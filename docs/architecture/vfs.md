@@ -19,8 +19,10 @@ UI never imports Capacitor; all I/O goes through `createStorage()` in `@babylons
 | Adapter | Host | Notes |
 | --- | --- | --- |
 | OPFS | Web | Replaces localStorage; binary-capable; projects under stable ids; Homepage remove deletes the OPFS directory; `readdir` skips Chromium's `*.crswap` write swap files and entries removed mid-listing, so a concurrent save never fails a whole listing (an asset rescan would otherwise publish an empty Content Browser); `readBinary` reads again when a save replaces the file between `getFile()` and the read (Chromium fails that stale snapshot with `NotReadableError` / `NotFoundError`), so a Preview reading a Texture while its encode commits gets the saved bytes; a snapshot that stays unreadable reports its real read error instead of `File not found` |
-| Documents | iPad default | `@capacitor/filesystem` under `BabylonSlate/projects/`; no picker/bookmark; Files-visible via `UIFileSharingEnabled` + `LSSupportsOpeningDocumentsInPlace` |
+| Documents | iPad default | `@capacitor/filesystem` `Directory.Documents` under `BabylonSlate/projects/`; no picker/bookmark; Files-visible via `UIFileSharingEnabled` + `LSSupportsOpeningDocumentsInPlace` |
+| Documents | Android default | App-private `Directory.Data` under `BabylonSlate/projects/`; Android 11+ public Documents is unreadable without a picker |
 | Scoped / external | iPad opt-in | Document picker; security-scoped bookmarks; root-confined relative paths; `openKnownFolder` reopens without picker; Reconnect on staleness or revoked scope access |
+| Scoped / external | Android opt-in | SAF `ACTION_OPEN_DOCUMENT_TREE`; persisted read/write URI permissions; `DocumentsContract` child traversal; UUID handles map to tree URIs in native SharedPreferences; no `importBookmark` |
 | Memory | Tests | In-memory tree |
 | Read-only wrapper | Engine plugins | `createReadOnlyProjectStorage(inner)` — reads pass through; `write*` / `mkdir` / `remove` / `deleteProject` throw |
 | Node | CI / tools | Real filesystem under a root path; `openAbsoluteFolder` for Electron pickers |
@@ -30,7 +32,7 @@ UI never imports Capacitor; all I/O goes through `createStorage()` in `@babylons
 
 ### External tier / Working Copy spike
 
-File-provider I/O uses `NSFileCoordinator` and acquires/releases security scope for each operation, including metadata checks. The native folder picker presents on the main thread. The Swift plugin validates paths while scope is held and rechecks the coordinated target before access.
+iPad file-provider I/O uses `NSFileCoordinator` and acquires/releases security scope for each operation, including metadata checks. Android SAF retains read/write URI permission and resolves each path segment through `DocumentsContract` cursor results. Both plugins reject absolute/traversing paths and surface revoked access.
 
 - Mobile operations await one initialization pass before selecting a storage tier. Restoring an old bookmark cannot redirect a new project's writes. Expired access remains visible as **Reconnect Project Folder** after startup or a failed recent-project open.
 - An unreachable legacy bookmark retains its reconnect identity without blocking Documents initialization. Reopening a Documents recent requires the directory to exist; it never recreates a deleted project folder.
@@ -41,7 +43,7 @@ File-provider I/O uses `NSFileCoordinator` and acquires/releases security scope 
 
 ## Two storage tiers (Homepage)
 
-1. **Default (iPad / Capacitor, Electron):** app Documents (Electron: `userData/projects`) — Create Project writes here with no picker until the user taps **Choose Location…**. Cold reopen of Documents projects needs no picker. The Create Project Name field starts **empty** on live (`TestProject` in `/?test=1` / `VITE_TEST_MODE`). Native **Choose Location…** is a required full-width `Button` (not a ToggleGroup) that arms `pickProjectFolder` at Create; **App Documents** / **Projects Folder** returns to the default. Web omits the Location line (internal OPFS). A colliding name warns **Name already exists.** instead of loading that folder. Capacitor and Electron never fall through to the OPFS adapter.
+1. **Default (Capacitor, Electron):** iPad `Directory.Documents`, Android app-private `Directory.Data`, or Electron `userData/projects` — Create Project writes here with no picker until the user taps **Choose Location…**. Cold reopen of Documents projects needs no picker. The Create Project Name field starts **empty** on live (`TestProject` in `/?test=1` / `VITE_TEST_MODE`). Native **Choose Location…** is a required full-width `Button` (not a ToggleGroup) that arms `pickProjectFolder` at Create; **App Documents** / **Projects Folder** returns to the default. Web omits the Location line (internal OPFS). A colliding name warns **Name already exists.** instead of loading that folder. Capacitor and Electron never fall through to the OPFS adapter.
 2. **Opt-in external:** iCloud / Working Copy / any folder via picker; bookmarks persist in app settings.
 3. **Web:** OPFS only; Export Project to get bytes out. Removing a listed OPFS project deletes its directory (and OPFS meta), not just the recents row. Recents never show the `opfs` API name: hide the location when every listed project is the same tier; mixed lists (Documents vs a picked folder) use **On this device** and **Chosen folder**.
 
@@ -71,9 +73,9 @@ Number fields (frame cap, hardware scaling, pointer scale, undo length, graph de
 
 `createAppSettingsStore()` picks Preferences on iOS/Android, `ElectronAppSettingsStore` when the host installed `globalThis.babylonslate.userData`, otherwise localStorage. With no bridge the Electron store keeps settings in memory, so desktop never silently loses them to a missing backend.
 
-## iOS public copy (P14)
+## Capacitor public copies (P14)
 
-Capacitor `webDir` is editor `dist`. `npx cap copy` / Xcode sync fills `ios/App/App/public/` (gitignored) from that dist, including `coi-serviceworker.js`, `havok/`, `ktx2/`, `draco/`, `meshopt/`, and `/player/`. WKWebView needs a first-gesture audio unlock (Play overlay pointerdown + player `pointerdown`/`touchstart`). Do not treat the gitignored iOS `public/` snapshot as source — the copy contract is asserted in `packages/vfs/src/capacitor-ios.test.ts`.
+Capacitor `webDir` is editor `dist`. `cap sync ios` fills gitignored `ios/App/App/public/`; `cap sync android` fills gitignored `android/app/src/main/assets/public/`. Both include `coi-serviceworker.js`, `havok/`, `ktx2/`, `draco/`, `meshopt/`, and `/player/`. WKWebView needs a first-gesture audio unlock (Play overlay pointerdown + player `pointerdown`/`touchstart`). Generated public copies are not source.
 
 ## WebContent termination (iOS)
 
@@ -105,13 +107,14 @@ Source-control tokens and LFS HTTP stay in `vfs` so Capacitor / Electron never l
 
 | Host | Backend |
 | --- | --- |
-| iOS / Android | First-party `BabylonSlateSecrets` Capacitor plugin (Keychain / Keystore). **Not** `@capacitor/preferences`. The Swift plugin is compiled in the iOS App target (`BabylonSlateSecretsPlugin.swift` in Sources) and listed in `ios/App/App/capacitor.config.json` `packageClassList`. Keep that class listed after `npx cap sync`. There is no Android editor shell yet. |
+| iOS | First-party `BabylonSlateSecrets` Keychain plugin compiled in the App target and retained in `packageClassList` after sync. **Not** Capacitor Preferences. |
+| Android | App-module `BabylonSlateSecrets` plugin, registered in `MainActivity`; an AndroidKeyStore AES-GCM key encrypts ciphertext held in private SharedPreferences. **Not** Capacitor Preferences. |
 | Electron | Preload `babylonslate.secrets` → IPC `secrets:get` / `secrets:set` / `secrets:delete` → a versioned file whose records explicitly tag `safeStorage` ciphertext or plaintext. Mutations are serialized to prevent lost updates. Linux hosts without a keyring write tagged plaintext; encrypted reads fail while decryption is unavailable and never expose ciphertext. |
 | Web | `UnavailableSecretStore` (`available: false`) — Source Control UI hidden |
 
 `nativeHttp`: `{ method, url, headers, body? }` → `{ status, bodyText }`. iOS/Android use `CapacitorHttp` (bypasses CORS). Electron uses IPC `lfs:fetch` → `net.fetch`. Web returns `null` (unused). Playwright covers lock UX with `FakeLockProvider` instead.
 
-Native HTTP responses expose optional `headers`, used by the native project-browser account adapter to persist Clerk's rotating client token. The adapter uses the [versioned public Frontend API](https://github.com/clerk/openapi-specs/tree/main/fapi), sends form-encoded email-code requests with `_is_native=1`, and restores access only after Clerk returns an active session. Client credentials stay in iOS Keychain through `SecretStore`; Android uses session memory until a Keystore adapter exists. Electron uses the separate `createAccountSecretStore()` / `accountSecrets` preload bridge: account tokens are OS-encrypted in `account-secrets.json`, or stay in main-process memory when secure encryption is unavailable (including Linux `basic_text`). Existing source-control credential behavior is unchanged. Electron HTTP preserves response headers, omits browser cookies, and rejects redirects. Tokens, verification codes, and raw server diagnostics never enter app settings or user-facing errors. Sign-out revokes the session before removing local credentials, including any older encrypted cache from a memory-only run.
+Native HTTP responses expose optional `headers`, used by the native project-browser account adapter to persist Clerk's rotating client token. The adapter uses the [versioned public Frontend API](https://github.com/clerk/openapi-specs/tree/main/fapi), sends form-encoded email-code requests with `_is_native=1`, and restores access only after Clerk returns an active session. Client credentials stay in iOS Keychain or Android Keystore-backed `SecretStore`. Electron uses the separate `createAccountSecretStore()` / `accountSecrets` preload bridge: account tokens are OS-encrypted in `account-secrets.json`, or stay in main-process memory when secure encryption is unavailable (including Linux `basic_text`). Existing source-control credential behavior is unchanged. Electron HTTP preserves response headers, omits browser cookies, and rejects redirects. Tokens, verification codes, and raw server diagnostics never enter app settings or user-facing errors. Sign-out revokes the session before removing local credentials, including any older encrypted cache from a memory-only run.
 
 While the native project browser is mounted, window focus and visibility resume trigger a fresh server check. Project actions are hidden during validation or sign-out; failed requests retain credentials and show a retry gate. Pending results and focus listeners cannot outlive the Home route. The editor has no account polling or listeners.
 
@@ -120,3 +123,5 @@ Desktop account-cache writes replace the file atomically. Invalid cache JSON or 
 Native account builds require Clerk's Native API and email-code sign-in/sign-up to be enabled. Additional mandatory profile fields, MFA, OAuth, and passkeys need corresponding flows before enabling them for app users; unsupported requirements keep the account form closed. Web authentication uses the optional Clerk React flow; Electron embeds the native email-code flow optionally in Profile. Native integration tests cover transport and session continuity with controlled API responses; real Clerk credentials and physical-device verification remain separate from browser emulation.
 
 `StatusBarStylePort` accepts `"light"` or `"dark"` glyph styles. iOS/Android use the Capacitor Status Bar plugin's `setStyle` only; Web and Electron use a no-op adapter. The editor maps resolved dark chrome to light glyphs and resolved light chrome to dark glyphs. It never hides or overlays the native status bar.
+
+Android audio lifecycle reports route additions/removals from device callbacks and becoming-noisy broadcasts. API 31+ audio mode changes model call/ringtone interruptions. It never requests audio focus, so other apps keep playing. Android memory stats report host-process PSS and system `availMem`; there is no jetsam-style per-process allowance, and the separate WebView renderer is not included.

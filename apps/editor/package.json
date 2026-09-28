@@ -11,7 +11,10 @@
     "preview": "vite preview",
     "ios:sync": "node scripts/ios-sync.mjs",
     "ios:build": "pnpm run ios:sync && node scripts/ios-build.mjs",
-    "ios:archive": "node scripts/ios-archive.mjs"
+    "ios:archive": "node scripts/ios-archive.mjs",
+    "android:sync": "node scripts/android-sync.mjs",
+    "android:build": "pnpm run android:sync && node scripts/android-build.mjs",
+    "android:release": "node scripts/android-release.mjs"
   },
   "dependencies": {
     "@babylonjs/core": "9.20.0",
@@ -38,6 +41,7 @@
     "@babylonslate/source-control": "workspace:*",
     "@babylonslate/ui": "workspace:*",
     "@babylonslate/vfs": "workspace:*",
+    "@capacitor/android": "^8.0.0",
     "@capacitor/app": "^8.0.0",
     "@capacitor/cli": "^8.0.0",
     "@capacitor/core": "^8.0.0",

@@ -5,6 +5,8 @@ import { parse } from "yaml";
 
 const workflow = parse(await readFile(".github/workflows/distribute.yml", "utf8"));
 const inspection = parse(await readFile(".github/workflows/inspect-desktop-packaging.yml", "utf8"));
+const appleInspection = parse(await readFile(".github/workflows/inspect-apple-toolchain.yml", "utf8"));
+const androidInspection = parse(await readFile(".github/workflows/inspect-android-toolchain.yml", "utf8"));
 
 test("distribution has only a manual trigger, explicit channels and exact platform choices", () => {
   assert.deepEqual(Object.keys(workflow.on), ["workflow_dispatch"]);
@@ -61,19 +63,41 @@ test("ordinary build and verification commands do not perform distribution", asy
   }
 });
 
-test("desktop inspection is manual, credential-free and uses the three standard hosts", () => {
+test("desktop inspection plans only the requested standard hosts", () => {
   assert.deepEqual(Object.keys(inspection.on), ["workflow_dispatch"]);
   assert.deepEqual(inspection.on.workflow_dispatch.inputs.platform.options, ["all", "windows", "macos", "linux"]);
   assert.deepEqual(inspection.on.workflow_dispatch.inputs.channel.options, ["test", "release"]);
   assert.equal(inspection.permissions.contents, "read");
-  assert.deepEqual(inspection.jobs.package.strategy.matrix.include, [
+  assert.ok(inspection.jobs.package.needs.includes("plan"));
+  assert.equal(inspection.jobs.package.strategy.matrix.include, "${{ fromJSON(needs.plan.outputs.matrix) }}");
+  const plan = inspection.jobs.plan.steps.find(step => step.id === "matrix").run;
+  const literal = plan.match(/all='([^']+)'/)?.[1];
+  assert.ok(literal);
+  const hosts = JSON.parse(literal);
+  assert.deepEqual(hosts, [
     { platform: "windows", runner: "windows-2025" },
     { platform: "macos", runner: "macos-26" },
     { platform: "linux", runner: "ubuntu-24.04" },
   ]);
+  for (const host of hosts) assert.match(host.runner, /^(ubuntu-24\.04|windows-2025|macos-26)$/);
   assert.equal(inspection.jobs.package.environment, undefined);
   for (const step of inspection.jobs.package.steps) {
     if (step.uses) assert.match(step.uses, /^[\w-]+\/[\w-]+@[a-f0-9]{40}$/);
     assert.ok(!step.uses?.startsWith("actions/upload-artifact@"));
+  }
+});
+
+test("Apple and Android toolchain inspections are manual, read-only and action-pinned", () => {
+  for (const inspected of [appleInspection, androidInspection]) {
+    assert.deepEqual(Object.keys(inspected.on), ["workflow_dispatch"]);
+    assert.equal(inspected.permissions.contents, "read");
+    for (const job of Object.values(inspected.jobs)) {
+      assert.match(job["runs-on"], /^(ubuntu-24\.04|macos-26)$/);
+      for (const step of job.steps) {
+        if (step.uses) assert.match(step.uses, /^[\w-]+\/[\w-]+@[a-f0-9]{40}$/);
+        if (step.uses?.startsWith("actions/checkout@")) assert.equal(step.with["persist-credentials"], false);
+        assert.ok(!step.uses?.startsWith("actions/upload-artifact@"));
+      }
+    }
   }
 });

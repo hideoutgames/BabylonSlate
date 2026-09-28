@@ -19,19 +19,32 @@ on:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - name: Select requested desktop hosts
+        id: matrix
+        env:
+          PLATFORM: ${{ inputs.platform }}
+        run: |
+          all='[{"platform":"windows","runner":"windows-2025"},{"platform":"macos","runner":"macos-26"},{"platform":"linux","runner":"ubuntu-24.04"}]'
+          matrix=$(jq -c --arg p "$PLATFORM" '[.[] | select($p == "all" or .platform == $p)]' <<< "$all")
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
   package:
-    if: inputs.platform == 'all' || inputs.platform == matrix.platform
+    needs: [plan]
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - platform: windows
-            runner: windows-2025
-          - platform: macos
-            runner: macos-26
-          - platform: linux
-            runner: ubuntu-24.04
+        include: ${{ fromJSON(needs.plan.outputs.matrix) }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     env:

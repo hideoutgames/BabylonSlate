@@ -74,7 +74,7 @@ function toFileStat(stat: NativeFileStat): FileStat {
 
 /**
  * Opt-in external-folder tier via our own Capacitor scoped-storage plugin.
- * Bookmarks are kept in native storage keyed by a stable folder id.
+ * Native scope identities are kept in native storage under a stable folder id.
  * @see docs/architecture/vfs.md
  */
 export class ScopedStorageAdapter implements ProjectStorage {
