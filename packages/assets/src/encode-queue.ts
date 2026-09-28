@@ -1,3 +1,4 @@
+import type { BabassetHeader } from "./babasset";
 import type { TextureEncodeSettings } from "./texture-compression";
 import {
   DEFAULT_TEXTURE_ENCODE_SETTINGS,
@@ -12,9 +13,12 @@ import {
 export interface EncodeJobGuard {
   /**
    * Asked when the job reaches the front of the queue (false drops it
-   * unencoded) and right before each write it causes (false skips that write).
+   * unencoded), and right before each write it causes (false skips that
+   * write) with `current`, the header of the file that write would replace,
+   * read from disk: an external change (a git revert or pull) may have
+   * replaced the file the index still describes.
    */
-  canWrite(assetGuid: string): boolean;
+  canWrite(assetGuid: string, current?: BabassetHeader): boolean;
 }
 
 export interface EncodeJob {
@@ -27,6 +31,8 @@ export interface EncodeJob {
   /** Usage the job encodes for, which an unsaved Details edit may override. */
   usage?: string;
   guard?: EncodeJobGuard;
+  /** sha256 of `source`, set on a guarded job: it writes only while the file's `pixels` chunk still has it. */
+  sourceSha256?: string;
 }
 
 export interface EncodeJobResult {
@@ -37,6 +43,23 @@ export interface EncodeJobResult {
   chunkId?: string;
   usage?: string;
   guard?: EncodeJobGuard;
+  sourceSha256?: string;
+}
+
+/**
+ * Whether a guarded job may make a write to its Texture's file as it is on
+ * disk now (`current`): its guard allows it, and the file's source pixels are
+ * still the ones it encoded, so an encode of replaced pixels never lands.
+ * An unguarded job (the user's own encode) always may.
+ */
+export function encodeJobMayWrite(
+  job: Pick<EncodeJob, "assetGuid" | "guard" | "sourceSha256">,
+  current: BabassetHeader,
+): boolean {
+  if (!job.guard) return true;
+  if (!job.guard.canWrite(job.assetGuid, current)) return false;
+  if (job.sourceSha256 === undefined) return true;
+  return current.chunks.find((chunk) => chunk.kind === "pixels")?.sha256 === job.sourceSha256;
 }
 
 export type EncodeFn = (
@@ -221,6 +244,7 @@ export class EncodeQueue {
         ...(job.chunkId ? { chunkId: job.chunkId } : {}),
         ...(job.usage ? { usage: job.usage } : {}),
         ...(job.guard ? { guard: job.guard } : {}),
+        ...(job.sourceSha256 ? { sourceSha256: job.sourceSha256 } : {}),
       });
       this.completedSinceRecycle += 1;
       if (this.completedSinceRecycle >= this.recycleAfter) {

@@ -191,6 +191,25 @@ describe("texture encode alignment", () => {
     expect(requeued.flat()).toEqual(["legacy-odd"]);
   });
 
+  it("writes nothing from a re-encode once its Texture's source pixels were replaced on disk", async () => {
+    const storage = await storageWithProject("replaced-source");
+    const path = "assets/legacy-odd.babasset";
+    await writeTexture(storage, path, "legacy-odd", { source: [1, 1], committed: { id: KEY_MAX_1, size: [1, 1] } });
+    const { registry, jobs, queue } = await mount(storage);
+    queue.pause();
+    expect(await registry.reconcileTextureAlignment()).toEqual(["legacy-odd"]);
+    // A git pull replaces the source while the re-encode waits, and nothing rescans.
+    await writeTexture(storage, path, "legacy-odd", { source: [3, 3], committed: { id: KEY_MAX_1, size: [1, 1] } });
+    const pulled = await storage.readBinary(path);
+
+    queue.resume();
+    await vi.waitFor(() => {
+      expect(queue.depth).toBe(0);
+      expect(jobs).toHaveLength(1);
+    });
+    expect(await storage.readBinary(path)).toEqual(pulled);
+  });
+
   it("requeues on open only compressed textures committed off the grid that are not atlases", async () => {
     const storage = await storageWithProject("open");
     await writeTexture(storage, "assets/legacy-odd.babasset", "legacy-odd", { source: [1, 1], committed: { id: KEY_MAX_1, size: [1, 1] } });

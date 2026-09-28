@@ -908,6 +908,35 @@ describe("project documents as .babasset", () => {
     expect(payload()).not.toHaveProperty("ktx2Width");
   });
 
+  it("with source control on, writes nothing from this session's queued re-encode once a git revert restored the file, even without a rescan", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("RevertedQueued.babproject");
+    await installMinimalProject(storage);
+    const path = "assets/odd.babasset";
+    await writeLegacyOddTexture(storage, path, "odd");
+    const committedInGit = await storage.readBinary(path);
+    const encode = vi.fn(standInEncode);
+    const service = new ProjectService(storage, { encode });
+
+    // Source control is off: opening the project pads it on the grid.
+    await service.loadCurrentProject();
+    await vi.waitFor(() => expect(service.registry!.getByGuid("odd")!.header.payload).toMatchObject({ ktx2Width: 4, ktx2BlockAlign: 4 }));
+    service.setSourceControlEnabled(true);
+    // A Tileset picks it while the queue is paused: the padding is this
+    // session's own, so a re-encode at its own size is queued.
+    service.pauseTextureEncodeQueue();
+    await service.saveDocument("tileset", "assets/Ground.tileset.babasset", { ...createDefaultTilesetPayload(), textureGuid: "odd" });
+    await vi.waitFor(() => expect(service.textureEncodeQueue.depth).toBe(1));
+    // A git client restores the committed file; the window only lost focus, so nothing rescans.
+    await nextMillisecond();
+    await storage.writeBinary(path, committedInGit);
+
+    service.resumeTextureEncodeQueue();
+    await vi.waitFor(() => expect(service.textureEncodeQueue.depth).toBe(0));
+    expect(encode).toHaveBeenCalledTimes(2);
+    expect(await storage.readBinary(path)).toEqual(committedInGit);
+  });
+
   it("rechecks a Texture a Tileset picks while an unsaved Details Usage re-encodes it", async () => {
     const storage = new MemoryStorageAdapter("documents");
     await storage.openDocumentsProject("InFlight.babproject");

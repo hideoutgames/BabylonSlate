@@ -9,7 +9,7 @@ import {
 } from "./babasset";
 import { createVfsBlobStore, type BlobStore } from "./blob-store";
 import type { ContentRoot } from "./content-root";
-import type { EncodeJobGuard, EncodeJobResult, EncodeQueue } from "./encode-queue";
+import { encodeJobMayWrite, type EncodeJobGuard, type EncodeJobResult, type EncodeQueue } from "./encode-queue";
 import { newAssetGuid } from "./guid";
 import { isEnvironmentTexturePayload } from "./environment-texture";
 import {
@@ -815,15 +815,18 @@ export class AssetRegistry {
     await this.thumbnailWriter(asset.header.guid, thumb);
   }
 
-  /** `canWrite`, when set, is asked right before the write; false skips it. */
+  /**
+   * `canWrite`, when set, is asked right before the write with the header of
+   * the file on disk it would replace; false skips it.
+   */
   async setCompressionState(
     guid: string,
     state: TextureCompressionState,
-    options?: { error?: string; canWrite?: (guid: string) => boolean },
+    options?: { error?: string; canWrite?: (guid: string, current: BabassetHeader) => boolean },
   ): Promise<void> {
     await this.enqueueTextureWrite(guid, async () => {
-      await this.rewriteTexture(guid, async (header, chunks) => {
-        if (options?.canWrite && !options.canWrite(guid)) return null;
+      await this.rewriteTexture(guid, async (header, chunks, current) => {
+        if (options?.canWrite && !options.canWrite(guid, current)) return null;
         const payload: Record<string, unknown> = {
           ...header.payload,
           compressionState: state,
@@ -851,7 +854,8 @@ export class AssetRegistry {
    * prefers, or the first one when none matches, and WebGPU would decode it
    * to RGBA. An atlas keeps them (its own-size encode, should a Particle
    * Usage be switched back). Resolves false when nothing was written (the
-   * Texture is gone, or a guarded job's guard refuses).
+   * Texture is gone, or a guarded job may not write the file on disk now:
+   * `encodeJobMayWrite`).
    */
   commitCompressedTexture(result: EncodeJobResult): Promise<boolean> {
     // Entered at once: a pass that awaits this Texture's writes reads the commit.
@@ -861,9 +865,10 @@ export class AssetRegistry {
       const size = sniffKtx2Size(result.ktx2);
       const blockAlign = result.settings.blockAlign;
       const sha256 = await sha256Hex(result.ktx2);
-      return this.rewriteTexture(result.assetGuid, async (header, chunks) => {
-        // A background job commits only while its guard still allows it.
-        if (result.guard && !result.guard.canWrite(result.assetGuid)) return null;
+      return this.rewriteTexture(result.assetGuid, async (header, chunks, current) => {
+        // A background job commits only while its guard still allows it for
+        // the file it replaces, and only onto the source it encoded.
+        if (!encodeJobMayWrite(result, current)) return null;
         if (isOnBlockGrid(size) && !this.isAtlasTexture(result.assetGuid)) {
           for (const [id, chunk] of chunks) {
             if (id === chunkId || !(chunk.kind === "ktx2" || id.startsWith("ktx2:"))) continue;
@@ -954,7 +959,8 @@ export class AssetRegistry {
    * Details edit that has not been saved yet encodes with its new policy.
    * A `guard`ed re-encode (the alignment pass) writes no state before its
    * commit, and its guard is asked again when the job starts and before each
-   * write.
+   * write; it carries its source's sha256, so it writes nothing once the
+   * file's source pixels changed.
    */
   async retryTextureEncoding(
     guid: string,
@@ -991,6 +997,7 @@ export class AssetRegistry {
     const chunkId = await textureEncodeChunkId(settings, usage);
     const queue = this.encodeQueue;
     if (!queue) return false;
+    const sourceSha256 = options?.guard ? await sha256Hex(source.bytes) : undefined;
     queue.enqueue({
       assetGuid: guid,
       source: source.bytes,
@@ -998,7 +1005,7 @@ export class AssetRegistry {
       settings,
       chunkId,
       usage,
-      ...(options?.guard ? { guard: options.guard } : {}),
+      ...(options?.guard ? { guard: options.guard, sourceSha256 } : {}),
     });
     return true;
   }
@@ -1148,8 +1155,11 @@ export class AssetRegistry {
    */
   async reconcileTextureAlignment(options: {
     guids?: Iterable<string>;
-    /** Asked before the requeue, when the job starts and before its commit. */
-    canWrite?: (guid: string) => boolean;
+    /**
+     * Asked before the requeue, when the job starts, and before its commit
+     * with the header of the file on disk it would replace (`EncodeJobGuard`).
+     */
+    canWrite?: (guid: string, current?: BabassetHeader) => boolean;
     /**
      * Usage to check and re-encode with instead of the saved one: an open
      * Texture tab's, which an unsaved Details edit may have changed.
@@ -1348,6 +1358,8 @@ export class AssetRegistry {
     mutate: (
       header: Omit<BabassetHeader, "chunks">,
       chunks: Map<string, ChunkInput>,
+      /** The header as read from disk, chunk sha256s included. */
+      current: BabassetHeader,
     ) => Promise<{
       header: Omit<BabassetHeader, "chunks">;
       chunks: Map<string, ChunkInput>;
@@ -1377,7 +1389,7 @@ export class AssetRegistry {
     }
     const { chunks, ...headerRest } = decoded.header;
     void chunks;
-    const next = await mutate({ ...headerRest }, chunksById);
+    const next = await mutate({ ...headerRest }, chunksById, decoded.header);
     // Nothing to write (a refused guard).
     if (!next) return false;
     const bytes = await encodeBabasset({

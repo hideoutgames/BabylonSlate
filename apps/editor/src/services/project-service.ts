@@ -61,6 +61,7 @@ import {
   DOCUMENT_CHUNK_ID,
   EncodeQueue,
   encodeAssetDocument,
+  encodeJobMayWrite,
   extraChunksFromDecoded,
   extraChunksWithAudioReverb,
   extraChunksWithAudioClip,
@@ -80,6 +81,7 @@ import {
   readProjectTree,
   writeThumbnail,
   ProjectSearchIndex,
+  type BabassetHeader,
   type BlobStore,
   type EncodeFn,
   stubEncodeKtx2,
@@ -247,9 +249,9 @@ function withSavedTextureEncodeState(
 }
 
 /** sha256 of the KTX2 chunk a Texture's header commits to (`ktx2ChunkId`), if any. */
-function committedKtx2Sha256(asset: IndexedAsset | undefined): string | null {
-  const id = asset?.header.payload.ktx2ChunkId;
-  return asset?.header.chunks.find((chunk) => chunk.id === id)?.sha256 ?? null;
+function committedKtx2Sha256(header: Pick<BabassetHeader, "payload" | "chunks"> | undefined): string | null {
+  const id = header?.payload.ktx2ChunkId;
+  return header?.chunks.find((chunk) => chunk.id === id)?.sha256 ?? null;
 }
 
 export interface ProjectLoadResult {
@@ -330,7 +332,8 @@ export class ProjectService {
   /**
    * Texture guid -> sha256 of the KTX2 chunk this project session last
    * committed for it. It exempts the Texture only while that encode is still
-   * the committed one: a git revert or pull that replaces it ends the exemption.
+   * the committed one in the file on disk: a git revert or pull that replaces
+   * it ends the exemption, even for a job queued before it.
    */
   private readonly sessionEncodes = new Map<string, string>();
   /** Committed KTX2 (and sniffed source) sizes by chunk sha256, kept across registry remounts. */
@@ -439,7 +442,7 @@ export class ProjectService {
       onComplete: async (result) => {
         const registry = this.assetRegistry;
         if (!(await registry?.commitCompressedTexture(result))) return;
-        const committed = registry && committedKtx2Sha256(registry.getByGuid(result.assetGuid));
+        const committed = registry && committedKtx2Sha256(registry.getByGuid(result.assetGuid)?.header);
         if (committed) this.sessionEncodes.set(result.assetGuid, committed);
         this.emitRegistryChange();
         // A Tileset, Sprite or Sprite Animation may have picked the texture
@@ -458,7 +461,7 @@ export class ProjectService {
         void this.assetRegistry
           ?.setCompressionState(guid, "encode_failed", {
             error: message,
-            ...(job.guard ? { canWrite: job.guard.canWrite } : {}),
+            ...(job.guard ? { canWrite: (_guid: string, current: BabassetHeader) => encodeJobMayWrite(job, current) } : {}),
           })
           .then(() => this.emitRegistryChange());
       },
@@ -617,9 +620,10 @@ export class ProjectService {
    * source control is off or its committed encode is the one this project
    * session last wrote (such as an import a Tileset then picks); a git revert
    * or pull that replaced that encode ends it. Asked again when its job
-   * starts and before its commit.
+   * starts, and before its commit with `current`, the file on disk the commit
+   * would replace, which the index may not describe yet.
    */
-  private alignmentMayWrite(guid: string): boolean {
+  private alignmentMayWrite(guid: string, current?: BabassetHeader): boolean {
     const registry = this.assetRegistry;
     const asset = registry?.getByGuid(guid);
     if (!registry || !asset) return false;
@@ -627,7 +631,7 @@ export class ProjectService {
       return false;
     }
     if (!this.sourceControlEnabled) return true;
-    const committed = committedKtx2Sha256(asset);
+    const committed = committedKtx2Sha256(current ?? asset.header);
     return committed !== null && this.sessionEncodes.get(guid) === committed;
   }
 
@@ -670,7 +674,7 @@ export class ProjectService {
       if (!registry) return 0;
       const requeued = await registry.reconcileTextureAlignment({
         guids,
-        canWrite: (guid) => this.alignmentMayWrite(guid),
+        canWrite: (guid, current) => this.alignmentMayWrite(guid, current),
         usageFor: this.openTextureUsage ?? undefined,
         ktx2SizeCache: this.ktx2SizeCache,
       });
