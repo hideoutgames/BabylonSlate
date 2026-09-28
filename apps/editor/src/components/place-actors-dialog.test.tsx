@@ -131,7 +131,7 @@ describe("PlaceActorsDialog", () => {
     expect(onSelect).toHaveBeenCalledWith(hero);
   });
 
-  it("filters Project assets by type and restores them on Clear Filters", () => {
+  it("filters Project assets by type from the Filter menu", async () => {
     const asset = (id: string, assetType: string, path: string) => ({
       id: `asset-${id}`,
       title: id,
@@ -152,15 +152,12 @@ describe("PlaceActorsDialog", () => {
     fireEvent.click(screen.getByTestId("place-actors-catalog-category-Project"));
     expect(screen.getByTestId("place-actors-item-asset-Hero").textContent).toContain("assets/actors");
 
-    fireEvent.click(screen.getByTestId("place-actors-project-type-Prefab"));
-    expect(screen.queryByTestId("place-actors-item-asset-Hero")).toBeNull();
+    fireEvent.click(screen.getByTestId("place-actors-project-filter"));
+    fireEvent.click(await screen.findByTestId("place-actors-project-filter-Prefab"));
+    await waitFor(() => expect(screen.queryByTestId("place-actors-item-asset-Hero")).toBeNull());
     expect(screen.getByTestId("place-actors-item-asset-Door")).toBeTruthy();
-    expect(screen.getByTestId("place-actors-project-count").textContent).toBe("1 of 2");
-
-    fireEvent.click(screen.getByTestId("place-actors-project-type-Prefab"));
-    fireEvent.click(screen.getByTestId("place-actors-project-type-Class"));
-    expect(screen.queryByTestId("place-actors-item-asset-Door")).toBeNull();
-    expect(screen.getByTestId("place-actors-item-asset-Hero")).toBeTruthy();
+    expect(screen.getByTestId("place-actors-project-count").textContent).toBe("1 of 2 Assets");
+    expect(screen.getByTestId("place-actors-project-filter").textContent).toBe("Filter (1)");
   });
 
   it("still clears the search when dismissed without selecting", () => {

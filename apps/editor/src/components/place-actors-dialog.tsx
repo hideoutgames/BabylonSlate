@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowUpDownIcon, FolderIcon } from "lucide-react";
+import { ArrowUpDownIcon, FolderIcon, ListFilterIcon } from "lucide-react";
 import { thumbnailMime } from "@babylonslate/assets";
 import {
   CatalogCard,
@@ -15,14 +15,15 @@ import {
 import { Button } from "@babylonslate/ui/components/button";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@babylonslate/ui/components/dropdown-menu";
-import { ToggleGroup, ToggleGroupItem } from "@babylonslate/ui/components/toggle-group";
 import {
   FEATURED_PLACE_ACTOR_IDS,
   visualForPlaceActor,
@@ -130,106 +131,107 @@ function AssetToolbar({
   onSortChange: (sort: AssetSort) => void;
   shown: number;
 }) {
-  const typeCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const item of items) counts.set(assetType(item), (counts.get(assetType(item)) ?? 0) + 1);
-    return [...counts].sort(([a], [b]) => a.localeCompare(b));
-  }, [items]);
+  const types = useMemo(
+    () => [...new Set(items.map(assetType))].filter(Boolean).sort((a, b) => a.localeCompare(b)),
+    [items],
+  );
   const folders = useMemo(
     () => [...new Set(items.map(assetFolder))].sort((a, b) => a.localeCompare(b)),
     [items],
   );
   const prefix = `place-actors-${scope}`;
+  const filterTypes = typeFilters && onTypeFiltersChange && types.length > 1;
+  const filterFolders = folders.length > 1;
+  const activeFilters = (typeFilters?.length ?? 0) + (folder === ALL_FOLDERS ? 0 : 1);
   const sortOptions = typeFilters ? SORT_OPTIONS : SORT_OPTIONS.filter((option) => option.id !== "type");
 
   return (
     <div
-      className="sticky -top-4 z-10 -mx-4 -mt-4 mb-2 flex flex-wrap items-center gap-2 border-b bg-popover px-4 py-2"
+      className="sticky -top-4 z-10 -mx-4 -mt-4 mb-2 flex items-center gap-2 border-b bg-popover px-4 py-2"
       data-testid={`${prefix}-toolbar`}
     >
-      {typeFilters && onTypeFiltersChange ? (
-        <ToggleGroup
-          multiple
-          variant="outline"
-          size="sm"
-          spacing={1}
-          value={typeFilters}
-          onValueChange={(value) => onTypeFiltersChange(value as string[])}
-          aria-label="Asset Types"
-          className="flex-wrap"
-        >
-          {typeCounts.map(([type, count]) => (
-            <ToggleGroupItem
-              key={type}
-              value={type}
-              aria-label={`${typeLabel(type)} (${count})`}
-              data-testid={`${prefix}-type-${type}`}
-            >
-              <TypeVisualIcon visual={resolveTypeVisual({ assetType: type })} className="size-3.5" />
-              {typeLabel(type)}
-              <span className="text-muted-foreground tabular-nums">{count}</span>
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
-      ) : null}
-      <div className="ml-auto flex items-center gap-2">
-        <span className="text-xs text-muted-foreground tabular-nums" data-testid={`${prefix}-count`}>
-          {shown === items.length ? `${shown} ${shown === 1 ? "Asset" : "Assets"}` : `${shown} of ${items.length}`}
-        </span>
-        {folders.length > 1 ? (
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button
-                  type="button"
-                  variant={folder === ALL_FOLDERS ? "outline" : "secondary"}
-                  size="sm"
-                  className="max-w-48"
-                  data-testid={`${prefix}-folder`}
-                />
-              }
-            >
-              <FolderIcon data-icon="inline-start" />
-              <span className="truncate">{folder === ALL_FOLDERS ? "All Folders" : folder}</span>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="min-w-48">
+      <span className="mr-auto text-xs text-muted-foreground tabular-nums" data-testid={`${prefix}-count`}>
+        {shown === items.length
+          ? `${shown} ${shown === 1 ? "Asset" : "Assets"}`
+          : `${shown} of ${items.length} Assets`}
+      </span>
+      {filterTypes || filterFolders ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button
+                type="button"
+                variant={activeFilters > 0 ? "secondary" : "outline"}
+                size="sm"
+                data-testid={`${prefix}-filter`}
+                aria-label={activeFilters > 0 ? `Filter (${activeFilters})` : "Filter"}
+              />
+            }
+          >
+            <ListFilterIcon data-icon="inline-start" />
+            {`Filter${activeFilters > 0 ? ` (${activeFilters})` : ""}`}
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-44" data-testid={`${prefix}-filter-menu`}>
+            {filterTypes ? (
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>Asset Types</DropdownMenuLabel>
+                {types.map((type) => (
+                  <DropdownMenuCheckboxItem
+                    key={type}
+                    checked={typeFilters.includes(type)}
+                    data-testid={`${prefix}-filter-${type}`}
+                    onCheckedChange={(checked) =>
+                      onTypeFiltersChange(
+                        checked === true
+                          ? [...typeFilters.filter((entry) => entry !== type), type]
+                          : typeFilters.filter((entry) => entry !== type),
+                      )
+                    }
+                  >
+                    <TypeVisualIcon visual={resolveTypeVisual({ assetType: type })} className="size-4" />
+                    {typeLabel(type)}
+                  </DropdownMenuCheckboxItem>
+                ))}
+              </DropdownMenuGroup>
+            ) : null}
+            {filterTypes && filterFolders ? <DropdownMenuSeparator /> : null}
+            {filterFolders ? (
               <DropdownMenuGroup>
                 <DropdownMenuLabel>Folder</DropdownMenuLabel>
                 <DropdownMenuRadioGroup value={folder} onValueChange={(value) => onFolderChange(value as string)}>
                   <DropdownMenuRadioItem value={ALL_FOLDERS}>All Folders</DropdownMenuRadioItem>
                   {folders.filter(Boolean).map((entry) => (
                     <DropdownMenuRadioItem key={entry} value={entry} data-testid={`${prefix}-folder-${entry}`}>
+                      <FolderIcon className="size-4 text-muted-foreground" />
                       {entry}
                     </DropdownMenuRadioItem>
                   ))}
                 </DropdownMenuRadioGroup>
               </DropdownMenuGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        ) : null}
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <Button type="button" variant="outline" size="sm" data-testid={`${prefix}-sort`} />
-            }
-          >
-            <ArrowUpDownIcon data-icon="inline-start" />
-            {sortOptions.find((option) => option.id === sort)?.label ?? "Name"}
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="min-w-40">
-            <DropdownMenuGroup>
-              <DropdownMenuLabel>Sort By</DropdownMenuLabel>
-              <DropdownMenuRadioGroup value={sort} onValueChange={(value) => onSortChange(value as AssetSort)}>
-                {sortOptions.map((option) => (
-                  <DropdownMenuRadioItem key={option.id} value={option.id} data-testid={`${prefix}-sort-${option.id}`}>
-                    {option.label}
-                  </DropdownMenuRadioItem>
-                ))}
-              </DropdownMenuRadioGroup>
-            </DropdownMenuGroup>
+            ) : null}
           </DropdownMenuContent>
         </DropdownMenu>
-      </div>
+      ) : null}
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={<Button type="button" variant="outline" size="sm" data-testid={`${prefix}-sort`} aria-label="Sort" />}
+        >
+          <ArrowUpDownIcon data-icon="inline-start" />
+          Sort
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="min-w-44">
+          <DropdownMenuGroup>
+            <DropdownMenuLabel>Sort By</DropdownMenuLabel>
+            <DropdownMenuRadioGroup value={sort} onValueChange={(value) => onSortChange(value as AssetSort)}>
+              {sortOptions.map((option) => (
+                <DropdownMenuRadioItem key={option.id} value={option.id} data-testid={`${prefix}-sort-${option.id}`}>
+                  {option.label}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }
