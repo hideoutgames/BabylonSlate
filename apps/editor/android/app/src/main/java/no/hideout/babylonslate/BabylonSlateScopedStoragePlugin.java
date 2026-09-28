@@ -194,9 +194,9 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
             }
             DocumentMetadata existing = findChild(folder, parent, parts[parts.length - 1]);
             Uri target = existing == null
-                ? DocumentsContract.createDocument(getContext().getContentResolver(), parent, "application/octet-stream", parts[parts.length - 1])
+                ? createChild(folder, parent, "application/octet-stream", parts[parts.length - 1])
                 : existing.uri;
-            if (target == null || (existing != null && existing.directory)) throw new PluginFailure("File not found", "NOT_FOUND");
+            if (existing != null && existing.directory) throw new PluginFailure("File not found", "NOT_FOUND");
             try (OutputStream output = getContext().getContentResolver().openOutputStream(target, "wt")) {
                 if (output == null) throw new FileNotFoundException(path);
                 output.write(payload);
@@ -220,14 +220,12 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
                     parent = existing.uri;
                 } else {
                     if (!recursive && index != parts.length - 1) throw new PluginFailure("Parent directory not found", "NOT_FOUND");
-                    Uri created = DocumentsContract.createDocument(
-                        getContext().getContentResolver(),
+                    parent = createChild(
+                        folder,
                         parent,
                         DocumentsContract.Document.MIME_TYPE_DIR,
                         parts[index]
                     );
-                    if (created == null) throw new FileNotFoundException(path);
-                    parent = created;
                 }
             }
             call.resolve();
@@ -354,14 +352,27 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
             if (!existing.directory) throw new PluginFailure("Path is not a directory", "NOT_FOUND");
             return existing.uri;
         }
+        return createChild(folder, parent, DocumentsContract.Document.MIME_TYPE_DIR, name);
+    }
+
+    private Uri createChild(FolderAccess folder, Uri parent, String mimeType, String name) throws Exception {
         Uri created = DocumentsContract.createDocument(
             getContext().getContentResolver(),
             parent,
-            DocumentsContract.Document.MIME_TYPE_DIR,
+            mimeType,
             name
         );
         if (created == null) throw new FileNotFoundException(name);
-        return created;
+        Uri current = created;
+        if (!name.equals(metadata(current).name)) {
+            Uri renamed = DocumentsContract.renameDocument(getContext().getContentResolver(), current, name);
+            if (renamed != null) current = renamed;
+            if (!name.equals(metadata(current).name)) {
+                DocumentsContract.deleteDocument(getContext().getContentResolver(), current);
+                throw new PluginFailure("Provider renamed the created file", "UNREACHABLE");
+            }
+        }
+        return current;
     }
 
     private DocumentMetadata resolve(FolderAccess folder, String path) throws Exception {

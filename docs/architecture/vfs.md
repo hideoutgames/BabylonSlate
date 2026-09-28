@@ -75,7 +75,7 @@ Number fields (frame cap, hardware scaling, pointer scale, undo length, graph de
 
 ## Capacitor public copies (P14)
 
-Capacitor `webDir` is editor `dist`. `cap sync ios` fills gitignored `ios/App/App/public/`; `cap sync android` fills gitignored `android/app/src/main/assets/public/`. Both include `coi-serviceworker.js`, `havok/`, `ktx2/`, `draco/`, `meshopt/`, and `/player/`. WKWebView needs a first-gesture audio unlock (Play overlay pointerdown + player `pointerdown`/`touchstart`). Generated public copies are not source.
+Capacitor `webDir` is editor `dist`. `cap sync ios` fills gitignored `ios/App/App/public/`; `cap sync android` fills gitignored `android/app/src/main/assets/public/`. Both include `coi-serviceworker.js`, `havok/`, `ktx2/`, `draco/`, `meshopt/`, and `/player/`. WKWebView needs a first-gesture audio unlock (Play overlay pointerdown + player `pointerdown`/`touchstart`). Generated public copies are not source. The iOS copy contract is asserted in `packages/vfs/src/capacitor-ios.test.ts`; Android plugin and generated wiring contracts are asserted in `packages/vfs/src/capacitor-android.test.ts`.
 
 ## WebContent termination (iOS)
 
@@ -108,7 +108,7 @@ Source-control tokens and LFS HTTP stay in `vfs` so Capacitor / Electron never l
 | Host | Backend |
 | --- | --- |
 | iOS | First-party `BabylonSlateSecrets` Keychain plugin compiled in the App target and retained in `packageClassList` after sync. **Not** Capacitor Preferences. |
-| Android | App-module `BabylonSlateSecrets` plugin, registered in `MainActivity`; an AndroidKeyStore AES-GCM key encrypts ciphertext held in private SharedPreferences. **Not** Capacitor Preferences. |
+| Android | App-module `BabylonSlateSecrets` plugin, registered in `MainActivity`; an AndroidKeyStore AES-GCM key encrypts ciphertext held in private SharedPreferences, which backup/transfer rules exclude because the device-bound key cannot migrate. **Not** Capacitor Preferences. |
 | Electron | Preload `babylonslate.secrets` → IPC `secrets:get` / `secrets:set` / `secrets:delete` → a versioned file whose records explicitly tag `safeStorage` ciphertext or plaintext. Mutations are serialized to prevent lost updates. Linux hosts without a keyring write tagged plaintext; encrypted reads fail while decryption is unavailable and never expose ciphertext. |
 | Web | `UnavailableSecretStore` (`available: false`) — Source Control UI hidden |
 

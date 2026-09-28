@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.media.AudioDeviceCallback;
 import android.media.AudioDeviceInfo;
 import android.media.AudioManager;
 import android.os.Build;
@@ -17,7 +18,7 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 @CapacitorPlugin(name = "BabylonSlateAudioLifecycle")
 public class BabylonSlateAudioLifecyclePlugin extends Plugin {
     private AudioManager audioManager;
-    private AudioManager.AudioDeviceCallback deviceCallback;
+    private AudioDeviceCallback deviceCallback;
     private BroadcastReceiver noisyReceiver;
     private Object modeChangedListener;
     private boolean interrupted;
@@ -25,7 +26,7 @@ public class BabylonSlateAudioLifecyclePlugin extends Plugin {
     @Override
     public void load() {
         audioManager = (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
-        deviceCallback = new AudioManager.AudioDeviceCallback() {
+        deviceCallback = new AudioDeviceCallback() {
             @Override
             public void onAudioDevicesAdded(AudioDeviceInfo[] addedDevices) {
                 routeChange(1);

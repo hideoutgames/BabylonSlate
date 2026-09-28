@@ -14,10 +14,12 @@ test("staging preserves player, workers, wasm and plugins without workspace cred
       await writeFile(join(source, file), "fixture");
     }
     await writeFile(join(root, ".env"), "private fixture");
+    await writeFile(join(source, ".nojekyll"), "deployment marker");
     await stageRenderer(source, join(root, "staged"));
     assert.equal(await readFile(join(root, "staged/assets/physics.wasm"), "utf8"), "fixture");
     assert.equal(await readFile(join(root, "staged/player/index.html"), "utf8"), "fixture");
     assert.equal((await readdir(join(root, "staged"))).includes(".env"), false);
+    assert.equal((await readdir(join(root, "staged"))).includes(".nojekyll"), false);
     await writeFile(join(source, "credential.p8"), "private fixture");
     await assert.rejects(stageRenderer(source, join(root, "rejected")), /private|forbidden/i);
   } finally { await rm(root, { recursive: true, force: true }); }

@@ -3,7 +3,6 @@ package no.hideout.babylonslate;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.security.keystore.KeyGenParameterSpec;
-import android.security.keystore.KeyPermanentlyInvalidatedException;
 import android.security.keystore.KeyProperties;
 import android.util.Base64;
 import com.getcapacitor.JSObject;
@@ -13,7 +12,6 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyStore;
-import javax.crypto.AEADBadTagException;
 import javax.crypto.Cipher;
 import javax.crypto.KeyGenerator;
 import javax.crypto.SecretKey;
@@ -75,8 +73,6 @@ public class BabylonSlateSecretsPlugin extends Plugin {
             JSObject result = new JSObject();
             result.put("value", value);
             call.resolve(result);
-        } catch (AEADBadTagException | KeyPermanentlyInvalidatedException error) {
-            call.reject("Keystore read failed", null, error);
         } catch (Exception error) {
             call.reject("Keystore read failed", null, error);
         }
