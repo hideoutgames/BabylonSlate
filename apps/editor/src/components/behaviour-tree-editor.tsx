@@ -404,7 +404,7 @@ export function BehaviourTreeGraphPanel(_props: IDockviewPanelProps) {
   return (
     <PanelFrame className="flex-1">
       <div
-        className="flex h-full min-h-0 flex-col"
+        className="bt-graph-canvas flex h-full min-h-0 flex-col"
         data-testid="behaviour-tree-editor"
       >
         <GraphEditor
