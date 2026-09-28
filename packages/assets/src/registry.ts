@@ -1132,7 +1132,10 @@ export class AssetRegistry {
      * Texture tab's, which an unsaved Details edit may have changed.
      */
     usageFor?: (guid: string) => string | undefined;
-    /** KTX2 base sizes by chunk sha256, kept across registry remounts. */
+    /**
+     * Sizes the pass read, kept across registry remounts: KTX2 base sizes by
+     * chunk sha256, and sniffed source sizes by `source:` + chunk sha256.
+     */
     ktx2SizeCache?: Map<string, ImageSize | null>;
   } = {}): Promise<string[]> {
     if (!this.encodeQueue) return [];
@@ -1187,17 +1190,40 @@ export class AssetRegistry {
     const size = await this.committedKtx2Size(asset, usage, cache);
     if (size === null || isOnBlockGrid(size)) return false;
     // Requeue only if the re-encode can differ: padded, or under other
-    // settings. Otherwise (a payload size that disagrees with the source) it
-    // would land off the grid again and repeat after every commit.
-    const settings = this.encodeSettingsFor(asset, usage);
+    // settings. Otherwise (a payload or sniffed size that disagrees with the
+    // decoded source) it would land off the grid again and repeat after every
+    // commit. Built as the requeue builds them: without a payload size, the
+    // sniffed source decides the padding.
+    const sourceSize = payloadPixelSize(asset.header.payload)
+      ? undefined
+      : await this.sniffedSourceSize(asset, cache);
+    const settings = this.encodeSettingsFor(asset, usage, { sourceSize });
     if (settings.blockAlign !== undefined) return true;
     return asset.header.payload.ktx2ChunkId !== (await textureEncodeChunkId(settings, usage));
   }
 
+  /** `sniffSourceImageSize` of the source pixels, cached by chunk sha256 under `source:`. */
+  private async sniffedSourceSize(
+    asset: IndexedAsset,
+    cache?: Map<string, ImageSize | null>,
+  ): Promise<ImageSize | null> {
+    const pixels = asset.header.chunks.find((chunk) => chunk.kind === "pixels");
+    if (!pixels) return null;
+    const key = `source:${pixels.sha256}`;
+    const cached = cache?.get(key);
+    if (cached !== undefined) return cached;
+    const source = await this.loadSourcePixels(asset);
+    const size = source ? sniffSourceImageSize(source.bytes) : null;
+    cache?.set(key, size);
+    return size;
+  }
+
   /**
    * Base size of the committed KTX2: the recorded size; else, for an encode
-   * committed under today's id without a record, the clamped source size
-   * (unpadded encodes are exactly that); else the chunk's KTX2 header.
+   * committed under today's id without a record, the clamped source size when
+   * it is on the grid (padding then changes nothing); else the chunk's KTX2
+   * header, which also tells a padded encode whose record was dropped (by an
+   * editor that predates it) from an unpadded one.
    */
   private async committedKtx2Size(
     asset: IndexedAsset,
@@ -1214,7 +1240,7 @@ export class AssetRegistry {
       const settings = this.encodeSettingsFor(asset, usage);
       if (committed === (await textureEncodeChunkId(settings, usage))) {
         const clamped = clampDimension(source.width, source.height, settings.maxDimension);
-        return { width: clamped.width, height: clamped.height };
+        if (isOnBlockGrid(clamped)) return { width: clamped.width, height: clamped.height };
       }
     }
     const entry = asset.header.chunks.find((chunk) => chunk.id === committed);

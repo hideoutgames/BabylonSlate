@@ -327,7 +327,7 @@ export class ProjectService {
   private openTextureUsage: ((guid: string) => string | undefined) | null = null;
   /** Textures whose encode this project session committed. */
   private readonly sessionEncodedTextures = new Set<string>();
-  /** Committed KTX2 base sizes by chunk sha256, kept across registry remounts. */
+  /** Committed KTX2 (and sniffed source) sizes by chunk sha256, kept across registry remounts. */
   private readonly ktx2SizeCache = new Map<string, ImageSize | null>();
   /** Textures decoded legacy atlas referrers sample, by content, kept across registry remounts. */
   private readonly legacyAtlasCache = new Map<string, readonly string[]>();

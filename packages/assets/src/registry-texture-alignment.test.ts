@@ -11,7 +11,7 @@ import { AssetRegistry } from "./registry";
 import { resolveGpuTexture, textureEncodeSettingsFor } from "./resolve-gpu-texture";
 import { DEFAULT_TEXTURE_ENCODE_SETTINGS, textureEncodeChunkId, textureEncodeSize, type TextureEncodeSettings } from "./texture-compression";
 import { createDefaultTilesetPayload } from "./tileset-payload";
-import { webpHeader } from "./test-support/image-headers";
+import { gifHeader, webpHeader } from "./test-support/image-headers";
 
 /** PNG signature + IHDR size (enough for size sniffing). */
 function png(width: number, height: number): Uint8Array {
@@ -55,6 +55,8 @@ async function writeTexture(
     source: [number, number];
     sized?: boolean;
     pixels?: boolean;
+    /** A GIF source (its logical screen size) instead of a PNG. */
+    gif?: boolean;
     committed: { id: string; size: [number, number] };
     /**
      * What a commit recorded: `ktx2Width` / `ktx2Height`, `ktx2BlockAlign`,
@@ -83,7 +85,11 @@ async function writeTexture(
   await storage.writeBinary(path, await encodeBabasset({
     header: { guid, type: "Texture", name: guid, engineVersion: "0.0.0", version: 1, mode: "thin", dependencies: [], parentClass: null, payload },
     chunks: [
-      ...(options.pixels === false ? [] : [{ id: "pixels", kind: "pixels", mime: "image/png", data: png(width, height) }]),
+      ...(options.pixels === false
+        ? []
+        : [options.gif
+          ? { id: "pixels", kind: "pixels", mime: "image/gif", data: gifHeader(width, height) }
+          : { id: "pixels", kind: "pixels", mime: "image/png", data: png(width, height) }]),
       { id: options.committed.id, kind: "ktx2", mime: "image/ktx2", data: ktx2(...options.committed.size) },
     ],
   }));
@@ -265,6 +271,34 @@ describe("texture encode alignment", () => {
       await registry.reindexPath(path);
     }
     expect(await registry.reconcileTextureAlignment()).toEqual(["odd-webp"]);
+  });
+
+  it("does not requeue a size-less Texture whose unpadded re-encode would land off the grid again", async () => {
+    const storage = await storageWithProject("gif");
+    // A GIF imported before sizes were recorded: its logical screen sniffs 32x32,
+    // but its first frame is larger, and the browser decodes that 34x34.
+    await writeTexture(storage, "assets/legacy-gif.babasset", "legacy-gif", {
+      source: [32, 32], sized: false, gif: true, committed: { id: KEY_MAX_2048, size: [34, 34] },
+    });
+    // The same Texture once such a re-encode committed: unpadded, recorded off the grid.
+    await writeTexture(storage, "assets/recorded-gif.babasset", "recorded-gif", {
+      source: [32, 32], sized: false, gif: true, committed: { id: KEY_MAX_2048, size: [34, 34] }, recorded: { size: [34, 34] },
+    });
+    const { registry, queue } = await mount(storage);
+
+    expect(await registry.reconcileTextureAlignment()).toEqual([]);
+    expect(queue.depth).toBe(0);
+  });
+
+  it("does not re-encode a padded encode whose record an editor from before the record dropped", async () => {
+    const storage = await storageWithProject("dropped-record");
+    // Padded 1x1 -> 4x4 under today's id; a Texture tab opened before that commit
+    // was saved by an older editor, which kept the id but not the recorded fields.
+    await writeTexture(storage, "assets/dropped.babasset", "dropped", { source: [1, 1], committed: { id: KEY_MAX_1, size: [4, 4] } });
+    const { registry, queue } = await mount(storage);
+
+    expect(await registry.reconcileTextureAlignment()).toEqual([]);
+    expect(queue.depth).toBe(0);
   });
 
   it("drops an older encode off the grid once a Texture's encode is on it, so the resolver cannot bind the older one", async () => {
