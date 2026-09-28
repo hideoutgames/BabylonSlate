@@ -32,15 +32,27 @@ async function journalCommands(page: Page) {
       if (command.type === "edit.batch") command.commands?.forEach(append);
       else commands.push(command);
     };
-    const directories = derived as FileSystemDirectoryHandle & {
-      values(): AsyncIterableIterator<FileSystemDirectoryHandle>;
+    type Listable = FileSystemDirectoryHandle & {
+      values(): AsyncIterableIterator<FileSystemHandle>;
     };
-    for await (const directory of directories.values()) {
+    const readLines = async (file: FileSystemFileHandle) =>
+      (await (await file.getFile()).text()).trim().split("\n").filter(Boolean)
+        .forEach((line) => append(JSON.parse(line).command));
+    for await (const directory of (derived as Listable).values()) {
       if (directory.kind !== "directory") continue;
+      const project = directory as FileSystemDirectoryHandle;
+      // An older single-file journal, then the ordered segments.
       try {
-        const file = await (await directory.getFileHandle("journal.jsonl")).getFile();
-        (await file.text()).trim().split("\n").filter(Boolean)
-          .forEach((line) => append(JSON.parse(line).command));
+        await readLines(await project.getFileHandle("journal.jsonl"));
+      } catch { /* No legacy journal. */ }
+      try {
+        const segments = await project.getDirectoryHandle("journal");
+        const files: FileSystemFileHandle[] = [];
+        for await (const entry of (segments as Listable).values()) {
+          if (entry.kind === "file") files.push(entry as FileSystemFileHandle);
+        }
+        files.sort((a, b) => a.name.localeCompare(b.name));
+        for (const file of files) await readLines(file);
       } catch { /* A project without unsaved edits has no journal. */ }
     }
     return commands;

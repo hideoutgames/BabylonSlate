@@ -31,7 +31,7 @@ import type {
 } from "@babylonslate/core";
 import { documentId, parseDocumentId, isAssetDocumentKind, isSceneWorkspaceKind, normalizeProjectSettings, normalizeScene, defaultExportPreset, DEFAULT_RENDER_PROJECT_SETTINGS, DEFAULT_PLAY_FRAME_CAP, DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS } from "@babylonslate/core";
 import {
-  appendJournalLine,
+  appendJournalLines,
   getTile,
   hasJournal,
   normalizeTilemapPayload,
@@ -69,10 +69,10 @@ import {
   diffSceneCommands,
   EditSession,
   replayJournalLines,
-  serializeJournalLine,
   SetAssetDocumentCommand,
   type EditCommand,
 } from "@babylonslate/edit";
+import { JournalBuffer } from "../lib/journal-buffer";
 import {
   createAppSettingsStore,
   createDerivedStorage,
@@ -335,7 +335,6 @@ interface DocumentContextValue {
    */
   textureUsageBlockedReason: (guid: string) => string | null;
   onSessionDiagnostic: (listener: (line: string) => void) => () => void;
-  sessionDiagnostics: string[];
   openDocuments: OpenDocument[];
   tabOrder: string[];
   activeDocumentId: string | null;
@@ -931,6 +930,30 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     return derivedStorageRef.current;
   }, []);
 
+  // Applied edits reach the recovery journal in short batches; every path
+  // that reads, clears or abandons the journal flushes first. One buffer for
+  // the provider's lifetime keeps each project's writes in order.
+  const [journalBuffer] = useState(
+    () =>
+      new JournalBuffer(async (guid, lines) =>
+        appendJournalLines(await ensureDerived(), guid, lines),
+      ),
+  );
+  useEffect(() => {
+    const flush = () => {
+      void journalBuffer.flush();
+    };
+    window.addEventListener("pagehide", flush);
+    const detachPause = attachLifecyclePause((paused) => {
+      if (paused) flush();
+    });
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      detachPause();
+      flush();
+    };
+  }, [journalBuffer]);
+
   const recordRecent = useCallback(
     async (
       handle: ProjectFolderHandle | null,
@@ -1237,6 +1260,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     const guid = projectService.guid;
     if (!guid) return;
     const derived = await ensureDerived();
+    await journalBuffer.flush(guid);
     const lines = await readJournalLines(derived, guid);
     if (lines.length === 0) {
       setRecoveryAvailable(false);
@@ -1285,7 +1309,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     // Recovered edits remain unsaved. Keep the journal until Save/clean Close.
     setRecoveryAvailable(false);
     bump();
-  }, [bump, documentService, ensureDerived, projectService]);
+  }, [bump, documentService, ensureDerived, journalBuffer, projectService]);
 
   const enterEditor = useCallback(
     async (
@@ -1585,6 +1609,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       if (guid) {
         progress.phase("journal");
         const derived = await ensureDerived();
+        await journalBuffer.flush(guid);
         const cleared = await truncateJournal(derived, guid, () =>
           documentService.getDirtyDocuments().length === 0 && projectDocumentRef.current === document,
         );
@@ -1638,6 +1663,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     collectGraphTypeSchemas,
     documentService,
     ensureDerived,
+    journalBuffer,
     projectService,
   ]);
 
@@ -1720,6 +1746,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     const guid = projectService.guid;
     if (guid) {
       const derived = await ensureDerived();
+      await journalBuffer.flush(guid);
       await truncateJournal(derived, guid);
     }
     emitEditorUtilityLifecycle(EDITOR_UTILITY_EVENTS.shutdown);
@@ -1751,6 +1778,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     disposeDockSubscriptions,
     documentService,
     ensureDerived,
+    journalBuffer,
     projectService,
     refreshProjectList,
     clearPlayPreviewScripts,
@@ -1888,10 +1916,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     const guid = projectService.guid;
     if (guid) {
       const derived = await ensureDerived();
+      await journalBuffer.flush(guid);
       await truncateJournal(derived, guid);
     }
     setRecoveryAvailable(false);
-  }, [ensureDerived, projectService]);
+  }, [ensureDerived, journalBuffer, projectService]);
 
   const keepRecovery = useCallback(async () => {
     await replayRecoveryJournal();
@@ -1919,9 +1948,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       });
       documentService.closeDocument(id);
       editSessionRef.current.dropDocument(id);
+      void journalBuffer.flush();
       bump();
     },
-    [bump, disposeDockSubscriptions, documentService],
+    [bump, disposeDockSubscriptions, documentService, journalBuffer],
   );
 
   const closeDocumentsForPaths = useCallback(
@@ -2097,13 +2127,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         );
         if (blocking.length > 0) {
           setPendingExclusiveScene(ref);
-          bump();
           return;
         }
       }
       await finishOpenDocument(ref);
     },
-    [bump, documentService, finishOpenDocument],
+    [documentService, finishOpenDocument],
   );
 
   const openRecordedTrace = useCallback(
@@ -2194,8 +2223,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       metadata: { ...current.metadata, version, updatedAt: new Date().toISOString() },
     } : current);
     scheduleDebouncedSave();
-    bump();
-  }, [bump, scheduleDebouncedSave]);
+  }, [scheduleDebouncedSave]);
 
   const updateProjectSettings = useCallback(
     (settings: Partial<ProjectDocument["settings"]>) => {
@@ -2249,9 +2277,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         };
       });
       scheduleDebouncedSave();
-      bump();
     },
-    [bump, scheduleDebouncedSave],
+    [scheduleDebouncedSave],
   );
 
   const prefillSourceControlFromGit = useCallback(async () => {
@@ -2288,21 +2315,21 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const notifyAppliedCommand = useCallback(
     (id: string, command: EditCommand<unknown>) => {
       const guid = projectService.guid;
-      const line = serializeJournalLine({
-        v: 1,
+      const line = {
+        v: 1 as const,
         docId: id,
         at: new Date().toISOString(),
         command: commandToJournalPayload(command),
-      });
+      };
       return notifyDocumentEdited({
         scheduleDebouncedSave,
         bump,
         journal: async () => {
-          if (guid) await appendJournalLine(await ensureDerived(), guid, line);
+          if (guid) journalBuffer.append(guid, line);
         },
       });
     },
-    [bump, ensureDerived, projectService, scheduleDebouncedSave],
+    [bump, journalBuffer, projectService, scheduleDebouncedSave],
   );
 
   const applyGraphChange = useCallback(
@@ -2458,7 +2485,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     const next = syncSceneActorsFromPrefabs(scene, templates);
     if (scenesEqualForPrefabSync(scene, next)) return;
     if (options?.quiet) {
-      sceneDoc.content = next;
+      documentService.patchLoadedContent(sceneDoc.id, next);
       bump();
       return;
     }
@@ -3646,6 +3673,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         const guid = projectService.guid;
         if (!guid) return false;
         const derived = await ensureDerived();
+        await journalBuffer.flush(guid);
         return hasJournal(derived, guid);
       },
       /** Open main graph without activating it (avoids GraphEditor stomping edits). */
@@ -3894,6 +3922,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     bump,
     documentService,
     ensureDerived,
+    journalBuffer,
     projectService,
     projectDocument,
     updateProjectSettings,
@@ -4355,7 +4384,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       textureAlignmentStale,
       textureUsageBlockedReason,
       onSessionDiagnostic,
-      sessionDiagnostics: projectService.sessionDiagnostics,
       loadAssetThumbnail,
       writeAssetThumbnail,
       thumbnailVersions,
