@@ -404,6 +404,36 @@ export class SourceControlService {
     this.emit();
   }
 
+  /**
+   * Take `path`'s lock before a background rewrite (the texture alignment
+   * pass), as auto-lock on edit does for an edit, but without the tab banner
+   * or edit mode an edit sets. True when the write may go ahead: source
+   * control or auto-lock is off, or the lock is ours. A lock another user took
+   * since the last refresh is recorded, so the path reads as theirs.
+   */
+  async lockForBackgroundWrite(path: string): Promise<boolean> {
+    if (!this.settings.enabled || !this.settings.autoLockOnEdit) return true;
+    const provider = this.provider;
+    if (!provider) return false;
+    const held = this.locksByPath.get(path);
+    if (held) return held.ours;
+    const revision = this.providerRevision;
+    let result: Awaited<ReturnType<LockProvider["create"]>>;
+    try {
+      result = await provider.create(path);
+    } catch {
+      return false;
+    }
+    if (revision !== this.providerRevision) return false;
+    const lock = isOk(result)
+      ? result.value
+      : result.error.kind === "conflict" ? result.error.lock : undefined;
+    if (!lock) return false;
+    this.locksByPath.set(path, lock);
+    this.emit();
+    return lock.ours;
+  }
+
   refuseIfTheirs(path: string): string | null {
     if (!this.settings.enabled) return null;
     const lock = this.locksByPath.get(path);

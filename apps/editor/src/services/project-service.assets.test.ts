@@ -935,6 +935,37 @@ describe("project documents as .babasset", () => {
     expect(encode).toHaveBeenCalledTimes(1);
   });
 
+  it("takes each Texture's lock when its re-encode starts, and skips one whose lock it cannot take", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("Claims.babproject");
+    await installMinimalProject(storage);
+    const paths = ["assets/odd-a.babasset", "assets/odd-b.babasset"];
+    for (const [index, path] of paths.entries()) await writeLegacyOddTexture(storage, path, `odd-${index}`);
+    const encode = vi.fn(standInEncode);
+    const service = new ProjectService(storage, { encode });
+    await service.loadCurrentProject();
+    const claimed: string[] = [];
+    service.setTextureWriteGuard({
+      canWrite: () => true,
+      // A teammate locked odd-1 since the last lock refresh.
+      claim: async (guid) => {
+        claimed.push(guid);
+        return guid !== "odd-1";
+      },
+    });
+
+    service.pauseTextureEncodeQueue();
+    expect(await service.reconcileTextureAlignment()).toBe(2);
+    // Locks are taken as each re-encode starts, not while it waits.
+    expect(claimed).toEqual([]);
+    service.resumeTextureEncodeQueue();
+    await vi.waitFor(() => expect(service.textureEncodeQueue.depth).toBe(0));
+    expect(claimed.sort()).toEqual(["odd-0", "odd-1"]);
+    expect(encode).toHaveBeenCalledTimes(1);
+    expect(service.registry!.getByGuid("odd-0")!.header.payload).toMatchObject({ ktx2Width: 4, ktx2Height: 4 });
+    expect(service.registry!.getByGuid("odd-1")!.header.payload).not.toHaveProperty("ktx2Width");
+  });
+
   it("encodes each Texture once however often the registry remounts while its encode waits or runs", async () => {
     const storage = new MemoryStorageAdapter("documents");
     await storage.openDocumentsProject("Backlog.babproject");

@@ -50,7 +50,7 @@ describe("texture alignment write guard", () => {
       sourceControl.pausePolling();
       // A tab opened (or restored) before the first lock refresh never becomes read-only.
       sourceControl.onOpenDocument(PATHS.theirs!);
-      const canWrite = createTextureAlignmentGuard({
+      const { canWrite } = createTextureAlignmentGuard({
         sourceControl,
         projectGuid: "proj",
         pathFor: (guid) => PATHS[guid],
@@ -79,6 +79,47 @@ describe("texture alignment write guard", () => {
       expect(writable()).toEqual([]);
       other.release();
       await vi.waitFor(() => expect(writable()).toEqual(["theirs", "mine", "free"]));
+    } finally {
+      sourceControl.dispose();
+    }
+  });
+
+  it("takes a Texture's lock before the pass rewrites it, without an edit's banner, and not one a teammate took since", async () => {
+    const sourceControl = new SourceControlService();
+    const fake = new FakeLockProvider({ selfName: "Ada" });
+    const config = {
+      settings: enabled,
+      projectGuid: "proj",
+      platform: "electron",
+      testMode: true,
+      secretStore: new MemorySecretStore(),
+      nativeHttp: null,
+      fake,
+    };
+    try {
+      await sourceControl.configure(config);
+      sourceControl.pausePolling();
+      await sourceControl.refresh();
+      const guard = createTextureAlignmentGuard({
+        sourceControl,
+        projectGuid: "proj",
+        pathFor: (guid) => PATHS[guid],
+        blockedReason: () => null,
+      });
+      // A teammate locks it after the last refresh.
+      fake.addTheirs(PATHS.theirs!, "Bob");
+
+      expect(await guard.claim!("free")).toBe(true);
+      expect(fake.snapshot()).toContainEqual(expect.objectContaining({ path: PATHS.free, ours: true }));
+      expect(sourceControl.bannerFor(PATHS.free!)).toBeNull();
+      expect(await guard.claim!("theirs")).toBe(false);
+      expect(guard.canWrite("theirs")).toBe(false);
+      expect(sourceControl.bannerFor(PATHS.theirs!)).toBeNull();
+
+      // With auto-lock off, rewrites take no lock, as edits take none.
+      await sourceControl.configure({ ...config, settings: { ...enabled, autoLockOnEdit: false } });
+      expect(await guard.claim!("mine")).toBe(true);
+      expect(fake.snapshot().map((lock) => lock.path)).not.toContain(PATHS.mine);
     } finally {
       sourceControl.dispose();
     }

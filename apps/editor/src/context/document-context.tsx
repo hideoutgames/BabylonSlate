@@ -2531,14 +2531,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       : null;
   useEffect(() => {
     if (!textureGuardProject) return;
-    projectService.setTextureWriteGuard({
-      canWrite: createTextureAlignmentGuard({
+    projectService.setTextureWriteGuard(
+      createTextureAlignmentGuard({
         sourceControl: sourceControlRef.current,
         projectGuid: textureGuardProject,
         pathFor: (guid) => projectService.registry?.getByGuid(guid)?.path,
         blockedReason: textureUsageBlockedReason,
       }),
-    });
+    );
     void projectService.reconcileTextureAlignment();
     return () => projectService.setTextureWriteGuard(null);
   }, [projectService, textureGuardProject, textureUsageBlockedReason]);
