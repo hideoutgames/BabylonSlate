@@ -7,7 +7,6 @@ import {
   CatalogDialog,
   CatalogResultRow,
   TypeVisualIcon,
-  humanizePropertyLabel,
   resolveTypeVisual,
   useCatalogFilter,
   type CatalogCategory,
@@ -52,6 +51,11 @@ function assetGuid(item: PlaceActorItem): string | null {
 
 function assetType(item: PlaceActorItem): string {
   return item.kind.type === "asset" ? (item.kind.assetType ?? "") : "";
+}
+
+/** `ParticleSystem` → `Particle System`, matching Content Browser type names. */
+function typeLabel(type: string): string {
+  return type.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2");
 }
 
 /** Containing folder of an asset path (`assets/props/Tree.model.babasset` → `assets/props`). */
@@ -158,11 +162,11 @@ function AssetToolbar({
             <ToggleGroupItem
               key={type}
               value={type}
-              aria-label={`${humanizePropertyLabel(type)} (${count})`}
+              aria-label={`${typeLabel(type)} (${count})`}
               data-testid={`${prefix}-type-${type}`}
             >
               <TypeVisualIcon visual={resolveTypeVisual({ assetType: type })} className="size-3.5" />
-              {humanizePropertyLabel(type)}
+              {typeLabel(type)}
               <span className="text-muted-foreground tabular-nums">{count}</span>
             </ToggleGroupItem>
           ))}
@@ -170,7 +174,7 @@ function AssetToolbar({
       ) : null}
       <div className="ml-auto flex items-center gap-2">
         <span className="text-xs text-muted-foreground tabular-nums" data-testid={`${prefix}-count`}>
-          {shown === items.length ? `${shown} Assets` : `${shown} of ${items.length}`}
+          {shown === items.length ? `${shown} ${shown === 1 ? "Asset" : "Assets"}` : `${shown} of ${items.length}`}
         </span>
         {folders.length > 1 ? (
           <DropdownMenu>
@@ -369,7 +373,7 @@ export function PlaceActorsDialog({
     />
   );
   const assetLine = (item: PlaceActorItem) =>
-    [humanizePropertyLabel(assetType(item)), assetFolder(item)].filter(Boolean).join(" · ");
+    [typeLabel(assetType(item)), assetFolder(item)].filter(Boolean).join(" · ");
 
   let body;
   if (searching) {
