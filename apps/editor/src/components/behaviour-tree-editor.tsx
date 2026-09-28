@@ -73,6 +73,9 @@ import { useBehaviourTreeEditing } from "../context/behaviour-tree-editing-conte
 import { useLiveBtState, usePlay } from "../context/play-context";
 import { useGraphSessionViewport } from "../lib/graph-session-viewport";
 
+/** Org-chart wires: a trunk from the parent splits into square drops to each child. */
+const BT_EDGE_OPTIONS = { type: "smoothstep", pathOptions: { borderRadius: 8 } };
+
 function asTree(payload: Record<string, unknown>): BehaviourTreeDocument {
   return parseBehaviourTreeDocument(payload) ?? createDefaultBehaviourTree();
 }
@@ -410,6 +413,7 @@ export function BehaviourTreeGraphPanel(_props: IDockviewPanelProps) {
         <GraphEditor
           initialGraph={initialGraph}
           nodeTypes={treeNodeTypes}
+          defaultEdgeOptions={BT_EDGE_OPTIONS}
           nodesDraggable={!play.playing}
           nodeDragHandle=".bt-node-drag-handle"
           connectEndMode="add-node"
