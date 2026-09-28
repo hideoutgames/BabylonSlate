@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   engineEventTypeClassIds,
+  engineNativeEventsFor,
   engineScriptApiFor,
   engineScriptEventsFor,
   ENGINE_CLASS_SCRIPT_APIS,
@@ -314,5 +315,54 @@ describe("engine script API catalog", () => {
     ]);
     expect(types["flow.event.audioFinished"]).toEqual(["AudioComponent"]);
     expect(types["flow.event.beginPlay"]).toBeUndefined();
+    // Native lifecycle events must never demand a component binding.
+    for (const eventType of [
+      "flow.event.init",
+      "flow.event.tick",
+      "flow.event.sceneExit",
+      "flow.event.sceneLoaded",
+      "flow.event.sceneActorSpawned",
+    ]) {
+      expect(types[eventType]).toBeUndefined();
+    }
+  });
+
+  it("resolves subsystem native events and host functions through class ancestry", () => {
+    const exportsFor = (ancestry: string[]) =>
+      engineNativeEventsFor(ancestry).map((event) => [event.eventType, event.exportName]);
+    const gameInstanceEvents = [
+      ["flow.event.init", "onInit"],
+      ["flow.event.tick", "onTick"],
+      ["flow.event.end", "onEnd"],
+      ["flow.event.firstSceneLoaded", "onFirstSceneLoaded"],
+      ["flow.event.sceneStartLoading", "onSceneStartLoading"],
+      ["flow.event.sceneFinishLoading", "onSceneFinishLoading"],
+      ["flow.event.sceneExit", "onSceneExit"],
+    ];
+    expect(exportsFor(["MyGame", "GameInstance", "BObject"])).toEqual(gameInstanceEvents);
+    expect(
+      exportsFor(["Inventory", "BaseInventory", "GameSubsystem", "Subsystem", "BObject"]),
+    ).toEqual(gameInstanceEvents);
+    expect(exportsFor(["Weather", "SceneSubsystem", "Subsystem", "BObject"])).toEqual([
+      ["flow.event.init", "onInit"],
+      ["flow.event.tick", "onTick"],
+      ["flow.event.end", "onEnd"],
+      ["flow.event.sceneLoaded", "onSceneLoaded"],
+      ["flow.event.streamedSceneLoaded", "onStreamedSceneLoaded"],
+      ["flow.event.streamedSceneUnloaded", "onStreamedSceneUnloaded"],
+      ["flow.event.sceneLayerAdded", "onSceneLayerAdded"],
+      ["flow.event.sceneLayerRemoved", "onSceneLayerRemoved"],
+      ["flow.event.sceneActorSpawned", "onSceneActorSpawned"],
+      ["flow.event.sceneActorDestroyed", "onSceneActorDestroyed"],
+    ]);
+    expect(exportsFor(["Hero", "Actor", "BObject"])).toEqual([]);
+    expect(exportsFor(["Subsystem", "BObject"])).toEqual([]);
+    expect(names(engineScriptApiFor("GameSubsystem")?.functions)).toEqual([
+      "Get Scene Loading Progress",
+      "Get Scene Reference",
+    ]);
+    expect(names(engineScriptApiFor("SceneSubsystem")?.functions)).toEqual([
+      "Get Scene Reference",
+    ]);
   });
 });

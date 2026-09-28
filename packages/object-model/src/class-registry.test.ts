@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ClassRegistry, hydrateClassVariableValue } from "./class-registry";
 import {
   ENGINE_COMPONENT_CLASS_IDS,
+  isHiddenEngineBaseClassId,
   isLockedEngineClassId,
 } from "./ids";
 
@@ -49,6 +50,36 @@ describe("ClassRegistry", () => {
     expect(isLockedEngineClassId("Scene")).toBe(true);
     expect(isLockedEngineClassId("SceneLayerActor")).toBe(true);
     expect(isLockedEngineClassId("2DButtonComponent")).toBe(true);
+  });
+
+  it("parents both subsystem bases to the hidden locked Subsystem base", () => {
+    const registry = new ClassRegistry();
+    registry.register({
+      id: "Inventory",
+      parentClassId: "GameSubsystem",
+      kind: "object",
+      variables: [],
+      implementedInterfaces: [],
+    });
+    expect(registry.ancestry("Inventory")).toEqual([
+      "Inventory",
+      "GameSubsystem",
+      "Subsystem",
+      "BObject",
+    ]);
+    expect(registry.ancestry("SceneSubsystem")).toEqual([
+      "SceneSubsystem",
+      "Subsystem",
+      "BObject",
+    ]);
+    expect(registry.isA("GameSubsystem", "GameInstance")).toBe(false);
+    for (const id of ["Subsystem", "GameSubsystem", "SceneSubsystem"]) {
+      expect(isLockedEngineClassId(id)).toBe(true);
+      expect(registry.reparent(id, "Actor").ok).toBe(false);
+    }
+    expect(isHiddenEngineBaseClassId("Subsystem")).toBe(true);
+    expect(isHiddenEngineBaseClassId("GameSubsystem")).toBe(false);
+    expect(isHiddenEngineBaseClassId("SceneSubsystem")).toBe(false);
   });
 
   it("supports user class inheritance queries", () => {
