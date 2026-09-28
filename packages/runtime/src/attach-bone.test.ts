@@ -88,7 +88,7 @@ describe("Attach to Bone scripting", () => {
           ctx.attachActor(ctx.self, parent);
         }`,
       }]);
-      runtime.spawnScriptedActor({ classId: "Character" });
+      const parent = runtime.spawnScriptedActor({ classId: "Character" });
       const child = runtime.spawnScriptedActor({ classId: "HeldItem", transform: { position: { x: 9, y: 8, z: 7 }, rotation: { x: 0, y: 1, z: 0, w: 0 }, scale: { x: 2, y: 3, z: 4 } } });
       expect(commands.filter((c) => c.type === "attachToBone")).toEqual([
         { type: "attachToBone", slotId: 1, targetSlotId: 0, boneName: "Hand" },
@@ -98,6 +98,12 @@ describe("Attach to Bone scripting", () => {
       ]);
       expect(child?.transform).toEqual({ position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 2, y: 3, z: 4 } });
       expect(commands.filter((c) => c.type === "diagnostic")).toEqual([]);
+      // Only self-attachment and the cycle warn; missing, destroyed, and unnamed targets stay silent.
+      const refused = warnings(commands);
+      expect(refused).toHaveLength(2);
+      expect(refused[0]).toContain(child!.guid);
+      expect(refused[1]).toContain(child!.guid);
+      expect(refused[1]).toContain(parent!.guid);
     } finally { runtime.stop(); }
   });
 });
@@ -138,7 +144,7 @@ describe("Parent link cycles", () => {
     } finally { runtime.stop(); }
   });
 
-  it("refuses scripted parentId variable writes that would close a cycle, and a self link clears the parent", async () => {
+  it("refuses scripted parentId variable writes that would close a cycle, including the actor's own guid", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, onCommand: (c) => commands.push(c) });
     try {
@@ -160,8 +166,30 @@ describe("Parent link cycles", () => {
       }
 
       runtime.invokeScriptEvent("Link", "SetOwnParent", b, { parentId: b!.guid });
-      expect(b!.getVariable("parentId")).toBeNull();
-      expect(warnings(commands)).toHaveLength(2);
+      expect(b!.getVariable("parentId")).toBe(a!.guid);
+      const all = warnings(commands);
+      expect(all).toHaveLength(3);
+      expect(all[2]).toContain(b!.guid);
+    } finally { runtime.stop(); }
+  });
+
+  it("refuses a link into a parent chain that already loops", async () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, onCommand: (c) => commands.push(c) });
+    try {
+      await runtime.loadScripts([linkScript]);
+      const [a, b, c] = ["A", "B", "C"].map((name) =>
+        runtime.spawnScriptedActor({ classId: "Link", variables: { name } })!);
+      // Stands in for a loaded scene whose hierarchy already contains a loop.
+      a!.setVariable("parentId", b!.guid);
+      b!.setVariable("parentId", a!.guid);
+
+      attach(runtime, c!, a!);
+      expect(c!.getVariable("parentId") ?? null).toBeNull();
+      const refused = warnings(commands);
+      expect(refused).toHaveLength(1);
+      expect(refused[0]).toContain(c!.guid);
+      expect(refused[0]).toContain(a!.guid);
     } finally { runtime.stop(); }
   });
 

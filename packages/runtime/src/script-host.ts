@@ -1943,19 +1943,16 @@ function refuseParentCycle(
 }
 
 /**
- * Scripted `parentId` writes get Attach Actor's cycle refusal and self-link
- * rule (own guid clears the parent); other values are stored unchanged.
+ * Scripted `parentId` writes get Attach Actor's cycle refusal; the actor's own
+ * guid is a cycle too and is refused. Other values are stored unchanged.
  */
 function writeParentId(
   services: ScriptHostServices,
   child: Actor,
   value: unknown,
 ): void {
-  if (value === child.guid) {
-    child.setVariable("parentId", null);
-    return;
-  }
-  const parent = typeof value === "string" ? resolveLiveActor(services, value) : null;
+  const parent = value === child.guid ? child
+    : typeof value === "string" ? resolveLiveActor(services, value) : null;
   if (parent && refuseParentCycle(services, child, parent, "Set parentId")) return;
   child.setVariable("parentId", value);
 }
