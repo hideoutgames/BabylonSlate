@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { finalizeTestFlight, validatePrivateGroups } from "./testflight.mjs";
 
-const identity = { applicationVersion: "0.0.1", appleMarketingVersion: "0.0.1", appleBuildNumber: "417.0.1", channel: "test", sourceSha: "a".repeat(40), runNumber: 417, runAttempt: 1, windowsVersion: "0.0.1-indev.417.1" };
+const identity = { applicationVersion: "0.0.1", appleMarketingVersion: "0.0.1", appleBuildNumber: "417.0.1", channel: "test", sourceSha: "a".repeat(40), runNumber: 417, runAttempt: 1, packageVersion: "0.0.1-indev.417.1", androidVersionCode: 417001 };
 const group = { id: "test", attributes: { name: "Test Builds", publicLinkEnabled: false, hasAccessToAllBuilds: false, isInternalGroup: false } };
 const releaseGroup = { id: "release", attributes: { ...group.attributes, name: "Release Candidates" } };
 test("private groups reject public enrollment and automatic access to every build", () => {

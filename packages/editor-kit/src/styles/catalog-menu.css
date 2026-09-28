@@ -1,0 +1,67 @@
+.catalog-menu-row {
+  display: flex;
+  height: 100%;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  border-radius: var(--radius-sm);
+  padding-inline: 8px;
+  font-size: 0.8125rem;
+  color: var(--popover-foreground);
+  cursor: default;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.catalog-menu-row:hover,
+.catalog-menu-row[data-active="true"] {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+
+.catalog-menu-category {
+  font-weight: 500;
+}
+
+.catalog-menu-item[data-nested="true"] {
+  padding-inline-start: 1.625rem;
+}
+
+.catalog-menu-chevron {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+  transition: transform 100ms ease-out;
+}
+
+.catalog-menu-chevron[data-expanded="true"] {
+  transform: rotate(90deg);
+}
+
+.catalog-menu-hints {
+  display: flex;
+}
+
+/* Menus close instantly: Base UI unmounts once no exit animation runs. */
+[data-slot="dialog-content"][data-closed]:is(.catalog-menu-popup, .catalog-menu-modal),
+.catalog-menu-overlay[data-closed] {
+  animation: none;
+  transition: none;
+}
+
+@media (pointer: coarse) {
+  .catalog-menu-row {
+    padding-inline: 10px;
+  }
+
+  .catalog-menu-item[data-nested="true"] {
+    padding-inline-start: 2rem;
+  }
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .catalog-menu-hints {
+    display: none;
+  }
+}

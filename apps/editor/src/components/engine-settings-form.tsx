@@ -180,8 +180,8 @@ export function EngineSettingsForm({
               </FieldDescription>
               <FieldDescription>
                 <SelectableText>
-                  Windows {identity.windowsVersion} · Apple Build{" "}
-                  {identity.appleBuildNumber}
+                  Package {identity.packageVersion} · Apple Build{" "}
+                  {identity.appleBuildNumber} · Android {identity.androidVersionCode}
                 </SelectableText>
               </FieldDescription>
               <FieldDescription>

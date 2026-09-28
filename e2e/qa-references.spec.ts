@@ -70,6 +70,24 @@ test("H9: a large References graph focuses its asset and keeps Close inside the 
   await page.mouse.move(beforeDrag!.x + 160, beforeDrag!.y + 80, { steps: 8 });
   await page.mouse.up();
   await expect(rootNode.locator("..")).toHaveAttribute("style", nodePosition!);
+  const canvasBounds = (await dialog.getByTestId("asset-reference-canvas").boundingBox())!;
+  const linkPoint = await dialog.locator(".react-flow__edge-path").evaluateAll((paths, canvas) => {
+    for (const path of paths as SVGPathElement[]) {
+      const point = path.getPointAtLength(path.getTotalLength() / 2).matrixTransform(path.getScreenCTM()!);
+      if (point.x > canvas.x + 40 && point.x < canvas.x + canvas.width - 200 && point.y > canvas.y + 40 && point.y < canvas.y + canvas.height - 120) {
+        return { x: point.x, y: point.y };
+      }
+    }
+    return null;
+  }, canvasBounds);
+  expect(linkPoint).not.toBeNull();
+  const beforePan = (await rootNode.boundingBox())!;
+  await page.mouse.move(linkPoint!.x, linkPoint!.y);
+  await page.mouse.down();
+  await page.mouse.move(linkPoint!.x + 120, linkPoint!.y + 60, { steps: 8 });
+  await page.mouse.up();
+  await expect.poll(async () => Math.round((await rootNode.boundingBox())!.x - beforePan.x)).toBe(120);
+  await expect(rootNode).toHaveAttribute("data-selected", "true");
   await dialog.getByRole("button", { name: "Focus Asset", exact: true }).click();
   await page.keyboard.press("Delete");
   await expect(rootNode).toBeVisible();

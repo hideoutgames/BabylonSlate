@@ -1,6 +1,6 @@
 import { useAppSettings } from "../context/app-settings-context";
 import { captureShadowDiagnostics, lightsDebugText } from "@babylonslate/render";
-import { PLAY_SCENE_LOAD_STEPS, SceneLoadingDialog } from "./scene-loading-dialog";
+import { SceneLoadingDialog } from "./scene-loading-dialog";
 import type { SceneLoadProgress } from "@babylonslate/render";
 import type { RenderDiagnostics } from "@babylonslate/render";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -759,7 +759,7 @@ export function PlayOverlay({
       data-assigned-materials={assignedMaterials}
     >
       <SceneLoadingDialog open={sceneLoading !== null} progress={sceneLoading?.progress ?? 0}
-        phase={sceneLoading?.phase ?? "Preparing Scene"} steps={PLAY_SCENE_LOAD_STEPS} onStop={() => finishSessionRef.current()} />
+        phase={sceneLoading?.phase ?? "Preparing Scene"} onStop={() => finishSessionRef.current()} />
       <PlayOverlayChrome
         paused={paused}
         statsOpen={statsOpen}
