@@ -10,7 +10,7 @@ SceneLayer is a separate 2D overlay document (`scene-layer`), not a second world
 
 Scene streaming places another Scene through a `SceneStreamingActor`; it does not open another world document. See [scene streaming](#scene-streaming).
 
-Opening or restoring a Scene or SceneLayer document paints **Loading Scene / Loading Document** before storage access. A replacement keeps the current scene and its edit session until the read succeeds; read failures offer Retry / Close. Each request has an abort signal: a superseded read may finish in storage, but cannot replace the newer document. The viewport then owns asset, shader, and first-frame readiness.
+Opening or restoring a Scene or SceneLayer document paints **Loading Scene / Loading Document** before storage access. A replacement keeps the current scene and its edit session until the read succeeds; read failures offer Retry / Close. Each request has an abort signal: a superseded read may finish in storage, but cannot replace the newer document. The viewport then owns asset, shader, and first-frame readiness. When that load closes, its fading scrim stops capturing pointers so viewport controls accept the next touch immediately.
 
 Place Actors and Class Add Component share the `CatalogResultRow` appearance: contiguous striped rows, type icons, names and muted secondary labels. Search, categories and project asset bindings remain available; actor/component results stay unwindowed.
 

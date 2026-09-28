@@ -62,6 +62,23 @@ function distance(ax: number, ay: number, bx: number, by: number): number {
 }
 
 /**
+ * Portaled descendants, such as a dialog scrim, are React children of the bound
+ * surface but live outside its DOM. A hold there belongs to the portal.
+ */
+function eventTargetIsInside(event: {
+  currentTarget: EventTarget | null;
+  target: EventTarget | null;
+}): boolean {
+  const current = event.currentTarget;
+  const target = event.target;
+  return (
+    current instanceof Element &&
+    target instanceof Node &&
+    current.contains(target)
+  );
+}
+
+/**
  * Long-press (~500 ms stationary) and contextmenu (mouse) open the same menu.
  * Cancels when the pointer moves beyond the movement threshold or on scroll.
  */
@@ -101,7 +118,7 @@ export function useContextMenu(
 
   const onContextMenu = useCallback(
     (event: ReactMouseEvent) => {
-      if (!enabled) return;
+      if (!enabled || !eventTargetIsInside(event)) return;
       event.preventDefault();
       openAt(event.clientX, event.clientY);
     },
@@ -110,7 +127,8 @@ export function useContextMenu(
 
   const onPointerDown = useCallback(
     (event: React.PointerEvent) => {
-      if (!enabled || event.pointerType === "mouse") return;
+      if (!enabled || event.pointerType === "mouse" || !eventTargetIsInside(event))
+        return;
       clearPress();
       if (!event.isPrimary) return;
       const { pointerId, clientX, clientY } = event;

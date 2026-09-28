@@ -69,6 +69,7 @@ export function SceneLoadingDialog({
       <DialogContent
         showCloseButton={false}
         className="sm:max-w-md"
+        overlayClassName="data-closed:pointer-events-none"
         data-testid="scene-loading-dialog"
       >
         <ProgressDialogHeader
