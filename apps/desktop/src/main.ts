@@ -18,7 +18,7 @@ import { DesktopSecretStore } from "./desktop-secret-store";
 import { DesktopAccountSecretStore } from "./desktop-account-secrets";
 import { fetchDesktopHttp, type DesktopHttpRequest } from "./desktop-http";
 import { isEditorSender, rendererFile, validateIpcArguments } from "./packaged-security";
-import { automaticUpdatesEnabled, createDesktopUpdates } from "./desktop-updates";
+import { automaticUpdatesEnabled, createDesktopUpdates, updatesSupported } from "./desktop-updates";
 
 const rootDir = join(app.getAppPath(), "host");
 const rendererRoot = join(app.getAppPath(), "renderer");
@@ -205,10 +205,10 @@ void app.whenReady().then(async () => {
     } catch { return new Response(null, { status: 404 }); }
   });
   registerIpc();
-  if (app.isPackaged && process.platform === "win32") {
+  if (app.isPackaged) {
     try {
       const manifest = JSON.parse(await readFile(join(rendererRoot, "build-manifest.json"), "utf8"));
-      if (manifest.channel === "release" && manifest.windowsVersion === app.getVersion()) {
+      if (updatesSupported(process.platform, manifest, app.getVersion(), process.env)) {
         const { autoUpdater } = await import("electron-updater");
         updates = createDesktopUpdates(autoUpdater, error => console.warn("Automatic update failed:", error));
         const settings = await readFile(userDataFile("engine-settings.json"), "utf8").catch(() => null);
@@ -220,5 +220,9 @@ void app.whenReady().then(async () => {
 });
 
 app.on("window-all-closed", () => {
-  app.quit();
+  if (process.platform !== "darwin") app.quit();
+});
+
+app.on("activate", () => {
+  if (BrowserWindow.getAllWindows().length === 0) void createWindow();
 });

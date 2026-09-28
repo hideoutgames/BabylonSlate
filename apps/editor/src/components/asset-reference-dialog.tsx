@@ -14,8 +14,11 @@ import {
 import { buildAssetReferenceGraph } from "../lib/asset-reference-graph";
 import { displayAssetTitle } from "../lib/content-browser-helpers";
 
+/** Links only follow node selection; unselectable edges let a drag that starts on a link pan the graph. */
 const referenceEdges = {
   markerEnd: { type: "arrowclosed" as const, color: "var(--muted-foreground)" },
+  selectable: false,
+  focusable: false,
 };
 
 /** Edge ids are `JSON.stringify([source, target])`, so prefix/suffix selectors find a node's wires. */

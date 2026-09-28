@@ -2,7 +2,6 @@ import {
   createNativeHttp,
   createAccountSecretStore,
   getHostPlatform,
-  MemorySecretStore,
   type NativeHttp,
   type SecretStore,
 } from "@babylonslate/vfs";
@@ -322,10 +321,6 @@ export class NativeClerkClient {
   }
 }
 
-// Android has no secure-store plugin in this repository yet. Keep its token in
-// this process only until a Keystore-backed host adapter is supplied.
-const androidSessionSecrets = new MemorySecretStore();
-
 export function createNativeClerkClient(
   publishableKey: string,
 ): NativeClerkClient {
@@ -336,6 +331,6 @@ export function createNativeClerkClient(
   return new NativeClerkClient(
     publishableKey,
     http,
-    host === "android" ? androidSessionSecrets : createAccountSecretStore(),
+    createAccountSecretStore(),
   );
 }

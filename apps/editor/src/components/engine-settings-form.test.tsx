@@ -41,11 +41,13 @@ describe("EngineSettingsForm build identity", () => {
   });
 
   it("shows the exact channel, version, Apple build and source for support", () => {
-    vi.stubGlobal("__BABYLONSLATE_BUILD__", { applicationVersion: "1.2.3", channel: "release", appleBuildNumber: "418.1.1", windowsVersion: "1.2.3", sourceSha: "a".repeat(40), runNumber: 418, runAttempt: 1 });
+    vi.stubGlobal("__BABYLONSLATE_BUILD__", { applicationVersion: "1.2.3", channel: "release", appleBuildNumber: "418.1.1", packageVersion: "1.2.3-release", androidVersionCode: 418101, sourceSha: "a".repeat(40), runNumber: 418, runAttempt: 1 });
     const view = render(<EngineSettingsForm settings={defaultEngineSettings()} onChange={() => {}} categoryId="about" />);
     expect(view.getByTestId("build-identity").textContent).toContain("Release");
     expect(view.getByTestId("build-identity").textContent).toContain("1.2.3");
+    expect(view.getByTestId("build-identity").textContent).toContain("Package 1.2.3-release");
     expect(view.getByTestId("build-identity").textContent).toContain("418.1.1");
+    expect(view.getByTestId("build-identity").textContent).toContain("Android 418101");
     expect(view.getByTestId("build-identity").textContent).toContain("a".repeat(40));
     expect(view.getByTestId("build-identity").textContent).not.toContain("TEST");
   });

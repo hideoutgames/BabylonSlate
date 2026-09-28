@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const getPlatform = vi.fn(() => "web");
 const nativeStats = vi.fn(async () => ({
   appFootprintBytes: 40 * 1024 * 1024,
-  appAvailableBytes: 256 * 1024 * 1024,
+  appAvailableBytes: 256 * 1024 * 1024 as number | null,
   systemAvailableBytes: 1024 * 1024 * 1024,
 }));
 
@@ -62,11 +62,19 @@ describe("host memory stats", () => {
     expect(stats?.appFootprintBytes).toBeUndefined();
   });
 
-  it("does not call the native plugin on android", async () => {
+  it("merges Android host counters and omits its unavailable app allowance", async () => {
     getPlatform.mockReturnValue("android");
+    nativeStats.mockResolvedValueOnce({
+      appFootprintBytes: 40 * 1024 * 1024,
+      appAvailableBytes: null,
+      systemAvailableBytes: 1024 * 1024 * 1024,
+    });
     setPerformanceMemory({ usedJSHeapSize: 4 * 1024 * 1024 });
     const stats = await getHostMemoryStats();
-    expect(nativeStats).not.toHaveBeenCalled();
+    expect(nativeStats).toHaveBeenCalledOnce();
     expect(stats?.jsHeapBytes).toBe(4 * 1024 * 1024);
+    expect(stats?.appFootprintBytes).toBe(40 * 1024 * 1024);
+    expect(stats?.appAvailableBytes).toBeUndefined();
+    expect(stats?.systemAvailableBytes).toBe(1024 * 1024 * 1024);
   });
 });
