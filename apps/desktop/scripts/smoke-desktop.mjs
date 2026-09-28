@@ -98,7 +98,8 @@ try {
     ? ["PATH", "Path", "SystemRoot", "WINDIR", "TEMP", "TMP", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "COMSPEC", "PATHEXT"]
     : ["PATH", "HOME", "DISPLAY", "XAUTHORITY", "TMPDIR", "LANG", "LC_ALL", "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS"];
   for (const key of environmentKeys) if (process.env[key]) cleanEnv[key] = process.env[key];
-  const chromiumArgs = platform === "windows" ? [] : ["--enable-unsafe-swiftshader"];
+  // Hosted runners have no GPU; the launcher draws WebGL as soon as it boots.
+  const chromiumArgs = ["--enable-unsafe-swiftshader"];
   // Extracted AppImages have no SUID sandbox helper on hosted runners.
   if (platform === "linux") chromiumArgs.push("--no-sandbox");
   const observe = launched => {
