@@ -104,8 +104,10 @@ float swRippleK = 6.2831853 / (0.35 + swContactW * 0.45);
 float swRippleNoise = swNoise(swWorld * 1.3 + vec2(swTime * 0.13, swTime * -0.07));
 float swRipplePhase = swRippleK * swOutside - sqrt(9.81 * swRippleK) * swTime + swRippleNoise * 2.6;
 float swRippleAA = 1.0 - smoothstep(0.6, 1.8, fwidth(swRipplePhase));
-float swRippleFade = exp(-swOutside / (swContactW * 1.4)) * smoothstep(-0.05, 0.08, swContactSigned) * swRippleAA;
-float swAgitate = exp(-swObject / swContactW) * swRippleAA;
+// Distances clamp at the contact range: fade out before it, so open water carries no ripple residue.
+float swNearContact = 1.0 - smoothstep(0.55, 0.95, swObject / max(0.001, U.slateWaterContactInfo.y));
+float swRippleFade = exp(-swOutside / (swContactW * 1.4)) * smoothstep(-0.05, 0.08, swContactSigned) * swRippleAA * swNearContact;
+float swAgitate = exp(-swObject / swContactW) * swRippleAA * swNearContact;
 vec2 swRipple = swContactDir * (cos(swRipplePhase) * swRippleFade * (0.1 + 0.3 * U.slateWaterMotion.z) * (0.45 + 0.55 * swRippleNoise));
 vec2 swSlope = swGradient + swDetail * U.slateWaterMotion.z * (0.35 + 0.65 * swCalm + swAgitate) * (0.5 + swGust) + swRipple;
 normalW = normalize(vec3(swBaseNormal.x / max(0.001, swBaseNormal.y) - swSlope.x, 1.0, swBaseNormal.z / max(0.001, swBaseNormal.y) - swSlope.y));
