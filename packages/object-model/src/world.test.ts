@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { ClassRegistry } from "./class-registry";
-import { GameInstance } from "./objects";
+import {
+  GameInstance,
+  Scene,
+  type GameSubsystem,
+  type SceneSubsystemHooks,
+  type Subsystem,
+} from "./objects";
 import { TICK_PHASES } from "./tick";
 import { World } from "./world";
 import { createWorldSnapshot, stringifyWorldSnapshot } from "./snapshot";
@@ -515,5 +521,362 @@ describe("World tick", () => {
     };
     expect(run(42)).toBe(run(42));
     expect(run(42)).not.toBe(run(43));
+  });
+});
+
+function subsystemRegistry(
+  classes: ReadonlyArray<[id: string, parent: string]>,
+): ClassRegistry {
+  const registry = new ClassRegistry();
+  for (const [id, parentClassId] of classes) {
+    const result = registry.register({
+      id,
+      parentClassId,
+      kind: "object",
+      variables: [],
+      implementedInterfaces: [],
+    });
+    if (!result.ok) throw new Error(result.error);
+  }
+  return registry;
+}
+
+function recordingGameInstance(events: string[]): GameInstance {
+  return new GameInstance({
+    classId: "GameInstance",
+    guid: "gi",
+    hooks: {
+      onCreation: () => events.push("gi:init"),
+      onTick: () => events.push("gi:tick"),
+      onGameEnd: () => events.push("gi:end"),
+      onSceneStartLoading: (_self, name) => events.push(`gi:start:${name}`),
+      onSceneFinishLoading: (_self, name) => events.push(`gi:finish:${name}`),
+      onFirstSceneLoaded: (_self, name) => events.push(`gi:first:${name}`),
+      onSceneExit: (_self, name) => events.push(`gi:exit:${name}`),
+    },
+  });
+}
+
+function recordingGameSubsystem(
+  world: World,
+  classId: string,
+  events: string[],
+): GameSubsystem {
+  return world.createGameSubsystem({
+    classId,
+    hooks: {
+      onCreation: () => events.push(`${classId}:init`),
+      onTick: () => events.push(`${classId}:tick`),
+      onGameEnd: () => events.push(`${classId}:end`),
+      onSceneStartLoading: (_self, name) => events.push(`${classId}:start:${name}`),
+      onSceneFinishLoading: (_self, name) => events.push(`${classId}:finish:${name}`),
+      onFirstSceneLoaded: (_self, name) => events.push(`${classId}:first:${name}`),
+      onSceneExit: (_self, name) => events.push(`${classId}:exit:${name}`),
+    },
+  });
+}
+
+function recordingSceneSubsystemHooks(
+  events: string[],
+): (classId: string) => SceneSubsystemHooks {
+  return (classId) => ({
+    onCreation: () => events.push(`${classId}:init`),
+    onTick: () => events.push(`${classId}:tick`),
+    onEnd: () => events.push(`${classId}:end`),
+    onSceneLoaded: (_self, name) => events.push(`${classId}:loaded:${name}`),
+    onStreamedSceneLoaded: (_self, actor, scene) =>
+      events.push(`${classId}:streamLoaded:${actor.guid}:${scene.guid}`),
+    onStreamedSceneUnloaded: (_self, actor, scene) =>
+      events.push(`${classId}:streamUnloaded:${actor.guid}:${scene.guid}`),
+    onSceneLayerAdded: (_self, layer) => events.push(`${classId}:layerAdded:${layer.guid}`),
+    onSceneLayerRemoved: (_self, layer) => events.push(`${classId}:layerRemoved:${layer.guid}`),
+    onSceneActorSpawned: (_self, actor) => events.push(`${classId}:spawned:${actor.guid}`),
+    onSceneActorDestroyed: (_self, actor) => events.push(`${classId}:destroyed:${actor.guid}`),
+  });
+}
+
+const guids = (subsystems: readonly Subsystem[]) =>
+  subsystems.map((subsystem) => subsystem.guid);
+
+describe("World subsystems", () => {
+  it("wraps the Game Instance with GameSubsystems and runs SceneSubsystems inside the main scene", () => {
+    const events: string[] = [];
+    const world = new World({
+      seed: 1,
+      dt: 1 / 60,
+      classRegistry: new ClassRegistry(),
+      sceneSubsystemHooksFor: recordingSceneSubsystemHooks(events),
+    });
+    world.setGameInstance(recordingGameInstance(events));
+    world.setGameSubsystems([
+      recordingGameSubsystem(world, "Zeta", events),
+      recordingGameSubsystem(world, "Alpha", events),
+    ]);
+    world.setSceneSubsystemClasses(["Weather", "Music"]);
+    world.start();
+    world.beginSceneLoad("L1");
+    world.createScene({
+      assetGuid: "scene-1",
+      sceneName: "L1",
+      hooks: { onDestroyed: () => events.push("scene:destroyed") },
+    });
+    world.spawnActorNow(world.createActor({
+      classId: "Actor",
+      guid: "hero",
+      hooks: {
+        onCreation: () => events.push("hero:beginPlay"),
+        onTick: () => events.push("hero:tick"),
+      },
+    }));
+    world.finishSceneLoad("L1");
+    world.tick();
+    world.end();
+    expect(events).toEqual([
+      "Alpha:init", "Zeta:init", "gi:init",
+      "gi:start:L1", "Alpha:start:L1", "Zeta:start:L1",
+      "Music:init", "Weather:init",
+      "Music:spawned:hero", "Weather:spawned:hero", "hero:beginPlay",
+      "gi:finish:L1", "Alpha:finish:L1", "Zeta:finish:L1",
+      "gi:first:L1", "Alpha:first:L1", "Zeta:first:L1",
+      "Music:loaded:L1", "Weather:loaded:L1",
+      "gi:tick", "Alpha:tick", "Zeta:tick", "Music:tick", "Weather:tick", "hero:tick",
+      "Weather:end", "Music:end", "scene:destroyed",
+      "gi:exit:L1", "Alpha:exit:L1", "Zeta:exit:L1",
+      "gi:end", "Zeta:end", "Alpha:end",
+    ]);
+    // Ended subsystems never tick or end again.
+    const before = events.length;
+    world.end();
+    world.tick();
+    expect(
+      events.slice(before).filter((event) => /^(Alpha|Zeta|Music|Weather):/.test(event)),
+    ).toEqual([]);
+  });
+
+  it("ends SceneSubsystems on every main-scene exit and creates fresh instances per Scene", () => {
+    const events: string[] = [];
+    const world = new World({
+      seed: 1,
+      dt: 1 / 60,
+      classRegistry: subsystemRegistry([["Weather", "SceneSubsystem"]]),
+      sceneSubsystemHooksFor: () => ({
+        onCreation: (self) => events.push(`init:${self.guid}`),
+        onEnd: (self) => events.push(`end:${self.guid}`),
+      }),
+    });
+    world.setSceneSubsystemClasses(["Weather"]);
+    const sceneHooks = (label: string) => ({
+      onDestroyed: () => events.push(`destroyed:${label}`),
+    });
+
+    world.beginSceneLoad("L1");
+    world.createScene({ assetGuid: "scene-1", sceneName: "L1", hooks: sceneHooks("first") });
+    world.finishSceneLoad("L1");
+    const [first] = world.findSubsystems("Weather");
+    world.exitActiveScene();
+    expect(world.findSubsystems("Weather")).toEqual([]);
+    expect(world.getSceneSubsystems()).toEqual([]);
+
+    // Same-scene reload, then a direct replacement without exitActiveScene.
+    world.beginSceneLoad("L1");
+    world.createScene({ assetGuid: "scene-1", sceneName: "L1", hooks: sceneHooks("second") });
+    const third = world.createScene({ assetGuid: "scene-2", sceneName: "L2", hooks: sceneHooks("third") });
+    const live = world.getSceneSubsystems();
+    world.end();
+
+    expect(events).toEqual([
+      "init:scene-subsystem:Weather:1",
+      "end:scene-subsystem:Weather:1", "destroyed:first",
+      "init:scene-subsystem:Weather:2",
+      "end:scene-subsystem:Weather:2", "destroyed:second",
+      "init:scene-subsystem:Weather:3",
+      "end:scene-subsystem:Weather:3", "destroyed:third",
+    ]);
+    expect(first?.destroyed).toBe(true);
+    expect(live.map((subsystem) => subsystem.scene)).toEqual([third]);
+    expect(world.getSceneSubsystems()).toEqual([]);
+  });
+
+  it("announces world actors and SceneLayers to live SceneSubsystems and pairs removals with arrivals", () => {
+    const events: string[] = [];
+    const world = new World({
+      seed: 1,
+      dt: 1 / 60,
+      classRegistry: new ClassRegistry(),
+      sceneSubsystemHooksFor: recordingSceneSubsystemHooks(events),
+    });
+    world.setSceneSubsystemClasses(["Weather"]);
+    // Present before the Scene: never announced, so never reported as removed.
+    world.spawnActorNow(world.createActor({ classId: "Actor", guid: "early" }));
+    world.createSceneLayer({ guid: "hud", assetGuid: "hud-asset", zOrder: 1 });
+    world.createScene({ assetGuid: "scene-1", sceneName: "L1" });
+    events.length = 0;
+
+    world.spawnActorNow(world.createActor({
+      classId: "Actor",
+      guid: "hero",
+      hooks: { onCreation: () => events.push("hero:beginPlay") },
+    }));
+    world.createSceneLayer({ guid: "menu", assetGuid: "menu-asset", zOrder: 2 });
+    world.spawnActorNow(world.createActor({ classId: "SceneLayerActor", guid: "button", sceneLayerId: "menu" }));
+    const streamer = world.createActor({ classId: "SceneStreamingActor", guid: "streamer" });
+    world.spawnActorNow(streamer);
+    const streamed = new Scene({ guid: "stream:streamer:1", assetGuid: "sub", sceneName: "Sub" });
+    world.notifyStreamedSceneLoaded(streamer, streamed);
+    world.notifyStreamedSceneUnloaded(streamer, streamed);
+    world.destroyActor("hero");
+    world.destroyActor("early");
+    world.flushPending();
+    world.destroySceneLayer("menu");
+    world.destroySceneLayer("hud");
+    world.exitActiveScene();
+    // After On End: no per-actor or stream notifications during teardown.
+    world.destroyActor("streamer");
+    world.flushPending();
+    world.notifyStreamedSceneUnloaded(streamer, streamed);
+
+    expect(events).toEqual([
+      "Weather:spawned:hero", "hero:beginPlay",
+      "Weather:layerAdded:menu",
+      "Weather:spawned:streamer",
+      "Weather:streamLoaded:streamer:stream:streamer:1",
+      "Weather:streamUnloaded:streamer:stream:streamer:1",
+      "Weather:destroyed:hero",
+      "Weather:layerRemoved:menu",
+      "Weather:end",
+    ]);
+  });
+
+  it("gates SceneSubsystem ticks like actors while GameSubsystems tick during preparation", () => {
+    const events: string[] = [];
+    let sceneReady = false;
+    const blocked = new Set(["Music"]);
+    const world = new World({
+      seed: 1,
+      dt: 1 / 60,
+      classRegistry: new ClassRegistry(),
+      canTickScene: () => sceneReady,
+      canTickSceneSubsystem: (subsystem) => !blocked.has(subsystem.classId),
+      sceneSubsystemHooksFor: (classId) => ({
+        onTick: () => {
+          events.push(classId);
+          if (classId === "Music") sceneReady = false;
+        },
+      }),
+    });
+    world.setGameSubsystems([
+      world.createGameSubsystem({ classId: "Save", hooks: { onTick: () => { events.push("Save"); } } }),
+    ]);
+    world.setSceneSubsystemClasses(["Music", "Weather"]);
+    world.createScene({ assetGuid: "scene-1", sceneName: "L1" });
+    world.tick();
+    expect(events).toEqual(["Save"]);
+    sceneReady = true;
+    world.tick();
+    expect(events).toEqual(["Save", "Save", "Weather"]);
+    // Music drops readiness mid-phase, so Weather waits like a later actor.
+    blocked.clear();
+    world.tick();
+    expect(events).toEqual(["Save", "Save", "Weather", "Save", "Music"]);
+  });
+
+  it("applies class defaults and fixed guids without consuming the World guid factory", () => {
+    const registry = new ClassRegistry();
+    registry.register({
+      id: "Inventory",
+      parentClassId: "GameSubsystem",
+      kind: "object",
+      variables: [
+        { name: "slots", type: "int", defaultValue: 8 },
+        { name: "items", type: "string", container: "array", defaultValue: ["key"] },
+      ],
+      implementedInterfaces: ["iface-save"],
+    });
+    registry.register({
+      id: "Weather",
+      parentClassId: "SceneSubsystem",
+      kind: "object",
+      variables: [{ name: "rain", type: "float", defaultValue: 0.5 }],
+      implementedInterfaces: ["iface-weather"],
+    });
+    let n = 0;
+    const world = new World({
+      seed: 1,
+      dt: 1 / 60,
+      classRegistry: registry,
+      guidFactory: () => `id-${++n}`,
+    });
+    const inventory = world.createGameSubsystem({ classId: "Inventory", variables: { slots: 12 } });
+    world.setSceneSubsystemClasses(["Weather"]);
+    const scene = world.createScene({ assetGuid: "scene-1", sceneName: "L1" });
+    const actor = world.createActor({ classId: "Actor" });
+    const [weather] = world.getSceneSubsystems();
+
+    expect(inventory.guid).toBe("subsystem:Inventory");
+    expect(inventory.getVariable("slots")).toBe(12);
+    expect(inventory.getVariable("items")).toEqual(["key"]);
+    expect(inventory.implementedInterfaces).toEqual(["iface-save"]);
+    expect(weather?.guid).toBe("scene-subsystem:Weather:1");
+    expect(weather?.getVariable("rain")).toBe(0.5);
+    expect(weather?.implementedInterfaces).toEqual(["iface-weather"]);
+    expect([scene.guid, actor.guid]).toEqual(["id-1", "id-2"]);
+  });
+
+  it("resolves Get by ancestry in class-id order and skips ended subsystems during teardown", () => {
+    const registry = subsystemRegistry([
+      ["Audio", "GameSubsystem"],
+      ["SfxAudio", "Audio"],
+      ["MusicAudio", "Audio"],
+      ["Weather", "SceneSubsystem"],
+    ]);
+    const world = new World({ seed: 1, dt: 1 / 60, classRegistry: registry });
+    const duringEnd: Record<string, string[]> = {};
+    world.setGameInstance(new GameInstance({
+      classId: "GameInstance",
+      hooks: { onGameEnd: () => { duringEnd.gi = guids(world.findSubsystems("Audio")); } },
+    }));
+    world.setGameSubsystems(["SfxAudio", "MusicAudio"].map((classId) =>
+      world.createGameSubsystem({
+        classId,
+        hooks: { onGameEnd: () => { duringEnd[classId] = guids(world.findSubsystems("Audio")); } },
+      })));
+    world.setSceneSubsystemClasses(["Weather"]);
+    world.start();
+    expect(world.findSubsystems("Weather")).toEqual([]);
+    world.createScene({ assetGuid: "scene-1", sceneName: "L1" });
+
+    expect(guids(world.findSubsystems("Audio"))).toEqual(["subsystem:MusicAudio", "subsystem:SfxAudio"]);
+    expect(guids(world.findSubsystems("SfxAudio"))).toEqual(["subsystem:SfxAudio"]);
+    expect(guids(world.findSubsystems("Weather"))).toEqual(["scene-subsystem:Weather:1"]);
+    expect(world.findSubsystems("GameInstance")).toEqual([]);
+    world.end();
+    expect(duringEnd).toEqual({
+      gi: ["subsystem:MusicAudio", "subsystem:SfxAudio"],
+      SfxAudio: ["subsystem:MusicAudio"],
+      MusicAudio: [],
+    });
+    expect(world.findSubsystems("Audio")).toEqual([]);
+    expect(world.findSubsystems("Weather")).toEqual([]);
+  });
+
+  it("adds the subsystems snapshot key only when subsystems exist", () => {
+    const plain = createTestWorld();
+    expect(Object.keys(createWorldSnapshot(plain))).toEqual([
+      "tickIndex", "dt", "gameInstance", "actors",
+    ]);
+    const world = createTestWorld();
+    world.setGameSubsystems([
+      world.createGameSubsystem({ classId: "Save", variables: { slot: 2, autosave: true } }),
+    ]);
+    world.setSceneSubsystemClasses(["Weather"]);
+    world.createScene({ assetGuid: "scene-1", sceneName: "L1" });
+    const snapshot = createWorldSnapshot(world);
+    expect(Object.keys(snapshot)).toEqual([
+      "tickIndex", "dt", "gameInstance", "subsystems", "actors",
+    ]);
+    expect(snapshot.subsystems).toEqual([
+      { guid: "subsystem:Save", classId: "Save", variables: { autosave: true, slot: 2 } },
+      { guid: "scene-subsystem:Weather:1", classId: "Weather", variables: {} },
+    ]);
   });
 });

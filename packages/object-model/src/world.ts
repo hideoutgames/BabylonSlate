@@ -11,13 +11,23 @@ import {
   Actor,
   ActorComponent,
   GameInstance,
+  GameSubsystem,
   Scene,
   SceneLayer,
   SceneStreamingActor,
+  SceneSubsystem,
   type GameInstanceHooks,
+  type GameSubsystemHooks,
   type LifecycleHooks,
+  type SceneSubsystemHooks,
+  type Subsystem,
   type TickContext,
 } from "./objects";
+import {
+  compareClassIds,
+  gameSubsystemGuid,
+  sceneSubsystemGuid,
+} from "./subsystems";
 import { TICK_PHASES, TickClock, type PhaseHook, type TickPhase } from "./tick";
 
 export type WorldInputProvider = Pick<
@@ -51,6 +61,14 @@ export interface WorldOptions {
   canTickActor?: (actor: Actor) => boolean;
   /** Script lifecycle binding shared by authored and dynamically added components. */
   componentHooksFor?: (classId: string) => LifecycleHooks<ActorComponent> | undefined;
+  /**
+   * Hooks for each SceneSubsystem the World creates in `createScene`. The
+   * World calls `onCreation` (On Init) synchronously; a host that must wait
+   * for scene readiness defers its script dispatch inside the hook.
+   */
+  sceneSubsystemHooksFor?: (classId: string) => SceneSubsystemHooks | undefined;
+  /** Owner gate for the `sceneSubsystems` tick phase, after `canTickScene`. */
+  canTickSceneSubsystem?: (subsystem: SceneSubsystem) => boolean;
 }
 
 export class World {
@@ -65,9 +83,20 @@ export class World {
   private readonly canTickScene: () => boolean;
   private readonly canTickActor: (actor: Actor) => boolean;
   private readonly componentHooksFor?: WorldOptions["componentHooksFor"];
+  private readonly sceneSubsystemHooksFor?: WorldOptions["sceneSubsystemHooksFor"];
+  private readonly canTickSceneSubsystem: (subsystem: SceneSubsystem) => boolean;
 
   gameInstance: GameInstance | null = null;
   currentScene: Scene | null = null;
+  /** Session GameSubsystems in class-id order. */
+  private gameSubsystems: GameSubsystem[] = [];
+  /** Current main Scene's SceneSubsystems in class-id order. */
+  private sceneSubsystems: SceneSubsystem[] = [];
+  private sceneSubsystemClassIds: string[] = [];
+  /** Main Scene creations this session; numbers SceneSubsystem guids. */
+  private mainSceneCreations = 0;
+  /** Objects whose Spawned / Added the live SceneSubsystems received. */
+  private announcedToSceneSubsystems = new WeakSet<Actor | SceneLayer>();
   /** Actors in spawn order — never iterate a Map for tick/snapshot. */
   private readonly actors: Actor[] = [];
   /** Preserve first-spawned lookup while replacement actors share a guid. */
@@ -94,6 +123,8 @@ export class World {
     this.canTickScene = options.canTickScene ?? (() => true);
     this.canTickActor = options.canTickActor ?? (() => true);
     this.componentHooksFor = options.componentHooksFor;
+    this.sceneSubsystemHooksFor = options.sceneSubsystemHooksFor;
+    this.canTickSceneSubsystem = options.canTickSceneSubsystem ?? (() => true);
   }
 
   setInputProvider(provider: WorldInputProvider | null): void {
@@ -108,15 +139,78 @@ export class World {
     this.gameInstance = instance;
   }
 
+  /**
+   * Install the session's GameSubsystems, kept in class-id order. Call once,
+   * before `start()`. Subsystems installed after `start()` run On Init
+   * immediately, after the Game Instance's.
+   */
+  setGameSubsystems(subsystems: readonly GameSubsystem[]): void {
+    this.gameSubsystems = [...subsystems].sort((a, b) =>
+      compareClassIds(a.classId, b.classId),
+    );
+    if (this.started) {
+      for (const subsystem of [...this.gameSubsystems]) subsystem.callOnCreation();
+    }
+  }
+
+  getGameSubsystems(): readonly GameSubsystem[] {
+    return this.gameSubsystems;
+  }
+
+  /**
+   * SceneSubsystem classes every later main `createScene` instantiates, kept in
+   * class-id order. Streamed sub-scenes and SceneLayers never create them.
+   */
+  setSceneSubsystemClasses(classIds: readonly string[]): void {
+    this.sceneSubsystemClassIds = [...new Set(classIds)].sort(compareClassIds);
+  }
+
+  /** The current main Scene's SceneSubsystems (empty between scenes). */
+  getSceneSubsystems(): readonly SceneSubsystem[] {
+    return this.sceneSubsystems;
+  }
+
+  /**
+   * Live (not ended) subsystems whose class isA `classId`: GameSubsystems, then
+   * the current main Scene's SceneSubsystems, each in class-id order. The
+   * first entry is the deterministic `Get` result; more than one is ambiguous.
+   */
+  findSubsystems(classId: string): Subsystem[] {
+    return [...this.gameSubsystems, ...this.sceneSubsystems].filter(
+      (subsystem) =>
+        !subsystem.ended && this.classRegistry.isA(subsystem.classId, classId),
+    );
+  }
+
+  /** Host notification: a streamed sub-scene became ready in the main scene. */
+  notifyStreamedSceneLoaded(streamingActor: Actor, scene: Scene): void {
+    for (const subsystem of this.liveSceneSubsystems()) {
+      subsystem.callOnStreamedSceneLoaded(streamingActor, scene);
+    }
+  }
+
+  /** Host notification: a streamed sub-scene was retired. */
+  notifyStreamedSceneUnloaded(streamingActor: Actor, scene: Scene): void {
+    for (const subsystem of this.liveSceneSubsystems()) {
+      subsystem.callOnStreamedSceneUnloaded(streamingActor, scene);
+    }
+  }
+
+  /** GameSubsystems' On Init (class-id order), then the Game Instance's. */
   start(): void {
     if (this.started) return;
     this.started = true;
+    for (const subsystem of this.liveGameSubsystems()) subsystem.callOnCreation();
     this.gameInstance?.callOnCreation();
   }
 
+  /** Scene exit, Game Instance On End, then GameSubsystems' On End in reverse. */
   end(): void {
     this.exitActiveScene();
     this.gameInstance?.callOnGameEnd();
+    for (const subsystem of this.liveGameSubsystems().reverse()) {
+      subsystem.callOnGameEnd();
+    }
   }
 
   loadScene(sceneName: string): void {
@@ -128,18 +222,38 @@ export class World {
   beginSceneLoad(sceneName: string): void {
     this.loadingSceneName = sceneName;
     this.gameInstance?.callOnSceneStartLoading(sceneName);
+    for (const subsystem of this.liveGameSubsystems()) {
+      subsystem.callOnSceneStartLoading(sceneName);
+    }
   }
 
+  /**
+   * Game Instance then GameSubsystems hear Finish Loading (and First Scene
+   * Loaded once); the main Scene's SceneSubsystems hear Scene Loaded last.
+   */
   finishSceneLoad(sceneName: string): void {
     this.activeSceneName = sceneName;
     this.loadingSceneName = null;
     this.gameInstance?.callOnSceneFinishLoading(sceneName);
+    for (const subsystem of this.liveGameSubsystems()) {
+      subsystem.callOnSceneFinishLoading(sceneName);
+    }
     if (!this.firstSceneLoaded) {
       this.firstSceneLoaded = true;
       this.gameInstance?.callOnFirstSceneLoaded(sceneName);
+      for (const subsystem of this.liveGameSubsystems()) {
+        subsystem.callOnFirstSceneLoaded(sceneName);
+      }
+    }
+    for (const subsystem of this.liveSceneSubsystems()) {
+      subsystem.callOnSceneLoaded(sceneName);
     }
   }
 
+  /**
+   * Tear down the main Scene (SceneSubsystems' On End, then the Scene), then
+   * the Game Instance and GameSubsystems hear Scene Exit.
+   */
   exitActiveScene(): void {
     const name = this.activeSceneName ?? this.loadingSceneName;
     this.activeSceneName = null;
@@ -147,6 +261,25 @@ export class World {
     this.clearCurrentScene();
     if (!name) return;
     this.gameInstance?.callOnSceneExit(name);
+    for (const subsystem of this.liveGameSubsystems()) {
+      subsystem.callOnSceneExit(name);
+    }
+  }
+
+  private liveGameSubsystems(): GameSubsystem[] {
+    return this.gameSubsystems.filter((subsystem) => !subsystem.ended);
+  }
+
+  private liveSceneSubsystems(): SceneSubsystem[] {
+    return this.sceneSubsystems.filter((subsystem) => !subsystem.ended);
+  }
+
+  /** World (not SceneLayer overlay) actors are announced to SceneSubsystems. */
+  private isWorldSceneActor(actor: Actor): boolean {
+    return (
+      actor.sceneLayerId == null &&
+      !this.classRegistry.isA(actor.classId, "SceneLayerActor")
+    );
   }
 
   /** Queue actor for spawn; applied after the current phase / at end of tick. */
@@ -216,6 +349,11 @@ export class World {
     });
     this.sceneLayers.push(layer);
     layer.callOnCreation();
+    const subsystems = this.liveSceneSubsystems();
+    if (!layer.destroyed && subsystems.length > 0) {
+      this.announcedToSceneSubsystems.add(layer);
+      for (const subsystem of subsystems) subsystem.callOnSceneLayerAdded(layer);
+    }
     return layer;
   }
 
@@ -224,6 +362,12 @@ export class World {
     if (index < 0) return;
     const layer = this.sceneLayers[index]!;
     this.sceneLayers.splice(index, 1);
+    // Unlinked but intact: re-entrant destruction of this layer is a no-op.
+    if (this.announcedToSceneSubsystems.delete(layer)) {
+      for (const subsystem of this.liveSceneSubsystems()) {
+        subsystem.callOnSceneLayerRemoved(layer);
+      }
+    }
     for (const actor of [...this.actors]) {
       if (actor.sceneLayerId === guid) {
         this.commitDestroy(actor);
@@ -249,10 +393,46 @@ export class World {
     });
     this.currentScene = scene;
     scene.callOnCreation();
+    if (this.currentScene === scene) this.createSceneSubsystems(scene);
     return scene;
   }
 
+  /**
+   * Every SceneSubsystem is constructed (and findable) before the first On
+   * Init runs; On Init then runs in class-id order before any actor spawns.
+   */
+  private createSceneSubsystems(scene: Scene): void {
+    const creation = ++this.mainSceneCreations;
+    if (this.sceneSubsystemClassIds.length === 0) return;
+    this.announcedToSceneSubsystems = new WeakSet();
+    const subsystems = this.sceneSubsystemClassIds.map((classId) => {
+      const defaults = this.classDefaults(classId, {});
+      return new SceneSubsystem({
+        classId,
+        guid: sceneSubsystemGuid(classId, creation),
+        scene,
+        variables: defaults.variables,
+        implementedInterfaces: defaults.implementedInterfaces,
+        hooks: this.sceneSubsystemHooksFor?.(classId),
+      });
+    });
+    this.sceneSubsystems = subsystems;
+    for (const subsystem of subsystems) {
+      if (!subsystem.ended) subsystem.callOnCreation();
+    }
+  }
+
+  /**
+   * The one place every main-Scene exit passes through (scene change, failed
+   * realization, `end()`, direct `createScene` replacement): SceneSubsystems'
+   * On End in reverse order while the Scene is still current, then the Scene.
+   */
   private clearCurrentScene(): void {
+    const subsystems = this.sceneSubsystems;
+    for (let index = subsystems.length - 1; index >= 0; index--) {
+      subsystems[index]!.callOnEnd();
+    }
+    if (this.sceneSubsystems === subsystems) this.sceneSubsystems = [];
     const scene = this.currentScene;
     if (!scene) return;
     this.currentScene = null;
@@ -273,6 +453,12 @@ export class World {
     const sameGuid = this.actorsByGuid.get(actor.guid);
     if (sameGuid) sameGuid.push(actor);
     else this.actorsByGuid.set(actor.guid, [actor]);
+    if (this.sceneSubsystems.length > 0 && this.isWorldSceneActor(actor)) {
+      this.announcedToSceneSubsystems.add(actor);
+      for (const subsystem of this.liveSceneSubsystems()) {
+        subsystem.callOnSceneActorSpawned(actor);
+      }
+    }
     actor.callOnCreation();
     for (const component of actor.components) component.callOnCreation();
   }
@@ -299,6 +485,12 @@ export class World {
     const sameGuid = this.actorsByGuid.get(actor.guid)!;
     sameGuid.splice(sameGuid.indexOf(actor), 1);
     if (sameGuid.length === 0) this.actorsByGuid.delete(actor.guid);
+    // Unlinked but intact, before its own teardown; announced actors only.
+    if (this.announcedToSceneSubsystems.delete(actor)) {
+      for (const subsystem of this.liveSceneSubsystems()) {
+        subsystem.callOnSceneActorDestroyed(actor);
+      }
+    }
     actor.destroyed = true;
     for (const component of [...actor.components].reverse()) {
       if (!component.destroyed) {
@@ -336,6 +528,17 @@ export class World {
       switch (phase) {
         case "gameInstance":
           this.gameInstance?.callOnTick(ctx);
+          for (const subsystem of this.liveGameSubsystems()) {
+            subsystem.callOnTick(ctx);
+          }
+          break;
+        case "sceneSubsystems":
+          for (const subsystem of this.liveSceneSubsystems()) {
+            if (!this.canTickScene()) break;
+            if (!subsystem.ended && this.canTickSceneSubsystem(subsystem)) {
+              subsystem.callOnTick(ctx);
+            }
+          }
           break;
         case "actors":
           for (const actor of [...this.actors]) {
@@ -435,6 +638,26 @@ export class World {
       variables: defaults.variables,
       implementedInterfaces: defaults.implementedInterfaces,
       guidFactory: this.guidFactory,
+    });
+  }
+
+  /**
+   * Build (not install) a GameSubsystem with class defaults applied. The guid
+   * defaults to `subsystem:<classId>` and never comes from the guid factory.
+   */
+  createGameSubsystem(options: {
+    classId: string;
+    guid?: Guid;
+    variables?: Record<string, unknown>;
+    hooks?: GameSubsystemHooks;
+    implementedInterfaces?: string[];
+  }): GameSubsystem {
+    const defaults = this.classDefaults(options.classId, options);
+    return new GameSubsystem({
+      ...options,
+      guid: options.guid ?? gameSubsystemGuid(options.classId),
+      variables: defaults.variables,
+      implementedInterfaces: defaults.implementedInterfaces,
     });
   }
 

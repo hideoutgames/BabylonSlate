@@ -33,7 +33,13 @@ export type EngineClassScriptApi = {
   classId: string;
   variables?: readonly EngineScriptVariable[];
   functions?: readonly EngineScriptFunction[];
+  /** Component-bound events (Add Event on an attached component). */
   events?: readonly EngineScriptEvent[];
+  /**
+   * Lifecycle events a class of this lineage handles on Self. Never
+   * component-bound, so they stay out of `engineEventTypeClassIds()`.
+   */
+  nativeEvents?: readonly EngineScriptEvent[];
 };
 
 const EXEC_IN: EngineScriptPin = {
@@ -140,6 +146,109 @@ export const COLLIDER_EVENTS: readonly EngineScriptEvent[] = [
   },
 ];
 
+const INIT_EVENT: EngineScriptEvent = {
+  name: "On Init",
+  eventType: "flow.event.init",
+  exportName: "onInit",
+};
+const TICK_EVENT: EngineScriptEvent = {
+  name: "Tick",
+  eventType: "flow.event.tick",
+  exportName: "onTick",
+};
+const END_EVENT: EngineScriptEvent = {
+  name: "On End",
+  eventType: "flow.event.end",
+  exportName: "onEnd",
+};
+
+/** Game Instance lifecycle; GameSubsystem shares it for parity. */
+const GAME_INSTANCE_EVENTS: readonly EngineScriptEvent[] = [
+  INIT_EVENT,
+  TICK_EVENT,
+  END_EVENT,
+  {
+    name: "On First Scene Loaded",
+    eventType: "flow.event.firstSceneLoaded",
+    exportName: "onFirstSceneLoaded",
+  },
+  {
+    name: "On Scene Start Loading",
+    eventType: "flow.event.sceneStartLoading",
+    exportName: "onSceneStartLoading",
+  },
+  {
+    name: "On Scene Finish Loading",
+    eventType: "flow.event.sceneFinishLoading",
+    exportName: "onSceneFinishLoading",
+  },
+  {
+    name: "On Scene Exit",
+    eventType: "flow.event.sceneExit",
+    exportName: "onSceneExit",
+  },
+];
+
+const SCENE_SUBSYSTEM_EVENTS: readonly EngineScriptEvent[] = [
+  INIT_EVENT,
+  TICK_EVENT,
+  END_EVENT,
+  {
+    name: "On Scene Loaded",
+    eventType: "flow.event.sceneLoaded",
+    exportName: "onSceneLoaded",
+  },
+  {
+    name: "On Streamed Scene Loaded",
+    eventType: "flow.event.streamedSceneLoaded",
+    exportName: "onStreamedSceneLoaded",
+  },
+  {
+    name: "On Streamed Scene Unloaded",
+    eventType: "flow.event.streamedSceneUnloaded",
+    exportName: "onStreamedSceneUnloaded",
+  },
+  {
+    name: "On Scene Layer Added",
+    eventType: "flow.event.sceneLayerAdded",
+    exportName: "onSceneLayerAdded",
+  },
+  {
+    name: "On Scene Layer Removed",
+    eventType: "flow.event.sceneLayerRemoved",
+    exportName: "onSceneLayerRemoved",
+  },
+  {
+    name: "On Scene Actor Spawned",
+    eventType: "flow.event.sceneActorSpawned",
+    exportName: "onSceneActorSpawned",
+  },
+  {
+    name: "On Scene Actor Destroyed",
+    eventType: "flow.event.sceneActorDestroyed",
+    exportName: "onSceneActorDestroyed",
+  },
+];
+
+const GET_SCENE_LOADING_PROGRESS: EngineScriptFunction = {
+  name: "Get Scene Loading Progress",
+  runtime: "getSceneLoadingProgress",
+  pins: [{ name: "progress", typeId: "float", direction: "out" }],
+};
+
+const GET_SCENE_REFERENCE: EngineScriptFunction = {
+  name: "Get Scene Reference",
+  runtime: "getSceneReference",
+  pins: [
+    {
+      name: "scene",
+      typeId: "object",
+      typeClassId: "Scene",
+      direction: "out",
+    },
+  ],
+};
+
 export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
   {
     classId: "RenderTargetCaptureComponent",
@@ -173,25 +282,18 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
   ] },
   {
     classId: "GameInstance",
-    functions: [
-      {
-        name: "Get Scene Loading Progress",
-        runtime: "getSceneLoadingProgress",
-        pins: [{ name: "progress", typeId: "float", direction: "out" }],
-      },
-      {
-        name: "Get Scene Reference",
-        runtime: "getSceneReference",
-        pins: [
-          {
-            name: "scene",
-            typeId: "object",
-            typeClassId: "Scene",
-            direction: "out",
-          },
-        ],
-      },
-    ],
+    functions: [GET_SCENE_LOADING_PROGRESS, GET_SCENE_REFERENCE],
+    nativeEvents: GAME_INSTANCE_EVENTS,
+  },
+  {
+    classId: "GameSubsystem",
+    functions: [GET_SCENE_LOADING_PROGRESS, GET_SCENE_REFERENCE],
+    nativeEvents: GAME_INSTANCE_EVENTS,
+  },
+  {
+    classId: "SceneSubsystem",
+    functions: [GET_SCENE_REFERENCE],
+    nativeEvents: SCENE_SUBSYSTEM_EVENTS,
   },
   {
     classId: "Scene",
@@ -635,4 +737,18 @@ export function engineScriptEventsFor(
   classId: string,
 ): readonly EngineScriptEvent[] {
   return engineScriptApiFor(classId)?.events ?? [];
+}
+
+/**
+ * Native lifecycle events for a class, from the nearest engine class in its
+ * ancestry (class first, root last) that declares them.
+ */
+export function engineNativeEventsFor(
+  ancestry: readonly string[],
+): readonly EngineScriptEvent[] {
+  for (const classId of ancestry) {
+    const events = engineScriptApiFor(classId)?.nativeEvents;
+    if (events) return events;
+  }
+  return [];
 }
