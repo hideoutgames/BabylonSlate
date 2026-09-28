@@ -34,6 +34,7 @@ import {
   SceneLayer,
   dispatchInterface,
   interfaceHandlerKey,
+  isLockedEngineClassId,
   type ClassRegistry,
   type InterfaceDispatchTarget,
   type InterfaceRegistry,
@@ -622,24 +623,77 @@ export class ScriptHost {
     return (this.byClassId.get(classId) ?? []).map((entry) => entry.script);
   }
 
-  /** Lifecycle hooks that run every entry point registered for `classId`. */
+  /**
+   * Loaded scripts of `classId`, then of each user-class ancestor, nearest
+   * first. Scripts keyed by a locked engine id answer only for that exact id
+   * and are never inherited.
+   */
+  private scriptLineage(classId: string): LoadedScript[][] {
+    const lineage: LoadedScript[][] = [];
+    const own = this.byClassId.get(classId);
+    if (own && own.length > 0) lineage.push(own);
+    const ancestry = this.services.classRegistry?.ancestry(classId) ?? [];
+    for (const ancestorId of ancestry.slice(1)) {
+      const loaded = this.byClassId.get(ancestorId);
+      if (!loaded || loaded.length === 0) continue;
+      // Engine bases only have engine ancestors.
+      if (isLockedEngineClassId(ancestorId)) break;
+      lineage.push(loaded);
+    }
+    return lineage;
+  }
+
+  /**
+   * The nearest class in `classId`'s lineage that implements `event`. A class
+   * that implements an event replaces its ancestors' implementation; Call
+   * Parent (`ctx.invokeEvent`) reaches an ancestor explicitly.
+   */
+  private eventScriptsFor(
+    classId: string,
+    event: string,
+    self: BObject | null,
+    componentId?: string,
+  ): LoadedScript[] | undefined {
+    return this.scriptLineage(classId).find((loaded) =>
+      loaded.some((entry) =>
+        entry.script.entryPoints.some(
+          (point) =>
+            point.event === event &&
+            typeof entry.exports[point.name] === "function" &&
+            entryMatchesComponentInvoke(point.componentId, componentId, self),
+        ),
+      ),
+    );
+  }
+
+  /** The nearest class in `classId`'s lineage that exports function `exportName`. */
+  private functionScriptsFor(
+    classId: string,
+    exportName: string,
+  ): LoadedScript[] | undefined {
+    return this.scriptLineage(classId).find((loaded) =>
+      loaded.some((entry) => typeof entry.exports[exportName] === "function"),
+    );
+  }
+
+  /**
+   * Lifecycle hooks for `classId`. Each event runs the nearest implementation
+   * in the class lineage, so a child inherits its parent's events.
+   */
   hooksFor(classId: string): LifecycleHooks<BObject> | undefined {
-    const loaded = this.byClassId.get(classId);
-    if (!loaded || loaded.length === 0) return undefined;
+    if (this.scriptLineage(classId).length === 0) return undefined;
     const isGameInstance =
       this.services.classRegistry?.isA(classId, "GameInstance") ??
       classId === "GameInstance";
+    const creationEvent = isGameInstance ? "onInit" : "onBeginPlay";
     return {
       onCreation: (self) => {
-        this.dispatchEvent(
-          loaded,
-          isGameInstance ? "onInit" : "onBeginPlay",
-          self,
-          0,
-          0,
-        );
+        const loaded = this.eventScriptsFor(classId, creationEvent, self);
+        if (loaded) this.dispatchEvent(loaded, creationEvent, self, 0, 0);
       },
       onTick: (self, ctx: TickContext) => {
+        const loaded = this.eventScriptsFor(classId, "onTick", self);
+        if (!loaded) return;
         this.dispatchEvent(
           loaded,
           "onTick",
@@ -652,7 +706,8 @@ export class ScriptHost {
       },
       onDestroyed: (self) => {
         this.clearFlowState(self);
-        this.dispatchFinalEvent(loaded, "onDestroyed", self);
+        const loaded = this.eventScriptsFor(classId, "onDestroyed", self);
+        if (loaded) this.dispatchFinalEvent(loaded, "onDestroyed", self);
       },
     };
   }
@@ -672,7 +727,7 @@ export class ScriptHost {
 
   /** The driver calls this only for the actual GameInstance shutdown lifecycle. */
   invokeGameShutdownEvent(classId: string, event: "onEnd" | "onSceneExit", self: BObject, args: Record<string, unknown> = {}): void {
-    const loaded = this.byClassId.get(classId);
+    const loaded = this.eventScriptsFor(classId, event, self);
     if (loaded) this.dispatchFinalEvent(loaded, event, self, args);
   }
 
@@ -711,8 +766,8 @@ export class ScriptHost {
     args: Record<string, unknown> = {},
     componentId?: string,
   ): void {
-    const loaded = this.byClassId.get(classId);
-    if (!loaded || loaded.length === 0) return;
+    const loaded = this.eventScriptsFor(classId, event, self, componentId);
+    if (!loaded) return;
     if (self && !this.canInvokeOwner(self)) return;
     this.dispatchEvent(loaded, event, self, 0, 0, args, undefined, undefined, componentId);
   }
@@ -779,48 +834,77 @@ export class ScriptHost {
 
   /**
    * Register compiled function implementations as interface handlers on `object`.
-   * Keys match `interfaceHandlerKey` (`guid:method`).
+   * Keys match `interfaceHandlerKey` (`guid:method`). Implementations declared by
+   * user ancestors are inherited; the nearest declaring class wins.
    */
   bindInterfaceHandlers(object: BObject): void {
-    const loaded = this.byClassId.get(object.classId);
-    if (!loaded || loaded.length === 0) return;
+    const lineage = this.scriptLineage(object.classId);
+    if (lineage.length === 0) return;
     for (const iface of object.implementedInterfaces) {
-      for (const entry of loaded) {
-        for (const impl of entry.script.interfaceImplementations ?? []) {
-          if (impl.interfaceGuid !== iface) continue;
-          const exportName = impl.exportName;
-          const key = interfaceHandlerKey(iface, impl.method);
-          object.interfaceHandlers.set(key, (args) => {
-            if (!this.canInvokeOwner(object)) return {};
-            const fn = entry.exports[exportName];
-            if (typeof fn !== "function") return {};
-            const ctx = this.createContext(
-              object,
-              0,
-              0,
-              args,
-              undefined,
-              undefined,
-              entry.script.assetGuid,
+      // Farthest ancestor first so nearer declarations replace its handlers.
+      for (const loaded of [...lineage].reverse()) {
+        for (const entry of loaded) {
+          for (const impl of entry.script.interfaceImplementations ?? []) {
+            if (impl.interfaceGuid !== iface) continue;
+            const exportName = impl.exportName;
+            const key = interfaceHandlerKey(iface, impl.method);
+            object.interfaceHandlers.set(key, (args) =>
+              this.invokeInterfaceHandler(object, loaded, entry, exportName, args),
             );
-            try {
-              const result = this.invokeOwned(object, () => (fn as (ctx: ScriptContext) => unknown)(ctx));
-              if (result instanceof Promise) {
-                void result.catch((error) => this.services.reportError(error));
-                return {};
-              }
-              return (
-                result && typeof result === "object" && !Array.isArray(result)
-                  ? result
-                  : {}
-              ) as Record<string, unknown>;
-            } catch (error) {
-              this.services.reportError(error);
-              return {};
-            }
-          });
+          }
         }
       }
+    }
+  }
+
+  /**
+   * Run an interface implementation on `object`. A class between `object` and
+   * the declaring class that overrides the implementing function runs instead.
+   */
+  private invokeInterfaceHandler(
+    object: BObject,
+    declaringScripts: readonly LoadedScript[],
+    declaringEntry: LoadedScript,
+    exportName: string,
+    args: Record<string, unknown>,
+  ): Record<string, unknown> {
+    if (!this.canInvokeOwner(object)) return {};
+    let entry = declaringEntry;
+    for (const loaded of this.scriptLineage(object.classId)) {
+      if (loaded === declaringScripts) break;
+      const override = loaded.find(
+        (candidate) => typeof candidate.exports[exportName] === "function",
+      );
+      if (override) {
+        entry = override;
+        break;
+      }
+    }
+    const fn = entry.exports[exportName];
+    if (typeof fn !== "function") return {};
+    const ctx = this.createContext(
+      object,
+      0,
+      0,
+      args,
+      undefined,
+      undefined,
+      entry.script.assetGuid,
+    );
+    try {
+      const result = this.invokeOwned(object, () => (fn as (ctx: ScriptContext) => unknown)(ctx));
+      if (result instanceof Promise) {
+        void result.catch((error) => this.services.reportError(error));
+        return {};
+      }
+      return (
+        result && typeof result === "object" && !Array.isArray(result)
+          ? result
+          : {}
+      ) as Record<string, unknown>;
+    } catch (error) {
+      this.services.reportError(error);
+      return {};
     }
   }
 
@@ -1269,8 +1353,8 @@ export class ScriptHost {
       invokeCustomEvent: (target, eventName, eventArgs) => {
         const receiver = (target ?? self) as BObject | null;
         if (!receiver || !this.canInvokeOwner(receiver) || typeof eventName !== "string" || !eventName) return;
-        const loaded = this.byClassId.get(receiver.classId);
-        if (loaded && loaded.length > 0) {
+        const loaded = this.eventScriptsFor(receiver.classId, eventName, receiver);
+        if (loaded) {
           this.dispatchEvent(
             loaded,
             eventName,
@@ -1294,8 +1378,9 @@ export class ScriptHost {
         if (self && !this.canInvokeOwner(self)) return;
         if (typeof classId !== "string" || !classId.trim()) return;
         if (typeof eventName !== "string" || !eventName) return;
-        const loaded = this.byClassId.get(classId.trim());
-        if (!loaded || loaded.length === 0) return;
+        // Call Parent passes the parent class; resolve from there, never from self.
+        const loaded = this.eventScriptsFor(classId.trim(), eventName, self);
+        if (!loaded) return;
         this.dispatchEvent(
           loaded,
           eventName,
@@ -1314,14 +1399,14 @@ export class ScriptHost {
         let loaded: LoadedScript[] | undefined;
         let receiver: BObject | null = null;
         if (typeof target === "string") {
-          loaded = this.byClassId.get(target);
+          loaded = this.functionScriptsFor(target, functionName);
         } else {
           const object = (target ?? self) as BObject | null;
           if (!object || !this.canInvokeOwner(object)) return {};
           receiver = object;
-          loaded = this.byClassId.get(object.classId);
+          loaded = this.functionScriptsFor(object.classId, functionName);
         }
-        if (!loaded || loaded.length === 0) return {};
+        if (!loaded) return {};
         let result: unknown = {};
         for (const entry of loaded) {
           const fn = entry.exports[functionName];
