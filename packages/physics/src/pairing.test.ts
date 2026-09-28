@@ -2,6 +2,15 @@ import { describe, expect, it } from "vitest";
 import { physicsActorDiagnostics } from "./pairing";
 
 describe("physicsActorDiagnostics", () => {
+  it("accepts an enabled runtime mesh as a rigid body's collision source", () => {
+    const actor = { id: "mesh", components: [
+      { id: "body", classId: "RigidBodyComponent", properties: {} },
+      { id: "surface", classId: "DynamicRuntimeMeshComponent", properties: { enableCollision: true } },
+    ] };
+    expect(physicsActorDiagnostics(actor)).toEqual([]);
+    actor.components[1]!.properties.enableCollision = false;
+    expect(physicsActorDiagnostics(actor)[0]?.code).toBe("physics.body_without_collider");
+  });
   it("warns when a collider has no rigid body and no tilemap", () => {
     expect(
       physicsActorDiagnostics({

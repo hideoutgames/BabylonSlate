@@ -232,7 +232,7 @@ export class ActorComponent extends BObject {
   }
 
   override getVariable(name: string): unknown {
-    if (this.classId !== "MeshComponent" || name !== "materialObject") {
+    if ((this.classId !== "MeshComponent" && this.classId !== "DynamicRuntimeMeshComponent") || name !== "materialObject") {
       return super.getVariable(name);
     }
     const guid = super.getVariable("materialGuid");
@@ -262,7 +262,7 @@ export class ActorComponent extends BObject {
   }
 
   override setVariable(name: string, value: unknown): void {
-    if (this.classId === "MeshComponent") {
+    if (this.classId === "MeshComponent" || this.classId === "DynamicRuntimeMeshComponent") {
       if (name === "materialObject") return;
       if (name === "materialGuid" && value !== super.getVariable(name)) {
         if (this.materialObject) this.materialObject.destroyed = true;

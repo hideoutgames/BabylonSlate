@@ -200,7 +200,8 @@ export interface ScriptHostServices {
   getRenderTargetTextureTarget?(guid: string): string | null;
   captureRenderTarget?(target: Actor): void;
   updateIllumination?(target: unknown): void;
-  refreshComponent?(component: ActorComponent): void;
+  refreshComponent?(component: ActorComponent, propertyName?: string): void;
+  dynamicMeshFunction?(component: ActorComponent, name: string, args: Record<string, unknown>): Record<string, unknown>;
   /** Apply live world-scene gravity from a Scene Gravity Set. */
   setWorldGravity?(gravity: { x: number; y: number; z: number }): void;
   findPathTo?(
@@ -1681,7 +1682,7 @@ export class ScriptHost {
     name: string,
     value: unknown,
   ): void {
-    this.services.refreshComponent?.(component);
+    this.services.refreshComponent?.(component, name);
     if (name === "text" && isTextComponent(component)) {
       this.fireComponentOwnerEvent(component, "onTextChanged", {
         text: value,
@@ -1696,6 +1697,10 @@ export class ScriptHost {
   ): Record<string, unknown> {
     const component = asActorComponent(target);
     if (!component || !name) return {};
+    if (component.classId === "DynamicRuntimeMeshComponent") {
+      if (!this.canInvokeOwner(component)) return { success: false };
+      return this.services.dynamicMeshFunction?.(component, name, args) ?? { success: false };
+    }
     if (name === "setText") {
       const text = String(args.text ?? "");
       component.setVariable("text", text);

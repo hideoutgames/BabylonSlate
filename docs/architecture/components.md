@@ -209,6 +209,12 @@ and a static four-line node-body preview as Custom GLSL.
 
 Not kit (single call site): `BrandIcon` (editor chrome bar project title).
 
+### Dynamic Runtime Mesh
+
+The shared type visual registry recognizes this component for object-reference pins and component chrome, using the existing mesh glyph.
+
+**Add Component → Rendering → Dynamic Runtime Mesh** reuses the component catalog and PropertyGrid in Scene Details and the Class/Prefab Inspector for Material, Enable Collision (off by default), collision filters and shadow controls. Geometry is created through component-targeted NodeGraph calls during Play; there is no mesh asset editor or Place Actors preset.
+
 ### Spline and river path editing
 
 Add Component > General > **Spline** exposes a general-purpose 3D path in Scene Details and the Class/Prefab Inspector. Spline and Water River share the typed Curvature, Path Point Count and XYZ point rows. Spline adds Closed Loop; Water River retains per-point Width Scale. Both use the same viewport handle lifecycle for live point dragging, midpoint insertion and double-click removal, with one history entry per released gesture in scenes and prefabs. Desktop control density is unchanged.
