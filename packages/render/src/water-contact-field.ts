@@ -176,11 +176,14 @@ export class WaterContactField {
   /** Candidate placements of every mesh that reaches the wave envelope near this surface. */
   private scan(): void {
     const seen = new Set<string>();
-    const box = this.surface.mesh.getBoundingInfo().boundingBox, margin = this.range;
+    const box = this.surface.mesh.getBoundingInfo().boundingBox, margin = this.range, amplitude = this.amplitude;
+    // The rendered surface's world box bounds every rest height, so most meshes need no height query.
+    const near = (min: Vector3, max: Vector3) => max.y >= box.minimumWorld.y - amplitude && min.y <= box.maximumWorld.y + amplitude
+      && (this.surface.unbounded || (max.x >= box.minimumWorld.x - margin && min.x <= box.maximumWorld.x + margin && max.z >= box.minimumWorld.z - margin && min.z <= box.maximumWorld.z + margin));
     const reaches = (min: Vector3, max: Vector3) => {
-      if (!this.surface.unbounded && (max.x < box.minimumWorld.x - margin || min.x > box.maximumWorld.x + margin || max.z < box.minimumWorld.z - margin || min.z > box.maximumWorld.z + margin)) return false;
+      if (!near(min, max)) return false;
       const level = this.levelIn(min, max);
-      return level !== null && min.y <= level + this.amplitude && max.y >= level - this.amplitude;
+      return level !== null && min.y <= level + amplitude && max.y >= level - amplitude;
     };
     const visit = (key: string, mesh: AbstractMesh, instance: number, matrix: ArrayLike<number>) => {
       seen.add(key);
@@ -191,22 +194,31 @@ export class WaterContactField {
         piece.mesh = mesh; piece.matrix.set(matrix); piece.stale = true;
       }
     };
+    const centre = new Vector3(), sphereMin = new Vector3(), sphereMax = new Vector3();
     for (const mesh of this.scene.meshes) {
       if (!isWaterContactMesh(mesh)) continue;
       const world = mesh.computeWorldMatrix();
+      const { minimumWorld: min, maximumWorld: max } = mesh.getBoundingInfo().boundingBox;
+      if (!near(min, max)) continue;
       if (mesh instanceof Mesh && mesh.hasThinInstances) {
+        // Thin instances (e.g. foliage) each place the geometry; the mesh bounds already cover them all.
         const positions = mesh.getVerticesData(VertexBuffer.PositionKind);
         if (!positions) continue;
         const local = geometryBounds(positions);
+        const localCentre = local.min.add(local.max).scaleInPlace(0.5), localRadius = Vector3.Distance(local.min, local.max) / 2;
         const instances = mesh.thinInstanceGetWorldMatrices();
         for (let i = 0; i < instances.length; i++) {
           instances[i]!.multiplyToRef(world, this.scratch);
+          const m = this.scratch.m, scale = Math.sqrt(Math.max(m[0]! ** 2 + m[1]! ** 2 + m[2]! ** 2, m[4]! ** 2 + m[5]! ** 2 + m[6]! ** 2, m[8]! ** 2 + m[9]! ** 2 + m[10]! ** 2));
+          Vector3.TransformCoordinatesToRef(localCentre, this.scratch, centre);
+          const radius = localRadius * scale;
+          sphereMin.set(centre.x - radius, centre.y - radius, centre.z - radius); sphereMax.set(centre.x + radius, centre.y + radius, centre.z + radius);
+          if (!near(sphereMin, sphereMax)) continue;
           const placed = worldBox(local.min, local.max, this.scratch);
-          if (reaches(placed.min, placed.max)) visit(`${mesh.uniqueId}:${i}`, mesh, i, this.scratch.m);
+          if (reaches(placed.min, placed.max)) visit(`${mesh.uniqueId}:${i}`, mesh, i, m);
         }
         continue;
       }
-      const { minimumWorld: min, maximumWorld: max } = mesh.getBoundingInfo().boundingBox;
       if (reaches(min, max)) visit(`${mesh.uniqueId}`, mesh, -1, world.m);
     }
     for (const [key, piece] of this.pieces) {
@@ -319,7 +331,9 @@ export class WaterContactField {
     const target = Math.max(MIN_CELL, Math.min(MAX_TARGET_CELL, this.range / 24));
     const margin = this.range + 2 * target;
     const needed = { minX: reach.minX - margin, minZ: reach.minZ - margin, maxX: reach.maxX + margin, maxZ: reach.maxZ + margin };
-    const cell = Math.max(target, Math.max(needed.maxX - needed.minX, needed.maxZ - needed.minZ) / MAX_CELLS);
+    // Widely spread objects coarsen the cells in doublings, so small moves keep the allocation.
+    const spread = Math.max(needed.maxX - needed.minX, needed.maxZ - needed.minZ) / (MAX_CELLS * target);
+    const cell = target * (spread > 1 ? 2 ** Math.ceil(Math.log2(spread)) : 1);
     const current = this.rect;
     const fits = current && this.cell === cell && current.minX <= needed.minX && current.minZ <= needed.minZ && current.maxX >= needed.maxX && current.maxZ >= needed.maxZ
       // Release most of an oversized field once objects leave.

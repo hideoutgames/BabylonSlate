@@ -54,8 +54,13 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     expect(result.waveTerrain.troughDifference).toBeLessThan(1);
     // A post through a lake gets a bright foam ring on its waterline in both styles, even at the
     // realistic preset's low Foam Amount, well above open water beyond its foam and ripples.
-    expect(result.contact.realistic.ring).toBeGreaterThan(result.contact.realistic.open + 30);
-    expect(result.contact.stylized.ring).toBeGreaterThan(result.contact.stylized.open + 30);
+    // On a cone the foam follows the rendered wave height: inward at a crest, outward in a trough.
+    for (const style of ["realistic", "stylized"] as const) {
+      const { ring, open, crest, trough } = result.contact[style];
+      expect(ring).toBeGreaterThan(open + 30);
+      expect(crest.inner).toBeGreaterThan(trough.inner + 20);
+      expect(trough.outer).toBeGreaterThan(crest.outer + 20);
+    }
   });
   test(`Water presets and a custom Water Surface material render on ${backend}`, async ({ page }, testInfo) => {
     test.setTimeout(120_000);

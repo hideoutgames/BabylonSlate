@@ -145,21 +145,30 @@ describe("Water contact field", () => {
     let clock = 0;
     vi.spyOn(performance, "now").mockImplementation(() => clock);
     const post = MeshBuilder.CreateBox("post", { width: 1, height: 6, depth: 1 }, scene);
+    const neighbour = MeshBuilder.CreateBox("neighbour", { width: 1, height: 6, depth: 1 }, scene);
+    neighbour.position.x = -3;
+    frame();
     const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 30, length: 30, waveScale: 1 }), { ...createDefaultWaterDefinition(), waveHeight: 1 });
     const contacts = contactsOf(lake);
     expect(contacts.texture).not.toBeNull();
     const uploads = [vi.spyOn(engine, "updateRawTexture"), vi.spyOn(engine, "createRawTexture")];
-    for (let frame = 1; frame <= 6; frame++) {
-      clock += 250; setSceneWaterTime(scene, frame * 0.4); updateSceneWater(scene);
+    for (let step = 1; step <= 6; step++) {
+      clock += 250; setSceneWaterTime(scene, step * 0.4); updateSceneWater(scene);
     }
     for (const upload of uploads) expect(upload).not.toHaveBeenCalled();
     expect(Math.abs(contactAt(contacts, 0.55, 0, 0))).toBeLessThan(0.15);
-    post.position.x = 6;
+    // A small move recomputes only the post's neighbourhood; the static neighbour inside it survives.
+    post.position.x = 0.3;
     frame(); clock += 50; updateSceneWater(scene);
     expect(uploads.some((upload) => upload.mock.calls.length > 0)).toBe(true);
-    expect(contactAt(contacts, 0.55, 0, 0)).toBeGreaterThan(view(contacts).range * 0.95);
+    expect(contactAt(contacts, 0.55, 0, 0)).toBeLessThan(-0.15);
+    expect(Math.abs(contactAt(contacts, 0.85, 0, 0))).toBeLessThan(0.15);
+    expect(Math.abs(contactAt(contacts, -2.45, 0, 0))).toBeLessThan(0.15);
+    post.position.x = 6;
+    frame(); clock += 50; updateSceneWater(scene);
+    expect(contactAt(contacts, 0.85, 0, 0)).toBeGreaterThan(1);
     expect(Math.abs(contactAt(contacts, 6.55, 0, 0))).toBeLessThan(0.15);
-    post.position.y = 20;
+    for (const mesh of [post, neighbour]) mesh.position.y = 20;
     frame(); clock += 250; updateSceneWater(scene);
     expect(contacts.texture).toBeNull();
   });

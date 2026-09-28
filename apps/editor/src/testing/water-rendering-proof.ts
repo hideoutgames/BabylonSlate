@@ -92,19 +92,40 @@ export async function runWaterRenderingProof(backend: "webgl2" | "webgpu") {
     // Objects crossing the water: a post and a sloped cone, seen in perspective at two wave phases.
     const post = MeshBuilder.CreateBox("contact-post", { width: 1, height: 4, depth: 1 }, scene);
     const cone = MeshBuilder.CreateCylinder("contact-cone", { height: 3, diameterBottom: 3, diameterTop: 0.4, tessellation: 48 }, scene);
+    // Radius (3 - y) / 2: its waterline shrinks as a crest rises and widens in a trough.
+    const spire = MeshBuilder.CreateCylinder("contact-spire", { height: 6, diameterBottom: 6, diameterTop: 0, tessellation: 64 }, scene);
     const dark = new StandardMaterial("contact-dark", scene);
     dark.diffuseColor = new Color3(0.08, 0.07, 0.06); dark.specularColor = Color3.Black();
-    post.material = cone.material = dark;
+    post.material = cone.material = spire.material = dark;
     // Placement settles like a rendered frame would, before each surface builds its contacts.
-    const place = (x: number, z: number, withCone: boolean) => {
-      post.position.set(x, 0, z); cone.position.set(1.8, 0, -0.2); cone.isVisible = withCone;
-      post.computeWorldMatrix(true); cone.computeWorldMatrix(true);
+    const place = (at: "perspective" | "post" | "spire") => {
+      post.position.set(at === "post" ? 0 : -1.6, 0, at === "post" ? 0 : 0.4); cone.position.set(1.8, 0, -0.2);
+      post.isVisible = at !== "spire"; cone.isVisible = at === "perspective"; spire.isVisible = at === "spire";
+      for (const mesh of [post, cone, spire]) mesh.computeWorldMatrix(true);
     };
-    const contact: Record<string, { ring: number; open: number }> = {};
+    const topDown = () => {
+      camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
+      camera.orthoLeft = -4; camera.orthoRight = 4; camera.orthoTop = 2.5; camera.orthoBottom = -2.5;
+      camera.alpha = -Math.PI / 2; camera.beta = 0.01; camera.radius = 24;
+      camera.setTarget(Vector3.Zero(), false, false, true);
+    };
+    // Mean brightness between two distances (metres, 80 pixels each) from the view centre.
+    const band = (pixels: number[], from: number, to: number, square = false) => {
+      let sum = 0, count = 0;
+      for (let y = 0; y < canvas.height; y++) for (let x = 0; x < canvas.width; x++) {
+        const dx = Math.abs(x + 0.5 - canvas.width / 2) / 80, dy = Math.abs(y + 0.5 - canvas.height / 2) / 80;
+        const reach = square ? Math.max(dx, dy) : Math.hypot(dx, dy);
+        if (reach <= from || reach >= to) continue;
+        const i = (y * canvas.width + x) * 4;
+        sum += (pixels[i]! + pixels[i + 1]! + pixels[i + 2]!) / 3; count++;
+      }
+      return sum / count;
+    };
+    const contact: Record<string, { ring: number; open: number; crest: { inner: number; outer: number }; trough: { inner: number; outer: number } }> = {};
     for (const style of ["realistic", "stylized"] as const) {
       const water = { ...createDefaultWaterDefinition(style), sparkles: 0 };
       const body = normalizeWaterBody({ width: 28, length: 24, waveScale: 1 });
-      place(-1.6, 0.4, true);
+      place("perspective");
       const lake = createWaterMesh(scene, "contact-lake", body, water);
       camera.mode = Camera.PERSPECTIVE_CAMERA;
       camera.setTarget(Vector3.Zero(), false, false, true);
@@ -115,27 +136,33 @@ export async function runWaterRenderingProof(backend: "webgl2" | "webgpu") {
       }
       lake.dispose();
       // Top-down, the post's waterline ring must outshine open water beyond its foam and ripples.
-      place(0, 0, false);
-      const top = createWaterMesh(scene, "contact-top", body, water);
-      camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
-      camera.orthoLeft = -4; camera.orthoRight = 4; camera.orthoTop = 2.5; camera.orthoBottom = -2.5;
-      camera.alpha = -Math.PI / 2; camera.beta = 0.01; camera.radius = 24;
-      camera.setTarget(Vector3.Zero(), false, false, true);
+      place("post");
+      const flat = createWaterMesh(scene, "contact-top", body, water);
+      topDown();
       setSceneWaterTime(scene, 2.2);
       const shot = await capture();
       evidence[`${style}-contact-top`] = shot.png;
-      // 80 pixels per metre; the post covers 40 pixels either side of the centre.
-      let ring = 0, ringCount = 0, open = 0, openCount = 0;
-      for (let y = 0; y < canvas.height; y++) for (let x = 0; x < canvas.width; x++) {
-        const reach = Math.max(Math.abs(x + 0.5 - canvas.width / 2), Math.abs(y + 0.5 - canvas.height / 2)) / 80;
-        const i = (y * canvas.width + x) * 4, value = (shot.pixels[i]! + shot.pixels[i + 1]! + shot.pixels[i + 2]!) / 3;
-        if (reach > 0.56 && reach < 0.7) { ring += value; ringCount++; }
-        else if (reach > 2.2 && reach < 2.45) { open += value; openCount++; }
-      }
-      contact[style] = { ring: ring / ringCount, open: open / openCount };
-      top.dispose();
+      const ring = band(shot.pixels, 0.56, 0.7, true), open = band(shot.pixels, 2.2, 2.45, true);
+      flat.dispose();
+      // Long, tall swell lifts the water around the spire almost uniformly: its foam ring must follow
+      // the rendered height inward at a crest and outward in a trough, without rebuilding contacts.
+      place("spire");
+      const swell = { ...water, waveHeight: 1.2, waveLength: 100, choppiness: 0, crestFoam: 0 };
+      const heights = Array.from({ length: 80 }, (_, i) => ({ time: i * 0.25, height: sampleWaterSurface(swell, body, { x: 0, y: 0, z: 0 }, i * 0.25).height }));
+      const high = heights.reduce((a, b) => a.height > b.height ? a : b), low = heights.reduce((a, b) => a.height < b.height ? a : b);
+      const rising = createWaterMesh(scene, "contact-swell", body, swell);
+      const measure = async (time: number, name: string) => {
+        setSceneWaterTime(scene, time);
+        const frame = await capture();
+        evidence[`${style}-spire-${name}`] = frame.png;
+        const inner = (3 - high.height) / 2, outer = (3 - low.height) / 2;
+        return { inner: band(frame.pixels, inner + 0.05, inner + 0.3), outer: band(frame.pixels, outer + 0.05, outer + 0.3) };
+      };
+      const crest = await measure(high.time, "crest"), trough = await measure(low.time, "trough");
+      rising.dispose();
+      contact[style] = { ring, open, crest, trough };
     }
-    post.dispose(); cone.dispose(); dark.dispose();
+    post.dispose(); cone.dispose(); spire.dispose(); dark.dispose();
     camera.mode = Camera.PERSPECTIVE_CAMERA;
     camera.setTarget(Vector3.Zero(), false, false, true);
     camera.alpha = -Math.PI / 2; camera.beta = 1.03; camera.radius = 24;
