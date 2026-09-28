@@ -25,7 +25,7 @@ export async function clickListedTestProject(page: Page): Promise<void> {
   await listedLegacy.click();
 }
 
-/** Homepage → Create Project dialog (test-mode name TestProject) → editor chrome.
+/** Homepage → Create Project dialog (named TestProject) → editor chrome.
  *  If TestProject is already listed (shared OPFS), open it instead of Create.
  */
 export async function openTestProject(
@@ -55,9 +55,7 @@ export async function openTestProject(
   await page.getByTestId("create-project").click();
   await expect(page.getByTestId("create-project-dialog")).toBeVisible();
   await page.getByTestId("create-project-empty").click();
-  await expect(page.getByTestId("create-project-name")).toHaveValue(
-    "TestProject",
-  );
+  await page.getByTestId("create-project-name").fill("TestProject");
   await page.getByTestId("create-project-submit").click();
   await waitForEditorInteractive(page);
 }
@@ -73,6 +71,7 @@ export async function submitCreateOrOpenListed(
   page: Page,
   listedName = "TestProject",
 ): Promise<void> {
+  await page.getByTestId("create-project-name").fill(listedName);
   const submit = page.getByTestId("create-project-submit");
   if (await submit.isEnabled()) {
     await submit.click();

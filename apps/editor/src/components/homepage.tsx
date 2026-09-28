@@ -31,7 +31,6 @@ import {
 import { SearchInput } from "@babylonslate/editor-kit";
 import {
   getHostPlatform,
-  isTestModeEnabled,
   pickImportFiles,
 } from "@babylonslate/vfs";
 import { Alert, AlertDescription } from "@babylonslate/ui/components/alert";
@@ -77,7 +76,7 @@ import {
 } from "../lib/listed-projects";
 import {
   createProjectNameIssue,
-  defaultCreateProjectDisplayName,
+  randomProjectName,
   normalizeProjectFolderName,
   type CreateProjectOptions,
 } from "../lib/create-project";
@@ -243,6 +242,8 @@ export function Homepage({
   const [removeTarget, setRemoveTarget] = useState<ListedProject | null>(null);
   const [removeOpen, setRemoveOpen] = useState(false);
   const [name, setName] = useState("");
+  // Shown as the Name placeholder; used when the field is left empty.
+  const [suggestedName, setSuggestedName] = useState("");
   const [appearance, setAppearance] = useState<ProjectAppearance>(
     DEFAULT_PROJECT_APPEARANCE,
   );
@@ -252,12 +253,13 @@ export function Homepage({
   const [blackBars, setBlackBars] = useState(false);
   const [pickFolder, setPickFolder] = useState(false);
   const hostPlatform = getHostPlatform();
+  const createName = name.trim() || suggestedName;
   const nameIssue = editTarget
     ? name.trim()
       ? null
       : "Name Required"
     : createProjectNameIssue(
-        name,
+        createName,
         projects.map((project) => project.name),
       );
   const deleting =
@@ -297,12 +299,8 @@ export function Homepage({
   const create = (id = "blank", choose = true) => {
     if (busyRef.current) return;
     setEditTarget(null);
-    setName(
-      defaultCreateProjectDisplayName(
-        isTestModeEnabled(),
-        projects.map((project) => project.name),
-      ),
-    );
+    setName("");
+    setSuggestedName(randomProjectName(projects.map((project) => project.name)));
     setAppearance(DEFAULT_PROJECT_APPEARANCE);
     setTemplateId(id);
     setChooseTemplate(choose);
@@ -732,6 +730,7 @@ export function Homepage({
         busy={busy}
         name={name}
         onNameChange={setName}
+        suggestedName={editTarget ? undefined : suggestedName}
         nameIssue={nameIssue}
         appearance={appearance}
         onAppearanceChange={setAppearance}
@@ -767,7 +766,7 @@ export function Homepage({
                     blackBars,
                     ...(hostPlatform === "web" ? {} : { pickFolder }),
                   };
-                  const folderName = normalizeProjectFolderName(name);
+                  const folderName = normalizeProjectFolderName(createName);
                   if (!folderName) return;
                   if (
                     templateId === "blank" ||
@@ -785,7 +784,7 @@ export function Homepage({
                       options,
                     );
                   recordTemplateUse(templateId);
-                }, name.trim());
+                }, createName);
               }
               setCreateOpen(false);
             },

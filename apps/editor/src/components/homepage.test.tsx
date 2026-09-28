@@ -265,29 +265,40 @@ describe("Slate project browser", () => {
     );
   });
 
-  it("suggests a free random name and rejects empty or duplicate names", () => {
-    renderHomepage({ projects: [listedProject("Orbit", "opfs")] });
+  it("creates the suggested name when the field is left empty", async () => {
+    const onCreateEmpty = vi.fn(async () => {});
+    renderHomepage({ projects: [listedProject("Orbit", "opfs")], onCreateEmpty });
     createDialog();
     const name = screen.getByTestId("create-project-name") as HTMLInputElement;
-    expect(name.value).toMatch(/^[A-Z][a-z]+ [A-Z][a-z]+ [A-Z][a-z]+$/);
+    expect(name.value).toBe("");
+    expect(name.placeholder).toMatch(/^[A-Z][a-z]+ [A-Z][a-z]+ [A-Z][a-z]+$/);
+    expect(screen.queryByTestId("create-project-name-issue")).toBeNull();
+    fireEvent.click(screen.getByTestId("create-project-submit"));
+    await waitFor(() =>
+      expect(onCreateEmpty).toHaveBeenCalledWith(
+        name.placeholder,
+        expect.any(Object),
+      ),
+    );
+  });
+
+  it("flags a duplicate name while typing and clears it for a free name", () => {
+    renderHomepage({ projects: [listedProject("Orbit", "opfs")] });
+    createDialog();
+    const name = screen.getByTestId("create-project-name");
+    fireEvent.change(name, { target: { value: "orbit" } });
+    expect(screen.getByTestId("create-project-name-issue").textContent).toMatch(
+      /already exists/i,
+    );
+    expect(screen.getByTestId("create-project-submit")).toHaveProperty(
+      "disabled",
+      true,
+    );
+    fireEvent.change(name, { target: { value: "Orbit 2" } });
+    expect(screen.queryByTestId("create-project-name-issue")).toBeNull();
     expect(screen.getByTestId("create-project-submit")).toHaveProperty(
       "disabled",
       false,
-    );
-    fireEvent.change(name, { target: { value: "" } });
-    expect(screen.getByTestId("create-project-submit")).toHaveProperty(
-      "disabled",
-      true,
-    );
-    fireEvent.change(screen.getByTestId("create-project-name"), {
-      target: { value: "Orbit" },
-    });
-    expect(screen.getByTestId("create-project-submit")).toHaveProperty(
-      "disabled",
-      true,
-    );
-    expect(screen.getByTestId("create-project-name-issue").textContent).toMatch(
-      /already exists/i,
     );
   });
 
