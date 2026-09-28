@@ -496,7 +496,7 @@ export abstract class Subsystem extends BObject {
 }
 
 /** Game Instance parity hooks; `onGameEnd` is the subsystem's On End. */
-export type GameSubsystemHooks = LifecycleHooks<GameSubsystem> & {
+export type GameSubsystemHooks = Omit<LifecycleHooks<GameSubsystem>, "onDestroyed"> & {
   onGameEnd?: (self: GameSubsystem) => void;
   onSceneStartLoading?: (self: GameSubsystem, sceneName: string) => void;
   onSceneFinishLoading?: (self: GameSubsystem, sceneName: string) => void;
@@ -534,17 +534,17 @@ export class GameSubsystem extends Subsystem {
   }
 }
 
-export type SceneSubsystemHooks = LifecycleHooks<SceneSubsystem> & {
+export type SceneSubsystemHooks = Omit<LifecycleHooks<SceneSubsystem>, "onDestroyed"> & {
   onEnd?: (self: SceneSubsystem) => void;
   onSceneLoaded?: (self: SceneSubsystem, sceneName: string) => void;
   onStreamedSceneLoaded?: (
     self: SceneSubsystem,
-    streamingActor: Actor,
+    streamingActor: SceneStreamingActor,
     scene: Scene,
   ) => void;
   onStreamedSceneUnloaded?: (
     self: SceneSubsystem,
-    streamingActor: Actor,
+    streamingActor: SceneStreamingActor,
     scene: Scene,
   ) => void;
   onSceneLayerAdded?: (self: SceneSubsystem, layer: SceneLayer) => void;
@@ -577,13 +577,13 @@ export class SceneSubsystem extends Subsystem {
     if (!this.ended) this.sceneHooks.onSceneLoaded?.(this, sceneName);
   }
 
-  callOnStreamedSceneLoaded(streamingActor: Actor, scene: Scene): void {
+  callOnStreamedSceneLoaded(streamingActor: SceneStreamingActor, scene: Scene): void {
     if (!this.ended) {
       this.sceneHooks.onStreamedSceneLoaded?.(this, streamingActor, scene);
     }
   }
 
-  callOnStreamedSceneUnloaded(streamingActor: Actor, scene: Scene): void {
+  callOnStreamedSceneUnloaded(streamingActor: SceneStreamingActor, scene: Scene): void {
     if (!this.ended) {
       this.sceneHooks.onStreamedSceneUnloaded?.(this, streamingActor, scene);
     }

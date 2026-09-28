@@ -164,6 +164,11 @@ const END_EVENT: EngineScriptEvent = {
 
 /** Game Instance lifecycle; GameSubsystem shares it for parity. */
 const GAME_INSTANCE_EVENTS: readonly EngineScriptEvent[] = [
+  {
+    name: "Scalability Changed",
+    eventType: "flow.event.scalabilityChanged",
+    exportName: "onScalabilityChanged",
+  },
   INIT_EVENT,
   TICK_EVENT,
   END_EVENT,
@@ -285,14 +290,15 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
     functions: [GET_SCENE_LOADING_PROGRESS, GET_SCENE_REFERENCE],
     nativeEvents: GAME_INSTANCE_EVENTS,
   },
+  // Subsystems reach Get Scene Loading Progress / Get Scene Reference through
+  // the lineage-gated `gameInstance.*` nodes; catalog `functions` would add
+  // Call rows to every host.
   {
     classId: "GameSubsystem",
-    functions: [GET_SCENE_LOADING_PROGRESS, GET_SCENE_REFERENCE],
     nativeEvents: GAME_INSTANCE_EVENTS,
   },
   {
     classId: "SceneSubsystem",
-    functions: [GET_SCENE_REFERENCE],
     nativeEvents: SCENE_SUBSYSTEM_EVENTS,
   },
   {

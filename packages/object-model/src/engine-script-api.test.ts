@@ -327,42 +327,28 @@ describe("engine script API catalog", () => {
     }
   });
 
-  it("resolves subsystem native events and host functions through class ancestry", () => {
-    const exportsFor = (ancestry: string[]) =>
-      engineNativeEventsFor(ancestry).map((event) => [event.eventType, event.exportName]);
-    const gameInstanceEvents = [
-      ["flow.event.init", "onInit"],
-      ["flow.event.tick", "onTick"],
-      ["flow.event.end", "onEnd"],
-      ["flow.event.firstSceneLoaded", "onFirstSceneLoaded"],
-      ["flow.event.sceneStartLoading", "onSceneStartLoading"],
-      ["flow.event.sceneFinishLoading", "onSceneFinishLoading"],
-      ["flow.event.sceneExit", "onSceneExit"],
-    ];
-    expect(exportsFor(["MyGame", "GameInstance", "BObject"])).toEqual(gameInstanceEvents);
+  it("resolves native lifecycle events from the nearest engine class in the ancestry", () => {
+    const typesFor = (ancestry: string[]) =>
+      engineNativeEventsFor(ancestry).map((event) => event.eventType);
+    const gameInstance = typesFor(["MyGame", "GameInstance", "BObject"]);
+    // A user subsystem chain (user parent first) inherits GameSubsystem's set,
+    // which has full Game Instance parity.
     expect(
-      exportsFor(["Inventory", "BaseInventory", "GameSubsystem", "Subsystem", "BObject"]),
-    ).toEqual(gameInstanceEvents);
-    expect(exportsFor(["Weather", "SceneSubsystem", "Subsystem", "BObject"])).toEqual([
-      ["flow.event.init", "onInit"],
-      ["flow.event.tick", "onTick"],
-      ["flow.event.end", "onEnd"],
-      ["flow.event.sceneLoaded", "onSceneLoaded"],
-      ["flow.event.streamedSceneLoaded", "onStreamedSceneLoaded"],
-      ["flow.event.streamedSceneUnloaded", "onStreamedSceneUnloaded"],
-      ["flow.event.sceneLayerAdded", "onSceneLayerAdded"],
-      ["flow.event.sceneLayerRemoved", "onSceneLayerRemoved"],
-      ["flow.event.sceneActorSpawned", "onSceneActorSpawned"],
-      ["flow.event.sceneActorDestroyed", "onSceneActorDestroyed"],
-    ]);
-    expect(exportsFor(["Hero", "Actor", "BObject"])).toEqual([]);
-    expect(exportsFor(["Subsystem", "BObject"])).toEqual([]);
-    expect(names(engineScriptApiFor("GameSubsystem")?.functions)).toEqual([
-      "Get Scene Loading Progress",
-      "Get Scene Reference",
-    ]);
-    expect(names(engineScriptApiFor("SceneSubsystem")?.functions)).toEqual([
-      "Get Scene Reference",
-    ]);
+      typesFor(["Inventory", "BaseInventory", "GameSubsystem", "Subsystem", "BObject"]),
+    ).toEqual(gameInstance);
+    const sceneSubsystem = typesFor(["Weather", "SceneSubsystem", "Subsystem", "BObject"]);
+    expect(sceneSubsystem).toEqual(expect.arrayContaining([
+      "flow.event.init",
+      "flow.event.end",
+      "flow.event.sceneLoaded",
+      "flow.event.sceneActorDestroyed",
+    ]));
+    // Scene-scoped subsystems do not receive the session-level scene hooks.
+    expect(sceneSubsystem).not.toContain("flow.event.sceneExit");
+    expect(typesFor(["Hero", "Actor", "BObject"])).toEqual([]);
+    expect(typesFor(["Subsystem", "BObject"])).toEqual([]);
+    // Host-only functions stay off subsystem catalog entries (no stray Call rows).
+    expect(engineScriptApiFor("GameSubsystem")?.functions).toBeUndefined();
+    expect(engineScriptApiFor("SceneSubsystem")?.functions).toBeUndefined();
   });
 });

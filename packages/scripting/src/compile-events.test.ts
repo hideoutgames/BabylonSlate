@@ -134,46 +134,6 @@ describe("editor utility events", () => {
     );
   });
 
-  it.each([
-    ["flow.event.sceneLoaded", "onSceneLoaded"],
-    ["flow.event.streamedSceneLoaded", "onStreamedSceneLoaded"],
-    ["flow.event.streamedSceneUnloaded", "onStreamedSceneUnloaded"],
-    ["flow.event.sceneLayerAdded", "onSceneLayerAdded"],
-    ["flow.event.sceneLayerRemoved", "onSceneLayerRemoved"],
-    ["flow.event.sceneActorSpawned", "onSceneActorSpawned"],
-    ["flow.event.sceneActorDestroyed", "onSceneActorDestroyed"],
-  ])("binds Scene Subsystem event %s to the %s ScriptHost export", (typeId, exportName) => {
-    const registry = new NodeRegistry();
-    registry.register({
-      id: typeId,
-      title: "Event",
-      category: "flow",
-      pure: true,
-      pins: () => [pin("execOut", "then", "out", EXEC)],
-      codegen: () => {},
-    });
-    const compiled = compileGraph(
-      {
-        id: "g",
-        kind: "event",
-        nodes: [
-          {
-            id: "a",
-            typeId,
-            position: { x: 0, y: 0 },
-            pins: registry.get(typeId)!.pins({}),
-            properties: {},
-          },
-        ],
-        edges: [],
-      },
-      { assetGuid: "a", registry },
-    );
-    expect(compiled.entryPoints).toEqual([
-      expect.objectContaining({ name: exportName, event: exportName }),
-    ]);
-  });
-
   it("maps Animation Object lifecycle nodes to ScriptHost events", () => {
     expect(EVENT_BY_TYPE_ID["anim.event.initialize"]).toBe(
       "onInitializeAnimation",

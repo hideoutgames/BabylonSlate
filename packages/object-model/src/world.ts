@@ -140,17 +140,17 @@ export class World {
   }
 
   /**
-   * Install the session's GameSubsystems, kept in class-id order. Call once,
-   * before `start()`. Subsystems installed after `start()` run On Init
-   * immediately, after the Game Instance's.
+   * Install the session's GameSubsystems, kept in class-id order. Must run
+   * before `start()`: their On Init precedes the Game Instance's, which a late
+   * install could no longer honour.
    */
   setGameSubsystems(subsystems: readonly GameSubsystem[]): void {
+    if (this.started) {
+      throw new Error("GameSubsystems must be installed before World.start()");
+    }
     this.gameSubsystems = [...subsystems].sort((a, b) =>
       compareClassIds(a.classId, b.classId),
     );
-    if (this.started) {
-      for (const subsystem of [...this.gameSubsystems]) subsystem.callOnCreation();
-    }
   }
 
   getGameSubsystems(): readonly GameSubsystem[] {
@@ -183,14 +183,14 @@ export class World {
   }
 
   /** Host notification: a streamed sub-scene became ready in the main scene. */
-  notifyStreamedSceneLoaded(streamingActor: Actor, scene: Scene): void {
+  notifyStreamedSceneLoaded(streamingActor: SceneStreamingActor, scene: Scene): void {
     for (const subsystem of this.liveSceneSubsystems()) {
       subsystem.callOnStreamedSceneLoaded(streamingActor, scene);
     }
   }
 
   /** Host notification: a streamed sub-scene was retired. */
-  notifyStreamedSceneUnloaded(streamingActor: Actor, scene: Scene): void {
+  notifyStreamedSceneUnloaded(streamingActor: SceneStreamingActor, scene: Scene): void {
     for (const subsystem of this.liveSceneSubsystems()) {
       subsystem.callOnStreamedSceneUnloaded(streamingActor, scene);
     }
@@ -386,7 +386,11 @@ export class World {
     variables?: Record<string, unknown>;
     hooks?: LifecycleHooks;
   }): Scene {
-    this.clearCurrentScene();
+    // A SceneSubsystem's On End may install a scene re-entrantly; retire it too
+    // so no main Scene (or its subsystems) is orphaned without End.
+    do {
+      this.clearCurrentScene();
+    } while (this.currentScene);
     const scene = new Scene({
       ...options,
       guidFactory: this.guidFactory,
@@ -428,14 +432,16 @@ export class World {
    * On End in reverse order while the Scene is still current, then the Scene.
    */
   private clearCurrentScene(): void {
+    const scene = this.currentScene;
     const subsystems = this.sceneSubsystems;
     for (let index = subsystems.length - 1; index >= 0; index--) {
       subsystems[index]!.callOnEnd();
     }
+    // An On End hook may have changed scene re-entrantly: only clear the slots
+    // this call still owns, never the replacement scene or its subsystems.
     if (this.sceneSubsystems === subsystems) this.sceneSubsystems = [];
-    const scene = this.currentScene;
     if (!scene) return;
-    this.currentScene = null;
+    if (this.currentScene === scene) this.currentScene = null;
     if (scene.destroyed) return;
     scene.destroyed = true;
     scene.callOnDestroyed();

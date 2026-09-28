@@ -3,6 +3,7 @@ import { ClassRegistry } from "./class-registry";
 import {
   GameInstance,
   Scene,
+  SceneStreamingActor,
   type GameSubsystem,
   type SceneSubsystemHooks,
   type Subsystem,
@@ -697,6 +698,51 @@ describe("World subsystems", () => {
     expect(world.getSceneSubsystems()).toEqual([]);
   });
 
+  it("keeps the replacement scene when a SceneSubsystem's On End changes scene re-entrantly", () => {
+    const events: string[] = [];
+    const world: World = new World({
+      seed: 1,
+      dt: 1 / 60,
+      classRegistry: subsystemRegistry([["Weather", "SceneSubsystem"]]),
+      sceneSubsystemHooksFor: () => ({
+        onCreation: (self) => events.push(`init:${self.guid}`),
+        onEnd: (self) => {
+          events.push(`end:${self.guid}`);
+          if (self.scene.assetGuid === "scene-a") {
+            world.createScene({ assetGuid: "scene-b", sceneName: "B" });
+          }
+        },
+      }),
+    });
+    world.setSceneSubsystemClasses(["Weather"]);
+    world.createScene({ assetGuid: "scene-a", sceneName: "A" });
+
+    world.exitActiveScene();
+    const replacement = world.currentScene;
+    expect(replacement?.assetGuid).toBe("scene-b");
+    expect(replacement?.destroyed).toBe(false);
+    expect(guids(world.findSubsystems("Weather"))).toEqual(["scene-subsystem:Weather:2"]);
+
+    // A re-entrant scene installed during createScene's own teardown is retired too.
+    world.createScene({ assetGuid: "scene-a", sceneName: "A" });
+    world.createScene({ assetGuid: "scene-c", sceneName: "C" });
+    expect(world.currentScene?.assetGuid).toBe("scene-c");
+    expect(guids(world.getSceneSubsystems())).toEqual(["scene-subsystem:Weather:5"]);
+    expect(events).toEqual([
+      "init:scene-subsystem:Weather:1",
+      "end:scene-subsystem:Weather:1", "init:scene-subsystem:Weather:2",
+      "end:scene-subsystem:Weather:2", "init:scene-subsystem:Weather:3",
+      "end:scene-subsystem:Weather:3", "init:scene-subsystem:Weather:4",
+      "end:scene-subsystem:Weather:4", "init:scene-subsystem:Weather:5",
+    ]);
+  });
+
+  it("rejects installing GameSubsystems after start, which would reorder On Init", () => {
+    const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
+    world.start();
+    expect(() => world.setGameSubsystems([])).toThrow(/before World\.start/);
+  });
+
   it("announces world actors and SceneLayers to live SceneSubsystems and pairs removals with arrivals", () => {
     const events: string[] = [];
     const world = new World({
@@ -720,6 +766,7 @@ describe("World subsystems", () => {
     world.createSceneLayer({ guid: "menu", assetGuid: "menu-asset", zOrder: 2 });
     world.spawnActorNow(world.createActor({ classId: "SceneLayerActor", guid: "button", sceneLayerId: "menu" }));
     const streamer = world.createActor({ classId: "SceneStreamingActor", guid: "streamer" });
+    if (!(streamer instanceof SceneStreamingActor)) throw new Error("expected a SceneStreamingActor");
     world.spawnActorNow(streamer);
     const streamed = new Scene({ guid: "stream:streamer:1", assetGuid: "sub", sceneName: "Sub" });
     world.notifyStreamedSceneLoaded(streamer, streamed);
