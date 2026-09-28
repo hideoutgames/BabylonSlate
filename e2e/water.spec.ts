@@ -38,6 +38,7 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       await testInfo.attach(name, { body: bytes, contentType: "image/png" });
       await import("node:fs/promises").then((fs) => fs.writeFile(testInfo.outputPath(name + ".png"), bytes));
     }
+    await testInfo.attach("metrics", { body: JSON.stringify({ ...result, evidence: undefined }), contentType: "application/json" });
     expect(errors).toEqual([]);
     expect(result.differences.realistic).toBeLessThan(2);
     expect(result.differences.stylized).toBeLessThan(2);
@@ -51,6 +52,10 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     expect(result.waveTerrain.troughHeight).toBeLessThan(-0.4);
     expect(result.waveTerrain.crestDifference).toBeGreaterThan(10);
     expect(result.waveTerrain.troughDifference).toBeLessThan(1);
+    // A post through a lake gets a bright foam ring on its waterline in both styles, even at the
+    // realistic preset's low Foam Amount, well above open water beyond its foam and ripples.
+    expect(result.contact.realistic.ring).toBeGreaterThan(result.contact.realistic.open + 30);
+    expect(result.contact.stylized.ring).toBeGreaterThan(result.contact.stylized.open + 30);
   });
   test(`Water presets and a custom Water Surface material render on ${backend}`, async ({ page }, testInfo) => {
     test.setTimeout(120_000);

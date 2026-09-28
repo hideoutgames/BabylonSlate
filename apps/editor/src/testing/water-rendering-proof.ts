@@ -1,4 +1,4 @@
-import { Camera, DirectionalLight, Engine, Vector3 } from "@babylonjs/core";
+import { Camera, Color3, DirectionalLight, Engine, MeshBuilder, StandardMaterial, Vector3 } from "@babylonjs/core";
 import { createDefaultWaterDefinition, normalizeWaterBody, sampleWaterSurface } from "@babylonslate/core";
 import { createAppWebGpuEngine, createParticlePreviewScene, createWaterMesh, setSceneWaterTime, updateSceneWater } from "@babylonslate/render";
 import { createLandscapeMesh } from "../../../../packages/render/src/landscape-mesh";
@@ -89,6 +89,56 @@ export async function runWaterRenderingProof(backend: "webgl2" | "webgpu") {
       camera.setTarget(Vector3.Zero(), false, false, true);
       camera.alpha = -Math.PI / 2; camera.beta = 1.03; camera.radius = 24;
     }
+    // Objects crossing the water: a post and a sloped cone, seen in perspective at two wave phases.
+    const post = MeshBuilder.CreateBox("contact-post", { width: 1, height: 4, depth: 1 }, scene);
+    const cone = MeshBuilder.CreateCylinder("contact-cone", { height: 3, diameterBottom: 3, diameterTop: 0.4, tessellation: 48 }, scene);
+    const dark = new StandardMaterial("contact-dark", scene);
+    dark.diffuseColor = new Color3(0.08, 0.07, 0.06); dark.specularColor = Color3.Black();
+    post.material = cone.material = dark;
+    // Placement settles like a rendered frame would, before each surface builds its contacts.
+    const place = (x: number, z: number, withCone: boolean) => {
+      post.position.set(x, 0, z); cone.position.set(1.8, 0, -0.2); cone.isVisible = withCone;
+      post.computeWorldMatrix(true); cone.computeWorldMatrix(true);
+    };
+    const contact: Record<string, { ring: number; open: number }> = {};
+    for (const style of ["realistic", "stylized"] as const) {
+      const water = { ...createDefaultWaterDefinition(style), sparkles: 0 };
+      const body = normalizeWaterBody({ width: 28, length: 24, waveScale: 1 });
+      place(-1.6, 0.4, true);
+      const lake = createWaterMesh(scene, "contact-lake", body, water);
+      camera.mode = Camera.PERSPECTIVE_CAMERA;
+      camera.setTarget(Vector3.Zero(), false, false, true);
+      camera.alpha = -Math.PI / 2 + 0.35; camera.beta = 1.05; camera.radius = 9;
+      for (const [phase, time] of [["a", 2.2], ["b", 4.1]] as const) {
+        setSceneWaterTime(scene, time);
+        evidence[`${style}-contact-${phase}`] = (await capture()).png;
+      }
+      lake.dispose();
+      // Top-down, the post's waterline ring must outshine open water beyond its foam and ripples.
+      place(0, 0, false);
+      const top = createWaterMesh(scene, "contact-top", body, water);
+      camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
+      camera.orthoLeft = -4; camera.orthoRight = 4; camera.orthoTop = 2.5; camera.orthoBottom = -2.5;
+      camera.alpha = -Math.PI / 2; camera.beta = 0.01; camera.radius = 24;
+      camera.setTarget(Vector3.Zero(), false, false, true);
+      setSceneWaterTime(scene, 2.2);
+      const shot = await capture();
+      evidence[`${style}-contact-top`] = shot.png;
+      // 80 pixels per metre; the post covers 40 pixels either side of the centre.
+      let ring = 0, ringCount = 0, open = 0, openCount = 0;
+      for (let y = 0; y < canvas.height; y++) for (let x = 0; x < canvas.width; x++) {
+        const reach = Math.max(Math.abs(x + 0.5 - canvas.width / 2), Math.abs(y + 0.5 - canvas.height / 2)) / 80;
+        const i = (y * canvas.width + x) * 4, value = (shot.pixels[i]! + shot.pixels[i + 1]! + shot.pixels[i + 2]!) / 3;
+        if (reach > 0.56 && reach < 0.7) { ring += value; ringCount++; }
+        else if (reach > 2.2 && reach < 2.45) { open += value; openCount++; }
+      }
+      contact[style] = { ring: ring / ringCount, open: open / openCount };
+      top.dispose();
+    }
+    post.dispose(); cone.dispose(); dark.dispose();
+    camera.mode = Camera.PERSPECTIVE_CAMERA;
+    camera.setTarget(Vector3.Zero(), false, false, true);
+    camera.alpha = -Math.PI / 2; camera.beta = 1.03; camera.radius = 24;
     // A hidden landscape still supplies the water field. The visible crest must
     // cross its elevated floor, while a trough reveals the unchanged background.
     for (const mesh of scene.meshes) mesh.isVisible = false;
@@ -123,7 +173,7 @@ export async function runWaterRenderingProof(backend: "webgl2" | "webgpu") {
     const waveTerrain = { crestHeight: crest.height, troughHeight: trough.height,
       crestDifference: difference(high.pixels), troughDifference: difference(low.pixels) };
     water.dispose(); terrain.dispose();
-    return { evidence, differences, brightness, pan, waveTerrain };
+    return { evidence, differences, brightness, pan, waveTerrain, contact };
   } finally {
     const device = (engine as { _device?: { queue: { onSubmittedWorkDone(): Promise<void> } } })._device;
     engine.flushFramebuffer(); await device?.queue.onSubmittedWorkDone();

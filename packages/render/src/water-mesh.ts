@@ -1,16 +1,16 @@
 import { Matrix, Mesh, PBRMaterial, Vector3, VertexBuffer, VertexData, type Material, type Scene } from "@babylonjs/core";
 import { createDefaultWaterDefinition, normalizeWaterBody, normalizeWaterDefinition, sampleWaterWaves, waterFootprint, waterRiverCentreline, type WaterBodyProperties, type WaterDefinition } from "@babylonslate/core";
 import { configureWaterMaterial, contactRange, WaterMaterialPlugin } from "./water-material";
-import { WaterField } from "./water-field";
+import { WaterContactField } from "./water-contact-field";
+import { WaterField, type WaterFieldSurface } from "./water-field";
 import { WaterReflection } from "./water-reflection";
-import { WaterSurfaceSampler } from "./water-surface-sampler";
 
 type Surface = {
-  mesh: Mesh; water: WaterDefinition; body: WaterBodyProperties; plugin: WaterMaterialPlugin | null; field: WaterField | null;
+  mesh: Mesh; water: WaterDefinition; body: WaterBodyProperties; plugin: WaterMaterialPlugin | null;
+  field: WaterField | null; contacts: WaterContactField | null;
   world: Matrix; inverse: Matrix;
   layout: string; frame: string; time: number | null; version: number; base: Float32Array; worldBase: Float32Array; positions: Float32Array; normals: Float32Array;
   baseNormals: Float32Array; data: Float32Array; flow: Float32Array; spacing: Float32Array;
-  contact: { frame: string; sampler: WaterSurfaceSampler } | null; contactRevision: number;
 };
 const surfaces = new WeakMap<Scene, Set<Surface>>();
 const surfaceByMesh = new WeakMap<Mesh, Surface>();
@@ -30,7 +30,9 @@ export function updateSceneWater(scene: Scene): void {
   const now = performance.now();
   for (const surface of surfaces.get(scene) ?? []) if (surface.mesh.isEnabled()) {
     updateSurface(surface, clock.time);
-    surface.field?.update(now);
+    // Waves never rebake either field: the shader reads contacts at each fragment's rendered height.
+    surface.field?.update();
+    surface.contacts?.update(now);
   }
 }
 
@@ -227,16 +229,6 @@ function updateSurface(s: Surface, time: number): void {
     s.mesh.updateVerticesData("slateWaterBaseNormal", s.baseNormals);
   }
   s.time = time;
-  if (moved || (s.water.waveHeight > 0 && s.body.waveScale > 0 && s.water.waveSpeed > 0)) s.contactRevision++;
-}
-
-function waterContactY(s: Surface, x: number, z: number): number | null {
-  if (!s.contact || s.contact.frame !== s.frame) {
-    const indices = s.mesh.getIndices();
-    if (!indices) return null;
-    s.contact = { frame: s.frame, sampler: new WaterSurfaceSampler(s.worldBase, s.data, indices) };
-  }
-  return s.contact.sampler.heightAt(x, z);
 }
 
 const scratch = new Vector3();
@@ -265,7 +257,8 @@ export function updateWaterMeshBody(mesh: Mesh, input: unknown): boolean {
   surface.version++; surface.layout = ""; surface.frame = "";
   mesh.setEnabled(surface.body.enabled);
   updateSurface(surface, clocks.get(mesh.getScene())?.time ?? 0);
-  surface.field?.update(performance.now(), true);
+  surface.field?.update(true);
+  surface.contacts?.update(performance.now(), true);
   return true;
 }
 
@@ -289,7 +282,7 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
     mesh.onDisposeObservable.addOnce(() => material.dispose());
   }
   const empty = new Float32Array();
-  const surface: Surface = { mesh, water, body, plugin, field: null, world: Matrix.Identity(), inverse: Matrix.Identity(), layout: "", frame: "", time: null, version: 0, base: empty, worldBase: empty, positions: empty, normals: empty, baseNormals: empty, data: empty, flow: empty, spacing: empty, contact: null, contactRevision: 0 };
+  const surface: Surface = { mesh, water, body, plugin, field: null, contacts: null, world: Matrix.Identity(), inverse: Matrix.Identity(), layout: "", frame: "", time: null, version: 0, base: empty, worldBase: empty, positions: empty, normals: empty, baseNormals: empty, data: empty, flow: empty, spacing: empty };
   let entries = surfaces.get(scene);
   if (!entries) {
     entries = new Set(); surfaces.set(scene, entries);
@@ -301,17 +294,17 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
   mesh.onDisposeObservable.addOnce(() => entries.delete(surface));
   updateSurface(surface, clocks.get(scene)?.time ?? 0);
   if (plugin) {
-    const contactHeight = (x: number, z: number) => waterContactY(surface, x, z);
-    const field = new WaterField(scene, {
+    const fieldSurface: WaterFieldSurface = {
       mesh, unbounded: body.kind === "global", contactRange: contactRange(water),
       get amplitude() { return water.waveHeight * body.waveScale * 1.3 + 0.05; },
       surfaceY: (x, z) => waterSurfaceY(surface, x, z),
-      get contactY() { return water.waveHeight > 0 && body.waveScale > 0 ? contactHeight : undefined; },
-      contactRevision: () => surface.contactRevision,
-    });
-    surface.field = field; plugin.field = field;
-    field.update(performance.now(), true);
-    mesh.onDisposeObservable.addOnce(() => field.dispose());
+    };
+    const field = new WaterField(scene, fieldSurface), contacts = new WaterContactField(scene, fieldSurface);
+    surface.field = field; surface.contacts = contacts;
+    plugin.field = field; plugin.contacts = contacts;
+    field.update(true);
+    contacts.update(performance.now(), true);
+    mesh.onDisposeObservable.addOnce(() => { field.dispose(); contacts.dispose(); });
   }
   return mesh;
 }

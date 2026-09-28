@@ -1,5 +1,6 @@
 import { Color3, DirectionalLight, HemisphericLight, MaterialPluginBase, Matrix, PBRMaterial, RawTexture, ShaderLanguage, Texture, Vector3, type AbstractMesh, type Scene, type UniformBuffer } from "@babylonjs/core";
 import { WATER_CREST_MEAN, WATER_CREST_RANGE, waterWaveComponents, type WaterBodyProperties, type WaterColor, type WaterDefinition } from "@babylonslate/core";
+import type { WaterContactField } from "./water-contact-field";
 import { WATER_FIELD_DEPTH_RANGE, WATER_FIELD_SHORE_RANGE as SHORE, type WaterField } from "./water-field";
 import { sceneWaterRemovals, waterRemovalShapeVector, waterRemovalWorldRadius } from "./water-removal-mesh";
 
@@ -86,7 +87,8 @@ ${detail}
 // Values stay continuous at the field's edges and range limits, so derivative-based antialiasing never spikes.
 float swFieldShore = mix(${f(SHORE[1])}, swTerrainShore, swFieldOn);
 float swKnown = swField.a * swFieldOn;
-float swObject = mix(1.0, swField.b, swFieldOn) * U.slateWaterFieldInfo.y;
+// Distance to the object waterline at this fragment's rendered height (metres; contacts sampled in the cut code).
+float swObject = abs(swContactSigned);
 float swBank = min(min(max(0.0, IN.vSlateWater.y), max(0.0, swFieldShore)), ${f(SHORE[1])});
 float swBodyDepth = max(0.01, IN.vSlateWater.z);
 float swMedium = swNoise(swFlowed * 0.43 + vec2(swTime * 0.03, 0.0));
@@ -94,7 +96,18 @@ float swFine = swNoise(swFlowed * 2.9 - vec2(0.0, swTime * 0.09));
 float swFoamWidth = max(0.001, U.slateWaterMotion.w);
 float swCalm = smoothstep(0.0, swFoamWidth * 2.0 + 0.5, swBank);
 vec3 swBaseNormal = normalize(IN.vSlateWaterBaseNormal);
-vec2 swSlope = swGradient + swDetail * U.slateWaterMotion.z * (0.35 + 0.65 * swCalm) * (0.5 + swGust);
+// Small waves around objects that cut the surface: they travel outward at the deep-water speed of their
+// wavelength, fade with distance, and a drifting noise bends and breaks them so they never read as perfect rings.
+float swContactW = max(0.05, U.slateWaterShape.w);
+float swOutside = max(swContactSigned, 0.0);
+float swRippleK = 6.2831853 / (0.35 + swContactW * 0.45);
+float swRippleNoise = swNoise(swWorld * 1.3 + vec2(swTime * 0.13, swTime * -0.07));
+float swRipplePhase = swRippleK * swOutside - sqrt(9.81 * swRippleK) * swTime + swRippleNoise * 2.6;
+float swRippleAA = 1.0 - smoothstep(0.6, 1.8, fwidth(swRipplePhase));
+float swRippleFade = exp(-swOutside / (swContactW * 1.4)) * smoothstep(-0.05, 0.08, swContactSigned) * swRippleAA;
+float swAgitate = exp(-swObject / swContactW) * swRippleAA;
+vec2 swRipple = swContactDir * (cos(swRipplePhase) * swRippleFade * (0.1 + 0.3 * U.slateWaterMotion.z) * (0.45 + 0.55 * swRippleNoise));
+vec2 swSlope = swGradient + swDetail * U.slateWaterMotion.z * (0.35 + 0.65 * swCalm + swAgitate) * (0.5 + swGust) + swRipple;
 normalW = normalize(vec3(swBaseNormal.x / max(0.001, swBaseNormal.y) - swSlope.x, 1.0, swBaseNormal.z / max(0.001, swBaseNormal.y) - swSlope.y));
 float swNdotV = clamp(dot(normalW, viewDirectionW), 0.0, 1.0);
 
@@ -120,7 +133,7 @@ float swStreakW = fwidth(swStreakA - swStreakB) + 0.035;
 float swStreak = (1.0 - smoothstep(0.0, swStreakW, abs(swStreakA - swStreakB))) * (1.0 - smoothstep(0.02, 0.2, fwidth(swFlowed.x * 0.55))) * smoothstep(0.3, 0.65, swMedium);
 
 // Realistic foam: bubbly cell webs thresholded by a foam density, so dense foam at the waterline
-// breaks into lace, then scattered patches as it thins. Crests, shores and objects feed the density.
+// breaks into lace, then scattered patches as it thins. Crests and shores feed the density.
 float swCrest = swHeight / max(0.001, U.slateWaterWaves.x);
 vec2 swFoamUv = swFlowed * 0.9 + swSlope * 0.4 + vec2(swMedium - 0.5, swFine - 0.5) * 0.9;
 float swFoamFade = smoothstep(0.2, 0.8, fwidth(swFoamUv.x) * 2.7);
@@ -129,18 +142,23 @@ float swWebB = swCells(swFoamUv * 2.7 + vec2(3.1, swTime * 0.07));
 float swFoamTex = mix((1.0 - smoothstep(0.0, 0.45, swWebA)) * 0.55 + (1.0 - smoothstep(0.0, 0.4, swWebB)) * 0.3 + swFine * 0.15, 0.42, swFoamFade);
 float swWashPhase = swBank / swFoamWidth - swTime * 0.45 + swMedium * 1.4;
 float swWash = exp(-swBank / swFoamWidth) * (0.8 + 0.3 * sin(swWashPhase * 6.2831853));
-float swContactW = max(0.05, U.slateWaterShape.w);
-float swHug = exp(-swObject / swContactW * 1.7) * (0.7 + 0.3 * swMedium);
 float swCap = smoothstep(0.55, 1.05, swCrest + swChopH * 0.8 + (swGust - 0.5) * 0.3) * U.slateWaterShape.z;
-float swDensity = clamp(max(max(swWash, swHug), swCap), 0.0, 1.0);
+float swDensity = clamp(max(swWash, swCap), 0.0, 1.0);
 float swFoamSoft = 0.18 + 0.2 * (1.0 - swDensity) + fwidth(swFoamTex);
 // Bubble grain keeps the foam from reading as flat paint; it averages out before it would alias.
 float swGrain = mix(swNoise(swFoamUv * 11.0 + vec2(0.0, swTime * 0.2)), 0.5, swFoamFade);
 float swRealFoam = smoothstep(1.0 - swDensity, 1.0 - swDensity + swFoamSoft, swFoamTex) * (0.25 + 0.6 * swDensity) * (0.55 + 0.45 * swGrain);
-float swWaterline = max(1.0 - smoothstep(0.0, 0.1 * swContactW + 0.04, swObject), 1.0 - smoothstep(0.0, 0.1 * swFoamWidth + 0.04, swBank));
-swRealFoam = max(swRealFoam, swWaterline * smoothstep(0.2, 0.5, swFoamTex) * (0.5 + 0.35 * swGrain));
+float swShoreLine = 1.0 - smoothstep(0.0, 0.1 * swFoamWidth + 0.04, swBank);
+swRealFoam = max(swRealFoam, swShoreLine * smoothstep(0.2, 0.5, swFoamTex) * (0.5 + 0.35 * swGrain));
+// Contact foam hugs the actual waterline on objects: a dense churned band where the water meets them,
+// thinning into lace that ripple crests carry outward.
+float swHug = clamp(exp(-swObject / swContactW * 1.7) * (0.8 + 0.3 * swMedium) + max(0.0, cos(swRipplePhase)) * swRippleFade * 0.25, 0.0, 1.0);
+float swHugSoft = 0.16 + 0.2 * (1.0 - swHug) + fwidth(swFoamTex);
+float swRealContact = smoothstep(1.0 - swHug, 1.0 - swHug + swHugSoft, swFoamTex) * (0.35 + 0.65 * swHug) * (0.6 + 0.4 * swGrain);
+float swContactLine = 1.0 - smoothstep(0.0, 0.08 * swContactW + 0.05 + fwidth(swObject), swObject);
+swRealContact = max(swRealContact, swContactLine * (0.7 + 0.3 * smoothstep(0.15, 0.5, swFoamTex)));
 // Air churned under the foam lightens the water around it, without a pattern.
-float swAerated = swDensity * (1.0 - swStylized) * U.slateWaterFoam.w;
+float swAerated = max(swDensity * U.slateWaterFoam.w, swHug * 0.6) * (1.0 - swStylized);
 
 // Stylized foam: a crisp wobbling outline plus a travelling second ring.
 float swEdgeUnit = swBank / swFoamWidth;
@@ -151,13 +169,22 @@ float swOutline = 1.0 - smoothstep(0.55 - swEdgeAA, 0.55 + swEdgeAA, swEdge);
 float swRingAge = fract(swTime * 0.16);
 float swRing = (1.0 - smoothstep(0.07, 0.07 + swEdgeAA * 1.5, abs(swEdge - 0.95 - swRingAge * 1.4))) * (1.0 - swRingAge);
 swRing *= smoothstep(0.3, 0.42, swFine * 0.6 + swMedium * 0.4);
+// Stylized contacts: a wobbling collar at the waterline and graphic ripple rings that ride outward and break up.
 float swObjectUnit = swObject / swContactW + swWobble * 0.6;
 float swObjectAA = fwidth(swObjectUnit) + 0.02;
-float swToonContact = max(1.0 - smoothstep(0.7 - swObjectAA, 0.7 + swObjectAA, swObjectUnit),
-  (1.0 - smoothstep(0.08, 0.08 + swObjectAA * 1.5, abs(swObjectUnit - 1.2 - swRingAge * 1.6))) * (1.0 - swRingAge) * 0.85);
+float swCollar = 1.0 - smoothstep(0.55 - swObjectAA, 0.55 + swObjectAA, swObjectUnit);
+float swRingWave = cos(swRipplePhase);
+float swRingAA = fwidth(swRingWave) + 0.03;
+float swToonRings = smoothstep(0.72 - swRingAA, 0.72 + swRingAA, swRingWave) * smoothstep(0.25, 0.45, swRippleNoise) * swRippleFade * 1.6;
+float swToonContact = clamp(max(swCollar, swToonRings), 0.0, 1.0);
 float swToonCap = smoothstep(0.82, 0.9, swCrest + swFine * 0.25) * U.slateWaterShape.z;
-float swToonFoam = max(max(swOutline, swRing), max(swToonContact, swToonCap));
-float swFoam = clamp(mix(swRealFoam, swToonFoam, swStylized) * U.slateWaterFoam.w * mix(1.35, 1.0, swStylized), 0.0, 1.0);
+float swToonFoam = max(max(swOutline, swRing), swToonCap);
+// Contact foam keeps its own strength: a low Foam Amount calms shores and crests but still marks every
+// waterline on objects; only a Foam Amount near zero (or Contact Foam Width 0) removes it.
+float swFoamAmount = U.slateWaterFoam.w;
+float swContactStrength = smoothstep(0.0, 0.1, swFoamAmount) * max(swFoamAmount, 0.85) * smoothstep(0.0, 0.05, U.slateWaterShape.w);
+float swFoam = clamp(max(mix(swRealFoam, swToonFoam, swStylized) * swFoamAmount * mix(1.35, 1.0, swStylized),
+  mix(swRealContact, swToonContact, swStylized) * swContactStrength), 0.0, 1.0);
 
 // Sun-facing sparkles on a jittered world grid; they twinkle and fade before they would alias.
 vec2 swSparkUv = swFlowed * 0.9 * U.slateWaterMotion.y;
@@ -223,6 +250,9 @@ function cutSource(wgsl: boolean): string {
   const sample = wgsl
     ? "var swField: vec4f = textureSampleLevel(slateWaterFieldSampler, slateWaterFieldSamplerSampler, swFieldUv, 0.0);"
     : "vec4 swField = texture2D(slateWaterFieldSampler, swFieldUv);";
+  const sampleContacts = wgsl
+    ? "var swContactTex: vec4f = textureSampleLevel(slateWaterContactSampler, slateWaterContactSamplerSampler, swContactUv, 0.0);"
+    : "vec4 swContactTex = texture2D(slateWaterContactSampler, swContactUv);";
   const removals = Array.from({ length: WATER_REMOVAL_SLOTS }, (_, i) => `swRemoval(U.slateWaterRemoval${i}, U.slateWaterRemovalShape${i}, swPosW)`);
   return `
 // Large-world rendering makes vPositionW eye-relative; rebuild the absolute world position.
@@ -233,12 +263,25 @@ float swFieldOn = U.slateWaterFieldInfo.x * step(0.0, swFieldUv.x) * step(swFiel
 // Geometry displacement, not the unfiltered per-pixel normal waves, sets the waterline.
 float swTerrainDepth = mix(U.slateWaterFieldInfo.z, U.slateWaterFieldInfo.w, swField.g) + IN.vSlateWater.x;
 float swTerrainShore = mix(${f(SHORE[0])}, ${f(SHORE[1])}, swField.r);
+// Objects: signed distances at four heights across rest +/- the wave envelope (negative inside). Blending the
+// two layers around this fragment's rendered wave height puts contacts on the actual, moving waterline.
+vec2 swContactUv = (swPosW.xz - U.slateWaterContactBounds.xy) * U.slateWaterContactBounds.zw;
+${sampleContacts}
+float swContactOn = U.slateWaterContactInfo.x * step(0.0, swContactUv.x) * step(swContactUv.x, 1.0) * step(0.0, swContactUv.y) * step(swContactUv.y, 1.0);
+float swLayer = (clamp(IN.vSlateWater.x / max(0.001, U.slateWaterContactInfo.z), -1.0, 1.0) * 0.5 + 0.5) * 3.0;
+vec4 swLayerW = max(vec4(0.0), vec4(1.0) - abs(vec4(0.0, 1.0, 2.0, 3.0) - vec4(swLayer)));
+float swContactSigned = mix(1.0, dot(swContactTex, swLayerW) * 2.0 - 1.0, swContactOn) * U.slateWaterContactInfo.y;
+vec2 swContactDerivative = vec2(dFdx(swContactSigned), dFdy(swContactSigned));
 // Convert wave-relative depth to a local world-space shoreline distance. Compute
 // derivatives before discard; rest-height distance stays exact when waves are off.
 vec2 swDx = dFdx(swPosW.xz);
 vec2 swDy = dFdy(swPosW.xz);
 vec2 swDepthDerivative = vec2(dFdx(swTerrainDepth), dFdy(swTerrainDepth));
 float swDet = swDx.x * swDy.y - swDx.y * swDy.x;
+// Outward world X/Z direction from the nearest object, from the screen derivatives of its distance.
+float swSafeDet = mix(1e-12, swDet, step(1e-12, abs(swDet)));
+vec2 swContactGrad = vec2(swContactDerivative.x * swDy.y - swContactDerivative.y * swDx.y, swDx.x * swContactDerivative.y - swDy.x * swContactDerivative.x) / swSafeDet;
+vec2 swContactDir = swContactGrad / max(length(swContactGrad), 0.00001);
 if (U.slateWaterWaves.x > 0.0 && swField.a > 0.5 && abs(swDet) > 1e-12) {
   vec2 swDepthGradient = vec2(swDepthDerivative.x * swDy.y - swDepthDerivative.y * swDx.y, swDx.x * swDepthDerivative.y - swDy.x * swDepthDerivative.x) / swDet;
   swTerrainShore = clamp(swTerrainDepth / max(length(swDepthGradient), 0.001), ${f(SHORE[0])}, ${f(SHORE[1])});
@@ -263,18 +306,18 @@ export function waterShaderSource(language: ShaderLanguage): { helpers: string; 
   const wgsl = language === ShaderLanguage.WGSL;
   const bind = (code: string) => code.replace(/\bU\./g, wgsl ? "uniforms." : "").replace(/\bIN\./g, wgsl ? "fragmentInputs." : "");
   const samplerDeclaration = wgsl
-    ? "var slateWaterFieldSamplerSampler: sampler;\nvar slateWaterFieldSampler: texture_2d<f32>;\n"
-    : "uniform sampler2D slateWaterFieldSampler;\n";
+    ? "var slateWaterFieldSamplerSampler: sampler;\nvar slateWaterFieldSampler: texture_2d<f32>;\nvar slateWaterContactSamplerSampler: sampler;\nvar slateWaterContactSampler: texture_2d<f32>;\n"
+    : "uniform sampler2D slateWaterFieldSampler;\nuniform sampler2D slateWaterContactSampler;\n";
   return wgsl
     ? { helpers: samplerDeclaration + toWgsl(HELPERS + REMOVAL_HELPER), cut: bind(toWgsl(cutSource(true))), main: bind(toWgsl(fragmentSource())) }
     : { helpers: samplerDeclaration + HELPERS + REMOVAL_HELPER, cut: bind(cutSource(false)), main: bind(fragmentSource()) };
 }
 
-/** Object distances are encoded up to three contact-foam widths (1-8 m). */
+/** Object contact distances are encoded up to three contact-foam widths (1-8 m). */
 export const contactRange = (water: WaterDefinition) => Math.max(1, Math.min(8, water.contactFoamWidth * 3));
 
 const placeholders = new WeakMap<Scene, RawTexture>();
-/** Field for surfaces nothing meets: far from terrain, no objects, terrain unknown. */
+/** Field for surfaces nothing meets: far from terrain, terrain unknown. Contacts that are off ignore it. */
 function placeholderField(scene: Scene): RawTexture {
   let texture = placeholders.get(scene);
   if (!texture) {
@@ -349,8 +392,10 @@ function sceneWaterBindingData(scene: Scene): WaterBindingData {
 /** World-space water shading on native PBR; both backends use the same wave spectrum. */
 export class WaterMaterialPlugin extends MaterialPluginBase {
   time = 0;
-  /** Terrain and contact data for this surface; null until something meets the water. */
+  /** Terrain data for this surface; null until terrain meets the water. */
   field: WaterField | null = null;
+  /** Height-aware object contacts for this surface; its texture is null until an object meets the water. */
+  contacts: WaterContactField | null = null;
   readonly water: WaterDefinition;
   readonly body: WaterBodyProperties;
   /** The surface this material shades, for choosing nearby removal volumes. */
@@ -371,16 +416,17 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
   override getClassName(): string { return "WaterMaterialPlugin"; }
   override getAttributes(attributes: string[]): void { attributes.push("slateWaterData", "slateWaterFlow", "slateWaterBaseNormal"); }
   override getUniforms() {
-    const vectors = ["slateWaterShallow", "slateWaterDeep", "slateWaterFoam", "slateWaterMotion", "slateWaterLook", "slateWaterWaves", "slateWaterSun", "slateWaterSunColor", "slateWaterLight", "slateWaterShape", "slateWaterFieldBounds", "slateWaterFieldInfo", "slateWaterOrigin"];
+    const vectors = ["slateWaterShallow", "slateWaterDeep", "slateWaterFoam", "slateWaterMotion", "slateWaterLook", "slateWaterWaves", "slateWaterSun", "slateWaterSunColor", "slateWaterLight", "slateWaterShape", "slateWaterFieldBounds", "slateWaterFieldInfo", "slateWaterContactBounds", "slateWaterContactInfo", "slateWaterOrigin"];
     const removals = Array.from({ length: WATER_REMOVAL_SLOTS }, (_, i) => i);
     return { ubo: [
       ...[...vectors, ...removals.map((i) => `slateWaterRemovalShape${i}`)].map((name) => ({ name, size: 4, type: "vec4" })),
       ...removals.map((i) => ({ name: `slateWaterRemoval${i}`, size: 16, type: "mat4" })),
     ] };
   }
-  override getSamplers(samplers: string[]): void { samplers.push("slateWaterFieldSampler"); }
+  override getSamplers(samplers: string[]): void { samplers.push("slateWaterFieldSampler", "slateWaterContactSampler"); }
   override bindForSubMesh(buffer: UniformBuffer, scene: Scene): void {
     buffer.setTexture("slateWaterFieldSampler", this.field?.texture ?? placeholderField(scene));
+    buffer.setTexture("slateWaterContactSampler", this.contacts?.texture ?? placeholderField(scene));
   }
   override hardBindForSubMesh(buffer: UniformBuffer, scene: Scene): void {
     const w = this.water, b = this.body;
@@ -403,7 +449,11 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
     const field = this.field?.texture ? this.field : null;
     const bounds = field?.bounds ?? [0, 0, 1, 1];
     buffer.updateFloat4("slateWaterFieldBounds", bounds[0]!, bounds[1]!, bounds[2]!, bounds[3]!);
-    buffer.updateFloat4("slateWaterFieldInfo", field ? 1 : 0, contactRange(w), ...(field?.depthRange ?? WATER_FIELD_DEPTH_RANGE));
+    buffer.updateFloat4("slateWaterFieldInfo", field ? 1 : 0, 0, ...(field?.depthRange ?? WATER_FIELD_DEPTH_RANGE));
+    const contacts = this.contacts?.texture ? this.contacts : null;
+    const contactBounds = contacts?.bounds ?? [0, 0, 1, 1];
+    buffer.updateFloat4("slateWaterContactBounds", contactBounds[0]!, contactBounds[1]!, contactBounds[2]!, contactBounds[3]!);
+    buffer.updateFloat4("slateWaterContactInfo", contacts ? 1 : 0, contacts?.range ?? contactRange(w), contacts?.amplitude ?? 1, 0);
     // The nearest enabled removal volumes that can reach this surface.
     const mesh = this.mesh;
     if (this.bindingFrame !== data.frame || this.bindingRender !== data.render || this.removalMesh !== mesh) {
