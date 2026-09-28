@@ -35,12 +35,14 @@ copies. Copy timing includes synchronous flush/driver waits, so it does not
 isolate CPU or GPU cost. Pixel-readback correctness checks
 must be collected separately from performance samples.
 
-Camera-driven shadow handoffs refresh the managed bridge's borrowed RTT bindings
-and receiver readiness in place. The ordered shadow pass renders these RTTs
-unmanaged before the object pass; their native samplers need no graph texture
-imports. Replacing a map preserves the object render-pass ID, effects and outline
-tasks, avoiding unrelated shader preparation and resource churn. Revocation and
-first-map readiness guards still apply before either drawing or sampling a map.
+Camera-driven shadow handoffs move a retained local map to the incoming light
+(see [Camera-driven shadow handoffs](#camera-driven-shadow-handoffs)). The managed
+bridge borrows admitted and standby maps and matches them by allocation, not by
+scene light order, so a moved map needs no preparation. The ordered shadow pass
+renders these RTTs unmanaged before the object pass; their native samplers need no
+graph texture imports. Replacing a map preserves the object render-pass ID,
+effects and outline tasks, avoiding unrelated shader preparation and resource
+churn. Revocation and first-map readiness guards still apply before drawing a map.
 
 Editor gizmo utility layers belong to their viewport, independently of graph
 rebuilds. `SceneRenderCoordinator` draws the registered editor overlay once after
@@ -525,7 +527,7 @@ Models get Babylon mesh LOD levels automatically (`model-lod.ts`). Texture strea
   - Level thresholds are screen sizes (bounding-sphere diameter / view height) of 0.5, 0.25 and 0.125, scaled by **LOD Distance Scale**.
   - While the editor freezes active meshes for brush tools, selection keeps full detail.
 - **Consumers.**
-  - Level meshes are `isBlocked`. They are excluded from `visualMeshes` (nav bake, outlines, slots, framing), editor material overrides, pickability writers, shadow-caster admission, shadow receiver warmup, water contact, live mesh counts and shadow diagnostic captures.
+  - Level meshes are `isBlocked`. They are excluded from `visualMeshes` (nav bake, outlines, slots, framing), editor material overrides, pickability writers, shadow-caster admission, water contact, live mesh counts and shadow diagnostic captures.
   - Shadow maps draw the selected level through the master caster.
   - Local shadow maps keep caching auto-LOD casters. A map re-renders once when a caster within its light's range changes its drawn level.
   - `RenderDiagnostics.autoLod` and the stats HUD report visible auto-LOD meshes, how many draw a simplified level, and the triangles saved.
@@ -1374,30 +1376,48 @@ invalidation; browser shadow parity and desktop profiling are recorded in
 
 Failed shadow and clustered allocations roll back through one engine allocation checkpoint (`allocation-checkpoint.ts`, the only reader in `packages/render` of Babylon 9.20's private render-target wrapper cache). Borrowed shadow and clustered-mask FrameGraph draws share one state-restoring helper (`framegraph-borrowed-draw.ts`) with per-owner alpha and error policy.
 
-Compatible local-light handoffs keep eligible incumbents while one prospective
-receiver layout warms after rendered frames. The warmer dispatches at most eight
-probes and two milliseconds of work per frame (a single driver call cannot be
-preempted). Detached submeshes cover camera/Forward passes and instancing variants;
-temporary shadow lookups borrow compatible generator definitions without changing
-live maps, frozen receiver wrappers or shadow flags. Successful effects remain
-referenced until the actual layout passes strict readiness. There is no extra RTT
-or all-light-combinations cache, including when the shadow budget is full.
-Detached probes preserve each live pass's define ordering so activation reuses
-the prepared shader instead of compiling an equivalent variant under a new key.
-While a handoff warms, the retained sun still refreshes its cascade caster bounds
-and `shadowMaxZ` every sync, and retained owners keep their admission reasons;
-only outgoing owners have their reason cleared.
+Point and spot maps are pooled `ReusableShadowGenerator`s
+(`reusable-shadow-generator.ts`). Admission ranking and budgets are unchanged; a
+changed winner set is realized without per-light allocation:
 
-Changed winners or readiness invalidate pending work. Authored disable/priority,
-camera possession, lost eligibility, resource/settings changes, incompatible
-light types and unqualified material callbacks use immediate normal admission.
-First activation without a compatible incumbent still uses ordinary preparation.
-Context recovery, graph retirement and scene disposal release pending probes.
-Cancelled WebGL programs retain their last reference until native compilation
-settles. Further speculation uses normal admission while that release is pending,
-so rapid camera changes cannot accumulate abandoned warmup layouts.
-The existing dispose-before-allocate commit and first-map readiness checks remain
-authoritative; shader warmup does not authorize sampling an unrendered map.
+- **Retarget.** A winner takes the map of a same-kind light (same class, cube
+  layout and map size) that lost admission. The RTT, render-pass IDs, caster draw
+  wrappers and scene UBO stay; only Babylon's per-light transform cache is reset.
+  There is no construction, disposal, shader loading or FrameGraph preparation.
+- **Receiver exchange.** When both lights have identical per-light define inputs
+  (class, light-specific defines including texture readiness, falloff, specular,
+  lightmap mode, shadow flag, cube layout) and every receiver holds both or
+  neither, `shadow-receiver-handoff.ts` swaps them in `scene.lights` and each
+  `mesh.lightSources`. Every shader light index keeps identical defines, so no
+  material is dirtied and no effect changes; binding follows the new order, and
+  later `lightSources` rebuilds reproduce it. Scene lighting accepts a layout
+  change that the recorded exchanges fully explain. Any other generator change
+  invalidates them and takes the normal dirty path.
+- **Standby.** A local map that only lost camera admission
+  (`outside-relevant-area`, `budget-limited`) stays attached at darkness 1, where
+  every Babylon 9.20 shadow filter returns fully lit. It is switched to render-once
+  and not refreshed. Receivers keep their defines, and the bridge keeps it bound.
+  `generator()` reports only admitted maps (`boundGenerator()` includes standby);
+  diagnostics treat standby lights as unadmitted, and metrics count their memory
+  but no passes. Standby fits within `maxLocalLights`, the byte budget and sampler
+  headroom, and is not used under Clustered Forward. A returning light resumes its
+  map; another same-kind winner takes it by retarget.
+- **First-render guard.** A moved or resumed map samples at darkness 1 until its
+  next actual pass (last cube face) completes. That pass precedes the object pass,
+  so shadows normally appear in the same frame. A skipped pass shows no shadow
+  rather than stale depth; readiness probes do not release the guard.
+- **Released immediately:** authored disable or `castShadows` off, zero intensity,
+  forward-excluded lights, global shadows off, settings/profile/map-size changes,
+  context recovery and allocation failure. Dispose-before-allocate still applies,
+  and the pool never exceeds the admitted budget. New maps are constructed only
+  while the pool fills or when no same-kind map is available.
+- **Not receiver-neutral (receivers re-prepare, no allocation):** different light
+  kinds or define inputs, per-mesh include/exclude lists, node blocks pinned to one
+  light, and Clustered Forward, where lights move into or out of the cluster.
+  Forward light-budget churn and the volumetric effects key (keyed by light id)
+  remain separate camera-driven sources. An exchange can change exact-tie winners
+  of CEL Strongest between the two lights and reorders `scene.lights` diagnostics
+  rows.
 
 ### Shared outline candidate (22 September 2026)
 

@@ -407,9 +407,9 @@ export async function runFrameGraphShadowProof(
             const beforeFrameCompilations = shaderCompilations;
             const frame = await host.render("graph", false, false);
             frameCompilations += shaderCompilations - beforeFrameCompilations;
-            if (frame.result.path !== "frameGraph") throw new Error("A warming shadow handoff lost the prepared graph.");
+            if (frame.result.path !== "frameGraph") throw new Error("A shadow handoff lost the prepared graph.");
             maximumFrameMs = Math.max(maximumFrameMs, frame.cpuMs); frames++;
-            if (performance.now() - started > 10_000) throw new Error("Shadow handoff did not finish warming.");
+            if (performance.now() - started > 10_000) throw new Error("Shadow handoff did not activate.");
             if (!expected.getShadowGenerator()) await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
           } while (!expected.getShadowGenerator());
           handoffs.push({ mode, index, preparationMs, maximumPreparationMs, maximumFrameMs, frames, preparationCompilations, frameCompilations,

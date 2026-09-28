@@ -30,8 +30,11 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       expect(step.active).toEqual([step.index % 2 === 0 ? "incoming" : "key"]);
       expect(step.allocations).toBe(1);
       expect(step.resources.reservedBytes).toBeLessThanOrEqual(step.resources.limit);
-      expect(step.frames).toBeGreaterThan(1);
+      // The retained map moves in place: the first prepared frame draws the
+      // incoming light without compiling receiver or caster shaders.
+      expect(step.frames).toBe(1);
       expect(step.preparationCompilations).toBe(0);
+      expect(step.frameCompilations).toBe(0);
     }
   });
 }
