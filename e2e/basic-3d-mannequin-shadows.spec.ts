@@ -40,6 +40,7 @@ for (const variant of cases) test(`Basic 3D mannequin ${variant.backend} ${varia
   await expect(page.getByTestId("open-listed-project-TestProject")).toHaveCount(0);
   await page.getByTestId("create-project").click();
   await page.getByTestId("create-project-empty").click();
+  await page.getByTestId("create-project-name").fill("TestProject");
   await page.getByTestId("create-project-submit").click();
   await waitForEditorInteractive(page);
   await openMainScene(page);

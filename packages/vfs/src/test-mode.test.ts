@@ -5,7 +5,7 @@ import { isTestModeEnabled, TEST_PROJECT_NAME } from "./test-mode";
  * The compiled-environment branches are not reachable from unit tests:
  * vi.stubEnv does not reach import.meta.env, which is fixed per bundle. The
  * VITE_TEST_MODE branch is covered by the Playwright suite, which builds with
- * VITE_TEST_MODE=true so Create Project prefills TestProject. The production
+ * VITE_TEST_MODE=true so storage uses the TestProject folder. The production
  * boundary — query activation with DEV=false and no VITE_TEST_QUERY — is
  * exercised against built bundles, not stubbed here.
  */
