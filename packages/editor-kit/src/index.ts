@@ -8,15 +8,18 @@ export {
   type CatalogDialogProps,
 } from "./catalog-dialog";
 export {
-  catalogCategories,
-  catalogSections,
-  type CatalogSection,
-} from "./catalog-sections";
+  CATALOG_MENU_ROW_HEIGHT,
+  CATALOG_MENU_TOUCH_ROW_HEIGHT,
+  CatalogMenu,
+  type CatalogMenuItem,
+  type CatalogMenuProps,
+} from "./catalog-menu";
 export {
-  CatalogTile,
-  CatalogTileGroup,
-  type CatalogTileProps,
-} from "./catalog-tile";
+  CatalogCard,
+  CatalogCardGrid,
+  type CatalogCardProps,
+} from "./catalog-card";
+export { CatalogResultRow, type CatalogResultRowProps } from "./catalog-result-row";
 export { SearchInput, type SearchInputProps } from "./search-input";
 export { PanelFrame } from "./panel-frame";
 export { DisclosureSection, type DisclosureSectionProps } from "./disclosure-section";

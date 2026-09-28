@@ -236,6 +236,26 @@ export function placeActorsForHost(options: { overlay: boolean }): PlaceActorIte
   ];
 }
 
+/** Place Actors' default page, in display order; ids absent from the host are skipped. */
+export const FEATURED_PLACE_ACTOR_IDS: readonly string[] = [
+  "empty",
+  "shape-box",
+  "shape-sphere",
+  "shape-plane",
+  "light-point",
+  "light-directional",
+  "camera",
+  "skybox",
+  "fog-volume",
+  "water-lake",
+  "audio",
+  "particle",
+  "2d-text",
+  "2d-button",
+  "2d-panel",
+  "2d-texture",
+];
+
 export const PLACEABLE_PROJECT_TYPES = new Set([
   "Class",
   "Model",
@@ -328,7 +348,7 @@ export function projectPlaceActors(
     .map((asset) => ({
       id: `asset-${asset.header.guid}`,
       title: asset.header.name,
-      category: "Project",
+      category: asset.header.type === "Model" ? "Models" : "Project",
       kind: {
         type: "asset" as const,
         name: asset.header.name,

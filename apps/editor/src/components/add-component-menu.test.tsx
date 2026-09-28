@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { AddComponentDialog } from "./add-component-dialog";
+import { AddComponentMenu } from "./add-component-menu";
 import { projectAddComponentItems, type AddComponentItem } from "../panels/add-component-catalog";
 
 afterEach(() => {
@@ -16,14 +16,14 @@ const projectModel: AddComponentItem = {
   properties: { assetGuid: "hero" },
 };
 
-describe("AddComponentDialog", () => {
+describe("AddComponentMenu", () => {
   it("offers constraints in both physics worlds and restricts skeletal ragdolls to 3D", () => {
     const onSelect = vi.fn();
-    const view = render(<AddComponentDialog open onOpenChange={vi.fn()} onSelect={onSelect} physicsWorld="2d" />);
+    const view = render(<AddComponentMenu open onOpenChange={vi.fn()} onSelect={onSelect} physicsWorld="2d" />);
     expect(screen.queryByTestId("add-component-catalog-item-RagdollComponent")).toBeNull();
     fireEvent.click(screen.getByTestId("add-component-catalog-item-PhysicsConstraintComponent"));
     expect(onSelect).toHaveBeenLastCalledWith({ classId: "PhysicsConstraintComponent" });
-    view.rerender(<AddComponentDialog open onOpenChange={vi.fn()} onSelect={onSelect} physicsWorld="3d" />);
+    view.rerender(<AddComponentMenu open onOpenChange={vi.fn()} onSelect={onSelect} physicsWorld="3d" />);
     fireEvent.click(screen.getByTestId("add-component-catalog-item-RagdollComponent"));
     expect(onSelect).toHaveBeenLastCalledWith({ classId: "RagdollComponent" });
   });
@@ -33,7 +33,7 @@ describe("AddComponentDialog", () => {
       { header: { guid: "health", name: "Health", type: "Class", parentClass: "ActorComponent" } },
       { header: { guid: "regen", name: "RegenHealth", type: "Class", parentClass: "Health" } },
     ]);
-    render(<AddComponentDialog open onOpenChange={vi.fn()} onSelect={onSelect} projectItems={projectItems} />);
+    render(<AddComponentMenu open onOpenChange={vi.fn()} onSelect={onSelect} projectItems={projectItems} />);
     const row = screen.getByTestId("add-component-catalog-item-class-RegenHealth");
     const icon = row.querySelector("svg[data-type-icon]");
     expect(icon?.getAttribute("data-type-icon")).toBe("ActorComponent");
@@ -42,17 +42,19 @@ describe("AddComponentDialog", () => {
     expect(onSelect).toHaveBeenCalledWith({ classId: "RegenHealth", properties: {} });
   });
 
-  it("passes classId and property overrides when a project Model is picked", () => {
+  it("passes classId and property overrides when a project Model is picked from search", () => {
     const onSelect = vi.fn();
     render(
-      <AddComponentDialog
+      <AddComponentMenu
         open
         onOpenChange={vi.fn()}
         onSelect={onSelect}
         projectItems={[projectModel]}
       />,
     );
-    fireEvent.keyDown(screen.getByRole("button", { name: "Hero Model" }), { key: " " });
+    const search = screen.getByTestId("add-component-catalog-search");
+    fireEvent.change(search, { target: { value: "hero" } });
+    fireEvent.keyDown(search, { key: "Enter" });
     expect(onSelect).toHaveBeenCalledWith({
       classId: "MeshComponent",
       properties: { assetGuid: "hero" },
@@ -62,7 +64,7 @@ describe("AddComponentDialog", () => {
   it("still reports engine class picks as classId with no extra properties", () => {
     const onSelect = vi.fn();
     render(
-      <AddComponentDialog
+      <AddComponentMenu
         open
         onOpenChange={vi.fn()}
         onSelect={onSelect}

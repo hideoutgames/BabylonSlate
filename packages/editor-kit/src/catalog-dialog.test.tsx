@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import { useState } from "react";
 import { CatalogDialog } from "./catalog-dialog";
-import { catalogCategories, catalogSections } from "./catalog-sections";
 
 afterEach(() => {
   cleanup();
@@ -104,34 +103,6 @@ describe("CatalogDialog", () => {
     );
     getByTestId("catalog-search-clear").click();
     expect(onSearchChange).toHaveBeenCalledWith("");
-  });
-
-  it("keeps every category listed while counts follow the search matches", () => {
-    const items = [
-      { id: "box", category: "Shapes" },
-      { id: "point", category: "Lights" },
-      { id: "sphere", category: "Shapes" },
-    ];
-    const categoryOf = (item: (typeof items)[number]) => item.category;
-    expect(catalogCategories(items, categoryOf)).toEqual([
-      { id: "all", label: "All", count: 3 },
-      { id: "Shapes", label: "Shapes", count: 2 },
-      { id: "Lights", label: "Lights", count: 1 },
-    ]);
-    expect(catalogCategories(items, categoryOf, [items[1]!])).toEqual([
-      { id: "all", label: "All", count: 1 },
-      { id: "Shapes", label: "Shapes", count: 0 },
-      { id: "Lights", label: "Lights", count: 1 },
-    ]);
-    expect(
-      catalogSections(items, categoryOf).map((section) => [
-        section.category,
-        section.items.map((item) => item.id),
-      ]),
-    ).toEqual([
-      ["Shapes", ["box", "sphere"]],
-      ["Lights", ["point"]],
-    ]);
   });
 
   it("renders grouped category headings", () => {

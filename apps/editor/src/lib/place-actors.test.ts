@@ -613,6 +613,9 @@ describe("projectPlaceActors", () => {
     expect(items.map((item) => item.title)).toEqual([
       "Hero", "Tree", "Jump", "Fire", "Dungeon",
     ]);
+    expect(items.map((item) => item.category)).toEqual([
+      "Project", "Models", "Project", "Project", "Project",
+    ]);
   });
 
   it.each([

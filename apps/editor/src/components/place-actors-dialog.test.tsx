@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { PlaceActorsDialog } from "./place-actors-dialog";
 
@@ -76,6 +76,53 @@ describe("PlaceActorsDialog", () => {
     fireEvent.click(screen.getByTestId("reopen"));
 
     expect(screen.getByTestId("place-actors-item-shape-box")).toBeTruthy();
+  });
+
+  it("opens on Featured cards and shows project Models as thumbnail cards apart from other assets", async () => {
+    const onSelect = vi.fn();
+    const model = {
+      id: "asset-tree",
+      title: "Tree",
+      category: "Models",
+      kind: { type: "asset" as const, name: "Tree", guid: "tree", assetType: "Model" },
+    };
+    const hero = {
+      id: "asset-hero",
+      title: "Hero",
+      category: "Project",
+      kind: { type: "asset" as const, name: "Hero", guid: "hero", assetType: "Class" },
+    };
+    const original = { create: URL.createObjectURL, revoke: URL.revokeObjectURL };
+    URL.createObjectURL = vi.fn(() => "blob:tree");
+    URL.revokeObjectURL = vi.fn();
+    onTestFinished(() => {
+      URL.createObjectURL = original.create;
+      URL.revokeObjectURL = original.revoke;
+    });
+    const loadThumbnail = vi.fn(async () => new Uint8Array([0x89, 0x50, 0x4e, 0x47]));
+    render(
+      <PlaceActorsDialog
+        open
+        onOpenChange={() => {}}
+        onSelect={onSelect}
+        projectItems={[model, hero]}
+        loadThumbnail={loadThumbnail}
+      />,
+    );
+    expect(screen.getByRole("group", { name: "Featured" })).toBeTruthy();
+    expect(screen.queryByTestId("place-actors-item-light-spot")).toBeNull();
+    expect(loadThumbnail).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId("place-actors-catalog-category-Models"));
+    expect(screen.queryByTestId("place-actors-item-asset-hero")).toBeNull();
+    const image = await screen.findByRole("img", { hidden: true });
+    expect(image.getAttribute("src")).toBe("blob:tree");
+    expect(loadThumbnail).toHaveBeenCalledWith("tree");
+
+    fireEvent.click(screen.getByTestId("place-actors-catalog-category-Project"));
+    expect(screen.queryByTestId("place-actors-item-asset-tree")).toBeNull();
+    fireEvent.click(screen.getByTestId("place-actors-item-asset-hero"));
+    expect(onSelect).toHaveBeenCalledWith(hero);
   });
 
   it("still clears the search when dismissed without selecting", () => {

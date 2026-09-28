@@ -15,8 +15,9 @@ import {
   AtlasTileGrid,
   BindingCodePicker,
   CatalogDialog,
-  CatalogTile,
-  CatalogTileGroup,
+  CatalogCard,
+  CatalogCardGrid,
+  CatalogResultRow,
   ClassPicker,
   CurveField,
   GradientField,
@@ -1255,23 +1256,41 @@ function GalleryCatalogRows() {
   const [selected, setSelected] = useState<string | null>(null);
   return (
     <section className="flex flex-col gap-2" data-testid="gallery-catalog-rows">
-      <h2 className="text-lg font-medium">Catalog Tiles</h2>
-      <CatalogTileGroup label="Rendering" count={3}>
+      <h2 className="text-lg font-medium">Catalog Results</h2>
+      <div role="group" aria-label="Catalog Results">
         {[
-          { title: "Mesh", description: "Primitive or Model asset", classId: "MeshComponent" },
-          { title: "Camera", description: "Scene camera", classId: "CameraComponent" },
-          { title: "Light", classId: "LightComponent" },
-        ].map((item) => (
-          <CatalogTile
+          { title: "Mesh", description: "Rendering", classId: "MeshComponent" },
+          { title: "Camera", description: "Camera", classId: "CameraComponent" },
+        ].map((item, index) => (
+          <CatalogResultRow
             key={item.classId}
             title={item.title}
             description={item.description}
-            visual={resolveTypeVisual({ classId: item.classId })}
-            aria-pressed={selected === item.classId}
+            leading={<TypeVisualIcon visual={resolveTypeVisual({ classId: item.classId })} />}
+            active={selected === item.classId}
+            striped={index % 2 === 1}
             onSelect={() => setSelected(item.classId)}
           />
         ))}
-      </CatalogTileGroup>
+      </div>
+      <h2 className="text-lg font-medium">Catalog Cards</h2>
+      <div className="max-w-xl" data-testid="gallery-catalog-cards">
+        <CatalogCardGrid label="Catalog Cards">
+          {[
+            { title: "Box", subtitle: "Shapes", visual: resolveTypeVisual({ classId: "MeshComponent", family: "class" }) },
+            { title: "Point Light", subtitle: "Lights", visual: resolveTypeVisual({ classId: "LightComponent", family: "class" }) },
+            { title: "Hero", subtitle: "Model", visual: resolveTypeVisual({ assetType: "Model" }) },
+          ].map((item) => (
+            <CatalogCard
+              key={item.title}
+              title={item.title}
+              subtitle={item.subtitle}
+              visual={item.visual}
+              onSelect={() => setSelected(item.title)}
+            />
+          ))}
+        </CatalogCardGrid>
+      </div>
     </section>
   );
 }

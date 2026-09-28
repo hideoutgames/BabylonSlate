@@ -244,6 +244,7 @@ test.describe("P10 tilemaps", () => {
 
     await page.getByTestId("outliner-add-actor").click();
     await expect(page.getByTestId("place-actors-catalog")).toBeVisible();
+    await page.getByTestId("place-actors-catalog-category-Rendering").click();
     await page.getByTestId("place-actors-item-tilemap").click();
     const tilemapGuid = await guidForPath(
       page,
