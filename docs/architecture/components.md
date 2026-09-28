@@ -209,6 +209,8 @@ Not kit (single call site): `BrandIcon` (editor chrome bar project title).
 
 ### Dynamic Runtime Mesh
 
+The shared type visual registry recognizes this component for object-reference pins and component chrome, using the existing mesh glyph.
+
 **Add Component → Rendering → Dynamic Runtime Mesh** reuses the component catalog and PropertyGrid in Scene Details and the Class/Prefab Inspector for Material, Enable Collision (off by default), collision filters and shadow controls. Geometry is created through component-targeted NodeGraph calls during Play; there is no mesh asset editor or Place Actors preset.
 
 ### Spline and river path editing
