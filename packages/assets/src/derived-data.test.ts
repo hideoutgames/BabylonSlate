@@ -33,6 +33,25 @@ describe("derived-data journal", () => {
     expect(largest).toBeLessThan(100_000);
   });
 
+  it("writes each record larger than a segment once, never reading or rewriting an earlier one", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("derived-root");
+    const reads = vi.spyOn(storage, "readText");
+    const writes = vi.spyOn(storage, "writeText");
+    // Full-document asset records (e.g. a large Material) exceed the 64 KiB bound.
+    const large = (index: number) =>
+      JSON.stringify({ v: 1, line: index, pad: "x".repeat(70_000) });
+    const expected = [0, 1, 2, 3].map(large);
+    for (const line of expected) {
+      await appendJournalLine(storage, "proj-1", line);
+    }
+
+    const written = writes.mock.calls.reduce((sum, [, text]) => sum + text.length, 0);
+    expect(written).toBe(expected.reduce((sum, line) => sum + line.length + 1, 0));
+    expect(reads).not.toHaveBeenCalled();
+    expect(await readJournalLines(storage, "proj-1")).toEqual(expected);
+  });
+
   it("recovers a single-file journal from an older session ahead of newer edits, and clears both layouts", async () => {
     const storage = new MemoryStorageAdapter("documents");
     await storage.openDocumentsProject("derived-root");

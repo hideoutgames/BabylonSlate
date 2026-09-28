@@ -5,8 +5,14 @@ const journalOperations = new WeakMap<
   Map<string, Promise<unknown>>
 >();
 
-/** Tail segment index per storage/project, learned on first append. */
-const journalTails = new WeakMap<ProjectStorage, Map<string, number>>();
+/** Last segment written and its length in characters. */
+interface JournalTail {
+  index: number;
+  chars: number;
+}
+
+/** Tail segment per storage/project, learned on first append. */
+const journalTails = new WeakMap<ProjectStorage, Map<string, JournalTail>>();
 
 function journalOperation<T>(
   storage: ProjectStorage,
@@ -30,7 +36,7 @@ function journalOperation<T>(
   return next;
 }
 
-function tailsFor(storage: ProjectStorage): Map<string, number> {
+function tailsFor(storage: ProjectStorage): Map<string, JournalTail> {
   let tails = journalTails.get(storage);
   if (!tails) {
     tails = new Map();
@@ -109,7 +115,11 @@ async function removeJournalFiles(
   if (existing.segments) await storage.remove(journalSegmentsPath(projectGuid));
 }
 
-/** Append `lines` after the tail segment's `text`, rolling at the size bound. */
+/**
+ * Append `lines` after the tail segment's `text`, rolling at the size bound.
+ * A segment is written only once it holds a new line (or as the empty stub),
+ * so a full tail is never rewritten unchanged.
+ */
 async function writeSegments(
   storage: ProjectStorage,
   projectGuid: string,
@@ -117,20 +127,25 @@ async function writeSegments(
   startText: string,
   lines: readonly string[],
 ): Promise<void> {
+  const write = async (index: number, text: string) => {
+    await storage.writeText(segmentPath(projectGuid, index), text);
+    tailsFor(storage).set(projectGuid, { index, chars: text.length });
+  };
   let index = startIndex;
   let text =
     startText.length > 0 && !startText.endsWith("\n") ? `${startText}\n` : startText;
+  let changed = false;
   for (const line of lines) {
     const chunk = `${line}\n`;
     if (text.length > 0 && text.length + chunk.length > JOURNAL_SEGMENT_MAX_CHARS) {
-      await storage.writeText(segmentPath(projectGuid, index), text);
+      if (changed) await write(index, text);
       index += 1;
       text = "";
     }
     text += chunk;
+    changed = true;
   }
-  await storage.writeText(segmentPath(projectGuid, index), text);
-  tailsFor(storage).set(projectGuid, index);
+  await write(index, text);
 }
 
 /** True when either journal layout exists (an empty stub counts). */
@@ -180,7 +195,8 @@ export async function writeJournalStub(
 
 /**
  * Append JSONL lines to the recovery journal in order (creates it if missing).
- * Only the tail segment is read and rewritten, never the whole journal.
+ * Only the tail segment is read and rewritten, never the whole journal; a tail
+ * already known to be too full for the first line is neither read nor rewritten.
  */
 export async function appendJournalLines(
   derivedStorage: ProjectStorage,
@@ -190,8 +206,17 @@ export async function appendJournalLines(
   if (lines.length === 0) return;
   return journalOperation(derivedStorage, projectGuid, async () => {
     await derivedStorage.mkdir(journalSegmentsPath(projectGuid), true);
+    const known = tailsFor(derivedStorage).get(projectGuid);
+    if (
+      known &&
+      known.chars > 0 &&
+      known.chars + lines[0].length + 1 > JOURNAL_SEGMENT_MAX_CHARS
+    ) {
+      await writeSegments(derivedStorage, projectGuid, known.index + 1, "", lines);
+      return;
+    }
     const index =
-      tailsFor(derivedStorage).get(projectGuid) ??
+      known?.index ??
       (await segmentIndices(derivedStorage, projectGuid)).at(-1) ??
       0;
     const tail = segmentPath(projectGuid, index);
