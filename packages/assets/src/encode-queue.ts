@@ -162,19 +162,24 @@ export class EncodeQueue {
     ktx2: Uint8Array;
     wallMs: number;
   }> {
-    const encodePromise = this.encode(job.source, job.settings, job.mime);
+    return this.withJobTimeout(
+      this.encode(job.source, job.settings, job.mime),
+      `texture encode timed out for ${job.assetGuid}`,
+    );
+  }
+
+  /** Reject `work` after the job timeout, so a hung step cannot deadlock the queue. */
+  private withJobTimeout<T>(work: Promise<T>, message: string): Promise<T> {
     const timeoutMs = this.jobTimeoutMs;
-    if (!timeoutMs || timeoutMs <= 0) return encodePromise;
+    if (!timeoutMs || timeoutMs <= 0) return work;
     return new Promise((resolve, reject) => {
       let settled = false;
       const timer = setTimeout(() => {
         if (settled) return;
         settled = true;
-        reject(
-          new Error(`texture encode timed out for ${job.assetGuid}`),
-        );
+        reject(new Error(message));
       }, timeoutMs);
-      encodePromise.then(
+      work.then(
         (value) => {
           if (settled) return;
           settled = true;
@@ -205,9 +210,13 @@ export class EncodeQueue {
     this.encoding = job;
     let started = true;
     if (job.guard) {
-      // Dropped before any work or write when its guard now refuses it.
+      // Dropped before any work or write when its guard now refuses it, or
+      // does not answer in time (its lock request hangs).
       try {
-        started = await job.guard.start(job.assetGuid);
+        started = await this.withJobTimeout(
+          job.guard.start(job.assetGuid),
+          `texture write check timed out for ${job.assetGuid}`,
+        );
       } catch {
         started = false;
       }
