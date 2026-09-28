@@ -15,6 +15,8 @@ import {
   AtlasTileGrid,
   BindingCodePicker,
   CatalogDialog,
+  CatalogCard,
+  CatalogCardGrid,
   CatalogResultRow,
   ClassPicker,
   CurveField,
@@ -1270,6 +1272,24 @@ function GalleryCatalogRows() {
             onSelect={() => setSelected(item.classId)}
           />
         ))}
+      </div>
+      <h2 className="text-lg font-medium">Catalog Cards</h2>
+      <div className="max-w-xl" data-testid="gallery-catalog-cards">
+        <CatalogCardGrid label="Catalog Cards">
+          {[
+            { title: "Box", subtitle: "Shapes", visual: resolveTypeVisual({ classId: "MeshComponent", family: "class" }) },
+            { title: "Point Light", subtitle: "Lights", visual: resolveTypeVisual({ classId: "LightComponent", family: "class" }) },
+            { title: "Hero", subtitle: "Model", visual: resolveTypeVisual({ assetType: "Model" }) },
+          ].map((item) => (
+            <CatalogCard
+              key={item.title}
+              title={item.title}
+              subtitle={item.subtitle}
+              visual={item.visual}
+              onSelect={() => setSelected(item.title)}
+            />
+          ))}
+        </CatalogCardGrid>
       </div>
     </section>
   );

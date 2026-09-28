@@ -285,6 +285,8 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
     registryVersion,
     loadGraphDocument,
     openDocument,
+    loadAssetThumbnail,
+    thumbnailVersions,
   } = useDocuments();
   const {
     selectedActorIds,
@@ -995,6 +997,8 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
         onSelect={addActor}
         projectItems={projectItems}
         overlay={overlay}
+        loadThumbnail={loadAssetThumbnail}
+        thumbnailVersions={thumbnailVersions}
       />
       <GraphDropHint hint={dropHint} testId="outliner-drop-hint" />
       {deleteActorChoice && deletingActor ? (

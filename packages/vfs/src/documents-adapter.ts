@@ -75,8 +75,8 @@ function decodeBinary(b64: string): Uint8Array {
 }
 
 /**
- * Durable iPad / Android Documents tier via Capacitor Filesystem.
- * No picker or bookmark — projects live under BabylonSlate/projects/.
+ * Durable mobile default tier via Capacitor Filesystem: iPad Documents or
+ * Android app-private Data. No picker — projects live under BabylonSlate/projects/.
  */
 export class DocumentsStorageAdapter implements ProjectStorage {
   private folder: ProjectFolderHandle | null = null;

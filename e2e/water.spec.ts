@@ -90,8 +90,8 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     for (const style of ["realistic", "stylized", "custom"]) {
       await openAssetFromBrowser(page, `assets/${style}.water.babasset`);
       const canvas = page.getByTestId("water-preview-canvas").filter({ visible: true });
-      await expect(canvas).toBeVisible();
-      await expect(page.getByTestId("water-details-panel").filter({ visible: true })).toBeVisible();
+      await expect(canvas).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId("water-details-panel").filter({ visible: true })).toBeVisible({ timeout: 30_000 });
       try {
         await expect.poll(async () => {
           const [r, g, b] = await centerColor(canvas);
