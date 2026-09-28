@@ -1,7 +1,13 @@
-import { CircleXIcon, TriangleAlertIcon } from "lucide-react";
+import { CircleXIcon, InfoIcon, TriangleAlertIcon } from "lucide-react";
 import { SelectableText } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
 import { cn } from "@babylonslate/ui/lib/utils";
+
+const SEVERITY = {
+  error: { Icon: CircleXIcon, label: "Error", tone: "text-destructive" },
+  warning: { Icon: TriangleAlertIcon, label: "Warning", tone: "text-(--warning)" },
+  info: { Icon: InfoIcon, label: "Info", tone: "text-muted-foreground" },
+} as const;
 
 /**
  * One 44px Compiler Results row: a ghost button with a severity icon, the
@@ -16,7 +22,7 @@ export function DiagnosticResultRow({
   onSelect,
   testId,
 }: {
-  severity: "error" | "warning";
+  severity: "error" | "warning" | "info";
   message: string;
   code?: string;
   /** Node or pin the diagnostic points at. */
@@ -26,7 +32,7 @@ export function DiagnosticResultRow({
   /** On the row button. */
   testId: string;
 }) {
-  const Icon = severity === "error" ? CircleXIcon : TriangleAlertIcon;
+  const { Icon, label, tone } = SEVERITY[severity];
   return (
     <Button
       type="button"
@@ -41,14 +47,8 @@ export function DiagnosticResultRow({
       data-testid={testId}
       data-severity={severity}
     >
-      <Icon
-        aria-hidden="true"
-        className={cn(
-          "size-3.5 shrink-0",
-          severity === "error" ? "text-destructive" : "text-(--warning)",
-        )}
-      />
-      <span className="sr-only">{severity === "error" ? "Error" : "Warning"}</span>
+      <Icon aria-hidden="true" className={cn("size-3.5 shrink-0", tone)} />
+      <span className="sr-only">{label}</span>
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
         <SelectableText className="truncate text-xs leading-4 text-foreground">
           {message}

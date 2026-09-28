@@ -34,7 +34,8 @@ function flattenCompilerRows(diagnostics: readonly Diagnostic[]): CompilerRow[] 
   const rows: CompilerRow[] = [];
   for (const [graphId, list] of grouped) {
     const errors = list.filter((diagnostic) => diagnostic.severity === "error").length;
-    rows.push({ kind: "header", graphId, errors, warnings: list.length - errors });
+    const warnings = list.filter((diagnostic) => diagnostic.severity === "warning").length;
+    rows.push({ kind: "header", graphId, errors, warnings });
     for (const diagnostic of list) {
       rows.push({ kind: "item", diagnostic });
     }
