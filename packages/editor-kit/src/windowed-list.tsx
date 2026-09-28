@@ -62,15 +62,16 @@ export function WindowedList({
   children,
 }: WindowedListProps) {
   const listRef = useRef<HTMLDivElement>(null);
+  const fixedRowHeight = typeof rowHeight === "number" ? rowHeight : 0;
   const rowOffsets =
     typeof rowHeight === "function"
       ? windowedRowOffsets(itemCount, rowHeight)
       : undefined;
   const rowTop = (index: number) =>
-    rowOffsets ? rowOffsets[index]! : index * (rowHeight as number);
+    rowOffsets ? rowOffsets[index]! : index * fixedRowHeight;
   const rowSize = (index: number) =>
-    rowOffsets ? rowOffsets[index + 1]! - rowOffsets[index]! : (rowHeight as number);
-  const totalHeight = rowOffsets ? rowOffsets[itemCount]! : itemCount * (rowHeight as number);
+    rowOffsets ? rowOffsets[index + 1]! - rowOffsets[index]! : fixedRowHeight;
+  const totalHeight = rowOffsets ? rowOffsets[itemCount]! : itemCount * fixedRowHeight;
   const [viewportHeight, setViewportHeight] = useState(0);
   const [scrollTop, setScrollTop] = useState(0);
 
@@ -113,7 +114,7 @@ export function WindowedList({
 
   const { firstIndex, lastIndex } = windowedSlice({
     itemCount,
-    rowHeight,
+    rowHeight: fixedRowHeight,
     scrollTop,
     viewportHeight,
     overscan: WINDOWED_SLICE_OVERSCAN,
