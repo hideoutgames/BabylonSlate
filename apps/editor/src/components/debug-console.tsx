@@ -1,4 +1,5 @@
 import {
+  memo,
   useEffect,
   useId,
   useMemo,
@@ -27,6 +28,10 @@ import {
 } from "@babylonslate/ui/components/sheet";
 import { cn } from "@babylonslate/ui/lib/utils";
 import { ChevronRightIcon, TerminalIcon, XIcon } from "lucide-react";
+import {
+  mergeDebugConsoleTranscript,
+  type DebugConsoleTranscriptEntry,
+} from "../lib/debug-console-transcript";
 
 export type ConsoleExecuteResult = { success: boolean; output: string };
 
@@ -53,13 +58,33 @@ const ACCESSORY = ['"', "'", "=", ":", ",", ".", "/", "-", "Tab"] as const;
 const NO_LOGS: readonly DebugConsoleLogEntry[] = [];
 const TRANSCRIPT_LIMIT = 500;
 
-type TranscriptEntry = {
-  id: string;
-  timestamp: number;
-  text: string;
-  severity: string;
-  testId?: string;
-};
+type TranscriptEntry = DebugConsoleTranscriptEntry;
+
+/** Rows keep identity across renders, so draft, stats, and inspect polls skip them. */
+const TranscriptRow = memo(function TranscriptRow({
+  entry,
+}: {
+  entry: TranscriptEntry;
+}) {
+  return (
+    <div
+      className={cn(
+        "whitespace-pre-wrap break-words",
+        entry.severity === "error"
+          ? "text-destructive"
+          : entry.severity === "info"
+            ? "text-muted-foreground"
+            : "text-foreground",
+        (entry.severity === "warning" || entry.severity === "warn") &&
+          "font-semibold",
+      )}
+      data-testid={entry.testId}
+      data-severity={entry.severity}
+    >
+      <SelectableText>{entry.text}</SelectableText>
+    </div>
+  );
+});
 
 function commandUsage(command: RegisteredCommand): string {
   return command.parameters
@@ -116,20 +141,7 @@ export function DebugConsole({
   const selectedSuggestion = suggestions[selectedIndex];
   const transcript = useMemo(
     () =>
-      [
-        ...entries,
-        ...logs
-          .filter((entry) => entry.id > clearedLogId)
-          .map((entry): TranscriptEntry => ({
-            id: `log-${entry.id}`,
-            timestamp: entry.timestamp,
-            text: `[${entry.severity}] ${entry.message}`,
-            severity: entry.severity,
-            testId: `debug-console-log-${entry.id}`,
-          })),
-      ]
-        .sort((a, b) => a.timestamp - b.timestamp)
-        .slice(-TRANSCRIPT_LIMIT),
+      mergeDebugConsoleTranscript(entries, logs, clearedLogId, TRANSCRIPT_LIMIT),
     [entries, logs, clearedLogId],
   );
 
@@ -254,9 +266,8 @@ export function DebugConsole({
   };
   const clearTranscript = () => {
     setEntries([]);
-    setClearedLogId((previous) =>
-      Math.max(previous, ...logs.map((entry) => entry.id)),
-    );
+    // Log ids increase, so the newest log carries the highest id.
+    setClearedLogId((previous) => Math.max(previous, logs.at(-1)?.id ?? previous));
     setCopyStatus("");
   };
   const copyTranscript = async () => {
@@ -346,23 +357,7 @@ export function DebugConsole({
             aria-live="polite"
           >
             {transcript.map((entry) => (
-              <div
-                key={entry.id}
-                className={cn(
-                  "whitespace-pre-wrap break-words",
-                  entry.severity === "error"
-                    ? "text-destructive"
-                    : entry.severity === "info"
-                      ? "text-muted-foreground"
-                      : "text-foreground",
-                  (entry.severity === "warning" || entry.severity === "warn") &&
-                    "font-semibold",
-                )}
-                data-testid={entry.testId}
-                data-severity={entry.severity}
-              >
-                <SelectableText>{entry.text}</SelectableText>
-              </div>
+              <TranscriptRow key={entry.id} entry={entry} />
             ))}
             <div ref={transcriptEndRef} />
           </div>
