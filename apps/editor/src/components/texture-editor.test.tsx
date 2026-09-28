@@ -136,11 +136,9 @@ describe("Texture editor", () => {
     if (!stale) {
       await act(async () => {});
       expect(screen.queryByTestId("texture-retry-encode")).toBeNull();
-      expect(screen.queryByTestId("texture-alignment-stale")).toBeNull();
       return;
     }
     fireEvent.click(await screen.findByTestId("texture-retry-encode"));
-    expect(screen.getByTestId("texture-alignment-stale")).toBeTruthy();
     expect(retryTextureEncoding).toHaveBeenCalledWith("tex-odd", { force: true, usage: "normal" });
   });
 

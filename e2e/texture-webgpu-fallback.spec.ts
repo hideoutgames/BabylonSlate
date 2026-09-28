@@ -334,7 +334,6 @@ test("with source control on, an old Texture off the grid re-encodes only on Ret
   // Texture Details offers Retry Encoding for it, the user's own re-encode.
   await openAssetFromBrowser(page, LEGACY_TEXTURE_PATH);
   const details = page.getByTestId("texture-details");
-  await expect(details.getByTestId("texture-alignment-stale")).toBeVisible();
   await details.getByTestId("texture-retry-encode").click();
   await expect.poll(() => committedKtx2(page, LEGACY_TEXTURE_PATH), { timeout: 60_000 }).toEqual(aligned);
   await expect(details.getByTestId("texture-retry-encode")).toHaveCount(0);

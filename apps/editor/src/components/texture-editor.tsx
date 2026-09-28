@@ -437,11 +437,6 @@ export function TextureDetails({
             <AlertDescription>{encodeError}</AlertDescription>
           </Alert>
         ) : null}
-        {alignmentStale ? (
-          <p className="text-xs text-muted-foreground" data-testid="texture-alignment-stale">
-            Its current encode does not follow this size rule yet. Retry Encoding re-encodes it.
-          </p>
-        ) : null}
         {guid && compressed && (compression === "encode_failed" || alignmentStale) ? (
           <Button
             size="sm"
