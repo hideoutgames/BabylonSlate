@@ -820,6 +820,12 @@ export class AssetRegistry {
    * whenever padding was requested (a no-op for a size already on the grid),
    * plus `ktx2Sha256`, the committed bytes these describe. The alignment pass
    * reads these instead of the chunk while that sha256 still matches.
+   *
+   * An encode on the grid for a Texture no atlas uses also drops older KTX2
+   * chunks off the grid: the resolver binds a retained chunk whose id it
+   * prefers, or the first one when none matches, and WebGPU would decode it
+   * to RGBA. An atlas keeps them (its own-size encode, should a Particle
+   * Usage be switched back).
    */
   async commitCompressedTexture(result: EncodeJobResult): Promise<void> {
     const chunkId =
@@ -829,6 +835,13 @@ export class AssetRegistry {
     const sha256 = await sha256Hex(result.ktx2);
     await this.enqueueTextureWrite(result.assetGuid, async () => {
       await this.rewriteTexture(result.assetGuid, async (header, chunks) => {
+        if (isOnBlockGrid(size) && !this.isAtlasTexture(result.assetGuid)) {
+          for (const [id, chunk] of chunks) {
+            if (id === chunkId || !(chunk.kind === "ktx2" || id.startsWith("ktx2:"))) continue;
+            const retained = sniffKtx2Size(chunk.data);
+            if (retained && !isOnBlockGrid(retained)) chunks.delete(id);
+          }
+        }
         chunks.set(chunkId, {
           id: chunkId,
           kind: "ktx2",
@@ -1137,9 +1150,7 @@ export class AssetRegistry {
     if (this.isAtlasTexture(asset.header.guid)) return padded;
     if (padded) return false;
     const size = await this.committedKtx2Size(asset, usage, cache);
-    if (size === null || (size.width % TEXTURE_BLOCK_EDGE === 0 && size.height % TEXTURE_BLOCK_EDGE === 0)) {
-      return false;
-    }
+    if (size === null || isOnBlockGrid(size)) return false;
     // Requeue only if the re-encode can differ: padded, or under other
     // settings. Otherwise (a payload size that disagrees with the source) it
     // would land off the grid again and repeat after every commit.
@@ -1488,6 +1499,10 @@ export class AssetRegistry {
     // Creator replace deletes then recreates the same guid.
     this.inbound.delete(asset.header.guid);
   }
+}
+
+function isOnBlockGrid(size: ImageSize | null): boolean {
+  return size !== null && size.width % TEXTURE_BLOCK_EDGE === 0 && size.height % TEXTURE_BLOCK_EDGE === 0;
 }
 
 /**

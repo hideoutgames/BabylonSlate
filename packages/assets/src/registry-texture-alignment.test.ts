@@ -1,14 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { encodeAssetDocument } from "./asset-document";
-import { encodeBabasset } from "./babasset";
+import { decodeBabasset, encodeBabasset } from "./babasset";
 import { sha256Hex } from "./bytes";
 import { projectContentRoot, type ContentRoot } from "./content-root";
 import { EncodeQueue, type EncodeJobResult } from "./encode-queue";
 import { sniffSourceImageSize } from "./image-size";
+import { sniffKtx2Size } from "./ktx2-info";
 import { AssetRegistry } from "./registry";
-import { textureEncodeSettingsFor } from "./resolve-gpu-texture";
-import { DEFAULT_TEXTURE_ENCODE_SETTINGS, textureEncodeChunkId, textureEncodeSize } from "./texture-compression";
+import { resolveGpuTexture, textureEncodeSettingsFor } from "./resolve-gpu-texture";
+import { DEFAULT_TEXTURE_ENCODE_SETTINGS, textureEncodeChunkId, textureEncodeSize, type TextureEncodeSettings } from "./texture-compression";
 import { createDefaultTilesetPayload } from "./tileset-payload";
 import { webpHeader } from "./test-support/image-headers";
 
@@ -88,7 +89,11 @@ async function writeTexture(
   }));
 }
 
-async function mount(storage: MemoryStorageAdapter, extraRoots: ContentRoot[] = []) {
+async function mount(
+  storage: MemoryStorageAdapter,
+  extraRoots: ContentRoot[] = [],
+  projectSettings: TextureEncodeSettings = DEFAULT_TEXTURE_ENCODE_SETTINGS,
+) {
   const registry = new AssetRegistry(storage);
   const jobs: EncodeJobResult[] = [];
   const queue = new EncodeQueue({
@@ -103,7 +108,7 @@ async function mount(storage: MemoryStorageAdapter, extraRoots: ContentRoot[] = 
       await registry.commitCompressedTexture(result);
     },
   });
-  registry.setEncodePipeline(queue);
+  registry.setEncodePipeline(queue, projectSettings);
   await registry.mountRoot(projectContentRoot());
   for (const root of extraRoots) await registry.mountRoot(root);
   return { registry, jobs, queue };
@@ -258,6 +263,64 @@ describe("texture encode alignment", () => {
       await registry.reindexPath(path);
     }
     expect(await registry.reconcileTextureAlignment()).toEqual(["odd-webp"]);
+  });
+
+  it("drops an older encode off the grid once a Texture's encode is on it, so the resolver cannot bind the older one", async () => {
+    const storage = await storageWithProject("retained");
+    // Encoded at 30x20 under the default 2048 project max, then at 15x10 once the
+    // project max became 15. The resolver keys ids with the default max, so it
+    // prefers the older full-size encode, which is still in the file.
+    const payload = { usage: "albedo", width: 30, height: 20 };
+    const full = await textureEncodeChunkId(textureEncodeSettingsFor(payload, DEFAULT_TEXTURE_ENCODE_SETTINGS), "albedo");
+    const projectSettings = { ...DEFAULT_TEXTURE_ENCODE_SETTINGS, maxDimension: 15 };
+    const clamped = await textureEncodeChunkId(textureEncodeSettingsFor(payload, projectSettings), "albedo");
+    await storage.writeBinary("assets/retained.babasset", await encodeBabasset({
+      header: {
+        guid: "retained", type: "Texture", name: "retained", engineVersion: "0.0.0", version: 1, mode: "thin", dependencies: [], parentClass: null,
+        payload: { ...payload, compressionState: "compressed", ktx2ChunkId: clamped },
+      },
+      chunks: [
+        { id: "pixels", kind: "pixels", mime: "image/png", data: png(30, 20) },
+        { id: full, kind: "ktx2", mime: "image/ktx2", data: ktx2(30, 20) },
+        { id: clamped, kind: "ktx2", mime: "image/ktx2", data: ktx2(15, 10) },
+      ],
+    }));
+    const { registry, jobs, queue } = await mount(storage, [], projectSettings);
+
+    expect(await registry.reconcileTextureAlignment()).toEqual(["retained"]);
+    await vi.waitFor(() => {
+      expect(queue.depth).toBe(0);
+      expect(jobs).toHaveLength(1);
+    });
+    const { header } = registry.getByGuid("retained")!;
+    const file = await decodeBabasset(await storage.readBinary("assets/retained.babasset"));
+    const resolved = await resolveGpuTexture({
+      header,
+      readChunk: async (id) => file.chunks.get(id) ?? null,
+      editorLod: { enabled: false, quality: 1 },
+    });
+    expect(resolved?.kind).toBe("ktx2");
+    expect(sniffKtx2Size(resolved!.bytes)).toEqual({ width: 16, height: 12 });
+  });
+
+  it("keeps an atlas's own-size encode when a Particle Usage encode commits for it", async () => {
+    const storage = await storageWithProject("atlas-particle");
+    await writeTexture(storage, "assets/atlas.babasset", "atlas", { source: [1, 1], committed: { id: KEY_MAX_1, size: [1, 1] } });
+    await storage.writeBinary("assets/ground.tileset.babasset", await encodeAssetDocument({
+      guid: "ground", type: "Tileset", name: "Ground", version: 1,
+      payload: { ...createDefaultTilesetPayload(), textureGuid: "atlas" } as unknown as Record<string, unknown>,
+    }, { dependencies: ["atlas"] }));
+    const { registry, jobs, queue } = await mount(storage);
+
+    expect(await registry.retryTextureEncoding("atlas", { force: true, usage: "particle" })).toBe(true);
+    await vi.waitFor(() => {
+      expect(queue.depth).toBe(0);
+      expect(jobs).toHaveLength(1);
+    });
+    const chunks = registry.getByGuid("atlas")!.header.chunks.map((chunk) => chunk.id);
+    expect(chunks).toContain(await particleKeyMax1());
+    // Switching the Usage back binds this 1x1 encode straight away.
+    expect(chunks).toContain(KEY_MAX_1);
   });
 
   it("leaves a texture alone when its lock is learned while the pass reads its committed encode", async () => {
