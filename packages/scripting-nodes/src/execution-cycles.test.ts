@@ -57,7 +57,7 @@ describe("execution cycles", () => {
       edge("branch", "true", "step", "execIn"),
       edge("branch", "false", "done", "execIn"),
     ] };
-    expect(validateGraphs([graph], { assetGuid: "cycles", registry })).toEqual([]);
+    expect(validateGraphs([graph], { assetGuid: "cycles" }, { registry })).toEqual([]);
     const compiled = runnable(graph);
     const ctx = { count: 0, finished: false };
     compiled.run(ctx);
