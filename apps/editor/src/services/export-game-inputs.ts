@@ -97,8 +97,8 @@ async function bytesForAsset(
         return bytes;
       }
       // A KTX2 retained from an earlier Usage: uncompressed Usages keep exact
-      // pixels, and WebGPU players reject a Particle KTX2 that is not
-      // block-aligned (its re-encode pending or failed). Ship the source pixels.
+      // pixels, and Particle encodes block-aligned, so a misaligned Particle
+      // KTX2 is stale (its re-encode pending or failed). Ship the source pixels.
       const pixels = asset.header.chunks.find((chunk) => chunk.id === "pixels" || chunk.kind === "pixels");
       return (pixels ? await readAssetChunk(asset.path, pixels.id) : null) ?? bytes;
     } catch {

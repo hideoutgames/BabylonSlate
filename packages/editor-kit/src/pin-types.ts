@@ -26,8 +26,6 @@ export type PinPickerType = (typeof PIN_PICKER_TYPES)[number];
 /** Function signature picker: exec plus the Structure/data pin types. */
 export const FUNCTION_PIN_PICKER_TYPES = ["exec", ...PIN_PICKER_TYPES] as const;
 
-export type FunctionPinPickerType = (typeof FUNCTION_PIN_PICKER_TYPES)[number];
-
 export const PIN_PICKER_LABEL: Record<string, string> = {
   exec: "Exec",
   bool: "Bool",
@@ -85,10 +83,6 @@ export function pinPickerLabel(type: string): string {
     return PIN_PICKER_LABEL[type as PinPickerType];
   }
   return type;
-}
-
-export function isPinPickerType(value: string): value is PinPickerType {
-  return (PIN_PICKER_TYPES as readonly string[]).includes(value);
 }
 
 /** Object/class constraints and Structure/Enum guids share `typeClassId`. */

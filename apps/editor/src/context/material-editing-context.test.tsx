@@ -43,6 +43,7 @@ function sampledRock() {
 
 const harness = vi.hoisted(() => ({
   functionAssets: [] as Array<{ path: string; header: { guid: string; type: string; payload: unknown } }>,
+  registryVersion: 0,
   playing: false,
   engine: {
     registerView: vi.fn(),
@@ -97,7 +98,6 @@ const harness = vi.hoisted(() => ({
   } | null,
   acquireCalls: 0,
   invalidateCalls: 0,
-  releaseGpuCalls: 0,
   cacheDisposeCalls: 0,
   content: null as ReturnType<typeof createDefaultMaterialDocument> | null,
   readAssetChunk: vi.fn(
@@ -139,6 +139,9 @@ vi.mock("./document-context", () => ({
       },
     ],
     assetRegistry,
+    get registryVersion() {
+      return harness.registryVersion;
+    },
     projectDocument: { settings: { playFrameCap: 60 } },
     readAssetChunk: harness.readAssetChunk,
   }),
@@ -153,9 +156,6 @@ vi.mock("@babylonslate/render", async (importOriginal) => {
         resource: { name: guid, isDisposed: () => false }, key: guid, release: vi.fn(),
       };
     },
-    releaseGpuTextures() {
-      harness.releaseGpuCalls += 1;
-    },
     dispose() {
       harness.cacheDisposeCalls += 1;
     },
@@ -165,7 +165,6 @@ vi.mock("@babylonslate/render", async (importOriginal) => {
     setSceneRenderSettings: harness.setRenderSettings,
     ResourceCache: class {
       acquireTexture = cache.acquireTexture;
-      releaseGpuTextures = cache.releaseGpuTextures;
       dispose = cache.dispose;
     },
     resourceCacheForEngine: () => cache,
@@ -231,8 +230,8 @@ function RenderProbe() {
   );
 }
 
-function mount(active = true, children?: ReactNode) {
-  return render(
+function materialTree(active = true, children?: ReactNode) {
+  return (
     <MaterialRenderControlProvider>
       <MaterialEditingProvider
         documentId="material:assets/Rock.material.babasset"
@@ -240,13 +239,18 @@ function mount(active = true, children?: ReactNode) {
       >
         {children ?? <AttachCanvas />}
       </MaterialEditingProvider>
-    </MaterialRenderControlProvider>,
+    </MaterialRenderControlProvider>
   );
+}
+
+function mount(active = true, children?: ReactNode) {
+  return render(materialTree(active, children));
 }
 
 describe("MaterialEditingProvider preview isolation", () => {
   beforeEach(() => {
     harness.functionAssets = [];
+    harness.registryVersion = 0;
     harness.playing = false;
     harness.engine.registerView.mockReset();
     harness.engine.unRegisterView.mockReset();
@@ -266,7 +270,6 @@ describe("MaterialEditingProvider preview isolation", () => {
     harness.libraryOptions = null;
     harness.acquireCalls = 0;
     harness.invalidateCalls = 0;
-    harness.releaseGpuCalls = 0;
     harness.cacheDisposeCalls = 0;
     harness.contextRestored = null;
     harness.cachedTextures = [];
@@ -287,6 +290,35 @@ describe("MaterialEditingProvider preview isolation", () => {
     harness.readAssetChunk.mockImplementation(async (_path, chunkId) => chunkId === "document" ? new TextEncoder().encode(JSON.stringify({ name: "Saved Wave", nodes: [], edges: [], inputs: [], outputs: [] })) : null);
     mount();
     await waitFor(() => expect(harness.libraryOptions?.functions?.()).toMatchObject({ wave: { name: "Saved Wave" } }));
+  });
+
+  it("does not reload saved Material Functions when the registry version bumps without function changes", async () => {
+    const asset = {
+      path: "assets/Wave.material-function.babasset",
+      header: { guid: "wave", type: "MaterialFunction", payload: {} },
+    };
+    harness.functionAssets = [asset];
+    harness.readAssetChunk.mockImplementation(async (_path, chunkId) =>
+      chunkId === "document"
+        ? new TextEncoder().encode(
+            JSON.stringify({ name: "Saved Wave", nodes: [], edges: [], inputs: [], outputs: [] }),
+          )
+        : null,
+    );
+    const view = mount();
+    await waitFor(() => expect(harness.readAssetChunk).toHaveBeenCalledTimes(1));
+
+    harness.registryVersion += 1;
+    view.rerender(materialTree());
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(harness.readAssetChunk).toHaveBeenCalledTimes(1);
+
+    harness.functionAssets = [{ ...asset, header: { ...asset.header } }];
+    harness.registryVersion += 1;
+    view.rerender(materialTree());
+    await waitFor(() => expect(harness.readAssetChunk).toHaveBeenCalledTimes(2));
   });
 
   it("does not registerView, attachControl, resize, or runRenderLoop on the shared Engine", async () => {
@@ -522,7 +554,6 @@ describe("MaterialEditingProvider preview isolation", () => {
         await vi.advanceTimersByTimeAsync(0);
       });
       expect(harness.invalidateCalls).toBeGreaterThan(0);
-      expect(harness.releaseGpuCalls).toBe(0);
       expect(harness.acquireCalls).toBeGreaterThan(acquiresBefore);
       expect(harness.presenter.present).toHaveBeenCalledWith({ force: true });
     } finally {

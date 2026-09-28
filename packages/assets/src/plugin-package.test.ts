@@ -16,7 +16,6 @@ import {
   applyPluginImport,
   exportPluginZip,
   inspectBabplugin,
-  packEnginePluginFiles,
   planPluginImport,
   pluginFolderSlug,
   uniquePluginFolderName,
@@ -37,6 +36,26 @@ import {
 
 const FIXTURE_DIR = dirname(fileURLToPath(import.meta.url));
 const UPDATE = process.env.UPDATE_GOLDENS === "1";
+
+/** Starter Content packed the way `apps/editor/vite-engine-plugins.ts` ships it. */
+async function vitePackedStarterContent(): Promise<Uint8Array> {
+  const files = await buildStarterContentFiles();
+  const record: Record<string, Uint8Array> = {};
+  for (const file of files) record[file.path] = file.data;
+  record["plugin.json"] = new TextEncoder().encode(
+    `${JSON.stringify({
+      kind: "plugin",
+      guid: STARTER_CONTENT_PLUGIN_GUID,
+      name: "Starter Content",
+      engineVersion: "0.0.0",
+      version: 1,
+    })}\n`,
+  );
+  return zipSync(record, {
+    level: 6,
+    mtime: new Date(1980, 0, 1, 12, 0, 0),
+  });
+}
 
 async function projectStorage(): Promise<MemoryStorageAdapter> {
   const storage = new MemoryStorageAdapter("documents");
@@ -359,36 +378,12 @@ describe("replace conflict", () => {
 });
 
 describe("engine plugin pack and unpack", () => {
-  it("packs directory files into a kind:plugin zip with plugin.json", async () => {
-    const files = await buildStarterContentFiles();
-    const packed = await packEnginePluginFiles(files, {
-      id: STARTER_CONTENT_FOLDER,
-    });
-    expect(packed.indexEntry).toEqual({
-      id: "starter-content",
-      file: "starter-content.babplugin",
-    });
-    const inspected = await inspectBabplugin(packed.zip);
-    expect(inspected.manifest.kind).toBe("plugin");
-    expect(inspected.settings.pluginGuid).toBe(STARTER_CONTENT_PLUGIN_GUID);
-    expect(inspected.settings.displayName).toBe("Starter Content");
-    expect(
-      inspected.files.some(
-        (file) => file.path === "assets/StarterActor.class.babasset",
-      ),
-    ).toBe(true);
-  });
-
   it("unpacks a .babplugin at the engine storage root, not under plugins/", async () => {
-    const files = await buildStarterContentFiles();
-    const packed = await packEnginePluginFiles(files, {
-      id: STARTER_CONTENT_FOLDER,
-    });
     const storage = new MemoryStorageAdapter("opfs");
     await storage.openDocumentsProject("engine-plugins");
     const descriptor = await unpackEnginePluginZip(
       storage,
-      packed.zip,
+      await vitePackedStarterContent(),
       STARTER_CONTENT_FOLDER,
     );
     expect(descriptor.folderPath).toBe("starter-content");
@@ -414,22 +409,7 @@ describe("engine plugin pack and unpack", () => {
   });
 
   it("inspects a fflate zip packed the same way as the Vite plugin", async () => {
-    const files = await buildStarterContentFiles();
-    const record: Record<string, Uint8Array> = {};
-    for (const file of files) record[file.path] = file.data;
-    record["plugin.json"] = new TextEncoder().encode(
-      `${JSON.stringify({
-        kind: "plugin",
-        guid: STARTER_CONTENT_PLUGIN_GUID,
-        name: "Starter Content",
-        engineVersion: "0.0.0",
-        version: 1,
-      })}\n`,
-    );
-    const zip = zipSync(record, {
-      level: 6,
-      mtime: new Date(1980, 0, 1, 12, 0, 0),
-    });
+    const zip = await vitePackedStarterContent();
     const inspected = await inspectBabplugin(zip);
     expect(inspected.settings.pluginGuid).toBe(STARTER_CONTENT_PLUGIN_GUID);
     const storage = new MemoryStorageAdapter("opfs");
@@ -447,11 +427,11 @@ describe("installEnginePluginDefaults", () => {
   async function engineWithStarter() {
     const engine = new MemoryStorageAdapter("opfs");
     await engine.openDocumentsProject("engine-plugins");
-    const files = await buildStarterContentFiles();
-    const packed = await packEnginePluginFiles(files, {
-      id: STARTER_CONTENT_FOLDER,
-    });
-    await unpackEnginePluginZip(engine, packed.zip, STARTER_CONTENT_FOLDER);
+    await unpackEnginePluginZip(
+      engine,
+      await vitePackedStarterContent(),
+      STARTER_CONTENT_FOLDER,
+    );
     return engine;
   }
 

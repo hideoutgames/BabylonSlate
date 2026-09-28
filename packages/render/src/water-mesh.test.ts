@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { CubeTexture, FreeCamera, type Mesh, MeshBuilder, NullEngine, PBRMaterial, Quaternion, Scene, SphericalPolynomial, Texture, Vector3, VertexBuffer } from "@babylonjs/core";
 import { createDefaultWaterDefinition, normalizeWaterBody, sampleWaterSurface } from "@babylonslate/core";
-import { createWaterMesh, sceneHasWater, setSceneWaterTime, updateSceneWater, updateWaterMeshBody, waterMeshBody } from "./water-mesh";
+import { createWaterMesh, setSceneWaterTime, updateSceneWater, updateWaterMeshBody, waterMeshBody } from "./water-mesh";
 import { applyAssignMesh, createPlayMesh, createSnapshotSceneBinding } from "./snapshot-apply";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@babylonslate/shader-graph";
 import { compileMaterialPlan, prewarmMaterial } from "./material-compiler";
@@ -210,10 +210,12 @@ describe("Water rendering", () => {
       const sample = sampleWaterSurface(water, body, point, 3, { position: mesh.position, rotation: Quaternion.Identity(), scale: mesh.scaling });
       expect(sample.found).toBe(true);
       expect(point.y).toBeCloseTo(sample.height, 5);
-      expect(sceneHasWater(scene)).toBe(true);
       mesh.dispose();
-      expect(sceneHasWater(scene)).toBe(false);
       expect(scene.materials).not.toContain(material);
+      // A disposed surface leaves the per-scene set, so later frames never resample it.
+      const resample = vi.spyOn(mesh, "updateVerticesData");
+      setSceneWaterTime(scene, 4); updateSceneWater(scene);
+      expect(resample).not.toHaveBeenCalled();
     } finally { scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
   });
   it("fills a curved, widening river inside its query footprint and reshapes it live", () => {

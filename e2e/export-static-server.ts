@@ -1,6 +1,5 @@
 import { createServer, type Server } from "node:http";
-import { readFileSync, readdirSync, statSync } from "node:fs";
-import { extname, join } from "node:path";
+import { extname } from "node:path";
 import type { AddressInfo } from "node:net";
 
 const MIME: Record<string, string> = {
@@ -10,23 +9,6 @@ const MIME: Record<string, string> = {
   ".wasm": "application/wasm",
   ".css": "text/css; charset=utf-8",
 };
-
-export function collectDirFiles(
-  dir: string,
-  prefix = "",
-): Map<string, Uint8Array> {
-  const files = new Map<string, Uint8Array>();
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
-    const abs = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      for (const [path, bytes] of collectDirFiles(abs, rel)) files.set(path, bytes);
-    } else if (entry.isFile()) {
-      files.set(rel, new Uint8Array(readFileSync(abs)));
-    }
-  }
-  return files;
-}
 
 function parseRange(
   header: string | undefined,
@@ -87,12 +69,4 @@ export async function serveExportFiles(
     });
     server.on("error", reject);
   });
-}
-
-export function fileExists(path: string): boolean {
-  try {
-    return statSync(path).isFile() || statSync(path).isDirectory();
-  } catch {
-    return false;
-  }
 }

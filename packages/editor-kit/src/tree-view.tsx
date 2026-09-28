@@ -101,8 +101,6 @@ export interface TreeViewProps {
   /** Double-tap / double-click a row (frame camera, open, …). */
   onActivate?: (id: string) => void;
   onContextMenu?: (id: string, clientX: number, clientY: number) => void;
-  /** @deprecated Timing follows input: mouse drags immediately; touch/pen hold for 250ms. */
-  reparentArm?: "immediate" | "hold";
   rowHeight?: number;
   emptyLabel?: string;
   "data-testid"?: string;
@@ -174,9 +172,14 @@ export function TreeView({
   const [viewportHeight, setViewportHeight] = useState(0);
   const [dropHint, setDropHint] = useState<DropHint | undefined>(undefined);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const indexById = useMemo(
+    () => new Map(nodes.map((node, index) => [node.id, index])),
+    [nodes],
+  );
+  const activeKey = activeId ?? selectedId;
   const activeIndex = Math.max(
     0,
-    nodes.findIndex((node) => node.id === (activeId ?? selectedId)),
+    activeKey == null ? -1 : (indexById.get(activeKey) ?? -1),
   );
   const activeNode = nodes[activeIndex];
   const rowId = (id: string) => `${treeId}-${encodeURIComponent(id)}`;
@@ -196,9 +199,13 @@ export function TreeView({
       size: counts.get(entry.parent),
     }));
   }, [nodes]);
-  const selectedSet = new Set(
-    selectedIds ??
-      (selectedId !== null && selectedId !== undefined ? [selectedId] : []),
+  const selectedSet = useMemo(
+    () =>
+      new Set(
+        selectedIds ??
+          (selectedId !== null && selectedId !== undefined ? [selectedId] : []),
+      ),
+    [selectedId, selectedIds],
   );
 
   // jsdom and first paint report a zero-height client rect; render everything

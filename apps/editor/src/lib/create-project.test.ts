@@ -1,22 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   createProjectNameIssue,
-  defaultCreateProjectDisplayName,
   normalizeProjectFolderName,
   randomProjectName,
 } from "./create-project";
-
-describe("defaultCreateProjectDisplayName", () => {
-  it("keeps TestProject for automation and suggests a random name otherwise", () => {
-    expect(defaultCreateProjectDisplayName(true)).toBe("TestProject");
-    expect(defaultCreateProjectDisplayName(false, [], () => 0)).toBe(
-      "Amber Apple Arcade",
-    );
-    expect(defaultCreateProjectDisplayName(false, [], () => 0.999)).toBe(
-      "Walnut Waffle Workshop",
-    );
-  });
-});
 
 describe("randomProjectName", () => {
   it("draws a new combination when the suggestion is already taken", () => {

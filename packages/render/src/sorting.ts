@@ -1,6 +1,5 @@
 import type { AbstractMesh, Scene, SubMesh } from "@babylonjs/core";
 import { sortingLayerSortKey } from "@babylonslate/core";
-export { ORDER_IN_LAYER_LIMIT, clampOrderInLayer, computeSortKey } from "@babylonslate/core";
 
 /**
  * Babylon supports four rendering groups, reserved here for coarse separation
@@ -14,8 +13,6 @@ export const RENDERING_GROUP = {
   foreground: 2,
   ui: 3,
 } as const;
-
-export type RenderingGroupName = keyof typeof RENDERING_GROUP;
 
 export interface SortingLayerResolution {
   /** Index of the layer in the project's ordered list; -1 when unknown. */

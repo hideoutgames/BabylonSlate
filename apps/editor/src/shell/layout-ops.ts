@@ -48,50 +48,6 @@ export function focusKeepPanelIds(
   return panels[kind];
 }
 
-/** Built-in Scene dock tabs Focus may keep. */
-export const SCENE_FOCUS_CANDIDATES: readonly FocusKeepCandidate[] =
-  catalogFocusCandidates("scene");
-
-/** Built-in Class dock tabs Focus may keep. */
-export const GRAPH_FOCUS_CANDIDATES: readonly FocusKeepCandidate[] =
-  catalogFocusCandidates("graph");
-
-export const FOCUS_PRIMARY_PANEL: Record<FocusDocumentKind, string> = {
-  scene: primaryDockPanel("scene"),
-  "scene-layer": primaryDockPanel("scene-layer"),
-  graph: primaryDockPanel("graph"),
-  enum: primaryDockPanel("enum"),
-  structure: primaryDockPanel("structure"),
-  "script-interface": primaryDockPanel("script-interface"),
-  sprite: primaryDockPanel("sprite"),
-  "sprite-animation": primaryDockPanel("sprite-animation"),
-  tileset: primaryDockPanel("tileset"),
-  tilemap: primaryDockPanel("tilemap"),
-  material: primaryDockPanel("material"),
-  "material-function": primaryDockPanel("material-function"),
-  "plugin-settings": primaryDockPanel("plugin-settings"),
-  "anim-graph": primaryDockPanel("anim-graph"),
-  "behaviour-tree": primaryDockPanel("behaviour-tree"),
-  audio: primaryDockPanel("audio"),
-  "input-action": primaryDockPanel("input-action"),
-  "input-axis": primaryDockPanel("input-axis"),
-  "audio-mixer": primaryDockPanel("audio-mixer"),
-  "audio-channel": primaryDockPanel("audio-channel"),
-  "sound-attenuation": primaryDockPanel("sound-attenuation"),
-  "particle-emitter": primaryDockPanel("particle-emitter"),
-  "particle-graph": primaryDockPanel("particle-graph"),
-  "particle-system": primaryDockPanel("particle-system"),
-  water: primaryDockPanel("water"),
-  "render-target": primaryDockPanel("render-target"),
-  "render-target-texture": primaryDockPanel("render-target-texture"),
-  model: primaryDockPanel("model"),
-  skeleton: primaryDockPanel("skeleton"),
-  animation: primaryDockPanel("animation"),
-  "skybox-creator": primaryDockPanel("skybox-creator"),
-  trace: primaryDockPanel("trace"),
-  texture: primaryDockPanel("texture"),
-};
-
 /**
  * Dock tabs Focus can keep for a document kind.
  */

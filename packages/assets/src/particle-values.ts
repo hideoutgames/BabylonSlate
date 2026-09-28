@@ -374,17 +374,6 @@ export function sampleScalarCurve(
   return a + (keys[to]!.value - a) * ratio;
 }
 
-export function sampleColorCurve(
-  keys: readonly ParticleColorKey[],
-  x: number,
-): ParticleColorTuple {
-  if (keys.length === 0) return [0, 0, 0, 0];
-  const { from, to, ratio } = curveSegment(keys, x);
-  const a = keys[from]!.color;
-  const b = keys[to]!.color;
-  return a.map((channel, i) => channel + (b[i]! - channel) * ratio) as ParticleColorTuple;
-}
-
 /** Smallest and largest value the property can produce (a curve spans its keys). */
 export function scalarValueBounds(value: ParticleScalarValue): {
   min: number;

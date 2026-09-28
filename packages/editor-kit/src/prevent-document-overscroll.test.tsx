@@ -1,9 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import {
-  canScrollInDirection,
-  isScrollableAxis,
-  shouldPreventDocumentOverscroll,
-} from "./prevent-document-overscroll";
+import { shouldPreventDocumentOverscroll } from "./prevent-document-overscroll";
 
 function mountScrollable(
   options: {
@@ -44,41 +40,6 @@ describe("prevent-document-overscroll", () => {
     document.body.innerHTML = "";
   });
 
-  describe("isScrollableAxis", () => {
-    it("detects vertical scroll overflow", () => {
-      const el = mountScrollable();
-      expect(isScrollableAxis(el, "y")).toBe(true);
-      expect(isScrollableAxis(el, "x")).toBe(false);
-    });
-
-    it("returns false when overflow is hidden", () => {
-      const el = mountScrollable({ overflowY: "hidden" });
-      expect(isScrollableAxis(el, "y")).toBe(false);
-    });
-  });
-
-  describe("canScrollInDirection", () => {
-    it("allows downward drag when not at the top", () => {
-      const el = mountScrollable({ scrollTop: 20 });
-      expect(canScrollInDirection(el, "y", 10)).toBe(true);
-    });
-
-    it("blocks downward drag at the top", () => {
-      const el = mountScrollable({ scrollTop: 0 });
-      expect(canScrollInDirection(el, "y", 10)).toBe(false);
-    });
-
-    it("allows upward drag when not at the bottom", () => {
-      const el = mountScrollable({ scrollTop: 0 });
-      expect(canScrollInDirection(el, "y", -10)).toBe(true);
-    });
-
-    it("blocks upward drag at the bottom", () => {
-      const el = mountScrollable({ scrollTop: 100 });
-      expect(canScrollInDirection(el, "y", -10)).toBe(false);
-    });
-  });
-
   describe("shouldPreventDocumentOverscroll", () => {
     beforeEach(() => {
       document.documentElement.style.overflow = "hidden";
@@ -101,6 +62,23 @@ describe("prevent-document-overscroll", () => {
       const scrollable = mountScrollable({ scrollTop: 0 });
       const child = document.createElement("span");
       scrollable.appendChild(child);
+      expect(shouldPreventDocumentOverscroll(child, 0, 10)).toBe(true);
+    });
+
+    it("allows an upward drag until the scrollable ancestor reaches its bottom", () => {
+      const scrollable = mountScrollable({ scrollTop: 0 });
+      const child = document.createElement("span");
+      scrollable.appendChild(child);
+      expect(shouldPreventDocumentOverscroll(child, 0, -10)).toBe(false);
+
+      scrollable.scrollTop = 100;
+      expect(shouldPreventDocumentOverscroll(child, 0, -10)).toBe(true);
+    });
+
+    it("prevents when an overflowing ancestor hides its overflow", () => {
+      const clipped = mountScrollable({ scrollTop: 50, overflowY: "hidden" });
+      const child = document.createElement("span");
+      clipped.appendChild(child);
       expect(shouldPreventDocumentOverscroll(child, 0, 10)).toBe(true);
     });
 

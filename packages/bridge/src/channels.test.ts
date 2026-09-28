@@ -206,15 +206,7 @@ describe("Play session commands", () => {
     expect(controlType(control)).toBe("sceneLayerResize");
   });
 
-  it("setRenderPath and renderPathStatus are channel variants", () => {
-    const request = {
-      type: "setRenderPath",
-      renderPath: "clusteredForward",
-    } satisfies CommandMessage;
-    const reset = {
-      type: "setRenderPath",
-      renderPath: null,
-    } satisfies CommandMessage;
+  it("renderPathStatus is a ControlMessage variant", () => {
     const status = {
       type: "renderPathStatus",
       requested: "auto",
@@ -222,8 +214,6 @@ describe("Play session commands", () => {
       gpuBackend: "webgl2",
       limits: [],
     } satisfies ControlMessage;
-    expect(commandType(request)).toBe("setRenderPath");
-    expect(commandType(reset)).toBe("setRenderPath");
     expect(controlType(status)).toBe("renderPathStatus");
   });
 

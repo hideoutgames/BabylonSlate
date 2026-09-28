@@ -208,8 +208,6 @@ export interface GraphEditorProps {
    * opens Add State; near tap/release cancels without breaking transitions).
    */
   connectEndMode?: ConnectEndMode;
-  /** Double-tap empty pane opens Add Node. Default true. */
-  emptyPaneDoubleTapAddsNode?: boolean;
   /** Replace existing edges into the same target handle (tree parent pin). */
   replaceIncomingOnConnect?: boolean;
   /** One visual edge per source→target pair (Animation Graph transitions). */
@@ -518,7 +516,6 @@ function GraphEditorCanvas({
   lockNodeDragAxis: lockDragAxis,
   nodeDragHandle,
   connectEndMode = "default",
-  emptyPaneDoubleTapAddsNode = true,
   replaceIncomingOnConnect = false,
   uniqueDirectedPairOnConnect = false,
   canConnect,
@@ -633,18 +630,34 @@ function GraphEditorCanvas({
     [diagnostics],
   );
 
-  const nodeErrorCount = useCallback(
-    (nodeId: string) =>
-      errorDiagnostics.filter((entry) => entry.nodeId === nodeId).length,
-    [errorDiagnostics],
-  );
-
-  const pinHasError = useCallback(
-    (nodeId: string, pinId: string) =>
-      errorDiagnostics.some(
-        (entry) => entry.nodeId === nodeId && entry.pinId === pinId,
+  const nodeErrorCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const entry of errorDiagnostics) {
+      if (entry.nodeId) {
+        counts.set(entry.nodeId, (counts.get(entry.nodeId) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }, [errorDiagnostics]);
+  const pinErrorKeys = useMemo(
+    () =>
+      new Set(
+        errorDiagnostics.flatMap((entry) =>
+          entry.nodeId && entry.pinId
+            ? [`${entry.nodeId}\u0000${entry.pinId}`]
+            : [],
+        ),
       ),
     [errorDiagnostics],
+  );
+  const nodeErrorCount = useCallback(
+    (nodeId: string) => nodeErrorCounts.get(nodeId) ?? 0,
+    [nodeErrorCounts],
+  );
+  const pinHasError = useCallback(
+    (nodeId: string, pinId: string) =>
+      pinErrorKeys.has(`${nodeId}\u0000${pinId}`),
+    [pinErrorKeys],
   );
 
   const lastEmittedRef = useRef<GraphDocument | null>(null);
@@ -1838,11 +1851,7 @@ function GraphEditorCanvas({
       }
       clearSelection();
       const now = Date.now();
-      if (
-        now - lastPaneTapRef.current < DOUBLE_TAP_MS &&
-        !readOnly &&
-        emptyPaneDoubleTapAddsNode
-      ) {
+      if (now - lastPaneTapRef.current < DOUBLE_TAP_MS && !readOnly) {
         const point = event ? { x: event.clientX, y: event.clientY } : null;
         setPendingConnect(point ? { position: screenToFlowPosition(point) } : null);
         setPaletteAnchor(point);
@@ -1854,7 +1863,6 @@ function GraphEditorCanvas({
     [
       clearSelection,
       connectEndMode,
-      emptyPaneDoubleTapAddsNode,
       readOnly,
       screenToFlowPosition,
     ],

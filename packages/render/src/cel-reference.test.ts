@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { celBandReference, celHighlightReference } from "./cel-reference";
+import { celBandReference } from "./cel-reference";
 
 describe("celBandReference", () => {
   it("steps exactly once at every band threshold for 2..8 bands", () => {
@@ -49,31 +49,5 @@ describe("celBandReference", () => {
       Math.pow((0 + 0.4999) / levels, Math.log(midpoint) / Math.log(0.5));
     expect(celBandReference(threshold - 0.0005, 4, midpoint)).toBe(0);
     expect(celBandReference(threshold + 0.0005, 4, midpoint)).toBe(1 / levels);
-  });
-});
-
-describe("celHighlightReference", () => {
-  it("emits only zero or the full strength across the edge", () => {
-    const strength = 0.35;
-    const size = 0.2;
-    const edge = 1 - size;
-    for (let ndh = 0; ndh <= 1; ndh += 0.001) {
-      const result = celHighlightReference(ndh, 0.5, size, strength);
-      expect(result === 0 || result === strength, `ndh=${ndh}`).toBe(true);
-      expect(result).toBe(
-        ndh >= edge - 0.00001 ? strength : 0,
-      );
-    }
-  });
-
-  it("requires lit shading: no highlight on the dark side", () => {
-    expect(celHighlightReference(1, 0, 0.2, 0.5)).toBe(0);
-    expect(celHighlightReference(1, 0.00001, 0.2, 0.5)).toBe(0.5);
-    expect(celHighlightReference(1, 0.000005, 0.2, 0.5)).toBe(0);
-  });
-
-  it("widens the highlight as size grows", () => {
-    expect(celHighlightReference(0.5, 1, 0.2, 1)).toBe(0);
-    expect(celHighlightReference(0.5, 1, 0.6, 1)).toBe(1);
   });
 });

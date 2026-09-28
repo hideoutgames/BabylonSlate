@@ -325,19 +325,3 @@ export function simpleColliderToPhysicsShape(
       };
   }
 }
-
-export function cylinderConvexPoints(
-  radius: number,
-  height: number,
-  segments = 12,
-): HullVec3[] {
-  const hy = height / 2;
-  const points: HullVec3[] = [];
-  for (let i = 0; i < segments; i++) {
-    const theta = (i / segments) * Math.PI * 2;
-    const x = Math.cos(theta) * radius;
-    const z = Math.sin(theta) * radius;
-    points.push({ x, y: hy, z }, { x, y: -hy, z });
-  }
-  return points;
-}

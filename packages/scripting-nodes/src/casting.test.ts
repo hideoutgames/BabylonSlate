@@ -5,6 +5,7 @@ import {
   BOOL,
   classRef,
   objectRef,
+  wildcardConverterNodeId,
   type GraphNode,
   type LogicGraph,
   type NodeRegistry,
@@ -179,5 +180,130 @@ describe("casting nodes", () => {
     expect(checks.every((entry) => entry.instance === hero && entry.classId === "Hero")).toBe(
       true,
     );
+  });
+});
+
+describe("wildcard conversions", () => {
+  const registry = createDefaultNodeRegistry();
+  const TO_INT = "wildcard.to_int";
+  const TO_FLOAT = "wildcard.to_float";
+
+  type Probe = {
+    fallback?: unknown;
+    isTag?: string;
+    blackboard?: Record<string, unknown>;
+    actorClassIds?: readonly string[];
+  };
+
+  /**
+   * Wire `source.out` into a converter, Wildcard Type Of and Wildcard Is,
+   * compile the graph, run Begin Play, and return what Set Blackboard saw.
+   */
+  function convert(source: GraphNode, converter: string, probe: Probe = {}) {
+    const set = (id: string, key: string) =>
+      node(registry, id, "bt.blackboard.set", { "default:key": key });
+    const wire = (id: string, from: string, fromPin: string, to: string, toPin: string) => ({
+      id,
+      sourceNodeId: from,
+      sourcePinId: fromPin,
+      targetNodeId: to,
+      targetPinId: toPin,
+    });
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        source,
+        node(
+          registry,
+          "to",
+          converter,
+          probe.fallback === undefined ? {} : { "default:fallback": probe.fallback },
+        ),
+        node(registry, "typeOf", "wildcard.typeOf"),
+        node(registry, "is", "wildcard.is", { "default:tag": probe.isTag ?? "" }),
+        set("setSuccess", "success"),
+        set("setValue", "value"),
+        set("setTypeOf", "typeOf"),
+        set("setIs", "is"),
+      ],
+      edges: [
+        wire("x1", "begin", "execOut", "to", "execIn"),
+        wire("x2", "to", "execOut", "setSuccess", "execIn"),
+        wire("x3", "setSuccess", "execOut", "setValue", "execIn"),
+        wire("x4", "setValue", "execOut", "setTypeOf", "execIn"),
+        wire("x5", "setTypeOf", "execOut", "setIs", "execIn"),
+        wire("d1", source.id, "out", "to", "in"),
+        wire("d2", source.id, "out", "typeOf", "in"),
+        wire("d3", source.id, "out", "is", "in"),
+        wire("d4", "to", "success", "setSuccess", "value"),
+        wire("d5", "to", "value", "setValue", "value"),
+        wire("d6", "typeOf", "out", "setTypeOf", "value"),
+        wire("d7", "is", "out", "setIs", "value"),
+      ],
+    };
+    const writes: Record<string, unknown> = {};
+    loadBeginPlay(compileGraph(graph, { assetGuid: "a", registry }).source)({
+      getBlackboard: (key: string) => probe.blackboard?.[key],
+      setBlackboard: (key: string, value: unknown) => {
+        writes[key] = value;
+      },
+      isA: (instance: unknown, classId: string) =>
+        classId === "Actor" &&
+        (probe.actorClassIds ?? []).includes(
+          (instance as { classId?: string }).classId ?? "",
+        ),
+      formatValue: String,
+    });
+    return writes;
+  }
+
+  const literal = (typeId: string, value: unknown) =>
+    node(registry, "src", typeId, { "default:in": value });
+  const blackboard = () => node(registry, "src", "bt.blackboard.get", { "default:key": "slot" });
+
+  it("converts a typed source whose tag matches, including Int into Float", () => {
+    expect(convert(literal("literal.makeInt", 5), TO_INT)).toMatchObject({
+      success: true,
+      value: 5,
+    });
+    expect(convert(literal("literal.makeInt", 5), TO_FLOAT)).toMatchObject({
+      success: true,
+      value: 5,
+    });
+  });
+
+  it("returns the fallback when a typed source has another tag", () => {
+    expect(convert(literal("literal.makeFloat", 2.5), TO_INT, { fallback: -1 })).toMatchObject({
+      success: false,
+      value: -1,
+    });
+  });
+
+  it("reports a typed source's static tag from Type Of and Is", () => {
+    // A whole Float stays `float`: the static type wins over the runtime value.
+    expect(
+      convert(literal("literal.makeFloat", 2), TO_INT, { fallback: -1, isTag: "float" }),
+    ).toMatchObject({ success: false, value: -1, typeOf: "float", is: true });
+  });
+
+  it("tags an untyped runtime value by shape and unwraps a tagged box", () => {
+    expect(
+      convert(blackboard(), TO_INT, { blackboard: { slot: 7 }, isTag: "int" }),
+    ).toEqual({ success: true, value: 7, typeOf: "int", is: true });
+    expect(
+      convert(blackboard(), TO_INT, { blackboard: { slot: 2.5 }, fallback: -1, isTag: "int" }),
+    ).toEqual({ success: false, value: -1, typeOf: "float", is: false });
+    expect(
+      convert(blackboard(), TO_FLOAT, { blackboard: { slot: { tag: "float", value: 3 } } }),
+    ).toMatchObject({ success: true, value: 3, typeOf: "float" });
+    const hero = { classId: "Hero" };
+    expect(
+      convert(blackboard(), wildcardConverterNodeId(actorRef("Actor")), {
+        blackboard: { slot: hero },
+        actorClassIds: ["Hero"],
+      }),
+    ).toMatchObject({ success: true, value: hero, typeOf: "actorRef:Hero" });
   });
 });

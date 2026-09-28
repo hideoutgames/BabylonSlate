@@ -41,6 +41,7 @@ test("Basic 3D mannequin preserves real materials, contacts and animation in Pla
   await expect(page.getByTestId("open-listed-project-TestProject")).toHaveCount(0);
   await page.getByTestId("create-project").click();
   await page.getByTestId("create-project-empty").click();
+  await page.getByTestId("create-project-name").fill("TestProject");
   await page.getByTestId("create-project-submit").click();
   await waitForEditorInteractive(page);
   await openMainScene(page);

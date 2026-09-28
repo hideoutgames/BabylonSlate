@@ -8,12 +8,8 @@ import {
   type LogicGraph,
   type NodeRegistry,
 } from "@babylonslate/scripting";
-import { ALL_NODE_CATEGORIES, createDefaultNodeRegistry } from "./index";
-import {
-  isSceneLayerPostProcessNodeType,
-  registerSceneLayerValidationRules,
-  sceneLayerNodes,
-} from "./scene-layer";
+import { createDefaultNodeRegistry } from "./index";
+import { registerSceneLayerValidationRules, sceneLayerNodes } from "./scene-layer";
 
 function node(
   registry: NodeRegistry,
@@ -42,7 +38,6 @@ describe("scene-layer nodes", () => {
   });
 
   it("registers Create, Remove, Clear, and post-process nodes", () => {
-    expect(ALL_NODE_CATEGORIES).toContain("scene-layer");
     expect(sceneLayerNodes.map((entry) => entry.id)).toEqual([
       "scene-layer.create",
       "scene-layer.remove",
@@ -50,10 +45,6 @@ describe("scene-layer nodes", () => {
       "scene-layer.registerPostProcess",
       "scene-layer.unregisterPostProcess",
     ]);
-    expect(isSceneLayerPostProcessNodeType("scene-layer.registerPostProcess")).toBe(
-      true,
-    );
-    expect(isSceneLayerPostProcessNodeType("scene-layer.create")).toBe(false);
     const created = sceneLayerNodes.find((entry) => entry.id === "scene-layer.create");
     expect(created?.title).toBe("Create Scene Layer");
     const pins = created?.pins({}) ?? [];

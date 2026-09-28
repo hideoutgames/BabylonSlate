@@ -4,7 +4,6 @@ import {
   applyPixelArtSampling,
   applyPixelArtSamplingToScene,
   pixelPerfectOrthoHalfHeight,
-  quantizeZoom,
   snapToPixelGrid,
 } from "./pixel-perfect";
 import { createEditorCamera } from "./editor-camera";
@@ -20,16 +19,6 @@ describe("pixelPerfectOrthoHalfHeight", () => {
   it("rejects non-positive inputs", () => {
     expect(pixelPerfectOrthoHalfHeight(0, 100)).toBe(1);
     expect(pixelPerfectOrthoHalfHeight(600, 0)).toBe(1);
-  });
-});
-
-describe("quantizeZoom", () => {
-  it("snaps to integer scales both above and below 1:1", () => {
-    expect(quantizeZoom(1.4)).toBe(1);
-    expect(quantizeZoom(1.6)).toBe(2);
-    expect(quantizeZoom(0.6)).toBe(0.5);
-    expect(quantizeZoom(0.4)).toBeCloseTo(1 / 3, 6);
-    expect(quantizeZoom(0)).toBe(1);
   });
 });
 

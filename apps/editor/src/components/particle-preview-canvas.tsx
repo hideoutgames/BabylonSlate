@@ -20,7 +20,6 @@ import {
   createParticlePreviewScene,
   installTextureBytes,
   resourceCacheForEngine,
-  textureBlockSizeMessage,
   type MaterialPreviewPresenter,
   type MaterialPreviewScene,
   type ParticlePreviewStats,
@@ -40,11 +39,6 @@ const STATS_POLL_MS = 250;
 const PREVIEW_ACTOR = "preview";
 const PREVIEW_COMPONENT = "preview";
 
-/**
- * A service diagnostic; a `particle.missing_material` caused by a texture WebGPU
- * refused names that Texture in `textureGuid` (and its message).
- */
-export type ParticlePreviewDiagnostic = ParticleServiceDiagnostic & { textureGuid?: string };
 type PreviewFailure = Pick<ParticleServiceDiagnostic, "code" | "message">;
 type PreviewLook = "no-emitters" | "no-material" | "graph-errors" | "ok";
 
@@ -157,7 +151,7 @@ const TEXTURE_PROGRESS_FIELDS = new Set(["compressionState", "encodeWallMs", "en
 /**
  * The saved Texture headers that decide which bytes the Preview uploads: the
  * payload (Usage, Downsample, committed KTX2) and the chunks. It changes when a
- * Usage fix is saved or an encode commits, not while an encode is running.
+ * Usage change is saved or an encode commits, not while an encode is running.
  */
 function textureHeadersKey(
   textureByGuid: ((guid: string) => IndexedAsset | undefined) | undefined,
@@ -217,7 +211,7 @@ export function ParticlePreviewCanvas({
    * while a debounced edit waits.
    */
   onDiagnostics?: (
-    diagnostics: readonly ParticlePreviewDiagnostic[],
+    diagnostics: readonly ParticleServiceDiagnostic[],
     applied: ParticleLibrary,
   ) => void;
 }) {
@@ -258,7 +252,7 @@ export function ParticlePreviewCanvas({
   const pausedRef = useRef(paused);
   const serviceRef = useRef<ParticleService | null>(null);
   const appliedRef = useRef<ParticleLibrary | null>(null);
-  const diagnosticsRef = useRef<ParticlePreviewDiagnostic[]>([]);
+  const diagnosticsRef = useRef<ParticleServiceDiagnostic[]>([]);
   /** True while a service call reports synchronously; the caller evaluates after it. */
   const syncRef = useRef(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -382,37 +376,20 @@ export function ParticlePreviewCanvas({
       const cache = resourceCacheForEngine(engine);
       host = createParticlePreviewScene(engine, { skybox: showSkybox });
       presenter = createMaterialPreviewPresenter(host, canvas);
-      // A refused texture explains the No Material its slot reports right after.
-      let refusedTexture: { guid: string; message: string } | null = null;
-      const resolver = createParticleMaterialResolver({
+      materials = createParticleMaterialResolver({
         scene: host.scene,
         documents: docs.documents,
         functions: docs.functions,
         acquireTexture: (guid) => {
           const data = sources.get(guid);
-          return data ? acquireMaterialTexture(cache, guid, engine, data, undefined, ({ width, height }) => {
-            const name = textureByGuidRef.current(guid)?.header.name ?? guid;
-            refusedTexture = {
-              guid,
-              message: textureBlockSizeMessage({ name, width, height, particle: true }),
-            };
-          }) : null;
+          return data ? acquireMaterialTexture(cache, guid, engine, data) : null;
         },
       });
-      materials = resolver;
       const service = new ParticleService({
         scene: host.scene,
-        acquireMaterial: (guid, owner) => {
-          refusedTexture = null;
-          return resolver.acquire(guid, owner);
-        },
+        acquireMaterial: materials.acquire,
         statsScope: "local",
-        onDiagnostic: (next) => {
-          const refused = next.code === "particle.missing_material" ? refusedTexture : null;
-          refusedTexture = null;
-          const diagnostic: ParticlePreviewDiagnostic = refused
-            ? { ...next, message: refused.message, textureGuid: refused.guid }
-            : next;
+        onDiagnostic: (diagnostic) => {
           diagnosticsRef.current.push(diagnostic);
           // Async Material failures arrive after the assign returned.
           if (!syncRef.current && !cancelled) evaluate();
@@ -463,8 +440,8 @@ export function ParticlePreviewCanvas({
     showSkybox,
   ]);
 
-  // The scene keeps the bytes it uploaded. A saved Texture change (Set Usage to
-  // Particle, a finished encode) starts a new scene, the way Retry does.
+  // The scene keeps the bytes it uploaded. A saved Texture change (a Usage
+  // change, a finished encode) starts a new scene, the way Retry does.
   useEffect(() => {
     const loaded = loadedTexturesRef.current;
     if (!loaded || loaded.guids.length === 0) return;

@@ -139,7 +139,7 @@ describe("Playwright iPad project filter", () => {
       ]),
     );
     expect(ipadTitles).not.toContain(
-      "P9 content systems › Play overlay stick drives the same Move.x as the gamepad path",
+      "P9 content systems › touch-axis input drives the same Move.x as the gamepad path",
     );
     expect(ipadTitles).not.toContain(
       "P6 first-playable scene editing › build, save, reopen, play in 3D and 2D with gamepad and gizmo undo",

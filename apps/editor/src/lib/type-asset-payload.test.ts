@@ -5,7 +5,6 @@ import {
   asStructureAsset,
   memberKey,
   parseMemberIndex,
-  parsePinKey,
   pinKey,
 } from "./type-asset-payload";
 
@@ -117,7 +116,7 @@ describe("asScriptInterfaceAsset", () => {
 });
 
 describe("selection keys", () => {
-  it("round-trips member and pin keys and rejects garbage", () => {
+  it("round-trips member keys and keeps pin keys out of member parsing", () => {
     expect(memberKey(3)).toBe("member:3");
     expect(parseMemberIndex("member:3")).toBe(3);
     expect(parseMemberIndex("member:1.5")).toBeNull();
@@ -125,9 +124,5 @@ describe("selection keys", () => {
     expect(parseMemberIndex(null)).toBeNull();
 
     expect(pinKey(1, 2)).toBe("pin:1:2");
-    expect(parsePinKey("pin:1:2")).toEqual({ methodIndex: 1, pinIndex: 2 });
-    expect(parsePinKey("pin:a:2")).toBeNull();
-    expect(parsePinKey("member:1")).toBeNull();
-    expect(parsePinKey(null)).toBeNull();
   });
 });

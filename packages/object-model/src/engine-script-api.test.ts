@@ -3,7 +3,6 @@ import {
   engineEventTypeClassIds,
   engineScriptApiFor,
   engineScriptEventsFor,
-  engineScriptFunctionsFor,
   ENGINE_CLASS_SCRIPT_APIS,
 } from "./engine-script-api";
 
@@ -76,7 +75,7 @@ describe("engine script API catalog", () => {
       "fontAssetGuid",
       "alignment",
     ]);
-    const setText = engineScriptFunctionsFor("Text3DComponent").find(
+    const setText = engineScriptApiFor("Text3DComponent")?.functions?.find(
       (entry) => entry.name === "Set Text",
     );
     expect(setText?.runtime).toBe("setText");
@@ -198,7 +197,7 @@ describe("engine script API catalog", () => {
       "nearClip",
       "farClip",
     ]);
-    expect(engineScriptFunctionsFor("CameraComponent")).toEqual([
+    expect(engineScriptApiFor("CameraComponent")?.functions).toEqual([
       expect.objectContaining({ name: "Possess", runtime: "possessCamera" }),
     ]);
     expect(
@@ -227,7 +226,7 @@ describe("engine script API catalog", () => {
       ),
     ).toEqual(["radius", "height", "maxSpeed", "maxAcceleration"]);
     expect(
-      engineScriptFunctionsFor("NavAgentComponent").map((entry) => [
+      engineScriptApiFor("NavAgentComponent")?.functions?.map((entry) => [
         entry.name,
         entry.runtime,
       ]),
@@ -287,7 +286,7 @@ describe("engine script API catalog", () => {
       "linearDamping",
       "angularDamping",
     ]);
-    expect(engineScriptFunctionsFor("RigidBodyComponent")).toEqual([
+    expect(engineScriptApiFor("RigidBodyComponent")?.functions).toEqual([
       expect.objectContaining({ name: "Add Impulse", runtime: "addImpulse" }),
     ]);
     expect(

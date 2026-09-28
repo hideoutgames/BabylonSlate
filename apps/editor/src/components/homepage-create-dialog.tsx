@@ -72,6 +72,7 @@ export function HomepageCreateDialog({
   chooseTemplate = false,
   name,
   onNameChange,
+  suggestedName,
   nameIssue,
   appearance,
   onAppearanceChange,
@@ -98,6 +99,8 @@ export function HomepageCreateDialog({
   chooseTemplate?: boolean;
   name: string;
   onNameChange: (name: string) => void;
+  /** Create mode: placeholder name used when the field is left empty. */
+  suggestedName?: string;
   nameIssue: string | null;
   appearance: ProjectAppearance;
   onAppearanceChange: (appearance: ProjectAppearance) => void;
@@ -201,7 +204,9 @@ export function HomepageCreateDialog({
       }
     }
   };
-  const canSubmit = !busy && !imageBusy && !nameIssue && Boolean(name.trim());
+  const placeholderName = suggestedName || "Untitled";
+  const canSubmit =
+    !busy && !imageBusy && !nameIssue && Boolean(name.trim() || suggestedName);
   const submit = () => {
     if (canSubmit) onSubmit();
   };
@@ -287,7 +292,7 @@ export function HomepageCreateDialog({
                 <ProjectCover appearance={appearance} />
                 <span className="homepage-composer-preview-name">
                   <ProjectColorDot appearance={appearance} />
-                  <span>{name.trim() || "Untitled"}</span>
+                  <span>{name.trim() || placeholderName}</span>
                 </span>
               </div>
             </aside>
@@ -312,7 +317,7 @@ export function HomepageCreateDialog({
                       onBlur={() => setNameTouched(true)}
                       id={nameId}
                       data-testid={nameId}
-                      placeholder="Untitled"
+                      placeholder={placeholderName}
                       autoComplete="off"
                       disabled={busy}
                       value={name}

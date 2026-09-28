@@ -43,8 +43,6 @@ export interface WorldOptions {
   onPhase?: PhaseHook;
   /** Optional physics step (P7). Called during the named `physics` phase. */
   onPhysics?: (ctx: TickContext) => void;
-  /** Optional post-physics fixup callback. */
-  onPostPhysics?: (ctx: TickContext) => void;
   /** Resolved input for this world; filled by the runtime driver each tick. */
   input?: WorldInputProvider;
   /** Rechecked after Game Instance and between scene objects during loading. */
@@ -63,7 +61,6 @@ export class World {
   private readonly guidFactory?: GuidFactory;
   private readonly onPhase?: PhaseHook;
   private readonly onPhysics?: (ctx: TickContext) => void;
-  private readonly onPostPhysics?: (ctx: TickContext) => void;
   private inputProvider: WorldInputProvider | null;
   private readonly canTickScene: () => boolean;
   private readonly canTickActor: (actor: Actor) => boolean;
@@ -93,7 +90,6 @@ export class World {
     this.guidFactory = options.guidFactory;
     this.onPhase = options.onPhase;
     this.onPhysics = options.onPhysics;
-    this.onPostPhysics = options.onPostPhysics;
     this.inputProvider = options.input ?? null;
     this.canTickScene = options.canTickScene ?? (() => true);
     this.canTickActor = options.canTickActor ?? (() => true);
@@ -116,7 +112,6 @@ export class World {
     if (this.started) return;
     this.started = true;
     this.gameInstance?.callOnCreation();
-    this.gameInstance?.callOnGameStart();
   }
 
   end(): void {
@@ -361,9 +356,7 @@ export class World {
         case "physics":
           this.onPhysics?.(ctx);
           break;
-        case "postPhysics":
-          this.onPostPhysics?.(ctx);
-          break;
+        // postPhysics has no built-in work; onPhase marks its boundary.
       }
     } finally {
       this.ticking = false;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PARTICLE_PALETTE_CATEGORIES, particleNodeDefinition } from "./catalog";
+import { particleNodeDefinition } from "./catalog";
 import { createDefaultParticleGraphDocument, newParticleNodeProperties } from "./document";
 import {
   hydrateParticleGraphForEditor,
@@ -118,12 +118,9 @@ describe("particle graph canvas adapter", () => {
     });
   });
 
-  it("offers every node but the Emitter Output, grouped by category, with the header role on each chip", () => {
+  it("offers every node but the Emitter Output, with the header role on each chip", () => {
     const palette = particlePaletteNodes();
     expect(palette.some((entry) => entry.id === "particle.output")).toBe(false);
-    const order = palette.map((entry) => PARTICLE_PALETTE_CATEGORIES.indexOf(entry.category as never));
-    expect(order.every((index) => index >= 0)).toBe(true);
-    expect(order).toEqual([...order].sort((a, b) => a - b));
     for (const entry of palette) {
       expect(entry.defaultData.__particleRole, entry.id).toBe(particleNodeDefinition(entry.id)!.role);
       const added = hydrateParticleGraphForEditor({

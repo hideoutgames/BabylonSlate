@@ -28,6 +28,7 @@ const frameActor = vi.hoisted(() => vi.fn());
 const harness = vi.hoisted(() => ({
   phone: false,
   assetListReads: 0,
+  registryVersion: 0,
   scene: null as SerializedScene | null,
   assets: [] as Array<{
     path: string;
@@ -77,6 +78,7 @@ vi.mock("../context/document-context", () => ({
     ],
     applySceneChange,
     assetRegistry,
+    registryVersion: harness.registryVersion,
     loadGraphDocument: vi.fn(),
     openDocument,
   }),
@@ -90,6 +92,7 @@ afterEach(() => {
   harness.assets = [];
   harness.phone = false;
   harness.assetListReads = 0;
+  harness.registryVersion = 0;
 });
 
 describe("SceneOutlinerPanel menus", () => {
@@ -340,6 +343,7 @@ describe("SceneOutlinerPanel menus", () => {
       path: "assets/Characters/Hero.class.babasset",
       header: { type: "Class", name: "Hero", guid: "hero-guid" },
     };
+    harness.registryVersion += 1;
     rerender(
       <SceneEditingProvider>
         <SceneOutlinerPanel {...({} as IDockviewPanelProps)} />

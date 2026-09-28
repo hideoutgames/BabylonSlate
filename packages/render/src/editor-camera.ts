@@ -82,7 +82,6 @@ export interface EditorCameraController {
   setMode: (mode: ViewportMode) => void;
   /** Aspect-correct orthographic bounds; call on resize and on zoom. */
   updateOrthoBounds: (aspectRatio: number) => void;
-  setOrthoHalfHeight: (halfHeight: number) => void;
   orthoHalfHeight: () => number;
   /** Pixel-perfect 2D framing; pass null to return to free ortho zoom. */
   setPixelPerfect: (settings: PixelPerfectSettings | null) => void;
@@ -296,13 +295,6 @@ export function createEditorCamera(
     },
     updateOrthoBounds: (aspectRatio: number) => {
       aspect = aspectRatio > 0 ? aspectRatio : 1;
-      if (mode === "2d") {
-        applyOrthoBounds();
-        invalidate();
-      }
-    },
-    setOrthoHalfHeight: (halfHeight: number) => {
-      orthoHalfHeight = Math.max(0.01, halfHeight);
       if (mode === "2d") {
         applyOrthoBounds();
         invalidate();

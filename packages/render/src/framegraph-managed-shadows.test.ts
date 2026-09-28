@@ -393,29 +393,34 @@ it("prepares replacement shadow maps without retiring the live object pass", asy
   }
 });
 
-it("keeps the admitted map while a compatible camera handoff warms, then commits without extra maps", async () => {
-  const { engine, scene, camera, light, controller, graph } = await fixture("spot");
+it("moves the admitted map to a compatible camera handoff within one presented frame", async () => {
+  const { engine, scene, camera, mesh, light, controller, map, graph } = await fixture("spot");
   const incoming = new SpotLight("incoming", new Vector3(40, 3, -2), Vector3.Down(), Math.PI / 2, 1, scene);
   incoming.range = light.range = 100;
   controller.register(incoming, true); controller.sync();
-  await graph.prepare(camera);
-  const previous = controller.generator(light);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  const previous = controller.generator(light)!;
   const bytes = controller.metrics().bytes;
-  const now = performance.now();
-  vi.spyOn(performance, "now").mockReturnValue(now + 500);
+  const effect = mesh.subMeshes[0]!.effect;
+  const allocate = vi.spyOn(engine, "createRenderTargetTexture");
+  const dirty = vi.spyOn(mesh.material!, "markDirty");
+  const lightDirty = vi.spyOn(mesh, "_markSubMeshesAsLightDirty");
+  vi.spyOn(performance, "now").mockReturnValue(performance.now() + 500);
   camera.position.x = 40;
-  controller.sync();
-  expect(controller.status(incoming)).toBe("warming");
-  expect(controller.generator(light)).toBe(previous);
-  expect(controller.generator(incoming)).toBeNull();
-  for (let frame = 0; frame < 20 && !controller.generator(incoming); frame++) {
-    await graph.prepare(camera);
-    engine.beginFrame(); graph.render(camera, false); engine.endFrame();
-    expect(controller.metrics().bytes).toBe(bytes);
-  }
-  expect(controller.generator(incoming)).not.toBeNull();
+  // No classic fallback, held frame, preparation or receiver shader change.
+  expect(graph.render(camera, false)).toEqual({ path: "frameGraph" });
+  expect(controller.generator(incoming)).toBe(previous);
   expect(controller.generator(light)).toBeNull();
   expect(scene.lights.filter((light) => light.getShadowGenerator())).toEqual([incoming]);
+  expect(controller.metrics().bytes).toBe(bytes);
+  expect(scene.textures.filter((texture) => texture.isRenderTarget)).toEqual([map]);
+  expect(allocate).not.toHaveBeenCalled();
+  expect(dirty).not.toHaveBeenCalled();
+  expect(lightDirty).not.toHaveBeenCalled();
+  expect(mesh.subMeshes[0]!.effect).toBe(effect);
+  // The map redrew for its new light before the object pass sampled it.
+  expect(previous.getDarkness()).toBe(0);
+  graph.dispose();
 });
 
 it("uses normal preparation when a point-light handoff changes cube layout", async () => {

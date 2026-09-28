@@ -23,15 +23,11 @@ describe("Electron userData app settings", () => {
     const store = new ElectronAppSettingsStore(bridge);
 
     const next = defaultEngineSettings();
-    next.templatesFolder = "Templates";
     next.automaticUpdatesEnabled = false;
     next.seenReleaseVersions = ["1.2.3"];
     await store.save(next);
 
     expect(bridge.writeSettings).toHaveBeenCalledOnce();
-    expect((await new ElectronAppSettingsStore(bridge).load()).templatesFolder).toBe(
-      "Templates",
-    );
     const restored = await new ElectronAppSettingsStore(bridge).load();
     expect(restored.automaticUpdatesEnabled).toBe(false);
     expect(restored.seenReleaseVersions).toEqual(["1.2.3"]);
@@ -60,14 +56,6 @@ describe("Electron userData app settings", () => {
     await store.save(next);
 
     expect((await store.load()).viewportFrameCap).toBe(30);
-  });
-
-  it("works with no bridge at all (stub until the desktop host lands)", async () => {
-    const store = new ElectronAppSettingsStore(null);
-    const next = defaultEngineSettings();
-    next.thumbnailsEnabled = false;
-    await store.save(next);
-    expect((await store.load()).thumbnailsEnabled).toBe(false);
   });
 
   it("detects the Electron host from the injected bridge", () => {
