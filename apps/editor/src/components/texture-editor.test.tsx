@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { AssetRegistry, projectContentRoot, type AreaEmissionProgress } from "@babylonslate/assets";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
@@ -16,6 +16,7 @@ if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined")
 }
 
 const retryTextureEncoding = vi.hoisted(() => vi.fn(async () => true));
+const textureAlignmentStale = vi.hoisted(() => vi.fn(async (_guid: string, _usage?: string) => false));
 const prepareAreaEmission = vi.hoisted(() => vi.fn(async (_guid: string, options: { signal: AbortSignal; onProgress: (value: AreaEmissionProgress) => void }) => {
   options.onProgress({ phase: "filtering", progress: 0.5 });
   await new Promise<void>((_resolve, reject) => options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true }));
@@ -40,8 +41,10 @@ vi.mock("../context/document-context", () => ({
   useDocuments: () => ({
     prepareAreaEmission,
     retryTextureEncoding,
+    textureAlignmentStale,
     readAssetChunk,
     assetRegistry,
+    registryVersion: 0,
     openDocuments: [
       { id: "other", ref: { path: "assets/tex-other.babasset" }, content: {} },
       {
@@ -58,6 +61,8 @@ const ENVIRONMENT = { usage: "skybox", dimension: "cube", container: "dds", enco
 afterEach(() => {
   cleanup();
   retryTextureEncoding.mockClear();
+  textureAlignmentStale.mockReset();
+  textureAlignmentStale.mockResolvedValue(false);
   prepareAreaEmission.mockClear();
   readAssetChunk.mockClear();
 });
@@ -121,6 +126,22 @@ describe("Texture editor", () => {
     expect(screen.getByTestId("texture-encode-error").textContent).toContain("BasisEncoder.encode returned 0");
     fireEvent.click(screen.getByTestId("texture-retry-encode"));
     expect(retryTextureEncoding).toHaveBeenCalledWith("tex-albedo", { force: true, usage: "albedo" });
+  });
+
+  it.each([true, false])("offers Retry Encoding for a compressed Texture only while its encode breaks the size rule (stale=%s)", async (stale) => {
+    textureAlignmentStale.mockResolvedValue(stale);
+    render(<TextureDetails guid="tex-odd" dependencies={[]} payload={{ usage: "normal", compressionState: "compressed" }} onChange={vi.fn()} />);
+    // Checked with the tab's Usage, which may be an unsaved Details edit.
+    await waitFor(() => expect(textureAlignmentStale).toHaveBeenCalledWith("tex-odd", "normal"));
+    if (!stale) {
+      await act(async () => {});
+      expect(screen.queryByTestId("texture-retry-encode")).toBeNull();
+      expect(screen.queryByTestId("texture-alignment-stale")).toBeNull();
+      return;
+    }
+    fireEvent.click(await screen.findByTestId("texture-retry-encode"));
+    expect(screen.getByTestId("texture-alignment-stale")).toBeTruthy();
+    expect(retryTextureEncoding).toHaveBeenCalledWith("tex-odd", { force: true, usage: "normal" });
   });
 
   it("offers no Retry Encoding once the Usage stays uncompressed", () => {

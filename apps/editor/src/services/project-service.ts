@@ -632,6 +632,22 @@ export class ProjectService {
   }
 
   /**
+   * Whether Texture Details offers **Retry Encoding** for a `compressed`
+   * Texture: its committed encode is stale for the alignment policy and
+   * nothing re-encodes it yet (source control on, so the pass leaves it for
+   * the user). `usage` is its tab's, saved or not.
+   */
+  async textureAlignmentStale(guid: string, usage?: string): Promise<boolean> {
+    const registry = this.assetRegistry;
+    const asset = registry?.getByGuid(guid);
+    if (!registry || !asset || isPluginDocumentReadOnly(this.pluginDescriptors, asset.path)) return false;
+    return registry.isTextureAlignmentStale(guid, {
+      usage: usage ?? this.openTextureUsage?.(guid),
+      ktx2SizeCache: this.ktx2SizeCache,
+    });
+  }
+
+  /**
    * `usageFor(guid)` is the Usage an open Texture tab shows, saved or not,
    * so the alignment pass checks and re-encodes as a Details edit did
    * instead of undoing it with the saved Usage.

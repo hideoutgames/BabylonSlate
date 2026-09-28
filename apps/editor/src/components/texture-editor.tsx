@@ -54,6 +54,33 @@ function asRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
+/**
+ * Whether the Texture's committed encode is stale for the alignment policy
+ * while nothing re-encodes it (with source control on the pass leaves older
+ * Textures to the user), so Details offers Retry Encoding. Checked with the
+ * tab's Usage, and again whenever the registry changes.
+ */
+function useTextureAlignmentStale(
+  guid: string | undefined,
+  payload: Record<string, unknown>,
+  check: (guid: string, usage?: string) => Promise<boolean>,
+  registryVersion: number,
+): boolean {
+  const usage = typeof payload.usage === "string" ? payload.usage : "albedo";
+  const key = guid && !isEnvironmentTexturePayload(payload) && shouldCompressTexture(usage) ? `${guid}\n${usage}` : null;
+  const [result, setResult] = useState<{ key: string; stale: boolean } | null>(null);
+  useEffect(() => {
+    if (!key || !guid) return;
+    let current = true;
+    check(guid, usage).then(
+      (stale) => { if (current) setResult({ key, stale }); },
+      () => { if (current) setResult({ key, stale: false }); },
+    );
+    return () => { current = false; };
+  }, [check, guid, key, usage, registryVersion]);
+  return key !== null && result?.key === key && result.stale;
+}
+
 function useTextureDocument() {
   const { documentId } = useDocumentWorkspace();
   const { openDocuments, applyAssetDocumentChange, assetRegistry } = useDocuments();
@@ -300,7 +327,8 @@ export function TextureDetails({
   payload: Record<string, unknown>;
   onChange: (next: Record<string, unknown>) => void;
 }) {
-  const { retryTextureEncoding, prepareAreaEmission, assetRegistry } = useDocuments();
+  const { retryTextureEncoding, textureAlignmentStale, prepareAreaEmission, assetRegistry, registryVersion } = useDocuments();
+  const alignmentStale = useTextureAlignmentStale(guid, payload, textureAlignmentStale, registryVersion);
   const emissionJob = useRef<AbortController | null>(null);
   const [emissionProgress, setEmissionProgress] = useState<AreaEmissionProgress | null>(null);
   const [emissionError, setEmissionError] = useState("");
@@ -409,7 +437,12 @@ export function TextureDetails({
             <AlertDescription>{encodeError}</AlertDescription>
           </Alert>
         ) : null}
-        {guid && compressed && compression === "encode_failed" ? (
+        {alignmentStale ? (
+          <p className="text-xs text-muted-foreground" data-testid="texture-alignment-stale">
+            Its current encode does not follow this size rule yet. Retry Encoding re-encodes it.
+          </p>
+        ) : null}
+        {guid && compressed && (compression === "encode_failed" || alignmentStale) ? (
           <Button
             size="sm"
             variant="outline"

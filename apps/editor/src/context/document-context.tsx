@@ -322,6 +322,11 @@ interface DocumentContextValue {
     options?: { maxDimension?: number; force?: boolean; usage?: string },
   ) => Promise<boolean>;
   /**
+   * A `compressed` Texture whose committed encode the alignment policy would
+   * change and nothing re-encodes yet: Texture Details offers Retry Encoding.
+   */
+  textureAlignmentStale: ProjectService["textureAlignmentStale"];
+  /**
    * Why an edit or re-encode from outside the Texture tab cannot write this
    * Texture, as a sentence (a read-only root or plugin, or another user's
    * lock); null when it can. Reads live lock and tab state, so call it while
@@ -1206,6 +1211,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       return ok;
     },
     [bump, projectService],
+  );
+
+  const textureAlignmentStale = useCallback<ProjectService["textureAlignmentStale"]>(
+    (guid, usage) => projectService.textureAlignmentStale(guid, usage),
+    [projectService],
   );
 
   const prepareAreaEmission = useCallback<ProjectService["prepareAreaEmission"]>(async (guid, options) => {
@@ -4337,6 +4347,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       prepareAreaEmission,
       collectPlayAreaEmissions,
       retryTextureEncoding,
+      textureAlignmentStale,
       textureUsageBlockedReason,
       onSessionDiagnostic,
       sessionDiagnostics: projectService.sessionDiagnostics,
@@ -4405,6 +4416,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       prepareAreaEmission,
       collectPlayAreaEmissions,
       retryTextureEncoding,
+      textureAlignmentStale,
       textureUsageBlockedReason,
       onSessionDiagnostic,
       loadAssetThumbnail,

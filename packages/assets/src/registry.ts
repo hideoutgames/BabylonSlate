@@ -1167,16 +1167,9 @@ export class AssetRegistry {
     for (const guid of guids) {
       const asset = await this.settledTexture(guid);
       // Already queued (an earlier pass, or a remount's): one job is enough.
-      if (queue.has(guid)) continue;
-      if (!asset || asset.placeholder || asset.header.type !== "Texture") continue;
-      const payload = asset.header.payload;
-      const usage = options.usageFor?.(guid) ?? String(payload.usage ?? "albedo");
-      if (payload.compressionState !== "compressed") continue;
-      if (isEnvironmentTexturePayload(payload) || !shouldCompressTexture(usage)) continue;
-      // Without source pixels a forced retry would strand it `pending`.
-      if (!asset.header.chunks.some((chunk) => chunk.kind === "pixels")) continue;
-      if (this.roots.get(asset.rootId)?.readOnly) continue;
-      if (!canWrite(guid)) continue;
+      if (queue.has(guid) || !asset) continue;
+      const usage = options.usageFor?.(guid) ?? String(asset.header.payload.usage ?? "albedo");
+      if (!this.isAlignmentCandidate(asset, usage) || !canWrite(guid)) continue;
       try {
         if (!(await this.isAlignmentStale(asset, usage, options.ktx2SizeCache))) continue;
         // Asked again after the (possibly reading) staleness check, just
@@ -1188,6 +1181,44 @@ export class AssetRegistry {
       }
     }
     return requeued;
+  }
+
+  /**
+   * Whether `reconcileTextureAlignment` would requeue this Texture, whatever
+   * the editor's `canWrite`: its committed encode is stale for the alignment
+   * policy, and no encode for it waits or runs. Texture Details offers
+   * **Retry Encoding** for it, the user's own re-encode.
+   */
+  async isTextureAlignmentStale(
+    guid: string,
+    options: { usage?: string; ktx2SizeCache?: Map<string, ImageSize | null> } = {},
+  ): Promise<boolean> {
+    const queue = this.encodeQueue;
+    if (!queue) return false;
+    await this.resolveLegacyAtlasReferrers();
+    const asset = await this.settledTexture(guid);
+    if (!asset || queue.has(guid)) return false;
+    const usage = options.usage ?? String(asset.header.payload.usage ?? "albedo");
+    if (!this.isAlignmentCandidate(asset, usage)) return false;
+    try {
+      return await this.isAlignmentStale(asset, usage, options.ktx2SizeCache);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * A writable `compressed` Texture of a compressed Usage with source pixels
+   * to re-encode from: one the alignment pass checks.
+   */
+  private isAlignmentCandidate(asset: IndexedAsset, usage: string): boolean {
+    const payload = asset.header.payload;
+    if (asset.placeholder || asset.header.type !== "Texture") return false;
+    if (payload.compressionState !== "compressed") return false;
+    if (isEnvironmentTexturePayload(payload) || !shouldCompressTexture(usage)) return false;
+    // Without source pixels a forced retry would strand it `pending`.
+    if (!asset.header.chunks.some((chunk) => chunk.kind === "pixels")) return false;
+    return !this.roots.get(asset.rootId)?.readOnly;
   }
 
   private async isAlignmentStale(

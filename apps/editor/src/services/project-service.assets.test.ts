@@ -821,17 +821,22 @@ describe("project documents as .babasset", () => {
     expect(await service.reconcileTextureAlignment()).toBe(0);
     expect(service.textureEncodeQueue.depth).toBe(0);
     expect(encode).not.toHaveBeenCalled();
+    // So Texture Details offers Retry Encoding for both.
+    expect(await service.textureAlignmentStale("retried")).toBe(true);
+    expect(await service.textureAlignmentStale("waiting")).toBe(true);
 
     // Retry Encoding, and every Details change that re-encodes, makes this call.
     expect(await service.retryTextureEncoding("retried", { force: true, usage: "albedo" })).toBe(true);
     await vi.waitFor(() => expect(payload("retried")).toMatchObject({ compressionState: "compressed", ktx2Width: 4, ktx2Height: 4 }));
     expect(payload("waiting")).toMatchObject({ compressionState: "compressed", ktx2ChunkId: KTX2_KEY_MAX_1 });
     expect(payload("waiting")).not.toHaveProperty("ktx2Width");
+    expect(await service.textureAlignmentStale("retried")).toBe(false);
 
     // Turning source control off in Project Settings runs the pass.
     service.setSourceControlEnabled(false);
     await vi.waitFor(() => expect(payload("waiting")).toMatchObject({ compressionState: "compressed", ktx2Width: 4, ktx2Height: 4 }));
     expect(encode).toHaveBeenCalledTimes(2);
+    expect(await service.textureAlignmentStale("waiting")).toBe(false);
   });
 
   it("with source control on, keeps a Tileset's texture at its own size only when this session padded it", async () => {
@@ -1045,6 +1050,8 @@ describe("project documents as .babasset", () => {
     await service.loadCurrentProject();
     await settled();
     expect(service.textureAlignmentState.requeued.sort()).toEqual(["odd-0", "odd-1"]);
+    // Its re-encode waits: Texture Details offers no Retry Encoding meanwhile.
+    expect(await service.textureAlignmentStale("odd-0")).toBe(false);
     const [imported] = await service.registry!.importFile("project", "", "odd.png", pngHeader(1, 1));
     // Content Browser changes and returning to the app remount the registry.
     await service.remountRegistry();
