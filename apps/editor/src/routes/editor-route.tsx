@@ -380,18 +380,31 @@ function PlayAwareKeybinds({ children }: { children: ReactNode }) {
   return <KeybindProvider suspended={playing}>{children}</KeybindProvider>;
 }
 
+/**
+ * Reads the document identity feed here rather than in EditorRoute: a
+ * document change re-renders only this wrapper, and its unchanged `children`
+ * keep the rest of the editor from re-rendering with it.
+ */
+function ProjectSessionState({ children }: { children: ReactNode }) {
+  const { subscribeDocumentIdentity } = useDocuments();
+  return (
+    <EditorSessionStateProvider
+      subscribeDocumentIdentity={subscribeDocumentIdentity}
+    >
+      {children}
+    </EditorSessionStateProvider>
+  );
+}
+
 export default function EditorRoute({
   gallery = false,
 }: {
   gallery?: boolean;
 }) {
-  const { subscribeDocumentIdentity } = useDocuments();
   // Homepage is the only way into a project and closing one returns there,
   // so this route (and the session view state it owns) mounts once per project.
   return (
-    <EditorSessionStateProvider
-      subscribeDocumentIdentity={subscribeDocumentIdentity}
-    >
+    <ProjectSessionState>
       <AssetOpenDocumentsProvider>
         <ValidationProvider>
           <PlayProvider>
@@ -410,6 +423,6 @@ export default function EditorRoute({
           </PlayProvider>
         </ValidationProvider>
       </AssetOpenDocumentsProvider>
-    </EditorSessionStateProvider>
+    </ProjectSessionState>
   );
 }
