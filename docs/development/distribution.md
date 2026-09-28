@@ -42,7 +42,7 @@ The implementation provides the manual distribution paths below. On September 7,
 ## Implemented paths
 
 - `.github/workflows/distribute.yml` is manual only, with Test/Release choices, grouped or individual platforms, exact source/version assertions, and a default dry run. Only standard Ubuntu, Windows and macOS runners are used.
-- Electron host/preload compile to CommonJS under `host/`; the packaged `renderer/`, `app://babylonslate/` protocol, IPC validation, sandboxing and context isolation are shared by all desktop hosts. Staging omits the web-deployment-only `.nojekyll` marker while retaining strict dotfile/credential rejection.
+- Electron host/preload compile to CommonJS under `host/`; the packaged `renderer/`, `app://babylonslate/` protocol, IPC validation, sandboxing and context isolation are shared by all desktop hosts. Staging omits web/deployment placeholder markers (`.nojekyll`, `.keep`, `.gitkeep`) while retaining strict rejection of other dotfiles, symlinks and credential-shaped files.
 - Windows produces an unsigned x64 NSIS installer. Windows may warn about an unrecognized publisher.
 - macOS produces arm64/x64 DMG and ZIP packages with hardened runtime entitlements. The `macos-signing` credentials enable Developer ID signing and notarization; without the p12 secret, packaging is unsigned, updates are disabled, and users open it through **Privacy & Security → Open Anyway**.
 - Linux produces an x64 AppImage. Update checks run only when the app was launched as an AppImage.
