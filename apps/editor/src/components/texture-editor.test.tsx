@@ -16,7 +16,7 @@ if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined")
 }
 
 const retryTextureEncoding = vi.hoisted(() => vi.fn(async () => true));
-const textureAlignmentStale = vi.hoisted(() => vi.fn(async (_guid: string, _usage?: string) => false));
+const textureAlignmentStale = vi.hoisted(() => vi.fn<(guid: string, usage?: string) => Promise<boolean>>(async () => false));
 const prepareAreaEmission = vi.hoisted(() => vi.fn(async (_guid: string, options: { signal: AbortSignal; onProgress: (value: AreaEmissionProgress) => void }) => {
   options.onProgress({ phase: "filtering", progress: 0.5 });
   await new Promise<void>((_resolve, reject) => options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true }));
