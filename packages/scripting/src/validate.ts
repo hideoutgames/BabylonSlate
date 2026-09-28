@@ -1050,8 +1050,5 @@ export function validateGraphs(
   for (const rule of listValidationRules()) {
     diagnostics.push(...rule.run(canonicalGraphs, ctx));
   }
-  for (const rule of options.extraRules ?? []) {
-    diagnostics.push(...rule.run(canonicalGraphs, ctx));
-  }
   return diagnostics;
 }

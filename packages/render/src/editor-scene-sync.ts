@@ -30,6 +30,7 @@ import {
   freezeStaticActorWorldMatrix,
   isEditorActorOrigin,
   syncMeshCollisionDashes,
+  syncEditorCablePreviews,
   visualMeshesOfActorRoot,
 } from "./scene-loader";
 import { syncAuthoredIlluminationSteps } from "./scene-illumination";
@@ -404,6 +405,7 @@ export class EditorSceneSync {
       }
       yield 0.6 + 0.1 * ++index / actorCount;
     }
+    syncEditorCablePreviews(this.scene, sceneData.actors);
     for (const progress of syncAuthoredIlluminationSteps(this.scene, sceneData, {
       stealActiveCamera: this.stealActiveCamera,
       restoreCamera: this.restoreCamera,
@@ -765,7 +767,7 @@ export class EditorSceneSync {
     root: Mesh,
   ): void {
     for (const component of actor.components) {
-      if (component.classId !== "MeshComponent") continue;
+      if (component.classId !== "MeshComponent" && component.classId !== "CableComponent") continue;
       if (meshKindOf(component) === "pivot") continue;
       if (authoredMaterialGuid(component.properties.materialGuid)) continue;
       const visual = visualForMeshComponent(root, actor.id, component.id);
@@ -800,7 +802,7 @@ export class EditorSceneSync {
         }
         continue;
       }
-      if (component.classId !== "MeshComponent") continue;
+      if (component.classId !== "MeshComponent" && component.classId !== "CableComponent") continue;
       if (meshKindOf(component) === "pivot") continue;
       const visual = visualForMeshComponent(root, actor.id, component.id);
       if (!visual) continue;

@@ -60,13 +60,6 @@ export function playAudioLibraryFromAssets(options: {
   return library;
 }
 
-/** Audio guids the worker uses for BT PlaySound fail-on-missing. */
-export function audioAssetGuidsFromLibrary(
-  library: PlayAudioLibrary,
-): string[] {
-  return [...library.audio.keys()];
-}
-
 /** Read Audio clip bytes on first playSound — unused assets stay on disk. */
 export function createPlayAudioSourceLoader(options: {
   assets: ReadonlyArray<{

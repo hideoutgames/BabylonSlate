@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  burstFireTimes,
   burstParticlesInWindow,
   type ParticleBurst,
 } from "./particle-schedule";
@@ -24,7 +23,6 @@ describe("burst schedule", () => {
     const bursts = [burst({ time: 0.2, cycles: 3, interval: 0.5 })];
     expect(burstParticlesInWindow(bursts, 5, 0, 5)).toBe(30);
     expect(burstParticlesInWindow(bursts, 5, 0.7, 1.2)).toBe(10);
-    expect(burstFireTimes(bursts[0]!, 5, 10)).toEqual([0.2, 0.7, 1.2]);
   });
 
   it("repeats a zero-cycle burst until the cycle ends and never at or after duration", () => {
@@ -47,11 +45,5 @@ describe("burst schedule", () => {
       expect(split).toBe(whole);
     }
     expect(whole).toBe(10 + 4 * 2);
-  });
-
-  it("caps listed fire times at the requested limit", () => {
-    expect(
-      burstFireTimes(burst({ cycles: 0, interval: 0.01 }), 600, 5),
-    ).toHaveLength(5);
   });
 });

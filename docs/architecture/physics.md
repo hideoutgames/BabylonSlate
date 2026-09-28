@@ -13,9 +13,8 @@ Shared surface for simulation in the game worker (engineplan §2.1, §2.3, §13.
 
 | Export | Role |
 | --- | --- |
-| `PhysicsBackend` | Port: world lifecycle, bodies/colliders, `step(dt)`, `pollContacts()`, sync queries, impulses, partial world-axis `setBodyLinearVelocity` for dynamic bodies, live `updateBody` / `updateCollider` |
+| `PhysicsBackend` | Port: world lifecycle, bodies/colliders, `step(dt)`, `pollContacts()`, sync queries, impulses, partial world-axis `setBodyLinearVelocity` for dynamic bodies, live `updateBody` / `applyColliderChanges` |
 | `PhysicsWorldKind` | `"3d"` \| `"2d"` — one kind per scene |
-| `NullPhysicsBackend` | In-memory no-op for tests without wasm |
 | `createPhysicsBackend` | Lazy factory; dynamic-imports only the needed engine |
 | `bakeColliderLocal` | Actor × component scale into shape sizes; scaled local translation; local rotation on `ColliderDesc` |
 | `physicsActorDiagnostics` | Pairing warnings (`physics.collider_without_body` / `physics.body_without_collider`); tilemaps exempt |
@@ -26,6 +25,8 @@ Depends on `@babylonslate/core` at the type layer plus `@babylonjs/core` Physics
 The optional `getBodyImpulseResponse(bodyId, impulse, point)` query returns the predicted world linear/angular velocity change and world centre of mass without changing the body. Havok uses native collider inertia (including principal-axis rotation and mass); software uses its unit-inertia model. [Water buoyancy](render.md#water) uses this to solve its support forces together while leaving collision response to the native solver.
 
 ## Backends
+
+Havok also implements the optional `createSphereSweep(radius)` port for [Cable Component](render.md#cable-component). It owns one native sphere and reusable query results, excludes triggers and checks initial penetration before sweeping. Radius must be finite and positive. `SphereSweepQuery.sweep` returns a borrowed `HitResult` (including its vectors), valid until the next sweep: distance is sphere-center travel, location is the collider surface, and initial overlap has distance zero. Dispose queries when no longer needed; backend shutdown also disposes them. A disposed query returns a miss.
 
 | Kind | Engine | When loaded |
 | --- | --- | --- |
@@ -143,7 +144,7 @@ Havok compound shapes share one actor-pair overlap lifetime: Begin Overlap fires
 
 Spawn/attach creates bodies; destroy removes them (`PhysicsWorldSync` drops backend bodies when the actor leaves the live set). Bodies use the same composed world-space actor hierarchy as render snapshots. After `step`, body poses are converted through the inverse parent transform back into Actor-local TRS before `postPhysics`; a parented body therefore does not jump between local simulation and world rendering. Static and kinematic bodies copy the composed actor transform on resync; dynamic bodies keep the simulation transform. `addImpulse` is a no-op when the actor has no body. Tilemap chain colliders skip `collision: false` layers and missing guid/tileset payloads.
 
-Graph **Set** of RigidBody / Collider catalog variables is not store-only. `setVariableOn` → `refreshComponent` → `PhysicsWorldSync.applyComponent` retunes the body and reconciles the actor's collider descriptors through one `applyColliderChanges` transaction. Native shape tuning remains available through `updateCollider`; geometry changes replace only the affected collider shape. Software, Rapier, and Havok implement the shared commands. Unit coverage lives in `packages/runtime/src/physics-sync.test.ts`, `packages/runtime/src/physics-sync-transactions.test.ts`, and `packages/physics/src/physics.test.ts`.
+Graph **Set** of RigidBody / Collider catalog variables is not store-only. `setVariableOn` → `refreshComponent` → `PhysicsWorldSync.applyComponent` retunes the body and reconciles the actor's collider descriptors through one `applyColliderChanges` transaction. Havok keeps the native shape for trigger, material and filter changes; geometry changes replace only the affected collider shape. Software, Rapier, and Havok implement the shared commands. Unit coverage lives in `packages/runtime/src/physics-sync.test.ts`, `packages/runtime/src/physics-sync-transactions.test.ts`, and `packages/physics/src/physics.test.ts`.
 
 In 3D worlds, dynamic actors with `NavAgentComponent` retain physics position authority and gravity. Navigation supplies XZ steering while preserving vertical velocity; the crowd follows the resolved body position. Attaching a Behaviour Tree or stopping its movement task does not freeze a falling body. Navigation does not change `motionType` or `gravityScale`; kinematic bodies still require explicit movement. See [navigation.md](navigation.md#dynamic-rigid-bodies).
 

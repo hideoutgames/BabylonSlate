@@ -10,8 +10,6 @@
  */
 
 export type StructuredFlowKind =
-  | "branch"
-  | "sequence"
   | "forLoop"
   | "forLoopWithBreak"
   | "forEach"
@@ -28,13 +26,6 @@ export type StructuredFlowKind =
   | "switchOnString";
 
 export type StructuredFlowMeta =
-  | {
-      kind: "branch";
-      conditionPin: string;
-      truePin: string;
-      falsePin: string;
-    }
-  | { kind: "sequence" }
   | {
       kind: "forLoop" | "forLoopWithBreak";
       firstIndexPin: string;
@@ -102,12 +93,6 @@ export type StructuredFlowMeta =
       valuePin: string;
       defaultPin: string;
     };
-
-export function isFlowSwitchKind(
-  kind: StructuredFlowKind | undefined,
-): boolean {
-  return kind === "switchOnInt" || kind === "switchOnString";
-}
 
 export function isFlowSwitchMeta(
   meta: StructuredFlowMeta,

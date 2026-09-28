@@ -16,8 +16,8 @@ export interface ViewportJoystickProps {
 }
 
 /**
- * On-screen editor camera stick. Not the P9 game TouchJoystick — this only
- * flies the viewport camera.
+ * On-screen editor camera stick. It only flies the viewport camera and never
+ * writes to the Play input ring.
  */
 export function ViewportJoystick({
   onFly,

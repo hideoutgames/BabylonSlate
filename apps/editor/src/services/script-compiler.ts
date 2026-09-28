@@ -373,6 +373,22 @@ function compileFunctionGraphFingerprint(
   return Object.fromEntries(entries);
 }
 
+const documentFingerprints = new WeakMap<SerializedGraph, string>();
+
+function documentCompileFingerprint(content: SerializedGraph): string {
+  const cached = documentFingerprints.get(content);
+  if (cached !== undefined) return cached;
+  const fingerprint = JSON.stringify({
+    nodes: compileNodeFingerprint(content.nodes),
+    edges: compileEdgeFingerprint(content.edges),
+    members: content.members ?? [],
+    components: content.components ?? [],
+    functionGraphs: compileFunctionGraphFingerprint(content.functionGraphs),
+  });
+  documentFingerprints.set(content, fingerprint);
+  return fingerprint;
+}
+
 /**
  * Stable fingerprint of graph *compile* inputs. Node positions are omitted so
  * Format / canvas nudges do not re-enable Compile (event graph and function graphs).
@@ -384,11 +400,7 @@ export function graphCompileSignature(
   const payload = [...documents]
     .map((doc) => ({
       path: doc.path,
-      nodes: compileNodeFingerprint(doc.content.nodes),
-      edges: compileEdgeFingerprint(doc.content.edges),
-      members: doc.content.members ?? [],
-      components: doc.content.components ?? [],
-      functionGraphs: compileFunctionGraphFingerprint(doc.content.functionGraphs),
+      fingerprint: documentCompileFingerprint(doc.content),
     }))
     .sort((a, b) => a.path.localeCompare(b.path));
   return JSON.stringify(inputAssets === undefined ? payload : { graphs: payload, inputAssets });
@@ -605,18 +617,6 @@ export function compileGraphDocuments(
     if (script) scripts.push(script);
   }
   return scripts;
-}
-
-/** Release / packed export compile — always omits Development Only nodes. */
-export function compileGraphDocumentsForExport(
-  documents: ReadonlyArray<{
-    path: string;
-    content: SerializedGraph | LogicGraph;
-    classId?: string;
-    parentClassId?: string | null;
-  }>,
-): ScriptBundleEntry[] {
-  return compileGraphDocuments(documents, { stripDevelopmentOnly: true });
 }
 
 export type AnimGraphCompileDocument = {

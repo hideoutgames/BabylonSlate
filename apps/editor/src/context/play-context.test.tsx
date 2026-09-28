@@ -9,7 +9,6 @@ import {
   usePlay,
   type LiveBtState,
 } from "./play-context";
-import { useProjectRenderingStatus } from "./project-rendering-context";
 
 const host = vi.hoisted(() => {
   const diagnostics = new Set<(line: string) => void>();
@@ -51,7 +50,7 @@ afterEach(() => {
 });
 
 it("delivers logs and BT snapshots only to their subscribers while Play controls stay live", () => {
-  const renders = { play: 0, optional: 0, log: 0, bt: 0, rendering: 0 };
+  const renders = { play: 0, optional: 0, log: 0, bt: 0 };
   let controls!: ReturnType<typeof usePlay>;
   function PlayConsumer() {
     controls = usePlay();
@@ -85,18 +84,12 @@ it("delivers logs and BT snapshots only to their subscribers while Play controls
       </output>
     );
   }
-  function RenderingConsumer() {
-    const status = useProjectRenderingStatus();
-    renders.rendering += 1;
-    return <output data-testid="rendering-status">{status?.phase}</output>;
-  }
   const view = render(
     <PlayProvider>
       <PlayConsumer />
       <OptionalConsumer />
       <LogConsumer />
       <BtConsumer />
-      <RenderingConsumer />
     </PlayProvider>,
   );
   expect(screen.getByTestId("play-controls").textContent).toBe("false");
@@ -119,7 +112,6 @@ it("delivers logs and BT snapshots only to their subscribers while Play controls
   expect(renders.play).toBe(initial.play);
   expect(renders.optional).toBe(initial.optional);
   expect(renders.bt).toBe(initial.bt);
-  expect(renders.rendering).toBe(initial.rendering);
 
   const afterLogs = { ...renders };
   const snapshot: LiveBtState = {
@@ -138,7 +130,6 @@ it("delivers logs and BT snapshots only to their subscribers while Play controls
   expect(renders.log).toBe(afterLogs.log);
   expect(renders.play).toBe(initial.play);
   expect(renders.optional).toBe(initial.optional);
-  expect(renders.rendering).toBe(initial.rendering);
   expect(controls.reportBtState).toBe(writer);
 
   act(() => writer(null));

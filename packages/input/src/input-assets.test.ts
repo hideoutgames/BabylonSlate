@@ -235,25 +235,21 @@ describe("asset input runtime", () => {
         },
       ],
     };
-    const resolver = new InputResolver(inputMappingsFromAssets([original]));
-    const selected = resolver.bindings.getInputBindings({
-      Name: "stale",
-      Asset: "move",
-    })[1]!;
-    expect(
-      resolver.bindings.setInputControl(selected, {
-        Device: "key",
-        Code: "KeyH",
-        Shift: false,
-        Ctrl: false,
-        Alt: false,
-        Meta: false,
-      }),
-    ).toBe(true);
-    expect(
-      resolver.bindings.getInputBindings({ Name: "", Asset: "move" })[1]!.Label,
-    ).toBe("H");
-    const saved = resolver.bindings.exportBindings();
+    // Version 1 player saves override an authored slot by its stable binding id.
+    const saved = JSON.stringify({
+      version: 1,
+      overrides: [
+        {
+          kind: "axis",
+          mapping: "move",
+          index: 1,
+          bindingId: "left",
+          defaultBinding: original.bindings[1],
+          device: "key",
+          code: "KeyH",
+        },
+      ],
+    });
     const renamed = new InputResolver(
       inputMappingsFromAssets([
         {
@@ -264,6 +260,9 @@ describe("asset input runtime", () => {
       ]),
     );
     expect(renamed.bindings.importBindings(saved)).toBe(true);
+    expect(
+      renamed.bindings.getInputBindings({ Name: "", Asset: "move" })[0],
+    ).toMatchObject({ Id: "left", Label: "H", DigitalValue: -1 });
     const missingBindingId = JSON.parse(saved);
     delete missingBindingId.overrides[0].bindingId;
     expect(
@@ -285,9 +284,6 @@ describe("asset input runtime", () => {
       released: true,
       value: { x: 0, y: 0 },
     });
-    expect(
-      renamed.bindings.beginInputRebind({ ...selected, Id: "deleted" }),
-    ).toBe(false);
   });
 
   it("keeps same-name assets independent through their asset identities", () => {
@@ -308,35 +304,10 @@ describe("asset input runtime", () => {
       Name: "Jump",
       Asset: "jump",
     })[0]!;
-    expect(
-      resolver.bindings.setInputControl(binding, {
-        Device: "key",
-        Code: "KeyH",
-        Shift: false,
-        Ctrl: false,
-        Alt: false,
-        Meta: false,
-      }),
-    ).toBe(true);
+    expect(resolver.bindings.setInputActionBinding(binding, "KeyH")).toBe(true);
     expect(
       resolver.bindings.getInputBindings({ Name: "Jump", Asset: "other" })[0]
         ?.Key,
     ).toBe("KeyJ");
-  });
-
-  it("captures a replacement key without activating gameplay", () => {
-    const resolver = new InputResolver(inputMappingsFromAssets([action]));
-    const binding = resolver.bindings.getInputBindings({
-      Name: "Jump",
-      Asset: "jump",
-    })[0]!;
-    expect(resolver.bindings.beginInputRebind(binding)).toBe(true);
-    expect(resolver.resolve([key("KeyH", "down")]).inputs.jump.held).toBe(
-      false,
-    );
-    resolver.resolve([key("KeyH", "up")]);
-    const pressed = resolver.resolve([key("KeyH", "down")]);
-    expect(pressed.inputs.jump.started).toBe(true);
-    expect(pressed.actions.Jump.held).toBe(true);
   });
 });

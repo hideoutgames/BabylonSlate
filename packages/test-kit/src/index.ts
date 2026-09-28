@@ -9,7 +9,6 @@ export { findHardcodedRadii, findRadiusDeclarations } from "./style-audit";
 export {
   A16_ENCODE_FIXTURES,
   A16_POLICY,
-  fixtureId,
   type EncodeFixtureSpec,
 } from "./a16-encode-fixtures";
 export {
@@ -17,16 +16,4 @@ export {
   type DeterministicScenarioOptions,
   type DeterministicScenarioResult,
 } from "./harness";
-export {
-  installHarnessProjectFixtures,
-  assertHarnessFixtureReadable,
-  type HarnessProjectFixtures,
-} from "./harness-fixtures";
-export {
-  createInProcessRuntime,
-  createWorldSnapshot,
-  stringifyWorldSnapshot,
-  type RuntimeDriver,
-  type RuntimeDriverOptions,
-  type TransportMode,
-} from "./transport-harness";
+export { createInProcessRuntime } from "./transport-harness";

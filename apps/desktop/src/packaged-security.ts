@@ -41,7 +41,7 @@ export function validateIpcArguments(channel: string, args: unknown[]): void {
     "settings:read": 0, "settings:write": 1, "secrets:get": 1, "secrets:set": 2, "secrets:delete": 1,
     "account-secrets:get": 1, "account-secrets:set": 2, "account-secrets:delete": 1,
     "lfs:fetch": 1, "project:pickFolder": 0, "project:openDocuments": 1, "project:openKnown": 1,
-    "project:list": 0, "project:current": 0, "project:release": 0, "project:readBinary": 1,
+    "project:list": 0, "project:release": 0, "project:readBinary": 1,
     "project:writeBinary": 2, "project:exists": 1, "project:readdir": 1, "project:mkdir": 2,
     "project:remove": 1, "project:stat": 1,
   };

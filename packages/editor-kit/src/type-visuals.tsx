@@ -5,6 +5,7 @@ import {
   BoxIcon,
   BoxesIcon,
   BracesIcon,
+  CableIcon,
   CameraIcon,
   CircleDashedIcon,
   CloudIcon,
@@ -25,9 +26,11 @@ import {
   LayersIcon,
   LayoutGridIcon,
   LightbulbIcon,
+  LinkIcon,
   ListIcon,
   ListTreeIcon,
   MapIcon,
+  MountainIcon,
   MousePointerClickIcon,
   NavigationIcon,
   NetworkIcon,
@@ -38,15 +41,18 @@ import {
   SparklesIcon,
   SplineIcon,
   SquareDashedIcon,
+  TreesIcon,
   TypeIcon,
   Volume2Icon,
   WindIcon,
   WavesIcon,
+  WaypointsIcon,
   EraserIcon,
   WorkflowIcon,
 } from "lucide-react";
+import { ENGINE_COMPONENT_CLASS_IDS } from "@babylonslate/core";
 import { cn } from "@babylonslate/ui/lib/utils";
-import { ASSET_COLOR_TOKENS, assetColorVar } from "@babylonslate/ui/lib/data-types";
+import { assetColorVar } from "@babylonslate/ui/lib/data-types";
 
 export type AssetVisualFamily =
   | "scene"
@@ -118,12 +124,16 @@ const ENGINE_PARENT: Record<string, string | null> = {
   BTComposite_Selector: "BTComposite",
   BTComposite_Sequence: "BTComposite",
   BTComposite_Parallel: "BTComposite",
+  LandscapeComponent: "ActorComponent",
+  FoliageComponent: "ActorComponent",
   MeshComponent: "ActorComponent",
   SpriteComponent: "ActorComponent",
   TilemapComponent: "ActorComponent",
   CameraComponent: "ActorComponent",
   RenderTargetCaptureComponent: "ActorComponent",
   SpringArmComponent: "ActorComponent",
+  CableComponent: "ActorComponent",
+  SplineComponent: "ActorComponent",
   LightComponent: "ActorComponent",
   AreaRectLightComponent: "ActorComponent",
   FogVolumeComponent: "ActorComponent",
@@ -143,6 +153,8 @@ const ENGINE_PARENT: Record<string, string | null> = {
   WaterBuoyancyComponent: "ActorComponent",
   RigidBodyComponent: "ActorComponent",
   ColliderComponent: "ActorComponent",
+  PhysicsConstraintComponent: "ActorComponent",
+  RagdollComponent: "ActorComponent",
   AnimationGraphComponent: "ActorComponent",
   BehaviourTreeComponent: "ActorComponent",
   NavAgentComponent: "ActorComponent",
@@ -188,6 +200,8 @@ const ICON_BY_ID: Record<string, LucideIcon> = {
   "2DTextComponent": TypeIcon,
   "2DRichTextComponent": SparklesIcon,
   "2DPanelComponent": LayoutGridIcon,
+  LandscapeComponent: MountainIcon,
+  FoliageComponent: TreesIcon,
   MeshComponent: BoxIcon,
   SpriteComponent: ImagesIcon,
   TilemapComponent: Grid3x3Icon,
@@ -195,6 +209,8 @@ const ICON_BY_ID: Record<string, LucideIcon> = {
   RenderTargetCapture: CameraIcon,
   RenderTargetCaptureComponent: CameraIcon,
   SpringArmComponent: SplineIcon,
+  CableComponent: CableIcon,
+  SplineComponent: WaypointsIcon,
   LightComponent: LightbulbIcon,
   AreaRectLightComponent: LightbulbIcon,
   FogVolumeComponent: CloudIcon,
@@ -214,6 +230,8 @@ const ICON_BY_ID: Record<string, LucideIcon> = {
   WaterBuoyancyComponent: AnchorIcon,
   RigidBodyComponent: CylinderIcon,
   ColliderComponent: CircleDashedIcon,
+  PhysicsConstraintComponent: LinkIcon,
+  RagdollComponent: PersonStandingIcon,
   Scene: LayersIcon,
   Graph: FileJsonIcon,
   Texture: ImageIcon,
@@ -253,40 +271,7 @@ const ICON_BY_ID: Record<string, LucideIcon> = {
   PluginSettings: PuzzleIcon,
 };
 
-const COMPONENT_CLASS_IDS = new Set([
-  "MeshComponent",
-  "SpriteComponent",
-  "TilemapComponent",
-  "CameraComponent",
-  "RenderTargetCaptureComponent",
-  "SpringArmComponent",
-  "LightComponent",
-  "AreaRectLightComponent",
-  "FogVolumeComponent",
-  "OutlineComponent",
-  "HemisphericFillLightComponent",
-  "SkyboxComponent",
-  "Text3DComponent",
-  "SceneStreamingComponent",
-  "AudioComponent",
-  "ParticleComponent",
-  "GlobalWaterVolumeComponent", "WaterOceanComponent", "WaterLakeComponent", "WaterRiverComponent", "WaterPuddleComponent", "WaterRemovalVolumeComponent", "WaterBuoyancyComponent",
-  "RigidBodyComponent",
-  "ColliderComponent",
-  "AnimationGraphComponent",
-  "BehaviourTreeComponent",
-  "NavAgentComponent",
-  "NavMeshComponent",
-  "NavMeshBlockerComponent",
-  "BlockingVolumeComponent",
-  "2DAnchorComponent",
-  "2DButtonComponent",
-  "2DMaterialComponent",
-  "2DTextureComponent",
-  "2DTextComponent",
-  "2DRichTextComponent",
-  "2DPanelComponent",
-]);
+const COMPONENT_CLASS_IDS = new Set<string>(ENGINE_COMPONENT_CLASS_IDS);
 
 const FAMILY_BY_ASSET_TYPE: Record<string, AssetVisualFamily> = {
   Scene: "scene",
@@ -328,8 +313,6 @@ const FAMILY_BY_ASSET_TYPE: Record<string, AssetVisualFamily> = {
   ScriptInterface: "class",
   PluginSettings: "scriptType",
 };
-
-export { ASSET_COLOR_TOKENS };
 
 const COLOR_BY_FAMILY: Record<AssetVisualFamily, string> = {
   scene: assetColorVar("scene"),

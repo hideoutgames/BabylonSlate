@@ -3,8 +3,6 @@ import type { ImportOptions, ImportResult } from "./types";
 import { baseName, extensionOf } from "./util";
 import { AUDIO_DEFAULT_SOURCE_CHUNK } from "../audio-payload";
 
-export const AUDIO_EXTENSIONS = new Set(["mp3", "wav", "ogg"]);
-
 const MIME_BY_EXTENSION: Record<string, string> = {
   mp3: "audio/mpeg",
   wav: "audio/wav",

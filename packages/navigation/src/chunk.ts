@@ -16,15 +16,6 @@ export function navmeshChunk(bytes: Uint8Array): NavmeshChunk {
   };
 }
 
-export function navmeshBytesFromChunks(
-  chunks: Iterable<{ id: string; data?: Uint8Array }>,
-): Uint8Array | null {
-  for (const chunk of chunks) {
-    if (chunk.id === NAVMESH_CHUNK_ID && chunk.data) return chunk.data;
-  }
-  return null;
-}
-
 export type ExtraChunkLike = {
   id: string;
   kind?: string;

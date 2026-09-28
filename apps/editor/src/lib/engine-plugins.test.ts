@@ -1,19 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
-  STARTER_CONTENT_FOLDER,
   STARTER_CONTENT_PLUGIN_GUID,
   buildStarterContentFiles,
   discoverEnginePlugins,
-  packEnginePluginFiles,
+  encodeProjectZip,
 } from "@babylonslate/assets";
 import { loadEnginePluginStorage } from "./engine-plugins";
 
 describe("loadEnginePluginStorage", () => {
   it("fetches index.json and unpacks each .babplugin at the storage root", async () => {
-    const files = await buildStarterContentFiles();
-    const packed = await packEnginePluginFiles(files, {
-      id: STARTER_CONTENT_FOLDER,
-    });
+    const packed = encodeProjectZip(await buildStarterContentFiles());
     const fetchFn: typeof fetch = async (input) => {
       const url = String(input);
       if (url.endsWith("engine-plugins/index.json")) {
@@ -25,7 +21,7 @@ describe("loadEnginePluginStorage", () => {
         );
       }
       if (url.endsWith("engine-plugins/starter-content.babplugin")) {
-        return new Response(packed.zip, { status: 200 });
+        return new Response(packed, { status: 200 });
       }
       return new Response("missing", { status: 404 });
     };

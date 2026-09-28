@@ -75,8 +75,6 @@ describe("parametric reverb topology", () => {
       graph.input,
       graph.output,
     );
-    expect(connected.combCount).toBe(AUDIO_REVERB_COMB_COUNT);
-    expect(connected.allpassCount).toBe(AUDIO_REVERB_ALLPASS_COUNT);
     expect(graph.nodes.filter((node) => node.kind === "delay")).toHaveLength(
       AUDIO_REVERB_COMB_COUNT + AUDIO_REVERB_ALLPASS_COUNT,
     );
@@ -84,7 +82,7 @@ describe("parametric reverb topology", () => {
       (node) => node.kind === "gain" && node.gain.value < 0,
     );
     expect(feedforward).toHaveLength(AUDIO_REVERB_ALLPASS_COUNT);
-    connected.setWet(0.4);
+    connected.setProfile({ wet: 0.4, decay: 0, damping: 0 });
     const wet = graph.nodes.find(
       (node) => node.kind === "gain" && node.gain.value === 0.4,
     );

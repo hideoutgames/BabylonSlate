@@ -16,7 +16,7 @@ import { ResourceCache } from "./resource-cache";
 import { RenderScheduler } from "./render-scheduler";
 
 describe("hardware scaling", () => {
-  it("drops a hardware scaling tier and applies an initial Engine Settings level", () => {
+  it("applies an initial Engine Settings level", () => {
     const engine = {
       setHardwareScalingLevel: vi.fn(),
     } as unknown as NullEngine;
@@ -27,8 +27,7 @@ describe("hardware scaling", () => {
       initialLevel: 1.5,
     });
     expect(scaling.getLevel()).toBe(1.5);
-    scaling.dropTier();
-    expect(scaling.getLevel()).toBe(1.75);
+    expect(engine.setHardwareScalingLevel).toHaveBeenCalledWith(1.5);
   });
 
   it("does not call setHardwareScalingLevel when the clamped level is unchanged", () => {
@@ -110,7 +109,7 @@ describe("hardware scaling", () => {
       initialLevel: 1,
       targetFrameMs: 1000 / 60,
     });
-    scaling.dropTier();
+    scaling.setLevel(1.25);
     expect(scaling.getLevel()).toBe(1.25);
     scaling.noteRestore();
     expect(scaling.getLevel()).toBe(1);

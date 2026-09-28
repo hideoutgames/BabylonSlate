@@ -46,11 +46,6 @@ export function statusBarStyleForTheme(
   return resolved === "dark" ? "light" : "dark";
 }
 
-export function documentColorScheme(): ResolvedTheme {
-  if (typeof document === "undefined") return "dark";
-  return document.documentElement.classList.contains("dark") ? "dark" : "light";
-}
-
 export function subscribeSystemTheme(
   onChange: (prefersDark: boolean) => void,
 ): () => void {

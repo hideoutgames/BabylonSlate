@@ -19,11 +19,9 @@ import { useDocuments } from "../context/document-context";
 export function SkeletonPreviewCanvas({
   sourceBytes,
   kind,
-  showBones = true,
 }: {
   sourceBytes: Uint8Array;
   kind: SkeletonKind;
-  showBones?: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const play = useOptionalPlay();
@@ -71,15 +69,13 @@ export function SkeletonPreviewCanvas({
         });
         hostRef.current = host;
         presenterRef.current = presenter;
-        if (showBones) {
-          bonesRef.current?.dispose();
-          bonesRef.current = attachSkeletonPreview(
-            previewRigRoot(host),
-            host.scene,
-            kind,
-          );
-          setBonesAttached(true);
-        }
+        bonesRef.current?.dispose();
+        bonesRef.current = attachSkeletonPreview(
+          previewRigRoot(host),
+          host.scene,
+          kind,
+        );
+        setBonesAttached(true);
         presenter.present({ force: true });
         if (cancelled) {
           bonesRef.current?.dispose();
@@ -120,14 +116,14 @@ export function SkeletonPreviewCanvas({
       hostRef.current = null;
       presenterRef.current = null;
     };
-  }, [engine, kind, showBones, sourceBytes]);
+  }, [engine, kind, sourceBytes]);
 
   useEffect(() => {
     const host = hostRef.current;
     bonesRef.current?.dispose();
     bonesRef.current = null;
     setBonesAttached(false);
-    if (!host || !showBones) {
+    if (!host) {
       presenterRef.current?.present({ force: true });
       return;
     }
@@ -138,7 +134,7 @@ export function SkeletonPreviewCanvas({
     );
     setBonesAttached(true);
     presenterRef.current?.present({ force: true });
-  }, [kind, showBones, previewGeneration]);
+  }, [kind, previewGeneration]);
 
   return (
     <canvas

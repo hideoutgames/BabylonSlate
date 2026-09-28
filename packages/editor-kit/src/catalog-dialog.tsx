@@ -1,10 +1,4 @@
-import {
-  useMemo,
-  useRef,
-  useState,
-  type ComponentProps,
-  type ReactNode,
-} from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { Button } from "@babylonslate/ui/components/button";
 import {
   Dialog,
@@ -50,13 +44,6 @@ export interface CatalogDialogProps {
   search: string;
   onSearchChange: (value: string) => void;
   searchPlaceholder?: string;
-  /** When true, focus the search field on open. Default false (iPad keyboard). */
-  autoFocusSearch?: boolean;
-  /** Search-result owners can supply combobox semantics and keyboard navigation. */
-  searchInputProps?: Omit<
-    ComponentProps<typeof SearchInput>,
-    "value" | "onChange" | "ref"
-  >;
   children: ReactNode;
   footer?: ReactNode;
   "data-testid"?: string;
@@ -103,8 +90,6 @@ export function CatalogDialog({
   search,
   onSearchChange,
   searchPlaceholder = "Search",
-  autoFocusSearch = false,
-  searchInputProps,
   children,
   footer,
   "data-testid": testId,
@@ -122,9 +107,7 @@ export function CatalogDialog({
       <DialogContent
         data-testid={testId}
         initialFocus={(interaction) =>
-          autoFocusSearch || interaction === "keyboard"
-            ? searchRef.current
-            : bodyRef.current
+          interaction === "keyboard" ? searchRef.current : bodyRef.current
         }
         className={cn(
           "catalog-dialog editor-dialog-large flex max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none",
@@ -192,7 +175,6 @@ export function CatalogDialog({
           }}
         >
           <SearchInput
-            {...searchInputProps}
             ref={searchRef}
             aria-label={searchPlaceholder}
             value={search}
@@ -200,8 +182,6 @@ export function CatalogDialog({
             placeholder={searchPlaceholder}
             className="min-h-[var(--chrome-row,28px)]"
             data-testid={testId ? `${testId}-search` : undefined}
-            data-autofocus-search={autoFocusSearch ? "true" : undefined}
-            autoFocus={autoFocusSearch}
           />
         </div>
         <div className="flex min-h-0 flex-1">

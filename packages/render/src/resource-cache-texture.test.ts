@@ -3,12 +3,15 @@ import { NullEngine, PBRMaterial, Texture } from "@babylonjs/core";
 import {
   bindResourceCacheToHandle,
   acquireMaterialTexture,
+  acquireTextureVariant,
+  PIXEL_ART_TEXTURE_SAMPLING,
   ResourceCache,
   resourceCacheForEngine,
   releaseResourceCacheForEngine,
 } from "./resource-cache";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { installTextureBytes } from "./mesh-assets";
+import { encodeRgbaPng } from "./png-encode";
 import { ktx2HeaderBytes } from "./texture-test-fixtures";
 import { pickAtCanvas } from "./picking";
 import { Scene } from "@babylonjs/core/scene";
@@ -114,7 +117,7 @@ describe("bounded texture preparation ownership", () => {
     }
   });
 
-  it("settles native-ready header work when GPU wrappers are retired for restoration", async () => {
+  it("settles native-ready header work when a leased wrapper is disposed", async () => {
     const engine = textureEngine();
     const cache = new ResourceCache();
     const source = new Blob([new Uint8Array([4, 5, 6])]);
@@ -126,16 +129,17 @@ describe("bounded texture preparation ownership", () => {
     try {
       const pending = cache.acquireTexture("pending", engine, source);
       expect(pending.resource.isReady()).toBe(true);
-      cache.releaseGpuTextures();
+      pending.resource.dispose();
       await expect(pending.ready).rejects.toThrow("retired during preparation");
       expect(cache.resourceStats()).toEqual({ generations: 1, wrappers: 0, leases: 1, pending: 0 });
       finish(new ArrayBuffer(0));
-      const restored = cache.acquireTexture("pending", engine, source);
-      await restored.ready;
+      const rebuilt = cache.acquireTexture("pending", engine, source);
+      await rebuilt.ready;
       pending.release();
-      expect(restored.resource.isReady()).toBe(true);
+      expect(rebuilt.resource).not.toBe(pending.resource);
+      expect(rebuilt.resource.isReady()).toBe(true);
       expect(cache.resourceStats()).toEqual({ generations: 1, wrappers: 1, leases: 1, pending: 0 });
-      restored.release();
+      rebuilt.release();
       cache.flushUnreferenced();
       expect(cache.resourceStats()).toEqual({ generations: 0, wrappers: 0, leases: 0, pending: 0 });
     } finally { finish(new ArrayBuffer(0)); read.mockRestore(); slice.mockRestore(); cache.dispose(); engine.dispose(); }
@@ -216,21 +220,6 @@ describe("resource cache getTexture", () => {
     bLease.release();
     cache.flushUnreferenced();
     expect(cache.accountedBytes()).toBe(0);
-    cache.dispose();
-    engine.dispose();
-  });
-
-  it("rebuilds after releaseGpuTextures keeps the blob URL", () => {
-    const engine = textureEngine();
-    const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
-    const bytes = new Uint8Array([1, 2, 3, 4]);
-    const firstLease = cache.acquireTexture("tex", engine, bytes);
-    const first = firstLease.resource;
-    cache.releaseGpuTextures();
-    const secondLease = cache.acquireTexture("tex", engine, bytes);
-    const second = secondLease.resource;
-    expect(second).not.toBe(first);
-    expect(second.getInternalTexture()).not.toBeNull();
     cache.dispose();
     engine.dispose();
   });
@@ -771,6 +760,79 @@ describe("WebGPU KTX2 off the 4x4 block grid", () => {
     expect(lease?.resource).toBeInstanceOf(Texture);
     expect(lease!.resource.mimeType).toBe("image/ktx2");
     lease!.release();
+    cache.dispose();
+    engine.dispose();
+  });
+});
+
+/**
+ * Image row (0 = top, as encoded) that NEAREST sampling at `v` reads from a
+ * `rows`-row texture. The wrapper's texture matrix is applied as Babylon's
+ * shaders do (`textureMatrix * vec4(uv, 1, 0)`). Upload behaviour is Babylon
+ * 9.20's, which a NullEngine cannot run: an image or RGBA upload stores rows
+ * bottom-first when the InternalTexture's `invertY` is set, while a
+ * block-compressed KTX2 upload never flips (WebGPU passes `false`, WebGL2 sets
+ * no `UNPACK_FLIP_Y_WEBGL`).
+ */
+function sampledImageRow(texture: Texture, v: number, rows: number, upload: "rgba" | "block-compressed"): number {
+  const m = texture.getTextureMatrix().m;
+  const sampled = 0.5 * m[1]! + v * m[5]! + m[9]!;
+  const stored = Math.min(rows - 1, Math.max(0, Math.floor(sampled * rows)));
+  return upload === "rgba" && texture.getInternalTexture()!.invertY ? rows - 1 - stored : stored;
+}
+
+describe("KTX2 orientation", () => {
+  // Sprite, Tilemap and 2D sites request this (applyAlbedoTexture).
+  const PIXEL_ART_SITE = { ...PIXEL_ART_TEXTURE_SAMPLING, hasAlpha: true };
+  // Two rows, green over red: the numeric PNG and a KTX2 header of the same size.
+  const png = encodeRgbaPng(1, 2, new Uint8Array([0, 200, 0, 255, 200, 0, 0, 255]));
+  const ktx2Sources = [
+    ["raw bytes", () => ktx2HeaderBytes(1, 2)],
+    ["an installed Blob", () => installTextureBytes(new Map([["atlas", ktx2HeaderBytes(1, 2)]]))!.get("atlas")!],
+  ] as const;
+  // UV v in the lower and the upper half of a quad.
+  const lowerAndUpper = [0.25, 0.75];
+
+  it.each(ktx2Sources)("draws a KTX2 from %s at a pixel-art site the same way up as its PNG, whichever format it decodes to", (_source, bytes) => {
+    const engine = textureEngine();
+    const cache = new ResourceCache();
+    const pngTexture = cache.acquireTexture("png", engine, png, PIXEL_ART_SITE).resource as Texture;
+    const ktx2Texture = cache.acquireTexture("ktx2", engine, bytes(), PIXEL_ART_SITE).resource as Texture;
+    // Pixel-art UVs grow upward: the lower half of a quad shows the bottom row.
+    expect(lowerAndUpper.map((v) => sampledImageRow(pngTexture, v, 2, "rgba"))).toEqual([1, 0]);
+    for (const upload of ["rgba", "block-compressed"] as const)
+      expect(lowerAndUpper.map((v) => sampledImageRow(ktx2Texture, v, 2, upload)), upload).toEqual([1, 0]);
+    cache.dispose();
+    engine.dispose();
+  });
+
+  it.each(ktx2Sources)("leaves a KTX2 from %s and a PNG requested without invertY unflipped", (_source, bytes) => {
+    const engine = textureEngine();
+    const cache = new ResourceCache();
+    const pngTexture = acquireMaterialTexture(cache, "png", engine, png)!.resource;
+    const ktx2Texture = acquireMaterialTexture(cache, "ktx2", engine, bytes())!.resource;
+    // glTF convention: v = 0 is the top row.
+    expect(lowerAndUpper.map((v) => sampledImageRow(pngTexture, v, 2, "rgba"))).toEqual([0, 1]);
+    for (const upload of ["rgba", "block-compressed"] as const)
+      expect(lowerAndUpper.map((v) => sampledImageRow(ktx2Texture, v, 2, upload)), upload).toEqual([0, 1]);
+    cache.dispose();
+    engine.dispose();
+  });
+
+  it("keeps a pixel-art KTX2 upright on every wrapper that shares its upload", () => {
+    const engine = textureEngine();
+    vi.spyOn(engine, "getCaps").mockReturnValue({ ...engine.getCaps(), maxAnisotropy: 16 });
+    const cache = new ResourceCache();
+    const bytes = ktx2HeaderBytes(1, 2);
+    const first = cache.acquireTexture("ktx2", engine, bytes, PIXEL_ART_SITE).resource as Texture;
+    // A texture-quality anisotropy variant, and a sibling request differing only in alpha.
+    const variant = acquireTextureVariant(first, { anisotropicFilteringLevel: 8 })!.resource;
+    const sibling = cache.acquireTexture("ktx2", engine, bytes, PIXEL_ART_TEXTURE_SAMPLING).resource as Texture;
+    expect(new Set([first, variant, sibling]).size).toBe(3);
+    expect(variant.getInternalTexture()).toBe(first.getInternalTexture());
+    expect(sibling.getInternalTexture()).toBe(first.getInternalTexture());
+    for (const texture of [variant, sibling])
+      expect(lowerAndUpper.map((v) => sampledImageRow(texture, v, 2, "block-compressed"))).toEqual([1, 0]);
     cache.dispose();
     engine.dispose();
   });

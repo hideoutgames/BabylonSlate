@@ -75,6 +75,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     selectedIds,
     setSelectedId,
     commitComponentGizmo,
+    commitComponentProperties,
     commitComponentTransforms,
     applyPivotTransform,
   } = usePrefabEditing();
@@ -169,6 +170,8 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   selectedIdRef.current = selectedId;
   const commitComponentGizmoRef = useRef(commitComponentGizmo);
   commitComponentGizmoRef.current = commitComponentGizmo;
+  const commitComponentPropertiesRef = useRef(commitComponentProperties);
+  commitComponentPropertiesRef.current = commitComponentProperties;
   const applyPivotTransformRef = useRef(applyPivotTransform);
   applyPivotTransformRef.current = applyPivotTransform;
 
@@ -224,6 +227,9 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
               }
             : undefined,
         );
+      },
+      onComponentShapeEdit: (edit) => {
+        commitComponentPropertiesRef.current(edit.componentId, edit.properties);
       },
       editorFlySpeed: () => flySpeedRef.current,
     });
@@ -287,9 +293,10 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   }, [playing, preparing]);
 
   const previewLoadKey = prefabPreviewLoadKey(previewComponents);
-  const materialLibraryKey = savedMaterialLibraryKey(
-    assetRegistry?.list() ?? [],
-  );
+  const materialLibraryKey = useMemo(() => {
+    void registryVersion;
+    return savedMaterialLibraryKey(assetRegistry?.list() ?? []);
+  }, [assetRegistry, registryVersion]);
   const areaTextureGuids = useMemo(() => areaEmissionTextureGuids(components), [components]);
   const areaEmissionKey = savedAreaEmissionKey(areaTextureGuids, (guid) => assetRegistry?.getByGuid(guid));
   const textureLodKey = `${editorTextureLodEnabled}:${editorTextureLodQuality}`;

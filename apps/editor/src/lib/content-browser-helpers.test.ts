@@ -48,13 +48,13 @@ import {
   listChildFolders,
   matchesAssetSearch,
   newAssetFileName,
-  siblingAssetRelativePath,
   remapPathAfterFolderMove,
   textureCompressionState,
   visualForIndexedAsset,
   materialAssetDependencies,
   assetHeaderDependencies,
   materialHeaderMeta,
+  isMaterialSamplerTextureAsset,
   isPostProcessMaterialAsset,
   isPostProcessMaterialForPicker,
   isParticleMaterialAsset,
@@ -76,6 +76,12 @@ import {
   assetTypeThumbAccent,
 } from "./content-browser-helpers";
 import { resolveTypeVisual } from "@babylonslate/editor-kit";
+
+it("admits material sampler textures without admitting environment cubes", () => {
+  expect(isMaterialSamplerTextureAsset({ type: "RenderTargetTexture" })).toBe(true);
+  expect(isMaterialSamplerTextureAsset({ type: "Texture", payload: { dimension: "cube", container: "env" } })).toBe(false);
+  expect(isMaterialSamplerTextureAsset({ type: "Texture", payload: {} })).toBe(true);
+});
 
 it("creates a Scene Streaming subclass with an authorable target and attached name marker", () => {
   const result = buildNewAssetResult({ type: "Class", name: "Room", guid: "room-class", parentClass: "SceneStreamingActor" });
@@ -1153,12 +1159,6 @@ describe("content-browser-helpers", () => {
   });
 
   it("seeds P9 document assets with typed suffixes", () => {
-    expect(siblingAssetRelativePath("assets/HUD.class.babasset", "Chip.class.babasset")).toBe(
-      "Chip.class.babasset",
-    );
-    expect(
-      siblingAssetRelativePath("assets/ui/HUD.class.babasset", "Chip.class.babasset"),
-    ).toBe("ui/Chip.class.babasset");
     expect(newAssetFileName("Sprite", "Hero")).toBe("Hero.sprite.babasset");
     expect(newAssetFileName("SpriteAnimation", "Walk")).toBe(
       "Walk.spriteanim.babasset",
@@ -1928,6 +1928,12 @@ describe("content-browser-helpers", () => {
         { id: "name", kind: "variable", name: "Name", typeId: "string", defaultValue: "Unused" },
       ],
     }, classes)).toEqual(["guid-SpawnBase", "guid-SpawnChild"]);
+  });
+
+  it.each(["Scene", "Class"])("retains cable material dependencies in %s assets", (type) => {
+    const components = [{ id: "cable", classId: "CableComponent", properties: { materialGuid: "rope-material", targetActorId: "hook-actor" } }];
+    const payload = type === "Scene" ? { actors: [{ id: "rope", classId: "Actor", components }] } : { components };
+    expect(assetHeaderDependencies(type, payload)).toEqual(["rope-material"]);
   });
 
   it.each(["Scene", "Class", "Graph"])("records streaming Scene targets in %s header dependencies", (type) => {

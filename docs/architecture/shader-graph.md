@@ -189,7 +189,7 @@ Offset**, including through a Material Function (`call/inner` node ids).
 
 `lowerMaterialDocument` produces a deterministic `MaterialBuildPlan`:
 topologically ordered operations, explicit operands (including ordered numeric conversions),
-texture bindings, dependencies, cost features and a content hash that ignores
+texture bindings and dependencies, cost features and a content hash that ignores
 node positions. Material Function calls are **inlined** here under namespaced
 operation ids (`callNodeId/innerNodeId`) because Babylon has no runtime function
 object; each inlined operation still maps back to its call node.
@@ -397,9 +397,9 @@ Layout-only node moves do not recompile: `materialCompileKey` / the plan hash
 ignore positions. The graph canvas commits positions once per drag, with a
 per-gesture `transactionId` so Undo restores one drag at a time. Measured-size
 frames and identical payloads do not dirty the document. The preview canvas
-exposes `data-camera-radius` (and test-mode `materialPreviewCameraRadius`) so
-e2e can dispatch wheel and two-pointer pinch on the preview canvas. Gestures
-attach only to that canvas (`attachMaterialPreviewGestures`); never
+exposes `data-camera-radius` so e2e can dispatch wheel and two-pointer pinch
+on the preview canvas. Gestures attach only to that canvas
+(`attachMaterialPreviewGestures`); never
 `camera.attachControl`, which Babylon binds to the Engine input element.
 
 ## Pin defaults and Details
@@ -573,6 +573,10 @@ rendering and in-editor Play preview only — not the Material editor's own
 post-process preview and not exported games. Disabling it detaches passes
 without mutating the scene document. `hardwareScalingLevel` from the same
 settings page is applied to the Engine.
+
+`MaterialEditingProvider` re-reads saved Material Function documents only when
+their registry entries change (a save reindexes the asset); unrelated document
+edits reuse the loaded set.
 
 Play and export close over surface materials, stack materials (including
 disabled entries), transitive Material Functions and texture guids. Saving a

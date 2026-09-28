@@ -334,8 +334,11 @@ export function isSceneFrameReady(scene: Scene, targets: readonly RenderTargetTe
         if (textures) for (let index = 0; index < textures.length; index += 1) renderTargets.add(textures.data[index]!);
       }
     }
-    for (const geometry of admitted ? new Set(meshes.flatMap((mesh) => mesh instanceof Mesh && mesh.geometry ? [mesh.geometry] : [])) : scene.geometries)
-      if (geometry.delayLoadState === 2) ready = false;
+    if (admitted) {
+      for (const mesh of meshes) if (mesh instanceof Mesh && mesh.geometry?.delayLoadState === 2) ready = false;
+    } else {
+      for (const geometry of scene.geometries) if (geometry.delayLoadState === 2) ready = false;
+    }
     const cameras = scene.activeCameras?.length ? scene.activeCameras : scene.activeCamera ? [scene.activeCamera] : [];
     for (const camera of cameras) {
       if (!camera.isReady(true)) ready = false;

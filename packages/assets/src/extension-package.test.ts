@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { encodeAssetDocument } from "./asset-document";
-import { encodeProjectZip, exportProjectZip } from "./babproject";
+import { decodeProjectZip, encodeProjectZip, exportProjectZip, writeProjectTree } from "./babproject";
 import { projectContentRoot } from "./content-root";
 import { createExtensionSettings, discoverEngineExtensions, discoverProjectExtensions, shadowEngineExtensions, writeProjectExtension } from "./extension-host";
 import { applyExtensionImport, exportExtensionZip, inspectBabextension, installEngineExtensionDefaults, planExtensionImport, unpackEngineExtensionZip } from "./extension-package";
@@ -160,8 +160,7 @@ describe("Extension packages", () => {
     await registry.mountRoot(projectContentRoot());
     expect(registry.list().map((asset) => asset.header.guid)).toEqual(["generated"]);
     const restored = await storage();
-    const { importProjectZip } = await import("./babproject");
-    await importProjectZip(restored, await exportProjectZip(source));
+    await writeProjectTree(restored, decodeProjectZip(await exportProjectZip(source)));
     expect(await restored.readText("extensions/tools/index.ts")).toContain("api.log('ready')");
     expect((await discoverProjectExtensions(restored))[0]!.extensionGuid).toBe("tools");
   });

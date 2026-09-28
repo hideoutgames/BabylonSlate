@@ -42,7 +42,6 @@ export const babassetHeaderSchema = z.object({
 
 export type BabassetHeader = z.infer<typeof babassetHeaderSchema>;
 export type ChunkEntry = z.infer<typeof chunkEntrySchema>;
-export type ChunkLocator = z.infer<typeof chunkLocatorSchema>;
 
 export interface ChunkInput {
   id: string;

@@ -52,6 +52,15 @@ describe("Water surfaces", () => {
     expect(sampleWaterSurface(flat, curved, { x: 1.5, y: -1, z: 1 }, 0).found).toBe(false);
     expect(normalizeWaterBody({ points, widthScales: [2, "x"] }, "river").widthScales).toEqual([2, 1, 1]);
   });
+  it("keeps river elevation and width linear while shared spline sampling bends its footprint", () => {
+    const body = normalizeWaterBody({ width: 4, points: [[0, 9, 0], [0, 3, 10], [10, 0, 10]], widthScales: [1, 2, 4] }, "river");
+    const line = waterRiverCentreline(body);
+    const halfway = line.find((point) => point.y === 6)!;
+    expect(halfway.x).toBeCloseTo(-0.625, 10);
+    expect(halfway.z).toBeCloseTo(5.625, 10);
+    expect(halfway.halfWidth).toBe(3);
+    expect(line.at(-1)).toEqual({ x: 10, y: 0, z: 10, halfWidth: 8 });
+  });
   it("reports normals and vertical velocity matching the moving surface", () => {
     const water = createDefaultWaterDefinition();
     const p = sampleWaterWaves(water, 2, 3, 1);

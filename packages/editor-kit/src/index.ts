@@ -34,7 +34,6 @@ export {
   ariaKeyShortcuts,
   chordFromEvent,
   chordHasCommandModifier,
-  chordMatchesEvent,
   describeChord,
   formatChord,
   isApplePlatform,
@@ -48,29 +47,19 @@ export {
 export { ShortcutKeys, type ShortcutKeysProps } from "./shortcut-keys";
 export { usePreventDocumentOverscroll } from "./use-prevent-document-overscroll";
 export {
-  canScrollInDirection,
   isCoarsePointerEnvironment,
-  isScrollableAxis,
   shouldPreventDocumentOverscroll,
-  type ScrollAxis,
 } from "./prevent-document-overscroll";
 export {
   useContextMenu,
   CONTEXT_MENU_LONG_PRESS_MS,
   CONTEXT_MENU_MOVE_TOLERANCE_PX,
   DRAG_ARM_MS,
-  resolveHoldPointerPhase,
   type ContextMenuItem,
   type ContextMenuState,
-  type HoldPointerPhase,
   type UseContextMenuOptions,
   type UseContextMenuResult,
 } from "./use-context-menu";
-export {
-  useHoldDragMenu,
-  type UseHoldDragMenuOptions,
-  type UseHoldDragMenuResult,
-} from "./use-hold-drag-menu";
 
 export {
   ParameterListEditor,
@@ -98,11 +87,9 @@ export {
   FUNCTION_PIN_PICKER_TYPES,
   pinPickerColorVar,
   pinPickerLabel,
-  isPinPickerType,
   pinPickerKeepsTypeClassId,
   ASSET_REF_PICKER_TYPES,
   type PinPickerType,
-  type FunctionPinPickerType,
 } from "./pin-types";
 export {
   NumericDragField,
@@ -265,11 +252,6 @@ export {
   type BindingCodePickerProps,
 } from "./binding-code-picker";
 export {
-  InputMappingEditor,
-  INPUT_DEVICES,
-  type InputMappingEditorProps,
-} from "./input-mapping-editor";
-export {
   ColorField,
   colorFromHex,
   colorToHex,
@@ -285,7 +267,6 @@ export {
   type FlagsFieldProps,
 } from "./flags-field";
 export {
-  ASSET_COLOR_TOKENS,
   TYPE_VISUAL_ICON_CHROME_SIZE,
   TYPE_VISUAL_ICON_TILE_SIZE,
   TYPE_VISUAL_ICON_TILE_STROKE_WIDTH,

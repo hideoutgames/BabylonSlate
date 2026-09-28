@@ -3,6 +3,7 @@ import {
   Matrix,
   Mesh,
   RenderTargetTexture,
+  VertexBuffer,
   Vector3,
   type AbstractMesh,
   type Geometry,
@@ -10,6 +11,7 @@ import {
   type ShadowGenerator,
 } from "@babylonjs/core";
 import { canCacheShadowMaterial } from "./shadow-material-policy";
+import { hasRevisionTrackedCableGeometry } from "./cable-mesh";
 import { isAutoLodMaster, peekAutoLodLevel } from "./model-lod";
 
 /** Reused scalar/object snapshot; unchanged frames allocate no signature arrays. */
@@ -182,9 +184,10 @@ export class ShadowMapRefresh {
       let dynamicGeometry =
         !geometry || Reflect.get(geometry, "_indexBufferIsUpdatable") !== false;
       const buffers = geometry?.getVertexBuffers();
+      const trackedCable = mesh instanceof Mesh && hasRevisionTrackedCableGeometry(mesh);
       if (buffers)
         for (const kind in buffers)
-          if (buffers[kind]?.isUpdatable()) dynamicGeometry = true;
+          if (buffers[kind]?.isUpdatable() && !(trackedCable && (kind === VertexBuffer.PositionKind || kind === VertexBuffer.NormalKind))) dynamicGeometry = true;
       const safeMesh =
         mesh instanceof Mesh &&
         !dynamicGeometry &&

@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { isEnvironmentTexturePayload } from "@babylonslate/assets";
 import { MessageDetails } from "./message-details";
 import { DiagnosticResultRow } from "./diagnostic-result-row";
 import { MaterialCustomGlsl } from "./material-custom-glsl";
@@ -30,6 +29,7 @@ import {
 } from "@babylonslate/ui/components/toggle-group";
 import { GraphEditor } from "@babylonslate/graph-ui";
 import { useGraphSessionViewport } from "../lib/graph-session-viewport";
+import { isMaterialSamplerTextureAsset } from "../lib/content-browser-helpers";
 import {
   MATERIAL_PREVIEW_MESHES,
   classifyMaterialCost,
@@ -71,10 +71,7 @@ import {
 } from "lucide-react";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
-import {
-  useMaterialEditing,
-  type MaterialEditingValue,
-} from "../context/material-editing-context";
+import { useMaterialEditing } from "../context/material-editing-context";
 
 const PREVIEW_MESH_LABEL: Record<MaterialPreviewMesh, string> = {
   cube: "Cube",
@@ -247,7 +244,7 @@ function useTextureExists(): (guid: string) => boolean {
   return useCallback(
     (guid: string) => {
       const header = assetRegistry?.getByGuid(guid)?.header;
-      return header?.type === "RenderTargetTexture" || (header?.type === "Texture" && !isEnvironmentTexturePayload(header.payload));
+      return header ? isMaterialSamplerTextureAsset(header) : false;
     },
     [assetRegistry],
   );
@@ -782,7 +779,7 @@ function MaterialNodeDetails({
     void registryVersion; // Registry contents mutate without replacing its instance.
     if (!pickOpen || !isTextureNode) return [];
     return (assetRegistry?.list() ?? [])
-      .filter((asset) => asset.header.type === "RenderTargetTexture" || (asset.header.type === "Texture" && !isEnvironmentTexturePayload(asset.header.payload)))
+      .filter((asset) => isMaterialSamplerTextureAsset(asset.header))
       .map((asset) => ({
         guid: asset.header.guid,
         name: asset.header.name,
@@ -1216,5 +1213,3 @@ export function MaterialCompilerResultsPanel(_props: IDockviewPanelProps) {
     </PanelFrame>
   );
 }
-
-export type { MaterialEditingValue };

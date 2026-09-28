@@ -74,17 +74,6 @@ export function isEditorOnlyAsset(
   return isEditorGraphClass(header.parentClass, parentOf);
 }
 
-export type FunctionLibraryHeaderFunction = {
-  name: string;
-  pins: Array<{
-    name: string;
-    typeId?: string;
-    direction?: "in" | "out";
-    typeClassId?: string;
-  }>;
-  overridable?: boolean;
-};
-
 export type ClassHeaderPin = {
   name: string;
   typeId?: string;
@@ -144,7 +133,7 @@ export type ClassHeaderMeta = {
 };
 
 function headerPinsFromMember(
-  pins: FunctionLibraryHeaderFunction["pins"] | undefined,
+  pins: ClassHeaderPin[] | undefined,
 ): ClassHeaderPin[] {
   return (pins ?? []).map((pin) => {
     const next: ClassHeaderPin = {
@@ -155,25 +144,6 @@ function headerPinsFromMember(
     if (pin.typeClassId) next.typeClassId = pin.typeClassId;
     return next;
   });
-}
-
-export function functionLibraryHeaderMeta(graph: {
-  members?: Array<{
-    kind: string;
-    name: string;
-    pins?: FunctionLibraryHeaderFunction["pins"];
-    overridable?: boolean;
-  }>;
-}): { functions: FunctionLibraryHeaderFunction[] } {
-  return {
-    functions: (graph.members ?? [])
-      .filter((member) => member.kind === "function")
-      .map((member) => ({
-        name: member.name,
-        pins: headerPinsFromMember(member.pins),
-        ...(member.overridable === true ? { overridable: true } : {}),
-      })),
-  };
 }
 
 export function classHeaderMeta(graph: {

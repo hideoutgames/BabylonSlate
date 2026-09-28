@@ -198,7 +198,7 @@ export function updateSceneTilemapParallax(
       | { x: number; y: number }
       | undefined;
     if (!parallax) continue;
-    // Same offset as tilemapParallaxOffset, without a result object per chunk.
+    // Parallax 1 stays world-locked; 0 tracks the camera.
     chunk.position.x = camera.x * (1 - parallax.x);
     chunk.position.y = camera.y * (1 - parallax.y);
   }

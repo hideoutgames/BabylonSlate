@@ -1,7 +1,6 @@
-export interface SceneStreamIdentity {
-  actorGuid: string;
-  streamLoadId: number;
-}
+import { decodeSceneStreamEvent, type SceneStreamIdentity } from "./scene-stream-commands";
+
+export type { SceneStreamIdentity } from "./scene-stream-commands";
 
 interface PendingStream extends SceneStreamIdentity {
   controller: AbortController;
@@ -27,27 +26,27 @@ export function createSceneStreamingReadiness(options: {
   return {
     receive(command: { type: string; actorGuid?: unknown; streamLoadId?: unknown; slotIds?: unknown }): void {
       if (disposed) return;
-      if (command.type === "sceneLoading" || command.type === "activeScene") {
+      const event = decodeSceneStreamEvent(command);
+      if (!event) return;
+      if (event.kind === "reset") {
         for (const stream of streams.values()) cancel(stream);
         return;
       }
-      if (!["sceneStreamLoading", "sceneStreamRealized", "sceneStreamRemoved"].includes(command.type)) return;
-      const { actorGuid, streamLoadId } = command;
-      if (typeof actorGuid !== "string" || typeof streamLoadId !== "number" || !Number.isSafeInteger(streamLoadId) || streamLoadId < 1) return;
+      const { actorGuid, streamLoadId } = event.identity;
       const stream = streams.get(actorGuid);
-      if (command.type === "sceneStreamLoading") {
+      if (event.kind === "loading") {
         if (stream && stream.streamLoadId >= streamLoadId) return;
         if (stream) cancel(stream);
         streams.set(actorGuid, { actorGuid, streamLoadId, controller: new AbortController(), scheduled: false });
         return;
       }
       if (!stream || stream.streamLoadId !== streamLoadId) return;
-      if (command.type === "sceneStreamRemoved") { cancel(stream); return; }
-      if (stream.scheduled || !Array.isArray(command.slotIds) || !command.slotIds.every((slot) => Number.isSafeInteger(slot) && slot >= 0)) return;
+      if (event.kind === "removed") { cancel(stream); return; }
+      if (stream.scheduled) return;
       stream.scheduled = true;
       const pending = stream;
       void (async () => {
-        await options.handle.prepareSceneStream(command.slotIds as number[], pending.controller.signal, (progress) => {
+        await options.handle.prepareSceneStream(event.slotIds, pending.controller.signal, (progress) => {
           if (current(pending)) options.onProgress(pending, Math.max(0, Math.min(0.99, progress)));
         }, pending);
         if (current(pending)) options.onReady(pending);

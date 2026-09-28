@@ -21,17 +21,6 @@ export function pixelPerfectOrthoHalfHeight(
   return canvasHeightPx / pixelsPerUnit / 2 / zoom;
 }
 
-/**
- * Nearest integer zoom factor, so sprites scale by whole pixels. Zooming out
- * uses `1/n` rather than clamping to 1, which would make zoom-out impossible.
- */
-export function quantizeZoom(zoom: number): number {
-  if (zoom <= 0) return 1;
-  if (zoom >= 1) return Math.max(1, Math.round(zoom));
-  const inverse = Math.max(1, Math.round(1 / zoom));
-  return 1 / inverse;
-}
-
 /** Snap a world coordinate to the device pixel grid at the authoring scale. */
 export function snapToPixelGrid(value: number, pixelsPerUnit: number): number {
   if (pixelsPerUnit <= 0) return value;

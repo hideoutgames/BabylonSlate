@@ -178,7 +178,11 @@ test("browser specs stay CI-only while harness changes run discovery policy", ()
   assert.deepEqual(configTest.packages, []);
   assert.deepEqual(configTest.unitTests, ["playwright.config.test.ts"]);
   assert.deepEqual(configTest.toolingTests, []);
-  const timings = selectChecks(["browser-timings.json"], packages, tests);
+  const timings = selectChecks(
+    ["scripts/browser-timings.json"],
+    packages,
+    tests,
+  );
   assert.deepEqual(timings.packages, []);
   assert.deepEqual(timings.toolingTests, [
     "scripts/browser-partition.test.mjs",

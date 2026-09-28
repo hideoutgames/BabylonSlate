@@ -8,11 +8,11 @@ Authoring (`p11-bt-authoring`) and the React Flow host (`p11-bt-editor`) are in.
 
 | Package | Owns | Must not import |
 | --- | --- | --- |
-| `behaviour-tree` | Tree + Blackboard documents, parse/normalize, explicit-stack evaluator, abort matrix, `bt.*` diagnostics, scripting rule registration | React, Babylon, Capacitor |
-| `scripting` | Pin types for blackboard keys; `registerValidationRule` hook | React, Babylon, Capacitor |
+| `behaviour-tree` | Tree + Blackboard documents, parse/normalize, explicit-stack evaluator, abort matrix, `bt.*` diagnostics | React, Babylon, Capacitor |
+| `scripting` | Pin types for blackboard keys; `Diagnostic` shape | React, Babylon, Capacitor |
 | `graph-ui` / `apps/editor` | React Flow tree host (DockView Graph / Details / Blackboard / Compiler Results, optional `editorPositions`, Play overlay) | Babylon, Capacitor |
 
-`behaviour-tree` may import `@babylonslate/scripting` (pin types, `Diagnostic`, `ValidationRule`) and `@babylonslate/core`.
+`behaviour-tree` may import `@babylonslate/scripting` (pin types, `Diagnostic`) and `@babylonslate/core`.
 
 ## Tree IR
 
@@ -56,7 +56,7 @@ Pure: `(tree, previous, dtSeconds, options?) → BtEvalState`.
 
 `validateBehaviourTree(doc, ctx)` emits `Diagnostic` values (`bt.missing_root`, `bt.unknown_child`, `bt.cycle`, `bt.composite_empty`, `bt.task_has_children`, `bt.parallel_too_small`, `bt.missing_blackboard_key`). Structural fixtures live in `packages/behaviour-tree/fixtures/`. Key checks accept `ctx.blackboardKeys` or typed `ctx.blackboardKeyEntries`; the latter also reports `bt.invalid_blackboard_key_type` if a Move To Blackboard Key target is retyped to a nonspatial value.
 
-`registerBehaviourTreeValidationRules()` installs a `bt.structural` rule on the scripting hook. `validateGraphs([], { assetGuid, behaviourTree })` runs the same codes so Compiler Results stay one list. `TypeContext.behaviourTree` is an optional unknown payload (parsed in this package).
+The Behaviour Tree editor calls `validateBehaviourTree` directly for canvas badges and its Compiler Results tab. BT codes do not run through the scripting `validateGraphs` rule hook.
 
 ## Authoring (`p11-bt-authoring`)
 

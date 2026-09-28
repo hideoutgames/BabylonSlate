@@ -325,8 +325,6 @@ export interface PlaySession {
   lastActorPositions: () => readonly PlayActorPosition[];
   /** Latest sim tick (in-process World clock, else last published snapshot). */
   lastTickIndex: () => number;
-  /** Push a touch joystick sample into the Play input ring. */
-  pushTouchAxis: (controlId: string, value: number) => void;
   /** Session-only Play/Preview fps cap; does not write `project.json`. */
   setFrameCap: (fps: number) => void;
   /** Actor guids spawned this session (authored scene + explicit runtime spawns). */
@@ -501,7 +499,6 @@ export function startPlaySession(options: {
     string,
     readonly RetargetAnimationLoad[]
   >;
-  audioBytes?: ReadonlyMap<string, Uint8Array>;
   loadAudioSourceBytes?: import("@babylonslate/render").AudioSourceBytesLoader;
   audioLibrary?: AudioLibrary;
   /** Animation / Sprite Animation clip metadata for BT Play Animation. */
@@ -610,7 +607,6 @@ export function startPlaySession(options: {
     modelPayloads: options.modelPayloads,
     modelClipAnimationGuids: options.modelClipAnimationGuids,
     retargetAnimationLoads: options.retargetAnimationLoads,
-    audioBytes: options.audioBytes,
     loadAudioSourceBytes: options.loadAudioSourceBytes,
     audioLibrary: options.audioLibrary,
     particleLibrary: options.particleLibrary,
@@ -868,9 +864,6 @@ export function startPlaySession(options: {
       onStat: options.onStatHighlight,
       onFreeCam: options.onFreeCam,
     });
-    if (command.type === "setRenderResolution") {
-      options.onSetRenderResolution?.(command.width, command.height);
-    }
     if (command.type === "btState") {
       options.onBtState?.({
         slotId: command.slotId,
@@ -1156,9 +1149,6 @@ export function startPlaySession(options: {
         runtime?.getWorld().clock.tickIndex,
         lastWorkerTickIndex,
       ),
-    pushTouchAxis: (controlId: string, value: number) => {
-      input?.pushTouchAxis(controlId, value);
-    },
     setFrameCap: (fps: number) => {
       handle.scheduler.setFrameCap(fps);
     },
@@ -1282,4 +1272,3 @@ export function startPlaySession(options: {
 }
 
 export const PREVIEW_FIXTURE_NODE_ID = FIXTURE_NODE;
-export const PREVIEW_FIXTURE_ASSET_GUID = FIXTURE_ASSET;

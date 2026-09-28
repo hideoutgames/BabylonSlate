@@ -4,8 +4,7 @@
  *   { type: "init" }
  *   { type: "encode", id, source, mime, settings }  // preferred — decode+clamp+align here
  *   { type: "encode", id, rgba, width, height, settings }  // Safari fallback
- *   { type: "recycle" }
- * Replies: loaded | encoded | error | decode_unavailable | recycled
+ * Replies: loaded | encoded | error | decode_unavailable
  */
 /* eslint-disable no-undef */
 let moduleInstance = null;
@@ -149,12 +148,6 @@ self.onmessage = function (event) {
     } catch (err) {
       post({ type: "error", error: String(err) });
     }
-    return;
-  }
-
-  if (msg.type === "recycle") {
-    moduleInstance = null;
-    post({ type: "recycled" });
     return;
   }
 
