@@ -17,6 +17,7 @@ if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined")
 
 const retryTextureEncoding = vi.hoisted(() => vi.fn(async () => true));
 const textureAlignmentStale = vi.hoisted(() => vi.fn<(guid: string, usage?: string) => Promise<boolean>>(async () => false));
+const textureUsageBlockedReason = vi.hoisted(() => vi.fn<(guid: string) => string | null>(() => null));
 const prepareAreaEmission = vi.hoisted(() => vi.fn(async (_guid: string, options: { signal: AbortSignal; onProgress: (value: AreaEmissionProgress) => void }) => {
   options.onProgress({ phase: "filtering", progress: 0.5 });
   await new Promise<void>((_resolve, reject) => options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true }));
@@ -42,6 +43,7 @@ vi.mock("../context/document-context", () => ({
     prepareAreaEmission,
     retryTextureEncoding,
     textureAlignmentStale,
+    textureUsageBlockedReason,
     readAssetChunk,
     assetRegistry,
     registryVersion: 0,
@@ -63,6 +65,8 @@ afterEach(() => {
   retryTextureEncoding.mockClear();
   textureAlignmentStale.mockReset();
   textureAlignmentStale.mockResolvedValue(false);
+  textureUsageBlockedReason.mockReset();
+  textureUsageBlockedReason.mockReturnValue(null);
   prepareAreaEmission.mockClear();
   readAssetChunk.mockClear();
 });
@@ -140,6 +144,23 @@ describe("Texture editor", () => {
     }
     fireEvent.click(await screen.findByTestId("texture-retry-encode"));
     expect(retryTextureEncoding).toHaveBeenCalledWith("tex-odd", { force: true, usage: "normal" });
+  });
+
+  it("re-encodes nothing while another user's lock keeps the Texture read-only", async () => {
+    textureUsageBlockedReason.mockReturnValue("The Texture is locked by Bob.");
+    textureAlignmentStale.mockResolvedValue(true);
+    const onChange = vi.fn();
+    render(<TextureDetails guid="tex-locked" dependencies={[]} payload={{ usage: "albedo", compressionState: "compressed" }} onChange={onChange} />);
+    const retry = await screen.findByTestId("texture-retry-encode");
+    expect(retry).toHaveProperty("disabled", true);
+    fireEvent.click(retry);
+    // A Details change the read-only tab refuses must not re-encode the file either.
+    fireEvent.click(screen.getByRole("combobox", { name: "Usage" }));
+    const particle = screen.getByRole("option", { name: "Particle" });
+    fireEvent.pointerDown(particle);
+    fireEvent.click(particle);
+    expect(onChange).toHaveBeenCalledWith({ usage: "particle", compressionState: "compressed" });
+    expect(retryTextureEncoding).not.toHaveBeenCalled();
   });
 
   it("offers no Retry Encoding once the Usage stays uncompressed", () => {

@@ -327,8 +327,11 @@ export function TextureDetails({
   payload: Record<string, unknown>;
   onChange: (next: Record<string, unknown>) => void;
 }) {
-  const { retryTextureEncoding, textureAlignmentStale, prepareAreaEmission, assetRegistry, registryVersion } = useDocuments();
+  const { retryTextureEncoding, textureAlignmentStale, textureUsageBlockedReason, prepareAreaEmission, assetRegistry, registryVersion } = useDocuments();
   const alignmentStale = useTextureAlignmentStale(guid, payload, textureAlignmentStale, registryVersion);
+  // A re-encode rewrites the file: not while it is read-only, such as under
+  // another user's lock (the tab's banner offers Edit Anyway).
+  const encodeBlocked = guid ? textureUsageBlockedReason(guid) !== null : true;
   const emissionJob = useRef<AbortController | null>(null);
   const [emissionProgress, setEmissionProgress] = useState<AreaEmissionProgress | null>(null);
   const [emissionError, setEmissionError] = useState("");
@@ -378,7 +381,7 @@ export function TextureDetails({
       onChange: (value) => {
         const { payload: next, shouldRequeue } = applyTextureUsageChange(payload, value);
         onChange(next);
-        if (guid && shouldRequeue) void retryTextureEncoding(guid, { force: true, usage: value });
+        if (guid && shouldRequeue && !encodeBlocked) void retryTextureEncoding(guid, { force: true, usage: value });
       },
     },
     {
@@ -390,7 +393,7 @@ export function TextureDetails({
       onChange: (value) => {
         const { payload: next, shouldRequeue } = applyTextureDownsampleChange(payload, value);
         onChange(next);
-        if (guid && shouldRequeue) void retryTextureEncoding(guid, { force: true, usage });
+        if (guid && shouldRequeue && !encodeBlocked) void retryTextureEncoding(guid, { force: true, usage });
       },
     },
   ];
@@ -403,7 +406,7 @@ export function TextureDetails({
       onChange: (value) => {
         const { payload: next, shouldRequeue } = applyTextureCompressionQualityChange(payload, value);
         onChange(next);
-        if (guid && shouldRequeue) void retryTextureEncoding(guid, { force: true, usage });
+        if (guid && shouldRequeue && !encodeBlocked) void retryTextureEncoding(guid, { force: true, usage });
       },
     });
   }
@@ -443,6 +446,7 @@ export function TextureDetails({
             variant="outline"
             className="w-fit"
             data-testid="texture-retry-encode"
+            disabled={encodeBlocked}
             onClick={() => void retryTextureEncoding(guid, { force: true, usage })}
           >
             Retry Encoding
