@@ -16,7 +16,8 @@ test("Add Component actions match the viewport island and Class tabs use their a
   await detailsAdd.click();
   const detailsCatalog = page.getByTestId("add-component-catalog");
   await expect(detailsCatalog).toBeVisible();
-  await detailsCatalog.getByRole("button", { name: "Close", exact: true }).click();
+  await page.keyboard.press("Escape");
+  await expect(detailsCatalog).toHaveCount(0);
 
   await openAssetFromBrowser(page, "assets/main.class.babasset");
   const prefabAdd = page.getByTestId("prefab-add-component");

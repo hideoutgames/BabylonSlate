@@ -7,6 +7,18 @@ export {
   type CatalogCategoryGroup,
   type CatalogDialogProps,
 } from "./catalog-dialog";
+export {
+  CATALOG_MENU_ROW_HEIGHT,
+  CATALOG_MENU_TOUCH_ROW_HEIGHT,
+  CatalogMenu,
+  type CatalogMenuItem,
+  type CatalogMenuProps,
+} from "./catalog-menu";
+export {
+  CatalogCard,
+  CatalogCardGrid,
+  type CatalogCardProps,
+} from "./catalog-card";
 export { CatalogResultRow, type CatalogResultRowProps } from "./catalog-result-row";
 export { SearchInput, type SearchInputProps } from "./search-input";
 export { PanelFrame } from "./panel-frame";
