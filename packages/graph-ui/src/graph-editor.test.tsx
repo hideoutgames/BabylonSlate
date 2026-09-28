@@ -3940,7 +3940,7 @@ describe("GraphEditor", () => {
     expect(container.querySelector('[data-id="task"] [data-node-role="bt-task"]')).not.toBeNull();
     expect(
       container.querySelector('[data-id="task"] [data-node-role="bt-task"]')?.className,
-    ).toMatch(/min-w-56/);
+    ).toMatch(/\bw-56\b/);
     expect(getByTestId("bt-node-root").className).toContain("bt-node-drag-handle");
     expect(getByTestId("bt-decorator-dec-1").className).toContain("nodrag");
     expect(getByTestId("bt-service-svc-1").className).toContain("nodrag");

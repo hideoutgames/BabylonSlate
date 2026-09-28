@@ -323,7 +323,7 @@ export function BlueprintNodeShell({
   selected,
   data,
   children,
-  compact = false,
+  card = false,
 }: {
   nodeId: string;
   title: string;
@@ -331,7 +331,8 @@ export function BlueprintNodeShell({
   selected?: boolean;
   data?: Record<string, unknown>;
   children: ReactNode;
-  compact?: boolean;
+  /** Fixed-width flat card without the role title bar; children render their own header. */
+  card?: boolean;
 }) {
   const { nodeErrorCount } = useGraphEditorContext();
   const developmentOnly = shellIsDevelopmentOnly(nodeId, data);
@@ -344,21 +345,25 @@ export function BlueprintNodeShell({
       <div
         data-node-role={role}
         data-disabled={disabled ? "true" : undefined}
+        data-selected={card ? (selected ? "true" : "false") : undefined}
         className={cn(
-          "overflow-hidden rounded-lg border border-border bg-graph-node text-card-foreground shadow-sm",
-          compact ? "min-w-56" : "w-max min-w-80",
-          selected && "ring-2 ring-primary",
+          "overflow-hidden border border-border bg-graph-node text-card-foreground shadow-sm",
+          card
+            ? "graph-card-node w-56 rounded-md"
+            : cn("w-max min-w-80 rounded-lg", selected && "ring-2 ring-primary"),
           disabled && "opacity-50",
         )}
       >
-        <div
-          className={cn(
-            "rounded-t-lg px-4 py-2.5 text-base font-semibold leading-snug whitespace-nowrap text-node-title",
-            nodeRoleClass(role),
-          )}
-        >
-          {title}
-        </div>
+        {card ? null : (
+          <div
+            className={cn(
+              "rounded-t-lg px-4 py-2.5 text-base font-semibold leading-snug whitespace-nowrap text-node-title",
+              nodeRoleClass(role),
+            )}
+          >
+            {title}
+          </div>
+        )}
         {children}
         {developmentOnly ? (
           <div

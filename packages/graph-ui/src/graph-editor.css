@@ -214,45 +214,127 @@
   width: 8px;
   height: 8px;
   background: var(--muted-foreground);
+  opacity: 0;
   pointer-events: none;
   transform: translate(-50%, -50%) rotate(45deg);
+  transition: opacity 120ms ease-out;
+}
+
+/* Connection affordances only appear where the pointer can use them. */
+.anim-state-node:hover .anim-state-handle-source::after,
+.anim-state-node-selected .anim-state-handle-source::after {
+  opacity: 1;
+}
+
+@media (pointer: coarse) {
+  .anim-state-handle-source::after {
+    opacity: 0.6;
+  }
+}
+
+.anim-graph-canvas .react-flow__arrowhead polyline {
+  stroke: var(--graph-link) !important;
+  fill: var(--graph-link) !important;
 }
 
 .anim-transition-badge {
   position: absolute;
-  width: 18px;
-  height: 18px;
+  width: 10px;
+  height: 10px;
   border-radius: 999px;
-  border: 1px solid var(--primary-foreground);
-  background: var(--primary);
+  border: 0;
+  background: var(--graph-link);
+  box-shadow: 0 0 0 2px var(--graph-canvas);
   pointer-events: all;
   cursor: pointer;
+  transition: background-color 120ms ease-out, width 120ms ease-out, height 120ms ease-out;
 }
 
-.anim-transition-badge::after {
+.anim-transition-badge::before {
   content: "";
   position: absolute;
-  inset: 5px 4px 5px 6px;
-  border-top: 4px solid transparent;
-  border-bottom: 4px solid transparent;
-  border-left: 6px solid var(--primary-foreground);
+  inset: -7px;
+  border-radius: 999px;
 }
 
-.anim-transition-badge-both::after {
-  inset: 6px;
-  border: 0;
-  border-left: 2px solid var(--primary-foreground);
-  border-right: 2px solid var(--primary-foreground);
+/* Grow by size: the inline translate positions the badge, so a scale would move it. */
+.anim-transition-badge:hover {
+  width: 12px;
+  height: 12px;
+  background: var(--foreground);
 }
 
-.anim-transition-badge-selected {
+.anim-transition-badge-selected,
+.anim-transition-badge-selected:hover {
+  width: 12px;
+  height: 12px;
   background: var(--graph-state-selected);
+}
+
+@media (pointer: coarse) {
+  .anim-transition-badge::before {
+    inset: -17px;
+  }
 }
 
 @media (pointer: coarse) {
   .node-palette-context {
     min-height: var(--touch-target, 44px);
   }
+}
+
+.graph-card-node[data-selected="true"] {
+  border-color: var(--graph-state-selected);
+  box-shadow: 0 0 0 1px var(--graph-state-selected);
+}
+
+.graph-card-node:has(.bt-node-drag-handle[data-bt-state="running"]):not([data-selected="true"]) {
+  border-color: var(--primary);
+}
+
+.bt-state[data-state="running"] {
+  color: var(--primary);
+}
+
+.bt-state[data-state="success"] {
+  color: var(--success);
+}
+
+.bt-state[data-state="failure"] {
+  color: var(--destructive);
+}
+
+.bt-state-dot {
+  background: currentColor;
+}
+
+.bt-pin-visual {
+  border-color: var(--graph-link);
+  background: var(--graph-node);
+}
+
+.bt-pin-visual[data-pin-connected="true"] {
+  background: var(--graph-link);
+}
+
+.bt-pin:hover .bt-pin-visual {
+  border-color: var(--foreground);
+}
+
+/* GraphEditor paints exec-width inline strokes; tree and state wires stay thin and neutral. */
+:is(.bt-graph-canvas, .anim-graph-canvas) {
+  --graph-link: color-mix(in oklch, var(--muted-foreground) 70%, var(--graph-canvas));
+}
+
+:is(.bt-graph-canvas, .anim-graph-canvas) .react-flow__edge-path {
+  stroke: var(--graph-link) !important;
+  stroke-width: 2.5px !important;
+}
+
+:is(.bt-graph-canvas, .anim-graph-canvas) .react-flow__edge.selected .react-flow__edge-path {
+  stroke: var(--graph-state-selected) !important;
+  stroke-opacity: 1;
+  stroke-width: 3px !important;
 }
 
 .asset-reference-node[data-selected="true"] {
