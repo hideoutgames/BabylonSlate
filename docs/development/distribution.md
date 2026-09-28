@@ -37,7 +37,21 @@ Vite reads the generated manifest for startup, project-loading and Engine Settin
 
 ## Rollout status
 
-The implementation provides the manual distribution paths below. On September 7, 2026, `testflight` and `github-release` were configured with exact-`main` branch restrictions, and `main` was protected with all nine Verify checks, including enforcement for administrators. Native acceptance has not been performed; Apple credentials and compliance configuration still require maintainer provisioning. The native AppIcon is still Capacitor's placeholder. Distribution rejects it; supply an opaque 1024×1024 BabylonSlate PNG before the first Apple upload. Desktop packages currently use electron-builder's default Electron icon because no BabylonSlate desktop icon asset exists; a human-supplied image at least 512×512 is required before replacing it.
+The implementation provides the manual distribution paths below. On September 7, 2026, `testflight` and `github-release` were configured with exact-`main` branch restrictions, and `main` was protected with all nine Verify checks, including enforcement for administrators. Native acceptance has not been performed; Apple credentials and compliance configuration still require maintainer provisioning. The native AppIcon is still Capacitor's placeholder. Distribution rejects it; supply an opaque 1024×1024 BabylonSlate PNG before the first Apple upload. Android launcher icons and splash screens are also Capacitor's placeholders. Desktop packages currently use electron-builder's default Electron icon because no BabylonSlate desktop icon asset exists; a human-supplied image at least 512×512 is required before replacing it.
+
+## Readiness without secrets
+
+Every platform builds from a clean checkout with no credentials. Only signing, notarization and store upload wait for secrets.
+
+| Platform | Works now without secrets | Blocked until provisioned |
+| --- | --- | --- |
+| Windows | Unsigned NSIS installer: packaged, installed and smoked (**Inspect desktop packaging**); publishable to a GitHub Release | Nothing (no code signing is configured) |
+| macOS | Unsigned arm64/x64 DMG and ZIP: packaged, mounted and smoked; publishable, with updates disabled | Developer ID signing and notarization (`macos-signing`) |
+| Linux | x64 AppImage: packaged, extracted and smoked under Xvfb; publishable | Nothing |
+| Android | Debug APK via `android:build` (**Inspect Android toolchain**) | Signed release APK and publication (`android-signing`) |
+| iPadOS | Unsigned iPad simulator build via `ios:build` (**Inspect Apple toolchain** `ipados-build` job) | Archive, signing and TestFlight upload (`testflight`) |
+
+`platforms=all` or `mobile` dispatches fail the Android and iPadOS jobs until their environments are provisioned. `desktop` dispatches need no secrets; macOS packages unsigned while `macos-signing` has no p12 secret. Create all four environments with their branch restrictions (step 2 of Maintainer setup) before the first dispatch, even while they are empty. The complete secret and variable lists are in [Maintainer setup](#maintainer-setup).
 
 ## Implemented paths
 
@@ -141,7 +155,7 @@ Before the first Apple upload, replace the Capacitor placeholder with an existin
 
 Review the pinned standard runner's installed Xcode before toolchain upgrades. Xcode/SDK requirements are independent of the deployment target. Install dependencies with `pnpm install --frozen-lockfile` and the checked-in Ruby bundle; keep CocoaPods and its lockfile. Do not add native packaging to recursive workspace `build` or ordinary Verify.
 
-The separate **Inspect Apple toolchain** workflow validates the pinned Xcode build and iPhoneOS SDK with `node scripts/distribution/apple-toolchain.mjs --inspect-xcode`, checks the native project and entitlement property lists with `plutil`, then reads public `xcodebuild -help` on a standard `macos-26` runner. It needs no dependencies beyond Node/Xcode, has no Apple credentials or distribution environment, and performs no archive, export or upload. Its result verifies the installed command interface and property-list syntax only; it cannot certify provisioning, signing permissions or TestFlight delivery. Distribution passes its temporary toolchain metadata path through step environment configuration, where GitHub supports the `runner` context.
+The separate **Inspect Apple toolchain** workflow validates the pinned Xcode build and iPhoneOS SDK with `node scripts/distribution/apple-toolchain.mjs --inspect-xcode`, checks the native project and entitlement property lists with `plutil`, then reads public `xcodebuild -help` on a standard `macos-26` runner. That job needs no dependencies beyond Node/Xcode. A separate `ipados-build` job installs the locked CocoaPods bundle, runs `ios:build` (editor build, `ios:sync`, then an unsigned Debug iPad simulator build with `CODE_SIGNING_ALLOWED=NO`) and confirms `Podfile.lock` is unchanged. Neither job has Apple credentials or a distribution environment, and neither archives, exports or uploads. Their results verify the toolchain, property-list syntax and that the native shell compiles; they cannot certify provisioning, signing permissions or TestFlight delivery. Distribution passes its temporary toolchain metadata path through step environment configuration, where GitHub supports the `runner` context.
 
 After this workflow is on the default branch, run the inspection with `gh workflow run inspect-apple-toolchain.yml --ref main`. The shared inspection script [passed on a second fresh hosted runner](https://github.com/hideoutgames/BabylonSlate/actions/runs/36042593306). Neither inspection exercised signing or upload.
 
