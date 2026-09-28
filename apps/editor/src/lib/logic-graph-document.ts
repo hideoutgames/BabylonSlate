@@ -5,7 +5,7 @@ import {
   type GraphClassMemberPin,
   type SerializedGraph,
 } from "@babylonslate/core";
-import { diffGraphCommands } from "@babylonslate/edit";
+import { diffGraphCommands, type EditCommand } from "@babylonslate/edit";
 import { pruneEventMembersToNodes } from "./class-members";
 import {
   animGraphMembersFromVariables,
@@ -537,7 +537,10 @@ export function logicGraphEditMergeKey(
   next: SerializedGraph,
 ): string | undefined {
   if (!previous) return undefined;
-  const commands = diffGraphCommands(previous, next);
+  const commands: EditCommand<SerializedGraph>[] = diffGraphCommands(
+    previous,
+    next,
+  );
   const key = commands.length === 1 ? commands[0]!.mergeKey : undefined;
   return key ? `logic-graph:${key}` : undefined;
 }
