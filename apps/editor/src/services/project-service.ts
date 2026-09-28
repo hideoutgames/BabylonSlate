@@ -420,7 +420,7 @@ export class ProjectService {
       onState: (guid, state, job) => {
         // `compressed` is written with the KTX2 chunk in onComplete. A guarded
         // (alignment) job leaves the saved state alone until it commits, so
-        // nothing on disk requeues it later without its guard.
+        // nothing on disk requeues it later, source control on or not.
         if (state === "compressed" || job.guard) return;
         void this.assetRegistry
           ?.setCompressionState(guid, state)
