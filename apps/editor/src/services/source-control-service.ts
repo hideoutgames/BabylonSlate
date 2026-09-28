@@ -98,12 +98,14 @@ export class SourceControlService {
 
   /**
    * Whether `projectGuid`'s locks are known: configure() finished for it and,
-   * with a lock provider, a lock refresh has succeeded since the provider was
-   * created or source control was last enabled.
+   * with source control on, a lock refresh has succeeded since its provider
+   * was created or source control was last enabled. Never while source
+   * control is on without a provider (a web host, no repository URL, no HTTP
+   * bridge): teammates may hold locks this editor cannot see.
    */
   locksKnownFor(projectGuid: string | null): boolean {
     if (projectGuid === null || this.configuredProject !== projectGuid) return false;
-    return !this.enabled || this.locksCurrent;
+    return !this.settings.enabled || this.locksCurrent;
   }
 
   get operationError(): string | null {

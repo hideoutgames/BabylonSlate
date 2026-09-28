@@ -152,6 +152,24 @@ describe("SourceControlService", () => {
     } finally { service.dispose(); }
   });
 
+  it("does not know a project's locks while source control is on but no lock provider can load", async () => {
+    const service = new SourceControlService();
+    const base = { settings: enabled, projectGuid: "proj", testMode: false, secretStore: new MemorySecretStore() };
+    try {
+      // The web host has no Git LFS locks.
+      await service.configure({ ...base, platform: "web", nativeHttp: null });
+      expect(service.locksKnownFor("proj")).toBe(false);
+      // A desktop host without an HTTP bridge, or without a repository URL.
+      await service.configure({ ...base, platform: "electron", nativeHttp: null });
+      expect(service.locksKnownFor("proj")).toBe(false);
+      await service.configure({ ...base, settings: { ...enabled, repositoryUrl: "" }, platform: "electron", nativeHttp: vi.fn() });
+      expect(service.locksKnownFor("proj")).toBe(false);
+      // Turning source control off makes them known: there are none.
+      await service.configure({ ...base, settings: { ...enabled, enabled: false }, platform: "web", nativeHttp: null });
+      expect(service.locksKnownFor("proj")).toBe(true);
+    } finally { service.dispose(); }
+  });
+
   it("auto-locks on first edit and skips a second attempt", async () => {
     const service = new SourceControlService();
     const fake = new FakeLockProvider({ selfName: "Ada" });
