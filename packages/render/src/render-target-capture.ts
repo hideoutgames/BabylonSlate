@@ -1,7 +1,7 @@
 import {
   Color4, Constants, LinesMesh, Material, Matrix, MultiMaterial, Quaternion, RawTexture,
   RenderTargetTexture, Texture, UniversalCamera, Vector3,
-  type AbstractMesh, type InternalTexture, type IParticleSystem, type Mesh, type Node, type NodeMaterial, type Observer, type Scene,
+  type AbstractMesh, type InternalTexture, type IParticleSystem, type Node, type NodeMaterial, type Observer, type Scene,
 } from "@babylonjs/core";
 import { FloatingOriginCurrentScene } from "@babylonjs/core/Materials/floatingOriginMatrixOverrides";
 import {
@@ -16,7 +16,7 @@ import { drawBorrowedTarget } from "./framegraph-borrowed-draw";
 import { createRenderTargetDepthMaterial, createRenderTargetNormalMaterial } from "./render-target-normal-material";
 import type { ResourceLease } from "./resource-cache";
 import { renderTargetCaptureDrawing } from "./render-target-capture-state";
-import { isViewportShadingTarget } from "./viewport-shading-mode";
+import { isEditorHelperMesh } from "./helper-mesh";
 import { particleMaterialForSystem } from "./node-material-particles";
 import { admittedSceneMeshes, admittedSceneParticles } from "./scene-stream-admission";
 
@@ -356,9 +356,7 @@ export class RenderTargetCaptures {
   }
   private isEligible(capture: Capture, target: Target, internal: InternalTexture | null, mesh: AbstractMesh): boolean {
     if (mesh.isDisposed() || !mesh.isEnabled() || !mesh.isVisible || mesh.visibility <= 0 || mesh.getTotalVertices() === 0 || !(mesh.layerMask & capture.camera.layerMask)) return false;
-    if (mesh instanceof LinesMesh || !isViewportShadingTarget(mesh as Mesh)) return false;
-    const metadata = mesh.metadata as Record<string, unknown> | null;
-    if (metadata?.editorPickProxy || metadata?.editorCameraModel || metadata?.editorBillboard || metadata?.editorVolume || metadata?.playHelperVisual || metadata?.playActorOrigin || metadata?.playDebugOverlay || metadata?.editorColliderVisual) return false;
+    if (mesh instanceof LinesMesh || isEditorHelperMesh(mesh)) return false;
     if (capture.settings.captureOnlyActors) {
       const actorId = this.ownerOf(mesh);
       if (!actorId || !capture.includeIds.has(actorId)) return false;
