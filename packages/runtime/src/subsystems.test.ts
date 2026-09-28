@@ -308,6 +308,31 @@ describe("Scene Subsystems", () => {
     } finally { runtime.stop(); }
   });
 
+  it("stay callable from a sibling's On End on Change Scene and on Stop", async () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      playScene: sceneNamed("Level1"), playSceneGuid: "scene-1",
+      onCommand: (command) => commands.push(command),
+    });
+    const take = scriptLog(commands);
+    await runtime.loadScripts([
+      classScript("Alpha", "SceneSubsystem", {}, { functions: 'export function Ping(ctx) { return { text: "alpha-pong" }; }' }),
+      // Beta Ends first (reverse class-id order), while Alpha is still live.
+      classScript("Beta", "SceneSubsystem", {
+        "flow.event.end": { gets: { alpha: "Alpha" }, body: 'log("beta:end:" + ctx.invokeFunction(alpha, "Ping", {}).text);' },
+      }),
+    ]);
+    try {
+      runtime.realizePlayWorld();
+      runtime.start();
+      runtime.executeConsoleCommand("changescene scene-1");
+      expect(take()).toEqual(["beta:end:alpha-pong"]);
+      runtime.stop();
+      expect(take()).toEqual(["beta:end:alpha-pong"]);
+    } finally { runtime.stop(); }
+  });
+
   it("report streamed scenes and their actors once in play, never for the main scene's teardown", async () => {
     const commands: CommandMessage[] = [];
     const marker = createActor("left", "Left", { classId: "SceneStreamingActor",

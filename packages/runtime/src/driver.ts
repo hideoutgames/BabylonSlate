@@ -2333,13 +2333,17 @@ class InProcessRuntime implements RuntimeDriver {
 
   private canRunOwner(owner: BObject): boolean {
     if (owner instanceof GameSubsystem) return this.canRunGameSubsystem(owner);
+    // Callable from creation until its On End returns, even while its Scene
+    // prepares or Play stops (a sibling's On End may still call it); its own
+    // lifecycle waits for the Scene (canRunSceneSubsystem).
+    if (owner instanceof SceneSubsystem) {
+      return !owner.destroyed && owner.scene === this.world.currentScene &&
+        (this.stopped || this.streamBlockingCount === 0);
+    }
     if (this.stopped || owner.destroyed || this.streamBlockingCount > 0) return false;
     if (owner instanceof PostProcessMaterialObject)
       return owner.isCurrent() && this.canRunOwner(owner.owner);
     if (owner === this.world.gameInstance) return true;
-    // Callable from creation until its On End returns, even while its Scene
-    // prepares; its own lifecycle waits for the Scene (canRunSceneSubsystem).
-    if (owner instanceof SceneSubsystem) return owner.scene === this.world.currentScene;
     const actor = owner instanceof Actor ? owner : owner instanceof ActorComponent ? owner.owner
       : owner instanceof MaterialObject ? owner.component.owner : null;
     if (actor) return actor.world === this.world && this.canTickActor(actor);
