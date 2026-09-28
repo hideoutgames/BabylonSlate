@@ -737,7 +737,6 @@ export class ForwardSceneFrameGraph {
       this.setActiveCamera(camera);
       // Admit the conventional prefix before shadows spend shared texture units.
       syncSceneLighting(this.scene);
-      controller?.setReceiverRenderPass(this.objects?.objectRenderer.renderPassId);
       controller?.sync();
       // Allocation/participation changes alter the material shadow layout.
       // Commit that layout before probing effects, so onBeforeRender cannot
@@ -1005,7 +1004,6 @@ export class ForwardSceneFrameGraph {
 
   private probeReadiness(): { ready: boolean; nativeReady: boolean; revision: number } {
     this.strictChecks += 1;
-    findSceneShadowController(this.scene)?.setReceiverRenderPass(this.objects!.objectRenderer.renderPassId);
     const cameras = this.scene.activeCameras;
     const shadowFlags = this.scene.lights.map(
       (light) => [light, light.shadowEnabled] as const,
@@ -1030,7 +1028,6 @@ export class ForwardSceneFrameGraph {
         const revision = this.readinessRevision;
         const cameraReady = isSceneFrameReady(this.scene);
         const graphReady = this.graph!.isReady();
-        if (cameraReady && graphReady) findSceneShadowController(this.scene)?.receiversReady();
         return { ready: cameraReady && graphReady, nativeReady: cameraReady, revision };
       });
     } finally {
@@ -1087,7 +1084,6 @@ export class ForwardSceneFrameGraph {
 
   private releaseGraphResources(): void {
     this.admittedCamera = undefined;
-    findSceneShadowController(this.scene)?.setReceiverRenderPass(undefined);
     // Babylon FrameGraph.clear/dispose reset tasks without disposing their
     // ObjectRenderer, OIT renderer and render-pass resources.
     this.postProcessOwner?.clearGraph();

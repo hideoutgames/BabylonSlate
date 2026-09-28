@@ -11,6 +11,10 @@ import {
 import { sceneRenderingSettings } from "./render-settings";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
 import {
+  takeShadowReceiverHandoffs,
+  type ShadowReceiverHandoff,
+} from "./shadow-receiver-handoff";
+import {
   LightBlock,
   Material,
   NodeMaterial,
@@ -47,6 +51,53 @@ function isLitMaterial(material: Material): material is LitMaterial {
 }
 
 type SceneLighting = { sync: () => void; limits: () => string[] };
+
+// Shadow layout tokens per enabled light: shadowEnabled, generator, area
+// emission texture, area emission readiness.
+const LAYOUT_STRIDE = 4;
+
+/**
+ * Whether same-kind shadow map moves, which exchanged the lights' shader
+ * indices without changing any receiver define, explain every difference
+ * between the previous and next snapshots.
+ */
+function explainedByShadowHandoffs(
+  handoffs: readonly ShadowReceiverHandoff[],
+  lights: readonly Light[],
+  layout: readonly unknown[],
+  nextLights: readonly Light[],
+  nextLayout: readonly unknown[],
+): boolean {
+  const expectedLights = lights.slice();
+  const expected = layout.slice();
+  for (const { from, to, generator } of handoffs) {
+    const a = expectedLights.indexOf(from);
+    const b = expectedLights.indexOf(to);
+    if (
+      a < 0 ||
+      b < 0 ||
+      expected[a * LAYOUT_STRIDE + 1] !== generator ||
+      expected[b * LAYOUT_STRIDE + 1] !== null
+    )
+      return false;
+    expectedLights[a] = to;
+    expectedLights[b] = from;
+    for (let token = 0; token < LAYOUT_STRIDE; token++) {
+      const value = expected[a * LAYOUT_STRIDE + token];
+      expected[a * LAYOUT_STRIDE + token] = expected[b * LAYOUT_STRIDE + token];
+      expected[b * LAYOUT_STRIDE + token] = value;
+    }
+    // The map keeps its shader index; only its light changed places.
+    expected[a * LAYOUT_STRIDE + 1] = generator;
+    expected[b * LAYOUT_STRIDE + 1] = null;
+  }
+  return (
+    expectedLights.length === nextLights.length &&
+    expectedLights.every((light, index) => light === nextLights[index]) &&
+    expected.length === nextLayout.length &&
+    expected.every((token, index) => token === nextLayout[index])
+  );
+}
 const lightingByScene = new WeakMap<Scene, SceneLighting>();
 
 /**
@@ -117,6 +168,7 @@ function installSceneLighting(scene: Scene): SceneLighting {
         light instanceof RectAreaLight ? light.emissionTexture?.isReady() : false,
       );
     }
+    const handoffs = takeShadowReceiverHandoffs(scene);
     const changed =
       sceneLightsEnabled !== scene.lightsEnabled ||
       sceneShadowsEnabled !== scene.shadowsEnabled ||
@@ -130,9 +182,25 @@ function installSceneLighting(scene: Scene): SceneLighting {
       !dirty &&
       lightCount === scene.lights.length &&
       materialCount === scene.materials.length &&
-      !changed
-    )
+      (!changed ||
+        (sceneLightsEnabled === scene.lightsEnabled &&
+          sceneShadowsEnabled === scene.shadowsEnabled &&
+          !handoffs?.invalid &&
+          !!handoffs?.handoffs.length &&
+          explainedByShadowHandoffs(
+            handoffs.handoffs,
+            enabledLights,
+            shadowLayout,
+            nextEnabled,
+            nextShadowLayout,
+          )))
+    ) {
+      if (!changed) return;
+      // Receivers already bind the exchanged order with unchanged effects.
+      [enabledLights, nextEnabled] = [nextEnabled, enabledLights];
+      [shadowLayout, nextShadowLayout] = [nextShadowLayout, shadowLayout];
       return;
+    }
     dirty = false;
     // Light membership/shadow layout changed; the cached strict readiness
     // result no longer describes the effects these materials will build.

@@ -562,7 +562,7 @@ describe("shared shadow lifecycle", () => {
   });
 
   it.each([true, false])(
-    "keeps the retained sun's caster bounds and limits current while a local handoff warms (cascades supported: %s)",
+    "keeps the retained sun's caster bounds and limits current across a local handoff (cascades supported: %s)",
     (cascaded) => {
       const clock = vi.spyOn(performance, "now").mockReturnValue(0);
       try {
@@ -581,10 +581,9 @@ describe("shared shadow lifecycle", () => {
         const far = new SpotLight("far", new Vector3(40, 3, -2), Vector3.Down(), Math.PI / 2, 1, scene);
         near.range = far.range = 100;
         for (const light of [sun, near, far]) controller.register(light, true);
-        // The prepared Forward graph supplies this pass, enabling warm handoffs.
-        controller.setReceiverRenderPass(scene.getEngine().createRenderPassId("receiver"));
         controller.sync();
         const generator = controller.generator(sun)!;
+        const local = controller.generator(near)!;
         expect(generator instanceof CascadedShadowGenerator).toBe(cascaded);
         const sunReason = controller.diagnostics([sun])[0]!.reason;
         expect(sunReason).toContain("shadow map reduced");
@@ -594,10 +593,11 @@ describe("shared shadow lifecycle", () => {
         caster.computeWorldMatrix(true);
         clock.mockReturnValue(500);
         controller.sync();
-        expect(controller.status(far)).toBe("warming");
+        // The local map moves in the same sync; the retained sun keeps its own limits.
+        expect(controller.generator(far)).toBe(local);
+        expect(controller.generator(near)).toBeNull();
         expect(controller.generator(sun)).toBe(generator);
-        // The outgoing map still renders; the retained sun keeps its own limits.
-        expect(controller.diagnostics([sun, near]).map(({ status, reason }) => ({ status, reason })))
+        expect(controller.diagnostics([sun, far]).map(({ status, reason }) => ({ status, reason })))
           .toEqual([{ status: "active", reason: sunReason }, { status: "active", reason: null }]);
         if (cascaded)
           expect((generator as CascadedShadowGenerator).shadowCastersBoundingInfo.maximum.x).toBeGreaterThan(60);
@@ -652,6 +652,108 @@ describe("shared shadow lifecycle", () => {
       expect(controller.generator(a)).toBeNull();
       expect(controller.generator(b)).not.toBeNull();
     } finally { clock.mockRestore(); }
+  });
+  it("moves a local map to a nearer same-kind light without allocation or receiver changes", () => {
+    const clock = vi.spyOn(performance, "now").mockReturnValue(0);
+    try {
+      const { scene, controller } = fixture();
+      scene.activeCamera!.position.set(0, 0, 0);
+      const receiver = MeshBuilder.CreateBox("receiver", {}, scene);
+      receiver.material = new StandardMaterial("receiver", scene);
+      controller.setParticipation(receiver, { castShadows: true, receiveShadows: true });
+      const near = new PointLight("near", new Vector3(5, 0, 0), scene);
+      const far = new PointLight("far", new Vector3(50, 0, 0), scene);
+      controller.register(near, true);
+      controller.register(far, true);
+      controller.sync();
+      const generator = controller.generator(near)!;
+      const part = receiver.subMeshes[0]!;
+      receiver.material.isReadyForSubMesh(receiver, part);
+      const defines = part.materialDefines!.toString();
+      expect(defines).toContain("SHADOW0");
+      const allocate = vi.spyOn(scene.getEngine(), "createRenderTargetCubeTexture");
+      const dispose = vi.spyOn(generator, "dispose");
+      const dirty = vi.spyOn(receiver, "_markSubMeshesAsLightDirty");
+      scene.activeCamera!.position.x = 50;
+      clock.mockReturnValue(300);
+      controller.sync();
+      expect(controller.generator(far)).toBe(generator);
+      expect(controller.generator(near)).toBeNull();
+      expect(near.getShadowGenerator()).toBeNull();
+      expect(allocate).not.toHaveBeenCalled();
+      expect(dispose).not.toHaveBeenCalled();
+      expect(dirty).not.toHaveBeenCalled();
+      // Re-preparing proves the exchanged shader light indices keep every define.
+      receiver._markSubMeshesAsLightDirty();
+      receiver.material.isReadyForSubMesh(receiver, part);
+      expect(part.materialDefines!.toString()).toBe(defines);
+      // The moved map samples neutrally until it has redrawn for its new light.
+      expect(generator.getDarkness()).toBe(1);
+      prepareShadowLayers(generator);
+      expect(generator.getDarkness()).toBe(0);
+    } finally { clock.mockRestore(); }
+  });
+
+  it("keeps a camera-rejected local map on standby, unrendered, for the next same-kind light", async () => {
+    const { scene, controller } = fixture();
+    scene.activeCamera!.position.set(0, 0, 0);
+    const receiver = MeshBuilder.CreateBox("receiver", {}, scene);
+    receiver.material = new StandardMaterial("receiver", scene);
+    controller.setParticipation(receiver, { castShadows: true, receiveShadows: true });
+    // An observed caster cannot be cached, so admitted local maps redraw every frame.
+    receiver.onBeforeRenderObservable.add(() => {});
+    const first = new PointLight("first", new Vector3(5, 0, 0), scene);
+    first.range = 10;
+    controller.register(first, true);
+    controller.sync();
+    const generator = controller.generator(first)!;
+    // Babylon retries a map every frame until its caster shaders are ready.
+    await generator.forceCompilationAsync();
+    const map = generator.getShadowMap()!;
+    const bytes = controller.metrics().bytes;
+    const dispose = vi.spyOn(generator, "dispose");
+    const dirty = vi.spyOn(receiver, "_markSubMeshesAsLightDirty");
+    scene.activeCamera!.position.x = 1000;
+    controller.sync();
+    expect(controller.status(first)).toBe("outside-relevant-area");
+    expect(controller.generator(first)).toBeNull();
+    // Receivers keep the attached map, and so their defines, at neutral darkness.
+    expect(first.getShadowGenerator()).toBe(generator);
+    expect(generator.getDarkness()).toBe(1);
+    expect(dirty).not.toHaveBeenCalled();
+    expect(controller.metrics()).toEqual({ passes: 0, bytes });
+    // Only actual passes clear; one final pass may follow the refresh-rate change.
+    let clears = 0;
+    map.onClearObservable.add(() => clears++);
+    for (let frame = 0; frame < 3; frame++) scene.render();
+    expect(clears).toBeLessThanOrEqual(6);
+    const allocate = vi.spyOn(scene.getEngine(), "createRenderTargetCubeTexture");
+    const next = new PointLight("next", new Vector3(1005, 0, 0), scene);
+    next.range = 10;
+    controller.register(next, true);
+    controller.sync();
+    expect(controller.generator(next)).toBe(generator);
+    expect(first.getShadowGenerator()).toBeNull();
+    expect(allocate).not.toHaveBeenCalled();
+    expect(dispose).not.toHaveBeenCalled();
+  });
+
+  it("releases a standby map when its light no longer requests shadows", () => {
+    const { scene, controller } = fixture();
+    scene.activeCamera!.position.set(0, 0, 0);
+    const light = new PointLight("light", new Vector3(5, 0, 0), scene);
+    light.range = 10;
+    controller.register(light, true);
+    controller.sync();
+    const map = controller.generator(light)!.getShadowMap()!;
+    scene.activeCamera!.position.x = 1000;
+    controller.sync();
+    expect(light.getShadowGenerator()).not.toBeNull();
+    controller.register(light, false);
+    controller.sync();
+    expect(light.getShadowGenerator()).toBeNull();
+    expect(scene.textures).not.toContain(map);
+    expect(controller.metrics()).toEqual({ passes: 0, bytes: 0 });
   });
   it("admits point cube memory and faces before construction, then lowers cost after Manual 16 and a Low preset", () => {
     const { scene, controller } = fixture();

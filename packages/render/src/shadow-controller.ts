@@ -26,8 +26,13 @@ import {
   type ShadowSettings,
 } from "@babylonslate/core";
 import { sceneRenderingSettings } from "./render-settings";
-import { markSceneReadinessDirty, onSceneReadinessDirty } from "./scene-readiness-signal";
-import { ShadowReceiverWarmup } from "./shadow-receiver-warmup";
+import { markSceneReadinessDirty } from "./scene-readiness-signal";
+import { ReusableShadowGenerator, type LocalShadowLight } from "./reusable-shadow-generator";
+import {
+  exchangeShadowReceivers,
+  invalidateShadowReceiverHandoffs,
+} from "./shadow-receiver-handoff";
+import { hasClusteredLightPolicy } from "./clustered-light-policy";
 import {
   authoredShadowParticipation,
   hasDeformingShadowBounds,
@@ -69,7 +74,6 @@ export type EffectiveShadowBias = {
 };
 export type ShadowLightStatus =
   | "active"
-  | "warming"
   | "disabled"
   | "not-requested"
   | "non-illuminating"
@@ -90,6 +94,8 @@ type Entry = {
   recovery: { requestKey: string; mapSize: number; error: string } | null;
   resetAllocation: boolean;
   status: ShadowLightStatus;
+  /** Keeps a camera-rejected local map attached, neutral and unrendered for reuse. */
+  standby: boolean;
   admittedAt: number;
   distanceSquared: number;
   effectiveBias: EffectiveShadowBias[];
@@ -97,6 +103,8 @@ type Entry = {
 // Minimum residency bounds camera-driven map churn; priority/camera switches
 // and loss of eligibility still take effect immediately.
 const SHADOW_MIN_RESIDENCY_MS = 250;
+// Every Babylon 9.20 shadow filter returns fully lit at darkness 1.
+const NEUTRAL_DARKNESS = 1;
 const controllers = new WeakMap<Scene, SceneShadowController>();
 
 /** An admitted map's allocation shape; a change replaces the generator. */
@@ -137,7 +145,7 @@ function generatorPasses(generator: ShadowGenerator): number {
 
 /** Illumination state and shadow allocation of one light; no entry is "unsupported". */
 function shadowLightRow(light: Light, entry?: Entry) {
-  const generator = entry?.generator;
+  const generator = entry?.standby ? null : entry?.generator;
   return {
     name: light.name,
     illumination: isDirectionalLightExcluded(light)
@@ -196,10 +204,8 @@ export class SceneShadowController {
   private readonly pending = new Set<AbstractMesh>();
   private readonly spatial = new ShadowSpatialIndex();
   private selectionCamera: Camera | null = null;
-  private receiverPass: number | undefined;
-  private readonly receiverWarmup: ShadowReceiverWarmup;
-  private authoredRevision = 0;
-  private appliedAuthoredRevision = 0;
+  /** Per-map closures read their current owner; a local map can move between lights. */
+  private readonly slots = new WeakMap<ShadowGenerator, { entry: Entry; guard: boolean }>();
   private readonly refresh = new ShadowMapRefresh((mesh) =>
     this.spatial.invalidate(mesh),
   );
@@ -214,12 +220,8 @@ export class SceneShadowController {
   private readonly scene: Scene;
   constructor(scene: Scene) {
     this.scene = scene;
-    this.receiverWarmup = new ShadowReceiverWarmup(scene);
-    const stopReadiness = onSceneReadinessDirty(scene, () => this.receiverWarmup.cancelPending());
-    scene.onAfterRenderObservable.add(() => this.receiverWarmup.advance());
     const engine = scene.getEngine();
     const restored = engine.onContextRestoredObservable.add(() => {
-      this.receiverWarmup.cancel();
       for (const entry of this.entries.values()) {
         entry.failedKey = "";
         entry.recovery = null;
@@ -251,7 +253,6 @@ export class SceneShadowController {
       this.refreshShadowMaps();
     });
     scene.onDisposeObservable.addOnce(() => {
-      stopReadiness(); this.receiverWarmup.cancel();
       engine.onContextRestoredObservable.remove(restored);
       for (const entry of this.entries.values()) entry.generator?.dispose();
       this.entries.clear();
@@ -271,10 +272,6 @@ export class SceneShadowController {
     ))
       return;
     let entry = this.entries.get(light);
-    if (!entry || entry.requested !== requested || entry.priority !== priority) {
-      this.authoredRevision++;
-      this.receiverWarmup.cancelPending();
-    }
     if (!entry) {
       entry = {
         light,
@@ -289,6 +286,7 @@ export class SceneShadowController {
         recovery: null,
         resetAllocation: false,
         status: "disabled",
+        standby: false,
         admittedAt: -Infinity,
         distanceSquared: 0,
         effectiveBias: [],
@@ -321,16 +319,15 @@ export class SceneShadowController {
     this.pending.add(mesh);
     for (const child of mesh.getChildMeshes()) this.pending.add(child);
   }
+  /** The admitted map; standby maps are neither rendered nor admitted. */
   generator(light: Light): ShadowGenerator | null {
+    const entry = this.entries.get(light);
+    return entry?.standby ? null : (entry?.generator ?? null);
+  }
+  /** Admitted or standby map still attached to the light, which receivers bind. */
+  boundGenerator(light: Light): ShadowGenerator | null {
     return this.entries.get(light)?.generator ?? null;
   }
-  /** The prepared Forward renderer supplies its stable receiver pass. */
-  setReceiverRenderPass(pass: number | undefined): void {
-    if (this.receiverPass === pass) return;
-    this.receiverPass = pass;
-    this.receiverWarmup.cancel();
-  }
-  receiversReady(): void { this.receiverWarmup.releaseCommitted(); }
   /** Last completed map pass, bounded to the admitted faces/cascades. */
   effectiveBias(light: Light): readonly EffectiveShadowBias[] {
     return this.entries.get(light)?.effectiveBias ?? [];
@@ -339,7 +336,7 @@ export class SceneShadowController {
   refreshShadowMaps(): void {
     this.refresh.syncCasters(this.scene, this.meshes);
     for (const entry of this.entries.values())
-      if (entry.generator) this.refresh.apply(entry.generator);
+      if (entry.generator && !entry.standby) this.refresh.apply(entry.generator);
   }
   status(light: Light): ShadowLightStatus | undefined {
     return this.entries.get(light)?.status;
@@ -352,7 +349,7 @@ export class SceneShadowController {
     const limits = new Set<string>();
     for (const entry of this.entries.values()) {
       if (entry.reason) limits.add(entry.reason);
-      if (entry.generator?.usePoissonSampling)
+      if (!entry.standby && entry.generator?.usePoissonSampling)
         limits.add(
           entry.light.needCube()
             ? "point shadows: Poisson filter fallback"
@@ -364,10 +361,10 @@ export class SceneShadowController {
   metrics(): { passes: number; bytes: number } {
     let passes = 0;
     let bytes = 0;
-    for (const { generator } of this.entries.values()) {
+    for (const { generator, standby } of this.entries.values()) {
       if (!generator) continue;
       const count = generatorPasses(generator);
-      passes += count;
+      if (!standby) passes += count;
       bytes +=
         count *
         (generator.getShadowMap()?.getSize().width ?? 0) ** 2 *
@@ -507,10 +504,11 @@ export class SceneShadowController {
     // Nearest relevant lights win independently of brightness. A short minimum
     // residency and squared-distance bonus stabilize camera boundaries without
     // preventing an authored-priority change or a newly possessed camera.
-    const resident = (entry: Entry) => Boolean(entry.generator && !cameraChanged &&
-      selectionTime - entry.admittedAt < SHADOW_MIN_RESIDENCY_MS);
+    const incumbent = (entry: Entry) => Boolean(entry.generator && !entry.standby && !cameraChanged);
+    const resident = (entry: Entry) => incumbent(entry) &&
+      selectionTime - entry.admittedAt < SHADOW_MIN_RESIDENCY_MS;
     const distance = (entry: Entry) =>
-      entry.distanceSquared / (entry.generator && !cameraChanged ? 1.15 : 1);
+      entry.distanceSquared / (incumbent(entry) ? 1.15 : 1);
     candidates.sort(
       (a, b) =>
         b.priority - a.priority ||
@@ -628,19 +626,6 @@ export class SceneShadowController {
       admitted.passes += passes;
       admitted.samplers += samplers;
     }
-    const owners = [...this.entries.values()].filter((entry) => entry.generator);
-    const winners = [...this.entries.values()].filter((entry) => entry.status === "active");
-    const incoming = winners.filter((entry) => !entry.generator);
-    const outgoing = owners.filter((entry) => entry.status !== "active");
-    // Only a compatible camera-ranked handoff can retain the incumbent. Authored
-    // disable/priority, camera possession, lost eligibility and settings changes
-    // still take effect immediately through normal admission.
-    const canWarm = this.receiverPass !== undefined && camera && !cameraChanged &&
-      this.authoredRevision === this.appliedAuthoredRevision && incoming.length > 0 && incoming.length === outgoing.length &&
-      owners.every((entry) => candidates.includes(entry) && !entry.resetAllocation &&
-        entry.key === allocationKey(entry.mapSize, entry.light, settings.cascades) &&
-        entry.generator!.getShadowMap()?.getSize().width === entry.mapSize && JSON.stringify(entry.settings) === JSON.stringify(settings)) &&
-      outgoing.every((entry) => !(entry.light instanceof DirectionalLight));
     // CSM freezes caster bounds; retained owners refresh them every sync.
     const maintainCascades = (entry: Entry) => {
       if (!(entry.generator instanceof CascadedShadowGenerator)) return;
@@ -657,51 +642,116 @@ export class SceneShadowController {
           ? `${cascadeFallback}; ${entry.reason}`
           : cascadeFallback;
     };
-    const layout = new Map<Light, ShadowGenerator | null>();
-    const donors = [...outgoing];
-    if (canWarm) for (const entry of incoming) {
-      const index = donors.findIndex((donor) => donor.light.getTypeID() === entry.light.getTypeID() &&
-        donor.light.needCube() === entry.light.needCube() && donor.mapSize === entry.mapSize);
-      if (index < 0) break;
-      layout.set(entry.light, donors.splice(index, 1)[0]!.generator);
-    }
-    if (canWarm && !donors.length) {
-      for (const entry of outgoing) layout.set(entry.light, null);
-      const originals = owners.map((entry) => [entry.light, entry.generator] as const);
-      const key = JSON.stringify([camera.uniqueId, this.receiverPass, settings, winners.map((entry) => entry.light.uniqueId)]);
-      if (!this.receiverWarmup.ready(key, layout, [camera.renderPassId, this.receiverPass!],
-        () => originals.every(([light, generator]) => this.entries.get(light)?.generator === generator && light.isEnabled()))) {
-        for (const entry of incoming) { entry.status = "warming"; entry.reason = "preparing shadow receiver shaders"; }
-        for (const entry of owners) {
-          // Outgoing maps still render; retained winners keep admission reasons.
-          if (entry.status !== "active") entry.reason = null;
-          entry.status = "active";
-          maintainCascades(entry);
-          applyCascadeFallback(entry);
-          this.refresh.apply(entry.generator!);
-        }
-        return;
+    const settingsKey = JSON.stringify(settings);
+    const release = (entry: Entry) => {
+      if (entry.generator) {
+        entry.generator.dispose();
+        markSceneReadinessDirty(scene);
+        invalidateShadowReceiverHandoffs(scene);
       }
-      this.receiverWarmup.commit();
-    } else this.receiverWarmup.cancelPending();
-    this.appliedAuthoredRevision = this.authoredRevision;
+      entry.generator = null;
+      entry.standby = false;
+      entry.effectiveBias.length = 0;
+      entry.key = "";
+    };
     // Release incompatible and retired maps before reserving/constructing their
     // replacements; old and new sets must never overlap outside this envelope.
+    // A local map that only lost camera admission stays allocated for reuse.
+    const donors: Entry[] = [];
     for (const entry of this.entries.values()) {
-      if (
-        entry.status !== "active" ||
-        entry.key !== allocationKey(entry.mapSize, entry.light, settings.cascades)
-      ) {
-        if (entry.generator) {
-          entry.generator.dispose();
-          markSceneReadinessDirty(scene);
+      if (entry.status === "active" && entry.generator &&
+        entry.key === allocationKey(entry.mapSize, entry.light, settings.cascades)) {
+        if (entry.standby) {
+          entry.standby = false;
+          entry.admittedAt = selectionTime;
+          this.neutralUntilRendered(entry.generator);
         }
-        entry.generator = null;
-        entry.effectiveBias.length = 0;
-        entry.key = "";
+        continue;
       }
+      if (entry.status !== "active" && entry.generator instanceof ReusableShadowGenerator &&
+        !entry.resetAllocation)
+        donors.push(entry);
+      else release(entry);
     }
-    reserveSceneShadows(scene, admitted);
+    // Hand a retained map to a same-kind winner instead of constructing one.
+    // Farther donors are least likely to return.
+    donors.sort((a, b) => b.distanceSquared - a.distanceSquared);
+    for (const entry of planned) {
+      if (entry.status !== "active" || entry.generator || entry.light instanceof DirectionalLight)
+        continue;
+      const key = allocationKey(entry.mapSize, entry.light, settings.cascades);
+      const index = donors.findIndex((donor) => donor.key === key &&
+        (donor.generator as ReusableShadowGenerator).canMoveTo(entry.light as LocalShadowLight));
+      if (index < 0) continue;
+      const [donor] = donors.splice(index, 1) as [Entry];
+      const generator = donor.generator as ReusableShadowGenerator;
+      generator.moveTo(entry.light as LocalShadowLight);
+      // Same-kind lights exchange shader light indices, so receivers keep their
+      // defines and effects. Otherwise dirty them as construction/disposal would.
+      if (JSON.stringify(donor.settings) !== settingsKey ||
+        !exchangeShadowReceivers(scene, donor.light, entry.light, generator)) {
+        invalidateShadowReceiverHandoffs(scene);
+        donor.light._markMeshesAsLightDirty();
+        entry.light._markMeshesAsLightDirty();
+        markSceneReadinessDirty(scene);
+      }
+      entry.generator = generator;
+      entry.key = donor.key;
+      // The retained-owner path compares against the settings this map last applied.
+      entry.settings = donor.settings;
+      entry.standby = false;
+      entry.failedKey = "";
+      entry.admittedAt = selectionTime;
+      entry.effectiveBias.length = 0;
+      donor.generator = null;
+      donor.standby = false;
+      donor.key = "";
+      donor.effectiveBias.length = 0;
+      this.slots.get(generator)!.entry = entry;
+      this.neutralUntilRendered(generator);
+    }
+    // Remaining donors keep their receiver defines on standby while the pool,
+    // memory and sampler budgets allow; authored, eligibility and settings
+    // changes still release immediately. Clustered Forward moves an unshadowed
+    // light into the cluster instead.
+    const clustered = hasClusteredLightPolicy(scene);
+    let pooled = 0;
+    for (const entry of this.entries.values())
+      if (entry.status === "active" && !(entry.light instanceof DirectionalLight)) pooled++;
+    const standby: ShadowCost = { bytes: 0, passes: 0, samplers: 0 };
+    for (const entry of donors.reverse()) {
+      const generator = entry.generator!;
+      const bytes = generatorPasses(generator) * entry.mapSize ** 2 * bytesPerTexel;
+      const samplers = admissionSamplers(entry.light, settings);
+      if (
+        clustered ||
+        (entry.status !== "outside-relevant-area" && entry.status !== "budget-limited") ||
+        JSON.stringify(entry.settings) !== settingsKey ||
+        pooled >= settings.maxLocalLights ||
+        admitted.bytes + standby.bytes + bytes > byteBudget ||
+        admitted.samplers + standby.samplers + samplers > samplerBudget
+      ) {
+        release(entry);
+        continue;
+      }
+      pooled++;
+      standby.bytes += bytes;
+      standby.samplers += samplers;
+      if (entry.standby) continue;
+      entry.standby = true;
+      entry.effectiveBias.length = 0;
+      generator.setDarkness(NEUTRAL_DARKNESS);
+      this.slots.get(generator)!.guard = false;
+      // A continuous caster would otherwise keep redrawing the neutral map.
+      const map = generator.getShadowMap();
+      if (map && map.refreshRate !== RenderTargetTexture.REFRESHRATE_RENDER_ONCE)
+        map.refreshRate = RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
+    }
+    reserveSceneShadows(scene, {
+      bytes: admitted.bytes + standby.bytes,
+      passes: admitted.passes,
+      samplers: admitted.samplers + standby.samplers,
+    });
     // One scene-wide light invalidation covers every retained generator's defines.
     let materialsDirty = false;
     for (const entry of this.entries.values()) {
@@ -712,11 +762,14 @@ export class SceneShadowController {
       entry.settings = settings;
       if (entry.generator) {
         this.applySettings(entry.generator, settings);
-        if (!materialsDirty && (previousSettings?.fadeFraction !== settings.fadeFraction ||
+        // Only CSM emits the fade define; only the sun uses automatic bias.
+        if (!materialsDirty && ((entry.generator instanceof CascadedShadowGenerator &&
+            previousSettings?.fadeFraction !== settings.fadeFraction) ||
             (directionalLight && previousSettings?.autoBias !== settings.autoBias))) {
           materialsDirty = true;
           scene.markAllMaterialsAsDirty(Material.LightDirtyFlag);
           markSceneReadinessDirty(scene);
+          invalidateShadowReceiverHandoffs(scene);
         }
         maintainCascades(entry);
         if (
@@ -749,7 +802,11 @@ export class SceneShadowController {
                   mapSize,
                   entry.light as DirectionalLight,
                 )
-              : new ShadowGenerator(mapSize, entry.light);
+              : directionalLight
+                ? new ShadowGenerator(mapSize, entry.light)
+                : new ReusableShadowGenerator(mapSize, entry.light as LocalShadowLight);
+          const slot = { entry, guard: false };
+          this.slots.set(generator, slot);
           if (generator instanceof CascadedShadowGenerator) {
             generator.numCascades = settings.cascades;
             generator.stabilizeCascades = true;
@@ -778,9 +835,9 @@ export class SceneShadowController {
           generator.prepareDefines = (defines, lightIndex) => {
             prepare(defines, lightIndex);
             defines[`SLATE_SHADOW_AUTO${lightIndex}`] =
-              directionalLight && entry.settings!.autoBias && generator.usePercentageCloserFiltering;
+              directionalLight && slot.entry.settings!.autoBias && generator.usePercentageCloserFiltering;
             if (generator instanceof CascadedShadowGenerator)
-              defines[`SLATE_SHADOW_FADE${lightIndex}`] = entry.settings!.fadeFraction;
+              defines[`SLATE_SHADOW_FADE${lightIndex}`] = slot.entry.settings!.fadeFraction;
             defines.rebuild();
           };
           validateAllocation(generator);
@@ -821,7 +878,7 @@ export class SceneShadowController {
           };
           map?.onBeforeRenderObservable.add((layer) => {
             clearedForDraw = false;
-            const settings = entry.settings!;
+            const settings = slot.entry.settings!;
             const automatic = settings.autoBias && directionalLight;
             const projection = generator instanceof CascadedShadowGenerator
               ? generator.getCascadeProjectionMatrix(layer)
@@ -864,13 +921,19 @@ export class SceneShadowController {
           // prepared values private until that pass has finished, so evidence
           // cannot relabel a cached map after another camera's readiness probe.
           map?.onClearObservable.add(() => { clearedForDraw = true; });
-          map?.onAfterRenderObservable.add(() => {
-            if (!clearedForDraw || !preparedBias) return;
-            const record = entry.effectiveBias[preparedBias.layer] ??= { ...preparedBias };
+          map?.onAfterRenderObservable.add((face) => {
+            if (!clearedForDraw) return;
+            clearedForDraw = false;
+            // A moved or resumed map samples neutrally until its last face is redrawn.
+            if (slot.guard && face === (map.isCube ? 5 : 0)) {
+              slot.guard = false;
+              if (!slot.entry.standby) generator.setDarkness(0);
+            }
+            if (!preparedBias) return;
+            const record = slot.entry.effectiveBias[preparedBias.layer] ??= { ...preparedBias };
             Object.assign(record, preparedBias);
             record.depthBias = generator.bias;
             record.normalBias = generator.normalBias;
-            clearedForDraw = false;
           });
           let activePlanes: Plane[] | null = null;
           // Babylon consumes each custom list synchronously, so every map reuses
@@ -887,7 +950,7 @@ export class SceneShadowController {
               if (!transform) return null;
               Frustum.GetPlanesToRef(transform, planes);
               activePlanes =
-                directionalLight && entry.settings!.filter === "pcf"
+                directionalLight && slot.entry.settings!.filter === "pcf"
                   ? upstream
                   : planes;
               return this.spatial.queryPlanes(activePlanes, casters);
@@ -913,6 +976,7 @@ export class SceneShadowController {
           };
           entry.generator = generator;
           markSceneReadinessDirty(scene);
+          invalidateShadowReceiverHandoffs(scene);
           entry.admittedAt = selectionTime;
           entry.mapSize = mapSize;
           entry.key = allocationKey(mapSize, entry.light, settings.cascades);
@@ -955,11 +1019,17 @@ export class SceneShadowController {
       const passes = generatorPasses(entry.generator);
       live.bytes +=
         (cascaded ? 4 : passes) * entry.mapSize ** 2 * bytesPerTexel;
-      live.passes += passes;
+      if (!entry.standby) live.passes += passes;
     }
     reserveSceneShadows(scene, live);
     for (const entry of this.entries.values())
-      if (entry.generator) this.refresh.apply(entry.generator);
+      if (entry.generator && !entry.standby) this.refresh.apply(entry.generator);
+  }
+  /** Keep a moved or resumed map from sampling stale depth before it redraws. */
+  private neutralUntilRendered(generator: ShadowGenerator): void {
+    generator.setDarkness(NEUTRAL_DARKNESS);
+    this.slots.get(generator)!.guard = true;
+    generator.getShadowMap()?.resetRefreshCounter();
   }
   private applySettings(
     generator: ShadowGenerator,
