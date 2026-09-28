@@ -164,6 +164,13 @@ subsequent handoffs. All handoffs retained zero graph rebuilds and one allocatio
 within the same ceiling. A driver call can exceed the dispatch time budget; these
 small-scene measurements do not establish large-scene or mobile frame-time bounds.
 
+These staged measurements describe the removed receiver warmup. Handoffs now move
+the retained map in place and exchange receiver light indices
+([render](../architecture/render.md#camera-driven-shadow-handoffs)). The same
+cases now require activation within the first prepared frame, with zero
+preparation and frame compilations and no graph builds. Timings have not been
+re-measured on native hardware since this change.
+
 ### Static shadow reuse comparison
 
 A later run at `1b575657` uses the same fixture, browser version, software backend, dimensions, cap, and three 30-second untraced samples. Other local agent checks were held during both runs. The reference at `fc735530` predates static caching and nearest-light selection; this is a revision comparison, not an isolated attribution of each change.

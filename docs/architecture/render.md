@@ -35,12 +35,14 @@ copies. Copy timing includes synchronous flush/driver waits, so it does not
 isolate CPU or GPU cost. Pixel-readback correctness checks
 must be collected separately from performance samples.
 
-Camera-driven shadow handoffs refresh the managed bridge's borrowed RTT bindings
-and receiver readiness in place. The ordered shadow pass renders these RTTs
-unmanaged before the object pass; their native samplers need no graph texture
-imports. Replacing a map preserves the object render-pass ID, effects and outline
-tasks, avoiding unrelated shader preparation and resource churn. Revocation and
-first-map readiness guards still apply before either drawing or sampling a map.
+Camera-driven shadow handoffs move a retained local map to the incoming light
+(see [Camera-driven shadow handoffs](#camera-driven-shadow-handoffs)). The managed
+bridge borrows admitted and standby maps and matches them by allocation, not by
+scene light order, so a moved map needs no preparation. The ordered shadow pass
+renders these RTTs unmanaged before the object pass; their native samplers need no
+graph texture imports. Replacing a map preserves the object render-pass ID,
+effects and outline tasks, avoiding unrelated shader preparation and resource
+churn. Revocation and first-map readiness guards still apply before drawing a map.
 
 Editor gizmo utility layers belong to their viewport, independently of graph
 rebuilds. `SceneRenderCoordinator` draws the registered editor overlay once after
@@ -229,7 +231,7 @@ KTX2 decoding thread and upload format are independent. Packed players can decod
 
 - The pinned Babylon patch (`KhronosTextureContainer2._uploadAsync`) sets a per-texture `forceRGBA` when the engine is WebGPU and the KTX2 is Basis Universal (vkFormat 0) with a base width or height off the 4-texel grid. It decides from the texture's own bytes, so first loads, installed Blobs, device-loss rebuilds (which recreate URL textures without loader options) and KTX2 inside GLB models (`KHR_texture_basisu`) are all covered. Nothing is refused or reported.
 - The decoder spreads its defaults over each texture's options, so `configureKtx2DecoderRuntime` leaves `DefaultDecoderOptions.forceRGBA` `undefined` on hardware rather than `false`, which would mask the per-texture value; `true` still forces RGBA everywhere when compressed upload would fail.
-- The RGBA upload keeps the texture's gamma space, full mip chain and ResourceCache byte accounting (header base size and level count), at four bytes per texel instead of about one. Like any RGBA upload it applies the texture's `invertY`, so a Sprite, Tilemap or 2D atlas draws the same way up as its source PNG. A block-compressed upload ignores `invertY`: the orientation check in `e2e/texture-webgpu-fallback.spec.ts` reads an aligned compressed Tilemap atlas upside down against its PNG on WebGPU, a separate issue this path does not fix.
+- The RGBA upload keeps the texture's gamma space, full mip chain and ResourceCache byte accounting (header base size and level count), at four bytes per texel instead of about one. It draws the same way up as the block-compressed upload and the source PNG ([KTX2 orientation](#resource-cache)).
 - WebGL2, aligned textures and uncompressed KTX2 are unchanged. A failed RGBA decode is an ordinary texture load failure (`material.missingTexture`, "Sprite texture replacement failed").
 
 Missing compressed-format capabilities and known software renderers still select RGBA. Preview Build retains its existing PNG/pixel payload policy.
@@ -328,6 +330,12 @@ Texture installation copies mutable arrays into immutable Blobs and computes SHA
 Sprite quads use updatable position/UV buffers and retain CPU arrays. Reapplying a frame preserves material and texture ownership; UV, size, pivot and blend visibility updates are independent. Texture successors prepare before replacing a working binding, and a failed request is not retried every frame. Auto-generated sprite materials remain stable; animation preserves an authored material assignment. The test-only texture lease proof replays 10,000 selections using real browser buffers/materials and checks atlas pixels and independent SceneLayer ownership.
 
 Cache key includes `url`, `noMipmap`, `samplingMode`, `invertY`, `isCube` (cache textures never use an sRGB buffer). A later `acquireTexture` with a **different** upload key builds another GPU wrapper from a second object URL of the same Blob and does not dispose the first. That keeps a 3D Mannequin albedo (`invertY: false`) upright when a sprite/tilemap requests NEAREST / no mips / `invertY: true`. GPU-dead wrappers (no Babylon `isDisposed()` on Texture — scene-owned wrappers lose `getScene()`, engine-owned ones lose `_engine`) are still treated as a miss and rebuilt from the retained blob URL. Sprite / tilemap `applyAlbedoTexture` requests `hasAlpha` as an immutable pixel-art wrapper option so diffuse alpha participates in the final alpha-test cutout; glTF / NodeMaterial wrappers keep their own alpha settings. Compiled NodeMaterials detach engine-owned `TextureBlock` textures before `dispose(false, false)` so overlay / MaterialLibrary teardown cannot drop ResourceCache GPU objects. Pixel-perfect `applyPixelArtSamplingToScene` skips engine-owned cache textures (`uniqueId` unset) **and** PBR/GLB construction albedos (CLAMP would break Mannequin UVs). `acquireTexture(..., { isCube: true }).resource` returns a `CubeTexture` (IBL, single DDS/ENV URL). `acquireCubeTextureFromImages(guid, scene, files).resource` builds a six-face skybox cube (`files` in `px, py, pz, nx, ny, nz` order) **on the Engine** (`new CubeTexture(files, engine)`), not the Scene, so Play `scene.dispose()` cannot drop a cache-owned cube. Constructing `Texture` outside the cache is lint-banned. Skybox empty faces load `engine-content/skybox/{px,py,pz,nx,ny,nz}.png` (Vite-copied to editor/player public; URL helper in `packages/render/src/default-skybox/`); override Texture guids are collected into Play `textureBytes` (`skyboxFaceGuidsFromScene`). The skybox never sets `scene.environmentTexture`. Editor billboard PNGs live in `engine-content/billboards/` (Vite-copied to **editor** `public/` only; URL helper `engineBillboardUrl` in `packages/render/src/default-billboard/`). Player does not copy them.
+
+**KTX2 orientation.** Babylon 9.20's block-compressed (ASTC/BC7) uploads ignore `invertY`: WebGPU passes `false` and WebGL2 never sets `UNPACK_FLIP_Y_WEBGL`. Its KTX2 loader also sets no `_invertVScale`, unlike KTX1 and `.basis`. Without compensation, a compressed KTX2 at an `invertY: true` site drew upside down against its PNG.
+- `prepareTexture` builds a 2D KTX2 requested with `invertY` (every `applyAlbedoTexture` site: Sprite, Sprite Animation, Tilemap, 2D Texture, 2D Panel with a texture source, rich-text `[img]`) with `invertY: false` and flips V on the wrapper (`vScale = -1`, `vOffset = 1`, so v′ = 1 − v). It decides from the bytes (KTX2 magic or `image/ktx2` Blob), so the result is upright whether the decoder picks a block format or RGBA. PNG and `invertY: false` requests (Materials, glTF) are unchanged; nothing is re-encoded.
+- The flip lives on each wrapper, set at construction: cache reuse, sampling variants (`acquireTextureVariant`) and device-loss rebuilds (which reuse the InternalTexture's `invertY: false`) keep it. Upload keys keep the *requested* `invertY`, so flipped and unflipped wrappers never share one; `Texture.invertY` reads `false` on flipped ones.
+- Samplers must apply the texture matrix, as StandardMaterial, the shared outline mask, shadow/depth passes and render-target alpha masks do. A Babylon upgrade that sets `_invertVScale = !invertY` for KTX2 would flip twice; `= invertY` is a no-op here.
+- Measured on SwiftShader WebGPU (block-compressed and RGBA) and on software WebGL2 (RGBA, flipped by the GLSL StandardMaterial's texture matrix). Hardware WebGL2's compressed path is inferred from code only: CI's software GL decodes every KTX2 to RGBA.
 
 Texture storage is estimated from each loaded sampling representation's actual GPU format and type, rounded compressed blocks, individual mip dimensions, and cube faces. Pending uploads reserve RGBA8 when source dimensions are available; Blob header reads are bounded to 64 KiB. KTX2 base dimensions and level count come from its header because Babylon 9.20's RGBA fallback leaves internal dimensions at the last mip. Partial KTX2 chains count only their stored levels, including levels uploaded despite a no-mip sampling request. Load/dispose callbacks belong to the exact cache entry and wrapper; eviction and external disposal remove their accounting and observers. These estimates exclude driver alignment and hidden allocations, and are not measured VRAM. WebGL restore logs lost/restored to the Output Log and resets hardware scaling to the Engine Settings floor (`noteRestore`). Babylon rebuilds retained GPU resources before notifying; handle callbacks preserve those shared textures and materials. Disposal removes the handle's restore/loss/frame observers and rejects pending presentation. Context loss invalidates outstanding load and shader-warm generations.
 
@@ -526,7 +534,7 @@ Models get Babylon mesh LOD levels automatically (`model-lod.ts`). Texture strea
   - Level thresholds are screen sizes (bounding-sphere diameter / view height) of 0.5, 0.25 and 0.125, scaled by **LOD Distance Scale**.
   - While the editor freezes active meshes for brush tools, selection keeps full detail.
 - **Consumers.**
-  - Level meshes are `isBlocked`. They are excluded from `visualMeshes` (nav bake, outlines, slots, framing), editor material overrides, pickability writers, shadow-caster admission, shadow receiver warmup, water contact, live mesh counts and shadow diagnostic captures.
+  - Level meshes are `isBlocked`. They are excluded from `visualMeshes` (nav bake, outlines, slots, framing), editor material overrides, pickability writers, shadow-caster admission, water contact, live mesh counts and shadow diagnostic captures.
   - Shadow maps draw the selected level through the master caster.
   - Local shadow maps keep caching auto-LOD casters. A map re-renders once when a caster within its light's range changes its drawn level.
   - `RenderDiagnostics.autoLod` and the stats HUD report visible auto-LOD meshes, how many draw a simplified level, and the triangles saved.
@@ -1376,30 +1384,50 @@ invalidation; browser shadow parity and desktop profiling are recorded in
 
 Failed shadow and clustered allocations roll back through one engine allocation checkpoint (`allocation-checkpoint.ts`, the only reader in `packages/render` of Babylon 9.20's private render-target wrapper cache). Borrowed shadow and clustered-mask FrameGraph draws share one state-restoring helper (`framegraph-borrowed-draw.ts`) with per-owner alpha and error policy.
 
-Compatible local-light handoffs keep eligible incumbents while one prospective
-receiver layout warms after rendered frames. The warmer dispatches at most eight
-probes and two milliseconds of work per frame (a single driver call cannot be
-preempted). Detached submeshes cover camera/Forward passes and instancing variants;
-temporary shadow lookups borrow compatible generator definitions without changing
-live maps, frozen receiver wrappers or shadow flags. Successful effects remain
-referenced until the actual layout passes strict readiness. There is no extra RTT
-or all-light-combinations cache, including when the shadow budget is full.
-Detached probes preserve each live pass's define ordering so activation reuses
-the prepared shader instead of compiling an equivalent variant under a new key.
-While a handoff warms, the retained sun still refreshes its cascade caster bounds
-and `shadowMaxZ` every sync, and retained owners keep their admission reasons;
-only outgoing owners have their reason cleared.
+Point and spot maps are pooled `ReusableShadowGenerator`s
+(`reusable-shadow-generator.ts`). Admission ranking and budgets are unchanged; a
+changed winner set is realized without per-light allocation:
 
-Changed winners or readiness invalidate pending work. Authored disable/priority,
-camera possession, lost eligibility, resource/settings changes, incompatible
-light types and unqualified material callbacks use immediate normal admission.
-First activation without a compatible incumbent still uses ordinary preparation.
-Context recovery, graph retirement and scene disposal release pending probes.
-Cancelled WebGL programs retain their last reference until native compilation
-settles. Further speculation uses normal admission while that release is pending,
-so rapid camera changes cannot accumulate abandoned warmup layouts.
-The existing dispose-before-allocate commit and first-map readiness checks remain
-authoritative; shader warmup does not authorize sampling an unrendered map.
+- **Retarget.** A winner takes the map of a same-kind light (same class, cube
+  layout and map size) that lost admission. The RTT, render-pass IDs, caster draw
+  wrappers and scene UBO stay; only Babylon's per-light transform cache is reset.
+  There is no construction, disposal, shader loading or FrameGraph preparation.
+- **Receiver exchange.** When both lights have identical per-light define inputs
+  (class, light-specific defines including texture readiness, falloff, specular,
+  lightmap mode, shadow flag, cube layout) and every receiver holds both or
+  neither, `shadow-receiver-handoff.ts` swaps them in `scene.lights` and each
+  `mesh.lightSources`. Every shader light index keeps identical defines, so no
+  material is dirtied and no effect changes; binding follows the new order, and
+  later `lightSources` rebuilds reproduce it. Scene lighting accepts a layout
+  change that the recorded exchanges fully explain. Any other generator change
+  invalidates them and takes the normal dirty path.
+- **Standby.** A local map that only lost camera admission
+  (`outside-relevant-area`, `budget-limited`) stays attached at darkness 1, where
+  every Babylon 9.20 shadow filter returns fully lit. It is switched to render-once
+  and not refreshed. Receivers keep their defines, and the bridge keeps it bound.
+  `generator()` reports only admitted maps (`boundGenerator()` includes standby);
+  diagnostics treat standby lights as unadmitted, and metrics count their memory
+  but no passes. Standby fits within `maxLocalLights`, the byte budget and sampler
+  headroom, and is not used under Clustered Forward. A returning light resumes its
+  map; another same-kind winner takes it by retarget.
+- **First-render guard.** A moved or resumed map samples at darkness 1 until its
+  next actual pass (last cube face) completes. That pass precedes the object pass,
+  so shadows normally appear in the same frame. A skipped pass shows no shadow
+  rather than stale depth; readiness probes do not release the guard.
+- **Released immediately:** authored disable or `castShadows` off, zero intensity,
+  forward-excluded lights, global shadows off, settings/profile/map-size changes,
+  context recovery and allocation failure; a failed construction first frees
+  standby maps and retries the same size. Dispose-before-allocate still applies,
+  and the pool never exceeds the admitted budget. New maps are constructed only
+  while the pool fills or when no same-kind map is available.
+- **Not receiver-neutral (receivers re-prepare, no allocation):** same-kind lights
+  with different define inputs, per-mesh include/exclude lists, node blocks pinned
+  to one light, and Clustered Forward, where lights move into or out of the cluster.
+  A different class or cube layout cannot take the map and constructs its own.
+  Forward light-budget churn and the volumetric effects key (keyed by light id)
+  remain separate camera-driven sources. An exchange can change exact-tie winners
+  of CEL Strongest between the two lights and reorders `scene.lights` diagnostics
+  rows.
 
 ### Shared outline candidate (22 September 2026)
 
