@@ -1,5 +1,9 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { WINDOWED_SLICE_OVERSCAN, windowedSlice } from "./windowed-slice";
+import {
+  WINDOWED_SLICE_OVERSCAN,
+  windowedSlice,
+  type WindowedSlice,
+} from "./windowed-slice";
 
 /** Matches `--touch-target` for catalog and Compiler Results rows. */
 export const WINDOWED_LIST_TOUCH_ROW_HEIGHT = 44;
@@ -50,6 +54,39 @@ export type WindowedListProps = {
   children: (index: number) => ReactNode;
 };
 
+/** Unmeasured viewport: mount every row (jsdom / first paint). */
+const UNMEASURED_ROWS: WindowedSlice = {
+  firstIndex: 0,
+  lastIndex: Number.POSITIVE_INFINITY,
+};
+
+/**
+ * Mounted row range for an unbounded list; it changes only when a row
+ * boundary is crossed, so scrolling within a row keeps the same state.
+ */
+function rowWindow(
+  rowHeight: number,
+  scrollTop: number,
+  viewportHeight: number,
+): WindowedSlice {
+  return windowedSlice({
+    itemCount: Number.POSITIVE_INFINITY,
+    rowHeight,
+    scrollTop,
+    viewportHeight,
+    overscan: WINDOWED_SLICE_OVERSCAN,
+  });
+}
+
+/** State updater that keeps the current range when it is unchanged. */
+function keepRows(next: WindowedSlice) {
+  return (current: WindowedSlice): WindowedSlice =>
+    current.firstIndex === next.firstIndex &&
+    current.lastIndex === next.lastIndex
+      ? current
+      : next;
+}
+
 export function WindowedList({
   itemCount,
   rowHeight,
@@ -57,18 +94,20 @@ export function WindowedList({
   children,
 }: WindowedListProps) {
   const listRef = useRef<HTMLDivElement>(null);
-  const [viewportHeight, setViewportHeight] = useState(0);
-  const [scrollTop, setScrollTop] = useState(0);
+  const [range, setRange] = useState<WindowedSlice>(UNMEASURED_ROWS);
 
   useLayoutEffect(() => {
     const viewport = findWindowedListScrollParent(listRef.current);
     if (!(viewport instanceof HTMLElement)) return;
+    let viewportHeight = 0;
+    const onScroll = () => {
+      setRange(keepRows(rowWindow(rowHeight, viewport.scrollTop, viewportHeight)));
+    };
     const read = () => {
-      setViewportHeight(viewport.clientHeight);
-      setScrollTop(viewport.scrollTop);
+      viewportHeight = viewport.clientHeight;
+      onScroll();
     };
     read();
-    const onScroll = () => setScrollTop(viewport.scrollTop);
     viewport.addEventListener("scroll", onScroll, { passive: true });
     const observer =
       typeof ResizeObserver === "undefined" ? null : new ResizeObserver(read);
@@ -77,7 +116,7 @@ export function WindowedList({
       viewport.removeEventListener("scroll", onScroll);
       observer?.disconnect();
     };
-  }, [itemCount]);
+  }, [itemCount, rowHeight]);
 
   useLayoutEffect(() => {
     if (activeIndex < 0 || activeIndex >= itemCount) return;
@@ -93,16 +132,13 @@ export function WindowedList({
     if (top < viewport.scrollTop) viewport.scrollTop = top;
     else if (bottom > viewport.scrollTop + viewport.clientHeight)
       viewport.scrollTop = bottom - viewport.clientHeight;
-    setScrollTop(viewport.scrollTop);
+    setRange(
+      keepRows(rowWindow(rowHeight, viewport.scrollTop, viewport.clientHeight)),
+    );
   }, [activeIndex, itemCount, rowHeight]);
 
-  const { firstIndex, lastIndex } = windowedSlice({
-    itemCount,
-    rowHeight,
-    scrollTop,
-    viewportHeight,
-    overscan: WINDOWED_SLICE_OVERSCAN,
-  });
+  const firstIndex = range.firstIndex;
+  const lastIndex = Math.min(itemCount, range.lastIndex);
 
   const rows: number[] = [];
   for (let index = firstIndex; index < lastIndex; index++) {

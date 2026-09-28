@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, fireEvent, render } from "@testing-library/react";
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
 import { WINDOWED_SLICE_OVERSCAN } from "./windowed-slice";
 import {
@@ -127,6 +127,51 @@ describe("WindowedList", () => {
       expect(mounted.length).toBeLessThan(40);
       expect(queryByTestId("windowed-row-0")).toBeTruthy();
       expect(queryByTestId("windowed-row-499")).toBeNull();
+    } finally {
+      restore();
+    }
+  });
+});
+
+describe("WindowedList scrolling", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  function mountedRange(): [number, number] {
+    const indices = [
+      ...document.querySelectorAll('[data-testid^="windowed-row-"]'),
+    ].map((row) => Number(row.textContent));
+    return [Math.min(...indices), Math.max(...indices)];
+  }
+
+  it("moves the mounted rows only when scrolling crosses a row boundary", () => {
+    const restore = stubNativeScrollerHeight("native-scroller", 280);
+    try {
+      const { getByTestId } = render(
+        <div data-testid="native-scroller" style={{ overflowY: "auto" }}>
+          <WindowedList itemCount={500} rowHeight={28}>
+            {(index) => (
+              <div data-testid={`windowed-row-${index}`}>{index}</div>
+            )}
+          </WindowedList>
+        </div>,
+      );
+      const scroller = getByTestId("native-scroller");
+      const scrollTo = (top: number) => {
+        scroller.scrollTop = top;
+        fireEvent.scroll(scroller);
+      };
+      // Ten 28px rows fill the viewport, plus four overscan rows.
+      expect(mountedRange()).toEqual([0, 13]);
+      scrollTo(30);
+      expect(mountedRange()).toEqual([0, 15]);
+      scrollTo(50);
+      expect(mountedRange()).toEqual([0, 15]);
+      scrollTo(200);
+      expect(mountedRange()).toEqual([3, 21]);
+      scrollTo(0);
+      expect(mountedRange()).toEqual([0, 13]);
     } finally {
       restore();
     }
