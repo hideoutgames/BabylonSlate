@@ -109,7 +109,6 @@ export function artifactNames(platform, version) {
     const names = ["arm64", "x64"].flatMap(arch => [
       `BabylonSlate-${version}-${arch}.dmg`,
       `BabylonSlate-${version}-${arch}.zip`,
-      ...(release ? [`BabylonSlate-${version}-${arch}.zip.blockmap`] : []),
     ]);
     return [...names, ...(release ? ["latest-mac.yml"] : [])];
   }

@@ -29,6 +29,15 @@ const run = (command, args, cwd = sandbox) => new Promise((resolvePromise, rejec
   child.once("error", reject);
   child.once("close", code => code === 0 ? resolvePromise() : reject(new Error(`Command failed: ${command}`)));
 });
+const delay = milliseconds => new Promise(resolveDelay => setTimeout(resolveDelay, milliseconds));
+async function cleanupStep(label, operation) {
+  try {
+    await operation();
+  } catch (error) {
+    console.warn(`${label}: ${error instanceof Error ? error.message : "cleanup failed"}`);
+  }
+}
+let failure;
 try {
   if (platform === "windows") {
     installer = join(sandbox, "installer.exe");
@@ -149,15 +158,38 @@ try {
   await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
   assert.deepEqual(await page.evaluate(async () => [...new Uint8Array(await window.babylonslate.project.readBinary("distribution-smoke.bin"))]), [17, 42, 99]);
   console.log(`Installed ${platform} checks passed: identity, production storage/persistence, editor, player, workers, wasm, and package allowlist.`);
-} finally {
-  if (app) await app.close().catch(() => {});
-  for (const [source, destination] of hidden.reverse()) await rename(destination, source);
-  assert.equal(dirname(resolve(sandbox)), resolve(tmpdir()));
-  if (dmgMounted) await run("hdiutil", ["detach", join(sandbox, "dmg")]).catch(() => {});
-  if (platform === "windows") {
+} catch (error) {
+  failure = error;
+}
+await cleanupStep("Packaged app close failed", async () => {
+  if (app) await app.close();
+});
+for (const [source, destination] of hidden.reverse()) {
+  await cleanupStep(`Renderer restore failed for ${relative(repo, source)}`, () => rename(destination, source));
+}
+await cleanupStep("DMG detach failed", async () => {
+  if (dmgMounted) await run("hdiutil", ["detach", join(sandbox, "dmg")]);
+});
+if (platform === "windows") {
+  await cleanupStep("Windows uninstall failed", async () => {
     const entries = await readdir(installDir).catch(() => []);
     const uninstaller = entries.find(name => /^Uninstall.*\.exe$/i.test(name));
-    if (uninstaller) await run(join(installDir, uninstaller), ["/S"]).catch(() => {});
-  }
-  await rm(sandbox, { recursive: true, force: true });
+    if (!uninstaller) return;
+    await run(join(installDir, uninstaller), ["/S"]);
+    for (let attempt = 0; attempt < 60; attempt++) {
+      try {
+        await access(installDir);
+      } catch (error) {
+        if (error?.code === "ENOENT") return;
+        throw error;
+      }
+      await delay(500);
+    }
+    throw new Error("Timed out waiting for the NSIS uninstaller");
+  });
 }
+await cleanupStep("Sandbox removal failed", async () => {
+  assert.equal(dirname(resolve(sandbox)), resolve(tmpdir()));
+  await rm(sandbox, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
+});
+if (failure) throw failure;

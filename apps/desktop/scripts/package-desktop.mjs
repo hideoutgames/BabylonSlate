@@ -1,3 +1,4 @@
+import { listPackage } from "@electron/asar";
 import { build, Platform, Arch } from "electron-builder";
 import { access, cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
@@ -23,13 +24,36 @@ catch (error) { if (error.code !== "ENOENT") throw error; }
 await mkdir(stage, { recursive: true });
 await cp(join(desktop, "dist/host"), join(stage, "host"), { recursive: true });
 await stageRenderer(join(desktop, "../editor/dist"), join(stage, "renderer"));
-await writeFile(join(stage, "package.json"), JSON.stringify({ name: "babylonslate", productName: "BabylonSlate", version: manifest.packageVersion, main: "host/main.cjs", description: "BabylonSlate editor", author: "Hideout Games" }, null, 2));
+await writeFile(join(stage, "package.json"), JSON.stringify({ name: "babylonslate", productName: "BabylonSlate", desktopName: "babylonslate.desktop", version: manifest.packageVersion, main: "host/main.cjs", description: "BabylonSlate editor", author: "Hideout Games" }, null, 2));
 
 const targets = {
   windows: () => Platform.WINDOWS.createTarget(["nsis"], Arch.x64),
   macos: () => Platform.MAC.createTarget(["dmg", "zip"], Arch.arm64, Arch.x64),
   linux: () => Platform.LINUX.createTarget(["AppImage"], Arch.x64),
 };
+const output = join(desktop, "dist/installers");
+async function findAppArchives(directory) {
+  const archives = [];
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) archives.push(...await findAppArchives(path));
+    else if (entry.isFile() && entry.name === "app.asar") archives.push(path);
+  }
+  return archives;
+}
+async function validateAppArchives() {
+  const archives = await findAppArchives(output);
+  if (archives.length === 0) throw new Error("Packaged app.asar was not produced");
+  const allowed = new Set(["package.json", "host", "renderer"]);
+  const unexpected = new Set();
+  for (const archive of archives) {
+    for (const name of listPackage(archive)) {
+      const root = name.replaceAll("\\", "/").replace(/^\//, "").split("/")[0];
+      if (root && !allowed.has(root)) unexpected.add(root);
+    }
+  }
+  if (unexpected.size) throw new Error(`Packaged app.asar contains unexpected roots: ${[...unexpected].sort().join(", ")}`);
+}
 const signingEnvironment = ["APPLE_DEVELOPER_ID_P12_BASE64", "APPLE_DEVELOPER_ID_PASSWORD", "ASC_PRIVATE_KEY_P8_BASE64", "ASC_KEY_ID", "ASC_ISSUER_ID", "CSC_LINK", "CSC_KEY_PASSWORD", "APPLE_API_KEY", "APPLE_API_KEY_ID", "APPLE_API_ISSUER", "APPLE_TEAM_ID"];
 let privateKeyDirectory;
 try {
@@ -51,12 +75,12 @@ try {
     if (platform === "macos") config.mac = { notarize: false };
   }
   await build({ projectDir: desktop, targets: targets[platform](), publish: "never", config });
+  await validateAppArchives();
 } finally {
   if (privateKeyDirectory) await rm(privateKeyDirectory, { recursive: true, force: true });
   for (const name of [...signingEnvironment, "CSC_IDENTITY_AUTO_DISCOVERY"]) delete process.env[name];
 }
 
-const output = join(desktop, "dist/installers");
 const publicDir = join(desktop, "dist/public");
 await mkdir(publicDir, { recursive: true });
 const assets = new Map();

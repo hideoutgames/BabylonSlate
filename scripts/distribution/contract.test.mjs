@@ -87,7 +87,13 @@ test("platform and merged release assets are exact public allowlists", () => {
   assert.deepEqual(artifactNames("windows", testVersion), [`BabylonSlate-${testVersion}-x64.exe`]);
   assert.deepEqual(artifactNames("android", testVersion), [`BabylonSlate-${testVersion}-android.apk`]);
   const releaseVersion = "1.2.3-release";
-  assert.ok(artifactNames("macos", releaseVersion).includes("latest-mac.yml"));
+  assert.deepEqual(artifactNames("macos", releaseVersion), [
+    `BabylonSlate-${releaseVersion}-arm64.dmg`,
+    `BabylonSlate-${releaseVersion}-arm64.zip`,
+    `BabylonSlate-${releaseVersion}-x64.dmg`,
+    `BabylonSlate-${releaseVersion}-x64.zip`,
+    "latest-mac.yml",
+  ]);
   assert.ok(artifactNames("linux", releaseVersion).includes("latest-linux.yml"));
   const files = platformArtifactNames("windows", testVersion);
   assert.doesNotThrow(() => validateArtifacts(files, files));
