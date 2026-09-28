@@ -682,6 +682,39 @@ test.describe("P9 content systems", () => {
     await closeWindowsMenu(page);
   });
 
+  test("Animation Graph mode switch keeps another open document's Windows menu working", async ({
+    page,
+  }) => {
+    test.setTimeout(90_000);
+    await openMinimalTestProject(page);
+    await createAsset(page, "Sprite", "Hero");
+    await openAssetFromBrowser(page, "assets/Hero.sprite.babasset");
+    const spriteDetails = page.getByTestId("sprite-details-panel");
+    await expect(spriteDetails).toBeVisible();
+
+    // The Sprite stays mounted in the background while the Animation Graph changes mode.
+    await createAsset(page, "AnimationGraph", "Loco");
+    await openAssetFromBrowser(page, "assets/Loco.anim.babasset");
+    await expect(animStateMachine(page)).toHaveAttribute("data-active", "true");
+    await page.getByTestId("anim-editor-mode-animation-object").click();
+    await expect(animObject(page)).toHaveAttribute("data-active", "true");
+
+    await page
+      .locator('[data-testid="document-tab"][data-document-kind="sprite"]')
+      .getByTestId("document-tab-select")
+      .click();
+    await expect(spriteDetails).toBeVisible();
+    await openWindowsMenu(page);
+    const detailsItem = page.getByTestId("windows-menu-sprite-details");
+    await expect(detailsItem).toHaveAttribute("aria-checked", "true");
+    await detailsItem.click({ force: true });
+    await expect(spriteDetails).toHaveCount(0);
+    await expect(detailsItem).toHaveAttribute("aria-checked", "false");
+    await detailsItem.click({ force: true });
+    await expect(spriteDetails).toBeVisible();
+    await closeWindowsMenu(page);
+  });
+
   test("Material preview compiles the authored graph and follows the primitive picker", async ({
     page,
   }) => {
