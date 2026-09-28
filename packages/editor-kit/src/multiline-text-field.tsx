@@ -113,7 +113,7 @@ export function MultilineTextField({
               />
             )}
           </div>
-          <DialogFooter className="m-0">
+          <DialogFooter className="m-0 pt-3">
             <Button
               type="button"
               variant="outline"
