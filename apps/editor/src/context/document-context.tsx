@@ -205,7 +205,6 @@ import {
 } from "../lib/plugin-ui";
 import { readProjectJsonMtime, refreshMtimeSnapshotAfterEditorSave } from "../lib/external-change";
 import { ProjectSaveState } from "../lib/project-save-state";
-import { createTextureAlignmentGuard } from "../lib/texture-alignment-guard";
 import {
   applyOwnAssetWrite,
   classifyExternalChanges,
@@ -875,6 +874,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const sourceControlEnabled = projectDocument
     ? projectDocument.settings.sourceControl?.enabled === true
     : null;
+  // Not via the debounced project save: turning source control on must stop
+  // the texture alignment pass's queued re-encodes at once.
+  useEffect(() => {
+    if (sourceControlEnabled !== null) projectService.setSourceControlEnabled(sourceControlEnabled);
+  }, [projectService, sourceControlEnabled]);
   useEffect(() => {
     if (sourceControlEnabled === null) return;
     const folder = projectService.storagePort.getCurrentFolder();
@@ -2527,26 +2531,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     });
     return () => projectService.setOpenTextureUsage(null);
   }, [documentService, projectService]);
-
-  // The texture alignment pass re-encodes Textures in the background, so it
-  // runs only while this project's source-control locks are known.
-  const textureGuardProject =
-    projectDocument && sourceControlRef.current.locksKnownFor(projectService.guid)
-      ? projectService.guid
-      : null;
-  useEffect(() => {
-    if (!textureGuardProject) return;
-    projectService.setTextureWriteGuard(
-      createTextureAlignmentGuard({
-        sourceControl: sourceControlRef.current,
-        projectGuid: textureGuardProject,
-        pathFor: (guid) => projectService.registry?.getByGuid(guid)?.path,
-        blockedReason: textureUsageBlockedReason,
-      }),
-    );
-    void projectService.reconcileTextureAlignment();
-    return () => projectService.setTextureWriteGuard(null);
-  }, [projectService, textureGuardProject, textureUsageBlockedReason]);
 
   const readAssetChunk = useCallback(
     (path: string, chunkId: string) =>

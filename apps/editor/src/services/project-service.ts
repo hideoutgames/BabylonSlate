@@ -246,14 +246,6 @@ function withSavedTextureEncodeState(
   return next;
 }
 
-/** What the editor lets the background texture alignment pass write. */
-export interface TextureWriteGuard {
-  /** False for a Texture that is locked by another user or read-only. */
-  canWrite(guid: string): boolean;
-  /** Takes what rewriting the Texture needs (its lock) before it re-encodes; false skips it. */
-  claim?(guid: string): Promise<boolean>;
-}
-
 export interface ProjectLoadResult {
   document: ProjectDocument;
   layouts: ProjectLayouts;
@@ -321,8 +313,12 @@ export class ProjectService {
   private readonly ownWriteListeners = new Set<(write: OwnAssetWrite) => void>();
   private readonly diagnostics: string[] = [];
   private readonly diagnosticListeners = new Set<(line: string) => void>();
-  /** Lets the texture alignment pass write, for the project it was set for. */
-  private textureWriteGuard: (TextureWriteGuard & { projectGuid: string | null }) | null = null;
+  /**
+   * The open project's source control **Enable** setting, saved or not. While
+   * it is on, nothing re-encodes a Texture in the background: only the user's
+   * own edits, and Textures this session encoded, re-align.
+   */
+  private sourceControlEnabled = false;
   /** The Usage an open Texture tab shows, saved or not (the editor sets it). */
   private openTextureUsage: ((guid: string) => string | undefined) | null = null;
   /** Textures whose encode this project session committed. */
@@ -593,36 +589,31 @@ export class ProjectService {
   }
 
   /**
-   * Let the texture alignment pass write to this project: `canWrite(guid)`
-   * is false for Textures that are locked or read-only, and `claim(guid)`
-   * takes what a rewrite needs first (the Texture's source-control lock). The
-   * editor sets it once source-control locks are known, then runs the pass;
-   * null (or closing the project) stops it, including the jobs it queued.
+   * The editor reports the project's source control **Enable** setting as it
+   * changes, saved or not (a project load reads the saved one). Turning it on
+   * stops the alignment pass, including the re-encodes it queued; turning it
+   * off runs the pass.
    */
-  setTextureWriteGuard(guard: TextureWriteGuard | null): void {
-    this.textureWriteGuard = guard
-      ? { projectGuid: this.projectGuid, canWrite: guard.canWrite, claim: guard.claim }
-      : null;
-  }
-
-  private currentTextureWriteGuard(): TextureWriteGuard | null {
-    const guard = this.textureWriteGuard;
-    return guard && guard.projectGuid === this.projectGuid ? guard : null;
+  setSourceControlEnabled(enabled: boolean): void {
+    if (this.sourceControlEnabled === enabled) return;
+    this.sourceControlEnabled = enabled;
+    if (!enabled) void this.reconcileTextureAlignment();
   }
 
   /**
-   * Whether the alignment pass may write a Texture now: the open project's
-   * guard allows it, or, without one (locks unknown), this project session
-   * committed its encode. Asked again when its job starts and commits.
+   * Whether the alignment pass may rewrite a Texture now: not read-only, and
+   * source control is off or this project session committed its encode (the
+   * user's own new work, such as an import a Tileset then picks). Asked again
+   * when its job starts and before its commit.
    */
   private alignmentMayWrite(guid: string): boolean {
-    const guard = this.currentTextureWriteGuard();
-    return guard ? guard.canWrite(guid) : this.sessionEncodedTextures.has(guid);
-  }
-
-  private async claimAlignmentWrite(guid: string): Promise<boolean> {
-    const claim = this.currentTextureWriteGuard()?.claim;
-    return claim ? claim(guid) : true;
+    const registry = this.assetRegistry;
+    const asset = registry?.getByGuid(guid);
+    if (!registry || !asset) return false;
+    if (registry.getRoot(asset.rootId)?.readOnly || isPluginDocumentReadOnly(this.pluginDescriptors, asset.path)) {
+      return false;
+    }
+    return !this.sourceControlEnabled || this.sessionEncodedTextures.has(guid);
   }
 
   /**
@@ -637,22 +628,22 @@ export class ProjectService {
   /**
    * Requeue compressed Textures whose committed encode is stale for the
    * alignment policy (all Textures, or `guids`). Runs one at a time on the
-   * current registry, with a write guard for this project. Without one
-   * (locks unknown) it only rechecks `guids` whose encode this session
-   * committed, such as an import picked by a Tileset: that corrects the
-   * session's own unguarded write. Resolves with the number requeued.
+   * current registry. While source control is on it only rechecks `guids`
+   * whose encode this session committed, such as an import picked by a
+   * Tileset; every other Texture waits for the user's own edit. Resolves
+   * with the number requeued.
    */
   reconcileTextureAlignment(guids?: readonly string[]): Promise<number> {
     const run = async () => {
       const registry = this.assetRegistry;
       if (!registry) return 0;
-      const guard = this.currentTextureWriteGuard();
-      const targets = guard ? guids : guids?.filter((guid) => this.sessionEncodedTextures.has(guid));
-      if (!guard && !targets?.length) return 0;
+      const targets = this.sourceControlEnabled
+        ? (guids ?? []).filter((guid) => this.sessionEncodedTextures.has(guid))
+        : guids;
+      if (targets?.length === 0) return 0;
       const requeued = await registry.reconcileTextureAlignment({
         guids: targets,
         canWrite: (guid) => this.alignmentMayWrite(guid),
-        claim: (guid) => this.claimAlignmentWrite(guid),
         usageFor: this.openTextureUsage ?? undefined,
         ktx2SizeCache: this.ktx2SizeCache,
       });
@@ -981,7 +972,6 @@ export class ProjectService {
   }
 
   async closeProject(): Promise<void> {
-    this.textureWriteGuard = null;
     this.sessionEncodedTextures.clear();
     await this.extensions.close();
     this.cancelEmissionJobs();
@@ -1087,6 +1077,7 @@ export class ProjectService {
     const document = normalizeProjectDocument(raw, folder.name);
     this.projectGuid = raw.guid ?? newGuid();
     this.loadedTextureSettings = document.settings.textures;
+    this.sourceControlEnabled = document.settings.sourceControl?.enabled === true;
     this.pluginOverrides = document.settings.pluginOverrides ?? {};
 
     // Project manifest schema migration (type Project).
@@ -1229,8 +1220,9 @@ export class ProjectService {
     registry.setAtlasStatusListener((guids) => {
       void this.reconcileTextureAlignment(guids);
     });
-    // A remount rebuilds the registry; recheck against what is on disk now.
-    if (this.textureWriteGuard) void this.reconcileTextureAlignment();
+    // Open and every remount recheck what is on disk now (nothing while
+    // source control is on).
+    void this.reconcileTextureAlignment();
     return registry;
   }
 
@@ -1601,6 +1593,7 @@ export class ProjectService {
     if (appearance) document.metadata.appearance = appearance;
     this.projectGuid = newGuid();
     this.loadedTextureSettings = document.settings.textures;
+    this.sourceControlEnabled = document.settings.sourceControl?.enabled === true;
     this.pluginOverrides = document.settings.pluginOverrides ?? {};
     const graph = createDefaultLogicGraphSerialized();
     const scene = createDefaultScene(kind === "2d" ? "2d" : "3d");

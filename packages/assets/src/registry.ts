@@ -930,7 +930,8 @@ export class AssetRegistry {
    * Re-encode a Texture. `usage` overrides the saved header's Usage so a
    * Details edit that has not been saved yet encodes with its new policy.
    * A `guard`ed re-encode (the alignment pass) writes no state before its
-   * commit, and its guard is asked again before the encode and each write.
+   * commit, and its guard is asked again when the job starts and before each
+   * write.
    */
   async retryTextureEncoding(
     guid: string,
@@ -1118,15 +1119,14 @@ export class AssetRegistry {
    * Requeue `compressed` textures whose committed encode no longer matches
    * the alignment policy: a non-atlas encode off the 4-texel grid, or an atlas
    * encode that was padded. Particle is always aligned. Skips read-only roots
-   * and textures `canWrite` refuses (locks). An aligned texture is never
-   * requeued. Returns the requeued guids.
+   * and textures `canWrite` refuses (the editor's rule for background
+   * re-encodes). An aligned texture is never requeued. Returns the requeued
+   * guids.
    */
   async reconcileTextureAlignment(options: {
     guids?: Iterable<string>;
     /** Asked before the requeue, when the job starts and before its commit. */
     canWrite?: (guid: string) => boolean;
-    /** Takes what the write needs (a source-control lock) when the job starts. */
-    claim?: (guid: string) => Promise<boolean>;
     /**
      * Usage to check and re-encode with instead of the saved one: an open
      * Texture tab's, which an unsaved Details edit may have changed.
@@ -1144,11 +1144,7 @@ export class AssetRegistry {
       ? [...new Set(options.guids)]
       : this.list({ type: "Texture" }).map((asset) => asset.header.guid);
     const canWrite = options.canWrite ?? (() => true);
-    const claim = options.claim;
-    const guard: EncodeJobGuard = {
-      canWrite,
-      start: async (guid) => canWrite(guid) && (!claim || (await claim(guid))) && canWrite(guid),
-    };
+    const guard: EncodeJobGuard = { canWrite };
     const queue = this.encodeQueue;
     const requeued: string[] = [];
     for (const guid of guids) {
@@ -1167,7 +1163,7 @@ export class AssetRegistry {
       try {
         if (!(await this.isAlignmentStale(asset, usage, options.ktx2SizeCache))) continue;
         // Asked again after the (possibly reading) staleness check, just
-        // before the requeue, so a lock learned meanwhile still stops it.
+        // before the requeue, so a refusal meanwhile still stops it.
         if (!canWrite(guid) || queue.has(guid)) continue;
         if (await this.retryTextureEncoding(guid, { force: true, usage, guard })) requeued.push(guid);
       } catch {

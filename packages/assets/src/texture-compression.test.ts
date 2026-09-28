@@ -225,38 +225,6 @@ describe("EncodeQueue", () => {
     expect(states).toContain("hang:encode_failed");
     expect(states).toContain("ok:compressed");
   });
-
-  it("drops a guarded job whose write check hangs and pumps the next job", async () => {
-    const encoded: string[] = [];
-    const completed: string[] = [];
-    const errors: string[] = [];
-    const queue = new EncodeQueue({
-      jobTimeoutMs: 20,
-      encode: async (source, settings) => {
-        encoded.push(String(source[0]));
-        return stubEncodeKtx2(source, settings);
-      },
-      onComplete: (result) => {
-        completed.push(result.assetGuid);
-      },
-      onError: (guid) => {
-        errors.push(guid);
-      },
-    });
-    const settings = { format: "uastc", quality: 2, maxDimension: 2048, generateMipmaps: true } as const;
-    // Its lock request never answers.
-    queue.enqueue({
-      assetGuid: "unanswered",
-      source: new Uint8Array([1]),
-      settings,
-      guard: { start: () => new Promise<boolean>(() => undefined), canWrite: () => true },
-    });
-    queue.enqueue({ assetGuid: "ok", source: new Uint8Array([2]), settings });
-    await vi.waitFor(() => expect(completed).toEqual(["ok"]));
-    expect(encoded).toEqual(["2"]);
-    expect(errors).toEqual([]);
-    expect(queue.depth).toBe(0);
-  });
 });
 
 describe("selectTextureChunk", () => {

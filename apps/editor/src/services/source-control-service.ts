@@ -87,25 +87,9 @@ export class SourceControlService {
   private providerRevision = 0;
   private lockRefreshState: LockRefreshState = { status: "idle", error: null, lastSuccessAt: null };
   private lastOperationError: string | null = null;
-  /** Project whose configure() finished; null while a new provider loads and after dispose(). */
-  private configuredProject: string | null = null;
-  /** A lock refresh succeeded since the provider was created or source control re-enabled. */
-  private locksCurrent = false;
 
   get refreshState(): Readonly<LockRefreshState> {
     return this.lockRefreshState;
-  }
-
-  /**
-   * Whether `projectGuid`'s locks are known: configure() finished for it and,
-   * with source control on, a lock refresh has succeeded since its provider
-   * was created or source control was last enabled. Never while source
-   * control is on without a provider (a web host, no repository URL, no HTTP
-   * bridge): teammates may hold locks this editor cannot see.
-   */
-  locksKnownFor(projectGuid: string | null): boolean {
-    if (projectGuid === null || this.configuredProject !== projectGuid) return false;
-    return !this.settings.enabled || this.locksCurrent;
   }
 
   get operationError(): string | null {
@@ -203,9 +187,6 @@ export class SourceControlService {
       this.refreshRevision += 1;
       this.providerRevision += 1;
       this.lockRefreshState = { ...this.lockRefreshState, status: "idle", error: null };
-      // Unpolled from here on: enabling again waits for a fresh refresh.
-      this.locksCurrent = false;
-      this.configuredProject = input.projectGuid;
       this.emit();
       return;
     }
@@ -219,7 +200,6 @@ export class SourceControlService {
         });
       }
       this.scheduler.start();
-      this.configuredProject = input.projectGuid;
       this.emit();
       return;
     }
@@ -232,13 +212,10 @@ export class SourceControlService {
     this.scheduler = null;
     this.provider = null;
     this.fake = null;
-    this.configuredProject = null;
-    this.locksCurrent = false;
     this.locksByPath.clear();
     this.autoLockAttempted.clear();
     const hostOk = isSourceControlHost(input.platform, input.testMode);
     if (!hostOk) {
-      this.configuredProject = input.projectGuid;
       this.emit();
       return;
     }
@@ -276,7 +253,6 @@ export class SourceControlService {
       });
       this.scheduler.start();
     }
-    this.configuredProject = input.projectGuid;
     this.emit();
   }
 
@@ -289,8 +265,6 @@ export class SourceControlService {
     this.scheduler = null;
     this.provider = null;
     this.fake = null;
-    this.configuredProject = null;
-    this.locksCurrent = false;
     this.providerIdentity = "";
     this.locksByPath.clear();
     this.editMode.clear();
@@ -333,7 +307,6 @@ export class SourceControlService {
           this.locksByPath.set(lock.path, lock);
         }
         this.lockRefreshState = { status: "ready", error: null, lastSuccessAt: Date.now() };
-        this.locksCurrent = true;
       }
     } catch (error) {
       if (revision !== this.refreshRevision) return;
@@ -402,36 +375,6 @@ export class SourceControlService {
       message: result.error.message || "Could not lock this asset.",
     });
     this.emit();
-  }
-
-  /**
-   * Take `path`'s lock before a background rewrite (the texture alignment
-   * pass), as auto-lock on edit does for an edit, but without the tab banner
-   * or edit mode an edit sets. True when the write may go ahead: source
-   * control or auto-lock is off, or the lock is ours. A lock another user took
-   * since the last refresh is recorded, so the path reads as theirs.
-   */
-  async lockForBackgroundWrite(path: string): Promise<boolean> {
-    if (!this.settings.enabled || !this.settings.autoLockOnEdit) return true;
-    const provider = this.provider;
-    if (!provider) return false;
-    const held = this.locksByPath.get(path);
-    if (held) return held.ours;
-    const revision = this.providerRevision;
-    let result: Awaited<ReturnType<LockProvider["create"]>>;
-    try {
-      result = await provider.create(path);
-    } catch {
-      return false;
-    }
-    if (revision !== this.providerRevision) return false;
-    const lock = isOk(result)
-      ? result.value
-      : result.error.kind === "conflict" ? result.error.lock : undefined;
-    if (!lock) return false;
-    this.locksByPath.set(path, lock);
-    this.emit();
-    return lock.ours;
   }
 
   refuseIfTheirs(path: string): string | null {

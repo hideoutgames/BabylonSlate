@@ -85,6 +85,13 @@ async function writeLegacyOddTexture(storage: MemoryStorageAdapter, path: string
   }));
 }
 
+/** Turns source control **Enable** on in project.json, as a shared checkout has it. */
+async function enableSourceControlOnDisk(storage: MemoryStorageAdapter): Promise<void> {
+  const project = JSON.parse(await storage.readText(PROJECT_FILE)) as { settings: Record<string, unknown> };
+  project.settings.sourceControl = { ...(project.settings.sourceControl as object | undefined), enabled: true };
+  await storage.writeText(PROJECT_FILE, JSON.stringify(project));
+}
+
 /** Let the storage clock move on, so the next write gets another mtime. */
 const nextMillisecond = () => new Promise((resolve) => setTimeout(resolve, 5));
 
@@ -714,7 +721,6 @@ describe("project documents as .babasset", () => {
       },
     });
     await service.loadCurrentProject();
-    service.setTextureWriteGuard({ canWrite: () => true });
     const registry = service.registry!;
     const encoded = () => {
       const payload = registry.getByGuid(texture!.header.guid)!.header.payload;
@@ -750,7 +756,6 @@ describe("project documents as .babasset", () => {
     const guid = texture!.header.guid;
     // The editor's guard: an open Texture tab's Usage, once Details changes it.
     const tabUsages = new Map<string, string>();
-    service.setTextureWriteGuard({ canWrite: () => true });
     service.setOpenTextureUsage((id) => tabUsages.get(id));
     const payload = () => service.registry!.getByGuid(guid)!.header.payload;
     const encoded = () => [payload().compressionState, payload().ktx2Width, payload().ktx2Height, payload().ktx2BlockAlign];
@@ -780,11 +785,61 @@ describe("project documents as .babasset", () => {
     expect(saved.header.payload).toMatchObject({ usage: "particle", ktx2ChunkId: particleChunkId, ktx2BlockAlign: 4 });
   });
 
-  it("while locks are unknown, keeps a Tileset's texture at its own size only when this session padded it", async () => {
+  it("re-encodes an old odd Texture on the grid when a project with source control off opens", async () => {
     const storage = new MemoryStorageAdapter("documents");
-    await storage.openDocumentsProject("NoLocks.babproject");
+    await storage.openDocumentsProject("Solo.babproject");
     await installMinimalProject(storage);
-    // Padded by an earlier session: its file may be a teammate's locked one.
+    await writeLegacyOddTexture(storage, "assets/odd.babasset", "odd");
+    const service = new ProjectService(storage, { encode: standInEncode });
+
+    await service.loadCurrentProject();
+    await vi.waitFor(() =>
+      expect(service.registry!.getByGuid("odd")!.header.payload).toMatchObject({
+        compressionState: "compressed",
+        ktx2ChunkId: KTX2_KEY_MAX_1,
+        ktx2Width: 4,
+        ktx2Height: 4,
+      }),
+    );
+  });
+
+  it("with source control on, re-encodes an old odd Texture only when the user retries it, or once source control is turned off", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("SharedOdd.babproject");
+    await installMinimalProject(storage);
+    await enableSourceControlOnDisk(storage);
+    await writeLegacyOddTexture(storage, "assets/retried.babasset", "retried");
+    await writeLegacyOddTexture(storage, "assets/waiting.babasset", "waiting");
+    const encode = vi.fn(standInEncode);
+    const service = new ProjectService(storage, { encode });
+    const payload = (guid: string) => service.registry!.getByGuid(guid)!.header.payload;
+
+    await service.loadCurrentProject();
+    // Each call runs after the passes queued before it (the open's, the remount's).
+    expect(await service.reconcileTextureAlignment()).toBe(0);
+    await service.remountRegistry();
+    expect(await service.reconcileTextureAlignment()).toBe(0);
+    expect(service.textureEncodeQueue.depth).toBe(0);
+    expect(encode).not.toHaveBeenCalled();
+
+    // Retry Encoding, and every Details change that re-encodes, makes this call.
+    expect(await service.retryTextureEncoding("retried", { force: true, usage: "albedo" })).toBe(true);
+    await vi.waitFor(() => expect(payload("retried")).toMatchObject({ compressionState: "compressed", ktx2Width: 4, ktx2Height: 4 }));
+    expect(payload("waiting")).toMatchObject({ compressionState: "compressed", ktx2ChunkId: KTX2_KEY_MAX_1 });
+    expect(payload("waiting")).not.toHaveProperty("ktx2Width");
+
+    // Turning source control off in Project Settings runs the pass.
+    service.setSourceControlEnabled(false);
+    await vi.waitFor(() => expect(payload("waiting")).toMatchObject({ compressionState: "compressed", ktx2Width: 4, ktx2Height: 4 }));
+    expect(encode).toHaveBeenCalledTimes(2);
+  });
+
+  it("with source control on, keeps a Tileset's texture at its own size only when this session padded it", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("Shared.babproject");
+    await installMinimalProject(storage);
+    await enableSourceControlOnDisk(storage);
+    // Padded by an earlier session: a teammate may be changing it.
     const legacyPath = "assets/legacy-padded.babasset";
     await storage.writeBinary(legacyPath, await encodeBabasset({
       header: {
@@ -801,7 +856,6 @@ describe("project documents as .babasset", () => {
     }));
     const service = new ProjectService(storage, { encode: standInEncode });
     await service.loadCurrentProject();
-    // No write guard: source control is on but its locks never loaded (no token, offline).
     const registry = service.registry!;
     const [texture] = await registry.importFile("project", "", "odd.png", pngHeader(1, 1));
     const encoded = (guid: string) => {
@@ -814,7 +868,8 @@ describe("project documents as .babasset", () => {
     await service.saveDocument("tileset", "assets/New.tileset.babasset", { ...createDefaultTilesetPayload(), textureGuid: texture!.header.guid });
     // The import's padding was this session's own write, so it is undone...
     await vi.waitFor(() => expect(encoded(texture!.header.guid)).toEqual(["compressed", 1, 1, undefined]));
-    // ...while the earlier session's padded atlas waits for the locks.
+    // ...while the earlier session's padded atlas waits for the user's own edit.
+    expect(await service.reconcileTextureAlignment(["legacy-padded"])).toBe(0);
     expect(encoded("legacy-padded")).toEqual(["compressed", 4, 4, 4]);
   });
 
@@ -824,7 +879,6 @@ describe("project documents as .babasset", () => {
     await installMinimalProject(storage);
     const service = new ProjectService(storage, { encode: standInEncode });
     await service.loadCurrentProject();
-    service.setTextureWriteGuard({ canWrite: () => true });
     const tabUsages = new Map<string, string>();
     service.setOpenTextureUsage((id) => tabUsages.get(id));
     const registry = service.registry!;
@@ -859,6 +913,8 @@ describe("project documents as .babasset", () => {
     await installMinimalProject(storage);
     const paths = Array.from({ length: 8 }, (_, index) => `assets/odd-${index}.babasset`);
     for (const [index, path] of paths.entries()) await writeLegacyOddTexture(storage, path, `odd-${index}`);
+    // Opened with source control on, so the pass waits until it is turned off below.
+    await enableSourceControlOnDisk(storage);
     const service = new ProjectService(storage, { encode: standInEncode });
     await service.loadCurrentProject();
     // The editor's mtime snapshot at open, kept current with the editor's own writes.
@@ -870,8 +926,7 @@ describe("project documents as .babasset", () => {
     await storage.writeBinary(paths[0]!, await storage.readBinary(paths[0]!));
     await nextMillisecond();
 
-    service.setTextureWriteGuard({ canWrite: () => true });
-    expect(await service.reconcileTextureAlignment()).toBe(8);
+    service.setSourceControlEnabled(false);
     await vi.waitFor(() => {
       expect(service.textureEncodeQueue.depth).toBe(0);
       for (const path of paths) expect(service.registry!.getByPath(path)!.header.payload.ktx2Width).toBe(4);
@@ -891,9 +946,9 @@ describe("project documents as .babasset", () => {
     expect(changes.kind).toBe("none");
   });
 
-  it("writes nothing for the pass's re-encodes once locks are unknown, leaving nothing for the next open to re-encode", async () => {
+  it("stops the pass's re-encodes once source control is turned on, leaving nothing for the next open to re-encode", async () => {
     const storage = new MemoryStorageAdapter("documents");
-    await storage.openDocumentsProject("Forgotten.babproject");
+    await storage.openDocumentsProject("TurnedOn.babproject");
     await installMinimalProject(storage);
     const paths = ["assets/odd-a.babasset", "assets/odd-b.babasset"];
     for (const [index, path] of paths.entries()) await writeLegacyOddTexture(storage, path, `odd-${index}`);
@@ -909,14 +964,14 @@ describe("project documents as .babasset", () => {
       return standInEncode(source, settings);
     });
     const service = new ProjectService(storage, { encode });
-    await service.loadCurrentProject();
     const onDisk = async (path: string) => (await decodeBabasset(await storage.readBinary(path))).header.payload;
 
-    service.setTextureWriteGuard({ canWrite: () => true });
-    expect(await service.reconcileTextureAlignment()).toBe(2);
+    // Source control is off: opening the project queues both re-encodes.
+    await service.loadCurrentProject();
     await vi.waitFor(() => expect(encode).toHaveBeenCalledTimes(1));
-    // Source control is reconfigured while the first re-encode runs: its locks are unknown again.
-    service.setTextureWriteGuard(null);
+    expect(service.textureAlignmentState.requeued.sort()).toEqual(["odd-0", "odd-1"]);
+    // Project Settings turns source control on while the first re-encode runs.
+    service.setSourceControlEnabled(true);
     releaseFirst();
     await vi.waitFor(() => expect(service.textureEncodeQueue.depth).toBe(0));
     // The running one's failure is not written, and the waiting one never starts.
@@ -928,42 +983,13 @@ describe("project documents as .babasset", () => {
       expect(payload).not.toHaveProperty("ktx2Width");
     }
 
-    // The next session opens before its locks load: nothing waits on disk for it to re-encode.
+    // The next session opens with the setting saved: nothing waits on disk for it to re-encode.
+    await enableSourceControlOnDisk(storage);
     const next = new ProjectService(storage, { encode });
     await next.loadCurrentProject();
+    expect(await next.reconcileTextureAlignment()).toBe(0);
     expect(next.textureEncodeQueue.depth).toBe(0);
     expect(encode).toHaveBeenCalledTimes(1);
-  });
-
-  it("takes each Texture's lock when its re-encode starts, and skips one whose lock it cannot take", async () => {
-    const storage = new MemoryStorageAdapter("documents");
-    await storage.openDocumentsProject("Claims.babproject");
-    await installMinimalProject(storage);
-    const paths = ["assets/odd-a.babasset", "assets/odd-b.babasset"];
-    for (const [index, path] of paths.entries()) await writeLegacyOddTexture(storage, path, `odd-${index}`);
-    const encode = vi.fn(standInEncode);
-    const service = new ProjectService(storage, { encode });
-    await service.loadCurrentProject();
-    const claimed: string[] = [];
-    service.setTextureWriteGuard({
-      canWrite: () => true,
-      // A teammate locked odd-1 since the last lock refresh.
-      claim: async (guid) => {
-        claimed.push(guid);
-        return guid !== "odd-1";
-      },
-    });
-
-    service.pauseTextureEncodeQueue();
-    expect(await service.reconcileTextureAlignment()).toBe(2);
-    // Locks are taken as each re-encode starts, not while it waits.
-    expect(claimed).toEqual([]);
-    service.resumeTextureEncodeQueue();
-    await vi.waitFor(() => expect(service.textureEncodeQueue.depth).toBe(0));
-    expect(claimed.sort()).toEqual(["odd-0", "odd-1"]);
-    expect(encode).toHaveBeenCalledTimes(1);
-    expect(service.registry!.getByGuid("odd-0")!.header.payload).toMatchObject({ ktx2Width: 4, ktx2Height: 4 });
-    expect(service.registry!.getByGuid("odd-1")!.header.payload).not.toHaveProperty("ktx2Width");
   });
 
   it("encodes each Texture once however often the registry remounts while its encode waits or runs", async () => {
@@ -981,24 +1007,24 @@ describe("project documents as .babasset", () => {
       return standInEncode(source, settings);
     });
     const service = new ProjectService(storage, { encode });
-    await service.loadCurrentProject();
     const payload = (path: string) => service.registry!.getByPath(path)!.header.payload;
     const settled = () => vi.waitFor(() => expect(service.textureAlignmentState.pending).toBe(0));
 
-    // The page is hidden: an import and the pass's re-encodes wait in the queue.
+    // The page is hidden: the open's alignment re-encodes and an import wait in the queue.
     service.pauseTextureEncodeQueue();
+    await service.loadCurrentProject();
+    await settled();
+    expect(service.textureAlignmentState.requeued.sort()).toEqual(["odd-0", "odd-1"]);
     const [imported] = await service.registry!.importFile("project", "", "odd.png", pngHeader(1, 1));
-    service.setTextureWriteGuard({ canWrite: () => true });
-    expect(await service.reconcileTextureAlignment()).toBe(2);
     // Content Browser changes and returning to the app remount the registry.
     await service.remountRegistry();
     await service.remountRegistry();
     await settled();
     expect(service.textureEncodeQueue.depth).toBe(3);
 
-    // The import encodes first, and a remount lands while it runs.
+    // A re-encode runs first, still `compressed` on disk, and a remount lands while it runs.
     service.resumeTextureEncodeQueue();
-    await vi.waitFor(() => expect(payload(imported!.path).compressionState).toBe("encoding"));
+    await vi.waitFor(() => expect(encode).toHaveBeenCalledTimes(1));
     await service.remountRegistry();
     await settled();
     expect(service.textureEncodeQueue.depth).toBe(3);
