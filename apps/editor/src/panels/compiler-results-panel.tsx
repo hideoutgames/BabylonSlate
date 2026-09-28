@@ -1,7 +1,7 @@
 import type { IDockviewPanelProps } from "dockview-react";
 import { useEffect, useMemo, useState } from "react";
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
-import { Button } from "@babylonslate/ui/components/button";
+import { Empty, EmptyDescription, EmptyTitle } from "@babylonslate/ui/components/empty";
 import {
   PanelFrame,
   SelectableText,
@@ -18,9 +18,10 @@ import { useOptionalSceneEditing } from "../context/scene-editing-context";
 import { documentIdToRevealForDiagnostic } from "../services/diagnostic-navigation";
 import { physicsPairingDiagnostics } from "../lib/physics-pairing-diagnostics";
 import { MessageDetails } from "../components/message-details";
+import { DiagnosticResultRow } from "../components/diagnostic-result-row";
 
 type CompilerRow =
-  | { kind: "header"; graphId: string }
+  | { kind: "header"; graphId: string; errors: number; warnings: number }
   | { kind: "item"; diagnostic: Diagnostic };
 
 function flattenCompilerRows(diagnostics: readonly Diagnostic[]): CompilerRow[] {
@@ -32,7 +33,8 @@ function flattenCompilerRows(diagnostics: readonly Diagnostic[]): CompilerRow[] 
   }
   const rows: CompilerRow[] = [];
   for (const [graphId, list] of grouped) {
-    rows.push({ kind: "header", graphId });
+    const errors = list.filter((diagnostic) => diagnostic.severity === "error").length;
+    rows.push({ kind: "header", graphId, errors, warnings: list.length - errors });
     for (const diagnostic of list) {
       rows.push({ kind: "item", diagnostic });
     }
@@ -68,10 +70,13 @@ export function CompilerResultsPanel(_props: IDockviewPanelProps) {
 
   return (
     <PanelFrame data-testid="compiler-results">
-      <ScrollArea className="min-h-0 flex-1 p-2">
-        {diagnostics.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No diagnostics.</p>
-        ) : (
+      {diagnostics.length === 0 ? (
+        <Empty>
+          <EmptyTitle>No Issues</EmptyTitle>
+          <EmptyDescription>Compiler diagnostics appear here.</EmptyDescription>
+        </Empty>
+      ) : (
+        <ScrollArea className="min-h-0 flex-1 pb-1">
           <WindowedList
             itemCount={rows.length}
             rowHeight={WINDOWED_LIST_TOUCH_ROW_HEIGHT}
@@ -80,22 +85,38 @@ export function CompilerResultsPanel(_props: IDockviewPanelProps) {
               const row = rows[index]!;
               if (row.kind === "header") {
                 return (
-                  <div className="flex h-full items-center px-2 text-xs font-medium text-muted-foreground" title={row.graphId}>
-                    <SelectableText className="truncate">
+                  <div
+                    className="flex h-full items-end gap-2 border-b border-border px-2 pb-1.5 text-[11px] font-medium text-muted-foreground"
+                    title={row.graphId}
+                  >
+                    <SelectableText className="truncate text-foreground">
                       {openDocuments.find((doc) => doc.id === row.graphId)?.ref.label ?? row.graphId}
                     </SelectableText>
+                    <span className="ml-auto flex shrink-0 items-center gap-2 tabular-nums">
+                      {row.errors > 0 ? (
+                        <span className="text-destructive">
+                          {row.errors} {row.errors === 1 ? "Error" : "Errors"}
+                        </span>
+                      ) : null}
+                      {row.warnings > 0 ? (
+                        <span className="text-(--warning)">
+                          {row.warnings} {row.warnings === 1 ? "Warning" : "Warnings"}
+                        </span>
+                      ) : null}
+                    </span>
                   </div>
                 );
               }
               const d = row.diagnostic;
               return (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="touch"
-                  className="h-full w-full min-h-0 flex-col items-start justify-center gap-0 px-2 py-0 text-left"
-                  data-testid="compiler-result-row"
-                  onClick={() => {
+                <DiagnosticResultRow
+                  severity={d.severity}
+                  message={d.message}
+                  code={d.code}
+                  location={d.nodeId ? `${d.nodeId}${d.pinId ? `.${d.pinId}` : ""}` : undefined}
+                  selected={d === selected}
+                  testId="compiler-result-row"
+                  onSelect={() => {
                     setSelectedDiagnostic(d);
                     clearFocusedNode();
                     setFocusDiagnostic(d);
@@ -106,27 +127,12 @@ export function CompilerResultsPanel(_props: IDockviewPanelProps) {
                     );
                     if (revealId) setActiveDocument(revealId);
                   }}
-                >
-                  <span
-                    className={
-                      d.severity === "error"
-                        ? "truncate text-sm text-destructive"
-                        : "truncate text-sm text-foreground"
-                    }
-                  >
-                    {d.severity}: {d.code}
-                  </span>
-                  <SelectableText className="truncate text-xs text-muted-foreground">
-                    {d.message}
-                    {d.nodeId ? ` @ ${d.nodeId}` : ""}
-                    {d.pinId ? `.${d.pinId}` : ""}
-                  </SelectableText>
-                </Button>
+                />
               );
             }}
           </WindowedList>
-        )}
-      </ScrollArea>
+        </ScrollArea>
+      )}
       {selected ? <MessageDetails title="Diagnostic Details" message={`${selected.severity}: ${selected.code}\n${selected.message}\n${selected.graphId}${selected.nodeId ? `\nNode: ${selected.nodeId}` : ""}${selected.pinId ? `\nPin: ${selected.pinId}` : ""}`} onClose={() => setSelectedDiagnostic(null)} /> : null}
     </PanelFrame>
   );

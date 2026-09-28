@@ -122,6 +122,7 @@
     --sidebar-border: var(--border);
     --shadow-color: oklch(0 0 0);
     --success: oklch(0.45 0.12 155);
+    --warning: oklch(0.56 0.13 70);
     --vector: var(--pin-vector);
     --axis-x: var(--destructive);
     --axis-y: var(--success);
@@ -226,6 +227,7 @@
     --sidebar-border: var(--border);
     --shadow-color: oklch(0 0 0);
     --success: oklch(0.62 0.14 155);
+    --warning: oklch(0.80 0.14 80);
     --vector: var(--pin-vector);
     --axis-x: var(--destructive);
     --axis-y: var(--success);
