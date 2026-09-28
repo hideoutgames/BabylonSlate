@@ -31,8 +31,7 @@ function records(data: Float32Array): Map<number, number[]> {
 
 describe("CableComponent runtime", () => {
   it("batches hundreds of active cables and does no collision work by default", () => {
-    // Match the endpoint distance so first-tick motion reflects gravity without initial slack settling.
-    const { runtime, commands, frames } = setup(Array.from({ length: 200 }, (_, index) => createActor(`a${index}`, "Cable", { components: [cable(`c${index}`, { cableLength: 3 })] })));
+    const { runtime, commands, frames } = setup(Array.from({ length: 200 }, (_, index) => createActor(`a${index}`, "Cable", { components: [cable(`c${index}`)] })));
     try {
       runtime.realizePlayWorld();
       runtime.start();
@@ -42,7 +41,9 @@ describe("CableComponent runtime", () => {
       const first = frames()[0]!.data;
       const cables = records(first);
       expect(cables.size).toBe(200);
-      expect([...cables.values()][0]![25]).toBeLessThan(0);
+      // Slack cables start at their settled rest shape: the first packet already sags
+      // (4 units of cable between pins 3 apart hang about 1.18 below them).
+      expect([...cables.values()][0]![25]).toBeLessThan(-1);
       // An owned packet remains valid after the following tick; it is not solver storage.
       const saved = first.slice();
       runtime.tick();

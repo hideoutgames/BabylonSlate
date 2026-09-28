@@ -83,7 +83,7 @@ import {
 } from "./editor-place";
 import { createEditorGrid, type EditorGrid } from "./editor-grid";
 import { EditorSceneSync } from "./editor-scene-sync";
-import { applyCableFrame } from "./cable-mesh";
+import { applyCableFrame, stepEditorCables } from "./cable-mesh";
 import { calculateEditorDropTransforms, type EditorDropTransform } from "./editor-drop";
 import { createPreviewLighting } from "./preview-lighting";
 import {
@@ -2258,6 +2258,9 @@ function initializeEngine(
     if (rttPresent) rttPresent.bind();
     if (!options.playMode) {
       updateSceneTilemapAnimations(scene, frameStart - tilemapPreviewStart);
+      // Editor cables simulate only while this view renders (never in Play or
+      // hidden/paused views); sleeping cables skip their anchor math.
+      if (stepEditorCables(scene, frameStart)) scheduler.invalidate("asset");
     }
     try {
       const presentingLayers = new Set([...pendingPresentations.values()].flatMap((pending) => pending.owner ? [pending.owner.layerId] : []));
