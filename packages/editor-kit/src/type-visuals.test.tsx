@@ -5,11 +5,13 @@ import {
   ActivityIcon,
   CloudIcon,
   FileBoxIcon,
+  FileAxis3dIcon,
   FileBracesCornerIcon,
   FileCogIcon,
   FileIcon,
   FileSlidersIcon,
   FileSpreadsheetIcon,
+  FileStackIcon,
   FileTerminalIcon,
   FilmIcon,
   Layers2Icon,
@@ -180,10 +182,25 @@ describe("resolveTypeVisual", () => {
     expect(objectVisual.icon).not.toBe(actorVisual.icon);
   });
 
+  it("walks subsystem bases through the hidden Subsystem base to BObject", () => {
+    expect(walkAncestry("GameSubsystem", engineParentOf)).toEqual([
+      "GameSubsystem",
+      "Subsystem",
+      "BObject",
+    ]);
+    expect(walkAncestry("SceneSubsystem", engineParentOf)).toEqual([
+      "SceneSubsystem",
+      "Subsystem",
+      "BObject",
+    ]);
+  });
+
   it.each([
     ["BObject", FileIcon],
     ["Actor", FileBoxIcon],
     ["GameInstance", FileSlidersIcon],
+    ["GameSubsystem", FileStackIcon],
+    ["SceneSubsystem", FileAxis3dIcon],
     ["FunctionLibrary", FileSpreadsheetIcon],
     ["ActorComponent", FileCogIcon],
     ["BDebugCommand", FileTerminalIcon],

@@ -1162,6 +1162,28 @@ describe("subclassClassEntries", () => {
     expect(ids).toContain("EditorMath");
   });
 
+  it("offers subsystem classes with their ancestry but never the hidden Subsystem base", () => {
+    const assets = [
+      {
+        path: "assets/Inventory.class.babasset",
+        header: { type: "Class", name: "Inventory", parentClass: "GameSubsystem" },
+      },
+    ];
+    const ids = subclassClassEntries("BObject", assets).map((entry) => entry.id);
+    expect(ids).toEqual(expect.arrayContaining(["GameSubsystem", "SceneSubsystem", "Inventory"]));
+    expect(ids).not.toContain("Subsystem");
+    // The fallback pin type of an unset Get Subsystem node constrains to Subsystem.
+    expect(subclassClassEntries("Subsystem", assets).map((entry) => entry.id)).toEqual([
+      "GameSubsystem",
+      "SceneSubsystem",
+      "Inventory",
+    ]);
+    expect(
+      subclassClassEntries("BObject", assets).find((entry) => entry.id === "Inventory")?.ancestry,
+    ).toEqual(["Inventory", "GameSubsystem", "Subsystem", "BObject"]);
+    expect(gameInstanceClassEntries(assets).map((entry) => entry.id)).toEqual(["GameInstance"]);
+  });
+
   it("uses the compile class id for a Class asset named main.class", () => {
     const assets = [
       {

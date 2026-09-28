@@ -108,6 +108,57 @@ describe("script compiler service", () => {
     }
   });
 
+  it("ships empty subsystem classes and their empty user bases so the runtime registers them", async () => {
+    const { createInProcessRuntime } = await import("@babylonslate/runtime");
+    const { instantiableSubsystemClassIds } = await import("@babylonslate/object-model");
+    const empty: SerializedGraph = { nodes: [], edges: [] };
+    const scripts = compileGraphDocuments([
+      { path: "assets/Weather.class.babasset", parentClassId: "SceneSubsystem", content: empty },
+      {
+        path: "assets/RainWeather.class.babasset",
+        parentClassId: "Weather",
+        content: {
+          ...empty,
+          members: [{ id: "v", kind: "variable", name: "Intensity", typeId: "float", defaultValue: 0.5 }],
+        },
+      },
+      { path: "assets/Save.class.babasset", parentClassId: "GameSubsystem", content: empty },
+      { path: "assets/Notes.class.babasset", parentClassId: "BObject", content: empty },
+    ]);
+    expect(scripts.map((script) => [script.classId, script.parentClassId])).toEqual([
+      ["Weather", "SceneSubsystem"],
+      ["RainWeather", "Weather"],
+      ["Save", "GameSubsystem"],
+    ]);
+    expect(scripts[1]!.variables).toEqual([{ name: "Intensity", type: "float", defaultValue: 0.5 }]);
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true });
+    try {
+      await runtime.loadScripts(scripts);
+      const registry = runtime.getWorld().classRegistry;
+      expect(instantiableSubsystemClassIds(registry, registry.classIds(), "SceneSubsystem")).toEqual([
+        "RainWeather",
+      ]);
+      expect(instantiableSubsystemClassIds(registry, registry.classIds(), "GameSubsystem")).toEqual(["Save"]);
+    } finally {
+      runtime.stop();
+    }
+  });
+
+  it("recompiles a cached empty class once an ancestor joins a subsystem lineage", () => {
+    const cache = new GraphScriptCompileCache();
+    const empty: SerializedGraph = { nodes: [], edges: [] };
+    const leaf = { path: "assets/Leaf.class.babasset", parentClassId: "Base", content: empty };
+    const base = (parentClassId: string) => ({
+      path: "assets/Base.class.babasset",
+      parentClassId,
+      content: empty,
+    });
+    expect(compileGraphDocuments([base("BObject"), leaf], { cache })).toEqual([]);
+    expect(
+      compileGraphDocuments([base("GameSubsystem"), leaf], { cache }).map((script) => script.classId),
+    ).toEqual(["Base", "Leaf"]);
+  });
+
   it("ships authored prefab components with the compiled class", () => {
     const components = [
       { id: "mesh", classId: "MeshComponent", properties: { meshKind: "box" } },
