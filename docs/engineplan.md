@@ -630,9 +630,9 @@ The conversion family (`WildcardToString`, `WildcardToObject`, `WildcardToFloat`
 **Graph IR:** typed nodes with exec pins and data pins, stored in the owning asset's payload. Validation emits structured diagnostics; see section 6.2 for the full rule set and how they surface in the editor.
 
 **Compiler:** IR to **plain JavaScript ES modules**, not TypeScript. This deliberately avoids shipping a transpiler into the browser and the iPad app; TypeScript emission becomes a later opt-in for readable export and debugging only.
-- Exec flow becomes straight-line statements; Branch, Sequence and loop nodes become native `if`, `for` and `while`.
+- Exec flow becomes straight-line statements; Branch, Sequence and loop nodes become native `if`, `for` and `while`. Execution cycles use labeled loops with editor loop-budget checks, including cycles through latent actions.
 - Pure data nodes inline as expressions with common-subexpression elimination.
-- Latent nodes (v1: Delay and Timeline) compile into async generator state machines.
+- Latent nodes (Delay, async ExecuteJavaScript, and latent Call Function) use async entry functions that await each action on every iteration.
 - FunctionLibrary classes emit a module of static functions. Palette injects static Call Function rows from open FL docs and the header signature index. EditorFunctionLibrary calls stay on editor hosts.
 - Output is deterministic text, so compiler golden tests are the primary correctness gate.
 - Compiled modules load through a blob-URL dynamic import inside the worker. That needs a CSP allowing blob URLs plus a spike to confirm behaviour in WKWebView under Capacitor.
@@ -681,7 +681,7 @@ Mistakes in visual scripting should be caught **before Preview**, not discovered
 
 **Rules, grouped by when they can run:**
 
-- **Structural** (no full compile needed): disconnected exec entry, exec cycle, pure-data cycle, latent node inside a synchronous-only context. Leftover nodes whose exec never roots at a trigger (and pures no compiled node reads) are omitted rather than warned as `exec.unreachable`. The compiled set follows every exec→exec wire (Branch true/false, Sequence `then_*`) and pulls data-only pures such as Cast when a compiled node reads `success` or `result`.
+- **Structural** (no full compile needed): disconnected exec entry, pure-data cycle, latent node inside a synchronous-only context. Leftover nodes whose exec never roots at a trigger (and pures no compiled node reads) are omitted rather than warned as `exec.unreachable`. The compiled set follows every exec→exec wire (Branch true/false, Sequence `then_*`) and pulls data-only pures such as Cast when a compiled node reads `success` or `result`.
 - **Pin typing** (no full compile needed): type mismatch, missing required input, extra data wire on a single-input pin (`pin.duplicate_connection`; exec pins may fan in), incompatible wildcard resolution group, delegate signature mismatch.
 - **References** (needs registry index): broken asset, enum, struct or interface guid; class reference outside inheritance chain; interface function not implemented (`interface.unimplemented`).
 - **Signatures** (needs class graph): override pin list does not match parent (`member.override_signature`); ScriptInterface implementation arity or types differ (`interface.signature_mismatch`). Interface implementation Output pins without a wire or default are errors.
