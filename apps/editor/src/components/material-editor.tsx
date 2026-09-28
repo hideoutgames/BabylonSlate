@@ -1187,7 +1187,7 @@ export function MaterialCompilerResultsPanel(_props: IDockviewPanelProps) {
           <EmptyDescription>This material compiles cleanly.</EmptyDescription>
         </Empty>
       ) : (
-        <ScrollArea className="min-h-0 flex-1 p-2">
+        <ScrollArea className="min-h-0 flex-1 py-1">
           <WindowedList
             itemCount={rows.length}
             rowHeight={WINDOWED_LIST_TOUCH_ROW_HEIGHT}
@@ -1198,6 +1198,8 @@ export function MaterialCompilerResultsPanel(_props: IDockviewPanelProps) {
                 <DiagnosticResultRow
                   severity={row.severity}
                   message={row.message}
+                  code={row.code}
+                  selected={selected !== null && row.code === selected.code && row.message === selected.message && row.nodeId === selected.nodeId}
                   onSelect={() => {
                     setSelectedDiagnostic(row);
                     if (row.nodeId) editing.focusNode(row.nodeId);

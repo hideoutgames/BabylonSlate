@@ -104,6 +104,7 @@ Dark modal boundaries use opaque neutral `--border` / `--sidebar-border` (`oklch
 | Focus / docking indicator | `--ring`, `--chrome-tab-accent` | Ring is muted gray; docking targets use foreground ink |
 | Destructive | `--destructive` | Errors, unsaved dirty dot, axis X |
 | Success | `--success` | Positive status and axis Y |
+| Warning | `--warning` | Warning status (amber): Compiler Results and Output Log icons / tints |
 | Play | `--play`, `--play-foreground` | Consistent green action with a light label and filled triangle in both schemes; Play and Debug share a flush neutral enclosure matching the Play button height and corner radius, with an inset outline beneath the controls |
 
 ## Pin type colors
@@ -214,6 +215,10 @@ Default Blueprint shells use Tailwind `w-max min-w-80` and grow with `whitespace
 Project Settings **Input** reuses pin tokens for device accents rather than new CSS variables: key `--pin-string`, mouse `--pin-object`, pointer `--pin-wildcard`, gamepad button `--pin-bool`, gamepad axis `--pin-vector`, touch `--pin-float`. Action/axis section legends use bool / vector. 2D binding X/Y toggles use `text-axis-x` / `text-axis-y`.
 
 Dockview tab strips are **26px** tall on fine pointers and **30px** on coarse (`--dv-tabs-and-actions-container-height` in `apps/editor/src/shell/dockview-theme.css`). Tabs are segments inside the `--panel-header` strip: **20px / 26px** tall with **96px / 128px** minimum widths so short titles stay easy to hit on touch. The visible tab is a raised `--card` pill with a 1px `--border` edge; hidden tabs are transparent, fill with `--muted` on hover, and the close action appears on hover, focus, or the active tab (always on coarse pointers). Tabs use `--dv-tab-margin: 0 2px`. Tab labels use `--foreground` / `--muted-foreground` (not vendor white) so light chrome stays readable. Each `.dv-content-container` has a 1px inset outline from `--border` so panel content bounds stay visible in both schemes without recoloring the tab strip; in the framed desktop layout the group border draws that bound instead. Tree rows are 28px (`--chrome-row`).
+
+When a group's tabs overflow, the trigger is a ghost chevron + hidden-tab count that fills with `--muted` on hover. Dockview mounts the overflow list in its popover anchor, **outside** `.dockview-theme-babylonslate`, so `.dv-popover-anchor .dv-tabs-overflow-container` is styled from editor tokens directly to match `DropdownMenu`: `--popover` surface, `--radius-lg`, 4px padding, a 10% foreground ring with a soft shadow, 24px `--radius-md` rows with an `--accent` hover, the active panel in medium weight, and a hover close action. Coarse pointers use a 26px trigger and `--touch-target` rows with an always-visible close.
+
+**Output Log** rows are 28px (44px coarse) mono lines with `--list-stripe` banding. `parseOutputLogLine` (`apps/editor/src/lib/output-log-line.ts`) splits a leading `[Source]` tag into a muted chip and infers severity from the wording (warning before failure/error), adding a `--destructive` or `--warning` icon and tint; log producers are unchanged and **Log Details** still shows the raw line. **Compiler Results** groups 44px rows under a compact 28px bordered document header with error / warning counts.
 
 The chrome document tab strip keeps pinned Content Browser and the open Scene tab (when present) outside the scroller (`.editor-chrome-tabs-pinned` inside `.editor-chrome-tabs`, `overflow: hidden`). Other document tabs pan in `.editor-chrome-tabs-scroll` (`overflow-x: auto`) when they overflow and hide native and iOS overlay scrollbars (`scrollbar-width: none` plus `::-webkit-scrollbar { display: none }`). The Scene pin is closable and is not drag-reorderable.
 
