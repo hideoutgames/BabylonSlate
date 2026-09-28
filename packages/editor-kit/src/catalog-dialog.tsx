@@ -46,6 +46,8 @@ export interface CatalogDialogProps {
   searchPlaceholder?: string;
   children: ReactNode;
   footer?: ReactNode;
+  /** `medium` suits pick lists and leaves the editor visible; `large` suits settings. */
+  size?: "large" | "medium";
   "data-testid"?: string;
   className?: string;
 }
@@ -92,6 +94,7 @@ export function CatalogDialog({
   searchPlaceholder = "Search",
   children,
   footer,
+  size = "large",
   "data-testid": testId,
   className,
 }: CatalogDialogProps) {
@@ -111,6 +114,7 @@ export function CatalogDialog({
         }
         className={cn(
           "catalog-dialog editor-dialog-large flex max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none",
+          size === "medium" && "catalog-dialog-medium",
           className,
         )}
       >
@@ -211,7 +215,10 @@ export function CatalogDialog({
                       type="button"
                       size="sm"
                       variant={active ? "secondary" : "ghost"}
-                      className="justify-between rounded-md"
+                      className={cn(
+                        "justify-between rounded-md",
+                        category.count === 0 && !active && "text-muted-foreground/60",
+                      )}
                       onClick={() => onCategoryChange(category.id)}
                       aria-current={active ? "true" : undefined}
                       data-testid={
@@ -258,6 +265,50 @@ export function useCatalogFilter<T>(
     if (!needle) return items;
     return items.filter((item) => getText(item).toLowerCase().includes(needle));
   }, [items, query, getText]);
+}
+
+/**
+ * Sidebar categories for every item in first-seen order, led by "All". Counts
+ * come from `matches` (the search results) so the list stays stable while typing.
+ */
+export function catalogCategories<T>(
+  items: readonly T[],
+  getCategory: (item: T) => string,
+  matches: readonly T[] = items,
+): CatalogCategory[] {
+  const counts = new Map<string, number>();
+  for (const item of items) counts.set(getCategory(item), 0);
+  for (const item of matches) {
+    const category = getCategory(item);
+    counts.set(category, (counts.get(category) ?? 0) + 1);
+  }
+  return [
+    { id: "all", label: "All", count: matches.length },
+    ...[...counts].map(([id, count]) => ({ id, label: id, count })),
+  ];
+}
+
+export interface CatalogSection<T> {
+  category: string;
+  items: T[];
+}
+
+/** Buckets visible items by category, keeping first-seen category order. */
+export function catalogSections<T>(
+  items: readonly T[],
+  getCategory: (item: T) => string,
+): CatalogSection<T>[] {
+  const byCategory = new Map<string, T[]>();
+  for (const item of items) {
+    const category = getCategory(item);
+    const bucket = byCategory.get(category);
+    if (bucket) bucket.push(item);
+    else byCategory.set(category, [item]);
+  }
+  return [...byCategory].map(([category, bucket]) => ({
+    category,
+    items: bucket,
+  }));
 }
 
 export function useCatalogSearchState(initial = "") {

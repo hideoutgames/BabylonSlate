@@ -1,8 +1,10 @@
 import { useMemo, useState } from "react";
 import {
   CatalogDialog,
-  CatalogResultRow,
-  TypeVisualIcon,
+  CatalogTile,
+  CatalogTileGroup,
+  catalogCategories,
+  catalogSections,
   resolveTypeVisual,
   useCatalogFilter,
 } from "@babylonslate/editor-kit";
@@ -11,6 +13,9 @@ import {
   type AddComponentItem,
   type AddComponentSelection,
 } from "../panels/add-component-catalog";
+import { CatalogNoMatches } from "./catalog-no-matches";
+
+const categoryOf = (item: AddComponentItem) => item.category;
 
 export function AddComponentDialog({
   open,
@@ -36,29 +41,20 @@ export function AddComponentDialog({
     () => [...addableComponentsForHost({ overlay, physicsWorld }), ...projectItems],
     [overlay, physicsWorld, projectItems],
   );
-
-  const categories = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const item of items) {
-      map.set(item.category, (map.get(item.category) ?? 0) + 1);
-    }
-    const listed = [...map.entries()].map(([id, count]) => ({
-      id,
-      label: id,
-      count,
-    }));
-    return [{ id: "all", label: "All", count: items.length }, ...listed];
-  }, [items]);
-
   const bySearch = useCatalogFilter(
     items,
     search,
     (item) => `${item.label} ${item.description} ${item.category}`,
   );
+  const categories = useMemo(
+    () => catalogCategories(items, categoryOf, bySearch),
+    [items, bySearch],
+  );
   const visible =
     activeCategory === "all"
       ? bySearch
       : bySearch.filter((item) => item.category === activeCategory);
+  const sections = catalogSections(visible, categoryOf);
 
   return (
     <CatalogDialog
@@ -71,7 +67,8 @@ export function AddComponentDialog({
         }
       }}
       title="Add Component"
-      description="Rendering, camera, physics, and project assets."
+      description="Attach rendering, gameplay, physics, or project components to the selected actor."
+      size="medium"
       categories={categories}
       activeCategoryId={activeCategory}
       onCategoryChange={setActiveCategory}
@@ -80,26 +77,35 @@ export function AddComponentDialog({
       searchPlaceholder="Search components"
       data-testid={testId}
     >
-      {visible.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No matches</p>
+      {sections.length === 0 ? (
+        <CatalogNoMatches search={search} />
       ) : (
-        <div role="group" aria-label="Components" className="flex flex-col">
-          {visible.map((item, index) => (
-            <CatalogResultRow
-              key={item.id}
-              data-testid={`${testId}-item-${item.id}`}
-              title={item.label}
-              description={item.description}
-              leading={<TypeVisualIcon visual={visualForAddComponentItem(item)} />}
-              striped={index % 2 === 1}
-              onSelect={() => {
-                onSelect({
-                  classId: item.classId,
-                  ...(item.properties ? { properties: item.properties } : {}),
-                });
-                onOpenChange(false);
-              }}
-            />
+        <div className="flex flex-col gap-4">
+          {sections.map((section) => (
+            <CatalogTileGroup
+              key={section.category}
+              label={section.category}
+              count={section.items.length}
+              hideLabel={activeCategory !== "all"}
+              minTileWidth="16rem"
+            >
+              {section.items.map((item) => (
+                <CatalogTile
+                  key={item.id}
+                  data-testid={`${testId}-item-${item.id}`}
+                  title={item.label}
+                  description={item.description}
+                  visual={visualForAddComponentItem(item)}
+                  onSelect={() => {
+                    onSelect({
+                      classId: item.classId,
+                      ...(item.properties ? { properties: item.properties } : {}),
+                    });
+                    onOpenChange(false);
+                  }}
+                />
+              ))}
+            </CatalogTileGroup>
           ))}
         </div>
       )}

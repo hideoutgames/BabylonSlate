@@ -377,6 +377,12 @@
   max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 2 * var(--dialog-edge));
 }
 
+/* Pick lists keep the editor in view; phones fall back to the large size. */
+.catalog-dialog-medium {
+  width: min(56rem, calc(100vw - var(--safe-left) - var(--safe-right) - 2 * var(--dialog-edge)));
+  height: min(38rem, calc(100dvh - var(--safe-top) - var(--safe-bottom) - 2 * var(--dialog-edge)));
+}
+
 .editor-dialog-delete {
   height: auto;
   width: min(34rem, calc(100vw - var(--safe-left) - var(--safe-right) - 2 * var(--dialog-edge)));
@@ -473,7 +479,8 @@
     [data-slot="dropdown-menu-radio-item"],
     [data-slot="dropdown-menu-sub-trigger"],
     [data-slot="select-item"],
-    .catalog-sidebar [data-slot="button"]
+    .catalog-sidebar [data-slot="button"],
+    .catalog-tile
   ) {
     min-height: var(--touch-target);
   }

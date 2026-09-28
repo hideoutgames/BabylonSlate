@@ -1,13 +1,20 @@
 export {
   CatalogDialog,
   CatalogItemButton,
+  catalogCategories,
+  catalogSections,
   useCatalogFilter,
   useCatalogSearchState,
   type CatalogCategory,
   type CatalogCategoryGroup,
   type CatalogDialogProps,
+  type CatalogSection,
 } from "./catalog-dialog";
-export { CatalogResultRow, type CatalogResultRowProps } from "./catalog-result-row";
+export {
+  CatalogTile,
+  CatalogTileGroup,
+  type CatalogTileProps,
+} from "./catalog-tile";
 export { SearchInput, type SearchInputProps } from "./search-input";
 export { PanelFrame } from "./panel-frame";
 export { DisclosureSection, type DisclosureSectionProps } from "./disclosure-section";

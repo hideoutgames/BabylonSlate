@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   CatalogDialog,
-  CatalogResultRow,
-  TypeVisualIcon,
+  CatalogTile,
+  CatalogTileGroup,
+  catalogCategories,
+  catalogSections,
   useCatalogFilter,
 } from "@babylonslate/editor-kit";
 import {
@@ -10,6 +12,9 @@ import {
   placeActorsForHost,
   type PlaceActorItem,
 } from "../lib/place-actors";
+import { CatalogNoMatches } from "./catalog-no-matches";
+
+const categoryOf = (item: PlaceActorItem) => item.category;
 
 export function PlaceActorsDialog({
   open,
@@ -39,36 +44,28 @@ export function PlaceActorsDialog({
     () => [...placeActorsForHost({ overlay }), ...projectItems],
     [overlay, projectItems],
   );
-
-  const categories = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const item of items) {
-      map.set(item.category, (map.get(item.category) ?? 0) + 1);
-    }
-    const listed = [...map.entries()].map(([id, count]) => ({
-      id,
-      label: id,
-      count,
-    }));
-    return [{ id: "all", label: "All", count: items.length }, ...listed];
-  }, [items]);
-
   const bySearch = useCatalogFilter(
     items,
     search,
     (item) => `${item.title} ${item.category}`,
   );
+  const categories = useMemo(
+    () => catalogCategories(items, categoryOf, bySearch),
+    [items, bySearch],
+  );
   const visible =
     activeCategory === "all"
       ? bySearch
       : bySearch.filter((item) => item.category === activeCategory);
+  const sections = catalogSections(visible, categoryOf);
 
   return (
     <CatalogDialog
       open={open}
       onOpenChange={onOpenChange}
       title="Place Actors"
-      description="Spawn a shape, light, camera, empty actor, or project asset."
+      description="Spawn a shape, light, camera, volume, or project asset into the scene."
+      size="medium"
       categories={categories}
       activeCategoryId={activeCategory}
       onCategoryChange={setActiveCategory}
@@ -77,20 +74,27 @@ export function PlaceActorsDialog({
       searchPlaceholder="Search actors"
       data-testid="place-actors-catalog"
     >
-      {visible.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No matches</p>
+      {sections.length === 0 ? (
+        <CatalogNoMatches search={search} />
       ) : (
-        <div role="group" aria-label="Actors" className="flex flex-col">
-          {visible.map((item, index) => (
-            <CatalogResultRow
-              key={item.id}
-              data-testid={`place-actors-item-${item.id}`}
-              title={item.title}
-              description={item.category}
-              leading={<TypeVisualIcon visual={visualForPlaceActor(item)} />}
-              striped={index % 2 === 1}
-              onSelect={() => onSelect(item)}
-            />
+        <div className="flex flex-col gap-4">
+          {sections.map((section) => (
+            <CatalogTileGroup
+              key={section.category}
+              label={section.category}
+              count={section.items.length}
+              hideLabel={activeCategory !== "all"}
+            >
+              {section.items.map((item) => (
+                <CatalogTile
+                  key={item.id}
+                  data-testid={`place-actors-item-${item.id}`}
+                  title={item.title}
+                  visual={visualForPlaceActor(item)}
+                  onSelect={() => onSelect(item)}
+                />
+              ))}
+            </CatalogTileGroup>
           ))}
         </div>
       )}

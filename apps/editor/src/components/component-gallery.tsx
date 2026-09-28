@@ -15,7 +15,8 @@ import {
   AtlasTileGrid,
   BindingCodePicker,
   CatalogDialog,
-  CatalogResultRow,
+  CatalogTile,
+  CatalogTileGroup,
   ClassPicker,
   CurveField,
   GradientField,
@@ -1254,23 +1255,23 @@ function GalleryCatalogRows() {
   const [selected, setSelected] = useState<string | null>(null);
   return (
     <section className="flex flex-col gap-2" data-testid="gallery-catalog-rows">
-      <h2 className="text-lg font-medium">Catalog Results</h2>
-      <div role="group" aria-label="Catalog Results">
+      <h2 className="text-lg font-medium">Catalog Tiles</h2>
+      <CatalogTileGroup label="Rendering" count={3}>
         {[
-          { title: "Mesh", description: "Rendering", classId: "MeshComponent" },
-          { title: "Camera", description: "Camera", classId: "CameraComponent" },
-        ].map((item, index) => (
-          <CatalogResultRow
+          { title: "Mesh", description: "Primitive or Model asset", classId: "MeshComponent" },
+          { title: "Camera", description: "Scene camera", classId: "CameraComponent" },
+          { title: "Light", classId: "LightComponent" },
+        ].map((item) => (
+          <CatalogTile
             key={item.classId}
             title={item.title}
             description={item.description}
-            leading={<TypeVisualIcon visual={resolveTypeVisual({ classId: item.classId })} />}
-            active={selected === item.classId}
-            striped={index % 2 === 1}
+            visual={resolveTypeVisual({ classId: item.classId })}
+            aria-pressed={selected === item.classId}
             onSelect={() => setSelected(item.classId)}
           />
         ))}
-      </div>
+      </CatalogTileGroup>
     </section>
   );
 }
