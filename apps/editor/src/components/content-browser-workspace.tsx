@@ -342,6 +342,7 @@ export function ContentBrowserWorkspace({
   const [retargetErrors, setRetargetErrors] = useState<string[] | null>(null);
   const [openError, setOpenError] = useState<string | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
+  const deleteCancelRef = useRef<HTMLButtonElement>(null);
   const thumbnailUrlsRef = useRef(thumbnailUrls);
   thumbnailUrlsRef.current = thumbnailUrls;
   const menuTargetGuidsRef = useRef<string[]>([]);
@@ -2706,10 +2707,11 @@ export function ContentBrowserWorkspace({
         <AlertDialogContent
           variant="destructive"
           className="editor-dialog-large editor-dialog-delete flex flex-col gap-0 overflow-hidden p-0"
+          initialFocus={deleteCancelRef}
           data-testid="content-browser-delete-dialog"
           data-has-references={deleteInboundRefs.length > 0}
         >
-          <AlertDialogHeader className="flex shrink-0 items-start gap-3 border-b px-4 py-3">
+          <AlertDialogHeader className="flex shrink-0 items-start gap-3 px-4 pt-4 pb-1">
             <AlertDialogMedia className="mb-0 size-8 shrink-0" data-testid="content-browser-delete-media">
               <Trash2Icon className="size-4" />
             </AlertDialogMedia>
@@ -2821,8 +2823,9 @@ export function ContentBrowserWorkspace({
               </section>
             )}
           </div>
-          <AlertDialogFooter className="m-0 shrink-0">
+          <AlertDialogFooter className="m-0 shrink-0 pt-3">
             <AlertDialogCancel
+              ref={deleteCancelRef}
               disabled={busy}
               size="touch"
               className="h-[var(--touch-target,44px)]"
