@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { encodeAssetDocument } from "./asset-document";
 import { encodeBabasset } from "./babasset";
+import { sha256Hex } from "./bytes";
 import { projectContentRoot, type ContentRoot } from "./content-root";
 import { EncodeQueue, type EncodeJobResult } from "./encode-queue";
 import { sniffImageSize } from "./image-size";
@@ -53,17 +54,29 @@ async function writeTexture(
     sized?: boolean;
     pixels?: boolean;
     committed: { id: string; size: [number, number] };
-    /** `ktx2Width` / `ktx2Height` a commit recorded. */
-    recorded?: [number, number];
+    /**
+     * What a commit recorded: `ktx2Width` / `ktx2Height`, `ktx2BlockAlign`,
+     * and `ktx2Sha256` of the committed chunk, or of the encode at `replaced`
+     * size that a writer unaware of the record has since overwritten.
+     */
+    recorded?: { size: [number, number]; blockAlign?: number; replaced?: [number, number] };
   },
 ): Promise<void> {
   const [width, height] = options.source;
+  const recorded = options.recorded;
   const payload: Record<string, unknown> = {
     usage: options.usage ?? "albedo",
     compressionState: "compressed",
     ktx2ChunkId: options.committed.id,
     ...(options.sized === false ? {} : { width, height }),
-    ...(options.recorded ? { ktx2Width: options.recorded[0], ktx2Height: options.recorded[1] } : {}),
+    ...(recorded
+      ? {
+          ktx2Width: recorded.size[0],
+          ktx2Height: recorded.size[1],
+          ...(recorded.blockAlign ? { ktx2BlockAlign: recorded.blockAlign } : {}),
+          ktx2Sha256: await sha256Hex(ktx2(...(recorded.replaced ?? options.committed.size))),
+        }
+      : {}),
   };
   await storage.writeBinary(path, await encodeBabasset({
     header: { guid, type: "Texture", name: guid, engineVersion: "0.0.0", version: 1, mode: "thin", dependencies: [], parentClass: null, payload },
@@ -143,7 +156,7 @@ describe("texture encode alignment", () => {
     });
     // Its payload size is on the grid, so a re-encode would land off it again: never requeued.
     await writeTexture(storage, "assets/mismatched.babasset", "mismatched", {
-      source: [64, 32], committed: { id: KEY_MAX_64, size: [30, 30] }, recorded: [30, 30],
+      source: [64, 32], committed: { id: KEY_MAX_64, size: [30, 30] }, recorded: { size: [30, 30] },
     });
     // Nothing to re-encode from: it keeps drawing its committed encode.
     await writeTexture(storage, "assets/sourceless-odd.babasset", "sourceless-odd", {
@@ -178,6 +191,38 @@ describe("texture encode alignment", () => {
     // Once committed, the recorded encode satisfies the check.
     expect(await registry.reconcileTextureAlignment({ canWrite })).toEqual([]);
     expect(registry.getByGuid("sourceless-odd")!.header.payload.compressionState).toBe("compressed");
+  });
+
+  it("ignores a commit's record once another writer replaced the encode it describes", async () => {
+    const storage = await storageWithProject("replaced");
+    // Padded to 4x4 and recorded, then re-encoded 1x1 under the same id by an
+    // editor that keeps the fields without knowing them.
+    await writeTexture(storage, "assets/replaced-odd.babasset", "replaced-odd", {
+      source: [1, 1], committed: { id: KEY_MAX_1, size: [1, 1] }, recorded: { size: [4, 4], blockAlign: 4, replaced: [4, 4] },
+    });
+    await writeTexture(storage, "assets/replaced-atlas.babasset", "replaced-atlas", {
+      source: [1, 1], committed: { id: KEY_MAX_1, size: [1, 1] }, recorded: { size: [4, 4], blockAlign: 4, replaced: [4, 4] },
+    });
+    // Its record still describes its committed bytes: a padded atlas.
+    await writeTexture(storage, "assets/padded-atlas.babasset", "padded-atlas", {
+      source: [1, 1], committed: { id: KEY_MAX_1, size: [4, 4] }, recorded: { size: [4, 4], blockAlign: 4 },
+    });
+    for (const texture of ["replaced-atlas", "padded-atlas"]) {
+      await storage.writeBinary(`assets/${texture}.tileset.babasset`, await encodeAssetDocument({
+        guid: `${texture}-tileset`, type: "Tileset", name: texture, version: 1,
+        payload: { ...createDefaultTilesetPayload(), textureGuid: texture } as unknown as Record<string, unknown>,
+      }, { dependencies: [texture] }));
+    }
+    const { registry, jobs, queue } = await mount(storage);
+
+    expect((await registry.reconcileTextureAlignment()).sort()).toEqual(["padded-atlas", "replaced-odd"]);
+    await vi.waitFor(() => {
+      expect(queue.depth).toBe(0);
+      expect(jobs).toHaveLength(2);
+    });
+    expect(registry.getByGuid("replaced-odd")!.header.payload).toMatchObject({ ktx2Width: 4, ktx2Height: 4, ktx2BlockAlign: 4 });
+    expect(registry.getByGuid("padded-atlas")!.header.payload).toMatchObject({ ktx2Width: 1, ktx2Height: 1 });
+    expect(registry.getByGuid("padded-atlas")!.header.payload).not.toHaveProperty("ktx2BlockAlign");
   });
 
   it("leaves a texture alone when its lock is learned while the pass reads its committed encode", async () => {

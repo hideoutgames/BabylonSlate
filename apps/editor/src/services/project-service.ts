@@ -226,6 +226,7 @@ const TEXTURE_ENCODE_STATE_KEYS = [
   "ktx2Width",
   "ktx2Height",
   "ktx2BlockAlign",
+  "ktx2Sha256",
 ] as const;
 
 /**

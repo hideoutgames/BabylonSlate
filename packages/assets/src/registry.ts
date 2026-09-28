@@ -817,14 +817,16 @@ export class AssetRegistry {
   /**
    * Store an encode under its chunk id and record what was committed:
    * `ktx2Width` / `ktx2Height` from the KTX2 header, and `ktx2BlockAlign`
-   * whenever padding was requested (a no-op for a size already on the grid).
-   * The alignment pass reads these instead of the chunk.
+   * whenever padding was requested (a no-op for a size already on the grid),
+   * plus `ktx2Sha256`, the committed bytes these describe. The alignment pass
+   * reads these instead of the chunk while that sha256 still matches.
    */
   async commitCompressedTexture(result: EncodeJobResult): Promise<void> {
     const chunkId =
       result.chunkId ?? ktx2ChunkId(await encodeSettingsHash(result.settings));
     const size = sniffKtx2Size(result.ktx2);
     const blockAlign = result.settings.blockAlign;
+    const sha256 = await sha256Hex(result.ktx2);
     await this.enqueueTextureWrite(result.assetGuid, async () => {
       await this.rewriteTexture(result.assetGuid, async (header, chunks) => {
         chunks.set(chunkId, {
@@ -848,6 +850,7 @@ export class AssetRegistry {
           payload.ktx2Height = size.height;
         }
         if (blockAlign && blockAlign > 1) payload.ktx2BlockAlign = blockAlign;
+        payload.ktx2Sha256 = sha256;
         header.payload = payload;
         return { header, chunks };
       });
@@ -1130,8 +1133,7 @@ export class AssetRegistry {
   ): Promise<boolean> {
     // Particle keys its alignment into the chunk id: always on the grid.
     if (usage === "particle") return false;
-    const blockAlign = asset.header.payload.ktx2BlockAlign;
-    const padded = typeof blockAlign === "number" && blockAlign > 1;
+    const padded = (committedEncodeRecord(asset.header)?.blockAlign ?? 0) > 1;
     if (this.isAtlasTexture(asset.header.guid)) return padded;
     if (padded) return false;
     const size = await this.committedKtx2Size(asset, usage, cache);
@@ -1148,8 +1150,8 @@ export class AssetRegistry {
 
   /**
    * Base size of the committed KTX2: the recorded size; else, for an encode
-   * committed under today's id before sizes were recorded, the clamped source
-   * size (unpadded encodes are exactly that); else the chunk's KTX2 header.
+   * committed under today's id without a record, the clamped source size
+   * (unpadded encodes are exactly that); else the chunk's KTX2 header.
    */
   private async committedKtx2Size(
     asset: IndexedAsset,
@@ -1157,9 +1159,8 @@ export class AssetRegistry {
     cache?: Map<string, ImageSize | null>,
   ): Promise<ImageSize | null> {
     const payload = asset.header.payload;
-    if (typeof payload.ktx2Width === "number" && typeof payload.ktx2Height === "number") {
-      return { width: payload.ktx2Width, height: payload.ktx2Height };
-    }
+    const recorded = committedEncodeRecord(asset.header)?.size;
+    if (recorded) return recorded;
     const committed = payload.ktx2ChunkId;
     if (typeof committed !== "string") return null;
     const source = payloadPixelSize(payload);
@@ -1487,6 +1488,27 @@ export class AssetRegistry {
     // Creator replace deletes then recreates the same guid.
     this.inbound.delete(asset.header.guid);
   }
+}
+
+/**
+ * What a commit recorded about the committed encode, while `ktx2Sha256` still
+ * matches the committed chunk. A writer that replaced the encode but kept the
+ * fields (an editor from before they existed) leaves them describing other
+ * bytes, so they are ignored.
+ */
+function committedEncodeRecord(
+  header: BabassetHeader,
+): { size: ImageSize | null; blockAlign: number | null } | null {
+  const payload = header.payload;
+  const committed = header.chunks.find((chunk) => chunk.id === payload.ktx2ChunkId);
+  if (!committed || typeof payload.ktx2Sha256 !== "string" || committed.sha256 !== payload.ktx2Sha256) {
+    return null;
+  }
+  const { ktx2Width: width, ktx2Height: height, ktx2BlockAlign: blockAlign } = payload;
+  return {
+    size: typeof width === "number" && typeof height === "number" ? { width, height } : null,
+    blockAlign: typeof blockAlign === "number" ? blockAlign : null,
+  };
 }
 
 /** A legacy atlas referrer's document content, when it has a document chunk. */

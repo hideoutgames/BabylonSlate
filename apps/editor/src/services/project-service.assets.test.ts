@@ -21,6 +21,7 @@ import {
   clearDeletedAssetRefs,
   createDefaultTilesetPayload,
   DEFAULT_TEXTURE_ENCODE_SETTINGS,
+  sha256Hex,
   sniffImageSize,
   textureEncodeSize,
   writeTraceDocument,
@@ -694,6 +695,7 @@ describe("project documents as .babasset", () => {
       ktx2Width: 4,
       ktx2Height: 4,
       ktx2BlockAlign: 4,
+      ktx2Sha256: await sha256Hex(ktx2),
     });
     expect(saved.header.payload).not.toHaveProperty("encodeError");
     expect(saved.chunks.get(committed)).toEqual(ktx2);
@@ -787,7 +789,10 @@ describe("project documents as .babasset", () => {
     await storage.writeBinary(legacyPath, await encodeBabasset({
       header: {
         guid: "legacy-padded", type: "Texture", name: "legacy-padded", engineVersion: "0.0.0", version: 1, mode: "thin", dependencies: [], parentClass: null,
-        payload: { usage: "albedo", compressionState: "compressed", ktx2ChunkId: KTX2_KEY_MAX_1, width: 1, height: 1, ktx2Width: 4, ktx2Height: 4, ktx2BlockAlign: 4 },
+        payload: {
+          usage: "albedo", compressionState: "compressed", ktx2ChunkId: KTX2_KEY_MAX_1, width: 1, height: 1,
+          ktx2Width: 4, ktx2Height: 4, ktx2BlockAlign: 4, ktx2Sha256: await sha256Hex(ktx2Header(4, 4)),
+        },
       },
       chunks: [
         { id: "pixels", kind: "pixels", mime: "image/png", data: pngHeader(1, 1) },
