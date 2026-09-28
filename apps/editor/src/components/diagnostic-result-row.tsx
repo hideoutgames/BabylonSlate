@@ -4,10 +4,27 @@ import { Button } from "@babylonslate/ui/components/button";
 import { cn } from "@babylonslate/ui/lib/utils";
 
 const SEVERITY = {
-  error: { Icon: CircleXIcon, label: "Error", tone: "text-destructive" },
-  warning: { Icon: TriangleAlertIcon, label: "Warning", tone: "text-(--warning)" },
-  info: { Icon: InfoIcon, label: "Info", tone: "text-muted-foreground" },
+  error: { label: "Error", tone: "text-destructive" },
+  warning: { label: "Warning", tone: "text-(--warning)" },
+  info: { label: "Info", tone: "text-muted-foreground" },
 } as const;
+
+/**
+ * The icon is chosen while rendering. Storing `TriangleAlertIcon` on a
+ * module-scope object copies it before a chunk cycle finishes initializing
+ * that export, so production renders an undefined component.
+ */
+function SeverityIcon({
+  severity,
+  className,
+}: {
+  severity: keyof typeof SEVERITY;
+  className: string;
+}) {
+  if (severity === "error") return <CircleXIcon aria-hidden="true" className={className} />;
+  if (severity === "warning") return <TriangleAlertIcon aria-hidden="true" className={className} />;
+  return <InfoIcon aria-hidden="true" className={className} />;
+}
 
 /**
  * One 44px Compiler Results row: a ghost button with a severity icon, the
@@ -32,7 +49,7 @@ export function DiagnosticResultRow({
   /** On the row button. */
   testId: string;
 }) {
-  const { Icon, label, tone } = SEVERITY[severity];
+  const { label, tone } = SEVERITY[severity];
   return (
     <Button
       type="button"
@@ -47,7 +64,7 @@ export function DiagnosticResultRow({
       data-testid={testId}
       data-severity={severity}
     >
-      <Icon aria-hidden="true" className={cn("size-3.5 shrink-0", tone)} />
+      <SeverityIcon severity={severity} className={cn("size-3.5 shrink-0", tone)} />
       <span className="sr-only">{label}</span>
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
         <SelectableText className="truncate text-xs leading-4 text-foreground">
