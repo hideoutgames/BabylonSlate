@@ -102,6 +102,7 @@ import {
 import { attachLifecyclePause } from "../services/lifecycle-pause";
 import {
   afterMutatingApply,
+  requeueWithEditLock,
   isMutatingApplyBlocked,
 } from "../lib/document-lock-apply";
 import { dirtyScenesBlockingOpen } from "../lib/exclusive-scene";
@@ -1206,7 +1207,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       guid: string,
       options?: { maxDimension?: number; force?: boolean; usage?: string },
     ) => {
-      const ok = await projectService.retryTextureEncoding(guid, options);
+      const ok = await requeueWithEditLock(
+        sourceControlRef.current,
+        projectService.registry?.getByGuid(guid)?.path,
+        () => projectService.retryTextureEncoding(guid, options),
+      );
       bump();
       return ok;
     },
