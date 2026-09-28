@@ -131,6 +131,7 @@ export class DynamicRuntimeMeshGeometry {
   }
 
   clear(): void {
+    if (!this.positions.length && !this.indices.length) return;
     this.positions = new Float32Array(0);
     this.normals = new Float32Array(0);
     this.uvs = new Float32Array(0);

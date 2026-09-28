@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { DynamicRuntimeMeshGeometry, identitySerializedTransform } from "@babylonslate/core";
 import { createTestEngine } from "./create-null-engine";
 import { applyDynamicRuntimeMeshUpdate, createDynamicRuntimeMesh, flushDynamicRuntimeMeshes } from "./dynamic-runtime-mesh";
-import { applyAssignMaterial, applyAssignMesh, createSnapshotSceneBinding, retirePlaySlot } from "./snapshot-apply";
+import { applyAssignMaterial, applyAssignMesh, createSnapshotSceneBinding, migratePlaySlotVisual, retirePlaySlot } from "./snapshot-apply";
 
 describe("dynamic runtime mesh rendering", () => {
   const handles: ReturnType<typeof createTestEngine>[] = [];
@@ -78,5 +78,26 @@ describe("dynamic runtime mesh rendering", () => {
     data.updateVertices(0, [100, 0, 0]);
     applyDynamicRuntimeMeshUpdate(scene, 2, data.takeUpdate()); flushDynamicRuntimeMeshes(scene);
     expect(scene.getMeshByName("actor-4|surface")).toBeNull();
+  });
+
+  it("preserves the latest deformation when a slot moves to another render scene", () => {
+    const source = setup().scene, destination = setup().scene;
+    const binding = createSnapshotSceneBinding();
+    const data = new DynamicRuntimeMeshGeometry();
+    data.setGeometry([0, 0, 0, 1, 0, 0, 0, 1, 0], [0, 1, 2]);
+    applyAssignMesh(source, binding, { type: "assignMesh", slotId: 1, meshKind: "dynamicRuntimeMesh", meshAssetGuid: null,
+      parts: [{ componentId: "surface", meshKind: "dynamicRuntimeMesh", ...identitySerializedTransform(),
+        dynamicMesh: { meshId: 1, update: data.takeUpdate() } }] });
+    data.updateVertices(0, [0, 0, 3]);
+    applyDynamicRuntimeMeshUpdate(source, 1, data.takeUpdate());
+    migratePlaySlotVisual(destination, binding, 1);
+    const moved = destination.getMeshByName("actor-1|surface") as Mesh;
+    expect(moved.getVerticesData(VertexBuffer.PositionKind)?.slice(0, 3)).toEqual(new Float32Array([0, 0, 3]));
+    expect(moved.getBoundingInfo().boundingBox.maximum.z).toBe(3);
+    expect(source.getMeshByName("actor-1|surface")).toBeNull();
+    data.updateVertices(1, [2, 0, 1]);
+    applyDynamicRuntimeMeshUpdate(destination, 1, data.takeUpdate()); flushDynamicRuntimeMeshes(destination);
+    expect(moved.getVerticesData(VertexBuffer.PositionKind)?.slice(3, 6)).toEqual(new Float32Array([2, 0, 1]));
+    retirePlaySlot(binding, 1);
   });
 });

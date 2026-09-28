@@ -962,9 +962,14 @@ export class PhysicsWorldSync {
 
   private dynamicMeshPhysicsComponents(actor: Actor): ActorComponent[] {
     if (this.backend.kind !== "3d") return [];
-    return actor.components.filter((component) => component.classId === "DynamicRuntimeMeshComponent" &&
-      !component.destroyed && component.owner === actor && component.getVariable("enableCollision") === true &&
-      !!dynamicRuntimeGeometry(component)?.indices.length);
+    const enabled: ActorComponent[] = [];
+    for (const component of actor.components) {
+      if (component.classId !== "DynamicRuntimeMeshComponent") continue;
+      if (!component.destroyed && component.owner === actor && component.getVariable("enableCollision") === true &&
+        dynamicRuntimeGeometry(component)?.indices.length) enabled.push(component);
+      else this.dynamicMeshCollisions.remove(component);
+    }
+    return enabled;
   }
 
   private collectLandscapeColliders(actor: Actor, bodyId: string, colliders: Map<string, ColliderDesc>): void {

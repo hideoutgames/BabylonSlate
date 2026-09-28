@@ -6,10 +6,12 @@ import type { DynamicMeshRange, DynamicMeshUpdate } from "@babylonslate/core";
 import { updateDynamicMaterialBounds } from "./material-bounds";
 
 type Channel = { kind: string; data: Float32Array; start: number; end: number };
+type InitialGeometry = { meshId: number; update: DynamicMeshUpdate };
 type Surface = {
   mesh: Mesh; revision: number; channels: [Channel, Channel, Channel]; indices: Uint32Array;
   verticesResized: boolean; indicesResized: boolean; indicesDirty: boolean;
   minimum: Vector3; maximum: Vector3;
+  initial?: InitialGeometry;
 };
 type SceneState = { surfaces: Map<number, Set<Surface>>; dirty: Set<Surface> };
 const scenes = new WeakMap<Scene, SceneState>();
@@ -36,10 +38,10 @@ function sceneState(scene: Scene): SceneState {
   return state;
 }
 
-export function createDynamicRuntimeMesh(scene: Scene, name: string, initial?: { meshId: number; update: DynamicMeshUpdate }): Mesh {
+export function createDynamicRuntimeMesh(scene: Scene, name: string, initial?: InitialGeometry): Mesh {
   const mesh = new Mesh(name, scene);
   const channel = (kind: string): Channel => ({ kind, data: new Float32Array(0), start: Infinity, end: 0 });
-  const surface: Surface = { mesh, revision: -1, channels: [channel(VertexBuffer.PositionKind), channel(VertexBuffer.NormalKind), channel(VertexBuffer.UVKind)],
+  const surface: Surface = { mesh, initial, revision: -1, channels: [channel(VertexBuffer.PositionKind), channel(VertexBuffer.NormalKind), channel(VertexBuffer.UVKind)],
     indices: new Uint32Array(0), verticesResized: false, indicesResized: false, indicesDirty: false, minimum: new Vector3(), maximum: new Vector3() };
   surfaces.set(mesh, surface);
   if (initial) {
@@ -94,6 +96,14 @@ function applyUpdate(surface: Surface, update: DynamicMeshUpdate): boolean {
   if (update.indices) { surface.indices.set(update.indices); surface.indicesDirty = true; }
   surface.minimum.copyFromFloats(...update.bounds.min); surface.maximum.copyFromFloats(...update.bounds.max);
   surface.revision = update.revision;
+  // Slot migration and staged visual replacement can recreate this component
+  // without a new runtime assignment. Retain current owned arrays, not its first packet.
+  if (surface.initial) surface.initial.update = {
+    revision: update.revision, vertexCount: update.vertexCount, indexCount: update.indexCount, reset: true,
+    positions: { offset: 0, data: positions.data }, normals: { offset: 0, data: normals.data },
+    uvs: { offset: 0, data: uvs.data }, indices: surface.indices,
+    bounds: { min: [...update.bounds.min], max: [...update.bounds.max] },
+  };
   return true;
 }
 

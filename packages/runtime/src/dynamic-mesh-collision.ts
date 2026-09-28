@@ -1,6 +1,6 @@
 import type { ActorComponent } from "@babylonslate/object-model";
 import { prepareColliderShape, type ColliderShape, type Vec3 } from "@babylonslate/physics";
-import type { Transform } from "@babylonslate/core";
+import type { DynamicRuntimeMeshGeometry, Transform } from "@babylonslate/core";
 import { dynamicRuntimeGeometry } from "./dynamic-runtime-mesh";
 import { sameDescriptor, transformDescriptor } from "./physics-preparation";
 
@@ -26,13 +26,19 @@ function componentChain(component: ActorComponent): ActorComponent[] {
 
 /** No shape preparation until explicitly enabled. Cache by collision revision and local transforms. */
 export class DynamicMeshCollisionCache {
-  private readonly states = new WeakMap<ActorComponent, { descriptor: unknown[]; shape: ColliderShape | null }>();
+  // Geometry lifetime, rather than a retained destroyed component reference, owns the cache.
+  private readonly states = new WeakMap<DynamicRuntimeMeshGeometry, { descriptor: unknown[]; shape: ColliderShape | null }>();
+
+  remove(component: ActorComponent): void {
+    const geometry = dynamicRuntimeGeometry(component);
+    if (geometry) this.states.delete(geometry);
+  }
 
   prepare(component: ActorComponent, actorScale: Vec3): ColliderShape | null {
     const geometry = dynamicRuntimeGeometry(component);
     if (component.getVariable("enableCollision") !== true || !geometry?.indices.length) return null;
     const descriptor = [...dynamicMeshCollisionDescriptor(component), actorScale.x, actorScale.y, actorScale.z];
-    const previous = this.states.get(component);
+    const previous = this.states.get(geometry);
     if (previous && sameDescriptor(previous.descriptor, descriptor)) return previous.shape;
     const chain = componentChain(component);
     const vertices: Vec3[] = new Array(geometry.positions.length / 3);
@@ -53,7 +59,7 @@ export class DynamicMeshCollisionCache {
       if (Math.hypot(ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx) >= 1e-12) indices.push(ai, bi, ci);
     }
     const shape = indices.length ? prepareColliderShape({ kind: "mesh", vertices, indices }) : null;
-    this.states.set(component, { descriptor, shape });
+    this.states.set(geometry, { descriptor, shape });
     return shape;
   }
 }
