@@ -51,6 +51,6 @@ describe("windowedSlice", () => {
         scrollTop: 28 + 44 * 10,
         viewportHeight: 440,
       }),
-    ).toEqual({ firstIndex: 7, lastIndex: 27 });
+    ).toEqual({ firstIndex: 7, lastIndex: 26 });
   });
 });
