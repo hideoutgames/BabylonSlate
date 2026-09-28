@@ -29,6 +29,15 @@ function overrideSet(keys: readonly string[] | undefined): Set<string> {
   return new Set(keys ?? []);
 }
 
+function sameOverrideKeys(
+  a: readonly string[] | undefined,
+  b: readonly string[] | undefined,
+): boolean {
+  const left = overrideSet(a);
+  const right = overrideSet(b);
+  return left.size === right.size && [...left].every((key) => right.has(key));
+}
+
 const MESH_MATERIAL_KEYS = ["materialGuid", "materialSource"] as const;
 
 function expandMeshMaterialOverrides(keys: Set<string>, component: SerializedComponent): void {
@@ -367,43 +376,49 @@ export function stampUserComponentOverrides(
         beforeActor.components.map((component) => [component.id, component]),
       );
       const prefabRows = prefabsByClassId?.[actor.classId] ?? [];
-      return {
-        ...actor,
-        components: actor.components.map((component) => {
-          const before = beforeComponents.get(component.id);
-          const sourceId = component.sourceId ?? before?.sourceId;
-          if (!sourceId || !before) return component;
-          const keys = overrideSet(component.overrideKeys ?? before.overrideKeys);
-          for (const key of new Set([
-            ...Object.keys(before.properties),
-            ...Object.keys(component.properties),
-          ])) {
-            if (!jsonEqual(before.properties[key], component.properties[key])) {
-              keys.add(key);
-            }
+      const nextComponents = actor.components.map((component) => {
+        const before = beforeComponents.get(component.id);
+        const sourceId = component.sourceId ?? before?.sourceId;
+        if (!sourceId || !before) return component;
+        const keys = overrideSet(component.overrideKeys ?? before.overrideKeys);
+        for (const key of new Set([
+          ...Object.keys(before.properties),
+          ...Object.keys(component.properties),
+        ])) {
+          if (!jsonEqual(before.properties[key], component.properties[key])) {
+            keys.add(key);
           }
-          if (
-            !jsonEqual(
-              before.transform ?? identitySerializedTransform(),
-              component.transform ?? identitySerializedTransform(),
-            )
-          ) {
-            keys.add(PREFAB_TRANSFORM_OVERRIDE);
-          }
-          if ((before.parentId ?? null) !== (component.parentId ?? null)) {
-            keys.add(PREFAB_PARENT_OVERRIDE);
-          }
-          expandMeshMaterialOverrides(keys, component);
-          return pruneMatchingPrefabOverrides(
-            {
-              ...component,
-              sourceId,
-              ...withOverrideKeys(keys),
-            },
-            prefabRows.find((row) => row.id === sourceId),
-          );
-        }),
-      };
+        }
+        if (
+          !jsonEqual(
+            before.transform ?? identitySerializedTransform(),
+            component.transform ?? identitySerializedTransform(),
+          )
+        ) {
+          keys.add(PREFAB_TRANSFORM_OVERRIDE);
+        }
+        if ((before.parentId ?? null) !== (component.parentId ?? null)) {
+          keys.add(PREFAB_PARENT_OVERRIDE);
+        }
+        expandMeshMaterialOverrides(keys, component);
+        const next = pruneMatchingPrefabOverrides(
+          {
+            ...component,
+            sourceId,
+            ...withOverrideKeys(keys),
+          },
+          prefabRows.find((row) => row.id === sourceId),
+        );
+        return next.sourceId === component.sourceId &&
+          sameOverrideKeys(next.overrideKeys, component.overrideKeys)
+          ? component
+          : next;
+      });
+      return nextComponents.every(
+        (component, index) => component === actor.components[index],
+      )
+        ? actor
+        : { ...actor, components: nextComponents };
     }),
   };
 }
@@ -421,19 +436,25 @@ export function copyInstanceLinkage(
       const fromComponents = new Map(
         source.components.map((component) => [component.id, component]),
       );
-      return {
-        ...actor,
-        components: actor.components.map((component) => {
-          const linked = fromComponents.get(component.id);
-          if (!linked) return component;
-          const rest = withoutOverrideKeys(component);
-          return {
-            ...rest,
-            ...(linked.sourceId ? { sourceId: linked.sourceId } : {}),
-            ...withOverrideKeys(overrideSet(linked.overrideKeys)),
-          };
-        }),
-      };
+      const nextComponents = actor.components.map((component) => {
+        const linked = fromComponents.get(component.id);
+        if (!linked) return component;
+        const rest = withoutOverrideKeys(component);
+        const next = {
+          ...rest,
+          ...(linked.sourceId ? { sourceId: linked.sourceId } : {}),
+          ...withOverrideKeys(overrideSet(linked.overrideKeys)),
+        };
+        return next.sourceId === component.sourceId &&
+          sameOverrideKeys(next.overrideKeys, component.overrideKeys)
+          ? component
+          : next;
+      });
+      return nextComponents.every(
+        (component, index) => component === actor.components[index],
+      )
+        ? actor
+        : { ...actor, components: nextComponents };
     }),
   };
 }

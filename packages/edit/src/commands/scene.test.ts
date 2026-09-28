@@ -344,6 +344,26 @@ describe("diffSceneCommands", () => {
     expect(diffSceneCommands(scene, structuredClone(scene))).toEqual([]);
   });
 
+  it("derives no commands when actors keep reference identity", () => {
+    const scene = baseScene();
+    expect(diffSceneCommands(scene, { ...scene, actors: [...scene.actors] })).toEqual([]);
+  });
+
+  it("derives a reorder when actors keep reference identity but change index", () => {
+    const before = baseScene();
+    const after = {
+      ...before,
+      actors: [before.actors[1]!, before.actors[0]!],
+    };
+    const commands = diffSceneCommands(before, after);
+    expect(commands.length).toBeGreaterThan(0);
+    expect(commands.every((command) => command.type === "scene.reorderActor")).toBe(true);
+
+    let applied = before;
+    for (const command of commands) applied = command.apply(applied);
+    expect(applied.actors).toEqual(after.actors);
+  });
+
   it("derives an add for a new actor", () => {
     const before = baseScene();
     const after = {
@@ -407,6 +427,34 @@ describe("diffSceneCommands", () => {
     const before = baseScene();
     const after = structuredClone(before);
     after.actors[0]!.components[0]!.properties.meshKind = "sphere";
+    const commands = diffSceneCommands(before, after);
+    expect(commands).toHaveLength(1);
+    expect(commands[0]!.type).toBe("scene.setComponentProperty");
+  });
+
+  it("derives a component property delta when only that component is replaced", () => {
+    const before = baseScene();
+    const after = {
+      ...before,
+      actors: before.actors.map((actor, actorIndex) =>
+        actorIndex === 0
+          ? {
+              ...actor,
+              components: actor.components.map((component, componentIndex) =>
+                componentIndex === 0
+                  ? {
+                      ...component,
+                      properties: {
+                        ...component.properties,
+                        meshKind: "sphere",
+                      },
+                    }
+                  : component,
+              ),
+            }
+          : actor,
+      ),
+    };
     const commands = diffSceneCommands(before, after);
     expect(commands).toHaveLength(1);
     expect(commands[0]!.type).toBe("scene.setComponentProperty");

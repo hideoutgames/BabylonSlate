@@ -269,7 +269,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   brushStateRef.current = {
     ...sceneTools, scene, mode: sceneMode,
     enabled: activeDocumentId === documentId && sceneReady && !sceneLoad.open && !playing && !preparing,
-    group: group ? { ...group, models: group.models.filter((model) => assetRegistry?.list({ type: "Model" }).some((asset) => asset.header.guid === model.modelGuid)) } : undefined,
+    group: group ? { ...group, models: group.models.filter((model) => assetRegistry?.getByGuid?.(model.modelGuid)?.header.type === "Model") } : undefined,
   };
   useEffect(() => {
     const handle = engineRef.current; const canvas = canvasRef.current;
@@ -282,7 +282,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   }, [engineEpoch, sceneMode, sceneTools.landscapeTool, sceneTools.foliageTool, documentId, activeDocumentId, playing, preparing, applySceneChange]);
   const sceneAssetGuidRef = useRef<string | undefined>(undefined);
   sceneAssetGuidRef.current = doc?.ref.path
-    ? assetRegistry?.list().find((asset) => asset.path === doc.ref.path)?.header.guid
+    ? assetRegistry?.getByPath?.(doc.ref.path)?.header.guid
     : undefined;
   const audioLibrary = useEditorAudioDebug(Boolean(scene?.actors.some((actor) =>
     selectedActorIds.includes(actor.id) &&
@@ -301,7 +301,10 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   const [renderSettingsKey, setRenderSettingsKey] = useState(requestedRenderSettingsKey);
   // Shading changes replace compiled material ownership. Other rendering settings
   // are reconciled by the existing scene quality, lighting and material controllers.
-  const renderMode = (JSON.parse(renderSettingsKey) as { mode: "pbr" | "cel" }).mode;
+  const renderMode = useMemo(
+    () => (JSON.parse(renderSettingsKey) as { mode: "pbr" | "cel" }).mode,
+    [renderSettingsKey],
+  );
   useEffect(() => {
     const timer = window.setTimeout(() => setRenderSettingsKey(requestedRenderSettingsKey), 150);
     return () => window.clearTimeout(timer);
@@ -633,16 +636,29 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     }
   }, [playing, preparing, sceneReady, engineEpoch]);
 
-  const materialLibraryKey = savedMaterialLibraryKey(
-    assetRegistry?.list() ?? [],
-  );
+  const textureLodKey = `${editorTextureLodEnabled}:${editorTextureLodQuality}`;
+  const { materialLibraryKey, viewportAssetsKey } = useMemo(() => {
+    void registryVersion;
+    const assets = assetRegistry?.list() ?? [];
+    return {
+      materialLibraryKey: savedMaterialLibraryKey(assets),
+      viewportAssetsKey: JSON.stringify([
+        sceneViewportAssetKey(scene, assets),
+        textureLodKey,
+        projectDocument?.settings.twoD,
+        projectDocument?.settings.fonts,
+      ]),
+    };
+  }, [
+    assetRegistry,
+    registryVersion,
+    scene,
+    textureLodKey,
+    projectDocument?.settings.twoD,
+    projectDocument?.settings.fonts,
+  ]);
   const areaTextureGuids = useMemo(() => areaEmissionTextureGuids(scene), [scene]);
   const areaEmissionKey = savedAreaEmissionKey(areaTextureGuids, (guid) => assetRegistry?.getByGuid(guid));
-  const textureLodKey = `${editorTextureLodEnabled}:${editorTextureLodQuality}`;
-  const viewportAssetsKey = JSON.stringify([
-    sceneViewportAssetKey(scene, assetRegistry?.list() ?? []), textureLodKey,
-    projectDocument?.settings.twoD, projectDocument?.settings.fonts,
-  ]);
 
   useEffect(() => {
     const handle = engineRef.current;

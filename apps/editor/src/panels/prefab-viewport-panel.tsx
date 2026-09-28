@@ -293,9 +293,10 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   }, [playing, preparing]);
 
   const previewLoadKey = prefabPreviewLoadKey(previewComponents);
-  const materialLibraryKey = savedMaterialLibraryKey(
-    assetRegistry?.list() ?? [],
-  );
+  const materialLibraryKey = useMemo(() => {
+    void registryVersion;
+    return savedMaterialLibraryKey(assetRegistry?.list() ?? []);
+  }, [assetRegistry, registryVersion]);
   const areaTextureGuids = useMemo(() => areaEmissionTextureGuids(components), [components]);
   const areaEmissionKey = savedAreaEmissionKey(areaTextureGuids, (guid) => assetRegistry?.getByGuid(guid));
   const textureLodKey = `${editorTextureLodEnabled}:${editorTextureLodQuality}`;
