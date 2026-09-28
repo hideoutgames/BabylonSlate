@@ -3,6 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { IPAD_TEST_TAG } from "./ipad-tag";
 import { openMainScene, submitCreateOrOpenListed } from "./open-test-project";
 import { clickPlayAndWaitForOverlay } from "./play";
+import { pickCatalogItem } from "./pick-catalog-item";
 import { saveAllIfEnabled } from "./save-all";
 
 async function openTwoDProject(page: Page): Promise<void> {
@@ -256,13 +257,13 @@ test.describe("P10 tilemaps", () => {
     await expect(page.getByTestId("place-actors-catalog")).toBeVisible();
     await page.getByTestId("place-actors-item-empty").click();
     await page.getByTestId("details-add-component").click();
-    await page.getByTestId("add-component-catalog-item-SpriteComponent").click();
+    await pickCatalogItem(page, "add-component-catalog", "SpriteComponent", "2D sprite quad");
     await page.getByTestId("details-add-component").click();
-    await page.getByTestId("add-component-catalog-item-AnimationGraphComponent").click();
+    await pickCatalogItem(page, "add-component-catalog", "AnimationGraphComponent", "Animation Graph");
     await page.getByTestId("details-add-component").click();
-    await page.getByTestId("add-component-catalog-item-RigidBodyComponent").click();
+    await pickCatalogItem(page, "add-component-catalog", "RigidBodyComponent", "Rigid Body");
     await page.getByTestId("details-add-component").click();
-    await page.getByTestId("add-component-catalog-item-ColliderComponent").click();
+    await pickCatalogItem(page, "add-component-catalog", "ColliderComponent", "Physics collider");
 
     const spriteGuid = await guidForPath(page, "assets/Hero.sprite.babasset");
     await pickSelectedAsset(page, "Sprite", spriteGuid);
