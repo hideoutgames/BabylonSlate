@@ -1918,7 +1918,8 @@ function setActorLink(
 /**
  * Scripts may not close a parent cycle. Walk the proposed parent's ancestors
  * (a seen-set stops at loops already present) and refuse with a warning when
- * `child` is the parent or one of its ancestors, or the chain already loops.
+ * `child` is `parent` itself or one of `parent`'s ancestors, or the chain
+ * already loops.
  */
 function refuseParentCycle(
   services: ScriptHostServices,
@@ -1941,7 +1942,10 @@ function refuseParentCycle(
   return false;
 }
 
-/** A scripted `parentId` write follows the Attach Actor link rules. */
+/**
+ * Scripted `parentId` writes get Attach Actor's cycle refusal and self-link
+ * rule (own guid clears the parent); other values are stored unchanged.
+ */
 function writeParentId(
   services: ScriptHostServices,
   child: Actor,
