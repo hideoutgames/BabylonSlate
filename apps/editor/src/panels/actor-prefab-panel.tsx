@@ -22,7 +22,8 @@ import {
 } from "../lib/prefab-preview";
 import { applyPrefabTreeSelect } from "../lib/prefab-tree-select";
 import { IconActionButton } from "../components/icon-action-button";
-import { AddComponentMenu, addComponentMenuAnchor } from "../components/add-component-menu";
+import { AddComponentMenu } from "../components/add-component-menu";
+import { anchorBelow } from "../lib/menu-anchor";
 import {
   prefabComponentLabel,
   physicsWorldFromOpenDocuments,
@@ -152,7 +153,7 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
           <Button
             variant="outline"
             size="sm"
-            onClick={(event) => setAddAnchor(addComponentMenuAnchor(event.currentTarget))}
+            onClick={(event) => setAddAnchor(anchorBelow(event.currentTarget))}
             data-testid="prefab-add-component"
           >
             <PlusIcon data-icon="inline-start" />

@@ -87,7 +87,8 @@ import {
 import { useOptionalNavBake } from "../context/nav-bake-context";
 import { IconActionButton } from "../components/icon-action-button";
 import { NineSlicePreview } from "../components/nine-slice-preview";
-import { AddComponentMenu, addComponentMenuAnchor } from "../components/add-component-menu";
+import { AddComponentMenu } from "../components/add-component-menu";
+import { anchorBelow } from "../lib/menu-anchor";
 import { RagdollBoneNamesEditor } from "../components/ragdoll-bone-names-editor";
 import {
   defaultPropertiesFor,
@@ -1253,7 +1254,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
             variant="outline"
             size="sm"
             aria-label={multiSelection ? `Add Component To ${actor.name}` : "Add Component"}
-            onClick={(event) => setAddComponentAnchor(addComponentMenuAnchor(event.currentTarget))}
+            onClick={(event) => setAddComponentAnchor(anchorBelow(event.currentTarget))}
             data-testid="details-add-component"
           >
             <PlusIcon data-icon="inline-start" />

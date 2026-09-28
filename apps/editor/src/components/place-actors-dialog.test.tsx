@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { PlaceActorsDialog } from "./place-actors-dialog";
 
 /**
@@ -115,8 +115,14 @@ describe("PlaceActorsDialog", () => {
 
     fireEvent.click(screen.getByTestId("place-actors-catalog-category-Models"));
     expect(screen.queryByTestId("place-actors-item-asset-hero")).toBeNull();
-    const image = await screen.findByRole("img", { hidden: true });
-    expect(image.getAttribute("src")).toBe("blob:tree");
+    await waitFor(() =>
+      expect(
+        screen
+          .getByTestId("place-actors-item-asset-tree")
+          .querySelector("img")
+          ?.getAttribute("src"),
+      ).toBe("blob:tree"),
+    );
     expect(loadThumbnail).toHaveBeenCalledWith("tree");
 
     fireEvent.click(screen.getByTestId("place-actors-catalog-category-Project"));

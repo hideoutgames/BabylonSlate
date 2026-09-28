@@ -18,12 +18,6 @@ type AddComponentMenuItem = {
   source: AddComponentItem;
 };
 
-/** Viewport point just below an Add Component button, for `anchor`. */
-export function addComponentMenuAnchor(button: Element): { x: number; y: number } {
-  const rect = button.getBoundingClientRect();
-  return { x: rect.left, y: rect.bottom + 4 };
-}
-
 /** Add Node-style popup of addable components, anchored under its button. */
 export function AddComponentMenu({
   open,
