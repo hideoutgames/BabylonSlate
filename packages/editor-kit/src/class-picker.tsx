@@ -7,7 +7,8 @@ import {
 import { SearchDialog, type SearchDialogItem } from "./search-dialog";
 import { displayPickerTitle } from "./picker-identity";
 import { TypeVisualIcon, resolveTypeVisual } from "./type-visuals";
-import { useAssetCreate, usePickerCreate } from "./asset-create-context";
+import { useAssetCreate } from "./asset-create-context";
+import { usePickerCreate } from "./use-picker-create";
 
 export interface ClassPickerEntry {
   id: string;

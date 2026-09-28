@@ -7,11 +7,8 @@ import {
 import { SearchDialog, type SearchDialogItem } from "./search-dialog";
 import { displayPickerTitle } from "./picker-identity";
 import { TypeVisualIcon, resolveTypeVisual } from "./type-visuals";
-import {
-  useAssetCreate,
-  usePickerCreate,
-  type AssetCreateOptions,
-} from "./asset-create-context";
+import { useAssetCreate, type AssetCreateOptions } from "./asset-create-context";
+import { usePickerCreate } from "./use-picker-create";
 
 export interface AssetPickerEntry {
   guid: string;

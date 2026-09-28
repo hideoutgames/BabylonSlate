@@ -16,6 +16,7 @@ import {
   normalizeShadowSettings,
   quaternionToEulerDegrees,
 } from "@babylonslate/core";
+import { AssetCreateProvider } from "@babylonslate/editor-kit";
 import { SceneDetailsPanel } from "./scene-details-panel";
 import type { SceneShapeEditTarget } from "../context/scene-editing-context";
 
@@ -574,6 +575,34 @@ describe("SceneDetailsPanel authoring", () => {
     fireEvent.click(button);
     expect(await screen.findByTestId("search-item-mesh-1")).toBeTruthy();
     expect(screen.queryByTestId("search-item-tex-1")).toBeNull();
+  });
+
+  it("creates a Render Target from the capture picker and assigns it in one scene edit", async () => {
+    const createAsset = vi.fn(async () => "rt-new");
+    scene().actors = [createActor("cam", "Capture", { components: [
+      { id: "capture", classId: "RenderTargetCaptureComponent", properties: {} },
+    ] })];
+    harness.selectedActorIds = ["cam"];
+    render(
+      <AssetCreateProvider
+        value={{
+          canCreate: (type) => type === "RenderTarget",
+          typeLabel: () => "Render Target",
+          createAsset,
+        }}
+      >
+        <SceneDetailsPanel {...({} as IDockviewPanelProps)} />
+      </AssetCreateProvider>,
+    );
+    fireEvent.click(screen.getByTestId("property-cam-capture-renderTargetGuid"));
+    const create = await screen.findByTestId("search-item-__create__RenderTarget");
+    expect(create.textContent).toContain("Create New Render Target");
+    fireEvent.click(create);
+    await waitFor(() => expect(harness.applySceneChange).toHaveBeenCalledTimes(1));
+    expect(createAsset).toHaveBeenCalledWith({ type: "RenderTarget" });
+    const saved = harness.applySceneChange.mock.calls[0]![1];
+    expect(saved.actors[0]!.components[0]!.properties.renderTargetGuid).toBe("rt-new");
+    await waitFor(() => expect(screen.queryByTestId("details-asset-picker")).toBeNull());
   });
 
   it("selects and clears a streaming scene and its read-only name in one document edit", async () => {
