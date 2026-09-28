@@ -51,7 +51,7 @@ Order (from P3): `gameInstance` → `actors` → `components` → **`physics`** 
 
 1. Script phases may call sync queries on the live backend.
 2. `physics` phase: `backend.step(dt)`, then write body transforms back to Actors, then `pollContacts()` (see Contact events).
-3. `RuntimeDriver` times script phases and the physics phase separately into snapshot/`stats` `scriptMs` and `physicsMs`.
+3. `RuntimeDriver` times script phases and the physics phase separately into snapshot/`stats` `scriptMs` and `physicsMs`; snapshot publish time is reported separately as `stats` `publishMs`.
 
 Play (in-process and the game worker) constructs a `SoftwarePhysicsBackend`, then `RuntimeDriver.loadPhysics()` loads Havok or Rapier before simulation starts and re-syncs already-spawned bodies. When SceneLayer documents are available, their separate Rapier world must also initialize before the swap; failure releases the newly loaded engines. Without those documents, no overlay actors can be created and the empty overlay world stays in software. `preferSoftwarePhysics` skips the swap for explicit software tests. Loading remains deferred until Play, so opening the editor does not fetch physics WASM.
 

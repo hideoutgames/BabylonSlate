@@ -61,7 +61,9 @@ Compiled graphs call `ctx.findPathTo` / `ctx.moveTo` / `ctx.stopMovement` / `ctx
 
 **Move To Blackboard Key** uses the same navigation path as Move To, resolving a Vector or spatial Object/Actor Reference from the linked Blackboard. It follows changes to that value and stops when the target becomes invalid or the task is aborted.
 
-Both crowd-update passes resolve agents through the tick's shared GUID-to-actor map, so actor lookup costs O(agents) instead of O(agents × actors). The map is built before behavior-tree updates, includes actors realized during that phase, and is cleared afterward. Destroyed actors and removed NavAgent components still trigger the existing cleanup; navigation simulation and component checks are unchanged.
+Both crowd-update passes resolve agents through the tick's shared GUID-to-actor map, so actor lookup costs O(agents) instead of O(agents × actors). The map is built with a plain last-wins loop before behavior-tree updates, only when a navmesh is loaded or behaviour trees are registered; it includes actors realized during that phase and is cleared afterward. Destroyed actors and removed NavAgent components still trigger the existing cleanup; navigation simulation and component checks are unchanged.
+
+The crowd composes world poses only for NavAgent actors and their ancestors, resolving parents through the same map instead of composing the whole world. A parent destroyed or committed after the map was built resolves against the live World, and repeated guids fall back to the whole-world composition, so acyclic hierarchies get the same crowd inputs and writes as before. Agent writes still precede the published frame, so children of crowd-moved actors follow in the same snapshot.
 
 ### Dynamic rigid bodies
 
