@@ -256,6 +256,8 @@ export class WaterContactField {
     const source = mesh instanceof InstancedMesh ? mesh.sourceMesh : mesh as Mesh;
     const positions = source.getVerticesData(VertexBuffer.PositionKind), indices = source.getIndices();
     if (!positions || !indices) return;
+    // A mesh that kept moving while its rebuild was throttled is sliced where it is now.
+    if (piece.instance < 0) piece.matrix.set(mesh.computeWorldMatrix().m);
     const matrix = Matrix.FromArray(piece.matrix);
     const local = geometryBounds(positions);
     const placed = worldBox(local.min, local.max, matrix);
