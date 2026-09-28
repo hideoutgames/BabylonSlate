@@ -316,8 +316,11 @@ export class ProjectService {
   private textureWriteGuard: {
     projectGuid: string | null;
     canWrite: (guid: string) => boolean;
-    usageFor?: (guid: string) => string | undefined;
   } | null = null;
+  /** The Usage an open Texture tab shows, saved or not (the editor sets it). */
+  private openTextureUsage: ((guid: string) => string | undefined) | null = null;
+  /** Textures whose encode this project session committed. */
+  private readonly sessionEncodedTextures = new Set<string>();
   /** Committed KTX2 base sizes by chunk sha256, kept across registry remounts. */
   private readonly ktx2SizeCache = new Map<string, ImageSize | null>();
   /** Textures decoded legacy atlas referrers sample, by content, kept across registry remounts. */
@@ -421,12 +424,15 @@ export class ProjectService {
       },
       onComplete: async (result) => {
         await this.assetRegistry?.commitCompressedTexture(result);
+        this.sessionEncodedTextures.add(result.assetGuid);
         this.emitRegistryChange();
         // A Tileset, Sprite or Sprite Animation may have picked the texture
-        // while it encoded; recheck it, unless an unsaved Details Usage chose
-        // this encode (without a guard `usageFor`, the pass reads the saved one).
+        // while it encoded; recheck it with the Usage the pass will use (an
+        // open tab's, else the saved one), unless another Usage chose this
+        // encode: an unsaved Details edit in a tab closed since.
         const saved = this.assetRegistry?.getByGuid(result.assetGuid)?.header.payload.usage;
-        if (result.usage === undefined || result.usage === String(saved ?? "albedo")) {
+        const usage = this.openTextureUsage?.(result.assetGuid) ?? String(saved ?? "albedo");
+        if (result.usage === undefined || result.usage === usage) {
           void this.reconcileTextureAlignment([result.assetGuid]);
         }
       },
@@ -577,36 +583,44 @@ export class ProjectService {
 
   /**
    * Let the texture alignment pass write to this project: `canWrite(guid)`
-   * is false for Textures that are locked or read-only. `usageFor(guid)` is
-   * the Usage an open Texture tab shows, saved or not, so the pass checks
-   * and re-encodes as a Details edit did. The editor sets it once
-   * source-control locks are known, then runs the pass; null (or closing the
-   * project) stops it.
+   * is false for Textures that are locked or read-only. The editor sets it
+   * once source-control locks are known, then runs the pass; null (or
+   * closing the project) stops it.
    */
-  setTextureWriteGuard(
-    canWrite: ((guid: string) => boolean) | null,
-    options: { usageFor?: (guid: string) => string | undefined } = {},
-  ): void {
+  setTextureWriteGuard(canWrite: ((guid: string) => boolean) | null): void {
     this.textureWriteGuard = canWrite
-      ? { projectGuid: this.projectGuid, canWrite, usageFor: options.usageFor }
+      ? { projectGuid: this.projectGuid, canWrite }
       : null;
+  }
+
+  /**
+   * `usageFor(guid)` is the Usage an open Texture tab shows, saved or not,
+   * so the alignment pass checks and re-encodes as a Details edit did
+   * instead of undoing it with the saved Usage.
+   */
+  setOpenTextureUsage(usageFor: ((guid: string) => string | undefined) | null): void {
+    this.openTextureUsage = usageFor;
   }
 
   /**
    * Requeue compressed Textures whose committed encode is stale for the
    * alignment policy (all Textures, or `guids`). Runs one at a time on the
-   * current registry, and only while a write guard for this project is set.
-   * Resolves with the number requeued.
+   * current registry, with a write guard for this project. Without one
+   * (locks unknown) it only rechecks `guids` whose encode this session
+   * committed, such as an import picked by a Tileset: that corrects the
+   * session's own unguarded write. Resolves with the number requeued.
    */
   reconcileTextureAlignment(guids?: readonly string[]): Promise<number> {
     const run = async () => {
       const registry = this.assetRegistry;
-      const guard = this.textureWriteGuard;
-      if (!registry || !guard || guard.projectGuid !== this.projectGuid) return 0;
+      if (!registry) return 0;
+      const guard = this.textureWriteGuard?.projectGuid === this.projectGuid ? this.textureWriteGuard : null;
+      const targets = guard ? guids : guids?.filter((guid) => this.sessionEncodedTextures.has(guid));
+      if (!guard && !targets?.length) return 0;
       const requeued = await registry.reconcileTextureAlignment({
-        guids,
-        canWrite: guard.canWrite,
-        usageFor: guard.usageFor,
+        guids: targets,
+        canWrite: guard?.canWrite,
+        usageFor: this.openTextureUsage ?? undefined,
         ktx2SizeCache: this.ktx2SizeCache,
       });
       this.textureAlignment.runs += 1;
@@ -935,6 +949,7 @@ export class ProjectService {
 
   async closeProject(): Promise<void> {
     this.textureWriteGuard = null;
+    this.sessionEncodedTextures.clear();
     await this.extensions.close();
     this.cancelEmissionJobs();
     await this.storage.releaseFolder();
@@ -1026,6 +1041,7 @@ export class ProjectService {
     this.migrationPending = [];
     this.migrateOnSaveApproved = false;
     this.assetGuids.clear();
+    this.sessionEncodedTextures.clear();
 
     const hasProject = await this.storage.exists(PROJECT_FILE);
     if (!hasProject) {

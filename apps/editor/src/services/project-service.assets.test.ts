@@ -748,7 +748,8 @@ describe("project documents as .babasset", () => {
     const guid = texture!.header.guid;
     // The editor's guard: an open Texture tab's Usage, once Details changes it.
     const tabUsages = new Map<string, string>();
-    service.setTextureWriteGuard(() => true, { usageFor: (id) => tabUsages.get(id) });
+    service.setTextureWriteGuard(() => true);
+    service.setOpenTextureUsage((id) => tabUsages.get(id));
     const payload = () => service.registry!.getByGuid(guid)!.header.payload;
     const encoded = () => [payload().compressionState, payload().ktx2Width, payload().ktx2Height, payload().ktx2BlockAlign];
     await service.saveDocument("tileset", "assets/Ground.tileset.babasset", { ...createDefaultTilesetPayload(), textureGuid: guid });
@@ -775,6 +776,76 @@ describe("project documents as .babasset", () => {
     await service.saveDocument("texture", texture!.path, { ...opened, usage: "particle" });
     const saved = await decodeBabasset(await storage.readBinary(texture!.path));
     expect(saved.header.payload).toMatchObject({ usage: "particle", ktx2ChunkId: particleChunkId, ktx2BlockAlign: 4 });
+  });
+
+  it("while locks are unknown, keeps a Tileset's texture at its own size only when this session padded it", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("NoLocks.babproject");
+    await installMinimalProject(storage);
+    // Padded by an earlier session: its file may be a teammate's locked one.
+    const legacyPath = "assets/legacy-padded.babasset";
+    await storage.writeBinary(legacyPath, await encodeBabasset({
+      header: {
+        guid: "legacy-padded", type: "Texture", name: "legacy-padded", engineVersion: "0.0.0", version: 1, mode: "thin", dependencies: [], parentClass: null,
+        payload: { usage: "albedo", compressionState: "compressed", ktx2ChunkId: KTX2_KEY_MAX_1, width: 1, height: 1, ktx2Width: 4, ktx2Height: 4, ktx2BlockAlign: 4 },
+      },
+      chunks: [
+        { id: "pixels", kind: "pixels", mime: "image/png", data: pngHeader(1, 1) },
+        { id: KTX2_KEY_MAX_1, kind: "ktx2", mime: "image/ktx2", data: ktx2Header(4, 4) },
+      ],
+    }));
+    const service = new ProjectService(storage, { encode: standInEncode });
+    await service.loadCurrentProject();
+    // No write guard: source control is on but its locks never loaded (no token, offline).
+    const registry = service.registry!;
+    const [texture] = await registry.importFile("project", "", "odd.png", pngHeader(1, 1));
+    const encoded = (guid: string) => {
+      const payload = registry.getByGuid(guid)!.header.payload;
+      return [payload.compressionState, payload.ktx2Width, payload.ktx2Height, payload.ktx2BlockAlign];
+    };
+    await vi.waitFor(() => expect(encoded(texture!.header.guid)).toEqual(["compressed", 4, 4, 4]));
+
+    await service.saveDocument("tileset", "assets/Old.tileset.babasset", { ...createDefaultTilesetPayload(), textureGuid: "legacy-padded" });
+    await service.saveDocument("tileset", "assets/New.tileset.babasset", { ...createDefaultTilesetPayload(), textureGuid: texture!.header.guid });
+    // The import's padding was this session's own write, so it is undone...
+    await vi.waitFor(() => expect(encoded(texture!.header.guid)).toEqual(["compressed", 1, 1, undefined]));
+    // ...while the earlier session's padded atlas waits for the locks.
+    expect(encoded("legacy-padded")).toEqual(["compressed", 4, 4, 4]);
+  });
+
+  it("rechecks a Texture a Tileset picks while an unsaved Details Usage re-encodes it", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("InFlight.babproject");
+    await installMinimalProject(storage);
+    const service = new ProjectService(storage, { encode: standInEncode });
+    await service.loadCurrentProject();
+    service.setTextureWriteGuard(() => true);
+    const tabUsages = new Map<string, string>();
+    service.setOpenTextureUsage((id) => tabUsages.get(id));
+    const registry = service.registry!;
+    const [texture] = await registry.importFile("project", "", "odd.png", pngHeader(1, 1));
+    const guid = texture!.header.guid;
+    const encoded = () => {
+      const payload = registry.getByGuid(guid)!.header.payload;
+      return [payload.compressionState, payload.ktx2Width, payload.ktx2Height, payload.ktx2BlockAlign];
+    };
+    await vi.waitFor(() => expect(encoded()).toEqual(["compressed", 4, 4, 4]));
+
+    // Texture Details sets Usage to Normal without saving; its encode is queued padded.
+    service.pauseTextureEncodeQueue();
+    tabUsages.set(guid, "normal");
+    await service.retryTextureEncoding(guid, { force: true, usage: "normal" });
+    // A Tileset picks the texture while that encode waits: the pass leaves a pending encode alone.
+    const runs = service.textureAlignmentState.runs;
+    await service.saveDocument("tileset", "assets/Ground.tileset.babasset", { ...createDefaultTilesetPayload(), textureGuid: guid });
+    await vi.waitFor(() => {
+      expect(service.textureAlignmentState.runs).toBeGreaterThan(runs);
+      expect(service.textureAlignmentState.pending).toBe(0);
+    });
+    expect(encoded()[0]).toBe("pending");
+    service.resumeTextureEncodeQueue();
+
+    await vi.waitFor(() => expect(encoded()).toEqual(["compressed", 1, 1, undefined]));
   });
 
   it("does not report its own alignment re-encodes as external changes on a foreground rescan", async () => {

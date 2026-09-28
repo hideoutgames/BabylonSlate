@@ -2508,6 +2508,21 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [documentService, projectService],
   );
 
+  // An open Texture tab's Usage may be an unsaved Details edit that already
+  // re-encoded; the texture alignment pass must not undo it with the saved Usage.
+  useEffect(() => {
+    projectService.setOpenTextureUsage((guid) => {
+      const asset = projectService.registry?.getByGuid(guid);
+      if (!asset) return undefined;
+      const open = documentService
+        .getState()
+        .openDocuments.get(documentId({ kind: "texture", path: asset.path }));
+      const usage = (open?.content as { usage?: unknown } | null | undefined)?.usage;
+      return typeof usage === "string" ? usage : undefined;
+    });
+    return () => projectService.setOpenTextureUsage(null);
+  }, [documentService, projectService]);
+
   // The texture alignment pass re-encodes Textures in the background, so it
   // runs only while this project's source-control locks are known.
   const textureGuardProject =
@@ -2516,30 +2531,17 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       : null;
   useEffect(() => {
     if (!textureGuardProject) return;
-    const sourceControl = sourceControlRef.current;
-    // An open Texture tab's Usage may be an unsaved Details edit that already
-    // re-encoded; the pass must not undo it with the saved Usage.
-    const usageFor = (guid: string): string | undefined => {
-      const asset = projectService.registry?.getByGuid(guid);
-      if (!asset) return undefined;
-      const open = documentService
-        .getState()
-        .openDocuments.get(documentId({ kind: "texture", path: asset.path }));
-      const usage = (open?.content as { usage?: unknown } | null | undefined)?.usage;
-      return typeof usage === "string" ? usage : undefined;
-    };
     projectService.setTextureWriteGuard(
       createTextureAlignmentGuard({
-        sourceControl,
+        sourceControl: sourceControlRef.current,
         projectGuid: textureGuardProject,
         pathFor: (guid) => projectService.registry?.getByGuid(guid)?.path,
         blockedReason: textureUsageBlockedReason,
       }),
-      { usageFor },
     );
     void projectService.reconcileTextureAlignment();
     return () => projectService.setTextureWriteGuard(null);
-  }, [documentService, projectService, textureGuardProject, textureUsageBlockedReason]);
+  }, [projectService, textureGuardProject, textureUsageBlockedReason]);
 
   const readAssetChunk = useCallback(
     (path: string, chunkId: string) =>
