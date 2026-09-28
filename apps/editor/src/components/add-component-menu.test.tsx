@@ -61,6 +61,11 @@ describe("AddComponentMenu", () => {
     });
   });
 
+  it("keeps authored category labels such as the AI acronym", () => {
+    render(<AddComponentMenu open onOpenChange={vi.fn()} onSelect={vi.fn()} />);
+    expect(screen.getByTestId("add-component-catalog-category-AI").textContent).toContain("AI");
+  });
+
   it("still reports engine class picks as classId with no extra properties", () => {
     const onSelect = vi.fn();
     render(

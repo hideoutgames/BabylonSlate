@@ -43,6 +43,8 @@ export interface CatalogMenuProps<T extends CatalogMenuItem> {
   filterItems?: (items: readonly T[], query: string) => T[];
   /** Keep the given order as one flat list instead of a category tree. */
   flat?: boolean;
+  /** Visible category label; defaults to `humanizePropertyLabel` for camelCase ids. */
+  formatCategory?: (category: string) => string;
   renderLeading?: (item: T) => ReactNode;
   /** Right side of the title row (Add Node's Context Sensitive checkbox). */
   headerAccessory?: ReactNode;
@@ -59,11 +61,15 @@ type MenuRow<T> =
   | { kind: "category"; key: string; category: string; count: number; expanded: boolean }
   | { kind: "item"; key: string; item: T; nested: boolean };
 
-function defaultFilter<T extends CatalogMenuItem>(items: readonly T[], query: string): T[] {
+function defaultFilter<T extends CatalogMenuItem>(
+  items: readonly T[],
+  query: string,
+  formatCategory: (category: string) => string,
+): T[] {
   const needle = query.trim().toLowerCase();
   if (!needle) return [...items];
   return items.filter((item) =>
-    `${item.title} ${humanizePropertyLabel(item.category)} ${item.description ?? ""}`
+    `${item.title} ${formatCategory(item.category)} ${item.description ?? ""}`
       .toLowerCase()
       .includes(needle),
   );
@@ -116,8 +122,9 @@ export function CatalogMenu<T extends CatalogMenuItem>({
   onSelect,
   anchor,
   presentation = "popup",
-  filterItems = defaultFilter,
+  filterItems,
   flat = false,
+  formatCategory = humanizePropertyLabel,
   renderLeading,
   headerAccessory,
   searchLabel,
@@ -143,7 +150,10 @@ export function CatalogMenu<T extends CatalogMenuItem>({
     setCollapsed(new Set());
   }, [open]);
 
-  const filtered = useMemo(() => filterItems(items, search), [filterItems, items, search]);
+  const filtered = useMemo(
+    () => (filterItems ? filterItems(items, search) : defaultFilter(items, search, formatCategory)),
+    [filterItems, formatCategory, items, search],
+  );
 
   const rows = useMemo((): MenuRow<T>[] => {
     if (flat) {
@@ -156,7 +166,7 @@ export function CatalogMenu<T extends CatalogMenuItem>({
       groups.set(item.category, list);
     }
     const sorted = [...groups.entries()].sort(([a], [b]) =>
-      humanizePropertyLabel(a).localeCompare(humanizePropertyLabel(b)),
+      formatCategory(a).localeCompare(formatCategory(b)),
     );
     const result: MenuRow<T>[] = [];
     for (const [category, grouped] of sorted) {
@@ -174,7 +184,7 @@ export function CatalogMenu<T extends CatalogMenuItem>({
       }
     }
     return result;
-  }, [collapsed, filtered, flat]);
+  }, [collapsed, filtered, flat, formatCategory]);
 
   const activeIndex = rows.findIndex((row) => row.key === activeKey);
   const firstItemIndex = rows.findIndex((row) => row.kind === "item");
@@ -342,7 +352,7 @@ export function CatalogMenu<T extends CatalogMenuItem>({
                           data-expanded={row.expanded ? "true" : undefined}
                         />
                         <span className="min-w-0 flex-1 truncate">
-                          {humanizePropertyLabel(row.category)}
+                          {formatCategory(row.category)}
                         </span>
                         <span className="text-xs text-muted-foreground tabular-nums">
                           {row.count}
@@ -376,7 +386,7 @@ export function CatalogMenu<T extends CatalogMenuItem>({
                       ) : null}
                       {row.nested ? null : (
                         <span className="truncate text-xs text-muted-foreground">
-                          {humanizePropertyLabel(item.category)}
+                          {formatCategory(item.category)}
                         </span>
                       )}
                     </div>

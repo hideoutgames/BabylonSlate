@@ -12,7 +12,7 @@ Scene streaming places another Scene through a `SceneStreamingActor`; it does no
 
 Opening or restoring a Scene or SceneLayer document paints **Loading Scene / Loading Document** before storage access. A replacement keeps the current scene and its edit session until the read succeeds; read failures offer Retry / Close. Each request has an abort signal: a superseded read may finish in storage, but cannot replace the newer document. The viewport then owns asset, shader, and first-frame readiness.
 
-Place Actors and Add Component open a medium `CatalogDialog` that leaves the editor visible. Results are `CatalogTile` cards (tinted type icon, name, optional description) grouped under category headings when **All** is selected; a single category shows one unheaded grid. Sidebar counts follow the search. Add Component uses wider tiles so descriptions fit. Search, categories and project asset bindings remain available; actor/component results stay unwindowed.
+Add Component (Scene Details and the Class/Prefab Components toolbar) is an Add Node-style `CatalogMenu` popup anchored under its button: search, collapsible A–Z categories with type icons, and keyboard navigation. Place Actors is a medium `CatalogDialog` that opens on **Featured** (`FEATURED_PLACE_ACTOR_IDS`, cards for common actors available to the host), then list categories in the previous striped-row style. Project Model assets appear under **Models** as thumbnail cards (Content Browser thumbnails, loaded only while that page is shown); other placeable assets stay in the **Project** list. Search shows one list across all categories with sidebar counts following the matches. Actor/component results stay unwindowed.
 
 ## Scene streaming
 

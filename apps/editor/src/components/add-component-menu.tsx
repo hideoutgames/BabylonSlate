@@ -10,6 +10,8 @@ import {
   type AddComponentSelection,
 } from "../panels/add-component-catalog";
 
+const categoryLabel = (category: string) => category;
+
 type AddComponentMenuItem = {
   id: string;
   title: string;
@@ -68,6 +70,7 @@ export function AddComponentMenu({
       renderLeading={({ source }) => (
         <TypeVisualIcon visual={visualForAddComponentItem(source)} />
       )}
+      formatCategory={categoryLabel}
       searchLabel="Search Components"
       searchPlaceholder="Search components"
       treeLabel="Components"
