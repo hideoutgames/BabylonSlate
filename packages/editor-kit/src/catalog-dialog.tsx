@@ -46,6 +46,8 @@ export interface CatalogDialogProps {
   searchPlaceholder?: string;
   children: ReactNode;
   footer?: ReactNode;
+  /** `medium` suits pick lists and leaves the editor visible; `large` suits settings. */
+  size?: "large" | "medium";
   "data-testid"?: string;
   className?: string;
 }
@@ -92,6 +94,7 @@ export function CatalogDialog({
   searchPlaceholder = "Search",
   children,
   footer,
+  size = "large",
   "data-testid": testId,
   className,
 }: CatalogDialogProps) {
@@ -111,6 +114,7 @@ export function CatalogDialog({
         }
         className={cn(
           "catalog-dialog editor-dialog-large flex max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none",
+          size === "medium" && "catalog-dialog-medium",
           className,
         )}
       >
@@ -211,7 +215,10 @@ export function CatalogDialog({
                       type="button"
                       size="sm"
                       variant={active ? "secondary" : "ghost"}
-                      className="justify-between rounded-md"
+                      className={cn(
+                        "justify-between rounded-md",
+                        category.count === 0 && !active && "text-muted-foreground/60",
+                      )}
                       onClick={() => onCategoryChange(category.id)}
                       aria-current={active ? "true" : undefined}
                       data-testid={
@@ -241,7 +248,7 @@ export function CatalogDialog({
           </div>
         </div>
         {footer ? (
-          <div className="shrink-0 border-t bg-muted/40 px-4 py-3">{footer}</div>
+          <div className="shrink-0 px-4 pt-3 pb-4">{footer}</div>
         ) : null}
       </DialogContent>
     </Dialog>
@@ -265,7 +272,7 @@ export function useCatalogSearchState(initial = "") {
   return { search, setSearch };
 }
 
-/** Compact outline row used by Place Actors and Add Component. */
+/** Compact outline row used by Behaviour Tree Add Service / Add Decorator. */
 export function CatalogItemButton({
   children,
   onClick,
