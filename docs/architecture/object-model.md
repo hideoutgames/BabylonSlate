@@ -16,7 +16,7 @@ Shared surface for the headless runtime object graph (engineplan §5, §16). Imp
 | `Subsystem` | Hidden abstract engine base (`BObject`) of both subsystem kinds. Never offered in pickers and never instantiated. End runs at most once: `ended` is true from the moment End starts, `destroyed` once it returns. See [Subsystems](#subsystems). |
 | `GameSubsystem` | Session-lifetime subsystem with Game Instance parity hooks: `onCreation` (On Init), `onTick`, `onGameEnd` (On End), and the four scene hooks. It is not a `GameInstance` (Cast to GameInstance fails). |
 | `SceneSubsystem` | Lives with one main `Scene` (`scene`). Hooks: `onCreation` (On Init), `onTick`, `onEnd`, plus Scene Loaded, Streamed Scene Loaded / Unloaded, Scene Layer Added / Removed and Scene Actor Spawned / Destroyed. Notifications stop once it has ended. |
-| `World` | Owns GameInstance, subsystems, actors in spawn order, RNG, deferred destroy, snapshot, `currentScene`. `beginSceneLoad` / `finishSceneLoad` / `exitActiveScene` / `createScene`. `beginSceneLoad` remembers the loading display name so `exitActiveScene` still fires **OnSceneExit** if finish never ran (Play stop while models-ready is deferred). `end()` exits the active or in-flight scene then `onGameEnd`. `loadScene` / scene swap never fire `onGameEnd`. `createActor` / `createComponent` / `createGameInstance` / `createGameSubsystem` apply inherited variable defaults and interface guids from `ClassRegistry` (caller overrides win). Subsystem API: `setGameSubsystems` (before `start()` only; throws after), `setSceneSubsystemClasses`, `getGameSubsystems` / `getSceneSubsystems`, `findSubsystems(classId)`, `notifyStreamedSceneLoaded` / `notifyStreamedSceneUnloaded`. |
+| `World` | Owns GameInstance, subsystems, actors in spawn order, RNG, deferred destroy, snapshot, `currentScene`. `beginSceneLoad` / `finishSceneLoad` / `exitActiveScene` / `createScene`. `beginSceneLoad` remembers the loading display name so `exitActiveScene` still fires **OnSceneExit** if finish never ran (Play stop while models-ready is deferred). `end()` exits the active or in-flight scene then `onGameEnd`. `loadScene` / scene swap never fire `onGameEnd`. `createActor` / `createComponent` / `createGameInstance` / `createGameSubsystem` apply inherited variable defaults and interface guids from `ClassRegistry` (caller overrides win). Subsystem API: `setGameSubsystems` (before `start()` only; throws after), `setSceneSubsystemClasses`, `getGameSubsystems` / `getSceneSubsystems`, `findSubsystems(classId)`, `notifyStreamedSceneLoaded` / `notifyStreamedSceneUnloaded`, `notifyActorEnteringPlay`. |
 | `ClassRegistry` | Inheritance graph, re-parenting, engine bases and components. `ensure` merges session class metadata; `inheritedInterfaces` walks ancestry. `classIds()` lists every registered id in registration order (engine defaults first). `MAX_CLASS_INHERITANCE_DEPTH` (16, including self) blocks `register` / `reparent` past the limit. |
 | `TickPhase` / `TICK_PHASES` / `TickClock` | Fixed-dt phases; `physics` filled by `@babylonslate/physics` |
 | `ScriptInterface` / `dispatchInterface` | Interface defs and runtime dispatch with pin defaults |
@@ -67,7 +67,7 @@ Engine-managed singletons: a user Class opts in by parenting to `GameSubsystem` 
 | Scene Start / Finish Loading, First Scene Loaded, Scene Exit | Game Instance first, then GameSubsystems |
 | `finishSceneLoad` | After those hooks, the main Scene's SceneSubsystems hear On Scene Loaded. A handler that loads another scene re-entrantly stops the rest; First Scene Loaded still reaches every GameSubsystem |
 | Tick | Game Instance and GameSubsystems (`gameInstance`), then SceneSubsystems (`sceneSubsystems`) |
-| `createScene` (main Scene) | Scene `onCreation`; every SceneSubsystem is constructed and installed (Get finds it); each runs On Init in order, before any actor spawns |
+| `createScene` (main Scene) | Scene `onCreation`; every SceneSubsystem is constructed and installed (Get finds it); each runs On Init in order, before the Scene's actors spawn (SceneLayer actors are separate) |
 | `clearCurrentScene` (every exit path) | SceneSubsystems On End in reverse order while the Scene is still current; then the Scene's `onDestroyed`; then On Scene Exit for the Game Instance and GameSubsystems |
 | `end()` | Scene exit, Game Instance On End, then GameSubsystems On End in reverse order |
 
@@ -77,10 +77,10 @@ Engine-managed singletons: a user Class opts in by parenting to `GameSubsystem` 
 
 ### Scene notifications
 
-- **Scene Actor Spawned** fires at spawn commit, immediately before the actor's `onCreation`, for world actors only (not SceneLayer overlay actors).
+- **Scene Actor Spawned** fires at spawn commit, immediately before the actor's `onCreation`, for world actors only (not SceneLayer overlay actors). A host that holds `onCreation` back reports an actor committed before the current SceneSubsystems existed with `notifyActorEnteringPlay`, once, as it enters play.
 - **Scene Actor Destroyed** fires after the actor is unlinked, before its own teardown.
 - **Scene Layer Added** fires after the layer's `onCreation`. **Scene Layer Removed** fires after it is unlinked, before its actors are destroyed.
-- **Pairing.** Destroyed and Removed fire only for objects whose Spawned or Added reached the same SceneSubsystem generation, so pre-existing actors and global layers are never reported. Nothing fires after End.
+- **Pairing.** Destroyed and Removed fire only for objects whose Spawned or Added reached the same SceneSubsystem generation, so pre-existing actors (unless reported entering play) and global layers are never reported. Nothing fires after End.
 - **Streamed Scene Loaded / Unloaded** come from the host through `notifyStreamedSceneLoaded` / `notifyStreamedSceneUnloaded`.
 - The World calls `WorldOptions.sceneSubsystemHooksFor` hooks synchronously. A host that defers script dispatch until scene readiness must keep their order. Runtime readiness, admission and silent teardown are in [scripting.md](scripting.md#subsystems).
 

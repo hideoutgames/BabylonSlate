@@ -198,6 +198,15 @@ export class World {
     }
   }
 
+  /**
+   * Host notification: a world actor whose `onCreation` the host held back
+   * enters play. SceneSubsystems created after its spawn commit hear Spawned
+   * now; an actor they already heard about is not reported again.
+   */
+  notifyActorEnteringPlay(actor: Actor): void {
+    if (actor.world === this && !actor.destroyed) this.announceSceneActor(actor);
+  }
+
   /** GameSubsystems' On Init (class-id order), then the Game Instance's. */
   start(): void {
     if (this.started) return;
@@ -294,6 +303,21 @@ export class World {
       actor.sceneLayerId == null &&
       !this.classRegistry.isA(actor.classId, "SceneLayerActor")
     );
+  }
+
+  /** Scene Actor Spawned, once per SceneSubsystem generation. */
+  private announceSceneActor(actor: Actor): void {
+    if (
+      this.sceneSubsystems.length === 0 ||
+      !this.isWorldSceneActor(actor) ||
+      this.announcedToSceneSubsystems.has(actor)
+    ) {
+      return;
+    }
+    this.announcedToSceneSubsystems.add(actor);
+    for (const subsystem of this.liveSceneSubsystems()) {
+      subsystem.callOnSceneActorSpawned(actor);
+    }
   }
 
   /** Queue actor for spawn; applied after the current phase / at end of tick. */
@@ -473,12 +497,7 @@ export class World {
     const sameGuid = this.actorsByGuid.get(actor.guid);
     if (sameGuid) sameGuid.push(actor);
     else this.actorsByGuid.set(actor.guid, [actor]);
-    if (this.sceneSubsystems.length > 0 && this.isWorldSceneActor(actor)) {
-      this.announcedToSceneSubsystems.add(actor);
-      for (const subsystem of this.liveSceneSubsystems()) {
-        subsystem.callOnSceneActorSpawned(actor);
-      }
-    }
+    this.announceSceneActor(actor);
     actor.callOnCreation();
     for (const component of actor.components) component.callOnCreation();
   }

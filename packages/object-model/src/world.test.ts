@@ -794,6 +794,30 @@ describe("World subsystems", () => {
     ]);
   });
 
+  it("announces a world actor its host held back once, when it enters play", () => {
+    const events: string[] = [];
+    const world = new World({
+      seed: 1,
+      dt: 1 / 60,
+      classRegistry: new ClassRegistry(),
+      sceneSubsystemHooksFor: recordingSceneSubsystemHooks(events),
+    });
+    world.setSceneSubsystemClasses(["Weather"]);
+    world.spawnActorNow(world.createActor({ classId: "Actor", guid: "held" }));
+    world.createScene({ assetGuid: "scene-1", sceneName: "L1" });
+    world.createSceneLayer({ guid: "menu", assetGuid: "menu-asset", zOrder: 1 });
+    world.spawnActorNow(world.createActor({ classId: "SceneLayerActor", guid: "button", sceneLayerId: "menu" }));
+    events.length = 0;
+
+    world.notifyActorEnteringPlay(world.findActor("held")!);
+    world.notifyActorEnteringPlay(world.findActor("held")!);
+    world.notifyActorEnteringPlay(world.findActor("button")!);
+    world.destroyActor("held");
+    world.flushPending();
+
+    expect(events).toEqual(["Weather:spawned:held", "Weather:destroyed:held"]);
+  });
+
   it("stops a scene's Finish Loading announcement once a handler loads another scene", () => {
     const events: string[] = [];
     const world: World = new World({

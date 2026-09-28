@@ -544,6 +544,8 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly layerLoads = new Map<string, { layer: SceneLayer; loadId: number; realized: boolean; presented: boolean; ready: boolean }>();
   private readonly independentLayerWork = new Map<string, { layer: SceneLayer; loadId: number; controller: AbortController; painted: () => void }>();
   private readonly pendingOwnerActions = new Map<BObject, Array<() => void>>();
+  /** Nonzero while `flushOwnerActions` runs queued owner work. */
+  private flushingOwnerActions = 0;
   private readonly createdScriptObjects = new WeakSet<BObject>();
   /**
    * Actors each SceneSubsystem heard enter play (Scene Actor Spawned); only
@@ -2371,9 +2373,18 @@ class InProcessRuntime implements RuntimeDriver {
     return !subsystem.ended && subsystem.scene === this.world.currentScene && this.canTickScene();
   }
 
-  /** Deferred owner work waits for the owner (a SceneSubsystem's for its Scene). */
+  /**
+   * Deferred owner work waits for the owner (a SceneSubsystem's for its
+   * Scene). World actors and their components also wait while a current
+   * SceneSubsystem has queued work (On Init first), so every subsystem hears
+   * Spawned right before the actor's Begin Play.
+   */
   private canRunOwnerActions(owner: BObject): boolean {
-    return owner instanceof SceneSubsystem ? this.canRunSceneSubsystem(owner) : this.canRunOwner(owner);
+    if (owner instanceof SceneSubsystem) return this.canRunSceneSubsystem(owner);
+    if (!this.canRunOwner(owner)) return false;
+    const actor = owner instanceof Actor ? owner : owner instanceof ActorComponent ? owner.owner : null;
+    return !actor || !!actor.sceneLayerId || this.world.getSceneSubsystems().every(
+      (subsystem) => subsystem.ended || !this.pendingOwnerActions.get(subsystem)?.length);
   }
 
   private runOwnerAction(owner: BObject, action: () => void): void {
@@ -2386,6 +2397,8 @@ class InProcessRuntime implements RuntimeDriver {
 
   private runOwnerCreation(owner: BObject, create: () => void): void {
     this.runOwnerAction(owner, () => {
+      // Spawned before a SceneSubsystem existed: it hears about it now.
+      if (owner instanceof Actor) this.world.notifyActorEnteringPlay(owner);
       this.createdScriptObjects.add(owner);
       this.guardScript(create);
     });
@@ -2397,11 +2410,24 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private flushOwnerActions(): void {
-    for (const [owner, actions] of this.pendingOwnerActions) {
-      if (owner.destroyed) { this.pendingOwnerActions.delete(owner); continue; }
-      while (actions.length && this.canRunOwnerActions(owner)) actions.shift()!();
-      if (actions.length === 0) this.pendingOwnerActions.delete(owner);
+    this.flushingOwnerActions++;
+    try {
+      // SceneSubsystems first: their On Init precedes the Begin Play it releases.
+      for (const owner of this.pendingOwnerActions.keys()) {
+        if (owner instanceof SceneSubsystem) this.drainOwnerActions(owner);
+      }
+      for (const owner of this.pendingOwnerActions.keys()) this.drainOwnerActions(owner);
+    } finally {
+      this.flushingOwnerActions--;
     }
+  }
+
+  private drainOwnerActions(owner: BObject): void {
+    const actions = this.pendingOwnerActions.get(owner);
+    if (!actions) return;
+    if (owner.destroyed) { this.pendingOwnerActions.delete(owner); return; }
+    while (actions.length && this.canRunOwnerActions(owner)) actions.shift()!();
+    if (actions.length === 0 && this.pendingOwnerActions.get(owner) === actions) this.pendingOwnerActions.delete(owner);
   }
 
   notifySceneLayerReady(layerId: string, layerLoadId: number): void {
@@ -4579,7 +4605,11 @@ class InProcessRuntime implements RuntimeDriver {
     checkpoint();
     this.world.spawnActorNow(actor);
     checkpoint();
-    this.flushOwnerActions();
+    // Spawned from queued work (an On Init or Begin Play): only this actor's
+    // work runs now; other owners wait until that handler returns.
+    if (this.flushingOwnerActions > 0) {
+      for (const owner of [actor, ...actor.components]) this.drainOwnerActions(owner);
+    } else this.flushOwnerActions();
     checkpoint();
     this.navFrameActors?.set(actor.guid, actor);
   }
@@ -5091,8 +5121,9 @@ class InProcessRuntime implements RuntimeDriver {
   ): void {
     const dispatch = () =>
       this.guardScript(() => this.scriptHost.invokeEvent(classId, event, subsystem, args));
+    // An empty queue is one being drained (its On Init may be running).
     const queued = this.pendingOwnerActions.get(subsystem);
-    if (queued) queued.push(dispatch);
+    if (queued && queued.length > 0) queued.push(dispatch);
     else this.runOwnerAction(subsystem, dispatch);
   }
 

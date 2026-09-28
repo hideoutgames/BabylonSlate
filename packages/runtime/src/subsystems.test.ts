@@ -308,6 +308,48 @@ describe("Scene Subsystems", () => {
     } finally { runtime.stop(); }
   });
 
+  it("hear every world actor right before its Begin Play and after every On Init, however early it spawned", async () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      playScene: sceneNamed("Level1", [createActor("a1", "A1", { classId: "Authored" })]), playSceneGuid: "scene-1",
+      onCommand: (command) => commands.push(command),
+    });
+    const take = scriptLog(commands);
+    const actorClass = (classId: string) =>
+      classScript(classId, "Actor", { "flow.event.beginPlay": 'log("begin:" + ctx.self.classId);' });
+    const watcher = (classId: string, tag: string, init: string) => classScript(classId, "SceneSubsystem", {
+      "flow.event.init": init,
+      "flow.event.sceneActorSpawned": `log("${tag}:spawned:" + actor.classId);`,
+      "flow.event.sceneActorDestroyed": `log("${tag}:destroyed:" + actor.classId);`,
+    });
+    await runtime.loadScripts([
+      actorClass("Authored"), actorClass("Early"), actorClass("Held"), actorClass("Immediate"),
+      // Spawned before the Scene and its subsystems exist.
+      classScript("GameInstance", "GameInstance", { "flow.event.sceneStartLoading": 'ctx.spawnActor("Early");' }),
+      // Director Inits first and spawns while Tracker's On Init is still queued.
+      watcher("Director", "director", 'log("director:init"); ctx.spawnActor("Held");'),
+      watcher("Tracker", "tracker", 'log("tracker:init"); ctx.spawnActor("Immediate"); log("tracker:init-done");'),
+    ]);
+    const world = runtime.getWorld();
+    try {
+      runtime.realizePlayWorld();
+      expect(take()).toEqual([
+        "director:init", "tracker:init",
+        "director:spawned:Immediate", "tracker:spawned:Immediate", "begin:Immediate",
+        "tracker:init-done",
+        "director:spawned:Early", "tracker:spawned:Early", "begin:Early",
+        "director:spawned:Authored", "tracker:spawned:Authored", "begin:Authored",
+        "director:spawned:Held", "tracker:spawned:Held", "begin:Held",
+      ]);
+      // Announced as it entered play, so its removal is reported too.
+      world.destroyActor(world.getActors().find((actor) => actor.classId === "Early")!.guid);
+      world.flushPending();
+      expect(take()).toEqual(["director:destroyed:Early", "tracker:destroyed:Early"]);
+      expect(scriptErrors(commands)).toEqual([]);
+    } finally { runtime.stop(); }
+  });
+
   it("stay callable from a sibling's On End on Change Scene and on Stop", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
