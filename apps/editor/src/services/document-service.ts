@@ -53,8 +53,28 @@ export interface DocumentLoadOptions {
   beforeCommit?: (ref: DocumentRef) => void;
 }
 
+/** Identity changes that editor session state keyed by document id follows. */
+export type DocumentIdentityEvent =
+  | { type: "opened"; id: string }
+  | { type: "repathed"; oldId: string; newId: string };
+
+export type DocumentIdentityListener = (event: DocumentIdentityEvent) => void;
+
 export class DocumentService {
   private readonly contentRevisions = new WeakMap<OpenDocument, number>();
+  private readonly identityListeners = new Set<DocumentIdentityListener>();
+
+  /** `opened` fires when a new tab entry is created; `repathed` on every path change. */
+  onIdentityChange(listener: DocumentIdentityListener): () => void {
+    this.identityListeners.add(listener);
+    return () => {
+      this.identityListeners.delete(listener);
+    };
+  }
+
+  private emitIdentity(event: DocumentIdentityEvent): void {
+    for (const listener of [...this.identityListeners]) listener(event);
+  }
 
   /** Changes even when Undo returns to a previously held content object. */
   contentRevision(id: string): number {
@@ -259,6 +279,7 @@ export class DocumentService {
     if (setActive) {
       this.state.activeDocumentId = id;
     }
+    this.emitIdentity({ type: "opened", id });
     return id;
   }
 
@@ -304,19 +325,32 @@ export class DocumentService {
   }
 
   /**
-   * Retarget an open Scene/Graph tab after a registry move/rename.
-   * Guids stay stable; only path-based document ids and layout keys change.
+   * Retarget an open tab after a registry move/rename. Guids stay stable; only
+   * path-based document ids and layout keys change. `repathed` is emitted even
+   * when the document is not open, so session state kept for closed tabs
+   * follows the asset too. Returns the ids, or null when the path is unchanged.
    */
   repathDocument(
     kind: AssetDocumentKind,
     oldPath: string,
     newPath: string,
-  ): void {
-    if (oldPath === newPath) return;
+  ): { oldId: string; newId: string } | null {
+    if (oldPath === newPath) return null;
     const oldId = documentId({ kind, path: oldPath });
+    const newId = documentId({ kind, path: newPath });
+    this.retargetOpenDocument(kind, oldId, newId, newPath);
+    this.emitIdentity({ type: "repathed", oldId, newId });
+    return { oldId, newId };
+  }
+
+  private retargetOpenDocument(
+    kind: AssetDocumentKind,
+    oldId: string,
+    newId: string,
+    newPath: string,
+  ): void {
     const doc = this.state.openDocuments.get(oldId);
     if (!doc) return;
-    const newId = documentId({ kind, path: newPath });
     this.state.openDocuments.delete(oldId);
     const next: OpenDocument = {
       ...doc,

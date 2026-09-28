@@ -90,6 +90,7 @@ import type { TracePayload } from "@babylonslate/debugger";
 import {
   DocumentService,
   type DocumentContent,
+  type DocumentIdentityListener,
   type OpenDocument,
 } from "../services/document-service";
 import { attachEditGestureBoundaries } from "../services/edit-gesture-boundaries";
@@ -106,6 +107,7 @@ import {
   isMutatingApplyBlocked,
 } from "../lib/document-lock-apply";
 import { dirtyScenesBlockingOpen } from "../lib/exclusive-scene";
+import { moveKeyedEntry } from "../lib/move-keyed-entry";
 import { notifyDocumentEdited } from "../lib/notify-document-edited";
 import { advanceTestIdleClock } from "../lib/document-working-set";
 import { shouldApplyAssetDocumentChange } from "../lib/asset-document-change";
@@ -173,6 +175,7 @@ import {
 } from "../shell/anim-document-layout";
 import {
   dockviewApiKey,
+  dockviewApiKeyPairs,
   dockviewApiKeysForDocument,
   dockviewSurfaceForAnimMode,
   type DockviewSurface,
@@ -309,12 +312,17 @@ interface DocumentContextValue {
     bytes: Uint8Array,
     decision?: "keep" | "replace",
   ) => Promise<PluginImportResult>;
-  /** Retarget open tabs after a Scene/Graph file move or rename. */
+  /**
+   * Retarget open tabs after a file move or rename. Undo history, dock Focus
+   * state, Anim mode and session view state follow the document to its new id.
+   */
   repathDocument: (
     kind: AssetDocumentKind,
     oldPath: string,
     newPath: string,
   ) => void;
+  /** Document opens and renames, for session state keyed by document id. */
+  subscribeDocumentIdentity: (listener: DocumentIdentityListener) => () => void;
   retryFailedTextureEncoding: () => Promise<number>;
   prepareAreaEmission: ProjectService["prepareAreaEmission"];
   collectPlayAreaEmissions: (scenes: readonly (SerializedScene | null | undefined)[], includeGraphs?: boolean) => Promise<Map<string, import("@babylonslate/assets").AreaEmissionPixels>>;
@@ -636,6 +644,8 @@ function openGraphCompileDocuments(
 
 const DocumentContext = createContext<DocumentContextValue | null>(null);
 
+const THUMBNAIL_DECODE_LRU_ENTRIES = 64;
+
 /** Bumps only the Windows menu so dock add/remove does not remount editor chrome. */
 const DockWindowTickContext = createContext(0);
 
@@ -753,7 +763,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     () => new Set(),
   );
   const saveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const thumbnailLruRef = useRef(new ThumbnailDecodeLru(64));
+  // Keyed by asset guid, and projects made from one template share guids:
+  // enterEditor replaces it so one project never shows another's thumbnails.
+  const thumbnailLruRef = useRef(new ThumbnailDecodeLru(THUMBNAIL_DECODE_LRU_ENTRIES));
   const thumbnailsEnabledRef = useRef(true);
   const [thumbnailVersions, setThumbnailVersions] = useState<Record<string, number>>({});
 
@@ -1188,12 +1200,68 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [bump, projectService],
   );
 
+  /**
+   * The one rename path: the tab, its undo history, Focus state and Anim mode
+   * move to the new id together. DocumentService also notifies the project
+   * session store (camera, graph pan/zoom, module cards) through
+   * `subscribeDocumentIdentity`.
+   */
   const repathDocument = useCallback(
     (kind: AssetDocumentKind, oldPath: string, newPath: string) => {
-      documentService.repathDocument(kind, oldPath, newPath);
+      const oldId = documentId({ kind, path: oldPath });
+      // The workspace remounts under the new id; keep its live dock layout.
+      if (oldPath !== newPath && documentService.getDocument(oldId)) {
+        captureLayoutForId(oldId);
+      }
+      const moved = documentService.repathDocument(kind, oldPath, newPath);
+      if (moved) {
+        const { newId } = moved;
+        editSessionRef.current.rekeyDocument(oldId, newId);
+        // Live dock handles belong to the workspace unmounting under the old
+        // id. Release them as closeDocument does, so its teardown cannot write
+        // placements back under the old id; the remount registers new ones.
+        for (const key of dockviewApiKeysForDocument(oldId)) {
+          dockviewApisRef.current.delete(key);
+        }
+        disposeDockSubscriptions(oldId);
+        const pairs = dockviewApiKeyPairs(oldId, newId);
+        for (const [from, to] of pairs) {
+          moveKeyedEntry(preFocusLayoutsRef.current, from, to);
+          moveKeyedEntry(sceneFocusedLayoutsRef.current, from, to);
+        }
+        setFocusedLayoutIds((current) => {
+          if (!pairs.some(([from, to]) => current.has(from) || current.has(to))) {
+            return current;
+          }
+          const next = new Set(current);
+          for (const [from, to] of pairs) {
+            next.delete(to);
+            if (current.has(from)) {
+              next.delete(from);
+              next.add(to);
+            }
+          }
+          return next;
+        });
+        setAnimEditorModes((current) => {
+          if (!(oldId in current) && !(newId in current)) return current;
+          const next = { ...current };
+          const mode = next[oldId];
+          delete next[oldId];
+          delete next[newId];
+          if (mode) next[newId] = mode;
+          return next;
+        });
+      }
       bump();
     },
-    [bump, documentService],
+    [bump, captureLayoutForId, disposeDockSubscriptions, documentService],
+  );
+
+  const subscribeDocumentIdentity = useCallback(
+    (listener: DocumentIdentityListener) =>
+      documentService.onIdentityChange(listener),
+    [documentService],
   );
 
   const retryFailedTextureEncoding = useCallback(async () => {
@@ -1304,6 +1372,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       sceneFocusedLayoutsRef.current.clear();
       setFocusedLayoutIds(new Set());
       editSessionRef.current.clear();
+      thumbnailLruRef.current = new ThumbnailDecodeLru(THUMBNAIL_DECODE_LRU_ENTRIES);
       try {
         await documentService.initializeFromProject(
           projectService,
@@ -3510,7 +3579,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const loadAssetThumbnail = useCallback(
     async (assetGuid: string): Promise<Uint8Array | null> => {
       if (!thumbnailsEnabledRef.current) return null;
-      const cached = thumbnailLruRef.current.get(assetGuid);
+      // A read that finishes after a project switch fills the old cache only.
+      const lru = thumbnailLruRef.current;
+      const cached = lru.get(assetGuid);
       if (cached) return cached;
       const guid = projectService.guid;
       if (!guid) return null;
@@ -3521,7 +3592,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       // their materials were ready. Texture thumbnail keys stay unchanged.
       const key = rendered ? `${assetGuid}.render-v2` : assetGuid;
       const bytes = await readThumbnail(derived, guid, key);
-      if (bytes) thumbnailLruRef.current.set(assetGuid, bytes);
+      if (bytes) lru.set(assetGuid, bytes);
       else if (asset && rendered) {
         enqueueModelThumbnailJobs([{
           guid: assetGuid,
@@ -4348,6 +4419,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       exportPlugin,
       importPlugin,
       repathDocument,
+      subscribeDocumentIdentity,
       retryFailedTextureEncoding,
       prepareAreaEmission,
       collectPlayAreaEmissions,
@@ -4417,6 +4489,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       exportPlugin,
       importPlugin,
       repathDocument,
+      subscribeDocumentIdentity,
       retryFailedTextureEncoding,
       prepareAreaEmission,
       collectPlayAreaEmissions,
