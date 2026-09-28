@@ -43,6 +43,10 @@ export interface SearchDialogItem {
   group?: string;
   leading?: ReactNode;
   trailing?: ReactNode;
+  /** Listed for every query, such as Create New rows. */
+  pinned?: boolean;
+  /** Selecting keeps the dialog open and the query; the caller closes it. */
+  keepOpen?: boolean;
 }
 
 export interface SearchDialogProps {
@@ -51,9 +55,14 @@ export interface SearchDialogProps {
   title: string;
   description?: string;
   items: SearchDialogItem[];
-  onSelect: (id: string) => void;
+  /** `query` is the search text at the time of selection. */
+  onSelect: (id: string, query: string) => void;
   placeholder?: string;
   emptyLabel?: string;
+  /** Marks the list busy and ignores selections (a pending create). */
+  busy?: boolean;
+  /** Shown under the list, such as an error Alert. */
+  status?: ReactNode;
   "data-testid"?: string;
 }
 
@@ -63,10 +72,12 @@ export function filterSearchItems(
 ): SearchDialogItem[] {
   const needle = query.trim().toLowerCase();
   if (!needle) return items;
-  return items.filter((item) =>
-    `${item.label} ${item.description ?? ""} ${item.group ?? ""}`
-      .toLowerCase()
-      .includes(needle),
+  return items.filter(
+    (item) =>
+      item.pinned ||
+      `${item.label} ${item.description ?? ""} ${item.group ?? ""}`
+        .toLowerCase()
+        .includes(needle),
   );
 }
 
@@ -98,7 +109,9 @@ export function SearchDialog({
   items,
   onSelect,
   placeholder = "Search",
-  emptyLabel = "No matches",
+  emptyLabel = "No Matches",
+  busy = false,
+  status,
   "data-testid": testId,
 }: SearchDialogProps) {
   const [query, setQuery] = useState("");
@@ -119,8 +132,10 @@ export function SearchDialog({
     setActiveId(null);
     if (listRef.current) listRef.current.scrollTop = 0;
   };
-  const commit = (id: string) => {
-    onSelect(id);
+  const commit = (item: SearchDialogItem) => {
+    if (busy) return;
+    onSelect(item.id, query);
+    if (item.keepOpen) return;
     resetQuery("");
     onOpenChange(false);
   };
@@ -129,7 +144,7 @@ export function SearchDialog({
     if (event.key === "Enter" && activeIndex >= 0) {
       event.preventDefault();
       event.stopPropagation();
-      commit(filtered[activeIndex]!.id);
+      commit(filtered[activeIndex]!);
       return;
     }
     // Home/End still edit the query when the input owns focus.
@@ -224,6 +239,7 @@ export function SearchDialog({
             tabIndex={0}
             aria-label={title}
             aria-activedescendant={activeOptionId}
+            aria-busy={busy || undefined}
             onKeyDown={navigate}
             className="min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y"
             style={{
@@ -259,12 +275,12 @@ export function SearchDialog({
                           ? "bg-accent text-accent-foreground"
                           : index % 2 === 1 && "bg-list-stripe",
                       )}
-                      onClick={() => commit(item.id)}
+                      onClick={() => commit(item)}
                       onFocus={() => setActiveId(item.id)}
                       onKeyDown={(event) => {
                         if (event.key === "Enter" || event.key === " ")
                           event.stopPropagation();
-                        commitPickerOptionKeyDown(event, () => commit(item.id));
+                        commitPickerOptionKeyDown(event, () => commit(item));
                       }}
                       data-testid={`search-item-${item.id}`}
                     >
@@ -280,6 +296,7 @@ export function SearchDialog({
               </WindowedList>
             )}
           </div>
+          {status ? <div className="shrink-0">{status}</div> : null}
         </div>
       </DialogContent>
     </Dialog>

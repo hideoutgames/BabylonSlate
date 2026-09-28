@@ -48,6 +48,7 @@ import {
   normalizeMaterialDocument,
   normalizeMaterialFunctionDocument,
   parseMaterialDomain,
+  type MaterialDomain,
 } from "@babylonslate/shader-graph";
 import { createDefaultParticleGraphDocument } from "@babylonslate/particle-graph";
 import {
@@ -1446,6 +1447,8 @@ export function buildNewAssetResult(options: {
   parentClass: string | null;
   parentOf?: (id: string) => string | null | undefined;
   parentGraphs?: Record<string, import("@babylonslate/core").SerializedGraph>;
+  /** New Material domain; pickers pass `particle` / `postProcess` / `landscape`. */
+  materialDomain?: MaterialDomain;
 }): ImportResult {
   const { type, name, guid, parentClass } = options;
   if (type === "RenderTarget") return documentAsset(type, name, guid, { ...createDefaultRenderTargetPayload() });
@@ -1563,10 +1566,10 @@ export function buildNewAssetResult(options: {
   }
 
   if (type === "Material") {
-    const payload = createDefaultMaterialDocument(name) as unknown as Record<
-      string,
-      unknown
-    >;
+    const payload = createDefaultMaterialDocument(
+      name,
+      options.materialDomain,
+    ) as unknown as Record<string, unknown>;
     return documentAsset(type, name, guid, payload);
   }
 
@@ -1737,13 +1740,18 @@ const ASSET_FILE_SUFFIX: Partial<Record<CreatableAssetType, string>> = {
   SkyboxCreator: ".skyboxcreator.babasset",
 };
 
+/** File suffix a new asset of this type is written with. */
+export function newAssetFileSuffix(type: CreatableAssetType): string {
+  return ASSET_FILE_SUFFIX[type] ?? ".babasset";
+}
+
 export function newAssetFileName(
   type: CreatableAssetType,
   name: string,
 ): string {
   const safe = name.trim().replace(/[^a-zA-Z0-9_.-]+/g, "_");
   if (!safe) return "";
-  return `${safe}${ASSET_FILE_SUFFIX[type] ?? ".babasset"}`;
+  return `${safe}${newAssetFileSuffix(type)}`;
 }
 
 /**

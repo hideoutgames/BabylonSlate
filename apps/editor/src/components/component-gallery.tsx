@@ -9,6 +9,8 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import {
+  AssetCreateProvider,
+  type AssetCreateApi,
   AssetPicker,
   AssetOpenProvider,
   AssetPickerControl,
@@ -168,6 +170,14 @@ const GALLERY_NESTED_ITEMS: NestedMenuItem[] = [
 ];
 
 const GALLERY_SCALAR_MODES = [VALUE_MODE_CONSTANT, VALUE_MODE_RANGE, VALUE_MODE_CURVE];
+
+/** Demo creation for the picker Create New rows; resolves to existing gallery entries. */
+const GALLERY_ASSET_CREATE: AssetCreateApi = {
+  canCreate: (type) => type === "Material",
+  typeLabel: (type) => type,
+  createAsset: async () => "gallery-material",
+  createClass: async () => "MyGame",
+};
 
 /** Lifetime row in whichever kind its value mode needs, as Basic emitter Details do. */
 function galleryLifetimeRow(
@@ -1189,23 +1199,30 @@ function GalleryComposites() {
         onSelect={() => {}}
         data-testid="gallery-search-dialog"
       />
-      <AssetPicker
-        open={pickerOpen}
-        onOpenChange={setPickerOpen}
-        assets={[{ guid: "gallery-asset", name: "Rock", type: "Mesh" }]}
-        onPick={() => {}}
-        data-testid="gallery-asset-picker"
-      />
-      <ClassPicker
-        open={classPickerOpen}
-        onOpenChange={setClassPickerOpen}
-        classes={[
-          { id: "GameInstance", name: "Game Instance", group: "Engine" },
-          { id: "MyGame", name: "My Game", group: "Project" },
-        ]}
-        onPick={() => {}}
-        data-testid="gallery-class-picker"
-      />
+      <AssetCreateProvider value={GALLERY_ASSET_CREATE}>
+        <AssetPicker
+          open={pickerOpen}
+          onOpenChange={setPickerOpen}
+          assets={[
+            { guid: "gallery-asset", name: "Rock", type: "Mesh" },
+            { guid: "gallery-material", name: "Stone", type: "Material" },
+          ]}
+          allowedTypes={["Material"]}
+          onPick={() => {}}
+          data-testid="gallery-asset-picker"
+        />
+        <ClassPicker
+          open={classPickerOpen}
+          onOpenChange={setClassPickerOpen}
+          classes={[
+            { id: "GameInstance", name: "Game Instance", group: "Engine" },
+            { id: "MyGame", name: "My Game", group: "Project" },
+          ]}
+          createBaseClass="GameInstance"
+          onPick={() => {}}
+          data-testid="gallery-class-picker"
+        />
+      </AssetCreateProvider>
       <SceneComponentPicker
         open={sceneComponentPickerOpen}
         onOpenChange={setSceneComponentPickerOpen}

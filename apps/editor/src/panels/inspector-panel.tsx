@@ -635,6 +635,12 @@ function ClassMemberDetails({
           }}
           classes={classEntries}
           allowNone={false}
+          createBaseClass={
+            (entryPick?.field === "key"
+              ? member.keyTypeClassId
+              : member.typeClassId
+            )?.trim() || "BObject"
+          }
           title="Pick Class"
           onPick={(classId) => {
             if (!entryPick || !classId) return;
@@ -1837,6 +1843,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
             : []
         }
         allowNone={false}
+        createBaseClass={classPinPick?.constraintClassId}
         onPick={(classId) => {
           if (classPinPick && classId) {
             updateNodeData({
@@ -1859,6 +1866,12 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
           { nodeType: selectedNode.type },
         )}
         allowedTypes={assetPinPick?.allowedTypes}
+        createOptions={
+          selectedNode.type === "scene-layer.registerPostProcess" ||
+          selectedNode.type === "scene-layer.unregisterPostProcess"
+            ? { materialDomain: "postProcess" }
+            : undefined
+        }
         allowNone
         title={assetPinPick ? `Pick ${assetPinPick.assetType}` : "Pick Asset"}
         onPick={(guid) => {

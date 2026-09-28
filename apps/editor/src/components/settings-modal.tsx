@@ -1728,6 +1728,7 @@ export function SettingsModal({
           classes={gameInstanceClassEntries(assetRegistry?.list() ?? [])}
           title="Pick Game Instance"
           allowNone
+          createBaseClass="GameInstance"
           onPick={(classId) => {
             if (!projectDocument) return;
             updateProjectSettings({ gameInstanceClass: classId });
@@ -1745,6 +1746,7 @@ export function SettingsModal({
           classes={editorUtilityObjectClassEntries(assetRegistry?.list() ?? [])}
           title="Pick Editor Utility Object"
           allowNone={false}
+          createBaseClass="EditorUtilityObject"
           onPick={(classId) => {
             if (!projectDocument || !classId) {
               setUtilityPick(null);
