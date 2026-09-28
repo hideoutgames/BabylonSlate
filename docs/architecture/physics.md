@@ -269,3 +269,5 @@ Authored simple-collider factories copy identity TRS arrays for each collider. E
 Make Transform now supplies unit scale when its scale input is unauthored, so graph-created physics actors have a valid default transform. Explicit authored scales remain unchanged, including zero values that physics rejects as degenerate.
 
 Collider property parsing defaults to native geometry validation. Inspector rows explicitly select the authoring mode so empty point clouds and zero-sized draft primitives remain editable; the runtime and native backends still reject those geometries.
+
+`DynamicRuntimeMeshComponent` optionally contributes its runtime triangles to the owning actor's 3D body. **Enable Collision** defaults off; an actor without a Rigid Body gets an implicit static body. Edits are committed at the next physics step and reuse the prepared shape while positions, topology and component/ancestor transforms are unchanged. Normals, UVs and materials do not recook collision. Clear, disable, destruction and scene teardown remove the collider. See [Dynamic Runtime Mesh](render.md#dynamic-runtime-mesh) for its component-bound API and update costs.

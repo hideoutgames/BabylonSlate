@@ -1,4 +1,6 @@
 import { WaterWorld } from "./water-world";
+import { dynamicRuntimeGeometry } from "./dynamic-runtime-mesh";
+import { DynamicMeshCollisionCache, dynamicMeshCollisionDescriptor } from "./dynamic-mesh-collision";
 import { landscapeCollisionMesh, normalizeWaterBuoyancy } from "@babylonslate/core";
 import type {
   ColliderDesc,
@@ -53,6 +55,7 @@ import {
  * collision, enabled Landscapes, or a Blocking Volume.
  */
 export class PhysicsWorldSync {
+  private readonly dynamicMeshCollisions = new DynamicMeshCollisionCache();
   readonly water = new WaterWorld();
   private readonly backend: PhysicsBackend;
   private readonly actorFilter: (actor: Actor) => boolean;
@@ -343,7 +346,7 @@ export class PhysicsWorldSync {
           c.owner === actor,
       );
       const meshPhysics = this.meshPhysicsComponents(actor).length > 0;
-      if (!rigid && !tilemap && !blocking && !meshPhysics && !this.landscapePhysicsComponents(actor).length) continue;
+      if (!rigid && !tilemap && !blocking && !meshPhysics && !this.landscapePhysicsComponents(actor).length && !this.dynamicMeshPhysicsComponents(actor).length) continue;
       live.add(actor.guid);
       if (
         this.bodyOwnerByActor.has(actor.guid) &&
@@ -564,6 +567,7 @@ export class PhysicsWorldSync {
     if (
       [
         "MeshComponent",
+        "DynamicRuntimeMeshComponent",
         "LandscapeComponent",
         "ColliderComponent",
         "SpriteComponent",
@@ -649,7 +653,8 @@ export class PhysicsWorldSync {
       !tilemap &&
       !blocking &&
       this.meshPhysicsComponents(actor).length === 0 &&
-      this.landscapePhysicsComponents(actor).length === 0
+      this.landscapePhysicsComponents(actor).length === 0 &&
+      this.dynamicMeshPhysicsComponents(actor).length === 0
     )
       return;
     const bodyId = `body:${actor.guid}`;
@@ -761,6 +766,13 @@ export class PhysicsWorldSync {
     this.collectSpriteColliders(actor, bodyId, colliders);
     this.collectMeshColliders(actor, bodyId, colliders);
     this.collectLandscapeColliders(actor, bodyId, colliders);
+    for (const component of this.dynamicMeshPhysicsComponents(actor)) {
+      const shape = this.dynamicMeshCollisions.prepare(component, worldScale(actor, this.worldTransforms));
+      if (!shape) continue;
+      const id = componentColliderPhysicsId(actor.guid, component.guid);
+      colliders.set(id, { id, bodyId, shape, friction: 0.5, restitution: 0, isTrigger: false,
+        layer: parseMeshCollisionLayer(component.getVariable("layer")), mask: parseMeshCollisionMask(component.getVariable("mask")) });
+    }
     // Adding buoyancy alone is enough for a physical float. Authored collision wins.
     const buoyancy = actor.components.find((c) => c.classId === "WaterBuoyancyComponent" && !c.destroyed && c.owner === actor);
     if (this.backend.kind === "3d" && colliders.size === 0 && buoyancy) {
@@ -871,6 +883,7 @@ export class PhysicsWorldSync {
         ![
           "ColliderComponent",
           "MeshComponent",
+          "DynamicRuntimeMeshComponent",
           "LandscapeComponent",
           "SpriteComponent",
           "TilemapComponent",
@@ -888,6 +901,7 @@ export class PhysicsWorldSync {
         ...transformDescriptor(component.transform),
       );
       if (component.destroyed) continue;
+      if (component.classId === "DynamicRuntimeMeshComponent") descriptor.push(...dynamicMeshCollisionDescriptor(component));
       for (const name of [
         "shape",
         "friction",
@@ -944,6 +958,13 @@ export class PhysicsWorldSync {
     if (this.backend.kind !== "3d") return [];
     return actor.components.filter((component) => component.classId === "LandscapeComponent" &&
       !component.destroyed && component.owner === actor && component.getVariable("collisionsEnabled") === true);
+  }
+
+  private dynamicMeshPhysicsComponents(actor: Actor): ActorComponent[] {
+    if (this.backend.kind !== "3d") return [];
+    return actor.components.filter((component) => component.classId === "DynamicRuntimeMeshComponent" &&
+      !component.destroyed && component.owner === actor && component.getVariable("enableCollision") === true &&
+      !!dynamicRuntimeGeometry(component)?.indices.length);
   }
 
   private collectLandscapeColliders(actor: Actor, bodyId: string, colliders: Map<string, ColliderDesc>): void {

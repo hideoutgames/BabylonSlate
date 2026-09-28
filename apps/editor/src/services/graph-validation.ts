@@ -1175,6 +1175,7 @@ function callFunctionPaletteNodes(
             typeId: pin.typeId,
             direction: pin.direction,
             ...(pin.typeClassId ? { typeClassId: pin.typeClassId } : {}),
+            ...(pin.container ? { container: pin.container } : {}),
           })),
           runtime: fn.runtime,
         },
@@ -2167,6 +2168,7 @@ export function classMemberSymbolsFromGraphs(
           typeId: pin.typeId,
           direction: pin.direction,
           ...(pin.typeClassId ? { typeClassId: pin.typeClassId } : {}),
+          ...(pin.container ? { container: pin.container } : {}),
         })),
       });
     }

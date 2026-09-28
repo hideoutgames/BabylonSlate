@@ -1,3 +1,4 @@
+import { applyDynamicRuntimeMeshUpdate } from "./dynamic-runtime-mesh";
 import { PostProcessRetirement } from "./post-process-retirement";
 import { sceneRenderTargetCaptures } from "./render-target-capture";
 import type { AudioLibrary } from "./audio-service";
@@ -2928,6 +2929,10 @@ function initializeEngine(
       }
       if (command.type === "cableFrame") {
         applyCableFrame(scene, command.data, command.frameId);
+        scheduler.invalidate("snapshot");
+      }
+      if (command.type === "dynamicMeshUpdate") {
+        applyDynamicRuntimeMeshUpdate(scene, command.meshId, command.update);
         scheduler.invalidate("snapshot");
       }
       if (command.type === "animState") {

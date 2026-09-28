@@ -19,6 +19,18 @@ import {
 
 const registry = createDefaultNodeRegistry();
 
+it("exposes runtime geometry functions only on typed component targets and retains numeric array pins", () => {
+  const nodes = scriptPaletteNodes(registry, { parentClass: "Actor", classId: "Rig" });
+  const create = nodes.find((node) => node.id === "functions.call:DynamicRuntimeMeshComponent:Set Geometry")!;
+  expect(create.defaultData).toMatchObject({ implicitSelf: false, runtime: "setDynamicMeshGeometry" });
+  expect(create.pins?.find((pin) => pin.id === "target")?.type).toEqual(objectRef("DynamicRuntimeMeshComponent"));
+  expect(create.pins?.find((pin) => pin.id === "positions")?.type).toMatchObject({ kind: "array", element: { kind: "float" } });
+  expect(create.pins?.find((pin) => pin.id === "indices")?.type).toMatchObject({ kind: "array", element: { kind: "int" } });
+  const symbols = classMemberSymbolsFromGraphs({});
+  expect(symbols.find((symbol) => symbol.classId === "DynamicRuntimeMeshComponent" && symbol.name === "Set Geometry")?.pins)
+    .toContainEqual({ name: "positions", typeId: "float", direction: "in", container: "array" });
+});
+
 describe("custom event declaration validation", () => {
   it.each([
     { declaration: true, name: "Ping", missing: false },

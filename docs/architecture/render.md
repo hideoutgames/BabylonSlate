@@ -1737,3 +1737,26 @@ Only two dedicated graph nodes are added:
 | MaterialGraph | Water Surface | Reads world-unit wave displacement, bank distance, scaled water depth, simulation time and world current from the rendered mesh. Ordinary meshes return zero. Global shading clamps bank distance to 10,000 metres. |
 
 A Water asset's **Custom Material** accepts a Surface MaterialGraph; it replaces built-in shading while retaining geometry waves and buoyancy. Use Water Surface to blend foam by bank distance or animate effects with the water clock. Additional graph position offsets affect rendering only. Existing component variable Get/Set nodes expose water assignment, dimensions, current, waves, enabled state and buoyancy tuning. Water content is loaded before scene realization in Play and the player; simulation time travels through the worker bridge and freezes with Play pause.
+
+## Dynamic Runtime Mesh
+
+`DynamicRuntimeMeshComponent` is a world component, available from **Add Component → Rendering → Dynamic Runtime Mesh** or `Add Component` during Play. It starts empty. It has no asset type or Place Actors preset; generated geometry belongs to the running component and is discarded on clear, component destruction, scene removal, or Stop.
+
+Drag its object reference into a NodeGraph to find its target-bound functions. Geometry uses component-local coordinates and flat numeric arrays; JavaScript callers may also supply typed arrays through `ctx.callComponentFunction(component, runtimeName, arguments)`.
+
+| Function | Runtime Name | Inputs / Behavior |
+| --- | --- | --- |
+| Set Geometry | `setDynamicMeshGeometry` | `positions` (XYZ), `indices` (triangle triples), optional `normals` (XYZ) and `uvs` (UV). Replaces topology; returns `success`. Missing/empty normals are generated once; missing/empty UVs become zero. |
+| Update Vertices | `updateDynamicMeshVertices` | `firstVertex` (zero-based), optional `positions`, `normals`, `uvs`. Writes contiguous ranges, retaining omitted/empty channels and topology; returns `success`. |
+| Clear Geometry | `clearDynamicMeshGeometry` | Releases vertex/index storage and removes collision on the next physics step. Retains component settings and material assignment. |
+| Recalculate Normals | `recalculateDynamicMeshNormals` | Explicit whole-mesh normal rebuild after deformation. Supply normals with Update Vertices to avoid this scan. |
+| Recalculate Bounds | `recalculateDynamicMeshBounds` | Tightens bounds after geometry shrinks. Partial position edits otherwise expand conservative bounds by scanning only changed vertices. |
+
+**Set Material** and **Get Material Object** use the normal component-targeted property API, including per-component material parameters. Material changes retain geometry. Cast Shadows, Receive Shadows, Enable Collision, Layer and Mask are component properties. Invalid indices, mismatched channels, non-finite values, out-of-range edits, or geometry exceeding one million vertices / six million indices are rejected before mutation. Attribute magnitudes are limited to `1e10` to keep float geometry and generated normals finite. Input arrays are copied, so callers can reuse them immediately.
+
+Performance contract:
+
+- Fixed-size edits and replacements reuse CPU arrays and GPU buffers. Resizing reallocates affected buffers; clear releases them. Index buffers support 32-bit vertex indices.
+- Edits coalesce per component per simulation tick into bounded dirty ranges. Only changed channels cross the worker bridge, using owned transferable arrays. Clean ticks send no geometry. Play and the exported player use the same command handler.
+- Rendering coalesces packets before admission into one GPU upload per changed channel. CPU data remains available for picking and graphics-context restoration; bounds and picking caches update with geometry. Revision-tracked shadows can stay cached while geometry is unchanged.
+- Geometry collision is **disabled by default**. Enabling it uses the current triangles in 3D physics; no Rigid Body means an implicit static body, while an attached Rigid Body owns motion. Position/topology edits recook at the next physics step; normal, UV and material edits do not. Collision cooking is proportional to mesh size, so keep it disabled for frequently deforming visuals that do not need exact triangle collision. Collapsed triangles contribute no collision surface.

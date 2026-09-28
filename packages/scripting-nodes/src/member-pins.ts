@@ -22,6 +22,9 @@ export type MemberPinRow = {
   typeId?: string;
   typeClassId?: string;
   direction?: string;
+  container?: string;
+  keyTypeId?: string;
+  keyTypeClassId?: string;
 };
 
 export function jsIdent(name: string): string {

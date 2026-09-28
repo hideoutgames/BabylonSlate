@@ -12,6 +12,7 @@ import {
 } from "@babylonjs/core";
 import { canCacheShadowMaterial } from "./shadow-material-policy";
 import { hasRevisionTrackedCableGeometry } from "./cable-mesh";
+import { hasRevisionTrackedDynamicMesh } from "./dynamic-runtime-mesh";
 import { isAutoLodMaster, peekAutoLodLevel } from "./model-lod";
 
 /** Reused scalar/object snapshot; unchanged frames allocate no signature arrays. */
@@ -181,13 +182,14 @@ export class ShadowMapRefresh {
       // Babylon 9.20 has no public index-mutability getter. updateIndices skips
       // onGeometryUpdated for an existing dynamic buffer, including GPU-only
       // updates, so only the known immutable state is eligible for caching.
+      const trackedDynamic = mesh instanceof Mesh && hasRevisionTrackedDynamicMesh(mesh);
       let dynamicGeometry =
-        !geometry || Reflect.get(geometry, "_indexBufferIsUpdatable") !== false;
+        !trackedDynamic && (!geometry || Reflect.get(geometry, "_indexBufferIsUpdatable") !== false);
       const buffers = geometry?.getVertexBuffers();
       const trackedCable = mesh instanceof Mesh && hasRevisionTrackedCableGeometry(mesh);
       if (buffers)
         for (const kind in buffers)
-          if (buffers[kind]?.isUpdatable() && !(trackedCable && (kind === VertexBuffer.PositionKind || kind === VertexBuffer.NormalKind))) dynamicGeometry = true;
+          if (buffers[kind]?.isUpdatable() && !trackedDynamic && !(trackedCable && (kind === VertexBuffer.PositionKind || kind === VertexBuffer.NormalKind))) dynamicGeometry = true;
       const safeMesh =
         mesh instanceof Mesh &&
         !dynamicGeometry &&
