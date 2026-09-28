@@ -587,7 +587,7 @@ export type CommandMessage =
         tickIndex: number;
         nodes: Array<{
           id: string;
-          kind: "gameInstance" | "actor" | "component";
+          kind: "gameInstance" | "subsystem" | "actor" | "component";
           label: string;
           classId: string;
           parentId: string | null;
