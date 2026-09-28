@@ -5,6 +5,7 @@ import { Empty, EmptyDescription, EmptyTitle } from "@babylonslate/ui/components
 import {
   PanelFrame,
   SelectableText,
+  TREE_ROW_HEIGHT,
   WindowedList,
   WINDOWED_LIST_TOUCH_ROW_HEIGHT,
 } from "@babylonslate/editor-kit";
@@ -80,14 +81,16 @@ export function CompilerResultsPanel(_props: IDockviewPanelProps) {
         <ScrollArea className="min-h-0 flex-1 pb-1">
           <WindowedList
             itemCount={rows.length}
-            rowHeight={WINDOWED_LIST_TOUCH_ROW_HEIGHT}
+            rowHeight={(index) =>
+              rows[index]?.kind === "header" ? TREE_ROW_HEIGHT : WINDOWED_LIST_TOUCH_ROW_HEIGHT
+            }
           >
             {(index) => {
               const row = rows[index]!;
               if (row.kind === "header") {
                 return (
                   <div
-                    className="flex h-full items-end gap-2 border-b border-border px-2 pb-1.5 text-[11px] font-medium text-muted-foreground"
+                    className="flex h-full items-center gap-2 border-b border-border px-2 text-[11px] font-medium text-muted-foreground"
                     title={row.graphId}
                   >
                     <SelectableText className="truncate text-foreground">

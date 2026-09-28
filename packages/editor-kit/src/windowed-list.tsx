@@ -1,5 +1,9 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { WINDOWED_SLICE_OVERSCAN, windowedSlice } from "./windowed-slice";
+import {
+  WINDOWED_SLICE_OVERSCAN,
+  windowedRowOffsets,
+  windowedSlice,
+} from "./windowed-slice";
 
 /** Matches `--touch-target` for catalog and Compiler Results rows. */
 export const WINDOWED_LIST_TOUCH_ROW_HEIGHT = 44;
@@ -44,7 +48,8 @@ export function findWindowedListScrollParent(
 
 export type WindowedListProps = {
   itemCount: number;
-  rowHeight: number;
+  /** One height for every row, or a per-row height (e.g. compact group headers). */
+  rowHeight: number | ((index: number) => number);
   /** Keep a keyboard target mounted and reveal it without moving DOM focus. */
   activeIndex?: number;
   children: (index: number) => ReactNode;
@@ -57,6 +62,15 @@ export function WindowedList({
   children,
 }: WindowedListProps) {
   const listRef = useRef<HTMLDivElement>(null);
+  const rowOffsets =
+    typeof rowHeight === "function"
+      ? windowedRowOffsets(itemCount, rowHeight)
+      : undefined;
+  const rowTop = (index: number) =>
+    rowOffsets ? rowOffsets[index]! : index * (rowHeight as number);
+  const rowSize = (index: number) =>
+    rowOffsets ? rowOffsets[index + 1]! - rowOffsets[index]! : (rowHeight as number);
+  const totalHeight = rowOffsets ? rowOffsets[itemCount]! : itemCount * (rowHeight as number);
   const [viewportHeight, setViewportHeight] = useState(0);
   const [scrollTop, setScrollTop] = useState(0);
 
@@ -88,12 +102,13 @@ export function WindowedList({
       bounds && bounds.height > 0
         ? bounds.top - viewport.getBoundingClientRect().top + viewport.scrollTop
         : 0;
-    const top = listTop + activeIndex * rowHeight;
-    const bottom = top + rowHeight;
+    const top = listTop + rowTop(activeIndex);
+    const bottom = top + rowSize(activeIndex);
     if (top < viewport.scrollTop) viewport.scrollTop = top;
     else if (bottom > viewport.scrollTop + viewport.clientHeight)
       viewport.scrollTop = bottom - viewport.clientHeight;
     setScrollTop(viewport.scrollTop);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- row geometry derives from rowHeight.
   }, [activeIndex, itemCount, rowHeight]);
 
   const { firstIndex, lastIndex } = windowedSlice({
@@ -102,6 +117,7 @@ export function WindowedList({
     scrollTop,
     viewportHeight,
     overscan: WINDOWED_SLICE_OVERSCAN,
+    rowOffsets,
   });
 
   const rows: number[] = [];
@@ -121,13 +137,13 @@ export function WindowedList({
     <div
       ref={listRef}
       className="relative"
-      style={{ height: itemCount * rowHeight }}
+      style={{ height: totalHeight }}
     >
       {rows.map((index) => (
         <div
           key={index}
           className="absolute right-0 left-0 overflow-hidden touch-pan-y"
-          style={{ top: index * rowHeight, height: rowHeight }}
+          style={{ top: rowTop(index), height: rowSize(index) }}
         >
           {children(index)}
         </div>

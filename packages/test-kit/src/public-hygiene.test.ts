@@ -46,10 +46,10 @@ describe("public repository hygiene", () => {
   it("scans pull request metadata without printing its contents", () => {
     expect(
       scanEventMetadata({
-        pull_request: { title: "A change", body: sessionLink },
+        pull_request: { title: sessionLink, body: "A change" },
       }),
     ).toMatchObject([
-      { path: "pull-request:body", rule: "agent-session-link" },
+      { path: "pull-request:title", rule: "agent-session-link" },
     ]);
     expect(
       scanEventMetadata({
@@ -59,6 +59,31 @@ describe("public repository hygiene", () => {
     ).toMatchObject([
       { path: "pull-request:comment", rule: "agent-request-attribution" },
     ]);
+  });
+
+  it("allows a session link in the pull request description but not other secrets", () => {
+    expect(
+      scanEventMetadata({
+        pull_request: { title: "A change", body: `Summary\n\n${sessionLink}` },
+      }),
+    ).toEqual([]);
+    expect(
+      scanEventMetadata({
+        pull_request: {
+          title: "A change",
+          body: `${sessionLink}\n[Written by Devin](https://example.com)\n${fakeGithubToken}`,
+        },
+      }),
+    ).toMatchObject([
+      { path: "pull-request:body", rule: "agent-attribution" },
+      { path: "pull-request:body", rule: "github-token" },
+    ]);
+    expect(
+      scanEventMetadata({
+        issue: { pull_request: {} },
+        comment: { body: sessionLink },
+      }),
+    ).toMatchObject([{ path: "pull-request:comment", rule: "agent-session-link" }]);
   });
 
   it("scans commit messages in only the requested range", () => {
