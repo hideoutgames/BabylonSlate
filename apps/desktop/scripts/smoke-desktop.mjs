@@ -1,12 +1,15 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { access, chmod, cp, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { access, chmod, cp, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { extractAll, listPackage } from "@electron/asar";
-import { _electron, expect } from "@playwright/test";
+import { _electron, expect as baseExpect } from "@playwright/test";
 import { stageRenderer } from "./layout.mjs";
+
+// Cold installed-app launches on hosted runners exceed Playwright's 5 s assertion default.
+const expect = baseExpect.configure({ timeout: 60000 });
 
 const platform = process.argv[2];
 const hosts = { windows: "win32", macos: "darwin", linux: "linux" };
@@ -99,7 +102,8 @@ try {
   if (platform === "linux") chromiumArgs.push("--no-sandbox");
   const launch = () => _electron.launch({ executablePath: executable, cwd: sandbox, args: [`--user-data-dir=${userData}`, ...chromiumArgs], env: cleanEnv, timeout: 60000 });
   app = await launch();
-  assert.equal(resolve(await app.evaluate(({ app }) => app.getPath("userData"))), resolve(userData));
+  // macOS reports the /private/var target of the /var temporary directory symlink.
+  assert.equal(await realpath(await app.evaluate(({ app }) => app.getPath("userData"))), await realpath(userData));
   assert.equal(await app.evaluate(({ app }) => app.getVersion()), manifest.packageVersion);
   let page = await app.firstWindow();
   page.setDefaultTimeout(60000);
@@ -116,8 +120,8 @@ try {
   await expect(page.getByTestId("build-identity")).toContainText(manifest.channel === "test" ? "Test" : "Release");
   await page.keyboard.press("Escape");
   await page.getByTestId("create-project").click();
+  await page.getByTestId("create-project-empty").click();
   await page.getByTestId("create-project-name").fill("DistributionSmoke");
-  await page.getByTestId("create-project-app-documents").click();
   await page.getByTestId("create-project-submit").click();
   await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
   await page.getByTestId("content-browser-search").fill("main");
