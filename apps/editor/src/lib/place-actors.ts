@@ -60,6 +60,7 @@ export type PlaceActorKind =
       type: "asset";
       name: string;
       guid: string;
+      path?: string;
       assetType?: string;
       classId?: string;
       components?: SerializedComponent[];
@@ -263,7 +264,6 @@ export const PLACEABLE_PROJECT_TYPES = new Set([
   "ParticleSystem",
   "Water",
   "Tilemap",
-  "Scene",
 ]);
 
 export function prefabComponentsForGuid(
@@ -333,7 +333,7 @@ export function projectPlaceActors(
   );
   const overlay = options?.overlay === true;
   return assets
-    .filter((asset) => PLACEABLE_PROJECT_TYPES.has(asset.header.type ?? "") && !(overlay && (asset.header.type === "Water" || asset.header.type === "Scene")))
+    .filter((asset) => PLACEABLE_PROJECT_TYPES.has(asset.header.type ?? "") && !(overlay && asset.header.type === "Water"))
     .filter((asset) => {
       if (asset.header.type !== "Class") return true;
       const classId = classIdFromClassAsset({
@@ -353,6 +353,7 @@ export function projectPlaceActors(
         type: "asset" as const,
         name: asset.header.name,
         guid: asset.header.guid,
+        path: asset.path,
         assetType: asset.header.type,
         classId:
           asset.header.type === "Class"
@@ -631,9 +632,6 @@ export function spawnPlacedActor(
     }));
   }
   if (kind.type === "asset") {
-    if (kind.assetType === "Scene") {
-      return finish(createSceneStreamingActor(id, kind.guid, kind.name, transform));
-    }
     if (kind.assetType === "Class") {
       return finish(createActor(id, kind.name, {
         classId: kind.classId ?? kind.name,
