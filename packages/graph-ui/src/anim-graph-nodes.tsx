@@ -100,6 +100,30 @@ export function AnimStateNode({
   );
 }
 
+/** Side plates stick out of the card; pull wire ends back so they meet the border. */
+const SOURCE_PLATE_OVERHANG = 10;
+const TARGET_PLATE_OVERHANG = 2;
+
+function insetTowardNode(
+  x: number,
+  y: number,
+  position: Position,
+  inset: number,
+): { x: number; y: number } {
+  switch (position) {
+    case Position.Left:
+      return { x: x + inset, y };
+    case Position.Right:
+      return { x: x - inset, y };
+    case Position.Top:
+      return { x, y: y + inset };
+    case Position.Bottom:
+      return { x, y: y - inset };
+    default:
+      return { x, y };
+  }
+}
+
 export function AnimTransitionEdge({
   id,
   sourceX,
@@ -115,12 +139,14 @@ export function AnimTransitionEdge({
   type,
 }: EdgeProps) {
   const { setEdges, setNodes } = useReactFlow();
+  const source = insetTowardNode(sourceX, sourceY, sourcePosition, SOURCE_PLATE_OVERHANG);
+  const target = insetTowardNode(targetX, targetY, targetPosition, TARGET_PLATE_OVERHANG);
   const { path: edgePath, labelX, labelY, angle } = animTransitionPath({
-    sourceX,
-    sourceY,
+    sourceX: source.x,
+    sourceY: source.y,
     sourcePosition,
-    targetX,
-    targetY,
+    targetX: target.x,
+    targetY: target.y,
     targetPosition,
   });
   const bidirectional = type === "animTransitionBoth";
