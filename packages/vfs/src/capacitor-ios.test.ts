@@ -151,7 +151,8 @@ describe("Capacitor 8 iOS host", () => {
       (name) =>
         name.startsWith("@capacitor/") &&
         name !== "@capacitor/cli" &&
-        name !== "@capacitor/ios",
+        name !== "@capacitor/ios" &&
+        name !== "@capacitor/android",
     );
     expect(podfile).not.toContain("CapacitorScopedStorage");
     expect(podfileLock).not.toContain("CapacitorScopedStorage");

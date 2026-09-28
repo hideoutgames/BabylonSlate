@@ -21,7 +21,7 @@ test("missing, empty, mismatched and duplicate patch notes block builds", () => 
 
 test("release metadata carries the required version's notes for either native platform", () => {
   for (const platforms of ["windows", "ipados"]) {
-    const request = { channel: "release", platforms, sourceSha: "a".repeat(40), runNumber: 20, runAttempt: 1 };
+    const request = { channel: "release", platforms, platform: platforms, sourceSha: "a".repeat(40), runNumber: 20, runAttempt: 1 };
     assert.throws(() => buildManifest({ version: "1.2.3" }, request), /Patch notes/);
     const manifest = buildManifest({ version: "1.2.3" }, { ...request, patchNotes: entry() });
     assert.deepEqual(manifest.patchNotes, entry());

@@ -60,6 +60,7 @@ export type PlaceActorKind =
       type: "asset";
       name: string;
       guid: string;
+      path?: string;
       assetType?: string;
       classId?: string;
       components?: SerializedComponent[];
@@ -236,6 +237,26 @@ export function placeActorsForHost(options: { overlay: boolean }): PlaceActorIte
   ];
 }
 
+/** Place Actors' default page, in display order; ids absent from the host are skipped. */
+export const FEATURED_PLACE_ACTOR_IDS: readonly string[] = [
+  "empty",
+  "shape-box",
+  "shape-sphere",
+  "shape-plane",
+  "light-point",
+  "light-directional",
+  "camera",
+  "skybox",
+  "fog-volume",
+  "water-lake",
+  "audio",
+  "particle",
+  "2d-text",
+  "2d-button",
+  "2d-panel",
+  "2d-texture",
+];
+
 export const PLACEABLE_PROJECT_TYPES = new Set([
   "Class",
   "Model",
@@ -243,7 +264,6 @@ export const PLACEABLE_PROJECT_TYPES = new Set([
   "ParticleSystem",
   "Water",
   "Tilemap",
-  "Scene",
 ]);
 
 export function prefabComponentsForGuid(
@@ -313,7 +333,7 @@ export function projectPlaceActors(
   );
   const overlay = options?.overlay === true;
   return assets
-    .filter((asset) => PLACEABLE_PROJECT_TYPES.has(asset.header.type ?? "") && !(overlay && (asset.header.type === "Water" || asset.header.type === "Scene")))
+    .filter((asset) => PLACEABLE_PROJECT_TYPES.has(asset.header.type ?? "") && !(overlay && asset.header.type === "Water"))
     .filter((asset) => {
       if (asset.header.type !== "Class") return true;
       const classId = classIdFromClassAsset({
@@ -328,11 +348,12 @@ export function projectPlaceActors(
     .map((asset) => ({
       id: `asset-${asset.header.guid}`,
       title: asset.header.name,
-      category: "Project",
+      category: asset.header.type === "Model" ? "Models" : "Project",
       kind: {
         type: "asset" as const,
         name: asset.header.name,
         guid: asset.header.guid,
+        path: asset.path,
         assetType: asset.header.type,
         classId:
           asset.header.type === "Class"
@@ -611,9 +632,6 @@ export function spawnPlacedActor(
     }));
   }
   if (kind.type === "asset") {
-    if (kind.assetType === "Scene") {
-      return finish(createSceneStreamingActor(id, kind.guid, kind.name, transform));
-    }
     if (kind.assetType === "Class") {
       return finish(createActor(id, kind.name, {
         classId: kind.classId ?? kind.name,

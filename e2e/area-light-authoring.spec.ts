@@ -31,9 +31,10 @@ test("rectangular-light authoring, prepared Texture, history, duplication and re
   await openMainScene(page);
   await page.getByTestId("tree-row-actor:actor-1").click();
   await page.getByTestId("details-add-component").click();
+  await page.getByTestId("add-component-catalog-search").fill("Rectangular Area Light");
   const catalog = page.getByTestId("add-component-catalog-item-AreaRectLightComponent");
   await expect(catalog).toContainText("Rectangular Area Light");
-  await expect(catalog).toContainText("Unshadowed");
+  await expect(catalog).toHaveAttribute("aria-description", /Unshadowed/);
   await catalog.click();
   const component = (await scene(page)).actors.find((actor) => actor.id === "actor-1")!.components.find((entry) => entry.classId === "AreaRectLightComponent")!;
   const width = page.getByTestId(`property-actor-1-${component.id}-width`);

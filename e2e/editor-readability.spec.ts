@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { IPAD_TEST_TAG } from "./ipad-tag";
 import { openMinimalTestProject } from "./minimal-project";
+import { pickCatalogItem } from "./pick-catalog-item";
 
 test.describe("Editor modal readability", { tag: IPAD_TEST_TAG }, () => {
   test("unsaved actions share a height on desktop and touch", async ({
@@ -11,9 +12,12 @@ test.describe("Editor modal readability", { tag: IPAD_TEST_TAG }, () => {
       .locator('[data-asset-path="assets/main.class.babasset"]')
       .dblclick();
     await page.getByTestId("prefab-add-component").click();
-    await page
-      .getByTestId("prefab-add-component-catalog-item-LightComponent")
-      .click();
+    await pickCatalogItem(
+      page,
+      "prefab-add-component-catalog",
+      "LightComponent",
+      "Scene light",
+    );
     await page
       .locator('[data-testid="document-tab"][data-document-kind="graph"]')
       .getByTestId("document-tab-close")

@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { openMainScene } from "./open-test-project";
 import { openMinimalTestProject } from "./minimal-project";
+import { pickCatalogItem } from "./pick-catalog-item";
 import { clickPlayAndWaitForOverlay } from "./play";
 
 test.describe("P7 Play physics timings", () => {
@@ -22,9 +23,9 @@ test.describe("P7 Play physics timings", () => {
     await page.getByTestId("place-actors-item-shape-box").click();
 
     await page.getByTestId("details-add-component").click();
-    await page.getByTestId("add-component-catalog-item-RigidBodyComponent").click();
+    await pickCatalogItem(page, "add-component-catalog", "RigidBodyComponent", "Rigid Body");
     await page.getByTestId("details-add-component").click();
-    await page.getByTestId("add-component-catalog-item-ColliderComponent").click();
+    await pickCatalogItem(page, "add-component-catalog", "ColliderComponent", "Physics collider");
 
     await clickPlayAndWaitForOverlay(page);
     await page.getByTestId("play-stats-toggle").click();

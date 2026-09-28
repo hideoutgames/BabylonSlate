@@ -4,6 +4,7 @@ import type { ShadowDiagnostics } from "../packages/render/src/index";
 import { openMainScene, openTestProject } from "./open-test-project";
 import { clickPlayAndWaitForOverlay } from "./play";
 import { setPreviewScene } from "./preview-parity";
+import { pickCatalogItem } from "./pick-catalog-item";
 import { saveAllIfEnabled } from "./save-all";
 
 const PARTS = ["head", "torso", "arm-left", "arm-right", "leg-left", "leg-right"];
@@ -78,7 +79,7 @@ test("a UI-authored ragdoll articulates the real Mannequin in worker Play and st
 
   await page.getByTestId("tree-row-actor:actor-1").click();
   await page.getByTestId("details-add-component").click();
-  await page.getByTestId("add-component-catalog-item-RagdollComponent").click();
+  await pickCatalogItem(page, "add-component-catalog", "RagdollComponent", "Ragdoll");
   const ragdoll = await page.evaluate(() => (globalThis as unknown as TestHost).__babylonslateTest.activeSceneContent()
     .actors.find(entry => entry.id === "actor-1")!.components.find(component => component.classId === "RagdollComponent")!);
   expect(ragdoll.properties.enabled).toBe(false);

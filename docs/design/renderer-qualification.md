@@ -142,7 +142,7 @@ Current-head CI, review and merge remain delivery gates.
 
 ## Current continuation status — 23 September 2026
 
-Implementation and the Windows desktop browser routes below are qualified. The
+Implementation and the Electron desktop browser routes below are qualified. The
 Linux software-renderer export transition has a verified local repair awaiting
 fresh CI after the failures described below. At this
 evidence checkpoint PR #651 is unmerged; current-head Verify, required

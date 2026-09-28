@@ -4,24 +4,23 @@ Distribution is explicitly invoked and separate from ordinary build, Verify, Pre
 
 ## Version contract
 
-The version declared at the selected source commit is the intended application version. The dispatch version must match it. Generated counters are never committed by Actions.
-
-Vite reads `release/version.json` for the startup and project-loading cards, including the HTML splash before React loads. Local and non-distribution builds display `<version> Development build`; distribution builds use the generated manifest channel to display either `<version> Development build` or `<version> Release`. A distribution manifest with a different application version is rejected. Platform build counters remain in the manifest and Engine Settings build details.
+- The dispatch version must match `release/version.json` at the selected source commit. Generated counters are never committed by Actions.
+- `packageVersion` is the Windows/macOS/Linux package version and Android `versionName`: `<version>-indev.<run>.<attempt>` for Test, or `<version>-release` for Release.
+- `androidVersionCode = sequence * 1000 + channelCode * 100 + attempt`, where sequence is run number plus the Apple offset and channel is 0 for Test or 1 for Release. Examples: Apple `417.0.1` → Android `417001`; `418.1.1` → `418101`.
+- Apple keeps numeric marketing versions and `<sequence>.<channel-code>.<attempt>` build numbers. Sequence is 1–9999, attempt is 1–99, counters never wrap, and duplicate/superseded builds require a fresh dispatch.
+- Windows, macOS, Linux and Android share one GitHub Release and tag for each `packageVersion`. Requested assets are published together or not at all.
+- Desktop/Android jobs retain the validate job's attempt, so rerunning only failed jobs still produces one tag/version. iPadOS uses its actual job attempt because every Apple upload needs a unique build number.
 
 | Identity | Test | Release |
 | --- | --- | --- |
-| Windows | `0.0.1-indev.417.1` | `0.0.1-release` |
+| Package version | `0.0.1-indev.417.1` | `0.0.1-release` |
 | Tag | `v0.0.1-indev.417.1` | `v0.0.1-release` |
-| Release title | `[TEST] BabylonSlate …` | `[RELEASE] BabylonSlate …` |
 | GitHub classification | Prerelease, never Latest | Normal; GitHub legacy version/date selection for Latest |
-| Apple marketing version | `0.0.1` | `0.0.1` |
-| Apple build | `417.0.1` | `418.1.1` |
+| Apple marketing/build | `0.0.1` / `417.0.1` | `0.0.1` / `418.1.1` |
+| Android versionCode | `417001` | `418101` |
 | Private TestFlight group | Test Builds | Release Candidates |
-| App Store selection policy | Do not select | May be considered after validation |
 
-The initial numeric version is `0.0.1`, declared in `release/version.json`. Windows uses the requested `-indev` and `-release` suffixes; Apple marketing versions remain numeric. GitHub classification is explicit regardless of SemVer suffix. Apple uses `<sequence>.<channel-code>.<attempt>`: workflow run number plus an explicitly configured initial offset, channel 0 or 1, and the actual build job's run attempt. Sequence is 1–9999 and attempt 1–99. Counters never wrap. Before replacing or renaming the workflow, audit existing uploads and configure an offset that preserves ordering. Duplicate or superseded builds require a fresh dispatch. See [Apple's numeric component limits](https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html).
-
-Published Windows releases are immutable. A conflicting tag or a draft targeting anything other than the exact selected source fails before packaging. Test packages cannot become release packages by changing GitHub classification. Apple retains a single bundle identifier and app record; the channels do not install side by side.
+Vite reads the generated manifest for startup, project-loading and Engine Settings identity. A manifest with a different application version is rejected. Published GitHub Releases are immutable: conflicting tags or drafts targeting another source fail before packaging, and Test packages cannot be promoted by changing GitHub classification. Apple retains one bundle identifier and app record; channels do not install side by side.
 
 ## Patch Notes And Changelog
 
@@ -31,21 +30,40 @@ Published Windows releases are immutable. A conflicting tag or a draft targeting
 
 ## Desktop Automatic Updates
 
-- Installed Windows release builds check the public `hideoutgames/BabylonSlate` GitHub Releases feed at startup and every six hours. Downloads run in the background and install on a normal exit; the editor never forces a restart. Test builds and unpackaged development hosts do not check for updates, and release clients reject prereleases and downgrades.
-- **Engine Settings → About → Automatic Updates** defaults on. **Account → Application Settings** exposes the same saved preference on desktop; that control is disabled on web and mobile. Turning it off immediately stops scheduled checks, cancels active downloads and disables installation on exit, including already downloaded updates. Windows session end also defers installation to a later normal exit.
-- Release packaging supplies `latest.yml` and the installer `.blockmap` in addition to the installer, `SHA256SUMS.txt` and `build-manifest.json`. Feed version, file size and SHA-512 must match the installer before staging; publication verifies the exact asset allowlist and SHA-256 checksums. Test releases retain the original three assets and cannot enter the release update feed.
-- Existing installations without the updater need one manual installation of an updater-enabled release. A two-version installed-app update remains a distribution acceptance check; implementation tests do not certify installation or publication.
+- Windows releases check `latest.yml`; Linux checks `latest-linux.yml` only when launched through its AppImage (`APPIMAGE` is present); signed/notarized macOS releases check `latest-mac.yml`. Unsigned macOS packages disable updates because Squirrel.Mac rejects unsigned updates.
+- Checks run at startup and every six hours. Downloads are background-only and install on normal exit; Test builds, unpackaged hosts, unsigned macOS packages and unpacked Linux executables do not check. Clients reject prereleases and downgrades.
+- **Engine Settings → About → Automatic Updates** defaults on. Turning it off stops checks, cancels downloads and disables install-on-exit. Windows session end defers installation to a later normal exit.
+- Every release feed is checked against package name, size and SHA-512 before staging. Publication then verifies each platform allowlist and SHA-256 checksums. Existing installations without the updater need one manual install; two-version update acceptance remains a native distribution check.
 
 ## Rollout status
 
-The implementation provides the manual distribution paths below. On September 7, 2026, `testflight` and `github-release` were configured with exact-`main` branch restrictions, and `main` was protected with all nine Verify checks, including enforcement for administrators. Native acceptance has not been performed; Apple credentials and compliance configuration still require maintainer provisioning. The native AppIcon is still Capacitor's placeholder. Distribution rejects it; supply an opaque 1024×1024 BabylonSlate PNG before the first Apple upload.
+The implementation provides the manual distribution paths below. On September 7, 2026, `testflight` and `github-release` were configured with exact-`main` branch restrictions, and `main` was protected with all nine Verify checks, including enforcement for administrators. Native acceptance has not been performed; Apple credentials and compliance configuration still require maintainer provisioning. The native AppIcon is still Capacitor's placeholder. Distribution rejects it; supply an opaque 1024×1024 BabylonSlate PNG before the first Apple upload. Android launcher icons and splash screens are also Capacitor's placeholders. Desktop packages currently use electron-builder's default Electron icon because no BabylonSlate desktop icon asset exists; a human-supplied image at least 512×512 is required before replacing it.
+
+## Readiness without secrets
+
+Every platform builds from a clean checkout with no credentials. Only signing, notarization and store upload wait for secrets.
+
+| Platform | Works now without secrets | Blocked until provisioned |
+| --- | --- | --- |
+| Windows | Unsigned NSIS installer: packaged, installed and smoked (**Inspect desktop packaging**); publishable to a GitHub Release | Nothing (no code signing is configured) |
+| macOS | Unsigned arm64/x64 DMG and ZIP: packaged, mounted and smoked; publishable, with updates disabled | Developer ID signing and notarization (`macos-signing`) |
+| Linux | x64 AppImage: packaged, extracted and smoked under Xvfb; publishable | Nothing |
+| Android | Debug APK via `android:build` (**Inspect Android toolchain**) | Signed release APK and publication (`android-signing`) |
+| iPadOS | Unsigned iPad simulator build via `ios:build` (**Inspect Apple toolchain** `ipados-build` job) | Archive, signing and TestFlight upload (`testflight`) |
+
+`platforms=all` or `mobile` dispatches fail the Android and iPadOS jobs until their environments are provisioned. `desktop` dispatches need no secrets; macOS packages unsigned while `macos-signing` has no p12 secret. Create all four environments with their branch restrictions (step 2 of Maintainer setup) before the first dispatch, even while they are empty. The complete secret and variable lists are in [Maintainer setup](#maintainer-setup).
 
 ## Implemented paths
 
-- `.github/workflows/distribute.yml` is manual only, with Test/Release choices, independent platforms, exact source/version assertions, and a default dry run. Only standard Ubuntu, Windows and macOS runners are used.
-- Windows host and preload compile to CommonJS under `host/`; `renderer/` contains the existing editor output including the player and static/generated assets. `app://babylonslate/` restricts resource access. IPC validates the main editor frame, arguments and saved folder grants. Node integration is disabled and renderer sandboxing/context isolation remain enabled.
-- The packaged protocol decodes asset filenames after parsing the URL, preserving spaces, Unicode and encoded filename delimiters while rejecting traversal, backslashes and NUL characters.
-- `build:host`, `package:windows` and `smoke:windows` are explicit desktop scripts. The NSIS packager never publishes. A draft release is published only after installer/checksum/manifest validation. Published releases are immutable.
+- `.github/workflows/distribute.yml` is manual only, with Test/Release choices, grouped or individual platforms, exact source/version assertions, and a default dry run. Only standard Ubuntu, Windows and macOS runners are used.
+- Electron host/preload compile to CommonJS under `host/`; the packaged `renderer/`, `app://babylonslate/` protocol, IPC validation, sandboxing and context isolation are shared by all desktop hosts. Staging omits web/deployment placeholder markers (`.nojekyll`, `.keep`, `.gitkeep`) while retaining strict rejection of other dotfiles, symlinks and credential-shaped files.
+- Windows produces an unsigned x64 NSIS installer. Windows may warn about an unrecognized publisher. Windows jobs set `MSYS2_ENV_CONV_EXCL=VITE_BASE_PATH` so Git Bash does not rewrite the `/` base to its install path; desktop packaging rejects any renderer whose entry script is not under `/assets/`.
+- macOS produces arm64/x64 DMG and ZIP packages with hardened runtime entitlements. The `macos-signing` credentials enable Developer ID signing and notarization; without the p12 secret, packaging is unsigned, updates are disabled, and users open it through **Privacy & Security → Open Anyway**.
+- Linux produces an x64 AppImage. Update checks run only when the app was launched as an AppImage.
+- Android uses `android:sync` to build/copy the web app and refresh Capacitor wiring, `android:build` to compile a debug APK, and `android:release` to assemble the signed universal APK. Gradle receives `babylonslateVersionCode`/`babylonslateVersionName`; release signing comes only from temporary `BABYLONSLATE_ANDROID_*` properties. Publication verifies the APK signature with `apksigner`, rejects the debug certificate, and checks package/version identity with `aapt2`.
+- `publish-release` validates every requested platform package, manifest identity, updater feed and checksum before merging toolchains, `platformsBuilt`, optional `macosSigned`, one manifest and one regenerated checksum file. Conflicting toolchain versions or any missing platform blocks publication.
+- `.github/workflows/inspect-desktop-packaging.yml` packages and smokes unsigned Windows/macOS/Linux artifacts without secrets or uploads. Run it from a branch with `gh workflow run inspect-desktop-packaging.yml --ref <branch> -f platform=all -f channel=test`.
+- `.github/workflows/inspect-android-toolchain.yml` syncs and compiles the unsigned debug shell with Java 21/Gradle 8.14.3, then checks generated Gradle wiring. Run it with `gh workflow run inspect-android-toolchain.yml --ref <branch>`; it has no signing secrets or artifact upload.
 - `ios:sync` preserves the custom Capacitor plugins. `ios:archive` imports the manual signing assets before creating a signed Release generic-device archive, preserving the app's requested entitlements. It uses temporary credentials, normal App Store Connect export with automatic version management disabled, bundle/entitlement/privacy checks and direct Fastlane upload. The manual profile selector applies only to the App target, leaving CocoaPods frameworks without an app provisioning profile. No Apple binaries, signing logs or credentials become Actions artifacts.
 - Ruby 3.3.12, Bundler 2.5.22, CocoaPods 1.16.2 and Fastlane 2.239.0 are locked. Distribution requires Xcode 26.6 build 17F113 and iPhoneOS SDK 26.5. A different build or SDK fails before credential import and requires a toolchain review. The deployment target remains separate from the SDK requirement.
 - Engine Settings → About shows the generated version/channel/build/source identity. Native builds explicitly disable `VITE_TEST_MODE`.
@@ -92,7 +110,7 @@ These entitlements apply to the native host. The editor's JavaScript, WebAssembl
 ## Maintainer setup
 
 1. Protect `main` with required checks. Distribution requires the latest successful Verify run for the exact selected commit, including static, unit and all seven browser shards, plus configured branch/ruleset checks. A passing ancestor or skipped draft run does not qualify.
-2. Create GitHub environments named `testflight` and `github-release`. For each, select **Selected branches and tags**, add a **branch** rule for exactly `main`, and allow no tags or other branches. Do not use **Protected branches only**, which can allow all branches when protection is absent. Required reviewers are optional; this workflow does not require a second human approval.
+2. Create `testflight`, `github-release`, `macos-signing` and `android-signing` environments. For each, select **Selected branches and tags**, add a branch rule for exactly `main`, and allow no tags or other branches. Do not use **Protected branches only**, which can allow all branches when protection is absent.
 3. Create the App Store Connect app record for `no.hideout.babylonslate`. Create **Test Builds** and **Release Candidates** under that app. Disable public links and automatic access to every build in all groups; use explicit membership. Existing App Store Connect users may test internally; other testers receive private invitations. External testing can require Beta App Review and builds expire after 90 days.
 4. Provision the following values directly in GitHub's `testflight` environment settings. Never provide credentials in chat, issues, workflow inputs or commits.
 
@@ -112,7 +130,22 @@ These entitlements apply to the native host. The editor's JavaScript, WebAssembl
 | Variable | `APPLE_PRIVACY_REVIEWED_VERSION` | Numeric version whose app/SDK privacy declarations have been reviewed |
 | Variable | `APPLE_USES_NON_EXEMPT_ENCRYPTION` | Explicit `true` or `false` after reviewing actual encryption use and export-compliance requirements |
 
-This table is the complete current Apple configuration: **four active secrets and nine variable names** (`ASC_ISSUER_ID` is optional only for the retained individual-key path). All four secrets have runtime consumers; none is an unused reference. Removing the three signing secrets now would disable the retained path. The target after successful automatic-signing qualification is **only `ASC_PRIVATE_KEY_P8_BASE64`**, the same nine variables, and a required team issuer ID. Do not add Apple ID passwords, certificate bundles disguised as one secret, or an unverified signing-mode variable. The Windows environment uses only the built-in `GITHUB_TOKEN`; no stored PAT is needed.
+This table is the complete current iPadOS Apple configuration: **four active secrets and nine variable names** (`ASC_ISSUER_ID` is optional only for the retained individual-key path). All four secrets have runtime consumers. The target after successful automatic-signing qualification is **only `ASC_PRIVATE_KEY_P8_BASE64`**, the same nine variables, and a required team issuer ID. Do not add Apple ID passwords or unverified signing modes.
+
+`macos-signing` configuration:
+
+| Kind | Name |
+| --- | --- |
+| Secret | `APPLE_DEVELOPER_ID_P12_BASE64` |
+| Secret | `APPLE_DEVELOPER_ID_PASSWORD` |
+| Secret | `ASC_PRIVATE_KEY_P8_BASE64` |
+| Variable | `ASC_KEY_ID` |
+| Variable | `ASC_ISSUER_ID` |
+| Variable | `APPLE_TEAM_ID` |
+
+The macOS job intentionally runs unsigned when `APPLE_DEVELOPER_ID_P12_BASE64` is absent. If signing is enabled, every other listed value is required and failures name only the missing variable.
+
+`android-signing` secrets are `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`. Android has no unsigned distribution mode: the release script must fail clearly when the keystore configuration is missing. GitHub Release publication uses only the built-in `GITHUB_TOKEN`; no stored PAT is needed.
 
 The Xcode project contains a variable reference for CI's App-target profile selector, not a profile ID. Public-hygiene checks permit that reference while rejecting literal signing identifiers; resolved configuration stays on the private runner.
 
@@ -122,7 +155,7 @@ Before the first Apple upload, replace the Capacitor placeholder with an existin
 
 Review the pinned standard runner's installed Xcode before toolchain upgrades. Xcode/SDK requirements are independent of the deployment target. Install dependencies with `pnpm install --frozen-lockfile` and the checked-in Ruby bundle; keep CocoaPods and its lockfile. Do not add native packaging to recursive workspace `build` or ordinary Verify.
 
-The separate **Inspect Apple toolchain** workflow validates the pinned Xcode build and iPhoneOS SDK with `node scripts/distribution/apple-toolchain.mjs --inspect-xcode`, checks the native project and entitlement property lists with `plutil`, then reads public `xcodebuild -help` on a standard `macos-26` runner. It needs no dependencies beyond Node/Xcode, has no Apple credentials or distribution environment, and performs no archive, export or upload. Its result verifies the installed command interface and property-list syntax only; it cannot certify provisioning, signing permissions or TestFlight delivery. Distribution passes its temporary toolchain metadata path through step environment configuration, where GitHub supports the `runner` context.
+The separate **Inspect Apple toolchain** workflow validates the pinned Xcode build and iPhoneOS SDK with `node scripts/distribution/apple-toolchain.mjs --inspect-xcode`, checks the native project and entitlement property lists with `plutil`, then reads public `xcodebuild -help` on a standard `macos-26` runner. That job needs no dependencies beyond Node/Xcode. A separate `ipados-build` job installs the locked CocoaPods bundle, runs `ios:build` (editor build, `ios:sync`, then an unsigned Debug iPad simulator build with `CODE_SIGNING_ALLOWED=NO`) and confirms `Podfile.lock` is unchanged. Neither job has Apple credentials or a distribution environment, and neither archives, exports or uploads. Their results verify the toolchain, property-list syntax and that the native shell compiles; they cannot certify provisioning, signing permissions or TestFlight delivery. Distribution passes its temporary toolchain metadata path through step environment configuration, where GitHub supports the `runner` context.
 
 After this workflow is on the default branch, run the inspection with `gh workflow run inspect-apple-toolchain.yml --ref main`. The shared inspection script [passed on a second fresh hosted runner](https://github.com/hideoutgames/BabylonSlate/actions/runs/36042593306). Neither inspection exercised signing or upload.
 
@@ -130,12 +163,14 @@ After this workflow is on the default branch, run the inspection with `gh workfl
 
 Only use these commands after an explicit request for the stated channel and platforms. Replace `SOURCE_SHA` with the exact 40-character source on protected `main` and assert its checked-in version. The workflow definition always runs from `main`; omitted source uses the dispatch commit. A dry run validates source/checks/versions/destinations without a native build or Apple authentication, so it does not certify signing credentials or TestFlight availability.
 
-```sh
-# Read-only preflight for a proposed test build.
-gh workflow run distribute.yml --ref main -f channel=test -f platforms=both -f source_sha=SOURCE_SHA -f version=0.0.1 -F dry_run=true
+Platform choices are `all`, `desktop`, `mobile`, `ipados`, `android`, `windows`, `macos` and `linux`.
 
-# Explicitly requested test distribution to both destinations.
-gh workflow run distribute.yml --ref main -f channel=test -f platforms=both -f source_sha=SOURCE_SHA -f version=0.0.1 -F dry_run=false
+```sh
+# Read-only preflight for every platform.
+gh workflow run distribute.yml --ref main -f channel=test -f platforms=all -f source_sha=SOURCE_SHA -f version=0.0.1 -F dry_run=true
+
+# Explicitly requested desktop test distribution.
+gh workflow run distribute.yml --ref main -f channel=test -f platforms=desktop -f source_sha=SOURCE_SHA -f version=0.0.1 -F dry_run=false
 
 # Explicitly requested unsigned Windows release.
 gh workflow run distribute.yml --ref main -f channel=release -f platforms=windows -f source_sha=SOURCE_SHA -f version=0.0.1 -F dry_run=false
@@ -156,29 +191,33 @@ Find the resulting run in Actions and preserve its run ID, source and per-platfo
 | Upload failed with an uncertain outcome | Check App Store Connect for the exact version/build before retrying. Do not assume an upload error means Apple received nothing. |
 | Uploaded, still processing, finalization API failure | Retry only finalization against the original identity using the command below. Do not archive/upload again. |
 | Awaiting Beta App Review | Complete required beta review/contact/compliance details privately in App Store Connect, then retry finalization. This is separate from App Store submission. |
-| Interrupted Windows asset upload | Rerun failed jobs while the original Windows artifact remains. Matching draft assets are reused; different/unexpected assets fail without replacement. |
-| Both requested; Apple failed or is still processing | Normal Windows publication is blocked. Preserve the packaged Windows identity; complete Apple finalization and rerun the original failed finalization/publication jobs. |
+| One desktop/Android job failed | Rerun failed jobs. The shared validate identity retains one tag/version; publication waits for every requested GitHub Release platform. Preserve successful artifacts for recovery. |
+| Unsigned macOS package | This is expected when the p12 secret is absent. Updates stay disabled; open through **Privacy & Security → Open Anyway**. Provision all `macos-signing` values before expecting signing/notarization. |
+| iPadOS failed or is still processing | Normal combined Release publication is blocked. Complete Apple finalization and rerun the original failed finalization/publication jobs. |
 | Only one platform succeeds | Report partial success and its exact identity. Never report the overall request complete. |
-| Windows release already published | Inspect the published identity; do not rerun publication or replace assets. A new test dispatch gets a distinct version; a new release needs a version change. |
+| GitHub Release already published | Inspect the published identity; do not rerun publication or replace assets. A new Test dispatch gets a distinct version; a new Release needs a version change. |
 
 ```sh
 # Use the original channel/source/version and exact existing Apple build.
 gh workflow run distribute.yml --ref main -f operation=finalize-testflight -f channel=test -f platforms=ipados -f source_sha=SOURCE_SHA -f version=0.0.1 -f existing_build_number=417.0.1 -F dry_run=false
 ```
 
-A finalization-only dispatch never creates a Windows release. For a combined operation, once Apple is ready, rerun the original failed jobs to retain the original Windows manifest/artifact rather than generating a different package. Artifacts are retained for one day; if they expire before recovery, do not substitute an unverified package. Preserve any draft and its identity for maintainer inspection and make a fresh authorized request as appropriate. A Windows prerelease may be published with an Apple failure, but the overall result remains partial; a normal combined release requires Apple availability or a reported pending beta review.
+A finalization-only dispatch never creates a GitHub Release. For a combined operation, rerun failed jobs so every desktop/Android package keeps the validate identity. Artifacts are retained for one day; never substitute an unverified package after expiry. A Test prerelease may publish while Apple is unavailable, but the overall result remains partial; a normal combined Release requires Apple availability or reported pending beta review.
 
-All logs, summaries, caches and GitHub artifacts must be treated as public. Only the Windows installer, `SHA256SUMS.txt`, `build-manifest.json`, and (for release builds) `latest.yml` plus the installer `.blockmap` are uploaded. Apple IPAs, archives, keychains, profiles, raw diagnostics and tester exports stay off GitHub. Sensitive commands write private temporary diagnostics and cleanup runs on failure as well as success. Secret masking alone is insufficient; this cannot protect against malicious trusted code, compromised dependencies or compromised credential holders.
+All logs, summaries, caches and GitHub artifacts are public. The public asset allowlist is: Windows x64 `.exe` plus release `latest.yml`/`.blockmap`; macOS arm64+x64 `.dmg` and `.zip` plus release `latest-mac.yml`; Linux x64 `.AppImage` plus release `latest-linux.yml`; Android universal `.apk`; and one merged `SHA256SUMS.txt`/`build-manifest.json`. Apple IPAs, archives, keychains, profiles, raw diagnostics and tester exports stay off GitHub. Sensitive commands clean up on failure and success; secret masking alone is insufficient.
 
 ## Acceptance record
 
 Do not mark rollout complete until each applicable item has recorded evidence. Ordinary verification does not package or distribute a native app.
 
 - [ ] Targeted local tests and scoped static checks for changed behavior, plus current-head PR Verify, pass; ordinary CI includes distribution contract/security tests without native jobs.
-- [ ] Both environments have exact-main branch restrictions, `main` is protected, and credentials/configuration are provisioned by the maintainer.
+- [ ] All four environments have exact-main branch restrictions, `main` is protected, and credentials/configuration are provisioned by the maintainer.
 - [ ] Dry runs reject invalid inputs, untrusted source, conflicting tags and missing/pending/skipped/cancelled checks, with no build/sign/upload/publication side effects.
-- [ ] An explicitly requested Windows build installs and launches with clean user data and no repository/dev server dependency. About shows the expected identity; project creation, scene/graph editing, storage/relaunch, Play/Stop, player, workers and WebAssembly work. Package contents contain no developer projects or credentials.
-- [ ] Windows test publication is a prerelease and leaves Latest unchanged; installer/checksum/manifest match. Release-channel publication has its own `-release` identity and is unsigned.
+- [ ] A Windows NSIS build installs and launches with clean user data and no repository/dev server dependency; identity, storage/relaunch, editor, player, workers and WebAssembly work.
+- [ ] macOS arm64/x64 DMG images mount and ZIP apps launch. When provisioned, signing and notarization validate on a clean host; unsigned packages show the documented Gatekeeper/update behavior.
+- [ ] The Linux x64 AppImage launches and persists a project on a clean host.
+- [ ] The Android APK installs on a real device, is signed with the release key, and reports the expected package identity/versionCode.
+- [ ] Test publication is a prerelease and leaves Latest unchanged; every requested package/checksum/manifest matches. Release publication has its own `-release` identity.
 - [ ] An explicitly requested iOS build installs through the selected private TestFlight group on a real iPad and a real iPhone. Confirm identity, universal targeting, storage/plugins and persistence, scene/graph editing, Play/Stop, audio and workers.
 - [ ] A release candidate used normal App Store Connect export, retained its production app name and is identifiable for later selection. No App Store submission occurred.
 - [ ] Invalid/missing credentials, signing failure, duplicate builds, delayed processing and interrupted publication were exercised; sanitized logs and cleanup were reviewed, and independent finalization recovered an existing upload.

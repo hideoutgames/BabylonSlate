@@ -29,3 +29,24 @@ nsis:
   allowToChangeInstallationDirectory: true
   runAfterFinish: false
   deleteAppDataOnUninstall: false
+mac:
+  target:
+    - { target: dmg, arch: [arm64, x64] }
+    - { target: zip, arch: [arm64, x64] }
+  category: public.app-category.developer-tools
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  notarize: false
+dmg:
+  sign: false
+linux:
+  target:
+    - { target: AppImage, arch: [x64] }
+  artifactName: BabylonSlate-${version}-x64.${ext}
+  category: Development
+  executableName: babylonslate
+  maintainer: Hideout Games
+  synopsis: BabylonSlate editor
+  syncDesktopName: true
