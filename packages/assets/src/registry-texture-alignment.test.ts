@@ -179,4 +179,24 @@ describe("texture encode alignment", () => {
     expect(await registry.reconcileTextureAlignment({ canWrite })).toEqual([]);
     expect(registry.getByGuid("sourceless-odd")!.header.payload.compressionState).toBe("compressed");
   });
+
+  it("leaves a texture alone when its lock is learned while the pass reads its committed encode", async () => {
+    const storage = await storageWithProject("lock-during-read");
+    // No recorded size: the pass reads the committed KTX2 header from the file.
+    await writeTexture(storage, "assets/unsized-odd.babasset", "unsized-odd", {
+      source: [30, 30], sized: false, committed: { id: KEY_MAX_2048, size: [30, 30] },
+    });
+    const { registry, queue } = await mount(storage);
+    let locked = false;
+    const readBinary = storage.readBinary.bind(storage);
+    vi.spyOn(storage, "readBinary").mockImplementation(async (path) => {
+      if (path === "assets/unsized-odd.babasset") locked = true;
+      return readBinary(path);
+    });
+
+    expect(await registry.reconcileTextureAlignment({ canWrite: () => !locked })).toEqual([]);
+    expect(locked).toBe(true);
+    expect(queue.depth).toBe(0);
+    expect(registry.getByGuid("unsized-odd")!.header.payload.compressionState).toBe("compressed");
+  });
 });

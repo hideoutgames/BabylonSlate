@@ -89,6 +89,8 @@ export class SourceControlService {
   private lastOperationError: string | null = null;
   /** Project whose configure() finished; null while a new provider loads and after dispose(). */
   private configuredProject: string | null = null;
+  /** A lock refresh succeeded since the provider was created or source control re-enabled. */
+  private locksCurrent = false;
 
   get refreshState(): Readonly<LockRefreshState> {
     return this.lockRefreshState;
@@ -96,11 +98,12 @@ export class SourceControlService {
 
   /**
    * Whether `projectGuid`'s locks are known: configure() finished for it and,
-   * with a lock provider, a lock refresh has succeeded since.
+   * with a lock provider, a lock refresh has succeeded since the provider was
+   * created or source control was last enabled.
    */
   locksKnownFor(projectGuid: string | null): boolean {
     if (projectGuid === null || this.configuredProject !== projectGuid) return false;
-    return !this.enabled || this.lockRefreshState.lastSuccessAt !== null;
+    return !this.enabled || this.locksCurrent;
   }
 
   get operationError(): string | null {
@@ -198,6 +201,8 @@ export class SourceControlService {
       this.refreshRevision += 1;
       this.providerRevision += 1;
       this.lockRefreshState = { ...this.lockRefreshState, status: "idle", error: null };
+      // Unpolled from here on: enabling again waits for a fresh refresh.
+      this.locksCurrent = false;
       this.configuredProject = input.projectGuid;
       this.emit();
       return;
@@ -226,6 +231,7 @@ export class SourceControlService {
     this.provider = null;
     this.fake = null;
     this.configuredProject = null;
+    this.locksCurrent = false;
     this.locksByPath.clear();
     this.autoLockAttempted.clear();
     const hostOk = isSourceControlHost(input.platform, input.testMode);
@@ -282,6 +288,7 @@ export class SourceControlService {
     this.provider = null;
     this.fake = null;
     this.configuredProject = null;
+    this.locksCurrent = false;
     this.providerIdentity = "";
     this.locksByPath.clear();
     this.editMode.clear();
@@ -324,6 +331,7 @@ export class SourceControlService {
           this.locksByPath.set(lock.path, lock);
         }
         this.lockRefreshState = { status: "ready", error: null, lastSuccessAt: Date.now() };
+        this.locksCurrent = true;
       }
     } catch (error) {
       if (revision !== this.refreshRevision) return;

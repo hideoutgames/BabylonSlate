@@ -435,4 +435,35 @@ describe("SourceControlService", () => {
     expect(service.lockForPath("assets/hero.scene.babasset")?.ours).toBe(true);
     expect(service.lockStateForPath("assets/hero.scene.babasset")).toBe("mine");
   });
+
+  it("does not know the locks after Enable is turned off and on until they refresh again", async () => {
+    const service = new SourceControlService();
+    const fake = new FakeLockProvider({ selfName: "Ada" });
+    const config = { settings: enabled, projectGuid: "proj", platform: "electron", testMode: true, secretStore: new MemorySecretStore(), nativeHttp: null, fake };
+    try {
+      await service.configure(config);
+      service.pausePolling();
+      await service.refresh();
+      expect(service.locksKnownFor("proj")).toBe(true);
+
+      await service.configure({ ...config, settings: { ...enabled, enabled: false } });
+      // Unpolled while off: a teammate locks a file meanwhile.
+      fake.addTheirs("assets/hero.babasset", "Bob");
+      let verified!: () => void;
+      const verifying = new Promise<void>((resolve) => { verified = resolve; });
+      const verify = fake.verify.bind(fake);
+      vi.spyOn(fake, "verify").mockImplementationOnce(async () => {
+        await verifying;
+        return verify();
+      });
+      await service.configure(config);
+      expect(service.lockStateForPath("assets/hero.babasset")).toBeNull();
+      expect(service.locksKnownFor("proj")).toBe(false);
+      verified();
+      await vi.waitFor(() => expect(service.locksKnownFor("proj")).toBe(true));
+      expect(service.lockStateForPath("assets/hero.babasset")).toBe("theirs");
+    } finally {
+      service.dispose();
+    }
+  });
 });

@@ -1086,6 +1086,9 @@ export class AssetRegistry {
       if (options.canWrite && !options.canWrite(guid)) continue;
       try {
         if (!(await this.isAlignmentStale(asset, usage, options.ktx2SizeCache))) continue;
+        // Asked again after the (possibly reading) staleness check, just
+        // before the requeue, so a lock learned meanwhile still stops it.
+        if (options.canWrite && !options.canWrite(guid)) continue;
         if (await this.retryTextureEncoding(guid, { force: true, usage })) requeued.push(guid);
       } catch {
         // One unreadable texture must not stop the pass.

@@ -205,6 +205,7 @@ import {
 } from "../lib/plugin-ui";
 import { readProjectJsonMtime, refreshMtimeSnapshotAfterEditorSave } from "../lib/external-change";
 import { ProjectSaveState } from "../lib/project-save-state";
+import { createTextureAlignmentGuard } from "../lib/texture-alignment-guard";
 import {
   classifyExternalChanges,
   snapshotIndexedMtimes,
@@ -2516,10 +2517,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       const usage = (open?.content as { usage?: unknown } | null | undefined)?.usage;
       return typeof usage === "string" ? usage : undefined;
     };
-    // Recheck at write time: reconfiguring source control forgets the locks
-    // before this effect sees it.
     projectService.setTextureWriteGuard(
-      (guid) => sourceControl.locksKnownFor(textureGuardProject) && textureUsageBlockedReason(guid) === null,
+      createTextureAlignmentGuard({
+        sourceControl,
+        projectGuid: textureGuardProject,
+        pathFor: (guid) => projectService.registry?.getByGuid(guid)?.path,
+        blockedReason: textureUsageBlockedReason,
+      }),
       { usageFor },
     );
     void projectService.reconcileTextureAlignment();
