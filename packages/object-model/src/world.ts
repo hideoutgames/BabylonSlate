@@ -108,6 +108,8 @@ export class World {
   /** True while a tick phase is executing (before deferred flush). */
   private ticking = false;
   private firstSceneLoaded = false;
+  /** Bumped by every scene load step; a re-entrant load supersedes the outer one. */
+  private sceneLoadGeneration = 0;
   private activeSceneName: string | null = null;
   private loadingSceneName: string | null = null;
 
@@ -220,6 +222,7 @@ export class World {
   }
 
   beginSceneLoad(sceneName: string): void {
+    this.sceneLoadGeneration++;
     this.loadingSceneName = sceneName;
     this.gameInstance?.callOnSceneStartLoading(sceneName);
     for (const subsystem of this.liveGameSubsystems()) {
@@ -230,22 +233,32 @@ export class World {
   /**
    * Game Instance then GameSubsystems hear Finish Loading (and First Scene
    * Loaded once); the main Scene's SceneSubsystems hear Scene Loaded last.
+   * A handler that loads another scene re-entrantly ends this announcement:
+   * the replacement announces itself.
    */
   finishSceneLoad(sceneName: string): void {
     this.activeSceneName = sceneName;
     this.loadingSceneName = null;
+    const scene = this.currentScene;
+    const generation = ++this.sceneLoadGeneration;
+    const current = () =>
+      this.sceneLoadGeneration === generation && this.currentScene === scene;
     this.gameInstance?.callOnSceneFinishLoading(sceneName);
     for (const subsystem of this.liveGameSubsystems()) {
+      if (!current()) return;
       subsystem.callOnSceneFinishLoading(sceneName);
     }
-    if (!this.firstSceneLoaded) {
+    if (!this.firstSceneLoaded && current()) {
       this.firstSceneLoaded = true;
+      // Once per session, so every GameSubsystem hears it even after the Game
+      // Instance's handler moved on to another scene.
       this.gameInstance?.callOnFirstSceneLoaded(sceneName);
       for (const subsystem of this.liveGameSubsystems()) {
         subsystem.callOnFirstSceneLoaded(sceneName);
       }
     }
     for (const subsystem of this.liveSceneSubsystems()) {
+      if (!current()) return;
       subsystem.callOnSceneLoaded(sceneName);
     }
   }
@@ -255,6 +268,7 @@ export class World {
    * the Game Instance and GameSubsystems hear Scene Exit.
    */
   exitActiveScene(): void {
+    this.sceneLoadGeneration++;
     const name = this.activeSceneName ?? this.loadingSceneName;
     this.activeSceneName = null;
     this.loadingSceneName = null;

@@ -794,6 +794,46 @@ describe("World subsystems", () => {
     ]);
   });
 
+  it("stops a scene's Finish Loading announcement once a handler loads another scene", () => {
+    const events: string[] = [];
+    const world: World = new World({
+      seed: 1,
+      dt: 1 / 60,
+      classRegistry: new ClassRegistry(),
+      sceneSubsystemHooksFor: recordingSceneSubsystemHooks(events),
+    });
+    world.setGameInstance(new GameInstance({
+      classId: "GameInstance",
+      hooks: {
+        onSceneFinishLoading: (_self, name) => {
+          events.push(`gi:finish:${name}`);
+          if (name !== "Intro") return;
+          world.exitActiveScene();
+          world.beginSceneLoad("Menu");
+          world.createScene({ assetGuid: "menu", sceneName: "Menu" });
+          world.finishSceneLoad("Menu");
+        },
+        onFirstSceneLoaded: (_self, name) => events.push(`gi:first:${name}`),
+      },
+    }));
+    world.setGameSubsystems([recordingGameSubsystem(world, "Svc", events)]);
+    world.setSceneSubsystemClasses(["Rules"]);
+    world.start();
+    world.beginSceneLoad("Intro");
+    world.createScene({ assetGuid: "intro", sceneName: "Intro" });
+    events.length = 0;
+
+    world.finishSceneLoad("Intro");
+
+    // Nothing stale about Intro reaches Svc or the replacement Rules afterwards.
+    expect(events).toEqual([
+      "gi:finish:Intro",
+      "Rules:end", "Svc:exit:Intro", "Svc:start:Menu", "Rules:init",
+      "gi:finish:Menu", "Svc:finish:Menu", "gi:first:Menu", "Svc:first:Menu",
+      "Rules:loaded:Menu",
+    ]);
+  });
+
   it("gates SceneSubsystem ticks like actors while GameSubsystems tick during preparation", () => {
     const events: string[] = [];
     let sceneReady = false;

@@ -65,7 +65,7 @@ Engine-managed singletons: a user Class opts in by parenting to `GameSubsystem` 
 | --- | --- |
 | `start()` | GameSubsystems On Init, then the Game Instance On Init |
 | Scene Start / Finish Loading, First Scene Loaded, Scene Exit | Game Instance first, then GameSubsystems |
-| `finishSceneLoad` | After those hooks, the main Scene's SceneSubsystems hear On Scene Loaded |
+| `finishSceneLoad` | After those hooks, the main Scene's SceneSubsystems hear On Scene Loaded. A handler that loads another scene re-entrantly stops the rest; First Scene Loaded still reaches every GameSubsystem |
 | Tick | Game Instance and GameSubsystems (`gameInstance`), then SceneSubsystems (`sceneSubsystems`) |
 | `createScene` (main Scene) | Scene `onCreation`; every SceneSubsystem is constructed and installed (Get finds it); each runs On Init in order, before any actor spawns |
 | `clearCurrentScene` (every exit path) | SceneSubsystems On End in reverse order while the Scene is still current; then the Scene's `onDestroyed`; then On Scene Exit for the Game Instance and GameSubsystems |
