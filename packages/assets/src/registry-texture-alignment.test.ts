@@ -155,7 +155,7 @@ describe("texture encode alignment", () => {
     await writeTexture(storage, "assets/legacy-odd.babasset", "legacy-odd", { source: [1, 1], committed: { id: KEY_MAX_1, size: [1, 1] } });
     await writeTexture(storage, "assets/aligned.babasset", "aligned", { source: [64, 32], committed: { id: KEY_MAX_64, size: [64, 32] } });
     await writeTexture(storage, "assets/atlas-odd.babasset", "atlas-odd", { source: [1, 1], committed: { id: KEY_MAX_1, size: [1, 1] } });
-    await writeTexture(storage, "assets/locked-odd.babasset", "locked-odd", { source: [1, 1], committed: { id: KEY_MAX_1, size: [1, 1] } });
+    await writeTexture(storage, "assets/refused-odd.babasset", "refused-odd", { source: [1, 1], committed: { id: KEY_MAX_1, size: [1, 1] } });
     // A Particle encode from before sizes were recorded, under its real id: its
     // clamped source size is off the grid, but Particle always pads.
     await writeTexture(storage, "assets/particle-odd.babasset", "particle-odd", {
@@ -188,7 +188,7 @@ describe("texture encode alignment", () => {
       { id: "plugin:starter", kind: "plugin", pathPrefix: "starter/assets", readOnly: true, storage: plugin },
     ]);
 
-    const canWrite = (guid: string) => guid !== "locked-odd";
+    const canWrite = (guid: string) => guid !== "refused-odd";
     expect((await registry.reconcileTextureAlignment({ canWrite })).sort()).toEqual(["legacy-odd", "unsized-odd"]);
     // Idempotent: the requeued textures are queued.
     expect(await registry.reconcileTextureAlignment({ canWrite })).toEqual([]);
@@ -362,59 +362,59 @@ describe("texture encode alignment", () => {
   it("writes nothing until a requeued encode commits, and asks the guard again when it starts and commits", async () => {
     const storage = await storageWithProject("guarded-jobs");
     await writeTexture(storage, "assets/free.babasset", "free", { source: [1, 1], committed: { id: KEY_MAX_1, size: [1, 1] } });
-    await writeTexture(storage, "assets/locked-queued.babasset", "locked-queued", { source: [1, 1], committed: { id: KEY_MAX_1, size: [1, 1] } });
+    await writeTexture(storage, "assets/refused-queued.babasset", "refused-queued", { source: [1, 1], committed: { id: KEY_MAX_1, size: [1, 1] } });
     // Its own source size, so the encoder can tell its job apart.
     const key5 = await textureEncodeChunkId(textureEncodeSettingsFor({ usage: "albedo", width: 5, height: 5 }, DEFAULT_TEXTURE_ENCODE_SETTINGS), "albedo");
-    await writeTexture(storage, "assets/locked-encoding.babasset", "locked-encoding", { source: [5, 5], committed: { id: key5, size: [5, 5] } });
-    const locked = new Set<string>();
+    await writeTexture(storage, "assets/refused-encoding.babasset", "refused-encoding", { source: [5, 5], committed: { id: key5, size: [5, 5] } });
+    const refused = new Set<string>();
     const encoded: number[] = [];
     const { registry, queue } = await mount(storage, [], DEFAULT_TEXTURE_ENCODE_SETTINGS, (size) => {
       encoded.push(size.width);
-      // A lock poll lands while this one encodes.
-      if (size.width === 5) locked.add("locked-encoding");
+      // The editor refuses it (source control turned on) while this one encodes.
+      if (size.width === 5) refused.add("refused-encoding");
     });
     const onDisk = async (guid: string) =>
       (await decodeBabasset(await storage.readBinary(`assets/${guid}.babasset`))).header.payload;
 
     queue.pause();
-    const canWrite = (guid: string) => !locked.has(guid);
-    expect((await registry.reconcileTextureAlignment({ canWrite })).sort()).toEqual(["free", "locked-encoding", "locked-queued"]);
+    const canWrite = (guid: string) => !refused.has(guid);
+    expect((await registry.reconcileTextureAlignment({ canWrite })).sort()).toEqual(["free", "refused-encoding", "refused-queued"]);
     // Still `compressed` on disk: nothing is left for a later open to requeue without the guard.
-    for (const guid of ["free", "locked-queued", "locked-encoding"]) {
+    for (const guid of ["free", "refused-queued", "refused-encoding"]) {
       expect((await onDisk(guid)).compressionState).toBe("compressed");
     }
     const nextOpen = await mount(storage);
     expect(await nextOpen.registry.requeueUncompressedTextures()).toBe(0);
 
-    // A lock poll lands while the jobs wait.
-    locked.add("locked-queued");
+    // The editor refuses another while the jobs wait.
+    refused.add("refused-queued");
     queue.resume();
     await vi.waitFor(() => expect(queue.depth).toBe(0));
     expect(encoded).toEqual(expect.arrayContaining([1, 5]));
     expect(encoded).toHaveLength(2);
     expect(await onDisk("free")).toMatchObject({ compressionState: "compressed", ktx2Width: 4, ktx2Height: 4 });
-    for (const guid of ["locked-queued", "locked-encoding"]) {
+    for (const guid of ["refused-queued", "refused-encoding"]) {
       expect(await onDisk(guid)).toMatchObject({ compressionState: "compressed" });
       expect(await onDisk(guid)).not.toHaveProperty("ktx2Width");
     }
   });
 
-  it("leaves a texture alone when its lock is learned while the pass reads its committed encode", async () => {
-    const storage = await storageWithProject("lock-during-read");
+  it("leaves a texture alone when the editor refuses it while the pass reads its committed encode", async () => {
+    const storage = await storageWithProject("refused-during-read");
     // No recorded size: the pass reads the committed KTX2 header from the file.
     await writeTexture(storage, "assets/unsized-odd.babasset", "unsized-odd", {
       source: [30, 30], sized: false, committed: { id: KEY_MAX_2048, size: [30, 30] },
     });
     const { registry, queue } = await mount(storage);
-    let locked = false;
+    let refused = false;
     const readBinary = storage.readBinary.bind(storage);
     vi.spyOn(storage, "readBinary").mockImplementation(async (path) => {
-      if (path === "assets/unsized-odd.babasset") locked = true;
+      if (path === "assets/unsized-odd.babasset") refused = true;
       return readBinary(path);
     });
 
-    expect(await registry.reconcileTextureAlignment({ canWrite: () => !locked })).toEqual([]);
-    expect(locked).toBe(true);
+    expect(await registry.reconcileTextureAlignment({ canWrite: () => !refused })).toEqual([]);
+    expect(refused).toBe(true);
     expect(queue.depth).toBe(0);
     expect(registry.getByGuid("unsized-odd")!.header.payload.compressionState).toBe("compressed");
   });
