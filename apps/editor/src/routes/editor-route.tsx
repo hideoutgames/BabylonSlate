@@ -23,6 +23,7 @@ import { DocumentWorkspace } from "../components/document-workspace";
 import { ExternalChangeDialogs } from "../components/external-change-dialogs";
 import { useDocuments } from "../context/document-context";
 import { AssetOpenDocumentsProvider } from "../context/asset-open-provider";
+import { EditorSessionStateProvider } from "../context/editor-session-state-context";
 import { PlayProvider, usePlay } from "../context/play-context";
 import { KeybindProvider } from "../context/keybind-context";
 import { ProjectSearchProvider } from "../context/project-search-context";
@@ -384,24 +385,31 @@ export default function EditorRoute({
 }: {
   gallery?: boolean;
 }) {
+  const { subscribeDocumentIdentity } = useDocuments();
+  // Homepage is the only way into a project and closing one returns there,
+  // so this route (and the session view state it owns) mounts once per project.
   return (
-    <AssetOpenDocumentsProvider>
-      <ValidationProvider>
-        <PlayProvider>
-          <MaterialRenderControlProvider>
-            <EditorUtilityRuntime />
-            <EditorExtensionsRuntime />
-            <TestAudioHostStats />
-            <TestParticleHostStats />
-            <ModelThumbnailCaptureHost />
-            <ProjectSearchProvider>
-              <PlayAwareKeybinds>
-                {gallery ? <ComponentGallery /> : <EditorLayout />}
-              </PlayAwareKeybinds>
-            </ProjectSearchProvider>
-          </MaterialRenderControlProvider>
-        </PlayProvider>
-      </ValidationProvider>
-    </AssetOpenDocumentsProvider>
+    <EditorSessionStateProvider
+      subscribeDocumentIdentity={subscribeDocumentIdentity}
+    >
+      <AssetOpenDocumentsProvider>
+        <ValidationProvider>
+          <PlayProvider>
+            <MaterialRenderControlProvider>
+              <EditorUtilityRuntime />
+              <EditorExtensionsRuntime />
+              <TestAudioHostStats />
+              <TestParticleHostStats />
+              <ModelThumbnailCaptureHost />
+              <ProjectSearchProvider>
+                <PlayAwareKeybinds>
+                  {gallery ? <ComponentGallery /> : <EditorLayout />}
+                </PlayAwareKeybinds>
+              </ProjectSearchProvider>
+            </MaterialRenderControlProvider>
+          </PlayProvider>
+        </ValidationProvider>
+      </AssetOpenDocumentsProvider>
+    </EditorSessionStateProvider>
   );
 }
