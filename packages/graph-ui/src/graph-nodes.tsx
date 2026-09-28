@@ -6,13 +6,14 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 import { useCallback, type MouseEvent, type ReactNode } from "react";
+import { ClockIcon, PlugIcon, ZapIcon } from "lucide-react";
 import {
   ContextMenuOverlay,
   humanizePropertyLabel,
   PinShapeGlyph,
   useContextMenu,
 } from "@babylonslate/editor-kit";
-import { isDevelopmentOnlyNode } from "@babylonslate/scripting";
+import { EVENT_BY_TYPE_ID, isDevelopmentOnlyNode } from "@babylonslate/scripting";
 import { cn } from "@babylonslate/ui/lib/utils";
 import { useGraphEditorContext } from "./graph-editor-context";
 import { hasSerializedPins, type SerializedPin } from "./graph-types";
@@ -272,9 +273,11 @@ function PinRow({
 function NodeErrorBadge({
   nodeId,
   count,
+  leading = false,
 }: {
   nodeId: string;
   count: number;
+  leading?: boolean;
 }) {
   const { onNavigateRequest } = useGraphEditorContext();
 
@@ -291,7 +294,10 @@ function NodeErrorBadge({
   return (
     <button
       type="button"
-      className="absolute -right-2 -top-2 z-10 flex size-11 items-center justify-center"
+      className={cn(
+        "absolute -top-2 z-10 flex size-11 items-center justify-center",
+        leading ? "-left-2" : "-right-2",
+      )}
       aria-label={`${count} error${count === 1 ? "" : "s"}`}
       onClick={handleClick}
     >
@@ -316,6 +322,21 @@ function shellIsDevelopmentOnly(
   });
 }
 
+function nodeCornerMarker(data: Record<string, unknown> | undefined) {
+  if (data?.__material || data?.__particleRole) return null;
+  const nodeType = typeof data?.__nodeType === "string" ? data.__nodeType : "";
+  if (data?.__latent === true || (nodeType === "debug.executeJavaScript" && data?.async === true)) {
+    return { Icon: ClockIcon, label: "Latent Action" };
+  }
+  if (nodeType === "interface.call" || data?.__interface === true) {
+    return { Icon: PlugIcon, label: "Script Interface Function" };
+  }
+  if (Object.hasOwn(EVENT_BY_TYPE_ID, nodeType) || nodeType === "flow.event.custom") {
+    return { Icon: ZapIcon, label: "Event" };
+  }
+  return null;
+}
+
 export function BlueprintNodeShell({
   nodeId,
   title,
@@ -337,10 +358,23 @@ export function BlueprintNodeShell({
   const developmentOnly = shellIsDevelopmentOnly(nodeId, data);
   const editorOnly = data?.__editorOnly === true;
   const disabled = data?.__disabled === true;
+  const marker = nodeCornerMarker(data);
 
   return (
     <div className="relative">
-      <NodeErrorBadge nodeId={nodeId} count={nodeErrorCount(nodeId)} />
+      <NodeErrorBadge nodeId={nodeId} count={nodeErrorCount(nodeId)} leading={!!marker} />
+      {marker ? (
+        <span
+          role="img"
+          aria-label={marker.label}
+          className={cn(
+            "pointer-events-none absolute right-0 top-0 flex size-6 translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-graph-node text-foreground",
+            disabled && "opacity-50",
+          )}
+        >
+          <marker.Icon className="size-4" aria-hidden="true" />
+        </span>
+      ) : null}
       <div
         data-node-role={role}
         data-disabled={disabled ? "true" : undefined}

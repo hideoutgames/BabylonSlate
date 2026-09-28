@@ -485,6 +485,8 @@ function refreshInputEvent(
 export type InputPaletteAsset = { guid: string; name: string; type: string; valueType: string };
 
 export type HydrateGraphOptions = {
+  /** Active function slice, for Script Interface endpoint chrome. */
+  functionId?: string;
   inputAssets?: readonly InputPaletteAsset[];
   parentOf?: (id: string) => string | null | undefined;
   structs?: TypeSchemas["structs"];
@@ -552,6 +554,9 @@ export function hydrateSerializedGraphForEditor(
   options?: HydrateGraphOptions,
 ): SerializedGraph {
   const graph = bindUnboundComponentEvents(input, options);
+  const functionMember = graph.members?.find(
+    (member) => member.kind === "function" && member.id === options?.functionId,
+  );
   const parentOf = parentLookup(options?.parentOf);
   const latentFunctions = editorLatentFunctions(nodeRegistry, {
     classId: options?.classId,
@@ -575,6 +580,9 @@ export function hydrateSerializedGraphForEditor(
   const nodes = graph.nodes.map((node) => {
       const rawData = { ...(node.data as Record<string, unknown>) };
       const typeIdHint = catalogTypeId({ type: node.type, data: rawData });
+      if (typeIdHint === "flow.function.input" || typeIdHint === "flow.function.output") {
+        rawData.__interface = Boolean(functionMember?.implementsInterface);
+      }
       refreshInputEvent(typeIdHint, rawData, options, graph, node.id);
       if (hasNonEmptyPins(rawData) && !shouldRegeneratePins(typeIdHint)) {
         return {
