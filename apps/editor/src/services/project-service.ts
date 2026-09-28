@@ -320,6 +320,8 @@ export class ProjectService {
   } | null = null;
   /** Committed KTX2 base sizes by chunk sha256, kept across registry remounts. */
   private readonly ktx2SizeCache = new Map<string, ImageSize | null>();
+  /** Textures decoded legacy atlas referrers sample, by content, kept across registry remounts. */
+  private readonly legacyAtlasCache = new Map<string, readonly string[]>();
   private textureAlignmentChain: Promise<unknown> = Promise.resolve();
   private readonly textureAlignment = { runs: 0, pending: 0, requeued: new Set<string>() };
 
@@ -1148,7 +1150,10 @@ export class ProjectService {
     const maxDimension =
       this.loadedTextureSettings?.maxTextureDimension ??
       DEFAULT_TEXTURE_ENCODE_SETTINGS.maxDimension;
-    const registry = new AssetRegistry(this.storage, { blobs: this.blobs });
+    const registry = new AssetRegistry(this.storage, {
+      blobs: this.blobs,
+      legacyAtlasCache: this.legacyAtlasCache,
+    });
     registry.setEncodePipeline(this.encodeQueue, {
       ...DEFAULT_TEXTURE_ENCODE_SETTINGS,
       maxDimension,

@@ -815,6 +815,37 @@ describe("project documents as .babasset", () => {
     expect(changes.kind).toBe("none");
   });
 
+  it("decodes an unchanged legacy Tileset once across remounts, and again once it changes", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("Legacy.babproject");
+    await installMinimalProject(storage);
+    const tilesetPath = "assets/ground.tileset.babasset";
+    // Saved before atlas meta existed: only its document names the texture.
+    const writeLegacyTileset = async (textureGuid: string) => storage.writeBinary(tilesetPath, await encodeAssetDocument({
+      guid: "ground", type: "Tileset", name: "Ground", version: 1,
+      payload: { ...createDefaultTilesetPayload(), textureGuid } as unknown as Record<string, unknown>,
+    }, { dependencies: [textureGuid] }));
+    await writeLegacyTileset("tex-a");
+    const service = new ProjectService(storage);
+    await service.loadCurrentProject();
+    expect(service.registry!.isAtlasTexture("tex-a")).toBe(true);
+    const reads = vi.spyOn(storage, "readBinary");
+    const tilesetReads = () => reads.mock.calls.filter(([path]) => path === tilesetPath).length;
+
+    await service.remountRegistry();
+    // The header scan only: the decoded referrer is remembered.
+    expect(tilesetReads()).toBe(1);
+    expect(service.registry!.isAtlasTexture("tex-a")).toBe(true);
+
+    // Another checkout of the Tileset, still without meta, picks another texture.
+    await writeLegacyTileset("tex-b");
+    reads.mockClear();
+    await service.remountRegistry();
+    expect(tilesetReads()).toBe(2);
+    expect(service.registry!.isAtlasTexture("tex-a")).toBe(false);
+    expect(service.registry!.isAtlasTexture("tex-b")).toBe(true);
+  });
+
   it("saves Model slots onto the header without replacing the source GLB", async () => {
     const { storage, service } = await scaffolded();
     const source = new Uint8Array([0x67, 0x6c, 0x54, 0x46, 1, 2, 3, 4]);

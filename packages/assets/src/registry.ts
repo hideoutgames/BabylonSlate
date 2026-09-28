@@ -25,7 +25,7 @@ import {
   nextCopyName,
   stripAssetFileSuffix,
 } from "./unique-names";
-import { decodeAssetDocument, stampDocumentChunkName } from "./asset-document";
+import { DOCUMENT_CHUNK_ID, decodeAssetDocument, stampDocumentChunkName } from "./asset-document";
 import { ATLAS_REFERRER_TYPES, atlasTextureGuids, headerAtlasTextureGuids } from "./atlas-textures";
 import { sniffImageSize, type ImageSize } from "./image-size";
 import { sniffKtx2Size } from "./ktx2-info";
@@ -86,6 +86,12 @@ export interface FolderNode {
 export interface AssetRegistryOptions {
   payloadLoader?: AccountedPayloadLoader;
   blobs?: BlobStore;
+  /**
+   * Textures each decoded legacy atlas referrer samples, by type and document
+   * chunk sha256. Pass the same map to every remount so unchanged referrers
+   * are not read and decoded again.
+   */
+  legacyAtlasCache?: Map<string, readonly string[]>;
 }
 
 const BLOBS_DIR_NAME = ".blobs";
@@ -124,12 +130,14 @@ export class AssetRegistry {
   private readonly atlasStatusBefore = new Map<string, boolean>();
   private atlasFlushScheduled = false;
   private ownWriteListener: ((write: OwnAssetWrite) => void) | null = null;
+  private readonly legacyAtlasCache: Map<string, readonly string[]>;
 
   constructor(storage: ProjectStorage, options: AssetRegistryOptions = {}) {
     this.storage = storage;
     this.blobs = options.blobs ?? createVfsBlobStore(storage);
     this.loader =
       options.payloadLoader ?? new AccountedPayloadLoader(storage, { blobs: this.blobs });
+    this.legacyAtlasCache = options.legacyAtlasCache ?? new Map();
   }
 
   /** Bind the §3.5 encode scheduler (ProjectService owns the queue lifetime). */
@@ -1052,6 +1060,8 @@ export class AssetRegistry {
           const bytes = await this.storageForAsset(asset).readBinary(asset.path);
           const document = await decodeAssetDocument(bytes, { blobs: this.blobsForAsset(asset) });
           textures = atlasTextureGuids(asset.header.type, document.payload);
+          const key = legacyAtlasCacheKey(readBabassetHeader(bytes));
+          if (key) this.legacyAtlasCache.set(key, textures);
         } catch {
           // Unreadable: it samples nothing we can see.
         }
@@ -1397,7 +1407,8 @@ export class AssetRegistry {
       set.add(header.guid);
     }
     if (!placeholder && ATLAS_REFERRER_TYPES.has(header.type)) {
-      const listed = headerAtlasTextureGuids(header.payload);
+      const key = legacyAtlasCacheKey(header);
+      const listed = headerAtlasTextureGuids(header.payload) ?? (key ? this.legacyAtlasCache.get(key) : undefined);
       if (listed) {
         this.setAtlasReferrer(header.guid, listed);
       } else {
@@ -1476,6 +1487,12 @@ export class AssetRegistry {
     // Creator replace deletes then recreates the same guid.
     this.inbound.delete(asset.header.guid);
   }
+}
+
+/** A legacy atlas referrer's document content, when it has a document chunk. */
+function legacyAtlasCacheKey(header: BabassetHeader): string | null {
+  const document = header.chunks.find((chunk) => chunk.id === DOCUMENT_CHUNK_ID);
+  return document ? `${header.type}:${document.sha256}` : null;
 }
 
 function sortFolderTree(node: FolderNode): void {
