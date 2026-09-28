@@ -14,6 +14,9 @@ export function patchInspectorComponentProperty(
   property: string,
   value: unknown,
 ): Record<string, unknown> {
+  if (component.classId === "CableComponent" && property === "targetActorId" && value !== component.properties.targetActorId) {
+    return { ...component.properties, targetActorId: value || null, targetComponentId: null };
+  }
   if (component.classId === "MeshComponent" && property === "materialGuid") {
     const inherit = value === MODEL_MATERIALS_PICKER_VALUE;
     const properties: Record<string, unknown> = {

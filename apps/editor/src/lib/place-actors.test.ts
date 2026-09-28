@@ -69,6 +69,33 @@ it("places a Global Water Volume with usable water defaults", () => {
   expect(actor.components).toEqual([expect.objectContaining({ classId: "GlobalWaterVolumeComponent", properties: expect.objectContaining({ kind: "global", enabled: true, waveScale: 1, depth: 1000 }) })]);
 });
 
+it("places a cable ready to simulate and hides it from overlay placement", () => {
+  const entry = placeActorsForHost({ overlay: false }).find((item) => item.id === "cable")!;
+  const actor = spawnPlacedActor(createDefaultScene(), entry, "hanging-cable", [0, 5, 0]);
+  expect(actor.transform.position).toEqual([0, 5, 0]);
+  expect(actor.components).toEqual([expect.objectContaining({
+    classId: "CableComponent",
+    properties: expect.objectContaining({ cableLength: 4, endPosition: [3, 0, 0], attachStart: true, attachEnd: true, enableCollision: false }),
+  })]);
+  expect(placeActorsForHost({ overlay: true }).some((item) => item.id === "cable")).toBe(false);
+});
+
+it("duplicates cable attachments within the copied actor or selection and retains external targets", () => {
+  const owner = createActor("owner", "Cable Assembly", { components: [
+    { id: "local-hook", classId: "ActorComponent", properties: {} },
+    { id: "local-cable", classId: "CableComponent", properties: { targetActorId: null, targetComponentId: "local-hook" } },
+    { id: "remote-cable", classId: "CableComponent", properties: { targetActorId: "remote", targetComponentId: "remote-hook" } },
+  ] });
+  const target = createActor("remote", "Remote Hook", { components: [{ id: "remote-hook", classId: "ActorComponent", properties: {} }] });
+  const scene = { ...createDefaultScene(), actors: [owner, target] };
+  const single = duplicateSceneActor(scene, owner);
+  expect(single.components[1]!.properties).toMatchObject({ targetActorId: null, targetComponentId: single.components[0]!.id });
+  expect(single.components[2]!.properties).toMatchObject({ targetActorId: "remote", targetComponentId: "remote-hook" });
+  const [ownerCopy, targetCopy] = duplicateSceneActors(scene, [owner.id, target.id]);
+  expect(ownerCopy!.components[2]!.properties).toMatchObject({ targetActorId: targetCopy!.id, targetComponentId: targetCopy!.components[0]!.id });
+  expect(owner.components[1]!.properties.targetComponentId).toBe("local-hook");
+});
+
 it("places a Water Removal Volume that cuts a 4 m box by default", () => {
   const entry = ENGINE_PLACE_ACTORS.find((item) => item.id === "water-removal")!;
   const actor = spawnPlacedActor(createDefaultScene(), entry, "cut", ORIGIN);

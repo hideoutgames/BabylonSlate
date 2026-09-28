@@ -26,6 +26,8 @@ The optional `getBodyImpulseResponse(bodyId, impulse, point)` query returns the 
 
 ## Backends
 
+Havok also implements the optional `createSphereSweep(radius)` port for [Cable Component](render.md#cable-component). It owns one native sphere and reusable query results, excludes triggers and checks initial penetration before sweeping. Radius must be finite and positive. `SphereSweepQuery.sweep` returns a borrowed `HitResult` (including its vectors), valid until the next sweep: distance is sphere-center travel, location is the collider surface, and initial overlap has distance zero. Dispose queries when no longer needed; backend shutdown also disposes them. A disposed query returns a miss.
+
 | Kind | Engine | When loaded |
 | --- | --- | --- |
 | `3d` | Babylon Physics V2: `HavokPlugin` + explicitly owned `PhysicsBody` / shapes on a worker-local `NullEngine` Scene | Scene `physicsWorld === "3d"` |

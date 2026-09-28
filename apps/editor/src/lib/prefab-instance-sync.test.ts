@@ -253,6 +253,65 @@ describe("descendantClassIds", () => {
 });
 
 describe("stampUserComponentOverrides", () => {
+  it("keeps actor and component references when nothing changed", () => {
+    const prefab = createMeshComponent("prefab-mesh", "box");
+    const scene = createDefaultScene();
+    scene.actors = [
+      createActor("hero", "Hero", {
+        classId: "Hero",
+        components: instantiatePrefabComponents([prefab], "hero"),
+      }),
+      createActor("other", "Other"),
+    ];
+
+    const stamped = stampUserComponentOverrides(scene, scene, {
+      Hero: [prefab],
+    });
+
+    expect(stamped.actors[0]).toBe(scene.actors[0]);
+    expect(stamped.actors[0]!.components[0]).toBe(
+      scene.actors[0]!.components[0],
+    );
+    expect(stamped.actors[1]).toBe(scene.actors[1]);
+  });
+
+  it("replaces only the actor whose component changed", () => {
+    const prefab = createMeshComponent("prefab-mesh", "box");
+    const previous = createDefaultScene();
+    previous.actors = [
+      createActor("hero", "Hero", {
+        classId: "Hero",
+        components: instantiatePrefabComponents([prefab], "hero"),
+      }),
+      createActor("other", "Other"),
+    ];
+    const component = previous.actors[0]!.components[0]!;
+    const next = {
+      ...previous,
+      actors: previous.actors.map((actor, index) =>
+        index === 0
+          ? {
+              ...actor,
+              components: [
+                {
+                  ...component,
+                  properties: { ...component.properties, meshKind: "sphere" },
+                },
+              ],
+            }
+          : actor,
+      ),
+    };
+
+    const stamped = stampUserComponentOverrides(previous, next, {
+      Hero: [prefab],
+    });
+
+    expect(stamped.actors[0]).not.toBe(next.actors[0]);
+    expect(stamped.actors[0]!.components[0]!.overrideKeys).toContain("meshKind");
+    expect(stamped.actors[1]).toBe(previous.actors[1]);
+  });
+
   it("keeps explicit model None across prefab material edits and resumes inheritance after reset", () => {
     const prefab = createMeshComponent("prefab-mesh", "box");
     prefab.properties.assetGuid = "model";
@@ -342,6 +401,28 @@ describe("stampUserComponentOverrides", () => {
 });
 
 describe("copyInstanceLinkage", () => {
+  it("keeps references when linkage already matches", () => {
+    const scene = createDefaultScene();
+    scene.actors = [
+      createActor("hero", "Hero", {
+        components: [
+          {
+            ...createMeshComponent("c1", "box"),
+            sourceId: "prefab-mesh",
+            overrideKeys: ["meshKind"],
+          },
+        ],
+      }),
+      createActor("other", "Other"),
+    ];
+
+    const copied = copyInstanceLinkage(scene, scene);
+
+    expect(copied.actors[0]).toBe(scene.actors[0]);
+    expect(copied.actors[0]!.components[0]).toBe(scene.actors[0]!.components[0]);
+    expect(copied.actors[1]).toBe(scene.actors[1]);
+  });
+
   it("copies sourceId and overrideKeys onto the applied scene", () => {
     const from = createDefaultScene();
     from.actors = [

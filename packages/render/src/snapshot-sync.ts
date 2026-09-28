@@ -9,6 +9,8 @@ import type { AudioPose } from "./audio-playback-backend";
 
 export interface SampledSnapshot {
   frameId: number;
+  /** Source of the previous interpolation endpoint (may skip worker frames). */
+  previousFrameId?: number;
   tickIndex: number;
   actors: ActorSlot[];
   alpha: number;
@@ -104,6 +106,7 @@ export class SnapshotInterpolator {
         readActorSlotInto(this.next, i, this.scratch[i]!);
       }
       this.sampled.frameId = nextHeader.frameId;
+      this.sampled.previousFrameId = nextHeader.frameId;
       this.sampled.tickIndex = nextHeader.tickIndex;
       this.sampled.alpha = 1;
       this.sampled.actorCount = count;
@@ -142,6 +145,7 @@ export class SnapshotInterpolator {
       out.flags = b.flags;
     }
     this.sampled.frameId = nextHeader.frameId;
+    this.sampled.previousFrameId = prevHeader.frameId;
     this.sampled.tickIndex = nextHeader.tickIndex;
     this.sampled.alpha = t;
     this.sampled.actorCount = count;

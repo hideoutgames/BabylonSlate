@@ -61,6 +61,10 @@ interface PrefabEditingContextValue {
     componentId: string,
     transform: SerializedTransform,
   ) => void;
+  commitComponentProperties: (
+    componentId: string,
+    properties: Record<string, unknown>,
+  ) => void;
   commitComponentGizmo: (
     componentId: string,
     transform: SerializedTransform,
@@ -306,6 +310,18 @@ export function PrefabEditingProvider({
     [components, upsertLocalFromViews],
   );
 
+  const commitComponentProperties = useCallback(
+    (componentId: string, properties: Record<string, unknown>) => {
+      if (!components.some((component) => component.id === componentId)) return;
+      upsertLocalFromViews(components.map((component) =>
+        component.id === componentId
+          ? { ...component, properties: { ...component.properties, ...properties } }
+          : component,
+      ));
+    },
+    [components, upsertLocalFromViews],
+  );
+
   const commitComponentGizmo = useCallback(
     (
       componentId: string,
@@ -384,6 +400,7 @@ export function PrefabEditingProvider({
       reparentComponent,
       updateComponent,
       updateComponentTransform,
+      commitComponentProperties,
       commitComponentGizmo,
       commitComponentTransforms,
       applyPivotTransform,
@@ -399,6 +416,7 @@ export function PrefabEditingProvider({
       setSelectedId,
       updateComponent,
       updateComponentTransform,
+      commitComponentProperties,
       commitComponentGizmo,
       commitComponentTransforms,
     ],

@@ -204,6 +204,7 @@ Overlay Play collects Texture literals from **Set Material Texture Parameter** n
 - **Render Target Texture** stores a `renderTargetGuid`. Select it in a Material Texture Sample, Texture Parameter, or Set Material Texture Parameter node. It references scene-local GPU output; it has no imported image bytes or compression job.
 - Place **Render Target Capture** and assign its target. It reuses the normal Camera's existing editor model, with independent field of view and near/far clipping. It does not become the gameplay camera.
 - **Capture Every Frame** defaults on. Turn it off and call **Capture Render Target** from a NodeGraph for explicit updates. **Enabled** gates capture. **Capture Only Actors** defaults off; enabling it limits capture to **Actors**, with an empty list capturing nothing. Graph Get/Set Actors exchanges live Actor references; scenes persist IDs.
+- In the editor viewport, a target with **Capture Every Frame** off keeps the transparent fallback until a graph requests a capture in Play or the player; the editor has no capture request path.
 - Capture settings use the command bridge; changing a filter or lens does not rebuild the actor's meshes. Component-relative transforms follow the authored parent chain. Play and the exported player receive the same asset definitions before scene realization.
 - Each mode renders only its required pass. Depth avoids surface lighting and post-processing. World Normal records geometric world normals encoded from −1…1 to 0…1; it does not evaluate material normal maps. Scene Color uses surface shading without camera post-processing. Captures exclude editor helpers.
 - Scene Color stores gamma-encoded color; depth and normals store linear data. Material Texture Samples automatically decode color while preserving data, including mode changes and SceneLayer consumers. The main camera's image-processing settings are restored after capture. Scene Color prepares clustered lighting once for each readiness attempt; a ready draw reuses that preparation.
@@ -1524,6 +1525,20 @@ guides are excluded. SceneLayers do not support this world-outline component.
 Regular instances remain independent actors; one thin-instance mesh is one actor
 group. There is no authored per-thin-index style or selection API.
 
+### Cable component
+
+`CableComponent` is a world component available through Add Component and Place Actors → Environment → Cable. It renders a material-backed tube in editor, Play and the exported player. The editor previews a static sag; Play runs the simulation in the game worker after rigid-body physics.
+
+- Start attaches to the component origin by default. End attaches to `endPosition` in the cable's space, or the selected actor/component's space. Either end can be released. Component targets resolve live IDs and prefab source IDs; missing targets fall back to the owner/actor. Actor and component ancestry contribute rotation and scale to endpoints; length and diameter use world units.
+- Default quality: 16 segments, 6 sides, 6 distance-constraint iterations and a 1/60-second substep. Gravity Scale, Cable Force, Damping and optional Stiffness control motion. An endpoint separation longer than Cable Length stretches the cable; it never pulls attached actors.
+- Simulation reuses particle buffers, limits catch-up to Max Substeps (default 4), and drops excess stall time. Settled cables sleep until an attached endpoint, gravity or configuration changes. Re-assigning unchanged properties — for example when a sibling component refreshes — leaves a sleeping cable asleep and resends its current shape once. Sleep Threshold is speed in world units/second; zero disables sleeping. Disabled cables preserve their state and render hidden.
+- The worker registers cables when visuals are assigned and sends changed cables in one packed `cableFrame` per tick (frame identity plus packed simulation ID, particle count, endpoint actor slots/local anchors and XYZ triples). Native workers transfer the packet buffer. No per-particle physics bodies or per-cable frame messages are created. Sleeping cables send no geometry updates.
+- Tubes retain index/UV buffers and update reusable position/normal buffers and bounds only when needed. Particle frames use the same sampled frame identities and interpolation as actors; attached ends follow sampled endpoint transforms. A shared scene observer coalesces geometry updates at presentation and handles world-to-local reprojection under moving parents. Bounds retain their scratch storage, and unchanged sleeping cables do not invalidate shadow maps. Materials use the normal material pipeline; Tile Material repeats UVs along the length.
+- **Enable Collision defaults off.** When enabled, free particles sweep spheres against scene colliders at each substep, with Collision Friction removing tangential velocity. Havok reuses a sphere shape and query scratch per cable, ignores triggers and resolves initial overlaps. In 2D physics worlds the fallback is the backend's line trace without a radius. Collision-enabled cables remain awake. This is one-way scene collision: no cable self-collision, segment collision, rigid-body reaction or pulling force. The software fallback uses the backend's approximate sweep.
+- Authoring bounds limit segments to 64, sides to 12, iterations to 16 and substeps to 8. Endpoint offsets/force components clamp to ±1,000,000. Hundreds of active cables are the intended workload; cost scales with segment count × iterations × substeps, and collision adds particle queries. GPU cost still includes a draw per visible cable; no device frame-rate guarantee is implied.
+
+The focused `cable-simulation.bench.ts` benchmark measures 300 active default cables separately from sleeping cables. It measures CPU simulation only, excluding rendering, physics queries and transport.
+
 ### Spring arm
 
 `SpringArmComponent` (`@babylonslate/core` `spring-arm-component.ts`, render
@@ -1644,6 +1659,14 @@ Material generations retain their compile-time texture leases until preparation 
 Bitmap allocation preflight and rasterization use the same canvas font, top baseline, and alignment before measuring. Baseline-dependent native glyph bounds therefore fit the admitted cells; genuinely changed dimensions are still rejected before pixel allocation.
 
 Texture installation preserves the existing legacy UASTC descriptor normalization before creating immutable upload Blobs. Stored asset bytes remain unchanged; repeated bindings reuse the installed content without repeating conversion or hashing.
+## Spline
+
+Add **General > Spline** to an actor or Class/Prefab to author a component-local 3D path. Details shares Water River's Curvature, Path Point Count and XYZ controls; **Closed Loop** joins the last point to the first when there are at least three points. Paths keep 2–128 points. Curvature 0 uses straight segments and 1 uses a centripetal Catmull–Rom curve through the control points on all three axes.
+
+In Scene Details, use the component card's **Edit In Viewport** action to target its handles; actor selection defaults to the first editable shape. In Class/Prefab, select the component. Drag a point in the camera-facing plane, drag a faint midpoint to insert a point, or double-click a point to remove it. Use the Details XYZ fields for exact positioning. The curve previews live; release commits one undoable property change in Scene and Class/Prefab documents. Component and ancestor transforms apply normally. The curve is an editor helper and does not render in Play/player.
+
+Spline and Water River share the core sampling implementation, typed point rows and viewport handle lifecycle. Water keeps its existing X/Z curve with linearly interpolated elevation and width; river point drags remain on the local horizontal plane. Water-only width, depth, shading and buoyancy stay on water components.
+
 ## Water
 
 Water assets share one definition between the renderer and game worker. Realistic and Stylized presets expose colors, opacity, reflections, roughness, waves, ripples, foam, sparkles, and density. Colors are authored in sRGB. Ocean, Lake, River, Puddle, and Global Water Volume components own their footprint, depth, wave scale, and current. River control points include elevation and a per-point Width Scale, and the path curves through them; lakes and puddles use elliptical bounds.

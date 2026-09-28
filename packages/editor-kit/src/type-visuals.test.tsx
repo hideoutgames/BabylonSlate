@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render } from "@testing-library/react";
+import { ENGINE_COMPONENT_CLASS_IDS } from "@babylonslate/core";
 import {
   ActivityIcon,
   CloudIcon,
@@ -207,16 +208,16 @@ describe("resolveTypeVisual", () => {
     expect(actorClass.icon).toBe(resolveTypeVisual({ classId: "Actor" }).icon);
   });
 
-  it("keeps the Class color and nearest engine icon on attached custom components", () => {
-    const mesh = resolveTypeVisual({ classId: "MeshComponent" });
-    const userMesh = resolveTypeVisual({
-      classId: "MyMesh",
-      ancestry: ["MyMesh", "MeshComponent", "ActorComponent", "BObject"],
+  it.each(["MeshComponent", "SplineComponent"])("keeps the Class color and nearest engine icon on attached custom %s subclasses", (classId) => {
+    const component = resolveTypeVisual({ classId });
+    const userComponent = resolveTypeVisual({
+      classId: "CustomComponent",
+      ancestry: ["CustomComponent", ...walkAncestry(classId, engineParentOf)],
     });
-    expect(userMesh.colorVar).toBe("var(--asset-animation)");
-    expect(mesh.colorVar).toBe("var(--asset-component)");
-    expect(userMesh.icon).toBe(mesh.icon);
-    expect(userMesh.icon).not.toBe(
+    expect(userComponent.colorVar).toBe("var(--asset-animation)");
+    expect(component.colorVar).toBe("var(--asset-component)");
+    expect(userComponent.icon).toBe(component.icon);
+    expect(userComponent.icon).not.toBe(
       resolveTypeVisual({ classId: "ActorComponent" }).icon,
     );
   });
@@ -286,6 +287,15 @@ describe("resolveTypeVisual", () => {
     expect(tree.colorVar).toBe("var(--asset-animation)");
     expect(tree.icon).not.toBe(FilmIcon);
     expect(component.icon).toBe(ListTreeIcon);
+  });
+
+  it("resolves every engine component to component chrome with a dedicated glyph", () => {
+    for (const classId of ENGINE_COMPONENT_CLASS_IDS) {
+      const visual = resolveTypeVisual({ classId });
+      expect(visual.family, classId).toBe("component");
+      expect(visual.iconKey, classId).toBe(classId);
+      expect(visual.icon, classId).not.toBe(FileIcon);
+    }
   });
 
   it("uses component color for engine components unless family is overridden", () => {

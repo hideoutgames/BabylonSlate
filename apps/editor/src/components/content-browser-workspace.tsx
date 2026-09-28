@@ -473,6 +473,10 @@ export function ContentBrowserWorkspace({
     },
     [assetRegistry, registryVersion],
   );
+  const assetsByGuid = useMemo(
+    () => new Map(allAssets.map((asset) => [asset.header.guid, asset])),
+    [allAssets],
+  );
 
   const handleRetargetSkeleton = useCallback(
     async (skeletonGuid: string | null) => {
@@ -672,29 +676,27 @@ export function ContentBrowserWorkspace({
   const treeSelectedId = useMemo(() => {
     if (selectedGuids.size === 1) {
       const guid = [...selectedGuids][0]!;
-      const asset = allAssets.find((item) => item.header.guid === guid);
+      const asset = assetsByGuid.get(guid);
       if (asset) return asset.path;
     }
     return selectedFolderPath;
-  }, [allAssets, selectedFolderPath, selectedGuids]);
+  }, [assetsByGuid, selectedFolderPath, selectedGuids]);
 
   const treeSelectedIds = useMemo(() => {
     const ids: string[] = [...selectedFolderPaths];
     for (const guid of selectedGuids) {
-      const asset = allAssets.find((item) => item.header.guid === guid);
+      const asset = assetsByGuid.get(guid);
       if (asset) ids.push(asset.path);
     }
     if (ids.length === 0 && treeSelectedId) ids.push(treeSelectedId);
     return ids;
-  }, [allAssets, selectedFolderPaths, selectedGuids, treeSelectedId]);
+  }, [assetsByGuid, selectedFolderPaths, selectedGuids, treeSelectedId]);
 
   const treeNodes = useMemo(
     () =>
       browserRows.map((row) => {
         const FolderGlyph = pluginRootIcons.get(row.id) ?? FolderIcon;
-        const asset = row.guid
-          ? allAssets.find((item) => item.header.guid === row.guid)
-          : undefined;
+        const asset = row.guid ? assetsByGuid.get(row.guid) : undefined;
         return {
           id: row.id,
           label: row.label,
@@ -711,7 +713,7 @@ export function ContentBrowserWorkspace({
             ) : undefined,
         };
       }),
-    [allAssets, browserRows, classParentOf, pluginRootIcons],
+    [assetsByGuid, browserRows, classParentOf, pluginRootIcons],
   );
 
   const selectionCount = selectedGuids.size + selectedFolderPaths.size;

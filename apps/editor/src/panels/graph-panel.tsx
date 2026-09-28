@@ -1,5 +1,5 @@
 import { inputAssetCatalog } from "../lib/input-asset-catalog";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { GlslCodePreview } from "../components/glsl-code-preview";
 import {
@@ -71,6 +71,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     applyGraphChange,
     applyAssetDocumentChange,
     assetRegistry,
+    registryVersion,
     activeDocumentId,
     animEditorMode,
   } = useDocuments();
@@ -94,17 +95,23 @@ export function GraphPanel(_props: IDockviewPanelProps) {
   );
 
   const doc = openDocuments.find((entry) => entry.id === documentId);
-  const indexed = (assetRegistry?.list() ?? []).find(
-    (asset) => asset.path === doc?.ref.path,
-  );
+  const indexed = useMemo(() => {
+    void registryVersion;
+    return (assetRegistry?.list() ?? []).find(
+      (asset) => asset.path === doc?.ref.path,
+    );
+  }, [assetRegistry, registryVersion, doc?.ref.path]);
   const parentClass =
     indexed?.header.parentClass ??
     (doc?.ref.kind === "anim-graph" ? "BObject" : null);
-  const parentOf = classParentLookup(assetRegistry?.list() ?? []);
+  const parentOf = useMemo(() => {
+    void registryVersion;
+    return classParentLookup(assetRegistry?.list() ?? []);
+  }, [assetRegistry, registryVersion]);
   const classId = doc?.ref.path ? classIdForGraphPath(doc.ref.path) : undefined;
-  const graphContent = serializedGraphFromDocument(
-    doc?.ref.kind ?? "",
-    doc?.content,
+  const graphContent = useMemo(
+    () => serializedGraphFromDocument(doc?.ref.kind ?? "", doc?.content),
+    [doc?.ref.kind, doc?.content],
   );
   const otherClassGraphs = useMemo(
     () =>
@@ -360,6 +367,41 @@ export function GraphPanel(_props: IDockviewPanelProps) {
       })),
     [diagnostics],
   );
+  const nodeTypeById = useMemo(() => {
+    const nodes = activeFunctionId
+      ? graphContent?.functionGraphs?.[activeFunctionId]?.nodes
+      : graphContent?.nodes;
+    return new Map((nodes ?? []).map((node) => [node.id, node.type]));
+  }, [activeFunctionId, graphContent]);
+  const renderNodeBody = useCallback(
+    (nodeId: string, data: Record<string, unknown>) =>
+      nodeTypeById.get(nodeId) === "debug.executeJavaScript" ? (
+        <div className="w-88 border-t px-3 py-2">
+          <GlslCodePreview
+            value={String(data.body ?? "")}
+            language="javascript"
+          />
+        </div>
+      ) : null,
+    [nodeTypeById],
+  );
+  const onNavigateRequest = useCallback(
+    () => setFocusDiagnostic(null),
+    [setFocusDiagnostic],
+  );
+  const contextMenuItemsForNode = useCallback(
+    (nodeId: string) =>
+      graphContent && canRenameCustomEvent(graphContent, nodeId)
+        ? [
+            {
+              id: "rename-event",
+              label: "Rename Event",
+              onSelect: () => setRenameEventId(nodeId),
+            },
+          ]
+        : [],
+    [graphContent],
+  );
 
   const showLibraryEmpty = functionLibraryShowsEventGraphEmpty({
     parentClass,
@@ -381,9 +423,10 @@ export function GraphPanel(_props: IDockviewPanelProps) {
         </Empty>
       ) : (
         <GraphEditor
-          renderNodeBody={(nodeId, data) => graph.nodes.find((node) => node.id === nodeId)?.type === "debug.executeJavaScript" ? <div className="w-88 border-t px-3 py-2"><GlslCodePreview value={String(data.body ?? "")} language="javascript" /></div> : null}
+          renderNodeBody={renderNodeBody}
           key={`${documentId}:${activeFunctionId ?? "event"}`}
           initialGraph={graph}
+          commitPositionsOnDragEnd
           colorMode="dark"
           defaultZoom={defaultZoom}
           sessionViewport={sessionViewport}
@@ -395,11 +438,9 @@ export function GraphPanel(_props: IDockviewPanelProps) {
           pinCompatibility={pinCompatibility}
           pinTypeNames={pinTypeNames}
           onCanvasApi={setCanvasDropApi}
-          onNavigateRequest={() => setFocusDiagnostic(null)}
+          onNavigateRequest={onNavigateRequest}
           onSelectionChange={setSelectedNodeIds}
-          contextMenuItemsForNode={(nodeId) => graphContent && canRenameCustomEvent(graphContent, nodeId)
-            ? [{ id: "rename-event", label: "Rename Event", onSelect: () => setRenameEventId(nodeId) }]
-            : []}
+          contextMenuItemsForNode={contextMenuItemsForNode}
           onChange={(next) => {
             if (!doc) return;
             const current = graphContent ?? { nodes: [], edges: [] };
