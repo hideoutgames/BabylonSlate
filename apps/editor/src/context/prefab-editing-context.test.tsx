@@ -9,17 +9,18 @@ import {
   PrefabEditingProvider,
   usePrefabEditing,
 } from "./prefab-editing-context";
-import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
+import { PREFAB_ROOT_ID, type PrefabComponentView } from "../lib/prefab-preview";
 
 const applyGraphChange = vi.hoisted(() => vi.fn<(id: string, graph: SerializedGraph) => Promise<boolean>>(async () => true));
 const documentOverrides = vi.hoisted(() => ({
   value: {} as Record<string, unknown>,
 }));
+const workspace = vi.hoisted(() => ({
+  documentId: "graph:assets/Hero.class.babasset",
+}));
 
 vi.mock("./document-workspace-context", () => ({
-  useDocumentWorkspace: () => ({
-    documentId: "graph:assets/Hero.class.babasset",
-  }),
+  useDocumentWorkspace: () => ({ documentId: workspace.documentId }),
 }));
 
 vi.mock("./document-context", () => ({
@@ -160,6 +161,152 @@ afterEach(() => {
   cleanup();
   applyGraphChange.mockClear();
   documentOverrides.value = {};
+  workspace.documentId = "graph:assets/Hero.class.babasset";
+});
+
+function ComponentsProbe({ seen }: { seen: PrefabComponentView[][] }) {
+  const { components } = usePrefabEditing();
+  seen.push(components);
+  return (
+    <span data-testid="prefab-component-ids">
+      {components.map((component) => component.id).join(",")}
+    </span>
+  );
+}
+
+describe("PrefabEditingContext inherited components", () => {
+  const baseGraph = {
+    id: "graph:assets/Base.class.babasset",
+    ref: { kind: "graph", path: "assets/Base.class.babasset" },
+    content: {
+      nodes: [],
+      edges: [],
+      members: [],
+      components: [createMeshComponent("inherited-mesh", "sphere")],
+    },
+  };
+
+  it("follows a Class reparented in place in the registry", () => {
+    const heroGraph = {
+      id: "graph:assets/Hero.class.babasset",
+      ref: { kind: "graph", path: "assets/Hero.class.babasset" },
+      content: {
+        nodes: [],
+        edges: [],
+        members: [],
+        components: [createMeshComponent("prefab-mesh", "box")],
+      },
+    };
+    const hero = {
+      path: "assets/Hero.class.babasset",
+      header: { type: "Class", name: "Hero", parentClass: "Actor" },
+    };
+    const registry = {
+      list: () => [
+        hero,
+        {
+          path: "assets/Base.class.babasset",
+          header: { type: "Class", name: "Base", parentClass: "Actor" },
+        },
+      ],
+    };
+    documentOverrides.value = {
+      openDocuments: [heroGraph, baseGraph],
+      assetRegistry: registry,
+    };
+    const view = render(
+      <PrefabEditingProvider>
+        <ComponentsProbe seen={[]} />
+      </PrefabEditingProvider>,
+    );
+    expect(screen.getByTestId("prefab-component-ids").textContent).toBe(
+      "prefab-mesh",
+    );
+
+    hero.header.parentClass = "Base";
+    view.rerender(
+      <PrefabEditingProvider>
+        <ComponentsProbe seen={[]} />
+      </PrefabEditingProvider>,
+    );
+    expect(screen.getByTestId("prefab-component-ids").textContent).toBe(
+      "inherited-mesh,prefab-mesh",
+    );
+  });
+
+  it("keeps the published components when an unrelated edit re-renders the editor", () => {
+    const heroGraph = {
+      id: "graph:assets/Hero.class.babasset",
+      ref: { kind: "graph", path: "assets/Hero.class.babasset" },
+      content: {
+        nodes: [],
+        edges: [],
+        members: [],
+        components: [createMeshComponent("prefab-mesh", "box")],
+      },
+    };
+    const assets = [
+      {
+        path: "assets/Hero.class.babasset",
+        header: { type: "Class", name: "Hero", parentClass: "Base" },
+      },
+      {
+        path: "assets/Base.class.babasset",
+        header: {
+          type: "Class",
+          name: "Base",
+          parentClass: "Actor",
+          payload: { components: [createMeshComponent("inherited-mesh", "sphere")] },
+        },
+      },
+    ];
+    const seen: PrefabComponentView[][] = [];
+    documentOverrides.value = {
+      openDocuments: [heroGraph],
+      assetRegistry: { list: () => assets.map((asset) => ({ ...asset })) },
+    };
+    const view = render(
+      <PrefabEditingProvider>
+        <ComponentsProbe seen={seen} />
+      </PrefabEditingProvider>,
+    );
+    documentOverrides.value = {
+      ...documentOverrides.value,
+      openDocuments: [heroGraph, { ...baseGraph, id: "sprite:assets/Other.sprite.babasset", ref: { kind: "sprite", path: "assets/Other.sprite.babasset" } }],
+    };
+    view.rerender(
+      <PrefabEditingProvider>
+        <ComponentsProbe seen={seen} />
+      </PrefabEditingProvider>,
+    );
+    expect(seen.at(-1)!.map((component) => component.id)).toEqual([
+      "inherited-mesh",
+      "prefab-mesh",
+    ]);
+    expect(seen.at(-1)).toBe(seen[0]);
+  });
+
+  it("does not read the asset registry for a Scene workspace", () => {
+    workspace.documentId = "scene:assets/Main.scene.babasset";
+    const list = vi.fn(() => []);
+    documentOverrides.value = {
+      openDocuments: [
+        {
+          id: "scene:assets/Main.scene.babasset",
+          ref: { kind: "scene", path: "assets/Main.scene.babasset" },
+          content: { name: "Main", actors: [], settings: {} },
+        },
+        baseGraph,
+      ],
+      assetRegistry: { list },
+    };
+    render(
+      <PrefabEditingProvider>
+        <ComponentsProbe seen={[]} />
+      </PrefabEditingProvider>,
+    );
+    expect(list).not.toHaveBeenCalled();
+  });
 });
 
 function BatchTransformProbe({
