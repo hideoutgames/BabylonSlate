@@ -51,6 +51,8 @@ jobs:
       BABYLONSLATE_DISTRIBUTION: 'true'
       VITE_TEST_MODE: 'false'
       VITE_BASE_PATH: /
+      # Git Bash must not rewrite the URL base to its Windows installation path.
+      MSYS2_ENV_CONV_EXCL: VITE_BASE_PATH
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4

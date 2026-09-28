@@ -24,6 +24,8 @@ catch (error) { if (error.code !== "ENOENT") throw error; }
 await mkdir(stage, { recursive: true });
 await cp(join(desktop, "dist/host"), join(stage, "host"), { recursive: true });
 await stageRenderer(join(desktop, "../editor/dist"), join(stage, "renderer"));
+// app://babylonslate/ serves the renderer root; any other Vite base 404s every asset.
+if (!/<script\b[^>]*\bsrc="\/assets\//.test(await readFile(join(stage, "renderer/index.html"), "utf8"))) throw new Error("Renderer must be built with VITE_BASE_PATH=/");
 await writeFile(join(stage, "package.json"), JSON.stringify({ name: "babylonslate", productName: "BabylonSlate", desktopName: "babylonslate.desktop", version: manifest.packageVersion, main: "host/main.cjs", description: "BabylonSlate editor", author: "Hideout Games" }, null, 2));
 
 const targets = {
