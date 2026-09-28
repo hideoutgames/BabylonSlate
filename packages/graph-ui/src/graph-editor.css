@@ -58,16 +58,19 @@
 .anim-state-node {
   position: relative;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 10px;
-  width: 208px;
-  height: 56px;
-  padding: 0 12px;
-  border-radius: var(--radius-md);
+  justify-content: center;
+  gap: 4px;
+  min-width: 200px;
+  max-width: 280px;
+  min-height: 88px;
+  padding: 14px 28px;
+  border-radius: var(--radius-lg);
   background: var(--graph-node);
-  border: 1px solid var(--border);
-  color: var(--card-foreground);
-  box-shadow: var(--shadow-sm, 0 1px 2px 0 rgb(0 0 0 / 0.05));
+  border: 1px solid var(--input);
+  color: var(--foreground);
+  box-shadow: var(--surface-shadow);
 }
 
 .anim-state-node-selected {
@@ -75,56 +78,34 @@
   box-shadow: 0 0 0 1px var(--graph-state-selected);
 }
 
-.anim-state-node-icon {
-  display: flex;
-  width: 24px;
-  height: 24px;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-sm);
-  background: var(--muted);
-  color: var(--muted-foreground);
-}
-
-.anim-state-node-icon svg {
-  width: 14px;
-  height: 14px;
-}
-
-.anim-state-node-entry .anim-state-node-icon {
-  background: color-mix(in oklch, var(--graph-state-entry) 18%, transparent);
-  color: var(--graph-state-entry);
-}
-
-.anim-state-node-text {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  flex-direction: column;
+.anim-state-node-entry {
+  /* Keeps the pinned Entry mark inside the shared min-height so wires stay level. */
+  padding-bottom: 26px;
+  border-color: var(--graph-state-entry);
 }
 
 .anim-state-node-title {
+  max-width: 100%;
   overflow: hidden;
   font-size: 14px;
-  font-weight: 500;
-  line-height: 20px;
+  font-weight: 600;
+  text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .anim-state-node-clip {
   display: flex;
-  min-width: 0;
+  max-width: 100%;
   align-items: center;
   gap: 4px;
-  font-size: 12px;
-  line-height: 16px;
+  font-size: 11px;
   color: var(--muted-foreground);
 }
 
 .anim-state-node-clip-empty {
-  opacity: 0.7;
+  font-style: italic;
+  opacity: 0.8;
 }
 
 .anim-state-node-loop {
@@ -134,14 +115,16 @@
 }
 
 .anim-state-node-entry-mark {
-  flex-shrink: 0;
-  padding: 0 6px;
-  border-radius: 999px;
-  background: color-mix(in oklch, var(--graph-state-entry) 18%, transparent);
-  color: var(--graph-state-entry);
+  position: absolute;
+  right: 0;
+  bottom: 9px;
+  left: 0;
   font-size: 10px;
-  font-weight: 500;
-  line-height: 16px;
+  letter-spacing: 0.04em;
+  line-height: 12px;
+  text-transform: uppercase;
+  color: var(--graph-state-entry);
+  text-align: center;
 }
 
 .anim-state-handle {
@@ -228,22 +211,11 @@
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 6px;
-  height: 6px;
-  border: 1px solid var(--muted-foreground);
-  background: var(--graph-node);
-  opacity: 0.6;
+  width: 8px;
+  height: 8px;
+  background: var(--muted-foreground);
   pointer-events: none;
   transform: translate(-50%, -50%) rotate(45deg);
-}
-
-.anim-state-node:hover .anim-state-handle-source::after,
-.anim-state-node-selected .anim-state-handle-source::after {
-  opacity: 1;
-}
-
-.anim-state-handle-source:hover::after {
-  background: var(--muted-foreground);
 }
 
 .anim-graph-canvas .react-flow__arrowhead polyline {
@@ -253,10 +225,10 @@
 
 .anim-transition-badge {
   position: absolute;
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   border-radius: 999px;
-  border: 1px solid var(--muted-foreground);
+  border: 1.5px solid var(--muted-foreground);
   background: var(--graph-node);
   pointer-events: all;
   cursor: pointer;
@@ -272,14 +244,14 @@
 .anim-transition-badge::after {
   content: "";
   position: absolute;
-  inset: 3px 3px 3px 5px;
-  border-top: 3px solid transparent;
-  border-bottom: 3px solid transparent;
-  border-left: 4px solid var(--muted-foreground);
+  inset: 3.5px 3px 3.5px 5px;
+  border-top: 3.5px solid transparent;
+  border-bottom: 3.5px solid transparent;
+  border-left: 5px solid var(--muted-foreground);
 }
 
 .anim-transition-badge-both::after {
-  inset: 4px;
+  inset: 4.5px;
   border: 0;
   border-left: 1.5px solid var(--muted-foreground);
   border-right: 1.5px solid var(--muted-foreground);
@@ -423,14 +395,14 @@
 /* GraphEditor paints exec-width inline strokes; tree and state wires stay thin and neutral. */
 :is(.bt-graph-canvas, .anim-graph-canvas) .react-flow__edge-path {
   stroke: var(--muted-foreground) !important;
-  stroke-opacity: 0.55;
-  stroke-width: 1.5px !important;
+  stroke-opacity: 0.7;
+  stroke-width: 2.5px !important;
 }
 
 :is(.bt-graph-canvas, .anim-graph-canvas) .react-flow__edge.selected .react-flow__edge-path {
   stroke: var(--graph-state-selected) !important;
   stroke-opacity: 1;
-  stroke-width: 2px !important;
+  stroke-width: 3px !important;
 }
 
 .asset-reference-node[data-selected="true"] {
