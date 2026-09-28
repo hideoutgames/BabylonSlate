@@ -244,6 +244,7 @@ export function PlayOverlay({
   const [fps, setFps] = useState(0);
   const [scriptMs, setScriptMs] = useState(0);
   const [physicsMs, setPhysicsMs] = useState(0);
+  const [publishMs, setPublishMs] = useState(0);
   const [memoryBytes, setMemoryBytes] = useState(0);
   const [hostMemory, setHostMemory] = useState<HostMemoryStats | null>(null);
   const [geometryBytes, setGeometryBytes] = useState(0);
@@ -551,6 +552,7 @@ export function PlayOverlay({
         setFps(stats.fps);
         setScriptMs(stats.scriptMs);
         setPhysicsMs(stats.physicsMs);
+        setPublishMs(stats.publishMs);
         setMoveX(sessionRef.current?.lastMoveX() ?? null);
       },
       onLog: (message, severity) => {
@@ -785,6 +787,7 @@ export function PlayOverlay({
             fps={fps}
             scriptMs={scriptMs}
             physicsMs={physicsMs}
+            publishMs={publishMs}
             memoryBytes={memoryBytes}
             hostMemory={hostMemory}
             geometryBytes={geometryBytes}

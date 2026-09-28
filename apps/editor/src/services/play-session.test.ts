@@ -223,11 +223,12 @@ describe("Play HUD stats merge", () => {
     expect(next).toMatchObject({ fps: 30, scriptMs: 4, physicsMs: 2, frameId: 99 });
   });
 
-  it("keeps worker script and physics ms when the rAF pump only has fps", () => {
+  it("keeps worker script, physics and publish ms when the rAF pump only has fps", () => {
     const fromWorker = applyWorkerPlayStats(undefined, {
       fps: 0,
       scriptMs: 4.2,
       physicsMs: 1.8,
+      publishMs: 0.6,
       frameId: 12,
       liveActors: 300,
       snapshotCapacity: 512,
@@ -236,6 +237,7 @@ describe("Play HUD stats merge", () => {
       fps: 0,
       scriptMs: 4.2,
       physicsMs: 1.8,
+      publishMs: 0.6,
       frameId: 12,
       liveActors: 300,
       snapshotCapacity: 512,
@@ -244,6 +246,7 @@ describe("Play HUD stats merge", () => {
     expect(afterFps.fps).toBe(60);
     expect(afterFps.scriptMs).toBe(4.2);
     expect(afterFps.physicsMs).toBe(1.8);
+    expect(afterFps.publishMs).toBe(0.6);
     expect(afterFps.frameId).toBe(12);
     expect(afterFps.liveActors).toBe(300);
     expect(afterFps.snapshotCapacity).toBe(512);
