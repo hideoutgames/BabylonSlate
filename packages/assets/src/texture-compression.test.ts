@@ -71,7 +71,8 @@ describe("texture compression policy", () => {
   });
 
   it("keys block alignment for Particle only, so a padded encode keeps today's chunk id", async () => {
-    // Existing chunk ids on disk must not change: an aligned texture never re-encodes.
+    // Padding is encode-only: it never changes a Usage's chunk id, so ids on
+    // disk and the resolver's preferred id stay valid.
     expect(await encodeSettingsHash(DEFAULT_TEXTURE_ENCODE_SETTINGS)).toBe("34dad383eac5f9b6");
     const unaligned: TextureEncodeSettings = { ...DEFAULT_TEXTURE_ENCODE_SETTINGS, blockAlign: undefined };
     expect(await encodeSettingsHash(unaligned)).toBe("34dad383eac5f9b6");

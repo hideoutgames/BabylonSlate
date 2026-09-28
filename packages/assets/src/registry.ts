@@ -817,8 +817,8 @@ export class AssetRegistry {
   /**
    * Store an encode under its chunk id and record what was committed:
    * `ktx2Width` / `ktx2Height` from the KTX2 header, and `ktx2BlockAlign`
-   * when the encode was padded to the block grid. The alignment pass reads
-   * these instead of the chunk.
+   * whenever padding was requested (a no-op for a size already on the grid).
+   * The alignment pass reads these instead of the chunk.
    */
   async commitCompressedTexture(result: EncodeJobResult): Promise<void> {
     const chunkId =
