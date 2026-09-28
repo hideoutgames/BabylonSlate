@@ -35,6 +35,7 @@ import {
   dispatchInterface,
   interfaceHandlerKey,
   isLockedEngineClassId,
+  SUBSYSTEM_CLASS_ID,
   type ClassRegistry,
   type InterfaceDispatchTarget,
   type InterfaceRegistry,
@@ -88,6 +89,15 @@ export interface ScriptHostServices {
   getActors?(): readonly Actor[];
   /** Live Scene instance for the active Play scene, if any. */
   getSceneReference?(owner?: BObject | null): Scene | null;
+  /**
+   * `Get <Subsystem>`: the live (never ended) GameSubsystem, or the current
+   * main Scene's SceneSubsystem, whose class isA `classId`. Compiled graphs
+   * call it at every use, so it must be cheap and side-effect free. Hosts
+   * without subsystems (Editor Utility) omit it and the node reads null.
+   */
+  getSubsystem?(classId: string): BObject | null;
+  /** `Get Game Instance`: the session Game Instance, if the host has one. */
+  getGameInstance?(): BObject | null;
   getTargetSceneName?(target: unknown): string;
   loadScene?(target: unknown, blocking: boolean): Promise<void>;
   unloadScene?(target: unknown, blocking: boolean): Promise<void>;
@@ -391,6 +401,10 @@ export interface ScriptContext {
   getProjectName(): string;
   getProjectVersion(): string;
   getSceneReference(): Scene | null;
+  /** Live subsystem whose class isA `classId`, or null (`Get <Subsystem>`). */
+  getSubsystem(classId: string): BObject | null;
+  /** The session Game Instance, or null in hosts without one. */
+  getGameInstance(): BObject | null;
   getAnimGraphVariable(target: unknown, name: string): unknown;
   setAnimGraphVariable(target: unknown, name: string, value: unknown): void;
   getAnimGraphCurrentState(target: unknown): { id: string; name: string } | null;
@@ -589,6 +603,12 @@ type LoadedScript = {
  */
 export class ScriptHost {
   private readonly byClassId = new Map<string, LoadedScript[]>();
+  /**
+   * `scriptLineage` per class id. `hooksFor` resolves it on every tick for
+   * every component and actor, so it is cached; `load` clears it, and the
+   * runtime only changes the ClassRegistry immediately before a `load`.
+   */
+  private readonly lineageByClassId = new Map<string, readonly LoadedScript[][]>();
   private readonly pending = new WeakMap<BObject, Set<string>>();
   private readonly flowStates = new WeakMap<
     BObject,
@@ -609,10 +629,14 @@ export class ScriptHost {
   }
 
   async load(script: CompiledScript): Promise<void> {
+    // The class was just registered (or its parent repaired): drop lineages
+    // resolved against the previous hierarchy before the module import yields.
+    this.lineageByClassId.clear();
     const exports = await loadCompiledModule(script.source, script.assetGuid);
     const list = this.byClassId.get(script.classId) ?? [];
     list.push({ script, exports });
     this.byClassId.set(script.classId, list);
+    this.lineageByClassId.clear();
   }
 
   classIds(): string[] {
@@ -628,7 +652,9 @@ export class ScriptHost {
    * first. Scripts keyed by a locked engine id answer only for that exact id
    * and are never inherited.
    */
-  private scriptLineage(classId: string): LoadedScript[][] {
+  private scriptLineage(classId: string): readonly LoadedScript[][] {
+    const cached = this.lineageByClassId.get(classId);
+    if (cached) return cached;
     const lineage: LoadedScript[][] = [];
     const own = this.byClassId.get(classId);
     if (own && own.length > 0) lineage.push(own);
@@ -640,6 +666,7 @@ export class ScriptHost {
       if (isLockedEngineClassId(ancestorId)) break;
       lineage.push(loaded);
     }
+    this.lineageByClassId.set(classId, lineage);
     return lineage;
   }
 
@@ -678,14 +705,16 @@ export class ScriptHost {
 
   /**
    * Lifecycle hooks for `classId`. Each event runs the nearest implementation
-   * in the class lineage, so a child inherits its parent's events.
+   * in the class lineage, so a child inherits its parent's events. Creation is
+   * On Init for the Game Instance and subsystems, Begin Play for the rest.
    */
   hooksFor(classId: string): LifecycleHooks<BObject> | undefined {
     if (this.scriptLineage(classId).length === 0) return undefined;
-    const isGameInstance =
-      this.services.classRegistry?.isA(classId, "GameInstance") ??
-      classId === "GameInstance";
-    const creationEvent = isGameInstance ? "onInit" : "onBeginPlay";
+    const ancestry = this.services.classRegistry?.ancestry(classId) ?? [classId];
+    const creationEvent =
+      ancestry.includes("GameInstance") || ancestry.includes(SUBSYSTEM_CLASS_ID)
+        ? "onInit"
+        : "onBeginPlay";
     return {
       onCreation: (self) => {
         const loaded = this.eventScriptsFor(classId, creationEvent, self);
@@ -725,7 +754,11 @@ export class ScriptHost {
     return this.commandResult;
   }
 
-  /** The driver calls this only for the actual GameInstance shutdown lifecycle. */
+  /**
+   * Final-lifecycle dispatch: the driver calls this only for the Game
+   * Instance's shutdown events and a subsystem's On End. Only the dying
+   * object's synchronous calls into itself bypass owner admission.
+   */
   invokeGameShutdownEvent(classId: string, event: "onEnd" | "onSceneExit", self: BObject, args: Record<string, unknown> = {}): void {
     const loaded = this.eventScriptsFor(classId, event, self);
     if (loaded) this.dispatchFinalEvent(loaded, event, self, args);
@@ -1329,6 +1362,11 @@ export class ScriptHost {
         const scene = services.getSceneReference?.(self) ?? null;
         return scene && !scene.destroyed ? scene : null;
       },
+      getSubsystem: (classId) => {
+        const id = typeof classId === "string" ? classId.trim() : "";
+        return id ? (services.getSubsystem?.(id) ?? null) : null;
+      },
+      getGameInstance: () => services.getGameInstance?.() ?? null,
       isA: (instance, classId) => {
         if (instance == null || typeof instance !== "object") return false;
         const id = (instance as { classId?: unknown }).classId;
