@@ -41,10 +41,6 @@ export function isParticleValueType(type: string): type is ParticleValueType {
   return type === "particle" || isParticleNumericType(type);
 }
 
-export function particleComponentCount(type: ParticleValueType): number {
-  return COMPONENTS[type];
-}
-
 export function particleTypeLabel(type: ParticleValueType): string {
   return LABELS[type];
 }

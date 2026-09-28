@@ -10,7 +10,6 @@ import {
 } from "react";
 import { particleLibraryEmitterKey } from "@babylonslate/assets";
 import {
-  PARTICLE_OUTPUT_NODE_TYPE,
   normalizeParticleGraphDocument,
   validateParticleGraphDocument,
   type ParticleGraphDiagnostic,
@@ -19,8 +18,6 @@ import {
 } from "@babylonslate/particle-graph";
 import { useDocuments } from "./document-context";
 import { materialDomainsFromAssets } from "../lib/content-browser-helpers";
-import type { ParticleTextureUsageWarning } from "../lib/particle-texture-usage";
-import { useParticleMaterialTextureUsageWarnings } from "../lib/use-particle-texture-usage";
 
 /** A preview build problem as `ParticleService` reports it (node-anchored when known). */
 export interface ParticleGraphBuildDiagnostic {
@@ -28,8 +25,6 @@ export interface ParticleGraphBuildDiagnostic {
   message: string;
   nodeId?: string;
   pinId?: string;
-  /** The Texture WebGPU refused, when that is why the slot has no Material. */
-  textureGuid?: string;
 }
 
 export interface ParticleGraphEditingValue {
@@ -39,16 +34,8 @@ export interface ParticleGraphEditingValue {
   commit: (next: ParticleGraphDocument, mergeKey?: string) => void;
   /** Validation of `document`; errors keep the Preview on its last valid build. */
   diagnostics: ParticleGraphDiagnostic[];
-  /**
-   * Build problems of the Preview's current build; stale reports never appear,
-   * nor a refused Texture's No Material that `textureUsageWarnings` explains.
-   */
+  /** Build problems of the Preview's current build; stale reports never appear. */
   buildDiagnostics: ParticleGraphDiagnostic[];
-  /**
-   * Textures the Material samples that need Particle Usage to load on WebGPU,
-   * anchored to the Emitter Output. Warnings: never counted in `errorCount`.
-   */
-  textureUsageWarnings: ParticleTextureUsageWarning[];
   errorCount: number;
   /**
    * What the Preview builds: `document` while it validates, else the last
@@ -85,30 +72,21 @@ export function useParticleGraphEditing(): ParticleGraphEditingValue {
 }
 /* eslint-enable react-refresh/only-export-components */
 
-/**
- * Validation already explains these, so the build report does not repeat them;
- * nor does it repeat a Texture Usage warning as the No Material its refused
- * Texture caused.
- */
+/** Validation already explains these, so the build report does not repeat them. */
 function buildRows(
   report: readonly ParticleGraphBuildDiagnostic[],
   validation: readonly ParticleGraphDiagnostic[],
-  textureWarnings: readonly ParticleTextureUsageWarning[],
 ): ParticleGraphDiagnostic[] {
   const materialReported = validation.some(
     (row) =>
       row.code === "particle.missingMaterial" ||
       row.code === "particle.materialDomain",
   );
-  const warned = new Set(textureWarnings.map((warning) => warning.textureGuid));
   return report
     .filter(
       (row) =>
         row.code !== "particle.graph_invalid" &&
-        !(
-          row.code === "particle.missing_material" &&
-          (materialReported || (row.textureGuid !== undefined && warned.has(row.textureGuid)))
-        ),
+        !(materialReported && row.code === "particle.missing_material"),
     )
     .map((row) => ({
       code: row.code,
@@ -215,21 +193,12 @@ export function ParticleGraphEditingProvider({
     },
     [],
   );
-  const materialWarnings = useParticleMaterialTextureUsageWarnings(materialGuid);
-  const outputId =
-    document.nodes.find((node) => node.type === PARTICLE_OUTPUT_NODE_TYPE)?.id ??
-    PARTICLE_OUTPUT_NODE_TYPE;
-  const textureUsageWarnings = useMemo(
-    () => materialWarnings.map((warning) => ({ ...warning, nodeId: outputId })),
-    [materialWarnings, outputId],
-  );
-
   const buildDiagnostics = useMemo(
     () =>
       report && report.key === previewKey
-        ? buildRows(report.diagnostics, diagnostics, textureUsageWarnings)
+        ? buildRows(report.diagnostics, diagnostics)
         : [],
-    [diagnostics, previewKey, report, textureUsageWarnings],
+    [diagnostics, previewKey, report],
   );
 
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -246,7 +215,6 @@ export function ParticleGraphEditingProvider({
       commit,
       diagnostics,
       buildDiagnostics,
-      textureUsageWarnings,
       errorCount,
       previewDocument,
       previewKey,
@@ -269,7 +237,6 @@ export function ParticleGraphEditingProvider({
       previewKey,
       reportBuildDiagnostics,
       selectedNodeId,
-      textureUsageWarnings,
     ],
   );
 

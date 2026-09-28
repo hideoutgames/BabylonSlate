@@ -211,18 +211,6 @@ export function materialPreviewReducer(
   }
 }
 
-/** Whether an idle tick should start a compile without the Render button. */
-export function shouldAutoCompile(
-  state: MaterialPreviewState,
-  policy: Omit<MaterialPreviewPolicy, "observedCompileMs">,
-): boolean {
-  if (state.status !== "dirty") return false;
-  if (state.costClass === "expensive") return false;
-  if (state.compileSamplesMs.length === 0) return true;
-  const worst = Math.max(...state.compileSamplesMs);
-  return worst <= policy.frameBudgetMs * AUTO_COMPILE_FRAME_ALLOWANCE;
-}
-
 /**
  * Manual Render can refresh the current material even when it is already on
  * screen. It is blocked only while work is already queued or compiling.

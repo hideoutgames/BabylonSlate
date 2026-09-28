@@ -6,7 +6,6 @@ import {
   type NodeRegistry,
 } from "@babylonslate/scripting";
 import {
-  ALL_NODE_CATEGORIES,
   createDefaultNodeRegistry,
   rotatorNodes,
 } from "./index";
@@ -30,7 +29,6 @@ function node(
 
 describe("rotator nodes", () => {
   it("registers rotator math on the rotator palette", () => {
-    expect(ALL_NODE_CATEGORIES).toContain("rotator");
     expect(rotatorNodes.map((entry) => entry.id)).toEqual([
       "rotator.combine",
       "rotator.delta",

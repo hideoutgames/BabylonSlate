@@ -42,6 +42,7 @@ const {
   collectPlayAudio,
   prefabDocs,
   commitComponentTransforms,
+  commitComponentProperties,
   viewportState,
 } = vi.hoisted(() => {
   const disposeFn = vi.fn();
@@ -95,6 +96,7 @@ const {
     handle,
     createEngineMock,
     commitComponentTransforms: vi.fn(),
+    commitComponentProperties: vi.fn(),
     viewportState: { mode: "3d" as "3d" | "2d", tool: "translate" as "translate" | "rotate" | "scale" },
     collectPlayWaterContent: vi.fn(async () => new Map()),
     collectPlayRenderTargets: vi.fn(async () => ({ renderTargets: new Map(), renderTargetTextures: new Map() })),
@@ -191,6 +193,7 @@ vi.mock("../context/prefab-editing-context", () => ({
     updateComponentTransform: vi.fn(),
     commitComponentGizmo: vi.fn(),
     commitComponentTransforms,
+    commitComponentProperties,
     applyPivotTransform: vi.fn(),
   }),
 }));
@@ -306,6 +309,7 @@ describe("PrefabViewportPanel engine", () => {
     handle.setMeshAssets.mockClear();
     handle.whenEditorModelsReady.mockReset().mockResolvedValue();
     commitComponentTransforms.mockClear();
+    commitComponentProperties.mockClear();
     collectPlayMaterialLibrary.mockClear();
     collectPlayAudio.mockReset();
     prefabState.components = [createMeshComponent("prefab-mesh", "box")];
@@ -319,6 +323,16 @@ describe("PrefabViewportPanel engine", () => {
     play.ensureSharedEngine.mockClear();
     play.sharedEngineGeneration = 1;
     play.ensureSharedEngine.mockReturnValue({ id: "shared-engine" });
+  });
+
+  it("commits a viewport spline edit to its prefab component", async () => {
+    prefabState.components = [{ id: "path", classId: "SplineComponent", properties: {} }];
+    render(<PrefabViewportPanel {...({} as IDockviewPanelProps)} />);
+    await waitFor(() => expect(createEngineMock).toHaveBeenCalled());
+    const options = createEngineMock.mock.calls.at(-1)![1] as import("@babylonslate/render").CreateEngineOptions;
+    const properties = { points: [[0, 2, 0], [4, 5, 6]], curvature: 0.5 };
+    act(() => options.onComponentShapeEdit?.({ actorId: "path", componentId: "path", properties }));
+    expect(commitComponentProperties).toHaveBeenCalledExactlyOnceWith("path", properties);
   });
 
   it("resolves attenuation for selected prefab Audio Components", async () => {

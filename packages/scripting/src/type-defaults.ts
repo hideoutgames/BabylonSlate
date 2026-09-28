@@ -19,10 +19,6 @@ export type TypeSchemas = {
   structs: Readonly<Record<string, StructSchema>>;
 };
 
-export function emptyTypeSchemas(): TypeSchemas {
-  return { enums: {}, structs: {} };
-}
-
 export function mergeEngineTypeSchemas(
   project?: Partial<TypeSchemas>,
 ): TypeSchemas {

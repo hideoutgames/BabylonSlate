@@ -619,18 +619,6 @@ export function compileGraphDocuments(
   return scripts;
 }
 
-/** Release / packed export compile — always omits Development Only nodes. */
-export function compileGraphDocumentsForExport(
-  documents: ReadonlyArray<{
-    path: string;
-    content: SerializedGraph | LogicGraph;
-    classId?: string;
-    parentClassId?: string | null;
-  }>,
-): ScriptBundleEntry[] {
-  return compileGraphDocuments(documents, { stripDevelopmentOnly: true });
-}
-
 export type AnimGraphCompileDocument = {
   guid: string;
   path: string;

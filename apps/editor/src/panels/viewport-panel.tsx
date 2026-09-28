@@ -1,4 +1,3 @@
-import { registerScenePipelineStatus, scenePipelineKey } from "../lib/scene-pipeline-status";
 import { parseSceneDocumentLayout } from "../shell/scene-document-layout";
 import { SceneBrushToolbar } from "../components/scene-brush-toolbar";
 import { useSceneTools } from "../context/scene-tools-context";
@@ -99,7 +98,6 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     activeDocumentId,
     applySceneChange,
     projectDocument,
-    projectGuid,
     collectPlaySpritePayloads,
     collectPlayWaterContent,
     collectPlayRenderTargets,
@@ -120,6 +118,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   } = useDocuments();
   const {
     selectedActorIds,
+    shapeEditTarget,
     selectActor,
     setSelectedActorIds,
     gizmoTool,
@@ -386,8 +385,8 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   }, [applySceneChange, documentId]);
   const commitGizmoTransformRef = useRef(commitGizmoTransform);
   commitGizmoTransformRef.current = commitGizmoTransform;
-  /** A released water shape handle becomes one undoable component property change. */
-  const commitWaterShape = useCallback((edit: { actorId: string; componentId: string; properties: Record<string, unknown> }) => {
+  /** A released shape handle becomes one undoable component property change. */
+  const commitComponentShape = useCallback((edit: { actorId: string; componentId: string; properties: Record<string, unknown> }) => {
     const current = sceneRef.current;
     if (!current) return;
     void applySceneChange(documentId, {
@@ -401,8 +400,8 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       }),
     });
   }, [applySceneChange, documentId]);
-  const commitWaterShapeRef = useRef(commitWaterShape);
-  commitWaterShapeRef.current = commitWaterShape;
+  const commitComponentShapeRef = useRef(commitComponentShape);
+  commitComponentShapeRef.current = commitComponentShape;
 
   const dropDisabled = !sceneReady || dropReady?.scene !== scene ||
     dropReady?.handle !== engineRef.current || playing || preparing || !scene?.actors.some(
@@ -456,11 +455,8 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         controller.signal.throwIfAborted();
         setSceneLoad({ open: true, progress: 10, phase: "Realizing Scene" });
 
-        const pipeline = registerScenePipelineStatus(scenePipelineKey(projectGuid, documentId));
-        disposers.push(() => pipeline.dispose());
         const handle = createEngine(canvas, {
           editor: true,
-          onRenderPathChanged: pipeline.publish,
           renderSettings: sceneViewportRenderSettings(renderSettingsKey, environmentSettingsRef.current),
           editorViewportId: dropViewportId,
           sharedEngine,
@@ -483,7 +479,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
             dragStartSceneRef.current = sceneRef.current;
           },
           onGizmoDragEnd: () => commitGizmoTransformRef.current(),
-          onWaterShapeEdit: (edit) => commitWaterShapeRef.current(edit),
+          onComponentShapeEdit: (edit) => commitComponentShapeRef.current(edit),
           editorFlyEnabled: () => !playingRef.current,
           editorFlySpeed: () => flySpeedRef.current,
         });
@@ -908,12 +904,19 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
 
   useEffect(() => {
     engineRef.current?.editor?.setSelectedActors(sceneMode === "design" ? selectedActorIds : []);
+    const targetActor = shapeEditTarget && selectedActorIds.length === 1 && shapeEditTarget.actorId === selectedActorIds[0]
+      ? scene?.actors.find((actor) => actor.id === shapeEditTarget.actorId)
+      : undefined;
+    const selectedComponentIds = shapeEditTarget && targetActor?.components.some((component) => component.id === shapeEditTarget.componentId)
+      ? [shapeEditTarget.componentId]
+      : undefined;
     engineRef.current?.editor?.syncSelectionDebug({
       sceneData: scene,
       selectedActorIds,
+      selectedComponentIds,
       audioLibrary,
     });
-  }, [scene, selectedActorIds, engineEpoch, audioLibrary, sceneMode]);
+  }, [scene, selectedActorIds, shapeEditTarget, engineEpoch, audioLibrary, sceneMode]);
 
   useEffect(() => {
     engineRef.current?.editor?.setViewportMode(sceneMode === "design" ? viewportMode : "3d");

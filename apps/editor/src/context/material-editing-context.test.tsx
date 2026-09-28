@@ -98,7 +98,6 @@ const harness = vi.hoisted(() => ({
   } | null,
   acquireCalls: 0,
   invalidateCalls: 0,
-  releaseGpuCalls: 0,
   cacheDisposeCalls: 0,
   content: null as ReturnType<typeof createDefaultMaterialDocument> | null,
   readAssetChunk: vi.fn(
@@ -157,9 +156,6 @@ vi.mock("@babylonslate/render", async (importOriginal) => {
         resource: { name: guid, isDisposed: () => false }, key: guid, release: vi.fn(),
       };
     },
-    releaseGpuTextures() {
-      harness.releaseGpuCalls += 1;
-    },
     dispose() {
       harness.cacheDisposeCalls += 1;
     },
@@ -169,7 +165,6 @@ vi.mock("@babylonslate/render", async (importOriginal) => {
     setSceneRenderSettings: harness.setRenderSettings,
     ResourceCache: class {
       acquireTexture = cache.acquireTexture;
-      releaseGpuTextures = cache.releaseGpuTextures;
       dispose = cache.dispose;
     },
     resourceCacheForEngine: () => cache,
@@ -275,7 +270,6 @@ describe("MaterialEditingProvider preview isolation", () => {
     harness.libraryOptions = null;
     harness.acquireCalls = 0;
     harness.invalidateCalls = 0;
-    harness.releaseGpuCalls = 0;
     harness.cacheDisposeCalls = 0;
     harness.contextRestored = null;
     harness.cachedTextures = [];
@@ -560,7 +554,6 @@ describe("MaterialEditingProvider preview isolation", () => {
         await vi.advanceTimersByTimeAsync(0);
       });
       expect(harness.invalidateCalls).toBeGreaterThan(0);
-      expect(harness.releaseGpuCalls).toBe(0);
       expect(harness.acquireCalls).toBeGreaterThan(acquiresBefore);
       expect(harness.presenter.present).toHaveBeenCalledWith({ force: true });
     } finally {

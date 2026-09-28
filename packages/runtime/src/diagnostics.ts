@@ -58,13 +58,4 @@ export class SessionDiagnosticAggregator {
   droppedCount(): number {
     return this.dropped;
   }
-
-  clear(): void {
-    this.map.clear();
-    this.dropped = 0;
-  }
-
-  isEmpty(): boolean {
-    return this.map.size === 0;
-  }
 }

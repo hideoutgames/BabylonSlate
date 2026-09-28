@@ -19,7 +19,6 @@ function fakeProjectBridge(): ElectronProjectBridge {
       return folder;
     }),
     listProjects: vi.fn(async () => (folder ? [folder] : [])),
-    getCurrentFolder: vi.fn(async () => folder),
     releaseFolder: vi.fn(async () => {
       folder = null;
     }),

@@ -369,7 +369,6 @@ describe("World tick", () => {
         guid: "gi",
         hooks: {
           onCreation: () => events.push("create"),
-          onGameStart: () => events.push("start"),
           onTick: () => events.push("tick"),
           onGameEnd: () => events.push("end"),
           onSceneStartLoading: (_self, sceneName) =>
@@ -389,7 +388,6 @@ describe("World tick", () => {
     world.end();
     expect(events).toEqual([
       "create",
-      "start",
       "start:Level1",
       "finish:Level1",
       "first:Level1",
@@ -417,7 +415,6 @@ describe("World tick", () => {
         guid: "gi",
         hooks: {
           onCreation: () => events.push("create"),
-          onGameStart: () => events.push("start"),
           onGameEnd: () => events.push("end"),
           onSceneStartLoading: (_self, sceneName) =>
             events.push(`start:${sceneName}`),
@@ -433,7 +430,6 @@ describe("World tick", () => {
     world.end();
     expect(events).toEqual([
       "create",
-      "start",
       "start:Level1",
       "exit:Level1",
       "end",

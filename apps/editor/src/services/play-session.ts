@@ -52,7 +52,6 @@ import {
   createEngine,
   createSceneLoadReadiness,
   createSceneStreamingReadiness,
-  textureBlockSizeMessage,
   waitForSceneLoadingPaint,
   type SceneLoadProgress,
   navDebugBlockersFromActors,
@@ -60,7 +59,6 @@ import {
   type EngineHandle,
   type ParticleLibrary,
   type PlayActorPosition,
-  type TextureBlockSizeDiagnostic,
 } from "@babylonslate/render";
 import { encodeInputEvents } from "@babylonslate/input";
 import {
@@ -130,20 +128,6 @@ export function deliverInspectSnapshot(
 
 export function isFatalPlayDiagnostic(code: string | undefined): boolean {
   return code === INFINITE_LOOP_DIAGNOSTIC_CODE;
-}
-
-/** Session report entry for a texture WebGPU could not draw; Play keeps running. */
-export function textureBlockSizeReportEntry(
-  diagnostic: TextureBlockSizeDiagnostic,
-  name?: string,
-): RuntimeDiagnostic {
-  return {
-    code: diagnostic.code,
-    severity: "error",
-    message: textureBlockSizeMessage({ ...diagnostic, name: name ?? diagnostic.assetGuid }),
-    assetGuid: diagnostic.assetGuid,
-    frameId: 0,
-  };
 }
 
 /** Apply worker sessionPaused onto Play overlay chrome. */
@@ -341,8 +325,6 @@ export interface PlaySession {
   lastActorPositions: () => readonly PlayActorPosition[];
   /** Latest sim tick (in-process World clock, else last published snapshot). */
   lastTickIndex: () => number;
-  /** Push a touch joystick sample into the Play input ring. */
-  pushTouchAxis: (controlId: string, value: number) => void;
   /** Session-only Play/Preview fps cap; does not write `project.json`. */
   setFrameCap: (fps: number) => void;
   /** Actor guids spawned this session (authored scene + explicit runtime spawns). */
@@ -517,7 +499,6 @@ export function startPlaySession(options: {
     string,
     readonly RetargetAnimationLoad[]
   >;
-  audioBytes?: ReadonlyMap<string, Uint8Array>;
   loadAudioSourceBytes?: import("@babylonslate/render").AudioSourceBytesLoader;
   audioLibrary?: AudioLibrary;
   /** Animation / Sprite Animation clip metadata for BT Play Animation. */
@@ -536,8 +517,6 @@ export function startPlaySession(options: {
   >;
   materialDocuments?: ReadonlyMap<string, MaterialDocument>;
   materialFunctions?: ReadonlyMap<string, MaterialFunctionDocument>;
-  /** Texture display names for session report entries. */
-  textureName?: (guid: string) => string | undefined;
   /** Reads bake assets (project registry or packed container). */
   postProcessingEnabled?: boolean;
   hardwareScalingLevel?: number;
@@ -601,8 +580,6 @@ export function startPlaySession(options: {
     if (worker) worker.postControl(control);
     else runtime?.applyRenderPathStatus(control);
   };
-  // Renderer problems the runtime never sees; merged into the Stop report.
-  const hostDiagnostics = new SessionDiagnosticAggregator();
 
   const handle = createEngine(canvas, {
     renderSettings: options.consoleRenderSettings ?? options.renderSettings,
@@ -630,7 +607,6 @@ export function startPlaySession(options: {
     modelPayloads: options.modelPayloads,
     modelClipAnimationGuids: options.modelClipAnimationGuids,
     retargetAnimationLoads: options.retargetAnimationLoads,
-    audioBytes: options.audioBytes,
     loadAudioSourceBytes: options.loadAudioSourceBytes,
     audioLibrary: options.audioLibrary,
     particleLibrary: options.particleLibrary,
@@ -668,11 +644,6 @@ export function startPlaySession(options: {
         diagnostic.message,
         diagnostic.severity === "error" ? "error" : "warning",
       );
-    },
-    onTextureDiagnostic: (diagnostic) => {
-      const entry = textureBlockSizeReportEntry(diagnostic, options.textureName?.(diagnostic.assetGuid));
-      hostDiagnostics.push(entry);
-      options.onLog?.(entry.message, "error");
     },
     onSceneLayerPointer: (event) => {
       const control = { type: "sceneLayerPointer" as const, ...event };
@@ -736,6 +707,7 @@ export function startPlaySession(options: {
   // Aggregates diagnostics received over the command channel (Worker mode).
   // The in-process path already aggregates via `runtime.getDiagnostics()`.
   const workerDiagnostics = new SessionDiagnosticAggregator();
+  const hostDiagnostics = new SessionDiagnosticAggregator();
 
   const spawnedActorGuids: string[] = [];
   let hostSceneGuid: string | null = options.sceneAssetGuid ?? null;
@@ -892,9 +864,6 @@ export function startPlaySession(options: {
       onStat: options.onStatHighlight,
       onFreeCam: options.onFreeCam,
     });
-    if (command.type === "setRenderResolution") {
-      options.onSetRenderResolution?.(command.width, command.height);
-    }
     if (command.type === "btState") {
       options.onBtState?.({
         slotId: command.slotId,
@@ -1180,9 +1149,6 @@ export function startPlaySession(options: {
         runtime?.getWorld().clock.tickIndex,
         lastWorkerTickIndex,
       ),
-    pushTouchAxis: (controlId: string, value: number) => {
-      input?.pushTouchAxis(controlId, value);
-    },
     setFrameCap: (fps: number) => {
       handle.scheduler.setFrameCap(fps);
     },
@@ -1306,4 +1272,3 @@ export function startPlaySession(options: {
 }
 
 export const PREVIEW_FIXTURE_NODE_ID = FIXTURE_NODE;
-export const PREVIEW_FIXTURE_ASSET_GUID = FIXTURE_ASSET;

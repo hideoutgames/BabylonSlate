@@ -4,11 +4,9 @@ import type {
   ConstraintDesc,
   ColliderDesc,
   ColliderChanges,
-  ColliderTuning,
   HitResult,
   LineTraceOptions,
   OverlapResult,
-  PhysicsBackendOptions,
   PhysicsContactEvent,
   PhysicsTransform,
   TeleportOptions,
@@ -18,6 +16,14 @@ import type {
   Vec3,
 } from "./types";
 import type { DebugColliderPrimitive } from "./debug-colliders";
+
+/** Reusable radius-specific query. Results/vectors are borrowed until the next sweep. */
+export interface SphereSweepQuery {
+  /** Distance is sphere-center travel; location is the hit collider's surface. Initial overlaps have distance zero. */
+  sweep(sx: number, sy: number, sz: number, ex: number, ey: number, ez: number): HitResult;
+  /** Idempotent. Queries return a miss after disposal, including backend shutdown. */
+  dispose(): void;
+}
 
 /**
  * Transport-agnostic physics port hosted inside the game worker.
@@ -41,10 +47,6 @@ export interface PhysicsBackend {
   setBodyLinearVelocity(bodyId: string, velocity: Partial<Vec3>): void;
   /** Set a dynamic body's world angular velocity in radians/second. 2D uses only Z. */
   setBodyAngularVelocity(bodyId: string, velocity: Vec3): void;
-  setBodyMotionType(
-    bodyId: string,
-    motionType: RigidBodyDesc["motionType"],
-  ): void;
   addImpulse(bodyId: string, impulse: Vec3, strength?: number): void;
   /** World-space impulse at a point, preserving collision-driven linear and angular motion. */
   addImpulseAtPoint(bodyId: string, impulse: Vec3, point: Vec3): void;
@@ -61,7 +63,6 @@ export interface PhysicsBackend {
   createCollider(desc: ColliderDesc): void;
   applyColliderChanges(bodyId: string, changes: ColliderChanges): void;
   destroyCollider(colliderId: string): void;
-  updateCollider(colliderId: string, tuning: ColliderTuning): void;
 
   /** Debug draw primitives for `showcollision` (boxes/spheres/circles/polylines). */
   listDebugColliders(): readonly DebugColliderPrimitive[];
@@ -76,9 +77,6 @@ export interface PhysicsBackend {
    */
   pollContacts(): PhysicsContactEvent[];
 
-  /** Snapshot all dynamic/kinematic body transforms after step. */
-  readTransforms(): ReadonlyMap<string, PhysicsTransform>;
-
   lineTrace(start: Vec3, end: Vec3, options?: LineTraceOptions): HitResult;
   sphereOverlap(center: Vec3, radius: number): OverlapResult;
   shapeSweep(
@@ -86,6 +84,8 @@ export interface PhysicsBackend {
     start: PhysicsTransform,
     end: PhysicsTransform,
   ): HitResult;
+  /** Optional optimized query for repeated sphere casts, excluding triggers. Own until disposed. */
+  createSphereSweep?(radius: number): SphereSweepQuery;
 
   /** 2D Rapier kinematic character controller; 3D uses Babylon `PhysicsCharacterController`. */
   createCharacterController(desc: CharacterControllerDesc): void;
@@ -96,7 +96,3 @@ export interface PhysicsBackend {
     dt: number,
   ): PhysicsTransform | null;
 }
-
-export type CreatePhysicsBackend = (
-  options: PhysicsBackendOptions,
-) => Promise<PhysicsBackend>;

@@ -135,15 +135,12 @@ export interface PlayOverlayProps {
     string,
     readonly RetargetAnimationLoad[]
   >;
-  audioBytes?: ReadonlyMap<string, Uint8Array>;
   loadAudioSourceBytes?: import("@babylonslate/render").AudioSourceBytesLoader;
   audioLibrary?: PlayAudioLibrary;
   animClipCatalog?: readonly AnimClipCatalogEntry[];
   particleLibrary?: ParticleLibrary;
   materialDocuments?: ReadonlyMap<string, MaterialDocument>;
   materialFunctions?: ReadonlyMap<string, MaterialFunctionDocument>;
-  /** Texture display names for session report entries. */
-  textureName?: (guid: string) => string | undefined;
   postProcessingEnabled?: boolean;
   hardwareScalingLevel?: number;
   pixelsPerUnit?: number;
@@ -221,14 +218,12 @@ export function PlayOverlay({
   modelPayloads,
   modelClipAnimationGuids,
   retargetAnimationLoads,
-  audioBytes,
   loadAudioSourceBytes,
   audioLibrary,
   animClipCatalog,
   particleLibrary,
   materialDocuments,
   materialFunctions,
-  textureName,
   postProcessingEnabled,
   hardwareScalingLevel,
   pixelsPerUnit,
@@ -351,8 +346,6 @@ export function PlayOverlay({
   modelClipAnimationGuidsRef.current = modelClipAnimationGuids;
   const retargetAnimationLoadsRef = useRef(retargetAnimationLoads);
   retargetAnimationLoadsRef.current = retargetAnimationLoads;
-  const audioBytesRef = useRef(audioBytes);
-  audioBytesRef.current = audioBytes;
   const loadAudioSourceBytesRef = useRef(loadAudioSourceBytes);
   loadAudioSourceBytesRef.current = loadAudioSourceBytes;
   const audioLibraryRef = useRef(audioLibrary);
@@ -365,8 +358,6 @@ export function PlayOverlay({
   materialDocumentsRef.current = materialDocuments;
   const materialFunctionsRef = useRef(materialFunctions);
   materialFunctionsRef.current = materialFunctions;
-  const textureNameRef = useRef(textureName);
-  textureNameRef.current = textureName;
   const navmeshBytesRef = useRef(navmeshBytes);
   navmeshBytesRef.current = navmeshBytes;
   const audioReverbBytesRef = useRef(audioReverbBytes);
@@ -514,14 +505,12 @@ export function PlayOverlay({
       modelPayloads: modelPayloadsRef.current,
       modelClipAnimationGuids: modelClipAnimationGuidsRef.current,
       retargetAnimationLoads: retargetAnimationLoadsRef.current,
-      audioBytes: audioBytesRef.current,
       loadAudioSourceBytes: loadAudioSourceBytesRef.current,
       audioLibrary: audioLibraryRef.current,
       animClipCatalog: animClipCatalogRef.current,
       particleLibrary: particleLibraryRef.current,
       materialDocuments: materialDocumentsRef.current,
       materialFunctions: materialFunctionsRef.current,
-      textureName: (guid) => textureNameRef.current?.(guid),
       postProcessingEnabled,
       renderSettings: initialRenderRef.current,
       consoleRenderSettings: initialConsoleRenderRef.current,

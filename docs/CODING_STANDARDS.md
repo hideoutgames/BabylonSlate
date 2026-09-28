@@ -51,7 +51,7 @@ User-facing Event names, Details labels, node titles, pin labels, and enum optio
 See [design/perf-budget.md](design/perf-budget.md). In particular:
 
 - No per-actor per-frame allocation in render sync paths (reuse scratch math objects).
-- Do not construct `Texture` outside the resource cache (lint rule when `render` lands P4 machinery).
+- Construct asset image textures through the resource cache. Renderer-owned dynamic targets (`RenderTargetTexture` and `RawTexture` data/fallback textures) are exempt and must account bytes through `beginManagedRenderAllocation`.
 - Every scene mutation that should appear in the viewport must mark the viewport dirty.
 
 ## Tests

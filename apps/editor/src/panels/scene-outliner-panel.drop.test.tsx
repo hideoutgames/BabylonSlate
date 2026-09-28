@@ -3,7 +3,7 @@ import { act, cleanup, render, screen } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import type { SerializedScene } from "@babylonslate/core";
 import { createDefaultScene } from "@babylonslate/core";
-import { actorRowId } from "./scene-outliner-panel";
+import { actorRowId } from "../lib/outliner-drop";
 import { SceneOutlinerPanel } from "./scene-outliner-panel";
 
 /** jsdom has no PointerEvent; a MouseEvent with pointer fields drives TreeView. */

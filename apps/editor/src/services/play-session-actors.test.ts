@@ -121,7 +121,6 @@ describe.each(["worker", "in-process"] as const)(
         const boot = createPlayBootCoordinator();
         let onCommand: (command: CommandMessage) => void = () => {};
         vi.mocked(createGameWorkerHost).mockReturnValue({
-          mode: "worker",
           onCommand: (handler) => {
             onCommand = handler;
           },

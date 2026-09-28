@@ -30,7 +30,7 @@ Parser: whitespace tokens, quoted strings, longest-name match (`stat unit`, `sna
 | `quality shadows/resolution/textures/geometry/postprocessing/lighting [tier\|reset]` | yes | **yes** | Applies or resets one group. Shadow budget, distance and enabled state are independent settings. |
 | `quality geometry lod on\|off`, `quality geometry distance <0.25..4>` | yes | **yes** | Switches automatic Model LOD or scales its switch distances for the session. |
 | `quality resolution scale <0.25..1>` | yes | **yes** | Sets a fixed fraction of target width/height without resetting simulation. |
-| `framecap` | yes | **yes** | `{ type: "setFrameCap" }` → Play/player `scheduler.setFrameCap`. No arg → print current. |
+| `framecap` | yes | **yes** | `setScalability` frame-cap patch → Play/player `scheduler.setFrameCap`. No arg → print current. |
 | `volume` | yes | **yes** | `{ type: "setGlobalVolume" }` (P16 mixer). No arg → print current. |
 | `help` | yes | **yes** | Core. Lists registered names or one command’s parameters. Stripped debug names print “not available in this build”. |
 
@@ -115,7 +115,7 @@ Seven core setters plus `help`. Optional args print the current value.
 | `quality shadows [tier\|reset\|budget N\|distance N\|enabled on/off]` | Shadow quality and allocation controls; presets preserve distance and budget. |
 | `quality resolution scale N` | Fixed fraction of target width and height, from 0.25 to 1. |
 | `quality geometry [tier\|reset\|lod on/off\|distance N]` | Automatic Model LOD and its distance scale, from 0.25 to 4. |
-| `framecap [fps]` | Play/player `scheduler.setFrameCap`. No arg → print current. |
+| `framecap [fps]` | `setScalability` frame-cap patch → Play/player `scheduler.setFrameCap`. No arg → print current. |
 | `volume [0..1]` | Emit `setGlobalVolume` (same as the graph node). No arg → print current. |
 | `quit` | Unchanged. |
 | `help [name]` | Core. No arg: names + one-line descriptions, user commands included, grouped by category (`engine` vs authored category). With a name: parameters and enum values. Stripped debug names still print “not available in this build” rather than “unknown”. `help` is **registry-driven**: registering a builtin in `builtinCommands()` (plus `CORE_COMMAND_NAMES` / `DEBUG_COMMAND_NAMES`) or a user `BDebugCommand` is enough — do not duplicate a help string. |
@@ -184,7 +184,7 @@ Worker→main commands:
 | Command | Direction | Purpose |
 | --- | --- | --- |
 | `sessionPaused` | worker → main | Overlay chrome Pause/Resume label + `userPausedRef` |
-| `setRenderingQuality` / `setFrameCap` | worker → main | Play view hardware scaling + scheduler cap |
+| `setScalability` | worker → main | Play view quality, render path, hardware scaling + scheduler cap |
 | `setGlobalVolume` | already existed | `volume` console command reuses it |
 | `setFreeCam` | worker → main | Attach/detach debug camera, input steal |
 | `setWireframe` / `setShowBounds` / `setShowCollision` / `setShowNav` / `setShowAudioDebug` | worker → main | Play-scene overlays; audio debug is a DOM overlay, not Babylon GUI |

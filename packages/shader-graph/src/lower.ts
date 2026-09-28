@@ -63,11 +63,9 @@ export interface MaterialCostFeatures {
   textureSamples: number;
   /** Sum of catalog cost weights. Relative ALU work, not milliseconds. */
   weight: number;
-  usesDerivatives: boolean;
   usesSceneDepth: boolean;
   usesSceneNormal: boolean;
   customBlocks: number;
-  inlinedFunctions: number;
 }
 
 export interface MaterialBuildPlan {
@@ -84,7 +82,7 @@ export interface MaterialBuildPlan {
   outputs: Record<string, MaterialOperand | null>;
   textures: MaterialTextureBinding[];
   cost: MaterialCostFeatures;
-  dependencies: { textures: string[]; functions: string[] };
+  dependencies: { textures: string[] };
   /** Scene buffers a post-process plan samples. Surface plans are all false. */
   bufferRequirements: MaterialBufferRequirements;
   /** Stable content hash. Node positions and names are deliberately excluded. */
@@ -258,7 +256,6 @@ export function lowerMaterialDocument(
   const emitted = new Map<string, MaterialOperation>();
   const emitting = new Set<string>();
   const textures: MaterialTextureBinding[] = [];
-  const usedFunctions = new Set<string>();
 
   const rootFrame: Frame = {
     graph: doc,
@@ -278,7 +275,6 @@ export function lowerMaterialDocument(
     const guid = callNode.properties.functionGuid;
     const fn = typeof guid === "string" ? functions[guid] : undefined;
     if (!fn) return null;
-    usedFunctions.add(guid as string);
     const bindings = new Map<string, MaterialOperand>();
     for (const pin of fn.inputs) {
       bindings.set(pin.id, operandForInput(frame, callNode, pin.id));
@@ -485,7 +481,6 @@ export function lowerMaterialDocument(
       cost,
       dependencies: {
         textures: [...new Set(textures.map((entry) => entry.textureGuid))].sort(),
-        functions: [...usedFunctions].sort(),
       },
       bufferRequirements: bufferRequirementsOf(operations),
       hash: hashPlan(operations, outputs, header),
@@ -496,34 +491,24 @@ export function lowerMaterialDocument(
 function costOf(operations: readonly MaterialOperation[]): MaterialCostFeatures {
   let weight = 0;
   let textureSamples = 0;
-  let usesDerivatives = false;
   let usesSceneDepth = false;
   let usesSceneNormal = false;
   let customBlocks = 0;
-  let inlinedFunctions = 0;
-  const functionGuids = new Set<string>();
   for (const operation of operations) {
     const definition = materialNodeDefinition(operation.nodeType);
     weight += definition?.cost ?? 1;
     textureSamples += definition?.samples ?? 0;
-    if (definition?.requires?.includes("derivatives")) usesDerivatives = true;
     if (definition?.requires?.includes("sceneDepth")) usesSceneDepth = true;
     if (definition?.requires?.includes("sceneNormal")) usesSceneNormal = true;
     if (operation.nodeType === "custom.glsl") customBlocks += 1;
-    if (operation.source.functionGuid) {
-      functionGuids.add(operation.source.functionGuid);
-    }
   }
-  inlinedFunctions = functionGuids.size;
   return {
     operations: operations.length,
     textureSamples,
     weight,
-    usesDerivatives,
     usesSceneDepth,
     usesSceneNormal,
     customBlocks,
-    inlinedFunctions,
   };
 }
 

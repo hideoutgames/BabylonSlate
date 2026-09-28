@@ -1,222 +1,24 @@
 /** Synthetic GLB fixtures for NullEngine tests and test-mode proofs; kept out of the render barrel. */
-import { Matrix, Mesh, Quaternion, Scene, Vector3, VertexData } from "@babylonjs/core";
-import { encodeGlbJsonBin, splitGlbJsonBin } from "@babylonslate/assets";
+import { encodeGlbJsonBin } from "@babylonslate/assets";
 
 const FLOAT = 5126;
 const UNSIGNED_SHORT = 5123;
-const UNSIGNED_INT = 5125;
 
-function accessorFloats(
-  json: Record<string, unknown>,
-  bin: Uint8Array,
-  accessorIndex: number,
-): Float32Array | null {
-  const accessors = Array.isArray(json.accessors) ? json.accessors : [];
-  const bufferViews = Array.isArray(json.bufferViews) ? json.bufferViews : [];
-  const accessor = accessors[accessorIndex] as Record<string, unknown> | undefined;
-  if (!accessor) return null;
-  const componentType = Number(accessor.componentType);
-  const count = Number(accessor.count);
-  const type = accessor.type;
-  if (componentType !== FLOAT || type !== "VEC3" || !Number.isFinite(count)) {
-    return null;
-  }
-  const viewIndex = Number(accessor.bufferView);
-  const view = bufferViews[viewIndex] as Record<string, unknown> | undefined;
-  if (!view) return null;
-  const byteOffset =
-    Number(view.byteOffset ?? 0) + Number(accessor.byteOffset ?? 0);
-  const byteLength = count * 12;
-  if (byteOffset + byteLength > bin.byteLength) return null;
-  const copy = new Float32Array(count * 3);
-  const data = new DataView(bin.buffer, bin.byteOffset + byteOffset, byteLength);
-  for (let i = 0; i < copy.length; i++) {
-    copy[i] = data.getFloat32(i * 4, true);
-  }
-  return copy;
-}
-
-function accessorIndices(
-  json: Record<string, unknown>,
-  bin: Uint8Array,
-  accessorIndex: number,
-): number[] | null {
-  const accessors = Array.isArray(json.accessors) ? json.accessors : [];
-  const bufferViews = Array.isArray(json.bufferViews) ? json.bufferViews : [];
-  const accessor = accessors[accessorIndex] as Record<string, unknown> | undefined;
-  if (!accessor) return null;
-  const componentType = Number(accessor.componentType);
-  const count = Number(accessor.count);
-  const viewIndex = Number(accessor.bufferView);
-  const view = bufferViews[viewIndex] as Record<string, unknown> | undefined;
-  if (!view || !Number.isFinite(count)) return null;
-  const byteOffset =
-    Number(view.byteOffset ?? 0) + Number(accessor.byteOffset ?? 0);
-  const stride = componentType === UNSIGNED_INT ? 4 : 2;
-  if (byteOffset + count * stride > bin.byteLength) return null;
-  const viewBuf = new DataView(bin.buffer, bin.byteOffset + byteOffset);
-  const indices: number[] = [];
-  for (let i = 0; i < count; i++) {
-    indices.push(
-      componentType === UNSIGNED_INT
-        ? viewBuf.getUint32(i * 4, true)
-        : componentType === UNSIGNED_SHORT
-          ? viewBuf.getUint16(i * 2, true)
-          : viewBuf.getUint8(i),
-    );
-  }
-  return indices;
-}
-
-function asTuple3(
-  value: unknown,
-  fallback: [number, number, number],
-): [number, number, number] {
-  if (!Array.isArray(value) || value.length < 3) return fallback;
-  const [x, y, z] = value;
-  return [
-    typeof x === "number" ? x : fallback[0],
-    typeof y === "number" ? y : fallback[1],
-    typeof z === "number" ? z : fallback[2],
-  ];
-}
-
-function asTuple4(
-  value: unknown,
-  fallback: [number, number, number, number],
-): [number, number, number, number] {
-  if (!Array.isArray(value) || value.length < 4) return fallback;
-  const [x, y, z, w] = value;
-  return [
-    typeof x === "number" ? x : fallback[0],
-    typeof y === "number" ? y : fallback[1],
-    typeof z === "number" ? z : fallback[2],
-    typeof w === "number" ? w : fallback[3],
-  ];
-}
-
-function nodeLocalMatrix(node: Record<string, unknown>): Matrix {
-  if (Array.isArray(node.matrix) && node.matrix.length >= 16) {
-    const values = node.matrix.map((entry) =>
-      typeof entry === "number" ? entry : 0,
-    );
-    return Matrix.FromArray(values);
-  }
-  const translation = asTuple3(node.translation, [0, 0, 0]);
-  const rotation = asTuple4(node.rotation, [0, 0, 0, 1]);
-  const scale = asTuple3(node.scale, [1, 1, 1]);
-  return Matrix.Compose(
-    new Vector3(scale[0], scale[1], scale[2]),
-    new Quaternion(rotation[0], rotation[1], rotation[2], rotation[3]),
-    new Vector3(translation[0], translation[1], translation[2]),
-  );
-}
-
-/** World matrix of the first node that references `meshIndex`, or identity. */
-function meshNodeWorldMatrix(
-  json: Record<string, unknown>,
-  meshIndex: number,
-): Matrix {
-  const nodes = Array.isArray(json.nodes) ? json.nodes : [];
-  const scenes = Array.isArray(json.scenes) ? json.scenes : [];
-  const sceneIndex = typeof json.scene === "number" ? json.scene : 0;
-  const scene = scenes[sceneIndex] as { nodes?: unknown } | undefined;
-  const roots = Array.isArray(scene?.nodes)
-    ? scene.nodes
-    : nodes.map((_, index) => index);
-  let found: Matrix | null = null;
-  const visit = (index: unknown, parent: Matrix) => {
-    if (found || typeof index !== "number" || index < 0 || index >= nodes.length) {
-      return;
-    }
-    const node = nodes[index] as Record<string, unknown> | undefined;
-    if (!node) return;
-    const world = nodeLocalMatrix(node).multiply(parent);
-    if (node.mesh === meshIndex) {
-      found = world;
-      return;
-    }
-    const children = Array.isArray(node.children) ? node.children : [];
-    for (const child of children) visit(child, world);
-  };
-  const identity = Matrix.Identity();
-  for (const root of roots) visit(root, identity);
-  return found ?? identity;
-}
-
-function bakePositions(
-  positions: Float32Array,
-  world: Matrix,
-): Float32Array {
-  if (world.isIdentity()) return positions;
-  const baked = new Float32Array(positions.length);
-  const point = new Vector3();
-  for (let i = 0; i < positions.length; i += 3) {
-    point.set(positions[i]!, positions[i + 1]!, positions[i + 2]!);
-    Vector3.TransformCoordinatesToRef(point, world, point);
-    baked[i] = point.x;
-    baked[i + 1] = point.y;
-    baked[i + 2] = point.z;
-  }
-  return baked;
-}
-
-/** Build a Babylon mesh from the first GLB primitive, or null when unreadable. */
-export function createMeshFromModelBytes(
-  scene: Scene,
-  name: string,
-  bytes: Uint8Array,
-): Mesh | null {
-  const glb = splitGlbJsonBin(bytes);
-  if (!glb?.bin.byteLength) return null;
-  const meshes = Array.isArray(glb.json.meshes) ? glb.json.meshes : [];
-  const meshJson = meshes[0] as Record<string, unknown> | undefined;
-  const primitives = Array.isArray(meshJson?.primitives)
-    ? meshJson.primitives
-    : [];
-  const primitive = primitives[0] as Record<string, unknown> | undefined;
-  const attributes = (primitive?.attributes ?? {}) as Record<string, unknown>;
-  if (typeof attributes.POSITION !== "number") return null;
-  const positions = accessorFloats(glb.json, glb.bin, attributes.POSITION);
-  if (!positions || positions.length < 9) return null;
-  const baked = bakePositions(positions, meshNodeWorldMatrix(glb.json, 0));
-  const vertexData = new VertexData();
-  vertexData.positions = Array.from(baked);
-  if (typeof primitive?.indices === "number") {
-    const indices = accessorIndices(glb.json, glb.bin, primitive.indices);
-    if (indices) vertexData.indices = indices;
-  } else {
-    const count = baked.length / 3;
-    vertexData.indices = Array.from({ length: count }, (_, i) => i);
-  }
-  const mesh = new Mesh(name, scene);
-  vertexData.applyToMesh(mesh, true);
-  mesh.refreshBoundingInfo();
-  return mesh;
-}
-
-/** Volume tetrahedron whose first mesh node (and optional parent) is translated. */
+/** Volume tetrahedron whose mesh node is translated. */
 export function encodeTranslatedTetrahedronGlb(
   translation: [number, number, number],
-  parentTranslation?: [number, number, number],
 ): Uint8Array {
   const positions = new Float32Array([0, 0, 0, 0.5, 0, 0, 0, 0.5, 0, 0, 0, 0.5]);
   const indices = new Uint16Array([0, 1, 2, 0, 1, 3, 0, 2, 3, 1, 2, 3]);
   const bin = new Uint8Array(positions.byteLength + indices.byteLength);
   bin.set(new Uint8Array(positions.buffer), 0);
   bin.set(new Uint8Array(indices.buffer), positions.byteLength);
-  const nodes = parentTranslation
-    ? [
-        { children: [1], translation: parentTranslation },
-        { mesh: 0, translation },
-      ]
-    : [{ mesh: 0, translation }];
   return encodeGlbJsonBin(
     {
       asset: { version: "2.0" },
       scene: 0,
       scenes: [{ nodes: [0] }],
-      nodes,
+      nodes: [{ mesh: 0, translation }],
       meshes: [{ primitives: [{ attributes: { POSITION: 0 }, indices: 1 }] }],
       accessors: [
         {
@@ -245,34 +47,6 @@ export function encodeTranslatedTetrahedronGlb(
       buffers: [{ byteLength: bin.byteLength }],
     },
     bin,
-  );
-}
-
-/** Triangle at x=1 whose node is rotated 90° about Y (glTF right-hand). */
-export function encodeYRotatedTriangleGlb(): Uint8Array {
-  const positions = new Float32Array([1, 0, 0, 1.2, 0, 0, 1, 0.2, 0]);
-  const half = Math.SQRT1_2;
-  return encodeGlbJsonBin(
-    {
-      asset: { version: "2.0" },
-      scene: 0,
-      scenes: [{ nodes: [0] }],
-      nodes: [{ mesh: 0, rotation: [0, half, 0, half] }],
-      meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
-      accessors: [
-        {
-          bufferView: 0,
-          componentType: FLOAT,
-          count: 3,
-          type: "VEC3",
-          min: [1, 0, 0],
-          max: [1.2, 0.2, 0],
-        },
-      ],
-      bufferViews: [{ buffer: 0, byteOffset: 0, byteLength: 36 }],
-      buffers: [{ byteLength: 36 }],
-    },
-    new Uint8Array(positions.buffer),
   );
 }
 

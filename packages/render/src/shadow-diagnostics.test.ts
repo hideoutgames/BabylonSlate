@@ -70,7 +70,6 @@ describe("opt-in shadow evidence capture", () => {
     const evidence = captureShadowDiagnostics(scene, {
       buildSha: "revision",
       host: "unit-test",
-      backendFallbackReason: "No native GPU in this test",
     });
 
     expect(evidence.backend).toMatchObject({

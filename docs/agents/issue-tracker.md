@@ -19,6 +19,17 @@ When the code-review skill reports Standards or Spec findings:
 
 | Date | Branch | Checklist / issue | Axis | Finding | Status |
 | --- | --- | --- | --- | --- | --- |
+| 2026-09-27 | agent/review-followups-7d31 | Review follow-ups | Standards | Render-target capture allocated owner, filter, particle and override collections on continuous frames; capture-owned scratch collections now retain steady-state storage. | Resolved |
+| 2026-09-27 | agent/review-followups-7d31 | Review follow-ups | Standards | Stream admission allocated mesh, particle, texture, geometry and native-visibility collections during staged frames; scope caches and borrowed scratch collections now serve those paths. | Resolved |
+| 2026-09-27 | agent/review-followups-7d31 | Review follow-ups | Standards | Admission and readiness repeated scene-stream lifecycle command switches and validation; one decoder now owns lifecycle events. | Resolved |
+| 2026-09-27 | agent/review-followups-7d31 | Review follow-ups | Standards | Material editor repeated RenderTargetTexture/plain-Texture sampler eligibility predicates; both call one Content Browser helper. | Resolved |
+| 2026-09-27 | agent/review-followups-7d31 | Review follow-ups | Standards | Engine component registration and SceneLayer placement were scattered across core, object-model and editor-kit; one descriptor registry now derives the lists and visuals. | Resolved |
+| 2026-09-27 | agent/review-followups-7d31 | Review follow-ups | Standards | ResourceCache wording incorrectly covered renderer-owned dynamic targets; standards now scope the cache rule to asset image textures and require managed allocation accounting for exempt targets. | Resolved |
+| 2026-09-27 | agent/review-followups-7d31 | Review follow-ups | Spec | Engineplan still listed render-target cameras as out of v1 after Render Target Capture landed; it now distinguishes offscreen captures from gameplay cameras. | Resolved |
+| 2026-09-27 | agent/review-followups-7d31 | Review follow-ups | Spec | Render docs omitted the editor fallback behavior for manual capture targets; the transparent fallback and Play/player request boundary are documented. | Resolved |
+| 2026-09-27 | agent/review-followups-7d31 | Review follow-ups | Spec | Streamed Spawn Actor ownership, Get Scene Reference, and blocking failure continuation semantics were undocumented; scripting docs now state each contract. | Resolved |
+| 2026-09-27 | agent/review-followups-7d31 | Review follow-ups | Spec | The component `editorOnly` rendering contract was implicit; scene authoring docs now state it and identify the streaming scene-name label. | Resolved |
+| 2026-09-27 | agent/review-followups-7d31 | Review follow-ups | Spec | Navigation docs described blocker transforms at actor scope; they now specify the full actor world transform and parent chain. | Resolved |
 | 2026-09-24 | zeron/preview-launch-bug-plan | Preview Build launch | Spec | The reported Starter Content error identifies plugin version checking as the launch blocker. Version differences now remain warnings across mounting and export, while blocking preparation errors use a modal. Portable plugin-import regressions replace the unavailable Windows WebKit OPFS setup for this failure path. | Resolved; focused unit and Chromium/WebKit checks passed |
 | 2026-09-24 | zeron/babylonslate-shadow-fix-plan | Basic 3D mannequin shadows | Spec | Real-model desktop pixel and contact checks pass for the two reproduced defects. Low PCF adds three comparison fetches; native A16 timing and the original TestProject222 remain unavailable. See [qualification](../design/renderer-qualification.md#basic-3d-mannequin-24-september-2026). | Code/browser scope verified; device/original-project qualification BLOCKED |
 | 2026-09-23 | zeron/babylonslate-rendering-handoff | Final integration review | Standards | Sequential review of `5fafa7b4..96a40632` preserves bounded owner cancellation, scoped verification and every CI case. No remaining standards finding; evidence distinguishes native, WARP, SwiftShader and unavailable device measurements. | Reviewed |
@@ -31,7 +42,7 @@ When the code-review skill reports Standards or Spec findings:
 | 2026-08-27 | cursor/model-simple-collision-33dd | Model simple collision | Spec | `PhysicsWorldSync.applyMeshColliders` fingerprinted kind + TRS + layer/mask but not `baked.shape`, so actor scale (and radius/hull size) kept the old Havok collider | Resolved |
 | 2026-08-27 | cursor/model-simple-collision-33dd | Model simple collision | Spec | Add → Generated Collision with no Model `source` chunk wrote `kind: "generated"` and `points: []` instead of recooking the hull | Resolved |
 | 2026-08-27 | cursor/model-simple-collision-33dd | Model simple collision | Spec | Play `showcollision` maps cylinder to a box AABB and skips convex/mesh (cone, generated, complex). Editor dashes already use cylinder/hull wires. Same skip as prior convex authorship | Accepted |
-| 2026-08-27 | cursor/model-simple-collision-33dd | Model simple collision | Spec | Havok always uses `PhysicsShapeCylinder` (present in Babylon 9); unused `cylinderConvexPoints` prism fallback not wired | Accepted |
+| 2026-08-27 | cursor/model-simple-collision-33dd | Model simple collision | Spec | Havok always uses `PhysicsShapeCylinder` (present in Babylon 9); unused `cylinderConvexPoints` prism fallback not wired | Resolved 2026-09-27; unused fallback removed |
 | 2026-08-27 | cursor/model-simple-collision-33dd | Model simple collision | Spec | `physicsActorDiagnostics` treats Mesh `collisionMode !== "none"` as a collider source without resolved shapes or Model payloads | Accepted |
 | 2026-08-27 | cursor/model-simple-collision-33dd | Model simple collision | Standards | Colliders Add/Delete sit in the panel body, not `PanelFrame.toolbar`. DockView already titles the tab Colliders | Accepted |
 | 2026-08-26 | cursor/scenelayer-2d-review-fixes-db32 | SceneLayer 2D Improvements | Spec | Nested `2DButton` editor origin was unpickable at create then `applyActorTransform` restored picks, stealing viewport hits from the parent visual | Resolved |
@@ -125,7 +136,7 @@ When the code-review skill reports Standards or Spec findings:
 | 2026-08-15 | cursor/p13-plugins-4e26 | p13-plugin-model | Spec | Any dependency cycle returned `order: []`, unmounting independent plugins | Resolved |
 | 2026-08-15 | cursor/p13-plugins-4e26 | p13-plugin-model | Spec | `pluginOverrides` guids were always indexed as Unresolved, including discovered plugins (PluginSettings lives outside the mounted `assets/` root) | Resolved |
 | 2026-08-15 | cursor/p13-plugins-4e26 | p13-plugin-settings-ui | Standards | Open / Export / Delete plugin row buttons were `size="sm"` without a 44px min touch target | Resolved |
-| 2026-08-15 | cursor/p13-plugins-4e26 | p13-babplugin / p13-plugin-settings-ui | Spec | Game-export packing and export-preset layer-3 consumption deferred to P14 (`collectEnabledPluginAssets` + empty `exportPresets` only) | Accepted |
+| 2026-08-15 | cursor/p13-plugins-4e26 | p13-babplugin / p13-plugin-settings-ui | Spec | Game-export packing and export-preset layer-3 consumption deferred to P14 (`collectEnabledPluginAssets` + empty `exportPresets` only) | Resolved in P14 (`resolveExportPluginGraph` + `collectExportReachability`); `collectEnabledPluginAssets` removed 2026-09-27 |
 | 2026-08-15 | cursor/p13-plugins-4e26 | p13-engine-plugin | Spec | Missing-plugin e2e seeds an override on an open project rather than cold-loading a project whose plugin folder is absent; unit tests cover remount replacing placeholders | Accepted |
 | 2026-08-15 | cursor/p13-plugins-4e26 | p13-babplugin | Spec | Import e2e asserts the class guid in Place Actors after discard, not a scene actor edge (the scene lives in the project, not the `.babplugin`) | Accepted |
 | 2026-08-15 | cursor/p13-plugins-4e26 | p13-babplugin | Spec | Same guid + different version updates in place; Keep/Replace is same guid+version (locked design). Spec §10.5 “version conflict” prompt is the identical-version case | Accepted |
@@ -266,7 +277,7 @@ Appendix A `p4-*` checkboxes are landed as a vertical Play path. Leftovers below
 | --- | --- | --- |
 | Live SAB zero-copy (main thread reads shared buffer, no per-frame `postMessage`) | later polish (`runtime` worker-entry) | `SeqLockSnapshotPair` unit-tested; Play always uses `TransferablePingPong`. Accepted 2026-08-12 |
 | Multi-transport parity as three hosts | later polish (`test-kit`) | `transport-parity.test.ts` republishes one in-process buffer through SAB/transferable; not three independent runtimes |
-| Typed RPC on the live worker path | later polish (`bridge`, `runtime`) | Types + unit test only; Play uses control/command/input/snapshot |
+| Typed RPC on the live worker path | Removed | The unused RPC helpers, in-process bridge and `rpc` channel were deleted; Play uses control/command/input/snapshot |
 | `remap` command | later polish (`bridge`) | Docs mention guid↔slotId via spawn/despawn/remap; types have spawn/despawn only |
 | Play 60fps on A16 iPad | `p14-perf-smoke` / `p1-device-spikes` | CI does not prove device frame rate |
 | WKWebView `Error.stack` parse | `p1-device-spikes` | V8 + WebKit-shaped strings unit-tested; hardware WKWebView unconfirmed |
@@ -318,7 +329,7 @@ Design notes: [scripting.md](../architecture/scripting.md).
 | Play console + stats HUD | P8 | Landed (`p8-console-hud`) |
 | Trace recorder / `.babtrace` | P8 | Landed (`p8-trace-recorder`); playback tab Done (`p8-trace-playback`) |
 | Keyed Print HUD polish | P8 / export | Print works; HUD polish deferred |
-| Development Only node flag | Done | Inspector checkbox; Print defaults on; `compileGraphDocumentsForExport` skips the node and continues exec (`then` / Sequence `then_*`). P14 release export must call that helper |
+| Development Only node flag | Done | Inspector checkbox; Print defaults on; release export (`compileGraphDocuments` with `stripDevelopmentOnly` while Bundle Debugger is off) skips the node and continues exec (`then` / Sequence `then_*`) |
 | AI / navigation scripting nodes | P11 | Catalog categories wait for behaviour trees + navmesh |
 | Audio node runtime helpers beyond stubs | P16 | Play Sound / Set Channel Volume / Set Global Volume emit audio commands (P16 Done) |
 
@@ -395,7 +406,7 @@ P8 phase acceptance is met at the blocking level (`p8-command-system`, `p8-bdebu
 
 | Gap vs engineplan §9 | Reality | Owner |
 | --- | --- | --- |
-| Core quality commands “mutate real engine settings” | Play applies `setGlobalVolume` / `setFrameCap` / `setRenderQuality` / `setResolutionScale` | `p8-console-apply` (done) |
+| Core quality commands “mutate real engine settings” | Play applies `setGlobalVolume` and `setScalability` transactions (quality, resolution scale, frame cap) | `p8-console-apply` (done) |
 | No `resume`; console `step` no-ops while paused; overlay Pause/Resume unsynced | `resume` / `unpause`; console `step` matches overlay; `sessionPaused` updates chrome | `p8-console-session` (done) |
 | No free cam / spectate without pausing | `freecam` detached fly/pan; simulation keeps ticking | `p8-console-freecam` (done) |
 | `showcollision` / `showbounds` / `wireframe` / `slomo` | `slomo` scales tick `dt`; viz overlays + Stats HUD + `dumpactors` / `inspect` | `p8-console-slomo`, `p8-console-viz` (done) |
@@ -414,7 +425,7 @@ P9 content systems have landed (`p9-fonts`, `p9-sprite`, `p9-anim-graph`, `p9-sh
 | --- | --- | --- | --- |
 | Design notes | — | `docs/architecture/fonts.md`, `sprites.md`, `anim-graph.md`, `shader-graph.md` | P8 complete |
 | Font payload + registry | `p9-fonts` (done) | `assets`, `core`, `render`, `apps/editor` | Design notes |
-| Sprite packer + quad | `p9-sprite` (done) | `assets`, `render`, `apps/editor` | Design notes |
+| Sprite asset + quad | `p9-sprite` (done) | `assets`, `render`, `apps/editor` | Design notes |
 | AnimationGraph | `p9-anim-graph` (done) | `anim-graph`, `runtime`, `render`, `graph-ui`, `scripting`, `apps/editor` | Dual-mode State Machine / Animation Object host, typed variables, compiled transition rules |
 | Shader graph | `p9-shader-graph` (done) | `shader-graph`, `render`, `graph-ui`, `apps/editor` | Design notes + graph-ui host |
 
@@ -437,7 +448,7 @@ Chrome polish (pin flash) stays parked. Multi-select gizmo group transforms are 
 | ScriptHost input / tick Delay / spawn / addComponent / GameInstance | Done (foundation wave; worker Play applies queued input each tick — host wall-clock stamps must not drop GetAxis) |
 | Play startup scene with no scene tab open | Superseded — Play is **disabled** until a scene tab is open; `startupSceneGuid` is packaged/export only |
 | Sprite/tilemap `ResourceCache` textures + GLB `assetGuid` | Done (foundation wave) |
-| HUD TouchButton / TouchDPad → input | Removed with the game HUD. Play overlay virtual sticks remain (`play-hud-joystick.ts`) |
+| HUD TouchButton / TouchDPad → input | Removed with the game HUD. There is no on-screen Play movement stick; Touch bindings are fed only by the `injectTestTouchAxis` test hook |
 | `playSound` command (log, not a mixer), `.babtrace` tab, §9.4 HUD | Command landed; mixer Done; `.babtrace` tab Done (`p8-trace-playback`). §9.4 stats HUD parked. Game HUD removed |
 
 ### Authoring-surface wave (before P11)

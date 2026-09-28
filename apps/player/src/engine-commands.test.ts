@@ -90,7 +90,7 @@ describe("applyPlayerEngineCommand", () => {
     ]);
   });
 
-  it("forwards Play hardware scaling and frame cap commands", () => {
+  it("forwards Play scalability transactions and the lights debug overlay", () => {
     const applied: string[] = [];
     const handle = {
       applyCommand: (command: { type: string }) => {
@@ -98,16 +98,10 @@ describe("applyPlayerEngineCommand", () => {
       },
     };
     expect(
-      applyPlayerEngineCommand(handle, { type: "setFrameCap", fps: 30 }),
-    ).toBe(true);
-    expect(
-      applyPlayerEngineCommand(handle, { type: "setRenderingQuality", overrides: { shadows: { maxLocalLights: 8 } } }),
-    ).toBe(true);
-    expect(
-      applyPlayerEngineCommand(handle, { type: "setRenderPath", renderPath: "forward" }),
-    ).toBe(true);
-    expect(
-      applyPlayerEngineCommand(handle, { type: "setRenderPath", renderPath: null }),
+      applyPlayerEngineCommand(handle, {
+        type: "setScalability",
+        transaction: { revision: 1, settings: { render: {}, frameCap: 30 }, overrides: { renderPath: "forward" } },
+      }),
     ).toBe(true);
     expect(
       applyPlayerEngineCommand(handle, {
@@ -115,13 +109,7 @@ describe("applyPlayerEngineCommand", () => {
         enabled: true,
       }),
     ).toBe(true);
-    expect(applied).toEqual([
-      "setFrameCap",
-      "setRenderingQuality",
-      "setRenderPath",
-      "setRenderPath",
-      "setLightsDebug",
-    ]);
+    expect(applied).toEqual(["setScalability", "setLightsDebug"]);
   });
 
   it("forwards setFreeCam onto the Engine handle", () => {

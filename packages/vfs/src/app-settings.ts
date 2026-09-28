@@ -54,8 +54,6 @@ const focusKeepPanelList = (fallback: readonly string[]) =>
 export const engineSettingsSchema = z.object({
   automaticUpdatesEnabled: z.boolean().default(true),
   seenReleaseVersions: z.array(z.string()).catch([]).default([]),
-  templatesFolder: z.string().nullable().default(null),
-  defaultProjectLocation: z.string().nullable().default(null),
   recents: z
     .array(
       z.object({
@@ -141,8 +139,6 @@ export const engineSettingsSchema = z.object({
     .default({}),
   debuggerDefaults: z
     .object({
-      showFps: z.boolean().default(false),
-      logLevel: z.enum(["error", "warn", "info", "debug"]).default("warn"),
       previewBuild: z.boolean().default(false),
       playFromScene: z.boolean().default(true),
       overlayStats: z.boolean().default(true),
@@ -151,8 +147,6 @@ export const engineSettingsSchema = z.object({
       pauseOnPlay: z.boolean().default(false),
     })
     .default({
-      showFps: false,
-      logLevel: "warn",
       previewBuild: false,
       playFromScene: true,
       overlayStats: true,

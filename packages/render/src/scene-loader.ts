@@ -1,7 +1,10 @@
 import { Color3, Mesh, MeshBuilder, Quaternion, Scene, Vector3, StandardMaterial } from "@babylonjs/core";
 import { normalizeWaterBody, waterKindForClass } from "@babylonslate/core";
 import { createWaterMesh } from "./water-mesh";
+import { createSplineMesh } from "./spline-mesh";
 import { createWaterRemovalMesh } from "./water-removal-mesh";
+import { createCableMesh, updateCablePreview } from "./cable-mesh";
+import { authoredActorMatrices, authoredComponentActorTransform, authoredTransformMatrix } from "./authored-transform-matrices";
 import { createFogVolumeGuide, syncFogVolumeGuideAttachments } from "./fog-volume-guide";
 import type { SerializedActor, SerializedComponent, SerializedScene, SerializedTransform } from "@babylonslate/core";
 import { sceneShadowController } from "./shadow-controller";
@@ -16,6 +19,7 @@ import {
   parseSkyboxSize,
   parseText2DProperties,
   parseText3DProperties,
+  parseCableProperties,
   SKYBOX_FACE_KEYS,
   SPRING_ARM_COMPONENT_CLASS_ID,
 } from "@babylonslate/core";
@@ -73,7 +77,6 @@ import {
 } from "./editor-volume";
 import { parseColliderProperties } from "@babylonslate/physics";
 import { createText3DMesh } from "./text3d-mesh";
-import { authoredComponentActorTransform } from "./authored-transform-matrices";
 import { attachmentParentFor, createEditorSpringArmMesh } from "./spring-arm";
 import { createText2DMesh, text2DBitmapBytes } from "./text2d-mesh";
 import {
@@ -224,6 +227,8 @@ function stringProp(value: unknown): string | null {
 }
 
 const VISUAL_COMPONENT_CLASS_IDS = new Set([
+  "CableComponent",
+  "SplineComponent",
   "GlobalWaterVolumeComponent", "WaterOceanComponent", "WaterLakeComponent", "WaterRiverComponent", "WaterPuddleComponent",
   "LandscapeComponent",
   "FoliageComponent",
@@ -254,6 +259,8 @@ const VISUAL_COMPONENT_CLASS_IDS = new Set([
 ]);
 
 const SURFACE_COMPONENT_CLASS_IDS = new Set([
+  "CableComponent",
+  "SplineComponent",
   "GlobalWaterVolumeComponent", "WaterOceanComponent", "WaterLakeComponent", "WaterRiverComponent", "WaterPuddleComponent",
   "LandscapeComponent",
   "FoliageComponent",
@@ -418,7 +425,8 @@ export function needsOriginRoot(
   return (
     helperBillboardIconOf(actor) !== null ||
     visuals.length > 1 ||
-    visuals.some((component) => waterKindForClass(component.classId) !== null || component.classId === "WaterRemovalVolumeComponent") ||
+    visuals.some((component) => component.classId === "CableComponent") ||
+    visuals.some((component) => waterKindForClass(component.classId) !== null || component.classId === "WaterRemovalVolumeComponent" || component.classId === "SplineComponent") ||
     visuals.some((component) => component.classId === "FogVolumeComponent") ||
     visuals.some((component) => component.classId === "LandscapeComponent" || component.classId === "FoliageComponent") ||
     visuals.some((component) => !isIdentitySerializedTransform(component.transform)) ||
@@ -440,6 +448,8 @@ function componentVisualKind(
 ): string {
   if (component.classId === "SceneStreamingComponent") return editorBillboardKind("default");
   const asset = stringProp(component.properties.assetGuid) ?? "";
+  if (component.classId === "CableComponent") return `cable:${JSON.stringify(parseCableProperties(component.properties))}`;
+  if (component.classId === "SplineComponent") return `spline:${JSON.stringify(component.properties)}`;
   if (waterKindForClass(component.classId)) return `water:${component.classId}:${JSON.stringify(component.properties)}`;
   if (component.classId === "WaterRemovalVolumeComponent") return `waterRemoval:${JSON.stringify(component.properties)}`;
   if (component.classId === "FogVolumeComponent") {
@@ -604,6 +614,8 @@ export function editorMeshKindOf(
   assets?: MeshAssetContext,
   allActors?: readonly SerializedActor[],
 ): string | null {
+  const cable = actor.components.find((component) => component.classId === "CableComponent");
+  if (cable) return componentVisualKind(cable);
   const meshComponent = actor.components.find(
     (component) => component.classId === "MeshComponent",
   );
@@ -696,6 +708,14 @@ export function createMeshForComponent(
   assets?: MeshAssetContext,
   allActors?: readonly SerializedActor[],
 ): Mesh {
+  if (component.classId === "CableComponent") {
+    const properties = parseCableProperties(component.properties);
+    const mesh = createCableMesh(scene, name, properties);
+    if (properties.materialGuid) mesh.material = assets?.resolveMaterial?.(properties.materialGuid, { scene }) ?? null;
+    sceneShadowController(scene).setParticipation(mesh, component.properties);
+    return mesh;
+  }
+  if (component.classId === "SplineComponent") return createSplineMesh(scene, name, component.properties);
   if (component.classId === "SceneStreamingComponent") return createEditorBillboard(scene, name, "default");
   const waterKind = waterKindForClass(component.classId);
   if (waterKind) {
@@ -973,6 +993,25 @@ function parentVisualMeshId(
   return null;
 }
 
+function cableVisualTransform(actor: SerializedActor, component: SerializedComponent): SerializedTransform {
+  const local = component.transform ?? identitySerializedTransform();
+  if (component.classId !== "CableComponent" || !component.parentId) return local;
+  const byId = new Map(actor.components.map((entry) => [entry.id, entry]));
+  const matrix = authoredTransformMatrix(local);
+  const visited = new Set([component.id]);
+  let parent = byId.get(component.parentId);
+  // A non-visual SceneComponent has no Babylon node: retain its transform in
+  // the cable's local transform up to the nearest actual visual parent.
+  while (parent && !VISUAL_COMPONENT_CLASS_IDS.has(parent.classId) && !visited.has(parent.id)) {
+    visited.add(parent.id);
+    matrix.multiplyToRef(authoredTransformMatrix(parent.transform ?? identitySerializedTransform()), matrix);
+    parent = parent.parentId ? byId.get(parent.parentId) : undefined;
+  }
+  const position = new Vector3(), rotation = new Quaternion(), scale = new Vector3();
+  if (!matrix.decompose(scale, rotation, position)) return local;
+  return { position: [position.x, position.y, position.z], rotation: [rotation.x, rotation.y, rotation.z, rotation.w], scale: [scale.x, scale.y, scale.z] };
+}
+
 function createActorOriginHierarchy(
   scene: Scene,
   actor: SerializedActor,
@@ -1000,7 +1039,7 @@ function createActorOriginHierarchy(
       retainedBitmapBytes += text2DBitmapBytes(mesh);
       applySerializedTransform(
         mesh,
-        component.transform ?? identitySerializedTransform(),
+        cableVisualTransform(actor, component),
       );
       mesh.isVisible = actor.visible;
       mesh.isPickable = visualIsPickable(mesh, actor.locked);
@@ -1221,11 +1260,11 @@ export function applyComponentChildTransforms(
     const childName = editorComponentMeshName(actor.id, component.id);
     const child = childMeshesOf(mesh).find((entry) => entry.name === childName);
     if (!child) continue;
-    if (isEditorCameraModel(child) && child.isWorldMatrixFrozen) child.unfreezeWorldMatrix();
-    if (component.classId === "MeshComponent") sceneShadowController(mesh.getScene()).setParticipation(child, component.properties);
+    if ((isEditorCameraModel(child) || component.classId === "CableComponent") && child.isWorldMatrixFrozen) child.unfreezeWorldMatrix();
+    if (component.classId === "MeshComponent" || component.classId === "CableComponent") sceneShadowController(mesh.getScene()).setParticipation(child, component.properties);
     applySerializedTransform(
       child,
-      component.transform ?? identitySerializedTransform(),
+      cableVisualTransform(actor, component),
     );
     const fogBinding = fogBindings.get(component.id);
     if (fogBinding) syncFogVolumeGuideAttachments(child, mesh, fogBinding, actor.visible);
@@ -1294,6 +1333,30 @@ export function freezeStaticActorWorldMatrix(root: Mesh): void {
 export function unfreezeActorWorldMatrix(root: Mesh): void {
   for (const mesh of [root, ...visualMeshesOfActorRoot(root)]) {
     if (mesh.isWorldMatrixFrozen) mesh.unfreezeWorldMatrix();
+  }
+}
+
+/** Update attached cable endpoints after document transforms, without ticking the editor. */
+export function syncEditorCablePreviews(scene: Scene, actors: readonly SerializedActor[]): void {
+  const actorsById = new Map(actors.map((actor) => [actor.id, actor]));
+  const actorMatrix = authoredActorMatrices(actors);
+  for (const actor of actors) for (const component of actor.components) {
+    if (component.classId !== "CableComponent") continue;
+    const mesh = scene.getMeshByName(editorComponentMeshName(actor.id, component.id));
+    if (!(mesh instanceof Mesh)) continue;
+    const properties = parseCableProperties(component.properties);
+    const targetActor = (properties.targetActorId ? actorsById.get(properties.targetActorId) : undefined) ?? actor;
+    const targetComponent = properties.targetComponentId
+      ? targetActor.components.find((entry) => entry.id === properties.targetComponentId || entry.sourceId === properties.targetComponentId)
+      : properties.targetActorId ? undefined : component;
+    const target = targetComponent
+      ? authoredTransformMatrix(authoredComponentActorTransform(targetActor, targetComponent)).multiply(actorMatrix(targetActor))
+      : actorMatrix(targetActor);
+    const cableWorld = authoredTransformMatrix(authoredComponentActorTransform(actor, component)).multiply(actorMatrix(actor));
+    if (Math.abs(cableWorld.determinant()) < 1e-12) continue;
+    const end = Vector3.TransformCoordinates(Vector3.FromArray(properties.endPosition), target);
+    const start = Vector3.TransformCoordinates(Vector3.Zero(), cableWorld);
+    updateCablePreview(mesh, [end.x, end.y, end.z], [start.x, start.y, start.z]);
   }
 }
 
@@ -1374,6 +1437,7 @@ export function applySceneToBabylonScene(
     }
   }
 
+  syncEditorCablePreviews(scene, sceneData.actors);
   for (const mesh of meshes.values()) {
     freezeStaticActorWorldMatrix(mesh);
   }

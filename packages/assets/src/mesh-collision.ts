@@ -193,10 +193,6 @@ export type ResolvedMeshCollision = {
   scale: [number, number, number];
 };
 
-export function meshColliderId(componentGuid: string, shapeId: string): string {
-  return `mesh-collider:${componentGuid}:${shapeId}`;
-}
-
 /** Stable key so editor meshes rebuild when Mesh collision or Model hulls change. */
 export function meshCollisionFingerprint(
   properties: Record<string, unknown>,

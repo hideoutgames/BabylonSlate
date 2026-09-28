@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  audioAssetGuidsFromLibrary,
   createPlayAudioSourceLoader,
   playAudioLibraryFromAssets,
 } from "./play-audio";
@@ -25,7 +24,6 @@ describe("playAudioLibraryFromAssets", () => {
     expect(library.channels.get("sfx")?.parentChannelGuid).toBeNull();
     expect(library.audio.get("jump")?.volume).toBe(0.5);
     expect(library.attenuations.get("near")?.innerRadius).toBe(2);
-    expect(audioAssetGuidsFromLibrary(library)).toEqual(["jump"]);
   });
 });
 

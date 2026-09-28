@@ -224,12 +224,13 @@ it("uses uploaded raster dimensions and partial KTX2 mip chains", () => {
   expect(cache.accountedBytes()).toBe(80);
 });
 
-it("clears observer accounting on context release and ignores retired upload notifications", () => {
+it("clears observer accounting on eviction and ignores retired upload notifications", () => {
   const { cache, engine } = host();
   const bytes = ktx2();
   const oldLease = cache.acquireTexture("atlas", engine, bytes);
     const old = oldLease.resource;
-  cache.releaseGpuTextures();
+  oldLease.release();
+  cache.flushUnreferenced();
   expect(cache.accountedBytes()).toBe(0);
   expect(old.onLoadObservable.hasObservers()).toBe(false);
   const replacementLease = cache.acquireTexture("atlas", engine, bytes);
@@ -256,7 +257,8 @@ it("reads Blob KTX2 headers without a late header reviving a disposed generation
   const slice = vi.spyOn(bytes, "slice").mockReturnValue(header);
   const oldLease = cache.acquireTexture("atlas", engine, bytes);
     const old = oldLease.resource;
-  cache.releaseGpuTextures();
+  oldLease.release();
+  cache.flushUnreferenced();
   slice.mockRestore();
   const replacementLease = cache.acquireTexture("atlas", engine, bytes);
     const replacement = replacementLease.resource;

@@ -23,6 +23,7 @@ import {
   animationAssetGuids,
   normalizeAnimationPayload,
   spriteAnimationTextureGuids,
+  isEnvironmentTexturePayload,
 } from "@babylonslate/assets";
 import {
   classIdsFromVariableMembers,
@@ -33,6 +34,7 @@ import {
   isInputAssetType,
   createDefaultSceneLayer,
   isLegacyMaterialAssetType,
+  isMaterialTextureAssetType,
 } from "@babylonslate/core";
 import { createDefaultAnimGraph } from "@babylonslate/anim-graph";
 import {
@@ -1744,15 +1746,6 @@ export function newAssetFileName(
   return `${safe}${ASSET_FILE_SUFFIX[type] ?? ".babasset"}`;
 }
 
-/** Relative path next to an existing asset (`assets/HUD.class.babasset` → `Chip.class.babasset`). */
-export function siblingAssetRelativePath(hostPath: string, fileName: string): string {
-  const slash = hostPath.lastIndexOf("/");
-  const dir = slash >= 0 ? hostPath.slice(0, slash) : "";
-  const relativeDir =
-    dir === "assets" || dir === "" ? "" : dir.replace(/^assets\//, "");
-  return relativeDir ? `${relativeDir}/${fileName}` : fileName;
-}
-
 /**
  * Textures, called functions and the preview mesh a material references.
  * Saving writes these into `header.dependencies[]` so Show References, delete
@@ -1833,7 +1826,7 @@ export function assetHeaderDependencies(
           const guid = component.properties?.renderTargetGuid;
           if (typeof guid === "string" && guid) unique.add(guid);
         }
-        if (component.classId !== "MeshComponent") continue;
+        if (component.classId !== "MeshComponent" && component.classId !== "CableComponent") continue;
         for (const key of ["materialGuid", "assetGuid"]) {
           const guid = component.properties?.[key];
           if (typeof guid === "string" && guid.length > 0) unique.add(guid);
@@ -1906,6 +1899,11 @@ export function materialHeaderMeta(
   return {
     domain: parseMaterialDomain(payload.domain),
   };
+}
+
+export function isMaterialSamplerTextureAsset(header: { type: string; payload?: unknown }): boolean {
+  return isMaterialTextureAssetType(header.type) &&
+    (header.type !== "Texture" || !isEnvironmentTexturePayload(header.payload));
 }
 
 export function isPostProcessMaterialAsset(asset: {
@@ -2043,16 +2041,6 @@ function documentAsset(
       },
     ],
   };
-}
-
-export function folderRelativePath(
-  selectedFolderPath: string,
-  assetsRoot: string,
-): string {
-  if (selectedFolderPath === assetsRoot) return "";
-  return selectedFolderPath.startsWith(`${assetsRoot}/`)
-    ? selectedFolderPath.slice(assetsRoot.length + 1)
-    : "";
 }
 
 export function joinAssetFolderPath(folderPath: string, fileName: string): string {

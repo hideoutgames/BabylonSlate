@@ -10,6 +10,7 @@ import { createActor, createDefaultScene, createEmptyProject, engineCommandBus, 
 import { areaEmissionChunkId, encodeAssetDocument, readAssetDocumentHeader, type AssetRegistry, type AreaEmissionPixels } from "@babylonslate/assets";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { playAudioLibraryFromAssets } from "../lib/play-audio";
+import type { SceneShapeEditTarget } from "../context/scene-editing-context";
 
 const { createEngineMock, play, documents, handle, selection } = vi.hoisted(() => {
   const handle = {
@@ -71,7 +72,7 @@ const { createEngineMock, play, documents, handle, selection } = vi.hoisted(() =
   return {
     createEngineMock,
     handle,
-    selection: { actorIds: [] as string[], mode: "3d" as "2d" | "3d" },
+    selection: { actorIds: [] as string[], mode: "3d" as "2d" | "3d", shapeEditTarget: null as SceneShapeEditTarget | null },
     documents: {
       projectDocument: null as ReturnType<typeof createEmptyProject> | null,
       registryVersion: 0,
@@ -170,6 +171,7 @@ vi.mock("../context/scene-editing-context", () => ({
   FALLBACK_PLACE_POSITION: [0, 0, 0],
   useSceneEditing: () => ({
     selectedActorIds: selection.actorIds,
+    shapeEditTarget: selection.shapeEditTarget,
     selectActor: vi.fn(),
     setSelectedActorIds: vi.fn(),
     gizmoTool: "translate",
@@ -247,6 +249,7 @@ describe("ViewportPanel engine", () => {
     documents.registryVersion = 0;
     documents.projectDocument = null;
     selection.actorIds = [];
+    selection.shapeEditTarget = null;
     documents.applySceneChange.mockClear();
     handle.loadScene.mockClear();
     handle.loadSceneAsync.mockReset().mockResolvedValue(undefined);
@@ -529,6 +532,45 @@ describe("ViewportPanel engine", () => {
     await act(async () => present());
     await waitFor(() => expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("true"));
     expect(createEngineMock).toHaveBeenCalledOnce();
+  });
+
+  it("persists a spline viewport gesture as one scene edit on the addressed component", async () => {
+    const actor = createActor("a", "Path");
+    actor.components.push({ id: "path", classId: "SplineComponent", properties: {
+      points: [[0, 0, 0], [0, 0, 5]], curvature: 0.5, closed: false,
+    } });
+    const untouched = createActor("b", "Other");
+    documents.openDocuments = [{ id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },
+      content: { ...createDefaultScene(), actors: [actor, untouched] },
+    }];
+    renderViewport();
+    await waitFor(() => expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("true"));
+    const options = createEngineMock.mock.calls.at(-1)![1] as import("@babylonslate/render").CreateEngineOptions;
+    act(() => options.onComponentShapeEdit?.({ actorId: "a", componentId: "path", properties: { points: [[1, 2, 3], [4, 5, 6]] } }));
+    expect(documents.applySceneChange).toHaveBeenCalledOnce();
+    const next = documents.applySceneChange.mock.calls[0]![1];
+    expect(next.actors[0]!.components.at(-1)!.properties).toEqual({ points: [[1, 2, 3], [4, 5, 6]], curvature: 0.5, closed: false });
+    expect(next.actors[0]!.transform).toBe(actor.transform);
+    expect(next.actors[1]).toBe(untouched);
+    expect(actor.components.at(-1)!.properties.points).toEqual([[0, 0, 0], [0, 0, 5]]);
+  });
+
+  it.each([
+    { actorIds: ["paths"], target: { actorId: "paths", componentId: "curve" }, expected: ["curve"] },
+    { actorIds: ["other"], target: { actorId: "paths", componentId: "curve" }, expected: undefined },
+    { actorIds: ["paths", "other"], target: { actorId: "paths", componentId: "curve" }, expected: undefined },
+    { actorIds: ["paths"], target: { actorId: "paths", componentId: "deleted" }, expected: undefined },
+  ])("forwards only a valid sole actor's explicit shape target ($actorIds, $target.componentId)", async ({ actorIds, target, expected }) => {
+    const actor = createActor("paths", "Paths", { components: [
+      { id: "river", classId: "WaterRiverComponent", properties: {} },
+      { id: "curve", classId: "SplineComponent", properties: {} },
+    ] });
+    documents.openDocuments = [{ id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" }, content: { ...createDefaultScene(), actors: [actor, createActor("other", "Other")] } }];
+    selection.actorIds = actorIds;
+    selection.shapeEditTarget = target;
+    renderViewport();
+    await waitFor(() => expect(handle.editor.syncSelectionDebug).toHaveBeenLastCalledWith(expect.objectContaining({ selectedActorIds: actorIds, selectedComponentIds: expected })));
+    expect(documents.applySceneChange).not.toHaveBeenCalled();
   });
 
   it("drops the selected actors in one scene edit and leaves no-hit actors untouched", async () => {

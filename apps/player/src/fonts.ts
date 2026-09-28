@@ -1,16 +1,5 @@
 import { compileText2DFontStacks } from "@babylonslate/assets";
 
-export function packedFontEntries(options: {
-  fontBytes: ReadonlyMap<string, Uint8Array>;
-  fontFamilies?: ReadonlyMap<string, string>;
-}): Array<{ guid: string; family: string; bytes: Uint8Array }> {
-  return [...options.fontBytes.entries()].map(([guid, bytes]) => ({
-    guid,
-    family: options.fontFamilies?.get(guid)?.trim() || guid,
-    bytes,
-  }));
-}
-
 export function packedFontCssStacks(
   fontFamilies: ReadonlyMap<string, string>,
   globalFallback = "sans-serif",

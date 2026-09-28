@@ -8,9 +8,6 @@ export const PARAMETRIC_REVERB_COMB_DELAYS = [0.0297, 0.0371, 0.0411, 0.0437];
 export const PARAMETRIC_REVERB_ALLPASS_DELAYS = [0.005, 0.0017];
 
 export type ParametricReverbGraph = {
-  combCount: number;
-  allpassCount: number;
-  setWet: (wet: number) => void;
   setProfile: (profile: {
     wet: number;
     decay: number;
@@ -132,11 +129,6 @@ export function connectParametricReverb(
   stage.connect(output);
 
   return {
-    combCount: combDelays.length,
-    allpassCount: allpassDelays.length,
-    setWet: (value) => {
-      wet.gain.value = clamp01(value);
-    },
     setProfile: (profile) => {
       wet.gain.value = clamp01(profile.wet);
       const feedbackGain = reverbCombFeedbackFromDecay(profile.decay);

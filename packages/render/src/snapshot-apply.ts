@@ -2,6 +2,7 @@ import { sceneShadowController } from "./shadow-controller";
 import { setFogVolumesVisible } from "./fog-volumes";
 import { createWaterMesh } from "./water-mesh";
 import { createWaterRemovalMesh } from "./water-removal-mesh";
+import { createCableMesh, sampleCableFrame } from "./cable-mesh";
 import { applyMaterialBounds } from "./material-bounds";
 import {
   AbstractMesh,
@@ -515,7 +516,7 @@ function partsNeedOrigin(
   parts: readonly AssignMeshPart[] | undefined,
 ): boolean {
   if (!parts || parts.length === 0) return false;
-  if (parts.length > 1 || parts.some((part) => part.meshKind === "water" || part.meshKind === "waterRemoval")) return true;
+  if (parts.length > 1 || parts.some((part) => part.meshKind === "water" || part.meshKind === "waterRemoval" || part.meshKind === "cable")) return true;
   const part = parts[0]!;
   return (
     Boolean(part.landscape || part.foliage) ||
@@ -1269,6 +1270,7 @@ function createPlayVisual(
         part.foliage,
         part.water,
         part.waterRemoval,
+        part.cable,
       );
       child.parent = root;
       retainedBitmapBytes += text2DBitmapBytes(child);
@@ -1390,8 +1392,14 @@ export function createPlayMesh(
   foliage?: import("@babylonslate/core").FoliageProperties,
   water?: import("@babylonslate/core").WaterBodyProperties,
   waterRemoval?: import("@babylonslate/core").WaterRemovalProperties,
+  cable?: import("@babylonslate/core").CableProperties & { simulationId?: number },
 ): Mesh {
   const name = meshName ?? `actor-${slotId}`;
+  if (meshKind === "cable" && cable) {
+    const mesh = createCableMesh(scene, name, cable, cable.simulationId, (id) => binding?.meshes.get(id));
+    if (cable.materialGuid) mesh.material = binding?.resolveMaterial?.(cable.materialGuid, { scene }) ?? null;
+    return finishPlayWorldMesh(mesh);
+  }
   if (meshKind === "waterRemoval" && waterRemoval) return createWaterRemovalMesh(scene, name, waterRemoval, { editor: false });
   if (meshKind === "water" && water) {
     const definition = assetGuid ? binding?.waters?.get(assetGuid) : undefined;
@@ -1678,6 +1686,7 @@ export function applySnapshotToScene(
   binding: SnapshotSceneBinding,
   snapshot: SampledSnapshot,
 ): void {
+  sampleCableFrame(scene, snapshot.frameId, snapshot.previousFrameId ?? snapshot.frameId, snapshot.alpha);
   reconcileSnapshotVisuals(scene, binding, snapshot);
   const count = snapshot.actorCount ?? snapshot.actors.length;
   for (let i = 0; i < count; i++) {

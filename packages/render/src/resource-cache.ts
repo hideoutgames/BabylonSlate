@@ -3,10 +3,8 @@ import type { AbstractEngine, BaseTexture, Scene } from "@babylonjs/core";
 import { CubeTexture } from "@babylonjs/core/Materials/Textures/cubeTexture";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { Constants } from "@babylonjs/core/Engines/constants";
-import { KhronosTextureContainer2 } from "@babylonjs/core/Misc/khronosTextureContainer2";
 import { assetByteFingerprint as contentKey } from "./asset-byte-fingerprint";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
-import { webGpuKtx2BlockMisalignment } from "./ktx2-transcoder";
 import {
   TEXTURE_BYTE_CEILING,
   TEXTURE_EVICTION_TARGET_FACTOR,
@@ -16,8 +14,6 @@ import { uploadedTextureBytes } from "./uploaded-texture-bytes";
 export interface ResourceCacheOptions {
   /** Accounted byte ceiling before evicting unreferenced LRU entries. */
   byteCeiling?: number;
-  /** Trim unreferenced entries toward this fraction of the ceiling (default 0.8). */
-  evictionTargetFactor?: number;
   /** When false, skip LRU eviction. */
   budgetEnabled?: boolean;
   onEvict?: (assetGuid: string, reason: string) => void;
@@ -28,7 +24,6 @@ export interface TextureSamplingOptions {
   noMipmap?: boolean;
   samplingMode?: number;
   invertY?: boolean;
-  useSRGBBuffer?: boolean;
   isCube?: boolean;
   hasAlpha?: boolean;
   anisotropicFilteringLevel?: number;
@@ -53,23 +48,6 @@ interface CacheEntry {
 
 // Match the existing owner-scoped readiness deadline; no upload may pin forever.
 const TEXTURE_PREPARATION_TIMEOUT_MS = 30_000;
-
-/**
- * WebGPU would reject this texture's upload and invalidate every frame that
- * binds it (see `webGpuKtx2BlockMisalignment`). Thrown before any allocation.
- */
-export class TextureUploadRefusedError extends Error {
-  readonly assetGuid: string;
-  readonly width: number;
-  readonly height: number;
-  constructor(assetGuid: string, size: { width: number; height: number }) {
-    super(`Texture ${assetGuid} (${size.width}×${size.height}) is block-compressed at a size WebGPU rejects`);
-    this.name = "TextureUploadRefusedError";
-    this.assetGuid = assetGuid;
-    this.width = size.width;
-    this.height = size.height;
-  }
-}
 
 /**
  * Six-face cubemap bound to the Engine, not a Scene. Scene.dispose must not
@@ -153,7 +131,6 @@ function uploadSamplingKey(options: TextureSamplingOptions = {}): string {
     options.noMipmap ? "1" : "0",
     String(options.samplingMode ?? Texture.TRILINEAR_SAMPLINGMODE),
     options.invertY === false ? "0" : "1",
-    options.useSRGBBuffer ? "1" : "0",
     options.isCube ? "1" : "0",
   ].join(":");
 }
@@ -260,7 +237,6 @@ export function releaseResourceCacheForEngine(engine: AbstractEngine): void {
 export class ResourceCache {
   private ceiling: number;
   private readonly clientBudgets = new Map<object, { bytes?: number; enabled?: boolean }>();
-  private evictionTargetFactor: number;
   private budgetEnabled: boolean;
   private readonly onEvict?: (assetGuid: string, reason: string) => void;
   private readonly entries = new Map<string, CacheEntry>();
@@ -275,8 +251,6 @@ export class ResourceCache {
 
   constructor(options: ResourceCacheOptions = {}) {
     this.ceiling = options.byteCeiling ?? TEXTURE_BYTE_CEILING;
-    this.evictionTargetFactor =
-      options.evictionTargetFactor ?? TEXTURE_EVICTION_TARGET_FACTOR;
     this.budgetEnabled = options.budgetEnabled !== false;
     this.onEvict = options.onEvict;
   }
@@ -509,12 +483,6 @@ export class ResourceCache {
       existing!.lastUsed = ++this.clock;
       return reused as Texture | CubeTexture;
     }
-    if (engine.isWebGPU) {
-      // An installed Blob keeps its header; an external one cannot be decided synchronously.
-      const header = bytes instanceof Blob ? installedAssetHeader(bytes) : bytes;
-      const misaligned = header && webGpuKtx2BlockMisalignment(engine, header, KhronosTextureContainer2.DefaultDecoderOptions);
-      if (misaligned) throw new TextureUploadRefusedError(assetGuid, misaligned);
-    }
     this.prepareBlobUrl(assetGuid, bytes, identity);
     const entry = this.entries.get(variantKey)!;
     const uploadKey = uploadSamplingKey(options);
@@ -527,7 +495,7 @@ export class ResourceCache {
     texture = options.isCube
       ? new CubeTexture(blobUrl, engine, {
           noMipmap: options.noMipmap ?? false,
-          useSRGBBuffer: environment ? false : options.useSRGBBuffer ?? false,
+          useSRGBBuffer: false,
           forcedExtension: environment ? `.${environment}` : undefined,
           prefiltered: !!environment,
           createPolynomials: !!environment,
@@ -537,7 +505,7 @@ export class ResourceCache {
           noMipmap: options.noMipmap ?? false,
           invertY: options.invertY !== false,
           samplingMode: options.samplingMode ?? Texture.TRILINEAR_SAMPLINGMODE,
-          useSRGBBuffer: options.useSRGBBuffer ?? false,
+          useSRGBBuffer: false,
           mimeType: ktx2.mimeType,
           forcedExtension: ktx2.forcedExtension,
           buffer: raw ? copyTextureBytesForUpload(raw) : undefined,
@@ -651,21 +619,6 @@ export class ResourceCache {
     }
   }
 
-  /**
-   * Drop GPU Texture wrappers but keep blob URLs so the next `acquireTexture`
-   * rebuilds. WebGL restore does not call this: Babylon rebuilds retained
-   * textures before notifying, and a flush would destroy them.
-   */
-  releaseGpuTextures(): void {
-    for (const entry of this.entries.values()) {
-      disposeEntryTextures(entry);
-      entry.samplingBytes?.clear();
-      this.totalBytes -= entry.bytes;
-      entry.bytes = 0;
-      revokeExtraBlobUrls(entry);
-    }
-  }
-
   account(assetGuid: string, bytes: number): void {
     const entry = this.entries.get(this.resourceKey(assetGuid));
     if (!entry) {
@@ -728,7 +681,7 @@ export class ResourceCache {
   evictToCeiling(): void {
     const ceiling = this.effectiveCeiling();
     if (ceiling === null || this.totalBytes <= ceiling) return;
-    const target = ceiling * this.evictionTargetFactor;
+    const target = ceiling * TEXTURE_EVICTION_TARGET_FACTOR;
     const candidates = [...this.entries.values()]
       .filter((e) => this.isUnreferenced(e))
       .sort((a, b) => a.lastUsed - b.lastUsed);
@@ -852,8 +805,8 @@ export interface ResourceLease<T> {
   release(): void;
 }
 
-/** A view cannot drop the wrappers and accounting every other view shares. */
-export type TextureResources = Omit<Pick<ResourceCache, keyof ResourceCache>, "releaseGpuTextures">;
+/** The public ResourceCache surface a per-view owner forwards. */
+export type TextureResources = Pick<ResourceCache, keyof ResourceCache>;
 
 /** A view retains only its currently outstanding leases, never acquisition history. */
 export class ResourceCacheOwner implements TextureResources {
@@ -914,29 +867,20 @@ export const MATERIAL_TEXTURE_SAMPLING: TextureSamplingOptions = {
   invertY: false,
 };
 
-/** Null for environment/cube sources and for a refused upload (reported through `onRefused`). */
 export function acquireMaterialTexture(
   cache: TextureResources,
   assetGuid: string,
   engine: AbstractEngine,
   bytes: Uint8Array | Blob,
   options: TextureSamplingOptions = {},
-  onRefused?: (refused: TextureUploadRefusedError) => void,
 ): ResourceLease<Texture> | null {
   if (environmentContainer(bytes)) return null;
-  let lease: ResourceLease<Texture | CubeTexture>;
-  try {
-    lease = cache.acquireTexture(
-      assetGuid,
-      engine,
-      bytes,
-      { ...MATERIAL_TEXTURE_SAMPLING, ...options },
-    );
-  } catch (error) {
-    if (!(error instanceof TextureUploadRefusedError)) throw error;
-    onRefused?.(error);
-    return null;
-  }
+  const lease = cache.acquireTexture(
+    assetGuid,
+    engine,
+    bytes,
+    { ...MATERIAL_TEXTURE_SAMPLING, ...options },
+  );
   if (lease.resource.isCube) { lease.release(); return null; }
   return lease as ResourceLease<Texture>;
 }

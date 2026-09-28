@@ -1,21 +1,21 @@
 # Sprites (P9)
 
-Sprite assets, deterministic atlas packing, and `SpriteComponent` as a UV-baked quad mesh (engineplan §13.2). Not `BABYLON.Sprite` — that type is not a Mesh, so it cannot parent, take a shader, hold a physics shape, or share the gizmo path.
+Sprite assets and `SpriteComponent` as a UV-baked quad mesh (engineplan §13.2). Not `BABYLON.Sprite` — that type is not a Mesh, so it cannot parent, take a shader, hold a physics shape, or share the gizmo path.
 
 Thin instances and merged-static batching stay out of v1 (measure later).
 
 ## Asset
 
-Sprite payload (document chunk, or import result):
+Sprite payload (document chunk):
 
 | Field | Role |
 | --- | --- |
-| `textureGuid` | atlas (or packed) texture |
+| `textureGuid` | atlas texture |
 | `frames` | `{ name, u, v, uSize, vSize, durationMs, pivot, collision? }` — `collision` is a normalized AABB `{ x, y, width, height }` defaulting to full image `{0,0,1,1}` |
 | `clips` | named sequences of frame indices (legacy atlas playback; AnimGraph sprite clips pick **Sprite Animation** instead) |
 | `pixelsPerUnit` | default 100 (project 2D scale) |
 
-Import accepts **pre-packed JSON** or **loose frames**. Loose frames run a **deterministic rectangle packer** in `@babylonslate/assets` (padding + edge extrusion), golden-tested. Pixel-art policy already keeps sprites uncompressed (P2). Sampling at texture creation: **NEAREST**, no mips, anisotropic 1 (resource cache canonical sampling).
+Sprites are created with **New Asset** and point at an imported Texture atlas; there is no sprite importer for atlas JSON or loose frames. Pixel-art policy already keeps sprites uncompressed (P2). Sampling at texture creation: **NEAREST**, no mips, anisotropic 1 (resource cache canonical sampling).
 
 ## `SpriteComponent`
 

@@ -617,7 +617,7 @@ describe("script host runs compiled graphs", () => {
         classId: "GameInstance",
         guid: "gi",
         hooks: {
-          onSceneLoaded: (_self, sceneName) => {
+          onSceneFinishLoading: (_self, sceneName) => {
             loaded = sceneName;
           },
         },

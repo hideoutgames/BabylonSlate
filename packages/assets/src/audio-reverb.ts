@@ -96,15 +96,6 @@ export function audioReverbChunk(bytes: Uint8Array): {
   };
 }
 
-export function audioReverbBytesFromChunks(
-  chunks: Iterable<{ id: string; data?: Uint8Array }>,
-): Uint8Array | null {
-  for (const chunk of chunks) {
-    if (chunk.id === AUDIO_REVERB_CHUNK_ID && chunk.data) return chunk.data;
-  }
-  return null;
-}
-
 /** Replace or insert the Scene `audioReverb` extra chunk, keeping other extras. */
 export function extraChunksWithAudioReverb(
   extra: Iterable<ExtraChunkLike>,
@@ -722,13 +713,6 @@ function buildOccupancy(geometry: AudioReverbGeometry): InternalGrid {
     );
   }
   return grid;
-}
-
-export function occupancyGridForAudioBake(
-  geometry: AudioReverbGeometry,
-): AudioReverbOccupancyGrid {
-  const grid = buildOccupancy(geometry);
-  return { sizeX: grid.sizeX, sizeY: grid.sizeY, sizeZ: grid.sizeZ };
 }
 
 const NEIGHBORS: ReadonlyArray<readonly [number, number, number]> = [

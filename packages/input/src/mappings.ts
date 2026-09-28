@@ -1,7 +1,7 @@
 /**
  * Pure action / axis mapping model (engineplan §11). Bindings carry per-device
- * dead zone, scale, inversion and sensitivity so a gamepad stick and an
- * on-screen joystick can drive the same axis identically.
+ * dead zone, scale, inversion and sensitivity so a gamepad stick and a touch
+ * axis can drive the same axis identically.
  */
 
 import type {

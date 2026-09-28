@@ -1,30 +1,13 @@
 import { keepsNativeEditing } from "./ios-editing-gestures";
 
-export type ScrollAxis = "x" | "y";
+type ScrollAxis = "x" | "y";
 
 function allowsScrollOverflow(style: CSSStyleDeclaration, axis: ScrollAxis) {
   const overflow = axis === "y" ? style.overflowY : style.overflowX;
   return overflow === "auto" || overflow === "scroll" || overflow === "overlay";
 }
 
-/** Returns whether an element can scroll along the given axis. */
-export function isScrollableAxis(el: Element, axis: ScrollAxis): boolean {
-  if (!allowsScrollOverflow(getComputedStyle(el), axis)) return false;
-  return axis === "y"
-    ? el.scrollHeight > el.clientHeight
-    : el.scrollWidth > el.clientWidth;
-}
-
 /** Whether a scrollable element can absorb movement in the drag direction. */
-export function canScrollInDirection(
-  el: Element,
-  axis: ScrollAxis,
-  delta: number,
-): boolean {
-  if (delta === 0) return false;
-  return canAbsorbScroll(el, axis, delta, getComputedStyle(el));
-}
-
 function canAbsorbScroll(
   el: Element,
   axis: ScrollAxis,

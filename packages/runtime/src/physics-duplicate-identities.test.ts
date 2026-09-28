@@ -5,17 +5,23 @@ import {
   createDefaultScene,
   type SerializedActor,
   type SerializedComponent,
+  type SerializedScene,
 } from "@babylonslate/core";
 import {
   ClassRegistry,
   World,
-  createActorsFromSerializedScene,
+  createActorFromSerialized,
 } from "@babylonslate/object-model";
 import {
   createSoftwarePhysicsBackend,
   HavokPhysicsBackend,
 } from "@babylonslate/physics";
 import { PhysicsWorldSync } from "./physics-sync";
+
+/** Unspawned actors from the per-actor factory the runtime driver uses. */
+function sceneActors(world: World, scene: SerializedScene) {
+  return scene.actors.flatMap((serialized) => createActorFromSerialized(world, serialized) ?? []);
+}
 
 function legacyScene(components: SerializedComponent[]) {
   const scene = createDefaultScene();
@@ -95,7 +101,7 @@ describe("physics identities in previously duplicated scenes", () => {
         dt: 1 / 60,
         classRegistry: new ClassRegistry(),
       });
-      const actors = createActorsFromSerializedScene(
+      const actors = sceneActors(
         world,
         legacyScene(components),
       );
@@ -145,7 +151,7 @@ describe("physics identities in previously duplicated scenes", () => {
     scene.actors = scene.actors.slice(0, 4);
     scene.actors[1]!.transform.position = [0.4, 0, 0];
     scene.actors[3]!.transform.position = [4.4, 0, 0];
-    const actors = createActorsFromSerializedScene(world, scene);
+    const actors = sceneActors(world, scene);
     for (const actor of actors) world.spawnActorNow(actor);
     const backend = createSoftwarePhysicsBackend("3d", { x: 0, y: 0, z: 0 });
     const sync = new PhysicsWorldSync(backend);
@@ -220,7 +226,7 @@ describe("physics identities in previously duplicated scenes", () => {
       dt: 1 / 60,
       classRegistry: new ClassRegistry(),
     });
-    const actors = createActorsFromSerializedScene(world, scene);
+    const actors = sceneActors(world, scene);
     for (const actor of actors) world.spawnActorNow(actor);
     const backend = await HavokPhysicsBackend.create({
       kind: "3d",
@@ -282,7 +288,7 @@ describe("physics identities in previously duplicated scenes", () => {
         }],
       }));
       const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
-      const actors = createActorsFromSerializedScene(world, scene);
+      const actors = sceneActors(world, scene);
       for (const actor of actors) world.spawnActorNow(actor);
       const backend = await HavokPhysicsBackend.create({
         kind: "3d",

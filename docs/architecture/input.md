@@ -36,7 +36,7 @@ The native **Key** enum uses the same catalog as Input Action/Axis authoring: ke
 
 For WASD rebinding, store the selected **Input Binding**, gate **On Any Key Pressed** with the menu's waiting flag, pass Key to **Set Input Axis Binding**, and clear the waiting flag after success. Replacing W retains its original Y component and positive/negative direction. The game owns menu gating and persistence; these nodes do not automatically write browser storage or suppress gameplay input.
 
-**Input Binding** contains Input (asset GUID/name), Id, Label, Key, Shift/Ctrl/Alt/Meta, the native **Input Component** enum (X/Y), Digital Value, Scale, Dead Zone, Invert, and Sensitivity. Profile additions/removals use version 2 edits; controls still resolve through the device/code mapping model. Imports validate the complete profile before applying it. The obsolete string-based input nodes, native Input Control/Input Device types, and capture/status graph workflow have been removed.
+**Input Binding** contains Input (asset GUID/name), Id, Label, Key, Shift/Ctrl/Alt/Meta, the native **Input Component** enum (X/Y), Digital Value, Scale, Dead Zone, Invert, and Sensitivity. Profile additions/removals use version 2 edits; controls still resolve through the device/code mapping model. Imports validate the complete profile before applying it; per-slot version 1 `overrides` from older saves still import and export. The obsolete string-based input nodes, native Input Control/Input Device types, and capture/status graph workflow have been removed.
 
 ## Storage and defaults
 
@@ -84,7 +84,9 @@ interface ResolvedInputTick {
 
 - **`resolve(events)`** — apply one tick's events and retain action transitions along the event sequence. A complete tap between ticks reports both `pressed` and `released` while final `held` is false; the next empty tick reports neither edge. Multiple bindings still combine into one action, so releasing one binding while another remains held does not release the action.
 - **`kind: "2d"`** axes fold x/y bindings into `axes2D[name]`; magnitude also exposed on `axes[name]` for 1D callers.
-- **Cursor.** Primary `kind: "pointer"` (mouse or first `pointerId`; extra fingers ignored) keeps `{ x, y, pressed }` in canvas CSS pixels. XY sticks after up/cancel. `kind: "mouse"` updates the cursor when no pointer is primary. Touch uses the same cursor sample as mouse.
+- **Raw kinds.** `pointer` (mouse and touch arrive as Pointer Events), `key`, polled `gamepad` samples, `gamepadDisconnect`, and `touchAxis`.
+- **Cursor.** Primary `kind: "pointer"` (mouse or first `pointerId`; extra fingers ignored) keeps `{ x, y, pressed }` in canvas CSS pixels. XY sticks after up/cancel. Touch uses the same cursor sample as mouse.
+- **Gamepad connections.** A pad reports `connected: true` on its first sample. Play and the exported player compare each gamepad poll with the previous one and push `gamepadDisconnect` for a pad that is no longer returned (empty slot or `connected: false`). The resolver then reports `connected: false` once and drops that pad's held buttons and stick values; a later sample reconnects it. **On Gamepad Connected** and **On Gamepad Disconnected** run once per transition with the pad index.
 
 Pure with respect to the browser — feed synthetic streams from the deterministic harness.
 
@@ -99,7 +101,7 @@ Pure with respect to the browser — feed synthetic streams from the determinist
 | `wasActionReleased(action)` | `actions[action].released` |
 | `getAxis(axis)` | `axes[axis]` |
 | `getAxis2D(axis)` | `axes2D[axis]` |
-| `gamepadConnections` | connection transitions this tick |
+| `gamepadConnections` | pads first sampled or disconnected this tick |
 | `getPressedKeys()` | ordered physical Key rising edges this tick |
 | `setGamepadRumble(index, intensity, durationMs)` | forwarded to main thread when supported |
 
@@ -108,6 +110,6 @@ Wired in `packages/runtime/src/driver.ts`: ring buffer → `InputResolver.resolv
 
 ## Testing
 
-Per engineplan §11.1: input is tested through **synthetic event streams** replayed by the deterministic harness and `InputResolver` unit tests — not by driving a browser. P4 raw capture tests remain separate from mapping resolution. Runtime tests also cover live gamepad events stamped with a host wall-clock tick (the Play worker skew) so `GetAxis2D("Move")` cannot silently stay at `{x:0,y:0}`. E2e: `e2e/p5-scripting.spec.ts` injects a synthetic pad and asserts a compiled Tick → GetAxis2D → Print overlay.
+Per engineplan §11.1: input is tested through **synthetic event streams** replayed by the deterministic harness and `InputResolver` unit tests — not by driving a browser. P4 raw capture tests remain separate from mapping resolution. Runtime tests also cover live gamepad events stamped with a host wall-clock tick (the Play worker skew) so `GetAxis2D("Move")` cannot silently stay at `{x:0,y:0}`. E2e: `e2e/p5-scripting.spec.ts` injects a synthetic pad and asserts that a compiled Move Input Axis event prints the stick in Play.
 
 The typed node catalog is implemented in `packages/scripting-nodes/src/input.ts` and `input-bindings.ts`; compiler event gating lives in `packages/scripting/src/compile.ts`.

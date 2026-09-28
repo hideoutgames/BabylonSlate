@@ -12,7 +12,7 @@ Shared surface for the headless runtime object graph (engineplan §5, §16). Imp
 | `SceneLayer` | Session overlay instance (`BObject`); not an Actor. Stores `layerBounds` (orange design canvas, default 32×18). |
 | `SceneLayerActor` | Overlay actor tagged `sceneLayerId`; same World tick as world actors |
 | `ActorComponent` | Attached script instance with independent variables/interfaces; Begin Play after owner spawn, own Tick, Destroyed on owner destruction or Play stop. |
-| `GameInstance` | Session singleton. Application: `onCreation` (script `onInit`), `onTick`, `onGameEnd` (script `onEnd`). Scene: `onSceneStartLoading` / `onSceneFinishLoading` / `onFirstSceneLoaded` / `onSceneExit`. `onSceneLoaded` still aliases finish. |
+| `GameInstance` | Session singleton. Application: `onCreation` (script `onInit`), `onTick`, `onGameEnd` (script `onEnd`). Scene: `onSceneStartLoading` / `onSceneFinishLoading` / `onFirstSceneLoaded` / `onSceneExit`. |
 | `World` | Owns GameInstance, actors in spawn order, RNG, deferred destroy, snapshot, `currentScene`. `beginSceneLoad` / `finishSceneLoad` / `exitActiveScene` / `createScene`. `beginSceneLoad` remembers the loading display name so `exitActiveScene` still fires **OnSceneExit** if finish never ran (Play stop while models-ready is deferred). `end()` exits the active or in-flight scene then `onGameEnd`. `loadScene` / scene swap never fire `onGameEnd`. `createActor` / `createComponent` / `createGameInstance` apply inherited variable defaults and interface guids from `ClassRegistry` (caller overrides win). |
 | `ClassRegistry` | Inheritance graph, re-parenting, engine bases and components. `ensure` merges session class metadata; `inheritedInterfaces` walks ancestry. `MAX_CLASS_INHERITANCE_DEPTH` (16, including self) blocks `register` / `reparent` past the limit. |
 | `TickPhase` / `TICK_PHASES` / `TickClock` | Fixed-dt phases; `physics` filled by `@babylonslate/physics` |
@@ -21,8 +21,7 @@ Shared surface for the headless runtime object graph (engineplan §5, §16). Imp
 | `ENGINE_CLASS_SCRIPT_APIS` / `engineScriptApiFor` | Per-class script catalog: optional variables (incl. `typeClassIds`), functions, events (Get/Set/Call and Add Event). Overlay 2D classes are in the catalog; Animation Graph / BT / nav bake helpers stay ref-only. Mouse events live on `2DButtonComponent`, not SceneLayerActor. |
 | `createWorldSnapshot` | Canonical JSON-serializable world state for harness goldens |
 | `createDebugInspectSnapshot` | Read-only Play inspector tree (`tickIndex` + Game Instance / actors / components + optional `variableTypes`). Not a harness golden |
-| `createActorsFromSerializedScene` | Build unspawned World actors from a `SerializedScene` for Play. Skips `SceneLayerActor` (and subclasses); those belong on overlay documents. |
-| `createActorsFromSerializedSceneLayer` | Overlay actors from a `SerializedSceneLayer` (stamped `sceneLayerId`). Drops Skybox / Camera / Light. |
+| `createActorFromSerialized` | Build one unspawned World actor from a scene or SceneLayer document row for Play. Skips `SceneLayerActor` (and subclasses) unless given a `sceneLayerId`; overlay actors are stamped with it and drop SceneLayer-denied components. |
 
 Depends only on `@babylonslate/core` (Guid, Result, math, seeded RNG). No React, Babylon, or Capacitor.
 
@@ -34,13 +33,13 @@ Order is fixed and named from the first commit:
 2. `actors` — Actors in **spawn order**
 3. `components` — Each actor’s components in **attach order**
 4. `physics` — Backend `step(dt)` + transform write-back (see [physics.md](physics.md))
-5. `postPhysics` — Post-physics fixups
+5. `postPhysics` — Phase boundary after the physics write-back (`onPhase` timing, deferred flush); no built-in work
 
 Never iterate a `Map` for tick or snapshot order. Spawn and attach use stable arrays.
 
 `WorldOptions.componentHooksFor` binds script lifecycle hooks to both serialized and dynamically created components. Component creation is deferred until its owner enters the world, runs once, and is skipped for cancelled preparation. In Play, component callbacks use the owning Scene or SceneLayer readiness gate: Begin Play waits for its valid presented frame, retained ready layers continue ticking, and cancelled components never run Begin Play or Destroyed. Adding a component to a ready live Actor begins it immediately. ActorComponent subclasses expose Begin Play, Tick, and Destroyed in Class graphs; Self is the attached component itself.
 
-`WorldOptions.canTickScene` can suspend actor, component, physics and post-physics phases during cooperative scene preparation while Game Instance continues ticking. It is rechecked after Game Instance and between actors/components, so a scene switch initiated during the tick stops the remaining incomplete scene work immediately. `createActorFromSerialized` exposes the same unspawned single-actor construction used by the synchronous scene helpers.
+`WorldOptions.canTickScene` can suspend actor, component, physics and post-physics phases during cooperative scene preparation while Game Instance continues ticking. It is rechecked after Game Instance and between actors/components, so a scene switch initiated during the tick stops the remaining incomplete scene work immediately. `createActorFromSerialized` builds one unspawned actor per document row, so preparation can yield between rows.
 
 `WorldOptions.canTickActor` adds an independent owner gate for world actors and each SceneLayer. The World rechecks it between actor and component callbacks, so a newly blocked owner cannot continue the same tick while another ready layer remains active. It does not defer structural spawning or replace the driver's separate physics and authored creation-callback readiness policy.
 
@@ -70,9 +69,17 @@ Registered as typed stubs (asset refs + lifecycle hooks) from day one; `RigidBod
 
 `MeshComponent`, `SpriteComponent`, `TilemapComponent`, `CameraComponent`, `SpringArmComponent`, `LightComponent`, `HemisphericFillLightComponent`, `SkyboxComponent`, `Text3DComponent`, `AudioComponent`, `ParticleComponent`, `RigidBodyComponent`, `ColliderComponent`, `AnimationGraphComponent`, `BehaviourTreeComponent`, `NavAgentComponent`, `NavMeshComponent`, `NavMeshBlockerComponent`, `BlockingVolumeComponent`, overlay-exclusive `2DAnchorComponent`, `2DTextureComponent`, `2DMaterialComponent`, `2DButtonComponent`, `2DTextComponent`, `2DRichTextComponent`, `2DPanelComponent` (`SCENE_LAYER_EXCLUSIVE_COMPONENT_CLASS_IDS`).
 
+- Component placement (`world`, `overlay`, or `any`) is declared once in `ENGINE_COMPONENT_DESCRIPTORS` from `@babylonslate/core`; SceneLayer denied/exclusive lists and object-model ids derive from it, with Landscape, Foliage, and Cable consistently world-only.
+
 Search and Add Component advertise shipped behaviour: `TilemapComponent` is addable (P10 Play loads chunk meshes and Rapier chains). `BehaviourTreeComponent` and `NavAgentComponent` are addable. `NavMeshComponent`, `NavMeshBlockerComponent`, and `BlockingVolumeComponent` are Place Actors only (not Add Component). `BTTask` / `BTDecorator` / `BTService` / `BTComposite` plus the built-in Wait / MoveTo / … classes are inheritable engine bases. `AudioComponent` is addable and searchable (`audioAssetGuid`, play-on-start, loop, component volume); Play-on-start emits `playSound` with the owning actor as emitter. Compiled graphs call `ctx.playSound` / `ctx.setChannelVolume` / `ctx.setGlobalVolume` (see [audio.md](audio.md)). `SkyboxComponent` is addable and searchable (Place Actors **Environment → Skybox**); `size` default 1000, `faces` six nullable Texture guids (empty = engine default cubemap). It is a scene backdrop mesh, not IBL and not a Content Browser document (see [render.md](render.md) and [engineplan §2.5](../engineplan.md)). `HemisphericFillLightComponent` is addable and searchable (Place Actors **Lights → Hemispheric Fill**); `intensity` default 0.9, `groundColor` black; direction is actor rotation × +Y. Not seeded on new 3D scenes. `Text3DComponent` is addable and searchable (catalog **3D Text**, Place Actors **Environment → 3D Text**, Lucide `TypeIcon`); `text` default `"Text"`, `size` `1`, `color` white, `alignment` `"left"` (`left` / `center` / `right` horizontal anchor, bottom pivot), optional Font `fontAssetGuid` (facetype chunk). Flat triangulated TypeFace mesh, not Development Only (see [fonts.md](fonts.md) and [render.md](render.md)). `ParticleComponent` is addable and searchable (`particleSystemGuid`, play-on-start, sorting layer/order); Play-on-start emits `assignParticle`. Compiled graphs call `ctx.playParticles` / `ctx.stopParticles` (see [particles.md](particles.md)). `SpringArmComponent` is addable and searchable (catalog **Camera → Spring Arm**, Lucide `SplineIcon`, world scenes only): `armLength` default 4 (0–1000), `enableLocationLag` / `enableRotationLag` default off, `locationLagSpeed` / `rotationLagSpeed` default 10 (0.1–100), `maxLocationLagDistance` default 0 (unlimited), `drawDebugLag` default off. Child components attach at the socket `[0, 0, -armLength]` in the arm's local space, so rotating the arm swings its children and an unrotated child camera looks at the arm origin (see [render.md](render.md#spring-arm)). Add Component also lists **Project** rows that create the matching engine component with the asset guid already set (Model / Mesh → `MeshComponent.assetGuid`, Audio, ParticleSystem, Sprite, Tilemap, AnimationGraph, BehaviourTree). User Class assets whose ancestry includes `ActorComponent` and not `Actor` are addable; NavMesh subclasses stay hidden. There is no `ModelComponent` — imported models bind on `MeshComponent.assetGuid`.
 
 See [physics.md](physics.md) for RigidBody / Collider / Mesh collision property schemas, pairing warnings, collider TRS bake, named collision layers, and backend sync.
+
+`CableComponent` is a world-only `ActorComponent`, available through **Add Component → Physics → Cable**, search, and **Place Actors → Environment → Cable**. The compact Details controls author length, segments, tube width/sides, material and tiling, endpoint pins, solver budgets, forces, damping, optional scene collision and sleeping. Collision defaults off. The default 4-unit cable has 16 segments and an end offset of `[3, 0, 0]`.
+
+**Target Actor** defaults to Self; without a Target Component, **End Position** is local to the cable. Selecting another actor uses its origin, while **Target Component** selects a component on that actor or on Self. Class authoring supports local component targets; scene actor targets are chosen after placing the Class. Runtime attachment resolves both component IDs and prefab source IDs. Duplicating actors remaps local and selected attachments to the copied components while retaining external targets. Cable Materials are included in scene/Class dependency collection and Play content loading. Simulation and rendering are described in [render.md](render.md).
+
+`SplineComponent` is a world-scene ActorComponent with local `points` (`[x,y,z][]`, 2–128 points), `curvature` (0–1, default 1) and `closed` (default false; requires at least three points). `parseSplineProperties` sanitizes serialized values and supplies two default endpoints. Scene/Class serialization, inheritance and runtime instantiation retain its data through the standard component paths. The curve and editing handles are editor helpers; it has no native scripting functions or generated gameplay geometry. See [Spline authoring](render.md#spline).
 
 ### Engine script API
 
@@ -80,7 +87,7 @@ See [physics.md](physics.md) for RigidBody / Collider / Mesh collision property 
 
 `GameInstance` catalog functions are **Get Scene Loading Progress** (`0..1`) and **Get Scene Reference** (`objectRef("Scene")`). Play registers a child type `Scene:{guid}` per library scene so Cast / `isA` walk to engine `Scene`. Scene variables: **Scene Name** and **Asset Guid** (Get-only), **Gravity** (`vec3`, Get/Set — Play applies `setWorldGravity` onto the physics backend). `ctx.getComponentById` on a live current `Scene` searches world actors by authored component id / `sourceId` and returns null when the scene is inactive or the id is missing.
 
-`createActorsFromSerializedScene` (same package) builds unspawned World actors from a `SerializedScene` — ids, actor transforms, and component properties plus each component’s local `transform` / `parentId` — so Play can instantiate the authored document without the editor touching Babylon. Overlay classes (`SceneLayerActor` and subclasses) are skipped here; `createActorsFromSerializedSceneLayer` stamps `sceneLayerId` and strips the overlay denylist (Skybox / Camera / Light).
+`createActorFromSerialized` (same package) builds one unspawned World actor per document row — id, actor transform, and component properties plus each component’s local `transform` / `parentId` — so Play can instantiate the authored document without the editor touching Babylon, yielding between rows. Without a `sceneLayerId`, overlay classes (`SceneLayerActor` and subclasses) are skipped; with one, the actor is stamped with `sceneLayerId` and the SceneLayer denylist ([scene-layers.md](scene-layers.md)) is stripped.
 
 ## ScriptInterface dispatch
 
@@ -106,7 +113,6 @@ See [physics.md](physics.md) for RigidBody / Collider / Mesh collision property 
 | Export | Role |
 | --- | --- |
 | `runDeterministicScenario` | Seed RNG, fixed dt, N in-process ticks, return canonical snapshot |
-| `installHarnessProjectFixtures` | Memory VFS + minimal project/asset JSON stubs |
 
 Acceptance: a 120-tick scenario reproduces a committed golden byte-exactly and is identical across two runs with the same seed.
 

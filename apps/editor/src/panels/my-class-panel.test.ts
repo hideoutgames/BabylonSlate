@@ -8,8 +8,13 @@ import { ensureEventNodeOnGraph } from "../lib/class-members";
 import {
   blueprintTreeNodes,
   membersForGraph,
-  membersForSection,
+  type MyClassMember,
 } from "./my-class-panel";
+
+const membersOfKind = (
+  members: MyClassMember[],
+  kind: MyClassMember["kind"],
+): MyClassMember[] => members.filter((member) => member.kind === kind);
 
 describe("My Class members", () => {
   it("Title Cases poorly cased event titles in the Class tree", () => {
@@ -102,7 +107,7 @@ describe("My Class members", () => {
       ],
       edges: [],
     };
-    const events = membersForSection(membersForGraph(graph), "event");
+    const events = membersOfKind(membersForGraph(graph), "event");
     expect(events.filter((row) => row.eventType === "flow.event.call")).toEqual(
       [],
     );
@@ -139,7 +144,7 @@ describe("My Class members", () => {
       ],
       edges: [],
     };
-    const events = membersForSection(membersForGraph(graph), "event");
+    const events = membersOfKind(membersForGraph(graph), "event");
     expect(
       events.filter((row) => row.eventType === "flow.event.callParent"),
     ).toEqual([]);
@@ -164,7 +169,7 @@ describe("My Class members", () => {
     expect(next.nodes.some((node) => node.type === "flow.event.callParent")).toBe(
       true,
     );
-    const events = membersForSection(membersForGraph(next), "event");
+    const events = membersOfKind(membersForGraph(next), "event");
     expect(
       events.filter((row) => row.eventType === "flow.event.callParent"),
     ).toEqual([]);
@@ -273,7 +278,7 @@ describe("My Class members", () => {
         },
       },
     );
-    expect(membersForSection(members, "event")).toEqual([
+    expect(membersOfKind(members, "event")).toEqual([
       {
         kind: "event",
         name: "On Hit",
@@ -285,7 +290,7 @@ describe("My Class members", () => {
 
   it("does not list a custom event member that has no canvas node", () => {
     expect(
-      membersForSection(
+      membersOfKind(
         membersForGraph({
           nodes: [],
           edges: [],
@@ -327,7 +332,7 @@ describe("My Class members", () => {
         },
       },
     );
-    const events = membersForSection(members, "event");
+    const events = membersOfKind(members, "event");
     expect(
       events.filter((row) => row.eventType === "flow.event.callParent"),
     ).toEqual([]);
@@ -348,7 +353,7 @@ describe("My Class members", () => {
       edges: [],
     };
     const members = membersForGraph(graph);
-    expect(membersForSection(members, "event")).toEqual([
+    expect(membersOfKind(members, "event")).toEqual([
       {
         kind: "event",
         name: "Event Begin Play",
@@ -356,10 +361,9 @@ describe("My Class members", () => {
         eventType: "flow.event.beginPlay",
       },
     ]);
-    expect(membersForSection(members, "function")).toEqual([]);
-    expect(membersForSection(members, "variable")).toEqual([]);
-    expect(membersForSection(members, "interface")).toEqual([]);
-    expect(membersForSection(members, null)).toEqual([]);
+    expect(membersOfKind(members, "function")).toEqual([]);
+    expect(membersOfKind(members, "variable")).toEqual([]);
+    expect(membersOfKind(members, "interface")).toEqual([]);
   });
 
   it("builds a compact section tree with Events populated and no Graphs section", () => {
@@ -398,13 +402,13 @@ describe("My Class members", () => {
       ],
     };
     const members = membersForGraph(graph);
-    expect(membersForSection(members, "function")).toEqual([
+    expect(membersOfKind(members, "function")).toEqual([
       { kind: "function", name: "Jump", detail: "fn-1" },
     ]);
-    expect(membersForSection(members, "variable")).toEqual([
+    expect(membersOfKind(members, "variable")).toEqual([
       { kind: "variable", name: "Health", detail: "var-1" },
     ]);
-    expect(membersForSection(members, "interface")).toEqual([
+    expect(membersOfKind(members, "interface")).toEqual([
       { kind: "interface", name: "Damageable", detail: "if-1" },
     ]);
   });
@@ -467,7 +471,7 @@ describe("My Class members", () => {
       ],
     };
     const members = membersForGraph(graph);
-    expect(membersForSection(members, "variable")).toEqual([
+    expect(membersOfKind(members, "variable")).toEqual([
       { kind: "variable", name: "Health", detail: "var-1", typeId: "float" },
       {
         kind: "variable",
@@ -518,7 +522,7 @@ describe("My Class members", () => {
         },
       },
     );
-    const variables = membersForSection(members, "variable");
+    const variables = membersOfKind(members, "variable");
     expect(variables).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -565,7 +569,7 @@ describe("My Class members", () => {
       ],
       edges: [],
     };
-    const events = membersForSection(membersForGraph(graph), "event");
+    const events = membersOfKind(membersForGraph(graph), "event");
     expect(events.find((row) => row.detail === "click")?.name).toBe(
       "Event On Click (2D Button)",
     );

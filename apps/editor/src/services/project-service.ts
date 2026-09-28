@@ -131,7 +131,6 @@ import {
 import type { UpdateListedProjectOptions } from "../lib/listed-projects";
 import { loadKenneyMannequinGlb } from "../lib/kenney-mannequin";
 import { editorEncodeWorkerUrl } from "../lib/public-engine-assets";
-import { applyTextureUsageChange, TextureUsageChangedError } from "../lib/asset-settings";
 import {
   applyKenneyMannequinEmptyScaffold,
   MANNEQUIN_CLASS_FILE,
@@ -524,42 +523,6 @@ export class ProjectService {
     return (
       (await this.assetRegistry?.retryTextureEncoding(guid, options)) ?? false
     );
-  }
-
-  /**
-   * Texture Details' Usage change for a Texture without an open tab: the new
-   * Usage is saved to the file at once, then the Texture re-encodes when the
-   * change affects its encode. The read and the save share the asset's write
-   * slot, so an encode commit cannot rewrite the file between them. Returns
-   * the Usage it replaced; null when `guid` is not a Texture or already uses
-   * `usage` (nothing is saved). With `expectedUsage` (an Undo), a file whose
-   * Usage is neither `usage` nor `expectedUsage` is left alone and the call
-   * rejects with `TextureUsageChangedError`.
-   */
-  async setTextureUsage(
-    guid: string,
-    usage: string,
-    expectedUsage?: string,
-  ): Promise<{ previousUsage: string } | null> {
-    const registry = this.assetRegistry;
-    if (registry?.getByGuid(guid)?.header.type !== "Texture") return null;
-    const saved = await registry.withAssetWrite(guid, async () => {
-      // A move queued ahead of this write may have changed the path.
-      const asset = registry.getByGuid(guid);
-      if (asset?.header.type !== "Texture") return null;
-      const payload = (await this.loadDocument("texture", asset.path)) as Record<string, unknown>;
-      const previousUsage = String(payload.usage ?? "albedo");
-      if (previousUsage === usage) return null;
-      if (expectedUsage !== undefined && previousUsage !== expectedUsage) {
-        throw new TextureUsageChangedError(previousUsage);
-      }
-      const change = applyTextureUsageChange(payload, usage);
-      await this.saveDocumentUnlocked("texture", asset.path, change.payload);
-      return { previousUsage, shouldRequeue: change.shouldRequeue };
-    });
-    if (!saved) return null;
-    if (saved.shouldRequeue) await this.retryTextureEncoding(guid, { force: true, usage });
-    return { previousUsage: saved.previousUsage };
   }
 
   async prepareAreaEmission(guid: string, options: { signal?: AbortSignal; onProgress?: (value: AreaEmissionProgress) => void } = {}): Promise<void> {

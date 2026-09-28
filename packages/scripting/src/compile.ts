@@ -5,7 +5,7 @@ import type {
   CodegenContext,
   HoistBodyAnchor,
 } from "./node-registry";
-import { defaultValueLiteral } from "./types";
+import { defaultValueLiteral, type PinType } from "./types";
 import { pinTypeKey, resolveWildcardPinTypes } from "./wildcard-resolve";
 import { pinRejectsStoredDefault, readPinDefaultForPin } from "./pin-defaults";
 import { isDevelopmentOnlyNode } from "./development-only";
@@ -233,6 +233,21 @@ function entryPinMatches(
   return !!pin && (pin.id === pinRef || pin.name === pinRef);
 }
 
+/** Static type of the pin wired into `pinId`, unless disconnected or stripped. */
+function wiredSourceType(
+  graph: LogicGraph,
+  node: GraphNode,
+  pinId: string,
+  shouldStrip: (node: GraphNode) => boolean,
+): PinType | undefined {
+  const incoming = edgeToInput(graph, node.id, pinId);
+  if (!incoming) return undefined;
+  const srcNode = findNode(graph, incoming.sourceNodeId);
+  const srcPin = srcNode && findPin(srcNode, incoming.sourcePinId);
+  if (!srcNode || !srcPin || shouldStrip(srcNode)) return undefined;
+  return srcPin.type;
+}
+
 function pinForCodegen(
   node: GraphNode,
   pinName: string,
@@ -367,6 +382,10 @@ export function compileGraph(
         const p = pinForCodegen(node, pinName, "in");
         if (!p) return "undefined";
         return pinExpr(node, p);
+      },
+      inputType(pinName) {
+        const p = pinForCodegen(node, pinName, "in");
+        return p ? wiredSourceType(graph, node, p.id, shouldStrip) : undefined;
       },
       output(pinName) {
         const p = pinForCodegen(node, pinName, "out");
@@ -1170,6 +1189,10 @@ export function compileTransitionRuleGraph(
         const p = pinForCodegen(node, pinName, "in");
         if (!p) return "undefined";
         return pinExpr(node, p);
+      },
+      inputType(pinName) {
+        const p = pinForCodegen(node, pinName, "in");
+        return p ? wiredSourceType(graph, node, p.id, shouldStrip) : undefined;
       },
       output(pinName) {
         const p = pinForCodegen(node, pinName, "out");

@@ -1,7 +1,5 @@
 import type { DockviewApi } from "dockview-react";
 import {
-  CLASS_PANEL_INITIAL_HEIGHT,
-  CLASS_PANEL_TITLE,
   dockLayoutHostWidth,
   listDockWindows,
   primaryDockPanel,
@@ -11,7 +9,6 @@ import {
 } from "./window-catalog";
 
 export type { DockviewDocumentKind };
-export { CLASS_PANEL_INITIAL_HEIGHT, CLASS_PANEL_TITLE };
 
 function applyCatalogLayout(
   api: DockviewApi,
@@ -52,14 +49,6 @@ function applyCatalogLayout(
     if (def.id === primaryId) primary = panel;
   }
   primary?.api.setActive();
-}
-
-export function createSceneDefaultLayout(api: DockviewApi): void {
-  applyCatalogLayout(api, "scene");
-}
-
-export function createGraphDefaultLayout(api: DockviewApi): void {
-  applyCatalogLayout(api, "graph");
 }
 
 export function createDefaultLayoutForKind(

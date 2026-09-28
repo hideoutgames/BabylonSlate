@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Actor, ActorComponent, BObject, Scene, SceneLayer, getPostProcessMaterialObject } from "./objects";
 import { ClassRegistry } from "./class-registry";
-import { engineScriptVariablesFor } from "./engine-script-api";
+import { engineScriptApiFor } from "./engine-script-api";
 
 it.each(["scene", "layer"] as const)("keeps %s pass handles isolated across reorder and rejects replacement or teardown", (kind) => {
   const stack = [
@@ -35,7 +35,7 @@ it.each(["scene", "layer"] as const)("keeps %s pass handles isolated across reor
 
 describe("MeshComponent Material Object", () => {
   it("exposes a get-only live object separately from the assignable Material asset", () => {
-    const members = engineScriptVariablesFor("MeshComponent");
+    const members = engineScriptApiFor("MeshComponent")?.variables ?? [];
     expect(
       members.find((entry) => entry.propertyKey === "materialObject"),
     ).toMatchObject({

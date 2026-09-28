@@ -10,12 +10,6 @@ export type TickPhase = (typeof TICK_PHASES)[number];
 
 export type PhaseHook = (phase: TickPhase, dt: number, tickIndex: number) => void;
 
-export interface TickSchedulerOptions {
-  dt: number;
-  /** Optional per-phase hooks. */
-  onPhase?: PhaseHook;
-}
-
 export class TickClock {
   tickIndex = 0;
   dt: number;

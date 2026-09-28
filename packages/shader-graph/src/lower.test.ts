@@ -537,7 +537,6 @@ describe("material lowering", () => {
         (operation) => operation.nodeType === "function.call",
       ),
     ).toBe(false);
-    expect(result.plan.dependencies.functions).toEqual(["fn-tint"]);
   });
 
   it("maps an inlined operation back to its function and call node", () => {

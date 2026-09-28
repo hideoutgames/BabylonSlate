@@ -89,21 +89,60 @@ it("edits Global Water Volume settings without exposing finite bounds", () => {
   expect(update).toHaveBeenLastCalledWith("depth", 42);
 });
 
-it("edits a river path through typed vector rows and extends from its last point", () => {
+it.each(["WaterRiverComponent", "SplineComponent"])("edits %s through typed XYZ rows and extends from its last point", (classId) => {
   const properties = { points: [[0, 3, 0], [4, 2, 8]] };
-  const { rows, update } = rowsFor({ id: "river", classId: "WaterRiverComponent", properties });
+  const { rows, update } = rowsFor({ id: "path", classId, properties });
   const point = rows.find((row) => row.label === "Path Point 2");
   const count = rows.find((row) => row.label === "Path Point Count");
-  if (point?.kind !== "vector3" || count?.kind !== "number") throw new Error("River path controls missing");
+  const curvature = rows.find((row) => row.label === "Curvature");
+  if (point?.kind !== "vector3" || count?.kind !== "number" || curvature?.kind !== "number") throw new Error("Path controls missing");
   point.onChange([4, 1, 9]);
   expect(update).toHaveBeenLastCalledWith("points", [[0, 3, 0], [4, 1, 9]]);
   count.onChange(3);
   expect(update).toHaveBeenLastCalledWith("points", [[0, 3, 0], [4, 2, 8], [4, 2, 13]]);
+  curvature.onChange(0.25);
+  expect(update).toHaveBeenLastCalledWith("curvature", 0.25);
   expect(properties.points).toEqual([[0, 3, 0], [4, 2, 8]]);
+});
+
+it("keeps per-point river width editing alongside the shared path controls", () => {
+  const { rows, update } = rowsFor({ id: "river", classId: "WaterRiverComponent", properties: { points: [[0, 3, 0], [4, 2, 8]], widthScales: [0.75, 1.5] } });
   const width = rows.find((row) => row.label === "Path Point 2 Width Scale");
   if (width?.kind !== "number") throw new Error("River width control missing");
   width.onChange(2.5);
-  expect(update).toHaveBeenLastCalledWith("widthScales", [1, 2.5]);
+  expect(update).toHaveBeenLastCalledWith("widthScales", [0.75, 2.5]);
+});
+
+it("bounds path point counts and preserves existing points when truncating", () => {
+  const { rows, update } = rowsFor({ id: "spline", classId: "SplineComponent", properties: { points: [[0, 0, 0], [1, 2, 3], [4, 5, 6]] } });
+  const count = rows.find((row) => row.label === "Path Point Count");
+  if (count?.kind !== "number") throw new Error("Path count missing");
+  count.onChange(0);
+  expect(update).toHaveBeenLastCalledWith("points", [[0, 0, 0], [1, 2, 3]]);
+  count.onChange(129);
+  const extended = update.mock.lastCall?.[1] as number[][];
+  expect(extended).toHaveLength(128);
+  expect(extended.slice(0, 3)).toEqual([[0, 0, 0], [1, 2, 3], [4, 5, 6]]);
+  expect(extended.at(-1)).toEqual([4, 5, 631]);
+  update.mockClear();
+  count.onChange(Number.POSITIVE_INFINITY);
+  expect(update).not.toHaveBeenCalled();
+});
+
+it("allows closing a spline only when at least three points are available", () => {
+  const initial = rowsFor({ id: "spline", classId: "SplineComponent", properties: defaultPropertiesFor("SplineComponent") });
+  expect(initial.rows.find((row) => row.label === "Closed Loop")).toMatchObject({ kind: "boolean", value: false, disabled: true });
+  const { rows, update } = rowsFor({ id: "spline", classId: "SplineComponent", properties: { points: [[0, 0, 0], [1, 2, 3], [4, 5, 6]] } });
+  const closed = rows.find((row) => row.label === "Closed Loop");
+  if (closed?.kind !== "boolean") throw new Error("Spline loop control missing");
+  expect(closed.disabled).toBe(false);
+  closed.onChange(true);
+  expect(update).toHaveBeenLastCalledWith("closed", true);
+  const loop = rowsFor({ id: "spline", classId: "SplineComponent", properties: { closed: true, points: [[0, 0, 0], [1, 2, 3], [4, 5, 6]] } });
+  const count = loop.rows.find((row) => row.label === "Path Point Count");
+  if (count?.kind !== "number") throw new Error("Loop point count missing");
+  count.onChange(2);
+  expect(loop.update).toHaveBeenLastCalledWith("points", [[0, 0, 0], [1, 2, 3], [4, 5, 6]]);
 });
 
 it("edits a Water Removal Volume with only the sizes its shape uses", () => {
@@ -119,6 +158,48 @@ it("edits a Water Removal Volume with only the sizes its shape uses", () => {
 });
 
 describe("componentPropertyRows", () => {
+  it("authors cable endpoints and bounded work while collision stays opt-in", () => {
+    const properties = defaultPropertiesFor("CableComponent");
+    const cable = { id: "cable", classId: "CableComponent", properties };
+    const onPickActor = vi.fn();
+    const actorComponents = vi.fn(() => [cable, { id: "hook", classId: "ActorComponent", properties: {} }]);
+    const { rows, update, onPickAsset } = rowsFor(cable, { onPickActor, actorComponents });
+    const target = rows.find((row) => row.label === "Target Actor");
+    const component = rows.find((row) => row.label === "Target Component");
+    const end = rows.find((row) => row.label === "End Position");
+    const segments = rows.find((row) => row.label === "Segments");
+    const collision = rows.find((row) => row.label === "Enable Collision");
+    const material = rows.find((row) => row.label === "Material");
+    if (target?.kind !== "asset" || component?.kind !== "enum" || end?.kind !== "vector3" || segments?.kind !== "number" || collision?.kind !== "boolean" || material?.kind !== "asset") throw new Error("Missing Cable controls");
+    expect(actorComponents).toHaveBeenCalledWith("actor-1");
+    expect(component.options.map((option) => option.value)).toEqual(["", "hook"]);
+    target.onPick();
+    component.onChange("hook");
+    end.onChange([2, 1, -1]);
+    segments.onChange(200);
+    collision.onChange(true);
+    material.onPick();
+    expect(onPickActor).toHaveBeenCalledWith("cable");
+    expect(update.mock.calls).toEqual([["targetComponentId", "hook"], ["endPosition", [2, 1, -1]], ["numSegments", 64], ["enableCollision", true]]);
+    expect(onPickAsset).toHaveBeenCalledWith(expect.objectContaining({ property: "materialGuid", allowedTypes: ["Material"] }));
+    expect(rows.find((row) => row.label === "Collision Friction")?.disabled).toBe(true);
+    expect(rowsFor({ ...cable, properties: { ...properties, enableCollision: true } }).rows.find((row) => row.label === "Collision Friction")?.disabled).toBe(false);
+    expect(properties.targetComponentId).toBeNull();
+  });
+
+  it("resolves a prefab cable target by source ID and clears the component when its actor changes", () => {
+    const cable = { id: "cable", classId: "CableComponent", properties: { targetActorId: "hook-actor", targetComponentId: "prefab-hook" } };
+    const actorComponents = vi.fn(() => [{ id: "instance-hook", sourceId: "prefab-hook", classId: "MeshComponent", properties: {} }]);
+    const { rows, update } = rowsFor(cable, { actorComponents });
+    expect(actorComponents).toHaveBeenCalledWith("hook-actor");
+    const target = rows.find((row) => row.label === "Target Component");
+    if (target?.kind !== "enum") throw new Error("Missing component picker");
+    expect(target.value).toBe("instance-hook");
+    target.onChange("");
+    expect(update).toHaveBeenCalledWith("targetComponentId", null);
+    expect(patchInspectorComponentProperty(cable, "targetActorId", null)).toMatchObject({ targetActorId: null, targetComponentId: null });
+  });
+
   it("selects only Scene assets for streaming targets and keeps the cached name out of editable properties", () => {
     const { rows, onPickAsset, update } = rowsFor({ id: "stream", classId: "SceneStreamingComponent", properties: { sceneGuid: "cave", sceneName: "Cave" } }, { assetLabel: () => "Cave", assetType: () => "Scene" });
     expect(rows).toHaveLength(1);

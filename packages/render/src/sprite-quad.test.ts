@@ -17,9 +17,8 @@ describe("sprite quad", () => {
       lockstepMaxSteps: 1,
     });
     scene = new Scene(engine);
-    const camera = createEditorCamera(scene, { mode: "2d" });
+    const camera = createEditorCamera(scene, { mode: "2d", orthoHalfHeight: 5 });
     camera.updateOrthoBounds(800 / 600);
-    camera.setOrthoHalfHeight(5);
     scene.updateTransformMatrix();
   });
 

@@ -21,10 +21,6 @@ const POST_PROCESS_NODE_IDS = new Set([
   "scene-layer.unregisterPostProcess",
 ]);
 
-export function isSceneLayerPostProcessNodeType(typeId: string): boolean {
-  return POST_PROCESS_NODE_IDS.has(typeId);
-}
-
 function materialGuidFromNode(node: {
   properties: Record<string, unknown>;
 }): string | undefined {

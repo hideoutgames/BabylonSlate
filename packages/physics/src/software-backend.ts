@@ -11,7 +11,6 @@ import type {
   ColliderShape,
   HitResult,
   LineTraceOptions,
-  MotionType,
   OverlapResult,
   PhysicsContactEvent,
   PhysicsTransform,
@@ -19,7 +18,6 @@ import type {
   PhysicsWorldKind,
   RigidBodyDesc,
   RigidBodyTuning,
-  ColliderTuning,
   Vec3,
 } from "./types";
 
@@ -361,12 +359,6 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
     body.angularVelocity = this.kind === "2d" ? { x: 0, y: 0, z: velocity.z } : { ...velocity };
   }
 
-  setBodyMotionType(bodyId: string, motionType: MotionType): void {
-    const body = this.bodies.get(bodyId);
-    if (!body) return;
-    body.desc.motionType = motionType;
-  }
-
   setBodyLinearVelocity(bodyId: string, velocity: Partial<Vec3>): void {
     const body = this.bodies.get(bodyId);
     if (!body || body.desc.motionType !== "dynamic") return;
@@ -476,32 +468,6 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
 
   destroyCollider(colliderId: string): void {
     this.colliders.delete(colliderId);
-  }
-
-  updateCollider(colliderId: string, tuning: ColliderTuning): void {
-    const collider = this.colliders.get(colliderId);
-    if (!collider) return;
-    if (typeof tuning.isTrigger === "boolean") {
-      collider.desc.isTrigger = tuning.isTrigger;
-    }
-    if (
-      typeof tuning.friction === "number" &&
-      Number.isFinite(tuning.friction)
-    ) {
-      collider.desc.friction = tuning.friction;
-    }
-    if (
-      typeof tuning.restitution === "number" &&
-      Number.isFinite(tuning.restitution)
-    ) {
-      collider.desc.restitution = tuning.restitution;
-    }
-    if (typeof tuning.layer === "number" && Number.isFinite(tuning.layer)) {
-      collider.desc.layer = tuning.layer;
-    }
-    if (typeof tuning.mask === "number" && Number.isFinite(tuning.mask)) {
-      collider.desc.mask = tuning.mask;
-    }
   }
 
   listDebugColliders() {
@@ -668,14 +634,6 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
         }
       }
     }
-  }
-
-  readTransforms(): ReadonlyMap<string, PhysicsTransform> {
-    const out = new Map<string, PhysicsTransform>();
-    for (const [id, body] of this.bodies) {
-      out.set(id, cloneTransform(body.transform));
-    }
-    return out;
   }
 
   lineTrace(start: Vec3, end: Vec3, options?: LineTraceOptions): HitResult {
@@ -845,10 +803,4 @@ function isShape2D(shape: ColliderShape): boolean {
     shape.kind === "polygon" ||
     shape.kind === "chain"
   );
-}
-
-export function createNullPhysicsBackend(
-  kind: PhysicsWorldKind = "3d",
-): PhysicsBackend {
-  return new SoftwarePhysicsBackend(kind, { x: 0, y: 0, z: 0 });
 }

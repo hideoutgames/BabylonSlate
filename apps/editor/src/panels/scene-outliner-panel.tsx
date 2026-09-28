@@ -95,14 +95,6 @@ import {
 const QUIET_ROW_ACTION =
   "[@media(hover:hover)_and_(pointer:fine)]:opacity-0 [@media(hover:hover)_and_(pointer:fine)]:[[role=treeitem]:hover_&]:opacity-100 [@media(hover:hover)_and_(pointer:fine)]:[[role=treeitem]:focus-within_&]:opacity-100";
 
-export {
-  actorRowId,
-  applyOutlinerRowSelect,
-  folderRowId,
-  outlinerRowTarget,
-  type OutlinerRowTarget,
-} from "../lib/outliner-drop";
-
 /**
  * Depth-first walk so children follow their parent in the flattened list.
  * Folders come first at each level, then the actors they hold. Transform
@@ -986,7 +978,6 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
             onExternalDrop={dropActorRow}
             onExternalDragMove={moveActorDropHint}
             onExternalDragEnd={() => setDropHint(null)}
-            reparentArm="immediate"
             emptyLabel={
               scene
                 ? search.trim()

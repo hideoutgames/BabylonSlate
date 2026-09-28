@@ -1,4 +1,5 @@
 import { RuntimeMaterialParameters } from "./runtime-material-parameters";
+import { CableWorldSync } from "./cable-sync";
 import { captureComponent, captureLocalTransform, captureProperties } from "./render-targets";
 import { createDefaultRenderTargetCaptureProperties, normalizeRenderTargetPayload, normalizeRenderTargetTexturePayload, type RenderTargetPayload, type RenderTargetTexturePayload } from "@babylonslate/core";
 import { normalizeWaterDefinition, normalizeWaterBody, normalizeWaterRemoval, waterKindForClass, type WaterDefinition } from "@babylonslate/core";
@@ -163,8 +164,6 @@ import {
   type NavPoint,
 } from "@babylonslate/navigation";
 
-export type TransportMode = "in-process" | "sab" | "transferable";
-
 export interface RuntimeDriverOptions {
   renderSettings?: Partial<RenderProjectSettings>;
   /** Initial render cap for console readback; does not change the simulation step. */
@@ -173,7 +172,6 @@ export interface RuntimeDriverOptions {
   seed: number;
   dt?: number;
   maxActors?: number;
-  maxCatchUpSteps?: number;
   onCommand?: (command: CommandMessage) => void;
   /** Project Settings input mappings; defaults when omitted. */
   inputAssets?: InputAssetDefinition[];
@@ -252,7 +250,6 @@ export interface RuntimeDriver {
   advance(elapsedSeconds: number): void;
   pushInput(events: readonly RawInputEvent[]): void;
   pushInputBuffer(buffer: ArrayBuffer): void;
-  setInputMappings(mappings: InputMappings): void;
   /** Most recent resolved input tick (empty before the first tick). */
   getResolvedInput(): ResolvedInputTick;
   copySnapshot(out: Float32Array): boolean;
@@ -386,7 +383,6 @@ export interface RuntimeDriver {
   addNavObstacle(kind: NavObstacleKind, pose: NavPoint, size: NavPoint): string;
   removeNavObstacle(id: string): void;
   stopNavAgent(actorGuid: string): void;
-  readonly transportMode: TransportMode;
   readonly lastScriptMs: number;
   readonly lastPhysicsMs: number;
 }
@@ -394,7 +390,7 @@ export interface RuntimeDriver {
 export function createInProcessRuntime(
   options: RuntimeDriverOptions,
 ): RuntimeDriver {
-  return new InProcessRuntime(options, "in-process");
+  return new InProcessRuntime(options);
 }
 
 interface SceneDeparture {
@@ -439,7 +435,6 @@ interface SceneStream {
 }
 
 class InProcessRuntime implements RuntimeDriver {
-  readonly transportMode: TransportMode;
   private readonly world: World;
   private snapshots: SeqLockSnapshotPair;
   private readonly input = new InputRingBuffer(512);
@@ -461,7 +456,7 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly diagnostics = new SessionDiagnosticAggregator();
   private readonly anchors = new Map<string, readonly AnchorEntry[]>();
   private readonly onCommand?: (command: CommandMessage) => void;
-  private readonly maxCatchUp: number;
+  private readonly maxCatchUp = 4;
   private readonly dt: number;
   private readonly physicsWorldKind: PhysicsWorldKind;
   private gravity: [number, number, number];
@@ -504,6 +499,7 @@ class InProcessRuntime implements RuntimeDriver {
   private physicsSync: PhysicsWorldSync;
   private overlayPhysicsSync: PhysicsWorldSync;
   private readonly ragdolls: RagdollWorldSync;
+  private readonly cables: CableWorldSync;
   private readonly overlayGravity: [number, number, number];
   private readonly overlayDesignPose = new Map<string, { x: number; y: number }>();
   private playCanvasWidth = 1;
@@ -603,16 +599,14 @@ class InProcessRuntime implements RuntimeDriver {
   get snapshotCapacity(): number { return this.snapshots.maxActors; }
   get snapshotGeneration(): number { return this._snapshotGeneration; }
 
-  constructor(options: RuntimeDriverOptions, mode: TransportMode) {
+  constructor(options: RuntimeDriverOptions) {
     this.materialParameters = new RuntimeMaterialParameters(options.materialParameterCatalog, options.materialTextureAssetGuids);
     this.validateLegacyMeshParameters = options.materialParameterCatalog !== undefined;
     this.scalabilityProjectRenderPath = options.renderSettings?.renderPath ?? "forward";
     this.scalability = new ScalabilitySession(options.renderSettings, options.frameCap, options.playScene?.settings,
       (transaction) => this.emit({ type: "setScalability", transaction }));
-    this.transportMode = mode;
     this.dt = options.dt ?? 1 / 60;
     this.seed = options.seed;
-    this.maxCatchUp = options.maxCatchUpSteps ?? 4;
     this.onCommand = options.onCommand;
     this.physicsWorldKind =
       options.physicsWorld ??
@@ -810,8 +804,19 @@ class InProcessRuntime implements RuntimeDriver {
         }
         if (this.hasReadyLayers()) this.overlayPhysicsSync.step(ctx.dt, this.world);
         this.ragdolls.afterStep();
+        if (this.canTickScene()) this.cables.step(ctx.dt, this.gravity, this.frameId + 1);
         this.dispatchCollisionEvents();
       },
+    });
+    this.cables = new CableWorldSync({
+      world: this.world,
+      physics: () => this.physicsSync.getBackend(),
+      eligible: (actor) => this.canTickActor(actor),
+      slot: (actor) => {
+        const slot = this.slotByGuid.get(actor.guid);
+        return slot !== undefined && this.slotOwners.get(slot) === actor ? slot : undefined;
+      },
+      emit: (command) => this.emit(command),
     });
     this.ragdolls = new RagdollWorldSync({
       world: this.world,
@@ -2311,6 +2316,7 @@ class InProcessRuntime implements RuntimeDriver {
     const stream = this.sceneStreams.get(actor.guid);
     if (stream) this.retireSceneStream(stream);
     this.ragdolls.retire(actor);
+    this.cables.retire(actor);
     this.pendingOwnerActions.delete(actor);
     for (const component of actor.components) {
       this.pendingOwnerActions.delete(component);
@@ -4117,8 +4123,8 @@ class InProcessRuntime implements RuntimeDriver {
       );
       const parts = playPartsNeeded(renderables) ||
         renderables.some((component) => component.classId === SPRING_ARM_COMPONENT_CLASS_ID)
-        ? renderables.map((component) =>
-            playMeshPartOf(
+        ? renderables.map((component) => ({
+            ...playMeshPartOf(
               component,
               nearestVisualParentId(
                 component,
@@ -4126,7 +4132,8 @@ class InProcessRuntime implements RuntimeDriver {
                 renderableIds,
               ),
             ),
-          )
+            ...(component.classId === "CableComponent" ? { cable: this.cables.assign(component) } : {}),
+          }))
         : undefined;
       const skyboxComp = renderables.find(
         (component) => component.classId === "SkyboxComponent",
@@ -4754,7 +4761,10 @@ class InProcessRuntime implements RuntimeDriver {
 
   private releaseSlot(actorGuid: string, slotId: number): void {
     const owner = this.slotOwners.get(slotId);
-    if (owner) this.ragdolls.retire(owner);
+    if (owner) {
+      this.ragdolls.retire(owner);
+      this.cables.retire(owner);
+    }
     this.areaLightSlots.delete(slotId);
     this.outlineSlots.delete(slotId);
     this.captureSlots.delete(slotId);
@@ -4936,6 +4946,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.pendingOwnerActions.clear();
     this.layerLoads.clear();
     this.ragdolls.dispose();
+    this.cables.dispose();
     this.physicsSync.dispose();
     this.overlayPhysicsSync.dispose();
     if (this.showPathfinding || this.showNavAgent) {
@@ -4967,10 +4978,6 @@ class InProcessRuntime implements RuntimeDriver {
 
   pushInputBuffer(buffer: ArrayBuffer): void {
     this.pushInput(decodeInputEvents(buffer));
-  }
-
-  setInputMappings(mappings: InputMappings): void {
-    this.resolver.setMappings(normalizeInputMappings(mappings));
   }
 
   get inputBindings(): InputBindingControls { return this.resolver.bindings; }
@@ -5432,6 +5439,7 @@ function isPlayRenderable(
   if (
     component.classId === "LandscapeComponent" ||
     component.classId === "FoliageComponent" ||
+    component.classId === "CableComponent" ||
     component.classId === "MeshComponent" ||
     component.classId === "SpriteComponent" ||
     component.classId === "TilemapComponent" ||
@@ -5517,6 +5525,7 @@ function playSortingOf(component: ActorComponent): {
 }
 
 function playMeshKindOf(component: ActorComponent): string | null {
+  if (component.classId === "CableComponent") return "cable";
   if (waterKindForClass(component.classId)) return "water";
   if (component.classId === "WaterRemovalVolumeComponent") return "waterRemoval";
   if (component.classId === "LandscapeComponent") return "landscape";
@@ -5570,6 +5579,7 @@ function isIdentityComponentTransform(component: ActorComponent): boolean {
 
 function playPartsNeeded(components: readonly ActorComponent[]): boolean {
   return (
+    components.some((component) => component.classId === "CableComponent") ||
     components.some((component) => waterKindForClass(component.classId) !== null || component.classId === "WaterRemovalVolumeComponent") ||
     components.length > 1 ||
     components.some((component) => component.classId === "LandscapeComponent" || component.classId === "FoliageComponent") ||
