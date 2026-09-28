@@ -873,6 +873,36 @@ describe("project documents as .babasset", () => {
     expect(encoded("legacy-padded")).toEqual(["compressed", 4, 4, 4]);
   });
 
+  it("with source control on, leaves an encode a git revert restored alone, though this session re-encoded the Texture before", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("Reverted.babproject");
+    await installMinimalProject(storage);
+    const path = "assets/odd.babasset";
+    await writeLegacyOddTexture(storage, path, "odd");
+    const committedInGit = await storage.readBinary(path);
+    const encode = vi.fn(standInEncode);
+    const service = new ProjectService(storage, { encode });
+    const payload = () => service.registry!.getByGuid("odd")!.header.payload;
+
+    // Source control is off: opening the project re-encodes it on the grid.
+    await service.loadCurrentProject();
+    await vi.waitFor(() => expect(payload()).toMatchObject({ compressionState: "compressed", ktx2Width: 4, ktx2Height: 4 }));
+    // Project Settings turns source control on, and a git client restores the committed file.
+    service.setSourceControlEnabled(true);
+    await nextMillisecond();
+    await storage.writeBinary(path, committedInGit);
+
+    // Returning to the app remounts the registry, which runs the pass.
+    service.pauseTextureEncodeQueue();
+    await service.remountRegistry();
+    expect(await service.reconcileTextureAlignment()).toBe(0);
+    expect(service.textureEncodeQueue.depth).toBe(0);
+    service.resumeTextureEncodeQueue();
+    expect(encode).toHaveBeenCalledTimes(1);
+    expect(payload()).toMatchObject({ compressionState: "compressed", ktx2ChunkId: KTX2_KEY_MAX_1 });
+    expect(payload()).not.toHaveProperty("ktx2Width");
+  });
+
   it("rechecks a Texture a Tileset picks while an unsaved Details Usage re-encodes it", async () => {
     const storage = new MemoryStorageAdapter("documents");
     await storage.openDocumentsProject("InFlight.babproject");

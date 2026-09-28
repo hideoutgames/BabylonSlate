@@ -246,6 +246,12 @@ function withSavedTextureEncodeState(
   return next;
 }
 
+/** sha256 of the KTX2 chunk a Texture's header commits to (`ktx2ChunkId`), if any. */
+function committedKtx2Sha256(asset: IndexedAsset | undefined): string | null {
+  const id = asset?.header.payload.ktx2ChunkId;
+  return asset?.header.chunks.find((chunk) => chunk.id === id)?.sha256 ?? null;
+}
+
 export interface ProjectLoadResult {
   document: ProjectDocument;
   layouts: ProjectLayouts;
@@ -316,13 +322,17 @@ export class ProjectService {
   /**
    * The open project's source control **Enable** setting, saved or not. While
    * it is on, nothing re-encodes a Texture in the background: only the user's
-   * own edits, and Textures this session encoded, re-align.
+   * own edits, and Textures whose committed encode this session wrote, re-align.
    */
   private sourceControlEnabled = false;
   /** The Usage an open Texture tab shows, saved or not (the editor sets it). */
   private openTextureUsage: ((guid: string) => string | undefined) | null = null;
-  /** Textures whose encode this project session committed. */
-  private readonly sessionEncodedTextures = new Set<string>();
+  /**
+   * Texture guid -> sha256 of the KTX2 chunk this project session last
+   * committed for it. It exempts the Texture only while that encode is still
+   * the committed one: a git revert or pull that replaces it ends the exemption.
+   */
+  private readonly sessionEncodes = new Map<string, string>();
   /** Committed KTX2 (and sniffed source) sizes by chunk sha256, kept across registry remounts. */
   private readonly ktx2SizeCache = new Map<string, ImageSize | null>();
   /** Textures decoded legacy atlas referrers sample, by content, kept across registry remounts. */
@@ -427,8 +437,10 @@ export class ProjectService {
           .then(() => this.emitRegistryChange());
       },
       onComplete: async (result) => {
-        if (!(await this.assetRegistry?.commitCompressedTexture(result))) return;
-        this.sessionEncodedTextures.add(result.assetGuid);
+        const registry = this.assetRegistry;
+        if (!(await registry?.commitCompressedTexture(result))) return;
+        const committed = registry && committedKtx2Sha256(registry.getByGuid(result.assetGuid));
+        if (committed) this.sessionEncodes.set(result.assetGuid, committed);
         this.emitRegistryChange();
         // A Tileset, Sprite or Sprite Animation may have picked the texture
         // while it encoded; recheck it with the Usage the pass will use (an
@@ -602,9 +614,10 @@ export class ProjectService {
 
   /**
    * Whether the alignment pass may rewrite a Texture now: not read-only, and
-   * source control is off or this project session committed its encode (the
-   * user's own new work, such as an import a Tileset then picks). Asked again
-   * when its job starts and before its commit.
+   * source control is off or its committed encode is the one this project
+   * session last wrote (such as an import a Tileset then picks); a git revert
+   * or pull that replaced that encode ends it. Asked again when its job
+   * starts and before its commit.
    */
   private alignmentMayWrite(guid: string): boolean {
     const registry = this.assetRegistry;
@@ -613,7 +626,9 @@ export class ProjectService {
     if (registry.getRoot(asset.rootId)?.readOnly || isPluginDocumentReadOnly(this.pluginDescriptors, asset.path)) {
       return false;
     }
-    return !this.sourceControlEnabled || this.sessionEncodedTextures.has(guid);
+    if (!this.sourceControlEnabled) return true;
+    const committed = committedKtx2Sha256(asset);
+    return committed !== null && this.sessionEncodes.get(guid) === committed;
   }
 
   /**
@@ -629,9 +644,9 @@ export class ProjectService {
    * Requeue compressed Textures whose committed encode is stale for the
    * alignment policy (all Textures, or `guids`). Runs one at a time on the
    * current registry. While source control is on it only requeues Textures
-   * whose encode this session committed, such as an import picked by a
-   * Tileset (`alignmentMayWrite`); every other Texture waits for the user's
-   * own edit. Resolves with the number requeued.
+   * whose committed encode is still the one this session wrote, such as an
+   * import picked by a Tileset (`alignmentMayWrite`); every other Texture
+   * waits for the user's own edit. Resolves with the number requeued.
    */
   reconcileTextureAlignment(guids?: readonly string[]): Promise<number> {
     const run = async () => {
@@ -968,7 +983,7 @@ export class ProjectService {
   }
 
   async closeProject(): Promise<void> {
-    this.sessionEncodedTextures.clear();
+    this.sessionEncodes.clear();
     await this.extensions.close();
     this.cancelEmissionJobs();
     await this.storage.releaseFolder();
@@ -1060,7 +1075,7 @@ export class ProjectService {
     this.migrationPending = [];
     this.migrateOnSaveApproved = false;
     this.assetGuids.clear();
-    this.sessionEncodedTextures.clear();
+    this.sessionEncodes.clear();
 
     const hasProject = await this.storage.exists(PROJECT_FILE);
     if (!hasProject) {
