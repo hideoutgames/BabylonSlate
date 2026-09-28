@@ -19,6 +19,9 @@ When the code-review skill reports Standards or Spec findings:
 
 | Date | Branch | Checklist / issue | Axis | Finding | Status |
 | --- | --- | --- | --- | --- | --- |
+| 2026-09-27 | agent/spline-cable-followups-3b9e | Spline and Cable follow-ups | Standards | Shape handles recomputed drag constraints for every handle on every rendered frame; cached world/view matrices now refresh constraints only when the camera, shape, or handle topology changes. | Resolved |
+| 2026-09-27 | agent/spline-cable-followups-3b9e | Spline and Cable follow-ups | Spec | Cable owner re-emits woke sleeping simulations; unchanged properties now leave them asleep with one current-shape resend, and the radius-free 2D collision fallback is documented. | Resolved |
+| 2026-09-27 | agent/spline-cable-followups-3b9e | Spline and Cable follow-ups | Standards | Spline and Cable components shared the Spring Arm glyph; each now has a distinct outliner glyph. | Resolved |
 | 2026-09-27 | agent/review-followups-7d31 | Review follow-ups | Standards | Render-target capture allocated owner, filter, particle and override collections on continuous frames; capture-owned scratch collections now retain steady-state storage. | Resolved |
 | 2026-09-27 | agent/review-followups-7d31 | Review follow-ups | Standards | Stream admission allocated mesh, particle, texture, geometry and native-visibility collections during staged frames; scope caches and borrowed scratch collections now serve those paths. | Resolved |
 | 2026-09-27 | agent/review-followups-7d31 | Review follow-ups | Standards | Admission and readiness repeated scene-stream lifecycle command switches and validation; one decoder now owns lifecycle events. | Resolved |
