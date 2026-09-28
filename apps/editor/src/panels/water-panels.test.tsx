@@ -19,12 +19,13 @@ if (typeof window !== "undefined") {
   });
 }
 
-const DOC_ID = "water:assets/Lake.water.babasset";
-
 /** Water Details over a real undo stack, as `applyAssetDocumentChange` drives it. */
 const harness = vi.hoisted(() => ({
   content: {} as Record<string, unknown>,
-  apply: (_next: Record<string, unknown>, _mergeKey?: string) => {},
+  apply: (next: Record<string, unknown>, mergeKey?: string): void => {
+    void next;
+    void mergeKey;
+  },
 }));
 
 vi.mock("../context/play-context", () => ({ useOptionalPlay: () => null }));
