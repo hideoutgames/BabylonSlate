@@ -40,6 +40,12 @@ Out of v1: ExecuteJavaScript `body` text, binary payloads, on-disk search cache.
 
 In-memory only, keyed by the open project. Query is case-insensitive substring; empty needle returns no rows.
 
+## Query ranking
+
+- Each entry stores its lowercase label, description, and keywords when it is indexed (rebuild or upsert), so a query does not lowercase the index per keystroke.
+- Hits rank by match tier: exact label, label prefix, label substring, description, keyword. Within a tier, labels compare with the default collation (`localeCompare`); equal labels keep index order.
+- `query` fills the cap tier by tier and keeps a bounded sorted buffer for a tier that overflows it, so it returns the same first hits as sorting every match without doing so.
+
 ## UI
 
 - Toolbar icon left of Settings (`data-testid="global-search"`), disabled with no project.
@@ -47,6 +53,7 @@ In-memory only, keyed by the open project. Query is case-insensitive substring; 
 - While a rebuild is pending, the body is empty/spinner; queries wait until the snapshot is ready.
 - Results live in a native scroller (`data-testid="global-search-results"`, `min-h-0 flex-1 overflow-y-auto`) so long hit lists scroll instead of growing the popup. Cap ~80; do not window-virtualise this list.
 - Results grouped by kind, each hit showing the same type icon/color as the Content Browser. `Ctrl/Cmd+K` toggles on desktop.
+- The result list renders from `useDeferredValue(needle)`, so typing stays responsive. Enter and ArrowUp/ArrowDown act on the typed text: when the list still shows an older query they re-query synchronously. Enter is still ignored during IME composition and while indexing.
 
 ## Navigation
 
