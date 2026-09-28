@@ -1,7 +1,7 @@
 import {
-  Camera, Color3, CreateLineSystem, CreateSphere, Mesh, PointerDragBehavior,
+  Camera, Color3, CreateLineSystem, CreateSphere, Matrix, Mesh, PointerDragBehavior,
   StandardMaterial, Vector3,
-  type LinesMesh, type Matrix, type Scene, type UtilityLayerRenderer,
+  type LinesMesh, type Scene, type UtilityLayerRenderer,
 } from "@babylonjs/core";
 import type { RenderScheduler } from "./render-scheduler";
 
@@ -63,6 +63,9 @@ export function createShapeHandles<Body extends object, Handle extends ShapeHand
   let outline: LinesMesh | null = null;
   let outlineBody: Body | null = null;
   let outlineWorld: Matrix | null = null;
+  let constraintWorld: Matrix | null = null;
+  let constraintView: Matrix | null = null;
+  let constraintsDirty = true;
   let drag: { handle: Handle; meshId: string; start: Body; properties: Record<string, unknown>; removed: boolean } | null = null;
   let release: (() => void) | null = null;
   const lastTap = { id: "", time: -Infinity };
@@ -139,6 +142,7 @@ export function createShapeHandles<Body extends object, Handle extends ShapeHand
     behavior.onDragEndObservable.add(() => finish());
   };
   const syncMeshes = () => {
+    constraintsDirty = true;
     const ids = new Set(handles.map((handle) => handle.id));
     for (const [id, mesh] of meshes) {
       if (ids.has(id)) continue;
@@ -177,9 +181,12 @@ export function createShapeHandles<Body extends object, Handle extends ShapeHand
       localOutline = adapter.outline(body);
       handlesBody = body;
       meshesDirty = true;
+      constraintsDirty = true;
     }
     if (meshesDirty) { syncMeshes(); meshesDirty = false; }
     const matrix = source.computeWorldMatrix(true), camera = layer.getRenderCamera();
+    const view = camera?.getViewMatrix() ?? null;
+    const stale = !drag && (constraintsDirty || !constraintWorld || !constraintWorld.equals(matrix) || !view || !constraintView || !constraintView.equals(view));
     for (const handle of handles) {
       const pick = meshes.get(handle.id)!;
       pick.setEnabled(true);
@@ -188,7 +195,12 @@ export function createShapeHandles<Body extends object, Handle extends ShapeHand
       const ortho = camera?.mode === Camera.ORTHOGRAPHIC_CAMERA ? (camera.orthoTop ?? 1) - (camera.orthoBottom ?? -1) : 0;
       pick.scaling.setAll(Math.max(0.01, (ortho || distance) * 0.045 * (options.handleScale ?? 1)));
       const behavior = pick.getBehaviorByName("PointerDrag") as PointerDragBehavior | null;
-      if (behavior && !drag) behavior.options = adapter.constraint(handle, matrix, camera);
+      if (behavior && stale) behavior.options = adapter.constraint(handle, matrix, camera);
+    }
+    if (stale) {
+      constraintsDirty = false;
+      (constraintWorld ??= Matrix.Identity()).copyFrom(matrix);
+      if (view) (constraintView ??= Matrix.Identity()).copyFrom(view);
     }
     if (body !== outlineBody || !outlineWorld?.equals(matrix)) {
       outline?.dispose(); outline = null;
@@ -210,7 +222,7 @@ export function createShapeHandles<Body extends object, Handle extends ShapeHand
       if (drag && same) { target = next; return; }
       if (drag) finish(true);
       target = next; body = next ? adapter.parse(next.properties, next) : null;
-      if (!same) { handles = []; clear(); lastTap.id = ""; }
+      if (!same) { handles = []; clear(); lastTap.id = ""; constraintsDirty = true; }
       if (next) layout();
       options.scheduler?.invalidate("gizmo");
     },

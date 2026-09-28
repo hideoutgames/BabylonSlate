@@ -58,6 +58,36 @@ export const DEFAULT_CABLE_PROPERTIES: Readonly<CableProperties> = {
   sleepDelay: 0.5,
 };
 
+export function cablePropertiesEqual(a: CableProperties, b: CableProperties): boolean {
+  return a.enabled === b.enabled &&
+    a.materialGuid === b.materialGuid &&
+    a.cableLength === b.cableLength &&
+    a.numSegments === b.numSegments &&
+    a.cableWidth === b.cableWidth &&
+    a.numSides === b.numSides &&
+    a.tileMaterial === b.tileMaterial &&
+    a.attachStart === b.attachStart &&
+    a.attachEnd === b.attachEnd &&
+    a.endPosition[0] === b.endPosition[0] &&
+    a.endPosition[1] === b.endPosition[1] &&
+    a.endPosition[2] === b.endPosition[2] &&
+    a.targetActorId === b.targetActorId &&
+    a.targetComponentId === b.targetComponentId &&
+    a.solverIterations === b.solverIterations &&
+    a.enableStiffness === b.enableStiffness &&
+    a.gravityScale === b.gravityScale &&
+    a.cableForce[0] === b.cableForce[0] &&
+    a.cableForce[1] === b.cableForce[1] &&
+    a.cableForce[2] === b.cableForce[2] &&
+    a.damping === b.damping &&
+    a.substepTime === b.substepTime &&
+    a.maxSubsteps === b.maxSubsteps &&
+    a.enableCollision === b.enableCollision &&
+    a.collisionFriction === b.collisionFriction &&
+    a.sleepThreshold === b.sleepThreshold &&
+    a.sleepDelay === b.sleepDelay;
+}
+
 function finiteNumber(value: unknown, fallback: number, min: number, max: number): number {
   return typeof value === "number" && Number.isFinite(value)
     ? Math.min(max, Math.max(min, value))

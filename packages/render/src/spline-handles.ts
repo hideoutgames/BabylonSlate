@@ -1,7 +1,15 @@
-import { Color3, Vector3, type Scene, type UtilityLayerRenderer } from "@babylonjs/core";
+import { Color3, Vector3, type Camera, type Scene, type UtilityLayerRenderer } from "@babylonjs/core";
 import { parseSplineProperties, splineCentreline, type SplinePoint, type SplineProperties } from "@babylonslate/core";
 import { createShapeHandles, type ShapeHandleTarget, type ShapeHandlesOptions, type ShapeHandlesHost } from "./shape-handles";
 import { splineMeshBody, updateSplineMeshBody } from "./spline-mesh";
+
+const FORWARD = new Vector3();
+const FALLBACK_FORWARD = Vector3.Forward();
+
+function cameraForward(camera: Camera): Vector3 {
+  const m = camera.getWorldMatrix().m;
+  return FORWARD.set(m[8]!, m[9]!, m[10]!).normalize();
+}
 
 export interface SplineHandle {
   id: string;
@@ -53,7 +61,7 @@ export function createSplineHandles(layer: UtilityLayerRenderer, scene: Scene, o
       return properties ? { properties, handle: { id: `point:${index}`, kind: "point", position: local, index } } : null;
     },
     remove: (body, handle) => removeSplinePoint(body, handle.index),
-    constraint: (_handle, _world, camera) => ({ dragPlaneNormal: camera?.getForwardRay().direction ?? Vector3.Forward() }),
+    constraint: (_handle, _world, camera) => ({ dragPlaneNormal: camera ? cameraForward(camera) : FALLBACK_FORWARD }),
     color: () => new Color3(0.95, 0.97, 1),
   }, options);
 }

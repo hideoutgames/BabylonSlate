@@ -101,25 +101,37 @@ describe("CableComponent runtime", () => {
     } finally { runtime.stop(); }
   });
 
-  it("omits sleeping cables until an attachment moves or its target retires", () => {
+  it("keeps sleeping cables asleep through unchanged owner refreshes until an attachment moves or retires", async () => {
     const { runtime, frames } = setup([
-      createActor("owner", "Owner", { components: [cable("rope", { targetActorId: "target", gravityScale: 0, cableLength: 3, sleepDelay: .05 })] }),
+      createActor("owner", "Owner", { classId: "Rig", components: [
+        cable("rope", { targetActorId: "target", gravityScale: 0, cableLength: 3, sleepDelay: .05 }),
+        { id: "helper", classId: "ActorComponent", properties: {} },
+      ] }),
       createActor("target", "Target", { components: [] }),
     ]);
     try {
+      await runtime.loadScripts([{
+        assetGuid: "rig", classId: "Rig", parentClassId: "Actor", anchors: [],
+        entryPoints: [{ event: "Refresh", name: "Refresh", isAsync: false }],
+        source: 'export function Refresh(ctx) { ctx.setVariableOn(ctx.getComponentById(ctx.self,"helper"),"value",1); }',
+      }]);
       runtime.realizePlayWorld(); runtime.start();
       for (let i = 0; i < 10; i++) runtime.tick();
       const count = frames().length;
       for (let i = 0; i < 10; i++) runtime.tick();
       expect(frames()).toHaveLength(count);
+      const owner = runtime.getWorld().findActor("owner")!;
+      runtime.invokeScriptEvent("Rig", "Refresh", owner);
+      for (let i = 0; i < 10; i++) runtime.tick();
+      expect(frames()).toHaveLength(count + 1);
       runtime.getWorld().destroyActor("target");
       runtime.tick(); runtime.tick();
-      expect(frames()).toHaveLength(count + 1);
+      expect(frames()).toHaveLength(count + 2);
       const fallback = frames().at(-1)!.data;
       expect(fallback[3]).toBe(fallback[2]); // Endpoint now belongs to the owner, not the retired slot.
-      runtime.getWorld().findActor("owner")!.transform.position.y = 2;
+      owner.transform.position.y = 2;
       runtime.tick();
-      expect(frames()).toHaveLength(count + 2);
+      expect(frames()).toHaveLength(count + 3);
       expect([...records(frames().at(-1)!.data).values()][0]!.slice(0, 3)).toEqual([0, 2, 0]);
     } finally { runtime.stop(); }
   });

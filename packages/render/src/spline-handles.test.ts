@@ -17,6 +17,30 @@ describe("Spline shape handles", () => {
     expect(removeSplinePoint(body, 0)).toBeNull();
   });
 
+  it("updates point drag planes when the render camera turns", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    const camera = new FreeCamera("camera", new Vector3(0, 10, -20), scene);
+    camera.setTarget(Vector3.Zero());
+    const layer = new UtilityLayerRenderer(scene);
+    const handles = createSplineHandles(layer, scene);
+    try {
+      const properties = { points: [[0, 0, 0], [0, 0, 10]], curvature: 0 };
+      createSplineMesh(scene, "curve", properties);
+      handles.attach({ actorId: "actor", componentId: "spline", meshName: "curve", properties });
+      layer.utilityLayerScene.render();
+      const pick = layer.utilityLayerScene.getMeshByName("spline-handle:point:1")!;
+      const drag = pick.getBehaviorByName("PointerDrag") as PointerDragBehavior;
+      const before = drag.options.dragPlaneNormal!.clone().normalize();
+      camera.setTarget(new Vector3(10, 0, 0));
+      camera.getViewMatrix(true);
+      layer.utilityLayerScene.render();
+      const after = drag.options.dragPlaneNormal!.clone().normalize();
+      const expected = camera.getForwardRay().direction.normalize();
+      expect(Math.abs(Vector3.Dot(after, expected))).toBeCloseTo(1, 6);
+      expect(Math.abs(Vector3.Dot(after, before))).toBeLessThan(0.99);
+    } finally { handles.dispose(); layer.dispose(); scene.dispose(); engine.dispose(); }
+  });
+
   it("moves full XYZ in component space, previews without committing, and rolls back cancelled drags", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     const camera = new FreeCamera("camera", new Vector3(0, 10, -20), scene);

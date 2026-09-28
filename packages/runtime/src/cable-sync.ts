@@ -1,4 +1,4 @@
-import { CableSimulation, parseCableProperties, DEFAULT_SPRING_ARM_PROPERTIES, SPRING_ARM_LENGTH_LIMITS, type CableProperties, type Transform } from "@babylonslate/core";
+import { CableSimulation, cablePropertiesEqual, parseCableProperties, DEFAULT_SPRING_ARM_PROPERTIES, SPRING_ARM_LENGTH_LIMITS, type CableProperties, type Transform } from "@babylonslate/core";
 import type { CommandMessage } from "@babylonslate/bridge";
 import type { Actor, ActorComponent, World } from "@babylonslate/object-model";
 import type { PhysicsBackend, SphereSweepQuery, PhysicsTransform } from "@babylonslate/physics";
@@ -62,12 +62,14 @@ export class CableWorldSync {
       this.states.set(component, state);
     } else {
       state.owner = component.owner ?? state.owner;
-      if (state.properties.cableWidth !== properties.cableWidth || !properties.enableCollision) {
-        state.query?.dispose();
-        state.query = null;
+      if (!cablePropertiesEqual(state.properties, properties)) {
+        if (state.properties.cableWidth !== properties.cableWidth || !properties.enableCollision) {
+          state.query?.dispose();
+          state.query = null;
+        }
+        state.properties = properties;
+        state.simulation?.configure(properties);
       }
-      state.properties = properties;
-      state.simulation?.configure(properties);
       state.dirty = true; // A replacement visual needs the current shape, even asleep.
     }
     return { ...properties, simulationId: state.id };
