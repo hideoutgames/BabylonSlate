@@ -5,11 +5,12 @@ import { encodeBabasset } from "./babasset";
 import { sha256Hex } from "./bytes";
 import { projectContentRoot, type ContentRoot } from "./content-root";
 import { EncodeQueue, type EncodeJobResult } from "./encode-queue";
-import { sniffImageSize } from "./image-size";
+import { sniffSourceImageSize } from "./image-size";
 import { AssetRegistry } from "./registry";
 import { textureEncodeSettingsFor } from "./resolve-gpu-texture";
 import { DEFAULT_TEXTURE_ENCODE_SETTINGS, textureEncodeChunkId, textureEncodeSize } from "./texture-compression";
 import { createDefaultTilesetPayload } from "./tileset-payload";
+import { webpHeader } from "./test-support/image-headers";
 
 /** PNG signature + IHDR size (enough for size sniffing). */
 function png(width: number, height: number): Uint8Array {
@@ -93,7 +94,7 @@ async function mount(storage: MemoryStorageAdapter, extraRoots: ContentRoot[] = 
   const queue = new EncodeQueue({
     // Stand-in encoder: a KTX2 header at the size the real encoders produce.
     encode: async (source, settings) => {
-      const sourceSize = sniffImageSize(source)!;
+      const sourceSize = sniffSourceImageSize(source)!;
       const size = textureEncodeSize(sourceSize.width, sourceSize.height, settings);
       return { ktx2: ktx2(size.width, size.height), wallMs: 0 };
     },
@@ -147,7 +148,7 @@ describe("texture encode alignment", () => {
     await writeTexture(storage, "assets/particle-odd.babasset", "particle-odd", {
       usage: "particle", source: [1, 1], committed: { id: await particleKeyMax1(), size: [4, 4] },
     });
-    // No recorded source size (Model textures, WebP): the committed KTX2 header decides.
+    // No recorded source size (WebP, GIF or Model textures imported before sizes were recorded): the committed KTX2 header decides.
     await writeTexture(storage, "assets/unsized-odd.babasset", "unsized-odd", {
       source: [30, 30], sized: false, committed: { id: KEY_MAX_2048, size: [30, 30] },
     });
@@ -223,6 +224,40 @@ describe("texture encode alignment", () => {
     expect(registry.getByGuid("replaced-odd")!.header.payload).toMatchObject({ ktx2Width: 4, ktx2Height: 4, ktx2BlockAlign: 4 });
     expect(registry.getByGuid("padded-atlas")!.header.payload).toMatchObject({ ktx2Width: 1, ktx2Height: 1 });
     expect(registry.getByGuid("padded-atlas")!.header.payload).not.toHaveProperty("ktx2BlockAlign");
+  });
+
+  it("pads a size-less WebP only when its sniffed size is off the grid, so an atlas pick re-encodes only that one", async () => {
+    const storage = await storageWithProject("webp");
+    // Imported before WebP sizes were recorded, still waiting for its encode.
+    for (const [guid, edge] of [["even-webp", 32], ["odd-webp", 30]] as const) {
+      await storage.writeBinary(`assets/${guid}.babasset`, await encodeBabasset({
+        header: {
+          guid, type: "Texture", name: guid, engineVersion: "0.0.0", version: 1, mode: "thin", dependencies: [], parentClass: null,
+          payload: { usage: "albedo", compressionState: "pending" },
+        },
+        chunks: [{ id: "pixels", kind: "pixels", mime: "image/webp", data: webpHeader("VP8L", edge, edge) }],
+      }));
+    }
+    const { registry, jobs, queue } = await mount(storage);
+    expect(await registry.requeueUncompressedTextures()).toBe(2);
+    await vi.waitFor(() => {
+      expect(queue.depth).toBe(0);
+      expect(jobs).toHaveLength(2);
+    });
+    expect(registry.getByGuid("even-webp")!.header.payload).toMatchObject({ ktx2Width: 32, ktx2Height: 32 });
+    expect(registry.getByGuid("even-webp")!.header.payload).not.toHaveProperty("ktx2BlockAlign");
+    expect(registry.getByGuid("odd-webp")!.header.payload).toMatchObject({ ktx2Width: 32, ktx2Height: 32, ktx2BlockAlign: 4 });
+
+    // Tilesets pick both: only the padded one must return to its own size.
+    for (const texture of ["even-webp", "odd-webp"]) {
+      const path = `assets/${texture}.tileset.babasset`;
+      await storage.writeBinary(path, await encodeAssetDocument({
+        guid: `${texture}-tileset`, type: "Tileset", name: texture, version: 1,
+        payload: { ...createDefaultTilesetPayload(), textureGuid: texture } as unknown as Record<string, unknown>,
+      }, { dependencies: [texture] }));
+      await registry.reindexPath(path);
+    }
+    expect(await registry.reconcileTextureAlignment()).toEqual(["odd-webp"]);
   });
 
   it("leaves a texture alone when its lock is learned while the pass reads its committed encode", async () => {

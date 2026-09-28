@@ -53,7 +53,7 @@ describe("texture compression policy", () => {
       // Already on the grid: no resample.
       ["albedo", false, { width: 64, height: 32 }, undefined],
       ["emissive", false, { width: 252, height: 188 }, undefined],
-      // Unknown size (WebP, GIF, Model textures): padding a grid size is a no-op.
+      // Unknown size (a source no sniffer reads): padding a grid size is a no-op.
       ["albedo", false, null, 4],
       // Atlases keep their size so tile and frame UVs stay put.
       ["albedo", true, { width: 1, height: 1 }, undefined],

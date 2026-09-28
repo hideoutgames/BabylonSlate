@@ -63,6 +63,78 @@ function sniffJpegSize(bytes: Uint8Array): ImageSize | null {
   return null;
 }
 
+/**
+ * WebP canvas size from its VP8X, VP8L or VP8 chunk, and whether VP8X marks
+ * it animated. Null unless the RIFF length matches the bytes.
+ */
+export function sniffWebpSize(bytes: Uint8Array): (ImageSize & { animated: boolean }) | null {
+  const text = (offset: number) =>
+    String.fromCharCode(...bytes.subarray(offset, offset + 4));
+  if (bytes.length < 20 || text(0) !== "RIFF" || text(8) !== "WEBP")
+    return null;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (view.getUint32(4, true) + 8 !== bytes.length) return null;
+  const u24 = (offset: number) =>
+    bytes[offset]! + bytes[offset + 1]! * 256 + bytes[offset + 2]! * 65536;
+  for (let offset = 12; offset + 8 <= bytes.length;) {
+    const length = view.getUint32(offset + 4, true);
+    if (offset + 8 + length > bytes.length) return null;
+    const start = offset + 8;
+    if (text(offset) === "VP8X" && length >= 10) {
+      return {
+        width: u24(start + 4) + 1,
+        height: u24(start + 7) + 1,
+        animated: (bytes[start]! & 2) !== 0,
+      };
+    }
+    if (text(offset) === "VP8L" && length >= 5 && bytes[start] === 0x2f) {
+      const bits = view.getUint32(start + 1, true);
+      return {
+        width: (bits & 0x3fff) + 1,
+        height: ((bits >>> 14) & 0x3fff) + 1,
+        animated: false,
+      };
+    }
+    if (
+      text(offset) === "VP8 " &&
+      length >= 10 &&
+      bytes[start + 3] === 0x9d &&
+      bytes[start + 4] === 1 &&
+      bytes[start + 5] === 0x2a
+    ) {
+      return {
+        width: view.getUint16(start + 6, true) & 0x3fff,
+        height: view.getUint16(start + 8, true) & 0x3fff,
+        animated: false,
+      };
+    }
+    offset += 8 + length + (length % 2);
+  }
+  return null;
+}
+
+/** GIF logical screen size (`GIF87a` / `GIF89a`), the size browsers decode it at. */
+function sniffGifSize(bytes: Uint8Array): ImageSize | null {
+  if (bytes.length < 10) return null;
+  const signature = String.fromCharCode(...bytes.subarray(0, 6));
+  if (signature !== "GIF87a" && signature !== "GIF89a") return null;
+  const width = bytes[6]! | (bytes[7]! << 8);
+  const height = bytes[8]! | (bytes[9]! << 8);
+  return width > 0 && height > 0 ? { width, height } : null;
+}
+
+/**
+ * Size of any image a Texture imports (PNG, JPEG, WebP, GIF), for recording
+ * `payload.width` / `height` and deciding encode padding. The resolver and
+ * render keep {@link sniffImageSize} (PNG / JPEG): widening it would change
+ * the preferred encode id of existing WebP and GIF Textures.
+ */
+export function sniffSourceImageSize(bytes: Uint8Array): ImageSize | null {
+  const webp = sniffWebpSize(bytes);
+  if (webp) return webp.width > 0 && webp.height > 0 ? { width: webp.width, height: webp.height } : null;
+  return sniffImageSize(bytes) ?? sniffGifSize(bytes);
+}
+
 export function longestEdge(size: ImageSize | null): number | null {
   if (!size) return null;
   return Math.max(size.width, size.height);

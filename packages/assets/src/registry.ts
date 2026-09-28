@@ -27,7 +27,7 @@ import {
 } from "./unique-names";
 import { DOCUMENT_CHUNK_ID, decodeAssetDocument, stampDocumentChunkName } from "./asset-document";
 import { ATLAS_REFERRER_TYPES, atlasTextureGuids, headerAtlasTextureGuids } from "./atlas-textures";
-import { sniffImageSize, type ImageSize } from "./image-size";
+import { sniffSourceImageSize, type ImageSize } from "./image-size";
 import { sniffKtx2Size } from "./ktx2-info";
 import { clampDimension,
   DEFAULT_TEXTURE_ENCODE_SETTINGS,
@@ -938,7 +938,7 @@ export class AssetRegistry {
     if (!source) return false;
     await this.resolveLegacyAtlasReferrers();
     const settings = this.encodeSettingsFor(latest, usage, {
-      sourceSize: sniffImageSize(source.bytes),
+      sourceSize: sniffSourceImageSize(source.bytes),
       ...(options?.maxDimension
         ? { maxDimension: effectiveTextureMaxDimension(options.maxDimension, this.encodeSettings.maxDimension) }
         : {}),
@@ -1007,7 +1007,7 @@ export class AssetRegistry {
     const source = await this.loadSourcePixels(asset);
     if (!source) return;
     await this.resolveLegacyAtlasReferrers();
-    const settings = this.encodeSettingsFor(asset, usage, { sourceSize: sniffImageSize(source.bytes) });
+    const settings = this.encodeSettingsFor(asset, usage, { sourceSize: sniffSourceImageSize(source.bytes) });
     const chunkId = await textureEncodeChunkId(settings, usage);
     this.encodeQueue?.enqueue({
       assetGuid: asset.header.guid,
