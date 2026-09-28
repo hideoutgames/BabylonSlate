@@ -68,7 +68,9 @@ import {
   diffGraphCommands,
   diffSceneCommands,
   EditSession,
+  journalRepathLine,
   replayJournalLines,
+  resolveJournalLines,
   serializeJournalLine,
   SetAssetDocumentCommand,
   type EditCommand,
@@ -1201,22 +1203,34 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   );
 
   /**
-   * The one rename path: the tab, its undo history, Focus state and Anim mode
-   * move to the new id together. DocumentService also notifies the project
-   * session store (camera, graph pan/zoom, module cards) through
-   * `subscribeDocumentIdentity`.
+   * The one rename path: the tab, its undo history, crash-journal lines, Focus
+   * state and Anim mode move to the new id together. DocumentService also
+   * notifies the project session store (camera, graph pan/zoom, module cards)
+   * through `subscribeDocumentIdentity`.
    */
   const repathDocument = useCallback(
     (kind: AssetDocumentKind, oldPath: string, newPath: string) => {
       const oldId = documentId({ kind, path: oldPath });
+      const wasOpen = oldPath !== newPath && !!documentService.getDocument(oldId);
       // The workspace remounts under the new id; keep its live dock layout.
-      if (oldPath !== newPath && documentService.getDocument(oldId)) {
-        captureLayoutForId(oldId);
-      }
+      if (wasOpen) captureLayoutForId(oldId);
       const moved = documentService.repathDocument(kind, oldPath, newPath);
       if (moved) {
         const { newId } = moved;
         editSessionRef.current.rekeyDocument(oldId, newId);
+        const guid = projectService.guid;
+        if (wasOpen && guid) {
+          // Unsaved edits journalled under the old id replay onto the moved
+          // file, together with any later Undo journalled under the new id.
+          const line = serializeJournalLine(
+            journalRepathLine(oldId, newId, new Date().toISOString()),
+          );
+          void ensureDerived()
+            .then((derived) => appendJournalLine(derived, guid, line))
+            .catch((error: unknown) => {
+              console.error("[journal] failed to record rename", error);
+            });
+        }
         // Live dock handles belong to the workspace unmounting under the old
         // id. Release them as closeDocument does, so its teardown cannot write
         // placements back under the old id; the remount registers new ones.
@@ -1255,7 +1269,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       }
       bump();
     },
-    [bump, captureLayoutForId, disposeDockSubscriptions, documentService],
+    [
+      bump,
+      captureLayoutForId,
+      disposeDockSubscriptions,
+      documentService,
+      ensureDerived,
+      projectService,
+    ],
   );
 
   const subscribeDocumentIdentity = useCallback(
@@ -1312,14 +1333,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     }
 
     // Ensure every journal target document is open so replay is not skipped.
-    for (const raw of lines) {
+    // Resolved ids follow renames, so a renamed document opens at its new path.
+    for (const { docId } of resolveJournalLines(lines)) {
+      const ref = parseDocumentId(docId);
+      if (!ref || !isAssetDocumentKind(ref.kind)) continue;
+      if (documentService.getState().openDocuments.has(docId)) continue;
+      const { kind, path } = ref;
       try {
-        const line = JSON.parse(raw) as { docId?: string };
-        const docId = line.docId;
-        const ref = typeof docId === "string" ? parseDocumentId(docId) : null;
-        if (!docId || !ref || !isAssetDocumentKind(ref.kind)) continue;
-        if (documentService.getState().openDocuments.has(docId)) continue;
-        const { kind, path } = ref;
         await documentService.openDocument(
           projectService,
           { kind, path, label: path.split("/").pop() ?? path },
@@ -1327,7 +1347,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           false,
         );
       } catch {
-        // Skip malformed lines; replayJournalLines will ignore them too.
+        // A missing document is skipped by replayJournalLines too.
       }
     }
 
