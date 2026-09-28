@@ -192,6 +192,8 @@ Validator and compiler share the **type context builder** so a graph that valida
 
 Execution back-edges retain the editor loop-budget checks even for cycles made only of control nodes or stripped development nodes. Break still exits its enclosing structured loop; a latent cycle resumes on the runtime tick clock, and pending Tick entries do not stack.
 
+Tap-to-connect accepts an execution output wired to the same node's execution input, including a self-repeating Delay. Host graph connection restrictions still apply.
+
 Anchor tables are position-based: any pass that moves generated lines (packed export concat) must rewrite offsets. Never minify compiled game scripts.
 
 ## Special nodes (§6.1)
