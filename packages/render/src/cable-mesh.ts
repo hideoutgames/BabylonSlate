@@ -421,7 +421,8 @@ type EditorCable = {
   pending: boolean;
 };
 
-type EditorCables = { cables: Map<string, EditorCable>; lastTime: number | null };
+/** `list` mirrors `cables` so the per-frame loop iterates without allocating. */
+type EditorCables = { cables: Map<string, EditorCable>; list: EditorCable[]; lastTime: number | null };
 const editorCables = new WeakMap<Scene, EditorCables>();
 const ORIGIN: readonly number[] = [0, 0, 0];
 
@@ -485,7 +486,7 @@ export function bindEditorCable(mesh: Mesh, binding: EditorCableBinding): void {
   const scene = mesh.getScene();
   let registry = editorCables.get(scene);
   if (!registry) {
-    registry = { cables: new Map(), lastTime: null };
+    registry = { cables: new Map(), list: [], lastTime: null };
     editorCables.set(scene, registry);
   }
   const properties = surface.properties;
@@ -493,7 +494,8 @@ export function bindEditorCable(mesh: Mesh, binding: EditorCableBinding): void {
   // A document apply may have moved ancestors after this render ID cached them.
   const startMatrix = mesh.computeWorldMatrix(true);
   const endMatrix = endSelf ? startMatrix : binding.endNode.computeWorldMatrix(true);
-  let cable = registry.cables.get(mesh.name);
+  const existing = registry.cables.get(mesh.name);
+  let cable = existing;
   if (!cable || cable.simulation.positions.length !== surface.points.length) {
     cable = {
       name: mesh.name, surface, properties, simulation: new CableSimulation(properties, ORIGIN, ORIGIN),
@@ -501,6 +503,9 @@ export function bindEditorCable(mesh: Mesh, binding: EditorCableBinding): void {
       start: [0, 0, 0], end: [0, 0, 0], gravity: [0, 0, 0], startFlag: -1, endFlag: -1, pending: true,
     };
     registry.cables.set(mesh.name, cable);
+    const index = existing ? registry.list.indexOf(existing) : -1;
+    if (index >= 0) registry.list[index] = cable;
+    else registry.list.push(cable);
   } else {
     if (cable.surface !== surface) {
       cable.surface = surface;
@@ -532,6 +537,10 @@ export function pruneEditorCables(scene: Scene, keep?: ReadonlySet<string>): voi
   const registry = editorCables.get(scene);
   if (!registry) return;
   for (const name of registry.cables.keys()) if (!keep?.has(name)) registry.cables.delete(name);
+  if (registry.list.length !== registry.cables.size) {
+    registry.list.length = 0;
+    for (const cable of registry.cables.values()) registry.list.push(cable);
+  }
   if (registry.cables.size === 0) registry.lastTime = null;
 }
 
@@ -551,13 +560,18 @@ export function stepEditorCables(scene: Scene, nowMs: number): boolean {
   // world-matrix reads below observe them instead of last frame's cache.
   scene.incrementRenderId();
   let changed = false;
-  for (const [name, cable] of registry.cables) {
+  const list = registry.list;
+  let kept = 0;
+  for (let index = 0; index < list.length; index++) {
+    const cable = list[index]!;
     if (!adoptLiveMesh(scene, cable)) {
-      registry.cables.delete(name);
+      registry.cables.delete(cable.name);
       continue;
     }
+    list[kept++] = cable;
     if (stepEditorCable(cable, dt)) changed = true;
   }
+  list.length = kept;
   return changed;
 }
 
