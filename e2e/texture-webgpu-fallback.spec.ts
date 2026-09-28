@@ -43,6 +43,7 @@ import {
   offBlockGrid,
   previewDraw,
   recordCompressedGpuTextures,
+  settledAlignmentPass,
   watchGpuFailures,
   type CompressedTexture,
 } from "./webgpu-texture-proof";
@@ -203,19 +204,6 @@ async function viewportProof(
   }).__babylonslateViewportTest.webgpuPreviewsProof({ frames: 30, timeoutMs: 30_000, ...options }), options);
   await testInfo.attach(label, { body: JSON.stringify({ ...proof, frames: undefined }), contentType: "application/json" });
   return proof;
-}
-
-/** Resolves once the editor's texture alignment pass ran and is idle, with the Textures it requeued. */
-async function settledAlignmentPass(page: Page): Promise<string[]> {
-  let requeued: string[] = [];
-  await expect.poll(async () => {
-    const state = await page.evaluate(() => (globalThis as {
-      __babylonslateTest?: { textureAlignment?: () => { runs: number; pending: number; requeued: string[] } };
-    }).__babylonslateTest?.textureAlignment?.() ?? null);
-    requeued = state?.requeued ?? [];
-    return state !== null && state.runs > 0 && state.pending === 0;
-  }, { timeout: 60_000 }).toBe(true);
-  return requeued;
 }
 
 function subject(proof: ViewportProofResult, actorId: string): ViewportProofSubjectResult {

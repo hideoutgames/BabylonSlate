@@ -34,6 +34,8 @@ import {
   offBlockGrid,
   previewDraw,
   recordCompressedGpuTextures,
+  settledAlignmentPass,
+  textureAlignment,
   watchGpuFailures,
   type CompressedTexture,
 } from "./webgpu-texture-proof";
@@ -128,26 +130,6 @@ async function atlasTextureFiles(): Promise<Map<string, Uint8Array>> {
       { headerMeta: { [ATLAS_TEXTURES_META]: [ATLAS_TEXTURE_GUID] } },
     )],
   ]);
-}
-
-async function textureAlignment(page: Page): Promise<{ runs: number; pending: number; requeued: string[] } | null> {
-  return page.evaluate(() => (globalThis as {
-    __babylonslateTest?: { textureAlignment?: () => { runs: number; pending: number; requeued: string[] } };
-  }).__babylonslateTest?.textureAlignment?.() ?? null);
-}
-
-/**
- * Resolves once the editor's texture alignment pass ran (more than `afterRuns`
- * times) and is idle, with every Texture a pass requeued.
- */
-async function settledAlignmentPass(page: Page, afterRuns = 0): Promise<string[]> {
-  let requeued: string[] = [];
-  await expect.poll(async () => {
-    const state = await textureAlignment(page);
-    requeued = state?.requeued ?? [];
-    return state !== null && state.runs > afterRuns && state.pending === 0;
-  }, { timeout: 60_000 }).toBe(true);
-  return requeued;
 }
 
 /** A Particle-domain Material whose Texture Sample (unwired UV reads particle_uv) drives Color. */
