@@ -25,6 +25,8 @@ import {
   type LogicGraph,
 } from "@babylonslate/scripting";
 import { localVariablePreamble } from "@babylonslate/scripting-nodes";
+import { subsystemBaseClassIdOf } from "@babylonslate/object-model";
+import { engineParentOf, walkAncestry } from "@babylonslate/editor-kit";
 import {
   bindUnboundComponentEvents,
   defaultNodeRegistry,
@@ -54,6 +56,23 @@ function prefabComponentsForCompile(
       ((id) => (id === classId ? options.parentClassId : null)),
     graphs: { ...options.otherClassGraphs, [classId]: content },
   });
+}
+
+/**
+ * Subsystems are discovered from the runtime ClassRegistry, which only learns
+ * classes that compiled to a script. A GameSubsystem / SceneSubsystem class
+ * (including an empty user base between a subsystem and its engine base)
+ * therefore always compiles, if only to its parent, variables and interfaces.
+ */
+function isSubsystemLineageClass(
+  classId: string,
+  parentOf: (classId: string) => string | null | undefined,
+): boolean {
+  const lineage = {
+    ancestry: (id: string) =>
+      walkAncestry(id, (ancestor) => parentOf(ancestor) ?? engineParentOf(ancestor)),
+  };
+  return subsystemBaseClassIdOf(lineage, classId) !== null;
 }
 
 /**
@@ -234,6 +253,17 @@ export function compileGraphDocument(
         }),
       );
     }
+  }
+  if (compiledPieces.length === 0 && isSubsystemLineageClass(classId, parentOf)) {
+    compiledPieces.push(
+      compileGraph(logic, {
+        assetGuid: options.path,
+        registry: defaultNodeRegistry,
+        stripDevelopmentOnly: options.stripDevelopmentOnly,
+        instrumentInfiniteLoops,
+        isLatentFunction,
+      }),
+    );
   }
   if (compiledPieces.length === 0) return null;
   let source = compiledPieces[0]!.source;
@@ -455,13 +485,21 @@ function graphDocumentCompileCacheKey(
   const content = isLogicGraphPayload(doc.content)
     ? { nodes: doc.content.nodes, edges: doc.content.edges }
     : doc.content;
+  const classId = documentClassId(doc);
   return JSON.stringify({
     signature: graphCompileSignature([
       { path: doc.path, content: content as SerializedGraph },
     ]),
     classId: doc.classId ?? null,
     parentClassId: doc.parentClassId ?? null,
-    prefab: prefabComponentsForCompile(doc.content, documentClassId(doc), {
+    // An ancestor reparented into a subsystem lineage changes whether an
+    // empty class still compiles.
+    subsystem: isSubsystemLineageClass(
+      classId,
+      options.parentOf ??
+        ((id) => (id === classId ? (doc.parentClassId ?? null) : null)),
+    ),
+    prefab: prefabComponentsForCompile(doc.content, classId, {
       ...options,
       parentClassId: doc.parentClassId,
     }),
