@@ -47,12 +47,12 @@ export type TraceValueNode = {
 const pointerPart = (key: string) =>
   key.replace(/~/g, "~0").replace(/\//g, "~1");
 
+/** Recorded world objects keyed by guid (subsystems follow the Game Instance). */
+const GUID_COLLECTIONS = new Set(["subsystems", "actors", "components"]);
+
 function identityKey(value: unknown, collection: string): string | null {
   if (!record(value)) return null;
-  if (
-    (collection === "actors" || collection === "components") &&
-    typeof value.guid === "string"
-  )
+  if (GUID_COLLECTIONS.has(collection) && typeof value.guid === "string")
     return `guid:${value.guid}`;
   if (collection === "bt" && typeof value.slotId === "number")
     return `slot:${value.slotId}`;
@@ -74,13 +74,22 @@ function collectionEntries(value: unknown[], collection: string) {
   }));
 }
 
-function objectLabel(value: Record<string, unknown>, fallback: string): string {
+function objectLabel(
+  value: Record<string, unknown>,
+  fallback: string,
+  collection: string,
+): string {
   const name =
     record(value.variables) && typeof value.variables.name === "string"
       ? value.variables.name
       : null;
   const classId = typeof value.classId === "string" ? value.classId : fallback;
-  const guid = typeof value.guid === "string" ? value.guid.slice(0, 8) : "";
+  // A subsystem is the only instance of its class and its guid is derived
+  // from the class id, so a guid prefix adds nothing.
+  const guid =
+    collection !== "subsystems" && typeof value.guid === "string"
+      ? value.guid.slice(0, 8)
+      : "";
   return [name, classId, guid]
     .filter((entry, i, entries) => entry && entries.indexOf(entry) === i)
     .join(" · ");
@@ -88,6 +97,7 @@ function objectLabel(value: Record<string, unknown>, fallback: string): string {
 
 function isEntityCollection(path: string): boolean {
   return (
+    path === "/snapshot/subsystems" ||
     path === "/snapshot/actors" ||
     path === "/bt" ||
     /^\/snapshot\/actors\/[^/]+\/components$/.test(path)
@@ -135,10 +145,10 @@ function buildNode(
         );
         if (
           entityCollection &&
-          (key === "actors" || key === "components") &&
+          GUID_COLLECTIONS.has(key) &&
           record(entry.value)
         )
-          child.label = objectLabel(entry.value, child.label);
+          child.label = objectLabel(entry.value, child.label, key);
         if (path === "/bt" && record(entry.value))
           child.label = `Slot ${String(entry.value.slotId ?? entry.index)} · ${String(entry.value.status ?? "Unknown")}`;
         if (
@@ -157,6 +167,7 @@ function buildNode(
       typeof value.guid === "string" &&
       typeof value.classId === "string" &&
       (path === "/snapshot/gameInstance" ||
+        /^\/snapshot\/subsystems\/[^/]+$/.test(path) ||
         /^\/snapshot\/actors\/[^/]+(\/components\/[^/]+)?$/.test(path));
     if (isEntity) {
       node.children.push({
