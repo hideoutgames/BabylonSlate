@@ -13,14 +13,18 @@ Shared surface for the headless runtime object graph (engineplan §5, §16). Imp
 | `SceneLayerActor` | Overlay actor tagged `sceneLayerId`; same World tick as world actors |
 | `ActorComponent` | Attached script instance with independent variables/interfaces; Begin Play after owner spawn, own Tick, Destroyed on owner destruction or Play stop. |
 | `GameInstance` | Session singleton. Application: `onCreation` (script `onInit`), `onTick`, `onGameEnd` (script `onEnd`). Scene: `onSceneStartLoading` / `onSceneFinishLoading` / `onFirstSceneLoaded` / `onSceneExit`. |
-| `World` | Owns GameInstance, actors in spawn order, RNG, deferred destroy, snapshot, `currentScene`. `beginSceneLoad` / `finishSceneLoad` / `exitActiveScene` / `createScene`. `beginSceneLoad` remembers the loading display name so `exitActiveScene` still fires **OnSceneExit** if finish never ran (Play stop while models-ready is deferred). `end()` exits the active or in-flight scene then `onGameEnd`. `loadScene` / scene swap never fire `onGameEnd`. `createActor` / `createComponent` / `createGameInstance` apply inherited variable defaults and interface guids from `ClassRegistry` (caller overrides win). |
-| `ClassRegistry` | Inheritance graph, re-parenting, engine bases and components. `ensure` merges session class metadata; `inheritedInterfaces` walks ancestry. `MAX_CLASS_INHERITANCE_DEPTH` (16, including self) blocks `register` / `reparent` past the limit. |
+| `Subsystem` | Hidden abstract engine base (`BObject`) of both subsystem kinds. Never offered in pickers and never instantiated. End runs at most once: `ended` is true from the moment End starts, `destroyed` once it returns. See [Subsystems](#subsystems). |
+| `GameSubsystem` | Session-lifetime subsystem with Game Instance parity hooks: `onCreation` (On Init), `onTick`, `onGameEnd` (On End), and the four scene hooks. It is not a `GameInstance` (Cast to GameInstance fails). |
+| `SceneSubsystem` | Lives with one main `Scene` (`scene`). Hooks: `onCreation` (On Init), `onTick`, `onEnd`, plus Scene Loaded, Streamed Scene Loaded / Unloaded, Scene Layer Added / Removed and Scene Actor Spawned / Destroyed. Notifications stop once it has ended. |
+| `World` | Owns GameInstance, subsystems, actors in spawn order, RNG, deferred destroy, snapshot, `currentScene`. `beginSceneLoad` / `finishSceneLoad` / `exitActiveScene` / `createScene`. `beginSceneLoad` remembers the loading display name so `exitActiveScene` still fires **OnSceneExit** if finish never ran (Play stop while models-ready is deferred). `end()` exits the active or in-flight scene then `onGameEnd`. `loadScene` / scene swap never fire `onGameEnd`. `createActor` / `createComponent` / `createGameInstance` / `createGameSubsystem` apply inherited variable defaults and interface guids from `ClassRegistry` (caller overrides win). Subsystem API: `setGameSubsystems` (before `start()` only; throws after), `setSceneSubsystemClasses`, `getGameSubsystems` / `getSceneSubsystems`, `findSubsystems(classId)`, `notifyStreamedSceneLoaded` / `notifyStreamedSceneUnloaded`. |
+| `ClassRegistry` | Inheritance graph, re-parenting, engine bases and components. `ensure` merges session class metadata; `inheritedInterfaces` walks ancestry. `classIds()` lists every registered id in registration order (engine defaults first). `MAX_CLASS_INHERITANCE_DEPTH` (16, including self) blocks `register` / `reparent` past the limit. |
 | `TickPhase` / `TICK_PHASES` / `TickClock` | Fixed-dt phases; `physics` filled by `@babylonslate/physics` |
 | `ScriptInterface` / `dispatchInterface` | Interface defs and runtime dispatch with pin defaults |
-| `ENGINE_BASE_CLASS_IDS` / `ENGINE_COMPONENT_CLASS_IDS` / `ENGINE_BT_BUILTIN_CLASSES` / `isLockedEngineClassId` | Stable string ids for engine types; locked ids cannot be reparented |
-| `ENGINE_CLASS_SCRIPT_APIS` / `engineScriptApiFor` | Per-class script catalog: optional variables (incl. `typeClassIds`), functions, events (Get/Set/Call and Add Event). Overlay 2D classes are in the catalog; Animation Graph / BT / nav bake helpers stay ref-only. Mouse events live on `2DButtonComponent`, not SceneLayerActor. |
+| `ENGINE_BASE_CLASS_IDS` / `ENGINE_COMPONENT_CLASS_IDS` / `ENGINE_BT_BUILTIN_CLASSES` / `isLockedEngineClassId` | Stable string ids for engine types; locked ids cannot be reparented. Includes `Subsystem` / `GameSubsystem` / `SceneSubsystem` (`SUBSYSTEM_CLASS_ID` and peers; all kind `object`). `HIDDEN_ENGINE_BASE_CLASS_IDS` / `isHiddenEngineBaseClassId` mark `Subsystem`: known to validation, never offered in parent, Class Type or Cast pickers. |
+| Subsystem helpers (`subsystems.ts`) | `subsystemBaseClassIdOf`, `instantiableSubsystemClassIds` (leaf classes), `subsystemClassIdsForGet`, `compareClassIds` (code-unit order), `gameSubsystemGuid` / `sceneSubsystemGuid`. They take any `{ ancestry(classId) }` view, so the runtime `ClassRegistry`, editor parent lookups and the exporter share them. |
+| `ENGINE_CLASS_SCRIPT_APIS` / `engineScriptApiFor` / `engineNativeEventsFor` | Per-class script catalog: optional variables (incl. `typeClassIds`), functions, component-bound events, and Self lifecycle `nativeEvents` (Get/Set/Call and Add Event). Overlay 2D classes are in the catalog; Animation Graph / BT / nav bake helpers stay ref-only. Mouse events live on `2DButtonComponent`, not SceneLayerActor. |
 | `createWorldSnapshot` | Canonical JSON-serializable world state for harness goldens |
-| `createDebugInspectSnapshot` | Read-only Play inspector tree (`tickIndex` + Game Instance / actors / components + optional `variableTypes`). Not a harness golden |
+| `createDebugInspectSnapshot` | Read-only Play inspector tree (`tickIndex` + Game Instance / subsystems / actors / components + optional `variableTypes`). Not a harness golden |
 | `createActorFromSerialized` | Build one unspawned World actor from a scene or SceneLayer document row for Play. Skips `SceneLayerActor` (and subclasses) unless given a `sceneLayerId`; overlay actors are stamped with it and drop SceneLayer-denied components. |
 
 Depends only on `@babylonslate/core` (Guid, Result, math, seeded RNG). No React, Babylon, or Capacitor.
@@ -29,19 +33,56 @@ Depends only on `@babylonslate/core` (Guid, Result, math, seeded RNG). No React,
 
 Order is fixed and named from the first commit:
 
-1. `gameInstance` — GameInstance `onTick`
-2. `actors` — Actors in **spawn order**
-3. `components` — Each actor’s components in **attach order**
-4. `physics` — Backend `step(dt)` + transform write-back (see [physics.md](physics.md))
-5. `postPhysics` — Phase boundary after the physics write-back (`onPhase` timing, deferred flush); no built-in work
+1. `gameInstance` — GameInstance `onTick`, then live GameSubsystems in class-id order
+2. `sceneSubsystems` — The main Scene's live SceneSubsystems in class-id order; gated like actors (`canTickScene`, then `canTickSceneSubsystem`)
+3. `actors` — Actors in **spawn order**
+4. `components` — Each actor’s components in **attach order**
+5. `physics` — Backend `step(dt)` + transform write-back (see [physics.md](physics.md))
+6. `postPhysics` — Phase boundary after the physics write-back (`onPhase` timing, deferred flush); no built-in work
 
-Never iterate a `Map` for tick or snapshot order. Spawn and attach use stable arrays.
+Never iterate a `Map` for tick or snapshot order. Spawn and attach use stable arrays; subsystem lists are sorted by class id.
 
 `WorldOptions.componentHooksFor` binds script lifecycle hooks to both serialized and dynamically created components. Component creation is deferred until its owner enters the world, runs once, and is skipped for cancelled preparation. In Play, component callbacks use the owning Scene or SceneLayer readiness gate: Begin Play waits for its valid presented frame, retained ready layers continue ticking, and cancelled components never run Begin Play or Destroyed. Adding a component to a ready live Actor begins it immediately. ActorComponent subclasses expose Begin Play, Tick, and Destroyed in Class graphs; Self is the attached component itself.
 
-`WorldOptions.canTickScene` can suspend actor, component, physics and post-physics phases during cooperative scene preparation while Game Instance continues ticking. It is rechecked after Game Instance and between actors/components, so a scene switch initiated during the tick stops the remaining incomplete scene work immediately. `createActorFromSerialized` builds one unspawned actor per document row, so preparation can yield between rows.
+`WorldOptions.canTickScene` can suspend the SceneSubsystem, actor, component, physics and post-physics phases during cooperative scene preparation while Game Instance and GameSubsystems continue ticking. It is rechecked after Game Instance and between subsystems/actors/components, so a scene switch initiated during the tick stops the remaining incomplete scene work immediately. `createActorFromSerialized` builds one unspawned actor per document row, so preparation can yield between rows.
 
 `WorldOptions.canTickActor` adds an independent owner gate for world actors and each SceneLayer. The World rechecks it between actor and component callbacks, so a newly blocked owner cannot continue the same tick while another ready layer remains active. It does not defer structural spawning or replace the driver's separate physics and authored creation-callback readiness policy.
+
+## Subsystems
+
+Engine-managed singletons: a user Class opts in by parenting to `GameSubsystem` (session lifetime) or `SceneSubsystem` (main-Scene lifetime). There is no registration list; overlay Play, Preview Build and exported games create every leaf class automatically.
+
+- **Leaf-only instancing.** `instantiableSubsystemClassIds` returns user classes of a subsystem lineage that no other user subsystem class extends. A base with a subsystem subclass is never created itself.
+- **Order.** Class-id code-unit order (`compareClassIds`), never locale or `Map` order.
+- **Identity.** Fixed guids, never drawn from the World `guidFactory`, so actor guids do not shift: `subsystem:<classId>` for a GameSubsystem, `scene-subsystem:<classId>:<n>` for a SceneSubsystem (`n` counts main-Scene creations this session). Class variable defaults and inherited interfaces apply as for actors.
+- **Kind.** The class kind stays `object` (no new `ClassKind`). Lineage is gated by `isA`, and subsystem classes never spawn as actors.
+- **Ended vs destroyed.** `ended` flips when End starts, so Get, ticks and notifications skip the instance. `destroyed` flips when End returns, so On End can still call its own functions.
+- **Lookup.** `findSubsystems(classId)` returns live instances whose class isA `classId`: GameSubsystems, then the current main Scene's SceneSubsystems, each in class-id order. The first entry is the Get result; more than one is ambiguous.
+
+### Lifecycle order
+
+| Moment | Order |
+| --- | --- |
+| `start()` | GameSubsystems On Init, then the Game Instance On Init |
+| Scene Start / Finish Loading, First Scene Loaded, Scene Exit | Game Instance first, then GameSubsystems |
+| `finishSceneLoad` | After those hooks, the main Scene's SceneSubsystems hear On Scene Loaded |
+| Tick | Game Instance and GameSubsystems (`gameInstance`), then SceneSubsystems (`sceneSubsystems`) |
+| `createScene` (main Scene) | Scene `onCreation`; every SceneSubsystem is constructed and installed (Get finds it); each runs On Init in order, before any actor spawns |
+| `clearCurrentScene` (every exit path) | SceneSubsystems On End in reverse order while the Scene is still current; then the Scene's `onDestroyed`; then On Scene Exit for the Game Instance and GameSubsystems |
+| `end()` | Scene exit, Game Instance On End, then GameSubsystems On End in reverse order |
+
+- `setGameSubsystems` throws after `start()`, which keeps GameSubsystem On Init ahead of the Game Instance's.
+- Every main `createScene` builds fresh SceneSubsystems, including a same-scene reload. Streamed sub-scenes and SceneLayers never create them.
+- `clearCurrentScene` is the one path every exit shares: scene change, failed realization, `end()`, and direct `createScene` replacement. It and `createScene` tolerate a scene change started from a SceneSubsystem's On End, so no Scene or subsystem is left without End.
+
+### Scene notifications
+
+- **Scene Actor Spawned** fires at spawn commit, immediately before the actor's `onCreation`, for world actors only (not SceneLayer overlay actors).
+- **Scene Actor Destroyed** fires after the actor is unlinked, before its own teardown.
+- **Scene Layer Added** fires after the layer's `onCreation`. **Scene Layer Removed** fires after it is unlinked, before its actors are destroyed.
+- **Pairing.** Destroyed and Removed fire only for objects whose Spawned or Added reached the same SceneSubsystem generation, so pre-existing actors and global layers are never reported. Nothing fires after End.
+- **Streamed Scene Loaded / Unloaded** come from the host through `notifyStreamedSceneLoaded` / `notifyStreamedSceneUnloaded`.
+- The World calls `WorldOptions.sceneSubsystemHooksFor` hooks synchronously. A host that defers script dispatch until scene readiness must keep their order. Runtime readiness, admission and silent teardown are in [scripting.md](scripting.md#subsystems).
 
 ## Destroy / spawn during tick
 
@@ -55,9 +96,11 @@ Preparation rollback uses `World.destroyActorInstance` to target the owned objec
 
 `createWorldSnapshot(world)` returns a pure JSON-serializable tree with sorted variable keys and spawn/attach order for lists. This is the P3 golden format — **not** the P4 `Float32Array` bridge snapshot layout.
 
+`WorldSnapshot.subsystems` (`WorldSnapshotObject[]`: guid, classId, variables) lists GameSubsystems, then the main Scene's SceneSubsystems, between `gameInstance` and `actors`. The key is omitted when there are none, so subsystem-free goldens stay byte-identical.
+
 ## Inspect snapshot (Play debugger)
 
-`createDebugInspectSnapshot(world)` is a separate, lossy JSON tree for the overlay inspector: Game Instance if any, then actors parent-before-child (`parentId` variable), then each actor’s components as children. Label is `name` else `classId`. Values are JSON-safe (`BObject` → `{ guid, classId }`; circular / non-cloneable → `formatValue()`). Optional `variableTypes` stamps ClassRegistry `inheritedVariables` types onto keys that exist in `variables`; untyped keys are omitted so the editor infers. See [debugger.md](debugger.md).
+`createDebugInspectSnapshot(world)` is a separate, lossy JSON tree for the overlay inspector: Game Instance if any, then subsystems (kind `"subsystem"`, `parentId: null`; GameSubsystems, then SceneSubsystems), then actors parent-before-child (`parentId` variable), then each actor’s components as children. Label is `name` else `classId`. Values are JSON-safe (`BObject` → `{ guid, classId }`; circular / non-cloneable → `formatValue()`). Optional `variableTypes` stamps ClassRegistry `inheritedVariables` types onto keys that exist in `variables`; untyped keys are omitted so the editor infers. See [debugger.md](debugger.md).
 
 ## RNG
 
@@ -83,9 +126,9 @@ See [physics.md](physics.md) for RigidBody / Collider / Mesh collision property 
 
 ### Engine script API
 
-`ENGINE_CLASS_SCRIPT_APIS` in `@babylonslate/object-model` is the Get/Set/Call/Add Event catalog (no React/Babylon). Each class id may list `variables` (`propertyKey` on `component.variables`, optional `typeClassIds` when a pin picker accepts more than one Content Browser type — Mesh `assetGuid` is Mesh **and** Model, optional `getOnly` for Get without Set — Scene **Scene Name** and **Asset Guid**), `functions` (`runtime` name for `ctx.callComponentFunction` or GI `ctx` helpers), and `events` (`eventType` / `exportName`). Overlay pointer events are on `2DButtonComponent` only; SceneLayerActor has no native mouse stubs. Collision events are on `ColliderComponent`. Text components (3D + overlay 2D) expose Set Text and On Text Changed. Audio exposes Play/Stop and On Audio Finished. Camera Possess, RigidBody Add Impulse, and Nav Agent Move To / Stop Movement are Calls off the component pin. Animation Graph, Behaviour Tree, NavMesh, NavMesh Blocker, and Blocking Volume stay **ref-only**. Catalog completeness and Play apply paths: [scripting.md](scripting.md).
+`ENGINE_CLASS_SCRIPT_APIS` in `@babylonslate/object-model` is the Get/Set/Call/Add Event catalog (no React/Babylon). Each class id may list `variables` (`propertyKey` on `component.variables`, optional `typeClassIds` when a pin picker accepts more than one Content Browser type — Mesh `assetGuid` is Mesh **and** Model, optional `getOnly` for Get without Set — Scene **Scene Name** and **Asset Guid**), `functions` (`runtime` name for `ctx.callComponentFunction` or GI `ctx` helpers), `events` (`eventType` / `exportName`), and `nativeEvents`. `events` are component-bound (Add Event on an attached component) and feed `engineEventTypeClassIds`. `nativeEvents` are Self lifecycle events of a class lineage and never feed that map, so an unbound Init or Tick is not `event.missing_component`. `engineNativeEventsFor(ancestry)` returns the set of the nearest engine class that declares one; the editor's Add Event lists and lineage validation use it. Overlay pointer events are on `2DButtonComponent` only; SceneLayerActor has no native mouse stubs. Collision events are on `ColliderComponent`. Text components (3D + overlay 2D) expose Set Text and On Text Changed. Audio exposes Play/Stop and On Audio Finished. Camera Possess, RigidBody Add Impulse, and Nav Agent Move To / Stop Movement are Calls off the component pin. Animation Graph, Behaviour Tree, NavMesh, NavMesh Blocker, and Blocking Volume stay **ref-only**. Catalog completeness and Play apply paths: [scripting.md](scripting.md).
 
-`GameInstance` catalog functions are **Get Scene Loading Progress** (`0..1`) and **Get Scene Reference** (`objectRef("Scene")`). Play registers a child type `Scene:{guid}` per library scene so Cast / `isA` walk to engine `Scene`. Scene variables: **Scene Name** and **Asset Guid** (Get-only), **Gravity** (`vec3`, Get/Set — Play applies `setWorldGravity` onto the physics backend). `ctx.getComponentById` on a live current `Scene` searches world actors by authored component id / `sourceId` and returns null when the scene is inactive or the id is missing.
+`GameInstance` catalog functions are **Get Scene Loading Progress** (`0..1`) and **Get Scene Reference** (`objectRef("Scene")`). Native events: GameInstance and GameSubsystem share On Init, Tick, On End, Scalability Changed, On First Scene Loaded, On Scene Start / Finish Loading and On Scene Exit. SceneSubsystem declares On Init, Tick, On End and its seven scene events ([scripting.md](scripting.md#subsystems)). The subsystem entries have no catalog `functions`, which would add Call rows to every host; their graphs reach the two getters through the lineage-gated `gameInstance.*` nodes instead. Play registers a child type `Scene:{guid}` per library scene so Cast / `isA` walk to engine `Scene`. Scene variables: **Scene Name** and **Asset Guid** (Get-only), **Gravity** (`vec3`, Get/Set — Play applies `setWorldGravity` onto the physics backend). `ctx.getComponentById` on a live current `Scene` searches world actors by authored component id / `sourceId` and returns null when the scene is inactive or the id is missing.
 
 `createActorFromSerialized` (same package) builds one unspawned World actor per document row — id, actor transform, and component properties plus each component’s local `transform` / `parentId` — so Play can instantiate the authored document without the editor touching Babylon, yielding between rows. Without a `sceneLayerId`, overlay classes (`SceneLayerActor` and subclasses) are skipped; with one, the actor is stamped with `sceneLayerId` and the SceneLayer denylist ([scene-layers.md](scene-layers.md)) is stripped.
 
@@ -96,7 +139,7 @@ See [physics.md](physics.md) for RigidBody / Collider / Mesh collision property 
 - Classes declare implemented interface guids; handlers are injectable so P5 can bind compiled graphs without changing the dispatch shape (see [scripting.md](scripting.md)).
 - `World.createActor` copies `ClassRegistry.inheritedInterfaces` onto the instance unless the caller passes `implementedInterfaces`.
 - Play `ScriptHost.callInterface` calls `dispatchInterface` against the world's `InterfaceRegistry` so a missing implementation returns pin defaults instead of `undefined`.
-- `ScriptHost.invokeEvent(classId, event, self?, args?, componentId?)` and compiled `ctx.invokeCustomEvent(target, eventName, args)` pass `args` into the entry as `ctx.commandArgs` (alias `ctx.args`). Cross-instance Call dispatches on `target.classId` with `self = target`. `ctx.invokeFunction(target, functionName, args)` looks up `exports[functionName]` on `target.classId` (function graphs have no lifecycle `point.event`) and returns the result or `{}`, or a Promise of that object when the export is async. `ctx.getComponentById` matches `guid` or authored `sourceId` on an Actor, or searches current-world actors when the target is the live `Scene`. See [scripting.md](scripting.md).
+- `ScriptHost.invokeEvent(classId, event, self?, args?, componentId?)` and compiled `ctx.invokeCustomEvent(target, eventName, args)` pass `args` into the entry as `ctx.commandArgs` (alias `ctx.args`). Cross-instance Call dispatches on `target.classId` with `self = target`. `ctx.invokeFunction(target, functionName, args)` looks up `exports[functionName]` on `target.classId`, else its nearest user ancestor that exports it (function graphs have no lifecycle `point.event`) and returns the result or `{}`, or a Promise of that object when the export is async. `ctx.getComponentById` matches `guid` or authored `sourceId` on an Actor, or searches current-world actors when the target is the live `Scene`. See [scripting.md](scripting.md).
 
 ## Re-parenting
 
@@ -107,6 +150,8 @@ See [physics.md](physics.md) for RigidBody / Collider / Mesh collision property 
 - Returns an invalidation list of inherited members that break under the new parent.
 - Prefab Root Details exposes **Parent Class** (Actor ancestry only). Commit is `ClassRegistry.reparent` then `saveDocument(..., { parentClass })` — header only; graph members, overrides, and components are not rewritten. Cycles, self, depth, locked engine classes, and leaving Actor ancestry reject without a write. Class panel change-parent UI is still later polish.
 - `ensure(def)` registers a user class or merges variables / interface guids onto an existing user class. `RuntimeDriver.loadScripts` uses this so Play spawn can apply class metadata. `ensure` does not rewrite `parentClassId` on an already-registered def.
+- `RuntimeDriver.loadScripts` registers user parents before their children within one call, so a child no longer falls back to `Actor` because its parent's script came later. A class registered before its script (the built-in demo `Enemy : Actor`) is reparented to the registered parent its script names. Cycles and unknown parents still fall back to `Actor`. A parent arriving in a later `loadScripts` call does not repair earlier children; real hosts load once.
+- After registration, `loadScripts` applies the Game Instance's class variable defaults (existing values win), inherited interfaces and interface handlers, then installs subsystems. The Game Instance object exists before scripts load, so this is what makes `createGameInstance`-style defaults hold in Play, Preview Build and the player; all of it runs before `World.start()`.
 
 ## Deterministic harness (`@babylonslate/test-kit`)
 
