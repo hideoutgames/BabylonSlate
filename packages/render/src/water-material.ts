@@ -153,10 +153,12 @@ swRealFoam = max(swRealFoam, swShoreLine * smoothstep(0.2, 0.5, swFoamTex) * (0.
 // Contact foam hugs the actual waterline on objects: a dense churned band where the water meets them,
 // thinning into lace that ripple crests carry outward.
 float swHug = clamp(exp(-swObject / swContactW * 1.7) * (0.8 + 0.3 * swMedium) + max(0.0, cos(swRipplePhase)) * swRippleFade * 0.25, 0.0, 1.0);
-float swHugSoft = 0.16 + 0.2 * (1.0 - swHug) + fwidth(swFoamTex);
-float swRealContact = smoothstep(1.0 - swHug, 1.0 - swHug + swHugSoft, swFoamTex) * (0.35 + 0.65 * swHug) * (0.6 + 0.4 * swGrain);
+// Churned contact foam favours the finer web, so it reads as bubbles rather than open-water patches.
+float swBubbleTex = mix((1.0 - smoothstep(0.0, 0.4, swWebB)) * 0.7 + (1.0 - smoothstep(0.0, 0.45, swWebA)) * 0.15 + swFine * 0.15, 0.42, swFoamFade);
+float swHugSoft = 0.16 + 0.2 * (1.0 - swHug) + fwidth(swBubbleTex);
+float swRealContact = smoothstep(1.0 - swHug, 1.0 - swHug + swHugSoft, swBubbleTex) * (0.35 + 0.65 * swHug) * (0.6 + 0.4 * swGrain);
 float swContactLine = 1.0 - smoothstep(0.0, 0.08 * swContactW + 0.05 + fwidth(swObject), swObject);
-swRealContact = max(swRealContact, swContactLine * (0.7 + 0.3 * smoothstep(0.15, 0.5, swFoamTex)));
+swRealContact = max(swRealContact, swContactLine * (0.7 + 0.3 * smoothstep(0.15, 0.5, swBubbleTex)));
 // Air churned under the foam lightens the water around it, without a pattern.
 float swAerated = max(swDensity * U.slateWaterFoam.w, swHug * 0.6) * (1.0 - swStylized);
 
