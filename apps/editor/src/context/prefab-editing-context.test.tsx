@@ -174,6 +174,11 @@ function ComponentsProbe({ seen }: { seen: PrefabComponentView[][] }) {
   );
 }
 
+function ValueProbe({ seen }: { seen: ReturnType<typeof usePrefabEditing>[] }) {
+  seen.push(usePrefabEditing());
+  return null;
+}
+
 describe("PrefabEditingContext inherited components", () => {
   const baseGraph = {
     id: "graph:assets/Base.class.babasset",
@@ -286,26 +291,50 @@ describe("PrefabEditingContext inherited components", () => {
     expect(seen.at(-1)).toBe(seen[0]);
   });
 
-  it("does not read the asset registry for a Scene workspace", () => {
+  it("keeps the published value for a Scene workspace while scene and Class documents change", () => {
     workspace.documentId = "scene:assets/Main.scene.babasset";
-    const list = vi.fn(() => []);
-    documentOverrides.value = {
-      openDocuments: [
-        {
-          id: "scene:assets/Main.scene.babasset",
-          ref: { kind: "scene", path: "assets/Main.scene.babasset" },
-          content: { name: "Main", actors: [], settings: {} },
-        },
-        baseGraph,
-      ],
-      assetRegistry: { list },
+    const scene = {
+      id: "scene:assets/Main.scene.babasset",
+      ref: { kind: "scene", path: "assets/Main.scene.babasset" },
+      content: { name: "Main", actors: [], settings: {} },
     };
-    render(
+    const seen: ReturnType<typeof usePrefabEditing>[] = [];
+    documentOverrides.value = {
+      openDocuments: [scene, baseGraph],
+      assetRegistry: {
+        list: () => [
+          {
+            path: "assets/Base.class.babasset",
+            header: { type: "Class", name: "Base", parentClass: "Actor" },
+          },
+        ],
+      },
+    };
+    const view = render(
       <PrefabEditingProvider>
-        <ComponentsProbe seen={[]} />
+        <ValueProbe seen={seen} />
       </PrefabEditingProvider>,
     );
-    expect(list).not.toHaveBeenCalled();
+    documentOverrides.value = {
+      ...documentOverrides.value,
+      openDocuments: [
+        { ...scene, content: { ...scene.content, name: "Main Edited" } },
+        {
+          ...baseGraph,
+          content: {
+            ...baseGraph.content,
+            components: [createMeshComponent("inherited-mesh", "cylinder")],
+          },
+        },
+      ],
+    };
+    view.rerender(
+      <PrefabEditingProvider>
+        <ValueProbe seen={seen} />
+      </PrefabEditingProvider>,
+    );
+    expect(seen.length).toBeGreaterThan(1);
+    expect(seen.at(-1)).toBe(seen[0]);
   });
 });
 
