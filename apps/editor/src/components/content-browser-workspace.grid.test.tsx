@@ -661,6 +661,68 @@ describe("ContentBrowserWorkspace grid window", () => {
     ).toBeNull();
   });
 
+  it("mounts no tiles while hidden and shows the current folder again when visible", () => {
+    docs.thumbnailsEnabled = false;
+    stubGridSize(
+      CONTENT_BROWSER_GRID_PAD_PX * 2 +
+        CONTENT_BROWSER_TILE_WIDTH_PX * 4 +
+        CONTENT_BROWSER_GRID_GAP_PX * 3,
+      CONTENT_BROWSER_GRID_PAD_PX * 2 +
+        CONTENT_BROWSER_TILE_HEIGHT_PX * 2 +
+        CONTENT_BROWSER_GRID_GAP_PX,
+    );
+    const textures = Array.from({ length: 300 }, (_, index) => texture(index));
+    installRegistry(textures);
+    const tiles = () => document.querySelectorAll("[data-asset-path]");
+    const { rerender } = render(<ContentBrowserWorkspace />);
+    expect(tiles().length).toBeGreaterThan(0);
+
+    rerender(<ContentBrowserWorkspace hidden />);
+    expect(tiles()).toHaveLength(0);
+
+    // A registry change while hidden appears once the browser is shown.
+    const added = { ...texture(0), path: "assets/added.babasset" };
+    added.header = { ...added.header, guid: "added", name: "added" };
+    installRegistry([added, ...textures]);
+    rerender(<ContentBrowserWorkspace hidden />);
+    expect(tiles()).toHaveLength(0);
+
+    rerender(<ContentBrowserWorkspace />);
+    expect(screen.getByTestId("content-item-assets/added.babasset")).toBeTruthy();
+    expect(screen.getByTestId("content-item-assets/tex-0.babasset")).toBeTruthy();
+    expect(screen.queryByTestId("content-item-assets/tex-299.babasset")).toBeNull();
+  });
+
+  it("filters the sorted grid in full sort order, including name ties", () => {
+    docs.thumbnailsEnabled = false;
+    const named = (guid: string, name: string, path: string): IndexedAsset => {
+      const asset = { ...texture(0), path };
+      asset.header = { ...asset.header, guid, name };
+      return asset;
+    };
+    installRegistry([
+      named("guid-b", "Rock", "assets/Rock.babasset"),
+      named("guid-e", "Pebble", "assets/pebble.babasset"),
+      named("guid-f", "Rockface", "assets/Rockface.babasset"),
+      named("guid-a", "rock", "assets/rock-2.babasset"),
+      named("guid-c", "Rock.png", "assets/Rock-png.babasset"),
+      named("guid-d", "Boulder", "assets/boulder-rock.babasset"),
+    ]);
+    render(<ContentBrowserWorkspace />);
+    const order = () =>
+      [...document.querySelectorAll("[data-asset-guid]")].map((tile) =>
+        tile.getAttribute("data-asset-guid"),
+      );
+    expect(order()).toEqual(["guid-d", "guid-e", "guid-a", "guid-b", "guid-c", "guid-f"]);
+
+    fireEvent.change(screen.getByTestId("content-browser-search"), {
+      target: { value: "ROCK" },
+    });
+    // "Rock" and "rock" tie on name and fall back to guid; "Rock.png" shows
+    // as "Rock" but its full name sorts after them.
+    expect(order()).toEqual(["guid-d", "guid-a", "guid-b", "guid-c", "guid-f"]);
+  });
+
   it("does not decode thumbnails while CSS-hidden", async () => {
     loadAssetThumbnail.mockClear();
     render(<ContentBrowserWorkspace hidden />);

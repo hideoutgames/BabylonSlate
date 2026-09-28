@@ -596,18 +596,66 @@ export function resolveContentBrowserPaintHit(
 
 export { typeColorThumbAccent as assetTypeThumbAccent };
 
-export function matchesAssetSearch(asset: IndexedAsset, query: string): boolean {
-  const needle = query.trim().toLowerCase();
-  if (!needle) return true;
+type AssetSearchHaystack = {
+  sourceName: string;
+  sourcePath: string;
+  sourceType: string;
+  name: string;
+  path: string;
+  type: string;
+};
+
+/**
+ * Lowercased search fields per indexed asset, built on the first non-empty
+ * search. The registry replaces an asset object when its name, path, or type
+ * changes; the source strings still guard against an in-place edit.
+ */
+const assetSearchHaystacks = new WeakMap<IndexedAsset, AssetSearchHaystack>();
+
+function assetSearchHaystack(asset: IndexedAsset): AssetSearchHaystack {
+  const { name, type } = asset.header;
+  const cached = assetSearchHaystacks.get(asset);
+  if (
+    cached &&
+    cached.sourceName === name &&
+    cached.sourcePath === asset.path &&
+    cached.sourceType === type
+  ) {
+    return cached;
+  }
+  const haystack: AssetSearchHaystack = {
+    sourceName: name,
+    sourcePath: asset.path,
+    sourceType: type,
+    name: name.toLowerCase(),
+    path: asset.path.toLowerCase(),
+    type: type.toLowerCase(),
+  };
+  assetSearchHaystacks.set(asset, haystack);
+  return haystack;
+}
+
+function assetMatchesNeedle(asset: IndexedAsset, needle: string): boolean {
+  const haystack = assetSearchHaystack(asset);
   return (
-    asset.header.name.toLowerCase().includes(needle) ||
-    asset.path.toLowerCase().includes(needle) ||
-    asset.header.type.toLowerCase().includes(needle)
+    haystack.name.includes(needle) ||
+    haystack.path.includes(needle) ||
+    haystack.type.includes(needle)
   );
 }
 
+export function matchesAssetSearch(asset: IndexedAsset, query: string): boolean {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return true;
+  return assetMatchesNeedle(asset, needle);
+}
+
+/**
+ * Keeps the input order, so filtering a list already sorted by `sortAssets`
+ * yields the same order as sorting the filtered list.
+ */
 export function filterAssets(
-  assets: IndexedAsset[],
+  assets: readonly IndexedAsset[],
   options: {
     folderGuids: Set<string> | null;
     typeFilters: string[] | null;
@@ -615,6 +663,7 @@ export function filterAssets(
   },
 ): IndexedAsset[] {
   const types = options.typeFilters ?? [];
+  const needle = options.search.trim().toLowerCase();
   return assets.filter((asset) => {
     if (options.folderGuids && !options.folderGuids.has(asset.header.guid)) {
       return false;
@@ -622,7 +671,7 @@ export function filterAssets(
     if (types.length > 0 && !types.includes(asset.header.type)) {
       return false;
     }
-    return matchesAssetSearch(asset, options.search);
+    return !needle || assetMatchesNeedle(asset, needle);
   });
 }
 
@@ -646,36 +695,49 @@ export const CONTENT_BROWSER_SORT_OPTIONS: ReadonlyArray<{
   { mode: "date-asc", label: "Date Modified (Oldest)" },
 ];
 
-const NAME_COMPARE: Intl.CollatorOptions = { sensitivity: "base" };
-
-function compareNames(a: string, b: string): number {
-  return a.localeCompare(b, undefined, NAME_COMPARE);
-}
+/**
+ * Same ordering as `localeCompare(b, undefined, { sensitivity: "base" })`,
+ * without building a collator per comparison.
+ */
+const NAME_COLLATOR = new Intl.Collator(undefined, { sensitivity: "base" });
+const compareNames = NAME_COLLATOR.compare;
 
 function assetDisplayName(asset: IndexedAsset): string {
   return displayAssetTitle(asset.header.name) || asset.header.name;
 }
 
-function compareAssetNames(a: IndexedAsset, b: IndexedAsset): number {
-  const byDisplay = compareNames(assetDisplayName(a), assetDisplayName(b));
+type SortableAsset = { asset: IndexedAsset; displayName: string };
+
+function compareAssetNames(a: SortableAsset, b: SortableAsset): number {
+  const byDisplay = compareNames(a.displayName, b.displayName);
   if (byDisplay !== 0) return byDisplay;
-  return compareNames(a.header.name, b.header.name);
+  return compareNames(a.asset.header.name, b.asset.header.name);
 }
 
 function assetMtime(asset: IndexedAsset): number {
   return asset.mtime ?? 0;
 }
 
+/**
+ * Total order ending in a guid tiebreak, so sorting once and then filtering
+ * matches filtering first and sorting the matches.
+ */
 export function sortAssets(
   assets: readonly IndexedAsset[],
   mode: ContentBrowserSortMode,
 ): IndexedAsset[] {
-  return [...assets].sort((left, right) => {
+  const rows: SortableAsset[] = assets.map((asset) => ({
+    asset,
+    displayName: assetDisplayName(asset),
+  }));
+  rows.sort((leftRow, rightRow) => {
+    const left = leftRow.asset;
+    const right = rightRow.asset;
     let primary = 0;
     switch (mode) {
       case "name-asc":
       case "name-desc":
-        primary = compareAssetNames(left, right);
+        primary = compareAssetNames(leftRow, rightRow);
         if (mode === "name-desc") primary = -primary;
         break;
       case "type-asc":
@@ -691,11 +753,12 @@ export function sortAssets(
     }
     if (primary !== 0) return primary;
     if (mode !== "name-asc" && mode !== "name-desc") {
-      const byName = compareAssetNames(left, right);
+      const byName = compareAssetNames(leftRow, rightRow);
       if (byName !== 0) return byName;
     }
     return left.header.guid.localeCompare(right.header.guid);
   });
+  return rows.map((row) => row.asset);
 }
 
 export function sortChildFolders<T extends { name: string }>(
