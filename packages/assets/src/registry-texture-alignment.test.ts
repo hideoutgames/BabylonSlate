@@ -150,6 +150,38 @@ describe("texture encode alignment", () => {
     expect(aligned).not.toHaveProperty("ktx2BlockAlign");
   });
 
+  it("aligns a Texture a .babasset import or a Duplicate creates with an old encode, unless an atlas uses it", async () => {
+    const storage = await storageWithProject("created");
+    await writeTexture(storage, "assets/legacy-odd.babasset", "legacy-odd", { source: [1, 1], committed: { id: KEY_MAX_1, size: [1, 1] } });
+    // Saved before the Texture it uses was imported.
+    await storage.writeBinary("assets/ground.tileset.babasset", await encodeAssetDocument({
+      guid: "ground", type: "Tileset", name: "Ground", version: 1,
+      payload: { ...createDefaultTilesetPayload(), textureGuid: "incoming-atlas" } as unknown as Record<string, unknown>,
+    }, { dependencies: ["incoming-atlas"] }));
+    const outside = await storageWithProject("outside");
+    for (const guid of ["incoming", "incoming-atlas"]) {
+      await writeTexture(outside, `assets/${guid}.babasset`, guid, { source: [1, 1], committed: { id: KEY_MAX_1, size: [1, 1] } });
+    }
+    const { registry, jobs, queue } = await mount(storage);
+
+    for (const guid of ["incoming", "incoming-atlas"]) {
+      await registry.importFile("project", "", `${guid}.babasset`, await outside.readBinary(`assets/${guid}.babasset`));
+    }
+    const copy = await registry.duplicateAsset("legacy-odd", "project");
+    await vi.waitFor(() => {
+      expect(queue.depth).toBe(0);
+      expect(jobs).toHaveLength(2);
+    });
+    expect(jobs.map((job) => job.assetGuid).sort()).toEqual([copy.header.guid, "incoming"].sort());
+    for (const guid of [copy.header.guid, "incoming"]) {
+      expect(registry.getByGuid(guid)!.header.payload).toMatchObject({ ktx2ChunkId: KEY_MAX_1, ktx2Width: 4, ktx2Height: 4 });
+    }
+    // The Tileset's atlas and the Texture duplicated keep their encodes.
+    for (const guid of ["incoming-atlas", "legacy-odd"]) {
+      expect(registry.getByGuid(guid)!.header.payload).not.toHaveProperty("ktx2Width");
+    }
+  });
+
   it("requeues on open only compressed textures committed off the grid that are not atlases", async () => {
     const storage = await storageWithProject("open");
     await writeTexture(storage, "assets/legacy-odd.babasset", "legacy-odd", { source: [1, 1], committed: { id: KEY_MAX_1, size: [1, 1] } });

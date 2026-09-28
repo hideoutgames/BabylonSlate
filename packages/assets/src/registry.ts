@@ -586,7 +586,9 @@ export class AssetRegistry {
       : "";
     if (dir) await destStorage.mkdir(dir, true);
     await destStorage.writeBinary(candidate, encoded);
-    return this.indexHeader(rootId, candidate, readBabassetHeader(encoded));
+    const duplicate = this.indexHeader(rootId, candidate, readBabassetHeader(encoded));
+    await this.alignCreatedTextures([duplicate]);
+    return duplicate;
   }
 
   /** Copy into a folder (same as duplicate with an explicit destination folder). */
@@ -770,7 +772,22 @@ export class AssetRegistry {
       await this.maybeWriteThumbnail(asset, result);
       await this.maybeEnqueueTextureEncode(asset);
     }
+    // After every result is indexed, so a bundled Tileset counts.
+    await this.alignCreatedTextures(created);
     return created;
+  }
+
+  /**
+   * A Texture created with an encode already committed (a `.babasset` import
+   * or a Duplicate) is a new file, not an older one teammates may share:
+   * align it now, as an image import pads its first encode, whatever the
+   * editor's rule for re-encoding older Textures in the background.
+   */
+  private async alignCreatedTextures(assets: readonly IndexedAsset[]): Promise<void> {
+    const guids = assets
+      .filter((asset) => asset.header.type === "Texture" && asset.header.payload.compressionState === "compressed")
+      .map((asset) => asset.header.guid);
+    if (guids.length > 0) await this.reconcileTextureAlignment({ guids });
   }
 
   private async maybeWriteThumbnail(
