@@ -891,36 +891,48 @@ describe("project documents as .babasset", () => {
     expect(changes.kind).toBe("none");
   });
 
-  it("drops the pass's queued re-encodes once locks are unknown, leaving nothing for the next open to re-encode", async () => {
+  it("writes nothing for the pass's re-encodes once locks are unknown, leaving nothing for the next open to re-encode", async () => {
     const storage = new MemoryStorageAdapter("documents");
     await storage.openDocumentsProject("Forgotten.babproject");
     await installMinimalProject(storage);
     const paths = ["assets/odd-a.babasset", "assets/odd-b.babasset"];
     for (const [index, path] of paths.entries()) await writeLegacyOddTexture(storage, path, `odd-${index}`);
-    const encode = vi.fn(standInEncode);
+    let releaseFirst!: () => void;
+    const firstEncode = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const encode = vi.fn<EncodeFn>(async (source, settings) => {
+      if (encode.mock.calls.length === 1) {
+        await firstEncode;
+        throw new Error("The encode worker stopped.");
+      }
+      return standInEncode(source, settings);
+    });
     const service = new ProjectService(storage, { encode });
     await service.loadCurrentProject();
     const onDisk = async (path: string) => (await decodeBabasset(await storage.readBinary(path))).header.payload;
 
-    // The page is hidden, so the re-encodes wait in the queue.
-    service.pauseTextureEncodeQueue();
     service.setTextureWriteGuard({ canWrite: () => true });
     expect(await service.reconcileTextureAlignment()).toBe(2);
-    // Source control is reconfigured before they run: its locks are unknown again.
+    await vi.waitFor(() => expect(encode).toHaveBeenCalledTimes(1));
+    // Source control is reconfigured while the first re-encode runs: its locks are unknown again.
     service.setTextureWriteGuard(null);
-    service.resumeTextureEncodeQueue();
+    releaseFirst();
     await vi.waitFor(() => expect(service.textureEncodeQueue.depth).toBe(0));
-    expect(encode).not.toHaveBeenCalled();
+    // The running one's failure is not written, and the waiting one never starts.
+    expect(encode).toHaveBeenCalledTimes(1);
     for (const path of paths) {
-      expect(await onDisk(path)).toMatchObject({ compressionState: "compressed", ktx2ChunkId: KTX2_KEY_MAX_1 });
-      expect(await onDisk(path)).not.toHaveProperty("ktx2Width");
+      const payload = await onDisk(path);
+      expect(payload).toMatchObject({ compressionState: "compressed", ktx2ChunkId: KTX2_KEY_MAX_1 });
+      expect(payload).not.toHaveProperty("encodeError");
+      expect(payload).not.toHaveProperty("ktx2Width");
     }
 
     // The next session opens before its locks load: nothing waits on disk for it to re-encode.
     const next = new ProjectService(storage, { encode });
     await next.loadCurrentProject();
     expect(next.textureEncodeQueue.depth).toBe(0);
-    expect(encode).not.toHaveBeenCalled();
+    expect(encode).toHaveBeenCalledTimes(1);
   });
 
   it("encodes each Texture once however often the registry remounts while its encode waits or runs", async () => {
