@@ -1,4 +1,11 @@
 import type { ComponentProps, ReactNode } from "react";
+import {
+  Card,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@babylonslate/ui/components/card";
+import { typeColorThumbAccent } from "@babylonslate/ui/lib/data-types";
 import { cn } from "@babylonslate/ui/lib/utils";
 import {
   TYPE_VISUAL_ICON_TILE_SIZE,
@@ -11,12 +18,16 @@ export interface CatalogCardProps
   title: string;
   subtitle?: string;
   visual: TypeVisual;
-  /** Thumbnail shown in the preview well; the tinted type icon stands in without one. */
+  /** Thumbnail shown in the preview well; the type icon stands in without one. */
   imageUrl?: string | null;
   onSelect: () => void;
 }
 
-/** Preview card for catalog pages. A non-button host preserves touch scrolling. */
+/**
+ * Pickable card styled like the Content Browser asset tile: `--card` well
+ * framed in the type color, then title and type line. A non-button host
+ * preserves touch scrolling.
+ */
 export function CatalogCard({
   title,
   subtitle,
@@ -30,14 +41,15 @@ export function CatalogCard({
   ...props
 }: CatalogCardProps) {
   return (
-    <div
+    <Card
+      size="sm"
       {...props}
       role={role}
       tabIndex={tabIndex}
       title={title}
       className={cn(
-        "catalog-card flex min-w-0 cursor-pointer select-none flex-col overflow-hidden rounded-lg border bg-card text-left outline-none transition-colors touch-pan-y",
-        "hover:border-ring/50 hover:bg-accent focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40",
+        "catalog-card w-full cursor-pointer select-none gap-0 py-0 text-left outline-none transition-colors touch-pan-y",
+        "hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring",
         className,
       )}
       onClick={onSelect}
@@ -53,35 +65,35 @@ export function CatalogCard({
         onSelect();
       }}
     >
-      <span
-        className="flex aspect-[4/3] items-center justify-center overflow-hidden"
-        style={{
-          backgroundColor: `color-mix(in oklab, ${visual.colorVar} 10%, var(--muted))`,
-        }}
-      >
-        {imageUrl ? (
-          <img
-            src={imageUrl}
-            alt=""
-            draggable={false}
-            className="size-full object-contain"
-            data-slot="catalog-card-image"
-          />
-        ) : (
-          <TypeVisualIcon visual={visual} size={TYPE_VISUAL_ICON_TILE_SIZE} />
-        )}
+      <span className="relative aspect-square w-full shrink-0">
+        <span
+          className="absolute inset-0.5 flex items-center justify-center overflow-hidden bg-card"
+          style={typeColorThumbAccent(visual.colorVar)}
+        >
+          {imageUrl ? (
+            <img
+              src={imageUrl}
+              alt=""
+              draggable={false}
+              className="size-full object-cover"
+              data-slot="catalog-card-image"
+            />
+          ) : (
+            <TypeVisualIcon visual={visual} size={TYPE_VISUAL_ICON_TILE_SIZE} />
+          )}
+        </span>
       </span>
-      <span className="flex min-w-0 flex-col gap-0.5 border-t px-2 py-1.5 leading-tight">
-        <span className="truncate text-[13px] font-medium">{title}</span>
+      <CardHeader className="min-h-0 w-full gap-0.5 p-1.5">
+        <CardTitle className="truncate text-xs font-medium">{title}</CardTitle>
         {subtitle ? (
-          <span className="truncate text-xs text-muted-foreground">{subtitle}</span>
+          <CardDescription className="truncate text-[10px]">{subtitle}</CardDescription>
         ) : null}
-      </span>
-    </div>
+      </CardHeader>
+    </Card>
   );
 }
 
-/** Responsive card grid. */
+/** Responsive card grid; columns stay near the Content Browser tile width. */
 export function CatalogCardGrid({
   label,
   children,
@@ -93,7 +105,7 @@ export function CatalogCardGrid({
     <div
       role="group"
       aria-label={label}
-      className="grid grid-cols-[repeat(auto-fill,minmax(min(8rem,100%),1fr))] gap-2"
+      className="grid grid-cols-[repeat(auto-fill,minmax(min(7.5rem,100%),1fr))] gap-2"
     >
       {children}
     </div>
