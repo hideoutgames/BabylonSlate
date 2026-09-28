@@ -182,6 +182,15 @@ describe("texture encode alignment", () => {
     }
   });
 
+  it("queues one re-encode when two alignment checks of a Texture overlap", async () => {
+    const storage = await storageWithProject("overlap");
+    await writeTexture(storage, "assets/legacy-odd.babasset", "legacy-odd", { source: [1, 1], committed: { id: KEY_MAX_1, size: [1, 1] } });
+    const { registry } = await mount(storage);
+    // An import's own check and the editor's pass (an atlas status change, a remount) may run at once.
+    const requeued = await Promise.all([1, 2].map(() => registry.reconcileTextureAlignment({ guids: ["legacy-odd"] })));
+    expect(requeued.flat()).toEqual(["legacy-odd"]);
+  });
+
   it("requeues on open only compressed textures committed off the grid that are not atlases", async () => {
     const storage = await storageWithProject("open");
     await writeTexture(storage, "assets/legacy-odd.babasset", "legacy-odd", { source: [1, 1], committed: { id: KEY_MAX_1, size: [1, 1] } });

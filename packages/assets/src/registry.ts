@@ -131,6 +131,12 @@ export class AssetRegistry {
   private atlasFlushScheduled = false;
   private ownWriteListener: ((write: OwnAssetWrite) => void) | null = null;
   private readonly legacyAtlasCache: Map<string, readonly string[]>;
+  /**
+   * Textures an alignment check is requeuing right now. Imports and
+   * Duplicates run the pass outside the editor's serialized passes, so a
+   * concurrent one skips them rather than queue a second copy.
+   */
+  private readonly alignmentRequeues = new Set<string>();
 
   constructor(storage: ProjectStorage, options: AssetRegistryOptions = {}) {
     this.storage = storage;
@@ -1167,9 +1173,10 @@ export class AssetRegistry {
     for (const guid of guids) {
       const asset = await this.settledTexture(guid);
       // Already queued (an earlier pass, or a remount's): one job is enough.
-      if (queue.has(guid) || !asset) continue;
+      if (queue.has(guid) || this.alignmentRequeues.has(guid) || !asset) continue;
       const usage = options.usageFor?.(guid) ?? String(asset.header.payload.usage ?? "albedo");
       if (!this.isAlignmentCandidate(asset, usage) || !canWrite(guid)) continue;
+      this.alignmentRequeues.add(guid);
       try {
         if (!(await this.isAlignmentStale(asset, usage, options.ktx2SizeCache))) continue;
         // Asked again after the (possibly reading) staleness check, just
@@ -1178,6 +1185,8 @@ export class AssetRegistry {
         if (await this.retryTextureEncoding(guid, { force: true, usage, guard })) requeued.push(guid);
       } catch {
         // One unreadable texture must not stop the pass.
+      } finally {
+        this.alignmentRequeues.delete(guid);
       }
     }
     return requeued;
@@ -1197,7 +1206,7 @@ export class AssetRegistry {
     if (!queue) return false;
     await this.resolveLegacyAtlasReferrers();
     const asset = await this.settledTexture(guid);
-    if (!asset || queue.has(guid)) return false;
+    if (!asset || queue.has(guid) || this.alignmentRequeues.has(guid)) return false;
     const usage = options.usage ?? String(asset.header.payload.usage ?? "albedo");
     if (!this.isAlignmentCandidate(asset, usage)) return false;
     try {
