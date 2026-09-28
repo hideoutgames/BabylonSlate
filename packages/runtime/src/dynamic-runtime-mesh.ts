@@ -10,18 +10,22 @@ export function dynamicRuntimeGeometry(component: ActorComponent): DynamicRuntim
 }
 
 type State = { meshId: number; owner: Actor | null; geometry: DynamicRuntimeMeshGeometry };
+type MeshSyncHost = {
+  slot: (actor: Actor) => number | undefined;
+  eligible: (actor: Actor) => boolean;
+  emit: (command: CommandMessage) => void;
+};
 
 /** Registered on demand; clean ticks do not walk components or geometry buffers. */
 export class DynamicRuntimeMeshSync {
   private readonly states = new Map<ActorComponent, State>();
   private readonly dirty = new Set<ActorComponent>();
   private sequence = 0;
+  private readonly host: MeshSyncHost;
 
-  constructor(private readonly host: {
-    slot: (actor: Actor) => number | undefined;
-    eligible: (actor: Actor) => boolean;
-    emit: (command: CommandMessage) => void;
-  }) {}
+  constructor(host: MeshSyncHost) {
+    this.host = host;
+  }
 
   private state(component: ActorComponent): State {
     let state = this.states.get(component);
