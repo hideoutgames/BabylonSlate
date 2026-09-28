@@ -68,22 +68,18 @@ test("desktop inspection plans only the requested standard hosts", () => {
   assert.deepEqual(inspection.on.workflow_dispatch.inputs.platform.options, ["all", "windows", "macos", "linux"]);
   assert.deepEqual(inspection.on.workflow_dispatch.inputs.channel.options, ["test", "release"]);
   assert.equal(inspection.permissions.contents, "read");
-  assert.ok(inspection.jobs.package.needs.includes("plan"));
-  assert.equal(inspection.jobs.package.strategy.matrix.include, "${{ fromJSON(needs.plan.outputs.matrix) }}");
-  const plan = inspection.jobs.plan.steps.find(step => step.id === "matrix").run;
-  const literal = plan.match(/all='([^']+)'/)?.[1];
-  assert.ok(literal);
-  const hosts = JSON.parse(literal);
-  assert.deepEqual(hosts, [
-    { platform: "windows", runner: "windows-2025" },
-    { platform: "macos", runner: "macos-26" },
-    { platform: "linux", runner: "ubuntu-24.04" },
-  ]);
-  for (const host of hosts) assert.match(host.runner, /^(ubuntu-24\.04|windows-2025|macos-26)$/);
-  assert.equal(inspection.jobs.package.environment, undefined);
-  for (const step of inspection.jobs.package.steps) {
-    if (step.uses) assert.match(step.uses, /^[\w-]+\/[\w-]+@[a-f0-9]{40}$/);
-    assert.ok(!step.uses?.startsWith("actions/upload-artifact@"));
+  const hosts = { windows: "windows-2025", macos: "macos-26", linux: "ubuntu-24.04" };
+  assert.deepEqual(Object.keys(inspection.jobs), Object.keys(hosts));
+  for (const [platform, runner] of Object.entries(hosts)) {
+    const job = inspection.jobs[platform];
+    assert.equal(job["runs-on"], runner);
+    assert.equal(job.if, `inputs.platform == 'all' || inputs.platform == '${platform}'`);
+    assert.equal(job.environment, undefined);
+    assert.ok(job.steps.some(step => step.run === `pnpm --filter desktop package:${platform}`));
+    for (const step of job.steps) {
+      if (step.uses) assert.match(step.uses, /^[\w-]+\/[\w-]+@[a-f0-9]{40}$/);
+      assert.ok(!step.uses?.startsWith("actions/upload-artifact@"));
+    }
   }
 });
 
