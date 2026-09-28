@@ -330,10 +330,11 @@ export class ProjectService {
   /** The Usage an open Texture tab shows, saved or not (the editor sets it). */
   private openTextureUsage: ((guid: string) => string | undefined) | null = null;
   /**
-   * Texture guid -> sha256 of the KTX2 chunk this project session last
-   * committed for it. It exempts the Texture only while that encode is still
-   * the committed one in the file on disk: a git revert or pull that replaces
-   * it ends the exemption, even for a job queued before it.
+   * Texture guid -> sha256 of the KTX2 chunk this project session last wrote
+   * for it: an encode it committed, or the one a file it created carries (a
+   * `.babasset` import, Duplicate or Copy). It exempts the Texture only while
+   * that encode is still the committed one in the file on disk: a git revert
+   * or pull that replaces it ends the exemption, even for a job queued before.
    */
   private readonly sessionEncodes = new Map<string, string>();
   /** Committed KTX2 (and sniffed source) sizes by chunk sha256, kept across registry remounts. */
@@ -1238,6 +1239,11 @@ export class ProjectService {
     });
     registry.setOwnWriteListener((write) => {
       for (const listener of this.ownWriteListeners) listener(write);
+    });
+    // A file this session creates is its own new work, not one teammates share.
+    registry.setCreatedTextureListener(({ header }) => {
+      const committed = committedKtx2Sha256(header);
+      if (committed) this.sessionEncodes.set(header.guid, committed);
     });
     await registry.mountRoot(projectContentRoot());
     this.assetRegistry = registry;

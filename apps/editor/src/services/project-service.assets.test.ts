@@ -839,7 +839,7 @@ describe("project documents as .babasset", () => {
     expect(await service.textureAlignmentStale("waiting")).toBe(false);
   });
 
-  it("with source control on, keeps a Tileset's texture at its own size only when this session padded it", async () => {
+  it("with source control on, keeps a Tileset's texture at its own size only when this session padded it or created its file", async () => {
     const storage = new MemoryStorageAdapter("documents");
     await storage.openDocumentsProject("Shared.babproject");
     await installMinimalProject(storage);
@@ -868,11 +868,22 @@ describe("project documents as .babasset", () => {
       return [payload.compressionState, payload.ktx2Width, payload.ktx2Height, payload.ktx2BlockAlign];
     };
     await vi.waitFor(() => expect(encoded(texture!.header.guid)).toEqual(["compressed", 4, 4, 4]));
+    // New files carrying the earlier session's padded encode: a Duplicate and a .babasset import.
+    const copy = await registry.duplicateAsset("legacy-padded", "project");
+    const [imported] = await registry.importFile("project", "incoming", "incoming.babasset", await storage.readBinary(legacyPath));
+    expect(imported!.header.guid).not.toBe("legacy-padded");
+    for (const created of [copy, imported!]) expect(encoded(created.header.guid)).toEqual(["compressed", 4, 4, 4]);
 
     await service.saveDocument("tileset", "assets/Old.tileset.babasset", { ...createDefaultTilesetPayload(), textureGuid: "legacy-padded" });
     await service.saveDocument("tileset", "assets/New.tileset.babasset", { ...createDefaultTilesetPayload(), textureGuid: texture!.header.guid });
-    // The import's padding was this session's own write, so it is undone...
-    await vi.waitFor(() => expect(encoded(texture!.header.guid)).toEqual(["compressed", 1, 1, undefined]));
+    await service.saveDocument("tileset", "assets/Copy.tileset.babasset", { ...createDefaultTilesetPayload(), textureGuid: copy.header.guid });
+    await service.saveDocument("tileset", "assets/Imported.tileset.babasset", { ...createDefaultTilesetPayload(), textureGuid: imported!.header.guid });
+    // The import's padding was this session's own write, and so were the new files, so it is undone...
+    await vi.waitFor(() => {
+      for (const guid of [texture!.header.guid, copy.header.guid, imported!.header.guid]) {
+        expect(encoded(guid)).toEqual(["compressed", 1, 1, undefined]);
+      }
+    });
     // ...while the earlier session's padded atlas waits for the user's own edit.
     expect(await service.reconcileTextureAlignment(["legacy-padded"])).toBe(0);
     expect(encoded("legacy-padded")).toEqual(["compressed", 4, 4, 4]);

@@ -130,6 +130,7 @@ export class AssetRegistry {
   private readonly atlasStatusBefore = new Map<string, boolean>();
   private atlasFlushScheduled = false;
   private ownWriteListener: ((write: OwnAssetWrite) => void) | null = null;
+  private createdTextureListener: ((asset: IndexedAsset) => void) | null = null;
   private readonly legacyAtlasCache: Map<string, readonly string[]>;
   /**
    * Textures an alignment check is requeuing right now. Imports and
@@ -158,6 +159,24 @@ export class AssetRegistry {
   /** Report the registry's own file rewrites, so they are not mistaken for external changes. */
   setOwnWriteListener(listener: ((write: OwnAssetWrite) => void) | null): void {
     this.ownWriteListener = listener;
+  }
+
+  /**
+   * Report each Texture the registry creates with a KTX2 encode already
+   * committed (a `.babasset` import, a Duplicate or Copy): a new file, so its
+   * committed encode is this session's own. Called as it is indexed, before
+   * any alignment check sees it.
+   */
+  setCreatedTextureListener(listener: ((asset: IndexedAsset) => void) | null): void {
+    this.createdTextureListener = listener;
+  }
+
+  private reportCreatedTexture(asset: IndexedAsset): IndexedAsset {
+    const { header } = asset;
+    if (header.type === "Texture" && header.chunks.some((chunk) => chunk.id === header.payload.ktx2ChunkId)) {
+      this.createdTextureListener?.(asset);
+    }
+    return asset;
   }
 
   /** Write CB thumbnails into derived data (ProjectService supplies storage). */
@@ -334,7 +353,7 @@ export class AssetRegistry {
     await storage.writeBinary(path, bytes);
     const header = readBabassetHeader(bytes);
     const mtime = await this.statMtime(storage, path);
-    return this.indexHeader(rootId, path, header, false, mtime);
+    return this.reportCreatedTexture(this.indexHeader(rootId, path, header, false, mtime));
   }
 
   /** Re-read a .babasset header after an in-place save so catalog fields stay current. */
@@ -592,7 +611,7 @@ export class AssetRegistry {
       : "";
     if (dir) await destStorage.mkdir(dir, true);
     await destStorage.writeBinary(candidate, encoded);
-    const duplicate = this.indexHeader(rootId, candidate, readBabassetHeader(encoded));
+    const duplicate = this.reportCreatedTexture(this.indexHeader(rootId, candidate, readBabassetHeader(encoded)));
     await this.alignCreatedTextures([duplicate]);
     return duplicate;
   }
