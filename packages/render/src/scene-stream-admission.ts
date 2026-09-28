@@ -2,7 +2,7 @@ import type { AbstractMesh, BaseTexture, IParticleSystem, Light, Scene } from "@
 import type { CommandMessage } from "@babylonslate/bridge";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
 import type { SnapshotSceneBinding } from "./snapshot-apply";
-import type { SceneStreamIdentity } from "./scene-streaming-readiness";
+import { decodeSceneStreamEvent, type SceneStreamIdentity } from "./scene-stream-commands";
 
 type Scope = {
   binding: SnapshotSceneBinding;
@@ -10,7 +10,20 @@ type Scope = {
   textures: Set<BaseTexture>;
   particles: Set<IParticleSystem>;
   slots: Map<number, SceneStreamIdentity & { instanceActorGuid: string }>;
-  cached?: { meshes: AbstractMesh[]; meshCount: number; slotCount: number; newestMesh?: AbstractMesh };
+  restore: AbstractMesh[];
+  textureScratch: Set<BaseTexture>;
+  liveScratch: Set<BaseTexture | IParticleSystem>;
+  cached?: {
+    meshes: AbstractMesh[];
+    meshSet: Set<AbstractMesh>;
+    meshCount: number;
+    slotCount: number;
+    newestMesh?: AbstractMesh;
+    particles?: IParticleSystem[];
+    particleCount?: number;
+    particleSlotCount?: number;
+    newestParticle?: IParticleSystem;
+  };
 };
 const scopes = new WeakMap<Scene, Scope>();
 const particleSlots = new WeakMap<IParticleSystem, number>();
@@ -39,28 +52,47 @@ export function admittedSceneMeshes(scene: Scene): AbstractMesh[] | undefined {
     for (const child of root.getChildMeshes()) meshes.add(child);
   }
   const result = [...meshes];
-  scope.cached = { meshes: result, meshCount: scene.meshes.length, slotCount: scope.binding.meshes.size, newestMesh };
+  scope.cached = { meshes: result, meshSet: meshes, meshCount: scene.meshes.length, slotCount: scope.binding.meshes.size, newestMesh };
   return result;
 }
 
 export function admittedSceneParticles(scene: Scene): IParticleSystem[] | undefined {
   const scope = scopes.get(scene);
   if (!scope) return undefined;
-  const live = new Set(scene.particleSystems);
+  admittedSceneMeshes(scene);
+  const cached = scope.cached!;
+  const newestParticle = scene.particleSystems.at(-1);
+  if (cached.particles && cached.particleCount === scene.particleSystems.length &&
+      cached.particleSlotCount === scope.slots.size && cached.newestParticle === newestParticle) return cached.particles;
+  const live = scope.liveScratch;
+  live.clear();
+  for (const system of scene.particleSystems) live.add(system);
   for (const system of scope.particles) if (!live.has(system)) scope.particles.delete(system);
-  return scene.particleSystems.filter((system) => {
+  const particles = cached.particles ?? [];
+  let count = 0;
+  for (const system of scene.particleSystems) {
     const slot = particleSlots.get(system);
-    return slot === undefined ? scope.particles.has(system) : !scope.slots.has(slot);
-  });
+    if (slot === undefined ? scope.particles.has(system) : !scope.slots.has(slot)) particles[count++] = system;
+  }
+  particles.length = count;
+  cached.particles = particles;
+  cached.particleCount = scene.particleSystems.length;
+  cached.particleSlotCount = scope.slots.size;
+  cached.newestParticle = newestParticle;
+  return particles;
 }
 
-/** Keep failed or newly changed parent textures strict while ignoring staged uploads. */
+/** Keep failed or newly changed parent textures strict while ignoring staged uploads. The returned Set is borrowed until the next call. */
 export function admittedSceneTextures(scene: Scene, meshes: readonly AbstractMesh[]): Set<BaseTexture> | undefined {
   const scope = scopes.get(scene);
   if (!scope) return undefined;
-  const live = new Set(scene.textures);
+  const live = scope.liveScratch;
+  live.clear();
+  for (const texture of scene.textures) live.add(texture);
   for (const texture of scope.textures) if (!live.has(texture)) scope.textures.delete(texture);
-  const textures = new Set(scope.textures);
+  const textures = scope.textureScratch;
+  textures.clear();
+  for (const texture of scope.textures) textures.add(texture);
   for (const mesh of meshes) for (const texture of (mesh.material ?? scene.defaultMaterial).getActiveTextures()) textures.add(texture);
   for (const system of admittedSceneParticles(scene) ?? []) {
     if (system.particleTexture) textures.add(system.particleTexture);
@@ -72,8 +104,9 @@ export function admittedSceneTextures(scene: Scene, meshes: readonly AbstractMes
 export function withSceneStreamNativeVisibility<T>(scene: Scene, draw: () => T): T {
   const admitted = admittedSceneMeshes(scene);
   if (!admitted) return draw();
-  const included = new Set(admitted);
-  const restore: AbstractMesh[] = [];
+  const scope = scopes.get(scene)!;
+  const included = scope.cached!.meshSet;
+  const restore = scope.restore.length ? [] : scope.restore;
   try {
     for (const mesh of scene.meshes) {
       if (included.has(mesh) || !mesh.isEnabled(false)) continue;
@@ -82,6 +115,7 @@ export function withSceneStreamNativeVisibility<T>(scene: Scene, draw: () => T):
     return draw();
   } finally {
     for (const mesh of restore) if (!mesh.isDisposed()) mesh.setEnabled(true);
+    restore.length = 0;
   }
 }
 
@@ -95,8 +129,11 @@ export function createSceneStreamAdmission(scene: Scene, binding: SnapshotSceneB
   const ensureScope = (): Scope => {
     let scope = scopes.get(scene);
     if (!scope) {
-      scope = { binding, baseline: new Set(scene.meshes), textures: new Set(scene.textures),
-        particles: new Set(scene.particleSystems), slots: new Map() };
+      scope = {
+        binding, baseline: new Set(scene.meshes), textures: new Set(scene.textures),
+        particles: new Set(scene.particleSystems), slots: new Map(), restore: [],
+        textureScratch: new Set(), liveScratch: new Set(),
+      };
       scopes.set(scene, scope);
     }
     return scope;
@@ -107,7 +144,7 @@ export function createSceneStreamAdmission(scene: Scene, binding: SnapshotSceneB
     heldRoots.clear(); heldLights.clear();
   };
   const prune = () => {
-    if ([...streams.values()].some((stream) => stream.loading)) return;
+    for (const stream of streams.values()) if (stream.loading) return;
     const scope = scopes.get(scene);
     if (!scope) return;
     // Removed precedes per-actor despawn on the reliable worker channel.
@@ -118,14 +155,14 @@ export function createSceneStreamAdmission(scene: Scene, binding: SnapshotSceneB
     // Admitted parent consumers are still checked normally by scene-perf.
     if (scene.getWaitingItemsCount() > 0) return;
     const admitted = admittedSceneMeshes(scene)!;
+    const admittedSet = scope.cached!.meshSet;
     const textures = admittedSceneTextures(scene, admitted)!;
     try {
       for (const texture of scene.textures) {
         if (!textures.has(texture) && !texture.isRenderTarget && (texture.loadingError || !texture.isReady())) return;
       }
-      const meshes = new Set(admitted);
       for (const mesh of scene.meshes) {
-        if (!meshes.has(mesh) && !mesh.isDisposed() && !mesh.isReady(true)) return;
+        if (!admittedSet.has(mesh) && !mesh.isDisposed() && !mesh.isReady(true)) return;
       }
     } catch {
       // A retired import's native failure must not become the parent's failure.
@@ -167,13 +204,32 @@ export function createSceneStreamAdmission(scene: Scene, binding: SnapshotSceneB
         const scope = scopes.get(scene);
         if (scope) scope.cached = undefined;
       }
-      if (command.type === "sceneLoading" || command.type === "activeScene") { clear(); return; }
-      if (command.type === "sceneStreamLoading") {
-        const previous = streams.get(command.actorGuid);
-        if (previous && previous.loadId >= command.streamLoadId) return;
-        streams.set(command.actorGuid, { loadId: command.streamLoadId, loading: true });
-        ensureScope(); markSceneReadinessDirty(scene);
-      } else if (command.type === "spawn" && command.sceneStreamActorGuid) {
+      const event = decodeSceneStreamEvent(command);
+      if (event) switch (event.kind) {
+        case "reset":
+          clear();
+          return;
+        case "loading": {
+          const { actorGuid, streamLoadId } = event.identity;
+          const previous = streams.get(actorGuid);
+          if (previous && previous.loadId >= streamLoadId) return;
+          streams.set(actorGuid, { loadId: streamLoadId, loading: true });
+          ensureScope(); markSceneReadinessDirty(scene);
+          break;
+        }
+        case "removed": {
+          const { actorGuid, streamLoadId } = event.identity;
+          if (streams.get(actorGuid)?.loadId !== streamLoadId) return;
+          streams.delete(actorGuid);
+          const scope = scopes.get(scene);
+          if (scope) scope.cached = undefined;
+          prune();
+          break;
+        }
+        case "realized":
+          break;
+      }
+      if (command.type === "spawn" && command.sceneStreamActorGuid) {
         const owner = streams.get(command.sceneStreamActorGuid);
         if (owner?.loading && owner.loadId === command.streamLoadId)
           ensureScope().slots.set(command.slotId, {
@@ -185,12 +241,6 @@ export function createSceneStreamAdmission(scene: Scene, binding: SnapshotSceneB
         const scope = scopes.get(scene);
         if (scope?.slots.get(command.slotId)?.instanceActorGuid === command.actorGuid)
           scope.slots.delete(command.slotId);
-      } else if (command.type === "sceneStreamRemoved") {
-        if (streams.get(command.actorGuid)?.loadId !== command.streamLoadId) return;
-        streams.delete(command.actorGuid);
-        const scope = scopes.get(scene);
-        if (scope) scope.cached = undefined;
-        prune();
       }
     },
     publish(slotIds: readonly number[], identity?: SceneStreamIdentity): boolean {

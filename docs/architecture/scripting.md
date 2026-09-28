@@ -377,6 +377,10 @@ All streaming nodes require a **Target** reference typed as `SceneStreamingActor
 
 Blocking operations keep realization and resource preparation running while gameplay simulation is paused. Their pause ownership is separate from manual Pause and other blocking operations; a graph continuation waits for overlapping blocks and manual Pause to clear. A destroyed caller cannot resume its blocked graph. Async loads can overlap; each actor has its own state and progress. Unloading cancels pending work and removes only that actor's streamed instance, including nested instances. These nodes have no editor streaming path.
 
+- **Spawn Actor** from a streamed graph creates an instance-owned actor parented to the `SceneStreamingActor`, interprets its transform in the streamed instance's space at the streaming origin, and destroys it with that instance.
+- **Get Scene Reference** from a streamed owner returns that instance's Scene. Setting its Gravity still writes the session's single world physics gravity.
+- A failed or cancelled **Load Scene Blocking** / **Unload Scene Blocking** reports an error, stops that graph at the node, and does not fire **Then**. Async variants report the error and continue immediately.
+
 The nodes realize actors and render resources from the prepared Play/player Scene library; source Scene assets and their dependencies are loaded before these calls. Child Scene Defaults, baked navigation and default SceneLayers do not replace or extend the parent's settings automatically. See [runtime ownership and preparation](render.md#additive-scene-streaming).
 
 ### Actor component graph APIs
@@ -392,6 +396,7 @@ Engine classes expose an optional script catalog in `@babylonslate/object-model`
 | `SkyboxComponent` | Size | — | — |
 | `CameraComponent` | Field Of View, Orthographic Size, Projection Mode, Near Clip, Far Clip | Possess | — |
 | `SpringArmComponent` | Arm Length, Enable Location Lag, Location Lag Speed, Max Location Lag Distance, Enable Rotation Lag, Rotation Lag Speed, Draw Debug Lag | — | — |
+| `CableComponent` | Enabled; Cable Length, Segments, Cable Width, Sides, Tile Material, Material; Attach Start/End, End Position, Target Actor ID, Target Component ID; Solver Iterations, Enable Stiffness, Gravity Scale, Cable Force, Damping, Substep Time, Max Substeps, Enable Collision, Collision Friction, Sleep Threshold, Sleep Delay | — | — |
 | `LightComponent` | Enabled, Color, Intensity, Kind, Range, Inner Angle, Outer Angle, Cast Shadows | — | — |
 | `HemisphericFillLightComponent` | Enabled, Color, Ground Color, Intensity | — | — |
 | `FogVolumeComponent` | Enabled (`bool`), Shape (`string`: `box` / `sphere`), Size (`vec3`), Density (`float`), Edge Falloff (`float`) | — | — |
@@ -457,7 +462,7 @@ The `ctx` handed to compiled code copies the world's `TickContext`: `self`, `del
 ### Codegen invariants
 
 - Impure node output slots are declared once at the top of each entry point, never inside a branch body — a node reachable from two `Sequence` outputs or both `Branch` arms must not redeclare them, and downstream reads must stay in scope. Slot temps are named from the pin **id** (`_n_<node>_<id>`), not the Title Case display name, so writers (`ctx.output`) and pure readers stay on the same variable.
-- Editor / debugger compiles (`compileGraphDocuments`, `instrumentInfiniteLoops: true`) prepend `ctx.checkInfiniteLoop();` to each impure exec emit and to generated `for` / `while` bodies (for example the gamepad connect loop). Play prepare / toolbar Compile reuse `GraphScriptCompileCache` (`p20-play-compile-audio`) so an unchanged graph is not recompiled. `graphCompileSignature` omits node positions on the **event graph and every function graph**; Class `members` (including variable defaults) stay in the key. Release export compiles (`stripDevelopmentOnly: true`) leave the flag off by default — no checks in shipped JS. Call Function recursion shares the same per-tick budget.
+- Editor / debugger compiles (`compileGraphDocuments`, `instrumentInfiniteLoops: true`) prepend `ctx.checkInfiniteLoop();` to each impure exec emit and to generated `for` / `while` bodies (for example the gamepad connect loop). Play prepare / toolbar Compile reuse `GraphScriptCompileCache` (`p20-play-compile-audio`) so an unchanged graph is not recompiled. `graphCompileSignature` omits node positions on the **event graph and every function graph**; Class `members` (including variable defaults) stay in the key. Per-document fingerprints are cached by document content reference (documents are immutable), so an unchanged open graph is not re-serialized when another document changes. Release export compiles (`stripDevelopmentOnly: true`) leave the flag off by default — no checks in shipped JS. Call Function recursion shares the same per-tick budget.
 - `ctx.checkInfiniteLoop` is always a function on `ScriptContext` (no-op when the debugger guard is missing or disabled) so mixed or stale instrumented scripts cannot throw `is not a function`.
 - A node that emits `await` must call `ctx.requestAsync()` (or declare `latent: true`) so the entry point is emitted `async`.
 - Statements must not introduce fixed-name temporaries; assign into `ctx.output(pin)` slots instead, since a node can be emitted more than once per function.

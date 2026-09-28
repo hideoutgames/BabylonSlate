@@ -47,7 +47,7 @@ Bytes per texel (unit-tested): RGBA8 = 4, ASTC 4×4 = 1, plus ~⅓ for mipmaps.
 - Output Log and Compiler Results window-virtualise to viewport plus overscan (`p20-log-virtualize`; `WindowedList` / TreeView arithmetic). Ring buffer cap 500 stays. SearchDialog (AssetPicker / ClassPicker) uses the same helper. Place Actors catalogs stay unwindowed. Global Search **result** body is not virtualised.
 - One `Engine` per **open project** (hidden constructor canvas). Scene viewport, Play overlay, Material Preview, **and Prefab Preview** are `sharedEngine` clients (`p18-shared-prefab-engine`). Close project disposes Engine + ResourceCache.
 - Play/Preview renders at project `playFrameCap` (default 60), not the editor viewport cap.
-- Construct textures only through `ResourceCache` (stable blob URL + canonical sampling flags). **One cache per Engine lifetime** (`p20-shared-resource-cache`): Play / Prefab / Material reuse the viewport cache even when `sharedEngine` is set. Each `createEngine` handle holds leases on its textures (`bindResourceCacheToHandle`); LRU eviction of **unreferenced** entries (not leased by any handle) trims toward 80% of the Engine Settings ceiling (default 2 GB). `getTexture` accounts sniffed KTX2/PNG sizes.
+- Construct asset image textures only through `ResourceCache` (stable blob URL + canonical sampling flags). Renderer-owned dynamic targets (`RenderTargetTexture` and `RawTexture` data/fallback textures) are exempt and account their bytes through `beginManagedRenderAllocation`. **One cache per Engine lifetime** (`p20-shared-resource-cache`): Play / Prefab / Material reuse the viewport cache even when `sharedEngine` is set. Each `createEngine` handle holds leases on its textures (`bindResourceCacheToHandle`); LRU eviction of **unreferenced** entries (not leased by any handle) trims toward 80% of the Engine Settings ceiling (default 2 GB). `getTexture` accounts sniffed KTX2/PNG sizes.
 - Editor idle `freezeActiveMeshes()` / static `freezeWorldMatrix()` / `material.freeze()` / unique-id maps / scene-load `forceCompilationAsync` are **Done** (`p20-editor-scene-freeze`). Visible editor stays at `viewportFrameCap` — do not dirty-skip an on-screen scene. Remount dialog: Collecting Assets → Loading Models → Warming Shaders.
 - Play prepare caches compiled scripts by graph content hash and loads Audio `source` chunks on first `playSound` (`p20-play-compile-audio`, **Done**). Overlay Play and `apps/player` share the lazy audio path.
 - Global Search rebuilds when the dialog is initiated (`p20-search-on-demand`, **Done**), not on project open. Async/chunked; include open-document JSON. No on-disk search cache.
@@ -163,6 +163,13 @@ variants during warmup, with zero compilations during activation preparation or
 subsequent handoffs. All handoffs retained zero graph rebuilds and one allocation
 within the same ceiling. A driver call can exceed the dispatch time budget; these
 small-scene measurements do not establish large-scene or mobile frame-time bounds.
+
+These staged measurements describe the removed receiver warmup. Handoffs now move
+the retained map in place and exchange receiver light indices
+([render](../architecture/render.md#camera-driven-shadow-handoffs)). The same
+cases now require activation within the first prepared frame, with zero
+preparation and frame compilations and no graph builds. Timings have not been
+re-measured on native hardware since this change.
 
 ### Static shadow reuse comparison
 

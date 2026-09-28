@@ -207,8 +207,17 @@ export function flattenOutliner(
     }
   };
 
+  const rootActorsByFolder = new Map<
+    string | null | undefined,
+    SerializedActor[]
+  >();
+  for (const actor of childrenOf.get(null) ?? []) {
+    const bucket = rootActorsByFolder.get(actor.folderId) ?? [];
+    bucket.push(actor);
+    rootActorsByFolder.set(actor.folderId, bucket);
+  }
   const actorsAtFolderRoot = (folderId: string | null) =>
-    (childrenOf.get(null) ?? []).filter((actor) => actor.folderId === folderId);
+    rootActorsByFolder.get(folderId) ?? [];
 
   const walkFolders = (parentFolderId: string | null, depth: number) => {
     for (const folder of foldersByParent.get(parentFolderId) ?? []) {
@@ -273,6 +282,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
     openDocuments,
     applySceneChange,
     assetRegistry,
+    registryVersion,
     loadGraphDocument,
     openDocument,
   } = useDocuments();
@@ -317,17 +327,21 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
     [selectedActorIds],
   );
   // Registry entries can change without replacing the registry instance.
-  const classAssetById = new Map<string, IndexedAsset>();
-  for (const asset of assetRegistry?.list() ?? []) {
-    if (asset.header.type !== "Class") continue;
-    const classId = classIdFromClassAsset(asset);
-    if (!classAssetById.has(classId)) classAssetById.set(classId, asset);
-  }
+  const classAssetById = useMemo(() => {
+    void registryVersion;
+    const assets = new Map<string, IndexedAsset>();
+    for (const asset of assetRegistry?.list() ?? []) {
+      if (asset.header.type !== "Class") continue;
+      const classId = classIdFromClassAsset(asset);
+      if (!assets.has(classId)) assets.set(classId, asset);
+    }
+    return assets;
+  }, [assetRegistry, registryVersion]);
 
-  const parentOf = useMemo(
-    () => classParentLookup(assetRegistry?.list() ?? []),
-    [assetRegistry],
-  );
+  const parentOf = useMemo(() => {
+    void registryVersion;
+    return classParentLookup(assetRegistry?.list() ?? []);
+  }, [assetRegistry, registryVersion]);
 
   const nodes = useMemo(
     () =>

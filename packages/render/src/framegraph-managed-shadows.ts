@@ -70,6 +70,7 @@ export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTas
   private boundCamera: Camera | undefined;
   private boundShadows: Array<{
     generator: ShadowGenerator;
+    light: Light;
     enabled: boolean;
     shadowEnabled: boolean;
   }> = [];
@@ -124,8 +125,11 @@ export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTas
       generators.every((generator, index) => {
         const previous = this.boundShadows[index];
         const light = generator.getLight();
+        // A pooled local map can move to another light without reallocating;
+        // `admitted` must follow it or the object pass clears its shadows.
         return (
           previous.generator === generator &&
+          previous.light === light &&
           previous.enabled === light.isEnabled() &&
           previous.shadowEnabled === light.shadowEnabled
         );
@@ -135,6 +139,7 @@ export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTas
     this.boundCamera = camera;
     this.boundShadows = generators.map((generator) => ({
       generator,
+      light: generator.getLight(),
       enabled: generator.getLight().isEnabled(),
       shadowEnabled: generator.getLight().shadowEnabled,
     }));
@@ -164,7 +169,7 @@ export function unsupportedManagedShadows(scene: Scene): string | undefined {
   const controller = findSceneShadowController(scene);
   for (const light of scene.lights) {
     for (const [camera, generator] of light.getShadowGenerators() ?? []) {
-      const owned = controller?.generator(light);
+      const owned = controller?.boundGenerator(light);
       if (!owned || owned !== generator)
         return "Unmanaged shadow allocations require classic rendering.";
       if (camera !== null || owned.camera !== null)
@@ -201,17 +206,21 @@ export class ManagedShadowsTask extends FrameGraphTask {
     this.objects = objects;
   }
 
-  /** Changed bindings require readiness, not new graph tasks or render-pass IDs. */
+  /**
+   * Changed allocations require readiness, not new graph tasks or render-pass
+   * IDs. Scene light order is irrelevant: a moved map keeps its allocation.
+   */
   needsPreparation(current = this.generators()): boolean {
     if (this.changedDuringFrame) return true;
     return (
       current.length !== this.borrowed.length ||
-      current.some((generator, index) => {
-        const previous = this.borrowed[index];
-        return (
-          previous.generator !== generator ||
-          previous.map !== generator.getShadowMap() ||
-          previous.texture !== generator.getShadowMap()?.getInternalTexture()
+      current.some((generator) => {
+        const map = generator.getShadowMap();
+        return !this.borrowed.some(
+          (previous) =>
+            previous.generator === generator &&
+            previous.map === map &&
+            previous.texture === map?.getInternalTexture(),
         );
       })
     );
@@ -222,8 +231,9 @@ export class ManagedShadowsTask extends FrameGraphTask {
     const controller = findSceneShadowController(this.scene);
     const generators = this.currentGenerators;
     let count = 0;
+    // Standby maps stay bound: receivers keep sampling them at neutral darkness.
     for (const light of this.scene.lights) {
-      const generator = controller?.generator(light);
+      const generator = controller?.boundGenerator(light);
       if (generator) generators[count++] = generator;
     }
     // Truncate after overwriting; clearing first would drop the backing store.
@@ -316,7 +326,7 @@ export class ManagedShadowsTask extends FrameGraphTask {
   private isCurrent(entry: BorrowedMap): boolean {
     const light = entry.generator.getLight();
     return (
-      findSceneShadowController(this.scene)?.generator(light) ===
+      findSceneShadowController(this.scene)?.boundGenerator(light) ===
         entry.generator &&
       entry.generator.getShadowMap() === entry.map &&
       entry.map.getInternalTexture() === entry.texture

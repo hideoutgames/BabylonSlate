@@ -457,6 +457,9 @@ importers:
       '@babylonslate/assets':
         specifier: workspace:*
         version: link:../assets
+      '@babylonslate/core':
+        specifier: workspace:*
+        version: link:../core
       '@babylonslate/input':
         specifier: workspace:*
         version: link:../input

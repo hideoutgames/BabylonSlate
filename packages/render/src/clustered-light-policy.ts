@@ -35,6 +35,11 @@ export function registerClusteredLightPolicy(
   };
 }
 
+/** Clustered Forward owns light order and cluster membership for this scene. */
+export function hasClusteredLightPolicy(scene: Scene): boolean {
+  return policies.has(scene);
+}
+
 export function syncClusteredLightPolicy(scene: Scene): void {
   policies.get(scene)?.sync();
 }

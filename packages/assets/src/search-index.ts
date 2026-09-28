@@ -126,9 +126,7 @@ export class ProjectSearchIndex {
   }
 
   async upsertAsset(registry: AssetRegistry, path: string): Promise<void> {
-    const asset =
-      registry.list().find((entry) => entry.path === path) ??
-      registry.getByGuid(path);
+    const asset = registry.getByPath(path) ?? registry.getByGuid(path);
     if (!asset) {
       this.removeAsset(path);
       return;
