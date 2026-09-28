@@ -236,10 +236,12 @@ function useAnimGraphDocument() {
       asAnimGraph((entry?.content ?? {}) as Record<string, unknown>, catalog),
     [entry?.content, catalog],
   );
-  const commit = (next: AnimGraphDocument) => {
+  /** `mergeKey` groups one scrub's edits into one undo entry. */
+  const commit = (next: AnimGraphDocument, mergeKey?: string) => {
     void applyAssetDocumentChange(
       documentId,
       next as unknown as Record<string, unknown>,
+      mergeKey,
     );
   };
   return { doc, commit, assetRegistry, documentId, catalog };
@@ -640,7 +642,7 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
 function transitionPropertyRows(
   doc: AnimGraphDocument,
   transition: AnimTransition,
-  commit: (next: AnimGraphDocument) => void,
+  commit: (next: AnimGraphDocument, mergeKey?: string) => void,
   titleFromSource: boolean,
 ): {
   title: string;
@@ -668,7 +670,10 @@ function transitionPropertyRows(
         value: transition.blendSeconds,
         min: 0,
         onChange: (blendSeconds) =>
-          commit(patchTransition(doc, transition.id, { blendSeconds })),
+          commit(
+            patchTransition(doc, transition.id, { blendSeconds }),
+            `anim-graph:transition:${transition.id}:blendSeconds`,
+          ),
       },
       {
         id: `${transition.id}-priority`,
@@ -676,7 +681,10 @@ function transitionPropertyRows(
         label: "Priority",
         value: transition.priority,
         onChange: (priority) =>
-          commit(patchTransition(doc, transition.id, { priority })),
+          commit(
+            patchTransition(doc, transition.id, { priority }),
+            `anim-graph:transition:${transition.id}:priority`,
+          ),
       },
       {
         id: `${transition.id}-direction`,
@@ -836,7 +844,11 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
           label: "Speed",
           value: selected.speed,
           min: 0.001,
-          onChange: (speed) => commit(patchState(doc, selected.id, { speed })),
+          onChange: (speed) =>
+            commit(
+              patchState(doc, selected.id, { speed }),
+              `anim-graph:state:${selected.id}:speed`,
+            ),
         },
         {
           id: "loop",

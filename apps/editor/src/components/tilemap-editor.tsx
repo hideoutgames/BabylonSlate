@@ -157,8 +157,8 @@ export function TilemapDetailsPanel(_props: IDockviewPanelProps) {
     <PanelFrame data-testid="tilemap-details-panel">
       <TilemapDetails
         payload={payload}
-        onChange={(next) => {
-          void applyAssetDocumentChange(documentId, next);
+        onChange={(next, mergeKey) => {
+          void applyAssetDocumentChange(documentId, next, mergeKey);
         }}
       />
     </PanelFrame>
@@ -198,18 +198,21 @@ export function TilemapDetails({
     tilemap.layers.find((entry) => entry.id === selectedLayerId) ??
     tilemap.layers[0];
 
-  const commit = (next: TilemapPayload) => {
-    onChange(next as unknown as Record<string, unknown>);
+  /** `field` marks a continuous edit whose scrub is one undo step. */
+  const commit = (next: TilemapPayload, field?: string) => {
+    const record = next as unknown as Record<string, unknown>;
+    if (field) onChange(record, `tilemap:${field}`);
+    else onChange(record);
   };
 
-  const patchLayer = (patch: Partial<TilemapLayer>) => {
+  const patchLayer = (patch: Partial<TilemapLayer>, field?: string) => {
     if (!layer) return;
     commit({
       ...tilemap,
       layers: tilemap.layers.map((entry) =>
         entry.id === layer.id ? { ...entry, ...patch } : entry,
       ),
-    });
+    }, field ? `layer:${layer.id}:${field}` : undefined);
   };
 
   const addTileset = async (guid: string | null) => {
@@ -239,7 +242,7 @@ export function TilemapDetails({
       label: "Map Width",
       value: tilemap.width,
       min: 1,
-      onChange: (value) => commit(resizeTilemap(tilemap, value, tilemap.height)),
+      onChange: (value) => commit(resizeTilemap(tilemap, value, tilemap.height), "width"),
     },
     {
       id: "mapHeight",
@@ -247,28 +250,28 @@ export function TilemapDetails({
       label: "Map Height",
       value: tilemap.height,
       min: 1,
-      onChange: (value) => commit(resizeTilemap(tilemap, tilemap.width, value)),
+      onChange: (value) => commit(resizeTilemap(tilemap, tilemap.width, value), "height"),
     },
     {
       id: "tileWidth",
       kind: "number",
       label: "Tile Width",
       value: tilemap.tileWidth,
-      onChange: (value) => commit({ ...tilemap, tileWidth: value }),
+      onChange: (value) => commit({ ...tilemap, tileWidth: value }, "tileWidth"),
     },
     {
       id: "tileHeight",
       kind: "number",
       label: "Tile Height",
       value: tilemap.tileHeight,
-      onChange: (value) => commit({ ...tilemap, tileHeight: value }),
+      onChange: (value) => commit({ ...tilemap, tileHeight: value }, "tileHeight"),
     },
     {
       id: "chunkSize",
       kind: "number",
       label: "Chunk Size",
       value: tilemap.chunkSize,
-      onChange: (value) => commit({ ...tilemap, chunkSize: value }),
+      onChange: (value) => commit({ ...tilemap, chunkSize: value }, "chunkSize"),
     },
   ];
   const layerRows: PropertyRow[] = [];
@@ -308,7 +311,7 @@ export function TilemapDetails({
         kind: "number",
         label: "Order In Layer",
         value: layer.orderInLayer,
-        onChange: (orderInLayer) => patchLayer({ orderInLayer }),
+        onChange: (orderInLayer) => patchLayer({ orderInLayer }, "orderInLayer"),
       },
       {
         id: "layer-parallax",
@@ -316,7 +319,7 @@ export function TilemapDetails({
         label: "Parallax",
         value: [layer.parallax.x, layer.parallax.y, 0],
         axes: ["X", "Y"],
-        onChange: ([x, y]) => patchLayer({ parallax: { x, y } }),
+        onChange: ([x, y]) => patchLayer({ parallax: { x, y } }, "parallax"),
       },
     );
   }

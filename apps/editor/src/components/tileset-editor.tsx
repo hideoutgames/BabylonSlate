@@ -53,8 +53,8 @@ export function TilesetPreviewPanel(_props: IDockviewPanelProps) {
     <PanelFrame data-testid="tileset-preview-panel">
       <TilesetPreview
         payload={payload}
-        onChange={(next) => {
-          void applyAssetDocumentChange(documentId, next);
+        onChange={(next, mergeKey) => {
+          void applyAssetDocumentChange(documentId, next, mergeKey);
         }}
       />
     </PanelFrame>
@@ -71,8 +71,8 @@ export function TilesetDetailsPanel(_props: IDockviewPanelProps) {
     <PanelFrame data-testid="tileset-details-panel">
       <TilesetEditor
         payload={payload}
-        onChange={(next) => {
-          void applyAssetDocumentChange(documentId, next);
+        onChange={(next, mergeKey) => {
+          void applyAssetDocumentChange(documentId, next, mergeKey);
         }}
       />
     </PanelFrame>
@@ -84,7 +84,8 @@ export function TilesetPreview({
   onChange,
 }: {
   payload: Record<string, unknown>;
-  onChange?: (next: Record<string, unknown>) => void;
+  /** A collision paint drag passes one merge key so the stroke is one undo step. */
+  onChange?: (next: Record<string, unknown>, mergeKey?: string) => void;
 }) {
   const tileset = useMemo(
     () => ensureTilesetTiles(normalizeTilesetPayload(payload)),
@@ -107,18 +108,24 @@ export function TilesetPreview({
   const selected =
     tileset.tiles.find((tile) => tile.id === selectedId) ?? tileset.tiles[0];
 
-  const commit = (next: TilesetPayload) => {
-    onChange?.(ensureTilesetTiles(next) as unknown as Record<string, unknown>);
+  const commit = (next: TilesetPayload, mergeKey?: string) => {
+    const record = ensureTilesetTiles(next) as unknown as Record<string, unknown>;
+    if (mergeKey) onChange?.(record, mergeKey);
+    else onChange?.(record);
   };
 
-  const patchTiles = (tileIds: number[], patch: Partial<TilesetTile>) => {
+  const patchTiles = (
+    tileIds: number[],
+    patch: Partial<TilesetTile>,
+    mergeKey?: string,
+  ) => {
     const ids = new Set(tileIds);
     commit({
       ...tileset,
       tiles: tileset.tiles.map((tile) =>
         ids.has(tile.id) ? { ...tile, ...patch } : tile,
       ),
-    });
+    }, mergeKey);
   };
 
   const collisionValue = collisionEnum(selected?.collision);
@@ -221,14 +228,15 @@ export function TilesetPreview({
           if (editing) editing.setSelectedTileId(id);
           else setLocalSelectedIds([id]);
           if (editing?.paintCollision && selected) {
-            patchTiles([id], { collision: selected.collision });
+            patchTiles([id], { collision: selected.collision }, "tileset:paintCollision");
           }
         }}
         onSelectionChange={(ids) => {
           if (editing) editing.setSelectedTileIds(ids);
           else setLocalSelectedIds(ids);
           if (editing?.paintCollision && selected) {
-            patchTiles(ids, { collision: selected.collision });
+            // The selection grows on every pointer move of a paint drag.
+            patchTiles(ids, { collision: selected.collision }, "tileset:paintCollision");
           }
         }}
         onImageSize={(width, height) => {
@@ -269,7 +277,8 @@ export function TilesetEditor({
   onChange,
 }: {
   payload: Record<string, unknown>;
-  onChange: (next: Record<string, unknown>) => void;
+  /** `mergeKey` groups one scrub's edits into one undo entry. */
+  onChange: (next: Record<string, unknown>, mergeKey?: string) => void;
 }) {
   const tileset = useMemo(
     () => ensureTilesetTiles(normalizeTilesetPayload(payload)),
@@ -296,11 +305,14 @@ export function TilesetEditor({
   const selected =
     tileset.tiles.find((tile) => tile.id === selectedId) ?? tileset.tiles[0];
 
-  const commit = (next: TilesetPayload) => {
-    onChange(ensureTilesetTiles(next) as unknown as Record<string, unknown>);
+  /** `field` marks a continuous edit whose scrub is one undo step. */
+  const commit = (next: TilesetPayload, field?: string) => {
+    const record = ensureTilesetTiles(next) as unknown as Record<string, unknown>;
+    if (field) onChange(record, `tileset:${field}`);
+    else onChange(record);
   };
 
-  const patchTile = (patch: Partial<TilesetTile>) => {
+  const patchTile = (patch: Partial<TilesetTile>, field?: string) => {
     if (!selected) return;
     const ids = new Set(selectedIds);
     commit({
@@ -308,7 +320,7 @@ export function TilesetEditor({
       tiles: tileset.tiles.map((tile) =>
         ids.has(tile.id) ? { ...tile, ...patch } : tile,
       ),
-    });
+    }, field ? `tiles:${selectedIds.join(",")}:${field}` : undefined);
   };
 
   const preview = useTexturePreview(tileset.textureGuid);
@@ -370,14 +382,14 @@ export function TilesetEditor({
       kind: "number",
       label: "Margin",
       value: tileset.margin,
-      onChange: (value) => commit({ ...tileset, margin: value }),
+      onChange: (value) => commit({ ...tileset, margin: value }, "margin"),
     },
     {
       id: "spacing",
       kind: "number",
       label: "Spacing",
       value: tileset.spacing,
-      onChange: (value) => commit({ ...tileset, spacing: value }),
+      onChange: (value) => commit({ ...tileset, spacing: value }, "spacing"),
     },
   ];
   const tileRows: PropertyRow[] = [
@@ -420,7 +432,11 @@ export function TilesetEditor({
       label: "Frame Duration MS",
       value: selected?.animationFrameDurationMs ?? DEFAULT_TILE_ANIMATION_FRAME_DURATION_MS,
       min: 1,
-      onChange: (value) => patchTile({ animationFrameDurationMs: Math.max(1, Math.floor(value)) }),
+      onChange: (value) =>
+        patchTile(
+          { animationFrameDurationMs: Math.max(1, Math.floor(value)) },
+          "animationFrameDurationMs",
+        ),
     },
   ];
   if (collisionValue === "chain") {

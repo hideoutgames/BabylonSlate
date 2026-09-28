@@ -44,15 +44,21 @@ function useInputDocument() {
     isAxis ? "InputAxis" : "InputAction",
     doc?.content,
   );
-  const commit = (next: InputAssetPayload) =>
-    void applyAssetDocumentChange(documentId, { ...next });
-  const patch = (id: string, changes: Partial<Binding>) =>
-    commit({
-      ...asset,
-      bindings: asset.bindings.map((binding) =>
-        binding.id === id ? { ...binding, ...changes } : binding,
-      ),
-    });
+  /** `mergeKey` groups one scrub's edits into one undo entry. */
+  const commit = (next: InputAssetPayload, mergeKey?: string) =>
+    void (mergeKey
+      ? applyAssetDocumentChange(documentId, { ...next }, mergeKey)
+      : applyAssetDocumentChange(documentId, { ...next }));
+  const patch = (id: string, changes: Partial<Binding>, field?: string) =>
+    commit(
+      {
+        ...asset,
+        bindings: asset.bindings.map((binding) =>
+          binding.id === id ? { ...binding, ...changes } : binding,
+        ),
+      },
+      field ? `input:binding:${id}:${field}` : undefined,
+    );
   return {
     asset,
     isAxis,
@@ -390,7 +396,11 @@ export function InputBindingDetailsPanel(_props: IDockviewPanelProps) {
       label: digital ? "Value When Held" : "Scale",
       value: digital ? (binding.digitalValue ?? 1) : (binding.scale ?? 1),
       onChange: (value) =>
-        patch(binding.id, digital ? { digitalValue: value } : { scale: value }),
+        patch(
+          binding.id,
+          digital ? { digitalValue: value } : { scale: value },
+          digital ? "digitalValue" : "scale",
+        ),
     });
     if (!digital)
       rows.push(
@@ -401,14 +411,14 @@ export function InputBindingDetailsPanel(_props: IDockviewPanelProps) {
           value: binding.deadZone ?? 0,
           min: 0,
           max: 1,
-          onChange: (value) => patch(binding.id, { deadZone: value }),
+          onChange: (value) => patch(binding.id, { deadZone: value }, "deadZone"),
         },
         {
           id: "sensitivity",
           kind: "number",
           label: "Sensitivity",
           value: binding.sensitivity ?? 1,
-          onChange: (value) => patch(binding.id, { sensitivity: value }),
+          onChange: (value) => patch(binding.id, { sensitivity: value }, "sensitivity"),
         },
       );
     rows.push({

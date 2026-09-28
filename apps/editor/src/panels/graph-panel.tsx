@@ -463,7 +463,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
                 };
             const commit = commitLogicGraph(doc.ref.kind, doc.content, merged);
             if (commit.kind !== "graph") {
-              void applyAssetDocumentChange(documentId, commit.payload);
+              void applyAssetDocumentChange(documentId, commit.payload, commit.mergeKey);
               return;
             }
             void applyGraphChange(documentId, commit.graph);
@@ -486,7 +486,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
           const next = renameCustomEvent(graphContent, renameEventId, name, classId);
           const commit = commitLogicGraph(doc.ref.kind, doc.content, next);
           if (commit.kind === "graph") void applyGraphChange(documentId, commit.graph);
-          else void applyAssetDocumentChange(documentId, commit.payload);
+          else void applyAssetDocumentChange(documentId, commit.payload, commit.mergeKey);
         }}
       />
     </PanelFrame>
