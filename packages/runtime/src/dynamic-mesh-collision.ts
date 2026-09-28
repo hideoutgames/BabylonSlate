@@ -18,7 +18,7 @@ function componentChain(component: ActorComponent): ActorComponent[] {
   let current: ActorComponent | undefined = component;
   while (current && chain.length < 128 && !chain.includes(current)) {
     chain.push(current);
-    const parentId = current.parentId;
+    const parentId: string | null = current.parentId;
     current = parentId ? component.owner?.components.find((entry) => !entry.destroyed && (entry.guid === parentId || entry.sourceId === parentId)) : undefined;
   }
   return chain;
