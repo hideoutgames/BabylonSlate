@@ -22,6 +22,7 @@ const sandbox = await mkdtemp(join(tmpdir(), "BabylonSlate-installed-check-"));
 const installDir = join(sandbox, "installed");
 const userData = join(sandbox, "user-data");
 const hidden = [];
+const diagnostics = [];
 let executable;
 let archive;
 let app;
@@ -100,7 +101,20 @@ try {
   const chromiumArgs = platform === "windows" ? [] : ["--enable-unsafe-swiftshader"];
   // Extracted AppImages have no SUID sandbox helper on hosted runners.
   if (platform === "linux") chromiumArgs.push("--no-sandbox");
-  const launch = () => _electron.launch({ executablePath: executable, cwd: sandbox, args: [`--user-data-dir=${userData}`, ...chromiumArgs], env: cleanEnv, timeout: 60000 });
+  const observe = launched => {
+    const clip = text => String(text).slice(0, 300);
+    launched.process().stderr?.on("data", chunk => diagnostics.push(`host: ${clip(chunk).trim()}`));
+    const watch = window => {
+      window.on("console", message => { if (message.type() === "error") diagnostics.push(`console: ${clip(message.text())}`); });
+      window.on("pageerror", error => diagnostics.push(`page error: ${clip(error.message)}`));
+      window.on("requestfailed", request => diagnostics.push(`request failed: ${clip(request.url())} ${request.failure()?.errorText ?? ""}`));
+      window.on("response", response => { if (response.status() >= 400) diagnostics.push(`HTTP ${response.status()}: ${clip(response.url())}`); });
+    };
+    launched.windows().forEach(watch);
+    launched.on("window", watch);
+    return launched;
+  };
+  const launch = async () => observe(await _electron.launch({ executablePath: executable, cwd: sandbox, args: [`--user-data-dir=${userData}`, ...chromiumArgs], env: cleanEnv, timeout: 60000 }));
   app = await launch();
   // macOS reports the /private/var target of the /var temporary directory symlink.
   assert.equal(await realpath(await app.evaluate(({ app }) => app.getPath("userData"))), await realpath(userData));
@@ -196,4 +210,7 @@ await cleanupStep("Sandbox removal failed", async () => {
   assert.equal(dirname(resolve(sandbox)), resolve(tmpdir()));
   await rm(sandbox, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
 });
-if (failure) throw failure;
+if (failure) {
+  if (diagnostics.length) console.error(`Packaged app diagnostics (last ${Math.min(diagnostics.length, 40)}):\n${diagnostics.slice(-40).join("\n")}`);
+  throw failure;
+}
