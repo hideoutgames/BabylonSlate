@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { openMainScene, openTestProject, submitCreateOrOpenListed } from "./open-test-project";
+import { pickCatalogItem } from "./pick-catalog-item";
 import { clickPlayAndWaitForOverlay } from "./play";
 import { readSaveAllDiagnostics } from "./save-all";
 
@@ -251,9 +252,12 @@ test.describe("P11 behaviour tree and navigation acceptance", () => {
     await openMainScene(page);
     await placeActor(page, "empty");
     await page.getByTestId("details-add-component").click();
-    await page
-      .getByTestId("add-component-catalog-item-BehaviourTreeComponent")
-      .click();
+    await pickCatalogItem(
+      page,
+      "add-component-catalog",
+      "BehaviourTreeComponent",
+      "Behaviour Tree",
+    );
     const treeGuid = await guidForPath(page, "assets/Patrol.bt.babasset");
     expect(treeGuid.length).toBeGreaterThan(0);
     await pickSelectedAsset(page, "Behaviour Tree", treeGuid);

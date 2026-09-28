@@ -1,15 +1,15 @@
 import { registerPlugin } from "@capacitor/core";
-import { getHostPlatform } from "./platform";
+import { isMobilePlatform } from "./platform";
 
 /**
  * Memory counters for the Play debugger stats HUD. Every field is optional:
  * each source reports only where the platform exposes it.
  *
  * - `jsHeapBytes`: JS heap in use, Chromium/Electron only (`performance.memory`).
- * - `appFootprintBytes`: host app process footprint on iOS (excludes the
- *   separate WKWebView content process, which iOS does not expose).
- * - `appAvailableBytes`: bytes until jetsam would kill the app process.
- * - `systemAvailableBytes`: device-wide free + inactive + purgeable memory.
+ * - `appFootprintBytes`: native host process footprint on iOS/Android (excludes
+ *   the separate WebView content process).
+ * - `appAvailableBytes`: bytes until iOS jetsam would kill the app process.
+ * - `systemAvailableBytes`: device-wide memory exposed by the native host.
  */
 export type HostMemoryStats = {
   jsHeapBytes?: number;
@@ -43,8 +43,8 @@ export async function getHostMemoryStats(): Promise<HostMemoryStats | null> {
     stats.jsHeapBytes = memory.usedJSHeapSize;
   }
 
-  // The native plugin is iOS-only; Android and desktop have no bridge.
-  if (getHostPlatform() === "ios") {
+  // First-party iOS and Android shells expose host-process counters.
+  if (isMobilePlatform()) {
     try {
       const native = await BabylonSlateMemory.stats();
       if (typeof native.appFootprintBytes === "number") {

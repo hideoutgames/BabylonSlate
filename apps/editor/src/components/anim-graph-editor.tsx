@@ -590,7 +590,7 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
 
   return (
     <PanelFrame className="flex-1">
-      <div className="flex h-full min-h-0 flex-col" data-testid="anim-graph-editor">
+      <div className="anim-graph-canvas flex h-full min-h-0 flex-col" data-testid="anim-graph-editor">
         <GraphEditor
           initialGraph={initialGraph}
           commitPositionsOnDragEnd

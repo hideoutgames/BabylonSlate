@@ -1,6 +1,13 @@
 import { Handle, Position, useStore, type NodeProps } from "@xyflow/react";
 import { useCallback, useMemo, useRef, type MouseEvent } from "react";
 import {
+  Columns3Icon,
+  ListOrderedIcon,
+  PlayIcon,
+  SplitIcon,
+  type LucideIcon,
+} from "lucide-react";
+import {
   ContextMenuOverlay,
   humanizePropertyLabel,
   useContextMenu,
@@ -9,7 +16,7 @@ import {
 import { cn } from "@babylonslate/ui/lib/utils";
 import { BlueprintNodeShell, type CanvasNode } from "./graph-nodes";
 import { useGraphEditorContext } from "./graph-editor-context";
-import type { NodeVisualRole } from "./node-theme";
+import { nodeRoleClass, type NodeVisualRole } from "./node-theme";
 
 const DOUBLE_TAP_MS = 350;
 
@@ -40,6 +47,13 @@ function treeRole(
   if (kind === "task") return "bt-task";
   return "bt-composite";
 }
+
+const KIND_ICON: Record<string, LucideIcon> = {
+  selector: SplitIcon,
+  sequence: ListOrderedIcon,
+  parallel: Columns3Icon,
+  task: PlayIcon,
+};
 
 function treeState(running: boolean, lastResult: string | null): string {
   if (running) return "running";
@@ -78,9 +92,10 @@ function TreePinHandle({
       aria-label={label}
       data-pin-type="exec"
       className={cn(
-        "!flex !size-11 !min-h-11 !min-w-11 items-center justify-center",
+        "bt-pin !flex !size-6 !min-h-6 !min-w-6 items-center justify-center rounded-full",
+        "pointer-coarse:!size-11 pointer-coarse:!min-h-11 pointer-coarse:!min-w-11",
         "!border-0 !bg-transparent touch-manipulation",
-        pending && "ring-2 ring-primary ring-offset-1 ring-offset-card",
+        pending && "ring-2 ring-primary",
       )}
       onClick={(event) => {
         event.stopPropagation();
@@ -88,18 +103,9 @@ function TreePinHandle({
       }}
     >
       <span
-        className={cn(
-          "graph-pin-visual block rotate-45 rounded-sm border-2",
-          connected ? "border-card" : "",
-        )}
+        className="graph-pin-visual bt-pin-visual block size-2.5 rotate-45 rounded-[2px] border-[1.5px]"
         data-pin-shape="diamond"
         data-pin-connected={connected ? "true" : "false"}
-        style={{
-          width: "var(--graph-pin-size, 22px)",
-          height: "var(--graph-pin-size, 22px)",
-          background: connected ? "var(--pin-exec)" : "transparent",
-          borderColor: connected ? undefined : "var(--pin-exec)",
-        }}
         aria-hidden="true"
       />
     </Handle>
@@ -159,14 +165,25 @@ export function TreeNode({ id, data, selected }: NodeProps<CanvasNode>) {
     [id, onAttachmentDoubleClick, onAttachmentSelect],
   );
 
+  const role = treeRole(kind, protectedNode);
+  const KindIcon = KIND_ICON[kind] ?? PlayIcon;
+  const kindLabel = protectedNode
+    ? `Root ${humanizePropertyLabel(kind)}`
+    : humanizePropertyLabel(kind);
+  const stateLabel = running
+    ? "Running"
+    : lastResult
+      ? humanizePropertyLabel(lastResult)
+      : "";
+
   return (
     <BlueprintNodeShell
       nodeId={id}
       title={title}
-      role={treeRole(kind, protectedNode)}
+      role={role}
       selected={selected}
       data={data}
-      compact
+      card
     >
       {protectedNode ? null : (
         <TreePinHandle
@@ -179,7 +196,7 @@ export function TreeNode({ id, data, selected }: NodeProps<CanvasNode>) {
       )}
       <button
         type="button"
-        className="bt-node-drag-handle flex w-full items-center justify-between gap-2 px-3 py-1 text-left text-xs text-muted-foreground"
+        className="bt-node-drag-handle flex h-12 w-full items-center gap-2.5 px-2.5 text-left"
         data-testid={`bt-node-${id}`}
         data-running={running ? "true" : "false"}
         data-last-result={lastResult ?? ""}
@@ -195,26 +212,53 @@ export function TreeNode({ id, data, selected }: NodeProps<CanvasNode>) {
         onPointerUp={nodeMenu.bind.onPointerUp}
         onPointerCancel={nodeMenu.bind.onPointerCancel}
       >
-        <span>{humanizePropertyLabel(kind)}</span>
         <span
-          className="flex size-5 items-center justify-center rounded-full bg-background text-[10px] font-semibold text-foreground"
+          className={cn(
+            "flex size-6 shrink-0 items-center justify-center rounded text-node-title",
+            nodeRoleClass(role),
+          )}
+          aria-hidden="true"
+        >
+          <KindIcon className="size-3.5" />
+        </span>
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate text-sm font-medium leading-5 text-foreground" title={title}>
+            {title}
+          </span>
+          <span className="flex min-w-0 items-center gap-1 text-xs leading-4 text-muted-foreground">
+            <span className="truncate">{kindLabel}</span>
+            <span
+              className="bt-state flex shrink-0 items-center gap-1"
+              data-testid={`bt-result-${id}`}
+              data-state={state}
+              aria-live="polite"
+            >
+              {stateLabel ? (
+                <>
+                  <span
+                    className={cn(
+                      "bt-state-dot size-1.5 rounded-full",
+                      running && "motion-safe:animate-pulse",
+                    )}
+                    aria-hidden="true"
+                  />
+                  {stateLabel}
+                </>
+              ) : null}
+            </span>
+          </span>
+        </span>
+        <span
+          className="flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-medium tabular-nums text-muted-foreground"
+          title="Priority"
           data-testid={`bt-sort-${id}`}
         >
           {sortIndex}
         </span>
       </button>
-      <div
-        className="min-h-5 px-3 text-xs leading-5"
-        data-testid={`bt-result-${id}`}
-        aria-live="polite"
-      >
-        {running
-          ? "Running"
-          : lastResult
-            ? humanizePropertyLabel(lastResult)
-            : "\u00a0"}
-      </div>
-      {decorators.map((row) => (
+      {decorators.length + services.length > 0 ? (
+        <div className="flex flex-col border-t border-border py-1">
+          {decorators.map((row) => (
         <AttachmentRow
           key={row.id}
           prefix="Decorator"
@@ -237,7 +281,9 @@ export function TreeNode({ id, data, selected }: NodeProps<CanvasNode>) {
           items={contextMenuItemsForAttachment?.(id, row.id) ?? []}
           onClick={(event) => handleAttachmentClick(event, row.id)}
         />
-      ))}
+          ))}
+        </div>
+      ) : null}
       {showChildren ? (
         <TreePinHandle
           nodeId={id}
@@ -275,15 +321,24 @@ function AttachmentRow({
       <button
         type="button"
         className={cn(
-          "nodrag nopan flex min-h-11 w-full items-center px-3 text-left text-xs",
-          tone === "decorator" ? "bg-node-bt-decorator/20" : "bg-node-bt-service/20",
-          selected && "bg-accent",
+          "nodrag nopan flex min-h-7 w-full items-center gap-2 px-2.5 text-left text-xs pointer-coarse:min-h-11",
+          "hover:bg-accent/50",
+          selected && "bg-accent hover:bg-accent",
         )}
         data-testid={testId}
+        data-selected={selected ? "true" : "false"}
         onClick={onClick}
         {...menu.bind}
       >
-        {prefix} · {label}
+        <span
+          className={cn(
+            "size-2 shrink-0 rounded-full",
+            tone === "decorator" ? "bg-node-bt-decorator" : "bg-node-bt-service",
+          )}
+          aria-hidden="true"
+        />
+        <span className="min-w-0 flex-1 truncate text-foreground" title={label}>{label}</span>
+        <span className="shrink-0 text-[10px] text-muted-foreground">{prefix}</span>
       </button>
       <ContextMenuOverlay menu={menu.menu} onClose={menu.closeMenu} />
     </>

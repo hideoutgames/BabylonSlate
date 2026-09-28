@@ -405,7 +405,7 @@ export function ContentBrowserNewAssetDialog({
           ) : null}
         </div>
         {error ? <Alert variant="destructive"><AlertTitle>Could Not Create Asset</AlertTitle><AlertDescription>{error}</AlertDescription></Alert> : null}
-        <div className="flex shrink-0 justify-end gap-2 border-t bg-muted/40 px-4 py-3">
+        <div className="flex shrink-0 justify-end gap-2 px-4 pt-3 pb-4">
           <Button
             type="button"
             variant="outline"

@@ -3,7 +3,7 @@ import test from "node:test";
 import { preflight } from "./preflight.mjs";
 
 const sha = "a".repeat(40);
-const request = { channel: "test", platforms: "both", version: "1.0.0", sourceSha: sha, runNumber: 4, runAttempt: 1, workflowRef: "refs/heads/main", eventName: "workflow_dispatch", dryRun: true };
+const request = { channel: "test", platforms: "all", version: "1.0.0", sourceSha: sha, runNumber: 4, runAttempt: 1, workflowRef: "refs/heads/main", eventName: "workflow_dispatch", dryRun: true };
 function fixture(patch = {}) {
   const reads = [];
   const dependencies = {
