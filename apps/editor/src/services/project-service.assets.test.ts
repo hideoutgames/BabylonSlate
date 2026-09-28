@@ -24,6 +24,10 @@ import {
   sniffImageSize,
   textureEncodeSize,
   writeTraceDocument,
+  applyOwnAssetWrite,
+  classifyExternalChanges,
+  snapshotIndexedMtimes,
+  type EncodeFn,
 } from "@babylonslate/assets";
 import { AUDIO_REVERB_CHUNK_ID } from "@babylonslate/assets";
 import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
@@ -55,6 +59,33 @@ function pngHeader(width: number, height: number): Uint8Array {
   view.setUint32(20, height);
   return bytes;
 }
+
+/** Stand-in encoder: a KTX2 header at the size the real encoders produce. */
+const standInEncode: EncodeFn = async (source, settings) => {
+  const size = sniffImageSize(source)!;
+  const encoded = textureEncodeSize(size.width, size.height, settings);
+  return { ktx2: ktx2Header(encoded.width, encoded.height), wallMs: 0 };
+};
+
+/** The id a 1x1 source's encode commits under (maxDimension 1, uastc, quality 2, mips). */
+const KTX2_KEY_MAX_1 = "ktx2:30d6ee4fb9bf2d2e";
+
+/** A compressed 1x1 Texture whose encode predates alignment: committed 1x1, nothing recorded. */
+async function writeLegacyOddTexture(storage: MemoryStorageAdapter, path: string, guid: string): Promise<void> {
+  await storage.writeBinary(path, await encodeBabasset({
+    header: {
+      guid, type: "Texture", name: guid, engineVersion: "0.0.0", version: 1, mode: "thin", dependencies: [], parentClass: null,
+      payload: { usage: "albedo", compressionState: "compressed", ktx2ChunkId: KTX2_KEY_MAX_1, width: 1, height: 1 },
+    },
+    chunks: [
+      { id: "pixels", kind: "pixels", mime: "image/png", data: pngHeader(1, 1) },
+      { id: KTX2_KEY_MAX_1, kind: "ktx2", mime: "image/ktx2", data: ktx2Header(1, 1) },
+    ],
+  }));
+}
+
+/** Let the storage clock move on, so the next write gets another mtime. */
+const nextMillisecond = () => new Promise((resolve) => setTimeout(resolve, 5));
 
 async function scaffolded(authentic = false) {
   const storage = new MemoryStorageAdapter("documents");
@@ -744,6 +775,44 @@ describe("project documents as .babasset", () => {
     await service.saveDocument("texture", texture!.path, { ...opened, usage: "particle" });
     const saved = await decodeBabasset(await storage.readBinary(texture!.path));
     expect(saved.header.payload).toMatchObject({ usage: "particle", ktx2ChunkId: particleChunkId, ktx2BlockAlign: 4 });
+  });
+
+  it("does not report its own alignment re-encodes as external changes on a foreground rescan", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("Rescan.babproject");
+    await installMinimalProject(storage);
+    const paths = Array.from({ length: 8 }, (_, index) => `assets/odd-${index}.babasset`);
+    for (const [index, path] of paths.entries()) await writeLegacyOddTexture(storage, path, `odd-${index}`);
+    const service = new ProjectService(storage, { encode: standInEncode });
+    await service.loadCurrentProject();
+    // The editor's mtime snapshot at open, kept current with the editor's own writes.
+    const snapshot = snapshotIndexedMtimes(service.registry!.list());
+    const atOpen = { ...snapshot };
+    service.onOwnAssetWrite((write) => applyOwnAssetWrite(snapshot, write));
+    // A teammate's change to one Texture lands before the pass rewrites it.
+    await nextMillisecond();
+    await storage.writeBinary(paths[0]!, await storage.readBinary(paths[0]!));
+    await nextMillisecond();
+
+    service.setTextureWriteGuard(() => true);
+    expect(await service.reconcileTextureAlignment()).toBe(8);
+    await vi.waitFor(() => {
+      expect(service.textureEncodeQueue.depth).toBe(0);
+      for (const path of paths) expect(service.registry!.getByPath(path)!.header.payload.ktx2Width).toBe(4);
+    });
+    for (const path of paths) expect((await storage.stat(path)).mtime).not.toBe(atOpen[path]);
+
+    // What returning to the app does (`runForegroundRescan`).
+    await service.remountRegistry();
+    const changes = classifyExternalChanges({
+      previousAssets: snapshot,
+      nextAssets: snapshotIndexedMtimes(service.registry!.list()),
+      previousProjectJsonMtime: null,
+      nextProjectJsonMtime: null,
+      openDocs: [],
+    });
+    expect(changes.changedPaths).toEqual([paths[0]]);
+    expect(changes.kind).toBe("none");
   });
 
   it("saves Model slots onto the header without replacing the source GLB", async () => {

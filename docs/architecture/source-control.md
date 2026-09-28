@@ -98,7 +98,7 @@ Tick on subscribe, then every `pollIntervalMs` (default 60s). `pause()` / `resum
 
 ## External change (mtime, not git)
 
-`IndexedAsset.mtime` comes from `DirEntry` during registry walk. On lifecycle **foreground**, remount/rescan and diff mtimes (plus `project.json` mtime). Save All (and compile-on-save writes) recapture that snapshot (`refreshMtimeSnapshotAfterEditorSave`) so the editor’s own `project.json` mtime is not classified as **Reload Project**.
+`IndexedAsset.mtime` comes from `DirEntry` during registry walk. On lifecycle **foreground**, remount/rescan and diff mtimes (plus `project.json` mtime). Save All (and compile-on-save writes) recapture that snapshot (`refreshMtimeSnapshotAfterEditorSave`) so the editor’s own `project.json` mtime is not classified as **Reload Project**. The registry's own Texture rewrites (encode states, committed encodes such as the alignment pass's, derived chunks) record their new mtime and report it (`AssetRegistry.setOwnWriteListener` → `ProjectService.onOwnAssetWrite`); the editor folds each into the snapshot with `applyOwnAssetWrite` only when the file still had the snapshot's mtime right before that write, so a teammate's change to the same file still counts.
 
 | Classification | Prompt |
 | --- | --- |

@@ -63,6 +63,16 @@ export type ThumbnailWriter = (
   bytes: Uint8Array,
 ) => Promise<void>;
 
+/**
+ * The registry rewrote an asset file itself (Texture encode state, committed
+ * encode, derived chunk): its mtime just before and after that write.
+ */
+export interface OwnAssetWrite {
+  path: string;
+  previousMtime: number | null;
+  mtime: number | null;
+}
+
 /** Marker file so empty folders survive Git and remount scans. */
 export const FOLDER_MARKER_NAME = ".babylonslate-folder";
 
@@ -113,6 +123,7 @@ export class AssetRegistry {
   /** Texture guid -> atlas status before the changes not yet reported. */
   private readonly atlasStatusBefore = new Map<string, boolean>();
   private atlasFlushScheduled = false;
+  private ownWriteListener: ((write: OwnAssetWrite) => void) | null = null;
 
   constructor(storage: ProjectStorage, options: AssetRegistryOptions = {}) {
     this.storage = storage;
@@ -128,6 +139,11 @@ export class AssetRegistry {
   ): void {
     this.encodeQueue = queue;
     this.encodeSettings = { ...DEFAULT_TEXTURE_ENCODE_SETTINGS, ...settings };
+  }
+
+  /** Report the registry's own file rewrites, so they are not mistaken for external changes. */
+  setOwnWriteListener(listener: ((write: OwnAssetWrite) => void) | null): void {
+    this.ownWriteListener = listener;
   }
 
   /** Write CB thumbnails into derived data (ProjectService supplies storage). */
@@ -1206,6 +1222,7 @@ export class AssetRegistry {
     if (!asset) return;
     const storage = this.storageForAsset(asset);
     const blobs = this.blobsForAsset(asset);
+    const previousMtime = await this.statMtime(storage, asset.path);
     const fileBytes = await storage.readBinary(asset.path);
     const decoded = await decodeBabasset(fileBytes, (sha256) =>
       blobs.readBlob(sha256),
@@ -1232,8 +1249,10 @@ export class AssetRegistry {
     });
     assertCurrent();
     await storage.writeBinary(asset.path, bytes);
+    const mtime = await this.statMtime(storage, asset.path);
     const header = readBabassetHeader(bytes);
-    this.indexHeader(asset.rootId, asset.path, header);
+    this.indexHeader(asset.rootId, asset.path, header, false, mtime);
+    this.ownWriteListener?.({ path: asset.path, previousMtime, mtime });
   }
 
   /** Attach a representation chunk (facetype / msdf) to an existing Font asset. */

@@ -109,6 +109,7 @@ import {
   ATLAS_TEXTURES_META,
   atlasTextureGuids,
   type ImageSize,
+  type OwnAssetWrite,
   type InspectedBabplugin,
   type PluginImportPlan,
 } from "@babylonslate/assets";
@@ -308,6 +309,7 @@ export class ProjectService {
   /** Asset guids stay stable across saves so references survive a rewrite. */
   private readonly assetGuids = new Map<string, string>();
   private readonly registryListeners = new Set<() => void>();
+  private readonly ownWriteListeners = new Set<(write: OwnAssetWrite) => void>();
   private readonly diagnostics: string[] = [];
   private readonly diagnosticListeners = new Set<(line: string) => void>();
   /** Lets the texture alignment pass write, for the project it was set for. */
@@ -539,6 +541,18 @@ export class ProjectService {
 
   private emitRegistryChange(): void {
     for (const listener of this.registryListeners) listener();
+  }
+
+  /**
+   * Asset files the registry rewrote itself (Texture encode states, committed
+   * encodes, derived chunks), with their mtimes before and after, so the
+   * editor does not report its own writes as external changes.
+   */
+  onOwnAssetWrite(listener: (write: OwnAssetWrite) => void): () => void {
+    this.ownWriteListeners.add(listener);
+    return () => {
+      this.ownWriteListeners.delete(listener);
+    };
   }
 
   /** Pause encode jobs while Preview runs (engineplan §3.5). */
@@ -1138,6 +1152,9 @@ export class ProjectService {
     registry.setEncodePipeline(this.encodeQueue, {
       ...DEFAULT_TEXTURE_ENCODE_SETTINGS,
       maxDimension,
+    });
+    registry.setOwnWriteListener((write) => {
+      for (const listener of this.ownWriteListeners) listener(write);
     });
     await registry.mountRoot(projectContentRoot());
     this.assetRegistry = registry;

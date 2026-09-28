@@ -207,6 +207,7 @@ import { readProjectJsonMtime, refreshMtimeSnapshotAfterEditorSave } from "../li
 import { ProjectSaveState } from "../lib/project-save-state";
 import { createTextureAlignmentGuard } from "../lib/texture-alignment-guard";
 import {
+  applyOwnAssetWrite,
   classifyExternalChanges,
   snapshotIndexedMtimes,
   type ExternalChangeClassification,
@@ -828,6 +829,16 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       projectJson: await readProjectJsonMtime(projectService.storagePort),
     };
   }, [projectService]);
+
+  // The editor's own Texture encode writes are not external changes.
+  useEffect(
+    () =>
+      projectService.onOwnAssetWrite((write) => {
+        const snapshot = mtimeSnapshotRef.current;
+        if (snapshot) applyOwnAssetWrite(snapshot.assets, write);
+      }),
+    [projectService],
+  );
 
   useEffect(() => {
     return sourceControlRef.current.subscribe(() => {
