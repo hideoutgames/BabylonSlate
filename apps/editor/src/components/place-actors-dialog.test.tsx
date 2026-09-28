@@ -131,6 +131,38 @@ describe("PlaceActorsDialog", () => {
     expect(onSelect).toHaveBeenCalledWith(hero);
   });
 
+  it("filters Project assets by type and restores them on Clear Filters", () => {
+    const asset = (id: string, assetType: string, path: string) => ({
+      id: `asset-${id}`,
+      title: id,
+      category: "Project",
+      kind: { type: "asset" as const, name: id, guid: id, assetType, path },
+    });
+    render(
+      <PlaceActorsDialog
+        open
+        onOpenChange={() => {}}
+        onSelect={() => {}}
+        projectItems={[
+          asset("Hero", "Class", "assets/actors/Hero.class.babasset"),
+          asset("Door", "Prefab", "assets/props/Door.prefab.babasset"),
+        ]}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("place-actors-catalog-category-Project"));
+    expect(screen.getByTestId("place-actors-item-asset-Hero").textContent).toContain("assets/actors");
+
+    fireEvent.click(screen.getByTestId("place-actors-project-type-Prefab"));
+    expect(screen.queryByTestId("place-actors-item-asset-Hero")).toBeNull();
+    expect(screen.getByTestId("place-actors-item-asset-Door")).toBeTruthy();
+    expect(screen.getByTestId("place-actors-project-count").textContent).toBe("1 of 2");
+
+    fireEvent.click(screen.getByTestId("place-actors-project-type-Prefab"));
+    fireEvent.click(screen.getByTestId("place-actors-project-type-Class"));
+    expect(screen.queryByTestId("place-actors-item-asset-Door")).toBeNull();
+    expect(screen.getByTestId("place-actors-item-asset-Hero")).toBeTruthy();
+  });
+
   it("still clears the search when dismissed without selecting", () => {
     render(<Harness />);
     fireEvent.change(screen.getByTestId("place-actors-catalog-search"), {

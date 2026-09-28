@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { ArrowUpDownIcon, FolderIcon } from "lucide-react";
 import { thumbnailMime } from "@babylonslate/assets";
 import {
   CatalogCard,
@@ -6,9 +7,23 @@ import {
   CatalogDialog,
   CatalogResultRow,
   TypeVisualIcon,
+  humanizePropertyLabel,
+  resolveTypeVisual,
   useCatalogFilter,
   type CatalogCategory,
+  type CatalogCategoryGroup,
 } from "@babylonslate/editor-kit";
+import { Button } from "@babylonslate/ui/components/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@babylonslate/ui/components/dropdown-menu";
+import { ToggleGroup, ToggleGroupItem } from "@babylonslate/ui/components/toggle-group";
 import {
   FEATURED_PLACE_ACTOR_IDS,
   visualForPlaceActor,
@@ -20,11 +35,38 @@ import { CatalogNoMatches } from "./catalog-no-matches";
 const FEATURED = "featured";
 const MODELS = "Models";
 const PROJECT = "Project";
+const ALL_FOLDERS = "";
 
 type LoadThumbnail = (guid: string) => Promise<Uint8Array | null>;
+type AssetSort = "name" | "type" | "folder";
+
+const SORT_OPTIONS: ReadonlyArray<{ id: AssetSort; label: string }> = [
+  { id: "name", label: "Name" },
+  { id: "type", label: "Type" },
+  { id: "folder", label: "Folder" },
+];
 
 function assetGuid(item: PlaceActorItem): string | null {
   return item.kind.type === "asset" ? item.kind.guid : null;
+}
+
+function assetType(item: PlaceActorItem): string {
+  return item.kind.type === "asset" ? (item.kind.assetType ?? "") : "";
+}
+
+/** Containing folder of an asset path (`assets/props/Tree.model.babasset` → `assets/props`). */
+function assetFolder(item: PlaceActorItem): string {
+  const path = item.kind.type === "asset" ? item.kind.path : undefined;
+  if (!path) return "";
+  const slash = path.lastIndexOf("/");
+  return slash < 0 ? "" : path.slice(0, slash);
+}
+
+function sortAssets(items: readonly PlaceActorItem[], sort: AssetSort): PlaceActorItem[] {
+  const byName = (a: PlaceActorItem, b: PlaceActorItem) =>
+    a.title.localeCompare(b.title, undefined, { sensitivity: "base", numeric: true });
+  const key = sort === "type" ? assetType : sort === "folder" ? assetFolder : null;
+  return [...items].sort((a, b) => (key ? key(a).localeCompare(key(b)) : 0) || byName(a, b));
 }
 
 /** Object URLs for model thumbnails while `enabled`; released when hidden or changed. */
@@ -63,6 +105,142 @@ function useThumbnailUrls(
   return urls;
 }
 
+function AssetToolbar({
+  scope,
+  items,
+  typeFilters,
+  onTypeFiltersChange,
+  folder,
+  onFolderChange,
+  sort,
+  onSortChange,
+  shown,
+}: {
+  scope: string;
+  items: readonly PlaceActorItem[];
+  typeFilters?: string[];
+  onTypeFiltersChange?: (types: string[]) => void;
+  folder: string;
+  onFolderChange: (folder: string) => void;
+  sort: AssetSort;
+  onSortChange: (sort: AssetSort) => void;
+  shown: number;
+}) {
+  const typeCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const item of items) counts.set(assetType(item), (counts.get(assetType(item)) ?? 0) + 1);
+    return [...counts].sort(([a], [b]) => a.localeCompare(b));
+  }, [items]);
+  const folders = useMemo(
+    () => [...new Set(items.map(assetFolder))].sort((a, b) => a.localeCompare(b)),
+    [items],
+  );
+  const prefix = `place-actors-${scope}`;
+  const sortOptions = typeFilters ? SORT_OPTIONS : SORT_OPTIONS.filter((option) => option.id !== "type");
+
+  return (
+    <div
+      className="sticky -top-4 z-10 -mx-4 -mt-4 mb-2 flex flex-wrap items-center gap-2 border-b bg-popover px-4 py-2"
+      data-testid={`${prefix}-toolbar`}
+    >
+      {typeFilters && onTypeFiltersChange ? (
+        <ToggleGroup
+          multiple
+          variant="outline"
+          size="sm"
+          spacing={1}
+          value={typeFilters}
+          onValueChange={(value) => onTypeFiltersChange(value as string[])}
+          aria-label="Asset Types"
+          className="flex-wrap"
+        >
+          {typeCounts.map(([type, count]) => (
+            <ToggleGroupItem
+              key={type}
+              value={type}
+              aria-label={`${humanizePropertyLabel(type)} (${count})`}
+              data-testid={`${prefix}-type-${type}`}
+            >
+              <TypeVisualIcon visual={resolveTypeVisual({ assetType: type })} className="size-3.5" />
+              {humanizePropertyLabel(type)}
+              <span className="text-muted-foreground tabular-nums">{count}</span>
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
+      ) : null}
+      <div className="ml-auto flex items-center gap-2">
+        <span className="text-xs text-muted-foreground tabular-nums" data-testid={`${prefix}-count`}>
+          {shown === items.length ? `${shown} Assets` : `${shown} of ${items.length}`}
+        </span>
+        {folders.length > 1 ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  type="button"
+                  variant={folder === ALL_FOLDERS ? "outline" : "secondary"}
+                  size="sm"
+                  className="max-w-48"
+                  data-testid={`${prefix}-folder`}
+                />
+              }
+            >
+              <FolderIcon data-icon="inline-start" />
+              <span className="truncate">{folder === ALL_FOLDERS ? "All Folders" : folder}</span>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-48">
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>Folder</DropdownMenuLabel>
+                <DropdownMenuRadioGroup value={folder} onValueChange={(value) => onFolderChange(value as string)}>
+                  <DropdownMenuRadioItem value={ALL_FOLDERS}>All Folders</DropdownMenuRadioItem>
+                  {folders.filter(Boolean).map((entry) => (
+                    <DropdownMenuRadioItem key={entry} value={entry} data-testid={`${prefix}-folder-${entry}`}>
+                      {entry}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : null}
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button type="button" variant="outline" size="sm" data-testid={`${prefix}-sort`} />
+            }
+          >
+            <ArrowUpDownIcon data-icon="inline-start" />
+            {sortOptions.find((option) => option.id === sort)?.label ?? "Name"}
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-40">
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>Sort By</DropdownMenuLabel>
+              <DropdownMenuRadioGroup value={sort} onValueChange={(value) => onSortChange(value as AssetSort)}>
+                {sortOptions.map((option) => (
+                  <DropdownMenuRadioItem key={option.id} value={option.id} data-testid={`${prefix}-sort-${option.id}`}>
+                    {option.label}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    </div>
+  );
+}
+
+function FilteredEmpty({ onClear }: { onClear: () => void }) {
+  return (
+    <div className="flex flex-col items-center gap-2 py-10 text-center text-sm text-muted-foreground">
+      No assets match these filters.
+      <Button type="button" variant="outline" size="sm" onClick={onClear}>
+        Clear Filters
+      </Button>
+    </div>
+  );
+}
+
 export function PlaceActorsDialog({
   open,
   onOpenChange,
@@ -82,13 +260,22 @@ export function PlaceActorsDialog({
 }) {
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState(FEATURED);
+  const [typeFilters, setTypeFilters] = useState<string[]>([]);
+  const [projectFolder, setProjectFolder] = useState(ALL_FOLDERS);
+  const [modelFolder, setModelFolder] = useState(ALL_FOLDERS);
+  const [projectSort, setProjectSort] = useState<AssetSort>("name");
+  const [modelSort, setModelSort] = useState<AssetSort>("name");
 
   // The Outliner closes this dialog itself once an actor spawns, so resetting
-  // from `onOpenChange` alone would leave the previous filter in place.
+  // from `onOpenChange` alone would leave the previous filter in place. Sort
+  // order is a preference and survives reopening.
   useEffect(() => {
     if (open) return;
     setSearch("");
     setActiveCategory(FEATURED);
+    setTypeFilters([]);
+    setProjectFolder(ALL_FOLDERS);
+    setModelFolder(ALL_FOLDERS);
   }, [open]);
 
   const items = useMemo(
@@ -102,37 +289,58 @@ export function PlaceActorsDialog({
       return item ? [item] : [];
     });
   }, [items]);
+  const models = useMemo(() => items.filter((item) => item.category === MODELS), [items]);
+  const project = useMemo(() => items.filter((item) => item.category === PROJECT), [items]);
 
   const bySearch = useCatalogFilter(
     items,
     search,
-    (item) => `${item.title} ${item.category}`,
+    (item) => `${item.title} ${item.category} ${assetType(item)} ${assetFolder(item)}`,
   );
   const searching = search.trim().length > 0;
 
-  const categories = useMemo((): CatalogCategory[] => {
+  const { categories, groups } = useMemo(() => {
     const counted = searching ? bySearch : items;
     const counts = new Map<string, number>();
     for (const item of items) counts.set(item.category, 0);
     for (const item of counted) counts.set(item.category, counts.get(item.category)! + 1);
     const content = [MODELS, PROJECT].filter((id) => counts.has(id));
     const engine = [...counts.keys()].filter((id) => !content.includes(id));
-    return [
-      { id: FEATURED, label: "Featured", count: featured.length },
-      ...[...engine, ...content].map((id) => ({ id, label: id, count: counts.get(id) })),
+    const list: CatalogCategory[] = [
+      ...content.map((id) => ({ id, label: id, count: counts.get(id) })),
+      { id: FEATURED, label: "Featured" },
+      ...engine.map((id) => ({ id, label: id, count: counts.get(id) })),
     ];
-  }, [bySearch, featured.length, items, searching]);
+    const grouped: CatalogCategoryGroup[] = [
+      ...(content.length ? [{ label: "Content", ids: content }] : []),
+      { label: "Engine", ids: [FEATURED, ...engine] },
+    ];
+    return { categories: list, groups: grouped };
+  }, [bySearch, items, searching]);
 
-  const inCategory = items.filter((item) => item.category === activeCategory);
-  const modelGuids = useMemo(
+  const visibleModels = useMemo(
     () =>
-      items
-        .filter((item) => item.category === MODELS)
-        .flatMap((item) => assetGuid(item) ?? []),
-    [items],
+      sortAssets(
+        models.filter((item) => modelFolder === ALL_FOLDERS || assetFolder(item) === modelFolder),
+        modelSort,
+      ),
+    [modelFolder, modelSort, models],
   );
+  const visibleProject = useMemo(
+    () =>
+      sortAssets(
+        project.filter(
+          (item) =>
+            (typeFilters.length === 0 || typeFilters.includes(assetType(item))) &&
+            (projectFolder === ALL_FOLDERS || assetFolder(item) === projectFolder),
+        ),
+        projectSort,
+      ),
+    [project, projectFolder, projectSort, typeFilters],
+  );
+
   const thumbnails = useThumbnailUrls(
-    modelGuids,
+    useMemo(() => models.flatMap((item) => assetGuid(item) ?? []), [models]),
     loadThumbnail,
     thumbnailVersions,
     open && !searching && activeCategory === MODELS,
@@ -160,6 +368,8 @@ export function PlaceActorsDialog({
       onSelect={() => onSelect(item)}
     />
   );
+  const assetLine = (item: PlaceActorItem) =>
+    [humanizePropertyLabel(assetType(item)), assetFolder(item)].filter(Boolean).join(" · ");
 
   let body;
   if (searching) {
@@ -168,7 +378,9 @@ export function PlaceActorsDialog({
         <CatalogNoMatches search={search} />
       ) : (
         <div role="group" aria-label="Search Results" className="flex flex-col">
-          {bySearch.map((item, index) => row(item, index, item.category))}
+          {bySearch.map((item, index) =>
+            row(item, index, item.kind.type === "asset" ? `${item.category} · ${assetLine(item)}` : item.category),
+          )}
         </div>
       );
   } else if (activeCategory === FEATURED) {
@@ -179,20 +391,57 @@ export function PlaceActorsDialog({
     );
   } else if (activeCategory === MODELS) {
     body = (
-      <CatalogCardGrid label={MODELS}>
-        {inCategory.map((item) => card(item, "Model", thumbnails[assetGuid(item) ?? ""]))}
-      </CatalogCardGrid>
+      <>
+        <AssetToolbar
+          scope="models"
+          items={models}
+          folder={modelFolder}
+          onFolderChange={setModelFolder}
+          sort={modelSort}
+          onSortChange={setModelSort}
+          shown={visibleModels.length}
+        />
+        <CatalogCardGrid label={MODELS}>
+          {visibleModels.map((item) =>
+            card(item, assetFolder(item) || "Model", thumbnails[assetGuid(item) ?? ""]),
+          )}
+        </CatalogCardGrid>
+      </>
+    );
+  } else if (activeCategory === PROJECT) {
+    body = (
+      <>
+        <AssetToolbar
+          scope="project"
+          items={project}
+          typeFilters={typeFilters}
+          onTypeFiltersChange={setTypeFilters}
+          folder={projectFolder}
+          onFolderChange={setProjectFolder}
+          sort={projectSort}
+          onSortChange={setProjectSort}
+          shown={visibleProject.length}
+        />
+        {visibleProject.length === 0 ? (
+          <FilteredEmpty
+            onClear={() => {
+              setTypeFilters([]);
+              setProjectFolder(ALL_FOLDERS);
+            }}
+          />
+        ) : (
+          <div role="group" aria-label={PROJECT} className="flex flex-col">
+            {visibleProject.map((item, index) => row(item, index, assetLine(item)))}
+          </div>
+        )}
+      </>
     );
   } else {
     body = (
       <div role="group" aria-label={activeCategory} className="flex flex-col">
-        {inCategory.map((item, index) =>
-          row(
-            item,
-            index,
-            item.kind.type === "asset" ? item.kind.assetType : undefined,
-          ),
-        )}
+        {items
+          .filter((item) => item.category === activeCategory)
+          .map((item, index) => row(item, index))}
       </div>
     );
   }
@@ -205,6 +454,7 @@ export function PlaceActorsDialog({
       description="Spawn a shape, light, camera, volume, or project asset into the scene."
       size="medium"
       categories={categories}
+      groups={groups}
       activeCategoryId={activeCategory}
       onCategoryChange={(id) => {
         setActiveCategory(id);
@@ -212,7 +462,7 @@ export function PlaceActorsDialog({
       }}
       search={search}
       onSearchChange={setSearch}
-      searchPlaceholder="Search actors"
+      searchPlaceholder="Search actors and assets"
       data-testid="place-actors-catalog"
     >
       {body}
