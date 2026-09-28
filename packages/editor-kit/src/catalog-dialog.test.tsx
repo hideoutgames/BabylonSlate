@@ -1,11 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import { useState } from "react";
-import {
-  CatalogDialog,
-  catalogCategories,
-  catalogSections,
-} from "./catalog-dialog";
+import { CatalogDialog } from "./catalog-dialog";
+import { catalogCategories, catalogSections } from "./catalog-sections";
 
 afterEach(() => {
   cleanup();

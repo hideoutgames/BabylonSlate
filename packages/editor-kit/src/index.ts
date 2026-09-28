@@ -1,15 +1,17 @@
 export {
   CatalogDialog,
   CatalogItemButton,
-  catalogCategories,
-  catalogSections,
   useCatalogFilter,
   useCatalogSearchState,
   type CatalogCategory,
   type CatalogCategoryGroup,
   type CatalogDialogProps,
-  type CatalogSection,
 } from "./catalog-dialog";
+export {
+  catalogCategories,
+  catalogSections,
+  type CatalogSection,
+} from "./catalog-sections";
 export {
   CatalogTile,
   CatalogTileGroup,
