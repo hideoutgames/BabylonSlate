@@ -72,7 +72,7 @@ import {
   SetAssetDocumentCommand,
   type EditCommand,
 } from "@babylonslate/edit";
-import { JournalBuffer } from "../lib/journal-buffer";
+import { attachJournalFlushOnHide, JournalBuffer } from "../lib/journal-buffer";
 import {
   createAppSettingsStore,
   createDerivedStorage,
@@ -939,20 +939,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         appendJournalLines(await ensureDerived(), guid, lines),
       ),
   );
-  useEffect(() => {
-    const flush = () => {
-      void journalBuffer.flush();
-    };
-    window.addEventListener("pagehide", flush);
-    const detachPause = attachLifecyclePause((paused) => {
-      if (paused) flush();
-    });
-    return () => {
-      window.removeEventListener("pagehide", flush);
-      detachPause();
-      flush();
-    };
-  }, [journalBuffer]);
+  useEffect(() => attachJournalFlushOnHide(journalBuffer), [journalBuffer]);
 
   const recordRecent = useCallback(
     async (
@@ -1545,6 +1532,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       clearTimeout(saveDebounceRef.current);
       saveDebounceRef.current = null;
     }
+    // Buffered journal records start writing as Save begins, so a Save that
+    // fails part-way leaves them recoverable. The clear below awaits them.
+    void journalBuffer.flush();
     const projectSave = projectSaveState.current.capture(document);
     try {
       progress.phase("audio-reverb");

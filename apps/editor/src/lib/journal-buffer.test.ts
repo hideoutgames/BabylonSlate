@@ -12,7 +12,11 @@ import {
   SetAssetDocumentCommand,
   type EditCommand,
 } from "@babylonslate/edit";
-import { JOURNAL_FLUSH_DELAY_MS, JournalBuffer } from "./journal-buffer";
+import {
+  attachJournalFlushOnHide,
+  JOURNAL_FLUSH_DELAY_MS,
+  JournalBuffer,
+} from "./journal-buffer";
 
 const guid = "proj-1";
 const docId = "water:assets/Lake.water.babasset";
@@ -32,8 +36,16 @@ function record(command: EditCommand<unknown>) {
   };
 }
 
+function setVisibility(state: "visible" | "hidden") {
+  Object.defineProperty(document, "visibilityState", {
+    configurable: true,
+    get: () => state,
+  });
+}
+
 afterEach(() => {
   vi.useRealTimers();
+  setVisibility("visible");
 });
 
 describe("JournalBuffer", () => {
@@ -94,5 +106,39 @@ describe("JournalBuffer", () => {
       new Map([[docId, { opacity: 1 }]]),
     );
     expect(documents.get(docId)).toEqual({ opacity: 0.2 });
+  });
+
+  it.each([
+    ["the page unloads", () => window.dispatchEvent(new Event("pagehide"))],
+    [
+      "the app is hidden",
+      () => {
+        setVisibility("hidden");
+        document.dispatchEvent(new Event("visibilitychange"));
+      },
+    ],
+  ])("writes buffered records without waiting for the batch timer when %s", async (_when, hide) => {
+    const storage = await derivedStorage();
+    // A timer this long cannot fire during the test, so only the hide can write.
+    const buffer = new JournalBuffer(
+      (project, lines) => appendJournalLines(storage, project, lines),
+      { delayMs: 60_000 },
+    );
+    const detach = attachJournalFlushOnHide(buffer);
+    try {
+      buffer.append(guid, record(new SetAssetDocumentCommand({ opacity: 1 }, { opacity: 0.5 })));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(await readJournalLines(storage, guid)).toEqual([]);
+
+      hide();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const { documents } = replayJournalLines(
+        await readJournalLines(storage, guid),
+        new Map([[docId, { opacity: 1 }]]),
+      );
+      expect(documents.get(docId)).toEqual({ opacity: 0.5 });
+    } finally {
+      detach();
+    }
   });
 });

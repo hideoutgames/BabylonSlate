@@ -3,6 +3,7 @@ import {
   serializeJournalLine,
   type JournalLine,
 } from "@babylonslate/edit";
+import { attachLifecyclePause } from "../services/lifecycle-pause";
 
 /**
  * Longest time an applied edit waits in memory before its journal record is
@@ -80,4 +81,24 @@ export class JournalBuffer {
     }
     return Promise.all(waits).then(() => undefined);
   }
+}
+
+/**
+ * Write buffered records on `pagehide` and whenever the app is hidden or
+ * backgrounded, so a reload, tab close or app switch does not wait out the
+ * batching window. The returned detach flushes once more.
+ */
+export function attachJournalFlushOnHide(buffer: JournalBuffer): () => void {
+  const flush = () => {
+    void buffer.flush();
+  };
+  window.addEventListener("pagehide", flush);
+  const detachPause = attachLifecyclePause((hidden) => {
+    if (hidden) flush();
+  });
+  return () => {
+    window.removeEventListener("pagehide", flush);
+    detachPause();
+    flush();
+  };
 }
