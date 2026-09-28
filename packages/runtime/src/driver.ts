@@ -38,6 +38,7 @@ import {
   SceneLayer,
   isSceneLayerExclusiveComponent,
   sceneAssetClassId,
+  hydrateClassVariableValue,
   type ClassKind,
   type DebugInspectSnapshot,
   type TickPhase,
@@ -2064,19 +2065,49 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   async loadScripts(scripts: readonly CompiledScript[]): Promise<void> {
-    for (const script of scripts) {
-      this.registerScriptClass(script);
-      await this.scriptHost.load(script);
-      if (script.anchors.length > 0) {
-        this.registerAnchors(script.assetGuid, script.anchors);
+    const ordered = parentFirstScriptOrder(scripts, (classId) =>
+      this.world.classRegistry.has(classId),
+    );
+    try {
+      for (const script of ordered) {
+        this.registerScriptClass(script);
+        await this.scriptHost.load(script);
+        if (script.anchors.length > 0) {
+          this.registerAnchors(script.assetGuid, script.anchors);
+        }
+        if (script.command) {
+          this.bindUserCommand({
+            ...script.command,
+            classId: script.classId,
+          });
+        }
       }
-      if (script.command) {
-        this.bindUserCommand({
-          ...script.command,
-          classId: script.classId,
-        });
-      }
+    } finally {
+      this.applyGameInstanceClassDefaults();
     }
+  }
+
+  /**
+   * The Game Instance is created before scripts register its class, so apply
+   * its class variable defaults, inherited interfaces and interface handlers
+   * once they are known (before `World.start()` fires On Init). Values already
+   * on the instance win, as with `World.createGameInstance`.
+   */
+  private applyGameInstanceClassDefaults(): void {
+    const gameInstance = this.world.gameInstance;
+    if (!gameInstance) return;
+    const classes = this.world.classRegistry;
+    for (const variable of classes.inheritedVariables(gameInstance.classId)) {
+      if (gameInstance.variables.has(variable.name)) continue;
+      const value = hydrateClassVariableValue(variable);
+      if (value !== undefined) gameInstance.setVariable(variable.name, value);
+    }
+    const interfaces = new Set(gameInstance.implementedInterfaces);
+    for (const iface of classes.inheritedInterfaces(gameInstance.classId)) {
+      interfaces.add(iface);
+    }
+    gameInstance.implementedInterfaces = [...interfaces];
+    this.scriptHost.bindInterfaceHandlers(gameInstance);
   }
 
   private registerScriptClass(script: CompiledScript): void {
@@ -5815,5 +5846,36 @@ function* remapOverlaySerializedActors(
     yield;
   }
   return remapped;
+}
+
+/**
+ * Order scripts so a user parent class registers before its children; the
+ * incoming order is kept otherwise. A parent that is missing, or reached again
+ * through a parent cycle, falls back to `Actor` like any unknown parent.
+ */
+function parentFirstScriptOrder(
+  scripts: readonly CompiledScript[],
+  isRegistered: (classId: string) => boolean,
+): CompiledScript[] {
+  const indicesByClassId = new Map<string, number[]>();
+  scripts.forEach((script, index) => {
+    const indices = indicesByClassId.get(script.classId) ?? [];
+    indices.push(index);
+    indicesByClassId.set(script.classId, indices);
+  });
+  const visited = new Set<number>();
+  const ordered: CompiledScript[] = [];
+  const visit = (index: number): void => {
+    if (visited.has(index)) return;
+    visited.add(index);
+    const script = scripts[index]!;
+    const parentClassId = script.parentClassId?.trim();
+    if (parentClassId && parentClassId !== script.classId && !isRegistered(parentClassId)) {
+      for (const parentIndex of indicesByClassId.get(parentClassId) ?? []) visit(parentIndex);
+    }
+    ordered.push(script);
+  };
+  scripts.forEach((_, index) => visit(index));
+  return ordered;
 }
 import { parseLandscapeProperties, parseFoliageProperties } from "@babylonslate/core";
