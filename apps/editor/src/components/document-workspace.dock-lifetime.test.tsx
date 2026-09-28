@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   act,
@@ -11,7 +11,11 @@ import {
 } from "@testing-library/react";
 import type { DockviewApi, IDockviewPanelProps } from "dockview-react";
 import { DocumentWorkspace } from "./document-workspace";
-import type { AnimEditorMode } from "../shell/anim-document-layout";
+import {
+  parseAnimDocumentLayout,
+  serializeAnimDocumentLayout,
+  type AnimEditorMode,
+} from "../shell/anim-document-layout";
 import { dockviewApiKey, type DockviewSurface } from "../shell/dockview-surface";
 import { captureAdaptiveDockviewLayout } from "../shell/phone-dock-layout";
 
@@ -71,9 +75,10 @@ vi.mock("../shell/panel-registry", () => {
 });
 
 /**
- * Stands in for DocumentProvider's dock registry and layout store. Like the
- * real provider, its callbacks change identity when provider state changes
- * (active tab, Animation Graph modes).
+ * Stands in for DocumentProvider's dock registry and layout store with the
+ * same callback identities: the registry callbacks are stable, while
+ * captureLayoutForId changes identity when Animation Graph modes change
+ * because an Animation Graph capture records its current mode.
  */
 function Editor({ initialTabs }: { initialTabs: string[] }) {
   const [tabOrder, setTabs] = useState(initialTabs);
@@ -81,6 +86,46 @@ function Editor({ initialTabs }: { initialTabs: string[] }) {
   const [animEditorModes, setAnimEditorModes] = useState<
     Record<string, AnimEditorMode>
   >({});
+  const setAnimEditorMode = useCallback(
+    (id: string, mode: AnimEditorMode) =>
+      setAnimEditorModes((current) => ({ ...current, [id]: mode })),
+    [],
+  );
+  const registerDockviewApi = useCallback(
+    (id: string, api: DockviewApi, surface?: DockviewSurface) => {
+      harness.apis.set(dockviewApiKey(id, surface), api);
+    },
+    [],
+  );
+  const unregisterDockviewApi = useCallback(
+    (id: string, surface?: DockviewSurface) => {
+      harness.apis.delete(dockviewApiKey(id, surface));
+    },
+    [],
+  );
+  const captureLayoutForId = useCallback(
+    (id: string) => {
+      const capture = (surface?: DockviewSurface) => {
+        const api = harness.apis.get(dockviewApiKey(id, surface));
+        return api ? captureAdaptiveDockviewLayout(api) : null;
+      };
+      if (id !== ANIM) {
+        const layout = capture();
+        if (layout) harness.layouts.set(id, layout);
+        return;
+      }
+      const stored = parseAnimDocumentLayout(harness.layouts.get(id));
+      harness.layouts.set(
+        id,
+        serializeAnimDocumentLayout({
+          animEditorMode: animEditorModes[id] ?? "stateMachine",
+          stateMachine: capture("stateMachine") ?? stored.stateMachine,
+          animationObject: capture("animationObject") ?? stored.animationObject,
+        }),
+      );
+    },
+    [animEditorModes],
+  );
   harness.control = { setTabs, setActive };
   harness.docs = {
     tabOrder,
@@ -94,22 +139,10 @@ function Editor({ initialTabs }: { initialTabs: string[] }) {
     assetRegistry: null,
     sourceControl: { enabled: false },
     animEditorMode: animEditorModes[activeDocumentId] ?? "stateMachine",
-    setAnimEditorMode: (id: string, mode: AnimEditorMode) =>
-      setAnimEditorModes((current) => ({ ...current, [id]: mode })),
-    registerDockviewApi: (
-      id: string,
-      api: DockviewApi,
-      surface?: DockviewSurface,
-    ) => {
-      harness.apis.set(dockviewApiKey(id, surface), api);
-    },
-    unregisterDockviewApi: (id: string, surface?: DockviewSurface) => {
-      harness.apis.delete(dockviewApiKey(id, surface));
-    },
-    captureLayoutForId: (id: string) => {
-      const api = harness.apis.get(id);
-      if (api) harness.layouts.set(id, captureAdaptiveDockviewLayout(api));
-    },
+    setAnimEditorMode,
+    registerDockviewApi,
+    unregisterDockviewApi,
+    captureLayoutForId,
   };
   return <DocumentWorkspace />;
 }
