@@ -953,6 +953,10 @@ export class ScriptHost {
       },
       getVariable: (name) => store?.getVariable(name),
       setVariable: (name, value) => {
+        if (store instanceof Actor && name === "parentId") {
+          writeParentId(services, store, value);
+          return;
+        }
         store?.setVariable(name, value);
       },
       getVariableFrom: (target, name) => {
@@ -975,6 +979,10 @@ export class ScriptHost {
           if (!gravity) return;
           object.setVariable("gravity", gravity);
           services.setWorldGravity?.(gravity);
+          return;
+        }
+        if (object instanceof Actor && name === "parentId") {
+          writeParentId(services, object, value);
           return;
         }
         object?.setVariable(name, value);
@@ -1144,6 +1152,12 @@ export class ScriptHost {
       },
       attachActor: (child, parent) => {
         const actor = asActor(child);
+        const target = asActor(parent);
+        // Refuse before the bone detach so a rejected link changes nothing.
+        // Attaching an actor to itself keeps its documented Detach behavior.
+        if (actor && !actor.destroyed && target && !target.destroyed &&
+          target.guid !== actor.guid &&
+          refuseParentCycle(services, actor, target, "Attach Actor")) return;
         if (actor && !actor.destroyed) services.attachToBone?.(actor, null, "");
         setActorLink(child, "parentId", parent);
       },
@@ -1157,11 +1171,7 @@ export class ScriptHost {
         const parent = asActor(target);
         if (!child || child.destroyed || !parent || parent.destroyed ||
           typeof boneName !== "string" || !boneName.trim()) return;
-        const seen = new Set<string>();
-        for (let ancestor: Actor | null = parent; ancestor; ancestor = readActorLink(services, ancestor, "parentId")) {
-          if (ancestor === child || seen.has(ancestor.guid)) return;
-          seen.add(ancestor.guid);
-        }
+        if (refuseParentCycle(services, child, parent, "Attach To Bone")) return;
         child.setVariable("parentId", parent.guid);
         child.transform.position = { x: 0, y: 0, z: 0 };
         child.transform.rotation = { x: 0, y: 0, z: 0, w: 1 };
@@ -1903,6 +1913,52 @@ function setActorLink(
     return;
   }
   target.setVariable(key, linked.guid);
+}
+
+/**
+ * Scripts may not close a parent cycle. Walk the proposed parent's ancestors
+ * (a seen-set stops at loops already present) and refuse with a warning when
+ * `child` is the parent or one of its ancestors, or the chain already loops.
+ */
+function refuseParentCycle(
+  services: ScriptHostServices,
+  child: Actor,
+  parent: Actor,
+  operation: string,
+): boolean {
+  const seen = new Set<string>();
+  for (let ancestor: Actor | null = parent; ancestor; ancestor = readActorLink(services, ancestor, "parentId")) {
+    if (ancestor.guid === child.guid) {
+      services.log("warning", "actor", `${operation} refused: parenting ${actorLabel(child)} to ${actorLabel(parent)} would create a parent cycle.`);
+      return true;
+    }
+    if (seen.has(ancestor.guid)) {
+      services.log("warning", "actor", `${operation} refused: ${actorLabel(child)} cannot be parented to ${actorLabel(parent)} because that parent chain already contains a cycle.`);
+      return true;
+    }
+    seen.add(ancestor.guid);
+  }
+  return false;
+}
+
+/** A scripted `parentId` write follows the Attach Actor link rules. */
+function writeParentId(
+  services: ScriptHostServices,
+  child: Actor,
+  value: unknown,
+): void {
+  if (value === child.guid) {
+    child.setVariable("parentId", null);
+    return;
+  }
+  const parent = typeof value === "string" ? resolveLiveActor(services, value) : null;
+  if (parent && refuseParentCycle(services, child, parent, "Set parentId")) return;
+  child.setVariable("parentId", value);
+}
+
+function actorLabel(actor: Actor): string {
+  const name = actor.getVariable("name");
+  return `${typeof name === "string" && name.trim() ? name : actor.classId} (${actor.guid})`;
 }
 
 function readActorLink(
