@@ -92,6 +92,12 @@ export interface AssetRegistryOptions {
    * are not read and decoded again.
    */
   legacyAtlasCache?: Map<string, readonly string[]>;
+  /**
+   * Textures an alignment check is requeuing right now. Pass the same set to
+   * every remount that shares one encode queue, so a check on the previous
+   * registry and one on the next skip each other's Texture.
+   */
+  alignmentRequeues?: Set<string>;
 }
 
 const BLOBS_DIR_NAME = ".blobs";
@@ -137,7 +143,7 @@ export class AssetRegistry {
    * Duplicates run the pass outside the editor's serialized passes, so a
    * concurrent one skips them rather than queue a second copy.
    */
-  private readonly alignmentRequeues = new Set<string>();
+  private readonly alignmentRequeues: Set<string>;
 
   constructor(storage: ProjectStorage, options: AssetRegistryOptions = {}) {
     this.storage = storage;
@@ -145,6 +151,7 @@ export class AssetRegistry {
     this.loader =
       options.payloadLoader ?? new AccountedPayloadLoader(storage, { blobs: this.blobs });
     this.legacyAtlasCache = options.legacyAtlasCache ?? new Map();
+    this.alignmentRequeues = options.alignmentRequeues ?? new Set();
   }
 
   /** Bind the §3.5 encode scheduler (ProjectService owns the queue lifetime). */

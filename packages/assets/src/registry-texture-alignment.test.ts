@@ -191,6 +191,25 @@ describe("texture encode alignment", () => {
     expect(requeued.flat()).toEqual(["legacy-odd"]);
   });
 
+  it("queues one re-encode when checks on a registry and on its remount overlap", async () => {
+    const storage = await storageWithProject("overlap-remount");
+    await writeTexture(storage, "assets/legacy-odd.babasset", "legacy-odd", { source: [1, 1], committed: { id: KEY_MAX_1, size: [1, 1] } });
+    const queue = new EncodeQueue();
+    queue.pause();
+    // The editor hands every remount the same queue and in-flight set.
+    const alignmentRequeues = new Set<string>();
+    const registries = await Promise.all([1, 2].map(async () => {
+      const registry = new AssetRegistry(storage, { alignmentRequeues });
+      registry.setEncodePipeline(queue);
+      await registry.mountRoot(projectContentRoot());
+      return registry;
+    }));
+    // A Duplicate's check still running on the previous registry, and the remount's pass.
+    const requeued = await Promise.all(registries.map((registry) => registry.reconcileTextureAlignment({ guids: ["legacy-odd"] })));
+    expect(requeued.flat()).toEqual(["legacy-odd"]);
+    expect(queue.depth).toBe(1);
+  });
+
   it("writes nothing from a re-encode once its Texture's source pixels were replaced on disk", async () => {
     const storage = await storageWithProject("replaced-source");
     const path = "assets/legacy-odd.babasset";

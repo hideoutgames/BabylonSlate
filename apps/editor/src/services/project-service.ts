@@ -341,6 +341,8 @@ export class ProjectService {
   private readonly ktx2SizeCache = new Map<string, ImageSize | null>();
   /** Textures decoded legacy atlas referrers sample, by content, kept across registry remounts. */
   private readonly legacyAtlasCache = new Map<string, readonly string[]>();
+  /** Textures an alignment check is requeuing, shared by remounts as the encode queue is. */
+  private readonly alignmentRequeues = new Set<string>();
   private textureAlignmentChain: Promise<unknown> = Promise.resolve();
   private readonly textureAlignment = { runs: 0, pending: 0, requeued: new Set<string>() };
 
@@ -1232,6 +1234,7 @@ export class ProjectService {
     const registry = new AssetRegistry(this.storage, {
       blobs: this.blobs,
       legacyAtlasCache: this.legacyAtlasCache,
+      alignmentRequeues: this.alignmentRequeues,
     });
     registry.setEncodePipeline(this.encodeQueue, {
       ...DEFAULT_TEXTURE_ENCODE_SETTINGS,
