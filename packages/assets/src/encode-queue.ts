@@ -1,14 +1,38 @@
+import type { BabassetHeader } from "./babasset";
 import type { TextureEncodeSettings } from "./texture-compression";
 import {
   DEFAULT_TEXTURE_ENCODE_SETTINGS,
   stubEncodeKtx2,
 } from "./texture-compression";
 
+/**
+ * A background job's permission to write its Texture (the alignment pass).
+ * A guarded job writes nothing before its commit: the Texture keeps its saved
+ * state and committed encode until then.
+ */
+export interface EncodeJobGuard {
+  /**
+   * Asked when the job reaches the front of the queue (false drops it
+   * unencoded), and right before each write it causes (false skips that
+   * write) with `current`, the header of the file that write would replace,
+   * read from disk: an external change (a git revert or pull) may have
+   * replaced the file the index still describes.
+   */
+  canWrite(assetGuid: string, current?: BabassetHeader): boolean;
+}
+
 export interface EncodeJob {
   assetGuid: string;
   source: Uint8Array;
   settings: TextureEncodeSettings;
   mime?: string;
+  /** Chunk id to commit under (`textureEncodeChunkId`); else the settings hash. */
+  chunkId?: string;
+  /** Usage the job encodes for, which an unsaved Details edit may override. */
+  usage?: string;
+  guard?: EncodeJobGuard;
+  /** sha256 of `source`, set on a guarded job: it writes only while the file's `pixels` chunk still has it. */
+  sourceSha256?: string;
 }
 
 export interface EncodeJobResult {
@@ -16,6 +40,26 @@ export interface EncodeJobResult {
   ktx2: Uint8Array;
   wallMs: number;
   settings: TextureEncodeSettings;
+  chunkId?: string;
+  usage?: string;
+  guard?: EncodeJobGuard;
+  sourceSha256?: string;
+}
+
+/**
+ * Whether a guarded job may make a write to its Texture's file as it is on
+ * disk now (`current`): its guard allows it, and the file's source pixels are
+ * still the ones it encoded, so an encode of replaced pixels never lands.
+ * An unguarded job (the user's own encode) always may.
+ */
+export function encodeJobMayWrite(
+  job: Pick<EncodeJob, "assetGuid" | "guard" | "sourceSha256">,
+  current: BabassetHeader,
+): boolean {
+  if (!job.guard) return true;
+  if (!job.guard.canWrite(job.assetGuid, current)) return false;
+  if (job.sourceSha256 === undefined) return true;
+  return current.chunks.find((chunk) => chunk.kind === "pixels")?.sha256 === job.sourceSha256;
 }
 
 export type EncodeFn = (
@@ -35,9 +79,12 @@ export interface EncodeQueueOptions {
   onState?: (
     assetGuid: string,
     state: "encoding" | "compressed" | "encode_failed",
+    job: EncodeJob,
   ) => void;
   onComplete?: (result: EncodeJobResult) => void | Promise<void>;
-  onError?: (assetGuid: string, error: unknown) => void;
+  onError?: (assetGuid: string, error: unknown, job: EncodeJob) => void;
+  /** A guarded job its guard refused at the front of the queue, dropped unencoded. */
+  onDrop?: (job: EncodeJob) => void;
 }
 
 type DerivedJob = { run: () => Promise<void> };
@@ -54,8 +101,11 @@ export class EncodeQueue {
   private readonly onState?: EncodeQueueOptions["onState"];
   private readonly onComplete?: EncodeQueueOptions["onComplete"];
   private readonly onError?: EncodeQueueOptions["onError"];
+  private readonly onDrop?: EncodeQueueOptions["onDrop"];
   private paused = false;
   private running = false;
+  /** The job being encoded, until its result or error is reported. */
+  private encoding: EncodeJob | null = null;
   private completedSinceRecycle = 0;
   private recycled = 0;
 
@@ -67,6 +117,7 @@ export class EncodeQueue {
     this.onState = options.onState;
     this.onComplete = options.onComplete;
     this.onError = options.onError;
+    this.onDrop = options.onDrop;
   }
 
   get depth(): number {
@@ -75,6 +126,15 @@ export class EncodeQueue {
 
   get recycleCount(): number {
     return this.recycled;
+  }
+
+  /**
+   * A job for this asset waits or is encoding. Its completion callbacks run
+   * after this turns false, so they may queue the asset again.
+   */
+  has(assetGuid: string): boolean {
+    if (this.encoding?.assetGuid === assetGuid) return true;
+    return this.queue.some((job) => "assetGuid" in job && job.assetGuid === assetGuid);
   }
 
   enqueue(job: EncodeJob): void {
@@ -161,7 +221,12 @@ export class EncodeQueue {
 
   private async pump(): Promise<void> {
     if (this.paused || this.running) return;
-    const job = this.queue.shift();
+    let job = this.queue.shift();
+    // A guarded job its guard now refuses is dropped before any work or write.
+    while (job && "assetGuid" in job && job.guard && !job.guard.canWrite(job.assetGuid)) {
+      this.onDrop?.(job);
+      job = this.queue.shift();
+    }
     if (!job) return;
 
     this.running = true;
@@ -170,15 +235,21 @@ export class EncodeQueue {
       finally { this.running = false; void this.pump(); }
       return;
     }
-    this.onState?.(job.assetGuid, "encoding");
+    this.encoding = job;
+    this.onState?.(job.assetGuid, "encoding", job);
     try {
       const { ktx2, wallMs } = await this.encodeWithTimeout(job);
-      this.onState?.(job.assetGuid, "compressed");
+      this.encoding = null;
+      this.onState?.(job.assetGuid, "compressed", job);
       await this.onComplete?.({
         assetGuid: job.assetGuid,
         ktx2,
         wallMs,
         settings: job.settings,
+        ...(job.chunkId ? { chunkId: job.chunkId } : {}),
+        ...(job.usage ? { usage: job.usage } : {}),
+        ...(job.guard ? { guard: job.guard } : {}),
+        ...(job.sourceSha256 ? { sourceSha256: job.sourceSha256 } : {}),
       });
       this.completedSinceRecycle += 1;
       if (this.completedSinceRecycle >= this.recycleAfter) {
@@ -186,9 +257,11 @@ export class EncodeQueue {
         this.recycled += 1;
       }
     } catch (error) {
-      this.onState?.(job.assetGuid, "encode_failed");
-      this.onError?.(job.assetGuid, error);
+      this.encoding = null;
+      this.onState?.(job.assetGuid, "encode_failed", job);
+      this.onError?.(job.assetGuid, error, job);
     } finally {
+      this.encoding = null;
       this.running = false;
       void this.pump();
     }

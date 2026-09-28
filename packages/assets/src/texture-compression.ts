@@ -25,8 +25,9 @@ export interface TextureEncodeSettings {
   generateMipmaps: boolean;
   /**
    * Round each encoded base edge up to a multiple of this after the
-   * max-dimension clamp. Set only for Particle usage; see
-   * {@link textureEncodeBlockAlign}.
+   * max-dimension clamp ({@link textureEncodePadding}). Only Particle's
+   * alignment joins the chunk id ({@link textureEncodeChunkId}); for other
+   * Usages it is encode-only.
    */
   blockAlign?: number;
 }
@@ -72,11 +73,36 @@ export function clampDimension(
  */
 export const TEXTURE_BLOCK_EDGE = 4;
 
-/** Encode block alignment for a Texture usage: Particle only, else none. */
+/**
+ * Block alignment keyed into a Usage's chunk id: Particle only, else none.
+ * Particle ids have always carried it; keying it for other Usages would
+ * change every existing id and re-encode aligned textures.
+ */
 export function textureEncodeBlockAlign(
   usage: TextureUsage | string,
 ): number | undefined {
   return usage === "particle" ? TEXTURE_BLOCK_EDGE : undefined;
+}
+
+/**
+ * Block alignment an encode is padded to. Compressed encodes round up to the
+ * 4-texel grid so WebGPU keeps them block-compressed, except atlases
+ * (Tileset, Sprite and Sprite Animation textures), whose tile and frame
+ * rects must not be resampled. Particle always aligns. A known clamped size
+ * already on the grid needs none; an unknown size pads, which is a no-op
+ * for a grid size.
+ */
+export function textureEncodePadding(
+  usage: TextureUsage | string,
+  context: { atlas: boolean; clampedSize: { width: number; height: number } | null },
+): number | undefined {
+  if (usage === "particle") return TEXTURE_BLOCK_EDGE;
+  if (!shouldCompressTexture(usage) || context.atlas) return undefined;
+  const size = context.clampedSize;
+  if (size && size.width % TEXTURE_BLOCK_EDGE === 0 && size.height % TEXTURE_BLOCK_EDGE === 0) {
+    return undefined;
+  }
+  return TEXTURE_BLOCK_EDGE;
 }
 
 /** Round each edge up to a multiple of `align` (no-op when unset or <= 1). */
@@ -147,6 +173,22 @@ export async function encodeSettingsHash(
 
 export function ktx2ChunkId(settingsHash: string): string {
   return `ktx2:${settingsHash}`;
+}
+
+/**
+ * Chunk id an encode under `usage` commits to: the settings hash with
+ * `blockAlign` keyed for Particle only ({@link textureEncodeBlockAlign}).
+ * Encode-only padding never changes the id, so a re-encode of a texture off
+ * the grid overwrites the chunk the resolver already prefers.
+ */
+export async function textureEncodeChunkId(
+  settings: TextureEncodeSettings,
+  usage: TextureUsage | string,
+): Promise<string> {
+  const keyed = textureEncodeBlockAlign(usage);
+  const { blockAlign: _encodeOnly, ...rest } = settings;
+  void _encodeOnly;
+  return ktx2ChunkId(await encodeSettingsHash({ ...rest, ...(keyed ? { blockAlign: keyed } : {}) }));
 }
 
 /**

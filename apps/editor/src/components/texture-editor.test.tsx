@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { AssetRegistry, projectContentRoot, type AreaEmissionProgress } from "@babylonslate/assets";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
@@ -16,6 +16,8 @@ if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined")
 }
 
 const retryTextureEncoding = vi.hoisted(() => vi.fn(async () => true));
+const textureAlignmentStale = vi.hoisted(() => vi.fn<(guid: string, usage?: string) => Promise<boolean>>(async () => false));
+const textureUsageBlockedReason = vi.hoisted(() => vi.fn<(guid: string) => string | null>(() => null));
 const prepareAreaEmission = vi.hoisted(() => vi.fn(async (_guid: string, options: { signal: AbortSignal; onProgress: (value: AreaEmissionProgress) => void }) => {
   options.onProgress({ phase: "filtering", progress: 0.5 });
   await new Promise<void>((_resolve, reject) => options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true }));
@@ -40,8 +42,11 @@ vi.mock("../context/document-context", () => ({
   useDocuments: () => ({
     prepareAreaEmission,
     retryTextureEncoding,
+    textureAlignmentStale,
+    textureUsageBlockedReason,
     readAssetChunk,
     assetRegistry,
+    registryVersion: 0,
     openDocuments: [
       { id: "other", ref: { path: "assets/tex-other.babasset" }, content: {} },
       {
@@ -58,6 +63,10 @@ const ENVIRONMENT = { usage: "skybox", dimension: "cube", container: "dds", enco
 afterEach(() => {
   cleanup();
   retryTextureEncoding.mockClear();
+  textureAlignmentStale.mockReset();
+  textureAlignmentStale.mockResolvedValue(false);
+  textureUsageBlockedReason.mockReset();
+  textureUsageBlockedReason.mockReturnValue(null);
   prepareAreaEmission.mockClear();
   readAssetChunk.mockClear();
 });
@@ -121,6 +130,37 @@ describe("Texture editor", () => {
     expect(screen.getByTestId("texture-encode-error").textContent).toContain("BasisEncoder.encode returned 0");
     fireEvent.click(screen.getByTestId("texture-retry-encode"));
     expect(retryTextureEncoding).toHaveBeenCalledWith("tex-albedo", { force: true, usage: "albedo" });
+  });
+
+  it.each([true, false])("offers Retry Encoding for a compressed Texture only while its encode breaks the size rule (stale=%s)", async (stale) => {
+    textureAlignmentStale.mockResolvedValue(stale);
+    render(<TextureDetails guid="tex-odd" dependencies={[]} payload={{ usage: "normal", compressionState: "compressed" }} onChange={vi.fn()} />);
+    // Checked with the tab's Usage, which may be an unsaved Details edit.
+    await waitFor(() => expect(textureAlignmentStale).toHaveBeenCalledWith("tex-odd", "normal"));
+    if (!stale) {
+      await act(async () => {});
+      expect(screen.queryByTestId("texture-retry-encode")).toBeNull();
+      return;
+    }
+    fireEvent.click(await screen.findByTestId("texture-retry-encode"));
+    expect(retryTextureEncoding).toHaveBeenCalledWith("tex-odd", { force: true, usage: "normal" });
+  });
+
+  it("re-encodes nothing while another user's lock keeps the Texture read-only", async () => {
+    textureUsageBlockedReason.mockReturnValue("The Texture is locked by Bob.");
+    textureAlignmentStale.mockResolvedValue(true);
+    const onChange = vi.fn();
+    render(<TextureDetails guid="tex-locked" dependencies={[]} payload={{ usage: "albedo", compressionState: "compressed" }} onChange={onChange} />);
+    const retry = await screen.findByTestId("texture-retry-encode");
+    expect(retry).toHaveProperty("disabled", true);
+    fireEvent.click(retry);
+    // A Details change the read-only tab refuses must not re-encode the file either.
+    fireEvent.click(screen.getByRole("combobox", { name: "Usage" }));
+    const particle = screen.getByRole("option", { name: "Particle" });
+    fireEvent.pointerDown(particle);
+    fireEvent.click(particle);
+    expect(onChange).toHaveBeenCalledWith({ usage: "particle", compressionState: "compressed" });
+    expect(retryTextureEncoding).not.toHaveBeenCalled();
   });
 
   it("offers no Retry Encoding once the Usage stays uncompressed", () => {

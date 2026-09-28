@@ -61,6 +61,7 @@ import {
   DOCUMENT_CHUNK_ID,
   EncodeQueue,
   encodeAssetDocument,
+  encodeJobMayWrite,
   extraChunksFromDecoded,
   extraChunksWithAudioReverb,
   extraChunksWithAudioClip,
@@ -80,6 +81,7 @@ import {
   readProjectTree,
   writeThumbnail,
   ProjectSearchIndex,
+  type BabassetHeader,
   type BlobStore,
   type EncodeFn,
   stubEncodeKtx2,
@@ -105,6 +107,11 @@ import {
   writeProjectPlugin,
   parseSpriteAnimationPayload,
   spriteAnimationDurationMs,
+  ATLAS_REFERRER_TYPES,
+  ATLAS_TEXTURES_META,
+  atlasTextureGuids,
+  type ImageSize,
+  type OwnAssetWrite,
   type InspectedBabplugin,
   type PluginImportPlan,
 } from "@babylonslate/assets";
@@ -202,13 +209,27 @@ function headerMetaForSave(
     const parsed = parseSpriteAnimationPayload(content);
     return {
       durationMs: spriteAnimationDurationMs(parsed),
+      [ATLAS_TEXTURES_META]: atlasTextureGuids(type, content as Record<string, unknown>),
     };
+  }
+  if (ATLAS_REFERRER_TYPES.has(type)) {
+    // The registry reads a referrer's atlases from its header, never its document.
+    return { [ATLAS_TEXTURES_META]: atlasTextureGuids(type, content as Record<string, unknown>) };
   }
   return undefined;
 }
 
 /** Texture payload fields owned by the registry's encode queue, not the document. */
-const TEXTURE_ENCODE_STATE_KEYS = ["compressionState", "ktx2ChunkId", "encodeError", "encodeWallMs"] as const;
+const TEXTURE_ENCODE_STATE_KEYS = [
+  "compressionState",
+  "ktx2ChunkId",
+  "encodeError",
+  "encodeWallMs",
+  "ktx2Width",
+  "ktx2Height",
+  "ktx2BlockAlign",
+  "ktx2Sha256",
+] as const;
 
 /**
  * An open Texture document keeps the payload it opened with, but encodes can
@@ -225,6 +246,12 @@ function withSavedTextureEncodeState(
     else delete next[key];
   }
   return next;
+}
+
+/** sha256 of the KTX2 chunk a Texture's header commits to (`ktx2ChunkId`), if any. */
+function committedKtx2Sha256(header: Pick<BabassetHeader, "payload" | "chunks"> | undefined): string | null {
+  const id = header?.payload.ktx2ChunkId;
+  return header?.chunks.find((chunk) => chunk.id === id)?.sha256 ?? null;
 }
 
 export interface ProjectLoadResult {
@@ -291,8 +318,33 @@ export class ProjectService {
   /** Asset guids stay stable across saves so references survive a rewrite. */
   private readonly assetGuids = new Map<string, string>();
   private readonly registryListeners = new Set<() => void>();
+  private readonly ownWriteListeners = new Set<(write: OwnAssetWrite) => void>();
   private readonly diagnostics: string[] = [];
   private readonly diagnosticListeners = new Set<(line: string) => void>();
+  /**
+   * The open project's source control **Enable** setting, saved or not. While
+   * it is on, nothing re-encodes a Texture in the background: only the user's
+   * own edits, and Textures whose committed encode this session wrote, re-align.
+   */
+  private sourceControlEnabled = false;
+  /** The Usage an open Texture tab shows, saved or not (the editor sets it). */
+  private openTextureUsage: ((guid: string) => string | undefined) | null = null;
+  /**
+   * Texture guid -> sha256 of the KTX2 chunk this project session last wrote
+   * for it: an encode it committed, or the one a file it created carries (a
+   * `.babasset` import, Duplicate or Copy). It exempts the Texture only while
+   * that encode is still the committed one in the file on disk: a git revert
+   * or pull that replaces it ends the exemption, even for a job queued before.
+   */
+  private readonly sessionEncodes = new Map<string, string>();
+  /** Committed KTX2 (and sniffed source) sizes by chunk sha256, kept across registry remounts. */
+  private readonly ktx2SizeCache = new Map<string, ImageSize | null>();
+  /** Textures decoded legacy atlas referrers sample, by content, kept across registry remounts. */
+  private readonly legacyAtlasCache = new Map<string, readonly string[]>();
+  /** Textures an alignment check is requeuing, shared by remounts as the encode queue is. */
+  private readonly alignmentRequeues = new Set<string>();
+  private textureAlignmentChain: Promise<unknown> = Promise.resolve();
+  private readonly textureAlignment = { runs: 0, pending: 0, requeued: new Set<string>() };
 
   constructor(
     storage: ProjectStorage,
@@ -381,24 +433,48 @@ export class ProjectService {
           settings,
           mime,
         ),
-      onState: (guid, state) => {
-        // `compressed` is written with the KTX2 chunk in onComplete.
-        if (state === "compressed") return;
+      onState: (guid, state, job) => {
+        // `compressed` is written with the KTX2 chunk in onComplete. A guarded
+        // (alignment) job leaves the saved state alone until it commits, so
+        // nothing on disk requeues it later, source control on or not.
+        if (state === "compressed" || job.guard) return;
         void this.assetRegistry
           ?.setCompressionState(guid, state)
           .then(() => this.emitRegistryChange());
       },
       onComplete: async (result) => {
-        await this.assetRegistry?.commitCompressedTexture(result);
+        const registry = this.assetRegistry;
+        if (!(await registry?.commitCompressedTexture(result))) {
+          // Refused (a guarded job the file on disk no longer allows): Texture
+          // Details rechecks whether the Texture is left stale for the user.
+          this.emitRegistryChange();
+          return;
+        }
+        const committed = registry && committedKtx2Sha256(registry.getByGuid(result.assetGuid)?.header);
+        if (committed) this.sessionEncodes.set(result.assetGuid, committed);
         this.emitRegistryChange();
+        // A Tileset, Sprite or Sprite Animation may have picked the texture
+        // while it encoded; recheck it with the Usage the pass will use (an
+        // open tab's, else the saved one), unless another Usage chose this
+        // encode: an unsaved Details edit in a tab closed since.
+        const saved = this.assetRegistry?.getByGuid(result.assetGuid)?.header.payload.usage;
+        const usage = this.openTextureUsage?.(result.assetGuid) ?? String(saved ?? "albedo");
+        if (result.usage === undefined || result.usage === usage) {
+          void this.reconcileTextureAlignment([result.assetGuid]);
+        }
       },
-      onError: (guid, error) => {
+      onError: (guid, error, job) => {
         this.emitTextureEncodeDiagnostic(guid, error);
         const message = error instanceof Error ? error.message : String(error);
         void this.assetRegistry
-          ?.setCompressionState(guid, "encode_failed", { error: message })
+          ?.setCompressionState(guid, "encode_failed", {
+            error: message,
+            ...(job.guard ? { canWrite: (_guid: string, current: BabassetHeader) => encodeJobMayWrite(job, current) } : {}),
+          })
           .then(() => this.emitRegistryChange());
       },
+      // A guarded job dropped unencoded may leave its Texture stale for the user.
+      onDrop: () => this.emitRegistryChange(),
     });
   }
 
@@ -507,6 +583,18 @@ export class ProjectService {
     for (const listener of this.registryListeners) listener();
   }
 
+  /**
+   * Asset files the registry rewrote itself (Texture encode states, committed
+   * encodes, derived chunks), with their mtimes before and after, so the
+   * editor does not report its own writes as external changes.
+   */
+  onOwnAssetWrite(listener: (write: OwnAssetWrite) => void): () => void {
+    this.ownWriteListeners.add(listener);
+    return () => {
+      this.ownWriteListeners.delete(listener);
+    };
+  }
+
   /** Pause encode jobs while Preview runs (engineplan §3.5). */
   pauseTextureEncodeQueue(): void {
     this.encodeQueue.pause();
@@ -523,6 +611,100 @@ export class ProjectService {
     return (
       (await this.assetRegistry?.retryTextureEncoding(guid, options)) ?? false
     );
+  }
+
+  /**
+   * The editor reports the project's source control **Enable** setting as it
+   * changes, saved or not (a project load reads the saved one). Turning it on
+   * stops the alignment pass, including the re-encodes it queued; turning it
+   * off runs the pass.
+   */
+  setSourceControlEnabled(enabled: boolean): void {
+    if (this.sourceControlEnabled === enabled) return;
+    this.sourceControlEnabled = enabled;
+    if (!enabled) void this.reconcileTextureAlignment();
+  }
+
+  /**
+   * Whether the alignment pass may rewrite a Texture now: not read-only, and
+   * source control is off or its committed encode is the one this project
+   * session last wrote (such as an import a Tileset then picks); a git revert
+   * or pull that replaced that encode ends it. Asked again when its job
+   * starts, and before its commit with `current`, the file on disk the commit
+   * would replace, which the index may not describe yet.
+   */
+  private alignmentMayWrite(guid: string, current?: BabassetHeader): boolean {
+    const registry = this.assetRegistry;
+    const asset = registry?.getByGuid(guid);
+    if (!registry || !asset) return false;
+    if (registry.getRoot(asset.rootId)?.readOnly || isPluginDocumentReadOnly(this.pluginDescriptors, asset.path)) {
+      return false;
+    }
+    if (!this.sourceControlEnabled) return true;
+    const committed = committedKtx2Sha256(current ?? asset.header);
+    return committed !== null && this.sessionEncodes.get(guid) === committed;
+  }
+
+  /**
+   * Whether Texture Details offers **Retry Encoding** for a `compressed`
+   * Texture: its committed encode is stale for the alignment policy and
+   * nothing re-encodes it yet (source control on, so the pass leaves it for
+   * the user). `usage` is its tab's, saved or not.
+   */
+  async textureAlignmentStale(guid: string, usage?: string): Promise<boolean> {
+    const registry = this.assetRegistry;
+    const asset = registry?.getByGuid(guid);
+    if (!registry || !asset || isPluginDocumentReadOnly(this.pluginDescriptors, asset.path)) return false;
+    return registry.isTextureAlignmentStale(guid, {
+      usage: usage ?? this.openTextureUsage?.(guid),
+      ktx2SizeCache: this.ktx2SizeCache,
+    });
+  }
+
+  /**
+   * `usageFor(guid)` is the Usage an open Texture tab shows, saved or not,
+   * so the alignment pass checks and re-encodes as a Details edit did
+   * instead of undoing it with the saved Usage.
+   */
+  setOpenTextureUsage(usageFor: ((guid: string) => string | undefined) | null): void {
+    this.openTextureUsage = usageFor;
+  }
+
+  /**
+   * Requeue compressed Textures whose committed encode is stale for the
+   * alignment policy (all Textures, or `guids`). Runs one at a time on the
+   * current registry. While source control is on it only requeues Textures
+   * whose committed encode is still the one this session wrote, such as an
+   * import picked by a Tileset (`alignmentMayWrite`); every other Texture
+   * waits for the user's own edit. Resolves with the number requeued.
+   */
+  reconcileTextureAlignment(guids?: readonly string[]): Promise<number> {
+    const run = async () => {
+      const registry = this.assetRegistry;
+      if (!registry) return 0;
+      const requeued = await registry.reconcileTextureAlignment({
+        guids,
+        canWrite: (guid, current) => this.alignmentMayWrite(guid, current),
+        usageFor: this.openTextureUsage ?? undefined,
+        ktx2SizeCache: this.ktx2SizeCache,
+      });
+      this.textureAlignment.runs += 1;
+      for (const guid of requeued) this.textureAlignment.requeued.add(guid);
+      if (requeued.length > 0) this.emitRegistryChange();
+      return requeued.length;
+    };
+    this.textureAlignment.pending += 1;
+    const next = this.textureAlignmentChain.then(run, run).finally(() => {
+      this.textureAlignment.pending -= 1;
+    });
+    this.textureAlignmentChain = next.catch(() => 0);
+    return next;
+  }
+
+  /** Alignment passes finished and still queued, and every Texture they requeued (test hook). */
+  get textureAlignmentState(): { runs: number; pending: number; requeued: string[] } {
+    const { runs, pending, requeued } = this.textureAlignment;
+    return { runs, pending, requeued: [...requeued] };
   }
 
   async prepareAreaEmission(guid: string, options: { signal?: AbortSignal; onProgress?: (value: AreaEmissionProgress) => void } = {}): Promise<void> {
@@ -831,6 +1013,7 @@ export class ProjectService {
   }
 
   async closeProject(): Promise<void> {
+    this.sessionEncodes.clear();
     await this.extensions.close();
     this.cancelEmissionJobs();
     await this.storage.releaseFolder();
@@ -922,6 +1105,7 @@ export class ProjectService {
     this.migrationPending = [];
     this.migrateOnSaveApproved = false;
     this.assetGuids.clear();
+    this.sessionEncodes.clear();
 
     const hasProject = await this.storage.exists(PROJECT_FILE);
     if (!hasProject) {
@@ -934,6 +1118,7 @@ export class ProjectService {
     const document = normalizeProjectDocument(raw, folder.name);
     this.projectGuid = raw.guid ?? newGuid();
     this.loadedTextureSettings = document.settings.textures;
+    this.sourceControlEnabled = document.settings.sourceControl?.enabled === true;
     this.pluginOverrides = document.settings.pluginOverrides ?? {};
 
     // Project manifest schema migration (type Project).
@@ -1046,10 +1231,22 @@ export class ProjectService {
     const maxDimension =
       this.loadedTextureSettings?.maxTextureDimension ??
       DEFAULT_TEXTURE_ENCODE_SETTINGS.maxDimension;
-    const registry = new AssetRegistry(this.storage, { blobs: this.blobs });
+    const registry = new AssetRegistry(this.storage, {
+      blobs: this.blobs,
+      legacyAtlasCache: this.legacyAtlasCache,
+      alignmentRequeues: this.alignmentRequeues,
+    });
     registry.setEncodePipeline(this.encodeQueue, {
       ...DEFAULT_TEXTURE_ENCODE_SETTINGS,
       maxDimension,
+    });
+    registry.setOwnWriteListener((write) => {
+      for (const listener of this.ownWriteListeners) listener(write);
+    });
+    // A file this session creates is its own new work, not one teammates share.
+    registry.setCreatedTextureListener(({ header }) => {
+      const committed = committedKtx2Sha256(header);
+      if (committed) this.sessionEncodes.set(header.guid, committed);
     });
     await registry.mountRoot(projectContentRoot());
     this.assetRegistry = registry;
@@ -1060,10 +1257,19 @@ export class ProjectService {
       nodeTitles: SEARCH_NODE_TITLES,
     });
     this.bindThumbnailWriter();
+    // Every encode pads by atlas status, so legacy Tilesets, Sprites and
+    // Sprite Animations must be decoded before anything is queued.
+    await registry.resolveLegacyAtlasReferrers();
     const auto = this.loadedTextureSettings?.autoRequeueUncompressed ?? true;
     if (auto) {
       await registry.requeueUncompressedTextures();
     }
+    registry.setAtlasStatusListener((guids) => {
+      void this.reconcileTextureAlignment(guids);
+    });
+    // Open and every remount recheck what is on disk now (nothing while
+    // source control is on).
+    void this.reconcileTextureAlignment();
     return registry;
   }
 
@@ -1434,6 +1640,7 @@ export class ProjectService {
     if (appearance) document.metadata.appearance = appearance;
     this.projectGuid = newGuid();
     this.loadedTextureSettings = document.settings.textures;
+    this.sourceControlEnabled = document.settings.sourceControl?.enabled === true;
     this.pluginOverrides = document.settings.pluginOverrides ?? {};
     const graph = createDefaultLogicGraphSerialized();
     const scene = createDefaultScene(kind === "2d" ? "2d" : "3d");

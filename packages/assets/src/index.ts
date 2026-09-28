@@ -1,4 +1,5 @@
 export * from "./asset-document";
+export * from "./atlas-textures";
 export * from "./babasset";
 export * from "./babproject";
 export * from "./blob-store";

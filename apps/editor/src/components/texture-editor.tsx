@@ -54,6 +54,33 @@ function asRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
+/**
+ * Whether the Texture's committed encode is stale for the alignment policy
+ * while nothing re-encodes it (with source control on the pass leaves older
+ * Textures to the user), so Details offers Retry Encoding. Checked with the
+ * tab's Usage, and again whenever the registry changes.
+ */
+function useTextureAlignmentStale(
+  guid: string | undefined,
+  payload: Record<string, unknown>,
+  check: (guid: string, usage?: string) => Promise<boolean>,
+  registryVersion: number,
+): boolean {
+  const usage = typeof payload.usage === "string" ? payload.usage : "albedo";
+  const key = guid && !isEnvironmentTexturePayload(payload) && shouldCompressTexture(usage) ? `${guid}\n${usage}` : null;
+  const [result, setResult] = useState<{ key: string; stale: boolean } | null>(null);
+  useEffect(() => {
+    if (!key || !guid) return;
+    let current = true;
+    check(guid, usage).then(
+      (stale) => { if (current) setResult({ key, stale }); },
+      () => { if (current) setResult({ key, stale: false }); },
+    );
+    return () => { current = false; };
+  }, [check, guid, key, usage, registryVersion]);
+  return key !== null && result?.key === key && result.stale;
+}
+
 function useTextureDocument() {
   const { documentId } = useDocumentWorkspace();
   const { openDocuments, applyAssetDocumentChange, assetRegistry } = useDocuments();
@@ -300,7 +327,11 @@ export function TextureDetails({
   payload: Record<string, unknown>;
   onChange: (next: Record<string, unknown>) => void;
 }) {
-  const { retryTextureEncoding, prepareAreaEmission, assetRegistry } = useDocuments();
+  const { retryTextureEncoding, textureAlignmentStale, textureUsageBlockedReason, prepareAreaEmission, assetRegistry, registryVersion } = useDocuments();
+  const alignmentStale = useTextureAlignmentStale(guid, payload, textureAlignmentStale, registryVersion);
+  // A re-encode rewrites the file: not while it is read-only, such as under
+  // another user's lock (the tab's banner offers Edit Anyway).
+  const encodeBlocked = guid ? textureUsageBlockedReason(guid) !== null : true;
   const emissionJob = useRef<AbortController | null>(null);
   const [emissionProgress, setEmissionProgress] = useState<AreaEmissionProgress | null>(null);
   const [emissionError, setEmissionError] = useState("");
@@ -350,7 +381,7 @@ export function TextureDetails({
       onChange: (value) => {
         const { payload: next, shouldRequeue } = applyTextureUsageChange(payload, value);
         onChange(next);
-        if (guid && shouldRequeue) void retryTextureEncoding(guid, { force: true, usage: value });
+        if (guid && shouldRequeue && !encodeBlocked) void retryTextureEncoding(guid, { force: true, usage: value });
       },
     },
     {
@@ -362,7 +393,7 @@ export function TextureDetails({
       onChange: (value) => {
         const { payload: next, shouldRequeue } = applyTextureDownsampleChange(payload, value);
         onChange(next);
-        if (guid && shouldRequeue) void retryTextureEncoding(guid, { force: true, usage });
+        if (guid && shouldRequeue && !encodeBlocked) void retryTextureEncoding(guid, { force: true, usage });
       },
     },
   ];
@@ -375,7 +406,7 @@ export function TextureDetails({
       onChange: (value) => {
         const { payload: next, shouldRequeue } = applyTextureCompressionQualityChange(payload, value);
         onChange(next);
-        if (guid && shouldRequeue) void retryTextureEncoding(guid, { force: true, usage });
+        if (guid && shouldRequeue && !encodeBlocked) void retryTextureEncoding(guid, { force: true, usage });
       },
     });
   }
@@ -400,7 +431,7 @@ export function TextureDetails({
       <div className="flex flex-col gap-2 px-2 py-2">
         <p className="text-xs text-muted-foreground">
           {compressed
-            ? `Encoded to GPU formats in the background after import or when settings change.${usage === "particle" ? " Particle Textures encode at a size rounded up to a multiple of 4 for WebGPU." : ""}`
+            ? `Encoded to GPU formats in the background after import or when settings change. ${usage === "particle" ? "Particle Textures always encode at a size rounded up to a multiple of 4 for WebGPU." : "Compressed Textures encode at a size rounded up to a multiple of 4 for WebGPU, except Textures used by a Tileset, Sprite or Sprite Animation, which keep their size."}`
             : `${usageLabel(usage)} Textures stay uncompressed to keep exact pixels.`}
         </p>
         {encodeError ? (
@@ -409,12 +440,13 @@ export function TextureDetails({
             <AlertDescription>{encodeError}</AlertDescription>
           </Alert>
         ) : null}
-        {guid && compressed && compression === "encode_failed" ? (
+        {guid && compressed && (compression === "encode_failed" || alignmentStale) ? (
           <Button
             size="sm"
             variant="outline"
             className="w-fit"
             data-testid="texture-retry-encode"
+            disabled={encodeBlocked}
             onClick={() => void retryTextureEncoding(guid, { force: true, usage })}
           >
             Retry Encoding

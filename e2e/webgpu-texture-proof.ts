@@ -39,6 +39,30 @@ export async function compressedGpuTextures(page: Page): Promise<CompressedTextu
   );
 }
 
+/** The editor's texture alignment pass: completed runs, runs in flight, and every Texture a run requeued. */
+export type TextureAlignmentState = { runs: number; pending: number; requeued: string[] };
+
+/** The alignment pass test hook's state; null before the editor installs it. */
+export async function textureAlignment(page: Page): Promise<TextureAlignmentState | null> {
+  return page.evaluate(() => (globalThis as {
+    __babylonslateTest?: { textureAlignment?: () => TextureAlignmentState };
+  }).__babylonslateTest?.textureAlignment?.() ?? null);
+}
+
+/**
+ * Resolves once the editor's texture alignment pass ran (more than `afterRuns`
+ * times) and is idle, with every Texture a pass requeued.
+ */
+export async function settledAlignmentPass(page: Page, afterRuns = 0): Promise<string[]> {
+  let requeued: string[] = [];
+  await expect.poll(async () => {
+    const state = await textureAlignment(page);
+    requeued = state?.requeued ?? [];
+    return state !== null && state.runs > afterRuns && state.pending === 0;
+  }, { timeout: 60_000 }).toBe(true);
+  return requeued;
+}
+
 /** Recorded textures off the 4-texel grid: WebGPU rejects such a block-compressed upload. */
 export function offBlockGrid(textures: readonly CompressedTexture[]): CompressedTexture[] {
   return textures.filter((texture) => texture.width % 4 !== 0 || texture.height % 4 !== 0);

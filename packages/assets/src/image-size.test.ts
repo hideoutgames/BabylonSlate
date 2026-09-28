@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { sniffImageSize } from "./image-size";
+import { sniffImageSize, sniffSourceImageSize, sniffWebpSize } from "./image-size";
+import { gifHeader, webpHeader } from "./test-support/image-headers";
 import { isKtx2Bytes } from "./texture-loader";
 import { sniffKtx2Size } from "./ktx2-info";
 
@@ -35,6 +36,23 @@ describe("sniffImageSize", () => {
 
   it("returns null for unknown bytes", () => {
     expect(sniffImageSize(new Uint8Array([1, 2, 3]))).toBeNull();
+  });
+});
+
+describe("sniffSourceImageSize", () => {
+  it("reads every format a Texture imports", () => {
+    expect(sniffSourceImageSize(png(30, 20))).toEqual({ width: 30, height: 20 });
+    expect(sniffSourceImageSize(webpHeader("VP8 ", 30, 20))).toEqual({ width: 30, height: 20 });
+    expect(sniffSourceImageSize(webpHeader("VP8L", 30, 20))).toEqual({ width: 30, height: 20 });
+    expect(sniffSourceImageSize(webpHeader("VP8X", 1000, 750))).toEqual({ width: 1000, height: 750 });
+    expect(sniffSourceImageSize(webpHeader("VP8X", 30, 20, true))).toEqual({ width: 30, height: 20 });
+    expect(sniffSourceImageSize(gifHeader(30, 20))).toEqual({ width: 30, height: 20 });
+    expect(sniffSourceImageSize(new Uint8Array([1, 2, 3]))).toBeNull();
+  });
+
+  it("flags animated WebP, which environment cube faces reject", () => {
+    expect(sniffWebpSize(webpHeader("VP8X", 32, 32, true))?.animated).toBe(true);
+    expect(sniffWebpSize(webpHeader("VP8L", 32, 32))?.animated).toBe(false);
   });
 });
 
