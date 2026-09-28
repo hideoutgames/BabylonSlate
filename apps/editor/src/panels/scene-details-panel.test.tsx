@@ -235,7 +235,8 @@ describe("constraint target authoring", () => {
     fireEvent.click(screen.getByRole("option", { name: /Empty Hook/ }));
     await waitFor(() => expect(harness.applySceneChange).toHaveBeenCalled());
     const saved = normalizeScene(JSON.parse(JSON.stringify(harness.applySceneChange.mock.calls.at(-1)![1])));
-    expect(saved.actors[0]!.components[0]!.properties).toMatchObject({ targetActorId: "attachment", targetComponentId: null });
+    // The end attaches at the picked actor's origin rather than the old local offset.
+    expect(saved.actors[0]!.components[0]!.properties).toMatchObject({ targetActorId: "attachment", targetComponentId: null, endPosition: [0, 0, 0] });
   });
 
   it("selects a physical actor by name and persists the target through the scene change path", async () => {

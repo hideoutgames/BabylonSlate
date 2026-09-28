@@ -1554,7 +1554,9 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
           updateActor((entry) => ({
             ...entry,
             components: entry.components.map((component) => component.id === constraintTargetPick.componentId
-              ? { ...component, properties: { ...component.properties, targetActorId: pickingCableTarget ? targetActorId || null : targetActorId, ...(pickingCableTarget ? { targetComponentId: null } : {}) } }
+              ? { ...component, properties: pickingCableTarget
+                ? patchInspectorComponentProperty(component, "targetActorId", targetActorId || null)
+                : { ...component.properties, targetActorId } }
               : component),
           }));
           setConstraintTargetPick(null);
