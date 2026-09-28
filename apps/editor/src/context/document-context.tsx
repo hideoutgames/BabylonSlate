@@ -824,10 +824,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const runForegroundRescanRef = useRef<() => Promise<void>>(async () => {});
 
   const captureMtimeSnapshot = useCallback(async () => {
-    mtimeSnapshotRef.current = {
+    // Installed before the project.json read, so the editor's own writes that
+    // land meanwhile fold into this snapshot, not the one it replaces.
+    const snapshot = {
       assets: snapshotIndexedMtimes(projectService.registry?.list() ?? []),
-      projectJson: await readProjectJsonMtime(projectService.storagePort),
+      projectJson: mtimeSnapshotRef.current?.projectJson ?? null,
     };
+    mtimeSnapshotRef.current = snapshot;
+    snapshot.projectJson = await readProjectJsonMtime(projectService.storagePort);
   }, [projectService]);
 
   // The editor's own Texture encode writes are not external changes.
@@ -1089,6 +1093,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     const nextAssets = snapshotIndexedMtimes(
       projectService.registry?.list() ?? [],
     );
+    // Installed before the project.json read, so the editor's own writes that
+    // land meanwhile fold into it; the scan itself is what gets classified.
+    const next = { assets: { ...nextAssets }, projectJson: previous?.projectJson ?? null };
+    mtimeSnapshotRef.current = next;
     const nextProject = await readProjectJsonMtime(projectService.storagePort);
     if (previous) {
       const openDocs = documentService
@@ -1106,10 +1114,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         setExternalChangePrompt(result);
       }
     }
-    mtimeSnapshotRef.current = {
-      assets: nextAssets,
-      projectJson: nextProject,
-    };
+    next.projectJson = nextProject;
   }, [bump, documentService, projectService]);
   runForegroundRescanRef.current = runForegroundRescan;
 
