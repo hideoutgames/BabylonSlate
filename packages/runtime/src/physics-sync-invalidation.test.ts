@@ -280,6 +280,92 @@ it("uses current parent physics poses during indexed child readback", () => {
   }
 });
 
+it("reads back a body under a nonphysics child of another body from both post-step poses", () => {
+  const world = new World({
+    seed: 1,
+    dt: 1 / 60,
+    classRegistry: new ClassRegistry(),
+  });
+  const spawn = (guid: string, parentId?: string, body = true) => {
+    const actor = world.createActor({
+      classId: "Actor",
+      guid,
+      transform: identityTransform(),
+      variables: parentId ? { parentId } : {},
+    });
+    if (body)
+      actor.attachComponent(
+        world.createComponent({
+          classId: "RigidBodyComponent",
+          variables: { motionType: "dynamic", mass: 1, gravityScale: 0, linearDamping: 0 },
+        }),
+      );
+    world.spawnActorNow(actor);
+    return actor;
+  };
+  const upper = spawn("upper");
+  const middle = spawn("middle", upper.guid, false);
+  middle.transform.position.x = 2;
+  middle.transform.rotation = { x: 0, y: 0, z: Math.SQRT1_2, w: Math.SQRT1_2 };
+  middle.transform.scale = { x: 2, y: 2, z: 2 };
+  const lower = spawn("lower", middle.guid);
+  lower.transform.position.x = 1; // World (2, 2, 0) under the quarter-turned, doubled middle.
+  const sync = new PhysicsWorldSync(
+    physics.createSoftwarePhysicsBackend("3d", { x: 0, y: 0, z: 0 }),
+  );
+  try {
+    sync.syncFromWorld(world);
+    sync.addImpulse(upper.guid, { x: 6, y: 0, z: 0 });
+    sync.step(1 / 60, world);
+    // Middle follows upper to (2.1, 0, 0); the resting lower body is now
+    // (-0.1, 2, 0) from it, which is (1, 0.05, 0) in middle's rotated, doubled frame.
+    expect(upper.transform.position.x).toBeCloseTo(0.1, 9);
+    expect(middle.transform.position).toEqual({ x: 2, y: 0, z: 0 });
+    expect(lower.transform.position.x).toBeCloseTo(1, 9);
+    expect(lower.transform.position.y).toBeCloseTo(0.05, 9);
+    expect(lower.transform.rotation.z).toBeCloseTo(0, 9);
+    expect(lower.transform.rotation.w).toBeCloseTo(1, 9);
+    sync.step(1 / 60, world);
+    expect(lower.transform.position.y).toBeCloseTo(0.1, 9);
+  } finally {
+    sync.dispose();
+  }
+});
+
+it("adds and retires implicit bodies after direct variable-map writes", () => {
+  const { world, actor, collider, backend, sync, trace } = fixture();
+  actor.components[0]!.destroyed = true; // No RigidBody: collision alone must supply a body.
+  collider.destroyed = true;
+  const mesh = world.createComponent({
+    classId: "MeshComponent",
+    variables: { meshKind: "box", collisionMode: "none" },
+  });
+  actor.attachComponent(mesh);
+  const landscape = world.createComponent({
+    classId: "LandscapeComponent",
+    variables: { width: 4, depth: 4, subdivisions: 1, heights: [0, 0, 0, 0] },
+  });
+  actor.attachComponent(landscape);
+  const hasBody = () => backend.getBodyTransform(`body:${actor.guid}`) !== null;
+  try {
+    sync.syncFromWorld(world);
+    expect(hasBody()).toBe(false);
+    mesh.variables.set("collisionMode", "simple");
+    sync.syncFromWorld(world);
+    expect(hasBody()).toBe(true);
+    expect(trace(0)).toBe(true);
+    mesh.variables.set("collisionMode", "none");
+    landscape.variables.set("collisionsEnabled", true);
+    sync.syncFromWorld(world);
+    expect(hasBody()).toBe(true); // The landscape alone keeps the static body.
+    landscape.variables.set("collisionsEnabled", false);
+    sync.syncFromWorld(world);
+    expect(hasBody()).toBe(false);
+  } finally {
+    sync.dispose();
+  }
+});
+
 it.each([
   { x: -1, y: 1, z: 1 },
   { x: 1, y: -1, z: 1 },

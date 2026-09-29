@@ -35,17 +35,37 @@ export function actorWorldTransforms(
   const byGuid = new Map<string, Actor>();
   for (const actor of actors) byGuid.set(actor.guid, actor);
   const resolved = new Map<string, Transform>();
+  composeActorWorldTransforms(byGuid, selected, resolved);
+  return resolved;
+}
+
+/**
+ * Compose `selected` and their ancestors into `resolved` through a caller-owned
+ * guid index. Returns true when a parent cycle was reached: poses on a cycle
+ * depend on resolution order, so callers that must match a whole-world pass
+ * recompose in world order instead.
+ */
+export function composeActorWorldTransforms(
+  byGuid: ReadonlyMap<string, Actor>,
+  selected: Iterable<Actor>,
+  resolved: Map<string, Transform>,
+): boolean {
   const resolving = new Set<string>();
+  let cyclic = false;
 
   const resolve = (actor: Actor): Transform => {
     const cached = resolved.get(actor.guid);
     if (cached) return cached;
     const local = copyTransform(actor.transform);
-    if (resolving.has(actor.guid)) return local;
+    if (resolving.has(actor.guid)) {
+      cyclic = true;
+      return local;
+    }
 
     resolving.add(actor.guid);
     const parentId = actorParentGuid(actor);
     const parent = parentId ? byGuid.get(parentId) : undefined;
+    if (parent && resolving.has(parent.guid)) cyclic = true;
     const world =
       parent && !resolving.has(parent.guid)
         ? composeParentChildTransform(resolve(parent), local)
@@ -56,7 +76,7 @@ export function actorWorldTransforms(
   };
 
   for (const actor of selected) resolve(actor);
-  return resolved;
+  return cyclic;
 }
 
 export function actorParentGuid(actor: Actor): string | null {

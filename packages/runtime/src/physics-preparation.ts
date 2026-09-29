@@ -13,7 +13,6 @@ import {
   type ColliderLocalTransform,
   type ColliderShape,
   type Quat,
-  type PhysicsTransform,
   type Vec3,
 } from "@babylonslate/physics";
 
@@ -21,11 +20,10 @@ export function sameDescriptor(
   a: readonly unknown[] | undefined,
   b: readonly unknown[],
 ): boolean {
-  return (
-    !!a &&
-    a.length === b.length &&
-    a.every((value, index) => Object.is(value, b[index]))
-  );
+  if (!a || a.length !== b.length) return false;
+  for (let index = 0; index < a.length; index++)
+    if (!Object.is(a[index], b[index])) return false;
+  return true;
 }
 
 export function transformDescriptor(
@@ -114,14 +112,26 @@ export class PreparedColliderGeometry {
   }
 }
 
+const PARTICIPANT_CLASSES = new Set([
+  "RigidBodyComponent",
+  "WaterBuoyancyComponent",
+  "ColliderComponent",
+  "MeshComponent",
+  "DynamicRuntimeMeshComponent",
+  "LandscapeComponent",
+  "BlockingVolumeComponent",
+  "TilemapComponent",
+]);
+
 /** Resolve only physics participants and their ancestors, retaining the ordered
- * World list for iteration. A parent without physics still contributes scale. */
+ * World list for iteration. A parent without physics still contributes scale.
+ * This is the tick's validation boundary: parent cycles and unsupported shear
+ * throw here, before any native body or collider is touched. */
 export function physicsWorldTransforms(
   actors: readonly Actor[],
   byGuid: ReadonlyMap<string, Actor>,
   kind: "2d" | "3d",
   eligible: (actor: Actor) => boolean,
-  bodyPoses?: ReadonlyMap<string, PhysicsTransform>,
 ): Map<string, Transform> {
   const resolved = new Map<string, Transform>();
   const resolving = new Set<Actor>();
@@ -149,13 +159,6 @@ export function physicsWorldTransforms(
       );
       transform = composeParentChildTransform(ancestor, actor.transform);
     }
-    const bodyPose = bodyPoses?.get(actor.guid);
-    if (bodyPose)
-      transform = {
-        ...transform,
-        position: { ...bodyPose.position },
-        rotation: { ...bodyPose.rotation },
-      };
     resolving.delete(actor);
     resolved.set(actor.guid, transform);
     return transform;
@@ -173,16 +176,7 @@ export function physicsWorldTransforms(
             (kind === "3d" && component.getVariable("collisionsEnabled") === true)) &&
           (component.classId !== "DynamicRuntimeMeshComponent" ||
             (kind === "3d" && component.getVariable("enableCollision") === true)) &&
-          [
-            "RigidBodyComponent",
-            "WaterBuoyancyComponent",
-            "ColliderComponent",
-            "MeshComponent",
-            "DynamicRuntimeMeshComponent",
-            "LandscapeComponent",
-            "BlockingVolumeComponent",
-            "TilemapComponent",
-          ].includes(component.classId),
+          PARTICIPANT_CLASSES.has(component.classId),
       )
     )
       resolve(actor);

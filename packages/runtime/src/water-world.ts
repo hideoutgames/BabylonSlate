@@ -6,7 +6,7 @@ import {
 } from "@babylonslate/core";
 import type { Actor, ActorComponent } from "@babylonslate/object-model";
 import type { PhysicsBackend } from "@babylonslate/physics";
-import { actorWorldTransforms, composeParentChildTransform } from "./actor-world-transform";
+import { actorWorldTransforms, composeActorWorldTransforms, composeParentChildTransform } from "./actor-world-transform";
 
 type WaterBody = { actorId: string; definition: WaterDefinition; body: WaterBodyProperties; transform: Transform };
 export type WaterWorldSample = WaterSample & { actorId: string | null; density: number; waterDepth: number };
@@ -30,11 +30,19 @@ function componentWorldTransform(component: ActorComponent, actor: Actor, world:
 
 export class WaterWorld {
   private definitions = new Map<string, WaterDefinition>();
-  private bodies: WaterBody[] = [];
-  private cutters: WaterCutters = { removals: [], landscapes: [] };
+  private readonly bodies: WaterBody[] = [];
+  private readonly removals: Array<WaterCutters["removals"][number]> = [];
+  private readonly landscapes: Array<WaterCutters["landscapes"][number]> = [];
+  private readonly cutters: WaterCutters = { removals: this.removals, landscapes: this.landscapes };
   /** Parsed terrain per authored heights array; sculpting replaces the array. */
   private readonly terrain = new WeakMap<object, { size: string; data: LandscapeProperties }>();
+  /** Composed poses of water sources, cutters and buoyant actors (with ancestors). */
   private transforms = new Map<string, Transform>();
+  // Per-update scratch: surfaces and cutters awaiting a pose, and the actors to compose.
+  private readonly sourceActors: Actor[] = [];
+  private readonly sourceComponents: ActorComponent[] = [];
+  private readonly sourceBodies: Array<WaterBodyProperties | null> = [];
+  private readonly composed: Actor[] = [];
   private time = 0;
   private readonly defaultWater = createDefaultWaterDefinition();
   get hasBodies(): boolean { return this.bodies.length > 0; }
@@ -44,47 +52,78 @@ export class WaterWorld {
     this.definitions = new Map(Array.from(entries, ([id, value]) => [id, normalizeWaterDefinition(value)]));
   }
 
+  /**
+   * Water, removal volumes, landscapes and buoyant actors compose only their own
+   * ancestor chains. Without an enabled water surface nothing can be sampled, so
+   * cutters and poses are left empty and no transform is composed.
+   */
   update(actors: readonly Actor[], time: number): void {
     this.time = time;
-    let transforms: Map<string, Transform> | undefined;
-    this.bodies = [];
-    const removals: Array<WaterCutters["removals"][number]> = [], landscapes: Array<WaterCutters["landscapes"][number]> = [];
+    const { bodies, removals, landscapes, sourceActors, sourceComponents, sourceBodies, composed } = this;
+    bodies.length = removals.length = landscapes.length = 0;
+    let water = false;
     for (const actor of actors) {
-      if (actor.destroyed || actor.sceneLayerId) continue;
+      const surfaces = !actor.destroyed && !actor.sceneLayerId;
       for (const component of actor.components) {
         if (component.destroyed) continue;
-        if (component.classId === "WaterRemovalVolumeComponent" || component.classId === "LandscapeComponent") {
-          transforms ??= actorWorldTransforms(actors);
-          const transform = componentWorldTransform(component, actor, transforms.get(actor.guid)!);
-          if (component.classId === "LandscapeComponent") {
-            const heights = component.getVariable("heights");
-            const key = Array.isArray(heights) ? heights : component;
-            const size = ["width", "depth", "subdivisions"].map((name) => String(component.getVariable(name))).join(":");
-            let entry = this.terrain.get(key);
-            if (entry?.size !== size) {
-              entry = { size, data: parseLandscapeProperties(Object.fromEntries(component.variables)) };
-              this.terrain.set(key, entry);
-            }
-            landscapes.push({ data: entry.data, transform });
-          } else {
-            const volume = normalizeWaterRemoval(Object.fromEntries(component.variables));
-            if (volume.enabled) removals.push({ volume, transform });
-          }
-          continue;
+        // Buoyancy reads its actor's pose from this map during the physics step.
+        if (component.classId === "WaterBuoyancyComponent") composed.push(actor);
+        if (!surfaces) continue;
+        let body: WaterBodyProperties | null = null;
+        if (component.classId !== "WaterRemovalVolumeComponent" && component.classId !== "LandscapeComponent") {
+          const kind = waterKindForClass(component.classId);
+          if (!kind) continue;
+          body = normalizeWaterBody(Object.fromEntries(component.variables), kind);
+          if (!body.enabled) continue;
+          water = true;
         }
-        const kind = waterKindForClass(component.classId);
-        if (!kind || component.destroyed) continue;
-        const body = normalizeWaterBody(Object.fromEntries(component.variables), kind);
-        if (!body.enabled) continue;
-        const definition = body.assetGuid ? (this.definitions.get(body.assetGuid) ?? this.defaultWater) : this.defaultWater;
-        transforms ??= actorWorldTransforms(actors);
-        this.bodies.push({ actorId: actor.guid, definition, body,
-          transform: componentWorldTransform(component, actor, transforms.get(actor.guid)!),
-        });
+        sourceActors.push(actor);
+        sourceComponents.push(component);
+        sourceBodies.push(body);
+        composed.push(actor);
       }
     }
-    this.transforms = transforms ?? new Map();
-    this.cutters = { removals, landscapes };
+    if (water) {
+      const transforms = this.composeSources(actors);
+      for (let index = 0; index < sourceActors.length; index++) {
+        const actor = sourceActors[index]!, component = sourceComponents[index]!, body = sourceBodies[index];
+        const transform = componentWorldTransform(component, actor, transforms.get(actor.guid)!);
+        if (body) {
+          const definition = body.assetGuid ? (this.definitions.get(body.assetGuid) ?? this.defaultWater) : this.defaultWater;
+          bodies.push({ actorId: actor.guid, definition, body, transform });
+        } else if (component.classId === "LandscapeComponent") {
+          const heights = component.getVariable("heights");
+          const key = Array.isArray(heights) ? heights : component;
+          const size = ["width", "depth", "subdivisions"].map((name) => String(component.getVariable(name))).join(":");
+          let entry = this.terrain.get(key);
+          if (entry?.size !== size) {
+            entry = { size, data: parseLandscapeProperties(Object.fromEntries(component.variables)) };
+            this.terrain.set(key, entry);
+          }
+          landscapes.push({ data: entry.data, transform });
+        } else {
+          const volume = normalizeWaterRemoval(Object.fromEntries(component.variables));
+          if (volume.enabled) removals.push({ volume, transform });
+        }
+      }
+    } else {
+      this.transforms.clear();
+    }
+    sourceActors.length = sourceComponents.length = sourceBodies.length = composed.length = 0;
+  }
+
+  /** Last-wins guid lookup, as the whole-world pass; ambiguous graphs keep that pass. */
+  private composeSources(actors: readonly Actor[]): Map<string, Transform> {
+    const byGuid = new Map<string, Actor>();
+    for (const actor of actors) byGuid.set(actor.guid, actor);
+    // Duplicate guids or a parent cycle make poses depend on world order.
+    if (byGuid.size === actors.length) {
+      const transforms = this.transforms;
+      transforms.clear();
+      if (!composeActorWorldTransforms(byGuid, this.composed, transforms)) return transforms;
+    }
+    this.transforms = actorWorldTransforms(actors);
+    return this.transforms;
   }
 
   sample(position: Vec3, actorId: string | null = null): WaterWorldSample {
