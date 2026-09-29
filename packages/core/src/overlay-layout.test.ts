@@ -66,6 +66,23 @@ describe("nested SceneLayer layout", () => {
     expect(result.entries.get("first")!.rect).toEqual({ x: -1.5, y: 3.5, width: 1, height: 1 });
     expect(result.entries.get("second")!.rect).toEqual({ x: -1.5, y: 1.5, width: 1, height: 1 });
   });
+  it("arranges descendants through chained Anchor carriers without giving the carriers a spatial pose or a flow slot", () => {
+    const source = [
+      actor("root", [component("column", "2DVerticalBoxComponent", { width: 4, height: 4 })]),
+      actor("anchor", [component("pin", "2DAnchorComponent")], "root"),
+      actor("nested-anchor", [component("pin", "2DAnchorComponent")], "anchor"),
+      actor("content", [component("visual", "2DMaterialComponent")], "nested-anchor"),
+      actor("sibling", [component("visual", "2DMaterialComponent")], "root"),
+    ];
+    const before = structuredClone(source);
+    const result = resolveOverlayLayout(source);
+    expect(result.actors.find(entry => entry.id === "anchor")!.transform).toEqual(identitySerializedTransform());
+    expect(result.actors.find(entry => entry.id === "nested-anchor")!.transform).toEqual(identitySerializedTransform());
+    expect(result.actors.find(entry => entry.id === "content")).toMatchObject({ parentId: "nested-anchor", transform: { position: [-1.5, 1.5, 0] } });
+    expect(result.entries.get("content/visual")!.rect).toEqual({ x: -1.5, y: 1.5, width: 1, height: 1 });
+    expect(result.entries.get("sibling/visual")!.rect).toEqual({ x: -1.5, y: 0.5, width: 1, height: 1 });
+    expect(source).toEqual(before);
+  });
   it("insets a visual parent's component children and uses Painter's actual default bounds", () => {
     const source = [actor("root", [component("surface", "2DPainterComponent"),
       component("padding", "2DPaddingComponent", { paddingLeft: 1, paddingRight: 2, paddingTop: 3, paddingBottom: 1 }, "surface"),

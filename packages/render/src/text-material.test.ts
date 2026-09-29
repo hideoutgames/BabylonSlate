@@ -6,6 +6,7 @@ import { createTestEngine } from "./create-null-engine";
 import { MaterialLibrary } from "./material-library";
 import { createText2DMesh, refreshText2DMaterials } from "./text2d-mesh";
 import { textMaterialGlyphBinding } from "./text-material-block";
+import { prewarmMaterial } from "./material-compiler";
 import { applyAssignMaterial, applyAssignMesh, createSnapshotSceneBinding } from "./snapshot-apply";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { createDefaultScene } from "@babylonslate/core";
@@ -51,8 +52,11 @@ describe("Text Materials", () => {
       const atlas = textMaterialGlyphBinding(glyph)!.atlas!;
       const ready = vi.spyOn(atlas, "isReady").mockReturnValue(false);
       expect(material.isReadyForSubMesh(glyph, glyph.subMeshes[0]!)).toBe(false);
+      // Preparation must return while the atlas is pending, without leaving
+      // Babylon polling this glyph after its owner may have been disposed.
+      await prewarmMaterial(material, glyph);
       ready.mockReturnValue(true);
-      await material.forceCompilationAsync(glyph);
+      await prewarmMaterial(material, glyph);
       // forceCompilation uses a temporary SubMesh; the actual draw owns its
       // own wrapper and must run the normal readiness step before binding.
       expect(material.isReadyForSubMesh(glyph, glyph.subMeshes[0]!)).toBe(true);

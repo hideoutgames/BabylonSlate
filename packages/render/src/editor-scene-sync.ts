@@ -561,9 +561,9 @@ export class EditorSceneSync {
     const signal = this.pendingApply?.signal;
     const load = ready.then(() => {
       if (generation !== this.applyGeneration || signal?.aborted || this.disposed || root.isDisposed() || this.meshes.get(actor.id) !== root) return;
-      const current = (this.applyingScene ?? this.lastScene)?.actors.find((entry) => entry.id === actor.id);
-      if (!current) return;
-      this.prepareActorVisual(current, root);
+      // This generation's actor includes the resolved layout pose. The stored
+      // scene remains authored and must not overwrite it after preparation.
+      this.prepareActorVisual(actor, root);
       freezeStaticActorWorldMatrix(root);
       if (!this.applyingScene) {
         this.freezeActiveQueue();
@@ -750,10 +750,8 @@ export class EditorSceneSync {
       () => {
         if (!ownsLoad()) return;
         publication?.onAdopted();
-        const current = (this.applyingScene ?? this.lastScene)?.actors.find((entry) => entry.id === actor.id);
-        if (!current) return;
         const wasFrozen = root.isWorldMatrixFrozen;
-        applyActorTransform(root, current);
+        applyActorTransform(root, actor);
         // Adoption may land at a yield after this actor's final freeze step.
         // Restore that matrix without announcing a partially realized scene.
         if (wasFrozen || !this.applyingScene) freezeStaticActorWorldMatrix(root);
@@ -765,11 +763,10 @@ export class EditorSceneSync {
       },
       ownsLoad,
       (prepared) => {
-        const current = (this.applyingScene ?? this.lastScene)?.actors.find((entry) => entry.id === actor.id);
-        if (!current || !ownsLoad()) return;
-        this.restoreMeshComponentConstruction(current, prepared);
-        this.applyModelSlots(current, prepared);
-        this.bindActorMeshMaterials(current, prepared);
+        if (!ownsLoad()) return;
+        this.restoreMeshComponentConstruction(actor, prepared);
+        this.applyModelSlots(actor, prepared);
+        this.bindActorMeshMaterials(actor, prepared);
       },
     );
   }

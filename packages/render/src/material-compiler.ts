@@ -1454,6 +1454,10 @@ export async function prewarmMaterial(
   if (!mesh) return;
   if (material.mode === NodeMaterialModes.Particle) return;
   if (!nodeMaterialTexturesSampleReady(material)) return;
+  // Glyph atlases are bound per mesh rather than through TextureBlocks. As
+  // with authored textures, rendering readiness owns their pending upload;
+  // do not start Babylon's uncancellable compilation poll before it finishes.
+  if (material.attachedBlocks.some((block) => block instanceof TextMaterialBlock && !block.isReady(mesh))) return;
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     await Promise.race([

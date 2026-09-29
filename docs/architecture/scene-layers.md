@@ -94,7 +94,7 @@ Pointer / click / press graph events come from adding a `2DButtonComponent` (sam
 
 ## Nested layout and scrolling
 
-SceneLayer Outliner children and SceneLayerActor component children share the same layout rules. A root box component arranges its actor's child actors as well as components attached beneath that box. Boxes can nest in either hierarchy; sibling array/Outliner order determines layout order. These remain actor components, with no separate widget asset system.
+SceneLayer Outliner children and SceneLayerActor component children share the same layout rules. A root box component arranges its actor's child actors as well as components attached beneath that box. Boxes can nest in either hierarchy; sibling array/Outliner order determines layout order. Anchor-only Outliner actors are skipped when arranging their descendants, while their authored parent links remain intact. These remain actor components, with no separate widget asset system.
 
 | Component | Behavior |
 | --- | --- |
@@ -146,7 +146,7 @@ Overlay-only `2DTextComponent` / `2DRichTextComponent`. Shared per-glyph quads (
 
 **Text Material** accepts the dedicated **Text** Material domain. Its **Text Output** Color (RGBA) multiplies the glyph's baked Bitmap color or MSDF fill/outline color; the engine preserves letter coverage and rich-text spans. Underlines receive the same material, while inline images keep their image textures. None, a missing asset, or another material domain uses the normal text renderer. **Material UV** defaults to **Text Box** (0–1 across the wrap box); **Each Glyph** repeats 0–1 on each letter. Atlas coordinates remain private to text rendering. Both properties have component Get/Set variables, and Play/player carry the same material and UV settings as the editor.
 
-Text materials share a scene-local compiled graph and bind each glyph's atlas/style on every draw, including frozen materials. Disposing or rebuilding one label releases its atlas without altering another label. Material preview displays sample text. Export and Play dependency collection include text materials and their texture/function dependencies.
+Text materials share a scene-local compiled graph and bind each glyph's atlas/style on every draw, including frozen materials. Shader prewarming defers while a glyph atlas is uploading; normal draw readiness still waits for that atlas. Disposing or rebuilding one label releases its atlas without altering another label. Material preview displays sample text. Export and Play dependency collection include text materials and their texture/function dependencies.
 
 | Renderer | When | How |
 | --- | --- | --- |

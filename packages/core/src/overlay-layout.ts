@@ -1,4 +1,4 @@
-import { identitySerializedTransform, type SerializedActor, type SerializedComponent, type SerializedTransform } from "./scene";
+import { identitySerializedTransform, isSceneLayerAnchorActor, type SerializedActor, type SerializedComponent, type SerializedTransform } from "./scene";
 import { parsePainter2DProperties } from "./painter2d";
 import { parseText2DProperties } from "./text2d";
 import { parseRichText } from "./rich-text";
@@ -101,7 +101,8 @@ function nativeSize(component: SerializedComponent, options: OverlayLayoutOption
 export function resolveOverlayLayout(source: readonly SerializedActor[], options: OverlayLayoutOptions = {}): OverlayLayoutResult {
   const hasLayout = source.some(a => a.components.some(c => isOverlayLayoutClass(c.classId)));
   if (!hasLayout && !options.includeUnmanagedBounds) return { actors: source as SerializedActor[], entries: new Map() };
-  const actors = source.map(a => ({ ...a, transform: structuredClone(a.transform), components: a.components.map(c => ({ ...c, properties: { ...c.properties }, transform: structuredClone(c.transform ?? identitySerializedTransform()) })) }));
+  const anchorActors = new Set(source.filter(isSceneLayerAnchorActor).map(actor => actor.id));
+  const actors = source.map(a => ({ ...a, transform: anchorActors.has(a.id) ? identitySerializedTransform() : structuredClone(a.transform), components: a.components.map(c => ({ ...c, properties: { ...c.properties }, transform: structuredClone(c.transform ?? identitySerializedTransform()) })) }));
   const nodes = new Map<string, Node>(), actorNodes = new Map<string, Node>();
   for (const actor of actors) {
     const node: Node = { key: actor.id, actor, classId: "actor", props: parseOverlayLayoutProperties({}, "actor"), local: actor.transform, parent: null, actualParent: null, children: [], native: [1, 1], desired: [1, 1], size: [1, 1], managed: false };
@@ -111,18 +112,32 @@ export function resolveOverlayLayout(source: readonly SerializedActor[], options
       nodes.set(key, { key, actor, component, classId: component.classId, props: parseOverlayLayoutProperties(component.properties, component.classId), local: component.transform!, parent: node, actualParent: node, children: [], native: nativeSize(component, options), desired: [1, 1], size: [1, 1], managed: false });
     }
   }
+  // Anchor carriers are Outliner-only. Their descendants use the nearest
+  // spatial actor's coordinates, matching editor renderer parenting.
+  const spatialParent = (actor: SerializedActor): Node | null => {
+    const seen = new Set([actor.id]);
+    let parentId = actor.parentId;
+    while (parentId && !seen.has(parentId)) {
+      seen.add(parentId);
+      const parent = actorNodes.get(parentId);
+      if (!parent) return null;
+      if (!anchorActors.has(parentId)) return parent;
+      parentId = parent.actor.parentId;
+    }
+    return null;
+  };
   for (const node of nodes.values()) {
     if (node.component) {
       const parent = node.component.parentId ? nodes.get(overlayLayoutKey(node.actor.id, node.component.parentId)) : undefined;
       node.parent = node.actualParent = parent ?? actorNodes.get(node.actor.id)!;
     } else {
-      node.parent = node.actualParent = actorNodes.get(node.actor.parentId ?? "") ?? null;
+      node.parent = node.actualParent = spatialParent(node.actor);
       node.proxy = node.actor.components.map(c => nodes.get(overlayLayoutKey(node.actor.id, c.id))!).find(c => !c.component?.parentId && isOverlayLayoutClass(c.classId) && c.classId !== "2DPaddingComponent");
       if (node.proxy) node.props = node.proxy.props;
     }
   }
   // Outliner children belong to their parent's root box, just like explicit component children.
-  for (const node of actorNodes.values()) if (node.parent?.proxy) node.parent = node.parent.proxy;
+  for (const node of actorNodes.values()) if (!anchorActors.has(node.actor.id) && node.parent?.proxy) node.parent = node.parent.proxy;
   // Padding helper actors decorate their immediate parent's content and occupy no slot.
   for (const node of nodes.values()) {
     const seen = new Set([node.key]); let parent = node.parent;
@@ -137,7 +152,7 @@ export function resolveOverlayLayout(source: readonly SerializedActor[], options
   const paddingOnly = (n: Node) => n.classId === "2DPaddingComponent" || n.classId === "actor" && n.children.length > 0 && n.children.every(c => c.classId === "2DPaddingComponent" || interactionOnly(c));
   const visible = (n: Node) => n.actor.visible !== false && n.component?.properties.visible !== false && n.component?.properties.enabled !== false;
   function participates(n: Node): boolean {
-    if (!visible(n) || paddingOnly(n) || interactionOnly(n)) return false;
+    if (!visible(n) || paddingOnly(n) || interactionOnly(n) || !n.component && anchorActors.has(n.actor.id)) return false;
     if (n.classId === "actor") return n.children.some(participates);
     return isOverlayLayoutClass(n.classId) || surfaceClasses.has(n.classId) || n.classId === "2DButtonComponent";
   }
