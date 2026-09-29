@@ -92,8 +92,8 @@ function useTextureDocument() {
     payload: asRecord(doc?.content),
     guid: indexed?.header.guid,
     dependencies: indexed?.header.dependencies ?? [],
-    commit: (next: Record<string, unknown>) => {
-      void applyAssetDocumentChange(documentId, next);
+    commit: (next: Record<string, unknown>, mergeKey?: string) => {
+      void applyAssetDocumentChange(documentId, next, mergeKey);
     },
   };
 }
@@ -325,7 +325,8 @@ export function TextureDetails({
   guid?: string;
   dependencies: string[];
   payload: Record<string, unknown>;
-  onChange: (next: Record<string, unknown>) => void;
+  /** `mergeKey` groups one scrub's edits into one undo entry. */
+  onChange: (next: Record<string, unknown>, mergeKey?: string) => void;
 }) {
   const { retryTextureEncoding, textureAlignmentStale, textureUsageBlockedReason, prepareAreaEmission, assetRegistry, registryVersion } = useDocuments();
   const alignmentStale = useTextureAlignmentStale(guid, payload, textureAlignmentStale, registryVersion);
@@ -405,7 +406,7 @@ export function TextureDetails({
       value: typeof payload.compressionQuality === "number" ? payload.compressionQuality : 2,
       onChange: (value) => {
         const { payload: next, shouldRequeue } = applyTextureCompressionQualityChange(payload, value);
-        onChange(next);
+        onChange(next, "texture:compressionQuality");
         if (guid && shouldRequeue && !encodeBlocked) void retryTextureEncoding(guid, { force: true, usage });
       },
     });

@@ -55,6 +55,22 @@ export function NavBakeProvider({ children }: { children: ReactNode }) {
     projectDocument,
   } = useDocuments();
   const { documentId } = useDocumentWorkspace();
+  // Latest inputs for startBake and the Save flush, so neither changes (nor
+  // re-registers) on every document edit.
+  const latestRef = useRef({
+    openDocuments,
+    documentId,
+    projectDocument,
+    writeSceneNavmeshChunk,
+    collectPlayTilemapContent,
+  });
+  latestRef.current = {
+    openDocuments,
+    documentId,
+    projectDocument,
+    writeSceneNavmeshChunk,
+    collectPlayTilemapContent,
+  };
   const collectorRef = useRef<NavBakeCollector | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const [phase, setPhase] = useState<NavBakePhase | null>(null);
@@ -68,6 +84,13 @@ export function NavBakeProvider({ children }: { children: ReactNode }) {
 
   const startBake = useCallback(
     async (properties: Record<string, unknown>) => {
+      const {
+        openDocuments,
+        documentId,
+        projectDocument,
+        writeSceneNavmeshChunk,
+        collectPlayTilemapContent,
+      } = latestRef.current;
       const doc = openDocuments.find((entry) => entry.id === documentId);
       if (!doc || doc.ref.kind !== "scene" || !doc.content) {
         const message = "Open a scene before baking a navmesh.";
@@ -162,11 +185,12 @@ export function NavBakeProvider({ children }: { children: ReactNode }) {
         if (!failed) setPhase(null);
       }
     },
-    [collectPlayTilemapContent, documentId, openDocuments, projectDocument, writeSceneNavmeshChunk],
+    [],
   );
 
   useEffect(() => {
     return registerNavBakeSaveFlush(async () => {
+      const { openDocuments, documentId } = latestRef.current;
       const doc = openDocuments.find((entry) => entry.id === documentId);
       if (!doc || doc.ref.kind !== "scene" || !doc.content) return;
       const scene = doc.content as SerializedScene;
@@ -174,7 +198,7 @@ export function NavBakeProvider({ children }: { children: ReactNode }) {
         await startBake(properties);
       }
     });
-  }, [documentId, openDocuments, startBake]);
+  }, [startBake]);
 
   const value = useMemo(
     () => ({

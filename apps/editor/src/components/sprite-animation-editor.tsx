@@ -98,8 +98,8 @@ export function SpriteAnimationPreviewPanel(_props: IDockviewPanelProps) {
     <PanelFrame data-testid="sprite-animation-preview-panel">
       <SpriteAnimationPreview
         payload={payload}
-        onChange={(next) => {
-          void applyAssetDocumentChange(documentId, next);
+        onChange={(next, mergeKey) => {
+          void applyAssetDocumentChange(documentId, next, mergeKey);
         }}
       />
     </PanelFrame>
@@ -116,12 +116,17 @@ export function SpriteAnimationDetailsPanel(_props: IDockviewPanelProps) {
     <PanelFrame data-testid="sprite-animation-details-panel">
       <SpriteAnimationDetails
         payload={payload}
-        onChange={(next) => {
-          void applyAssetDocumentChange(documentId, next);
+        onChange={(next, mergeKey) => {
+          void applyAssetDocumentChange(documentId, next, mergeKey);
         }}
       />
     </PanelFrame>
   );
+}
+
+/** One scrub or drag on a frame field is one undo step. */
+function spriteFrameMergeKey(frameIndex: number, field: string): string {
+  return `sprite-animation:frame:${frameIndex}:${field}`;
 }
 
 function sliderNumber(next: number | readonly number[]): number | undefined {
@@ -134,7 +139,8 @@ export function SpriteAnimationPreview({
   onChange,
 }: {
   payload: Record<string, unknown>;
-  onChange?: (next: Record<string, unknown>) => void;
+  /** A collision drag passes one merge key so the whole drag is one undo step. */
+  onChange?: (next: Record<string, unknown>, mergeKey?: string) => void;
 }) {
   const animation = asPayload(payload);
   const { selectedFrameIndex, setSelectedFrameIndex } =
@@ -308,7 +314,10 @@ export function SpriteAnimationPreview({
                     ? { ...entry, collision: next }
                     : entry,
                 );
-                onChange({ ...animation, frames });
+                onChange(
+                  { ...animation, frames },
+                  spriteFrameMergeKey(selectedFrameIndex, "collision"),
+                );
               }}
             />
           </div>
@@ -399,7 +408,8 @@ export function SpriteAnimationDetails({
   onChange,
 }: {
   payload: Record<string, unknown>;
-  onChange: (next: Record<string, unknown>) => void;
+  /** `mergeKey` groups one scrub's edits into one undo entry. */
+  onChange: (next: Record<string, unknown>, mergeKey?: string) => void;
 }) {
   const animation = asPayload(payload);
   const { selectedFrameIndex, setSelectedFrameIndex } =
@@ -418,8 +428,10 @@ export function SpriteAnimationDetails({
   const collision = parseSpriteCollision(frame?.collision);
   const pivot = parseSpritePivot(frame?.pivot);
 
+  /** `field` marks a continuous edit whose scrub is one undo step. */
   const patchFrame = (
     patch: Partial<NonNullable<typeof frame>>,
+    field?: string,
   ): void => {
     const frames = [...animation.frames];
     if (!frames[selectedFrameIndex]) return;
@@ -427,7 +439,8 @@ export function SpriteAnimationDetails({
       ...frames[selectedFrameIndex]!,
       ...patch,
     };
-    onChange({ ...animation, frames });
+    if (field) onChange({ ...animation, frames }, spriteFrameMergeKey(selectedFrameIndex, field));
+    else onChange({ ...animation, frames });
   };
 
   const setDurationOverride = (override: boolean): void => {
@@ -481,7 +494,10 @@ export function SpriteAnimationDetails({
       value: animation.frameDurationMs,
       min: 1,
       onChange: (frameDurationMs) =>
-        onChange({ ...animation, frameDurationMs: Math.max(1, frameDurationMs) }),
+        onChange(
+          { ...animation, frameDurationMs: Math.max(1, frameDurationMs) },
+          "sprite-animation:frameDurationMs",
+        ),
     },
   ];
 
@@ -513,7 +529,8 @@ export function SpriteAnimationDetails({
       label: "Frame Duration MS",
       value: frame.durationMs,
       min: 1,
-      onChange: (durationMs) => patchFrame({ durationMs: Math.max(1, durationMs) }),
+      onChange: (durationMs) =>
+        patchFrame({ durationMs: Math.max(1, durationMs) }, "durationMs"),
     });
   }
   frameRows.push(
@@ -523,7 +540,7 @@ export function SpriteAnimationDetails({
       label: "Pivot",
       value: [pivot.x, pivot.y, 0],
       axes: ["X", "Y"],
-      onChange: ([x, y]) => patchFrame({ pivot: { x, y } }),
+      onChange: ([x, y]) => patchFrame({ pivot: { x, y } }, "pivot"),
     },
     {
       id: "collision",
@@ -532,9 +549,10 @@ export function SpriteAnimationDetails({
       value: [collision.x, collision.y, collision.width, collision.height],
       axes: ["X", "Y", "W", "H"],
       onChange: ([x, y, width, height]) =>
-        patchFrame({
-          collision: parseSpriteCollision({ x, y, width, height }),
-        }),
+        patchFrame(
+          { collision: parseSpriteCollision({ x, y, width, height }) },
+          "collision",
+        ),
     },
   );
 

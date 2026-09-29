@@ -121,6 +121,64 @@ describe("SourceControlService", () => {
     expect(service.lockStateForPath("assets/hero.scene.babasset")).toBe("mine");
   });
 
+  it("does not notify subscribers on later edits once the lock is already ours", async () => {
+    const service = new SourceControlService();
+    const fake = new FakeLockProvider({ selfName: "Ada" });
+    await service.configure({
+      settings: enabled,
+      projectGuid: "proj",
+      platform: "web",
+      testMode: true,
+      secretStore: new MemorySecretStore(),
+      nativeHttp: null,
+      fake,
+    });
+    service.pausePolling();
+    try {
+      await service.refresh();
+      await service.autoLock("assets/hero.scene.babasset");
+      const listener = vi.fn();
+      service.subscribe(listener);
+      await service.autoLock("assets/hero.scene.babasset");
+      await service.autoLock("assets/hero.scene.babasset");
+      expect(listener).not.toHaveBeenCalled();
+      expect(service.lockStateForPath("assets/hero.scene.babasset")).toBe("mine");
+    } finally {
+      service.dispose();
+    }
+  });
+
+  it("notifies subscribers when an edit on a held lock clears its banner", async () => {
+    const service = new SourceControlService();
+    const fake = new FakeLockProvider({ selfName: "Ada" });
+    await service.configure({
+      settings: enabled,
+      projectGuid: "proj",
+      platform: "web",
+      testMode: true,
+      secretStore: new MemorySecretStore(),
+      nativeHttp: null,
+      fake,
+    });
+    service.pausePolling();
+    try {
+      vi.spyOn(fake, "create").mockResolvedValueOnce(
+        err({ kind: "http", status: 503, message: "Offline" }),
+      );
+      await service.autoLock("assets/hero.scene.babasset");
+      expect(service.bannerFor("assets/hero.scene.babasset")?.kind).toBe("unlocked");
+      await fake.create("assets/hero.scene.babasset");
+      await service.refresh();
+      const listener = vi.fn();
+      service.subscribe(listener);
+      await service.autoLock("assets/hero.scene.babasset");
+      expect(listener).toHaveBeenCalledOnce();
+      expect(service.bannerFor("assets/hero.scene.babasset")).toBeNull();
+    } finally {
+      service.dispose();
+    }
+  });
+
   it("opens theirs read-only until Edit Anyway", async () => {
     const service = new SourceControlService();
     const fake = new FakeLockProvider({ selfName: "Ada" });

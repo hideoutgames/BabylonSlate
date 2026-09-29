@@ -64,6 +64,7 @@ export {
   reviveCommand,
   serializeJournalLine,
   commandToJournalPayload,
+  coalesceJournalLines,
   registerGraphCommandRevivers,
   registerSceneCommandRevivers,
   registerAssetDocumentCommandRevivers,

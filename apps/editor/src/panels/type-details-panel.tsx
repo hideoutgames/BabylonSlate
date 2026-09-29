@@ -60,8 +60,11 @@ export function TypeDetailsPanel(_props: IDockviewPanelProps) {
     assetRegistry?.list() ?? [],
   );
 
-  const commit = (next: Record<string, unknown>) => {
-    void applyAssetDocumentChange(documentId, next);
+  /** `mergeKey` groups one scrub's edits into one undo entry. */
+  const commit = (next: Record<string, unknown>, mergeKey?: string) => {
+    void (mergeKey
+      ? applyAssetDocumentChange(documentId, next, mergeKey)
+      : applyAssetDocumentChange(documentId, next));
   };
 
   if (kind === "enum") {
@@ -92,7 +95,10 @@ export function TypeDetailsPanel(_props: IDockviewPanelProps) {
         label: "Value",
         value: member.value,
         onChange: (value) =>
-          commit(patchEnumMember(asset, selectedIndex, { value })),
+          commit(
+            patchEnumMember(asset, selectedIndex, { value }),
+            `enum:member:${selectedIndex}:value`,
+          ),
       },
     ];
     return (
@@ -134,6 +140,8 @@ export function TypeDetailsPanel(_props: IDockviewPanelProps) {
       (value) =>
         commit(
           patchStructureField(asset, selectedIndex, { defaultValue: value }),
+          // Default editors scrub numbers, vectors and colors continuously.
+          `structure:field:${selectedIndex}:defaultValue`,
         ),
       {
         typeClassId: field.typeClassId,
