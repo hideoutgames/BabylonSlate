@@ -665,8 +665,9 @@ the camera therefore does not move world-space procedural material coordinates.
 The selected Camera or Render Target Capture preview establishes its own
 floating-origin scope and refreshes camera-dependent light data for every timed
 RTT draw. Editor camera navigation and the preceding gizmo pass therefore cannot
-shift lighting in a stationary preview. The preview restores the caller's camera, matrices, uniform
-buffer, framebuffer and viewport even when a draw fails.
+shift lighting in a stationary preview. The preview restores the caller's
+camera, matrices, uniform buffer, framebuffer and viewport even when a draw
+fails.
 
 All Scene, Play and preview controllers share a 512 MiB managed lighting texture
 reservation ceiling; shadows also retain their 64-face/pass ceiling and lower
