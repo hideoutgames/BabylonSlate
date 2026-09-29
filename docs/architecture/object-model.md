@@ -81,7 +81,7 @@ See [physics.md](physics.md) for RigidBody / Collider / Mesh collision property 
 
 - Picking a Target Actor or Target Component (Details, the Pick Target Actor dialog, or the Class Inspector) resets End Position to `[0, 0, 0]`, so the end attaches at the new target's origin.
 - Returning to the cable's own origin (Self with no component) from a zero offset restores the default `[3, 0, 0]`, so the cable keeps its length. A non-zero authored offset is kept.
-- Cables gently simulate in editor viewports without collision; Enable Collision applies during Play.
+- Cables gently simulate in scene and Class viewports without collision; Enable Collision applies during Play. In the Class viewport a local Target Component attaches the end to that component.
 
 Class authoring supports local component targets; scene actor targets are chosen after placing the Class. Runtime attachment resolves both component IDs and prefab source IDs. Duplicating actors remaps local and selected attachments to the copied components while retaining external targets. Cable Materials are included in scene/Class dependency collection and Play content loading. Simulation and rendering are described in [render.md](render.md).
 

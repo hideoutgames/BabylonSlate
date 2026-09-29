@@ -400,7 +400,9 @@ export function applyCableFrame(scene: Scene, data: Float32Array, frameId: numbe
 // Editor viewport simulation. Cables in scene and Class viewports gently
 // simulate on the main thread so they react while actors or targets are
 // dragged, then sleep. There is no physics world in the editor, so editor
-// cables never collide. An idle cable costs two world-matrix flag compares.
+// cables never collide, and Enable Collision cables sleep too. An idle cable
+// skips the solver and uploads: it costs a liveness and enabled check, two
+// cached world-matrix reads and two update-flag compares per frame.
 type EditorCable = {
   name: string;
   surface: CableSurface;
@@ -546,8 +548,8 @@ export function pruneEditorCables(scene: Scene, keep?: ReadonlySet<string>): voi
 
 /**
  * Advance editor cables to `nowMs` (editor render loop, before drawing).
- * Sleeping cables whose anchors' world matrices are unchanged cost two flag
- * compares and upload nothing. Returns whether any tube was updated.
+ * Sleeping cables whose anchors' world matrices are unchanged skip the solver
+ * and upload nothing. Returns whether any tube was updated.
  */
 export function stepEditorCables(scene: Scene, nowMs: number): boolean {
   const registry = editorCables.get(scene);
