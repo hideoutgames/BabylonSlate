@@ -6,13 +6,14 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 import { useCallback, type MouseEvent, type ReactNode } from "react";
+import { ClockIcon, PlugIcon, ZapIcon } from "lucide-react";
 import {
   ContextMenuOverlay,
   humanizePropertyLabel,
   PinShapeGlyph,
   useContextMenu,
 } from "@babylonslate/editor-kit";
-import { isDevelopmentOnlyNode } from "@babylonslate/scripting";
+import { EVENT_BY_TYPE_ID, isDevelopmentOnlyNode } from "@babylonslate/scripting";
 import { cn } from "@babylonslate/ui/lib/utils";
 import { useGraphEditorContext } from "./graph-editor-context";
 import { hasSerializedPins, type SerializedPin } from "./graph-types";
@@ -272,9 +273,11 @@ function PinRow({
 function NodeErrorBadge({
   nodeId,
   count,
+  leading = false,
 }: {
   nodeId: string;
   count: number;
+  leading?: boolean;
 }) {
   const { onNavigateRequest } = useGraphEditorContext();
 
@@ -291,7 +294,10 @@ function NodeErrorBadge({
   return (
     <button
       type="button"
-      className="absolute -right-2 -top-2 z-10 flex size-11 items-center justify-center"
+      className={cn(
+        "absolute -top-2 z-10 flex size-11 items-center justify-center",
+        leading ? "-left-2" : "-right-2",
+      )}
       aria-label={`${count} error${count === 1 ? "" : "s"}`}
       onClick={handleClick}
     >
@@ -316,6 +322,21 @@ function shellIsDevelopmentOnly(
   });
 }
 
+function nodeCornerMarker(data: Record<string, unknown> | undefined) {
+  if (data?.__material || data?.__particleRole) return null;
+  const nodeType = typeof data?.__nodeType === "string" ? data.__nodeType : "";
+  if (data?.__latent === true || (nodeType === "debug.executeJavaScript" && data?.async === true)) {
+    return { Icon: ClockIcon, label: "Latent Action" };
+  }
+  if (nodeType === "interface.call" || data?.__interface === true) {
+    return { Icon: PlugIcon, label: "Script Interface Function" };
+  }
+  if (Object.hasOwn(EVENT_BY_TYPE_ID, nodeType) || nodeType === "flow.event.custom") {
+    return { Icon: ZapIcon, label: "Event" };
+  }
+  return null;
+}
+
 export function BlueprintNodeShell({
   nodeId,
   title,
@@ -323,7 +344,7 @@ export function BlueprintNodeShell({
   selected,
   data,
   children,
-  compact = false,
+  card = false,
 }: {
   nodeId: string;
   title: string;
@@ -331,34 +352,52 @@ export function BlueprintNodeShell({
   selected?: boolean;
   data?: Record<string, unknown>;
   children: ReactNode;
-  compact?: boolean;
+  /** Fixed-width flat card without the role title bar; children render their own header. */
+  card?: boolean;
 }) {
   const { nodeErrorCount } = useGraphEditorContext();
   const developmentOnly = shellIsDevelopmentOnly(nodeId, data);
   const editorOnly = data?.__editorOnly === true;
   const disabled = data?.__disabled === true;
+  const marker = nodeCornerMarker(data);
 
   return (
     <div className="relative">
-      <NodeErrorBadge nodeId={nodeId} count={nodeErrorCount(nodeId)} />
+      <NodeErrorBadge nodeId={nodeId} count={nodeErrorCount(nodeId)} leading={!!marker} />
+      {marker ? (
+        <span
+          role="img"
+          aria-label={marker.label}
+          className={cn(
+            "pointer-events-none absolute right-0 top-0 flex size-6 translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-graph-node text-foreground",
+            disabled && "opacity-50",
+          )}
+        >
+          <marker.Icon className="size-4" aria-hidden="true" />
+        </span>
+      ) : null}
       <div
         data-node-role={role}
         data-disabled={disabled ? "true" : undefined}
+        data-selected={card ? (selected ? "true" : "false") : undefined}
         className={cn(
-          "overflow-hidden rounded-lg border border-border bg-graph-node text-card-foreground shadow-sm",
-          compact ? "min-w-56" : "w-max min-w-80",
-          selected && "ring-2 ring-primary",
+          "overflow-hidden border border-border bg-graph-node text-card-foreground shadow-sm",
+          card
+            ? "graph-card-node w-56 rounded-md"
+            : cn("w-max min-w-80 rounded-lg", selected && "ring-2 ring-primary"),
           disabled && "opacity-50",
         )}
       >
-        <div
-          className={cn(
-            "rounded-t-lg px-4 py-2.5 text-base font-semibold leading-snug whitespace-nowrap text-node-title",
-            nodeRoleClass(role),
-          )}
-        >
-          {title}
-        </div>
+        {card ? null : (
+          <div
+            className={cn(
+              "rounded-t-lg px-4 py-2.5 text-base font-semibold leading-snug whitespace-nowrap text-node-title",
+              nodeRoleClass(role),
+            )}
+          >
+            {title}
+          </div>
+        )}
         {children}
         {developmentOnly ? (
           <div

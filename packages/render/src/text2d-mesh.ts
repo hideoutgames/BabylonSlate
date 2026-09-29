@@ -33,6 +33,7 @@ import {
   resolveText2DFontStack,
   type BitmapAllocationLimits,
   type BitmapCanvasScratch,
+  type BitmapGlyphCell,
 } from "./text2d-bitmap";
 import { VisualBundle } from "./visual-bundle";
 import { bindTextMaterialGlyph } from "./text-material-block";
@@ -144,7 +145,7 @@ export function parseMsdfAtlas(bytes: Uint8Array): MsdfAtlas | null {
 /** Quad size follows the raster cell so 5×7 fallback is not stretched to measureText. */
 function bitmapMetrics(
   pixelsPerUnit: number,
-  measure: (ch: string, style: RichTextStyle) => { width: number; height: number },
+  measure: (ch: string, style: RichTextStyle) => Pick<BitmapGlyphCell, "width" | "height" | "inkBounds">,
 ): GlyphMetricsProvider {
   const ppu = pixelsPerUnit > 0 ? pixelsPerUnit : 100;
   return {
@@ -170,6 +171,10 @@ function bitmapMetrics(
         bearingY: 0,
         advance: worldW,
         source: "bitmap",
+        inkBounds: cell.inkBounds && {
+          top: cell.inkBounds.top / ppu,
+          bottom: cell.inkBounds.bottom / ppu,
+        },
       };
     },
     measureImage(_guid, sizePx) {

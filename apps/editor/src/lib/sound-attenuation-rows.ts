@@ -17,7 +17,8 @@ const DEFAULT_DOPPLER = {
 
 export function soundAttenuationDetailRows(
   attenuation: SoundAttenuationPayload,
-  commit: (next: SoundAttenuationPayload) => void,
+  /** `field` marks a continuous edit whose scrub is one undo step. */
+  commit: (next: SoundAttenuationPayload, field?: string) => void,
 ): PropertyRow[] {
   const rows: PropertyRow[] = [
     {
@@ -26,7 +27,7 @@ export function soundAttenuationDetailRows(
       label: "Inner Radius",
       value: attenuation.innerRadius,
       min: 0,
-      onChange: (innerRadius) => commit({ ...attenuation, innerRadius }),
+      onChange: (innerRadius) => commit({ ...attenuation, innerRadius }, "innerRadius"),
     },
     {
       id: "maxRadius",
@@ -34,7 +35,7 @@ export function soundAttenuationDetailRows(
       label: "Max Radius",
       value: attenuation.maxRadius,
       min: 0,
-      onChange: (maxRadius) => commit({ ...attenuation, maxRadius }),
+      onChange: (maxRadius) => commit({ ...attenuation, maxRadius }, "maxRadius"),
     },
     {
       id: "distanceModel",
@@ -58,7 +59,7 @@ export function soundAttenuationDetailRows(
       label: "Rolloff",
       value: attenuation.rolloff,
       min: 0,
-      onChange: (rolloff) => commit({ ...attenuation, rolloff }),
+      onChange: (rolloff) => commit({ ...attenuation, rolloff }, "rolloff"),
     },
     {
       id: "spatialisation",
@@ -100,7 +101,7 @@ export function soundAttenuationDetailRows(
         min: 0,
         max: 360,
         onChange: (innerAngle) =>
-          commit({ ...attenuation, cone: { ...cone, innerAngle } }),
+          commit({ ...attenuation, cone: { ...cone, innerAngle } }, "cone.innerAngle"),
       },
       {
         id: "coneOuterAngle",
@@ -110,7 +111,7 @@ export function soundAttenuationDetailRows(
         min: 0,
         max: 360,
         onChange: (outerAngle) =>
-          commit({ ...attenuation, cone: { ...cone, outerAngle } }),
+          commit({ ...attenuation, cone: { ...cone, outerAngle } }, "cone.outerAngle"),
       },
       {
         id: "coneOuterGain",
@@ -123,7 +124,7 @@ export function soundAttenuationDetailRows(
           commit({
             ...attenuation,
             cone: { ...cone, outerGain: clampAudioGain(outerGain, 0) },
-          }),
+          }, "cone.outerGain"),
       },
     );
   }
@@ -151,7 +152,7 @@ export function soundAttenuationDetailRows(
       value: doppler.factor,
       min: 0,
       onChange: (factor) =>
-        commit({ ...attenuation, doppler: { ...doppler, factor } }),
+        commit({ ...attenuation, doppler: { ...doppler, factor } }, "doppler.factor"),
     });
   }
 

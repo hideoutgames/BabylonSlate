@@ -5,6 +5,7 @@ import {
   type GraphClassMemberPin,
   type SerializedGraph,
 } from "@babylonslate/core";
+import { diffGraphCommands, type EditCommand } from "@babylonslate/edit";
 import { pruneEventMembersToNodes } from "./class-members";
 import {
   animGraphMembersFromVariables,
@@ -19,6 +20,13 @@ import {
   type TypeSchemas,
 } from "@babylonslate/scripting";
 import { asEnumAsset, asStructureAsset } from "./type-asset-payload";
+import { walkAncestry } from "@babylonslate/editor-kit";
+import {
+  compareClassIds,
+  isLockedEngineClassId,
+  subsystemBaseClassIdOf,
+  type SubsystemBaseClassId,
+} from "@babylonslate/object-model";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -193,6 +201,52 @@ export function collectFunctionLibrariesForPalette(options: {
   }
 
   return libraries;
+}
+
+export type SubsystemClassEntry = {
+  classId: string;
+  base: SubsystemBaseClassId;
+};
+
+/**
+ * Project and plugin Classes of GameSubsystem / SceneSubsystem lineage,
+ * including non-leaf bases, by compile class id in class-id order. Closed
+ * assets use their header parent; open documents join like Function Libraries.
+ */
+export function collectSubsystemClassesForPalette(options: {
+  assets: ReadonlyArray<{
+    path: string;
+    header: { type: string; parentClass?: string | null };
+  }>;
+  openDocuments: ReadonlyArray<{ ref: { kind: string; path: string } }>;
+  parentOf: (id: string) => string | null | undefined;
+  classIdForPath: (path: string) => string;
+}): SubsystemClassEntry[] {
+  const hierarchy = {
+    ancestry: (id: string) => walkAncestry(id, options.parentOf),
+  };
+  const bases = new Map<string, SubsystemBaseClassId>();
+  const consider = (classId: string, parentClass: string | null | undefined) => {
+    if (bases.has(classId) || isLockedEngineClassId(classId)) return;
+    const base =
+      subsystemBaseClassIdOf(hierarchy, classId) ??
+      (parentClass ? subsystemBaseClassIdOf(hierarchy, parentClass) : null);
+    if (base) bases.set(classId, base);
+  };
+  for (const asset of options.assets) {
+    if (asset.header.type !== "Class" && asset.header.type !== "Graph") {
+      continue;
+    }
+    consider(options.classIdForPath(asset.path), asset.header.parentClass);
+  }
+  for (const doc of options.openDocuments) {
+    if (doc.ref.kind !== "graph") continue;
+    const classId = options.classIdForPath(doc.ref.path);
+    consider(classId, options.parentOf(classId));
+  }
+  return [...bases]
+    .map(([classId, base]) => ({ classId, base }))
+    .sort((a, b) => compareClassIds(a.classId, b.classId));
 }
 
 function headerMemberId(entry: { id?: unknown; name: string }): string {
@@ -518,7 +572,31 @@ export function collectSceneDocumentsForPalette(options: {
 
 export type LogicGraphCommit =
   | { kind: "graph"; graph: SerializedGraph }
-  | { kind: "anim-graph"; payload: Record<string, unknown> };
+  | {
+      kind: "anim-graph";
+      payload: Record<string, unknown>;
+      /** Set when the edit is one graph command that coalesces (a pin default scrub). */
+      mergeKey?: string;
+    };
+
+/**
+ * Undo merge key for a logic graph stored inside an asset payload. A Class
+ * graph gets its keys from `applyGraphChange`; here the command layer's own
+ * key is reused when the edit is a single graph command, so scrubbing a pin
+ * default is one undo step there too.
+ */
+export function logicGraphEditMergeKey(
+  previous: SerializedGraph | null,
+  next: SerializedGraph,
+): string | undefined {
+  if (!previous) return undefined;
+  const commands: EditCommand<SerializedGraph>[] = diffGraphCommands(
+    previous,
+    next,
+  );
+  const key = commands.length === 1 ? commands[0]!.mergeKey : undefined;
+  return key ? `logic-graph:${key}` : undefined;
+}
 
 /** Persist a logic graph as a Class body or Animation Object. */
 export function commitLogicGraph(
@@ -534,7 +612,14 @@ export function commitLogicGraph(
       next,
     );
     if (isRecord(payload)) {
-      return { kind: "anim-graph", payload };
+      return {
+        kind: "anim-graph",
+        payload,
+        mergeKey: logicGraphEditMergeKey(
+          serializedGraphFromDocument("anim-graph", content),
+          next,
+        ),
+      };
     }
   }
   return { kind: "graph", graph: next };

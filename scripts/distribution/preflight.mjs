@@ -1,4 +1,4 @@
-import { createIdentity, existingAppleIdentity, releaseDisposition, validateChecks, validateSource } from "./contract.mjs";
+import { GITHUB_RELEASE_PLATFORMS, createIdentity, existingAppleIdentity, releaseDisposition, requestedPlatforms, validateChecks, validateSource } from "./contract.mjs";
 import { validateChangelog } from "./changelog.mjs";
 
 const VERIFY_JOBS = ["static", "unit", ...Array.from({ length: 7 }, (_, i) => `e2e (${i + 1})`)];
@@ -45,7 +45,7 @@ export async function preflight(request, { api, git }) {
     }
     validateChecks(identity.sourceSha, combined, [...required]);
   }
-  if (request.platforms !== "ipados") {
+  if (requestedPlatforms(request.platforms).some(platform => GITHUB_RELEASE_PLATFORMS.includes(platform))) {
     const tagSha = await resolveTag(api, identity.tag);
     const release = await api(`/releases/tags/${encodeURIComponent(identity.tag)}`, { optional: true });
     releaseDisposition(identity, tagSha, release);

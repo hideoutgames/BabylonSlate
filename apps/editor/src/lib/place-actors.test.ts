@@ -20,20 +20,11 @@ import {
 
 const ORIGIN: [number, number, number] = [0, 0, 0];
 
-it("places each Scene asset as an independent streaming marker at the requested origin", () => {
-  const scene = createDefaultScene();
-  scene.actors = [];
-  const [entry] = projectPlaceActors([{ header: { guid: "cave", name: "Cave", type: "Scene" } }]);
-  const first = spawnPlacedActor(scene, entry!, "stream-a", [5, 0, 2]);
-  scene.actors.push(first);
-  const second = spawnPlacedActor(scene, entry!, "stream-b", [8, 0, 2]);
-  expect(first).toMatchObject({ classId: "SceneStreamingActor", name: "Cave", transform: { position: [5, 0, 2] } });
-  expect(second.name).toBe("Cave 2");
-  expect(first.components.map((component) => component.classId)).toEqual(["SceneStreamingComponent", "Text3DComponent"]);
-  expect(first.components[0]?.properties).toEqual({ sceneGuid: "cave", sceneName: "Cave" });
-  expect(first.components[1]).toMatchObject({ parentId: first.components[0]?.id, properties: { text: "Cave", editorOnly: true } });
-  expect(second.components.every((component) => !first.components.some((other) => other.id === component.id))).toBe(true);
-  expect(projectPlaceActors([{ header: { guid: "cave", name: "Cave", type: "Scene" } }], undefined, { overlay: true })).toEqual([]);
+it("leaves Scene assets to the Scene Streaming actor instead of listing them", () => {
+  const scenes = [{ header: { guid: "cave", name: "Cave", type: "Scene" } }];
+  expect(projectPlaceActors(scenes)).toEqual([]);
+  expect(projectPlaceActors(scenes, undefined, { overlay: true })).toEqual([]);
+  expect(placeActorsForHost({ overlay: false }).some((item) => item.kind.type === "scene-streaming")).toBe(true);
   expect(placeActorsForHost({ overlay: true }).some((item) => item.kind.type === "scene-streaming")).toBe(false);
 });
 
@@ -238,13 +229,19 @@ describe("ENGINE_PLACE_ACTORS", () => {
         createDefaultScene(),
         item!,
         `actor-${id}`,
-        ORIGIN,
+        [7, 8, 9],
         { overlay: true },
       );
       expect(actor.classId).toBe("SceneLayerActor");
       expect(actor.components.map((component) => component.classId)).toEqual([
         classId,
       ]);
+      if (classId === "2DAnchorComponent") {
+        expect(actor.transform.position).toEqual([0, 0, 0]);
+        expect(duplicateSceneActor(createDefaultScene(), actor, { position: [4, 5, 6] }).transform.position).toEqual([0, 0, 0]);
+      } else {
+        expect(actor.transform.position).toEqual([7, 8, 9]);
+      }
       if (classId === "2DTextComponent" || classId === "2DRichTextComponent") {
         expect(actor.components[0]?.properties.wrapWidth).toBe(200);
         expect(actor.components[0]?.properties.wrapHeight).toBe(64);
@@ -650,6 +647,9 @@ describe("projectPlaceActors", () => {
     ]);
     expect(items.map((item) => item.title)).toEqual([
       "Hero", "Tree", "Jump", "Fire", "Dungeon",
+    ]);
+    expect(items.map((item) => item.category)).toEqual([
+      "Project", "Models", "Project", "Project", "Project",
     ]);
   });
 

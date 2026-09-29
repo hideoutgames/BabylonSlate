@@ -70,7 +70,7 @@ export function HomepageApplicationSettings({
                 <FieldDescription>
                   {desktop
                     ? "Download new releases from GitHub and install them when you exit BabylonSlate. Also available in Engine Settings."
-                    : "Automatic updates are managed here in the Windows desktop app."}
+                    : "Automatic updates are managed here in the desktop app."}
                 </FieldDescription>
               </FieldContent>
               <Switch

@@ -38,13 +38,14 @@ export function WaterDetailsPanel(_props: IDockviewPanelProps) {
   const doc = openDocuments.find((entry) => entry.id === documentId);
   const water = normalizeWaterDefinition(doc?.content);
   const defaults = createDefaultWaterDefinition(water.style);
-  const commit = (next: WaterDefinition) => { void applyAssetDocumentChange(documentId, normalizeWaterDefinition(next) as unknown as Record<string, unknown>); };
+  /** `field` names the per-field merge key: one scrub or color drag is one undo step. */
+  const commit = (next: WaterDefinition, field?: string) => { void applyAssetDocumentChange(documentId, normalizeWaterDefinition(next) as unknown as Record<string, unknown>, field ? `water:${field}` : undefined); };
   const assets = (assetRegistry?.list() ?? []).filter((asset) => asset.header.type === "Material" && (!asset.header.payload?.domain || asset.header.payload.domain === "surface"));
   const selected = assets.find((asset) => asset.header.guid === water.materialGuid);
   const rows: PropertyRow[] = [
     { id: "water-style", kind: "enum", label: "Style", value: water.style, options: [{ value: "realistic", label: "Realistic" }, { value: "stylized", label: "Stylized" }], description: "Changes shading style. Your colors and wave settings are retained.", onChange: (style) => commit({ ...water, style: style === "stylized" ? "stylized" : "realistic" }) },
-    ...(["shallowColor", "deepColor", "foamColor"] as const).map((key): PropertyRow => ({ id: `water-${key}`, kind: "color", label: humanizePropertyLabel(key), value: water[key], defaultValue: defaults[key], onChange: (value) => commit({ ...water, [key]: [value[0], value[1], value[2]] }) })),
-    ...controls.map(([key, min, max]): PropertyRow => ({ id: `water-${key}`, kind: "number", label: humanizePropertyLabel(key), value: water[key], defaultValue: defaults[key], min, max, ...(descriptions[key] ? { description: descriptions[key] } : {}), onChange: (value) => commit({ ...water, [key]: value }) })),
+    ...(["shallowColor", "deepColor", "foamColor"] as const).map((key): PropertyRow => ({ id: `water-${key}`, kind: "color", label: humanizePropertyLabel(key), value: water[key], defaultValue: defaults[key], onChange: (value) => commit({ ...water, [key]: [value[0], value[1], value[2]] }, key) })),
+    ...controls.map(([key, min, max]): PropertyRow => ({ id: `water-${key}`, kind: "number", label: humanizePropertyLabel(key), value: water[key], defaultValue: defaults[key], min, max, ...(descriptions[key] ? { description: descriptions[key] } : {}), onChange: (value) => commit({ ...water, [key]: value }, key) })),
     { id: "water-material", kind: "asset", label: "Custom Material", value: water.materialGuid, placeholder: "Built-In Water", description: "Optional Surface Material. Wave displacement and buoyancy remain active.", ...(selected ? assetRowIdentity({ name: selected.header.name, type: selected.header.type }) : {}), onPick: () => setPicking(true), onChange: (materialGuid) => commit({ ...water, materialGuid }) },
   ];
   return <PanelFrame data-testid="water-details-panel"><div className="min-h-0 flex-1 overflow-auto p-2"><PropertyGrid rows={rows} /></div>

@@ -1,3 +1,4 @@
+import { createDynamicRuntimeMesh } from "./dynamic-runtime-mesh";
 import { Color3, Mesh, MeshBuilder, Quaternion, Scene, Vector3, StandardMaterial } from "@babylonjs/core";
 import { normalizeWaterBody, waterKindForClass } from "@babylonslate/core";
 import { OVERLAY_LAYOUT_CLASSES, isOverlayLayoutClass, parseOverlayLayoutProperties, resolveOverlayLayout } from "@babylonslate/core";
@@ -13,6 +14,7 @@ import { sceneShadowController } from "./shadow-controller";
 import { createPainter2DMesh } from "./painter2d-mesh";
 import {
   identitySerializedTransform,
+  isSceneLayerAnchorActor,
   fogVolumeBindings,
   parseFogVolumeProperties,
   overlayPanelDestFromScale,
@@ -232,6 +234,7 @@ function stringProp(value: unknown): string | null {
 const VISUAL_COMPONENT_CLASS_IDS = new Set([
   "2DPainterComponent",
   ...OVERLAY_LAYOUT_CLASSES,
+  "DynamicRuntimeMeshComponent",
   "CableComponent",
   "SplineComponent",
   "GlobalWaterVolumeComponent", "WaterOceanComponent", "WaterLakeComponent", "WaterRiverComponent", "WaterPuddleComponent",
@@ -265,6 +268,7 @@ const VISUAL_COMPONENT_CLASS_IDS = new Set([
 
 const SURFACE_COMPONENT_CLASS_IDS = new Set([
   "2DPainterComponent",
+  "DynamicRuntimeMeshComponent",
   "CableComponent",
   "SplineComponent",
   "GlobalWaterVolumeComponent", "WaterOceanComponent", "WaterLakeComponent", "WaterRiverComponent", "WaterPuddleComponent",
@@ -397,6 +401,7 @@ export function helperBillboardIconOf(
   actor: SerializedActor,
 ): EditorBillboardIcon | null {
   if (actor.components.some(c => isOverlayLayoutClass(c.classId))) return null;
+  if (isSceneLayerAnchorActor(actor)) return null;
   if (actor.components.some((component) => component.classId === "SceneStreamingComponent")) return "default";
   if (hasSurfaceVisual(actor)) return null;
   const fill = actor.components.find(
@@ -435,6 +440,7 @@ export function needsOriginRoot(
     helperBillboardIconOf(actor) !== null ||
     visuals.length > 1 ||
     visuals.some((component) => component.classId === "CableComponent") ||
+    visuals.some((component) => component.classId === "DynamicRuntimeMeshComponent") ||
     visuals.some((component) => waterKindForClass(component.classId) !== null || component.classId === "WaterRemovalVolumeComponent" || component.classId === "SplineComponent") ||
     visuals.some((component) => component.classId === "FogVolumeComponent") ||
     visuals.some((component) => component.classId === "LandscapeComponent" || component.classId === "FoliageComponent") ||
@@ -462,6 +468,7 @@ function componentVisualKind(
   if (component.classId === "SceneStreamingComponent") return editorBillboardKind("default");
   const asset = stringProp(component.properties.assetGuid) ?? "";
   if (component.classId === "CableComponent") return `cable:${JSON.stringify(parseCableProperties(component.properties))}`;
+  if (component.classId === "DynamicRuntimeMeshComponent") return "dynamicRuntimeMesh";
   if (component.classId === "SplineComponent") return `spline:${JSON.stringify(component.properties)}`;
   if (waterKindForClass(component.classId)) return `water:${component.classId}:${JSON.stringify(component.properties)}`;
   if (component.classId === "WaterRemovalVolumeComponent") return `waterRemoval:${JSON.stringify(component.properties)}`;
@@ -737,6 +744,7 @@ export function createMeshForComponent(
     sceneShadowController(scene).setParticipation(mesh, component.properties);
     return mesh;
   }
+  if (component.classId === "DynamicRuntimeMeshComponent") return createDynamicRuntimeMesh(scene, name);
   if (component.classId === "SplineComponent") return createSplineMesh(scene, name, component.properties);
   if (component.classId === "SceneStreamingComponent") return createEditorBillboard(scene, name, "default");
   const waterKind = waterKindForClass(component.classId);
@@ -1108,6 +1116,12 @@ export function createActorMesh(
   assets?: MeshAssetContext,
   allActors?: readonly SerializedActor[],
 ): Mesh {
+  if (isSceneLayerAnchorActor(actor)) {
+    const root = new Mesh(editorMeshName(actor.id), scene);
+    root.metadata = { editorActorOrigin: true, editorUnpickable: true };
+    root.isPickable = false;
+    return root;
+  }
   if (needsOriginRoot(actor, allActors)) {
     return createActorOriginHierarchy(scene, actor, assets, allActors);
   }
@@ -1231,7 +1245,7 @@ export function applyActorTransform(mesh: Mesh, actor: SerializedActor): void {
   const component = actor.components.find((entry) => entry.classId === "MeshComponent");
   if (component && !isEditorActorOrigin(mesh)) sceneShadowController(mesh.getScene()).setParticipation(mesh, component.properties);
   if (mesh.isWorldMatrixFrozen) mesh.unfreezeWorldMatrix();
-  applySerializedTransform(mesh, actor.transform);
+  applySerializedTransform(mesh, isSceneLayerAnchorActor(actor) ? identitySerializedTransform() : actor.transform);
   const origin = isEditorActorOrigin(mesh);
   if (origin) {
     mesh.visibility = 0;
@@ -1399,6 +1413,22 @@ export function editorModelLoadTarget(
   return visualMeshesOfActorRoot(root).find((mesh) => mesh.name === name) ?? root;
 }
 
+/** Outliner-only anchors are transparent to the renderer's spatial hierarchy. */
+export function editorActorParentId(
+  actor: SerializedActor,
+  actorsById: ReadonlyMap<string, SerializedActor>,
+): string | null {
+  let parentId = actor.parentId;
+  const visited = new Set([actor.id]);
+  while (parentId && !visited.has(parentId)) {
+    const parent = actorsById.get(parentId);
+    if (!parent || !isSceneLayerAnchorActor(parent)) return parentId;
+    visited.add(parentId);
+    parentId = parent.parentId;
+  }
+  return null;
+}
+
 /** Full rebuild of the editor scene; `EditorSceneSync` does incremental work. */
 export function applySceneToBabylonScene(
   scene: Scene,
@@ -1431,6 +1461,7 @@ export function applySceneToBabylonScene(
   };
   let loadSlot = 0;
   for (const actor of sceneData.actors) {
+    if (isSceneLayerAnchorActor(actor)) continue;
     const mesh = createActorMesh(scene, actor, meshAssets, sceneData.actors);
     applyActorTransform(mesh, actor);
     applyActorComponentSorting(mesh, actor, assets?.sortingLayers ?? ["Background", "Default", "Foreground", "UI"]);
@@ -1454,10 +1485,12 @@ export function applySceneToBabylonScene(
     }
   }
 
+  const actorsById = new Map(sceneData.actors.map((actor) => [actor.id, actor]));
   for (const actor of sceneData.actors) {
-    if (!actor.parentId) continue;
+    const parentId = editorActorParentId(actor, actorsById);
+    if (!parentId) continue;
     const mesh = meshes.get(actor.id);
-    const parent = meshes.get(actor.parentId);
+    const parent = meshes.get(parentId);
     if (mesh && parent) {
       mesh.parent = parent;
     }

@@ -57,11 +57,14 @@ export {
 export { diffSceneCommands } from "./commands/scene-diff";
 export {
   type JournalLine,
+  JOURNAL_REPATH_TYPE,
+  journalRepathLine,
   parseJournalLine,
   registerCommandReviver,
   reviveCommand,
   serializeJournalLine,
   commandToJournalPayload,
+  coalesceJournalLines,
   registerGraphCommandRevivers,
   registerSceneCommandRevivers,
   registerAssetDocumentCommandRevivers,
@@ -72,6 +75,7 @@ export {
 } from "./commands/asset-document";
 export {
   replayJournalLines,
+  resolveJournalLines,
   type JournalReplayResult,
   type ReplayableDocument,
 } from "./journal-replay";

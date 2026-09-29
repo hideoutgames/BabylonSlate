@@ -62,13 +62,10 @@ function buildAdjacency(
   graph: LogicGraph,
   registry: ValidateOptions["registry"],
 ): {
-  execOut: Map<string, string[]>;
   dataDeps: Map<string, string[]>;
 } {
-  const execOut = new Map<string, string[]>();
   const dataDeps = new Map<string, string[]>();
   for (const node of graph.nodes) {
-    execOut.set(node.id, []);
     dataDeps.set(node.id, []);
   }
   for (const edge of graph.edges) {
@@ -78,9 +75,7 @@ function buildAdjacency(
     const sp = pinById(source, edge.sourcePinId);
     const tp = pinById(target, edge.targetPinId);
     if (!sp || !tp) continue;
-    if (sp.kind === "exec" && tp.kind === "exec") {
-      execOut.get(source.id)!.push(target.id);
-    } else if (
+    if (
       sp.kind === "data" &&
       tp.kind === "data" &&
       isPureEvalSource(source, registry)
@@ -88,7 +83,7 @@ function buildAdjacency(
       dataDeps.get(target.id)!.push(source.id);
     }
   }
-  return { execOut, dataDeps };
+  return { dataDeps };
 }
 
 function hasCycle(
@@ -202,20 +197,7 @@ function validateStructural(
   registry: ValidateOptions["registry"],
 ): Diagnostic[] {
   const out: Diagnostic[] = [];
-  const { execOut, dataDeps } = buildAdjacency(graph, registry);
-
-  const execCycle = hasCycle(execOut, compiled);
-  if (execCycle) {
-    out.push(
-      diagnostic({
-        code: "exec.cycle",
-        message: `Execution cycle involving node ${execCycle}`,
-        assetGuid: ctx.assetGuid,
-        graphId: graph.id,
-        nodeId: execCycle,
-      }),
-    );
-  }
+  const { dataDeps } = buildAdjacency(graph, registry);
 
   const dataCycle = hasCycle(dataDeps, compiled);
   if (dataCycle) {

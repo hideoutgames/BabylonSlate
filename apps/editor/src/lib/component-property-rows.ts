@@ -60,6 +60,7 @@ import {
 import {
   ENGINE_BASE_CLASS_IDS,
   ENGINE_COMPONENT_CLASS_IDS,
+  isHiddenEngineBaseClassId,
 } from "@babylonslate/object-model";
 import { parseNavMeshActorSettings } from "@babylonslate/navigation";
 import { classParentLookup, classIdFromClassAsset } from "./content-browser-helpers";
@@ -588,6 +589,25 @@ export function componentPropertyRows(
       return [
         ...cablePropertyRows(actorId, component, update, context),
         assetRow(actorId, component, "materialGuid", "Material", ["Material"], update, context, "Choose Cable Material"),
+      ];
+    case "DynamicRuntimeMeshComponent":
+      return [
+        assetRow(actorId, component, "materialGuid", "Material", ["Material"], update, context, "Choose Mesh Material"),
+        {
+          kind: "boolean", id: rowId(actorId, component.id, "enableCollision"), label: "Enable Collision",
+          value: component.properties.enableCollision === true, defaultValue: false,
+          disabled: context.physicsWorld !== "3d",
+          description: "Use the runtime triangles for collision. Geometry edits rebuild collision on the next physics step.",
+          onChange: (value) => update("enableCollision", value),
+        },
+        collisionLayerRow(actorId, component, update, context.collisionLayers),
+        collidesWithRow(actorId, component, update, context.collisionLayers),
+        ...(["castShadows", "receiveShadows"] as const).map((key): PropertyRow => ({
+          kind: "boolean", id: rowId(actorId, component.id, key),
+          label: key === "castShadows" ? "Cast Shadows" : "Receive Shadows",
+          value: component.properties[key] !== false, defaultValue: true,
+          onChange: (value) => update(key, value),
+        })),
       ];
     case "RagdollComponent": {
       const parsed = parseRagdollProperties(component.properties);
@@ -2084,8 +2104,9 @@ export function gameInstanceClassEntries(
     if (asset.header.type !== "Class") continue;
     const id = classIdFromClassAsset(asset);
     if (id === "GameInstance") continue;
-    if (!walkAncestry(id, parentOf).includes("GameInstance")) continue;
-    entries.push({ id, name: id, group: "Project" });
+    const ancestry = walkAncestry(id, parentOf);
+    if (!ancestry.includes("GameInstance")) continue;
+    entries.push({ id, name: id, group: "Project", ancestry });
   }
   return entries;
 }
@@ -2109,12 +2130,15 @@ export function subclassClassEntries(
   const seen = new Set<string>();
   const add = (id: string, name: string, group: string) => {
     if (seen.has(id)) return;
-    if (!walkAncestry(id, parentOf).includes(baseClassId)) return;
+    // Hidden engine bases (Subsystem) stay known but are never offered.
+    if (isHiddenEngineBaseClassId(id)) return;
+    const ancestry = walkAncestry(id, parentOf);
+    if (!ancestry.includes(baseClassId)) return;
     if (options?.editorGraph !== true && isEditorGraphClass(id, parentOf)) {
       return;
     }
     seen.add(id);
-    entries.push({ id, name, group });
+    entries.push({ id, name, group, ancestry });
   };
   add(baseClassId, baseClassId, "Engine");
   for (const id of ENGINE_BASE_CLASS_IDS) add(id, id, "Engine");

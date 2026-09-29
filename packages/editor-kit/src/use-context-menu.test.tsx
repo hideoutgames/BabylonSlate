@@ -1,4 +1,5 @@
 import { render, fireEvent, cleanup, act } from "@testing-library/react";
+import { createPortal } from "react-dom";
 import { describe, expect, it, vi, afterEach } from "vitest";
 import {
   CONTEXT_MENU_LONG_PRESS_MS,
@@ -83,6 +84,28 @@ describe("useContextMenu", () => {
     act(() => dispatchPointerEvent(document.body, "pointerdown", { pointerType: "touch" }));
 
     expect(state()).toBe("closed");
+  });
+
+  it("does not open from a press or context menu on a portaled descendant", async () => {
+    vi.useFakeTimers();
+    function PortalHost() {
+      const { menu, closeMenu, bind } = useContextMenu({
+        items: [{ id: "a", label: "Action", onSelect: vi.fn() }],
+      });
+      return (
+        <div data-testid="target" {...bind}>
+          <span data-testid="state">{menu?.open ? "open" : "closed"}</span>
+          {createPortal(<div data-testid="portaled-child">Outside</div>, document.body)}
+          <ContextMenuOverlay menu={menu} onClose={closeMenu} />
+        </div>
+      );
+    }
+    const view = render(<PortalHost />);
+    const outside = view.getByTestId("portaled-child");
+    fireEvent.contextMenu(outside, { clientX: 10, clientY: 20 });
+    dispatchPointerEvent(outside, "pointerdown", ORIGIN);
+    await advancePastLongPress();
+    expect(view.getByTestId("state").textContent).toBe("closed");
   });
 
   it("opens after a stationary long press from a touch pointer", async () => {

@@ -18,7 +18,8 @@ import {
   VertexBuffer,
   VertexData,
 } from "@babylonjs/core";
-import { normalizeShadowSettings } from "@babylonslate/core";
+import { DynamicRuntimeMeshGeometry, normalizeShadowSettings } from "@babylonslate/core";
+import { applyDynamicRuntimeMeshUpdate, createDynamicRuntimeMesh } from "./dynamic-runtime-mesh";
 import { sceneShadowController } from "./shadow-controller";
 import { attachModelLods, generateModelLods } from "./model-lod";
 import { updateSceneRenderingSettings } from "./render-settings";
@@ -102,6 +103,25 @@ async function fixture(floatingOrigin = false) {
 }
 
 describe("local shadow refresh", () => {
+  it("caches unchanged runtime mesh shadows and refreshes edits and clear in the same frame", async () => {
+    const { scene, material, controller, render } = await fixture();
+    const geometry = new DynamicRuntimeMeshGeometry();
+    geometry.setGeometry([0, 0, 0, 1, 0, 0, 0, 1, 0], [0, 1, 2]);
+    const mesh = createDynamicRuntimeMesh(scene, "runtime", { meshId: 1, update: geometry.takeUpdate() });
+    mesh.material = material;
+    controller.setParticipation(mesh, { castShadows: true });
+    expect(render()).toBe(6);
+    expect(render()).toBe(0);
+    geometry.updateVertices(0, [0, 0, 1]);
+    applyDynamicRuntimeMeshUpdate(scene, 1, geometry.takeUpdate());
+    expect(render()).toBe(6);
+    expect(render()).toBe(0);
+    geometry.clear();
+    applyDynamicRuntimeMeshUpdate(scene, 1, geometry.takeUpdate());
+    expect(render()).toBe(6);
+    expect(render()).toBe(0);
+    mesh.dispose();
+  });
   it("caches resting cable shadows and refreshes changed geometry in the same rendered frame", async () => {
     const { scene, material, controller, render } = await fixture();
     const cable = createCableMesh(scene, "cable", { numSegments: 2, numSides: 4 }, 1);

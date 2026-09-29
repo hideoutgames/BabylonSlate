@@ -36,6 +36,7 @@ import {
   createDefaultSceneSettings,
   findActor,
   identitySerializedTransform,
+  isSceneLayerAnchorActor,
   parseOverlayPanelProperties,
   parseText2DProperties,
   parseText3DProperties,
@@ -87,7 +88,8 @@ import {
 import { useOptionalNavBake } from "../context/nav-bake-context";
 import { IconActionButton } from "../components/icon-action-button";
 import { NineSlicePreview } from "../components/nine-slice-preview";
-import { AddComponentDialog } from "../components/add-component-dialog";
+import { AddComponentMenu } from "../components/add-component-menu";
+import { anchorBelow } from "../lib/menu-anchor";
 import { RagdollBoneNamesEditor } from "../components/ragdoll-bone-names-editor";
 import {
   defaultPropertiesFor,
@@ -216,7 +218,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       </EmptyHeader>
     </Empty>
   );
-  const [addComponentOpen, setAddComponentOpen] = useState(false);
+  const [addComponentAnchor, setAddComponentAnchor] = useState<{ x: number; y: number } | null>(null);
   const [assetPick, setAssetPick] = useState<AssetPickRequest | null>(null);
   const [constraintTargetPick, setConstraintTargetPick] = useState<{ actorId: string; componentId: string } | null>(null);
   const [cameraPickerOpen, setCameraPickerOpen] = useState(false);
@@ -1042,6 +1044,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         entry !== undefined && entry !== null,
     );
   const multiSelection = selectedActors.length > 1;
+  const spatialActors = selectedActors.filter((entry) => !isSceneLayerAnchorActor(entry));
   const shapeComponents = actor.components.filter((component) =>
     component.classId === "SplineComponent" || waterKindForClass(component.classId) !== null,
   );
@@ -1067,11 +1070,11 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       value: actor.name,
       onChange: (name) => updateActor((entry) => ({ ...entry, name })),
     },
-    ...(multiSelection
+    ...(spatialActors.length === 0 ? [] : multiSelection
       ? selectionTransformPropertyRows(
-          selectedActors,
+          spatialActors,
           scene.viewportMode,
-          updateSelectedActors,
+          (update) => updateSelectedActors((entry) => isSceneLayerAnchorActor(entry) ? entry : update(entry)),
         )
       : spatialTransformPropertyRows(
           "actor",
@@ -1079,16 +1082,16 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
           actor.transform,
           (transform) => updateActor((entry) => ({ ...entry, transform })),
         )),
-    {
+    ...(spatialActors.length === 0 ? [] : [{
       kind: "boolean",
       id: "actor-visible",
       label: "Visible",
-      value: actor.visible,
-      mixed: selectedActors.some((entry) => entry.visible !== actor.visible),
+      value: spatialActors[0]?.visible ?? true,
+      mixed: spatialActors.some((entry) => entry.visible !== spatialActors[0]?.visible),
       defaultValue: true,
       onChange: (visible) =>
-        updateSelectedActors((entry) => ({ ...entry, visible })),
-    },
+        updateSelectedActors((entry) => isSceneLayerAnchorActor(entry) ? entry : ({ ...entry, visible })),
+    } satisfies PropertyRow]),
     {
       kind: "boolean",
       id: "actor-locked",
@@ -1256,7 +1259,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
             variant="outline"
             size="sm"
             aria-label={multiSelection ? `Add Component To ${actor.name}` : "Add Component"}
-            onClick={() => setAddComponentOpen(true)}
+            onClick={(event) => setAddComponentAnchor(anchorBelow(event.currentTarget))}
             data-testid="details-add-component"
           >
             <PlusIcon data-icon="inline-start" />
@@ -1565,9 +1568,12 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         }}
         data-testid={pickingCableTarget ? "details-cable-target-picker" : "details-constraint-target-picker"}
       />
-      <AddComponentDialog
-        open={addComponentOpen}
-        onOpenChange={setAddComponentOpen}
+      <AddComponentMenu
+        open={addComponentAnchor !== null}
+        onOpenChange={(open) => {
+          if (!open) setAddComponentAnchor(null);
+        }}
+        anchor={addComponentAnchor}
         projectItems={projectAddComponentItems(assetRegistry?.list() ?? [])}
         overlay={overlay}
         physicsWorld={scene.settings.physicsWorld}

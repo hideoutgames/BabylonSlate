@@ -32,6 +32,7 @@ import {
   collectLatentFunctions,
   isLatentFunctionKey,
   latentSourcesFromSerializedGraph,
+  diagnostic,
 } from "@babylonslate/scripting";
 import {
   ENGINE_BASE_CLASS_IDS,
@@ -39,8 +40,12 @@ import {
   ENGINE_CLASS_SCRIPT_APIS,
   ENGINE_COMPONENT_CLASS_IDS,
   engineEventTypeClassIds,
+  isHiddenEngineBaseClassId,
   isSceneAssetClassId,
   sceneAssetClassId,
+  subsystemBaseClassIdOf,
+  subsystemClassIdsForGet,
+  type SubsystemClassHierarchy,
 } from "@babylonslate/object-model";
 import {
   componentGraphMembersForClass,
@@ -53,6 +58,11 @@ import {
   castDefaultClassId,
   callInterfaceTitle,
   isCallInterfaceMethodPin,
+  SUBSYSTEM_GET_NODE_ID,
+  subsystemGetClassId,
+  subsystemGetPaletteCategory,
+  subsystemGetProperties,
+  subsystemGetTitle,
 } from "@babylonslate/scripting-nodes";
 import {
   warnDebugTierConsoleCommands,
@@ -61,19 +71,25 @@ import {
 import type { PaletteNode, PinCompatibilityRule } from "@babylonslate/graph-ui";
 import {
   ensureCallParentForEvent,
+  GET_GAME_INSTANCE_NODE_ID,
   inheritedCustomEventSeeds,
+  isEditorUtilityChain,
+  isLineageNativeEventAllowed,
   isObjectInstanceVariableType,
   isScriptCatalogNodeAllowed,
+  lineageNativeEventBases,
+  LINEAGE_NATIVE_EVENT_TYPES,
   nativeEventStubs,
+  nativeEventTitle,
   NATIVE_CLASS_EVENT_TYPES,
-  NATIVE_GAME_INSTANCE_EVENT_TYPES,
-  SEEDED_NATIVE_EVENT_TYPES,
+  seededNativeEventTypes,
   COLLISION_EVENT_TYPE_IDS,
   type ClassEventOptions,
 } from "../lib/class-members";
 import type {
   GraphEnumEntry,
   GraphStructureEntry,
+  SubsystemClassEntry,
 } from "../lib/logic-graph-document";
 
 const registry = createDefaultNodeRegistry();
@@ -196,6 +212,7 @@ function shouldRegeneratePins(typeId: string): boolean {
     typeId === "variables.getValidated" ||
     typeId === "component.getNamed" ||
     typeId === "casting.cast" ||
+    typeId === SUBSYSTEM_GET_NODE_ID ||
     typeId === "struct.make" ||
     typeId === "struct.break" ||
     typeId === "enum.make" ||
@@ -446,6 +463,9 @@ function hydratedNodeTitle(
       typeof properties.method === "string" ? properties.method : "",
     );
   }
+  if (typeId === SUBSYSTEM_GET_NODE_ID) {
+    return subsystemGetTitle(subsystemGetClassId(properties));
+  }
   if (
     typeof properties.title === "string" &&
     (typeId === "flow.event.call" ||
@@ -485,6 +505,8 @@ function refreshInputEvent(
 export type InputPaletteAsset = { guid: string; name: string; type: string; valueType: string };
 
 export type HydrateGraphOptions = {
+  /** Active function slice, for Script Interface endpoint chrome. */
+  functionId?: string;
   inputAssets?: readonly InputPaletteAsset[];
   parentOf?: (id: string) => string | null | undefined;
   structs?: TypeSchemas["structs"];
@@ -552,6 +574,9 @@ export function hydrateSerializedGraphForEditor(
   options?: HydrateGraphOptions,
 ): SerializedGraph {
   const graph = bindUnboundComponentEvents(input, options);
+  const functionMember = graph.members?.find(
+    (member) => member.kind === "function" && member.id === options?.functionId,
+  );
   const parentOf = parentLookup(options?.parentOf);
   const latentFunctions = editorLatentFunctions(nodeRegistry, {
     classId: options?.classId,
@@ -575,6 +600,9 @@ export function hydrateSerializedGraphForEditor(
   const nodes = graph.nodes.map((node) => {
       const rawData = { ...(node.data as Record<string, unknown>) };
       const typeIdHint = catalogTypeId({ type: node.type, data: rawData });
+      if (typeIdHint === "flow.function.input" || typeIdHint === "flow.function.output") {
+        rawData.__interface = Boolean(functionMember?.implementsInterface);
+      }
       refreshInputEvent(typeIdHint, rawData, options, graph, node.id);
       if (hasNonEmptyPins(rawData) && !shouldRegeneratePins(typeIdHint)) {
         return {
@@ -810,10 +838,10 @@ export function createDefaultLogicGraphSerialized(
   nodeRegistry: NodeRegistry = registry,
   options?: ClassEventOptions,
 ): SerializedGraph {
-  const seedNatives = new Set<string>(SEEDED_NATIVE_EVENT_TYPES);
+  const seedNatives = new Set<string>(seededNativeEventTypes(options));
   const skipSeedNatives = new Set<string>([
     ...NATIVE_CLASS_EVENT_TYPES,
-    ...NATIVE_GAME_INSTANCE_EVENT_TYPES,
+    ...LINEAGE_NATIVE_EVENT_TYPES,
     ...COLLISION_EVENT_TYPE_IDS,
   ]);
   const stubs = nativeEventStubs(options).filter((stub) => {
@@ -940,6 +968,8 @@ export type ScriptPaletteOptions = ClassEventOptions & {
   structures?: readonly GraphStructureEntry[];
   enums?: readonly GraphEnumEntry[];
   sceneDocuments?: readonly PaletteSceneDocument[];
+  /** Project subsystem classes; each gets a Get <ClassId> row. */
+  subsystemClasses?: readonly SubsystemClassEntry[];
 };
 
 export type PaletteSceneDocument = {
@@ -1176,6 +1206,7 @@ function callFunctionPaletteNodes(
             typeId: pin.typeId,
             direction: pin.direction,
             ...(pin.typeClassId ? { typeClassId: pin.typeClassId } : {}),
+            ...(pin.container ? { container: pin.container } : {}),
           })),
           runtime: fn.runtime,
         },
@@ -1581,7 +1612,9 @@ function castPaletteNodes(
         ...sceneIds,
       ].filter((id): id is string => Boolean(id)),
     ),
-  ].sort((a, b) => a.localeCompare(b));
+  ]
+    .filter((classId) => !isHiddenEngineBaseClassId(classId))
+    .sort((a, b) => a.localeCompare(b));
   return classIds.map((classId) => {
     const resultKind = resultKindForClass(classId, parentOf);
     const defaultData: Record<string, unknown> = {
@@ -1595,6 +1628,33 @@ function castPaletteNodes(
       nodeType: "casting.cast",
       title: sceneName ? `Cast to ${sceneName}` : `Cast to ${classId}`,
       category: def.category,
+      pins: def.pins(defaultData),
+      pure: def.pure,
+      latent: def.latent,
+      defaultData,
+    };
+  });
+}
+
+/**
+ * One pure Get <ClassId> row per project subsystem class (non-leaf bases
+ * included). Editor utility graphs have no runtime subsystems.
+ */
+function subsystemGetPaletteNodes(
+  nodeRegistry: NodeRegistry,
+  options?: ScriptPaletteOptions,
+): PaletteNode[] {
+  const def = nodeRegistry.get(SUBSYSTEM_GET_NODE_ID);
+  if (!def || isEditorGraphHost(options ?? {})) return [];
+  return (options?.subsystemClasses ?? []).map(({ classId, base }) => {
+    const defaultData: Record<string, unknown> = {
+      ...subsystemGetProperties(classId),
+    };
+    return {
+      id: `${SUBSYSTEM_GET_NODE_ID}:${classId}`,
+      nodeType: SUBSYSTEM_GET_NODE_ID,
+      title: subsystemGetTitle(classId),
+      category: subsystemGetPaletteCategory(base),
       pins: def.pins(defaultData),
       pure: def.pure,
       latent: def.latent,
@@ -1818,6 +1878,7 @@ export function scriptPaletteInjectorKey(
     other,
     functionLibraries: options?.functionLibraries ?? [],
     scriptInterfaces: options?.scriptInterfaces ?? [],
+    subsystemClasses: options?.subsystemClasses ?? [],
     structures: options?.structures ?? [],
     enums: options?.enums ?? [],
     inputAssets: options?.inputAssets ?? [],
@@ -1939,6 +2000,7 @@ function scriptPaletteInjectorNodes(
       ...callInterfacePaletteNodes(nodeRegistry, options),
       ...variableAccessPaletteNodes(nodeRegistry, options),
       ...castPaletteNodes(nodeRegistry, options),
+      ...subsystemGetPaletteNodes(nodeRegistry, options),
       ...structPaletteNodes(nodeRegistry, options),
       ...enumPaletteNodes(nodeRegistry, options),
     ],
@@ -2169,6 +2231,7 @@ export function classMemberSymbolsFromGraphs(
           typeId: pin.typeId,
           direction: pin.direction,
           ...(pin.typeClassId ? { typeClassId: pin.typeClassId } : {}),
+          ...(pin.container ? { container: pin.container } : {}),
         })),
       });
     }
@@ -2221,7 +2284,118 @@ export type ValidateSerializedGraphOptions = {
   attachedComponents?: ReadonlyArray<{ id: string; classId: string }>;
   eventTypeClassIds?: Readonly<Record<string, readonly string[]>>;
   parentEventNames?: ReadonlySet<string>;
+  /**
+   * Every project subsystem class; enables the Get <Subsystem> instance
+   * checks (no instantiable class, more than one).
+   */
+  subsystemClasses?: readonly SubsystemClassEntry[];
 };
+
+function joinClassIds(classIds: readonly string[]): string {
+  if (classIds.length <= 1) return classIds[0] ?? "";
+  return `${classIds.slice(0, -1).join(", ")} or ${classIds[classIds.length - 1]}`;
+}
+
+/**
+ * Host-lineage rules the palette also enforces, so pasted or stale nodes are
+ * reported: lifecycle events outside their lineage, Get <Subsystem> classes
+ * and both runtime getters in editor utility graphs.
+ */
+function hostLineageDiagnostics(
+  graphs: readonly LogicGraph[],
+  options: ValidateSerializedGraphOptions,
+): Diagnostic[] {
+  const parentOf = parentLookup(options.parentOf);
+  const hierarchy: SubsystemClassHierarchy = {
+    ancestry: (id) => walkAncestry(id, parentOf),
+  };
+  // A class the lookup does not know (legacy Graph assets, Animation Graph
+  // objects) has no lineage to check against.
+  const classChain = options.classId
+    ? walkAncestry(options.classId, parentOf)
+    : [];
+  const hostChain = classChain.length > 1 ? classChain : null;
+  const editorHost = hostChain ? isEditorUtilityChain(hostChain) : false;
+  const subsystemClassIds = options.subsystemClasses?.map(
+    (entry) => entry.classId,
+  );
+  const out: Diagnostic[] = [];
+  for (const graph of graphs) {
+    const report = (code: string, message: string, nodeId: string) =>
+      out.push(
+        diagnostic({
+          code,
+          message,
+          assetGuid: options.assetGuid,
+          graphId: graph.id,
+          nodeId,
+        }),
+      );
+    for (const node of graph.nodes) {
+      if (hostChain && !isLineageNativeEventAllowed(node.typeId, hostChain)) {
+        report(
+          "event.wrong_lineage",
+          `${nativeEventTitle(node.typeId)} only runs on ${joinClassIds(
+            lineageNativeEventBases(node.typeId),
+          )} classes`,
+          node.id,
+        );
+        continue;
+      }
+      if (node.typeId === GET_GAME_INSTANCE_NODE_ID && editorHost) {
+        report(
+          "gameInstance.editor_host",
+          "Get Game Instance is not available in editor utility graphs",
+          node.id,
+        );
+        continue;
+      }
+      if (node.typeId !== SUBSYSTEM_GET_NODE_ID) continue;
+      const classId = subsystemGetClassId(node.properties);
+      const title = subsystemGetTitle(classId);
+      if (editorHost) {
+        report(
+          "subsystem.editor_host",
+          `${title} is not available in editor utility graphs`,
+          node.id,
+        );
+        continue;
+      }
+      if (!classId) {
+        report("subsystem.missing_class", "Get Subsystem has no class", node.id);
+        continue;
+      }
+      if (!subsystemBaseClassIdOf(hierarchy, classId)) {
+        report(
+          "subsystem.not_subsystem",
+          `"${classId}" is not a GameSubsystem or SceneSubsystem class`,
+          node.id,
+        );
+        continue;
+      }
+      if (!subsystemClassIds) continue;
+      const leaves = subsystemClassIdsForGet(
+        hierarchy,
+        subsystemClassIds,
+        classId,
+      );
+      if (leaves.length === 0) {
+        report(
+          "subsystem.no_instance",
+          `${title} matches no subsystem class that is created at runtime`,
+          node.id,
+        );
+      } else if (leaves.length > 1) {
+        report(
+          "subsystem.ambiguous",
+          `${title} is ambiguous because more than one subsystem is created for it (${leaves.join(", ")}). Get one of those classes instead`,
+          node.id,
+        );
+      }
+    }
+  }
+  return out;
+}
 
 function attachedComponentsForGraph(
   content: SerializedGraph,
@@ -2278,6 +2452,7 @@ export function validateSerializedGraph(
   if (isLogicGraphPayload(content)) {
     return [
       ...validateGraphs([content], ctx, { registry }),
+      ...hostLineageDiagnostics([content], options),
       ...warnDebugTierConsoleCommands([content], { assetGuid: options.assetGuid }),
       ...warnReservedConsoleCommandNames([content], { assetGuid: options.assetGuid }),
     ];
@@ -2306,6 +2481,7 @@ export function validateSerializedGraph(
   }
   return [
     ...validateGraphs(graphs, ctx, { registry }),
+    ...hostLineageDiagnostics(graphs, options),
     ...warnDebugTierConsoleCommands(graphs, { assetGuid: options.assetGuid }),
     ...warnReservedConsoleCommandNames(graphs, { assetGuid: options.assetGuid }),
   ];

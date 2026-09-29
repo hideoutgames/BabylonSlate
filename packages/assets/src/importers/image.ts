@@ -1,5 +1,5 @@
 import { newAssetGuid } from "../guid";
-import { sniffImageSize } from "../image-size";
+import { sniffSourceImageSize } from "../image-size";
 import { shouldCompressTexture } from "../texture-compression";
 import type { ImportOptions, ImportResult } from "./types";
 import { baseName, extensionOf } from "./util";
@@ -31,7 +31,7 @@ export async function importImage(
   const mime = MIME_BY_EXTENSION[extension] ?? "application/octet-stream";
   const usage = usageFromFileName(options.fileName);
   const payload: Record<string, unknown> = { usage };
-  const size = sniffImageSize(bytes);
+  const size = sniffSourceImageSize(bytes);
   if (size) {
     payload.width = size.width;
     payload.height = size.height;

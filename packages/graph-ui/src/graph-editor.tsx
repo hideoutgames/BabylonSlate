@@ -1301,7 +1301,10 @@ function GraphEditorCanvas({
 
       const activePin = pendingPinRef.current;
       if (!activePin) return;
-      if (activePin.nodeId === nodeId) {
+      const sourcePin = pinOnNode(graphStateRef.current.nodes, activePin.nodeId, activePin.pinId);
+      const targetPin = pinOnNode(graphStateRef.current.nodes, nodeId, pinId);
+      if (activePin.nodeId === nodeId && (sourcePin?.kind !== "exec" || targetPin?.kind !== "exec")) {
+        pendingPinRef.current = null;
         setPendingPin(null);
         return;
       }

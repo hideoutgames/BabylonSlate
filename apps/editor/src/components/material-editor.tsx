@@ -694,7 +694,7 @@ function MaterialDocumentDetails() {
       onChange: (value) => commit({ ...document, defaultNormals: value === "flat" ? "flat" : "model" }),
     },
   ];
-  if ((document.domain === "surface" || document.domain === "landscape")) rows.push({ id: "boundsPadding", kind: "number", label: "Bounds Padding (Local)", value: document.boundsPadding ?? 0, min: 0, onChange: (boundsPadding) => commit({ ...document, boundsPadding }) });
+  if ((document.domain === "surface" || document.domain === "landscape")) rows.push({ id: "boundsPadding", kind: "number", label: "Bounds Padding (Local)", value: document.boundsPadding ?? 0, min: 0, onChange: (boundsPadding) => commit({ ...document, boundsPadding }, "material:boundsPadding") });
   if ((document.domain !== "surface" && document.domain !== "landscape")) {
     // Particle emitters own blending (their Render module), so particle Materials hide Blend Mode.
     const hidden = document.domain === "particle" || document.domain === "text" ? ["shadingModel", "blendMode", "twoSided", "defaultNormals"] : ["shadingModel", "twoSided", "defaultNormals"];
@@ -708,7 +708,7 @@ function MaterialDocumentDetails() {
       value: document.alphaCutoff,
       min: 0,
       max: 1,
-      onChange: (value) => commit({ ...document, alphaCutoff: value }),
+      onChange: (value) => commit({ ...document, alphaCutoff: value }, "material:alphaCutoff"),
     });
   }
 
@@ -767,7 +767,7 @@ function MaterialNodeDetails({
   selectedNodeId,
 }: {
   document: MaterialGraphDocument;
-  commit: (next: MaterialGraphDocument) => void;
+  commit: (next: MaterialGraphDocument, mergeKey?: string) => void;
   selectedNodeId: string | null;
 }) {
   const { assetRegistry, registryVersion } = useDocuments();
@@ -790,6 +790,8 @@ function MaterialNodeDetails({
   }, [assetRegistry, registryVersion, pickOpen, isTextureNode]);
   if (!node) return null;
 
+  // Keyed by node and property names: a value scrub, color drag or typed
+  // field is one undo step, while each separate click still starts a new one.
   const setProperties = (properties: Record<string, unknown>) => {
     const pins = node.type === "custom.glsl" && (properties.inputs || properties.outputs) ? customGlslInterface({ ...node.properties, ...properties }) : null;
     commit({
@@ -800,7 +802,7 @@ function MaterialNodeDetails({
           ? { ...entry, properties: { ...entry.properties, ...properties } }
           : entry,
       ),
-    });
+    }, `material-node:${node.id}:${Object.keys(properties).sort().join(",")}`);
   };
 
   const rows: PropertyRow[] = materialPinDefaultRows(
@@ -1105,7 +1107,7 @@ export function MaterialFunctionInterfacePanel(_props: IDockviewPanelProps) {
   const [selectedInput, selectInput] = useState<string | null>(null);
   const [selectedOutput, selectOutput] = useState<string | null>(null);
   const input = document.inputs.find((pin) => pin.id === selectedInput);
-  const setDefault = (defaultValue: number[]) => commit({ ...document, inputs: document.inputs.map((pin) => pin.id === selectedInput ? { ...pin, defaultValue } : pin) });
+  const setDefault = (defaultValue: number[]) => commit({ ...document, inputs: document.inputs.map((pin) => pin.id === selectedInput ? { ...pin, defaultValue } : pin) }, `material-function:input:${selectedInput}:defaultValue`);
   return (
     <PanelFrame
       className="flex-1"
@@ -1188,7 +1190,7 @@ export function MaterialCompilerResultsPanel(_props: IDockviewPanelProps) {
           <EmptyDescription>This material compiles cleanly.</EmptyDescription>
         </Empty>
       ) : (
-        <ScrollArea className="min-h-0 flex-1 p-2">
+        <ScrollArea className="min-h-0 flex-1 py-1">
           <WindowedList
             itemCount={rows.length}
             rowHeight={WINDOWED_LIST_TOUCH_ROW_HEIGHT}
@@ -1199,6 +1201,8 @@ export function MaterialCompilerResultsPanel(_props: IDockviewPanelProps) {
                 <DiagnosticResultRow
                   severity={row.severity}
                   message={row.message}
+                  code={row.code}
+                  selected={selected !== null && row.code === selected.code && row.message === selected.message && row.nodeId === selected.nodeId}
                   onSelect={() => {
                     setSelectedDiagnostic(row);
                     if (row.nodeId) editing.focusNode(row.nodeId);

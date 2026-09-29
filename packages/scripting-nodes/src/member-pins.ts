@@ -20,8 +20,10 @@ export type MemberPinRow = {
   name?: string;
   typeId?: string;
   typeClassId?: string;
-  container?: "single" | "array" | "map";
   direction?: string;
+  container?: string;
+  keyTypeId?: string;
+  keyTypeClassId?: string;
 };
 
 export function jsIdent(name: string): string {

@@ -16,7 +16,8 @@ import type { BtEditorPosition } from "./types";
 export const BT_NODE_TYPE = "bt.node";
 export const BT_PARENT_HANDLE = "parent";
 export const BT_CHILDREN_HANDLE = "children";
-export const BT_LAYOUT_NODE_WIDTH = 220;
+/** Card width (224px, `TreeNode`) plus a sibling gap. */
+export const BT_LAYOUT_NODE_WIDTH = 248;
 export const BT_LAYOUT_NODE_HEIGHT = 180;
 /** Each decorator/service row is a 44px touch target on the host node. */
 export const BT_LAYOUT_ATTACHMENT_ROW = 44;

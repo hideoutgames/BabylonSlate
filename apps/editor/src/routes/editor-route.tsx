@@ -23,6 +23,7 @@ import { DocumentWorkspace } from "../components/document-workspace";
 import { ExternalChangeDialogs } from "../components/external-change-dialogs";
 import { useDocuments } from "../context/document-context";
 import { AssetOpenDocumentsProvider } from "../context/asset-open-provider";
+import { EditorSessionStateProvider } from "../context/editor-session-state-context";
 import { PlayProvider, usePlay } from "../context/play-context";
 import { KeybindProvider } from "../context/keybind-context";
 import { ProjectSearchProvider } from "../context/project-search-context";
@@ -379,29 +380,49 @@ function PlayAwareKeybinds({ children }: { children: ReactNode }) {
   return <KeybindProvider suspended={playing}>{children}</KeybindProvider>;
 }
 
+/**
+ * Reads the document identity feed here rather than in EditorRoute: a
+ * document change re-renders only this wrapper, and its unchanged `children`
+ * keep the rest of the editor from re-rendering with it.
+ */
+function ProjectSessionState({ children }: { children: ReactNode }) {
+  const { subscribeDocumentIdentity } = useDocuments();
+  return (
+    <EditorSessionStateProvider
+      subscribeDocumentIdentity={subscribeDocumentIdentity}
+    >
+      {children}
+    </EditorSessionStateProvider>
+  );
+}
+
 export default function EditorRoute({
   gallery = false,
 }: {
   gallery?: boolean;
 }) {
+  // Homepage is the only way into a project and closing one returns there,
+  // so this route (and the session view state it owns) mounts once per project.
   return (
-    <AssetOpenDocumentsProvider>
-      <ValidationProvider>
-        <PlayProvider>
-          <MaterialRenderControlProvider>
-            <EditorUtilityRuntime />
-            <EditorExtensionsRuntime />
-            <TestAudioHostStats />
-            <TestParticleHostStats />
-            <ModelThumbnailCaptureHost />
-            <ProjectSearchProvider>
-              <PlayAwareKeybinds>
-                {gallery ? <ComponentGallery /> : <EditorLayout />}
-              </PlayAwareKeybinds>
-            </ProjectSearchProvider>
-          </MaterialRenderControlProvider>
-        </PlayProvider>
-      </ValidationProvider>
-    </AssetOpenDocumentsProvider>
+    <ProjectSessionState>
+      <AssetOpenDocumentsProvider>
+        <ValidationProvider>
+          <PlayProvider>
+            <MaterialRenderControlProvider>
+              <EditorUtilityRuntime />
+              <EditorExtensionsRuntime />
+              <TestAudioHostStats />
+              <TestParticleHostStats />
+              <ModelThumbnailCaptureHost />
+              <ProjectSearchProvider>
+                <PlayAwareKeybinds>
+                  {gallery ? <ComponentGallery /> : <EditorLayout />}
+                </PlayAwareKeybinds>
+              </ProjectSearchProvider>
+            </MaterialRenderControlProvider>
+          </PlayProvider>
+        </ValidationProvider>
+      </AssetOpenDocumentsProvider>
+    </ProjectSessionState>
   );
 }

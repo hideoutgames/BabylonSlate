@@ -36,7 +36,13 @@ export type EngineClassScriptApi = {
   classId: string;
   variables?: readonly EngineScriptVariable[];
   functions?: readonly EngineScriptFunction[];
+  /** Component-bound events (Add Event on an attached component). */
   events?: readonly EngineScriptEvent[];
+  /**
+   * Lifecycle events a class of this lineage handles on Self. Never
+   * component-bound, so they stay out of `engineEventTypeClassIds()`.
+   */
+  nativeEvents?: readonly EngineScriptEvent[];
 };
 
 const EXEC_IN: EngineScriptPin = {
@@ -167,6 +173,114 @@ export const COLLIDER_EVENTS: readonly EngineScriptEvent[] = [
   },
 ];
 
+const INIT_EVENT: EngineScriptEvent = {
+  name: "On Init",
+  eventType: "flow.event.init",
+  exportName: "onInit",
+};
+const TICK_EVENT: EngineScriptEvent = {
+  name: "Tick",
+  eventType: "flow.event.tick",
+  exportName: "onTick",
+};
+const END_EVENT: EngineScriptEvent = {
+  name: "On End",
+  eventType: "flow.event.end",
+  exportName: "onEnd",
+};
+
+/** Game Instance lifecycle; GameSubsystem shares it for parity. */
+const GAME_INSTANCE_EVENTS: readonly EngineScriptEvent[] = [
+  {
+    name: "Scalability Changed",
+    eventType: "flow.event.scalabilityChanged",
+    exportName: "onScalabilityChanged",
+  },
+  INIT_EVENT,
+  TICK_EVENT,
+  END_EVENT,
+  {
+    name: "On First Scene Loaded",
+    eventType: "flow.event.firstSceneLoaded",
+    exportName: "onFirstSceneLoaded",
+  },
+  {
+    name: "On Scene Start Loading",
+    eventType: "flow.event.sceneStartLoading",
+    exportName: "onSceneStartLoading",
+  },
+  {
+    name: "On Scene Finish Loading",
+    eventType: "flow.event.sceneFinishLoading",
+    exportName: "onSceneFinishLoading",
+  },
+  {
+    name: "On Scene Exit",
+    eventType: "flow.event.sceneExit",
+    exportName: "onSceneExit",
+  },
+];
+
+const SCENE_SUBSYSTEM_EVENTS: readonly EngineScriptEvent[] = [
+  INIT_EVENT,
+  TICK_EVENT,
+  END_EVENT,
+  {
+    name: "On Scene Loaded",
+    eventType: "flow.event.sceneLoaded",
+    exportName: "onSceneLoaded",
+  },
+  {
+    name: "On Streamed Scene Loaded",
+    eventType: "flow.event.streamedSceneLoaded",
+    exportName: "onStreamedSceneLoaded",
+  },
+  {
+    name: "On Streamed Scene Unloaded",
+    eventType: "flow.event.streamedSceneUnloaded",
+    exportName: "onStreamedSceneUnloaded",
+  },
+  {
+    name: "On Scene Layer Added",
+    eventType: "flow.event.sceneLayerAdded",
+    exportName: "onSceneLayerAdded",
+  },
+  {
+    name: "On Scene Layer Removed",
+    eventType: "flow.event.sceneLayerRemoved",
+    exportName: "onSceneLayerRemoved",
+  },
+  {
+    name: "On Scene Actor Spawned",
+    eventType: "flow.event.sceneActorSpawned",
+    exportName: "onSceneActorSpawned",
+  },
+  {
+    name: "On Scene Actor Destroyed",
+    eventType: "flow.event.sceneActorDestroyed",
+    exportName: "onSceneActorDestroyed",
+  },
+];
+
+const GET_SCENE_LOADING_PROGRESS: EngineScriptFunction = {
+  name: "Get Scene Loading Progress",
+  runtime: "getSceneLoadingProgress",
+  pins: [{ name: "progress", typeId: "float", direction: "out" }],
+};
+
+const GET_SCENE_REFERENCE: EngineScriptFunction = {
+  name: "Get Scene Reference",
+  runtime: "getSceneReference",
+  pins: [
+    {
+      name: "scene",
+      typeId: "object",
+      typeClassId: "Scene",
+      direction: "out",
+    },
+  ],
+};
+
 export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
   ...OVERLAY_LAYOUT_CLASSES.map((classId): EngineClassScriptApi => ({ classId, variables: [
     ...["width", "height", "fillWeight", "gap", "paddingLeft", "paddingRight", "paddingTop", "paddingBottom", "scrollX", "scrollY"].map(propertyKey => ({ name: propertyKey.replace(/([A-Z])/g, " $1").replace(/^./, c => c.toUpperCase()), typeId: "float", propertyKey })),
@@ -211,6 +325,41 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
     ],
   },
   {
+    classId: "DynamicRuntimeMeshComponent",
+    variables: [
+      { name: "Material", typeId: "asset", typeClassId: "Material", propertyKey: "materialGuid" },
+      { name: "Material Object", typeId: "object", typeClassId: "MaterialObject", propertyKey: "materialObject", getOnly: true },
+      { name: "Enable Collision", typeId: "bool", propertyKey: "enableCollision" },
+      { name: "Layer", typeId: "int", propertyKey: "layer" },
+      { name: "Mask", typeId: "int", propertyKey: "mask" },
+      { name: "Cast Shadows", typeId: "bool", propertyKey: "castShadows" },
+      { name: "Receive Shadows", typeId: "bool", propertyKey: "receiveShadows" },
+    ],
+    functions: [
+      {
+        name: "Set Geometry", runtime: "setDynamicMeshGeometry",
+        pins: [EXEC_IN, EXEC_OUT,
+          { name: "positions", typeId: "float", container: "array", direction: "in" },
+          { name: "indices", typeId: "int", container: "array", direction: "in" },
+          { name: "normals", typeId: "float", container: "array", direction: "in" },
+          { name: "uvs", typeId: "float", container: "array", direction: "in" },
+          { name: "success", typeId: "bool", direction: "out" }],
+      },
+      {
+        name: "Update Vertices", runtime: "updateDynamicMeshVertices",
+        pins: [EXEC_IN, EXEC_OUT,
+          { name: "firstVertex", typeId: "int", direction: "in" },
+          { name: "positions", typeId: "float", container: "array", direction: "in" },
+          { name: "normals", typeId: "float", container: "array", direction: "in" },
+          { name: "uvs", typeId: "float", container: "array", direction: "in" },
+          { name: "success", typeId: "bool", direction: "out" }],
+      },
+      { name: "Clear Geometry", runtime: "clearDynamicMeshGeometry", pins: [EXEC_IN, EXEC_OUT] },
+      { name: "Recalculate Normals", runtime: "recalculateDynamicMeshNormals", pins: [EXEC_IN, EXEC_OUT] },
+      { name: "Recalculate Bounds", runtime: "recalculateDynamicMeshBounds", pins: [EXEC_IN, EXEC_OUT] },
+    ],
+  },
+  {
     classId: "RenderTargetCaptureComponent",
     variables: [
       { name: "Render Target", typeId: "asset", typeClassId: "RenderTarget", propertyKey: "renderTargetGuid" },
@@ -242,25 +391,19 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
   ] },
   {
     classId: "GameInstance",
-    functions: [
-      {
-        name: "Get Scene Loading Progress",
-        runtime: "getSceneLoadingProgress",
-        pins: [{ name: "progress", typeId: "float", direction: "out" }],
-      },
-      {
-        name: "Get Scene Reference",
-        runtime: "getSceneReference",
-        pins: [
-          {
-            name: "scene",
-            typeId: "object",
-            typeClassId: "Scene",
-            direction: "out",
-          },
-        ],
-      },
-    ],
+    functions: [GET_SCENE_LOADING_PROGRESS, GET_SCENE_REFERENCE],
+    nativeEvents: GAME_INSTANCE_EVENTS,
+  },
+  // Subsystems reach Get Scene Loading Progress / Get Scene Reference through
+  // the lineage-gated `gameInstance.*` nodes; catalog `functions` would add
+  // Call rows to every host.
+  {
+    classId: "GameSubsystem",
+    nativeEvents: GAME_INSTANCE_EVENTS,
+  },
+  {
+    classId: "SceneSubsystem",
+    nativeEvents: SCENE_SUBSYSTEM_EVENTS,
   },
   {
     classId: "Scene",
@@ -711,4 +854,18 @@ export function engineScriptEventsFor(
   classId: string,
 ): readonly EngineScriptEvent[] {
   return engineScriptApiFor(classId)?.events ?? [];
+}
+
+/**
+ * Native lifecycle events for a class, from the nearest engine class in its
+ * ancestry (class first, root last) that declares them.
+ */
+export function engineNativeEventsFor(
+  ancestry: readonly string[],
+): readonly EngineScriptEvent[] {
+  for (const classId of ancestry) {
+    const events = engineScriptApiFor(classId)?.nativeEvents;
+    if (events) return events;
+  }
+  return [];
 }

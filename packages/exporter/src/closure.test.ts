@@ -1169,3 +1169,54 @@ it("packs enabled input assets at startup even when no graph currently reference
   ], pluginEnabledGuids: new Set(), parentOf: () => null, sceneByGuid: () => createDefaultScene(), graphByGuid: () => null });
   expect(result).toMatchObject({ ok: true, value: { guids: ["action", "axis", "scene"] } });
 });
+
+describe("collectExportReachability subsystem roots", () => {
+  function subsystemClosure(
+    classes: ReadonlyArray<Pick<ExportIndexedAsset, "guid" | "name" | "parentClass"> & { rootId?: string }>,
+    pluginEnabledGuids: ReadonlySet<string> = new Set(),
+  ) {
+    // Mirrors the editor's class-header parent lookup: user classes by name, engine ids unknown.
+    const parents = new Map(classes.map((entry) => [entry.name, entry.parentClass ?? null]));
+    return collectExportReachability({
+      startupSceneGuid: "scene",
+      assets: [
+        asset({ guid: "scene", type: "Scene", name: "Main" }),
+        ...classes.map((entry) => asset({ ...entry, type: "Class" })),
+      ],
+      pluginEnabledGuids,
+      parentOf: (id) => parents.get(id) ?? null,
+      sceneByGuid: () => createDefaultScene(),
+      graphByGuid: () => ({ nodes: [], edges: [] }),
+    });
+  }
+
+  it("packs unreferenced Game and Scene Subsystem classes but no other unreferenced class", () => {
+    const result = subsystemClosure([
+      { guid: "save", name: "SaveSubsystem", parentClass: "GameSubsystem" },
+      { guid: "weather", name: "WeatherSubsystem", parentClass: "SceneSubsystem" },
+      { guid: "enemy-base", name: "EnemyBase", parentClass: "Actor" },
+      { guid: "enemy", name: "Enemy", parentClass: "EnemyBase" },
+      { guid: "helper", name: "Helper", parentClass: "BObject" },
+    ]);
+    expect(result).toMatchObject({ ok: true, value: { guids: ["save", "scene", "weather"] } });
+  });
+
+  it("packs a subsystem that reaches its engine base only through a user parent class", () => {
+    const result = subsystemClosure([
+      { guid: "leaf", name: "HardcoreSave", parentClass: "SaveBase" },
+      { guid: "base", name: "SaveBase", parentClass: "GameSubsystem" },
+    ]);
+    expect(result).toMatchObject({ ok: true, value: { guids: ["base", "leaf", "scene"] } });
+  });
+
+  it("packs subsystem classes from enabled plugins only", () => {
+    const result = subsystemClosure(
+      [
+        { guid: "on", name: "EnabledSubsystem", parentClass: "GameSubsystem", rootId: "plugin:on" },
+        { guid: "off", name: "DisabledSubsystem", parentClass: "SceneSubsystem", rootId: "plugin:off" },
+      ],
+      new Set(["on"]),
+    );
+    expect(result).toMatchObject({ ok: true, value: { guids: ["on", "scene"] } });
+  });
+});

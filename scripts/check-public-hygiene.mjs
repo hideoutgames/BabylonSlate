@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Rejects things that must never appear in a public repository: links to agent
-// sessions, credential markers, and developer-specific Apple signing identifiers.
+// sessions (outside pull-request descriptions), credential markers, and
+// developer-specific Apple signing identifiers.
 //
 // gitleaks (.gitleaks.toml) covers generic high-entropy credentials. This check
 // covers the repository's own policy, which gitleaks has no notion of, and runs
@@ -140,8 +141,15 @@ export const forbiddenPathRules = [
   },
 ];
 
+/**
+ * Pull-request descriptions may link the agent session that produced them; the
+ * link grants no access by itself. Tracked content, commit messages, titles, and
+ * comments still reject it.
+ */
+export const pullRequestBodyAllowedRules = new Set(["agent-session-link"]);
+
 /** @returns {{path: string, line: number, rule: string, hint: string}[]} */
-export function scanText(path, text) {
+export function scanText(path, text, allowedRules = new Set()) {
   if (selfReferentialPaths.has(path)) {
     return [];
   }
@@ -149,6 +157,7 @@ export function scanText(path, text) {
   const lines = text.split("\n");
   for (const [index, line] of lines.entries()) {
     for (const rule of contentRules) {
+      if (allowedRules.has(rule.id)) continue;
       if (rule.regex.test(line)) {
         violations.push({
           path,
@@ -236,7 +245,11 @@ export function scanEventMetadata(event) {
   if (event.pull_request) {
     violations.push(
       ...scanText("pull-request:title", event.pull_request.title ?? ""),
-      ...scanText("pull-request:body", event.pull_request.body ?? ""),
+      ...scanText(
+        "pull-request:body",
+        event.pull_request.body ?? "",
+        pullRequestBodyAllowedRules,
+      ),
     );
   }
   if (event.comment && event.issue?.pull_request) {

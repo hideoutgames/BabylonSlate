@@ -825,7 +825,7 @@ describe("GraphEditor", () => {
     expect(container.querySelectorAll(".react-flow__handle")).not.toHaveLength(0);
   });
 
-  it("creates an edge when tapping an output pin then an input pin", () => {
+  it.each(["log-a", "log-b"])("tap-connects execution to %s, including a self-cycle", (targetId) => {
     const onChange = vi.fn();
     const { container } = render(
       <GraphEditor initialGraph={graphWithPins()} onChange={onChange} />,
@@ -837,7 +837,7 @@ describe("GraphEditor", () => {
     const source = nodeElements[0]?.querySelector(
       '[data-handleid="execOut"][data-handlepos="right"]',
     );
-    const target = nodeElements[1]?.querySelector(
+    const target = container.querySelector(`.react-flow__node[data-id="${targetId}"]`)?.querySelector(
       '[data-handleid="execIn"][data-handlepos="left"]',
     );
     expect(source).not.toBeNull();
@@ -851,7 +851,7 @@ describe("GraphEditor", () => {
     expect(lastGraph.edges).toHaveLength(1);
     expect(lastGraph.edges[0]).toMatchObject({
       source: "log-a",
-      target: "log-b",
+      target: targetId,
       sourceHandle: "execOut",
       targetHandle: "execIn",
     });
@@ -3940,7 +3940,7 @@ describe("GraphEditor", () => {
     expect(container.querySelector('[data-id="task"] [data-node-role="bt-task"]')).not.toBeNull();
     expect(
       container.querySelector('[data-id="task"] [data-node-role="bt-task"]')?.className,
-    ).toMatch(/min-w-56/);
+    ).toMatch(/\bw-56\b/);
     expect(getByTestId("bt-node-root").className).toContain("bt-node-drag-handle");
     expect(getByTestId("bt-decorator-dec-1").className).toContain("nodrag");
     expect(getByTestId("bt-service-svc-1").className).toContain("nodrag");

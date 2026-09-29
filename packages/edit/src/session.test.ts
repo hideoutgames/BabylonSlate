@@ -153,6 +153,35 @@ describe("EditSession", () => {
     expect(session.canUndo("doc-b")).toBe(true);
   });
 
+  it("undoes a renamed document's edits under its new id and keeps none under the old id", () => {
+    const session = new EditSession();
+    let doc: TestDoc = { value: 0 };
+    ({ doc } = session.apply("scene:old", doc, new IncrementCommand(1)));
+    session.getStack("scene:old").endGesture();
+    ({ doc } = session.apply("scene:old", doc, new IncrementCommand(2)));
+
+    session.rekeyDocument("scene:old", "scene:new");
+
+    expect(session.canUndo("scene:old")).toBe(false);
+    expect(session.undo("scene:old", { value: 40 })).toBeNull();
+    const undone = session.undo("scene:new", doc);
+    expect(undone?.doc).toEqual({ value: 1 });
+    expect(session.redo("scene:new", undone!.doc)?.doc).toEqual({ value: 3 });
+  });
+
+  it("never gives a renamed document another document's history left under the new id", () => {
+    const session = new EditSession();
+    session.apply("scene:new", { value: 0 }, new IncrementCommand(100));
+    session.apply("scene:old", { value: 0 }, new IncrementCommand(1));
+    session.rekeyDocument("scene:old", "scene:new");
+    expect(session.undo("scene:new", { value: 1 })?.doc).toEqual({ value: 0 });
+    expect(session.canUndo("scene:new")).toBe(false);
+
+    session.apply("scene:stale", { value: 0 }, new IncrementCommand(7));
+    session.rekeyDocument("scene:untouched", "scene:stale");
+    expect(session.canUndo("scene:stale")).toBe(false);
+  });
+
   it("drops document stacks on close", () => {
     const session = new EditSession();
     let doc: TestDoc = { value: 0 };

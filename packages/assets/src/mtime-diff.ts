@@ -31,6 +31,20 @@ export function snapshotIndexedMtimes(
   return out;
 }
 
+/**
+ * Fold the editor's own write of `path` into `snapshot`, so a later rescan
+ * does not report it. Only when the file was unchanged since the snapshot
+ * right before that write; otherwise an external change stays visible.
+ */
+export function applyOwnAssetWrite(
+  snapshot: AssetMtimeMap,
+  write: { path: string; previousMtime: number | null; mtime: number | null },
+): void {
+  if (write.path in snapshot && snapshot[write.path] === write.previousMtime) {
+    snapshot[write.path] = write.mtime;
+  }
+}
+
 export function diffAssetMtimes(
   previous: AssetMtimeMap,
   next: AssetMtimeMap,

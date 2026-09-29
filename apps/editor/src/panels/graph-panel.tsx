@@ -48,6 +48,7 @@ import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
 import {
   collectClassGraphsForPalette,
   collectFunctionLibrariesForPalette,
+  collectSubsystemClassesForPalette,
   collectGraphTypeAssets,
   collectSceneDocumentsForPalette,
   collectScriptInterfacesForPalette,
@@ -125,6 +126,16 @@ export function GraphPanel(_props: IDockviewPanelProps) {
   const functionLibraries = useMemo(
     () =>
       collectFunctionLibrariesForPalette({
+        assets: assetRegistry?.list() ?? [],
+        openDocuments,
+        parentOf,
+        classIdForPath: classIdForGraphPath,
+      }),
+    [assetRegistry, openDocuments, parentOf],
+  );
+  const subsystemClasses = useMemo(
+    () =>
+      collectSubsystemClassesForPalette({
         assets: assetRegistry?.list() ?? [],
         openDocuments,
         parentOf,
@@ -221,6 +232,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
         classId,
         otherClassGraphs,
         functionGraphs: graphContent?.functionGraphs,
+        functionId: activeFunctionId ?? undefined,
         scriptInterfaces,
       },
     );
@@ -291,6 +303,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
           ),
           parentOf,
           otherClassGraphs,
+          subsystemClasses,
         }),
         ...physicsPairingDiagnostics(
           [
@@ -325,6 +338,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     animEditorMode,
     assetRegistry,
     openDocuments,
+    subsystemClasses,
   ]);
 
   const paletteInput = {
@@ -341,6 +355,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     structures: typeAssets.structures,
     enums: typeAssets.enums,
     sceneDocuments,
+    subsystemClasses,
     animationGraphHost:
       doc?.ref.kind === "anim-graph" ? ("object" as const) : undefined,
   };
@@ -463,7 +478,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
                 };
             const commit = commitLogicGraph(doc.ref.kind, doc.content, merged);
             if (commit.kind !== "graph") {
-              void applyAssetDocumentChange(documentId, commit.payload);
+              void applyAssetDocumentChange(documentId, commit.payload, commit.mergeKey);
               return;
             }
             void applyGraphChange(documentId, commit.graph);
@@ -486,7 +501,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
           const next = renameCustomEvent(graphContent, renameEventId, name, classId);
           const commit = commitLogicGraph(doc.ref.kind, doc.content, next);
           if (commit.kind === "graph") void applyGraphChange(documentId, commit.graph);
-          else void applyAssetDocumentChange(documentId, commit.payload);
+          else void applyAssetDocumentChange(documentId, commit.payload, commit.mergeKey);
         }}
       />
     </PanelFrame>

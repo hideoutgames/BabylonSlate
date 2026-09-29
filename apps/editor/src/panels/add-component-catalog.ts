@@ -64,7 +64,6 @@ function engineComponent(
 }
 
 export const ADDABLE_COMPONENT_CLASSES: readonly AddComponentItem[] = [
-  engineComponent("2DPainterComponent", "2D Painter", "Draw shapes, paths, curves and masks with graph nodes", "Overlay"),
   engineComponent(
     "SplineComponent",
     "Spline",
@@ -78,6 +77,7 @@ export const ADDABLE_COMPONENT_CLASSES: readonly AddComponentItem[] = [
     "Rendering",
   ),
   engineComponent("SpriteComponent", "Sprite", "2D sprite quad", "Rendering"),
+  engineComponent("DynamicRuntimeMeshComponent", "Dynamic Runtime Mesh", "Create and update mesh geometry from component functions during Play", "Rendering"),
   engineComponent(
     "TilemapComponent",
     "Tilemap",
@@ -152,6 +152,7 @@ export const ADDABLE_COMPONENT_CLASSES: readonly AddComponentItem[] = [
   engineComponent("WaterRemovalVolumeComponent", "Water Removal Volume", "Removes water inside a box, sphere, cylinder or capsule", "Water"),
   engineComponent("WaterBuoyancyComponent", "Water Buoyancy", "Float with waves and respond to physics impacts", "Water"),
   ...OVERLAY_LAYOUT_CLASSES.map(classId => engineComponent(classId, humanizePropertyLabel(classId.replace(/Component$/, "")), classId === "2DPaddingComponent" ? "Insets the parent content without drawing a surface" : "Nested SceneLayer layout", "Overlay")),
+  engineComponent("2DPainterComponent", "2D Painter", "Draw shapes, paths, curves and masks with graph nodes", "Overlay"),
   engineComponent(
     "2DAnchorComponent",
     "2D Anchor",
@@ -233,6 +234,8 @@ export function defaultPropertiesFor(
   if (classId === "WaterBuoyancyComponent") return { ...normalizeWaterBuoyancy({}), mass: 1 };
   if (classId === "WaterRemovalVolumeComponent") return { ...normalizeWaterRemoval({}) };
   switch (classId) {
+    case "DynamicRuntimeMeshComponent":
+      return { materialGuid: null, enableCollision: false, castShadows: true, receiveShadows: true, layer: 1, mask: 0xffffffff };
     case "MeshComponent":
       return {
         meshKind: "box",

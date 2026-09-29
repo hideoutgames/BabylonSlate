@@ -28,8 +28,8 @@ export function SpritePreviewPanel(_props: IDockviewPanelProps) {
     <PanelFrame data-testid="sprite-preview-panel">
       <SpritePreview
         payload={payload}
-        onChange={(next) => {
-          void applyAssetDocumentChange(documentId, next);
+        onChange={(next, mergeKey) => {
+          void applyAssetDocumentChange(documentId, next, mergeKey);
         }}
       />
     </PanelFrame>
@@ -46,8 +46,8 @@ export function SpriteDetailsPanel(_props: IDockviewPanelProps) {
     <PanelFrame data-testid="sprite-details-panel">
       <SpriteEditor
         payload={payload}
-        onChange={(next) => {
-          void applyAssetDocumentChange(documentId, next);
+        onChange={(next, mergeKey) => {
+          void applyAssetDocumentChange(documentId, next, mergeKey);
         }}
       />
     </PanelFrame>
@@ -59,7 +59,8 @@ export function SpritePreview({
   onChange,
 }: {
   payload: Record<string, unknown>;
-  onChange?: (next: Record<string, unknown>) => void;
+  /** A collision drag passes one merge key so the whole drag is one undo step. */
+  onChange?: (next: Record<string, unknown>, mergeKey?: string) => void;
 }) {
   const sprite = normalizeSprite(payload);
   const preview = useTexturePreview(sprite.textureGuid);
@@ -126,7 +127,7 @@ export function SpritePreview({
             if (frames[0]) {
               frames[0] = { ...frames[0], collision: next };
             }
-            onChange({ ...sprite, frames });
+            onChange({ ...sprite, frames }, "sprite:collision");
           }}
         />
       </div>
@@ -139,10 +140,14 @@ export function SpriteEditor({
   onChange,
 }: {
   payload: Record<string, unknown>;
-  onChange: (next: Record<string, unknown>) => void;
+  /** `mergeKey` groups one scrub's edits into one undo entry. */
+  onChange: (next: Record<string, unknown>, mergeKey?: string) => void;
 }) {
   const sprite = normalizeSprite(payload);
   const [pickerOpen, setPickerOpen] = useState(false);
+  /** Continuous field edit: one scrub on `field` is one undo step. */
+  const edit = (next: SpritePayload, field: string) =>
+    onChange(next as unknown as Record<string, unknown>, `sprite:${field}`);
   const { assetRegistry } = useDocuments();
   const assets = (assetRegistry?.list() ?? []).map((asset) => ({
     guid: asset.header.guid,
@@ -171,7 +176,7 @@ export function SpriteEditor({
       kind: "number",
       label: "Pixels Per Unit",
       value: sprite.pixelsPerUnit,
-      onChange: (value) => onChange({ ...sprite, pixelsPerUnit: value }),
+      onChange: (value) => edit({ ...sprite, pixelsPerUnit: value }, "pixelsPerUnit"),
     },
     {
       id: "pivot",
@@ -184,7 +189,7 @@ export function SpriteEditor({
         if (frames[0]) {
           frames[0] = { ...frames[0], pivot: { x, y } };
         }
-        onChange({ ...sprite, frames });
+        edit({ ...sprite, frames }, "pivot");
       },
     },
     {
@@ -198,7 +203,7 @@ export function SpriteEditor({
         if (frames[0]) {
           frames[0] = { ...frames[0], durationMs };
         }
-        onChange({ ...sprite, frames });
+        edit({ ...sprite, frames }, "durationMs");
       },
     },
     {
@@ -220,7 +225,7 @@ export function SpriteEditor({
             collision: parseSpriteCollision({ x, y, width, height }),
           };
         }
-        onChange({ ...sprite, frames });
+        edit({ ...sprite, frames }, "collision");
       },
     },
   ];

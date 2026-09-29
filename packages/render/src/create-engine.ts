@@ -1,3 +1,4 @@
+import { applyDynamicRuntimeMeshUpdate } from "./dynamic-runtime-mesh";
 import { PostProcessRetirement } from "./post-process-retirement";
 import { OverlayLayoutRenderer } from "./overlay-layout-render";
 import { sceneRenderTargetCaptures } from "./render-target-capture";
@@ -2991,6 +2992,10 @@ function initializeEngine(
       }
       if (command.type === "cableFrame") {
         applyCableFrame(scene, command.data, command.frameId);
+        scheduler.invalidate("snapshot");
+      }
+      if (command.type === "dynamicMeshUpdate") {
+        applyDynamicRuntimeMeshUpdate(scene, command.meshId, command.update);
         scheduler.invalidate("snapshot");
       }
       if (command.type === "animState") {

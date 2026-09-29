@@ -123,6 +123,7 @@ import {
   collectClassGraphsForPalette,
   collectGraphTypeAssets,
   collectScriptInterfacesForPalette,
+  logicGraphEditMergeKey,
   serializedGraphFromDocument,
   typeAssetPickerEntries,
   typeSchemasFromGraphAssets,
@@ -842,7 +843,7 @@ function PrefabComponentDetails({
       className="flex flex-col gap-3 p-3"
       data-testid="inspector-prefab-component"
     >
-      <PropertyGrid
+      {component.classId !== "2DAnchorComponent" && <PropertyGrid
         title="Transform"
         rows={spatialTransformPropertyRows(
           component.id,
@@ -851,7 +852,7 @@ function PrefabComponentDetails({
           onUpdateTransform,
         )}
         data-testid="prefab-component-transform-grid"
-      />
+      />}
       <div className="overflow-hidden rounded-lg border border-border/60 bg-sidebar">
         <div className="flex items-center gap-2 border-b border-border/60 bg-panel-header px-2 py-1">
           <span className="flex min-w-0 items-center gap-2 truncate text-sm font-medium">
@@ -1060,17 +1061,19 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
   const persistGraph = (next: SerializedGraph) => {
     if (!doc) return;
     if (ruleTransition && parsedAnim) {
+      const ruleKey = logicGraphEditMergeKey(graph, next);
       void applyAssetDocumentChange(
         documentId,
         patchTransition(parsedAnim, ruleTransition.id, {
           ruleGraph: persistTransitionRuleGraph(next),
         }) as unknown as Record<string, unknown>,
+        ruleKey ? `anim-rule:${ruleTransition.id}:${ruleKey}` : undefined,
       );
       return;
     }
     const commit = commitLogicGraph(doc.ref.kind, doc.content, next);
     if (commit.kind !== "graph") {
-      void applyAssetDocumentChange(documentId, commit.payload);
+      void applyAssetDocumentChange(documentId, commit.payload, commit.mergeKey);
       return;
     }
     void applyGraphChange(documentId, commit.graph);

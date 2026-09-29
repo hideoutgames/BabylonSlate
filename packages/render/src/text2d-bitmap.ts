@@ -10,6 +10,8 @@ export type BitmapGlyphCell = {
   width: number;
   height: number;
   pixels: Uint8ClampedArray;
+  /** Visible bounds relative to the cell center, in upward-positive pixels. */
+  inkBounds?: { top: number; bottom: number };
 };
 
 export type PackedBitmapGlyphAtlas = {
@@ -151,9 +153,9 @@ function channel(color: [number, number, number], index: number): number {
   return Math.max(0, Math.min(255, Math.round(color[index]! * 255)));
 }
 
-function isLetterShapedAlpha(pixels: Uint8ClampedArray, width: number, height: number): boolean {
+function letterShapedBounds(pixels: Uint8ClampedArray, width: number, height: number): BitmapGlyphCell["inkBounds"] | null {
   const total = width * height;
-  if (total <= 0) return false;
+  if (total <= 0) return null;
   let opaque = 0;
   let minX = width;
   let minY = height;
@@ -169,12 +171,12 @@ function isLetterShapedAlpha(pixels: Uint8ClampedArray, width: number, height: n
       if (y > maxY) maxY = y;
     }
   }
-  if (opaque === 0 || opaque >= total * 0.9) return false;
+  if (opaque === 0 || opaque >= total * 0.9) return null;
   const bboxW = maxX - minX + 1;
   const bboxH = maxY - minY + 1;
   const solid = opaque >= bboxW * bboxH * 0.95;
   const thin = bboxW < width * 0.45 || bboxH < height * 0.45;
-  return !(solid && !thin);
+  return solid && !thin ? null : { top: height / 2 - minY, bottom: height / 2 - maxY - 1 };
 }
 
 function nextPowerOfTwo(value: number): number {
@@ -314,7 +316,7 @@ function rasterizeSoftwareBitmapGlyph(
       if (style.bold && lit(col, row, 1)) paint(col, row, style.color, 255);
     }
   }
-  return { key, width, height, pixels };
+  return { key, width, height, pixels, inkBounds: letterShapedBounds(pixels, width, height) ?? undefined };
 }
 
 function tryCanvasRasterize(
@@ -356,8 +358,9 @@ function tryCanvasRasterize(
   ctx.fillStyle = cssRgb(style.color);
   ctx.fillText(ch, x, y);
   const image = ctx.getImageData(0, 0, width, height);
-  if (!isLetterShapedAlpha(image.data, width, height)) return null;
-  return { key, width, height, pixels: image.data };
+  const inkBounds = letterShapedBounds(image.data, width, height);
+  if (!inkBounds) return null;
+  return { key, width, height, pixels: image.data, inkBounds };
 }
 
 /** Rasterize one glyph: canvas FontFace when it paints, else bundled 5×7. */

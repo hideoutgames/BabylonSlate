@@ -8,8 +8,6 @@ import { useSceneTools } from "../context/scene-tools-context";
 import { FOLIAGE_TOOL_GROUPS, LANDSCAPE_TOOL_GROUPS, type FoliageTool, type LandscapeTool } from "../lib/scene-brush-tools";
 import type { SceneMode } from "../shell/scene-document-layout";
 
-const TOOL_ITEM = "pointer-coarse:min-h-11 pointer-coarse:min-w-11";
-
 function IslandSeparator() {
   return <Separator orientation="vertical" className="mx-0.5 data-vertical:h-5 data-vertical:self-center" />;
 }
@@ -34,7 +32,7 @@ export function SceneBrushToolbar({ mode, scene, disabled }: { mode: SceneMode; 
       <ToggleGroup variant="outline" size="sm" spacing={0} disabled={disabled} value={group.some((tool) => tool.value === active) ? [active] : []}
         onValueChange={(values) => { if (values[0]) setTool(values[0]); }}>
         {group.map(({ value, label, icon: Icon }) => <Tooltip key={value}>
-          <TooltipTrigger render={<ToggleGroupItem value={value} aria-label={label} className={TOOL_ITEM} data-testid={`scene-brush-tool-${value}`}><Icon /></ToggleGroupItem>} />
+          <TooltipTrigger render={<ToggleGroupItem value={value} aria-label={label} data-testid={`scene-brush-tool-${value}`}><Icon /></ToggleGroupItem>} />
           <TooltipContent>{label}</TooltipContent>
         </Tooltip>)}
       </ToggleGroup>

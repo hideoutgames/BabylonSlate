@@ -3,6 +3,7 @@ import { setFogVolumesVisible } from "./fog-volumes";
 import { createWaterMesh } from "./water-mesh";
 import { createWaterRemovalMesh } from "./water-removal-mesh";
 import { createCableMesh, sampleCableFrame } from "./cable-mesh";
+import { createDynamicRuntimeMesh } from "./dynamic-runtime-mesh";
 import { applyMaterialBounds } from "./material-bounds";
 import {
   AbstractMesh,
@@ -14,6 +15,7 @@ import {
   Quaternion,
   Scene,
   SpotLight,
+  TransformNode,
   UniversalCamera,
   Vector3,
   type Camera,
@@ -520,7 +522,7 @@ function partsNeedOrigin(
   parts: readonly AssignMeshPart[] | undefined,
 ): boolean {
   if (!parts || parts.length === 0) return false;
-  if (parts.length > 1 || parts.some((part) => part.meshKind === "water" || part.meshKind === "waterRemoval" || part.meshKind === "cable")) return true;
+  if (parts.length > 1 || parts.some((part) => part.meshKind === "water" || part.meshKind === "waterRemoval" || part.meshKind === "cable" || part.meshKind === "dynamicRuntimeMesh")) return true;
   const part = parts[0]!;
   return (
     Boolean(part.landscape || part.foliage) ||
@@ -1292,6 +1294,7 @@ function createPlayVisual(
         part.water,
         part.waterRemoval,
         part.cable,
+        part.dynamicMesh,
         part.painter,
       );
       child.parent = root;
@@ -1304,6 +1307,16 @@ function createPlayVisual(
       if (!child) continue;
       const parent = part.parentId ? meshes.get(part.parentId) : undefined;
       child.parent = parent ?? root;
+      let attachment: TransformNode = child;
+      for (const transform of part.parentTransforms ?? []) {
+        const ancestor = new TransformNode(`${child.name}-attachment`, scene);
+        ancestor.position.copyFromFloats(transform.position.x, transform.position.y, transform.position.z);
+        ancestor.rotationQuaternion = new Quaternion(transform.rotation.x, transform.rotation.y, transform.rotation.z, transform.rotation.w);
+        ancestor.scaling.copyFromFloats(transform.scale.x, transform.scale.y, transform.scale.z);
+        ancestor.parent = parent ?? root;
+        attachment.parent = ancestor;
+        attachment = ancestor;
+      }
     }
     attachPlaySpringArms(binding, root, slotId, parts ?? [], meshes);
     applyPlayVisualSorting(root, slotId, binding);
@@ -1358,7 +1371,14 @@ function attachPlaySpringArms(
   for (const part of parts) {
     const child = meshes.get(part.componentId);
     const parent = part.parentId ? meshes.get(part.parentId) : undefined;
-    if (child && parent) child.parent = attachmentParentFor(parent);
+    if (child && parent) {
+      let attachment: TransformNode = child;
+      // Preserve nonvisual component ancestors when redirecting to an arm socket.
+      for (let i = 0; i < (part.parentTransforms?.length ?? 0); i++) {
+        if (attachment.parent instanceof TransformNode) attachment = attachment.parent;
+      }
+      attachment.parent = attachmentParentFor(parent);
+    }
   }
   const cameraPart = parts.find((part) => part.meshKind === "camera");
   const anchor = cameraPart ? meshes.get(cameraPart.componentId) : undefined;
@@ -1415,9 +1435,11 @@ export function createPlayMesh(
   water?: import("@babylonslate/core").WaterBodyProperties,
   waterRemoval?: import("@babylonslate/core").WaterRemovalProperties,
   cable?: import("@babylonslate/core").CableProperties & { simulationId?: number },
+  dynamicMesh?: { meshId: number; update: import("@babylonslate/core").DynamicMeshUpdate },
   painter?: import("@babylonslate/core").Painter2DProperties,
 ): Mesh {
   const name = meshName ?? `actor-${slotId}`;
+  if (meshKind === "dynamicRuntimeMesh") return finishPlayWorldMesh(createDynamicRuntimeMesh(scene, name, dynamicMesh));
   if (meshKind === "2dlayout") {
     const mesh = new Mesh(name, scene);
     mesh.isPickable = false;

@@ -146,4 +146,83 @@ describe("game instance nodes", () => {
     );
     expect(sceneCompiled.source).toContain("ctx.getSceneReference()");
   });
+
+  it("feeds the session Game Instance into Cast to the project's class", () => {
+    const registry = createDefaultNodeRegistry();
+    const node = (
+      id: string,
+      typeId: string,
+      properties: Record<string, unknown> = {},
+    ) => ({
+      id,
+      typeId,
+      position: { x: 0, y: 0 },
+      pins: registry.get(typeId)!.pins(properties),
+      properties,
+    });
+    const edge = (
+      sourceNodeId: string,
+      sourcePinId: string,
+      targetNodeId: string,
+      targetPinId: string,
+    ) => ({
+      id: `${sourceNodeId}->${targetNodeId}.${targetPinId}`,
+      sourceNodeId,
+      sourcePinId,
+      targetNodeId,
+      targetPinId,
+    });
+    expect(registry.get("gameInstance.get")?.pure).toBe(true);
+    expect(registry.get("gameInstance.get")?.pins({})).toEqual([
+      expect.objectContaining({
+        id: "gameInstance",
+        direction: "out",
+        type: objectRef("GameInstance"),
+      }),
+    ]);
+    const compiled = compileGraph(
+      {
+        id: "g",
+        kind: "event",
+        nodes: [
+          node("begin", "flow.event.beginPlay"),
+          node("gi", "gameInstance.get"),
+          node("cast", "casting.cast", {
+            defaultClassId: "MatchGameInstance",
+            "default:class": "MatchGameInstance",
+            resultKind: "objectRef",
+          }),
+          node("call", "functions.call", {
+            classId: "MatchGameInstance",
+            functionName: "Start Match",
+            implicitSelf: false,
+          }),
+        ],
+        edges: [
+          edge("begin", "execOut", "cast", "execIn"),
+          edge("cast", "execOut", "call", "execIn"),
+          edge("gi", "gameInstance", "cast", "object"),
+          edge("cast", "result", "call", "target"),
+        ],
+      },
+      { assetGuid: "a", registry },
+    );
+    const body = compiled.source.replace(/export\s+function\s+/g, "function ");
+    const onBeginPlay = new Function(`${body}\nreturn onBeginPlay;`)() as (
+      ctx: unknown,
+    ) => void;
+    const session = { classId: "MatchGameInstance" };
+    const calls: Array<{ target: unknown; name: string }> = [];
+    onBeginPlay({
+      getGameInstance: () => session,
+      isA: (object: typeof session | null, classId: string) =>
+        object?.classId === classId,
+      invokeFunction: (target: unknown, name: string) => {
+        calls.push({ target, name });
+      },
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.target).toBe(session);
+    expect(calls[0]!.name).toBe("Start_Match");
+  });
 });

@@ -22,6 +22,7 @@ import {
   DEFAULT_TEXTURE_ENCODE_SETTINGS,
   encodeSettingsHash,
   ktx2ChunkId,
+  textureEncodeChunkId,
   type TextureEncodeSettings,
 } from "../packages/assets/src/texture-compression";
 import { createDefaultTilemapPayload } from "../packages/assets/src/tilemap-payload";
@@ -42,6 +43,8 @@ import {
   offBlockGrid,
   previewDraw,
   recordCompressedGpuTextures,
+  settledAlignmentPass,
+  textureAlignment,
   watchGpuFailures,
   type CompressedTexture,
 } from "./webgpu-texture-proof";
@@ -54,6 +57,14 @@ const SURFACE_GUID = "00000000-0000-4000-8000-000000000072";
 const PARTICLE_GUID = "00000000-0000-4000-8000-000000000073";
 const TEXTURE_PATH = "assets/albedo.babasset";
 const EMITTER_PATH = "assets/OddSparks.emitter.babasset";
+/** A Tileset saved before atlas meta existed: it keeps `TEXTURE_GUID` an atlas, off the grid. */
+const ODD_TILESET_GUID = "00000000-0000-4000-8000-000000000077";
+/** The same 1×1 encode with no atlas: stale, so opening the project re-encodes it 4×4. */
+const LEGACY_TEXTURE_GUID = "00000000-0000-4000-8000-000000000078";
+const LEGACY_TEXTURE_PATH = "assets/legacy-odd.babasset";
+/** Another such Texture, for a project with source control on. */
+const WAITING_TEXTURE_GUID = "00000000-0000-4000-8000-000000000079";
+const WAITING_TEXTURE_PATH = "assets/waiting-odd.babasset";
 /** Samples the texture through its surface Material. */
 const TEXTURED_BOX = "actor-1";
 /** No Material: the engine default material under the same light. */
@@ -84,11 +95,15 @@ async function encodeKtx2(
   return ktx2;
 }
 
-/** The minimal project on `backend`. */
-async function projectFiles(backend: Backend): Promise<{ files: Map<string, Uint8Array>; startupSceneGuid: string }> {
+/** The minimal project on `backend`, with source control **Enable** on when asked. */
+async function projectFiles(
+  backend: Backend,
+  sourceControl = false,
+): Promise<{ files: Map<string, Uint8Array>; startupSceneGuid: string }> {
   const files = await minimalProjectFiles();
   const project = JSON.parse(new TextDecoder().decode(files.get(PROJECT_FILE)!));
   project.settings.render.gpuBackend = backend;
+  if (sourceControl) project.settings.sourceControl = { ...project.settings.sourceControl, enabled: true };
   files.set(PROJECT_FILE, new TextEncoder().encode(JSON.stringify(project)));
   return { files, startupSceneGuid: project.settings.startupSceneGuid };
 }
@@ -96,25 +111,36 @@ async function projectFiles(backend: Backend): Promise<{ files: Map<string, Uint
 /**
  * `e2e/fixtures/albedo.png` (1×1 pure red) as a `compressed` Albedo Texture
  * whose committed 1×1 KTX2 is pure green: a green draw comes from the KTX2, a
- * red one from the PNG. The chunk id is the one the registry and the resolver
- * compute for this payload, so opening the project neither re-encodes it nor
+ * red one from the PNG. A legacy (meta-less) Tileset samples it, so it stays
+ * an atlas off the 4×4 grid, and its chunk id is the one the registry and the
+ * resolver compute for it: opening the project neither re-encodes it nor
  * prefers another chunk. A surface Material samples it on the box and a
- * particle Material in an Emitter; a second box has no Material.
+ * particle Material in an Emitter; a second box has no Material. A second
+ * Texture holds the same 1×1 encode with no atlas; with source control on, a
+ * third one does too.
  */
-async function fixture(backend: Backend): Promise<Map<string, Uint8Array>> {
-  const { files, startupSceneGuid } = await projectFiles(backend);
+async function fixture(backend: Backend, sourceControl = false): Promise<Map<string, Uint8Array>> {
+  const { files, startupSceneGuid } = await projectFiles(backend, sourceControl);
   const migrations = createDefaultMigrationRegistry();
   const png = new Uint8Array(await readFile(path.join(process.cwd(), "e2e/fixtures/albedo.png")));
   const [texture] = await importImage(png, { fileName: "albedo.png", existingGuids: new Set() });
   expect(texture!.payload).toMatchObject({ usage: "albedo", width: 1, height: 1 });
-  const settings = textureEncodeSettingsFor(texture!.payload, DEFAULT_TEXTURE_ENCODE_SETTINGS);
-  const chunkId = ktx2ChunkId(await encodeSettingsHash(settings));
+  const settings = textureEncodeSettingsFor(texture!.payload, DEFAULT_TEXTURE_ENCODE_SETTINGS, "albedo", { atlas: true });
+  const chunkId = await textureEncodeChunkId(settings, "albedo");
   const ktx2 = await encodeKtx2(settings, 1, 1, () => [0, 255, 0]);
   const payload = { ...texture!.payload, compressionState: "compressed", ktx2ChunkId: chunkId };
-  files.set(TEXTURE_PATH, await encodeAssetDocument(
-    { guid: TEXTURE_GUID, type: "Texture", name: texture!.name, version: texture!.version, payload },
-    { headerPayload: payload, extraChunks: [...texture!.chunks, { id: chunkId, kind: "ktx2", mime: "image/ktx2", data: ktx2 }] },
-  ));
+  const textures: [string, string][] = [[TEXTURE_GUID, TEXTURE_PATH], [LEGACY_TEXTURE_GUID, LEGACY_TEXTURE_PATH]];
+  if (sourceControl) textures.push([WAITING_TEXTURE_GUID, WAITING_TEXTURE_PATH]);
+  for (const [guid, assetPath] of textures) {
+    files.set(assetPath, await encodeAssetDocument(
+      { guid, type: "Texture", name: path.basename(assetPath, ".babasset"), version: texture!.version, payload },
+      { headerPayload: payload, extraChunks: [...texture!.chunks, { id: chunkId, kind: "ktx2", mime: "image/ktx2", data: ktx2 }] },
+    ));
+  }
+  files.set("assets/odd.tileset.babasset", await encodeAssetDocument({
+    guid: ODD_TILESET_GUID, type: "Tileset", name: "Odd", version: 1,
+    payload: { ...createDefaultTilesetPayload(), textureGuid: TEXTURE_GUID, atlasWidth: 1, atlasHeight: 1, tileWidth: 1, tileHeight: 1 },
+  }, { dependencies: [TEXTURE_GUID] }));
   for (const [guid, domain, name] of [[SURFACE_GUID, "surface", "OddSurface"], [PARTICLE_GUID, "particle", "OddParticle"]] as const) {
     const material = createDefaultMaterialDocument(name, domain);
     material.nodes.push({ id: "sample", type: "texture.sample", position: { x: 0, y: 0 }, properties: { textureGuid: TEXTURE_GUID } });
@@ -236,7 +262,11 @@ test("WebGPU decodes a Basis KTX2 off the 4×4 block grid to RGBA: the viewport 
   const { gpuFailures, consoleProblems } = watchGpuFailures(page);
   await page.addInitScript(recordCompressedGpuTextures);
   await openMinimalTestProject(page, await fixture("webgpu"));
-  // The seeded encode stays committed: opening the project does not re-encode it.
+  // Opening the project re-encodes only the stale non-atlas Texture, 4×4.
+  expect(await settledAlignmentPass(page)).toEqual([LEGACY_TEXTURE_GUID]);
+  await expect.poll(() => committedKtx2(page, LEGACY_TEXTURE_PATH), { timeout: 60_000 })
+    .toEqual({ compressionState: "compressed", ktx2: { width: 4, height: 4 } });
+  // The Tileset's atlas keeps its seeded 1×1 encode.
   expect(await committedKtx2(page, TEXTURE_PATH)).toEqual({ compressionState: "compressed", ktx2: { width: 1, height: 1 } });
   await openMainScene(page);
   await expectBoxesDrawKtx2(page, testInfo, "webgpu");
@@ -272,6 +302,52 @@ test("WebGPU decodes a Basis KTX2 off the 4×4 block grid to RGBA: the viewport 
   // The 1×1 KTX2 never reached the GPU block-compressed.
   expect(offBlockGrid(compressed!)).toEqual([]);
   expect(gpuFailures).toEqual([]);
+});
+
+/** Turns source control **Enable** off in Project Settings. */
+async function disableSourceControl(page: Page): Promise<void> {
+  await page.getByTestId("settings-menu").click();
+  await page.getByTestId("project-settings").click();
+  const modal = page.getByTestId("settings-modal");
+  await expect(modal).toBeVisible();
+  await page.getByTestId("settings-modal-category-sourceControl").click();
+  const enable = page.getByTestId("settings-source-control-enabled");
+  await expect(enable).toHaveAttribute("aria-checked", "true");
+  await enable.click();
+  await page.getByTestId("settings-source-control-disable-confirm-action").click();
+  await expect(enable).toHaveAttribute("aria-checked", "false");
+  await modal.locator('[data-slot="dialog-close"]').click();
+  await expect(modal).toHaveCount(0);
+}
+
+test("with source control on, an old Texture off the grid re-encodes only on Retry Encoding, or once Enable is turned off", async ({ page }) => {
+  test.setTimeout(180_000);
+  await openMinimalTestProject(page, await fixture("webgl2", true));
+  // Opening the project re-encodes nothing: teammates share these files.
+  expect(await settledAlignmentPass(page)).toEqual([]);
+  const odd = { compressionState: "compressed", ktx2: { width: 1, height: 1 } };
+  const aligned = { compressionState: "compressed", ktx2: { width: 4, height: 4 } };
+  for (const assetPath of [TEXTURE_PATH, LEGACY_TEXTURE_PATH, WAITING_TEXTURE_PATH]) {
+    expect(await committedKtx2(page, assetPath), assetPath).toEqual(odd);
+  }
+
+  // Texture Details offers Retry Encoding for it, the user's own re-encode.
+  await openAssetFromBrowser(page, LEGACY_TEXTURE_PATH);
+  const details = page.getByTestId("texture-details");
+  await details.getByTestId("texture-retry-encode").click();
+  await expect.poll(() => committedKtx2(page, LEGACY_TEXTURE_PATH), { timeout: 60_000 }).toEqual(aligned);
+  await expect(details.getByTestId("texture-retry-encode")).toHaveCount(0);
+  // The commit's own recheck finds it aligned; the other one still waits for the user.
+  expect(await settledAlignmentPass(page)).toEqual([]);
+  expect(await committedKtx2(page, WAITING_TEXTURE_PATH)).toEqual(odd);
+
+  // Turning Enable off in Project Settings runs the pass at once.
+  const before = (await textureAlignment(page))!.runs;
+  await disableSourceControl(page);
+  expect(await settledAlignmentPass(page, before)).toEqual([WAITING_TEXTURE_GUID]);
+  await expect.poll(() => committedKtx2(page, WAITING_TEXTURE_PATH), { timeout: 60_000 }).toEqual(aligned);
+  // The Tileset's atlas keeps its 1×1 encode.
+  expect(await committedKtx2(page, TEXTURE_PATH)).toEqual(odd);
 });
 
 test("WebGL2 draws the same 1×1 Albedo KTX2", async ({ page }, testInfo) => {

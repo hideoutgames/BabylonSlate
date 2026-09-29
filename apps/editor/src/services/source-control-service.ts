@@ -340,9 +340,12 @@ export class SourceControlService {
     const held = this.locksByPath.get(path);
     if (held?.ours) {
       this.autoLockAttempted.add(path);
-      this.banners.delete(path);
+      // Every applied edit lands here once the lock is ours; notify only
+      // when the banner or edit mode actually changes.
+      const changed =
+        this.banners.delete(path) || this.editMode.get(path) !== "editable";
       this.editMode.set(path, "editable");
-      this.emit();
+      if (changed) this.emit();
       return;
     }
     if (this.autoLockAttempted.has(path)) return;

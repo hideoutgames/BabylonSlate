@@ -305,6 +305,7 @@ export type DebugBehaviourTree = {
 
 export type CommandMessage =
   | { type: "setPainter2D"; slotId: number; componentId: string; painter: import("@babylonslate/core").Painter2DProperties }
+  | { type: "dynamicMeshUpdate"; meshId: number; update: import("@babylonslate/core").DynamicMeshUpdate }
   /** Cable records: ID, count, start/end actor slots, two actor-local anchors, world xyz particles. */
   | { type: "cableFrame"; frameId: number; data: Float32Array }
   | { type: "captureRenderTarget"; actorGuid: string }
@@ -386,6 +387,9 @@ export type CommandMessage =
       /** Extra renderable components parented to the actor origin mesh. */
       parts?: Array<{
         painter?: import("@babylonslate/core").Painter2DProperties;
+        dynamicMesh?: { meshId: number; update: import("@babylonslate/core").DynamicMeshUpdate };
+        /** Nonvisual ancestors between this component and its nearest visual parent, nearest first. */
+        parentTransforms?: import("@babylonslate/core").Transform[];
         cable?: import("@babylonslate/core").CableProperties & { simulationId?: number };
         water?: import("@babylonslate/core").WaterBodyProperties;
         /** Water Removal Volume shape; Play keeps an invisible mesh that cuts water. */
@@ -597,7 +601,7 @@ export type CommandMessage =
         tickIndex: number;
         nodes: Array<{
           id: string;
-          kind: "gameInstance" | "actor" | "component";
+          kind: "gameInstance" | "subsystem" | "actor" | "component";
           label: string;
           classId: string;
           parentId: string | null;

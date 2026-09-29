@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { BabassetHeader } from "./babasset";
 import { resolveGpuTexture } from "./resolve-gpu-texture";
+import { webpHeader } from "./test-support/image-headers";
 
 function ktx2Header(width: number, height: number): Uint8Array {
   const bytes = new Uint8Array(32);
@@ -177,5 +178,26 @@ describe("resolveGpuTexture", () => {
     expect(resolved?.chunkId).toBe("pixels");
     expect(resolved?.targetEdge).toBe(2048);
     expect(resolved?.missingPreferred).toBe(true);
+  });
+
+  it("keeps binding a size-less WebP Texture's committed encode under editor LOD", async () => {
+    // Imported before WebP sizes were recorded: the registry committed it under
+    // the project max (2048) id. The resolver must still prefer that id, so it
+    // does not read the WebP's own size.
+    const committed = "ktx2:34dad383eac5f9b6";
+    const byId: Record<string, Uint8Array> = { pixels: webpHeader("VP8L", 30, 20), [committed]: ktx2Header(32, 20) };
+    const asset = header([{ ...chunk("pixels", "pixels"), mime: "image/webp" }, chunk(committed, "ktx2")], {
+      usage: "albedo",
+      compressionState: "compressed",
+      ktx2ChunkId: committed,
+    });
+    const resolved = await resolveGpuTexture({
+      header: asset,
+      readChunk: async (id) => byId[id] ?? null,
+      editorLod: { enabled: true, quality: 1 },
+    });
+    expect(resolved?.kind).toBe("ktx2");
+    expect(resolved?.chunkId).toBe(committed);
+    expect(resolved?.missingPreferred).toBe(false);
   });
 });

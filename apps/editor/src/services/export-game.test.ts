@@ -130,6 +130,46 @@ describe("collectAndExportGame", () => {
     ]);
   });
 
+  it("ships empty subsystem classes no scene references, with their empty user bases", async () => {
+    const empty: SerializedGraph = { nodes: [], edges: [] };
+    const parents: Record<string, string> = {
+      Save: "GameSubsystem",
+      Weather: "SceneSubsystem",
+      RainWeather: "Weather",
+      Unused: "Actor",
+    };
+    const classAsset = (name: string) =>
+      asset({ guid: `class-${name}`, type: "Class", name, parentClass: parents[name] ?? null });
+    const scene = createDefaultScene();
+    const result = await collectAndExportGame({
+      startupSceneGuid: "scene-main",
+      assets: [
+        asset({ guid: "scene-main", type: "Scene", name: "Main" }),
+        ...Object.keys(parents).map(classAsset),
+      ],
+      plugins: [],
+      projectPluginOverrides: {},
+      parentOf: (id) => parents[id] ?? null,
+      sceneByGuid: (guid) => (guid === "scene-main" ? scene : null),
+      graphByGuid: (guid) => (guid.startsWith("class-") ? empty : null),
+      bytesByGuid: (guid) => new TextEncoder().encode(JSON.stringify(guid === "scene-main" ? scene : empty)),
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
+      playFrameCap: 60,
+      physicsWorld: "3d",
+      playerFiles,
+    });
+    expect(result.ok).toBe(true);
+    if (!isOk(result)) return;
+    const scripts = parseScriptRegistry(new TextDecoder().decode(result.value.files.get("scripts.js")));
+    expect(
+      scripts.map((script) => [script.classId, script.parentClassId]).sort(),
+    ).toEqual([
+      ["RainWeather", "Weather"],
+      ["Save", "GameSubsystem"],
+      ["Weather", "SceneSubsystem"],
+    ]);
+  });
+
   it("uses startup reachability for boot and a stable shared-asset policy", async () => {
     const start = {
       ...createDefaultScene(),
