@@ -244,7 +244,6 @@ describe("structured flow compile + runtime", () => {
 
     const compiled = compileGraph(graph, { assetGuid: "a", registry });
     expect(compiled.source).toMatch(/\.slice\s*\(/);
-    expect(compiled.source).toContain("break;");
 
     const mod = loadModule(compiled.source);
     const logs: string[] = [];

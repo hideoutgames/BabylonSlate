@@ -20,6 +20,18 @@ import {
 
 const registry = createDefaultNodeRegistry();
 
+it("exposes runtime geometry functions only on typed component targets and retains numeric array pins", () => {
+  const nodes = scriptPaletteNodes(registry, { parentClass: "Actor", classId: "Rig" });
+  const create = nodes.find((node) => node.id === "functions.call:DynamicRuntimeMeshComponent:Set Geometry")!;
+  expect(create.defaultData).toMatchObject({ implicitSelf: false, runtime: "setDynamicMeshGeometry" });
+  expect(create.pins?.find((pin) => pin.id === "target")?.type).toEqual(objectRef("DynamicRuntimeMeshComponent"));
+  expect(create.pins?.find((pin) => pin.id === "positions")?.type).toMatchObject({ kind: "array", element: { kind: "float" } });
+  expect(create.pins?.find((pin) => pin.id === "indices")?.type).toMatchObject({ kind: "array", element: { kind: "int" } });
+  const symbols = classMemberSymbolsFromGraphs({});
+  expect(symbols.find((symbol) => symbol.classId === "DynamicRuntimeMeshComponent" && symbol.name === "Set Geometry")?.pins)
+    .toContainEqual({ name: "positions", typeId: "float", direction: "in", container: "array" });
+});
+
 describe("custom event declaration validation", () => {
   it.each([
     { declaration: true, name: "Ping", missing: false },
@@ -61,6 +73,20 @@ describe("hydrateClassDocumentPayload", () => {
 });
 
 describe("hydrateSerializedGraphForEditor", () => {
+  it("refreshes interface endpoint markers from the active function member", () => {
+    const graph: SerializedGraph = {
+      nodes: ["input", "output"].map((endpoint) => ({
+        id: endpoint, type: `flow.function.${endpoint}`, position: { x: 0, y: 0 }, data: {},
+      })),
+      edges: [],
+      members: [{ id: "apply", kind: "function", name: "Apply", implementsInterface: { assetGuid: "iface", methodName: "Apply" } }],
+    };
+    const hydrated = hydrateSerializedGraphForEditor(graph, registry, { functionId: "apply" });
+    expect(hydrated.nodes.map((node) => node.data.__interface)).toEqual([true, true]);
+    const ordinary = hydrateSerializedGraphForEditor({ ...hydrated, members: [{ id: "apply", kind: "function", name: "Apply" }] }, registry, { functionId: "apply" });
+    expect(ordinary.nodes.map((node) => node.data.__interface)).toEqual([false, false]);
+  });
+
   it("refreshes edited JavaScript pins and removes links to deleted pins", () => {
     const graph: SerializedGraph = {
       nodes: [{ id: "js", type: "debug.executeJavaScript", position: { x: 0, y: 0 }, data: {

@@ -75,6 +75,7 @@ export const ADDABLE_COMPONENT_CLASSES: readonly AddComponentItem[] = [
     "Rendering",
   ),
   engineComponent("SpriteComponent", "Sprite", "2D sprite quad", "Rendering"),
+  engineComponent("DynamicRuntimeMeshComponent", "Dynamic Runtime Mesh", "Create and update mesh geometry from component functions during Play", "Rendering"),
   engineComponent(
     "TilemapComponent",
     "Tilemap",
@@ -227,6 +228,8 @@ export function defaultPropertiesFor(
   if (classId === "WaterBuoyancyComponent") return { ...normalizeWaterBuoyancy({}), mass: 1 };
   if (classId === "WaterRemovalVolumeComponent") return { ...normalizeWaterRemoval({}) };
   switch (classId) {
+    case "DynamicRuntimeMeshComponent":
+      return { materialGuid: null, enableCollision: false, castShadows: true, receiveShadows: true, layer: 1, mask: 0xffffffff };
     case "MeshComponent":
       return {
         meshKind: "box",

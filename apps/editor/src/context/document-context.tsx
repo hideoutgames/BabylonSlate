@@ -4544,7 +4544,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       </DockWindowTickContext.Provider>
       <SceneLoadingDialog
         open={sceneDocumentLoad !== null}
-        progress={0}
+        progress={null}
         phase="Loading Document"
         failed={sceneDocumentLoad?.failed}
         onRetry={() => { if (sceneDocumentLoad) void finishOpenDocument(sceneDocumentLoad.ref); }}

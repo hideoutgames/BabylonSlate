@@ -33,9 +33,9 @@ it.each(["scene", "layer"] as const)("keeps %s pass handles isolated across reor
   expect(getPostProcessMaterialObject(owner, "second")).toBeNull();
 });
 
-describe("MeshComponent Material Object", () => {
+describe.each(["MeshComponent", "DynamicRuntimeMeshComponent"])("%s Material Object", (classId) => {
   it("exposes a get-only live object separately from the assignable Material asset", () => {
-    const members = engineScriptApiFor("MeshComponent")?.variables ?? [];
+    const members = engineScriptApiFor(classId)?.variables ?? [];
     expect(
       members.find((entry) => entry.propertyKey === "materialObject"),
     ).toMatchObject({
@@ -55,7 +55,7 @@ describe("MeshComponent Material Object", () => {
 
   it("keeps the same reference until reassignment and cannot be overwritten", () => {
     const actor = new Actor({ classId: "Actor", guid: "actor" });
-    const mesh = new ActorComponent({ classId: "MeshComponent", guid: "mesh" });
+    const mesh = new ActorComponent({ classId, guid: "mesh" });
     actor.attachComponent(mesh);
     expect(mesh.getVariable("materialObject")).toBeNull();
     mesh.setVariable("materialGuid", "mat-a");

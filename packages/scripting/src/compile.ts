@@ -169,20 +169,16 @@ function isPassthroughExecOut(pin: GraphPin): boolean {
  * Exclusive Branch true/false (and any other multi-out that is not `then`)
  * are not entered — the stripped node cannot choose an arm.
  */
-function stripExecSuccessors(graph: LogicGraph, node: GraphNode): string[] {
+function stripExecSuccessors(graph: LogicGraph, node: GraphNode) {
   const passthrough = node.pins.filter(isPassthroughExecOut);
   if (passthrough.length > 0) {
-    const targets: string[] = [];
-    for (const out of passthrough) {
-      targets.push(...execSuccessors(graph, node.id, out.name));
-    }
-    return targets;
+    return passthrough.flatMap((out) => execSuccessorEdges(graph, node.id, out.name));
   }
   const outs = node.pins.filter(
     (pin) => pin.kind === "exec" && pin.direction === "out",
   );
   if (outs.length === 1) {
-    return execSuccessors(graph, node.id, outs[0]!.name);
+    return execSuccessorEdges(graph, node.id, outs[0]!.name);
   }
   return [];
 }
@@ -325,7 +321,11 @@ export function compileGraph(
   };
   const hoisted: HoistChunk[] = [];
   type BodyLine = { text: string; anchor?: Omit<CompileAnchor, "line"> };
+  type ExecScope = { label: string; opening: BodyLine; repeats: boolean };
+  type ExecPath = Map<string, ExecScope>;
   const body: BodyLine[] = [];
+  const loopStack: Array<{ label: string; opening: BodyLine; labeled?: boolean }> = [];
+  let nextLabel = 0;
   const shouldStrip = (node: GraphNode) =>
     options.stripDevelopmentOnly === true && isDevelopmentOnlyNode(node);
   const instrumentLoops = options.instrumentInfiniteLoops === true;
@@ -340,7 +340,9 @@ export function compileGraph(
   let isAsync = false;
 
   const emitBody = (text: string, anchor?: Omit<CompileAnchor, "line">) => {
-    body.push({ text, anchor });
+    const line = { text, anchor };
+    body.push(line);
+    return line;
   };
 
   function pinExpr(node: GraphNode, dataPin: GraphPin): string {
@@ -450,10 +452,10 @@ export function compileGraph(
 
   function emitAlong(
     edges: Array<{ targetNodeId: string; targetPinId: string }>,
-    visited: Set<string>,
+    visited: ExecPath,
   ) {
     for (const edge of edges) {
-      emitExecChain(edge.targetNodeId, new Set(visited), edge.targetPinId);
+      emitExecChain(edge.targetNodeId, new Map(visited), edge.targetPinId);
     }
   }
 
@@ -472,7 +474,7 @@ export function compileGraph(
   function emitFlowSwitch(
     node: GraphNode,
     meta: StructuredFlowMeta,
-    visited: Set<string>,
+    visited: ExecPath,
   ): boolean {
     if (!isFlowSwitchMeta(meta)) return false;
     const ctx = makeCtx(node);
@@ -504,17 +506,13 @@ export function compileGraph(
         meta.kind === "switchOnInt" ? String(Number(raw)) : JSON.stringify(raw);
       const keyword = i === 0 ? "if" : "} else if";
       emitBody(`  ${keyword} (${valueExpr} === ${compare}) {`, anchor);
-      for (const target of execSuccessors(graph, node.id, pin.name)) {
-        emitExecChain(target, new Set(visited));
-      }
+      emitAlong(execSuccessorEdges(graph, node.id, pin.name), visited);
     }
     if (defaultTargets.length > 0) {
       if (wiredCases.length > 0) {
         emitBody(`  } else {`, anchor);
       }
-      for (const target of defaultTargets) {
-        emitExecChain(target, new Set(visited));
-      }
+      emitAlong(execSuccessorEdges(graph, node.id, "Default"), visited);
       if (wiredCases.length > 0) {
         emitBody(`  }`, anchor);
       }
@@ -527,7 +525,7 @@ export function compileGraph(
   function emitStructuredFlow(
     node: GraphNode,
     meta: StructuredFlowMeta,
-    visited: Set<string>,
+    visited: ExecPath,
     entryPinId: string | undefined,
   ): boolean {
     const ctx = makeCtx(node);
@@ -539,15 +537,22 @@ export function compileGraph(
     };
 
     if (meta.kind === "break") {
-      emitBody(`  break;`, anchor);
+      const loop = loopStack.at(-1);
+      if (loop && !loop.labeled) {
+        loop.opening.text = `  ${loop.label}: ${loop.opening.text.trimStart()}`;
+        loop.labeled = true;
+      }
+      emitBody(loop ? `  break ${loop.label};` : `  break;`, anchor);
       return true;
     }
 
     if (meta.kind === "whileLoop") {
       const conditionExpr = ctx.input(meta.conditionPin);
-      emitBody(`  while (${conditionExpr}) {`, anchor);
+      const opening = emitBody(`  while (${conditionExpr}) {`, anchor);
       if (instrumentLoops) emitBody(`    ${loopCheck}`, anchor);
+      loopStack.push({ label: `__loop_${nextLabel++}`, opening });
       emitAlong(execSuccessorEdges(graph, node.id, meta.loopBodyPin), visited);
+      loopStack.pop();
       emitBody(`  }`, anchor);
       emitAlong(execSuccessorEdges(graph, node.id, meta.completedPin), visited);
       return true;
@@ -561,16 +566,18 @@ export function compileGraph(
         const lastExpr = ctx.input(meta.lastIndexPin);
         const iter = `__i_${jsIdent(node.id)}`;
         emitBody(`  {`, anchor);
-        emitBody(
+        const opening = emitBody(
           `    for (let ${iter} = (${firstExpr}) | 0; ${iter} <= ((${lastExpr}) | 0); ${iter}++) {`,
           anchor,
         );
         if (instrumentLoops) emitBody(`      ${loopCheck}`, anchor);
         emitBody(`      ${indexSlot} = ${iter};`, anchor);
+        loopStack.push({ label: `__loop_${nextLabel++}`, opening });
         emitAlong(
           execSuccessorEdges(graph, node.id, meta.loopBodyPin),
           visited,
         );
+        loopStack.pop();
         emitBody(`    }`, anchor);
         emitBody(`  }`, anchor);
       } else if (meta.kind === "forEach" || meta.kind === "forEachWithBreak") {
@@ -583,17 +590,19 @@ export function compileGraph(
           `    const ${snap} = Array.isArray(${arrayExpr}) ? (${arrayExpr}).slice() : [];`,
           anchor,
         );
-        emitBody(
+        const opening = emitBody(
           `    for (let ${iter} = 0; ${iter} < ${snap}.length; ${iter}++) {`,
           anchor,
         );
         if (instrumentLoops) emitBody(`      ${loopCheck}`, anchor);
         emitBody(`      ${indexSlot} = ${iter};`, anchor);
         emitBody(`      ${elementSlot} = ${snap}[${iter}];`, anchor);
+        loopStack.push({ label: `__loop_${nextLabel++}`, opening });
         emitAlong(
           execSuccessorEdges(graph, node.id, meta.loopBodyPin),
           visited,
         );
+        loopStack.pop();
         emitBody(`    }`, anchor);
         emitBody(`  }`, anchor);
       } else if (
@@ -610,7 +619,7 @@ export function compileGraph(
           `    const ${snap} = [...(new Map(${mapExpr} ?? [])).entries()];`,
           anchor,
         );
-        emitBody(
+        const opening = emitBody(
           `    for (let ${iter} = 0; ${iter} < ${snap}.length; ${iter}++) {`,
           anchor,
         );
@@ -618,10 +627,12 @@ export function compileGraph(
         emitBody(`      ${indexSlot} = ${iter};`, anchor);
         emitBody(`      ${keySlot} = ${snap}[${iter}][0];`, anchor);
         emitBody(`      ${valueSlot} = ${snap}[${iter}][1];`, anchor);
+        loopStack.push({ label: `__loop_${nextLabel++}`, opening });
         emitAlong(
           execSuccessorEdges(graph, node.id, meta.loopBodyPin),
           visited,
         );
+        loopStack.pop();
         emitBody(`    }`, anchor);
         emitBody(`  }`, anchor);
       }
@@ -741,24 +752,52 @@ export function compileGraph(
 
   function emitExecChain(
     startId: string,
-    visited = new Set<string>(),
+    visited: ExecPath = new Map(),
     entryPinId?: string,
   ) {
     let current: string | undefined = startId;
     let currentEntryPin = entryPinId;
-    while (current && !visited.has(current)) {
-      visited.add(current);
+    const scopes: ExecScope[] = [];
+    while (current) {
       const node = findNode(graph, current);
       if (!node) break;
+      // Control inputs (Gate Open/Close, Do Once Reset) are distinct states.
+      const input = currentEntryPin ?? node.pins.find(
+        (pin) => pin.kind === "exec" && pin.direction === "in",
+      )?.id;
+      const key = JSON.stringify([node.id, input]);
+      const anchor = {
+        column: 1,
+        assetGuid: options.assetGuid,
+        graphId: graph.id,
+        nodeId: node.id,
+      };
+      const previous = visited.get(key);
+      if (previous) {
+        previous.repeats = true;
+        previous.opening.text = `  ${previous.label}: while (true) {`;
+        if (instrumentLoops) emitBody(`  ${loopCheck}`, anchor);
+        emitBody(`  continue ${previous.label};`, anchor);
+        break;
+      }
+      // Reserve an opening; only back-edge targets need a loop wrapper.
+      // Native loops keep await, output slots and function locals in this invocation.
+      const scope = {
+        label: `__exec_${nextLabel++}`,
+        opening: emitBody("", anchor),
+        repeats: false,
+      };
+      visited.set(key, scope);
+      scopes.push(scope);
       if (shouldStrip(node)) {
         const targets = stripExecSuccessors(graph, node);
         if (targets.length === 0) break;
         if (targets.length === 1) {
-          current = targets[0];
-          currentEntryPin = undefined;
+          current = targets[0]!.targetNodeId;
+          currentEntryPin = targets[0]!.targetPinId;
           continue;
         }
-        for (const t of targets) emitExecChain(t, new Set(visited));
+        emitAlong(targets, visited);
         break;
       }
       const def = options.registry.get(node.typeId);
@@ -915,7 +954,7 @@ export function compileGraph(
               node.id,
               phase[0]!.toUpperCase() + phase.slice(1),
             ),
-            new Set(visited),
+            new Map(visited),
           );
           emitBody("    }", anchor);
         }
@@ -939,7 +978,7 @@ export function compileGraph(
         );
         if (instrumentLoops) emitBody(`    ${loopCheck}`, anchor);
         emitBody(`    ${ctx.output("key")} = ${pressedKey};`, anchor);
-        emitAlong(execSuccessorEdges(graph, node.id, "Then"), new Set(visited));
+        emitAlong(execSuccessorEdges(graph, node.id, "Then"), visited);
         emitBody("  }", anchor);
         break;
       }
@@ -981,7 +1020,7 @@ export function compileGraph(
         )) {
           for (const e of graph.edges) {
             if (e.sourceNodeId === node.id && e.sourcePinId === outPin.id) {
-              emitExecChain(e.targetNodeId, new Set(visited), e.targetPinId);
+              emitExecChain(e.targetNodeId, new Map(visited), e.targetPinId);
             }
           }
         }
@@ -1015,6 +1054,12 @@ export function compileGraph(
       }
       emitAlong(edges, visited);
       break;
+    }
+    for (const scope of scopes.reverse()) {
+      if (scope.repeats) {
+        emitBody(`  break ${scope.label};`);
+        emitBody("  }");
+      }
     }
   }
 
@@ -1054,7 +1099,7 @@ export function compileGraph(
         ...(entry ? entryComponentId(entry) : {}),
       },
       declLines: [...outputDecls.values()],
-      bodyLines: [...body],
+      bodyLines: body.filter((line) => line.text !== ""),
     });
   }
 

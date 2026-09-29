@@ -4,6 +4,7 @@ import { ForwardSceneFrameGraph, type ForwardSceneGraphResult } from "./framegra
 import { onSceneReadinessDirty } from "./scene-perf";
 import type { SharedOutlineView } from "./shared-outline";
 import { flushSceneCables } from "./cable-mesh";
+import { flushDynamicRuntimeMeshes } from "./dynamic-runtime-mesh";
 
 class PreparationChanged extends Error {}
 
@@ -192,6 +193,7 @@ export class SceneRenderCoordinator {
     // Dynamic cable bounds must reach shadow admission before its cached caster
     // decision. The scene observer covers direct/native Scene.render callers.
     flushSceneCables(this.scene);
+    flushDynamicRuntimeMeshes(this.scene);
     const status = this.graph.readiness(camera);
     if (!status.ready) this.requestPreparation();
     // Draw on readiness's admission; graph preparation or invalidation re-admits.

@@ -583,6 +583,25 @@ export function componentPropertyRows(
         ...cablePropertyRows(actorId, component, update, context),
         assetRow(actorId, component, "materialGuid", "Material", ["Material"], update, context, "Choose Cable Material"),
       ];
+    case "DynamicRuntimeMeshComponent":
+      return [
+        assetRow(actorId, component, "materialGuid", "Material", ["Material"], update, context, "Choose Mesh Material"),
+        {
+          kind: "boolean", id: rowId(actorId, component.id, "enableCollision"), label: "Enable Collision",
+          value: component.properties.enableCollision === true, defaultValue: false,
+          disabled: context.physicsWorld !== "3d",
+          description: "Use the runtime triangles for collision. Geometry edits rebuild collision on the next physics step.",
+          onChange: (value) => update("enableCollision", value),
+        },
+        collisionLayerRow(actorId, component, update, context.collisionLayers),
+        collidesWithRow(actorId, component, update, context.collisionLayers),
+        ...(["castShadows", "receiveShadows"] as const).map((key): PropertyRow => ({
+          kind: "boolean", id: rowId(actorId, component.id, key),
+          label: key === "castShadows" ? "Cast Shadows" : "Receive Shadows",
+          value: component.properties[key] !== false, defaultValue: true,
+          onChange: (value) => update(key, value),
+        })),
+      ];
     case "RagdollComponent": {
       const parsed = parseRagdollProperties(component.properties);
       const defaults = parseRagdollProperties({});

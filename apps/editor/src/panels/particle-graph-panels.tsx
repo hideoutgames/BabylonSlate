@@ -785,7 +785,7 @@ export function ParticleGraphCompilerResults({
           <EmptyDescription>This Particle Graph builds cleanly.</EmptyDescription>
         </Empty>
       ) : (
-        <ScrollArea className="min-h-0 flex-1 p-2">
+        <ScrollArea className="min-h-0 flex-1 py-1">
           <WindowedList itemCount={rows.length} rowHeight={WINDOWED_LIST_TOUCH_ROW_HEIGHT}>
             {(index) => {
               const row = rows[index]!;
@@ -793,6 +793,8 @@ export function ParticleGraphCompilerResults({
                 <DiagnosticResultRow
                   severity={row.severity}
                   message={row.message}
+                  code={row.code}
+                  selected={selected !== null && sameDiagnostic(row, selected)}
                   onSelect={() => {
                     setSelectedRow(row);
                     if (row.nodeId) onFocusNode(row.nodeId);

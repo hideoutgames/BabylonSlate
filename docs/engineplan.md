@@ -173,7 +173,7 @@ Key decisions:
 apps/
   editor/        Vite + React + Capacitor host: editor UI + renderer (main thread)
   player/        Standalone runtime host: Preview Build iframe (section 15.2) + exported game shell
-  desktop/       Electron wrapper for Windows/macOS (Capacitor has no desktop target)
+  desktop/       Electron wrapper for Windows/macOS/Linux (Capacitor has no desktop target)
 engine-content/  Engine default skybox faces (`skybox/px.png` … `nz.png`); Kenney packs present, not wired
 engine-plugins/  First-party plugins bundled with the engine (see section 10)
 packages/
@@ -634,9 +634,9 @@ The conversion family (`WildcardToString`, `WildcardToObject`, `WildcardToFloat`
 **Graph IR:** typed nodes with exec pins and data pins, stored in the owning asset's payload. Validation emits structured diagnostics; see section 6.2 for the full rule set and how they surface in the editor.
 
 **Compiler:** IR to **plain JavaScript ES modules**, not TypeScript. This deliberately avoids shipping a transpiler into the browser and the iPad app; TypeScript emission becomes a later opt-in for readable export and debugging only.
-- Exec flow becomes straight-line statements; Branch, Sequence and loop nodes become native `if`, `for` and `while`.
+- Exec flow becomes straight-line statements; Branch, Sequence and loop nodes become native `if`, `for` and `while`. Execution cycles use labeled loops with editor loop-budget checks, including cycles through latent actions.
 - Pure data nodes inline as expressions with common-subexpression elimination.
-- Latent nodes (v1: Delay and Timeline) compile into async generator state machines.
+- Latent nodes (Delay, async ExecuteJavaScript, and latent Call Function) use async entry functions that await each action on every iteration.
 - FunctionLibrary classes emit a module of static functions. Palette injects static Call Function rows from open FL docs and the header signature index. EditorFunctionLibrary calls stay on editor hosts.
 - Output is deterministic text, so compiler golden tests are the primary correctness gate.
 - Compiled modules load through a blob-URL dynamic import inside the worker. That needs a CSP allowing blob URLs plus a spike to confirm behaviour in WKWebView under Capacitor.
@@ -685,7 +685,7 @@ Mistakes in visual scripting should be caught **before Preview**, not discovered
 
 **Rules, grouped by when they can run:**
 
-- **Structural** (no full compile needed): disconnected exec entry, exec cycle, pure-data cycle, latent node inside a synchronous-only context. Leftover nodes whose exec never roots at a trigger (and pures no compiled node reads) are omitted rather than warned as `exec.unreachable`. The compiled set follows every exec→exec wire (Branch true/false, Sequence `then_*`) and pulls data-only pures such as Cast when a compiled node reads `success` or `result`.
+- **Structural** (no full compile needed): disconnected exec entry, pure-data cycle, latent node inside a synchronous-only context. Leftover nodes whose exec never roots at a trigger (and pures no compiled node reads) are omitted rather than warned as `exec.unreachable`. The compiled set follows every exec→exec wire (Branch true/false, Sequence `then_*`) and pulls data-only pures such as Cast when a compiled node reads `success` or `result`.
 - **Pin typing** (no full compile needed): type mismatch, missing required input, extra data wire on a single-input pin (`pin.duplicate_connection`; exec pins may fan in), incompatible wildcard resolution group, delegate signature mismatch.
 - **References** (needs registry index): broken asset, enum, struct or interface guid; class reference outside inheritance chain; interface function not implemented (`interface.unimplemented`).
 - **Signatures** (needs class graph): override pin list does not match parent (`member.override_signature`); ScriptInterface implementation arity or types differ (`interface.signature_mismatch`). Interface implementation Output pins without a wire or default are errors.
@@ -1208,8 +1208,9 @@ Scripting gets the expected nodes: FindPathTo, MoveTo, StopMovement, IsPathValid
 Games export to **web only**; the Capacitor and Electron shells exist to run the editor.
 
 - **Web and itch.io**: `packages/exporter` produces a zip with `index.html` at the root, as itch requires, plus the player bundle, compiled scripts, a packed asset bundle and `coi-serviceworker.js`. Editor-only asset types are stripped and the asset set is tree-shaken from `project.json` **`startupSceneGuid`** (asset guid) plus GameInstance references and every GameSubsystem / SceneSubsystem Class (they run without being referenced). Do not boot or tree-shake from `BabprojectManifest.startupScene` (still a path in zip templates) or guess `assets/main.scene.babasset`. An E2E test unzips the artifact, serves it, and asserts the game boots and ticks; the export path is otherwise the easiest thing to break silently.
-- **iPad (editor host)**: Capacitor 8, up from 7. The scoped-storage plugin in use is `@daniele-rolli/capacitor-scoped-storage@0.0.3` with a Capacitor 7-or-later peer range; verify it against Capacitor 8 and be ready to write a thin Swift plugin, since document-folder access is load-bearing for the entire file format story. With the native status bar visible, `contentInset: "never"` and CSS safe-area tokens own landscape insets; the VFS status-bar-style port keeps glyph contrast aligned with the resolved editor theme.
-- **Windows and macOS (editor host)**: Electron in `apps/desktop`, sharing the web build with a Node-backed vfs adapter. Capacitor has no desktop target.
+- **iPad (editor host)**: Capacitor 8 with first-party Swift plugins for Keychain secrets, security-scoped storage, audio lifecycle and memory stats. With the native status bar visible, `contentInset: "never"` and CSS safe-area tokens own landscape insets; the VFS status-bar-style port keeps glyph contrast aligned with the resolved editor theme.
+- **Android (editor host)**: same Capacitor 8 shell; app-module Java plugins mirror the Swift ones (Keystore secrets, SAF scoped storage, audio lifecycle, memory stats); default project tier is app-private `Directory.Data`.
+- **Windows, macOS and Linux (editor host)**: Electron in `apps/desktop`, sharing the web build with a Node-backed vfs adapter. Capacitor has no desktop target.
 
 ### 15.1 Keeping the exported file count low
 
@@ -1522,7 +1523,7 @@ Named slice, not a P-number. Spec: section 2.5. **Done.**
 - [x] **p14-export** — P14: exporter package producing an itch.io-ready zip (index.html at root, packed assets, compiled scripts, coi-serviceworker) with an E2E test that unzips, serves, boots and ticks the exported game; bundle-debugger preset; release compile strips Development Only nodes (`stripDevelopmentOnly`); boot and tree-shake from `project.json` `startupSceneGuid` (asset guid), not `BabprojectManifest.startupScene` path and not `assets/main.scene.babasset`; apply `render.customResolution` (Black Bars on: WxH framebuffer + host letterbox; off: fill host, live aspect) as the packaged framebuffer
 - [x] **p14-packed-mode** — P14: packed export mode as the default - single player bundle with code splitting off, .babpack asset packs grouped per boot and per scene with a range-request loader and whole-fetch fallback, concatenated script bundle, inlined CSS and glue; file-count reporting with warn at 800 and fail at 1000, asserted by the export smoke test on both range-capable and range-blind servers; loose mode retained as an option
 - [x] **p14-preview-build** — P14: overlay Play / Preview remains the default (today's path). Preview Build is a Debug-dropdown checkbox only (Engine Settings `debuggerDefaults.previewBuild`, default off), not a second Play button; when on, Play packages via exporter into a temporary in-memory web pack; blocking Preparing Preview progress modal; same-origin `apps/player` iframe overlay; boot `startupSceneGuid`; labeled Stop discards the pack and unmounts the iframe immediately; e2e covers default overlay Play, toggle on/off, missing startup scene, overlay Play unchanged when off, and Stop restoring editor chrome
-- [x] **p14-platforms** — P14: apps/player standalone runtime host (boots `startupSceneGuid`, applies project render size; the same shell hosts the Preview Build iframe, section 15.2), apps/desktop Electron shell for Windows and macOS with a Node VFS adapter, Capacitor 8 polish. **Residual:** on-device A16 reopen / 60fps stays with `p1-device-spikes` — this environment cannot prove hardware
+- [x] **p14-platforms** — P14: apps/player standalone runtime host (boots `startupSceneGuid`, applies project render size; the same shell hosts the Preview Build iframe, section 15.2), apps/desktop Electron shell for Windows, macOS and Linux with a Node VFS adapter, Capacitor 8 iPad/Android shells and native VFS plugins. **Residual:** on-device A16 reopen / 60fps stays with `p1-device-spikes` — this environment cannot prove hardware
 - [x] **p14-perf-smoke** — P14: CI perf smoke against the A16 iPad budget from section 1.2 - tiny scene through the in-process runtime asserting the combined script-plus-physics tick stays under 8ms with the two halves asserted separately, accounted texture and geometry bytes asserted against a fixed fixture so byte-accounting drift fails a build, an obstructed-editor assertion that zero frames render when the viewport is hidden or a modal is open, plus draw-call ceilings surfaced as HUD warnings. P4 Play overlay e2e does **not** claim A16 60fps; device 60fps remains `p1-device-spikes`
 
 ### P15
