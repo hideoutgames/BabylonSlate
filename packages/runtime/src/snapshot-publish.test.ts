@@ -145,31 +145,49 @@ describe("snapshot publishing", () => {
   });
 
   it("steers the crowd from NavAgent actors and their ancestors only", async () => {
-    const { runtime, slots } = await launch(scene([
+    // The agent starts at world (-4, 0, -4) under a parent that a script moves
+    // every tick; the crowd owns its world pose, so it must follow the path of
+    // a root agent placed there.
+    const parented = await launch(scene([
       createActor("still", "Still"),
-      createActor("base", "Base", pose([1, 0, 1])),
+      createActor("base", "Base", { classId: "Mover", ...pose([1, 0, 1]) }),
       createActor("agent", "Agent", { parentId: "base", ...pose([-5, 0, -5]), components: [navAgent] }),
       createActor("rider", "Rider", { parentId: "agent", ...pose([0, 2, 0]) }),
     ]), navMesh);
+    const root = await launch(scene([
+      createActor("agent", "Agent", { ...pose([-4, 0, -4]), components: [navAgent] }),
+    ]), navMesh);
     try {
-      expect(runtime.setNavAgentTarget("agent", { x: 4, y: 0, z: 4 })).toBe(true);
-      const reads = countWholeWorldReads(runtime.getWorld().findActor("still")!);
-      for (let tick = 0; tick < 10; tick += 1) runtime.tick();
+      for (const { runtime } of [parented, root]) {
+        expect(runtime.setNavAgentTarget("agent", { x: 4, y: 0, z: -2 })).toBe(true);
+      }
+      const reads = countWholeWorldReads(parented.runtime.getWorld().findActor("still")!);
+      for (let tick = 0; tick < 30; tick += 1) {
+        parented.runtime.tick();
+        root.runtime.tick();
+      }
       // Only the published frame composes every actor; the crowd no longer does.
-      expect(reads()).toBe(10);
+      expect(reads()).toBe(30);
 
-      const frame = published(runtime);
-      const agent = slotPose(frame, slots.get("agent"))!;
-      const rider = slotPose(frame, slots.get("rider"))!;
-      expect(agent.position.x).toBeGreaterThan(-4);
-      expect(agent.position.z).toBeGreaterThan(-4);
+      const expected = slotPose(published(root.runtime), root.slots.get("agent"))!;
+      const frame = published(parented.runtime);
+      const agent = slotPose(frame, parented.slots.get("agent"))!;
+      const rider = slotPose(frame, parented.slots.get("rider"))!;
+      expect(expected.position.x).toBeGreaterThan(-3.5);
+      for (const axis of ["x", "y", "z"] as const) {
+        expect(agent.position[axis]).toBeCloseTo(expected.position[axis], 4);
+      }
+      for (const axis of ["x", "y", "z", "w"] as const) {
+        expect(agent.rotation[axis]).toBeCloseTo(expected.rotation[axis], 4);
+      }
       // Yaw-only agent rotation leaves the rider's vertical offset unrotated.
       expect(rider.position.x).toBeCloseTo(agent.position.x, 4);
       expect(rider.position.y).toBeCloseTo(agent.position.y + 2, 4);
       expect(rider.position.z).toBeCloseTo(agent.position.z, 4);
       expect(rider.rotation).toEqual(agent.rotation);
     } finally {
-      runtime.stop();
+      parented.runtime.stop();
+      root.runtime.stop();
     }
   });
 
@@ -184,7 +202,8 @@ describe("snapshot publishing", () => {
       expect(commands.filter((command) => command.type === "despawn")).toEqual([
         { type: "despawn", slotId: doomedSlot, actorGuid: "doomed" },
       ]);
-      expect(despawnTicks).toEqual([2]);
+      // Doomed destroys itself in the third tick (ctx.tickIndex 2), before the burst ends.
+      expect(despawnTicks).toEqual([3]);
       const frame = published(runtime);
       expect(frame.header.tickIndex).toBe(4);
       expect(frame.poses.map((entry) => entry.slotId)).toEqual([slots.get("mover")]);
@@ -198,7 +217,8 @@ describe("snapshot publishing", () => {
     ["pauses the session", "Pauser"],
     ["starts a blocking stream load", "Blocker"],
   ])("still publishes the last simulated tick when a burst tick %s", async (_label, classId) => {
-    // The interrupting actor ticks first, so nothing else moves in its tick.
+    // The interrupting actor ticks first in the third tick (ctx.tickIndex 2). A pause lets
+    // that tick finish and publish; a blocking load stops the Mover and skips the publish.
     const actors = () => [
       createActor("interrupt", "Interrupt", { classId }),
       createActor("mover", "Mover", { classId: "Mover" }),
@@ -209,8 +229,8 @@ describe("snapshot publishing", () => {
     try {
       burst(deferred.runtime);
       for (let tick = 0; tick < 4; tick += 1) perTick.runtime.tick();
-      const lastTick = classId === "Pauser" ? 2 : 1;
-      expect(deferred.runtime.getWorld().clock.tickIndex).toBe(2);
+      const lastTick = classId === "Pauser" ? 3 : 2;
+      expect(deferred.runtime.getWorld().clock.tickIndex).toBe(3);
       const frame = published(deferred.runtime);
       expect(frame.header.tickIndex).toBe(lastTick);
       expect(slotPose(frame, deferred.slots.get("mover"))?.position.x).toBe(lastTick);
@@ -251,7 +271,8 @@ describe("snapshot publishing", () => {
       }
       expect(deferred.runtime.getWorld().clock.tickIndex).toBe(20);
       expect(lifecycle(deferred.commands)).toEqual(lifecycle(perTick.commands));
-      expect(deferred.despawnTicks).toEqual([6]);
+      // Late destroys itself in the second burst's third tick (ctx.tickIndex 6).
+      expect(deferred.despawnTicks).toEqual([7]);
     } finally {
       deferred.runtime.stop();
       perTick.runtime.stop();
