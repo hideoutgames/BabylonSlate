@@ -664,6 +664,9 @@ describe("SceneLayer runtime compositor", () => {
         const snapshot = new Float32Array(snapshotFloatCount(16));
         expect(runtime.copySnapshot(snapshot)).toBe(true);
         const slots = Array.from({ length: readSnapshotHeader(snapshot).actorCount }, (_, index) => readActorSlot(snapshot, index));
+        const anchorSlots = commands.filter((command) => command.type === "spawn" && ["upper", "lower", "nested"].includes(command.actorGuid))
+          .map((command) => command.slotId);
+        expect(slots.some((slot) => anchorSlots.includes(slot.slotId))).toBe(false);
         for (const [id, x, y] of [["a", 11, 22], ["b", -1, 26], ["c", -4, 28]] as const) {
           const spawn = commands.find((command) => command.type === "spawn" && command.actorGuid === id);
           if (spawn?.type !== "spawn") throw new Error(`Missing spawn for ${id}`);

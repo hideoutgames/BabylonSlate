@@ -5269,6 +5269,8 @@ class InProcessRuntime implements RuntimeDriver {
     }
     let count = 0;
     for (const actor of actors) {
+      // Layout-only anchors must not create fallback visuals from pose snapshots.
+      if (isSceneLayerAnchorActor(actor)) continue;
       const slotId = this.slotByGuid.get(actor.guid);
       if (slotId === undefined) continue;
       const world = worldTransforms.get(actor.guid);
