@@ -92,6 +92,30 @@ On canvas / resolution change the worker reapplies the controlling anchor from a
 
 Pointer / click / press graph events come from adding a `2DButtonComponent` (same attach-gated pattern as Collider overlap). Add Event is empty of On Mouse Enter / Leave / Click / Press Start / Press End until a 2D Button is on the Actor; world Actors never see those rows (`2DButton` is overlay-exclusive). Multiple buttons → one override per event per instance (`Event On Click (2D Button 2)`). Dispatch keys hover/press by `actorGuid:componentId`. Overlay actors with only `2DText` / `2DTexture` still render; they do not get click/hover graph events until a 2D Button is added. Hit Test is a **variable** on the button (and sibling visuals for the pick walk), not an Add Event row. Old HUD event ids stay unmapped. SceneLayerActor has no native mouse stubs. There are no `onTouch*` nodes.
 
+## Nested layout and scrolling
+
+SceneLayer Outliner children and SceneLayerActor component children share the same layout rules. A root box component arranges its actor's child actors as well as components attached beneath that box. Boxes can nest in either hierarchy; sibling array/Outliner order determines layout order. Anchor-only Outliner actors are skipped when arranging their descendants, while their authored parent links remain intact. These remain actor components, with no separate widget asset system.
+
+| Component | Behavior |
+| --- | --- |
+| 2D Vertical Box / 2D Horizontal Box | Arrange children top-to-bottom / left-to-right with Gap and alignment. |
+| 2D Overlay Box | Arrange children in the same content rectangle, with alignment and existing draw order. |
+| 2D Scroll Box | Clip nested content to its viewport; vertical, horizontal or both axes. Wheel, Shift+wheel, touch/pen drag and Scroll X/Y setters move it within measured content bounds. |
+| 2D Padding | Nonvisual child modifier: Left/Right/Top/Bottom inset only the immediate parent's content area; it occupies no layout slot. |
+| 2D Spacer | Nonvisual fixed space or a weighted share of the remaining main-axis space. |
+
+Box Width/Height Mode selects Fixed, Content or Fill. Fill Weight divides remaining space between fill children; hidden children do not reserve slots. Width, Height, Gap, padding and scroll offsets use SceneLayer world units. Texture desired dimensions come from authored pixels / Pixels Per Unit; text uses its explicit wrap dimensions, or an estimate from parsed visible text and inline images when unwrapped. Layout recalculates after authored/script size, hierarchy or visibility changes, retaining original design transforms to avoid cumulative scaling. Editor preview and Play/player use the same solver. Scroll clipping applies to rendered geometry and pointer/touch picks; focus navigation reveals an offscreen target through its scroll ancestors. Clip render callbacks attach only to clipped meshes and detach when clipping or the layer is removed, preserving idle world shadow caching when an editor scene is reused. Hidden or disabled containers cannot scroll, and higher layers with blocking hits stop scrolling through to lower layers. A touch scroll cancels a pressed button instead of activating it on release.
+
+## Focus navigation
+
+**2D Button** supports keyboard and gamepad navigation. Add nonvisual **2D Focus Target** to another element for the same focus behavior. Actor and nested component transforms determine direction; helpers attached to a visual use that visual's bounds and visibility even when the layer has no layout boxes. Destroyed, hidden, disabled and not-ready owners are excluded. Navigation stays within the highest ready layer containing eligible targets. Explicit neighbor links cannot cross layer instances.
+
+Project Settings **Focus Navigation** controls enablement, repeat delay/interval and wrapping. **Navigation Input** selects a 2D Input Axis (positive Y is up); **Activate Input** selects an Input Action. Their authored bindings and runtime rebinding use the existing input asset system. None uses arrows/WASD, D-Pad/left stick, and Enter/Space/bottom gamepad face button. Game input remains available to gameplay scripts; games own their menu input gating.
+
+Each target has **Focus Enabled**, **Initial Focus**, and **Focus Up/Down/Left/Right**. Automatic selects a nearby target in that direction; an explicit unavailable neighbor stops movement. Initial Focus is applied once when the layer becomes active. Without an initial target, the first navigation or activation input selects the topmost, then leftmost target. Neighbor dropdowns include scene actors and attached focus components; Class/Prefab editing includes its attached components. Prefab component links resolve within the current actor instance, including when that sibling is unavailable. Duplicating controls remaps links to actors and components inside the copied selection and preserves external links.
+
+Component-bound **On Focus Enter**, **On Focus Leave**, and **On Focus Activate** events support authored highlights and actions. **Focused** is readable; **Set Focus** returns Success, and **Clear Focus** releases that target. Button activation additionally uses **On Press Start**, **On Press End**, and **On Click**. Removing, hiding, disabling, or superseding a pressed target cancels its activation. Pointer press transfers focus to an eligible Button. Focus state is session-only and never saved to the SceneLayer document. Editor Play and exported players use the same runtime controller and project settings.
+
 ## Graph nodes
 
 Category `scene-layer` (GameInstance and other graphs; instances live on the session compositor):
@@ -120,6 +144,10 @@ Editor Play and the packaged player apply `sceneLayerCreate` / `Remove` / `Clear
 
 Overlay-only `2DTextComponent` / `2DRichTextComponent`. Shared per-glyph quads (not Babylon GUI / `TextRenderer.addParagraph`). **Renderer** is `bitmap` (default) or `msdf`.
 
+**Text Material** accepts the dedicated **Text** Material domain. Its **Text Output** Color (RGBA) multiplies the glyph's baked Bitmap color or MSDF fill/outline color; the engine preserves letter coverage and rich-text spans. Underlines receive the same material, while inline images keep their image textures. None, a missing asset, or another material domain uses the normal text renderer. **Material UV** defaults to **Text Box** (0–1 across the wrap box); **Each Glyph** repeats 0–1 on each letter. Atlas coordinates remain private to text rendering. Both properties have component Get/Set variables, and Play/player carry the same material and UV settings as the editor.
+
+Text materials share a scene-local compiled graph and bind each glyph's atlas/style on every draw, including frozen materials. Shader prewarming defers while a glyph atlas is uploading; normal draw readiness still waits for that atlas. Disposing or rebuilding one label releases its atlas without altering another label. Material preview displays sample text. Export and Play dependency collection include text materials and their texture/function dependencies.
+
 | Renderer | When | How |
 | --- | --- | --- |
 | Bitmap | Always | Canvas `FontFace` glyphs packed onto an RGBA atlas when the paint is letter-shaped (not a solid slab filling the glyph box). A blank, full-canvas, or solid tofu fill (Node / NullEngine, broken headless 2D) uses the bundled 5×7 bitmap. Letter quads are sized to that raster cell. Missing Font uses the project default CSS stack. |
@@ -142,3 +170,15 @@ Preview Build and the exported player own no loading screen: `Event On Scene Sta
 Layer post-process targets retain alpha so transparent pixels preserve the world and lower layers when composited. Play pass diagnostics count ready, enabled graph tasks as well as the native fallback passes.
 
 The test-build-only scenePostProcessHostProof fixture exercises the registered Play view and actual layer hosts: an HTTP-held numeric texture keeps a replacement pending while the prior processed image and a separate live layer compose over world rendering. It also checks first-frame acknowledgement, resize and shared-Engine retirement on both backends.
+
+## 2D Painter
+
+`2DPainterComponent` is an overlay-only procedural drawing surface. Add Component and Place Actors expose **2D Painter**. Its centered Width/Height, coordinates, radii and Stroke Width use SceneLayer units; positive Y points up. Pixels Per Unit controls raster quality, bounded to 4096 pixels per side and four million pixels. The editor, Play and exported player use the same transparent, unlit canvas-backed plane. Hit Test uses its rectangular bounds.
+
+- Component functions draw Line, Polyline, Rectangle, Circle, Ellipse and Polygon. Point lists are Vector 2 arrays; rectangles use a center and full size, and ellipses use X/Y radii. Fill/Stroke, RGBA colors, Stroke Width, Line Cap and Line Join are captured when a draw command is issued.
+- Begin Path, Move To, Line To, Quadratic Curve To, Bezier Curve To, Arc and Close Path build reusable paths. Arc angles and rotation are radians. Fill Path and Stroke Path draw without discarding the path.
+- Push Mask clips subsequent drawing to the current path; Pop Mask restores the previous clip. Fill Rule selects Nonzero or Even Odd for fills, masks and holes. Cut Out Path erases only this painter's existing pixels inside the current clip. Clear resets drawing, the path and the mask stack.
+- Clear Each Frame defaults on and clears before an active owner's simulation Tick. Disable it for drawing that remains until Clear. Paused/not-ready owners retain their drawing. Independent components never share drawing or mask state, and drawing remains present in release players without debug settings.
+- Native functions return Success. Invalid geometry, mask underflow/overflow and resource-limit violations return false without replacing existing drawing. Limits are 16,384 commands, 8,192 segments per path, 65,536 retained segments and 32 nested masks. Drawing commands update textures without rebuilding actor meshes; resource ownership follows the component visual lifecycle.
+
+The serializable `commands` property supports authored drawing data; script-generated commands belong to the live component instance and are not written back to the project. Fill/stroke style changes affect subsequent commands. Existing drawing is replayed at the new canvas size when Width, Height or Pixels Per Unit changes.

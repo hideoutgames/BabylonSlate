@@ -15,6 +15,7 @@ export * from "./scene-streaming-actor";
 export * from "./skybox";
 export * from "./text3d";
 export * from "./text2d";
+export * from "./painter2d";
 export * from "./rich-text";
 export * from "./project";
 export * from "./cel-shading";
@@ -39,6 +40,7 @@ export * from "./input-assets";
 export * from "./input-keys";
 
 export * from "./default-input-assets";
+export * from "./scene-layer-focus";
 
 export * from "./sorting";
 export * from "./particle-settings";
@@ -64,4 +66,5 @@ export * from "./cable-component";
 export * from "./cable-simulation";
 export * from "./spline-component";
 export * from "./render-target";
+export * from "./overlay-layout";
 export * from "./dynamic-runtime-mesh";

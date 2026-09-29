@@ -83,6 +83,9 @@ export type ControlMessage =
       /** Authored project mappings; omitted legacy loads use defaults. */
       inputAssets?: import("@babylonslate/core").InputAssetDefinition[];
   inputMappings?: ProjectInputSettings;
+      focusNavigation?: import("@babylonslate/core").FocusNavigationSettings;
+      pixelsPerUnit?: number;
+      texturePixelSizes?: Record<string, { width: number; height: number }>;
       /** Authored scene document. When present, Play instantiates these actors. */
       scene?: SerializedScene;
       seed?: number;
@@ -174,6 +177,7 @@ export type ControlMessage =
   | { type: "setPaused"; paused: boolean }
   | { type: "console"; line: string }
   | { type: "inspect" }
+  | { type: "sceneLayerScroll"; layerId: string; actorId: string; componentId: string; deltaX: number; deltaY: number }
   | {
       type: "sceneLayerPointer";
       layerId: string;
@@ -300,6 +304,7 @@ export type DebugBehaviourTree = {
 };
 
 export type CommandMessage =
+  | { type: "setPainter2D"; slotId: number; componentId: string; painter: import("@babylonslate/core").Painter2DProperties }
   | { type: "dynamicMeshUpdate"; meshId: number; update: import("@babylonslate/core").DynamicMeshUpdate }
   /** Cable records: ID, count, start/end actor slots, two actor-local anchors, world xyz particles. */
   | { type: "cableFrame"; frameId: number; data: Float32Array }
@@ -381,6 +386,7 @@ export type CommandMessage =
       };
       /** Extra renderable components parented to the actor origin mesh. */
       parts?: Array<{
+        painter?: import("@babylonslate/core").Painter2DProperties;
         dynamicMesh?: { meshId: number; update: import("@babylonslate/core").DynamicMeshUpdate };
         /** Nonvisual ancestors between this component and its nearest visual parent, nearest first. */
         parentTransforms?: import("@babylonslate/core").Transform[];
@@ -420,6 +426,8 @@ export type CommandMessage =
         };
         text2d?: {
           text: string;
+          materialGuid?: string | null;
+          materialUv?: "text" | "glyph";
           size: number;
           color: [number, number, number];
           fontAssetGuid: string | null;
@@ -458,6 +466,8 @@ export type CommandMessage =
       };
       text2d?: {
         text: string;
+        materialGuid?: string | null;
+        materialUv?: "text" | "glyph";
         size: number;
         color: [number, number, number];
         fontAssetGuid: string | null;
@@ -702,6 +712,7 @@ export type CommandMessage =
     }
   | { type: "sceneLayerRemove"; layerId: string }
   | { type: "sceneLayerClear" }
+  | { type: "sceneLayerLayout"; layerId: string; entries: Array<import("@babylonslate/core").OverlayLayoutEntry & { slotId: number; transform?: import("@babylonslate/core").SerializedTransform }> }
   | {
       type: "sceneLayerPostProcess";
       layerId: string;

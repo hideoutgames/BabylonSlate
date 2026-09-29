@@ -8,6 +8,7 @@ import {
   createText2DComponent,
   DEFAULT_RENDER_PROJECT_SETTINGS,
   defaultExportPreset,
+  normalizeFocusNavigationSettings,
   isErr,
   isOk,
   type SerializedGraph,
@@ -41,6 +42,20 @@ const playerFiles = new Map([
 ]);
 
 describe("collectAndExportGame", () => {
+  it.each([true, false])("retains project focus navigation in editor exports with preview=%s", async (previewBuild) => {
+    const scene = createDefaultScene();
+    const result = await collectAndExportGame({
+      startupSceneGuid: "scene", assets: [asset({ guid: "scene", type: "Scene", name: "Main" })],
+      plugins: [], projectPluginOverrides: {}, parentOf: () => null,
+      sceneByGuid: () => scene, graphByGuid: () => null,
+      bytesByGuid: () => new TextEncoder().encode(JSON.stringify(scene)),
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, playFrameCap: 60, physicsWorld: "3d", playerFiles, previewBuild,
+      focusNavigation: normalizeFocusNavigationSettings({ enabled: false, navigationInputGuid: "menu-axis", activateInputGuid: "accept", repeatDelay: 0.7, wrap: true }),
+    });
+    if (!isOk(result)) throw new Error(result.error);
+    expect(result.value.manifest.focusNavigation).toMatchObject({ enabled: false, navigationInputGuid: "menu-axis", activateInputGuid: "accept", repeatDelay: 0.7, wrap: true });
+  });
+
   it("resolves plugins with version warnings while still rejecting missing dependencies", () => {
     const plugin = { pluginGuid: "pack", settings: createDefaultPluginSettings({ pluginGuid: "pack", displayName: "Pack" }) };
     plugin.settings.engineVersion = "";

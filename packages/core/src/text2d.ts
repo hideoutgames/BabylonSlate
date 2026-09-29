@@ -38,6 +38,9 @@ export const TEXT2D_COMPONENT_CLASS_IDS = [
 
 export type Text2DProperties = {
   text: string;
+  /** Only Materials with the Text domain are accepted. */
+  materialGuid: string | null;
+  materialUv: "text" | "glyph";
   fontAssetGuid: string | null;
   size: number;
   color: Rgb;
@@ -187,6 +190,8 @@ export function parseText2DProperties(
       : 0;
   return {
     text: typeof source.text === "string" ? source.text : defaultText,
+    materialGuid: typeof source.materialGuid === "string" && source.materialGuid.trim() ? source.materialGuid.trim() : null,
+    materialUv: source.materialUv === "glyph" ? "glyph" : "text",
     fontAssetGuid:
       typeof source.fontAssetGuid === "string" && source.fontAssetGuid.trim()
         ? source.fontAssetGuid.trim()
@@ -211,6 +216,8 @@ function componentProperties(rich: boolean): Record<string, unknown> {
   const parsed = parseText2DProperties({}, { rich });
   return {
     text: parsed.text,
+    materialGuid: parsed.materialGuid,
+    materialUv: parsed.materialUv,
     fontAssetGuid: parsed.fontAssetGuid,
     size: parsed.size,
     color: [...parsed.color],

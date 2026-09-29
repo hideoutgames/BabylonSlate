@@ -623,6 +623,15 @@ describe("scene-referenced Play content", () => {
     expect(materialAssetGuidsFromScene(scene)).toEqual(["terrain", "leaves"]);
   });
 
+  it("loads Text Materials referenced by plain and rich SceneLayer labels", () => {
+    const scene = createDefaultScene();
+    scene.actors = [createActor("labels", "Labels", { components: [
+      { id: "plain", classId: "2DTextComponent", properties: { materialGuid: "plain-fill" } },
+      { id: "rich", classId: "2DRichTextComponent", properties: { materialGuid: "rich-fill" } },
+    ] })];
+    expect(materialAssetGuidsFromScene(scene)).toEqual(["plain-fill", "rich-fill"]);
+  });
+
   it("collects post-process stack guids in authored order, including disabled entries", () => {
     const scene = createDefaultScene();
     scene.settings.postProcessStack = [

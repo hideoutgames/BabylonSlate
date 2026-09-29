@@ -62,6 +62,9 @@ const EVENT_EXPORT_BY_TYPE: Record<string, string> = {
   "flow.event.onClick": "onClick",
   "flow.event.onPressStart": "onPressStart",
   "flow.event.onPressEnd": "onPressEnd",
+  "flow.event.focusEnter": "onFocusEnter",
+  "flow.event.focusLeave": "onFocusLeave",
+  "flow.event.focusActivate": "onFocusActivate",
   "flow.event.textChanged": "onTextChanged",
   "flow.event.audioFinished": "onAudioFinished",
   "bt.event.activate": "onActivate",
@@ -145,6 +148,11 @@ const sceneSubsystemEventNodes: NodeDefinition[] = [
 ];
 
 export const flowNodes: NodeDefinition[] = [
+  ...([ ["focusEnter", "Focus Enter"], ["focusLeave", "Focus Leave"], ["focusActivate", "Focus Activate"] ] as const).map(([id, label]): NodeDefinition => ({
+    id: `flow.event.${id}`, title: `Event On ${label}`, category: "flow", pure: true,
+    pins: () => [pin("execOut", "then", "out", EXEC)],
+    codegen: () => {},
+  })),
   {
     id: "flow.event.beginPlay",
     title: "Event Begin Play",

@@ -264,6 +264,8 @@ export class InputResolver {
               : "1d"
             : "button",
           value,
+          ...(axis && held && typeof value !== "boolean" ? { activeValue: value }
+            : accumulated?.activeValue !== undefined ? { activeValue: accumulated.activeValue } : {}),
           held,
           started: !!accumulated?.started || (held && !previous?.held),
           released: !!accumulated?.released || (!held && !!previous?.held),

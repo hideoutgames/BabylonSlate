@@ -116,7 +116,7 @@ import {
 } from "../lib/graph-inspector";
 import { defaultValueForMember, keepsTypeClassId, pinDefaultPropertyKey } from "@babylonslate/scripting";
 import { canRenameCustomEvent, customEventRenameError, patchClassMember, renameCustomEvent } from "../lib/class-members";
-import { classDocumentShowsPrefab, classIdFromClassAsset, classParentLookup, filterInspectorPinPickerAssets } from "../lib/content-browser-helpers";
+import { classDocumentShowsPrefab, classIdFromClassAsset, classParentLookup, filterInspectorPinPickerAssets, materialDomainsFromAssets } from "../lib/content-browser-helpers";
 import { physicsWorldFromOpenDocuments, prefabComponentLabel } from "./add-component-catalog";
 import {
   commitLogicGraph,
@@ -837,6 +837,7 @@ function PrefabComponentDetails({
 }) {
   const { assetRegistry, openDocuments } = useDocuments();
   const [assetPick, setAssetPick] = useState<AssetPickRequest | null>(null);
+  const materialDomains = materialDomainsFromAssets(assetRegistry?.list() ?? [], openDocuments);
   return (
     <div
       className="flex flex-col gap-3 p-3"
@@ -884,6 +885,7 @@ function PrefabComponentDetails({
             physicsWorld,
             onPickAsset: setAssetPick,
             actorComponents: (targetId) => targetId === PREFAB_ROOT_ID ? components : [],
+            focusTargets: components.filter((entry) => entry.classId === "2DButtonComponent" || entry.classId === "2DFocusTargetComponent").map((entry, index) => ({ value: entry.id, label: `${entry.classId === "2DButtonComponent" ? "2D Button" : "2D Focus Target"} ${index + 1}` })),
           })}
         />
         {component.classId === "2DPanelComponent" ? (
@@ -941,7 +943,7 @@ function PrefabComponentDetails({
         onOpenChange={(open) => {
           if (!open) setAssetPick(null);
         }}
-        assets={assetPick?.property === "materialGuid" && component.classId === "MeshComponent" && component.properties.assetGuid
+        assets={assetPick?.materialDomain === "text" ? pickerAssets.filter((asset) => materialDomains[asset.guid] === "text") : assetPick?.property === "materialGuid" && component.classId === "MeshComponent" && component.properties.assetGuid
           ? [MODEL_MATERIALS_PICKER_ENTRY, ...pickerAssets]
           : pickerAssets}
         allowedTypes={assetPick?.allowedTypes}
@@ -949,6 +951,7 @@ function PrefabComponentDetails({
         allowNone
         onPick={(guid) => {
           if (!assetPick) return;
+          if (guid && assetPick.materialDomain === "text" && materialDomains[guid] !== "text") return;
           onUpdate(assetPick.property, guid);
           if (
             assetPick.property === "fontAssetGuid" &&

@@ -602,6 +602,8 @@ export function materialAssetGuidsFromScene(
     ...(scene?.actors.flatMap((actor) => actor.components.flatMap((component) => component.classId === "FoliageComponent" ? parseFoliageProperties(component.properties).batches.flatMap((batch) => batch.materialGuid ? [batch.materialGuid] : []) : [])) ?? []),
     ...componentGuidsFromScene(scene, "2DMaterialComponent", ["materialGuid"]),
     ...componentGuidsFromScene(scene, "2DPanelComponent", ["materialGuid"]),
+    ...componentGuidsFromScene(scene, "2DTextComponent", ["materialGuid"]),
+    ...componentGuidsFromScene(scene, "2DRichTextComponent", ["materialGuid"]),
   ]) {
     if (seen.has(guid)) continue;
     seen.add(guid);

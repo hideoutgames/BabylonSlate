@@ -12,6 +12,12 @@ function key(tick: number, code: string, phase: "down" | "up"): RawInputEvent {
 }
 
 describe("InputResolver event transitions", () => {
+  it("preserves a released axis tap direction for navigation without keeping it active next tick", () => {
+    const resolver = new InputResolver({ actions: [], axes: [{ id: "nav", name: "Menu", kind: "2d", bindings: [{ device: "key", code: "ArrowLeft", digitalValue: -1 }] }] });
+    const state = resolver.resolve([key(0, "ArrowLeft", "down"), key(0, "ArrowLeft", "up")]).inputs.nav;
+    expect(state).toMatchObject({ value: { x: 0, y: 0 }, activeValue: { x: -1, y: 0 }, held: false, started: true, released: true });
+    expect(resolver.resolve([]).inputs.nav.activeValue).toBeUndefined();
+  });
   it("reports every physical press once, including taps and gamepad threshold crossings", () => {
     const resolver = new InputResolver({ actions: [], axes: [] });
     const pad = (buttons: number[], axes: number[]): RawInputEvent => ({ kind: "gamepad", tick: 0, gamepadIndex: 1, buttons, axes });

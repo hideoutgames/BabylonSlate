@@ -99,6 +99,7 @@ export type CollectExportGameParams = {
   infiniteLoopDetection?: boolean;
   loopCount?: number;
   inputMappings?: import("@babylonslate/core").ProjectInputSettings;
+  focusNavigation?: import("@babylonslate/core").FocusNavigationSettings;
   playerFiles: Map<string, Uint8Array>;
   extraFiles?: Map<string, Uint8Array>;
   /** Preview Build keeps Development Only nodes. */
@@ -460,6 +461,7 @@ export async function collectAndExportGame(
     loopCount: params.loopCount,
     inputAssets,
     inputMappings: params.inputMappings,
+    focusNavigation: params.focusNavigation,
     scripts,
     assets: exportAssets,
     playerFiles: params.playerFiles,

@@ -1088,6 +1088,8 @@ describe("collectExportReachability", () => {
         asset({ guid: "tex-1", type: "Texture", name: "BannerTex" }),
         asset({ guid: "tex-panel", type: "Texture", name: "PanelTex" }),
         asset({ guid: "mat-panel", type: "Material", name: "PanelMat" }),
+        asset({ guid: "mat-text", type: "Material", name: "TextMat" }),
+        asset({ guid: "tex-text", type: "Texture", name: "TextFill" }),
         asset({ guid: "tex-inline", type: "Texture", name: "Inline" }),
         asset({ guid: "font-1", type: "Font", name: "Display" }),
         asset({ guid: "unused-layer", type: "SceneLayer", name: "Unused" }),
@@ -1097,6 +1099,7 @@ describe("collectExportReachability", () => {
       sceneByGuid: () => scene,
       graphByGuid: (guid) => (guid === "class-game" ? graph : null),
       payloadByGuid: (guid) => {
+        if (guid === "mat-text") return { domain: "text", nodes: [{ type: "texture.sample", properties: { textureGuid: "tex-text" } }] };
         if (guid === "hud") {
           return {
             name: "HUD",
@@ -1124,6 +1127,7 @@ describe("collectExportReachability", () => {
                     properties: {
                       text: "[img=tex-inline]Hi",
                       fontAssetGuid: "font-1",
+                      materialGuid: "mat-text",
                     },
                   },
                 ],
@@ -1145,6 +1149,8 @@ describe("collectExportReachability", () => {
         "tex-1",
         "tex-panel",
         "mat-panel",
+        "mat-text",
+        "tex-text",
         "tex-inline",
         "font-1",
       ]),

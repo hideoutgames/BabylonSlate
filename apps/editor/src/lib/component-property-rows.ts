@@ -1,5 +1,7 @@
 import { normalizeWaterBody, normalizeWaterBuoyancy, normalizeWaterRemoval, WATER_REMOVAL_SHAPES, waterKindForClass } from "@babylonslate/core";
 import { humanizePropertyLabel } from "@babylonslate/editor-kit";
+import { isOverlayLayoutClass } from "@babylonslate/core";
+import { overlayLayoutPropertyRows } from "./overlay-layout-property-rows";
 import type { PropertyRow } from "@babylonslate/editor-kit";
 import {
   assetRowIdentity,
@@ -65,6 +67,8 @@ import { classParentLookup, classIdFromClassAsset } from "./content-browser-help
 import { physicsConstraintPropertyRows } from "./physics-constraint-property-rows";
 import { cablePropertyRows } from "./cable-property-rows";
 import { pathPropertyRows } from "./path-property-rows";
+import { focusPropertyRows } from "./focus-property-rows";
+import { painterPropertyRows } from "./painter-property-rows";
 
 const MESH_KINDS = ["box", "sphere", "cylinder", "plane", "ground"];
 const MOTION_TYPES = ["static", "kinematic", "dynamic"] as const;
@@ -77,6 +81,7 @@ export type AssetPickRequest = {
   property: string;
   allowedTypes: string[];
   title?: string;
+  materialDomain?: "text";
 };
 
 export type ComponentPropertyContext = {
@@ -93,6 +98,7 @@ export type ComponentPropertyContext = {
   actorLabel?: (actorId: string) => string | undefined;
   actorComponents?: (actorId: string) => readonly SerializedComponent[];
   onPickActor?: (componentId: string) => void;
+  focusTargets?: readonly { value: string; label: string }[];
 };
 
 function rowId(actorId: string, componentId: string, key: string): string {
@@ -483,6 +489,7 @@ export function componentPropertyRows(
   update: (property: string, value: unknown) => void,
   context: ComponentPropertyContext,
 ): PropertyRow[] {
+  if (isOverlayLayoutClass(component.classId)) return overlayLayoutPropertyRows(actorId, component, update);
   if (component.classId === "SplineComponent") {
     const spline = parseSplineProperties(component.properties);
     return [
@@ -1673,6 +1680,7 @@ export function componentPropertyRows(
         ...genericRows(actorId, component, update, new Set(["anchor"])),
       ];
     }
+    case "2DPainterComponent": return painterPropertyRows(actorId, component, update);
     case "2DTextComponent":
     case "2DRichTextComponent": {
       const parsed = parseText2DProperties(component.properties, {
@@ -1722,6 +1730,21 @@ export function componentPropertyRows(
           description:
             "Bitmap uses the source FontFace. MSDF needs a JSON + PNG atlas on this Font.",
           onChange: coerceRendererOnFontChange,
+        },
+        {
+          ...assetRow(actorId, component, "materialGuid", "Text Material", ["Material"], update, context, "Pick Text Material"),
+          kind: "asset",
+          description: "A Text-domain Material multiplies the glyph and rich-text colors while preserving letter coverage.",
+          onPick: () => context.onPickAsset({ componentId: component.id, property: "materialGuid", allowedTypes: ["Material"], materialDomain: "text", title: "Pick Text Material" }),
+        } as Extract<PropertyRow, { kind: "asset" }>,
+        {
+          kind: "enum",
+          id: rowId(actorId, component.id, "materialUv"),
+          label: "Material UV",
+          value: parsed.materialUv,
+          defaultValue: "text",
+          options: [{ value: "text", label: "Text Box" }, { value: "glyph", label: "Each Glyph" }],
+          onChange: (next) => update("materialUv", next),
         },
         {
           kind: "enum",
@@ -1882,6 +1905,8 @@ export function componentPropertyRows(
           update,
           new Set([
             "text",
+            "materialGuid",
+            "materialUv",
             "fontAssetGuid",
             "renderer",
             "size",
@@ -1900,6 +1925,8 @@ export function componentPropertyRows(
         ),
       ];
     }
+    case "2DFocusTargetComponent":
+      return focusPropertyRows(actorId, component, update, context.focusTargets);
     case "2DButtonComponent":
     case "2DTextureComponent":
     case "2DMaterialComponent": {
@@ -1931,6 +1958,7 @@ export function componentPropertyRows(
         : [];
       return [
         ...assetRows,
+        ...(component.classId === "2DButtonComponent" ? focusPropertyRows(actorId, component, update, context.focusTargets) : []),
         {
           kind: "enum",
           id: rowId(actorId, component.id, "hitTest"),
@@ -1949,6 +1977,7 @@ export function componentPropertyRows(
           new Set([
             "hitTest",
             ...(assetProperty ? [assetProperty] : []),
+            ...(component.classId === "2DButtonComponent" ? ["focusEnabled", "focusInitial", "focusUp", "focusDown", "focusLeft", "focusRight", "focused"] : []),
           ]),
         ),
       ];

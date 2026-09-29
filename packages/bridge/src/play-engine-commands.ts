@@ -3,6 +3,7 @@ import type { CommandMessage } from "./channels";
 /** Worker/runtime commands the Play/player Babylon handle must apply. */
 export const PLAY_ENGINE_COMMAND_TYPES = [
   "assignMesh",
+  "setPainter2D",
   "dynamicMeshUpdate",
   "setAreaLights",
   "setActorOutlines",
@@ -50,6 +51,7 @@ export const PLAY_ENGINE_COMMAND_TYPES = [
   "sceneLayerCreate",
   "sceneLayerRemove",
   "sceneLayerClear",
+  "sceneLayerLayout",
   "sceneLayerPostProcess",
 ] as const satisfies readonly CommandMessage["type"][];
 

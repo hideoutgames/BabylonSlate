@@ -173,10 +173,18 @@ describe("ENGINE_PLACE_ACTORS", () => {
     expect(
       overlay.filter((entry) => entry.category === "Overlay").map((entry) => entry.id),
     ).toEqual([
+      "2d-scrollbox",
+      "2d-verticalbox",
+      "2d-horizontalbox",
+      "2d-overlaybox",
+      "2d-padding",
+      "2d-spacer",
+      "2d-painter",
       "2d-anchor",
       "2d-texture",
       "2d-material",
       "2d-button",
+      "2d-focus-target",
       "2d-panel",
       "2d-text",
       "2d-rich-text",
@@ -197,15 +205,24 @@ describe("ENGINE_PLACE_ACTORS", () => {
   it("stamps overlay 2D Place Actors as SceneLayerActors with the matching component", () => {
     const overlay = placeActorsForHost({ overlay: true });
     const expected: Array<[string, string]> = [
+      ["2d-scrollbox", "2DScrollBoxComponent"],
+      ["2d-verticalbox", "2DVerticalBoxComponent"],
+      ["2d-horizontalbox", "2DHorizontalBoxComponent"],
+      ["2d-overlaybox", "2DOverlayBoxComponent"],
+      ["2d-padding", "2DPaddingComponent"],
+      ["2d-spacer", "2DSpacerComponent"],
+      ["2d-painter", "2DPainterComponent"],
       ["2d-anchor", "2DAnchorComponent"],
       ["2d-texture", "2DTextureComponent"],
       ["2d-material", "2DMaterialComponent"],
       ["2d-button", "2DButtonComponent"],
+      ["2d-focus-target", "2DFocusTargetComponent"],
       ["2d-panel", "2DPanelComponent"],
       ["2d-text", "2DTextComponent"],
       ["2d-rich-text", "2DRichTextComponent"],
     ];
     for (const [id, classId] of expected) {
+      expect(placeActorsForHost({ overlay: false }).some((entry) => entry.id === id)).toBe(false);
       const item = overlay.find((entry) => entry.id === id);
       expect(item?.title).toBeTruthy();
       const actor = spawnPlacedActor(
@@ -503,6 +520,27 @@ describe("spawnPlacedActor placement", () => {
 });
 
 describe("duplicateSceneActor", () => {
+  it("keeps copied focus links inside the selected controls while retaining external and prefab-relative links", () => {
+    const owner = createActor("menu", "Menu", { classId: "SceneLayerActor", components: [
+      { id: "button", classId: "2DButtonComponent", properties: { focusUp: "target", focusDown: "target-focus", focusLeft: "outside-focus", focusRight: "local-focus" } },
+      { id: "local-focus", sourceId: "prefab-local", classId: "2DFocusTargetComponent", properties: { focusLeft: "menu", focusRight: "prefab-local", focusDown: null } },
+    ] });
+    const target = createActor("target", "Target", { classId: "SceneLayerActor", components: [
+      { id: "target-focus", classId: "2DFocusTargetComponent", properties: { focusUp: "button", focusDown: "outside" } },
+    ] });
+    const outside = createActor("outside", "Outside", { components: [{ id: "outside-focus", classId: "2DButtonComponent", properties: {} }] });
+    const scene = { ...createDefaultScene(), actors: [owner, target, outside] };
+    const before = structuredClone(scene);
+    const single = duplicateSceneActor(scene, owner);
+    expect(single.components[0]!.properties).toEqual({ focusUp: "target", focusDown: "target-focus", focusLeft: "outside-focus", focusRight: single.components[1]!.id });
+    expect(single.components[1]!.properties).toEqual({ focusLeft: single.id, focusRight: "prefab-local", focusDown: null });
+    const [ownerCopy, targetCopy] = duplicateSceneActors(scene, [owner.id, target.id]);
+    expect(ownerCopy!.components[0]!.properties).toEqual({ focusUp: targetCopy!.id, focusDown: targetCopy!.components[0]!.id, focusLeft: "outside-focus", focusRight: ownerCopy!.components[1]!.id });
+    expect(ownerCopy!.components[1]!.properties).toEqual({ focusLeft: ownerCopy!.id, focusRight: "prefab-local", focusDown: null });
+    expect(targetCopy!.components[0]!.properties).toEqual({ focusUp: ownerCopy!.components[0]!.id, focusDown: "outside" });
+    expect(scene).toEqual(before);
+  });
+
   it("remaps selected capture actors while preserving external actor references", () => {
     const scene = createDefaultScene();
     const capture = createActor("capture", "Capture", { components: [{ id: "capture-component", classId: "RenderTargetCaptureComponent", properties: { captureOnlyActors: true, actorIds: ["subject", "external"] } }] });

@@ -170,6 +170,9 @@ export function playLoadControl(options: {
   project?: { name: string; version: string };
   inputAssets?: import("@babylonslate/core").InputAssetDefinition[];
   inputMappings?: ProjectInputSettings;
+  focusNavigation?: import("@babylonslate/core").FocusNavigationSettings;
+  pixelsPerUnit?: number;
+  texturePixelSizes?: Record<string, { width: number; height: number }>;
   sceneAssetGuid?: string;
   scene?: SerializedScene;
   seed?: number;
@@ -206,6 +209,9 @@ export function playLoadControl(options: {
     ...(options.project ? { project: options.project } : {}),
     inputAssets: options.inputAssets,
     inputMappings: options.inputMappings,
+    focusNavigation: options.focusNavigation,
+    pixelsPerUnit: options.pixelsPerUnit,
+    texturePixelSizes: options.texturePixelSizes,
     sceneAssetGuid: options.sceneAssetGuid ?? "play-scene",
     scene: options.scene,
     seed: options.seed,

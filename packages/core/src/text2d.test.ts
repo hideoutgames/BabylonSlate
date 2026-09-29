@@ -26,6 +26,8 @@ describe("2DTextComponent helpers", () => {
     expect(component.properties).toEqual({
       text: "Text",
       fontAssetGuid: null,
+      materialGuid: null,
+      materialUv: "text",
       size: DEFAULT_TEXT2D_SIZE,
       color: [1, 1, 1],
       renderer: "bitmap",
@@ -44,7 +46,7 @@ describe("2DTextComponent helpers", () => {
     expect(TEXT2D_ALIGNMENTS).toEqual(["left", "center", "right"]);
     expect(TEXT2D_VERTICAL_ALIGNMENTS).toEqual(["top", "center", "bottom"]);
     expect(
-      parseText2DProperties({ size: -1, renderer: "nope" }),
+      parseText2DProperties({ size: -1, renderer: "nope", materialGuid: "  ", materialUv: "invalid" }),
     ).toMatchObject({
       size: 32,
       renderer: "bitmap",
@@ -52,7 +54,10 @@ describe("2DTextComponent helpers", () => {
       wrapWidth: 0,
       wrapHeight: 0,
       verticalAlignment: "center",
+      materialGuid: null,
+      materialUv: "text",
     });
+    expect(parseText2DProperties({ materialGuid: " text-material ", materialUv: "glyph" })).toMatchObject({ materialGuid: "text-material", materialUv: "glyph" });
   });
 
   it("seeds 2D Rich Text with the markup example", () => {

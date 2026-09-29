@@ -1319,6 +1319,10 @@ describe("applyPrefabPropertyDefaults", () => {
       kind: "asset",
       value: "font-1",
     });
+    const material = text.rows.find((row) => row.id.endsWith("-materialGuid"));
+    expect(material?.kind).toBe("asset");
+    if (material?.kind === "asset") material.onPick?.();
+    expect(text.onPickAsset).toHaveBeenCalledWith(expect.objectContaining({ property: "materialGuid", materialDomain: "text" }));
     const renderer = text.rows.find((row) => row.id.endsWith("-renderer"));
     expect(renderer).toMatchObject({
       kind: "enum",

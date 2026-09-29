@@ -531,6 +531,7 @@ export function startPlaySession(options: {
   loopCount?: number;
   inputAssets?: import("@babylonslate/core").InputAssetDefinition[];
   inputMappings?: import("@babylonslate/core").ProjectInputSettings;
+  focusNavigation?: import("@babylonslate/core").FocusNavigationSettings;
   /** Called when a session-fatal diagnostic (infinite loop) arrives. */
   onFatalDiagnostic?: () => void;
   /** When true, pause after Play boot so `boot.play`'s resume cannot undo it. */
@@ -644,6 +645,11 @@ export function startPlaySession(options: {
         diagnostic.message,
         diagnostic.severity === "error" ? "error" : "warning",
       );
+    },
+    onSceneLayerScroll: (event) => {
+      const control = { type: "sceneLayerScroll" as const, ...event };
+      if (worker) worker.postControl(control);
+      else runtime?.applySceneLayerScroll(event.layerId, event.actorId, event.componentId, event.deltaX, event.deltaY);
     },
     onSceneLayerPointer: (event) => {
       const control = { type: "sceneLayerPointer" as const, ...event };
@@ -911,6 +917,9 @@ export function startPlaySession(options: {
     loopCount: options.loopCount,
     inputAssets: options.inputAssets,
     inputMappings: options.inputMappings,
+    focusNavigation: options.focusNavigation,
+    pixelsPerUnit: options.pixelsPerUnit,
+    texturePixelSizes: Object.fromEntries(options.texturePixelSizes ?? []),
     audioAssetGuids: [...(options.audioLibrary?.audio.keys() ?? [])],
     materialParameterCatalog: buildMaterialParameterCatalog(options.materialDocuments ?? new Map(), options.materialFunctions),
     materialTextureAssetGuids: materialParameterTextureAssetGuids(options.textureBytes, options.renderTargetTextures),

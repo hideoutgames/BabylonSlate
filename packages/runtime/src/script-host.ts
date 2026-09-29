@@ -172,6 +172,8 @@ export interface ScriptHostServices {
   ): SceneLayer | null;
   removeSceneLayer?(layerGuid: string): void;
   clearSceneLayers?(): void;
+  setFocusTarget?(target: unknown): boolean;
+  clearFocusTarget?(target: unknown): void;
   registerSceneLayerPostProcess?(
     layerGuid: string,
     materialGuid: string,
@@ -212,6 +214,7 @@ export interface ScriptHostServices {
   getRenderTargetTextureTarget?(guid: string): string | null;
   captureRenderTarget?(target: Actor): void;
   updateIllumination?(target: unknown): void;
+  paint2D?(component: ActorComponent, operation: string, args: Record<string, unknown>): boolean;
   refreshComponent?(component: ActorComponent, propertyName?: string): void;
   dynamicMeshFunction?(component: ActorComponent, name: string, args: Record<string, unknown>): Record<string, unknown>;
   /** Apply live world-scene gravity from a Scene Gravity Set. */
@@ -508,6 +511,8 @@ export interface ScriptContext {
   createSceneLayer(assetGuid: string, zOrder?: number): SceneLayer | null;
   removeSceneLayer(layer: BObject | string | null | undefined): void;
   clearSceneLayers(): void;
+  setFocusTarget(target: unknown): boolean;
+  clearFocusTarget(target: unknown): void;
   registerSceneLayerPostProcess(
     layer: BObject | string | null | undefined,
     materialGuid: string,
@@ -1674,6 +1679,8 @@ export class ScriptHost {
       clearSceneLayers: () => {
         services.clearSceneLayers?.();
       },
+      setFocusTarget: (target) => services.setFocusTarget?.(target) ?? false,
+      clearFocusTarget: (target) => { services.clearFocusTarget?.(target); },
       registerSceneLayerPostProcess: (layer, materialGuid) => {
         const guid = sceneLayerGuidOf(layer);
         if (guid) {
@@ -1821,6 +1828,12 @@ export class ScriptHost {
   ): Record<string, unknown> {
     const component = asActorComponent(target);
     if (!component || !name) return {};
+    if (name === "setFocusTarget") return { success: this.canInvokeOwner(component) && this.services.setFocusTarget?.(component) === true };
+    if (name === "clearFocusTarget") {
+      if (this.canInvokeOwner(component)) this.services.clearFocusTarget?.(component);
+      return {};
+    }
+    if (name.startsWith("painter")) return { success: this.canInvokeOwner(component) && this.services.paint2D?.(component, name, args) === true };
     if (component.classId === "DynamicRuntimeMeshComponent") {
       if (!this.canInvokeOwner(component)) return { success: false };
       return this.services.dynamicMeshFunction?.(component, name, args) ?? { success: false };

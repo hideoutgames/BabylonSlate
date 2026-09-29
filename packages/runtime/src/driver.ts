@@ -1,5 +1,8 @@
 import { overlayAnchorBindings } from "./overlay-anchor-layout";
 import { RuntimeMaterialParameters } from "./runtime-material-parameters";
+import { SceneLayerFocusNavigation } from "./scene-layer-focus";
+import { focusLayoutEntry, revealFocusedElement } from "./scene-layer-focus-layout";
+import type { FocusNavigationSettings } from "@babylonslate/core";
 import { CableWorldSync } from "./cable-sync";
 import { DynamicRuntimeMeshSync } from "./dynamic-runtime-mesh";
 import { captureComponent, captureLocalTransform, captureProperties } from "./render-targets";
@@ -134,6 +137,7 @@ import {
   type RuntimeDiagnostic,
 } from "./diagnostics";
 import { mapStackToAnchor, type AnchorEntry } from "./stack-map";
+import { Painter2DRuntime } from "./painter2d-runtime";
 import {
   animGraphScriptClassId,
   animRuleScriptClassId,
@@ -163,6 +167,8 @@ import {
   formatInspectActor,
 } from "./console-inspect";
 import { actorParentGuid, actorWorldTransform, actorWorldTransforms } from "./actor-world-transform";
+import { SceneLayerLayout } from "./scene-layer-layout";
+import { isOverlayLayoutClass, overlayLayoutKey } from "@babylonslate/core";
 import { composeParentChildTransform } from "./actor-world-transform";
 import { blackboardTargetPosition, snapshotBlackboard } from "./bt-blackboard";
 import type { ModelPayload, SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
@@ -192,6 +198,7 @@ export interface RuntimeDriverOptions {
   /** Project Settings input mappings; defaults when omitted. */
   inputAssets?: InputAssetDefinition[];
   inputMappings?: InputMappings;
+  focusNavigation?: Partial<FocusNavigationSettings>;
   /** Demo actors exist so an empty project still shows motion in Preview. */
   seedDemoActors?: boolean;
   /** Scene physics world kind (defaults to 3d). */
@@ -244,6 +251,7 @@ export interface RuntimeDriverOptions {
     >
   >;
   pixelsPerUnit?: number;
+  texturePixelSizes?: Readonly<Record<string, { width: number; height: number }>>;
   /**
    * Hold OnSceneFinishLoading until `notifySceneModelsReady`. Play overlay and
    * the exported player set this; in-process tests leave it false.
@@ -337,6 +345,7 @@ export interface RuntimeDriver {
   applySceneLayerPointer(
     message: Extract<ControlMessage, { type: "sceneLayerPointer" }>,
   ): void;
+  applySceneLayerScroll(layerId: string, actorId: string, componentId: string, deltaX: number, deltaY: number): void;
   applyAudioVoiceEnded(
     message: Extract<ControlMessage, { type: "audioVoiceEnded" }>,
   ): void;
@@ -466,6 +475,8 @@ class InProcessRuntime implements RuntimeDriver {
   private snapshots: SeqLockSnapshotPair;
   private readonly input = new InputRingBuffer(512);
   private readonly resolver: InputResolver;
+  private readonly focusNavigation: SceneLayerFocusNavigation;
+  private readonly overlayLayout = new SceneLayerLayout();
   private resolvedInput: ResolvedInputTick = {
     inputs: {},
     actions: {},
@@ -482,6 +493,7 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly logs = new LogRingBuffer(512);
   private readonly diagnostics = new SessionDiagnosticAggregator();
   private readonly anchors = new Map<string, readonly AnchorEntry[]>();
+  private readonly painters = new Painter2DRuntime();
   private readonly onCommand?: (command: CommandMessage) => void;
   private readonly maxCatchUp = 4;
   private readonly dt: number;
@@ -614,6 +626,7 @@ class InProcessRuntime implements RuntimeDriver {
   >();
   private pendingAnimJumpByComponent = new Map<string, string>();
   private pixelsPerUnit = 100;
+  private readonly texturePixelSizes: Readonly<Record<string, { width: number; height: number }>>;
   private readonly delayWaiters: Array<{ remaining: number; resolve: () => void; owner?: BObject | null }> =
     [];
   private nav: NavigationBackend | null = null;
@@ -735,6 +748,7 @@ class InProcessRuntime implements RuntimeDriver {
         this.blackboards.set(guid, document);
       }
     }
+    this.texturePixelSizes = options.texturePixelSizes ?? {};
     if (options.pixelsPerUnit && options.pixelsPerUnit > 0) {
       this.pixelsPerUnit = options.pixelsPerUnit;
     }
@@ -889,6 +903,18 @@ class InProcessRuntime implements RuntimeDriver {
       deferNative: !this.preferSoftwarePhysics,
       emit: (command) => this.emit(command),
       error: (error) => { this.reportError(error); },
+    });
+    this.focusNavigation = new SceneLayerFocusNavigation(this.world, options.focusNavigation, {
+      canRun: (actor) => this.canTickActor(actor),
+      event: (actor, component, event) => this.scriptHost.invokeEvent(actor.classId, event, actor, {}, component.guid),
+      bounds: (actor, component) => {
+        const entry = focusLayoutEntry(this.overlayLayout, this.world, actor, component);
+        const visual = entry?.componentId ? this.world.findActor(entry.actorId)?.components.find((target) => target.guid === entry.componentId) : undefined;
+        if (visual?.getVariable("visible") === false || visual?.getVariable("enabled") === false) return null;
+        return entry?.rect;
+      },
+      onFocusChange: (actor, component) => revealFocusedElement(this.overlayLayout, this.world, actor, component,
+        (layerId, actorId, componentId, x, y) => this.applySceneLayerScroll(layerId, actorId, componentId, x, y)),
     });
     const resolved = () => this.resolvedInput;
     const connections = this.connectionBox;
@@ -1161,6 +1187,8 @@ class InProcessRuntime implements RuntimeDriver {
       clearSceneLayers: () => {
         this.clearSceneLayers();
       },
+      setFocusTarget: (target) => this.focusNavigation.setFocus(target),
+      clearFocusTarget: (target) => this.focusNavigation.clearFocus(target),
       registerSceneLayerPostProcess: (layerGuid, materialGuid) => {
         this.registerSceneLayerPostProcess(layerGuid, materialGuid);
       },
@@ -1201,6 +1229,11 @@ class InProcessRuntime implements RuntimeDriver {
       updateIllumination: (target) => {
         this.reemitIllumination(target);
       },
+      paint2D: (component, operation, args) => {
+        const changed = this.painters.execute(component, operation, args);
+        if (!this.processingTick) this.flushPainters();
+        return changed;
+      },
       dynamicMeshFunction: (component, name, args) => this.dynamicMeshes.invoke(component, name, args),
       refreshComponent: (component, propertyName) => {
         const owner = component.owner;
@@ -1208,6 +1241,7 @@ class InProcessRuntime implements RuntimeDriver {
         if (owner.sceneLayerId && component.classId === "2DAnchorComponent") {
           for (const _ of this.applyOverlayAnchors(this.world.getActors())) void _;
         }
+        if (owner.sceneLayerId) this.applyOverlayLayouts();
         const slotId = this.slotByGuid.get(owner.guid);
         if (component.classId === "DynamicRuntimeMeshComponent" &&
           (propertyName === "materialGuid" || propertyName === "enableCollision" || propertyName === "layer" || propertyName === "mask")) {
@@ -1910,10 +1944,37 @@ class InProcessRuntime implements RuntimeDriver {
     }
   }
 
+  private applyOverlayLayouts(): void {
+    const actors = this.world.getActors();
+    for (const layer of this.world.getSceneLayers()) {
+      const result = this.overlayLayout.update(layer.guid, actors, this.pixelsPerUnit, this.texturePixelSizes);
+      if (!result) continue;
+      const transforms = new Map(result.actors.flatMap(actor => actor.components.map(component => [overlayLayoutKey(actor.id, component.id), component.transform] as const)));
+      this.emit({ type: "sceneLayerLayout", layerId: layer.guid, entries: [...result.entries].flatMap(([key, entry]) => {
+        const slotId = this.slotByGuid.get(entry.actorId);
+        return slotId === undefined ? [] : [{ ...entry, slotId, transform: transforms.get(key) }];
+      }) });
+    }
+  }
+
+  applySceneLayerScroll(layerId: string, actorId: string, componentId: string, deltaX: number, deltaY: number): void {
+    const actor = this.world.findActor(actorId);
+    if (!actor || actor.sceneLayerId !== layerId || !this.canTickActor(actor)) return;
+    const component = actor.components.find(c => c.guid === componentId && c.classId === "2DScrollBoxComponent" && !c.destroyed);
+    const state = this.overlayLayout.entries(layerId).get(overlayLayoutKey(actorId, componentId))?.scroll;
+    if (!component || !state) return;
+    component.setVariable("scrollX", Math.max(0, Math.min(state.maxX, state.x + (Number.isFinite(deltaX) ? deltaX : 0))));
+    component.setVariable("scrollY", Math.max(0, Math.min(state.maxY, state.y + (Number.isFinite(deltaY) ? deltaY : 0))));
+    this.applyOverlayLayouts();
+    this.publishSnapshot();
+  }
+
   removeSceneLayer(layerGuid: string): void {
     const layer = this.world.findSceneLayer(layerGuid);
     if (!layer) return;
     this.layerLoads.delete(layerGuid);
+    this.overlayLayout.remove(layerGuid);
+    this.focusNavigation.refresh();
     const work = this.independentLayerWork.get(layerGuid);
     if (work?.layer === layer) {
       this.independentLayerWork.delete(layerGuid);
@@ -1998,6 +2059,8 @@ class InProcessRuntime implements RuntimeDriver {
       typeof message.componentId === "string" ? message.componentId.trim() : "";
     const resolved = resolveOverlayPointerButton(this.world, actor, requested);
     if (!resolved) return;
+    if (resolved.button?.getVariable("enabled") === false) return;
+    if (message.event === "onPressStart" && resolved.button) this.focusNavigation.setFocus(resolved.button);
     this.scriptHost.invokeEvent(
       resolved.owner.classId,
       message.event,
@@ -2087,6 +2150,13 @@ class InProcessRuntime implements RuntimeDriver {
       }
       yield;
     }
+  }
+
+  private flushPainters(): void {
+    this.painters.flush((component, painter) => {
+      const slotId = component.owner ? this.slotByGuid.get(component.owner.guid) : undefined;
+      if (slotId !== undefined) this.emit({ type: "setPainter2D", slotId, componentId: component.guid, painter });
+    });
   }
 
   private applyRelativeOverlayAnchor(actor: Actor, anchorComp: ActorComponent): void {
@@ -4351,6 +4421,7 @@ class InProcessRuntime implements RuntimeDriver {
               ),
             ),
             ...(component.classId === "CableComponent" ? { cable: this.cables.assign(component) } : {}),
+            ...(component.classId === "2DPainterComponent" ? { painter: this.painters.payload(component) } : {}),
             ...(component.classId === "DynamicRuntimeMeshComponent" ? { dynamicMesh: this.dynamicMeshes.assign(component) } : {}),
             ...(component.classId === "DynamicRuntimeMeshComponent" ? { parentTransforms: dynamicMeshParentTransforms(component, componentsByGuid, renderableIds) } : {}),
           }))
@@ -4737,6 +4808,7 @@ class InProcessRuntime implements RuntimeDriver {
     multipart: boolean,
   ): void {
     for (const component of renderables) {
+      if (component.classId === "2DTextComponent" || component.classId === "2DRichTextComponent") continue;
       const value = component.getVariable("materialGuid");
       const guid = typeof value === "string" && value.trim() ? value : null;
       if (guid) this.componentsWithMaterialAssignment.add(component);
@@ -5249,6 +5321,8 @@ class InProcessRuntime implements RuntimeDriver {
   stop(): void {
     if (this.stopped) return;
     this.stopped = true;
+    this.focusNavigation.clearFocus();
+    this.overlayLayout.clear();
     this.lifecycleId++;
     this.sceneChangeId++;
     this.running = false;
@@ -5359,7 +5433,9 @@ class InProcessRuntime implements RuntimeDriver {
     this.phaseMark = nowMs();
 
     this.loopGuard.reset();
+    this.painters.beginFrame(this.world.getActors(), (actor) => this.canTickActor(actor));
     try {
+      this.focusNavigation.tick(pending, this.resolvedInput, simDt);
       this.world.tick();
       if (this.canTickScene()) {
         for (const stream of this.sceneStreams.values()) {
@@ -5391,6 +5467,7 @@ class InProcessRuntime implements RuntimeDriver {
     this._lastScriptMs = this.phaseScriptMs;
     this._lastPhysicsMs = this.phasePhysicsMs;
 
+    this.flushPainters();
     this.frameId += 1;
     if (this.canTickScene() || this.hasReadyLayers()) {
       this.publishSnapshot();
@@ -5572,6 +5649,7 @@ class InProcessRuntime implements RuntimeDriver {
   private snapshotOriginGeneration = 0;
 
   private publishSnapshot(): void {
+    this.applyOverlayLayouts();
     for (const stream of [...this.sceneStreams.values()]) {
       if (stream.actor.destroyed || stream.actor.world !== this.world) this.retireSceneStream(stream);
     }
@@ -5644,6 +5722,7 @@ class InProcessRuntime implements RuntimeDriver {
 }
 
 const OVERLAY_BUTTON_VISUAL_CLASS_IDS = new Set([
+  "2DPainterComponent",
   "2DTextureComponent",
   "2DMaterialComponent",
   "2DPanelComponent",
@@ -5767,6 +5846,7 @@ function isPlayRenderable(
   skipButtonMesh: boolean,
 ): boolean {
   if (component.destroyed || component.getVariable("editorOnly") === true) return false;
+  if (isOverlayLayoutClass(component.classId)) return true;
   if (waterKindForClass(component.classId) || component.classId === "WaterRemovalVolumeComponent") return true;
   if (component.classId === "2DButtonComponent") return !skipButtonMesh;
   if (
@@ -5782,6 +5862,7 @@ function isPlayRenderable(
     component.classId === "2DTextureComponent" ||
     component.classId === "2DMaterialComponent" ||
     component.classId === "2DPanelComponent" ||
+    component.classId === "2DPainterComponent" ||
     component.classId === "2DTextComponent" ||
     component.classId === "2DRichTextComponent"
   ) {
@@ -5834,6 +5915,7 @@ function overlayHitTestOf(
       (component.classId === "2DTextureComponent" ||
         component.classId === "2DMaterialComponent" ||
         component.classId === "2DPanelComponent" ||
+        component.classId === "2DPainterComponent" ||
         component.classId === "2DTextComponent" ||
         component.classId === "2DRichTextComponent") &&
       !component.destroyed,
@@ -5859,6 +5941,7 @@ function playSortingOf(component: ActorComponent): {
 }
 
 function playMeshKindOf(component: ActorComponent): string | null {
+  if (isOverlayLayoutClass(component.classId)) return "2dlayout";
   if (component.classId === "CableComponent") return "cable";
   if (component.classId === "DynamicRuntimeMeshComponent") return "dynamicRuntimeMesh";
   if (waterKindForClass(component.classId)) return "water";
@@ -5874,6 +5957,7 @@ function playMeshKindOf(component: ActorComponent): string | null {
   if (component.classId === "2DTextureComponent") return "2dtexture";
   if (component.classId === "2DMaterialComponent") return "2dmaterial";
   if (component.classId === "2DPanelComponent") return "2dpanel";
+  if (component.classId === "2DPainterComponent") return "2dpainter";
   if (component.classId === "2DButtonComponent") return "2dbutton";
   if (component.classId === "ColliderComponent") {
     const shape = component.getVariable("shape");
@@ -5914,6 +5998,8 @@ function isIdentityComponentTransform(component: ActorComponent): boolean {
 
 function playPartsNeeded(components: readonly ActorComponent[]): boolean {
   return (
+    components.some((component) => isOverlayLayoutClass(component.classId)) ||
+    components.some((component) => component.classId === "2DPainterComponent") ||
     components.some((component) => component.classId === "CableComponent") ||
     components.some((component) => component.classId === "DynamicRuntimeMeshComponent") ||
     components.some((component) => waterKindForClass(component.classId) !== null || component.classId === "WaterRemovalVolumeComponent") ||
@@ -5942,6 +6028,8 @@ function text2dAssignPayload(
   const parsed = parseText2DProperties(
     {
       text: component.getVariable("text"),
+      materialGuid: component.getVariable("materialGuid"),
+      materialUv: component.getVariable("materialUv"),
       fontAssetGuid:
         component.getVariable("fontAssetGuid") ?? component.assetGuid,
       size: component.getVariable("size"),
@@ -5961,6 +6049,8 @@ function text2dAssignPayload(
   );
   return {
     text: parsed.text,
+    materialGuid: parsed.materialGuid,
+    materialUv: parsed.materialUv,
     fontAssetGuid: parsed.fontAssetGuid,
     size: parsed.size,
     color: parsed.color,
@@ -6161,6 +6251,14 @@ function* remapOverlaySerializedActors(
     parentId: actor.parentId
       ? (idMap.get(actor.parentId) ?? actor.parentId)
       : null,
+    components: actor.components.map((component) => ({
+      ...component,
+      properties: Object.fromEntries(Object.entries(component.properties).map(([key, value]) => [
+        key,
+        ["focusUp", "focusDown", "focusLeft", "focusRight"].includes(key) && typeof value === "string"
+          ? idMap.get(value) ?? value : value,
+      ])),
+    })),
     });
     yield;
   }

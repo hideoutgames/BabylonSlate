@@ -1201,6 +1201,7 @@ function callFunctionPaletteNodes(
         {
           name: fn.name,
           pins: fn.pins.map((pin) => ({
+            ...(pin.container ? { container: pin.container } : {}),
             name: pin.name,
             typeId: pin.typeId,
             direction: pin.direction,
@@ -2225,6 +2226,7 @@ export function classMemberSymbolsFromGraphs(
         classId: api.classId,
         runtime: fn.runtime,
         pins: fn.pins.map((pin) => ({
+          ...(pin.container ? { container: pin.container } : {}),
           name: pin.name,
           typeId: pin.typeId,
           direction: pin.direction,

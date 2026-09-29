@@ -5,6 +5,7 @@ import {
   createSceneStreamingActor,
   createText3DComponent,
   identitySerializedTransform,
+  isFocusTargetClass,
   isSceneLayerAnchorActor,
   isSceneLayerDeniedComponent,
   type SerializedActor,
@@ -50,9 +51,17 @@ export type PlaceActorKind =
       type: "overlay-2d";
       classId:
         | "2DAnchorComponent"
+        | "2DScrollBoxComponent"
+        | "2DVerticalBoxComponent"
+        | "2DHorizontalBoxComponent"
+        | "2DOverlayBoxComponent"
+        | "2DPaddingComponent"
+        | "2DSpacerComponent"
+        | "2DPainterComponent"
         | "2DTextureComponent"
         | "2DMaterialComponent"
         | "2DButtonComponent"
+        | "2DFocusTargetComponent"
         | "2DPanelComponent"
         | "2DTextComponent"
         | "2DRichTextComponent";
@@ -176,6 +185,8 @@ export const ENGINE_PLACE_ACTORS: PlaceActorItem[] = [
 ];
 
 const OVERLAY_PLACE_ACTORS: PlaceActorItem[] = [
+  ...(["ScrollBox", "VerticalBox", "HorizontalBox", "OverlayBox", "Padding", "Spacer"] as const).map(name => ({ id: `2d-${name.toLowerCase()}`, title: `2D ${name.replace(/Box$/, " Box")}`, category: "Overlay", kind: { type: "overlay-2d" as const, classId: `2D${name}Component` as const } })),
+  { id: "2d-painter", title: "2D Painter", category: "Overlay", kind: { type: "overlay-2d", classId: "2DPainterComponent" } },
   {
     id: "2d-anchor",
     title: "2D Anchor",
@@ -200,6 +211,7 @@ const OVERLAY_PLACE_ACTORS: PlaceActorItem[] = [
     category: "Overlay",
     kind: { type: "overlay-2d", classId: "2DButtonComponent" },
   },
+  { id: "2d-focus-target", title: "2D Focus Target", category: "Overlay", kind: { type: "overlay-2d", classId: "2DFocusTargetComponent" } },
   {
     id: "2d-panel",
     title: "2D Panel",
@@ -716,6 +728,16 @@ function applyOverlayPlace(
   };
 }
 
+function remapFocusNeighbors(component: SerializedComponent, references: ReadonlyMap<string, string>): SerializedComponent {
+  if (!isFocusTargetClass(component.classId)) return component;
+  const properties = { ...component.properties };
+  for (const key of ["focusUp", "focusDown", "focusLeft", "focusRight"]) {
+    const target = properties[key];
+    if (typeof target === "string" && references.has(target)) properties[key] = references.get(target)!;
+  }
+  return { ...component, properties };
+}
+
 export function duplicateSceneActor(
   scene: SerializedScene,
   source: SerializedActor,
@@ -730,7 +752,8 @@ export function duplicateSceneActor(
   const componentIds = new Map(copy.components.map((component, index) => [
     component.id, `${copy.id}-${component.classId}-${index + 1}`,
   ]));
-  copy.components = copy.components.map((component) => ({
+  const focusReferences = new Map([[source.id, copy.id], ...componentIds]);
+  copy.components = copy.components.map((component) => remapFocusNeighbors({
     ...component,
     id: componentIds.get(component.id)!,
     ...(component.parentId ? { parentId: componentIds.get(component.parentId) ?? component.parentId } : {}),
@@ -742,7 +765,7 @@ export function duplicateSceneActor(
           ? componentIds.get(component.properties.targetComponentId) ?? component.properties.targetComponentId
           : null,
       } } : {}),
-  }));
+  }, focusReferences));
   if (options && "parentId" in options) {
     copy.parentId = options.parentId ?? null;
   }
@@ -772,9 +795,11 @@ export function duplicateSceneActors(
     copies.push(copy);
     next = { ...next, actors: [...next.actors, copy] };
   }
+  const focusReferences = new Map([...actorCopies, ...[...componentCopies.values()].flatMap((ids) => [...ids])]);
   return copies.map((copy) => ({
     ...copy,
     components: copy.components.map((component) => {
+      if (isFocusTargetClass(component.classId)) return remapFocusNeighbors(component, focusReferences);
       if (component.classId === "RenderTargetCaptureComponent" && Array.isArray(component.properties.actorIds)) {
         return { ...component, properties: { ...component.properties, actorIds: component.properties.actorIds.map((id: unknown) => typeof id === "string" ? actorCopies.get(id) ?? id : id) } };
       }

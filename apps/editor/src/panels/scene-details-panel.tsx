@@ -109,6 +109,7 @@ import {
 import {
   classParentLookup,
   isPostProcessMaterialForPicker,
+  materialDomainsFromAssets,
 } from "../lib/content-browser-helpers";
 import { spatialTransformPropertyRows } from "../lib/transform-property-rows";
 import { selectionTransformPropertyRows } from "../lib/selection-transform-property-rows";
@@ -235,6 +236,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
     type: asset.header.type,
     path: asset.path,
   }));
+  const materialDomains = materialDomainsFromAssets(assetRegistry?.list() ?? [], openDocuments);
   const postProcessPickerAssets = (assetRegistry?.list() ?? [])
     .filter((asset) => isPostProcessMaterialForPicker(asset, openDocuments))
     .map((asset) => ({
@@ -1156,6 +1158,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
             onPickAsset: setAssetPick,
             actorLabel: (targetId) => actorDisplayNames.get(targetId),
             actorComponents: (targetId) => scene.actors.find((candidate) => candidate.id === targetId)?.components ?? [],
+            focusTargets: scene.actors.flatMap((candidate) => candidate.components.filter((entry) => entry.classId === "2DButtonComponent" || entry.classId === "2DFocusTargetComponent").map((entry, index) => ({ value: entry.id, label: `${actorDisplayNames.get(candidate.id) ?? candidate.name} / ${entry.classId === "2DButtonComponent" ? "2D Button" : "2D Focus Target"} ${index + 1}` }))),
             onPickActor: (componentId) => setConstraintTargetPick({ actorId: actor.id, componentId }),
           },
         ),
@@ -1493,7 +1496,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         onOpenChange={(open) => {
           if (!open) setAssetPick(null);
         }}
-        assets={assetPick?.property === "materialGuid" && actor.components.some((component) => component.id === assetPick.componentId && component.classId === "MeshComponent" && component.properties.assetGuid)
+        assets={assetPick?.materialDomain === "text" ? pickerAssets.filter((asset) => materialDomains[asset.guid] === "text") : assetPick?.property === "materialGuid" && actor.components.some((component) => component.id === assetPick.componentId && component.classId === "MeshComponent" && component.properties.assetGuid)
           ? [MODEL_MATERIALS_PICKER_ENTRY, ...pickerAssets]
           : pickerAssets}
         allowedTypes={assetPick?.allowedTypes}
@@ -1501,6 +1504,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         allowNone
         onPick={(guid) => {
           if (!assetPick) return;
+          if (guid && assetPick.materialDomain === "text" && materialDomains[guid] !== "text") return;
           const { componentId, property } = assetPick;
           if (property === "sceneGuid" && actor.components.some((candidate) => candidate.id === componentId && candidate.classId === "SceneStreamingComponent")) {
             updateActor((entry) => ({ ...entry, components: setSceneStreamingTarget(entry.components, componentId, guid, assetLabel(guid) ?? "") }));

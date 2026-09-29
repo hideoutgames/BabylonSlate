@@ -61,7 +61,9 @@ export async function openMinimalTestProject(
   await page.waitForFunction(() => window.crossOriginIsolated, undefined, {
     timeout: 15_000,
   });
-  await expect(page.getByTestId("homepage")).toBeVisible();
+  // A cold application module load can outlast the default assertion timeout.
+  // Use the same boot allowance as the editor's interactive readiness check.
+  await expect(page.getByTestId("homepage")).toBeVisible({ timeout: 30_000 });
   await expect(
     page.getByTestId("open-listed-project-TestProject"),
   ).toBeVisible();

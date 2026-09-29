@@ -36,6 +36,7 @@ import {
   type BitmapGlyphCell,
 } from "./text2d-bitmap";
 import { VisualBundle } from "./visual-bundle";
+import { bindTextMaterialGlyph } from "./text-material-block";
 import {
   combineText2DEffects,
   layoutHasLetterEffects,
@@ -57,6 +58,20 @@ export type Text2DAssetContext = MeshAssetContext & {
   fontMsdfPng?: ReadonlyMap<string, Uint8Array | Blob>;
   paused?: boolean;
 };
+
+const textMaterialVisuals = new WeakMap<Mesh, { guid: string | null; glyphs: Array<{ mesh: Mesh; fallback: Material | null }> }>();
+
+/** Rebind hot-reloaded Text graphs without replacing the atlas or layout. */
+export function refreshText2DMaterials(root: Mesh, assets?: MeshAssetContext): void {
+  for (const visual of [root, ...root.getChildMeshes()]) {
+    if (!(visual instanceof Mesh)) continue;
+    const entry = textMaterialVisuals.get(visual);
+    if (!entry) continue;
+    const material = entry.guid ? assets?.resolveMaterial?.(entry.guid, { scene: visual.getScene(), unlit: true }) : null;
+    const accepted = material?.metadata?.materialDomain === "text" ? material : null;
+    for (const glyph of entry.glyphs) glyph.mesh.material = accepted ?? glyph.fallback;
+  }
+}
 
 /** CPU restoration data plus native bitmap storage kept during replacement. */
 export function text2DBitmapBytes(root: Mesh | undefined): number {
@@ -557,6 +572,7 @@ export function createText2DMesh(
     // MSDF uniforms depend only on these style fields; bold and italic are
     // mesh transforms, so glyphs of one style share a bundle-owned material.
     const msdfMaterials = new Map<string, Material>();
+    const materialGlyphs: Array<{ mesh: Mesh; fallback: Material | null }> = [];
     layout.items.forEach((item, index) => {
       if (item.kind === "glyph" && !(item.ch ?? "").trim()) return;
       const child = MeshBuilder.CreatePlane(
@@ -611,8 +627,29 @@ export function createText2DMesh(
         text2dGlyph: true,
         text2dSource: item.kind === "image" ? "image" : item.source,
       };
+      if (item.kind !== "image") {
+        const atlasUv = msdf ? item.uvs : item.ch ? packedBitmap?.uvs.get(bitmapGlyphKey(item.ch, item.style, fontStack)) : undefined;
+        const glyphAtlas = msdf ? atlasTexture : item.kind === "glyph" ? bitmapAtlas : null;
+        bindTextMaterialGlyph(child, {
+          atlas: glyphAtlas,
+          mode: msdf && atlasTexture ? "msdf" : glyphAtlas ? "bitmap" : "solid",
+          color: item.style.color,
+          outlineColor: item.style.outlineColor,
+          outline: item.style.outline,
+          atlasRect: atlasUv ? [atlasUv.u0, atlasUv.v0, Math.max(1e-8, atlasUv.u1 - atlasUv.u0), Math.max(1e-8, atlasUv.v1 - atlasUv.v0)] : [0, 0, 1, 1],
+          materialRect: parsed.materialUv === "glyph" ? [0, 0, 1, 1] : [
+            (item.x - item.width / 2) / wrapW + 0.5,
+            (item.y - item.height / 2) / wrapH + 0.5,
+            item.width / wrapW, item.height / wrapH,
+          ],
+        });
+        materialGlyphs.push({ mesh: child, fallback: child.material });
+      }
       glyphMeshes.push({ mesh: child, item, restRotation });
     });
+
+    textMaterialVisuals.set(parent, { guid: parsed.materialGuid, glyphs: materialGlyphs });
+    refreshText2DMaterials(parent, assets);
 
     if (rich && layoutHasLetterEffects(layout)) {
       attachEffects(scene, parent, glyphMeshes, bundle, options.isPaused ?? (() => assets?.paused === true));

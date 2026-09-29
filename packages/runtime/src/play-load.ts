@@ -21,6 +21,9 @@ export function runtimeOptionsFromLoadControl(
   | "seed"
   | "frameCap"
   | "renderSettings"
+  | "focusNavigation"
+  | "pixelsPerUnit"
+  | "texturePixelSizes"
   | "project"
   | "inputAssets"
   | "inputMappings"
@@ -69,6 +72,9 @@ export function runtimeOptionsFromLoadControl(
     cooperativeSceneLoading: true,
     ...(msg.frameCap !== undefined ? { frameCap: msg.frameCap } : {}),
     renderSettings: msg.renderSettings,
+    focusNavigation: msg.focusNavigation,
+    pixelsPerUnit: msg.pixelsPerUnit,
+    texturePixelSizes: msg.texturePixelSizes,
     ...(msg.materialParameterCatalog !== undefined ? { materialParameterCatalog: msg.materialParameterCatalog } : {}),
     ...(msg.materialTextureAssetGuids !== undefined ? { materialTextureAssetGuids: msg.materialTextureAssetGuids } : {}),
     renderTargets: msg.renderTargets,
