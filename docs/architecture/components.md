@@ -14,7 +14,7 @@ This page lists **kit** components currently in the repo. Feature screens (Homep
 
 `DockviewShell` fills its host, including stacked Animation Graph surfaces, before reserving space for the phone **Window** picker.
 
-Scene documents pass `sceneMode` to the shared DockView catalog: Design uses the existing windows, Landscape adds its filtered Outliner and Settings, and Foliage adds Groups, Settings and its filtered Outliner. `SceneModeSelect` sits in the global action bar. `SceneBrushToolbar` replaces the Design viewport island in painting modes: grouped segmented tool toggles with tooltips (44px coarse-pointer targets) and the current landscape or foliage group. All panels reuse PanelFrame, ToolbarStrip, PropertyGrid, TreeView, Empty and AssetPicker; Focus preferences and saved placements are independent per mode.
+Scene documents pass `sceneMode` to the shared DockView catalog: Design uses the existing windows, Landscape adds its filtered Outliner and Settings, and Foliage adds Groups, Settings and its filtered Outliner. `SceneModeSelect` sits in the global action bar. `SceneBrushToolbar` replaces the Design viewport island in painting modes: grouped segmented tool toggles with tooltips and the current landscape or foliage group. Its small outline controls, separators, spacing and island shell match Design, including the compact 28px control height on tablets. All panels reuse PanelFrame, ToolbarStrip, PropertyGrid, TreeView, Empty and AssetPicker; Focus preferences and saved placements are independent per mode.
 
 `NumericDragField` keeps desktop and tablet Details compact with 28px inputs, 12px text, narrow axis handles, and 6px horizontal padding. Phone layouts retain separate 44px input and scrub targets.
 
