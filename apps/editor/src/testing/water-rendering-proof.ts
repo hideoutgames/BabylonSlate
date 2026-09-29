@@ -1,4 +1,4 @@
-import { Camera, Color3, DirectionalLight, Engine, MeshBuilder, StandardMaterial, Vector3 } from "@babylonjs/core";
+import { Camera, Color3, DirectionalLight, Engine, MeshBuilder, PointLight, StandardMaterial, Vector3, type PBRMaterial } from "@babylonjs/core";
 import { createDefaultWaterDefinition, normalizeWaterBody, sampleWaterSurface } from "@babylonslate/core";
 import { createAppWebGpuEngine, createParticlePreviewScene, createWaterMesh, setSceneWaterTime, updateSceneWater } from "@babylonslate/render";
 import { createLandscapeMesh } from "../../../../packages/render/src/landscape-mesh";
@@ -36,7 +36,28 @@ export async function runWaterRenderingProof(backend: "webgl2" | "webgpu") {
     const evidence: Record<string, string> = {};
     const differences: Record<string, number> = {};
     const brightness: Record<string, number> = {};
+    const crowded: Record<string, number> = {};
     const pan: Record<string, number> = {};
+    const whitecaps: Record<string, { calm: number; breaking: number }> = {};
+    // Mean brightness of the view centre.
+    const centreLight = (pixels: number[]) => {
+      let light = 0, samples = 0;
+      for (let y = 150; y < 250; y++) for (let x = 220; x < 420; x++) {
+        const i = (y * canvas.width + x) * 4;
+        light += (pixels[i]! + pixels[i + 1]! + pixels[i + 2]!) / 3; samples++;
+      }
+      return light / samples;
+    };
+    // Share of near-white pixels in the lower two thirds of the view (water, not sky).
+    const whiteShare = (pixels: number[]) => {
+      let white = 0, count = 0;
+      for (let y = Math.floor(canvas.height / 3); y < canvas.height; y++) for (let x = 0; x < canvas.width; x++) {
+        const i = (y * canvas.width + x) * 4;
+        if (Math.min(pixels[i]!, pixels[i + 1]!, pixels[i + 2]!) > 200) white++;
+        count++;
+      }
+      return white / count;
+    };
     for (const style of ["realistic", "stylized"] as const) {
       setSceneWaterTime(scene, 1.7);
       const water = createDefaultWaterDefinition(style);
@@ -56,12 +77,18 @@ export async function runWaterRenderingProof(backend: "webgl2" | "webgpu") {
       const lit = await capture();
       evidence[style + "-lake"] = lit.png;
       // Mean centre brightness: an oversized fragment shader can compile but render black under several lights.
-      let light = 0, samples = 0;
-      for (let y = 150; y < 250; y++) for (let x = 220; x < 420; x++) {
-        const i = (y * canvas.width + x) * 4;
-        light += (lit.pixels[i]! + lit.pixels[i + 1]! + lit.pixels[i + 2]!) / 3; samples++;
-      }
-      brightness[style] = light / samples;
+      brightness[style] = centreLight(lit.pixels);
+      // Scenes raise a lit material's light slots with their light count: seven lights must still shade it.
+      const lamps = [-6, -2, 2, 6].map((x, i) => {
+        const lamp = new PointLight(`crowd-${i}`, new Vector3(x, 3, -4), scene);
+        lamp.intensity = 0.2;
+        return lamp;
+      });
+      (lake.material as PBRMaterial).maxSimultaneousLights = 8;
+      const busy = await capture();
+      evidence[style + "-lake-seven-lights"] = busy.png;
+      crowded[style] = centreLight(busy.pixels);
+      for (const lamp of lamps) lamp.dispose();
       lake.dispose();
       camera.beta = 1.38; camera.radius = 16;
       const ocean = createWaterMesh(scene, "ocean", normalizeWaterBody({ width: 120, length: 120 }, "ocean"), water);
@@ -71,7 +98,20 @@ export async function runWaterRenderingProof(backend: "webgl2" | "webgpu") {
       camera.setTarget(new Vector3(4000, 0, -2000), false, false, true);
       evidence[style + "-global"] = (await capture()).png;
       global.dispose();
-      camera.setTarget(Vector3.Zero(), false, false, true); camera.beta = 1.03; camera.radius = 24;
+      // Steep, sharp waves break into whitecaps as Crest Foam rises; long gentle swell never does.
+      camera.setTarget(Vector3.Zero(), false, false, true);
+      camera.alpha = -Math.PI / 2 - 0.6; camera.beta = 1.2; camera.radius = 30;
+      const rough = { ...water, waveHeight: 1.2, waveLength: 22, choppiness: 0.7, surfaceFoam: 0, sparkles: 0 };
+      const sea = (crestFoam: number) => createWaterMesh(scene, "whitecaps", normalizeWaterBody({ width: 300, length: 300 }, "ocean"), { ...rough, crestFoam });
+      const calmSea = sea(0);
+      const calm = await capture();
+      calmSea.dispose();
+      const breakingSea = sea(0.8);
+      const breaking = await capture();
+      evidence[style + "-whitecaps"] = breaking.png;
+      breakingSea.dispose();
+      whitecaps[style] = { calm: whiteShare(calm.pixels), breaking: whiteShare(breaking.pixels) };
+      camera.setTarget(Vector3.Zero(), false, false, true); camera.alpha = -Math.PI / 2; camera.beta = 1.03; camera.radius = 24;
       // Moving the eye must reveal a different part of the world-anchored pattern. If shading used
       // large-world rendering's eye-relative positions, a pure camera translation would change nothing.
       const still = createWaterMesh(scene, "pan-check", normalizeWaterBody({ width: 300, length: 300, waveScale: 0 }, "ocean"), { ...water, foamAmount: 0, sparkles: 0 });
@@ -162,6 +202,24 @@ export async function runWaterRenderingProof(backend: "webgl2" | "webgpu") {
       rising.dispose();
       contact[style] = { ring, open, crest, trough };
     }
+    // Clear water still mirrors the sky: over a black floor, a clear realistic lake seen at a low angle
+    // is lit by its reflection alone, which blending must not scale away with the water's low coverage.
+    spire.isVisible = post.isVisible = cone.isVisible = false;
+    camera.mode = Camera.PERSPECTIVE_CAMERA;
+    camera.setTarget(Vector3.Zero(), false, false, true);
+    camera.alpha = -Math.PI / 2; camera.beta = 1.32; camera.radius = 18;
+    const floor = MeshBuilder.CreateGround("clear-floor", { width: 60, height: 60 }, scene);
+    const black = new StandardMaterial("clear-floor", scene);
+    black.diffuseColor = Color3.Black(); black.specularColor = Color3.Black(); black.disableLighting = true;
+    floor.material = black; floor.position.y = -0.6;
+    setSceneWaterTime(scene, 2.2);
+    const bare = await capture();
+    const clear = createWaterMesh(scene, "clear-lake", normalizeWaterBody({ width: 40, length: 40, waveScale: 0.3, depth: 0.6 }),
+      { ...createDefaultWaterDefinition("realistic"), depthColorDistance: 1000, foamAmount: 0, sparkles: 0 });
+    const mirrored = await capture();
+    evidence["realistic-clear-reflection"] = mirrored.png;
+    const clearReflection = { floor: centreLight(bare.pixels), water: centreLight(mirrored.pixels) };
+    clear.dispose(); floor.dispose(); black.dispose();
     post.dispose(); cone.dispose(); spire.dispose(); dark.dispose();
     camera.mode = Camera.PERSPECTIVE_CAMERA;
     camera.setTarget(Vector3.Zero(), false, false, true);
@@ -200,7 +258,7 @@ export async function runWaterRenderingProof(backend: "webgl2" | "webgpu") {
     const waveTerrain = { crestHeight: crest.height, troughHeight: trough.height,
       crestDifference: difference(high.pixels), troughDifference: difference(low.pixels) };
     water.dispose(); terrain.dispose();
-    return { evidence, differences, brightness, pan, waveTerrain, contact };
+    return { evidence, differences, brightness, crowded, pan, whitecaps, clearReflection, waveTerrain, contact };
   } finally {
     const device = (engine as { _device?: { queue: { onSubmittedWorkDone(): Promise<void> } } })._device;
     engine.flushFramebuffer(); await device?.queue.onSubmittedWorkDone();

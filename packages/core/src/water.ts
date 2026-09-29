@@ -95,7 +95,7 @@ export function createDefaultWaterDefinition(style: WaterStyle = "realistic"): W
   return {
     style,
     shallowColor: stylized ? [0.36, 0.86, 0.95] : [0.1, 0.5, 0.48],
-    deepColor: stylized ? [0.06, 0.38, 0.78] : [0.015, 0.11, 0.2],
+    deepColor: stylized ? [0.06, 0.38, 0.78] : [0.02, 0.13, 0.24],
     foamColor: stylized ? [1, 1, 1] : [0.9, 0.93, 0.94],
     opacity: stylized ? 0.9 : 0.97, roughness: stylized ? 0.3 : 0.06,
     reflectionStrength: stylized ? 0.6 : 1, depthColorDistance: stylized ? 1.6 : 4,

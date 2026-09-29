@@ -208,8 +208,8 @@ vec3 swCol = mix(U.slateWaterShallow.rgb, U.slateWaterDeep.rgb, swTone);
 float swSwellDotV = clamp(dot(swSwellNormal, swV), 0.0, 1.0);
 float swBehind = pow(max(dot(swL, -swV), 0.0), 4.0);
 float swPeak = clamp(swCrest * 0.5 + 0.5 + swChopH * 0.6, 0.0, 1.2);
-float swThrough = U.slateWaterLook.w * (swBehind * swPeak * (1.0 - swSwellDotV * 0.5) * 1.3 + smoothstep(0.2, 0.9, swFoldN) * swRough * 0.12);
-vec3 swScatter = swCol * (swAmb * 0.6 + swSun * (0.3 * swSwellDotV * swSwellDotV + 0.3 * max(dot(swSwellNormal, swL), 0.0)))
+float swThrough = U.slateWaterLook.w * (swBehind * swPeak * (1.0 - swSwellDotV * 0.5) * 1.6 + smoothstep(0.2, 0.9, swFoldN) * swRough * 0.15);
+vec3 swScatter = swCol * (swAmb * 0.75 + swSun * (0.3 * swSwellDotV * swSwellDotV + 0.3 * max(dot(swSwellNormal, swL), 0.0)))
   + U.slateWaterShallow.rgb * vec3(0.9, 1.15, 0.85) * swSun * swThrough;
 
 // Foam: a clumpy, bubbly pattern thresholded by a foam density (Crest-style), so dense foam is solid, then
@@ -229,11 +229,14 @@ float swFoamTex = mix(smoothstep(0.05, 0.85, swClump * 0.4 + swBlob * 0.25 + swL
 float swWashPhase = swBank / swFoamWidth - swTime * 0.45 + swMedium * 1.4;
 float swWash = exp(-swBank / swFoamWidth) * (0.85 + 0.3 * sin(swWashPhase * 6.2831853));
 float swBack = max(dot(swGradient, swWindDir), 0.0) / max(0.0001, swSteep);
-float swCapDrive = (swFoldN * 1.8 + swBack * 0.5 + swChopH * 0.8 + (swGust - 0.5) * 0.5) * swRough;
-float swCap = smoothstep(1.0 - U.slateWaterShape.z, 1.5 - U.slateWaterShape.z, swCapDrive) * (0.7 + 0.3 * swClump);
+// Only some crests break at a time: breaking zones drift slowly downwind.
+float swBreakZone = swNoise(swWorld * 0.045 - swWindDir * (swTime * 0.12) + vec2(5.1, 2.7));
+float swCapDrive = (swFoldN * 1.8 + swBack * 0.5 + swChopH * 0.8 + (swBreakZone - 0.5) * 0.7 + (swGust - 0.5) * 0.4) * swRough;
+// Never solid: even the densest cap keeps bubbles and holes.
+float swCap = smoothstep(1.0 - U.slateWaterShape.z, 1.5 - U.slateWaterShape.z, swCapDrive) * (0.55 + 0.35 * swClump);
 vec2 swWindUv = vec2(dot(swFlowed, swWindDir), dot(swFlowed, vec2(-swWindDir.y, swWindDir.x)));
 float swTrailTex = swNoise(swWindUv * vec2(0.3, 2.2) + swSlope * 0.5 + vec2(swTime * 0.05, 0.0));
-float swTrail = smoothstep(0.75 - U.slateWaterShape.z, 1.2 - U.slateWaterShape.z, swCapDrive + swBack * swRough * 0.8) * smoothstep(0.3, 0.8, swTrailTex) * 0.65;
+float swTrail = smoothstep(0.75 - U.slateWaterShape.z, 1.2 - U.slateWaterShape.z, swCapDrive + swBack * swRough * 0.8) * smoothstep(0.3, 0.8, swTrailTex) * 0.6;
 // Wind streaks: long, thin foam lines drawn out along the wind where gusts are strong (Surface Foam).
 float swStreak = smoothstep(0.66, 0.95, swNoise(swWindUv * vec2(0.05, 1.3) + swSlope * 0.25 + vec2(swLarge * 2.0, 0.0)) * 0.75 + swGust * 0.35) * U.slateWaterSunColor.w * (0.3 + swGust) * swCalm * 1.4;
 float swDensity = clamp(max(max(swWash, swCap), max(swTrail, swStreak)), 0.0, 1.0);
@@ -321,9 +324,12 @@ float swEdgeUnit = swBank / swFoamWidth;
 float swEdgeAA = fwidth(swEdgeUnit) + 0.015;
 float swWobble = (swMedium - 0.5) * 0.5 + sin(swTime * 1.7 + swLarge * 18.0) * 0.08;
 float swEdge = swEdgeUnit + swWobble;
-float swOutline = 1.0 - smoothstep(0.55 - swEdgeAA, 0.55 + swEdgeAA, swEdge);
+float swOutline = 1.0 - smoothstep(0.7 - swEdgeAA, 0.7 + swEdgeAA, swEdge);
+// Two foam lines take turns washing in toward the shore, fading as they arrive; phases vary along the coast.
 float swRingAge = fract(swTime * 0.16 + swLarge * 2.3);
-float swRing = (1.0 - smoothstep(0.07, 0.07 + swEdgeAA * 1.5, abs(swEdge - 0.95 - swRingAge * 1.4))) * (1.0 - swRingAge);
+float swRingAgeB = fract(swRingAge + 0.5);
+float swRing = max((1.0 - smoothstep(0.08, 0.08 + swEdgeAA * 1.5, abs(swEdge - 0.95 - (1.0 - swRingAge) * 1.6))) * swRingAge,
+  (1.0 - smoothstep(0.08, 0.08 + swEdgeAA * 1.5, abs(swEdge - 0.95 - (1.0 - swRingAgeB) * 1.6))) * swRingAgeB);
 swRing *= smoothstep(0.3, 0.42, swFine * 0.6 + swMedium * 0.4);
 // Contacts: a wobbling collar at the waterline and graphic ripple rings that ride outward and break up.
 float swObjectUnit = swObject / swContactW + swWobble * 0.6;
@@ -351,7 +357,7 @@ float swSpark = swSparkBase * 2.5 * (0.3 + 1.7 * pow(max(swAlign, 0.0), 5.0)) * 
 vec3 swFoamLit = U.slateWaterFoam.rgb * clamp(swLitScale * 1.1, vec3(0.35), vec3(1.0));
 vec3 swEmissive = mix(swLit, swFoamLit, swFoam) + vec3(swSpec * 0.95 * (1.0 - swFoam) + swSpark);
 surfaceAlbedo = vec3(0.0);
-alpha = clamp(max(mix(U.slateWaterShallow.a * 0.55, U.slateWaterShallow.a, smoothstep(0.0, 0.5, swTone)), max(swFoam, swSpec)), 0.0, 1.0);
+alpha = clamp(max(mix(U.slateWaterShallow.a * 0.55, U.slateWaterShallow.a, smoothstep(0.0, 0.5, swTone)), max(swFoam, max(swSpec, swSpark))), 0.0, 1.0);
 `;
 }
 

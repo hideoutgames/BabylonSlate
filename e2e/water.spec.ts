@@ -42,9 +42,18 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     expect(errors).toEqual([]);
     expect(result.differences.realistic).toBeLessThan(2);
     expect(result.differences.stylized).toBeLessThan(2);
-    // The preview lights plus a sun must still shade the water, not collapse it to black.
+    // The preview lights plus a sun must still shade the water, not collapse it to black, even with seven lights.
     expect(result.brightness.realistic).toBeGreaterThan(20);
     expect(result.brightness.stylized).toBeGreaterThan(40);
+    expect(result.crowded.realistic).toBeGreaterThan(20);
+    expect(result.crowded.stylized).toBeGreaterThan(40);
+    // Crest Foam breaks steep waves into whitecaps in both styles; without it the same sea stays clear.
+    for (const style of ["realistic", "stylized"] as const) {
+      expect(result.whitecaps[style].calm).toBeLessThan(0.01);
+      expect(result.whitecaps[style].breaking).toBeGreaterThan(result.whitecaps[style].calm + 0.02);
+    }
+    // Clear water over a black floor still shows the sky's reflection.
+    expect(result.clearReflection.water).toBeGreaterThan(result.clearReflection.floor + 15);
     // Under the app's large-world rendering, panning the camera must reveal different, world-anchored water.
     expect(result.pan.realistic).toBeGreaterThan(0.5);
     expect(result.pan.stylized).toBeGreaterThan(0.5);
