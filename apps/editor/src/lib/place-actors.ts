@@ -49,9 +49,17 @@ export type PlaceActorKind =
       type: "overlay-2d";
       classId:
         | "2DAnchorComponent"
+        | "2DScrollBoxComponent"
+        | "2DVerticalBoxComponent"
+        | "2DHorizontalBoxComponent"
+        | "2DOverlayBoxComponent"
+        | "2DPaddingComponent"
+        | "2DSpacerComponent"
+        | "2DPainterComponent"
         | "2DTextureComponent"
         | "2DMaterialComponent"
         | "2DButtonComponent"
+        | "2DFocusTargetComponent"
         | "2DPanelComponent"
         | "2DTextComponent"
         | "2DRichTextComponent";
@@ -174,6 +182,8 @@ export const ENGINE_PLACE_ACTORS: PlaceActorItem[] = [
 ];
 
 const OVERLAY_PLACE_ACTORS: PlaceActorItem[] = [
+  ...(["ScrollBox", "VerticalBox", "HorizontalBox", "OverlayBox", "Padding", "Spacer"] as const).map(name => ({ id: `2d-${name.toLowerCase()}`, title: `2D ${name.replace(/Box$/, " Box")}`, category: "Overlay", kind: { type: "overlay-2d" as const, classId: `2D${name}Component` as const } })),
+  { id: "2d-painter", title: "2D Painter", category: "Overlay", kind: { type: "overlay-2d", classId: "2DPainterComponent" } },
   {
     id: "2d-anchor",
     title: "2D Anchor",
@@ -198,6 +208,7 @@ const OVERLAY_PLACE_ACTORS: PlaceActorItem[] = [
     category: "Overlay",
     kind: { type: "overlay-2d", classId: "2DButtonComponent" },
   },
+  { id: "2d-focus-target", title: "2D Focus Target", category: "Overlay", kind: { type: "overlay-2d", classId: "2DFocusTargetComponent" } },
   {
     id: "2d-panel",
     title: "2D Panel",

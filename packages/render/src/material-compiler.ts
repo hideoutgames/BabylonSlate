@@ -7,6 +7,7 @@ import {
   ColorSplitterBlock,
   InstancesBlock,
   MorphTargetsBlock,
+  MultiplyBlock,
   Constants,
   DiscardBlock,
   FragmentOutputBlock,
@@ -74,6 +75,7 @@ import { registerCacheableShadowMaterial } from "./shadow-material-policy";
 import { prepareNodeMaterialParticleBindings } from "./node-material-particles";
 import type { MaterialParameterValue } from "@babylonslate/bridge";
 import { SharedOutlineIdentityBlock, SharedOutlineOutputBlock } from "./shared-outline-output-block";
+import { TextMaterialBlock } from "./text-material-block";
 
 export interface CompileMaterialOptions {
   /** Internal coverage variant; retains authored deformation and alpha discard. */
@@ -222,7 +224,7 @@ export function compileMaterialPlan(
       : ShaderLanguage.GLSL,
   });
   if (scene.getEngine().isWebGPU) rebindEmptiedDrawContexts(material);
-  material.metadata = { boundsPadding: plan.boundsPadding ?? 0 };
+  material.metadata = { boundsPadding: plan.boundsPadding ?? 0, materialDomain: plan.domain };
   const configureSurface = () => {
     if (outlineMask) {
       material.backFaceCulling = plan.twoSided !== true;
@@ -251,6 +253,7 @@ export function compileMaterialPlan(
     created.push(origin);
   }
   const outputNodes: NodeMaterialBlock[] = [];
+  let textGlyph: TextMaterialBlock | undefined;
 
   const fail = (): CompileMaterialResult => {
     for (const block of created) block.dispose();
@@ -282,6 +285,15 @@ export function compileMaterialPlan(
       outputNodes.push(
         ...createSurfacePlumbing(options.name, created, plumbing),
       );
+    }
+    if (plan.domain === "text") {
+      textGlyph = new TextMaterialBlock(`${options.name}_textGlyph`);
+      const uv = new InputBlock(`${options.name}_glyphUV`, undefined, NodeMaterialBlockConnectionPointTypes.Vector2);
+      uv.setAsAttribute("uv");
+      uv.output.connectTo(textGlyph.glyphUV);
+      plumbing.uv = textGlyph.uv;
+      created.push(uv, textGlyph);
+      plumbing.worldPosition?.connectTo(plumbing.clipPosition!);
     }
   } catch (error) {
     diagnostics.push({
@@ -561,7 +573,15 @@ export function compileMaterialPlan(
   };
 
   try {
-    if (plan.domain === "postProcess" || plan.domain === "particle") {
+    if (plan.domain === "text" && textGlyph) {
+      const fragment = new FragmentOutputBlock(`${options.name}_fragment`);
+      const multiply = new MultiplyBlock(`${options.name}_textFill`);
+      outputPoint("color", `${options.name}_color`, true)?.connectTo(multiply.left);
+      textGlyph.color.connectTo(multiply.right);
+      multiply.output.connectTo(fragment.rgba);
+      created.push(fragment, multiply);
+      outputNodes.push(fragment);
+    } else if (plan.domain === "postProcess" || plan.domain === "particle") {
       const fragment = new FragmentOutputBlock(`${options.name}_fragment`);
       created.push(fragment);
       const color = outputPoint("color", `${options.name}_color`, true);
@@ -957,6 +977,13 @@ function applyAuthoredSurfaceBlend(
   material: NodeMaterial,
   plan: MaterialBuildPlan,
 ): void {
+  if (plan.domain === "text") {
+    material.backFaceCulling = false;
+    material.alphaMode = plan.blendMode === "additive" ? Constants.ALPHA_ADD : Constants.ALPHA_COMBINE;
+    material.transparencyMode = Material.MATERIAL_ALPHABLEND;
+    material.needDepthPrePass = false;
+    return;
+  }
   if (plan.domain === "postProcess" || plan.domain === "particle") {
     return;
   }

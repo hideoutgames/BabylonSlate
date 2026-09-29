@@ -1,4 +1,5 @@
 import { PostProcessParameterState } from "./post-process-parameter-state";
+import { overlayClipAllowsPoint } from "./overlay-layout-render";
 import type { AttachedPostProcessStack } from "./post-process-material";
 import {
   Camera,
@@ -376,7 +377,8 @@ export class SceneLayerCompositor {
       const layer = ordered[index]!;
       if (!this.isLayerReady(layer.layerId)) continue;
       this.bindHudCamera(layer);
-      const pick = layer.scene.pick(canvasX, canvasY, undefined, false);
+      const pickWorld = overlayCanvasToWorld(canvasX, canvasY, renderWidth, renderHeight, layer.layerBounds.width / 2, layer.layerBounds.height / 2);
+      const pick = layer.scene.pick(canvasX, canvasY, mesh => mesh.isEnabled() && mesh.isVisible && mesh.isPickable && overlayClipAllowsPoint(mesh, pickWorld.x, pickWorld.y), false);
       if (pick?.hit && pick.pickedMesh) {
         let mesh: {
           name: string;
@@ -431,6 +433,7 @@ export class SceneLayerCompositor {
       for (const mesh of layer.scene.meshes) {
         // Same eligibility as Babylon's default ray pick above.
         if (!mesh.isEnabled() || !mesh.isVisible || !mesh.isPickable) continue;
+        if (!overlayClipAllowsPoint(mesh, world.x, world.y)) continue;
         const metadata = overlayMetadataOf(mesh);
         if (!metadata?.overlayHasButton) continue;
         const hitTest = parseSceneLayerHitTest(metadata.overlayHitTest, "ignore");

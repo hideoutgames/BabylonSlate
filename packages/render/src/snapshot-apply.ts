@@ -99,6 +99,7 @@ import { snapToPixelGrid } from "./pixel-perfect";
 import { createSkyboxMesh, resolveSkyboxCubeTexture } from "./skybox";
 import { createText3DMesh } from "./text3d-mesh";
 import { createText2DMesh, text2DBitmapBytes } from "./text2d-mesh";
+import { createPainter2DMesh, updatePainter2DMesh } from "./painter2d-mesh";
 import { BitmapAllocationLimitError } from "./text2d-bitmap";
 import { retireBoneAttachments, updateBoneAttachments, type BoneAttachment } from "./bone-attachment";
 export { applyAttachToBone } from "./bone-attachment";
@@ -413,6 +414,7 @@ function wantsOverlayUnlitMaterial(
     case "2dmaterial":
     case "2dbutton":
     case "2dpanel":
+    case "2dpainter":
     case "2dtext":
     case "2drichtext":
       return true;
@@ -454,6 +456,8 @@ export function applyMaterialToActorMeshes(
 ): void {
   const targets: Mesh[] = [root, ...root.getChildMeshes().filter(isMesh)];
   for (const target of targets) {
+    // Text Materials are composed with glyph coverage by the text builder.
+    if (target.metadata?.text2d || target.metadata?.text2dGlyph) continue;
     if (isTilemapChunkMesh(target)) continue;
     const componentId = componentIdForPlayMesh(target, slotId, binding);
     const guid = assignedMaterialGuid(binding, slotId, componentId);
@@ -576,6 +580,23 @@ function applyPlayShadows(scene: Scene): void {
 const rejectedTextAssignments = new WeakMap<SnapshotSceneBinding, Map<number, string>>();
 const rejectedPreparedAssignments = new WeakMap<SnapshotSceneBinding, Map<number, string>>();
 const pendingVisualReplacements = new WeakMap<SnapshotSceneBinding, Map<number, Mesh>>();
+
+export function applyPainter2DCommand(binding: SnapshotSceneBinding, command: Extract<CommandMessage, { type: "setPainter2D" }>): void {
+  const parts = binding.meshParts.get(command.slotId);
+  const part = parts?.find((entry) => entry.componentId === command.componentId && entry.meshKind === "2dpainter");
+  if (!part) return;
+  part.painter = command.painter;
+  for (const root of [binding.meshes.get(command.slotId), pendingVisualReplacements.get(binding)?.get(command.slotId)]) {
+    if (!root || root.isDisposed()) continue;
+    if (!partsNeedOrigin(parts)) updatePainter2DMesh(root, command.painter);
+    else {
+      const name = playComponentMeshName(command.slotId, command.componentId);
+      const mesh = root.getChildMeshes().find((child) => child.name === name);
+      if (mesh instanceof Mesh) updatePainter2DMesh(mesh, command.painter);
+    }
+  }
+  binding.onVisualChanged?.(command.slotId);
+}
 // A material command supersedes preparation for the exact pending visual, not
 // the already published model generation or another incarnation of this slot.
 const pendingMaterialPreparations = new WeakMap<SnapshotSceneBinding, Map<number, () => void>>();
@@ -1271,6 +1292,7 @@ function createPlayVisual(
         part.water,
         part.waterRemoval,
         part.cable,
+        part.painter,
       );
       child.parent = root;
       retainedBitmapBytes += text2DBitmapBytes(child);
@@ -1393,8 +1415,18 @@ export function createPlayMesh(
   water?: import("@babylonslate/core").WaterBodyProperties,
   waterRemoval?: import("@babylonslate/core").WaterRemovalProperties,
   cable?: import("@babylonslate/core").CableProperties & { simulationId?: number },
+  painter?: import("@babylonslate/core").Painter2DProperties,
 ): Mesh {
   const name = meshName ?? `actor-${slotId}`;
+  if (meshKind === "2dlayout") {
+    const mesh = new Mesh(name, scene);
+    mesh.isPickable = false;
+    return mesh;
+  }
+  if (meshKind === "2dpainter") {
+    const properties = painter ?? binding?.meshParts.get(slotId)?.find((part) => part.meshKind === "2dpainter" && (!meshName || playComponentMeshName(slotId, part.componentId) === meshName))?.painter;
+    return createPainter2DMesh(scene, name, properties);
+  }
   if (meshKind === "cable" && cable) {
     const mesh = createCableMesh(scene, name, cable, cable.simulationId, (id) => binding?.meshes.get(id));
     if (cable.materialGuid) mesh.material = binding?.resolveMaterial?.(cable.materialGuid, { scene }) ?? null;

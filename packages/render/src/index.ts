@@ -66,6 +66,7 @@ export * from "./post-process-material";
 export * from "./scene-layer-compositor";
 export * from "./scene-layer-pointer";
 export * from "./overlay-touch-target";
+export * from "./overlay-layout-render";
 export * from "./anim-apply";
 export * from "./collider-visual";
 export * from "./editor-debug-overlay";

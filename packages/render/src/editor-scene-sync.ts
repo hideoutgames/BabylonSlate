@@ -1,6 +1,8 @@
 import { Mesh, type AbstractMesh, type Camera, type Material, type Node, type Scene } from "@babylonjs/core";
 import { applyMaterialBounds } from "./material-bounds";
 import { DEFAULT_SORTING_LAYERS } from "@babylonslate/core";
+import { resolveOverlayLayout } from "@babylonslate/core";
+import { applyEditorLayoutClips } from "./overlay-layout-render";
 import type {
   SerializedActor,
   SerializedComponent,
@@ -46,7 +48,7 @@ import { isColliderVisualMesh, isColliderVisualTree } from "./collider-visual";
 import { visualMeshes } from "./visual-meshes";
 import { isTilemapChunkMesh } from "./tilemap-mesh";
 import { BitmapAllocationLimitError } from "./text2d-bitmap";
-import { text2DBitmapBytes } from "./text2d-mesh";
+import { refreshText2DMaterials, text2DBitmapBytes } from "./text2d-mesh";
 
 export type EditorSceneSyncOptions = {
   /** FrameGraph owns its camera-specific active queue; world matrices still freeze. */
@@ -253,6 +255,8 @@ export class EditorSceneSync {
   }
 
   private *applySteps(sceneData: SerializedScene, rebuild = false, cooperative = false): Generator<number, void, unknown> {
+    const layout = resolveOverlayLayout(sceneData.actors, { pixelsPerUnit: this.assets?.pixelsPerUnit, textureSize: guid => this.assets?.texturePixelSizes?.get(guid) });
+    sceneData = { ...sceneData, actors: layout.actors };
     rebuild ||= this.assetsNeedRebuild;
     // Blocking loads already require final readiness; skip the immediate path's
     // full-document structural pre-scan and unfreeze before phased planning.
@@ -406,6 +410,7 @@ export class EditorSceneSync {
       yield 0.6 + 0.1 * ++index / actorCount;
     }
     syncEditorCablePreviews(this.scene, sceneData.actors);
+    applyEditorLayoutClips(this.scene, layout.entries);
     for (const progress of syncAuthoredIlluminationSteps(this.scene, sceneData, {
       stealActiveCamera: this.stealActiveCamera,
       restoreCamera: this.restoreCamera,
@@ -782,6 +787,9 @@ export class EditorSceneSync {
   }
 
   private bindActorMeshMaterials(actor: SerializedActor, root: Mesh): void {
+    refreshText2DMaterials(root, {
+      resolveMaterial: (guid, options) => this.resolveMaterial?.(guid, options) ?? this.assets?.resolveMaterial?.(guid, options) ?? null,
+    });
     for (const component of actor.components) {
       if (component.classId === "2DMaterialComponent") {
         this.bindMaterialOverride(

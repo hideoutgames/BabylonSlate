@@ -8,7 +8,7 @@ export type MaterialParameterCatalog = Readonly<
   Record<
     string,
     {
-      domain: "surface" | "landscape" | "postProcess" | "particle";
+      domain: "surface" | "landscape" | "postProcess" | "particle" | "text";
       planHash: string;
       parameters: Readonly<Record<string, MaterialParameterValue>>;
     }

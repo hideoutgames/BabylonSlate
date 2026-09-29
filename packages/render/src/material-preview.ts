@@ -33,6 +33,7 @@ import { OwnedPostProcess } from "./owned-post-process";
 import { PostProcessRetirement } from "./post-process-retirement";
 import { createPreviewLighting } from "./preview-lighting";
 import { previewMeshesReady } from "./preview-readiness";
+import { createText2DMesh } from "./text2d-mesh";
 import { resolveSceneRenderingQuality } from "./render-settings";
 
 export const MATERIAL_PREVIEW_MESH_NAME = "materialPreviewMesh";
@@ -157,6 +158,8 @@ export function createMaterialPreviewScene(
   const postProcessRetirement = new PostProcessRetirement();
   let currentMaterial: Material | null = mesh.material;
   let particlePlane: Mesh | null = null;
+  let textPreview: Mesh | null = null;
+  const disposeTextPreview = () => { textPreview?.dispose(); textPreview = null; mesh.setEnabled(true); };
   const disposeParticles = () => { particlePlane?.dispose(); particlePlane = null; mesh.setEnabled(true); };
   let customContainer: AssetContainer | null = null;
   let meshGeneration = 0;
@@ -225,18 +228,30 @@ export function createMaterialPreviewScene(
       }
       if (generation !== meshGeneration) return mesh;
       applyMaterialToVisualMeshes(mesh, currentMaterial);
-      if (particlePlane) mesh.setEnabled(false);
+      if (particlePlane || textPreview) mesh.setEnabled(false);
       else aimPreviewCameraAtMesh(camera, mesh);
       return mesh;
     },
     applyMaterial: (material) => {
       if (material) disposeParticles();
+      disposeTextPreview();
       currentMaterial = material;
+      if (material?.metadata?.materialDomain === "text") {
+        mesh.setEnabled(false);
+        textPreview = createText2DMesh(scene, "materialPreviewText", {
+          text: "Text", size: 80, wrapWidth: 240, wrapHeight: 100, alignment: "center", materialGuid: "preview",
+        }, { resolveMaterial: () => material });
+        camera.alpha = -Math.PI / 2;
+        camera.beta = Math.PI / 2;
+        aimPreviewCameraAtMesh(camera, textPreview);
+        return;
+      }
       applyMaterialToVisualMeshes(mesh, material);
     },
     applyPostProcess: (material) => {
       disposePostProcess();
       if (!material) return;
+      disposeTextPreview();
       disposeParticles();
       // Same guard as NodeMaterial.createPostProcess: only post-process and
       // SFE materials can author a camera pass.
@@ -269,6 +284,7 @@ export function createMaterialPreviewScene(
     applyParticleMaterial: (material) => {
       disposeParticles();
       if (!material) return;
+      disposeTextPreview();
       mesh.setEnabled(false);
       particlePlane = MeshBuilder.CreatePlane("materialPreviewParticlePlane", { size: 1.6 }, scene);
       particlePlane.material = material;
@@ -278,6 +294,7 @@ export function createMaterialPreviewScene(
     },
     dispose: () => {
       meshGeneration += 1;
+      disposeTextPreview();
       disposeParticles();
       disposePostProcess();
       disposeCustomContainer();

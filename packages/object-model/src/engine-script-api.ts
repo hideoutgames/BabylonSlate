@@ -1,8 +1,11 @@
+import { OVERLAY_LAYOUT_CLASSES } from "@babylonslate/core";
+
 export type EngineScriptPin = {
   name: string;
   typeId: string;
   direction: "in" | "out";
   typeClassId?: string;
+  container?: "single" | "array" | "map";
 };
 
 export type EngineScriptVariable = {
@@ -53,6 +56,12 @@ const SET_TEXT: EngineScriptFunction = {
   pins: [EXEC_IN, EXEC_OUT, { name: "text", typeId: "string", direction: "in" }],
 };
 
+function painterFunction(name: string, operation: string, inputs: Array<[string, string, "array"?]> = []): EngineScriptFunction {
+  return { name, runtime: `painter${operation}`, pins: [EXEC_IN, EXEC_OUT,
+    ...inputs.map(([pinName, typeId, container]) => ({ name: pinName, typeId, direction: "in" as const, ...(container ? { container } : {}) })),
+    { name: "success", typeId: "bool", direction: "out" }] };
+}
+
 const HIT_TEST: EngineScriptVariable = {
   name: "Hit Test",
   typeId: "string",
@@ -73,6 +82,8 @@ const TEXT_VARIABLES: readonly EngineScriptVariable[] = [
 
 const TEXT2D_VARIABLES: readonly EngineScriptVariable[] = [
   ...TEXT_VARIABLES,
+  { name: "Text Material", typeId: "asset", typeClassId: "Material", propertyKey: "materialGuid" },
+  { name: "Material UV", typeId: "string", propertyKey: "materialUv" },
   HIT_TEST,
   { name: "Renderer", typeId: "string", propertyKey: "renderer" },
   { name: "Outline", typeId: "float", propertyKey: "outline" },
@@ -126,6 +137,22 @@ export const BUTTON_MOUSE_EVENTS: readonly EngineScriptEvent[] = [
   },
 ];
 
+const FOCUS_EVENTS: readonly EngineScriptEvent[] = [
+  { name: "On Focus Enter", eventType: "flow.event.focusEnter", exportName: "onFocusEnter" },
+  { name: "On Focus Leave", eventType: "flow.event.focusLeave", exportName: "onFocusLeave" },
+  { name: "On Focus Activate", eventType: "flow.event.focusActivate", exportName: "onFocusActivate" },
+];
+const FOCUS_VARIABLES: readonly EngineScriptVariable[] = [
+  { name: "Focus Enabled", typeId: "bool", propertyKey: "focusEnabled" },
+  { name: "Initial Focus", typeId: "bool", propertyKey: "focusInitial" },
+  { name: "Focused", typeId: "bool", propertyKey: "focused", getOnly: true },
+  ...["Up", "Down", "Left", "Right"].map((direction) => ({ name: `Focus ${direction}`, typeId: "string", propertyKey: `focus${direction}` })),
+];
+const FOCUS_FUNCTIONS: readonly EngineScriptFunction[] = [
+  { name: "Set Focus", runtime: "setFocusTarget", pins: [EXEC_IN, EXEC_OUT, { name: "success", typeId: "bool", direction: "out" }] },
+  { name: "Clear Focus", runtime: "clearFocusTarget", pins: [EXEC_IN, EXEC_OUT] },
+];
+
 export const COLLIDER_EVENTS: readonly EngineScriptEvent[] = [
   { name: "On Hit", eventType: "flow.event.hit", exportName: "onHit" },
   {
@@ -141,6 +168,48 @@ export const COLLIDER_EVENTS: readonly EngineScriptEvent[] = [
 ];
 
 export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
+  ...OVERLAY_LAYOUT_CLASSES.map((classId): EngineClassScriptApi => ({ classId, variables: [
+    ...["width", "height", "fillWeight", "gap", "paddingLeft", "paddingRight", "paddingTop", "paddingBottom", "scrollX", "scrollY"].map(propertyKey => ({ name: propertyKey.replace(/([A-Z])/g, " $1").replace(/^./, c => c.toUpperCase()), typeId: "float", propertyKey })),
+    ...["widthMode", "heightMode", "horizontalAlignment", "verticalAlignment", "scrollAxis"].map(propertyKey => ({ name: propertyKey.replace(/([A-Z])/g, " $1").replace(/^./, c => c.toUpperCase()), typeId: "string", propertyKey })),
+  ] })),
+  {
+    classId: "2DPainterComponent",
+    variables: [
+      { name: "Width", typeId: "float", propertyKey: "width" },
+      { name: "Height", typeId: "float", propertyKey: "height" },
+      { name: "Pixels Per Unit", typeId: "float", propertyKey: "pixelsPerUnit" },
+      { name: "Clear Each Frame", typeId: "bool", propertyKey: "clearEachFrame" },
+      { name: "Fill", typeId: "bool", propertyKey: "fill" },
+      { name: "Stroke", typeId: "bool", propertyKey: "stroke" },
+      { name: "Fill Color", typeId: "color", propertyKey: "fillColor" },
+      { name: "Stroke Color", typeId: "color", propertyKey: "strokeColor" },
+      { name: "Stroke Width", typeId: "float", propertyKey: "strokeWidth" },
+      { name: "Line Cap", typeId: "string", propertyKey: "lineCap" },
+      { name: "Line Join", typeId: "string", propertyKey: "lineJoin" },
+      { name: "Fill Rule", typeId: "string", propertyKey: "fillRule" }, HIT_TEST,
+    ],
+    functions: [
+      painterFunction("Clear", "Clear"),
+      painterFunction("Draw Line", "DrawLine", [["start", "vec2"], ["end", "vec2"]]),
+      painterFunction("Draw Polyline", "DrawPolyline", [["points", "vec2", "array"]]),
+      painterFunction("Draw Polygon", "DrawPolygon", [["points", "vec2", "array"]]),
+      painterFunction("Draw Rectangle", "DrawRectangle", [["center", "vec2"], ["size", "vec2"]]),
+      painterFunction("Draw Circle", "DrawCircle", [["center", "vec2"], ["radius", "float"]]),
+      painterFunction("Draw Ellipse", "DrawEllipse", [["center", "vec2"], ["radius", "vec2"]]),
+      painterFunction("Begin Path", "BeginPath"),
+      painterFunction("Move To", "MoveTo", [["point", "vec2"]]),
+      painterFunction("Line To", "LineTo", [["point", "vec2"]]),
+      painterFunction("Quadratic Curve To", "QuadraticTo", [["control", "vec2"], ["point", "vec2"]]),
+      painterFunction("Bezier Curve To", "BezierTo", [["control1", "vec2"], ["control2", "vec2"], ["point", "vec2"]]),
+      painterFunction("Arc", "Arc", [["center", "vec2"], ["radius", "vec2"], ["rotation", "float"], ["startAngle", "float"], ["endAngle", "float"], ["anticlockwise", "bool"]]),
+      painterFunction("Close Path", "ClosePath"),
+      painterFunction("Fill Path", "FillPath"),
+      painterFunction("Stroke Path", "StrokePath"),
+      painterFunction("Push Mask", "PushMask"),
+      painterFunction("Pop Mask", "PopMask"),
+      painterFunction("Cut Out Path", "CutOutPath"),
+    ],
+  },
   {
     classId: "RenderTargetCaptureComponent",
     variables: [
@@ -546,8 +615,15 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
   },
   {
     classId: "2DButtonComponent",
-    variables: [HIT_TEST],
-    events: BUTTON_MOUSE_EVENTS,
+    variables: [HIT_TEST, ...FOCUS_VARIABLES],
+    events: [...BUTTON_MOUSE_EVENTS, ...FOCUS_EVENTS],
+    functions: FOCUS_FUNCTIONS,
+  },
+  {
+    classId: "2DFocusTargetComponent",
+    variables: FOCUS_VARIABLES,
+    events: FOCUS_EVENTS,
+    functions: FOCUS_FUNCTIONS,
   },
   {
     classId: "2DAnchorComponent",

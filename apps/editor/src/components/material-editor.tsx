@@ -504,7 +504,7 @@ export function MaterialPreviewPanel(_props: IDockviewPanelProps) {
   return (
     <PanelFrame className="flex-1" data-testid="material-preview-panel">
       <div className="relative flex h-full min-h-0 flex-col">
-        {document.domain !== "particle" ? <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-2">
+        {document.domain !== "particle" && document.domain !== "text" ? <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-2">
           <div
             className="pointer-events-auto flex flex-wrap items-center gap-1 rounded-lg border border-border bg-popover p-1 shadow-md"
             data-testid="material-preview-overlay"
@@ -636,6 +636,7 @@ function MaterialDocumentDetails() {
         { value: "landscape", label: "Landscape" },
         { value: "postProcess", label: "Post Process" },
         { value: "particle", label: "Particle" },
+        { value: "text", label: "Text" },
       ],
       onChange: (value) =>
         commit(setMaterialDomain(document, parseMaterialDomain(value))),
@@ -696,7 +697,7 @@ function MaterialDocumentDetails() {
   if ((document.domain === "surface" || document.domain === "landscape")) rows.push({ id: "boundsPadding", kind: "number", label: "Bounds Padding (Local)", value: document.boundsPadding ?? 0, min: 0, onChange: (boundsPadding) => commit({ ...document, boundsPadding }) });
   if ((document.domain !== "surface" && document.domain !== "landscape")) {
     // Particle emitters own blending (their Render module), so particle Materials hide Blend Mode.
-    const hidden = document.domain === "particle" ? ["shadingModel", "blendMode", "twoSided", "defaultNormals"] : ["shadingModel", "twoSided", "defaultNormals"];
+    const hidden = document.domain === "particle" || document.domain === "text" ? ["shadingModel", "blendMode", "twoSided", "defaultNormals"] : ["shadingModel", "twoSided", "defaultNormals"];
     for (let i = rows.length - 1; i >= 0; i--) if (hidden.includes(rows[i]!.id)) rows.splice(i, 1);
   }
   if ((document.domain === "surface" || document.domain === "landscape") && document.blendMode === "masked") {

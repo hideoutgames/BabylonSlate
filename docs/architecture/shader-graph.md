@@ -262,6 +262,7 @@ not author:
 - **Post process**: the `position2d` fullscreen quad, its vertex output, and the
   screen UV remapped from clip space. Babylon still requires a vertex output in
   post-process mode. There is no World Position Offset channel.
+- **Text**: an unlit, double-sided Material with **Text Output** Color (RGBA). The engine multiplies it by Bitmap/MSDF glyph coverage and span color, including outlines. Only 2D Text / 2D Rich Text accept it; ordinary Surface materials do not replace glyph masks. UV reads the component's Text Box or Each Glyph coordinates, separately from the font atlas. The preview shows sample text.
 - **Particle**: `NodeMaterialModes.Particle` so `createEffectForParticles` can
   attach. Vertex program may be empty; the terminal is fragment color/alpha
   only. **Particle Color** (`input.particleColor`) is the system's
@@ -418,7 +419,7 @@ defaults to `[0, 0, 0]` when unwired.
 
 Details is selection-aware:
 
-- **No node selected:** Domain (Surface / Landscape / Post Process / Particle), Shading Model, Blend Mode, Two Sided
+- **No node selected:** Domain (Surface / Landscape / Post Process / Particle / Text), Shading Model, Blend Mode, Two Sided
   (and Alpha Cutoff when masked) plus the cost line. Post Process and Particle hide Shading Model and Two Sided; Particle
   also hides Blend Mode, because each particle emitter owns its blend.
 - **A node selected:** those material settings hide; the panel shows only that

@@ -1628,6 +1628,8 @@ describe("p7-play-scene-load", () => {
                         text: "Hi",
                         fontAssetGuid: "font-1",
                         renderer: "msdf",
+                        materialGuid: "text-material",
+                        materialUv: "glyph",
                       },
                     },
                   ],
@@ -1655,6 +1657,8 @@ describe("p7-play-scene-load", () => {
         fontAssetGuid: "font-1",
         renderer: "msdf",
         size: 32,
+        materialGuid: "text-material",
+        materialUv: "glyph",
       },
     });
     runtime.stop();

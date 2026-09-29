@@ -105,6 +105,7 @@ export interface PlayOverlayProps {
   loopCount?: number;
   inputAssets?: import("@babylonslate/core").InputAssetDefinition[];
   inputMappings?: ProjectInputSettings;
+  focusNavigation?: import("@babylonslate/core").FocusNavigationSettings;
   /** Project Play Preview letterbox; snapshotted when the session starts. */
   playPreview?: PlayPreviewProjectSettings;
   /** Project render size; snapshotted when the session starts. */
@@ -193,6 +194,7 @@ export function PlayOverlay({
   loopCount,
   inputAssets,
   inputMappings,
+  focusNavigation,
   playPreview = DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
   render = DEFAULT_RENDER_PROJECT_SETTINGS,
   animGraphs,
@@ -396,6 +398,7 @@ export function PlayOverlay({
   const initialLoopCountRef = useRef(loopCount);
   const initialInputAssetsRef = useRef(inputAssets);
   const initialInputMappingsRef = useRef(inputMappings);
+  const initialFocusNavigationRef = useRef(focusNavigation);
   const initialPlayPreviewRef = useRef(playPreview);
   const { settings: localEngineSettings } = useAppSettings();
   const initialRenderRef = useRef(render);
@@ -482,6 +485,7 @@ export function PlayOverlay({
       loopCount: initialLoopCountRef.current,
       inputAssets: initialInputAssetsRef.current,
       inputMappings: initialInputMappingsRef.current,
+      focusNavigation: initialFocusNavigationRef.current,
       animGraphs: animGraphsRef.current,
       behaviourTrees: behaviourTreesRef.current,
       blackboards: blackboardsRef.current,

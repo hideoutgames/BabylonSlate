@@ -141,6 +141,22 @@ function engine(): NullEngine {
 }
 
 describe("material preview scene", () => {
+  it("previews Text-domain glyphs and retires their atlas when leaving Text", () => {
+    const host = createMaterialPreviewScene(engine() as never);
+    disposers.push(host.dispose);
+    const library = new MaterialLibrary();
+    disposers.push(() => library.dispose());
+    const material = library.resolve(host.scene, "text", createDefaultMaterialDocument("Letters", "text"))!;
+    host.applyMaterial(material);
+    const root = host.scene.getMeshByName("materialPreviewText")!;
+    expect(root.getChildMeshes().length).toBeGreaterThan(0);
+    expect(root.getChildMeshes().every((glyph) => glyph.material === material)).toBe(true);
+    expect(host.mesh.isEnabled()).toBe(false);
+    host.applyMaterial(new StandardMaterial("surface", host.scene));
+    expect(root.isDisposed()).toBe(true);
+    expect(host.mesh.isEnabled()).toBe(true);
+    expect(host.scene.textures.some((texture) => texture.name.includes("bitmap-atlas"))).toBe(false);
+  });
   it("previews one particle plane and removes it when leaving the domain", () => {
     const host = createMaterialPreviewScene(engine() as never);
     disposers.push(host.dispose);
