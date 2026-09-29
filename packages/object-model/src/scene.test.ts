@@ -70,6 +70,25 @@ describe("Scene object model", () => {
     expect(scene.destroyed).toBe(true);
     expect(world.currentScene).toBeNull();
   });
+
+  it("ends SceneSubsystems while their Scene is still current and alive", () => {
+    const seen: Array<[Scene | null, boolean]> = [];
+    const world = new World({
+      seed: 1,
+      dt: 1 / 60,
+      classRegistry: new ClassRegistry(),
+      sceneSubsystemHooksFor: () => ({
+        onEnd: (self) => {
+          seen.push([world.currentScene, self.scene.destroyed]);
+        },
+      }),
+    });
+    world.setSceneSubsystemClasses(["Weather"]);
+    const scene = world.createScene({ assetGuid: "scene-1", sceneName: "Main" });
+    world.exitActiveScene();
+    expect(seen).toEqual([[scene, false]]);
+    expect(scene.destroyed).toBe(true);
+  });
 });
 
 describe("sceneAssetClassId", () => {

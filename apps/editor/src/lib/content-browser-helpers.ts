@@ -59,7 +59,12 @@ import {
   type TreeDropPlacement,
 } from "@babylonslate/editor-kit";
 import { typeColorThumbAccent } from "@babylonslate/ui/lib/data-types";
-import { isSceneAssetClassId } from "@babylonslate/object-model";
+import {
+  GAME_SUBSYSTEM_CLASS_ID,
+  SCENE_SUBSYSTEM_CLASS_ID,
+  isLockedEngineClassId,
+  isSceneAssetClassId,
+} from "@babylonslate/object-model";
 import { createDefaultLogicGraphSerialized, defaultNodeRegistry } from "../services/graph-validation";
 import { classIdForGraphPath } from "../services/script-compiler";
 
@@ -97,6 +102,8 @@ export const ENGINE_BASE_CLASSES = [
   "SceneStreamingActor",
   "ActorComponent",
   "GameInstance",
+  GAME_SUBSYSTEM_CLASS_ID,
+  SCENE_SUBSYSTEM_CLASS_ID,
   "FunctionLibrary",
   "BDebugCommand",
   "EditorUtilityObject",
@@ -147,13 +154,14 @@ export function buildParentClassTreeRows(
     children.set(parent, list);
   };
   for (const id of ENGINE_BASE_CLASSES) {
-    const parent = engineParentOf(id) ?? null;
-    // Only nest engine bases under other engine bases that appear in the picker.
-    if (parent && (ENGINE_BASE_CLASSES as readonly string[]).includes(parent)) {
-      addChild(parent, id);
-    } else {
-      addChild(null, id);
-    }
+    // Nest engine bases under the nearest engine base the picker lists, so
+    // the subsystem bases sit under BObject past the hidden Subsystem base.
+    const parent =
+      walkAncestry(engineParentOf(id), (ancestor) => engineParentOf(ancestor))
+        .find((ancestor) =>
+          (ENGINE_BASE_CLASSES as readonly string[]).includes(ancestor),
+        ) ?? null;
+    addChild(parent, id);
   }
   for (const id of projectIds) {
     const parent = parentOf(id);
@@ -1563,6 +1571,12 @@ export function buildNewAssetResult(options: {
   }
 
   if (type === "Class") {
+    // The class id is the file stem; an engine id would be swallowed by the
+    // locked engine class of that name at runtime.
+    const classId = classIdForGraphPath(newAssetFileName(type, name));
+    if (isLockedEngineClassId(classId)) {
+      throw new Error(`"${classId}" is an engine class name. Choose another Class name.`);
+    }
     if (walkAncestry(parentClass ?? "BObject", options.parentOf ?? engineParentOf).includes("SceneLayer")) {
       throw new Error("SceneLayer classes must be created as Scene Layer assets.");
     }

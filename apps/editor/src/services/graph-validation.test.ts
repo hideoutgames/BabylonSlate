@@ -3,6 +3,7 @@ import type { SerializedGraph } from "@babylonslate/core";
 import { createText3DComponent } from "@babylonslate/core";
 import { objectRef } from "@babylonslate/scripting";
 import { createDefaultNodeRegistry, formatArgPinId, selectOptionPinId } from "@babylonslate/scripting-nodes";
+import { filterPaletteForPin } from "@babylonslate/graph-ui";
 import {
   classHierarchyFromParentOf,
   classMemberSymbolsFromGraphs,
@@ -3331,5 +3332,220 @@ describe("hydrate component event bindings", () => {
       },
     );
     expect(diags.some((d) => d.code === "event.missing_inherited")).toBe(true);
+  });
+});
+
+describe("subsystems", () => {
+  // Inventory: GameSubsystem. Weather: SceneSubsystem, extended by the two
+  // instantiated leaves RainWeather and SnowWeather. Hero: Actor. Tools:
+  // EditorUtilityObject.
+  const parents: Record<string, string> = {
+    Inventory: "GameSubsystem",
+    Weather: "SceneSubsystem",
+    RainWeather: "Weather",
+    SnowWeather: "Weather",
+    Hero: "Actor",
+    Tools: "EditorUtilityObject",
+  };
+  const parentOf = (id: string) => parents[id];
+  const subsystemClasses = [
+    { classId: "Inventory", base: "GameSubsystem" as const },
+    { classId: "RainWeather", base: "SceneSubsystem" as const },
+    { classId: "SnowWeather", base: "SceneSubsystem" as const },
+    { classId: "Weather", base: "SceneSubsystem" as const },
+  ];
+  const inventoryGraph: SerializedGraph = {
+    nodes: [],
+    edges: [],
+    members: [
+      { id: "fn-add", kind: "function", name: "Add Item" },
+      { id: "var-gold", kind: "variable", name: "Gold", typeId: "int" },
+      { id: "evt-refresh", kind: "event", name: "On Refresh" },
+    ],
+  };
+
+  const getNode = (id: string, classId: string) => ({
+    id,
+    type: "subsystem.get",
+    position: { x: 0, y: 0 },
+    data: { classId },
+  });
+
+  function validateOn(hostClassId: string, nodes: SerializedGraph["nodes"]) {
+    return validateSerializedGraph(
+      { nodes, edges: [] },
+      {
+        assetGuid: hostClassId,
+        graphId: "main",
+        classId: hostClassId,
+        parentOf,
+        subsystemClasses,
+      },
+    );
+  }
+
+  it.each(["GameSubsystem", "SceneSubsystem"])(
+    "seeds only Event On Init wired to its parent for a new %s class",
+    (parentClass) => {
+      const graph = createDefaultLogicGraphSerialized(registry, { parentClass });
+      expect(graph.nodes.map((node) => node.type)).toEqual([
+        "flow.event.init",
+        "flow.event.callParent",
+      ]);
+      expect(graph.edges).toEqual([
+        expect.objectContaining({ source: "event-on-init", sourceHandle: "execOut", targetHandle: "execIn" }),
+      ]);
+    },
+  );
+
+  it("injects one pure Get row per project subsystem class, typed to that class", () => {
+    const nodes = scriptPaletteNodes(registry, {
+      parentClass: "Actor",
+      classId: "Hero",
+      parentOf,
+      subsystemClasses,
+    });
+    const rows = nodes.filter((node) => node.nodeType === "subsystem.get");
+    expect(rows.map((row) => [row.id, row.title, row.category])).toEqual([
+      ["subsystem.get:Inventory", "Get Inventory", "game-subsystems"],
+      ["subsystem.get:RainWeather", "Get RainWeather", "scene-subsystems"],
+      ["subsystem.get:SnowWeather", "Get SnowWeather", "scene-subsystems"],
+      ["subsystem.get:Weather", "Get Weather", "scene-subsystems"],
+    ]);
+    const inventory = rows[0]!;
+    expect(inventory.pure).toBe(true);
+    expect(inventory.defaultData).toEqual({ classId: "Inventory" });
+    expect(inventory.pins).toEqual([
+      expect.objectContaining({ id: "subsystem", direction: "out", type: objectRef("Inventory") }),
+    ]);
+    expect(inventory.outOfContext).toBeUndefined();
+    expect(nodes.some((node) => node.id === "subsystem.get")).toBe(false);
+    expect(nodes.some((node) => node.id === "gameInstance.get")).toBe(true);
+  });
+
+  it("offers no Get Subsystem or Get Game Instance rows in editor utility graphs", () => {
+    const nodes = scriptPaletteNodes(registry, {
+      parentClass: "EditorUtilityObject",
+      classId: "Tools",
+      parentOf,
+      subsystemClasses,
+    });
+    expect(nodes.some((node) => node.nodeType === "subsystem.get")).toBe(false);
+    expect(nodes.some((node) => node.id === "gameInstance.get")).toBe(false);
+  });
+
+  it("never offers Cast to the hidden Subsystem base", () => {
+    const ids = scriptPaletteNodes(registry, { parentClass: "Actor", parentOf, subsystemClasses }).map(
+      (node) => node.id,
+    );
+    expect(ids).not.toContain("casting.cast:Subsystem");
+    expect(ids).toContain("casting.cast:GameSubsystem");
+    expect(ids).toContain("casting.cast:SceneSubsystem");
+  });
+
+  it("lists the subsystem's Call, Get, Set and Call event rows first when dragging from Get", () => {
+    const nodes = scriptPaletteNodes(registry, {
+      parentClass: "Actor",
+      classId: "Hero",
+      parentOf,
+      otherClassGraphs: { Inventory: inventoryGraph },
+      subsystemClasses,
+    });
+    const output = nodes.find((node) => node.id === "subsystem.get:Inventory")!.pins![0]!;
+    const hierarchy = classHierarchyFromParentOf((id) => parents[id] ?? null);
+    const suggested = filterPaletteForPin(nodes, output, scriptPinCompatibility(hierarchy)).map(
+      (node) => node.id,
+    );
+    const members = [
+      "functions.call:Inventory:Add Item",
+      "variables.get:Inventory:Gold",
+      "variables.set:Inventory:Gold",
+      "flow.event.call:Inventory:On Refresh",
+    ];
+    for (const id of members) expect(suggested).toContain(id);
+    expect(suggested.slice(0, 3)).toEqual(expect.arrayContaining(members.slice(0, 3)));
+  });
+
+  it("rebuilds a saved Get node's typed pin and title from its class", () => {
+    const hydrated = hydrateSerializedGraphForEditor(
+      {
+        nodes: [
+          {
+            id: "get",
+            type: "subsystem.get",
+            position: { x: 0, y: 0 },
+            data: {
+              classId: "Weather",
+              title: "Get Subsystem",
+              __pins: registry.get("subsystem.get")!.pins({}),
+            },
+          },
+        ],
+        edges: [],
+      },
+      registry,
+    );
+    expect(hydrated.nodes[0]!.data.title).toBe("Get Weather");
+    expect(hydrated.nodes[0]!.data.__pins).toEqual([
+      expect.objectContaining({ id: "subsystem", type: objectRef("Weather") }),
+    ]);
+  });
+
+  it("errors when a Get targets a class outside the subsystem lineages", () => {
+    const codes = validateOn("Hero", [getNode("get", "Hero"), getNode("missing", "Gone")]).map(
+      (entry) => [entry.nodeId, entry.code],
+    );
+    expect(codes).toEqual(
+      expect.arrayContaining([
+        ["get", "subsystem.not_subsystem"],
+        ["missing", "subsystem.not_subsystem"],
+      ]),
+    );
+  });
+
+  it("errors when a Get matches more than one instantiated subsystem and names them", () => {
+    const diagnostics = validateOn("Hero", [
+      getNode("base", "Weather"),
+      getNode("leaf", "RainWeather"),
+      getNode("game", "Inventory"),
+    ]);
+    const ambiguous = diagnostics.filter((entry) => entry.code === "subsystem.ambiguous");
+    expect(ambiguous.map((entry) => entry.nodeId)).toEqual(["base"]);
+    expect(ambiguous[0]!.severity).toBe("error");
+    expect(ambiguous[0]!.message).toContain("RainWeather, SnowWeather");
+    expect(diagnostics.filter((entry) => entry.nodeId !== "base" && entry.severity === "error")).toEqual([]);
+  });
+
+  it("errors on Get Game Instance and Get Subsystem in editor utility graphs only", () => {
+    const nodes = [
+      getNode("sub", "Inventory"),
+      { id: "gi", type: "gameInstance.get", position: { x: 0, y: 0 }, data: {} },
+    ];
+    expect(
+      validateOn("Tools", nodes).map((entry) => [entry.nodeId, entry.code]),
+    ).toEqual(
+      expect.arrayContaining([
+        ["sub", "subsystem.editor_host"],
+        ["gi", "gameInstance.editor_host"],
+      ]),
+    );
+    expect(validateOn("Hero", nodes).filter((entry) => entry.severity === "error")).toEqual([]);
+  });
+
+  it("errors on lifecycle events outside the lineage that runs them", () => {
+    const event = (type: string) => ({ id: type, type, position: { x: 0, y: 0 }, data: {} });
+    const lineageErrors = (host: string, types: string[]) =>
+      validateOn(host, types.map(event))
+        .filter((entry) => entry.code === "event.wrong_lineage")
+        .map((entry) => entry.nodeId);
+    const scene = ["flow.event.sceneLoaded", "flow.event.sceneActorSpawned"];
+    expect(lineageErrors("RainWeather", scene)).toEqual([]);
+    expect(lineageErrors("Inventory", scene)).toEqual(scene);
+    expect(lineageErrors("Hero", scene)).toEqual(scene);
+    expect(lineageErrors("RainWeather", ["flow.event.sceneExit", "flow.event.init", "flow.event.tick"])).toEqual([
+      "flow.event.sceneExit",
+    ]);
+    expect(lineageErrors("Inventory", ["flow.event.sceneExit", "flow.event.init"])).toEqual([]);
+    expect(lineageErrors("Hero", ["flow.event.init", "flow.event.beginPlay"])).toEqual(["flow.event.init"]);
   });
 });

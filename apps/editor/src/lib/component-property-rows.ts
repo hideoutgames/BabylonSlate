@@ -58,6 +58,7 @@ import {
 import {
   ENGINE_BASE_CLASS_IDS,
   ENGINE_COMPONENT_CLASS_IDS,
+  isHiddenEngineBaseClassId,
 } from "@babylonslate/object-model";
 import { parseNavMeshActorSettings } from "@babylonslate/navigation";
 import { classParentLookup, classIdFromClassAsset } from "./content-browser-helpers";
@@ -2074,8 +2075,9 @@ export function gameInstanceClassEntries(
     if (asset.header.type !== "Class") continue;
     const id = classIdFromClassAsset(asset);
     if (id === "GameInstance") continue;
-    if (!walkAncestry(id, parentOf).includes("GameInstance")) continue;
-    entries.push({ id, name: id, group: "Project" });
+    const ancestry = walkAncestry(id, parentOf);
+    if (!ancestry.includes("GameInstance")) continue;
+    entries.push({ id, name: id, group: "Project", ancestry });
   }
   return entries;
 }
@@ -2099,12 +2101,15 @@ export function subclassClassEntries(
   const seen = new Set<string>();
   const add = (id: string, name: string, group: string) => {
     if (seen.has(id)) return;
-    if (!walkAncestry(id, parentOf).includes(baseClassId)) return;
+    // Hidden engine bases (Subsystem) stay known but are never offered.
+    if (isHiddenEngineBaseClassId(id)) return;
+    const ancestry = walkAncestry(id, parentOf);
+    if (!ancestry.includes(baseClassId)) return;
     if (options?.editorGraph !== true && isEditorGraphClass(id, parentOf)) {
       return;
     }
     seen.add(id);
-    entries.push({ id, name, group });
+    entries.push({ id, name, group, ancestry });
   };
   add(baseClassId, baseClassId, "Engine");
   for (const id of ENGINE_BASE_CLASS_IDS) add(id, id, "Engine");

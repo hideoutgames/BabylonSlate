@@ -8,6 +8,8 @@ export interface ClassPickerEntry {
   name: string;
   description?: string;
   group?: string;
+  /** Most-specific first; project classes resolve their engine-base glyph from it. */
+  ancestry?: readonly string[];
 }
 
 export interface ClassPickerProps {
@@ -42,6 +44,7 @@ export function ClassPicker({
         <TypeVisualIcon
           visual={resolveTypeVisual({
             classId: entry.id,
+            ...(entry.ancestry ? { ancestry: [...entry.ancestry] } : {}),
             family: "class",
           })}
         />

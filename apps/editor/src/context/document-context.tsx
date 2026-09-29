@@ -155,7 +155,7 @@ import {
   knownClassIdSet,
   validateSerializedGraph,
 } from "../services/graph-validation";
-import { collectClassGraphsForPalette, collectGraphTypeAssets, collectSceneDocumentsForPalette, typeSchemasFromGraphAssets } from "../lib/logic-graph-document";
+import { collectClassGraphsForPalette, collectGraphTypeAssets, collectSceneDocumentsForPalette, collectSubsystemClassesForPalette, typeSchemasFromGraphAssets } from "../lib/logic-graph-document";
 import { applyFocusLayout, focusKeepPanelIds } from "../shell/layout-ops";
 import {
   capturePanelPlacement,
@@ -2846,6 +2846,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       assets,
       openDocuments,
     }).map((scene) => sceneAssetClassId(scene.guid));
+    const subsystemClasses = collectSubsystemClassesForPalette({
+      assets,
+      openDocuments,
+      parentOf,
+      classIdForPath: classIdForGraphPath,
+    });
     const diagnostics = documents.flatMap((doc) =>
       validateSerializedGraph(doc.content, {
         assetGuid: doc.path,
@@ -2866,6 +2872,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         ),
         parentOf,
         otherClassGraphs: classGraphs,
+        subsystemClasses,
       }),
     );
     const bundles = [
