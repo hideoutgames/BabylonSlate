@@ -1,3 +1,4 @@
+import { overlayAnchorBindings } from "./overlay-anchor-layout";
 import { RuntimeMaterialParameters } from "./runtime-material-parameters";
 import { CableWorldSync } from "./cable-sync";
 import { captureComponent, captureLocalTransform, captureProperties } from "./render-targets";
@@ -62,6 +63,8 @@ import {
   normalizeSceneLayer,
   newGuid,
   sceneLayerRelativeAnchorWorldPosition,
+  isSceneLayerAnchorActor,
+  identityTransform,
   SCENE_LAYER_DEFAULT_LAYER_BOUNDS,
   deprojectCursorRay,
   type MaterialParameterCatalog,
@@ -1141,7 +1144,9 @@ class InProcessRuntime implements RuntimeDriver {
       refreshComponent: (component) => {
         const owner = component.owner;
         if (!owner || owner.destroyed) return;
-        this.applyOverlayAnchor(owner);
+        if (owner.sceneLayerId && component.classId === "2DAnchorComponent") {
+          for (const _ of this.applyOverlayAnchors(this.world.getActors())) void _;
+        }
         const slotId = this.slotByGuid.get(owner.guid);
         if (slotId !== undefined) {
           if (component.classId === "RenderTargetCaptureComponent") this.emitRenderTargetCapture(owner, slotId);
@@ -1791,10 +1796,9 @@ class InProcessRuntime implements RuntimeDriver {
       this.ensureOverlayDesignPose(actor);
       yield;
     }
-    for (const actor of actors) {
+    for (const _ of this.applyOverlayAnchors(actors)) {
       checkpoint();
-      this.applyOverlayAnchor(actor);
-      yield;
+      yield _;
     }
     for (const actor of actors) {
       checkpoint();
@@ -1901,10 +1905,7 @@ class InProcessRuntime implements RuntimeDriver {
     if (typeof canvasHeight === "number" && canvasHeight > 0) {
       this.playCanvasHeight = canvasHeight;
     }
-    for (const actor of this.world.getActors()) {
-      this.ensureOverlayDesignPose(actor);
-      this.applyOverlayAnchor(actor);
-    }
+    for (const _ of this.applyOverlayAnchors(this.world.getActors())) void _;
     this.overlayPhysicsSync.syncFromWorld(this.world);
   }
 
@@ -1987,21 +1988,25 @@ class InProcessRuntime implements RuntimeDriver {
     });
   }
 
-  private applyOverlayAnchor(actor: Actor): void {
-    if (!actor.sceneLayerId) return;
-    const ownAnchor = liveOverlayAnchor(actor);
-    const parentId = actorParentGuid(actor);
-    const parent = parentId ? this.world.findActor(parentId) : undefined;
-    if (ownAnchor && parent?.sceneLayerId) {
-      if (!liveOverlayAnchor(parent)) {
-        this.applyRelativeOverlayAnchor(parent, ownAnchor);
+  private readonly anchoredOverlayActors = new Set<string>();
+
+  private *applyOverlayAnchors(actors: readonly Actor[]): Generator<void, void, unknown> {
+    const bindings = overlayAnchorBindings(actors);
+    for (const actor of actors) {
+      if (!actor.sceneLayerId || actor.destroyed) continue;
+      this.ensureOverlayDesignPose(actor);
+      if (isSceneLayerAnchorActor(actor)) actor.transform = identityTransform();
+      const anchor = bindings.get(actor);
+      if (anchor) {
+        this.applyRelativeOverlayAnchor(actor, anchor);
+        this.anchoredOverlayActors.add(actor.guid);
+      } else if (this.anchoredOverlayActors.delete(actor.guid)) {
+        const authored = this.overlayDesignPose.get(actor.guid)!;
+        actor.transform.position.x = authored.x;
+        actor.transform.position.y = authored.y;
       }
-      actor.transform.position.x = 0;
-      actor.transform.position.y = 0;
-      return;
+      yield;
     }
-    if (!ownAnchor) return;
-    this.applyRelativeOverlayAnchor(actor, ownAnchor);
   }
 
   private applyRelativeOverlayAnchor(actor: Actor, anchorComp: ActorComponent): void {
@@ -2334,7 +2339,10 @@ class InProcessRuntime implements RuntimeDriver {
       if (ownsSlot()) this.emit({ type: "despawn", slotId: slotId!, actorGuid: actor.guid });
     } finally {
       if (ownsSlot()) this.releaseSlot(actor.guid, slotId!);
-      if (this.world.findActor(actor.guid) === actor) this.overlayDesignPose.delete(actor.guid);
+      if (this.world.findActor(actor.guid) === actor) {
+        this.overlayDesignPose.delete(actor.guid);
+        this.anchoredOverlayActors.delete(actor.guid);
+      }
       this.world.destroyActorInstance(actor);
       this.removingActors.delete(actor);
     }
@@ -5329,13 +5337,6 @@ function overlayButtonHasParentVisual(actor: Actor, world: World): boolean {
   if (!parentId) return false;
   const parent = world.findActor(parentId);
   return parent ? overlayActorHasVisual(parent) : false;
-}
-
-function liveOverlayAnchor(actor: Actor): ActorComponent | undefined {
-  return actor.components.find(
-    (component) =>
-      component.classId === "2DAnchorComponent" && !component.destroyed,
-  );
 }
 
 function liveOverlayButtons(actor: Actor): ActorComponent[] {

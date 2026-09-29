@@ -86,7 +86,7 @@ Editor Preview shows unlit planes for `2DTexture` / `2DMaterial` / `2DPanel` / s
 
 `2DAnchor` maps authored XY from the orange layer bounds onto the Play frustum. Origin is the 9-point on the orange rect (and the matching point on screen); `relative = (authoredXY + offset − origin) / layerBounds`; `runtimeXY = screenOrigin + relative × frustumSize`. Play’s frustum **is** `layerBounds`, so the map is identity plus design-space offset. Offsets are an extra design-space inset (default 0). Authoring is WYSIWYG inside the orange box.
 
-Outliner parent/child: a `2DAnchor` on actor A, or on a **direct child** of A, pins **A** (the visual parent). The child helper stays at local origin.
+Outliner parent/child: an anchor-only object configures its spatial parent; a root anchor with no parent is inert. An anchor component attached to a visual actor configures that actor. The uppermost configured anchor takes precedence throughout its subtree: descendants inherit the parent transform, and lower anchors do not apply a second offset or move ancestors. An actor?s own anchor wins over an anchor helper attached beneath that same actor; among helper siblings, the first live anchor in Outliner order wins. Reparenting or changing anchor properties resolves this ownership again.
 
 On canvas / resolution change the worker reapplies XY from a cached design pose so Get Actor Location matches the visual. `normalizeSceneLayer` bakes legacy identity XY + non-zero `offsetX`/`offsetY` into actor XY (old “1 world unit from the corner”) so existing 16×9 layouts do not jump; later resizes use relative mapping. Rotation, Z, and scale are not part of that bake.
 
