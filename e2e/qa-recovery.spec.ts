@@ -23,11 +23,18 @@ async function recoverAfterReload(page: Page) {
 
 async function journalCommands(page: Page) {
   return page.evaluate(async () => {
-    const root = await navigator.storage.getDirectory();
-    const storage = await root.getDirectoryHandle("opfs:__babylonslate_derived__");
-    const derived = await storage.getDirectoryHandle("derived");
     type Command = { type: string; to?: unknown; commands?: Command[] };
     const commands: Command[] = [];
+    const root = await navigator.storage.getDirectory();
+    let derived: FileSystemDirectoryHandle;
+    try {
+      const storage = await root.getDirectoryHandle("opfs:__babylonslate_derived__");
+      derived = await storage.getDirectoryHandle("derived");
+    } catch {
+      // Journal writes are batched, so the first poll can precede the first
+      // flush that creates the derived-data folders.
+      return commands;
+    }
     const append = (command: Command) => {
       if (command.type === "edit.batch") command.commands?.forEach(append);
       else commands.push(command);
