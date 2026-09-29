@@ -69,7 +69,9 @@ test.describe("Scene modes", { tag: IPAD_TEST_TAG }, () => {
     test.setTimeout(150_000);
     await openMinimalTestProject(page, await landscapeProjectFiles()); await openMainScene(page);
     await expect(page.getByTestId("scene-mode-select")).toContainText("Design");
+    const designIslandHeight = (await page.getByTestId("viewport-panel-frame").boundingBox())!.height;
     await selectMode(page, "Landscape");
+    expect((await page.getByTestId("viewport-panel-frame").boundingBox())!.height).toBe(designIslandHeight);
     await page.getByRole("button", { name: "Create Landscape", exact: true }).click();
     await expect(page.getByRole("treeitem", { name: /Landscape 1/ })).toBeVisible();
     const collisions = page.getByRole("checkbox", { name: "Landscape Collisions", exact: true });
@@ -101,6 +103,7 @@ test.describe("Scene modes", { tag: IPAD_TEST_TAG }, () => {
     await page.screenshot({ path: testInfo.outputPath("landscape.png") });
     await toggleWindow(page, "landscape-outliner");
     await selectMode(page, "Foliage");
+    expect((await page.getByTestId("viewport-panel-frame").boundingBox())!.height).toBe(designIslandHeight);
     await page.getByTestId("focus-layout").click();
     await expect(page.getByTestId("focus-layout")).toHaveAttribute("aria-pressed", "true");
     await selectMode(page, "Design");
