@@ -29,28 +29,37 @@ function node(id: string, typeId: string, properties: Record<string, unknown> = 
 }
 
 /**
- * JavaScript run by an event node. The event's data pins, and one `Get
- * <Subsystem>` node per `gets` entry, are in scope under their pin/entry names.
+ * JavaScript run by an event node. The event's data pins, one `Get
+ * <Subsystem>` node per `gets` entry and an optional Get Game Instance node
+ * (named by `gameInstance`) are in scope under their pin/entry names.
  */
-type Handler = string | { body: string; gets: Record<string, string> };
+type Handler = string | { body: string; gets?: Record<string, string>; gameInstance?: string };
 
 /** Compiles a real Class Graph: each event node drives one Execute JavaScript node. */
 function classScript(
   classId: string,
   parentClassId: string,
   handlers: Record<string, Handler>,
-  extra: { functions?: string; variables?: CompiledScript["variables"] } = {},
+  extra: {
+    functions?: string;
+    variables?: CompiledScript["variables"];
+    interfaces?: Pick<CompiledScript, "implementedInterfaces" | "interfaceImplementations">;
+  } = {},
 ): CompiledScript {
   const nodes: GraphNode[] = [];
   const edges: LogicGraph["edges"] = [];
   Object.entries(handlers).forEach(([typeId, handler], index) => {
-    const { body, gets = {} } = typeof handler === "string" ? { body: handler } : handler;
+    const { body, gets = {}, gameInstance } =
+      typeof handler === "string" ? { body: handler } : handler;
     const event = node(`event${index}`, typeId);
     const data = event.pins.filter((pin) => pin.direction === "out" && pin.kind === "data");
-    const getNodes = Object.entries(gets).map(([name, getClassId]) => ({
-      name,
-      get: node(`get${index}_${name}`, SUBSYSTEM_GET_NODE_ID, subsystemGetProperties(getClassId)),
-    }));
+    const getNodes = [
+      ...Object.entries(gets).map(([name, getClassId]) => ({
+        name,
+        get: node(`get${index}_${name}`, SUBSYSTEM_GET_NODE_ID, subsystemGetProperties(getClassId)),
+      })),
+      ...(gameInstance ? [{ name: gameInstance, get: node(`gi${index}`, "gameInstance.get") }] : []),
+    ];
     const js = node(`js${index}`, "debug.executeJavaScript", {
       inputs: [
         ...data.map((pin) => ({ name: pin.id, type: pin.type })),
@@ -65,7 +74,7 @@ function classScript(
       edges.push({ id: `data${index}_${pin.id}`, sourceNodeId: event.id, sourcePinId: pin.id, targetNodeId: js.id, targetPinId: `in_${pin.id}` });
     }
     for (const { name, get } of getNodes) {
-      edges.push({ id: `get${index}_${name}`, sourceNodeId: get.id, sourcePinId: "subsystem", targetNodeId: js.id, targetPinId: `in_${name}` });
+      edges.push({ id: `get${index}_${name}`, sourceNodeId: get.id, sourcePinId: get.pins[0]!.id, targetNodeId: js.id, targetPinId: `in_${name}` });
     }
   });
   const assetGuid = `${classId}-class`;
@@ -78,6 +87,7 @@ function classScript(
     anchors: compiled.anchors,
     entryPoints: compiled.entryPoints,
     ...(extra.variables ? { variables: extra.variables } : {}),
+    ...extra.interfaces,
   };
 }
 
@@ -240,6 +250,72 @@ describe("Game Subsystems", () => {
       expect(scriptLog(commands)()).toEqual([]);
       expect(commands.filter((command) => command.type === "log" && command.severity === "warning" &&
         command.message.includes("LateSubsystem"))).toHaveLength(1);
+    } finally { runtime.stop(); }
+  });
+
+  it("answer Call Interface through Get references, a Scene Subsystem already while its Scene prepares", async () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, deferSceneModelsReady: true,
+      playScene: sceneNamed("Level1"), playSceneGuid: "scene-1",
+      onCommand: (command) => commands.push(command),
+    });
+    const take = scriptLog(commands);
+    const describes = (classId: string, parentClassId: string, text: string) =>
+      classScript(classId, parentClassId, {}, {
+        functions: `export function Describe() { return { text: "${text}" }; }`,
+        interfaces: {
+          implementedInterfaces: ["iface-describe"],
+          interfaceImplementations: [{ interfaceGuid: "iface-describe", method: "Describe", exportName: "Describe" }],
+        },
+      });
+    await runtime.loadScripts([
+      describes("SaveSubsystem", "GameSubsystem", "save"),
+      describes("RainSubsystem", "SceneSubsystem", "rain"),
+      classScript("GameInstance", "GameInstance", {
+        "flow.event.init": {
+          gets: { save: "SaveSubsystem" },
+          body: 'log("init:" + ctx.callInterface(save, "iface-describe", "Describe", {}).text);',
+        },
+        "flow.event.tick": {
+          gets: { rain: "RainSubsystem" },
+          body: 'log("tick:" + ctx.callInterface(rain, "iface-describe", "Describe", {}).text);',
+        },
+      }),
+    ]);
+    try {
+      runtime.realizePlayWorld();
+      runtime.start();
+      runtime.tick();
+      // Level1 is still waiting for its models, so the Scene Subsystem has not had On Init yet.
+      expect(take()).toEqual(["init:save", "tick:rain"]);
+      expect(scriptErrors(commands)).toEqual([]);
+    } finally { runtime.stop(); }
+  });
+
+  it("let Get Game Instance reach the session Game Instance with its inherited class defaults", async () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, gameInstanceClass: "MatchGI",
+      playScene: sceneNamed("Level1", [createActor("a1", "A1", { classId: "Reader" })]), playSceneGuid: "scene-1",
+      onCommand: (command) => commands.push(command),
+    });
+    const take = scriptLog(commands);
+    await runtime.loadScripts([
+      // The selected class only inherits: its base declares the default and On Init.
+      classScript("MatchGI", "GameBase", {}),
+      classScript("GameBase", "GameInstance", { "flow.event.init": 'log("init:" + ctx.self.classId);' }, {
+        variables: [{ name: "score", type: "int", defaultValue: 10 }],
+      }),
+      classScript("Reader", "Actor", {
+        "flow.event.beginPlay": { gameInstance: "gi", body: 'log("read:" + (gi === ctx.getGameInstance()) + ":" + gi.classId + ":" + gi.getVariable("score"));' },
+      }),
+    ]);
+    try {
+      runtime.realizePlayWorld();
+      expect(take()).toEqual(["init:MatchGI", "read:true:MatchGI:10"]);
+      expect(runtime.getWorld().gameInstance?.getVariable("score")).toBe(10);
+      expect(scriptErrors(commands)).toEqual([]);
     } finally { runtime.stop(); }
   });
 });

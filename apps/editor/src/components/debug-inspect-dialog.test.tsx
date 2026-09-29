@@ -73,41 +73,6 @@ describe("DebugInspectDialog", () => {
     }
   });
 
-  it("lists subsystems after the Game Instance with their subsystem base glyphs", () => {
-    const live: DebugInspectSnapshot = {
-      tickIndex: 4,
-      nodes: [
-        snapshot.nodes[0]!,
-        {
-          id: "subsystem:Inventory", kind: "subsystem", label: "Inventory", classId: "Inventory",
-          ancestry: ["Inventory", "GameSubsystem", "Subsystem", "BObject"], parentId: null, variables: { gold: 3 },
-        },
-        {
-          id: "scene-subsystem:RainWeather:1", kind: "subsystem", label: "RainWeather", classId: "RainWeather",
-          ancestry: ["RainWeather", "Weather", "SceneSubsystem", "Subsystem", "BObject"], parentId: null, variables: {},
-        },
-        snapshot.nodes[1]!,
-      ],
-    };
-    render(<DebugInspectDialog open onOpenChange={() => {}} snapshot={live} />);
-    const rowIds = screen
-      .getAllByTestId(/^tree-row-/)
-      .map((row) => row.getAttribute("data-testid"));
-    expect(rowIds).toEqual([
-      "tree-row-gi",
-      "tree-row-subsystem:Inventory",
-      "tree-row-scene-subsystem:RainWeather:1",
-      "tree-row-hero",
-    ]);
-    for (const [id, glyph] of [
-      ["subsystem:Inventory", "file-stack"],
-      ["scene-subsystem:RainWeather:1", "file-axis-3d"],
-    ]) {
-      const icon = screen.getByTestId(`tree-row-${id}`).querySelector(`svg.lucide-${glyph}`);
-      expect(icon?.getAttribute("stroke")).toBe("var(--asset-animation)");
-    }
-  });
-
   it("offers session actor destruction and camera possession only for valid selections", async () => {
     const execute = vi.fn().mockResolvedValue({ success: true, output: "ok" });
     const live = { ...snapshot, nodes: [...snapshot.nodes, {

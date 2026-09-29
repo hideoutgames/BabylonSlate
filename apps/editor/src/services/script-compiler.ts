@@ -59,20 +59,25 @@ function prefabComponentsForCompile(
 }
 
 /**
- * Subsystems are discovered from the runtime ClassRegistry, which only learns
- * classes that compiled to a script. A GameSubsystem / SceneSubsystem class
- * (including an empty user base between a subsystem and its engine base)
- * therefore always compiles, if only to its parent, variables and interfaces.
+ * The runtime ClassRegistry only learns classes that compiled to a script.
+ * Subsystems are discovered from it, and the Game Instance takes its variable
+ * defaults and interfaces from it (read through Get Game Instance). A
+ * GameSubsystem / SceneSubsystem / GameInstance class, including an empty user
+ * base between it and its engine base, therefore always compiles, if only to
+ * its parent, variables and interfaces.
  */
-function isSubsystemLineageClass(
+function alwaysCompilesClass(
   classId: string,
   parentOf: (classId: string) => string | null | undefined,
 ): boolean {
-  const lineage = {
-    ancestry: (id: string) =>
-      walkAncestry(id, (ancestor) => parentOf(ancestor) ?? engineParentOf(ancestor)),
-  };
-  return subsystemBaseClassIdOf(lineage, classId) !== null;
+  const ancestry = walkAncestry(
+    classId,
+    (ancestor) => parentOf(ancestor) ?? engineParentOf(ancestor),
+  );
+  return (
+    subsystemBaseClassIdOf({ ancestry: () => ancestry }, classId) !== null ||
+    ancestry.includes("GameInstance")
+  );
 }
 
 /**
@@ -254,7 +259,7 @@ export function compileGraphDocument(
       );
     }
   }
-  if (compiledPieces.length === 0 && isSubsystemLineageClass(classId, parentOf)) {
+  if (compiledPieces.length === 0 && alwaysCompilesClass(classId, parentOf)) {
     compiledPieces.push(
       compileGraph(logic, {
         assetGuid: options.path,
@@ -492,9 +497,9 @@ function graphDocumentCompileCacheKey(
     ]),
     classId: doc.classId ?? null,
     parentClassId: doc.parentClassId ?? null,
-    // An ancestor reparented into a subsystem lineage changes whether an
-    // empty class still compiles.
-    subsystem: isSubsystemLineageClass(
+    // An ancestor reparented into a subsystem or Game Instance lineage changes
+    // whether an empty class still compiles.
+    alwaysCompiles: alwaysCompilesClass(
       classId,
       options.parentOf ??
         ((id) => (id === classId ? (doc.parentClassId ?? null) : null)),

@@ -144,6 +144,40 @@ describe("script compiler service", () => {
     }
   });
 
+  it("ships variables-only Game Instance classes and their empty bases so the Game Instance gets its defaults", async () => {
+    const { createInProcessRuntime } = await import("@babylonslate/runtime");
+    const scripts = compileGraphDocuments([
+      { path: "assets/MatchGI.class.babasset", parentClassId: "GameBase", content: { nodes: [], edges: [] } },
+      {
+        path: "assets/GameBase.class.babasset",
+        parentClassId: "GameInstance",
+        content: {
+          nodes: [],
+          edges: [],
+          members: [{ id: "v", kind: "variable", name: "Score", typeId: "int", defaultValue: 10 }],
+        },
+      },
+    ]);
+    expect(scripts.map((script) => [script.classId, script.parentClassId])).toEqual([
+      ["MatchGI", "GameBase"],
+      ["GameBase", "GameInstance"],
+    ]);
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      preferSoftwarePhysics: true,
+      gameInstanceClass: "MatchGI",
+    });
+    try {
+      await runtime.loadScripts(scripts);
+      const world = runtime.getWorld();
+      expect(world.classRegistry.isA("MatchGI", "GameInstance")).toBe(true);
+      expect(world.gameInstance?.getVariable("Score")).toBe(10);
+    } finally {
+      runtime.stop();
+    }
+  });
+
   it("recompiles a cached empty class once an ancestor joins a subsystem lineage", () => {
     const cache = new GraphScriptCompileCache();
     const empty: SerializedGraph = { nodes: [], edges: [] };
