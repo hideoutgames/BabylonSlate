@@ -4,10 +4,10 @@ import type { PlayAudioLibrary } from "./play-audio";
 
 /** Selection helpers need audio metadata only; source clips remain unloaded. */
 export function useEditorAudioDebug(enabled: boolean): PlayAudioLibrary | undefined {
-  const { collectPlayAudio, openDocuments, registryVersion } = useDocuments();
+  const { collectPlayAudio, openDocuments, registryEpoch } = useDocuments();
   const [library, setLibrary] = useState<PlayAudioLibrary>();
   // Scene/gizmo changes also replace openDocuments. Only audio drafts should
-  // reload the metadata; registryVersion covers saved, imported and deleted assets.
+  // reload the metadata; registryEpoch covers saved, imported and deleted assets.
   const draftKey = JSON.stringify(openDocuments
     .filter((doc) => doc.ref.kind === "audio" || doc.ref.kind === "sound-attenuation")
     .map((doc) => [doc.id, doc.content]));
@@ -23,6 +23,6 @@ export function useEditorAudioDebug(enabled: boolean): PlayAudioLibrary | undefi
       }
     });
     return () => { cancelled = true; };
-  }, [collectPlayAudio, draftKey, enabled, registryVersion]);
+  }, [collectPlayAudio, draftKey, enabled, registryEpoch]);
   return enabled ? library : undefined;
 }

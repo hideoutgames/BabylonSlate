@@ -282,7 +282,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
     openDocuments,
     applySceneChange,
     assetRegistry,
-    registryVersion,
+    registryEpoch,
     loadGraphDocument,
     openDocument,
     loadAssetThumbnail,
@@ -330,7 +330,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
   );
   // Registry entries can change without replacing the registry instance.
   const classAssetById = useMemo(() => {
-    void registryVersion;
+    void registryEpoch;
     const assets = new Map<string, IndexedAsset>();
     for (const asset of assetRegistry?.list() ?? []) {
       if (asset.header.type !== "Class") continue;
@@ -338,12 +338,12 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
       if (!assets.has(classId)) assets.set(classId, asset);
     }
     return assets;
-  }, [assetRegistry, registryVersion]);
+  }, [assetRegistry, registryEpoch]);
 
   const parentOf = useMemo(() => {
-    void registryVersion;
+    void registryEpoch;
     return classParentLookup(assetRegistry?.list() ?? []);
-  }, [assetRegistry, registryVersion]);
+  }, [assetRegistry, registryEpoch]);
 
   const nodes = useMemo(
     () =>

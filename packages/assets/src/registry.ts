@@ -83,9 +83,32 @@ export interface FolderNode {
   assets: string[];
 }
 
+/**
+ * Change counter behind `AssetRegistry.generation`. Registries that share one
+ * clock (every remount of a project) advance it together, so a registry that
+ * replaces another never reports an earlier or repeated generation.
+ */
+export class RegistryGenerationClock {
+  private current = 0;
+
+  get value(): number {
+    return this.current;
+  }
+
+  /** Record a change to what a registry sharing this clock reports. */
+  advance(): void {
+    this.current += 1;
+  }
+}
+
 export interface AssetRegistryOptions {
   payloadLoader?: AccountedPayloadLoader;
   blobs?: BlobStore;
+  /**
+   * Shared change counter. Pass the same clock to every remount so the
+   * generation keeps rising when a new registry replaces the previous one.
+   */
+  generationClock?: RegistryGenerationClock;
   /**
    * Textures each decoded legacy atlas referrer samples, by type and document
    * chunk sha256. Pass the same map to every remount so unchanged referrers
@@ -144,6 +167,7 @@ export class AssetRegistry {
    * concurrent one skips them rather than queue a second copy.
    */
   private readonly alignmentRequeues: Set<string>;
+  private readonly clock: RegistryGenerationClock;
 
   constructor(storage: ProjectStorage, options: AssetRegistryOptions = {}) {
     this.storage = storage;
@@ -152,6 +176,34 @@ export class AssetRegistry {
       options.payloadLoader ?? new AccountedPayloadLoader(storage, { blobs: this.blobs });
     this.legacyAtlasCache = options.legacyAtlasCache ?? new Map();
     this.alignmentRequeues = options.alignmentRequeues ?? new Set();
+    this.clock = options.generationClock ?? new RegistryGenerationClock();
+  }
+
+  /**
+   * Monotonic change counter: it advances whenever what `list`, `getByGuid`,
+   * `getByPath`, `folderTree`, `listRoots`, `showReferences` or
+   * `isAtlasTexture` report may have changed (a header indexed or removed, a
+   * move, a folder or root change, a Texture's compression state or committed
+   * encode). Reads never advance it. Index entries are replaced, never
+   * mutated, so memos keyed on it see every change. Registries sharing a
+   * `generationClock` report the clock's latest value.
+   */
+  get generation(): number {
+    return this.clock.value;
+  }
+
+  private changed(): void {
+    this.clock.advance();
+  }
+
+  private addKnownFolder(path: string): void {
+    if (this.knownFolders.has(path)) return;
+    this.knownFolders.add(path);
+    this.changed();
+  }
+
+  private removeKnownFolder(path: string): void {
+    if (this.knownFolders.delete(path)) this.changed();
   }
 
   /** Bind the §3.5 encode scheduler (ProjectService owns the queue lifetime). */
@@ -201,11 +253,12 @@ export class AssetRegistry {
 
   async mountRoot(root: ContentRoot): Promise<void> {
     this.roots.set(root.id, root);
+    this.changed();
     await this.walk(root, root.pathPrefix);
   }
 
   unmountRoot(rootId: string): void {
-    this.roots.delete(rootId);
+    if (this.roots.delete(rootId)) this.changed();
     for (const asset of [...this.byGuid.values()]) {
       if (asset.rootId === rootId) {
         this.removeFromIndex(asset);
@@ -409,7 +462,7 @@ export class AssetRegistry {
     await storage.remove(folderPath);
     for (const known of [...this.knownFolders]) {
       if (isWithinFolder(known, folderPath)) {
-        this.knownFolders.delete(known);
+        this.removeKnownFolder(known);
       }
     }
   }
@@ -433,13 +486,13 @@ export class AssetRegistry {
       `${folderPath}/${FOLDER_MARKER_NAME}`,
       "# BabylonSlate folder marker\n",
     );
-    this.knownFolders.add(folderPath);
+    this.addKnownFolder(folderPath);
     // Ensure parent folders are visible even without their own markers.
     let parent = folderPath.includes("/")
       ? folderPath.slice(0, folderPath.lastIndexOf("/"))
       : "";
     while (parent && parent.startsWith(root.pathPrefix)) {
-      this.knownFolders.add(parent);
+      this.addKnownFolder(parent);
       if (parent === root.pathPrefix) break;
       parent = parent.includes("/")
         ? parent.slice(0, parent.lastIndexOf("/"))
@@ -483,6 +536,7 @@ export class AssetRegistry {
     const moved: IndexedAsset = { ...asset, path: newPath };
     this.byGuid.set(guid, moved);
     this.byPath.set(newPath, moved);
+    this.changed();
     return moved;
   }
 
@@ -745,11 +799,11 @@ export class AssetRegistry {
       isWithinFolder(folder, fromPath),
     );
     for (const folder of nestedFolders) {
-      this.knownFolders.delete(folder);
+      this.removeKnownFolder(folder);
       const suffix =
         folder === fromPath ? "" : folder.slice(fromPath.length + 1);
       const next = suffix ? `${toPath}/${suffix}` : toPath;
-      this.knownFolders.add(next);
+      this.addKnownFolder(next);
       const markerFrom = `${folder}/${FOLDER_MARKER_NAME}`;
       if (await storage.exists(markerFrom)) {
         await storage.mkdir(next, true);
@@ -761,7 +815,7 @@ export class AssetRegistry {
     if (await storage.exists(fromPath)) {
       await storage.remove(fromPath);
     }
-    this.knownFolders.add(toPath);
+    this.addKnownFolder(toPath);
   }
 
   async importFile(
@@ -1535,12 +1589,12 @@ export class AssetRegistry {
       const path = `${dir}/${entry.name}`;
       if (entry.isDir) {
         if (entry.name === BLOBS_DIR_NAME) continue;
-        this.knownFolders.add(path);
+        this.addKnownFolder(path);
         await this.walk(root, path);
         continue;
       }
       if (entry.name === FOLDER_MARKER_NAME) {
-        this.knownFolders.add(dir);
+        this.addKnownFolder(dir);
         continue;
       }
       if (!path.endsWith(".babasset")) continue;
@@ -1565,6 +1619,7 @@ export class AssetRegistry {
     const indexed: IndexedAsset = { rootId, path, header, placeholder, mtime };
     this.byGuid.set(header.guid, indexed);
     this.byPath.set(path, indexed);
+    this.changed();
     for (const dep of header.dependencies) {
       let set = this.inbound.get(dep);
       if (!set) {
@@ -1590,6 +1645,7 @@ export class AssetRegistry {
     const previous = this.atlasByReferrer.get(referrer) ?? [];
     const next = [...new Set(textures)];
     if (previous.length === 0 && next.length === 0) return;
+    this.changed();
     this.noteAtlasStatus([...previous, ...next]);
     for (const guid of previous) {
       const set = this.atlasReferrers.get(guid);
@@ -1642,6 +1698,7 @@ export class AssetRegistry {
     if (this.byPath.get(asset.path) === asset) {
       this.byPath.delete(asset.path);
     }
+    this.changed();
     this.legacyAtlasReferrers.delete(asset.header.guid);
     this.setAtlasReferrer(asset.header.guid, []);
     for (const dep of asset.header.dependencies) {

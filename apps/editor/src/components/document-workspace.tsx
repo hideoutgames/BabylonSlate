@@ -2,7 +2,7 @@ import { InputAssetEditingProvider } from "../context/input-asset-editing-contex
 import { SceneToolsProvider } from "../context/scene-tools-context";
 import { CONTENT_BROWSER_ID, isAssetDocumentKind, isSceneWorkspaceKind, type SerializedScene } from "@babylonslate/core";
 import type { DockviewApi } from "dockview-react";
-import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { useDocuments } from "../context/document-context";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
 import { useProjectSearch } from "../context/project-search-context";
@@ -231,9 +231,17 @@ export function DocumentWorkspace() {
     openDocuments,
     projectDocument,
     assetRegistry,
+    registryEpoch,
   } = useDocuments();
 
   const projectKey = projectDocument?.metadata.name ?? null;
+  // Class ancestry for every mounted tab, kept until the registry changes.
+  // Built lazily so tabs outside the working set do no registry traversal.
+  const classParents = useMemo(() => {
+    void registryEpoch;
+    let lookup: ReturnType<typeof classParentLookup> | undefined;
+    return () => (lookup ??= classParentLookup(assetRegistry?.list() ?? []));
+  }, [assetRegistry, registryEpoch]);
 
   const resolvedActiveId =
     tabOrder.length === 0
@@ -259,10 +267,6 @@ export function DocumentWorkspace() {
       </div>
     );
   }
-
-  // Share ancestry only within this render: the registry mutates in place.
-  // Build it lazily so tabs outside the working set do no registry traversal.
-  let parentOf: ReturnType<typeof classParentLookup> | undefined;
 
   return (
     <AudioReverbBakeProvider>
@@ -603,7 +607,7 @@ export function DocumentWorkspace() {
           isSceneWorkspaceKind(doc.ref.kind)
             ? (doc.content as SerializedScene | null)
             : null;
-        parentOf ??= classParentLookup(assetRegistry?.list() ?? []);
+        const parentOf = classParents();
         const indexed = assetRegistry?.getByPath(doc.ref.path);
         const actorPrefab =
           doc.ref.kind !== "graph" ||

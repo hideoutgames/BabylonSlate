@@ -64,7 +64,7 @@ function useTextureAlignmentStale(
   guid: string | undefined,
   payload: Record<string, unknown>,
   check: (guid: string, usage?: string) => Promise<boolean>,
-  registryVersion: number,
+  registryEpoch: number,
 ): boolean {
   const usage = typeof payload.usage === "string" ? payload.usage : "albedo";
   const key = guid && !isEnvironmentTexturePayload(payload) && shouldCompressTexture(usage) ? `${guid}\n${usage}` : null;
@@ -77,7 +77,7 @@ function useTextureAlignmentStale(
       () => { if (current) setResult({ key, stale: false }); },
     );
     return () => { current = false; };
-  }, [check, guid, key, usage, registryVersion]);
+  }, [check, guid, key, usage, registryEpoch]);
   return key !== null && result?.key === key && result.stale;
 }
 
@@ -328,8 +328,8 @@ export function TextureDetails({
   /** `mergeKey` groups one scrub's edits into one undo entry. */
   onChange: (next: Record<string, unknown>, mergeKey?: string) => void;
 }) {
-  const { retryTextureEncoding, textureAlignmentStale, textureUsageBlockedReason, prepareAreaEmission, assetRegistry, registryVersion } = useDocuments();
-  const alignmentStale = useTextureAlignmentStale(guid, payload, textureAlignmentStale, registryVersion);
+  const { retryTextureEncoding, textureAlignmentStale, textureUsageBlockedReason, prepareAreaEmission, assetRegistry, registryEpoch } = useDocuments();
+  const alignmentStale = useTextureAlignmentStale(guid, payload, textureAlignmentStale, registryEpoch);
   // A re-encode rewrites the file: not while it is read-only, such as under
   // another user's lock (the tab's banner offers Edit Anyway).
   const encodeBlocked = guid ? textureUsageBlockedReason(guid) !== null : true;

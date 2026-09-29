@@ -8,7 +8,7 @@ import {
   encodeGlbJsonBin,
 } from "./importers/glb-parse";
 import { EncodeQueue } from "./encode-queue";
-import { AssetRegistry } from "./registry";
+import { AssetRegistry, RegistryGenerationClock } from "./registry";
 import { ThumbnailDecodeLru } from "./thumbnails";
 
 async function createStorage(): Promise<MemoryStorageAdapter> {
@@ -767,6 +767,85 @@ describe("AssetRegistry", () => {
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
     expect(registry.getByGuid("tex-mtime")?.mtime).toBe(expected);
+  });
+});
+
+describe("AssetRegistry generation", () => {
+  /** Every read the editor derives registry views from; none may advance the generation. */
+  function readEverything(registry: AssetRegistry): void {
+    registry.list();
+    registry.list({ type: "Texture" });
+    registry.getByGuid("tex-1");
+    registry.getByPath("assets/tex.babasset");
+    registry.folderTree("project");
+    registry.listRoots();
+    registry.showReferences("tex-1");
+    registry.listDocumentPaths();
+    registry.isAtlasTexture("tex-1");
+  }
+
+  it("advances on every index, folder, root and compression change, and never on reads", async () => {
+    const storage = await createStorage();
+    await writeAsset(storage, "assets/tex.babasset", { guid: "tex-1", type: "Texture", name: "tex" });
+    await writeAsset(storage, "assets/fx/spark.babasset", { guid: "spark-1", type: "Texture", name: "spark" });
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const plugin: ContentRoot = { id: "plugin:p", kind: "plugin", pathPrefix: "plugin/assets", readOnly: true };
+
+    const mutations: Array<[string, () => Promise<unknown> | unknown]> = [
+      ["create", () => registry.createAsset("project", "mat.babasset", {
+        guid: "mat-1", type: "Material", name: "mat", version: 1, dependencies: ["tex-1"], payload: {}, chunks: [],
+      })],
+      ["reindex a saved file", async () => {
+        await writeAsset(storage, "assets/tex.babasset", { guid: "tex-1", type: "Texture", name: "saved" });
+        await registry.reindexPath("assets/tex.babasset");
+      }],
+      ["compression state", () => registry.setCompressionState("tex-1", "encode_failed", { error: "boom" })],
+      ["rename", () => registry.renameAsset("mat-1", "shiny")],
+      ["move", () => registry.moveAsset("mat-1", "project", "materials/shiny.babasset")],
+      ["create folder", () => registry.createFolder("project", "empty")],
+      ["move folder", () => registry.moveFolder("project", "empty", "", "renamed")],
+      ["delete folder", () => registry.deleteFolder("project", "renamed")],
+      ["placeholder", () => registry.indexPlaceholder("missing-1")],
+      ["delete", () => registry.deleteAsset("spark-1")],
+      ["mount root", () => registry.mountRoot(plugin)],
+      ["unmount root", () => registry.unmountRoot("plugin:p")],
+    ];
+
+    let previous = registry.generation;
+    for (const [label, mutate] of mutations) {
+      await mutate();
+      const after = registry.generation;
+      expect(after, label).toBeGreaterThan(previous);
+      readEverything(registry);
+      expect(registry.generation, `reads after ${label}`).toBe(after);
+      previous = after;
+    }
+    expect(registry.getByGuid("tex-1")?.header.payload.compressionState).toBe("encode_failed");
+    expect(registry.getByGuid("mat-1")?.path).toBe("assets/materials/shiny.babasset");
+  });
+
+  it("never moves backwards or repeats when a remount replaces the registry", async () => {
+    const storage = await createStorage();
+    await writeAsset(storage, "assets/tex.babasset", { guid: "tex-1", type: "Texture", name: "tex" });
+    const clock = new RegistryGenerationClock();
+    const first = new AssetRegistry(storage, { generationClock: clock });
+    await first.mountRoot(projectContentRoot());
+    await first.createFolder("project", "a");
+    await first.createFolder("project", "b");
+    const seen = first.generation;
+
+    // A fresh scan of fewer entries than the old registry ever indexed.
+    await storage.remove("assets/a");
+    await storage.remove("assets/b");
+    const second = new AssetRegistry(storage, { generationClock: clock });
+    await second.mountRoot(projectContentRoot());
+    expect(second.generation).toBeGreaterThan(seen);
+
+    // A write still landing on the replaced registry is not lost either.
+    const beforeLateWrite = second.generation;
+    await first.setCompressionState("tex-1", "pending");
+    expect(second.generation).toBeGreaterThan(beforeLateWrite);
   });
 });
 

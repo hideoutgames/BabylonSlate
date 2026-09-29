@@ -243,7 +243,7 @@ export function ContentBrowserWorkspace({
   const {
     projectDocument,
     assetRegistry,
-    registryVersion,
+    registryEpoch,
     refreshAssetRegistry,
     repathDocument,
     openDocument,
@@ -436,7 +436,7 @@ export function ContentBrowserWorkspace({
         },
       ];
     });
-  }, [assetRegistry, browserRoots, registryVersion]);
+  }, [assetRegistry, browserRoots, registryEpoch]);
 
   useEffect(() => {
     setCollapsedFolders((current) => {
@@ -465,14 +465,14 @@ export function ContentBrowserWorkspace({
       if (!assetRegistry.getRoot(root.id)) return [];
       return assetRegistry.list({ rootId: root.id });
     });
-  }, [assetRegistry, browserRoots, registryVersion]);
+  }, [assetRegistry, browserRoots, registryEpoch]);
 
   const referenceAssets = useMemo(
     () => {
-      void registryVersion;
+      void registryEpoch;
       return assetRegistry?.list() ?? [];
     },
-    [assetRegistry, registryVersion],
+    [assetRegistry, registryEpoch],
   );
   const assetsByGuid = useMemo(
     () => new Map(allAssets.map((asset) => [asset.header.guid, asset])),

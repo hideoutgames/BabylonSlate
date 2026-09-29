@@ -31,7 +31,7 @@ import {
   Maximize2Icon,
   EllipsisIcon,
 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import {
   CONTENT_BROWSER_ID,
   type DocumentRef,
@@ -266,6 +266,7 @@ export function EditorChromeBar({
     graphsNeedCompile,
     activateDockPanel,
     assetRegistry,
+    registryEpoch,
   } = useDocuments();
   const { control: materialRenderControl } = useMaterialRenderControl();
 
@@ -294,7 +295,11 @@ export function EditorChromeBar({
   const [searchOpen, setSearchOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
   const phone = usePhoneLayout();
-  const resolveDocumentVisual = createDocumentTypeVisualResolver(assetRegistry);
+  // Keeps its lazy class lookup until the registry changes, not per edit.
+  const resolveDocumentVisual = useMemo(() => {
+    void registryEpoch;
+    return createDocumentTypeVisualResolver(assetRegistry);
+  }, [assetRegistry, registryEpoch]);
 
   const contentBrowserDoc = openDocuments.find(
     (doc) => doc.id === CONTENT_BROWSER_ID,
