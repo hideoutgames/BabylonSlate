@@ -28,10 +28,10 @@ it("shares model vertices while keeping stroke and cell instance buffers indepen
   expect(glbContainerLoadCount(scene)).toBe(1);
   expect(am.thinInstanceGetWorldMatrices()[1]!.getTranslation().x).toBe(4);
   // Read the attributes actually bound for drawing, not the separate CPU matrix cache.
-  expect(Array.from(am.getVerticesData("world3")!)).toEqual([0, 0, 0, 1, 4, 0, 0, 1]);
-  expect(Array.from(bm.getVerticesData("world3")!)).toEqual([12, 0, 0, 1]);
+  expect(Array.from(am.getVertexBuffer("world3")!.getFloatData(am.thinInstanceCount)!)).toEqual([0, 0, 0, 1, 4, 0, 0, 1]);
+  expect(Array.from(bm.getVertexBuffer("world3")!.getFloatData(bm.thinInstanceCount)!)).toEqual([12, 0, 0, 1]);
   const distantCell = a.getChildMeshes().find((mesh): mesh is Mesh => mesh instanceof Mesh && mesh.hasThinInstances && mesh !== am)!;
-  expect(Array.from(distantCell.getVerticesData("world3")!)).toEqual([40, 0, 0, 1]);
+  expect(Array.from(distantCell.getVertexBuffer("world3")!.getFloatData(distantCell.thinInstanceCount)!)).toEqual([40, 0, 0, 1]);
   const source = am.source as Mesh;
   expect(source.isVerticesDataPresent("world0")).toBe(false);
   const paddedMaximum = am.getBoundingInfo().boundingBox.maximum.clone();
@@ -42,7 +42,7 @@ it("shares model vertices while keeping stroke and cell instance buffers indepen
   expect(bm.isDisposed()).toBe(false);
   expect(bm.getVertexBuffer("world3")!.getBuffer()).not.toBeNull();
   expect(bm.getVertexBuffer(VertexBuffer.PositionKind)!.getBuffer()).not.toBeNull();
-  expect(Array.from(bm.getVerticesData("world3")!)).toEqual([12, 0, 0, 1]);
+  expect(Array.from(bm.getVertexBuffer("world3")!.getFloatData(bm.thinInstanceCount)!)).toEqual([12, 0, 0, 1]);
   expect(scene.materials).toContain(material);
 });
 
