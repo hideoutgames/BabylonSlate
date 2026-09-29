@@ -34,6 +34,18 @@ export function actorWorldTransforms(
 ): Map<string, Transform> {
   const byGuid = new Map<string, Actor>();
   for (const actor of actors) byGuid.set(actor.guid, actor);
+  return composeActorWorldTransforms((guid) => byGuid.get(guid), selected);
+}
+
+/**
+ * Compose selected actors and their ancestors through a caller-owned parent
+ * lookup, so a frame that already indexes actors by guid need not rebuild one.
+ * The lookup must answer like the last-wins index `actorWorldTransforms` builds.
+ */
+export function composeActorWorldTransforms(
+  lookup: (guid: string) => Actor | undefined,
+  selected: Iterable<Actor>,
+): Map<string, Transform> {
   const resolved = new Map<string, Transform>();
   const resolving = new Set<string>();
 
@@ -45,7 +57,7 @@ export function actorWorldTransforms(
 
     resolving.add(actor.guid);
     const parentId = actorParentGuid(actor);
-    const parent = parentId ? byGuid.get(parentId) : undefined;
+    const parent = parentId ? lookup(parentId) : undefined;
     const world =
       parent && !resolving.has(parent.guid)
         ? composeParentChildTransform(resolve(parent), local)

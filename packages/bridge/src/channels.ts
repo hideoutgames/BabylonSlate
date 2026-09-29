@@ -562,6 +562,8 @@ export type CommandMessage =
       tickIndex: number;
       scriptMs: number;
       physicsMs: number;
+      /** Most recent snapshot publish: removal pass, world composition and buffer write. */
+      publishMs?: number;
       fps?: number;
       liveActors?: number;
       snapshotCapacity?: number;

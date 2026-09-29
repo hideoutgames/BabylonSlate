@@ -12,6 +12,8 @@ export type StatsHudProps = {
   fps: number;
   scriptMs: number;
   physicsMs: number;
+  /** Snapshot publish ms; shown apart from the script/physics tick budget. */
+  publishMs?: number;
   memoryBytes?: number;
   hostMemory?: HostMemoryStats | null;
   geometryBytes?: number;
@@ -39,6 +41,7 @@ export function StatsHud({
   fps,
   scriptMs,
   physicsMs,
+  publishMs,
   memoryBytes,
   hostMemory,
   geometryBytes,
@@ -111,6 +114,18 @@ export function StatsHud({
         >
           <SelectableText>physics {physicsMs.toFixed(2)} ms</SelectableText>
         </span>
+        {publishMs != null ? (
+          <span
+            data-testid="play-publish-ms"
+            data-ms={String(publishMs)}
+            className={cn(
+              (highlight === "unit" || highlight === "threads") &&
+                "text-foreground ring-1 ring-ring",
+            )}
+          >
+            <SelectableText>publish {publishMs.toFixed(2)} ms</SelectableText>
+          </span>
+        ) : null}
         {overBudget ? (
           <Badge
             variant="destructive"
