@@ -21,7 +21,7 @@ export async function runTextMaterialProof(backend: "webgl2" | "webgpu") {
   const materialDocument = createDefaultMaterialDocument("Text Fill", "text");
   materialDocument.nodes[0]!.properties = { "default:color": [0, 1, 1, 1] };
   const acquired = library.acquire(scene, "text", materialDocument);
-  if (!acquired.ok) throw new Error(JSON.stringify(acquired.diagnostics));
+  if (acquired.ok === false) throw new Error(JSON.stringify(acquired.diagnostics));
   const diagnostics = await acquired.ready;
   if (diagnostics.length) throw new Error(JSON.stringify(diagnostics));
   let authored = false;

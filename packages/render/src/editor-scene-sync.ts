@@ -842,7 +842,7 @@ export class EditorSceneSync {
   ): void {
     if (!guid) return;
     const targets = meshAndDescendantMeshes(visual).filter(
-      (target) => !isTilemapChunkMesh(target),
+      (target) => !isTilemapChunkMesh(target) && !target.metadata?.text2d && !target.metadata?.text2dGlyph,
     );
     for (const target of targets) {
       if (isColliderVisualTree(target)) continue;

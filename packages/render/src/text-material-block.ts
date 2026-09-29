@@ -72,7 +72,8 @@ export class TextMaterialBlock extends NodeMaterialBlock {
     this.stroke = state._getFreeVariableName("textGlyphStroke");
     this.atlasRect = state._getFreeVariableName("textAtlasRect");
     this.materialRect = state._getFreeVariableName("textMaterialRect");
-    // A shared, frozen material still has to bind this particular glyph's atlas.
+    // Each glyph binds its own atlas; the compiler also rebinds these values
+    // through onBindObservable when Babylon skips frozen forced bindings.
     state.sharedData.forcedBindableBlocks.push(this);
     state.sharedData.blockingBlocks.push(this);
     state._emit2DSampler(this.sampler);

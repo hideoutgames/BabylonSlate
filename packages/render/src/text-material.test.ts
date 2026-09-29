@@ -60,7 +60,7 @@ describe("Text Materials", () => {
     material.freeze();
     const samples: unknown[] = [];
     const effects = new Set<Effect>();
-    for (const glyph of [firstGlyph, secondGlyph]) {
+    for (const glyph of [firstGlyph, secondGlyph, firstGlyph, secondGlyph]) {
       const effect = glyph.subMeshes[0]!.effect!;
       if (!effects.has(effect)) {
         effects.add(effect);
@@ -71,9 +71,9 @@ describe("Text Materials", () => {
         });
       }
       material.bindForSubMesh(glyph.computeWorldMatrix(true), glyph, glyph.subMeshes[0]!);
+      expect(samples.at(-1)).toBe(textMaterialGlyphBinding(glyph)!.atlas);
     }
-    expect(samples.slice(-2)).toEqual([textMaterialGlyphBinding(firstGlyph)!.atlas, textMaterialGlyphBinding(secondGlyph)!.atlas]);
-    expect(samples.at(-1)).not.toBe(samples.at(-2));
+    expect(textMaterialGlyphBinding(firstGlyph)!.atlas).not.toBe(textMaterialGlyphBinding(secondGlyph)!.atlas);
     first.dispose();
     expect(secondGlyph.material).toBe(material);
     expect(scene.textures).toContain(textMaterialGlyphBinding(secondGlyph)!.atlas);
@@ -106,13 +106,19 @@ describe("Text Materials", () => {
 
   it("updates editor text assignments and keeps Play glyph masks out of generic assignments", () => {
     const { scene, assets } = host();
+    const surface = new StandardMaterial("Background Surface", scene);
+    const resolveMaterial = (guid: string) => guid === "background" ? surface : assets.resolveMaterial(guid);
     const component = createText2DComponent("label");
     component.properties = { ...component.properties, materialGuid: "letters" };
     const document = createDefaultScene("2d");
-    document.actors = [createActor("actor", "Text", { components: [component] })];
-    const sync = new EditorSceneSync(scene, undefined, assets);
+    document.actors = [createActor("actor", "Text", { components: [component,
+      { id: "background", classId: "2DMaterialComponent", properties: { materialGuid: "background" } },
+    ] })];
+    const sync = new EditorSceneSync(scene, undefined, { resolveMaterial });
     sync.apply(document);
     expect(scene.meshes.some((mesh) => mesh.metadata?.text2dGlyph && mesh.material?.metadata?.materialDomain === "text")).toBe(true);
+    expect(scene.meshes.some((mesh) => mesh.material === surface)).toBe(true);
+    expect(scene.meshes.some((mesh) => mesh.metadata?.text2dGlyph && mesh.material === surface)).toBe(false);
     component.properties.materialGuid = null;
     sync.apply(document);
     expect(scene.meshes.some((mesh) => mesh.metadata?.text2dGlyph && mesh.material?.metadata?.materialDomain === "text")).toBe(false);

@@ -12,7 +12,8 @@ export type PainterPathSegment =
 export type PainterStyle = { fillColor: PainterColor; strokeColor: PainterColor; strokeWidth: number; lineCap: "butt" | "round" | "square"; lineJoin: "miter" | "round" | "bevel" };
 export type PainterCommand =
   | { kind: "draw"; path: PainterPathSegment[]; fill: boolean; stroke: boolean; fillRule: PainterFillRule; style: PainterStyle }
-  | { kind: "pushMask" | "cutout"; path: PainterPathSegment[]; fillRule: PainterFillRule }
+  | { kind: "pushMask"; path: PainterPathSegment[]; fillRule: PainterFillRule }
+  | { kind: "cutout"; path: PainterPathSegment[]; fillRule: PainterFillRule }
   | { kind: "popMask" };
 export type Painter2DProperties = PainterStyle & {
   width: number; height: number; pixelsPerUnit: number; clearEachFrame: boolean;

@@ -26,6 +26,7 @@ function stubPlayer(): Map<string, Uint8Array> {
 describe("exportGame", () => {
   it("preserves focus input selections and normalizes unsafe repeat values through player manifests", async () => {
     const result = await exportGame({ mode: "packed", bundleDebugger: false, startupSceneGuid: "scene-1", scripts: [], assets: [], playerFiles: stubPlayer(),
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       focusNavigation: normalizeFocusNavigationSettings({ navigationInputGuid: "menu-axis", activateInputGuid: "accept", wrap: true }),
     });
     if (!result.ok) throw new Error(result.error);

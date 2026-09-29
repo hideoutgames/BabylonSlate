@@ -47,6 +47,34 @@ describe("SceneLayer focus navigation", () => {
     expect(f.navigation.getFocused()).toBeNull();
   });
 
+  it("moves immediately on a same-direction repress and restarts the repeat delay", () => {
+    const f = fixture({ repeatDelay: 0.4, repeatInterval: 0.1 });
+    f.add("a", 0, 0, { focusInitial: true });
+    const b = f.add("b", 2, 0), c = f.add("c", 4, 0), d = f.add("d", 6, 0);
+    f.tick(); f.tick([key("ArrowRight", "down")]);
+    expect(f.navigation.getFocused()).toBe(b.component);
+    f.tick([], 0.2);
+    f.tick([key("ArrowRight", "up"), key("ArrowRight", "down")]);
+    expect(f.navigation.getFocused()).toBe(c.component);
+    f.tick([], 0.3);
+    expect(f.navigation.getFocused()).toBe(c.component);
+    f.tick([], 0.11);
+    expect(f.navigation.getFocused()).toBe(d.component);
+  });
+
+  it("ends a previous activation before a rapid repress and retains the new held press", () => {
+    const f = fixture();
+    f.add("a", 0, 0, { focusInitial: true });
+    f.tick(); f.tick([key("Enter", "down")]);
+    f.tick([key("Enter", "up"), key("Enter", "down")]);
+    expect(f.events).toEqual([
+      "a-focus:onFocusEnter", "a-focus:onPressStart", "a-focus:onPressEnd", "a-focus:onFocusActivate", "a-focus:onClick", "a-focus:onPressStart",
+    ]);
+    f.tick([key("Enter", "up")]);
+    expect(f.events.slice(-3)).toEqual(["a-focus:onPressEnd", "a-focus:onFocusActivate", "a-focus:onClick"]);
+    expect(f.events.filter(event => event === "a-focus:onClick")).toHaveLength(2);
+  });
+
   it("uses nested component positions and an explicit neighbor before automatic spatial choice", () => {
     const f = fixture();
     const start = f.add("start", 0, 0, { focusInitial: true });

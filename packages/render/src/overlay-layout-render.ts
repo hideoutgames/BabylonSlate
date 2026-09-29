@@ -61,7 +61,8 @@ export class OverlayLayoutRenderer {
   private readonly layers = new Map<string, LayoutCommand>();
   private readonly layerMeshes = new Map<string, Set<AbstractMesh>>();
   private readonly observers = new Map<Scene, ReturnType<Scene["onBeforeRenderObservable"]["add"]>>();
-  constructor(private readonly sceneForLayer: (id: string) => Scene | undefined) {}
+  private readonly sceneForLayer: (id: string) => Scene | undefined;
+  constructor(sceneForLayer: (id: string) => Scene | undefined) { this.sceneForLayer = sceneForLayer; }
   apply(command: LayoutCommand): void {
     this.layers.set(command.layerId, command);
     const scene = this.sceneForLayer(command.layerId);

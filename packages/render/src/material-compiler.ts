@@ -749,17 +749,18 @@ export function compileMaterialPlan(
     }
   });
   // Frozen NodeMaterials skip forced bindings when another mesh shared the effect.
-  // Bone palettes and morph weights belong to each mesh, even when its material is static.
-  const deformationBlocks = created.filter(
-    (block): block is BonesBlock | MorphTargetsBlock =>
-      block instanceof BonesBlock || block instanceof MorphTargetsBlock,
+  // Bone palettes, morph weights and text atlases belong to each mesh, even
+  // when their material is static.
+  const perMeshBlocks = created.filter(
+    (block): block is BonesBlock | MorphTargetsBlock | TextMaterialBlock =>
+      block instanceof BonesBlock || block instanceof MorphTargetsBlock || block instanceof TextMaterialBlock,
   );
-  if (deformationBlocks.length > 0) {
+  if (perMeshBlocks.length > 0) {
     material.onBindObservable.add((mesh) => {
       if (!(mesh instanceof Mesh) || !material.isFrozen) return;
       const effect = material.getEffect();
       if (effect) {
-        for (const block of deformationBlocks) block.bind(effect, material, mesh);
+        for (const block of perMeshBlocks) block.bind(effect, material, mesh);
       }
     });
   }

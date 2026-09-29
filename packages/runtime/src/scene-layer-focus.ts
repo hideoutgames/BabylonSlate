@@ -60,13 +60,17 @@ function available(object: Actor | ActorComponent): boolean {
 export class SceneLayerFocusNavigation {
   private readonly defaults = fallbackResolver();
   private readonly settings: FocusNavigationSettings;
+  private readonly world: World;
+  private readonly host: FocusNavigationHost;
   private focused: Candidate | null = null;
   private pressed: Candidate | null = null;
   private direction: FocusDirection | null = null;
   private repeatRemaining = 0;
   private initialLayer: string | null = null;
 
-  constructor(private readonly world: World, settings: Partial<FocusNavigationSettings> | undefined, private readonly host: FocusNavigationHost) {
+  constructor(world: World, settings: Partial<FocusNavigationSettings> | undefined, host: FocusNavigationHost) {
+    this.world = world;
+    this.host = host;
     this.settings = normalizeFocusNavigationSettings(settings);
   }
 
@@ -230,7 +234,7 @@ export class SceneLayerFocusNavigation {
     const direction = directionOf(navigate?.held ? navigate.value : undefined);
     const pulse = !navigate?.held && navigate?.started ? directionOf(navigate.activeValue) : null;
     if (pulse) this.move(pulse);
-    if (direction !== this.direction) {
+    if (direction !== this.direction || direction !== null && navigate?.started) {
       this.direction = direction;
       this.repeatRemaining = this.settings.repeatDelay;
       if (direction) this.move(direction);
@@ -244,22 +248,29 @@ export class SceneLayerFocusNavigation {
     const activate = this.settings.activateInputGuid
       ? input.inputs[this.settings.activateInputGuid]
       : defaults.inputs.focusActivate;
+    // A release and repress between ticks ends the previous press first.
+    // Keep a final held press pending; a completed tap still ends this tick.
+    const releaseBeforeStart = activate?.started && activate.released && (activate.held || this.pressed !== null);
+    if (releaseBeforeStart) this.releaseActivation();
     if (activate?.started) {
+      this.refresh();
       if (!this.focused) this.transition(this.initial(this.candidates()) ?? null);
       this.pressed = this.focused;
       if (this.pressed?.component.classId === "2DButtonComponent") this.emit(this.pressed, "onPressStart");
     }
-    if (activate?.released) {
-      this.refresh();
-      const pressed = this.pressed;
-      this.pressed = null;
-      if (!pressed) return;
-      if (pressed.component.classId === "2DButtonComponent") this.emit(pressed, "onPressEnd");
-      this.refresh();
-      if (pressed.component !== this.focused?.component) return;
-      this.emit(pressed, "onFocusActivate");
-      this.refresh();
-      if (pressed.component === this.focused?.component && pressed.component.classId === "2DButtonComponent") this.emit(pressed, "onClick");
-    }
+    if (activate?.released && (!releaseBeforeStart || !activate.held)) this.releaseActivation();
+  }
+
+  private releaseActivation(): void {
+    this.refresh();
+    const pressed = this.pressed;
+    this.pressed = null;
+    if (!pressed) return;
+    if (pressed.component.classId === "2DButtonComponent") this.emit(pressed, "onPressEnd");
+    this.refresh();
+    if (pressed.component !== this.focused?.component) return;
+    this.emit(pressed, "onFocusActivate");
+    this.refresh();
+    if (pressed.component === this.focused?.component && pressed.component.classId === "2DButtonComponent") this.emit(pressed, "onClick");
   }
 }
