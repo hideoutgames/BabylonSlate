@@ -1854,12 +1854,17 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
         onOpenChange={(open) => {
           if (!open) setAssetPinPick(null);
         }}
-        assets={filterInspectorPinPickerAssets(
-          pickerAssets,
-          assetRegistry?.list() ?? [],
-          openDocuments,
-          { nodeType: selectedNode.type },
-        )}
+        assets={
+          // Only while picking: every edit of the graph re-renders this branch.
+          assetPinPick
+            ? filterInspectorPinPickerAssets(
+                pickerAssets,
+                assetRegistry?.list() ?? [],
+                openDocuments,
+                { nodeType: selectedNode.type },
+              )
+            : []
+        }
         allowedTypes={assetPinPick?.allowedTypes}
         allowNone
         title={assetPinPick ? `Pick ${assetPinPick.assetType}` : "Pick Asset"}
