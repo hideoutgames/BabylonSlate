@@ -52,7 +52,8 @@ export function BlackboardEditor({
   onChange,
 }: {
   payload: Record<string, unknown>;
-  onChange: (next: Record<string, unknown>) => void;
+  /** `mergeKey` groups one scrub's edits into one undo entry. */
+  onChange: (next: Record<string, unknown>, mergeKey?: string) => void;
 }) {
   const { openDocuments, assetRegistry } = useDocuments();
   const doc = useMemo(() => asBoard(payload), [payload]);
@@ -75,8 +76,10 @@ export function BlackboardEditor({
     openDocuments,
     assetRegistry?.list() ?? [],
   );
-  const commit = (next: BlackboardDocument) => {
-    onChange(next as unknown as Record<string, unknown>);
+  const commit = (next: BlackboardDocument, mergeKey?: string) => {
+    const record = next as unknown as Record<string, unknown>;
+    if (mergeKey) onChange(record, mergeKey);
+    else onChange(record);
   };
   const key = doc.keys[selected];
   const pickerTypeId = key ? typeIdFromPinType(key.type) : "bool";
@@ -112,13 +115,14 @@ export function BlackboardEditor({
     ? variableDefaultPropertyRows(
         pickerTypeId,
         key.defaultValue,
+        // Default editors scrub numbers, vectors and colors continuously.
         (value) =>
           commit({
             ...doc,
             keys: doc.keys.map((entry, index) =>
               index === selected ? { ...entry, defaultValue: value } : entry,
             ),
-          }),
+          }, `blackboard:key:${selected}:defaultValue`),
         {
           typeClassId,
           schemas: typeSchemas,

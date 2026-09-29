@@ -5,6 +5,7 @@ import {
   type GraphClassMemberPin,
   type SerializedGraph,
 } from "@babylonslate/core";
+import { diffGraphCommands, type EditCommand } from "@babylonslate/edit";
 import { pruneEventMembersToNodes } from "./class-members";
 import {
   animGraphMembersFromVariables,
@@ -518,7 +519,31 @@ export function collectSceneDocumentsForPalette(options: {
 
 export type LogicGraphCommit =
   | { kind: "graph"; graph: SerializedGraph }
-  | { kind: "anim-graph"; payload: Record<string, unknown> };
+  | {
+      kind: "anim-graph";
+      payload: Record<string, unknown>;
+      /** Set when the edit is one graph command that coalesces (a pin default scrub). */
+      mergeKey?: string;
+    };
+
+/**
+ * Undo merge key for a logic graph stored inside an asset payload. A Class
+ * graph gets its keys from `applyGraphChange`; here the command layer's own
+ * key is reused when the edit is a single graph command, so scrubbing a pin
+ * default is one undo step there too.
+ */
+export function logicGraphEditMergeKey(
+  previous: SerializedGraph | null,
+  next: SerializedGraph,
+): string | undefined {
+  if (!previous) return undefined;
+  const commands: EditCommand<SerializedGraph>[] = diffGraphCommands(
+    previous,
+    next,
+  );
+  const key = commands.length === 1 ? commands[0]!.mergeKey : undefined;
+  return key ? `logic-graph:${key}` : undefined;
+}
 
 /** Persist a logic graph as a Class body or Animation Object. */
 export function commitLogicGraph(
@@ -534,7 +559,14 @@ export function commitLogicGraph(
       next,
     );
     if (isRecord(payload)) {
-      return { kind: "anim-graph", payload };
+      return {
+        kind: "anim-graph",
+        payload,
+        mergeKey: logicGraphEditMergeKey(
+          serializedGraphFromDocument("anim-graph", content),
+          next,
+        ),
+      };
     }
   }
   return { kind: "graph", graph: next };

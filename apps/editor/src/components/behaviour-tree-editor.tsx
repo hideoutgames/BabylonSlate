@@ -111,6 +111,15 @@ function propertyValue(field: BtPropertyField, properties: Record<string, unknow
   return properties[field.key];
 }
 
+/** One scrub or typed edit on a node or attachment field is one undo step. */
+function btFieldMergeKey(
+  nodeId: string,
+  ownerId: string,
+  updates: Record<string, unknown>,
+): string {
+  return `behaviour-tree:${nodeId}:${ownerId}:${Object.keys(updates).sort().join(",")}`;
+}
+
 function useBehaviourTreeDocument() {
   const { documentId: workspaceDocumentId } = useDocumentWorkspace();
   const {
@@ -127,10 +136,12 @@ function useBehaviourTreeDocument() {
     () => asTree((entry?.content ?? {}) as Record<string, unknown>),
     [entry?.content],
   );
-  const commit = (next: BehaviourTreeDocument) => {
+  /** `mergeKey` groups one scrub's edits into one undo entry. */
+  const commit = (next: BehaviourTreeDocument, mergeKey?: string) => {
     void applyAssetDocumentChange(
       workspaceDocumentId,
       next as unknown as Record<string, unknown>,
+      mergeKey,
     );
   };
   const overlay = useMemo((): BtGraphOverlay | undefined => {
@@ -890,6 +901,7 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
           patchNode(doc, selected.id, {
             properties: { ...selected.properties, ...updates },
           }),
+          btFieldMergeKey(selected.id, "node", updates),
         ),
       ),
     );
@@ -954,6 +966,7 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
                 : row,
             ),
           }),
+          btFieldMergeKey(selected.id, attachment.id, updates),
         ),
       ),
     );
@@ -1000,6 +1013,7 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
                 row.id === attachment.id ? { ...row, intervalMs } : row,
               ),
             }),
+            btFieldMergeKey(selected.id, attachment.id, { intervalMs }),
           ),
       });
       rows.push({
@@ -1015,6 +1029,7 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
                 row.id === attachment.id ? { ...row, randomDeviationMs } : row,
               ),
             }),
+            btFieldMergeKey(selected.id, attachment.id, { randomDeviationMs }),
           ),
       });
     }
@@ -1028,6 +1043,7 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
                 : row,
             ),
           }),
+          btFieldMergeKey(selected.id, attachment.id, updates),
         ),
       ),
     );

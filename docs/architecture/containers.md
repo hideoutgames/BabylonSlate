@@ -88,7 +88,7 @@ Packed export concatenates reached asset bytes into `boot.babpack` plus one `sce
 
 ### Derived data (outside the project)
 
-App-private storage keyed by project guid: compiled scripts, thumbnails, import cache, recovery journal, **Play traces** (`traces/*.babtrace`). Export Project ignores derived data by construction.
+App-private storage keyed by project guid: compiled scripts, thumbnails, import cache, recovery journal (`journal/*.jsonl` segments; see [command-layer.md](command-layer.md#journal-format)), **Play traces** (`traces/*.babtrace`). Export Project ignores derived data by construction.
 
 ## Schema migration
 
