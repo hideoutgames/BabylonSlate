@@ -12,11 +12,14 @@ import { landscapeWorldHeightAt, type LandscapeProperties, type Transform } from
 import { landscapeMeshData } from "./landscape-mesh";
 
 /**
- * Encoded ranges of the RGBA8 field: R shore distance, G depth over terrain, A terrain known.
- * B is unused (255); objects live in the separate, height-aware `WaterContactField`.
+ * Encoded ranges of the RGBA8 field: R shore distance, G depth over terrain, B the same depth at fine precision
+ * over the shallows (`WATER_FIELD_FINE_DEPTH_SPAN` metres from `fineDepthMin`), A terrain known.
+ * Objects live in the separate, height-aware `WaterContactField`.
  */
 export const WATER_FIELD_SHORE_RANGE: readonly [number, number] = [-8, 24];
 export const WATER_FIELD_DEPTH_RANGE: readonly [number, number] = [-8, 32];
+/** About 2 cm per step, so gentle shores shade and foam without depth terraces. */
+export const WATER_FIELD_FINE_DEPTH_SPAN = 5;
 const MAX_CELLS = 512;
 const MIN_CELL = 0.2;
 
@@ -105,13 +108,23 @@ export class WaterField {
     return [Math.min(WATER_FIELD_DEPTH_RANGE[0], -this.surface.amplitude - 1), Math.max(WATER_FIELD_DEPTH_RANGE[1], this.surface.amplitude + 1)];
   }
 
+  /** One cell in texture coordinates (u, v). */
+  get texelSize(): readonly [number, number] {
+    return [1 / Math.max(1, this.width), 1 / Math.max(1, this.height)];
+  }
+
+  /** Floor of the fine depth channel: below the lowest trough, so clamped cells still read as dry land. */
+  get fineDepthMin(): number {
+    return Math.min(-1, -this.surface.amplitude - 0.25);
+  }
+
   /** Refresh when terrain or the surface changes. Returns true when the texture changed. */
   update(force = false): boolean {
     const landscapes = this.landscapes();
     const surfaceBox = this.surface.mesh.getBoundingInfo().boundingBox;
     const terrainKey = landscapes.map(({ root, data }) => this.idOf(data) + ":" + Array.from(root.getWorldMatrix().m).join(",")).join("|")
       + "@" + Array.from(this.surface.mesh.getWorldMatrix().m).join(",")
-      + "@" + this.depthRange.join(",")
+      + "@" + this.depthRange.join(",") + "," + this.fineDepthMin
       + "@" + (this.surface.unbounded ? "" : [surfaceBox.minimumWorld.x, surfaceBox.minimumWorld.z, surfaceBox.maximumWorld.x, surfaceBox.maximumWorld.z].join(","));
     if (!force && terrainKey === this.terrainKey) return false;
     this.terrainKey = terrainKey;
@@ -196,7 +209,8 @@ export class WaterField {
 
   private fillTerrain(landscapes: Array<{ root: Mesh; data: LandscapeProperties }>): void {
     const { width, height } = this, data = this.data!, count = width * height;
-    const depthRange = this.depthRange;
+    const depthRange = this.depthRange, fineMin = this.fineDepthMin;
+    const fineRange = [fineMin, fineMin + WATER_FIELD_FINE_DEPTH_SPAN] as const;
     const transforms = landscapes.map(({ root, data }) => ({ data, transform: toTransform(root.computeWorldMatrix(true)) }));
     const depth = new Float64Array(count), known = new Uint8Array(count);
     for (let z = 0; z < height; z++) for (let x = 0; x < width; x++) {
@@ -225,7 +239,7 @@ export class WaterField {
         : (Math.sqrt(toLand[i]!) - 0.5) * cell;
       data[i * 4] = encode(shore, WATER_FIELD_SHORE_RANGE);
       data[i * 4 + 1] = known[i] ? encode(depth[i]!, depthRange) : 255;
-      data[i * 4 + 2] = 255;
+      data[i * 4 + 2] = known[i] ? encode(depth[i]!, fineRange) : 255;
       data[i * 4 + 3] = known[i] ? 255 : 0;
     }
   }

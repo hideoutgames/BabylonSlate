@@ -1,7 +1,7 @@
 import { Color3, DirectionalLight, HemisphericLight, MaterialPluginBase, Matrix, PBRMaterial, type MaterialDefines, RawTexture, ShaderLanguage, Texture, Vector3, type AbstractMesh, type Scene, type UniformBuffer } from "@babylonjs/core";
 import { WATER_CREST_MEAN, WATER_CREST_RANGE, waterWaveComponents, type WaterBodyProperties, type WaterColor, type WaterDefinition } from "@babylonslate/core";
 import type { WaterContactField } from "./water-contact-field";
-import { WATER_FIELD_DEPTH_RANGE, WATER_FIELD_SHORE_RANGE as SHORE, type WaterField } from "./water-field";
+import { WATER_FIELD_DEPTH_RANGE, WATER_FIELD_FINE_DEPTH_SPAN, WATER_FIELD_SHORE_RANGE as SHORE, type WaterField } from "./water-field";
 import { sceneWaterRemovals, waterRemovalShapeVector, waterRemovalWorldRadius } from "./water-removal-mesh";
 
 /**
@@ -388,6 +388,9 @@ function cutSource(wgsl: boolean): string {
   const sampleContacts = wgsl
     ? "var swContactTex: vec4f = textureSampleLevel(slateWaterContactSampler, slateWaterContactSamplerSampler, swContactUv, 0.0);"
     : "vec4 swContactTex = texture2D(slateWaterContactSampler, swContactUv);";
+  const fineAt = (uv: string) => wgsl
+    ? `textureSampleLevel(slateWaterFieldSampler, slateWaterFieldSamplerSampler, ${uv}, 0.0).b`
+    : `texture2D(slateWaterFieldSampler, ${uv}).b`;
   const removals = Array.from({ length: WATER_REMOVAL_SLOTS }, (_, i) => `swRemoval(U.slateWaterRemoval${i}, U.slateWaterRemovalShape${i}, swPosW)`);
   return `
 // Large-world rendering makes vPositionW eye-relative; rebuild the absolute world position.
@@ -395,8 +398,12 @@ vec3 swPosW = IN.vPositionW + U.slateWaterOrigin.xyz;
 vec2 swFieldUv = (swPosW.xz - U.slateWaterFieldBounds.xy) * U.slateWaterFieldBounds.zw;
 ${sample}
 float swFieldOn = U.slateWaterFieldInfo.x * step(0.0, swFieldUv.x) * step(swFieldUv.x, 1.0) * step(0.0, swFieldUv.y) * step(swFieldUv.y, 1.0);
-// Geometry displacement, not the unfiltered per-pixel normal waves, sets the waterline.
-float swTerrainDepth = mix(U.slateWaterFieldInfo.z, U.slateWaterFieldInfo.w, swField.g) + IN.vSlateWater.x;
+// Geometry displacement, not the unfiltered per-pixel normal waves, sets the waterline. Shallows read the fine
+// depth channel, so gentle shores have no terraces; deeper water falls back to the full-range channel.
+float swCoarseDepth = mix(U.slateWaterFieldInfo.z, U.slateWaterFieldInfo.w, swField.g);
+float swFineDepth = U.slateWaterFieldInfo.y + swField.b * ${f(WATER_FIELD_FINE_DEPTH_SPAN)};
+float swFineTop = U.slateWaterFieldInfo.y + ${f(WATER_FIELD_FINE_DEPTH_SPAN)};
+float swTerrainDepth = mix(swFineDepth, swCoarseDepth, smoothstep(swFineTop - 0.8, swFineTop - 0.2, swFineDepth)) + IN.vSlateWater.x;
 float swTerrainShore = mix(${f(SHORE[0])}, ${f(SHORE[1])}, swField.r);
 // Objects: signed distances at four heights across rest +/- the wave envelope (negative inside). Blending the
 // two layers around this fragment's rendered wave height puts contacts on the actual, moving waterline.
@@ -407,19 +414,22 @@ float swLayer = (clamp(IN.vSlateWater.x / max(0.001, U.slateWaterContactInfo.z),
 vec4 swLayerW = max(vec4(0.0), vec4(1.0) - abs(vec4(0.0, 1.0, 2.0, 3.0) - vec4(swLayer)));
 float swContactSigned = mix(1.0, dot(swContactTex, swLayerW) * 2.0 - 1.0, swContactOn) * U.slateWaterContactInfo.y;
 vec2 swContactDerivative = vec2(dFdx(swContactSigned), dFdy(swContactSigned));
-// Convert wave-relative depth to a local world-space shoreline distance. Compute
-// derivatives before discard; rest-height distance stays exact when waves are off.
+// Convert wave-relative depth to a local world-space shoreline distance: the displaced depth over the terrain
+// slope. Central differences of the fine depth one cell apart keep that slope continuous (a bilinear field's own
+// gradient steps at every cell). Rest-height distance stays exact when waves are off.
+vec2 swFieldStep = U.slateWaterFieldStep.xy;
+vec2 swTerrainSlope = vec2(${fineAt("swFieldUv + vec2(swFieldStep.x, 0.0)")} - ${fineAt("swFieldUv - vec2(swFieldStep.x, 0.0)")},
+  ${fineAt("swFieldUv + vec2(0.0, swFieldStep.y)")} - ${fineAt("swFieldUv - vec2(0.0, swFieldStep.y)")}) * ${f(WATER_FIELD_FINE_DEPTH_SPAN * 0.5)} / max(swFieldStep / U.slateWaterFieldBounds.zw, vec2(0.000001));
+// Derivatives before discard.
 vec2 swDx = dFdx(swPosW.xz);
 vec2 swDy = dFdy(swPosW.xz);
-vec2 swDepthDerivative = vec2(dFdx(swTerrainDepth), dFdy(swTerrainDepth));
 float swDet = swDx.x * swDy.y - swDx.y * swDy.x;
 // Outward world X/Z direction from the nearest object, from the screen derivatives of its distance.
 float swSafeDet = mix(1e-12, swDet, step(1e-12, abs(swDet)));
 vec2 swContactGrad = vec2(swContactDerivative.x * swDy.y - swContactDerivative.y * swDx.y, swDx.x * swContactDerivative.y - swDy.x * swContactDerivative.x) / swSafeDet;
 vec2 swContactDir = swContactGrad / max(length(swContactGrad), 0.00001);
-if (U.slateWaterWaves.x > 0.0 && swField.a > 0.5 && abs(swDet) > 1e-12) {
-  vec2 swDepthGradient = vec2(swDepthDerivative.x * swDy.y - swDepthDerivative.y * swDx.y, swDx.x * swDepthDerivative.y - swDy.x * swDepthDerivative.x) / swDet;
-  swTerrainShore = clamp(swTerrainDepth / max(length(swDepthGradient), 0.001), ${f(SHORE[0])}, ${f(SHORE[1])});
+if (U.slateWaterWaves.x > 0.0 && swField.a > 0.5) {
+  swTerrainShore = clamp(swTerrainDepth / max(length(swTerrainSlope), 0.001), ${f(SHORE[0])}, ${f(SHORE[1])});
 }
 float swCut = min(min(${removals[0]}, ${removals[1]}), min(${removals[2]}, ${removals[3]}));
 if (swCut < 0.0 || (swField.a * swFieldOn > 0.5 && swTerrainDepth <= 0.0)) { discard; }
@@ -561,7 +571,7 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
   override prepareDefines(defines: MaterialDefines): void { defines[WATER_STYLIZED_DEFINE] = this.water.style === "stylized"; }
   override getAttributes(attributes: string[]): void { attributes.push("slateWaterData", "slateWaterFlow", "slateWaterBaseNormal"); }
   override getUniforms() {
-    const vectors = ["slateWaterShallow", "slateWaterDeep", "slateWaterFoam", "slateWaterMotion", "slateWaterLook", "slateWaterWaves", "slateWaterSun", "slateWaterSunColor", "slateWaterLight", "slateWaterShape", "slateWaterFieldBounds", "slateWaterFieldInfo", "slateWaterContactBounds", "slateWaterContactInfo", "slateWaterOrigin"];
+    const vectors = ["slateWaterShallow", "slateWaterDeep", "slateWaterFoam", "slateWaterMotion", "slateWaterLook", "slateWaterWaves", "slateWaterSun", "slateWaterSunColor", "slateWaterLight", "slateWaterShape", "slateWaterFieldBounds", "slateWaterFieldInfo", "slateWaterFieldStep", "slateWaterContactBounds", "slateWaterContactInfo", "slateWaterOrigin"];
     const removals = Array.from({ length: WATER_REMOVAL_SLOTS }, (_, i) => i);
     return { ubo: [
       ...[...vectors, ...removals.map((i) => `slateWaterRemovalShape${i}`)].map((name) => ({ name, size: 4, type: "vec4" })),
@@ -594,7 +604,9 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
     const field = this.field?.texture ? this.field : null;
     const bounds = field?.bounds ?? [0, 0, 1, 1];
     buffer.updateFloat4("slateWaterFieldBounds", bounds[0]!, bounds[1]!, bounds[2]!, bounds[3]!);
-    buffer.updateFloat4("slateWaterFieldInfo", field ? 1 : 0, 0, ...(field?.depthRange ?? WATER_FIELD_DEPTH_RANGE));
+    buffer.updateFloat4("slateWaterFieldInfo", field ? 1 : 0, field?.fineDepthMin ?? 0, ...(field?.depthRange ?? WATER_FIELD_DEPTH_RANGE));
+    const texel = field?.texelSize ?? [1, 1];
+    buffer.updateFloat4("slateWaterFieldStep", texel[0], texel[1], 0, 0);
     const contacts = this.contacts?.texture ? this.contacts : null;
     const contactBounds = contacts?.bounds ?? [0, 0, 1, 1];
     buffer.updateFloat4("slateWaterContactBounds", contactBounds[0]!, contactBounds[1]!, contactBounds[2]!, contactBounds[3]!);

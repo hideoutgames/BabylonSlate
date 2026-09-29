@@ -5,9 +5,9 @@ import { createLandscapeMesh } from "./landscape-mesh";
 import { createWaterMesh, updateSceneWater } from "./water-mesh";
 import { createWaterRemovalMesh, sceneWaterRemovals } from "./water-removal-mesh";
 import { applyAssignMesh, createSnapshotSceneBinding } from "./snapshot-apply";
-import { distanceTransform, WATER_FIELD_DEPTH_RANGE, WATER_FIELD_SHORE_RANGE, WaterField } from "./water-field";
+import { distanceTransform, WATER_FIELD_DEPTH_RANGE, WATER_FIELD_FINE_DEPTH_SPAN, WATER_FIELD_SHORE_RANGE, WaterField } from "./water-field";
 
-type FieldView = { data: Uint8Array; width: number; height: number; bounds: number[]; depthRange?: readonly [number, number] };
+type FieldView = { data: Uint8Array; width: number; height: number; bounds: number[]; depthRange?: readonly [number, number]; fineDepthMin: number };
 const liveField = (mesh: Mesh) => (mesh.material as unknown as { pluginManager: { _plugins: Array<{ field?: WaterField | null }> } })
   .pluginManager._plugins.find((plugin) => plugin.field)!.field!;
 const fieldOf = (mesh: Mesh) => liveField(mesh) as unknown as FieldView;
@@ -15,7 +15,10 @@ const fieldOf = (mesh: Mesh) => liveField(mesh) as unknown as FieldView;
 function texel(field: FieldView, x: number, z: number) {
   const u = Math.floor((x - field.bounds[0]!) * field.bounds[2]! * field.width), v = Math.floor((z - field.bounds[1]!) * field.bounds[3]! * field.height);
   const i = (v * field.width + u) * 4, decode = (byte: number, [min, max]: readonly [number, number]) => min + byte / 255 * (max - min);
-  return { shore: decode(field.data[i]!, WATER_FIELD_SHORE_RANGE), depth: decode(field.data[i + 1]!, field.depthRange ?? WATER_FIELD_DEPTH_RANGE), known: field.data[i + 3] === 255 };
+  return {
+    shore: decode(field.data[i]!, WATER_FIELD_SHORE_RANGE), depth: decode(field.data[i + 1]!, field.depthRange ?? WATER_FIELD_DEPTH_RANGE),
+    fineDepth: decode(field.data[i + 2]!, [field.fineDepthMin, field.fineDepthMin + WATER_FIELD_FINE_DEPTH_SPAN]), known: field.data[i + 3] === 255,
+  };
 }
 
 describe("Water field", () => {
@@ -68,6 +71,29 @@ describe("Water field", () => {
       binding.meshes.get(3)!.position.x = 9;
       expect(entry!.mesh.computeWorldMatrix(true).getTranslation().asArray()).toEqual([9, 0, 2]);
     } finally { scene.dispose(); engine.dispose(); }
+  });
+
+  it("stores shallow depth finely enough that a gentle shore shades without terraces", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    let field: WaterField | undefined;
+    try {
+      const surface = MeshBuilder.CreateGround("water", { width: 20, height: 20 }, scene);
+      surface.metadata = { slateWater: true };
+      // A beach rising 0.15 m per metre across X, crossing the waterline at x = 0.
+      const side = 20, heights = Array.from({ length: (side + 1) ** 2 }, (_, i) => -1.5 + (i % (side + 1)) * 0.15);
+      createLandscapeMesh(scene, "beach", { width: 20, depth: 20, subdivisions: side, heights });
+      field = new WaterField(scene, { mesh: surface, unbounded: false, amplitude: 0.5, contactRange: 1, surfaceY: () => 0 });
+      field.update();
+      const view = field as unknown as FieldView;
+      // Across the shallows, depth follows the slope to within a couple of centimetres at every cell...
+      const cell = 1 / (view.bounds[2]! * view.width);
+      for (let x = -9; x < 6; x += 0.37) {
+        const centre = view.bounds[0]! + (Math.floor((x - view.bounds[0]!) / cell) + 0.5) * cell;
+        expect(Math.abs(texel(view, x, 0).fineDepth + centre * 0.15)).toBeLessThan(0.02);
+      }
+      // ...while dry land still reads as dry below the lowest trough.
+      expect(texel(view, 9.5, 0).fineDepth).toBeLessThan(-0.5);
+    } finally { field?.dispose(); scene.dispose(); engine.dispose(); }
   });
 
   it("retains terrain depth throughout the high-wave envelope", () => {
