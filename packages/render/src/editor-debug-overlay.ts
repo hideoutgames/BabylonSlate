@@ -19,6 +19,7 @@ import {
   normalizeRenderTargetCaptureProperties,
   normalizeRenderTargetPayload,
   parseAreaRectLightProperties,
+  type RenderTargetCaptureProperties,
   type RenderTargetPayload,
   type SerializedActor,
   type SerializedComponent,
@@ -35,7 +36,7 @@ import { actorMeshName } from "./picking";
 import { authoredComponentActorTransform } from "./authored-transform-matrices";
 import { createRttCanvasBlitter } from "./flip-read-pixels";
 import { withSceneReadinessState } from "./scene-perf";
-import { isRenderTargetCaptureCandidate } from "./render-target-capture";
+import { isRenderTargetCaptureCandidate, samplesRenderTargetOutput } from "./render-target-capture";
 import { admittedSceneMeshes } from "./scene-stream-admission";
 import type { AudioLibrary } from "./audio-service";
 
@@ -75,8 +76,8 @@ type LensDebug = {
   aspect: number;
   /** Meshes the lens renders. */
   renderList: AbstractMesh[];
-  /** Render Target assigned to a capture lens; undefined for a camera. */
-  captureTarget?: string | null;
+  /** Normalized settings of a capture lens; undefined for a camera. */
+  capture?: RenderTargetCaptureProperties;
 };
 
 const DEBUG_FAR_MIN = 8;
@@ -179,8 +180,8 @@ export class EditorDebugOverlay {
   private previewCamera: FreeCamera | null = null;
   private previewLens: AuthoredCameraProperties | null = null;
   private previewAspect = CAMERA_PREVIEW_ASPECT;
-  /** Assigned target of the previewed capture; undefined for a camera or no lens. */
-  private previewCaptureTarget: string | null | undefined = undefined;
+  /** Settings of the previewed capture; null for a camera or no lens. */
+  private previewCapture: RenderTargetCaptureProperties | null = null;
   private lastSync: OverlaySync | null = null;
   private readonly renderTargets: EditorDebugOverlayOptions["renderTargets"];
   private previewCanvas: HTMLCanvasElement | null = null;
@@ -254,14 +255,19 @@ export class EditorDebugOverlay {
   }
 
   /**
-   * Rebuild a selected capture's frustum and preview when its Render Target's
-   * aspect changed after asset installation; other asset edits keep the RTT.
+   * After asset installation, rebuild a selected capture's frustum and preview
+   * when its Render Target's aspect changed. Otherwise keep the RTT and only
+   * re-filter its meshes: installs can rebuild meshes or change which ones
+   * sample the target's own output.
    */
   refreshRenderTargets(): void {
-    const target = this.previewCaptureTarget;
-    if (this.stopped || !this.lastSync || target === undefined) return;
-    if (this.captureAspect(target) === this.previewAspect) return;
-    this.sync(this.lastSync);
+    const capture = this.previewCapture;
+    if (this.stopped || !this.lastSync || !capture) return;
+    if (this.captureAspect(capture.renderTargetGuid) !== this.previewAspect) {
+      this.sync(this.lastSync);
+      return;
+    }
+    if (this.previewTexture) this.previewTexture.renderList = this.captureRenderList(capture);
   }
 
   /**
@@ -360,7 +366,7 @@ export class EditorDebugOverlay {
     this.previewCamera = null;
     this.previewLens = null;
     this.previewAspect = CAMERA_PREVIEW_ASPECT;
-    this.previewCaptureTarget = undefined;
+    this.previewCapture = null;
     this.previewRenderCount = 0;
     this.lastPreviewMs = Number.NEGATIVE_INFINITY;
     this.clearTimer();
@@ -397,7 +403,6 @@ export class EditorDebugOverlay {
    */
   private captureLens(component: SerializedComponent): LensDebug {
     const settings = normalizeRenderTargetCaptureProperties(component.properties);
-    const included = settings.captureOnlyActors ? new Set(settings.actorIds) : null;
     return {
       lens: {
         projectionMode: "perspective",
@@ -406,18 +411,35 @@ export class EditorDebugOverlay {
         farClip: settings.farClip,
       },
       aspect: this.captureAspect(settings.renderTargetGuid),
-      captureTarget: settings.renderTargetGuid,
-      renderList: (admittedSceneMeshes(this.scene) ?? this.scene.meshes).filter((mesh) => {
-        if (!isRenderTargetCaptureCandidate(mesh)) return false;
-        // Nearest actor owner, so an attached child actor needs its own entry.
-        return !included || included.has(actorIdFromMeshName(actorMeshName(mesh)) ?? "");
-      }),
+      capture: settings,
+      renderList: this.captureRenderList(settings),
     };
   }
 
-  private captureAspect(renderTargetGuid: string | null): number {
+  /**
+   * Meshes the capture records: capture candidates, filtered by Capture Only
+   * Actors, and for Scene Color never a mesh sampling the target's own output.
+   */
+  private captureRenderList(settings: RenderTargetCaptureProperties): AbstractMesh[] {
+    const included = settings.captureOnlyActors ? new Set(settings.actorIds) : null;
+    const guid = settings.renderTargetGuid;
+    const ownOutput = guid && this.captureTarget(guid).mode === "SceneColor" ? guid : null;
+    return (admittedSceneMeshes(this.scene) ?? this.scene.meshes).filter((mesh) => {
+      if (!isRenderTargetCaptureCandidate(mesh)) return false;
+      if (ownOutput && samplesRenderTargetOutput(mesh, ownOutput)) return false;
+      // Nearest actor owner, so an attached child actor needs its own entry.
+      return !included || included.has(actorIdFromMeshName(actorMeshName(mesh)) ?? "");
+    });
+  }
+
+  /** Installed Render Target asset, or the default (512² Scene Color) when unassigned or missing. */
+  private captureTarget(renderTargetGuid: string | null): RenderTargetPayload {
     const definition = renderTargetGuid ? this.renderTargets?.()?.get(renderTargetGuid) : undefined;
-    const { width, height } = normalizeRenderTargetPayload(definition);
+    return normalizeRenderTargetPayload(definition);
+  }
+
+  private captureAspect(renderTargetGuid: string | null): number {
+    const { width, height } = this.captureTarget(renderTargetGuid);
     return width / height;
   }
 
@@ -466,7 +488,7 @@ export class EditorDebugOverlay {
     camera.rotation.set(0, 0, 0);
     this.previewLens = debug.lens;
     this.previewAspect = debug.aspect;
-    this.previewCaptureTarget = debug.captureTarget;
+    this.previewCapture = debug.capture ?? null;
     applyAuthoredCameraLens(camera, debug.lens, debug.aspect);
     this.previewCamera = camera;
     const rtt = new RenderTargetTexture(

@@ -6,6 +6,7 @@ import {
   Quaternion,
   RenderTargetTexture,
   Scene,
+  StandardMaterial,
   TransformNode,
   Vector3,
   VertexBuffer,
@@ -34,6 +35,7 @@ import {
   EditorDebugOverlay,
 } from "./editor-debug-overlay";
 import { editorComponentMeshName, editorMeshName } from "./scene-loader";
+import { sceneRenderTargetCaptures } from "./render-target-capture";
 import { isViewportShadingTarget } from "./viewport-shading-mode";
 import { createEditorCameraModel } from "./editor-camera-model";
 
@@ -734,6 +736,46 @@ describe("EditorDebugOverlay", () => {
 
     overlay.sync({ sceneData: sceneWith([captureActor()]), selectedActorIds: ["rt"] });
     expect(previewed()).toEqual([subject, part, attached, other, world].map((mesh) => mesh.name));
+    overlay.dispose();
+  });
+
+  it("leaves out meshes sampling a Scene Color capture's own output, like the capture", () => {
+    const { scene } = createHandle();
+    const captures = sceneRenderTargetCaptures(scene);
+    const textures = new Map([
+      ["feed", { renderTargetGuid: "target" }],
+      ["other feed", { renderTargetGuid: "other" }],
+    ]);
+    let targets = renderTargetMap({ target: { width: 16, height: 8 }, other: { width: 16, height: 8 } });
+    captures.setAssets(targets, textures);
+    const screen = (name: string, textureGuid: string) => {
+      const mesh = MeshBuilder.CreatePlane(name, {}, scene);
+      const material = new StandardMaterial(`${name} material`, scene);
+      material.emissiveTexture = captures.acquireTexture(textureGuid)!.resource;
+      mesh.material = material;
+      return mesh;
+    };
+    const monitor = screen("monitor", "feed");
+    const otherMonitor = screen("other monitor", "other feed");
+    const wall = MeshBuilder.CreateBox("wall", {}, scene);
+    const overlay = new EditorDebugOverlay(scene, { now: () => 0, renderTargets: () => targets });
+
+    // Disabled, so the target has never published: the preview still shows
+    // what the capture records once it runs.
+    overlay.sync({
+      sceneData: sceneWith([captureActor({ renderTargetGuid: "target", enabled: false })]),
+      selectedActorIds: ["rt"],
+    });
+    const preview = overlay.previewTexture;
+    const previewed = () => overlay.previewTexture!.renderList!.map((mesh) => mesh.name);
+    expect(previewed()).toEqual([otherMonitor, wall].map((mesh) => mesh.name));
+
+    // Depth and normal passes replace materials, so they record the monitor.
+    targets = new Map<string, RenderTargetPayload>([...targets, ["target", { mode: "DepthPass", width: 16, height: 8 }]]);
+    captures.setAssets(targets, textures);
+    overlay.refreshRenderTargets();
+    expect(overlay.previewTexture).toBe(preview);
+    expect(previewed()).toEqual([monitor, otherMonitor, wall].map((mesh) => mesh.name));
     overlay.dispose();
   });
 
