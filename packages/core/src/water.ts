@@ -33,6 +33,10 @@ export interface WaterDefinition {
   crestFoam: number;
   /** Metres of foam around objects and terrain that intersect the surface. */
   contactFoamWidth: number;
+  /** Open-water foam: wind streaks and trailing foam (Realistic) or drifting foam patches (Stylized). */
+  surfaceFoam: number;
+  /** Sunlight scattered through wave crests (Realistic) or the lighter tint on wave tops (Stylized). */
+  subsurface: number;
   colorBands: number;
   /** Twinkling sun glints, mostly for Stylized water. */
   sparkles: number;
@@ -90,17 +94,18 @@ export function createDefaultWaterDefinition(style: WaterStyle = "realistic"): W
   const stylized = style === "stylized";
   return {
     style,
-    shallowColor: stylized ? [0.3, 0.76, 0.95] : [0.14, 0.42, 0.34],
-    deepColor: stylized ? [0.03, 0.27, 0.66] : [0.02, 0.1, 0.13],
-    foamColor: stylized ? [1, 1, 1] : [0.86, 0.9, 0.9],
-    opacity: stylized ? 0.92 : 0.97, roughness: stylized ? 0.18 : 0.05,
-    reflectionStrength: 1, depthColorDistance: stylized ? 1.6 : 3,
+    shallowColor: stylized ? [0.36, 0.86, 0.95] : [0.1, 0.5, 0.48],
+    deepColor: stylized ? [0.06, 0.38, 0.78] : [0.015, 0.11, 0.2],
+    foamColor: stylized ? [1, 1, 1] : [0.9, 0.93, 0.94],
+    opacity: stylized ? 0.9 : 0.97, roughness: stylized ? 0.3 : 0.06,
+    reflectionStrength: stylized ? 0.6 : 1, depthColorDistance: stylized ? 1.6 : 4,
     waveHeight: 0.35, waveLength: 12, waveSpeed: 1.3, waveDirection: 25,
     choppiness: stylized ? 0.2 : 0.45, waveSpread: 0.5,
     rippleStrength: stylized ? 0.35 : 0.6, rippleScale: stylized ? 1 : 1.4,
-    foamAmount: stylized ? 1 : 0.35, foamWidth: stylized ? 0.7 : 0.8,
-    crestFoam: stylized ? 0.3 : 0.12, contactFoamWidth: stylized ? 0.6 : 1.2,
-    colorBands: stylized ? 3 : 0, sparkles: stylized ? 0.7 : 0, density: 1000, materialGuid: null,
+    foamAmount: stylized ? 1 : 0.6, foamWidth: stylized ? 0.7 : 0.8,
+    crestFoam: 0.35, contactFoamWidth: stylized ? 0.6 : 1.2,
+    surfaceFoam: stylized ? 0.4 : 0.15, subsurface: stylized ? 0.5 : 1,
+    colorBands: stylized ? 3 : 0, sparkles: stylized ? 0.4 : 0, density: 1000, materialGuid: null,
   };
 }
 
@@ -128,6 +133,8 @@ export function normalizeWaterDefinition(value: unknown): WaterDefinition {
     foamWidth: number(v.foamWidth, d.foamWidth, 0, 20),
     crestFoam: number(v.crestFoam, d.crestFoam, 0, 1),
     contactFoamWidth: number(v.contactFoamWidth, d.contactFoamWidth, 0, 8),
+    surfaceFoam: number(v.surfaceFoam, d.surfaceFoam, 0, 1),
+    subsurface: number(v.subsurface, d.subsurface, 0, 2),
     colorBands: Math.round(number(v.colorBands, d.colorBands, 0, 12)),
     sparkles: number(v.sparkles, d.sparkles, 0, 1),
     density: number(v.density, d.density, 1, 20000),

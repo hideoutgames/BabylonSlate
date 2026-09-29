@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { DirectionalLight, HemisphericLight, Matrix, MeshBuilder, NullEngine, PBRMaterial, Scene, Texture, TransformNode, Vector3, type UniformBuffer } from "@babylonjs/core";
+import { DirectionalLight, FreeCamera, HemisphericLight, Matrix, MeshBuilder, NullEngine, PBRMaterial, PointLight, Scene, Texture, TransformNode, Vector3, type UniformBuffer } from "@babylonjs/core";
 import { createDefaultWaterDefinition, normalizeWaterBody } from "@babylonslate/core";
 import { WaterMaterialPlugin } from "./water-material";
+import { createWaterMesh } from "./water-mesh";
 import { createWaterRemovalMesh } from "./water-removal-mesh";
 
 /** Capture the shader upload boundary while using real scene objects and binding logic. */
@@ -116,6 +117,33 @@ describe("Water material binding", () => {
         expect(local.length()).toBeCloseTo(0);
       };
       scene.render();
+    } finally { scene.dispose(); engine.dispose(); }
+  });
+
+  it("compiles only the asset's style: lit, reflective Realistic and unlit Stylized that ignores scene lights", async () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    try {
+      new FreeCamera("camera", new Vector3(0, 5, -10), scene);
+      new DirectionalLight("sun", new Vector3(0, -1, 0.3), scene);
+      new PointLight("lamp", new Vector3(0, 3, 0), scene);
+      // Preview, editor scenes and Play all build water through createWaterMesh; an edited asset rebuilds it.
+      const compiled = async (style: "realistic" | "stylized") => {
+        const mesh = createWaterMesh(scene, style, normalizeWaterBody({ resolution: 8 }), createDefaultWaterDefinition(style));
+        const material = mesh.material as PBRMaterial, subMesh = mesh.subMeshes[0]!;
+        await material.forceCompilationAsync(mesh);
+        expect(material.isReadyForSubMesh(mesh, subMesh)).toBe(true);
+        const defines = subMesh.effect!.defines;
+        mesh.dispose();
+        return defines;
+      };
+      const stylized = await compiled("stylized");
+      expect(stylized).toContain("#define SLATE_WATER_STYLIZED");
+      expect(stylized).toContain("#define UNLIT");
+      expect(stylized).not.toContain("#define LIGHT0");
+      const realistic = await compiled("realistic");
+      expect(realistic).not.toContain("#define SLATE_WATER_STYLIZED");
+      expect(realistic).not.toContain("#define UNLIT");
+      expect(realistic).toContain("#define LIGHT1");
     } finally { scene.dispose(); engine.dispose(); }
   });
 

@@ -275,9 +275,12 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
     configureWaterMaterial(material, water);
     plugin = new WaterMaterialPlugin(material, water, body);
     plugin.mesh = mesh;
-    let reflection = reflections.get(scene);
-    if (!reflection) { reflection = new WaterReflection(scene); reflections.set(scene, reflection); }
-    reflection.add(material);
+    // Unlit Stylized water never samples a reflection.
+    if (water.style !== "stylized") {
+      let reflection = reflections.get(scene);
+      if (!reflection) { reflection = new WaterReflection(scene); reflections.set(scene, reflection); }
+      reflection.add(material);
+    }
     mesh.material = material;
     mesh.onDisposeObservable.addOnce(() => material.dispose());
   }
