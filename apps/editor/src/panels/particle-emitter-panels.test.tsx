@@ -7,6 +7,7 @@ import {
   normalizeParticleEmitterPayload,
   type ParticleEmitterPayload,
 } from "@babylonslate/assets";
+import { EditorSessionStateProvider } from "../context/editor-session-state-context";
 import { ParticleEmitterEditor, ParticleEmitterPreview } from "./particle-emitter-panels";
 
 if (typeof window !== "undefined") {
@@ -155,6 +156,39 @@ describe("ParticleEmitterEditor", () => {
     expect(screen.queryByTestId("search-item-mat-surface")).toBeNull();
     fireEvent.click(screen.getByTestId("search-item-mat-particle"));
     expect(history.read().render.materialGuid).toBe("mat-particle");
+  });
+
+  it("keeps a document's closed cards for the project session and nothing longer", () => {
+    const payload = createDefaultParticleEmitterPayload() as unknown as Doc;
+    const sparks = "particle-emitter:assets/Sparks.emitter.babasset";
+    const smoke = "particle-emitter:assets/Smoke.emitter.babasset";
+    const session = (documentKey: string | null) => (
+      <EditorSessionStateProvider>
+        {documentKey ? (
+          <ParticleEmitterEditor
+            key={documentKey}
+            documentKey={documentKey}
+            payload={payload}
+            onChange={() => {}}
+          />
+        ) : null}
+      </EditorSessionStateProvider>
+    );
+    const emitterOpen = () => screen.queryByTestId("module-card-emitter-body") !== null;
+
+    const { rerender, unmount } = render(session(sparks));
+    fireEvent.click(screen.getByTestId("module-card-emitter-toggle"));
+    expect(emitterOpen()).toBe(false);
+
+    rerender(session(null));
+    rerender(session(sparks));
+    expect(emitterOpen()).toBe(false);
+    rerender(session(smoke));
+    expect(emitterOpen()).toBe(true);
+
+    unmount();
+    render(session(sparks));
+    expect(emitterOpen()).toBe(true);
   });
 
   it("opens a P17-shaped document with the new module defaults", () => {
