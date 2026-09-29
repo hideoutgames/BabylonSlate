@@ -1,9 +1,10 @@
-import { Mesh, MeshBuilder, TransformNode } from "@babylonjs/core";
+import { Mesh, MeshBuilder, StandardMaterial, TransformNode } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createActor, createDefaultScene, createMeshComponent, identitySerializedTransform, resolveOverlayLayout } from "@babylonslate/core";
 import { createTestEngine } from "./create-null-engine";
 import { EditorSceneSync } from "./editor-scene-sync";
-import { OverlayLayoutRenderer, overlayClipAllowsPoint } from "./overlay-layout-render";
+import { applyEditorLayoutClips, OverlayLayoutRenderer, overlayClipAllowsPoint } from "./overlay-layout-render";
+import { canCacheShadowMaterial } from "./shadow-material-policy";
 import { applySceneToBabylonScene, editorComponentMeshName, editorMeshName, helperBillboardIconOf } from "./scene-loader";
 import { SceneLayerCompositor } from "./scene-layer-compositor";
 import { encodeTriangleGlb } from "./glb-test-fixtures";
@@ -13,6 +14,60 @@ const cleanup: Array<() => void> = [];
 afterEach(() => { while (cleanup.length) cleanup.pop()!(); vi.restoreAllMocks(); });
 
 describe("SceneLayer layout rendering", () => {
+  it.each(["editor", "runtime"] as const)("restores shadow caching when %s clipping is cleared or a mesh leaves its clip", (mode) => {
+    const { engine, scene } = createTestEngine();
+    const renderer = new OverlayLayoutRenderer(() => scene);
+    cleanup.push(() => { renderer.dispose(); scene.dispose(); engine.dispose(); });
+    const rootName = mode === "editor" ? "editorActor:panel" : "actor-1";
+    const root = MeshBuilder.CreatePlane(rootName, {}, scene);
+    const glyph = MeshBuilder.CreatePlane("glyph", {}, scene);
+    glyph.parent = root;
+    const unclipped = MeshBuilder.CreatePlane(`${rootName}|unclipped`, {}, scene);
+    unclipped.parent = root;
+    const world = MeshBuilder.CreateBox("world", {}, scene);
+    const material = new StandardMaterial("opaque", scene);
+    for (const mesh of [root, glyph, unclipped, world]) mesh.material = material;
+    const afterDraw = vi.fn();
+    glyph.onAfterRenderObservable.add(afterDraw);
+    const beforeScene = vi.fn();
+    const unrelatedSceneObserver = scene.onBeforeRenderObservable.add(beforeScene);
+    const rect = { x: 0, y: 0, width: 2, height: 2 };
+    const entries = [
+      { actorId: "panel", slotId: 1, rect, clip: rect, scrollAncestors: ["scroll"] },
+      { actorId: "panel", componentId: "unclipped", slotId: 1, rect, clip: null, scrollAncestors: [] },
+    ];
+    const apply = (clipped: boolean) => {
+      const current = clipped ? entries : [];
+      if (mode === "editor") applyEditorLayoutClips(scene, new Map(current.map((entry, index) => [String(index), entry])));
+      else renderer.apply({ type: "sceneLayerLayout", layerId: "hud", entries: current });
+    };
+    apply(true);
+    expect(canCacheShadowMaterial(material, glyph)).toBe(false);
+    expect(canCacheShadowMaterial(material, unclipped)).toBe(true);
+    expect(canCacheShadowMaterial(material, world)).toBe(true);
+    glyph.parent = null;
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    expect(canCacheShadowMaterial(material, glyph)).toBe(true);
+    glyph.parent = root;
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    expect(canCacheShadowMaterial(material, glyph)).toBe(false);
+    apply(false);
+    expect(canCacheShadowMaterial(material, root)).toBe(true);
+    expect(canCacheShadowMaterial(material, glyph)).toBe(true);
+    glyph.onAfterRenderObservable.notifyObservers(glyph);
+    expect(afterDraw).toHaveBeenCalledOnce();
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    expect(beforeScene).toHaveBeenCalled();
+    scene.onBeforeRenderObservable.remove(unrelatedSceneObserver);
+    expect(scene.onBeforeRenderObservable.hasObservers()).toBe(false);
+    apply(true);
+    expect(canCacheShadowMaterial(material, glyph)).toBe(false);
+    if (mode === "runtime") renderer.remove("hud");
+    else apply(false);
+    expect(canCacheShadowMaterial(material, glyph)).toBe(true);
+    expect(scene.onBeforeRenderObservable.hasObservers()).toBe(false);
+  });
+
   it("preserves layout and clipping when an asynchronous editor model replaces a primitive", async () => {
     const { engine, scene } = createTestEngine();
     const sync = new EditorSceneSync(scene);
