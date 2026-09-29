@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { Mesh, StandardMaterial, Vector3 } from "@babylonjs/core";
+import { Mesh, StandardMaterial, Vector3, VertexBuffer } from "@babylonjs/core";
 import { createActor, createDefaultScene, identitySerializedTransform } from "@babylonslate/core";
 import { installAssetBytes, normalizeModelPayload } from "@babylonslate/assets";
 import { EditorSceneSync } from "./editor-scene-sync";
@@ -10,29 +10,39 @@ import { glbContainerLoadCount } from "./glb-anim";
 const disposers: Array<() => void> = [];
 afterEach(() => { while (disposers.length) disposers.pop()!(); vi.restoreAllMocks(); });
 
-it("shares model geometry across strokes and batches transforms with a Material override", async () => {
+it("shares model vertices while keeping stroke and cell instance buffers independent", async () => {
   const { engine, scene } = createTestEngine();
   disposers.push(() => { scene.dispose(); engine.dispose(); });
   const material = new StandardMaterial("leaves", scene);
   material.metadata = { boundsPadding: 2 };
   const assets = { modelSources: new Map([["tree", installAssetBytes(encodeTriangleGlb(), "model/gltf-binary")]]), resolveMaterial: () => material };
-  const data = { groupId: "forest", batches: [{ modelGuid: "tree", materialGuid: "leaf-material", transforms: [identitySerializedTransform(), { ...identitySerializedTransform(), position: [4, 0, 0] }] }] };
+  const data = { groupId: "forest", batches: [{ modelGuid: "tree", materialGuid: "leaf-material", transforms: [identitySerializedTransform(), { ...identitySerializedTransform(), position: [4, 0, 0] }, { ...identitySerializedTransform(), position: [40, 0, 0] }] }] };
   const a = createFoliageMesh(scene, "stroke-a", data, assets);
-  const b = createFoliageMesh(scene, "stroke-b", data, assets);
+  const b = createFoliageMesh(scene, "stroke-b", { batches: [{ modelGuid: "tree", transforms: [{ ...identitySerializedTransform(), position: [12, 0, 0] }] }] }, assets);
   await Promise.all([foliagePreparation(a), foliagePreparation(b)]);
   const am = a.getChildMeshes().find((mesh): mesh is Mesh => mesh instanceof Mesh && mesh.hasThinInstances)!;
   const bm = b.getChildMeshes().find((mesh): mesh is Mesh => mesh instanceof Mesh && mesh.hasThinInstances)!;
   expect(am.thinInstanceCount).toBe(2);
   expect(am.material).toBe(material);
-  expect(am.geometry).toBe(bm.geometry);
+  expect(am.getVertexBuffer(VertexBuffer.PositionKind)!.getWrapperBuffer()).toBe(bm.getVertexBuffer(VertexBuffer.PositionKind)!.getWrapperBuffer());
   expect(glbContainerLoadCount(scene)).toBe(1);
   expect(am.thinInstanceGetWorldMatrices()[1]!.getTranslation().x).toBe(4);
+  // Read the attributes actually bound for drawing, not the separate CPU matrix cache.
+  expect(Array.from(am.getVerticesData("world3")!)).toEqual([0, 0, 0, 1, 4, 0, 0, 1]);
+  expect(Array.from(bm.getVerticesData("world3")!)).toEqual([12, 0, 0, 1]);
+  const distantCell = a.getChildMeshes().find((mesh): mesh is Mesh => mesh instanceof Mesh && mesh.hasThinInstances && mesh !== am)!;
+  expect(Array.from(distantCell.getVerticesData("world3")!)).toEqual([40, 0, 0, 1]);
+  const source = am.source as Mesh;
+  expect(source.isVerticesDataPresent("world0")).toBe(false);
   const paddedMaximum = am.getBoundingInfo().boundingBox.maximum.clone();
   refreshFoliageMaterials(a, { ...assets, resolveMaterial: () => null });
   expect(am.getBoundingInfo().boundingBox.maximum.x).toBeCloseTo(paddedMaximum.x - 2);
   expect(am.getBoundingInfo().boundingBox.maximum.y).toBeCloseTo(paddedMaximum.y - 2);
   a.dispose();
   expect(bm.isDisposed()).toBe(false);
+  expect(bm.getVertexBuffer("world3")!.getBuffer()).not.toBeNull();
+  expect(bm.getVertexBuffer(VertexBuffer.PositionKind)!.getBuffer()).not.toBeNull();
+  expect(Array.from(bm.getVerticesData("world3")!)).toEqual([12, 0, 0, 1]);
   expect(scene.materials).toContain(material);
 });
 
