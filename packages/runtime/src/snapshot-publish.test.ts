@@ -83,8 +83,7 @@ function published(runtime: RuntimeDriver) {
 /** Everything a host consumes except wall-clock timings and the seq-lock counter. */
 function comparable(runtime: RuntimeDriver) {
   const { header, poses } = published(runtime);
-  const { scriptMs: _script, physicsMs: _physics, seq: _seq, ...rest } = header;
-  return { header: rest, poses };
+  return { header: { ...header, scriptMs: 0, physicsMs: 0, seq: 0 }, poses };
 }
 
 function slotPose(frame: { poses: ActorSlot[] }, slotId: number | undefined): ActorSlot | undefined {
