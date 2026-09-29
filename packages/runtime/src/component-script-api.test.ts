@@ -567,7 +567,7 @@ describe("component script API", () => {
     runtime.stop();
   });
 
-  it("Set 2DAnchor offset moves the overlay actor", async () => {
+  it("Set 2DAnchor offset moves its parent while actor pose setters leave the anchor inert", async () => {
     const hud: SerializedSceneLayer = {
       ...createDefaultSceneLayer(),
       name: "HUD",
@@ -576,8 +576,12 @@ describe("component script API", () => {
         layerBounds: { width: 16, height: 9 },
       },
       actors: [
+        createActor("visual", "Visual", { classId: "SceneLayerActor", transform: {
+          position: [-7, 4, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1],
+        } }),
         createActor("badge", "Badge", {
           classId: "Hero",
+          parentId: "visual",
           components: [
             {
               id: "anchor",
@@ -600,17 +604,24 @@ describe("component script API", () => {
           "export function onBeginPlay(ctx) {",
           '  const c = ctx.getComponentById(ctx.self, "anchor");',
           '  ctx.setVariableOn(c, "offsetX", 3);',
+          '  ctx.setActorLocation(ctx.self, { x: 20, y: 30, z: 40 });',
+          '  ctx.addActorWorldOffset(ctx.self, { x: 1, y: 2, z: 3 });',
+          '  ctx.setActorRotation(ctx.self, { pitch: 10, yaw: 20, roll: 30 });',
+          '  ctx.setActorScale(ctx.self, { x: 2, y: 3, z: 4 });',
+          '  ctx.setActorTransform(ctx.self, { position: { x: 5, y: 6, z: 7 } });',
           "}",
         ].join("\n"),
       ),
     ]);
     runtime.realizePlayWorld();
     runtime.createSceneLayer("hud", 0);
-    const actor = runtime.getWorld().findActor("badge");
-    // normalizeSceneLayer bakes offset 1 into (-7, 4) and zeros offsets.
-    // Set offsetX 3 must re-apply; a store-only write would leave x at -7.
+    const actor = runtime.getWorld().findActor("visual");
+    // A store-only write would leave the parent's x at -6.
     expect(actor?.transform.position.x).toBe(-4);
-    expect(actor?.transform.position.y).toBe(4);
+    expect(actor?.transform.position.y).toBe(3.5);
+    expect(runtime.getWorld().findActor("badge")?.transform).toEqual({
+      position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 },
+    });
     runtime.stop();
   });
 

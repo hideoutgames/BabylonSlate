@@ -11,6 +11,7 @@ import type { SerializedActor, SerializedComponent, SerializedScene, SerializedT
 import { sceneShadowController } from "./shadow-controller";
 import {
   identitySerializedTransform,
+  isSceneLayerAnchorActor,
   fogVolumeBindings,
   parseFogVolumeProperties,
   overlayPanelDestFromScale,
@@ -392,6 +393,7 @@ function hasSurfaceVisual(actor: SerializedActor): boolean {
 export function helperBillboardIconOf(
   actor: SerializedActor,
 ): EditorBillboardIcon | null {
+  if (isSceneLayerAnchorActor(actor)) return null;
   if (actor.components.some((component) => component.classId === "SceneStreamingComponent")) return "default";
   if (hasSurfaceVisual(actor)) return null;
   const fill = actor.components.find(
@@ -1091,6 +1093,12 @@ export function createActorMesh(
   assets?: MeshAssetContext,
   allActors?: readonly SerializedActor[],
 ): Mesh {
+  if (isSceneLayerAnchorActor(actor)) {
+    const root = new Mesh(editorMeshName(actor.id), scene);
+    root.metadata = { editorActorOrigin: true, editorUnpickable: true };
+    root.isPickable = false;
+    return root;
+  }
   if (needsOriginRoot(actor, allActors)) {
     return createActorOriginHierarchy(scene, actor, assets, allActors);
   }
@@ -1213,7 +1221,7 @@ export function applyActorTransform(mesh: Mesh, actor: SerializedActor): void {
   const component = actor.components.find((entry) => entry.classId === "MeshComponent");
   if (component && !isEditorActorOrigin(mesh)) sceneShadowController(mesh.getScene()).setParticipation(mesh, component.properties);
   if (mesh.isWorldMatrixFrozen) mesh.unfreezeWorldMatrix();
-  applySerializedTransform(mesh, actor.transform);
+  applySerializedTransform(mesh, isSceneLayerAnchorActor(actor) ? identitySerializedTransform() : actor.transform);
   const origin = isEditorActorOrigin(mesh);
   if (origin) {
     mesh.visibility = 0;
@@ -1381,6 +1389,22 @@ export function editorModelLoadTarget(
   return visualMeshesOfActorRoot(root).find((mesh) => mesh.name === name) ?? root;
 }
 
+/** Outliner-only anchors are transparent to the renderer's spatial hierarchy. */
+export function editorActorParentId(
+  actor: SerializedActor,
+  actorsById: ReadonlyMap<string, SerializedActor>,
+): string | null {
+  let parentId = actor.parentId;
+  const visited = new Set([actor.id]);
+  while (parentId && !visited.has(parentId)) {
+    const parent = actorsById.get(parentId);
+    if (!parent || !isSceneLayerAnchorActor(parent)) return parentId;
+    visited.add(parentId);
+    parentId = parent.parentId;
+  }
+  return null;
+}
+
 /** Full rebuild of the editor scene; `EditorSceneSync` does incremental work. */
 export function applySceneToBabylonScene(
   scene: Scene,
@@ -1411,6 +1435,7 @@ export function applySceneToBabylonScene(
   };
   let loadSlot = 0;
   for (const actor of sceneData.actors) {
+    if (isSceneLayerAnchorActor(actor)) continue;
     const mesh = createActorMesh(scene, actor, meshAssets, sceneData.actors);
     applyActorTransform(mesh, actor);
     applyActorComponentSorting(mesh, actor, assets?.sortingLayers ?? ["Background", "Default", "Foreground", "UI"]);
@@ -1434,10 +1459,12 @@ export function applySceneToBabylonScene(
     }
   }
 
+  const actorsById = new Map(sceneData.actors.map((actor) => [actor.id, actor]));
   for (const actor of sceneData.actors) {
-    if (!actor.parentId) continue;
+    const parentId = editorActorParentId(actor, actorsById);
+    if (!parentId) continue;
     const mesh = meshes.get(actor.id);
-    const parent = meshes.get(actor.parentId);
+    const parent = meshes.get(parentId);
     if (mesh && parent) {
       mesh.parent = parent;
     }

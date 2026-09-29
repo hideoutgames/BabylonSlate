@@ -9,6 +9,7 @@ import {
   formatValue,
   inverseQuat,
   inverseRotator,
+  isSceneLayerAnchorActor,
   lerpRotator,
   lookAtRotator,
   multiplyQuats,
@@ -1165,7 +1166,7 @@ export class ScriptHost {
       },
       setActorLocation: (actor, location) => {
         const target = asActor(actor ?? self);
-        if (!target || !location) return;
+        if (!target || !location || isSceneLayerAnchorActor(target)) return;
         target.transform.position.x = Number(location.x ?? 0);
         target.transform.position.y = Number(location.y ?? 0);
         target.transform.position.z = Number(location.z ?? 0);
@@ -1173,7 +1174,7 @@ export class ScriptHost {
       },
       addActorWorldOffset: (actor, offset) => {
         const target = asActor(actor ?? self);
-        if (!target || !offset) return;
+        if (!target || !offset || isSceneLayerAnchorActor(target)) return;
         target.transform.position.x += Number(offset.x ?? 0);
         target.transform.position.y += Number(offset.y ?? 0);
         target.transform.position.z += Number(offset.z ?? 0);
@@ -1181,7 +1182,7 @@ export class ScriptHost {
       },
       setActorRotation: (actor, rotation) => {
         const target = asActor(actor ?? self);
-        if (!target) return;
+        if (!target || isSceneLayerAnchorActor(target)) return;
         const quat = rotatorToQuat(rotation);
         target.transform.rotation.x = quat.x;
         target.transform.rotation.y = quat.y;
@@ -1191,7 +1192,7 @@ export class ScriptHost {
       },
       setActorScale: (actor, scale) => {
         const target = asActor(actor ?? self);
-        if (!target || !scale) return;
+        if (!target || !scale || isSceneLayerAnchorActor(target)) return;
         target.transform.scale.x = Number(scale.x ?? 1);
         target.transform.scale.y = Number(scale.y ?? 1);
         target.transform.scale.z = Number(scale.z ?? 1);
@@ -1199,7 +1200,7 @@ export class ScriptHost {
       },
       setActorTransform: (actor, transform, options) => {
         const target = asActor(actor ?? self);
-        if (!target || !transform) return;
+        if (!target || !transform || isSceneLayerAnchorActor(target)) return;
         if (transform.position) {
           target.transform.position.x = Number(transform.position.x ?? 0);
           target.transform.position.y = Number(transform.position.y ?? 0);

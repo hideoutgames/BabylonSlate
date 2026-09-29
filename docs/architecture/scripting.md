@@ -479,7 +479,7 @@ Compiled Get/Set of catalog variables uses `ctx.getVariableFrom` / `ctx.setVaria
 
 - Visual / illumination / 2D text: `emitMeshAssignment` (`assignMesh` / `assignMaterial`, including sprite/tilemap `sortingLayer` / `orderInLayer`).
 - `ParticleComponent`: `assignParticle` (guid + sorting).
-- `2DAnchorComponent`: `applyOverlayAnchor` (same path as frustum resize).
+- `2DAnchorComponent`: recompute the layer's anchor ownership and layout (same path as frustum resize); the uppermost anchor controls each subtree. Anchor-only Outliner objects ignore Actor pose setters.
 - `AudioComponent` Volume: `{ type: "setVoiceGain"; voiceId: component.guid }` for the live voice. Loop applies on the next Play.
 - `RigidBodyComponent` / `ColliderComponent`: `PhysicsWorldSync.applyComponent` → `updateBody` / `applyColliderChanges` (see [physics.md](physics.md)).
 - `NavAgentComponent`: `updateAgent` on the live Recast crowd (radius / height / max speed / max acceleration). Call **Move To** / actor `navigation.moveTo` adds the crowd agent if Begin Play ran before the batch register.

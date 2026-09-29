@@ -5,6 +5,7 @@ import {
   createSceneStreamingActor,
   createText3DComponent,
   identitySerializedTransform,
+  isSceneLayerAnchorActor,
   isSceneLayerDeniedComponent,
   type SerializedActor,
   type SerializedComponent,
@@ -745,7 +746,9 @@ export function duplicateSceneActor(
   if (options && "parentId" in options) {
     copy.parentId = options.parentId ?? null;
   }
-  if (options?.position) {
+  if (isSceneLayerAnchorActor(copy)) {
+    copy.transform = identitySerializedTransform();
+  } else if (options?.position) {
     copy.transform = { ...copy.transform, position: options.position };
   }
   return copy;

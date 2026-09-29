@@ -445,6 +445,39 @@ describe("shared actor Details", () => {
 });
 
 describe("SceneDetailsPanel authoring", () => {
+  it("edits an Outliner anchor's offsets without exposing a transform or visibility", () => {
+    scene().actors = [createActor("pin", "2D Anchor", { components: [
+      { id: "anchor", classId: "2DAnchorComponent", properties: { anchor: "topLeft", offsetX: 0, offsetY: 0 } },
+    ] })];
+    scene().viewportMode = "2d";
+    harness.documentKind = "scene-layer";
+    harness.selectedActorIds = ["pin"];
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    for (const id of ["actor-position-x", "actor-rotation-z", "actor-scale-x", "actor-z-order", "actor-visible"]) {
+      expect(screen.queryByTestId(`property-${id}`)).toBeNull();
+    }
+    fireEvent.change(screen.getByTestId("property-pin-anchor-offsetX"), { target: { value: "3" } });
+    expect(harness.applySceneChange.mock.calls.at(-1)![1].actors[0]!.components[0]!.properties.offsetX).toBe(3);
+  });
+
+  it("excludes Outliner anchors from mixed-selection transform and visibility edits", () => {
+    scene().actors = [
+      createActor("pin", "2D Anchor", { components: [{ id: "anchor", classId: "2DAnchorComponent", properties: {} }] }),
+      createActor("visual", "Visual"),
+    ];
+    scene().actors[0]!.visible = false;
+    harness.selectedActorIds = ["pin", "visual"];
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    fireEvent.change(screen.getByTestId("property-actor-position-x"), { target: { value: "9" } });
+    const next = harness.applySceneChange.mock.calls.at(-1)![1];
+    expect(next.actors[0]!.transform).toEqual(identitySerializedTransform());
+    expect(next.actors[1]!.transform.position).toEqual([9, 0, 0]);
+    const visible = screen.getByTestId("property-actor-visible");
+    expect(visible.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(visible);
+    expect(harness.applySceneChange.mock.calls.at(-1)![1].actors.map((actor) => actor.visible)).toEqual([false, false]);
+  });
+
   it("shows inherited model materials and lets None persist and reset through the Material picker", async () => {
     harness.selectedActorIds = ["actor-1"];
     const mesh = createMeshComponent("mesh", "box");

@@ -8,6 +8,7 @@ import type {
   ViewportMode,
 } from "@babylonslate/core";
 import type { EditCommand } from "../command";
+import { isSceneLayerAnchorActor } from "@babylonslate/core";
 
 function byteSizeOf(value: unknown): number {
   return new TextEncoder().encode(JSON.stringify(value)).byteLength;
@@ -105,7 +106,7 @@ export class SetActorTransformCommand implements EditCommand<SerializedScene> {
   }
 
   apply(doc: SerializedScene): SerializedScene {
-    return replaceActor(doc, this.actorId, (actor) => ({
+    return replaceActor(doc, this.actorId, (actor) => isSceneLayerAnchorActor(actor) ? actor : ({
       ...actor,
       transform: {
         position: [...this.to.position],
@@ -153,7 +154,7 @@ export class SetActorsTransformsCommand implements EditCommand<SerializedScene> 
   apply(doc: SerializedScene): SerializedScene {
     let next = doc;
     for (const entry of this.entries) {
-      next = replaceActor(next, entry.actorId, (actor) => ({
+      next = replaceActor(next, entry.actorId, (actor) => isSceneLayerAnchorActor(actor) ? actor : ({
         ...actor,
         transform: {
           position: [...entry.to.position],
@@ -512,7 +513,7 @@ export class SetComponentTransformCommand
     return replaceActor(doc, this.actorId, (actor) => ({
       ...actor,
       components: actor.components.map((component) =>
-        component.id === this.componentId
+        component.id === this.componentId && component.classId !== "2DAnchorComponent"
           ? { ...component, transform: this.to }
           : component,
       ),

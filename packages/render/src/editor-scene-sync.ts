@@ -1,6 +1,6 @@
 import { Mesh, type AbstractMesh, type Camera, type Material, type Node, type Scene } from "@babylonjs/core";
 import { applyMaterialBounds } from "./material-bounds";
-import { DEFAULT_SORTING_LAYERS } from "@babylonslate/core";
+import { DEFAULT_SORTING_LAYERS, isSceneLayerAnchorActor } from "@babylonslate/core";
 import type {
   SerializedActor,
   SerializedComponent,
@@ -26,6 +26,7 @@ import {
   applyComponentChildTransforms,
   createActorMesh,
   editorComponentMeshName,
+  editorActorParentId,
   editorModelLoadTarget,
   freezeStaticActorWorldMatrix,
   isEditorActorOrigin,
@@ -267,6 +268,7 @@ export class EditorSceneSync {
     const actorCount = Math.max(1, sceneData.actors.length);
     let index = 0;
     for (const actor of sceneData.actors) {
+      if (isSceneLayerAnchorActor(actor)) continue;
       liveIds.add(actor.id);
       const kind = actorVisualFingerprint(actor, assets, sceneData.actors);
       nextKinds.set(actor.id, kind);
@@ -288,6 +290,7 @@ export class EditorSceneSync {
     }
     index = 0;
     for (const actor of sceneData.actors) {
+      if (!liveIds.has(actor.id)) continue;
       let mesh = this.meshes.get(actor.id);
       let prepared = false;
       const descriptor = `${nextKinds.get(actor.id)}|${this.lastAssetFingerprint}|${this.scene.getEngine().getCaps().maxTextureSize}`;
@@ -397,10 +400,12 @@ export class EditorSceneSync {
       yield 0.5 + 0.1 * ++index / Math.max(1, oldMeshes.length);
     }
     index = 0;
+    const actorsById = new Map(sceneData.actors.map((actor) => [actor.id, actor]));
     for (const actor of sceneData.actors) {
       const mesh = this.meshes.get(actor.id);
       if (mesh) {
-        const parent = actor.parentId ? this.meshes.get(actor.parentId) ?? null : null;
+        const parentId = editorActorParentId(actor, actorsById);
+        const parent = parentId ? this.meshes.get(parentId) ?? null : null;
         if (mesh.parent !== parent) mesh.parent = parent;
       }
       yield 0.6 + 0.1 * ++index / actorCount;

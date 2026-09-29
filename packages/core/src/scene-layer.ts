@@ -106,44 +106,6 @@ function normalizeLayerBounds(value: unknown): SceneCameraBounds2D {
   };
 }
 
-function bakeIdentityOverlayAnchor(
-  actor: SerializedActor,
-  layerWidth: number,
-  layerHeight: number,
-): SerializedActor {
-  const anchor = actor.components.find(
-    (component) => component.classId === "2DAnchorComponent",
-  );
-  if (!anchor) return actor;
-  const position = actor.transform.position;
-  if (position[0] !== 0 || position[1] !== 0) return actor;
-  const offsetX = Number(anchor.properties.offsetX) || 0;
-  const offsetY = Number(anchor.properties.offsetY) || 0;
-  if (offsetX === 0 && offsetY === 0) return actor;
-  const baked = sceneLayerAnchorWorldPosition(
-    parseSceneLayerAnchor(anchor.properties.anchor),
-    offsetX,
-    offsetY,
-    layerWidth,
-    layerHeight,
-  );
-  return {
-    ...actor,
-    transform: {
-      ...actor.transform,
-      position: [baked.x, baked.y, position[2]],
-    },
-    components: actor.components.map((component) =>
-      component.id === anchor.id
-        ? {
-            ...component,
-            properties: { ...component.properties, offsetX: 0, offsetY: 0 },
-          }
-        : component,
-    ),
-  };
-}
-
 export function normalizeSceneLayer(value: unknown): SerializedSceneLayer {
   const source = (value ?? {}) as Record<string, unknown>;
   const scene = normalizeScene({
@@ -163,15 +125,7 @@ export function normalizeSceneLayer(value: unknown): SerializedSceneLayer {
       ),
       layerBounds,
     },
-    actors: scene.actors
-      .map(stripDeniedComponents)
-      .map((actor) =>
-        bakeIdentityOverlayAnchor(
-          actor,
-          layerBounds.width,
-          layerBounds.height,
-        ),
-      ),
+    actors: scene.actors.map(stripDeniedComponents),
     folders: scene.folders,
   };
 }
