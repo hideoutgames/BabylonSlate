@@ -11,12 +11,14 @@ import {
 } from "../lib/content-browser-helpers";
 import {
   createPickerAsset,
+  isNewClassParentAllowed,
   isPickerCreatableAssetType,
 } from "../lib/create-project-asset";
 
 /**
  * Supplies AssetPicker / ClassPicker "Create New" rows. New assets go next to
- * the active document and are not opened; the picker assigns them.
+ * the request's owner document (default: the active document) and are not
+ * opened; the picker assigns them.
  */
 export function AssetCreateDocumentsProvider({
   children,
@@ -37,6 +39,7 @@ export function AssetCreateDocumentsProvider({
       name?: string;
       parentClass?: string;
       materialDomain?: MaterialDomain;
+      ownerPath?: string | null;
     }) => {
       if (!assetRegistry) throw new Error("Open a project to create assets.");
       if (!isPickerCreatableAssetType(request.type)) {
@@ -45,7 +48,10 @@ export function AssetCreateDocumentsProvider({
       const { openDocuments: docs, activeDocumentId: activeId } = latest.current;
       const created = await createPickerAsset({
         registry: assetRegistry,
-        ownerPath: docs.find((doc) => doc.id === activeId)?.ref.path,
+        ownerPath:
+          request.ownerPath !== undefined
+            ? request.ownerPath
+            : docs.find((doc) => doc.id === activeId)?.ref.path,
         openDocuments: docs,
         type: request.type,
         name: request.name,
@@ -60,8 +66,14 @@ export function AssetCreateDocumentsProvider({
       typeLabel: (type) =>
         isPickerCreatableAssetType(type) ? creatableAssetTypeLabel(type) : type,
       createAsset: async (request) => (await create(request)).header.guid,
-      createClass: async ({ parentClass, name }) =>
-        classIdFromClassAsset(await create({ type: "Class", name, parentClass })),
+      createClass: async ({ parentClass, name, ownerPath }) =>
+        classIdFromClassAsset(
+          await create({ type: "Class", name, parentClass, ownerPath }),
+        ),
+      canCreateClass: (parentClass) =>
+        assetRegistry
+          ? isNewClassParentAllowed(parentClass, assetRegistry.list())
+          : false,
     };
   }, [assetRegistry]);
 

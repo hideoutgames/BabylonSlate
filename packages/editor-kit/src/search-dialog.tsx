@@ -43,7 +43,10 @@ export interface SearchDialogItem {
   group?: string;
   leading?: ReactNode;
   trailing?: ReactNode;
-  /** Listed for every query, such as Create New rows. */
+  /**
+   * Listed for every query, such as Create New rows. While searching they
+   * follow the matches, and arrow keys enter the list on an unpinned row.
+   */
   pinned?: boolean;
   /** Selecting keeps the dialog open and the query; the caller closes it. */
   keepOpen?: boolean;
@@ -72,13 +75,33 @@ export function filterSearchItems(
 ): SearchDialogItem[] {
   const needle = query.trim().toLowerCase();
   if (!needle) return items;
-  return items.filter(
-    (item) =>
-      item.pinned ||
+  const matches: SearchDialogItem[] = [];
+  const pinned: SearchDialogItem[] = [];
+  for (const item of items) {
+    if (item.pinned) pinned.push(item);
+    else if (
       `${item.label} ${item.description ?? ""} ${item.group ?? ""}`
         .toLowerCase()
-        .includes(needle),
-  );
+        .includes(needle)
+    ) {
+      matches.push(item);
+    }
+  }
+  // The first result stays a match, so type → ArrowDown → Enter picks it.
+  return [...matches, ...pinned];
+}
+
+/**
+ * Row that ArrowDown (or ArrowUp from the end) activates when none is active:
+ * the first unpinned row, so the keyboard never lands on a Create New row
+ * unless it is all that is listed.
+ */
+function arrowEntryIndex(items: SearchDialogItem[], fromEnd: boolean): number {
+  for (let step = 0; step < items.length; step += 1) {
+    const index = fromEnd ? items.length - 1 - step : step;
+    if (!items[index]!.pinned) return index;
+  }
+  return fromEnd ? items.length - 1 : 0;
 }
 
 export type SearchItemGroup = {
@@ -164,9 +187,7 @@ export function SearchDialog({
         : event.key === "End"
           ? filtered.length - 1
           : activeIndex < 0
-            ? event.key === "ArrowUp"
-              ? filtered.length - 1
-              : 0
+            ? arrowEntryIndex(filtered, event.key === "ArrowUp")
             : Math.max(
                 0,
                 Math.min(

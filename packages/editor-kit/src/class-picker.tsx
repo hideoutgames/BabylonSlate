@@ -7,7 +7,7 @@ import {
 import { SearchDialog, type SearchDialogItem } from "./search-dialog";
 import { displayPickerTitle } from "./picker-identity";
 import { TypeVisualIcon, resolveTypeVisual } from "./type-visuals";
-import { useAssetCreate } from "./asset-create-context";
+import { useAssetCreate, type ClassCreateOptions } from "./asset-create-context";
 import { usePickerCreate } from "./use-picker-create";
 
 export interface ClassPickerEntry {
@@ -26,9 +26,12 @@ export interface ClassPickerProps {
   allowNone?: boolean;
   /**
    * Parent class for a "Create New Class" row, shown when an
-   * AssetCreateProvider can create Classes. Omit for type or parent choosers.
+   * AssetCreateProvider can create a child of it. Omit for type or parent
+   * choosers, which cannot know the parent a new Class needs.
    */
   createBaseClass?: string;
+  /** Added to every Create New Class request, such as the owning document. */
+  createOptions?: ClassCreateOptions;
   "data-testid"?: string;
 }
 
@@ -44,10 +47,19 @@ export function ClassPicker({
   title = "Pick Class",
   allowNone = true,
   createBaseClass,
+  createOptions,
   "data-testid": testId,
 }: ClassPickerProps) {
   const api = useAssetCreate();
-  const createClass = createBaseClass?.trim() ? api?.createClass : undefined;
+  const base = createBaseClass?.trim() ?? "";
+  // Checked while open only: the host's parent rule walks the project Classes.
+  const createClass = useMemo(
+    () =>
+      open && base && api?.createClass && (api.canCreateClass?.(base) ?? true)
+        ? api.createClass
+        : undefined,
+    [api, base, open],
+  );
   const { creatingId, error, run } = usePickerCreate({
     open,
     onOpenChange,
@@ -68,7 +80,6 @@ export function ClassPicker({
         />
       ),
     }));
-    const base = createBaseClass?.trim() ?? "";
     const baseName = displayPickerTitle(
       classes.find((entry) => entry.id === base)?.name ?? base,
     );
@@ -99,17 +110,18 @@ export function ClassPicker({
       ...createRows,
       ...rows,
     ];
-  }, [allowNone, classes, createBaseClass, createClass, creatingId]);
+  }, [allowNone, base, classes, createClass, creatingId]);
 
   const select = (id: string, query: string) => {
     if (id === NONE_ID) {
       onPick(null);
       return;
     }
-    if (id === CREATE_ID && createClass && createBaseClass) {
+    if (id === CREATE_ID && createClass) {
       const name = query.trim() || undefined;
-      const parentClass = createBaseClass.trim();
-      void run(id, () => createClass({ parentClass, name }));
+      void run(id, () =>
+        createClass({ ...createOptions, parentClass: base, name }),
+      );
       return;
     }
     onPick(id);

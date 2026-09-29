@@ -10,6 +10,8 @@ import { createPickerAsset, createProjectAsset } from "./create-project-asset";
 async function registryWith(
   files: Array<{ path: string; type: string; name: string; parentClass?: string }>,
   engineFiles: Array<{ path: string; type: string; name: string }> = [],
+  /** Writable project plugin content roots (`plugins/Foo/assets`). */
+  pluginRoots: string[] = [],
 ): Promise<AssetRegistry> {
   const write = async (
     storage: MemoryStorageAdapter,
@@ -37,6 +39,10 @@ async function registryWith(
   for (const file of files) await write(storage, file);
   const registry = new AssetRegistry(storage);
   await registry.mountRoot(projectContentRoot());
+  for (const pathPrefix of pluginRoots) {
+    await storage.mkdir(pathPrefix, true);
+    await registry.mountRoot({ id: `plugin:${pathPrefix}`, kind: "plugin", pathPrefix });
+  }
   if (engineFiles.length > 0) {
     const engine = new MemoryStorageAdapter("opfs");
     await engine.openDocumentsProject("engine-plugins");
@@ -105,6 +111,7 @@ describe("createPickerAsset", () => {
   it("keeps Class ids unique across folders and engine classes", async () => {
     const registry = await registryWith([
       { path: "assets/Characters/Hero.class.babasset", type: "Class", name: "Hero", parentClass: "Actor" },
+      { path: "assets/Game/GameInstance_1.class.babasset", type: "Class", name: "GameInstance_1", parentClass: "GameInstance" },
       { path: "assets/Levels/Main.scene.babasset", type: "Scene", name: "Main" },
     ]);
     const create = (name: string) =>
@@ -120,12 +127,52 @@ describe("createPickerAsset", () => {
     const hero = await create("Hero");
     const spaced = await create(" Boss Fight! ");
     const engine = await create("Actor");
+    // `_N` stripping must not land on the engine class id `GameInstance`.
+    const copy = await create("GameInstance_1");
 
     expect(hero.path).toBe("assets/Levels/Hero_1.class.babasset");
     expect(hero.header.parentClass).toBe("Hero");
     expect(spaced.path).toBe("assets/Levels/Boss_Fight.class.babasset");
     expect(spaced.header.name).toBe("Boss_Fight");
     expect(engine.path).toBe("assets/Levels/Actor_1.class.babasset");
+    expect(copy.path).toBe("assets/Levels/GameInstance_2.class.babasset");
+  });
+
+  it("refuses Class parents that New Asset does not offer, before writing", async () => {
+    const registry = await registryWith([
+      { path: "assets/Layers/Fog.class.babasset", type: "Class", name: "Fog", parentClass: "SceneLayer" },
+    ]);
+    const before = registry.list().length;
+
+    for (const parentClass of ["MeshComponent", "Fog"]) {
+      await expect(
+        createPickerAsset({
+          registry,
+          ownerPath: null,
+          openDocuments: [],
+          type: "Class",
+          name: "Child",
+          parentClass,
+        }),
+      ).rejects.toThrow(`cannot be a child of ${parentClass}`);
+    }
+    expect(registry.list()).toHaveLength(before);
+  });
+
+  it("creates in a project plugin's content root from its settings document", async () => {
+    const registry = await registryWith([], [], ["plugins/Tools/assets"]);
+
+    const created = await createPickerAsset({
+      registry,
+      ownerPath: "plugins/Tools/Tools.plugin.babasset",
+      openDocuments: [],
+      type: "Class",
+      name: "Cleanup",
+      parentClass: "EditorUtilityObject",
+    });
+
+    expect(created.rootId).toBe("plugin:plugins/Tools/assets");
+    expect(created.path).toBe("plugins/Tools/assets/Cleanup.class.babasset");
   });
 
   it("falls back to the project assets root for read-only or missing owners", async () => {

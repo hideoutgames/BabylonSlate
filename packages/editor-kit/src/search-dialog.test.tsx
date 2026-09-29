@@ -64,14 +64,22 @@ describe("filterSearchItems", () => {
     ]);
   });
 
-  it("keeps pinned items for any query", () => {
+  it("keeps pinned items for any query, after the matches", () => {
     const withPinned = [
       { id: "create", label: "Create New Material", pinned: true },
       ...items,
     ];
+    expect(filterSearchItems(withPinned, "").map((item) => item.id)).toEqual([
+      "create",
+      "a",
+      "b",
+    ]);
     expect(
       filterSearchItems(withPinned, "beta").map((item) => item.id),
-    ).toEqual(["create", "b"]);
+    ).toEqual(["b", "create"]);
+    expect(
+      filterSearchItems(withPinned, "zeta").map((item) => item.id),
+    ).toEqual(["create"]);
   });
 });
 
@@ -126,6 +134,39 @@ describe("SearchDialog", () => {
     fireEvent.keyDown(query, { key: "Enter" });
     expect(onSelect).toHaveBeenCalledWith("a", "Alpha");
     expect(onSelect).toHaveBeenCalledTimes(1);
+  });
+
+  it("enters the list on an unpinned row unless only pinned rows are listed", () => {
+    const onSelect = vi.fn();
+    render(
+      <SearchDialog
+        open
+        onOpenChange={() => {}}
+        title="Pick"
+        items={[
+          { id: "create", label: "Create New Material", pinned: true, keepOpen: true },
+          ...items,
+        ]}
+        onSelect={onSelect}
+        data-testid="picker"
+      />,
+    );
+    const query = screen.getByTestId("picker-query");
+    query.focus();
+    fireEvent.keyDown(query, { key: "ArrowDown" });
+    fireEvent.keyDown(query, { key: "Enter" });
+    expect(onSelect).toHaveBeenLastCalledWith("a", "");
+
+    // Still reachable: one step up from the first unpinned row.
+    fireEvent.keyDown(query, { key: "ArrowDown" });
+    fireEvent.keyDown(query, { key: "ArrowUp" });
+    fireEvent.keyDown(query, { key: "Enter" });
+    expect(onSelect).toHaveBeenLastCalledWith("create", "");
+
+    fireEvent.change(query, { target: { value: "Gamma" } });
+    fireEvent.keyDown(query, { key: "ArrowDown" });
+    fireEvent.keyDown(query, { key: "Enter" });
+    expect(onSelect).toHaveBeenLastCalledWith("create", "Gamma");
   });
 
   it("keeps a keyboard-active result mounted beyond the virtual list's first page", () => {
@@ -615,6 +656,30 @@ describe("AssetPicker Create New rows", () => {
       materialDomain: "particle",
     });
     expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("picks the matching asset with type, ArrowDown, Enter instead of creating", () => {
+    const api = createApi();
+    const onPick = vi.fn();
+    render(
+      <AssetCreateProvider value={api}>
+        <AssetPicker
+          open
+          onOpenChange={() => {}}
+          assets={assets}
+          allowedTypes={["Material"]}
+          onPick={onPick}
+        />
+      </AssetCreateProvider>,
+    );
+    const query = screen.getByTestId("asset-picker-query");
+    query.focus();
+    fireEvent.change(query, { target: { value: "Stone" } });
+    fireEvent.keyDown(query, { key: "ArrowDown" });
+    fireEvent.keyDown(query, { key: "Enter" });
+
+    expect(onPick).toHaveBeenCalledWith("m1");
+    expect(api.createAsset).not.toHaveBeenCalled();
   });
 
   it("keeps the dialog open with the error when creation fails", async () => {

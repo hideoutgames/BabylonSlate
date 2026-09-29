@@ -208,6 +208,7 @@ export {
   type AssetCreateMaterialDomain,
   type AssetCreateOptions,
   type AssetCreateRequest,
+  type ClassCreateOptions,
   type ClassCreateRequest,
 } from "./asset-create-context";
 export {

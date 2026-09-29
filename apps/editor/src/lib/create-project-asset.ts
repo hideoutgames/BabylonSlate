@@ -15,6 +15,7 @@ import {
   ASSETS_ROOT,
   CREATABLE_ASSET_TYPES,
   buildNewAssetResult,
+  buildParentClassTreeRows,
   classIdFromClassAsset,
   classParentLookup,
   defaultParentClassForType,
@@ -121,13 +122,37 @@ export function uniqueNewAssetName(options: {
     used.push(fileName.slice(0, -suffix.length));
   }
   const stem = newAssetFileName(type, name).slice(0, -suffix.length);
-  if (isClass) {
-    used.push(...(options.classIds ?? []));
-    if (isLockedEngineClassId(stem) || engineParentOf(stem) !== undefined) {
-      used.push(stem);
-    }
+  if (isClass) used.push(...(options.classIds ?? []));
+  const usedSet = new Set(used);
+  // Checks every candidate, including the base nextCopyName returns after
+  // stripping `_N` (`GameInstance_1` → `GameInstance`).
+  const taken = (candidate: string) =>
+    usedSet.has(candidate) || (isClass && isEngineClassId(candidate));
+  if (!taken(stem)) return name;
+  const blocked = [...usedSet, stem];
+  let candidate = nextCopyName(stem, blocked);
+  while (taken(candidate)) {
+    blocked.push(candidate);
+    candidate = nextCopyName(stem, blocked);
   }
-  return used.includes(stem) ? nextCopyName(stem, used) : name;
+  return candidate;
+}
+
+function isEngineClassId(classId: string): boolean {
+  return isLockedEngineClassId(classId) || engineParentOf(classId) !== undefined;
+}
+
+/**
+ * New Asset's Class parent rule: an engine base class or project Class, not in
+ * the SceneLayer lineage, below the inheritance depth limit.
+ */
+export function isNewClassParentAllowed(
+  parentClass: string,
+  assets: Parameters<typeof buildParentClassTreeRows>[0],
+): boolean {
+  return buildParentClassTreeRows(assets, {
+    maxDepth: MAX_CLASS_INHERITANCE_DEPTH,
+  }).some((row) => row.id === parentClass && row.selectable);
 }
 
 export type PickerCreateFolder = {
@@ -140,7 +165,9 @@ export type PickerCreateFolder = {
 
 /**
  * Picker-created assets go next to the owning document when it sits in a
- * writable content root; otherwise (engine plugins, no document) in `assets`.
+ * writable content root. A document outside every root but holding one (a
+ * plugin's `plugins/Foo/Foo.plugin.babasset` beside `plugins/Foo/assets`) uses
+ * that root. Otherwise (engine plugins, the project, no document): `assets`.
  */
 export function pickerCreateFolder(
   ownerPath: string | null | undefined,
@@ -165,6 +192,19 @@ export function pickerCreateFolder(
           ? ""
           : folder.slice(root.pathPrefix.length + 1),
     };
+  }
+  const nested =
+    !root && folder
+      ? roots
+          .filter(
+            (candidate) =>
+              !candidate.readOnly &&
+              candidate.pathPrefix.startsWith(`${folder}/`),
+          )
+          .sort((a, b) => a.pathPrefix.length - b.pathPrefix.length)[0]
+      : undefined;
+  if (nested) {
+    return { rootId: nested.id, folderPath: nested.pathPrefix, relative: "" };
   }
   const project = roots.find((entry) => entry.id === PROJECT_CONTENT_ROOT_ID);
   return {
@@ -194,6 +234,17 @@ export async function createPickerAsset(options: {
 }): Promise<IndexedAsset> {
   const { registry, type } = options;
   const assets = registry.list();
+  const parentClass =
+    type === "Class"
+      ? options.parentClass?.trim() || defaultParentClassForType(type)
+      : options.parentClass;
+  if (
+    type === "Class" &&
+    parentClass &&
+    !isNewClassParentAllowed(parentClass, assets)
+  ) {
+    throw new Error(`A new Class cannot be a child of ${parentClass}.`);
+  }
   const folder = pickerCreateFolder(options.ownerPath, registry.listRoots());
   const classIds =
     type === "Class"
@@ -217,7 +268,7 @@ export async function createPickerAsset(options: {
     folderRelative: folder.relative,
     type,
     name,
-    parentClass: options.parentClass,
+    parentClass,
     materialDomain: options.materialDomain,
     classParentOf: classParentLookup(assets),
     parentGraphs:

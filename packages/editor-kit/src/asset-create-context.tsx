@@ -12,6 +12,12 @@ export type AssetCreateRequest = {
   /** Preferred name (the picker's search text); the host makes it unique. */
   name?: string;
   materialDomain?: AssetCreateMaterialDomain;
+  /**
+   * Path of the document that will hold the reference; the host creates the
+   * asset in that document's content. `null` means the project itself (the
+   * project content root). Omit to use the active document.
+   */
+  ownerPath?: string | null;
 };
 
 /** Per-picker fields added to every create request. */
@@ -20,7 +26,12 @@ export type AssetCreateOptions = Omit<AssetCreateRequest, "type" | "name">;
 export type ClassCreateRequest = {
   parentClass: string;
   name?: string;
+  /** Same as `AssetCreateRequest.ownerPath`. */
+  ownerPath?: string | null;
 };
+
+/** Per-picker fields added to every Class create request. */
+export type ClassCreateOptions = Omit<ClassCreateRequest, "parentClass" | "name">;
 
 export type AssetCreateApi = {
   /** True when a "Create New" row may be offered for this asset type. */
@@ -31,6 +42,11 @@ export type AssetCreateApi = {
   createAsset: (request: AssetCreateRequest) => Promise<string>;
   /** Creates a Class asset and resolves with its class id. */
   createClass?: (request: ClassCreateRequest) => Promise<string>;
+  /**
+   * True when a new Class may have this parent (New Asset's parent rule).
+   * Omitted means every parent is allowed.
+   */
+  canCreateClass?: (parentClass: string) => boolean;
 };
 
 const AssetCreateContext = createContext<AssetCreateApi | null>(null);

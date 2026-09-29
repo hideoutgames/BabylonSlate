@@ -94,6 +94,7 @@ describe("ClassPicker Create New Class", () => {
           onOpenChange={onOpenChange}
           classes={classes}
           createBaseClass="GameInstance"
+          createOptions={{ ownerPath: null }}
           onPick={onPick}
         />
       </AssetCreateProvider>,
@@ -110,6 +111,7 @@ describe("ClassPicker Create New Class", () => {
     expect(createClass).toHaveBeenCalledWith({
       parentClass: "GameInstance",
       name: "Arcade Game",
+      ownerPath: null,
     });
     expect(api.createAsset).not.toHaveBeenCalled();
     expect(onOpenChange).toHaveBeenCalledWith(false);
@@ -130,5 +132,32 @@ describe("ClassPicker Create New Class", () => {
     );
     expect(screen.getByTestId("search-item-MyGame")).toBeTruthy();
     expect(screen.queryByTestId("search-item-__create__Class")).toBeNull();
+  });
+
+  it("offers the create row only for a base the host can subclass", () => {
+    const api: AssetCreateApi = {
+      canCreate: () => true,
+      typeLabel: (type) => type,
+      createAsset: async () => "unused",
+      createClass: async () => "unused",
+      canCreateClass: (parent) => parent === "GameInstance",
+    };
+    const picker = (base: string) => (
+      <AssetCreateProvider value={api}>
+        <ClassPicker
+          open
+          onOpenChange={() => {}}
+          classes={classes}
+          createBaseClass={base}
+          onPick={() => {}}
+        />
+      </AssetCreateProvider>
+    );
+    const view = render(picker("MeshComponent"));
+    expect(screen.getByTestId("search-item-MyGame")).toBeTruthy();
+    expect(screen.queryByTestId("search-item-__create__Class")).toBeNull();
+
+    view.rerender(picker("GameInstance"));
+    expect(screen.getByTestId("search-item-__create__Class")).toBeTruthy();
   });
 });

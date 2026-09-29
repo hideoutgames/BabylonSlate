@@ -60,7 +60,7 @@ function renderApi(): AssetCreateApi | null {
 }
 
 describe("AssetCreateDocumentsProvider", () => {
-  it("creates beside the active document and refreshes before resolving", async () => {
+  it("creates beside the owner (default: the active document) and refreshes before resolving", async () => {
     const registry = await projectRegistry();
     let listedAtRefresh = false;
     const refreshAssetRegistry = vi.fn(async () => {
@@ -92,11 +92,22 @@ describe("AssetCreateDocumentsProvider", () => {
       "assets/Levels/Rock.material.babasset",
     );
     expect(listedAtRefresh).toBe(true);
+    // Project Settings pickers name no owner document: project content root.
+    const global = await api.createAsset({
+      type: "Material",
+      name: "Global",
+      ownerPath: null,
+    });
+    expect(registry.getByGuid(global)?.path).toBe(
+      "assets/Global.material.babasset",
+    );
 
+    expect(api.canCreateClass!("GameInstance")).toBe(true);
+    expect(api.canCreateClass!("MeshComponent")).toBe(false);
     await expect(
       api.createClass!({ parentClass: "GameInstance", name: "My Game" }),
     ).resolves.toBe("My_Game");
-    expect(refreshAssetRegistry).toHaveBeenCalledTimes(2);
+    expect(refreshAssetRegistry).toHaveBeenCalledTimes(3);
     await expect(api.createAsset({ type: "Audio" })).rejects.toThrow(
       /cannot be created/,
     );

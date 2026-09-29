@@ -28,11 +28,10 @@ export interface AssetPickerProps {
   /** Show a "None" row so a property can be cleared. */
   allowNone?: boolean;
   /**
-   * Types offered as Create New rows when an AssetCreateProvider can create
-   * them. Defaults to `allowedTypes` when it lists 1–3 types; `[]` hides them.
+   * Added to every Create New request, such as a Material domain or the
+   * owning document. Rows are offered for `allowedTypes` with 1–3 entries
+   * that an AssetCreateProvider can create.
    */
-  createTypes?: readonly string[];
-  /** Added to every create request, such as a Material domain. */
   createOptions?: AssetCreateOptions;
   "data-testid"?: string;
 }
@@ -40,7 +39,7 @@ export interface AssetPickerProps {
 const NONE_ID = "__none__";
 const CREATE_PREFIX = "__create__";
 /** Wider type filters (Asset variables) would bury the list under create rows. */
-const MAX_DEFAULT_CREATE_TYPES = 3;
+const MAX_CREATE_TYPES = 3;
 
 /** Asset reference picker built on the shared search dialog. */
 export function AssetPicker({
@@ -51,7 +50,6 @@ export function AssetPicker({
   onPick,
   title = "Pick Asset",
   allowNone = true,
-  createTypes,
   createOptions,
   "data-testid": testId,
 }: AssetPickerProps) {
@@ -62,16 +60,16 @@ export function AssetPicker({
     onPick,
   });
   const offeredCreateTypes = useMemo(() => {
-    if (!api) return [];
-    const candidates =
-      createTypes ??
-      (allowedTypes &&
-      allowedTypes.length > 0 &&
-      allowedTypes.length <= MAX_DEFAULT_CREATE_TYPES
-        ? allowedTypes
-        : []);
-    return [...new Set(candidates)].filter((type) => api.canCreate(type));
-  }, [allowedTypes, api, createTypes]);
+    if (
+      !api ||
+      !allowedTypes ||
+      allowedTypes.length === 0 ||
+      allowedTypes.length > MAX_CREATE_TYPES
+    ) {
+      return [];
+    }
+    return [...new Set(allowedTypes)].filter((type) => api.canCreate(type));
+  }, [allowedTypes, api]);
   const items = useMemo<SearchDialogItem[]>(() => {
     const filtered =
       allowedTypes && allowedTypes.length > 0
