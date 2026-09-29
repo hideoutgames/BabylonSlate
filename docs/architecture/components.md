@@ -116,6 +116,8 @@ Related hooks (not components): `useContextMenu`, `useSuppressNativeContextMenu`
 
 ## Graph (`@babylonslate/graph-ui`)
 
+`BlueprintNodeShell` places Lucide Clock (latent action), Zap (event entry), or Plug (Script Interface call/implementation endpoint) at the exact top-right corner. The marker is outside the clipped node body and does not affect layout or pointer input; an existing error badge uses the top-left corner when the marker is present. Material and Particle nodes keep their own visual roles.
+
 Reusable by script, shader, animation, behaviour-tree and particle graphs, and the Content Browser read-only References dialog.
 
 Edge styling indexes source nodes once per pass, giving O(nodes + edges) node lookup work instead of a node scan per edge. Source-pin lookup remains local to each source node, and resolved display types still take precedence over authored pin types. Position-only updates retain the existing stable pin-node inputs.

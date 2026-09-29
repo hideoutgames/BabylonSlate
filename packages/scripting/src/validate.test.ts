@@ -1429,187 +1429,24 @@ describe("validateGraphs", () => {
     ).toBe(true);
   });
 
-  it("does not diagnose an exec cycle that is not compiled", () => {
-    const graph: LogicGraph = {
-      id: "g",
-      kind: "event",
-      nodes: [
-        {
-          id: "a",
-          typeId: "debug.log",
-          position: { x: 0, y: 0 },
-          pins: [
-            pin("execIn", "exec", "in", EXEC),
-            pin("execOut", "then", "out", EXEC),
-          ],
-          properties: {},
-        },
-        {
-          id: "b",
-          typeId: "debug.log",
-          position: { x: 200, y: 0 },
-          pins: [
-            pin("execIn", "exec", "in", EXEC),
-            pin("execOut", "then", "out", EXEC),
-          ],
-          properties: {},
-        },
-      ],
-      edges: [
-        {
-          id: "e1",
-          sourceNodeId: "a",
-          sourcePinId: "execOut",
-          targetNodeId: "b",
-          targetPinId: "execIn",
-        },
-        {
-          id: "e2",
-          sourceNodeId: "b",
-          sourcePinId: "execOut",
-          targetNodeId: "a",
-          targetPinId: "execIn",
-        },
-      ],
-    };
-    const diags = validateGraphs([graph], { assetGuid: "a" });
-    expect(diags.some((d) => d.code === "exec.cycle")).toBe(false);
-  });
-
-  it("still diagnoses an exec cycle on a compiled chain", () => {
-    const graph: LogicGraph = {
-      id: "g",
-      kind: "event",
-      nodes: [
-        {
-          id: "begin",
-          typeId: "flow.event.beginPlay",
-          position: { x: 0, y: 0 },
-          pins: [pin("execOut", "then", "out", EXEC)],
-          properties: {},
-        },
-        {
-          id: "a",
-          typeId: "debug.log",
-          position: { x: 200, y: 0 },
-          pins: [
-            pin("execIn", "exec", "in", EXEC),
-            pin("execOut", "then", "out", EXEC),
-          ],
-          properties: {},
-        },
-        {
-          id: "b",
-          typeId: "debug.log",
-          position: { x: 400, y: 0 },
-          pins: [
-            pin("execIn", "exec", "in", EXEC),
-            pin("execOut", "then", "out", EXEC),
-          ],
-          properties: {},
-        },
-      ],
-      edges: [
-        {
-          id: "e0",
-          sourceNodeId: "begin",
-          sourcePinId: "execOut",
-          targetNodeId: "a",
-          targetPinId: "execIn",
-        },
-        {
-          id: "e1",
-          sourceNodeId: "a",
-          sourcePinId: "execOut",
-          targetNodeId: "b",
-          targetPinId: "execIn",
-        },
-        {
-          id: "e2",
-          sourceNodeId: "b",
-          sourcePinId: "execOut",
-          targetNodeId: "a",
-          targetPinId: "execIn",
-        },
-      ],
-    };
-    expect(
-      validateGraphs([graph], { assetGuid: "a" }).some(
-        (d) => d.code === "exec.cycle",
-      ),
-    ).toBe(true);
-  });
-
-  it("still diagnoses a compiled exec cycle when a leftover island also cycles", () => {
-    const execLog = (id: string, x: number, y: number): GraphNode => ({
-      id,
-      typeId: "debug.log",
-      position: { x, y },
-      pins: [
-        pin("execIn", "exec", "in", EXEC),
-        pin("execOut", "then", "out", EXEC),
-      ],
-      properties: {},
+  it.each([false, true])("allows execution cycles (connected to an entry: %s)", (connected) => {
+    const execLog = (id: string): GraphNode => ({
+      id, typeId: "debug.log", position: { x: 0, y: 0 }, properties: {},
+      pins: [pin("execIn", "exec", "in", EXEC), pin("execOut", "then", "out", EXEC)],
     });
     const graph: LogicGraph = {
-      id: "g",
-      kind: "event",
-      nodes: [
-        execLog("deadA", 0, 80),
-        execLog("deadB", 200, 80),
-        {
-          id: "begin",
-          typeId: "flow.event.beginPlay",
-          position: { x: 0, y: 0 },
-          pins: [pin("execOut", "then", "out", EXEC)],
-          properties: {},
-        },
-        execLog("liveA", 200, 0),
-        execLog("liveB", 400, 0),
-      ],
+      id: "g", kind: "event",
+      nodes: [execLog("a"), execLog("b")],
       edges: [
-        {
-          id: "dead1",
-          sourceNodeId: "deadA",
-          sourcePinId: "execOut",
-          targetNodeId: "deadB",
-          targetPinId: "execIn",
-        },
-        {
-          id: "dead2",
-          sourceNodeId: "deadB",
-          sourcePinId: "execOut",
-          targetNodeId: "deadA",
-          targetPinId: "execIn",
-        },
-        {
-          id: "e0",
-          sourceNodeId: "begin",
-          sourcePinId: "execOut",
-          targetNodeId: "liveA",
-          targetPinId: "execIn",
-        },
-        {
-          id: "e1",
-          sourceNodeId: "liveA",
-          sourcePinId: "execOut",
-          targetNodeId: "liveB",
-          targetPinId: "execIn",
-        },
-        {
-          id: "e2",
-          sourceNodeId: "liveB",
-          sourcePinId: "execOut",
-          targetNodeId: "liveA",
-          targetPinId: "execIn",
-        },
+        { id: "ab", sourceNodeId: "a", sourcePinId: "execOut", targetNodeId: "b", targetPinId: "execIn" },
+        { id: "ba", sourceNodeId: "b", sourcePinId: "execOut", targetNodeId: "a", targetPinId: "execIn" },
       ],
     };
-    const cycle = validateGraphs([graph], { assetGuid: "a" }).find(
-      (d) => d.code === "exec.cycle",
-    );
-    expect(cycle).toBeDefined();
-    expect(["liveA", "liveB", "begin"]).toContain(cycle?.nodeId);
+    if (connected) {
+      graph.nodes.unshift({ id: "begin", typeId: "flow.event.beginPlay", position: { x: 0, y: 0 }, properties: {}, pins: [pin("execOut", "then", "out", EXEC)] });
+      graph.edges.push({ id: "start", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "a", targetPinId: "execIn" });
+    }
+    expect(validateGraphs([graph], { assetGuid: "a" })).toEqual([]);
   });
 
   it("still diagnoses a Branch false arm reachable from Begin Play", () => {
