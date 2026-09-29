@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import {
   readActorSlot,
   readSnapshotHeader,
@@ -234,6 +234,42 @@ describe("snapshot publishing", () => {
       const frame = published(deferred.runtime);
       expect(frame.header.tickIndex).toBe(lastTick);
       expect(slotPose(frame, deferred.slots.get("mover"))?.position.x).toBe(lastTick);
+      expect(comparable(deferred.runtime)).toEqual(comparable(perTick.runtime));
+    } finally {
+      deferred.runtime.stop();
+      perTick.runtime.stop();
+    }
+  });
+
+  it("leaves removals from a tick stopped by a blocking load to the next publish", async () => {
+    // Doomed destroys itself in the third tick (ctx.tickIndex 2), then the Blocker's
+    // load stops that tick before its publish point.
+    const actors = () => [
+      createActor("doomed", "Doomed", { classId: "Doomed" }),
+      createActor("blocker", "Blocker", { classId: "Blocker" }),
+      createActor("mover", "Mover", { classId: "Mover" }),
+      streamTarget(),
+    ];
+    const deferred = await launch(scene(actors()));
+    const perTick = await launch(scene(actors()));
+    const lifecycle = (commands: CommandMessage[]) =>
+      commands.filter((command) => command.type === "spawn" || command.type === "despawn");
+    try {
+      burst(deferred.runtime);
+      for (let tick = 0; tick < 4; tick += 1) perTick.runtime.tick();
+      for (const { runtime, commands } of [deferred, perTick]) {
+        expect(runtime.getWorld().findActor("doomed")).toBeUndefined();
+        expect(commands.some((command) => command.type === "despawn")).toBe(false);
+      }
+      // Doomed keeps its slot until the streamed scene's readiness publish, so the
+      // streamed actor cannot take it over.
+      for (const { commands } of [deferred, perTick]) {
+        await vi.waitFor(() => expect(commands.some((command) => command.type === "sceneStreamRealized")).toBe(true));
+      }
+      expect(lifecycle(deferred.commands)).toEqual(lifecycle(perTick.commands));
+      expect(deferred.commands.filter((command) => command.type === "despawn")).toEqual([
+        { type: "despawn", slotId: deferred.slots.get("doomed"), actorGuid: "doomed" },
+      ]);
       expect(comparable(deferred.runtime)).toEqual(comparable(perTick.runtime));
     } finally {
       deferred.runtime.stop();

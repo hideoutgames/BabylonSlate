@@ -5351,8 +5351,10 @@ class InProcessRuntime implements RuntimeDriver {
     this.pendingPublishMs = 0;
     if (this.stopped) return;
     const start = nowMs();
-    // Normally a no-op: it only finds removals made after the last publishing tick.
-    this.retireRemovedSnapshotActors();
+    // A later tick stopped before its publish point (blocking load, scene change)
+    // leaves its removals to the next publish, as per-tick writes did; the write
+    // below already omits actors that left the World.
+    if (this.canTickScene() || this.hasReadyLayers()) this.retireRemovedSnapshotActors();
     const header = this.pendingSnapshotHeader;
     this.writeSnapshot(header.frameId, header.tickIndex, header.scriptMs, header.physicsMs);
     this._lastPublishMs = spent + (nowMs() - start);
