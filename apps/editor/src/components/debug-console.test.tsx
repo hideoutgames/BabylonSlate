@@ -233,11 +233,10 @@ describe("DebugConsole", () => {
       });
       fireEvent.click(screen.getByTestId("debug-console-submit"));
       await screen.findByText("Ran");
-      const rows = [
-        ...screen.getByTestId("debug-console-transcript").children,
-      ]
-        .map((row) => row.textContent)
-        .filter(Boolean);
+      const rows = Array.from(
+        screen.getByTestId("debug-console-transcript").children,
+        (row) => row.textContent,
+      ).filter(Boolean);
       expect(rows).toEqual([
         "[info] Before",
         "> help",

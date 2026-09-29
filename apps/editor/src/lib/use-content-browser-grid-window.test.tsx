@@ -131,10 +131,10 @@ describe("useContentBrowserGridWindow", () => {
     CONTENT_BROWSER_GRID_GAP_PX;
 
   function mountedRange(): [number, number] {
-    const indices = [
-      ...document.querySelectorAll('[data-testid^="content-item-"]'),
-    ].map((tile) =>
-      Number(/tex-(\d+)\./.exec(tile.getAttribute("data-testid") ?? "")![1]),
+    const indices = Array.from(
+      document.querySelectorAll('[data-testid^="content-item-"]'),
+      (tile) =>
+        Number(/tex-(\d+)\./.exec(tile.getAttribute("data-testid") ?? "")![1]),
     );
     return [Math.min(...indices), Math.max(...indices)];
   }

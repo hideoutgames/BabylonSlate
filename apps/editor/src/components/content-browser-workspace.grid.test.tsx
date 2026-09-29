@@ -710,7 +710,7 @@ describe("ContentBrowserWorkspace grid window", () => {
     ]);
     render(<ContentBrowserWorkspace />);
     const order = () =>
-      [...document.querySelectorAll("[data-asset-guid]")].map((tile) =>
+      Array.from(document.querySelectorAll("[data-asset-guid]"), (tile) =>
         tile.getAttribute("data-asset-guid"),
       );
     expect(order()).toEqual(["guid-d", "guid-e", "guid-a", "guid-b", "guid-c", "guid-f"]);
