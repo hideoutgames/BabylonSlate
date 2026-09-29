@@ -52,6 +52,7 @@ import {
 } from "@babylonslate/ui/lib/data-types";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
+import { useEditorSessionState } from "../context/editor-session-state-context";
 import {
   PARTICLE_BILLBOARD_LABELS,
   PARTICLE_BLEND_MODE_LABELS,
@@ -183,22 +184,22 @@ export function ParticleEmitterPreview({
   );
 }
 
-/** Card open state per document: UI only, kept across tab switches, never saved. */
-const closedModulesByDocument = new Map<string, Set<ParticleModuleId>>();
-
-/** Every module starts open; disabled modules render collapsed regardless. */
+/**
+ * Every module starts open; disabled modules render collapsed regardless.
+ * Card open state is UI only and never saved: it is kept per document in the
+ * project session store, so it survives remounts and closing the tab.
+ */
 function useModuleOpenState(documentKey: string | undefined) {
+  const sessionState = useEditorSessionState();
   const [closed, setClosed] = useState<ReadonlySet<ParticleModuleId>>(
-    () => (documentKey && closedModulesByDocument.get(documentKey)) || new Set(),
+    () => (documentKey && sessionState.loadClosedModules(documentKey)) || new Set(),
   );
   const setOpen = (id: ParticleModuleId, open: boolean) => {
-    setClosed((current) => {
-      const next = new Set(current);
-      if (open) next.delete(id);
-      else next.add(id);
-      if (documentKey) closedModulesByDocument.set(documentKey, next);
-      return next;
-    });
+    const next = new Set(closed);
+    if (open) next.delete(id);
+    else next.add(id);
+    if (documentKey) sessionState.saveClosedModules(documentKey, next);
+    setClosed(next);
   };
   return { isOpen: (id: ParticleModuleId) => !closed.has(id), setOpen };
 }
@@ -686,7 +687,7 @@ export function ParticleEmitterEditor({
   payload: Record<string, unknown>;
   /** `mergeKey` groups one gesture's edits into one undo entry. */
   onChange: (next: Record<string, unknown>, mergeKey?: string) => void;
-  /** Keeps card open state per document across tab switches. */
+  /** Keeps card open state per document for the project session. */
   documentKey?: string;
 }) {
   const emitter = normalizeParticleEmitterPayload(payload);
