@@ -294,7 +294,7 @@ float swBandAA = fwidth(swBand) + 0.04;
 float swBanded = (floor(swBand) + smoothstep(0.5 - swBandAA, 0.5 + swBandAA, fract(swBand))) / swBandCount;
 swTone = mix(swTone, swBanded, step(1.5, U.slateWaterLook.x));
 // Authored colours read as-is in daylight and dim with the scene's light.
-vec3 swLitScale = vec3(0.3) + swAmb * 0.35 + swSun * (0.25 * max(swL.y, 0.0));
+vec3 swLitScale = min(vec3(0.3) + swAmb * 0.35 + swSun * (0.25 * max(swL.y, 0.0)), vec3(1.15));
 vec3 swShallowLit = U.slateWaterShallow.rgb * swLitScale;
 vec3 swLit = mix(U.slateWaterShallow.rgb, U.slateWaterDeep.rgb, swTone) * swLitScale;
 // Two-tone swell: slopes facing the sun are a little lighter; wave tops take the shallow tint (Subsurface).
@@ -342,14 +342,14 @@ float swToonContact = clamp(max(swCollar, swToonRings), 0.0, 1.0);
 // Binary white caps on the sharpest crests (Crest Foam sets coverage, not brightness).
 float swCapDrive = (swFoldN * 1.3 + swCrest * 0.2 + (swFine - 0.5) * 0.3) * swRough;
 float swCapThreshold = 1.1 - 0.6 * U.slateWaterShape.z;
-float swCapAA = fwidth(swCapDrive) + 0.01;
+float swCapAA = fwidth(swCapDrive) * 0.75 + 0.005;
 float swToonCap = smoothstep(swCapThreshold - swCapAA, swCapThreshold + swCapAA, swCapDrive) * step(0.001, U.slateWaterShape.z);
 // Surface foam: drifting, distorted noise cut into crisp patches, denser near shores and objects (Surface Foam).
 float swNearEdge = clamp(min(swBank / (swFoamWidth * 3.0), swObject / (swContactW * 3.0)), 0.0, 1.0);
 vec2 swSurfUv = swFlowed * 0.65 * U.slateWaterMotion.y + swSlope * 0.6 + vec2(swMedium - 0.5, swFine - 0.5) * 0.7 + vec2(swTime * 0.05, swTime * 0.03);
 float swSurfNoise = swNoise(swSurfUv) * 0.6 + swNoise(swSurfUv * 2.3 + vec2(4.1, swTime * 0.07)) * 0.4;
 float swSurfCut = mix(1.02, 0.68, U.slateWaterSunColor.w) * mix(0.95, 1.0, swNearEdge);
-float swSurfAA = fwidth(swSurfNoise) + 0.008;
+float swSurfAA = fwidth(swSurfNoise) * 0.75 + 0.004;
 float swSurf = smoothstep(swSurfCut - swSurfAA, swSurfCut + swSurfAA, swSurfNoise) * (1.0 - smoothstep(0.06, 0.2, swFoot * 0.65 * U.slateWaterMotion.y));
 float swFoam = clamp(max(max(max(swOutline, swRing), max(swToonCap, swSurf)) * swFoamAmount, swToonContact * swContactStrength), 0.0, 1.0);
 
