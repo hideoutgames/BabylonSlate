@@ -171,11 +171,14 @@ export function physicsWorldTransforms(
           component.owner === actor &&
           (component.classId !== "LandscapeComponent" ||
             (kind === "3d" && component.getVariable("collisionsEnabled") === true)) &&
+          (component.classId !== "DynamicRuntimeMeshComponent" ||
+            (kind === "3d" && component.getVariable("enableCollision") === true)) &&
           [
             "RigidBodyComponent",
             "WaterBuoyancyComponent",
             "ColliderComponent",
             "MeshComponent",
+            "DynamicRuntimeMeshComponent",
             "LandscapeComponent",
             "BlockingVolumeComponent",
             "TilemapComponent",

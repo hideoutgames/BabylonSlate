@@ -86,6 +86,21 @@ describe("WindowedList", () => {
     ).toBe(80);
   });
 
+  it("positions rows by per-row heights", () => {
+    const { getByTestId } = render(
+      <ScrollArea>
+        <WindowedList itemCount={3} rowHeight={(index) => (index === 0 ? 28 : 44)}>
+          {(index) => <div data-testid={`windowed-row-${index}`}>{index}</div>}
+        </WindowedList>
+      </ScrollArea>,
+    );
+    const slot = (index: number) => getByTestId(`windowed-row-${index}`).parentElement!;
+    expect(slot(0).style.height).toBe("28px");
+    expect(slot(1).style.top).toBe("28px");
+    expect(slot(2).style.top).toBe("72px");
+    expect(slot(0).parentElement!.style.height).toBe("116px");
+  });
+
   it("mounts only viewport-near rows plus overscan for a 500-row list", () => {
     const restore = stubScrollViewportHeight(280);
     try {

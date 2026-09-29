@@ -8,7 +8,7 @@ import {
   jsIdent,
   memberPinRows,
   objectLiteralKey,
-  pinTypeForMember,
+  pinTypeForVariable,
 } from "./member-pins";
 
 export const functionCallNodes: NodeDefinition[] = [
@@ -54,7 +54,7 @@ export const functionCallNodes: NodeDefinition[] = [
               row.name,
               row.name,
               direction,
-              pinTypeForMember(row.typeId, row.typeClassId),
+              pinTypeForVariable(row),
             ),
           ];
         }),

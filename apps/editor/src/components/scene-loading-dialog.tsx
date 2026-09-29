@@ -34,7 +34,11 @@ export function SceneLoadingDialog({
 }: SceneLoadingDialogProps) {
   return (
     <Dialog open={open} onOpenChange={() => {}}>
-      <ProgressDialogContent failed={failed} data-testid="scene-loading-dialog">
+      <ProgressDialogContent
+        failed={failed}
+        overlayClassName="data-closed:pointer-events-none"
+        data-testid="scene-loading-dialog"
+      >
         {failed ? (
           <ProgressDialogFailure
             title={rendering ? "Rendering Update Failed" : "Scene Loading Failed"}

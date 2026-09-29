@@ -64,3 +64,4 @@ export * from "./cable-component";
 export * from "./cable-simulation";
 export * from "./spline-component";
 export * from "./render-target";
+export * from "./dynamic-runtime-mesh";

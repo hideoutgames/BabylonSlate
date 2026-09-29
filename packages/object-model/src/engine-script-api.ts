@@ -3,6 +3,7 @@ export type EngineScriptPin = {
   typeId: string;
   direction: "in" | "out";
   typeClassId?: string;
+  container?: "single" | "array" | "map";
 };
 
 export type EngineScriptVariable = {
@@ -141,6 +142,41 @@ export const COLLIDER_EVENTS: readonly EngineScriptEvent[] = [
 ];
 
 export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
+  {
+    classId: "DynamicRuntimeMeshComponent",
+    variables: [
+      { name: "Material", typeId: "asset", typeClassId: "Material", propertyKey: "materialGuid" },
+      { name: "Material Object", typeId: "object", typeClassId: "MaterialObject", propertyKey: "materialObject", getOnly: true },
+      { name: "Enable Collision", typeId: "bool", propertyKey: "enableCollision" },
+      { name: "Layer", typeId: "int", propertyKey: "layer" },
+      { name: "Mask", typeId: "int", propertyKey: "mask" },
+      { name: "Cast Shadows", typeId: "bool", propertyKey: "castShadows" },
+      { name: "Receive Shadows", typeId: "bool", propertyKey: "receiveShadows" },
+    ],
+    functions: [
+      {
+        name: "Set Geometry", runtime: "setDynamicMeshGeometry",
+        pins: [EXEC_IN, EXEC_OUT,
+          { name: "positions", typeId: "float", container: "array", direction: "in" },
+          { name: "indices", typeId: "int", container: "array", direction: "in" },
+          { name: "normals", typeId: "float", container: "array", direction: "in" },
+          { name: "uvs", typeId: "float", container: "array", direction: "in" },
+          { name: "success", typeId: "bool", direction: "out" }],
+      },
+      {
+        name: "Update Vertices", runtime: "updateDynamicMeshVertices",
+        pins: [EXEC_IN, EXEC_OUT,
+          { name: "firstVertex", typeId: "int", direction: "in" },
+          { name: "positions", typeId: "float", container: "array", direction: "in" },
+          { name: "normals", typeId: "float", container: "array", direction: "in" },
+          { name: "uvs", typeId: "float", container: "array", direction: "in" },
+          { name: "success", typeId: "bool", direction: "out" }],
+      },
+      { name: "Clear Geometry", runtime: "clearDynamicMeshGeometry", pins: [EXEC_IN, EXEC_OUT] },
+      { name: "Recalculate Normals", runtime: "recalculateDynamicMeshNormals", pins: [EXEC_IN, EXEC_OUT] },
+      { name: "Recalculate Bounds", runtime: "recalculateDynamicMeshBounds", pins: [EXEC_IN, EXEC_OUT] },
+    ],
+  },
   {
     classId: "RenderTargetCaptureComponent",
     variables: [

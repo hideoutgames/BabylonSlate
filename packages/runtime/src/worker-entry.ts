@@ -18,6 +18,7 @@ import {
 } from "@babylonslate/assets";
 import {
   TransferablePingPong,
+  dynamicMeshTransferables,
   type BridgeHostMessage,
   type CommandMessage,
   type ControlMessage,
@@ -47,6 +48,11 @@ let stopConsoleCapture: (() => void) | null = null;
 
 function onCommand(command: CommandMessage): void {
   if (sceneSnapshots.receive(command)) return;
+  const geometryTransfers = dynamicMeshTransferables(command);
+  if (geometryTransfers) {
+    postMessage({ channel: "command", payload: command }, geometryTransfers);
+    return;
+  }
   if (command.type === "cableFrame") {
     postMessage({ channel: "command", payload: command }, [command.data.buffer as ArrayBuffer]);
     return;

@@ -1,3 +1,4 @@
+import { createDynamicRuntimeMesh } from "./dynamic-runtime-mesh";
 import { Color3, Mesh, MeshBuilder, Quaternion, Scene, Vector3, StandardMaterial } from "@babylonjs/core";
 import { normalizeWaterBody, waterKindForClass } from "@babylonslate/core";
 import { createWaterMesh } from "./water-mesh";
@@ -227,6 +228,7 @@ function stringProp(value: unknown): string | null {
 }
 
 const VISUAL_COMPONENT_CLASS_IDS = new Set([
+  "DynamicRuntimeMeshComponent",
   "CableComponent",
   "SplineComponent",
   "GlobalWaterVolumeComponent", "WaterOceanComponent", "WaterLakeComponent", "WaterRiverComponent", "WaterPuddleComponent",
@@ -259,6 +261,7 @@ const VISUAL_COMPONENT_CLASS_IDS = new Set([
 ]);
 
 const SURFACE_COMPONENT_CLASS_IDS = new Set([
+  "DynamicRuntimeMeshComponent",
   "CableComponent",
   "SplineComponent",
   "GlobalWaterVolumeComponent", "WaterOceanComponent", "WaterLakeComponent", "WaterRiverComponent", "WaterPuddleComponent",
@@ -426,6 +429,7 @@ export function needsOriginRoot(
     helperBillboardIconOf(actor) !== null ||
     visuals.length > 1 ||
     visuals.some((component) => component.classId === "CableComponent") ||
+    visuals.some((component) => component.classId === "DynamicRuntimeMeshComponent") ||
     visuals.some((component) => waterKindForClass(component.classId) !== null || component.classId === "WaterRemovalVolumeComponent" || component.classId === "SplineComponent") ||
     visuals.some((component) => component.classId === "FogVolumeComponent") ||
     visuals.some((component) => component.classId === "LandscapeComponent" || component.classId === "FoliageComponent") ||
@@ -449,6 +453,7 @@ function componentVisualKind(
   if (component.classId === "SceneStreamingComponent") return editorBillboardKind("default");
   const asset = stringProp(component.properties.assetGuid) ?? "";
   if (component.classId === "CableComponent") return `cable:${JSON.stringify(parseCableProperties(component.properties))}`;
+  if (component.classId === "DynamicRuntimeMeshComponent") return "dynamicRuntimeMesh";
   if (component.classId === "SplineComponent") return `spline:${JSON.stringify(component.properties)}`;
   if (waterKindForClass(component.classId)) return `water:${component.classId}:${JSON.stringify(component.properties)}`;
   if (component.classId === "WaterRemovalVolumeComponent") return `waterRemoval:${JSON.stringify(component.properties)}`;
@@ -715,6 +720,7 @@ export function createMeshForComponent(
     sceneShadowController(scene).setParticipation(mesh, component.properties);
     return mesh;
   }
+  if (component.classId === "DynamicRuntimeMeshComponent") return createDynamicRuntimeMesh(scene, name);
   if (component.classId === "SplineComponent") return createSplineMesh(scene, name, component.properties);
   if (component.classId === "SceneStreamingComponent") return createEditorBillboard(scene, name, "default");
   const waterKind = waterKindForClass(component.classId);
