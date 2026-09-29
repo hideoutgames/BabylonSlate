@@ -138,6 +138,70 @@ describe("CableSimulation", () => {
     expect(cable.positions[4]).toBe(1);
     expect(cable.positions[1]).toBe(0);
     expect(cable.positions[13]).toBe(0);
+    // Editor viewports step collision-enabled cables without a callback; those settle and sleep.
+    for (let frame = 0; frame < 600 && !cable.sleeping; frame++) cable.update(STEP, START, END, ZERO);
+    expect(cable.sleeping).toBe(true);
+    expect(cable.update(STEP, START, END, ZERO)).toBe(false);
+  });
+
+  it("starts and re-poses a colliding cable on thin geometry instead of sagging through it", () => {
+    // A one-sided floor plane, like a heightfield: only particles arriving from above are stopped.
+    const floor = -1;
+    const collide: CableCollision = (previous, positions, particle, radius) => {
+      const y = particle * 3 + 1, top = floor + radius;
+      if (previous[y]! > floor && positions[y]! < top) positions[y] = previous[y] = top;
+    };
+    // Level pins 1 unit above the floor; the free catenary would sag 1.18 below them.
+    const cable = new CableSimulation(parseCableProperties({ enableCollision: true }), START, END);
+    const lowest = () => {
+      let y = Infinity;
+      for (let offset = 1; offset < cable.positions.length; offset += 3) y = Math.min(y, cable.positions[offset]!);
+      return y;
+    };
+    let worst = Infinity;
+    for (let frame = 0; frame < 120; frame++) {
+      cable.update(STEP, START, END, GRAVITY, collide);
+      worst = Math.min(worst, lowest());
+    }
+    expect(worst).toBeGreaterThan(floor);
+    // A teleport re-poses onto the floor at the destination too.
+    const start = [40, 0, 0], end = [43, 0, 0];
+    for (let frame = 0; frame < 60; frame++) {
+      cable.update(STEP, start, end, GRAVITY, collide);
+      worst = Math.min(worst, lowest());
+    }
+    expect(worst).toBeGreaterThan(floor);
+    expect(cable.positions[8 * 3]).toBeCloseTo(41.5, 1);
+  });
+
+  it("keeps a fast-carried cable swinging but still re-poses a jump during that motion", () => {
+    // Both pins ride one actor moving sideways at 90 units/second: 1.5 units per
+    // frame, beyond the 1-unit jump distance of this 2-unit cable.
+    const cable = new CableSimulation(parseCableProperties({ cableLength: 2, endPosition: [1.5, 0, 0] }), START, [1.5, 0, 0]);
+    for (let frame = 0; frame < 300; frame++) cable.update(STEP, START, [1.5, 0, 0], GRAVITY);
+    let z = 0;
+    for (let frame = 0; frame < 20; frame++) {
+      z += 1.5;
+      cable.update(STEP, [0, 0, z], [1.5, 0, z], GRAVITY);
+    }
+    // The carried cable trails its pins; one re-posed every frame would hang level with them.
+    expect(cable.positions[8 * 3 + 2]).toBeLessThan(z - 0.1);
+    let ahead = -Infinity;
+    for (let frame = 0; frame < 60; frame++) {
+      cable.update(STEP, [0, 0, z], [1.5, 0, z], GRAVITY);
+      ahead = Math.max(ahead, cable.positions[8 * 3 + 2]! - z);
+    }
+    // Stopping swings it forward past the pins.
+    expect(ahead).toBeGreaterThan(0.1);
+    // Moving again at the same pace, then jumping 50 units in one frame, re-poses at the destination.
+    for (let frame = 0; frame < 5; frame++) {
+      z += 1.5;
+      cable.update(STEP, [0, 0, z], [1.5, 0, z], GRAVITY);
+    }
+    z += 50;
+    cable.update(STEP, [0, 0, z], [1.5, 0, z], GRAVITY);
+    expect(totalLength(cable.positions)).toBeLessThan(2.1);
+    expect(cable.positions[8 * 3 + 2]).toBeCloseTo(z, 1);
   });
 
   it("stays finite for coincident pins and an authored cable shorter than its pin separation", () => {

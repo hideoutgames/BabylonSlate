@@ -14,9 +14,18 @@ export type CableCollision = (
   friction: number,
 ) => void;
 
-/** An attached anchor that jumps further than this in one update re-poses the cable. */
+/**
+ * An attached anchor that jumps further than max(this fraction of the length,
+ * the minimum) plus a multiple of its recent motion in one update re-poses the
+ * cable. Measuring against recent motion keeps fast continuous motion (a quick
+ * gizmo drag, a vehicle) swinging while a jump from rest or a jump far beyond
+ * the current pace (script teleport, undo, Details edit) still re-poses.
+ */
 const TELEPORT_LENGTH_FRACTION = 0.5;
 const TELEPORT_MINIMUM_DISTANCE = 1;
+const TELEPORT_MOTION_RATIO = 4;
+/** Seconds for remembered anchor motion to decay to 1/e. */
+const TELEPORT_MOTION_DECAY = 0.25;
 
 /**
  * Engine-neutral fixed-step Verlet cable. Long-range tethers bound every free
@@ -36,6 +45,8 @@ export class CableSimulation {
   private readonly acceleration = new Float64Array(3);
   private accelerationKnown = false;
   private restPending = true;
+  /** Recent per-update attached-anchor displacement, decaying over time. */
+  private anchorMotion = 0;
   private accumulatedTime = 0;
   private quietTime = 0;
   private asleep = false;
@@ -91,8 +102,10 @@ export class CableSimulation {
     this.endFrom.set(this.end);
     this.writeRestShape();
     // Before the first update the acceleration is unknown; pose again then.
-    this.restPending = !this.accelerationKnown;
+    // A colliding cable also poses again with the collision callback.
+    this.restPending = !this.accelerationKnown || this.properties.enableCollision;
     this.accumulatedTime = 0;
+    this.anchorMotion = 0;
     this.wake();
   }
 
@@ -105,7 +118,8 @@ export class CableSimulation {
   /**
    * Returns whether positions may have changed. Excess stall time is dropped,
    * so a paused/backgrounded host never queues unbounded catch-up work.
-   * Collision-enabled cables remain awake so moving obstacles are observed.
+   * Cables that collide (Enable Collision with a `collide` callback) remain
+   * awake so moving obstacles are observed; without a callback they sleep.
    */
   update(
     dt: number,
@@ -130,9 +144,10 @@ export class CableSimulation {
       }
     }
     this.accelerationKnown = true;
+    const teleported = this.trackAnchorMotion(dt, startMoved, endMoved);
     let changed = false;
-    if (this.restPending || (anchorMoved && this.teleported())) {
-      this.writeRestShape();
+    if (this.restPending || teleported) {
+      this.writeRestShape(collide);
       changed = true;
     }
     if (anchorMoved || accelerationChanged || changed) this.wake();
@@ -200,18 +215,40 @@ export class CableSimulation {
     this.tailRight = tailRightFree ? 0.5 : 0;
   }
 
-  private teleported(): boolean {
+  /**
+   * Whether an attached anchor jumped discontinuously this update. Every move,
+   * including a jump, becomes recent motion: an anchor that keeps moving that
+   * far each update is continuous motion, however fast.
+   */
+  private trackAnchorMotion(dt: number, startMoved: boolean, endMoved: boolean): boolean {
+    if (this.anchorMotion > 0 && dt > 0 && Number.isFinite(dt)) this.anchorMotion *= Math.exp(-dt / TELEPORT_MOTION_DECAY);
+    if (!startMoved && !endMoved) return false;
     const props = this.properties;
+    const moved = Math.sqrt(Math.max(
+      startMoved ? distanceSquared(this.start, this.startFrom) : 0,
+      endMoved ? distanceSquared(this.end, this.endFrom) : 0,
+    ));
     const limit = Math.max(props.cableLength * TELEPORT_LENGTH_FRACTION, TELEPORT_MINIMUM_DISTANCE);
-    const limitSquared = limit * limit;
-    return (props.attachStart && distanceSquared(this.start, this.startFrom) > limitSquared) ||
-      (props.attachEnd && distanceSquared(this.end, this.endFrom) > limitSquared);
+    const jumped = moved > limit + TELEPORT_MOTION_RATIO * this.anchorMotion;
+    if (moved > this.anchorMotion) this.anchorMotion = moved;
+    return jumped;
   }
 
-  private writeRestShape(): void {
+  private writeRestShape(collide?: CableCollision): void {
     const props = this.properties;
-    writeCableRestShape(this.current, this.start, this.end, props.cableLength, this.acceleration, props.attachStart, props.attachEnd, props.numSegments);
-    this.previous.set(this.current);
+    const current = this.current, previous = this.previous;
+    writeCableRestShape(current, this.start, this.end, props.cableLength, this.acceleration, props.attachStart, props.attachEnd, props.numSegments);
+    if (props.enableCollision && collide) {
+      // Collision sweeps each particle from previous to current, so a rest
+      // shape sagging through thin geometry would never be corrected. Sweep
+      // from the straight pin-to-pin line (the shape with no pinned end) to
+      // the rest shape instead, so the cable starts resting on obstacles.
+      writeCableRestShape(previous, this.start, this.end, props.cableLength, this.acceleration, false, false, props.numSegments);
+      for (let particle = this.firstFree; particle <= this.lastFree; particle++) {
+        collide(previous, current, particle, props.cableWidth * 0.5, props.collisionFriction);
+      }
+    }
+    previous.set(current);
     this.startFrom.set(this.start);
     this.endFrom.set(this.end);
     this.restPending = false;
@@ -286,12 +323,15 @@ export class CableSimulation {
       }
     }
 
-    if (props.enableCollision && collide) {
+    // Only a cable that actually collides stays awake for moving obstacles.
+    // Editor cables step without a callback and sleep like any other cable.
+    const colliding = props.enableCollision && !!collide;
+    if (colliding) {
       for (let particle = this.firstFree; particle <= this.lastFree; particle++) {
         collide(previous, current, particle, props.cableWidth * 0.5, props.collisionFriction);
       }
     }
-    if (!props.enableCollision && props.sleepThreshold > 0) {
+    if (!colliding && props.sleepThreshold > 0) {
       let maximumMovementSquared = 0;
       for (let offset = firstOffset; offset <= lastOffset; offset += 3) {
         const dx = current[offset]! - previous[offset]!;
@@ -304,6 +344,8 @@ export class CableSimulation {
         this.quietTime += props.substepTime;
         if (this.quietTime + 1e-10 >= props.sleepDelay) {
           this.asleep = true;
+          // Pins were still while the cable settled; a later jump is judged from rest.
+          this.anchorMotion = 0;
           previous.set(current);
         }
       } else this.quietTime = 0;
