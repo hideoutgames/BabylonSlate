@@ -47,7 +47,7 @@ function installScene(scene: Scene): void {
   scene.onBeforeRenderObservable.add(() => { for (const mesh of scene.meshes) if (mesh instanceof Mesh) installClip(mesh); });
 }
 export function applyEditorLayoutClips(scene: Scene, entries: ReadonlyMap<string, OverlayLayoutEntry>): void {
-  installScene(scene);
+  if ([...entries.values()].some((entry) => entry.clip !== null)) installScene(scene);
   for (const mesh of scene.meshes) clips.delete(mesh);
   for (const entry of entries.values()) {
     const name = `editorActor:${entry.actorId}${entry.componentId ? `|${entry.componentId}` : ""}`;
@@ -67,7 +67,7 @@ export class OverlayLayoutRenderer {
     this.layers.set(command.layerId, command);
     const scene = this.sceneForLayer(command.layerId);
     if (!scene) return;
-    installScene(scene);
+    if (command.entries.some((entry) => entry.clip !== null)) installScene(scene);
     if (!this.observers.has(scene)) {
       this.observers.set(scene, scene.onBeforeRenderObservable.add(() => this.sync(command.layerId)));
       scene.onDisposeObservable.addOnce(() => this.observers.delete(scene));
