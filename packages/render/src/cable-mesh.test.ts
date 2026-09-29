@@ -296,6 +296,64 @@ describe("cable rendering", () => {
     sync.dispose();
   });
 
+  it("simulates a default Self cable dragged with its own actor, then sleeps without uploads even with Enable Collision on", () => {
+    const { scene } = setup();
+    // No Target Actor or Component: both ends ride the cable's own actor. The
+    // editor has no physics world, so an Enable Collision cable must still sleep.
+    const actor = createActor("rope", "Rope", { components: [{ id: "cable", classId: "CableComponent", properties: { numSides: 4, enableCollision: true } }] });
+    const sync = new EditorSceneSync(scene);
+    sync.apply({ ...createDefaultScene(), actors: [actor] });
+    const mesh = scene.getMeshByName(editorComponentMeshName("rope", "cable")) as Mesh;
+    let now = 0;
+    const step = (frames: number) => {
+      let changed = false;
+      for (let frame = 0; frame < frames; frame++) changed = stepEditorCables(scene, now += 1000 / 60) || changed;
+      return changed;
+    };
+    step(600);
+    const owner = sync.meshForActor("rope")!;
+    unfreezeActorWorldMatrix(owner); // As a gizmo drag does.
+    owner.position.set(0, 0, 1.5);
+    expect(step(1)).toBe(true);
+    const dragged = ringCenters(mesh, 4);
+    const rounded = (point: Vector3) => point.asArray().map((value) => Number(value.toFixed(4)) + 0); // + 0 folds -0.
+    expect(rounded(dragged[0]!)).toEqual([0, 0, 1.5]);
+    expect(rounded(dragged.at(-1)!)).toEqual([3, 0, 1.5]);
+    // The interior trails the pins instead of moving rigidly with the actor.
+    expect(dragged[8]!.z).toBeLessThan(1.4);
+    step(600);
+    expect(ringCenters(mesh, 4)[8]!.z).toBeCloseTo(1.5, 2);
+    const upload = vi.spyOn(mesh, "updateVerticesData");
+    expect(step(30)).toBe(false);
+    expect(upload).not.toHaveBeenCalled();
+    upload.mockRestore();
+    sync.dispose();
+  });
+
+  it("rebuilds an editor cable for Material edits, so clearing the Material drops it, without resetting the swing", () => {
+    const { scene } = setup();
+    const materials: Record<string, StandardMaterial> = { rope: new StandardMaterial("rope", scene), steel: new StandardMaterial("steel", scene) };
+    const sync = new EditorSceneSync(scene, undefined, { resolveMaterial: (guid) => materials[guid] ?? null });
+    const name = editorComponentMeshName("rope", "cable");
+    sync.apply(ropeScene({ materialGuid: "rope" }));
+    expect(scene.getMeshByName(name)!.material).toBe(materials.rope);
+    let now = 0;
+    for (let frame = 0; frame < 600; frame++) stepEditorCables(scene, now += 1000 / 60);
+    const hook = sync.meshForActor("hook")!;
+    unfreezeActorWorldMatrix(hook);
+    hook.position.set(3, 1.5, 0);
+    for (let frame = 0; frame < 8; frame++) stepEditorCables(scene, now += 1000 / 60);
+    const swinging = ringCenters(scene.getMeshByName(name) as Mesh, 4);
+    sync.apply(ropeScene({ materialGuid: "steel" }, [3, 1.5, 0]));
+    const rebuilt = scene.getMeshByName(name) as Mesh;
+    expect(rebuilt.material).toBe(materials.steel);
+    const shown = ringCenters(rebuilt, 4);
+    for (let ring = 1; ring < swinging.length - 1; ring++) expect(Vector3.Distance(shown[ring]!, swinging[ring]!)).toBeLessThan(1e-4);
+    sync.apply(ropeScene({ materialGuid: null }, [3, 1.5, 0]));
+    expect(scene.getMeshByName(name)!.material).toBeNull();
+    sync.dispose();
+  });
+
   it("keeps a swinging editor cable's state through property-only edits", () => {
     const { scene } = setup();
     const sync = new EditorSceneSync(scene);

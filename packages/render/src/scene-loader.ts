@@ -449,10 +449,13 @@ function componentVisualKind(
   if (component.classId === "SceneStreamingComponent") return editorBillboardKind("default");
   const asset = stringProp(component.properties.assetGuid) ?? "";
   if (component.classId === "CableComponent") {
-    // Only topology (and Enabled, which the frozen active-mesh queue must see)
-    // rebuilds the tube; other edits apply live in syncEditorCablePreviews.
+    // Only topology, Enabled (which the frozen active-mesh queue must see) and
+    // Material rebuild the tube; other edits apply live in syncEditorCablePreviews.
+    // Construction assigns the Material, and editor material binding restores a
+    // mesh's construction material when the guid is cleared, so a Material
+    // change needs a fresh mesh. The rebuilt mesh keeps its editor simulation.
     const cable = parseCableProperties(component.properties);
-    return `cable:${cable.enabled}:${cable.numSegments}:${cable.numSides}:${cable.tileMaterial}`;
+    return `cable:${cable.enabled}:${cable.numSegments}:${cable.numSides}:${cable.tileMaterial}:${JSON.stringify(cable.materialGuid)}`;
   }
   if (component.classId === "SplineComponent") return `spline:${JSON.stringify(component.properties)}`;
   if (waterKindForClass(component.classId)) return `water:${component.classId}:${JSON.stringify(component.properties)}`;
