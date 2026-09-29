@@ -25,6 +25,8 @@ import {
   type LogicGraph,
 } from "@babylonslate/scripting";
 import { localVariablePreamble } from "@babylonslate/scripting-nodes";
+import { subsystemBaseClassIdOf } from "@babylonslate/object-model";
+import { engineParentOf, walkAncestry } from "@babylonslate/editor-kit";
 import {
   bindUnboundComponentEvents,
   defaultNodeRegistry,
@@ -54,6 +56,28 @@ function prefabComponentsForCompile(
       ((id) => (id === classId ? options.parentClassId : null)),
     graphs: { ...options.otherClassGraphs, [classId]: content },
   });
+}
+
+/**
+ * The runtime ClassRegistry only learns classes that compiled to a script.
+ * Subsystems are discovered from it, and the Game Instance takes its variable
+ * defaults and interfaces from it (read through Get Game Instance). A
+ * GameSubsystem / SceneSubsystem / GameInstance class, including an empty user
+ * base between it and its engine base, therefore always compiles, if only to
+ * its parent, variables and interfaces.
+ */
+function alwaysCompilesClass(
+  classId: string,
+  parentOf: (classId: string) => string | null | undefined,
+): boolean {
+  const ancestry = walkAncestry(
+    classId,
+    (ancestor) => parentOf(ancestor) ?? engineParentOf(ancestor),
+  );
+  return (
+    subsystemBaseClassIdOf({ ancestry: () => ancestry }, classId) !== null ||
+    ancestry.includes("GameInstance")
+  );
 }
 
 /**
@@ -234,6 +258,17 @@ export function compileGraphDocument(
         }),
       );
     }
+  }
+  if (compiledPieces.length === 0 && alwaysCompilesClass(classId, parentOf)) {
+    compiledPieces.push(
+      compileGraph(logic, {
+        assetGuid: options.path,
+        registry: defaultNodeRegistry,
+        stripDevelopmentOnly: options.stripDevelopmentOnly,
+        instrumentInfiniteLoops,
+        isLatentFunction,
+      }),
+    );
   }
   if (compiledPieces.length === 0) return null;
   let source = compiledPieces[0]!.source;
@@ -455,13 +490,21 @@ function graphDocumentCompileCacheKey(
   const content = isLogicGraphPayload(doc.content)
     ? { nodes: doc.content.nodes, edges: doc.content.edges }
     : doc.content;
+  const classId = documentClassId(doc);
   return JSON.stringify({
     signature: graphCompileSignature([
       { path: doc.path, content: content as SerializedGraph },
     ]),
     classId: doc.classId ?? null,
     parentClassId: doc.parentClassId ?? null,
-    prefab: prefabComponentsForCompile(doc.content, documentClassId(doc), {
+    // An ancestor reparented into a subsystem or Game Instance lineage changes
+    // whether an empty class still compiles.
+    alwaysCompiles: alwaysCompilesClass(
+      classId,
+      options.parentOf ??
+        ((id) => (id === classId ? (doc.parentClassId ?? null) : null)),
+    ),
+    prefab: prefabComponentsForCompile(doc.content, classId, {
       ...options,
       parentClassId: doc.parentClassId,
     }),

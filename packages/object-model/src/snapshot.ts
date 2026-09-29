@@ -1,14 +1,18 @@
 import { serializeTransform } from "@babylonslate/core";
 import type { World } from "./world";
 
+export type WorldSnapshotObject = {
+  guid: string;
+  classId: string;
+  variables: Record<string, unknown>;
+};
+
 export type WorldSnapshot = {
   tickIndex: number;
   dt: number;
-  gameInstance: {
-    guid: string;
-    classId: string;
-    variables: Record<string, unknown>;
-  } | null;
+  gameInstance: WorldSnapshotObject | null;
+  /** GameSubsystems then main-Scene SceneSubsystems; omitted when there are none. */
+  subsystems?: WorldSnapshotObject[];
   actors: Array<{
     guid: string;
     classId: string;
@@ -38,6 +42,14 @@ function sortedVariables(
 /** Canonical JSON-serializable world state for harness goldens (not P4 bridge). */
 export function createWorldSnapshot(world: World): WorldSnapshot {
   const gi = world.gameInstance;
+  const subsystems = [
+    ...world.getGameSubsystems(),
+    ...world.getSceneSubsystems(),
+  ].map((subsystem) => ({
+    guid: subsystem.guid,
+    classId: subsystem.classId,
+    variables: sortedVariables(subsystem.variables),
+  }));
   return {
     tickIndex: world.clock.tickIndex,
     dt: world.clock.dt,
@@ -48,6 +60,8 @@ export function createWorldSnapshot(world: World): WorldSnapshot {
           variables: sortedVariables(gi.variables),
         }
       : null,
+    // Omit the key when empty so subsystem-free goldens stay byte-identical.
+    ...(subsystems.length > 0 ? { subsystems } : {}),
     actors: world.getActors().map((actor) => ({
       guid: actor.guid,
       classId: actor.classId,

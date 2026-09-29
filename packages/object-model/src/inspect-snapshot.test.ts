@@ -125,6 +125,32 @@ describe("createDebugInspectSnapshot", () => {
     ]);
   });
 
+  it("lists GameSubsystems then SceneSubsystems as roots after the Game Instance", () => {
+    const world = createInspectWorld();
+    world.classRegistry.register({
+      id: "Inventory", parentClassId: "GameSubsystem", kind: "object",
+      variables: [{ name: "slots", type: "int", defaultValue: 4 }], implementedInterfaces: [],
+    });
+    world.setGameSubsystems([world.createGameSubsystem({ classId: "Inventory" })]);
+    world.setSceneSubsystemClasses(["Weather"]);
+    world.createScene({ assetGuid: "scene-1", sceneName: "Main" });
+    world.spawnActorNow(world.createActor({ guid: "hero", classId: "Actor" }));
+
+    const nodes = createDebugInspectSnapshot(world).nodes;
+    expect(nodes.map((node) => [node.id, node.kind, node.parentId])).toEqual([
+      ["gi", "gameInstance", null],
+      ["subsystem:Inventory", "subsystem", null],
+      ["scene-subsystem:Weather:1", "subsystem", null],
+      ["hero", "actor", null],
+    ]);
+    expect(nodes[1]).toMatchObject({
+      label: "Inventory",
+      ancestry: ["Inventory", "GameSubsystem", "Subsystem", "BObject"],
+      variables: { slots: 4 },
+      variableTypes: { slots: "int" },
+    });
+  });
+
   it("falls back to classId when an actor has no name", () => {
     const world = createInspectWorld();
     const actor = world.createActor({

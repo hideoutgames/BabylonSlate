@@ -177,6 +177,39 @@ describe("recorded snapshot values", () => {
     expect(expanded.size).toBe(0);
   });
 
+  it("matches recorded subsystems by GUID and labels them by class", () => {
+    const inventory = { guid: "subsystem:Inventory", classId: "Inventory", variables: { gold: 3 } };
+    const weather = { guid: "scene-subsystem:Weather:1", classId: "Weather", variables: {} };
+    const before = { gameInstance: { guid: "runtime-gi", classId: "GameInstance", variables: {} }, subsystems: [inventory, weather] };
+    const after = {
+      ...before,
+      subsystems: [
+        { ...weather, guid: "scene-subsystem:Weather:2" },
+        { ...inventory, variables: { gold: 5 } },
+      ],
+    };
+    expect(
+      compareTraceSnapshots(before, after).map(({ path, kind }) => ({ path, kind })),
+    ).toEqual([
+      { path: "/snapshot/subsystems/guid:subsystem:Inventory/variables/gold", kind: "Changed" },
+      { path: "/snapshot/subsystems/guid:scene-subsystem:Weather:1", kind: "Removed" },
+      { path: "/snapshot/subsystems/guid:scene-subsystem:Weather:2", kind: "Added" },
+    ]);
+    const rows = flattenTraceSnapshot(
+      traceSnapshotRoots(frame, { status: "ready", value: before }),
+      new Set(["/snapshot/subsystems", "/snapshot/subsystems/guid:subsystem:Inventory"]),
+      "",
+    );
+    expect(rows.map((row) => row.label).slice(0, 6)).toEqual([
+      "Game Instance",
+      "Subsystems",
+      "Inventory",
+      "Identity",
+      "Variables",
+      "Weather",
+    ]);
+  });
+
   it("distinguishes missing fields from null and escapes property paths without identity collisions", () => {
     const changes = compareTraceSnapshots({ "a/b": null }, { "a~b": null });
     expect(changes.map(({ path, kind }) => ({ path, kind }))).toEqual([

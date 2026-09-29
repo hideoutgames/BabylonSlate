@@ -2,6 +2,9 @@ import { err, ok, mapFromDefaultEntries, type Result } from "@babylonslate/core"
 import {
   ENGINE_BT_BUILTIN_CLASSES,
   ENGINE_COMPONENT_CLASS_IDS,
+  GAME_SUBSYSTEM_CLASS_ID,
+  SCENE_SUBSYSTEM_CLASS_ID,
+  SUBSYSTEM_CLASS_ID,
   isLockedEngineClassId,
 } from "./ids";
 
@@ -132,6 +135,20 @@ export class ClassRegistry {
       variables: [],
       implementedInterfaces: [],
     });
+    // Subsystems stay kind "object" (never spawnable); lineage is gated by isA.
+    for (const [id, parentClassId] of [
+      [SUBSYSTEM_CLASS_ID, "BObject"],
+      [GAME_SUBSYSTEM_CLASS_ID, SUBSYSTEM_CLASS_ID],
+      [SCENE_SUBSYSTEM_CLASS_ID, SUBSYSTEM_CLASS_ID],
+    ] as const) {
+      this.register({
+        id,
+        parentClassId,
+        kind: "object",
+        variables: [],
+        implementedInterfaces: [],
+      });
+    }
     this.register({
       id: "FunctionLibrary",
       parentClassId: "BObject",
@@ -224,6 +241,11 @@ export class ClassRegistry {
 
   has(classId: string): boolean {
     return this.classes.has(classId);
+  }
+
+  /** Every registered class id (engine defaults first), in registration order. */
+  classIds(): string[] {
+    return [...this.classes.keys()];
   }
 
   /** Ancestry from classId up to root (inclusive), root last. */
