@@ -94,16 +94,16 @@ describe("rasterizeBitmapGlyph", () => {
   });
 
   it("centers inline images on painted letters rather than transparent canvas padding", () => {
-    withMockCanvas((w, h) => {
-      const pixels = new Uint8ClampedArray(w * h * 4);
-      // Numeric alpha fixture: visible rows [6, 18), above the 58 px cell center.
-      for (let y = 6; y < 18; y++) {
-        pixels[(y * w + 3) * 4 + 3] = 255;
-      }
-      return pixels;
-    }, () => {
-      const { engine, scene } = createTestEngine();
-      try {
+    const { engine, scene } = createTestEngine();
+    try {
+      withMockCanvas((w, h) => {
+        const pixels = new Uint8ClampedArray(w * h * 4);
+        // Numeric alpha fixture: visible rows [6, 18), above the 58 px cell center.
+        for (let y = 6; y < 18; y++) {
+          pixels[(y * w + 3) * 4 + 3] = 255;
+        }
+        return pixels;
+      }, () => {
         const mesh = createText2DMesh(scene, "inline", {
           text: "A[img=small size=14][img=large size=48]A",
           size: 32,
@@ -116,11 +116,11 @@ describe("rasterizeBitmapGlyph", () => {
         expect(large?.position.y).toBeCloseTo(0.17);
         expect(a?.position.y).toBeCloseTo(0);
         expect(b?.position.y).toBeCloseTo(0);
-      } finally {
-        scene.dispose();
-        engine.dispose();
-      }
-    }, () => 16, true);
+      }, () => 16, true);
+    } finally {
+      scene.dispose();
+      engine.dispose();
+    }
   });
 
   it("rejects changed canvas metrics before allocating glyph pixels", () => {
