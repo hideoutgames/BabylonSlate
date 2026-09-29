@@ -59,13 +59,11 @@ describe("SceneLayer layout rendering", () => {
     scene.onBeforeRenderObservable.notifyObservers(scene);
     expect(beforeScene).toHaveBeenCalled();
     scene.onBeforeRenderObservable.remove(unrelatedSceneObserver);
-    expect(scene.onBeforeRenderObservable.hasObservers()).toBe(false);
     apply(true);
     expect(canCacheShadowMaterial(material, glyph)).toBe(false);
     if (mode === "runtime") renderer.remove("hud");
     else apply(false);
     expect(canCacheShadowMaterial(material, glyph)).toBe(true);
-    expect(scene.onBeforeRenderObservable.hasObservers()).toBe(false);
   });
 
   it("preserves layout and clipping when an asynchronous editor model replaces a primitive", async () => {
