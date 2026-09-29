@@ -729,10 +729,11 @@ describe("EditorDebugOverlay", () => {
       sceneData: sceneWith([captureActor({ captureOnlyActors: true, actorIds: ["subject"] })]),
       selectedActorIds: ["rt"],
     });
-    expect(overlay.previewTexture!.renderList).toEqual([subject, part]);
+    const previewed = () => overlay.previewTexture!.renderList!.map((mesh) => mesh.name);
+    expect(previewed()).toEqual([subject, part].map((mesh) => mesh.name));
 
     overlay.sync({ sceneData: sceneWith([captureActor()]), selectedActorIds: ["rt"] });
-    expect(overlay.previewTexture!.renderList).toEqual([subject, part, attached, other, world]);
+    expect(previewed()).toEqual([subject, part, attached, other, world].map((mesh) => mesh.name));
     overlay.dispose();
   });
 
