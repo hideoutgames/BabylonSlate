@@ -171,6 +171,7 @@ describe("SceneLayer runtime compositor", () => {
             scale: [1, 1, 1],
           },
           components: [
+            { id: "texture", classId: "2DTextureComponent", properties: {} },
             {
               id: "anchor",
               classId: "2DAnchorComponent",
@@ -649,7 +650,7 @@ describe("SceneLayer runtime compositor", () => {
     const actors = [a, visual("b", "a", [2, 4, 0]), visual("c", "b", [1, 1, 0]),
       anchor("upper", "a", 1, 2), anchor("lower", "b", 50, 60)];
     const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, playScene: worldScene("A"),
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, maxActors: 16, playScene: worldScene("A"),
       sceneLayerLibrary: { hud: { ...createDefaultSceneLayer(), actors: reverse ? actors.reverse() : actors } },
       onCommand: (command) => commands.push(command),
     });

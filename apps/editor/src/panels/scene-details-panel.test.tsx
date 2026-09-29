@@ -460,17 +460,22 @@ describe("SceneDetailsPanel authoring", () => {
     expect(harness.applySceneChange.mock.calls.at(-1)![1].actors[0]!.components[0]!.properties.offsetX).toBe(3);
   });
 
-  it("excludes Outliner anchors from mixed-selection transform edits", () => {
+  it("excludes Outliner anchors from mixed-selection transform and visibility edits", () => {
     scene().actors = [
       createActor("pin", "2D Anchor", { components: [{ id: "anchor", classId: "2DAnchorComponent", properties: {} }] }),
       createActor("visual", "Visual"),
     ];
+    scene().actors[0]!.visible = false;
     harness.selectedActorIds = ["pin", "visual"];
     render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     fireEvent.change(screen.getByTestId("property-actor-position-x"), { target: { value: "9" } });
     const next = harness.applySceneChange.mock.calls.at(-1)![1];
     expect(next.actors[0]!.transform).toEqual(identitySerializedTransform());
     expect(next.actors[1]!.transform.position).toEqual([9, 0, 0]);
+    const visible = screen.getByTestId("property-actor-visible");
+    expect(visible.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(visible);
+    expect(harness.applySceneChange.mock.calls.at(-1)![1].actors.map((actor) => actor.visible)).toEqual([false, false]);
   });
 
   it("shows inherited model materials and lets None persist and reset through the Material picker", async () => {

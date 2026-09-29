@@ -1083,8 +1083,8 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       kind: "boolean",
       id: "actor-visible",
       label: "Visible",
-      value: actor.visible,
-      mixed: selectedActors.some((entry) => entry.visible !== actor.visible),
+      value: spatialActors[0]?.visible ?? true,
+      mixed: spatialActors.some((entry) => entry.visible !== spatialActors[0]?.visible),
       defaultValue: true,
       onChange: (visible) =>
         updateSelectedActors((entry) => isSceneLayerAnchorActor(entry) ? entry : ({ ...entry, visible })),

@@ -1383,7 +1383,6 @@ export function editorModelLoadTarget(
   return visualMeshesOfActorRoot(root).find((mesh) => mesh.name === name) ?? root;
 }
 
-/** Full rebuild of the editor scene; `EditorSceneSync` does incremental work. */
 /** Outliner-only anchors are transparent to the renderer's spatial hierarchy. */
 export function editorActorParentId(
   actor: SerializedActor,
@@ -1400,6 +1399,7 @@ export function editorActorParentId(
   return null;
 }
 
+/** Full rebuild of the editor scene; `EditorSceneSync` does incremental work. */
 export function applySceneToBabylonScene(
   scene: Scene,
   sceneData: SerializedScene,
