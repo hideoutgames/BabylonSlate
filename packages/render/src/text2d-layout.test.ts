@@ -3,12 +3,13 @@ import {
   combineText2DEffects,
   layoutText2D,
   layoutText2DFromProperties,
+  type GlyphMetrics,
   type GlyphMetricsProvider,
   type Text2DLayoutItem,
 } from "./text2d-layout";
 
 function provider(
-  overrides: Partial<Record<string, { width: number; height: number; advance: number; source?: "bitmap" | "msdf" }>> = {},
+  overrides: Partial<Record<string, Partial<GlyphMetrics>>> = {},
 ): GlyphMetricsProvider {
   return {
     measureGlyph(ch, style) {
@@ -18,9 +19,10 @@ function provider(
         width: preset?.width ?? world * 0.5,
         height: preset?.height ?? world,
         bearingX: 0,
-        bearingY: 0,
+        bearingY: preset?.bearingY ?? 0,
         advance: preset?.advance ?? world * 0.5,
         source: preset?.source ?? "bitmap",
+        inkBounds: preset?.inkBounds,
       };
     },
     measureImage(_guid, sizePx) {
@@ -248,14 +250,45 @@ describe("layoutText2D", () => {
       outlineColor: [0, 0, 0],
       pixelsPerUnit: 100,
       metrics: provider({
-        A: { width: 0.16, height: 0.32, advance: 0.16, source: "msdf" },
-        B: { width: 0.16, height: 0.32, advance: 0.16, source: "bitmap" },
+        A: { width: 0.16, height: 0.32, advance: 0.16, bearingY: -0.04, source: "msdf" },
+        B: { width: 0.16, height: 0.32, advance: 0.16, bearingY: -0.04, source: "bitmap" },
       }),
     });
     expect(layout.items.map((item) => item.kind)).toEqual(["glyph", "image", "glyph"]);
     expect(layout.items[0]?.source).toBe("msdf");
     expect(layout.items[1]?.kind).toBe("image");
+    expect(layout.items[1]?.y).toBeCloseTo(-0.04);
     expect(layout.items[2]?.source).toBe("bitmap");
+  });
+
+  it.each(["", "\n"])("centers images on each line's visible text across breaks (%j)", (separator) => {
+    const { layout } = layoutText2DFromProperties(
+      { text: `A [img=first size=14]${separator}B[img=second size=14]`, size: 32, wrapWidth: 48, wrapHeight: 0 },
+      {
+        rich: true,
+        pixelsPerUnit: 100,
+        metrics: provider({
+          A: { height: 0.4, bearingY: 0.04, inkBounds: { top: 0.14, bottom: -0.02 } },
+          B: { height: 0.2, bearingY: -0.05 },
+        }),
+      },
+    );
+    const images = layout.items.filter((item) => item.kind === "image");
+    // The first row is centered at 0.1; its visible text spans 0.12 to 0.28.
+    expect(images[0]?.y).toBeCloseTo(0.2);
+    // The second row is centered at -0.2 with a -0.05 glyph bearing.
+    expect(images[1]?.y).toBeCloseTo(-0.25);
+    expect(glyphs(layout.items).find((item) => item.ch === "A")?.y).toBeCloseTo(0.14);
+  });
+
+  it("keeps different-sized images centered when a line contains only images and spaces", () => {
+    const { layout } = layoutText2DFromProperties(
+      { text: "[img=small size=14] [img=large size=48]", wrapWidth: 0, wrapHeight: 0 },
+      { rich: true, pixelsPerUnit: 100, metrics: provider() },
+    );
+    const images = layout.items.filter((item) => item.kind === "image");
+    expect(images.map((item) => item.y)).toEqual([0, 0]);
+    expect(images.map((item) => item.height)).toEqual([0.14, 0.48]);
   });
 
   it("staggers hover and rotate phases per glyph", () => {
@@ -324,7 +357,6 @@ describe("combineText2DEffects", () => {
         fontSize: 0.32,
         hoverPhase: 0,
         rotatePhase: 0,
-        noise: () => 1,
       },
     );
     expect(first.x).not.toBe(0);
@@ -339,7 +371,6 @@ describe("combineText2DEffects", () => {
         fontSize: 0.32,
         hoverPhase: 0,
         rotatePhase: 0,
-        noise: () => 0,
       },
     );
     expect(later.rotation).toBeGreaterThan(0);
@@ -347,7 +378,7 @@ describe("combineText2DEffects", () => {
 
   it("writes the same sample into a reused output", () => {
     const effects = { shake: 1, waveSpeed: 2, waveIntensity: 1, hover: 1, rotate: 45 };
-    const context = { time: 0.7, index: 3, fontSize: 0.32, hoverPhase: 0.2, rotatePhase: 0.4, noise: () => 0.8 };
+    const context = { time: 0.7, index: 3, fontSize: 0.32, hoverPhase: 0.2, rotatePhase: 0.4 };
     const out = { x: 9, y: 9, rotation: 9 };
     expect(combineText2DEffects(effects, context, out)).toBe(out);
     expect(out).toEqual(combineText2DEffects(effects, context));
@@ -362,7 +393,6 @@ describe("combineText2DEffects", () => {
         fontSize: 0.32,
         hoverPhase: 0,
         rotatePhase: 0,
-        noise: () => 0,
       },
     );
     const frozen = combineText2DEffects(
@@ -373,11 +403,34 @@ describe("combineText2DEffects", () => {
         fontSize: 0.32,
         hoverPhase: 0,
         rotatePhase: 0,
-        noise: () => 0,
         paused: true,
         last: live,
       },
     );
     expect(frozen).toEqual(live);
+  });
+
+  it("keeps shake gentle and continuous between frames without synchronizing letters", () => {
+    const effects = { shake: 1, waveSpeed: 0, waveIntensity: 0, hover: 0, rotate: 0 };
+    const context = { time: 0, index: 0, fontSize: 0.32, hoverPhase: 0, rotatePhase: 0 };
+    const first = combineText2DEffects(effects, context);
+    let previous = first;
+    let travel = 0;
+    for (let frame = 1; frame <= 180; frame++) {
+      const sample = combineText2DEffects(effects, { ...context, time: frame / 60 });
+      // At 32 px / 100 ppu, a normal shake stays within 1.5 px of rest
+      // and moves less than half a pixel between 60 Hz frames.
+      expect(Math.hypot(sample.x, sample.y)).toBeLessThan(0.015);
+      const movement = Math.hypot(sample.x - previous.x, sample.y - previous.y);
+      expect(movement).toBeLessThan(0.005);
+      travel += movement;
+      previous = sample;
+    }
+    expect(travel).toBeGreaterThan(0.05);
+    expect(combineText2DEffects(effects, context)).toEqual(first);
+    expect(combineText2DEffects(effects, { ...context, index: 1 })).not.toEqual(first);
+    const stronger = combineText2DEffects({ ...effects, shake: 2 }, context);
+    expect(stronger.x).toBeCloseTo(first.x * 2);
+    expect(stronger.y).toBeCloseTo(first.y * 2);
   });
 });

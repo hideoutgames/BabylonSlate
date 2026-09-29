@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { RichTextStyle } from "@babylonslate/core";
+import { createTestEngine } from "./create-null-engine";
+import { createText2DMesh } from "./text2d-mesh";
 import {
   bitmapGlyphKey,
   packBitmapGlyphAtlas,
@@ -89,6 +91,36 @@ describe("rasterizeBitmapGlyph", () => {
       expect(opaqueCount(glyph.pixels)).toBeGreaterThan(0);
       expect(readbacks).toBe(1);
     }, () => 16, true);
+  });
+
+  it("centers inline images on painted letters rather than transparent canvas padding", () => {
+    const { engine, scene } = createTestEngine();
+    try {
+      withMockCanvas((w, h) => {
+        const pixels = new Uint8ClampedArray(w * h * 4);
+        // Numeric alpha fixture: visible rows [6, 18), above the 58 px cell center.
+        for (let y = 6; y < 18; y++) {
+          pixels[(y * w + 3) * 4 + 3] = 255;
+        }
+        return pixels;
+      }, () => {
+        const mesh = createText2DMesh(scene, "inline", {
+          text: "A[img=small size=14][img=large size=48]A",
+          size: 32,
+          wrapWidth: 0,
+          wrapHeight: 0,
+        }, { pixelsPerUnit: 100 }, { rich: true });
+        const [a, small, large, b] = mesh.getChildMeshes();
+        // Ink center is 12 px from the top, so it sits 17 px above quad center.
+        expect(small?.position.y).toBeCloseTo(0.17);
+        expect(large?.position.y).toBeCloseTo(0.17);
+        expect(a?.position.y).toBeCloseTo(0);
+        expect(b?.position.y).toBeCloseTo(0);
+      }, () => 16, true);
+    } finally {
+      scene.dispose();
+      engine.dispose();
+    }
   });
 
   it("rejects changed canvas metrics before allocating glyph pixels", () => {
