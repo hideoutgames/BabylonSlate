@@ -221,13 +221,19 @@ describe("ENGINE_PLACE_ACTORS", () => {
         createDefaultScene(),
         item!,
         `actor-${id}`,
-        ORIGIN,
+        [7, 8, 9],
         { overlay: true },
       );
       expect(actor.classId).toBe("SceneLayerActor");
       expect(actor.components.map((component) => component.classId)).toEqual([
         classId,
       ]);
+      if (classId === "2DAnchorComponent") {
+        expect(actor.transform.position).toEqual([0, 0, 0]);
+        expect(duplicateSceneActor(createDefaultScene(), actor, { position: [4, 5, 6] }).transform.position).toEqual([0, 0, 0]);
+      } else {
+        expect(actor.transform.position).toEqual([7, 8, 9]);
+      }
       if (classId === "2DTextComponent" || classId === "2DRichTextComponent") {
         expect(actor.components[0]?.properties.wrapWidth).toBe(200);
         expect(actor.components[0]?.properties.wrapHeight).toBe(64);

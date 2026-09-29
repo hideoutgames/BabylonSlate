@@ -36,6 +36,7 @@ import {
   createDefaultSceneSettings,
   findActor,
   identitySerializedTransform,
+  isSceneLayerAnchorActor,
   parseOverlayPanelProperties,
   parseText2DProperties,
   parseText3DProperties,
@@ -1040,6 +1041,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         entry !== undefined && entry !== null,
     );
   const multiSelection = selectedActors.length > 1;
+  const spatialActors = selectedActors.filter((entry) => !isSceneLayerAnchorActor(entry));
   const shapeComponents = actor.components.filter((component) =>
     component.classId === "SplineComponent" || waterKindForClass(component.classId) !== null,
   );
@@ -1065,11 +1067,11 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       value: actor.name,
       onChange: (name) => updateActor((entry) => ({ ...entry, name })),
     },
-    ...(multiSelection
+    ...(spatialActors.length === 0 ? [] : multiSelection
       ? selectionTransformPropertyRows(
-          selectedActors,
+          spatialActors,
           scene.viewportMode,
-          updateSelectedActors,
+          (update) => updateSelectedActors((entry) => isSceneLayerAnchorActor(entry) ? entry : update(entry)),
         )
       : spatialTransformPropertyRows(
           "actor",
@@ -1077,7 +1079,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
           actor.transform,
           (transform) => updateActor((entry) => ({ ...entry, transform })),
         )),
-    {
+    ...(spatialActors.length === 0 ? [] : [{
       kind: "boolean",
       id: "actor-visible",
       label: "Visible",
@@ -1085,8 +1087,8 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       mixed: selectedActors.some((entry) => entry.visible !== actor.visible),
       defaultValue: true,
       onChange: (visible) =>
-        updateSelectedActors((entry) => ({ ...entry, visible })),
-    },
+        updateSelectedActors((entry) => isSceneLayerAnchorActor(entry) ? entry : ({ ...entry, visible })),
+    } satisfies PropertyRow]),
     {
       kind: "boolean",
       id: "actor-locked",

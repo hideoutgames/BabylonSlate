@@ -1,5 +1,6 @@
 import {
   createDefaultSceneSettings,
+  isSceneLayerAnchorActor,
   normalizeScene,
   normalizeSceneLayerSpawnList,
   normalizeScenePostProcessStack,
@@ -111,6 +112,7 @@ function bakeIdentityOverlayAnchor(
   layerWidth: number,
   layerHeight: number,
 ): SerializedActor {
+  if (isSceneLayerAnchorActor(actor)) return actor;
   const anchor = actor.components.find(
     (component) => component.classId === "2DAnchorComponent",
   );
