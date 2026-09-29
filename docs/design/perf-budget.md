@@ -33,6 +33,18 @@ with another view are not per-viewport GPU measurements.
 
 Bytes per texel (unit-tested): RGBA8 = 4, ASTC 4×4 = 1, plus ~⅓ for mipmaps.
 
+## Runtime physics and water composition
+
+Per fixed tick, inside the ~3 ms physics share of the combined game-tick budget. Main and SceneLayer overlay physics follow the same rules ([physics](../architecture/physics.md#per-tick-transform-work)):
+
+- One pre-step world-pose composition of physics participants and their ancestors; it is the tick's cycle/shear validation boundary. No other per-tick pass composes the whole world.
+- Body membership scans each eligible actor's components once. Unchanged collider, rigid-body, mesh-source and static-pose descriptors are compared in scratch and copied only on change.
+- Water: no transform work without an enabled water surface (a Landscape alone costs nothing). Otherwise only water, removal-volume, Landscape and buoyant actors plus their ancestors. Each script `sampleWater` call follows the same rule.
+- Readback: no composition when no body is parented; otherwise only the parented bodies' ancestor chains.
+- Simulation results stay unchanged: per-tick world snapshots are identical for acyclic hierarchies.
+
+Deterministic counts, not timings, guard these rules: `physics-tick-composition.test.ts` keeps transform reads of 2,048 unrelated actors at zero, beside `physics-sync-preparation.test.ts` and `ragdoll-sync-performance.test.ts`. The pre-step pass still scales with participants, which include every 3D MeshComponent actor. Explicit teleports, component edits and `moveCharacter` still recompose participants per call.
+
 ## Render rules (agents)
 
 - `adaptToDeviceRatio: false`; resolution via `setHardwareScalingLevel`. The dynamic valve reads a per-view `FramePressureSample` — presented-frame interval (null on skipped/hidden/loading frames, never zero), `scene.render()` CPU, and engine GPU time only when the view is the sole rendering view — and scales down on the 15-sample median of the worst signal, up only on proven presentation + CPU/GPU headroom. Only `playMode` handles (Play overlay, Preview Build, standalone player) report presentation/GPU signals: their frame pacing is meaningful. Free-running editor/prefab viewports feed `scene.render()` CPU only — their presented-frame interval measures host event-loop contention, not frame cost — and the valve falls back to the cost-only headroom rule for them.
