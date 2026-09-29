@@ -18,6 +18,8 @@ export type GlyphMetrics = {
   bearingY: number;
   advance: number;
   source: GlyphSource;
+  /** Visible glyph bounds relative to the quad center, in world-space Y. */
+  inkBounds?: { top: number; bottom: number };
   uvs?: { u0: number; v0: number; u1: number; v1: number };
 };
 
@@ -79,13 +81,28 @@ type Pending = {
   style: RichTextStyle;
   effects: RichTextEffects;
   source: GlyphSource;
+  inkBounds?: GlyphMetrics["inkBounds"];
   uvs?: GlyphMetrics["uvs"];
   index: number;
 };
 
 const HOVER_SPEED = 2;
 const ROTATE_SPEED = 2;
-const SHAKE_SCALE = 0.08;
+const SHAKE_SCALE = 0.03;
+const SHAKE_SPEED = 8;
+
+function shakeSample(index: number, seed: number): number {
+  const value = Math.sin(index * 127.1 + seed * 311.7) * 43758.5453123;
+  return (value - Math.floor(value)) * 2 - 1;
+}
+
+function shakeNoise(time: number, seed: number): number {
+  const step = Math.floor(time);
+  const fraction = time - step;
+  const blend = fraction * fraction * (3 - 2 * fraction);
+  const start = shakeSample(step, seed);
+  return start + (shakeSample(step + 1, seed) - start) * blend;
+}
 
 function emptyEffects(): RichTextEffects {
   return {
@@ -155,11 +172,19 @@ function flushLine(
   }
   const lineWidth = line.reduce((sum, entry) => sum + entry.advance, 0);
   const lineHeight = Math.max(...line.map((entry) => entry.height), 0);
+  let inkTop = -Infinity;
+  let inkBottom = Infinity;
+  for (const entry of line) {
+    if (entry.kind !== "glyph" || !entry.ch?.trim()) continue;
+    inkTop = Math.max(inkTop, entry.bearingY + (entry.inkBounds?.top ?? entry.height / 2));
+    inkBottom = Math.min(inkBottom, entry.bearingY + (entry.inkBounds?.bottom ?? -entry.height / 2));
+  }
+  const imageCenterY = Number.isFinite(inkTop) ? (inkTop + inkBottom) / 2 : 0;
   const shift = lineShiftX(alignment, lineWidth, wrapWorld);
   let cursorX = shift;
   for (const entry of line) {
     const x = cursorX + entry.bearingX + entry.width / 2;
-    const y = cursorY + entry.bearingY;
+    const y = cursorY + (entry.kind === "image" ? imageCenterY : entry.bearingY);
     items.push({
       kind: entry.kind,
       ch: entry.ch,
@@ -286,6 +311,7 @@ export function layoutText2D(input: LayoutText2DInput): Text2DLayout {
         style: span.style,
         effects: span.effects,
         source: metrics.source,
+        inkBounds: metrics.inkBounds,
         uvs: metrics.uvs,
         index: glyphIndex,
       });
@@ -350,7 +376,6 @@ export type Text2DEffectContext = {
   fontSize: number;
   hoverPhase: number;
   rotatePhase: number;
-  noise?: () => number;
   paused?: boolean;
   last?: Text2DEffectSample;
 };
@@ -364,12 +389,14 @@ export function combineText2DEffects(
 ): Text2DEffectSample {
   if (context.paused && context.last) return context.last;
   const fontSize = context.fontSize > 0 ? context.fontSize : 0.32;
-  const noise = context.noise ?? Math.random;
   let x = 0;
   let y = 0;
   if (effects.shake) {
-    x += (noise() * 2 - 1) * effects.shake * fontSize * SHAKE_SCALE;
-    y += (noise() * 2 - 1) * effects.shake * fontSize * SHAKE_SCALE;
+    // Smooth between fixed noise samples so motion is independent of frame rate.
+    const time = context.time * SHAKE_SPEED;
+    const amplitude = effects.shake * fontSize * SHAKE_SCALE;
+    x += shakeNoise(time, context.index * 2 + 1) * amplitude;
+    y += shakeNoise(time, context.index * 2 + 2) * amplitude;
   }
   if (effects.waveSpeed || effects.waveIntensity) {
     y +=

@@ -127,6 +127,8 @@ Size is px / Project Settings `pixelsPerUnit` (default 100). Overlay cameras use
 
 **2D Rich Text** markup is BBCode-like and nestable: `[b]` `[i]` `[u]`, `[color=…]` (named VGA + orange, or hex 3/4/6/8 with optional `#`), `[size=14]`, `[outline]` / `[outline-color]`, void `[img=<guid>]` / `[img=<guid> size=14]`, `[shake=1]`, `[wave=2]` (`intensity` default 1), `[hover]`, `[rotate=45]`. Unknown `[…]` stays literal. Unclosed wrappers apply to end of string. Letter effects combine on `onBeforeRender` and freeze while Play is paused. Underline is a shared line under each run of `[u]` / Underline glyphs (constant Y and thickness from the line, not each letter bbox) and does not inherit shake/wave/hover/rotate.
 
+Shake uses smooth, time-based noise per letter with a small displacement; `[shake=1]` stays within 3% of the glyph height on each axis, and larger values scale the movement. Inline images align to the center of each line's visible text, accounting for bitmap transparency and glyph bearings. Different image sizes share that center; lines containing only images remain centered in their line box.
+
 Do not re-add `@babylonslate/ui-runtime`, UserInterface, WidgetComponent, or Babylon GUI. `p9-ui-anchoring` stays “do not rebuild” for HUD widgets; `2DAnchor` is overlay-actor layout only.
 
 The shared host readiness coordinator tracks world and SceneLayer transitions independently. Each layer waits for its own model, texture, shader and first-frame work. Completing one owner does not dismiss another owner's loading UI; authored activation is acknowledged only after the host has painted the presented canvas, including after dismissal of the final loading blocker. Removed layers and stopped hosts cannot acknowledge delayed completion.

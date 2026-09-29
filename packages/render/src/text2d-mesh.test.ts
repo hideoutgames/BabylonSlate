@@ -278,7 +278,7 @@ describe("createText2DMesh", () => {
     const mesh = createText2DMesh(
       handle.scene,
       "fx",
-      { text: "[wave=2]Hi", size: 32 },
+      { text: "[shake=1][wave=2]Hi", size: 32 },
       undefined,
       { rich: true, metrics: fixedMetrics(), isPaused: () => paused },
     );
@@ -287,10 +287,12 @@ describe("createText2DMesh", () => {
     const tick = (mesh.metadata as { tickText2DEffects?: (time: number) => void })
       .tickText2DEffects;
     tick?.(1);
+    const liveX = child.position.x;
     const liveY = child.position.y;
     expect(liveY).not.toBeCloseTo(restY);
     paused = true;
     tick?.(4);
+    expect(child.position.x).toBeCloseTo(liveX);
     expect(child.position.y).toBeCloseTo(liveY);
   });
 });
