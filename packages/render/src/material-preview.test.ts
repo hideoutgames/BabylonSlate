@@ -605,9 +605,16 @@ describe("material preview presenter", () => {
     expect(onError).toHaveBeenLastCalledWith(null);
   });
 
-  it("waits for shader readiness without consuming the static preview frame interval", async () => {
+  it.each(["surface", "text"] as const)("waits for %s shader readiness without consuming the static preview frame interval", async (domain) => {
     const host = await previewHost();
-    const ready = vi.spyOn(host.mesh, "isReady").mockReturnValue(false);
+    if (domain === "text") {
+      const library = new MaterialLibrary();
+      disposers.push(() => library.dispose());
+      host.applyMaterial(library.resolve(host.scene, "text", createDefaultMaterialDocument("Letters", "text"))!);
+    }
+    const drawn = domain === "text" ? host.scene.getMeshByName("materialPreviewText")!.getChildMeshes() : [host.mesh];
+    const readiness = drawn.map(mesh => vi.spyOn(mesh, "isReady").mockReturnValue(true));
+    const ready = readiness[0]!.mockReturnValue(false);
     const render = vi.spyOn(host.scene, "render");
     const presenter = createMaterialPreviewPresenter(
       host,

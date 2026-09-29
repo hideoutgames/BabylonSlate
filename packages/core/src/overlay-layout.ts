@@ -1,5 +1,7 @@
 import { identitySerializedTransform, type SerializedActor, type SerializedComponent, type SerializedTransform } from "./scene";
 import { parsePainter2DProperties } from "./painter2d";
+import { parseText2DProperties } from "./text2d";
+import { parseRichText } from "./rich-text";
 
 export const OVERLAY_LAYOUT_CLASSES = ["2DScrollBoxComponent", "2DVerticalBoxComponent", "2DHorizontalBoxComponent", "2DOverlayBoxComponent", "2DPaddingComponent", "2DSpacerComponent"] as const;
 export function isOverlayLayoutClass(classId: string): boolean { return (OVERLAY_LAYOUT_CLASSES as readonly string[]).includes(classId); }
@@ -29,10 +31,12 @@ export function parseOverlayLayoutProperties(value: Record<string, unknown> = {}
 }
 export type OverlayLayoutEntry = {
   actorId: string; componentId?: string; rect: OverlayLayoutRect; clip: OverlayLayoutRect | null;
+  /** False when this element or an actor/component ancestor is hidden or disabled. */
+  interactive?: boolean;
   scrollAncestors: string[]; scroll?: { x: number; y: number; maxX: number; maxY: number; axis: OverlayLayoutProperties["scrollAxis"]; viewport: OverlayLayoutRect; scaleX: number; scaleY: number };
 };
 export type OverlayLayoutResult = { actors: SerializedActor[]; entries: Map<string, OverlayLayoutEntry> };
-export type OverlayLayoutOptions = { pixelsPerUnit?: number; textureSize?: (guid: string) => { width: number; height: number } | undefined };
+export type OverlayLayoutOptions = { pixelsPerUnit?: number; textureSize?: (guid: string) => { width: number; height: number } | undefined; /** Measure authored bounds even without layout components. */ includeUnmanagedBounds?: boolean };
 export const overlayLayoutKey = (actorId: string, componentId?: string): string => componentId ? `${actorId}/${componentId}` : actorId;
 export function intersectOverlayRects(a: OverlayLayoutRect | null, b: OverlayLayoutRect): OverlayLayoutRect {
   if (!a) return { ...b };
@@ -69,8 +73,19 @@ type Node = {
 function nativeSize(component: SerializedComponent, options: OverlayLayoutOptions): [number, number] {
   const p = component.properties, ppu = positive(options.pixelsPerUnit, 100) || 100;
   if (component.classId === "2DTextComponent" || component.classId === "2DRichTextComponent") {
-    const size = positive(p.size, 16), text = String(p.text ?? "");
-    return [positive(p.wrapWidth) / ppu || Math.max(size, text.length * size * 0.6) / ppu, positive(p.wrapHeight) / ppu || size * 1.2 / ppu];
+    const rich = component.classId === "2DRichTextComponent", text = parseText2DProperties(p, { rich });
+    const spans = rich ? parseRichText(text.text, text) : [{ kind: "text" as const, text: text.text, style: text }];
+    let width = 0, height = 0, lineWidth = 0, lineHeight = 0;
+    const finishLine = () => { width = Math.max(width, lineWidth); height += lineHeight || text.size * 1.2; lineWidth = 0; lineHeight = 0; };
+    for (const span of spans) {
+      if (span.kind === "image") { lineWidth += span.size; lineHeight = Math.max(lineHeight, span.size); continue; }
+      for (const character of span.text) {
+        if (character === "\n") { finishLine(); continue; }
+        lineWidth += span.style.size * 0.6; lineHeight = Math.max(lineHeight, span.style.size * 1.2);
+      }
+    }
+    finishLine();
+    return [(text.wrapWidth || Math.max(text.size, width)) / ppu, (text.wrapHeight || height) / ppu];
   }
   if (component.classId === "2DTextureComponent") {
     const size = options.textureSize?.(String(p.textureGuid ?? ""));
@@ -84,7 +99,8 @@ function nativeSize(component: SerializedComponent, options: OverlayLayoutOption
  * Dimensions/gaps/padding/scroll are SceneLayer world units. Array order is layout order.
  */
 export function resolveOverlayLayout(source: readonly SerializedActor[], options: OverlayLayoutOptions = {}): OverlayLayoutResult {
-  if (!source.some(a => a.components.some(c => isOverlayLayoutClass(c.classId)))) return { actors: source as SerializedActor[], entries: new Map() };
+  const hasLayout = source.some(a => a.components.some(c => isOverlayLayoutClass(c.classId)));
+  if (!hasLayout && !options.includeUnmanagedBounds) return { actors: source as SerializedActor[], entries: new Map() };
   const actors = source.map(a => ({ ...a, transform: structuredClone(a.transform), components: a.components.map(c => ({ ...c, properties: { ...c.properties }, transform: structuredClone(c.transform ?? identitySerializedTransform()) })) }));
   const nodes = new Map<string, Node>(), actorNodes = new Map<string, Node>();
   for (const actor of actors) {
@@ -175,7 +191,8 @@ export function resolveOverlayLayout(source: readonly SerializedActor[], options
     }
     n.world = compose(parentPose, local);
     const rect = rectAt(n.world, container ? width : n.native[0], container ? height : n.native[1]);
-    const entry: OverlayLayoutEntry = { actorId: n.actor.id, ...(n.component ? { componentId: n.component.id } : {}), rect, clip, scrollAncestors };
+    const entry: OverlayLayoutEntry = { actorId: n.actor.id, ...(n.component ? { componentId: n.component.id } : {}), rect, clip, scrollAncestors,
+      interactive: visible(n) && (!n.parent || entries.get(n.parent.key)?.interactive !== false) };
     entries.set(n.key, entry);
     if (n.component && isOverlayLayoutClass(n.classId)) { n.component.properties.layoutResolvedWidth = width; n.component.properties.layoutResolvedHeight = height; }
     const padding = inset(n), innerW = Math.max(0, width - padding.left - padding.right), innerH = Math.max(0, height - padding.top - padding.bottom);
@@ -200,6 +217,7 @@ export function resolveOverlayLayout(source: readonly SerializedActor[], options
     const mainAlign = horizontal ? n.props.horizontalAlignment : n.props.verticalAlignment;
     let cursor = Math.max(0, mainSize - total) * (mainAlign === "end" ? 1 : mainAlign === "center" ? 0.5 : 0);
     for (const child of n.children) {
+      if (!hasLayout) { arrange(child, n.world, undefined, undefined, childClip, ancestors); continue; }
       if (!children.includes(child) || paddingOnly(child)) { arrange(child, n.world, undefined, undefined, childClip, ancestors); continue; }
       const hasPadding = padding.left + padding.right + padding.top + padding.bottom > 0;
       if (n.classId === "actor" && !n.proxy && !hasPadding) { arrange(child, n.world, undefined, undefined, childClip, ancestors); continue; }
@@ -228,5 +246,5 @@ export function resolveOverlayLayout(source: readonly SerializedActor[], options
     // Layout preserves authored rotation; the logical parent may be a component proxy.
     if (node.parent !== node.actualParent) node.local.rotation = [0, 0, Math.sin(local.angle / 2), Math.cos(local.angle / 2)];
   }
-  return { actors, entries };
+  return { actors: hasLayout ? actors : source as SerializedActor[], entries };
 }

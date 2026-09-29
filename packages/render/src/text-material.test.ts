@@ -45,7 +45,18 @@ describe("Text Materials", () => {
     const material = library.resolve(scene, "letters", document)!;
     expect(firstGlyph.material).toBe(material);
     expect(secondGlyph.material).toBe(material);
-    for (const glyph of [firstGlyph, secondGlyph]) await material.forceCompilationAsync(glyph);
+    for (const glyph of [firstGlyph, secondGlyph]) {
+      // NullEngine cannot upload the real bitmap atlas; simulate its upload
+      // boundary while preserving the material's actual shader and bindings.
+      const atlas = textMaterialGlyphBinding(glyph)!.atlas!;
+      const ready = vi.spyOn(atlas, "isReady").mockReturnValue(false);
+      expect(material.isReadyForSubMesh(glyph, glyph.subMeshes[0]!)).toBe(false);
+      ready.mockReturnValue(true);
+      await material.forceCompilationAsync(glyph);
+      // forceCompilation uses a temporary SubMesh; the actual draw owns its
+      // own wrapper and must run the normal readiness step before binding.
+      expect(material.isReadyForSubMesh(glyph, glyph.subMeshes[0]!)).toBe(true);
+    }
     material.freeze();
     const samples: unknown[] = [];
     const effects = new Set<Effect>();

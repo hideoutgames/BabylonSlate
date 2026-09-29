@@ -1,10 +1,44 @@
 import { describe, expect, it } from "vitest";
-import { createActor, createDefaultScene, createDefaultSceneLayer, normalizeFocusNavigationSettings } from "@babylonslate/core";
+import { createActor, createDefaultScene, createDefaultSceneLayer, identitySerializedTransform, normalizeFocusNavigationSettings } from "@babylonslate/core";
 import type { CommandMessage } from "@babylonslate/bridge";
 import { createInProcessRuntime } from "./driver";
 import { runtimeOptionsFromLoadControl } from "./play-load";
 
 describe("SceneLayer focus runtime integration", () => {
+  it("navigates by standalone attached visuals and skips hidden or disabled visual attachments without layout boxes", () => {
+    const layer = createDefaultSceneLayer();
+    const offset = identitySerializedTransform(); offset.position[0] = 10;
+    layer.actors = [
+      createActor("start", "Start", { classId: "SceneLayerActor", components: [{ id: "start-focus", classId: "2DButtonComponent", properties: { focusInitial: true } }] }),
+      createActor("offset", "Offset", { classId: "SceneLayerActor", components: [
+        { id: "offset-visual", classId: "2DMaterialComponent", transform: offset, properties: {} },
+        { id: "offset-focus", classId: "2DFocusTargetComponent", properties: {} },
+      ] }),
+      createActor("middle", "Middle", { classId: "SceneLayerActor", components: [{ id: "middle-focus", classId: "2DButtonComponent", properties: {} }] }),
+      createActor("hidden", "Hidden", { classId: "SceneLayerActor", components: [
+        { id: "hidden-visual", classId: "2DMaterialComponent", properties: { visible: false } },
+        { id: "hidden-focus", classId: "2DButtonComponent", properties: {} },
+      ] }),
+      createActor("disabled-parent", "Disabled Parent", { classId: "SceneLayerActor", components: [{ id: "disabled-visual", classId: "2DMaterialComponent", properties: { enabled: false } }] }),
+      createActor("helper", "Helper", { classId: "SceneLayerActor", parentId: "disabled-parent", components: [{ id: "helper-focus", classId: "2DFocusTargetComponent", properties: {} }] }),
+    ];
+    layer.actors[2]!.transform.position[0] = 5;
+    layer.actors[3]!.transform.position[0] = 2;
+    layer.actors[4]!.transform.position[0] = 3;
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, playScene: createDefaultScene(), sceneLayerLibrary: { menu: layer }, onCommand: () => {} });
+    try {
+      runtime.realizePlayWorld(); runtime.createSceneLayer("menu"); runtime.start(); runtime.tick();
+      const navigate = () => { runtime.pushInput([
+        { kind: "key", tick: 0, code: "ArrowRight", phase: "down" },
+        { kind: "key", tick: 0, code: "ArrowRight", phase: "up" },
+      ]); runtime.tick(); };
+      const focused = () => runtime.getWorld().getActors().flatMap(actor => actor.components).find(component => component.getVariable("focused") === true)?.guid;
+      navigate(); expect(focused()).toBe("middle-focus");
+      navigate(); expect(focused()).toBe("offset-focus");
+      expect(runtime.getWorld().findActor("offset")!.components.find(component => component.guid === "offset-visual")!.transform.position.x).toBe(10);
+    } finally { runtime.stop(); }
+  });
+
   it.each([true, false])("honors worker-loaded project enablement (%s) and invokes component-bound native focus and activation", async (enabled) => {
     const layer = createDefaultSceneLayer();
     layer.actors = [createActor("menu", "Menu", {

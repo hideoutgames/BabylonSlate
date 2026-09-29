@@ -87,6 +87,30 @@ describe("SceneLayer focus navigation", () => {
     expect(a.component.getVariable("focused")).toBe(false);
   });
 
+  it("keeps prefab component neighbor links within each instance, including an unavailable sibling", () => {
+    const f = fixture();
+    const first = f.add("first", 0, 0);
+    const second = f.add("second", 5, 0);
+    const neighbors = [first, second].map(({ actor, component }) => {
+      component.sourceId = "start";
+      component.setVariable("focusRight", "next");
+      const neighbor = f.world.createComponent({ guid: `${actor.guid}-next`, sourceId: "next", classId: "2DFocusTargetComponent" });
+      neighbor.transform.position.x = 2;
+      actor.attachComponent(neighbor);
+      return neighbor;
+    });
+    f.navigation.setFocus(second.component);
+    f.tick(tap("ArrowRight"));
+    expect(f.navigation.getFocused()).toBe(neighbors[1]);
+    f.navigation.setFocus(second.component);
+    neighbors[1]!.setVariable("enabled", false);
+    f.tick(tap("ArrowRight"));
+    expect(f.navigation.getFocused()).toBe(second.component);
+    second.component.setVariable("focusRight", neighbors[0]!.guid);
+    f.tick(tap("ArrowRight"));
+    expect(f.navigation.getFocused()).toBe(neighbors[0]);
+  });
+
   it("isolates navigation to the highest ready layer and cannot follow an explicit cross-layer link", () => {
     const f = fixture();
     const a = f.add("a", 0, 0, { focusInitial: true });

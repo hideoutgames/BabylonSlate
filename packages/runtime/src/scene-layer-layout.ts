@@ -38,7 +38,7 @@ export class SceneLayerLayout {
     const signature = JSON.stringify([source, pixelsPerUnit, sizes]);
     const previousOwners = this.owners.get(layerId);
     if (this.signatures.get(layerId) === signature && previousOwners?.length === owners.length && owners.every((owner, index) => previousOwners[index] === owner)) return null;
-    const result = resolveOverlayLayout(source, { pixelsPerUnit, textureSize: (guid) => texturePixelSizes[guid] });
+    const result = resolveOverlayLayout(source, { pixelsPerUnit, textureSize: (guid) => texturePixelSizes[guid], includeUnmanagedBounds: true });
     const byId = new Map(actors.map(a => [a.guid, a]));
     const apply = (target: Actor | ActorComponent, transform: SerializedTransform) => {
       target.transform = live(transform);

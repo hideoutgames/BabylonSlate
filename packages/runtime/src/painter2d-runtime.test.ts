@@ -64,6 +64,40 @@ describe("2D Painter retained drawing", () => {
     expect(sent).toHaveLength(3);
   });
 
+  it("rejects invalid scalar geometry without adding drawing or path segments, then accepts valid operations", () => {
+    const runtime = new Painter2DRuntime(), { component } = painter("validated");
+    runtime.execute(component, "painterDrawLine", { start: [-1, 0], end: [1, 0] });
+    runtime.execute(component, "painterMoveTo", { point: [0, 0] });
+    const retained = runtime.payload(component).commands;
+    runtime.flush(() => {});
+    for (const radius of [NaN, Infinity, "2", null, undefined]) {
+      expect(runtime.execute(component, "painterDrawCircle", { center: [0, 0], radius })).toBe(false);
+    }
+    const arc = { center: [1, 2], radius: [2, 1] };
+    for (const invalid of [{ rotation: NaN }, { startAngle: Infinity }, { endAngle: "3" }, { endAngle: null }, { anticlockwise: 1 }]) {
+      expect(runtime.execute(component, "painterArc", { ...arc, ...invalid })).toBe(false);
+    }
+    expect(runtime.execute(component, "painterDrawRectangle", { center: [Number.MAX_VALUE, 0], size: [Number.MAX_VALUE, 1] })).toBe(false);
+    const rejectedUpdates: Painter2DProperties[] = [];
+    runtime.flush((_component, payload) => rejectedUpdates.push(payload));
+    expect(rejectedUpdates).toEqual([]);
+    expect(runtime.payload(component).commands).toEqual(retained);
+
+    expect(runtime.execute(component, "painterDrawCircle", { center: [2, 3], radius: 0.5 })).toBe(true);
+    expect(runtime.execute(component, "painterArc", arc)).toBe(true);
+    expect(runtime.execute(component, "painterLineTo", { point: [3, 2] })).toBe(true);
+    expect(runtime.execute(component, "painterStrokePath", {})).toBe(true);
+    const commands = runtime.payload(component).commands;
+    expect(commands).toHaveLength(3);
+    expect(commands[0]).toEqual(retained[0]);
+    expect(commands[1]).toMatchObject({ path: [{ kind: "ellipse", center: [2, 3], radius: [0.5, 0.5] }, { kind: "close" }] });
+    expect(commands[2]).toMatchObject({ fill: false, stroke: true, path: [
+      { kind: "move", point: [0, 0] },
+      { kind: "ellipse", center: [1, 2], radius: [2, 1], rotation: 0, start: 0, end: Math.PI * 2, anticlockwise: false },
+      { kind: "line", point: [3, 2] },
+    ] });
+  });
+
   it("sends native graph drawing to both Play hosts and clears before Tick without rebuilding meshes", async () => {
     const commands: CommandMessage[] = [];
     const layer = createDefaultSceneLayer();

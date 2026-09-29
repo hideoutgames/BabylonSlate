@@ -7,6 +7,39 @@ function actor(id: string, components: SerializedComponent[], parentId: string |
   return { ...createActor("SceneLayerActor", id), id, parentId, components };
 }
 describe("nested SceneLayer layout", () => {
+  it("makes hidden actors and disabled or hidden component ancestors unavailable to scroll input", () => {
+    const hiddenActor = actor("hidden", [component("scroll", "2DScrollBoxComponent")]);
+    hiddenActor.visible = false;
+    const source = [hiddenActor, actor("child", [component("scroll", "2DScrollBoxComponent")], "hidden"),
+      actor("visible", [
+        component("disabled", "2DOverlayBoxComponent", { enabled: false }),
+        component("disabled-scroll", "2DScrollBoxComponent", {}, "disabled"),
+        component("hidden", "2DOverlayBoxComponent", { visible: false }),
+        component("hidden-scroll", "2DScrollBoxComponent", {}, "hidden"),
+        component("active-scroll", "2DScrollBoxComponent"),
+      ])];
+    const result = resolveOverlayLayout(source);
+    for (const key of ["hidden/scroll", "child/scroll", "visible/disabled-scroll", "visible/hidden-scroll"]) {
+      expect(result.entries.get(key)).toMatchObject({ interactive: false });
+    }
+    expect(result.entries.get("visible/active-scroll")).toMatchObject({ interactive: true });
+  });
+
+  it("measures standalone visual bounds on request without arranging or cloning authored transforms", () => {
+    const surface = component("surface", "2DTextureComponent", { textureGuid: "icon", paddingLeft: 4 });
+    surface.transform!.position = [4, 2, 0];
+    const child = component("child", "2DMaterialComponent", {}, "surface");
+    child.transform!.position = [1, 1, 0];
+    const source = [actor("standalone", [surface, child])];
+    source[0]!.transform.position = [5, 1, 0];
+    const before = structuredClone(source);
+    const result = resolveOverlayLayout(source, { includeUnmanagedBounds: true, textureSize: () => ({ width: 200, height: 100 }) });
+    expect(result.entries.get("standalone/surface")!.rect).toEqual({ x: 9, y: 3, width: 2, height: 1 });
+    expect(result.entries.get("standalone/child")!.rect).toEqual({ x: 10, y: 4, width: 1, height: 1 });
+    expect(result.actors).toBe(source);
+    expect(source).toEqual(before);
+  });
+
   it("applies a root box's padding once and combines actor-level padding helpers without mutating authored data", () => {
     const source = [actor("root", [
       component("box", "2DOverlayBoxComponent", { width: 10, height: 8, paddingLeft: 1, paddingRight: 1 }),
@@ -87,5 +120,18 @@ describe("nested SceneLayer layout", () => {
     const result = resolveOverlayLayout([root], { pixelsPerUnit: 100, textureSize: () => ({ width: 300, height: 100 }) });
     expect(result.entries.get("root/row")!.rect).toMatchObject({ width: 5, height: 1 });
     expect(result.entries.get("root/text")!.rect).toMatchObject({ width: 2, height: 0.5 });
+  });
+  it("measures unwrapped text defaults and rich visible content instead of markup characters", () => {
+    const root = actor("root", [
+      component("row", "2DHorizontalBoxComponent", { widthMode: "content", heightMode: "content" }),
+      component("default", "2DTextComponent", {}, "row"),
+      component("rich", "2DRichTextComponent", { text: "[b]Hi[/b]\n[size=64]W[/size][img=icon size=16]" }, "row"),
+    ]);
+    const result = resolveOverlayLayout([root], { pixelsPerUnit: 100 });
+    expect(result.entries.get("root/default")!.rect.width).toBeCloseTo(0.768);
+    expect(result.entries.get("root/default")!.rect.height).toBeCloseTo(0.384);
+    expect(result.entries.get("root/rich")!.rect.width).toBeCloseTo(0.544);
+    expect(result.entries.get("root/rich")!.rect.height).toBeCloseTo(1.152);
+    expect(result.entries.get("root/row")!.rect.width).toBeCloseTo(1.312);
   });
 });

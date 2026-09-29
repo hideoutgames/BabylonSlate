@@ -96,7 +96,7 @@ export class OverlayLayoutRenderer {
   }
   scrollAt(layerId: string, x: number, y: number): OverlayLayoutEntry | undefined {
     const entries = this.layers.get(layerId)?.entries ?? [];
-    return entries.filter(e => e.scroll && overlayRectContains(e.rect, x, y) && (!e.clip || overlayRectContains(e.clip, x, y)))
+    return entries.filter(e => e.interactive !== false && e.scroll && overlayRectContains(e.rect, x, y) && (!e.clip || overlayRectContains(e.clip, x, y)))
       .sort((a, b) => b.scrollAncestors.length - a.scrollAncestors.length)[0];
   }
   remove(layerId: string): void {

@@ -29,7 +29,8 @@ export function normalizeMaterialParameterCatalog(
       (entry.domain !== "surface" &&
         entry.domain !== "landscape" &&
         entry.domain !== "postProcess" &&
-        entry.domain !== "particle") ||
+        entry.domain !== "particle" &&
+        entry.domain !== "text") ||
       typeof entry.planHash !== "string" ||
       !entry.planHash
     )

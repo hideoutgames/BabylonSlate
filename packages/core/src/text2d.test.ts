@@ -26,6 +26,8 @@ describe("2DTextComponent helpers", () => {
     expect(component.properties).toEqual({
       text: "Text",
       fontAssetGuid: null,
+      materialGuid: null,
+      materialUv: "text",
       size: DEFAULT_TEXT2D_SIZE,
       color: [1, 1, 1],
       renderer: "bitmap",

@@ -322,8 +322,10 @@ export class EditorSceneSync {
                 this.pendingVisuals.get(actor.id) === candidate && this.meshes.get(actor.id) === previous;
               const onAdopted = () => {
                 if (!ownsLoad()) return;
-                const current = (this.applyingScene ?? this.lastScene)?.actors.find((entry) => entry.id === actor.id);
-                if (current) this.prepareActorVisual(current, candidate);
+                // Ownership pins this load to the current apply generation.
+                // Its actor is already arranged; the stored document keeps the
+                // authored pose and must not undo that arrangement on adoption.
+                this.prepareActorVisual(actor, candidate);
                 candidate.parent = previous.parent;
                 for (const child of this.meshes.values()) if (child.parent === previous) child.parent = candidate;
                 this.meshes.set(actor.id, candidate);
@@ -332,6 +334,7 @@ export class EditorSceneSync {
                 this.pendingVisuals.delete(actor.id);
                 candidate.setEnabled(true);
                 previous.dispose();
+                applyEditorLayoutClips(this.scene, layout.entries);
                 freezeStaticActorWorldMatrix(candidate);
                 if (!this.applyingScene) {
                   this.freezeActiveQueue();

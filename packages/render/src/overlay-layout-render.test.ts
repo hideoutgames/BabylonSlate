@@ -1,16 +1,73 @@
 import { Mesh, MeshBuilder, TransformNode } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createActor, createDefaultScene, identitySerializedTransform } from "@babylonslate/core";
+import { createActor, createDefaultScene, createMeshComponent, identitySerializedTransform } from "@babylonslate/core";
 import { createTestEngine } from "./create-null-engine";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { OverlayLayoutRenderer, overlayClipAllowsPoint } from "./overlay-layout-render";
 import { applySceneToBabylonScene, editorComponentMeshName, helperBillboardIconOf } from "./scene-loader";
 import { SceneLayerCompositor } from "./scene-layer-compositor";
+import { encodeTriangleGlb } from "./glb-test-fixtures";
+import * as modelContainer from "./model-container";
 
 const cleanup: Array<() => void> = [];
 afterEach(() => { while (cleanup.length) cleanup.pop()!(); vi.restoreAllMocks(); });
 
 describe("SceneLayer layout rendering", () => {
+  it("preserves layout and clipping when an asynchronous editor model replaces a primitive", async () => {
+    const { engine, scene } = createTestEngine();
+    const sync = new EditorSceneSync(scene);
+    const originalLoad = modelContainer.loadModelContainer;
+    let release!: () => void;
+    const admission = new Promise<void>(resolve => { release = resolve; });
+    let loaded!: () => void;
+    const ready = new Promise<void>(resolve => { loaded = resolve; });
+    vi.spyOn(modelContainer, "loadModelContainer").mockImplementation(async (...args) => {
+      const container = await originalLoad(...args);
+      loaded();
+      await admission;
+      return container;
+    });
+    cleanup.push(() => { release(); sync.dispose(); scene.dispose(); engine.dispose(); });
+    sync.setMeshAssets({ modelBytes: new Map([["model", encodeTriangleGlb()]]) });
+    const document = createDefaultScene("2d");
+    const component = createMeshComponent("visual", "box");
+    const content = createActor("content", "Content", { parentId: "panel", components: [component] });
+    content.transform.position = [3, 4, 0];
+    document.actors = [createActor("panel", "Panel", { components: [{ id: "scroll", classId: "2DScrollBoxComponent", properties: { width: 4, height: 4 } }] }), content];
+    sync.apply(document);
+    const previous = sync.meshForActor("content")!;
+    const arranged = previous.position.asArray();
+    expect(arranged).not.toEqual(content.transform.position);
+    expect(overlayClipAllowsPoint(previous, 3, 0)).toBe(false);
+    component.properties.assetGuid = "model";
+    sync.apply(document);
+    await ready;
+    expect(sync.meshForActor("content")).toBe(previous);
+    release();
+    await sync.whenEditorModelsReady();
+    const adopted = sync.meshForActor("content")!;
+    expect(adopted).not.toBe(previous);
+    expect(previous.isDisposed()).toBe(true);
+    expect(adopted.position.asArray()).toEqual(arranged);
+    expect(overlayClipAllowsPoint(adopted, 0, 0)).toBe(true);
+    expect(overlayClipAllowsPoint(adopted, 3, 0)).toBe(false);
+    expect(sync.serializedScene()!.actors[1]!.transform.position).toEqual([3, 4, 0]);
+  });
+
+  it("routes scroll to the deepest available viewport within its inherited clip", () => {
+    const renderer = new OverlayLayoutRenderer(() => undefined);
+    cleanup.push(() => renderer.dispose());
+    const rect = { x: 0, y: 0, width: 4, height: 4 };
+    const scroll = { x: 0, y: 0, maxX: 0, maxY: 10, axis: "vertical" as const, viewport: rect, scaleX: 1, scaleY: 1 };
+    const outer = { actorId: "outer", slotId: 1, rect, clip: null, scrollAncestors: [], scroll };
+    const inner = { actorId: "inner", slotId: 2, rect, clip: { ...rect, width: 2 }, scrollAncestors: ["outer"], scroll, interactive: true };
+    renderer.apply({ type: "sceneLayerLayout", layerId: "hud", entries: [outer, inner] });
+    expect(renderer.scrollAt("hud", 0, 0)?.actorId).toBe("inner");
+    expect(renderer.scrollAt("hud", 1.5, 0)?.actorId).toBe("outer");
+    renderer.apply({ type: "sceneLayerLayout", layerId: "hud", entries: [outer, { ...inner, interactive: false }] });
+    expect(renderer.scrollAt("hud", 0, 0)?.actorId).toBe("outer");
+  });
+
   it("clips normal and expanded touch picks through imported transform nodes, and clears a removed layout", () => {
     const { engine, scene } = createTestEngine();
     vi.spyOn(engine, "getRenderWidth").mockReturnValue(256);

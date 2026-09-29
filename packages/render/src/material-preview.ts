@@ -633,7 +633,8 @@ export function createMaterialPreviewPresenter(
         const scale = resolveSceneRenderingQuality(host.scene).resolution.scale;
         const texture = ensureRtt(Math.max(1, Math.round(size.width * scale)), Math.max(1, Math.round(size.height * scale)));
         // Shader warm-up must not consume a static preview's presentation interval.
-        if (!previewMeshesReady(host.scene.getMeshByName("materialPreviewParticlePlane") as Mesh ?? host.mesh)) return;
+        const preview = host.scene.getMeshByName("materialPreviewText") ?? host.scene.getMeshByName("materialPreviewParticlePlane") ?? host.mesh;
+        if (!previewMeshesReady(preview)) return;
         pendingForce = false;
         lastPresentMs = at;
         host.scene.render();

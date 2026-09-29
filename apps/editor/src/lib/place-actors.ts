@@ -5,6 +5,7 @@ import {
   createSceneStreamingActor,
   createText3DComponent,
   identitySerializedTransform,
+  isFocusTargetClass,
   isSceneLayerDeniedComponent,
   type SerializedActor,
   type SerializedComponent,
@@ -708,6 +709,16 @@ function applyOverlayPlace(
   };
 }
 
+function remapFocusNeighbors(component: SerializedComponent, references: ReadonlyMap<string, string>): SerializedComponent {
+  if (!isFocusTargetClass(component.classId)) return component;
+  const properties = { ...component.properties };
+  for (const key of ["focusUp", "focusDown", "focusLeft", "focusRight"]) {
+    const target = properties[key];
+    if (typeof target === "string" && references.has(target)) properties[key] = references.get(target)!;
+  }
+  return { ...component, properties };
+}
+
 export function duplicateSceneActor(
   scene: SerializedScene,
   source: SerializedActor,
@@ -722,7 +733,8 @@ export function duplicateSceneActor(
   const componentIds = new Map(copy.components.map((component, index) => [
     component.id, `${copy.id}-${component.classId}-${index + 1}`,
   ]));
-  copy.components = copy.components.map((component) => ({
+  const focusReferences = new Map([[source.id, copy.id], ...componentIds]);
+  copy.components = copy.components.map((component) => remapFocusNeighbors({
     ...component,
     id: componentIds.get(component.id)!,
     ...(component.parentId ? { parentId: componentIds.get(component.parentId) ?? component.parentId } : {}),
@@ -734,7 +746,7 @@ export function duplicateSceneActor(
           ? componentIds.get(component.properties.targetComponentId) ?? component.properties.targetComponentId
           : null,
       } } : {}),
-  }));
+  }, focusReferences));
   if (options && "parentId" in options) {
     copy.parentId = options.parentId ?? null;
   }
@@ -762,9 +774,11 @@ export function duplicateSceneActors(
     copies.push(copy);
     next = { ...next, actors: [...next.actors, copy] };
   }
+  const focusReferences = new Map([...actorCopies, ...[...componentCopies.values()].flatMap((ids) => [...ids])]);
   return copies.map((copy) => ({
     ...copy,
     components: copy.components.map((component) => {
+      if (isFocusTargetClass(component.classId)) return remapFocusNeighbors(component, focusReferences);
       if (component.classId === "RenderTargetCaptureComponent" && Array.isArray(component.properties.actorIds)) {
         return { ...component, properties: { ...component.properties, actorIds: component.properties.actorIds.map((id: unknown) => typeof id === "string" ? actorCopies.get(id) ?? id : id) } };
       }

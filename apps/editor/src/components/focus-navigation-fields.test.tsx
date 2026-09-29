@@ -4,6 +4,11 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { normalizeFocusNavigationSettings, type FocusNavigationSettings } from "@babylonslate/core";
 import { FocusNavigationFields } from "./focus-navigation-fields";
 
+// Base UI dispatches PointerEvent when activating its native switch input.
+if (typeof window.PointerEvent === "undefined") {
+  window.PointerEvent = MouseEvent as unknown as typeof PointerEvent;
+}
+
 afterEach(cleanup);
 describe("focus navigation settings", () => {
   it("selects only 2D navigation axes, preserves the selection while disabled, and restores built-in controls", () => {

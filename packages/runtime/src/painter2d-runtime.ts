@@ -33,7 +33,8 @@ export class Painter2DRuntime {
       state.maskDepth--; state.commands.push({ kind: "popMask" }); this.dirty.add(component); return true;
     }
     const point = (key: string) => painterPoint(args[key]);
-    const scalar = (key: string, fallback = 0) => typeof args[key] === "number" && Number.isFinite(args[key]) ? args[key] as number : fallback;
+    const scalar = (key: string, fallback = 0): number | null => !Object.hasOwn(args, key) ? fallback
+      : typeof args[key] === "number" && Number.isFinite(args[key]) ? args[key] as number : null;
     let segment: PainterPathSegment | null = null;
     if (name === "painterMoveTo" || name === "painterLineTo") {
       const p = point("point"); if (!p) return false;
@@ -47,7 +48,9 @@ export class Painter2DRuntime {
     } else if (name === "painterClosePath") segment = { kind: "close" };
     else if (name === "painterArc") {
       const center = point("center"), radius = point("radius"); if (!center || !radius || radius.some((r) => r < 0)) return false;
-      segment = { kind: "ellipse", center, radius, rotation: scalar("rotation"), start: scalar("startAngle"), end: scalar("endAngle", Math.PI * 2), anticlockwise: args.anticlockwise === true };
+      const rotation = scalar("rotation"), start = scalar("startAngle"), end = scalar("endAngle", Math.PI * 2);
+      if (rotation === null || start === null || end === null || Object.hasOwn(args, "anticlockwise") && typeof args.anticlockwise !== "boolean") return false;
+      segment = { kind: "ellipse", center, radius, rotation, start, end, anticlockwise: args.anticlockwise === true };
     }
     if (segment) {
       if (state.path.length >= PAINTER_MAX_PATH_SEGMENTS) return false;
@@ -72,10 +75,12 @@ export class Painter2DRuntime {
       const center = point("center"), size = point("size"); if (!center || !size || size.some((v) => v < 0)) return false;
       const [x, y] = center, [w, h] = size;
       path = ([[x - w / 2, y - h / 2], [x + w / 2, y - h / 2], [x + w / 2, y + h / 2], [x - w / 2, y + h / 2]] as PainterPoint[]).map((p, i) => ({ kind: i ? "line" : "move", point: p }));
+      if (path.some((segment) => (segment.kind === "move" || segment.kind === "line") && !painterPoint(segment.point))) return false;
       path.push({ kind: "close" });
     } else if (name === "painterDrawCircle" || name === "painterDrawEllipse") {
       const center = point("center");
-      const radius = name === "painterDrawCircle" ? [scalar("radius"), scalar("radius")] as PainterPoint : point("radius");
+      const circleRadius = name === "painterDrawCircle" ? scalar("radius") : null;
+      const radius = name === "painterDrawCircle" ? circleRadius === null ? null : [circleRadius, circleRadius] as PainterPoint : point("radius");
       if (!center || !radius || radius.some((r) => r < 0)) return false;
       path = [{ kind: "ellipse", center, radius, rotation: 0, start: 0, end: Math.PI * 2, anticlockwise: false }, { kind: "close" }];
     } else return false;

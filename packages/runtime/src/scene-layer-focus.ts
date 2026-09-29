@@ -187,7 +187,15 @@ export class SceneLayerFocusNavigation {
     const key = `focus${direction[0]!.toUpperCase()}${direction.slice(1)}` as keyof FocusTargetProperties;
     const explicit = current.properties[key];
     if (typeof explicit === "string") {
-      const target = candidates.find((entry) => entry.component.guid === explicit || entry.component.sourceId === explicit || entry.actor.guid === explicit);
+      // Prefab component IDs are relative to their owning instance. Resolve the
+      // local definition even when unavailable, so a disabled sibling cannot
+      // redirect navigation into another instance of the same prefab.
+      const local = current.actor.components.find((component) => component.sourceId === explicit);
+      const sourceMatches = local ? [] : candidates.filter((entry) => entry.component.sourceId === explicit);
+      const target = local
+        ? candidates.find((entry) => entry.component === local)
+        : candidates.find((entry) => entry.component.guid === explicit || entry.actor.guid === explicit)
+          ?? (sourceMatches.length === 1 ? sourceMatches[0] : undefined);
       // An authored missing/disabled neighbor stops here; never silently route elsewhere.
       if (target) this.transition(target);
       return;

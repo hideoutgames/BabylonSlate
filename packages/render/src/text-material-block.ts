@@ -1,7 +1,7 @@
 import {
   NodeMaterialBlock, NodeMaterialBlockTargets as Targets,
   NodeMaterialBlockConnectionPointTypes as Types, RawTexture, Texture,
-  type BaseTexture, type Effect, type Mesh, type NodeMaterial,
+  type AbstractMesh, type BaseTexture, type Effect, type Mesh, type NodeMaterial,
 } from "@babylonjs/core";
 import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/nodeMaterialBuildState";
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
@@ -17,7 +17,7 @@ export type TextMaterialBinding = {
   materialRect: readonly [number, number, number, number];
 };
 
-const bindings = new WeakMap<Mesh, TextMaterialBinding>();
+const bindings = new WeakMap<AbstractMesh, TextMaterialBinding>();
 export function bindTextMaterialGlyph(mesh: Mesh, binding: TextMaterialBinding): void {
   bindings.set(mesh, binding);
 }
@@ -46,6 +46,10 @@ export class TextMaterialBlock extends NodeMaterialBlock {
   get color() { return this._outputs[1]!; }
   override getClassName(): string { return "TextMaterialBlock"; }
 
+  override isReady(mesh: AbstractMesh): boolean {
+    return bindings.get(mesh)?.atlas?.isReady() ?? true;
+  }
+
   override bind(effect: Effect, _material: NodeMaterial, mesh?: Mesh): void {
     const binding = mesh ? bindings.get(mesh) : undefined;
     effect.setTexture(this.sampler, binding?.atlas ?? this.fallback);
@@ -70,6 +74,7 @@ export class TextMaterialBlock extends NodeMaterialBlock {
     this.materialRect = state._getFreeVariableName("textMaterialRect");
     // A shared, frozen material still has to bind this particular glyph's atlas.
     state.sharedData.forcedBindableBlocks.push(this);
+    state.sharedData.blockingBlocks.push(this);
     state._emit2DSampler(this.sampler);
     state._emitUniformFromString(this.parameters, Types.Vector2);
     state._emitUniformFromString(this.tint, Types.Vector3);
