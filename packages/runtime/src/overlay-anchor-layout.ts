@@ -25,13 +25,10 @@ export function overlayAnchorBindings(actors: readonly Actor[]): Map<Actor, Acto
   for (const actor of live) {
     if (!isSceneLayerAnchorActor(actor)) continue;
     const anchor = anchorOf(actor);
-    const visited = new Set([actor]);
-    let parent = parentOf(actor);
-    while (parent && isSceneLayerAnchorActor(parent) && !visited.has(parent)) {
-      visited.add(parent);
-      parent = parentOf(parent);
-    }
-    if (anchor && parent && !visited.has(parent) && !direct.has(parent)) direct.set(parent, anchor);
+    const parent = parentOf(actor);
+    // A helper beneath another helper inherits it; the upper helper registers
+    // its own spatial parent, regardless of the serialized actor order.
+    if (anchor && parent && !isSceneLayerAnchorActor(parent) && !direct.has(parent)) direct.set(parent, anchor);
   }
 
   const controlling = new Map<Actor, Actor | null>();

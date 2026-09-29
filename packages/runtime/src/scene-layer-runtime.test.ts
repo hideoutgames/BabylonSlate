@@ -647,7 +647,7 @@ describe("SceneLayer runtime compositor", () => {
     const a = visual("a", null, [10, 20, 0]);
     a.transform.rotation = eulerDegreesToQuaternion([0, 0, 90]);
     a.transform.scale = [2, 3, 1];
-    const actors = [a, visual("b", "a", [2, 4, 0]), visual("c", "b", [1, 1, 0]),
+    const actors = [anchor("nested", "upper", 80, 90), a, visual("b", "a", [2, 4, 0]), visual("c", "b", [1, 1, 0]),
       anchor("upper", "a", 1, 2), anchor("lower", "b", 50, 60)];
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, maxActors: 16, playScene: worldScene("A"),
