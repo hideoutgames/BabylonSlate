@@ -89,6 +89,21 @@ export function reviveCommand(
   return reviver(payload);
 }
 
+/**
+ * Journal-only marker, not an `EditCommand`: an open document moved from
+ * `command.from` to `docId`. Replay gives the earlier lines under `from` to the
+ * renamed document, so its unsaved edits and a later Undo replay together.
+ */
+export const JOURNAL_REPATH_TYPE = "document.repath";
+
+export function journalRepathLine(
+  oldId: string,
+  newId: string,
+  at: string,
+): JournalLine {
+  return { v: 1, docId: newId, at, command: { type: JOURNAL_REPATH_TYPE, from: oldId } };
+}
+
 export function serializeJournalLine(line: JournalLine): string {
   return JSON.stringify(line);
 }

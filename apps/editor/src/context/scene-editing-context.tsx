@@ -14,6 +14,7 @@ import type {
   GizmoTool,
   ViewportShadingMode,
 } from "@babylonslate/render";
+import { useEditorSessionState } from "./editor-session-state-context";
 
 export type ViewportDropApi = {
   containsClientPoint(clientX: number, clientY: number): boolean;
@@ -70,37 +71,12 @@ export interface SceneEditingContextValue {
   /** Scene viewport hit-test and screen-to-world for Outliner drop / Place Actors. */
   viewportDropApi: ViewportDropApi;
   setViewportDropApi: (api: ViewportDropApi | null) => void;
-  /** Persist editor camera pose across viewport remounts (Focus, layout restore). */
+  /**
+   * Editor camera pose across viewport remounts (Focus, Windows, idle-unmount,
+   * closing and reopening the tab) for the rest of the project session.
+   */
   saveEditorCameraPose: (state: EditorCameraSessionState) => void;
   loadEditorCameraPose: () => EditorCameraSessionState | null;
-}
-
-/** In-memory editor camera pose. Pass `documentId` so remounts restore. */
-const editorCameraPosesByDocumentId = new Map<
-  string,
-  EditorCameraSessionState | null
->();
-
-export function createEditorCameraPoseStore(documentId?: string) {
-  if (!documentId) {
-    let pose: EditorCameraSessionState | null = null;
-    return {
-      save(state: EditorCameraSessionState | null | undefined) {
-        pose = state ?? null;
-      },
-      load(): EditorCameraSessionState | null {
-        return pose;
-      },
-    };
-  }
-  return {
-    save(state: EditorCameraSessionState | null | undefined) {
-      editorCameraPosesByDocumentId.set(documentId, state ?? null);
-    },
-    load(): EditorCameraSessionState | null {
-      return editorCameraPosesByDocumentId.get(documentId) ?? null;
-    },
-  };
 }
 
 const SceneEditingContext = createContext<SceneEditingContextValue | null>(null);
@@ -137,7 +113,10 @@ export function SceneEditingProvider({
   documentNavmeshVisible,
 }: {
   children: ReactNode;
-  /** When set, camera pose survives workspace unmount for this document. */
+  /**
+   * When set, the camera pose is kept in the project session store for this
+   * document; without it the pose lives only as long as this provider.
+   */
   documentId?: string;
   initialViewportMode?: ViewportMode;
   initialViewportShadingMode?: ViewportShadingMode;
@@ -180,7 +159,8 @@ export function SceneEditingProvider({
     null,
   );
   const viewportDropApiRef = useRef<ViewportDropApi | null>(null);
-  const cameraPoseStoreRef = useRef(createEditorCameraPoseStore(documentId));
+  const sessionState = useEditorSessionState();
+  const localCameraPoseRef = useRef<EditorCameraSessionState | null>(null);
 
   useEffect(() => {
     if (documentViewportMode === undefined) return;
@@ -250,13 +230,22 @@ export function SceneEditingProvider({
     [],
   );
 
-  const saveEditorCameraPose = useCallback((state: EditorCameraSessionState) => {
-    cameraPoseStoreRef.current.save(state);
-  }, []);
+  // A viewport saves on engine release, which can run after this workspace
+  // was renamed; the session store forwards that write to the new id.
+  const saveEditorCameraPose = useCallback(
+    (state: EditorCameraSessionState) => {
+      if (documentId) sessionState.saveCameraPose(documentId, state);
+      else localCameraPoseRef.current = state;
+    },
+    [documentId, sessionState],
+  );
 
   const loadEditorCameraPose = useCallback(
-    () => cameraPoseStoreRef.current.load(),
-    [],
+    () =>
+      documentId
+        ? sessionState.loadCameraPose(documentId)
+        : localCameraPoseRef.current,
+    [documentId, sessionState],
   );
 
   const value = useMemo<SceneEditingContextValue>(

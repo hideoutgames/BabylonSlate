@@ -38,6 +38,7 @@ export function physicsActorDiagnostics(
       component.classId === "TilemapComponent" ||
       component.classId === "BlockingVolumeComponent" ||
       (component.classId === "LandscapeComponent" && component.properties?.collisionsEnabled === true) ||
+      (component.classId === "DynamicRuntimeMeshComponent" && component.properties?.enableCollision === true) ||
       meshComponentHasCollision(component),
   );
   if (hasImplicitBody) return [];

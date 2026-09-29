@@ -221,6 +221,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
         classId,
         otherClassGraphs,
         functionGraphs: graphContent?.functionGraphs,
+        functionId: activeFunctionId ?? undefined,
         scriptInterfaces,
       },
     );

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MessageDetails } from "./message-details";
+import { DiagnosticResultRow } from "./diagnostic-result-row";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   addDecorator,
@@ -60,7 +61,6 @@ import {
 } from "@babylonslate/editor-kit";
 import { GraphEditor, treeNodeTypes, type PaletteNode } from "@babylonslate/graph-ui";
 import { defaultJsValue } from "@babylonslate/scripting";
-import { Badge } from "@babylonslate/ui/components/badge";
 import { Button } from "@babylonslate/ui/components/button";
 import { Empty, EmptyDescription, EmptyTitle } from "@babylonslate/ui/components/empty";
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
@@ -635,7 +635,7 @@ export function BehaviourTreeCompilerResultsPanel(_props: IDockviewPanelProps) {
           </EmptyDescription>
         </Empty>
       ) : (
-        <ScrollArea className="min-h-0 flex-1 p-2">
+        <ScrollArea className="min-h-0 flex-1 py-1">
           <WindowedList
             itemCount={diagnostics.length}
             rowHeight={WINDOWED_LIST_TOUCH_ROW_HEIGHT}
@@ -643,23 +643,17 @@ export function BehaviourTreeCompilerResultsPanel(_props: IDockviewPanelProps) {
             {(index) => {
               const row = diagnostics[index]!;
               return (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="touch"
-                  className="h-full w-full min-h-0 justify-start gap-2 overflow-hidden text-left"
-                  onClick={() => {
+                <DiagnosticResultRow
+                  severity={row.severity}
+                  message={row.message}
+                  code={row.code}
+                  selected={selected !== null && row.code === selected.code && row.message === selected.message && row.nodeId === selected.nodeId}
+                  onSelect={() => {
                     setSelectedDiagnostic(row);
                     if (row.nodeId) focusNode(row.nodeId);
                   }}
-                  data-testid={`behaviour-tree-diagnostic-${row.code}`}
-                  data-severity={row.severity}
-                >
-                  <Badge variant={row.severity === "error" ? "destructive" : "secondary"}>
-                    {humanizePropertyLabel(row.severity)}
-                  </Badge>
-                  <SelectableText className="truncate">{row.message}</SelectableText>
-                </Button>
+                  testId={`behaviour-tree-diagnostic-${row.code}`}
+                />
               );
             }}
           </WindowedList>

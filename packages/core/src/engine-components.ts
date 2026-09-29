@@ -6,6 +6,7 @@ export const ENGINE_COMPONENT_DESCRIPTORS = [
   { classId: "LandscapeComponent", placement: "world" },
   { classId: "FoliageComponent", placement: "world" },
   { classId: "MeshComponent", placement: "any" },
+  { classId: "DynamicRuntimeMeshComponent", placement: "world" },
   { classId: "CableComponent", placement: "world" },
   { classId: "SpriteComponent", placement: "any" },
   { classId: "TilemapComponent", placement: "any" },

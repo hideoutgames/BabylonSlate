@@ -1,5 +1,6 @@
 import { RuntimeMaterialParameters } from "./runtime-material-parameters";
 import { CableWorldSync } from "./cable-sync";
+import { DynamicRuntimeMeshSync } from "./dynamic-runtime-mesh";
 import { captureComponent, captureLocalTransform, captureProperties } from "./render-targets";
 import { createDefaultRenderTargetCaptureProperties, normalizeRenderTargetPayload, normalizeRenderTargetTexturePayload, type RenderTargetPayload, type RenderTargetTexturePayload } from "@babylonslate/core";
 import { normalizeWaterDefinition, normalizeWaterBody, normalizeWaterRemoval, waterKindForClass, type WaterDefinition } from "@babylonslate/core";
@@ -500,6 +501,7 @@ class InProcessRuntime implements RuntimeDriver {
   private overlayPhysicsSync: PhysicsWorldSync;
   private readonly ragdolls: RagdollWorldSync;
   private readonly cables: CableWorldSync;
+  private readonly dynamicMeshes: DynamicRuntimeMeshSync;
   private readonly overlayGravity: [number, number, number];
   private readonly overlayDesignPose = new Map<string, { x: number; y: number }>();
   private playCanvasWidth = 1;
@@ -791,11 +793,14 @@ class InProcessRuntime implements RuntimeDriver {
           },
           onTick: (self, ctx) =>
             this.guardScript(() => this.scriptHost.hooksFor(classId)?.onTick?.(self, ctx)),
-          onDestroyed: (self) =>
-            this.runOwnerDestroyed(self, () => this.scriptHost.hooksFor(classId)?.onDestroyed?.(self)),
+          onDestroyed: (self) => {
+            this.runOwnerDestroyed(self, () => this.scriptHost.hooksFor(classId)?.onDestroyed?.(self));
+            this.dynamicMeshes.remove(self);
+          },
         };
       },
       onPhysics: (ctx) => {
+        this.dynamicMeshes.flush();
         this.ragdolls.sync();
         if (this.canTickScene()) {
           const time = ctx.tickIndex * ctx.dt;
@@ -807,6 +812,14 @@ class InProcessRuntime implements RuntimeDriver {
         if (this.canTickScene()) this.cables.step(ctx.dt, this.gravity, this.frameId + 1);
         this.dispatchCollisionEvents();
       },
+    });
+    this.dynamicMeshes = new DynamicRuntimeMeshSync({
+      eligible: (actor) => !actor.sceneLayerId && this.canRunOwner(actor),
+      slot: (actor) => {
+        const slot = this.slotByGuid.get(actor.guid);
+        return slot !== undefined && this.slotOwners.get(slot) === actor ? slot : undefined;
+      },
+      emit: (command) => this.emit(command),
     });
     this.cables = new CableWorldSync({
       world: this.world,
@@ -1138,11 +1151,18 @@ class InProcessRuntime implements RuntimeDriver {
       updateIllumination: (target) => {
         this.reemitIllumination(target);
       },
-      refreshComponent: (component) => {
+      dynamicMeshFunction: (component, name, args) => this.dynamicMeshes.invoke(component, name, args),
+      refreshComponent: (component, propertyName) => {
         const owner = component.owner;
         if (!owner || owner.destroyed) return;
         this.applyOverlayAnchor(owner);
         const slotId = this.slotByGuid.get(owner.guid);
+        if (component.classId === "DynamicRuntimeMeshComponent" &&
+          (propertyName === "materialGuid" || propertyName === "enableCollision" || propertyName === "layer" || propertyName === "mask")) {
+          if (propertyName === "materialGuid" && slotId !== undefined) this.emitMaterialAssignments([component], slotId, true);
+          // Geometry collision changes are coalesced by the next physics step.
+          return;
+        }
         if (slotId !== undefined) {
           if (component.classId === "RenderTargetCaptureComponent") this.emitRenderTargetCapture(owner, slotId);
           else if (component.classId === "OutlineComponent") this.emitActorOutlines(owner, slotId);
@@ -2317,6 +2337,7 @@ class InProcessRuntime implements RuntimeDriver {
     if (stream) this.retireSceneStream(stream);
     this.ragdolls.retire(actor);
     this.cables.retire(actor);
+    this.dynamicMeshes.retire(actor);
     this.pendingOwnerActions.delete(actor);
     for (const component of actor.components) {
       this.pendingOwnerActions.delete(component);
@@ -4133,6 +4154,8 @@ class InProcessRuntime implements RuntimeDriver {
               ),
             ),
             ...(component.classId === "CableComponent" ? { cable: this.cables.assign(component) } : {}),
+            ...(component.classId === "DynamicRuntimeMeshComponent" ? { dynamicMesh: this.dynamicMeshes.assign(component) } : {}),
+            ...(component.classId === "DynamicRuntimeMeshComponent" ? { parentTransforms: dynamicMeshParentTransforms(component, componentsByGuid, renderableIds) } : {}),
           }))
         : undefined;
       const skyboxComp = renderables.find(
@@ -4764,6 +4787,7 @@ class InProcessRuntime implements RuntimeDriver {
     if (owner) {
       this.ragdolls.retire(owner);
       this.cables.retire(owner);
+      this.dynamicMeshes.retire(owner);
     }
     this.areaLightSlots.delete(slotId);
     this.outlineSlots.delete(slotId);
@@ -4947,6 +4971,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.layerLoads.clear();
     this.ragdolls.dispose();
     this.cables.dispose();
+    this.dynamicMeshes.dispose();
     this.physicsSync.dispose();
     this.overlayPhysicsSync.dispose();
     if (this.showPathfinding || this.showNavAgent) {
@@ -5440,6 +5465,7 @@ function isPlayRenderable(
     component.classId === "LandscapeComponent" ||
     component.classId === "FoliageComponent" ||
     component.classId === "CableComponent" ||
+    component.classId === "DynamicRuntimeMeshComponent" ||
     component.classId === "MeshComponent" ||
     component.classId === "SpriteComponent" ||
     component.classId === "TilemapComponent" ||
@@ -5526,6 +5552,7 @@ function playSortingOf(component: ActorComponent): {
 
 function playMeshKindOf(component: ActorComponent): string | null {
   if (component.classId === "CableComponent") return "cable";
+  if (component.classId === "DynamicRuntimeMeshComponent") return "dynamicRuntimeMesh";
   if (waterKindForClass(component.classId)) return "water";
   if (component.classId === "WaterRemovalVolumeComponent") return "waterRemoval";
   if (component.classId === "LandscapeComponent") return "landscape";
@@ -5580,6 +5607,7 @@ function isIdentityComponentTransform(component: ActorComponent): boolean {
 function playPartsNeeded(components: readonly ActorComponent[]): boolean {
   return (
     components.some((component) => component.classId === "CableComponent") ||
+    components.some((component) => component.classId === "DynamicRuntimeMeshComponent") ||
     components.some((component) => waterKindForClass(component.classId) !== null || component.classId === "WaterRemovalVolumeComponent") ||
     components.length > 1 ||
     components.some((component) => component.classId === "LandscapeComponent" || component.classId === "FoliageComponent") ||
@@ -5694,6 +5722,20 @@ function springArmAssignPayload(
     rotationLagSpeed: component.getVariable("rotationLagSpeed"),
     drawDebugLag: component.getVariable("drawDebugLag"),
   });
+}
+
+function dynamicMeshParentTransforms(component: ActorComponent, components: ReadonlyMap<string, ActorComponent>, renderableIds: ReadonlySet<string>): Transform[] {
+  const transforms: Transform[] = [];
+  const visited = new Set<string>([component.guid]);
+  let parentId = component.parentId;
+  while (parentId && !visited.has(parentId) && !renderableIds.has(parentId)) {
+    visited.add(parentId);
+    const parent = components.get(parentId);
+    if (!parent || parent.destroyed) break;
+    transforms.push({ position: { ...parent.transform.position }, rotation: { ...parent.transform.rotation }, scale: { ...parent.transform.scale } });
+    parentId = parent.parentId;
+  }
+  return transforms;
 }
 
 function nearestVisualParentId(

@@ -46,3 +46,4 @@ export {
   isPlayEngineCommandType,
   type PlayEngineCommandType,
 } from "./play-engine-commands";
+export { dynamicMeshTransferables } from "./dynamic-mesh-transfers";

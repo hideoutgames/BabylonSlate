@@ -5,10 +5,11 @@ import type { EditCommand } from "./command";
 import {
   coalesceJournalLines,
   commandToJournalPayload,
+  journalRepathLine,
   serializeJournalLine,
   type JournalLine,
 } from "./journal";
-import { replayJournalLines } from "./journal-replay";
+import { replayJournalLines, resolveJournalLines } from "./journal-replay";
 import { EditSession } from "./session";
 import { diffGraphCommands } from "./commands/graph-diff";
 import type { SerializedGraph } from "@babylonslate/core";
@@ -112,6 +113,53 @@ describe("journal replay", () => {
       expect(replayed.documents.get(docId)?.edges.map((edge) => edge.id))
         .toEqual(count === 2 ? ["wire"] : []);
     }
+  });
+
+  it("replays an edit made before a rename and its Undo after it onto the renamed file", () => {
+    const oldId = "graph:assets/hero.class.babasset";
+    const newId = "graph:assets/player.class.babasset";
+    // The file on disk: the deletion was never saved.
+    const graph: SerializedGraph = {
+      nodes: [
+        { id: "start", type: "event", position: { x: 0, y: 0 }, data: {} },
+        { id: "print", type: "print", position: { x: 200, y: 0 }, data: {} },
+      ],
+      edges: [{ id: "wire", source: "start", target: "print" }],
+    };
+    const session = new EditSession();
+    const deleted = session.applyBatch(oldId, graph, diffGraphCommands(graph, {
+      nodes: [graph.nodes[0]!], edges: [],
+    }))!;
+    session.rekeyDocument(oldId, newId);
+    const undone = session.undo(newId, deleted.doc)!;
+    const at = "2026-09-28T12:00:00Z";
+    const lines = [
+      serializeJournalLine({ v: 1, docId: oldId, at, command: commandToJournalPayload(deleted.command) }),
+      serializeJournalLine(journalRepathLine(oldId, newId, at)),
+      serializeJournalLine({ v: 1, docId: newId, at, command: commandToJournalPayload(undone.command) }),
+    ];
+    for (const count of [2, 3]) {
+      const replayed = replayJournalLines(lines.slice(0, count), new Map([[newId, graph]]));
+      expect(replayed.skipped).toEqual([]);
+      expect(replayed.documents.get(newId)?.nodes.map((node) => node.id))
+        .toEqual(count === 2 ? ["start"] : ["start", "print"]);
+    }
+  });
+
+  it("keeps a document later opened at a renamed path apart from the renamed one", () => {
+    const [a, b, c] = ["graph:assets/a.graph.babasset", "graph:assets/b.graph.babasset", "graph:assets/c.graph.babasset"];
+    const at = "2026-09-28T12:00:00Z";
+    const move = (docId: string, x: number) => serializeJournalLine({
+      v: 1, docId, at,
+      command: commandToJournalPayload(new MoveNodeCommand("node-1", { x: 0, y: 0 }, { x, y: 0 })),
+    });
+    const lines = [
+      move(a, 1),
+      serializeJournalLine(journalRepathLine(a, b, at)),
+      move(a, 2),
+      serializeJournalLine(journalRepathLine(b, c, at)),
+    ];
+    expect(resolveJournalLines(lines).map((line) => line.docId)).toEqual([c, a]);
   });
 
   it("replays lines onto open graph documents", () => {
