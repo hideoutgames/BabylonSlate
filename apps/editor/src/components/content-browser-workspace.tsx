@@ -633,8 +633,11 @@ export function ContentBrowserWorkspace({
   }, [folderTrees, selectedFolderPath]);
 
   // Typing updates the field at once; the grid follows at low priority.
+  // Clearing the search (Clear Filters, revealing an asset) applies in the same
+  // render as the folder and type filters that change with it.
   const deferredSearch = useDeferredValue(search);
-  const searchPending = search !== deferredSearch;
+  const gridSearch = search.trim() ? deferredSearch : search;
+  const searchPending = search !== gridSearch;
 
   // Sort once per list and mode. Filtering keeps that order, and the sort is a
   // total order, so each keystroke only filters.
@@ -648,9 +651,9 @@ export function ContentBrowserWorkspace({
       filterAssets(sortedAssets, {
         folderGuids,
         typeFilters,
-        search: deferredSearch,
+        search: gridSearch,
       }),
-    [deferredSearch, folderGuids, sortedAssets, typeFilters],
+    [gridSearch, folderGuids, sortedAssets, typeFilters],
   );
 
   const sortedChildFolders = useMemo(() => {
@@ -662,12 +665,12 @@ export function ContentBrowserWorkspace({
   }, [folderTrees, selectedFolderPath, sortMode]);
 
   const childFolders = useMemo(() => {
-    const needle = deferredSearch.trim().toLowerCase();
+    const needle = gridSearch.trim().toLowerCase();
     if (!needle) return sortedChildFolders;
     return sortedChildFolders.filter((folder) =>
       folder.name.toLowerCase().includes(needle),
     );
-  }, [deferredSearch, sortedChildFolders]);
+  }, [gridSearch, sortedChildFolders]);
 
   const gridItems = useMemo((): GridItem[] => {
     const items: GridItem[] = childFolders.map((folder) => ({
@@ -2648,11 +2651,11 @@ export function ContentBrowserWorkspace({
             {gridItems.length === 0 ? (
               <Empty data-testid="content-browser-empty-copy" className="border-0 py-10">
                 <EmptyHeader>
-                  <EmptyTitle>{deferredSearch.trim() || typeFilters.length ? "No Matching Assets" : "This Folder Is Empty"}</EmptyTitle>
-                  <EmptyDescription>{deferredSearch.trim() || typeFilters.length ? "Try another search or clear the filters." : "Add an asset or import files to get started."}</EmptyDescription>
+                  <EmptyTitle>{gridSearch.trim() || typeFilters.length ? "No Matching Assets" : "This Folder Is Empty"}</EmptyTitle>
+                  <EmptyDescription>{gridSearch.trim() || typeFilters.length ? "Try another search or clear the filters." : "Add an asset or import files to get started."}</EmptyDescription>
                 </EmptyHeader>
                 <EmptyContent>
-                  {deferredSearch.trim() || typeFilters.length ? (
+                  {gridSearch.trim() || typeFilters.length ? (
                     <Button variant="outline" size={phone ? "touch" : "sm"} onClick={() => { setSearch(""); setTypeFilters([]); }}>Clear Filters</Button>
                   ) : selectedRootWritable ? (
                     <div className="flex items-center gap-2">
