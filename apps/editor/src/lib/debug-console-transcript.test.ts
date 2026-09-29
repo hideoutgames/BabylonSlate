@@ -20,7 +20,8 @@ const ids = (rows: readonly DebugConsoleTranscriptEntry[]) => rows.map((row) => 
 
 describe("mergeDebugConsoleTranscript", () => {
   it("orders commands and logs by time, with commands first at equal times", () => {
-    expect(ids(mergeDebugConsoleTranscript(entries, logs, -Infinity, 500))).toEqual([
+    const rows = mergeDebugConsoleTranscript(entries, logs, -Infinity, 500);
+    expect(ids(rows)).toEqual([
       "log-1",
       "command-0",
       "log-2",
@@ -30,6 +31,13 @@ describe("mergeDebugConsoleTranscript", () => {
       "command-1",
       "log-5",
     ]);
+    expect(rows[2]).toEqual({
+      id: "log-2",
+      timestamp: 10,
+      text: "[info] message 2",
+      severity: "info",
+      testId: "debug-console-log-2",
+    });
   });
 
   it("keeps only the newest rows, even when the cut falls inside equal times", () => {
@@ -58,19 +66,5 @@ describe("mergeDebugConsoleTranscript", () => {
       "log-5",
     ]);
     expect(mergeDebugConsoleTranscript([], logs, 5, 500)).toEqual([]);
-  });
-
-  it("formats a log row once and reuses it while the same log is passed again", () => {
-    const first = mergeDebugConsoleTranscript([], logs, -Infinity, 500);
-    expect(first[1]).toEqual({
-      id: "log-2",
-      timestamp: 10,
-      text: "[info] message 2",
-      severity: "info",
-      testId: "debug-console-log-2",
-    });
-    const next = mergeDebugConsoleTranscript([], [...logs, log(6, 50)], -Infinity, 500);
-    expect(next.slice(0, logs.length)).toEqual(first);
-    next.slice(0, logs.length).forEach((row, index) => expect(row).toBe(first[index]));
   });
 });

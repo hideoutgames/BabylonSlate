@@ -145,7 +145,7 @@ describe("useContentBrowserGridWindow", () => {
     fireEvent.scroll(grid);
   }
 
-  it("moves the mounted tiles only when scrolling crosses a row boundary", () => {
+  it("mounts the tiles around the scroll position, including overscan rows", () => {
     stubGridSize(FOUR_COLUMNS_WIDE, TWO_ROWS_HIGH);
     render(<GridHarness count={300} />);
     // Rows 0-2 are in view plus four overscan rows below.

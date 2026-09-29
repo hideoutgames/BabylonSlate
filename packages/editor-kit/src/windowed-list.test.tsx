@@ -145,7 +145,7 @@ describe("WindowedList scrolling", () => {
     return [Math.min(...indices), Math.max(...indices)];
   }
 
-  it("moves the mounted rows only when scrolling crosses a row boundary", () => {
+  it("mounts the rows around the scroll position, including overscan rows", () => {
     const restore = stubNativeScrollerHeight("native-scroller", 280);
     try {
       const { getByTestId } = render(
