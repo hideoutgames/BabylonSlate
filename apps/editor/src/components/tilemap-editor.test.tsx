@@ -232,6 +232,7 @@ describe("TilemapDetails", () => {
     fireEvent.blur(screen.getByTestId("property-mapWidth"));
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({ width: 8, height: 64 }),
+      expect.any(String),
     );
   });
 

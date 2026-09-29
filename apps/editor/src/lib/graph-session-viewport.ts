@@ -1,37 +1,20 @@
 import { useCallback } from "react";
+import { useEditorSessionState } from "../context/editor-session-state-context";
+import type { GraphSessionViewport } from "./editor-session-state";
 
-export type GraphSessionViewport = { x: number; y: number; zoom: number };
-
-const viewports = new Map<string, GraphSessionViewport>();
-
-export function graphSessionViewportKey(
-  documentId: string,
-  surface = "default",
-): string {
-  return `${documentId}:${surface}`;
-}
-
-export function loadGraphSessionViewport(
-  key: string,
-): GraphSessionViewport | null {
-  return viewports.get(key) ?? null;
-}
-
-export function saveGraphSessionViewport(
-  key: string,
-  viewport: GraphSessionViewport,
-): void {
-  viewports.set(key, viewport);
-}
-
+/**
+ * Graph pan/zoom for one document surface, kept for the project session.
+ * Read at render (GraphEditor `sessionViewport`), saved on move end without
+ * re-rendering.
+ */
 export function useGraphSessionViewport(documentId: string, surface = "default") {
-  const key = graphSessionViewportKey(documentId, surface);
-  const sessionViewport = loadGraphSessionViewport(key);
+  const sessionState = useEditorSessionState();
+  const sessionViewport = sessionState.loadGraphViewport(documentId, surface);
   const onSessionViewportChange = useCallback(
     (viewport: GraphSessionViewport) => {
-      saveGraphSessionViewport(key, viewport);
+      sessionState.saveGraphViewport(documentId, surface, viewport);
     },
-    [key],
+    [documentId, sessionState, surface],
   );
   return { sessionViewport, onSessionViewportChange };
 }

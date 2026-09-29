@@ -31,7 +31,7 @@ import type {
 } from "@babylonslate/core";
 import { documentId, parseDocumentId, isAssetDocumentKind, isSceneWorkspaceKind, normalizeProjectSettings, normalizeScene, defaultExportPreset, DEFAULT_RENDER_PROJECT_SETTINGS, DEFAULT_PLAY_FRAME_CAP, DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS } from "@babylonslate/core";
 import {
-  appendJournalLine,
+  appendJournalLines,
   getTile,
   hasJournal,
   normalizeTilemapPayload,
@@ -68,11 +68,13 @@ import {
   diffGraphCommands,
   diffSceneCommands,
   EditSession,
+  journalRepathLine,
   replayJournalLines,
-  serializeJournalLine,
+  resolveJournalLines,
   SetAssetDocumentCommand,
   type EditCommand,
 } from "@babylonslate/edit";
+import { attachJournalFlushOnHide, JournalBuffer } from "../lib/journal-buffer";
 import {
   createAppSettingsStore,
   createDerivedStorage,
@@ -90,6 +92,7 @@ import type { TracePayload } from "@babylonslate/debugger";
 import {
   DocumentService,
   type DocumentContent,
+  type DocumentIdentityListener,
   type OpenDocument,
 } from "../services/document-service";
 import { attachEditGestureBoundaries } from "../services/edit-gesture-boundaries";
@@ -106,6 +109,7 @@ import {
   isMutatingApplyBlocked,
 } from "../lib/document-lock-apply";
 import { dirtyScenesBlockingOpen } from "../lib/exclusive-scene";
+import { moveKeyedEntry } from "../lib/move-keyed-entry";
 import { notifyDocumentEdited } from "../lib/notify-document-edited";
 import { advanceTestIdleClock } from "../lib/document-working-set";
 import { shouldApplyAssetDocumentChange } from "../lib/asset-document-change";
@@ -173,6 +177,7 @@ import {
 } from "../shell/anim-document-layout";
 import {
   dockviewApiKey,
+  dockviewApiKeyPairs,
   dockviewApiKeysForDocument,
   dockviewSurfaceForAnimMode,
   type DockviewSurface,
@@ -309,12 +314,17 @@ interface DocumentContextValue {
     bytes: Uint8Array,
     decision?: "keep" | "replace",
   ) => Promise<PluginImportResult>;
-  /** Retarget open tabs after a Scene/Graph file move or rename. */
+  /**
+   * Retarget open tabs after a file move or rename. Undo history, dock Focus
+   * state, Anim mode and session view state follow the document to its new id.
+   */
   repathDocument: (
     kind: AssetDocumentKind,
     oldPath: string,
     newPath: string,
   ) => void;
+  /** Document opens and renames, for session state keyed by document id. */
+  subscribeDocumentIdentity: (listener: DocumentIdentityListener) => () => void;
   retryFailedTextureEncoding: () => Promise<number>;
   prepareAreaEmission: ProjectService["prepareAreaEmission"];
   collectPlayAreaEmissions: (scenes: readonly (SerializedScene | null | undefined)[], includeGraphs?: boolean) => Promise<Map<string, import("@babylonslate/assets").AreaEmissionPixels>>;
@@ -335,7 +345,6 @@ interface DocumentContextValue {
    */
   textureUsageBlockedReason: (guid: string) => string | null;
   onSessionDiagnostic: (listener: (line: string) => void) => () => void;
-  sessionDiagnostics: string[];
   openDocuments: OpenDocument[];
   tabOrder: string[];
   activeDocumentId: string | null;
@@ -636,6 +645,8 @@ function openGraphCompileDocuments(
 
 const DocumentContext = createContext<DocumentContextValue | null>(null);
 
+const THUMBNAIL_DECODE_LRU_ENTRIES = 64;
+
 /** Bumps only the Windows menu so dock add/remove does not remount editor chrome. */
 const DockWindowTickContext = createContext(0);
 
@@ -753,7 +764,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     () => new Set(),
   );
   const saveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const thumbnailLruRef = useRef(new ThumbnailDecodeLru(64));
+  // Keyed by asset guid, and projects made from one template share guids:
+  // enterEditor replaces it so one project never shows another's thumbnails.
+  const thumbnailLruRef = useRef(new ThumbnailDecodeLru(THUMBNAIL_DECODE_LRU_ENTRIES));
   const thumbnailsEnabledRef = useRef(true);
   const [thumbnailVersions, setThumbnailVersions] = useState<Record<string, number>>({});
 
@@ -930,6 +943,17 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     }
     return derivedStorageRef.current;
   }, []);
+
+  // Applied edits reach the recovery journal in short batches; every path
+  // that reads, clears or abandons the journal flushes first. One buffer for
+  // the provider's lifetime keeps each project's writes in order.
+  const [journalBuffer] = useState(
+    () =>
+      new JournalBuffer(async (guid, lines) =>
+        appendJournalLines(await ensureDerived(), guid, lines),
+      ),
+  );
+  useEffect(() => attachJournalFlushOnHide(journalBuffer), [journalBuffer]);
 
   const recordRecent = useCallback(
     async (
@@ -1188,12 +1212,85 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [bump, projectService],
   );
 
+  /**
+   * The one rename path: the tab, its undo history, crash-journal lines, Focus
+   * state and Anim mode move to the new id together. DocumentService also
+   * notifies the project session store (camera, graph pan/zoom, module cards)
+   * through `subscribeDocumentIdentity`.
+   */
   const repathDocument = useCallback(
     (kind: AssetDocumentKind, oldPath: string, newPath: string) => {
-      documentService.repathDocument(kind, oldPath, newPath);
+      const oldId = documentId({ kind, path: oldPath });
+      const wasOpen = oldPath !== newPath && !!documentService.getDocument(oldId);
+      // The workspace remounts under the new id; keep its live dock layout.
+      if (wasOpen) captureLayoutForId(oldId);
+      const moved = documentService.repathDocument(kind, oldPath, newPath);
+      if (moved) {
+        const { newId } = moved;
+        editSessionRef.current.rekeyDocument(oldId, newId);
+        const guid = projectService.guid;
+        if (wasOpen && guid) {
+          // Unsaved edits journalled under the old id replay onto the moved
+          // file, together with any later Undo journalled under the new id.
+          // The marker goes through the batch buffer so it lands after the
+          // buffered edits it renames.
+          journalBuffer.append(
+            guid,
+            journalRepathLine(oldId, newId, new Date().toISOString()),
+          );
+        }
+        // Live dock handles belong to the workspace unmounting under the old
+        // id. Release them as closeDocument does, so its teardown cannot write
+        // placements back under the old id; the remount registers new ones.
+        for (const key of dockviewApiKeysForDocument(oldId)) {
+          dockviewApisRef.current.delete(key);
+        }
+        disposeDockSubscriptions(oldId);
+        const pairs = dockviewApiKeyPairs(oldId, newId);
+        for (const [from, to] of pairs) {
+          moveKeyedEntry(preFocusLayoutsRef.current, from, to);
+          moveKeyedEntry(sceneFocusedLayoutsRef.current, from, to);
+        }
+        setFocusedLayoutIds((current) => {
+          if (!pairs.some(([from, to]) => current.has(from) || current.has(to))) {
+            return current;
+          }
+          const next = new Set(current);
+          for (const [from, to] of pairs) {
+            next.delete(to);
+            if (current.has(from)) {
+              next.delete(from);
+              next.add(to);
+            }
+          }
+          return next;
+        });
+        setAnimEditorModes((current) => {
+          if (!(oldId in current) && !(newId in current)) return current;
+          const next = { ...current };
+          const mode = next[oldId];
+          delete next[oldId];
+          delete next[newId];
+          if (mode) next[newId] = mode;
+          return next;
+        });
+      }
       bump();
     },
-    [bump, documentService],
+    [
+      bump,
+      captureLayoutForId,
+      disposeDockSubscriptions,
+      documentService,
+      journalBuffer,
+      projectService,
+    ],
+  );
+
+  const subscribeDocumentIdentity = useCallback(
+    (listener: DocumentIdentityListener) =>
+      documentService.onIdentityChange(listener),
+    [documentService],
   );
 
   const retryFailedTextureEncoding = useCallback(async () => {
@@ -1237,21 +1334,22 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     const guid = projectService.guid;
     if (!guid) return;
     const derived = await ensureDerived();
-    const lines = await readJournalLines(derived, guid);
+    const lines = await journalBuffer.afterFlush(guid, () =>
+      readJournalLines(derived, guid),
+    );
     if (lines.length === 0) {
       setRecoveryAvailable(false);
       return;
     }
 
     // Ensure every journal target document is open so replay is not skipped.
-    for (const raw of lines) {
+    // Resolved ids follow renames, so a renamed document opens at its new path.
+    for (const { docId } of resolveJournalLines(lines)) {
+      const ref = parseDocumentId(docId);
+      if (!ref || !isAssetDocumentKind(ref.kind)) continue;
+      if (documentService.getState().openDocuments.has(docId)) continue;
+      const { kind, path } = ref;
       try {
-        const line = JSON.parse(raw) as { docId?: string };
-        const docId = line.docId;
-        const ref = typeof docId === "string" ? parseDocumentId(docId) : null;
-        if (!docId || !ref || !isAssetDocumentKind(ref.kind)) continue;
-        if (documentService.getState().openDocuments.has(docId)) continue;
-        const { kind, path } = ref;
         await documentService.openDocument(
           projectService,
           { kind, path, label: path.split("/").pop() ?? path },
@@ -1259,7 +1357,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           false,
         );
       } catch {
-        // Skip malformed lines; replayJournalLines will ignore them too.
+        // A missing document is skipped by replayJournalLines too.
       }
     }
 
@@ -1285,7 +1383,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     // Recovered edits remain unsaved. Keep the journal until Save/clean Close.
     setRecoveryAvailable(false);
     bump();
-  }, [bump, documentService, ensureDerived, projectService]);
+  }, [bump, documentService, ensureDerived, journalBuffer, projectService]);
 
   const enterEditor = useCallback(
     async (
@@ -1304,6 +1402,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       sceneFocusedLayoutsRef.current.clear();
       setFocusedLayoutIds(new Set());
       editSessionRef.current.clear();
+      thumbnailLruRef.current = new ThumbnailDecodeLru(THUMBNAIL_DECODE_LRU_ENTRIES);
       try {
         await documentService.initializeFromProject(
           projectService,
@@ -1521,6 +1620,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       clearTimeout(saveDebounceRef.current);
       saveDebounceRef.current = null;
     }
+    // Buffered journal records start writing as Save begins, so a Save that
+    // fails part-way leaves them recoverable. The clear below awaits them.
+    void journalBuffer.flush();
     const projectSave = projectSaveState.current.capture(document);
     try {
       progress.phase("audio-reverb");
@@ -1585,8 +1687,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       if (guid) {
         progress.phase("journal");
         const derived = await ensureDerived();
-        const cleared = await truncateJournal(derived, guid, () =>
-          documentService.getDirtyDocuments().length === 0 && projectDocumentRef.current === document,
+        const cleared = await journalBuffer.afterFlush(guid, () =>
+          truncateJournal(derived, guid, () =>
+            documentService.getDirtyDocuments().length === 0 && projectDocumentRef.current === document,
+          ),
         );
         if (cleared) setRecoveryAvailable(false);
       }
@@ -1638,6 +1742,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     collectGraphTypeSchemas,
     documentService,
     ensureDerived,
+    journalBuffer,
     projectService,
   ]);
 
@@ -1720,7 +1825,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     const guid = projectService.guid;
     if (guid) {
       const derived = await ensureDerived();
-      await truncateJournal(derived, guid);
+      await journalBuffer.afterFlush(guid, () => truncateJournal(derived, guid));
     }
     emitEditorUtilityLifecycle(EDITOR_UTILITY_EVENTS.shutdown);
     await projectService.closeProject();
@@ -1751,6 +1856,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     disposeDockSubscriptions,
     documentService,
     ensureDerived,
+    journalBuffer,
     projectService,
     refreshProjectList,
     clearPlayPreviewScripts,
@@ -1888,10 +1994,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     const guid = projectService.guid;
     if (guid) {
       const derived = await ensureDerived();
-      await truncateJournal(derived, guid);
+      await journalBuffer.afterFlush(guid, () => truncateJournal(derived, guid));
     }
     setRecoveryAvailable(false);
-  }, [ensureDerived, projectService]);
+  }, [ensureDerived, journalBuffer, projectService]);
 
   const keepRecovery = useCallback(async () => {
     await replayRecoveryJournal();
@@ -1919,9 +2025,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       });
       documentService.closeDocument(id);
       editSessionRef.current.dropDocument(id);
+      void journalBuffer.flush();
       bump();
     },
-    [bump, disposeDockSubscriptions, documentService],
+    [bump, disposeDockSubscriptions, documentService, journalBuffer],
   );
 
   const closeDocumentsForPaths = useCallback(
@@ -2097,13 +2204,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         );
         if (blocking.length > 0) {
           setPendingExclusiveScene(ref);
-          bump();
           return;
         }
       }
       await finishOpenDocument(ref);
     },
-    [bump, documentService, finishOpenDocument],
+    [documentService, finishOpenDocument],
   );
 
   const openRecordedTrace = useCallback(
@@ -2194,8 +2300,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       metadata: { ...current.metadata, version, updatedAt: new Date().toISOString() },
     } : current);
     scheduleDebouncedSave();
-    bump();
-  }, [bump, scheduleDebouncedSave]);
+  }, [scheduleDebouncedSave]);
 
   const updateProjectSettings = useCallback(
     (settings: Partial<ProjectDocument["settings"]>) => {
@@ -2249,9 +2354,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         };
       });
       scheduleDebouncedSave();
-      bump();
     },
-    [bump, scheduleDebouncedSave],
+    [scheduleDebouncedSave],
   );
 
   const prefillSourceControlFromGit = useCallback(async () => {
@@ -2288,21 +2392,21 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const notifyAppliedCommand = useCallback(
     (id: string, command: EditCommand<unknown>) => {
       const guid = projectService.guid;
-      const line = serializeJournalLine({
-        v: 1,
+      const line = {
+        v: 1 as const,
         docId: id,
         at: new Date().toISOString(),
         command: commandToJournalPayload(command),
-      });
+      };
       return notifyDocumentEdited({
         scheduleDebouncedSave,
         bump,
         journal: async () => {
-          if (guid) await appendJournalLine(await ensureDerived(), guid, line);
+          if (guid) journalBuffer.append(guid, line);
         },
       });
     },
-    [bump, ensureDerived, projectService, scheduleDebouncedSave],
+    [bump, journalBuffer, projectService, scheduleDebouncedSave],
   );
 
   const applyGraphChange = useCallback(
@@ -2458,7 +2562,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     const next = syncSceneActorsFromPrefabs(scene, templates);
     if (scenesEqualForPrefabSync(scene, next)) return;
     if (options?.quiet) {
-      sceneDoc.content = next;
+      documentService.patchLoadedContent(sceneDoc.id, next);
       bump();
       return;
     }
@@ -3510,7 +3614,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const loadAssetThumbnail = useCallback(
     async (assetGuid: string): Promise<Uint8Array | null> => {
       if (!thumbnailsEnabledRef.current) return null;
-      const cached = thumbnailLruRef.current.get(assetGuid);
+      // A read that finishes after a project switch fills the old cache only.
+      const lru = thumbnailLruRef.current;
+      const cached = lru.get(assetGuid);
       if (cached) return cached;
       const guid = projectService.guid;
       if (!guid) return null;
@@ -3521,7 +3627,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       // their materials were ready. Texture thumbnail keys stay unchanged.
       const key = rendered ? `${assetGuid}.render-v2` : assetGuid;
       const bytes = await readThumbnail(derived, guid, key);
-      if (bytes) thumbnailLruRef.current.set(assetGuid, bytes);
+      if (bytes) lru.set(assetGuid, bytes);
       else if (asset && rendered) {
         enqueueModelThumbnailJobs([{
           guid: assetGuid,
@@ -3646,7 +3752,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         const guid = projectService.guid;
         if (!guid) return false;
         const derived = await ensureDerived();
-        return hasJournal(derived, guid);
+        return journalBuffer.afterFlush(guid, () => hasJournal(derived, guid));
       },
       /** Open main graph without activating it (avoids GraphEditor stomping edits). */
       ensureMainGraphOpen: async () => {
@@ -3894,6 +4000,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     bump,
     documentService,
     ensureDerived,
+    journalBuffer,
     projectService,
     projectDocument,
     updateProjectSettings,
@@ -4348,6 +4455,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       exportPlugin,
       importPlugin,
       repathDocument,
+      subscribeDocumentIdentity,
       retryFailedTextureEncoding,
       prepareAreaEmission,
       collectPlayAreaEmissions,
@@ -4355,7 +4463,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       textureAlignmentStale,
       textureUsageBlockedReason,
       onSessionDiagnostic,
-      sessionDiagnostics: projectService.sessionDiagnostics,
       loadAssetThumbnail,
       writeAssetThumbnail,
       thumbnailVersions,
@@ -4417,6 +4524,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       exportPlugin,
       importPlugin,
       repathDocument,
+      subscribeDocumentIdentity,
       retryFailedTextureEncoding,
       prepareAreaEmission,
       collectPlayAreaEmissions,

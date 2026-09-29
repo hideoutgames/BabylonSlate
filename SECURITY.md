@@ -31,7 +31,8 @@ plausibly end up in a working tree. None of it belongs in git:
 - Anything belonging to a user: project files, telemetry, crash reports.
 
 The same applies to commit messages, PR titles and descriptions, code comments,
-and test fixtures.
+and test fixtures. One exception: a PR description may link the agent session
+that produced it.
 
 Xcode build-setting variable references may be tracked when they contain no
 literal signing identifier. Supply the resolved IDs through CI configuration or
@@ -50,7 +51,8 @@ Three layers, all of which run on Linux and need no macOS or Xcode:
    both can contain authenticated URLs or arbitrary metadata.
 3. `scripts/check-public-hygiene.mjs` (also run as a unit test, so `pnpm verify`
    covers it) rejects agent session links and credential markers in tracked
-   content, pull-request metadata/comments, commit messages, and added lines.
+   content, pull-request titles/comments, commit messages, and added lines, and
+   credential markers and attribution footers in pull-request descriptions.
 
 None of these can catch a secret that has been renamed and obfuscated. They are a
 safety net under the actual rule, which is human: don't put secrets in a public

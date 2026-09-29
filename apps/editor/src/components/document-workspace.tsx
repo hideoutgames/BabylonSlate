@@ -2,7 +2,7 @@ import { InputAssetEditingProvider } from "../context/input-asset-editing-contex
 import { SceneToolsProvider } from "../context/scene-tools-context";
 import { CONTENT_BROWSER_ID, isAssetDocumentKind, isSceneWorkspaceKind, type SerializedScene } from "@babylonslate/core";
 import type { DockviewApi } from "dockview-react";
-import { useCallback, useEffect, useLayoutEffect } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { useDocuments } from "../context/document-context";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
 import { useProjectSearch } from "../context/project-search-context";
@@ -94,13 +94,20 @@ function RegisteredDockviewShell({
     },
     [id, registerDockviewApi, surface],
   );
+  // Dockview reports its API only once per mount, so only unmount may release
+  // it. Context callbacks change identity with provider state (Animation Graph
+  // modes), so read them through refs instead of re-running this cleanup.
+  const captureLayoutRef = useRef(captureLayoutForId);
+  captureLayoutRef.current = captureLayoutForId;
+  const unregisterRef = useRef(unregisterDockviewApi);
+  unregisterRef.current = unregisterDockviewApi;
 
   useLayoutEffect(() => {
     return () => {
-      captureLayoutForId(id);
-      unregisterDockviewApi(id, surface);
+      captureLayoutRef.current(id);
+      unregisterRef.current(id, surface);
     };
-  }, [id, surface, captureLayoutForId, unregisterDockviewApi]);
+  }, [id, surface]);
 
   return (
     <DockviewShell

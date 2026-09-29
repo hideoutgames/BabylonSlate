@@ -263,6 +263,7 @@ describe("SpriteAnimation editor", () => {
     });
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({ frameDurationMs: 40 }),
+      expect.any(String),
     );
   });
 
@@ -325,6 +326,7 @@ describe("SpriteAnimation editor", () => {
           }),
         ],
       }),
+      expect.any(String),
     );
   });
 

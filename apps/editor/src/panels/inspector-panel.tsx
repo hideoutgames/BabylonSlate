@@ -123,6 +123,7 @@ import {
   collectClassGraphsForPalette,
   collectGraphTypeAssets,
   collectScriptInterfacesForPalette,
+  logicGraphEditMergeKey,
   serializedGraphFromDocument,
   typeAssetPickerEntries,
   typeSchemasFromGraphAssets,
@@ -1057,17 +1058,19 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
   const persistGraph = (next: SerializedGraph) => {
     if (!doc) return;
     if (ruleTransition && parsedAnim) {
+      const ruleKey = logicGraphEditMergeKey(graph, next);
       void applyAssetDocumentChange(
         documentId,
         patchTransition(parsedAnim, ruleTransition.id, {
           ruleGraph: persistTransitionRuleGraph(next),
         }) as unknown as Record<string, unknown>,
+        ruleKey ? `anim-rule:${ruleTransition.id}:${ruleKey}` : undefined,
       );
       return;
     }
     const commit = commitLogicGraph(doc.ref.kind, doc.content, next);
     if (commit.kind !== "graph") {
-      void applyAssetDocumentChange(documentId, commit.payload);
+      void applyAssetDocumentChange(documentId, commit.payload, commit.mergeKey);
       return;
     }
     void applyGraphChange(documentId, commit.graph);

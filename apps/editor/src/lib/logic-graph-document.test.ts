@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SerializedGraph } from "@babylonslate/core";
 import { createDefaultAnimGraph } from "@babylonslate/anim-graph";
+import { DocumentEditStack, SetAssetDocumentCommand } from "@babylonslate/edit";
 import {
   classGraphFromHeaderPayload,
   collectClassGraphsForPalette,
@@ -385,6 +386,27 @@ describe("commitLogicGraph", () => {
       nodes: next.nodes,
       edges: next.edges,
     });
+  });
+
+  it("records an Animation Object pin default scrub as one undo step", () => {
+    const stack = new DocumentEditStack<Record<string, unknown>>({ maxEntries: 50, maxBytes: 1_000_000 });
+    const initial = createDefaultAnimGraph() as unknown as Record<string, unknown>;
+    let current = initial;
+    const scrub = (value: number) => {
+      const graph = serializedGraphFromDocument("anim-graph", current)!;
+      const [first, ...rest] = graph.nodes;
+      const commit = commitLogicGraph("anim-graph", current, {
+        ...graph,
+        nodes: [{ ...first!, data: { ...first!.data, "default:rate": value } }, ...rest],
+      });
+      if (commit.kind !== "anim-graph") throw new Error("expected an Animation Object commit");
+      current = stack.apply(current, new SetAssetDocumentCommand(current, commit.payload, commit.mergeKey)).doc;
+    };
+    scrub(0.5);
+    scrub(0.75);
+    scrub(1);
+    expect(stack.undoDepth).toBe(1);
+    expect(stack.undo(current)!.doc).toEqual(initial);
   });
 });
 

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MessageDetails } from "./message-details";
+import { DiagnosticResultRow } from "./diagnostic-result-row";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   addDecorator,
@@ -60,7 +61,6 @@ import {
 } from "@babylonslate/editor-kit";
 import { GraphEditor, treeNodeTypes, type PaletteNode } from "@babylonslate/graph-ui";
 import { defaultJsValue } from "@babylonslate/scripting";
-import { Badge } from "@babylonslate/ui/components/badge";
 import { Button } from "@babylonslate/ui/components/button";
 import { Empty, EmptyDescription, EmptyTitle } from "@babylonslate/ui/components/empty";
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
@@ -111,6 +111,15 @@ function propertyValue(field: BtPropertyField, properties: Record<string, unknow
   return properties[field.key];
 }
 
+/** One scrub or typed edit on a node or attachment field is one undo step. */
+function btFieldMergeKey(
+  nodeId: string,
+  ownerId: string,
+  updates: Record<string, unknown>,
+): string {
+  return `behaviour-tree:${nodeId}:${ownerId}:${Object.keys(updates).sort().join(",")}`;
+}
+
 function useBehaviourTreeDocument() {
   const { documentId: workspaceDocumentId } = useDocumentWorkspace();
   const {
@@ -127,10 +136,12 @@ function useBehaviourTreeDocument() {
     () => asTree((entry?.content ?? {}) as Record<string, unknown>),
     [entry?.content],
   );
-  const commit = (next: BehaviourTreeDocument) => {
+  /** `mergeKey` groups one scrub's edits into one undo entry. */
+  const commit = (next: BehaviourTreeDocument, mergeKey?: string) => {
     void applyAssetDocumentChange(
       workspaceDocumentId,
       next as unknown as Record<string, unknown>,
+      mergeKey,
     );
   };
   const overlay = useMemo((): BtGraphOverlay | undefined => {
@@ -624,7 +635,7 @@ export function BehaviourTreeCompilerResultsPanel(_props: IDockviewPanelProps) {
           </EmptyDescription>
         </Empty>
       ) : (
-        <ScrollArea className="min-h-0 flex-1 p-2">
+        <ScrollArea className="min-h-0 flex-1 py-1">
           <WindowedList
             itemCount={diagnostics.length}
             rowHeight={WINDOWED_LIST_TOUCH_ROW_HEIGHT}
@@ -632,23 +643,17 @@ export function BehaviourTreeCompilerResultsPanel(_props: IDockviewPanelProps) {
             {(index) => {
               const row = diagnostics[index]!;
               return (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="touch"
-                  className="h-full w-full min-h-0 justify-start gap-2 overflow-hidden text-left"
-                  onClick={() => {
+                <DiagnosticResultRow
+                  severity={row.severity}
+                  message={row.message}
+                  code={row.code}
+                  selected={selected !== null && row.code === selected.code && row.message === selected.message && row.nodeId === selected.nodeId}
+                  onSelect={() => {
                     setSelectedDiagnostic(row);
                     if (row.nodeId) focusNode(row.nodeId);
                   }}
-                  data-testid={`behaviour-tree-diagnostic-${row.code}`}
-                  data-severity={row.severity}
-                >
-                  <Badge variant={row.severity === "error" ? "destructive" : "secondary"}>
-                    {humanizePropertyLabel(row.severity)}
-                  </Badge>
-                  <SelectableText className="truncate">{row.message}</SelectableText>
-                </Button>
+                  testId={`behaviour-tree-diagnostic-${row.code}`}
+                />
               );
             }}
           </WindowedList>
@@ -896,6 +901,7 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
           patchNode(doc, selected.id, {
             properties: { ...selected.properties, ...updates },
           }),
+          btFieldMergeKey(selected.id, "node", updates),
         ),
       ),
     );
@@ -960,6 +966,7 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
                 : row,
             ),
           }),
+          btFieldMergeKey(selected.id, attachment.id, updates),
         ),
       ),
     );
@@ -1006,6 +1013,7 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
                 row.id === attachment.id ? { ...row, intervalMs } : row,
               ),
             }),
+            btFieldMergeKey(selected.id, attachment.id, { intervalMs }),
           ),
       });
       rows.push({
@@ -1021,6 +1029,7 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
                 row.id === attachment.id ? { ...row, randomDeviationMs } : row,
               ),
             }),
+            btFieldMergeKey(selected.id, attachment.id, { randomDeviationMs }),
           ),
       });
     }
@@ -1034,6 +1043,7 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
                 : row,
             ),
           }),
+          btFieldMergeKey(selected.id, attachment.id, updates),
         ),
       ),
     );

@@ -7,7 +7,9 @@ import {
   type SerializedScene,
 } from "../packages/core/src/index.ts";
 import {
+  createContentBrowserAsset,
   openAssetFromBrowser,
+  openContentBrowser,
   openMainScene,
   openTestProject,
 } from "./open-test-project";
@@ -121,5 +123,64 @@ test("M5: one Undo restores a deleted actor subtree", async ({ page }) => {
   await page.getByTestId("redo-document").click();
   await expect(parent).toHaveCount(0);
   await expect(child).toHaveCount(0);
+  await expect(control).toBeVisible();
+});
+
+test("Undo and Focus follow a dirty Scene renamed in the Content Browser", async ({
+  page,
+}) => {
+  await openTestProject(page);
+  await createContentBrowserAsset(page, "Scene", "RenameProbe");
+  await openMainScene(page);
+  const scene: SerializedScene = {
+    ...createDefaultScene(),
+    actors: [createActor("parent", "Parent"), createActor("control", "Control")],
+  };
+  expect(
+    await page.evaluate(async (next) => {
+      return (
+        globalThis as unknown as {
+          __babylonslateTest: {
+            setActiveSceneContent: (scene: SerializedScene) => Promise<boolean>;
+          };
+        }
+      ).__babylonslateTest.setActiveSceneContent(next);
+    }, scene),
+  ).toBe(true);
+  const parent = page.getByTestId("tree-row-actor:parent");
+  const control = page.getByTestId("tree-row-actor:control");
+  await expect(parent).toBeVisible();
+  await page.getByTestId("outliner-menu-parent").click();
+  await page.getByTestId("outliner-delete-parent").click();
+  await expect(parent).toHaveCount(0);
+  const focus = page.getByTestId("focus-layout");
+  await focus.click();
+  await expect(focus).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("scene-outliner-panel")).not.toBeVisible();
+
+  await openContentBrowser(page);
+  await page.getByTestId("content-browser-search").fill("RenameProbe");
+  const tile = page.locator(
+    '[data-asset-path="assets/RenameProbe.scene.babasset"]',
+  );
+  await expect(tile).toBeVisible();
+  await tile.click();
+  await tile.click({ button: "right" });
+  await page.getByTestId("context-menu-item-rename").click();
+  await page.getByTestId("content-browser-name-input").fill("Renamed");
+  await page.getByTestId("content-browser-name-confirm").click();
+  await expect(page.getByTestId("content-browser-name-dialog")).toHaveCount(0);
+  await expect(tile).toHaveCount(0);
+
+  // The renamed tab keeps its Focus layout and its unsaved history.
+  await openMainScene(page);
+  await expect(focus).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("scene-outliner-panel")).not.toBeVisible();
+  await focus.click();
+  await expect(focus).toHaveAttribute("aria-pressed", "false");
+  await expect(control).toBeVisible();
+  await expect(parent).toHaveCount(0);
+  await page.getByTestId("undo-document").click();
+  await expect(parent).toBeVisible();
   await expect(control).toBeVisible();
 });

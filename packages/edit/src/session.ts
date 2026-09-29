@@ -110,6 +110,21 @@ export class EditSession {
     this.stacks.delete(documentId);
   }
 
+  /**
+   * Move a renamed or moved document's history to its new id. Nothing stays
+   * under `oldId`, so a later document opened at the old path starts empty.
+   * Any stack already under `newId` is dropped rather than kept: it recorded
+   * commands against another document's content, and undoing them on the
+   * renamed document could corrupt it.
+   */
+  rekeyDocument(oldId: string, newId: string): void {
+    if (oldId === newId) return;
+    const stack = this.stacks.get(oldId);
+    this.stacks.delete(oldId);
+    if (stack) this.stacks.set(newId, stack);
+    else this.stacks.delete(newId);
+  }
+
   clear(): void {
     this.stacks.clear();
   }

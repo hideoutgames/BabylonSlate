@@ -57,10 +57,14 @@ function useAudioDocument() {
     (asset) => asset.path === doc?.ref.path,
   );
   const assetName = indexed?.header.name ?? "";
-  const commit = (next: AudioPayload | Record<string, unknown>) => {
+  const commit = (
+    next: AudioPayload | Record<string, unknown>,
+    mergeKey?: string,
+  ) => {
     void applyAssetDocumentChange(
       documentId,
       next as unknown as Record<string, unknown>,
+      mergeKey,
     );
   };
   return {
@@ -283,11 +287,15 @@ export function AudioDetails({
 }: {
   payload: Record<string, unknown>;
   assetName: string;
-  onChange?: (next: Record<string, unknown>) => void;
+  /** `mergeKey` groups one scrub's edits into one undo entry. */
+  onChange?: (next: Record<string, unknown>, mergeKey?: string) => void;
 }) {
   const { assetRegistry } = useDocuments();
   const audio = normalizeAudioPayload(payload);
   const [pick, setPick] = useState<"channel" | "atten" | null>(null);
+  /** Continuous field edit: one scrub on `field` is one undo step. */
+  const edit = (next: AudioPayload, field: string) =>
+    onChange?.(next as unknown as Record<string, unknown>, `audio:${field}`);
   useEffect(() => {
     persistFilledClipName(payload, assetName, onChange);
   }, [assetName, onChange, payload]);
@@ -318,7 +326,7 @@ export function AudioDetails({
       value: audio.volume,
       min: 0,
       max: 1,
-      onChange: (volume) => onChange?.({ ...audio, volume }),
+      onChange: (volume) => edit({ ...audio, volume }, "volume"),
     },
     {
       id: "loop",
@@ -343,7 +351,7 @@ export function AudioDetails({
             value: audio.pitchMin,
             min: AUDIO_PITCH_MIN,
             max: AUDIO_PITCH_MAX,
-            onChange: (pitchMin: number) => onChange?.({ ...audio, pitchMin }),
+            onChange: (pitchMin: number) => edit({ ...audio, pitchMin }, "pitchMin"),
           },
           {
             id: "pitchMax",
@@ -352,7 +360,7 @@ export function AudioDetails({
             value: audio.pitchMax,
             min: AUDIO_PITCH_MIN,
             max: AUDIO_PITCH_MAX,
-            onChange: (pitchMax: number) => onChange?.({ ...audio, pitchMax }),
+            onChange: (pitchMax: number) => edit({ ...audio, pitchMax }, "pitchMax"),
           },
         ]
       : [
@@ -363,7 +371,7 @@ export function AudioDetails({
             value: audio.pitch,
             min: AUDIO_PITCH_MIN,
             max: AUDIO_PITCH_MAX,
-            onChange: (pitch: number) => onChange?.({ ...audio, pitch }),
+            onChange: (pitch: number) => edit({ ...audio, pitch }, "pitch"),
           },
         ]),
   ];
@@ -456,7 +464,8 @@ export function AudioClips({
   path: string;
   payload: Record<string, unknown>;
   assetName: string;
-  onChange?: (next: Record<string, unknown>) => void;
+  /** A Weight scrub passes one merge key per clip so it is one undo step. */
+  onChange?: (next: Record<string, unknown>, mergeKey?: string) => void;
 }) {
   const { writeAudioClipChunk, removeAudioClipChunk } = useDocuments();
   const audio = fillEmptySourceClipName(payload, assetName);
@@ -521,7 +530,7 @@ export function AudioClips({
                     const clips = audio.clips.map((entry, clipIndex) =>
                       clipIndex === index ? { ...entry, weight } : entry,
                     );
-                    onChange?.({ ...audio, clips });
+                    onChange?.({ ...audio, clips }, `audio:clip:${clip.chunkId}:weight`);
                   }}
                 />
               </div>
