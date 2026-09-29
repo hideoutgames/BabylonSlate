@@ -4,7 +4,7 @@ import { createDefaultScene, MAIN_SCENE_FILE } from "../packages/core/src/projec
 import { minimalProjectFiles } from "../packages/assets/src/test-support/minimal-project";
 import { decodeAssetDocument, encodeAssetDocument } from "../packages/assets/src/asset-document";
 import { normalizeModelPayload } from "../packages/assets/src/model-payload";
-import { encodeTriangleGlb } from "../packages/render/src/glb-test-fixtures";
+import { encodeUvSphereGlb } from "../packages/render/src/glb-test-fixtures";
 import { openMinimalTestProject } from "./minimal-project";
 import { openMainScene, waitForSceneViewportReady, waitForEditorInteractive } from "./open-test-project";
 import { closeProjectViaSettings } from "./close-project";
@@ -122,13 +122,13 @@ test.describe("Scene modes", { tag: IPAD_TEST_TAG }, () => {
     expect((await content(page)).actors.flatMap((actor) => actor.components).find((component) => component.classId === "LandscapeComponent")!.properties.collisionsEnabled).toBe(true);
   });
 
-  test("selects only Models and paints one undoable foliage component per stroke", async ({ page, isMobile }) => {
+  test("selects only Models and reopens saved, undoable foliage strokes", async ({ page, isMobile }) => {
     test.setTimeout(120_000);
     const files = await landscapeProjectFiles();
     const guid = "00000000-0000-4000-8000-000000000010";
     files.set("assets/brush.model.babasset", await encodeAssetDocument({ guid, name: "Brush Model", type: "Model", version: 1, payload: {} }, {
       headerPayload: { ...normalizeModelPayload({}) },
-      extraChunks: [{ id: "source", kind: "geometry", mime: "model/gltf-binary", data: encodeTriangleGlb() }],
+      extraChunks: [{ id: "source", kind: "geometry", mime: "model/gltf-binary", data: encodeUvSphereGlb(4, 8) }],
     }));
     await openMinimalTestProject(page, files); await openMainScene(page);
     await selectMode(page, "Landscape");
@@ -153,5 +153,12 @@ test.describe("Scene modes", { tag: IPAD_TEST_TAG }, () => {
     await expect.poll(async () => (await foliage()).length).toBe(1);
     await selectMode(page, "Design");
     await expect(page.getByTestId("scene-outliner-panel")).toContainText("Foliage Group 1 Stroke");
+    await saveAllIfEnabled(page);
+    await closeProjectViaSettings(page);
+    await page.getByTestId("open-listed-project-TestProject").click();
+    await waitForEditorInteractive(page);
+    await openMainScene(page);
+    await waitForSceneViewportReady(page);
+    expect((await foliage())[0]!.properties.batches).toEqual(batches);
   });
 });
