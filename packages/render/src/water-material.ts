@@ -8,7 +8,7 @@ import { sceneWaterRemovals, waterRemovalShapeVector, waterRemovalWorldRadius } 
  * Wind-chop octaves: [heading offset (radians), wavenumber multiplier, slope, speed, phase].
  * Sharp-crested `exp(sin - 1)` waves with a little domain drag read as wind chop rather than
  * the regular interference of plain sines. All are world-space and advect with the current.
- * Realistic uses all six (WebGL shader-size budget, with headroom for four lights); Stylized uses the first three.
+ * Realistic uses all six (the WebGL shader-size budget; the browser proof shades it under seven lights); Stylized uses three.
  */
 const DETAIL_OCTAVES = [
   [0.0, 1.0, 0.22, 1.0, 0.0], [0.9, 1.61, 0.2, 0.93, 1.7], [-0.7, 2.59, 0.17, 1.07, 4.1],
@@ -17,7 +17,7 @@ const DETAIL_OCTAVES = [
 const STYLIZED_OCTAVES = 3;
 
 /** Compile-time style switch: each material compiles only its own style's shading. */
-export const WATER_STYLIZED_DEFINE = "SLATE_WATER_STYLIZED";
+const WATER_STYLIZED_DEFINE = "SLATE_WATER_STYLIZED";
 
 /** GLSL-shaped source that also compiles as WGSL after `toWgsl`; see `waterShaderSource`. */
 const HELPERS = `
@@ -187,13 +187,12 @@ float swSparkBase = swCore * swCore * swTwinkle * smoothstep(0.4, 0.5, swRnd) * 
 function realisticSource(): string {
   return surfaceSource("realistic") + `
 vec3 swV = viewDirectionW;
-// Keep reflected rays above the horizon: below it the water would reflect only more water, never the ground
-// half of the sky. The shading normal becomes the half vector between the view and the clamped reflection.
-// Detail filtered away at a distance still roughens the surface (bounded), so far water keeps a broad sun path.
 // Toward the horizon the chop flattens into the swell, so distant water keeps reflecting the horizon sky.
 normalW = normalize(mix(normalW, swSwellNormal, pow(1.0 - clamp(swV.y, 0.0, 1.0), 12.0) * 0.6));
-// Rougher (filtered) water lifts its reflection further, so a blurred lobe stays in the sky.
+// Detail filtered away at a distance still roughens the surface (bounded), so far water keeps a broad sun path.
 swSlopeVariance = min(swLost + swLostDetail * swChopGain * swChopGain, 0.004);
+// Keep reflected rays above the horizon, higher for rougher water so its blurred lobe stays in the sky: below it the
+// water would reflect only more water. The shading normal becomes the half vector toward the clamped reflection.
 vec3 swRefl = reflect(-swV, normalW);
 swRefl.y = mix(swRefl.y, max(swRefl.y, 0.025 + sqrt(swSlopeVariance) * 1.2), step(0.0, swV.y));
 normalW = normalize(swV + normalize(swRefl));
@@ -204,7 +203,7 @@ float swCosT = sqrt(1.0 - (1.0 - swNdotV * swNdotV) * 0.5625);
 float swTransmit = max(exp(-swDepth * (1.0 + 1.0 / swCosT) / swAbsorb), 1.0 - U.slateWaterShallow.a);
 vec3 swCol = mix(U.slateWaterShallow.rgb, U.slateWaterDeep.rgb, swTone);
 // In-scattering: sky and sun light the body; sunlight passing through thin crests turns them bright and
-// green when seen toward the sun, and wave tops stay a little lighter from every side (Subsurface).
+// green when seen toward the sun, and sharp crests stay a little lighter from every side (Subsurface).
 float swSwellDotV = clamp(dot(swSwellNormal, swV), 0.0, 1.0);
 float swBehind = pow(max(dot(swL, -swV), 0.0), 4.0);
 float swPeak = clamp(swCrest * 0.5 + 0.5 + swChopH * 0.6, 0.0, 1.2);
@@ -319,7 +318,7 @@ float swSpecThreshold = 1.0 - 0.05 * U.slateWaterOrigin.w - 0.002;
 float swSpecAA = fwidth(swAlign) + 0.001;
 float swSpec = smoothstep(swSpecThreshold - swSpecAA, swSpecThreshold + swSpecAA, swAlign) * step(0.0, swL.y) * min(1.0, U.slateWaterSun.w);
 
-// Shoreline: a crisp wobbling outline plus a travelling second ring.
+// Shoreline: a crisp wobbling outline plus foam lines washing in.
 float swEdgeUnit = swBank / swFoamWidth;
 float swEdgeAA = fwidth(swEdgeUnit) + 0.015;
 float swWobble = (swMedium - 0.5) * 0.5 + sin(swTime * 1.7 + swLarge * 18.0) * 0.08;
