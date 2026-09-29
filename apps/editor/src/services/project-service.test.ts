@@ -63,6 +63,27 @@ describe("ProjectService lifecycle", () => {
     expect(factory.workers[0]?.dispose).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps the registry generation rising across a remount, a close and a reopen", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("Generation");
+    const service = new ProjectService(storage);
+    await service.loadCurrentProject();
+    const opened = service.registryGeneration;
+
+    // A remount scans the same files into a new registry.
+    await service.remountRegistry();
+    const remounted = service.registryGeneration;
+    expect(remounted).toBeGreaterThan(opened);
+
+    await service.closeProject();
+    const closed = service.registryGeneration;
+    expect(closed).toBeGreaterThan(remounted);
+
+    await storage.openDocumentsProject("Generation");
+    await service.loadCurrentProject();
+    expect(service.registryGeneration).toBeGreaterThan(closed);
+  });
+
   it("supports a Strict Mode-style initialize/dispose/remount sequence", () => {
     const factory = workerFactory();
     const service = new ProjectService(new MemoryStorageAdapter("documents"), {
