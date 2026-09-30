@@ -1,5 +1,5 @@
 import { Material, Mesh, StandardMaterial } from "@babylonjs/core";
-import { installTextureBytes } from "@babylonslate/assets";
+import { installTextureBytes } from "./mesh-assets";
 import { afterEach, expect, it } from "vitest";
 import { createTestEngine } from "./create-null-engine";
 import { createText2DMesh, updateText2DAppear } from "./text2d-mesh";
