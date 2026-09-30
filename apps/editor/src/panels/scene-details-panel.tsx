@@ -1203,6 +1203,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                   : "";
       return {
         component,
+        template,
         index,
         title,
         rows: filterRows(rows, title),
@@ -1272,6 +1273,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         {componentDetails.map(
           ({
             component,
+            template,
             index,
             title,
             rows,
