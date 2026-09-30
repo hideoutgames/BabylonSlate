@@ -156,9 +156,9 @@ it.each(["3d", "2d"] as const)("native %s Movement follows parent translation wi
   world.spawnActorNow(actor);
   const backend = await createPhysicsBackend({ kind, gravity: { x: 0, y: 0, z: 0 }, allowSoftwareFallback: false });
   const sync = new PhysicsWorldSync(backend);
-  const step = () => sync.step(1 / 60, world, 0, 0, () => {
-    const moved = sync.moveMovement(actor, { x: 0, y: 0, z: 0 }, 1 / 60, parseMovementProperties());
-    expect(moved?.velocity.x).toBeCloseTo(0);
+  let velocityX: number | undefined;
+  const step = (x = 0) => sync.step(1 / 60, world, 0, 0, () => {
+    velocityX = sync.moveMovement(actor, { x, y: 0, z: 0 }, 1 / 60, parseMovementProperties())?.velocity.x;
   });
   try {
     step();
@@ -167,8 +167,15 @@ it.each(["3d", "2d"] as const)("native %s Movement follows parent translation wi
     step();
     expect(actor.transform.position.x).toBeCloseTo(2);
     expect(backend.getBodyTransform("body:moving")?.position.x).toBeCloseTo(17);
+    expect(velocityX).toBeCloseTo(0);
+    parent.transform.position.x += 5;
+    step(0.1);
+    expect(actor.transform.position.x).toBeCloseTo(2.1);
+    expect(backend.getBodyTransform("body:moving")?.position.x).toBeCloseTo(22.1);
+    expect(velocityX).toBeCloseTo(6);
     step();
-    expect(actor.transform.position.x).toBeCloseTo(2);
+    expect(actor.transform.position.x).toBeCloseTo(2.1);
+    expect(velocityX).toBeCloseTo(0);
   } finally {
     sync.dispose();
   }

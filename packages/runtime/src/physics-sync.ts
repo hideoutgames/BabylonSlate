@@ -659,11 +659,14 @@ export class PhysicsWorldSync {
       this.characterByActor.set(actor.guid, actor.guid);
       this.movementControllerDescriptors.set(actor.guid, descriptor);
     }
-    const moved = this.backend.moveCharacter(actor.guid, translation, dt);
+    // Parent transforms are authored repositioning, separate from the motor's
+    // displacement and velocity. Native kinematic targets have not stepped yet.
+    const startPose = actorWorldPhysicsTransform(actor, this.worldTransforms);
+    const moved = this.backend.moveCharacter(actor.guid, translation, dt, startPose);
     if (!moved) return null;
     // Native kinematic targets have not stepped yet: preserve the actor's
     // authored facing instead of overwriting it with last tick's body rotation.
-    moved.rotation = actorWorldPhysicsTransform(actor, this.worldTransforms).rotation;
+    moved.rotation = startPose.rotation;
     const local = actorLocalPhysicsTransform(moved, actor, this.worldTransforms);
     Object.assign(actor.transform.position, local.position);
     Object.assign(actor.transform.rotation, local.rotation);
@@ -945,6 +948,14 @@ export class PhysicsWorldSync {
   }
 
   private actorCollisionDescriptor(actor: Actor): readonly unknown[] {
+    const movement = this.movementComponent(actor);
+    if (movement) {
+      const rotation = uprightCapsuleRotation(actorWorldPhysicsTransform(actor, this.worldTransforms).rotation);
+      // Movement owns a fixed world-sized capsule. Visual frames, authored
+      // colliders, local component transforms, and scale cannot change it.
+      return [actor, movement, movement.getVariable("radius"), movement.getVariable("height"),
+        rotation.x, rotation.y, rotation.z, rotation.w];
+    }
     const scale = worldScale(actor, this.worldTransforms);
     const descriptor: unknown[] = [
       actor,
@@ -1028,10 +1039,6 @@ export class PhysicsWorldSync {
           frame?.height,
         );
       }
-    }
-    if (this.movementComponent(actor)) {
-      const rotation = uprightCapsuleRotation(actorWorldPhysicsTransform(actor, this.worldTransforms).rotation);
-      descriptor.push(rotation.x, rotation.y, rotation.z, rotation.w);
     }
     return descriptor;
   }

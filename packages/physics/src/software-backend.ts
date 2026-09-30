@@ -725,11 +725,13 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
     id: string,
     translation: Vec3,
     dt: number,
+    startPose?: PhysicsTransform,
   ): CharacterMovementResult | null {
     const character = this.characters.get(id);
     if (!character) return null;
     const body = this.bodies.get(character.desc.bodyId);
     if (!body || !Number.isFinite(dt) || dt < 0) return null;
+    if (startPose) body.transform = normalizedPhysicsPose(startPose);
     // Discrete graph events can request a displacement before the first tick.
     const inverseDt = dt > 0 ? 1 / dt : 0;
     const before = { ...body.transform.position };

@@ -923,12 +923,14 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     id: string,
     translation: Vec3,
     dt: number,
+    startPose?: PhysicsTransform,
   ): CharacterMovementResult | null {
     this.flushMutations();
     const character = this.characters.get(id);
     if (!character) return null;
     const body = this.bodies.get(character.desc.bodyId);
     if (!body || !Number.isFinite(dt) || dt <= 0) return null;
+    if (startPose) character.controller.setPosition(toVector3(startPose.position));
     const invDt = dt > 1e-8 ? 1 / dt : 0;
     character.controller.setVelocity(
       new Vector3(
