@@ -423,15 +423,7 @@ export class PhysicsWorldSync {
 
   private syncStaticPose(actor: Actor, bodyId: string): void {
     const pose = actorWorldPhysicsTransform(actor, this.worldTransforms);
-    const descriptor = [
-      pose.position.x,
-      pose.position.y,
-      pose.position.z,
-      pose.rotation.x,
-      pose.rotation.y,
-      pose.rotation.z,
-      pose.rotation.w,
-    ];
+    const descriptor = physicsPoseDescriptor(pose);
     if (sameDescriptor(this.staticPoses.get(actor.guid), descriptor)) return;
     this.backend.teleportBody(bodyId, pose);
     this.staticPoses.set(actor.guid, descriptor);
@@ -731,6 +723,7 @@ export class PhysicsWorldSync {
           mass: 0,
           gravityScale: 0,
         });
+    const pose = actorWorldPhysicsTransform(actor, this.worldTransforms);
     this.backend.createBody({
       id: bodyId,
       actorId: actor.guid,
@@ -739,7 +732,7 @@ export class PhysicsWorldSync {
       linearDamping: props.linearDamping,
       angularDamping: props.angularDamping,
       gravityScale: props.gravityScale,
-      transform: actorWorldPhysicsTransform(actor, this.worldTransforms),
+      transform: pose,
     });
     try {
       this.applyActorColliders(actor, bodyId);
@@ -749,6 +742,9 @@ export class PhysicsWorldSync {
         component: movement ?? rigid ?? null,
         value: movement || rigid ? props : STATIC_BODY_PROPERTIES,
       });
+      // Creation already installed this pose. Re-teleporting an unchanged
+      // static trigger on its second tick would end and restart its overlaps.
+      if (props.motionType === "static") this.staticPoses.set(actor.guid, physicsPoseDescriptor(pose));
     } catch (error) {
       this.backend.destroyBody(bodyId);
       this.preparedByActor.delete(actor.guid);
@@ -1494,7 +1490,12 @@ function uprightCapsuleRotation(rotation: PhysicsTransform["rotation"]): Physics
   const x = up.z / length, z = -up.x / length, w = 1 + up.y / length;
   const norm = Math.hypot(x, z, w);
   if (norm < 1e-8) return { x: 1, y: 0, z: 0, w: 0 };
-  return { x: x / norm, y: 0, z: z / norm, w: w / norm };
+  return { x: x === 0 ? 0 : x / norm, y: 0, z: z === 0 ? 0 : z / norm, w: w / norm };
+}
+
+function physicsPoseDescriptor(pose: PhysicsTransform): readonly number[] {
+  return [pose.position.x, pose.position.y, pose.position.z,
+    pose.rotation.x, pose.rotation.y, pose.rotation.z, pose.rotation.w];
 }
 
 function meshAssetGuid(component: ActorComponent): string | null {
