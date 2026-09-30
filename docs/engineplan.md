@@ -856,7 +856,7 @@ A command line with history, argument hints and registry autocomplete ranked by 
 
 An optional editor tool armed before or during preview. While recording it captures a time series of the stats, a ring of log and print events, and world snapshots at a reduced rate, into a capped in-memory buffer with a configurable budget that spills to a `.babtrace` file in the project's derived-data directory. The trace reuses the container format from section 3 (sorted-key JSON header plus binary chunks) rather than inventing a second binary format.
 
-Current Play capture records complete snapshots each tick. Engine Settings **Debugger → Trace Memory Budget (MiB)** now exposes the local retention budget, defaulting to 128 MiB with a 1–1024 MiB range; changes apply to the next Play session. Incremental UTF-8 accounting evicts the oldest frames while retaining the newest. Reduced-rate snapshots remain separate from this budget control.
+Current Play capture records complete snapshots each tick. Engine Settings **Debugger → Trace Memory Budget (MiB)** now exposes the local retention budget, defaulting to 128 MiB with a 1–1024 MiB range; changes apply to the next Play or Preview Build session. Incremental UTF-8 accounting evicts the oldest frames while retaining the newest. Reduced-rate snapshots remain separate from this budget control.
 
 When preview ends the trace opens as its own document tab with a scrubbable timeline: graphs on top, the log filtered to the current time window, and world state at the selected frame.
 

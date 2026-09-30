@@ -317,8 +317,8 @@ export function EngineSettingsForm({
               }
             />
             <FieldDescription>
-              Applies to the next Play session. When the budget fills, the oldest
-              recorded frames are discarded.
+              Applies to the next Play or Preview Build session. When the budget
+              fills, the oldest recorded frames are discarded.
             </FieldDescription>
           </Field>
         </FieldSet>

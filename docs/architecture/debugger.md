@@ -136,7 +136,7 @@ Bridge: `{ type: "inspect" }` control → `{ type: "inspectSnapshot", snapshot }
 
 ## Trace recorder
 
-Engine Settings → **Debugger → Trace Memory Budget (MiB)** sets the budget for new Play sessions in both Worker and in-process modes. It defaults to **128 MiB** (previously 2 MiB), accepts **1–1024 MiB**, and is stored locally per user. Runtime callers can pass `traceByteBudget` in bytes; omitted values use the same default. Recording allocates data as frames arrive, rather than reserving the whole budget up front.
+Engine Settings → **Debugger → Trace Memory Budget (MiB)** sets the budget for new Play sessions in both Worker and in-process modes, and for Preview Build sessions. It defaults to **128 MiB** (previously 2 MiB), accepts **1–1024 MiB**, and is stored locally per user. Preview passes it through its temporary session handoff; exported game files do not contain the preference. Runtime callers can pass `traceByteBudget` in bytes; omitted values use the same default. Recording allocates data as frames arrive, rather than reserving the whole budget up front.
 
 The limit accounts for the payload's UTF-8 JSON bytes, including snapshots, events, and metadata; it is not a JavaScript heap limit. Oldest frames are discarded when the recording fills up, always keeping at least the newest frame even if that frame alone exceeds the budget. Retained duration depends on scene size and tick rate. Each incoming frame is measured once, avoiding repeated serialization of the entire history as the budget grows. The `.babtrace` format is unchanged.
 
