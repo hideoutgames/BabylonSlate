@@ -323,6 +323,10 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     await showContentBrowser(page);
     const heroTile = page.locator('[data-asset-path="assets/hero.babasset"]');
     await page.getByTestId("content-browser-search").fill("hero");
+    // The grid applies a search at low priority; count only once it has.
+    await expect(
+      page.getByTestId("content-browser-asset-grid"),
+    ).not.toHaveAttribute("aria-busy", "true");
     if ((await heroTile.count()) === 0) {
       await page.getByTestId("content-browser-search").fill("");
       await page

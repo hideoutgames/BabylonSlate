@@ -65,6 +65,11 @@ async function openOrCreateAsset(
   const search = page.getByTestId("content-browser-search");
   await search.fill(name);
   const tile = page.locator(`[data-asset-path="${assetPath}"]`);
+  // The grid applies a search at low priority; count only once it has.
+  await expect(page.getByTestId("content-browser-asset-grid")).not.toHaveAttribute(
+    "aria-busy",
+    "true",
+  );
   if ((await tile.count()) === 0) {
     await search.fill("");
     await createContentBrowserAsset(page, type, name);

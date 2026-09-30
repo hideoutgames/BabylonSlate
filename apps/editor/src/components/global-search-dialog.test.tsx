@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render } from "@testing-library/react";
+import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import type { SearchEntry } from "@babylonslate/assets";
 import { GlobalSearchDialog } from "./global-search-dialog";
 
@@ -13,6 +13,7 @@ const hits: SearchEntry[] = Array.from({ length: 40 }, (_, index) => ({
 
 const searchState = vi.hoisted(() => ({
   status: "ready" as "idle" | "pending" | "ready",
+  results: null as ((needle: string) => SearchEntry[]) | null,
   beginSearchRebuild: vi.fn(),
   cancelSearchRebuild: vi.fn(),
   openSearchResult: vi.fn<(entry: SearchEntry) => Promise<void>>(async () => {}),
@@ -21,7 +22,9 @@ const searchState = vi.hoisted(() => ({
 vi.mock("../context/project-search-context", () => ({
   useProjectSearch: () => ({
     query: (needle: string) =>
-      searchState.status === "pending" || !needle.trim() ? [] : hits,
+      searchState.status === "pending" || !needle.trim()
+        ? []
+        : (searchState.results?.(needle) ?? hits),
     searchStatus: searchState.status,
     beginSearchRebuild: searchState.beginSearchRebuild,
     cancelSearchRebuild: searchState.cancelSearchRebuild,
@@ -34,6 +37,7 @@ vi.mock("../context/project-search-context", () => ({
 afterEach(() => {
   cleanup();
   searchState.status = "ready";
+  searchState.results = null;
   searchState.beginSearchRebuild.mockClear();
   searchState.cancelSearchRebuild.mockClear();
   searchState.openSearchResult.mockClear();
@@ -78,6 +82,51 @@ describe("GlobalSearchDialog", () => {
     fireEvent.keyDown(input, { key: "Enter" });
     expect(searchState.openSearchResult).not.toHaveBeenCalled();
     expect(input.getAttribute("aria-activedescendant")).toBeNull();
+  });
+
+  it("opens the hit for the typed text when Enter arrives before the result list catches up", async () => {
+    const hit = (label: string): SearchEntry => ({
+      id: `class:${label}`,
+      kind: "class",
+      label,
+      keywords: [],
+      target: { kind: "class", classId: label },
+    });
+    const alpha = hit("Alpha");
+    const beta = hit("Beta");
+    searchState.results = (needle) => (needle.trim() === "beta" ? [beta] : [alpha]);
+    const close = vi.fn();
+    const { getByTestId, queryByTestId } = render(
+      <GlobalSearchDialog open onOpenChange={close} />,
+    );
+    const input = getByTestId("global-search-query") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "alpha" } });
+    expect(getByTestId("global-search-item-class:Alpha")).toBeTruthy();
+
+    // Schedule as a browser does: the typed text commits with the input
+    // event, while the result list renders later at low priority.
+    const environment = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean };
+    const actEnvironment = environment.IS_REACT_ACT_ENVIRONMENT;
+    environment.IS_REACT_ACT_ENVIRONMENT = false;
+    try {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!
+        .set!.call(input, "beta");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      expect(input.value).toBe("beta");
+      expect(queryByTestId("global-search-item-class:Alpha")).toBeTruthy();
+
+      input.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+      );
+      expect(searchState.openSearchResult).toHaveBeenCalledWith(beta);
+      expect(searchState.openSearchResult).not.toHaveBeenCalledWith(alpha);
+      expect(close).toHaveBeenCalledWith(false);
+      await waitFor(() =>
+        expect(getByTestId("global-search-item-class:Beta")).toBeTruthy(),
+      );
+    } finally {
+      environment.IS_REACT_ACT_ENVIRONMENT = actEnvironment;
+    }
   });
 
   it("uses a fixed tall height and a native overflow results pane", () => {
