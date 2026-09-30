@@ -1269,7 +1269,7 @@ class InProcessRuntime implements RuntimeDriver {
           if (component.classId === "RenderTargetCaptureComponent") this.emitRenderTargetCapture(owner, slotId);
           else if (component.classId === "OutlineComponent") this.emitActorOutlines(owner, slotId);
           else if (component.classId === "FogVolumeComponent") this.emitActorFogVolumes(owner, slotId);
-          else if (component.classId !== "PhysicsConstraintComponent" && component.classId !== "RagdollComponent") this.emitMeshAssignment(owner, slotId);
+          else if (component.classId !== "PhysicsConstraintComponent" && component.classId !== "RagdollComponent" && component.classId !== "MovementComponent") this.emitMeshAssignment(owner, slotId);
         }
         if (component.classId === "ParticleComponent") {
           this.emitParticleComponents(owner);
