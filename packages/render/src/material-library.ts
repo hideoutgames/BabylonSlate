@@ -234,9 +234,13 @@ export class MaterialLibrary {
 
     const textures = materialTextureBindings(this.options.acquireTexture ? (guid) => this.options.acquireTexture!(guid, scene) : undefined, this.options.textureIdentity);
     let compiled: ReturnType<typeof compileMaterialPlan>;
+    // Instances compile under their root Material's name so generated block
+    // names, and therefore the shader text, match and the GPU program is shared.
+    const programGuid = doc.instanceOf ?? assetGuid;
+    const materialName = unlit ? `material:${assetGuid}:unlit` : `material:${assetGuid}`;
     try { compiled = compileMaterialPlan(lowered.plan, {
       scene,
-      name: unlit ? `material:${assetGuid}:unlit` : `material:${assetGuid}`,
+      name: unlit ? `material:${programGuid}:unlit` : `material:${programGuid}`,
       particlePreview: this.options.particlePreview,
       logicalSceneBuffers: options?.logicalSceneBuffers,
       resolveTexture: this.options.acquireTexture ? textures.resolve : this.options.resolveTexture,
@@ -249,6 +253,7 @@ export class MaterialLibrary {
       textures.dispose();
       return { ok: false, diagnostics: compiled.diagnostics };
     }
+    compiled.material.name = compiled.material.id = materialName;
     const texturePreparations = lowered.plan.textures.flatMap((binding) => {
       const preparation = textures.ready(binding.textureGuid);
       return preparation ? [preparation] : [];

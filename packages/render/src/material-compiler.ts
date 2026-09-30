@@ -31,6 +31,7 @@ import {
   VectorSplitterBlock,
   VertexOutputBlock,
   ViewDirectionBlock,
+  type AbstractEngine,
   type Effect,
   type NodeMaterialBlock,
   type NodeMaterialConnectionPoint,
@@ -764,6 +765,11 @@ export function compileMaterialPlan(
       }
     });
   }
+  // Custom GLSL keeps its own readiness probe; everything else in Material
+  // mode may reuse a byte-identical program compiled for another material.
+  if (material.mode === NodeMaterialModes.Material && plan.cost.customBlocks === 0) {
+    shareCompiledProgram(material, JSON.stringify([options.name, options.surfaceVariant ?? null, material.shaderLanguage]));
+  }
   try {
     if (plan.operations.some((operation) => operation.nodeType === "input.environmentSample")) {
       const release = retainEnvironmentSample(scene, material);
@@ -929,6 +935,49 @@ export function compileMaterialPlan(
       return released ?? Promise.resolve();
     },
   };
+}
+
+const sharedPrograms = new WeakMap<AbstractEngine, Map<string, { buildId: number; shaders: string }>>();
+
+function freshBuildId(): number {
+  // Babylon's own build-id source, so an assigned id can never collide.
+  return (NodeMaterial as unknown as { _BuildIdGenerator: number })._BuildIdGenerator++;
+}
+
+/**
+ * Babylon keys a NodeMaterial effect by build id, so each build compiles and
+ * links its own GPU program even when the generated code is identical, as it
+ * is for Material Instances and per-component parameter copies. After each
+ * build, adopt the build id of an earlier build under the same key whose
+ * generated vertex and fragment code is byte-identical: the engine's effect
+ * cache then returns the already compiled program and only uniforms differ.
+ * Source equality is checked on every build, so a changed graph or a
+ * texture-dependent variant never reuses a mismatched program.
+ */
+export function shareCompiledProgram(material: NodeMaterial, key: string): void {
+  const engine = material.getScene().getEngine();
+  let programs = sharedPrograms.get(engine);
+  if (!programs) sharedPrograms.set(engine, (programs = new Map()));
+  const registry = programs;
+  let adopted: number | undefined;
+  let firstBuild = true;
+  // First observer: later observers (shadow/cluster policies) record the final id.
+  material.onBuildObservable.add(() => {
+    // A rebuild that kept an adopted id may no longer match that program.
+    if (adopted !== undefined && material.buildId === adopted) material.buildId = freshBuildId();
+    adopted = undefined;
+    const shaders = material.compiledShaders;
+    const known = registry.get(key);
+    // Only the compiler's own first build adopts: any later rebuild keeps a
+    // new id so policies that trust a compiled build id still see the change.
+    if (firstBuild && known?.shaders === shaders) {
+      firstBuild = false;
+      material.buildId = adopted = known.buildId;
+      return;
+    }
+    firstBuild = false;
+    registry.set(key, { buildId: material.buildId, shaders });
+  }, undefined, true);
 }
 
 /** Drop ResourceCache textures so NodeMaterial.dispose cannot free engine-owned GPU wrappers. */
