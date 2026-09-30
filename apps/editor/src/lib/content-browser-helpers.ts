@@ -44,9 +44,12 @@ import {
 import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
+  createDefaultMaterialInstanceDocument,
   materialDependencies,
+  materialInstanceDependencies,
   normalizeMaterialDocument,
   normalizeMaterialFunctionDocument,
+  normalizeMaterialInstanceDocument,
   parseMaterialDomain,
 } from "@babylonslate/shader-graph";
 import { createDefaultParticleGraphDocument } from "@babylonslate/particle-graph";
@@ -225,6 +228,7 @@ export const CREATABLE_ASSET_TYPES = [
   "SpriteAnimation",
   "AnimationGraph",
   "Material",
+  "MaterialInstance",
   "MaterialFunction",
   "Tileset",
   "Tilemap",
@@ -277,7 +281,7 @@ export const CREATABLE_ASSET_TYPE_GROUPS: readonly CreatableAssetTypeGroup[] = [
   {
     id: "rendering",
     label: "Rendering",
-    types: ["Material", "MaterialFunction", "RenderTarget", "RenderTargetTexture", "Water", "ParticleEmitter", "ParticleGraph", "ParticleSystem", "SkyboxCreator"],
+    types: ["Material", "MaterialInstance", "MaterialFunction", "RenderTarget", "RenderTargetTexture", "Water", "ParticleEmitter", "ParticleGraph", "ParticleSystem", "SkyboxCreator"],
   },
   {
     id: "audio",
@@ -302,6 +306,7 @@ const CREATABLE_ASSET_TYPE_DESCRIPTIONS: Record<CreatableAssetType, string> = {
   AnimationGraph: "A state machine that plays Sprite or Animation clips.",
   Material: "A shader graph that compiles to a Babylon material.",
   MaterialFunction: "A reusable shader subgraph for materials.",
+  MaterialInstance: "Parameter values for a parent Material. Shares its compiled shader, so edits and variants cost no recompile.",
   Tileset: "Tile definitions and collision for painting tilemaps.",
   Tilemap: "A painted 2D tile layer that references a Tileset.",
   BehaviourTree: "An AI tree of composites, tasks, and decorators.",
@@ -1647,6 +1652,11 @@ export function buildNewAssetResult(options: {
     return documentAsset(type, name, guid, payload);
   }
 
+  if (type === "MaterialInstance") {
+    const payload = createDefaultMaterialInstanceDocument(name) as unknown as Record<string, unknown>;
+    return documentAsset(type, name, guid, payload);
+  }
+
   if (type === "MaterialFunction") {
     const payload = createDefaultMaterialFunctionDocument(
       name,
@@ -1796,6 +1806,7 @@ const ASSET_FILE_SUFFIX: Partial<Record<CreatableAssetType, string>> = {
   AnimationGraph: ".anim.babasset",
   Material: ".material.babasset",
   MaterialFunction: ".matfunc.babasset",
+  MaterialInstance: ".matinst.babasset",
   Tileset: ".tileset.babasset",
   Tilemap: ".tilemap.babasset",
   BehaviourTree: ".bt.babasset",
@@ -1837,6 +1848,9 @@ export function materialAssetDependencies(
   }
   if (assetType === "MaterialFunction") {
     return materialDependencies(normalizeMaterialFunctionDocument(payload)).all;
+  }
+  if (assetType === "MaterialInstance") {
+    return materialInstanceDependencies(normalizeMaterialInstanceDocument(payload)).all;
   }
   return [];
 }
@@ -1970,6 +1984,10 @@ export function materialHeaderMeta(
   assetType: string,
   payload: Record<string, unknown>,
 ): Record<string, unknown> | undefined {
+  if (assetType === "MaterialInstance") {
+    const instance = normalizeMaterialInstanceDocument(payload);
+    return { domain: instance.domain, parentGuid: instance.parentGuid };
+  }
   if (assetType !== "Material" && !isLegacyMaterialAssetType(assetType)) {
     return undefined;
   }
@@ -1983,11 +2001,26 @@ export function isMaterialSamplerTextureAsset(header: { type: string; payload?: 
     (header.type !== "Texture" || !isEnvironmentTexturePayload(header.payload));
 }
 
+/** Assets a Material slot accepts: authored Materials and their instances. */
+export const MATERIAL_ASSET_TYPES = ["Material", "MaterialInstance"] as const;
+
+export function isMaterialAssetType(type: string): boolean {
+  return type === "Material" || type === "MaterialInstance";
+}
+
+function openMaterialDocumentFor(
+  asset: { path: string; header: { type: string } },
+  openDocuments: ReadonlyArray<{ ref: { kind: string; path: string }; content: unknown }>,
+) {
+  const kind = asset.header.type === "MaterialInstance" ? "material-instance" : "material";
+  return openDocuments.find((entry) => entry.ref.kind === kind && entry.ref.path === asset.path);
+}
+
 export function isPostProcessMaterialAsset(asset: {
   header: { type: string; payload?: Record<string, unknown> };
 }): boolean {
   return (
-    asset.header.type === "Material" &&
+    isMaterialAssetType(asset.header.type) &&
     asset.header.payload?.domain === "postProcess"
   );
 }
@@ -1996,7 +2029,7 @@ export function isParticleMaterialAsset(asset: {
   header: { type: string; payload?: Record<string, unknown> };
 }): boolean {
   return (
-    asset.header.type === "Material" &&
+    isMaterialAssetType(asset.header.type) &&
     asset.header.payload?.domain === "particle"
   );
 }
@@ -2011,10 +2044,7 @@ export function isPostProcessMaterialForPicker(
     content: unknown;
   }>,
 ): boolean {
-  const open = openDocuments.find(
-    (entry) =>
-      entry.ref.kind === "material" && entry.ref.path === asset.path,
-  );
+  const open = openMaterialDocumentFor(asset, openDocuments);
   if (open && open.content && typeof open.content === "object") {
     return (open.content as { domain?: unknown }).domain === "postProcess";
   }
@@ -2031,10 +2061,7 @@ export function isParticleMaterialForPicker(
     content: unknown;
   }>,
 ): boolean {
-  const open = openDocuments.find(
-    (entry) =>
-      entry.ref.kind === "material" && entry.ref.path === asset.path,
-  );
+  const open = openMaterialDocumentFor(asset, openDocuments);
   if (open && open.content && typeof open.content === "object") {
     return (open.content as { domain?: unknown }).domain === "particle";
   }
@@ -2053,11 +2080,8 @@ export function materialDomainsFromAssets(
 ): Record<string, string> {
   const domains: Record<string, string> = {};
   for (const asset of assets) {
-    if (asset.header.type !== "Material") continue;
-    const open = openDocuments.find(
-      (entry) =>
-        entry.ref.kind === "material" && entry.ref.path === asset.path,
-    );
+    if (!isMaterialAssetType(asset.header.type)) continue;
+    const open = openMaterialDocumentFor(asset, openDocuments);
     const domain =
       open && open.content && typeof open.content === "object"
         ? (open.content as { domain?: unknown }).domain

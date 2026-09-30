@@ -40,9 +40,12 @@ import {
   type SerializedSceneLayer,
 } from "@babylonslate/core";
 import {
+  isMaterialInstanceContent,
   materialDependencies,
+  materialInstanceDependencies,
   normalizeMaterialDocument,
   normalizeMaterialFunctionDocument,
+  normalizeMaterialInstanceDocument,
 } from "@babylonslate/shader-graph";
 import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
 
@@ -681,17 +684,21 @@ export function playSceneByGuid(
 }
 
 /**
- * Materials plus every Material Function they call, transitively.
- * Play and export both need the closure, not just the directly referenced set.
+ * Materials plus every Material Function they call, transitively, and each
+ * Material Instance's parent chain. Play and export both need the closure, not
+ * just the directly referenced set. `referenced` lists every guid visited,
+ * including ones whose content is not loaded yet, so callers can load and retry.
  */
 export function materialClosureFromGuids(
   guids: readonly string[],
   documentForGuid: (guid: string) => unknown | null,
-): { materials: string[]; functions: string[]; textures: string[] } {
+): { materials: string[]; instances: string[]; functions: string[]; textures: string[]; referenced: string[] } {
   const materials: string[] = [];
+  const instances: string[] = [];
   const functions: string[] = [];
   const textures = new Set<string>();
   const seen = new Set<string>();
+  const queue = [...guids];
 
   const visitFunction = (guid: string) => {
     if (seen.has(guid)) return;
@@ -706,17 +713,25 @@ export function materialClosureFromGuids(
     for (const nested of deps.functions) visitFunction(nested);
   };
 
-  for (const guid of guids) {
+  for (let index = 0; index < queue.length; index++) {
+    const guid = queue[index]!;
     if (seen.has(guid)) continue;
     seen.add(guid);
     const content = documentForGuid(guid);
     if (!content) continue;
+    if (isMaterialInstanceContent(content)) {
+      instances.push(guid);
+      const deps = materialInstanceDependencies(normalizeMaterialInstanceDocument(content));
+      for (const texture of deps.textures) textures.add(texture);
+      if (deps.parent) queue.push(deps.parent);
+      continue;
+    }
     materials.push(guid);
     const deps = materialDependencies(normalizeMaterialDocument(content));
     for (const texture of deps.textures) textures.add(texture);
     for (const fn of deps.functions) visitFunction(fn);
   }
-  return { materials, functions, textures: [...textures].sort() };
+  return { materials, instances, functions, textures: [...textures].sort(), referenced: [...seen] };
 }
 
 /** Model asset guids on MeshComponent.assetGuid (imported GLB). */

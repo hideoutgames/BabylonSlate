@@ -2,6 +2,7 @@ import {
   normalizeMaterialParameterOverrides,
   type MaterialParameterValue,
 } from "@babylonslate/core";
+import { parseMaterialDomain, type MaterialDomain } from "./catalog";
 import {
   normalizeMaterialPreviewSettings,
   type MaterialDocument,
@@ -22,6 +23,11 @@ export interface MaterialInstanceDocument {
   kind: "materialInstance";
   name: string;
   parentGuid: string | null;
+  /**
+   * The root Material's domain, cached when the parent changes so pickers can
+   * filter by domain from the asset header. Rendering always uses the root's.
+   */
+  domain: MaterialDomain;
   /** Parameter name to value; names or kinds the parent lacks are ignored. */
   overrides: Record<string, MaterialParameterValue>;
   preview: MaterialPreviewSettings;
@@ -68,6 +74,7 @@ export function createDefaultMaterialInstanceDocument(
     kind: "materialInstance",
     name,
     parentGuid,
+    domain: "surface",
     overrides: {},
     preview: { mesh: "cube", customMeshGuid: null },
   };
@@ -84,6 +91,7 @@ export function normalizeMaterialInstanceDocument(
     kind: "materialInstance",
     name: typeof record.name === "string" && record.name.trim() ? record.name : fallbackName,
     parentGuid: parent || null,
+    domain: parseMaterialDomain(record.domain),
     overrides: normalizeMaterialParameterOverrides(record.overrides),
     preview: normalizeMaterialPreviewSettings(record.preview),
   };

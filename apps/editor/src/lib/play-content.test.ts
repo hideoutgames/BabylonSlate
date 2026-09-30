@@ -696,11 +696,23 @@ describe("scene-referenced Play content", () => {
       ...materialAssetGuidsFromScene(scene),
       ...postProcessMaterialGuidsFromScene(scene),
     ];
-    expect(materialClosureFromGuids(guids, (guid) => docs[guid] ?? null)).toEqual({
+    expect(materialClosureFromGuids(guids, (guid) => docs[guid] ?? null)).toMatchObject({
       materials: ["mat-rock", "pp-blur"],
       functions: ["fn-tint", "fn-inner"],
       textures: ["tex-albedo", "tex-lut"],
     });
+  });
+
+  it("follows Material Instance parents to the root Material and reports unloaded references", () => {
+    const docs: Record<string, unknown> = {
+      "inst-red": { kind: "materialInstance", parentGuid: "inst-base", overrides: { Albedo: { kind: "texture", textureAssetGuid: "tex-red" } } },
+      "inst-base": { kind: "materialInstance", parentGuid: "mat-root", overrides: {} },
+      "mat-root": { nodes: [{ id: "call", type: "function.call", properties: { functionGuid: "fn-missing" } }], edges: [] },
+    };
+    const closure = materialClosureFromGuids(["inst-red"], (guid) => docs[guid] ?? null);
+    expect(closure).toMatchObject({ materials: ["mat-root"], instances: ["inst-red", "inst-base"], textures: ["tex-red"] });
+    // Callers load referenced guids that had no content yet, then retry.
+    expect(closure.referenced).toContain("fn-missing");
   });
 
   it("unions material guids across Play library scenes", () => {

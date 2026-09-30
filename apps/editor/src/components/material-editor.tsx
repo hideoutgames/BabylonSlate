@@ -57,8 +57,10 @@ import {
   validateMaterialFunctionDocument,
   type MaterialDocument,
   type MaterialFunctionDocument,
+  type MaterialDomain,
   type MaterialFunctionPin,
   type MaterialPreviewMesh,
+  type MaterialPreviewSettings,
 } from "@babylonslate/shader-graph";
 import {
   BoxIcon,
@@ -467,6 +469,25 @@ function MaterialParameterNamePrompt<T extends MaterialGraphDocument>({
 export function MaterialPreviewPanel(_props: IDockviewPanelProps) {
   void _props;
   const { document, commit } = useMaterialDocument();
+  return (
+    <MaterialPreviewSurface
+      preview={document.preview}
+      domain={document.domain}
+      onPreviewChange={(preview) => commit({ ...document, preview })}
+    />
+  );
+}
+
+/** The preview canvas with its mesh picker; shared by Materials and Material Instances. */
+export function MaterialPreviewSurface({
+  preview,
+  domain,
+  onPreviewChange,
+}: {
+  preview: MaterialPreviewSettings;
+  domain: MaterialDomain | null;
+  onPreviewChange: (preview: MaterialPreviewSettings) => void;
+}) {
   const editing = useMaterialEditing();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const customPickNeedsFallbackRef = useRef(false);
@@ -495,8 +516,8 @@ export function MaterialPreviewPanel(_props: IDockviewPanelProps) {
   const status = editing.previewState.status;
   const openCustomMeshPicker = () => {
     customPickNeedsFallbackRef.current =
-      document.preview.mesh !== "custom" ||
-      !document.preview.customMeshGuid;
+      preview.mesh !== "custom" ||
+      !preview.customMeshGuid;
     customPickCommittedRef.current = false;
     setMeshPickOpen(true);
   };
@@ -504,7 +525,7 @@ export function MaterialPreviewPanel(_props: IDockviewPanelProps) {
   return (
     <PanelFrame className="flex-1" data-testid="material-preview-panel">
       <div className="relative flex h-full min-h-0 flex-col">
-        {document.domain !== "particle" && document.domain !== "text" ? <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-2">
+        {domain !== "particle" && domain !== "text" ? <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-2">
           <div
             className="pointer-events-auto flex flex-wrap items-center gap-1 rounded-lg border border-border bg-popover p-1 shadow-md"
             data-testid="material-preview-overlay"
@@ -513,7 +534,7 @@ export function MaterialPreviewPanel(_props: IDockviewPanelProps) {
               variant="outline"
               size="sm"
               spacing={1}
-              value={[document.preview.mesh]}
+              value={[preview.mesh]}
               onValueChange={(value) => {
                 const next = value[0] as MaterialPreviewMesh | undefined;
                 if (!next) return;
@@ -521,13 +542,7 @@ export function MaterialPreviewPanel(_props: IDockviewPanelProps) {
                   openCustomMeshPicker();
                   return;
                 }
-                commit({
-                  ...document,
-                  preview: {
-                    mesh: next,
-                    customMeshGuid: null,
-                  },
-                });
+                onPreviewChange({ mesh: next, customMeshGuid: null });
               }}
               aria-label="Preview Mesh"
               data-testid="material-preview-mesh"
@@ -576,10 +591,7 @@ export function MaterialPreviewPanel(_props: IDockviewPanelProps) {
               customPickNeedsFallbackRef.current &&
               !customPickCommittedRef.current
             ) {
-              commit({
-                ...document,
-                preview: { mesh: "cube", customMeshGuid: null },
-              });
+              onPreviewChange({ mesh: "cube", customMeshGuid: null });
             }
             if (!open) {
               customPickNeedsFallbackRef.current = false;
@@ -593,12 +605,9 @@ export function MaterialPreviewPanel(_props: IDockviewPanelProps) {
           allowNone
           onPick={(guid) => {
             customPickCommittedRef.current = true;
-            commit({
-              ...document,
-              preview: guid
-                ? { mesh: "custom", customMeshGuid: guid }
-                : { mesh: "cube", customMeshGuid: null },
-            });
+            onPreviewChange(guid
+              ? { mesh: "custom", customMeshGuid: guid }
+              : { mesh: "cube", customMeshGuid: null });
             setMeshPickOpen(false);
           }}
           data-testid="material-preview-mesh-picker"

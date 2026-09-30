@@ -979,7 +979,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
             if (!open) setPostProcessPick(null);
           }}
           assets={postProcessPickerAssets}
-          allowedTypes={["Material"]}
+          allowedTypes={["Material", "MaterialInstance"]}
           title="Pick Post-Process Material"
           allowNone={postProcessPick !== "add"}
           onPick={(materialGuid) => {

@@ -204,7 +204,8 @@ export function assetPickerAllowedTypes(
   pinAssetType: string,
   typeClassIds: unknown,
 ): string[] {
-  const compatibleTypes = (types: string[]) => types.includes("Texture") ? [...new Set([...types, "RenderTargetTexture"])] : types;
+  const compatibleTypes = (types: string[]) => [...new Set(types.flatMap((type) =>
+    type === "Texture" ? [type, "RenderTargetTexture"] : type === "Material" ? [type, "MaterialInstance"] : [type]))];
   if (!Array.isArray(typeClassIds) || typeClassIds.length === 0) {
     return compatibleTypes([pinAssetType]);
   }

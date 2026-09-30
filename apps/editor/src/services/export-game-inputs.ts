@@ -34,6 +34,7 @@ const JSON_TYPES = new Set<string>([
   "Blackboard",
   "Material",
   "MaterialFunction",
+  "MaterialInstance",
   "Sprite",
   "SpriteAnimation",
   "Tilemap",

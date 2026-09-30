@@ -108,6 +108,7 @@ export const ASSET_REF_PICKER_TYPES = [
   "RenderTarget",
   "RenderTargetTexture",
   "Material",
+  "MaterialInstance",
   "Font",
   "Sprite",
   "SpriteAnimation",

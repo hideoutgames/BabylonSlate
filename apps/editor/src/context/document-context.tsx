@@ -287,8 +287,10 @@ import {
 import { animClipCatalogFromAssets } from "../lib/anim-clip-catalog";
 import { loadPlayParticleLibrary } from "../lib/play-particles";
 import {
+  materializeMaterialInstances,
   normalizeMaterialDocument,
   normalizeMaterialFunctionDocument,
+  normalizeMaterialInstanceDocument,
   type MaterialDocument,
   type MaterialFunctionDocument,
 } from "@babylonslate/shader-graph";
@@ -2949,6 +2951,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         | "tilemap"
         | "material"
         | "material-function"
+        | "material-instance"
         | "audio-mixer"
         | "audio-channel"
         | "sound-attenuation"
@@ -3516,7 +3519,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
             ? "material-function"
             : asset.header.type === "Material"
               ? "material"
-              : null;
+              : asset.header.type === "MaterialInstance"
+                ? "material-instance"
+                : null;
         if (!kind) return;
         const content = await loadPlayAssetContent(kind, asset.path);
         if (content) loaded.set(guid, content);
@@ -3534,7 +3539,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         const closure = materialClosureFromGuids([...needed], (guid) =>
           loaded.get(guid) ?? null,
         );
-        for (const guid of [...closure.materials, ...closure.functions]) {
+        for (const guid of closure.referenced) {
           if (needed.has(guid)) continue;
           needed.add(guid);
           grew = true;
@@ -3554,6 +3559,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         if (content) {
           functions.set(guid, normalizeMaterialFunctionDocument(content));
         }
+      }
+      // Instances render as their root graph with replaced parameter values.
+      const instances = new Map(closure.instances.flatMap((guid) => {
+        const content = loaded.get(guid);
+        return content ? [[guid, normalizeMaterialInstanceDocument(content)] as const] : [];
+      }));
+      for (const [guid, document] of materializeMaterialInstances(documents, instances)) {
+        documents.set(guid, document);
       }
       return { documents, functions, textureGuids: closure.textures };
     },

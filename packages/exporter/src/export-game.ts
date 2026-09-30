@@ -45,6 +45,7 @@ const JSON_TYPES = new Set<string>([
   "Blackboard",
   "Material",
   "MaterialFunction",
+  "MaterialInstance",
   "RenderTarget",
   "RenderTargetTexture",
   "Sprite",
