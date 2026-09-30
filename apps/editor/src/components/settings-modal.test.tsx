@@ -198,7 +198,7 @@ it("finds the trace budget and persists MiB edits as bytes", async () => {
     <SettingsModal open onOpenChange={() => {}} scope="engine" onEngineSaved={onEngineSaved} />,
   );
   try {
-    fireEvent.change(screen.getByTestId("settings-modal-search"), {
+    fireEvent.change(screen.getByRole("textbox", { name: "Search settings" }), {
       target: { value: "trace memory" },
     });
     fireEvent.click(screen.getByRole("button", { name: /Trace Memory Budget/ }));
