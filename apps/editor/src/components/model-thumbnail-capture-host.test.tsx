@@ -18,8 +18,8 @@ const captureModelThumbnailPng = vi.fn<
   ) => Promise<Uint8Array | null>
 >(async () => new Uint8Array([137, 80, 78, 71]));
 const MaterialLibrary = vi.fn();
-const captureAssetThumbnailPng = vi.fn(async (..._args: unknown[]): Promise<Uint8Array | null> => new Uint8Array([137, 80, 78, 71]));
-const prepareAssetThumbnailInput = vi.fn(async (_input: unknown) => ({ kind: "Material", materials: new Map() }));
+const captureAssetThumbnailPng = vi.fn<(...args: unknown[]) => Promise<Uint8Array | null>>(async () => new Uint8Array([137, 80, 78, 71]));
+const prepareAssetThumbnailInput = vi.fn<(input: unknown) => Promise<{ kind: string; materials: Map<string, unknown> }>>(async () => ({ kind: "Material", materials: new Map() }));
 let projectGuid = "project-a";
 let thumbnailsEnabled = true;
 const resourceCacheForEngine = vi.fn(() => ({}));

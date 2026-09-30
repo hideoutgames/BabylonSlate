@@ -794,6 +794,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const previousThumbnailIndexRef = useRef<ReturnType<typeof createAssetThumbnailRevisionIndex> | null>(null);
   const thumbnailRevisionIndex = useMemo(
     () => {
+      void registryVersion;
       const assets = projectService.registry?.list() ?? [];
       const previous = previousThumbnailIndexRef.current;
       // Document edits also bump registryVersion. Reuse saved revisions until
