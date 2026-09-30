@@ -249,21 +249,26 @@ export function sceneLayerGuidsFromGraphs(
   return guids;
 }
 
-/** Post-process Material guids on SceneLayer Register/Unregister nodes. */
-export function sceneLayerMaterialGuidsFromGraphs(
+const GRAPH_MATERIAL_PINS: Readonly<Record<string, string>> = {
+  "scene-layer.registerPostProcess": "material",
+  "scene-layer.unregisterPostProcess": "material",
+  "material.setMaterialInstance": "instance",
+};
+
+/**
+ * Material guids that only graphs reference: post-process Materials on
+ * SceneLayer Register/Unregister nodes and Set Material Instance assets.
+ */
+export function materialGuidsFromGraphs(
   graphs: readonly SerializedGraph[],
 ): string[] {
   const guids: string[] = [];
   const seen = new Set<string>();
   for (const graph of graphs) {
     for (const node of serializedGraphNodes(graph)) {
-      if (
-        node.type !== "scene-layer.registerPostProcess" &&
-        node.type !== "scene-layer.unregisterPostProcess"
-      ) {
-        continue;
-      }
-      const guid = pinDefaultFromNodeData(node.data, "material");
+      const pinId = GRAPH_MATERIAL_PINS[node.type];
+      if (!pinId) continue;
+      const guid = pinDefaultFromNodeData(node.data, pinId);
       if (!guid || seen.has(guid)) continue;
       seen.add(guid);
       guids.push(guid);

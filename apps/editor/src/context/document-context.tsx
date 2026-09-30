@@ -260,7 +260,7 @@ import {
   materialClosureFromGuids,
   sceneLayerGuidsFromScenes,
   sceneLayerGuidsFromGraphs,
-  sceneLayerMaterialGuidsFromGraphs,
+  materialGuidsFromGraphs,
   overlayEditorScenesFromLayers,
   playFontGuidsFromScenes,
   type PlayAnimGraphEntry,
@@ -3660,7 +3660,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       return {
         layers,
         overlayScenes: overlayEditorScenesFromLayers(layers),
-        graphMaterialGuids: sceneLayerMaterialGuidsFromGraphs(graphs),
+        graphMaterialGuids: materialGuidsFromGraphs(graphs),
       };
     },
     [
