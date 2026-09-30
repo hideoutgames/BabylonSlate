@@ -48,6 +48,7 @@ export * from "./glb-anim";
 export * from "./model-mesh";
 export * from "./model-preview";
 export * from "./model-thumbnail";
+export * from "./asset-thumbnail";
 export * from "./png-encode";
 export * from "./scene-illumination";
 export * from "./skybox";

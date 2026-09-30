@@ -669,11 +669,12 @@ describe("ContentBrowserWorkspace grid window", () => {
     expect(loadAssetThumbnail).not.toHaveBeenCalled();
   });
 
-  it("shows Model and Animation thumbnails when background capture finishes, then replaces recaptures", async () => {
+  it.each([["Model", "Animation"], ["Material", "Class"]])("shows %s and %s thumbnails when capture finishes, then replaces recaptures", async (firstType, secondType) => {
     const model = texture(0);
-    model.header.type = "Model";
+    model.header.type = firstType!;
     const animation = texture(1);
-    animation.header.type = "Animation";
+    animation.header.type = secondType!;
+    if (secondType === "Class") animation.header.parentClass = "Actor";
     installRegistry([model, animation]);
     const createUrl = vi.spyOn(URL, "createObjectURL");
     const revokeUrl = vi.spyOn(URL, "revokeObjectURL");
