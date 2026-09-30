@@ -66,6 +66,7 @@ import { parseNavMeshActorSettings } from "@babylonslate/navigation";
 import { classParentLookup, classIdFromClassAsset } from "./content-browser-helpers";
 import { physicsConstraintPropertyRows } from "./physics-constraint-property-rows";
 import { cablePropertyRows } from "./cable-property-rows";
+import { movementPropertyRows } from "./movement-property-rows";
 import { pathPropertyRows } from "./path-property-rows";
 import { focusPropertyRows } from "./focus-property-rows";
 import { painterPropertyRows } from "./painter-property-rows";
@@ -565,6 +566,8 @@ export function componentPropertyRows(
     ];
   }
   switch (component.classId) {
+    case "MovementComponent":
+      return movementPropertyRows(actorId, component, update, context);
     case "RenderTargetCaptureComponent": {
       const capture = normalizeRenderTargetCaptureProperties(component.properties);
       return [

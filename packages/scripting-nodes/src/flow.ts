@@ -67,6 +67,11 @@ const EVENT_EXPORT_BY_TYPE: Record<string, string> = {
   "flow.event.focusActivate": "onFocusActivate",
   "flow.event.textChanged": "onTextChanged",
   "flow.event.audioFinished": "onAudioFinished",
+  "flow.event.movementStarted": "onMovementStarted",
+  "flow.event.movementStopped": "onMovementStopped",
+  "flow.event.movementJumped": "onMovementJumped",
+  "flow.event.movementLeftGround": "onMovementLeftGround",
+  "flow.event.movementLanded": "onMovementLanded",
   "bt.event.activate": "onActivate",
   "bt.event.tick": "onBtTick",
   "bt.event.abort": "onAbort",
@@ -148,6 +153,16 @@ const sceneSubsystemEventNodes: NodeDefinition[] = [
 ];
 
 export const flowNodes: NodeDefinition[] = [
+  ...([
+    ["movementStarted", "Movement Started"],
+    ["movementStopped", "Movement Stopped"],
+    ["movementJumped", "Movement Jumped"],
+    ["movementLeftGround", "Movement Left Ground"],
+    ["movementLanded", "Movement Landed"],
+  ] as const).map(([id, label]) => argsEvent(`flow.event.${id}`, `Event On ${label}`, [
+    { id: "velocity", name: "Velocity", type: VEC3 },
+    { id: "speed", name: "Speed", type: FLOAT },
+  ])),
   ...([ ["focusEnter", "Focus Enter"], ["focusLeave", "Focus Leave"], ["focusActivate", "Focus Activate"] ] as const).map(([id, label]): NodeDefinition => ({
     id: `flow.event.${id}`, title: `Event On ${label}`, category: "flow", pure: true,
     pins: () => [pin("execOut", "then", "out", EXEC)],

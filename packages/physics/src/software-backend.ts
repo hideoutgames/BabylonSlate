@@ -4,6 +4,7 @@ import { listDebugCollidersFromRecords } from "./debug-colliders";
 import { isIdentityQuat, rotateQuatVec, multiplyQuat } from "./collider-bake";
 import type {
   CharacterControllerDesc,
+  CharacterMovementResult,
   BodyVelocity,
   ConstraintDesc,
   ColliderDesc,
@@ -34,6 +35,7 @@ type ColliderState = {
 
 type CharacterState = {
   desc: CharacterControllerDesc;
+  grounded: boolean;
 };
 
 function vec(x = 0, y = 0, z = 0): Vec3 {
@@ -712,7 +714,7 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
   }
 
   createCharacterController(desc: CharacterControllerDesc): void {
-    this.characters.set(desc.id, { desc: { ...desc } });
+    this.characters.set(desc.id, { desc: { ...desc }, grounded: false });
   }
 
   destroyCharacterController(id: string): void {
@@ -723,38 +725,74 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
     id: string,
     translation: Vec3,
     dt: number,
-  ): PhysicsTransform | null {
-    void dt;
+  ): CharacterMovementResult | null {
     const character = this.characters.get(id);
     if (!character) return null;
     const body = this.bodies.get(character.desc.bodyId);
-    if (!body) return null;
-    body.transform.position.x += translation.x;
-    body.transform.position.y += translation.y;
-    if (this.kind === "3d") body.transform.position.z += translation.z;
-    // Slide against static AABBs.
-    for (const collider of this.colliders.values()) {
-      if (collider.desc.bodyId === body.desc.id || collider.desc.isTrigger) {
-        continue;
+    if (!body || !Number.isFinite(dt) || dt < 0) return null;
+    // Discrete graph events can request a displacement before the first tick.
+    const inverseDt = dt > 0 ? 1 / dt : 0;
+    const before = { ...body.transform.position };
+    const self = [...this.colliders.values()].find((c) => c.desc.bodyId === body.desc.id && !c.desc.isTrigger);
+    const obstacles = [...this.colliders.values()].flatMap((c) => {
+      const other = this.bodies.get(c.desc.bodyId);
+      if (!self || !other || c.desc.bodyId === body.desc.id || c.desc.isTrigger ||
+        !(self.desc.layer & c.desc.mask) || !(c.desc.layer & self.desc.mask)) return [];
+      return [aabbForCollider(c.desc, other.transform)];
+    });
+    const axes = this.kind === "3d" ? ["x", "z", "y"] as const : ["x", "y"] as const;
+    if (self) for (const b of obstacles) {
+      const a = aabbForCollider(self.desc, body.transform);
+      if (!axes.every((axis) => a.min[axis] < b.max[axis] && a.max[axis] > b.min[axis])) continue;
+      let recoveryAxis: "x" | "y" | "z" = "y";
+      let recovery = Infinity;
+      for (const axis of axes) {
+        const negative = b.min[axis] - a.max[axis], positive = b.max[axis] - a.min[axis];
+        const candidate = Math.abs(negative) < Math.abs(positive) ? negative : positive;
+        if (Math.abs(candidate) < Math.abs(recovery)) { recovery = candidate; recoveryAxis = axis; }
       }
-      const other = this.bodies.get(collider.desc.bodyId);
-      if (!other || other.desc.motionType === "dynamic") continue;
-      const selfCollider = [...this.colliders.values()].find(
-        (c) => c.desc.bodyId === body.desc.id,
-      );
-      if (!selfCollider) continue;
-      const a = aabbForCollider(selfCollider.desc, body.transform);
-      const b = aabbForCollider(collider.desc, other.transform);
-      if (!aabbOverlap(a, b)) continue;
-      const overlapX = Math.min(a.max.x, b.max.x) - Math.max(a.min.x, b.min.x);
-      const overlapY = Math.min(a.max.y, b.max.y) - Math.max(a.min.y, b.min.y);
-      if (overlapX < overlapY) {
-        body.transform.position.x += a.min.x < b.min.x ? -overlapX : overlapX;
-      } else {
-        body.transform.position.y += a.min.y < b.min.y ? -overlapY : overlapY;
+      body.transform.position[recoveryAxis] += recovery + Math.sign(recovery) * character.desc.offset;
+    }
+    // Swept AABB fallback: resolve each axis without tunnelling through thin walls.
+    // Native backends retain capsule, slope and corner accuracy.
+    for (const axis of axes) {
+      let delta = translation[axis];
+      const a = self && aabbForCollider(self.desc, body.transform);
+      if (a) for (const b of obstacles) {
+        const crossAxes = axes.filter((candidate) => candidate !== axis);
+        if (!crossAxes.every((cross) => a.min[cross] < b.max[cross] - 1e-7 && a.max[cross] > b.min[cross] + 1e-7)) continue;
+        if (delta > 0 && a.max[axis] <= b.min[axis] + 1e-7)
+          delta = Math.min(delta, Math.max(0, b.min[axis] - a.max[axis] - character.desc.offset));
+        else if (delta < 0 && a.min[axis] >= b.max[axis] - 1e-7)
+          delta = Math.max(delta, Math.min(0, b.max[axis] - a.min[axis] + character.desc.offset));
+      }
+      body.transform.position[axis] += delta;
+    }
+    const a = self && aabbForCollider(self.desc, body.transform);
+    const snap = character.desc.groundSnapDistance ?? 0.1;
+    let grounded = false;
+    if (translation.y <= 0 && a) {
+      let closest = Infinity;
+      for (const b of obstacles) {
+        const gap = a.min.y - b.max.y;
+        if (gap >= -1e-6 && a.min.x < b.max.x && a.max.x > b.min.x &&
+          (this.kind === "2d" || (a.min.z < b.max.z && a.max.z > b.min.z))) closest = Math.min(closest, gap);
+      }
+      grounded = closest <= character.desc.offset + 1e-6;
+      if (!grounded && character.grounded && closest <= snap + character.desc.offset) {
+        body.transform.position.y -= Math.max(0, closest - character.desc.offset);
+        grounded = true;
       }
     }
-    return cloneTransform(body.transform);
+    character.grounded = grounded;
+    return {
+      ...cloneTransform(body.transform), grounded,
+      velocity: {
+        x: (body.transform.position.x - before.x) * inverseDt,
+        y: (body.transform.position.y - before.y) * inverseDt,
+        z: (body.transform.position.z - before.z) * inverseDt,
+      },
+    };
   }
 
   private assertLive(): void {

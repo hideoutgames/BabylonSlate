@@ -31,6 +31,7 @@ export const ENGINE_COMPONENT_DESCRIPTORS = [
   { classId: "WaterRemovalVolumeComponent", placement: "world" },
   { classId: "WaterBuoyancyComponent", placement: "world" },
   { classId: "RigidBodyComponent", placement: "any" },
+  { classId: "MovementComponent", placement: "world" },
   { classId: "ColliderComponent", placement: "any" },
   { classId: "PhysicsConstraintComponent", placement: "any" },
   { classId: "RagdollComponent", placement: "world" },

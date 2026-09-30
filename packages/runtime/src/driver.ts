@@ -5,6 +5,7 @@ import { focusLayoutEntry, revealFocusedElement } from "./scene-layer-focus-layo
 import type { FocusNavigationSettings } from "@babylonslate/core";
 import { CableWorldSync } from "./cable-sync";
 import { DynamicRuntimeMeshSync } from "./dynamic-runtime-mesh";
+import { MovementWorldSync } from "./movement";
 import { captureComponent, captureLocalTransform, captureProperties } from "./render-targets";
 import { createDefaultRenderTargetCaptureProperties, normalizeRenderTargetPayload, normalizeRenderTargetTexturePayload, type RenderTargetPayload, type RenderTargetTexturePayload } from "@babylonslate/core";
 import { normalizeWaterDefinition, normalizeWaterBody, normalizeWaterRemoval, waterKindForClass, type WaterDefinition } from "@babylonslate/core";
@@ -544,6 +545,7 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly ragdolls: RagdollWorldSync;
   private readonly cables: CableWorldSync;
   private readonly dynamicMeshes: DynamicRuntimeMeshSync;
+  private readonly movement: MovementWorldSync;
   private readonly overlayGravity: [number, number, number];
   private readonly overlayDesignPose = new Map<string, { x: number; y: number }>();
   private playCanvasWidth = 1;
@@ -850,6 +852,7 @@ class InProcessRuntime implements RuntimeDriver {
         if (!registry.isA(classId, "ActorComponent")) return undefined;
         return {
           onCreation: (self) => {
+            this.movement.initialize(self);
             this.scriptHost.bindInterfaceHandlers(self);
             this.runOwnerCreation(self, () => this.scriptHost.hooksFor(classId)?.onCreation?.(self));
           },
@@ -871,10 +874,10 @@ class InProcessRuntime implements RuntimeDriver {
         this.ragdolls.sync();
         if (this.canTickScene()) {
           const time = ctx.tickIndex * ctx.dt;
-          this.physicsSync.step(ctx.dt, this.world, time, -this.gravity[1]);
+          this.physicsSync.step(ctx.dt, this.world, time, -this.gravity[1], () => this.movement.step(ctx.dt, this.physicsSync));
           if (this.physicsSync.water.hasBodies) this.emit({ type: "waterTime", seconds: time });
         }
-        if (this.hasReadyLayers()) this.overlayPhysicsSync.step(ctx.dt, this.world);
+        if (this.hasReadyLayers()) this.overlayPhysicsSync.step(ctx.dt, this.world, undefined, undefined, () => this.movement.step(ctx.dt, this.overlayPhysicsSync));
         this.ragdolls.afterStep();
         if (this.canTickScene()) this.cables.step(ctx.dt, this.gravity, this.frameId + 1);
         this.dispatchCollisionEvents();
@@ -887,6 +890,18 @@ class InProcessRuntime implements RuntimeDriver {
         return slot !== undefined && this.slotOwners.get(slot) === actor ? slot : undefined;
       },
       emit: (command) => this.emit(command),
+    });
+    this.movement = new MovementWorldSync({
+      world: this.world,
+      physics: (actor) => actor.sceneLayerId ? this.overlayPhysicsSync : this.physicsSync,
+      eligible: (actor) => this.canTickActor(actor),
+      gravity: (actor) => -(actor.sceneLayerId ? this.overlayGravity[1] : this.gravity[1]),
+      warn: (component) => this.emit({ type: "log", severity: "warning", category: "Movement",
+        message: `Movement on ${component.owner?.guid ?? "actor"} could not create its motor. Use one Movement component without Rigid Body, Nav Agent, Ragdoll or Water Buoyancy components.`, frameId: this.frameId }),
+      event: (component, event, args) => {
+        const actor = component.owner;
+        if (actor) this.guardScript(() => this.scriptHost.invokeEvent(actor.classId, event, actor, args, component.guid));
+      },
     });
     this.cables = new CableWorldSync({
       world: this.world,
@@ -1241,6 +1256,7 @@ class InProcessRuntime implements RuntimeDriver {
         return changed;
       },
       dynamicMeshFunction: (component, name, args) => this.dynamicMeshes.invoke(component, name, args),
+      movementFunction: (component, name, args) => this.movement.invoke(component, name, args),
       text2DAppearProgress: (component) => this.textAppear.progress(component),
       text2DAppear: (component, operation) => {
         this.textAppear.execute(component, operation);
@@ -1254,6 +1270,9 @@ class InProcessRuntime implements RuntimeDriver {
           for (const _ of this.applyOverlayAnchors(this.world.getActors())) void _;
         }
         if (owner.sceneLayerId) this.applyOverlayLayouts();
+        // Steering/tuning is consumed by the next motor tick; only dimensions
+        // need immediate collider/query refresh after a property write.
+        if (component.classId === "MovementComponent" && propertyName && propertyName !== "radius" && propertyName !== "height") return;
         const slotId = this.slotByGuid.get(owner.guid);
         if (component.classId === "DynamicRuntimeMeshComponent" &&
           (propertyName === "materialGuid" || propertyName === "enableCollision" || propertyName === "layer" || propertyName === "mask")) {
@@ -1265,7 +1284,7 @@ class InProcessRuntime implements RuntimeDriver {
           if (component.classId === "RenderTargetCaptureComponent") this.emitRenderTargetCapture(owner, slotId);
           else if (component.classId === "OutlineComponent") this.emitActorOutlines(owner, slotId);
           else if (component.classId === "FogVolumeComponent") this.emitActorFogVolumes(owner, slotId);
-          else if (component.classId !== "PhysicsConstraintComponent" && component.classId !== "RagdollComponent") this.emitMeshAssignment(owner, slotId);
+          else if (component.classId !== "PhysicsConstraintComponent" && component.classId !== "RagdollComponent" && component.classId !== "MovementComponent") this.emitMeshAssignment(owner, slotId);
         }
         if (component.classId === "ParticleComponent") {
           this.emitParticleComponents(owner);
@@ -5377,6 +5396,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.ragdolls.dispose();
     this.cables.dispose();
     this.dynamicMeshes.dispose();
+    this.movement.dispose();
     this.physicsSync.dispose();
     this.overlayPhysicsSync.dispose();
     if (this.showPathfinding || this.showNavAgent) {

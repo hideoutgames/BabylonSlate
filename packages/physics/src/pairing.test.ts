@@ -2,6 +2,12 @@ import { describe, expect, it } from "vitest";
 import { physicsActorDiagnostics } from "./pairing";
 
 describe("physicsActorDiagnostics", () => {
+  it("does not suggest a conflicting rigid body for a Movement actor with an extra collider", () => {
+    expect(physicsActorDiagnostics({ id: "mover", components: [
+      { id: "movement", classId: "MovementComponent" },
+      { id: "collider", classId: "ColliderComponent" },
+    ] })).toEqual([]);
+  });
   it("accepts an enabled runtime mesh as a rigid body's collision source", () => {
     const actor = { id: "mesh", components: [
       { id: "body", classId: "RigidBodyComponent", properties: {} },

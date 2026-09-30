@@ -108,6 +108,8 @@ The world owns a seeded PRNG from `createSeededRng` in `@babylonslate/core`. Sim
 
 ## Engine components
 
+`MovementComponent` is a world-only ActorComponent, available through **Add Component → General → Movement** and search. Its settings persist through the normal scene/Class component properties; `parseMovementProperties` supplies shared defaults and sanitizes editor, loaded and scripted values. The runtime owns its upright capsule and publishes Get-only Velocity, Speed, Is Grounded, Is In Air and Is Moving. Its functions and component-bound events are reflected through `ENGINE_CLASS_SCRIPT_APIS`; see [Movement](physics.md#movement-component).
+
 Registered as typed stubs (asset refs + lifecycle hooks) from day one; `RigidBodyComponent` / `ColliderComponent` / 3D `MeshComponent` collision are synced by `PhysicsWorldSync` in `@babylonslate/runtime`:
 
 `MeshComponent`, `SpriteComponent`, `TilemapComponent`, `CameraComponent`, `SpringArmComponent`, `LightComponent`, `HemisphericFillLightComponent`, `SkyboxComponent`, `Text3DComponent`, `AudioComponent`, `ParticleComponent`, `RigidBodyComponent`, `ColliderComponent`, `AnimationGraphComponent`, `BehaviourTreeComponent`, `NavAgentComponent`, `NavMeshComponent`, `NavMeshBlockerComponent`, `BlockingVolumeComponent`, overlay-exclusive `2DAnchorComponent`, `2DTextureComponent`, `2DMaterialComponent`, `2DButtonComponent`, `2DTextComponent`, `2DRichTextComponent`, `2DPanelComponent` (`SCENE_LAYER_EXCLUSIVE_COMPONENT_CLASS_IDS`).

@@ -14,6 +14,12 @@ Nodes taking a **Render Target Capture** actor reference expose Get/Set Target, 
 
 The Project node category exposes pure string getters **Get Project Name** (`project.getName`) and **Get Project Version** (`project.getVersion`). They read authored metadata through `ctx.getProjectName()` / `ctx.getProjectVersion()` in Play, worker sessions, and packaged builds. Editor utility hosts read the current project's metadata. Version is set in Project Settings > General and is informational; it does not change execution. See [exported identity](exporter.md#project-identity).
 
+## Movement component calls and events
+
+Drag a `MovementComponent` reference to call **Convert Input**, **Set Movement Input**, **Add Movement Input**, **Set Velocity**, **Add Velocity**, **Jump**, or **Stop Immediately**. Convert Input accepts a Vec2 and additional yaw in degrees, applies the component's dead zone, scale and World/Actor space, and returns a world Vec3. All calls use execution pins. Set Movement Input persists until replaced; Add Movement Input adds only to the next physics tick. Set/Add Velocity accept world units per second. Component settings expose Get/Set; Velocity, horizontal Speed, Is Grounded, Is In Air and Is Moving expose Get only.
+
+Component **Add Event** offers **On Movement Started**, **On Movement Stopped**, **On Movement Jumped**, **On Movement Left Ground**, and **On Movement Landed**. Each event includes Velocity and Speed outputs and binds to the specific movement component, including prefab source IDs. Connect Input Axis events through Convert Input to Set Movement Input; send zero on release to clear persistent input. Connect an Input Action press to Jump. See [Movement](physics.md#movement-component) for simulation and input details.
+
 ## Package boundaries
 
 The **Scalability** category uses typed session transactions for Play and players.

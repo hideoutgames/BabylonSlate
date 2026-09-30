@@ -18,6 +18,8 @@ Scene documents pass `sceneMode` to the shared DockView catalog: Design uses the
 
 `NumericDragField` keeps desktop and tablet Details compact with 28px inputs, 12px text, narrow axis handles, and 6px horizontal padding. Phone layouts retain separate 44px input and scrub targets.
 
+**Add Component → General → Movement** uses the shared catalog and compact `PropertyGrid` in scene and Class Details. Movement rows reuse numeric, boolean, and enum controls for speed, jumping, capsule dimensions and graph input conversion.
+
 Numeric fields default to two displayed decimal places. `NumericDragField.precision` and numeric `PropertyRow.precision` opt into finer display without rounding stored values; Water Buoyancy Volume uses six places and a `0.0001 m³` scrub sensitivity so small displacements remain readable.
 
 ## Primitives (`@babylonslate/ui`)

@@ -133,6 +133,17 @@ export type CharacterControllerDesc = {
   id: string;
   bodyId: string;
   offset: number;
+  /** Upright capsule dimensions in world units; height includes both rounded ends. */
+  radius?: number;
+  height?: number;
+  maxSlopeAngle?: number;
+  groundSnapDistance?: number;
+};
+
+/** Resolved world motion, including support after the collision solve. */
+export type CharacterMovementResult = PhysicsTransform & {
+  velocity: Vec3;
+  grounded: boolean;
 };
 
 export type PhysicsContactEvent = {
