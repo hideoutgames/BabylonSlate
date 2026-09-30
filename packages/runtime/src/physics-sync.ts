@@ -669,6 +669,9 @@ export class PhysicsWorldSync {
     }
     const moved = this.backend.moveCharacter(actor.guid, translation, dt);
     if (!moved) return null;
+    // Native kinematic targets have not stepped yet: preserve the actor's
+    // authored facing instead of overwriting it with last tick's body rotation.
+    moved.rotation = actorWorldPhysicsTransform(actor, this.worldTransforms).rotation;
     const local = actorLocalPhysicsTransform(moved, actor, this.worldTransforms);
     Object.assign(actor.transform.position, local.position);
     Object.assign(actor.transform.rotation, local.rotation);
@@ -768,7 +771,7 @@ export class PhysicsWorldSync {
     if (movement) {
       const props = parseMovementProperties(Object.fromEntries(movement.variables));
       const id = componentColliderPhysicsId(actor.guid, movement.guid);
-      const rotation = inverseQuaternion(actorWorldPhysicsTransform(actor, this.worldTransforms).rotation);
+      const rotation = uprightCapsuleRotation(actorWorldPhysicsTransform(actor, this.worldTransforms).rotation);
       colliders.set(id, {
         id, bodyId,
         shape: { kind: this.backend.kind === "3d" ? "capsule" : "capsule2d", radius: props.radius, halfHeight: props.height / 2 - props.radius },
@@ -1031,7 +1034,7 @@ export class PhysicsWorldSync {
       }
     }
     if (this.movementComponent(actor)) {
-      const rotation = actorWorldPhysicsTransform(actor, this.worldTransforms).rotation;
+      const rotation = uprightCapsuleRotation(actorWorldPhysicsTransform(actor, this.worldTransforms).rotation);
       descriptor.push(rotation.x, rotation.y, rotation.z, rotation.w);
     }
     return descriptor;
@@ -1482,6 +1485,17 @@ const STATIC_BODY_PROPERTIES = parseRigidBodyProperties({
 const MOVEMENT_BODY_PROPERTIES = parseRigidBodyProperties({
   motionType: "kinematic", mass: 1, gravityScale: 0, linearDamping: 0, angularDamping: 0,
 });
+
+/** An upright capsule needs an axis correction, never a twist around that axis. */
+function uprightCapsuleRotation(rotation: PhysicsTransform["rotation"]): PhysicsTransform["rotation"] {
+  const up = rotateVector(inverseQuaternion(rotation), { x: 0, y: 1, z: 0 });
+  const length = Math.hypot(up.x, up.y, up.z);
+  if (length === 0) return { x: 0, y: 0, z: 0, w: 1 };
+  const x = up.z / length, z = -up.x / length, w = 1 + up.y / length;
+  const norm = Math.hypot(x, z, w);
+  if (norm < 1e-8) return { x: 1, y: 0, z: 0, w: 0 };
+  return { x: x / norm, y: 0, z: z / norm, w: w / norm };
+}
 
 function meshAssetGuid(component: ActorComponent): string | null {
   const variable = component.getVariable("assetGuid");

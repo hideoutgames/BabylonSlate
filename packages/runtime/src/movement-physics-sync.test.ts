@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import { identityTransform, parseMovementProperties } from "@babylonslate/core";
 import { ClassRegistry, World } from "@babylonslate/object-model";
-import { createSoftwarePhysicsBackend } from "@babylonslate/physics";
+import { createPhysicsBackend, createSoftwarePhysicsBackend } from "@babylonslate/physics";
 import { PhysicsWorldSync } from "./physics-sync";
 
 it.each(["3d", "2d"] as const)("%s Movement alone creates a capsule, updates dimensions and retires on removal", (kind) => {
@@ -55,6 +55,40 @@ it("Movement preserves a parented actor's local pose and refuses another motion 
     sync.syncFromWorld(world);
     expect(sync.moveMovement(actor, { x: 2, y: 0, z: 0 }, 1 / 60, parseMovementProperties())).toBeNull();
     expect(backend.getBodyTransform("body:moving")).toBeNull();
+  } finally {
+    sync.dispose();
+  }
+});
+
+it("Havok preserves authored facing and one overlap lifetime while Movement turns inside a trigger", async () => {
+  const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
+  const actor = world.createActor({ classId: "Actor", guid: "moving", transform: identityTransform() });
+  actor.attachComponent(world.createComponent({ classId: "MovementComponent" }));
+  world.spawnActorNow(actor);
+  const trigger = world.createActor({ classId: "Actor", guid: "trigger", transform: identityTransform() });
+  trigger.attachComponent(world.createComponent({ classId: "RigidBodyComponent", variables: { motionType: "static" } }));
+  trigger.attachComponent(world.createComponent({ classId: "ColliderComponent", variables: {
+    isTrigger: true, shape: { kind: "box", halfExtents: { x: 1, y: 2, z: 2 } },
+  } }));
+  world.spawnActorNow(trigger);
+  const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: 0, z: 0 }, allowSoftwareFallback: false });
+  const sync = new PhysicsWorldSync(backend);
+  const events: string[] = [];
+  const step = (x: number) => {
+    sync.step(1 / 60, world, 0, 0, () => sync.moveMovement(actor, { x, y: 0, z: 0 }, 1 / 60, parseMovementProperties()));
+    events.push(...backend.pollContacts().filter((event) => event.kind !== "hit").map((event) => event.kind));
+  };
+  try {
+    step(0);
+    for (let i = 1; i <= 12; i++) {
+      const halfAngle = i * Math.PI / 12;
+      actor.transform.rotation = { x: 0, y: Math.sin(halfAngle), z: 0, w: Math.cos(halfAngle) };
+      step(0);
+      expect(Math.abs(actor.transform.rotation.y)).toBeCloseTo(Math.abs(Math.sin(halfAngle)), 5);
+    }
+    expect(events).toEqual(["overlapBegin"]);
+    for (let i = 0; i < 25; i++) step(0.1);
+    expect(events).toEqual(["overlapBegin", "overlapEnd"]);
   } finally {
     sync.dispose();
   }
