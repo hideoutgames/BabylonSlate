@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
-import type { SerializedScene, ShadowSettings, RenderPath } from "@babylonslate/core";
+import type { SerializedComponent, SerializedScene, ShadowSettings, RenderPath } from "@babylonslate/core";
 import {
   createActor,
   createDefaultScene,
@@ -36,6 +36,7 @@ const harness = vi.hoisted(() => ({
   shapeEditTarget: null as SceneShapeEditTarget | null,
   setShapeEditTarget: vi.fn<(target: SceneShapeEditTarget | null) => void>(),
   scene: null as SerializedScene | null,
+  prefabComponents: [] as SerializedComponent[],
   documentKind: "scene" as "scene" | "scene-layer",
   documentId: "scene:assets/Main.scene.babasset",
   render: { mode: "pbr" as "pbr" | "cel", cel: { shadowBands: 4 }, shadows: undefined as ShadowSettings | undefined, renderPath: undefined as RenderPath | undefined },
@@ -83,6 +84,13 @@ vi.mock("../context/document-context", () => ({
     },
     assetRegistry: {
       list: () => [
+        ...(harness.prefabComponents.length ? [{
+          header: {
+            guid: "class-rich-label", name: "RichLabel", type: "Class", parentClass: "Actor",
+            payload: { components: harness.prefabComponents },
+          },
+          path: "assets/RichLabel.class.babasset",
+        }] : []),
         {
           header: { guid: "scene-cave", name: "Cave", type: "Scene", parentClass: null },
           path: "assets/Cave.scene.babasset",
@@ -168,6 +176,7 @@ beforeEach(() => {
   harness.render.shadows = undefined;
   harness.render.renderPath = undefined;
   harness.scene = createDefaultScene();
+  harness.prefabComponents = [];
   harness.applySceneChange.mockClear();
 });
 
@@ -1201,6 +1210,24 @@ describe("SceneDetailsPanel authoring", () => {
     expect(screen.getByTestId("text2d-text-rich").textContent).toContain(
       "[color=green]",
     );
+  });
+
+  it("resets a rich-text mode override to its prefab's modes", () => {
+    const prefab = createRichText2DComponent("prefab-rich");
+    prefab.properties.appearModes = ["fade"];
+    harness.prefabComponents = [prefab];
+    scene().actors = [createActor("hud", "Rich", {
+      classId: "RichLabel",
+      components: [{
+        ...prefab, id: "rich", sourceId: "prefab-rich", overrideKeys: ["appearModes"],
+        properties: { ...prefab.properties, appearModes: ["scale"] },
+      }],
+    })];
+    harness.selectedActorIds = ["hud"];
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    fireEvent.click(screen.getByRole("button", { name: "Reset Appear Modes" }));
+    const next = harness.applySceneChange.mock.calls.at(-1)![1];
+    expect(next.actors[0]?.components[0]?.properties.appearModes).toEqual(["fade"]);
   });
 
   it("opens markup tag suggestions for 2D Rich Text in the modal editor", () => {

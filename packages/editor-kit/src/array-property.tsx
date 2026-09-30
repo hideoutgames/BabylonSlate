@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { useId, useState } from "react";
 import { RotateCcwIcon } from "lucide-react";
 import { Button } from "@babylonslate/ui/components/button";
 import { Field, FieldDescription, FieldLabel } from "@babylonslate/ui/components/field";
@@ -42,6 +42,33 @@ export function ArrayProperty<T>({
   addLabel = "Add Item", disabled = false, "data-testid": testId = "array-property",
 }: ArrayPropertyProps<T>) {
   const id = useId();
+  const [rowIdentity, setRowIdentity] = useState(() => ({
+    value, keys: value.map((_, index) => index), nextKey: value.length,
+  }));
+  if (rowIdentity.value !== value) {
+    // Retained values keep their rows when reordered; replacements reuse the
+    // unmatched row at their position instead of remounting its focused picker.
+    const used = new Set<number>();
+    const retained = value.map((item) => {
+      const index = rowIdentity.value.findIndex((previous, candidate) =>
+        !used.has(rowIdentity.keys[candidate]!) && isEqual(previous, item));
+      if (index < 0) return undefined;
+      const key = rowIdentity.keys[index]!;
+      used.add(key);
+      return key;
+    });
+    let nextKey = rowIdentity.nextKey;
+    const keys = retained.map((key, index) => {
+      if (key !== undefined) return key;
+      const previous = rowIdentity.keys[index];
+      if (previous !== undefined && !used.has(previous)) {
+        used.add(previous);
+        return previous;
+      }
+      return nextKey++;
+    });
+    setRowIdentity({ value, keys, nextKey });
+  }
   const minimum = Number.isFinite(minItems) ? Math.max(0, Math.floor(minItems)) : 0;
   const maximum = Number.isFinite(maxItems) ? Math.max(minimum, Math.floor(maxItems)) : Number.POSITIVE_INFINITY;
   const optionFor = (item: T) => options.find((option) => isEqual(option.value, item));
@@ -73,7 +100,7 @@ export function ArrayProperty<T>({
           items={value} onChange={change} minItems={minimum}
           maxItems={nextOption ? maximum : value.length}
           onCreate={() => nextOption!.value}
-          getItemKey={unique ? (item) => optionFor(item)?.id ?? String(item) : undefined}
+          getItemKey={unique ? (_, index) => rowIdentity.keys[index]! : undefined}
           addLabel={addLabel} touchAdaptive data-testid={`${testId}-entries`}
           renderItem={({ item, index, onChange: update }) => {
             const selected = optionFor(item);
@@ -82,7 +109,15 @@ export function ArrayProperty<T>({
               items={options.map((option) => ({ value: option.id, label: option.label }))}
               onValueChange={(next) => {
                 const option = options.find((entry) => entry.id === next);
-                if (!disabled && option && allowed(option, index)) update(option.value);
+                if (!disabled && option && allowed(option, index)) {
+                  // Hosts may collapse other rows after a choice (e.g. Instant).
+                  // Associate the new value with this row before that change.
+                  setRowIdentity((previous) => ({
+                    ...previous,
+                    value: previous.value.map((item, row) => row === index ? option.value : item),
+                  }));
+                  update(option.value);
+                }
               }}
             >
               <SelectTrigger size="sm" className="w-full pointer-coarse:min-h-11" aria-label={`${label} ${itemLabel} ${index + 1}`}>

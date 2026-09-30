@@ -161,9 +161,13 @@ Shake uses smooth, time-based noise per letter with a small displacement; `[shak
 
 **Appear Modes** on 2D Rich Text is an array: combine **Fade**, **Scale**, and **Slide** once each, choose **Instant** alone, or remove every entry for **Off** (the default). Scene and Class/Prefab Details share the reusable Array Property editor. Choosing Instant replaces any combination. **Appear Transition** selects a curve, including Linear, Cubic Out, Cubic In Out, Bounce Out, and Instant. **Time Between Characters** defaults to `0.1 s`; `0` starts every character together. **Character Reveal Duration** defaults to `0.3 s`. Instant snaps each character at its scheduled time and ignores that duration, while preserving the interval.
 
+Off disables the transition and timing controls; Instant mode disables transition and duration, and Instant transition disables duration. Their stored values remain intact when re-enabled. Appear Start stays editable. Reset on a scene prefab instance restores its prefab's authored modes.
+
 Reveal runs after markup parsing and layout: tags consume no reveal time, each inline image counts as one character, and nested formatting and stacked letter effects remain applied. The full text determines wrapping and alignment throughout the animation, so unrevealed characters do not make the text reflow. **Appear Start** chooses Fully Revealed (default), Hidden, or Play On Start for the live component; editor authoring keeps the full label visible.
 
 Fade uses smooth alpha blending on Bitmap glyphs, inline images, underlines, MSDF, and shared Text Materials; glyph coverage and existing styling remain intact. Underline segments reveal with their characters while retaining the line's baseline.
+
+Continuous letter effects update only their affected glyphs. Reveal progress updates reuse component mesh references and avoid rebuilding or scanning the actor's glyph hierarchy each tick.
 
 The component graph exposes **Set Appear Modes**, **Set Appear Transition**, **Set Appear Interval**, and **Set Appear Duration**. **Trigger Appear** restarts from hidden; **Play** continues toward fully revealed; **Play Reverse** continues toward hidden. **Get Appear Progress** returns normalized `0–1` progress (`0` hidden, `1` fully revealed), and **Get Is Revealed** is true only at `1`. Reversing during playback preserves the current progress. Live property edits preserve normalized progress; Appear Start only sets the initial state. Simulation time drives the timeline, so pause and owner readiness stop it. Off completes playback commands immediately at their destination.
 

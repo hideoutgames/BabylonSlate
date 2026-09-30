@@ -1203,6 +1203,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                   : "";
       return {
         component,
+        template,
         index,
         title,
         rows: filterRows(rows, title),
@@ -1272,6 +1273,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         {componentDetails.map(
           ({
             component,
+            template,
             index,
             title,
             rows,
@@ -1372,6 +1374,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                   {showExtras && component.classId === "2DRichTextComponent" ? (
                     <RichTextAppearModesField
                       value={parseText2DAppearProperties(component.properties).appearModes}
+                      defaultValue={parseText2DAppearProperties(template?.properties ?? {}).appearModes}
                       onChange={(appearModes) => updateActor((entry) => ({
                         ...entry,
                         components: entry.components.map((candidate) => candidate.id === component.id

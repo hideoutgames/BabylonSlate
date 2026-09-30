@@ -441,22 +441,55 @@ function attachEffects(
   pixelsPerUnit: number,
   isPaused?: () => boolean,
 ): void {
-  let progress = properties.appearProgress ?? (properties.appearStart === "revealed" ? 1 : 0);
+  let progress: number | undefined;
   const modes = properties.appearModes;
   const fade = modes.includes("fade");
   const scale = modes.includes("scale");
   const slide = modes.includes("slide");
-  const animated = glyphs
-    .map((entry) => ({ ...entry, restScale: entry.mesh.scaling.clone(), sample: { x: 0, y: 0, rotation: 0 }, sampled: false }));
-  // Per-frame tick: one reused context and a preallocated sample per glyph.
+  const entries = glyphs.map((entry) => ({
+    ...entry,
+    restScale: entry.mesh.scaling.clone(),
+    sample: { x: 0, y: 0, rotation: 0 },
+    sampled: false,
+    slideOffset: 0,
+  }));
+  const effectEntries = entries.filter((entry) => hasLetterEffects(entry.item));
+  const applyPose = (entry: (typeof entries)[number]) => {
+    const { mesh, item, restRotation, sample, slideOffset } = entry;
+    const x = item.x + sample.x;
+    const y = item.y + sample.y - slideOffset;
+    const rotation = restRotation + sample.rotation;
+    // Babylon marks transforms dirty even when a setter receives the same value.
+    if (mesh.position.x !== x) mesh.position.x = x;
+    if (mesh.position.y !== y) mesh.position.y = y;
+    if (mesh.rotation.z !== rotation) mesh.rotation.z = rotation;
+  };
+  const applyReveal = (value: number) => {
+    if (progress === value) return;
+    progress = value;
+    for (const entry of entries) {
+      const { mesh, item } = entry;
+      const reveal = text2DCharacterReveal(value, item.index, characterCount, properties);
+      const visibility = fade ? Math.max(0, Math.min(1, reveal)) : reveal !== 0 ? 1 : 0;
+      if (mesh.visibility !== visibility) mesh.visibility = visibility;
+      const amount = scale ? Math.max(0, reveal) : 1;
+      const scaleX = entry.restScale.x * amount;
+      const scaleY = entry.restScale.y * amount;
+      if (mesh.scaling.x !== scaleX) mesh.scaling.x = scaleX;
+      if (mesh.scaling.y !== scaleY) mesh.scaling.y = scaleY;
+      entry.slideOffset = slide ? (1 - reveal) * item.style.size / pixelsPerUnit : 0;
+      applyPose(entry);
+    }
+  };
+  // Continuous effects visit only tagged glyphs and reuse their last reveal pose.
   const context: Text2DEffectContext = { time: 0, index: 0, fontSize: 0, hoverPhase: 0, rotatePhase: 0 };
-  const tick = (time: number) => {
+  const tickEffects = (time: number) => {
     const paused = isPaused?.() === true;
     context.time = time;
-    for (const entry of animated) {
-      const { mesh, item, restRotation, sample } = entry;
+    for (const entry of effectEntries) {
+      const { item, sample } = entry;
       // A paused glyph holds its last sample once it has one.
-      if ((!paused || !entry.sampled) && hasLetterEffects(item)) {
+      if (!paused || !entry.sampled) {
         context.index = item.index;
         context.fontSize = item.height;
         context.hoverPhase = item.hoverPhase;
@@ -464,23 +497,17 @@ function attachEffects(
         combineText2DEffects(item.effects, context, sample);
         entry.sampled = true;
       }
-      const reveal = text2DCharacterReveal(progress, item.index, characterCount, properties);
-      mesh.visibility = fade ? Math.max(0, Math.min(1, reveal)) : reveal !== 0 ? 1 : 0;
-      const amount = scale ? Math.max(0, reveal) : 1;
-      mesh.scaling.x = entry.restScale.x * amount;
-      mesh.scaling.y = entry.restScale.y * amount;
-      mesh.position.x = item.x + sample.x;
-      mesh.position.y = item.y + sample.y - (slide ? (1 - reveal) * item.style.size / pixelsPerUnit : 0);
-      mesh.rotation.z = restRotation + sample.rotation;
+      applyPose(entry);
     }
   };
   let elapsed = 0;
-  appearVisuals.set(parent, (value) => { progress = value; tick(elapsed); });
-  tick(0);
-  const observer: Nullable<Observer<Scene>> = glyphs.some((entry) => hasLetterEffects(entry.item)) ? scene.onBeforeRenderObservable.add(() => {
+  appearVisuals.set(parent, applyReveal);
+  tickEffects(0);
+  applyReveal(properties.appearProgress ?? (properties.appearStart === "revealed" ? 1 : 0));
+  const observer: Nullable<Observer<Scene>> = effectEntries.length > 0 ? scene.onBeforeRenderObservable.add(() => {
     if (isPaused?.()) return;
     elapsed += scene.getEngine().getDeltaTime() / 1000;
-    tick(elapsed);
+    tickEffects(elapsed);
   }) : null;
   bundle.cancelWith(() => {
     appearVisuals.delete(parent);
@@ -488,7 +515,7 @@ function attachEffects(
   });
   parent.metadata = {
     ...(parent.metadata ?? {}),
-    tickText2DEffects: (time: number) => { elapsed = time; tick(time); },
+    tickText2DEffects: (time: number) => { elapsed = time; tickEffects(time); },
   };
 }
 
