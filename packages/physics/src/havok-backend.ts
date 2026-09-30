@@ -932,14 +932,29 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     if (!body || !Number.isFinite(dt) || dt <= 0) return null;
     if (startPose) {
       const position = toVector3(startPose.position);
-      character.controller.setPosition(position);
       if (!body.node.position.equals(position)) {
         // Inherited repositioning is not velocity: large parent changes must
         // not be clipped by Havok's world speed limit. Keep contact membership;
         // only the motor's displacement becomes a native kinematic target.
+        const previousPosition = body.node.position.clone();
         body.node.position.copyFrom(position);
-        setHavokBodyPoseBeforeStep(this.plugin, body.body);
+        try {
+          setHavokBodyPoseBeforeStep(this.plugin, body.body);
+        } catch (error) {
+          body.node.position.copyFrom(previousPosition);
+          try {
+            setHavokBodyPoseBeforeStep(this.plugin, body.body);
+          } catch (rollbackError) {
+            body.mutationFailure = new AggregateError(
+              [error, rollbackError],
+              `Havok Movement pose rollback failed for ${character.desc.bodyId}`,
+            );
+            throw body.mutationFailure;
+          }
+          throw error;
+        }
       }
+      character.controller.setPosition(position);
     }
     const invDt = dt > 1e-8 ? 1 / dt : 0;
     character.controller.setVelocity(

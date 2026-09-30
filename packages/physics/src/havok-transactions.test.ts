@@ -535,6 +535,33 @@ describe("Havok explicit native motion", () => {
       failedPose.mockRestore();
       expect(trace(backend, 12).hit).toBe(true);
       expect(physicsBody.getPrestepType()).toBe(PhysicsPrestepType.DISABLED);
+
+      backend.updateBody("body", { motionType: "kinematic" });
+      backend.createCharacterController({ id: "movement", bodyId: "body", offset: 0.01 });
+      const previousPose = backend.getBodyTransform("body")!;
+      const failedMovement = vi.spyOn(havok, "HP_Body_SetQTransform")
+        .mockReturnValueOnce(havok.Result.RESULT_FAIL);
+      expect(() => backend.moveCharacter("movement", { x: 0, y: 0, z: 0 }, 1 / 60, pose(20)))
+        .toThrow("native body teleport failed");
+      failedMovement.mockRestore();
+      expect(backend.getBodyTransform("body")).toEqual(previousPose);
+      expect(havok.HP_Body_GetQTransform(handle)[1][0]).toEqual([
+        previousPose.position.x, previousPose.position.y, previousPose.position.z,
+      ]);
+      expect(backend.moveCharacter("movement", { x: 0, y: 0, z: 0 }, 1 / 60)?.position)
+        .toEqual(previousPose.position);
+      expect(backend.moveCharacter("movement", { x: 0.1, y: 0, z: 0 }, 1 / 60, pose(20))?.position.x)
+        .toBeCloseTo(20.1);
+      backend.step(1 / 60);
+      expect(backend.getBodyTransform("body")?.position.x).toBeCloseTo(20.1);
+      const failedRollback = vi.spyOn(havok, "HP_Body_SetQTransform")
+        .mockReturnValueOnce(havok.Result.RESULT_FAIL)
+        .mockReturnValueOnce(havok.Result.RESULT_FAIL);
+      expect(() => backend.moveCharacter("movement", { x: 0, y: 0, z: 0 }, 1 / 60, pose(30)))
+        .toThrow("Movement pose rollback failed");
+      failedRollback.mockRestore();
+      expect(() => backend.moveCharacter("movement", { x: 1, y: 0, z: 0 }, 1 / 60, pose(40)))
+        .toThrow("Movement pose rollback failed");
     } finally {
       backend.dispose();
     }
