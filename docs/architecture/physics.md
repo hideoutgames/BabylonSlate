@@ -73,6 +73,30 @@ Native fixtures exercise the packaged Havok solver in NullEngine, separately fro
 
 ## Components
 
+### Movement component
+
+Add **General → Movement** to an actor in a 3D or 2D world scene. It owns an upright capsule centered on the actor, with dimensions in world units. The default radius is 0.4 and total height is 1.8. Place the actor above a collision surface; world +Y is up. Ground movement uses XZ in 3D and X in 2D, with Y reserved for jumping and falling. SceneLayers do not support Movement.
+
+Use one Movement per actor. It supplies its own kinematic body and sole collision capsule, so an additional Rigid Body is unnecessary. Rigid Body, Nav Agent, Ragdoll, Water Buoyancy, or multiple Movement components on the same actor prevent Movement simulation. While Movement owns the actor, mesh collision and authored Collider components do not add shapes to its body. Actor/component scale and the component's local transform do not resize or offset the capsule; adjust Radius and Height directly. Spawn without penetrating another collider. Moving-platform carry is not guaranteed.
+
+- Movement is controlled through graphs. Connect a 2D Input Axis event to **Convert Input**, then pass Direction to **Set Movement Input**; send zero when the axis is released. Connect an Input Action press to **Jump**. A 1D axis can supply X with a zero Y value.
+- **Convert Input** maps a Vec2 through the radial **Dead Zone** (default 0.1), **Input Scale** (1), **Input Space** (World or Actor), and **Input Yaw** plus its extra yaw argument. It returns a world direction; 2D uses X only. Actor space follows the actor's heading, without tilting the movement plane.
+- **Set Movement Input** stores world-space input until changed. **Add Movement Input** contributes to the next physics tick and then clears. Their sum is clamped to unit length, retaining analog strength while preventing faster diagonal movement.
+- **Set Velocity** replaces world velocity; **Add Velocity** adds a world velocity change. **Stop Immediately** clears velocity, input and buffered jumping. Disabling Movement clears velocity and requests while retaining a stationary capsule.
+- **Jump** buffers a request. **Coyote Time** allows a jump shortly after walking off an edge; **Jump Buffer Time** retains an early press until landing. Both default to 0.1 seconds. A successful jump consumes the coyote allowance, so repeated calls cannot create an extra midair jump.
+
+| Setting | Default | Effect |
+| --- | --- | --- |
+| Max Speed | 5 | Maximum commanded horizontal speed, world units/s |
+| Acceleration / Braking | 30 / 40 | Approach the desired speed / slow when input is released, world units/s² |
+| Air Control | 0.35 | Fraction of horizontal steering available in the air |
+| Gravity Scale / Max Fall Speed | 1 / 40 | Scale scene gravity / cap downward speed |
+| Jump Speed | 6 | Upward launch speed, world units/s |
+| Max Slope Angle | 50° | Steepest surface considered walkable |
+| Ground Snap Distance | 0.1 | Distance used to maintain contact with nearby ground |
+
+Get-only **Velocity**, horizontal **Speed**, **Is Grounded**, **Is In Air**, and **Is Moving** expose current state. Is Moving uses horizontal speed above 0.01 world units/s. Component events report **Started**, **Stopped**, **Jumped**, **Left Ground**, and **Landed**, each with the resulting Velocity and Speed. The same runtime path serves Play and exported players. Movement currently provides ground travel and jumping; flying modes and automatic stair climbing are outside its contract.
+
 ### Constraints and ragdolls
 
 **Add Component → Physics → Physics Constraint** connects the owner's body to another actor. Choose **Target Actor** from the searchable scene picker; it includes explicit Rigid Bodies and implicit Mesh, Blocking Volume, or Tilemap bodies. Set a target after placing a Class, or use the component's **Set Connected Actor** graph function. An empty/missing target waits for a body to become available. Duplicating a connected selection remaps its internal targets to the copied actors.

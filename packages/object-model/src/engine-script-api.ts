@@ -173,6 +173,14 @@ export const COLLIDER_EVENTS: readonly EngineScriptEvent[] = [
   },
 ];
 
+export const MOVEMENT_EVENTS: readonly EngineScriptEvent[] = [
+  { name: "On Movement Started", eventType: "flow.event.movementStarted", exportName: "onMovementStarted" },
+  { name: "On Movement Stopped", eventType: "flow.event.movementStopped", exportName: "onMovementStopped" },
+  { name: "On Movement Jumped", eventType: "flow.event.movementJumped", exportName: "onMovementJumped" },
+  { name: "On Movement Left Ground", eventType: "flow.event.movementLeftGround", exportName: "onMovementLeftGround" },
+  { name: "On Movement Landed", eventType: "flow.event.movementLanded", exportName: "onMovementLanded" },
+];
+
 const INIT_EVENT: EngineScriptEvent = {
   name: "On Init",
   eventType: "flow.event.init",
@@ -730,6 +738,59 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
       name: "Add Impulse", runtime: "addImpulse",
       pins: [EXEC_IN, EXEC_OUT, { name: "impulse", typeId: "vec3", direction: "in" }, { name: "strength", typeId: "float", direction: "in" }],
     }],
+  },
+  {
+    classId: "MovementComponent",
+    variables: [
+      { name: "Enabled", typeId: "bool", propertyKey: "enabled" },
+      { name: "Input Space", typeId: "string", propertyKey: "inputSpace" },
+      { name: "Input Yaw", typeId: "float", propertyKey: "inputYaw" },
+      { name: "Input Scale", typeId: "float", propertyKey: "inputScale" },
+      { name: "Dead Zone", typeId: "float", propertyKey: "deadZone" },
+      { name: "Max Speed", typeId: "float", propertyKey: "maxSpeed" },
+      { name: "Acceleration", typeId: "float", propertyKey: "acceleration" },
+      { name: "Braking", typeId: "float", propertyKey: "braking" },
+      { name: "Air Control", typeId: "float", propertyKey: "airControl" },
+      { name: "Gravity Scale", typeId: "float", propertyKey: "gravityScale" },
+      { name: "Jump Speed", typeId: "float", propertyKey: "jumpSpeed" },
+      { name: "Max Fall Speed", typeId: "float", propertyKey: "maxFallSpeed" },
+      { name: "Radius", typeId: "float", propertyKey: "radius" },
+      { name: "Height", typeId: "float", propertyKey: "height" },
+      { name: "Max Slope Angle", typeId: "float", propertyKey: "maxSlopeAngle" },
+      { name: "Ground Snap Distance", typeId: "float", propertyKey: "groundSnapDistance" },
+      { name: "Coyote Time", typeId: "float", propertyKey: "coyoteTime" },
+      { name: "Jump Buffer Time", typeId: "float", propertyKey: "jumpBufferTime" },
+      { name: "Velocity", typeId: "vec3", propertyKey: "velocity", getOnly: true },
+      { name: "Speed", typeId: "float", propertyKey: "speed", getOnly: true },
+      { name: "Is Grounded", typeId: "bool", propertyKey: "isGrounded", getOnly: true },
+      { name: "Is In Air", typeId: "bool", propertyKey: "isInAir", getOnly: true },
+      { name: "Is Moving", typeId: "bool", propertyKey: "isMoving", getOnly: true },
+    ],
+    functions: [
+      {
+        name: "Convert Input", runtime: "convertMovementInput",
+        pins: [EXEC_IN, EXEC_OUT, { name: "input", typeId: "vec2", direction: "in" }, { name: "yaw", typeId: "float", direction: "in" }, { name: "direction", typeId: "vec3", direction: "out" }],
+      },
+      {
+        name: "Set Movement Input", runtime: "setMovementInput",
+        pins: [EXEC_IN, EXEC_OUT, { name: "direction", typeId: "vec3", direction: "in" }],
+      },
+      {
+        name: "Add Movement Input", runtime: "addMovementInput",
+        pins: [EXEC_IN, EXEC_OUT, { name: "direction", typeId: "vec3", direction: "in" }],
+      },
+      {
+        name: "Set Velocity", runtime: "setMovementVelocity",
+        pins: [EXEC_IN, EXEC_OUT, { name: "velocity", typeId: "vec3", direction: "in" }],
+      },
+      {
+        name: "Add Velocity", runtime: "addMovementVelocity",
+        pins: [EXEC_IN, EXEC_OUT, { name: "velocity", typeId: "vec3", direction: "in" }],
+      },
+      { name: "Jump", runtime: "jumpMovement", pins: [EXEC_IN, EXEC_OUT] },
+      { name: "Stop Immediately", runtime: "stopMovementImmediately", pins: [EXEC_IN, EXEC_OUT] },
+    ],
+    events: MOVEMENT_EVENTS,
   },
   {
     classId: "NavAgentComponent",

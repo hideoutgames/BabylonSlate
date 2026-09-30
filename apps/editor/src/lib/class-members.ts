@@ -108,6 +108,11 @@ const NATIVE_EVENT_TITLES: Record<string, string> = {
   "flow.event.onPressEnd": "Event On Press End",
   "flow.event.textChanged": "Event On Text Changed",
   "flow.event.audioFinished": "Event On Audio Finished",
+  "flow.event.movementStarted": "Event On Movement Started",
+  "flow.event.movementStopped": "Event On Movement Stopped",
+  "flow.event.movementJumped": "Event On Movement Jumped",
+  "flow.event.movementLeftGround": "Event On Movement Left Ground",
+  "flow.event.movementLanded": "Event On Movement Landed",
   "flow.event.commandRun": "Event On Command Run",
   "flow.event.editorBeginPlay": "Event Editor On Begin Play",
   "flow.event.editorStartup": "Event On Editor Startup",
@@ -147,6 +152,11 @@ const ACTOR_EVENT_TYPE_IDS = [
   "flow.event.endOverlap",
   "flow.event.textChanged",
   "flow.event.audioFinished",
+  "flow.event.movementStarted",
+  "flow.event.movementStopped",
+  "flow.event.movementJumped",
+  "flow.event.movementLeftGround",
+  "flow.event.movementLanded",
   ...OVERLAY_MOUSE_EVENT_TYPE_IDS,
 ] as const;
 

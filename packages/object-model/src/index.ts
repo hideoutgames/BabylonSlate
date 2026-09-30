@@ -17,6 +17,7 @@ export {
 export {
   BUTTON_MOUSE_EVENTS,
   COLLIDER_EVENTS,
+  MOVEMENT_EVENTS,
   ENGINE_CLASS_SCRIPT_APIS,
   engineEventTypeClassIds,
   engineNativeEventsFor,

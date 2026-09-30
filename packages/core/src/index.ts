@@ -57,6 +57,7 @@ export * from "./area-rect-light";
 export * from "./fog-volume";
 export * from "./outline-component";
 export * from "./ragdoll";
+export * from "./movement";
 export * from "./water";
 export * from "./water-removal";
 export * from "./landscape";
