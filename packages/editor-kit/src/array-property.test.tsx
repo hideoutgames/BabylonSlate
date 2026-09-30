@@ -1,8 +1,18 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { ArrayProperty } from "./array-property";
+import { dispatchPointerEvent } from "./test-support/pointer-events";
 
 afterEach(cleanup);
+
+function clickOption(option: HTMLElement) {
+  // Base UI ignores unhighlighted mouse clicks that did not start on the item.
+  act(() => {
+    dispatchPointerEvent(option, "pointerdown", { pointerType: "mouse" });
+    dispatchPointerEvent(option, "pointerup", { pointerType: "mouse" });
+  });
+  fireEvent.click(option, { detail: 1 });
+}
 
 const options = [
   { id: "red", label: "Red", value: "red" },
@@ -32,10 +42,16 @@ describe("ArrayProperty", () => {
       isOptionAllowed={(item, index) => item !== "blue" || index === 0} />);
     fireEvent.click(screen.getByRole("combobox", { name: "Colors Item 1" }));
     expect((await screen.findByRole("option", { name: "Green" })).getAttribute("aria-disabled")).toBe("true");
-    fireEvent.click(screen.getByRole("option", { name: "Green" }));
+    clickOption(screen.getByRole("option", { name: "Green" }));
     expect(onChange).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("option", { name: "Blue" }));
+    clickOption(screen.getByRole("option", { name: "Blue" }));
     expect(onChange).toHaveBeenLastCalledWith(["blue", "green"]);
+    onChange.mockClear();
+    fireEvent.click(screen.getByRole("combobox", { name: "Colors Item 2" }));
+    const incompatible = await screen.findByRole("option", { name: "Blue" });
+    expect(incompatible.getAttribute("aria-disabled")).toBe("true");
+    clickOption(incompatible);
+    expect(onChange).not.toHaveBeenCalled();
   });
 
   it("uses value identity for object arrays and disables Add when no compatible item remains", () => {

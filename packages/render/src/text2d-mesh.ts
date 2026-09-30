@@ -223,7 +223,7 @@ function msdfMetrics(
   };
 }
 
-function bitmapGlyphMaterial(scene: Scene, name: string, atlas: Texture, bundle: VisualBundle): StandardMaterial {
+function bitmapGlyphMaterial(scene: Scene, name: string, atlas: Texture, bundle: VisualBundle, fade: boolean): StandardMaterial {
   const material = bundle.ownMaterial(new StandardMaterial(name, scene));
   material.disableLighting = true;
   material.backFaceCulling = false;
@@ -234,7 +234,7 @@ function bitmapGlyphMaterial(scene: Scene, name: string, atlas: Texture, bundle:
   material.diffuseTexture = atlas;
   atlas.hasAlpha = true;
   material.useAlphaFromDiffuseTexture = true;
-  material.transparencyMode = Material.MATERIAL_ALPHATEST;
+  material.transparencyMode = fade ? Material.MATERIAL_ALPHABLEND : Material.MATERIAL_ALPHATEST;
   material.alphaCutOff = 0.4;
   material.metadata = { ...(material.metadata ?? {}), bitmapAtlas: true };
   return material;
@@ -502,6 +502,7 @@ export function createText2DMesh(
 ): Mesh {
   const rich = options.rich === true;
   const parsed = parseText2DProperties(properties, { rich });
+  const fade = rich && parsed.appearModes.includes("fade");
   const hitTest = parseSceneLayerHitTest(parsed.hitTest, "ignore");
   const ppu = assets?.pixelsPerUnit && assets.pixelsPerUnit > 0 ? assets.pixelsPerUnit : 100;
   const fontGuid = parsed.fontAssetGuid;
@@ -592,7 +593,7 @@ export function createText2DMesh(
       ));
       bitmapAtlas.hasAlpha = true;
       bitmapAtlas.name = `${name}:bitmap-atlas`;
-      sharedBitmapMaterial = bitmapGlyphMaterial(scene, `${name}:bitmap`, bitmapAtlas, bundle);
+      sharedBitmapMaterial = bitmapGlyphMaterial(scene, `${name}:bitmap`, bitmapAtlas, bundle, fade);
     }
 
     const glyphMeshes: Array<{ mesh: Mesh; item: Text2DLayoutItem; restRotation: number }> =
@@ -634,7 +635,7 @@ export function createText2DMesh(
         applyGlyphUvs(child, item.uvs);
       } else if (item.kind === "image") {
         child.material = unlitMaterial(scene, `${name}:glyph:${index}`, item.style.color, false, bundle);
-        if (item.guid) applyAlbedoTexture(child, scene, item.guid, assets);
+        if (item.guid) applyAlbedoTexture(child, scene, item.guid, assets, { alwaysBlend: fade });
       } else if (item.kind === "underline") {
         child.material = unlitMaterial(scene, `${name}:glyph:${index}`, item.style.color, false, bundle);
       } else if (sharedBitmapMaterial && packedBitmap && item.ch) {
@@ -649,6 +650,9 @@ export function createText2DMesh(
       if (item.style.bold && msdf) {
         child.scaling.x = 1.08;
         child.scaling.y = 1.08;
+      }
+      if (fade && child.material instanceof StandardMaterial) {
+        child.material.transparencyMode = Material.MATERIAL_ALPHABLEND;
       }
       child.metadata = {
         ...(child.metadata ?? {}),

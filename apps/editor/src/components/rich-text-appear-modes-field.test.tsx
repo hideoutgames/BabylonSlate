@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { RichTextAppearModesField } from "./rich-text-appear-modes-field";
+import { dispatchPointerEvent } from "../../../../packages/editor-kit/src/test-support/pointer-events";
 
 afterEach(cleanup);
 
@@ -12,7 +13,12 @@ describe("RichTextAppearModesField", () => {
     expect(onChange).toHaveBeenLastCalledWith(["fade", "scale"]);
     rerender(<RichTextAppearModesField value={["fade", "scale"]} onChange={onChange} />);
     fireEvent.click(screen.getByRole("combobox", { name: "Appear Modes Mode 2" }));
-    fireEvent.click(await screen.findByRole("option", { name: "Instant" }));
+    const instant = await screen.findByRole("option", { name: "Instant" });
+    act(() => {
+      dispatchPointerEvent(instant, "pointerdown", { pointerType: "mouse" });
+      dispatchPointerEvent(instant, "pointerup", { pointerType: "mouse" });
+    });
+    fireEvent.click(instant, { detail: 1 });
     expect(onChange).toHaveBeenLastCalledWith(["instant"]);
     rerender(<RichTextAppearModesField value={["instant"]} onChange={onChange} />);
     expect(screen.getByRole("button", { name: "Add Mode" })).toHaveProperty("disabled", true);

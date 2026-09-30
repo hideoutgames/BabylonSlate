@@ -1,9 +1,11 @@
-import { Mesh } from "@babylonjs/core";
+import { Material, Mesh, StandardMaterial } from "@babylonjs/core";
+import { installTextureBytes } from "@babylonslate/assets";
 import { afterEach, expect, it } from "vitest";
 import { createTestEngine } from "./create-null-engine";
 import { createText2DMesh, updateText2DAppear } from "./text2d-mesh";
 import { applyAssignMesh, applyText2DAppearCommand, createSnapshotSceneBinding, createPlayMesh } from "./snapshot-apply";
 import type { GlyphMetricsProvider } from "./text2d-layout";
+import { ResourceCache } from "./resource-cache";
 
 const handles: ReturnType<typeof createTestEngine>[] = [];
 afterEach(() => { for (const handle of handles.splice(0)) { handle.scene.dispose(); handle.engine.dispose(); } });
@@ -15,11 +17,13 @@ const metrics: GlyphMetricsProvider = {
 
 it("reveals formatted glyphs, images and underlines together while preserving stacked effects", () => {
   const { scene } = host();
+  const resourceCache = new ResourceCache();
+  scene.onDisposeObservable.addOnce(() => resourceCache.dispose());
   const root = createText2DMesh(scene, "rich", {
     text: "[u][color=red][b][wave=2][rotate=45]A[img=photo]B[/rotate][/wave][/b][/color][/u]",
     size: 32, appearModes: ["fade", "scale", "slide"], appearTransition: "linear",
     appearInterval: 0.1, appearDuration: 0.2, appearStart: "hidden",
-  }, undefined, { rich: true, metrics });
+  }, { resourceCache, textureBytes: installTextureBytes(new Map([["photo", new Uint8Array([1, 2, 3])]])) }, { rich: true, metrics });
   const children = root.getChildMeshes();
   const [a, image, b] = children.slice(0, 3);
   const underlines = children.filter((child) => child.name.includes(":underline:"));
@@ -31,6 +35,12 @@ it("reveals formatted glyphs, images and underlines together while preserving st
   updateText2DAppear(root, 0.5); // 0.2s of a 0.4s timeline: A finished, image halfway, B waiting.
   expect(a!.visibility).toBe(1);
   expect(image!.visibility).toBeCloseTo(0.5);
+  expect((image!.material as StandardMaterial).diffuseTexture).toBeTruthy();
+  for (const child of children) {
+    expect(child.material!.needAlphaBlendingForMesh(child)).toBe(true);
+    // Fade must preserve low alpha instead of discarding it at the cutout threshold.
+    expect(child.material!.transparencyMode).toBe(Material.MATERIAL_ALPHABLEND);
+  }
   expect(b!.visibility).toBe(0);
   expect(image!.scaling.x).toBeCloseTo(0.5);
   expect(image!.position.y).toBeCloseTo(rest[1]!.y - 0.16);
