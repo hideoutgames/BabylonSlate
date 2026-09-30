@@ -1388,6 +1388,25 @@ describe("applyPrefabPropertyDefaults", () => {
     expect(plain.rows.some((row) => row.id.includes("-appear"))).toBe(false);
   });
 
+  it.each([
+    { modes: [], transition: "bounceOut", disabled: [true, true, true] },
+    { modes: ["instant"], transition: "bounceOut", disabled: [true, false, true] },
+    { modes: ["fade"], transition: "instant", disabled: [false, false, true] },
+    { modes: ["fade", "scale"], transition: "bounceOut", disabled: [false, false, false] },
+  ])("disables only ineffective reveal fields for $modes / $transition", ({ modes, transition, disabled }) => {
+    const rich = rowsFor({
+      id: "label", classId: "2DRichTextComponent",
+      properties: { appearModes: modes, appearTransition: transition, appearInterval: 0.25, appearDuration: 0.8, appearStart: "hidden" },
+    });
+    const reveal = ["appearTransition", "appearInterval", "appearDuration"].map((key) => rich.rows.find((row) => row.id.endsWith(`-${key}`)));
+    expect(reveal.map((row) => row?.disabled)).toEqual(disabled);
+    expect(reveal.map((row) => row && "value" in row ? row.value : undefined)).toEqual([transition, 0.25, 0.8]);
+    const start = rich.rows.find((row) => row.id.endsWith("-appearStart"));
+    expect(start?.disabled).not.toBe(true);
+    if (start?.kind === "enum") start.onChange("play");
+    expect(rich.update).toHaveBeenCalledWith("appearStart", "play");
+  });
+
   it("writes renderer back to bitmap when the Font no longer has an MSDF pair", () => {
     const text = rowsFor(
       {

@@ -582,12 +582,34 @@ function applyPlayShadows(scene: Scene): void {
 const rejectedTextAssignments = new WeakMap<SnapshotSceneBinding, Map<number, string>>();
 const rejectedPreparedAssignments = new WeakMap<SnapshotSceneBinding, Map<number, string>>();
 const pendingVisualReplacements = new WeakMap<SnapshotSceneBinding, Map<number, Mesh>>();
+/** Exact component roots belong to one visual generation, including prepared successors. */
+const playVisualComponents = new WeakMap<Mesh, ReadonlyMap<string, Mesh>>();
+
+function rememberPlayVisualComponents(root: Mesh, components: ReadonlyMap<string, Mesh>): void {
+  playVisualComponents.set(root, components);
+  root.onDisposeObservable.addOnce(() => playVisualComponents.delete(root));
+}
+
+function updateVisualTextAppear(root: Mesh | undefined, componentId: string, progress: number): void {
+  if (!root || root.isDisposed()) return;
+  const mesh = playVisualComponents.get(root)?.get(componentId);
+  if (mesh && !mesh.isDisposed()) updateText2DAppear(mesh, progress);
+}
 
 /** Keep live and prepared text visuals on the same simulation-owned reveal sample. */
 export function applyText2DAppearCommand(binding: SnapshotSceneBinding, command: Extract<CommandMessage, { type: "setText2DAppear" }>): void {
   if (!Number.isFinite(command.progress)) return;
   const parts = binding.meshParts.get(command.slotId);
-  const part = parts?.find((entry) => entry.componentId === command.componentId && entry.meshKind === "2drichtext");
+  let part: AssignMeshPart | undefined;
+  if (parts) {
+    for (let index = 0; index < parts.length; index++) {
+      const entry = parts[index]!;
+      if (entry.componentId === command.componentId && entry.meshKind === "2drichtext") {
+        part = entry;
+        break;
+      }
+    }
+  }
   const primary = binding.primaryComponentIds.get(command.slotId) === command.componentId && binding.meshKinds.get(command.slotId) === "2drichtext";
   if (!part && !primary) return;
   const progress = Math.min(1, Math.max(0, command.progress));
@@ -596,15 +618,10 @@ export function applyText2DAppearCommand(binding: SnapshotSceneBinding, command:
     const properties = binding.text2dProps.get(command.slotId);
     if (properties) properties.appearProgress = progress;
   }
-  for (const root of [binding.meshes.get(command.slotId), pendingVisualReplacements.get(binding)?.get(command.slotId)]) {
-    if (!root || root.isDisposed()) continue;
-    if (!partsNeedOrigin(parts)) updateText2DAppear(root, progress);
-    else {
-      const name = playComponentMeshName(command.slotId, command.componentId);
-      const mesh = root.getChildMeshes().find((child) => child.name === name);
-      if (mesh instanceof Mesh) updateText2DAppear(mesh, progress);
-    }
-  }
+  const live = binding.meshes.get(command.slotId);
+  const prepared = pendingVisualReplacements.get(binding)?.get(command.slotId);
+  updateVisualTextAppear(live, command.componentId, progress);
+  if (prepared !== live) updateVisualTextAppear(prepared, command.componentId, progress);
 }
 
 export function applyPainter2DCommand(binding: SnapshotSceneBinding, command: Extract<CommandMessage, { type: "setPainter2D" }>): void {
@@ -1287,6 +1304,8 @@ function createPlayVisual(
   const assetGuid = binding.meshAssetGuids.get(slotId);
   if (!partsNeedOrigin(parts)) {
     const mesh = createPlayMesh(scene, slotId, meshKind, assetGuid, binding, undefined, undefined, undefined, deferredModels, undefined, targets);
+    const componentId = binding.primaryComponentIds.get(slotId);
+    if (meshKind === "2drichtext" && componentId) rememberPlayVisualComponents(mesh, new Map([[componentId, mesh]]));
     applyPlayVisualSorting(mesh, slotId, binding);
     return mesh;
   }
@@ -1343,6 +1362,7 @@ function createPlayVisual(
       }
     }
     attachPlaySpringArms(binding, root, slotId, parts ?? [], meshes);
+    if (parts?.some((part) => part.meshKind === "2drichtext")) rememberPlayVisualComponents(root, meshes);
     applyPlayVisualSorting(root, slotId, binding);
     return root;
   } catch (error) {

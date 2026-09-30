@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useState } from "react";
 import { ArrayProperty } from "./array-property";
 import { dispatchPointerEvent } from "./test-support/pointer-events";
 
@@ -21,6 +22,23 @@ const options = [
 ];
 
 describe("ArrayProperty", () => {
+  it("returns focus to a replaced choice and preserves that picker when reordered", async () => {
+    function ControlledProperty() {
+      const [value, setValue] = useState(["red", "green"]);
+      return <ArrayProperty label="Colors" value={value} options={options} unique onChange={setValue} />;
+    }
+    render(<ControlledProperty />);
+    const trigger = screen.getByRole("combobox", { name: "Colors Item 1" });
+    trigger.focus();
+    fireEvent.click(trigger);
+    clickOption(await screen.findByRole("option", { name: "Blue" }));
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
+    expect(trigger.textContent).toContain("Blue");
+    fireEvent.click(screen.getByRole("button", { name: "Move row 1 down" }));
+    expect(screen.getByRole("combobox", { name: "Colors Item 2" })).toBe(trigger);
+    expect(screen.getByRole("combobox", { name: "Colors Item 1" }).textContent).toContain("Green");
+  });
+
   it("adds only unused choices, preserves order on move, and allows clearing the array", () => {
     const onChange = vi.fn();
     const props = { label: "Colors", options, onChange, unique: true };
