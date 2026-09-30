@@ -177,7 +177,6 @@ it.each(["3d", "2d"] as const)("native %s Movement follows parent translation wi
     sync.step(1 / 60, world, 0, 0, () => {
       const result = sync.moveMovement(actor, { x, y: 0, z: 0 }, 1 / 60, parseMovementProperties());
       velocityX = result?.velocity.x;
-      if (kind === "3d") console.info("Movement diagnostic", { x, parent: parent.transform.position.x, result, beforeStep: backend.getBodyTransform("body:moving") });
     });
     events.push(...backend.pollContacts().filter((event) => event.kind !== "hit" &&
       (event.actorAId === "moving" || event.actorBId === "moving")).map((event) => event.kind));
@@ -190,16 +189,23 @@ it.each(["3d", "2d"] as const)("native %s Movement follows parent translation wi
     expect(actor.transform.position.x).toBeCloseTo(2);
     expect(backend.getBodyTransform("body:moving")?.position.x).toBeCloseTo(17);
     expect(velocityX).toBeCloseTo(0);
+    step(0.1);
+    expect(actor.transform.position.x).toBeCloseTo(2.1);
+    expect(backend.getBodyTransform("body:moving")?.position.x).toBeCloseTo(17.1);
+    expect(velocityX).toBeCloseTo(6);
     parent.transform.position.x += 5;
     step(1);
-    // The new location meets the wall at x=22.7, minus radius and skin.
-    // Solving against the old query pose would incorrectly reach x=23.
-    expect(actor.transform.position.x).toBeCloseTo(2.29, 1);
-    expect(backend.getBodyTransform("body:moving")?.position.x).toBeCloseTo(22.29, 1);
+    // Havok can stop at the start of a predicted wall hit; Rapier advances to
+    // its skin. Both must inherit the pose and stop before the wall at x=22.7.
+    // Solving against the old query pose would incorrectly reach x=23.1.
+    const stoppedX = actor.transform.position.x;
+    expect(stoppedX).toBeGreaterThanOrEqual(2.099);
+    expect(stoppedX).toBeLessThan(2.31);
+    expect(backend.getBodyTransform("body:moving")?.position.x).toBeCloseTo(20 + stoppedX);
     expect(velocityX).toBeGreaterThanOrEqual(0);
     expect(velocityX).toBeLessThan(30);
     step();
-    expect(actor.transform.position.x).toBeCloseTo(2.29, 1);
+    expect(actor.transform.position.x).toBeCloseTo(stoppedX);
     expect(velocityX).toBeCloseTo(0);
     expect(events).toEqual(["overlapBegin"]);
   } finally {
