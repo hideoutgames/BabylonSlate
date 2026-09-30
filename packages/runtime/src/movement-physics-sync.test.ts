@@ -175,7 +175,9 @@ it.each(["3d", "2d"] as const)("native %s Movement follows parent translation wi
   const events: string[] = [];
   const step = (x = 0) => {
     sync.step(1 / 60, world, 0, 0, () => {
-      velocityX = sync.moveMovement(actor, { x, y: 0, z: 0 }, 1 / 60, parseMovementProperties())?.velocity.x;
+      const result = sync.moveMovement(actor, { x, y: 0, z: 0 }, 1 / 60, parseMovementProperties());
+      velocityX = result?.velocity.x;
+      if (kind === "3d") console.info("Movement diagnostic", { x, parent: parent.transform.position.x, result, beforeStep: backend.getBodyTransform("body:moving") });
     });
     events.push(...backend.pollContacts().filter((event) => event.kind !== "hit" &&
       (event.actorAId === "moving" || event.actorBId === "moving")).map((event) => event.kind));
