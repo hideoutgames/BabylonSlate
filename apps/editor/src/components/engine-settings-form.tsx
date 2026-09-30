@@ -305,7 +305,7 @@ export function EngineSettingsForm({
             <NumberField
               id="setting-trace-budget-mib"
               min={1}
-              max={1024}
+              max={256}
               step={1}
               className="min-h-[var(--chrome-row,28px)]"
               data-testid="setting-trace-budget-mib"

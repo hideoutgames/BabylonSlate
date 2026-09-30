@@ -51,7 +51,7 @@ iPad file-provider I/O uses `NSFileCoordinator` and acquires/releases security s
 
 Global Engine Settings stored **outside** any project:
 
-- **Debugger → Trace Memory Budget (MiB)** stores `traceByteBudget` in bytes. New and legacy settings default to 128 MiB; finite values clamp to 1–1024 MiB. The next Play or Preview Build session uses the saved budget for snapshot recording, discarding the oldest frames when it fills.
+- **Debugger → Trace Memory Budget (MiB)** stores `traceByteBudget` in bytes. New and legacy settings default to 128 MiB; finite values clamp to 1–256 MiB. The next Play or Preview Build session uses the saved budget for snapshot recording, discarding the oldest frames when it fills.
 - `automaticUpdatesEnabled` defaults to `true` for legacy and new settings. The Electron main process reads it before its first release check and applies saved changes immediately. Web/iOS update delivery is unchanged.
 - `seenReleaseVersions` stores dismissed news versions (default `[]`) through the same localStorage, Electron userData, or Capacitor Preferences backend. The launcher waits for hydration before showing version news; opening the account menu's **Changelog** remains available after dismissal and offline.
 

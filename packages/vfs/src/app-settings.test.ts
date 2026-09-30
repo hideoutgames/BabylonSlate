@@ -20,7 +20,7 @@ describe("app settings", () => {
 
   it("bounds trace memory and rejects non-finite or non-numeric budgets", () => {
     expect(engineSettingsSchema.parse({ traceByteBudget: 0 }).traceByteBudget).toBe(1_048_576);
-    expect(engineSettingsSchema.parse({ traceByteBudget: 2_147_483_648 }).traceByteBudget).toBe(1_073_741_824);
+    expect(engineSettingsSchema.parse({ traceByteBudget: 2_147_483_648 }).traceByteBudget).toBe(268_435_456);
     expect(engineSettingsSchema.parse({ traceByteBudget: 2_000_000.4 }).traceByteBudget).toBe(2_000_000);
     for (const traceByteBudget of [NaN, Infinity, "128", null]) {
       expect(engineSettingsSchema.safeParse({ traceByteBudget }).success).toBe(false);

@@ -82,8 +82,9 @@ export const engineSettingsSchema = z.object({
   undoHistoryLength: z.number().int().positive().default(50),
   traceByteBudget: z.preprocess((value) => {
     if (typeof value !== "number" || !Number.isFinite(value)) return value;
-    return Math.min(1024 * 1024 * 1024, Math.max(1024 * 1024, Math.round(value)));
-  }, z.number().int().min(1024 * 1024).max(1024 * 1024 * 1024).default(DEFAULT_TRACE_BYTE_BUDGET)),
+    // Leave headroom for whole-file JSON and native storage's base64 strings.
+    return Math.min(256 * 1024 * 1024, Math.max(1024 * 1024, Math.round(value)));
+  }, z.number().int().min(1024 * 1024).max(256 * 1024 * 1024).default(DEFAULT_TRACE_BYTE_BUDGET)),
   viewportFrameCap: z.number().positive().default(30),
   viewportDropDistance: z.number().finite().positive().default(DEFAULT_EDITOR_DROP_DISTANCE),
   renderingOverridesEnabled: z.boolean().default(false),

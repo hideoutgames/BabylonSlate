@@ -204,17 +204,17 @@ it("finds the trace budget and persists MiB edits as bytes", async () => {
     fireEvent.click(screen.getByRole("button", { name: /Trace Memory Budget/ }));
     const field = screen.getByLabelText("Trace Memory Budget (MiB)");
     await waitFor(() => expect(field).toHaveProperty("value", "192"));
-    fireEvent.change(field, { target: { value: "256" } });
+    fireEvent.change(field, { target: { value: "64" } });
     await waitFor(() => expect(onEngineSaved).toHaveBeenCalled());
     fireEvent.blur(field);
-    expect((await createAppSettingsStore().load()).traceByteBudget).toBe(268_435_456);
-    await waitFor(() => expect(field).toHaveProperty("value", "256"));
+    expect((await createAppSettingsStore().load()).traceByteBudget).toBe(67_108_864);
+    await waitFor(() => expect(field).toHaveProperty("value", "64"));
     onEngineSaved.mockClear();
     fireEvent.change(field, { target: { value: "2048" } });
     expect(onEngineSaved).not.toHaveBeenCalled();
     fireEvent.blur(field);
     await waitFor(() => expect(onEngineSaved).toHaveBeenCalled());
-    expect((await createAppSettingsStore().load()).traceByteBudget).toBe(1_073_741_824);
+    expect((await createAppSettingsStore().load()).traceByteBudget).toBe(268_435_456);
   } finally {
     view.unmount();
     await store.save(previous);
