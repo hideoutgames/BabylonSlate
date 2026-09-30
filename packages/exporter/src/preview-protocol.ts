@@ -39,6 +39,8 @@ export function isPreviewConsoleRequest(
 export type PreviewPackMessage = {
   type: typeof PREVIEW_PACK_MESSAGE;
   files: Record<string, ArrayBuffer>;
+  /** Editor session preference; never written to the game manifest. */
+  traceByteBudget?: number;
 };
 
 export type PreviewRequestPackMessage = {
@@ -68,11 +70,14 @@ export function isPreviewPackMessage(
   value: unknown,
 ): value is PreviewPackMessage {
   if (!value || typeof value !== "object") return false;
-  const record = value as { type?: unknown; files?: unknown };
+  const record = value as { type?: unknown; files?: unknown; traceByteBudget?: unknown };
   return (
     record.type === PREVIEW_PACK_MESSAGE &&
     !!record.files &&
-    typeof record.files === "object"
+    typeof record.files === "object" &&
+    (record.traceByteBudget === undefined ||
+      (typeof record.traceByteBudget === "number" &&
+        Number.isSafeInteger(record.traceByteBudget) && record.traceByteBudget > 0))
   );
 }
 
@@ -112,6 +117,7 @@ export function filesFromPreviewPack(
 
 export function previewPackFromFiles(
   files: Map<string, Uint8Array>,
+  options: Pick<PreviewPackMessage, "traceByteBudget"> = {},
 ): PreviewPackMessage {
   const record: Record<string, ArrayBuffer> = {};
   for (const [path, bytes] of files) {
@@ -120,5 +126,9 @@ export function previewPackFromFiles(
       bytes.byteOffset + bytes.byteLength,
     ) as ArrayBuffer;
   }
-  return { type: PREVIEW_PACK_MESSAGE, files: record };
+  return {
+    type: PREVIEW_PACK_MESSAGE,
+    files: record,
+    ...(options.traceByteBudget !== undefined ? { traceByteBudget: options.traceByteBudget } : {}),
+  };
 }

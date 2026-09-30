@@ -468,6 +468,8 @@ export function startPlaySession(options: {
   }) => void;
   /** Project `playFrameCap`; omitted or invalid → 60. */
   frameCap?: number;
+  /** Engine Settings trace retention budget, captured when Play starts. */
+  traceByteBudget?: number;
   /** AnimationGraph documents for `loadAnimGraphs` / `registerAnimGraph`. */
   animGraphs?: ReadonlyArray<{ guid: string; document: unknown }>;
   /** BehaviourTree / Blackboard documents for worker load. */
@@ -904,6 +906,7 @@ export function startPlaySession(options: {
   });
   const loadControl = playLoadControl({
     frameCap: resolvePlayFrameCap(options.frameCap),
+    traceByteBudget: options.traceByteBudget,
     renderSettings: options.consoleRenderSettings ?? options.renderSettings,
     sceneAssetGuid: options.sceneAssetGuid ?? "play-scene",
     scene: options.scene,

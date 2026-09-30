@@ -77,6 +77,8 @@ export type ControlMessage =
       type: "load";
       /** Initial session render cap, shared with the renderer for console readback. */
       frameCap?: number;
+      /** Serialized trace retention budget in bytes for this session. */
+      traceByteBudget?: number;
   renderSettings?: Partial<RenderProjectSettings>;
       project?: { name: string; version: string };
       sceneAssetGuid: string;

@@ -116,6 +116,8 @@ export type PlayerTestHandle = Pick<PlayerBootHandle,
 export type PlayerBootOptions = {
   canvas: HTMLCanvasElement;
   game: LoadedGame;
+  /** Preview host's trace budget; omitted by standalone games. */
+  traceByteBudget?: number;
   sharedEngine?: AbstractEngine;
   content?: PackedGameContent;
   /** Runs after every player resource has attempted cleanup, including startup rollback. */
@@ -424,6 +426,7 @@ function initializePlayer(
   }));
   const loadControl = {
     frameCap: manifest.playFrameCap,
+    traceByteBudget: options.traceByteBudget,
     renderSettings: manifest.render,
     project: manifest.project,
     type: "load" as const,

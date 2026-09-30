@@ -401,6 +401,7 @@ export function PlayOverlay({
   const initialFocusNavigationRef = useRef(focusNavigation);
   const initialPlayPreviewRef = useRef(playPreview);
   const { settings: localEngineSettings } = useAppSettings();
+  const initialTraceByteBudgetRef = useRef(localEngineSettings.traceByteBudget);
   const initialRenderRef = useRef(render);
   const runtimeRenderRef = useRef(render);
   const initialConsoleRenderRef = useRef({ ...render, quality: resolveRenderingQuality(render, {}, localRenderingQualityOverrides(localEngineSettings)) });
@@ -481,6 +482,7 @@ export function PlayOverlay({
       scenes: sceneRef.current.scenes,
       sceneLayers: sceneRef.current.sceneLayers,
       frameCap: initialFrameCapRef.current,
+      traceByteBudget: initialTraceByteBudgetRef.current,
       infiniteLoopDetection: initialInfiniteLoopDetectionRef.current,
       loopCount: initialLoopCountRef.current,
       inputAssets: initialInputAssetsRef.current,

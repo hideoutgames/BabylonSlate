@@ -277,6 +277,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const [previewCanCancel, setPreviewCanCancel] = useState(true);
   const previewIframeRef = useRef<HTMLIFrameElement | null>(null);
   const previewFilesRef = useRef<Map<string, Uint8Array> | null>(null);
+  const previewTraceByteBudgetRef = useRef<number | undefined>(undefined);
   const previewRequestRef = useRef(0);
   const previewClosingRef = useRef(false);
   const previewDiagnosticsRef = useRef<SessionReportEntry[]>([]);
@@ -656,6 +657,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       frame.contentWindow.postMessage({ type: PREVIEW_STOP_MESSAGE }, previewOriginRef.current);
     }
     previewFilesRef.current = null;
+    previewTraceByteBudgetRef.current = undefined;
     setPreviewOpen(false);
     setPreviewPhase(null);
     setPreviewError(null);
@@ -683,7 +685,9 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       return;
     }
     try {
-      frame.postMessage(previewPackFromFiles(handoff.files), previewOriginRef.current);
+      frame.postMessage(previewPackFromFiles(handoff.files, {
+        traceByteBudget: previewTraceByteBudgetRef.current,
+      }), previewOriginRef.current);
     } catch (error) {
       setPreviewError(
         `Preview Build could not send the game data: ${
@@ -761,6 +765,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       return;
     }
     const requestId = ++previewRequestRef.current;
+    const traceByteBudget = appSettings.traceByteBudget;
     const isCurrentRequest = () => previewRequestRef.current === requestId;
     const fail = (message: string) => {
       const reason = message || "Preview Build could not prepare the game.";
@@ -808,6 +813,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       }
       const previewTarget = previewTargetFromSrc(playerPreviewSrc(Date.now()), window.location.href);
       previewFilesRef.current = packed.value.files;
+      previewTraceByteBudgetRef.current = traceByteBudget;
       setPreviewCanCancel(false);
       setPreviewPhase("Launching");
       setEncodeQueuePauseReason("play", true);
@@ -830,6 +836,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     }
   }, [
     appendLog,
+    appSettings.traceByteBudget,
     assetRegistry,
     dirtyDocuments.length,
     projectDirty,
