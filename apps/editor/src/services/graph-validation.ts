@@ -1090,6 +1090,7 @@ function callCustomEventPaletteNodes(
 
 type FunctionRow = {
   name: string;
+  description?: string;
   pins: GraphClassMemberPin[];
   runtime?: string;
 };
@@ -1200,6 +1201,7 @@ function callFunctionPaletteNodes(
         api.classId,
         {
           name: fn.name,
+          description: fn.description,
           pins: fn.pins.map((pin) => ({
             ...(pin.container ? { container: pin.container } : {}),
             name: pin.name,
@@ -1247,6 +1249,7 @@ function callFunctionPaletteNodes(
       id: `functions.call:${classId}:${fn.name}`,
       nodeType: "functions.call",
       title: `Call ${fn.name}`,
+      description: fn.description,
       category: def.category,
       pins: def.pins(defaultData),
       pure: def.pure,

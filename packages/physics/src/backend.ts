@@ -91,9 +91,11 @@ export interface PhysicsBackend {
   /** 2D Rapier kinematic character controller; 3D uses Babylon `PhysicsCharacterController`. */
   createCharacterController(desc: CharacterControllerDesc): void;
   destroyCharacterController(id: string): void;
+  /** Optional authored start pose repositions the solve without adding motor velocity. */
   moveCharacter(
     id: string,
     translation: Vec3,
     dt: number,
+    startPose?: PhysicsTransform,
   ): CharacterMovementResult | null;
 }

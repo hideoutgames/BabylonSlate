@@ -36,7 +36,7 @@ export function movementPropertyRows(
   return [
     {
       kind: "boolean", id: id("enabled"), label: "Enabled", value: properties.enabled, defaultValue: defaults.enabled,
-      description: "Move this actor through graph calls, using a capsule centered on its origin and the scene's 2D or 3D physics.",
+      description: "Connect a 2D Input Axis Held pin through Convert Input to Set Movement Input, and send zero on Released. Connect Input Action Started to Jump. Turning this off stops movement but keeps the capsule.",
       onChange: (value) => update("enabled", value),
     },
     number("maxSpeed", "Max Speed", 0, "Maximum speed from movement input.", undefined, "units/s"),
@@ -54,8 +54,8 @@ export function movementPropertyRows(
     }, number("inputYaw", "Input Yaw", -Number.MAX_VALUE, "Convert Input turns directions around world Y. Set this from a graph for camera-relative controls.", undefined, "°")] : []),
     number("inputScale", "Input Scale", 0, "Convert Input scales input strength before limiting it to full movement."),
     number("deadZone", "Dead Zone", 0, "Convert Input ignores small values, then remaps the remaining range smoothly.", 0.999),
-    number("radius", "Radius", 0.001, "Capsule radius in world units.", properties.height / 2),
-    number("height", "Height", properties.radius * 2, "Total capsule height, including its rounded ends."),
+    number("radius", "Radius", 0.001, "Capsule radius in world units, centered on the actor. Actor scale and component transforms do not change it.", properties.height / 2),
+    number("height", "Height", properties.radius * 2, "Total capsule height in world units, including its rounded ends. World Y is up in both 2D and 3D."),
     number("maxSlopeAngle", "Max Slope Angle", 0, "Steepest surface treated as ground.", 89.9, "°"),
     number("groundSnapDistance", "Ground Snap Distance", 0, "Stay attached to nearby ground when walking down shallow changes in height."),
     number("coyoteTime", "Coyote Time", 0, "Allow a jump briefly after walking off an edge.", undefined, "s"),

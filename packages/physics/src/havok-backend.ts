@@ -56,7 +56,7 @@ import {
   sameColliderPose,
   validateColliderShape,
 } from "./collider-validation";
-import { attachHavokShape, detachHavokCharacterBodyShape, teleportHavokBody } from "./havok-native-adapter";
+import { attachHavokShape, detachHavokCharacterBodyShape, setHavokBodyPoseBeforeStep, teleportHavokBody } from "./havok-native-adapter";
 import { listDebugCollidersFromRecords } from "./debug-colliders";
 import { loadHavokModule } from "./havok-loader";
 import { rotateQuatVec } from "./collider-bake";
@@ -923,12 +923,39 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     id: string,
     translation: Vec3,
     dt: number,
+    startPose?: PhysicsTransform,
   ): CharacterMovementResult | null {
     this.flushMutations();
     const character = this.characters.get(id);
     if (!character) return null;
     const body = this.bodies.get(character.desc.bodyId);
     if (!body || !Number.isFinite(dt) || dt <= 0) return null;
+    if (startPose) {
+      const position = toVector3(startPose.position);
+      if (!body.node.position.equals(position)) {
+        // Inherited repositioning is not velocity: large parent changes must
+        // not be clipped by Havok's world speed limit. Keep contact membership;
+        // only the motor's displacement becomes a native kinematic target.
+        const previousPosition = body.node.position.clone();
+        body.node.position.copyFrom(position);
+        try {
+          setHavokBodyPoseBeforeStep(this.plugin, body.body);
+        } catch (error) {
+          body.node.position.copyFrom(previousPosition);
+          try {
+            setHavokBodyPoseBeforeStep(this.plugin, body.body);
+          } catch (rollbackError) {
+            body.mutationFailure = new AggregateError(
+              [error, rollbackError],
+              `Havok Movement pose rollback failed for ${character.desc.bodyId}`,
+            );
+            throw body.mutationFailure;
+          }
+          throw error;
+        }
+      }
+      character.controller.setPosition(position);
+    }
     const invDt = dt > 1e-8 ? 1 / dt : 0;
     character.controller.setVelocity(
       new Vector3(

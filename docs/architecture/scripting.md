@@ -18,6 +18,8 @@ The Project node category exposes pure string getters **Get Project Name** (`pro
 
 Drag a `MovementComponent` reference to call **Convert Input**, **Set Movement Input**, **Add Movement Input**, **Set Velocity**, **Add Velocity**, **Jump**, or **Stop Immediately**. Convert Input accepts a Vec2 and additional yaw in degrees, applies the component's dead zone, scale and World/Actor space, and returns a world Vec3. All calls use execution pins. Set Movement Input persists until replaced; Add Movement Input adds only to the next physics tick. Set/Add Velocity accept world units per second. Component settings expose Get/Set; Velocity, horizontal Speed, Is Grounded, Is In Air and Is Moving expose Get only.
 
+Call Function palette descriptions explain persistent Set input, next-tick Add input, and sending zero on release. Input Space remains a string pin accepting World or Actor regardless of letter case or surrounding whitespace.
+
 Component **Add Event** offers **On Movement Started**, **On Movement Stopped**, **On Movement Jumped**, **On Movement Left Ground**, and **On Movement Landed**. Each event includes Velocity and Speed outputs and binds to the specific movement component, including prefab source IDs. Connect Input Axis events through Convert Input to Set Movement Input; send zero on release to clear persistent input. Connect an Input Action press to Jump. See [Movement](physics.md#movement-component) for simulation and input details.
 
 ## Package boundaries

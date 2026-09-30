@@ -1811,6 +1811,14 @@ describe("scriptPaletteNodes", () => {
       classId: "Text3DComponent",
       implicitSelf: false,
     });
+    const callSetMovement = nodes.find(
+      (node) => node.id === "functions.call:MovementComponent:Set Movement Input",
+    );
+    expect(callSetMovement?.description?.trim()).toBeTruthy();
+    expect(callSetMovement?.defaultData).toMatchObject({
+      runtime: "setMovementInput", classId: "MovementComponent", implicitSelf: false,
+    });
+    expect(callSetMovement?.pins?.find((pin) => pin.id === "direction")?.type.kind).toBe("vec3");
     const getMesh = nodes.find(
       (node) => node.id === "variables.get:MeshComponent:Mesh",
     );

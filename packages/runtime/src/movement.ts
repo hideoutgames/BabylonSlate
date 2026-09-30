@@ -59,9 +59,11 @@ export class MovementWorldSync {
   invoke(component: ActorComponent, name: string, args: Record<string, unknown>): Record<string, unknown> {
     const actor = component.owner;
     if (!actor || component.destroyed || actor.destroyed || !actor.components.includes(component) || !this.host.eligible(actor)) return {};
-    const props = parseMovementProperties(Object.fromEntries(component.variables));
-    if (name === "convertMovementInput") return { direction: this.convert(actor, props, args.input, finite(args.yaw)) };
-    if (!props.enabled) return {};
+    if (name === "convertMovementInput") {
+      const props = parseMovementProperties(Object.fromEntries(component.variables));
+      return { direction: this.convert(actor, props, args.input, finite(args.yaw)) };
+    }
+    if (component.getVariable("enabled") === false) return {};
     const state = this.state(component);
     switch (name) {
       case "setMovementInput": state.input = vector(args.direction); break;
@@ -78,7 +80,7 @@ export class MovementWorldSync {
       }
       case "jumpMovement":
         state.jumpRequested = true;
-        state.jumpRemaining = props.jumpBufferTime;
+        state.jumpRemaining = parseMovementProperties(Object.fromEntries(component.variables)).jumpBufferTime;
         break;
       case "stopMovementImmediately":
         state.input = zero(); state.addedInput = zero(); state.velocity = zero();
@@ -120,16 +122,17 @@ export class MovementWorldSync {
 
   step(dt: number, physics: PhysicsWorldSync): void {
     if (!(dt > 0) || !Number.isFinite(dt)) return;
-    const live = new Set<ActorComponent>();
-    for (const actor of this.host.world.getActors()) {
-      if (actor.destroyed) continue;
-      // One motor owns an actor. Extra components cannot multiply movement.
-      const component = actor.components.find((entry) => entry.classId === "MovementComponent" && !entry.destroyed && entry.owner === actor);
-      if (!component) continue;
-      live.add(component);
-      if (this.host.physics(actor) !== physics) continue;
-      const state = this.state(component);
-      if (!this.host.eligible(actor)) continue;
+    // Creation hooks register motors, so scenes without Movement pay no actor scan.
+    for (const [component, state] of this.states) {
+      const actor = component.owner;
+      if (component.destroyed || !actor || actor.destroyed || actor.world !== this.host.world || !actor.components.includes(component)) {
+        this.states.delete(component);
+        continue;
+      }
+      if (this.host.physics(actor) !== physics || !this.host.eligible(actor)) continue;
+      // Keep later registrations available if the first motor is removed.
+      // Physics rejects duplicates; only one motor may attempt to move the actor.
+      if (actor.components.find((entry) => entry.classId === "MovementComponent" && !entry.destroyed && entry.owner === actor) !== component) continue;
       const props = parseMovementProperties(Object.fromEntries(component.variables));
       if (!props.enabled) {
         state.input = zero(); state.addedInput = zero(); state.velocity = zero();
@@ -139,7 +142,6 @@ export class MovementWorldSync {
       }
       this.advance(actor, component, state, props, dt);
     }
-    for (const component of this.states.keys()) if (!live.has(component)) this.states.delete(component);
   }
 
   private advance(actor: Actor, component: ActorComponent, state: MovementState, props: MovementProperties, dt: number): void {

@@ -715,6 +715,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     id: string,
     translation: Vec3,
     dt: number,
+    startPose?: PhysicsTransform,
   ): CharacterMovementResult | null {
     if (!Number.isFinite(dt) || dt < 0) return null;
     // Collision resolution takes a displacement, including events outside a tick.
@@ -728,25 +729,46 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
       (c) => c.desc.bodyId === bodyRecord.desc.id && !c.desc.isTrigger,
     );
     if (!collider) return null;
-    character.controller.computeColliderMovement(collider.collider, {
-      x: translation.x,
-      y: translation.y,
-    }, undefined, undefined, (candidate) => {
-      const candidateId = this.colliderIdByHandle.get(candidate.handle);
-      const other = candidateId ? this.colliders.get(candidateId)?.desc : undefined;
-      return !!other && other.bodyId !== bodyRecord.desc.id && !other.isTrigger &&
-        (other.layer & collider.desc.mask) !== 0 && (collider.desc.layer & other.mask) !== 0;
-    });
-    const movement = character.controller.computedMovement();
     const current = bodyRecord.body.translation();
+    const currentRotation = bodyRecord.body.rotation();
+    const start = startPose ? normalizedPhysicsPose(startPose) : undefined;
+    const position = start?.position ?? current;
+    const rotation = start ? quatToPlanarAngle(start.rotation) : currentRotation;
+    const reposition = position.x !== current.x || position.y !== current.y || rotation !== currentRotation;
+    try {
+      if (reposition) {
+        // Query from the authored pose, including inherited parent motion.
+        bodyRecord.body.setTranslation(position, true);
+        bodyRecord.body.setRotation(rotation, true);
+        this.queriesDirty = true;
+        this.flushSceneQueries();
+      }
+      character.controller.computeColliderMovement(collider.collider, {
+        x: translation.x,
+        y: translation.y,
+      }, undefined, undefined, (candidate) => {
+        const candidateId = this.colliderIdByHandle.get(candidate.handle);
+        const other = candidateId ? this.colliders.get(candidateId)?.desc : undefined;
+        return !!other && other.bodyId !== bodyRecord.desc.id && !other.isTrigger &&
+          (other.layer & collider.desc.mask) !== 0 && (collider.desc.layer & other.mask) !== 0;
+      });
+    } finally {
+      if (reposition) {
+        // Keep native contacts and old-to-target kinematic integration intact.
+        bodyRecord.body.setTranslation(current, true);
+        bodyRecord.body.setRotation(currentRotation, true);
+        this.queriesDirty = true;
+      }
+    }
+    const movement = character.controller.computedMovement();
     bodyRecord.body.setNextKinematicTranslation({
-      x: current.x + movement.x,
-      y: current.y + movement.y,
+      x: position.x + movement.x,
+      y: position.y + movement.y,
     });
     return {
       position: {
-        x: current.x + movement.x,
-        y: current.y + movement.y,
+        x: position.x + movement.x,
+        y: position.y + movement.y,
         z: 0,
       },
       rotation: this.getBodyTransform(character.desc.bodyId)?.rotation ?? identityRotation(),
