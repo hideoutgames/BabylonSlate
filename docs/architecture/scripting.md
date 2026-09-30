@@ -461,6 +461,7 @@ Engine classes expose an optional script catalog in `@babylonslate/object-model`
 | `FogVolumeComponent` | Enabled (`bool`), Shape (`string`: `box` / `sphere`), Size (`vec3`), Density (`float`), Edge Falloff (`float`) | — | — |
 | `Text3DComponent` | Text, Size, Color, Font, Alignment | Set Text | On Text Changed |
 | `2DTextComponent` / `2DRichTextComponent` | shared text + Hit Test, Renderer, Outline, Outline Color, Alignment, Vertical Alignment, Bold, Italic, Underline, Wrap Width, Wrap Height | Set Text | On Text Changed |
+| `2DRichTextComponent` (additional) | Appear Modes (string array), Appear Transition, Appear Interval, Appear Duration, Appear Start; Appear Progress and Is Revealed (Get-only) | Trigger Appear, Play, Play Reverse | — |
 | `AudioComponent` | Audio, Volume, Loop | Play, Stop | On Audio Finished |
 | `ParticleComponent` | Particle System, Sorting Layer, Order In Layer | Play, Stop | — |
 | `RigidBodyComponent` | Mass, Gravity Scale, Motion Type, Linear Damping, Angular Damping | Add Impulse | — |
@@ -474,6 +475,8 @@ Engine classes expose an optional script catalog in `@babylonslate/object-model`
 **Ref-only** (Get component pin, no catalog knobs): `AnimationGraphComponent` (use `anim.actor.*` nodes), `BehaviourTreeComponent` (BT graphs own activate/tick), `NavMeshComponent`, `NavMeshBlockerComponent`, `BlockingVolumeComponent` (bake/place-only).
 
 User `ActorComponent` Class custom events appear the same way when that class is attached. Scene-instance-only components (not on the Class prefab) do not get Class-graph variables.
+
+Rich Text's generated Get/Set nodes use the serialized appear properties; `[]` disables appearing, while `fade`, `scale`, and `slide` combine uniquely and `instant` is exclusive. Trigger Appear restarts at `0`; Play and Play Reverse continue from the current normalized progress toward `1` and `0`. Get Appear Progress is always clamped to that range, and Get Is Revealed tests the fully revealed endpoint. Instant retains character staggering with zero per-character transition duration. Runtime edits preserve progress; Appear Start (`revealed`, `hidden`, or `play`) applies only at initialization. See [2D Rich Text](scene-layers.md#2d-text-and-2d-rich-text) for formatting, curves, and timing.
 
 Compiled Get/Set of catalog variables uses `ctx.getVariableFrom` / `ctx.setVariableOn` on the component instance (`propertyKey` such as `text`). Native functions codegen `ctx.callComponentFunction(target, runtime, args)` (`setText`, `playAudio`, `stopAudio`, `playParticles`, `stopParticles`, `possessCamera`, `addImpulse`, `moveTo`, `stopMovement`). Actor-level `camera.possess` / `physics.addImpulse` / `navigation.moveTo` / `particles.play` nodes stay. Component Calls are for dragging off **Get Camera** / **Get Rigid Body** / **Get Nav Agent** / **Get Particle**. Particle Play/Stop stamps `componentId`. `setVariableOn` is not store-only:
 

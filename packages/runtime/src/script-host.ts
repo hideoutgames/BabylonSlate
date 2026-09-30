@@ -215,6 +215,8 @@ export interface ScriptHostServices {
   captureRenderTarget?(target: Actor): void;
   updateIllumination?(target: unknown): void;
   paint2D?(component: ActorComponent, operation: string, args: Record<string, unknown>): boolean;
+  text2DAppear?(component: ActorComponent, operation: "triggerAppear" | "play" | "playReverse"): void;
+  text2DAppearProgress?(component: ActorComponent): number;
   refreshComponent?(component: ActorComponent, propertyName?: string): void;
   dynamicMeshFunction?(component: ActorComponent, name: string, args: Record<string, unknown>): Record<string, unknown>;
   /** Apply live world-scene gravity from a Scene Gravity Set. */
@@ -1085,6 +1087,11 @@ export class ScriptHost {
       },
       getVariableFrom: (target, name) => {
         const object = target ?? self;
+        if (object instanceof ActorComponent && object.classId === "2DRichTextComponent" &&
+          (name === "appearProgress" || name === "isRevealed")) {
+          const progress = services.text2DAppearProgress?.(object) ?? 1;
+          return name === "isRevealed" ? progress === 1 : progress;
+        }
         if (object instanceof ActorComponent && object.classId === "RenderTargetCaptureComponent" && name === "actorIds") {
           return this.canInvokeOwner(object) ? captureActorReferences(object, (id) => services.findActor?.(id)) : [];
         }
@@ -1828,6 +1835,11 @@ export class ScriptHost {
   ): Record<string, unknown> {
     const component = asActorComponent(target);
     if (!component || !name) return {};
+    if (component.classId === "2DRichTextComponent" &&
+      (name === "triggerAppear" || name === "play" || name === "playReverse")) {
+      if (this.canInvokeOwner(component)) this.services.text2DAppear?.(component, name);
+      return {};
+    }
     if (name === "setFocusTarget") return { success: this.canInvokeOwner(component) && this.services.setFocusTarget?.(component) === true };
     if (name === "clearFocusTarget") {
       if (this.canInvokeOwner(component)) this.services.clearFocusTarget?.(component);

@@ -99,6 +99,23 @@ describe("engine script API catalog", () => {
     ]);
   });
 
+  it("exposes rich text appearance controls while keeping progress and reveal state read-only", () => {
+    const api = engineScriptApiFor("2DRichTextComponent");
+    expect(api?.variables).toEqual(expect.arrayContaining([
+      expect.objectContaining({ propertyKey: "appearModes", typeId: "enum", typeClassId: "engine:Text2DAppearMode", container: "array" }),
+      expect.objectContaining({ propertyKey: "appearTransition", typeId: "enum", typeClassId: "engine:Text2DAppearTransition" }),
+      expect.objectContaining({ propertyKey: "appearStart", typeId: "enum", typeClassId: "engine:Text2DAppearStart" }),
+      expect.objectContaining({ propertyKey: "appearProgress", typeId: "float", getOnly: true }),
+      expect.objectContaining({ propertyKey: "isRevealed", typeId: "bool", getOnly: true }),
+    ]));
+    expect(api?.functions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "Trigger Appear", runtime: "triggerAppear" }),
+      expect.objectContaining({ name: "Play", runtime: "play" }),
+      expect.objectContaining({ name: "Play Reverse", runtime: "playReverse" }),
+    ]));
+    expect(engineScriptApiFor("2DTextComponent")?.variables?.some((variable) => variable.propertyKey === "appearProgress")).toBe(false);
+  });
+
   it("exposes Scene Name, Asset Guid, and Gravity on Scene and Game Instance scene getters", () => {
     const scene = engineScriptApiFor("Scene");
     expect(scene?.variables).toEqual([

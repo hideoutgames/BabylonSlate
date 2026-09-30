@@ -182,6 +182,7 @@ import {
   applySetMaterialParameter,
   applyAssignMesh,
   applyPainter2DCommand,
+  applyText2DAppearCommand,
   applyPossessCamera,
   assignedMaterialGuids as listAssignedMaterialGuids,
   createSnapshotSceneBinding,
@@ -2724,6 +2725,19 @@ function initializeEngine(
       playDebugDraw?.applyCommand(command);
       if (command.type === "setPainter2D") {
         applyPainter2DCommand(binding, command);
+        scheduler.invalidate("asset");
+      }
+      if (command.type === "setText2DAppear") {
+        const pending = pendingOverlayAssign.get(command.slotId);
+        if (pending && Number.isFinite(command.progress)) {
+          const progress = Math.max(0, Math.min(1, command.progress));
+          const part = pending.parts?.find((entry) => entry.componentId === command.componentId && entry.meshKind === "2drichtext");
+          if (part?.text2d) part.text2d.appearProgress = progress;
+          if (pending.primaryComponentId === command.componentId && pending.meshKind === "2drichtext" && pending.text2d) {
+            pending.text2d.appearProgress = progress;
+          }
+        }
+        applyText2DAppearCommand(binding, command);
         scheduler.invalidate("asset");
       }
       if (command.type === "setCursorVisible") {

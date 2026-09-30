@@ -425,6 +425,12 @@ export type CommandMessage =
           alignment: "left" | "center" | "right";
         };
         text2d?: {
+          appearModes?: import("@babylonslate/core").Text2DProperties["appearModes"];
+          appearTransition?: import("@babylonslate/core").Text2DProperties["appearTransition"];
+          appearInterval?: number;
+          appearDuration?: number;
+          appearStart?: import("@babylonslate/core").Text2DProperties["appearStart"];
+          appearProgress?: number;
           text: string;
           materialGuid?: string | null;
           materialUv?: "text" | "glyph";
@@ -465,6 +471,12 @@ export type CommandMessage =
         alignment: "left" | "center" | "right";
       };
       text2d?: {
+        appearModes?: import("@babylonslate/core").Text2DProperties["appearModes"];
+        appearTransition?: import("@babylonslate/core").Text2DProperties["appearTransition"];
+        appearInterval?: number;
+        appearDuration?: number;
+        appearStart?: import("@babylonslate/core").Text2DProperties["appearStart"];
+        appearProgress?: number;
         text: string;
         materialGuid?: string | null;
         materialUv?: "text" | "glyph";
@@ -618,6 +630,12 @@ export type CommandMessage =
     | {
       type: "trace";
       payload: Record<string, unknown>;
+    }
+  | {
+      type: "setText2DAppear";
+      slotId: number;
+      componentId: string;
+      progress: number;
     }
   | {
       type: "tilemapAnimationTime";

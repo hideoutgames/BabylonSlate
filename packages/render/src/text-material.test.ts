@@ -4,7 +4,7 @@ import { createDefaultMaterialDocument, lowerMaterialDocument, setMaterialDomain
 import { createActor, createText2DComponent, parseText2DProperties } from "@babylonslate/core";
 import { createTestEngine } from "./create-null-engine";
 import { MaterialLibrary } from "./material-library";
-import { createText2DMesh, refreshText2DMaterials } from "./text2d-mesh";
+import { createText2DMesh, refreshText2DMaterials, updateText2DAppear } from "./text2d-mesh";
 import { textMaterialGlyphBinding } from "./text-material-block";
 import { prewarmMaterial } from "./material-compiler";
 import { applyAssignMaterial, applyAssignMesh, createSnapshotSceneBinding } from "./snapshot-apply";
@@ -39,8 +39,11 @@ describe("Text Materials", () => {
   it("keeps per-text atlases when two labels share a frozen Text Material", async () => {
     const { scene, assets, library, document } = host();
     scene.setTransformMatrix(Matrix.Identity(), Matrix.Identity());
-    const first = createText2DMesh(scene, "first", { text: "A", materialGuid: "letters" }, assets);
-    const second = createText2DMesh(scene, "second", { text: "B", color: [0, 1, 0], materialGuid: "letters" }, assets);
+    const appear = { appearModes: ["fade"], appearInterval: 0, appearTransition: "linear" };
+    const first = createText2DMesh(scene, "first", { ...appear, text: "A", materialGuid: "letters" }, assets, { rich: true });
+    const second = createText2DMesh(scene, "second", { ...appear, text: "B", color: [0, 1, 0], materialGuid: "letters" }, assets, { rich: true });
+    updateText2DAppear(first, 0.25);
+    updateText2DAppear(second, 0.75);
     const firstGlyph = first.getChildMeshes()[0] as Mesh;
     const secondGlyph = second.getChildMeshes()[0] as Mesh;
     const material = library.resolve(scene, "letters", document)!;
@@ -63,6 +66,7 @@ describe("Text Materials", () => {
     }
     material.freeze();
     const samples: unknown[] = [];
+    const opacity: number[] = [];
     const effects = new Set<Effect>();
     for (const glyph of [firstGlyph, secondGlyph, firstGlyph, secondGlyph]) {
       const effect = glyph.subMeshes[0]!.effect!;
@@ -73,9 +77,15 @@ describe("Text Materials", () => {
           if (name.startsWith("textGlyphAtlas")) samples.push(texture);
           return original(name, texture);
         });
+        const setFloat = effect.setFloat.bind(effect);
+        vi.spyOn(effect, "setFloat").mockImplementation((name, value) => {
+          if (name.startsWith("textGlyphOpacity")) opacity.push(value);
+          return setFloat(name, value);
+        });
       }
       material.bindForSubMesh(glyph.computeWorldMatrix(true), glyph, glyph.subMeshes[0]!);
       expect(samples.at(-1)).toBe(textMaterialGlyphBinding(glyph)!.atlas);
+      expect(opacity.at(-1)).toBe(glyph === firstGlyph ? 0.25 : 0.75);
     }
     expect(textMaterialGlyphBinding(firstGlyph)!.atlas).not.toBe(textMaterialGlyphBinding(secondGlyph)!.atlas);
     first.dispose();

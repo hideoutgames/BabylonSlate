@@ -2333,6 +2333,23 @@ describe("Play createEngine view", () => {
     expect(order).toEqual(["world", "back", "front"]);
   });
 
+  it("retains rich-text reveal commands while its overlay scene is not created yet", () => {
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
+      sharedEngine: sharedEngine(), playMode: true,
+    });
+    handles.push(handle);
+    handle.applyCommand({ type: "spawn", slotId: 4, actorGuid: "label", classId: "SceneLayerActor", sceneLayerId: "late" });
+    handle.applyCommand({ type: "assignMesh", slotId: 4, primaryComponentId: "rich", meshKind: "2drichtext", meshAssetGuid: null,
+      text2d: { text: "AB", appearModes: ["fade"], appearTransition: "linear", appearInterval: 0, appearProgress: 0 } });
+    handle.applyCommand({ type: "setText2DAppear", slotId: 4, componentId: "rich", progress: 0.5 });
+    handle.applyCommand({ type: "setText2DAppear", slotId: 4, componentId: "wrong", progress: 1 });
+    handle.applyCommand({ type: "sceneLayerCreate", layerId: "late", assetGuid: "hud", zOrder: 0, ownerSceneGuid: null, postProcessStack: [] });
+    const layer = handle.sceneLayerScenes()[0]!.scene;
+    const root = layer.getMeshByName("actor-4")!;
+    expect(root.getChildMeshes().map((glyph) => glyph.visibility)).toEqual([0.5, 0.5]);
+    expect(handle.scene.getMeshByName("actor-4")).toBeNull();
+  });
+
   it("does not parent overlay spawn meshes into the world when the layer scene is missing", () => {
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
     const handle = createEngine(canvas, {

@@ -20,7 +20,9 @@ import {
   parseSceneLayerHitTest,
   parseText2DProperties,
   resolveText2DRenderer,
+  text2DCharacterReveal,
   type RichTextStyle,
+  type Text2DProperties,
 } from "@babylonslate/core";
 import { applyAlbedoTexture, type MeshAssetContext } from "./mesh-assets";
 import {
@@ -39,7 +41,6 @@ import { VisualBundle } from "./visual-bundle";
 import { bindTextMaterialGlyph } from "./text-material-block";
 import {
   combineText2DEffects,
-  layoutHasLetterEffects,
   layoutText2DFromProperties,
   type GlyphMetricsProvider,
   type Text2DEffectContext,
@@ -60,6 +61,14 @@ export type Text2DAssetContext = MeshAssetContext & {
 };
 
 const textMaterialVisuals = new WeakMap<Mesh, { guid: string | null; glyphs: Array<{ mesh: Mesh; fallback: Material | null }> }>();
+const appearVisuals = new WeakMap<Mesh, (progress: number) => void>();
+
+/** Apply a simulation-owned reveal sample without rebuilding glyphs or atlases. */
+export function updateText2DAppear(mesh: Mesh, progress: number): void {
+  if (!mesh.isDisposed() && Number.isFinite(progress)) {
+    appearVisuals.get(mesh)?.(Math.min(1, Math.max(0, progress)));
+  }
+}
 
 /** Rebind hot-reloaded Text graphs without replacing the atlas or layout. */
 export function refreshText2DMaterials(root: Mesh, assets?: MeshAssetContext): void {
@@ -269,6 +278,7 @@ var atlas: texture_2d<f32>;
 uniform fillColor: vec3f;
 uniform strokeColor: vec3f;
 uniform strokeWidth: f32;
+uniform glyphOpacity: f32;
 fn median(r: f32, g: f32, b: f32) -> f32 {
   return max(min(r, g), min(max(r, g), b));
 }
@@ -280,7 +290,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   let fill = clamp((sd - 0.5) / max(screenPxDistance, 0.0001) + 0.5, 0.0, 1.0);
   let outline = select(fill, clamp((sd - 0.5 + uniforms.strokeWidth) / max(screenPxDistance, 0.0001) + 0.5, 0.0, 1.0), uniforms.strokeWidth > 0.0);
   let color = mix(uniforms.strokeColor, uniforms.fillColor, fill);
-  let alpha = max(fill, outline);
+  let alpha = max(fill, outline) * uniforms.glyphOpacity;
   if (alpha < 0.01) { discard; }
   fragmentOutputs.color = vec4f(color, alpha);
 }
@@ -301,6 +311,7 @@ uniform sampler2D atlas;
 uniform vec3 fillColor;
 uniform vec3 strokeColor;
 uniform float strokeWidth;
+uniform float glyphOpacity;
 float median(float r, float g, float b) {
   return max(min(r, g), min(max(r, g), b));
 }
@@ -313,7 +324,7 @@ void main() {
     ? clamp((sd - 0.5 + strokeWidth) / max(screenPxDistance, 0.0001) + 0.5, 0.0, 1.0)
     : fill;
   vec3 color = mix(strokeColor, fillColor, fill);
-  float alpha = max(fill, outline);
+  float alpha = max(fill, outline) * glyphOpacity;
   if (alpha < 0.01) discard;
   gl_FragColor = vec4(color, alpha);
 }
@@ -358,7 +369,7 @@ function msdfGlyphMaterial(
       {
         shaderLanguage: scene.getEngine().isWebGPU ? ShaderLanguage.WGSL : ShaderLanguage.GLSL,
         attributes: ["position", "uv"],
-        uniforms: ["worldViewProjection", "fillColor", "strokeColor", "strokeWidth"],
+        uniforms: ["worldViewProjection", "fillColor", "strokeColor", "strokeWidth", "glyphOpacity"],
         samplers: ["atlas"],
         needAlphaBlending: true,
       },
@@ -371,6 +382,10 @@ function msdfGlyphMaterial(
       new Color3(outlineColor[0], outlineColor[1], outlineColor[2]),
     );
     material.setFloat("strokeWidth", Math.max(0, outline) * 0.08);
+    material.setFloat("glyphOpacity", 1);
+    material.onBindObservable.add((mesh) => {
+      material.getEffect()?.setFloat("glyphOpacity", mesh?.visibility ?? 1);
+    });
     material.metadata = { ...(material.metadata ?? {}), msdf: true };
     return material;
   } catch {
@@ -421,13 +436,18 @@ function attachEffects(
   parent: Mesh,
   glyphs: Array<{ mesh: Mesh; item: Text2DLayoutItem; restRotation: number }>,
   bundle: VisualBundle,
+  properties: Text2DProperties,
+  characterCount: number,
+  pixelsPerUnit: number,
   isPaused?: () => boolean,
 ): void {
-  // Glyphs without effects (and underlines) already rest at their layout pose.
+  let progress = properties.appearProgress ?? (properties.appearStart === "revealed" ? 1 : 0);
+  const modes = properties.appearModes;
+  const fade = modes.includes("fade");
+  const scale = modes.includes("scale");
+  const slide = modes.includes("slide");
   const animated = glyphs
-    .filter((entry) => hasLetterEffects(entry.item))
-    .map((entry) => ({ ...entry, sample: { x: 0, y: 0, rotation: 0 }, sampled: false }));
-  if (animated.length === 0) return;
+    .map((entry) => ({ ...entry, restScale: entry.mesh.scaling.clone(), sample: { x: 0, y: 0, rotation: 0 }, sampled: false }));
   // Per-frame tick: one reused context and a preallocated sample per glyph.
   const context: Text2DEffectContext = { time: 0, index: 0, fontSize: 0, hoverPhase: 0, rotatePhase: 0 };
   const tick = (time: number) => {
@@ -436,7 +456,7 @@ function attachEffects(
     for (const entry of animated) {
       const { mesh, item, restRotation, sample } = entry;
       // A paused glyph holds its last sample once it has one.
-      if (!paused || !entry.sampled) {
+      if ((!paused || !entry.sampled) && hasLetterEffects(item)) {
         context.index = item.index;
         context.fontSize = item.height;
         context.hoverPhase = item.hoverPhase;
@@ -444,23 +464,31 @@ function attachEffects(
         combineText2DEffects(item.effects, context, sample);
         entry.sampled = true;
       }
+      const reveal = text2DCharacterReveal(progress, item.index, characterCount, properties);
+      mesh.visibility = fade ? Math.max(0, Math.min(1, reveal)) : reveal !== 0 ? 1 : 0;
+      const amount = scale ? Math.max(0, reveal) : 1;
+      mesh.scaling.x = entry.restScale.x * amount;
+      mesh.scaling.y = entry.restScale.y * amount;
       mesh.position.x = item.x + sample.x;
-      mesh.position.y = item.y + sample.y;
+      mesh.position.y = item.y + sample.y - (slide ? (1 - reveal) * item.style.size / pixelsPerUnit : 0);
       mesh.rotation.z = restRotation + sample.rotation;
     }
   };
   let elapsed = 0;
-  const observer: Nullable<Observer<Scene>> = scene.onBeforeRenderObservable.add(() => {
+  appearVisuals.set(parent, (value) => { progress = value; tick(elapsed); });
+  tick(0);
+  const observer: Nullable<Observer<Scene>> = glyphs.some((entry) => hasLetterEffects(entry.item)) ? scene.onBeforeRenderObservable.add(() => {
     if (isPaused?.()) return;
     elapsed += scene.getEngine().getDeltaTime() / 1000;
     tick(elapsed);
-  });
+  }) : null;
   bundle.cancelWith(() => {
+    appearVisuals.delete(parent);
     if (observer) scene.onBeforeRenderObservable.remove(observer);
   });
   parent.metadata = {
     ...(parent.metadata ?? {}),
-    tickText2DEffects: tick,
+    tickText2DEffects: (time: number) => { elapsed = time; tick(time); },
   };
 }
 
@@ -651,8 +679,9 @@ export function createText2DMesh(
     textMaterialVisuals.set(parent, { guid: parsed.materialGuid, glyphs: materialGlyphs });
     refreshText2DMaterials(parent, assets);
 
-    if (rich && layoutHasLetterEffects(layout)) {
-      attachEffects(scene, parent, glyphMeshes, bundle, options.isPaused ?? (() => assets?.paused === true));
+    if (rich) {
+      const count = layout.items.reduce((total, item) => Math.max(total, item.index + 1), 0);
+      attachEffects(scene, parent, glyphMeshes, bundle, parsed, count, ppu, options.isPaused ?? (() => assets?.paused === true));
     }
     return parent;
   } catch (error) {

@@ -12,6 +12,7 @@ import {
   richTextImageGuids,
   type Rgb,
 } from "./rich-text";
+import { parseText2DAppearProperties, type Text2DAppearProperties } from "./text2d-appear";
 
 export { DEFAULT_RICH_TEXT_EXAMPLE };
 
@@ -36,7 +37,7 @@ export const TEXT2D_COMPONENT_CLASS_IDS = [
   "2DRichTextComponent",
 ] as const;
 
-export type Text2DProperties = {
+export type Text2DProperties = Text2DAppearProperties & {
   text: string;
   /** Only Materials with the Text domain are accepted. */
   materialGuid: string | null;
@@ -189,6 +190,7 @@ export function parseText2DProperties(
       ? source.wrapHeight
       : 0;
   return {
+    ...parseText2DAppearProperties(source),
     text: typeof source.text === "string" ? source.text : defaultText,
     materialGuid: typeof source.materialGuid === "string" && source.materialGuid.trim() ? source.materialGuid.trim() : null,
     materialUv: source.materialUv === "glyph" ? "glyph" : "text",
@@ -215,6 +217,7 @@ export function parseText2DProperties(
 function componentProperties(rich: boolean): Record<string, unknown> {
   const parsed = parseText2DProperties({}, { rich });
   return {
+    ...(rich ? parseText2DAppearProperties(parsed) : {}),
     text: parsed.text,
     materialGuid: parsed.materialGuid,
     materialUv: parsed.materialUv,

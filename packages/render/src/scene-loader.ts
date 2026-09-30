@@ -811,7 +811,7 @@ export function createMeshForComponent(
     component.classId === "2DTextComponent" ||
     component.classId === "2DRichTextComponent"
   ) {
-    return createText2DMesh(scene, name, component.properties, assets, {
+    return createText2DMesh(scene, name, { ...component.properties, appearProgress: 1 }, assets, {
       rich: component.classId === "2DRichTextComponent",
       bitmapLimits: { retainedBytes: assets?.retainedTextBitmapBytes },
     });
