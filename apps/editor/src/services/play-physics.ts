@@ -166,6 +166,7 @@ export function resolvePreviewStartupGuid(options: {
 
 export function playLoadControl(options: {
   frameCap?: number;
+  traceByteBudget?: number;
   renderSettings?: Partial<import("@babylonslate/core").RenderProjectSettings>;
   project?: { name: string; version: string };
   inputAssets?: import("@babylonslate/core").InputAssetDefinition[];
@@ -205,6 +206,7 @@ export function playLoadControl(options: {
   return {
     type: "load",
     frameCap: options.frameCap,
+    traceByteBudget: options.traceByteBudget,
     renderSettings: options.renderSettings,
     ...(options.project ? { project: options.project } : {}),
     inputAssets: options.inputAssets,

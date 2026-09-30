@@ -105,6 +105,32 @@ async function backendFixture() {
 }
 
 describe("player startup and Stop ownership", () => {
+  it.each([
+    { traceByteBudget: undefined, retainedTicks: [1, 2, 3, 4, 5, 6, 7, 8] },
+    { traceByteBudget: 1024, retainedTicks: [8] },
+  ])("records using the Preview session trace budget of $traceByteBudget", async ({ traceByteBudget, retainedTicks }) => {
+    const { game, canvas } = await fixture();
+    game.manifest.bundleDebugger = true;
+    sessions.push(startPlayer({ game, canvas, traceByteBudget }));
+    const message = TestWorker.instances[0]!.messages.find((entry) =>
+      entry.channel === "control" && entry.payload.type === "load");
+    if (message?.channel !== "control" || message.payload.type !== "load") throw new Error("Player did not load its runtime");
+    const runtime = runtimes.createRuntimeFromLoad(message.payload, () => {});
+    try {
+      const world = runtime.getWorld();
+      world.spawnActorNow(world.createActor({
+        classId: "Actor", guid: "trace-probe", variables: { payload: "x".repeat(1024) },
+      }));
+      runtime.start();
+      runtime.executeConsoleCommand("snapshot start");
+      for (let i = 0; i < 8; i++) runtime.tick();
+      runtime.executeConsoleCommand("snapshot stop");
+      expect(runtime.stopTrace()?.frames.map((frame) => frame.tickIndex)).toEqual(retainedTicks);
+    } finally {
+      runtime.stop();
+    }
+  });
+
   it("delivers capture configuration and explicit requests from the worker to the renderer", async () => {
     const { game, canvas, handle } = await fixture();
     sessions.push(startPlayer({ game, canvas }));

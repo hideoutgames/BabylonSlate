@@ -55,7 +55,7 @@ Appendix A `[x]` means the **package/slice** landed. It does not mean every Play
 | Graph node virtualisation | `GraphEditor` mounts viewport-near nodes and incident edges (Class, Material, Shader, Animation Graph, Behaviour Tree, Particle Graph). Focus/search and selected ids stay mounted. A never-measured 0×0 wrapper still renders all; a later 0×0 (hidden tab) keeps the last size | Done (`p18-graph-virtualize`) |
 | Add Node catalog | `NodePalette` windows the catalog body (`windowedSlice`, 44px rows, overscan); search/filter stay full-list | Done (`p18-add-node-virtualize`) |
 | Background chrome tabs | Working-set mount: Content Browser + active always; inactive 2 min after `lastActiveAt`; cap 3 non-CB; pause idle clock when backgrounded | Done (`p18-inactive-documents`) |
-| Content Browser grid | Grid windows to viewport tiles plus overscan. Off-screen thumbnail blob URLs revoke. CSS-hidden CB skips decode. Folder **TreeView** already windowed | Done (`p18-content-browser-virtualize`) |
+| Content Browser grid | Grid windows to viewport tiles plus overscan. Off-screen thumbnail blob URLs revoke. CSS-hidden CB mounts no tiles and skips decode. Folder **TreeView** already windowed | Done (`p18-content-browser-virtualize`) |
 | Prefab Preview Engine | Prefab Preview uses the app-lifetime Engine via RTT + 2D blit (`present: "rtt"`). Does not `registerView`; isolated world prefabs use the same session-only PBR preview lighting as Material/Model Preview, while Scene and Play keep authored lights | Done (`p18-shared-prefab-engine`) |
 | Particles | Basic Particle Emitter (module stack), Particle Graph (own IR lowered onto Node Particle blocks, CPU) and Particle System assets (up to 8 slots of either kind), particle-domain Material required (Particle Color; textures via Texture Sample), `ParticleComponent`, `GPUParticleSystem` with CPU fallback for Basic, Play/Stop nodes | Done (`p17-particle-*`, `p-particle-*`, section 2.7) |
 | Shared `ResourceCache` | One `ResourceCache` per Engine via `resourceCacheForEngine`; Play/Prefab/Material reuse it; Play dispose does not dispose the cache | Done (`p20-shared-resource-cache`) |
@@ -857,6 +857,8 @@ A command line with history, argument hints and registry autocomplete ranked by 
 ### 9.5 Debug snapshot recorder
 
 An optional editor tool armed before or during preview. While recording it captures a time series of the stats, a ring of log and print events, and world snapshots at a reduced rate, into a capped in-memory buffer with a configurable budget that spills to a `.babtrace` file in the project's derived-data directory. The trace reuses the container format from section 3 (sorted-key JSON header plus binary chunks) rather than inventing a second binary format.
+
+Current Play capture records complete snapshots each tick. Engine Settings **Debugger → Trace Memory Budget (MiB)** now exposes the local retention budget, defaulting to 128 MiB with a 1–256 MiB range; changes apply to the next Play or Preview Build session. Incremental UTF-8 accounting evicts the oldest frames while retaining the newest. Reduced-rate snapshots remain separate from this budget control.
 
 When preview ends the trace opens as its own document tab with a scrubbable timeline: graphs on top, the log filtered to the current time window, and world state at the selected frame.
 

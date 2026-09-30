@@ -18,6 +18,10 @@ const captureModelThumbnailPng = vi.fn<
   ) => Promise<Uint8Array | null>
 >(async () => new Uint8Array([137, 80, 78, 71]));
 const MaterialLibrary = vi.fn();
+const captureAssetThumbnailPng = vi.fn<(...args: unknown[]) => Promise<Uint8Array | null>>(async () => new Uint8Array([137, 80, 78, 71]));
+const prepareAssetThumbnailInput = vi.fn<(input: unknown) => Promise<{ kind: string; materials: Map<string, unknown> }>>(async () => ({ kind: "Material", materials: new Map() }));
+let projectGuid = "project-a";
+let thumbnailsEnabled = true;
 const resourceCacheForEngine = vi.fn(() => ({}));
 const collectPlayMaterialLibrary = vi.fn(async () => ({
   documents: new Map(),
@@ -35,6 +39,7 @@ const assets = new Map<
 >();
 
 vi.mock("@babylonslate/render", () => ({
+  captureAssetThumbnailPng: (...args: unknown[]) => captureAssetThumbnailPng(...args),
   captureModelThumbnailPng: (
     engine: unknown,
     bytes: Uint8Array,
@@ -69,6 +74,10 @@ vi.mock("@babylonslate/render", () => ({
   materialUnavailable: () => true,
 }));
 
+vi.mock("../lib/asset-thumbnail-input", () => ({
+  prepareAssetThumbnailInput: (input: unknown) => prepareAssetThumbnailInput(input),
+}));
+
 vi.mock("../context/play-context", () => ({
   useOptionalPlay: () => ({
     ensureSharedEngine: () => ({ id: "shared-engine" }),
@@ -77,7 +86,8 @@ vi.mock("../context/play-context", () => ({
 
 vi.mock("../context/document-context", () => ({
   useDocuments: () => ({
-    thumbnailsEnabled: true,
+    thumbnailsEnabled,
+    projectGuid,
     assetRegistry: { getByGuid: (guid: string) => assets.get(guid) },
     readAssetChunk,
     collectPlayMaterialLibrary,
@@ -98,9 +108,58 @@ afterEach(() => {
   writeAssetThumbnail.mockClear();
   readAssetChunk.mockReset().mockResolvedValue(new Uint8Array([1, 2, 3, 4]));
   assets.clear();
+  projectGuid = "project-a";
+  thumbnailsEnabled = true;
+  captureAssetThumbnailPng.mockReset().mockResolvedValue(new Uint8Array([137, 80, 78, 71]));
+  prepareAssetThumbnailInput.mockClear();
 });
 
 describe("ModelThumbnailCaptureHost", () => {
+  it.each(["Material", "Class"] as const)("captures a saved %s with its revision and project write guard", async (type) => {
+    assets.set("asset", { path: "assets/preview.babasset", header: { type, payload: {} } });
+    render(<ModelThumbnailCaptureHost />);
+    const job = { guid: "asset", path: "assets/preview.babasset", type, payload: {}, cacheKey: "asset.revision-1", projectGuid, onlyIfMissing: true };
+    enqueueModelThumbnailJobs([job, job]);
+    await waitFor(() => expect(writeAssetThumbnail).toHaveBeenCalledWith("asset", expect.any(Uint8Array), { cacheKey: "asset.revision-1", projectGuid: "project-a" }));
+    expect(captureAssetThumbnailPng).toHaveBeenCalledTimes(1);
+    expect(captureModelThumbnailPng).not.toHaveBeenCalled();
+  });
+
+  it.each(["project switch", "disabled thumbnails", "unmount"])("discards an in-flight capture after %s", async (change) => {
+    let finish!: (png: Uint8Array) => void;
+    captureAssetThumbnailPng.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    assets.set("asset", { path: "assets/preview.babasset", header: { type: "Material", payload: {} } });
+    const view = render(<ModelThumbnailCaptureHost />);
+    enqueueModelThumbnailJobs([{ guid: "asset", path: "assets/preview.babasset", type: "Material", payload: {}, projectGuid, cacheKey: "old" }]);
+    await waitFor(() => expect(captureAssetThumbnailPng).toHaveBeenCalledOnce());
+    const shouldContinue = captureAssetThumbnailPng.mock.calls[0]![2] as () => boolean;
+    expect(shouldContinue()).toBe(true);
+    if (change === "project switch") projectGuid = "project-b";
+    if (change === "disabled thumbnails") thumbnailsEnabled = false;
+    if (change === "unmount") view.unmount();
+    else view.rerender(<ModelThumbnailCaptureHost />);
+    expect(shouldContinue()).toBe(false);
+    finish(new Uint8Array([1]));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(writeAssetThumbnail).not.toHaveBeenCalled();
+  });
+
+  it("replaces queued saves with the newest revision without overlapping captures", async () => {
+    let finish!: (png: Uint8Array) => void;
+    captureAssetThumbnailPng.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    assets.set("asset", { path: "assets/preview.babasset", header: { type: "Material", payload: {} } });
+    render(<ModelThumbnailCaptureHost />);
+    const job = { guid: "asset", path: "assets/preview.babasset", type: "Material" as const, payload: {}, projectGuid };
+    enqueueModelThumbnailJobs([{ ...job, cacheKey: "old" }]);
+    await waitFor(() => expect(captureAssetThumbnailPng).toHaveBeenCalledOnce());
+    enqueueModelThumbnailJobs([{ ...job, cacheKey: "middle" }, { ...job, cacheKey: "new" }]);
+    expect(captureAssetThumbnailPng).toHaveBeenCalledOnce();
+    finish(new Uint8Array([1]));
+    await waitFor(() => expect(writeAssetThumbnail).toHaveBeenCalledWith("asset", expect.any(Uint8Array), { projectGuid, cacheKey: "new" }));
+    expect(writeAssetThumbnail).toHaveBeenCalledOnce();
+    expect(captureAssetThumbnailPng).toHaveBeenCalledTimes(2);
+  });
+
   it("captures an Animation from its owning Model and retarget source", async () => {
     assets.set("hero-model", {
       path: "assets/hero.babasset",

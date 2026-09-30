@@ -280,6 +280,10 @@ import {
   saveAllTrace,
 } from "../lib/dirty-trace";
 import { enqueueModelThumbnailJobs } from "../lib/model-thumbnail-queue";
+import {
+  createAssetThumbnailRevisionIndex,
+  type AssetThumbnailWriteIdentity,
+} from "../lib/asset-thumbnail-revision";
 import { animClipCatalogFromAssets } from "../lib/anim-clip-catalog";
 import { loadPlayParticleLibrary } from "../lib/play-particles";
 import {
@@ -492,7 +496,7 @@ interface DocumentContextValue {
   toggleLayoutFocus: () => void;
   /** Lazy CB thumbnail decode (derived-data LRU, separate from scene cache). */
   loadAssetThumbnail: (assetGuid: string) => Promise<Uint8Array | null>;
-  writeAssetThumbnail: (assetGuid: string, bytes: Uint8Array) => Promise<void>;
+  writeAssetThumbnail: (assetGuid: string, bytes: Uint8Array, expected?: AssetThumbnailWriteIdentity) => Promise<void>;
   thumbnailVersions: Readonly<Record<string, number>>;
   thumbnailsEnabled: boolean;
   /** Compile and validate every project graph for the Play prepare path. */
@@ -764,9 +768,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     () => new Set(),
   );
   const saveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Keyed by asset guid, and projects made from one template share guids:
+  // Keyed by saved revision, and projects made from one template share guids:
   // enterEditor replaces it so one project never shows another's thumbnails.
   const thumbnailLruRef = useRef(new ThumbnailDecodeLru(THUMBNAIL_DECODE_LRU_ENTRIES));
+  const requestedThumbnailRevisionsRef = useRef(new Map<string, string>());
   const thumbnailsEnabledRef = useRef(true);
   const [thumbnailVersions, setThumbnailVersions] = useState<Record<string, number>>({});
 
@@ -786,6 +791,38 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const [homepageReady, setHomepageReady] = useState(false);
   const [templates, setTemplates] = useState<ProjectTemplate[]>([]);
   const [registryVersion, setRegistryVersion] = useState(0);
+  const previousThumbnailIndexRef = useRef<ReturnType<typeof createAssetThumbnailRevisionIndex> | null>(null);
+  const thumbnailRevisionIndex = useMemo(
+    () => {
+      void registryVersion;
+      const assets = projectService.registry?.list() ?? [];
+      const previous = previousThumbnailIndexRef.current;
+      // Document edits also bump registryVersion. Reuse saved revisions until
+      // an indexed header actually changes, without hashing on every gesture.
+      const pixelsPerUnit = projectDocument?.settings.twoD.pixelsPerUnit;
+      const next = previous?.matches(assets, pixelsPerUnit) ? previous : createAssetThumbnailRevisionIndex(assets, pixelsPerUnit);
+      previousThumbnailIndexRef.current = next;
+      return next;
+    },
+    [projectDocument?.settings.twoD.pixelsPerUnit, projectService, registryVersion],
+  );
+  const thumbnailRevisionIndexRef = useRef(thumbnailRevisionIndex);
+  thumbnailRevisionIndexRef.current = thumbnailRevisionIndex;
+  useEffect(() => {
+    const changed: string[] = [];
+    for (const [guid, previous] of requestedThumbnailRevisionsRef.current) {
+      const next = thumbnailRevisionIndex.revision(guid);
+      if (next === previous) continue;
+      if (next === null) requestedThumbnailRevisionsRef.current.delete(guid);
+      else requestedThumbnailRevisionsRef.current.set(guid, next);
+      changed.push(guid);
+    }
+    if (changed.length) setThumbnailVersions((versions) => {
+      const next = { ...versions };
+      for (const guid of changed) next[guid] = (next[guid] ?? 0) + 1;
+      return next;
+    });
+  }, [thumbnailRevisionIndex]);
   const [dockWindowTick, setDockWindowTick] = useState(0);
   const [thumbnailsEnabled, setThumbnailsEnabled] = useState(true);
   const [pendingExclusiveScene, setPendingExclusiveScene] =
@@ -1403,6 +1440,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       setFocusedLayoutIds(new Set());
       editSessionRef.current.clear();
       thumbnailLruRef.current = new ThumbnailDecodeLru(THUMBNAIL_DECODE_LRU_ENTRIES);
+      requestedThumbnailRevisionsRef.current.clear();
+      setThumbnailVersions({});
       try {
         await documentService.initializeFromProject(
           projectService,
@@ -3624,24 +3663,40 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       if (!thumbnailsEnabledRef.current) return null;
       // A read that finishes after a project switch fills the old cache only.
       const lru = thumbnailLruRef.current;
-      const cached = lru.get(assetGuid);
-      if (cached) return cached;
       const guid = projectService.guid;
       if (!guid) return null;
-      const derived = await ensureDerived();
       const asset = projectService.registry?.getByGuid(assetGuid);
       const rendered = asset?.header.type === "Model" || asset?.header.type === "Animation";
+      const revisionIndex = thumbnailRevisionIndexRef.current;
+      const revision = revisionIndex.revision(assetGuid);
+      if (revision !== null) {
+        const requested = requestedThumbnailRevisionsRef.current;
+        requested.delete(assetGuid);
+        requested.set(assetGuid, revision);
+        if (requested.size > 512) requested.delete(requested.keys().next().value!);
+      }
+      else if (asset?.header.type === "Class" || asset?.header.type === "Graph") return null;
       // Regenerate old one-frame captures that may have been cached before
       // their materials were ready. Texture thumbnail keys stay unchanged.
-      const key = rendered ? `${assetGuid}.render-v2` : assetGuid;
+      const key = revision !== null ? await revisionIndex.cacheKey(assetGuid) :
+        rendered ? `${assetGuid}.render-v2` : assetGuid;
+      if (!key || projectService.guid !== guid || thumbnailLruRef.current !== lru ||
+        thumbnailRevisionIndexRef.current.revision(assetGuid) !== revision) return null;
+      const cached = lru.get(key);
+      if (cached) return cached;
+      const derived = await ensureDerived();
       const bytes = await readThumbnail(derived, guid, key);
-      if (bytes) lru.set(assetGuid, bytes);
-      else if (asset && rendered) {
+      if (projectService.guid !== guid || thumbnailLruRef.current !== lru ||
+        thumbnailRevisionIndexRef.current.revision(assetGuid) !== revision) return null;
+      if (bytes) lru.set(key, bytes);
+      else if (asset && (rendered || revision !== null)) {
         enqueueModelThumbnailJobs([{
           guid: assetGuid,
           path: asset.path,
           payload: asset.header.payload ?? {},
-          type: asset.header.type as "Model" | "Animation",
+          type: asset.header.type as "Model" | "Animation" | "Material" | "Class" | "Graph",
+          projectGuid: guid,
+          cacheKey: key,
           onlyIfMissing: true,
         }]);
       }
@@ -3651,14 +3706,21 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   );
 
   const writeAssetThumbnail = useCallback(
-    async (assetGuid: string, bytes: Uint8Array): Promise<void> => {
+    async (assetGuid: string, bytes: Uint8Array, expected?: AssetThumbnailWriteIdentity): Promise<void> => {
       const guid = projectService.guid;
-      if (!guid) return;
+      if (!guid || (expected && expected.projectGuid !== guid)) return;
+      const lru = thumbnailLruRef.current;
       const derived = await ensureDerived();
       const type = projectService.registry?.getByGuid(assetGuid)?.header.type;
-      const key = type === "Model" || type === "Animation" ? `${assetGuid}.render-v2` : assetGuid;
+      const revisionIndex = createAssetThumbnailRevisionIndex(projectService.registry?.list() ?? [], projectDocumentRef.current?.settings.twoD.pixelsPerUnit);
+      const revision = revisionIndex.revision(assetGuid);
+      const key = revision !== null ? await revisionIndex.cacheKey(assetGuid) :
+        type === "Model" || type === "Animation" ? `${assetGuid}.render-v2` : assetGuid;
+      if (!key || projectService.guid !== guid || thumbnailLruRef.current !== lru ||
+        (expected && expected.cacheKey !== key)) return;
       await writeThumbnail(derived, guid, key, bytes);
-      thumbnailLruRef.current.delete(assetGuid);
+      if (projectService.guid !== guid || thumbnailLruRef.current !== lru) return;
+      lru.delete(key);
       setThumbnailVersions((versions) => ({
         ...versions,
         [assetGuid]: (versions[assetGuid] ?? 0) + 1,

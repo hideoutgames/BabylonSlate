@@ -13,15 +13,21 @@ import {
 } from "./preview-protocol";
 
 describe("preview pack protocol", () => {
-  it("round-trips in-memory files without writing a project tree", () => {
+  it.each([undefined, 64 * 1024 * 1024])("round-trips in-memory files with a separate session budget of %s", (traceByteBudget) => {
     const files = new Map([
       ["game.json", new TextEncoder().encode('{"startupSceneGuid":"s1"}')],
     ]);
-    const message = previewPackFromFiles(files);
+    const message = previewPackFromFiles(files, { traceByteBudget });
     expect(message.type).toBe(PREVIEW_PACK_MESSAGE);
     expect(isPreviewPackMessage(message)).toBe(true);
+    expect(message.traceByteBudget).toBe(traceByteBudget);
     const restored = filesFromPreviewPack(message);
-    expect(new TextDecoder().decode(restored.get("game.json"))).toContain("s1");
+    expect(new TextDecoder().decode(restored.get("game.json"))).toBe('{"startupSceneGuid":"s1"}');
+    expect([...restored.keys()]).toEqual(["game.json"]);
+  });
+
+  it.each([0, -1, 1.5, NaN, Infinity, "128"])("rejects an invalid Preview trace budget of %s", (traceByteBudget) => {
+    expect(isPreviewPackMessage({ type: PREVIEW_PACK_MESSAGE, files: {}, traceByteBudget })).toBe(false);
   });
 
   it("rejects unrelated window messages", () => {

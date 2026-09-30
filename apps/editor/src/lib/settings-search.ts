@@ -167,6 +167,7 @@ export const ENGINE_SETTING_FIELDS = fields([
   ["appearance", "Theme", "setting-theme"],
   ["appearance", "Pointer Target Scale", "setting-pointer-scale"],
   ["undo", "Undo History Length", "setting-undo-length"],
+  ["debugger", "Trace Memory Budget (MiB)", "setting-trace-budget-mib"],
   ["viewport", "Viewport Frame Cap", "setting-frame-cap"],
   ["viewport", "Camera Speed", "setting-fly-speed"],
   ["viewport", "Override Project Rendering", "setting-rendering-overrides"],

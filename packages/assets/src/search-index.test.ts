@@ -3,7 +3,7 @@ import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { encodeAssetDocument } from "./asset-document";
 import { encodeBabasset } from "./babasset";
 import { projectContentRoot } from "./content-root";
-import { AssetRegistry } from "./registry";
+import { AssetRegistry, type IndexedAsset } from "./registry";
 import { ProjectSearchIndex } from "./search-index";
 
 const decodeAssetDocument = vi.hoisted(() => vi.fn());
@@ -539,4 +539,91 @@ afterEach(() => {
   decodeAssetDocument.mockClear();
 });
 
+describe("ProjectSearchIndex ranking", () => {
+  const scene: IndexedAsset = {
+    rootId: "project",
+    path: "assets/level.scene.babasset",
+    header: {
+      guid: "scene-1",
+      type: "Scene",
+      name: "Level",
+      engineVersion: "0.0.0",
+      version: 1,
+      mode: "thin",
+      dependencies: [],
+      parentClass: null,
+      payload: {},
+      chunks: [],
+    },
+  };
 
+  function indexActors(
+    actors: Array<{ id: string; name: string; classId?: string }>,
+    limit?: number,
+  ): ProjectSearchIndex {
+    const index = new ProjectSearchIndex(new MemoryStorageAdapter("documents"), {
+      limit,
+    });
+    index.upsertDocument(scene, {
+      actors: actors.map((actor) => ({
+        classId: "Actor",
+        components: [],
+        ...actor,
+      })),
+    });
+    return index;
+  }
+
+  const actorIds = (hits: ReturnType<ProjectSearchIndex["query"]>) =>
+    hits.map((hit) => (hit.target.kind === "scene-actor" ? hit.target.actorId : hit.id));
+
+  it("ranks exact, prefix, label, description, then keyword hits, by label with ties in index order", () => {
+    const index = indexActors([
+      { id: "a1", name: "Stone" },
+      { id: "a2", name: "stone" },
+      { id: "a3", name: "Gravestone" },
+      { id: "a4", name: "Stonework" },
+      { id: "a5", name: "Cobblestone" },
+      { id: "a6", name: "Pebble", classId: "StoneGolem" },
+      { id: "stone-rock", name: "Rock" },
+      { id: "a8", name: "Stonework" },
+    ]);
+
+    expect(actorIds(index.query("STONE"))).toEqual([
+      "a2",
+      "a1",
+      "a4",
+      "a8",
+      "a5",
+      "a3",
+      "a6",
+      "stone-rock",
+    ]);
+    // A limit that ends inside a tier keeps its earliest equal label.
+    expect(actorIds(index.query("stone", 3))).toEqual(["a2", "a1", "a4"]);
+    expect(actorIds(index.query("stone", 5))).toEqual(["a2", "a1", "a4", "a8", "a5"]);
+  });
+
+  it("selects the same first hits as ranking every match when many entries match", () => {
+    const words = ["Core", "core", "Ore", "ore", "Ore Cart", "ore cart", "Store", "Score", "Chore", "Explorer", "Ore", "Adore"];
+    let seed = 7;
+    const next = () => {
+      seed = (seed * 48271) % 2147483647;
+      return seed;
+    };
+    const actors = Array.from({ length: 400 }, (_, index) => {
+      const roll = next() % 10;
+      if (roll === 0) return { id: `ore-${index}`, name: `Rock ${index % 7}` };
+      if (roll === 1) return { id: `a${index}`, name: `Cart ${index % 5}`, classId: "OreCart" };
+      return { id: `a${index}`, name: words[next() % words.length]! };
+    });
+    const index = indexActors(actors);
+    const every = index.query("ore", Number.POSITIVE_INFINITY);
+    expect(every.length).toBeGreaterThan(300);
+
+    expect(index.query("ore")).toEqual(every.slice(0, 80));
+    for (const limit of [1, 2, 7, 33, 150, every.length - 1]) {
+      expect(index.query("ore", limit)).toEqual(every.slice(0, limit));
+    }
+  });
+});

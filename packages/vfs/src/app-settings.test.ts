@@ -7,6 +7,26 @@ import { MemoryAppSettingsStore } from "./memory-app-settings";
 import { WebAppSettingsStore } from "./web-app-settings";
 
 describe("app settings", () => {
+  it("adds the trace budget when loading legacy preferences without losing existing settings", async () => {
+    localStorage.setItem("babylonslate:engine-settings", JSON.stringify({
+      undoHistoryLength: 75,
+      debuggerDefaults: { overlayConsole: false },
+    }));
+    const settings = await new WebAppSettingsStore().load();
+    expect(settings.traceByteBudget).toBe(134_217_728);
+    expect(settings.undoHistoryLength).toBe(75);
+    expect(settings.debuggerDefaults.overlayConsole).toBe(false);
+  });
+
+  it("bounds trace memory and rejects non-finite or non-numeric budgets", () => {
+    expect(engineSettingsSchema.parse({ traceByteBudget: 0 }).traceByteBudget).toBe(1_048_576);
+    expect(engineSettingsSchema.parse({ traceByteBudget: 2_147_483_648 }).traceByteBudget).toBe(268_435_456);
+    expect(engineSettingsSchema.parse({ traceByteBudget: 2_000_000.4 }).traceByteBudget).toBe(2_000_000);
+    for (const traceByteBudget of [NaN, Infinity, "128", null]) {
+      expect(engineSettingsSchema.safeParse({ traceByteBudget }).success).toBe(false);
+    }
+  });
+
   it("loads a legacy Drop distance default and rejects invalid limits", () => {
     expect(engineSettingsSchema.parse({}).viewportDropDistance).toBe(10_000);
     for (const viewportDropDistance of [0, -1, Infinity, NaN]) {
@@ -396,11 +416,13 @@ describe("app settings", () => {
     settings.viewportFrameCap = 30;
     settings.graphDefaultZoom = 0.8;
     settings.viewportDropDistance = 25_000.5;
+    settings.traceByteBudget = 201_326_592;
     await store.save(settings);
     const reloaded = new WebAppSettingsStore();
     expect((await reloaded.load()).viewportFrameCap).toBe(30);
     expect((await reloaded.load()).graphDefaultZoom).toBe(0.8);
     expect((await reloaded.load()).viewportDropDistance).toBe(25_000.5);
+    expect((await reloaded.load()).traceByteBudget).toBe(201_326_592);
   });
 
   it("falls back to defaults when localStorage holds invalid JSON", async () => {

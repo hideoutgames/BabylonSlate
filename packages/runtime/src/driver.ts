@@ -191,6 +191,8 @@ export interface RuntimeDriverOptions {
   renderSettings?: Partial<RenderProjectSettings>;
   /** Initial render cap for console readback; does not change the simulation step. */
   frameCap?: number;
+  /** Serialized trace retention budget in bytes for this session. */
+  traceByteBudget?: number;
   project?: { name: string; version: string };
   seed: number;
   dt?: number;
@@ -601,7 +603,7 @@ class InProcessRuntime implements RuntimeDriver {
   private possessedCameraSlotId: number | null = null;
   private readonly commands: CommandRegistry;
   private readonly loopGuard: InfiniteLoopGuard;
-  private readonly trace = new TraceRecorder();
+  private readonly trace: TraceRecorder;
   private lastTrace: TracePayload | null = null;
   private readonly seed: number;
   private tickPrints: Array<{ message: string; key: string }> = [];
@@ -660,6 +662,7 @@ class InProcessRuntime implements RuntimeDriver {
   get snapshotGeneration(): number { return this._snapshotGeneration; }
 
   constructor(options: RuntimeDriverOptions) {
+    this.trace = new TraceRecorder({ byteBudget: options.traceByteBudget });
     this.materialParameters = new RuntimeMaterialParameters(options.materialParameterCatalog, options.materialTextureAssetGuids);
     this.validateLegacyMeshParameters = options.materialParameterCatalog !== undefined;
     this.scalabilityProjectRenderPath = options.renderSettings?.renderPath ?? "forward";
