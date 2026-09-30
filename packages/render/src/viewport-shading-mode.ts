@@ -12,6 +12,7 @@ import { CAMERA_BOUNDS_MESH_NAME, GRID_MESH_NAME } from "./editor-grid";
 import { isEditorVolumeMesh } from "./editor-volume";
 import { isEditorModelPlaceholder } from "./glb-anim";
 import { isEditorActorOrigin } from "./scene-loader";
+import { isSkyboxMesh } from "./skybox";
 
 export type ViewportShadingMode = "pbr" | "unlit" | "wireframe";
 
@@ -89,6 +90,9 @@ export class ViewportShadingOverlay {
     const applied = new Set<Material>();
     for (const mesh of this.scene.meshes) {
       if (!(mesh instanceof Mesh) || !isViewportShadingTarget(mesh)) continue;
+      // Skyboxes display their cubemap through PBR reflections, which Unlit
+      // removes. Keep the background intact in every surface shading mode.
+      if (isSkyboxMesh(mesh)) continue;
       const material = mesh.material ?? this.scene.defaultMaterial;
       if (!material || applied.has(material)) continue;
       applied.add(material);
