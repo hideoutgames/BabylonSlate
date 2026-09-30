@@ -8,7 +8,7 @@ import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
 import { HavokPlugin } from "@babylonjs/core/Physics/v2/Plugins/havokPlugin";
 import { PhysicsBody } from "@babylonjs/core/Physics/v2/physicsBody";
 import type { Physics6DoFConstraint } from "@babylonjs/core/Physics/v2/physicsConstraint";
-import { PhysicsCharacterController } from "@babylonjs/core/Physics/v2/characterController";
+import { CharacterSupportedState, PhysicsCharacterController } from "@babylonjs/core/Physics/v2/characterController";
 import {
   PhysicsEventType,
   PhysicsMotionType,
@@ -30,6 +30,7 @@ import { ProximityCastResult } from "@babylonjs/core/Physics/proximityCastResult
 import type { PhysicsBackend, SphereSweepQuery } from "./backend";
 import type {
   CharacterControllerDesc,
+  CharacterMovementResult,
   BodyVelocity,
   ConstraintDesc,
   ColliderDesc,
@@ -55,7 +56,7 @@ import {
   sameColliderPose,
   validateColliderShape,
 } from "./collider-validation";
-import { attachHavokShape, teleportHavokBody } from "./havok-native-adapter";
+import { attachHavokShape, detachHavokCharacterBodyShape, teleportHavokBody } from "./havok-native-adapter";
 import { listDebugCollidersFromRecords } from "./debug-colliders";
 import { loadHavokModule } from "./havok-loader";
 import { rotateQuatVec } from "./collider-bake";
@@ -876,21 +877,30 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     const record = this.bodies.get(desc.bodyId);
     if (!record) return;
     if (this.characters.has(desc.id)) this.destroyCharacterController(desc.id);
+    const radius = desc.radius ?? 0.4;
+    const height = Math.max(desc.height ?? 1.8, radius * 2);
+    const halfSegment = height / 2 - radius;
     const shape = new PhysicsShapeCapsule(
-      new Vector3(0, 0.5, 0),
-      new Vector3(0, -0.5, 0),
-      0.4,
+      new Vector3(0, halfSegment, 0),
+      new Vector3(0, -halfSegment, 0),
+      radius,
       this.scene,
     );
+    let controller: PhysicsCharacterController | undefined;
     try {
-      const controller = new PhysicsCharacterController(
+      controller = new PhysicsCharacterController(
         record.node.position.clone(),
-        { shape, capsuleHeight: 1.8, capsuleRadius: 0.4 },
+        { shape, capsuleHeight: height, capsuleRadius: radius },
         this.scene,
       );
       controller.keepDistance = desc.offset;
+      controller.keepContactTolerance = desc.groundSnapDistance ?? 0.1;
+      controller.maxSlopeCosine = Math.cos((desc.maxSlopeAngle ?? 50) * Math.PI / 180);
+      // The actor's native body already supplies physical contacts and actor IDs.
+      detachHavokCharacterBodyShape(this.plugin, controller);
       this.characters.set(desc.id, { desc: { ...desc }, controller, shape });
     } catch (error) {
+      controller?.dispose();
       shape.dispose();
       throw error;
     }
@@ -908,9 +918,12 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     id: string,
     translation: Vec3,
     dt: number,
-  ): PhysicsTransform | null {
+  ): CharacterMovementResult | null {
+    this.flushMutations();
     const character = this.characters.get(id);
     if (!character) return null;
+    const body = this.bodies.get(character.desc.bodyId);
+    if (!body || !Number.isFinite(dt) || dt <= 0) return null;
     const invDt = dt > 1e-8 ? 1 / dt : 0;
     character.controller.setVelocity(
       new Vector3(
@@ -919,11 +932,24 @@ export class HavokPhysicsBackend implements PhysicsBackend {
         translation.z * invDt,
       ),
     );
-    const support = character.controller.checkSupport(dt, this.down);
-    character.controller.integrate(dt, support, this.zeroGravity);
+    const memberships = new Map<PhysicsShape, number>();
+    let grounded = false;
+    try {
+      // CCT casts exclude their private body, not the actor's physical body.
+      // Filter the owner's complete compound before collecting any contacts.
+      for (const shape of [body.body.shape, ...[...body.colliders.values()].map((c) => c.shape)]) {
+        if (!shape || memberships.has(shape)) continue;
+        memberships.set(shape, shape.filterMembershipMask);
+        shape.filterMembershipMask = 0;
+      }
+      const support = character.controller.checkSupport(dt, this.down);
+      character.controller.integrate(dt, support, this.zeroGravity);
+      grounded = translation.y <= 0 && character.controller.checkSupport(dt, this.down).supportedState === CharacterSupportedState.SUPPORTED;
+    } finally {
+      for (const [shape, membership] of memberships) shape.filterMembershipMask = membership;
+    }
     const pos = character.controller.getPosition();
-    const body = this.bodies.get(character.desc.bodyId);
-    if (!body) return null;
+    const velocity = character.controller.getVelocity();
     this.teleportBody(character.desc.bodyId, {
       position: { x: pos.x, y: pos.y, z: pos.z },
       rotation: this.getBodyTransform(character.desc.bodyId)?.rotation ?? {
@@ -933,7 +959,11 @@ export class HavokPhysicsBackend implements PhysicsBackend {
         w: 1,
       },
     });
-    return this.getBodyTransform(character.desc.bodyId);
+    return {
+      ...this.getBodyTransform(character.desc.bodyId)!,
+      velocity: { x: velocity.x, y: velocity.y, z: velocity.z },
+      grounded,
+    };
   }
 
   private enableCollisionCallbacks(body: PhysicsBody): void {

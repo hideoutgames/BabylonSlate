@@ -1,5 +1,6 @@
 import type {
   CharacterControllerDesc,
+  CharacterMovementResult,
   BodyVelocity,
   ConstraintDesc,
   ColliderDesc,
@@ -94,5 +95,5 @@ export interface PhysicsBackend {
     id: string,
     translation: Vec3,
     dt: number,
-  ): PhysicsTransform | null;
+  ): CharacterMovementResult | null;
 }

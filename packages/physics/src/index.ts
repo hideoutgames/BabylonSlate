@@ -22,6 +22,7 @@ export type {
   LineTraceOptions,
   OverlapResult,
   CharacterControllerDesc,
+  CharacterMovementResult,
   PhysicsContactEvent,
   PhysicsBackendOptions,
   RigidBodyTuning,

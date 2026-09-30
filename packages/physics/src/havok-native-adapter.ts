@@ -1,6 +1,7 @@
 import type { HavokPlugin } from "@babylonjs/core/Physics/v2/Plugins/havokPlugin";
 import type { PhysicsBody } from "@babylonjs/core/Physics/v2/physicsBody";
 import type { PhysicsShape } from "@babylonjs/core/Physics/v2/physicsShape";
+import type { PhysicsCharacterController } from "@babylonjs/core/Physics/v2/characterController";
 import { PhysicsPrestepType } from "@babylonjs/core/Physics/v2/IPhysicsEnginePlugin";
 import type {
   HavokPhysicsWithBindings,
@@ -74,6 +75,19 @@ export function attachHavokShape(
     body.shape = null;
   }
   restoreWorldMembership(plugin, body);
+}
+
+/**
+ * Babylon 9.20's controller creates a second body, although its solver uses
+ * independent shape queries. Keep that body's lifetime native, but leave its
+ * shape detached: the actor body owns physical contacts and query identity.
+ */
+export function detachHavokCharacterBodyShape(
+  plugin: HavokPlugin,
+  controller: PhysicsCharacterController,
+): void {
+  const body = (controller as unknown as { _body: PhysicsBody })._body;
+  attachHavokShape(plugin, body, null);
 }
 
 /** Worker NullEngine teleports must not depend on a later render/prestep callback. */

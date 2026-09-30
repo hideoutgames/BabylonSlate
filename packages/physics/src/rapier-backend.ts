@@ -8,6 +8,7 @@ import type {
 import type { PhysicsBackend } from "./backend";
 import type {
   CharacterControllerDesc,
+  CharacterMovementResult,
   BodyVelocity,
   ConstraintDesc,
   ColliderDesc,
@@ -155,8 +156,15 @@ type RapierCharacterController = {
   computeColliderMovement(
     collider: RapierCollider,
     desired: { x: number; y: number },
+    filterFlags?: QueryFilterFlags,
+    filterGroups?: InteractionGroups,
+    filterPredicate?: (collider: RapierCollider) => boolean,
   ): void;
   computedMovement(): { x: number; y: number };
+  computedGrounded(): boolean;
+  setMaxSlopeClimbAngle(angle: number): void;
+  setMinSlopeSlideAngle(angle: number): void;
+  enableSnapToGround(distance: number): void;
 };
 
 type BodyRecord = {
@@ -686,7 +694,13 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
   }
 
   createCharacterController(desc: CharacterControllerDesc): void {
+    if (this.characters.has(desc.id)) this.destroyCharacterController(desc.id);
     const controller = this.world.createCharacterController(desc.offset);
+    const angle = (desc.maxSlopeAngle ?? 50) * Math.PI / 180;
+    controller.setMaxSlopeClimbAngle(angle);
+    controller.setMinSlopeSlideAngle(angle);
+    if ((desc.groundSnapDistance ?? 0.1) > 0)
+      controller.enableSnapToGround(desc.groundSnapDistance ?? 0.1);
     this.characters.set(desc.id, { desc: { ...desc }, controller });
   }
 
@@ -701,19 +715,25 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     id: string,
     translation: Vec3,
     dt: number,
-  ): PhysicsTransform | null {
-    void dt;
+  ): CharacterMovementResult | null {
+    if (!Number.isFinite(dt) || dt <= 0) return null;
+    this.flushSceneQueries();
     const character = this.characters.get(id);
     if (!character) return null;
     const bodyRecord = this.bodies.get(character.desc.bodyId);
     if (!bodyRecord) return null;
     const collider = [...this.colliders.values()].find(
-      (c) => c.desc.bodyId === bodyRecord.desc.id,
+      (c) => c.desc.bodyId === bodyRecord.desc.id && !c.desc.isTrigger,
     );
     if (!collider) return null;
     character.controller.computeColliderMovement(collider.collider, {
       x: translation.x,
       y: translation.y,
+    }, undefined, undefined, (candidate) => {
+      const candidateId = this.colliderIdByHandle.get(candidate.handle);
+      const other = candidateId ? this.colliders.get(candidateId)?.desc : undefined;
+      return !!other && other.bodyId !== bodyRecord.desc.id && !other.isTrigger &&
+        (other.layer & collider.desc.mask) !== 0 && (collider.desc.layer & other.mask) !== 0;
     });
     const movement = character.controller.computedMovement();
     const current = bodyRecord.body.translation();
@@ -727,7 +747,9 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
         y: current.y + movement.y,
         z: 0,
       },
-      rotation: identityRotation(),
+      rotation: this.getBodyTransform(character.desc.bodyId)?.rotation ?? identityRotation(),
+      velocity: { x: movement.x / dt, y: movement.y / dt, z: 0 },
+      grounded: translation.y <= 0 && character.controller.computedGrounded(),
     };
   }
 
