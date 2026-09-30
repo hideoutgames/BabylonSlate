@@ -35,8 +35,9 @@ function vector(value: unknown): Vec3 {
 /** Fixed-tick intent, velocity and transitions; physics owns collision resolution. */
 export class MovementWorldSync {
   private readonly states = new Map<ActorComponent, MovementState>();
+  private readonly host: MovementHost;
 
-  constructor(private readonly host: MovementHost) {}
+  constructor(host: MovementHost) { this.host = host; }
 
   initialize(component: ActorComponent): void {
     if (component.classId === "MovementComponent") this.state(component);
