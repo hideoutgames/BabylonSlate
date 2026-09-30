@@ -291,22 +291,22 @@ export function layoutText2D(input: LayoutText2DInput): Text2DLayout {
       });
       continue;
     }
-      const metrics = input.metrics.measureGlyph(span.ch, span.style);
-      pushPending({
-        kind: "glyph",
-        ch: span.ch,
-        width: metrics.width,
-        height: metrics.height,
-        advance: metrics.advance,
-        bearingX: metrics.bearingX,
-        bearingY: metrics.bearingY,
-        style: span.style,
-        effects: span.effects,
-        source: metrics.source,
-        inkBounds: metrics.inkBounds,
-        uvs: metrics.uvs,
-        index: span.index,
-      });
+    const metrics = input.metrics.measureGlyph(span.ch, span.style);
+    pushPending({
+      kind: "glyph",
+      ch: span.ch,
+      width: metrics.width,
+      height: metrics.height,
+      advance: metrics.advance,
+      bearingX: metrics.bearingX,
+      bearingY: metrics.bearingY,
+      style: span.style,
+      effects: span.effects,
+      source: metrics.source,
+      inkBounds: metrics.inkBounds,
+      uvs: metrics.uvs,
+      index: span.index,
+    });
   }
   if (line.length > 0 || lines.length === 0) breakLine();
 

@@ -62,6 +62,7 @@ export function ArrayProperty<T>({
         <FieldLabel id={`${id}-label`} className="min-w-0 flex-1">{label}</FieldLabel>
         {defaultValue !== undefined ? <Button
           type="button" variant="ghost" size="icon-sm" aria-label={`Reset ${label}`}
+          className="pointer-coarse:min-h-11 pointer-coarse:min-w-11"
           disabled={disabled || atDefault} onClick={() => change([...defaultValue])}
         ><RotateCcwIcon /></Button> : null}
       </div>
