@@ -97,7 +97,7 @@ Use one Movement per actor. It supplies its own kinematic body and sole collisio
 
 Get-only **Velocity**, horizontal **Speed**, **Is Grounded**, **Is In Air**, and **Is Moving** expose current state. Is Moving uses horizontal speed above 0.01 world units/s. Component events report **Started**, **Stopped**, **Jumped**, **Left Ground**, and **Landed**, each with the resulting Velocity and Speed. The same runtime path serves Play and exported players. Movement currently provides ground travel and jumping; flying modes and automatic stair climbing are outside its contract.
 
-Havok and Rapier apply the slope limit through their native character controllers. Ground Snap Distance also sets Rapier's snap distance and Havok's support contact tolerance; their exact edge response may differ. The software test/fallback backend uses swept bounding boxes and cannot represent slopes.
+Havok and Rapier apply the slope limit through their native character controllers. Ground snapping only follows nearby supporting ground after a grounded frame; it does not add a downward impulse when leaving a ledge. Havok uses a short capsule cast and Rapier uses native snapping, so their exact edge response may differ. The software test/fallback backend uses swept bounding boxes and cannot represent slopes. Ordinary movement preserves trigger overlap lifetimes; explicit teleports retain the separate physics teleport contract.
 
 ### Constraints and ragdolls
 

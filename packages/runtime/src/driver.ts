@@ -893,7 +893,7 @@ class InProcessRuntime implements RuntimeDriver {
       physics: (actor) => actor.sceneLayerId ? this.overlayPhysicsSync : this.physicsSync,
       eligible: (actor) => this.canTickActor(actor),
       gravity: (actor) => -(actor.sceneLayerId ? this.overlayGravity[1] : this.gravity[1]),
-      warn: (component) => this.emit({ type: "log", severity: "warn", category: "Movement",
+      warn: (component) => this.emit({ type: "log", severity: "warning", category: "Movement",
         message: `Movement on ${component.owner?.guid ?? "actor"} could not create its motor. Use one Movement component without Rigid Body, Nav Agent, Ragdoll or Water Buoyancy components.`, frameId: this.frameId }),
       event: (component, event, args) => {
         const actor = component.owner;
@@ -1261,6 +1261,9 @@ class InProcessRuntime implements RuntimeDriver {
           for (const _ of this.applyOverlayAnchors(this.world.getActors())) void _;
         }
         if (owner.sceneLayerId) this.applyOverlayLayouts();
+        // Steering/tuning is consumed by the next motor tick; only dimensions
+        // need immediate collider/query refresh after a property write.
+        if (component.classId === "MovementComponent" && propertyName && propertyName !== "radius" && propertyName !== "height") return;
         const slotId = this.slotByGuid.get(owner.guid);
         if (component.classId === "DynamicRuntimeMeshComponent" &&
           (propertyName === "materialGuid" || propertyName === "enableCollision" || propertyName === "layer" || propertyName === "mask")) {
