@@ -24,6 +24,7 @@ export {
   migrateLegacyShaderPayload,
   normalizeMaterialDocument,
   normalizeMaterialFunctionDocument,
+  normalizeMaterialPreviewSettings,
   setMaterialDomain,
   type LegacyShaderMigrationContext,
   type MaterialBlendMode,
@@ -114,3 +115,17 @@ export * from "./vector-mask";
 
 export { buildMaterialParameterCatalog, materialParameterDefaults } from "./material-parameter-catalog";
 export { convertGlslToMaterial, type GlslToMaterialOptions, type GlslToMaterialResult } from "./glsl-to-material";
+export {
+  MATERIAL_INSTANCE_MAX_DEPTH,
+  MATERIAL_INSTANCE_SCHEMA_VERSION,
+  createDefaultMaterialInstanceDocument,
+  isMaterialInstanceContent,
+  materialInstanceDependencies,
+  materializeMaterialInstance,
+  materializeMaterialInstances,
+  normalizeMaterialInstanceDocument,
+  resolveMaterialInstance,
+  type MaterialInstanceDocument,
+  type MaterialInstanceResolution,
+  type MaterialSource,
+} from "./material-instance";
