@@ -716,7 +716,9 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     translation: Vec3,
     dt: number,
   ): CharacterMovementResult | null {
-    if (!Number.isFinite(dt) || dt <= 0) return null;
+    if (!Number.isFinite(dt) || dt < 0) return null;
+    // Collision resolution takes a displacement, including events outside a tick.
+    const inverseDt = dt > 0 ? 1 / dt : 0;
     this.flushSceneQueries();
     const character = this.characters.get(id);
     if (!character) return null;
@@ -748,7 +750,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
         z: 0,
       },
       rotation: this.getBodyTransform(character.desc.bodyId)?.rotation ?? identityRotation(),
-      velocity: { x: movement.x / dt, y: movement.y / dt, z: 0 },
+      velocity: { x: movement.x * inverseDt, y: movement.y * inverseDt, z: 0 },
       grounded: translation.y <= 0 && character.controller.computedGrounded(),
     };
   }

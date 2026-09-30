@@ -729,7 +729,9 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
     const character = this.characters.get(id);
     if (!character) return null;
     const body = this.bodies.get(character.desc.bodyId);
-    if (!body || !Number.isFinite(dt) || dt <= 0) return null;
+    if (!body || !Number.isFinite(dt) || dt < 0) return null;
+    // Discrete graph events can request a displacement before the first tick.
+    const inverseDt = dt > 0 ? 1 / dt : 0;
     const before = { ...body.transform.position };
     const self = [...this.colliders.values()].find((c) => c.desc.bodyId === body.desc.id && !c.desc.isTrigger);
     const obstacles = [...this.colliders.values()].flatMap((c) => {
@@ -786,9 +788,9 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
     return {
       ...cloneTransform(body.transform), grounded,
       velocity: {
-        x: (body.transform.position.x - before.x) / dt,
-        y: (body.transform.position.y - before.y) / dt,
-        z: (body.transform.position.z - before.z) / dt,
+        x: (body.transform.position.x - before.x) * inverseDt,
+        y: (body.transform.position.y - before.y) * inverseDt,
+        z: (body.transform.position.z - before.z) * inverseDt,
       },
     };
   }

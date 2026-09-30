@@ -33,13 +33,19 @@ it.each(["havok", "rapier", "software3d", "software2d"] as const)(
       box(backend, "wall", { x: 0.5, y: 2, z: 8 });
       body(backend, "trigger", { x: 0.6, y: 1, z: 0 });
       box(backend, "trigger", { x: 0.2, y: 1, z: 8 }, true);
-      body(backend, "player", { x: 0, y: 3, z: 0 }, true);
+      body(backend, "player", { x: kind === "havok" ? 0 : -0.25, y: 3, z: 0 }, true);
       backend.createCollider({
         id: "player:shape", bodyId: "player",
         shape: { kind: worldKind === "3d" ? "capsule" : "capsule2d", radius: 0.4, halfHeight: 0.5 },
         friction: 0, restitution: 0, isTrigger: false, layer: 1, mask: 0xffffffff,
       });
       backend.createCharacterController({ id: "motor", bodyId: "player", offset: 0.01, radius: 0.4, height: 1.8 });
+      if (kind !== "havok") {
+        const immediate = backend.moveCharacter("motor", { x: 0.25, y: 0, z: 0 }, 0)!;
+        expect(immediate.position.x).toBeCloseTo(0, 4);
+        expect(immediate.velocity).toEqual({ x: 0, y: 0, z: 0 });
+        backend.step(dt);
+      }
       let result = backend.moveCharacter("motor", { x: 0, y: -0.05, z: 0 }, dt)!;
       for (let i = 0; i < 90; i++) {
         result = backend.moveCharacter("motor", { x: 0, y: -0.05, z: 0 }, dt)!;
