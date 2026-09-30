@@ -120,8 +120,9 @@ describe("asset thumbnail capture", () => {
     expect(captured?.positions).toContainEqual([13, 1, 0]);
     expect(captured?.modelMaterial).toBe("material:paint");
     expect(captured?.names).toHaveLength(2);
-    // Box spans x 9.25..10.75; scaled, parented triangle spans x 13..15.
-    expect(captured?.target[0]).toBeCloseTo(12.125);
+    // Box spans x 9.25..10.75. The glTF left-handed conversion mirrors X,
+    // so the triangle's scale 2 and translation 13 produce x 11..13.
+    expect(captured?.target[0]).toBeCloseTo(11.125);
     expect(captured?.target[1]).toBeCloseTo(1.125);
     expect(captured?.radius).toBeLessThan(10);
     expect(engine.scenes).toEqual([scene]);
