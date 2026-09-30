@@ -53,6 +53,7 @@ vi.mock("../context/document-context", () => ({
           components: [
             createMeshComponent("prefab-mesh", "box"),
             createMeshComponent("prefab-sphere", "sphere"),
+            { id: "prefab-movement", classId: "MovementComponent", properties: {} },
           ],
         },
         layout: null,
@@ -146,6 +147,20 @@ describe("Inspector prefab component details", () => {
     ).toBeTruthy();
     expect(screen.getByTestId("property-prefab-mesh-position-z")).toBeTruthy();
     expect(screen.queryByTestId("property-prefab-mesh-z-order")).toBeNull();
+  });
+
+  it.each(["2d", "3d"] as const)("edits the Movement capsule instead of an ineffective local transform in %s", (mode) => {
+    sceneEditing.viewportMode = mode;
+    renderInspector({ selectedComponentId: "prefab-movement" });
+    expect(screen.queryByTestId("prefab-component-transform-grid")).toBeNull();
+    const radius = screen.getByTestId("property-prefab-root-prefab-movement-radius");
+    fireEvent.change(radius, { target: { value: "0.6" } });
+    fireEvent.blur(radius);
+    const movement = applyGraphChange.mock.calls.at(-1)![1].components.find(
+      (component) => component.id === "prefab-movement",
+    );
+    expect(movement?.properties.radius).toBe(0.6);
+    expect(movement?.transform).toBeUndefined();
   });
 
   it("shows Z-Order instead of Position Z in 2D Prefab Inspector", () => {

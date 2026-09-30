@@ -22,6 +22,7 @@ export type EngineScriptVariable = {
 
 export type EngineScriptFunction = {
   name: string;
+  description?: string;
   pins: EngineScriptPin[];
   runtime: string;
 };
@@ -782,26 +783,31 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
     functions: [
       {
         name: "Convert Input", runtime: "convertMovementInput",
+        description: "Convert a Vec2 to a world direction using Dead Zone and Input Scale. 3D maps X/Y to X/Z with Input Space and yaw in degrees; 2D uses X only.",
         pins: [EXEC_IN, EXEC_OUT, { name: "input", typeId: "vec2", direction: "in" }, { name: "yaw", typeId: "float", direction: "in" }, { name: "direction", typeId: "vec3", direction: "out" }],
       },
       {
         name: "Set Movement Input", runtime: "setMovementInput",
+        description: "Keep this world direction until replaced. Connect Input Axis Held through Convert Input, then send a zero direction on Released to stop accelerating.",
         pins: [EXEC_IN, EXEC_OUT, { name: "direction", typeId: "vec3", direction: "in" }],
       },
       {
         name: "Add Movement Input", runtime: "addMovementInput",
+        description: "Add a world direction for the next physics tick only. Call again each tick while held; contributions combine with Set Movement Input and are limited to full strength.",
         pins: [EXEC_IN, EXEC_OUT, { name: "direction", typeId: "vec3", direction: "in" }],
       },
       {
         name: "Set Velocity", runtime: "setMovementVelocity",
+        description: "Replace world velocity in units per second. Movement input, braking, gravity and collisions continue to affect it.",
         pins: [EXEC_IN, EXEC_OUT, { name: "velocity", typeId: "vec3", direction: "in" }],
       },
       {
         name: "Add Velocity", runtime: "addMovementVelocity",
+        description: "Add a world velocity change in units per second, such as knockback or a launch. Movement and gravity continue afterward.",
         pins: [EXEC_IN, EXEC_OUT, { name: "velocity", typeId: "vec3", direction: "in" }],
       },
-      { name: "Jump", runtime: "jumpMovement", pins: [EXEC_IN, EXEC_OUT] },
-      { name: "Stop Immediately", runtime: "stopMovementImmediately", pins: [EXEC_IN, EXEC_OUT] },
+      { name: "Jump", runtime: "jumpMovement", description: "Request a jump using Jump Speed, Coyote Time and Jump Buffer Time. Connect an Input Action Started pin; holding the call can request another jump after landing.", pins: [EXEC_IN, EXEC_OUT] },
+      { name: "Stop Immediately", runtime: "stopMovementImmediately", description: "Clear velocity, persistent input and any buffered jump. Future input and gravity can move the actor again.", pins: [EXEC_IN, EXEC_OUT] },
     ],
     events: MOVEMENT_EVENTS,
   },
