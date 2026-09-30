@@ -1,4 +1,5 @@
 import { sha256Hex, stableStringify, type IndexedAsset } from "@babylonslate/assets";
+import { DEFAULT_TWO_D_PROJECT_SETTINGS } from "@babylonslate/core";
 import {
   classDocumentShowsPrefab,
   classIdFromClassAsset,
@@ -8,7 +9,10 @@ import {
 export type AssetThumbnailWriteIdentity = { projectGuid: string; cacheKey: string };
 
 /** Header-only revision lookup. Payloads and source bytes are loaded only for capture. */
-export function createAssetThumbnailRevisionIndex(assets: readonly IndexedAsset[]) {
+export function createAssetThumbnailRevisionIndex(
+  assets: readonly IndexedAsset[],
+  pixelsPerUnit = DEFAULT_TWO_D_PROJECT_SETTINGS.pixelsPerUnit,
+) {
   const byGuid = new Map(assets.map((asset) => [asset.header.guid, asset]));
   const classes = assets.filter((asset) => asset.header.type === "Class" || asset.header.type === "Graph");
   const byClassId = new Map(classes.flatMap((asset) => [
@@ -69,7 +73,7 @@ export function createAssetThumbnailRevisionIndex(assets: readonly IndexedAsset[
       }
     }
     entries.sort(([a], [b]) => a.localeCompare(b));
-    const value = stableStringify(entries);
+    const value = stableStringify(type === "Material" ? entries : { pixelsPerUnit, assets: entries });
     return remember(guid, value);
   }
 
@@ -83,7 +87,8 @@ export function createAssetThumbnailRevisionIndex(assets: readonly IndexedAsset[
     return key;
   }
 
-  const matches = (current: readonly IndexedAsset[]): boolean =>
-    current.length === byGuid.size && current.every((asset) => byGuid.get(asset.header.guid) === asset);
+  const matches = (current: readonly IndexedAsset[], currentPixelsPerUnit = DEFAULT_TWO_D_PROJECT_SETTINGS.pixelsPerUnit): boolean =>
+    currentPixelsPerUnit === pixelsPerUnit && current.length === byGuid.size &&
+    current.every((asset) => byGuid.get(asset.header.guid) === asset);
   return { revision, cacheKey, matches };
 }

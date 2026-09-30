@@ -181,7 +181,10 @@ export async function captureAssetThumbnailPng(
     if (!(await whileCurrent(Promise.all(preparations), current)).every(Boolean)) return null;
     const deadline = Date.now() + SCENE_SHADER_WARM_TIMEOUT_MS;
     while (!meshes.every((mesh) => mesh.isReady(true))) {
-      if (!current() || Date.now() >= deadline) return null;
+      if (!current() || Date.now() >= deadline) {
+        console.warn("thumbnail readiness diagnostic", meshes.map((mesh) => ({ name: mesh.name, material: mesh.material?.name ?? host.scene.defaultMaterial.name, ready: mesh.isReady(true), textures: (mesh.material ?? host.scene.defaultMaterial).getActiveTextures().map((texture) => ({ name: texture.name, ready: texture.isReady() })) })));
+        return null;
+      }
       await new Promise<void>((resolve) => setTimeout(resolve, 16));
     }
     if (!current()) return null;
@@ -198,7 +201,8 @@ export async function captureAssetThumbnailPng(
       : new Uint8Array(readback.buffer, readback.byteOffset, readback.byteLength);
     if (pixels.byteLength < size * size * 4) return null;
     return encodeRgbaPng(size, size, new Uint8Array(flipReadPixelsRgba(pixels.subarray(0, size * size * 4), size, size)));
-  } catch {
+  } catch (error) {
+    console.warn("thumbnail capture diagnostic", error);
     return null;
   } finally {
     controller.abort();

@@ -798,11 +798,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       const previous = previousThumbnailIndexRef.current;
       // Document edits also bump registryVersion. Reuse saved revisions until
       // an indexed header actually changes, without hashing on every gesture.
-      const next = previous?.matches(assets) ? previous : createAssetThumbnailRevisionIndex(assets);
+      const pixelsPerUnit = projectDocument?.settings.twoD.pixelsPerUnit;
+      const next = previous?.matches(assets, pixelsPerUnit) ? previous : createAssetThumbnailRevisionIndex(assets, pixelsPerUnit);
       previousThumbnailIndexRef.current = next;
       return next;
     },
-    [projectService, registryVersion],
+    [projectDocument?.settings.twoD.pixelsPerUnit, projectService, registryVersion],
   );
   const thumbnailRevisionIndexRef = useRef(thumbnailRevisionIndex);
   thumbnailRevisionIndexRef.current = thumbnailRevisionIndex;
@@ -3710,7 +3711,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       const lru = thumbnailLruRef.current;
       const derived = await ensureDerived();
       const type = projectService.registry?.getByGuid(assetGuid)?.header.type;
-      const revisionIndex = createAssetThumbnailRevisionIndex(projectService.registry?.list() ?? []);
+      const revisionIndex = createAssetThumbnailRevisionIndex(projectService.registry?.list() ?? [], projectDocumentRef.current?.settings.twoD.pixelsPerUnit);
       const revision = revisionIndex.revision(assetGuid);
       const key = revision !== null ? await revisionIndex.cacheKey(assetGuid) :
         type === "Model" || type === "Animation" ? `${assetGuid}.render-v2` : assetGuid;

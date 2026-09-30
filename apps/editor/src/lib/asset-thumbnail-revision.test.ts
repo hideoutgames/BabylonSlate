@@ -22,6 +22,15 @@ function documentChunk(hash: string): IndexedAsset["header"]["chunks"] {
 }
 
 describe("saved asset thumbnail revisions", () => {
+  it("refreshes prefab scale after pixels-per-unit changes while reusing material spheres", async () => {
+    const assets = [asset("actor", "Class", { parentClass: "Actor" }), asset("paint", "Material")];
+    const original = createAssetThumbnailRevisionIndex(assets, 100);
+    const rescaled = createAssetThumbnailRevisionIndex(assets, 200);
+    expect(original.matches(assets, 200)).toBe(false);
+    expect(await rescaled.cacheKey("actor")).not.toBe(await original.cacheKey("actor"));
+    expect(await rescaled.cacheKey("paint")).toBe(await original.cacheKey("paint"));
+  });
+
   it("does not reuse a persisted material thumbnail after a transitive texture or material edit", async () => {
     const material = asset("material", "Material", {
       dependencies: ["function"], chunks: documentChunk("material-before"),
