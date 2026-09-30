@@ -14,18 +14,22 @@ if (process.env.BL_RENDER_NATIVE_GPU !== "1" || process.env.CI)
 type Api = {
   shadowDiagnostics(): ShadowDiagnostics | null;
   setRenderSettings(settings: RenderShadingSettings): void;
+  rendering(): { presentation: { drawn: number } } | null;
 };
 type Host = "play" | "player";
 const apiName = (host: Host) => host === "play" ? "__babylonslatePlayTest" : "__babylonslatePlayerTest";
 const diagnostics = (canvas: Locator, host: Host) => canvas.evaluate((_node, name) => (window as unknown as Record<string, Api>)[name]!.shadowDiagnostics(), apiName(host));
+// Scene render ids also advance for shadow and render-target passes, without a
+// new canvas frame. Captures must follow frames the host actually presented.
+const presented = (canvas: Locator, host: Host) => canvas.evaluate((_node, name) => (window as unknown as Record<string, Api>)[name]!.rendering()!.presentation.drawn, apiName(host));
 async function settings(canvas: Locator, host: Host, value: RenderShadingSettings) {
   await canvas.evaluate((_node, { name, value }) => (window as unknown as Record<string, Api>)[name]!.setRenderSettings(value), { name: apiName(host), value });
   await expect.poll(async () => {
     const state = await diagnostics(canvas, host);
     return [state?.surfaceMode, state?.requestedShadows.enabled];
   }).toEqual([value.mode, value.shadows!.enabled]);
-  const frame = (await diagnostics(canvas, host))!.provenance.renderId;
-  await expect.poll(async () => (await diagnostics(canvas, host))!.provenance.renderId).toBeGreaterThan(frame + 2);
+  const frame = await presented(canvas, host);
+  await expect.poll(() => presented(canvas, host), { timeout: 30_000 }).toBeGreaterThan(frame + 2);
 }
 
 test("Basic 3D mannequin preserves real materials, contacts and animation in Play and packed player", async ({ page }, testInfo) => {
