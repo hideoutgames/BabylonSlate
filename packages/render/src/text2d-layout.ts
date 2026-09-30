@@ -221,7 +221,8 @@ function flushLine(
     runStart = null;
   };
   cursorX = shift;
-  for (const entry of line) {
+  for (let index = 0; index < line.length; index++) {
+    const entry = line[index]!;
     const left = cursorX + entry.bearingX;
     const right = left + entry.width;
     if (entry.style.underline) {
@@ -230,7 +231,10 @@ function flushLine(
         runStyle = entry.style;
         runIndex = entry.index;
       }
-      runEnd = right;
+      const next = line[index + 1];
+      runEnd = separateUnderlines && next?.style.underline
+        ? cursorX + entry.advance + next.bearingX
+        : right;
       if (separateUnderlines) flushUnderline();
     } else {
       flushUnderline();
