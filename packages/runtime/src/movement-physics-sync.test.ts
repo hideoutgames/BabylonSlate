@@ -84,7 +84,12 @@ it("Havok preserves authored facing and one overlap lifetime while Movement turn
       const halfAngle = i * Math.PI / 12;
       actor.transform.rotation = { x: 0, y: Math.sin(halfAngle), z: 0, w: Math.cos(halfAngle) };
       step(0);
-      expect(Math.abs(actor.transform.rotation.y)).toBeCloseTo(Math.abs(Math.sin(halfAngle)), 5);
+      const actual = actor.transform.rotation;
+      const dot = Math.abs(actual.y * Math.sin(halfAngle) + actual.w * Math.cos(halfAngle)) /
+        Math.hypot(actual.x, actual.y, actual.z, actual.w);
+      // Havok integrates a kinematic angular target rather than teleporting to
+      // an exact quaternion. A lost facing update would be a full 30 degrees off.
+      expect(2 * Math.acos(Math.min(1, dot))).toBeLessThan(Math.PI / 180);
     }
     expect(events).toEqual(["overlapBegin"]);
     for (let i = 0; i < 25; i++) step(0.1);
