@@ -97,6 +97,8 @@ Use one Movement per actor. It supplies its own kinematic body and sole collisio
 
 Get-only **Velocity**, horizontal **Speed**, **Is Grounded**, **Is In Air**, and **Is Moving** expose current state. Is Moving uses horizontal speed above 0.01 world units/s. Component events report **Started**, **Stopped**, **Jumped**, **Left Ground**, and **Landed**, each with the resulting Velocity and Speed. The same runtime path serves Play and exported players. Movement currently provides ground travel and jumping; flying modes and automatic stair climbing are outside its contract.
 
+Havok and Rapier apply the slope limit through their native character controllers. Ground Snap Distance also sets Rapier's snap distance and Havok's support contact tolerance; their exact edge response may differ. The software test/fallback backend uses swept bounding boxes and cannot represent slopes.
+
 ### Constraints and ragdolls
 
 **Add Component → Physics → Physics Constraint** connects the owner's body to another actor. Choose **Target Actor** from the searchable scene picker; it includes explicit Rigid Bodies and implicit Mesh, Blocking Volume, or Tilemap bodies. Set a target after placing a Class, or use the component's **Set Connected Actor** graph function. An empty/missing target waits for a body to become available. Duplicating a connected selection remaps its internal targets to the copied actors.
