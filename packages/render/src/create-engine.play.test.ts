@@ -23,6 +23,7 @@ import {
   engineCommandBus,
   requestEditorDrop,
   parseCableProperties,
+  parseText2DProperties,
   type RenderSettingsPatch,
 } from "@babylonslate/core";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
@@ -2340,7 +2341,7 @@ describe("Play createEngine view", () => {
     handles.push(handle);
     handle.applyCommand({ type: "spawn", slotId: 4, actorGuid: "label", classId: "SceneLayerActor", sceneLayerId: "late" });
     handle.applyCommand({ type: "assignMesh", slotId: 4, primaryComponentId: "rich", meshKind: "2drichtext", meshAssetGuid: null,
-      text2d: { text: "AB", appearModes: ["fade"], appearTransition: "linear", appearInterval: 0, appearProgress: 0 } });
+      text2d: parseText2DProperties({ text: "AB", appearModes: ["fade"], appearTransition: "linear", appearInterval: 0, appearProgress: 0 }, { rich: true }) });
     handle.applyCommand({ type: "setText2DAppear", slotId: 4, componentId: "rich", progress: 0.5 });
     handle.applyCommand({ type: "setText2DAppear", slotId: 4, componentId: "wrong", progress: 1 });
     handle.applyCommand({ type: "sceneLayerCreate", layerId: "late", assetGuid: "hud", zOrder: 0, ownerSceneGuid: null, postProcessStack: [] });

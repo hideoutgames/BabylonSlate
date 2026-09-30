@@ -1,6 +1,7 @@
 import { Material, Mesh, StandardMaterial } from "@babylonjs/core";
 import { installTextureBytes } from "./mesh-assets";
 import { afterEach, expect, it } from "vitest";
+import { parseText2DProperties } from "@babylonslate/core";
 import { createTestEngine } from "./create-null-engine";
 import { createText2DMesh, updateText2DAppear } from "./text2d-mesh";
 import { applyAssignMesh, applyText2DAppearCommand, createSnapshotSceneBinding, createPlayMesh } from "./snapshot-apply";
@@ -71,7 +72,7 @@ it("reveals all characters simultaneously with zero interval and reverses the sa
 it("targets one text component, keeps atlas identity, and retains progress when its visual is recreated", () => {
   const { scene } = host();
   const binding = createSnapshotSceneBinding();
-  const text2d = { text: "AB", appearModes: ["fade" as const], appearTransition: "linear" as const, appearInterval: 0, appearDuration: 1, appearProgress: 0 };
+  const text2d = parseText2DProperties({ text: "AB", appearModes: ["fade"], appearTransition: "linear", appearInterval: 0, appearDuration: 1, appearProgress: 0 }, { rich: true });
   applyAssignMesh(scene, binding, { type: "assignMesh", slotId: 0, primaryComponentId: "rich", meshKind: "2drichtext", meshAssetGuid: null, text2d });
   const root = binding.meshes.get(0)!;
   const child = root.getChildMeshes()[0] as Mesh;
