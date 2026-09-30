@@ -17,7 +17,7 @@ Shared surface for simulation in the game worker (engineplan §2.1, §2.3, §13.
 | `PhysicsWorldKind` | `"3d"` \| `"2d"` — one kind per scene |
 | `createPhysicsBackend` | Lazy factory; dynamic-imports only the needed engine |
 | `bakeColliderLocal` | Actor × component scale into shape sizes; scaled local translation; local rotation on `ColliderDesc` |
-| `physicsActorDiagnostics` | Pairing warnings (`physics.collider_without_body` / `physics.body_without_collider`); tilemaps exempt |
+| `physicsActorDiagnostics` | Body/collider pairing warnings and `physics.movement_conflict` setup warnings; implicit collision sources exempt from ordinary pairing warnings |
 | Shape / body / hit types | Shared descriptors shaped primarily around Havok |
 
 Depends on `@babylonslate/core` at the type layer plus `@babylonjs/core` Physics V2 and `@babylonjs/havok` for 3D. No React, no Capacitor, no editor Babylon packages (gui/loaders/inspector). `@babylonslate/runtime` still must not import Babylon.
@@ -79,8 +79,10 @@ Add **General → Movement** to an actor in a 3D or 2D world scene. It owns an u
 
 Use one Movement per actor. It supplies its own kinematic body and sole collision capsule, so an additional Rigid Body is unnecessary. Rigid Body, Nav Agent, Ragdoll, Water Buoyancy, or multiple Movement components on the same actor prevent Movement simulation. While Movement owns the actor, mesh collision and authored Collider components do not add shapes to its body. Actor/component scale and the component's local transform do not resize or offset the capsule; adjust Radius and Height directly. Spawn without penetrating another collider. Moving-platform carry is not guaranteed.
 
+Details reports incompatible component combinations before Play. The Class/Prefab Inspector omits Movement's ineffective local Transform controls and explains graph setup beside Enabled. Sprite animation frames, visual transforms and actor scale do not recreate the Movement capsule or restart its trigger overlaps.
+
 - Movement is controlled through graphs. Connect a 2D Input Axis event to **Convert Input**, then pass Direction to **Set Movement Input**; send zero when the axis is released. Connect an Input Action press to **Jump**. A 1D axis can supply X with a zero Y value.
-- **Convert Input** maps a Vec2 through the radial **Dead Zone** (default 0.1), **Input Scale** (1), **Input Space** (World or Actor), and **Input Yaw** plus its extra yaw argument. It returns a world direction; 2D uses X only. Actor space follows the actor's heading, without tilting the movement plane.
+- **Convert Input** maps a Vec2 through the radial **Dead Zone** (default 0.1), **Input Scale** (1), **Input Space** (World or Actor), and **Input Yaw** plus its extra yaw argument. It returns a world direction; 2D uses X only. Actor space follows the actor's heading, without tilting the movement plane. Graph Input Space strings ignore surrounding whitespace and letter case.
 - **Set Movement Input** stores world-space input until changed. **Add Movement Input** contributes to the next physics tick and then clears. Their sum is clamped to unit length, retaining analog strength while preventing faster diagonal movement.
 - **Set Velocity** replaces world velocity; **Add Velocity** adds a world velocity change. **Stop Immediately** clears velocity, input and buffered jumping. Disabling Movement clears velocity and requests while retaining a stationary capsule.
 - **Jump** buffers a request. **Coyote Time** allows a jump shortly after walking off an edge; **Jump Buffer Time** retains an early press until landing. Both default to 0.1 seconds. A successful jump consumes the coyote allowance, so repeated calls cannot create an extra midair jump.
@@ -98,6 +100,8 @@ Use one Movement per actor. It supplies its own kinematic body and sole collisio
 Get-only **Velocity**, horizontal **Speed**, **Is Grounded**, **Is In Air**, and **Is Moving** expose current state. Is Moving uses horizontal speed above 0.01 world units/s. Component events report **Started**, **Stopped**, **Jumped**, **Left Ground**, and **Landed**, each with the resulting Velocity and Speed. The same runtime path serves Play and exported players. Movement currently provides ground travel and jumping; flying modes and automatic stair climbing are outside its contract.
 
 Havok and Rapier apply the slope limit through their native character controllers. Ground snapping only follows nearby supporting ground after a grounded frame; it does not add a downward impulse when leaving a ledge. Havok uses a short capsule cast and Rapier uses native snapping, so their exact edge response may differ. The software test/fallback backend uses swept bounding boxes and cannot represent slopes. Ordinary movement preserves trigger overlap lifetimes; explicit teleports retain the separate physics teleport contract.
+
+Each solve begins at the actor's current authored world pose, including changes inherited from its parent. This inherited repositioning does not become motor velocity and is not swept movement or moving-platform carry. Native bodies retain their ordinary kinematic step from the previous pose to the final target. Motor updates visit registered Movement components, including paused motors when they resume, without scanning unrelated actors. Graph commands and simulation read live component settings.
 
 ### Constraints and ragdolls
 
