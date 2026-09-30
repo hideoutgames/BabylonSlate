@@ -927,6 +927,7 @@ export function isValidSelectionMoveDestination(options: {
 export type ContentBrowserContextAction =
   | "open"
   | "import-msdf-atlas"
+  | "create-material-instance"
   | "duplicate"
   | "rename"
   | "retarget"
@@ -959,6 +960,9 @@ export function contentBrowserContextActions(options: {
     actions.push("open");
     if (options.singleAssetType === "Font") {
       actions.push("import-msdf-atlas");
+    }
+    if (isMaterialAssetType(options.singleAssetType ?? "")) {
+      actions.push("create-material-instance");
     }
   }
   actions.push("duplicate");
@@ -2117,6 +2121,33 @@ export function filterInspectorPinPickerAssets<
     const match = indexed.find((asset) => asset.header.guid === entry.guid);
     return match ? isPostProcessMaterialForPicker(match, openDocuments) : false;
   });
+}
+
+/** A Material Instance of `parent` that inherits its domain and depends on it. */
+export function buildMaterialInstanceAssetResult(
+  parent: { guid: string; payload?: Record<string, unknown> },
+  guid: string,
+  name: string,
+): ImportResult {
+  const document = {
+    ...createDefaultMaterialInstanceDocument(name, parent.guid),
+    domain: parseMaterialDomain(parent.payload?.domain),
+  };
+  return {
+    ...documentAsset("MaterialInstance", name, guid, document as unknown as Record<string, unknown>),
+    dependencies: materialInstanceDependencies(document).all,
+  };
+}
+
+/** `<Parent> Instance`, then `<Parent> Instance 2`, … until `taken` rejects none. */
+export function materialInstanceNameFor(
+  parentName: string,
+  taken: (name: string) => boolean,
+): string {
+  const base = `${parentName} Instance`;
+  let name = base;
+  for (let index = 2; taken(name); index += 1) name = `${base} ${index}`;
+  return name;
 }
 
 function documentAsset(

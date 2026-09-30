@@ -63,6 +63,7 @@ Aliases are catalog metadata and are not stored in authored graph properties.
 | --- | --- | --- |
 | `Material` | `material` | `.material.babasset` |
 | `MaterialFunction` | `material-function` | `.matfunc.babasset` |
+| `MaterialInstance` | `material-instance` | `.matinst.babasset` |
 
 `documentKindForAssetType` also opens legacy `Shader` / `ShaderGraph` headers
 and imported `Material` stubs as `material`. Saving rewrites the header to
@@ -95,6 +96,58 @@ pin ids** plus the graph; renaming a pin does not break callers.
 `materialDependencies()` is the authoritative source for `header.dependencies[]`
 — textures, called functions and the preview mesh — so Show References, delete
 guards and the export closure all see them.
+
+## Material Instances
+
+A Material Instance (`MaterialInstanceDocument` v1, `kind: "materialInstance"`)
+reuses a parent's graph and changes only parameter values. It stores
+`parentGuid` (a Material or another Material Instance), a cached `domain`,
+`overrides` (parameter name → typed float / color / texture value) and
+`preview`. It has no graph of its own.
+
+- **Resolution.** `resolveMaterialInstance` walks the parent chain to the root
+  Material (at most `MATERIAL_INSTANCE_MAX_DEPTH` = 16 links) and merges
+  overrides, nearest instance winning. Missing parents, cycles and over-deep
+  chains are errors, not silent fallbacks.
+- **Materialization.** `materializeMaterialInstance` produces a
+  `MaterialDocument` keyed by the instance guid: the root graph with Float /
+  Color / Texture Parameter defaults replaced. An override applies only when
+  its kind matches the root parameter. The result carries the runtime-only
+  `instanceOf` root guid. Editor viewports, Play, Preview Build and the player
+  all consume these materialized documents through the existing
+  `Map<guid, MaterialDocument>` paths, so the parameter catalog and parameter
+  nodes see instance defaults automatically.
+- **Dependencies.** `materialInstanceDependencies` lists the parent and
+  override textures. The Play/export closure (`materialClosureFromGuids`)
+  follows instance parents and override textures.
+- **Editor.** Content Browser → Create → Material Instance. The document opens
+  with **Preview** and **Details**. Details has the **Parent** picker and one
+  row per root parameter showing the inherited value; editing a row overrides
+  it and Reset (or setting the inherited value) clears the override.
+  **Remove Unused** drops overrides the root no longer exposes. The preview
+  compiles the root graph once; override edits are uniform or texture writes
+  through `MaterialLibrary.setParameter` and never recompile.
+- **Pickers.** Every Material picker (mesh, model slots, landscape, foliage,
+  water, particles, post-process, scripting asset pins) also offers Material
+  Instances of the matching domain. A `MaterialInstance` asset ref is
+  assignable to a `Material` pin.
+
+### Shared GPU programs
+
+Babylon keys a NodeMaterial effect by `buildId`, so before this change every
+material compiled its own GPU program even when the generated code was
+identical. `compileMaterial` now calls `shareCompiledProgram` for Material-mode
+builds without Custom GLSL: after a material's first build, it adopts the
+`buildId` of an earlier build on the same Engine whose `compiledShaders` text
+is byte-identical under the same name, surface variant and shader language.
+Babylon effects are reference-counted, so shared programs stay alive while any
+material uses them. Later rebuilds (graph edits) take a fresh id.
+
+`MaterialLibrary` compiles an instance under its root's name
+(`material:<rootGuid>`) so block names, and therefore the shader text, match,
+then renames the material to `material:<instanceGuid>`. The result is one
+compile and one GPU program per root Material, however many instances and
+per-mesh runtime copies use it; each keeps its own uniform values.
 
 ## Type system
 

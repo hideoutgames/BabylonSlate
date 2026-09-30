@@ -40,6 +40,8 @@ import {
   isValidMoveDestination,
   isValidSelectionMoveDestination,
   contentBrowserContextActions,
+  buildMaterialInstanceAssetResult,
+  materialInstanceNameFor,
   canRetargetSelectedAssets,
   contentBrowserMoveDialogTitle,
   contentBrowserMovePreviewName,
@@ -1427,6 +1429,7 @@ describe("content-browser-helpers", () => {
       "SpriteAnimation",
       "AnimationGraph",
       "Material",
+      "MaterialInstance",
       "MaterialFunction",
       "Tileset",
       "Tilemap",
@@ -1499,6 +1502,7 @@ describe("content-browser-helpers", () => {
     );
     expect([...rendering!.types]).toEqual([
       "Material",
+      "MaterialInstance",
       "MaterialFunction",
       "RenderTarget",
       "RenderTargetTexture",
@@ -1762,6 +1766,27 @@ describe("content-browser-helpers", () => {
     expect(accent.borderTopRightRadius).toBe("calc(var(--radius-xl) - 2px)");
     expect("boxShadow" in accent).toBe(false);
     expect("backgroundImage" in accent).toBe(false);
+  });
+
+  it("creates a Material Instance beside a Material under a free name", () => {
+    expect(
+      contentBrowserContextActions({ assetCount: 1, folderCount: 0, singleAssetType: "Material" }).slice(0, 2),
+    ).toEqual(["open", "create-material-instance"]);
+    expect(
+      contentBrowserContextActions({ assetCount: 1, folderCount: 0, singleAssetType: "Texture" }),
+    ).not.toContain("create-material-instance");
+    const taken = new Set(["Rock Instance", "Rock Instance 2"]);
+    expect(materialInstanceNameFor("Rock", (name) => taken.has(name))).toBe("Rock Instance 3");
+    const result = buildMaterialInstanceAssetResult(
+      { guid: "rock", payload: { domain: "postProcess" } },
+      "rock-inst",
+      "Rock Instance",
+    );
+    expect(result).toMatchObject({
+      type: "MaterialInstance",
+      dependencies: ["rock"],
+      payload: { kind: "materialInstance", parentGuid: "rock", domain: "postProcess", overrides: {} },
+    });
   });
 
   it("intersects tile menu actions by selection counts", () => {
