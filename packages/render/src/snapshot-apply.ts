@@ -100,7 +100,7 @@ import {
 import { snapToPixelGrid } from "./pixel-perfect";
 import { createSkyboxMesh, resolveSkyboxCubeTexture } from "./skybox";
 import { createText3DMesh } from "./text3d-mesh";
-import { createText2DMesh, text2DBitmapBytes } from "./text2d-mesh";
+import { createText2DMesh, text2DBitmapBytes, updateText2DAppear } from "./text2d-mesh";
 import { createPainter2DMesh, updatePainter2DMesh } from "./painter2d-mesh";
 import { BitmapAllocationLimitError } from "./text2d-bitmap";
 import { retireBoneAttachments, updateBoneAttachments, type BoneAttachment } from "./bone-attachment";
@@ -582,6 +582,30 @@ function applyPlayShadows(scene: Scene): void {
 const rejectedTextAssignments = new WeakMap<SnapshotSceneBinding, Map<number, string>>();
 const rejectedPreparedAssignments = new WeakMap<SnapshotSceneBinding, Map<number, string>>();
 const pendingVisualReplacements = new WeakMap<SnapshotSceneBinding, Map<number, Mesh>>();
+
+/** Keep live and prepared text visuals on the same simulation-owned reveal sample. */
+export function applyText2DAppearCommand(binding: SnapshotSceneBinding, command: Extract<CommandMessage, { type: "setText2DAppear" }>): void {
+  if (!Number.isFinite(command.progress)) return;
+  const parts = binding.meshParts.get(command.slotId);
+  const part = parts?.find((entry) => entry.componentId === command.componentId && entry.meshKind === "2drichtext");
+  const primary = binding.primaryComponentIds.get(command.slotId) === command.componentId && binding.meshKinds.get(command.slotId) === "2drichtext";
+  if (!part && !primary) return;
+  const progress = Math.min(1, Math.max(0, command.progress));
+  if (part?.text2d) part.text2d.appearProgress = progress;
+  if (primary) {
+    const properties = binding.text2dProps.get(command.slotId);
+    if (properties) properties.appearProgress = progress;
+  }
+  for (const root of [binding.meshes.get(command.slotId), pendingVisualReplacements.get(binding)?.get(command.slotId)]) {
+    if (!root || root.isDisposed()) continue;
+    if (!partsNeedOrigin(parts)) updateText2DAppear(root, progress);
+    else {
+      const name = playComponentMeshName(command.slotId, command.componentId);
+      const mesh = root.getChildMeshes().find((child) => child.name === name);
+      if (mesh instanceof Mesh) updateText2DAppear(mesh, progress);
+    }
+  }
+}
 
 export function applyPainter2DCommand(binding: SnapshotSceneBinding, command: Extract<CommandMessage, { type: "setPainter2D" }>): void {
   const parts = binding.meshParts.get(command.slotId);

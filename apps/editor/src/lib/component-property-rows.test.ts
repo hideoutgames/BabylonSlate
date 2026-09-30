@@ -1369,6 +1369,25 @@ describe("applyPrefabPropertyDefaults", () => {
     }
   });
 
+  it("edits rich-text reveal timing without exposing it on plain text", () => {
+    const rich = rowsFor({
+      id: "label", classId: "2DRichTextComponent",
+      properties: { appearModes: ["fade", "scale"], appearInterval: 0.1, appearStart: "hidden" },
+    });
+    const interval = rich.rows.find((row) => row.id.endsWith("-appearInterval"));
+    expect(interval?.kind).toBe("number");
+    if (interval?.kind === "number") interval.onChange(0);
+    expect(rich.update).toHaveBeenCalledWith("appearInterval", 0);
+    const transition = rich.rows.find((row) => row.id.endsWith("-appearTransition"));
+    expect(transition?.kind).toBe("enum");
+    if (transition?.kind === "enum") transition.onChange("bounceOut");
+    expect(rich.update).toHaveBeenCalledWith("appearTransition", "bounceOut");
+    expect(rich.rows.find((row) => row.id.endsWith("-appearStart"))).toMatchObject({ kind: "enum", value: "hidden" });
+    expect(rich.rows.find((row) => row.id.endsWith("-appearModes"))).toBeUndefined();
+    const plain = rowsFor({ id: "label", classId: "2DTextComponent", properties: {} });
+    expect(plain.rows.some((row) => row.id.includes("-appear"))).toBe(false);
+  });
+
   it("writes renderer back to bitmap when the Font no longer has an MSDF pair", () => {
     const text = rowsFor(
       {

@@ -5,6 +5,7 @@ import { isEnvironmentTexturePayload, normalizeModelPayload } from "@babylonslat
 import { MODEL_MATERIALS_PICKER_ENTRY, patchInspectorComponentProperty } from "../lib/mesh-material-properties";
 import { normalizeRenderTargetCaptureProperties } from "@babylonslate/core";
 import { RenderTargetCaptureActorsField } from "../components/render-target-capture-actors-field";
+import { RichTextAppearModesField } from "../components/rich-text-appear-modes-field";
 import type { IDockviewPanelProps } from "dockview-react";
 import { useCallback, useMemo, useState } from "react";
 import { CelShadingFields } from "../components/cel-shading-fields";
@@ -39,6 +40,7 @@ import {
   isSceneLayerAnchorActor,
   parseOverlayPanelProperties,
   parseText2DProperties,
+  parseText2DAppearProperties,
   parseText3DProperties,
   patchComponentProperties,
   setSceneStreamingTarget,
@@ -1185,10 +1187,11 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       const extraLabels =
         component.classId === "NavMeshComponent"
           ? "Bake NavMesh"
+          : component.classId === "2DRichTextComponent"
+            ? "Text Appear Modes Fade Scale Slide Instant Off"
           : [
                 "Text3DComponent",
                 "2DTextComponent",
-                "2DRichTextComponent",
               ].includes(component.classId)
             ? "Text"
             : component.classId === "2DPanelComponent"
@@ -1366,6 +1369,18 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
               ) : null}
               {expanded ? (
                 <div id={`component-details-${actor.id}-${component.id}`}>
+                  {showExtras && component.classId === "2DRichTextComponent" ? (
+                    <RichTextAppearModesField
+                      value={parseText2DAppearProperties(component.properties).appearModes}
+                      onChange={(appearModes) => updateActor((entry) => ({
+                        ...entry,
+                        components: entry.components.map((candidate) => candidate.id === component.id
+                          ? { ...candidate, properties: { ...candidate.properties, appearModes } }
+                          : candidate),
+                      }))}
+                      data-testid={`rich-text-appear-modes-${component.id}`}
+                    />
+                  ) : null}
                   {rows.length ? <PropertyGrid rows={rows} /> : null}
                   {showExtras && component.classId === "RenderTargetCaptureComponent" && component.properties.captureOnlyActors === true ? (
                     <RenderTargetCaptureActorsField actors={scene.actors} actorIds={normalizeRenderTargetCaptureProperties(component.properties).actorIds}

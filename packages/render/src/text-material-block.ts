@@ -34,6 +34,7 @@ export class TextMaterialBlock extends NodeMaterialBlock {
   private stroke = "";
   private atlasRect = "";
   private materialRect = "";
+  private opacity = "";
 
   constructor(name: string) {
     super(name, Targets.Fragment);
@@ -58,6 +59,7 @@ export class TextMaterialBlock extends NodeMaterialBlock {
     effect.setFloat3(this.stroke, ...(binding?.outlineColor ?? [0, 0, 0] as const));
     effect.setFloat4(this.atlasRect, ...(binding?.atlasRect ?? [0, 0, 1, 1] as const));
     effect.setFloat4(this.materialRect, ...(binding?.materialRect ?? [0, 0, 1, 1] as const));
+    effect.setFloat(this.opacity, mesh?.visibility ?? 1);
   }
 
   protected override _buildBlock(state: NodeMaterialBuildState): this {
@@ -72,6 +74,7 @@ export class TextMaterialBlock extends NodeMaterialBlock {
     this.stroke = state._getFreeVariableName("textGlyphStroke");
     this.atlasRect = state._getFreeVariableName("textAtlasRect");
     this.materialRect = state._getFreeVariableName("textMaterialRect");
+    this.opacity = state._getFreeVariableName("textGlyphOpacity");
     // Each glyph binds its own atlas; the compiler also rebinds these values
     // through onBindObservable when Babylon skips frozen forced bindings.
     state.sharedData.forcedBindableBlocks.push(this);
@@ -82,6 +85,7 @@ export class TextMaterialBlock extends NodeMaterialBlock {
     state._emitUniformFromString(this.stroke, Types.Vector3);
     state._emitUniformFromString(this.atlasRect, Types.Vector4);
     state._emitUniformFromString(this.materialRect, Types.Vector4);
+    state._emitUniformFromString(this.opacity, Types.Float);
     const wgsl = state.shaderLanguage === 1;
     const uniform = wgsl ? "uniforms." : "";
     const params = uniform + this.parameters, tint = uniform + this.tint, stroke = uniform + this.stroke;
@@ -105,6 +109,7 @@ export class TextMaterialBlock extends NodeMaterialBlock {
     state.compilationString += `${state._declareLocalVar(fill, Types.Float)} = clamp((${distance} - 0.5) / ${pixel} + 0.5, 0.0, 1.0);\n`;
     state.compilationString += `${state._declareLocalVar(outline, Types.Float)} = clamp((${distance} - 0.5 + ${params}.y) / ${pixel} + 0.5, 0.0, 1.0);\n`;
     state.compilationString += `if (${params}.x > 1.5) { ${this.color.associatedVariableName} = ${vec4}(mix(${stroke}, ${tint}, ${fill}), max(${fill}, ${outline})); }\n`;
+    state.compilationString += `${this.color.associatedVariableName}.a *= ${uniform}${this.opacity};\n`;
     return this;
   }
 

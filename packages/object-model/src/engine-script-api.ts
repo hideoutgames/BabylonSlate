@@ -1,4 +1,4 @@
-import { OVERLAY_LAYOUT_CLASSES } from "@babylonslate/core";
+import { OVERLAY_LAYOUT_CLASSES, ENGINE_TEXT2D_APPEAR_MODE_ENUM_ID, ENGINE_TEXT2D_APPEAR_TRANSITION_ENUM_ID, ENGINE_TEXT2D_APPEAR_START_ENUM_ID } from "@babylonslate/core";
 
 export type EngineScriptPin = {
   name: string;
@@ -444,8 +444,21 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
   },
   {
     classId: "2DRichTextComponent",
-    variables: TEXT2D_VARIABLES,
-    functions: [SET_TEXT],
+    variables: [
+      ...TEXT2D_VARIABLES,
+      { name: "Appear Modes", typeId: "enum", typeClassId: ENGINE_TEXT2D_APPEAR_MODE_ENUM_ID, container: "array", propertyKey: "appearModes" },
+      { name: "Appear Transition", typeId: "enum", typeClassId: ENGINE_TEXT2D_APPEAR_TRANSITION_ENUM_ID, propertyKey: "appearTransition" },
+      { name: "Appear Interval", typeId: "float", propertyKey: "appearInterval" },
+      { name: "Appear Duration", typeId: "float", propertyKey: "appearDuration" },
+      { name: "Appear Start", typeId: "enum", typeClassId: ENGINE_TEXT2D_APPEAR_START_ENUM_ID, propertyKey: "appearStart" },
+      { name: "Appear Progress", typeId: "float", propertyKey: "appearProgress", getOnly: true },
+      { name: "Is Revealed", typeId: "bool", propertyKey: "isRevealed", getOnly: true },
+    ],
+    functions: [SET_TEXT,
+      { name: "Trigger Appear", runtime: "triggerAppear", pins: [EXEC_IN, EXEC_OUT] },
+      { name: "Play", runtime: "play", pins: [EXEC_IN, EXEC_OUT] },
+      { name: "Play Reverse", runtime: "playReverse", pins: [EXEC_IN, EXEC_OUT] },
+    ],
     events: [TEXT_CHANGED],
   },
   {

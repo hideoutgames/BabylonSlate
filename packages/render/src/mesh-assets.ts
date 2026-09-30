@@ -205,6 +205,8 @@ export function installTextureBytes(bytes: ReadonlyMap<string, Uint8Array | Blob
 
 interface AlbedoBinding {
   material: StandardMaterial | null;
+  /** Smooth alpha animation must not discard pixels below the cutout threshold. */
+  alwaysBlend?: boolean;
   lease?: ResourceLease<Texture | CubeTexture>;
   source?: Uint8Array | Blob;
   guid?: string;
@@ -231,7 +233,7 @@ export function ownedVisualTexturePreparation(root: AbstractMesh): Promise<void>
 }
 
 function syncAlbedoTransparency(mesh: AbstractMesh, material: StandardMaterial): void {
-  const mode = mesh.visibility > 0 && mesh.visibility < 1
+  const mode = albedoBindings.get(mesh)?.alwaysBlend ? Material.MATERIAL_ALPHABLEND : mesh.visibility > 0 && mesh.visibility < 1
     ? Material.MATERIAL_ALPHATESTANDBLEND
     : Material.MATERIAL_ALPHATEST;
   if (material.transparencyMode === mode) return;
@@ -270,6 +272,7 @@ export function applyAlbedoTexture(
   _scene: Scene,
   textureGuid: string | null | undefined,
   assets?: MeshAssetContext,
+  options: { alwaysBlend?: boolean } = {},
 ): void {
   const scene = mesh.getScene();
   let binding = albedoBindings.get(mesh);
@@ -283,6 +286,7 @@ export function applyAlbedoTexture(
       albedoBindings.delete(mesh);
     });
   }
+  binding.alwaysBlend = options.alwaysBlend === true;
   if (!textureGuid) {
     binding.pending?.release(); binding.pending = undefined;
     binding.preparation = undefined;
