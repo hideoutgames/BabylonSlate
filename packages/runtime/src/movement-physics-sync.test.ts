@@ -154,6 +154,13 @@ it.each(["3d", "2d"] as const)("native %s Movement follows parent translation wi
   actor.transform.position.x = 2;
   actor.attachComponent(world.createComponent({ classId: "MovementComponent" }));
   world.spawnActorNow(actor);
+  const wall = world.createActor({ classId: "Actor", guid: "wall", transform: identityTransform() });
+  wall.transform.position.x = 23.2;
+  wall.attachComponent(world.createComponent({ classId: "RigidBodyComponent", variables: { motionType: "static" } }));
+  wall.attachComponent(world.createComponent({ classId: "ColliderComponent", variables: {
+    shape: kind === "3d" ? { kind: "box", halfExtents: { x: 0.5, y: 3, z: 3 } } : { kind: "box2d", halfExtents: { x: 0.5, y: 3 } },
+  } }));
+  world.spawnActorNow(wall);
   const backend = await createPhysicsBackend({ kind, gravity: { x: 0, y: 0, z: 0 }, allowSoftwareFallback: false });
   const sync = new PhysicsWorldSync(backend);
   let velocityX: number | undefined;
@@ -169,12 +176,15 @@ it.each(["3d", "2d"] as const)("native %s Movement follows parent translation wi
     expect(backend.getBodyTransform("body:moving")?.position.x).toBeCloseTo(17);
     expect(velocityX).toBeCloseTo(0);
     parent.transform.position.x += 5;
-    step(0.1);
-    expect(actor.transform.position.x).toBeCloseTo(2.1);
-    expect(backend.getBodyTransform("body:moving")?.position.x).toBeCloseTo(22.1);
-    expect(velocityX).toBeCloseTo(6);
+    step(1);
+    // The new location meets the wall at x=22.7, minus radius and skin.
+    // Solving against the old query pose would incorrectly reach x=23.
+    expect(actor.transform.position.x).toBeCloseTo(2.29, 1);
+    expect(backend.getBodyTransform("body:moving")?.position.x).toBeCloseTo(22.29, 1);
+    expect(velocityX).toBeGreaterThanOrEqual(0);
+    expect(velocityX).toBeLessThan(30);
     step();
-    expect(actor.transform.position.x).toBeCloseTo(2.1);
+    expect(actor.transform.position.x).toBeCloseTo(2.29, 1);
     expect(velocityX).toBeCloseTo(0);
   } finally {
     sync.dispose();
