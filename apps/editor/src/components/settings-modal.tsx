@@ -210,6 +210,11 @@ const ENGINE_CATEGORIES: Array<
     keywords: "undo history length stack",
   },
   {
+    id: "debugger",
+    label: "Debugger",
+    keywords: "trace babtrace snapshot recording frames memory budget",
+  },
+  {
     id: "viewport",
     label: "Viewport",
     keywords: "frame cap hardware scaling post processing camera speed fly",
@@ -270,6 +275,7 @@ const ENGINE_GROUPS: CatalogCategoryGroup[] = [
     ids: [
       "appearance",
       "undo",
+      "debugger",
       "viewport",
       "graph",
       "assets",

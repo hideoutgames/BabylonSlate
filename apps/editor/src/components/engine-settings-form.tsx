@@ -145,6 +145,7 @@ export type EngineSettingsCategoryId =
   | "about"
   | "appearance"
   | "undo"
+  | "debugger"
   | "viewport"
   | "assets"
   | "thumbnails"
@@ -289,6 +290,35 @@ export function EngineSettingsForm({
             />
             <FieldDescription>
               Maximum undo steps per document.
+            </FieldDescription>
+          </Field>
+        </FieldSet>
+      ) : null}
+
+      {categoryId === "debugger" ? (
+        <FieldSet>
+          <FieldLegend>Debugger</FieldLegend>
+          <Field className="settings-field">
+            <FieldLabel htmlFor="setting-trace-budget-mib">
+              Trace Memory Budget (MiB)
+            </FieldLabel>
+            <NumberField
+              id="setting-trace-budget-mib"
+              min={1}
+              max={1024}
+              step={1}
+              className="min-h-[var(--chrome-row,28px)]"
+              data-testid="setting-trace-budget-mib"
+              value={Math.round(settings.traceByteBudget / (1024 * 1024))}
+              onChange={(mebibytes) =>
+                void onChange({
+                  traceByteBudget: Math.round(mebibytes) * 1024 * 1024,
+                })
+              }
+            />
+            <FieldDescription>
+              Applies to the next Play session. When the budget fills, the oldest
+              recorded frames are discarded.
             </FieldDescription>
           </Field>
         </FieldSet>

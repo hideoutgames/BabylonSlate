@@ -20,6 +20,7 @@ export function runtimeOptionsFromLoadControl(
   RuntimeDriverOptions,
   | "seed"
   | "frameCap"
+  | "traceByteBudget"
   | "renderSettings"
   | "focusNavigation"
   | "pixelsPerUnit"
@@ -71,6 +72,7 @@ export function runtimeOptionsFromLoadControl(
     seed: msg.seed ?? 1,
     cooperativeSceneLoading: true,
     ...(msg.frameCap !== undefined ? { frameCap: msg.frameCap } : {}),
+    ...(msg.traceByteBudget !== undefined ? { traceByteBudget: msg.traceByteBudget } : {}),
     renderSettings: msg.renderSettings,
     focusNavigation: msg.focusNavigation,
     pixelsPerUnit: msg.pixelsPerUnit,

@@ -136,6 +136,10 @@ Bridge: `{ type: "inspect" }` control → `{ type: "inspectSnapshot", snapshot }
 
 ## Trace recorder
 
+Engine Settings → **Debugger → Trace Memory Budget (MiB)** sets the budget for new Play sessions in both Worker and in-process modes. It defaults to **128 MiB** (previously 2 MiB), accepts **1–1024 MiB**, and is stored locally per user. Runtime callers can pass `traceByteBudget` in bytes; omitted values use the same default. Recording allocates data as frames arrive, rather than reserving the whole budget up front.
+
+The limit accounts for the payload's UTF-8 JSON bytes, including snapshots, events, and metadata; it is not a JavaScript heap limit. Oldest frames are discarded when the recording fills up, always keeping at least the newest frame even if that frame alone exceeds the budget. Retained duration depends on scene size and tick rate. Each incoming frame is measured once, avoiding repeated serialization of the entire history as the budget grows. The `.babtrace` format is unchanged.
+
 `snapshot start` / `snapshot stop` fill a `TraceRecorder` (stats, logs, prints, world snapshots, input, RNG seed) with a byte budget. Stop emits a `trace` command. Runtime `stop()` also finalizes an in-flight recording. Editor Stop waits at most two seconds for the Worker trace reply before terminating the session, so an unavailable Worker cannot trap the user in Play or Scene Loading; a payload that has already arrived is retained. `@babylonslate/assets` writes the payload as a `Trace` document under app-private derived data (`derived/{projectGuid}/traces/*.babtrace`, same root as thumbnails/journal — not `assets/` / Content Browser). Overlay Play does not show a playback card. When Play ends with a payload, the editor opens a read-only DockView **Trace** tab: Timeline graphs (script/physics ms vs tick) + scrubber, Snapshot of the selected frame, and Log filtered to the selected and preceding 29 recorded frames (logs **and** prints). Headless replay: seed + ticks **or** feeding each frame’s `inputEvents` then `tick()` → same `stringifyWorldSnapshot`.
 
 ## Export settings (P14)
