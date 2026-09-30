@@ -95,3 +95,65 @@ it("Havok uses authored capsule height and radius for collision and releases con
     backend.dispose();
   }
 });
+
+it.each(["havok", "rapier"] as const)("%s emits one overlap lifetime while its capsule enters, stays and leaves", async (kind) => {
+  const backend = await createPhysicsBackend({ kind: kind === "havok" ? "3d" : "2d", gravity: { x: 0, y: 0, z: 0 }, allowSoftwareFallback: false });
+  try {
+    body(backend, "trigger", { x: 0, y: 0, z: 0 });
+    box(backend, "trigger", { x: 0.5, y: 2, z: 2 }, true);
+    body(backend, "player", { x: -2, y: 0, z: 0 }, true);
+    backend.createCollider({ id: "player:shape", bodyId: "player",
+      shape: { kind: backend.kind === "3d" ? "capsule" : "capsule2d", radius: 0.4, halfHeight: 0.5 },
+      friction: 0, restitution: 0, isTrigger: false, layer: 1, mask: 0xffffffff });
+    backend.createCharacterController({ id: "motor", bodyId: "player", offset: 0.01 });
+    const events: string[] = [];
+    const move = (x: number) => {
+      backend.moveCharacter("motor", { x, y: 0, z: 0 }, 1 / 60);
+      backend.step(1 / 60);
+      events.push(...backend.pollContacts().filter((e) => e.kind !== "hit").map((e) => e.kind));
+    };
+    for (let i = 0; i < 20; i++) move(0.1);
+    for (let i = 0; i < 10; i++) move(0);
+    expect(events).toEqual(["overlapBegin"]);
+    for (let i = 0; i < 20; i++) move(0.1);
+    expect(events).toEqual(["overlapBegin", "overlapEnd"]);
+  } finally {
+    backend.dispose();
+  }
+});
+
+it.each(["havok", "rapier", "software3d", "software2d"] as const)("%s snaps a grounded capsule down a short ledge without grounding an airborne capsule above the floor", async (kind) => {
+  const worldKind = kind === "rapier" || kind === "software2d" ? "2d" : "3d";
+  const gravity = { x: 0, y: 0, z: 0 };
+  const backend = kind.startsWith("software") ? createSoftwarePhysicsBackend(worldKind, gravity)
+    : await createPhysicsBackend({ kind: worldKind, gravity, allowSoftwareFallback: false });
+  try {
+    body(backend, "floor", { x: 0, y: -0.5, z: 0 });
+    box(backend, "floor", { x: 8, y: 0.5, z: 8 });
+    body(backend, "ledge", { x: -2, y: 0.1, z: 0 });
+    box(backend, "ledge", { x: 2, y: 0.1, z: 8 });
+    body(backend, "player", { x: -1, y: 1.11, z: 0 }, true);
+    backend.createCollider({ id: "player:shape", bodyId: "player",
+      shape: { kind: worldKind === "3d" ? "capsule" : "capsule2d", radius: 0.4, halfHeight: 0.5 },
+      friction: 0, restitution: 0, isTrigger: false, layer: 1, mask: 0xffffffff });
+    const controller = { id: "motor", bodyId: "player", offset: 0.01, groundSnapDistance: 0.3 };
+    backend.createCharacterController(controller);
+    const move = (x: number, y: number) => {
+      const result = backend.moveCharacter("motor", { x, y, z: 0 }, 1 / 60)!;
+      backend.step(1 / 60);
+      return result;
+    };
+    for (let i = 0; i < 6; i++) move(0, -0.01);
+    let result;
+    for (let i = 0; i < 18; i++) result = move(0.1, -0.001);
+    expect(result!.grounded).toBe(true);
+    expect(result!.position.y).toBeCloseTo(0.91, 2);
+    backend.teleportBody("player", { position: { x: 2, y: 1, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 } });
+    backend.createCharacterController(controller);
+    result = move(0, 0);
+    expect(result.grounded).toBe(false);
+    expect(result.position.y).toBeCloseTo(1, 3);
+  } finally {
+    backend.dispose();
+  }
+});

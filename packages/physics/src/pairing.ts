@@ -37,6 +37,7 @@ export function physicsActorDiagnostics(
     (component) =>
       component.classId === "TilemapComponent" ||
       component.classId === "BlockingVolumeComponent" ||
+      component.classId === "MovementComponent" ||
       (component.classId === "LandscapeComponent" && component.properties?.collisionsEnabled === true) ||
       (component.classId === "DynamicRuntimeMeshComponent" && component.properties?.enableCollision === true) ||
       meshComponentHasCollision(component),

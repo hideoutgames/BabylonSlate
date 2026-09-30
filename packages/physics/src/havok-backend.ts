@@ -83,6 +83,7 @@ type CharacterRecord = {
   desc: CharacterControllerDesc;
   controller: PhysicsCharacterController;
   shape: PhysicsShape;
+  grounded: boolean;
 };
 
 function miss(): HitResult {
@@ -381,8 +382,10 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     // World membership refresh retires native pairs without emitting exits.
     this.retireTriggerPairs(record.desc.actorId);
     for (const character of this.characters.values()) {
-      if (character.desc.bodyId === bodyId)
+      if (character.desc.bodyId === bodyId) {
         character.controller.setPosition(toVector3(pose.position));
+        character.grounded = false;
+      }
     }
   }
 
@@ -894,11 +897,13 @@ export class HavokPhysicsBackend implements PhysicsBackend {
         this.scene,
       );
       controller.keepDistance = desc.offset;
-      controller.keepContactTolerance = desc.groundSnapDistance ?? 0.1;
+      // A broad proximity tolerance makes checkSupport project gravity away
+      // before the capsule reaches the floor. Ground snapping is a separate cast.
+      controller.keepContactTolerance = Math.min(desc.offset, 0.001);
       controller.maxSlopeCosine = Math.cos((desc.maxSlopeAngle ?? 50) * Math.PI / 180);
       // The actor's native body already supplies physical contacts and actor IDs.
       detachHavokCharacterBodyShape(this.plugin, controller);
-      this.characters.set(desc.id, { desc: { ...desc }, controller, shape });
+      this.characters.set(desc.id, { desc: { ...desc }, controller, shape, grounded: false });
     } catch (error) {
       controller?.dispose();
       shape.dispose();
@@ -945,12 +950,31 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       const support = character.controller.checkSupport(dt, this.down);
       character.controller.integrate(dt, support, this.zeroGravity);
       grounded = translation.y <= 0 && character.controller.checkSupport(dt, this.down).supportedState === CharacterSupportedState.SUPPORTED;
+      const snap = character.desc.groundSnapDistance ?? 0.1;
+      if (character.grounded && translation.y <= 0 && snap > 0) {
+        const position = character.controller.getPosition();
+        const hit = new ShapeCastResult();
+        this.plugin.shapeCast({
+          shape: character.shape, rotation: Quaternion.Identity(),
+          startPosition: position,
+          endPosition: position.add(new Vector3(0, -snap - character.desc.offset, 0)),
+          shouldHitTriggers: false,
+        }, new ShapeCastResult(), hit);
+        if (hit.hasHit && hit.hitNormal.y >= character.controller.maxSlopeCosine) {
+          const drop = Math.max(0, hit.hitFraction * (snap + character.desc.offset) - character.desc.offset);
+          if (drop <= snap) {
+            character.controller.setPosition(position.add(new Vector3(0, -drop, 0)));
+            grounded = true;
+          }
+        }
+      }
     } finally {
       for (const [shape, membership] of memberships) shape.filterMembershipMask = membership;
     }
     const pos = character.controller.getPosition();
     const velocity = character.controller.getVelocity();
-    this.teleportBody(character.desc.bodyId, {
+    character.grounded = grounded;
+    const pose = {
       position: { x: pos.x, y: pos.y, z: pos.z },
       rotation: this.getBodyTransform(character.desc.bodyId)?.rotation ?? {
         x: 0,
@@ -958,9 +982,13 @@ export class HavokPhysicsBackend implements PhysicsBackend {
         z: 0,
         w: 1,
       },
-    });
+    };
+    // Kinematic movement must keep native contact membership alive. Explicit
+    // teleport refreshes retire overlap pairs, which would re-enter every tick.
+    if (body.desc.motionType === "kinematic") this.setBodyTargetTransform(character.desc.bodyId, pose);
+    else this.teleportBody(character.desc.bodyId, pose);
     return {
-      ...this.getBodyTransform(character.desc.bodyId)!,
+      ...pose,
       velocity: { x: velocity.x, y: velocity.y, z: velocity.z },
       grounded,
     };

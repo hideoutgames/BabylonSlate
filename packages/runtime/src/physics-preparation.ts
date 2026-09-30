@@ -176,6 +176,7 @@ export function physicsWorldTransforms(
           [
             "RigidBodyComponent",
             "WaterBuoyancyComponent",
+            "MovementComponent",
             "ColliderComponent",
             "MeshComponent",
             "DynamicRuntimeMeshComponent",
