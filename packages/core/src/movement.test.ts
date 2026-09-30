@@ -26,11 +26,11 @@ describe("movement settings", () => {
 
   it("preserves disabled controls and zero-valued tuning without mutating authored data", () => {
     const authored = Object.freeze({
-      enabled: false, inputSpace: "actor",
+      enabled: false, inputSpace: " Actor ",
       gravityScale: 0, jumpSpeed: 0, maxSpeed: 0, acceleration: 0,
       braking: 0, airControl: 0, coyoteTime: 0, jumpBufferTime: 0,
     });
-    expect(parseMovementProperties(authored)).toMatchObject(authored);
+    expect(parseMovementProperties(authored)).toMatchObject({ ...authored, inputSpace: "actor" });
     expect(parseMovementProperties(null).enabled).toBe(true);
   });
 });

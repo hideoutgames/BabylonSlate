@@ -58,7 +58,7 @@ export function parseMovementProperties(value?: unknown): MovementProperties {
   const radius = finiteNumber(source.radius, defaults.radius, 0.001, MAX_MOVEMENT_MAGNITUDE / 2);
   return {
     enabled: source.enabled !== false,
-    inputSpace: source.inputSpace === "actor" ? "actor" : "world",
+    inputSpace: typeof source.inputSpace === "string" && source.inputSpace.trim().toLowerCase() === "actor" ? "actor" : "world",
     inputYaw: finiteNumber(source.inputYaw, defaults.inputYaw, -MAX_MOVEMENT_MAGNITUDE),
     inputScale: finiteNumber(source.inputScale, defaults.inputScale),
     deadZone: finiteNumber(source.deadZone, defaults.deadZone, 0, 0.999),
