@@ -1,7 +1,7 @@
 import { parseMovementProperties, type MovementProperties } from "@babylonslate/core";
 import type { Actor, ActorComponent, World } from "@babylonslate/object-model";
 import type { Vec3 } from "@babylonslate/physics";
-import { actorWorldTransform, rotateVector } from "./actor-world-transform";
+import { actorParentGuid, actorWorldTransform, rotateVector } from "./actor-world-transform";
 import type { PhysicsWorldSync } from "./physics-sync";
 
 type MovementState = {
@@ -99,7 +99,14 @@ export class MovementWorldSync {
     const strength = Math.min(1, (magnitude - props.deadZone) / (1 - props.deadZone) * props.inputScale);
     let heading = (props.inputYaw + yaw) % 360 * Math.PI / 180;
     if (props.inputSpace === "actor") {
-      const actors = new Map(this.host.world.getActors().map((entry) => [entry.guid, entry]));
+      // Resolve only this ancestry, using the world's existing ID index.
+      const actors = new Map<string, Actor>();
+      let current: Actor | undefined = actor;
+      while (current && !actors.has(current.guid)) {
+        actors.set(current.guid, current);
+        const parent = actorParentGuid(current);
+        current = parent ? this.host.world.findActor(parent) : undefined;
+      }
       const pose = actorWorldTransform(actor, actors);
       if (pose) {
         const forward = rotateVector(pose.rotation, { x: 0, y: 0, z: 1 });
@@ -161,7 +168,6 @@ export class MovementWorldSync {
     if (state.grounded && !rising) state.velocity.y = 0;
     state.velocity.y = Math.max(-props.maxFallSpeed, state.velocity.y - Math.max(0, this.host.gravity(actor)) * props.gravityScale * dt);
     const translation = { x: state.velocity.x * dt, y: state.velocity.y * dt, z: state.velocity.z * dt };
-    if (state.grounded && !rising) translation.y = Math.min(translation.y, -props.groundSnapDistance);
     const moved = physics.moveMovement(actor, translation, dt, props);
     if (!moved) {
       if (!state.unavailable) this.host.warn(component);

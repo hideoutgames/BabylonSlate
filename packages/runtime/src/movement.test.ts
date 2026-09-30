@@ -152,4 +152,25 @@ describe("Movement through the shared Play/player runtime", () => {
       expect(motor.getVariable("isGrounded")).toBe(true);
     } finally { runtime.stop(); }
   });
+
+  it.each([0, 1])("leaving a ledge respects gravity scale %s and the fall cap, with a short coyote jump window", async (gravityScale) => {
+    const { runtime, actor, motor, call, tick } = await setup("3d", { gravityScale, maxFallSpeed: 1, acceleration: 600, airControl: 1 }, true);
+    try {
+      const floor = runtime.getWorld().findActor("floor")!;
+      floor.components.find((component) => component.classId === "ColliderComponent")!
+        .setVariable("shape", { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 4 } });
+      tick(3);
+      expect(motor.getVariable("isGrounded")).toBe(true);
+      call("setMovementInput", { direction: { x: 1, y: 0, z: 0 } });
+      for (let i = 0; i < 30 && motor.getVariable("isGrounded"); i++) tick();
+      expect(motor.getVariable("isInAir")).toBe(true);
+      expect((motor.getVariable("velocity") as { y: number }).y).toBeGreaterThanOrEqual(-1);
+      if (gravityScale === 0) expect(actor.transform.position.y).toBeCloseTo(0.9);
+      call("jumpMovement"); tick();
+      expect((motor.getVariable("velocity") as { y: number }).y).toBeGreaterThan(5);
+      tick(12);
+      call("jumpMovement"); tick();
+      expect((actor.getVariable("events") as Array<{ name: string }>).filter((event) => event.name === "onMovementJumped")).toHaveLength(1);
+    } finally { runtime.stop(); }
+  });
 });
