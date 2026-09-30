@@ -217,6 +217,7 @@ export interface ScriptHostServices {
   paint2D?(component: ActorComponent, operation: string, args: Record<string, unknown>): boolean;
   refreshComponent?(component: ActorComponent, propertyName?: string): void;
   dynamicMeshFunction?(component: ActorComponent, name: string, args: Record<string, unknown>): Record<string, unknown>;
+  movementFunction?(component: ActorComponent, name: string, args: Record<string, unknown>): Record<string, unknown>;
   /** Apply live world-scene gravity from a Scene Gravity Set. */
   setWorldGravity?(gravity: { x: number; y: number; z: number }): void;
   findPathTo?(
@@ -1837,6 +1838,10 @@ export class ScriptHost {
     if (component.classId === "DynamicRuntimeMeshComponent") {
       if (!this.canInvokeOwner(component)) return { success: false };
       return this.services.dynamicMeshFunction?.(component, name, args) ?? { success: false };
+    }
+    if (component.classId === "MovementComponent") {
+      if (!this.canInvokeOwner(component)) return {};
+      return this.services.movementFunction?.(component, name, args) ?? {};
     }
     if (name === "setText") {
       const text = String(args.text ?? "");
