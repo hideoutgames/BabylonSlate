@@ -15,6 +15,7 @@ export * from "./scene-streaming-actor";
 export * from "./skybox";
 export * from "./text3d";
 export * from "./text2d";
+export * from "./text2d-appear";
 export * from "./painter2d";
 export * from "./rich-text";
 export * from "./project";

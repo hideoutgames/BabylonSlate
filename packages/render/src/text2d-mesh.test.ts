@@ -330,6 +330,7 @@ describe("2D text editor and Play wiring", () => {
     handles.push(handle);
     const component = createRichText2DComponent("rich-1");
     component.properties.text = "[color=green]Hi";
+    component.properties.appearStart = "hidden";
     const actor = createActor("hud", "Banner", { components: [component] });
     const mesh = createMeshForComponent(
       handle.scene,
@@ -340,6 +341,7 @@ describe("2D text editor and Play wiring", () => {
     );
     expect((mesh.metadata as { text2dRich?: boolean }).text2dRich).toBe(true);
     expect(mesh.getChildMeshes().length).toBeGreaterThanOrEqual(2);
+    expect(mesh.getChildMeshes().every((glyph) => glyph.visibility === 1)).toBe(true);
     const material = mesh.getChildMeshes()[0]?.material as StandardMaterial;
     expect(material.emissiveTexture).toBeTruthy();
     expect(actorVisualFingerprint(actor)).toContain("2DRichTextComponent");

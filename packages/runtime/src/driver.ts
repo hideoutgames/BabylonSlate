@@ -139,6 +139,7 @@ import {
 } from "./diagnostics";
 import { mapStackToAnchor, type AnchorEntry } from "./stack-map";
 import { Painter2DRuntime } from "./painter2d-runtime";
+import { Text2DAppearRuntime } from "./text2d-appear-runtime";
 import {
   animGraphScriptClassId,
   animRuleScriptClassId,
@@ -497,6 +498,7 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly diagnostics = new SessionDiagnosticAggregator();
   private readonly anchors = new Map<string, readonly AnchorEntry[]>();
   private readonly painters = new Painter2DRuntime();
+  private readonly textAppear = new Text2DAppearRuntime();
   private readonly onCommand?: (command: CommandMessage) => void;
   private readonly maxCatchUp = 4;
   private readonly dt: number;
@@ -859,6 +861,7 @@ class InProcessRuntime implements RuntimeDriver {
           onDestroyed: (self) => {
             this.runOwnerDestroyed(self, () => this.scriptHost.hooksFor(classId)?.onDestroyed?.(self));
             this.dynamicMeshes.remove(self);
+            this.textAppear.remove(self);
           },
         };
       },
@@ -1254,9 +1257,15 @@ class InProcessRuntime implements RuntimeDriver {
       },
       dynamicMeshFunction: (component, name, args) => this.dynamicMeshes.invoke(component, name, args),
       movementFunction: (component, name, args) => this.movement.invoke(component, name, args),
+      text2DAppearProgress: (component) => this.textAppear.progress(component),
+      text2DAppear: (component, operation) => {
+        this.textAppear.execute(component, operation);
+        if (!this.processingTick) this.flushTextAppear();
+      },
       refreshComponent: (component, propertyName) => {
         const owner = component.owner;
         if (!owner || owner.destroyed) return;
+        if (component.classId === "2DRichTextComponent") this.textAppear.refresh(component);
         if (owner.sceneLayerId && component.classId === "2DAnchorComponent") {
           for (const _ of this.applyOverlayAnchors(this.world.getActors())) void _;
         }
@@ -2178,6 +2187,13 @@ class InProcessRuntime implements RuntimeDriver {
     this.painters.flush((component, painter) => {
       const slotId = component.owner ? this.slotByGuid.get(component.owner.guid) : undefined;
       if (slotId !== undefined) this.emit({ type: "setPainter2D", slotId, componentId: component.guid, painter });
+    });
+  }
+
+  private flushTextAppear(): void {
+    this.textAppear.flush((component, progress) => {
+      const slotId = component.owner ? this.slotByGuid.get(component.owner.guid) : undefined;
+      if (slotId !== undefined) this.emit({ type: "setText2DAppear", slotId, componentId: component.guid, progress });
     });
   }
 
@@ -4444,6 +4460,7 @@ class InProcessRuntime implements RuntimeDriver {
             ),
             ...(component.classId === "CableComponent" ? { cable: this.cables.assign(component) } : {}),
             ...(component.classId === "2DPainterComponent" ? { painter: this.painters.payload(component) } : {}),
+            ...(component.classId === "2DRichTextComponent" ? { text2d: text2dAssignPayload(component, this.textAppear.progress(component)) } : {}),
             ...(component.classId === "DynamicRuntimeMeshComponent" ? { dynamicMesh: this.dynamicMeshes.assign(component) } : {}),
             ...(component.classId === "DynamicRuntimeMeshComponent" ? { parentTransforms: dynamicMeshParentTransforms(component, componentsByGuid, renderableIds) } : {}),
           }))
@@ -4468,7 +4485,7 @@ class InProcessRuntime implements RuntimeDriver {
         meshAssetGuid: typeof assetGuid === "string" ? assetGuid : null,
         meshKind,
         actorGuid: actor.guid,
-        ...(!parts && primary.classId === "MeshComponent"
+        ...(!parts && (primary.classId === "MeshComponent" || primary.classId === "2DRichTextComponent")
           ? { primaryComponentId: primary.guid }
           : {}),
         ...(meshKind === "sprite" || meshKind === "tilemap"
@@ -4493,7 +4510,8 @@ class InProcessRuntime implements RuntimeDriver {
               text3d: text3dAssignPayload(text3dComp),
             }
           : {}),
-        ...(text2dComp ? { text2d: text2dAssignPayload(text2dComp) } : {}),
+        ...(text2dComp ? { text2d: text2dAssignPayload(text2dComp,
+          text2dComp.classId === "2DRichTextComponent" ? this.textAppear.progress(text2dComp) : 1) } : {}),
         ...(armCamera ? { camera: this.cameraAssignPayload(actor, armCamera) } : {}),
         ...(overlayPanel ? { overlayPanel } : {}),
         ...(parts ? { parts } : {}),
@@ -5083,6 +5101,7 @@ class InProcessRuntime implements RuntimeDriver {
       this.ragdolls.retire(owner);
       this.cables.retire(owner);
       this.dynamicMeshes.retire(owner);
+      for (const component of owner.components) this.textAppear.remove(component);
     }
     this.areaLightSlots.delete(slotId);
     this.outlineSlots.delete(slotId);
@@ -5367,6 +5386,7 @@ class InProcessRuntime implements RuntimeDriver {
         if (!component.destroyed) {
           component.destroyed = true;
           component.callOnDestroyed();
+          this.textAppear.remove(component);
         }
       }
     }
@@ -5456,6 +5476,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.phaseMark = nowMs();
 
     this.loopGuard.reset();
+    this.textAppear.advance(this.world.getActors(), simDt, (actor) => this.canTickActor(actor));
     this.painters.beginFrame(this.world.getActors(), (actor) => this.canTickActor(actor));
     try {
       this.focusNavigation.tick(pending, this.resolvedInput, simDt);
@@ -5491,6 +5512,7 @@ class InProcessRuntime implements RuntimeDriver {
     this._lastPhysicsMs = this.phasePhysicsMs;
 
     this.flushPainters();
+    this.flushTextAppear();
     this.frameId += 1;
     if (this.canTickScene() || this.hasReadyLayers()) {
       this.publishSnapshot();
@@ -6047,6 +6069,7 @@ function text3dAssignPayload(
 
 function text2dAssignPayload(
   component: ActorComponent,
+  appearProgress = 1,
 ): NonNullable<Extract<CommandMessage, { type: "assignMesh" }>["text2d"]> {
   const parsed = parseText2DProperties(
     {
@@ -6067,6 +6090,11 @@ function text2dAssignPayload(
       underline: component.getVariable("underline"),
       wrapWidth: component.getVariable("wrapWidth"),
       wrapHeight: component.getVariable("wrapHeight"),
+      appearModes: component.getVariable("appearModes"),
+      appearTransition: component.getVariable("appearTransition"),
+      appearInterval: component.getVariable("appearInterval"),
+      appearDuration: component.getVariable("appearDuration"),
+      appearStart: component.getVariable("appearStart"),
     },
     { rich: component.classId === "2DRichTextComponent" },
   );
@@ -6087,6 +6115,12 @@ function text2dAssignPayload(
     underline: parsed.underline,
     wrapWidth: parsed.wrapWidth,
     wrapHeight: parsed.wrapHeight,
+    appearModes: parsed.appearModes,
+    appearTransition: parsed.appearTransition,
+    appearInterval: parsed.appearInterval,
+    appearDuration: parsed.appearDuration,
+    appearStart: parsed.appearStart,
+    appearProgress,
   };
 }
 

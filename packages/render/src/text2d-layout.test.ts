@@ -314,6 +314,21 @@ describe("layoutText2D", () => {
     expect(a?.effects.hover).toBe(1);
   });
 
+  it("keeps reveal underline segments continuous across character spacing", () => {
+    const { layout } = layoutText2DFromProperties(
+      { text: "[u]ABC", appearModes: ["fade"], wrapWidth: 0, wrapHeight: 0 },
+      { rich: true, pixelsPerUnit: 100, metrics: provider({
+        A: { width: 0.08, advance: 0.12 },
+        B: { width: 0.08, advance: 0.12 },
+        C: { width: 0.08, advance: 0.12 },
+      }) },
+    );
+    const lines = layout.items.filter((item) => item.kind === "underline");
+    expect(lines.map((line) => line.index)).toEqual([0, 1, 2]);
+    for (const [index, width] of [0.12, 0.12, 0.08].entries()) expect(lines[index]!.width).toBeCloseTo(width);
+    for (const [index, x] of [0.06, 0.18, 0.28].entries()) expect(lines[index]!.x).toBeCloseTo(x);
+  });
+
   it("underlines with a shared line Y and ignores letter effects", () => {
     const layout = layoutText2D({
       text: "[u][wave=2]Ag",

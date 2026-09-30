@@ -4,6 +4,7 @@ import { MODEL_MATERIALS_PICKER_ENTRY } from "../lib/mesh-material-properties";
 import { RagdollBoneNamesEditor } from "../components/ragdoll-bone-names-editor";
 import { normalizeRenderTargetCaptureProperties, type SerializedScene } from "@babylonslate/core";
 import { RenderTargetCaptureActorsField } from "../components/render-target-capture-actors-field";
+import { RichTextAppearModesField } from "../components/rich-text-appear-modes-field";
 import {
   AssetPicker,
   AssetPickerControl,
@@ -48,6 +49,7 @@ import {
   isEditorGraphHost,
   parseOverlayPanelProperties,
   parseText2DProperties,
+  parseText2DAppearProperties,
   parseText3DProperties,
   type GraphClassMember,
   type SerializedComponent,
@@ -869,6 +871,13 @@ function PrefabComponentDetails({
             {component.classId}
           </span>
         </div>
+        {component.classId === "2DRichTextComponent" ? (
+          <RichTextAppearModesField
+            value={parseText2DAppearProperties(component.properties).appearModes}
+            onChange={(appearModes) => onUpdate("appearModes", appearModes)}
+            data-testid={`rich-text-appear-modes-${component.id}`}
+          />
+        ) : null}
         <PropertyGrid
           rows={componentPropertyRows(PREFAB_ROOT_ID, component, onUpdate, {
             sortingLayers,

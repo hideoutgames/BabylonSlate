@@ -70,6 +70,7 @@ import { movementPropertyRows } from "./movement-property-rows";
 import { pathPropertyRows } from "./path-property-rows";
 import { focusPropertyRows } from "./focus-property-rows";
 import { painterPropertyRows } from "./painter-property-rows";
+import { richTextAppearPropertyRows } from "./rich-text-appear-property-rows";
 
 const MESH_KINDS = ["box", "sphere", "cylinder", "plane", "ground"];
 const MOTION_TYPES = ["static", "kinematic", "dynamic"] as const;
@@ -1728,6 +1729,7 @@ export function componentPropertyRows(
           ? " Bold thickens the field; Italic shears glyphs. True bold/italic faces need a second atlas (not in v1)."
           : "";
       return [
+        ...(component.classId === "2DRichTextComponent" ? richTextAppearPropertyRows(actorId, component, update) : []),
         {
           ...font,
           description:
@@ -1924,6 +1926,11 @@ export function componentPropertyRows(
             "italic",
             "underline",
             "hitTest",
+            "appearModes",
+            "appearTransition",
+            "appearStart",
+            "appearInterval",
+            "appearDuration",
           ]),
         ),
       ];

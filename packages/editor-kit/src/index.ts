@@ -237,6 +237,11 @@ export {
   type EntryListItemRenderArgs,
 } from "./entry-list-editor";
 export {
+  ArrayProperty,
+  type ArrayPropertyOption,
+  type ArrayPropertyProps,
+} from "./array-property";
+export {
   AtlasTileGrid,
   type AtlasTileGridProps,
   type AtlasTileGridTool,
