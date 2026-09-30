@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { createActor, createDefaultSceneSettings, type SerializedActor } from "@babylonslate/core";
+import { ClassRegistry, World } from "@babylonslate/object-model";
+import { createSoftwarePhysicsBackend } from "@babylonslate/physics";
 import { createInProcessRuntime } from "./driver";
+import { MovementWorldSync } from "./movement";
+import { PhysicsWorldSync } from "./physics-sync";
 import type { CompiledScript } from "./script-host";
 
 const events = ["onMovementStarted", "onMovementStopped", "onMovementJumped", "onMovementLeftGround", "onMovementLanded"];
@@ -23,6 +27,54 @@ const controlScript: CompiledScript = {
     { name: "unrelated", event: "onMovementStarted", isAsync: false, componentId: "different-motor" },
   ],
 };
+
+it("advances registered motors without traversing unrelated actors, including a recreated actor", () => {
+  class PreparedWorld extends World {
+    enumerationAllowed = true;
+    override getActors() {
+      if (!this.enumerationAllowed) throw new Error("Movement must use its registered actors during the motor phase");
+      return super.getActors();
+    }
+  }
+  const world = new PreparedWorld({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry(),
+    componentHooksFor: () => ({ onCreation: (component) => movement.initialize(component) }),
+  });
+  const physics = new PhysicsWorldSync(createSoftwarePhysicsBackend("3d", { x: 0, y: 0, z: 0 }));
+  const movement = new MovementWorldSync({ world, physics: () => physics, gravity: () => 0,
+    eligible: () => true, event: () => {}, warn: () => {},
+  });
+  const tick = () => physics.step(1 / 60, world, 0, 0, () => {
+    world.enumerationAllowed = false;
+    try { movement.step(1 / 60, physics); }
+    finally { world.enumerationAllowed = true; }
+  });
+  const addMotorActor = () => {
+    const actor = world.createActor({ classId: "Actor", guid: "moving" });
+    const component = world.createComponent({ classId: "MovementComponent",
+      variables: { gravityScale: 0, acceleration: 600, airControl: 1 },
+    });
+    actor.attachComponent(component);
+    world.spawnActorNow(actor);
+    return { actor, component };
+  };
+  try {
+    for (let i = 0; i < 64; i++) world.spawnActorNow(world.createActor({ classId: "Actor", guid: `scenery-${i}` }));
+    tick();
+    const original = addMotorActor();
+    movement.invoke(original.component, "setMovementInput", { direction: { x: 1, y: 0, z: 0 } });
+    tick();
+    expect(original.actor.transform.position.x).toBeCloseTo(5 / 60);
+    world.destroyActorInstance(original.actor);
+    world.flushPending();
+    const replacement = addMotorActor();
+    tick();
+    expect(original.actor.transform.position.x).toBeCloseTo(5 / 60);
+    expect(replacement.actor.transform.position.x).toBe(0);
+    movement.invoke(replacement.component, "setMovementInput", { direction: { x: -1, y: 0, z: 0 } });
+    tick();
+    expect(replacement.actor.transform.position.x).toBeCloseTo(-5 / 60);
+  } finally { movement.dispose(); physics.dispose(); }
+});
 
 async function setup(kind: "3d" | "2d", properties: Record<string, unknown> = {}, floor = false) {
   const actors: SerializedActor[] = [createActor("hero", "Hero", {
@@ -87,7 +139,7 @@ describe("Movement through the shared Play/player runtime", () => {
       call("convertMovementInput", { input: { x: 0.1, y: 0.1 } });
       expect(actor.getVariable("result")).toEqual({ direction: { x: 0, y: 0, z: 0 } });
       actor.transform.rotation = { x: 0, y: Math.SQRT1_2, z: 0, w: Math.SQRT1_2 };
-      actor.components[0]!.setVariable("inputSpace", "actor");
+      actor.components[0]!.setVariable("inputSpace", " Actor ");
       call("convertMovementInput", { input: { x: 0, y: 1 }, yaw: -30 });
       expect((actor.getVariable("result") as typeof result).direction.x).toBeCloseTo(0.5);
     } finally { runtime.stop(); }
@@ -116,6 +168,52 @@ describe("Movement through the shared Play/player runtime", () => {
       motor.setVariable("airControl", 1);
       tick();
       expect(motor.getVariable("speed")).toBe(0);
+    } finally { runtime.stop(); }
+  });
+
+  it("keeps motor input across pause and promotes a surviving replacement without stale velocity", async () => {
+    const properties = { gravityScale: 0, acceleration: 600, braking: 600, airControl: 1 };
+    const { runtime, actor, motor, call, tick } = await setup("3d", properties);
+    try {
+      call("setMovementInput", { direction: { x: 1, y: 0, z: 0 } });
+      tick();
+      runtime.pause();
+      tick(3);
+      expect(actor.transform.position.x).toBeCloseTo(5 / 60);
+      runtime.resume();
+      tick();
+      expect(actor.transform.position.x).toBeCloseTo(10 / 60);
+
+      const replacement = runtime.getWorld().createComponent({
+        classId: "MovementComponent", guid: "motor", variables: { ...properties, maxSpeed: 2 },
+      });
+      actor.attachComponent(replacement);
+      tick();
+      expect(actor.transform.position.x).toBeCloseTo(10 / 60);
+      actor.components.splice(actor.components.indexOf(motor), 1);
+      motor.owner = null;
+      tick();
+      expect(replacement.getVariable("speed")).toBe(0);
+      expect(actor.transform.position.x).toBeCloseTo(10 / 60);
+      call("setMovementInput", { direction: { x: 1, y: 0, z: 0 } });
+      tick();
+      expect(actor.transform.position.x).toBeCloseTo(12 / 60);
+
+      // Both public writes and direct map writes must affect the next command/tick.
+      replacement.variables.set("maxSpeed", 4);
+      tick();
+      expect(actor.transform.position.x).toBeCloseTo(16 / 60);
+      replacement.variables.set("enabled", false);
+      call("setMovementVelocity", { velocity: { x: 100, y: 0, z: 0 } });
+      tick();
+      expect(replacement.getVariable("speed")).toBe(0);
+      expect(actor.transform.position.x).toBeCloseTo(16 / 60);
+
+      const position = { ...actor.transform.position };
+      runtime.getWorld().destroyActor(actor.guid);
+      tick(2);
+      expect(actor.destroyed).toBe(true);
+      expect(actor.transform.position).toEqual(position);
     } finally { runtime.stop(); }
   });
 
