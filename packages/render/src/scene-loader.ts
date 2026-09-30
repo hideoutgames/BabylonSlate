@@ -391,7 +391,8 @@ function isBillboardComponent(component: SerializedComponent): boolean {
   );
 }
 
-function hasSurfaceVisual(actor: SerializedActor): boolean {
+/** Whether an actor owns an authored surface rather than only editor helpers. */
+export function hasSurfaceVisual(actor: SerializedActor): boolean {
   return actor.components.some((component) =>
     SURFACE_COMPONENT_CLASS_IDS.has(component.classId),
   );

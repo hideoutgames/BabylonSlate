@@ -2,8 +2,11 @@ export type ModelThumbnailJob = {
   guid: string;
   path: string;
   payload: Record<string, unknown>;
-  type?: "Model" | "Animation";
+  type?: "Model" | "Animation" | "Material" | "Class" | "Graph";
   onlyIfMissing?: boolean;
+  /** Identity captured when the visible tile requested this saved asset. */
+  cacheKey?: string;
+  projectGuid?: string;
 };
 
 type Listener = (jobs: ModelThumbnailJob[]) => void;

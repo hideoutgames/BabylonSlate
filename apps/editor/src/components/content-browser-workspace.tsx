@@ -153,6 +153,7 @@ import {
   buildNewAssetResult,
   classIdFromClassAsset,
   classParentLookup,
+  classDocumentShowsPrefab,
   collectFolderGuidsFromTrees,
   contentBrowserContextActions,
   canRetargetSelectedAssets,
@@ -729,11 +730,13 @@ export function ContentBrowserWorkspace({
     for (let index = slice.firstIndex; index < slice.lastIndex; index++) {
       const item = gridItems[index];
       if (item?.kind === "asset" && isThumbnailableAssetType(item.asset.header.type)) {
+        const { type, parentClass } = item.asset.header;
+        if ((type === "Class" || type === "Graph") && !classDocumentShowsPrefab(parentClass, classParentOf, { assetType: type })) continue;
         guids.push(item.asset.header.guid);
       }
     }
     return guids;
-  }, [gridItems, slice.firstIndex, slice.lastIndex]);
+  }, [classParentOf, gridItems, slice.firstIndex, slice.lastIndex]);
 
   const tileLocksKey = mountedTileLocksKey(
     gridItems,
