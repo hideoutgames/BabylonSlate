@@ -62,6 +62,15 @@ describe("asset thumbnail capture", () => {
 
   it("captures parented prefab models with slot materials and frames only visible authored geometry", async () => {
     const { engine, scene } = fixture();
+    // NullEngine retains raw bytes but never marks uploads ready. Model the
+    // missing GPU completion for the default checker, retaining real material
+    // readiness and compilation (as in create-engine.play.test.ts).
+    const upload = engine.createRawTexture.bind(engine);
+    vi.spyOn(engine, "createRawTexture").mockImplementation((...args) => {
+      const texture = upload(...args);
+      texture.isReady = true;
+      return texture;
+    });
     const material = createDefaultMaterialDocument();
     const model = createMeshComponent("mesh", "box");
     model.properties.assetGuid = "triangle";
