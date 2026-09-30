@@ -15,6 +15,7 @@ import {
   parseFogVolumeProperties,
   parseOutlineProperties,
   parseRagdollProperties,
+  parseMovementProperties,
   parseSpringArmProperties,
   parseCableProperties,
   parseSplineProperties,
@@ -64,6 +65,12 @@ function engineComponent(
 }
 
 export const ADDABLE_COMPONENT_CLASSES: readonly AddComponentItem[] = [
+  engineComponent(
+    "MovementComponent",
+    "Movement",
+    "Actor movement, jumping, and air control driven by graph calls",
+    "General",
+  ),
   engineComponent(
     "SplineComponent",
     "Spline",
@@ -234,6 +241,8 @@ export function defaultPropertiesFor(
   if (classId === "WaterBuoyancyComponent") return { ...normalizeWaterBuoyancy({}), mass: 1 };
   if (classId === "WaterRemovalVolumeComponent") return { ...normalizeWaterRemoval({}) };
   switch (classId) {
+    case "MovementComponent":
+      return { ...parseMovementProperties({}) };
     case "DynamicRuntimeMeshComponent":
       return { materialGuid: null, enableCollision: false, castShadows: true, receiveShadows: true, layer: 1, mask: 0xffffffff };
     case "MeshComponent":

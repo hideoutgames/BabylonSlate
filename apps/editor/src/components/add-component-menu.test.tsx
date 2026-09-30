@@ -17,6 +17,15 @@ const projectModel: AddComponentItem = {
 };
 
 describe("AddComponentMenu", () => {
+  it.each(["2d", "3d"] as const)("adds Movement to a %s world actor", (physicsWorld) => {
+    const onSelect = vi.fn();
+    render(<AddComponentMenu open onOpenChange={vi.fn()} onSelect={onSelect} physicsWorld={physicsWorld} />);
+    const search = screen.getByTestId("add-component-catalog-search");
+    fireEvent.change(search, { target: { value: "movement" } });
+    fireEvent.keyDown(search, { key: "Enter" });
+    expect(onSelect).toHaveBeenCalledWith({ classId: "MovementComponent" });
+  });
+
   it("offers constraints in both physics worlds and restricts skeletal ragdolls to 3D", () => {
     const onSelect = vi.fn();
     const view = render(<AddComponentMenu open onOpenChange={vi.fn()} onSelect={onSelect} physicsWorld="2d" />);
