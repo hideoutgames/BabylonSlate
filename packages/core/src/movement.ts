@@ -42,7 +42,10 @@ export const DEFAULT_MOVEMENT_PROPERTIES: Readonly<MovementProperties> = {
   jumpBufferTime: 0.1,
 };
 
-function finiteNumber(value: unknown, fallback: number, min = 0, max = Number.MAX_VALUE): number {
+/** Bound authored magnitudes before squared dimensions and velocity calculations. */
+const MAX_MOVEMENT_MAGNITUDE = 1_000_000;
+
+function finiteNumber(value: unknown, fallback: number, min = 0, max = MAX_MOVEMENT_MAGNITUDE): number {
   return typeof value === "number" && Number.isFinite(value)
     ? Math.min(max, Math.max(min, value))
     : fallback;
@@ -52,11 +55,11 @@ function finiteNumber(value: unknown, fallback: number, min = 0, max = Number.MA
 export function parseMovementProperties(value?: unknown): MovementProperties {
   const source = value && typeof value === "object" ? value as Record<string, unknown> : {};
   const defaults = DEFAULT_MOVEMENT_PROPERTIES;
-  const radius = finiteNumber(source.radius, defaults.radius, 0.001, Number.MAX_VALUE / 2);
+  const radius = finiteNumber(source.radius, defaults.radius, 0.001, MAX_MOVEMENT_MAGNITUDE / 2);
   return {
     enabled: source.enabled !== false,
     inputSpace: source.inputSpace === "actor" ? "actor" : "world",
-    inputYaw: finiteNumber(source.inputYaw, defaults.inputYaw, -Number.MAX_VALUE),
+    inputYaw: finiteNumber(source.inputYaw, defaults.inputYaw, -MAX_MOVEMENT_MAGNITUDE),
     inputScale: finiteNumber(source.inputScale, defaults.inputScale),
     deadZone: finiteNumber(source.deadZone, defaults.deadZone, 0, 0.999),
     maxSpeed: finiteNumber(source.maxSpeed, defaults.maxSpeed),

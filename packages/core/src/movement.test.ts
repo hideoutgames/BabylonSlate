@@ -18,7 +18,10 @@ describe("movement settings", () => {
     });
     expect(properties.maxSlopeAngle).toBeLessThan(90);
     expect(properties.deadZone).toBeLessThan(1);
-    expect(Number.isFinite(parseMovementProperties({ radius: Number.MAX_VALUE }).height)).toBe(true);
+    const extreme = parseMovementProperties({ radius: Number.MAX_VALUE, height: Number.MAX_VALUE, maxSpeed: Number.MAX_VALUE, inputYaw: Number.MAX_VALUE });
+    expect(Number.isFinite(extreme.radius * extreme.radius * extreme.height)).toBe(true);
+    expect(Number.isFinite(extreme.maxSpeed * extreme.maxSpeed)).toBe(true);
+    expect(Number.isFinite(extreme.inputYaw * Math.PI)).toBe(true);
   });
 
   it("preserves disabled controls and zero-valued tuning without mutating authored data", () => {
