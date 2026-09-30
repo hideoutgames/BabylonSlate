@@ -161,12 +161,25 @@ it.each(["3d", "2d"] as const)("native %s Movement follows parent translation wi
     shape: kind === "3d" ? { kind: "box", halfExtents: { x: 0.5, y: 3, z: 3 } } : { kind: "box2d", halfExtents: { x: 0.5, y: 3 } },
   } }));
   world.spawnActorNow(wall);
+  const trigger = world.createActor({ classId: "Actor", guid: "trigger", transform: identityTransform() });
+  trigger.transform.position.x = 17;
+  trigger.attachComponent(world.createComponent({ classId: "RigidBodyComponent", variables: { motionType: "static" } }));
+  trigger.attachComponent(world.createComponent({ classId: "ColliderComponent", variables: {
+    isTrigger: true,
+    shape: kind === "3d" ? { kind: "box", halfExtents: { x: 10, y: 2, z: 2 } } : { kind: "box2d", halfExtents: { x: 10, y: 2 } },
+  } }));
+  world.spawnActorNow(trigger);
   const backend = await createPhysicsBackend({ kind, gravity: { x: 0, y: 0, z: 0 }, allowSoftwareFallback: false });
   const sync = new PhysicsWorldSync(backend);
   let velocityX: number | undefined;
-  const step = (x = 0) => sync.step(1 / 60, world, 0, 0, () => {
-    velocityX = sync.moveMovement(actor, { x, y: 0, z: 0 }, 1 / 60, parseMovementProperties())?.velocity.x;
-  });
+  const events: string[] = [];
+  const step = (x = 0) => {
+    sync.step(1 / 60, world, 0, 0, () => {
+      velocityX = sync.moveMovement(actor, { x, y: 0, z: 0 }, 1 / 60, parseMovementProperties())?.velocity.x;
+    });
+    events.push(...backend.pollContacts().filter((event) => event.kind !== "hit" &&
+      (event.actorAId === "moving" || event.actorBId === "moving")).map((event) => event.kind));
+  };
   try {
     step();
     parent.transform.position.x += 5;
@@ -186,6 +199,7 @@ it.each(["3d", "2d"] as const)("native %s Movement follows parent translation wi
     step();
     expect(actor.transform.position.x).toBeCloseTo(2.29, 1);
     expect(velocityX).toBeCloseTo(0);
+    expect(events).toEqual(["overlapBegin"]);
   } finally {
     sync.dispose();
   }

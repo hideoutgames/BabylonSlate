@@ -90,8 +90,8 @@ export function detachHavokCharacterBodyShape(
   attachHavokShape(plugin, body, null);
 }
 
-/** Worker NullEngine teleports must not depend on a later render/prestep callback. */
-export function teleportHavokBody(
+/** Preserve native contacts; the imminent physics step refreshes query broadphase. */
+export function setHavokBodyPoseBeforeStep(
   plugin: HavokPlugin,
   body: PhysicsBody,
 ): void {
@@ -100,9 +100,17 @@ export function teleportHavokBody(
   try {
     body.setPrestepType(PhysicsPrestepType.TELEPORT);
     plugin.setPhysicsBodyTransformation(body, body.transformNode);
-    removeWorldMembership(plugin, body);
-    restoreWorldMembership(plugin, body);
   } finally {
     body.setPrestepType(previous);
   }
+}
+
+/** Worker NullEngine teleports also refresh queries before the next physics step. */
+export function teleportHavokBody(
+  plugin: HavokPlugin,
+  body: PhysicsBody,
+): void {
+  setHavokBodyPoseBeforeStep(plugin, body);
+  removeWorldMembership(plugin, body);
+  restoreWorldMembership(plugin, body);
 }

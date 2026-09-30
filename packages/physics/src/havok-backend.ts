@@ -56,7 +56,7 @@ import {
   sameColliderPose,
   validateColliderShape,
 } from "./collider-validation";
-import { attachHavokShape, detachHavokCharacterBodyShape, teleportHavokBody } from "./havok-native-adapter";
+import { attachHavokShape, detachHavokCharacterBodyShape, setHavokBodyPoseBeforeStep, teleportHavokBody } from "./havok-native-adapter";
 import { listDebugCollidersFromRecords } from "./debug-colliders";
 import { loadHavokModule } from "./havok-loader";
 import { rotateQuatVec } from "./collider-bake";
@@ -930,7 +930,17 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     if (!character) return null;
     const body = this.bodies.get(character.desc.bodyId);
     if (!body || !Number.isFinite(dt) || dt <= 0) return null;
-    if (startPose) character.controller.setPosition(toVector3(startPose.position));
+    if (startPose) {
+      const position = toVector3(startPose.position);
+      character.controller.setPosition(position);
+      if (!body.node.position.equals(position)) {
+        // Inherited repositioning is not velocity: large parent changes must
+        // not be clipped by Havok's world speed limit. Keep contact membership;
+        // only the motor's displacement becomes a native kinematic target.
+        body.node.position.copyFrom(position);
+        setHavokBodyPoseBeforeStep(this.plugin, body.body);
+      }
+    }
     const invDt = dt > 1e-8 ? 1 / dt : 0;
     character.controller.setVelocity(
       new Vector3(
