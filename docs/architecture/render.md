@@ -443,6 +443,7 @@ Prefab instances track Material GUID and source as one override: explicit None s
 - Mesh flags: `ignoreCameraMaxZ`, `applyFog = false` (Babylon 9 fog flag is on the mesh), `receiveShadows = false`, **always** `isPickable = false`, `renderingGroupId` background. **Not** `infiniteDistance` — position/rotation/scale come from the Skybox actor world transform (component `size` is the box edge length)
 - Authored perspective cameras keep their explicit render/preview aspect while allowing Babylon to recalculate depth for `ignoreCameraMaxZ`. A size-10,000 skybox remains visible with Far Clip 1,000; ordinary geometry retains the authored clipping range after the skybox draw. Skybox materials disable depth writes so their infinite-far depth cannot cover geometry inside Far Clip.
 - Missing authored faces fall back to the matching engine default cubemap face (`engine-content/skybox/{face}.png`)
+- Scene and preview skyboxes retain their textured background in PBR, Unlit, and Wireframe viewport modes. The session shading overlay skips them: Babylon's PBR `unlit` flag removes the reflection path used to display the cubemap.
 - Shadows, nav bake, and `frameActor` skip skyboxes (`isSkyboxMesh`; framing a 1000-unit backdrop is a no-op)
 - Dispose the mesh when the actor is removed; rebuild when size or face guids change
 - Six-face cubes are Engine-owned; skybox materials null `reflectionTexture` on dispose so Play overlay `scene.dispose()` / material teardown cannot drop a ResourceCache cube the editor still uses
