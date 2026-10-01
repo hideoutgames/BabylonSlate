@@ -181,7 +181,7 @@ describe("componentPropertyRows", () => {
     material.onPick();
     expect(onPickActor).toHaveBeenCalledWith("cable");
     expect(update.mock.calls).toEqual([["targetComponentId", "hook"], ["endPosition", [2, 1, -1]], ["numSegments", 64], ["enableCollision", true]]);
-    expect(onPickAsset).toHaveBeenCalledWith(expect.objectContaining({ property: "materialGuid", allowedTypes: ["Material"] }));
+    expect(onPickAsset).toHaveBeenCalledWith(expect.objectContaining({ property: "materialGuid", allowedTypes: ["Material", "MaterialInstance"] }));
     expect(rows.find((row) => row.label === "Collision Friction")?.disabled).toBe(true);
     expect(rowsFor({ ...cable, properties: { ...properties, enableCollision: true } }).rows.find((row) => row.label === "Collision Friction")?.disabled).toBe(false);
     expect(properties.targetComponentId).toBeNull();
@@ -1292,7 +1292,7 @@ describe("applyPrefabPropertyDefaults", () => {
     expect(material.onPickAsset).toHaveBeenCalledWith(
       expect.objectContaining({
         property: "materialGuid",
-        allowedTypes: ["Material"],
+        allowedTypes: ["Material", "MaterialInstance"],
       }),
     );
   });

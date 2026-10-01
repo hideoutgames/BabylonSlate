@@ -314,7 +314,8 @@ export function DocumentWorkspace() {
 
         if (
           doc.ref.kind === "material" ||
-          doc.ref.kind === "material-function"
+          doc.ref.kind === "material-function" ||
+          doc.ref.kind === "material-instance"
         ) {
           if (!shouldMount) return null;
           return (

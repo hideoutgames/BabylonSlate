@@ -57,7 +57,7 @@ import {
   playFontGuidsFromScenes,
   sceneLayerGuidsFromGraphs,
   sceneLayerGuidsFromScenes,
-  sceneLayerMaterialGuidsFromGraphs,
+  materialGuidsFromGraphs,
 } from "./play-content";
 
 describe("playPrefabDependencyScene", () => {
@@ -696,11 +696,23 @@ describe("scene-referenced Play content", () => {
       ...materialAssetGuidsFromScene(scene),
       ...postProcessMaterialGuidsFromScene(scene),
     ];
-    expect(materialClosureFromGuids(guids, (guid) => docs[guid] ?? null)).toEqual({
+    expect(materialClosureFromGuids(guids, (guid) => docs[guid] ?? null)).toMatchObject({
       materials: ["mat-rock", "pp-blur"],
       functions: ["fn-tint", "fn-inner"],
       textures: ["tex-albedo", "tex-lut"],
     });
+  });
+
+  it("follows Material Instance parents to the root Material and reports unloaded references", () => {
+    const docs: Record<string, unknown> = {
+      "inst-red": { kind: "materialInstance", parentGuid: "inst-base", overrides: { Albedo: { kind: "texture", textureAssetGuid: "tex-red" } } },
+      "inst-base": { kind: "materialInstance", parentGuid: "mat-root", overrides: {} },
+      "mat-root": { nodes: [{ id: "call", type: "function.call", properties: { functionGuid: "fn-missing" } }], edges: [] },
+    };
+    const closure = materialClosureFromGuids(["inst-red"], (guid) => docs[guid] ?? null);
+    expect(closure).toMatchObject({ materials: ["mat-root"], instances: ["inst-red", "inst-base"], textures: ["tex-red"] });
+    // Callers load referenced guids that had no content yet, then retry.
+    expect(closure.referenced).toContain("fn-missing");
   });
 
   it("unions material guids across Play library scenes", () => {
@@ -847,7 +859,7 @@ describe("SceneLayer Play collection", () => {
     expect(spriteAssetGuidsFromScene(scenes[0])).toEqual(["sprite-hud"]);
   });
 
-  it("collects Register Scene Layer Post-processing material pin defaults", () => {
+  it("collects Material pin defaults from Scene Layer Post-processing and Set Material Instance nodes", () => {
     const graph: SerializedGraph = {
       nodes: [
         {
@@ -856,10 +868,16 @@ describe("SceneLayer Play collection", () => {
           position: { x: 0, y: 0 },
           data: { properties: { "default:material": "pp-blur" } },
         },
+        {
+          id: "swap",
+          type: "material.setMaterialInstance",
+          position: { x: 0, y: 0 },
+          data: { properties: { "default:instance": "rock-wet" } },
+        },
       ],
       edges: [],
     };
-    expect(sceneLayerMaterialGuidsFromGraphs([graph])).toEqual(["pp-blur"]);
+    expect(materialGuidsFromGraphs([graph])).toEqual(["pp-blur", "rock-wet"]);
   });
 });
 

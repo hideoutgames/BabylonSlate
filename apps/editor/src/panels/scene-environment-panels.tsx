@@ -14,7 +14,7 @@ import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useSceneEditing } from "../context/scene-editing-context";
 import { useSceneTools } from "../context/scene-tools-context";
-import { materialDomainsFromAssets } from "../lib/content-browser-helpers";
+import { isMaterialAssetType, materialDomainsFromAssets } from "../lib/content-browser-helpers";
 import { useCoarsePointer } from "../shell/use-platform-layout";
 
 const NEW_LANDSCAPE_SIZE = 64;
@@ -138,7 +138,7 @@ export function LandscapeSettingsPanel(_props: IDockviewPanelProps) {
   if (tool === "flatten") brushRows.push({ id: "height", label: "Flatten Height", kind: "number", value: brush.height, onChange: (height) => tools.setLandscapeBrush({ ...brush, height }) });
   if (tool === "paint") brushRows.push({ id: "layer", label: "Paint Layer", kind: "enum", value: String(brush.layer), options: [0, 1, 2, 3].map((i) => ({ value: String(i), label: `Layer ${i + 1}` })), onChange: (layer) => tools.setLandscapeBrush({ ...brush, layer: Number(layer) }) });
   const domains = materialDomainsFromAssets(assetRegistry?.list() ?? [], openDocuments);
-  const materials = (assetRegistry?.list({ type: "Material" }) ?? []).filter((entry) => domains[entry.header.guid] === "landscape").map((entry) => ({ guid: entry.header.guid, name: entry.header.name, path: entry.path, type: entry.header.type }));
+  const materials = (assetRegistry?.list() ?? []).filter((entry) => isMaterialAssetType(entry.header.type)).filter((entry) => domains[entry.header.guid] === "landscape").map((entry) => ({ guid: entry.header.guid, name: entry.header.name, path: entry.path, type: entry.header.type }));
   return <PanelFrame className="scene-environment-panel"><div className="flex min-h-0 flex-1 flex-col overflow-y-auto" data-testid="landscape-settings">
     <PropertySectionTitle aside={<ToolBadge label={LANDSCAPE_TOOL_LABELS[tool]} testId="landscape-settings-tool" />}>Brush</PropertySectionTitle>
     <PropertyGrid rows={brushRows} />
@@ -152,7 +152,7 @@ export function LandscapeSettingsPanel(_props: IDockviewPanelProps) {
       <PropertySectionTitle>Landscape</PropertySectionTitle>
       <p className="px-2 py-3 text-xs text-muted-foreground" data-testid="landscape-settings-empty">Select a landscape in Landscape Outliner to edit its size, cells, and Material.</p>
     </>}
-    <AssetPicker open={materialPicker} onOpenChange={setMaterialPicker} assets={materials} allowedTypes={["Material"]} allowNone title="Landscape Material" onPick={(materialGuid) => { if (data) setData({ ...data, materialGuid }); setMaterialPicker(false); }} />
+    <AssetPicker open={materialPicker} onOpenChange={setMaterialPicker} assets={materials} allowedTypes={["Material", "MaterialInstance"]} allowNone title="Landscape Material" onPick={(materialGuid) => { if (data) setData({ ...data, materialGuid }); setMaterialPicker(false); }} />
   </div></PanelFrame>;
 }
 
@@ -167,7 +167,7 @@ export function FoliageGroupsPanel(_props: IDockviewPanelProps) {
   const update = (next: FoliageGroup) => setGroups(groups.map((entry) => entry.id === next.id ? next : entry));
   const assets = (assetRegistry?.list() ?? []).map((entry) => ({ guid: entry.header.guid, name: entry.header.name, path: entry.path, type: entry.header.type }));
   const domains = materialDomainsFromAssets(assetRegistry?.list() ?? [], openDocuments);
-  const surfaceMaterials = new Set((assetRegistry?.list({ type: "Material" }) ?? []).filter((entry) => {
+  const surfaceMaterials = new Set((assetRegistry?.list() ?? []).filter((entry) => isMaterialAssetType(entry.header.type)).filter((entry) => {
     const domain = domains[entry.header.guid];
     return domain === undefined || domain === "surface";
   }).map((entry) => entry.header.guid));
@@ -222,7 +222,7 @@ export function FoliageGroupsPanel(_props: IDockviewPanelProps) {
     </div> : <EnvironmentEmpty icon={<TreesIcon />} title={groups.length ? "No Group Selected" : "No Foliage Groups"} testId="foliage-groups-empty">
       {groups.length ? "Pick a group to edit its Models." : "A group lists the Models a foliage stroke scatters."}
     </EnvironmentEmpty>}
-    <AssetPicker open={picker !== null} onOpenChange={(open) => { if (!open) setPicker(null); }} title={picker === "model" ? "Add Foliage Model" : "Foliage Material"} assets={pickerAssets} allowedTypes={picker === "model" ? ["Model"] : ["Material"]} allowNone={picker !== "model"} onPick={(guid) => {
+    <AssetPicker open={picker !== null} onOpenChange={(open) => { if (!open) setPicker(null); }} title={picker === "model" ? "Add Foliage Model" : "Foliage Material"} assets={pickerAssets} allowedTypes={picker === "model" ? ["Model"] : ["Material", "MaterialInstance"]} allowNone={picker !== "model"} onPick={(guid) => {
       if (!group) return;
       if (picker === "model" && guid && assets.some((asset) => asset.guid === guid && asset.type === "Model")) update({ ...group, models: [...group.models, { modelGuid: guid, materialGuid: null, weight: 1, minScale: 0.8, maxScale: 1.2 }] });
       else if (typeof picker === "number" && (!guid || surfaceMaterials.has(guid))) update({ ...group, models: group.models.map((model, i) => i === picker ? { ...model, materialGuid: guid } : model) });

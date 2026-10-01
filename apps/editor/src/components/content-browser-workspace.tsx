@@ -22,6 +22,7 @@ import {
   FolderPlusIcon,
   LinkIcon,
   ListFilterIcon,
+  PaintbrushIcon,
   PencilIcon,
   PlusIcon,
   Trash2Icon,
@@ -186,6 +187,8 @@ import {
   visualForIndexedAsset,
   withAutoCollapsedNestedFolders,
   runWithContentBrowserImportBusy,
+  buildMaterialInstanceAssetResult,
+  materialInstanceNameFor,
   type ContentBrowserDropMove,
   type ContentBrowserSortMode,
   type CreatableAssetType,
@@ -1068,6 +1071,38 @@ export function ContentBrowserWorkspace({
               setImportErrors([
                 err instanceof Error ? err.message : String(err),
               ]);
+            }
+          })();
+        },
+      },
+      {
+        id: "create-material-instance" as const,
+        label: "Create Material Instance",
+        icon: <PaintbrushIcon />,
+        onSelect: () => {
+          void (async () => {
+            const guid = menuTargetGuidsRef.current[0];
+            const parent = guid ? assetRegistry?.getByGuid(guid) : undefined;
+            if (!assetRegistry || !parent) return;
+            // Beside its parent, so a Material and its instances stay together.
+            const folder = parentFolderPath(parent.path);
+            const browse = contentBrowserFolderOps(folder, browserRoots);
+            if (browse.readOnly) return;
+            const paths = assetRegistry.list().map((asset) => asset.path);
+            const name = materialInstanceNameFor(parent.header.name, (candidate) =>
+              isNewAssetNameTaken(paths, folder, "MaterialInstance", candidate));
+            const fileName = newAssetFileName("MaterialInstance", name);
+            if (!fileName) return;
+            try {
+              const created = await assetRegistry.createAsset(
+                browse.rootId,
+                browse.relative ? `${browse.relative}/${fileName}` : fileName,
+                buildMaterialInstanceAssetResult(parent.header, newAssetGuid(), name),
+              );
+              await refreshAssetRegistry();
+              await openOrFocusDocument(created);
+            } catch (error) {
+              setOperationError(error instanceof Error ? error.message : String(error));
             }
           })();
         },

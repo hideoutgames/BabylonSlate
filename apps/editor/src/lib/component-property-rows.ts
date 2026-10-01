@@ -592,11 +592,11 @@ export function componentPropertyRows(
     case "CableComponent":
       return [
         ...cablePropertyRows(actorId, component, update, context),
-        assetRow(actorId, component, "materialGuid", "Material", ["Material"], update, context, "Choose Cable Material"),
+        assetRow(actorId, component, "materialGuid", "Material", ["Material", "MaterialInstance"], update, context, "Choose Cable Material"),
       ];
     case "DynamicRuntimeMeshComponent":
       return [
-        assetRow(actorId, component, "materialGuid", "Material", ["Material"], update, context, "Choose Mesh Material"),
+        assetRow(actorId, component, "materialGuid", "Material", ["Material", "MaterialInstance"], update, context, "Choose Mesh Material"),
         {
           kind: "boolean", id: rowId(actorId, component.id, "enableCollision"), label: "Enable Collision",
           value: component.properties.enableCollision === true, defaultValue: false,
@@ -670,7 +670,7 @@ export function componentPropertyRows(
         component,
         "materialGuid",
         "Material",
-        ["Material"],
+        ["Material", "MaterialInstance"],
         update,
         context,
         "Pick Material",
@@ -1737,10 +1737,10 @@ export function componentPropertyRows(
           onChange: coerceRendererOnFontChange,
         },
         {
-          ...assetRow(actorId, component, "materialGuid", "Text Material", ["Material"], update, context, "Pick Text Material"),
+          ...assetRow(actorId, component, "materialGuid", "Text Material", ["Material", "MaterialInstance"], update, context, "Pick Text Material"),
           kind: "asset",
           description: "A Text-domain Material multiplies the glyph and rich-text colors while preserving letter coverage.",
-          onPick: () => context.onPickAsset({ componentId: component.id, property: "materialGuid", allowedTypes: ["Material"], materialDomain: "text", title: "Pick Text Material" }),
+          onPick: () => context.onPickAsset({ componentId: component.id, property: "materialGuid", allowedTypes: ["Material", "MaterialInstance"], materialDomain: "text", title: "Pick Text Material" }),
         } as Extract<PropertyRow, { kind: "asset" }>,
         {
           kind: "enum",
@@ -1957,7 +1957,7 @@ export function componentPropertyRows(
               component,
               assetProperty,
               assetProperty === "materialGuid" ? "Material" : "Texture",
-              assetProperty === "materialGuid" ? ["Material"] : ["Texture"],
+              assetProperty === "materialGuid" ? ["Material", "MaterialInstance"] : ["Texture"],
               update,
               context,
               assetProperty === "materialGuid"
@@ -2013,7 +2013,7 @@ export function componentPropertyRows(
           component,
           assetProperty,
           parsed.source === "material" ? "Material" : "Texture",
-          parsed.source === "material" ? ["Material"] : ["Texture"],
+          parsed.source === "material" ? ["Material", "MaterialInstance"] : ["Texture"],
           update,
           context,
           parsed.source === "material" ? "Pick Material" : "Pick Texture",

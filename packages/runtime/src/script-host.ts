@@ -549,6 +549,8 @@ export interface ScriptContext {
   resetMaterialFloatParameter(material: unknown, name: string): boolean;
   resetMaterialColorParameter(material: unknown, name: string): boolean;
   resetMaterialTextureParameter(material: unknown, name: string): boolean;
+  setMeshMaterial(component: unknown, materialGuid: string | null): MaterialObject | null;
+  getMaterialAsset(material: unknown): string | null;
   possessCamera(target: unknown): void;
   getRenderTargetMode(guid: string | null): RenderTargetMode;
   getRenderTargetTextureTarget(guid: string | null): string | null;
@@ -1142,6 +1144,22 @@ export class ScriptHost {
       resetMaterialFloatParameter: (material, name) => this.resetMaterialParameter(material, name, "float"),
       resetMaterialColorParameter: (material, name) => this.resetMaterialParameter(material, name, "color"),
       resetMaterialTextureParameter: (material, name) => this.resetMaterialParameter(material, name, "texture"),
+      setMeshMaterial: (component, materialGuid) => {
+        const target = asActorComponent(component);
+        if (!target || (target.classId !== "MeshComponent" && target.classId !== "DynamicRuntimeMeshComponent") ||
+          !this.canInvokeOwner(target)) return null;
+        const guid = typeof materialGuid === "string" ? materialGuid.trim() : "";
+        // Re-applying the current asset keeps the runtime parameter values.
+        if (target.getVariable("materialGuid") !== guid) {
+          target.setVariable("materialGuid", guid);
+          this.applyComponentVariable(target, "materialGuid", guid);
+        }
+        return (target.getVariable("materialObject") as MaterialObject | null) ?? null;
+      },
+      getMaterialAsset: (material) =>
+        (material instanceof MaterialObject || material instanceof PostProcessMaterialObject) && !material.destroyed
+          ? material.materialAssetGuid
+          : null,
       setMaterialFloatParameter: (material, name, value) => {
         if (typeof value !== "number" || !Number.isFinite(value)) return;
         this.setMaterialParameter(material, name, { kind: "float", value });

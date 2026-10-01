@@ -43,10 +43,13 @@ import {
 import type { ControlMessage, ScriptBundleEntry } from "@babylonslate/bridge";
 import type { ScenePostProcessEntry } from "@babylonslate/core";
 import {
+  materializeMaterialInstances,
   normalizeMaterialDocument,
   normalizeMaterialFunctionDocument,
+  normalizeMaterialInstanceDocument,
   type MaterialDocument,
   type MaterialFunctionDocument,
+  type MaterialInstanceDocument,
 } from "@babylonslate/shader-graph";
 import type { LoadedGame } from "./artifact";
 
@@ -152,6 +155,7 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
   const blackboards: Array<{ guid: string; document: unknown }> = [];
   const materialDocuments = new Map<string, MaterialDocument>();
   const materialFunctions = new Map<string, MaterialFunctionDocument>();
+  const materialInstances = new Map<string, MaterialInstanceDocument>();
   const renderTargets = new Map<string, RenderTargetPayload>();
   const renderTargetTextures = new Map<string, RenderTargetTexturePayload>();
   const mixers = new Map<string, AudioMixerPayload>();
@@ -213,6 +217,10 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
         entry.guid,
         normalizeMaterialDocument(parsed, entry.name ?? "Material"),
       );
+      continue;
+    }
+    if (entry.type === "MaterialInstance" && parsed) {
+      materialInstances.set(entry.guid, normalizeMaterialInstanceDocument(parsed, entry.name ?? "Material Instance"));
       continue;
     }
     if (entry.type === "MaterialFunction" && parsed) {
@@ -299,6 +307,10 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
       document: resolveAnimGraphClips(document, clipCatalog),
     };
   });
+
+  for (const [guid, document] of materializeMaterialInstances(materialDocuments, materialInstances)) {
+    materialDocuments.set(guid, document);
+  }
 
   return {
     spritePayloads,

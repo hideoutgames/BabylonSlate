@@ -68,6 +68,11 @@ export interface MaterialDocument {
   preview: MaterialPreviewSettings;
   nodes: MaterialGraphNode[];
   edges: MaterialGraphEdge[];
+  /**
+   * Root Material guid when this document is a materialized Material Instance.
+   * Runtime-only: never persisted, so saved Materials never carry it.
+   */
+  instanceOf?: string;
 }
 
 export interface MaterialFunctionPin {
@@ -172,7 +177,7 @@ function normalizeEdges(value: unknown): MaterialGraphEdge[] {
   });
 }
 
-function normalizePreview(value: unknown): MaterialPreviewSettings {
+export function normalizeMaterialPreviewSettings(value: unknown): MaterialPreviewSettings {
   const record = asRecord(value);
   const selectedMesh = MATERIAL_PREVIEW_MESHES.includes(
     record.mesh as MaterialPreviewMesh,
@@ -476,7 +481,7 @@ export function normalizeMaterialDocument(
     defaultNormals: record.defaultNormals === "flat" ? "flat" : "model",
     alphaCutoff: asNumber(record.alphaCutoff, 0.5),
     ...(asNumber(record.boundsPadding, 0) > 0 ? { boundsPadding: asNumber(record.boundsPadding, 0) } : {}),
-    preview: normalizePreview(record.preview),
+    preview: normalizeMaterialPreviewSettings(record.preview),
     nodes,
     edges: normalizeColorParameterEdges(record, nodes, MATERIAL_SCHEMA_VERSION),
   };

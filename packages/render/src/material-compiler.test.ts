@@ -415,6 +415,38 @@ describe("material compiler", () => {
     );
   });
 
+  it("shares one GPU program between materials that differ only in parameter values", async () => {
+    const scene = host();
+    const variant = (roughness: number) => {
+      const doc = createDefaultMaterialDocument();
+      doc.nodes.push({ id: "rough", type: "param.float", position: { x: 0, y: 0 }, properties: { name: "Roughness", value: [roughness] } });
+      doc.edges.push({ id: "rough-out", sourceNodeId: "rough", sourcePinId: "out", targetNodeId: "output", targetPinId: "roughness" });
+      const result = compileMaterialPlan(planFor(doc), { scene, name: "material:parent" });
+      if (!result.ok) throw new Error("compile failed");
+      disposers.push(() => result.dispose());
+      return result;
+    };
+    const [parent, instance] = [variant(0.2), variant(0.9)];
+    const other = compileMaterialPlan(planFor(multiplyMaterial()), { scene, name: "material:parent" });
+    if (!other.ok) throw new Error("compile failed");
+    disposers.push(() => other.dispose());
+    // Blocks may load shader code asynchronously; builds settle through `ready`.
+    await Promise.all([parent.ready, instance.ready, other.ready]);
+
+    expect(instance.material.buildId).toBe(parent.material.buildId);
+    expect(other.material.buildId).not.toBe(parent.material.buildId);
+    const meshes = [parent, instance].map((compiled, index) => {
+      const mesh = MeshBuilder.CreateBox(`variant-${index}`, {}, scene);
+      mesh.material = compiled.material;
+      return mesh;
+    });
+    await parent.material.forceCompilationAsync(meshes[0]!);
+    await instance.material.forceCompilationAsync(meshes[1]!);
+    expect(meshes[1]!.subMeshes[0]!.effect).toBe(meshes[0]!.subMeshes[0]!.effect);
+    expect(instance.getParameter("Roughness")).toEqual({ kind: "float", value: 0.9 });
+    expect(parent.getParameter("Roughness")).toEqual({ kind: "float", value: 0.2 });
+  });
+
   it("carries a constant value onto its input block", () => {
     const scene = host();
     const doc = createDefaultMaterialDocument();
