@@ -19,6 +19,7 @@ function binary(
     category: "math",
     searchAliases: ARITHMETIC_SEARCH_ALIASES[op],
     pure: true,
+    referentiallyTransparent: true,
     pins: () => [
       pin("a", "a", "in", type),
       pin("b", "b", "in", type),

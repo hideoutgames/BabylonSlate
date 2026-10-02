@@ -33,6 +33,27 @@ function loadModule(source: string): Record<string, unknown> {
 }
 
 describe("math nodes", () => {
+  it("executes shared Add chains without exponential generated source", () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = { id: "shared", kind: "event", nodes: [node(registry, "begin", "flow.event.beginPlay"),
+      node(registry, "literal", "literal.makeFloat", { "default:in": 1 }), node(registry, "log", "debug.log")],
+      edges: [{ id: "exec", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "log", targetPinId: "execIn" }] };
+    let last = "literal";
+    for (let i = 0; i < 16; i++) {
+      const id = `add-${i}`;
+      graph.nodes.push(node(registry, id, "math.add"));
+      for (const pin of ["a", "b"]) graph.edges.push({ id: `${id}-${pin}`, sourceNodeId: last, sourcePinId: "out", targetNodeId: id, targetPinId: pin });
+      last = id;
+    }
+    graph.edges.push({ id: "result", sourceNodeId: last, sourcePinId: "out", targetNodeId: "log", targetPinId: "message" });
+    const compiled = compileGraph(graph, { assetGuid: "shared", registry });
+    expect(compiled.source.length).toBeLessThan(20_000);
+    const values: string[] = [];
+    (loadModule(compiled.source).onBeginPlay as (ctx: unknown) => void)({ formatValue: String,
+      log: (_severity: string, _category: string, value: string) => values.push(value) });
+    expect(values).toEqual(["65536"]);
+  });
+
   it.each([[5, 2, 2], [-5, 2, -2], [5, -2, -2], [6, 2, 3]])(
     "Divide Int truncates %s / %s toward zero", (a, b, expected) => {
       const registry = createDefaultNodeRegistry();

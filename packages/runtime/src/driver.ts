@@ -422,6 +422,11 @@ export function createInProcessRuntime(
   return new InProcessRuntime(options);
 }
 
+// Shallow BT memory copies retain this live activation, while trace JSON omits
+// it. A resumed task writes to its current board and cannot finish a later run.
+const BT_TASK_ACTIVATION = Symbol("btTaskActivation");
+type BtTaskActivation = { active: boolean; blackboard: BlackboardValues; result?: "success" | "failure" };
+
 interface SceneDeparture {
   guid: string;
   sceneInstance: Scene | null;
@@ -3681,14 +3686,24 @@ class InProcessRuntime implements RuntimeDriver {
       return this.tickPlaySound(actor, node, memory);
     }
     if (!this.scriptHost.hasClass(node.classId)) return "failure";
+    const liveMemory = memory as Record<string | symbol, unknown>;
+    let activation = liveMemory[BT_TASK_ACTIVATION] as BtTaskActivation | undefined;
+    if (!activation) {
+      activation = { active: true, blackboard };
+      liveMemory[BT_TASK_ACTIVATION] = activation;
+      memory.__activated = false;
+    }
+    activation.blackboard = blackboard;
+    const current = activation;
+    const isLive = () => current.active && !actor.destroyed && !this.stopped;
     const extras = {
       btFinish: (result: "success" | "failure") => {
-        memory.__btResult = result;
+        if (isLive()) current.result = result;
       },
       btEvaluate: () => undefined,
-      getBlackboard: (key: string) => blackboard[key],
+      getBlackboard: (key: string) => current.blackboard[key],
       setBlackboard: (key: string, value: unknown) => {
-        blackboard[key] = value;
+        if (isLive()) current.blackboard[key] = value;
       },
     };
     if (memory.__activated !== true) {
@@ -3702,8 +3717,12 @@ class InProcessRuntime implements RuntimeDriver {
       );
     }
     this.scriptHost.invokeBtEvent(node.classId, "onBtTick", actor, dtSeconds, extras);
-    const result = memory.__btResult;
-    if (result === "success" || result === "failure") return result;
+    const result = current.result;
+    if (result === "success" || result === "failure") {
+      current.active = false;
+      memory.__btResult = result;
+      return result;
+    }
     return "running";
   }
 
@@ -3932,6 +3951,10 @@ class InProcessRuntime implements RuntimeDriver {
     blackboard: BlackboardValues,
     memory: Record<string, unknown>,
   ): void {
+    const liveMemory = memory as Record<string | symbol, unknown>;
+    const activation = liveMemory[BT_TASK_ACTIVATION] as BtTaskActivation | undefined;
+    if (activation) activation.active = false;
+    delete liveMemory[BT_TASK_ACTIVATION];
     memory.__activated = false;
     delete memory.__btResult;
     delete memory.__moveRequested;
