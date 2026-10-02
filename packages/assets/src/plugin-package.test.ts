@@ -234,11 +234,9 @@ describe("importPluginZip", () => {
     expect(await storage.exists("plugins/pack/assets/original.txt")).toBe(false);
   });
 
-  it.each(["../outside.txt", "assets/../outside.txt", "/absolute.txt", "assets\\outside.txt"])("rejects unsafe archive entry %s before changing an installed plugin", async (path) => {
-    const { storage, incoming } = await replacementFixture();
-    const original = await readProjectTree(storage, "plugins/pack");
+  it.each(["../outside.txt", "assets/../outside.txt", "/absolute.txt", "assets\\outside.txt", "assets/file.txt.", "assets/file.txt ", "assets/CON.txt"])("rejects unsafe or ambiguous archive entry %s", async (path) => {
+    const { incoming } = await replacementFixture();
     await expect(inspectBabplugin(encodeProjectZip([...incoming.files, { path, data: new Uint8Array([1]) }]))).rejects.toThrow("Invalid plugin path");
-    expect(await readProjectTree(storage, "plugins/pack")).toEqual(original);
   });
 
   it.each([

@@ -15,6 +15,7 @@ import {
 import { stableStringify } from "./bytes";
 import { newAssetGuid } from "./guid";
 import { copyStorageTree } from "./storage-move";
+import { isPortablePackagePath } from "./package-path";
 import {
   discoverEnginePlugins,
   discoverProjectPlugins,
@@ -90,8 +91,7 @@ function isPluginManifestPath(path: string): boolean {
 }
 
 function validatePluginPath(path: string): void {
-  if (!path || path.includes("\\") || path.includes("\0") || path.includes(":") ||
-      path.split("/").some((segment) => !segment || segment === "." || segment === "..")) {
+  if (!isPortablePackagePath(path)) {
     throw new Error(`Invalid plugin path: ${path}`);
   }
 }
