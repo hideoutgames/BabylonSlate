@@ -39,6 +39,8 @@ Missing or stale startup scene: `MISSING_STARTUP_SCENE_MESSAGE` (`Set Startup Sc
 
 Not `header.dependencies` alone — scene saves often leave those empty.
 
+The editor serializes RenderTarget and RenderTargetTexture documents into export bytes, retaining their payloads for dependency traversal. Asset-typed variable defaults and Set Variable literals participate for every asset kind (including Audio, Material, Model and Font), with scalar, array and typed Map key/value handling in class and function graphs. Cleared canonical pin defaults mask legacy values; ordinary string variables do not create dependencies. Saved Class/Graph headers use the same asset-default collector for reference browsing and deletion guards.
+
 1. Apply export-preset `pluginOverrides` (layer 3) **before** the walk so disabled plugin roots are absent.
 2. Seed with `startupSceneGuid` (must be a Scene asset) **and** Project Settings `audioMixerGuid` the same way `gameInstanceClass` is seeded. Pack `occlusionEnabled` and reverb wet/decay/damping scales from Project Settings Audio.
 3. Walk only typed reference fields in `SerializedScene` actors/components (guid fields, Mesh/Model `assetGuid`, textures, Font, Class ids) plus scene `gameInstanceClass` **and** the project `gameInstanceClass` when the scene field is empty. Ordinary authored strings are never searched for GUID text.
