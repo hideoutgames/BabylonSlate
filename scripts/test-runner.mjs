@@ -240,7 +240,7 @@ export async function runTests(mode, args, options = {}) {
   if (["typecheck", "build-all", "lint"].includes(mode)) {
     const command =
       mode === "lint"
-        ? ["exec", "eslint", ".", ...args]
+        ? ["exec", "eslint", ...(args.length ? args : ["."])]
         : [
             "--workspace-concurrency=1",
             "-r",
