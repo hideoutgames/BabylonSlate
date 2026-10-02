@@ -8,6 +8,7 @@ import android.database.Cursor;
 import android.net.Uri;
 import android.provider.DocumentsContract;
 import android.util.Base64;
+import android.webkit.WebView;
 import androidx.activity.result.ActivityResult;
 import androidx.documentfile.provider.DocumentFile;
 import com.getcapacitor.JSArray;
@@ -15,6 +16,7 @@ import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
+import com.getcapacitor.WebViewListener;
 import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import java.io.ByteArrayOutputStream;
@@ -34,6 +36,22 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
     private static final String NAME_PREFIX = "name:";
     private boolean pickPending;
     private final Map<String, FolderAccess> readScopes = new HashMap<>();
+    private final WebViewListener readScopeLifecycle = new WebViewListener() {
+        @Override
+        public void onPageStarted(WebView view) {
+            clearReadScopesAsync();
+        }
+    };
+
+    @Override
+    public void load() {
+        getBridge().addWebViewListener(readScopeLifecycle);
+    }
+
+    private void clearReadScopesAsync() {
+        // Provider I/O runs on Capacitor's task thread; never wait for it on UI callbacks.
+        execute(() -> { synchronized (readScopes) { readScopes.clear(); } });
+    }
 
     private static class PluginFailure extends Exception {
         final String code;
@@ -362,7 +380,8 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
 
     @Override
     protected void handleOnDestroy() {
-        synchronized (readScopes) { readScopes.clear(); }
+        getBridge().removeWebViewListener(readScopeLifecycle);
+        clearReadScopesAsync();
         super.handleOnDestroy();
     }
 
