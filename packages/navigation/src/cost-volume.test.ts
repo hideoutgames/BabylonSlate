@@ -1,4 +1,5 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
+import { NavMeshQuery } from "@recast-navigation/core";
 import { mergeNavBakeMeshes } from "./geometry";
 import { solidBlockerMesh } from "./blockers";
 import {
@@ -133,5 +134,29 @@ describe("navmesh cost volumes vs unwalkable carve", () => {
     const carved = nav.findPath(from, to);
     expect(carved.length).toBeGreaterThan(1);
     expect(crossesOrigin(carved)).toBe(false);
+  });
+
+  it("batches moved cost volumes and leaves unchanged volumes alone between crowd ticks", async () => {
+    const bytes = await generateNavMesh(corridorGenerateInput());
+    const nav = createNavigationBackend();
+    nav.importNavMesh(bytes);
+    const query = vi.spyOn(NavMeshQuery.prototype, "queryPolygons");
+    const volumes = Array.from({ length: 20 }, (_, index) => ({ ...corridorBox, id: `cost-${index}` }));
+    try {
+      const openLength = pathLength(nav.findPath(from, to));
+      for (const volume of volumes) nav.applyCostVolume(volume);
+      expect(pathLength(nav.findPath(from, to))).toBeGreaterThan(openLength * 1.15);
+      expect(query.mock.calls.length).toBeGreaterThan(0);
+      expect(query.mock.calls.length).toBeLessThanOrEqual(volumes.length);
+      query.mockClear();
+      for (let tick = 0; tick < 5; tick++) {
+        for (const volume of volumes) nav.applyCostVolume(volume);
+        nav.stepCrowd(1 / 60);
+      }
+      expect(query).not.toHaveBeenCalled();
+      for (const volume of volumes) nav.applyCostVolume({ ...volume, pose: { x: 100, y: 1, z: 100 } });
+      expect(pathLength(nav.findPath(from, to))).toBeCloseTo(openLength, 5);
+      expect(query.mock.calls.length).toBeLessThanOrEqual(volumes.length);
+    } finally { query.mockRestore(); nav.dispose(); }
   });
 });

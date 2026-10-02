@@ -6,6 +6,7 @@ import {
   NavMeshQuery,
   TileCache,
   TileCacheMeshProcess,
+  Raw,
   exportNavMesh,
   exportTileCache,
   importNavMesh,
@@ -139,7 +140,10 @@ class RecastNavigationBackend implements NavigationBackend {
   private query: NavMeshQuery | null = null;
   private crowd: Crowd | null = null;
   private tileCache: TileCache | null = null;
-  private tileCacheKeepAlive: unknown[] = [];
+  private releaseTileCacheResources: (() => void) | null = null;
+  private tileCacheDirty = false;
+  private costVolumesDirty = false;
+  private areaCostsDirty = false;
   private obstacles = new Map<
     string,
     {
@@ -164,10 +168,19 @@ class RecastNavigationBackend implements NavigationBackend {
     const tileBytes = unwrapTileCacheBytes(bytes);
     if (tileBytes) {
       const process = walkableTileCacheMeshProcess();
-      const imported = importTileCache(tileBytes, process);
-      this.navMesh = imported.navMesh;
-      this.tileCache = imported.tileCache;
-      this.tileCacheKeepAlive = [imported.allocator, imported.compressor, process];
+      try {
+        const imported = importTileCache(tileBytes, process);
+        this.navMesh = imported.navMesh;
+        this.tileCache = imported.tileCache;
+        this.releaseTileCacheResources = () => {
+          Raw.destroy(imported.allocator);
+          Raw.destroy(imported.compressor);
+          Raw.destroy(process.raw);
+        };
+      } catch (error) {
+        Raw.destroy(process.raw);
+        throw error;
+      }
     } else {
       const imported = importNavMesh(bytes);
       this.navMesh = imported.navMesh;
@@ -178,6 +191,7 @@ class RecastNavigationBackend implements NavigationBackend {
   }
 
   findPath(from: NavPoint, to: NavPoint): NavPoint[] {
+    this.flushPendingChanges();
     if (!this.query) return [];
     const result = this.query.computePath(from, to, { halfExtents: QUERY_EXTENTS });
     if (!result.success) return [];
@@ -185,6 +199,7 @@ class RecastNavigationBackend implements NavigationBackend {
   }
 
   closestPoint(point: NavPoint): NavPoint | null {
+    this.flushPendingChanges();
     if (!this.query) return null;
     const result = this.query.findClosestPoint(point, { halfExtents: QUERY_EXTENTS });
     if (!result.success) return null;
@@ -192,6 +207,7 @@ class RecastNavigationBackend implements NavigationBackend {
   }
 
   randomPointInRadius(center: NavPoint, radius: number): NavPoint | null {
+    this.flushPendingChanges();
     if (!this.query) return null;
     const result = this.query.findRandomPointAroundCircle(center, radius, {
       halfExtents: QUERY_EXTENTS,
@@ -224,6 +240,7 @@ class RecastNavigationBackend implements NavigationBackend {
         );
         if (added.success) recast = added.obstacle;
       }
+      if (recast) this.tileCacheDirty = true;
       this.flushTileCache();
     }
     this.obstacles.set(id, { kind, pose, size, recast });
@@ -234,7 +251,8 @@ class RecastNavigationBackend implements NavigationBackend {
     const record = this.obstacles.get(id);
     this.obstacles.delete(id);
     if (record?.recast && this.tileCache) {
-      this.tileCache.removeObstacle(record.recast);
+      const removed = this.tileCache.removeObstacle(record.recast);
+      if (removed.success) this.tileCacheDirty = true;
       this.flushTileCache();
     }
   }
@@ -252,14 +270,20 @@ class RecastNavigationBackend implements NavigationBackend {
       size: { ...volume.size },
       cost,
     };
+    if (this.costAreaCost !== cost) this.areaCostsDirty = true;
     this.costAreaCost = cost;
-    this.restoreCostVolumePolys();
-    this.costVolumes.set(id, { volume: record, polyRefs: [] });
-    this.applyAreaCosts(cost);
-    this.stampCostVolumes();
+    const previous = this.costVolumes.get(id);
+    const before = previous?.volume;
+    const changed = !before || before.kind !== record.kind ||
+      before.pose.x !== record.pose.x || before.pose.y !== record.pose.y || before.pose.z !== record.pose.z ||
+      before.size.x !== record.size.x || before.size.y !== record.size.y || before.size.z !== record.size.z;
+    // Keep the previous polygon refs until the batch restores their old areas.
+    this.costVolumes.set(id, { volume: record, polyRefs: previous?.polyRefs ?? [] });
+    if (changed) this.costVolumesDirty = true;
   }
 
   addAgent(position: NavPoint, params?: NavAgentParams): string {
+    this.flushPendingChanges();
     if (!this.crowd) return "";
     const agent = this.crowd.addAgent(position, {
       radius: params?.radius ?? 0.5,
@@ -366,27 +390,40 @@ class RecastNavigationBackend implements NavigationBackend {
   }
 
   setAgentTarget(id: string, target: NavPoint): boolean {
+    this.flushPendingChanges();
     const agent = this.agents.get(id);
     if (!agent) return false;
     return agent.requestMoveTarget(target);
   }
 
   stepCrowd(dtSeconds: number): void {
-    this.flushTileCache();
+    this.flushPendingChanges();
     this.crowd?.update(dtSeconds);
   }
 
   private flushTileCache(): void {
-    if (!this.tileCache || !this.navMesh) return;
+    if (!this.tileCacheDirty || !this.tileCache || !this.navMesh) return;
+    this.restoreCostVolumePolys();
     for (let i = 0; i < 64; i += 1) {
       const result = this.tileCache.update(this.navMesh);
-      if (result.upToDate) break;
+      if (result.upToDate) { this.tileCacheDirty = false; break; }
     }
-    this.query?.destroy();
-    this.query = new NavMeshQuery(this.navMesh);
-    this.applyAreaCosts(this.costAreaCost);
-    for (const record of this.costVolumes.values()) record.polyRefs = [];
-    this.stampCostVolumes();
+    // Detour queries retain the same mutable NavMesh. Tile rebuilds do not
+    // require allocating a replacement query; only stamped areas need refresh.
+    this.costVolumesDirty = true;
+  }
+
+  private flushPendingChanges(): void {
+    this.flushTileCache();
+    if (this.areaCostsDirty) {
+      this.applyAreaCosts(this.costAreaCost);
+      this.areaCostsDirty = false;
+    }
+    if (this.costVolumesDirty) {
+      this.restoreCostVolumePolys();
+      this.stampCostVolumes();
+      this.costVolumesDirty = false;
+    }
   }
 
   private walkablePolyArea(): number {
@@ -434,7 +471,7 @@ class RecastNavigationBackend implements NavigationBackend {
     }
   }
 
-  private dispose(): void {
+  dispose(): void {
     this.crowd?.destroy();
     this.query?.destroy();
     this.tileCache?.destroy();
@@ -443,7 +480,11 @@ class RecastNavigationBackend implements NavigationBackend {
     this.query = null;
     this.tileCache = null;
     this.navMesh = null;
-    this.tileCacheKeepAlive.length = 0;
+    this.releaseTileCacheResources?.();
+    this.releaseTileCacheResources = null;
+    this.tileCacheDirty = false;
+    this.costVolumesDirty = false;
+    this.areaCostsDirty = false;
     this.obstacles.clear();
     this.agents.clear();
     this.costVolumes.clear();
