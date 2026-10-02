@@ -176,6 +176,8 @@ uses `AssetRegistry.prepareAreaEmission` and the existing single-job EncodeQueue
 including its Preview/background pause policy. A dedicated worker owns decoding
 and the pinned native-compatible filter; cancellation terminates that job's
 worker. Processing progress distinguishes queued, decoding, filtering and saving.
+The separable filter accumulates RGB together to reuse each mirrored sample and
+kernel weight, while preserving per-channel order, RGBA8 rounding and exact alpha.
 
 The original `pixels` chunk remains intact. A versioned `area-emission` chunk
 stores lighting data beside it, keyed by original source SHA-256 and processor

@@ -98,11 +98,17 @@ export async function filterAreaEmission(source: Uint8Array, edge: number, check
         // Write transposed so the same loop handles the vertical pass. Native
         // processing rounds each pass to RGBA8 and leaves alpha unfiltered.
         const destination = (x * edge + y) * 4;
-        for (let c = 0; c < 3; c++) {
-          let sum = 0;
-          for (let k = -half; k <= half; k++) sum += input[(y * edge + mirrorBlur(x + k, edge)) * 4 + c]! * weights[k + half]!;
-          output[destination + c] = Math.max(0, Math.min(255, Math.round(sum)));
+        let red = 0, green = 0, blue = 0;
+        for (let k = -half; k <= half; k++) {
+          const offset = (y * edge + mirrorBlur(x + k, edge)) * 4;
+          const weight = weights[k + half]!;
+          red += input[offset]! * weight;
+          green += input[offset + 1]! * weight;
+          blue += input[offset + 2]! * weight;
         }
+        output[destination] = Math.max(0, Math.min(255, Math.round(red)));
+        output[destination + 1] = Math.max(0, Math.min(255, Math.round(green)));
+        output[destination + 2] = Math.max(0, Math.min(255, Math.round(blue)));
         output[destination + 3] = input[(y * edge + x) * 4 + 3]!;
       }
     }
