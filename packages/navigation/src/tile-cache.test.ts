@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
-import { NavMeshQuery, TileCache } from "@recast-navigation/core";
+import { NavMeshQuery, Raw, TileCache } from "@recast-navigation/core";
 import {
   createNavigationBackend,
   generateNavMesh,
@@ -61,6 +61,7 @@ describe("tile-cache obstacles and static carve", () => {
     nav.importNavMesh(bytes);
     const update = vi.spyOn(TileCache.prototype, "update");
     const destroyQuery = vi.spyOn(NavMeshQuery.prototype, "destroy");
+    const destroyNative = vi.spyOn(Raw, "destroy");
     try {
       for (let tick = 0; tick < 8; tick++) nav.stepCrowd(1 / 60);
       expect(update).not.toHaveBeenCalled();
@@ -76,12 +77,15 @@ describe("tile-cache obstacles and static carve", () => {
       nav.dispose();
       expect(nav.findPath({ x: -4, y: 0, z: 0 }, { x: 4, y: 0, z: 0 })).toEqual([]);
       expect(destroyQuery).toHaveBeenCalledTimes(1);
+      const filter = destroyQuery.mock.contexts[0]?.defaultFilter.raw;
+      expect(destroyNative.mock.calls.filter(([resource]) => resource === filter)).toHaveLength(1);
       nav.importNavMesh(bytes);
       expect(nav.findPath({ x: -4, y: 0, z: 0 }, { x: 4, y: 0, z: 0 }).length).toBeGreaterThan(1);
     } finally {
       nav.dispose();
       update.mockRestore();
       destroyQuery.mockRestore();
+      destroyNative.mockRestore();
     }
   });
 
