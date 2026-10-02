@@ -89,7 +89,7 @@ meshopt/…           # glTF meshopt decoder (EXT_meshopt_compression)
 
 `exportGame` retains Rapier whenever the exported asset closure contains a `SceneLayer`, including a 3D project whose layers use a separate 2D physics world. A 3D export without layers still omits Rapier; a 2D export omits Havok.
 
-HTTP loader: probe `Range: bytes=0-7`, then the index, then per-asset ranges. Status `200` (range-blind host) falls back to a whole-pack fetch.
+HTTP loader: probe `Range: bytes=0-7`, then the index, then per-asset ranges. Concurrent readers share each pack's index request and whole-pack fallback. Status `200` (range-blind host) reuses the whole response. Packed and loose asset requests use a pool of at most six requests, with hydration retaining manifest order. The runtime still loads all exported scenes and asset bytes before boot, so total upfront memory and transfer cost remain proportional to the complete export. Hydration decodes only supported JSON document types; binary textures, models, fonts, scene sidecars and already-parsed Audio envelopes are not converted to JSON strings.
 
 File-count report: warn 800 / fail 1000 (preset-overridable). Export smoke asserts count.
 
