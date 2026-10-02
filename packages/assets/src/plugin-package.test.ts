@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { zipSync } from "fflate";
@@ -6,7 +6,7 @@ import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { readGoldenBinary, writeGoldenBinary } from "@babylonslate/test-kit";
 import { decodeAssetDocument } from "./asset-document";
 import { encodeBabasset, readBabassetHeader } from "./babasset";
-import { decodeProjectZip, encodeProjectZip } from "./babproject";
+import { decodeProjectZip, encodeProjectZip, readProjectTree } from "./babproject";
 import { bytesEqual } from "./bytes";
 import {
   createDefaultPluginSettings,
@@ -162,6 +162,95 @@ describe("exportPluginZip", () => {
 });
 
 describe("importPluginZip", () => {
+  async function replacementFixture() {
+    const storage = await projectStorage();
+    const settings = { ...createDefaultPluginSettings({ pluginGuid: "pack-guid", displayName: "Pack" }), version: "1" };
+    await writeProjectPlugin(storage, "pack", settings);
+    await storage.writeText("plugins/pack/assets/original.txt", "keep original");
+    await storage.mkdir("plugins/pack/assets/empty", true);
+    const files = [
+      { path: "pack.plugin.babasset", data: await encodePluginSettingsDocument({ ...settings, version: "2" }) },
+      { path: "assets/new.txt", data: new TextEncoder().encode("new content") },
+    ];
+    const incoming = await inspectBabplugin(encodeProjectZip(files));
+    const plan = { kind: "update" as const, folderName: "pack", existingGuid: "pack-guid" };
+    return { storage, incoming, plan };
+  }
+
+  it.each(["staging", "replacement"])("preserves the installed plugin when a %s write fails", async (phase) => {
+    const { storage, incoming, plan } = await replacementFixture();
+    const original = await readProjectTree(storage, "plugins/pack");
+    const write = storage.writeBinary.bind(storage);
+    vi.spyOn(storage, "writeBinary").mockImplementation(async (path, data) => {
+      if (path.endsWith("/assets/new.txt") && (phase === "staging" || path.startsWith("plugins/"))) {
+        throw new Error("Disk full");
+      }
+      return write(path, data);
+    });
+    await expect(applyPluginImport(storage, incoming, plan)).rejects.toThrow("Disk full");
+    expect(await readProjectTree(storage, "plugins/pack")).toEqual(original);
+    expect((await storage.stat("plugins/pack/assets/empty")).isDir).toBe(true);
+    expect((await discoverProjectPlugins(storage))[0]?.settings.version).toBe("1");
+    expect((await storage.readdir(".")).map((entry) => entry.name)).toEqual(["plugins"]);
+  });
+
+  it("retains a readable recovery copy if the filesystem also prevents restoration", async () => {
+    const { storage, incoming, plan } = await replacementFixture();
+    const write = storage.writeBinary.bind(storage);
+    vi.spyOn(storage, "writeBinary").mockImplementation(async (path, data) => {
+      if (path.startsWith("plugins/pack/")) throw new Error("Filesystem unavailable");
+      return write(path, data);
+    });
+    const error = await applyPluginImport(storage, incoming, plan).catch((error: unknown) => error);
+    expect(error).toBeInstanceOf(AggregateError);
+    const recovery = (error as Error).message.match(/recovery files remain at (.+)$/)?.[1];
+    expect(recovery).toBeDefined();
+    expect(await storage.readText(`${recovery}/original/assets/original.txt`)).toBe("keep original");
+  });
+
+  it("fails an update when removal is denied instead of mixing old and new files", async () => {
+    const { storage, incoming, plan } = await replacementFixture();
+    const remove = storage.remove.bind(storage);
+    vi.spyOn(storage, "remove").mockImplementation(async (path) => {
+      if (path === "plugins/pack") throw new Error("Removal denied");
+      return remove(path);
+    });
+    await expect(applyPluginImport(storage, incoming, plan)).rejects.toThrow("Plugin import failed");
+    expect(await storage.readText("plugins/pack/assets/original.txt")).toBe("keep original");
+    expect(await storage.exists("plugins/pack/assets/new.txt")).toBe(false);
+    expect((await discoverProjectPlugins(storage))[0]?.settings.version).toBe("1");
+  });
+
+  it("accepts standard ZIP directory entries before replacing an installed plugin", async () => {
+    const { storage, incoming, plan } = await replacementFixture();
+    const archive = encodeProjectZip([
+      { path: "wrapped/", data: new Uint8Array() },
+      { path: "wrapped/assets/", data: new Uint8Array() },
+      ...incoming.files.map((file) => ({ ...file, path: `wrapped/${file.path}` })),
+    ]);
+    const imported = await applyPluginImport(storage, await inspectBabplugin(archive), plan);
+    expect(imported.settings.version).toBe("2");
+    expect(await storage.readText("plugins/pack/assets/new.txt")).toBe("new content");
+    expect(await storage.exists("plugins/pack/assets/original.txt")).toBe(false);
+  });
+
+  it.each(["../outside.txt", "assets/../outside.txt", "/absolute.txt", "assets\\outside.txt"])("rejects unsafe archive entry %s before changing an installed plugin", async (path) => {
+    const { storage, incoming } = await replacementFixture();
+    const original = await readProjectTree(storage, "plugins/pack");
+    await expect(inspectBabplugin(encodeProjectZip([...incoming.files, { path, data: new Uint8Array([1]) }]))).rejects.toThrow("Invalid plugin path");
+    expect(await readProjectTree(storage, "plugins/pack")).toEqual(original);
+  });
+
+  it.each([
+    ["assets/new.txt", "assets/new.txt/child"],
+    ["assets/Duplicate.txt", "assets/duplicate.txt"],
+  ])("rejects conflicting file paths %s and %s", async (first, second) => {
+    const { incoming } = await replacementFixture();
+    const files = incoming.files.filter((file) => !file.path.startsWith("assets/"));
+    files.push({ path: first, data: new Uint8Array([1]) }, { path: second, data: new Uint8Array([2]) });
+    await expect(inspectBabplugin(encodeProjectZip(files))).rejects.toThrow("Conflicting plugin path");
+  });
+
   it("unpacks under plugins/<safeName>/ and keeps asset guids", async () => {
     const source = await projectStorage();
     const settings = createDefaultPluginSettings({
