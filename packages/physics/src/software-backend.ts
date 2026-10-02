@@ -490,6 +490,7 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
       for (let j = i + 1; j < list.length; j++) {
         const colliderA = list[i]!;
         const colliderB = list[j]!;
+        if (!(colliderA.desc.layer & colliderB.desc.mask) || !(colliderB.desc.layer & colliderA.desc.mask)) continue;
         const bodyA = this.bodies.get(colliderA.desc.bodyId);
         const bodyB = this.bodies.get(colliderB.desc.bodyId);
         if (!bodyA || !bodyB || bodyA === bodyB) continue;

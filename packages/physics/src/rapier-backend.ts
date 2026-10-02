@@ -4,6 +4,7 @@ import type {
   JointData,
   RevoluteImpulseJoint,
   QueryFilterFlags,
+  PhysicsHooks,
 } from "@dimforge/rapier2d-compat";
 import type { PhysicsBackend } from "./backend";
 import type {
@@ -41,10 +42,12 @@ type RapierApi = {
   EventQueue: new (autoDrain: boolean) => RapierEventQueue;
   ActiveEvents: { COLLISION_EVENTS: number };
   ActiveCollisionTypes: { ALL: number };
+  ActiveHooks: { FILTER_CONTACT_PAIRS: number; FILTER_INTERSECTION_PAIRS: number };
+  SolverFlags: { COMPUTE_IMPULSE: number };
   World: new (gravity: { x: number; y: number }) => {
     gravity: { x: number; y: number };
     timestep: number;
-    step(eventQueue?: RapierEventQueue): void;
+    step(eventQueue?: RapierEventQueue, hooks?: PhysicsHooks): void;
     propagateModifiedBodyPositionsToColliders(): void;
     updateSceneQueries(): void;
     free(): void;
@@ -119,6 +122,7 @@ type RapierColliderDesc = {
   setRotation(angle: number): RapierColliderDesc;
   setActiveEvents(events: number): RapierColliderDesc;
   setActiveCollisionTypes(types: number): RapierColliderDesc;
+  setActiveHooks(hooks: number): RapierColliderDesc;
 };
 
 type RapierRigidBody = {
@@ -213,6 +217,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
   private readonly bodyIdByHandle = new Map<number, string>();
   private readonly colliderIdByHandle = new Map<number, string>();
   private readonly eventQueue: RapierEventQueue;
+  private readonly collisionHooks: PhysicsHooks;
   private readonly pendingContacts: PhysicsContactEvent[] = [];
   private readonly blockingKeys = new Set<string>();
   private readonly triggerKeys = new Set<string>();
@@ -223,6 +228,12 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     this.RAPIER = RAPIER;
     this.world = new RAPIER.World({ x: gravity.x, y: gravity.y });
     this.eventQueue = new RAPIER.EventQueue(true);
+    // Rapier interaction groups only contain 16 membership bits; authored
+    // BabylonSlate masks have 32. Hooks retain all bits for contacts and sensors.
+    this.collisionHooks = {
+      filterContactPair: (a, b) => this.collisionPairAllowed(a, b) ? RAPIER.SolverFlags.COMPUTE_IMPULSE : null,
+      filterIntersectionPair: (a, b) => this.collisionPairAllowed(a, b),
+    };
   }
 
   static async create(
@@ -515,6 +526,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
         .setRestitution(desc.restitution)
         .setSensor(desc.isTrigger)
         .setActiveEvents(this.RAPIER.ActiveEvents.COLLISION_EVENTS)
+        .setActiveHooks(this.RAPIER.ActiveHooks.FILTER_CONTACT_PAIRS | this.RAPIER.ActiveHooks.FILTER_INTERSECTION_PAIRS)
         .setActiveCollisionTypes(this.RAPIER.ActiveCollisionTypes.ALL);
       colliderDesc
         .setTranslation(desc.translation!.x, desc.translation!.y)
@@ -590,7 +602,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
 
   step(dt: number): void {
     this.world.timestep = dt;
-    this.world.step(this.eventQueue);
+    this.world.step(this.eventQueue, this.collisionHooks);
     this.queriesDirty = false;
     this.eventQueue.drainCollisionEvents((handleA, handleB, started) => {
       this.recordCollisionEvent(handleA, handleB, started);
@@ -833,6 +845,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
       .setRestitution(desc.restitution)
       .setSensor(desc.isTrigger)
       .setActiveEvents(this.RAPIER.ActiveEvents.COLLISION_EVENTS)
+      .setActiveHooks(this.RAPIER.ActiveHooks.FILTER_CONTACT_PAIRS | this.RAPIER.ActiveHooks.FILTER_INTERSECTION_PAIRS)
       .setActiveCollisionTypes(this.RAPIER.ActiveCollisionTypes.ALL);
     segment
       .setTranslation(desc.translation?.x ?? 0, desc.translation?.y ?? 0)
@@ -880,6 +893,12 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
         normal: { x: 0, y: 1, z: 0 },
       });
     }
+  }
+
+  private collisionPairAllowed(handleA: number, handleB: number): boolean {
+    const a = this.colliders.get(this.colliderIdByHandle.get(handleA) ?? "")?.desc;
+    const b = this.colliders.get(this.colliderIdByHandle.get(handleB) ?? "")?.desc;
+    return !!a && !!b && (a.layer & b.mask) !== 0 && (b.layer & a.mask) !== 0;
   }
 
   private recordCollisionEvent(

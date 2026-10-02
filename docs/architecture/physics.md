@@ -190,6 +190,8 @@ In 3D worlds, dynamic actors with `NavAgentComponent` retain physics position au
 
 Project Settings → **Physics** stores `settings.physics.collisionLayers` (`NamedListEditor`, default `["Default"]`, cap 32, same normalize pattern as sorting layers). Bit storage stays 32-bit for Havok membership/collide masks (`layer` = `1 << index`; Default → `1`). Collider Details: **Layer** is a single-bit Select; **Collides With** is a `FlagsField` of named bits only. No collision matrix in this slice.
 
+Rapier contact and sensor-pair hooks preserve the same 32-bit membership/mask contract, including layers above bit 15. Both colliders must admit the other layer before collision response or contact/overlap events occur; the software fallback uses the same pair rule.
+
 ### Editor / Play visuals
 
 RigidBody-only actors use a camera-facing **`default.png` billboard** (Play `playHelperVisual`) — never a 0.25 cube. `ColliderComponent` is an `EditorSceneSync` **world visual** (opaque dashed segment meshes, `RENDERING_GROUP.world`, depth-tested). Editor always draws ColliderComponent dashes. MeshComponent simple/complex dashes follow session **Show Collisions** in Viewport Settings (default **off**; 2D worlds stay off). Play/export draws ColliderComponent dashes only when `renderInGame` is true (`meshKind` `collider:{json}`). Mesh collision dashes stay editor-only; Play uses console `showcollision` (`listDebugColliders()`, including capsules, convex hulls from generated/cone simple collision, Blocking Volume static boxes, and Mesh colliders). See [render.md](render.md) and [scene-editing.md](scene-editing.md).
