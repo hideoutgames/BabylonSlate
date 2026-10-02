@@ -58,6 +58,7 @@ import {
   walkAncestry,
   type NestedMenuItem,
   type PropertyRow,
+  type Vector3Value,
 } from "@babylonslate/editor-kit";
 import { GraphEditor, treeNodeTypes, type PaletteNode } from "@babylonslate/graph-ui";
 import { defaultJsValue } from "@babylonslate/scripting";
@@ -774,7 +775,7 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
             kind: "vector3" as const,
             label: field.label,
             value: vectorFromUnknown(raw),
-            onChange: (value) =>
+            onChange: (value: Vector3Value) =>
               write({ [field.key]: { x: value[0], y: value[1], z: value[2] } }),
           },
         ];
