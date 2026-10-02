@@ -367,7 +367,7 @@ export class DocumentService {
     const next: OpenDocument = {
       ...doc,
       id: newId,
-      ref: createDocumentRef(kind, newPath, doc.content),
+      ref: createDocumentRef(kind, newPath, doc.content ?? undefined),
     };
     this.state.openDocuments.set(newId, next);
     this.state.tabOrder = this.state.tabOrder.map((id) =>

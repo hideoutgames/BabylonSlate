@@ -1370,6 +1370,19 @@ describe("project documents as .babasset", () => {
     expect(decoded.chunks.get(AUDIO_REVERB_CHUNK_ID)).toEqual(new Uint8Array([7, 8]));
   });
 
+  it("drops an older reverb chunk when a saved edit outpaces the matching bake", async () => {
+    const { service } = await scaffolded();
+    const scene = { ...createDefaultScene(), actors: [createActor("wall", "Wall", {
+      components: [createMeshComponent("wall-mesh", "box")],
+    })] };
+    await service.saveDocument("scene", MAIN_SCENE_FILE, scene);
+    await service.writeSceneAudioReverbChunk(MAIN_SCENE_FILE, new Uint8Array([7]), scene as unknown as Record<string, unknown>);
+    const lateEdit = structuredClone(scene);
+    lateEdit.actors[0]!.transform.position[0] = 12;
+    await service.saveDocument("scene", MAIN_SCENE_FILE, lateEdit);
+    expect(await service.readAssetChunk(MAIN_SCENE_FILE, AUDIO_REVERB_CHUNK_ID)).toBeNull();
+  });
+
   it("writes a Scene audioReverb extra chunk and keeps navmesh", async () => {
     const { service } = await scaffolded();
     const scene = (await service.loadDocument(

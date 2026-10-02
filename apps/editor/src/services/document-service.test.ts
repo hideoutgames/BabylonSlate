@@ -57,7 +57,7 @@ describe("DocumentService", () => {
     const service = new DocumentService();
     let finishRead!: (value: { nodes: []; edges: [] }) => void;
     const previous = service.openDocument(createMockProjectService({
-      loadDocument: vi.fn(() => new Promise((resolve) => { finishRead = resolve; })),
+      loadDocument: vi.fn(() => new Promise<{ nodes: []; edges: [] }>((resolve) => { finishRead = resolve; })),
     }), { kind: "graph", path: MAIN_CLASS_FILE, label: "Old project Class" });
     const rejected = expect(previous).rejects.toMatchObject({ name: "AbortError" });
     await service.initializeFromProject(createMockProjectService(), createEmptyProject("Next"), createEmptyLayouts());

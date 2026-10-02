@@ -59,6 +59,7 @@ import {
   stableStringify,
   decodeBabasset,
   encodeBabasset,
+  AUDIO_REVERB_CHUNK_ID,
   DEFAULT_TEXTURE_ENCODE_SETTINGS,
   DOCUMENT_CHUNK_ID,
   EncodeQueue,
@@ -1912,6 +1913,11 @@ export class ProjectService {
         const baked = this.sceneAudioReverb.get(await this.guidForAsset(path));
         if (baked?.fingerprint === staticAudioGeometryFingerprint(content as SerializedScene)) {
           extraChunks = extraChunksWithAudioReverb(extraChunks, baked.bytes);
+        } else if (extraChunks.some((chunk) => chunk.id === AUDIO_REVERB_CHUNK_ID)) {
+          const saved = await this.readAssetDocument(path, "Scene");
+          if (staticAudioGeometryFingerprint(normalizeScene(saved.payload)) !== staticAudioGeometryFingerprint(content as SerializedScene)) {
+            extraChunks = extraChunks.filter((chunk) => chunk.id !== AUDIO_REVERB_CHUNK_ID);
+          }
         }
       }
       const bytes = await encodeAssetDocument(

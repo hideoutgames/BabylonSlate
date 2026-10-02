@@ -179,7 +179,7 @@ describe("audio reverb bake controller", () => {
     vi.useFakeTimers();
     const writes: AudioReverbBakeWrite[] = [];
     const diagnostics: Array<{ code: string }> = [];
-    let release: (() => void) | null = null;
+    let release!: () => void;
     const controller = createAudioReverbBakeController({
       bake: () =>
         new Promise((resolve) => {
@@ -203,7 +203,7 @@ describe("audio reverb bake controller", () => {
     expect(diagnostics).toEqual([
       expect.objectContaining({ code: "audio.reverb_bake_failed" }),
     ]);
-    release?.();
+    release();
   });
 
   it("flush of empty static geometry writes dry fallback without hanging", async () => {
