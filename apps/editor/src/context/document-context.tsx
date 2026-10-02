@@ -145,7 +145,7 @@ import {
 import { loadExportDocuments } from "../services/export-game-inputs";
 import { collectFontAssetEntries, collectFontCssStacks, collectFontFacetypeBytes, collectFontMsdfPair } from "../lib/play-fonts";
 import { loadPlayerDistFiles } from "../services/load-player-files";
-import { flushAudioReverbForSave } from "../lib/audio-reverb-bake";
+import { collectAudioReverbFlushScenes, flushAudioReverbForSave } from "../lib/audio-reverb-bake";
 import {
   flushNavBakeForSave,
   lastNavBakeSaveResult,
@@ -1929,8 +1929,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       /** When set, overrides `playerFilesHaveKtx2Transcoder` for Texture packing. */
       transcoderAvailable?: boolean;
     }) => {
-      await flushAudioReverbForSave();
       const exportDocument = options?.projectSnapshot ?? projectDocument;
+      // Export consumes persisted sources even when a tab contains unsaved edits.
+      await flushAudioReverbForSave(await collectAudioReverbFlushScenes({
+        paths: playSceneLibraryPaths(exportDocument?.scenes ?? [], projectService.registry?.list() ?? []),
+        load: (path) => projectService.loadDocument("scene", path),
+      }));
       const preset =
         exportDocument?.settings.exportPresets[0] ?? defaultExportPreset();
       const plugins = projectService.plugins;

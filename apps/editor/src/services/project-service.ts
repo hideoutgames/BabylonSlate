@@ -1823,10 +1823,21 @@ export class ProjectService {
       | Record<string, unknown>,
     options?: { parentClass?: string | null },
   ): Promise<void> {
-    const asset = this.assetRegistry?.getByPath(path);
-    const save = () => this.saveDocumentUnlocked(kind, path, content, options);
-    if (asset) return this.assetRegistry!.withAssetWrite(asset.header.guid, save);
-    return save();
+    return this.withDocumentWrite(path, (currentPath) => this.saveDocumentUnlocked(kind, currentPath, content, options));
+  }
+
+  /** Resolve a queued write's location after earlier moves/deletions finish. */
+  private async withDocumentWrite<T>(path: string, write: (currentPath: string) => Promise<T>): Promise<T> {
+    const registry = this.assetRegistry;
+    const asset = registry?.getByPath(path);
+    if (!asset) return write(path);
+    return registry!.withAssetWrite(asset.header.guid, () => {
+      const current = registry!.getByGuid(asset.header.guid);
+      if (this.assetRegistry !== registry || !current) {
+        throw new Error("The asset was closed or deleted before it could be saved");
+      }
+      return write(current.path);
+    });
   }
 
   private async saveDocumentUnlocked(
@@ -1998,6 +2009,14 @@ export class ProjectService {
     bytes: Uint8Array,
     payload: Record<string, unknown>,
   ): Promise<void> {
+    return this.withDocumentWrite(path, (currentPath) => this.writeSceneNavmeshChunkUnlocked(currentPath, bytes, payload));
+  }
+
+  private async writeSceneNavmeshChunkUnlocked(
+    path: string,
+    bytes: Uint8Array,
+    payload: Record<string, unknown>,
+  ): Promise<void> {
     if (isPluginDocumentReadOnly(this.pluginDescriptors, path)) {
       throw new Error("Engine plugin assets are read-only");
     }
@@ -2038,9 +2057,12 @@ export class ProjectService {
     const baked = { fingerprint: staticAudioGeometryFingerprint(payload), bytes: bytes.slice() };
     const write = async () => {
       if (this.assetRegistry !== registry) return;
-      const storage = this.storageForPath(path);
-      const blobs = this.blobsForPath(path);
-      const decoded = await decodeBabasset(await storage.readBinary(path), (hash) => blobs.readBlob(hash));
+      const current = asset ? registry?.getByGuid(asset.header.guid) : null;
+      if (asset && !current) return;
+      const currentPath = current?.path ?? path;
+      const storage = this.storageForPath(currentPath);
+      const blobs = this.blobsForPath(currentPath);
+      const decoded = await decodeBabasset(await storage.readBinary(currentPath), (hash) => blobs.readBlob(hash));
       const body = decoded.chunks.get(DOCUMENT_CHUNK_ID);
       const persisted = body ? JSON.parse(new TextDecoder().decode(body)) : decoded.header.payload;
       if (decoded.header.type !== "Scene") throw new Error("Audio reverb requires a Scene asset");
@@ -2056,8 +2078,8 @@ export class ProjectService {
         chunks: extraChunksWithAudioReverb(chunks, baked.bytes),
         writeBlob: (hash, data) => blobs.writeBlob(hash, data),
       });
-      await storage.writeBinary(path, encoded);
-      await registry?.reindexPath(path);
+      await storage.writeBinary(currentPath, encoded);
+      await registry?.reindexPath(currentPath);
     };
     if (asset) await registry!.withAssetWrite(asset.header.guid, write);
     else await write();

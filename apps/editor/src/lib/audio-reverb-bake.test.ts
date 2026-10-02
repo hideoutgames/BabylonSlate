@@ -175,6 +175,24 @@ describe("audio reverb bake controller", () => {
     controller.dispose();
   });
 
+  it("reuses a geometry hash for material edits while publishing the new Scene snapshot", async () => {
+    const writes: AudioReverbBakeWrite[] = [];
+    const bake = vi.fn(async () => new Uint8Array([1, 2, 3]));
+    const controller = createAudioReverbBakeController({ bake, write: async (entry) => { writes.push(entry); } });
+    const scene = sceneWith([boxActor("wall", [0, 0, 0])]);
+    await controller.flush("Main", scene);
+    const next = structuredClone(scene);
+    next.actors[0]!.components[0]!.properties.materialGuid = "new-material";
+    await controller.flush("Main", next);
+    expect(bake).toHaveBeenCalledOnce();
+    expect(writes).toHaveLength(2);
+    expect(writes[1]!.payload).toBe(next);
+    expect(writes[1]!.bytes).toEqual(writes[0]!.bytes);
+    await controller.flush("Main", next);
+    expect(writes).toHaveLength(2);
+    controller.dispose();
+  });
+
   it("flush writes a marked dry fallback on timeout", async () => {
     vi.useFakeTimers();
     const writes: AudioReverbBakeWrite[] = [];

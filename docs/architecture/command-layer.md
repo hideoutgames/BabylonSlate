@@ -94,6 +94,8 @@ Each line is one JSON object:
 
 Interactive edits mark the document dirty on apply. `applyGraphChange` and `applySceneChange` both diff snapshots into commands, push through `EditSession`, then **immediately** bump chrome (Undo / Redo / Save All dirty) and schedule `saveProject` after `ProjectSettings.autoSaveIntervalMs` (default **120000**). The crash-journal record is buffered after that bump and written in a batch (see Journal format); a slow or failed journal write is logged and cannot leave Undo disabled. A second edit does **not** reset an already-running timer. **Save All** writes immediately, cancels the pending timer, then `flushSync`s the chrome bump so Save All disables in the same turn as `markAllClean`. **Play** is another explicit save trigger: if documents are dirty or graphs are compile-stale, Play saves and compiles first (progress dialog) and waits before launching Preview. When a save runs and `compileOnSave` is on (default **true**), open graphs compile. Only dirty documents write; large immutable chunks stay in the blob store (engineplan §19 / [vfs.md](vfs.md)).
 
+Queued document and Scene bake writes resolve the asset's current path from its GUID after earlier moves finish. A queued Save cannot recreate an old path or resurrect a deleted asset.
+
 Per-edit update cost: each applied edit bumps the document context once. Consumers that recompute on that bump keep their published values when nothing they depend on changed:
 
 - `ValidationProvider.setDiagnostics` keeps the current list when a panel recomputes an equal one (Compiler Results for a scene, graph validation), so a selected diagnostic stays selected and its consumers do not re-render.
