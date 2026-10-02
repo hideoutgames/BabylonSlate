@@ -451,12 +451,22 @@ function withComponentLinkage(component: SerializedComponent, linkage?: Componen
 /** Prefab inheritance is document state and must travel with Undo and recovery. */
 export class SetComponentLinkageCommand implements EditCommand<SerializedScene> {
   readonly type = "scene.setComponentLinkage";
+  readonly actorId: string;
+  readonly componentId: string;
+  readonly from: ComponentLinkage;
+  readonly to: ComponentLinkage;
+
   constructor(
-    readonly actorId: string,
-    readonly componentId: string,
-    readonly from: ComponentLinkage,
-    readonly to: ComponentLinkage,
-  ) {}
+    actorId: string,
+    componentId: string,
+    from: ComponentLinkage,
+    to: ComponentLinkage,
+  ) {
+    this.actorId = actorId;
+    this.componentId = componentId;
+    this.from = from;
+    this.to = to;
+  }
 
   apply(doc: SerializedScene): SerializedScene {
     return replaceActor(doc, this.actorId, (actor) => ({
@@ -481,6 +491,7 @@ export class SetComponentPropertyCommand
   readonly property: string;
   readonly from: unknown;
   readonly to: unknown;
+  readonly linkage?: ComponentLinkageChange;
 
   constructor(
     actorId: string,
@@ -488,11 +499,12 @@ export class SetComponentPropertyCommand
     property: string,
     from: unknown,
     to: unknown,
-    readonly linkage?: ComponentLinkageChange,
+    linkage?: ComponentLinkageChange,
   ) {
     this.actorId = actorId;
     this.componentId = componentId;
     this.property = property;
+    this.linkage = linkage;
     this.from = from;
     this.to = to;
     this.mergeKey = `prop:${actorId}:${componentId}:${property}`;
@@ -533,19 +545,21 @@ export class SetComponentTransformCommand
   readonly componentId: string;
   readonly from: SerializedTransform;
   readonly to: SerializedTransform;
+  readonly linkage?: ComponentLinkageChange;
 
   constructor(
     actorId: string,
     componentId: string,
     from: SerializedTransform,
     to: SerializedTransform,
-    readonly linkage?: ComponentLinkageChange,
+    linkage?: ComponentLinkageChange,
   ) {
     this.actorId = actorId;
     this.componentId = componentId;
     this.from = from;
     this.to = to;
     this.mergeKey = `componentTransform:${actorId}:${componentId}`;
+    this.linkage = linkage;
   }
 
   apply(doc: SerializedScene): SerializedScene {
