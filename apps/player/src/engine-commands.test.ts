@@ -260,6 +260,22 @@ describe("applyPlayerEngineCommand", () => {
 });
 
 describe("applyPlayerActiveScene", () => {
+  it("replaces reverb on scene changes and clears it for scenes without a bake", () => {
+    const first = new Uint8Array([1]);
+    const second = new Uint8Array([2]);
+    let reverb: Uint8Array | null = first;
+    const handle = { loadScene: () => {}, applySceneEnvironment: () => {},
+      resetAudioSession: () => { reverb = first; },
+      setAudioReverbField: (bytes: Uint8Array | null) => { reverb = bytes; } };
+    const scenes = new Map(["first", "second", "dry"].map((guid) => [guid, createDefaultScene()]));
+    const fields = new Map([["first", first], ["second", second]]);
+    applyPlayerActiveScene(handle, scenes, { type: "activeScene", sceneAssetGuid: "second" }, "first", false, fields);
+    expect(reverb).toBe(second);
+    applyPlayerActiveScene(handle, scenes, { type: "activeScene", sceneAssetGuid: "dry" }, "second", false, fields);
+    expect(reverb).toBeNull();
+    applyPlayerActiveScene(handle, scenes, { type: "activeScene", sceneAssetGuid: "first" }, "dry", false, fields);
+    expect(reverb).toBe(first);
+  });
   it("loads the destination scene stack and environment", () => {
     const loaded: string[] = [];
     const handle = {

@@ -521,6 +521,17 @@ describe("applyPlayActiveScene", () => {
   const scene = { ...createDefaultScene(), name: "Level 1" };
   const other = { ...createDefaultScene(), name: "Level 2" };
 
+  it("selects the destination reverb and clears it for a scene without a bake", () => {
+    const bytes = new Uint8Array([2]);
+    const applied: Array<Uint8Array | null> = [];
+    const handle = { loadScene: () => {}, applySceneEnvironment: () => {}, resetAudioSession: () => {}, resetParticleSession: () => {},
+      setAudioReverbField: (field: Uint8Array | null) => applied.push(field) };
+    const options = { handle, scenes: [{ guid: "one", scene }, { guid: "two", scene: other }], boot: { guid: "one", scene }, audioReverbByScene: new Map([["two", bytes]]) };
+    applyPlayActiveScene({ ...options, currentSceneGuid: "one", command: { type: "activeScene", sceneAssetGuid: "two" } });
+    applyPlayActiveScene({ ...options, currentSceneGuid: "two", command: { type: "activeScene", sceneAssetGuid: "one" } });
+    expect(applied).toEqual([bytes, null]);
+  });
+
   it("skips reload and audio/particle reset when the boot scene is already active", () => {
     const loaded: string[] = [];
     const handle = {

@@ -28,6 +28,7 @@ import {
   playAnimGraphsFromGuids,
   playLoadTilemapsControl,
   readPlayNavmeshBytes,
+  readPlaySceneBakes,
   readPlayAudioReverbBytes,
   playSpriteAnimationPayloadsFromGuids,
   playSpritePayloadsFromGuids,
@@ -744,6 +745,23 @@ describe("scene-referenced Play content", () => {
 });
 
 describe("readPlayNavmeshBytes", () => {
+  it("collects each scene's bakes by GUID and isolates missing or failed chunks", async () => {
+    const reads: string[] = [];
+    const errors: string[] = [];
+    const result = await readPlaySceneBakes([
+      { guid: "one", path: "one.scene.babasset" }, { guid: "two", path: "two.scene.babasset" },
+      { guid: "one", path: "one.scene.babasset" }, { guid: "unsaved" },
+    ], async (path, chunkId) => {
+      reads.push(`${path}:${chunkId}`);
+      if (path.startsWith("one")) return chunkId === "navmesh" ? new Uint8Array([1]) : null;
+      if (chunkId === "navmesh") throw new Error("Unavailable");
+      return new Uint8Array([2]);
+    }, (guid, chunkId) => errors.push(`${guid}:${chunkId}`));
+    expect([...result.navmeshes]).toEqual([["one", new Uint8Array([1])]]);
+    expect([...result.audioReverbs]).toEqual([["two", new Uint8Array([2])]]);
+    expect(errors).toEqual(["two:navmesh"]);
+    expect(reads).toHaveLength(4);
+  });
   it("reads the Scene navmesh extra chunk and never invents bytes", async () => {
     const bytes = new Uint8Array([9, 8, 7]);
     const readChunk = async (path: string, chunkId: string) => {

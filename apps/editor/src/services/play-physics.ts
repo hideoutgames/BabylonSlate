@@ -181,6 +181,7 @@ export function playLoadControl(options: {
   gravity?: [number, number, number];
   gameInstanceClass?: string;
   scenes?: Array<{ guid: string; scene: SerializedScene }>;
+  sceneNavmeshBytes?: Record<string, Uint8Array>;
   sceneLayers?: Array<{ guid: string; layer: SerializedSceneLayer }>;
   infiniteLoopDetection?: boolean;
   loopCount?: number;
@@ -222,6 +223,7 @@ export function playLoadControl(options: {
     havokWasmUrl: editorHavokWasmUrl(),
     gameInstanceClass: options.gameInstanceClass,
     scenes: options.scenes,
+    sceneNavmeshBytes: options.sceneNavmeshBytes,
     sceneLayers: options.sceneLayers,
     infiniteLoopDetection: options.infiniteLoopDetection,
     loopCount: options.loopCount,

@@ -98,9 +98,11 @@ describe("playLoadControl", () => {
     const msg = playLoadControl({
       gameInstanceClass: "MyGame",
       scenes: [{ guid: "Level2", scene: extra as never }],
+      sceneNavmeshBytes: { Level2: new Uint8Array([2]) },
     });
     expect(msg.gameInstanceClass).toBe("MyGame");
     expect(msg.scenes).toEqual([{ guid: "Level2", scene: extra }]);
+    expect(msg.sceneNavmeshBytes).toEqual({ Level2: new Uint8Array([2]) });
   });
 
   it("forwards infinite loop detection onto the load message", () => {

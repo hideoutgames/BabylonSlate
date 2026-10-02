@@ -157,6 +157,7 @@ export function applyPlayActiveScene(options: {
     ) => void;
     applySceneEnvironment: (scene: SerializedScene) => void;
     resetAudioSession: () => void;
+    setAudioReverbField?: (bytes: Uint8Array | null) => void;
     resetParticleSession: () => void;
   };
   command: { type: string; sceneAssetGuid?: string };
@@ -164,6 +165,7 @@ export function applyPlayActiveScene(options: {
   boot: { guid?: string; scene?: SerializedScene };
   currentSceneGuid: string | null;
   forceReload?: boolean;
+  audioReverbByScene?: ReadonlyMap<string, Uint8Array>;
 }): string | null {
   if (
     options.command.type !== "activeScene" ||
@@ -180,6 +182,7 @@ export function applyPlayActiveScene(options: {
   options.handle.loadScene(scene, { sceneAssetGuid: guid });
   options.handle.applySceneEnvironment(scene);
   options.handle.resetAudioSession();
+  options.handle.setAudioReverbField?.(options.audioReverbByScene?.get(guid) ?? null);
   options.handle.resetParticleSession();
   return guid;
 }
@@ -529,6 +532,8 @@ export function startPlaySession(options: {
   touchMinTargetPx?: number;
   /** Baked Scene navmesh bytes; Play imports and never generates. */
   navmeshBytes?: Uint8Array | null;
+  sceneNavmeshBytes?: ReadonlyMap<string, Uint8Array>;
+  audioReverbByScene?: ReadonlyMap<string, Uint8Array>;
   infiniteLoopDetection?: boolean;
   loopCount?: number;
   inputAssets?: import("@babylonslate/core").InputAssetDefinition[];
@@ -743,6 +748,7 @@ export function startPlaySession(options: {
         boot: { guid: options.sceneAssetGuid, scene: options.scene },
         currentSceneGuid: hostSceneGuid,
         forceReload: receivedActiveScene,
+        audioReverbByScene: options.audioReverbByScene,
       });
       receivedActiveScene = true;
     },
@@ -915,6 +921,7 @@ export function startPlaySession(options: {
     project: options.project,
     gameInstanceClass: options.gameInstanceClass,
     scenes: options.scenes,
+    sceneNavmeshBytes: Object.fromEntries(options.sceneNavmeshBytes ?? []),
     sceneLayers: options.sceneLayers,
     infiniteLoopDetection: options.infiniteLoopDetection,
     loopCount: options.loopCount,

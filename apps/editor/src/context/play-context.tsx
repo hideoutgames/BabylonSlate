@@ -88,8 +88,7 @@ import type {
   PlayBlackboardEntry,
 } from "../lib/play-content";
 import {
-  readPlayNavmeshBytes,
-  readPlayAudioReverbBytes,
+  readPlaySceneBakes,
   modelSlotMaterialGuidsFromPayloads,
   overlayTextureGuidsFromScenes,
   playPrefabDependencyScene,
@@ -360,6 +359,8 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const [playNavmeshBytes, setPlayNavmeshBytes] = useState<Uint8Array | null>(
     null,
   );
+  const [playSceneNavmeshBytes, setPlaySceneNavmeshBytes] = useState<ReadonlyMap<string, Uint8Array>>(() => new Map());
+  const [playAudioReverbByScene, setPlayAudioReverbByScene] = useState<ReadonlyMap<string, Uint8Array>>(() => new Map());
   const [playAudioReverbBytes, setPlayAudioReverbBytes] = useState<Uint8Array | null>(
     null,
   );
@@ -1244,26 +1245,18 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
           setPlayAudioSourceLoader(undefined);
           setPlayAudioLibrary(emptyPlayAudioLibrary());
         }
-        try {
-          setPlayNavmeshBytes(
-            await readPlayNavmeshBytes(resolvedScene?.path, readAssetChunk),
-          );
-        } catch (error) {
-          appendLog(
-            `Navmesh load failed: ${error instanceof Error ? error.message : String(error)}`,
-          );
-          setPlayNavmeshBytes(null);
-        }
-        try {
-          setPlayAudioReverbBytes(
-            await readPlayAudioReverbBytes(resolvedScene?.path, readAssetChunk),
-          );
-        } catch (error) {
-          appendLog(
-            `Audio reverb load failed: ${error instanceof Error ? error.message : String(error)}`,
-          );
-          setPlayAudioReverbBytes(null);
-        }
+        const bakedSceneGuid = canonicalPlaySceneGuid(resolvedScene, (path) =>
+          assetRegistry?.list().find((asset) => asset.path === path)?.header.guid ?? null);
+        const sceneBakes = await readPlaySceneBakes([
+          ...playLibrary.map(({ guid }) => ({ guid, path: assetRegistry?.getByGuid(guid)?.path })),
+          { guid: bakedSceneGuid, path: resolvedScene.path },
+        ], readAssetChunk, (guid, chunkId, error) => {
+          appendLog(`${chunkId} load failed for ${guid}: ${error instanceof Error ? error.message : String(error)}`);
+        });
+        setPlaySceneNavmeshBytes(sceneBakes.navmeshes);
+        setPlayAudioReverbByScene(sceneBakes.audioReverbs);
+        setPlayNavmeshBytes(sceneBakes.navmeshes.get(bakedSceneGuid) ?? null);
+        setPlayAudioReverbBytes(sceneBakes.audioReverbs.get(bakedSceneGuid) ?? null);
 
         setPrepareState(null);
 
@@ -1572,6 +1565,8 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             hardwareScalingLevel={hardwareScalingLevel}
             pauseOnPlay={pauseOnPlay}
             navmeshBytes={playNavmeshBytes}
+            sceneNavmeshBytes={playSceneNavmeshBytes}
+            audioReverbByScene={playAudioReverbByScene}
             audioReverbBytes={playAudioReverbBytes}
             audioProjectSettings={projectDocument?.settings.audio}
             inputAssets={playInputAssets}
