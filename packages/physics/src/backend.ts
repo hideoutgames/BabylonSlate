@@ -79,11 +79,12 @@ export interface PhysicsBackend {
   pollContacts(): PhysicsContactEvent[];
 
   lineTrace(start: Vec3, end: Vec3, options?: LineTraceOptions): HitResult;
-  sphereOverlap(center: Vec3, radius: number): OverlapResult;
+  sphereOverlap(center: Vec3, radius: number, options?: LineTraceOptions): OverlapResult;
   shapeSweep(
     shape: ColliderDesc["shape"],
     start: PhysicsTransform,
     end: PhysicsTransform,
+    options?: LineTraceOptions,
   ): HitResult;
   /** Optional optimized query for repeated sphere casts, excluding triggers. Own until disposed. */
   createSphereSweep?(radius: number): SphereSweepQuery;

@@ -113,6 +113,8 @@ export type ColliderChanges = {
 export type LineTraceOptions = {
   /** Exclude every collider owned by these actors before selecting a hit. */
   ignoreActorIds?: readonly string[];
+  /** False excludes sensor/trigger geometry; omitted retains backend defaults. */
+  includeTriggers?: boolean;
 };
 
 export type HitResult = {

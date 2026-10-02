@@ -1178,10 +1178,10 @@ class InProcessRuntime implements RuntimeDriver {
         this.physicsSync.lineTrace(start, end, options),
       projectCursorToScene: (channel, options) =>
         this.projectCursorToScene(channel, options),
-      sphereOverlap: (center, radius) =>
-        this.physicsSync.sphereOverlap(center, radius),
-      shapeSweep: (shape, start, end) =>
-        this.physicsSync.shapeSweep(shape, start, end),
+      sphereOverlap: (center, radius, channel) =>
+        this.physicsSync.sphereOverlap(center, radius, { channel }),
+      shapeSweep: (shape, start, end, channel) =>
+        this.physicsSync.shapeSweep(shape, start, end, { channel }),
       addImpulse: (actor, impulse, strength) => {
         const target = actor;
         if (!target) return;
@@ -4871,7 +4871,7 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private projectCursorToScene(
-    _channel?: string,
+    channel?: string,
     options?: { drawDebug?: boolean; duration?: number },
   ) {
     const miss = {
@@ -4909,7 +4909,7 @@ class InProcessRuntime implements RuntimeDriver {
       },
     );
     this.physicsSync.syncFromWorld(this.world);
-    const hit = this.physicsSync.lineTrace(ray.origin, ray.end);
+    const hit = this.physicsSync.lineTrace(ray.origin, ray.end, { channel });
     const drawDebug = options?.drawDebug !== false;
     if (drawDebug) {
       const duration =

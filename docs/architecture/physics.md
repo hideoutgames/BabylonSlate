@@ -212,6 +212,7 @@ Sync nodes (exec pin continues in the same tick): `physics.lineTrace`, `physics.
 - **Sphere Shape Sweep** exposes Radius and returns the same Hit Result / exploded query fields as Line Trace.
 - Query misses return false, null vectors/Actor, and zero Distance rather than leaking backend ids or typed `undefined`. Radius defaults at or below zero emit `physics.radius`.
 - Every query has an optional **Collision Channel** (default All). In 2D, authored `vec3` points use XY.
+- Channels filter live physics candidates before choosing a hit: **WorldStatic** selects static bodies, **WorldDynamic** selects dynamic/kinematic bodies, **Pawn** selects actors owned by a valid Movement component, and **Visibility** excludes triggers. **All** retains the existing backend defaults. These are built-in query categories, not configurable per-channel collision responses. Havok overlap remains a body-AABB approximation; Visibility excludes trigger-only bodies from that approximation.
 
 `moveCharacter` takes an Actor (defaults to `self`), lazily creates a character controller on that actor’s rigid body (`id` = actor guid, optional `offset` default 0.01), and applies the returned transform to the actor immediately so the next kinematic sync keeps it. Destroy follows the rigid body. No `CharacterControllerComponent` in this slice.
 

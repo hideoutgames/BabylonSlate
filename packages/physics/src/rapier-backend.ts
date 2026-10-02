@@ -628,7 +628,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
       undefined,
       undefined,
       undefined,
-      ignored.size
+      ignored.size || options?.includeTriggers === false
         ? (collider) => {
             const bodyId = this.bodyIdByHandle.get(
               collider.parent()?.handle ?? -1,
@@ -636,7 +636,9 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
             const actorId = bodyId
               ? this.bodies.get(bodyId)?.desc.actorId
               : undefined;
-            return actorId === undefined || !ignored.has(actorId);
+            const desc = this.colliders.get(this.colliderIdByHandle.get(collider.handle) ?? "")?.desc;
+            return (actorId === undefined || !ignored.has(actorId)) &&
+              !(options?.includeTriggers === false && desc?.isTrigger);
           }
         : undefined,
     );
@@ -656,13 +658,20 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     };
   }
 
-  sphereOverlap(center: Vec3, radius: number): OverlapResult {
+  sphereOverlap(center: Vec3, radius: number, options?: LineTraceOptions): OverlapResult {
     this.flushSceneQueries();
+    const ignored = new Set(options?.ignoreActorIds);
+    const allowed = (collider: RapierCollider) => {
+      const desc = this.colliders.get(this.colliderIdByHandle.get(collider.handle) ?? "")?.desc;
+      const actorId = desc ? this.bodies.get(desc.bodyId)?.desc.actorId : undefined;
+      return actorId !== undefined && !ignored.has(actorId) && !(options?.includeTriggers === false && desc?.isTrigger);
+    };
     const actorIds: string[] = [];
     const bodyIds: string[] = [];
     this.world.intersectionsWithPoint(
       { x: center.x, y: center.y },
       (collider) => {
+        if (!allowed(collider)) return true;
         const bodyId = this.bodyIdByHandle.get(collider.parent()?.handle ?? -1);
         if (!bodyId) return true;
         const body = this.bodies.get(bodyId);
@@ -681,6 +690,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
         0,
         shape,
         (collider) => {
+          if (!allowed(collider)) return true;
           const bodyId = this.bodyIdByHandle.get(
             collider.parent()?.handle ?? -1,
           );
@@ -701,8 +711,9 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     _shape: ColliderDesc["shape"],
     start: PhysicsTransform,
     end: PhysicsTransform,
+    options?: LineTraceOptions,
   ): HitResult {
-    return this.lineTrace(start.position, end.position);
+    return this.lineTrace(start.position, end.position, options);
   }
 
   createCharacterController(desc: CharacterControllerDesc): void {

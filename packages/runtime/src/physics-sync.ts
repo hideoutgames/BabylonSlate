@@ -488,20 +488,36 @@ export class PhysicsWorldSync {
     }
   }
 
-  lineTrace(start: Vec3, end: Vec3, options?: LineTraceOptions) {
-    return this.backend.lineTrace(start, end, options);
+  private queryOptions(options?: LineTraceOptions & { channel?: string }): LineTraceOptions | undefined {
+    const channel = options?.channel;
+    if (!channel || channel === "All") return options;
+    if (channel === "Visibility") return { ...options, includeTriggers: false };
+    const ignored = new Set(options?.ignoreActorIds);
+    for (const [actorId, actor] of this.bodyOwnerByActor) {
+      const motion = this.appliedBodyProperties.get(actorId)?.value.motionType ?? "static";
+      const matches = channel === "WorldStatic" ? motion === "static"
+        : channel === "WorldDynamic" ? motion !== "static"
+          : channel === "Pawn" ? this.movementComponent(actor) !== undefined : true;
+      if (!matches) ignored.add(actorId);
+    }
+    return { ...options, ignoreActorIds: [...ignored] };
   }
 
-  sphereOverlap(center: Vec3, radius: number) {
-    return this.backend.sphereOverlap(center, radius);
+  lineTrace(start: Vec3, end: Vec3, options?: LineTraceOptions & { channel?: string }) {
+    return this.backend.lineTrace(start, end, this.queryOptions(options));
+  }
+
+  sphereOverlap(center: Vec3, radius: number, options?: LineTraceOptions & { channel?: string }) {
+    return this.backend.sphereOverlap(center, radius, this.queryOptions(options));
   }
 
   shapeSweep(
     shape: Parameters<PhysicsBackend["shapeSweep"]>[0],
     start: PhysicsTransform,
     end: PhysicsTransform,
+    options?: LineTraceOptions & { channel?: string },
   ) {
-    return this.backend.shapeSweep(shape, start, end);
+    return this.backend.shapeSweep(shape, start, end, this.queryOptions(options));
   }
 
   addImpulse(actorId: string, impulse: Vec3, strength?: number): void {
