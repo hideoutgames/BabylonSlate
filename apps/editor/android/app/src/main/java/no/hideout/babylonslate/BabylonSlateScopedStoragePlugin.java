@@ -35,6 +35,7 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
     private static final String URI_PREFIX = "uri:";
     private static final String NAME_PREFIX = "name:";
     private boolean pickPending;
+    private boolean readScopeLifecycleAttached;
     private final Map<String, FolderAccess> readScopes = new HashMap<>();
     private final WebViewListener readScopeLifecycle = new WebViewListener() {
         @Override
@@ -44,8 +45,13 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
     };
 
     @Override
-    public void load() {
-        getBridge().addWebViewListener(readScopeLifecycle);
+    protected void handleOnStart() {
+        // Bridge.Builder replaces its listener list after plugin load().
+        if (!readScopeLifecycleAttached) {
+            getBridge().addWebViewListener(readScopeLifecycle);
+            readScopeLifecycleAttached = true;
+        }
+        super.handleOnStart();
     }
 
     private void clearReadScopesAsync() {
@@ -381,6 +387,7 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
     @Override
     protected void handleOnDestroy() {
         getBridge().removeWebViewListener(readScopeLifecycle);
+        readScopeLifecycleAttached = false;
         clearReadScopesAsync();
         super.handleOnDestroy();
     }
