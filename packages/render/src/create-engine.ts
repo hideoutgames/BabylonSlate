@@ -2087,6 +2087,10 @@ function initializeEngine(
   let readDiagnostics: ReturnType<typeof createRenderDiagnostics> | undefined;
   const renderDiagnostics = () => {
     captureFramePhases = true;
+    const source = engine.getRenderingCanvas();
+    // Babylon 9.20 exposes loop scheduling fields but keeps the native context
+    // loss flag protected; this snapshot never mutates native ownership.
+    const native = engine as unknown as { _contextWasLost: boolean };
     return { ...(readDiagnostics ??= createRenderDiagnostics(
       scene, () => lastRenderCpuMs, () => rttPresent?.readbackMs() ?? null,
       () => ({ sample: lastPressureSample, gpuAttribution: gpuAttribution() }),
@@ -2095,7 +2099,15 @@ function initializeEngine(
         pendingPresentations: pendingPresentations.size,
         registeredViewEnabled: registeredView?.enabled ?? null,
         registeredViewRequestedEnabled: registeredView ? registeredViewIsEnabled(registeredView) : null,
-        rttPresenting: rttPresent?.isPresenting() ?? false, contextLost } };
+        rttPresenting: rttPresent?.isPresenting() ?? false, contextLost },
+      engineLoop: { frameId: engine.frameId, activeLoops: engine.activeRenderLoops.length,
+        ownsLoop: engine.activeRenderLoops.includes(renderLoop), frameHandler: engine._frameHandler,
+        disposed: engine.isDisposed, contextLost: native._contextWasLost,
+        windowIsBackground: engine._windowIsBackground, renderEvenInBackground: engine.renderEvenInBackground,
+        skipFrameRender: engine.skipFrameRender, maxFPS: engine.maxFPS ?? null,
+        customRequester: Boolean(engine.customAnimationFrameRequester),
+        sourceSize: source ? [source.width, source.height] as [number, number] : null,
+        now: performance.now() } };
   };
   const loadingScope = (owner?: SceneLayerLoadIdentity) => {
     const generation = loadGeneration;

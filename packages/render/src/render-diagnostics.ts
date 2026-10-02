@@ -38,6 +38,21 @@ export type RenderDiagnostics = {
     rttPresenting: boolean;
     contextLost: boolean;
   };
+  engineLoop?: {
+    frameId: number;
+    activeLoops: number;
+    ownsLoop: boolean;
+    frameHandler: number;
+    disposed: boolean;
+    contextLost: boolean;
+    windowIsBackground: boolean;
+    renderEvenInBackground: boolean;
+    skipFrameRender: boolean;
+    maxFPS: number | null;
+    customRequester: boolean;
+    sourceSize: [number, number] | null;
+    now: number;
+  };
   cpuMs: number;
   gpuMs: number | null;
   gpuStatus: "available" | "pending" | "unsupported";

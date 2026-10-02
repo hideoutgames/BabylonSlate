@@ -183,6 +183,9 @@ export class RenderScheduler {
       alwaysRender: this.alwaysRender,
       continuous: this.continuous,
       dirty: this.dirty,
+      frameCap: this.frameCap,
+      nextRenderAt: this.nextRenderAt,
+      lastRenderAt: this.lastRenderAt,
     };
   }
 
