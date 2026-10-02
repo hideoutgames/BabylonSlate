@@ -11,7 +11,7 @@ export async function runTextureLeaseProof(backend: "webgl2" | "webgpu") {
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = 64;
   document.getElementById("root")!.append(canvas);
-  const engine: AbstractEngine = backend === "webgpu" ? await createAppWebGpuEngine(canvas) : new Engine(canvas, false, { preserveDrawingBuffer: true });
+  const engine = backend === "webgpu" ? await createAppWebGpuEngine(canvas) : new Engine(canvas, false, { preserveDrawingBuffer: true });
   const cache = new ResourceCache();
   const owner = bindResourceCacheToHandle(cache);
   const siblingOwner = bindResourceCacheToHandle(cache);
@@ -34,7 +34,7 @@ export async function runTextureLeaseProof(backend: "webgl2" | "webgpu") {
   owner.cache.acquireTexture = (...args) => { operations.acquisitions++; return originalAcquire(...args); };
   const originalCreate = engine.createVertexBuffer.bind(engine);
   engine.createVertexBuffer = (...args) => { operations.buffers++; return originalCreate(...args); };
-  const originalDynamic = engine.createDynamicVertexBuffer.bind(engine);
+  const originalDynamic: AbstractEngine["createDynamicVertexBuffer"] = engine.createDynamicVertexBuffer.bind(engine);
   engine.createDynamicVertexBuffer = (...args: Parameters<typeof originalDynamic>) => { operations.buffers++; return originalDynamic(...args); };
   const originalUpdate = engine.updateDynamicVertexBuffer.bind(engine);
   engine.updateDynamicVertexBuffer = (...args) => { operations.updates++; return originalUpdate(...args); };
