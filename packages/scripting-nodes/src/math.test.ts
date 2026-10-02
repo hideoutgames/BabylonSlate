@@ -33,6 +33,27 @@ function loadModule(source: string): Record<string, unknown> {
 }
 
 describe("math nodes", () => {
+  it.each([[5, 2, 2], [-5, 2, -2], [5, -2, -2], [6, 2, 3]])(
+    "Divide Int truncates %s / %s toward zero", (a, b, expected) => {
+      const registry = createDefaultNodeRegistry();
+      const graph: LogicGraph = {
+        id: "division", kind: "event",
+        nodes: [node(registry, "begin", "flow.event.beginPlay"),
+          node(registry, "divide", "math.div_int", { "default:a": a, "default:b": b }),
+          node(registry, "log", "debug.log")],
+        edges: [
+          { id: "exec", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "log", targetPinId: "execIn" },
+          { id: "value", sourceNodeId: "divide", sourcePinId: "out", targetNodeId: "log", targetPinId: "message" },
+        ],
+      };
+      const logs: string[] = [];
+      const mod = loadModule(compileGraph(graph, { assetGuid: "division", registry }).source);
+      (mod.onBeginPlay as (ctx: unknown) => void)({ formatValue: String,
+        log: (_severity: string, _category: string, value: string) => logs.push(value) });
+      expect(logs).toEqual([String(expected)]);
+    },
+  );
+
   it("exports at least one node definition", () => {
     expect(mathNodes.length).toBeGreaterThan(0);
     expect(mathNodes[0]?.id).toBeTruthy();

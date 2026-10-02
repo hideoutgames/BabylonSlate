@@ -25,7 +25,9 @@ function binary(
       pin("out", "out", "out", type),
     ],
     codegen: (ctx) => ({
-      out: `(${ctx.input("a")} ${op} ${ctx.input("b")})`,
+      out: type === INT && op === "/"
+        ? `Math.trunc(${ctx.input("a")} / ${ctx.input("b")})`
+        : `(${ctx.input("a")} ${op} ${ctx.input("b")})`,
     }),
   };
 }

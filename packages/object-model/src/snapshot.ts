@@ -1,5 +1,6 @@
 import { serializeTransform } from "@babylonslate/core";
 import type { World } from "./world";
+import { sanitizeInspectValue } from "./inspect-snapshot";
 
 export type WorldSnapshotObject = {
   guid: string;
@@ -34,7 +35,8 @@ function sortedVariables(
   const keys = [...variables.keys()].sort();
   const out: Record<string, unknown> = {};
   for (const key of keys) {
-    out[key] = variables.get(key);
+    const value = variables.get(key);
+    out[key] = value === undefined ? undefined : sanitizeInspectValue(value);
   }
   return out;
 }

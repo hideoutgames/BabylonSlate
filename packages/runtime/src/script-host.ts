@@ -76,6 +76,8 @@ export type ScriptColor = { x: number; y: number; z: number; w: number };
  * node from a later phase runs instead of throwing.
  */
 export interface ScriptHostServices {
+  /** Session seed shared with the world and trace metadata. */
+  seed?: number;
   /** Whether an object may receive authored calls during its owner's load. */
   canRunOwner?(owner: BObject): boolean;
   inputBindings?: InputBindingControls;
@@ -634,10 +636,11 @@ export class ScriptHost {
   private invokingOwner: BObject | null = null;
   private finalizingOwner: BObject | null = null;
   private commandResult = { success: true, output: "" };
-  private readonly rng: Rng = createSeededRng(1);
+  private readonly rng: Rng;
 
   constructor(services: ScriptHostServices) {
     this.services = services;
+    this.rng = createSeededRng(services.seed ?? 1);
   }
 
   async load(script: CompiledScript): Promise<void> {

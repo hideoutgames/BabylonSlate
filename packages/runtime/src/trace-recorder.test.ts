@@ -8,6 +8,30 @@ import { createInProcessRuntime } from "./driver";
 import { replayTracePayload } from "./trace-replay";
 
 describe("runtime trace recorder", () => {
+  it("records live object references and collections without interrupting ticks", () => {
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true });
+    try {
+      const world = runtime.getWorld();
+      const actor = world.createActor({ classId: "Actor", guid: "target" });
+      const component = world.createComponent({ classId: "ActorComponent", guid: "component" });
+      actor.attachComponent(component);
+      world.spawnActorNow(actor);
+      actor.setVariable("Target", actor);
+      actor.setVariable("Collection", new Map([["Component", component]]));
+      runtime.start();
+      runtime.executeConsoleCommand("snapshot start");
+      runtime.tick();
+      runtime.tick();
+      const trace = runtime.stopTrace()!;
+      expect(trace.frames).toHaveLength(2);
+      const snapshot = JSON.parse(trace.frames[1]!.snapshotText!);
+      expect(snapshot.actors[0].variables).toEqual({
+        Target: { guid: "target", classId: "Actor" },
+        Collection: { Component: { guid: "component", classId: "ActorComponent" } },
+      });
+    } finally { runtime.stop(); }
+  });
+
   it("records a session that replays to the same world snapshot", () => {
     const options = {
       seed: 9,

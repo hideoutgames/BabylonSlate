@@ -971,6 +971,7 @@ class InProcessRuntime implements RuntimeDriver {
     });
 
     this.scriptHost = new ScriptHost({
+      seed: options.seed,
       canRunOwner: (owner) => this.canRunOwner(owner),
       inputBindings: this.resolver.bindings,
       getInputState: (input) => this.resolver.getInputState(input),
