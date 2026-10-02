@@ -617,7 +617,7 @@ export function DocumentWorkspace() {
           walkAncestry(
             indexed
               ? classIdFromClassAsset(indexed)
-              : (indexed?.header.parentClass ?? "Actor"),
+              : "Actor",
             parentOf,
           ).includes("SceneLayerActor");
         const overlayWorkspace =

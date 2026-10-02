@@ -156,7 +156,7 @@ describe("Inspector prefab component details", () => {
     const radius = screen.getByTestId("property-prefab-root-prefab-movement-radius");
     fireEvent.change(radius, { target: { value: "0.6" } });
     fireEvent.blur(radius);
-    const movement = applyGraphChange.mock.calls.at(-1)![1].components.find(
+    const movement = applyGraphChange.mock.calls.at(-1)![1].components?.find(
       (component) => component.id === "prefab-movement",
     );
     expect(movement?.properties.radius).toBe(0.6);
@@ -173,7 +173,7 @@ describe("Inspector prefab component details", () => {
     });
     expect(applyGraphChange).toHaveBeenCalled();
     const next = applyGraphChange.mock.calls[0]![1];
-    const mesh = next.components.find(
+    const mesh = next.components?.find(
       (component) => component.id === "prefab-mesh",
     );
     expect(mesh?.transform?.position[2]).toBe(4);

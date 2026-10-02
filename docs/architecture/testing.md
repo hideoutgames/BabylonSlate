@@ -19,7 +19,7 @@ Launcher regressions cover project creation/edit/removal, explicit web folder/ZI
 | Agent rules, Cursor adapters, PR metadata, or non-site prose | Diff check only; no test, typecheck, or build process |
 | Root package/compiler/test configuration or an unknown path | All workspace typechecks and all root tooling contracts |
 
-For public API changes, select directly affected consumers for scoped typechecking. Workspace-wide `pnpm typecheck` still requires an explicit broader-run request. GitHub Verify independently reruns the full workspace typecheck, all tooling and distribution contracts, unsharded package coverage, uncovered editor tests, and every browser partition; local selection never removes those merge gates.
+For public API changes, select directly affected consumers for scoped typechecking. The editor application uses TypeScript strict checking, including its unit fixtures and browser proof hooks. Workspace-wide `pnpm typecheck` still requires an explicit broader-run request. GitHub Verify independently reruns the full workspace typecheck, all tooling and distribution contracts, unsharded package coverage, uncovered editor tests, and every browser partition; local selection never removes those merge gates.
 
 ## Responsive editor checks
 
