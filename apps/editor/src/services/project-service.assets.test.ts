@@ -1408,6 +1408,32 @@ describe("project documents as .babasset", () => {
     controller.dispose();
   });
 
+  it.each([false, true])("reconciles reverb when manual nav bake saves changed geometry (staged=%s)", async (staged) => {
+    const { service } = await scaffolded();
+    const scene = { ...createDefaultScene(), actors: [createActor("wall", "Wall", {
+      components: [createMeshComponent("wall-mesh", "box")],
+    })] };
+    await service.saveDocument("scene", MAIN_SCENE_FILE, scene);
+    let baked = 0;
+    const controller = createAudioReverbBakeController({
+      bake: async () => new Uint8Array([++baked]),
+      write: (entry) => service.writeSceneAudioReverbChunk(entry.path, entry.bytes, entry.payload),
+    });
+    await controller.flush(MAIN_SCENE_FILE, scene as unknown as Record<string, unknown>);
+    const next = structuredClone(scene);
+    next.actors[0]!.transform.position[0] = 20;
+    if (staged) await controller.flush(MAIN_SCENE_FILE, next as unknown as Record<string, unknown>);
+    await service.writeSceneNavmeshChunk(MAIN_SCENE_FILE, new Uint8Array([9]), next as unknown as Record<string, unknown>);
+    expect(await service.readAssetChunk(MAIN_SCENE_FILE, AUDIO_REVERB_CHUNK_ID)).toEqual(staged ? new Uint8Array([2]) : null);
+    // Export either joins its completed bake or bakes the now-saved geometry.
+    await controller.flushAll(await collectAudioReverbFlushScenes({
+      paths: [MAIN_SCENE_FILE], load: (path) => service.loadDocument("scene", path),
+    }));
+    expect(await service.readAssetChunk(MAIN_SCENE_FILE, AUDIO_REVERB_CHUNK_ID)).toEqual(new Uint8Array([2]));
+    expect(await service.readAssetChunk(MAIN_SCENE_FILE, NAVMESH_CHUNK_ID)).toEqual(new Uint8Array([9]));
+    controller.dispose();
+  });
+
   it.each(["save", "navmesh", "reverb"] as const)("follows a queued rename before a %s write without recreating the old file", async (kind) => {
     const { storage, service } = await scaffolded();
     const path = "assets/Queued.scene.babasset";

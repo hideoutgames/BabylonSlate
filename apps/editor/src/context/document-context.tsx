@@ -33,7 +33,6 @@ import { documentId, parseDocumentId, isAssetDocumentKind, isSceneWorkspaceKind,
 import {
   appendJournalLines,
   getTile,
-  hasJournal,
   normalizeTilemapPayload,
   readJournalLines,
   readThumbnail,
@@ -1489,7 +1488,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       projectService.setDerivedStorage(derived);
       const guid = projectService.guid;
       if (guid) {
-        setRecoveryAvailable(await hasJournal(derived, guid));
+        setRecoveryAvailable(resolveJournalLines(await readJournalLines(derived, guid)).length > 0);
       }
       await refreshProjectList();
       await captureMtimeSnapshot();
@@ -3848,7 +3847,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         const guid = projectService.guid;
         if (!guid) return false;
         const derived = await ensureDerived();
-        return journalBuffer.afterFlush(guid, () => hasJournal(derived, guid));
+        return journalBuffer.afterFlush(guid, async () =>
+          resolveJournalLines(await readJournalLines(derived, guid)).length > 0,
+        );
       },
       /** Open main graph without activating it (avoids GraphEditor stomping edits). */
       ensureMainGraphOpen: async () => {

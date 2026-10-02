@@ -85,6 +85,7 @@ import {
   writeThumbnail,
   ProjectSearchIndex,
   type BabassetHeader,
+  type ChunkInput,
   type BlobStore,
   type EncodeFn,
   stubEncodeKtx2,
@@ -1920,18 +1921,9 @@ export class ProjectService {
 
     if (isAssetDocumentPath(path)) {
       const guid = await this.guidForAsset(path);
-      let extraChunks = await this.extraChunksFor(path);
-      if (type === "Scene") {
-        const baked = this.sceneAudioReverb.get(guid);
-        if (baked?.fingerprint === staticAudioGeometryFingerprint(content as SerializedScene)) {
-          extraChunks = extraChunksWithAudioReverb(extraChunks, baked.bytes);
-        } else if (extraChunks.some((chunk) => chunk.id === AUDIO_REVERB_CHUNK_ID)) {
-          const saved = await this.readAssetDocument(path, "Scene");
-          if (staticAudioGeometryFingerprint(normalizeScene(saved.payload)) !== staticAudioGeometryFingerprint(content as SerializedScene)) {
-            extraChunks = extraChunks.filter((chunk) => chunk.id !== AUDIO_REVERB_CHUNK_ID);
-          }
-        }
-      }
+      const extraChunks = type === "Scene"
+        ? await this.sceneExtraChunksForWrite(path, content as SerializedScene, guid)
+        : await this.extraChunksFor(path);
       const bytes = await encodeAssetDocument(
         {
           type,
@@ -2004,6 +1996,25 @@ export class ProjectService {
     return decoded.chunks.get(chunkId) ?? null;
   }
 
+  /** Every Scene payload write must keep only probes matching that geometry. */
+  private async sceneExtraChunksForWrite(
+    path: string,
+    payload: SerializedScene | Record<string, unknown>,
+    guid: string,
+  ): Promise<ChunkInput[]> {
+    const extra = await this.extraChunksFor(path);
+    const fingerprint = staticAudioGeometryFingerprint(payload as SerializedScene);
+    const baked = this.sceneAudioReverb.get(guid);
+    if (baked?.fingerprint === fingerprint) return extraChunksWithAudioReverb(extra, baked.bytes);
+    if (extra.some((chunk) => chunk.id === AUDIO_REVERB_CHUNK_ID)) {
+      const saved = await this.readAssetDocument(path, "Scene");
+      if (staticAudioGeometryFingerprint(normalizeScene(saved.payload)) !== fingerprint) {
+        return extra.filter((chunk) => chunk.id !== AUDIO_REVERB_CHUNK_ID);
+      }
+    }
+    return extra;
+  }
+
   /** Persist Recast `exportNavMesh` bytes as the Scene `navmesh` extra chunk. */
   async writeSceneNavmeshChunk(
     path: string,
@@ -2022,14 +2033,15 @@ export class ProjectService {
       throw new Error("Engine plugin assets are read-only");
     }
     const storage = this.storageForPath(path);
-    const extra = extraChunksWithNavmesh(await this.extraChunksFor(path), bytes);
+    const guid = await this.guidForAsset(path);
+    const extra = extraChunksWithNavmesh(await this.sceneExtraChunksForWrite(path, payload, guid), bytes);
     const existing = await this.readExistingAssetMeta(path);
     const type = existing?.type ?? "Scene";
     const encoded = await encodeAssetDocument(
       {
         type,
         name: assetName(path),
-        guid: await this.guidForAsset(path),
+        guid,
         version: this.migrations.currentVersion(type),
         payload,
       },

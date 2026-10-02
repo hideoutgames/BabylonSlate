@@ -86,6 +86,18 @@ describe("journal coalescing", () => {
 });
 
 describe("journal replay", () => {
+  it("offers no recovery for a stream containing only discarded edits and close markers", () => {
+    const at = "2026-10-02T00:00:00Z";
+    const id = "graph:closed";
+    const lines = [
+      serializeJournalLine(journalRecord(id, new MoveNodeCommand("node", { x: 0, y: 0 }, { x: 99, y: 0 }))),
+      serializeJournalLine(journalDiscardLine(id, at)),
+      serializeJournalLine(journalDiscardLine("graph:clean", at)),
+    ];
+    expect(resolveJournalLines(lines)).toEqual([]);
+    expect(replayJournalLines(lines, new Map()).skipped).toEqual([]);
+  });
+
   it.each([false, true])("discards only a closed document's earlier edits, including renames=%s", (renamed) => {
     const graph: SerializedGraph = {
       nodes: [{ id: "node", type: "print", position: { x: 0, y: 0 }, data: {} }], edges: [],
