@@ -10,6 +10,8 @@ Two upstream constraints remain: VitePress 1.6.4 declares Vite 5, whose dev serv
 
 Security scans keep pull-request, push and individual comment events in separate cancellation groups. A comment cannot cancel the PR commit scan, and newer comments cannot cancel scans of earlier comments. Root Node tooling and distribution scripts use ESLint's recommended JavaScript rules, including undefined-name and unused-binding checks. `pnpm lint <files>` checks only those paths, and `pnpm typecheck --filter <workspace>` selects that workspace before invoking its script; unfiltered commands retain the full CI scope.
 
+GPU proof harnesses keep typed capture and lifecycle records. Missing native preprocessing textures or active WebGL sampler locations fail qualification with an explicit diagnostic.
+
 Agents run only explicit targeted test files/cases for changed behavior and directly affected consumers, with scoped static checks where relevant. Full local suites, coverage, all browser tests, workspace-wide checks and the cumulative `verify:local` diagnostic require an explicit user request; they are not automatic PR prerequisites. Prose/instruction-only changes use diff/link review. After repairs, rerun only affected checks and document why reused results still apply. Required GitHub CI is unchanged. The cumulative tooling described below remains available as an opt-in diagnostic; its `deliveryEligible` certificate is not required for targeted agent delivery.
 
 

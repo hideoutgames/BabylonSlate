@@ -83,8 +83,8 @@ export async function runSharedOutlineGeometryProof(backend: "webgl2" | "webgpu"
   const material = new StandardMaterial("Gray Control", scene);
   material.disableLighting = true; material.emissiveColor = new Color3(0.4, 0.4, 0.4);
   const waitFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-  const captures = [];
-  const cases = [];
+  const captures: Awaited<ReturnType<typeof capture>>["data"][] = [];
+  const cases: Awaited<ReturnType<typeof pair>>[] = [];
   const capture = async (name: string, coordinator = renderer) => {
     await onProgress?.({ stage: name, state: "preparing" });
     // Direct fixture edits bypass editor transaction invalidation. Re-probe

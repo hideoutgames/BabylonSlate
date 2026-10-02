@@ -30,6 +30,7 @@ export async function qualifyAreaEmission(engine: AbstractEngine, sourceSize: re
   const processor = new AreaLightTextureTools(engine);
   try {
     const native = await processor.processAsync(original);
+    if (!native) throw new Error("Native emission preprocessing produced no texture.");
     const pixels = await native.readPixels();
     if (!pixels) { native.dispose(); throw new Error("Native emission preprocessing produced no pixels."); }
     const bytes = new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength);

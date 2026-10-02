@@ -61,7 +61,20 @@ export async function runFrameGraphForwardProof(backend: "webgl2" | "webgpu" = "
     context.drawImage(canvas, 0, 0);
     return Array.from(context.getImageData(0, 0, copy.width, copy.height).data);
   };
-  const captures = [];
+  const captures: {
+    name: string;
+    classic: number[];
+    graph: number[];
+    classicDraws: number;
+    graphDraws: number;
+    readinessDraws: number;
+    prepared: Awaited<ReturnType<ForwardSceneFrameGraph["prepare"]>>;
+    result: ReturnType<ForwardSceneFrameGraph["render"]>;
+    width: number;
+    height: number;
+    frames: number[];
+    frozen: boolean;
+  }[] = [];
   const lifecycle = [];
   try {
     for (const mode of ["pbr", "cel"] as const) {

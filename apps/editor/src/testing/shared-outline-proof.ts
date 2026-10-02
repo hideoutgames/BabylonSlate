@@ -68,7 +68,7 @@ export async function runSharedOutlineProof(backend: "webgl2" | "webgpu",
     if (id === undefined) { id = nextObjectId++; objectIds.set(object, id); }
     return id;
   };
-  const snapshots = [];
+  const snapshots: Awaited<ReturnType<typeof capture>>[] = [];
   const waitFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
   const capture = async (name: string) => {
     await onProgress?.({ stage: name, state: "preparing" });

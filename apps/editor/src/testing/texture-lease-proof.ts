@@ -35,7 +35,7 @@ export async function runTextureLeaseProof(backend: "webgl2" | "webgpu") {
   const originalCreate = engine.createVertexBuffer.bind(engine);
   engine.createVertexBuffer = (...args) => { operations.buffers++; return originalCreate(...args); };
   const originalDynamic = engine.createDynamicVertexBuffer.bind(engine);
-  engine.createDynamicVertexBuffer = (...args) => { operations.buffers++; return originalDynamic(...args); };
+  engine.createDynamicVertexBuffer = (...args: Parameters<typeof originalDynamic>) => { operations.buffers++; return originalDynamic(...args); };
   const originalUpdate = engine.updateDynamicVertexBuffer.bind(engine);
   engine.updateDynamicVertexBuffer = (...args) => { operations.updates++; return originalUpdate(...args); };
   scene.onNewMaterialAddedObservable.add(() => operations.materials++);
