@@ -121,6 +121,8 @@ export type ControlMessage =
       gameInstanceClass?: string;
       /** Extra authored scenes `changescene` can instantiate by guid or name. */
       scenes?: Array<{ guid: string; scene: SerializedScene }>;
+      /** Baked navigation by canonical scene guid, selected before Begin Play. */
+      sceneNavmeshBytes?: Record<string, Uint8Array>;
       /** Overlay documents the session compositor can instantiate by guid or name. */
       sceneLayers?: Array<{ guid: string; layer: SerializedSceneLayer }>;
       /** When false, debug-tier console commands are stripped in the player. */

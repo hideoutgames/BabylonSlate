@@ -219,6 +219,8 @@ export interface RuntimeDriverOptions {
   gameInstanceClass?: string;
   /** Extra authored scenes `changescene` can instantiate by guid or name. */
   sceneLibrary?: Readonly<Record<string, SerializedScene>>;
+  /** Baked navigation keyed by canonical scene guid, selected before Begin Play. */
+  sceneNavmeshBytes?: Readonly<Record<string, Uint8Array>>;
   /** Display name or library key → canonical scene asset guid. */
   sceneGuidByKey?: Readonly<Record<string, string>>;
   /** Overlay documents the session compositor can instantiate by guid or name. */
@@ -446,6 +448,7 @@ interface SceneRealization {
   finished: boolean;
   departure: SceneDeparture | null;
   painted: (() => void) | null;
+  refreshNavigation: boolean;
 }
 
 interface SceneStream {
@@ -507,7 +510,8 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly onCommand?: (command: CommandMessage) => void;
   private readonly maxCatchUp = 4;
   private readonly dt: number;
-  private readonly physicsWorldKind: PhysicsWorldKind;
+  private physicsWorldKind: PhysicsWorldKind;
+  private physicsGeneration = 0;
   private gravity: [number, number, number];
   private readonly havokWasmUrl: string | undefined;
   private readonly preferSoftwarePhysics: boolean;
@@ -641,6 +645,9 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly delayWaiters: Array<{ remaining: number; resolve: () => void; owner?: BObject | null }> =
     [];
   private nav: NavigationBackend | null = null;
+  private readonly sceneNavmeshBytes = new Map<string, Uint8Array>();
+  private navSceneGuid: string | null = null;
+  private navigationInitialized = false;
   private readonly navAgentByActor = new Map<string, string>();
   private readonly navYawByActor = new Map<string, number>();
   private readonly navTargetByActor = new Map<string, NavPoint>();
@@ -687,6 +694,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.preferSoftwarePhysics = options.preferSoftwarePhysics ?? false;
     this.playScene = options.playScene;
     this.playSceneGuid = options.playSceneGuid ?? "play-scene";
+    for (const [guid, bytes] of Object.entries(options.sceneNavmeshBytes ?? {})) this.sceneNavmeshBytes.set(guid, bytes);
     this.gameInstanceClass = options.gameInstanceClass ?? "GameInstance";
     this.deferSceneModelsReady = options.deferSceneModelsReady === true;
     this.deferSceneLoadingPaint = options.deferSceneLoadingPaint === true;
@@ -1677,7 +1685,8 @@ class InProcessRuntime implements RuntimeDriver {
   async loadPhysics(): Promise<void> {
     if (this.stopped) throw sceneRealizationCancelled();
     const lifecycleId = this.lifecycleId;
-    const current = () => !this.stopped && lifecycleId === this.lifecycleId;
+    const generation = this.physicsGeneration;
+    const current = () => !this.stopped && lifecycleId === this.lifecycleId && generation === this.physicsGeneration;
     if (this.preferSoftwarePhysics) return;
     if (!(this.physicsSync.getBackend() instanceof SoftwarePhysicsBackend)) {
       return;
@@ -2672,7 +2681,7 @@ class InProcessRuntime implements RuntimeDriver {
       return;
     }
     if (!this.playWorldRealized) this.beginSceneRealization();
-    if (this.cooperativeSceneLoading) return this.waitForSceneRealization();
+    if (this.cooperativeSceneLoading || this.realization?.promise) return this.waitForSceneRealization();
   }
 
   /** Follow a replacement begun by Game Instance while the boot caller awaits. */
@@ -2706,14 +2715,35 @@ class InProcessRuntime implements RuntimeDriver {
       controller: new AbortController(), scene: this.playScene, guid: this.playSceneGuid,
       loadId: ++this.sceneLoadId, actors: [], layers: [], sceneInstance: null,
       promise: null, finished: false, departure, painted: null,
+      refreshNavigation: departure !== null,
     };
     this.realization = work;
     this.sceneLoadingProgress = 0;
     const steps = this.realizeSceneSteps(work);
-    if (this.cooperativeSceneLoading) {
+    const retirement = this.retireSceneSteps(work);
+    const nextKind = work.scene?.settings.physicsWorld ?? this.physicsWorldKind;
+    const replaceNative = nextKind !== this.physicsWorldKind && !(this.physicsSync.getBackend() instanceof SoftwarePhysicsBackend);
+    const initializeNavigation = this.sceneNavmeshBytes.has(work.guid) && !this.navigationInitialized;
+    if (this.cooperativeSceneLoading || replaceNative || initializeNavigation) {
       work.promise = Promise.resolve().then(async () => {
         await this.prepareSceneLoading(work);
-        await runSceneRealizationWork(steps, work.controller.signal, this.cooperativeSceneLoading!);
+        await runSceneRealizationWork(retirement, work.controller.signal, this.cooperativeSceneLoading ?? {});
+        if (nextKind !== this.physicsWorldKind && !(this.physicsSync.getBackend() instanceof SoftwarePhysicsBackend)) {
+          const gravity = work.scene?.settings.gravity ?? this.gravity;
+          const acquisition = createPhysicsBackend({ kind: nextKind, gravity: { x: gravity[0], y: gravity[1], z: gravity[2] },
+            havokWasmUrl: this.havokWasmUrl, allowSoftwareFallback: false }).then((backend) => {
+            try { this.checkRealization(work); } catch (error) { backend.dispose(); throw error; }
+            return backend;
+          });
+          const backend = await waitForSceneWork(acquisition, work.controller.signal);
+          this.installScenePhysics(work, backend);
+        }
+        if (initializeNavigation) {
+          await waitForSceneWork(initNavigation(), work.controller.signal);
+          this.navigationInitialized = true;
+        }
+        this.prepareSceneBackends(work);
+        await runSceneRealizationWork(steps, work.controller.signal, this.cooperativeSceneLoading ?? {});
       }).catch((error: unknown) => {
         this.failRealization(work);
         throw error;
@@ -2730,12 +2760,58 @@ class InProcessRuntime implements RuntimeDriver {
       return;
     }
     try {
+      while (!retirement.next().done) { /* Retire before replacing native ownership. */ }
+      this.prepareSceneBackends(work);
       while (!steps.next().done) { /* Immediate consumers retain synchronous ordering. */ }
     } catch (error) {
       this.failRealization(work);
       if (!isInfiniteLoopError(error) && !work.controller.signal.aborted) throw error;
     } finally {
+      retirement.return();
       steps.return();
+    }
+  }
+
+  private installScenePhysics(work: SceneRealization, backend: PhysicsBackend): void {
+    let sync: PhysicsWorldSync | undefined;
+    try {
+      this.checkRealization(work);
+      sync = new PhysicsWorldSync(backend, {
+        actorFilter: (actor) => actor.sceneLayerId == null && this.streamActorReady(actor),
+        deferUnsupportedConstraints: !this.preferSoftwarePhysics && backend instanceof SoftwarePhysicsBackend,
+      });
+      this.bindPhysicsContent(sync);
+      sync.syncFromWorld(this.world);
+    } catch (error) {
+      if (sync) sync.dispose(); else backend.dispose();
+      throw error;
+    }
+    this.physicsSync.dispose();
+    this.physicsSync = sync;
+    this.physicsWorldKind = backend.kind;
+    this.physicsGeneration++;
+  }
+
+  private prepareSceneBackends(work: SceneRealization): void {
+    this.checkRealization(work);
+    const kind = work.scene?.settings.physicsWorld ?? this.physicsWorldKind;
+    if (kind !== this.physicsWorldKind) {
+      const gravity = work.scene?.settings.gravity ?? this.gravity;
+      this.installScenePhysics(work, createSoftwarePhysicsBackend(kind, { x: gravity[0], y: gravity[1], z: gravity[2] }));
+    }
+    const bytes = this.sceneNavmeshBytes.get(work.guid);
+    if (bytes && (work.refreshNavigation || this.navSceneGuid !== work.guid)) {
+      const nav = createNavigationBackend();
+      try { nav.importNavMesh(bytes); } catch (error) { nav.dispose(); throw error; }
+      this.clearNavAgents();
+      this.nav?.dispose();
+      this.nav = nav;
+      this.navSceneGuid = work.guid;
+    } else if (!bytes) {
+      this.clearNavAgents();
+      this.nav?.dispose();
+      this.nav = null;
+      this.navSceneGuid = null;
     }
   }
 
@@ -2822,8 +2898,6 @@ class InProcessRuntime implements RuntimeDriver {
 
   private *realizeSceneSteps(work: SceneRealization): Generator<void, void, unknown> {
     const checkpoint = () => this.checkRealization(work);
-    checkpoint();
-    yield* this.retireSceneSteps(work);
     checkpoint();
     this.tilemapAnimationTimeMs = 0;
     if (this.hasAnimatedTiles) this.emit({ type: "tilemapAnimationTime", elapsedMs: 0 });
@@ -3137,10 +3211,15 @@ class InProcessRuntime implements RuntimeDriver {
 
   async loadNavMesh(bytes: Uint8Array): Promise<void> {
     const lifecycleId = this.lifecycleId;
+    const sceneGuid = this.playSceneGuid;
+    this.sceneNavmeshBytes.set(sceneGuid, bytes);
     await initNavigation();
     if (this.stopped || lifecycleId !== this.lifecycleId) throw sceneRealizationCancelled();
+    this.navigationInitialized = true;
+    if (sceneGuid !== this.playSceneGuid) return;
     this.nav ??= createNavigationBackend();
     this.nav.importNavMesh(bytes);
+    this.navSceneGuid = sceneGuid;
     this.clearNavAgents();
     if (this.playWorldRealized) {
       this.registerNavAgents();
@@ -5361,6 +5440,10 @@ class InProcessRuntime implements RuntimeDriver {
     this.movement.dispose();
     this.physicsSync.dispose();
     this.overlayPhysicsSync.dispose();
+    this.clearNavAgents();
+    this.nav?.dispose();
+    this.nav = null;
+    this.sceneNavmeshBytes.clear();
     if (this.showPathfinding || this.showNavAgent) {
       this.emit({ type: "debugNavigation", agents: [], world: this.physicsWorldKind });
     }

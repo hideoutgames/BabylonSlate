@@ -45,6 +45,8 @@ Rejected alternative for 2D: constraining Havok (companion anchor + 6DOF per bod
 
 `SceneSettings.physicsWorld: "3d" | "2d"` (defaults from `viewportMode` on create). A scene never mixes worlds. Overlay **SceneLayer** actors always simulate in a dedicated Rapier 2D world on the Play session, independent of that world setting — overlay and world bodies do not collide. See [scene-layers.md](scene-layers.md). Explicit collider shapes that do not apply to the active world are rejected by `parseColliderProperties`; an omitted shape still uses that world's default box.
 
+Change Scene retires departing actors before replacing the main physics backend when the target dimension differs. The target Havok/Rapier backend is ready before its actors begin; loading failures stay visible and cancellation disposes any late native allocation. The overlay world survives this replacement. Software-only/headless sessions make the equivalent dimension change synchronously.
+
 ## Tick integration
 
 Order (from P3): `gameInstance` → `actors` → `components` → **`physics`** → `postPhysics`.

@@ -2,6 +2,8 @@
 
 Shared surface for navmesh bake and worker queries (engineplan §14.2). Implementation: `@babylonslate/navigation`. Recast wasm is allowed; no React, no Babylon, no `@recast-navigation/babylon`.
 
+Play hosts supply `sceneNavmeshBytes` on the load control/runtime options, keyed by canonical scene asset guid. Change Scene selects the target mesh before actor Begin Play, resets departing obstacles/costs, and clears navigation for an unbaked target. The legacy `loadNavMesh` control records bytes for its current scene. Runtime Stop disposes its navigation session, including in-process Play.
+
 Tile-cache obstacles, 2D bake input, scripting nodes, and crowd `MoveTo` are in (`p11-nav-blockers-2d`). **P19** (`p19-nav-leftovers`) wires Auto Bake On Save, bake-bounds collect, and cost volumes (Detour poly area + query-filter costs). Unwalkable tile-cache carve is unchanged. §18: `packages/runtime/src/p11-acceptance.test.ts` (including a dynamic box that **closes** an open route after MoveTo is running) plus `e2e/p11-ai.spec.ts` (including Auto Bake On Save).
 
 ## Package
