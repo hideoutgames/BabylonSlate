@@ -268,7 +268,7 @@ describe("document tab close requests", () => {
     });
     expect(state.closeDocument).not.toHaveBeenCalled();
     expect(state.closeProject).toHaveBeenCalledTimes(target === "project" ? 1 : 0);
-    expect(screen.queryByTestId("dirty-close-dialog")).toBeNull();
+    await waitFor(() => expect(screen.queryByTestId("dirty-close-dialog")).toBeNull());
   });
 
   it("keeps tabs open when edits remain dirty after a successful save", async () => {
