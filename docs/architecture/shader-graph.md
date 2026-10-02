@@ -18,6 +18,11 @@ with a `domain`, and a **Material Function** is a reusable typed subgraph.
 Babylon-free. `@babylonslate/render` maps a lowered plan onto real Babylon
 NodeMaterial blocks and owns every GPU resource.
 
+Function dependency discovery and body validation visit each referenced function
+once per validation, including disconnected call nodes. Shared bodies report
+diagnostics at the first call path that reaches them; missing functions and
+recursive call chains remain errors without expanding every path through a DAG.
+
 ## Noise and node search
 
 **Add Node → Noise** provides portable Babylon noise blocks in Material and
