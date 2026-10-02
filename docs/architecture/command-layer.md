@@ -24,6 +24,8 @@ Editor wiring: `DocumentProvider` owns an `EditSession` configured with `DEFAULT
 
 The active document ends its merge group at a new pointer gesture, input Enter, focus exit or discrete non-text key action. Multiple fingers within a continuous gesture and typing within one field remain grouped. Undo/Redo also close the merge group; Redo preserves the inverse from the start of the original gesture, so a subsequent Undo restores the same starting state.
 
+Whole-asset replacements, graph node snapshots, and graph members/components/function graphs also count their retained snapshots toward the byte budget. A merged gesture accounts for both its first inverse and latest forward snapshots, so shrinking the final payload cannot hide a large original value from history trimming. An edit larger than the budget still applies, but its oversized history entry is dropped.
+
 **First-edit auto-lock (P15):** after the plugin read-only check and a successful apply, `afterMutatingApply` calls `SourceControlService.autoLock(path)` once per document path this session. Later edits on a path whose lock is already ours notify subscribers only when its banner or edit mode actually changes, so a scrub does not re-render the editor a second time per move. Source Control off, `autoLockOnEdit` false, or a plugin-read-only document skips it. HTTP 409 / offline never blocks the edit — see [source-control.md](source-control.md). Advisory theirs-locks use the same early-return shape as `isPluginDocumentReadOnly` (`isMutatingApplyBlocked`).
 
 ## Ownership

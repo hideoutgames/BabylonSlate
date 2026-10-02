@@ -10,6 +10,10 @@ export interface ApplyResult<TDoc> {
   command: EditCommand<TDoc>;
 }
 
+interface BudgetedEntry<TDoc> extends StackEntry<TDoc> {
+  bytes: number;
+}
+
 /**
  * Per-document undo/redo stack with entry + byte budgets and merge-key
  * coalescing. Closing a document drops the stack (owned by EditSession).
@@ -17,8 +21,8 @@ export interface ApplyResult<TDoc> {
 export class DocumentEditStack<TDoc> {
   private readonly maxEntries: number;
   private readonly maxBytes: number;
-  private undoStack: StackEntry<TDoc>[] = [];
-  private redoStack: StackEntry<TDoc>[] = [];
+  private undoStack: BudgetedEntry<TDoc>[] = [];
+  private redoStack: BudgetedEntry<TDoc>[] = [];
   private mergeOpen = false;
 
   constructor(options: DocumentEditStackOptions) {
@@ -40,7 +44,7 @@ export class DocumentEditStack<TDoc> {
 
   get undoBytes(): number {
     return this.undoStack.reduce(
-      (sum, entry) => sum + (entry.command.byteSize ?? 0),
+      (sum, entry) => sum + entry.bytes,
       0,
     );
   }
@@ -56,8 +60,11 @@ export class DocumentEditStack<TDoc> {
     ) {
       // Keep the inverse from the first gesture event; update the forward cmd.
       top.command = command;
+      // A merged group retains the first inverse as well as the last forward
+      // snapshots. A small final value must not hide a large original payload.
+      top.bytes = (top.inverse.byteSize ?? 0) + (command.byteSize ?? 0);
     } else {
-      this.undoStack.push({ command, inverse });
+      this.undoStack.push({ command, inverse, bytes: Math.max(command.byteSize ?? 0, inverse.byteSize ?? 0) });
     }
     this.redoStack = [];
     this.mergeOpen = true;
