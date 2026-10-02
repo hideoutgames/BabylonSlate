@@ -48,7 +48,8 @@ const { docs, loadAssetThumbnail, layout } = vi.hoisted(() => {
     sourceControl: {
       enabled: false,
       requestRefresh: vi.fn(),
-      lockStateForPath: () => null,
+      lockStateForPath: vi.fn<() => "mine" | null>().mockReturnValue(null),
+      transferLock: vi.fn(async () => {}),
       lockForPath: () => null,
       refuseIfTheirs: () => null,
     },
@@ -187,6 +188,11 @@ afterEach(async () => {
   docs.thumbnailVersions = {};
   layout.phone = false;
   docs.openDocument.mockClear();
+  docs.repathDocument.mockClear();
+  docs.refreshAssetRegistry.mockClear();
+  docs.sourceControl.enabled = false;
+  docs.sourceControl.lockStateForPath.mockReset().mockReturnValue(null);
+  docs.sourceControl.transferLock.mockReset().mockResolvedValue(undefined);
   docs.openDocuments = [];
   docs.pluginDescriptors = [];
   docs.showPluginContent = false;
@@ -459,6 +465,28 @@ describe("ContentBrowserWorkspace grid window", () => {
     fireEvent.click(screen.getByTestId("content-browser-move-confirm"));
     await waitFor(() => expect(screen.queryByTestId("content-browser-move-dialog")).toBeNull());
     expect(asset.path).toBe("assets/Characters/tex-0.babasset");
+  });
+
+  it("repairs open paths and refreshes a successful rename even when the lock transfer fails", async () => {
+    const asset = texture(0);
+    installRegistry([asset]);
+    const renamed = { ...asset, path: "assets/Renamed.texture.babasset" };
+    docs.assetRegistry = { ...(docs.assetRegistry as object), renameAsset: vi.fn(async () => renamed) };
+    docs.sourceControl.enabled = true;
+    docs.sourceControl.lockStateForPath.mockReturnValue("mine");
+    docs.sourceControl.transferLock.mockImplementation(async () => {
+      expect(docs.repathDocument).toHaveBeenCalledWith("texture", asset.path, renamed.path);
+      expect(docs.refreshAssetRegistry).toHaveBeenCalled();
+      throw new Error("Lock service unavailable");
+    });
+    render(<ContentBrowserWorkspace />);
+    fireEvent.contextMenu(screen.getByTestId(`content-item-${asset.path}`));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
+    fireEvent.change(screen.getByTestId("content-browser-name-input"), { target: { value: "Renamed" } });
+    fireEvent.click(screen.getByTestId("content-browser-name-confirm"));
+    expect(await screen.findByText("Lock service unavailable")).toBeTruthy();
+    expect(docs.sourceControl.transferLock).toHaveBeenCalledWith(asset.path, renamed.path);
+    expect(screen.queryByTestId("content-browser-name-dialog")).toBeNull();
   });
 
   it("retains the new asset draft when the storage write fails", async () => {

@@ -2,6 +2,8 @@
 
 Spec: [engineplan.md](../engineplan.md) §12. Package: `@babylonslate/source-control`. Editor host: `SourceControlService` in `apps/editor`. Secrets and CORS-bypass HTTP live in `@babylonslate/vfs`.
 
+After a successful asset or folder rename, the Content Browser repairs open document paths and refreshes the registry before transferring remote locks. A lock-service failure reports the error while keeping tabs attached to the file's new location. Moves likewise refresh completed file operations when a later lock transfer fails.
+
 The engine is **not** a git client. It implements Git LFS file locking only. Clone, commit, pull, push, and merge stay in Working Copy (iPad) or a desktop git client. Web production has no source control (GitHub LFS has no CORS). Playwright uses `/?test=1` / `VITE_TEST_MODE` with `FakeLockProvider`.
 
 ## Opt-in
