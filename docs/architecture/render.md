@@ -567,6 +567,8 @@ strand the previous shadow profile; drawing and dynamic geometry uploads still
 wait for successful scene admission. Admission distinguishes missing or stale
 resources from a temporary readiness check on current resources: only the former
 starts asynchronous preparation, so the latter can present its next ready frame.
+Renderer diagnostics also snapshot scheduler and view admission gates, making a
+paused or obstructed viewport distinguishable from shader/resource waiting.
 
 ## AudioService (P16)
 

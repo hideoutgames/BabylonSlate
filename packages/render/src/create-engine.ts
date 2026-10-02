@@ -2090,7 +2090,12 @@ function initializeEngine(
     return { ...(readDiagnostics ??= createRenderDiagnostics(
       scene, () => lastRenderCpuMs, () => rttPresent?.readbackMs() ?? null,
       () => ({ sample: lastPressureSample, gpuAttribution: gpuAttribution() }),
-    ))(), presentation: { ...presentationStats }, rendererWork: worldRenderer.diagnostics() };
+    ))(), presentation: { ...presentationStats }, rendererWork: worldRenderer.diagnostics(),
+      frameAdmission: { ...scheduler.gateState(), worldLoading,
+        pendingPresentations: pendingPresentations.size,
+        registeredViewEnabled: registeredView?.enabled ?? null,
+        registeredViewRequestedEnabled: registeredView ? registeredViewIsEnabled(registeredView) : null,
+        rttPresenting: rttPresent?.isPresenting() ?? false, contextLost } };
   };
   const loadingScope = (owner?: SceneLayerLoadIdentity) => {
     const generation = loadGeneration;
