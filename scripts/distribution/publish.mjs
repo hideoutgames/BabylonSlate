@@ -43,8 +43,8 @@ export async function publishRelease({ identity, platformFiles, appleState }, ap
     validateArtifacts(platformArtifactNames(platform, identity.packageVersion), [...files.keys()]);
     verifyChecksums(platform, files);
     const manifest = JSON.parse(files.get("build-manifest.json").toString("utf8"));
-    if (manifest.platform !== platform) throw new Error(`${platform} manifest identity differs from the validated build`);
-    const { toolchains: platformToolchains = {}, platform: _platform, macosSigned: signed, ...manifestIdentity } = manifest;
+    const { toolchains: platformToolchains = {}, platform: manifestPlatform, macosSigned: signed, ...manifestIdentity } = manifest;
+    if (manifestPlatform !== platform) throw new Error(`${platform} manifest identity differs from the validated build`);
     if (JSON.stringify(stable(manifestIdentity)) !== JSON.stringify(stable(identity))) throw new Error(`${platform} manifest identity differs from the validated build`);
     for (const [key, value] of Object.entries(platformToolchains)) {
       if (toolchains[key] !== undefined && toolchains[key] !== value) throw new Error(`Conflicting toolchain version: ${key}`);

@@ -5,7 +5,6 @@ import {
 import { resolveExecutionPlan, workerArguments } from "./execution-plan.mjs";
 import {
   pnpmCommand,
-  repoRoot,
   runCommand,
   toolCli,
 } from "./process-runner.mjs";
