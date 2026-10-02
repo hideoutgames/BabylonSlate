@@ -44,6 +44,7 @@ import { payloadPixelSize, textureEncodeSettingsFor } from "./resolve-gpu-textur
 import { DEFAULT_THUMBNAIL_MAX_EDGE, generateThumbnailBytes } from "./thumbnails";
 import { AREA_EMISSION_CHUNK_KIND, areaEmissionChunkId, currentAreaEmissionChunk, decodeAreaEmission, type AreaEmissionProgress } from "./area-emission";
 import { sha256Hex } from "./bytes";
+import { moveStorageFile, moveStorageTree } from "./storage-move";
 
 export type AreaEmissionProcessor = (request: { source: Uint8Array; sourceHash: string; mime?: string }, signal: AbortSignal, onProgress?: (progress: AreaEmissionProgress) => void) => Promise<Uint8Array>;
 
@@ -470,12 +471,7 @@ export class AssetRegistry {
       throw new Error(`Target path already exists: ${newPath}`);
     }
     const bytes = await storage.readBinary(asset.path);
-    const dir = newPath.includes("/")
-      ? newPath.slice(0, newPath.lastIndexOf("/"))
-      : "";
-    if (dir) await storage.mkdir(dir, true);
-    await storage.writeBinary(newPath, bytes);
-    await storage.remove(asset.path);
+    await moveStorageFile(storage, asset.path, newPath, bytes);
     // Keep inbound refs: guid identity is unchanged, only the storage path moves.
     if (this.byPath.get(asset.path) === asset) {
       this.byPath.delete(asset.path);
@@ -533,17 +529,10 @@ export class AssetRegistry {
       writeBlob: (sha256, data) => blobs.writeBlob(sha256, data),
     });
     if (newPath !== asset.path) {
-      const parent = newPath.includes("/")
-        ? newPath.slice(0, newPath.lastIndexOf("/"))
-        : "";
-      if (parent) await storage.mkdir(parent, true);
-      await storage.writeBinary(newPath, encoded);
-      await storage.remove(asset.path);
-      this.removeFromIndex(asset);
+      await moveStorageFile(storage, asset.path, newPath, fileBytes, encoded);
       return this.indexHeader(asset.rootId, newPath, readBabassetHeader(encoded));
     }
     await storage.writeBinary(asset.path, encoded);
-    this.removeFromIndex(asset);
     return this.indexHeader(asset.rootId, asset.path, readBabassetHeader(encoded));
   }
 
@@ -731,37 +720,29 @@ export class AssetRegistry {
       (asset) =>
         asset.rootId === rootId && isWithinFolder(asset.path, fromPath),
     );
-    for (const asset of assets) {
-      const suffix = asset.path.slice(fromPath.length + 1);
-      const newAssetPath = `${toPath}/${suffix}`;
-      const relative = newAssetPath.startsWith(`${root.pathPrefix}/`)
-        ? newAssetPath.slice(root.pathPrefix.length + 1)
-        : newAssetPath;
-      await this.moveAsset(asset.header.guid, rootId, relative);
-    }
-
-    // Relocate folder markers / empty folders.
-    const nestedFolders = [...this.knownFolders].filter((folder) =>
-      isWithinFolder(folder, fromPath),
-    );
-    for (const folder of nestedFolders) {
-      this.knownFolders.delete(folder);
-      const suffix =
-        folder === fromPath ? "" : folder.slice(fromPath.length + 1);
-      const next = suffix ? `${toPath}/${suffix}` : toPath;
-      this.knownFolders.add(next);
-      const markerFrom = `${folder}/${FOLDER_MARKER_NAME}`;
-      if (await storage.exists(markerFrom)) {
-        await storage.mkdir(next, true);
-        const text = await storage.readText(markerFrom);
-        await storage.writeText(`${next}/${FOLDER_MARKER_NAME}`, text);
+    // Hold every affected asset's write queue while copying the complete tree,
+    // so a queued encode or save cannot land in the directory being removed.
+    const guids = assets.map((asset) => asset.header.guid).sort();
+    const move = async (index: number): Promise<void> => {
+      if (index < guids.length) {
+        return this.withAssetWrite(guids[index]!, () => move(index + 1));
       }
-    }
-
-    if (await storage.exists(fromPath)) {
-      await storage.remove(fromPath);
-    }
-    this.knownFolders.add(toPath);
+      const folders = await moveStorageTree(storage, fromPath, toPath);
+      for (const asset of assets) {
+        const current = this.byGuid.get(asset.header.guid);
+        if (!current || !isWithinFolder(current.path, fromPath)) continue;
+        const path = `${toPath}/${current.path.slice(fromPath.length + 1)}`;
+        this.byPath.delete(current.path);
+        const moved = { ...current, path };
+        this.byGuid.set(current.header.guid, moved);
+        this.byPath.set(path, moved);
+      }
+      for (const folder of [...this.knownFolders]) {
+        if (isWithinFolder(folder, fromPath)) this.knownFolders.delete(folder);
+      }
+      for (const folder of folders) this.knownFolders.add(folder ? `${toPath}/${folder}` : toPath);
+    };
+    await move(0);
   }
 
   async importFile(
@@ -1558,9 +1539,9 @@ export class AssetRegistry {
     mtime: number | null = null,
   ): IndexedAsset {
     const existingAtPath = this.byPath.get(path);
-    if (existingAtPath) this.removeFromIndex(existingAtPath);
+    if (existingAtPath) this.removeFromIndex(existingAtPath, existingAtPath.header.guid === header.guid);
     const existingByGuid = this.byGuid.get(header.guid);
-    if (existingByGuid) this.removeFromIndex(existingByGuid);
+    if (existingByGuid) this.removeFromIndex(existingByGuid, true);
 
     const indexed: IndexedAsset = { rootId, path, header, placeholder, mtime };
     this.byGuid.set(header.guid, indexed);
@@ -1637,7 +1618,7 @@ export class AssetRegistry {
     if (this.legacyAtlasReferrers.size > 0) this.scheduleAtlasStatusFlush();
   }
 
-  private removeFromIndex(asset: IndexedAsset): void {
+  private removeFromIndex(asset: IndexedAsset, preserveInbound = false): void {
     this.byGuid.delete(asset.header.guid);
     if (this.byPath.get(asset.path) === asset) {
       this.byPath.delete(asset.path);
@@ -1652,7 +1633,7 @@ export class AssetRegistry {
     // Remaining referrers are rewritten to None by Content Browser delete
     // (`ProjectService.clearDeletedAssetReferences`), not here — Skybox
     // Creator replace deletes then recreates the same guid.
-    this.inbound.delete(asset.header.guid);
+    if (!preserveInbound) this.inbound.delete(asset.header.guid);
   }
 }
 

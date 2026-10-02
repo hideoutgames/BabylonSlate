@@ -9,6 +9,8 @@ Shared surface for P2 Content Browser, import, thumbnails, and texture compressi
 3. **Payloads on demand.** Chunk bytes load through an accounted accessor. Full LRU resource cache is P4; P2 ships a thin byte-accounted loader so open stays near-zero payload bytes.
 4. **File create/delete outside undo.** Registry owns asset files; `packages/edit` owns in-document edits ([command-layer.md](command-layer.md)).
 
+Saving or renaming an indexed asset preserves inbound GUID references while rebuilding its outbound edges. Folder moves copy all files and empty directories, including source files and sidecars outside the asset index, before removing the source. Case-only renames use a recovery copy on case-insensitive volumes; a failed destination write restores the original, and failed recovery reports the retained backup path. Existing destinations are rejected rather than overwritten. These portable copies protect reported I/O failures; they are not filesystem-atomic across a process crash.
+
 ## Content roots
 
 ```ts

@@ -17,6 +17,26 @@ async function createStorage(): Promise<MemoryStorageAdapter> {
   return storage;
 }
 
+/** Case-preserving filesystem boundary, as on common Windows/macOS project volumes. */
+class CaseInsensitiveStorage extends MemoryStorageAdapter {
+  private async diskPath(path: string): Promise<string> {
+    let resolved = "";
+    for (const part of path.split("/").filter((part) => part && part !== ".")) {
+      const entries = await super.readdir(resolved).catch(() => []);
+      const name = entries.find((entry) => entry.name.toLowerCase() === part.toLowerCase())?.name ?? part;
+      resolved = resolved ? `${resolved}/${name}` : name;
+    }
+    return resolved;
+  }
+  override async readBinary(path: string) { return super.readBinary(await this.diskPath(path)); }
+  override async writeBinary(path: string, data: Uint8Array) { return super.writeBinary(await this.diskPath(path), data); }
+  override async exists(path: string) { return super.exists(await this.diskPath(path)); }
+  override async readdir(path: string) { return super.readdir(await this.diskPath(path)); }
+  override async mkdir(path: string, recursive = true) { return super.mkdir(await this.diskPath(path), recursive); }
+  override async remove(path: string) { return super.remove(await this.diskPath(path)); }
+  override async stat(path: string) { return super.stat(await this.diskPath(path)); }
+}
+
 async function writeAsset(
   storage: MemoryStorageAdapter,
   path: string,
@@ -56,6 +76,103 @@ async function writeAsset(
 }
 
 describe("AssetRegistry", () => {
+  it.each(["rename", "move"])("preserves an asset after a case-only %s on a case-insensitive filesystem", async (operation) => {
+    const storage = new CaseInsensitiveStorage();
+    await storage.openDocumentsProject("CaseSensitiveNames");
+    await storage.writeBinary("assets/Wood.babasset", await encodeAssetDocument({
+      guid: "wood", type: "Material", name: "Wood", version: 1, payload: { roughness: 0.4 },
+    }));
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    if (operation === "rename") await registry.renameAsset("wood", "wood");
+    else await registry.moveAsset("wood", "project", "wood.babasset");
+    expect((await storage.readdir("assets")).map((entry) => entry.name)).toEqual(["wood.babasset"]);
+    expect((await decodeAssetDocument(await storage.readBinary("assets/wood.babasset"))).payload).toEqual({ roughness: 0.4 });
+    const reopened = new AssetRegistry(storage);
+    await reopened.mountRoot(projectContentRoot());
+    expect(reopened.getByGuid("wood")?.path).toBe("assets/wood.babasset");
+  });
+
+  it("restores the original asset when a case-only rename cannot write its destination", async () => {
+    const storage = new CaseInsensitiveStorage();
+    await storage.openDocumentsProject("FailedRename");
+    await writeAsset(storage, "assets/Wood.babasset", { guid: "wood", name: "Wood", type: "Material" });
+    const original = await storage.readBinary("assets/Wood.babasset");
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const write = storage.writeBinary.bind(storage);
+    vi.spyOn(storage, "writeBinary").mockImplementation(async (path, bytes) => {
+      if (path === "assets/wood.babasset") throw new Error("Disk full");
+      return write(path, bytes);
+    });
+    await expect(registry.renameAsset("wood", "wood")).rejects.toThrow("Disk full");
+    expect(await storage.readBinary("assets/Wood.babasset")).toEqual(original);
+    expect(registry.getByGuid("wood")?.path).toBe("assets/Wood.babasset");
+  });
+
+  it.each(["case-only", "new-parent"])("moves unindexed files and empty folders along with assets (%s)", async (operation) => {
+    const storage = new CaseInsensitiveStorage();
+    await storage.openDocumentsProject("MoveTree");
+    await writeAsset(storage, "assets/Source/wood.babasset", { guid: "wood", name: "wood", type: "Material" });
+    await storage.writeText("assets/Source/source.png", "original input");
+    await storage.writeText("assets/Source/.hidden", "sidecar");
+    await storage.mkdir("assets/Source/empty/nested", true);
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const parent = operation === "case-only" ? "" : "archive";
+    await registry.moveFolder("project", "Source", parent, "source");
+    const destination = `assets/${parent ? `${parent}/` : ""}source`;
+    expect(await storage.readText(`${destination}/source.png`)).toBe("original input");
+    expect(await storage.readText(`${destination}/.hidden`)).toBe("sidecar");
+    expect((await storage.stat(`${destination}/empty/nested`)).isDir).toBe(true);
+    expect(registry.getByGuid("wood")?.path).toBe(`${destination}/wood.babasset`);
+    expect((await storage.readdir(`assets${parent ? `/${parent}` : ""}`)).map((entry) => entry.name)).toContain("source");
+    const reopened = new AssetRegistry(storage);
+    await reopened.mountRoot(projectContentRoot());
+    expect(reopened.getByGuid("wood")?.path).toBe(`${destination}/wood.babasset`);
+  });
+
+  it("refuses a folder move into an aliased descendant on a case-insensitive volume", async () => {
+    const storage = new CaseInsensitiveStorage();
+    await storage.openDocumentsProject("RecursiveMove");
+    await storage.writeText("assets/Source/source.png", "source");
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    await expect(registry.moveFolder("project", "Source", "source/nested")).rejects.toThrow("into itself");
+    expect(await storage.readText("assets/Source/source.png")).toBe("source");
+  });
+
+  it("keeps a source folder intact if copying any unindexed file fails", async () => {
+    const storage = await createStorage();
+    await storage.writeText("assets/source/notes.txt", "important notes");
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const write = storage.writeBinary.bind(storage);
+    vi.spyOn(storage, "writeBinary").mockImplementation(async (path, bytes) => {
+      if (path === "assets/moved/notes.txt") throw new Error("Disk full");
+      return write(path, bytes);
+    });
+    await expect(registry.moveFolder("project", "source", "", "moved")).rejects.toThrow("Disk full");
+    expect(await storage.readText("assets/source/notes.txt")).toBe("important notes");
+    expect(await storage.exists("assets/moved")).toBe(false);
+  });
+
+  it("retains incoming references while reindexing or renaming a referenced asset", async () => {
+    const storage = await createStorage();
+    await writeAsset(storage, "assets/material.babasset", { guid: "material", type: "Material", name: "material", dependencies: ["texture"] });
+    await writeAsset(storage, "assets/texture.babasset", { guid: "texture", type: "Texture", name: "texture", dependencies: ["old"] });
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    await writeAsset(storage, "assets/texture.babasset", { guid: "texture", type: "Texture", name: "texture", dependencies: ["new"] });
+    await registry.reindexPath("assets/texture.babasset");
+    expect(registry.showReferences("texture").inbound).toEqual(["material"]);
+    expect(registry.showReferences("old").inbound).toEqual([]);
+    expect(registry.showReferences("new").inbound).toEqual(["texture"]);
+    await registry.renameAsset("texture", "Renamed");
+    expect(registry.showReferences("texture").inbound).toEqual(["material"]);
+    expect(registry.showReferences("new").inbound).toEqual(["texture"]);
+  });
+
   it("mounts the project root and indexes headers only", async () => {
     const storage = await createStorage();
     await writeAsset(storage, "assets/tex.babasset", {
