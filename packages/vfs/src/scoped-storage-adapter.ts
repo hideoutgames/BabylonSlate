@@ -294,7 +294,7 @@ export class ScopedStorageAdapter implements ProjectStorage {
   }
 
   async readdir(path: string): Promise<DirEntry[]> {
-    path = scopedStoragePath(path, true);
+    path = scopedStoragePath(path === "." ? "" : path, true);
     const folder = this.getFolder();
     const { entries } = await this.withScope(() =>
       this.plugin.readdir({ folder: folder.id, path }),

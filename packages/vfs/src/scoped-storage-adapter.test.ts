@@ -308,6 +308,18 @@ describe("ScopedStorageAdapter", () => {
     ]);
   });
 
+  it("lists the project root with the portable dot spelling used by project exports", async () => {
+    const plugin = createMockPlugin();
+    prefs.set("babylonslate:scoped-folder", JSON.stringify({ id: "export-root", name: "Game" }));
+    vi.mocked(plugin.readdir).mockImplementation(async ({ path }) => {
+      if (path !== "") throw new Error("Wrong native root path");
+      return { entries: [{ name: "project.json", isDir: false, size: 2 }] };
+    });
+    const adapter = new ScopedStorageAdapter(plugin);
+    await adapter.init();
+    expect((await adapter.readdir(".")).map((entry) => entry.name)).toEqual(["project.json"]);
+  });
+
   it("maps NOT_FOUND plugin errors to a clear file message", async () => {
     const plugin = createMockPlugin();
     prefs.set(
