@@ -55,13 +55,13 @@ describe("rewriteRepoSourceHref", () => {
     expect(rewriteRepoSourceHref("#overview", "engineplan.md")).toBe("#overview");
   });
 
-  it("preserves local JSON evidence while resolving repository JSON links", () => {
-    for (const href of [
-      "../assets/renderer-qualification/measurements.json",
-      "./evidence/shadow-self-shadowing/corrected.json?raw=1#settings",
+  it("resolves JSON evidence relative to its doc without losing repository source links", () => {
+    for (const [href, target] of [
+      ["../assets/renderer-qualification/measurements.json", "docs/assets/renderer-qualification/measurements.json"],
+      ["./evidence/shadow-self-shadowing/corrected.json?raw=1#settings", "docs/design/evidence/shadow-self-shadowing/corrected.json?raw=1#settings"],
     ]) {
       expect(rewriteRepoSourceHref(href, "design/renderer-qualification.md"))
-        .toBe(href);
+        .toBe(`${GITHUB_BLOB_BASE}${target}`);
     }
     expect(rewriteRepoSourceHref("../../release/changelog.json", "design/perf-budget.md"))
       .toBe(`${GITHUB_BLOB_BASE}release/changelog.json`);

@@ -11,8 +11,6 @@ const REPO_ROOT_PREFIXES = [
   "e2e/",
 ];
 
-// JSON evidence is a documentation asset. Repository JSON links still resolve
-// through a root prefix or an explicit path outside docs, like other assets.
 const SOURCE_FILE = /\.(?:ts|tsx|js|jsx|mjs|cjs|css|mdc|vue)$/i;
 
 export function rewriteRepoSourceHref(href: string, fromDocPath: string): string {
@@ -48,6 +46,12 @@ export function rewriteRepoSourceHref(href: string, fromDocPath: string): string
   if (resolved === ".." || resolved.startsWith("../")) {
     const repoPath = path.posix.normalize(path.posix.join("docs", resolved));
     return `${GITHUB_BLOB_BASE}${repoPath}${suffix}`;
+  }
+
+  // VitePress does not copy arbitrary linked JSON files into its public output.
+  // Link evidence to its real repository path, relative to the current doc.
+  if (/\.json$/i.test(pathname)) {
+    return `${GITHUB_BLOB_BASE}docs/${resolved}${suffix}`;
   }
 
   if (SOURCE_FILE.test(pathname)) {
