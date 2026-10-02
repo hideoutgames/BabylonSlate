@@ -1438,6 +1438,37 @@ describe("project documents as .babasset", () => {
     expect(await storage.exists(path)).toBe(false);
   });
 
+  it.each(["rename", "delete"] as const)("creates a fresh GUID when a path is reused after %s", async (operation) => {
+    const { service } = await scaffolded();
+    const path = "assets/Reusable.class.babasset";
+    await service.saveDocument("graph", path, { nodes: [], edges: [] });
+    await service.loadDocument("graph", path); // Populate the pre-registry path cache.
+    const previousGuid = service.guidForPath(path)!;
+    const moved = operation === "rename" ? await service.registry!.renameAsset(previousGuid, "Moved") : null;
+    if (operation === "delete") await service.registry!.deleteAsset(previousGuid);
+    expect(service.guidForPath(path)).toBeNull();
+    await service.saveDocument("graph", path, { nodes: [], edges: [] });
+    const newGuid = service.guidForPath(path);
+    expect(newGuid).not.toBeNull();
+    expect(newGuid).not.toBe(previousGuid);
+    if (moved) expect(service.registry!.getByGuid(previousGuid)?.path).toBe(moved.path);
+    else expect(service.registry!.getByGuid(previousGuid)).toBeUndefined();
+  });
+
+  it("uses reindexed on-disk identity instead of a previously loaded path GUID", async () => {
+    const { service, storage } = await scaffolded();
+    const path = "assets/Replaced.class.babasset";
+    await service.saveDocument("graph", path, { nodes: [], edges: [] });
+    await service.loadDocument("graph", path);
+    const replacement = await decodeAssetDocument(await storage.readBinary(path));
+    replacement.guid = "replaced-guid";
+    await storage.writeBinary(path, await encodeAssetDocument(replacement));
+    await service.registry!.reindexPath(path);
+    expect(service.guidForPath(path)).toBe("replaced-guid");
+    await service.saveDocument("graph", path, { nodes: [], edges: [], properties: { edited: true } });
+    expect((await decodeAssetDocument(await storage.readBinary(path))).guid).toBe("replaced-guid");
+  });
+
   it("writes a Scene audioReverb extra chunk and keeps navmesh", async () => {
     const { service } = await scaffolded();
     const scene = (await service.loadDocument(

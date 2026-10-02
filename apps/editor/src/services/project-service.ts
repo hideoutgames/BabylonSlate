@@ -1919,9 +1919,10 @@ export class ProjectService {
     }
 
     if (isAssetDocumentPath(path)) {
+      const guid = await this.guidForAsset(path);
       let extraChunks = await this.extraChunksFor(path);
       if (type === "Scene") {
-        const baked = this.sceneAudioReverb.get(await this.guidForAsset(path));
+        const baked = this.sceneAudioReverb.get(guid);
         if (baked?.fingerprint === staticAudioGeometryFingerprint(content as SerializedScene)) {
           extraChunks = extraChunksWithAudioReverb(extraChunks, baked.bytes);
         } else if (extraChunks.some((chunk) => chunk.id === AUDIO_REVERB_CHUNK_ID)) {
@@ -1941,7 +1942,7 @@ export class ProjectService {
             (content as { displayName: string }).displayName.trim() !== ""
               ? (content as { displayName: string }).displayName.trim()
               : isInputAssetType(type) && existing?.name ? existing.name : assetName(path),
-          guid: await this.guidForAsset(path),
+          guid,
           version,
           payload: content as unknown as Record<string, unknown>,
         },
@@ -2148,10 +2149,10 @@ export class ProjectService {
   }
 
   guidForPath(path: string): string | null {
-    const cached = this.assetGuids.get(path);
-    if (cached) return cached;
-    const indexed = this.assetRegistry?.list().find((asset) => asset.path === path);
-    return indexed?.header.guid ?? null;
+    // The mounted registry owns identity after moves, deletions, and reindexing.
+    // A former path must not lend its GUID to a new asset created there.
+    if (this.assetRegistry) return this.assetRegistry.getByPath(path)?.header.guid ?? null;
+    return this.assetGuids.get(path) ?? null;
   }
 
   private async readExistingAssetMeta(path: string): Promise<{
@@ -2196,8 +2197,8 @@ export class ProjectService {
   }
 
   private async guidForAsset(path: string): Promise<string> {
-    const cached = this.assetGuids.get(path);
-    if (cached) return cached;
+    const indexed = this.assetRegistry?.getByPath(path);
+    if (indexed) return indexed.header.guid;
     const storage = this.storageForPath(path);
     if (await storage.exists(path)) {
       try {

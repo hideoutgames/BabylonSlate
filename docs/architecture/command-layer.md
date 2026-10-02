@@ -96,6 +96,8 @@ Interactive edits mark the document dirty on apply. `applyGraphChange` and `appl
 
 Queued document and Scene bake writes resolve the asset's current path from its GUID after earlier moves finish. A queued Save cannot recreate an old path or resurrect a deleted asset.
 
+The mounted asset registry is authoritative for path-to-GUID lookup. Reusing a moved or deleted path creates a fresh asset identity; replacing and reindexing a file also replaces any earlier cached identity for that path.
+
 Per-edit update cost: each applied edit bumps the document context once. Consumers that recompute on that bump keep their published values when nothing they depend on changed:
 
 - `ValidationProvider.setDiagnostics` keeps the current list when a panel recomputes an equal one (Compiler Results for a scene, graph validation), so a selected diagnostic stays selected and its consumers do not re-render.
