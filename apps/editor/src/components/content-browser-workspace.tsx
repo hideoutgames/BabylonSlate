@@ -2164,11 +2164,14 @@ export function ContentBrowserWorkspace({
         setBusy(true);
         setOperationError(null);
         try {
-          await applyRegistryMoves(moves);
+          try {
+            await applyRegistryMoves(moves);
+          } finally {
+            await refreshAssetRegistry();
+          }
         } catch (error) {
           setOperationError(error instanceof Error ? error.message : String(error));
         } finally {
-          await refreshAssetRegistry();
           setBusy(false);
         }
       })();
