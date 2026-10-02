@@ -77,7 +77,7 @@ describe("tile-cache obstacles and static carve", () => {
       nav.dispose();
       expect(nav.findPath({ x: -4, y: 0, z: 0 }, { x: 4, y: 0, z: 0 })).toEqual([]);
       expect(destroyQuery).toHaveBeenCalledTimes(1);
-      const filter = destroyQuery.mock.contexts[0]?.defaultFilter.raw;
+      const filter = (destroyQuery.mock.contexts[0] as NavMeshQuery | undefined)?.defaultFilter.raw;
       expect(destroyNative.mock.calls.filter(([resource]) => resource === filter)).toHaveLength(1);
       nav.importNavMesh(bytes);
       expect(nav.findPath({ x: -4, y: 0, z: 0 }, { x: 4, y: 0, z: 0 }).length).toBeGreaterThan(1);
