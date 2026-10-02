@@ -71,7 +71,7 @@ test("explicit Node and docs tests use the lighter unit workload", () => {
   assert.equal(unitProfile([]), "dom");
 });
 
-test("scoped lint forwards only the selected files to the package manager", async (t) => {
+test("scoped lint and typecheck preserve the selected files and workspace", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "scoped lint "));
   const config = join(directory, "resources.json");
   const manager = join(directory, "package-manager.mjs");
@@ -96,6 +96,11 @@ test("scoped lint forwards only the selected files to the package manager", asyn
   assert.deepEqual(JSON.parse(scoped.output), ["exec", "eslint", "scripts/test-runner.mjs"]);
   const all = await runTests("lint", [], options);
   assert.deepEqual(JSON.parse(all.output), ["exec", "eslint", "."]);
+  const types = await runTests("typecheck", ["--filter", "editor", "--noEmit"], options);
+  assert.deepEqual(JSON.parse(types.output), ["--workspace-concurrency=1", "--filter", "editor", "-r", "typecheck", "--noEmit"]);
+  const equals = await runTests("typecheck", ["--filter=docs-site"], options);
+  assert.deepEqual(JSON.parse(equals.output), ["--workspace-concurrency=1", "--filter=docs-site", "-r", "typecheck"]);
+  await assert.rejects(runTests("typecheck", ["--filter"], options), /requires a workspace selector/);
 });
 
 test("one resolved policy reaches child worker settings regardless of local CI flags", async (t) => {
