@@ -579,6 +579,7 @@ it.each(["isReady", "render"] as const)("applies a new shadow profile while %s i
   camera.outputRenderTarget = new RenderTargetTexture("native", 32, scene);
   const sun = new DirectionalLight("sun", new Vector3(0, -1, 1), scene);
   const controller = sceneShadowController(scene);
+  controller.register(sun, true);
   setSceneRenderSettings(scene, { shadows: normalizeShadowSettings({ profile: "medium", cascades: 1 }) });
   controller.sync();
   expect(controller.generator(sun)?.getShadowMap()?.getSize().width).toBe(2048);
