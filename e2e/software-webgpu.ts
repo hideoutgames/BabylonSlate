@@ -5,5 +5,9 @@ export const SOFTWARE_WEBGPU_ARGS = [
   "--use-webgpu-adapter=swiftshader",
   ...(process.platform === "linux" ? [
     "--enable-features=Vulkan", "--use-vulkan=swiftshader", "--disable-vulkan-surface",
+    // Functional fixtures retain the application's frame cap. Linux's software
+    // compositor can otherwise leave a browser animation frame queued after a
+    // backend switch even with a visible document and all engine gates open.
+    "--disable-frame-rate-limit",
   ] : []),
 ];

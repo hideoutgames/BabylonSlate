@@ -148,6 +148,14 @@ These have already produced false-passing tests, so check against them before tr
 
 Projects: `desktop-chrome` (full suite) and `ipad-landscape` (`hasTouch`, device scale factor 2, iPad Pro 11 landscape 1194×834). iPad portrait is unsupported — there is no `ipad-portrait` project. The suite builds with `VITE_TEST_MODE=true` and serves an exact-source artifact on an owned ephemeral loopback port. Default test timeout is 60s. Dirty Play shows the Preparing Play dialog before `play-overlay` mounts; specs that click Play after editing use `clickPlayAndWaitForOverlay` in `e2e/play.ts` (60s overlay wait) rather than the 5s default visibility timeout. Long dirty-Play cases (`p7`, `p10`, `p11` NavMesh, scene post-process) also raise `test.setTimeout`.
 
+The shared Linux software WebGPU launch settings use Vulkan SwiftShader with
+Chromium's frame-rate limiter disabled. This targets observed animation-frame
+delivery stalls after switching backends: the document and engine remained
+active while a queued callback stopped advancing. BabylonSlate's own viewport
+frame cap and the tests' readiness deadlines and pixel assertions remain active.
+These software fixtures qualify functionality, not device performance; native
+GPU performance runs omit the software launch settings.
+
 Material browser regressions also check parameter name uniqueness and RGBA defaults, link breaking inside a pin's safe zone, and saved graph edits reaching live Scene and Prefab shader inputs while preserving mesh identity. The viewport test hosts expose the assigned NodeMaterial input values and mesh/material IDs only in test mode.
 
 The Scene Defaults stack case in `engine-settings.spec.ts` also checks compact desktop rows, coarse-pointer layout, long asset names, Z-Order editing, and responsive post-process toggles. This one case runs on iPad as well as desktop; the discovery contract keeps the other Engine Settings cases desktop-only.
