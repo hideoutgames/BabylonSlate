@@ -32,6 +32,8 @@ UI never imports Capacitor; all I/O goes through `createStorage()` in `@babylons
 
 Browser project writes require OPFS; an unavailable or denied filesystem reports an error instead of accepting temporary in-memory saves. Project handles keep their existing ids, while metadata maps new projects to distinct hashed directories. Legacy directories remain readable; opening a remembered name alias copies its shared legacy contents into an independent directory, and deleting an unresolved alias preserves other projects' files. Tests inject an explicit OPFS filesystem boundary.
 
+Project lifecycle operations serialize by id across adapter instances and use Web Locks across browser tabs when available, so a second legacy migration cannot replay over a newer save. Metadata merges use a separate origin-wide Web Lock. Deletion reconciles the latest metadata after filesystem I/O, preserving unrelated project registrations.
+
 Node operations validate relative path segments and root containment, including siblings whose names share the project prefix. `readdir(".")` lists the project root on every adapter, including external mobile folders. Full project exports propagate directory-listing failures so an unreadable subtree cannot silently produce a partial backup.
 
 ### External tier / Working Copy spike

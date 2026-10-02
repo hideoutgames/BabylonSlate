@@ -10,6 +10,22 @@ const META_KEY = "babylonslate:opfs-meta";
 /** Reads of a file whose snapshot a concurrent write replaced, before giving up. */
 const OPFS_READ_ATTEMPTS = 4;
 const STALE_SNAPSHOT_ERRORS = new Set(["NotReadableError", "NotFoundError"]);
+const lifecycleQueues = new Map<string, Promise<void>>();
+
+/** Serialize migration/binding across adapters and, with Web Locks, browser tabs. */
+function withProjectLifecycle<T>(id: string, work: () => Promise<T>): Promise<T> {
+  const previous = lifecycleQueues.get(id) ?? Promise.resolve();
+  const next = previous.then(() => {
+    const locks = typeof navigator === "undefined" ? undefined : navigator.locks;
+    return locks ? locks.request(`babylonslate:opfs:${id}`, work) : work();
+  });
+  const settled = next.then(() => undefined, () => undefined);
+  lifecycleQueues.set(id, settled);
+  void settled.then(() => {
+    if (lifecycleQueues.get(id) === settled) lifecycleQueues.delete(id);
+  });
+  return next;
+}
 
 interface OpfsMeta {
   currentId: string | null;
@@ -30,6 +46,17 @@ function saveMeta(meta: OpfsMeta): void {
   localStorage.setItem(META_KEY, JSON.stringify(meta));
 }
 
+/** Keep different projects' metadata merges atomic across tabs as well. */
+function updateMeta(mutate: (meta: OpfsMeta) => void): Promise<void> {
+  const update = () => {
+    const meta = loadMeta();
+    mutate(meta);
+    saveMeta(meta);
+  };
+  const locks = typeof navigator === "undefined" ? undefined : navigator.locks;
+  return locks ? locks.request("babylonslate:opfs-meta", update) : Promise.resolve().then(update);
+}
+
 /** Durable browser storage. Hosts without OPFS must report the failure to the caller. */
 export class OpfsStorageAdapter implements ProjectStorage {
   private folder: ProjectFolderHandle | null = null;
@@ -45,13 +72,13 @@ export class OpfsStorageAdapter implements ProjectStorage {
     return this.root;
   }
 
-  private remember(handle: ProjectFolderHandle, directory: string): ProjectFolderHandle {
-    const meta = loadMeta();
-    const existing = meta.projects.find((project) => project.id === handle.id);
-    if (existing) existing.directory = directory;
-    else meta.projects.push({ id: handle.id, name: handle.name, directory });
-    meta.currentId = handle.id;
-    saveMeta(meta);
+  private async remember(handle: ProjectFolderHandle, directory: string): Promise<ProjectFolderHandle> {
+    await updateMeta((meta) => {
+      const existing = meta.projects.find((project) => project.id === handle.id);
+      if (existing) existing.directory = directory;
+      else meta.projects.push({ id: handle.id, name: handle.name, directory });
+      meta.currentId = handle.id;
+    });
     this.folder = handle;
     return handle;
   }
@@ -82,10 +109,12 @@ export class OpfsStorageAdapter implements ProjectStorage {
 
   private async bind(name: string): Promise<ProjectFolderHandle> {
     const handle: ProjectFolderHandle = { id: `opfs:${name}`, name, tier: "opfs" };
-    const opfs = await this.getOpfsRoot();
-    const directory = await this.directoryFor(handle);
-    await opfs.getDirectoryHandle(directory, { create: true });
-    return this.remember(handle, directory);
+    return withProjectLifecycle(handle.id, async () => {
+      const opfs = await this.getOpfsRoot();
+      const directory = await this.directoryFor(handle);
+      await opfs.getDirectoryHandle(directory, { create: true });
+      return this.remember(handle, directory);
+    });
   }
 
   async pickProjectFolder(): Promise<ProjectFolderHandle> {
@@ -136,13 +165,18 @@ export class OpfsStorageAdapter implements ProjectStorage {
   }
 
   async releaseFolder(): Promise<void> {
+    const folder = this.getCurrentFolder();
     this.folder = null;
-    const meta = loadMeta();
-    meta.currentId = null;
-    saveMeta(meta);
+    await updateMeta((meta) => {
+      if (meta.currentId === folder?.id) meta.currentId = null;
+    });
   }
 
   async deleteProject(handle: ProjectFolderHandle): Promise<void> {
+    return withProjectLifecycle(handle.id, () => this.deleteProjectUnlocked(handle));
+  }
+
+  private async deleteProjectUnlocked(handle: ProjectFolderHandle): Promise<void> {
     if (handle.tier !== "opfs") {
       throw new Error(`OPFS adapter cannot delete tier ${handle.tier}`);
     }
@@ -159,11 +193,11 @@ export class OpfsStorageAdapter implements ProjectStorage {
         if (!(error instanceof DOMException && error.name === "NotFoundError")) throw error;
       }
     }
-    meta.projects = meta.projects.filter((project) => project.id !== handle.id);
-    if (meta.currentId === handle.id) {
-      meta.currentId = null;
-    }
-    saveMeta(meta);
+    // Another adapter may have registered or selected a project during disk I/O.
+    await updateMeta((latest) => {
+      latest.projects = latest.projects.filter((project) => project.id !== handle.id);
+      if (latest.currentId === handle.id) latest.currentId = null;
+    });
     if (this.folder?.id === handle.id) {
       this.folder = null;
     }
@@ -188,12 +222,14 @@ export class OpfsStorageAdapter implements ProjectStorage {
   private async projectDir(): Promise<FileSystemDirectoryHandle> {
     const folder = this.assertFolder();
     const opfs = await this.getOpfsRoot();
-    const directory = await this.directoryFor(folder);
-    const result = await opfs.getDirectoryHandle(directory, { create: true });
-    if (!loadMeta().projects.find((project) => project.id === folder.id)?.directory) {
-      this.remember(folder, directory);
-    }
-    return result;
+    const directory = loadMeta().projects.find((project) => project.id === folder.id)?.directory;
+    if (directory) return opfs.getDirectoryHandle(directory, { create: true });
+    return withProjectLifecycle(folder.id, async () => {
+      const directory = await this.directoryFor(folder);
+      const result = await opfs.getDirectoryHandle(directory, { create: true });
+      await this.remember(folder, directory);
+      return result;
+    });
   }
 
   private async resolveHandle(
@@ -315,7 +351,7 @@ export class OpfsStorageAdapter implements ProjectStorage {
     return out;
   }
 
-  async mkdir(path: string, recursive = true): Promise<void> {
+  async mkdir(path: string, _recursive = true): Promise<void> {
     const root = await this.projectDir();
     let dir = root;
     for (const seg of this.split(path)) {

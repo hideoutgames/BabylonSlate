@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMemoryOpfsRoot } from "../../../../packages/vfs/src/test-support/memory-opfs";
-import { webcrypto } from "node:crypto";
 import { createEmptyProject, PROJECT_FILE } from "@babylonslate/core";
 import { MemoryStorageAdapter, OpfsStorageAdapter } from "@babylonslate/vfs";
 import { encodeBabasset } from "@babylonslate/assets";
@@ -9,7 +8,6 @@ import { ProjectService } from "./project-service";
 import { setEncodeQueuePauseReason } from "./encode-queue-pause";
 
 beforeEach(() => {
-  vi.stubGlobal("crypto", webcrypto);
   const root = createMemoryOpfsRoot();
   vi.stubGlobal("navigator", { storage: { getDirectory: async () => root } });
 });
