@@ -2,7 +2,7 @@
 
 ## Dependency advisory maintenance
 
-Vitest and its coverage provider use the patched 4.1.11 release line. Narrow workspace overrides update xmldom 0.9, brace-expansion 1/2/5, DOMPurify 3, fast-uri 3, js-yaml 4, Hono 4, ip-address 10, qs 6 and Undici 7 within their consumers' existing release lines. The lockfile records the resolved versions; overrides stop applying once a consumer resolves a newer safe version.
+Vitest and its coverage provider use the patched 4.1.11 release line. Narrow workspace overrides update xmldom 0.9, brace-expansion 1/2/5, DOMPurify 3, fast-uri 3, js-yaml 4, Hono 4, ip-address 10, qs 6 and Undici 7 within their consumers' existing release lines. The lockfile records the resolved versions; review and remove or advance overrides when upgrading consumers.
 
 Two upstream constraints remain. VitePress 1.6.4 declares Vite 5, whose dev server has no compatible fixes for [optimized-dependency traversal](https://github.com/advisories/GHSA-4w7w-66w2-5vf9), [Windows denied-file bypass](https://github.com/advisories/GHSA-fx2h-pf6j-xcff) and [Windows UNC editor paths](https://github.com/advisories/GHSA-v6wh-96g9-6wx3). Keep docs development local; the Windows UNC issue can still affect a local server. Published docs are static files. Vite also retains esbuild 0.21's [development-server cross-origin advisory](https://github.com/advisories/GHSA-67mh-4wv8-2f99), but the normal VitePress path uses esbuild's build/transform APIs, not its affected serve API.
 
