@@ -510,6 +510,7 @@ export class ForwardSceneFrameGraph {
     if (this.pending) return { path: "frameGraph", ready: false };
     if (!this.graph || this.preparedPostProcessRevision !== this.postProcessRevision ||
       this.preparedEffectsKey !== this.effectsKey(camera) || !this.outlineMatches() || this.shadows?.needsPreparation() ||
+      this.clustered?.needsPreparation(camera) ||
       !outputCurrent)
       return { path: "frameGraph", ready: false, preparationRequired: true };
     this.objects!.camera = camera;
