@@ -237,6 +237,17 @@ describe("OPFS / web storage adapter", () => {
     expect(await storage.exists("assets/x.txt")).toBe(true);
   });
 
+  it("requires an existing parent when creating a directory nonrecursively", async () => {
+    const storage = await openedAdapter();
+    await expect(storage.mkdir("missing/child", false)).rejects.toThrow();
+    expect(await storage.exists("missing")).toBe(false);
+    await storage.mkdir("parent", false);
+    await storage.mkdir("parent/child", false);
+    expect((await storage.stat("parent/child")).isDir).toBe(true);
+    await storage.mkdir("nested/child");
+    expect((await storage.stat("nested/child")).isDir).toBe(true);
+  });
+
   it("persists project meta across adapter instances", async () => {
     const storage = await openedAdapter();
     await storage.writeText("project.json", '{"persisted":true}');

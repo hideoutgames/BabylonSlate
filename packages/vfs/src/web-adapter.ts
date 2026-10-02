@@ -351,11 +351,12 @@ export class OpfsStorageAdapter implements ProjectStorage {
     return out;
   }
 
-  async mkdir(path: string, _recursive = true): Promise<void> {
+  async mkdir(path: string, recursive = true): Promise<void> {
     const root = await this.projectDir();
+    const parts = this.split(path);
     let dir = root;
-    for (const seg of this.split(path)) {
-      dir = await dir.getDirectoryHandle(seg, { create: true });
+    for (const [index, seg] of parts.entries()) {
+      dir = await dir.getDirectoryHandle(seg, { create: recursive || index === parts.length - 1 });
     }
   }
 
