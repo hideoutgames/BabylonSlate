@@ -2,6 +2,7 @@ import { createDefaultInputAssets } from "@babylonslate/core";
 import { normalizeImportedProject, readProjectArchive, PROJECT_IMPORT_LIMIT } from "./project-import";
 import { getHostPlatform, pickImportFiles } from "@babylonslate/vfs";
 import type { DockviewApi } from "dockview-react";
+import { staticAudioGeometryFingerprint } from "../lib/audio-reverb-bake";
 import { convertGlslToMaterial, normalizeMaterialDocument, normalizeMaterialFunctionDocument, validateMaterialParameterNames } from "@babylonslate/shader-graph";
 import { EditorExtensionService } from "./editor-extension-service";
 import { ENGINE_EXTENSION_LIBRARY_ROOT } from "../lib/engine-extension-library";
@@ -57,6 +58,7 @@ import {
   normalizePluginSettings,
   stableStringify,
   decodeBabasset,
+  encodeBabasset,
   DEFAULT_TEXTURE_ENCODE_SETTINGS,
   DOCUMENT_CHUNK_ID,
   EncodeQueue,
@@ -317,6 +319,8 @@ export class ProjectService {
   private pluginOverrides: Record<string, PluginEnableOverride> = {};
   /** Asset guids stay stable across saves so references survive a rewrite. */
   private readonly assetGuids = new Map<string, string>();
+  /** Unsaved geometry results become persistent only with the matching Scene. */
+  private readonly sceneAudioReverb = new Map<string, { fingerprint: string; bytes: Uint8Array }>();
   private readonly registryListeners = new Set<() => void>();
   private readonly ownWriteListeners = new Set<(write: OwnAssetWrite) => void>();
   private readonly diagnostics: string[] = [];
@@ -1021,6 +1025,7 @@ export class ProjectService {
     this.migrationPending = [];
     this.migrateOnSaveApproved = false;
     this.assetGuids.clear();
+    this.sceneAudioReverb.clear();
     this.assetRegistry = null;
     this.projectSearchIndex?.clear();
     this.projectSearchIndex = null;
@@ -1105,6 +1110,7 @@ export class ProjectService {
     this.migrationPending = [];
     this.migrateOnSaveApproved = false;
     this.assetGuids.clear();
+    this.sceneAudioReverb.clear();
     this.sessionEncodes.clear();
 
     const hasProject = await this.storage.exists(PROJECT_FILE);
@@ -1500,7 +1506,7 @@ export class ProjectService {
       const kind = documentKindForAssetType(asset.header.type);
       if (!kind || kind === "trace") continue;
       await onProgress?.(asset.path);
-      const content = await this.loadDocument(kind, asset.path, { strict: true });
+      const content = await this.loadDocument(kind, asset.path);
       const walked = replaceClassAssetReferences(content, replacements);
       const header = replaceClassAssetReferences({
         parentClass: asset.header.parentClass ?? null,
@@ -1718,7 +1724,6 @@ export class ProjectService {
   async loadDocument(
     kind: Exclude<DocumentKind, "content-browser">,
     path: string,
-    options: { strict?: boolean } = {},
   ): Promise<
     | SerializedScene
     | SerializedSceneLayer
@@ -1739,7 +1744,7 @@ export class ProjectService {
       ? assetTypeForDocumentKind(kind)
       : "Class";
     const raw = isAssetDocumentPath(path)
-      ? await this.readAssetDocument(path, fallbackType, options.strict)
+      ? await this.readAssetDocument(path, fallbackType)
       : await this.readLegacyJsonDocument(path, fallbackType);
 
     const migrated = loadPayloadWithMigration(this.migrations, {
@@ -1775,29 +1780,17 @@ export class ProjectService {
   private async readAssetDocument(
     path: string,
     fallbackType: string,
-    strict = false,
   ): Promise<{ type: string; version: number; payload: Record<string, unknown> }> {
-    try {
-      const decoded = await decodeAssetDocument(
-        await this.storageForPath(path).readBinary(path),
-        { blobs: this.blobsForPath(path) },
-      );
-      this.assetGuids.set(path, decoded.guid);
-      return {
-        type: decoded.type || fallbackType,
-        version: decoded.version,
-        payload: decoded.payload,
-      };
-    } catch (error) {
-      if (fallbackType === "Class" && !strict) {
-        return {
-          type: "Class",
-          version: this.migrations.currentVersion("Class"),
-          payload: {},
-        };
-      }
-      throw error;
-    }
+    const decoded = await decodeAssetDocument(
+      await this.storageForPath(path).readBinary(path),
+      { blobs: this.blobsForPath(path) },
+    );
+    this.assetGuids.set(path, decoded.guid);
+    return {
+      type: decoded.type || fallbackType,
+      version: decoded.version,
+      payload: decoded.payload,
+    };
   }
 
   /** Projects authored before assets moved to .babasset still load from JSON. */
@@ -1914,7 +1907,13 @@ export class ProjectService {
     }
 
     if (isAssetDocumentPath(path)) {
-      const extraChunks = await this.extraChunksFor(path);
+      let extraChunks = await this.extraChunksFor(path);
+      if (type === "Scene") {
+        const baked = this.sceneAudioReverb.get(await this.guidForAsset(path));
+        if (baked?.fingerprint === staticAudioGeometryFingerprint(content as SerializedScene)) {
+          extraChunks = extraChunksWithAudioReverb(extraChunks, baked.bytes);
+        }
+      }
       const bytes = await encodeAssetDocument(
         {
           type,
@@ -2019,7 +2018,7 @@ export class ProjectService {
     await this.assetRegistry?.reindexPath(path);
   }
 
-  /** Persist baked `audioReverb` bytes as the Scene extra chunk. */
+  /** Update only derived bytes; unsaved geometry waits for an explicit Scene save. */
   async writeSceneAudioReverbChunk(
     path: string,
     bytes: Uint8Array,
@@ -2028,27 +2027,34 @@ export class ProjectService {
     if (isPluginDocumentReadOnly(this.pluginDescriptors, path)) {
       throw new Error("Engine plugin assets are read-only");
     }
-    const storage = this.storageForPath(path);
-    const extra = extraChunksWithAudioReverb(await this.extraChunksFor(path), bytes);
-    const existing = await this.readExistingAssetMeta(path);
-    const type = existing?.type ?? "Scene";
-    const encoded = await encodeAssetDocument(
-      {
-        type,
-        name: assetName(path),
-        guid: await this.guidForAsset(path),
-        version: this.migrations.currentVersion(type),
-        payload,
-      },
-      {
-        blobs: this.blobsForPath(path),
-        extraChunks: extra,
-        parentClass: existing?.parentClass ?? null,
-        dependencies: assetHeaderDependencies(type, payload, this.assetRegistry?.list()),
-      },
-    );
-    await storage.writeBinary(path, encoded);
-    await this.assetRegistry?.reindexPath(path);
+    const registry = this.assetRegistry;
+    const asset = registry?.getByPath(path);
+    const baked = { fingerprint: staticAudioGeometryFingerprint(payload), bytes: bytes.slice() };
+    const write = async () => {
+      if (this.assetRegistry !== registry) return;
+      const storage = this.storageForPath(path);
+      const blobs = this.blobsForPath(path);
+      const decoded = await decodeBabasset(await storage.readBinary(path), (hash) => blobs.readBlob(hash));
+      const body = decoded.chunks.get(DOCUMENT_CHUNK_ID);
+      const persisted = body ? JSON.parse(new TextDecoder().decode(body)) : decoded.header.payload;
+      if (decoded.header.type !== "Scene") throw new Error("Audio reverb requires a Scene asset");
+      this.sceneAudioReverb.set(decoded.header.guid, baked);
+      if (staticAudioGeometryFingerprint(normalizeScene(persisted)) !== baked.fingerprint) return;
+      // Re-encode the persisted container under the same queue as Save. Preserve
+      // authored JSON, schema/header metadata, dependencies, and every other chunk.
+      const chunks = decoded.header.chunks.map((entry) => ({
+        id: entry.id, kind: entry.kind, mime: entry.mime, data: decoded.chunks.get(entry.id)!,
+      }));
+      const encoded = await encodeBabasset({
+        header: decoded.header,
+        chunks: extraChunksWithAudioReverb(chunks, baked.bytes),
+        writeBlob: (hash, data) => blobs.writeBlob(hash, data),
+      });
+      await storage.writeBinary(path, encoded);
+      await registry?.reindexPath(path);
+    };
+    if (asset) await registry!.withAssetWrite(asset.header.guid, write);
+    else await write();
   }
 
   /** Add or replace an imported Audio clip chunk (`source` / `source:N`). */

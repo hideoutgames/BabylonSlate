@@ -28,6 +28,44 @@ function createMockProjectService(
 }
 
 describe("DocumentService", () => {
+  it("keeps edits and one tab when concurrent reads of the same document finish out of order", async () => {
+    const service = new DocumentService();
+    const ref = { kind: "graph" as const, path: MAIN_CLASS_FILE, label: "Main" };
+    let finishSlowRead!: (value: { nodes: []; edges: [] }) => void;
+    const loadDocument = vi.fn()
+      .mockImplementationOnce(() => new Promise((resolve) => { finishSlowRead = resolve; }))
+      .mockResolvedValue({ nodes: [], edges: [] });
+    const project = createMockProjectService({ loadDocument });
+    const opened = vi.fn();
+    service.onIdentityChange(opened);
+    const slow = service.openDocument(project, ref);
+    const id = await service.openDocument(project, ref);
+    const entry = service.getDocument(id);
+    const edited = { nodes: [], edges: [], properties: { name: "Unsaved" } };
+    service.updateGraph(id, edited);
+    const revision = service.contentRevision(id);
+    finishSlowRead({ nodes: [], edges: [] });
+    expect(await slow).toBe(id);
+    expect(service.getDocument(id)).toBe(entry);
+    expect(entry).toMatchObject({ dirty: true, content: edited });
+    expect(service.contentRevision(id)).toBe(revision);
+    expect(service.getState().tabOrder.filter((tab) => tab === id)).toEqual([id]);
+    expect(opened).toHaveBeenCalledOnce();
+  });
+
+  it("does not commit a pending asset read into a replacement project", async () => {
+    const service = new DocumentService();
+    let finishRead!: (value: { nodes: []; edges: [] }) => void;
+    const previous = service.openDocument(createMockProjectService({
+      loadDocument: vi.fn(() => new Promise((resolve) => { finishRead = resolve; })),
+    }), { kind: "graph", path: MAIN_CLASS_FILE, label: "Old project Class" });
+    const rejected = expect(previous).rejects.toMatchObject({ name: "AbortError" });
+    await service.initializeFromProject(createMockProjectService(), createEmptyProject("Next"), createEmptyLayouts());
+    finishRead({ nodes: [], edges: [] });
+    await rejected;
+    expect(service.getOpenDocumentsOrdered().map((doc) => doc.id)).toEqual([CONTENT_BROWSER_ID]);
+  });
+
   it("waits for blocking UI before reading a scene and only closes the previous scene after success", async () => {
     const service = new DocumentService();
     const previous = { kind: "scene" as const, path: "assets/Previous.scene.babasset", label: "Previous" };

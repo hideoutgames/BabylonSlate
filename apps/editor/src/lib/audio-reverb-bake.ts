@@ -34,7 +34,7 @@ export type AudioReverbBakeController = {
   dispose(): void;
 };
 
-function actorsOf(scene: AudioReverbBakeScene): readonly SerializedActor[] {
+function actorsOf(scene: Pick<AudioReverbBakeScene, "actors">): readonly SerializedActor[] {
   return Array.isArray(scene.actors) ? scene.actors : [];
 }
 
@@ -58,7 +58,7 @@ function isDynamicRigidBody(actor: SerializedActor): boolean {
 
 /** Cheap key so background debounce is not reset by unrelated document bumps. */
 export function staticAudioGeometryFingerprint(
-  scene: AudioReverbBakeScene,
+  scene: Pick<AudioReverbBakeScene, "actors">,
 ): string {
   const parts: string[] = [];
   for (const actor of actorsOf(scene)) {

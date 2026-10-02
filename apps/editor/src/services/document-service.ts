@@ -236,6 +236,7 @@ export class DocumentService {
     }
 
     const id = documentId(ref);
+    const owner = this.state;
     const existing = this.state.openDocuments.get(id);
     if (existing) {
       options?.beforeCommit?.(ref);
@@ -254,6 +255,9 @@ export class DocumentService {
     options?.signal?.throwIfAborted();
     const loaded = await projectService.loadDocument(ref.kind, ref.path);
     options?.signal?.throwIfAborted();
+    if (this.state !== owner) {
+      throw new DOMException("The document's project was closed", "AbortError");
+    }
     const content = editorTabContentForKind(
       ref.kind,
       loaded,
@@ -270,8 +274,16 @@ export class DocumentService {
 
     options?.beforeCommit?.(ref);
     options?.signal?.throwIfAborted();
-    this.state.openDocuments.set(id, entry);
-    this.state.tabOrder.push(id);
+    if (this.state !== owner) {
+      throw new DOMException("The document's project was closed", "AbortError");
+    }
+    // Another opener may have committed and been edited while this read was
+    // pending. Keep that tab's identity, layout, content, and dirty revision.
+    const alreadyOpened = this.state.openDocuments.has(id);
+    if (!alreadyOpened) {
+      this.state.openDocuments.set(id, entry);
+      this.state.tabOrder.push(id);
+    }
     if (ref.kind === "scene") {
       this.closeOtherSceneDocuments(id);
     }
@@ -279,7 +291,7 @@ export class DocumentService {
     if (setActive) {
       this.state.activeDocumentId = id;
     }
-    this.emitIdentity({ type: "opened", id });
+    if (!alreadyOpened) this.emitIdentity({ type: "opened", id });
     return id;
   }
 
