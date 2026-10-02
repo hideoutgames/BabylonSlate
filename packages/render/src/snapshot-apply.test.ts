@@ -815,23 +815,29 @@ describe("createPlayMesh", () => {
     expect(light!.name).toBe("authoredLight:4");
   });
 
-  it("realizes independent light and camera parts, preserves them on property writes, and retires removed helpers", () => {
+  it.each(["primitive", "model"] as const)("realizes independent light and camera parts beside a %s, preserves property writes, and retires helpers", async (visualKind) => {
     const handle = createTestEngine();
     handles.push(handle);
     const { scene } = handle;
     setupDefaultViewport(scene);
     const binding = createSnapshotSceneBinding();
+    const modelGuid = visualKind === "model" ? "model" : null;
+    if (modelGuid) {
+      binding.modelBytes = new Map([[modelGuid, encodeTriangleGlb()]]);
+      binding.modelSources = installModelSources(binding);
+    }
     const part = (componentId: string, meshKind: string, x: number) => ({ componentId, meshKind,
       position: [x, 0, 0] as [number, number, number], rotation: [0, 0, 0, 1] as [number, number, number, number], scale: [1, 1, 1] as [number, number, number] });
-    const command: AssignMeshCommand = { type: "assignMesh", slotId: 0, meshKind: "box", meshAssetGuid: null,
+    const command: AssignMeshCommand = { type: "assignMesh", slotId: 0, meshKind: "box", meshAssetGuid: modelGuid,
       camera: { fieldOfView: 35, isDefault: true }, parts: [
-        part("body", "box", 0),
+        { ...part("body", "box", 0), meshAssetGuid: modelGuid },
         { ...part("lamp", "light:point", 1), light: { color: [1, 0, 0], intensity: 2, enabled: true } },
         { ...part("fill", "light:hemispheric", 0), light: { color: [0, 0, 1], intensity: 0.3, enabled: true } },
         { ...part("wide", "camera", 2), camera: { fieldOfView: 80, isDefault: false } },
         { ...part("detail", "camera", 5), camera: { fieldOfView: 35, isDefault: true } },
       ] };
     applyAssignMesh(scene, binding, command);
+    await binding.slotAnimLoads?.get(0);
     applySnapshotToScene(scene, binding, { frameId: 1, tickIndex: 1, alpha: 1, actorCount: 1, actors: [{ slotId: 0, position: { x: 10, y: 0, z: 0 },
       rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 2, y: 2, z: 2 }, flags: SNAPSHOT_FLAG_VISIBLE }] });
     const lamp = scene.getLightByName("authoredLight:0") as PointLight;
@@ -841,6 +847,8 @@ describe("createPlayMesh", () => {
     expect(lamp.position.asArray()).toEqual([12, 0, 0]);
     expect(lamp.diffuse.asArray()).toEqual([1, 0, 0]);
     expect(fill.intensity).toBe(0.3);
+    expect(lamp.isEnabled()).toBe(true);
+    expect(fill.isEnabled()).toBe(true);
     expect(wide.position.asArray()).toEqual([14, 0, 0]);
     expect(detail.position.asArray()).toEqual([20, 0, 0]);
     expect(detail.fov).toBeCloseTo(35 * Math.PI / 180);
@@ -853,6 +861,7 @@ describe("createPlayMesh", () => {
     expect(scene.activeCamera).toBe(detail);
 
     applyAssignMesh(scene, binding, { ...updated, parts: updated.parts.filter(p => p.componentId !== "fill") });
+    await binding.slotAnimLoads?.get(0);
     expect(fill.isDisposed()).toBe(true);
     expect(scene.lights.filter(light => light.name.startsWith("authoredLight:"))).toHaveLength(1);
     expect(scene.cameras.filter(camera => camera.name.startsWith("authoredCamera:"))).toHaveLength(2);
