@@ -4486,7 +4486,9 @@ class InProcessRuntime implements RuntimeDriver {
             ...(component.classId === "2DPainterComponent" ? { painter: this.painters.payload(component) } : {}),
             ...(component.classId === "2DRichTextComponent" ? { text2d: text2dAssignPayload(component, this.textAppear.progress(component)) } : {}),
             ...(component.classId === "DynamicRuntimeMeshComponent" ? { dynamicMesh: this.dynamicMeshes.assign(component) } : {}),
-            ...(component.classId === "DynamicRuntimeMeshComponent" ? { parentTransforms: dynamicMeshParentTransforms(component, componentsByGuid, renderableIds) } : {}),
+            ...(component.classId === "LightComponent" || component.classId === "HemisphericFillLightComponent" ? { light: lightAssignPayload(component) } : {}),
+            ...(component.classId === "CameraComponent" ? { camera: this.cameraAssignPayload(actor, component) } : {}),
+            parentTransforms: dynamicMeshParentTransforms(component, componentsByGuid, renderableIds),
           }))
         : undefined;
       const skyboxComp = renderables.find(
@@ -4500,9 +4502,9 @@ class InProcessRuntime implements RuntimeDriver {
           component.classId === "2DTextComponent" ||
           component.classId === "2DRichTextComponent",
       );
-      const armCamera = renderables.find(
-        (component) => component.classId === "CameraComponent",
-      );
+      const cameras = renderables.filter(component => component.classId === "CameraComponent");
+      const camera = cameras.find(component => this.cameraAssignPayload(actor, component).isDefault) ?? cameras[0];
+      const light = renderables.find(component => component.classId === "LightComponent" || component.classId === "HemisphericFillLightComponent");
       this.emit({
         type: "assignMesh",
         slotId,
@@ -4536,81 +4538,17 @@ class InProcessRuntime implements RuntimeDriver {
           : {}),
         ...(text2dComp ? { text2d: text2dAssignPayload(text2dComp,
           text2dComp.classId === "2DRichTextComponent" ? this.textAppear.progress(text2dComp) : 1) } : {}),
-        ...(armCamera ? { camera: this.cameraAssignPayload(actor, armCamera) } : {}),
+        ...(camera ? { camera: this.cameraAssignPayload(actor, camera) } : {}),
+        ...(light ? { light: lightAssignPayload(light) } : {}),
         ...(overlayPanel ? { overlayPanel } : {}),
         ...(parts ? { parts } : {}),
       });
       this.emitMaterialAssignments(renderables, slotId, Boolean(parts));
       return;
     }
-    const fill = actor.components.find(
-      (component) =>
-        component.classId === "HemisphericFillLightComponent" &&
-        !component.destroyed,
-    );
-    if (fill) {
-      const color = rgbTuple(fill.getVariable("color"));
-      const ground = fill.getVariable("groundColor");
-      this.emit({
-        type: "assignMesh",
-        slotId,
-        meshAssetGuid: null,
-        meshKind: "light:hemispheric",
-        light: {
-          color,
-          intensity: Number(fill.getVariable("intensity") ?? 0.9),
-          enabled: fill.getVariable("enabled") !== false,
-          groundColor: ground == null ? [0, 0, 0] : rgbTuple(ground),
-        },
-        parts: [playMeshPartOf(fill)],
-      });
-      return;
-    }
-    const light = actor.components.find(
-      (component) =>
-        component.classId === "LightComponent" && !component.destroyed,
-    );
-    if (light) {
-      const kind = light.getVariable("lightKind");
-      const color = rgbTuple(light.getVariable("color"));
-      this.emit({
-        type: "assignMesh",
-        slotId,
-        actorGuid: actor.guid,
-        meshAssetGuid: null,
-        meshKind: `light:${typeof kind === "string" ? kind : "point"}`,
-        light: {
-          color,
-          intensity: Number(light.getVariable("intensity") ?? 1),
-          enabled: light.getVariable("enabled") !== false,
-          range: Number(light.getVariable("range") ?? 10),
-          innerAngle: Number(light.getVariable("innerAngle") ?? 30),
-          outerAngle: Number(light.getVariable("outerAngle") ?? 45),
-          castShadows: light.getVariable("castShadows") === true,
-          shadowPriority: Number(light.getVariable("shadowPriority") ?? 0),
-        },
-        parts: [playMeshPartOf(light)],
-      });
-      return;
-    }
     const capture = captureComponent(actor);
     if (capture) {
       this.emit({ type: "assignMesh", slotId, actorGuid: actor.guid, meshAssetGuid: null, meshKind: "renderTargetCapture", parts: [playMeshPartOf(capture)] });
-      return;
-    }
-    const camera = actor.components.find(
-      (component) =>
-        component.classId === "CameraComponent" && !component.destroyed,
-    );
-    if (camera) {
-      this.emit({
-        type: "assignMesh",
-        slotId,
-        meshAssetGuid: null,
-        meshKind: "camera",
-        camera: this.cameraAssignPayload(actor, camera),
-        parts: [playMeshPartOf(camera)],
-      });
       return;
     }
     const audio = actor.components.find(
@@ -5916,6 +5854,7 @@ function isPlayRenderable(
 ): boolean {
   if (component.destroyed || component.getVariable("editorOnly") === true) return false;
   if (isOverlayLayoutClass(component.classId)) return true;
+  if (component.classId === "LightComponent" || component.classId === "HemisphericFillLightComponent" || component.classId === "CameraComponent" || component.classId === SPRING_ARM_COMPONENT_CLASS_ID) return true;
   if (waterKindForClass(component.classId) || component.classId === "WaterRemovalVolumeComponent") return true;
   if (component.classId === "2DButtonComponent") return !skipButtonMesh;
   if (
@@ -5943,33 +5882,12 @@ function isPlayRenderable(
   );
 }
 
-/**
- * Renderable components, then spring arms and the first camera attached below
- * one, so the camera follows the lagged arm socket.
- */
+/** Components that contribute visuals, illumination or camera poses to Play. */
 function playRenderablesOf(
   components: readonly ActorComponent[],
   skipButtonMesh: boolean,
 ): ActorComponent[] {
-  const renderables = components.filter((component) =>
-    isPlayRenderable(component, skipButtonMesh),
-  );
-  const arms = components.filter(
-    (component) =>
-      component.classId === SPRING_ARM_COMPONENT_CLASS_ID && !component.destroyed,
-  );
-  if (arms.length === 0) return renderables;
-  const armIds = new Set(arms.map((component) => component.guid));
-  const componentsByGuid = new Map(
-    components.map((component) => [component.guid, component]),
-  );
-  const camera = components.find(
-    (component) =>
-      component.classId === "CameraComponent" &&
-      !component.destroyed &&
-      nearestVisualParentId(component, componentsByGuid, armIds) !== null,
-  );
-  return [...renderables, ...arms, ...(camera ? [camera] : [])];
+  return components.filter(component => isPlayRenderable(component, skipButtonMesh));
 }
 
 function overlayHitTestOf(
@@ -6067,7 +5985,7 @@ function isIdentityComponentTransform(component: ActorComponent): boolean {
 
 function playPartsNeeded(components: readonly ActorComponent[]): boolean {
   return (
-    components.some((component) => isOverlayLayoutClass(component.classId)) ||
+    components.some((component) => isOverlayLayoutClass(component.classId) || component.classId === "LightComponent" || component.classId === "HemisphericFillLightComponent" || component.classId === "CameraComponent") ||
     components.some((component) => component.classId === "2DPainterComponent") ||
     components.some((component) => component.classId === "CableComponent") ||
     components.some((component) => component.classId === "DynamicRuntimeMeshComponent") ||
@@ -6145,6 +6063,23 @@ function text2dAssignPayload(
     appearDuration: parsed.appearDuration,
     appearStart: parsed.appearStart,
     appearProgress,
+  };
+}
+
+function lightAssignPayload(component: ActorComponent): NonNullable<Extract<CommandMessage, { type: "assignMesh" }>["light"]> {
+  const fill = component.classId === "HemisphericFillLightComponent";
+  const ground = component.getVariable("groundColor");
+  return {
+    color: rgbTuple(component.getVariable("color")),
+    intensity: Number(component.getVariable("intensity") ?? (fill ? 0.9 : 1)),
+    enabled: component.getVariable("enabled") !== false,
+    ...(fill ? { groundColor: ground == null ? [0, 0, 0] as [number, number, number] : rgbTuple(ground) } : {
+      range: Number(component.getVariable("range") ?? 10),
+      innerAngle: Number(component.getVariable("innerAngle") ?? 30),
+      outerAngle: Number(component.getVariable("outerAngle") ?? 45),
+      castShadows: component.getVariable("castShadows") === true,
+      shadowPriority: Number(component.getVariable("shadowPriority") ?? 0),
+    }),
   };
 }
 

@@ -6,6 +6,27 @@ import type { ProjectInputSettings, SerializedComponent, SerializedScene, Serial
 /** Serializable runtime override of one named Material Graph parameter. */
 export type { MaterialParameterValue } from "@babylonslate/core";
 
+export interface PlayLightProperties {
+  color: [number, number, number];
+  intensity: number;
+  enabled: boolean;
+  range?: number;
+  innerAngle?: number;
+  outerAngle?: number;
+  castShadows?: boolean;
+  shadowPriority?: number;
+  groundColor?: [number, number, number];
+}
+
+export interface PlayCameraProperties {
+  projectionMode?: "perspective" | "orthographic";
+  fieldOfView?: number;
+  orthographicSize?: number;
+  nearClip?: number;
+  farClip?: number;
+  isDefault?: boolean;
+}
+
 /** Source anchor mapping a generated line back to a graph node. */
 export type ScriptAnchorPayload = {
   line: number;
@@ -367,27 +388,12 @@ export type CommandMessage =
       sortingLayer?: string;
       /** Sprite / tilemap order within that sorting layer. */
       orderInLayer?: number;
-      light?: {
-        color: [number, number, number];
-        intensity: number;
-        enabled: boolean;
-        range?: number;
-        innerAngle?: number;
-        outerAngle?: number;
-        castShadows?: boolean;
-        shadowPriority?: number;
-        groundColor?: [number, number, number];
-      };
-      camera?: {
-        projectionMode?: "perspective" | "orthographic";
-        fieldOfView?: number;
-        orthographicSize?: number;
-        nearClip?: number;
-        farClip?: number;
-        isDefault?: boolean;
-      };
+      light?: PlayLightProperties;
+      camera?: PlayCameraProperties;
       /** Extra renderable components parented to the actor origin mesh. */
       parts?: Array<{
+        light?: PlayLightProperties;
+        camera?: PlayCameraProperties;
         painter?: import("@babylonslate/core").Painter2DProperties;
         dynamicMesh?: { meshId: number; update: import("@babylonslate/core").DynamicMeshUpdate };
         /** Nonvisual ancestors between this component and its nearest visual parent, nearest first. */
