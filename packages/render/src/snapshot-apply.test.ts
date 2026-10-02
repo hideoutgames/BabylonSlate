@@ -832,7 +832,7 @@ describe("createPlayMesh", () => {
         { ...part("detail", "camera", 5), camera: { fieldOfView: 35, isDefault: true } },
       ] };
     applyAssignMesh(scene, binding, command);
-    applySnapshotToScene(scene, binding, { frameId: 1, actors: [{ slotId: 0, position: { x: 10, y: 0, z: 0 },
+    applySnapshotToScene(scene, binding, { frameId: 1, tickIndex: 1, alpha: 1, actorCount: 1, actors: [{ slotId: 0, position: { x: 10, y: 0, z: 0 },
       rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 2, y: 2, z: 2 }, flags: SNAPSHOT_FLAG_VISIBLE }] });
     const lamp = scene.getLightByName("authoredLight:0") as PointLight;
     const fill = scene.getLightByName("authoredLight:0|fill") as HemisphericLight;
