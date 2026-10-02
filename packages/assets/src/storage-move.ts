@@ -1,6 +1,8 @@
 import type { ProjectStorage } from "@babylonslate/core";
 import { newAssetGuid } from "./guid";
 
+export const STORAGE_MOVE_BACKUP_PREFIX = ".babylonslate-move-";
+
 /** Resolve the spelling on disk before deciding whether two existing paths alias. */
 async function storedPath(storage: ProjectStorage, path: string): Promise<string> {
   let parent = "";
@@ -22,7 +24,7 @@ async function targetAliasesSource(storage: ProjectStorage, from: string, to: st
 
 function backupPath(path: string): string {
   const slash = path.lastIndexOf("/");
-  return `${slash < 0 ? "" : path.slice(0, slash + 1)}.babylonslate-move-${newAssetGuid()}`;
+  return `${slash < 0 ? "" : path.slice(0, slash + 1)}${STORAGE_MOVE_BACKUP_PREFIX}${newAssetGuid()}`;
 }
 
 async function removeBackup(storage: ProjectStorage, path: string): Promise<void> {

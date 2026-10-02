@@ -158,6 +158,78 @@ describe("AssetRegistry", () => {
     expect(await storage.exists("assets/moved")).toBe(false);
   });
 
+  it("includes a creation already writing when a folder move is requested", async () => {
+    const storage = await createStorage();
+    await writeAsset(storage, "assets/source/existing.babasset", { guid: "existing", name: "existing", type: "Material" });
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    let entered!: () => void;
+    let release!: () => void;
+    const writing = new Promise<void>((resolve) => { entered = resolve; });
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const write = storage.writeBinary.bind(storage);
+    vi.spyOn(storage, "writeBinary").mockImplementation(async (path, bytes) => {
+      if (path === "assets/source/new.babasset") { entered(); await gate; }
+      return write(path, bytes);
+    });
+    const creation = registry.createAsset("project", "source/new.babasset", {
+      guid: "new", type: "Material", name: "new", version: 1, dependencies: [], payload: { roughness: 0.5 }, chunks: [],
+    });
+    await writing;
+    const moving = registry.moveFolder("project", "source", "", "moved");
+    release();
+    await Promise.all([creation, moving]);
+    expect(registry.getByGuid("new")?.path).toBe("assets/moved/new.babasset");
+    expect(await storage.exists("assets/moved/new.babasset")).toBe(true);
+    expect(await storage.exists("assets/source")).toBe(false);
+  });
+
+  it("preserves an in-flight Font representation attachment through a folder move", async () => {
+    const storage = await createStorage();
+    await writeAsset(storage, "assets/source/Ui.babasset", { guid: "font", name: "Ui", type: "Font" });
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    let entered!: () => void;
+    let release!: () => void;
+    const writing = new Promise<void>((resolve) => { entered = resolve; });
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const write = storage.writeBinary.bind(storage);
+    vi.spyOn(storage, "writeBinary").mockImplementation(async (path, bytes) => {
+      if (path === "assets/source/Ui.babasset") { entered(); await gate; }
+      return write(path, bytes);
+    });
+    const attaching = registry.importFile("project", "source", "Ui.facetype.json", new TextEncoder().encode('{"glyphs":[]}'), { attachToGuid: "font" });
+    await writing;
+    const moving = registry.moveFolder("project", "source", "", "moved");
+    release();
+    await Promise.all([attaching, moving]);
+    expect(registry.getByGuid("font")?.path).toBe("assets/moved/Ui.babasset");
+    expect(registry.getByGuid("font")?.header.chunks.some((chunk) => chunk.id === "facetype-glyphs")).toBe(true);
+    expect(await storage.exists("assets/source")).toBe(false);
+  });
+
+  it("does not index a retained recovery folder after a successful case-only move", async () => {
+    const storage = new CaseInsensitiveStorage();
+    await storage.openDocumentsProject("RetainedBackup");
+    await writeAsset(storage, "assets/Source/item.babasset", { guid: "item", name: "item", type: "Material" });
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const remove = storage.remove.bind(storage);
+    vi.spyOn(storage, "remove").mockImplementation(async (path) => {
+      if (path.startsWith("assets/.babylonslate-move-")) throw new Error("Cleanup denied");
+      return remove(path);
+    });
+    await registry.moveFolder("project", "Source", "", "source");
+    expect((await storage.readdir("assets")).some((entry) => entry.name.startsWith(".babylonslate-move-"))).toBe(true);
+    const readdir = storage.readdir.bind(storage);
+    // Filesystem enumeration order must not decide which copy of a GUID is live.
+    vi.spyOn(storage, "readdir").mockImplementation(async (path) => (await readdir(path)).reverse());
+    const reopened = new AssetRegistry(storage);
+    await reopened.mountRoot(projectContentRoot());
+    expect(reopened.getByGuid("item")?.path).toBe("assets/source/item.babasset");
+    expect(reopened.folderTree("project").children.map((folder) => folder.name)).toEqual(["source"]);
+  });
+
   it("retains incoming references while reindexing or renaming a referenced asset", async () => {
     const storage = await createStorage();
     await writeAsset(storage, "assets/material.babasset", { guid: "material", type: "Material", name: "material", dependencies: ["texture"] });
