@@ -1,5 +1,5 @@
 /** Test-build-only real buffer/material and solid-color pixel ownership fixture. */
-import { Color3, Color4, Engine, FreeCamera, Scene, StandardMaterial, Vector3, VertexBuffer } from "@babylonjs/core";
+import { Color3, Color4, Engine, FreeCamera, Scene, StandardMaterial, Vector3, VertexBuffer, type AbstractEngine } from "@babylonjs/core";
 import { createDefaultSpriteAnimationPayload, createDefaultSpritePayload } from "@babylonslate/assets";
 import {
   applyAlbedoTexture, applyAnimStateToScene, applySpriteAnimationAssetFrame, applySpriteFrameUvs,
@@ -11,7 +11,7 @@ export async function runTextureLeaseProof(backend: "webgl2" | "webgpu") {
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = 64;
   document.getElementById("root")!.append(canvas);
-  const engine = backend === "webgpu" ? await createAppWebGpuEngine(canvas) : new Engine(canvas, false, { preserveDrawingBuffer: true });
+  const engine: AbstractEngine = backend === "webgpu" ? await createAppWebGpuEngine(canvas) : new Engine(canvas, false, { preserveDrawingBuffer: true });
   const cache = new ResourceCache();
   const owner = bindResourceCacheToHandle(cache);
   const siblingOwner = bindResourceCacheToHandle(cache);
