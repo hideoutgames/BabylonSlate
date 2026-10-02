@@ -564,7 +564,9 @@ or visual retirement disposes every owned native helper.
 Rendering admission continues applying requested shadow settings and preparing
 replacement resources while shaders are unready. A failed strict probe cannot
 strand the previous shadow profile; drawing and dynamic geometry uploads still
-wait for successful scene admission.
+wait for successful scene admission. Admission distinguishes missing or stale
+resources from a temporary readiness check on current resources: only the former
+starts asynchronous preparation, so the latter can present its next ready frame.
 
 ## AudioService (P16)
 

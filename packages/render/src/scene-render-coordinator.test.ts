@@ -631,8 +631,9 @@ it.each(["classic", "frameGraph"] as const)("holds a %s candidate invalidated du
   expect(renderer.render()).toMatchObject({ path, rendered: true });
   scene.onBeforeRenderObservable.addOnce(() => { ready = false; markSceneReadinessDirty(scene); });
   expect(renderer.render()).toMatchObject({ rendered: false, readyForPresentation: false });
+  expect(renderer.render()).toMatchObject({ rendered: false, readyForPresentation: false });
   ready = true;
-  expect(renderer.render()).toMatchObject({ path, rendered: true });
+  expect(renderer.render()).toMatchObject({ path, rendered: true, readyForPresentation: true });
   renderer.dispose();
 });
 

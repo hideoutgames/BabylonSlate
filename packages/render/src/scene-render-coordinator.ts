@@ -234,8 +234,10 @@ export class SceneRenderCoordinator {
     // A shader probe can still refer to the previous shadow layout. Admit the
     // requested lights/maps and prepare their graph even while that probe is
     // false, or neither the old shaders nor the new resources can progress.
+    // A temporary check on current resources must recover on the next ready
+    // frame without starting an unnecessary asynchronous preparation wait.
     // Dynamic geometry uploads remain behind successful scene admission.
-    if (!this.graph.readiness(camera).ready) this.requestPreparation();
+    if (this.graph.readiness(camera).preparationRequired) this.requestPreparation();
   }
 
   /** A corrected contribution may retry a failed preparation. Style changes
