@@ -46,6 +46,8 @@ Each **actor**: `id`, `name`, `classId`, `parentId`, `transform` (position / qua
 
 Each **component**: `id`, `classId`, `properties` (typed per class in the object-model registry), optional `parentId`, optional `transform` (local position / quaternion / scale relative to the parent component, or the **actor origin** when `parentId` is null). Missing `transform` normalizes to identity — no `SCENE_SCHEMA_VERSION` bump. Class-placed actors also store optional `sourceId` (prefab component id) and `overrideKeys` (dirtied property names plus `transform` / `parentId`). Missing `sourceId` means the row was added on the instance.
 
+Add Component allocates an unused actor-local ID, so deleting a middle row and adding another component cannot replace the properties of a surviving row.
+
 **Scene settings** include `physicsWorld` (`"3d"` \| `"2d"`, defaults from `viewportMode`), `grid` (`snapEnabled`, translate/rotate/scale snap, `tileSize`, `tileSubdivisions`, `showGrid`), `cameraBounds2D` (`width`, `height`) for the 2D game-camera frame overlay, `editorJoystickEnabled` (on-screen stick that flies/pans the **editor** camera; default true, missing keys normalize to true, explicit `false` stays off), `showNavmesh` (editor navmesh debug overlay; default **false**, missing keys normalize to false; a leftover `NavMeshComponent.debugOverlay === true` migrates on when the setting key is absent), and `sceneLayers` (Play compositor spawn list; Scene Options `NamedListEditor`). `grid.showGrid` is additive (missing keys normalize to true). A scene never mixes physics worlds — see [physics.md](physics.md). Overlay actors always use a dedicated Rapier 2D world — see [scene-layers.md](scene-layers.md). Details and Actor Prefab Add Component lists include `RigidBodyComponent` and `ColliderComponent` (defaults from `parseRigidBodyProperties` / `parseColliderProperties`). Prefab add uses the open scene’s `physicsWorld` and editor `viewportMode` when a scene is open (otherwise 3d). Overlay SceneLayer Details omit Default Camera, fog/IBL, lights, and the 3D/2D physics-world picker.
 
 **Actor ids are unique after normalize.** A repeated `id` collapsed the pair into one editor mesh and one Play snapshot slot, so the duplicate silently vanished. `normalizeScene` renames later occurrences (`dupe` → `dupe-2`); the first owner keeps the id, so existing `parentId` references still resolve.
@@ -71,6 +73,8 @@ Folders organize the Outliner. They are **not** actors and never reach the objec
 ## Actor Prefab instance sync
 
 Place Actors copies the **ancestor-merged** Class prefab onto the spawned actor (same merge as the Prefab tab) and stamps each row’s `sourceId` to the prefab component id. Actor placement fields (`name`, actor `transform`, `visible`, `locked`, `parentId`, `folderId`) stay instance-owned.
+
+Prefab linkage and override keys travel through the same commands as property and transform edits, including continuous scrubs. Undo restores inheritance, Redo restores the override, and recovery preserves which fields remain instance-owned before a later prefab sync. Metadata-only linkage changes are also reversible and journalled.
 
 Duplicate assigns fresh actor and component IDs and remaps component `parentId` links within the copy. Prefab `sourceId`, overrides, properties and transforms stay intact. Distinct collider identities keep copies independent in physics, including the software fallback. This affects newly created copies; existing saved duplicate IDs are not migrated automatically.
 

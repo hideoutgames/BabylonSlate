@@ -69,6 +69,7 @@ import {
   diffSceneCommands,
   EditSession,
   journalRepathLine,
+  journalDiscardLine,
   replayJournalLines,
   resolveJournalLines,
   SetAssetDocumentCommand,
@@ -195,7 +196,6 @@ import {
 } from "../lib/scene-layer-document";
 import { tryReparentUserClass } from "../lib/reparent-class";
 import {
-  copyInstanceLinkage,
   descendantClassIds,
   prefabTemplatesByClassId,
   scenesEqualForPrefabSync,
@@ -674,7 +674,7 @@ function dockOptionsForIndexed(
     actorPrefab:
       kind !== "graph" ||
       !indexed ||
-      classDocumentShowsPrefab(indexed.header.parentClass, parentOf, {
+      classDocumentShowsPrefab(indexed.header.parentClass, (id) => parentOf(id) ?? null, {
         assetType: indexed.header.type,
       }),
     sourceControl: sourceControlEnabled,
@@ -829,6 +829,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const [thumbnailsEnabled, setThumbnailsEnabled] = useState(true);
   const [pendingExclusiveScene, setPendingExclusiveScene] =
     useState<DocumentRef | null>(null);
+  const exclusiveSceneRequest = useRef(0);
   const [lastCompiledSignature, setLastCompiledSignature] = useState<
     string | null
   >(null);
@@ -1146,7 +1147,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           );
           documentService.replaceLoadedContent(
             doc.id,
-            editorTabContentForKind(doc.ref.kind, loaded) as typeof doc.content,
+            editorTabContentForKind(doc.ref.kind, loaded) as NonNullable<typeof doc.content>,
           );
           editSessionRef.current.dropDocument(doc.id);
         } catch {
@@ -2047,6 +2048,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   const closeDocument = useCallback(
     (id: string) => {
+      const doc = documentService.getDocument(id);
+      const guid = projectService.guid;
+      if (doc && doc.ref.kind !== "content-browser" && guid) {
+        journalBuffer.append(guid, journalDiscardLine(id, new Date().toISOString()));
+      }
       for (const key of dockviewApiKeysForDocument(id)) {
         dockviewApisRef.current.delete(key);
         preFocusLayoutsRef.current.delete(key);
@@ -2070,7 +2076,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       void journalBuffer.flush();
       bump();
     },
-    [bump, disposeDockSubscriptions, documentService, journalBuffer],
+    [bump, disposeDockSubscriptions, documentService, journalBuffer, projectService],
   );
 
   const closeDocumentsForPaths = useCallback(
@@ -2240,6 +2246,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const openDocument = useCallback(
     async (ref: DocumentRef) => {
       if (ref.kind === "scene") {
+        exclusiveSceneRequest.current += 1;
         const blocking = dirtyScenesBlockingOpen(
           documentService.getDirtyDocuments(),
           documentId(ref),
@@ -2277,17 +2284,20 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     async (mode: "save" | "discard") => {
       const ref = pendingExclusiveScene;
       if (!ref) return;
+      const request = exclusiveSceneRequest.current;
       if (mode === "save") {
         const saved = await saveAll();
-        if (!saved) return;
+        if (!saved || request !== exclusiveSceneRequest.current ||
+          dirtyScenesBlockingOpen(documentService.getDirtyDocuments(), documentId(ref)).length > 0) return;
       }
       setPendingExclusiveScene(null);
       await finishOpenDocument(ref);
     },
-    [finishOpenDocument, pendingExclusiveScene, saveAll],
+    [documentService, finishOpenDocument, pendingExclusiveScene, saveAll],
   );
 
   const cancelExclusiveSceneOpen = useCallback(() => {
+    exclusiveSceneRequest.current += 1;
     setPendingExclusiveScene(null);
   }, []);
 
@@ -2566,8 +2576,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         return true;
       }
       const result = editSessionRef.current.applyBatch(id, previous, commands)!;
-      const current = copyInstanceLinkage(intended, result.doc);
-      documentService.updateScene(id, current);
+      documentService.updateScene(id, result.doc);
       await notifyAppliedCommand(id, result.command);
       void afterMutatingApply(sourceControlRef.current, doc.ref.path);
       return true;

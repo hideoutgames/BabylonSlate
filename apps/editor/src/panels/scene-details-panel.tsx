@@ -1596,12 +1596,16 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         overlay={overlay}
         physicsWorld={scene.settings.physicsWorld}
         onSelect={(selection) =>
-          updateActor((entry) => ({
+          updateActor((entry) => {
+            const usedIds = new Set(entry.components.map((component) => component.id));
+            let suffix = entry.components.length + 1;
+            while (usedIds.has(`${entry.id}-component-${suffix}`)) suffix += 1;
+            return {
             ...entry,
             components: [
               ...entry.components,
               {
-                id: `${entry.id}-component-${entry.components.length + 1}`,
+                id: `${entry.id}-component-${suffix}`,
                 classId: selection.classId,
                 properties: {
                   ...defaultPropertiesFor(
@@ -1613,7 +1617,8 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                 },
               },
             ],
-          }))
+            };
+          })
         }
         data-testid="add-component-catalog"
       />

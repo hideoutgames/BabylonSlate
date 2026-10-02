@@ -34,6 +34,7 @@ import {
   createSetActorTransformCommandFromJson,
   createSetActorsTransformsCommandFromJson,
   createSetComponentPropertyCommandFromJson,
+  createSetComponentLinkageCommandFromJson,
   createSetComponentTransformCommandFromJson,
   createSetSceneNameCommandFromJson,
   createSetSceneSettingCommandFromJson,
@@ -95,6 +96,12 @@ export function reviveCommand(
  * renamed document, so its unsaved edits and a later Undo replay together.
  */
 export const JOURNAL_REPATH_TYPE = "document.repath";
+export const JOURNAL_DISCARD_TYPE = "document.discard";
+
+/** Ends recovery for earlier edits to this document, without clearing others. */
+export function journalDiscardLine(docId: string, at: string): JournalLine {
+  return { v: 1, docId, at, command: { type: JOURNAL_DISCARD_TYPE } };
+}
 
 export function journalRepathLine(
   oldId: string,
@@ -298,6 +305,7 @@ export function registerGraphCommandRevivers(): void {
 }
 
 export function registerSceneCommandRevivers(): void {
+  registerCommandReviver("scene.setComponentLinkage", createSetComponentLinkageCommandFromJson);
   registerCommandReviver("scene.addActor", createAddActorCommandFromJson);
   registerCommandReviver("scene.removeActor", createRemoveActorCommandFromJson);
   registerCommandReviver(

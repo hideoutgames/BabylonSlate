@@ -23,6 +23,7 @@ import {
   SetActorTransformCommand,
   SetActorsTransformsCommand,
   SetComponentPropertyCommand,
+  SetComponentLinkageCommand,
   SetComponentTransformCommand,
   SetSceneNameCommand,
   SetSceneSettingCommand,
@@ -76,6 +77,15 @@ function diffComponents(
       continue;
     }
     if (previous === component) continue;
+    const linkage = {
+      from: { sourceId: previous.sourceId, overrideKeys: previous.overrideKeys },
+      to: { sourceId: component.sourceId, overrideKeys: component.overrideKeys },
+    };
+    const changedLinkage = JSON.stringify(linkage.from) !== JSON.stringify(linkage.to);
+    // Carry unchanged linkage too: a coalesced scrub's final command must
+    // restore the override when Redo follows the first command's inverse.
+    const editLinkage = previous.sourceId || component.sourceId || changedLinkage ? linkage : undefined;
+    let recordedLinkage = false;
     for (const key of propertiesDiff(previous.properties, component.properties)) {
       commands.push(
         new SetComponentPropertyCommand(
@@ -84,8 +94,10 @@ function diffComponents(
           key,
           previous.properties[key],
           component.properties[key],
+          editLinkage,
         ),
       );
+      recordedLinkage = true;
     }
     if ((previous.parentId ?? null) !== (component.parentId ?? null)) {
       commands.push(
@@ -110,8 +122,13 @@ function diffComponents(
           id,
           previousTransform,
           nextTransform,
+          editLinkage,
         ),
       );
+      recordedLinkage = true;
+    }
+    if (changedLinkage && !recordedLinkage) {
+      commands.push(new SetComponentLinkageCommand(actorId, id, linkage.from, linkage.to));
     }
   }
 

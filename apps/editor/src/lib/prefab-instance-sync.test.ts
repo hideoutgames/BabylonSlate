@@ -8,13 +8,13 @@ import {
 import {
   PREFAB_PARENT_OVERRIDE,
   PREFAB_TRANSFORM_OVERRIDE,
-  copyInstanceLinkage,
   descendantClassIds,
   mergedPrefabComponentsForClass,
   stampUserComponentOverrides,
   syncActorComponentsFromPrefab,
   syncSceneActorsFromPrefabs,
 } from "./prefab-instance-sync";
+import { EditSession, commandToJournalPayload, diffSceneCommands, replayJournalLines, serializeJournalLine } from "@babylonslate/edit";
 import { instantiatePrefabComponents } from "./prefab-preview";
 import { MODEL_MATERIALS_PICKER_VALUE, patchInspectorComponentProperty } from "./mesh-material-properties";
 
@@ -400,73 +400,59 @@ describe("stampUserComponentOverrides", () => {
   });
 });
 
-describe("copyInstanceLinkage", () => {
-  it("keeps references when linkage already matches", () => {
-    const scene = createDefaultScene();
-    scene.actors = [
-      createActor("hero", "Hero", {
-        components: [
-          {
-            ...createMeshComponent("c1", "box"),
-            sourceId: "prefab-mesh",
-            overrideKeys: ["meshKind"],
-          },
-        ],
-      }),
-      createActor("other", "Other"),
-    ];
-
-    const copied = copyInstanceLinkage(scene, scene);
-
-    expect(copied.actors[0]).toBe(scene.actors[0]);
-    expect(copied.actors[0]!.components[0]).toBe(scene.actors[0]!.components[0]);
-    expect(copied.actors[1]).toBe(scene.actors[1]);
+describe("prefab overrides through edit history", () => {
+  it.each(["property", "transform"] as const)("preserves %s inheritance through a scrub, Undo, Redo and recovery", (kind) => {
+    const prefab = createMeshComponent("prefab-mesh", "box");
+    const initial = { ...createDefaultScene(), actors: [createActor("hero", "Hero", {
+      classId: "Hero", components: instantiatePrefabComponents([prefab], "hero"),
+    })] };
+    const session = new EditSession();
+    const id = "scene:Main";
+    const lines: string[] = [];
+    let live = initial;
+    for (const value of [1, 2]) {
+      const next = structuredClone(live);
+      if (kind === "property") next.actors[0]!.components[0]!.properties.meshKind = value === 1 ? "sphere" : "cylinder";
+      else next.actors[0]!.components[0]!.transform = { ...identity, position: [value * 5, 0, 0] };
+      const intended = stampUserComponentOverrides(live, next, { Hero: [prefab] });
+      const applied = session.applyBatch(id, live, diffSceneCommands(live, intended))!;
+      live = applied.doc;
+      lines.push(serializeJournalLine({ v: 1, docId: id, at: "2026-10-02T00:00:00Z", command: commandToJournalPayload(applied.command) }));
+    }
+    const updatedPrefab = { ...prefab, properties: { ...prefab.properties, meshKind: "sphere" }, transform: { ...identity, position: [20, 0, 0] as [number, number, number] } };
+    const undone = session.undo(id, live)!;
+    expect(undone.doc).toEqual(initial);
+    expect(session.canUndo(id)).toBe(false);
+    const inherited = syncActorComponentsFromPrefab(undone.doc.actors[0]!, [updatedPrefab])[0]!;
+    expect(inherited.properties.meshKind).toBe("sphere");
+    expect(inherited.transform?.position).toEqual([20, 0, 0]);
+    const redone = session.redo(id, undone.doc)!;
+    const recovered = replayJournalLines(lines, new Map([[id, initial]])).documents.get(id)!;
+    for (const scene of [redone.doc, recovered]) {
+      const synced = syncActorComponentsFromPrefab(scene.actors[0]!, [updatedPrefab])[0]!;
+      expect(synced.sourceId).toBe(prefab.id);
+      expect(synced.overrideKeys).toEqual([kind === "property" ? "meshKind" : PREFAB_TRANSFORM_OVERRIDE]);
+      if (kind === "property") expect(synced.properties.meshKind).toBe("cylinder");
+      else expect(synced.transform?.position).toEqual([10, 0, 0]);
+    }
   });
 
-  it("copies sourceId and overrideKeys onto the applied scene", () => {
-    const from = createDefaultScene();
-    from.actors = [
-      createActor("hero", "Hero", {
-        components: [
-          {
-            id: "c1",
-            classId: "MeshComponent",
-            properties: { meshKind: "sphere" },
-            parentId: null,
-            sourceId: "prefab-mesh",
-            overrideKeys: ["meshKind"],
-            transform: identity,
-          },
-        ],
-      }),
-    ];
-    const onto = structuredClone(from);
-    delete onto.actors[0]!.components[0]!.sourceId;
-    delete onto.actors[0]!.components[0]!.overrideKeys;
-    const copied = copyInstanceLinkage(from, onto);
-    expect(copied.actors[0]?.components[0]?.sourceId).toBe("prefab-mesh");
-    expect(copied.actors[0]?.components[0]?.overrideKeys).toEqual(["meshKind"]);
-  });
-
-  it("clears overrideKeys when the intended scene has none", () => {
-    const from = createDefaultScene();
-    from.actors = [
-      createActor("hero", "Hero", {
-        components: [
-          {
-            id: "c1",
-            classId: "MeshComponent",
-            properties: { meshKind: "box" },
-            parentId: null,
-            sourceId: "prefab-mesh",
-            transform: identity,
-          },
-        ],
-      }),
-    ];
-    const onto = structuredClone(from);
-    onto.actors[0]!.components[0]!.overrideKeys = ["meshKind"];
-    const copied = copyInstanceLinkage(from, onto);
-    expect(copied.actors[0]?.components[0]?.overrideKeys).toBeUndefined();
+  it("records metadata-only adoption and clearing overrides as reversible journalled state", () => {
+    const initial = { ...createDefaultScene(), actors: [createActor("hero", "Hero", {
+      classId: "Hero", components: [createMeshComponent("mesh", "box")],
+    })] };
+    const linked = structuredClone(initial);
+    linked.actors[0]!.components[0]!.sourceId = "prefab-mesh";
+    linked.actors[0]!.components[0]!.overrideKeys = ["meshKind"];
+    const session = new EditSession();
+    const added = session.applyBatch("scene:Main", initial, diffSceneCommands(initial, linked))!;
+    expect(added.doc).toEqual(linked);
+    const cleared = structuredClone(linked);
+    delete cleared.actors[0]!.components[0]!.overrideKeys;
+    const removed = session.applyBatch("scene:Main", added.doc, diffSceneCommands(added.doc, cleared))!;
+    expect(removed.doc).toEqual(cleared);
+    expect(session.undo("scene:Main", removed.doc)?.doc).toEqual(linked);
+    const lines = [added, removed].map(({ command }) => serializeJournalLine({ v: 1, docId: "scene:Main", at: "2026-10-02T00:00:00Z", command: commandToJournalPayload(command) }));
+    expect(replayJournalLines(lines, new Map([["scene:Main", initial]])).documents.get("scene:Main")).toEqual(cleared);
   });
 });
