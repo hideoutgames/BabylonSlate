@@ -355,6 +355,8 @@ export interface EngineHandle {
   unlockAudio: () => Promise<void>;
   /** Clear session mixer volumes and stop voices (scene change / Play stop). */
   resetAudioSession: () => void;
+  /** Replace the active scene's baked audio field; null restores dry acoustics. */
+  setAudioReverbField: (bytes: Uint8Array | null) => void;
   /** Dispose live particle systems (scene change / Play stop). GPU stop still draws leftovers. */
   resetParticleSession: () => void;
   /** Debug free camera is the Play active camera. */
@@ -2642,6 +2644,7 @@ function initializeEngine(
       canvas.removeEventListener("pointercancel", onPointerCancel);
       canvas.removeEventListener("touchstart", onOverlayTouch);
       canvas.removeEventListener("touchmove", onOverlayTouch);
+      canvas.removeEventListener("wheel", onOverlayWheel);
       if (typeof document !== "undefined") {
         document.removeEventListener("visibilitychange", onVisibility);
       }
@@ -3290,6 +3293,9 @@ function initializeEngine(
     unlockAudio: () => audioService?.unlockAsync() ?? Promise.resolve(),
     resetAudioSession: () => {
       audioService?.resetSession();
+    },
+    setAudioReverbField: (bytes) => {
+      audioService?.setReverbField(bytes);
     },
     resetParticleSession: () => {
       particleService?.resetSession();

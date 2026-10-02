@@ -4199,6 +4199,10 @@ describe("Play createEngine view", () => {
     blocker.metadata.overlayHitTest = "ignore";
     canvas.emit("wheel", { clientX: 128, clientY: 128, deltaX: 0, deltaY: 32, deltaMode: 0 });
     expect(scrolls).toHaveLength(count + 1);
+    handle.dispose();
+    expect(canvas.listeners.get("wheel")?.size ?? 0).toBe(0);
+    canvas.emit("wheel", { clientX: 128, clientY: 128, deltaX: 0, deltaY: 32, deltaMode: 0 });
+    expect(scrolls).toHaveLength(count + 1);
   });
 
   it("clicks a 2DButton through the touchMinTargetPx floor without growing the mesh", () => {
