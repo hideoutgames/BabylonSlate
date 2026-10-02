@@ -1,5 +1,13 @@
 # Testing architecture
 
+## Dependency advisory maintenance
+
+Vitest and its coverage provider use the patched 4.1.11 release line. Narrow workspace overrides update xmldom 0.9, brace-expansion 1/2/5, DOMPurify 3, fast-uri 3 and js-yaml 4 within their consumers' existing release lines. The lockfile records the resolved versions; overrides stop applying once a consumer resolves a newer safe version.
+
+Two upstream constraints remain: VitePress 1.6.4 declares Vite 5, whose dev server has no compatible fixes for [optimized-dependency traversal](https://github.com/advisories/GHSA-4w7w-66w2-5vf9), [Windows denied-file bypass](https://github.com/advisories/GHSA-fx2h-pf6j-xcff) and [Windows UNC editor paths](https://github.com/advisories/GHSA-v6wh-96g9-6wx3). Keep docs development local; published docs are static files. Capacitor's Xcode tooling retains uuid 7 through xcode 3.0.1; its consumer uses `v4()` without a caller buffer, while the [reported bounds issue](https://github.com/advisories/GHSA-w5hq-g745-h8pq) concerns buffered v3/v5/v6 calls. Resolve these constraints through compatible upstream upgrades rather than unqualified major-version overrides.
+
+## Verification scope
+
 Security scans keep pull-request, push and individual comment events in separate cancellation groups. A comment cannot cancel the PR commit scan, and newer comments cannot cancel scans of earlier comments. Root Node tooling and distribution scripts use ESLint's recommended JavaScript rules, including undefined-name and unused-binding checks. `pnpm lint <files>` checks only those paths, and `pnpm typecheck --filter <workspace>` selects that workspace before invoking its script; unfiltered commands retain the full CI scope.
 
 Agents run only explicit targeted test files/cases for changed behavior and directly affected consumers, with scoped static checks where relevant. Full local suites, coverage, all browser tests, workspace-wide checks and the cumulative `verify:local` diagnostic require an explicit user request; they are not automatic PR prerequisites. Prose/instruction-only changes use diff/link review. After repairs, rerun only affected checks and document why reused results still apply. Required GitHub CI is unchanged. The cumulative tooling described below remains available as an opt-in diagnostic; its `deliveryEligible` certificate is not required for targeted agent delivery.
