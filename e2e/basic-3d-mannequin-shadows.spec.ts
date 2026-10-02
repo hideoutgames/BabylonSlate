@@ -54,6 +54,12 @@ for (const variant of cases) test(`Basic 3D mannequin ${variant.backend} ${varia
     await expect.poll(() => page.evaluate(() => window.__babylonslateViewportTest?.shadowDiagnostics()?.backend.actual), { timeout: 30_000 }).toBe("webgpu");
     await waitForSceneViewportReady(page);
     await expect(page.getByTestId("project-rendering-dialog")).toHaveCount(0);
+    const initializedFrames = await page.evaluate(() => window.__babylonslateViewportTest.renderingBaseline().frameCount);
+    // Loading's first frames can precede resumed browser frame delivery after
+    // a software WebGPU switch. Establish presentation before timing an edit.
+    await expect.poll(() => page.evaluate(() => window.__babylonslateViewportTest.renderingBaseline().frameCount), {
+      timeout: 30_000, message: "WebGPU viewport resumes presenting after backend initialization",
+    }).toBeGreaterThan(initializedFrames + 2);
   }
   if (variant.alternate) {
     const scene = await page.evaluate(() => (window as unknown as { __babylonslateTest: { activeSceneContent(): SerializedScene } }).__babylonslateTest.activeSceneContent());
