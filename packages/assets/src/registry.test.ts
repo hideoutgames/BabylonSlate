@@ -10,6 +10,7 @@ import {
 import { EncodeQueue } from "./encode-queue";
 import { AssetRegistry } from "./registry";
 import { ThumbnailDecodeLru } from "./thumbnails";
+import type { ProjectStorageReader } from "@babylonslate/core";
 
 async function createStorage(): Promise<MemoryStorageAdapter> {
   const storage = new MemoryStorageAdapter("documents");
@@ -173,6 +174,28 @@ describe("AssetRegistry", () => {
     expect(registry.showReferences("new").inbound).toEqual(["texture"]);
   });
 
+  it("uses one read scope throughout recursive root indexing", async () => {
+    const storage = await createStorage();
+    await writeAsset(storage, "assets/a.babasset", { guid: "a", type: "Texture", name: "A" });
+    await writeAsset(storage, "assets/nested/b.babasset", { guid: "b", type: "Texture", name: "B" });
+    const paths: string[] = [];
+    let closed = false;
+    const scoped = Object.assign(storage, {
+      async withReadScope<T>(operation: (reader: ProjectStorageReader) => Promise<T>): Promise<T> {
+        const reader: ProjectStorageReader = {
+          readText: (path) => storage.readText(path), exists: (path) => storage.exists(path), stat: (path) => storage.stat(path),
+          readdir: async (path) => { paths.push(`dir:${path}`); return storage.readdir(path); },
+          readBinary: async (path) => { paths.push(`file:${path}`); return storage.readBinary(path); },
+        };
+        try { return await operation(reader); } finally { closed = true; }
+      },
+    });
+    const registry = new AssetRegistry(scoped);
+    await registry.mountRoot(projectContentRoot());
+    expect(registry.list().map((entry) => entry.header.guid).sort()).toEqual(["a", "b"]);
+    expect(paths.sort()).toEqual(["dir:assets", "dir:assets/nested", "file:assets/a.babasset", "file:assets/nested/b.babasset"]);
+    expect(closed).toBe(true);
+  });
   it("mounts the project root and indexes headers only", async () => {
     const storage = await createStorage();
     await writeAsset(storage, "assets/tex.babasset", {

@@ -1,4 +1,4 @@
-import type { ProjectStorage } from "@babylonslate/core";
+import type { ProjectStorage, ProjectStorageReader } from "@babylonslate/core";
 import { ENGINE_VERSION } from "@babylonslate/core";
 import {
   decodeBabasset,
@@ -202,7 +202,10 @@ export class AssetRegistry {
 
   async mountRoot(root: ContentRoot): Promise<void> {
     this.roots.set(root.id, root);
-    await this.walk(root, root.pathPrefix);
+    const storage = this.storageOf(root);
+    if (storage.withReadScope) {
+      await storage.withReadScope((reader) => this.walk(root, root.pathPrefix, reader));
+    } else await this.walk(root, root.pathPrefix, storage);
   }
 
   unmountRoot(rootId: string): void {
@@ -1504,8 +1507,7 @@ export class AssetRegistry {
     return root;
   }
 
-  private async walk(root: ContentRoot, dir: string): Promise<void> {
-    const storage = this.storageOf(root);
+  private async walk(root: ContentRoot, dir: string, storage: ProjectStorageReader): Promise<void> {
     let entries;
     try {
       entries = await storage.readdir(dir);
@@ -1517,7 +1519,7 @@ export class AssetRegistry {
       if (entry.isDir) {
         if (entry.name === BLOBS_DIR_NAME) continue;
         this.knownFolders.add(path);
-        await this.walk(root, path);
+        await this.walk(root, path, storage);
         continue;
       }
       if (entry.name === FOLDER_MARKER_NAME) {

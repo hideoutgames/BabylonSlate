@@ -19,6 +19,9 @@ export interface FileStat {
   mtime: number | null;
 }
 
+/** Read-only view whose path lookup cache may live for one caller operation. */
+export type ProjectStorageReader = Pick<ProjectStorage, "readText" | "readBinary" | "exists" | "readdir" | "stat">;
+
 /**
  * Binary-capable project filesystem. UI never calls Capacitor directly.
  * @see docs/architecture/vfs.md
@@ -47,6 +50,9 @@ export interface ProjectStorage {
    * chosen-folder adapters omit this — Homepage only drops recents there.
    */
   deleteProject?(handle: ProjectFolderHandle): Promise<void>;
+
+  /** Optional directory-lookup reuse for scans; not a transactional file snapshot. */
+  withReadScope?<T>(operation: (storage: ProjectStorageReader) => Promise<T>): Promise<T>;
 
   readText(path: string): Promise<string>;
   writeText(path: string, data: string): Promise<void>;
