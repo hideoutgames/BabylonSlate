@@ -55,6 +55,20 @@ describe("rewriteRepoSourceHref", () => {
     expect(rewriteRepoSourceHref("#overview", "engineplan.md")).toBe("#overview");
   });
 
+  it("preserves local JSON evidence while resolving repository JSON links", () => {
+    for (const href of [
+      "../assets/renderer-qualification/measurements.json",
+      "./evidence/shadow-self-shadowing/corrected.json?raw=1#settings",
+    ]) {
+      expect(rewriteRepoSourceHref(href, "design/renderer-qualification.md"))
+        .toBe(href);
+    }
+    expect(rewriteRepoSourceHref("../../release/changelog.json", "design/perf-budget.md"))
+      .toBe(`${GITHUB_BLOB_BASE}release/changelog.json`);
+    expect(rewriteRepoSourceHref("packages/core/package.json", "engineplan.md"))
+      .toBe(`${GITHUB_BLOB_BASE}packages/core/package.json`);
+  });
+
   it("rewrites href attributes on markdown-it link_open tokens", () => {
     const md = { renderer: { rules: {} as Record<string, unknown> } };
     installRepoLinkRewriter(md);

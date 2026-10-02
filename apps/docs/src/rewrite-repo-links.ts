@@ -11,7 +11,9 @@ const REPO_ROOT_PREFIXES = [
   "e2e/",
 ];
 
-const SOURCE_FILE = /\.(?:ts|tsx|js|jsx|mjs|cjs|css|mdc|vue|json)$/i;
+// JSON evidence is a documentation asset. Repository JSON links still resolve
+// through a root prefix or an explicit path outside docs, like other assets.
+const SOURCE_FILE = /\.(?:ts|tsx|js|jsx|mjs|cjs|css|mdc|vue)$/i;
 
 export function rewriteRepoSourceHref(href: string, fromDocPath: string): string {
   const hashIndex = href.indexOf("#");

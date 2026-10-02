@@ -4,6 +4,8 @@ Authoritative detail lives in [engineplan.md](../engineplan.md). This page orien
 
 `docs/` markdown is the source of truth for GitHub and the VitePress site at [https://hideoutgames.github.io/BabylonSlate/docs/](https://hideoutgames.github.io/BabylonSlate/docs/).
 
+The docs site keeps JSON qualification evidence as local documentation assets. Source links that leave `docs/`, including repository JSON configuration, resolve to GitHub.
+
 ## Monorepo
 
 ```

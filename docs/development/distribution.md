@@ -2,6 +2,8 @@
 
 Distribution is explicitly invoked and separate from ordinary build, Verify, Preview, and merge operations. Test and release builds have different identities. Neither channel submits to the App Store.
 
+The independent TestFlight finalization and GitHub publication jobs install locked dependencies before accessing credentials or artifacts. Package lifecycle scripts are disabled in these jobs; finalization does not rebuild native binaries.
+
 ## Version contract
 
 - The dispatch version must match `release/version.json` at the selected source commit. Generated counters are never committed by Actions.
