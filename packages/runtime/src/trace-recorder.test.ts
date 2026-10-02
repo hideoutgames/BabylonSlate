@@ -22,6 +22,7 @@ describe("runtime trace recorder", () => {
       runtime.executeConsoleCommand("snapshot start");
       runtime.tick();
       runtime.tick();
+      runtime.executeConsoleCommand("snapshot stop");
       const trace = runtime.stopTrace()!;
       expect(trace.frames).toHaveLength(2);
       const snapshot = JSON.parse(trace.frames[1]!.snapshotText!);
