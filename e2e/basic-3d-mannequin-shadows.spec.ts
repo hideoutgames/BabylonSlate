@@ -83,8 +83,17 @@ for (const variant of cases) test(`Basic 3D mannequin ${variant.backend} ${varia
       shadows: window.__babylonslateViewportTest.shadowDiagnostics(),
       documentVisibility: document.visibilityState,
     }));
+    const animationFrameProbe = await page.evaluate(async () => {
+      const started = performance.now();
+      let fired = false;
+      const frame = requestAnimationFrame(() => { fired = true; });
+      await new Promise<void>(resolve => setTimeout(resolve, 1_000));
+      cancelAnimationFrame(frame);
+      return { fired, elapsedMs: performance.now() - started,
+        baseline: window.__babylonslateViewportTest.renderingBaseline() };
+    });
     await testInfo.attach("shadow-profile-stall", {
-      body: JSON.stringify({ beforeSettings, ...stalled }, null, 2),
+      body: JSON.stringify({ beforeSettings, ...stalled, animationFrameProbe, errors }, null, 2),
       contentType: "application/json",
     });
     throw error;
