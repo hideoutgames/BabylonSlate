@@ -553,8 +553,6 @@ Models get Babylon mesh LOD levels automatically (`model-lod.ts`). Texture strea
 
 See [asset-registry.md](asset-registry.md) and [anim-graph.md](anim-graph.md).
 
-## AudioService (P16)
-
 Authored lights and cameras retain actor-plus-component identity. Play carries
 their properties on `assignMesh.parts` alongside ordinary visuals, so several
 lights or cameras can share an actor without replacing its mesh. Each native
@@ -562,6 +560,13 @@ helper follows its component hierarchy, including spring-arm sockets; the
 Default Camera selects the saved component ID. Property-only illumination
 updates retain working visuals and camera identities, while component removal
 or visual retirement disposes every owned native helper.
+
+Rendering admission continues applying requested shadow settings and preparing
+replacement resources while shaders are unready. A failed strict probe cannot
+strand the previous shadow profile; drawing and dynamic geometry uploads still
+wait for successful scene admission.
+
+## AudioService (P16)
 
 Main-thread owner shared by overlay Play and `apps/player`. Wraps Babylon 9 AudioV2 behind `AudioPlaybackBackend`. Unit tests use `FakeAudioPlaybackBackend`; `babylon-audio-backend.ts` is coverage-excluded (needs a real audio context).
 
