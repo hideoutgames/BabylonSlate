@@ -142,7 +142,7 @@ export function ParticlePreviewSurface({
     );
   }
 
-  const shown = stats && stats.backend !== "none" ? stats : null;
+  const shown = stats && stats.backend !== "none" ? { ...stats, backend: stats.backend } : null;
   const activeOf = shown ? `${count(shown.active)} of ${count(shown.capacity)}` : "";
   return (
     <div className="relative h-full min-h-0 w-full" data-testid={testId}>

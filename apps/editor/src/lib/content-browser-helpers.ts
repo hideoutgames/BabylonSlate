@@ -27,6 +27,7 @@ import {
 } from "@babylonslate/assets";
 import {
   classIdsFromVariableMembers,
+  assetVariableGuidsFromGraph,
   areaEmissionTextureGuids,
   createDefaultScene,
   createSceneStreamingActor,
@@ -1877,6 +1878,7 @@ export function assetHeaderDependencies(
   visitInputRefs(payload);
   const unique = new Set<string>([
     ...inputRefs,
+    ...(["Class", "Graph"].includes(assetType) ? assetVariableGuidsFromGraph(payload as unknown as import("@babylonslate/core").SerializedGraph) : []),
     ...(["Class", "Graph"].includes(assetType) ? renderTargetAssetGuidsFromGraph(payload as unknown as import("@babylonslate/core").SerializedGraph) : []),
     ...areaEmissionTextureGuids(payload),
     ...findClassAssetReferences({ ...payload, parentClass }, classes.flatMap((asset) =>

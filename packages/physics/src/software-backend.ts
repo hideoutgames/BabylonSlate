@@ -490,6 +490,7 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
       for (let j = i + 1; j < list.length; j++) {
         const colliderA = list[i]!;
         const colliderB = list[j]!;
+        if (!(colliderA.desc.layer & colliderB.desc.mask) || !(colliderB.desc.layer & colliderA.desc.mask)) continue;
         const bodyA = this.bodies.get(colliderA.desc.bodyId);
         const bodyB = this.bodies.get(colliderB.desc.bodyId);
         if (!bodyA || !bodyB || bodyA === bodyB) continue;
@@ -645,7 +646,7 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
     let best: HitResult = miss();
     for (const collider of this.colliders.values()) {
       const body = this.bodies.get(collider.desc.bodyId);
-      if (!body || ignored.has(body.desc.actorId)) continue;
+      if (!body || ignored.has(body.desc.actorId) || (options?.includeTriggers === false && collider.desc.isTrigger)) continue;
       const box = aabbForCollider(collider.desc, body.transform);
       const t = rayAabb(start, dir, box.min, box.max);
       if (t === null || t < 0 || t > 1 || t >= bestT) continue;
@@ -667,12 +668,13 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
     return best;
   }
 
-  sphereOverlap(center: Vec3, radius: number): OverlapResult {
+  sphereOverlap(center: Vec3, radius: number, options?: LineTraceOptions): OverlapResult {
+    const ignored = new Set(options?.ignoreActorIds);
     const actorIds: string[] = [];
     const bodyIds: string[] = [];
     for (const collider of this.colliders.values()) {
       const body = this.bodies.get(collider.desc.bodyId);
-      if (!body) continue;
+      if (!body || ignored.has(body.desc.actorId) || (options?.includeTriggers === false && collider.desc.isTrigger)) continue;
       const box = aabbForCollider(collider.desc, body.transform);
       const cx = Math.max(box.min.x, Math.min(center.x, box.max.x));
       const cy = Math.max(box.min.y, Math.min(center.y, box.max.y));
@@ -692,6 +694,7 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
     shape: ColliderDesc["shape"],
     start: PhysicsTransform,
     end: PhysicsTransform,
+    options?: LineTraceOptions,
   ): HitResult {
     // Approximate sweep as a line trace from start to end using shape AABB radius.
     const box = aabbForShape(shape, start.position);
@@ -702,10 +705,10 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
         box.max.z - box.min.z,
       ) * 0.5;
     const midStart = start.position;
-    const hit = this.lineTrace(midStart, end.position);
+    const hit = this.lineTrace(midStart, end.position, options);
     if (!hit.hit || !hit.location) return hit;
     // Inflate: if we would overlap at end, report hit.
-    const overlap = this.sphereOverlap(end.position, radius);
+    const overlap = this.sphereOverlap(end.position, radius, options);
     if (overlap.bodyIds.length === 0) {
       // Still report geometry hit along the path.
       return hit;

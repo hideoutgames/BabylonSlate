@@ -76,6 +76,8 @@ export type ScriptColor = { x: number; y: number; z: number; w: number };
  * node from a later phase runs instead of throwing.
  */
 export interface ScriptHostServices {
+  /** Session seed shared with the world and trace metadata. */
+  seed?: number;
   /** Whether an object may receive authored calls during its owner's load. */
   canRunOwner?(owner: BObject): boolean;
   inputBindings?: InputBindingControls;
@@ -138,7 +140,7 @@ export interface ScriptHostServices {
    */
   findActor?(actorId: string): Actor | undefined;
   sampleWater?(position: Vec3, actorId: string | null): WaterSample & { actorId: string | null };
-  lineTrace?(start: Vec3, end: Vec3, options?: LineTraceOptions): HitResult;
+  lineTrace?(start: Vec3, end: Vec3, options?: LineTraceOptions & { channel?: string }): HitResult;
   projectCursorToScene?(
     channel?: string,
     options?: { drawDebug?: boolean; duration?: number },
@@ -146,11 +148,12 @@ export interface ScriptHostServices {
     worldOrigin: Vec3;
     worldDirection: Vec3;
   };
-  sphereOverlap?(center: Vec3, radius: number): OverlapResult;
+  sphereOverlap?(center: Vec3, radius: number, channel?: string): OverlapResult;
   shapeSweep?(
     shape: ColliderShape,
     start: PhysicsTransform,
     end: PhysicsTransform,
+    channel?: string,
   ): HitResult;
   addImpulse?(
     actor: Actor | null | undefined,
@@ -634,10 +637,11 @@ export class ScriptHost {
   private invokingOwner: BObject | null = null;
   private finalizingOwner: BObject | null = null;
   private commandResult = { success: true, output: "" };
-  private readonly rng: Rng = createSeededRng(1);
+  private readonly rng: Rng;
 
   constructor(services: ScriptHostServices) {
     this.services = services;
+    this.rng = createSeededRng(services.seed ?? 1);
   }
 
   async load(script: CompiledScript): Promise<void> {
@@ -1557,7 +1561,7 @@ export class ScriptHost {
         const sample = services.sampleWater?.(position, waterActor?.guid ?? null);
         return sample ? { ...sample, actor: resolveLiveActor(services, sample.actorId) } : { ...emptyWaterSample(), actor: null };
       },
-      lineTrace: (start, end, _channel, options) => {
+      lineTrace: (start, end, channel, options) => {
         const ignoreActorIds = [
           ...new Set(
             (options?.actorsToIgnore ?? [])
@@ -1565,7 +1569,7 @@ export class ScriptHost {
               .map((actor) => actor.guid),
           ),
         ];
-        const hit = services.lineTrace?.(start, end, { ignoreActorIds }) ?? {
+        const hit = services.lineTrace?.(start, end, { ignoreActorIds, ...(channel ? { channel } : {}) }) ?? {
           hit: false,
           location: null,
           actorId: null,
@@ -1625,8 +1629,8 @@ export class ScriptHost {
           worldDirection: hit.worldDirection ?? { x: 0, y: 0, z: 0 },
         };
       },
-      sphereOverlap: (center, radius) => {
-        const overlap = services.sphereOverlap?.(center, radius) ?? {
+      sphereOverlap: (center, radius, channel) => {
+        const overlap = services.sphereOverlap?.(center, radius, channel) ?? {
           actorIds: [],
           bodyIds: [],
         };
@@ -1636,8 +1640,8 @@ export class ScriptHost {
           actors: resolveLiveActors(services, overlap.actorIds),
         };
       },
-      shapeSweep: (shape, start, end) => {
-        const hit = services.shapeSweep?.(shape, start, end) ?? {
+      shapeSweep: (shape, start, end, channel) => {
+        const hit = services.shapeSweep?.(shape, start, end, channel) ?? {
           hit: false,
           location: null,
           normal: null,

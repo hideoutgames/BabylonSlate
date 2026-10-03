@@ -402,8 +402,9 @@ function createLight(
   actor: SerializedActor,
   component: SerializedComponent,
   kind: string,
+  identity = actor.id,
 ): Light {
-  const name = `${AUTHORED_LIGHT_PREFIX}${actor.id}`;
+  const name = `${AUTHORED_LIGHT_PREFIX}${identity}`;
   const composed = composeActorComponentTransform(actor, component);
   const direction = actorForwardFromRotation(composed.rotation);
   if (kind === "hemispheric") {
@@ -431,10 +432,11 @@ function createCamera(
   scene: Scene,
   actor: SerializedActor,
   component: SerializedComponent,
+  identity = actor.id,
 ): UniversalCamera {
   const composed = composeActorComponentTransform(actor, component);
   const camera = new UniversalCamera(
-    `${AUTHORED_CAMERA_PREFIX}${actor.id}`,
+    `${AUTHORED_CAMERA_PREFIX}${identity}`,
     composed.position,
     scene,
   );
@@ -476,42 +478,28 @@ export function updateAuthoredCameraTransform(
   gameCamera.rotation.set(0, 0, 0);
 }
 
+function authoredComponentKey(actorId: string, componentId: string): string {
+  return `${actorId}|${componentId}`;
+}
+
 export function syncAuthoredCamerasFromMeshes(
   scene: Scene,
   sceneData: SerializedScene,
   meshForActor: (actorId: string) => AbstractMesh | null,
 ): void {
+  const state = stateByScene.get(scene);
+  if (!state) return;
   for (const actor of sceneData.actors) {
-    const component = actor.components.find(
-      (entry) => entry.classId === "CameraComponent",
-    );
-    if (!component) continue;
     const mesh = meshForActor(actor.id);
     if (!mesh) continue;
-    const camera = scene.getCameraByName(`${AUTHORED_CAMERA_PREFIX}${actor.id}`);
-    if (!camera) continue;
     const world = mesh.computeWorldMatrix(true);
-    if (mesh.parent) {
-      // Attached actor meshes hold parent-local TRS; follow their world pose.
+    for (const component of actor.components) {
+      if (component.classId !== "CameraComponent") continue;
+      const camera = state.cameras.get(authoredComponentKey(actor.id, component.id));
+      if (!camera) continue;
       const composed = composeWorldComponentTransform(world, actor, component);
       updateAuthoredCameraTransform(camera, composed.position, composed.rotation);
-      continue;
     }
-    const rotation = mesh.rotationQuaternion
-      ? mesh.rotationQuaternion
-      : Quaternion.FromEulerVector(mesh.rotation);
-    const composed = composeActorComponentTransform(
-      {
-        ...actor,
-        transform: {
-          position: [mesh.position.x, mesh.position.y, mesh.position.z],
-          rotation: [rotation.x, rotation.y, rotation.z, rotation.w],
-          scale: [mesh.scaling.x, mesh.scaling.y, mesh.scaling.z],
-        },
-      },
-      component,
-    );
-    updateAuthoredCameraTransform(camera, composed.position, composed.rotation);
   }
 }
 
@@ -553,7 +541,7 @@ export function applySceneEnvironment(
   applyEnvironmentLighting(scene, settings.environmentTextureGuid, options.assets);
 }
 
-function resolveDefaultCameraActorId(sceneData: SerializedScene): string | null {
+function resolveDefaultCameraKey(sceneData: SerializedScene): string | null {
   const actorId = sceneData.settings.mainCameraActorId;
   const componentId = sceneData.settings.mainCameraComponentId;
   if (!actorId || !componentId) return null;
@@ -561,7 +549,7 @@ function resolveDefaultCameraActorId(sceneData: SerializedScene): string | null 
   const component = actor?.components.find(
     (entry) => entry.id === componentId && entry.classId === "CameraComponent",
   );
-  return component ? actorId : null;
+  return component ? authoredComponentKey(actorId, component.id) : null;
 }
 
 /**
@@ -619,24 +607,21 @@ export function* syncAuthoredIlluminationSteps(
         options.onDiagnostic?.(`Rectangular Area Light ${actor.id}: ${String(error)}`);
       }
     }
-    const fillComponent = actor.components.find(
-      (component) => component.classId === HEMISPHERIC_FILL_LIGHT_CLASS_ID,
-    );
-    const lightComponent =
-      fillComponent ??
-      actor.components.find((component) => component.classId === "LightComponent");
-    if (lightComponent) {
-      liveLights.add(actor.id);
-      const kind = fillComponent ? "hemispheric" : lightKindOf(lightComponent);
-      let light = state.lights.get(actor.id);
-      if (light && state.lightKinds.get(actor.id) !== kind) {
+    const lightComponents = actor.components.filter(component =>
+      component.classId === HEMISPHERIC_FILL_LIGHT_CLASS_ID || component.classId === "LightComponent");
+    for (const [index, lightComponent] of lightComponents.entries()) {
+      const key = authoredComponentKey(actor.id, lightComponent.id);
+      liveLights.add(key);
+      const kind = lightComponent.classId === HEMISPHERIC_FILL_LIGHT_CLASS_ID ? "hemispheric" : lightKindOf(lightComponent);
+      let light = state.lights.get(key);
+      if (light && state.lightKinds.get(key) !== kind) {
         light.dispose();
         light = undefined;
       }
       if (!light) {
-        light = createLight(scene, actor, lightComponent, kind);
-        state.lights.set(actor.id, light);
-        state.lightKinds.set(actor.id, kind);
+        light = createLight(scene, actor, lightComponent, kind, index === 0 ? actor.id : key);
+        state.lights.set(key, light);
+        state.lightKinds.set(key, kind);
       }
       applyAuthoredLightProperties(light, lightComponent.properties);
       {
@@ -658,15 +643,14 @@ export function* syncAuthoredIlluminationSteps(
       }
 
     }
-    const cameraComponent = actor.components.find(
-      (component) => component.classId === "CameraComponent",
-    );
-    if (cameraComponent) {
-      liveCameras.add(actor.id);
-      let camera = state.cameras.get(actor.id);
+    const cameraComponents = actor.components.filter(component => component.classId === "CameraComponent");
+    for (const [index, cameraComponent] of cameraComponents.entries()) {
+      const key = authoredComponentKey(actor.id, cameraComponent.id);
+      liveCameras.add(key);
+      let camera = state.cameras.get(key);
       if (!camera) {
-        camera = createCamera(scene, actor, cameraComponent);
-        state.cameras.set(actor.id, camera);
+        camera = createCamera(scene, actor, cameraComponent, index === 0 ? actor.id : key);
+        state.cameras.set(key, camera);
       }
       applyAuthoredCameraProperties(camera, cameraComponent.properties);
       {
@@ -712,7 +696,7 @@ export function* syncAuthoredIlluminationSteps(
   for (const [id, group] of state.areaLights) if (!liveAreaLights.has(id)) { group.dispose(); state.areaLights.delete(id); }
 
 
-  const namedId = resolveDefaultCameraActorId(sceneData);
+  const namedId = resolveDefaultCameraKey(sceneData);
   const named = namedId ? state.cameras.get(namedId) : undefined;
   if (options.stealActiveCamera && named) {
     scene.activeCamera = named;

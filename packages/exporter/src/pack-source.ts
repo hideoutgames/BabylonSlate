@@ -36,17 +36,24 @@ export function createHttpPackSource(
 ): PackSource {
   let decoded: DecodedBabpack | null = knownPack ? decodeBabpack(knownPack) : null;
   let entries: BabpackEntry[] | null = decoded?.entries ?? null;
+  let indexLoad: Promise<BabpackEntry[]> | null = null;
+  let wholeLoad: Promise<DecodedBabpack> | null = null;
+  let entriesByGuid: Map<string, BabpackEntry> | null = null;
 
   async function loadWhole(): Promise<DecodedBabpack> {
-    const response = await fetchImpl(url);
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    decoded = decodeBabpack(bytes);
-    entries = decoded.entries;
-    return decoded;
+    if (decoded) return decoded;
+    if (!wholeLoad) wholeLoad = (async () => {
+      const response = await fetchImpl(url);
+      if (!response.ok) throw new Error(`Could not load pack: ${response.status}`);
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      decoded = decodeBabpack(bytes);
+      entries = decoded.entries;
+      return decoded;
+    })().finally(() => { wholeLoad = null; });
+    return wholeLoad;
   }
 
-  async function ensureIndex(): Promise<BabpackEntry[]> {
-    if (entries) return entries;
+  async function loadIndex(): Promise<BabpackEntry[]> {
     const probe = await fetchImpl(url, { headers: rangeHeaders(0, 8) });
     const probeBytes = new Uint8Array(await probe.arrayBuffer());
     if (isWholeBody(probe.status, probeBytes, 8)) {
@@ -75,10 +82,17 @@ export function createHttpPackSource(
     return entries;
   }
 
+  async function ensureIndex(): Promise<BabpackEntry[]> {
+    if (entries) return entries;
+    if (!indexLoad) indexLoad = loadIndex().finally(() => { indexLoad = null; });
+    return indexLoad;
+  }
+
   return {
     async read(guid: string) {
       const index = await ensureIndex();
-      const entry = index.find((item) => item.guid === guid);
+      entriesByGuid ??= new Map(index.map((entry) => [entry.guid, entry]));
+      const entry = entriesByGuid.get(guid);
       if (!entry) throw new Error(`Pack is missing ${guid}`);
       if (decoded) return decoded.read(guid);
       const response = await fetchImpl(url, {

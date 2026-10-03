@@ -770,13 +770,13 @@ function MaterialCostSummary() {
 }
 
 /** Per-node properties for the selected graph node. */
-function MaterialNodeDetails({
+function MaterialNodeDetails<T extends MaterialGraphDocument>({
   document,
   commit,
   selectedNodeId,
 }: {
-  document: MaterialGraphDocument;
-  commit: (next: MaterialGraphDocument, mergeKey?: string) => void;
+  document: T;
+  commit: (next: T, mergeKey?: string) => void;
   selectedNodeId: string | null;
 }) {
   const { assetRegistry, registryVersion } = useDocuments();
@@ -964,14 +964,14 @@ function MaterialNodeDetails({
   );
 }
 
-function MaterialFunctionPicker({
+function MaterialFunctionPicker<T extends MaterialGraphDocument>({
   node,
   document,
   commit,
 }: {
   node: string;
-  document: MaterialGraphDocument;
-  commit: (next: MaterialGraphDocument) => void;
+  document: T;
+  commit: (next: T) => void;
 }) {
   const { assetRegistry, registryVersion } = useDocuments();
   const [open, setOpen] = useState(false);

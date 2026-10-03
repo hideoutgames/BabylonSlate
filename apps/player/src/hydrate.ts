@@ -54,6 +54,12 @@ import {
 import type { LoadedGame } from "./artifact";
 
 const decoder = new TextDecoder();
+const JSON_CONTENT_TYPES = new Set([
+  "RenderTarget", "RenderTargetTexture", "Sprite", "SpriteAnimation", "Water",
+  "Tilemap", "Tileset", "AnimationGraph", "BehaviourTree", "Blackboard",
+  "Material", "MaterialInstance", "MaterialFunction", "AudioMixer", "AudioChannel",
+  "SoundAttenuation", "Animation", "Audio",
+]);
 
 export type PackedAudioLibrary = {
   mixerGuid: string | null;
@@ -167,6 +173,9 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
   const animationNames = new Map<string, string>();
 
   for (const entry of game.manifest.assets ?? []) {
+    if (!JSON_CONTENT_TYPES.has(entry.type) && !isParticleAssetType(entry.type)) continue;
+    // Packed Audio already has its envelope parsed; its clip data is binary.
+    if (entry.type === "Audio" && audio.has(entry.guid)) continue;
     const bytes = game.payloads.get(entry.guid);
     if (!bytes) continue;
     const parsed = jsonFromBytes(bytes);

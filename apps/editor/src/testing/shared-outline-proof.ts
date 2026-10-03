@@ -68,7 +68,24 @@ export async function runSharedOutlineProof(backend: "webgl2" | "webgpu",
     if (id === undefined) { id = nextObjectId++; objectIds.set(object, id); }
     return id;
   };
-  const snapshots = [];
+  const snapshots: {
+    name: string;
+    image: string;
+    lanes: { red: number; green: number; blue: number }[];
+    redCoverage: number[];
+    coveredPartialRed: number;
+    coveredBoundaryRed: number;
+    drawingBuffer: { width: number; height: number };
+    draws: number;
+    tasks: ReturnType<SceneRenderCoordinator["taskNames"]>;
+    outline: ReturnType<SceneRenderCoordinator["sharedOutlineDiagnostics"]>;
+    renderers: number[];
+    textures: number[];
+    objectRenderers: number;
+    reservations: ReturnType<typeof managedRenderReservations>;
+    owner: ReturnType<typeof owner.diagnostics>;
+    view: ReturnType<typeof view.diagnostics>;
+  }[] = [];
   const waitFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
   const capture = async (name: string) => {
     await onProgress?.({ stage: name, state: "preparing" });

@@ -199,7 +199,7 @@ export function collectParentFunctionSignatures(options: {
   pins: GraphClassMemberPin[];
 }> {
   const parentOf = parentLookup(options.parentOf);
-  const rows = [];
+  const rows: Array<{ classId: string; name: string; pins: GraphClassMemberPin[] }> = [];
   if (!options.classId) return rows;
   for (const ancestor of walkAncestry(options.classId, parentOf)) {
     if (ancestor === options.classId) continue;

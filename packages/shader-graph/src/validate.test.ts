@@ -3,8 +3,9 @@ import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
   type MaterialDocument,
+  type MaterialFunctionDocument,
 } from "./document";
-import { validateMaterialDocument } from "./validate";
+import { collectFunctionDependencies, validateMaterialDocument } from "./validate";
 
 function codes(doc: MaterialDocument, context = {}): string[] {
   return validateMaterialDocument(doc, context).map((row) => row.code);
@@ -491,6 +492,36 @@ describe("material validation", () => {
     expect(validateMaterialDocument(doc, { functions: { inner, outer } })).toEqual(expect.arrayContaining([
       expect.objectContaining({ code: "material.unknownNode", nodeId: "call/nested/invalid" }),
     ]));
+  });
+
+  it("validates shared function bodies within a linear work budget, including disconnected calls", () => {
+    const functions: Record<string, MaterialFunctionDocument> = {};
+    const depth = 12;
+    const call = (id: string, functionGuid: string) => ({
+      id, type: "function.call", position: { x: 0, y: 0 }, properties: { functionGuid },
+    });
+    for (let i = 0; i < depth; i += 1) {
+      const fn = createDefaultMaterialFunctionDocument(`Function ${i}`);
+      if (i + 1 < depth) fn.nodes.push(call("first", `f${i + 1}`), call("second", `f${i + 1}`));
+      else fn.nodes.push({ id: "invalid", type: "unknown.node", position: { x: 0, y: 0 }, properties: {} });
+      functions[`f${i}`] = fn;
+    }
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push(call("root", "f0"));
+    let lookups = 0;
+    const measured = new Proxy(functions, { get(target, key: string) { lookups += 1; return target[key]; } });
+    const diagnostics = validateMaterialDocument(doc, { functions: measured });
+    expect(diagnostics.filter(row => row.code === "material.unknownNode")).toEqual([
+      expect.objectContaining({ nodeId: `root/${"first/".repeat(depth - 1)}invalid` }),
+    ]);
+    expect(lookups).toBeLessThan(depth * 50);
+
+    // A back edge must still be diagnosed after shared siblings were visited.
+    functions.f11!.nodes.push(call("back", "f0"), call("missing", "absent"));
+    const dependencies = collectFunctionDependencies(doc, functions);
+    expect(dependencies.guids).toHaveLength(depth);
+    expect(dependencies.recursion).toEqual([...Array.from({ length: depth }, (_, i) => `f${i}`), "f0"]);
+    expect(dependencies.missing).toEqual(["absent"]);
   });
 
   it("checks function nodes against the calling material domain", () => {

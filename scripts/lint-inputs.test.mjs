@@ -17,3 +17,15 @@ test("lint excludes copied browser bundles while retaining authored code", async
     false,
   );
 });
+
+test("Node tooling reports undefined names and unused bindings", async () => {
+  const eslint = new ESLint({ cwd: repoRoot });
+  const [result] = await eslint.lintText(
+    "const unused = 1; process.stdout.write(missingValue);\n",
+    { filePath: join(repoRoot, "scripts/lint-contract.mjs") },
+  );
+  assert.deepEqual(result.messages.map((message) => message.ruleId).sort(), [
+    "no-undef",
+    "no-unused-vars",
+  ]);
+});

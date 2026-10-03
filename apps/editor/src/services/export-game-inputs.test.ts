@@ -41,6 +41,18 @@ function textureAsset(): IndexedAsset {
 }
 
 describe("loadExportDocuments", () => {
+  it.each(["RenderTarget", "RenderTargetTexture"])("retains %s document bytes and dependency payloads for export", async (type) => {
+    const document = type === "RenderTarget" ? { size: 512, mode: "depth" } : { renderTargetGuid: "target", attachment: "depth" };
+    const asset: IndexedAsset = { ...textureAsset(), path: `assets/capture.${type}.babasset`, header: {
+      ...textureAsset().header, guid: "capture", type, payload: {}, chunks: [
+        { id: "document", kind: "document", mime: "application/json", sha256: "aa", locator: { inline: { offset: 0, length: 1 } } },
+      ],
+    } };
+    const loaded = await loadExportDocuments({ assets: [asset], loadDocument: async (_kind, path) => path === asset.path ? document : null,
+      readAssetChunk: async () => null });
+    expect(loaded.payloadByGuid("capture")).toEqual(document);
+    expect(JSON.parse(new TextDecoder().decode(loaded.bytesByGuid("capture")!))).toEqual(document);
+  });
   it("keeps processed emission separate from a Texture's visual representation and rejects corrupt data on reachability", async () => {
     const asset = textureAsset();
     const sourceHash = "a".repeat(64);

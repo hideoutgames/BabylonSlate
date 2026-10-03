@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   createDefaultWaterDefinition,
   createActor,
@@ -24,6 +24,7 @@ import {
   createDefaultParticleSystemPayload,
   createDefaultSpriteAnimationPayload,
   encodeGlbJsonBin,
+  normalizeAudioPayload,
 } from "@babylonslate/assets";
 import { exportGame, navmeshExportGuid } from "@babylonslate/exporter";
 import { resolveAudioPlayback } from "@babylonslate/assets";
@@ -48,6 +49,24 @@ function pngIhdr(width: number, height: number): Uint8Array {
 }
 
 describe("packedContentFromGame", () => {
+  it("does not decode binary asset payloads as JSON during hydration", async () => {
+    const binaryTypes = ["Texture", "Model", "Font", "Audio", "Navmesh", "AudioReverb"];
+    const exported = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [] });
+    if (!exported.ok) throw new Error(exported.error);
+    const game = await loadGameFromFiles(exported.value.files);
+    for (const type of binaryTypes) {
+      game.manifest.assets!.push({ guid: type, type, encoding: "bytes", pack: "boot.babpack" });
+      game.payloads.set(type, new Uint8Array([0xff, 0xfe, 0xfd]));
+    }
+    // Packed audio metadata was already extracted from its binary envelope.
+    game.audioPayloads.set("Audio", normalizeAudioPayload({}));
+    const binary = new Set(game.payloads.values());
+    const decode = vi.spyOn(TextDecoder.prototype, "decode");
+    try {
+      packedContentFromGame(game);
+      expect(decode.mock.calls.some(([bytes]) => binary.has(bytes as Uint8Array))).toBe(false);
+    } finally { decode.mockRestore(); }
+  });
   it.each(["packed", "loose"] as const)("hydrates live render target assets without treating them as uploaded images (%s)", async (mode) => {
     const packed = await exportGame({
       mode, bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [],

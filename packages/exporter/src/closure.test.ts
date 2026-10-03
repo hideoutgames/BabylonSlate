@@ -28,6 +28,21 @@ function asset(
 }
 
 describe("collectExportReachability", () => {
+  it("packs non-texture variable assets and their transitive dependencies", () => {
+    const graph: SerializedGraph = { nodes: [], edges: [], members: [
+      { id: "clips", kind: "variable", name: "Clips", typeId: "asset", typeClassId: "Audio", container: "array", defaultValue: ["clip"] },
+      { id: "name", kind: "variable", name: "Name", typeId: "string", defaultValue: "unused" },
+    ] };
+    const result = collectExportReachability({ startupSceneGuid: "scene", pluginEnabledGuids: new Set(), parentOf: () => "Actor",
+      assets: [
+        asset({ guid: "scene", name: "Scene", type: "Scene", dependencies: ["host"] }),
+        asset({ guid: "host", name: "Host", type: "Class" }),
+        asset({ guid: "clip", name: "Clip", type: "Audio", dependencies: ["channel"] }),
+        asset({ guid: "channel", name: "Channel", type: "AudioChannel" }),
+        asset({ guid: "unused", name: "Unused", type: "Audio" }),
+      ], sceneByGuid: () => createDefaultScene(), graphByGuid: (guid) => guid === "host" ? graph : null });
+    expect(result).toMatchObject({ ok: true, value: { guids: ["channel", "clip", "host", "scene"] } });
+  });
   it("packs nested streamed scenes and their assets without requiring a Change Scene node", () => {
     const stream = (id: string, target: string) => createActor(id, id, { classId: "SceneStreamingActor", components: [
       { id: `${id}-component`, classId: "SceneStreamingComponent", properties: { sceneGuid: target, sceneName: target } },

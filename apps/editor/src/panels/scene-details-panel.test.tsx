@@ -17,6 +17,7 @@ import {
   quaternionToEulerDegrees,
 } from "@babylonslate/core";
 import { SceneDetailsPanel } from "./scene-details-panel";
+import { diffSceneCommands, EditSession } from "@babylonslate/edit";
 import type { SceneShapeEditTarget } from "../context/scene-editing-context";
 
 if (
@@ -939,6 +940,26 @@ describe("SceneDetailsPanel authoring", () => {
       meshKind: "box",
       assetGuid: "mesh-1",
     });
+  });
+
+  it("adds a distinct component after deleting a middle row without changing the remaining component", () => {
+    const actor = createActor("actor-1", "Actor", { components: [
+      createMeshComponent("actor-1-component-1", "box"),
+      { id: "actor-1-component-3", classId: "PointLightComponent", properties: { intensity: 5 } },
+    ] });
+    scene().actors = [actor];
+    const before = scene();
+    harness.selectedActorIds = [actor.id];
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    fireEvent.click(screen.getByTestId("details-add-component"));
+    fireEvent.click(screen.getByTestId("add-component-catalog-item-asset-mesh-1"));
+    const intended = harness.applySceneChange.mock.lastCall![1];
+    const result = new EditSession().applyBatch("scene", before, diffSceneCommands(before, intended))!;
+    const components = result.doc.actors[0]!.components;
+    expect(components).toHaveLength(3);
+    expect(new Set(components.map((component) => component.id)).size).toBe(3);
+    expect(components[1]).toEqual(actor.components[1]);
+    expect(components[2]).toMatchObject({ classId: "MeshComponent", properties: { assetGuid: "mesh-1" } });
   });
 
   it("reorders, disables, and removes a post-process pass", () => {

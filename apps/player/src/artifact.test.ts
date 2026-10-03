@@ -25,6 +25,29 @@ function useScriptsFilename(files: Map<string, Uint8Array>, scriptsFile: string)
 }
 
 describe("loadGameFromFiles", () => {
+  it.each(["packed", "loose"] as const)("overlaps asset HTTP requests with a bounded pool (%s)", async (mode) => {
+    const result = await exportGame({ mode, bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [],
+      assets: Array.from({ length: 15 }, (_, index) => ({ guid: `texture-${index}`, type: "Texture", sceneGuid: "scene", bytes: new Uint8Array([index]) })) });
+    if (!result.ok) throw new Error(result.error);
+    let active = 0;
+    let peak = 0;
+    const game = await loadGameFromHttp("https://game.example/", async (input, init) => {
+      const path = new URL(String(input)).pathname.slice(1);
+      const bytes = result.value.files.get(path);
+      if (!bytes) return new Response(null, { status: 404 });
+      const range = new Headers(init?.headers).get("Range");
+      const match = range ? /^bytes=(\d+)-(\d+)$/.exec(range) : null;
+      const isAsset = mode === "loose" ? path.startsWith("assets/") : Boolean(match && Number(match[1]) > 0);
+      if (isAsset) { active++; peak = Math.max(peak, active); }
+      await Promise.resolve();
+      if (isAsset) active--;
+      return new Response(match ? bytes.subarray(Number(match[1]), Number(match[2]) + 1) : bytes, { status: match ? 206 : 200 });
+    });
+    expect(game.textureBytes.size).toBe(15);
+    expect(game.textureBytes.get("texture-14")).toEqual(new Uint8Array([14]));
+    expect(peak).toBeGreaterThan(1);
+    expect(peak).toBeLessThanOrEqual(6);
+  });
   it.each([true, false])("loads prepared emission independently of visual texture bytes (packed=%s)", async (pack) => {
     const emission = await encodeAreaEmission(new Uint8Array(AREA_EMISSION_EDGE ** 2 * 4).fill(200), "a".repeat(64));
     const exported = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], mode: pack ? "packed" : "loose", assets: [

@@ -449,6 +449,7 @@ function initializePlayer(
       undefined,
     scenes,
     sceneLayers,
+    sceneNavmeshBytes: Object.fromEntries(content.navmeshByScene),
     ...loopGuardLoadFields(manifest),
     audioAssetGuids: [...content.audioLibrary.audio.keys()],
     materialParameterCatalog: buildMaterialParameterCatalog(content.materialDocuments, content.materialFunctions),
@@ -514,7 +515,7 @@ function initializePlayer(
       },
     },
     activate: ({ sceneAssetGuid }) => {
-      if (!applyPlayerActiveScene(handle, game.scenes, { type: "activeScene", sceneAssetGuid }, hostSceneGuid, receivedActiveScene)) {
+      if (!applyPlayerActiveScene(handle, game.scenes, { type: "activeScene", sceneAssetGuid }, hostSceneGuid, receivedActiveScene, content.audioReverbByScene)) {
         throw new Error("The requested scene is not available in this build.");
       }
       hostSceneGuid = sceneAssetGuid;

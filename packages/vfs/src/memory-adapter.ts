@@ -31,7 +31,7 @@ function textDecoder(): TextDecoder {
 }
 
 /**
- * In-memory ProjectStorage for unit tests and hosts without OPFS.
+ * Explicit in-memory ProjectStorage for tests and transient engine content.
  */
 export class MemoryStorageAdapter implements ProjectStorage {
   private folder: ProjectFolderHandle | null = null;

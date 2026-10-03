@@ -9,6 +9,12 @@ Shared surface for P2 Content Browser, import, thumbnails, and texture compressi
 3. **Payloads on demand.** Chunk bytes load through an accounted accessor. Full LRU resource cache is P4; P2 ships a thin byte-accounted loader so open stays near-zero payload bytes.
 4. **File create/delete outside undo.** Registry owns asset files; `packages/edit` owns in-document edits ([command-layer.md](command-layer.md)).
 
+Saving or renaming an indexed asset preserves inbound GUID references while rebuilding its outbound edges. Folder moves copy all files and empty directories, including source files and sidecars outside the asset index, before removing the source. Case-only renames use a recovery copy on case-insensitive volumes; a failed destination write restores the original, and failed recovery reports the retained backup path. Existing destinations are rejected rather than overwritten. These portable copies protect reported I/O failures; they are not filesystem-atomic across a process crash.
+
+Folder moves and deletions wait for pending asset writes and creations before enumerating the tree. Writes submitted during relocation wait until it finishes; GUID-based saves resolve their current path after admission. This includes newly created assets that were not indexed when the move was requested.
+
+Retained `.babylonslate-move-*` recovery folders stay on disk for recovery/export but are excluded from asset discovery, so their duplicate GUIDs cannot replace live entries after reopening.
+
 ## Content roots
 
 ```ts
@@ -176,6 +182,8 @@ uses `AssetRegistry.prepareAreaEmission` and the existing single-job EncodeQueue
 including its Preview/background pause policy. A dedicated worker owns decoding
 and the pinned native-compatible filter; cancellation terminates that job's
 worker. Processing progress distinguishes queued, decoding, filtering and saving.
+The separable filter accumulates RGB together to reuse each mirrored sample and
+kernel weight, while preserving per-channel order, RGBA8 rounding and exact alpha.
 
 The original `pixels` chunk remains intact. A versioned `area-emission` chunk
 stores lighting data beside it, keyed by original source SHA-256 and processor

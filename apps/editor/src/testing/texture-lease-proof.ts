@@ -1,5 +1,5 @@
 /** Test-build-only real buffer/material and solid-color pixel ownership fixture. */
-import { Color3, Color4, Engine, FreeCamera, Scene, StandardMaterial, Vector3, VertexBuffer } from "@babylonjs/core";
+import { Color3, Color4, Engine, FreeCamera, Scene, StandardMaterial, Vector3, VertexBuffer, type AbstractEngine } from "@babylonjs/core";
 import { createDefaultSpriteAnimationPayload, createDefaultSpritePayload } from "@babylonslate/assets";
 import {
   applyAlbedoTexture, applyAnimStateToScene, applySpriteAnimationAssetFrame, applySpriteFrameUvs,
@@ -34,8 +34,8 @@ export async function runTextureLeaseProof(backend: "webgl2" | "webgpu") {
   owner.cache.acquireTexture = (...args) => { operations.acquisitions++; return originalAcquire(...args); };
   const originalCreate = engine.createVertexBuffer.bind(engine);
   engine.createVertexBuffer = (...args) => { operations.buffers++; return originalCreate(...args); };
-  const originalDynamic = engine.createDynamicVertexBuffer.bind(engine);
-  engine.createDynamicVertexBuffer = (...args) => { operations.buffers++; return originalDynamic(...args); };
+  const originalDynamic: AbstractEngine["createDynamicVertexBuffer"] = engine.createDynamicVertexBuffer.bind(engine);
+  engine.createDynamicVertexBuffer = (...args: Parameters<typeof originalDynamic>) => { operations.buffers++; return originalDynamic(...args); };
   const originalUpdate = engine.updateDynamicVertexBuffer.bind(engine);
   engine.updateDynamicVertexBuffer = (...args) => { operations.updates++; return originalUpdate(...args); };
   scene.onNewMaterialAddedObservable.add(() => operations.materials++);

@@ -811,6 +811,27 @@ export function skyboxFaceGuidsFromScene(
   return found;
 }
 
+/** Collect per-scene baked data without discarding other bakes after a read failure. */
+export async function readPlaySceneBakes(
+  scenes: readonly { guid: string; path?: string }[],
+  readChunk: (path: string, chunkId: string) => Promise<Uint8Array | null>,
+  onError: (guid: string, chunkId: string, error: unknown) => void,
+): Promise<{ navmeshes: Map<string, Uint8Array>; audioReverbs: Map<string, Uint8Array> }> {
+  const navmeshes = new Map<string, Uint8Array>();
+  const audioReverbs = new Map<string, Uint8Array>();
+  // Startup may also be in the scene library. Load its authored path once.
+  const unique = new Map(scenes.filter((scene) => scene.path).map((scene) => [scene.guid, scene.path!]));
+  for (const [guid, path] of unique) {
+    for (const [chunkId, destination] of [[NAVMESH_CHUNK_ID, navmeshes], [AUDIO_REVERB_CHUNK_ID, audioReverbs]] as const) {
+      try {
+        const bytes = await readChunk(path, chunkId);
+        if (bytes?.byteLength) destination.set(guid, bytes);
+      } catch (error) { onError(guid, chunkId, error); }
+    }
+  }
+  return { navmeshes, audioReverbs };
+}
+
 /** Scene `navmesh` extra chunk for Play import. Never generates. */
 export async function readPlayNavmeshBytes(
   path: string | undefined,

@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createMemoryOpfsRoot } from "./test-support/memory-opfs";
+import { webcrypto } from "node:crypto";
 import type { ProjectFolderHandle } from "@babylonslate/core";
 
 const isMobile = vi.fn(() => false);
@@ -32,7 +34,11 @@ describe("createTemplateStorage", () => {
   beforeEach(() => {
     isMobile.mockReturnValue(false);
     localStorage.clear();
+    const root = createMemoryOpfsRoot();
+    vi.stubGlobal("crypto", webcrypto);
+    vi.stubGlobal("navigator", { storage: { getDirectory: async () => root } });
   });
+  afterEach(() => vi.unstubAllGlobals());
 
   it("binds OPFS at the templates folder on web", async () => {
     const storage = await createTemplateStorage("Templates");

@@ -33,7 +33,6 @@ import { documentId, parseDocumentId, isAssetDocumentKind, isSceneWorkspaceKind,
 import {
   appendJournalLines,
   getTile,
-  hasJournal,
   normalizeTilemapPayload,
   readJournalLines,
   readThumbnail,
@@ -69,6 +68,7 @@ import {
   diffSceneCommands,
   EditSession,
   journalRepathLine,
+  journalDiscardLine,
   replayJournalLines,
   resolveJournalLines,
   SetAssetDocumentCommand,
@@ -144,7 +144,7 @@ import {
 import { loadExportDocuments } from "../services/export-game-inputs";
 import { collectFontAssetEntries, collectFontCssStacks, collectFontFacetypeBytes, collectFontMsdfPair } from "../lib/play-fonts";
 import { loadPlayerDistFiles } from "../services/load-player-files";
-import { flushAudioReverbForSave } from "../lib/audio-reverb-bake";
+import { collectAudioReverbFlushScenes, flushAudioReverbForSave } from "../lib/audio-reverb-bake";
 import {
   flushNavBakeForSave,
   lastNavBakeSaveResult,
@@ -195,7 +195,6 @@ import {
 } from "../lib/scene-layer-document";
 import { tryReparentUserClass } from "../lib/reparent-class";
 import {
-  copyInstanceLinkage,
   descendantClassIds,
   prefabTemplatesByClassId,
   scenesEqualForPrefabSync,
@@ -674,7 +673,7 @@ function dockOptionsForIndexed(
     actorPrefab:
       kind !== "graph" ||
       !indexed ||
-      classDocumentShowsPrefab(indexed.header.parentClass, parentOf, {
+      classDocumentShowsPrefab(indexed.header.parentClass, (id) => parentOf(id) ?? null, {
         assetType: indexed.header.type,
       }),
     sourceControl: sourceControlEnabled,
@@ -829,6 +828,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const [thumbnailsEnabled, setThumbnailsEnabled] = useState(true);
   const [pendingExclusiveScene, setPendingExclusiveScene] =
     useState<DocumentRef | null>(null);
+  const exclusiveSceneRequest = useRef(0);
   const [lastCompiledSignature, setLastCompiledSignature] = useState<
     string | null
   >(null);
@@ -1146,7 +1146,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           );
           documentService.replaceLoadedContent(
             doc.id,
-            editorTabContentForKind(doc.ref.kind, loaded) as typeof doc.content,
+            editorTabContentForKind(doc.ref.kind, loaded) as NonNullable<typeof doc.content>,
           );
           editSessionRef.current.dropDocument(doc.id);
         } catch {
@@ -1488,7 +1488,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       projectService.setDerivedStorage(derived);
       const guid = projectService.guid;
       if (guid) {
-        setRecoveryAvailable(await hasJournal(derived, guid));
+        setRecoveryAvailable(resolveJournalLines(await readJournalLines(derived, guid)).length > 0);
       }
       await refreshProjectList();
       await captureMtimeSnapshot();
@@ -1928,8 +1928,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       /** When set, overrides `playerFilesHaveKtx2Transcoder` for Texture packing. */
       transcoderAvailable?: boolean;
     }) => {
-      await flushAudioReverbForSave();
       const exportDocument = options?.projectSnapshot ?? projectDocument;
+      // Export consumes persisted sources even when a tab contains unsaved edits.
+      await flushAudioReverbForSave(await collectAudioReverbFlushScenes({
+        paths: playSceneLibraryPaths(exportDocument?.scenes ?? [], projectService.registry?.list() ?? []),
+        load: (path) => projectService.loadDocument("scene", path),
+      }));
       const preset =
         exportDocument?.settings.exportPresets[0] ?? defaultExportPreset();
       const plugins = projectService.plugins;
@@ -2047,6 +2051,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   const closeDocument = useCallback(
     (id: string) => {
+      const doc = documentService.getDocument(id);
+      const guid = projectService.guid;
+      if (doc && doc.ref.kind !== "content-browser" && guid) {
+        journalBuffer.append(guid, journalDiscardLine(id, new Date().toISOString()));
+      }
       for (const key of dockviewApiKeysForDocument(id)) {
         dockviewApisRef.current.delete(key);
         preFocusLayoutsRef.current.delete(key);
@@ -2070,7 +2079,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       void journalBuffer.flush();
       bump();
     },
-    [bump, disposeDockSubscriptions, documentService, journalBuffer],
+    [bump, disposeDockSubscriptions, documentService, journalBuffer, projectService],
   );
 
   const closeDocumentsForPaths = useCallback(
@@ -2240,6 +2249,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const openDocument = useCallback(
     async (ref: DocumentRef) => {
       if (ref.kind === "scene") {
+        exclusiveSceneRequest.current += 1;
         const blocking = dirtyScenesBlockingOpen(
           documentService.getDirtyDocuments(),
           documentId(ref),
@@ -2277,17 +2287,20 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     async (mode: "save" | "discard") => {
       const ref = pendingExclusiveScene;
       if (!ref) return;
+      const request = exclusiveSceneRequest.current;
       if (mode === "save") {
         const saved = await saveAll();
-        if (!saved) return;
+        if (!saved || request !== exclusiveSceneRequest.current ||
+          dirtyScenesBlockingOpen(documentService.getDirtyDocuments(), documentId(ref)).length > 0) return;
       }
       setPendingExclusiveScene(null);
       await finishOpenDocument(ref);
     },
-    [finishOpenDocument, pendingExclusiveScene, saveAll],
+    [documentService, finishOpenDocument, pendingExclusiveScene, saveAll],
   );
 
   const cancelExclusiveSceneOpen = useCallback(() => {
+    exclusiveSceneRequest.current += 1;
     setPendingExclusiveScene(null);
   }, []);
 
@@ -2566,8 +2579,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         return true;
       }
       const result = editSessionRef.current.applyBatch(id, previous, commands)!;
-      const current = copyInstanceLinkage(intended, result.doc);
-      documentService.updateScene(id, current);
+      documentService.updateScene(id, result.doc);
       await notifyAppliedCommand(id, result.command);
       void afterMutatingApply(sourceControlRef.current, doc.ref.path);
       return true;
@@ -3835,7 +3847,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         const guid = projectService.guid;
         if (!guid) return false;
         const derived = await ensureDerived();
-        return journalBuffer.afterFlush(guid, () => hasJournal(derived, guid));
+        return journalBuffer.afterFlush(guid, async () =>
+          resolveJournalLines(await readJournalLines(derived, guid)).length > 0,
+        );
       },
       /** Open main graph without activating it (avoids GraphEditor stomping edits). */
       ensureMainGraphOpen: async () => {

@@ -19,13 +19,16 @@ function binary(
     category: "math",
     searchAliases: ARITHMETIC_SEARCH_ALIASES[op],
     pure: true,
+    referentiallyTransparent: true,
     pins: () => [
       pin("a", "a", "in", type),
       pin("b", "b", "in", type),
       pin("out", "out", "out", type),
     ],
     codegen: (ctx) => ({
-      out: `(${ctx.input("a")} ${op} ${ctx.input("b")})`,
+      out: type === INT && op === "/"
+        ? `Math.trunc(${ctx.input("a")} / ${ctx.input("b")})`
+        : `(${ctx.input("a")} ${op} ${ctx.input("b")})`,
     }),
   };
 }

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { BabylonSlateScopedStoragePlugin } from "./capacitor-scoped-storage";
+import type { ProjectStorageReader } from "@babylonslate/core";
 import { ScopedStorageAdapter } from "./scoped-storage-adapter";
 
 const prefs = new Map<string, string>();
@@ -39,6 +40,47 @@ function createMockPlugin(): BabylonSlateScopedStoragePlugin {
 describe("ScopedStorageAdapter", () => {
   beforeEach(() => {
     prefs.clear();
+  });
+
+  it("isolates concurrent read scopes, closes failed scans and keeps ordinary reads uncached", async () => {
+    const plugin = createMockPlugin();
+    plugin.beginReadScope = vi.fn()
+      .mockResolvedValueOnce({ readScope: "scan-one" })
+      .mockResolvedValueOnce({ readScope: "scan-two" });
+    plugin.endReadScope = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(plugin.pickFolder).mockResolvedValue({ folder: { id: "folder", name: "Game", supportsReadScope: true } });
+    vi.mocked(plugin.readFile).mockImplementation(async ({ path, readScope }) => ({ data: `${path}:${readScope ?? "ordinary"}` }));
+    const adapter = new ScopedStorageAdapter(plugin);
+    await adapter.pickProjectFolder();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let escaped: ProjectStorageReader | undefined;
+    const first = adapter.withReadScope(async (reader) => {
+      escaped = reader;
+      await gate;
+      return reader.readText("one.txt");
+    });
+    try {
+      await expect(adapter.withReadScope(async (reader) => {
+        expect(await reader.readText("two.txt")).toBe("two.txt:scan-two");
+        throw new Error("Scan failed");
+      })).rejects.toThrow("Scan failed");
+      expect(await adapter.readText("plain.txt")).toBe("plain.txt:ordinary");
+      expect(plugin.endReadScope).toHaveBeenCalledWith({ readScope: "scan-two" });
+    } finally { release(); }
+    expect(await first).toBe("one.txt:scan-one");
+    expect(plugin.endReadScope).toHaveBeenCalledWith({ readScope: "scan-one" });
+    await expect(escaped!.readText("one.txt")).rejects.toThrow("Read scope is closed");
+  });
+
+  it("uses ordinary reads on hosts without native read scopes", async () => {
+    const plugin = createMockPlugin();
+    vi.mocked(plugin.pickFolder).mockResolvedValue({ folder: { id: "folder", name: "Game" } });
+    vi.mocked(plugin.readFile).mockResolvedValue({ data: "content" });
+    const adapter = new ScopedStorageAdapter(plugin);
+    await adapter.pickProjectFolder();
+    expect(await adapter.withReadScope((reader) => reader.readText("file.txt"))).toBe("content");
+    expect(plugin.readFile).toHaveBeenCalledWith({ folder: "folder", path: "file.txt", encoding: "utf8" });
   });
 
   it("loads a persisted folder on init", async () => {
@@ -306,6 +348,18 @@ describe("ScopedStorageAdapter", () => {
         mtime: 1_700_000_000_000,
       },
     ]);
+  });
+
+  it("lists the project root with the portable dot spelling used by project exports", async () => {
+    const plugin = createMockPlugin();
+    prefs.set("babylonslate:scoped-folder", JSON.stringify({ id: "export-root", name: "Game" }));
+    vi.mocked(plugin.readdir).mockImplementation(async ({ path }) => {
+      if (path !== "") throw new Error("Wrong native root path");
+      return { entries: [{ name: "project.json", isDir: false, size: 2 }] };
+    });
+    const adapter = new ScopedStorageAdapter(plugin);
+    await adapter.init();
+    expect((await adapter.readdir(".")).map((entry) => entry.name)).toEqual(["project.json"]);
   });
 
   it("maps NOT_FOUND plugin errors to a clear file message", async () => {

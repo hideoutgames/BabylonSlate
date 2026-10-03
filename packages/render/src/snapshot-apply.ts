@@ -129,6 +129,16 @@ const scratchBoneSlot: ActorSlot = {
 export type AssignMeshCommand = Extract<CommandMessage, { type: "assignMesh" }>;
 export type AssignMeshPart = NonNullable<AssignMeshCommand["parts"]>[number];
 
+type ComponentIllumination = {
+  mesh: Mesh;
+  componentId?: string;
+  light?: Light;
+  camera?: Camera;
+  lightProperties?: AuthoredLightProperties;
+};
+const componentIllumination = new WeakMap<Mesh, ComponentIllumination>();
+const actorIllumination = new WeakMap<Mesh, ComponentIllumination[]>();
+
 export interface SnapshotSceneBinding extends MeshAssetContext {
   ragdoll?: import("./ragdoll-pose").RagdollPoseController;
   /** Runtime component records outlive asynchronous mesh realization. */
@@ -522,7 +532,7 @@ function partsNeedOrigin(
   parts: readonly AssignMeshPart[] | undefined,
 ): boolean {
   if (!parts || parts.length === 0) return false;
-  if (parts.length > 1 || parts.some((part) => part.meshKind === "water" || part.meshKind === "waterRemoval" || part.meshKind === "cable" || part.meshKind === "dynamicRuntimeMesh")) return true;
+  if (parts.length > 1 || parts.some((part) => part.light || part.camera || part.parentTransforms?.length || part.meshKind === "water" || part.meshKind === "waterRemoval" || part.meshKind === "cable" || part.meshKind === "dynamicRuntimeMesh")) return true;
   const part = parts[0]!;
   return (
     Boolean(part.landscape || part.foliage) ||
@@ -682,6 +692,10 @@ export function applyAssignMesh(
   binding: SnapshotSceneBinding,
   command: AssignMeshCommand,
 ): void {
+  const previousParts = binding.meshParts.get(command.slotId);
+  const reusable = !pendingVisualReplacements.get(binding)?.has(command.slotId) &&
+    binding.meshKinds.get(command.slotId) === (command.meshKind ?? null) &&
+    binding.meshAssetGuids.get(command.slotId) === command.meshAssetGuid;
   cancelPendingVisualReplacement(binding, command.slotId);
   const primaryId = !partsNeedOrigin(command.parts)
     ? (command.primaryComponentId ?? command.parts?.[0]?.componentId)
@@ -770,7 +784,31 @@ export function applyAssignMesh(
     }
   }
   const existingLight = binding.lights.get(command.slotId);
-  if (existingLight && command.light) {
+  const componentHelpers = command.parts?.some(part => part.light || part.camera);
+  const existingRoot = binding.meshes.get(command.slotId);
+  if (componentHelpers && reusable && existingRoot?.getScene() === scene && previousParts && command.parts &&
+    actorIllumination.has(existingRoot) && sameComponentVisuals(previousParts, command.parts)) {
+    const parts = new Map(command.parts.map(part => [part.componentId, part]));
+    let selectedCamera: Camera | undefined;
+    for (const helper of actorIllumination.get(existingRoot)!) {
+      const part = helper.componentId ? parts.get(helper.componentId) : undefined;
+      if (helper.light && part?.light) {
+        helper.lightProperties = part.light;
+        applyAuthoredLightProperties(helper.light, part.light);
+      }
+      if (helper.camera && part?.camera) {
+        applyAuthoredCameraProperties(helper.camera, part.camera);
+        if (!selectedCamera || part.camera.isDefault) selectedCamera = helper.camera;
+      }
+    }
+    if (selectedCamera) binding.cameras.set(command.slotId, selectedCamera);
+    stampOverlayPick(existingRoot, command);
+    applyPlayVisualSorting(existingRoot, command.slotId, binding);
+    applyPlayShadows(scene);
+    refreshPlayActiveCamera(scene, binding);
+    return;
+  }
+  if (existingLight && command.light && !componentHelpers) {
     applyAuthoredLightProperties(existingLight, command.light);
     applyPlayShadows(scene);
     refreshPlayActiveCamera(scene, binding);
@@ -778,7 +816,7 @@ export function applyAssignMesh(
   }
   const existingCamera = binding.cameras.get(command.slotId);
   const hasSpringArm = command.parts?.some((part) => part.meshKind === SPRING_ARM_MESH_KIND);
-  if (existingCamera && command.camera && !hasSpringArm) {
+  if (existingCamera && command.camera && !hasSpringArm && !componentHelpers) {
     applyAuthoredCameraProperties(existingCamera, command.camera);
     refreshPlayActiveCamera(scene, binding);
     return;
@@ -886,9 +924,16 @@ export function applyAssignMesh(
         if (props) applyAuthoredLightProperties(light, props); else light.setEnabled(true);
       }
       for (const [slot, camera] of targets.cameras) binding.cameras.set(slot, camera);
+      for (const helper of actorIllumination.get(staged) ?? []) {
+        if (helper.light) {
+          if (helper.lightProperties) applyAuthoredLightProperties(helper.light, helper.lightProperties);
+          else helper.light.setEnabled(true);
+        }
+      }
       adopted = true;
       rejected.delete(command.slotId);
       staged.setEnabled(true);
+      updateComponentIllumination(staged);
       // The adopted root inherits the last snapshot flag, not live membership.
       setPlayVisualVisibility(binding, staged,
         appliedPlayVisibility.get(working) ?? binding.liveSlots.has(command.slotId));
@@ -948,6 +993,7 @@ export function applyAssignMesh(
   releaseRetainedMaterialOwners(binding, command.slotId);
   const rebuilt = stagedText ?? createPlayVisual(scene, command.slotId, binding);
   binding.meshes.set(command.slotId, rebuilt);
+  updateComponentIllumination(rebuilt);
   for (const start of deferredModels) void start().catch(() => {});
   stampOverlayPick(rebuilt, command);
   // A rebuilt mesh loses its material, so re-apply the recorded assignment.
@@ -1317,6 +1363,7 @@ function createPlayVisual(
   root.isVisible = false;
   root.metadata = { ...(root.metadata ?? {}), playActorOrigin: true };
   const meshes = new Map<string, Mesh>();
+  const illumination: ComponentIllumination[] = [];
   let retainedBitmapBytes = text2DBitmapBytes(binding.meshes.get(slotId));
   try {
     for (const part of parts ?? []) {
@@ -1339,11 +1386,14 @@ function createPlayVisual(
         part.cable,
         part.dynamicMesh,
         part.painter,
+        part,
       );
       child.parent = root;
       retainedBitmapBytes += text2DBitmapBytes(child);
       applyPartTransform(child, part);
       meshes.set(part.componentId, child);
+      const helper = componentIllumination.get(child);
+      if (helper) illumination.push(helper);
     }
     for (const part of parts ?? []) {
       const child = meshes.get(part.componentId);
@@ -1362,6 +1412,8 @@ function createPlayVisual(
       }
     }
     attachPlaySpringArms(binding, root, slotId, parts ?? [], meshes);
+    if (illumination.length) actorIllumination.set(root, illumination);
+    if (!targets && illumination.some(helper => helper.light)) applyPlayShadows(scene);
     if (parts?.some((part) => part.meshKind === "2drichtext")) rememberPlayVisualComponents(root, meshes);
     applyPlayVisualSorting(root, slotId, binding);
     return root;
@@ -1448,7 +1500,7 @@ function updatePlaySpringArms(binding: SnapshotSceneBinding, nowMs: number): voi
     for (const rig of rigs) updateSpringArmRig(rig, state.store, dtSeconds);
     const camera = binding.cameras.get(slotId);
     const anchor = springArmCameraAnchorOf(root);
-    if (!camera || !anchor) continue;
+    if (!camera || !anchor || actorIllumination.has(root)) continue;
     anchor.computeWorldMatrix(true).decompose(scratchAnchorScale, scratchAnchorRotation, scratchAnchorPosition);
     updateAuthoredCameraTransform(camera, scratchAnchorPosition, scratchAnchorRotation);
   }
@@ -1481,6 +1533,7 @@ export function createPlayMesh(
   cable?: import("@babylonslate/core").CableProperties & { simulationId?: number },
   dynamicMesh?: { meshId: number; update: import("@babylonslate/core").DynamicMeshUpdate },
   painter?: import("@babylonslate/core").Painter2DProperties,
+  illuminationPart?: AssignMeshPart,
 ): Mesh {
   const name = meshName ?? `actor-${slotId}`;
   if (meshKind === "dynamicRuntimeMesh") return finishPlayWorldMesh(createDynamicRuntimeMesh(scene, name, dynamicMesh));
@@ -1668,9 +1721,11 @@ export function createPlayMesh(
   if (isPlayHelperMeshKind(meshKind)) {
     const mesh = createPrimitiveMesh(scene, name, null);
     markPlayHelperVisual(mesh);
+    const helper: ComponentIllumination = { mesh, componentId: illuminationPart?.componentId };
     if (meshKind?.startsWith("light:") && binding) {
       const kind = meshKind.slice("light:".length);
-      const lightName = `${AUTHORED_LIGHT_PREFIX}${slotId}`;
+      const lights = targets?.lights ?? binding.lights;
+      const lightName = `${AUTHORED_LIGHT_PREFIX}${slotId}${lights.has(slotId) ? `|${illuminationPart?.componentId ?? name}` : ""}`;
       const light =
         kind === "hemispheric"
           ? new HemisphericLight(lightName, new Vector3(0, 1, 0), scene)
@@ -1686,15 +1741,18 @@ export function createPlayMesh(
                   scene,
                 )
               : new PointLight(lightName, Vector3.Zero(), scene);
-      const props = binding.lightProps.get(slotId);
+      const props = illuminationPart?.light ?? binding.lightProps.get(slotId);
       if (props) applyAuthoredLightProperties(light, props);
-      (targets?.lights ?? binding.lights).set(slotId, light);
+      if (!lights.has(slotId)) lights.set(slotId, light);
+      helper.light = light;
+      helper.lightProperties = props;
       if (targets) light.setEnabled(false);
-      else applyPlayShadows(scene);
+      else if (!illuminationPart) applyPlayShadows(scene);
     }
     if (meshKind === "camera" && binding) {
+      const cameras = targets?.cameras ?? binding.cameras;
       const camera = new UniversalCamera(
-        `${AUTHORED_CAMERA_PREFIX}${slotId}`,
+        `${AUTHORED_CAMERA_PREFIX}${slotId}${cameras.has(slotId) ? `|${illuminationPart?.componentId ?? name}` : ""}`,
         Vector3.Zero(),
         scene,
       );
@@ -1704,10 +1762,23 @@ export function createPlayMesh(
       camera.rotation.set(0, 0, 0);
       camera.detachControl();
       camera.inputs.clear();
-      const props = binding.cameraProps.get(slotId);
+      const props = illuminationPart?.camera ?? binding.cameraProps.get(slotId);
       if (props) applyAuthoredCameraProperties(camera, props);
-      (targets?.cameras ?? binding.cameras).set(slotId, camera);
+      if (!cameras.has(slotId) || props?.isDefault) cameras.set(slotId, camera);
+      helper.camera = camera;
       if (!targets) refreshPlayActiveCamera(scene, binding);
+    }
+    if (helper.light || helper.camera) {
+      componentIllumination.set(mesh, helper);
+      actorIllumination.set(mesh, [helper]);
+      mesh.onDisposeObservable.addOnce(() => {
+        helper.light?.dispose();
+        helper.camera?.dispose();
+        const lights = targets?.lights ?? binding?.lights;
+        const cameras = targets?.cameras ?? binding?.cameras;
+        if (helper.light && lights?.get(slotId) === helper.light) lights.delete(slotId);
+        if (helper.camera && cameras?.get(slotId) === helper.camera) cameras.delete(slotId);
+      });
     }
     return finishPlayWorldMesh(mesh);
   }
@@ -1717,6 +1788,24 @@ export function createPlayMesh(
 function finishPlayWorldMesh(mesh: Mesh): Mesh {
   applyWorldVisualGroup(mesh, { components: [] });
   return mesh;
+}
+
+/** Component meshes include every attachment and spring-arm socket transform. */
+function updateComponentIllumination(root: Mesh): void {
+  for (const helper of actorIllumination.get(root) ?? []) {
+    helper.mesh.computeWorldMatrix(true).decompose(scratchAnchorScale, scratchAnchorRotation, scratchAnchorPosition);
+    if (helper.light) updateAuthoredLightTransform(helper.light, scratchAnchorPosition, scratchAnchorRotation);
+    if (helper.camera) updateAuthoredCameraTransform(helper.camera, scratchAnchorPosition, scratchAnchorRotation);
+  }
+}
+
+function sameComponentVisuals(previous: readonly AssignMeshPart[], next: readonly AssignMeshPart[]): boolean {
+  if (previous.length !== next.length) return false;
+  // Illumination property writes must not replace an actor's working meshes or
+  // reset its spring-arm lag. Every other part field still requires assignment.
+  return previous.every((part, index) =>
+    JSON.stringify({ ...part, light: undefined, camera: undefined }) ===
+    JSON.stringify({ ...next[index], light: undefined, camera: undefined }));
 }
 
 function snapshotSlotWantsOverlay(
@@ -1801,6 +1890,7 @@ export function applySnapshotToScene(
       mesh,
       (actor.flags & SNAPSHOT_FLAG_VISIBLE) === SNAPSHOT_FLAG_VISIBLE,
     );
+    if (actorIllumination.has(mesh)) continue;
     const light = binding.lights.get(actor.slotId);
     if (light) {
       const composed = composeSlotPartTransform(actor, binding, actor.slotId);
@@ -1826,6 +1916,8 @@ export function applySnapshotToScene(
   }
   for (const [slotId, attachment] of binding.boneAttachments) {
     if (!attachment.applied) continue;
+    const root = binding.meshes.get(slotId);
+    if (root && actorIllumination.has(root)) continue;
     const light = binding.lights.get(slotId);
     const camera = binding.cameras.get(slotId);
     if (!light && !camera) continue;
@@ -1839,6 +1931,7 @@ export function applySnapshotToScene(
     if (camera) updateAuthoredCameraTransform(camera, composed.position, composed.rotation);
   }
   updatePlaySpringArms(binding, performance.now());
+  for (const root of binding.snapshotMeshes) if (root) updateComponentIllumination(root);
   refreshPlayActiveCamera(scene, binding);
   // Camera-dependent passes wait for every camera pose, including later slots
   // and bone attachments, and for this snapshot's active camera.

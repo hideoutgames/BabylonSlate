@@ -109,6 +109,10 @@ export class OverlayLayoutRenderer {
     scene: Scene;
     beforeRender: Observer<Scene> | null;
     onDispose: Observer<Scene> | null;
+    addedMesh: Observer<AbstractMesh> | null;
+    removedMesh: Observer<AbstractMesh> | null;
+    dirty: boolean;
+    meshCount: number;
   }>();
   private readonly sceneForLayer: (id: string) => Scene | undefined;
   constructor(sceneForLayer: (id: string) => Scene | undefined) { this.sceneForLayer = sceneForLayer; }
@@ -123,9 +127,16 @@ export class OverlayLayoutRenderer {
     if (!scene) return;
     if (command.entries.length === 0) return;
     if (!binding) {
-      binding = { scene, beforeRender: null, onDispose: null };
+      binding = { scene, beforeRender: null, onDispose: null, addedMesh: null, removedMesh: null, dirty: true, meshCount: -1 };
       this.bindings.set(command.layerId, binding);
-      binding.beforeRender = scene.onBeforeRenderObservable.add(() => this.sync(command.layerId));
+      const current = binding;
+      binding.addedMesh = scene.onNewMeshAddedObservable.add(() => { current.dirty = true; });
+      binding.removedMesh = scene.onMeshRemovedObservable.add(() => { current.dirty = true; });
+      binding.beforeRender = scene.onBeforeRenderObservable.add(() => {
+        // Babylon defers mesh-added notifications; the count also catches a
+        // visual created immediately before this scene's first draw.
+        if (current.dirty || current.meshCount !== scene.meshes.length) this.sync(command.layerId);
+      });
       binding.onDispose = scene.onDisposeObservable.addOnce(() => this.remove(command.layerId));
     }
     this.sync(command.layerId);
@@ -134,16 +145,26 @@ export class OverlayLayoutRenderer {
   private sync(layerId: string): void {
     const scene = this.sceneForLayer(layerId), command = this.layers.get(layerId);
     if (!scene || !command) return;
+    const binding = this.bindings.get(layerId);
+    if (binding) {
+      binding.dirty = false;
+      binding.meshCount = scene.meshes.length;
+    }
     // A reparented child may no longer occur in the new layout command.
     for (const mesh of this.layerMeshes.get(layerId) ?? []) clips.delete(mesh);
     const currentMeshes = new Set<AbstractMesh>();
     this.layerMeshes.set(layerId, currentMeshes);
+    const meshesByName = new Map<string, AbstractMesh>();
+    for (const mesh of scene.meshes) if (!meshesByName.has(mesh.name)) meshesByName.set(mesh.name, mesh);
     for (const entry of command.entries) {
-      const mesh = scene.getMeshByName(`actor-${entry.slotId}${entry.componentId ? `|${entry.componentId}` : ""}`);
+      const mesh = meshesByName.get(`actor-${entry.slotId}${entry.componentId ? `|${entry.componentId}` : ""}`);
       if (!mesh) continue;
       clips.set(mesh, entry.clip);
       currentMeshes.add(mesh);
       if (entry.componentId && entry.transform) {
+        if (mesh.position.equalsToFloats(...entry.transform.position) &&
+          mesh.rotationQuaternion?.equalsToFloats(...entry.transform.rotation) &&
+          mesh.scaling.equalsToFloats(...entry.transform.scale)) continue;
         mesh.unfreezeWorldMatrix();
         mesh.position.copyFromFloats(...entry.transform.position);
         mesh.rotationQuaternion ??= Quaternion.Identity();
@@ -170,6 +191,8 @@ export class OverlayLayoutRenderer {
     this.bindings.delete(layerId);
     binding.scene.onBeforeRenderObservable.remove(binding.beforeRender);
     binding.scene.onDisposeObservable.remove(binding.onDispose);
+    binding.scene.onNewMeshAddedObservable.remove(binding.addedMesh);
+    binding.scene.onMeshRemovedObservable.remove(binding.removedMesh);
     setSceneClipOwner(binding.scene, binding, false);
   }
   dispose(): void {

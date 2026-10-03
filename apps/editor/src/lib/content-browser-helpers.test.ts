@@ -1999,6 +1999,13 @@ describe("content-browser-helpers", () => {
     }, classes)).toEqual(["guid-SpawnBase", "guid-SpawnChild"]);
   });
 
+  it.each(["Class", "Graph"])("records typed non-texture asset defaults in %s header dependencies", (type) => {
+    expect(assetHeaderDependencies(type, { members: [
+      { id: "audio", kind: "variable", name: "Clip", typeId: "asset", typeClassId: "Audio", defaultValue: "clip" },
+      { id: "name", kind: "variable", name: "Name", typeId: "string", defaultValue: "unused" },
+    ] })).toEqual(["clip"]);
+  });
+
   it.each(["Scene", "Class"])("retains cable material dependencies in %s assets", (type) => {
     const components = [{ id: "cable", classId: "CableComponent", properties: { materialGuid: "rope-material", targetActorId: "hook-actor" } }];
     const payload = type === "Scene" ? { actors: [{ id: "rope", classId: "Actor", components }] } : { components };

@@ -36,6 +36,7 @@ export function runtimeOptionsFromLoadControl(
   | "seedDemoActors"
   | "gameInstanceClass"
   | "sceneLibrary"
+  | "sceneNavmeshBytes"
   | "sceneGuidByKey"
   | "sceneLayerLibrary"
   | "includeDebugCommands"
@@ -92,6 +93,7 @@ export function runtimeOptionsFromLoadControl(
     seedDemoActors: msg.scene ? false : true,
     gameInstanceClass: msg.gameInstanceClass,
     sceneLibrary: Object.keys(sceneLibrary).length > 0 ? sceneLibrary : undefined,
+    ...(msg.sceneNavmeshBytes ? { sceneNavmeshBytes: msg.sceneNavmeshBytes } : {}),
     sceneGuidByKey:
       Object.keys(sceneGuidByKey).length > 0 ? sceneGuidByKey : undefined,
     sceneLayerLibrary:

@@ -4,6 +4,11 @@ Unlit 2D overlay documents stacked on a session compositor. Not a second world s
 
 Schema: `packages/core/src/scene-layer.ts`. Runtime: `RuntimeDriver` compositor APIs. Render: extra Babylon `Scene`s on the shared Engine (`packages/render/src/scene-layer-compositor.ts`).
 
+Runtime layout retains its entries across asynchronous visual replacement. It
+indexes mesh names when layout or scene membership changes; unchanged frames
+preserve cached component transforms without repeating name searches. Clip
+inheritance still follows reparented descendants before drawing.
+
 ## One world Scene, overlay stack
 
 Play still loads **one world Scene** at a time (`changeScene` / `changescene` swap that world). Overlay instances live on a session **SceneLayer Viewport** owned by Play/runtime, drawn **after** the world camera (and its post-process) so world PP never hits overlays.

@@ -56,7 +56,9 @@ export async function runAreaRectLightProof(backend: "webgl2" | "webgpu") {
           for (let index = 0; index < gl.getProgramParameter(program, gl.ACTIVE_UNIFORMS); index++) {
             const uniform = gl.getActiveUniform(program, index)!;
             if (uniform.type !== gl.SAMPLER_2D) continue;
-            const unit = gl.getUniform(program, gl.getUniformLocation(program, uniform.name)) as number;
+            const location = gl.getUniformLocation(program, uniform.name);
+            if (!location) throw new Error(`Active sampler ${uniform.name} has no uniform location.`);
+            const unit = gl.getUniform(program, location) as number;
             gl.activeTexture(gl.TEXTURE0 + unit);
             const bound = gl.getParameter(gl.TEXTURE_BINDING_2D) as WebGLTexture;
             samplers.push({ name: uniform.name, unit, texture: Object.entries(textures).find(([, texture]) => texture?.getInternalTexture()?._hardwareTexture?.underlyingResource === bound)?.[0] ?? "other" });

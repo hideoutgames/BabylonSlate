@@ -710,34 +710,37 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     if (!engine) return miss();
     this.tmpFrom.copyFrom(toVector3(start));
     this.tmpTo.copyFrom(toVector3(end));
+    return this.withQueryFilter(options, () => {
+      const hit = engine.raycast(this.tmpFrom, this.tmpTo,
+        options?.includeTriggers === undefined ? undefined : { shouldHitTriggers: options.includeTriggers });
+      if (!hit.hasHit) return miss();
+      return this.hitFromCast(hit.hasHit, hit.hitPointWorld, hit.hitNormalWorld, hit.hitDistance, hit.body);
+    });
+  }
+
+  private withQueryFilter<T>(options: LineTraceOptions | undefined, query: () => T): T {
     const ignored = new Set(options?.ignoreActorIds);
     const memberships = new Map<PhysicsShape, number>();
     // Havok exposes one ignoreBody, but the graph accepts multiple actors.
     // Mask all their shapes for this synchronous query, then restore them.
     // Filtering before raycast also avoids consuming a bounded hit collector.
     try {
-      if (ignored.size) {
+      if (ignored.size || options?.includeTriggers === false) {
         for (const record of this.bodies.values()) {
-          if (!ignored.has(record.desc.actorId)) continue;
-          for (const shape of [
-            record.body.shape,
-            ...[...record.colliders.values()].map((c) => c.shape),
-          ]) {
+          const excluded = ignored.has(record.desc.actorId);
+          const shapes = excluded
+            ? [record.body.shape, ...[...record.colliders.values()].map((c) => c.shape)]
+            : options?.includeTriggers === false
+              ? [...record.colliders.values()].filter((c) => c.desc.isTrigger).map((c) => c.shape)
+              : [];
+          for (const shape of shapes) {
             if (!shape || memberships.has(shape)) continue;
             memberships.set(shape, shape.filterMembershipMask);
             shape.filterMembershipMask = 0;
           }
         }
       }
-      const hit = engine.raycast(this.tmpFrom, this.tmpTo);
-      if (!hit.hasHit) return miss();
-      return this.hitFromCast(
-        hit.hasHit,
-        hit.hitPointWorld,
-        hit.hitNormalWorld,
-        hit.hitDistance,
-        hit.body,
-      );
+      return query();
     } finally {
       for (const [shape, membership] of memberships) {
         shape.filterMembershipMask = membership;
@@ -745,15 +748,18 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     }
   }
 
-  sphereOverlap(center: Vec3, radius: number): OverlapResult {
+  sphereOverlap(center: Vec3, radius: number, options?: LineTraceOptions): OverlapResult {
     this.flushMutations();
     const actorIds: string[] = [];
     const bodyIds: string[] = [];
     const c = toVector3(center);
     const r2 = radius * radius;
+    const ignored = new Set(options?.ignoreActorIds);
     for (const record of this.bodies.values()) {
       const body = record.body;
       if (!record.colliders.size) continue;
+      if (ignored.has(record.desc.actorId) || (options?.includeTriggers === false &&
+        [...record.colliders.values()].every((collider) => collider.desc.isTrigger))) continue;
       const bb = body.getBoundingBox();
       const min = bb.minimumWorld;
       const max = bb.maximumWorld;
@@ -775,6 +781,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     shape: ColliderDesc["shape"],
     start: PhysicsTransform,
     end: PhysicsTransform,
+    options?: LineTraceOptions,
   ): HitResult {
     this.flushMutations();
     if (!isShape3D(shape)) return miss();
@@ -782,17 +789,17 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     try {
       const input = new ShapeCastResult();
       const hit = new ShapeCastResult();
-      this.plugin.shapeCast(
+      this.withQueryFilter(options, () => this.plugin.shapeCast(
         {
           shape: queryShape,
           rotation: toQuaternion(start.rotation),
           startPosition: toVector3(start.position),
           endPosition: toVector3(end.position),
-          shouldHitTriggers: false,
+          shouldHitTriggers: options?.includeTriggers ?? false,
         },
         input,
         hit,
-      );
+      ));
       if (!hit.hasHit) return miss();
       const dx = end.position.x - start.position.x;
       const dy = end.position.y - start.position.y;

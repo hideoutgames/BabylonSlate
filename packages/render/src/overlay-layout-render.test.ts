@@ -170,6 +170,32 @@ describe("SceneLayer layout rendering", () => {
     expect(overlayClipAllowsPoint(glyph, 1, 0)).toBe(true);
   });
 
+  it("preserves cached transforms on unchanged frames and reapplies layout to replacement visuals", () => {
+    const { engine, scene } = createTestEngine();
+    const renderer = new OverlayLayoutRenderer(() => scene);
+    cleanup.push(() => { renderer.dispose(); scene.dispose(); engine.dispose(); });
+    const mesh = new Mesh("actor-7|text", scene);
+    const transform = identitySerializedTransform();
+    transform.position = [2, 3, 0];
+    const command = { type: "sceneLayerLayout" as const, layerId: "hud", entries: [{ actorId: "text", componentId: "text", slotId: 7,
+      rect: { x: 2, y: 3, width: 2, height: 2 }, clip: { x: 2, y: 3, width: 1, height: 1 }, scrollAncestors: [], transform }] };
+    renderer.apply(command);
+    mesh.freezeWorldMatrix();
+    const lookup = vi.spyOn(scene, "getMeshByName");
+    for (let i = 0; i < 3; i += 1) scene.onBeforeRenderObservable.notifyObservers(scene);
+    expect(mesh.isWorldMatrixFrozen).toBe(true);
+    expect(lookup).not.toHaveBeenCalled();
+    renderer.apply(command);
+    expect(mesh.isWorldMatrixFrozen).toBe(true);
+
+    mesh.dispose();
+    const replacement = new Mesh("actor-7|text", scene);
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    expect(replacement.position.asArray()).toEqual([2, 3, 0]);
+    expect(overlayClipAllowsPoint(replacement, 2, 3)).toBe(true);
+    expect(overlayClipAllowsPoint(replacement, 0, 0)).toBe(false);
+  });
+
   it.each(["full", "incremental"] as const)("updates invisible editor box pick bounds and child clips during %s apply", (mode) => {
     const { engine, scene } = createTestEngine();
     const sync = new EditorSceneSync(scene);

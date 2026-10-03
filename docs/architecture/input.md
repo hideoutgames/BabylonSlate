@@ -19,6 +19,8 @@ The **Input** category contains **Event Input Action**, **Event Input Axis**, **
 
 Complete taps between ticks retain both Started and Released. A release/repress in one tick emits Released, Started, then Held. Event outputs describe the final resolved tick value. Pausing does not advance held duration.
 
+Modifier chords remain active while either left or right modifier key is held. Raw input transport sizes batches from their actual UTF-8 identifiers and controller axis/button counts, including non-standard gamepads.
+
 Axis resolution also retains an internal `activeValue`, the last nonzero sample within that tick. SceneLayer focus uses it to preserve quick directional taps even when the final axis value is zero. It clears on the next inactive tick. Project Settings Focus Navigation references the existing Input Axis/Action assets; it does not author another set of bindings. See [SceneLayer focus navigation](scene-layers.md#focus-navigation).
 
 ## Player rebinding

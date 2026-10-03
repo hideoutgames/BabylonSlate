@@ -146,6 +146,8 @@ Repeated toolbar Add Node insertions stagger when their insertion points coincid
 | **TreeNode** | Behaviour-tree `bt.node` chrome: flat `w-56` card (`BlueprintNodeShell` `card` variant, amber selection outline) with a role-tinted kind icon tile (`data-node-role` `bt-root` / `bt-composite` / `bt-task`), Title Case title and muted kind line, small link-colored exec diamond pins (24px hit area, 44px on coarse pointers; the `__protected` root omits the parent handle), header drag handle (`.bt-node-drag-handle`), muted priority badge, inline Running / Success / Failure status (`data-bt-state`; a running node gets a primary border), dot-marked decorator/service rows (28px, 44px on coarse pointers), long-press node/row menus, running-branch highlight. | BehaviourTree GraphEditor `nodeTypes`. |
 
 
+GraphEditor Copy builds one lookup for the selected node IDs and scans edges once. Clipboard collection is linear in selected nodes plus graph edges, including large selections.
+
 ## App wrappers
 
 `RagdollBoneNamesEditor` composes `NamedListEditor` with validation feedback for Scene Details and Class/Prefab Inspector. Empty uses the complete model skeleton; exact names select a connected subtree. Invalid or duplicate drafts stay editable without changing persisted component properties. Physics Constraint Details reuse PropertyGrid and SearchDialog for a searchable scene actor target, local anchors, frame rotations, and degree-based hinge limits.

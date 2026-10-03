@@ -149,6 +149,8 @@ export interface PlayOverlayProps {
   pixelPerfect?: boolean;
   touchMinTargetPx?: number;
   navmeshBytes?: Uint8Array | null;
+  sceneNavmeshBytes?: ReadonlyMap<string, Uint8Array>;
+  audioReverbByScene?: ReadonlyMap<string, Uint8Array>;
   audioReverbBytes?: Uint8Array | null;
   audioProjectSettings?: Partial<
     Pick<
@@ -233,6 +235,8 @@ export function PlayOverlay({
   pixelPerfect,
   touchMinTargetPx,
   navmeshBytes,
+  sceneNavmeshBytes,
+  audioReverbByScene,
   audioReverbBytes,
   audioProjectSettings,
   pauseOnPlay = false,
@@ -362,6 +366,10 @@ export function PlayOverlay({
   materialFunctionsRef.current = materialFunctions;
   const navmeshBytesRef = useRef(navmeshBytes);
   navmeshBytesRef.current = navmeshBytes;
+  const sceneNavmeshBytesRef = useRef(sceneNavmeshBytes);
+  sceneNavmeshBytesRef.current = sceneNavmeshBytes;
+  const audioReverbBySceneRef = useRef(audioReverbByScene);
+  audioReverbBySceneRef.current = audioReverbByScene;
   const audioReverbBytesRef = useRef(audioReverbBytes);
   audioReverbBytesRef.current = audioReverbBytes;
   const audioProjectSettingsRef = useRef(audioProjectSettings);
@@ -526,6 +534,8 @@ export function PlayOverlay({
       touchMinTargetPx: touchMinTargetPxRef.current,
       pixelPerfect: pixelPerfectRef.current,
       navmeshBytes: navmeshBytesRef.current,
+      sceneNavmeshBytes: sceneNavmeshBytesRef.current,
+      audioReverbByScene: audioReverbBySceneRef.current,
       audioReverbBytes: audioReverbBytesRef.current,
       audioProjectSettings: audioProjectSettingsRef.current,
       pauseOnPlay: initialPauseOnPlayRef.current,

@@ -1659,7 +1659,6 @@ export function ContentBrowserWorkspace({
           dest.relative,
           newName,
         );
-        await transferFolderLocks(fromPath, nextFolder);
         for (const asset of contained) {
           repairDocumentPath(
             asset.path,
@@ -1671,6 +1670,8 @@ export function ContentBrowserWorkspace({
           remapPathAfterFolderMove(current, fromPath, nextFolder),
         );
         await refreshAssetRegistry();
+        setNameDialog(null);
+        await transferFolderLocks(fromPath, nextFolder);
       } else if (nameDialog.kind === "rename") {
         const before = assetRegistry.getByGuid(nameDialog.guid);
         if (!before) return;
@@ -1679,13 +1680,14 @@ export function ContentBrowserWorkspace({
           nameDialog.guid,
           nameDialog.value.trim(),
         );
+        repairDocumentPath(before.path, renamed.path, renamed.header.type);
+        await refreshAssetRegistry();
+        setNameDialog(null);
         await applyLockTransfers(
           [{ from: before.path, to: renamed.path }],
           (path) => sourceControl.lockStateForPath(path),
           (from, to) => sourceControl.transferLock(from, to),
         );
-        repairDocumentPath(before.path, renamed.path, renamed.header.type);
-        await refreshAssetRegistry();
       }
       setNameDialog(null);
     } catch (error) {
@@ -1843,6 +1845,7 @@ export function ContentBrowserWorkspace({
       setMoveTarget(null);
     } catch (error) {
       const remaining = remainingGuids.size + remainingFolders.size;
+      await refreshAssetRegistry();
       const completed = total - remaining;
       const message = error instanceof Error ? error.message : String(error);
       if (completed > 0) {
@@ -2161,8 +2164,11 @@ export function ContentBrowserWorkspace({
         setBusy(true);
         setOperationError(null);
         try {
-          await applyRegistryMoves(moves);
-          await refreshAssetRegistry();
+          try {
+            await applyRegistryMoves(moves);
+          } finally {
+            await refreshAssetRegistry();
+          }
         } catch (error) {
           setOperationError(error instanceof Error ? error.message : String(error));
         } finally {

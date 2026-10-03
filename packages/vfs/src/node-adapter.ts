@@ -1,5 +1,6 @@
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { projectFolderName, projectRelativePath } from "./project-path";
 import type {
   DirEntry,
   FileStat,
@@ -23,7 +24,7 @@ export class NodeStorageAdapter implements ProjectStorage {
   }
 
   async openDocumentsProject(name: string): Promise<ProjectFolderHandle> {
-    const root = resolve(this.baseDir, name);
+    const root = confinedPath(resolve(this.baseDir), projectFolderName(name));
     await mkdir(root, { recursive: true });
     this.rootPath = root;
     this.folder = { id: `node:${root}`, name, tier: "documents" };
@@ -80,14 +81,9 @@ export class NodeStorageAdapter implements ProjectStorage {
     return this.rootPath;
   }
 
-  private resolvePath(path: string): string {
+  private resolvePath(path: string, allowRoot = false): string {
     const root = this.assertRoot();
-    const cleaned = path.replace(/^\.\/+/, "").replace(/^\/+/, "");
-    const full = resolve(root, cleaned);
-    if (!full.startsWith(root)) {
-      throw new Error(`Path escapes project root: ${path}`);
-    }
-    return full;
+    return confinedPath(root, projectRelativePath(allowRoot && path === "." ? "" : path, allowRoot));
   }
 
   async readBinary(path: string): Promise<Uint8Array> {
@@ -115,7 +111,7 @@ export class NodeStorageAdapter implements ProjectStorage {
 
   async exists(path: string): Promise<boolean> {
     try {
-      await stat(this.resolvePath(path));
+      await stat(this.resolvePath(path, true));
       return true;
     } catch {
       return false;
@@ -123,7 +119,7 @@ export class NodeStorageAdapter implements ProjectStorage {
   }
 
   async readdir(path: string): Promise<DirEntry[]> {
-    const full = this.resolvePath(path === "." ? "" : path);
+    const full = this.resolvePath(path === "." ? "" : path, true);
     try {
       const entries = await readdir(full, { withFileTypes: true });
       const out: DirEntry[] = [];
@@ -156,7 +152,7 @@ export class NodeStorageAdapter implements ProjectStorage {
 
   async stat(path: string): Promise<FileStat> {
     try {
-      const s = await stat(this.resolvePath(path));
+      const s = await stat(this.resolvePath(path, true));
       return {
         isDir: s.isDirectory(),
         size: s.isFile() ? s.size : null,
@@ -166,4 +162,13 @@ export class NodeStorageAdapter implements ProjectStorage {
       throw new Error(`File not found: ${path}`);
     }
   }
+}
+
+function confinedPath(root: string, path: string): string {
+  const full = resolve(root, path);
+  const within = relative(root, full);
+  if (isAbsolute(within) || within === ".." || within.startsWith(`..${sep}`)) {
+    throw new Error(`Path escapes project root: ${path}`);
+  }
+  return full;
 }

@@ -1,5 +1,6 @@
 import { ENGINE_VERSION } from "@babylonslate/core";
 import { stableStringify } from "./bytes";
+import { isPortablePackagePath } from "./package-path";
 
 export const EXTENSION_MANIFEST_FILE = "extension.json";
 export const EXTENSIONS_DIR = "extensions";
@@ -29,11 +30,7 @@ export interface ExtensionSettings {
 }
 
 /** Shared by manifests and package writes; never resolve untrusted paths first. */
-export function isExtensionPackagePath(path: string): boolean {
-  return path.length > 0 && !/[\\:*?"<>|]/.test(path) && ![...path].some((character) => character.charCodeAt(0) < 32) &&
-    path.split("/").every((part) => part !== "" && part !== "." && part !== ".." &&
-      !/[. ]$/.test(part) && !/^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(part));
-}
+export const isExtensionPackagePath = isPortablePackagePath;
 
 export function createDefaultExtensionSettings(options: {
   extensionGuid: string;

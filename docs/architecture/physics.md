@@ -45,6 +45,8 @@ Rejected alternative for 2D: constraining Havok (companion anchor + 6DOF per bod
 
 `SceneSettings.physicsWorld: "3d" | "2d"` (defaults from `viewportMode` on create). A scene never mixes worlds. Overlay **SceneLayer** actors always simulate in a dedicated Rapier 2D world on the Play session, independent of that world setting — overlay and world bodies do not collide. See [scene-layers.md](scene-layers.md). Explicit collider shapes that do not apply to the active world are rejected by `parseColliderProperties`; an omitted shape still uses that world's default box.
 
+Change Scene retires departing actors before replacing the main physics backend when the target dimension differs. The target Havok/Rapier backend is ready before its actors begin; loading failures stay visible and cancellation disposes any late native allocation. The overlay world survives this replacement. Software-only/headless sessions make the equivalent dimension change synchronously.
+
 ## Tick integration
 
 Order (from P3): `gameInstance` → `actors` → `components` → **`physics`** → `postPhysics`.
@@ -190,6 +192,8 @@ In 3D worlds, dynamic actors with `NavAgentComponent` retain physics position au
 
 Project Settings → **Physics** stores `settings.physics.collisionLayers` (`NamedListEditor`, default `["Default"]`, cap 32, same normalize pattern as sorting layers). Bit storage stays 32-bit for Havok membership/collide masks (`layer` = `1 << index`; Default → `1`). Collider Details: **Layer** is a single-bit Select; **Collides With** is a `FlagsField` of named bits only. No collision matrix in this slice.
 
+Rapier contact and sensor-pair hooks preserve the same 32-bit membership/mask contract, including layers above bit 15. Both colliders must admit the other layer before collision response or contact/overlap events occur; the software fallback uses the same pair rule.
+
 ### Editor / Play visuals
 
 RigidBody-only actors use a camera-facing **`default.png` billboard** (Play `playHelperVisual`) — never a 0.25 cube. `ColliderComponent` is an `EditorSceneSync` **world visual** (opaque dashed segment meshes, `RENDERING_GROUP.world`, depth-tested). Editor always draws ColliderComponent dashes. MeshComponent simple/complex dashes follow session **Show Collisions** in Viewport Settings (default **off**; 2D worlds stay off). Play/export draws ColliderComponent dashes only when `renderInGame` is true (`meshKind` `collider:{json}`). Mesh collision dashes stay editor-only; Play uses console `showcollision` (`listDebugColliders()`, including capsules, convex hulls from generated/cone simple collision, Blocking Volume static boxes, and Mesh colliders). See [render.md](render.md) and [scene-editing.md](scene-editing.md).
@@ -210,6 +214,7 @@ Sync nodes (exec pin continues in the same tick): `physics.lineTrace`, `physics.
 - **Sphere Shape Sweep** exposes Radius and returns the same Hit Result / exploded query fields as Line Trace.
 - Query misses return false, null vectors/Actor, and zero Distance rather than leaking backend ids or typed `undefined`. Radius defaults at or below zero emit `physics.radius`.
 - Every query has an optional **Collision Channel** (default All). In 2D, authored `vec3` points use XY.
+- Channels filter live physics candidates before choosing a hit: **WorldStatic** selects static bodies, **WorldDynamic** selects dynamic/kinematic bodies, **Pawn** selects actors owned by a valid Movement component, and **Visibility** excludes triggers. **All** retains the existing backend defaults. These are built-in query categories, not configurable per-channel collision responses. Havok overlap remains a body-AABB approximation; Visibility excludes trigger-only bodies from that approximation.
 
 `moveCharacter` takes an Actor (defaults to `self`), lazily creates a character controller on that actor’s rigid body (`id` = actor guid, optional `offset` default 0.01), and applies the returned transform to the actor immediately so the next kinematic sync keeps it. Destroy follows the rigid body. No `CharacterControllerComponent` in this slice.
 

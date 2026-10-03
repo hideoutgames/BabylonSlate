@@ -1596,24 +1596,29 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         overlay={overlay}
         physicsWorld={scene.settings.physicsWorld}
         onSelect={(selection) =>
-          updateActor((entry) => ({
-            ...entry,
-            components: [
-              ...entry.components,
-              {
-                id: `${entry.id}-component-${entry.components.length + 1}`,
-                classId: selection.classId,
-                properties: {
-                  ...defaultPropertiesFor(
-                    selection.classId,
-                    overlay ? "2d" : scene.settings.physicsWorld,
-                    overlay ? "2d" : scene.viewportMode,
-                  ),
-                  ...selection.properties,
+          updateActor((entry) => {
+            const usedIds = new Set(entry.components.map((component) => component.id));
+            let suffix = entry.components.length + 1;
+            while (usedIds.has(`${entry.id}-component-${suffix}`)) suffix += 1;
+            return {
+              ...entry,
+              components: [
+                ...entry.components,
+                {
+                  id: `${entry.id}-component-${suffix}`,
+                  classId: selection.classId,
+                  properties: {
+                    ...defaultPropertiesFor(
+                      selection.classId,
+                      overlay ? "2d" : scene.settings.physicsWorld,
+                      overlay ? "2d" : scene.viewportMode,
+                    ),
+                    ...selection.properties,
+                  },
                 },
-              },
-            ],
-          }))
+              ],
+            };
+          })
         }
         data-testid="add-component-catalog"
       />

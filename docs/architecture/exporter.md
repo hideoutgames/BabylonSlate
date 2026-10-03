@@ -39,6 +39,8 @@ Missing or stale startup scene: `MISSING_STARTUP_SCENE_MESSAGE` (`Set Startup Sc
 
 Not `header.dependencies` alone — scene saves often leave those empty.
 
+The editor serializes RenderTarget and RenderTargetTexture documents into export bytes, retaining their payloads for dependency traversal. Asset-typed variable defaults and Set Variable literals participate for every asset kind (including Audio, Material, Model and Font), with scalar, array and typed Map key/value handling in class and function graphs. Cleared canonical pin defaults mask legacy values; ordinary string variables do not create dependencies. Saved Class/Graph headers use the same asset-default collector for reference browsing and deletion guards.
+
 1. Apply export-preset `pluginOverrides` (layer 3) **before** the walk so disabled plugin roots are absent.
 2. Seed with `startupSceneGuid` (must be a Scene asset) **and** Project Settings `audioMixerGuid` the same way `gameInstanceClass` is seeded. Pack `occlusionEnabled` and reverb wet/decay/damping scales from Project Settings Audio.
 3. Walk only typed reference fields in `SerializedScene` actors/components (guid fields, Mesh/Model `assetGuid`, textures, Font, Class ids) plus scene `gameInstanceClass` **and** the project `gameInstanceClass` when the scene field is empty. Ordinary authored strings are never searched for GUID text.
@@ -87,7 +89,9 @@ meshopt/…           # glTF meshopt decoder (EXT_meshopt_compression)
 
 `exportGame` retains Rapier whenever the exported asset closure contains a `SceneLayer`, including a 3D project whose layers use a separate 2D physics world. A 3D export without layers still omits Rapier; a 2D export omits Havok.
 
-HTTP loader: probe `Range: bytes=0-7`, then the index, then per-asset ranges. Status `200` (range-blind host) falls back to a whole-pack fetch.
+HTTP loader: probe `Range: bytes=0-7`, then the index, then per-asset ranges. Concurrent readers share each pack's index request and whole-pack fallback. Status `200` (range-blind host) reuses the whole response. Packed and loose asset requests use a pool of at most six requests, with hydration retaining manifest order. The runtime still loads all exported scenes and asset bytes before boot, so total upfront memory and transfer cost remain proportional to the complete export. Hydration decodes only supported JSON document types; binary textures, models, fonts, scene sidecars and already-parsed Audio envelopes are not converted to JSON strings.
+
+Play and packaged hosts supply baked navigation bytes for each scene GUID in the runtime load message, so scene activation can select its mesh before actors begin play. Both hosts replace the audio reverb field on activation and clear it when the destination has no bake. Editor Play collects these sidecars for the complete scene library, retaining other scenes' data if a single sidecar read fails.
 
 File-count report: warn 800 / fail 1000 (preset-overridable). Export smoke asserts count.
 

@@ -553,9 +553,31 @@ Models get Babylon mesh LOD levels automatically (`model-lod.ts`). Texture strea
 
 See [asset-registry.md](asset-registry.md) and [anim-graph.md](anim-graph.md).
 
+Authored lights and cameras retain actor-plus-component identity. Play carries
+their properties on `assignMesh.parts` alongside ordinary visuals, so several
+lights or cameras can share an actor without replacing its mesh. Each native
+helper follows its component hierarchy, including spring-arm sockets; the
+Default Camera selects the saved component ID. Property-only illumination
+updates retain working visuals and camera identities, while component removal
+or visual retirement disposes every owned native helper.
+
+Rendering admission continues applying requested shadow settings and preparing
+replacement resources while shaders are unready. A failed strict probe cannot
+strand the previous shadow profile; drawing and dynamic geometry uploads still
+wait for successful scene admission. Admission distinguishes missing or stale
+resources from a temporary readiness check on current resources: only the former
+starts asynchronous preparation, so the latter can present its next ready frame.
+Renderer diagnostics also snapshot scheduler and view admission gates, making a
+paused or obstructed viewport distinguishable from shader/resource waiting.
+
 ## AudioService (P16)
 
 Main-thread owner shared by overlay Play and `apps/player`. Wraps Babylon 9 AudioV2 behind `AudioPlaybackBackend`. Unit tests use `FakeAudioPlaybackBackend`; `babylon-audio-backend.ts` is coverage-excluded (needs a real audio context).
+
+`EngineHandle.setAudioReverbField(bytes)` replaces the active scene's baked field;
+pass `null` for a scene without a bake. Engine disposal detaches all owned canvas
+input handlers, including overlay wheel scrolling, even when the host retains
+the canvas for another session.
 
 - Play library loads at session start; **source bytes load on first `playSound`** (`loadSourceBytes` / overlay `createPlayAudioSourceLoader` / player `createGameAudioSourceLoader`). `createEngine` still accepts eager `audioBytes` (player-hydrated clips, tests); overlay Play passes only the loader. `setLibrary` sanitizes missing channel/attenuation refs and cyclic channel parents. Scene `audioReverb` extra chunks feed `setReverbField`. Project Settings audio (occlusion + reverb scales) feed `setProjectAudioSettings`.
 - Worker emits `playSound` / `stopSound` / `setChannelVolume` / `setGlobalVolume` only (`emitterActorGuid` / `voiceId` identity). `playSound` loops when the command **or** the Audio asset sets `loop`. Set Channel / Set Global update voices that are already playing. Spatial voices follow interpolated snapshot poses; the listener is `scene.activeCamera` (possessed, else Default Camera, else Play fallback) synced once per applied snapshot (world position and orientation) — pose and listener sync live in the deduplicated snapshot-apply path, not render admission, so a frame-cap-skipped draw still syncs exactly once. Doppler `playbackRate` uses snapshot dt only, composed with authored pitch. `AudioPlaybackBackend.onVoiceEnded` fires when a non-looping voice finishes (Babylon `onEndedObservable`; Fake `finish()`).

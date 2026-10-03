@@ -2,10 +2,12 @@ import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { PostProcess } from "@babylonjs/core/PostProcesses/postProcess";
 import { limitManagedRenderBytes, managedRenderReservations } from "./managed-render-resources";
 import { MaterialLibrary } from "./material-library";
-import { FreeCamera, MeshBuilder, NullEngine, NullEngineOptions, PointLight, RawTexture, RenderTargetTexture, Scene, StandardMaterial, Vector3, VertexBuffer } from "@babylonjs/core";
+import { DirectionalLight, FreeCamera, MeshBuilder, NullEngine, NullEngineOptions, PointLight, RawTexture, RenderTargetTexture, Scene, StandardMaterial, Vector3, VertexBuffer } from "@babylonjs/core";
 import { createSceneStreamAdmission, isSceneStreamSlotPending } from "./scene-stream-admission";
 import { createSnapshotSceneBinding, retirePlaySlot } from "./snapshot-apply";
-import { fogVolumeBindings, normalizeRenderingQuality } from "@babylonslate/core";
+import { fogVolumeBindings, normalizeRenderingQuality, normalizeShadowSettings } from "@babylonslate/core";
+import { sceneShadowController } from "./shadow-controller";
+import { setSceneRenderSettings } from "./scene-render-mode";
 import { sceneRenderingSettings, updateSceneRenderingSettings } from "./render-settings";
 import { hasFogVolumes, selectFogVolumes, upsertFogVolumes } from "./fog-volumes";
 import { markSceneReadinessDirty } from "./scene-perf";
@@ -571,6 +573,30 @@ it("draws unvalidated frames without acknowledging them and re-probes a scene ch
   renderer.dispose();
 });
 
+it.each(["isReady", "render"] as const)("applies a new shadow profile while %s is waiting for shaders", async (probe) => {
+  const { scene, engine, camera, renderer } = host();
+  Object.assign(engine.getCaps(), { maxTextureSize: 4096, textureHalfFloatRender: true, textureHalfFloatLinearFiltering: true });
+  camera.outputRenderTarget = new RenderTargetTexture("native", 32, scene);
+  const sun = new DirectionalLight("sun", new Vector3(0, -1, 1), scene);
+  const controller = sceneShadowController(scene);
+  controller.register(sun, true);
+  setSceneRenderSettings(scene, { shadows: normalizeShadowSettings({ profile: "medium", cascades: 1 }) });
+  controller.sync();
+  expect(controller.generator(sun)?.getShadowMap()?.getSize().width).toBe(2048);
+  await renderer.prepare();
+  let shadersReady = false;
+  scene.addIsReadyCheck({ isReady: () => shadersReady });
+  markSceneReadinessDirty(scene);
+  setSceneRenderSettings(scene, { shadows: normalizeShadowSettings({ profile: "low", cascades: 1 }) });
+  if (probe === "isReady") expect(renderer.isReady()).toBe(false);
+  else expect(renderer.render()).toMatchObject({ rendered: false, readyForPresentation: false });
+  expect(controller.generator(sun)?.getShadowMap()?.getSize().width).toBe(1024);
+  shadersReady = true;
+  await renderer.prepare();
+  expect(renderer.isReady()).toBe(true);
+  renderer.dispose();
+});
+
 it("holds native fallback when light admission invalidates its cached shader readiness", async () => {
   const { scene, camera, renderer } = host();
   const quality = normalizeRenderingQuality({ lighting: { localLightMode: "manual", maxLocalLights: 1 } });
@@ -605,8 +631,9 @@ it.each(["classic", "frameGraph"] as const)("holds a %s candidate invalidated du
   expect(renderer.render()).toMatchObject({ path, rendered: true });
   scene.onBeforeRenderObservable.addOnce(() => { ready = false; markSceneReadinessDirty(scene); });
   expect(renderer.render()).toMatchObject({ rendered: false, readyForPresentation: false });
+  expect(renderer.render()).toMatchObject({ rendered: false, readyForPresentation: false });
   ready = true;
-  expect(renderer.render()).toMatchObject({ path, rendered: true });
+  expect(renderer.render()).toMatchObject({ path, rendered: true, readyForPresentation: true });
   renderer.dispose();
 });
 

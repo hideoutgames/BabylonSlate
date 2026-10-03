@@ -30,9 +30,21 @@ UI never imports Capacitor; all I/O goes through `createStorage()` in `@babylons
 
 `openKnownFolder(handle)` rebinds a previously known project (Documents / OPFS / external bookmark) without showing a picker. The picker is only for first bind and Reconnect.
 
+Browser project writes require OPFS; an unavailable or denied filesystem reports an error instead of accepting temporary in-memory saves. Project handles keep their existing ids, while metadata maps new projects to distinct hashed directories. Legacy directories remain readable; opening a remembered name alias copies its shared legacy contents into an independent directory, and deleting an unresolved alias preserves other projects' files. Tests inject an explicit OPFS filesystem boundary.
+
+OPFS directory creation is recursive by default; `mkdir(path, false)` requires existing parent directories.
+
+Project lifecycle operations serialize by id across adapter instances and use Web Locks across browser tabs when available, so a second legacy migration cannot replay over a newer save. Metadata merges use a separate origin-wide Web Lock. Deletion reconciles the latest metadata after filesystem I/O, preserving unrelated project registrations.
+
+Node operations validate relative path segments and root containment, including siblings whose names share the project prefix. `readdir(".")` lists the project root on every adapter, including external mobile folders. Full project exports propagate directory-listing failures so an unreadable subtree cannot silently produce a partial backup.
+
 ### External tier / Working Copy spike
 
 iPad file-provider I/O uses `NSFileCoordinator` and acquires/releases security scope for each operation, including metadata checks. Android SAF retains read/write URI permission and resolves each path segment through `DocumentsContract` cursor results. Both plugins reject absolute/traversing paths and surface revoked access.
+
+Registry mounting optionally uses `ProjectStorage.withReadScope` to reuse Android directory lookups throughout one recursive scan. Each scope has an independent native cache, closed in `finally`; ordinary reads and later scans start fresh. Cached listings also index child names, avoiding one provider enumeration per asset. Native mutations clear open caches before and after their I/O, with native file operations serialized to prevent stale queries repopulating a cache after a write. Each scope retains at most 8,192 listing entries (an empty directory counts as one), evicts older directories, and skips caching larger single listings; at most eight scopes are open per plugin. These are lookup caches, not transactional snapshots of externally changing provider files. iOS and other adapters keep their existing read behavior.
+
+WebView navigation also closes abandoned scopes, because a reload can skip JavaScript `finally` blocks. Navigation and plugin destruction queue cleanup on Capacitor's task thread so UI lifecycle callbacks never wait for provider I/O.
 
 - Mobile operations await one initialization pass before selecting a storage tier. Restoring an old bookmark cannot redirect a new project's writes. Expired access remains visible as **Reconnect Project Folder** after startup or a failed recent-project open.
 - An unreachable legacy bookmark retains its reconnect identity without blocking Documents initialization. Reopening a Documents recent requires the directory to exist; it never recreates a deleted project folder.
@@ -98,7 +110,7 @@ Decided for P1, in this order:
 
 **Pack format is not adopted.** One `.babasset` per asset stays the unit on disk; revisit only if device numbers show the first three are insufficient. That keeps the P2 registry and Content Browser free of a pack indirection they would otherwise have to assume.
 
-CI covers memory, OPFS (jsdom memory fallback, plus a stubbed OPFS root for listing with a swap file and a vanished entry, and for reading a file replaced mid-read) and Documents-via-fake-filesystem; Playwright exercises real OPFS. Device Capacitor timings still need an iPad and remain open.
+CI covers memory, OPFS through an explicit filesystem boundary (including durable reopen, name migration, denied access, swap-file listings and stale reads), and Documents through a fake filesystem; Playwright exercises real OPFS. Device Capacitor timings still need an iPad and remain open.
 
 ## SecretStore and nativeHttp (P15)
 

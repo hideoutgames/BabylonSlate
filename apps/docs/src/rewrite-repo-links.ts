@@ -11,7 +11,7 @@ const REPO_ROOT_PREFIXES = [
   "e2e/",
 ];
 
-const SOURCE_FILE = /\.(?:ts|tsx|js|jsx|mjs|cjs|css|mdc|vue|json)$/i;
+const SOURCE_FILE = /\.(?:ts|tsx|js|jsx|mjs|cjs|css|mdc|vue)$/i;
 
 export function rewriteRepoSourceHref(href: string, fromDocPath: string): string {
   const hashIndex = href.indexOf("#");
@@ -46,6 +46,12 @@ export function rewriteRepoSourceHref(href: string, fromDocPath: string): string
   if (resolved === ".." || resolved.startsWith("../")) {
     const repoPath = path.posix.normalize(path.posix.join("docs", resolved));
     return `${GITHUB_BLOB_BASE}${repoPath}${suffix}`;
+  }
+
+  // VitePress does not copy arbitrary linked JSON files into its public output.
+  // Link evidence to its real repository path, relative to the current doc.
+  if (/\.json$/i.test(pathname)) {
+    return `${GITHUB_BLOB_BASE}docs/${resolved}${suffix}`;
   }
 
   if (SOURCE_FILE.test(pathname)) {

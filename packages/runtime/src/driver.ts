@@ -219,6 +219,8 @@ export interface RuntimeDriverOptions {
   gameInstanceClass?: string;
   /** Extra authored scenes `changescene` can instantiate by guid or name. */
   sceneLibrary?: Readonly<Record<string, SerializedScene>>;
+  /** Baked navigation keyed by canonical scene guid, selected before Begin Play. */
+  sceneNavmeshBytes?: Readonly<Record<string, Uint8Array>>;
   /** Display name or library key → canonical scene asset guid. */
   sceneGuidByKey?: Readonly<Record<string, string>>;
   /** Overlay documents the session compositor can instantiate by guid or name. */
@@ -422,6 +424,11 @@ export function createInProcessRuntime(
   return new InProcessRuntime(options);
 }
 
+// Shallow BT memory copies retain this live activation, while trace JSON omits
+// it. A resumed task writes to its current board and cannot finish a later run.
+const BT_TASK_ACTIVATION = Symbol("btTaskActivation");
+type BtTaskActivation = { active: boolean; blackboard: BlackboardValues; result?: "success" | "failure" };
+
 interface SceneDeparture {
   guid: string;
   sceneInstance: Scene | null;
@@ -441,6 +448,7 @@ interface SceneRealization {
   finished: boolean;
   departure: SceneDeparture | null;
   painted: (() => void) | null;
+  refreshNavigation: boolean;
 }
 
 interface SceneStream {
@@ -502,7 +510,8 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly onCommand?: (command: CommandMessage) => void;
   private readonly maxCatchUp = 4;
   private readonly dt: number;
-  private readonly physicsWorldKind: PhysicsWorldKind;
+  private physicsWorldKind: PhysicsWorldKind;
+  private physicsGeneration = 0;
   private gravity: [number, number, number];
   private readonly havokWasmUrl: string | undefined;
   private readonly preferSoftwarePhysics: boolean;
@@ -636,6 +645,9 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly delayWaiters: Array<{ remaining: number; resolve: () => void; owner?: BObject | null }> =
     [];
   private nav: NavigationBackend | null = null;
+  private readonly sceneNavmeshBytes = new Map<string, Uint8Array>();
+  private navSceneGuid: string | null = null;
+  private navigationInitialized = false;
   private readonly navAgentByActor = new Map<string, string>();
   private readonly navYawByActor = new Map<string, number>();
   private readonly navTargetByActor = new Map<string, NavPoint>();
@@ -682,6 +694,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.preferSoftwarePhysics = options.preferSoftwarePhysics ?? false;
     this.playScene = options.playScene;
     this.playSceneGuid = options.playSceneGuid ?? "play-scene";
+    for (const [guid, bytes] of Object.entries(options.sceneNavmeshBytes ?? {})) this.sceneNavmeshBytes.set(guid, bytes);
     this.gameInstanceClass = options.gameInstanceClass ?? "GameInstance";
     this.deferSceneModelsReady = options.deferSceneModelsReady === true;
     this.deferSceneLoadingPaint = options.deferSceneLoadingPaint === true;
@@ -971,6 +984,7 @@ class InProcessRuntime implements RuntimeDriver {
     });
 
     this.scriptHost = new ScriptHost({
+      seed: options.seed,
       canRunOwner: (owner) => this.canRunOwner(owner),
       inputBindings: this.resolver.bindings,
       getInputState: (input) => this.resolver.getInputState(input),
@@ -1172,10 +1186,10 @@ class InProcessRuntime implements RuntimeDriver {
         this.physicsSync.lineTrace(start, end, options),
       projectCursorToScene: (channel, options) =>
         this.projectCursorToScene(channel, options),
-      sphereOverlap: (center, radius) =>
-        this.physicsSync.sphereOverlap(center, radius),
-      shapeSweep: (shape, start, end) =>
-        this.physicsSync.shapeSweep(shape, start, end),
+      sphereOverlap: (center, radius, channel) =>
+        this.physicsSync.sphereOverlap(center, radius, { channel }),
+      shapeSweep: (shape, start, end, channel) =>
+        this.physicsSync.shapeSweep(shape, start, end, { channel }),
       addImpulse: (actor, impulse, strength) => {
         const target = actor;
         if (!target) return;
@@ -1671,7 +1685,8 @@ class InProcessRuntime implements RuntimeDriver {
   async loadPhysics(): Promise<void> {
     if (this.stopped) throw sceneRealizationCancelled();
     const lifecycleId = this.lifecycleId;
-    const current = () => !this.stopped && lifecycleId === this.lifecycleId;
+    const generation = this.physicsGeneration;
+    const current = () => !this.stopped && lifecycleId === this.lifecycleId && generation === this.physicsGeneration;
     if (this.preferSoftwarePhysics) return;
     if (!(this.physicsSync.getBackend() instanceof SoftwarePhysicsBackend)) {
       return;
@@ -2666,7 +2681,7 @@ class InProcessRuntime implements RuntimeDriver {
       return;
     }
     if (!this.playWorldRealized) this.beginSceneRealization();
-    if (this.cooperativeSceneLoading) return this.waitForSceneRealization();
+    if (this.cooperativeSceneLoading || this.realization?.promise) return this.waitForSceneRealization();
   }
 
   /** Follow a replacement begun by Game Instance while the boot caller awaits. */
@@ -2700,14 +2715,35 @@ class InProcessRuntime implements RuntimeDriver {
       controller: new AbortController(), scene: this.playScene, guid: this.playSceneGuid,
       loadId: ++this.sceneLoadId, actors: [], layers: [], sceneInstance: null,
       promise: null, finished: false, departure, painted: null,
+      refreshNavigation: departure !== null,
     };
     this.realization = work;
     this.sceneLoadingProgress = 0;
     const steps = this.realizeSceneSteps(work);
-    if (this.cooperativeSceneLoading) {
+    const retirement = this.retireSceneSteps(work);
+    const nextKind = work.scene?.settings.physicsWorld ?? this.physicsWorldKind;
+    const replaceNative = nextKind !== this.physicsWorldKind && !(this.physicsSync.getBackend() instanceof SoftwarePhysicsBackend);
+    const initializeNavigation = this.sceneNavmeshBytes.has(work.guid) && !this.navigationInitialized;
+    if (this.cooperativeSceneLoading || replaceNative || initializeNavigation) {
       work.promise = Promise.resolve().then(async () => {
         await this.prepareSceneLoading(work);
-        await runSceneRealizationWork(steps, work.controller.signal, this.cooperativeSceneLoading!);
+        await runSceneRealizationWork(retirement, work.controller.signal, this.cooperativeSceneLoading ?? {});
+        if (nextKind !== this.physicsWorldKind && !(this.physicsSync.getBackend() instanceof SoftwarePhysicsBackend)) {
+          const gravity = work.scene?.settings.gravity ?? this.gravity;
+          const acquisition = createPhysicsBackend({ kind: nextKind, gravity: { x: gravity[0], y: gravity[1], z: gravity[2] },
+            havokWasmUrl: this.havokWasmUrl, allowSoftwareFallback: false }).then((backend) => {
+            try { this.checkRealization(work); } catch (error) { backend.dispose(); throw error; }
+            return backend;
+          });
+          const backend = await waitForSceneWork(acquisition, work.controller.signal);
+          this.installScenePhysics(work, backend);
+        }
+        if (initializeNavigation) {
+          await waitForSceneWork(initNavigation(), work.controller.signal);
+          this.navigationInitialized = true;
+        }
+        this.prepareSceneBackends(work);
+        await runSceneRealizationWork(steps, work.controller.signal, this.cooperativeSceneLoading ?? {});
       }).catch((error: unknown) => {
         this.failRealization(work);
         throw error;
@@ -2724,12 +2760,58 @@ class InProcessRuntime implements RuntimeDriver {
       return;
     }
     try {
+      while (!retirement.next().done) { /* Retire before replacing native ownership. */ }
+      this.prepareSceneBackends(work);
       while (!steps.next().done) { /* Immediate consumers retain synchronous ordering. */ }
     } catch (error) {
       this.failRealization(work);
       if (!isInfiniteLoopError(error) && !work.controller.signal.aborted) throw error;
     } finally {
+      retirement.return();
       steps.return();
+    }
+  }
+
+  private installScenePhysics(work: SceneRealization, backend: PhysicsBackend): void {
+    let sync: PhysicsWorldSync | undefined;
+    try {
+      this.checkRealization(work);
+      sync = new PhysicsWorldSync(backend, {
+        actorFilter: (actor) => actor.sceneLayerId == null && this.streamActorReady(actor),
+        deferUnsupportedConstraints: !this.preferSoftwarePhysics && backend instanceof SoftwarePhysicsBackend,
+      });
+      this.bindPhysicsContent(sync);
+      sync.syncFromWorld(this.world);
+    } catch (error) {
+      if (sync) sync.dispose(); else backend.dispose();
+      throw error;
+    }
+    this.physicsSync.dispose();
+    this.physicsSync = sync;
+    this.physicsWorldKind = backend.kind;
+    this.physicsGeneration++;
+  }
+
+  private prepareSceneBackends(work: SceneRealization): void {
+    this.checkRealization(work);
+    const kind = work.scene?.settings.physicsWorld ?? this.physicsWorldKind;
+    if (kind !== this.physicsWorldKind) {
+      const gravity = work.scene?.settings.gravity ?? this.gravity;
+      this.installScenePhysics(work, createSoftwarePhysicsBackend(kind, { x: gravity[0], y: gravity[1], z: gravity[2] }));
+    }
+    const bytes = this.sceneNavmeshBytes.get(work.guid);
+    if (bytes && (work.refreshNavigation || this.navSceneGuid !== work.guid)) {
+      const nav = createNavigationBackend();
+      try { nav.importNavMesh(bytes); } catch (error) { nav.dispose(); throw error; }
+      this.clearNavAgents();
+      this.nav?.dispose();
+      this.nav = nav;
+      this.navSceneGuid = work.guid;
+    } else if (!bytes) {
+      this.clearNavAgents();
+      this.nav?.dispose();
+      this.nav = null;
+      this.navSceneGuid = null;
     }
   }
 
@@ -2816,8 +2898,6 @@ class InProcessRuntime implements RuntimeDriver {
 
   private *realizeSceneSteps(work: SceneRealization): Generator<void, void, unknown> {
     const checkpoint = () => this.checkRealization(work);
-    checkpoint();
-    yield* this.retireSceneSteps(work);
     checkpoint();
     this.tilemapAnimationTimeMs = 0;
     if (this.hasAnimatedTiles) this.emit({ type: "tilemapAnimationTime", elapsedMs: 0 });
@@ -3131,10 +3211,15 @@ class InProcessRuntime implements RuntimeDriver {
 
   async loadNavMesh(bytes: Uint8Array): Promise<void> {
     const lifecycleId = this.lifecycleId;
+    const sceneGuid = this.playSceneGuid;
+    this.sceneNavmeshBytes.set(sceneGuid, bytes);
     await initNavigation();
     if (this.stopped || lifecycleId !== this.lifecycleId) throw sceneRealizationCancelled();
+    this.navigationInitialized = true;
+    if (sceneGuid !== this.playSceneGuid) return;
     this.nav ??= createNavigationBackend();
     this.nav.importNavMesh(bytes);
+    this.navSceneGuid = sceneGuid;
     this.clearNavAgents();
     if (this.playWorldRealized) {
       this.registerNavAgents();
@@ -3680,14 +3765,24 @@ class InProcessRuntime implements RuntimeDriver {
       return this.tickPlaySound(actor, node, memory);
     }
     if (!this.scriptHost.hasClass(node.classId)) return "failure";
+    const liveMemory = memory as Record<string | symbol, unknown>;
+    let activation = liveMemory[BT_TASK_ACTIVATION] as BtTaskActivation | undefined;
+    if (!activation) {
+      activation = { active: true, blackboard };
+      liveMemory[BT_TASK_ACTIVATION] = activation;
+      memory.__activated = false;
+    }
+    activation.blackboard = blackboard;
+    const current = activation;
+    const isLive = () => current.active && !actor.destroyed && !this.stopped;
     const extras = {
       btFinish: (result: "success" | "failure") => {
-        memory.__btResult = result;
+        if (isLive()) current.result = result;
       },
       btEvaluate: () => undefined,
-      getBlackboard: (key: string) => blackboard[key],
+      getBlackboard: (key: string) => current.blackboard[key],
       setBlackboard: (key: string, value: unknown) => {
-        blackboard[key] = value;
+        if (isLive()) current.blackboard[key] = value;
       },
     };
     if (memory.__activated !== true) {
@@ -3701,8 +3796,12 @@ class InProcessRuntime implements RuntimeDriver {
       );
     }
     this.scriptHost.invokeBtEvent(node.classId, "onBtTick", actor, dtSeconds, extras);
-    const result = memory.__btResult;
-    if (result === "success" || result === "failure") return result;
+    const result = current.result;
+    if (result === "success" || result === "failure") {
+      current.active = false;
+      memory.__btResult = result;
+      return result;
+    }
     return "running";
   }
 
@@ -3931,6 +4030,10 @@ class InProcessRuntime implements RuntimeDriver {
     blackboard: BlackboardValues,
     memory: Record<string, unknown>,
   ): void {
+    const liveMemory = memory as Record<string | symbol, unknown>;
+    const activation = liveMemory[BT_TASK_ACTIVATION] as BtTaskActivation | undefined;
+    if (activation) activation.active = false;
+    delete liveMemory[BT_TASK_ACTIVATION];
     memory.__activated = false;
     delete memory.__btResult;
     delete memory.__moveRequested;
@@ -4462,7 +4565,9 @@ class InProcessRuntime implements RuntimeDriver {
             ...(component.classId === "2DPainterComponent" ? { painter: this.painters.payload(component) } : {}),
             ...(component.classId === "2DRichTextComponent" ? { text2d: text2dAssignPayload(component, this.textAppear.progress(component)) } : {}),
             ...(component.classId === "DynamicRuntimeMeshComponent" ? { dynamicMesh: this.dynamicMeshes.assign(component) } : {}),
-            ...(component.classId === "DynamicRuntimeMeshComponent" ? { parentTransforms: dynamicMeshParentTransforms(component, componentsByGuid, renderableIds) } : {}),
+            ...(component.classId === "LightComponent" || component.classId === "HemisphericFillLightComponent" ? { light: lightAssignPayload(component) } : {}),
+            ...(component.classId === "CameraComponent" ? { camera: this.cameraAssignPayload(actor, component) } : {}),
+            parentTransforms: dynamicMeshParentTransforms(component, componentsByGuid, renderableIds),
           }))
         : undefined;
       const skyboxComp = renderables.find(
@@ -4476,9 +4581,9 @@ class InProcessRuntime implements RuntimeDriver {
           component.classId === "2DTextComponent" ||
           component.classId === "2DRichTextComponent",
       );
-      const armCamera = renderables.find(
-        (component) => component.classId === "CameraComponent",
-      );
+      const cameras = renderables.filter(component => component.classId === "CameraComponent");
+      const camera = cameras.find(component => this.cameraAssignPayload(actor, component).isDefault) ?? cameras[0];
+      const light = renderables.find(component => component.classId === "LightComponent" || component.classId === "HemisphericFillLightComponent");
       this.emit({
         type: "assignMesh",
         slotId,
@@ -4512,81 +4617,17 @@ class InProcessRuntime implements RuntimeDriver {
           : {}),
         ...(text2dComp ? { text2d: text2dAssignPayload(text2dComp,
           text2dComp.classId === "2DRichTextComponent" ? this.textAppear.progress(text2dComp) : 1) } : {}),
-        ...(armCamera ? { camera: this.cameraAssignPayload(actor, armCamera) } : {}),
+        ...(camera ? { camera: this.cameraAssignPayload(actor, camera) } : {}),
+        ...(light ? { light: lightAssignPayload(light) } : {}),
         ...(overlayPanel ? { overlayPanel } : {}),
         ...(parts ? { parts } : {}),
       });
       this.emitMaterialAssignments(renderables, slotId, Boolean(parts));
       return;
     }
-    const fill = actor.components.find(
-      (component) =>
-        component.classId === "HemisphericFillLightComponent" &&
-        !component.destroyed,
-    );
-    if (fill) {
-      const color = rgbTuple(fill.getVariable("color"));
-      const ground = fill.getVariable("groundColor");
-      this.emit({
-        type: "assignMesh",
-        slotId,
-        meshAssetGuid: null,
-        meshKind: "light:hemispheric",
-        light: {
-          color,
-          intensity: Number(fill.getVariable("intensity") ?? 0.9),
-          enabled: fill.getVariable("enabled") !== false,
-          groundColor: ground == null ? [0, 0, 0] : rgbTuple(ground),
-        },
-        parts: [playMeshPartOf(fill)],
-      });
-      return;
-    }
-    const light = actor.components.find(
-      (component) =>
-        component.classId === "LightComponent" && !component.destroyed,
-    );
-    if (light) {
-      const kind = light.getVariable("lightKind");
-      const color = rgbTuple(light.getVariable("color"));
-      this.emit({
-        type: "assignMesh",
-        slotId,
-        actorGuid: actor.guid,
-        meshAssetGuid: null,
-        meshKind: `light:${typeof kind === "string" ? kind : "point"}`,
-        light: {
-          color,
-          intensity: Number(light.getVariable("intensity") ?? 1),
-          enabled: light.getVariable("enabled") !== false,
-          range: Number(light.getVariable("range") ?? 10),
-          innerAngle: Number(light.getVariable("innerAngle") ?? 30),
-          outerAngle: Number(light.getVariable("outerAngle") ?? 45),
-          castShadows: light.getVariable("castShadows") === true,
-          shadowPriority: Number(light.getVariable("shadowPriority") ?? 0),
-        },
-        parts: [playMeshPartOf(light)],
-      });
-      return;
-    }
     const capture = captureComponent(actor);
     if (capture) {
       this.emit({ type: "assignMesh", slotId, actorGuid: actor.guid, meshAssetGuid: null, meshKind: "renderTargetCapture", parts: [playMeshPartOf(capture)] });
-      return;
-    }
-    const camera = actor.components.find(
-      (component) =>
-        component.classId === "CameraComponent" && !component.destroyed,
-    );
-    if (camera) {
-      this.emit({
-        type: "assignMesh",
-        slotId,
-        meshAssetGuid: null,
-        meshKind: "camera",
-        camera: this.cameraAssignPayload(actor, camera),
-        parts: [playMeshPartOf(camera)],
-      });
       return;
     }
     const audio = actor.components.find(
@@ -4909,7 +4950,7 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private projectCursorToScene(
-    _channel?: string,
+    channel?: string,
     options?: { drawDebug?: boolean; duration?: number },
   ) {
     const miss = {
@@ -4947,7 +4988,7 @@ class InProcessRuntime implements RuntimeDriver {
       },
     );
     this.physicsSync.syncFromWorld(this.world);
-    const hit = this.physicsSync.lineTrace(ray.origin, ray.end);
+    const hit = this.physicsSync.lineTrace(ray.origin, ray.end, { channel });
     const drawDebug = options?.drawDebug !== false;
     if (drawDebug) {
       const duration =
@@ -5399,6 +5440,10 @@ class InProcessRuntime implements RuntimeDriver {
     this.movement.dispose();
     this.physicsSync.dispose();
     this.overlayPhysicsSync.dispose();
+    this.clearNavAgents();
+    this.nav?.dispose();
+    this.nav = null;
+    this.sceneNavmeshBytes.clear();
     if (this.showPathfinding || this.showNavAgent) {
       this.emit({ type: "debugNavigation", agents: [], world: this.physicsWorldKind });
     }
@@ -5892,6 +5937,7 @@ function isPlayRenderable(
 ): boolean {
   if (component.destroyed || component.getVariable("editorOnly") === true) return false;
   if (isOverlayLayoutClass(component.classId)) return true;
+  if (component.classId === "LightComponent" || component.classId === "HemisphericFillLightComponent" || component.classId === "CameraComponent" || component.classId === SPRING_ARM_COMPONENT_CLASS_ID) return true;
   if (waterKindForClass(component.classId) || component.classId === "WaterRemovalVolumeComponent") return true;
   if (component.classId === "2DButtonComponent") return !skipButtonMesh;
   if (
@@ -5919,33 +5965,12 @@ function isPlayRenderable(
   );
 }
 
-/**
- * Renderable components, then spring arms and the first camera attached below
- * one, so the camera follows the lagged arm socket.
- */
+/** Components that contribute visuals, illumination or camera poses to Play. */
 function playRenderablesOf(
   components: readonly ActorComponent[],
   skipButtonMesh: boolean,
 ): ActorComponent[] {
-  const renderables = components.filter((component) =>
-    isPlayRenderable(component, skipButtonMesh),
-  );
-  const arms = components.filter(
-    (component) =>
-      component.classId === SPRING_ARM_COMPONENT_CLASS_ID && !component.destroyed,
-  );
-  if (arms.length === 0) return renderables;
-  const armIds = new Set(arms.map((component) => component.guid));
-  const componentsByGuid = new Map(
-    components.map((component) => [component.guid, component]),
-  );
-  const camera = components.find(
-    (component) =>
-      component.classId === "CameraComponent" &&
-      !component.destroyed &&
-      nearestVisualParentId(component, componentsByGuid, armIds) !== null,
-  );
-  return [...renderables, ...arms, ...(camera ? [camera] : [])];
+  return components.filter(component => isPlayRenderable(component, skipButtonMesh));
 }
 
 function overlayHitTestOf(
@@ -6043,7 +6068,7 @@ function isIdentityComponentTransform(component: ActorComponent): boolean {
 
 function playPartsNeeded(components: readonly ActorComponent[]): boolean {
   return (
-    components.some((component) => isOverlayLayoutClass(component.classId)) ||
+    components.some((component) => isOverlayLayoutClass(component.classId) || component.classId === "LightComponent" || component.classId === "HemisphericFillLightComponent" || component.classId === "CameraComponent") ||
     components.some((component) => component.classId === "2DPainterComponent") ||
     components.some((component) => component.classId === "CableComponent") ||
     components.some((component) => component.classId === "DynamicRuntimeMeshComponent") ||
@@ -6121,6 +6146,23 @@ function text2dAssignPayload(
     appearDuration: parsed.appearDuration,
     appearStart: parsed.appearStart,
     appearProgress,
+  };
+}
+
+function lightAssignPayload(component: ActorComponent): NonNullable<Extract<CommandMessage, { type: "assignMesh" }>["light"]> {
+  const fill = component.classId === "HemisphericFillLightComponent";
+  const ground = component.getVariable("groundColor");
+  return {
+    color: rgbTuple(component.getVariable("color")),
+    intensity: Number(component.getVariable("intensity") ?? (fill ? 0.9 : 1)),
+    enabled: component.getVariable("enabled") !== false,
+    ...(fill ? { groundColor: ground == null ? [0, 0, 0] as [number, number, number] : rgbTuple(ground) } : {
+      range: Number(component.getVariable("range") ?? 10),
+      innerAngle: Number(component.getVariable("innerAngle") ?? 30),
+      outerAngle: Number(component.getVariable("outerAngle") ?? 45),
+      castShadows: component.getVariable("castShadows") === true,
+      shadowPriority: Number(component.getVariable("shadowPriority") ?? 0),
+    }),
   };
 }
 

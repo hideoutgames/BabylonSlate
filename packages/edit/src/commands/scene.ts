@@ -435,6 +435,52 @@ export class ReparentComponentCommand implements EditCommand<SerializedScene> {
   }
 }
 
+export type ComponentLinkage = Pick<SerializedComponent, "sourceId" | "overrideKeys">;
+export type ComponentLinkageChange = { from: ComponentLinkage; to: ComponentLinkage };
+
+function withComponentLinkage(component: SerializedComponent, linkage?: ComponentLinkage): SerializedComponent {
+  if (!linkage) return component;
+  const next = { ...component };
+  delete next.sourceId;
+  delete next.overrideKeys;
+  if (linkage.sourceId !== undefined) next.sourceId = linkage.sourceId;
+  if (linkage.overrideKeys !== undefined) next.overrideKeys = [...linkage.overrideKeys];
+  return next;
+}
+
+/** Prefab inheritance is document state and must travel with Undo and recovery. */
+export class SetComponentLinkageCommand implements EditCommand<SerializedScene> {
+  readonly type = "scene.setComponentLinkage";
+  readonly actorId: string;
+  readonly componentId: string;
+  readonly from: ComponentLinkage;
+  readonly to: ComponentLinkage;
+
+  constructor(
+    actorId: string,
+    componentId: string,
+    from: ComponentLinkage,
+    to: ComponentLinkage,
+  ) {
+    this.actorId = actorId;
+    this.componentId = componentId;
+    this.from = from;
+    this.to = to;
+  }
+
+  apply(doc: SerializedScene): SerializedScene {
+    return replaceActor(doc, this.actorId, (actor) => ({
+      ...actor,
+      components: actor.components.map((component) => component.id === this.componentId
+        ? withComponentLinkage(component, this.to) : component),
+    }));
+  }
+
+  invert(): SetComponentLinkageCommand {
+    return new SetComponentLinkageCommand(this.actorId, this.componentId, this.to, this.from);
+  }
+}
+
 export class SetComponentPropertyCommand
   implements EditCommand<SerializedScene>
 {
@@ -445,6 +491,7 @@ export class SetComponentPropertyCommand
   readonly property: string;
   readonly from: unknown;
   readonly to: unknown;
+  readonly linkage?: ComponentLinkageChange;
 
   constructor(
     actorId: string,
@@ -452,10 +499,12 @@ export class SetComponentPropertyCommand
     property: string,
     from: unknown,
     to: unknown,
+    linkage?: ComponentLinkageChange,
   ) {
     this.actorId = actorId;
     this.componentId = componentId;
     this.property = property;
+    this.linkage = linkage;
     this.from = from;
     this.to = to;
     this.mergeKey = `prop:${actorId}:${componentId}:${property}`;
@@ -466,10 +515,10 @@ export class SetComponentPropertyCommand
       ...actor,
       components: actor.components.map((component) =>
         component.id === this.componentId
-          ? {
+          ? withComponentLinkage({
               ...component,
               properties: { ...component.properties, [this.property]: this.to },
-            }
+            }, this.linkage?.to)
           : component,
       ),
     }));
@@ -482,6 +531,7 @@ export class SetComponentPropertyCommand
       this.property,
       this.to,
       this.from,
+      this.linkage ? { from: this.linkage.to, to: this.linkage.from } : undefined,
     );
   }
 }
@@ -495,18 +545,21 @@ export class SetComponentTransformCommand
   readonly componentId: string;
   readonly from: SerializedTransform;
   readonly to: SerializedTransform;
+  readonly linkage?: ComponentLinkageChange;
 
   constructor(
     actorId: string,
     componentId: string,
     from: SerializedTransform,
     to: SerializedTransform,
+    linkage?: ComponentLinkageChange,
   ) {
     this.actorId = actorId;
     this.componentId = componentId;
     this.from = from;
     this.to = to;
     this.mergeKey = `componentTransform:${actorId}:${componentId}`;
+    this.linkage = linkage;
   }
 
   apply(doc: SerializedScene): SerializedScene {
@@ -514,7 +567,7 @@ export class SetComponentTransformCommand
       ...actor,
       components: actor.components.map((component) =>
         component.id === this.componentId && component.classId !== "2DAnchorComponent"
-          ? { ...component, transform: this.to }
+          ? withComponentLinkage({ ...component, transform: this.to }, this.linkage?.to)
           : component,
       ),
     }));
@@ -526,6 +579,7 @@ export class SetComponentTransformCommand
       this.componentId,
       this.to,
       this.from,
+      this.linkage ? { from: this.linkage.to, to: this.linkage.from } : undefined,
     );
   }
 }
@@ -752,6 +806,7 @@ export type SceneEditCommand =
   | ReorderComponentCommand
   | ReparentComponentCommand
   | SetComponentPropertyCommand
+  | SetComponentLinkageCommand
   | SetComponentTransformCommand
   | SetSceneSettingCommand
   | SetViewportModeCommand
@@ -776,6 +831,7 @@ export const SCENE_COMMAND_TYPES = [
   "scene.reorderComponent",
   "scene.reparentComponent",
   "scene.setComponentProperty",
+  "scene.setComponentLinkage",
   "scene.setComponentTransform",
   "scene.setSceneSetting",
   "scene.setViewportMode",
@@ -913,6 +969,7 @@ export function createSetComponentPropertyCommandFromJson(
     String(payload.property),
     payload.from,
     payload.to,
+    payload.linkage as ComponentLinkageChange | undefined,
   );
 }
 
@@ -924,6 +981,16 @@ export function createSetComponentTransformCommandFromJson(
     String(payload.componentId),
     payload.from as SerializedTransform,
     payload.to as SerializedTransform,
+    payload.linkage as ComponentLinkageChange | undefined,
+  );
+}
+
+export function createSetComponentLinkageCommandFromJson(
+  payload: Record<string, unknown>,
+): SetComponentLinkageCommand {
+  return new SetComponentLinkageCommand(
+    String(payload.actorId), String(payload.componentId),
+    payload.from as ComponentLinkage, payload.to as ComponentLinkage,
   );
 }
 
