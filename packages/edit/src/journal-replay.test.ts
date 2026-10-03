@@ -39,7 +39,7 @@ describe("journal coalescing", () => {
     const session = new EditSession();
     let doc: Record<string, unknown> = initial;
     const records: JournalLine[] = [];
-    for (const waveHeight of [1.5, 2, 2.5]) {
+    for (const waveHeight of [1.5, 20, 250]) {
       const command = new SetAssetDocumentCommand(doc, { ...doc, waveHeight }, "water:waveHeight");
       doc = session.apply(docId, doc, command).doc;
       records.push(journalRecord(docId, command));
@@ -49,10 +49,10 @@ describe("journal coalescing", () => {
 
     const folded = fold(records);
     expect(folded).toHaveLength(2);
-    expect(folded[0]!.command).toMatchObject({ from: initial, to: { waveHeight: 2.5, opacity: 0.8 } });
+    expect(folded[0]!.command).toMatchObject({ from: initial, to: { waveHeight: 250, opacity: 0.8 } });
     const replay = (lines: JournalLine[]) =>
       replayJournalLines(lines.map(serializeJournalLine), new Map([[docId, initial]])).documents.get(docId);
-    expect(replay(folded.slice(0, 1))).toEqual({ waveHeight: 2.5, opacity: 0.8 });
+    expect(replay(folded.slice(0, 1))).toEqual({ waveHeight: 250, opacity: 0.8 });
     expect(replay(folded)).toEqual(initial);
     expect(replay(folded)).toEqual(replay(records));
   });

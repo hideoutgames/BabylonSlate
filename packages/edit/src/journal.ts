@@ -228,7 +228,10 @@ export function commandToJournalPayload(
         command.type.startsWith("scene.") ||
         command.type.startsWith("asset.")
       ) {
-        return { ...(command as object) } as { type: string };
+        // Undo bookkeeping is not target identity; snapshot sizes vary during a scrub.
+        const { byteSize: _byteSize, ...payload } = command;
+        void _byteSize;
+        return payload;
       }
       return { type: command.type };
     }
