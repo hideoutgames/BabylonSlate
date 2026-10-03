@@ -533,6 +533,79 @@ describe("ProjectSearchIndex", () => {
       index.query("spherehero").some((hit) => hit.kind === "actor"),
     ).toBe(true);
   });
+
+  it.each([false, true])("keeps the newer search snapshot when an older read finishes (aborted: %s)", async (abortOlder) => {
+    const storage = await createStorage();
+    const path = "assets/main.scene.babasset";
+    await writeDocument(storage, path, {
+      guid: "scene-1", type: "Scene", name: "Main",
+      payload: { actors: [{ id: "actor-1", name: "OldHero", components: [] }] },
+    });
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const index = new ProjectSearchIndex(storage);
+    await index.rebuild(registry);
+    let startRead!: () => void;
+    let finishRead!: () => void;
+    const started = new Promise<void>((resolve) => { startRead = resolve; });
+    const held = new Promise<void>((resolve) => { finishRead = resolve; });
+    const read = storage.readBinary.bind(storage);
+    vi.spyOn(storage, "readBinary").mockImplementationOnce(async (file) => {
+      startRead();
+      await held;
+      return read(file);
+    });
+    const controller = new AbortController();
+    const older = index.rebuild(registry, { signal: controller.signal });
+    const rejected = expect(older).rejects.toMatchObject({ name: "AbortError" });
+    await started;
+    // The last published snapshot remains usable during the read.
+    expect(index.query("OldHero").some((hit) => hit.kind === "actor")).toBe(true);
+    if (abortOlder) controller.abort();
+    await index.rebuild(registry, {
+      openDocuments: [{ path, payload: { actors: [{ id: "actor-1", name: "NewHero", components: [] }] } }],
+    });
+    finishRead();
+    await rejected;
+    expect(index.query("OldHero")).toEqual([]);
+    expect(index.query("NewHero").filter((hit) => hit.kind === "actor")).toHaveLength(1);
+  });
+
+  it("does not republish a pending rebuild after the project index is cleared", async () => {
+    const storage = await createStorage();
+    const registry = new AssetRegistry(storage);
+    registry.indexPlaceholder("old-project-asset");
+    const index = new ProjectSearchIndex(storage);
+    const pending = index.rebuild(registry);
+    const rejected = expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    index.clear();
+    await rejected;
+    expect(index.query("old-project-asset")).toEqual([]);
+    expect(index.size).toBe(0);
+  });
+
+  it("makes a large header-only index searchable without waiting one display frame per asset", async () => {
+    const storage = await createStorage();
+    const registry = new AssetRegistry(storage);
+    for (let i = 0; i < 1000; i++) registry.indexPlaceholder(`asset-${i}`);
+    const index = new ProjectSearchIndex(storage);
+    vi.useFakeTimers();
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) =>
+      setTimeout(() => callback(performance.now()), 16));
+    try {
+      let ready = false;
+      const pending = index.rebuild(registry).then(() => { ready = true; });
+      // A virtual 100 ms permits several cooperative tasks, but only six display frames.
+      await vi.advanceTimersByTimeAsync(100);
+      expect(ready).toBe(true);
+      await pending;
+      expect(index.size).toBe(1000);
+      expect(index.query("asset-999").map((hit) => hit.sourceGuid)).toEqual(["asset-999"]);
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
 });
 
 afterEach(() => {

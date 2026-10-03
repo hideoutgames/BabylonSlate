@@ -73,6 +73,7 @@ export class ProjectSearchIndex {
   private readonly nodeTitles: Readonly<Record<string, string>>;
   private readonly limit: number;
   private records: SearchRecord[] = [];
+  private rebuildRevision = 0;
 
   constructor(storage: ProjectStorage, options: ProjectSearchIndexOptions = {}) {
     this.storage = storage;
@@ -87,6 +88,7 @@ export class ProjectSearchIndex {
   }
 
   clear(): void {
+    this.rebuildRevision += 1;
     this.records = [];
   }
 
@@ -95,34 +97,48 @@ export class ProjectSearchIndex {
     options: ProjectSearchRebuildOptions = {},
   ): Promise<void> {
     throwIfAborted(options.signal);
-    const previous = this.records;
-    this.records = [];
+    const revision = ++this.rebuildRevision;
+    const snapshot = new ProjectSearchIndex(this.storage, {
+      blobs: this.blobs,
+      catalogClassIds: this.catalogClassIds,
+      nodeTitles: this.nodeTitles,
+      limit: this.limit,
+    });
+    const checkCurrent = () => {
+      throwIfAborted(options.signal);
+      if (revision !== this.rebuildRevision) {
+        throw new DOMException("Search rebuild superseded", "AbortError");
+      }
+    };
     const overlays = new Map(
       (options.openDocuments ?? []).map((document) => [
         document.path,
         document.payload,
       ]),
     );
-    try {
-      await yieldSearchSlice();
-      throwIfAborted(options.signal);
-      for (const asset of registry.list()) {
-        throwIfAborted(options.signal);
-        const overlay = overlays.get(asset.path);
-        if (overlay) {
-          this.upsertDocument(asset, overlay);
-        } else {
-          await this.indexAsset(asset, registry);
-        }
-        await yieldSearchSlice();
-        throwIfAborted(options.signal);
+    await yieldSearchSlice();
+    checkCurrent();
+    let sliceStarted = performance.now();
+    for (const asset of registry.list()) {
+      checkCurrent();
+      const overlay = overlays.get(asset.path);
+      if (overlay) {
+        snapshot.addHeaderEntries(asset);
+        snapshot.addDocumentEntries(asset, overlay);
+      } else {
+        // Registry entries are unique; a fresh snapshot needs no repeated removal scan.
+        await snapshot.indexAsset(asset, registry, false);
       }
-      this.addCatalogClasses();
-      throwIfAborted(options.signal);
-    } catch (error) {
-      this.records = previous;
-      throw error;
+      checkCurrent();
+      if (performance.now() - sliceStarted >= 8) {
+        await yieldSearchSlice();
+        checkCurrent();
+        sliceStarted = performance.now();
+      }
     }
+    snapshot.addCatalogClasses();
+    checkCurrent();
+    this.records = snapshot.records;
   }
 
   async upsertAsset(registry: AssetRegistry, path: string): Promise<void> {
@@ -175,8 +191,9 @@ export class ProjectSearchIndex {
   private async indexAsset(
     asset: IndexedAsset,
     registry?: AssetRegistry,
+    replaceExisting = true,
   ): Promise<void> {
-    this.removeBySource(asset.header.guid, asset.path);
+    if (replaceExisting) this.removeBySource(asset.header.guid, asset.path);
     this.addHeaderEntries(asset);
     if (asset.placeholder || asset.header.type === "Unresolved") return;
     if (!DOCUMENT_TYPES.has(asset.header.type)) return;
@@ -385,13 +402,8 @@ export class ProjectSearchIndex {
 }
 
 function yieldSearchSlice(): Promise<void> {
-  return new Promise((resolve) => {
-    if (typeof requestAnimationFrame === "function") {
-      requestAnimationFrame(() => resolve());
-    } else {
-      setTimeout(resolve, 0);
-    }
-  });
+  // Yield a task, not one display frame per asset; also works in hidden windows.
+  return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 function throwIfAborted(signal?: AbortSignal): void {

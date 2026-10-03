@@ -90,6 +90,7 @@ export class AudioBufferCache {
     const entry = this.entries.get(assetGuid);
     if (!entry) return;
     entry.pins = Math.max(0, entry.pins - 1);
+    this.evictToCeiling();
   }
 
   accountedBytes(): number {

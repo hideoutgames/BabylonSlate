@@ -83,6 +83,8 @@ Main → worker when a **non-looping** voice ends: `{ type: "audioVoiceEnded"; v
 
 ## Unlock and cache
 
+Weighted clips keep separate source identities: the asset-level source fallback applies only to the default clip, so playing it first cannot replace a later alternate clip. Scene changes invalidate queued and loading/decoding playback from the previous scene; late completion cannot start an old voice. Disposal also prevents pending loads from rebuilding the service's resources.
+
 Preview Build forwards native app, interruption, and route events into its same-origin player window and replays current state when the player reports Ready. Editor and packaged player share visibility/native pause handling. The player pauses its worker or in-process runtime, frame pump, rendering, and audio together; resume resets frame timing, and Stop removes the lifecycle listeners.
 
 Play and asset previews share `attachAudioLifecycle`: user pause, hidden pages, native app inactivity, and audio interruptions remain independent pause sources. An interruption that forbids automatic resume waits for another gesture. Suspended or WebKit-interrupted contexts recover on foreground/route events only when no pause source remains; Babylon's automatic resume timer is disabled so it cannot override these decisions. Native listeners are removed even when registration finishes after cleanup.
@@ -95,7 +97,7 @@ Asset-document preview **prefetches** clip bytes when the tab opens and starts p
 
 Preview Build’s iframe uses `outline-none` / `focus-visible:outline-none`; the packaged player also sets `canvas:focus { outline: none }` so a click does not draw a browser focus ring. Packing already includes Audio (BSAU); `export-game-inputs` loads documents as kind `audio`.
 
-`AudioBufferCache` is guid-keyed PCM with active-voice pins and a **256 MiB** LRU (Engine Settings `audioByteCeiling` / `audioBudgetEnabled`; 64 MiB is an iPad suggestion), separate from the texture `ResourceCache` (default 2 GB). Evicting a clip disposes its AudioV2 `StaticSoundBuffer` and the session encoded `sourceBytes` for that key. Max concurrent voices: Engine Settings `audioMaxVoices` (default 32, range 8–128). Overlay Play applies both live. The packaged player uses the code defaults. Overlay Play and the packaged player wire `backend.onVoiceEnded` through `AudioService`: a finished **non-looping** voice is unpinned and removed; looping voices ignore `onEnded`. Replaying the same `voiceId` calls `stopVoice` (unpin) before pin/play so pins cannot grow.
+`AudioBufferCache` is guid-keyed PCM with active-voice pins and a **256 MiB** LRU (Engine Settings `audioByteCeiling` / `audioBudgetEnabled`; 64 MiB is an iPad suggestion), separate from the texture `ResourceCache` (default 2 GB). Evicting a clip disposes its AudioV2 `StaticSoundBuffer` and the session encoded `sourceBytes` for that key. Max concurrent voices: Engine Settings `audioMaxVoices` (default 32, range 8–128). Overlay Play applies both live. The packaged player uses the code defaults. Overlay Play and the packaged player wire `backend.onVoiceEnded` through `AudioService`: a finished **non-looping** voice is unpinned and removed; looping voices ignore `onEnded`. Unpinning immediately reclaims any unreferenced buffers above the ceiling. Replaying the same `voiceId` transfers its pin before stopping the previous voice, preserving its buffer without growing the final pin count.
 
 ## Spatial
 

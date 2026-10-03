@@ -59,7 +59,7 @@ type RapierApi = {
     removeCollider(collider: RapierCollider, wakeUp: boolean): void;
     createCharacterController(offset: number): RapierCharacterController;
     removeCharacterController(controller: RapierCharacterController): void;
-    castRay(
+    castRayAndGetNormal(
       ray: unknown,
       maxToi: number,
       solid: boolean,
@@ -68,7 +68,7 @@ type RapierApi = {
       filterExcludeCollider?: RapierCollider,
       filterExcludeRigidBody?: RapierRigidBody,
       filterPredicate?: (collider: RapierCollider) => boolean,
-    ): { timeOfImpact: number; collider: RapierCollider } | null;
+    ): { timeOfImpact: number; collider: RapierCollider; normal: { x: number; y: number } } | null;
     intersectionsWithPoint(
       point: { x: number; y: number },
       callback: (collider: RapierCollider) => boolean,
@@ -620,7 +620,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
       { x: dx / len, y: dy / len },
     );
     const ignored = new Set(options?.ignoreActorIds);
-    const hit = this.world.castRay(
+    const hit = this.world.castRayAndGetNormal(
       ray,
       len,
       true,
@@ -651,7 +651,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     return {
       hit: true,
       location: { x: point.x, y: point.y, z: 0 },
-      normal: { x: 0, y: 1, z: 0 },
+      normal: { x: hit.normal.x, y: hit.normal.y, z: 0 },
       distance: hit.timeOfImpact,
       actorId,
       bodyId: bodyId ?? null,

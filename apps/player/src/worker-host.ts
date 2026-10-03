@@ -12,6 +12,7 @@ export type PlayerWorkerHost = {
   pushInput: (events: readonly RawInputEvent[]) => void;
   onCommand: (handler: (command: CommandMessage) => void) => void;
   onSnapshot: (handler: (buffer: Float32Array) => void) => void;
+  onError: (handler: (error: Error) => void) => void;
   terminate: () => void;
 };
 
@@ -22,11 +23,20 @@ export function createPlayerWorkerHost(): PlayerWorkerHost {
   );
   const commandHandlers: Array<(command: CommandMessage) => void> = [];
   const snapshotHandlers: Array<(buffer: Float32Array) => void> = [];
+  const errorHandlers: Array<(error: Error) => void> = [];
   let installedGeneration = 0;
   let stopped = false;
   const post = (message: BridgeHostMessage, transfer?: Transferable[]) => {
     worker.postMessage(message, transfer ?? []);
   };
+  const reportError = (error: Error) => {
+    if (stopped) return;
+    for (const handler of [...errorHandlers]) handler(error);
+  };
+  worker.onerror = (event) => {
+    reportError(new Error(event.message || "The game worker failed to start or stopped unexpectedly."));
+  };
+  worker.onmessageerror = () => reportError(new Error("The game worker sent an unreadable message."));
   worker.onmessage = (event: MessageEvent<BridgeWorkerMessage>) => {
     if (stopped) return;
     const msg = event.data;
@@ -61,12 +71,18 @@ export function createPlayerWorkerHost(): PlayerWorkerHost {
     onSnapshot: (handler) => {
       snapshotHandlers.push(handler);
     },
+    onError: (handler) => {
+      errorHandlers.push(handler);
+    },
     terminate: () => {
       if (stopped) return;
       stopped = true;
       worker.onmessage = null;
+      worker.onerror = null;
+      worker.onmessageerror = null;
       commandHandlers.length = 0;
       snapshotHandlers.length = 0;
+      errorHandlers.length = 0;
       worker.terminate();
     },
   };

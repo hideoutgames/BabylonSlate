@@ -624,6 +624,12 @@ function initializePlayer(
     const ownedWorker = createPlayerWorkerHost();
     worker = ownedWorker;
     releaseWorker = own(() => ownedWorker.terminate());
+    worker.onError((error) => {
+      if (halted) return;
+      diagnostics.push({ code: "player.worker.failed", severity: "error", message: error.message });
+      try { options.onDiagnostic?.(diagnostics); }
+      finally { haltPlayback(); }
+    });
     worker.onCommand((cmd) => onCommand(cmd as never));
     worker.onSnapshot((buffer) => {
       if (halted) return;
