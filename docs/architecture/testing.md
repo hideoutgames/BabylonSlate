@@ -12,6 +12,8 @@ Capacitor's Xcode tooling retains uuid 7 through xcode 3.0.1; its consumer uses 
 
 Asset migration fixtures keep on-disk headers, the mounted registry, and project references consistent. Direct storage writes after project open require reindexing before document saves; migration checks preserve the asset GUID and its startup-scene reference.
 
+Browser probes of persisted OPFS assets, journals, and thumbnails resolve each logical project ID through its registered catalog directory. Newly created projects use isolated physical directories; explicit legacy fixtures keep their registered legacy mapping. Recovery polling tolerates a journal subtree that has not been created yet, while unexpected storage or parse errors fail the check.
+
 Security scans keep pull-request, push and individual comment events in separate cancellation groups. A comment cannot cancel the PR commit scan, and newer comments cannot cancel scans of earlier comments. Root Node tooling and distribution scripts use ESLint's recommended JavaScript rules, including undefined-name and unused-binding checks. `pnpm lint <files>` checks only those paths, and `pnpm typecheck --filter <workspace>` selects that workspace before invoking its script; unfiltered commands retain the full CI scope.
 
 GPU proof harnesses keep typed capture and lifecycle records. Missing native preprocessing textures or active WebGL sampler locations fail qualification with an explicit diagnostic.

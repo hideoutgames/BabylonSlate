@@ -14,6 +14,7 @@ import {
   selectContentBrowserAssetsFolder,
 } from "./open-test-project";
 import { saveAllIfEnabled } from "./save-all";
+import { opfsProjectDirectory } from "./opfs-project";
 
 test("H9: a large References graph focuses its asset and keeps Close inside the viewport", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
@@ -33,9 +34,10 @@ test("H9: a large References graph focuses its asset and keeps Close inside the 
       payload: { ...createDefaultScene(), actors: [createActor(`actor-${index}`, "Placed Class", { classId: "Mannequin" })] },
     }, { dependencies: index === 0 ? [guid!, "qa-referrer-0", "qa-missing"] : [guid!] })),
   })));
-  await page.evaluate(async (assets) => {
+  const directoryName = await opfsProjectDirectory(page, "opfs:TestProject");
+  await page.evaluate(async ({ assets, projectDirectory }) => {
     const root = await navigator.storage.getDirectory();
-    const project = await root.getDirectoryHandle("opfs:TestProject");
+    const project = await root.getDirectoryHandle(projectDirectory);
     const folder = await project.getDirectoryHandle("assets");
     for (const asset of assets) {
       const stream = await (await folder.getFileHandle(asset.name, { create: true })).createWritable();
@@ -44,7 +46,7 @@ test("H9: a large References graph focuses its asset and keeps Close inside the 
     }
     await (globalThis as unknown as { __babylonslateTest: { runForegroundRescan: () => Promise<void> } })
       .__babylonslateTest.runForegroundRescan();
-  }, files);
+  }, { assets: files, projectDirectory: directoryName });
   await page.getByTestId("external-change-reload-project-cancel").click();
   await expect(page.getByTestId("external-change-reload-project")).toHaveCount(0);
   await page.getByTestId("content-browser-search").fill("Mannequin");

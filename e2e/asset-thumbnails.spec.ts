@@ -6,6 +6,7 @@ import { minimalProjectFiles } from "../packages/assets/src/test-support/minimal
 import { createDefaultMaterialDocument } from "../packages/shader-graph/src/document";
 import { openMinimalTestProject } from "./minimal-project";
 import { openContentBrowser, openListedTestProject, selectContentBrowserAssetsFolder } from "./open-test-project";
+import { opfsProjectDirectory } from "./opfs-project";
 
 const PROJECT_GUID = "00000000-0000-4000-8000-000000000100";
 const MATERIAL_GUID = "00000000-0000-4000-8000-000000000101";
@@ -106,10 +107,11 @@ async function thumbnailPixels(image: Locator) {
 }
 
 async function persistedCaptures(page: Page) {
-  return page.evaluate(async ({ projectGuid, guids }) => {
+  const directoryName = await opfsProjectDirectory(page, "opfs:__babylonslate_derived__");
+  return page.evaluate(async ({ storageDirectory, projectGuid, guids }) => {
     type Listable = FileSystemDirectoryHandle & { values(): AsyncIterableIterator<FileSystemHandle> };
     let directory = await navigator.storage.getDirectory();
-    for (const path of ["opfs:__babylonslate_derived__", "derived", projectGuid, "thumbnails"])
+    for (const path of [storageDirectory, "derived", projectGuid, "thumbnails"])
       directory = await directory.getDirectoryHandle(path);
     const captures: Array<{ name: string; size: number; modified: number }> = [];
     for await (const handle of (directory as Listable).values()) {
@@ -118,7 +120,7 @@ async function persistedCaptures(page: Page) {
       captures.push({ name: handle.name, size: file.size, modified: file.lastModified });
     }
     return captures.sort((a, b) => a.name.localeCompare(b.name));
-  }, { projectGuid: PROJECT_GUID, guids: [MATERIAL_GUID, PREFAB_GUID] });
+  }, { storageDirectory: directoryName, projectGuid: PROJECT_GUID, guids: [MATERIAL_GUID, PREFAB_GUID] });
 }
 
 async function showThumbnails(page: Page) {
