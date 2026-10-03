@@ -340,6 +340,7 @@ export class SourceControlService {
         for (const lock of [...result.value.ours, ...result.value.theirs]) {
           this.locksByPath.set(lock.path, lock);
         }
+        this.reconcileDocumentLockState();
         this.lockRefreshState = { status: "ready", error: null, lastSuccessAt: Date.now() };
       }
     } catch (error) {
@@ -536,7 +537,25 @@ export class SourceControlService {
       if (lock.id === id) {
         this.locksByPath.delete(path);
         this.autoLockAttempted.delete(path);
+        this.editMode.delete(path);
+        this.banners.delete(path);
       }
+    }
+  }
+
+  /** Verified lock changes must not leave a former owner's edit restriction behind. */
+  private reconcileDocumentLockState(): void {
+    for (const [path, mode] of this.editMode) {
+      const lock = this.locksByPath.get(path);
+      const banner = this.banners.get(path);
+      if (lock && !lock.ours) {
+        if (banner?.kind === "theirs") {
+          this.banners.set(path, { kind: "theirs", lock });
+        }
+        continue;
+      }
+      if (mode === "readonly") this.editMode.delete(path);
+      if (banner?.kind === "theirs") this.banners.delete(path);
     }
   }
 
