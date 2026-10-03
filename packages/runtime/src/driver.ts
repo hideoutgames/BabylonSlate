@@ -5558,6 +5558,7 @@ class InProcessRuntime implements RuntimeDriver {
 
     this.flushPainters();
     this.flushTextAppear();
+    const completedFrameId = this.frameId;
     this.frameId += 1;
     if (this.canTickScene() || this.hasReadyLayers()) {
       this.publishSnapshot();
@@ -5586,7 +5587,7 @@ class InProcessRuntime implements RuntimeDriver {
         physicsMs: this._lastPhysicsMs,
         logs: this.logs
           .entries()
-          .filter((entry) => entry.frameId === this.frameId)
+          .filter((entry) => entry.frameId === completedFrameId)
           .map((entry) => ({
             severity: entry.severity,
             category: entry.category,

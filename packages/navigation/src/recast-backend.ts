@@ -33,7 +33,8 @@ import {
 const QUERY_EXTENTS = { x: 4, y: 4, z: 4 };
 const TILE_CACHE_MAGIC = new Uint8Array([0x42, 0x53, 0x4e, 0x54]); // BSNT
 const WALKABLE_AREA = 63;
-const COST_AREA = 1;
+// Detour supports 64 area IDs; 0 and 63 are reserved for walkable polygons.
+const MAX_COST_AREAS = WALKABLE_AREA - 1;
 const WALKABLE_FLAGS = 1;
 const DEFAULT_COST_AREA_COST = 10;
 
@@ -143,7 +144,6 @@ class RecastNavigationBackend implements NavigationBackend {
   private releaseTileCacheResources: (() => void) | null = null;
   private tileCacheDirty = false;
   private costVolumesDirty = false;
-  private areaCostsDirty = false;
   private obstacles = new Map<
     string,
     {
@@ -161,7 +161,7 @@ class RecastNavigationBackend implements NavigationBackend {
     { volume: NavCostVolume; polyRefs: number[] }
   >();
   private nextCost = 1;
-  private costAreaCost = DEFAULT_COST_AREA_COST;
+  private costAreas = new Map<number, number>();
 
   importNavMesh(bytes: Uint8Array): void {
     this.dispose();
@@ -187,7 +187,7 @@ class RecastNavigationBackend implements NavigationBackend {
     }
     this.query = new NavMeshQuery(this.navMesh);
     this.crowd = new Crowd(this.navMesh, { maxAgents: 32, maxAgentRadius: 0.6 });
-    this.applyAreaCosts(this.costAreaCost);
+    this.applyAreaCosts();
   }
 
   findPath(from: NavPoint, to: NavPoint): NavPoint[] {
@@ -270,11 +270,18 @@ class RecastNavigationBackend implements NavigationBackend {
       size: { ...volume.size },
       cost,
     };
-    if (this.costAreaCost !== cost) this.areaCostsDirty = true;
-    this.costAreaCost = cost;
     const previous = this.costVolumes.get(id);
     const before = previous?.volume;
-    const changed = !before || before.kind !== record.kind ||
+    if (before?.cost !== cost) {
+      const distinctCosts = new Set([cost]);
+      for (const [otherId, other] of this.costVolumes) {
+        if (otherId !== id) distinctCosts.add(other.volume.cost);
+      }
+      if (distinctCosts.size > MAX_COST_AREAS) {
+        throw new RangeError(`Navigation supports at most ${MAX_COST_AREAS} distinct volume costs.`);
+      }
+    }
+    const changed = !before || before.cost !== record.cost || before.kind !== record.kind ||
       before.pose.x !== record.pose.x || before.pose.y !== record.pose.y || before.pose.z !== record.pose.z ||
       before.size.x !== record.size.x || before.size.y !== record.size.y || before.size.z !== record.size.z;
     // Keep the previous polygon refs until the batch restores their old areas.
@@ -415,12 +422,9 @@ class RecastNavigationBackend implements NavigationBackend {
 
   private flushPendingChanges(): void {
     this.flushTileCache();
-    if (this.areaCostsDirty) {
-      this.applyAreaCosts(this.costAreaCost);
-      this.areaCostsDirty = false;
-    }
     if (this.costVolumesDirty) {
       this.restoreCostVolumePolys();
+      this.applyAreaCosts();
       this.stampCostVolumes();
       this.costVolumesDirty = false;
     }
@@ -442,20 +446,26 @@ class RecastNavigationBackend implements NavigationBackend {
     }
   }
 
-  private applyAreaCosts(cost: number): void {
+  private applyAreaCosts(): void {
+    const costs = [...new Set([...this.costVolumes.values()].map((record) => record.volume.cost))].sort((a, b) => a - b);
+    this.costAreas = new Map(costs.map((cost, index) => [cost, index + 1]));
     const walkable = 1;
     this.query?.defaultFilter.setAreaCost(0, walkable);
     this.query?.defaultFilter.setAreaCost(WALKABLE_AREA, walkable);
-    this.query?.defaultFilter.setAreaCost(COST_AREA, cost);
     const crowdFilter = this.crowd?.getFilter(0);
     crowdFilter?.setAreaCost(0, walkable);
     crowdFilter?.setAreaCost(WALKABLE_AREA, walkable);
-    crowdFilter?.setAreaCost(COST_AREA, cost);
+    for (const [cost, area] of this.costAreas) {
+      this.query?.defaultFilter.setAreaCost(area, cost);
+      crowdFilter?.setAreaCost(area, cost);
+    }
   }
 
   private stampCostVolumes(): void {
     if (!this.query || !this.navMesh) return;
-    for (const record of this.costVolumes.values()) {
+    // More expensive overlapping volumes win independently of insertion order.
+    const volumes = [...this.costVolumes.values()].sort((a, b) => a.volume.cost - b.volume.cost);
+    for (const record of volumes) {
       const halfExtents = costVolumeHalfExtents(record.volume);
       const result = this.query.queryPolygons(record.volume.pose, halfExtents, {
         maxPolys: 512,
@@ -464,7 +474,7 @@ class RecastNavigationBackend implements NavigationBackend {
       const refs: number[] = [];
       for (const ref of result.polyRefs) {
         if (!ref) continue;
-        this.navMesh.setPolyArea(ref, COST_AREA);
+        this.navMesh.setPolyArea(ref, this.costAreas.get(record.volume.cost)!);
         refs.push(ref);
       }
       record.polyRefs = refs;
@@ -488,11 +498,10 @@ class RecastNavigationBackend implements NavigationBackend {
     this.releaseTileCacheResources = null;
     this.tileCacheDirty = false;
     this.costVolumesDirty = false;
-    this.areaCostsDirty = false;
     this.obstacles.clear();
     this.agents.clear();
     this.costVolumes.clear();
-    this.costAreaCost = DEFAULT_COST_AREA_COST;
+    this.costAreas.clear();
   }
 }
 
