@@ -15,6 +15,8 @@ class TestWorker {
   static failPost = false;
   readonly messages: BridgeHostMessage[] = [];
   onmessage: ((event: MessageEvent<BridgeWorkerMessage>) => void) | null = null;
+  onerror: ((event: ErrorEvent) => void) | null = null;
+  onmessageerror: ((event: MessageEvent) => void) | null = null;
   terminated = false;
   terminate = vi.fn(() => { this.terminated = true; });
   constructor() { TestWorker.instances.push(this); }
@@ -105,6 +107,25 @@ async function backendFixture() {
 }
 
 describe("player startup and Stop ownership", () => {
+  it.each(["error", "messageerror"] as const)("reports an asynchronous worker %s and releases the player", async (kind) => {
+    const { game, canvas, handle, owner } = await backendFixture();
+    const onDiagnostic = vi.fn();
+    const session = await startPlayerWithBackend({ game, canvas, onDiagnostic });
+    sessions.push(session);
+    const worker = TestWorker.instances[0]!;
+    if (kind === "error") worker.onerror?.(new ErrorEvent("error", { message: "Worker module could not load" }));
+    else worker.onmessageerror?.(new MessageEvent("messageerror"));
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.arrayContaining([
+      expect.objectContaining({ code: "player.worker.failed", severity: "error" }),
+    ]));
+    expect(worker.terminated).toBe(true);
+    expect(handle.dispose).toHaveBeenCalledOnce();
+    expect(owner.dispose).toHaveBeenCalledOnce();
+    expect(frames.size).toBe(0);
+    expect(session.stop().diagnostics).toContainEqual(expect.objectContaining({ code: "player.worker.failed" }));
+    expect(owner.dispose).toHaveBeenCalledOnce();
+  });
+
   it.each([
     { traceByteBudget: undefined, retainedTicks: [1, 2, 3, 4, 5, 6, 7, 8] },
     { traceByteBudget: 1024, retainedTicks: [8] },

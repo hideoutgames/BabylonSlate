@@ -221,9 +221,10 @@ function aabbFromLocalPoints(
   return { min: vec(minX, minY, minZ), max: vec(maxX, maxY, maxZ) };
 }
 
-function rayAabb(start: Vec3, dir: Vec3, min: Vec3, max: Vec3): number | null {
+function rayAabb(start: Vec3, dir: Vec3, min: Vec3, max: Vec3): { time: number; normal: Vec3 } | null {
   let tMin = 0;
   let tMax = 1;
+  let normal = vec();
   const axes: Array<"x" | "y" | "z"> = ["x", "y", "z"];
   for (const axis of axes) {
     const origin = start[axis];
@@ -241,11 +242,15 @@ function rayAabb(start: Vec3, dir: Vec3, min: Vec3, max: Vec3): number | null {
       t1 = t2;
       t2 = tmp;
     }
-    tMin = Math.max(tMin, t1);
+    if (t1 >= tMin) {
+      tMin = t1;
+      normal = vec();
+      normal[axis] = d > 0 ? -1 : 1;
+    }
     tMax = Math.min(tMax, t2);
     if (tMin > tMax) return null;
   }
-  return tMin;
+  return { time: tMin, normal };
 }
 
 function miss(): HitResult {
@@ -648,8 +653,10 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
       const body = this.bodies.get(collider.desc.bodyId);
       if (!body || ignored.has(body.desc.actorId) || (options?.includeTriggers === false && collider.desc.isTrigger)) continue;
       const box = aabbForCollider(collider.desc, body.transform);
-      const t = rayAabb(start, dir, box.min, box.max);
-      if (t === null || t < 0 || t > 1 || t >= bestT) continue;
+      const intersection = rayAabb(start, dir, box.min, box.max);
+      if (!intersection) continue;
+      const t = intersection.time;
+      if (t < 0 || t > 1 || t >= bestT) continue;
       bestT = t;
       const location = vec(
         start.x + dir.x * t,
@@ -659,7 +666,7 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
       best = {
         hit: true,
         location,
-        normal: vec(0, 1, 0),
+        normal: intersection.normal,
         distance: Math.hypot(dir.x, dir.y, dir.z) * t,
         actorId: body.desc.actorId,
         bodyId: body.desc.id,

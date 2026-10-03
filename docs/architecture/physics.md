@@ -207,6 +207,8 @@ Editor clicks are **mesh picks**, not physics. Collider dashes are unpickable in
 
 ## Scripting
 
+Line Trace normals follow the contacted surface in Rapier 2D, including walls and slopes. The software fallback reports the entry face of its approximate AABB; a trace starting strictly inside that box has distance zero and no entry normal (the zero vector).
+
 Sync nodes (exec pin continues in the same tick): `physics.lineTrace`, `physics.sphereOverlap`, `physics.shapeSweep`, `physics.addImpulse`, `physics.moveCharacter`. Dragging off **Get Rigid Body** also Calls **Add Impulse** (`callComponentFunction` `addImpulse`) on that owner.
 
 - **Line Trace** returns Hit Result plus exploded Hit, Location, Normal, Distance, and a live Actor reference. **Draw Debug** defaults on: misses draw a red line to End; hits draw a green line to the impact and a red circle aligned to its surface. Draws last one frame. **Actors To Ignore** accepts an Actor array (default empty); every collider on those actors is excluded before selecting the closest hit, so ignored actors cannot hide a target behind them. Software, Havok, and Rapier use the same exclusion contract (`LineTraceOptions.ignoreActorIds`); Havok restores temporarily masked shapes after each synchronous query.
