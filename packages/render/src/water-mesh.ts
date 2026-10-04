@@ -304,8 +304,11 @@ function updateSurface(s: Surface, time: number): void {
   s.mesh.updateVerticesData(VertexBuffer.PositionKind, s.positions, false);
   s.mesh.updateVerticesData(VertexBuffer.NormalKind, s.normals);
   s.mesh.updateVerticesData("slateWaterData", s.data);
-  if (gerstner || !s.offsetsZero) s.mesh.updateVerticesData("slateWaterOffset", s.offsets);
-  s.offsetsZero = !gerstner;
+  // Only built-in shading reads the offsets; calm water uploads its zeros once.
+  if (s.plugin && (gerstner || !s.offsetsZero)) {
+    s.mesh.updateVerticesData("slateWaterOffset", s.offsets);
+    s.offsetsZero = !gerstner;
+  }
   if (moved) {
     s.mesh.updateVerticesData("slateWaterFlow", s.flow);
     s.mesh.updateVerticesData("slateWaterBaseNormal", s.baseNormals);
