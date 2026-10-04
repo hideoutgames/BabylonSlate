@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { BoxIcon, ImageIcon, Maximize2Icon, ScanIcon } from "lucide-react";
 import {
@@ -129,7 +129,12 @@ function usageLabel(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
-export function TexturePreview({
+/**
+ * Memoized because it reads only the stable document actions and its panel
+ * passes the document's own content object, so an edit to another document
+ * re-renders the subscribing panel but skips this preview.
+ */
+export const TexturePreview = memo(function TexturePreview({
   path,
   payload,
 }: {
@@ -276,7 +281,7 @@ export function TexturePreview({
       </div>
     </div>
   );
-}
+});
 
 function TexturePreviewEmpty({
   icon,
