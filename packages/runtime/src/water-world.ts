@@ -6,7 +6,7 @@ import {
 } from "@babylonslate/core";
 import type { Actor, ActorComponent } from "@babylonslate/object-model";
 import type { PhysicsBackend } from "@babylonslate/physics";
-import { actorWorldTransforms, composeParentChildTransform } from "./actor-world-transform";
+import { actorParentGuid, actorWorldTransforms, composeParentChildTransform } from "./actor-world-transform";
 
 type WaterBody = { actorId: string; definition: WaterDefinition; body: WaterBodyProperties; transform: Transform };
 export type WaterWorldSample = WaterSample & { actorId: string | null; density: number; waterDepth: number };
@@ -29,6 +29,50 @@ function normalized<T>(cache: WeakMap<ActorComponent, Normalized<T>>, component:
   const value = normalize();
   cache.set(component, { kind, values, value });
   return value;
+}
+
+/** What a refresh read from an actor or component: lifetime, attachment, local transform and (components) variables. */
+function readInputs(object: Actor | ActorComponent, out: unknown[]): void {
+  const t = object.transform;
+  out.push(object.destroyed, t.position.x, t.position.y, t.position.z, t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w, t.scale.x, t.scale.y, t.scale.z);
+  if ("components" in object) { out.push(actorParentGuid(object)); return; }
+  out.push(object.owner, object.parentId, object.variables.size);
+  for (const [key, value] of object.variables) out.push(key, value);
+}
+
+/**
+ * The actors and components one refresh depended on (water, removal and landscape components, their parent
+ * components and their actors' ancestor chains) and what it read from them, so a later query in the same tick can
+ * confirm cheaply that nothing changed instead of rescanning every actor.
+ */
+class RefreshInputs {
+  private readonly objects: Array<Actor | ActorComponent> = [];
+  private readonly seen = new Set<Actor | ActorComponent>();
+  private readonly values: unknown[] = [];
+  private readonly scratch: unknown[] = [];
+  private count = 0;
+
+  clear(count: number): void {
+    this.objects.length = 0; this.values.length = 0; this.seen.clear(); this.count = count;
+  }
+
+  has(object: Actor | ActorComponent): boolean { return this.seen.has(object); }
+
+  record(object: Actor | ActorComponent): void {
+    if (this.seen.has(object)) return;
+    this.seen.add(object); this.objects.push(object);
+    readInputs(object, this.values);
+  }
+
+  unchanged(count: number): boolean {
+    if (count !== this.count) return false;
+    const now = this.scratch;
+    now.length = 0;
+    for (const object of this.objects) readInputs(object, now);
+    if (now.length !== this.values.length) return false;
+    for (let i = 0; i < now.length; i++) if (now[i] !== this.values[i]) return false;
+    return true;
+  }
 }
 
 /** Component attachments have the same transform meaning in physics and rendering. */
@@ -58,8 +102,9 @@ export class WaterWorld {
   private readonly normalizedRemovals = new WeakMap<ActorComponent, Normalized<ReturnType<typeof normalizeWaterRemoval>>>();
   private transforms = new Map<string, Transform>();
   private time = 0;
-  /** Simulation time and actor list of the last refresh; `sync` refreshes at most once per tick. */
+  /** Simulation time and actor list of the last refresh, and what it read; `sync` reuses it within a tick. */
   private refreshed: { time: number; actors: readonly Actor[] } | null = null;
+  private readonly inputs = new RefreshInputs();
   private readonly defaultWater = createDefaultWaterDefinition();
   get hasBodies(): boolean { return this.bodies.length > 0; }
 
@@ -70,19 +115,36 @@ export class WaterWorld {
   }
 
   /**
-   * Script queries: refresh only when the simulation tick (its time) or actor list differs from the last refresh,
-   * so any number of Sample Water Surface calls in one tick share one scan. Edits made later in the same tick
-   * apply from the next tick (or the physics step, which always refreshes).
+   * Script queries: within one simulation tick, Sample Water Surface calls reuse the last refresh unless something
+   * it read changed (a water, removal or landscape component's variables or transform, an owning actor's
+   * transform or parent, or the number of actors), so repeated queries never rescan or re-normalize. A water
+   * component added to an existing actor mid-tick appears from the next tick.
    */
   sync(actors: readonly Actor[], time: number): void {
-    if (this.refreshed?.time !== time || this.refreshed.actors !== actors) this.update(actors, time);
+    if (this.refreshed?.time === time && this.refreshed.actors === actors && this.inputs.unchanged(actors.length)) return;
+    this.update(actors, time);
   }
 
   /** Refresh bodies, transforms and cutters now. Unchanged components keep their normalized properties. */
   update(actors: readonly Actor[], time: number): void {
     this.time = time;
     this.refreshed = { time, actors };
-    let transforms: Map<string, Transform> | undefined;
+    this.inputs.clear(actors.length);
+    let transforms: Map<string, Transform> | undefined, byGuid: Map<string, Actor> | undefined;
+    const record = (component: ActorComponent, actor: Actor) => {
+      this.inputs.record(component);
+      for (let parentId = component.parentId; parentId;) {
+        const parent = actor.components.find((c) => c.guid === parentId);
+        if (!parent || this.inputs.has(parent)) break;
+        this.inputs.record(parent); parentId = parent.parentId;
+      }
+      byGuid ??= new Map(actors.map((entry) => [entry.guid, entry]));
+      for (let owner: Actor | undefined = actor; owner && !this.inputs.has(owner);) {
+        this.inputs.record(owner);
+        const parentId = actorParentGuid(owner);
+        owner = parentId ? byGuid.get(parentId) : undefined;
+      }
+    };
     this.bodies = [];
     const removals: Array<WaterCutters["removals"][number]> = [], landscapes: Array<WaterCutters["landscapes"][number]> = [];
     for (const actor of actors) {
@@ -90,6 +152,7 @@ export class WaterWorld {
       for (const component of actor.components) {
         if (component.destroyed) continue;
         if (component.classId === "WaterRemovalVolumeComponent" || component.classId === "LandscapeComponent") {
+          record(component, actor);
           transforms ??= actorWorldTransforms(actors);
           const transform = componentWorldTransform(component, actor, transforms.get(actor.guid)!);
           if (component.classId === "LandscapeComponent") {
@@ -110,6 +173,7 @@ export class WaterWorld {
         }
         const kind = waterKindForClass(component.classId);
         if (!kind || component.destroyed) continue;
+        record(component, actor);
         const body = normalized(this.normalizedBodies, component, kind, () => normalizeWaterBody(Object.fromEntries(component.variables), kind));
         if (!body.enabled) continue;
         const definition = body.assetGuid ? (this.definitions.get(body.assetGuid) ?? this.defaultWater) : this.defaultWater;
