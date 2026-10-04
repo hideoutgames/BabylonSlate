@@ -35,6 +35,18 @@ async function measureVertexParity(scene: Scene, camera: ArcRotateCamera, captur
   camera.alpha = -Math.PI / 2; camera.beta = Math.PI / 2; camera.radius = PARITY_DISTANCE;
   camera.minZ = PARITY_DISTANCE - PARITY_SLAB; camera.maxZ = PARITY_DISTANCE + PARITY_SLAB;
   const metresPerPixel = 2 * PARITY_HALF_HEIGHT / canvas.height;
+  // Evidence from the read-back pixels themselves (a WebGPU canvas cannot be re-encoded after presenting).
+  const png = (pixels: number[]) => {
+    const out = document.createElement("canvas");
+    out.width = canvas.width; out.height = canvas.height;
+    const context = out.getContext("2d")!, image = context.createImageData(canvas.width, canvas.height), stride = canvas.width * 4;
+    for (let row = 0; row < canvas.height; row++) {
+      const source = (backend === "webgl2" ? canvas.height - 1 - row : row) * stride;
+      for (let i = 0; i < stride; i++) image.data[row * stride + i] = pixels[source + i]!;
+    }
+    context.putImageData(image, 0, 0);
+    return out.toDataURL("image/png");
+  };
   // Height (pixel rows above the bottom of the view) of each column's topmost water pixel; null where it shows none.
   const profile = (pixels: number[]) => Array.from({ length: canvas.width }, (_, x) => {
     let top: number | null = null;
@@ -80,7 +92,7 @@ async function measureVertexParity(scene: Scene, camera: ArcRotateCamera, captur
       setSceneWaterTime(scene, 3);
       const laterShot = await capture();
       mesh.dispose();
-      evidence[`vertex-parity-${name}-gpu`] = gpuShot.png; evidence[`vertex-parity-${name}-cpu`] = cpuShot.png;
+      evidence[`vertex-parity-${name}-gpu`] = png(gpuShot.pixels); evidence[`vertex-parity-${name}-cpu`] = png(cpuShot.pixels);
       const gpu = profile(gpuShot.pixels), cpu = profile(cpuShot.pixels), later = profile(laterShot.pixels);
       const parity = compare(gpu, cpu), heights = gpu.filter((value): value is number => value !== null);
       results[name] = {

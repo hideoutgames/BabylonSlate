@@ -38,7 +38,9 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       await testInfo.attach(name, { body: bytes, contentType: "image/png" });
       await import("node:fs/promises").then((fs) => fs.writeFile(testInfo.outputPath(name + ".png"), bytes));
     }
-    await testInfo.attach("metrics", { body: JSON.stringify({ ...result, evidence: undefined }), contentType: "application/json" });
+    const metrics = JSON.stringify({ ...result, evidence: undefined });
+    await testInfo.attach("metrics", { body: metrics, contentType: "application/json" });
+    await import("node:fs/promises").then((fs) => fs.writeFile(testInfo.outputPath("metrics.json"), metrics));
     expect(errors).toEqual([]);
     expect(result.differences.realistic).toBeLessThan(2);
     expect(result.differences.stylized).toBeLessThan(2);

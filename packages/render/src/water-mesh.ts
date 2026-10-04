@@ -350,14 +350,19 @@ function updateBounds(s: Surface, world: Matrix, inverse: Matrix): void {
  */
 function placeSurface(s: Surface, time: number): void {
   if (s.plugin) s.plugin.time = time;
-  const world = s.mesh.computeWorldMatrix(true);
-  if (Math.abs(world.determinant()) < 1e-12) return;
-  s.world.copyFrom(world); world.invertToRef(s.inverse);
-  const inverse = s.inverse;
+  const placed = s.placed, m = s.mesh.computeWorldMatrix(true).m;
+  let moved = false;
+  for (let i = 0; i < 16; i++) if (placed[i] !== m[i]) { moved = true; break; }
+  if (moved) {
+    // A degenerate (zero-scale) transform keeps the last valid placement until it becomes invertible again.
+    const world = s.mesh.getWorldMatrix();
+    if (Math.abs(world.determinant()) < 1e-12) return;
+    s.world.copyFrom(world); world.invertToRef(s.inverse);
+    for (let i = 0; i < 16; i++) placed[i] = m[i]!;
+  }
+  const world = s.world, inverse = s.inverse;
   syncQuality(s);
-  let moved = updateLayout(s, world, inverse);
-  const placed = s.placed, m = world.m;
-  for (let i = 0; i < 16; i++) if (placed[i] !== m[i]) { moved = true; placed[i] = m[i]!; }
+  if (updateLayout(s, world, inverse)) moved = true;
   const subMeshes = s.mesh.subMeshes ?? [];
   if (moved || subMeshes.length !== s.boundedSubMeshes || (subMeshes[0] ?? null) !== s.boundedFirst) updateBounds(s, world, inverse);
   if (!moved) return;
