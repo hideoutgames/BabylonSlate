@@ -56,15 +56,21 @@ export function setSceneWaterTime(scene: Scene, seconds: number): void {
   if (Number.isFinite(seconds)) clocks.set(scene, { time: seconds, runtime: true });
 }
 
+/** This frame's frustum: Scene.render recomputes camera matrices only after before-render observers run. */
+function sees(camera: Camera, mesh: Mesh): boolean {
+  camera.getViewMatrix(); camera.getProjectionMatrix();
+  return camera.isInFrustum(mesh);
+}
+
 /** True when an active camera of the scene sees the surface's wave-padded bounds; a scene without a camera counts as seeing it. */
 function inActiveView(scene: Scene, mesh: Mesh): boolean {
   const cameras = scene.activeCameras;
   if (cameras && cameras.length > 0) {
-    for (const camera of cameras) if (camera.isInFrustum(mesh)) return true;
+    for (const camera of cameras) if (sees(camera, mesh)) return true;
     return false;
   }
   const camera: Camera | null = scene.activeCamera;
-  return !camera || camera.isInFrustum(mesh);
+  return !camera || sees(camera, mesh);
 }
 
 /**

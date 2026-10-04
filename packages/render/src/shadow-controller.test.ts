@@ -451,7 +451,7 @@ describe("shared shadow lifecycle", () => {
     const sun = new DirectionalLight("sun", new Vector3(0.3, -1, 0.2), scene);
     const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 10, length: 10, resolution: 8 }));
     const rock = MeshBuilder.CreateBox("rock", {}, scene);
-    controller.setParticipation(lake, { castShadows: true, receiveShadows: true });
+    for (const mesh of [lake, rock]) controller.setParticipation(mesh, { castShadows: true, receiveShadows: true });
     controller.register(sun, true);
     controller.sync();
     const casters = controller.generator(sun)!.getShadowMap()!.renderList!;
