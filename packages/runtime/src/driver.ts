@@ -138,6 +138,7 @@ import {
   type RuntimeDiagnostic,
 } from "./diagnostics";
 import { mapStackToAnchor, type AnchorEntry } from "./stack-map";
+import { parseJoystick2DProperties } from "@babylonslate/core";
 import { Painter2DRuntime } from "./painter2d-runtime";
 import { Text2DAppearRuntime } from "./text2d-appear-runtime";
 import {
@@ -4562,6 +4563,7 @@ class InProcessRuntime implements RuntimeDriver {
               ),
             ),
             ...(component.classId === "CableComponent" ? { cable: this.cables.assign(component) } : {}),
+            ...(component.classId === "2DJoystickComponent" ? { joystick: parseJoystick2DProperties(Object.fromEntries(component.variables)) } : {}),
             ...(component.classId === "2DPainterComponent" ? { painter: this.painters.payload(component) } : {}),
             ...(component.classId === "2DRichTextComponent" ? { text2d: text2dAssignPayload(component, this.textAppear.progress(component)) } : {}),
             ...(component.classId === "DynamicRuntimeMeshComponent" ? { dynamicMesh: this.dynamicMeshes.assign(component) } : {}),
@@ -5814,6 +5816,7 @@ class InProcessRuntime implements RuntimeDriver {
 
 const OVERLAY_BUTTON_VISUAL_CLASS_IDS = new Set([
   "2DPainterComponent",
+  "2DJoystickComponent",
   "2DTextureComponent",
   "2DMaterialComponent",
   "2DPanelComponent",
@@ -5951,6 +5954,7 @@ function isPlayRenderable(
     component.classId === "TilemapComponent" ||
     component.classId === "SkyboxComponent" ||
     component.classId === "Text3DComponent" ||
+    component.classId === "2DJoystickComponent" ||
     component.classId === "2DTextureComponent" ||
     component.classId === "2DMaterialComponent" ||
     component.classId === "2DPanelComponent" ||
@@ -5981,6 +5985,7 @@ function overlayHitTestOf(
   if (button) {
     return parseSceneLayerHitTest(button.getVariable("hitTest"), "block");
   }
+  if (actor.components.some(component => component.classId === "2DJoystickComponent" && !component.destroyed && component.getVariable("enabled") !== false)) return "block";
   const visual = actor.components.find(
     (component) =>
       (component.classId === "2DTextureComponent" ||
@@ -6025,6 +6030,7 @@ function playMeshKindOf(component: ActorComponent): string | null {
   if (component.classId === "Text3DComponent") return "text3d";
   if (component.classId === "2DTextComponent") return "2dtext";
   if (component.classId === "2DRichTextComponent") return "2drichtext";
+  if (component.classId === "2DJoystickComponent") return "2djoystick";
   if (component.classId === "2DTextureComponent") return "2dtexture";
   if (component.classId === "2DMaterialComponent") return "2dmaterial";
   if (component.classId === "2DPanelComponent") return "2dpanel";
@@ -6070,6 +6076,7 @@ function isIdentityComponentTransform(component: ActorComponent): boolean {
 function playPartsNeeded(components: readonly ActorComponent[]): boolean {
   return (
     components.some((component) => isOverlayLayoutClass(component.classId) || component.classId === "LightComponent" || component.classId === "HemisphericFillLightComponent" || component.classId === "CameraComponent") ||
+    components.some((component) => component.classId === "2DJoystickComponent") ||
     components.some((component) => component.classId === "2DPainterComponent") ||
     components.some((component) => component.classId === "CableComponent") ||
     components.some((component) => component.classId === "DynamicRuntimeMeshComponent") ||

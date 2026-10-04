@@ -72,3 +72,4 @@ export * from "./spline-component";
 export * from "./render-target";
 export * from "./overlay-layout";
 export * from "./dynamic-runtime-mesh";
+export * from "./joystick2d";

@@ -2387,7 +2387,7 @@ describe("Play createEngine view", () => {
     expect(handle.scene.getMeshByName("actor-4")).toBeNull();
   });
 
-  it("holds overlay-only assignMesh off the world until spawn tags a layer scene", () => {
+  it.each(["2dtexture", "2djoystick"])("holds overlay-only %s assignMesh off the world until spawn tags a layer scene", (meshKind) => {
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
     const handle = createEngine(canvas, {
       sharedEngine: sharedEngine(),
@@ -2398,7 +2398,7 @@ describe("Play createEngine view", () => {
       type: "assignMesh",
       slotId: 4,
       meshAssetGuid: null,
-      meshKind: "2dtexture",
+      meshKind,
     });
     expect(handle.scene.getMeshByName("actor-4")).toBeNull();
     handle.applyCommand({

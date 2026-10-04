@@ -264,3 +264,5 @@ Outliner row menus share actor, class-asset, and selection indexes instead of sc
 The project composer centers `New <TemplateName>` independently of its left-aligned Back button, using the selected built-in or imported template name.
 
 NodePalette rows expose optional registry descriptions as `title` hover hints and `aria-description` without changing their compact row height. Search aliases and active rows remain independent of this contract text. The Class Graph Scalability category uses native enums and structures for quality inputs, application results and effective readback.
+
+**2D Joystick** uses the shared Overlay component/placement catalogs and PropertyGrid in Scene Details and Class/Prefab Inspector. Background Material and Joystick Material reuse AssetPicker with Material / Material Instance filters. Radius, Dead Zone, Enabled and Touch axis selectors retain the existing compact controls.

@@ -17,6 +17,7 @@ import {
   parseSkyboxFaces,
   parseSkyboxSize,
   parseText2DProperties,
+  parseJoystick2DProperties,
   parseText3DProperties,
   parseAreaRectLightProperties,
   parseFogVolumeProperties,
@@ -1933,6 +1934,31 @@ export function componentPropertyRows(
             "appearDuration",
           ]),
         ),
+      ];
+    }
+    case "2DJoystickComponent": {
+      const joystick = parseJoystick2DProperties(component.properties);
+      const numeric = (property: "radius" | "joystickRadius" | "deadZone", label: string, min: number, max?: number): PropertyRow => ({
+        kind: "number", id: rowId(actorId, component.id, property), label, value: joystick[property], min, max,
+        onChange: value => update(property, value),
+      });
+      const axis = (property: "horizontalControl" | "verticalControl", label: string): PropertyRow => ({
+        kind: "enum", id: rowId(actorId, component.id, property), label, value: joystick[property],
+        options: [
+          { value: "joystick-x", label: "Joystick X" }, { value: "joystick-y", label: "Joystick Y" },
+          { value: "dpad-x", label: "D-Pad X" }, { value: "dpad-y", label: "D-Pad Y" },
+        ],
+        description: "Select the Touch binding used by your Input Axis asset.",
+        onChange: value => update(property, value),
+      });
+      return [
+        { kind: "boolean", id: rowId(actorId, component.id, "enabled"), label: "Enabled", value: joystick.enabled, onChange: value => update("enabled", value) },
+        assetRow(actorId, component, "backgroundMaterialGuid", "Background Material", ["Material", "MaterialInstance"], update, context, "Pick Background Material"),
+        assetRow(actorId, component, "joystickMaterialGuid", "Joystick Material", ["Material", "MaterialInstance"], update, context, "Pick Joystick Material"),
+        numeric("radius", "Background Radius", 0.01),
+        numeric("joystickRadius", "Joystick Radius", 0.01, joystick.radius * 0.95),
+        numeric("deadZone", "Dead Zone", 0, 0.99),
+        axis("horizontalControl", "Horizontal Axis"), axis("verticalControl", "Vertical Axis"),
       ];
     }
     case "2DFocusTargetComponent":
