@@ -170,6 +170,13 @@ if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.se
   });
 } else if (
   import.meta.env.VITE_TEST_MODE === "true" &&
+  new URLSearchParams(location.search).has("waterSceneCopyProof")
+) {
+  void import("./testing/water-scene-copy-proof").then(({ runWaterSceneCopyProof }) => {
+    Object.assign(window, { __babylonslateWaterSceneCopyProof: runWaterSceneCopyProof });
+  });
+} else if (
+  import.meta.env.VITE_TEST_MODE === "true" &&
   new URLSearchParams(location.search).has("celRenderModeProof")
 ) {
   void import("./testing/cel-render-mode-proof").then(

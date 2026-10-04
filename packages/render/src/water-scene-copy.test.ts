@@ -5,9 +5,9 @@ import {
   Scene,
   StandardMaterial,
   Vector3,
-  type AbstractMesh,
   type Mesh,
 } from "@babylonjs/core";
+import { FrameGraphRenderContext } from "@babylonjs/core/FrameGraph/frameGraphRenderContext";
 import { afterEach, expect, it, vi } from "vitest";
 import {
   createDefaultWaterDefinition,
@@ -84,7 +84,7 @@ function box(scene: Scene, name: string, alpha = 1): Mesh {
 }
 
 /** Name of the object renderer each draw of `mesh` happened in, by its render pass id. */
-function drawnBy(scene: Scene, mesh: AbstractMesh): string[] {
+function drawnBy(scene: Scene, mesh: Mesh): string[] {
   const passes: string[] = [];
   mesh.onBeforeRenderObservable.add(() => {
     const id = scene.getEngine().currentRenderPassId;
@@ -159,17 +159,20 @@ it("swaps the backbuffer view onto an own pair only on frames with visible copy-
   const waterDraws = drawnBy(scene, water), opaqueDraws = drawnBy(scene, opaque), glassDraws = drawnBy(scene, glass);
   const graph = new ForwardSceneFrameGraph(scene);
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  // The split switches the output clear too, so it decides before that clear runs.
   expect(graph.taskNames()).toEqual([
-    "Forward admitted shadows", "Clustered light mask", "Forward clear", "Forward cull",
-    "Water split", "Forward objects",
-    "Water clear", "Water opaque", "Water scene copy", "Forward transparent", "Water output",
+    "Forward admitted shadows", "Clustered light mask", "Forward cull", "Water split", "Forward clear",
+    "Forward objects", "Water clear", "Water opaque", "Water scene copy", "Forward transparent", "Water output",
   ]);
   await settle(graph, camera);
+  // Exactly one scene clear per frame, including frames where the split swaps paths.
+  const clears = vi.spyOn(FrameGraphRenderContext.prototype, "clearAttachments");
   let work = frames(graph, () => {
     waterDraws.length = opaqueDraws.length = glassDraws.length = 0;
     for (let frame = 0; frame < 3; frame += 1) expect(graph.render(camera)).toEqual({ path: "frameGraph" });
   });
   expect(work).toEqual({ frames: 3, visibleFrames: 3, copies: 3 });
+  expect(clears).toHaveBeenCalledTimes(3);
   expect(graph.waterSceneCopyDiagnostics()).toMatchObject({ ownTargets: true, scale: 0.5 });
   // Water draws after the copy, with its depth pre-pass, in the registered pass only.
   expect(new Set(waterDraws)).toEqual(new Set(["Forward transparent"]));
@@ -183,6 +186,7 @@ it("swaps the backbuffer view onto an own pair only on frames with visible copy-
     for (let frame = 0; frame < 3; frame += 1) expect(graph.render(camera)).toEqual({ path: "frameGraph" });
   });
   expect(work).toEqual({ frames: 3, visibleFrames: 0, copies: 0 });
+  expect(clears).toHaveBeenCalledTimes(6);
   expect(waterDraws).toEqual([]);
   expect(opaqueDraws).toEqual(["Forward objects", "Forward objects", "Forward objects"]);
   expect(glassDraws).toEqual(["Forward objects", "Forward objects", "Forward objects"]);
@@ -190,6 +194,7 @@ it("swaps the backbuffer view onto an own pair only on frames with visible copy-
   water.setEnabled(true);
   work = frames(graph, () => expect(graph.render(camera)).toEqual({ path: "frameGraph" }));
   expect(work).toEqual({ frames: 1, visibleFrames: 1, copies: 1 });
+  expect(clears).toHaveBeenCalledTimes(7);
   graph.dispose();
 });
 

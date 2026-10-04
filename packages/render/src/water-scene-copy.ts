@@ -26,8 +26,13 @@ import { managedRenderTextureResource } from "./render-target-resource-cost";
 import { sceneBuiltInWaterCount, waterMeshSamplesSceneCopy } from "./water-mesh";
 import type { WaterQualityDeviceClamp } from "./water-quality-device";
 
-/** Linear view depth stored for sky / far-plane pixels (the sentinel volumetric-shader also uses). */
+/** Linear view depth written for sky / far-plane pixels (the sentinel volumetric-shader also uses). */
 export const WATER_SCENE_COPY_SKY_DEPTH = 65000;
+/**
+ * RGBA16F stores the sentinel as its nearest half float, 64992: readers treat
+ * a copy alpha at or above this as sky. Real depths are clamped to the sentinel.
+ */
+export const WATER_SCENE_COPY_SKY_THRESHOLD = 64000;
 export const WATER_SCENE_COPY_SHADER = "babylonSlateWaterSceneCopy";
 
 /**
@@ -210,18 +215,22 @@ class WaterSceneCopyTask extends FrameGraphTask {
   private readonly inverseProjection = Matrix.Identity();
   private readonly footprintX: number;
   private readonly footprintY: number;
+  private readonly sourceColor: FrameGraphTextureHandle;
+  private readonly sourceDepth: FrameGraphTextureHandle;
   private retirement: OwnedEffectRetirement | undefined;
 
   constructor(
     name: string,
     graph: FrameGraph,
-    private readonly sourceColor: FrameGraphTextureHandle,
-    private readonly sourceDepth: FrameGraphTextureHandle,
+    sourceColor: FrameGraphTextureHandle,
+    sourceDepth: FrameGraphTextureHandle,
     width: number,
     height: number,
     footprint: boolean,
   ) {
     super(name, graph);
+    this.sourceColor = sourceColor;
+    this.sourceDepth = sourceDepth;
     this.outputTexture = graph.textureManager.createRenderTargetTexture(name, {
       size: { width, height }, sizeIsPercentage: false,
       options: {
@@ -290,8 +299,10 @@ class WaterSceneCopyTask extends FrameGraphTask {
 
 /** Runs once per frame after culling: switches the split on visible copy-sampling water. */
 class WaterSplitTask extends FrameGraphTask {
-  constructor(name: string, graph: FrameGraph, private readonly split: () => void) {
+  private readonly split: () => void;
+  constructor(name: string, graph: FrameGraph, split: () => void) {
     super(name, graph);
+    this.split = split;
   }
   override getClassName(): string { return "WaterSplitTask"; }
   override record(): void {
@@ -326,18 +337,23 @@ export interface WaterSceneCopyGraphOptions {
  * Opaque/transparent split with one packed scene copy between, owned by the
  * enclosing view graph:
  *
- *   Water split → Forward objects (opaque only while copy-sampling water is
- *   visible) → Water scene copy → Forward transparent
+ *   Forward clear → Forward cull → Water split → Forward objects (opaque only
+ *   while copy-sampling water is visible) → Water scene copy → Forward
+ *   transparent
  *
  * With no sampleable output the own-pair form keeps the direct path for
  * frames without such water ("Forward clear"/"Forward objects" draw the
  * output as before) and swaps to Water clear → Water opaque → Water scene
- * copy → Forward transparent → Water output on frames with it. Either way a
- * frame without visible copy-sampling water runs only empty disabled passes.
+ * copy → Forward transparent → Water output on frames with it. The split then
+ * decides before the output clear runs: Forward cull → Water split → Forward
+ * clear. Either way a frame without visible copy-sampling water runs only
+ * empty disabled passes.
  */
 export class WaterSceneCopyGraph {
-  /** Insert immediately before the main object pass. */
-  readonly beforeObjects: FrameGraphTask[] = [];
+  /** Runs after "Forward cull": before "Forward clear" when `splitsClear`, else just before the object pass. */
+  readonly split: FrameGraphTask;
+  /** The split also switches "Forward clear", so it must run before it (the own-pair form). */
+  readonly splitsClear: boolean;
   /** Insert immediately after the main object pass. */
   readonly afterObjects: FrameGraphTask[] = [];
   /** Main-view passes that must receive the admitted shadow maps. */
@@ -353,7 +369,6 @@ export class WaterSceneCopyGraph {
   private readonly objects: ManagedShadowObjectRendererTask;
   private readonly ownClear?: FrameGraphClearTextureTask;
   private readonly ownOpaque?: ManagedShadowObjectRendererTask;
-  private readonly ownOutput?: FrameGraphTask;
   private readonly ownHandles: FrameGraphTextureHandle[] = [];
   /** Tasks this owner disposes (the split's own, never the view's). */
   private readonly owned: FrameGraphTask[] = [];
@@ -462,9 +477,9 @@ export class WaterSceneCopyGraph {
     // Keep the copy alive (unaliased) through the pass that samples it.
     transparent.setOwnedTextureDependencies("water", [this.copy.outputTexture]);
     this.shadowReceivers.push(transparent);
-    const split = new WaterSplitTask("Water split", graph, () => this.split());
-    this.owned.push(split);
-    this.beforeObjects.push(split);
+    this.split = new WaterSplitTask("Water split", graph, () => this.splitFrame());
+    this.splitsClear = this.ownTargets;
+    this.owned.push(this.split);
     if (this.ownClear && this.ownOpaque) {
       const output = options.output;
       let copyOut: FrameGraphTask;
@@ -478,7 +493,6 @@ export class WaterSceneCopyGraph {
         task.sourceTexture = source.color;
         copyOut = task;
       }
-      this.ownOutput = copyOut;
       this.owned.push(copyOut);
       this.afterObjects.push(this.ownClear, this.ownOpaque, this.copy, transparent, copyOut);
       this.waterPasses.push(this.ownClear, this.ownOpaque, this.copy, transparent, copyOut);
@@ -548,7 +562,7 @@ export class WaterSceneCopyGraph {
   }
 
   /** Per frame, after culling: no allocation, and only flag writes when visibility changes. */
-  private split(): void {
+  private splitFrame(): void {
     const culled = this.cull.outputObjectList;
     const meshes = culled.meshes ?? this.scene.meshes;
     let visible = false;

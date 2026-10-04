@@ -905,14 +905,21 @@ export class ForwardSceneFrameGraph {
         );
         this.graph.addTask(this.shadows);
         this.graph.addTask(this.clustered);
-        this.graph.addTask(this.clear);
-        this.graph.addTask(this.cull);
+        if (this.water?.splitsClear) {
+          // The own-pair split switches the output clear: decide before it runs.
+          this.graph.addTask(this.cull);
+          this.graph.addTask(this.water.split);
+          this.graph.addTask(this.clear);
+        } else {
+          this.graph.addTask(this.clear);
+          this.graph.addTask(this.cull);
+        }
         for (const task of this.postProcessGraph?.geometryTasks ?? []) this.graph.addTask(task);
         if (this.effectsGraph?.spatial) {
           this.graph.addTask(this.effectsGraph.spatial.clear);
           this.graph.addTask(this.effectsGraph.spatial.geometry);
         }
-        for (const task of this.water?.beforeObjects ?? []) this.graph.addTask(task);
+        if (this.water && !this.water.splitsClear) this.graph.addTask(this.water.split);
         this.graph.addTask(this.objects);
         // The opaque copy and transparent pass precede every chain and the output copy.
         for (const task of this.water?.afterObjects ?? []) this.graph.addTask(task);
