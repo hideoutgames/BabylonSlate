@@ -535,9 +535,16 @@ export class PhysicsWorldSync {
     this.tilemapCollidersByActor.delete(actorId);
   }
 
-  step(dt: number, world: World, time = world.clock.tickIndex * dt, gravity = 9.81, beforeStep?: () => void): void {
+  /**
+   * `beforeStep` runs after this tick's composition and before simulation. A
+   * hook may run scripts that change poses, parents or physics membership, so
+   * readback then recomposes and revalidates the whole world. Only a hook that
+   * returns `false` promises it ran no scripts and moved only its own bodies
+   * (Movement motors), which keeps the chain-only readback.
+   */
+  step(dt: number, world: World, time = world.clock.tickIndex * dt, gravity = 9.81, beforeStep?: () => unknown): void {
     this.syncFromWorld(world);
-    beforeStep?.();
+    const recompose = beforeStep !== undefined && beforeStep() !== false;
     if (this.backend.kind === "3d") {
       this.water.update(this.actors, time);
       if (this.water.hasBodies) for (const [actorId, bodyId] of this.bodyByActor) {
@@ -548,45 +555,64 @@ export class PhysicsWorldSync {
       }
     }
     this.backend.step(dt);
-    this.readBack();
+    this.readBack(recompose);
   }
 
   /**
    * Gather every native pose, then write actor-local poses. An unparented body
    * copies its native pose without composition; a parented body resolves only
-   * its own ancestor chain against post-step parent body poses.
+   * its own ancestor chain against post-step parent body poses. With
+   * `recompose`, the whole world is recomposed and revalidated instead.
    */
-  private readBack(): void {
+  private readBack(recompose: boolean): void {
     const poses = this.bodyPoses;
     poses.clear();
     this.readbackWorld.clear();
-    for (const [actorId, bodyId] of this.bodyByActor) {
-      const transform = this.backend.getBodyTransform(bodyId);
-      if (transform) poses.set(actorId, transform);
+    try {
+      for (const [actorId, bodyId] of this.bodyByActor) {
+        const transform = this.backend.getBodyTransform(bodyId);
+        if (transform) poses.set(actorId, transform);
+      }
+      const world = recompose
+        ? physicsWorldTransforms(
+            this.actors,
+            this.actorById,
+            this.backend.kind,
+            this.actorFilter,
+            poses,
+          )
+        : undefined;
+      for (const [actorId, transform] of poses) {
+        const actor = this.actorById.get(actorId);
+        if (!actor || actor.destroyed) continue;
+        let local: PhysicsTransform;
+        if (world) local = actorLocalPhysicsTransform(transform, actor, world);
+        else {
+          const parentId = actorParentGuid(actor);
+          const parent = parentId ? this.actorById.get(parentId) : undefined;
+          // A body's resolved pose never reads its own local position or
+          // rotation, so writing earlier bodies cannot change a later ancestor.
+          local =
+            parent && !parent.destroyed
+              ? localPhysicsTransform(transform, this.readbackPose(parent))
+              : transform;
+        }
+        Object.assign(actor.transform.position, local.position);
+        Object.assign(actor.transform.rotation, local.rotation);
+      }
+    } finally {
+      poses.clear();
+      this.readbackWorld.clear();
     }
-    for (const [actorId, transform] of poses) {
-      const actor = this.actorById.get(actorId);
-      if (!actor || actor.destroyed) continue;
-      const parentId = actorParentGuid(actor);
-      const parent = parentId ? this.actorById.get(parentId) : undefined;
-      // A body's resolved pose never reads its own local position or rotation,
-      // so writing earlier bodies cannot change a later ancestor resolution.
-      const local =
-        parent && !parent.destroyed
-          ? localPhysicsTransform(transform, this.readbackPose(parent))
-          : transform;
-      Object.assign(actor.transform.position, local.position);
-      Object.assign(actor.transform.rotation, local.rotation);
-    }
-    poses.clear();
-    this.readbackWorld.clear();
   }
 
   /**
    * Post-step world pose of a readback ancestor: a body's native pose with its
    * composed scale, otherwise the authored composition under its resolved
    * parent. A chain without bodies reuses this tick's pre-step composition,
-   * whose inputs are unchanged and were already validated for cycles and shear.
+   * whose inputs are unchanged and were already validated for cycles and shear:
+   * without hook scripts, only Movement motors write poses after composition,
+   * and those actors are bodies whose descendants recompose here.
    */
   private readbackPose(actor: Actor): Transform {
     const cached = this.readbackWorld.get(actor.guid);

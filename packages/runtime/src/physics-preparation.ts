@@ -13,6 +13,7 @@ import {
   type ColliderLocalTransform,
   type ColliderShape,
   type Quat,
+  type PhysicsTransform,
   type Vec3,
 } from "@babylonslate/physics";
 
@@ -127,12 +128,15 @@ const PARTICIPANT_CLASSES = new Set([
 /** Resolve only physics participants and their ancestors, retaining the ordered
  * World list for iteration. A parent without physics still contributes scale.
  * This is the tick's validation boundary: parent cycles and unsupported shear
- * throw here, before any native body or collider is touched. */
+ * throw here, before any native body or collider is touched. `bodyPoses`
+ * substitutes post-step body positions and rotations for a whole-world
+ * readback after step hooks may have changed authored actors. */
 export function physicsWorldTransforms(
   actors: readonly Actor[],
   byGuid: ReadonlyMap<string, Actor>,
   kind: "2d" | "3d",
   eligible: (actor: Actor) => boolean,
+  bodyPoses?: ReadonlyMap<string, PhysicsTransform>,
 ): Map<string, Transform> {
   const resolved = new Map<string, Transform>();
   const resolving = new Set<Actor>();
@@ -160,6 +164,13 @@ export function physicsWorldTransforms(
       );
       transform = composeParentChildTransform(ancestor, actor.transform);
     }
+    const bodyPose = bodyPoses?.get(actor.guid);
+    if (bodyPose)
+      transform = {
+        ...transform,
+        position: { ...bodyPose.position },
+        rotation: { ...bodyPose.rotation },
+      };
     resolving.delete(actor);
     resolved.set(actor.guid, transform);
     return transform;

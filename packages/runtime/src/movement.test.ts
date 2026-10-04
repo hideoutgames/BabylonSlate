@@ -76,6 +76,34 @@ it("advances registered motors without traversing unrelated actors, including a 
   } finally { movement.dispose(); physics.dispose(); }
 });
 
+it("reports the motor steps whose transition events ran scripts, so physics readback recomposes after them", () => {
+  const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry(),
+    componentHooksFor: () => ({ onCreation: (component) => movement.initialize(component) }),
+  });
+  const physics = new PhysicsWorldSync(createSoftwarePhysicsBackend("3d", { x: 0, y: 0, z: 0 }));
+  const events: string[] = [];
+  const movement = new MovementWorldSync({ world, physics: () => physics, gravity: () => 0,
+    eligible: () => true, event: (_component, name) => { events.push(name); }, warn: () => {},
+  });
+  const reported: boolean[] = [];
+  const tick = () => physics.step(1 / 60, world, 0, 0, () => {
+    const scripted = movement.step(1 / 60, physics);
+    reported.push(scripted);
+    return scripted;
+  });
+  const actor = world.createActor({ classId: "Actor", guid: "moving" });
+  const component = world.createComponent({ classId: "MovementComponent", variables: { gravityScale: 0 } });
+  actor.attachComponent(component);
+  world.spawnActorNow(actor);
+  try {
+    tick();
+    movement.invoke(component, "setMovementInput", { direction: { x: 1, y: 0, z: 0 } });
+    tick();
+    tick();
+    expect({ reported, events }).toEqual({ reported: [false, true, false], events: ["onMovementStarted"] });
+  } finally { movement.dispose(); physics.dispose(); }
+});
+
 async function setup(kind: "3d" | "2d", properties: Record<string, unknown> = {}, floor = false) {
   const actors: SerializedActor[] = [createActor("hero", "Hero", {
     classId: "Hero", transform: { position: [0, floor ? 0.9 : 3, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },

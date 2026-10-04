@@ -37,13 +37,13 @@ Bytes per texel (unit-tested): RGBA8 = 4, ASTC 4×4 = 1, plus ~⅓ for mipmaps.
 
 Per fixed tick, inside the ~3 ms physics share of the combined game-tick budget. Main and SceneLayer overlay physics follow the same rules ([physics](../architecture/physics.md#per-tick-transform-work)):
 
-- One pre-step world-pose composition of physics participants and their ancestors; it is the tick's cycle/shear validation boundary. No other per-tick pass composes the whole world, except the water fallback below.
+- One pre-step world-pose composition of physics participants and their ancestors; it is the tick's cycle/shear validation boundary. No other per-tick pass composes the whole world, except the water and readback fallbacks below.
 - Body membership scans each eligible actor's components once. Unchanged collider, rigid-body, mesh-source and static-pose descriptors are compared in scratch and copied only on change.
 - Water: no transform work without an enabled water surface (a Landscape alone costs nothing). Otherwise only water, removal-volume, Landscape and buoyant actors plus their ancestors. Any duplicate actor guid in the world, or a parent cycle on a selected chain, falls back to composing the whole world. Each script `sampleWater` call follows the same rule.
-- Readback: no composition when no body is parented; otherwise only the parented bodies' ancestor chains.
+- Readback: no composition when no body is parented; otherwise only the parented bodies' ancestor chains. A tick whose Movement transition events ran scripts recomposes the whole world, as before.
 - Simulation results stay unchanged: per-tick world snapshots are identical for acyclic hierarchies.
 
-Deterministic counts, not timings, guard these rules: `physics-tick-composition.test.ts` keeps transform reads of 2,048 unrelated actors at zero, beside `physics-sync-preparation.test.ts` and `ragdoll-sync-performance.test.ts`. The pre-step pass still scales with participants, which include every 3D MeshComponent actor. `teleportActor` still recomposes participants per call, as does `applyComponent` for constraint and collider-class edits. `moveCharacter` does not recompose; it reuses the last tick's pre-step composition.
+Deterministic counts, not timings, guard these rules: `physics-tick-composition.test.ts` keeps transform reads of 2,048 unrelated actors at zero, beside `physics-sync-preparation.test.ts` and `ragdoll-sync-performance.test.ts`. The pre-step pass still scales with participants, which include every 3D MeshComponent actor. `teleportActor` still recomposes participants per call, as does `applyComponent` for constraint and collider-class edits. `moveCharacter` and Movement motors do not recompose; they reuse the last tick's pre-step composition.
 
 ## Render rules (agents)
 

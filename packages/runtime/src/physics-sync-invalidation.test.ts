@@ -332,6 +332,47 @@ it("reads back a body under a nonphysics child of another body from both post-st
   }
 });
 
+it("reads back a body against a nonphysics parent that a step hook moved", () => {
+  const world = new World({
+    seed: 1,
+    dt: 1 / 60,
+    classRegistry: new ClassRegistry(),
+  });
+  const parent = world.createActor({
+    classId: "Actor",
+    guid: "parent",
+    transform: identityTransform(),
+  });
+  world.spawnActorNow(parent);
+  const child = world.createActor({
+    classId: "Actor",
+    guid: "child",
+    transform: identityTransform(),
+    variables: { parentId: parent.guid },
+  });
+  child.transform.position.x = 1;
+  child.attachComponent(
+    world.createComponent({
+      classId: "RigidBodyComponent",
+      variables: { motionType: "dynamic", mass: 1, gravityScale: 0, linearDamping: 0 },
+    }),
+  );
+  world.spawnActorNow(child);
+  const sync = new PhysicsWorldSync(
+    physics.createSoftwarePhysicsBackend("3d", { x: 0, y: 0, z: 0 }),
+  );
+  try {
+    // A Movement event script runs after this tick's composition and moves the
+    // parent; the resting body keeps world x = 1 relative to the moved parent.
+    sync.step(1 / 60, world, 0, 0, () => {
+      parent.transform.position.x = 5;
+    });
+    expect(child.transform.position.x).toBeCloseTo(-4, 9);
+  } finally {
+    sync.dispose();
+  }
+});
+
 it("adds and retires implicit bodies after direct variable-map writes", () => {
   const { world, actor, collider, backend, sync, trace } = fixture();
   actor.components[0]!.destroyed = true; // No RigidBody: collision alone must supply a body.
