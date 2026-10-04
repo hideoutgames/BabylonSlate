@@ -14,6 +14,8 @@ import {
 } from "./babproject";
 import { stableStringify } from "./bytes";
 import { newAssetGuid } from "./guid";
+import { copyStorageTree } from "./storage-move";
+import { isPortablePackagePath } from "./package-path";
 import {
   discoverEnginePlugins,
   discoverProjectPlugins,
@@ -88,6 +90,39 @@ function isPluginManifestPath(path: string): boolean {
   return path === PLUGIN_MANIFEST_FILE || path.endsWith(`/${PLUGIN_MANIFEST_FILE}`);
 }
 
+function validatePluginPath(path: string): void {
+  if (!isPortablePackagePath(path)) {
+    throw new Error(`Invalid plugin path: ${path}`);
+  }
+}
+
+/** Validate before writing, including portable collisions and explicit ZIP directories. */
+function pluginFiles(files: readonly ProjectTreeFile[]): ProjectTreeFile[] {
+  const result: ProjectTreeFile[] = [];
+  const entries = new Map<string, "file" | "directory">();
+  for (const file of files) {
+    const directory = file.path.endsWith("/");
+    const path = directory ? file.path.slice(0, -1) : file.path;
+    validatePluginPath(path);
+    const key = path.toLowerCase();
+    const previous = entries.get(key);
+    if (previous && (!directory || previous !== "directory")) {
+      throw new Error(`Conflicting plugin path: ${path}`);
+    }
+    entries.set(key, directory ? "directory" : "file");
+    if (!directory) result.push(file);
+  }
+  for (const path of entries.keys()) {
+    const segments = path.split("/");
+    for (let end = 1; end < segments.length; end++) {
+      if (entries.get(segments.slice(0, end).join("/")) === "file") {
+        throw new Error(`Conflicting plugin path: ${path}`);
+      }
+    }
+  }
+  return result;
+}
+
 function parseManifest(data: Uint8Array, fallback: BabprojectManifest): BabprojectManifest {
   try {
     const parsed = JSON.parse(new TextDecoder().decode(data)) as Record<string, unknown>;
@@ -128,7 +163,7 @@ async function findPluginSettingsFile(
 }
 
 export async function inspectBabplugin(bytes: Uint8Array): Promise<InspectedBabplugin> {
-  const zipFiles = decodeProjectZip(bytes);
+  const zipFiles = pluginFiles(decodeProjectZip(bytes));
   const settingsFile = await findPluginSettingsFile(zipFiles);
   if (!settingsFile) {
     throw new Error("Not a .babplugin: missing PluginSettings");
@@ -139,13 +174,14 @@ export async function inspectBabplugin(bytes: Uint8Array): Promise<InspectedBabp
     displayName: document.name,
   });
   const rootPrefix = dirname(settingsFile.path);
-  const files = zipFiles
+  const files = pluginFiles(zipFiles
+    .filter((file) => !rootPrefix || file.path.startsWith(`${rootPrefix}/`))
     .filter((file) => !isPluginManifestPath(file.path))
     .map((file) => ({
       path: stripPrefix(file.path, rootPrefix),
       data: file.data,
     }))
-    .filter((file) => file.path !== "");
+    .filter((file) => file.path !== ""));
   const fallbackManifest: BabprojectManifest = {
     kind: "plugin",
     guid: settings.pluginGuid,
@@ -242,11 +278,11 @@ async function rewritePluginSettingsGuid(
   return encodePluginSettingsDocument({ ...settings, pluginGuid: nextGuid });
 }
 
-async function removeFolder(storage: ProjectStorage, folderPath: string): Promise<void> {
+async function cleanupImport(storage: ProjectStorage, folderPath: string): Promise<void> {
   try {
     await storage.remove(folderPath);
   } catch {
-    // Folder may not exist yet.
+    // Cleanup must not obscure the operation's result. A retained recovery copy is safe.
   }
 }
 
@@ -262,27 +298,56 @@ export async function applyPluginImport(
     throw new Error("Plugin import conflict was not replaced");
   }
   const folderName = plan.folderName;
-  const folderPath = `${PLUGINS_DIR}/${folderName}`;
-  if (replace) {
-    await removeFolder(storage, folderPath);
+  validatePluginPath(folderName);
+  if (folderName.includes("/")) throw new Error("Plugin folder must be a single name");
+  const files = pluginFiles(incoming.files);
+  if (!files.some((file) => file.path === incoming.settingsPath)) {
+    throw new Error("Not a .babplugin: missing PluginSettings");
   }
+  const folderPath = `${PLUGINS_DIR}/${folderName}`;
+  const hadOriginal = await storage.exists(folderPath);
+  if (hadOriginal && !replace) {
+    throw new Error(`Plugin folder already exists: ${folderPath}`);
+  }
+  // Stage outside plugins/ so discovery cannot mistake recovery copies for plugins.
+  const transaction = `.babylonslate-plugin-import-${newAssetGuid()}`;
+  const staged = `${transaction}/incoming`;
+  const backup = `${transaction}/original`;
   const remapGuid = plan.kind === "remap-plugin" ? plan.nextGuid : null;
   const out: ProjectTreeFile[] = [];
-  for (const file of incoming.files) {
+  for (const file of files) {
     let data = file.data;
     if (remapGuid && file.path === incoming.settingsPath) {
       data = await rewritePluginSettingsGuid(file.data, remapGuid);
     }
-    out.push({ path: `${folderPath}/${file.path}`, data });
+    out.push({ path: `${staged}/${file.path}`, data });
   }
-  await storage.mkdir(`${folderPath}/${ASSETS_DIR}`, true);
-  await writeProjectTree(storage, out);
-  const discovered = await discoverProjectPlugins(storage);
-  const imported = discovered.find((plugin) => plugin.folderName === folderName);
-  if (!imported) {
-    throw new Error(`Failed to import plugin into ${folderPath}`);
+  try {
+    await storage.mkdir(`${staged}/${ASSETS_DIR}`, true);
+    await writeProjectTree(storage, out);
+    if (hadOriginal) await copyStorageTree(storage, folderPath, backup);
+  } catch (error) {
+    await cleanupImport(storage, transaction);
+    throw error;
   }
-  return imported;
+  try {
+    if (hadOriginal) await storage.remove(folderPath);
+    await copyStorageTree(storage, staged, folderPath);
+    const discovered = await discoverProjectPlugins(storage);
+    const imported = discovered.find((plugin) => plugin.folderName === folderName);
+    if (!imported) throw new Error(`Failed to import plugin into ${folderPath}`);
+    await cleanupImport(storage, transaction);
+    return imported;
+  } catch (error) {
+    try {
+      if (await storage.exists(folderPath)) await storage.remove(folderPath);
+      if (hadOriginal) await copyStorageTree(storage, backup, folderPath);
+    } catch (restoreError) {
+      throw new AggregateError([error, restoreError], `Plugin import failed; recovery files remain at ${transaction}`);
+    }
+    await cleanupImport(storage, transaction);
+    throw error;
+  }
 }
 
 export async function unpackEnginePluginZip(
@@ -290,6 +355,8 @@ export async function unpackEnginePluginZip(
   zip: Uint8Array,
   folderName: string,
 ): Promise<PluginDescriptor> {
+  validatePluginPath(folderName);
+  if (folderName.includes("/")) throw new Error("Plugin folder must be a single name");
   const incoming = await inspectBabplugin(zip);
   const out: ProjectTreeFile[] = incoming.files.map((file) => ({
     path: `${folderName}/${file.path}`,

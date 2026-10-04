@@ -1,5 +1,7 @@
 import { normalizeWaterBody, normalizeWaterBuoyancy, normalizeWaterRemoval, WATER_REMOVAL_SHAPES, waterKindForClass } from "@babylonslate/core";
 import { humanizePropertyLabel } from "@babylonslate/editor-kit";
+import { isOverlayLayoutClass } from "@babylonslate/core";
+import { overlayLayoutPropertyRows } from "./overlay-layout-property-rows";
 import type { PropertyRow } from "@babylonslate/editor-kit";
 import {
   assetRowIdentity,
@@ -58,12 +60,17 @@ import {
 import {
   ENGINE_BASE_CLASS_IDS,
   ENGINE_COMPONENT_CLASS_IDS,
+  isHiddenEngineBaseClassId,
 } from "@babylonslate/object-model";
 import { parseNavMeshActorSettings } from "@babylonslate/navigation";
 import { classParentLookup, classIdFromClassAsset } from "./content-browser-helpers";
 import { physicsConstraintPropertyRows } from "./physics-constraint-property-rows";
 import { cablePropertyRows } from "./cable-property-rows";
+import { movementPropertyRows } from "./movement-property-rows";
 import { pathPropertyRows } from "./path-property-rows";
+import { focusPropertyRows } from "./focus-property-rows";
+import { painterPropertyRows } from "./painter-property-rows";
+import { richTextAppearPropertyRows } from "./rich-text-appear-property-rows";
 
 const MESH_KINDS = ["box", "sphere", "cylinder", "plane", "ground"];
 const MOTION_TYPES = ["static", "kinematic", "dynamic"] as const;
@@ -76,6 +83,7 @@ export type AssetPickRequest = {
   property: string;
   allowedTypes: string[];
   title?: string;
+  materialDomain?: "text";
 };
 
 export type ComponentPropertyContext = {
@@ -92,6 +100,7 @@ export type ComponentPropertyContext = {
   actorLabel?: (actorId: string) => string | undefined;
   actorComponents?: (actorId: string) => readonly SerializedComponent[];
   onPickActor?: (componentId: string) => void;
+  focusTargets?: readonly { value: string; label: string }[];
 };
 
 function rowId(actorId: string, componentId: string, key: string): string {
@@ -482,6 +491,7 @@ export function componentPropertyRows(
   update: (property: string, value: unknown) => void,
   context: ComponentPropertyContext,
 ): PropertyRow[] {
+  if (isOverlayLayoutClass(component.classId)) return overlayLayoutPropertyRows(actorId, component, update);
   if (component.classId === "SplineComponent") {
     const spline = parseSplineProperties(component.properties);
     return [
@@ -556,6 +566,8 @@ export function componentPropertyRows(
     ];
   }
   switch (component.classId) {
+    case "MovementComponent":
+      return movementPropertyRows(actorId, component, update, context);
     case "RenderTargetCaptureComponent": {
       const capture = normalizeRenderTargetCaptureProperties(component.properties);
       return [
@@ -580,11 +592,11 @@ export function componentPropertyRows(
     case "CableComponent":
       return [
         ...cablePropertyRows(actorId, component, update, context),
-        assetRow(actorId, component, "materialGuid", "Material", ["Material"], update, context, "Choose Cable Material"),
+        assetRow(actorId, component, "materialGuid", "Material", ["Material", "MaterialInstance"], update, context, "Choose Cable Material"),
       ];
     case "DynamicRuntimeMeshComponent":
       return [
-        assetRow(actorId, component, "materialGuid", "Material", ["Material"], update, context, "Choose Mesh Material"),
+        assetRow(actorId, component, "materialGuid", "Material", ["Material", "MaterialInstance"], update, context, "Choose Mesh Material"),
         {
           kind: "boolean", id: rowId(actorId, component.id, "enableCollision"), label: "Enable Collision",
           value: component.properties.enableCollision === true, defaultValue: false,
@@ -658,7 +670,7 @@ export function componentPropertyRows(
         component,
         "materialGuid",
         "Material",
-        ["Material"],
+        ["Material", "MaterialInstance"],
         update,
         context,
         "Pick Material",
@@ -1672,6 +1684,7 @@ export function componentPropertyRows(
         ...genericRows(actorId, component, update, new Set(["anchor"])),
       ];
     }
+    case "2DPainterComponent": return painterPropertyRows(actorId, component, update);
     case "2DTextComponent":
     case "2DRichTextComponent": {
       const parsed = parseText2DProperties(component.properties, {
@@ -1716,11 +1729,27 @@ export function componentPropertyRows(
           ? " Bold thickens the field; Italic shears glyphs. True bold/italic faces need a second atlas (not in v1)."
           : "";
       return [
+        ...(component.classId === "2DRichTextComponent" ? richTextAppearPropertyRows(actorId, component, update) : []),
         {
           ...font,
           description:
             "Bitmap uses the source FontFace. MSDF needs a JSON + PNG atlas on this Font.",
           onChange: coerceRendererOnFontChange,
+        },
+        {
+          ...assetRow(actorId, component, "materialGuid", "Text Material", ["Material", "MaterialInstance"], update, context, "Pick Text Material"),
+          kind: "asset",
+          description: "A Text-domain Material multiplies the glyph and rich-text colors while preserving letter coverage.",
+          onPick: () => context.onPickAsset({ componentId: component.id, property: "materialGuid", allowedTypes: ["Material", "MaterialInstance"], materialDomain: "text", title: "Pick Text Material" }),
+        } as Extract<PropertyRow, { kind: "asset" }>,
+        {
+          kind: "enum",
+          id: rowId(actorId, component.id, "materialUv"),
+          label: "Material UV",
+          value: parsed.materialUv,
+          defaultValue: "text",
+          options: [{ value: "text", label: "Text Box" }, { value: "glyph", label: "Each Glyph" }],
+          onChange: (next) => update("materialUv", next),
         },
         {
           kind: "enum",
@@ -1881,6 +1910,8 @@ export function componentPropertyRows(
           update,
           new Set([
             "text",
+            "materialGuid",
+            "materialUv",
             "fontAssetGuid",
             "renderer",
             "size",
@@ -1895,10 +1926,17 @@ export function componentPropertyRows(
             "italic",
             "underline",
             "hitTest",
+            "appearModes",
+            "appearTransition",
+            "appearStart",
+            "appearInterval",
+            "appearDuration",
           ]),
         ),
       ];
     }
+    case "2DFocusTargetComponent":
+      return focusPropertyRows(actorId, component, update, context.focusTargets);
     case "2DButtonComponent":
     case "2DTextureComponent":
     case "2DMaterialComponent": {
@@ -1919,7 +1957,7 @@ export function componentPropertyRows(
               component,
               assetProperty,
               assetProperty === "materialGuid" ? "Material" : "Texture",
-              assetProperty === "materialGuid" ? ["Material"] : ["Texture"],
+              assetProperty === "materialGuid" ? ["Material", "MaterialInstance"] : ["Texture"],
               update,
               context,
               assetProperty === "materialGuid"
@@ -1930,6 +1968,7 @@ export function componentPropertyRows(
         : [];
       return [
         ...assetRows,
+        ...(component.classId === "2DButtonComponent" ? focusPropertyRows(actorId, component, update, context.focusTargets) : []),
         {
           kind: "enum",
           id: rowId(actorId, component.id, "hitTest"),
@@ -1948,6 +1987,7 @@ export function componentPropertyRows(
           new Set([
             "hitTest",
             ...(assetProperty ? [assetProperty] : []),
+            ...(component.classId === "2DButtonComponent" ? ["focusEnabled", "focusInitial", "focusUp", "focusDown", "focusLeft", "focusRight", "focused"] : []),
           ]),
         ),
       ];
@@ -1973,7 +2013,7 @@ export function componentPropertyRows(
           component,
           assetProperty,
           parsed.source === "material" ? "Material" : "Texture",
-          parsed.source === "material" ? ["Material"] : ["Texture"],
+          parsed.source === "material" ? ["Material", "MaterialInstance"] : ["Texture"],
           update,
           context,
           parsed.source === "material" ? "Pick Material" : "Pick Texture",
@@ -2074,8 +2114,9 @@ export function gameInstanceClassEntries(
     if (asset.header.type !== "Class") continue;
     const id = classIdFromClassAsset(asset);
     if (id === "GameInstance") continue;
-    if (!walkAncestry(id, parentOf).includes("GameInstance")) continue;
-    entries.push({ id, name: id, group: "Project" });
+    const ancestry = walkAncestry(id, parentOf);
+    if (!ancestry.includes("GameInstance")) continue;
+    entries.push({ id, name: id, group: "Project", ancestry });
   }
   return entries;
 }
@@ -2099,12 +2140,15 @@ export function subclassClassEntries(
   const seen = new Set<string>();
   const add = (id: string, name: string, group: string) => {
     if (seen.has(id)) return;
-    if (!walkAncestry(id, parentOf).includes(baseClassId)) return;
+    // Hidden engine bases (Subsystem) stay known but are never offered.
+    if (isHiddenEngineBaseClassId(id)) return;
+    const ancestry = walkAncestry(id, parentOf);
+    if (!ancestry.includes(baseClassId)) return;
     if (options?.editorGraph !== true && isEditorGraphClass(id, parentOf)) {
       return;
     }
     seen.add(id);
-    entries.push({ id, name, group });
+    entries.push({ id, name, group, ancestry });
   };
   add(baseClassId, baseClassId, "Engine");
   for (const id of ENGINE_BASE_CLASS_IDS) add(id, id, "Engine");

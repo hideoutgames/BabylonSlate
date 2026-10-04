@@ -586,6 +586,33 @@ describe("editor camera controller", () => {
 });
 
 describe("EditorSceneSync", () => {
+  it("keeps 2DAnchor in scene data without a viewport mesh, pick target, or transform", () => {
+    const handle = createHandle();
+    const sync = new EditorSceneSync(handle.scene);
+    const parent = createActor("parent", "Visual", { components: [createMeshComponent("mesh", "box")] });
+    const pin = createActor("pin", "2D Anchor", { parentId: parent.id, components: [
+      { id: "anchor", classId: "2DAnchorComponent", properties: { anchor: "topLeft" } },
+    ] });
+    // Old documents can still carry a pose before normalization.
+    pin.transform.position = [40, 50, 60];
+    const scene = sceneWith([parent, pin]);
+    sync.apply(scene);
+    expect(sync.serializedScene()?.actors.map((actor) => actor.id)).toEqual(["parent", "pin"]);
+    expect(sync.meshForActor("pin")).toBeNull();
+    expect(sync.visualMeshesForActor("pin")).toEqual([]);
+    expect(handle.scene.meshes.some((mesh) => sync.actorForMesh(mesh.name) === "pin")).toBe(false);
+    expect(sync.meshForActor("parent")?.isPickable).toBe(true);
+    const child = createActor("child", "Child", { parentId: pin.id, components: [createMeshComponent("child-mesh", "box")] });
+    sync.apply(sceneWith([parent, pin, child]));
+    expect(sync.meshForActor("child")?.parent).toBe(sync.meshForActor("parent"));
+    // Replacing a prior helper retires its old billboard too.
+    sync.apply(sceneWith([parent, { ...pin, components: [] }]));
+    expect(sync.meshForActor("pin")).not.toBeNull();
+    sync.apply(scene);
+    expect(sync.meshForActor("pin")).toBeNull();
+    sync.dispose();
+  });
+
   it("clears a SceneLayer editor viewport to opaque black and leaves other 2D scenes chrome gray", () => {
     const { scene } = createHandle();
     const gray = scene.clearColor.clone();

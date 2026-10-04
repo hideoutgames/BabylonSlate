@@ -95,30 +95,28 @@ function installImmediateGraphHostSize(
       this.callback = callback;
     }
     observe(target: Element) {
-      const isEditor = target.getAttribute("data-testid") === "graph-editor";
-      if (isEditor) {
-        Object.defineProperty(target, "clientWidth", {
-          configurable: true,
-          value: width,
-        });
-        Object.defineProperty(target, "clientHeight", {
-          configurable: true,
-          value: height,
-        });
-      }
-      const measuredWidth = isEditor ? width : 0;
-      const measuredHeight = isEditor ? height : 0;
+      // Only the graph host has layout in this fixture. Notifying each zero-size
+      // React Flow node forces a separate, unused computed-style measurement.
+      if (target.getAttribute("data-testid") !== "graph-editor") return;
+      Object.defineProperty(target, "clientWidth", {
+        configurable: true,
+        value: width,
+      });
+      Object.defineProperty(target, "clientHeight", {
+        configurable: true,
+        value: height,
+      });
       this.callback(
         [
           {
             target,
             contentRect: {
-              width: measuredWidth,
-              height: measuredHeight,
+              width,
+              height,
               top: 0,
               left: 0,
-              right: measuredWidth,
-              bottom: measuredHeight,
+              right: width,
+              bottom: height,
               x: 0,
               y: 0,
               toJSON: () => ({}),
@@ -699,20 +697,19 @@ describe("GraphEditor", () => {
         observers.push(this);
       }
       observe(target: Element) {
+        // Match the measured-host fixture; other jsdom elements have no layout.
+        if (target.getAttribute("data-testid") !== "graph-editor") return;
         this.target = target;
-        const isEditor = target.getAttribute("data-testid") === "graph-editor";
-        if (isEditor) {
-          Object.defineProperty(target, "clientWidth", {
-            configurable: true,
-            value: 500,
-          });
-          Object.defineProperty(target, "clientHeight", {
-            configurable: true,
-            value: 400,
-          });
-        }
-        const width = isEditor ? 500 : 0;
-        const height = isEditor ? 400 : 0;
+        const width = 500;
+        const height = 400;
+        Object.defineProperty(target, "clientWidth", {
+          configurable: true,
+          value: width,
+        });
+        Object.defineProperty(target, "clientHeight", {
+          configurable: true,
+          value: height,
+        });
         this.callback(
           [
             {

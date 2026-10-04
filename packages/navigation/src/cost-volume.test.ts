@@ -1,4 +1,5 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
+import { NavMeshQuery } from "@recast-navigation/core";
 import { mergeNavBakeMeshes } from "./geometry";
 import { solidBlockerMesh } from "./blockers";
 import {
@@ -133,5 +134,66 @@ describe("navmesh cost volumes vs unwalkable carve", () => {
     const carved = nav.findPath(from, to);
     expect(carved.length).toBeGreaterThan(1);
     expect(crossesOrigin(carved)).toBe(false);
+  });
+
+  it.each([false, true])("keeps volume costs independent across insertion and cost changes (reverse=%s)", async (reverse) => {
+    const bytes = await generateNavMesh(corridorGenerateInput());
+    const nav = createNavigationBackend();
+    nav.importNavMesh(bytes);
+    try {
+      const openLength = pathLength(nav.findPath(from, to));
+      const expensive = { ...corridorBox, id: "corridor", cost: 100 };
+      const remote = { ...corridorBox, id: "remote", cost: 2, pose: { x: 100, y: 1, z: 100 } };
+      for (const volume of reverse ? [remote, expensive] : [expensive, remote]) nav.applyCostVolume(volume);
+      expect(goesAroundWalls(nav.findPath(from, to))).toBe(true);
+      // Changing an unrelated volume must not change this corridor's price.
+      nav.applyCostVolume({ ...remote, cost: 1.01 });
+      expect(goesAroundWalls(nav.findPath(from, to))).toBe(true);
+      nav.applyCostVolume({ ...expensive, cost: 1.01 });
+      expect(pathLength(nav.findPath(from, to))).toBeCloseTo(openLength, 5);
+      // A cheaper overlapping volume cannot erase the expensive one.
+      nav.applyCostVolume(expensive);
+      nav.applyCostVolume({ ...corridorBox, id: "overlap", cost: 1.01 });
+      expect(goesAroundWalls(nav.findPath(from, to))).toBe(true);
+    } finally { nav.dispose(); }
+  });
+
+  it("rejects area exhaustion without corrupting the already installed costs", async () => {
+    const nav = createNavigationBackend();
+    nav.importNavMesh(await generateNavMesh(corridorGenerateInput()));
+    try {
+      nav.applyCostVolume({ ...corridorBox, id: "corridor", cost: 100 });
+      for (let index = 0; index < 61; index++) nav.applyCostVolume({ ...corridorBox, id: `remote-${index}`,
+        cost: index + 2, pose: { x: 100, y: 1, z: 100 } });
+      expect(() => nav.applyCostVolume({ ...corridorBox, id: "overflow", cost: 200 })).toThrow(RangeError);
+      expect(goesAroundWalls(nav.findPath(from, to))).toBe(true);
+      // Reusing an existing price does not consume another Detour area.
+      nav.applyCostVolume({ ...corridorBox, id: "same-cost", cost: 100 });
+      expect(goesAroundWalls(nav.findPath(from, to))).toBe(true);
+    } finally { nav.dispose(); }
+  });
+
+  it("batches moved cost volumes and leaves unchanged volumes alone between crowd ticks", async () => {
+    const bytes = await generateNavMesh(corridorGenerateInput());
+    const nav = createNavigationBackend();
+    nav.importNavMesh(bytes);
+    const query = vi.spyOn(NavMeshQuery.prototype, "queryPolygons");
+    const volumes = Array.from({ length: 20 }, (_, index) => ({ ...corridorBox, id: `cost-${index}` }));
+    try {
+      const openLength = pathLength(nav.findPath(from, to));
+      for (const volume of volumes) nav.applyCostVolume(volume);
+      expect(pathLength(nav.findPath(from, to))).toBeGreaterThan(openLength * 1.15);
+      expect(query.mock.calls.length).toBeGreaterThan(0);
+      expect(query.mock.calls.length).toBeLessThanOrEqual(volumes.length);
+      query.mockClear();
+      for (let tick = 0; tick < 5; tick++) {
+        for (const volume of volumes) nav.applyCostVolume(volume);
+        nav.stepCrowd(1 / 60);
+      }
+      expect(query).not.toHaveBeenCalled();
+      for (const volume of volumes) nav.applyCostVolume({ ...volume, pose: { x: 100, y: 1, z: 100 } });
+      expect(pathLength(nav.findPath(from, to))).toBeCloseTo(openLength, 5);
+      expect(query.mock.calls.length).toBeLessThanOrEqual(volumes.length);
+    } finally { query.mockRestore(); nav.dispose(); }
   });
 });

@@ -251,6 +251,9 @@ function handleControl(msg: ControlMessage): void {
     case "inspect":
       applyInspectControl(ensureRuntime(), msg, onCommand);
       return;
+    case "sceneLayerScroll":
+      ensureRuntime().applySceneLayerScroll(msg.layerId, msg.actorId, msg.componentId, msg.deltaX, msg.deltaY);
+      break;
     case "sceneLayerPointer":
       ensureRuntime().applySceneLayerPointer(msg);
       return;

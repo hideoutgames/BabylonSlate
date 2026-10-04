@@ -1,8 +1,7 @@
 import {
-  parseRichText,
+  text2DFormattedUnits,
   parseText2DProperties,
   type RichTextEffects,
-  type RichTextSpan,
   type RichTextStyle,
   type Text2DAlignment,
   type Text2DProperties,
@@ -18,6 +17,8 @@ export type GlyphMetrics = {
   bearingY: number;
   advance: number;
   source: GlyphSource;
+  /** Visible glyph bounds relative to the quad center, in world-space Y. */
+  inkBounds?: { top: number; bottom: number };
   uvs?: { u0: number; v0: number; u1: number; v1: number };
 };
 
@@ -63,6 +64,8 @@ export type LayoutText2DInput = {
   underline: boolean;
   outline: number;
   outlineColor: [number, number, number];
+  /** Reveal underlines with their formatted character rather than the entire run. */
+  separateUnderlines?: boolean;
   pixelsPerUnit: number;
   metrics: GlyphMetricsProvider;
 };
@@ -79,13 +82,28 @@ type Pending = {
   style: RichTextStyle;
   effects: RichTextEffects;
   source: GlyphSource;
+  inkBounds?: GlyphMetrics["inkBounds"];
   uvs?: GlyphMetrics["uvs"];
   index: number;
 };
 
 const HOVER_SPEED = 2;
 const ROTATE_SPEED = 2;
-const SHAKE_SCALE = 0.08;
+const SHAKE_SCALE = 0.03;
+const SHAKE_SPEED = 8;
+
+function shakeSample(index: number, seed: number): number {
+  const value = Math.sin(index * 127.1 + seed * 311.7) * 43758.5453123;
+  return (value - Math.floor(value)) * 2 - 1;
+}
+
+function shakeNoise(time: number, seed: number): number {
+  const step = Math.floor(time);
+  const fraction = time - step;
+  const blend = fraction * fraction * (3 - 2 * fraction);
+  const start = shakeSample(step, seed);
+  return start + (shakeSample(step + 1, seed) - start) * blend;
+}
 
 function emptyEffects(): RichTextEffects {
   return {
@@ -105,7 +123,7 @@ function rotatePhaseFor(index: number): number {
   return (index * 2.3999632297 + 1.1) % (Math.PI * 2);
 }
 
-function spansFrom(input: LayoutText2DInput): RichTextSpan[] {
+function unitsFrom(input: LayoutText2DInput) {
   const defaults: RichTextStyle = {
     bold: input.bold,
     italic: input.italic,
@@ -115,15 +133,7 @@ function spansFrom(input: LayoutText2DInput): RichTextSpan[] {
     outline: input.outline,
     outlineColor: [...input.outlineColor] as [number, number, number],
   };
-  if (input.rich) return parseRichText(input.text, defaults);
-  return [
-    {
-      kind: "text",
-      text: input.text,
-      style: defaults,
-      effects: emptyEffects(),
-    },
-  ];
+  return text2DFormattedUnits(input.text, defaults, { rich: input.rich });
 }
 
 function lineShiftX(
@@ -149,17 +159,26 @@ function flushLine(
   alignment: Text2DAlignment,
   wrapWorld: number,
   items: Text2DLayoutItem[],
+  separateUnderlines = false,
 ): { width: number; height: number } {
   if (line.length === 0) {
     return { width: 0, height: 0 };
   }
   const lineWidth = line.reduce((sum, entry) => sum + entry.advance, 0);
   const lineHeight = Math.max(...line.map((entry) => entry.height), 0);
+  let inkTop = -Infinity;
+  let inkBottom = Infinity;
+  for (const entry of line) {
+    if (entry.kind !== "glyph" || !entry.ch?.trim()) continue;
+    inkTop = Math.max(inkTop, entry.bearingY + (entry.inkBounds?.top ?? entry.height / 2));
+    inkBottom = Math.min(inkBottom, entry.bearingY + (entry.inkBounds?.bottom ?? -entry.height / 2));
+  }
+  const imageCenterY = Number.isFinite(inkTop) ? (inkTop + inkBottom) / 2 : 0;
   const shift = lineShiftX(alignment, lineWidth, wrapWorld);
   let cursorX = shift;
   for (const entry of line) {
     const x = cursorX + entry.bearingX + entry.width / 2;
-    const y = cursorY + entry.bearingY;
+    const y = cursorY + (entry.kind === "image" ? imageCenterY : entry.bearingY);
     items.push({
       kind: entry.kind,
       ch: entry.ch,
@@ -202,7 +221,8 @@ function flushLine(
     runStart = null;
   };
   cursorX = shift;
-  for (const entry of line) {
+  for (let index = 0; index < line.length; index++) {
+    const entry = line[index]!;
     const left = cursorX + entry.bearingX;
     const right = left + entry.width;
     if (entry.style.underline) {
@@ -211,7 +231,11 @@ function flushLine(
         runStyle = entry.style;
         runIndex = entry.index;
       }
-      runEnd = right;
+      const next = line[index + 1];
+      runEnd = separateUnderlines && next?.style.underline
+        ? cursorX + entry.advance + next.bearingX
+        : right;
+      if (separateUnderlines) flushUnderline();
     } else {
       flushUnderline();
     }
@@ -231,7 +255,6 @@ export function layoutText2D(input: LayoutText2DInput): Text2DLayout {
   const lines: Array<{ pending: Pending[]; width: number; height: number }> = [];
   let line: Pending[] = [];
   let lineAdvance = 0;
-  let glyphIndex = 0;
   const defaultLineHeight = input.size / ppu;
 
   const breakLine = () => {
@@ -249,7 +272,11 @@ export function layoutText2D(input: LayoutText2DInput): Text2DLayout {
     lineAdvance += entry.advance;
   };
 
-  for (const span of spansFrom(input)) {
+  for (const span of unitsFrom(input)) {
+    if (span.kind === "lineBreak") {
+      breakLine();
+      continue;
+    }
     if (span.kind === "image") {
       const size = span.size > 0 ? span.size : input.size;
       const measured = input.metrics.measureImage(span.guid, size);
@@ -264,33 +291,26 @@ export function layoutText2D(input: LayoutText2DInput): Text2DLayout {
         style: span.style,
         effects: span.effects,
         source: "bitmap",
-        index: glyphIndex,
+        index: span.index,
       });
-      glyphIndex += 1;
       continue;
     }
-    for (const ch of span.text) {
-      if (ch === "\n") {
-        breakLine();
-        continue;
-      }
-      const metrics = input.metrics.measureGlyph(ch, span.style);
-      pushPending({
-        kind: "glyph",
-        ch,
-        width: metrics.width,
-        height: metrics.height,
-        advance: metrics.advance,
-        bearingX: metrics.bearingX,
-        bearingY: metrics.bearingY,
-        style: span.style,
-        effects: span.effects,
-        source: metrics.source,
-        uvs: metrics.uvs,
-        index: glyphIndex,
-      });
-      glyphIndex += 1;
-    }
+    const metrics = input.metrics.measureGlyph(span.ch, span.style);
+    pushPending({
+      kind: "glyph",
+      ch: span.ch,
+      width: metrics.width,
+      height: metrics.height,
+      advance: metrics.advance,
+      bearingX: metrics.bearingX,
+      bearingY: metrics.bearingY,
+      style: span.style,
+      effects: span.effects,
+      source: metrics.source,
+      inkBounds: metrics.inkBounds,
+      uvs: metrics.uvs,
+      index: span.index,
+    });
   }
   if (line.length > 0 || lines.length === 0) breakLine();
 
@@ -305,7 +325,7 @@ export function layoutText2D(input: LayoutText2DInput): Text2DLayout {
         : totalHeight / 2;
   for (const row of lines) {
     cursorY -= row.height / 2;
-    flushLine(row.pending, cursorY, input.alignment, wrapWorld, items);
+    flushLine(row.pending, cursorY, input.alignment, wrapWorld, items, input.separateUnderlines);
     cursorY -= row.height / 2;
   }
   return { items, width: totalWidth, height: totalHeight };
@@ -336,6 +356,7 @@ export function layoutText2DFromProperties(
       underline: parsed.underline,
       outline: parsed.outline,
       outlineColor: parsed.outlineColor,
+      separateUnderlines: options.rich && parsed.appearModes.length > 0,
       pixelsPerUnit: options.pixelsPerUnit,
       metrics: options.metrics,
     }),
@@ -350,7 +371,6 @@ export type Text2DEffectContext = {
   fontSize: number;
   hoverPhase: number;
   rotatePhase: number;
-  noise?: () => number;
   paused?: boolean;
   last?: Text2DEffectSample;
 };
@@ -364,12 +384,14 @@ export function combineText2DEffects(
 ): Text2DEffectSample {
   if (context.paused && context.last) return context.last;
   const fontSize = context.fontSize > 0 ? context.fontSize : 0.32;
-  const noise = context.noise ?? Math.random;
   let x = 0;
   let y = 0;
   if (effects.shake) {
-    x += (noise() * 2 - 1) * effects.shake * fontSize * SHAKE_SCALE;
-    y += (noise() * 2 - 1) * effects.shake * fontSize * SHAKE_SCALE;
+    // Smooth between fixed noise samples so motion is independent of frame rate.
+    const time = context.time * SHAKE_SPEED;
+    const amplitude = effects.shake * fontSize * SHAKE_SCALE;
+    x += shakeNoise(time, context.index * 2 + 1) * amplitude;
+    y += shakeNoise(time, context.index * 2 + 2) * amplitude;
   }
   if (effects.waveSpeed || effects.waveIntensity) {
     y +=

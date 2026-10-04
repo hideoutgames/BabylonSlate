@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ArrowRightIcon,
   ArrowUpDownIcon,
@@ -14,6 +22,7 @@ import {
   FolderPlusIcon,
   LinkIcon,
   ListFilterIcon,
+  PaintbrushIcon,
   PencilIcon,
   PlusIcon,
   Trash2Icon,
@@ -145,6 +154,7 @@ import {
   buildNewAssetResult,
   classIdFromClassAsset,
   classParentLookup,
+  classDocumentShowsPrefab,
   collectFolderGuidsFromTrees,
   contentBrowserContextActions,
   canRetargetSelectedAssets,
@@ -177,6 +187,8 @@ import {
   visualForIndexedAsset,
   withAutoCollapsedNestedFolders,
   runWithContentBrowserImportBusy,
+  buildMaterialInstanceAssetResult,
+  materialInstanceNameFor,
   type ContentBrowserDropMove,
   type ContentBrowserSortMode,
   type CreatableAssetType,
@@ -195,11 +207,14 @@ import { collectClassGraphsForPalette } from "../lib/logic-graph-document";
 import { classIdForGraphPath } from "../services/script-compiler";
 import { useLongPressMenu } from "../lib/use-long-press-menu";
 import { useContentBrowserPaintSelect } from "../lib/use-content-browser-paint-select";
-import { contentBrowserTileStyle } from "../lib/content-browser-grid";
 import { syncContentBrowserThumbnailUrls } from "../lib/content-browser-thumbnails";
 import { useContentBrowserGridWindow } from "../lib/use-content-browser-grid-window";
-import { ContentBrowserAssetTile } from "./content-browser-asset-tile";
-import { ContentBrowserFolderTile } from "./content-browser-folder-tile";
+import {
+  ContentBrowserGridTiles,
+  type ContentBrowserGridActions,
+  type ContentBrowserGridItem,
+  type ContentBrowserTileLock,
+} from "./content-browser-grid-tiles";
 import { ContentBrowserMoveDialog } from "./content-browser-move-dialog";
 import { ContentBrowserNewAssetDialog } from "./content-browser-new-asset-dialog";
 import { ContentBrowserSelectionActions } from "./content-browser-selection-actions";
@@ -226,9 +241,34 @@ type MoveTarget = {
   typeVisual: TypeVisual | null;
 };
 
-type GridItem =
-  | { kind: "folder"; path: string; name: string }
-  | { kind: "asset"; asset: IndexedAsset };
+type GridItem = ContentBrowserGridItem;
+
+/**
+ * Locks of the mounted asset tiles, serialized so the memoized grid sees a new
+ * value only when one of them changes (the service mutates its locks in place).
+ */
+function mountedTileLocksKey(
+  items: readonly GridItem[],
+  firstIndex: number,
+  lastIndex: number,
+  sourceControl: {
+    lockStateForPath: (path: string) => "mine" | "theirs" | null;
+    lockForPath: (path: string) => { ownerName?: string } | null | undefined;
+  },
+): string {
+  const locks: Record<string, ContentBrowserTileLock> = {};
+  const end = Math.min(lastIndex, items.length);
+  for (let index = firstIndex; index < end; index++) {
+    const item = items[index];
+    if (item?.kind !== "asset") continue;
+    const path = item.asset.path;
+    const state = sourceControl.lockStateForPath(path);
+    if (!state) continue;
+    const ownerName = sourceControl.lockForPath(path)?.ownerName;
+    locks[path] = ownerName === undefined ? { state } : { state, ownerName };
+  }
+  return JSON.stringify(locks);
+}
 
 export function ContentBrowserWorkspace({
   hidden = false,
@@ -578,33 +618,63 @@ export function ContentBrowserWorkspace({
     [allAssets],
   );
 
+  /** One type visual per asset object while the class ancestry is unchanged. */
+  const typeVisualFor = useMemo(() => {
+    const visuals = new WeakMap<IndexedAsset, TypeVisual>();
+    return (asset: IndexedAsset): TypeVisual => {
+      let visual = visuals.get(asset);
+      if (!visual) {
+        visual = visualForIndexedAsset(asset, classParentOf);
+        visuals.set(asset, visual);
+      }
+      return visual;
+    };
+  }, [classParentOf]);
+
   const folderGuids = useMemo(() => {
     if (folderTrees.length === 0) return null;
     return collectFolderGuidsFromTrees(selectedFolderPath, folderTrees);
   }, [folderTrees, selectedFolderPath]);
 
-  const visibleAssets = useMemo(
-    () =>
-      sortAssets(
-        filterAssets(allAssets, {
-          folderGuids,
-          typeFilters,
-          search,
-        }),
-        sortMode,
-      ),
-    [allAssets, folderGuids, search, sortMode, typeFilters],
+  // Typing updates the field at once; the grid follows at low priority.
+  // Clearing the search (Clear Filters, revealing an asset) applies in the same
+  // render as the folder and type filters that change with it.
+  const deferredSearch = useDeferredValue(search);
+  const gridSearch = search.trim() ? deferredSearch : search;
+  const searchPending = search !== gridSearch;
+
+  // Sort once per list and mode. Filtering keeps that order, and the sort is a
+  // total order, so each keystroke only filters.
+  const sortedAssets = useMemo(
+    () => sortAssets(allAssets, sortMode),
+    [allAssets, sortMode],
   );
 
-  const childFolders = useMemo(() => {
+  const visibleAssets = useMemo(
+    () =>
+      filterAssets(sortedAssets, {
+        folderGuids,
+        typeFilters,
+        search: gridSearch,
+      }),
+    [gridSearch, folderGuids, sortedAssets, typeFilters],
+  );
+
+  const sortedChildFolders = useMemo(() => {
     if (folderTrees.length === 0) return [];
-    const folders = listChildFoldersFromTrees(folderTrees, selectedFolderPath);
-    const needle = search.trim().toLowerCase();
-    const matched = needle
-      ? folders.filter((folder) => folder.name.toLowerCase().includes(needle))
-      : folders;
-    return sortChildFolders(matched, sortMode);
-  }, [folderTrees, search, selectedFolderPath, sortMode]);
+    return sortChildFolders(
+      listChildFoldersFromTrees(folderTrees, selectedFolderPath),
+      sortMode,
+    );
+  }, [folderTrees, selectedFolderPath, sortMode]);
+
+  const childFolders = useMemo(() => {
+    const needle = gridSearch.trim().toLowerCase();
+    if (!needle) return sortedChildFolders;
+    return sortedChildFolders.filter((folder) =>
+      folder.name.toLowerCase().includes(needle),
+    );
+  }, [gridSearch, sortedChildFolders]);
 
   const gridItems = useMemo((): GridItem[] => {
     const items: GridItem[] = childFolders.map((folder) => ({
@@ -663,11 +733,24 @@ export function ContentBrowserWorkspace({
     for (let index = slice.firstIndex; index < slice.lastIndex; index++) {
       const item = gridItems[index];
       if (item?.kind === "asset" && isThumbnailableAssetType(item.asset.header.type)) {
+        const { type, parentClass } = item.asset.header;
+        if ((type === "Class" || type === "Graph") && !classDocumentShowsPrefab(parentClass, classParentOf, { assetType: type })) continue;
         guids.push(item.asset.header.guid);
       }
     }
     return guids;
-  }, [gridItems, slice.firstIndex, slice.lastIndex]);
+  }, [classParentOf, gridItems, slice.firstIndex, slice.lastIndex]);
+
+  const tileLocksKey = mountedTileLocksKey(
+    gridItems,
+    slice.firstIndex,
+    slice.lastIndex,
+    sourceControl,
+  );
+  const tileLocks = useMemo(
+    () => JSON.parse(tileLocksKey) as Record<string, ContentBrowserTileLock>,
+    [tileLocksKey],
+  );
 
   const browserRows = useMemo(() => {
     if (folderTrees.length === 0) return [];
@@ -708,13 +791,11 @@ export function ContentBrowserWorkspace({
             row.kind === "folder" ? (
               <FolderGlyph />
             ) : asset ? (
-              <TypeVisualIcon
-                visual={visualForIndexedAsset(asset, classParentOf)}
-              />
+              <TypeVisualIcon visual={typeVisualFor(asset)} />
             ) : undefined,
         };
       }),
-    [assetsByGuid, browserRows, classParentOf, pluginRootIcons],
+    [assetsByGuid, browserRows, pluginRootIcons, typeVisualFor],
   );
 
   const selectionCount = selectedGuids.size + selectedFolderPaths.size;
@@ -990,6 +1071,38 @@ export function ContentBrowserWorkspace({
               setImportErrors([
                 err instanceof Error ? err.message : String(err),
               ]);
+            }
+          })();
+        },
+      },
+      {
+        id: "create-material-instance" as const,
+        label: "Create Material Instance",
+        icon: <PaintbrushIcon />,
+        onSelect: () => {
+          void (async () => {
+            const guid = menuTargetGuidsRef.current[0];
+            const parent = guid ? assetRegistry?.getByGuid(guid) : undefined;
+            if (!assetRegistry || !parent) return;
+            // Beside its parent, so a Material and its instances stay together.
+            const folder = parentFolderPath(parent.path);
+            const browse = contentBrowserFolderOps(folder, browserRoots);
+            if (browse.readOnly) return;
+            const paths = assetRegistry.list().map((asset) => asset.path);
+            const name = materialInstanceNameFor(parent.header.name, (candidate) =>
+              isNewAssetNameTaken(paths, folder, "MaterialInstance", candidate));
+            const fileName = newAssetFileName("MaterialInstance", name);
+            if (!fileName) return;
+            try {
+              const created = await assetRegistry.createAsset(
+                browse.rootId,
+                browse.relative ? `${browse.relative}/${fileName}` : fileName,
+                buildMaterialInstanceAssetResult(parent.header, newAssetGuid(), name),
+              );
+              await refreshAssetRegistry();
+              await openOrFocusDocument(created);
+            } catch (error) {
+              setOperationError(error instanceof Error ? error.message : String(error));
             }
           })();
         },
@@ -1546,7 +1659,6 @@ export function ContentBrowserWorkspace({
           dest.relative,
           newName,
         );
-        await transferFolderLocks(fromPath, nextFolder);
         for (const asset of contained) {
           repairDocumentPath(
             asset.path,
@@ -1558,6 +1670,8 @@ export function ContentBrowserWorkspace({
           remapPathAfterFolderMove(current, fromPath, nextFolder),
         );
         await refreshAssetRegistry();
+        setNameDialog(null);
+        await transferFolderLocks(fromPath, nextFolder);
       } else if (nameDialog.kind === "rename") {
         const before = assetRegistry.getByGuid(nameDialog.guid);
         if (!before) return;
@@ -1566,13 +1680,14 @@ export function ContentBrowserWorkspace({
           nameDialog.guid,
           nameDialog.value.trim(),
         );
+        repairDocumentPath(before.path, renamed.path, renamed.header.type);
+        await refreshAssetRegistry();
+        setNameDialog(null);
         await applyLockTransfers(
           [{ from: before.path, to: renamed.path }],
           (path) => sourceControl.lockStateForPath(path),
           (from, to) => sourceControl.transferLock(from, to),
         );
-        repairDocumentPath(before.path, renamed.path, renamed.header.type);
-        await refreshAssetRegistry();
       }
       setNameDialog(null);
     } catch (error) {
@@ -1730,6 +1845,7 @@ export function ContentBrowserWorkspace({
       setMoveTarget(null);
     } catch (error) {
       const remaining = remainingGuids.size + remainingFolders.size;
+      await refreshAssetRegistry();
       const completed = total - remaining;
       const message = error instanceof Error ? error.message : String(error);
       if (completed > 0) {
@@ -1925,6 +2041,46 @@ export function ContentBrowserWorkspace({
     [openSelectionMenu],
   );
 
+  // Tiles receive reference-stable handlers that forward to the handlers of
+  // the latest committed render, so memoized tiles skip unrelated renders.
+  const gridHandlersRef = useRef<ContentBrowserGridActions | null>(null);
+  useLayoutEffect(() => {
+    gridHandlersRef.current = {
+      select: selectGridTile,
+      openFolder: (path) => {
+        setSelectedFolderPath(path);
+        setSelectedGuids(new Set());
+        setSelectedFolderPaths(new Set());
+      },
+      openAsset: (asset) => {
+        void openOrFocusDocument(asset);
+      },
+      openFolderMenu: (path, clientX, clientY) => {
+        markMenuOpened();
+        openFolderMenu(path, clientX, clientY);
+      },
+      openAssetMenu: (guid, clientX, clientY) => {
+        markMenuOpened();
+        openTileMenu(guid, clientX, clientY);
+      },
+      consumeSelectClick,
+    };
+  });
+  const gridActions = useMemo<ContentBrowserGridActions>(
+    () => ({
+      select: (hit, event) => gridHandlersRef.current?.select(hit, event),
+      openFolder: (path) => gridHandlersRef.current?.openFolder(path),
+      openAsset: (asset) => gridHandlersRef.current?.openAsset(asset),
+      openFolderMenu: (path, clientX, clientY) =>
+        gridHandlersRef.current?.openFolderMenu(path, clientX, clientY),
+      openAssetMenu: (guid, clientX, clientY) =>
+        gridHandlersRef.current?.openAssetMenu(guid, clientX, clientY),
+      consumeSelectClick: () =>
+        gridHandlersRef.current?.consumeSelectClick() ?? false,
+    }),
+    [],
+  );
+
   const workspaceRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const runSelectionAction = (actionId: "duplicate" | "rename" | "delete" | "show-references") => {
@@ -2008,8 +2164,11 @@ export function ContentBrowserWorkspace({
         setBusy(true);
         setOperationError(null);
         try {
-          await applyRegistryMoves(moves);
-          await refreshAssetRegistry();
+          try {
+            await applyRegistryMoves(moves);
+          } finally {
+            await refreshAssetRegistry();
+          }
         } catch (error) {
           setOperationError(error instanceof Error ? error.message : String(error));
         } finally {
@@ -2489,6 +2648,7 @@ export function ContentBrowserWorkspace({
             ref={scrollerRef}
             className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain"
             data-testid="content-browser-asset-grid"
+            aria-busy={searchPending || undefined}
             style={paintBind.style}
             tabIndex={0}
             onClick={() => {
@@ -2535,11 +2695,11 @@ export function ContentBrowserWorkspace({
             {gridItems.length === 0 ? (
               <Empty data-testid="content-browser-empty-copy" className="border-0 py-10">
                 <EmptyHeader>
-                  <EmptyTitle>{search.trim() || typeFilters.length ? "No Matching Assets" : "This Folder Is Empty"}</EmptyTitle>
-                  <EmptyDescription>{search.trim() || typeFilters.length ? "Try another search or clear the filters." : "Add an asset or import files to get started."}</EmptyDescription>
+                  <EmptyTitle>{gridSearch.trim() || typeFilters.length ? "No Matching Assets" : "This Folder Is Empty"}</EmptyTitle>
+                  <EmptyDescription>{gridSearch.trim() || typeFilters.length ? "Try another search or clear the filters." : "Add an asset or import files to get started."}</EmptyDescription>
                 </EmptyHeader>
                 <EmptyContent>
-                  {search.trim() || typeFilters.length ? (
+                  {gridSearch.trim() || typeFilters.length ? (
                     <Button variant="outline" size={phone ? "touch" : "sm"} onClick={() => { setSearch(""); setTypeFilters([]); }}>Clear Filters</Button>
                   ) : selectedRootWritable ? (
                     <div className="flex items-center gap-2">
@@ -2550,82 +2710,22 @@ export function ContentBrowserWorkspace({
                 </EmptyContent>
               </Empty>
             ) : (
-              <div className="relative" style={{ height: spacerHeight }}>
-                {gridItems
-                  .slice(slice.firstIndex, slice.lastIndex)
-                  .map((item, offset) => {
-                    const index = slice.firstIndex + offset;
-                    const style = contentBrowserTileStyle(
-                      index,
-                      slice.columnCount,
-                    );
-                    if (item.kind === "folder") {
-                      return (
-                        <div key={item.path} style={style}>
-                          <ContentBrowserFolderTile
-                            path={item.path}
-                            name={item.name}
-                            icon={pluginRootIcons.get(item.path)}
-                            selected={selectedFolderPaths.has(item.path)}
-                            consumeSelectClick={consumeSelectClick}
-                            onSelect={(event) =>
-                              selectGridTile(
-                                { kind: "folder", path: item.path },
-                                event,
-                              )
-                            }
-                            onOpen={() => {
-                              setSelectedFolderPath(item.path);
-                              setSelectedGuids(new Set());
-                              setSelectedFolderPaths(new Set());
-                            }}
-                            onLongPressMenu={(x, y) => {
-                              markMenuOpened();
-                              openFolderMenu(item.path, x, y);
-                            }}
-                          />
-                        </div>
-                      );
-                    }
-                    const asset = item.asset;
-                    return (
-                      <div key={asset.header.guid} style={style}>
-                        <ContentBrowserAssetTile
-                          asset={asset}
-                          selected={selectedGuids.has(asset.header.guid)}
-                          thumbnailUrl={
-                            thumbnailUrls[asset.header.guid] ?? null
-                          }
-                          typeVisual={visualForIndexedAsset(
-                            asset,
-                            classParentOf,
-                          )}
-                          hasCompileError={
-                            compileErrorGuids.has(asset.header.guid) ||
-                            compileErrorGuids.has(asset.path)
-                          }
-                          onSelect={(event) =>
-                            selectGridTile(
-                              { kind: "asset", guid: asset.header.guid },
-                              event,
-                            )
-                          }
-                          consumeSelectClick={consumeSelectClick}
-                          onOpen={() => void openOrFocusDocument(asset)}
-                          sourceControlEnabled={sourceControl.enabled}
-                          lockState={sourceControl.lockStateForPath(asset.path)}
-                          lockOwnerName={
-                            sourceControl.lockForPath(asset.path)?.ownerName
-                          }
-                          onLongPressMenu={(x, y) => {
-                            markMenuOpened();
-                            openTileMenu(asset.header.guid, x, y);
-                          }}
-                        />
-                      </div>
-                    );
-                  })}
-              </div>
+              <ContentBrowserGridTiles
+                items={gridItems}
+                firstIndex={slice.firstIndex}
+                lastIndex={slice.lastIndex}
+                columnCount={slice.columnCount}
+                height={spacerHeight}
+                selectedGuids={selectedGuids}
+                selectedFolderPaths={selectedFolderPaths}
+                thumbnailUrls={thumbnailUrls}
+                compileErrors={compileErrorGuids}
+                typeVisualFor={typeVisualFor}
+                folderIcons={pluginRootIcons}
+                sourceControlEnabled={sourceControl.enabled}
+                locks={tileLocks}
+                actions={gridActions}
+              />
             )}
           </div>
         </ResizablePanel>

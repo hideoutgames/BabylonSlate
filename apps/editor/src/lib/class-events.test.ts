@@ -85,6 +85,102 @@ describe("nativeEventStubs", () => {
     ).toBe(false);
   });
 
+  describe("subsystem lineages", () => {
+    // Project classes: Save -> GameSubsystem, Weather -> SceneSubsystem,
+    // RainWeather -> Weather (user -> user chain).
+    const parents: Record<string, string> = {
+      Save: "GameSubsystem",
+      Weather: "SceneSubsystem",
+      RainWeather: "Weather",
+      GameSubsystem: "Subsystem",
+      SceneSubsystem: "Subsystem",
+      Subsystem: "BObject",
+    };
+    const parentOf = (id: string) => parents[id] ?? null;
+    const game = { parentClass: "Save", parentOf };
+    const scene = { parentClass: "RainWeather", parentOf };
+    const sceneEvents = [
+      "flow.event.sceneLoaded",
+      "flow.event.streamedSceneLoaded",
+      "flow.event.streamedSceneUnloaded",
+      "flow.event.sceneLayerAdded",
+      "flow.event.sceneLayerRemoved",
+      "flow.event.sceneActorSpawned",
+      "flow.event.sceneActorDestroyed",
+    ];
+
+    it("gives a GameSubsystem class exactly the Game Instance events", () => {
+      expect(nativeEventStubs(game).map((stub) => stub.eventType)).toEqual([
+        "flow.event.scalabilityChanged",
+        "flow.event.init",
+        "flow.event.tick",
+        "flow.event.end",
+        "flow.event.firstSceneLoaded",
+        "flow.event.sceneStartLoading",
+        "flow.event.sceneFinishLoading",
+        "flow.event.sceneExit",
+      ]);
+    });
+
+    it("gives a SceneSubsystem subclass Init, Tick, End and the scene events", () => {
+      expect(nativeEventStubs(scene).map((stub) => stub.name)).toEqual([
+        "Event On Init",
+        "Event Tick",
+        "Event On End",
+        "Event On Scene Loaded",
+        "Event On Streamed Scene Loaded",
+        "Event On Streamed Scene Unloaded",
+        "Event On Scene Layer Added",
+        "Event On Scene Layer Removed",
+        "Event On Scene Actor Spawned",
+        "Event On Scene Actor Destroyed",
+      ]);
+    });
+
+    it("offers the scene events only in SceneSubsystem lineages", () => {
+      for (const eventType of sceneEvents) {
+        expect(isScriptCatalogNodeAllowed(eventType, scene)).toBe(true);
+        expect(isScriptCatalogNodeAllowed(eventType, game)).toBe(false);
+        expect(
+          isScriptCatalogNodeAllowed(eventType, { parentClass: "GameInstance" }),
+        ).toBe(false);
+        expect(
+          isScriptCatalogNodeAllowed(eventType, { parentClass: "Actor" }),
+        ).toBe(false);
+      }
+    });
+
+    it("gates Game Instance events, getters, Tick and Scalability by subsystem lineage", () => {
+      const allowed = (nodeId: string, options: typeof game) =>
+        isScriptCatalogNodeAllowed(nodeId, options);
+      expect(allowed("flow.event.sceneExit", game)).toBe(true);
+      expect(allowed("flow.event.sceneExit", scene)).toBe(false);
+      expect(allowed("gameInstance.getSceneLoadingProgress", game)).toBe(true);
+      expect(allowed("gameInstance.getSceneLoadingProgress", scene)).toBe(false);
+      expect(allowed("gameInstance.getSceneReference", game)).toBe(true);
+      expect(allowed("gameInstance.getSceneReference", scene)).toBe(true);
+      expect(allowed("flow.event.tick", game)).toBe(true);
+      expect(allowed("flow.event.tick", scene)).toBe(true);
+      expect(allowed("flow.event.scalabilityChanged", game)).toBe(true);
+      expect(allowed("flow.event.scalabilityChanged", scene)).toBe(false);
+      expect(allowed("flow.event.beginPlay", scene)).toBe(false);
+    });
+  });
+
+  it("offers Get Game Instance in runtime hosts only and never the generic Get Subsystem", () => {
+    for (const parentClass of ["Actor", "GameInstance", "FunctionLibrary", "BTTask", "BObject"]) {
+      expect(isScriptCatalogNodeAllowed("gameInstance.get", { parentClass })).toBe(true);
+    }
+    const editorParentOf = (id: string) =>
+      id === "EditorFunctionLibrary" ? "FunctionLibrary" : id === "BObject" ? null : "BObject";
+    for (const parentClass of ["EditorUtilityObject", "EditorFunctionLibrary"]) {
+      expect(
+        isScriptCatalogNodeAllowed("gameInstance.get", { parentClass, parentOf: editorParentOf }),
+      ).toBe(false);
+    }
+    expect(isScriptCatalogNodeAllowed("subsystem.get", { parentClass: "Actor" })).toBe(false);
+  });
+
   it("does not treat leftover EditorUtilityInterface as a logic host", () => {
     expect(
       nativeEventStubs({

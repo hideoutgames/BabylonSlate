@@ -30,26 +30,52 @@ import {
   createMaterialPreviewState,
   lowerMaterialDocument,
   materialCompileKey,
+  materialParameterDefaults,
   materialPreviewReducer,
   normalizeMaterialDocument,
   normalizeMaterialFunctionDocument,
+  normalizeMaterialInstanceDocument,
   renderActionEnabled,
+  resolveMaterialInstance,
   type MaterialDiagnostic,
   type MaterialDocument,
+  type MaterialDomain,
   type MaterialFunctionDocument,
+  type MaterialInstanceDocument,
   type MaterialPreviewState,
 } from "@babylonslate/shader-graph";
+import type { MaterialParameterValue } from "@babylonslate/core";
 import { useDocuments } from "./document-context";
 import { usePlay } from "./play-context";
 import { useMaterialRenderControl } from "./material-render-control-context";
+import { useMaterialInstanceSources } from "./material-instance-sources";
 
 /** Trailing debounce: the last edit always compiles, unlike a rate limiter. */
 const IDLE_DEBOUNCE_MS = 220;
 export const MANUAL_RENDER_COOLDOWN_MS = 3_000;
 
+/** A parameter the root Material exposes, with the value this instance inherits. */
+export interface MaterialInstanceParameter {
+  name: string;
+  inherited: MaterialParameterValue;
+}
+
+export interface MaterialInstanceEditing {
+  document: MaterialInstanceDocument;
+  status: "loading" | "ready" | "error";
+  error: string | null;
+  rootGuid: string | null;
+  domain: MaterialDomain | null;
+  parameters: MaterialInstanceParameter[];
+}
+
 export interface MaterialEditingValue {
   /** Material Function documents in the project, keyed by asset guid. */
   functions: Record<string, MaterialFunctionDocument>;
+  /** Domain of the previewed graph (a Material Instance previews its root's). */
+  previewDomain: MaterialDomain | null;
+  /** Set only for Material Instance documents. */
+  instance: MaterialInstanceEditing | null;
   previewState: MaterialPreviewState;
   compileDiagnostics: MaterialDiagnostic[];
   selectedNodeId: string | null;
@@ -95,6 +121,7 @@ export function MaterialEditingProvider({
   const { register: registerRenderControl } = useMaterialRenderControl();
   const doc = openDocuments.find((entry) => entry.id === documentId);
   const isFunctionDocument = doc?.ref.kind === "material-function";
+  const isInstanceDocument = doc?.ref.kind === "material-instance";
 
   const [previewState, dispatch] = useReducer(
     materialPreviewReducer,
@@ -203,10 +230,28 @@ export function MaterialEditingProvider({
   // a document's content while keeping the entry identity, and memoizing on
   // the entry would leave the preview compiling a stale graph.
   const content = doc?.content;
+  const instanceDocument = useMemo<MaterialInstanceDocument | null>(
+    () => isInstanceDocument && content !== undefined ? normalizeMaterialInstanceDocument(content ?? {}) : null,
+    [content, isInstanceDocument],
+  );
+  const instanceSources = useMaterialInstanceSources(documentId, instanceDocument?.parentGuid ?? null);
+  const instanceResolution = useMemo(() => {
+    if (!instanceDocument || !instanceSources) return null;
+    return resolveMaterialInstance(documentId, (guid) =>
+      guid === documentId ? { kind: "instance", document: instanceDocument } : instanceSources.get(guid) ?? null);
+  }, [documentId, instanceDocument, instanceSources]);
+  // An instance compiles its root graph once; its own and inherited overrides
+  // are uniform writes on that material, so value edits never recompile.
   const document = useMemo<MaterialDocument | null>(() => {
     if (isFunctionDocument || content === undefined) return null;
+    if (isInstanceDocument) {
+      return instanceResolution?.ok
+        ? { ...instanceResolution.root, preview: instanceDocument!.preview, instanceOf: instanceResolution.rootGuid }
+        : null;
+    }
     return normalizeMaterialDocument(content ?? {});
-  }, [content, isFunctionDocument]);
+  }, [content, instanceDocument, instanceResolution, isFunctionDocument, isInstanceDocument]);
+  const instanceOverrides = instanceResolution?.ok ? instanceResolution.overrides : null;
 
   useEffect(() => {
     setSharedEngine(play?.ensureSharedEngine() ?? null);
@@ -336,8 +381,10 @@ export function MaterialEditingProvider({
     if (!document) return "";
     const lowered = lowerMaterialDocument(document, { functions });
     if (!lowered.ok) return "";
-    return lowered.plan.dependencies.textures.join(",");
-  }, [document, functions]);
+    const overrideTextures = Object.values(instanceOverrides ?? {}).flatMap((value) =>
+      value.kind === "texture" && value.textureAssetGuid ? [value.textureAssetGuid] : []);
+    return [...new Set([...lowered.plan.dependencies.textures, ...overrideTextures])].sort().join(",");
+  }, [document, functions, instanceOverrides]);
   const [loadedTextureGuidsKey, setLoadedTextureGuidsKey] = useState("");
   const texturesReady =
     textureGuidsKey === "" || textureGuidsKey === loadedTextureGuidsKey;
@@ -377,6 +424,29 @@ export function MaterialEditingProvider({
 
   const costClassRef = useRef(costClass);
   costClassRef.current = costClass;
+
+  const rootParameters = useMemo(() => {
+    if (!isInstanceDocument || !document) return null;
+    const lowered = lowerMaterialDocument(document, { functions });
+    return lowered.ok ? materialParameterDefaults(lowered.plan) : null;
+  }, [document, functions, isInstanceDocument]);
+
+  /** Push the merged overrides as uniform/texture writes; unset names return to the root default. */
+  const applyInstanceParameters = useCallback(() => {
+    const host = hostRef.current;
+    const library = libraryRef.current;
+    if (!host || !library || !rootParameters || !instanceOverrides) return;
+    for (const [name, fallback] of Object.entries(rootParameters)) {
+      const value = instanceOverrides[name];
+      if (value?.kind === fallback.kind) library.setParameter(host.scene, documentId, name, value);
+      else library.resetParameter(host.scene, documentId, name);
+    }
+  }, [documentId, instanceOverrides, rootParameters]);
+  const applyInstanceParametersRef = useRef(applyInstanceParameters);
+  applyInstanceParametersRef.current = applyInstanceParameters;
+  useEffect(() => {
+    if (texturesReady) applyInstanceParameters();
+  }, [applyInstanceParameters, previewState.readyGeneration, texturesReady]);
 
   useEffect(() => {
     const restored = sharedEngine?.onContextRestoredObservable;
@@ -439,6 +509,7 @@ export function MaterialEditingProvider({
         return;
       }
       setCompileDiagnostics([]);
+      applyInstanceParametersRef.current();
       host.applyParticleMaterial?.(document.domain === "particle" ? result.material : null);
       if (document.domain === "postProcess") {
         host.applyMaterial(null);
@@ -523,9 +594,32 @@ export function MaterialEditingProvider({
     requestRender,
   ]);
 
+  const instance = useMemo<MaterialInstanceEditing | null>(() => {
+    if (!instanceDocument) return null;
+    const parentOverrides = instanceSources && instanceDocument.parentGuid
+      ? resolveMaterialInstance(instanceDocument.parentGuid, (guid) => instanceSources.get(guid) ?? null)
+      : null;
+    const inherited = parentOverrides?.ok ? parentOverrides.overrides : {};
+    return {
+      document: instanceDocument,
+      status: !instanceDocument.parentGuid || instanceResolution?.ok === false ? "error"
+        : instanceResolution?.ok && rootParameters ? "ready" : "loading",
+      error: !instanceDocument.parentGuid ? "Pick a parent Material to edit its parameters."
+        : instanceResolution?.ok === false ? instanceResolution.message : null,
+      rootGuid: instanceResolution?.ok ? instanceResolution.rootGuid : null,
+      domain: document?.domain ?? null,
+      parameters: Object.entries(rootParameters ?? {}).map(([name, fallback]) => ({
+        name,
+        inherited: inherited[name]?.kind === fallback.kind ? inherited[name]! : fallback,
+      })),
+    };
+  }, [document?.domain, instanceDocument, instanceResolution, instanceSources, rootParameters]);
+
   const value = useMemo<MaterialEditingValue>(
     () => ({
       functions,
+      previewDomain: document?.domain ?? null,
+      instance,
       previewState,
       compileDiagnostics,
       selectedNodeId,
@@ -538,9 +632,11 @@ export function MaterialEditingProvider({
     }),
     [
       compileDiagnostics,
+      document?.domain,
       focusedNodeId,
       frameBudgetMs,
       functions,
+      instance,
       previewState,
       requestRender,
       selectedNodeId,

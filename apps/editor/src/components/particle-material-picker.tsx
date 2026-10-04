@@ -31,7 +31,7 @@ export function ParticleMaterialPicker({
       open={open}
       onOpenChange={onOpenChange}
       assets={assets}
-      allowedTypes={["Material"]}
+      allowedTypes={["Material", "MaterialInstance"]}
       title="Pick Particle Material"
       allowNone
       onPick={(guid) => {

@@ -1,10 +1,12 @@
 import type { EditCommand } from "../command";
+import { snapshotBytes } from "../snapshot-bytes";
 
 export class SetAssetDocumentCommand implements EditCommand<Record<string, unknown>> {
   readonly type = "asset.setDocument";
   readonly from: Record<string, unknown>;
   readonly to: Record<string, unknown>;
   readonly mergeKey?: string;
+  readonly byteSize: number;
 
   constructor(
     from: Record<string, unknown>,
@@ -14,6 +16,7 @@ export class SetAssetDocumentCommand implements EditCommand<Record<string, unkno
     this.from = from;
     this.to = to;
     this.mergeKey = mergeKey;
+    this.byteSize = snapshotBytes({ from, to });
   }
 
   apply(doc: Record<string, unknown>): Record<string, unknown> {

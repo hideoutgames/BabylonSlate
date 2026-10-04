@@ -69,9 +69,9 @@ function layoutFromManifest(manifest: GameManifest): void {
   });
 }
 
-async function launchFromFiles(files: Map<string, Uint8Array>): Promise<void> {
+async function launchFromFiles(files: Map<string, Uint8Array>, traceByteBudget?: number): Promise<void> {
   const game = await loadGameFromFiles(files);
-  await launchLoaded(game);
+  await launchLoaded(game, traceByteBudget);
 }
 
 async function launchFromHttp(): Promise<void> {
@@ -81,6 +81,7 @@ async function launchFromHttp(): Promise<void> {
 
 async function launchLoaded(
   game: Awaited<ReturnType<typeof loadGameFromFiles>>,
+  traceByteBudget?: number,
 ): Promise<void> {
   startupAbort.signal.throwIfAborted();
   await registerPackedFonts(game.fontBytes, undefined, game.fontFamilies);
@@ -138,6 +139,7 @@ async function launchLoaded(
     signal: startupAbort.signal,
     canvas,
     game,
+    traceByteBudget,
     onStopped: cleanupPage,
     onConsoleEvent: (command) => {
       hud.applyCommand(command);
@@ -326,7 +328,7 @@ if (previewMode()) {
     // The host may resend the pack until it sees the player boot; ignore repeats.
     if (launched) return;
     launched = true;
-    void launchFromFiles(filesFromPreviewPack(pack)).catch(bootFailure);
+    void launchFromFiles(filesFromPreviewPack(pack), pack.traceByteBudget).catch(bootFailure);
   });
   // Ask only once the listener above exists. Waiting for the parent's iframe
   // `load` event alone raced module evaluation and silently dropped the pack.

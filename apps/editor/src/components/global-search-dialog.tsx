@@ -1,5 +1,13 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+  useDeferredValue,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Loader2Icon, SearchIcon } from "lucide-react";
+import type { SearchEntry } from "@babylonslate/assets";
 import { Button } from "@babylonslate/ui/components/button";
 import { Badge } from "@babylonslate/ui/components/badge";
 import { Kbd } from "@babylonslate/ui/components/kbd";
@@ -56,20 +64,23 @@ export function GlobalSearchDialog({
     setActiveId(null);
   }, [beginSearchRebuild, cancelSearchRebuild, open]);
 
+  // The field updates at once; the result list follows at low priority.
+  const shownNeedle = useDeferredValue(needle);
   const grouped = useMemo(
-    () => groupSearchEntries(query(needle)),
-    [needle, query],
+    () => groupSearchEntries(query(shownNeedle)),
+    [shownNeedle, query],
   );
-  const hasQuery = needle.trim().length > 0;
+  const hasQuery = shownNeedle.trim().length > 0;
   const hasHits = grouped.length > 0;
   const entries = useMemo(
     () => grouped.flatMap((group) => group.entries),
     [grouped],
   );
-  const activeEntry =
-    pending || !hasQuery
+  const activeIn = (list: readonly SearchEntry[], text: string) =>
+    pending || !text.trim()
       ? undefined
-      : (entries.find((entry) => entry.id === activeId) ?? entries[0]);
+      : (list.find((entry) => entry.id === activeId) ?? list[0]);
+  const activeEntry = activeIn(entries, shownNeedle);
   const optionId = (id: string) => `${listId}-${encodeURIComponent(id)}`;
 
   useEffect(() => {
@@ -111,24 +122,34 @@ export function GlobalSearchDialog({
             onKeyDown={(event) => {
               if (event.key === "Escape") return;
               event.stopPropagation();
-              if (event.nativeEvent.isComposing || pending || !activeEntry)
-                return;
-              if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-                event.preventDefault();
-                const index = entries.findIndex(
-                  (entry) => entry.id === activeEntry.id,
+              if (event.nativeEvent.isComposing || pending) return;
+              const arrow =
+                event.key === "ArrowDown" || event.key === "ArrowUp";
+              if (!arrow && event.key !== "Enter") return;
+              // Act on what was typed, even before the list has caught up.
+              const current =
+                needle === shownNeedle
+                  ? entries
+                  : groupSearchEntries(query(needle)).flatMap(
+                      (group) => group.entries,
+                    );
+              const active = activeIn(current, needle);
+              if (!active) return;
+              event.preventDefault();
+              if (arrow) {
+                const index = current.findIndex(
+                  (entry) => entry.id === active.id,
                 );
                 const next = Math.max(
                   0,
                   Math.min(
-                    entries.length - 1,
+                    current.length - 1,
                     index + (event.key === "ArrowDown" ? 1 : -1),
                   ),
                 );
-                setActiveId(entries[next]!.id);
-              } else if (event.key === "Enter") {
-                event.preventDefault();
-                void openSearchResult(activeEntry);
+                setActiveId(current[next]!.id);
+              } else {
+                void openSearchResult(active);
                 onOpenChange(false);
               }
             }}
@@ -174,7 +195,7 @@ export function GlobalSearchDialog({
               <EmptyHeader>
                 <EmptyTitle>No Matches</EmptyTitle>
                 <EmptyDescription>
-                  Nothing in this project contains “{needle.trim()}”.
+                  Nothing in this project contains “{shownNeedle.trim()}”.
                 </EmptyDescription>
               </EmptyHeader>
             </Empty>

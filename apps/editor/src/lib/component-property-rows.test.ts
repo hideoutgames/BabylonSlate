@@ -181,7 +181,7 @@ describe("componentPropertyRows", () => {
     material.onPick();
     expect(onPickActor).toHaveBeenCalledWith("cable");
     expect(update.mock.calls).toEqual([["targetComponentId", "hook"], ["endPosition", [2, 1, -1]], ["numSegments", 64], ["enableCollision", true]]);
-    expect(onPickAsset).toHaveBeenCalledWith(expect.objectContaining({ property: "materialGuid", allowedTypes: ["Material"] }));
+    expect(onPickAsset).toHaveBeenCalledWith(expect.objectContaining({ property: "materialGuid", allowedTypes: ["Material", "MaterialInstance"] }));
     expect(rows.find((row) => row.label === "Collision Friction")?.disabled).toBe(true);
     expect(rowsFor({ ...cable, properties: { ...properties, enableCollision: true } }).rows.find((row) => row.label === "Collision Friction")?.disabled).toBe(false);
     expect(properties.targetComponentId).toBeNull();
@@ -1162,6 +1162,28 @@ describe("subclassClassEntries", () => {
     expect(ids).toContain("EditorMath");
   });
 
+  it("offers subsystem classes with their ancestry but never the hidden Subsystem base", () => {
+    const assets = [
+      {
+        path: "assets/Inventory.class.babasset",
+        header: { type: "Class", name: "Inventory", parentClass: "GameSubsystem" },
+      },
+    ];
+    const ids = subclassClassEntries("BObject", assets).map((entry) => entry.id);
+    expect(ids).toEqual(expect.arrayContaining(["GameSubsystem", "SceneSubsystem", "Inventory"]));
+    expect(ids).not.toContain("Subsystem");
+    // The fallback pin type of an unset Get Subsystem node constrains to Subsystem.
+    expect(subclassClassEntries("Subsystem", assets).map((entry) => entry.id)).toEqual([
+      "GameSubsystem",
+      "SceneSubsystem",
+      "Inventory",
+    ]);
+    expect(
+      subclassClassEntries("BObject", assets).find((entry) => entry.id === "Inventory")?.ancestry,
+    ).toEqual(["Inventory", "GameSubsystem", "Subsystem", "BObject"]);
+    expect(gameInstanceClassEntries(assets).map((entry) => entry.id)).toEqual(["GameInstance"]);
+  });
+
   it("uses the compile class id for a Class asset named main.class", () => {
     const assets = [
       {
@@ -1270,7 +1292,7 @@ describe("applyPrefabPropertyDefaults", () => {
     expect(material.onPickAsset).toHaveBeenCalledWith(
       expect.objectContaining({
         property: "materialGuid",
-        allowedTypes: ["Material"],
+        allowedTypes: ["Material", "MaterialInstance"],
       }),
     );
   });
@@ -1297,6 +1319,10 @@ describe("applyPrefabPropertyDefaults", () => {
       kind: "asset",
       value: "font-1",
     });
+    const material = text.rows.find((row) => row.id.endsWith("-materialGuid"));
+    expect(material?.kind).toBe("asset");
+    if (material?.kind === "asset") material.onPick?.();
+    expect(text.onPickAsset).toHaveBeenCalledWith(expect.objectContaining({ property: "materialGuid", materialDomain: "text" }));
     const renderer = text.rows.find((row) => row.id.endsWith("-renderer"));
     expect(renderer).toMatchObject({
       kind: "enum",
@@ -1341,6 +1367,44 @@ describe("applyPrefabPropertyDefaults", () => {
         blockedRenderer.options.find((option) => option.value === "msdf")?.disabled,
       ).toBe(true);
     }
+  });
+
+  it("edits rich-text reveal timing without exposing it on plain text", () => {
+    const rich = rowsFor({
+      id: "label", classId: "2DRichTextComponent",
+      properties: { appearModes: ["fade", "scale"], appearInterval: 0.1, appearStart: "hidden" },
+    });
+    const interval = rich.rows.find((row) => row.id.endsWith("-appearInterval"));
+    expect(interval?.kind).toBe("number");
+    if (interval?.kind === "number") interval.onChange(0);
+    expect(rich.update).toHaveBeenCalledWith("appearInterval", 0);
+    const transition = rich.rows.find((row) => row.id.endsWith("-appearTransition"));
+    expect(transition?.kind).toBe("enum");
+    if (transition?.kind === "enum") transition.onChange("bounceOut");
+    expect(rich.update).toHaveBeenCalledWith("appearTransition", "bounceOut");
+    expect(rich.rows.find((row) => row.id.endsWith("-appearStart"))).toMatchObject({ kind: "enum", value: "hidden" });
+    expect(rich.rows.find((row) => row.id.endsWith("-appearModes"))).toBeUndefined();
+    const plain = rowsFor({ id: "label", classId: "2DTextComponent", properties: {} });
+    expect(plain.rows.some((row) => row.id.includes("-appear"))).toBe(false);
+  });
+
+  it.each([
+    { modes: [], transition: "bounceOut", disabled: [true, true, true] },
+    { modes: ["instant"], transition: "bounceOut", disabled: [true, false, true] },
+    { modes: ["fade"], transition: "instant", disabled: [false, false, true] },
+    { modes: ["fade", "scale"], transition: "bounceOut", disabled: [false, false, false] },
+  ])("disables only ineffective reveal fields for $modes / $transition", ({ modes, transition, disabled }) => {
+    const rich = rowsFor({
+      id: "label", classId: "2DRichTextComponent",
+      properties: { appearModes: modes, appearTransition: transition, appearInterval: 0.25, appearDuration: 0.8, appearStart: "hidden" },
+    });
+    const reveal = ["appearTransition", "appearInterval", "appearDuration"].map((key) => rich.rows.find((row) => row.id.endsWith(`-${key}`)));
+    expect(reveal.map((row) => row?.disabled)).toEqual(disabled);
+    expect(reveal.map((row) => row && "value" in row ? row.value : undefined)).toEqual([transition, 0.25, 0.8]);
+    const start = rich.rows.find((row) => row.id.endsWith("-appearStart"));
+    expect(start?.disabled).not.toBe(true);
+    if (start?.kind === "enum") start.onChange("play");
+    expect(rich.update).toHaveBeenCalledWith("appearStart", "play");
   });
 
   it("writes renderer back to bitmap when the Font no longer has an MSDF pair", () => {

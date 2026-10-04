@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   engineEventTypeClassIds,
+  engineNativeEventsFor,
   engineScriptApiFor,
   engineScriptEventsFor,
   ENGINE_CLASS_SCRIPT_APIS,
@@ -52,7 +53,7 @@ describe("engine script API catalog", () => {
   it("exposes 2DButton mouse events and Hit Test, not SceneLayerActor natives", () => {
     expect(engineScriptApiFor("SceneLayerActor")).toBeUndefined();
     const button = engineScriptApiFor("2DButtonComponent");
-    expect(names(button?.variables)).toEqual(["Hit Test"]);
+    expect(names(button?.variables)).toEqual(expect.arrayContaining(["Hit Test", "Focus Enabled", "Focused"]));
     expect(button?.variables?.[0]?.propertyKey).toBe("hitTest");
     expect(engineScriptEventsFor("2DButtonComponent").map((event) => event.eventType)).toEqual(
       [
@@ -61,6 +62,9 @@ describe("engine script API catalog", () => {
         "flow.event.onClick",
         "flow.event.onPressStart",
         "flow.event.onPressEnd",
+        "flow.event.focusEnter",
+        "flow.event.focusLeave",
+        "flow.event.focusActivate",
       ],
     );
   });
@@ -93,6 +97,23 @@ describe("engine script API catalog", () => {
         exportName: "onTextChanged",
       }),
     ]);
+  });
+
+  it("exposes rich text appearance controls while keeping progress and reveal state read-only", () => {
+    const api = engineScriptApiFor("2DRichTextComponent");
+    expect(api?.variables).toEqual(expect.arrayContaining([
+      expect.objectContaining({ propertyKey: "appearModes", typeId: "enum", typeClassId: "engine:Text2DAppearMode", container: "array" }),
+      expect.objectContaining({ propertyKey: "appearTransition", typeId: "enum", typeClassId: "engine:Text2DAppearTransition" }),
+      expect.objectContaining({ propertyKey: "appearStart", typeId: "enum", typeClassId: "engine:Text2DAppearStart" }),
+      expect.objectContaining({ propertyKey: "appearProgress", typeId: "float", getOnly: true }),
+      expect.objectContaining({ propertyKey: "isRevealed", typeId: "bool", getOnly: true }),
+    ]));
+    expect(api?.functions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "Trigger Appear", runtime: "triggerAppear" }),
+      expect.objectContaining({ name: "Play", runtime: "play" }),
+      expect.objectContaining({ name: "Play Reverse", runtime: "playReverse" }),
+    ]));
+    expect(engineScriptApiFor("2DTextComponent")?.variables?.some((variable) => variable.propertyKey === "appearProgress")).toBe(false);
   });
 
   it("exposes Scene Name, Asset Guid, and Gravity on Scene and Game Instance scene getters", () => {
@@ -246,6 +267,8 @@ describe("engine script API catalog", () => {
       "size",
       "color",
       "fontAssetGuid",
+      "materialGuid",
+      "materialUv",
       "hitTest",
       "renderer",
       "outline",
@@ -314,5 +337,40 @@ describe("engine script API catalog", () => {
     ]);
     expect(types["flow.event.audioFinished"]).toEqual(["AudioComponent"]);
     expect(types["flow.event.beginPlay"]).toBeUndefined();
+    // Native lifecycle events must never demand a component binding.
+    for (const eventType of [
+      "flow.event.init",
+      "flow.event.tick",
+      "flow.event.sceneExit",
+      "flow.event.sceneLoaded",
+      "flow.event.sceneActorSpawned",
+    ]) {
+      expect(types[eventType]).toBeUndefined();
+    }
+  });
+
+  it("resolves native lifecycle events from the nearest engine class in the ancestry", () => {
+    const typesFor = (ancestry: string[]) =>
+      engineNativeEventsFor(ancestry).map((event) => event.eventType);
+    const gameInstance = typesFor(["MyGame", "GameInstance", "BObject"]);
+    // A user subsystem chain (user parent first) inherits GameSubsystem's set,
+    // which has full Game Instance parity.
+    expect(
+      typesFor(["Inventory", "BaseInventory", "GameSubsystem", "Subsystem", "BObject"]),
+    ).toEqual(gameInstance);
+    const sceneSubsystem = typesFor(["Weather", "SceneSubsystem", "Subsystem", "BObject"]);
+    expect(sceneSubsystem).toEqual(expect.arrayContaining([
+      "flow.event.init",
+      "flow.event.end",
+      "flow.event.sceneLoaded",
+      "flow.event.sceneActorDestroyed",
+    ]));
+    // Scene-scoped subsystems do not receive the session-level scene hooks.
+    expect(sceneSubsystem).not.toContain("flow.event.sceneExit");
+    expect(typesFor(["Hero", "Actor", "BObject"])).toEqual([]);
+    expect(typesFor(["Subsystem", "BObject"])).toEqual([]);
+    // Host-only functions stay off subsystem catalog entries (no stray Call rows).
+    expect(engineScriptApiFor("GameSubsystem")?.functions).toBeUndefined();
+    expect(engineScriptApiFor("SceneSubsystem")?.functions).toBeUndefined();
   });
 });

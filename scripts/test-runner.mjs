@@ -5,7 +5,6 @@ import {
 import { resolveExecutionPlan, workerArguments } from "./execution-plan.mjs";
 import {
   pnpmCommand,
-  repoRoot,
   runCommand,
   toolCli,
 } from "./process-runner.mjs";
@@ -238,14 +237,29 @@ export async function runTests(mode, args, options = {}) {
       options,
     );
   if (["typecheck", "build-all", "lint"].includes(mode)) {
+    const selectors = [];
+    const forwarded = [];
+    for (let index = 0; index < args.length; index++) {
+      const arg = args[index];
+      if (mode !== "lint" && ["--filter", "-F"].includes(arg)) {
+        const selector = args[++index];
+        if (!selector || selector.startsWith("-"))
+          throw new Error(`${arg} requires a workspace selector`);
+        selectors.push(arg, selector);
+      } else if (mode !== "lint" && /^--filter=/.test(arg)) {
+        if (arg === "--filter=") throw new Error("--filter requires a workspace selector");
+        selectors.push(arg);
+      } else forwarded.push(arg);
+    }
     const command =
       mode === "lint"
-        ? ["exec", "eslint", ".", ...args]
+        ? ["exec", "eslint", ...(args.length ? args : ["."])]
         : [
             "--workspace-concurrency=1",
+            ...selectors,
             "-r",
             mode === "build-all" ? "build" : "typecheck",
-            ...args,
+            ...forwarded,
           ];
     return runPnpm(mode === "lint" ? "unit" : "build", command, options);
   }

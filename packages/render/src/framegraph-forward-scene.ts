@@ -37,7 +37,12 @@ import {
 /** Internal proof result; renderer selection and authored settings are untouched. */
 export type ForwardSceneGraphResult =
   { path: "frameGraph" } | { path: "classic"; reason: string };
-export type ForwardSceneGraphReadiness = ForwardSceneGraphResult & { ready: boolean };
+export type ForwardSceneGraphReadiness = ForwardSceneGraphResult & {
+  ready: boolean;
+  /** Missing or stale resources need preparation; a temporary shader/scene
+   * readiness failure on an already prepared path only needs another probe. */
+  preparationRequired?: true;
+};
 const outlineAttachments = new WeakMap<SharedOutlineView, ForwardSceneFrameGraph>();
 /** Readiness-relevant collection sizes, compared in place each frame. */
 const membershipCounts: readonly ((scene: Scene) => number)[] = [
@@ -492,18 +497,22 @@ export class ForwardSceneFrameGraph {
       // Native stack creation belongs to preparation, never a readiness probe.
       // The strict scene probe only gates while an enabled chain must draw;
       // with no enabled effects the classic path admits exactly as before.
-      return { path: "classic", reason, ready: !this.outlineView?.active &&
-        (!this.postProcessOwner?.hasEnabledEntries ||
-          (this.postProcessOwner.nativeReadyFor(camera) && this.sceneStrictlyReady(camera))) &&
-        (!this.effectsOwner.hasEnabledEntries ||
-          (this.effectsOwner.nativeReadyFor(camera) && this.sceneStrictlyReady(camera))) };
+      const effectsEnabled = this.postProcessOwner?.hasEnabledEntries || this.effectsOwner.hasEnabledEntries;
+      const nativePrepared = (!this.postProcessOwner?.hasEnabledEntries || this.postProcessOwner.nativeReadyFor(camera)) &&
+        (!this.effectsOwner.hasEnabledEntries || this.effectsOwner.nativeReadyFor(camera));
+      const preparationRequired = Boolean(this.outlineView?.active) || !nativePrepared;
+      return { path: "classic", reason,
+        ready: !preparationRequired && (!effectsEnabled || this.sceneStrictlyReady(camera)),
+        ...(preparationRequired ? { preparationRequired: true as const } : {}) };
     }
     const outputCurrent = this.outputMatches(this.output(camera));
     if (this.graph && !outputCurrent) this.markReadinessDirty();
-    if (this.pending || !this.graph || this.preparedPostProcessRevision !== this.postProcessRevision ||
+    if (this.pending) return { path: "frameGraph", ready: false };
+    if (!this.graph || this.preparedPostProcessRevision !== this.postProcessRevision ||
       this.preparedEffectsKey !== this.effectsKey(camera) || !this.outlineMatches() || this.shadows?.needsPreparation() ||
+      this.clustered?.needsPreparation(camera) ||
       !outputCurrent)
-      return { path: "frameGraph", ready: false };
+      return { path: "frameGraph", ready: false, preparationRequired: true };
     this.objects!.camera = camera;
     this.cull!.camera = camera;
     this.syncSceneInputs();

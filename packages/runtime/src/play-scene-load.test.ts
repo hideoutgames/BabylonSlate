@@ -824,6 +824,34 @@ describe("p7-play-scene-load", () => {
     runtime.stop();
   });
 
+  it("keeps every light and camera component alongside mesh parts and selects the exact Default Camera", async () => {
+    const commands: CommandMessage[] = [];
+    const scene = createDefaultScene();
+    scene.settings.mainCameraActorId = "rig";
+    scene.settings.mainCameraComponentId = "detail-camera";
+    scene.actors = [createActor("rig", "Rig", { components: [
+      createMeshComponent("body", "box"),
+      { id: "lamp", classId: "LightComponent", properties: { lightKind: "point", intensity: 2 } },
+      { id: "fill", classId: "HemisphericFillLightComponent", properties: { intensity: 0.3 } },
+      { id: "wide-camera", classId: "CameraComponent", properties: { fieldOfView: 80 } },
+      { id: "detail-camera", classId: "CameraComponent", properties: { fieldOfView: 35 } },
+    ] })];
+    const runtime = createRuntimeFromLoad({ type: "load", sceneAssetGuid: "scene", scene }, command => commands.push(command));
+    await runtime.realizePlayWorld();
+    const assignment = commands.find(command => command.type === "assignMesh" && command.actorGuid === "rig");
+    expect(assignment).toMatchObject({
+      meshKind: "box", camera: { fieldOfView: 35, isDefault: true },
+      parts: [
+        { componentId: "body", meshKind: "box" },
+        { componentId: "lamp", meshKind: "light:point", light: { intensity: 2 } },
+        { componentId: "fill", meshKind: "light:hemispheric", light: { intensity: 0.3 } },
+        { componentId: "wide-camera", camera: { fieldOfView: 80, isDefault: false } },
+        { componentId: "detail-camera", camera: { fieldOfView: 35, isDefault: true } },
+      ],
+    });
+    runtime.stop();
+  });
+
   it("emits light:* on assignMesh parts and audio as meshKind audio", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createRuntimeFromLoad(
@@ -1628,6 +1656,8 @@ describe("p7-play-scene-load", () => {
                         text: "Hi",
                         fontAssetGuid: "font-1",
                         renderer: "msdf",
+                        materialGuid: "text-material",
+                        materialUv: "glyph",
                       },
                     },
                   ],
@@ -1655,6 +1685,8 @@ describe("p7-play-scene-load", () => {
         fontAssetGuid: "font-1",
         renderer: "msdf",
         size: 32,
+        materialGuid: "text-material",
+        materialUv: "glyph",
       },
     });
     runtime.stop();

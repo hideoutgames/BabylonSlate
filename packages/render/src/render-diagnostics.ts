@@ -14,6 +14,7 @@ import { effectiveShadowSettings } from "@babylonslate/core";
 import { sceneRenderingSettings } from "./render-settings";
 import { sceneLightingLimits } from "./scene-lighting";
 import { autoLodDiagnostics, liveMeshCount } from "./model-lod";
+import type { RenderScheduler } from "./render-scheduler";
 
 const instruments = new WeakMap<AbstractEngine, EngineInstrumentation>();
 export type GpuAttribution = "view" | "shared-engine" | "unavailable";
@@ -28,6 +29,29 @@ export type RenderDiagnostics = {
   };
   rendererWork?: {
     graphBuilds: number; shadowAdmissions: number; shadowAdmissionMs: number; strictReadinessChecks: number;
+  };
+  frameAdmission?: ReturnType<RenderScheduler["gateState"]> & {
+    worldLoading: boolean;
+    pendingPresentations: number;
+    registeredViewEnabled: boolean | null;
+    registeredViewRequestedEnabled: boolean | null;
+    rttPresenting: boolean;
+    contextLost: boolean;
+  };
+  engineLoop?: {
+    frameId: number;
+    activeLoops: number;
+    ownsLoop: boolean;
+    frameHandler: number;
+    disposed: boolean;
+    contextLost: boolean;
+    windowIsBackground: boolean;
+    renderEvenInBackground: boolean;
+    skipFrameRender: boolean;
+    maxFPS: number | null;
+    customRequester: boolean;
+    sourceSize: [number, number] | null;
+    now: number;
   };
   cpuMs: number;
   gpuMs: number | null;

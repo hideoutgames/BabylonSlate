@@ -1,6 +1,6 @@
 import { mockCubeTextureIO, mockDepthTextureIO } from "./texture-test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Camera, Constants, InputBlock, KhronosTextureContainer2, Matrix, NodeMaterial, NullEngine, PBRMaterial, RawTexture, RenderTargetTexture, Scene, UniversalCamera, Vector3, type Mesh } from "@babylonjs/core";
+import { Camera, Constants, InputBlock, KhronosTextureContainer2, Matrix, MeshBuilder, NodeMaterial, NullEngine, PBRMaterial, RawTexture, RenderTargetTexture, Scene, UniversalCamera, Vector3, type Mesh } from "@babylonjs/core";
 import { DracoDecoder } from "@babylonjs/core/Meshes/Compression/dracoDecoder";
 import {
   SNAPSHOT_FLAG_OVERLAY,
@@ -23,6 +23,7 @@ import {
   engineCommandBus,
   requestEditorDrop,
   parseCableProperties,
+  parseText2DProperties,
   type RenderSettingsPatch,
 } from "@babylonslate/core";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
@@ -2333,6 +2334,23 @@ describe("Play createEngine view", () => {
     expect(order).toEqual(["world", "back", "front"]);
   });
 
+  it("retains rich-text reveal commands while its overlay scene is not created yet", () => {
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
+      sharedEngine: sharedEngine(), playMode: true,
+    });
+    handles.push(handle);
+    handle.applyCommand({ type: "spawn", slotId: 4, actorGuid: "label", classId: "SceneLayerActor", sceneLayerId: "late" });
+    handle.applyCommand({ type: "assignMesh", slotId: 4, primaryComponentId: "rich", meshKind: "2drichtext", meshAssetGuid: null,
+      text2d: parseText2DProperties({ text: "AB", appearModes: ["fade"], appearTransition: "linear", appearInterval: 0, appearProgress: 0 }, { rich: true }) });
+    handle.applyCommand({ type: "setText2DAppear", slotId: 4, componentId: "rich", progress: 0.5 });
+    handle.applyCommand({ type: "setText2DAppear", slotId: 4, componentId: "wrong", progress: 1 });
+    handle.applyCommand({ type: "sceneLayerCreate", layerId: "late", assetGuid: "hud", zOrder: 0, ownerSceneGuid: null, postProcessStack: [] });
+    const layer = handle.sceneLayerScenes()[0]!.scene;
+    const root = layer.getMeshByName("actor-4")!;
+    expect(root.getChildMeshes().map((glyph) => glyph.visibility)).toEqual([0.5, 0.5]);
+    expect(handle.scene.getMeshByName("actor-4")).toBeNull();
+  });
+
   it("does not parent overlay spawn meshes into the world when the layer scene is missing", () => {
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
     const handle = createEngine(canvas, {
@@ -4148,6 +4166,43 @@ describe("Play createEngine view", () => {
     canvas.emit("touchstart", {});
     canvas.emit("touchmove", {});
     expect(canvas.prevented).toBe(beforeTouch + 2);
+  });
+
+  it("scrolls nested overlay content with wheel and cancels button activation after touch dragging", () => {
+    const engine = sharedEngine();
+    vi.spyOn(engine, "getRenderWidth").mockReturnValue(256);
+    vi.spyOn(engine, "getRenderHeight").mockReturnValue(256);
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
+    const canvas = new FakeCanvas();
+    const events: string[] = [], scrolls: Array<{ deltaY: number }> = [];
+    const handle = createEngine(canvas as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true, onSceneLayerPointer: event => events.push(event.event), onSceneLayerScroll: event => scrolls.push(event) });
+    handles.push(handle);
+    spawnOverlayButton(handle, () => runRenderLoop.mock.calls[0]?.[0]?.(), "hud", { width: 9, height: 9 });
+    handle.applyCommand({ type: "sceneLayerLayout", layerId: "hud", entries: [{ actorId: "scroll", componentId: "viewport", slotId: 2, rect: { x: 0, y: 0, width: 9, height: 9 }, clip: null, scrollAncestors: [], scroll: { x: 0, y: 0, maxX: 0, maxY: 20, axis: "vertical", viewport: { x: 0, y: 0, width: 9, height: 9 }, scaleX: 2, scaleY: 2 } }] });
+    canvas.emit("wheel", { clientX: 128, clientY: 128, deltaX: 0, deltaY: 32, deltaMode: 0 });
+    expect(scrolls[0]?.deltaY).toBeCloseTo(0.5625);
+    canvas.emit("pointerdown", pointerAt(128, 128));
+    canvas.emit("pointermove", pointerAt(128, 100));
+    canvas.emit("pointerup", pointerAt(128, 128));
+    expect(events).toContain("onPressStart");
+    expect(events).toContain("onPressEnd");
+    expect(events).not.toContain("onClick");
+    expect(scrolls.at(-1)?.deltaY).toBeCloseTo(0.4921875);
+    handle.applyCommand({ type: "sceneLayerCreate", layerId: "modal", assetGuid: "modal-asset", zOrder: 10, ownerSceneGuid: null, postProcessStack: [], layerBounds: { width: 9, height: 9 } });
+    const modalScene = handle.sceneLayerScenes().find(layer => layer.layerId === "modal")!.scene;
+    const blocker = MeshBuilder.CreatePlane("modal-blocker", { size: 4 }, modalScene);
+    blocker.metadata = { overlayActorGuid: "modal", overlayHitTest: "block" };
+    blocker.computeWorldMatrix(true);
+    const count = scrolls.length;
+    canvas.emit("wheel", { clientX: 128, clientY: 128, deltaX: 0, deltaY: 32, deltaMode: 0 });
+    expect(scrolls).toHaveLength(count);
+    blocker.metadata.overlayHitTest = "ignore";
+    canvas.emit("wheel", { clientX: 128, clientY: 128, deltaX: 0, deltaY: 32, deltaMode: 0 });
+    expect(scrolls).toHaveLength(count + 1);
+    handle.dispose();
+    expect(canvas.listeners.get("wheel")?.size ?? 0).toBe(0);
+    canvas.emit("wheel", { clientX: 128, clientY: 128, deltaX: 0, deltaY: 32, deltaMode: 0 });
+    expect(scrolls).toHaveLength(count + 1);
   });
 
   it("clicks a 2DButton through the touchMinTargetPx floor without growing the mesh", () => {

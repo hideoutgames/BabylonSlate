@@ -64,7 +64,11 @@ export function AudioReverbBakeProvider({ children }: { children: ReactNode }) {
       },
     });
     controllerRef.current = controller;
-    registerAudioReverbSaveFlush(async () => {
+    registerAudioReverbSaveFlush(async (persistedScenes) => {
+      if (persistedScenes) {
+        await controller.flushAll(persistedScenes);
+        return;
+      }
       const paths = playSceneLibraryPaths(
         projectDocumentRef.current?.scenes ?? [],
         assetRegistryRef.current?.list() ?? [],

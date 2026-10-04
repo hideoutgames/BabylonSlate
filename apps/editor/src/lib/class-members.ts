@@ -11,6 +11,13 @@ import {
   formatEventTitle,
   walkAncestry,
 } from "@babylonslate/editor-kit";
+import {
+  ENGINE_CLASS_SCRIPT_APIS,
+  GAME_SUBSYSTEM_CLASS_ID,
+  SCENE_SUBSYSTEM_CLASS_ID,
+  engineNativeEventsFor,
+} from "@babylonslate/object-model";
+import { SUBSYSTEM_GET_NODE_ID } from "@babylonslate/scripting-nodes";
 
 export type { GraphClassMember, GraphClassMemberKind, GraphClassMemberPin };
 
@@ -26,23 +33,46 @@ export const NATIVE_CLASS_EVENT_TYPES = [
   "flow.event.destroyed",
 ] as const;
 
-export const NATIVE_GAME_INSTANCE_EVENT_TYPES = [
-  "flow.event.scalabilityChanged",
-  "flow.event.init",
-  "flow.event.tick",
-  "flow.event.end",
-  "flow.event.firstSceneLoaded",
-  "flow.event.sceneStartLoading",
-  "flow.event.sceneFinishLoading",
-  "flow.event.sceneExit",
-] as const;
-
 /** Default new graphs seed these Actor natives; Destroyed stays in Events +. */
-export const SEEDED_NATIVE_EVENT_TYPES = [
+const SEEDED_NATIVE_EVENT_TYPES = [
   "flow.event.beginPlay",
   "flow.event.tick",
   "flow.event.init",
 ] as const;
+
+/** Subsystem classes seed On Init only; Tick and the rest stay in Events +. */
+const SEEDED_SUBSYSTEM_EVENT_TYPES = ["flow.event.init"] as const;
+
+/**
+ * Self lifecycle events the engine catalog declares per lineage (Game
+ * Instance, GameSubsystem, SceneSubsystem). Tick and Scalability Changed are
+ * also Actor / component natives, so only the rest are lineage-gated.
+ */
+export const LINEAGE_NATIVE_EVENT_TYPES: ReadonlySet<string> = new Set(
+  ENGINE_CLASS_SCRIPT_APIS.flatMap((api) =>
+    (api.nativeEvents ?? []).map((event) => event.eventType),
+  ).filter(
+    (eventType) =>
+      eventType !== "flow.event.tick" &&
+      eventType !== "flow.event.scalabilityChanged",
+  ),
+);
+
+/** Get Game Instance: every runtime host, never editor utilities. */
+export const GET_GAME_INSTANCE_NODE_ID = "gameInstance.get";
+
+/**
+ * Game Instance catalog getters and the lineages whose graphs may use them
+ * (their implicit Self is the Game Instance or a subsystem).
+ */
+const LINEAGE_FUNCTION_NODE_BASES: Readonly<Record<string, readonly string[]>> = {
+  "gameInstance.getSceneLoadingProgress": ["GameInstance", GAME_SUBSYSTEM_CLASS_ID],
+  "gameInstance.getSceneReference": [
+    "GameInstance",
+    GAME_SUBSYSTEM_CLASS_ID,
+    SCENE_SUBSYSTEM_CLASS_ID,
+  ],
+};
 
 export const COLLISION_EVENT_TYPE_IDS = [
   "flow.event.hit",
@@ -61,6 +91,13 @@ const NATIVE_EVENT_TITLES: Record<string, string> = {
   "flow.event.sceneStartLoading": "Event On Scene Start Loading",
   "flow.event.sceneFinishLoading": "Event On Scene Finish Loading",
   "flow.event.sceneExit": "Event On Scene Exit",
+  "flow.event.sceneLoaded": "Event On Scene Loaded",
+  "flow.event.streamedSceneLoaded": "Event On Streamed Scene Loaded",
+  "flow.event.streamedSceneUnloaded": "Event On Streamed Scene Unloaded",
+  "flow.event.sceneLayerAdded": "Event On Scene Layer Added",
+  "flow.event.sceneLayerRemoved": "Event On Scene Layer Removed",
+  "flow.event.sceneActorSpawned": "Event On Scene Actor Spawned",
+  "flow.event.sceneActorDestroyed": "Event On Scene Actor Destroyed",
   "flow.event.hit": "Event On Hit",
   "flow.event.beginOverlap": "Event On Begin Overlap",
   "flow.event.endOverlap": "Event On End Overlap",
@@ -71,6 +108,11 @@ const NATIVE_EVENT_TITLES: Record<string, string> = {
   "flow.event.onPressEnd": "Event On Press End",
   "flow.event.textChanged": "Event On Text Changed",
   "flow.event.audioFinished": "Event On Audio Finished",
+  "flow.event.movementStarted": "Event On Movement Started",
+  "flow.event.movementStopped": "Event On Movement Stopped",
+  "flow.event.movementJumped": "Event On Movement Jumped",
+  "flow.event.movementLeftGround": "Event On Movement Left Ground",
+  "flow.event.movementLanded": "Event On Movement Landed",
   "flow.event.commandRun": "Event On Command Run",
   "flow.event.editorBeginPlay": "Event Editor On Begin Play",
   "flow.event.editorStartup": "Event On Editor Startup",
@@ -110,6 +152,11 @@ const ACTOR_EVENT_TYPE_IDS = [
   "flow.event.endOverlap",
   "flow.event.textChanged",
   "flow.event.audioFinished",
+  "flow.event.movementStarted",
+  "flow.event.movementStopped",
+  "flow.event.movementJumped",
+  "flow.event.movementLeftGround",
+  "flow.event.movementLanded",
   ...OVERLAY_MOUSE_EVENT_TYPE_IDS,
 ] as const;
 
@@ -224,13 +271,69 @@ function ancestryChain(options?: ClassEventOptions): string[] {
   return walkAncestry(options?.parentClass ?? "Actor", parentOf);
 }
 
+function isSubsystemChain(chain: readonly string[]): boolean {
+  return (
+    chain.includes(GAME_SUBSYSTEM_CLASS_ID) ||
+    chain.includes(SCENE_SUBSYSTEM_CLASS_ID)
+  );
+}
+
+/** Lineage lifecycle events (Game Instance / subsystem) a class chain handles. */
+export function lineageNativeEventTypes(
+  chain: readonly string[],
+): ReadonlySet<string> {
+  return new Set(engineNativeEventsFor(chain).map((event) => event.eventType));
+}
+
+/**
+ * Whether a lineage-gated lifecycle event (On Init, the Game Instance scene
+ * events, the SceneSubsystem events) is legal on this class chain. Other
+ * events are not lineage-gated and always pass.
+ */
+export function isLineageNativeEventAllowed(
+  eventType: string,
+  chain: readonly string[],
+): boolean {
+  if (!LINEAGE_NATIVE_EVENT_TYPES.has(eventType)) return true;
+  return lineageNativeEventTypes(chain).has(eventType);
+}
+
+/** Engine bases whose catalog declares a lineage lifecycle event, root order. */
+export function lineageNativeEventBases(eventType: string): string[] {
+  return ENGINE_CLASS_SCRIPT_APIS.filter((api) =>
+    (api.nativeEvents ?? []).some((event) => event.eventType === eventType),
+  ).map((api) => api.classId);
+}
+
+/** Title Case node title for a native event type (`Event On Scene Loaded`). */
+export function nativeEventTitle(eventType: string): string {
+  return NATIVE_EVENT_TITLES[eventType] ?? formatEventTitle(eventType);
+}
+
+/** Get Game Instance and Get <Subsystem> are runtime-only (no editor utilities). */
+export function isEditorUtilityChain(chain: readonly string[]): boolean {
+  return (
+    chain.includes("EditorUtilityObject") ||
+    chain.includes("EditorFunctionLibrary")
+  );
+}
+
+/** Native events a new graph for this parent seeds (subsystems: On Init only). */
+export function seededNativeEventTypes(
+  options?: ClassEventOptions,
+): readonly string[] {
+  return isSubsystemChain(ancestryChain(options))
+    ? SEEDED_SUBSYSTEM_EVENT_TYPES
+    : SEEDED_NATIVE_EVENT_TYPES;
+}
+
 function eventStubsForTypes(types: readonly string[]): Array<{
   eventType: string;
   name: string;
 }> {
   return types.map((eventType) => ({
     eventType,
-    name: NATIVE_EVENT_TITLES[eventType] ?? formatEventTitle(eventType),
+    name: nativeEventTitle(eventType),
   }));
 }
 
@@ -262,9 +365,9 @@ export function nativeEventStubs(
   if (chain.includes("Actor") || chain.includes("ActorComponent")) {
     types.push(...NATIVE_CLASS_EVENT_TYPES);
   }
-  if (chain.includes("GameInstance")) {
-    types.push(...NATIVE_GAME_INSTANCE_EVENT_TYPES);
-  }
+  // Game Instance, GameSubsystem and SceneSubsystem lifecycles come from the
+  // engine catalog so the editor and runtime share one table.
+  types.push(...lineageNativeEventTypes(chain));
   if (chain.includes("BDebugCommand")) {
     types.push("flow.event.commandRun");
   }
@@ -322,6 +425,10 @@ export function isScriptCatalogNodeAllowed(
   if (nodeId === "casting.cast" || nodeId === "casting.castActor") {
     return false;
   }
+  // One Get <Subsystem> row per project subsystem class is injected instead.
+  if (nodeId === SUBSYSTEM_GET_NODE_ID) {
+    return false;
+  }
   if (nodeId === "struct.break") {
     return false;
   }
@@ -346,16 +453,16 @@ export function isScriptCatalogNodeAllowed(
     return false;
   }
   const chain = ancestryChain(options);
-  if (nodeId === "flow.event.scalabilityChanged") return !options?.animationGraphHost && ["Actor", "ActorComponent", "GameInstance"].some((base) => chain.includes(base));
+  const lineageEvents = lineageNativeEventTypes(chain);
+  if (nodeId === GET_GAME_INSTANCE_NODE_ID) return !isEditorUtilityChain(chain);
+  if (nodeId === "flow.event.scalabilityChanged") return !options?.animationGraphHost && (chain.includes("Actor") || chain.includes("ActorComponent") || lineageEvents.has(nodeId));
   const isActorEvent = (ACTOR_EVENT_TYPE_IDS as readonly string[]).includes(nodeId);
-  const isGiOnlyEvent = (
-    NATIVE_GAME_INSTANCE_EVENT_TYPES as readonly string[]
-  ).includes(nodeId) && nodeId !== "flow.event.tick";
-  const isGiFunction =
-    nodeId === "gameInstance.getSceneLoadingProgress" ||
-    nodeId === "gameInstance.getSceneReference";
-  if (isGiOnlyEvent || isGiFunction) {
-    return chain.includes("GameInstance");
+  if (LINEAGE_NATIVE_EVENT_TYPES.has(nodeId)) {
+    return lineageEvents.has(nodeId);
+  }
+  const functionBases = LINEAGE_FUNCTION_NODE_BASES[nodeId];
+  if (functionBases) {
+    return functionBases.some((base) => chain.includes(base));
   }
   const isBtLeafEvent = (BT_LEAF_EVENT_TYPE_IDS as readonly string[]).includes(
     nodeId,
@@ -445,7 +552,7 @@ export function isScriptCatalogNodeAllowed(
     return chain.includes("Actor") || chain.includes("ActorComponent");
   }
   if (nodeId === "flow.event.tick") {
-    return chain.includes("Actor") || chain.includes("GameInstance") || chain.includes("ActorComponent");
+    return chain.includes("Actor") || chain.includes("ActorComponent") || lineageEvents.has(nodeId);
   }
   if (nodeId === "flow.event.commandRun") {
     return chain.includes("Actor") || chain.includes("BDebugCommand");

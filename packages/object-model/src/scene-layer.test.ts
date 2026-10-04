@@ -60,7 +60,15 @@ describe("SceneLayer object model", () => {
     expect(isSceneLayerAllowedComponent("FoliageComponent")).toBe(false);
     expect([...SCENE_LAYER_EXCLUSIVE_COMPONENT_CLASS_IDS]).toEqual([
       "2DAnchorComponent",
+      "2DScrollBoxComponent",
+      "2DVerticalBoxComponent",
+      "2DHorizontalBoxComponent",
+      "2DOverlayBoxComponent",
+      "2DPaddingComponent",
+      "2DSpacerComponent",
+      "2DPainterComponent",
       "2DButtonComponent",
+      "2DFocusTargetComponent",
       "2DMaterialComponent",
       "2DTextureComponent",
       "2DTextComponent",

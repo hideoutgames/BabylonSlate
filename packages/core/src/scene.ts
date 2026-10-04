@@ -82,6 +82,16 @@ export interface SerializedActor {
   folderId: string | null;
 }
 
+/** An Outliner-only anchor carrier has no authored spatial pose. */
+export function isSceneLayerAnchorActor(actor: {
+  components: readonly { classId: string; destroyed?: boolean }[];
+}): boolean {
+  const components = actor.components.filter((component) => !component.destroyed);
+  return components.length > 0 && components.every(
+    (component) => component.classId === "2DAnchorComponent",
+  );
+}
+
 /** Editor-only Outliner grouping. Never instantiated as a runtime actor. */
 export interface SerializedOutlinerFolder {
   id: string;
@@ -275,7 +285,9 @@ export function createActor(
     name,
     classId: overrides.classId ?? "Actor",
     parentId: overrides.parentId ?? null,
-    transform: overrides.transform ?? identitySerializedTransform(),
+    transform: isSceneLayerAnchorActor({ components: overrides.components ?? [] })
+      ? identitySerializedTransform()
+      : overrides.transform ?? identitySerializedTransform(),
     visible: overrides.visible ?? true,
     locked: overrides.locked ?? false,
     components: overrides.components ?? [],
@@ -348,7 +360,7 @@ function normalizeComponent(
         ? { ...(source.properties as Record<string, unknown>) }
         : {},
     parentId: typeof source.parentId === "string" ? source.parentId : null,
-    transform: normalizeTransform(source.transform),
+    ...(source.classId === "2DAnchorComponent" ? {} : { transform: normalizeTransform(source.transform) }),
     ...(sourceId ? { sourceId } : {}),
     ...(overrideKeys ? { overrideKeys } : {}),
   };
@@ -356,17 +368,18 @@ function normalizeComponent(
 
 function normalizeActor(value: unknown, index: number): SerializedActor {
   const source = (value ?? {}) as Record<string, unknown>;
+  const components = Array.isArray(source.components) ? source.components.map(normalizeComponent) : [];
   return {
     id: typeof source.id === "string" ? source.id : `actor-${index}`,
     name: typeof source.name === "string" ? source.name : `Actor ${index + 1}`,
     classId: typeof source.classId === "string" ? source.classId : "Actor",
     parentId: typeof source.parentId === "string" ? source.parentId : null,
-    transform: normalizeTransform(source.transform),
+    transform: isSceneLayerAnchorActor({ components })
+      ? identitySerializedTransform()
+      : normalizeTransform(source.transform),
     visible: source.visible !== false,
     locked: source.locked === true,
-    components: Array.isArray(source.components)
-      ? source.components.map(normalizeComponent)
-      : [],
+    components,
     folderId: asNullableString(source.folderId),
   };
 }

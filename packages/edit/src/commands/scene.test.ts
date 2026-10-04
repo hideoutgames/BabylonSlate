@@ -131,6 +131,23 @@ describe("scene commands", () => {
     expect(first.mergeKey).toBe(second.mergeKey);
   });
 
+  it("ignores actor, group, and component transform edits on an Outliner anchor", () => {
+    const scene = baseScene();
+    const anchor = createActor("pin", "2D Anchor", { components: [
+      { id: "anchor", classId: "2DAnchorComponent", properties: {} },
+    ] });
+    scene.actors.push(anchor);
+    const from = anchor.transform;
+    const to = { ...from, position: [4, 5, 6] as [number, number, number] };
+    for (const command of [
+      new SetActorTransformCommand("pin", from, to),
+      new SetActorsTransformsCommand([{ actorId: "pin", from, to }]),
+      new SetComponentTransformCommand("pin", "anchor", from, to),
+    ]) {
+      expect(command.apply(scene).actors.find((actor) => actor.id === "pin")).toEqual(anchor);
+    }
+  });
+
   it("SetActorsTransformsCommand apply-then-invert restores every actor", () => {
     const scene = baseScene();
     const fromA = scene.actors[0]!.transform;

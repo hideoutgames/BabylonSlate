@@ -458,3 +458,150 @@ export class GameInstance extends BObject {
     this.gameHooks.onSceneExit?.(this, sceneName);
   }
 }
+
+type SubsystemOptions<H> = {
+  classId: string;
+  /** Fixed deterministic guid; subsystems never draw from a guid factory. */
+  guid: Guid;
+  variables?: Record<string, unknown>;
+  hooks?: H;
+  implementedInterfaces?: string[];
+};
+
+/**
+ * Hidden abstract base of GameSubsystem and SceneSubsystem. `onCreation` is
+ * the subsystem's On Init. End runs at most once; the instance is `ended`
+ * from the moment End starts and `destroyed` once it returns.
+ */
+export abstract class Subsystem extends BObject {
+  private endStarted = false;
+
+  constructor(options: SubsystemOptions<LifecycleHooks>) {
+    super(options);
+  }
+
+  get ended(): boolean {
+    return this.endStarted;
+  }
+
+  protected runEnd(end: () => void): void {
+    if (this.endStarted) return;
+    this.endStarted = true;
+    try {
+      end();
+    } finally {
+      this.destroyed = true;
+    }
+  }
+}
+
+/** Game Instance parity hooks; `onGameEnd` is the subsystem's On End. */
+export type GameSubsystemHooks = Omit<LifecycleHooks<GameSubsystem>, "onDestroyed"> & {
+  onGameEnd?: (self: GameSubsystem) => void;
+  onSceneStartLoading?: (self: GameSubsystem, sceneName: string) => void;
+  onSceneFinishLoading?: (self: GameSubsystem, sceneName: string) => void;
+  onFirstSceneLoaded?: (self: GameSubsystem, sceneName: string) => void;
+  onSceneExit?: (self: GameSubsystem, sceneName: string) => void;
+};
+
+/** Session-lifetime subsystem that wraps the Game Instance lifecycle. */
+export class GameSubsystem extends Subsystem {
+  private readonly gameHooks: GameSubsystemHooks;
+
+  constructor(options: SubsystemOptions<GameSubsystemHooks>) {
+    super({ ...options, hooks: options.hooks as LifecycleHooks | undefined });
+    this.gameHooks = options.hooks ?? {};
+  }
+
+  callOnGameEnd(): void {
+    this.runEnd(() => this.gameHooks.onGameEnd?.(this));
+  }
+
+  callOnSceneStartLoading(sceneName: string): void {
+    if (!this.ended) this.gameHooks.onSceneStartLoading?.(this, sceneName);
+  }
+
+  callOnSceneFinishLoading(sceneName: string): void {
+    if (!this.ended) this.gameHooks.onSceneFinishLoading?.(this, sceneName);
+  }
+
+  callOnFirstSceneLoaded(sceneName: string): void {
+    if (!this.ended) this.gameHooks.onFirstSceneLoaded?.(this, sceneName);
+  }
+
+  callOnSceneExit(sceneName: string): void {
+    if (!this.ended) this.gameHooks.onSceneExit?.(this, sceneName);
+  }
+}
+
+export type SceneSubsystemHooks = Omit<LifecycleHooks<SceneSubsystem>, "onDestroyed"> & {
+  onEnd?: (self: SceneSubsystem) => void;
+  onSceneLoaded?: (self: SceneSubsystem, sceneName: string) => void;
+  onStreamedSceneLoaded?: (
+    self: SceneSubsystem,
+    streamingActor: SceneStreamingActor,
+    scene: Scene,
+  ) => void;
+  onStreamedSceneUnloaded?: (
+    self: SceneSubsystem,
+    streamingActor: SceneStreamingActor,
+    scene: Scene,
+  ) => void;
+  onSceneLayerAdded?: (self: SceneSubsystem, layer: SceneLayer) => void;
+  onSceneLayerRemoved?: (self: SceneSubsystem, layer: SceneLayer) => void;
+  onSceneActorSpawned?: (self: SceneSubsystem, actor: Actor) => void;
+  onSceneActorDestroyed?: (self: SceneSubsystem, actor: Actor) => void;
+};
+
+/**
+ * Lives with one main Scene object; notifications stop once End starts. The
+ * World sends Actor Destroyed / Layer Removed only after this instance's
+ * generation received that object's Spawned / Added.
+ */
+export class SceneSubsystem extends Subsystem {
+  /** The main Scene this instance was created with. */
+  readonly scene: Scene;
+  private readonly sceneHooks: SceneSubsystemHooks;
+
+  constructor(options: SubsystemOptions<SceneSubsystemHooks> & { scene: Scene }) {
+    super({ ...options, hooks: options.hooks as LifecycleHooks | undefined });
+    this.scene = options.scene;
+    this.sceneHooks = options.hooks ?? {};
+  }
+
+  callOnEnd(): void {
+    this.runEnd(() => this.sceneHooks.onEnd?.(this));
+  }
+
+  callOnSceneLoaded(sceneName: string): void {
+    if (!this.ended) this.sceneHooks.onSceneLoaded?.(this, sceneName);
+  }
+
+  callOnStreamedSceneLoaded(streamingActor: SceneStreamingActor, scene: Scene): void {
+    if (!this.ended) {
+      this.sceneHooks.onStreamedSceneLoaded?.(this, streamingActor, scene);
+    }
+  }
+
+  callOnStreamedSceneUnloaded(streamingActor: SceneStreamingActor, scene: Scene): void {
+    if (!this.ended) {
+      this.sceneHooks.onStreamedSceneUnloaded?.(this, streamingActor, scene);
+    }
+  }
+
+  callOnSceneLayerAdded(layer: SceneLayer): void {
+    if (!this.ended) this.sceneHooks.onSceneLayerAdded?.(this, layer);
+  }
+
+  callOnSceneLayerRemoved(layer: SceneLayer): void {
+    if (!this.ended) this.sceneHooks.onSceneLayerRemoved?.(this, layer);
+  }
+
+  callOnSceneActorSpawned(actor: Actor): void {
+    if (!this.ended) this.sceneHooks.onSceneActorSpawned?.(this, actor);
+  }
+
+  callOnSceneActorDestroyed(actor: Actor): void {
+    if (!this.ended) this.sceneHooks.onSceneActorDestroyed?.(this, actor);
+  }
+}

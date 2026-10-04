@@ -11,7 +11,7 @@ import {
   createMeshForComponent,
   editorMeshName,
 } from "./scene-loader";
-import { createText2DMesh } from "./text2d-mesh";
+import { createText2DMesh, updateText2DAppear } from "./text2d-mesh";
 import type { GlyphMetricsProvider } from "./text2d-layout";
 import {
   applyAssignMesh,
@@ -271,14 +271,85 @@ describe("createText2DMesh", () => {
     expect(green!.emissiveColor.asArray()).toEqual([0, 1, 0]);
   });
 
-  it("freezes letter effects while Play is paused", () => {
+  it.each([
+    { mode: "Off", appearModes: [], progress: 1 },
+    { mode: "combined reveal", appearModes: ["fade", "scale", "slide"], progress: 0.5 },
+  ])("keeps static glyph world matrices cached during $mode effect frames", ({ appearModes, progress }) => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const mesh = createText2DMesh(
+      handle.scene,
+      "mixed-effects",
+      {
+        text: "AB[wave=2]C[/wave]",
+        size: 32,
+        appearModes,
+        appearInterval: 0,
+        appearDuration: 1,
+        appearProgress: progress,
+      },
+      undefined,
+      { rich: true, metrics: fixedMetrics() },
+    );
+    const children = mesh.getChildMeshes();
+    const tick = (mesh.metadata as { tickText2DEffects: (time: number) => void }).tickText2DEffects;
+    tick(0.25);
+    const matrixVersions = children.map((child) => child.computeWorldMatrix().updateFlag);
+    const effectY = children[2]!.position.y;
+
+    tick(0.5);
+    updateText2DAppear(mesh, progress);
+    handle.scene.incrementRenderId();
+    expect(children.slice(0, 2).map((child) => child.computeWorldMatrix().updateFlag))
+      .toEqual(matrixVersions.slice(0, 2));
+    expect(children[2]!.position.y).not.toBeCloseTo(effectY);
+    expect(children[2]!.computeWorldMatrix().updateFlag).not.toBe(matrixVersions[2]);
+  });
+
+  it("keeps completed glyph world matrices cached as later characters reveal", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const mesh = createText2DMesh(
+      handle.scene,
+      "staggered-reveal",
+      {
+        text: "ABC",
+        appearModes: ["fade", "scale", "slide"],
+        appearTransition: "linear",
+        appearInterval: 0.1,
+        appearDuration: 0.2,
+      },
+      undefined,
+      { rich: true, metrics: fixedMetrics() },
+    );
+    const [first, second] = mesh.getChildMeshes();
+    updateText2DAppear(mesh, 0.5);
+    const firstVersion = first!.computeWorldMatrix().updateFlag;
+    const secondVersion = second!.computeWorldMatrix().updateFlag;
+    expect(second!.scaling.x).toBeCloseTo(0.5);
+
+    updateText2DAppear(mesh, 0.75);
+    handle.scene.incrementRenderId();
+    expect(first!.computeWorldMatrix().updateFlag).toBe(firstVersion);
+    expect(second!.scaling.x).toBe(1);
+    expect(second!.computeWorldMatrix().updateFlag).not.toBe(secondVersion);
+  });
+
+  it("preserves paused letter effects while the reveal pose changes", () => {
     const handle = createTestEngine();
     handles.push(handle);
     let paused = false;
     const mesh = createText2DMesh(
       handle.scene,
       "fx",
-      { text: "[wave=2]Hi", size: 32 },
+      {
+        text: "[shake=1][wave=2]Hi",
+        size: 32,
+        appearModes: ["scale", "slide"],
+        appearTransition: "cubicOut",
+        appearInterval: 0,
+        appearDuration: 1,
+      },
       undefined,
       { rich: true, metrics: fixedMetrics(), isPaused: () => paused },
     );
@@ -287,10 +358,19 @@ describe("createText2DMesh", () => {
     const tick = (mesh.metadata as { tickText2DEffects?: (time: number) => void })
       .tickText2DEffects;
     tick?.(1);
+    const liveX = child.position.x;
     const liveY = child.position.y;
     expect(liveY).not.toBeCloseTo(restY);
     paused = true;
+    updateText2DAppear(mesh, 0.5);
+    // Cubic Out is 0.875 here; slide adds the remaining 0.125 of a 0.32-unit glyph.
+    expect(child.scaling.x).toBeCloseTo(0.875);
+    expect(child.position.x).toBeCloseTo(liveX);
+    expect(child.position.y).toBeCloseTo(liveY - 0.04);
     tick?.(4);
+    expect(child.position.x).toBeCloseTo(liveX);
+    expect(child.position.y).toBeCloseTo(liveY - 0.04);
+    updateText2DAppear(mesh, 1);
     expect(child.position.y).toBeCloseTo(liveY);
   });
 });
@@ -328,6 +408,7 @@ describe("2D text editor and Play wiring", () => {
     handles.push(handle);
     const component = createRichText2DComponent("rich-1");
     component.properties.text = "[color=green]Hi";
+    component.properties.appearStart = "hidden";
     const actor = createActor("hud", "Banner", { components: [component] });
     const mesh = createMeshForComponent(
       handle.scene,
@@ -338,6 +419,7 @@ describe("2D text editor and Play wiring", () => {
     );
     expect((mesh.metadata as { text2dRich?: boolean }).text2dRich).toBe(true);
     expect(mesh.getChildMeshes().length).toBeGreaterThanOrEqual(2);
+    expect(mesh.getChildMeshes().every((glyph) => glyph.visibility === 1)).toBe(true);
     const material = mesh.getChildMeshes()[0]?.material as StandardMaterial;
     expect(material.emissiveTexture).toBeTruthy();
     expect(actorVisualFingerprint(actor)).toContain("2DRichTextComponent");

@@ -5,6 +5,7 @@ import {
   GitLfsLockProvider,
   LockPollScheduler,
   isSourceControlHost,
+  lfsEndpointFromRepoUrl,
   parseGitConfigPrefill,
   sourceControlSecretKey,
   type FileLock,
@@ -15,6 +16,24 @@ import type { NativeHttp } from "@babylonslate/vfs";
 import type { SecretStore } from "@babylonslate/vfs";
 
 export type DocumentLockEditMode = "editable" | "readonly" | "edit-anyway";
+
+function credentialOrigin(repositoryUrl: string): string | null {
+  const endpoint = lfsEndpointFromRepoUrl(repositoryUrl);
+  try { return endpoint ? new URL(endpoint).origin : null; }
+  catch { return null; }
+}
+
+/** Legacy tokens have no destination authorization; only Save Token may bind one. */
+function tokenForOrigin(stored: string | null, origin: string | null): string | null {
+  if (!stored || !origin) return null;
+  try {
+    const value: unknown = JSON.parse(stored);
+    if (!value || typeof value !== "object") return null;
+    const record = value as Record<string, unknown>;
+    return record.version === 1 && record.origin === origin && typeof record.token === "string"
+      ? record.token : null;
+  } catch { return null; }
+}
 
 export interface LockRefreshState {
   status: "idle" | "refreshing" | "ready" | "error";
@@ -85,6 +104,7 @@ export class SourceControlService {
   private providerIdentity = "";
   private refreshRevision = 0;
   private providerRevision = 0;
+  private configureRevision = 0;
   private lockRefreshState: LockRefreshState = { status: "idle", error: null, lastSuccessAt: null };
   private lastOperationError: string | null = null;
 
@@ -171,6 +191,7 @@ export class SourceControlService {
   }
 
   async configure(input: SourceControlConfigureInput): Promise<void> {
+    const configureRevision = ++this.configureRevision;
     this.settings = { ...input.settings };
     this.projectGuid = input.projectGuid;
     this.secretStore = input.secretStore;
@@ -212,6 +233,7 @@ export class SourceControlService {
     this.scheduler = null;
     this.provider = null;
     this.fake = null;
+    this.tokenSaved = false;
     this.locksByPath.clear();
     this.autoLockAttempted.clear();
     const hostOk = isSourceControlHost(input.platform, input.testMode);
@@ -219,10 +241,20 @@ export class SourceControlService {
       this.emit();
       return;
     }
-    this.tokenSaved = Boolean(
-      input.projectGuid &&
-        (await input.secretStore.get(sourceControlSecretKey(this.projectGuid))),
-    );
+    const origin = credentialOrigin(input.settings.repositoryUrl);
+    const projectGuid = input.projectGuid;
+    let stored: string | null;
+    try {
+      stored = projectGuid ? await input.secretStore.get(sourceControlSecretKey(projectGuid)) : null;
+    } catch (error) {
+      if (configureRevision !== this.configureRevision) return;
+      this.tokenSaved = false;
+      this.lockRefreshState = { ...this.lockRefreshState, status: "error", error: error instanceof Error ? error.message : String(error) };
+      this.emit();
+      return;
+    }
+    if (configureRevision !== this.configureRevision) return;
+    this.tokenSaved = Boolean(tokenForOrigin(stored, origin));
     if (input.fake) {
       this.fake = input.fake;
       this.provider = input.fake;
@@ -236,8 +268,8 @@ export class SourceControlService {
           branch: this.settings.branch,
           fetch: input.nativeHttp,
           getToken: async () => {
-            if (!this.projectGuid || !this.secretStore) return null;
-            return this.secretStore.get(sourceControlSecretKey(this.projectGuid));
+            if (!projectGuid) return null;
+            return tokenForOrigin(await input.secretStore.get(sourceControlSecretKey(projectGuid)), origin);
           },
         });
       } catch {
@@ -257,6 +289,7 @@ export class SourceControlService {
   }
 
   dispose(): void {
+    this.configureRevision += 1;
     this.lastOperationError = null;
     this.refreshRevision += 1;
     this.providerRevision += 1;
@@ -270,6 +303,7 @@ export class SourceControlService {
     this.editMode.clear();
     this.banners.clear();
     this.autoLockAttempted.clear();
+    this.tokenSaved = false;
     this.emit();
   }
 
@@ -306,6 +340,7 @@ export class SourceControlService {
         for (const lock of [...result.value.ours, ...result.value.theirs]) {
           this.locksByPath.set(lock.path, lock);
         }
+        this.reconcileDocumentLockState();
         this.lockRefreshState = { status: "ready", error: null, lastSuccessAt: Date.now() };
       }
     } catch (error) {
@@ -321,14 +356,20 @@ export class SourceControlService {
 
   async saveToken(token: string): Promise<void> {
     if (!this.projectGuid || !this.secretStore) return;
-    await this.secretStore.set(sourceControlSecretKey(this.projectGuid), token);
+    const origin = credentialOrigin(this.settings.repositoryUrl);
+    if (!origin) throw new Error("Set a valid repository URL before saving a token.");
+    const revision = this.configureRevision;
+    await this.secretStore.set(sourceControlSecretKey(this.projectGuid), JSON.stringify({ version: 1, origin, token }));
+    if (revision !== this.configureRevision) return;
     this.tokenSaved = true;
     this.emit();
   }
 
   async clearToken(): Promise<void> {
     if (!this.projectGuid || !this.secretStore) return;
+    const revision = this.configureRevision;
     await this.secretStore.delete(sourceControlSecretKey(this.projectGuid));
+    if (revision !== this.configureRevision) return;
     this.tokenSaved = false;
     this.emit();
   }
@@ -350,7 +391,16 @@ export class SourceControlService {
     }
     if (this.autoLockAttempted.has(path)) return;
     this.autoLockAttempted.add(path);
-    const result = await this.provider.create(path);
+    const revision = this.providerRevision;
+    let result;
+    try { result = await this.provider.create(path); }
+    catch (error) {
+      if (revision !== this.providerRevision) return;
+      this.banners.set(path, { kind: "unlocked", message: error instanceof Error ? error.message : String(error) });
+      this.emit();
+      return;
+    }
+    if (revision !== this.providerRevision) return;
     if (isOk(result)) {
       this.locksByPath.set(path, result.value);
       this.banners.delete(path);
@@ -390,17 +440,36 @@ export class SourceControlService {
   }
 
   async transferLock(oldPath: string, newPath: string): Promise<void> {
-    if (!this.provider) return;
+    const provider = this.provider;
+    const revision = this.providerRevision;
+    if (!provider || !this.settings.enabled) return;
     const existing = this.locksByPath.get(oldPath);
     if (!existing?.ours) return;
-    await this.provider.unlock(existing.id);
-    this.locksByPath.delete(oldPath);
-    const created = await this.provider.create(newPath);
-    if (isOk(created)) {
+    this.lastOperationError = null;
+    try {
+      const released = await provider.unlock(existing.id);
+      if (revision !== this.providerRevision) return;
+      if (!isOk(released)) throw new Error(released.error.message || "Could not release the old lock.");
+      this.locksByPath.delete(oldPath);
+      this.autoLockAttempted.delete(oldPath);
+      const created = await provider.create(newPath);
+      if (revision !== this.providerRevision) return;
+      if (!isOk(created)) throw new Error(created.error.message || "Could not lock the moved asset.");
       this.locksByPath.set(newPath, created.value);
+      this.banners.delete(oldPath);
+      this.banners.delete(newPath);
+      this.editMode.delete(oldPath);
+      this.editMode.set(newPath, "editable");
+      this.autoLockAttempted.add(newPath);
+    } catch (error) {
+      if (revision !== this.providerRevision) return;
+      const message = `Could not transfer the lock to ${newPath}: ${error instanceof Error ? error.message : String(error)}`;
+      this.autoLockAttempted.delete(newPath);
+      this.banners.set(newPath, { kind: "unlocked", message });
+      this.lastOperationError = message;
+      this.emit();
+      throw new Error(message);
     }
-    this.autoLockAttempted.delete(oldPath);
-    this.autoLockAttempted.add(newPath);
     this.emit();
   }
 
@@ -429,6 +498,7 @@ export class SourceControlService {
     const mine = this.locks.filter((lock) => lock.ours);
     const errors: string[] = [];
     for (const lock of mine) {
+      if (revision !== this.providerRevision) return;
       const error = await this.releaseLock(lock.id);
       if (error) errors.push(`${lock.path}: ${error}`);
     }
@@ -467,7 +537,25 @@ export class SourceControlService {
       if (lock.id === id) {
         this.locksByPath.delete(path);
         this.autoLockAttempted.delete(path);
+        this.editMode.delete(path);
+        this.banners.delete(path);
       }
+    }
+  }
+
+  /** Verified lock changes must not leave a former owner's edit restriction behind. */
+  private reconcileDocumentLockState(): void {
+    for (const [path, mode] of this.editMode) {
+      const lock = this.locksByPath.get(path);
+      const banner = this.banners.get(path);
+      if (lock && !lock.ours) {
+        if (banner?.kind === "theirs") {
+          this.banners.set(path, { kind: "theirs", lock });
+        }
+        continue;
+      }
+      if (mode === "readonly") this.editMode.delete(path);
+      if (banner?.kind === "theirs") this.banners.delete(path);
     }
   }
 

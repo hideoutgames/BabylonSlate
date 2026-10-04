@@ -69,6 +69,8 @@ export interface InputValueState {
   held: boolean;
   released: boolean;
   value: boolean | number | { x: number; y: number };
+  /** Last nonzero axis sample this tick, including a complete between-tick tap. */
+  activeValue?: number | { x: number; y: number };
   heldSeconds: number;
   lastHeldSeconds: number;
 }

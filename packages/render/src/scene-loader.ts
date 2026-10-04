@@ -1,6 +1,8 @@
 import { createDynamicRuntimeMesh } from "./dynamic-runtime-mesh";
 import { Color3, Mesh, MeshBuilder, Quaternion, Scene, Vector3, StandardMaterial } from "@babylonjs/core";
 import { normalizeWaterBody, waterKindForClass } from "@babylonslate/core";
+import { OVERLAY_LAYOUT_CLASSES, isOverlayLayoutClass, parseOverlayLayoutProperties, resolveOverlayLayout } from "@babylonslate/core";
+import { applyEditorLayoutClips } from "./overlay-layout-render";
 import { createWaterMesh } from "./water-mesh";
 import { createSplineMesh } from "./spline-mesh";
 import { createWaterRemovalMesh } from "./water-removal-mesh";
@@ -9,8 +11,10 @@ import { authoredActorMatrices, authoredComponentActorTransform, authoredTransfo
 import { createFogVolumeGuide, syncFogVolumeGuideAttachments } from "./fog-volume-guide";
 import type { SerializedActor, SerializedComponent, SerializedScene, SerializedTransform } from "@babylonslate/core";
 import { sceneShadowController } from "./shadow-controller";
+import { createPainter2DMesh } from "./painter2d-mesh";
 import {
   identitySerializedTransform,
+  isSceneLayerAnchorActor,
   fogVolumeBindings,
   parseFogVolumeProperties,
   overlayPanelDestFromScale,
@@ -228,6 +232,8 @@ function stringProp(value: unknown): string | null {
 }
 
 const VISUAL_COMPONENT_CLASS_IDS = new Set([
+  "2DPainterComponent",
+  ...OVERLAY_LAYOUT_CLASSES,
   "DynamicRuntimeMeshComponent",
   "CableComponent",
   "SplineComponent",
@@ -261,6 +267,7 @@ const VISUAL_COMPONENT_CLASS_IDS = new Set([
 ]);
 
 const SURFACE_COMPONENT_CLASS_IDS = new Set([
+  "2DPainterComponent",
   "DynamicRuntimeMeshComponent",
   "CableComponent",
   "SplineComponent",
@@ -285,6 +292,7 @@ export const EDITOR_HELPER_BILLBOARD_ID = "billboard";
 function overlayActorHasSurfaceVisual(actor: SerializedActor): boolean {
   return actor.components.some(
     (component) =>
+      component.classId === "2DPainterComponent" ||
       component.classId === "2DTextureComponent" ||
       component.classId === "2DMaterialComponent" ||
       component.classId === "2DPanelComponent" ||
@@ -383,7 +391,8 @@ function isBillboardComponent(component: SerializedComponent): boolean {
   );
 }
 
-function hasSurfaceVisual(actor: SerializedActor): boolean {
+/** Whether an actor owns an authored surface rather than only editor helpers. */
+export function hasSurfaceVisual(actor: SerializedActor): boolean {
   return actor.components.some((component) =>
     SURFACE_COMPONENT_CLASS_IDS.has(component.classId),
   );
@@ -392,6 +401,8 @@ function hasSurfaceVisual(actor: SerializedActor): boolean {
 export function helperBillboardIconOf(
   actor: SerializedActor,
 ): EditorBillboardIcon | null {
+  if (actor.components.some(c => isOverlayLayoutClass(c.classId))) return null;
+  if (isSceneLayerAnchorActor(actor)) return null;
   if (actor.components.some((component) => component.classId === "SceneStreamingComponent")) return "default";
   if (hasSurfaceVisual(actor)) return null;
   const fill = actor.components.find(
@@ -426,6 +437,7 @@ export function needsOriginRoot(
 ): boolean {
   const visuals = visualComponentsOf(actor, allActors);
   return (
+    actor.components.some(c => isOverlayLayoutClass(c.classId)) ||
     helperBillboardIconOf(actor) !== null ||
     visuals.length > 1 ||
     visuals.some((component) => component.classId === "CableComponent") ||
@@ -450,6 +462,10 @@ function componentVisualKind(
   assets?: MeshAssetContext,
   actor?: SerializedActor,
 ): string {
+  if (isOverlayLayoutClass(component.classId)) {
+    const props = parseOverlayLayoutProperties(component.properties, component.classId);
+    return `layout:${component.classId}:${component.properties.layoutResolvedWidth ?? props.width}:${component.properties.layoutResolvedHeight ?? props.height}`;
+  }
   if (component.classId === "SceneStreamingComponent") return editorBillboardKind("default");
   const asset = stringProp(component.properties.assetGuid) ?? "";
   if (component.classId === "CableComponent") return `cable:${JSON.stringify(parseCableProperties(component.properties))}`;
@@ -503,7 +519,7 @@ function componentVisualKind(
     const parsed = parseText2DProperties(component.properties, {
       rich: component.classId === "2DRichTextComponent",
     });
-    return `2dtext:${component.classId}:${parsed.text}:${parsed.size}:${parsed.renderer}:${parsed.fontAssetGuid ?? ""}:${parsed.color.join(",")}:${parsed.alignment}:${parsed.verticalAlignment}:${parsed.bold}:${parsed.italic}:${parsed.underline}:${parsed.outline}:${parsed.wrapWidth}:${parsed.wrapHeight}:${parsed.hitTest}`;
+    return `2dtext:${component.classId}:${parsed.text}:${parsed.size}:${parsed.renderer}:${parsed.fontAssetGuid ?? ""}:${parsed.color.join(",")}:${parsed.alignment}:${parsed.verticalAlignment}:${parsed.bold}:${parsed.italic}:${parsed.underline}:${parsed.outline}:${parsed.wrapWidth}:${parsed.wrapHeight}:${parsed.hitTest}:${parsed.materialGuid ?? ""}:${parsed.materialUv}`;
   }
   if (component.classId === "2DTextureComponent") {
     return overlayTextureVisualKind(
@@ -517,6 +533,7 @@ function componentVisualKind(
   if (component.classId === "2DMaterialComponent") {
     return `2dmaterial:${stringProp(component.properties.materialGuid) ?? ""}:${String(component.properties.hitTest ?? "ignore")}`;
   }
+  if (component.classId === "2DPainterComponent") return `2dpainter:${JSON.stringify(component.properties)}`;
   if (component.classId === "2DPanelComponent") {
     const dest = overlayPanelDestFromScale(
       actor?.transform.scale[0] ?? 1,
@@ -686,6 +703,8 @@ export function editorMeshKindOf(
     (component) => component.classId === "2DPanelComponent",
   );
   if (panel2dComponent) return componentVisualKind(panel2dComponent, assets, actor);
+  const painter2dComponent = actor.components.find((component) => component.classId === "2DPainterComponent");
+  if (painter2dComponent) return componentVisualKind(painter2dComponent, assets, actor);
   const button2dComponent = actor.components.find(
     (component) => component.classId === "2DButtonComponent",
   );
@@ -713,6 +732,12 @@ export function createMeshForComponent(
   assets?: MeshAssetContext,
   allActors?: readonly SerializedActor[],
 ): Mesh {
+  if (isOverlayLayoutClass(component.classId)) {
+    const props = parseOverlayLayoutProperties(component.properties, component.classId);
+    const mesh = MeshBuilder.CreatePlane(name, { width: Number(component.properties.layoutResolvedWidth ?? props.width) || 0.001, height: Number(component.properties.layoutResolvedHeight ?? props.height) || 0.001 }, scene);
+    mesh.visibility = 0;
+    return mesh;
+  }
   if (component.classId === "CableComponent") {
     const properties = parseCableProperties(component.properties);
     const mesh = createCableMesh(scene, name, properties);
@@ -787,7 +812,7 @@ export function createMeshForComponent(
     component.classId === "2DTextComponent" ||
     component.classId === "2DRichTextComponent"
   ) {
-    return createText2DMesh(scene, name, component.properties, assets, {
+    return createText2DMesh(scene, name, { ...component.properties, appearProgress: 1 }, assets, {
       rich: component.classId === "2DRichTextComponent",
       bitmapLimits: { retainedBytes: assets?.retainedTextBitmapBytes },
     });
@@ -835,6 +860,7 @@ export function createMeshForComponent(
     mesh.material = createOverlayUnlitMaterial(scene, name, bundle);
     return mesh;
   }
+  if (component.classId === "2DPainterComponent") return createPainter2DMesh(scene, name, component.properties);
   if (component.classId === "ParticleComponent") {
     return createEditorBillboard(scene, name, "particle");
   }
@@ -1091,6 +1117,12 @@ export function createActorMesh(
   assets?: MeshAssetContext,
   allActors?: readonly SerializedActor[],
 ): Mesh {
+  if (isSceneLayerAnchorActor(actor)) {
+    const root = new Mesh(editorMeshName(actor.id), scene);
+    root.metadata = { editorActorOrigin: true, editorUnpickable: true };
+    root.isPickable = false;
+    return root;
+  }
   if (needsOriginRoot(actor, allActors)) {
     return createActorOriginHierarchy(scene, actor, assets, allActors);
   }
@@ -1117,6 +1149,7 @@ export function createActorMesh(
   );
   const overlayPlane = visualComponentsOf(actor, allActors).find(
     (component) =>
+      component.classId === "2DPainterComponent" ||
       component.classId === "2DTextureComponent" ||
       component.classId === "2DMaterialComponent" ||
       component.classId === "2DPanelComponent" ||
@@ -1213,7 +1246,7 @@ export function applyActorTransform(mesh: Mesh, actor: SerializedActor): void {
   const component = actor.components.find((entry) => entry.classId === "MeshComponent");
   if (component && !isEditorActorOrigin(mesh)) sceneShadowController(mesh.getScene()).setParticipation(mesh, component.properties);
   if (mesh.isWorldMatrixFrozen) mesh.unfreezeWorldMatrix();
-  applySerializedTransform(mesh, actor.transform);
+  applySerializedTransform(mesh, isSceneLayerAnchorActor(actor) ? identitySerializedTransform() : actor.transform);
   const origin = isEditorActorOrigin(mesh);
   if (origin) {
     mesh.visibility = 0;
@@ -1381,12 +1414,30 @@ export function editorModelLoadTarget(
   return visualMeshesOfActorRoot(root).find((mesh) => mesh.name === name) ?? root;
 }
 
+/** Outliner-only anchors are transparent to the renderer's spatial hierarchy. */
+export function editorActorParentId(
+  actor: SerializedActor,
+  actorsById: ReadonlyMap<string, SerializedActor>,
+): string | null {
+  let parentId = actor.parentId;
+  const visited = new Set([actor.id]);
+  while (parentId && !visited.has(parentId)) {
+    const parent = actorsById.get(parentId);
+    if (!parent || !isSceneLayerAnchorActor(parent)) return parentId;
+    visited.add(parentId);
+    parentId = parent.parentId;
+  }
+  return null;
+}
+
 /** Full rebuild of the editor scene; `EditorSceneSync` does incremental work. */
 export function applySceneToBabylonScene(
   scene: Scene,
   sceneData: SerializedScene,
   assets?: MeshAssetContext,
 ): void {
+  const layout = resolveOverlayLayout(sceneData.actors, { pixelsPerUnit: assets?.pixelsPerUnit, textureSize: guid => assets?.texturePixelSizes?.get(guid) });
+  sceneData = { ...sceneData, actors: layout.actors };
   clearSceneMeshes(scene);
 
   const meshAssets: MeshAssetContext = {
@@ -1411,6 +1462,7 @@ export function applySceneToBabylonScene(
   };
   let loadSlot = 0;
   for (const actor of sceneData.actors) {
+    if (isSceneLayerAnchorActor(actor)) continue;
     const mesh = createActorMesh(scene, actor, meshAssets, sceneData.actors);
     applyActorTransform(mesh, actor);
     applyActorComponentSorting(mesh, actor, assets?.sortingLayers ?? ["Background", "Default", "Foreground", "UI"]);
@@ -1434,16 +1486,19 @@ export function applySceneToBabylonScene(
     }
   }
 
+  const actorsById = new Map(sceneData.actors.map((actor) => [actor.id, actor]));
   for (const actor of sceneData.actors) {
-    if (!actor.parentId) continue;
+    const parentId = editorActorParentId(actor, actorsById);
+    if (!parentId) continue;
     const mesh = meshes.get(actor.id);
-    const parent = meshes.get(actor.parentId);
+    const parent = meshes.get(parentId);
     if (mesh && parent) {
       mesh.parent = parent;
     }
   }
 
   syncEditorCablePreviews(scene, sceneData.actors);
+  applyEditorLayoutClips(scene, layout.entries);
   for (const mesh of meshes.values()) {
     freezeStaticActorWorldMatrix(mesh);
   }

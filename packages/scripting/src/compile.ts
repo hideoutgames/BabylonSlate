@@ -9,6 +9,7 @@ import { defaultValueLiteral, type PinType } from "./types";
 import { pinTypeKey, resolveWildcardPinTypes } from "./wildcard-resolve";
 import { pinRejectsStoredDefault, readPinDefaultForPin } from "./pin-defaults";
 import { isDevelopmentOnlyNode } from "./development-only";
+import { createPureExpressions } from "./pure-expressions";
 import { instrumentJsLoops } from "@babylonslate/debugger";
 import { entryNodes } from "./compiled-nodes";
 import { enumSwitchMemberNameFromPinId } from "./enum-switch-pins";
@@ -43,6 +44,13 @@ export const EVENT_BY_TYPE_ID: Record<string, ScriptEventName> = {
   "flow.event.sceneStartLoading": "onSceneStartLoading",
   "flow.event.sceneFinishLoading": "onSceneFinishLoading",
   "flow.event.sceneExit": "onSceneExit",
+  "flow.event.sceneLoaded": "onSceneLoaded",
+  "flow.event.streamedSceneLoaded": "onStreamedSceneLoaded",
+  "flow.event.streamedSceneUnloaded": "onStreamedSceneUnloaded",
+  "flow.event.sceneLayerAdded": "onSceneLayerAdded",
+  "flow.event.sceneLayerRemoved": "onSceneLayerRemoved",
+  "flow.event.sceneActorSpawned": "onSceneActorSpawned",
+  "flow.event.sceneActorDestroyed": "onSceneActorDestroyed",
   "flow.event.hit": "onHit",
   "flow.event.beginOverlap": "onBeginOverlap",
   "flow.event.endOverlap": "onEndOverlap",
@@ -59,6 +67,11 @@ export const EVENT_BY_TYPE_ID: Record<string, ScriptEventName> = {
   "flow.event.onPressEnd": "onPressEnd",
   "flow.event.textChanged": "onTextChanged",
   "flow.event.audioFinished": "onAudioFinished",
+  "flow.event.movementStarted": "onMovementStarted",
+  "flow.event.movementStopped": "onMovementStopped",
+  "flow.event.movementJumped": "onMovementJumped",
+  "flow.event.movementLeftGround": "onMovementLeftGround",
+  "flow.event.movementLanded": "onMovementLanded",
   "bt.event.activate": "onActivate",
   "bt.event.tick": "onBtTick",
   "bt.event.abort": "onAbort",
@@ -324,6 +337,7 @@ export function compileGraph(
   const instrumentLoops = options.instrumentInfiniteLoops === true;
   const loopCheck = "ctx.checkInfiniteLoop();";
   const exprCache = new Map<string, string>();
+  let pureExpressions = createPureExpressions(graph, options.registry);
   /**
    * Impure output slots are declared once at the top of the entry point so a
    * node emitted under several exec branches neither redeclares them nor
@@ -438,7 +452,7 @@ export function compileGraph(
     if (result && typeof result === "object") {
       for (const [name, expr] of Object.entries(result)) {
         const outPin = pinForCodegen(node, name, "out");
-        if (outPin) exprCache.set(`${node.id}:${outPin.id}`, `(${expr})`);
+        if (outPin) exprCache.set(`${node.id}:${outPin.id}`, pureExpressions.expression(node, outPin, expr));
       }
     }
   }
@@ -1069,6 +1083,7 @@ export function compileGraph(
     body.length = 0;
     outputDecls.clear();
     exprCache.clear();
+    pureExpressions = createPureExpressions(graph, options.registry);
     isAsync = false;
 
     for (const node of graph.nodes) {
@@ -1091,7 +1106,7 @@ export function compileGraph(
         isAsync,
         ...(entry ? entryComponentId(entry) : {}),
       },
-      declLines: [...outputDecls.values()],
+      declLines: [...outputDecls.values(), ...pureExpressions.declarations],
       bodyLines: body.filter((line) => line.text !== ""),
     });
   }
@@ -1185,6 +1200,7 @@ export function compileTransitionRuleGraph(
   options: CompileOptions,
 ): CompileResult {
   const exprCache = new Map<string, string>();
+  const pureExpressions = createPureExpressions(graph, options.registry);
   const shouldStrip = (node: GraphNode) =>
     options.stripDevelopmentOnly === true && isDevelopmentOnlyNode(node);
 
@@ -1277,7 +1293,7 @@ export function compileTransitionRuleGraph(
     if (result && typeof result === "object") {
       for (const [name, expr] of Object.entries(result)) {
         const outPin = pinForCodegen(node, name, "out");
-        if (outPin) exprCache.set(`${node.id}:${outPin.id}`, `(${expr})`);
+        if (outPin) exprCache.set(`${node.id}:${outPin.id}`, pureExpressions.expression(node, outPin, expr));
       }
     }
   }
@@ -1302,6 +1318,7 @@ export function compileTransitionRuleGraph(
   const source = [
     `//# sourceURL=babylonslate:///${options.assetGuid}.js`,
     `export function evaluate(ctx) {`,
+    ...pureExpressions.declarations,
     `  return { enter: (${results.enter}), exit: (${results.exit}) };`,
     `}`,
     "",

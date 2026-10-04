@@ -5,8 +5,8 @@ import { openAssetFromBrowser, openMainScene } from "./open-test-project";
 
 test("Add Component actions match the viewport island and Class tabs use their asset icon", { tag: IPAD_TEST_TAG }, async ({ page }, testInfo) => {
   await openMinimalTestProject(page);
-  const tileIcon = page.locator('[data-asset-path="assets/main.class.babasset"] [data-type-icon]');
-  await expect(tileIcon).toHaveAttribute("data-type-icon", "Actor");
+  const tileThumbnail = page.locator('[data-asset-path="assets/main.class.babasset"] img');
+  await expect(tileThumbnail).toBeVisible({ timeout: 30_000 });
   await openMainScene(page);
   await page.getByTestId("tree-row-actor:actor-1").click();
   const reference = (await page.getByTestId("gizmo-tool-translate").boundingBox())!;

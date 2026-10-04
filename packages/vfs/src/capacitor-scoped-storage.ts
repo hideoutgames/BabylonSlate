@@ -16,6 +16,7 @@ export interface NativeFileStat {
 export interface PickedFolder {
   id: string;
   name: string;
+  supportsReadScope?: boolean;
 }
 
 export interface BabylonSlateScopedStoragePlugin {
@@ -25,9 +26,12 @@ export interface BabylonSlateScopedStoragePlugin {
     bookmark: string;
     name?: string;
   }): Promise<{ folder: PickedFolder }>;
+  beginReadScope?(options: { folder: string }): Promise<{ readScope: string }>;
+  endReadScope?(options: { readScope: string }): Promise<void>;
 
   readFile(options: {
     folder: string;
+    readScope?: string;
     path: string;
     encoding?: "utf8" | "base64";
   }): Promise<{ data: string }>;
@@ -51,11 +55,13 @@ export interface BabylonSlateScopedStoragePlugin {
 
   readdir(options: {
     folder: string;
+    readScope?: string;
     path?: string;
   }): Promise<{ entries: NativeDirEntry[] }>;
-  stat(options: { folder: string; path: string }): Promise<NativeFileStat>;
+  stat(options: { folder: string; path: string; readScope?: string }): Promise<NativeFileStat>;
   exists(options: {
     folder: string;
+    readScope?: string;
     path: string;
   }): Promise<{ exists: boolean; isDirectory: boolean }>;
 }

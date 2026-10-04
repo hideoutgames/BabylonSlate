@@ -450,14 +450,14 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     const handle = engineRef.current;
     if (!handle) return;
     const byPath = new Map(
-      (assetRegistry?.list({ type: "Material" }) ?? []).map((asset) => [
+      (assetRegistry?.list() ?? []).filter((asset) => asset.header.type === "Material" || asset.header.type === "MaterialInstance").map((asset) => [
         asset.path,
         asset.header.guid,
       ]),
     );
     const guids = new Set<string>();
     for (const doc of openDocuments) {
-      if (doc.ref.kind !== "material") continue;
+      if (doc.ref.kind !== "material" && doc.ref.kind !== "material-instance") continue;
       const guid = byPath.get(doc.ref.path);
       if (guid) guids.add(guid);
     }

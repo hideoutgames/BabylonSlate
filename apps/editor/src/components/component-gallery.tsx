@@ -33,6 +33,7 @@ import {
   FolderBreadcrumbs,
   NamedListEditor,
   EntryListEditor,
+  ArrayProperty,
   DisclosureSection,
   NamePromptDialog,
   AddFunctionDialog,
@@ -725,6 +726,7 @@ function GalleryComposites() {
   const [addFunctionOpen, setAddFunctionOpen] = useState(false);
   const [layers, setLayers] = useState(["Default", "Foreground"]);
   const [entryItems, setEntryItems] = useState(["One", "Two"]);
+  const [arrayItems, setArrayItems] = useState(["foreground"]);
   const [parameters, setParameters] = useState<ParameterRow[]>([
     { id: "gallery-amount", name: "amount", type: "float" },
   ]);
@@ -1173,6 +1175,19 @@ function GalleryComposites() {
               data-testid={`gallery-entry-${index}`}
             />
           )}
+        />
+      </div>
+      <div className="rounded-lg border border-border p-3">
+        <ArrayProperty
+          label="Array Property" value={arrayItems} onChange={setArrayItems}
+          options={[
+            { id: "background", label: "Background", value: "background" },
+            { id: "foreground", label: "Foreground", value: "foreground" },
+            { id: "overlay", label: "Overlay", value: "overlay" },
+          ]}
+          unique defaultValue={[]} emptyLabel="No Layers"
+          description="Each layer can appear once. Add, replace, reorder, or remove entries."
+          data-testid="gallery-array-property"
         />
       </div>
       <SearchDialog

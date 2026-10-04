@@ -1,10 +1,17 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createMemoryOpfsRoot } from "../../../../packages/vfs/src/test-support/memory-opfs";
 import { createEmptyProject, PROJECT_FILE } from "@babylonslate/core";
 import { MemoryStorageAdapter, OpfsStorageAdapter } from "@babylonslate/vfs";
 import { encodeBabasset } from "@babylonslate/assets";
 import { loadKenneyMannequinGlb } from "../lib/kenney-mannequin";
 import { ProjectService } from "./project-service";
 import { setEncodeQueuePauseReason } from "./encode-queue-pause";
+
+beforeEach(() => {
+  const root = createMemoryOpfsRoot();
+  vi.stubGlobal("navigator", { storage: { getDirectory: async () => root } });
+});
+afterEach(() => vi.unstubAllGlobals());
 
 vi.mock("../lib/kenney-mannequin", async (importOriginal) => {
   const mod =

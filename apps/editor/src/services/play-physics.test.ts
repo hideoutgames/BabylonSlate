@@ -21,6 +21,32 @@ describe("playLoadControl", () => {
     }
   });
 
+  it.each([
+    { traceByteBudget: 1024, retainedTicks: [8] },
+    { traceByteBudget: 32 * 1024, retainedTicks: [1, 2, 3, 4, 5, 6, 7, 8] },
+  ])("retains trace frames according to the Play load budget of $traceByteBudget bytes", ({ traceByteBudget, retainedTicks }) => {
+    const runtime = createRuntimeFromLoad(playLoadControl({
+      traceByteBudget,
+      scene: normalizeScene({ name: "Trace", actors: [] }),
+    }), () => {});
+    try {
+      const world = runtime.getWorld();
+      const actor = world.createActor({
+        classId: "Actor",
+        guid: "trace-probe",
+        variables: { payload: "x".repeat(1024) },
+      });
+      world.spawnActorNow(actor);
+      runtime.start();
+      runtime.executeConsoleCommand("snapshot start");
+      for (let i = 0; i < 8; i++) runtime.tick();
+      runtime.executeConsoleCommand("snapshot stop");
+      expect(runtime.stopTrace()?.frames.map((frame) => frame.tickIndex)).toEqual(retainedTicks);
+    } finally {
+      runtime.stop();
+    }
+  });
+
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
@@ -72,9 +98,11 @@ describe("playLoadControl", () => {
     const msg = playLoadControl({
       gameInstanceClass: "MyGame",
       scenes: [{ guid: "Level2", scene: extra as never }],
+      sceneNavmeshBytes: { Level2: new Uint8Array([2]) },
     });
     expect(msg.gameInstanceClass).toBe("MyGame");
     expect(msg.scenes).toEqual([{ guid: "Level2", scene: extra }]);
+    expect(msg.sceneNavmeshBytes).toEqual({ Level2: new Uint8Array([2]) });
   });
 
   it("forwards infinite loop detection onto the load message", () => {

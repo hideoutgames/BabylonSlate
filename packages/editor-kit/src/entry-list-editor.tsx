@@ -24,6 +24,8 @@ export type EntryListEditorProps<T> = {
   addLabel?: string;
   /** Count copy next to Add (`1 item` / `2 items`). Map uses entry/entries. */
   countNoun?: { one: string; other: string };
+  /** Compact desktop actions with separate coarse-pointer targets. */
+  touchAdaptive?: boolean;
   "data-testid"?: string;
 } & (
   { onCreate: () => T; onAdd?: never } | { onCreate?: never; onAdd: () => void }
@@ -53,6 +55,7 @@ export function EntryListEditor<T>({
   maxItems = Number.POSITIVE_INFINITY,
   addLabel = "Add",
   countNoun = { one: "item", other: "items" },
+  touchAdaptive = !!renderItemHeader,
   "data-testid": testId,
 }: EntryListEditorProps<T>) {
   const rootId = testId ?? "entry-list";
@@ -96,7 +99,7 @@ export function EntryListEditor<T>({
                 count={items.length}
                 removeDisabled={items.length <= minItems}
                 testIdPrefix={rootId}
-                touchAdaptive={!!renderItemHeader}
+                touchAdaptive={touchAdaptive}
                 onMove={(delta) => onChange(moveItem(items, index, delta))}
                 onRemove={() =>
                   onChange(items.filter((_, rowIndex) => rowIndex !== index))
@@ -110,8 +113,8 @@ export function EntryListEditor<T>({
         <Button
           type="button"
           variant="outline"
-          size={renderItemHeader ? "sm" : "touch"}
-          className={cn("w-fit", renderItemHeader && "pointer-coarse:min-h-11")}
+          size={touchAdaptive ? "sm" : "touch"}
+          className={cn("w-fit", touchAdaptive && "pointer-coarse:min-h-11")}
           data-testid={`${rootId}-add`}
           disabled={items.length >= maxItems}
           onClick={() => {

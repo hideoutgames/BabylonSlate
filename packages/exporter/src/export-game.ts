@@ -1,4 +1,4 @@
-import { err, ok, DEFAULT_LOOP_COUNT, DEFAULT_SORTING_LAYERS, normalizePlayFrameCap, normalizeRenderProjectSettings, type Result } from "@babylonslate/core";
+import { err, ok, DEFAULT_LOOP_COUNT, DEFAULT_SORTING_LAYERS, normalizePlayFrameCap, normalizeRenderProjectSettings, normalizeFocusNavigationSettings, type Result } from "@babylonslate/core";
 import { PARTICLE_ASSET_TYPES } from "@babylonslate/assets";
 import { zipSync, unzipSync } from "fflate";
 import { encodeBabpack } from "./babpack";
@@ -45,6 +45,7 @@ const JSON_TYPES = new Set<string>([
   "Blackboard",
   "Material",
   "MaterialFunction",
+  "MaterialInstance",
   "RenderTarget",
   "RenderTargetTexture",
   "Sprite",
@@ -243,6 +244,7 @@ export async function exportGame(
     project: { name: options.project?.name ?? "", version: options.project?.version ?? "" },
     ...(options.inputAssets !== undefined ? { inputAssets: structuredClone(options.inputAssets) } : {}),
     ...(options.inputMappings !== undefined ? { inputMappings: structuredClone(options.inputMappings) } : {}),
+    focusNavigation: normalizeFocusNavigationSettings(options.focusNavigation),
     startupSceneGuid: options.startupSceneGuid,
     ...(options.gameInstanceClass?.trim()
       ? { gameInstanceClass: options.gameInstanceClass.trim() }
@@ -352,6 +354,7 @@ export function parseGameManifest(source: string): GameManifest {
   return {
     ...rest,
     render: normalizeRenderProjectSettings(parsed.render),
+    focusNavigation: normalizeFocusNavigationSettings(parsed.focusNavigation),
     playFrameCap: normalizePlayFrameCap(parsed.playFrameCap),
     project: {
       name: typeof parsed.project?.name === "string" ? parsed.project.name : "",

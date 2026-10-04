@@ -8,6 +8,7 @@ import android.database.Cursor;
 import android.net.Uri;
 import android.provider.DocumentsContract;
 import android.util.Base64;
+import android.webkit.WebView;
 import androidx.activity.result.ActivityResult;
 import androidx.documentfile.provider.DocumentFile;
 import com.getcapacitor.JSArray;
@@ -15,6 +16,7 @@ import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
+import com.getcapacitor.WebViewListener;
 import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import java.io.ByteArrayOutputStream;
@@ -23,6 +25,8 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 
 @CapacitorPlugin(name = "BabylonSlateScopedStorage")
@@ -31,6 +35,29 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
     private static final String URI_PREFIX = "uri:";
     private static final String NAME_PREFIX = "name:";
     private boolean pickPending;
+    private boolean readScopeLifecycleAttached;
+    private final Map<String, FolderAccess> readScopes = new HashMap<>();
+    private final WebViewListener readScopeLifecycle = new WebViewListener() {
+        @Override
+        public void onPageStarted(WebView view) {
+            clearReadScopesAsync();
+        }
+    };
+
+    @Override
+    protected void handleOnStart() {
+        // Bridge.Builder replaces its listener list after plugin load().
+        if (!readScopeLifecycleAttached) {
+            getBridge().addWebViewListener(readScopeLifecycle);
+            readScopeLifecycleAttached = true;
+        }
+        super.handleOnStart();
+    }
+
+    private void clearReadScopesAsync() {
+        // Provider I/O runs on Capacitor's task thread; never wait for it on UI callbacks.
+        execute(() -> { synchronized (readScopes) { readScopes.clear(); } });
+    }
 
     private static class PluginFailure extends Exception {
         final String code;
@@ -44,9 +71,15 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
     private static class FolderAccess {
         final Uri treeUri;
         final Uri rootUri;
+        final DirectoryReadCache<DocumentMetadata> directories;
 
         FolderAccess(Uri treeUri) {
+            this(treeUri, false);
+        }
+
+        FolderAccess(Uri treeUri, boolean cacheDirectories) {
             this.treeUri = treeUri;
+            this.directories = cacheDirectories ? new DirectoryReadCache<>(8192) : null;
             this.rootUri = DocumentsContract.buildDocumentUriUsingTree(
                 treeUri,
                 DocumentsContract.getTreeDocumentId(treeUri)
@@ -151,7 +184,7 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
     @PluginMethod
     public void readFile(PluginCall call) {
         executeFileOperation(call, () -> {
-            FolderAccess folder = folder(call);
+            FolderAccess folder = folder(call, true);
             String path = path(call, false);
             Uri target = resolve(folder, path).uri;
             try (InputStream input = getContext().getContentResolver().openInputStream(target)) {
@@ -184,7 +217,7 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
             call.reject("data is not valid base64");
             return;
         }
-        executeFileOperation(call, () -> {
+        executeFileOperation(call, true, () -> {
             FolderAccess folder = folder(call);
             String path = path(call, false);
             String[] parts = path.split("/", -1);
@@ -207,7 +240,7 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
 
     @PluginMethod
     public void mkdir(PluginCall call) {
-        executeFileOperation(call, () -> {
+        executeFileOperation(call, true, () -> {
             FolderAccess folder = folder(call);
             String path = path(call, false);
             boolean recursive = call.getBoolean("recursive", false);
@@ -243,7 +276,7 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
     }
 
     private void delete(PluginCall call) {
-        executeFileOperation(call, () -> {
+        executeFileOperation(call, true, () -> {
             FolderAccess folder = folder(call);
             String path = path(call, false);
             DocumentMetadata target = resolve(folder, path);
@@ -256,7 +289,7 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
     @PluginMethod
     public void readdir(PluginCall call) {
         executeFileOperation(call, () -> {
-            FolderAccess folder = folder(call);
+            FolderAccess folder = folder(call, true);
             String path = path(call, true);
             DocumentMetadata target = path.isEmpty() ? metadata(folder.rootUri) : resolve(folder, path);
             if (!target.directory) throw new PluginFailure("Path is not a directory", "NOT_FOUND");
@@ -271,7 +304,7 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
     @PluginMethod
     public void stat(PluginCall call) {
         executeFileOperation(call, () -> {
-            FolderAccess folder = folder(call);
+            FolderAccess folder = folder(call, true);
             String path = path(call, true);
             call.resolve(statObject(path.isEmpty() ? metadata(folder.rootUri) : resolve(folder, path)));
         });
@@ -280,7 +313,7 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
     @PluginMethod
     public void exists(PluginCall call) {
         executeFileOperation(call, () -> {
-            FolderAccess folder = folder(call);
+            FolderAccess folder = folder(call, true);
             String path = path(call, true);
             JSObject result = new JSObject();
             try {
@@ -301,28 +334,83 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
     }
 
     private void executeFileOperation(PluginCall call, FileOperation operation) {
+        executeFileOperation(call, false, operation);
+    }
+
+    private void invalidateReadScopes() {
+        for (FolderAccess folder : readScopes.values()) folder.directories.clear();
+    }
+
+    private void executeFileOperation(PluginCall call, boolean mutation, FileOperation operation) {
         execute(() -> {
-            try {
-                operation.run();
-            } catch (PluginFailure error) {
-                call.reject(error.getMessage(), error.code, error);
-            } catch (SecurityException error) {
-                call.reject("Folder access has been revoked", "ACCESS_REVOKED", error);
-            } catch (FileNotFoundException error) {
-                call.reject("File not found", "NOT_FOUND", error);
-            } catch (Exception error) {
-                call.reject(error.getMessage() == null ? "Scoped storage operation failed" : error.getMessage(), null, error);
+            // Do not let a directory query publish an old listing after a mutation.
+            synchronized (readScopes) {
+                try {
+                    if (mutation) invalidateReadScopes();
+                    operation.run();
+                } catch (PluginFailure error) {
+                    call.reject(error.getMessage(), error.code, error);
+                } catch (SecurityException error) {
+                    call.reject("Folder access has been revoked", "ACCESS_REVOKED", error);
+                } catch (FileNotFoundException error) {
+                    call.reject("File not found", "NOT_FOUND", error);
+                } catch (Exception error) {
+                    call.reject(error.getMessage() == null ? "Scoped storage operation failed" : error.getMessage(), null, error);
+                } finally {
+                    if (mutation) invalidateReadScopes();
+                }
             }
         });
     }
 
+    @PluginMethod
+    public void beginReadScope(PluginCall call) {
+        executeFileOperation(call, () -> {
+            FolderAccess folder = folder(call);
+            if (readScopes.size() >= 8) throw new PluginFailure("Too many folder scans", "UNREACHABLE");
+            String id = UUID.randomUUID().toString();
+            readScopes.put(id, new FolderAccess(folder.treeUri, true));
+            JSObject result = new JSObject();
+            result.put("readScope", id);
+            call.resolve(result);
+        });
+    }
+
+    @PluginMethod
+    public void endReadScope(PluginCall call) {
+        executeFileOperation(call, () -> {
+            readScopes.remove(call.getString("readScope"));
+            call.resolve();
+        });
+    }
+
+    @Override
+    protected void handleOnDestroy() {
+        getBridge().removeWebViewListener(readScopeLifecycle);
+        readScopeLifecycleAttached = false;
+        clearReadScopesAsync();
+        super.handleOnDestroy();
+    }
+
     private FolderAccess folder(PluginCall call) throws PluginFailure {
+        return folder(call, false);
+    }
+
+    private FolderAccess folder(PluginCall call, boolean allowReadScope) throws PluginFailure {
         String id = call.getString("folder");
         if (id == null || id.isEmpty()) throw new PluginFailure("folder is required", "NOT_FOUND");
         String stored = preferences().getString(URI_PREFIX + id, null);
         if (stored == null) throw new PluginFailure("Project folder is no longer available; reconnect required", "STALE");
         Uri uri = Uri.parse(stored);
         if (!hasPersistedAccess(uri)) throw new PluginFailure("Folder access has been revoked", "ACCESS_REVOKED");
+        String scopeId = call.getString("readScope");
+        if (scopeId != null) {
+            FolderAccess scope = readScopes.get(scopeId);
+            if (!allowReadScope || scope == null || !scope.treeUri.equals(uri)) {
+                throw new PluginFailure("Invalid or closed read scope", "UNREACHABLE");
+            }
+            return scope;
+        }
         return new FolderAccess(uri);
     }
 
@@ -387,11 +475,16 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
     }
 
     private DocumentMetadata findChild(FolderAccess folder, Uri parent, String name) throws Exception {
-        for (DocumentMetadata child : children(folder, parent)) if (name.equals(child.name)) return child;
+        List<DocumentMetadata> entries = children(folder, parent);
+        DirectoryReadCache.Directory<DocumentMetadata> cached = folder.directories == null ? null : folder.directories.get(parent.toString());
+        if (cached != null) return cached.byName.get(name);
+        for (DocumentMetadata child : entries) if (name.equals(child.name)) return child;
         return null;
     }
 
     private List<DocumentMetadata> children(FolderAccess folder, Uri parent) throws Exception {
+        DirectoryReadCache.Directory<DocumentMetadata> cached = folder.directories == null ? null : folder.directories.get(parent.toString());
+        if (cached != null) return cached.entries;
         java.util.ArrayList<DocumentMetadata> result = new java.util.ArrayList<>();
         Uri childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(
             folder.treeUri,
@@ -412,6 +505,7 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
                 result.add(fromCursor(cursor, uri));
             }
         }
+        if (folder.directories != null) folder.directories.put(parent.toString(), result, entry -> entry.name);
         return result;
     }
 
@@ -459,6 +553,7 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
         JSObject folder = new JSObject();
         folder.put("id", id);
         folder.put("name", name);
+        folder.put("supportsReadScope", true);
         JSObject result = new JSObject();
         result.put("folder", folder);
         return result;

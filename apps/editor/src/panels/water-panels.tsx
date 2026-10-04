@@ -8,6 +8,7 @@ import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useOptionalPlay } from "../context/play-context";
+import { isMaterialAssetType } from "../lib/content-browser-helpers";
 
 const controls = [
   ["opacity", 0, 1], ["roughness", 0.02, 1], ["reflectionStrength", 0, 2],
@@ -43,7 +44,7 @@ export function WaterDetailsPanel(_props: IDockviewPanelProps) {
   // Surface Materials change with the registry, not with edits of this Water.
   const assets = useMemo(() => {
     void registryEpoch;
-    return (assetRegistry?.list() ?? []).filter((asset) => asset.header.type === "Material" && (!asset.header.payload?.domain || asset.header.payload.domain === "surface"));
+    return (assetRegistry?.list() ?? []).filter((asset) => isMaterialAssetType(asset.header.type) && (!asset.header.payload?.domain || asset.header.payload.domain === "surface"));
   }, [assetRegistry, registryEpoch]);
   const pickerAssets = useMemo(() => assets.map((asset) => ({ guid: asset.header.guid, name: asset.header.name, type: asset.header.type, path: asset.path })), [assets]);
   const selected = assets.find((asset) => asset.header.guid === water.materialGuid);
@@ -54,7 +55,7 @@ export function WaterDetailsPanel(_props: IDockviewPanelProps) {
     { id: "water-material", kind: "asset", label: "Custom Material", value: water.materialGuid, placeholder: "Built-In Water", description: "Optional Surface Material. Wave displacement and buoyancy remain active.", ...(selected ? assetRowIdentity({ name: selected.header.name, type: selected.header.type }) : {}), onPick: () => setPicking(true), onChange: (materialGuid) => commit({ ...water, materialGuid }) },
   ];
   return <PanelFrame data-testid="water-details-panel"><div className="min-h-0 flex-1 overflow-auto p-2"><PropertyGrid rows={rows} /></div>
-    <AssetPicker open={picking} onOpenChange={setPicking} allowedTypes={["Material"]} assets={pickerAssets} onPick={(materialGuid) => { commit({ ...water, materialGuid }); setPicking(false); }} />
+    <AssetPicker open={picking} onOpenChange={setPicking} allowedTypes={["Material", "MaterialInstance"]} assets={pickerAssets} onPick={(materialGuid) => { commit({ ...water, materialGuid }); setPicking(false); }} />
   </PanelFrame>;
 }
 

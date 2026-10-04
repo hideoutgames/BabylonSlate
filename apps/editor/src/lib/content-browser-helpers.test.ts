@@ -40,6 +40,8 @@ import {
   isValidMoveDestination,
   isValidSelectionMoveDestination,
   contentBrowserContextActions,
+  buildMaterialInstanceAssetResult,
+  materialInstanceNameFor,
   canRetargetSelectedAssets,
   contentBrowserMoveDialogTitle,
   contentBrowserMovePreviewName,
@@ -1125,6 +1127,50 @@ describe("content-browser-helpers", () => {
     expect(() => buildNewAssetResult({ type: "Class", name: "Child", guid: "child", parentClass: "Overlay", parentOf })).toThrow("Scene Layer");
   });
 
+  it("offers the subsystem bases under BObject and never the hidden Subsystem base", () => {
+    const rows = buildParentClassTreeRows([
+      {
+        path: "assets/Inventory.class.babasset",
+        header: { type: "Class", name: "Inventory", parentClass: "GameSubsystem" },
+      },
+      {
+        path: "assets/Weather.class.babasset",
+        header: { type: "Class", name: "Weather", parentClass: "SceneSubsystem" },
+      },
+    ]);
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    for (const base of ["GameSubsystem", "SceneSubsystem"]) {
+      expect(byId.get(base)).toMatchObject({ depth: 1, group: "Engine", selectable: true });
+    }
+    expect(byId.get("Inventory")).toMatchObject({ depth: 2, group: "Project" });
+    expect(byId.get("Weather")).toMatchObject({ depth: 2, group: "Project" });
+    const ids = rows.map((row) => row.id);
+    expect(ids).not.toContain("Subsystem");
+    expect(ids.indexOf("Inventory")).toBe(ids.indexOf("GameSubsystem") + 1);
+    expect(
+      buildParentClassTreeRows([], { search: "subsystem" }).map((row) => row.id),
+    ).toEqual(["BObject", "GameSubsystem", "SceneSubsystem"]);
+  });
+
+  it.each(["GameSubsystem", "Subsystem", "SceneSubsystem", "Actor"])(
+    "refuses a new Class named after the engine class %s",
+    (name) => {
+      expect(() =>
+        buildNewAssetResult({ type: "Class", name, guid: "reserved", parentClass: "GameSubsystem" }),
+      ).toThrow(`"${name}" is an engine class name`);
+    },
+  );
+
+  it("creates a GameSubsystem child whose name only contains an engine id", () => {
+    const klass = buildNewAssetResult({
+      type: "Class",
+      name: "SaveGameSubsystem",
+      guid: "save",
+      parentClass: "GameSubsystem",
+    });
+    expect(klass.parentClass).toBe("GameSubsystem");
+  });
+
   it("builds a searchable Parent Class tree with project Classes nested", () => {
     const rows = buildParentClassTreeRows([
       {
@@ -1383,6 +1429,7 @@ describe("content-browser-helpers", () => {
       "SpriteAnimation",
       "AnimationGraph",
       "Material",
+      "MaterialInstance",
       "MaterialFunction",
       "Tileset",
       "Tilemap",
@@ -1455,6 +1502,7 @@ describe("content-browser-helpers", () => {
     );
     expect([...rendering!.types]).toEqual([
       "Material",
+      "MaterialInstance",
       "MaterialFunction",
       "RenderTarget",
       "RenderTargetTexture",
@@ -1720,6 +1768,27 @@ describe("content-browser-helpers", () => {
     expect("backgroundImage" in accent).toBe(false);
   });
 
+  it("creates a Material Instance beside a Material under a free name", () => {
+    expect(
+      contentBrowserContextActions({ assetCount: 1, folderCount: 0, singleAssetType: "Material" }).slice(0, 2),
+    ).toEqual(["open", "create-material-instance"]);
+    expect(
+      contentBrowserContextActions({ assetCount: 1, folderCount: 0, singleAssetType: "Texture" }),
+    ).not.toContain("create-material-instance");
+    const taken = new Set(["Rock Instance", "Rock Instance 2"]);
+    expect(materialInstanceNameFor("Rock", (name) => taken.has(name))).toBe("Rock Instance 3");
+    const result = buildMaterialInstanceAssetResult(
+      { guid: "rock", payload: { domain: "postProcess" } },
+      "rock-inst",
+      "Rock Instance",
+    );
+    expect(result).toMatchObject({
+      type: "MaterialInstance",
+      dependencies: ["rock"],
+      payload: { kind: "materialInstance", parentGuid: "rock", domain: "postProcess", overrides: {} },
+    });
+  });
+
   it("intersects tile menu actions by selection counts", () => {
     expect(
       contentBrowserContextActions({ assetCount: 1, folderCount: 0 }),
@@ -1928,6 +1997,13 @@ describe("content-browser-helpers", () => {
         { id: "name", kind: "variable", name: "Name", typeId: "string", defaultValue: "Unused" },
       ],
     }, classes)).toEqual(["guid-SpawnBase", "guid-SpawnChild"]);
+  });
+
+  it.each(["Class", "Graph"])("records typed non-texture asset defaults in %s header dependencies", (type) => {
+    expect(assetHeaderDependencies(type, { members: [
+      { id: "audio", kind: "variable", name: "Clip", typeId: "asset", typeClassId: "Audio", defaultValue: "clip" },
+      { id: "name", kind: "variable", name: "Name", typeId: "string", defaultValue: "unused" },
+    ] })).toEqual(["clip"]);
   });
 
   it.each(["Scene", "Class"])("retains cable material dependencies in %s assets", (type) => {

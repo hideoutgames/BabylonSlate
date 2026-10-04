@@ -6,6 +6,7 @@ import { normalizeShadowSettings, type ShadowSettings } from "./shadows";
 import { normalizeEnvironmentLightingSettings, type EnvironmentLightingSettings } from "./environment-lighting";
 import { normalizeRenderEffectsSettings, type RenderEffectsSettings } from "./render-effects";
 import type { ProjectAppearance } from "./project-appearance";
+import { normalizeFocusNavigationSettings, type FocusNavigationSettings } from "./scene-layer-focus";
 import {
   createActor,
   createDefaultSceneSettings,
@@ -205,6 +206,7 @@ export interface ProjectSettings {
   twoD: TwoDProjectSettings;
   physics: PhysicsProjectSettings;
   input: ProjectInputSettings;
+  focusNavigation: FocusNavigationSettings;
   fonts: FontProjectSettings;
   audio: AudioProjectSettings;
   render: RenderProjectSettings;
@@ -282,6 +284,7 @@ export type GraphClassMemberKind =
 
 /** Lightweight Class panel rows stored on the graph until class documents exist. */
 export interface GraphClassMemberPin {
+  container?: "single" | "array" | "map";
   name: string;
   typeId: string;
   direction: "in" | "out";
@@ -731,6 +734,7 @@ export function normalizeProjectSettings(
         DEFAULT_TEXTURE_PROJECT_SETTINGS.autoRequeueUncompressed,
     },
     input: normalizeProjectInput(settings?.input),
+    focusNavigation: normalizeFocusNavigationSettings(settings?.focusNavigation),
     fonts: {
       defaultFontGuid:
         typeof settings?.fonts?.defaultFontGuid === "string" &&

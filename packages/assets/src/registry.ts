@@ -1,4 +1,4 @@
-import type { ProjectStorage } from "@babylonslate/core";
+import type { ProjectStorage, ProjectStorageReader } from "@babylonslate/core";
 import { ENGINE_VERSION } from "@babylonslate/core";
 import {
   decodeBabasset,
@@ -44,6 +44,7 @@ import { payloadPixelSize, textureEncodeSettingsFor } from "./resolve-gpu-textur
 import { DEFAULT_THUMBNAIL_MAX_EDGE, generateThumbnailBytes } from "./thumbnails";
 import { AREA_EMISSION_CHUNK_KIND, areaEmissionChunkId, currentAreaEmissionChunk, decodeAreaEmission, type AreaEmissionProgress } from "./area-emission";
 import { sha256Hex } from "./bytes";
+import { moveStorageFile, moveStorageTree, STORAGE_MOVE_BACKUP_PREFIX } from "./storage-move";
 
 export type AreaEmissionProcessor = (request: { source: Uint8Array; sourceHash: string; mime?: string }, signal: AbortSignal, onProgress?: (progress: AreaEmissionProgress) => void) => Promise<Uint8Array>;
 
@@ -147,6 +148,8 @@ export class AssetRegistry {
   };
   private thumbnailWriter: ThumbnailWriter | null = null;
   private readonly textureWriteChain = new Map<string, Promise<void>>();
+  private folderWriteChain: Promise<void> = Promise.resolve();
+  private readonly creationWrites = new Set<Promise<void>>();
   /** Atlas referrer (Tileset, Sprite, Sprite Animation) guid -> textures it samples. */
   private readonly atlasByReferrer = new Map<string, readonly string[]>();
   /** Texture guid -> atlas referrers sampling it. */
@@ -254,7 +257,10 @@ export class AssetRegistry {
   async mountRoot(root: ContentRoot): Promise<void> {
     this.roots.set(root.id, root);
     this.changed();
-    await this.walk(root, root.pathPrefix);
+    const storage = this.storageOf(root);
+    if (storage.withReadScope) {
+      await storage.withReadScope((reader) => this.walk(root, root.pathPrefix, reader));
+    } else await this.walk(root, root.pathPrefix, storage);
   }
 
   unmountRoot(rootId: string): void {
@@ -383,6 +389,10 @@ export class AssetRegistry {
     relativePath: string,
     result: ImportResult,
   ): Promise<IndexedAsset> {
+    return this.withCreationWrite(() => this.createAssetUnlocked(rootId, relativePath, result));
+  }
+
+  private async createAssetUnlocked(rootId: string, relativePath: string, result: ImportResult): Promise<IndexedAsset> {
     const root = this.getRootOrThrow(rootId);
     this.assertWritable(root);
     const storage = this.storageOf(root);
@@ -450,13 +460,17 @@ export class AssetRegistry {
   }
 
   async deleteFolder(rootId: string, relativeFolder: string): Promise<void> {
+    return this.withFolderWrite(() => this.deleteFolderUnlocked(rootId, relativeFolder));
+  }
+
+  private async deleteFolderUnlocked(rootId: string, relativeFolder: string): Promise<void> {
     const root = this.getRootOrThrow(rootId);
     this.assertWritable(root);
     const storage = this.storageOf(root);
     const folderPath = joinRootPath(root, relativeFolder);
     for (const asset of [...this.byGuid.values()]) {
       if (asset.rootId === rootId && isWithinFolder(asset.path, folderPath)) {
-        await this.deleteAsset(asset.header.guid);
+        await this.deleteAssetUnlocked(asset.header.guid);
       }
     }
     await storage.remove(folderPath);
@@ -468,6 +482,10 @@ export class AssetRegistry {
   }
 
   async createFolder(rootId: string, relativeFolder: string): Promise<void> {
+    return this.withCreationWrite(() => this.createFolderUnlocked(rootId, relativeFolder));
+  }
+
+  private async createFolderUnlocked(rootId: string, relativeFolder: string): Promise<void> {
     const root = this.getRootOrThrow(rootId);
     this.assertWritable(root);
     const storage = this.storageOf(root);
@@ -523,12 +541,7 @@ export class AssetRegistry {
       throw new Error(`Target path already exists: ${newPath}`);
     }
     const bytes = await storage.readBinary(asset.path);
-    const dir = newPath.includes("/")
-      ? newPath.slice(0, newPath.lastIndexOf("/"))
-      : "";
-    if (dir) await storage.mkdir(dir, true);
-    await storage.writeBinary(newPath, bytes);
-    await storage.remove(asset.path);
+    await moveStorageFile(storage, asset.path, newPath, bytes);
     // Keep inbound refs: guid identity is unchanged, only the storage path moves.
     if (this.byPath.get(asset.path) === asset) {
       this.byPath.delete(asset.path);
@@ -587,17 +600,10 @@ export class AssetRegistry {
       writeBlob: (sha256, data) => blobs.writeBlob(sha256, data),
     });
     if (newPath !== asset.path) {
-      const parent = newPath.includes("/")
-        ? newPath.slice(0, newPath.lastIndexOf("/"))
-        : "";
-      if (parent) await storage.mkdir(parent, true);
-      await storage.writeBinary(newPath, encoded);
-      await storage.remove(asset.path);
-      this.removeFromIndex(asset);
+      await moveStorageFile(storage, asset.path, newPath, fileBytes, encoded);
       return this.indexHeader(asset.rootId, newPath, readBabassetHeader(encoded));
     }
     await storage.writeBinary(asset.path, encoded);
-    this.removeFromIndex(asset);
     return this.indexHeader(asset.rootId, asset.path, readBabassetHeader(encoded));
   }
 
@@ -606,6 +612,12 @@ export class AssetRegistry {
     rootId: string,
     targetFolderRelative = "",
   ): Promise<IndexedAsset> {
+    const duplicate = await this.withCreationWrite(() => this.duplicateAssetUnlocked(guid, rootId, targetFolderRelative));
+    await this.alignCreatedTextures([duplicate]);
+    return duplicate;
+  }
+
+  private async duplicateAssetUnlocked(guid: string, rootId: string, targetFolderRelative: string): Promise<IndexedAsset> {
     const asset = this.byGuid.get(guid);
     if (!asset) throw new Error(`Unknown asset ${guid}`);
     const root = this.getRootOrThrow(rootId);
@@ -672,9 +684,7 @@ export class AssetRegistry {
       : "";
     if (dir) await destStorage.mkdir(dir, true);
     await destStorage.writeBinary(candidate, encoded);
-    const duplicate = this.reportCreatedTexture(this.indexHeader(rootId, candidate, readBabassetHeader(encoded)));
-    await this.alignCreatedTextures([duplicate]);
-    return duplicate;
+    return this.reportCreatedTexture(this.indexHeader(rootId, candidate, readBabassetHeader(encoded)));
   }
 
   /** Copy into a folder (same as duplicate with an explicit destination folder). */
@@ -766,6 +776,10 @@ export class AssetRegistry {
     newParentRelative: string,
     newName?: string,
   ): Promise<void> {
+    return this.withFolderWrite(() => this.moveFolderUnlocked(rootId, relativeFolder, newParentRelative, newName));
+  }
+
+  private async moveFolderUnlocked(rootId: string, relativeFolder: string, newParentRelative: string, newName?: string): Promise<void> {
     const root = this.getRootOrThrow(rootId);
     this.assertWritable(root);
     const storage = this.storageOf(root);
@@ -785,37 +799,19 @@ export class AssetRegistry {
       (asset) =>
         asset.rootId === rootId && isWithinFolder(asset.path, fromPath),
     );
+    const folders = await moveStorageTree(storage, fromPath, toPath);
     for (const asset of assets) {
-      const suffix = asset.path.slice(fromPath.length + 1);
-      const newAssetPath = `${toPath}/${suffix}`;
-      const relative = newAssetPath.startsWith(`${root.pathPrefix}/`)
-        ? newAssetPath.slice(root.pathPrefix.length + 1)
-        : newAssetPath;
-      await this.moveAsset(asset.header.guid, rootId, relative);
+      const path = `${toPath}/${asset.path.slice(fromPath.length + 1)}`;
+      this.byPath.delete(asset.path);
+      const moved = { ...asset, path };
+      this.byGuid.set(asset.header.guid, moved);
+      this.byPath.set(path, moved);
     }
-
-    // Relocate folder markers / empty folders.
-    const nestedFolders = [...this.knownFolders].filter((folder) =>
-      isWithinFolder(folder, fromPath),
-    );
-    for (const folder of nestedFolders) {
-      this.removeKnownFolder(folder);
-      const suffix =
-        folder === fromPath ? "" : folder.slice(fromPath.length + 1);
-      const next = suffix ? `${toPath}/${suffix}` : toPath;
-      this.addKnownFolder(next);
-      const markerFrom = `${folder}/${FOLDER_MARKER_NAME}`;
-      if (await storage.exists(markerFrom)) {
-        await storage.mkdir(next, true);
-        const text = await storage.readText(markerFrom);
-        await storage.writeText(`${next}/${FOLDER_MARKER_NAME}`, text);
-      }
+    if (assets.length > 0) this.changed();
+    for (const folder of [...this.knownFolders]) {
+      if (isWithinFolder(folder, fromPath)) this.removeKnownFolder(folder);
     }
-
-    if (await storage.exists(fromPath)) {
-      await storage.remove(fromPath);
-    }
-    this.addKnownFolder(toPath);
+    for (const folder of folders) this.addKnownFolder(folder ? `${toPath}/${folder}` : toPath);
   }
 
   async importFile(
@@ -1421,15 +1417,29 @@ export class AssetRegistry {
 
   /** Serialize read/modify/write with derived chunks, document saves and moves. */
   withAssetWrite<T>(guid: string, work: () => Promise<T>): Promise<T> {
-    const next = (this.textureWriteChain.get(guid) ?? Promise.resolve()).then(
-      work,
-      work,
-    );
+    const next = Promise.all([this.textureWriteChain.get(guid), this.folderWriteChain]).then(work);
     const settled = next.then(() => undefined, () => undefined);
     this.textureWriteChain.set(guid, settled);
     void settled.then(() => {
       if (this.textureWriteChain.get(guid) === settled) this.textureWriteChain.delete(guid);
     });
+    return next;
+  }
+
+  /** New GUIDs are not in the asset queue yet, but their files belong in a pending move. */
+  private withCreationWrite<T>(work: () => Promise<T>): Promise<T> {
+    const next = this.folderWriteChain.then(work);
+    const settled = next.then(() => undefined, () => undefined);
+    this.creationWrites.add(settled);
+    void settled.then(() => this.creationWrites.delete(settled));
+    return next;
+  }
+
+  /** Fence leaf writes before enumerating a tree; later writes enter after relocation. */
+  private withFolderWrite<T>(work: () => Promise<T>): Promise<T> {
+    const pending = [this.folderWriteChain, ...this.textureWriteChain.values(), ...this.creationWrites];
+    const next = Promise.all(pending).then(work);
+    this.folderWriteChain = next.then(() => undefined, () => undefined);
     return next;
   }
 
@@ -1488,6 +1498,10 @@ export class AssetRegistry {
 
   /** Attach a representation chunk (facetype / msdf) to an existing Font asset. */
   private async attachToExistingAsset(guid: string, result: ImportResult): Promise<void> {
+    return this.withAssetWrite(guid, () => this.attachToExistingAssetUnlocked(guid, result));
+  }
+
+  private async attachToExistingAssetUnlocked(guid: string, result: ImportResult): Promise<void> {
     const asset = this.byGuid.get(guid);
     if (!asset) {
       throw new Error(`Cannot attach representation: no asset for guid ${guid}`);
@@ -1577,8 +1591,7 @@ export class AssetRegistry {
     return root;
   }
 
-  private async walk(root: ContentRoot, dir: string): Promise<void> {
-    const storage = this.storageOf(root);
+  private async walk(root: ContentRoot, dir: string, storage: ProjectStorageReader): Promise<void> {
     let entries;
     try {
       entries = await storage.readdir(dir);
@@ -1588,9 +1601,9 @@ export class AssetRegistry {
     for (const entry of entries) {
       const path = `${dir}/${entry.name}`;
       if (entry.isDir) {
-        if (entry.name === BLOBS_DIR_NAME) continue;
+        if (entry.name === BLOBS_DIR_NAME || entry.name.startsWith(STORAGE_MOVE_BACKUP_PREFIX)) continue;
         this.addKnownFolder(path);
-        await this.walk(root, path);
+        await this.walk(root, path, storage);
         continue;
       }
       if (entry.name === FOLDER_MARKER_NAME) {
@@ -1612,9 +1625,9 @@ export class AssetRegistry {
     mtime: number | null = null,
   ): IndexedAsset {
     const existingAtPath = this.byPath.get(path);
-    if (existingAtPath) this.removeFromIndex(existingAtPath);
+    if (existingAtPath) this.removeFromIndex(existingAtPath, existingAtPath.header.guid === header.guid);
     const existingByGuid = this.byGuid.get(header.guid);
-    if (existingByGuid) this.removeFromIndex(existingByGuid);
+    if (existingByGuid) this.removeFromIndex(existingByGuid, true);
 
     const indexed: IndexedAsset = { rootId, path, header, placeholder, mtime };
     this.byGuid.set(header.guid, indexed);
@@ -1693,7 +1706,7 @@ export class AssetRegistry {
     if (this.legacyAtlasReferrers.size > 0) this.scheduleAtlasStatusFlush();
   }
 
-  private removeFromIndex(asset: IndexedAsset): void {
+  private removeFromIndex(asset: IndexedAsset, preserveInbound = false): void {
     this.byGuid.delete(asset.header.guid);
     if (this.byPath.get(asset.path) === asset) {
       this.byPath.delete(asset.path);
@@ -1709,7 +1722,7 @@ export class AssetRegistry {
     // Remaining referrers are rewritten to None by Content Browser delete
     // (`ProjectService.clearDeletedAssetReferences`), not here — Skybox
     // Creator replace deletes then recreates the same guid.
-    this.inbound.delete(asset.header.guid);
+    if (!preserveInbound) this.inbound.delete(asset.header.guid);
   }
 }
 

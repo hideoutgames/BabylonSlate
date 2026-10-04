@@ -15,6 +15,8 @@ class TestWorker {
   static failPost = false;
   readonly messages: BridgeHostMessage[] = [];
   onmessage: ((event: MessageEvent<BridgeWorkerMessage>) => void) | null = null;
+  onerror: ((event: ErrorEvent) => void) | null = null;
+  onmessageerror: ((event: MessageEvent) => void) | null = null;
   terminated = false;
   terminate = vi.fn(() => { this.terminated = true; });
   constructor() { TestWorker.instances.push(this); }
@@ -105,6 +107,51 @@ async function backendFixture() {
 }
 
 describe("player startup and Stop ownership", () => {
+  it.each(["error", "messageerror"] as const)("reports an asynchronous worker %s and releases the player", async (kind) => {
+    const { game, canvas, handle, owner } = await backendFixture();
+    const onDiagnostic = vi.fn();
+    const session = await startPlayerWithBackend({ game, canvas, onDiagnostic });
+    sessions.push(session);
+    const worker = TestWorker.instances[0]!;
+    if (kind === "error") worker.onerror?.(new ErrorEvent("error", { message: "Worker module could not load" }));
+    else worker.onmessageerror?.(new MessageEvent("messageerror"));
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.arrayContaining([
+      expect.objectContaining({ code: "player.worker.failed", severity: "error" }),
+    ]));
+    expect(worker.terminated).toBe(true);
+    expect(handle.dispose).toHaveBeenCalledOnce();
+    expect(owner.dispose).toHaveBeenCalledOnce();
+    expect(frames.size).toBe(0);
+    expect(session.stop().diagnostics).toContainEqual(expect.objectContaining({ code: "player.worker.failed" }));
+    expect(owner.dispose).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    { traceByteBudget: undefined, retainedTicks: [1, 2, 3, 4, 5, 6, 7, 8] },
+    { traceByteBudget: 1024, retainedTicks: [8] },
+  ])("records using the Preview session trace budget of $traceByteBudget", async ({ traceByteBudget, retainedTicks }) => {
+    const { game, canvas } = await fixture();
+    game.manifest.bundleDebugger = true;
+    sessions.push(startPlayer({ game, canvas, traceByteBudget }));
+    const message = TestWorker.instances[0]!.messages.find((entry) =>
+      entry.channel === "control" && entry.payload.type === "load");
+    if (message?.channel !== "control" || message.payload.type !== "load") throw new Error("Player did not load its runtime");
+    const runtime = runtimes.createRuntimeFromLoad(message.payload, () => {});
+    try {
+      const world = runtime.getWorld();
+      world.spawnActorNow(world.createActor({
+        classId: "Actor", guid: "trace-probe", variables: { payload: "x".repeat(1024) },
+      }));
+      runtime.start();
+      runtime.executeConsoleCommand("snapshot start");
+      for (let i = 0; i < 8; i++) runtime.tick();
+      runtime.executeConsoleCommand("snapshot stop");
+      expect(runtime.stopTrace()?.frames.map((frame) => frame.tickIndex)).toEqual(retainedTicks);
+    } finally {
+      runtime.stop();
+    }
+  });
+
   it("delivers capture configuration and explicit requests from the worker to the renderer", async () => {
     const { game, canvas, handle } = await fixture();
     sessions.push(startPlayer({ game, canvas }));

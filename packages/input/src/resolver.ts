@@ -153,31 +153,12 @@ function axisBindingValue(
   }
 }
 
-function updateModifiers(
-  code: string,
-  down: boolean,
-  state: ResolverInternals,
-): void {
-  switch (code) {
-    case "ShiftLeft":
-    case "ShiftRight":
-      state.modifiers.shift = down;
-      break;
-    case "ControlLeft":
-    case "ControlRight":
-      state.modifiers.ctrl = down;
-      break;
-    case "AltLeft":
-    case "AltRight":
-      state.modifiers.alt = down;
-      break;
-    case "MetaLeft":
-    case "MetaRight":
-      state.modifiers.meta = down;
-      break;
-    default:
-      break;
-  }
+function updateModifiers(state: ResolverInternals): void {
+  const held = state.heldKeys;
+  state.modifiers.shift = held.has("ShiftLeft") || held.has("ShiftRight");
+  state.modifiers.ctrl = held.has("ControlLeft") || held.has("ControlRight");
+  state.modifiers.alt = held.has("AltLeft") || held.has("AltRight");
+  state.modifiers.meta = held.has("MetaLeft") || held.has("MetaRight");
 }
 
 /**
@@ -264,6 +245,8 @@ export class InputResolver {
               : "1d"
             : "button",
           value,
+          ...(axis && held && typeof value !== "boolean" ? { activeValue: value }
+            : accumulated?.activeValue !== undefined ? { activeValue: accumulated.activeValue } : {}),
           held,
           started: !!accumulated?.started || (held && !previous?.held),
           released: !!accumulated?.released || (!held && !!previous?.held),
@@ -303,11 +286,11 @@ export class InputResolver {
       switch (event.kind) {
         case "key": {
           const down = event.phase === "down";
-          updateModifiers(event.code, down, this.state);
           if (down && !this.state.heldKeys.has(event.code))
             pressed("key", event.code);
           if (down) this.state.heldKeys.add(event.code);
           else this.state.heldKeys.delete(event.code);
+          updateModifiers(this.state);
           break;
         }
         case "pointer": {

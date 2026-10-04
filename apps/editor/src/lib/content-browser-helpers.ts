@@ -27,6 +27,7 @@ import {
 } from "@babylonslate/assets";
 import {
   classIdsFromVariableMembers,
+  assetVariableGuidsFromGraph,
   areaEmissionTextureGuids,
   createDefaultScene,
   createSceneStreamingActor,
@@ -44,9 +45,12 @@ import {
 import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
+  createDefaultMaterialInstanceDocument,
   materialDependencies,
+  materialInstanceDependencies,
   normalizeMaterialDocument,
   normalizeMaterialFunctionDocument,
+  normalizeMaterialInstanceDocument,
   parseMaterialDomain,
 } from "@babylonslate/shader-graph";
 import { createDefaultParticleGraphDocument } from "@babylonslate/particle-graph";
@@ -59,7 +63,12 @@ import {
   type TreeDropPlacement,
 } from "@babylonslate/editor-kit";
 import { typeColorThumbAccent } from "@babylonslate/ui/lib/data-types";
-import { isSceneAssetClassId } from "@babylonslate/object-model";
+import {
+  GAME_SUBSYSTEM_CLASS_ID,
+  SCENE_SUBSYSTEM_CLASS_ID,
+  isLockedEngineClassId,
+  isSceneAssetClassId,
+} from "@babylonslate/object-model";
 import { createDefaultLogicGraphSerialized, defaultNodeRegistry } from "../services/graph-validation";
 import { classIdForGraphPath } from "../services/script-compiler";
 
@@ -97,6 +106,8 @@ export const ENGINE_BASE_CLASSES = [
   "SceneStreamingActor",
   "ActorComponent",
   "GameInstance",
+  GAME_SUBSYSTEM_CLASS_ID,
+  SCENE_SUBSYSTEM_CLASS_ID,
   "FunctionLibrary",
   "BDebugCommand",
   "EditorUtilityObject",
@@ -147,13 +158,14 @@ export function buildParentClassTreeRows(
     children.set(parent, list);
   };
   for (const id of ENGINE_BASE_CLASSES) {
-    const parent = engineParentOf(id) ?? null;
-    // Only nest engine bases under other engine bases that appear in the picker.
-    if (parent && (ENGINE_BASE_CLASSES as readonly string[]).includes(parent)) {
-      addChild(parent, id);
-    } else {
-      addChild(null, id);
-    }
+    // Nest engine bases under the nearest engine base the picker lists, so
+    // the subsystem bases sit under BObject past the hidden Subsystem base.
+    const parent =
+      walkAncestry(engineParentOf(id), (ancestor) => engineParentOf(ancestor))
+        .find((ancestor) =>
+          (ENGINE_BASE_CLASSES as readonly string[]).includes(ancestor),
+        ) ?? null;
+    addChild(parent, id);
   }
   for (const id of projectIds) {
     const parent = parentOf(id);
@@ -217,6 +229,7 @@ export const CREATABLE_ASSET_TYPES = [
   "SpriteAnimation",
   "AnimationGraph",
   "Material",
+  "MaterialInstance",
   "MaterialFunction",
   "Tileset",
   "Tilemap",
@@ -269,7 +282,7 @@ export const CREATABLE_ASSET_TYPE_GROUPS: readonly CreatableAssetTypeGroup[] = [
   {
     id: "rendering",
     label: "Rendering",
-    types: ["Material", "MaterialFunction", "RenderTarget", "RenderTargetTexture", "Water", "ParticleEmitter", "ParticleGraph", "ParticleSystem", "SkyboxCreator"],
+    types: ["Material", "MaterialInstance", "MaterialFunction", "RenderTarget", "RenderTargetTexture", "Water", "ParticleEmitter", "ParticleGraph", "ParticleSystem", "SkyboxCreator"],
   },
   {
     id: "audio",
@@ -294,6 +307,7 @@ const CREATABLE_ASSET_TYPE_DESCRIPTIONS: Record<CreatableAssetType, string> = {
   AnimationGraph: "A state machine that plays Sprite or Animation clips.",
   Material: "A shader graph that compiles to a Babylon material.",
   MaterialFunction: "A reusable shader subgraph for materials.",
+  MaterialInstance: "Parameter values for a parent Material. Shares its compiled shader, so edits and variants cost no recompile.",
   Tileset: "Tile definitions and collision for painting tilemaps.",
   Tilemap: "A painted 2D tile layer that references a Tileset.",
   BehaviourTree: "An AI tree of composites, tasks, and decorators.",
@@ -596,18 +610,66 @@ export function resolveContentBrowserPaintHit(
 
 export { typeColorThumbAccent as assetTypeThumbAccent };
 
-export function matchesAssetSearch(asset: IndexedAsset, query: string): boolean {
-  const needle = query.trim().toLowerCase();
-  if (!needle) return true;
+type AssetSearchHaystack = {
+  sourceName: string;
+  sourcePath: string;
+  sourceType: string;
+  name: string;
+  path: string;
+  type: string;
+};
+
+/**
+ * Lowercased search fields per indexed asset, built on the first non-empty
+ * search. The registry replaces an asset object when its name, path, or type
+ * changes; the source strings still guard against an in-place edit.
+ */
+const assetSearchHaystacks = new WeakMap<IndexedAsset, AssetSearchHaystack>();
+
+function assetSearchHaystack(asset: IndexedAsset): AssetSearchHaystack {
+  const { name, type } = asset.header;
+  const cached = assetSearchHaystacks.get(asset);
+  if (
+    cached &&
+    cached.sourceName === name &&
+    cached.sourcePath === asset.path &&
+    cached.sourceType === type
+  ) {
+    return cached;
+  }
+  const haystack: AssetSearchHaystack = {
+    sourceName: name,
+    sourcePath: asset.path,
+    sourceType: type,
+    name: name.toLowerCase(),
+    path: asset.path.toLowerCase(),
+    type: type.toLowerCase(),
+  };
+  assetSearchHaystacks.set(asset, haystack);
+  return haystack;
+}
+
+function assetMatchesNeedle(asset: IndexedAsset, needle: string): boolean {
+  const haystack = assetSearchHaystack(asset);
   return (
-    asset.header.name.toLowerCase().includes(needle) ||
-    asset.path.toLowerCase().includes(needle) ||
-    asset.header.type.toLowerCase().includes(needle)
+    haystack.name.includes(needle) ||
+    haystack.path.includes(needle) ||
+    haystack.type.includes(needle)
   );
 }
 
+export function matchesAssetSearch(asset: IndexedAsset, query: string): boolean {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return true;
+  return assetMatchesNeedle(asset, needle);
+}
+
+/**
+ * Keeps the input order, so filtering a list already sorted by `sortAssets`
+ * yields the same order as sorting the filtered list.
+ */
 export function filterAssets(
-  assets: IndexedAsset[],
+  assets: readonly IndexedAsset[],
   options: {
     folderGuids: Set<string> | null;
     typeFilters: string[] | null;
@@ -615,6 +677,7 @@ export function filterAssets(
   },
 ): IndexedAsset[] {
   const types = options.typeFilters ?? [];
+  const needle = options.search.trim().toLowerCase();
   return assets.filter((asset) => {
     if (options.folderGuids && !options.folderGuids.has(asset.header.guid)) {
       return false;
@@ -622,7 +685,7 @@ export function filterAssets(
     if (types.length > 0 && !types.includes(asset.header.type)) {
       return false;
     }
-    return matchesAssetSearch(asset, options.search);
+    return !needle || assetMatchesNeedle(asset, needle);
   });
 }
 
@@ -646,36 +709,49 @@ export const CONTENT_BROWSER_SORT_OPTIONS: ReadonlyArray<{
   { mode: "date-asc", label: "Date Modified (Oldest)" },
 ];
 
-const NAME_COMPARE: Intl.CollatorOptions = { sensitivity: "base" };
-
-function compareNames(a: string, b: string): number {
-  return a.localeCompare(b, undefined, NAME_COMPARE);
-}
+/**
+ * Same ordering as `localeCompare(b, undefined, { sensitivity: "base" })`,
+ * without building a collator per comparison.
+ */
+const NAME_COLLATOR = new Intl.Collator(undefined, { sensitivity: "base" });
+const compareNames = NAME_COLLATOR.compare;
 
 function assetDisplayName(asset: IndexedAsset): string {
   return displayAssetTitle(asset.header.name) || asset.header.name;
 }
 
-function compareAssetNames(a: IndexedAsset, b: IndexedAsset): number {
-  const byDisplay = compareNames(assetDisplayName(a), assetDisplayName(b));
+type SortableAsset = { asset: IndexedAsset; displayName: string };
+
+function compareAssetNames(a: SortableAsset, b: SortableAsset): number {
+  const byDisplay = compareNames(a.displayName, b.displayName);
   if (byDisplay !== 0) return byDisplay;
-  return compareNames(a.header.name, b.header.name);
+  return compareNames(a.asset.header.name, b.asset.header.name);
 }
 
 function assetMtime(asset: IndexedAsset): number {
   return asset.mtime ?? 0;
 }
 
+/**
+ * Total order ending in a guid tiebreak, so sorting once and then filtering
+ * matches filtering first and sorting the matches.
+ */
 export function sortAssets(
   assets: readonly IndexedAsset[],
   mode: ContentBrowserSortMode,
 ): IndexedAsset[] {
-  return [...assets].sort((left, right) => {
+  const rows: SortableAsset[] = assets.map((asset) => ({
+    asset,
+    displayName: assetDisplayName(asset),
+  }));
+  rows.sort((leftRow, rightRow) => {
+    const left = leftRow.asset;
+    const right = rightRow.asset;
     let primary = 0;
     switch (mode) {
       case "name-asc":
       case "name-desc":
-        primary = compareAssetNames(left, right);
+        primary = compareAssetNames(leftRow, rightRow);
         if (mode === "name-desc") primary = -primary;
         break;
       case "type-asc":
@@ -691,11 +767,12 @@ export function sortAssets(
     }
     if (primary !== 0) return primary;
     if (mode !== "name-asc" && mode !== "name-desc") {
-      const byName = compareAssetNames(left, right);
+      const byName = compareAssetNames(leftRow, rightRow);
       if (byName !== 0) return byName;
     }
     return left.header.guid.localeCompare(right.header.guid);
   });
+  return rows.map((row) => row.asset);
 }
 
 export function sortChildFolders<T extends { name: string }>(
@@ -851,6 +928,7 @@ export function isValidSelectionMoveDestination(options: {
 export type ContentBrowserContextAction =
   | "open"
   | "import-msdf-atlas"
+  | "create-material-instance"
   | "duplicate"
   | "rename"
   | "retarget"
@@ -883,6 +961,9 @@ export function contentBrowserContextActions(options: {
     actions.push("open");
     if (options.singleAssetType === "Font") {
       actions.push("import-msdf-atlas");
+    }
+    if (isMaterialAssetType(options.singleAssetType ?? "")) {
+      actions.push("create-material-instance");
     }
   }
   actions.push("duplicate");
@@ -1500,6 +1581,12 @@ export function buildNewAssetResult(options: {
   }
 
   if (type === "Class") {
+    // The class id is the file stem; an engine id would be swallowed by the
+    // locked engine class of that name at runtime.
+    const classId = classIdForGraphPath(newAssetFileName(type, name));
+    if (isLockedEngineClassId(classId)) {
+      throw new Error(`"${classId}" is an engine class name. Choose another Class name.`);
+    }
     if (walkAncestry(parentClass ?? "BObject", options.parentOf ?? engineParentOf).includes("SceneLayer")) {
       throw new Error("SceneLayer classes must be created as Scene Layer assets.");
     }
@@ -1567,6 +1654,11 @@ export function buildNewAssetResult(options: {
       string,
       unknown
     >;
+    return documentAsset(type, name, guid, payload);
+  }
+
+  if (type === "MaterialInstance") {
+    const payload = createDefaultMaterialInstanceDocument(name) as unknown as Record<string, unknown>;
     return documentAsset(type, name, guid, payload);
   }
 
@@ -1719,6 +1811,7 @@ const ASSET_FILE_SUFFIX: Partial<Record<CreatableAssetType, string>> = {
   AnimationGraph: ".anim.babasset",
   Material: ".material.babasset",
   MaterialFunction: ".matfunc.babasset",
+  MaterialInstance: ".matinst.babasset",
   Tileset: ".tileset.babasset",
   Tilemap: ".tilemap.babasset",
   BehaviourTree: ".bt.babasset",
@@ -1761,6 +1854,9 @@ export function materialAssetDependencies(
   if (assetType === "MaterialFunction") {
     return materialDependencies(normalizeMaterialFunctionDocument(payload)).all;
   }
+  if (assetType === "MaterialInstance") {
+    return materialInstanceDependencies(normalizeMaterialInstanceDocument(payload)).all;
+  }
   return [];
 }
 
@@ -1782,6 +1878,7 @@ export function assetHeaderDependencies(
   visitInputRefs(payload);
   const unique = new Set<string>([
     ...inputRefs,
+    ...(["Class", "Graph"].includes(assetType) ? assetVariableGuidsFromGraph(payload as unknown as import("@babylonslate/core").SerializedGraph) : []),
     ...(["Class", "Graph"].includes(assetType) ? renderTargetAssetGuidsFromGraph(payload as unknown as import("@babylonslate/core").SerializedGraph) : []),
     ...areaEmissionTextureGuids(payload),
     ...findClassAssetReferences({ ...payload, parentClass }, classes.flatMap((asset) =>
@@ -1893,6 +1990,10 @@ export function materialHeaderMeta(
   assetType: string,
   payload: Record<string, unknown>,
 ): Record<string, unknown> | undefined {
+  if (assetType === "MaterialInstance") {
+    const instance = normalizeMaterialInstanceDocument(payload);
+    return { domain: instance.domain, parentGuid: instance.parentGuid };
+  }
   if (assetType !== "Material" && !isLegacyMaterialAssetType(assetType)) {
     return undefined;
   }
@@ -1906,11 +2007,26 @@ export function isMaterialSamplerTextureAsset(header: { type: string; payload?: 
     (header.type !== "Texture" || !isEnvironmentTexturePayload(header.payload));
 }
 
+/** Assets a Material slot accepts: authored Materials and their instances. */
+export const MATERIAL_ASSET_TYPES = ["Material", "MaterialInstance"] as const;
+
+export function isMaterialAssetType(type: string): boolean {
+  return type === "Material" || type === "MaterialInstance";
+}
+
+function openMaterialDocumentFor(
+  asset: { path: string; header: { type: string } },
+  openDocuments: ReadonlyArray<{ ref: { kind: string; path: string }; content: unknown }>,
+) {
+  const kind = asset.header.type === "MaterialInstance" ? "material-instance" : "material";
+  return openDocuments.find((entry) => entry.ref.kind === kind && entry.ref.path === asset.path);
+}
+
 export function isPostProcessMaterialAsset(asset: {
   header: { type: string; payload?: Record<string, unknown> };
 }): boolean {
   return (
-    asset.header.type === "Material" &&
+    isMaterialAssetType(asset.header.type) &&
     asset.header.payload?.domain === "postProcess"
   );
 }
@@ -1919,7 +2035,7 @@ export function isParticleMaterialAsset(asset: {
   header: { type: string; payload?: Record<string, unknown> };
 }): boolean {
   return (
-    asset.header.type === "Material" &&
+    isMaterialAssetType(asset.header.type) &&
     asset.header.payload?.domain === "particle"
   );
 }
@@ -1934,10 +2050,7 @@ export function isPostProcessMaterialForPicker(
     content: unknown;
   }>,
 ): boolean {
-  const open = openDocuments.find(
-    (entry) =>
-      entry.ref.kind === "material" && entry.ref.path === asset.path,
-  );
+  const open = openMaterialDocumentFor(asset, openDocuments);
   if (open && open.content && typeof open.content === "object") {
     return (open.content as { domain?: unknown }).domain === "postProcess";
   }
@@ -1954,10 +2067,7 @@ export function isParticleMaterialForPicker(
     content: unknown;
   }>,
 ): boolean {
-  const open = openDocuments.find(
-    (entry) =>
-      entry.ref.kind === "material" && entry.ref.path === asset.path,
-  );
+  const open = openMaterialDocumentFor(asset, openDocuments);
   if (open && open.content && typeof open.content === "object") {
     return (open.content as { domain?: unknown }).domain === "particle";
   }
@@ -1976,11 +2086,8 @@ export function materialDomainsFromAssets(
 ): Record<string, string> {
   const domains: Record<string, string> = {};
   for (const asset of assets) {
-    if (asset.header.type !== "Material") continue;
-    const open = openDocuments.find(
-      (entry) =>
-        entry.ref.kind === "material" && entry.ref.path === asset.path,
-    );
+    if (!isMaterialAssetType(asset.header.type)) continue;
+    const open = openMaterialDocumentFor(asset, openDocuments);
     const domain =
       open && open.content && typeof open.content === "object"
         ? (open.content as { domain?: unknown }).domain
@@ -2016,6 +2123,33 @@ export function filterInspectorPinPickerAssets<
     const match = indexed.find((asset) => asset.header.guid === entry.guid);
     return match ? isPostProcessMaterialForPicker(match, openDocuments) : false;
   });
+}
+
+/** A Material Instance of `parent` that inherits its domain and depends on it. */
+export function buildMaterialInstanceAssetResult(
+  parent: { guid: string; payload?: Record<string, unknown> },
+  guid: string,
+  name: string,
+): ImportResult {
+  const document = {
+    ...createDefaultMaterialInstanceDocument(name, parent.guid),
+    domain: parseMaterialDomain(parent.payload?.domain),
+  };
+  return {
+    ...documentAsset("MaterialInstance", name, guid, document as unknown as Record<string, unknown>),
+    dependencies: materialInstanceDependencies(document).all,
+  };
+}
+
+/** `<Parent> Instance`, then `<Parent> Instance 2`, … until `taken` rejects none. */
+export function materialInstanceNameFor(
+  parentName: string,
+  taken: (name: string) => boolean,
+): string {
+  const base = `${parentName} Instance`;
+  let name = base;
+  for (let index = 2; taken(name); index += 1) name = `${base} ${index}`;
+  return name;
 }
 
 function documentAsset(

@@ -1,4 +1,5 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
+import { NavMeshQuery, Raw, TileCache } from "@recast-navigation/core";
 import {
   createNavigationBackend,
   generateNavMesh,
@@ -52,6 +53,40 @@ describe("tile-cache obstacles and static carve", () => {
     nav.importNavMesh(bytes);
     nav.addObstacle("box", { x: 0, y: 1, z: 0 }, { x: 8, y: 2, z: 8 });
     expect(nav.findPath({ x: -4, y: 0, z: 0 }, { x: 4, y: 0, z: 0 }).length).toBeGreaterThan(1);
+  });
+
+  it("reuses queries and skips tile work while the crowd and obstacles are unchanged", async () => {
+    const bytes = await generateNavMesh({ ...groundPrism(), settings: { supportDynamicObstacles: true } });
+    const nav = createNavigationBackend();
+    nav.importNavMesh(bytes);
+    const update = vi.spyOn(TileCache.prototype, "update");
+    const destroyQuery = vi.spyOn(NavMeshQuery.prototype, "destroy");
+    const destroyNative = vi.spyOn(Raw, "destroy");
+    try {
+      for (let tick = 0; tick < 8; tick++) nav.stepCrowd(1 / 60);
+      expect(update).not.toHaveBeenCalled();
+      const obstacle = nav.addObstacle("box", { x: 0, y: 1, z: 0 }, { x: 2, y: 2, z: 8 });
+      expect(update).toHaveBeenCalled();
+      update.mockClear();
+      for (let tick = 0; tick < 8; tick++) nav.stepCrowd(1 / 60);
+      expect(update).not.toHaveBeenCalled();
+      expect(destroyQuery).not.toHaveBeenCalled();
+      expect(nav.findPath({ x: -4, y: 0, z: 0 }, { x: 4, y: 0, z: 0 }).length).toBeGreaterThan(1);
+      nav.removeObstacle(obstacle);
+      nav.dispose();
+      nav.dispose();
+      expect(nav.findPath({ x: -4, y: 0, z: 0 }, { x: 4, y: 0, z: 0 })).toEqual([]);
+      expect(destroyQuery).toHaveBeenCalledTimes(1);
+      const filter = (destroyQuery.mock.contexts[0] as NavMeshQuery | undefined)?.defaultFilter.raw;
+      expect(destroyNative.mock.calls.filter(([resource]) => resource === filter)).toHaveLength(1);
+      nav.importNavMesh(bytes);
+      expect(nav.findPath({ x: -4, y: 0, z: 0 }, { x: 4, y: 0, z: 0 }).length).toBeGreaterThan(1);
+    } finally {
+      nav.dispose();
+      update.mockRestore();
+      destroyQuery.mockRestore();
+      destroyNative.mockRestore();
+    }
   });
 
   it("bakes a static unwalkable box into the solo mesh", async () => {

@@ -17,7 +17,7 @@ import {
   type ParticleGraphValidationContext,
 } from "@babylonslate/particle-graph";
 import { useDocuments } from "./document-context";
-import { materialDomainsFromAssets } from "../lib/content-browser-helpers";
+import { isMaterialAssetType, materialDomainsFromAssets } from "../lib/content-browser-helpers";
 
 /** A preview build problem as `ParticleService` reports it (node-anchored when known). */
 export interface ParticleGraphBuildDiagnostic {
@@ -137,7 +137,7 @@ export function ParticleGraphEditingProvider({
     const assets = assetRegistry.list();
     const materials = new Set(
       assets
-        .filter((asset) => asset.header.type === "Material")
+        .filter((asset) => isMaterialAssetType(asset.header.type))
         .map((asset) => asset.header.guid),
     );
     const domains = materialDomainsFromAssets(assets, openDocuments);

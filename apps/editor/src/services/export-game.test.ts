@@ -8,6 +8,7 @@ import {
   createText2DComponent,
   DEFAULT_RENDER_PROJECT_SETTINGS,
   defaultExportPreset,
+  normalizeFocusNavigationSettings,
   isErr,
   isOk,
   type SerializedGraph,
@@ -41,6 +42,20 @@ const playerFiles = new Map([
 ]);
 
 describe("collectAndExportGame", () => {
+  it.each([true, false])("retains project focus navigation in editor exports with preview=%s", async (previewBuild) => {
+    const scene = createDefaultScene();
+    const result = await collectAndExportGame({
+      startupSceneGuid: "scene", assets: [asset({ guid: "scene", type: "Scene", name: "Main" })],
+      plugins: [], projectPluginOverrides: {}, parentOf: () => null,
+      sceneByGuid: () => scene, graphByGuid: () => null,
+      bytesByGuid: () => new TextEncoder().encode(JSON.stringify(scene)),
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, playFrameCap: 60, physicsWorld: "3d", playerFiles, previewBuild,
+      focusNavigation: normalizeFocusNavigationSettings({ enabled: false, navigationInputGuid: "menu-axis", activateInputGuid: "accept", repeatDelay: 0.7, wrap: true }),
+    });
+    if (!isOk(result)) throw new Error(result.error);
+    expect(result.value.manifest.focusNavigation).toMatchObject({ enabled: false, navigationInputGuid: "menu-axis", activateInputGuid: "accept", repeatDelay: 0.7, wrap: true });
+  });
+
   it("resolves plugins with version warnings while still rejecting missing dependencies", () => {
     const plugin = { pluginGuid: "pack", settings: createDefaultPluginSettings({ pluginGuid: "pack", displayName: "Pack" }) };
     plugin.settings.engineVersion = "";
@@ -112,6 +127,46 @@ describe("collectAndExportGame", () => {
     expect(scripts.find((script) => script.classId === "SpawnChild")?.components).toEqual([
       { ...mesh, inheritedFrom: "SpawnBase" },
       childCollider,
+    ]);
+  });
+
+  it("ships empty subsystem classes no scene references, with their empty user bases", async () => {
+    const empty: SerializedGraph = { nodes: [], edges: [] };
+    const parents: Record<string, string> = {
+      Save: "GameSubsystem",
+      Weather: "SceneSubsystem",
+      RainWeather: "Weather",
+      Unused: "Actor",
+    };
+    const classAsset = (name: string) =>
+      asset({ guid: `class-${name}`, type: "Class", name, parentClass: parents[name] ?? null });
+    const scene = createDefaultScene();
+    const result = await collectAndExportGame({
+      startupSceneGuid: "scene-main",
+      assets: [
+        asset({ guid: "scene-main", type: "Scene", name: "Main" }),
+        ...Object.keys(parents).map(classAsset),
+      ],
+      plugins: [],
+      projectPluginOverrides: {},
+      parentOf: (id) => parents[id] ?? null,
+      sceneByGuid: (guid) => (guid === "scene-main" ? scene : null),
+      graphByGuid: (guid) => (guid.startsWith("class-") ? empty : null),
+      bytesByGuid: (guid) => new TextEncoder().encode(JSON.stringify(guid === "scene-main" ? scene : empty)),
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
+      playFrameCap: 60,
+      physicsWorld: "3d",
+      playerFiles,
+    });
+    expect(result.ok).toBe(true);
+    if (!isOk(result)) return;
+    const scripts = parseScriptRegistry(new TextDecoder().decode(result.value.files.get("scripts.js")));
+    expect(
+      scripts.map((script) => [script.classId, script.parentClassId]).sort(),
+    ).toEqual([
+      ["RainWeather", "Weather"],
+      ["Save", "GameSubsystem"],
+      ["Weather", "SceneSubsystem"],
     ]);
   });
 

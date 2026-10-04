@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { SettingsModal } from "./settings-modal";
 import { createDefaultPluginSettings, type PluginDescriptor } from "@babylonslate/assets";
+import { createAppSettingsStore } from "@babylonslate/vfs";
 
 if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
   class PointerEventPolyfill extends MouseEvent {
@@ -186,6 +187,38 @@ it("hides unrelated settings when search has no matching section", () => {
   });
   fireEvent.click(screen.getByRole("button", { name: /Autosave Interval/ }));
   expect(screen.getByTestId("settings-autosave-interval")).toBeTruthy();
+});
+
+it("finds the trace budget and persists MiB edits as bytes", async () => {
+  const store = createAppSettingsStore();
+  const previous = await store.load();
+  await store.update((settings) => { settings.traceByteBudget = 201_326_592; });
+  const onEngineSaved = vi.fn();
+  const view = render(
+    <SettingsModal open onOpenChange={() => {}} scope="engine" onEngineSaved={onEngineSaved} />,
+  );
+  try {
+    fireEvent.change(screen.getByRole("textbox", { name: "Search settings" }), {
+      target: { value: "trace memory" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Trace Memory Budget/ }));
+    const field = screen.getByLabelText("Trace Memory Budget (MiB)");
+    await waitFor(() => expect(field).toHaveProperty("value", "192"));
+    fireEvent.change(field, { target: { value: "64" } });
+    await waitFor(() => expect(onEngineSaved).toHaveBeenCalled());
+    fireEvent.blur(field);
+    expect((await createAppSettingsStore().load()).traceByteBudget).toBe(67_108_864);
+    await waitFor(() => expect(field).toHaveProperty("value", "64"));
+    onEngineSaved.mockClear();
+    fireEvent.change(field, { target: { value: "2048" } });
+    expect(onEngineSaved).not.toHaveBeenCalled();
+    fireEvent.blur(field);
+    await waitFor(() => expect(onEngineSaved).toHaveBeenCalled());
+    expect((await createAppSettingsStore().load()).traceByteBudget).toBe(268_435_456);
+  } finally {
+    view.unmount();
+    await store.save(previous);
+  }
 });
 
 describe("SettingsModal project authoring", () => {

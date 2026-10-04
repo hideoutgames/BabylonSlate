@@ -2,6 +2,7 @@ import { createDefaultInputAssets } from "@babylonslate/core";
 import { normalizeImportedProject, readProjectArchive, PROJECT_IMPORT_LIMIT } from "./project-import";
 import { getHostPlatform, pickImportFiles } from "@babylonslate/vfs";
 import type { DockviewApi } from "dockview-react";
+import { staticAudioGeometryFingerprint } from "../lib/audio-reverb-bake";
 import { convertGlslToMaterial, normalizeMaterialDocument, normalizeMaterialFunctionDocument, validateMaterialParameterNames } from "@babylonslate/shader-graph";
 import { EditorExtensionService } from "./editor-extension-service";
 import { ENGINE_EXTENSION_LIBRARY_ROOT } from "../lib/engine-extension-library";
@@ -58,6 +59,8 @@ import {
   normalizePluginSettings,
   stableStringify,
   decodeBabasset,
+  encodeBabasset,
+  AUDIO_REVERB_CHUNK_ID,
   DEFAULT_TEXTURE_ENCODE_SETTINGS,
   DOCUMENT_CHUNK_ID,
   EncodeQueue,
@@ -83,6 +86,7 @@ import {
   writeThumbnail,
   ProjectSearchIndex,
   type BabassetHeader,
+  type ChunkInput,
   type BlobStore,
   type EncodeFn,
   stubEncodeKtx2,
@@ -318,6 +322,8 @@ export class ProjectService {
   private pluginOverrides: Record<string, PluginEnableOverride> = {};
   /** Asset guids stay stable across saves so references survive a rewrite. */
   private readonly assetGuids = new Map<string, string>();
+  /** Unsaved geometry results become persistent only with the matching Scene. */
+  private readonly sceneAudioReverb = new Map<string, { fingerprint: string; bytes: Uint8Array }>();
   private readonly registryListeners = new Set<() => void>();
   private readonly ownWriteListeners = new Set<(write: OwnAssetWrite) => void>();
   private readonly diagnostics: string[] = [];
@@ -1034,6 +1040,7 @@ export class ProjectService {
     this.migrationPending = [];
     this.migrateOnSaveApproved = false;
     this.assetGuids.clear();
+    this.sceneAudioReverb.clear();
     this.assetRegistry = null;
     this.registryClock.advance();
     this.projectSearchIndex?.clear();
@@ -1119,6 +1126,7 @@ export class ProjectService {
     this.migrationPending = [];
     this.migrateOnSaveApproved = false;
     this.assetGuids.clear();
+    this.sceneAudioReverb.clear();
     this.sessionEncodes.clear();
 
     const hasProject = await this.storage.exists(PROJECT_FILE);
@@ -1515,7 +1523,7 @@ export class ProjectService {
       const kind = documentKindForAssetType(asset.header.type);
       if (!kind || kind === "trace") continue;
       await onProgress?.(asset.path);
-      const content = await this.loadDocument(kind, asset.path, { strict: true });
+      const content = await this.loadDocument(kind, asset.path);
       const walked = replaceClassAssetReferences(content, replacements);
       const header = replaceClassAssetReferences({
         parentClass: asset.header.parentClass ?? null,
@@ -1733,7 +1741,6 @@ export class ProjectService {
   async loadDocument(
     kind: Exclude<DocumentKind, "content-browser">,
     path: string,
-    options: { strict?: boolean } = {},
   ): Promise<
     | SerializedScene
     | SerializedSceneLayer
@@ -1754,7 +1761,7 @@ export class ProjectService {
       ? assetTypeForDocumentKind(kind)
       : "Class";
     const raw = isAssetDocumentPath(path)
-      ? await this.readAssetDocument(path, fallbackType, options.strict)
+      ? await this.readAssetDocument(path, fallbackType)
       : await this.readLegacyJsonDocument(path, fallbackType);
 
     const migrated = loadPayloadWithMigration(this.migrations, {
@@ -1790,29 +1797,17 @@ export class ProjectService {
   private async readAssetDocument(
     path: string,
     fallbackType: string,
-    strict = false,
   ): Promise<{ type: string; version: number; payload: Record<string, unknown> }> {
-    try {
-      const decoded = await decodeAssetDocument(
-        await this.storageForPath(path).readBinary(path),
-        { blobs: this.blobsForPath(path) },
-      );
-      this.assetGuids.set(path, decoded.guid);
-      return {
-        type: decoded.type || fallbackType,
-        version: decoded.version,
-        payload: decoded.payload,
-      };
-    } catch (error) {
-      if (fallbackType === "Class" && !strict) {
-        return {
-          type: "Class",
-          version: this.migrations.currentVersion("Class"),
-          payload: {},
-        };
-      }
-      throw error;
-    }
+    const decoded = await decodeAssetDocument(
+      await this.storageForPath(path).readBinary(path),
+      { blobs: this.blobsForPath(path) },
+    );
+    this.assetGuids.set(path, decoded.guid);
+    return {
+      type: decoded.type || fallbackType,
+      version: decoded.version,
+      payload: decoded.payload,
+    };
   }
 
   /** Projects authored before assets moved to .babasset still load from JSON. */
@@ -1844,10 +1839,21 @@ export class ProjectService {
       | Record<string, unknown>,
     options?: { parentClass?: string | null },
   ): Promise<void> {
-    const asset = this.assetRegistry?.getByPath(path);
-    const save = () => this.saveDocumentUnlocked(kind, path, content, options);
-    if (asset) return this.assetRegistry!.withAssetWrite(asset.header.guid, save);
-    return save();
+    return this.withDocumentWrite(path, (currentPath) => this.saveDocumentUnlocked(kind, currentPath, content, options));
+  }
+
+  /** Resolve a queued write's location after earlier moves/deletions finish. */
+  private async withDocumentWrite<T>(path: string, write: (currentPath: string) => Promise<T>): Promise<T> {
+    const registry = this.assetRegistry;
+    const asset = registry?.getByPath(path);
+    if (!asset) return write(path);
+    return registry!.withAssetWrite(asset.header.guid, () => {
+      const current = registry!.getByGuid(asset.header.guid);
+      if (this.assetRegistry !== registry || !current) {
+        throw new Error("The asset was closed or deleted before it could be saved");
+      }
+      return write(current.path);
+    });
   }
 
   private async saveDocumentUnlocked(
@@ -1929,7 +1935,10 @@ export class ProjectService {
     }
 
     if (isAssetDocumentPath(path)) {
-      const extraChunks = await this.extraChunksFor(path);
+      const guid = await this.guidForAsset(path);
+      const extraChunks = type === "Scene"
+        ? await this.sceneExtraChunksForWrite(path, content as SerializedScene, guid)
+        : await this.extraChunksFor(path);
       const bytes = await encodeAssetDocument(
         {
           type,
@@ -1940,7 +1949,7 @@ export class ProjectService {
             (content as { displayName: string }).displayName.trim() !== ""
               ? (content as { displayName: string }).displayName.trim()
               : isInputAssetType(type) && existing?.name ? existing.name : assetName(path),
-          guid: await this.guidForAsset(path),
+          guid,
           version,
           payload: content as unknown as Record<string, unknown>,
         },
@@ -2002,8 +2011,35 @@ export class ProjectService {
     return decoded.chunks.get(chunkId) ?? null;
   }
 
+  /** Every Scene payload write must keep only probes matching that geometry. */
+  private async sceneExtraChunksForWrite(
+    path: string,
+    payload: SerializedScene | Record<string, unknown>,
+    guid: string,
+  ): Promise<ChunkInput[]> {
+    const extra = await this.extraChunksFor(path);
+    const fingerprint = staticAudioGeometryFingerprint(payload as SerializedScene);
+    const baked = this.sceneAudioReverb.get(guid);
+    if (baked?.fingerprint === fingerprint) return extraChunksWithAudioReverb(extra, baked.bytes);
+    if (extra.some((chunk) => chunk.id === AUDIO_REVERB_CHUNK_ID)) {
+      const saved = await this.readAssetDocument(path, "Scene");
+      if (staticAudioGeometryFingerprint(normalizeScene(saved.payload)) !== fingerprint) {
+        return extra.filter((chunk) => chunk.id !== AUDIO_REVERB_CHUNK_ID);
+      }
+    }
+    return extra;
+  }
+
   /** Persist Recast `exportNavMesh` bytes as the Scene `navmesh` extra chunk. */
   async writeSceneNavmeshChunk(
+    path: string,
+    bytes: Uint8Array,
+    payload: Record<string, unknown>,
+  ): Promise<void> {
+    return this.withDocumentWrite(path, (currentPath) => this.writeSceneNavmeshChunkUnlocked(currentPath, bytes, payload));
+  }
+
+  private async writeSceneNavmeshChunkUnlocked(
     path: string,
     bytes: Uint8Array,
     payload: Record<string, unknown>,
@@ -2012,14 +2048,15 @@ export class ProjectService {
       throw new Error("Engine plugin assets are read-only");
     }
     const storage = this.storageForPath(path);
-    const extra = extraChunksWithNavmesh(await this.extraChunksFor(path), bytes);
+    const guid = await this.guidForAsset(path);
+    const extra = extraChunksWithNavmesh(await this.sceneExtraChunksForWrite(path, payload, guid), bytes);
     const existing = await this.readExistingAssetMeta(path);
     const type = existing?.type ?? "Scene";
     const encoded = await encodeAssetDocument(
       {
         type,
         name: assetName(path),
-        guid: await this.guidForAsset(path),
+        guid,
         version: this.migrations.currentVersion(type),
         payload,
       },
@@ -2034,7 +2071,7 @@ export class ProjectService {
     await this.assetRegistry?.reindexPath(path);
   }
 
-  /** Persist baked `audioReverb` bytes as the Scene extra chunk. */
+  /** Update only derived bytes; unsaved geometry waits for an explicit Scene save. */
   async writeSceneAudioReverbChunk(
     path: string,
     bytes: Uint8Array,
@@ -2043,27 +2080,37 @@ export class ProjectService {
     if (isPluginDocumentReadOnly(this.pluginDescriptors, path)) {
       throw new Error("Engine plugin assets are read-only");
     }
-    const storage = this.storageForPath(path);
-    const extra = extraChunksWithAudioReverb(await this.extraChunksFor(path), bytes);
-    const existing = await this.readExistingAssetMeta(path);
-    const type = existing?.type ?? "Scene";
-    const encoded = await encodeAssetDocument(
-      {
-        type,
-        name: assetName(path),
-        guid: await this.guidForAsset(path),
-        version: this.migrations.currentVersion(type),
-        payload,
-      },
-      {
-        blobs: this.blobsForPath(path),
-        extraChunks: extra,
-        parentClass: existing?.parentClass ?? null,
-        dependencies: assetHeaderDependencies(type, payload, this.assetRegistry?.list()),
-      },
-    );
-    await storage.writeBinary(path, encoded);
-    await this.assetRegistry?.reindexPath(path);
+    const registry = this.assetRegistry;
+    const asset = registry?.getByPath(path);
+    const baked = { fingerprint: staticAudioGeometryFingerprint(payload), bytes: bytes.slice() };
+    const write = async () => {
+      if (this.assetRegistry !== registry) return;
+      const current = asset ? registry?.getByGuid(asset.header.guid) : null;
+      if (asset && !current) return;
+      const currentPath = current?.path ?? path;
+      const storage = this.storageForPath(currentPath);
+      const blobs = this.blobsForPath(currentPath);
+      const decoded = await decodeBabasset(await storage.readBinary(currentPath), (hash) => blobs.readBlob(hash));
+      const body = decoded.chunks.get(DOCUMENT_CHUNK_ID);
+      const persisted = body ? JSON.parse(new TextDecoder().decode(body)) : decoded.header.payload;
+      if (decoded.header.type !== "Scene") throw new Error("Audio reverb requires a Scene asset");
+      this.sceneAudioReverb.set(decoded.header.guid, baked);
+      if (staticAudioGeometryFingerprint(normalizeScene(persisted)) !== baked.fingerprint) return;
+      // Re-encode the persisted container under the same queue as Save. Preserve
+      // authored JSON, schema/header metadata, dependencies, and every other chunk.
+      const chunks = decoded.header.chunks.map((entry) => ({
+        id: entry.id, kind: entry.kind, mime: entry.mime, data: decoded.chunks.get(entry.id)!,
+      }));
+      const encoded = await encodeBabasset({
+        header: decoded.header,
+        chunks: extraChunksWithAudioReverb(chunks, baked.bytes),
+        writeBlob: (hash, data) => blobs.writeBlob(hash, data),
+      });
+      await storage.writeBinary(currentPath, encoded);
+      await registry?.reindexPath(currentPath);
+    };
+    if (asset) await registry!.withAssetWrite(asset.header.guid, write);
+    else await write();
   }
 
   /** Add or replace an imported Audio clip chunk (`source` / `source:N`). */
@@ -2129,10 +2176,10 @@ export class ProjectService {
   }
 
   guidForPath(path: string): string | null {
-    const cached = this.assetGuids.get(path);
-    if (cached) return cached;
-    const indexed = this.assetRegistry?.list().find((asset) => asset.path === path);
-    return indexed?.header.guid ?? null;
+    // The mounted registry owns identity after moves, deletions, and reindexing.
+    // A former path must not lend its GUID to a new asset created there.
+    if (this.assetRegistry) return this.assetRegistry.getByPath(path)?.header.guid ?? null;
+    return this.assetGuids.get(path) ?? null;
   }
 
   private async readExistingAssetMeta(path: string): Promise<{
@@ -2177,8 +2224,8 @@ export class ProjectService {
   }
 
   private async guidForAsset(path: string): Promise<string> {
-    const cached = this.assetGuids.get(path);
-    if (cached) return cached;
+    const indexed = this.assetRegistry?.getByPath(path);
+    if (indexed) return indexed.header.guid;
     const storage = this.storageForPath(path);
     if (await storage.exists(path)) {
       try {

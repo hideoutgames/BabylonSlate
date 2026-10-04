@@ -2,6 +2,7 @@ import type { SerializedGraph, SerializedScene } from "@babylonslate/core";
 import type { EditCommand } from "./command";
 import {
   JOURNAL_REPATH_TYPE,
+  JOURNAL_DISCARD_TYPE,
   parseJournalLine,
   reviveCommand,
   type JournalLine,
@@ -32,21 +33,26 @@ export function resolveJournalLines(lines: string[]): JournalLine[] {
     }
   }
   // Walk backwards so chained renames (A → B → C) resolve to the final id.
-  const finalIds = new Map<string, string>();
+  const finalIds = new Map<string, string | null>();
   const resolved: JournalLine[] = [];
   for (let index = parsed.length - 1; index >= 0; index--) {
     const line = parsed[index]!;
+    if (line.command.type === JOURNAL_DISCARD_TYPE) {
+      finalIds.set(line.docId, null);
+      continue;
+    }
     if (line.command.type === JOURNAL_REPATH_TYPE) {
       const from = line.command.from;
       if (typeof from === "string" && from !== line.docId) {
-        const target = finalIds.get(line.docId) ?? line.docId;
+        const target = finalIds.has(line.docId) ? finalIds.get(line.docId)! : line.docId;
         // Earlier lines under the new id belonged to another document.
         finalIds.delete(line.docId);
         finalIds.set(from, target);
       }
       continue;
     }
-    const docId = finalIds.get(line.docId) ?? line.docId;
+    const docId = finalIds.has(line.docId) ? finalIds.get(line.docId)! : line.docId;
+    if (docId === null) continue;
     resolved.push(docId === line.docId ? line : { ...line, docId });
   }
   return resolved.reverse();

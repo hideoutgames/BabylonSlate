@@ -40,6 +40,7 @@ export {
   SetActorTransformCommand,
   SetActorsTransformsCommand,
   SetComponentPropertyCommand,
+  SetComponentLinkageCommand,
   SetComponentTransformCommand,
   SetSceneNameCommand,
   SetSceneSettingCommand,
@@ -58,6 +59,8 @@ export { diffSceneCommands } from "./commands/scene-diff";
 export {
   type JournalLine,
   JOURNAL_REPATH_TYPE,
+  JOURNAL_DISCARD_TYPE,
+  journalDiscardLine,
   journalRepathLine,
   parseJournalLine,
   registerCommandReviver,

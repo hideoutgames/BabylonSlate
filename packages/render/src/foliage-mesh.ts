@@ -1,5 +1,6 @@
 import "@babylonjs/core/Meshes/thinInstanceMesh";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { Geometry } from "@babylonjs/core/Meshes/geometry";
 import { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
 import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { Scene } from "@babylonjs/core/scene";
@@ -12,6 +13,7 @@ import { RENDERING_GROUP } from "./sorting";
 import { snapshotByteFingerprint } from "./asset-byte-fingerprint";
 import { VisualBundle } from "./visual-bundle";
 import { applyMaterialBounds } from "./material-bounds";
+import { sharedVertexBuffer } from "./shared-vertex-buffer";
 
 const preparations = new WeakMap<Mesh, Promise<void>>();
 const batchesByRoot = new WeakMap<Mesh, Array<{ root: Mesh; batch: FoliageBatch }>>();
@@ -37,6 +39,19 @@ export function refreshFoliageMaterials(root: Mesh, assets?: MeshAssetContext): 
       applyMaterialBounds(mesh);
     }
   }
+}
+
+/** Thin-instance attributes belong to Geometry, so every cell needs its own. */
+function isolateFoliageGeometry(mesh: Mesh, source: Mesh): void {
+  const geometry = new Geometry(mesh.name, mesh.getScene());
+  const total = source.getTotalVertices();
+  for (const buffer of Object.values(source.geometry!.getVertexBuffers() ?? {})) {
+    geometry.setVerticesBuffer(sharedVertexBuffer(buffer), total);
+  }
+  geometry.setIndices(source.getIndices() ?? [], total);
+  geometry.applyToMesh(mesh);
+  mesh.releaseSubMeshes();
+  for (const subMesh of source.subMeshes) subMesh.clone(mesh);
 }
 
 /** One thin-instance draw per model primitive/material/spatial cell; never one actor per plant. */
@@ -84,6 +99,7 @@ export function createFoliageMesh(scene: Scene, name: string, properties: unknow
         for (const [cell, transforms] of cells) {
           const mesh = geometry.clone(`${name}:foliage:${batchIndex}:${sourceMesh.uniqueId}:${cell}`, batchRoot, true);
           bundle.ownRenderUser(mesh);
+          isolateFoliageGeometry(mesh, geometry);
           if (mesh.material) mesh.material = cloneMaterial(mesh.material);
           mesh.position.setAll(0); mesh.rotation.setAll(0); mesh.rotationQuaternion = Quaternion.Identity(); mesh.scaling.setAll(1);
           mesh.skeleton = null; mesh.morphTargetManager = null;

@@ -48,6 +48,10 @@ import {
   MaterialGraphPanel,
   MaterialPreviewPanel,
 } from "../components/material-editor";
+import {
+  MaterialInstanceDetailsPanel,
+  MaterialInstancePreviewPanel,
+} from "../components/material-instance-editor";
 import { PluginSettingsDetailsPanel } from "../panels/plugin-settings-details-panel";
 import {
   AudioChannelDetailsPanel,
@@ -198,6 +202,12 @@ export const panelComponents = {
   ),
   "material-function-interface": (props: IDockviewPanelProps) => (
     <MaterialFunctionInterfacePanel {...props} />
+  ),
+  "material-instance-preview": (props: IDockviewPanelProps) => (
+    <MaterialInstancePreviewPanel {...props} />
+  ),
+  "material-instance-details": (props: IDockviewPanelProps) => (
+    <MaterialInstanceDetailsPanel {...props} />
   ),
   "plugin-settings-details": (props: IDockviewPanelProps) => (
     <PluginSettingsDetailsPanel {...props} />

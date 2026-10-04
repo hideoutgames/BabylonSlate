@@ -61,8 +61,9 @@ describe("AudioBufferCache", () => {
     expect(cache.get("other")?.byteLength).toBe(30);
     expect(cache.accountedBytes()).toBe(60);
     cache.unpin("pinned");
-    cache.put("third", new Uint8Array(30), 30);
     expect(cache.get("pinned")).toBeUndefined();
+    expect(cache.accountedBytes()).toBe(30);
+    expect(cache.get("other")?.byteLength).toBe(30);
     cache.dispose();
     expect(cache.accountedBytes()).toBe(0);
     expect(cache.get("other")).toBeUndefined();

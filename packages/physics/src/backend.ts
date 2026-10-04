@@ -1,5 +1,6 @@
 import type {
   CharacterControllerDesc,
+  CharacterMovementResult,
   BodyVelocity,
   ConstraintDesc,
   ColliderDesc,
@@ -78,11 +79,12 @@ export interface PhysicsBackend {
   pollContacts(): PhysicsContactEvent[];
 
   lineTrace(start: Vec3, end: Vec3, options?: LineTraceOptions): HitResult;
-  sphereOverlap(center: Vec3, radius: number): OverlapResult;
+  sphereOverlap(center: Vec3, radius: number, options?: LineTraceOptions): OverlapResult;
   shapeSweep(
     shape: ColliderDesc["shape"],
     start: PhysicsTransform,
     end: PhysicsTransform,
+    options?: LineTraceOptions,
   ): HitResult;
   /** Optional optimized query for repeated sphere casts, excluding triggers. Own until disposed. */
   createSphereSweep?(radius: number): SphereSweepQuery;
@@ -90,9 +92,11 @@ export interface PhysicsBackend {
   /** 2D Rapier kinematic character controller; 3D uses Babylon `PhysicsCharacterController`. */
   createCharacterController(desc: CharacterControllerDesc): void;
   destroyCharacterController(id: string): void;
+  /** Optional authored start pose repositions the solve without adding motor velocity. */
   moveCharacter(
     id: string,
     translation: Vec3,
     dt: number,
-  ): PhysicsTransform | null;
+    startPose?: PhysicsTransform,
+  ): CharacterMovementResult | null;
 }
