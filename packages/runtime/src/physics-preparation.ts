@@ -21,11 +21,10 @@ export function sameDescriptor(
   a: readonly unknown[] | undefined,
   b: readonly unknown[],
 ): boolean {
-  return (
-    !!a &&
-    a.length === b.length &&
-    a.every((value, index) => Object.is(value, b[index]))
-  );
+  if (!a || a.length !== b.length) return false;
+  for (let index = 0; index < a.length; index++)
+    if (!Object.is(a[index], b[index])) return false;
+  return true;
 }
 
 export function transformDescriptor(
@@ -114,8 +113,24 @@ export class PreparedColliderGeometry {
   }
 }
 
+const PARTICIPANT_CLASSES = new Set([
+  "RigidBodyComponent",
+  "WaterBuoyancyComponent",
+  "MovementComponent",
+  "ColliderComponent",
+  "MeshComponent",
+  "DynamicRuntimeMeshComponent",
+  "LandscapeComponent",
+  "BlockingVolumeComponent",
+  "TilemapComponent",
+]);
+
 /** Resolve only physics participants and their ancestors, retaining the ordered
- * World list for iteration. A parent without physics still contributes scale. */
+ * World list for iteration. A parent without physics still contributes scale.
+ * This is the tick's validation boundary: parent cycles and unsupported shear
+ * throw here, before any native body or collider is touched. `bodyPoses`
+ * substitutes post-step body positions and rotations for a whole-world
+ * readback after step hooks may have changed authored actors. */
 export function physicsWorldTransforms(
   actors: readonly Actor[],
   byGuid: ReadonlyMap<string, Actor>,
@@ -173,17 +188,7 @@ export function physicsWorldTransforms(
             (kind === "3d" && component.getVariable("collisionsEnabled") === true)) &&
           (component.classId !== "DynamicRuntimeMeshComponent" ||
             (kind === "3d" && component.getVariable("enableCollision") === true)) &&
-          [
-            "RigidBodyComponent",
-            "WaterBuoyancyComponent",
-            "MovementComponent",
-            "ColliderComponent",
-            "MeshComponent",
-            "DynamicRuntimeMeshComponent",
-            "LandscapeComponent",
-            "BlockingVolumeComponent",
-            "TilemapComponent",
-          ].includes(component.classId),
+          PARTICIPANT_CLASSES.has(component.classId),
       )
     )
       resolve(actor);
