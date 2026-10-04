@@ -288,6 +288,7 @@ describe("SettingsModal project authoring", () => {
     ["shadow distance", /Shadow Distance/, "Shadows", "project-shadow-distance"],
     ["texture anisotropy", /Texture Anisotropy/, "Scalability", "quality-textures-anisotropy"],
     ["reflections", /Real-Time Reflections/, "Post Processing", "project-effects-reflections"],
+    ["fft ocean", /Water FFT Ocean Detail/, "Scalability", "quality-water-fft"],
     ["volumetric lighting", /Volumetric Fog/, "Post Processing", "project-effects-volumetric"],
     ["fog density", /Volumetric Fog/, "Post Processing", "project-effects-volumetric"],
   ])("opens the Rendering section holding %s from search", async (query, result, section, targetId) => {

@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { DirectionalLight, Vector3 } from "@babylonjs/core";
+import { DirectionalLight, Vector3, type Scene } from "@babylonjs/core";
 import type { IDockviewPanelProps } from "dockview-react";
 import { AssetPicker, PanelFrame, PropertyGrid, assetRowIdentity, humanizePropertyLabel, type PropertyRow } from "@babylonslate/editor-kit";
 import { createDefaultWaterDefinition, normalizeWaterBody, normalizeWaterDefinition, type WaterDefinition } from "@babylonslate/core";
-import { createMaterialPreviewPresenter, createParticlePreviewScene, createWaterMesh, setSceneWaterTime, MaterialLibrary, installTextureBytes, acquireMaterialTexture, resourceCacheForEngine } from "@babylonslate/render";
+import { createMaterialPreviewPresenter, createParticlePreviewScene, createWaterMesh, setSceneRenderSettings, setSceneWaterTime, MaterialLibrary, installTextureBytes, acquireMaterialTexture, resourceCacheForEngine } from "@babylonslate/render";
 import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
@@ -61,15 +61,25 @@ export function WaterDetailsPanel(_props: IDockviewPanelProps) {
 export function WaterPreviewPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, collectPlayMaterialLibrary, collectPlayTextureBytes } = useDocuments();
+  const { openDocuments, collectPlayMaterialLibrary, collectPlayTextureBytes, projectDocument } = useDocuments();
   const play = useOptionalPlay();
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const sceneRef = useRef<Scene | null>(null);
   const [error, setError] = useState<string | null>(null);
   const key = JSON.stringify(normalizeWaterDefinition(openDocuments.find((entry) => entry.id === documentId)?.content));
+  // The preview resolves the project's Water quality (and render mode) like the viewports.
+  const renderSettings = projectDocument?.settings.render;
+  const renderSettingsRef = useRef(renderSettings);
+  renderSettingsRef.current = renderSettings;
+  useEffect(() => {
+    if (sceneRef.current) setSceneRenderSettings(sceneRef.current, renderSettings ?? {});
+  }, [renderSettings]);
   useEffect(() => {
     const canvas = canvasRef.current, engine = play?.ensureSharedEngine();
     if (!canvas || !engine) return;
     const host = createParticlePreviewScene(engine, { skybox: true });
+    setSceneRenderSettings(host.scene, renderSettingsRef.current ?? {});
+    sceneRef.current = host.scene;
     const sun = new DirectionalLight("water-preview-sun", new Vector3(-0.3, -1, 0.6), host.scene);
     sun.intensity = 1.4;
     const water = JSON.parse(key) as WaterDefinition;
@@ -119,7 +129,7 @@ export function WaterPreviewPanel(_props: IDockviewPanelProps) {
       createWaterMesh(host.scene, "water-preview", normalizeWaterBody({ width: 24, length: 24, waveScale: 1, depth: 5 }), water, customMaterial);
       frame = requestAnimationFrame(tick);
     })().catch((cause) => { if (!cancelled) setError(cause instanceof Error ? cause.message : "Water preview could not load."); });
-    return () => { cancelled = true; cancelAnimationFrame(frame); presenter.dispose(); host.dispose(); materials?.dispose(); };
+    return () => { cancelled = true; sceneRef.current = null; cancelAnimationFrame(frame); presenter.dispose(); host.dispose(); materials?.dispose(); };
   }, [key, play, collectPlayMaterialLibrary, collectPlayTextureBytes]);
   return <PanelFrame data-testid="water-preview-panel">
     <canvas ref={canvasRef} className="min-h-0 h-full w-full touch-none" aria-label="Water Preview" data-testid="water-preview-canvas" />
