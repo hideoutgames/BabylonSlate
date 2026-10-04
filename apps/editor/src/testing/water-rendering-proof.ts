@@ -38,7 +38,9 @@ export async function runWaterRenderingProof(backend: "webgl2" | "webgpu") {
     const brightness: Record<string, number> = {};
     const crowded: Record<string, number> = {};
     const pan: Record<string, number> = {};
-    const whitecaps: Record<string, { calm: number; breaking: number }> = {};
+    const whitecaps: Record<string, { calm: number; breaking: number; calmChange: number }> = {};
+    const surfaceFoam: Record<string, { clear: number; foamy: number }> = {};
+    const subsurface: Record<string, { off: number; on: number }> = {};
     // Mean brightness of the view centre.
     const centreLight = (pixels: number[]) => {
       let light = 0, samples = 0;
@@ -48,15 +50,34 @@ export async function runWaterRenderingProof(backend: "webgl2" | "webgpu") {
       }
       return light / samples;
     };
-    // Share of near-white pixels in the lower two thirds of the view (water, not sky).
+    // Rows of the lower two thirds of the view (water, not sky): WebGL reads pixels bottom-up, WebGPU top-down.
+    const lowerRows = backend === "webgl2" ? [0, Math.ceil(canvas.height * 2 / 3)] : [Math.floor(canvas.height / 3), canvas.height];
+    // Share of near-white pixels in the lower two thirds of the view.
     const whiteShare = (pixels: number[]) => {
       let white = 0, count = 0;
-      for (let y = Math.floor(canvas.height / 3); y < canvas.height; y++) for (let x = 0; x < canvas.width; x++) {
+      for (let y = lowerRows[0]!; y < lowerRows[1]!; y++) for (let x = 0; x < canvas.width; x++) {
         const i = (y * canvas.width + x) * 4;
         if (Math.min(pixels[i]!, pixels[i + 1]!, pixels[i + 2]!) > 200) white++;
         count++;
       }
       return white / count;
+    };
+    // Mean brightness of the lower two thirds, and its mean per-channel change from another capture.
+    const waterLight = (pixels: number[]) => {
+      let sum = 0, count = 0;
+      for (let y = lowerRows[0]!; y < lowerRows[1]!; y++) for (let x = 0; x < canvas.width; x++) {
+        const i = (y * canvas.width + x) * 4;
+        sum += (pixels[i]! + pixels[i + 1]! + pixels[i + 2]!) / 3; count++;
+      }
+      return sum / count;
+    };
+    const waterChange = (a: number[], b: number[]) => {
+      let sum = 0, count = 0;
+      for (let y = lowerRows[0]!; y < lowerRows[1]!; y++) for (let x = 0; x < canvas.width; x++) for (let c = 0; c < 3; c++) {
+        const i = (y * canvas.width + x) * 4 + c;
+        sum += Math.abs(a[i]! - b[i]!); count++;
+      }
+      return sum / count;
     };
     for (const style of ["realistic", "stylized"] as const) {
       setSceneWaterTime(scene, 1.7);
@@ -102,15 +123,31 @@ export async function runWaterRenderingProof(backend: "webgl2" | "webgpu") {
       camera.setTarget(Vector3.Zero(), false, false, true);
       camera.alpha = -Math.PI / 2 - 0.6; camera.beta = 1.2; camera.radius = 30;
       const rough = { ...water, waveHeight: 1.2, waveLength: 22, choppiness: 0.7, surfaceFoam: 0, sparkles: 0 };
-      const sea = (crestFoam: number) => createWaterMesh(scene, "whitecaps", normalizeWaterBody({ width: 300, length: 300 }, "ocean"), { ...rough, crestFoam });
-      const calmSea = sea(0);
-      const calm = await capture();
-      calmSea.dispose();
-      const breakingSea = sea(0.8);
-      const breaking = await capture();
+      const ocean300 = normalizeWaterBody({ width: 300, length: 300 }, "ocean");
+      const sea = (crestFoam: number, foamAmount = rough.foamAmount) => createWaterMesh(scene, "whitecaps", ocean300, { ...rough, crestFoam, foamAmount });
+      const shoot = async (mesh: ReturnType<typeof createWaterMesh>) => { const shot = await capture(); mesh.dispose(); return shot; };
+      // Crest Foam 0 must match the same sea with no foam at all: no dim caps or trailing flecks either.
+      const foamless = await shoot(sea(0, 0));
+      const calm = await shoot(sea(0));
+      const breaking = await shoot(sea(0.8));
       evidence[style + "-whitecaps"] = breaking.png;
-      breakingSea.dispose();
-      whitecaps[style] = { calm: whiteShare(calm.pixels), breaking: whiteShare(breaking.pixels) };
+      whitecaps[style] = { calm: whiteShare(calm.pixels), breaking: whiteShare(breaking.pixels), calmChange: waterChange(calm.pixels, foamless.pixels) };
+      // Surface Foam adds open-water foam (Realistic wind streaks, Stylized drifting patches) to an otherwise clear sea.
+      const open = (overrides: Partial<typeof water>) => createWaterMesh(scene, "open-sea", ocean300, { ...water, crestFoam: 0, sparkles: 0, ...overrides });
+      const clearSea = await shoot(open({ surfaceFoam: 0 }));
+      const foamySea = await shoot(open({ surfaceFoam: 1 }));
+      evidence[style + "-surface-foam"] = foamySea.png;
+      surfaceFoam[style] = { clear: waterLight(clearSea.pixels), foamy: waterLight(foamySea.pixels) };
+      // Subsurface: looking toward a low sun, light through the waves (Realistic) or tinted wave tops (Stylized)
+      // lighten the sea.
+      const sunDirection = sun.direction.clone();
+      sun.direction = new Vector3(-0.42, -0.17, -0.89);
+      camera.alpha = -Math.PI / 2; camera.beta = 1.38; camera.radius = 30;
+      const flatLight = await shoot(open({ surfaceFoam: 0, subsurface: 0 }));
+      const throughLight = await shoot(open({ surfaceFoam: 0, subsurface: style === "realistic" ? 2 : 1 }));
+      evidence[style + "-subsurface"] = throughLight.png;
+      subsurface[style] = { off: waterLight(flatLight.pixels), on: waterLight(throughLight.pixels) };
+      sun.direction = sunDirection;
       camera.setTarget(Vector3.Zero(), false, false, true); camera.alpha = -Math.PI / 2; camera.beta = 1.03; camera.radius = 24;
       // Moving the eye must reveal a different part of the world-anchored pattern. If shading used
       // large-world rendering's eye-relative positions, a pure camera translation would change nothing.
@@ -161,7 +198,22 @@ export async function runWaterRenderingProof(backend: "webgl2" | "webgpu") {
       }
       return sum / count;
     };
+    // Mean local contrast (brightness against its 9 x 9 pixel neighbourhood) between two square distances, in
+    // metres at 40 pixels each, from the view centre.
+    const contrast = (pixels: number[], from: number, to: number) => {
+      const light = (x: number, y: number) => { const i = (y * canvas.width + x) * 4; return pixels[i]! + pixels[i + 1]! + pixels[i + 2]!; };
+      let sum = 0, count = 0;
+      for (let y = 4; y < canvas.height - 4; y++) for (let x = 4; x < canvas.width - 4; x++) {
+        const reach = Math.max(Math.abs(x + 0.5 - canvas.width / 2), Math.abs(y + 0.5 - canvas.height / 2)) / 40;
+        if (reach <= from || reach >= to) continue;
+        let mean = 0;
+        for (let dy = -4; dy <= 4; dy++) for (let dx = -4; dx <= 4; dx++) mean += light(x + dx, y + dy);
+        sum += Math.abs(light(x, y) - mean / 81) / 3; count++;
+      }
+      return sum / count;
+    };
     const contact: Record<string, { ring: number; open: number; crest: { inner: number; outer: number }; trough: { inner: number; outer: number } }> = {};
+    const ripples: Record<string, { near: number; open: number }> = {};
     for (const style of ["realistic", "stylized"] as const) {
       const water = { ...createDefaultWaterDefinition(style), sparkles: 0 };
       const body = normalizeWaterBody({ width: 28, length: 24, waveScale: 1 });
@@ -184,6 +236,26 @@ export async function runWaterRenderingProof(backend: "webgl2" | "webgpu") {
       evidence[`${style}-contact-top`] = shot.png;
       const ring = band(shot.pixels, 0.56, 0.7, true), open = band(shot.pixels, 2.2, 2.45, true);
       flat.dispose();
+      // Small waves travel out from the post. Realistic, with its foam off: an overhead sun mirrored by a calm, flat
+      // lake lights it evenly, and only the ripples break that reflection into rings near the post. Stylized draws
+      // them as broken toon rings beyond the post's foam collar.
+      const realistic = style === "realistic";
+      const calmLake = createWaterMesh(scene, "contact-ripples", normalizeWaterBody({ width: 28, length: 24, waveScale: 0 }),
+        realistic ? { ...water, foamAmount: 0, rippleStrength: 0 } : { ...water, surfaceFoam: 0 });
+      const sunDirection = sun.direction.clone();
+      if (realistic) sun.direction = new Vector3(0, -1, 0);
+      // A distant eye keeps the view direction, and so the mirrored sun, the same across the view.
+      const radiusLimit = camera.upperRadiusLimit;
+      camera.upperRadiusLimit = null;
+      camera.orthoLeft = -8; camera.orthoRight = 8; camera.orthoTop = 5; camera.orthoBottom = -5; camera.radius = 200;
+      const rippled = await capture();
+      camera.upperRadiusLimit = radiusLimit;
+      evidence[`${style}-contact-ripples`] = rippled.png;
+      const contactWidth = water.contactFoamWidth;
+      ripples[style] = { near: contrast(rippled.pixels, 0.5 + contactWidth * (realistic ? 0.5 : 0.8), 0.5 + contactWidth * 1.5), open: contrast(rippled.pixels, 4.2, 4.9) };
+      sun.direction = sunDirection;
+      calmLake.dispose();
+      topDown();
       // Long, tall swell lifts the water around the spire almost uniformly: its foam ring must follow
       // the rendered height inward at a crest and outward in a trough, without rebuilding contacts.
       place("spire");
@@ -258,7 +330,7 @@ export async function runWaterRenderingProof(backend: "webgl2" | "webgpu") {
     const waveTerrain = { crestHeight: crest.height, troughHeight: trough.height,
       crestDifference: difference(high.pixels), troughDifference: difference(low.pixels) };
     water.dispose(); terrain.dispose();
-    return { evidence, differences, brightness, crowded, pan, whitecaps, clearReflection, waveTerrain, contact };
+    return { evidence, differences, brightness, crowded, pan, whitecaps, surfaceFoam, subsurface, clearReflection, waveTerrain, contact, ripples };
   } finally {
     const device = (engine as { _device?: { queue: { onSubmittedWorkDone(): Promise<void> } } })._device;
     engine.flushFramebuffer(); await device?.queue.onSubmittedWorkDone();
