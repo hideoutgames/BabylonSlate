@@ -1331,8 +1331,8 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!playResumeRequested || migrationPending.length > 0) return;
-    // The approval dialog holds a callback from before the save. Resume only
-    // after the cleared migrations and current project reach this render.
+    // Resume only after the cleared migrations and current project reach this
+    // render; requestPlay reads them from the inputs its layout effect stored.
     setPlayResumeRequested(false);
     void requestPlay(pendingPlayOptionsRef.current);
   }, [migrationPending.length, playResumeRequested, requestPlay]);
