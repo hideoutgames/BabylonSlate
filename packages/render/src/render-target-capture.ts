@@ -20,10 +20,23 @@ import { isViewportShadingTarget } from "./viewport-shading-mode";
 import { particleMaterialForSystem } from "./node-material-particles";
 import { admittedSceneMeshes, admittedSceneParticles } from "./scene-stream-admission";
 
+/**
+ * Whether a mesh may appear in a Render Target Capture: world geometry only,
+ * never lines, editor helpers or Play debug visuals. The editor's capture
+ * preview uses the same rule so it shows what the capture lens records.
+ */
+export function isRenderTargetCaptureCandidate(mesh: AbstractMesh): boolean {
+  if (mesh instanceof LinesMesh || !isViewportShadingTarget(mesh as Mesh)) return false;
+  const metadata = mesh.metadata as Record<string, unknown> | null;
+  return !(metadata?.editorPickProxy || metadata?.editorCameraModel || metadata?.editorBillboard || metadata?.editorVolume || metadata?.playHelperVisual || metadata?.playActorOrigin || metadata?.playDebugOverlay || metadata?.editorColliderVisual);
+}
+
 const controllers = new WeakMap<Scene, RenderTargetCaptures>();
 const drawing = renderTargetCaptureDrawing;
 
 class CaptureTexture extends Texture {
+  /** Render Target this wrapper publishes, from its Render Target Texture asset. */
+  renderTargetGuid: string | null = null;
   constructor(scene: Scene, name: string) {
     super(null, scene, true, false, Texture.NEAREST_SAMPLINGMODE);
     this.name = name;
@@ -44,6 +57,22 @@ class CaptureTexture extends Texture {
     this.gammaSpace = gammaSpace;
     return changed;
   }
+}
+
+/**
+ * Whether a mesh's material samples `renderTargetGuid`'s own output through a
+ * Render Target Texture of the mesh's scene. Once that output is published, a
+ * Scene Color capture into the target leaves such a mesh out because it never
+ * reads the attachment it writes; the editor capture preview always does.
+ */
+export function samplesRenderTargetOutput(mesh: AbstractMesh, renderTargetGuid: string): boolean {
+  const material = mesh.material;
+  if (!material) return false;
+  const scene = mesh.getScene();
+  for (const texture of material.getActiveTextures()) {
+    if (texture instanceof CaptureTexture && texture.renderTargetGuid === renderTargetGuid && texture.getScene() === scene) return true;
+  }
+  return false;
 }
 
 class CaptureRenderTarget extends RenderTargetTexture {
@@ -356,9 +385,7 @@ export class RenderTargetCaptures {
   }
   private isEligible(capture: Capture, target: Target, internal: InternalTexture | null, mesh: AbstractMesh): boolean {
     if (mesh.isDisposed() || !mesh.isEnabled() || !mesh.isVisible || mesh.visibility <= 0 || mesh.getTotalVertices() === 0 || !(mesh.layerMask & capture.camera.layerMask)) return false;
-    if (mesh instanceof LinesMesh || !isViewportShadingTarget(mesh as Mesh)) return false;
-    const metadata = mesh.metadata as Record<string, unknown> | null;
-    if (metadata?.editorPickProxy || metadata?.editorCameraModel || metadata?.editorBillboard || metadata?.editorVolume || metadata?.playHelperVisual || metadata?.playActorOrigin || metadata?.playDebugOverlay || metadata?.editorColliderVisual) return false;
+    if (!isRenderTargetCaptureCandidate(mesh)) return false;
     if (capture.settings.captureOnlyActors) {
       const actorId = this.ownerOf(mesh);
       if (!actorId || !capture.includeIds.has(actorId)) return false;
@@ -519,6 +546,7 @@ export class RenderTargetCaptures {
     const changed = new Set<CaptureTexture>();
     for (const [guid, texture] of this.textures) {
       const source = this.textureDefinitions.get(guid)?.renderTargetGuid;
+      texture.renderTargetGuid = source ?? null;
       const target = source ? this.targets.get(source) : undefined;
       const gammaSpace = !!source && this.definitions.get(source)?.mode === "SceneColor";
       if (texture.bind(target?.published ? target.texture.getInternalTexture()! : fallback, gammaSpace)) changed.add(texture);

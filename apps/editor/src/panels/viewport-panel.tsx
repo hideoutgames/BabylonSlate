@@ -1413,7 +1413,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         ref={previewCanvasRef}
         hidden
         data-testid="camera-preview"
-        className="pointer-events-none absolute bottom-3 right-3 z-10 h-[180px] w-[320px] rounded-md border border-border bg-black"
+        className="pointer-events-none absolute bottom-3 right-3 z-10 h-[180px] w-[320px] rounded-md border border-border bg-black object-contain"
       />
       {joystickEnabled ? (
         <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex justify-start p-4">
