@@ -1198,7 +1198,7 @@ Post-process retirement tracks every detached generation with separate bounded c
 4. Authored post-process tasks, settings effects and shared outlines.
 5. `Scene post-process output`, only when a chain exists.
 
-A view with no chain, no outline and no admitted water copy has exactly the first five tasks.
+A view with no chain, no outline and no admitted water copy has exactly the five tasks in items 1–3.
 
 **Water scene copy** (`water-scene-copy.ts`): refraction infrastructure. Screen-space reflections reuse the same copy. The water shader does not sample it yet.
 
@@ -1236,7 +1236,7 @@ A view with no chain, no outline and no admitted water copy has exactly the firs
 
   Transparents of a lower rendering group now draw after opaques of a higher group. The shared depth buffer keeps depth-tested results unchanged. Readiness probes this pass with only the alpha-blended candidates, so opaque materials prepare no draw wrapper for its pass id.
 - **Registry.** `waterSceneCopyForPass(scene, renderPassId)` returns `{ texture, invSize, scale, revision }` for a `Forward transparent` pass, and null for any other pass. `texture` is a CLAMP `ThinTexture`; `invSize` is 1 / output size. `isMainWaterPass(scene, renderPassId)` tests for such a pass.
-  - The pass id is registered when the task is constructed, before the first readiness probe. Frozen Play materials therefore never need re-dirtying, and a rebuild gets a new pass id.
+  - The pass id is registered when the task is constructed, before the first readiness probe. Frozen Play materials therefore never need re-dirtying. A rebuild, including the one every output resize triggers (as for effect chains), gets a new pass id.
   - The texture is attached after the build.
   - The pass id is unregistered at actual graph disposal; a retained graph keeps its entry until it is released.
   - Classic frames, captures, previews and thumbnails use other pass ids, so they get null.
