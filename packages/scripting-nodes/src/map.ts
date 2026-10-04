@@ -19,6 +19,49 @@ function pairCount(properties: Record<string, unknown>): number {
   return Math.max(0, Math.min(32, Math.floor(raw)));
 }
 
+/** Key kinds whose runtime values are plain data objects, compared by value. */
+const VALUE_KEY_KINDS = new Set<PinType["kind"]>([
+  "vec2",
+  "vec3",
+  "vec4",
+  "rotator",
+  "quat",
+  "color",
+  "transform",
+  "structRef",
+]);
+
+/**
+ * `(m, k) => key` returning the stored key structurally equal to `k`. Native
+ * `Map` compares objects by reference, and each Vector / struct read yields a
+ * new object, so value-type keys would otherwise never match.
+ */
+const STORED_KEY =
+  "((m,k)=>{if(k===null||typeof k!==\"object\"||m.has(k))return k;" +
+  "const q=(a,b)=>{if(a===b)return true;" +
+  "if(a===null||b===null||typeof a!==\"object\"||typeof b!==\"object\")return false;" +
+  "const x=Object.keys(a);" +
+  "return x.length===Object.keys(b).length&&x.every((n)=>Object.prototype.hasOwnProperty.call(b,n)&&q(a[n],b[n]));};" +
+  "for(const e of m.keys())if(q(e,k))return e;return k;})";
+
+function hasValueKey(
+  ctx: Parameters<NodeDefinition["codegen"]>[0],
+  pinId: string,
+): boolean {
+  const keyPin = ctx.node.pins.find((entry) => entry.id === pinId);
+  return keyPin !== undefined && VALUE_KEY_KINDS.has(keyPin.type.kind);
+}
+
+/** Expression for the key to use against map expression `map`. */
+function storedKey(
+  ctx: Parameters<NodeDefinition["codegen"]>[0],
+  pinId: string,
+  map: string,
+  key: string,
+): string {
+  return hasValueKey(ctx, pinId) ? `${STORED_KEY}(${map},${key})` : key;
+}
+
 function valueFallback(ctx: Parameters<NodeDefinition["codegen"]>[0]) {
   const outPin = ctx.node.pins.find((entry) => entry.id === "out");
   return defaultValueLiteral(outPin?.type ?? V);
@@ -46,7 +89,11 @@ export const mapNodes: NodeDefinition[] = [
       for (let i = 0; i < count; i++) {
         pairs.push(`[${ctx.input(`key${i}`)}, ${ctx.input(`value${i}`)}]`);
       }
-      return { out: `new Map([${pairs.join(", ")}])` };
+      const entries = `[${pairs.join(", ")}]`;
+      if (!hasValueKey(ctx, "key0")) return { out: `new Map(${entries})` };
+      return {
+        out: `((p)=>{const m=new Map();for(const [k,v] of p)m.set(${STORED_KEY}(m,k),v);return m;})(${entries})`,
+      };
     },
   },
   {
@@ -64,9 +111,10 @@ export const mapNodes: NodeDefinition[] = [
       const map = ctx.input("map");
       const key = ctx.input("key");
       const fallback = valueFallback(ctx);
+      const k = storedKey(ctx, "key", "t", "k");
       return {
-        found: `((m,k)=>(m??new Map()).has(k))(${map},${key})`,
-        out: `((m,k,d)=>{const t=m??new Map();return t.has(k)?t.get(k):d;})(${map},${key},${fallback})`,
+        found: `((m,k)=>{const t=m??new Map();return t.has(${k});})(${map},${key})`,
+        out: `((m,k,d)=>{const t=m??new Map();const s=${k};return t.has(s)?t.get(s):d;})(${map},${key},${fallback})`,
       };
     },
   },
@@ -85,7 +133,7 @@ export const mapNodes: NodeDefinition[] = [
     codegen: (ctx) => {
       const out = ctx.output("out");
       ctx.emit(
-        `${out} = new Map(${ctx.input("map")}??[]); ${out}.set(${ctx.input("key")}, ${ctx.input("value")});`,
+        `${out} = new Map(${ctx.input("map")}??[]); ${out}.set(${storedKey(ctx, "key", out, ctx.input("key"))}, ${ctx.input("value")});`,
       );
     },
   },
@@ -100,7 +148,7 @@ export const mapNodes: NodeDefinition[] = [
       pin("out", "Out", "out", BOOL),
     ],
     codegen: (ctx) => ({
-      out: `((${ctx.input("map")})??new Map()).has(${ctx.input("key")})`,
+      out: `((m,k)=>{const t=m??new Map();return t.has(${storedKey(ctx, "key", "t", "k")});})(${ctx.input("map")},${ctx.input("key")})`,
     }),
   },
   {
@@ -119,7 +167,7 @@ export const mapNodes: NodeDefinition[] = [
       const out = ctx.output("out");
       const removed = ctx.output("removed");
       ctx.emit(`${out} = new Map(${ctx.input("map")}??[]);`);
-      ctx.emit(`${removed} = ${out}.delete(${ctx.input("key")});`);
+      ctx.emit(`${removed} = ${out}.delete(${storedKey(ctx, "key", out, ctx.input("key"))});`);
     },
   },
   {
