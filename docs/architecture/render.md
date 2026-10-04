@@ -1754,6 +1754,9 @@ Water velocity from a query (and so buoyancy) has two parts:
 
 - X/Z: the current plus the waves' horizontal orbital (particle) velocity and a small mean-drift term (`waterWaveDrift`). That term cancels the backward average a fixed point under Gerstner waves would otherwise see, so a stationary support feels no net push, while a hull carried by the orbit drifts slowly downwind. Buoyancy drag pulls each support toward it, so floating objects sway with the swell.
 - Y: the current's slope component plus the Eulerian rate of surface height at the queried X/Z, which drives the buoyancy spring/damper.
+
+Worker caching:
+
 - The game worker scans water once per simulation tick: the physics step always rescans, and Sample Water Surface calls within a tick reuse that scan (`WaterWorld.sync`). Before reusing it, a query re-reads only what the scan depended on (water, removal and landscape components' variables and transforms, their actors' transforms and parents, and the actor count), so a script that resizes or moves water and then queries in the same tick sees the change. A water component added to an existing actor mid-tick appears from the next tick.
 - Component properties are re-normalized only when a variable value is replaced, so per-tick work is mostly transforms, and long-lived bodies keep their caches (for example a river's sampled centreline). A value mutated in place (for example a river point array edited without reassigning it) is not detected.
 
