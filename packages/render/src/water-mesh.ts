@@ -290,8 +290,9 @@ export function updateWaterMeshDefinition(mesh: Mesh, input: unknown): boolean {
   const water = surface.water, next = normalizeWaterDefinition(input);
   if (next.style !== water.style || next.materialGuid !== water.materialGuid) return false;
   const range = contactRange(water);
-  // The tessellation step follows Wave Length, which Global Water's camera-following layout key omits.
-  if (next.waveLength !== water.waveLength) surface.layout = "";
+  // The tessellation step follows Wave Length, which Global Water's camera-following layout key omits. Its new
+  // layout keeps the same key, so the frame resets too, or the new vertices' world positions are never filled.
+  if (next.waveLength !== water.waveLength) { surface.layout = ""; surface.frame = ""; }
   Object.assign(water, next);
   if (surface.plugin && mesh.material instanceof PBRMaterial) configureWaterMaterial(mesh.material, water);
   // A paused clock repeats the cached time, which would otherwise skip the resample.

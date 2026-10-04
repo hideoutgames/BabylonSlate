@@ -74,10 +74,11 @@ vi.mock("../context/document-context", () => ({
   }),
 }));
 
-function asset(guid: string, type: string, path: string, dependencies: string[] = []): IndexedAsset {
+function asset(guid: string, type: string, path: string, dependencies: string[] = [], payload: Record<string, unknown> = {}, chunkSha256s: string[] = []): IndexedAsset {
+  const chunks = chunkSha256s.map((sha256, index) => ({ id: `chunk-${index}`, kind: "image", mime: "image/png", sha256, locator: { blob: sha256 } }));
   return {
     rootId: "project", path,
-    header: { guid, type, name: guid, version: 1, engineVersion: "1", mode: "thin", parentClass: null, payload: {}, dependencies, chunks: [] },
+    header: { guid, type, name: guid, version: 1, engineVersion: "1", mode: "thin", parentClass: null, payload, dependencies, chunks },
   };
 }
 
@@ -138,7 +139,8 @@ describe("WaterPreviewPanel", () => {
     // A closed Material whose saved header calls an open Material Function, which samples a Texture.
     harness.assets.set("mat", asset("mat", "Material", "assets/Mat.material.babasset", ["fn"]));
     harness.assets.set("fn", asset("fn", "MaterialFunction", "assets/Fn.materialfunction.babasset"));
-    harness.assets.set("tex", asset("tex", "Texture", "assets/Tex.texture.babasset"));
+    const texture = (payload: Record<string, unknown>, chunkSha256s: string[]) => asset("tex", "Texture", "assets/Tex.texture.babasset", [], { usage: "albedo", ...payload }, chunkSha256s);
+    harness.assets.set("tex", texture({ compressionState: "pending" }, ["source-1"]));
     harness.assets.set("other", asset("other", "Material", "assets/Other.material.babasset"));
     const sample = (name: string) => ({ name, nodes: [{ id: "sample", type: "texture.sample", properties: { textureGuid: "tex" } }] });
     setDocument("material-function", "assets/Fn.materialfunction.babasset", sample("Fn"));
@@ -157,8 +159,16 @@ describe("WaterPreviewPanel", () => {
     rerender();
     await waitFor(() => expect(builds()).toBe(2));
 
-    // Saving or reimporting the Texture re-indexes it; its bytes come from the saved asset.
-    harness.assets.set("tex", asset("tex", "Texture", "assets/Tex.texture.babasset"));
+    // Encode progress re-indexes the Texture without changing the bytes the preview loads.
+    for (const progress of [{ compressionState: "encoding" }, { compressionState: "encode_failed", encodeError: "Encoder failed.", encodeWallMs: 12 }]) {
+      harness.assets.set("tex", texture(progress, ["source-1"]));
+      harness.registryVersion++;
+      rerender();
+    }
+    expect(harness.hosts).toHaveLength(2);
+
+    // A committed encode (or a reimport) changes the saved bytes, which the preview loads from the asset.
+    harness.assets.set("tex", texture({ compressionState: "compressed", ktx2Sha256: "ktx2-1" }, ["source-1", "ktx2-1"]));
     harness.registryVersion++;
     rerender();
     await waitFor(() => expect(builds()).toBe(3));

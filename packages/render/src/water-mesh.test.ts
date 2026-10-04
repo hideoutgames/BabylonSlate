@@ -189,19 +189,32 @@ describe("Water rendering", () => {
     try {
       // A 40 m landscape floor centred on the origin, 4 m under the water.
       createLandscapeMesh(scene, "land", { width: 40, depth: 40, subdivisions: 4, heights: Array.from({ length: 25 }, () => -4) });
-      const water = createDefaultWaterDefinition();
-      const ocean = createWaterMesh(scene, "ocean", normalizeWaterBody({}, "global"), water);
+      setSceneWaterTime(scene, 1.5);
+      const water = createDefaultWaterDefinition(), body = normalizeWaterBody({}, "global");
+      const ocean = createWaterMesh(scene, "ocean", body, water);
       updateSceneWater(scene);
       const gapAtOrigin = () => { const xs = rowXs(ocean), k = xs.findIndex((x) => x > 0); return xs[k]! - xs[k - 1]!; };
       const fieldMinX = () => bindWater(ocean).get("slateWaterFieldBounds")![0]!;
       // The field covers the landscape plus the contact range (three Contact Foam Widths) and a metre.
       expect(fieldMinX()).toBeGreaterThan(-20 - (2.5 * 3 + 1));
       expect(gapAtOrigin()).toBeCloseTo(0.5, 4);
-      expect(updateWaterMeshDefinition(ocean, { ...water, waveLength: 24, contactFoamWidth: 2.5 })).toBe(true);
+      const edited = { ...water, waveLength: 24, contactFoamWidth: 2.5 };
+      expect(updateWaterMeshDefinition(ocean, edited)).toBe(true);
       updateSceneWater(scene);
       expect(fieldMinX()).toBeLessThanOrEqual(-20 - (2.5 * 3 + 1));
       // Cells scale with Wave Length even though the camera-following layout has not moved.
       expect(gapAtOrigin()).toBeCloseTo(1, 4);
+      // Each new vertex samples the waves at its own world X/Z and carries the body's depth and open-water edge.
+      const positions = ocean.getVerticesData(VertexBuffer.PositionKind)!, data = ocean.getVerticesData("slateWaterData")!;
+      let checked = 0;
+      for (let i = 0; i < positions.length; i += 3) {
+        const x = positions[i]!, z = positions[i + 2]!;
+        if (Math.abs(x) > 6 || Math.abs(z) > 6) continue;
+        expect(positions[i + 1]).toBeCloseTo(sampleWaterSurface(edited, body, { x, y: 0, z }, 1.5).height, 4);
+        expect([data[i / 3 * 4 + 1], data[i / 3 * 4 + 2]]).toEqual([10000, body.depth]);
+        checked++;
+      }
+      expect(checked).toBeGreaterThan(100);
     } finally { scene.dispose(); engine.dispose(); }
   });
   it("realizes and resizes an identity-transform Water component received from Play", () => {

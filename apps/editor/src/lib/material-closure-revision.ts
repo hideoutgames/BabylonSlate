@@ -1,5 +1,6 @@
 import type { IndexedAsset } from "@babylonslate/assets";
 import { materialAssetDependencies } from "./content-browser-helpers";
+import { textureUploadSignature } from "./texture-upload-signature";
 
 /** Document kinds of the assets a Material's library load reads. */
 const CLOSURE_KINDS: Readonly<Record<string, string>> = {
@@ -32,6 +33,17 @@ function dependenciesOf(type: string, content: object): readonly string[] {
   return found;
 }
 
+/** Upload signature of a saved Texture, cached per registry entry because each write replaces it. */
+const textureSignatures = new WeakMap<IndexedAsset, string>();
+function textureSignatureOf(asset: IndexedAsset): string {
+  let found = textureSignatures.get(asset);
+  if (found === undefined) {
+    found = JSON.stringify(textureUploadSignature(asset.header));
+    textureSignatures.set(asset, found);
+  }
+  return found;
+}
+
 /**
  * Revision of every Material, Material Instance parent, Material Function and
  * Texture a Material reaches, as `collectPlayMaterialLibrary` and
@@ -42,8 +54,9 @@ function dependenciesOf(type: string, content: object): readonly string[] {
  * Open Material documents contribute their content object (each edit replaces
  * it) and are walked through their unsaved dependencies; closed ones contribute
  * their indexed registry entry (each write replaces it) and are walked through
- * the saved header `dependencies[]`. Textures always contribute the registry
- * entry, because texture bytes come from the saved asset even while it is open.
+ * the saved header `dependencies[]`. Textures always contribute their saved
+ * upload signature, because texture bytes come from the saved asset even while
+ * it is open; encode progress re-indexes a Texture without changing it.
  */
 export function materialClosureRevision(
   materialGuid: string,
@@ -70,9 +83,12 @@ export function materialClosureRevision(
     const kind = CLOSURE_KINDS[asset.header.type];
     // Preview meshes and other references are not part of what the library loads.
     if (!kind) continue;
-    const content = kind === "texture" ? undefined : open.get(`${kind}:${asset.path}`);
+    if (kind === "texture") {
+      entries.push(`${guid}=texture:${textureSignatureOf(asset)}`);
+      continue;
+    }
+    const content = open.get(`${kind}:${asset.path}`);
     entries.push(content ? `${guid}=open:${identity(content)}` : `${guid}=saved:${identity(asset)}`);
-    if (kind === "texture") continue;
     pending.push(...(content ? dependenciesOf(asset.header.type, content) : asset.header.dependencies));
   }
   return entries.sort().join("|");
