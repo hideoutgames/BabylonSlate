@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { CubeTexture, FreeCamera, type Mesh, NullEngine, PBRMaterial, Quaternion, Scene, SphericalPolynomial, Texture, Vector3, VertexBuffer } from "@babylonjs/core";
+import { ArcRotateCamera, CubeTexture, FreeCamera, type Mesh, NullEngine, PBRMaterial, Quaternion, Scene, SphericalPolynomial, Texture, Vector3, VertexBuffer } from "@babylonjs/core";
 import { createDefaultWaterDefinition, normalizeWaterBody, sampleWaterSurface } from "@babylonslate/core";
 import { createWaterMesh, setSceneWaterTime, updateSceneWater, updateWaterMeshBody, waterMeshBody } from "./water-mesh";
 import { applyAssignMesh, createPlayMesh, createSnapshotSceneBinding } from "./snapshot-apply";
@@ -105,6 +105,23 @@ describe("Water rendering", () => {
       const expanded = global.getBoundingInfo().boundingBox;
       expect(expanded.maximum.x - expanded.minimum.x).toBeCloseTo(7200, 3);
       expect(expanded.maximum.z - expanded.minimum.z).toBeCloseTo(7200, 3);
+    } finally { scene.dispose(); engine.dispose(); }
+  });
+  it("keeps Global Water's fine wave cells under an orbit camera's target as well as near its eye", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    // The eye stands about 20 m from the target horizontally, beyond the dense cells' half width around the eye.
+    const camera = new ArcRotateCamera("orbit", Math.PI, 1.2, 22, new Vector3(30, 0, 0), scene);
+    camera.getViewMatrix(true);
+    try {
+      const global = createWaterMesh(scene, "global", normalizeWaterBody({}, "global"));
+      updateSceneWater(scene);
+      // One row of the grid: its X coordinates, sorted.
+      const positions = global.getVerticesData(VertexBuffer.PositionKind)!, xs: number[] = [];
+      for (let i = 0; i < positions.length && (i === 0 || positions[i]! > positions[i - 3]!); i += 3) xs.push(positions[i]!);
+      const gap = (x: number) => { const k = xs.findIndex((value) => value > x); return xs[k]! - xs[k - 1]!; };
+      // Default Global Water cells are 0.5 m, at the target and at the water nearest the eye alike.
+      expect(gap(30)).toBeLessThanOrEqual(0.5 + 1e-4);
+      expect(gap(camera.position.x + 3)).toBeLessThanOrEqual(0.5 + 1e-4);
     } finally { scene.dispose(); engine.dispose(); }
   });
   it("realizes and resizes an identity-transform Water component received from Play", () => {

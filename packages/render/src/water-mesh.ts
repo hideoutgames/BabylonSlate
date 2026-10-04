@@ -1,4 +1,4 @@
-import { Matrix, Mesh, PBRMaterial, Vector3, VertexBuffer, VertexData, type Material, type Scene } from "@babylonjs/core";
+import { ArcRotateCamera, Matrix, Mesh, PBRMaterial, Vector3, VertexBuffer, VertexData, type Material, type Scene } from "@babylonjs/core";
 import { createDefaultWaterDefinition, normalizeWaterBody, normalizeWaterDefinition, sampleWaterWaves, waterFootprint, waterRiverCentreline, type WaterBodyProperties, type WaterDefinition } from "@babylonslate/core";
 import { configureWaterMaterial, contactRange, WaterMaterialPlugin } from "./water-material";
 import { WaterContactField } from "./water-contact-field";
@@ -36,11 +36,14 @@ export function updateSceneWater(scene: Scene): void {
   }
 }
 
+/** Dense cells of an axis with `count` cells: the middle half. */
+const denseCells = (count: number) => count - 2 * Math.floor(count / 4);
+
 /** Fixed endpoints, dense world-sized cells near the camera, smoothly graded outer cells. */
 function axis(min: number, max: number, spacing: number, camera: number, budget = 192): number[] {
   const count = Math.min(budget, Math.max(8, Math.ceil((max - min) / spacing / 2) * 2));
   if ((max - min) <= count * spacing) return Array.from({ length: count + 1 }, (_, i) => min + (max - min) * i / count);
-  const outer = Math.floor(count / 4), inner = count - 2 * outer;
+  const outer = Math.floor(count / 4), inner = denseCells(count);
   const half = inner * spacing / 2;
   const center = Math.max(min + half, Math.min(max - half, Math.round(camera / spacing) * spacing));
   const left = center - half, right = center + half;
@@ -109,8 +112,17 @@ function updateLayout(s: Surface, world: Matrix, inverse: Matrix): void {
   if (body.kind === "global") {
     const camera = mesh.getScene().activeCamera;
     // Read the camera's current position, including a parent, without waiting for Scene.render's camera update.
-    const cameraWorld = camera ? (camera.parent ? Vector3.TransformCoordinates(camera.position, camera.parent.getWorldMatrix()) : camera.position) : Vector3.Zero();
-    const local = Vector3.TransformCoordinates(cameraWorld, inverse);
+    const toWorld = (point: Vector3) => camera?.parent ? Vector3.TransformCoordinates(point, camera.parent.getWorldMatrix()) : point;
+    const local = Vector3.TransformCoordinates(camera ? toWorld(camera.position) : Vector3.Zero(), inverse);
+    // An orbiting camera looks at its target: shift the dense cells toward it (up to most of their half width), so
+    // the wave geometry, and the waterline contacts that follow it, cover both the near water and what is in focus.
+    if (camera instanceof ArcRotateCamera) {
+      const target = Vector3.TransformCoordinates(toWorld(camera.target), inverse);
+      const dx = (target.x - local.x) * sx, dz = (target.z - local.z) * sz, reach = Math.hypot(dx, dz);
+      const half = denseCells(Math.max(32, body.resolution + body.resolution % 2)) * step / 2;
+      const shift = reach > 1e-6 ? Math.min(reach / 2, half * 0.85) / reach : 0;
+      local.x += dx * shift / sx; local.z += dz * shift / sz;
+    }
     extent = Math.max(256, (camera?.maxZ ?? 1000) * 1.2);
     cx = Math.round(local.x * sx / step) * step / sx; cz = Math.round(local.z * sz / step) * step / sz;
     key = `${cx},${cz},${extent}`;
