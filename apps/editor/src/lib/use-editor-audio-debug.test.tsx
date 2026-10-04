@@ -6,6 +6,9 @@ import { useEditorAudioDebug } from "./use-editor-audio-debug";
 const documents = vi.hoisted(() => ({
   openDocuments: [] as Array<{ id: string; ref: { kind: string }; content: unknown }>,
   registryEpoch: 0,
+  projectDocument: null as null | {
+    settings: { audio: { audioMixerGuid: string | null }; playFrameCap?: number };
+  },
   collectPlayAudio: vi.fn<() => Promise<{
     library: import("./play-audio").PlayAudioLibrary;
     loadSourceBytes: import("./play-audio").PlayAudioSourceLoader;
@@ -17,6 +20,7 @@ afterEach(() => {
   cleanup();
   documents.openDocuments = [];
   documents.registryEpoch = 0;
+  documents.projectDocument = null;
   documents.collectPlayAudio.mockReset();
 });
 
@@ -34,6 +38,19 @@ it("refreshes audio drafts and registry changes while ignoring scene edits", asy
   documents.registryEpoch += 1;
   rerender();
   await waitFor(() => expect(documents.collectPlayAudio).toHaveBeenCalledTimes(3));
+});
+
+it("reloads when Project Settings select another audio mixer, not for other settings edits", async () => {
+  documents.collectPlayAudio.mockResolvedValue({ library: emptyPlayAudioLibrary(), loadSourceBytes: async () => null });
+  documents.projectDocument = { settings: { audio: { audioMixerGuid: "mixer-a" } } };
+  const { rerender } = renderHook(() => useEditorAudioDebug(true));
+  await waitFor(() => expect(documents.collectPlayAudio).toHaveBeenCalledTimes(1));
+  documents.projectDocument = { settings: { audio: { audioMixerGuid: "mixer-a" }, playFrameCap: 30 } };
+  rerender();
+  expect(documents.collectPlayAudio).toHaveBeenCalledTimes(1);
+  documents.projectDocument = { settings: { audio: { audioMixerGuid: "mixer-b" } } };
+  rerender();
+  await waitFor(() => expect(documents.collectPlayAudio).toHaveBeenCalledTimes(2));
 });
 
 it("discards a superseded metadata load and clears helpers when selection no longer needs audio", async () => {

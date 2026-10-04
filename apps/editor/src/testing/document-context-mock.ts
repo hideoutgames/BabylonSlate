@@ -15,9 +15,11 @@
  * open documents, actions that do nothing, and loaders that find nothing.
  * Defaults that would have to invent project content reject instead.
  *
- * Exports added to `document-context.tsx` later resolve without editing every
- * mock: an unknown `use…` hook returns the same documents value (narrow hooks
- * return slices of it). Add an explicit entry here for anything else.
+ * `useDocumentActions()` returns that same value (it carries every action) and
+ * `useAppRoute()` its `route`. Exports added to `document-context.tsx` later
+ * resolve without editing every mock: an unknown `use…` hook returns the same
+ * documents value (narrow hooks return slices of it). Add an explicit entry
+ * here for anything else, such as a hook returning a single field.
  */
 import type { ReactNode } from "react";
 import type { ExtensionSnapshot } from "../services/editor-extension-service";
@@ -253,6 +255,9 @@ export function documentContextMock(
   const moduleExports = {
     DocumentProvider: ({ children }: { children: ReactNode }) => children,
     useDocuments,
+    // The documents value carries every action, so it serves the narrow hooks.
+    useDocumentActions: useDocuments,
+    useAppRoute: () => useDocuments().route,
     useDockWindowTick: options.useDockWindowTick ?? (() => 0),
   };
   return new Proxy(moduleExports, {
