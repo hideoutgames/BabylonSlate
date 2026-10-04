@@ -190,14 +190,17 @@ describe("physics tick composition work", () => {
         { id: "body", classId: "RigidBodyComponent", properties: { motionType: "dynamic", mass: 1, gravityScale: 0 } },
         { id: "box", classId: "ColliderComponent", properties: { shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } } } },
       ] }),
-    ], "Mover", { Nudge: "ctx.addActorWorldOffset(ctx.self, { x: 3, y: 0, z: 0 });" });
+    ], "Mover", {
+      Place: "ctx.setActorLocation(ctx.self, { x: 3, y: 0, z: 0 });",
+      Nudge: "ctx.addActorWorldOffset(ctx.self, { x: 3, y: 0, z: 0 });",
+    });
     try {
       const world = runtime.getWorld();
       const meshes = world.getActors().filter((actor) => actor.guid.startsWith("mesh-"));
       const lamp = world.findActor("lamp")!, crate = world.findActor("crate")!;
       expect(meshes).toHaveLength(512);
       const reads = countTransformReads(meshes);
-      runtime.invokeScriptEvent("Mover", "Nudge", lamp);
+      runtime.invokeScriptEvent("Mover", "Place", lamp);
       const lampReads = reads.count;
       runtime.invokeScriptEvent("Mover", "Nudge", crate);
       const counts = { lamp: lampReads, crate: reads.count - lampReads };

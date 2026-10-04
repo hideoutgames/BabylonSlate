@@ -128,10 +128,16 @@ export class PhysicsWorldSync {
   private world: World | null = null;
   /**
    * The last pre-step composition. Only that pass, its constraint sync and the
-   * Movement step hook and readback that follow it in `step` read this map;
-   * call-time writes and queries resolve their own chains instead.
+   * Movement step hook (until `passStale`) and readback that follow it in
+   * `step` read this map; call-time writes and queries resolve their own chains.
    */
   private worldTransforms: ActorTransformMap = new Map();
+  /**
+   * Set when a script pose write (`teleportActor`, `moveCharacter`) ran since
+   * the last pre-step composition. Movement motors that run after such a write
+   * in a transition event's script resolve their chains instead of the pass.
+   */
+  private passStale = false;
   private tilemaps = new Map<string, TilemapPayload>();
   private tilesets = new Map<string, TilesetPayload>();
   private sprites = new Map<string, SpritePayload>();
@@ -343,6 +349,7 @@ export class PhysicsWorldSync {
     this.actors = [];
     this.world = null;
     this.worldTransforms = new Map();
+    this.passStale = false;
   }
 
   /** Ensure every physics-bearing actor has backend bodies (idempotent). */
@@ -355,6 +362,7 @@ export class PhysicsWorldSync {
       this.backend.kind,
       this.actorFilter,
     );
+    this.passStale = false;
     const live = this.liveActors;
     live.clear();
     for (const actor of this.actors) {
@@ -788,6 +796,8 @@ export class PhysicsWorldSync {
    * (a light, camera or prop without collision) returns before any composition.
    */
   teleportActor(actor: Actor, world: World, options?: TeleportOptions): void {
+    // Even a body-less write moves its descendants, including Movement actors.
+    this.passStale = true;
     if (actor.destroyed || !this.actorFilter(actor)) return;
     this.bindWorld(world);
     if (world.findActor(actor.guid) !== actor) return;
@@ -857,6 +867,7 @@ export class PhysicsWorldSync {
     dt: number,
     offset?: number,
   ): void {
+    this.passStale = true;
     if (actor.destroyed || !this.actorFilter(actor)) return;
     const owner = this.bodyOwnerByActor.get(actor.guid);
     if (owner && owner !== actor) return;
@@ -903,9 +914,15 @@ export class PhysicsWorldSync {
       !this.movementComponent(actor) || !Number.isFinite(dt) || dt <= 0) return null;
     const owner = this.bodyOwnerByActor.get(actor.guid);
     if (owner && owner !== actor) return null;
-    // Motors run as `step`'s hook, directly after its pre-step composition, so
-    // they intentionally reuse that pass rather than resolving chains again.
-    if (!this.bodyByActor.has(actor.guid)) this.createForActor(actor, this.passWorldTransform);
+    // Motors run as `step`'s hook after its pre-step composition and reuse that
+    // pass. Once a transition event's script has written a pose through
+    // `teleportActor` or `moveCharacter`, later motors resolve their own chain
+    // instead, so the write is neither undone nor applied under a stale parent.
+    let live: Map<string, Transform> | undefined;
+    const transforms = (): ActorTransformMap =>
+      this.passStale ? (live ??= this.liveTransforms(actor)) : this.worldTransforms;
+    const world = (target: Actor): Transform => transforms().get(target.guid) ?? target.transform;
+    if (!this.bodyByActor.has(actor.guid)) this.createForActor(actor, world);
     const bodyId = this.bodyByActor.get(actor.guid);
     if (!bodyId) return null;
     const descriptor = [props.radius, props.height, props.maxSlopeAngle, props.groundSnapDistance];
@@ -920,13 +937,13 @@ export class PhysicsWorldSync {
     }
     // Parent transforms are authored repositioning, separate from the motor's
     // displacement and velocity. Native kinematic targets have not stepped yet.
-    const startPose = physicsPose(this.passWorldTransform(actor));
+    const startPose = physicsPose(world(actor));
     const moved = this.backend.moveCharacter(actor.guid, translation, dt, startPose);
     if (!moved) return null;
     // Native kinematic targets have not stepped yet: preserve the actor's
     // authored facing instead of overwriting it with last tick's body rotation.
     moved.rotation = startPose.rotation;
-    const local = actorLocalPhysicsTransform(moved, actor, this.worldTransforms);
+    const local = actorLocalPhysicsTransform(moved, actor, transforms());
     Object.assign(actor.transform.position, local.position);
     Object.assign(actor.transform.rotation, local.rotation);
     // Replace the pre-movement target captured at the start of this physics tick.
