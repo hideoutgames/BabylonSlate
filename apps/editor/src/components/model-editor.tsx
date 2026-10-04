@@ -93,8 +93,8 @@ export function ModelCollidersPanel(_props: IDockviewPanelProps) {
       <ModelColliders
         payload={asRecord(doc?.content)}
         sourceBytes={sourceBytes}
-        onChange={(next) => {
-          void applyAssetDocumentChange(documentId, next);
+        onChange={(next, mergeKey) => {
+          void applyAssetDocumentChange(documentId, next, mergeKey);
         }}
       />
     </PanelFrame>
@@ -231,7 +231,7 @@ export function ModelEditor({
           if (!open) setPickIndex(null);
         }}
         assets={assets}
-        allowedTypes={["Material"]}
+        allowedTypes={["Material", "MaterialInstance"]}
         onPick={(guid) => {
           if (pickIndex !== null) setSlotGuid(pickIndex, guid);
           setPickIndex(null);
@@ -266,7 +266,8 @@ function patchCollider(
 
 function colliderPropertyRows(
   collider: ModelSimpleCollider,
-  commit: (next: ModelSimpleCollider) => void,
+  /** `field` names the scrubbed property so one drag is one undo step. */
+  commit: (next: ModelSimpleCollider, field?: string) => void,
 ): PropertyRow[] {
   const euler = quaternionToEulerDegrees(collider.rotation);
   const rows: PropertyRow[] = [
@@ -283,7 +284,7 @@ function colliderPropertyRows(
       label: "Position",
       value: collider.position,
       onChange: (value) =>
-        commit({ ...collider, position: [value[0], value[1], value[2]] }),
+        commit({ ...collider, position: [value[0], value[1], value[2]] }, "position"),
     },
     {
       id: "rotation",
@@ -294,7 +295,7 @@ function colliderPropertyRows(
         commit({
           ...collider,
           rotation: eulerDegreesToQuaternion([value[0], value[1], value[2]]),
-        }),
+        }, "rotation"),
     },
     {
       id: "scale",
@@ -302,7 +303,7 @@ function colliderPropertyRows(
       label: "Scale",
       value: collider.scale,
       onChange: (value) =>
-        commit({ ...collider, scale: [value[0], value[1], value[2]] }),
+        commit({ ...collider, scale: [value[0], value[1], value[2]] }, "scale"),
     },
   ];
   if (collider.kind === "box") {
@@ -316,7 +317,7 @@ function colliderPropertyRows(
         commit({
           ...collider,
           halfExtents: { x: value[0], y: value[1], z: value[2] },
-        }),
+        }, "halfExtents"),
     });
   }
   if (
@@ -330,7 +331,7 @@ function colliderPropertyRows(
       kind: "number",
       label: "Radius",
       value: collider.radius ?? 0.5,
-      onChange: (value) => commit({ ...collider, radius: value }),
+      onChange: (value) => commit({ ...collider, radius: value }, "radius"),
     });
   }
   if (collider.kind === "capsule") {
@@ -339,7 +340,7 @@ function colliderPropertyRows(
       kind: "number",
       label: "Half Height",
       value: collider.halfHeight ?? 0.5,
-      onChange: (value) => commit({ ...collider, halfHeight: value }),
+      onChange: (value) => commit({ ...collider, halfHeight: value }, "halfHeight"),
     });
   }
   if (collider.kind === "cylinder" || collider.kind === "cone") {
@@ -348,7 +349,7 @@ function colliderPropertyRows(
       kind: "number",
       label: "Height",
       value: collider.height ?? 1,
-      onChange: (value) => commit({ ...collider, height: value }),
+      onChange: (value) => commit({ ...collider, height: value }, "height"),
     });
   }
   return rows;
@@ -361,7 +362,8 @@ export function ModelColliders({
 }: {
   payload: Record<string, unknown>;
   sourceBytes?: Uint8Array | null;
-  onChange: (next: Record<string, unknown>) => void;
+  /** `mergeKey` groups one scrub's edits into one undo entry. */
+  onChange: (next: Record<string, unknown>, mergeKey?: string) => void;
 }) {
   const model = normalizeModelPayload(payload);
   const { selectedColliderId, setSelectedColliderId } = useModelColliderSession();
@@ -369,8 +371,10 @@ export function ModelColliders({
     model.simpleColliders.find((entry) => entry.id === selectedColliderId) ??
     null;
 
-  const commit = (next: ModelPayload) => {
-    onChange(next as unknown as Record<string, unknown>);
+  const commit = (next: ModelPayload, mergeKey?: string) => {
+    const record = next as unknown as Record<string, unknown>;
+    if (mergeKey) onChange(record, mergeKey);
+    else onChange(record);
   };
 
   const addKind = (kind: ModelSimpleColliderKind) => {
@@ -459,8 +463,11 @@ export function ModelColliders({
       </div>
       {selected ? (
         <PropertyGrid
-          rows={colliderPropertyRows(selected, (next) =>
-            commit(patchCollider(model, next.id, next)),
+          rows={colliderPropertyRows(selected, (next, field) =>
+            commit(
+              patchCollider(model, next.id, next),
+              field ? `model-collider:${next.id}:${field}` : undefined,
+            ),
           )}
         />
       ) : null}

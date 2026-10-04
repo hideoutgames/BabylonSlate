@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   readActorSlot,
+  readSnapshotHeader,
   snapshotFloatCount,
   SNAPSHOT_FLAG_OVERLAY,
   SNAPSHOT_FLAG_VISIBLE,
@@ -11,6 +12,7 @@ import {
   createDefaultScene,
   createDefaultSceneLayer,
   createText2DComponent,
+  eulerDegreesToQuaternion,
   type SerializedScene,
   type SerializedSceneLayer,
 } from "@babylonslate/core";
@@ -169,6 +171,7 @@ describe("SceneLayer runtime compositor", () => {
             scale: [1, 1, 1],
           },
           components: [
+            { id: "texture", classId: "2DTextureComponent", properties: {} },
             {
               id: "anchor",
               classId: "2DAnchorComponent",
@@ -436,7 +439,7 @@ describe("SceneLayer runtime compositor", () => {
     runtime.stop();
   });
 
-  it("applies 2DAnchor positions on spawn and again on resize", () => {
+  it("leaves a root 2DAnchor inert on spawn and resize", () => {
     const hud: SerializedSceneLayer = {
       ...createDefaultSceneLayer(),
       name: "HUD",
@@ -466,11 +469,10 @@ describe("SceneLayer runtime compositor", () => {
     runtime.realizePlayWorld();
     runtime.createSceneLayer("hud", 0);
     const actor = runtime.getWorld().findActor("badge");
-    expect(actor?.transform.position.x).toBe(-7);
-    expect(actor?.transform.position.y).toBe(4);
+    expect(actor?.transform.position).toEqual({ x: 0, y: 0, z: 0 });
     runtime.applySceneLayerResize(32, 18);
-    expect(runtime.getWorld().findActor("badge")?.transform.position.x).toBe(-7);
-    expect(runtime.getWorld().findActor("badge")?.transform.position.y).toBe(4);
+    expect(actor?.transform.position).toEqual({ x: 0, y: 0, z: 0 });
+    runtime.stop();
   });
 
   it("maps a 2DAnchor at the orange bottom-right with Bottom Left onto the screen bottom-right", () => {
@@ -490,6 +492,7 @@ describe("SceneLayer runtime compositor", () => {
             scale: [1, 1, 1],
           },
           components: [
+            { id: "texture", classId: "2DTextureComponent", properties: {} },
             {
               id: "anchor",
               classId: "2DAnchorComponent",
@@ -545,7 +548,7 @@ describe("SceneLayer runtime compositor", () => {
             {
               id: "anchor",
               classId: "2DAnchorComponent",
-              properties: { anchor: "bottomLeft" },
+              properties: { anchor: "bottomLeft", offsetX: 1, offsetY: 0.5 },
             },
           ],
         }),
@@ -560,8 +563,11 @@ describe("SceneLayer runtime compositor", () => {
     runtime.realizePlayWorld();
     runtime.createSceneLayer("hud", 0);
     runtime.applySceneLayerResize(32, 18);
-    expect(runtime.getWorld().findActor("banner")?.transform.position.x).toBe(8);
-    expect(runtime.getWorld().findActor("banner")?.transform.position.y).toBe(-4.5);
+    expect(runtime.getWorld().findActor("banner")?.transform.position.x).toBe(9);
+    expect(runtime.getWorld().findActor("banner")?.transform.position.y).toBe(-4);
+    runtime.applySceneLayerResize(16, 9);
+    expect(runtime.getWorld().findActor("banner")?.transform.position.x).toBe(9);
+    expect(runtime.getWorld().findActor("banner")?.transform.position.y).toBe(-4);
     expect(runtime.getWorld().findActor("pin")?.transform.position.x).toBe(0);
     expect(runtime.getWorld().findActor("pin")?.transform.position.y).toBe(0);
   });
@@ -626,6 +632,78 @@ describe("SceneLayer runtime compositor", () => {
     expect(runtime.getWorld().findActor("banner")?.transform.position.y).toBe(-4.5);
     expect(runtime.getWorld().findActor("pin")?.transform.position.x).toBe(0);
     expect(runtime.getWorld().findActor("pin")?.transform.position.y).toBe(0);
+  });
+
+  it.each([false, true])("inherits the upper anchor once through a transformed hierarchy (reversed actors: %s)", (reverse) => {
+    const visual = (id: string, parentId: string | null, position: [number, number, number]) => createActor(id, id, {
+      classId: "SceneLayerActor", parentId,
+      transform: { position, rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
+      components: [{ id: `${id}-texture`, classId: "2DTextureComponent", properties: {} }],
+    });
+    const anchor = (id: string, parentId: string, offsetX: number, offsetY: number) => createActor(id, id, {
+      classId: "SceneLayerActor", parentId,
+      components: [{ id: `${id}-anchor`, classId: "2DAnchorComponent", properties: { anchor: "topLeft", offsetX, offsetY } }],
+    });
+    const a = visual("a", null, [10, 20, 0]);
+    a.transform.rotation = eulerDegreesToQuaternion([0, 0, 90]);
+    a.transform.scale = [2, 3, 1];
+    const actors = [anchor("nested", "upper", 80, 90), a, visual("b", "a", [2, 4, 0]), visual("c", "b", [1, 1, 0]),
+      anchor("upper", "a", 1, 2), anchor("lower", "b", 50, 60)];
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, maxActors: 16, playScene: worldScene("A"),
+      sceneLayerLibrary: { hud: { ...createDefaultSceneLayer(), actors: reverse ? actors.reverse() : actors } },
+      onCommand: (command) => commands.push(command),
+    });
+    try {
+      runtime.realizePlayWorld();
+      runtime.createSceneLayer("hud", 0);
+      runtime.start();
+      for (let pass = 0; pass < 2; pass++) {
+        runtime.applySceneLayerResize(32, 18);
+        runtime.tick();
+        const snapshot = new Float32Array(snapshotFloatCount(16));
+        expect(runtime.copySnapshot(snapshot)).toBe(true);
+        const slots = Array.from({ length: readSnapshotHeader(snapshot).actorCount }, (_, index) => readActorSlot(snapshot, index));
+        const anchorSlots = commands.flatMap((command) => command.type === "spawn" && ["upper", "lower", "nested"].includes(command.actorGuid)
+          ? [command.slotId] : []);
+        expect(slots.some((slot) => anchorSlots.includes(slot.slotId))).toBe(false);
+        for (const [id, x, y] of [["a", 11, 22], ["b", -1, 26], ["c", -4, 28]] as const) {
+          const spawn = commands.find((command) => command.type === "spawn" && command.actorGuid === id);
+          if (spawn?.type !== "spawn") throw new Error(`Missing spawn for ${id}`);
+          const pose = slots.find((slot) => slot.slotId === spawn.slotId)!.position;
+          expect(pose.x).toBeCloseTo(x);
+          expect(pose.y).toBeCloseTo(y);
+        }
+      }
+      expect(runtime.getWorld().findActor("b")?.transform.position).toEqual({ x: 2, y: 4, z: 0 });
+      expect(commands.some((command) => command.type === "assignMesh" && ["upper", "lower"].includes(command.actorGuid ?? ""))).toBe(false);
+    } finally { runtime.stop(); }
+  });
+
+  it("clears a lower anchor's applied offset when reparenting beneath an upper anchor", () => {
+    const actors = ["upper", "lower"].map((id, index) => createActor(id, id, {
+      classId: "SceneLayerActor",
+      transform: { position: [index + 1, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
+      components: [
+        { id: `${id}-texture`, classId: "2DTextureComponent", properties: {} },
+        { id: `${id}-anchor`, classId: "2DAnchorComponent", properties: { anchor: "center", offsetX: 10 * (index + 1) } },
+      ],
+    }));
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, playScene: worldScene("A"),
+      sceneLayerLibrary: { hud: { ...createDefaultSceneLayer(), actors } },
+    });
+    try {
+      runtime.realizePlayWorld();
+      runtime.createSceneLayer("hud", 0);
+      const lower = runtime.getWorld().findActor("lower")!;
+      expect(lower.transform.position.x).toBe(22);
+      lower.setVariable("parentId", "upper");
+      runtime.applySceneLayerResize(32, 18);
+      expect(lower.transform.position.x).toBe(2);
+      lower.setVariable("parentId", null);
+      runtime.applySceneLayerResize(32, 18);
+      expect(lower.transform.position.x).toBe(22);
+    } finally { runtime.stop(); }
   });
 
   it("invokes overlay button events on the actor class and ignores missing buttons", async () => {

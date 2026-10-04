@@ -13,8 +13,8 @@ on:
       platforms:
         description: Platforms to distribute
         type: choice
-        options: [ipados, windows, both]
-        default: both
+        options: [all, desktop, mobile, ipados, android, windows, macos, linux]
+        default: all
         required: true
       source_sha:
         description: Exact source commit on protected main (blank uses the dispatch commit)
@@ -64,7 +64,11 @@ jobs:
       identity: ${{ steps.request.outputs.identity }}
       dry_run: ${{ steps.request.outputs.dry_run }}
       windows: ${{ steps.request.outputs.windows }}
+      macos: ${{ steps.request.outputs.macos }}
+      linux: ${{ steps.request.outputs.linux }}
+      android: ${{ steps.request.outputs.android }}
       ipados: ${{ steps.request.outputs.ipados }}
+      github_release: ${{ steps.request.outputs.github_release }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -100,6 +104,8 @@ jobs:
       BABYLONSLATE_DISTRIBUTION: 'true'
       VITE_TEST_MODE: 'false'
       VITE_BASE_PATH: /
+      # Git Bash must not rewrite the URL base to its Windows installation path.
+      MSYS2_ENV_CONV_EXCL: VITE_BASE_PATH
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -126,10 +132,151 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: windows-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            apps/desktop/dist/public/BabylonSlate-${{ fromJSON(steps.metadata.outputs.identity).windowsVersion }}-x64.exe
-            apps/desktop/dist/public/SHA256SUMS.txt
-            apps/desktop/dist/public/build-manifest.json
+          path: apps/desktop/dist/public/*
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
+  macos:
+    name: macOS package and installed-app checks
+    needs: [validate]
+    if: needs.validate.outputs.dry_run != 'true' && needs.validate.outputs.macos == 'true' && inputs.operation == 'distribute'
+    runs-on: macos-26
+    timeout-minutes: 60
+    environment: macos-signing
+    outputs:
+      identity: ${{ steps.metadata.outputs.identity }}
+      artifact_name: macos-${{ github.run_id }}-${{ github.run_attempt }}
+    env:
+      BABYLONSLATE_DISTRIBUTION: 'true'
+      VITE_TEST_MODE: 'false'
+      VITE_BASE_PATH: /
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.validate.outputs.source_sha }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.23.2
+      - run: pnpm install --frozen-lockfile
+      - name: Generate actual macOS build identity
+        id: metadata
+        env:
+          DISTRIBUTION_IDENTITY: ${{ needs.validate.outputs.identity }}
+          MACOS_SIGNING_AVAILABLE: ${{ secrets.APPLE_DEVELOPER_ID_P12_BASE64 != '' }}
+        run: node scripts/distribution/generate-metadata.mjs macos
+      - run: pnpm --filter editor build
+      - run: pnpm --filter desktop build:host
+      - name: Package DMG/ZIP (signed and notarized only when credentials are provisioned)
+        env:
+          APPLE_DEVELOPER_ID_P12_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_P12_BASE64 }}
+          APPLE_DEVELOPER_ID_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_PASSWORD }}
+          ASC_PRIVATE_KEY_P8_BASE64: ${{ secrets.ASC_PRIVATE_KEY_P8_BASE64 }}
+          ASC_KEY_ID: ${{ vars.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ vars.ASC_ISSUER_ID }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+        run: pnpm --filter desktop package:macos
+      - run: pnpm --filter desktop smoke:macos
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: macos-${{ github.run_id }}-${{ github.run_attempt }}
+          path: apps/desktop/dist/public/*
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
+  linux:
+    name: Linux package and installed-app checks
+    needs: [validate]
+    if: needs.validate.outputs.dry_run != 'true' && needs.validate.outputs.linux == 'true' && inputs.operation == 'distribute'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    outputs:
+      identity: ${{ steps.metadata.outputs.identity }}
+      artifact_name: linux-${{ github.run_id }}-${{ github.run_attempt }}
+    env:
+      BABYLONSLATE_DISTRIBUTION: 'true'
+      VITE_TEST_MODE: 'false'
+      VITE_BASE_PATH: /
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.validate.outputs.source_sha }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.23.2
+      - run: pnpm install --frozen-lockfile
+      - name: Generate actual Linux build identity
+        id: metadata
+        env:
+          DISTRIBUTION_IDENTITY: ${{ needs.validate.outputs.identity }}
+        run: node scripts/distribution/generate-metadata.mjs linux
+      - run: pnpm --filter editor build
+      - run: pnpm --filter desktop build:host
+      - run: pnpm --filter desktop package:linux
+      - run: xvfb-run -a pnpm --filter desktop smoke:linux
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: linux-${{ github.run_id }}-${{ github.run_attempt }}
+          path: apps/desktop/dist/public/*
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
+  android:
+    name: Android signed release APK
+    needs: [validate]
+    if: needs.validate.outputs.dry_run != 'true' && needs.validate.outputs.android == 'true' && inputs.operation == 'distribute'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment: android-signing
+    outputs:
+      identity: ${{ steps.metadata.outputs.identity }}
+      artifact_name: android-${{ github.run_id }}-${{ github.run_attempt }}
+    env:
+      BABYLONSLATE_DISTRIBUTION: 'true'
+      VITE_TEST_MODE: 'false'
+      VITE_BASE_PATH: /
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.validate.outputs.source_sha }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.23.2
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: pnpm install --frozen-lockfile
+      - name: Generate actual Android build identity
+        id: metadata
+        env:
+          DISTRIBUTION_IDENTITY: ${{ needs.validate.outputs.identity }}
+        run: node scripts/distribution/generate-metadata.mjs android
+      - run: pnpm --filter editor android:sync
+      - name: Confirm generated Gradle wiring was preserved
+        run: git diff --exit-code -- apps/editor/android/capacitor.settings.gradle apps/editor/android/app/capacitor.build.gradle
+      - name: Sign release APK and verify package identity
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: pnpm --filter editor android:release
+      - name: Always remove the decoded keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP"/babylonslate-android-*.jks
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: android-${{ github.run_id }}-${{ github.run_attempt }}
+          path: apps/editor/android/dist/public/*
           if-no-files-found: error
           retention-days: 1
           compression-level: 0
@@ -222,6 +369,9 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22.23.2
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - name: Install publication dependencies without package lifecycle scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Finalize exact existing upload; never rebuild or reupload
         id: finalize
         env:
@@ -236,10 +386,10 @@ jobs:
           APPLE_RELEASE_GROUP_ID: ${{ vars.APPLE_RELEASE_GROUP_ID }}
         run: node scripts/distribution/finalize-testflight.mjs
 
-  publish-windows:
-    name: Validate draft assets and publish Windows release
-    needs: [validate, windows, ipados, testflight]
-    if: always() && needs.validate.result == 'success' && needs.validate.outputs.dry_run != 'true' && needs.windows.result == 'success'
+  publish-release:
+    name: Validate and publish shared GitHub Release
+    needs: [validate, windows, macos, linux, android, ipados, testflight]
+    if: always() && needs.validate.result == 'success' && needs.validate.outputs.dry_run != 'true' && needs.validate.outputs.github_release == 'true' && (needs.validate.outputs.windows != 'true' || needs.windows.result == 'success') && (needs.validate.outputs.macos != 'true' || needs.macos.result == 'success') && (needs.validate.outputs.linux != 'true' || needs.linux.result == 'success') && (needs.validate.outputs.android != 'true' || needs.android.result == 'success')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     environment: github-release
@@ -254,20 +404,39 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22.23.2
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - name: Install publication dependencies without package lifecycle scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - if: needs.validate.outputs.windows == 'true'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: ${{ needs.windows.outputs.artifact_name }}
-          path: windows-public
+          path: release-public/windows
+      - if: needs.validate.outputs.macos == 'true'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ${{ needs.macos.outputs.artifact_name }}
+          path: release-public/macos
+      - if: needs.validate.outputs.linux == 'true'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ${{ needs.linux.outputs.artifact_name }}
+          path: release-public/linux
+      - if: needs.validate.outputs.android == 'true'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ${{ needs.android.outputs.artifact_name }}
+          path: release-public/android
       - name: Publish only verified immutable deliverables
         env:
           GH_TOKEN: ${{ github.token }}
-          WINDOWS_IDENTITY: ${{ needs.windows.outputs.identity }}
+          RELEASE_IDENTITY: ${{ needs.validate.outputs.identity }}
           APPLE_STATE: ${{ needs.testflight.outputs.state || 'failed' }}
-        run: node scripts/distribution/publish-windows.mjs windows-public
+        run: node scripts/distribution/publish-release.mjs release-public
 
   summary:
     name: Sanitized platform outcomes
-    needs: [validate, windows, ipados, testflight, publish-windows]
+    needs: [validate, windows, macos, linux, android, ipados, testflight, publish-release]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5

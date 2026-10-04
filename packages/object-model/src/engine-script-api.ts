@@ -1,8 +1,11 @@
+import { OVERLAY_LAYOUT_CLASSES, ENGINE_TEXT2D_APPEAR_MODE_ENUM_ID, ENGINE_TEXT2D_APPEAR_TRANSITION_ENUM_ID, ENGINE_TEXT2D_APPEAR_START_ENUM_ID } from "@babylonslate/core";
+
 export type EngineScriptPin = {
   name: string;
   typeId: string;
   direction: "in" | "out";
   typeClassId?: string;
+  container?: "single" | "array" | "map";
 };
 
 export type EngineScriptVariable = {
@@ -19,6 +22,7 @@ export type EngineScriptVariable = {
 
 export type EngineScriptFunction = {
   name: string;
+  description?: string;
   pins: EngineScriptPin[];
   runtime: string;
 };
@@ -33,7 +37,13 @@ export type EngineClassScriptApi = {
   classId: string;
   variables?: readonly EngineScriptVariable[];
   functions?: readonly EngineScriptFunction[];
+  /** Component-bound events (Add Event on an attached component). */
   events?: readonly EngineScriptEvent[];
+  /**
+   * Lifecycle events a class of this lineage handles on Self. Never
+   * component-bound, so they stay out of `engineEventTypeClassIds()`.
+   */
+  nativeEvents?: readonly EngineScriptEvent[];
 };
 
 const EXEC_IN: EngineScriptPin = {
@@ -52,6 +62,12 @@ const SET_TEXT: EngineScriptFunction = {
   runtime: "setText",
   pins: [EXEC_IN, EXEC_OUT, { name: "text", typeId: "string", direction: "in" }],
 };
+
+function painterFunction(name: string, operation: string, inputs: Array<[string, string, "array"?]> = []): EngineScriptFunction {
+  return { name, runtime: `painter${operation}`, pins: [EXEC_IN, EXEC_OUT,
+    ...inputs.map(([pinName, typeId, container]) => ({ name: pinName, typeId, direction: "in" as const, ...(container ? { container } : {}) })),
+    { name: "success", typeId: "bool", direction: "out" }] };
+}
 
 const HIT_TEST: EngineScriptVariable = {
   name: "Hit Test",
@@ -73,6 +89,8 @@ const TEXT_VARIABLES: readonly EngineScriptVariable[] = [
 
 const TEXT2D_VARIABLES: readonly EngineScriptVariable[] = [
   ...TEXT_VARIABLES,
+  { name: "Text Material", typeId: "asset", typeClassId: "Material", propertyKey: "materialGuid" },
+  { name: "Material UV", typeId: "string", propertyKey: "materialUv" },
   HIT_TEST,
   { name: "Renderer", typeId: "string", propertyKey: "renderer" },
   { name: "Outline", typeId: "float", propertyKey: "outline" },
@@ -126,6 +144,22 @@ export const BUTTON_MOUSE_EVENTS: readonly EngineScriptEvent[] = [
   },
 ];
 
+const FOCUS_EVENTS: readonly EngineScriptEvent[] = [
+  { name: "On Focus Enter", eventType: "flow.event.focusEnter", exportName: "onFocusEnter" },
+  { name: "On Focus Leave", eventType: "flow.event.focusLeave", exportName: "onFocusLeave" },
+  { name: "On Focus Activate", eventType: "flow.event.focusActivate", exportName: "onFocusActivate" },
+];
+const FOCUS_VARIABLES: readonly EngineScriptVariable[] = [
+  { name: "Focus Enabled", typeId: "bool", propertyKey: "focusEnabled" },
+  { name: "Initial Focus", typeId: "bool", propertyKey: "focusInitial" },
+  { name: "Focused", typeId: "bool", propertyKey: "focused", getOnly: true },
+  ...["Up", "Down", "Left", "Right"].map((direction) => ({ name: `Focus ${direction}`, typeId: "string", propertyKey: `focus${direction}` })),
+];
+const FOCUS_FUNCTIONS: readonly EngineScriptFunction[] = [
+  { name: "Set Focus", runtime: "setFocusTarget", pins: [EXEC_IN, EXEC_OUT, { name: "success", typeId: "bool", direction: "out" }] },
+  { name: "Clear Focus", runtime: "clearFocusTarget", pins: [EXEC_IN, EXEC_OUT] },
+];
+
 export const COLLIDER_EVENTS: readonly EngineScriptEvent[] = [
   { name: "On Hit", eventType: "flow.event.hit", exportName: "onHit" },
   {
@@ -140,7 +174,200 @@ export const COLLIDER_EVENTS: readonly EngineScriptEvent[] = [
   },
 ];
 
+export const MOVEMENT_EVENTS: readonly EngineScriptEvent[] = [
+  { name: "On Movement Started", eventType: "flow.event.movementStarted", exportName: "onMovementStarted" },
+  { name: "On Movement Stopped", eventType: "flow.event.movementStopped", exportName: "onMovementStopped" },
+  { name: "On Movement Jumped", eventType: "flow.event.movementJumped", exportName: "onMovementJumped" },
+  { name: "On Movement Left Ground", eventType: "flow.event.movementLeftGround", exportName: "onMovementLeftGround" },
+  { name: "On Movement Landed", eventType: "flow.event.movementLanded", exportName: "onMovementLanded" },
+];
+
+const INIT_EVENT: EngineScriptEvent = {
+  name: "On Init",
+  eventType: "flow.event.init",
+  exportName: "onInit",
+};
+const TICK_EVENT: EngineScriptEvent = {
+  name: "Tick",
+  eventType: "flow.event.tick",
+  exportName: "onTick",
+};
+const END_EVENT: EngineScriptEvent = {
+  name: "On End",
+  eventType: "flow.event.end",
+  exportName: "onEnd",
+};
+
+/** Game Instance lifecycle; GameSubsystem shares it for parity. */
+const GAME_INSTANCE_EVENTS: readonly EngineScriptEvent[] = [
+  {
+    name: "Scalability Changed",
+    eventType: "flow.event.scalabilityChanged",
+    exportName: "onScalabilityChanged",
+  },
+  INIT_EVENT,
+  TICK_EVENT,
+  END_EVENT,
+  {
+    name: "On First Scene Loaded",
+    eventType: "flow.event.firstSceneLoaded",
+    exportName: "onFirstSceneLoaded",
+  },
+  {
+    name: "On Scene Start Loading",
+    eventType: "flow.event.sceneStartLoading",
+    exportName: "onSceneStartLoading",
+  },
+  {
+    name: "On Scene Finish Loading",
+    eventType: "flow.event.sceneFinishLoading",
+    exportName: "onSceneFinishLoading",
+  },
+  {
+    name: "On Scene Exit",
+    eventType: "flow.event.sceneExit",
+    exportName: "onSceneExit",
+  },
+];
+
+const SCENE_SUBSYSTEM_EVENTS: readonly EngineScriptEvent[] = [
+  INIT_EVENT,
+  TICK_EVENT,
+  END_EVENT,
+  {
+    name: "On Scene Loaded",
+    eventType: "flow.event.sceneLoaded",
+    exportName: "onSceneLoaded",
+  },
+  {
+    name: "On Streamed Scene Loaded",
+    eventType: "flow.event.streamedSceneLoaded",
+    exportName: "onStreamedSceneLoaded",
+  },
+  {
+    name: "On Streamed Scene Unloaded",
+    eventType: "flow.event.streamedSceneUnloaded",
+    exportName: "onStreamedSceneUnloaded",
+  },
+  {
+    name: "On Scene Layer Added",
+    eventType: "flow.event.sceneLayerAdded",
+    exportName: "onSceneLayerAdded",
+  },
+  {
+    name: "On Scene Layer Removed",
+    eventType: "flow.event.sceneLayerRemoved",
+    exportName: "onSceneLayerRemoved",
+  },
+  {
+    name: "On Scene Actor Spawned",
+    eventType: "flow.event.sceneActorSpawned",
+    exportName: "onSceneActorSpawned",
+  },
+  {
+    name: "On Scene Actor Destroyed",
+    eventType: "flow.event.sceneActorDestroyed",
+    exportName: "onSceneActorDestroyed",
+  },
+];
+
+const GET_SCENE_LOADING_PROGRESS: EngineScriptFunction = {
+  name: "Get Scene Loading Progress",
+  runtime: "getSceneLoadingProgress",
+  pins: [{ name: "progress", typeId: "float", direction: "out" }],
+};
+
+const GET_SCENE_REFERENCE: EngineScriptFunction = {
+  name: "Get Scene Reference",
+  runtime: "getSceneReference",
+  pins: [
+    {
+      name: "scene",
+      typeId: "object",
+      typeClassId: "Scene",
+      direction: "out",
+    },
+  ],
+};
+
 export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
+  ...OVERLAY_LAYOUT_CLASSES.map((classId): EngineClassScriptApi => ({ classId, variables: [
+    ...["width", "height", "fillWeight", "gap", "paddingLeft", "paddingRight", "paddingTop", "paddingBottom", "scrollX", "scrollY"].map(propertyKey => ({ name: propertyKey.replace(/([A-Z])/g, " $1").replace(/^./, c => c.toUpperCase()), typeId: "float", propertyKey })),
+    ...["widthMode", "heightMode", "horizontalAlignment", "verticalAlignment", "scrollAxis"].map(propertyKey => ({ name: propertyKey.replace(/([A-Z])/g, " $1").replace(/^./, c => c.toUpperCase()), typeId: "string", propertyKey })),
+  ] })),
+  {
+    classId: "2DPainterComponent",
+    variables: [
+      { name: "Width", typeId: "float", propertyKey: "width" },
+      { name: "Height", typeId: "float", propertyKey: "height" },
+      { name: "Pixels Per Unit", typeId: "float", propertyKey: "pixelsPerUnit" },
+      { name: "Clear Each Frame", typeId: "bool", propertyKey: "clearEachFrame" },
+      { name: "Fill", typeId: "bool", propertyKey: "fill" },
+      { name: "Stroke", typeId: "bool", propertyKey: "stroke" },
+      { name: "Fill Color", typeId: "color", propertyKey: "fillColor" },
+      { name: "Stroke Color", typeId: "color", propertyKey: "strokeColor" },
+      { name: "Stroke Width", typeId: "float", propertyKey: "strokeWidth" },
+      { name: "Line Cap", typeId: "string", propertyKey: "lineCap" },
+      { name: "Line Join", typeId: "string", propertyKey: "lineJoin" },
+      { name: "Fill Rule", typeId: "string", propertyKey: "fillRule" }, HIT_TEST,
+    ],
+    functions: [
+      painterFunction("Clear", "Clear"),
+      painterFunction("Draw Line", "DrawLine", [["start", "vec2"], ["end", "vec2"]]),
+      painterFunction("Draw Polyline", "DrawPolyline", [["points", "vec2", "array"]]),
+      painterFunction("Draw Polygon", "DrawPolygon", [["points", "vec2", "array"]]),
+      painterFunction("Draw Rectangle", "DrawRectangle", [["center", "vec2"], ["size", "vec2"]]),
+      painterFunction("Draw Circle", "DrawCircle", [["center", "vec2"], ["radius", "float"]]),
+      painterFunction("Draw Ellipse", "DrawEllipse", [["center", "vec2"], ["radius", "vec2"]]),
+      painterFunction("Begin Path", "BeginPath"),
+      painterFunction("Move To", "MoveTo", [["point", "vec2"]]),
+      painterFunction("Line To", "LineTo", [["point", "vec2"]]),
+      painterFunction("Quadratic Curve To", "QuadraticTo", [["control", "vec2"], ["point", "vec2"]]),
+      painterFunction("Bezier Curve To", "BezierTo", [["control1", "vec2"], ["control2", "vec2"], ["point", "vec2"]]),
+      painterFunction("Arc", "Arc", [["center", "vec2"], ["radius", "vec2"], ["rotation", "float"], ["startAngle", "float"], ["endAngle", "float"], ["anticlockwise", "bool"]]),
+      painterFunction("Close Path", "ClosePath"),
+      painterFunction("Fill Path", "FillPath"),
+      painterFunction("Stroke Path", "StrokePath"),
+      painterFunction("Push Mask", "PushMask"),
+      painterFunction("Pop Mask", "PopMask"),
+      painterFunction("Cut Out Path", "CutOutPath"),
+    ],
+  },
+  {
+    classId: "DynamicRuntimeMeshComponent",
+    variables: [
+      { name: "Material", typeId: "asset", typeClassId: "Material", propertyKey: "materialGuid" },
+      { name: "Material Object", typeId: "object", typeClassId: "MaterialObject", propertyKey: "materialObject", getOnly: true },
+      { name: "Enable Collision", typeId: "bool", propertyKey: "enableCollision" },
+      { name: "Layer", typeId: "int", propertyKey: "layer" },
+      { name: "Mask", typeId: "int", propertyKey: "mask" },
+      { name: "Cast Shadows", typeId: "bool", propertyKey: "castShadows" },
+      { name: "Receive Shadows", typeId: "bool", propertyKey: "receiveShadows" },
+    ],
+    functions: [
+      {
+        name: "Set Geometry", runtime: "setDynamicMeshGeometry",
+        pins: [EXEC_IN, EXEC_OUT,
+          { name: "positions", typeId: "float", container: "array", direction: "in" },
+          { name: "indices", typeId: "int", container: "array", direction: "in" },
+          { name: "normals", typeId: "float", container: "array", direction: "in" },
+          { name: "uvs", typeId: "float", container: "array", direction: "in" },
+          { name: "success", typeId: "bool", direction: "out" }],
+      },
+      {
+        name: "Update Vertices", runtime: "updateDynamicMeshVertices",
+        pins: [EXEC_IN, EXEC_OUT,
+          { name: "firstVertex", typeId: "int", direction: "in" },
+          { name: "positions", typeId: "float", container: "array", direction: "in" },
+          { name: "normals", typeId: "float", container: "array", direction: "in" },
+          { name: "uvs", typeId: "float", container: "array", direction: "in" },
+          { name: "success", typeId: "bool", direction: "out" }],
+      },
+      { name: "Clear Geometry", runtime: "clearDynamicMeshGeometry", pins: [EXEC_IN, EXEC_OUT] },
+      { name: "Recalculate Normals", runtime: "recalculateDynamicMeshNormals", pins: [EXEC_IN, EXEC_OUT] },
+      { name: "Recalculate Bounds", runtime: "recalculateDynamicMeshBounds", pins: [EXEC_IN, EXEC_OUT] },
+    ],
+  },
   {
     classId: "RenderTargetCaptureComponent",
     variables: [
@@ -173,25 +400,19 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
   ] },
   {
     classId: "GameInstance",
-    functions: [
-      {
-        name: "Get Scene Loading Progress",
-        runtime: "getSceneLoadingProgress",
-        pins: [{ name: "progress", typeId: "float", direction: "out" }],
-      },
-      {
-        name: "Get Scene Reference",
-        runtime: "getSceneReference",
-        pins: [
-          {
-            name: "scene",
-            typeId: "object",
-            typeClassId: "Scene",
-            direction: "out",
-          },
-        ],
-      },
-    ],
+    functions: [GET_SCENE_LOADING_PROGRESS, GET_SCENE_REFERENCE],
+    nativeEvents: GAME_INSTANCE_EVENTS,
+  },
+  // Subsystems reach Get Scene Loading Progress / Get Scene Reference through
+  // the lineage-gated `gameInstance.*` nodes; catalog `functions` would add
+  // Call rows to every host.
+  {
+    classId: "GameSubsystem",
+    nativeEvents: GAME_INSTANCE_EVENTS,
+  },
+  {
+    classId: "SceneSubsystem",
+    nativeEvents: SCENE_SUBSYSTEM_EVENTS,
   },
   {
     classId: "Scene",
@@ -232,8 +453,21 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
   },
   {
     classId: "2DRichTextComponent",
-    variables: TEXT2D_VARIABLES,
-    functions: [SET_TEXT],
+    variables: [
+      ...TEXT2D_VARIABLES,
+      { name: "Appear Modes", typeId: "enum", typeClassId: ENGINE_TEXT2D_APPEAR_MODE_ENUM_ID, container: "array", propertyKey: "appearModes" },
+      { name: "Appear Transition", typeId: "enum", typeClassId: ENGINE_TEXT2D_APPEAR_TRANSITION_ENUM_ID, propertyKey: "appearTransition" },
+      { name: "Appear Interval", typeId: "float", propertyKey: "appearInterval" },
+      { name: "Appear Duration", typeId: "float", propertyKey: "appearDuration" },
+      { name: "Appear Start", typeId: "enum", typeClassId: ENGINE_TEXT2D_APPEAR_START_ENUM_ID, propertyKey: "appearStart" },
+      { name: "Appear Progress", typeId: "float", propertyKey: "appearProgress", getOnly: true },
+      { name: "Is Revealed", typeId: "bool", propertyKey: "isRevealed", getOnly: true },
+    ],
+    functions: [SET_TEXT,
+      { name: "Trigger Appear", runtime: "triggerAppear", pins: [EXEC_IN, EXEC_OUT] },
+      { name: "Play", runtime: "play", pins: [EXEC_IN, EXEC_OUT] },
+      { name: "Play Reverse", runtime: "playReverse", pins: [EXEC_IN, EXEC_OUT] },
+    ],
     events: [TEXT_CHANGED],
   },
   {
@@ -520,6 +754,64 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
     }],
   },
   {
+    classId: "MovementComponent",
+    variables: [
+      { name: "Enabled", typeId: "bool", propertyKey: "enabled" },
+      { name: "Input Space", typeId: "string", propertyKey: "inputSpace" },
+      { name: "Input Yaw", typeId: "float", propertyKey: "inputYaw" },
+      { name: "Input Scale", typeId: "float", propertyKey: "inputScale" },
+      { name: "Dead Zone", typeId: "float", propertyKey: "deadZone" },
+      { name: "Max Speed", typeId: "float", propertyKey: "maxSpeed" },
+      { name: "Acceleration", typeId: "float", propertyKey: "acceleration" },
+      { name: "Braking", typeId: "float", propertyKey: "braking" },
+      { name: "Air Control", typeId: "float", propertyKey: "airControl" },
+      { name: "Gravity Scale", typeId: "float", propertyKey: "gravityScale" },
+      { name: "Jump Speed", typeId: "float", propertyKey: "jumpSpeed" },
+      { name: "Max Fall Speed", typeId: "float", propertyKey: "maxFallSpeed" },
+      { name: "Radius", typeId: "float", propertyKey: "radius" },
+      { name: "Height", typeId: "float", propertyKey: "height" },
+      { name: "Max Slope Angle", typeId: "float", propertyKey: "maxSlopeAngle" },
+      { name: "Ground Snap Distance", typeId: "float", propertyKey: "groundSnapDistance" },
+      { name: "Coyote Time", typeId: "float", propertyKey: "coyoteTime" },
+      { name: "Jump Buffer Time", typeId: "float", propertyKey: "jumpBufferTime" },
+      { name: "Velocity", typeId: "vec3", propertyKey: "velocity", getOnly: true },
+      { name: "Speed", typeId: "float", propertyKey: "speed", getOnly: true },
+      { name: "Is Grounded", typeId: "bool", propertyKey: "isGrounded", getOnly: true },
+      { name: "Is In Air", typeId: "bool", propertyKey: "isInAir", getOnly: true },
+      { name: "Is Moving", typeId: "bool", propertyKey: "isMoving", getOnly: true },
+    ],
+    functions: [
+      {
+        name: "Convert Input", runtime: "convertMovementInput",
+        description: "Convert a Vec2 to a world direction using Dead Zone and Input Scale. 3D maps X/Y to X/Z with Input Space and yaw in degrees; 2D uses X only.",
+        pins: [EXEC_IN, EXEC_OUT, { name: "input", typeId: "vec2", direction: "in" }, { name: "yaw", typeId: "float", direction: "in" }, { name: "direction", typeId: "vec3", direction: "out" }],
+      },
+      {
+        name: "Set Movement Input", runtime: "setMovementInput",
+        description: "Keep this world direction until replaced. Connect Input Axis Held through Convert Input, then send a zero direction on Released to stop accelerating.",
+        pins: [EXEC_IN, EXEC_OUT, { name: "direction", typeId: "vec3", direction: "in" }],
+      },
+      {
+        name: "Add Movement Input", runtime: "addMovementInput",
+        description: "Add a world direction for the next physics tick only. Call again each tick while held; contributions combine with Set Movement Input and are limited to full strength.",
+        pins: [EXEC_IN, EXEC_OUT, { name: "direction", typeId: "vec3", direction: "in" }],
+      },
+      {
+        name: "Set Velocity", runtime: "setMovementVelocity",
+        description: "Replace world velocity in units per second. Movement input, braking, gravity and collisions continue to affect it.",
+        pins: [EXEC_IN, EXEC_OUT, { name: "velocity", typeId: "vec3", direction: "in" }],
+      },
+      {
+        name: "Add Velocity", runtime: "addMovementVelocity",
+        description: "Add a world velocity change in units per second, such as knockback or a launch. Movement and gravity continue afterward.",
+        pins: [EXEC_IN, EXEC_OUT, { name: "velocity", typeId: "vec3", direction: "in" }],
+      },
+      { name: "Jump", runtime: "jumpMovement", description: "Request a jump using Jump Speed, Coyote Time and Jump Buffer Time. Connect an Input Action Started pin; holding the call can request another jump after landing.", pins: [EXEC_IN, EXEC_OUT] },
+      { name: "Stop Immediately", runtime: "stopMovementImmediately", description: "Clear velocity, persistent input and any buffered jump. Future input and gravity can move the actor again.", pins: [EXEC_IN, EXEC_OUT] },
+    ],
+    events: MOVEMENT_EVENTS,
+  },
+  {
     classId: "NavAgentComponent",
     variables: [
       { name: "Radius", typeId: "float", propertyKey: "radius" },
@@ -546,8 +838,15 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
   },
   {
     classId: "2DButtonComponent",
-    variables: [HIT_TEST],
-    events: BUTTON_MOUSE_EVENTS,
+    variables: [HIT_TEST, ...FOCUS_VARIABLES],
+    events: [...BUTTON_MOUSE_EVENTS, ...FOCUS_EVENTS],
+    functions: FOCUS_FUNCTIONS,
+  },
+  {
+    classId: "2DFocusTargetComponent",
+    variables: FOCUS_VARIABLES,
+    events: FOCUS_EVENTS,
+    functions: FOCUS_FUNCTIONS,
   },
   {
     classId: "2DAnchorComponent",
@@ -635,4 +934,18 @@ export function engineScriptEventsFor(
   classId: string,
 ): readonly EngineScriptEvent[] {
   return engineScriptApiFor(classId)?.events ?? [];
+}
+
+/**
+ * Native lifecycle events for a class, from the nearest engine class in its
+ * ancestry (class first, root last) that declares them.
+ */
+export function engineNativeEventsFor(
+  ancestry: readonly string[],
+): readonly EngineScriptEvent[] {
+  for (const classId of ancestry) {
+    const events = engineScriptApiFor(classId)?.nativeEvents;
+    if (events) return events;
+  }
+  return [];
 }

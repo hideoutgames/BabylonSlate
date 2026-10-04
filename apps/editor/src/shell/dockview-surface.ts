@@ -24,13 +24,25 @@ export function dockviewApiKey(
   return surface === "default" ? documentId : `${documentId}::${surface}`;
 }
 
+const DOCKVIEW_SURFACES: readonly DockviewSurface[] = [
+  "default",
+  "stateMachine",
+  "animationObject",
+  "design",
+  "landscape",
+  "foliage",
+];
+
 export function dockviewApiKeysForDocument(documentId: string): string[] {
-  return [
-    dockviewApiKey(documentId),
-    dockviewApiKey(documentId, "stateMachine"),
-    dockviewApiKey(documentId, "animationObject"),
-    dockviewApiKey(documentId, "design"),
-    dockviewApiKey(documentId, "landscape"),
-    dockviewApiKey(documentId, "foliage"),
-  ];
+  return DOCKVIEW_SURFACES.map((surface) => dockviewApiKey(documentId, surface));
+}
+
+/** Each surface key of a renamed document paired with the same surface's new key. */
+export function dockviewApiKeyPairs(
+  oldId: string,
+  newId: string,
+): Array<readonly [string, string]> {
+  return DOCKVIEW_SURFACES.map(
+    (surface) => [dockviewApiKey(oldId, surface), dockviewApiKey(newId, surface)] as const,
+  );
 }

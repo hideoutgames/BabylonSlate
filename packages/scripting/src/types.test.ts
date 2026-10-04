@@ -109,6 +109,9 @@ describe("pin assignability", () => {
     expect(isAssignable(assetRef("Audio"), STRING)).toBe(false);
     expect(isAssignable(assetRef("Audio"), classRef("Audio"))).toBe(false);
     expect(isAssignable(assetRef(""), assetRef("Audio"))).toBe(true);
+    // Instances plug into Material pins, never the reverse.
+    expect(isAssignable(assetRef("MaterialInstance"), assetRef("Material"))).toBe(true);
+    expect(isAssignable(assetRef("Material"), assetRef("MaterialInstance"))).toBe(false);
     expect(isAssignable(assetRef("Audio"), assetRef(""))).toBe(true);
     expect(defaultValueLiteral(assetRef("Audio"))).toBe('""');
     expect(pinTypeTag(assetRef("Audio"))).toBe("assetRef:Audio");

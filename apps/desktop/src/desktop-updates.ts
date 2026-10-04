@@ -10,6 +10,19 @@ export function automaticUpdatesEnabled(json: string | null): boolean {
   catch { return true; }
 }
 
+export function updatesSupported(
+  platform: NodeJS.Platform,
+  manifest: { channel?: unknown; packageVersion?: unknown; macosSigned?: unknown },
+  appVersion: string,
+  env: NodeJS.ProcessEnv,
+): boolean {
+  if (manifest.channel !== "release" || manifest.packageVersion !== appVersion) return false;
+  if (platform === "win32") return true;
+  if (platform === "linux") return typeof env.APPIMAGE === "string" && env.APPIMAGE.length > 0;
+  if (platform === "darwin") return manifest.macosSigned === true;
+  return false;
+}
+
 /** Owns checks/downloads; electron-updater owns verified installation on normal quit. */
 export function createDesktopUpdates(updater: Updater, reportError: (error: unknown) => void) {
   let enabled = false;

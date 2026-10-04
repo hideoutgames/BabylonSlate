@@ -155,6 +155,8 @@ export class AudioService {
   private unlocked = false;
   private unlocking: Promise<void> | null = null;
   private work: Promise<void> = Promise.resolve();
+  private generation = 0;
+  private disposed = false;
   private sessionGlobalVolume: number | null = null;
   private readonly lifecycle: ReturnType<typeof attachAudioLifecycle>;
   private lastGain: number | null = null;
@@ -269,6 +271,7 @@ export class AudioService {
   }
 
   handleCommand(command: CommandMessage): void {
+    if (this.disposed) return;
     if (command.type === "setShowAudioDebug") {
       this.setShowAudioDebug(command.enabled);
       return;
@@ -280,7 +283,8 @@ export class AudioService {
       this.publishStats();
       return;
     }
-    this.work = this.work.catch(() => undefined).then(() => this.dispatch(command));
+    const generation = this.generation;
+    this.work = this.work.catch(() => undefined).then(() => this.dispatch(command, generation));
   }
 
   setShowAudioDebug(enabled: boolean): void {
@@ -322,17 +326,21 @@ export class AudioService {
   }
 
   async unlockAsync(): Promise<void> {
+    if (this.disposed) return;
     this.lifecycle.resumeFromGesture();
     if (this.unlocked) return;
     if (this.unlocking) return this.unlocking;
     this.unlocking = this.backend.unlockAsync().then(async () => {
+      if (this.disposed) return;
       this.unlocked = true;
+      const generation = this.generation;
       const pending = this.queue;
       this.queue = [];
       this.publishStats();
       for (const command of pending) {
-        await this.dispatch(command);
+        this.work = this.work.catch(() => undefined).then(() => this.dispatch(command, generation));
       }
+      await this.work;
     });
     try {
       await this.unlocking;
@@ -370,6 +378,7 @@ export class AudioService {
   }
 
   resetSession(): void {
+    this.generation++;
     for (const voiceId of [...this.voices.keys()]) {
       this.stopVoice(voiceId);
     }
@@ -385,6 +394,9 @@ export class AudioService {
   }
 
   dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.generation++;
     this.lifecycle.dispose();
     for (const voiceId of [...this.voices.keys()]) {
       this.stopVoice(voiceId);
@@ -408,7 +420,12 @@ export class AudioService {
     this.publishStats();
   }
 
-  private async dispatch(command: QueuedCommand): Promise<void> {
+  private isCurrent(generation: number): boolean {
+    return !this.disposed && generation === this.generation;
+  }
+
+  private async dispatch(command: QueuedCommand, generation: number): Promise<void> {
+    if (!this.isCurrent(generation)) return;
     if (command.type === "setChannelVolume") {
       const mixer = this.activeMixer();
       if (!mixer) {
@@ -459,7 +476,7 @@ export class AudioService {
       this.refreshVoiceGains();
       return;
     }
-    await this.play(command);
+    await this.play(command, generation);
   }
 
   private async resolveSourceBytes(
@@ -469,15 +486,16 @@ export class AudioService {
   ): Promise<Uint8Array | null> {
     const cached =
       this.sourceBytes.get(cacheKey) ??
-      this.sourceBytes.get(assetGuid) ??
+      (chunkId === AUDIO_DEFAULT_SOURCE_CHUNK ? this.sourceBytes.get(assetGuid) : undefined) ??
       this.cache.get(cacheKey) ??
-      this.cache.get(assetGuid);
+      (chunkId === AUDIO_DEFAULT_SOURCE_CHUNK ? this.cache.get(assetGuid) : undefined);
     if (cached && cached.byteLength > 0) return cached;
     if (!this.loadSourceBytes) return cached ?? null;
     const inflight = this.sourceLoads.get(cacheKey);
     if (inflight) return inflight;
     const load = this.loadSourceBytes({ assetGuid, chunkId })
       .then((bytes) => {
+        if (this.disposed) return null;
         if (!bytes || bytes.byteLength === 0) return null;
         this.setSourceBytes(cacheKey, bytes);
         if (chunkId === AUDIO_DEFAULT_SOURCE_CHUNK) {
@@ -494,6 +512,7 @@ export class AudioService {
 
   private async play(
     command: Extract<CommandMessage, { type: "playSound" }>,
+    generation: number,
   ): Promise<void> {
     const assetGuid = command.assetGuid;
     const audio =
@@ -514,6 +533,7 @@ export class AudioService {
     const pitch = resolveAudioPitch(payload, this.random);
     const cacheKey = audioClipCacheKey(assetGuid, clip.chunkId);
     const source = await this.resolveSourceBytes(assetGuid, clip.chunkId, cacheKey);
+    if (!this.isCurrent(generation)) return;
     if (!source || source.byteLength === 0) {
       this.onDiagnostic?.({
         code: "audio.missing_source",
@@ -526,9 +546,15 @@ export class AudioService {
     if (!decoded) {
       try {
         const result = await this.backend.decode(cacheKey, source);
+        if (this.disposed) return;
+        if (!this.isCurrent(generation)) {
+          this.backend.disposeBuffer(cacheKey);
+          return;
+        }
         this.cache.put(cacheKey, source, result.pcmBytes);
         decoded = source;
       } catch {
+        if (!this.isCurrent(generation)) return;
         this.onDiagnostic?.({
           code: "audio.decode_failed",
           message: "Audio failed to decode; playback skipped.",
@@ -537,6 +563,9 @@ export class AudioService {
         return;
       }
     }
+    if (!this.isCurrent(generation)) return;
+    // Transfer the pin before stopping a replaced voice; unpin may evict now.
+    this.cache.pin(cacheKey);
     const voiceId = command.voiceId?.trim() || `voice-${++this.voiceSeq}`;
     this.stopVoice(voiceId);
     if (this.voices.size >= this.maxVoices) {
@@ -577,7 +606,6 @@ export class AudioService {
       reverbSend: resolved.environmentReverb,
       clipChunkId: clip.chunkId,
     };
-    this.cache.pin(cacheKey);
     this.voices.set(voiceId, {
       voiceId,
       assetGuid,
@@ -596,8 +624,10 @@ export class AudioService {
     this.lastGain = resolved.gain;
     try {
       await this.backend.play(request);
+      if (!this.isCurrent(generation)) return;
       this.backend.setVoicePlaybackRate(voiceId, pitch);
     } catch {
+      if (!this.isCurrent(generation)) return;
       this.stopVoice(voiceId);
       this.onDiagnostic?.({
         code: "audio.play_failed",
@@ -615,8 +645,8 @@ export class AudioService {
     const voice = this.voices.get(voiceId);
     if (!voice) return;
     this.voices.delete(voiceId);
-    this.cache.unpin(voice.cacheKey);
-    this.backend.stop(voiceId);
+    try { this.backend.stop(voiceId); }
+    finally { this.cache.unpin(voice.cacheKey); }
     this.refreshReverbWet();
     this.publishStats();
   }

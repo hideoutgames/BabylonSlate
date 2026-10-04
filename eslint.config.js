@@ -247,6 +247,11 @@ export default tseslint.config(
     ],
   },
   {
+    ...js.configs.recommended,
+    files: ["scripts/**/*.mjs", "eslint.config.js"],
+    languageOptions: { globals: globals.node },
+  },
+  {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ["**/*.{ts,tsx}"],
     languageOptions: {

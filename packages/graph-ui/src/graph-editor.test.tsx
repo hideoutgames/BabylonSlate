@@ -95,30 +95,28 @@ function installImmediateGraphHostSize(
       this.callback = callback;
     }
     observe(target: Element) {
-      const isEditor = target.getAttribute("data-testid") === "graph-editor";
-      if (isEditor) {
-        Object.defineProperty(target, "clientWidth", {
-          configurable: true,
-          value: width,
-        });
-        Object.defineProperty(target, "clientHeight", {
-          configurable: true,
-          value: height,
-        });
-      }
-      const measuredWidth = isEditor ? width : 0;
-      const measuredHeight = isEditor ? height : 0;
+      // Only the graph host has layout in this fixture. Notifying each zero-size
+      // React Flow node forces a separate, unused computed-style measurement.
+      if (target.getAttribute("data-testid") !== "graph-editor") return;
+      Object.defineProperty(target, "clientWidth", {
+        configurable: true,
+        value: width,
+      });
+      Object.defineProperty(target, "clientHeight", {
+        configurable: true,
+        value: height,
+      });
       this.callback(
         [
           {
             target,
             contentRect: {
-              width: measuredWidth,
-              height: measuredHeight,
+              width,
+              height,
               top: 0,
               left: 0,
-              right: measuredWidth,
-              bottom: measuredHeight,
+              right: width,
+              bottom: height,
               x: 0,
               y: 0,
               toJSON: () => ({}),
@@ -699,20 +697,19 @@ describe("GraphEditor", () => {
         observers.push(this);
       }
       observe(target: Element) {
+        // Match the measured-host fixture; other jsdom elements have no layout.
+        if (target.getAttribute("data-testid") !== "graph-editor") return;
         this.target = target;
-        const isEditor = target.getAttribute("data-testid") === "graph-editor";
-        if (isEditor) {
-          Object.defineProperty(target, "clientWidth", {
-            configurable: true,
-            value: 500,
-          });
-          Object.defineProperty(target, "clientHeight", {
-            configurable: true,
-            value: 400,
-          });
-        }
-        const width = isEditor ? 500 : 0;
-        const height = isEditor ? 400 : 0;
+        const width = 500;
+        const height = 400;
+        Object.defineProperty(target, "clientWidth", {
+          configurable: true,
+          value: width,
+        });
+        Object.defineProperty(target, "clientHeight", {
+          configurable: true,
+          value: height,
+        });
         this.callback(
           [
             {
@@ -825,7 +822,7 @@ describe("GraphEditor", () => {
     expect(container.querySelectorAll(".react-flow__handle")).not.toHaveLength(0);
   });
 
-  it("creates an edge when tapping an output pin then an input pin", () => {
+  it.each(["log-a", "log-b"])("tap-connects execution to %s, including a self-cycle", (targetId) => {
     const onChange = vi.fn();
     const { container } = render(
       <GraphEditor initialGraph={graphWithPins()} onChange={onChange} />,
@@ -837,7 +834,7 @@ describe("GraphEditor", () => {
     const source = nodeElements[0]?.querySelector(
       '[data-handleid="execOut"][data-handlepos="right"]',
     );
-    const target = nodeElements[1]?.querySelector(
+    const target = container.querySelector(`.react-flow__node[data-id="${targetId}"]`)?.querySelector(
       '[data-handleid="execIn"][data-handlepos="left"]',
     );
     expect(source).not.toBeNull();
@@ -851,7 +848,7 @@ describe("GraphEditor", () => {
     expect(lastGraph.edges).toHaveLength(1);
     expect(lastGraph.edges[0]).toMatchObject({
       source: "log-a",
-      target: "log-b",
+      target: targetId,
       sourceHandle: "execOut",
       targetHandle: "execIn",
     });
@@ -3940,7 +3937,7 @@ describe("GraphEditor", () => {
     expect(container.querySelector('[data-id="task"] [data-node-role="bt-task"]')).not.toBeNull();
     expect(
       container.querySelector('[data-id="task"] [data-node-role="bt-task"]')?.className,
-    ).toMatch(/min-w-56/);
+    ).toMatch(/\bw-56\b/);
     expect(getByTestId("bt-node-root").className).toContain("bt-node-drag-handle");
     expect(getByTestId("bt-decorator-dec-1").className).toContain("nodrag");
     expect(getByTestId("bt-service-svc-1").className).toContain("nodrag");

@@ -5,6 +5,7 @@ import { isEnvironmentTexturePayload, normalizeModelPayload } from "@babylonslat
 import { MODEL_MATERIALS_PICKER_ENTRY, patchInspectorComponentProperty } from "../lib/mesh-material-properties";
 import { normalizeRenderTargetCaptureProperties } from "@babylonslate/core";
 import { RenderTargetCaptureActorsField } from "../components/render-target-capture-actors-field";
+import { RichTextAppearModesField } from "../components/rich-text-appear-modes-field";
 import type { IDockviewPanelProps } from "dockview-react";
 import { useCallback, useMemo, useState } from "react";
 import { CelShadingFields } from "../components/cel-shading-fields";
@@ -36,8 +37,10 @@ import {
   createDefaultSceneSettings,
   findActor,
   identitySerializedTransform,
+  isSceneLayerAnchorActor,
   parseOverlayPanelProperties,
   parseText2DProperties,
+  parseText2DAppearProperties,
   parseText3DProperties,
   patchComponentProperties,
   setSceneStreamingTarget,
@@ -87,7 +90,8 @@ import {
 import { useOptionalNavBake } from "../context/nav-bake-context";
 import { IconActionButton } from "../components/icon-action-button";
 import { NineSlicePreview } from "../components/nine-slice-preview";
-import { AddComponentDialog } from "../components/add-component-dialog";
+import { AddComponentMenu } from "../components/add-component-menu";
+import { anchorBelow } from "../lib/menu-anchor";
 import { RagdollBoneNamesEditor } from "../components/ragdoll-bone-names-editor";
 import {
   defaultPropertiesFor,
@@ -107,6 +111,7 @@ import {
 import {
   classParentLookup,
   isPostProcessMaterialForPicker,
+  materialDomainsFromAssets,
 } from "../lib/content-browser-helpers";
 import { spatialTransformPropertyRows } from "../lib/transform-property-rows";
 import { selectionTransformPropertyRows } from "../lib/selection-transform-property-rows";
@@ -215,7 +220,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       </EmptyHeader>
     </Empty>
   );
-  const [addComponentOpen, setAddComponentOpen] = useState(false);
+  const [addComponentAnchor, setAddComponentAnchor] = useState<{ x: number; y: number } | null>(null);
   const [assetPick, setAssetPick] = useState<AssetPickRequest | null>(null);
   const [constraintTargetPick, setConstraintTargetPick] = useState<{ actorId: string; componentId: string } | null>(null);
   const [cameraPickerOpen, setCameraPickerOpen] = useState(false);
@@ -233,6 +238,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
     type: asset.header.type,
     path: asset.path,
   }));
+  const materialDomains = materialDomainsFromAssets(assetRegistry?.list() ?? [], openDocuments);
   const postProcessPickerAssets = (assetRegistry?.list() ?? [])
     .filter((asset) => isPostProcessMaterialForPicker(asset, openDocuments))
     .map((asset) => ({
@@ -975,7 +981,8 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
             if (!open) setPostProcessPick(null);
           }}
           assets={postProcessPickerAssets}
-          allowedTypes={["Material"]}
+          allowedTypes={["Material", "MaterialInstance"]}
+          createTypes={["Material"]}
           createOptions={{ materialDomain: "postProcess" }}
           title="Pick Post-Process Material"
           allowNone={postProcessPick !== "add"}
@@ -1041,6 +1048,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         entry !== undefined && entry !== null,
     );
   const multiSelection = selectedActors.length > 1;
+  const spatialActors = selectedActors.filter((entry) => !isSceneLayerAnchorActor(entry));
   const shapeComponents = actor.components.filter((component) =>
     component.classId === "SplineComponent" || waterKindForClass(component.classId) !== null,
   );
@@ -1066,11 +1074,11 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       value: actor.name,
       onChange: (name) => updateActor((entry) => ({ ...entry, name })),
     },
-    ...(multiSelection
+    ...(spatialActors.length === 0 ? [] : multiSelection
       ? selectionTransformPropertyRows(
-          selectedActors,
+          spatialActors,
           scene.viewportMode,
-          updateSelectedActors,
+          (update) => updateSelectedActors((entry) => isSceneLayerAnchorActor(entry) ? entry : update(entry)),
         )
       : spatialTransformPropertyRows(
           "actor",
@@ -1078,16 +1086,16 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
           actor.transform,
           (transform) => updateActor((entry) => ({ ...entry, transform })),
         )),
-    {
+    ...(spatialActors.length === 0 ? [] : [{
       kind: "boolean",
       id: "actor-visible",
       label: "Visible",
-      value: actor.visible,
-      mixed: selectedActors.some((entry) => entry.visible !== actor.visible),
+      value: spatialActors[0]?.visible ?? true,
+      mixed: spatialActors.some((entry) => entry.visible !== spatialActors[0]?.visible),
       defaultValue: true,
       onChange: (visible) =>
-        updateSelectedActors((entry) => ({ ...entry, visible })),
-    },
+        updateSelectedActors((entry) => isSceneLayerAnchorActor(entry) ? entry : ({ ...entry, visible })),
+    } satisfies PropertyRow]),
     {
       kind: "boolean",
       id: "actor-locked",
@@ -1154,6 +1162,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
             onPickAsset: setAssetPick,
             actorLabel: (targetId) => actorDisplayNames.get(targetId),
             actorComponents: (targetId) => scene.actors.find((candidate) => candidate.id === targetId)?.components ?? [],
+            focusTargets: scene.actors.flatMap((candidate) => candidate.components.filter((entry) => entry.classId === "2DButtonComponent" || entry.classId === "2DFocusTargetComponent").map((entry, index) => ({ value: entry.id, label: `${actorDisplayNames.get(candidate.id) ?? candidate.name} / ${entry.classId === "2DButtonComponent" ? "2D Button" : "2D Focus Target"} ${index + 1}` }))),
             onPickActor: (componentId) => setConstraintTargetPick({ actorId: actor.id, componentId }),
           },
         ),
@@ -1180,10 +1189,11 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       const extraLabels =
         component.classId === "NavMeshComponent"
           ? "Bake NavMesh"
+          : component.classId === "2DRichTextComponent"
+            ? "Text Appear Modes Fade Scale Slide Instant Off"
           : [
                 "Text3DComponent",
                 "2DTextComponent",
-                "2DRichTextComponent",
               ].includes(component.classId)
             ? "Text"
             : component.classId === "2DPanelComponent"
@@ -1195,6 +1205,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                   : "";
       return {
         component,
+        template,
         index,
         title,
         rows: filterRows(rows, title),
@@ -1254,7 +1265,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
             variant="outline"
             size="sm"
             aria-label={multiSelection ? `Add Component To ${actor.name}` : "Add Component"}
-            onClick={() => setAddComponentOpen(true)}
+            onClick={(event) => setAddComponentAnchor(anchorBelow(event.currentTarget))}
             data-testid="details-add-component"
           >
             <PlusIcon data-icon="inline-start" />
@@ -1264,6 +1275,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         {componentDetails.map(
           ({
             component,
+            template,
             index,
             title,
             rows,
@@ -1361,6 +1373,19 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
               ) : null}
               {expanded ? (
                 <div id={`component-details-${actor.id}-${component.id}`}>
+                  {showExtras && component.classId === "2DRichTextComponent" ? (
+                    <RichTextAppearModesField
+                      value={parseText2DAppearProperties(component.properties).appearModes}
+                      defaultValue={parseText2DAppearProperties(template?.properties ?? {}).appearModes}
+                      onChange={(appearModes) => updateActor((entry) => ({
+                        ...entry,
+                        components: entry.components.map((candidate) => candidate.id === component.id
+                          ? { ...candidate, properties: { ...candidate.properties, appearModes } }
+                          : candidate),
+                      }))}
+                      data-testid={`rich-text-appear-modes-${component.id}`}
+                    />
+                  ) : null}
                   {rows.length ? <PropertyGrid rows={rows} /> : null}
                   {showExtras && component.classId === "RenderTargetCaptureComponent" && component.properties.captureOnlyActors === true ? (
                     <RenderTargetCaptureActorsField actors={scene.actors} actorIds={normalizeRenderTargetCaptureProperties(component.properties).actorIds}
@@ -1491,7 +1516,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         onOpenChange={(open) => {
           if (!open) setAssetPick(null);
         }}
-        assets={assetPick?.property === "materialGuid" && actor.components.some((component) => component.id === assetPick.componentId && component.classId === "MeshComponent" && component.properties.assetGuid)
+        assets={assetPick?.materialDomain === "text" ? pickerAssets.filter((asset) => materialDomains[asset.guid] === "text") : assetPick?.property === "materialGuid" && actor.components.some((component) => component.id === assetPick.componentId && component.classId === "MeshComponent" && component.properties.assetGuid)
           ? [MODEL_MATERIALS_PICKER_ENTRY, ...pickerAssets]
           : pickerAssets}
         allowedTypes={assetPick?.allowedTypes}
@@ -1499,6 +1524,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         allowNone
         onPick={(guid) => {
           if (!assetPick) return;
+          if (guid && assetPick.materialDomain === "text" && materialDomains[guid] !== "text") return;
           const { componentId, property } = assetPick;
           if (property === "sceneGuid" && actor.components.some((candidate) => candidate.id === componentId && candidate.classId === "SceneStreamingComponent")) {
             updateActor((entry) => ({ ...entry, components: setSceneStreamingTarget(entry.components, componentId, guid, assetLabel(guid) ?? "") }));
@@ -1564,31 +1590,39 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         }}
         data-testid={pickingCableTarget ? "details-cable-target-picker" : "details-constraint-target-picker"}
       />
-      <AddComponentDialog
-        open={addComponentOpen}
-        onOpenChange={setAddComponentOpen}
+      <AddComponentMenu
+        open={addComponentAnchor !== null}
+        onOpenChange={(open) => {
+          if (!open) setAddComponentAnchor(null);
+        }}
+        anchor={addComponentAnchor}
         projectItems={projectAddComponentItems(assetRegistry?.list() ?? [])}
         overlay={overlay}
         physicsWorld={scene.settings.physicsWorld}
         onSelect={(selection) =>
-          updateActor((entry) => ({
-            ...entry,
-            components: [
-              ...entry.components,
-              {
-                id: `${entry.id}-component-${entry.components.length + 1}`,
-                classId: selection.classId,
-                properties: {
-                  ...defaultPropertiesFor(
-                    selection.classId,
-                    overlay ? "2d" : scene.settings.physicsWorld,
-                    overlay ? "2d" : scene.viewportMode,
-                  ),
-                  ...selection.properties,
+          updateActor((entry) => {
+            const usedIds = new Set(entry.components.map((component) => component.id));
+            let suffix = entry.components.length + 1;
+            while (usedIds.has(`${entry.id}-component-${suffix}`)) suffix += 1;
+            return {
+              ...entry,
+              components: [
+                ...entry.components,
+                {
+                  id: `${entry.id}-component-${suffix}`,
+                  classId: selection.classId,
+                  properties: {
+                    ...defaultPropertiesFor(
+                      selection.classId,
+                      overlay ? "2d" : scene.settings.physicsWorld,
+                      overlay ? "2d" : scene.viewportMode,
+                    ),
+                    ...selection.properties,
+                  },
                 },
-              },
-            ],
-          }))
+              ],
+            };
+          })
         }
         data-testid="add-component-catalog"
       />

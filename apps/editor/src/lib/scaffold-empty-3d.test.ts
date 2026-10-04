@@ -86,7 +86,7 @@ describe("applyKenneyMannequinEmptyScaffold", () => {
     expect(actorCollider?.properties.shape).toEqual(
       expect.objectContaining({ kind: "capsule", radius: 0.5, halfHeight: 1 }),
     );
-    const actorY = actorCollider?.transform.position[1];
+    const actorY = actorCollider?.transform?.position[1];
     expect(actorY).toBe(1.5);
 
     const classCall = createAsset.mock.calls.find(([, path]) =>
@@ -104,6 +104,6 @@ describe("applyKenneyMannequinEmptyScaffold", () => {
     expect(classCollider?.properties.shape).toEqual(
       expect.objectContaining({ kind: "capsule" }),
     );
-    expect(classCollider?.transform.position[1]).toBe(actorY);
+    expect(classCollider?.transform?.position[1]).toBe(actorY);
   });
 });

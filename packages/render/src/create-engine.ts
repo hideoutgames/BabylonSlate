@@ -1,4 +1,6 @@
+import { applyDynamicRuntimeMeshUpdate } from "./dynamic-runtime-mesh";
 import { PostProcessRetirement } from "./post-process-retirement";
+import { OverlayLayoutRenderer } from "./overlay-layout-render";
 import { sceneRenderTargetCaptures } from "./render-target-capture";
 import type { AudioLibrary } from "./audio-service";
 import { AudioService } from "./audio-service";
@@ -179,6 +181,8 @@ import {
   applyAttachToBone,
   applySetMaterialParameter,
   applyAssignMesh,
+  applyPainter2DCommand,
+  applyText2DAppearCommand,
   applyPossessCamera,
   assignedMaterialGuids as listAssignedMaterialGuids,
   createSnapshotSceneBinding,
@@ -213,6 +217,7 @@ import { updateSceneTilemapAnimations } from "./tilemap-mesh";
 import { EditorDebugOverlay } from "./editor-debug-overlay";
 import { beginEngineDrawCallFrame, readEngineDrawCalls } from "./draw-calls";
 import { MaterialLibrary } from "./material-library";
+import { refreshText2DMaterials } from "./text2d-mesh";
 import {
   normalizePostProcessStack,
   type AttachedPostProcessStack,
@@ -350,6 +355,8 @@ export interface EngineHandle {
   unlockAudio: () => Promise<void>;
   /** Clear session mixer volumes and stop voices (scene change / Play stop). */
   resetAudioSession: () => void;
+  /** Replace the active scene's baked audio field; null restores dry acoustics. */
+  setAudioReverbField: (bytes: Uint8Array | null) => void;
   /** Dispose live particle systems (scene change / Play stop). GPU stop still draws leftovers. */
   resetParticleSession: () => void;
   /** Debug free camera is the Play active camera. */
@@ -560,6 +567,7 @@ export interface CreateEngineOptions {
       | "onPressEnd";
     componentId?: string;
   }) => void;
+  onSceneLayerScroll?: (event: { layerId: string; actorId: string; componentId: string; deltaX: number; deltaY: number }) => void;
   /** Overlay 2DAnchor frustum in world units (height 9, width 9 * aspect). */
   onSceneLayerResize?: (size: {
     frustumWidth: number;
@@ -1178,6 +1186,9 @@ function initializeEngine(
       // Babylon completes deferred post-process effects on the attached pass.
       // Rebuilding here releases the ready material and starts compilation again.
       if (materialScene === scene) editorSync?.refreshMaterials();
+      for (const root of binding.meshes.values()) {
+        if (root.getScene() === materialScene) refreshText2DMaterials(root, binding);
+      }
       scheduler.invalidate("asset");
     },
   });
@@ -1380,6 +1391,8 @@ function initializeEngine(
     }
   };
   const overlayPointerState = createOverlayPointerState();
+  const overlayLayouts = new OverlayLayoutRenderer(id => sceneLayerCompositor?.layers().find(layer => layer.layerId === id)?.scene);
+  onRollback(() => overlayLayouts.dispose());
   const playCursor = options.playMode ? attachPlayCursor(canvas) : null;
   onRollback(() => playCursor?.dispose());
 
@@ -2077,10 +2090,27 @@ function initializeEngine(
   let readDiagnostics: ReturnType<typeof createRenderDiagnostics> | undefined;
   const renderDiagnostics = () => {
     captureFramePhases = true;
+    const source = engine.getRenderingCanvas();
+    // Babylon 9.20 exposes loop scheduling fields but keeps the native context
+    // loss flag protected; this snapshot never mutates native ownership.
+    const native = engine as unknown as { _contextWasLost: boolean };
     return { ...(readDiagnostics ??= createRenderDiagnostics(
       scene, () => lastRenderCpuMs, () => rttPresent?.readbackMs() ?? null,
       () => ({ sample: lastPressureSample, gpuAttribution: gpuAttribution() }),
-    ))(), presentation: { ...presentationStats }, rendererWork: worldRenderer.diagnostics() };
+    ))(), presentation: { ...presentationStats }, rendererWork: worldRenderer.diagnostics(),
+      frameAdmission: { ...scheduler.gateState(), worldLoading,
+        pendingPresentations: pendingPresentations.size,
+        registeredViewEnabled: registeredView?.enabled ?? null,
+        registeredViewRequestedEnabled: registeredView ? registeredViewIsEnabled(registeredView) : null,
+        rttPresenting: rttPresent?.isPresenting() ?? false, contextLost },
+      engineLoop: { frameId: engine.frameId, activeLoops: engine.activeRenderLoops.length,
+        ownsLoop: engine.activeRenderLoops.includes(renderLoop), frameHandler: engine._frameHandler,
+        disposed: engine.isDisposed, contextLost: native._contextWasLost,
+        windowIsBackground: engine._windowIsBackground, renderEvenInBackground: engine.renderEvenInBackground,
+        skipFrameRender: engine.skipFrameRender, maxFPS: engine.maxFPS ?? null,
+        customRequester: Boolean(engine.customAnimationFrameRequester),
+        sourceSize: source ? [source.width, source.height] as [number, number] : null,
+        now: performance.now() } };
   };
   const loadingScope = (owner?: SceneLayerLoadIdentity) => {
     const generation = loadGeneration;
@@ -2448,12 +2478,37 @@ function initializeEngine(
       y: event.clientY - rect.top,
     };
   };
+  const scrollTargetAt = (x: number, y: number) => {
+    const size = pointerCanvas();
+    const mapped = mapCanvasPointer(scene, x, y, size);
+    const blockingLayer = sceneLayerCompositor?.pickHits(mapped.x, mapped.y).find(hit => hit.hitTest === "block")?.layerId;
+    for (const layer of [...(sceneLayerCompositor?.sortedLayers() ?? [])].reverse()) {
+      if (layerLoads.get(layer.layerId)?.ready === false) continue;
+      const worldX = (x / Math.max(1, size.width) - 0.5) * layer.layerBounds.width;
+      const worldY = (0.5 - y / Math.max(1, size.height)) * layer.layerBounds.height;
+      const target = overlayLayouts.scrollAt(layer.layerId, worldX, worldY);
+      if (target?.componentId) return { target, layer, scaleX: layer.layerBounds.width / Math.max(1, size.width) / (target.scroll?.scaleX || 1), scaleY: layer.layerBounds.height / Math.max(1, size.height) / (target.scroll?.scaleY || 1) };
+      if (layer.layerId === blockingLayer) break;
+    }
+    return undefined;
+  };
+  let scrollDrag: { pointerId: number; startX: number; startY: number; x: number; y: number; active: boolean; target: NonNullable<ReturnType<typeof scrollTargetAt>> } | null = null;
+  const onOverlayWheel = (event: WheelEvent) => {
+    const rect = canvas.getBoundingClientRect();
+    const hit = scrollTargetAt(event.clientX - rect.left, event.clientY - rect.top);
+    if (!hit) return;
+    event.preventDefault();
+    const factor = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? rect.height : 1;
+    options.onSceneLayerScroll?.({ layerId: hit.layer.layerId, actorId: hit.target.actorId, componentId: hit.target.componentId!, deltaX: (event.shiftKey || hit.target.scroll?.axis === "horizontal" ? event.deltaY : event.deltaX) * factor * hit.scaleX, deltaY: event.shiftKey ? 0 : event.deltaY * factor * hit.scaleY });
+  };
   const onPointerDown = (event: PointerEvent) => {
     event.preventDefault();
     canvas.setPointerCapture?.(event.pointerId);
     const rect = canvas.getBoundingClientRect();
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
+    const scrollTarget = event.pointerType === "touch" || event.pointerType === "pen" ? scrollTargetAt(x, y) : undefined;
+    if (scrollTarget) scrollDrag = { pointerId: event.pointerId, startX: x, startY: y, x, y, active: false, target: scrollTarget };
     playCursor?.notePointer(event.pointerType ?? "mouse", x, y);
     if (dispatchOverlayPointer("down", x, y)) {
       scheduler.invalidate("selection");
@@ -2466,15 +2521,32 @@ function initializeEngine(
   };
   const onPointerMove = (event: PointerEvent) => {
     const { x, y } = overlayPointerCanvasCoords(event);
+    if (scrollDrag?.pointerId === event.pointerId) {
+      if (!scrollDrag.active && Math.hypot(x - scrollDrag.startX, y - scrollDrag.startY) >= 8) {
+        scrollDrag.active = true;
+        for (const hit of overlayPointerState.pressed.values()) options.onSceneLayerPointer?.({ layerId: hit.layerId, actorGuid: hit.actorGuid, componentId: hit.componentId, event: "onPressEnd" });
+        overlayPointerState.pressed.clear();
+      }
+      if (scrollDrag.active) {
+        const { target, layer, scaleX, scaleY } = scrollDrag.target;
+        options.onSceneLayerScroll?.({ layerId: layer.layerId, actorId: target.actorId, componentId: target.componentId!, deltaX: (scrollDrag.x - x) * scaleX, deltaY: (scrollDrag.y - y) * scaleY });
+        scrollDrag.x = x; scrollDrag.y = y;
+        return;
+      }
+    }
     playCursor?.notePointer(event.pointerType ?? "mouse", x, y);
     dispatchOverlayPointer("move", x, y);
   };
   const onPointerUp = (event: PointerEvent) => {
+    const wasScrolling = scrollDrag?.pointerId === event.pointerId && scrollDrag.active;
+    if (scrollDrag?.pointerId === event.pointerId) scrollDrag = null;
+    if (wasScrolling) return;
     const { x, y } = overlayPointerCanvasCoords(event);
     playCursor?.notePointer(event.pointerType ?? "mouse", x, y);
     dispatchOverlayPointer("up", x, y);
   };
   const onPointerCancel = (event: PointerEvent) => {
+    if (scrollDrag?.pointerId === event.pointerId) scrollDrag = null;
     const { x, y } = overlayPointerCanvasCoords(event);
     playCursor?.notePointer(event.pointerType ?? "mouse", x, y);
     dispatchOverlayPointer("cancel", x, y);
@@ -2490,6 +2562,7 @@ function initializeEngine(
       canvas.removeEventListener("pointercancel", onPointerCancel);
       canvas.removeEventListener("touchstart", onOverlayTouch);
       canvas.removeEventListener("touchmove", onOverlayTouch);
+      canvas.removeEventListener("wheel", onOverlayWheel);
     });
     canvas.addEventListener("pointerdown", onPointerDown);
     if (options.playMode && sceneLayerCompositor) {
@@ -2498,6 +2571,7 @@ function initializeEngine(
       canvas.addEventListener("pointercancel", onPointerCancel);
       canvas.addEventListener("touchstart", onOverlayTouch, { passive: false });
       canvas.addEventListener("touchmove", onOverlayTouch, { passive: false });
+      canvas.addEventListener("wheel", onOverlayWheel, { passive: false });
     }
   }
 
@@ -2593,6 +2667,7 @@ function initializeEngine(
       canvas.removeEventListener("pointercancel", onPointerCancel);
       canvas.removeEventListener("touchstart", onOverlayTouch);
       canvas.removeEventListener("touchmove", onOverlayTouch);
+      canvas.removeEventListener("wheel", onOverlayWheel);
       if (typeof document !== "undefined") {
         document.removeEventListener("visibilitychange", onVisibility);
       }
@@ -2674,6 +2749,23 @@ function initializeEngine(
       applyPlayFreeCamCommand(playFreeCam, command);
       playViz?.applyCommand(command);
       playDebugDraw?.applyCommand(command);
+      if (command.type === "setPainter2D") {
+        applyPainter2DCommand(binding, command);
+        scheduler.invalidate("asset");
+      }
+      if (command.type === "setText2DAppear") {
+        const pending = pendingOverlayAssign.get(command.slotId);
+        if (pending && Number.isFinite(command.progress)) {
+          const progress = Math.max(0, Math.min(1, command.progress));
+          const part = pending.parts?.find((entry) => entry.componentId === command.componentId && entry.meshKind === "2drichtext");
+          if (part?.text2d) part.text2d.appearProgress = progress;
+          if (pending.primaryComponentId === command.componentId && pending.meshKind === "2drichtext" && pending.text2d) {
+            pending.text2d.appearProgress = progress;
+          }
+        }
+        applyText2DAppearCommand(binding, command);
+        scheduler.invalidate("asset");
+      }
       if (command.type === "setCursorVisible") {
         playCursor?.setVisible(command.visible);
       }
@@ -2745,6 +2837,7 @@ function initializeEngine(
         scheduler.invalidate("snapshot");
       }
       if (command.type === "sceneLayerRemove") {
+        overlayLayouts.remove(command.layerId);
         particleService?.retireSlots((slotId) => sceneLayerCompositor?.layerIdForSlot(slotId) === command.layerId);
         cancelPresentation(new Error("SceneLayer was removed."), `layer:${command.layerId}`);
         layerLoads.delete(command.layerId);
@@ -2752,6 +2845,7 @@ function initializeEngine(
         scheduler.invalidate("snapshot");
       }
       if (command.type === "sceneLayerClear") {
+        overlayLayouts.dispose();
         particleService?.retireSlots((slotId) => sceneLayerCompositor?.layerIdForSlot(slotId) != null);
         for (const layerId of layerLoads.keys()) cancelPresentation(new Error("SceneLayer was removed."), `layer:${layerId}`);
         layerLoads.clear();
@@ -2765,6 +2859,10 @@ function initializeEngine(
           command.postProcessStack,
         );
         scheduler.invalidate("asset");
+      }
+      if (command.type === "sceneLayerLayout") {
+        overlayLayouts.apply(command);
+        scheduler.invalidate("snapshot");
       }
       audioService?.handleCommand(command);
       if (command.type === "configureRenderTargetCapture") {
@@ -2934,6 +3032,10 @@ function initializeEngine(
       }
       if (command.type === "cableFrame") {
         applyCableFrame(scene, command.data, command.frameId);
+        scheduler.invalidate("snapshot");
+      }
+      if (command.type === "dynamicMeshUpdate") {
+        applyDynamicRuntimeMeshUpdate(scene, command.meshId, command.update);
         scheduler.invalidate("snapshot");
       }
       if (command.type === "animState") {
@@ -3150,6 +3252,7 @@ function initializeEngine(
       functions?: ReadonlyMap<string, MaterialFunctionDocument>,
     ) => {
       if (!installMaterialDocuments(documents, functions)) return;
+      for (const root of binding.meshes.values()) refreshText2DMaterials(root, binding);
       rebuildPostProcessStack();
       const serialized = editorSync?.serializedScene();
       if (editorSync && serialized) editorSync.apply(serialized);
@@ -3215,6 +3318,9 @@ function initializeEngine(
     unlockAudio: () => audioService?.unlockAsync() ?? Promise.resolve(),
     resetAudioSession: () => {
       audioService?.resetSession();
+    },
+    setAudioReverbField: (bytes) => {
+      audioService?.setReverbField(bytes);
     },
     resetParticleSession: () => {
       particleService?.resetSession();
@@ -3326,6 +3432,8 @@ function isOverlayOnlyMeshKind(meshKind: string | null | undefined): boolean {
     case "2dmaterial":
     case "2dbutton":
     case "2dpanel":
+    case "2dlayout":
+    case "2dpainter":
     case "2dtext":
     case "2drichtext":
       return true;

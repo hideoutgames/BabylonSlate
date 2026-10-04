@@ -3,6 +3,7 @@ import { setFogVolumesVisible } from "./fog-volumes";
 import { createWaterMesh } from "./water-mesh";
 import { createWaterRemovalMesh } from "./water-removal-mesh";
 import { createCableMesh, sampleCableFrame } from "./cable-mesh";
+import { createDynamicRuntimeMesh } from "./dynamic-runtime-mesh";
 import { applyMaterialBounds } from "./material-bounds";
 import {
   AbstractMesh,
@@ -14,6 +15,7 @@ import {
   Quaternion,
   Scene,
   SpotLight,
+  TransformNode,
   UniversalCamera,
   Vector3,
   type Camera,
@@ -98,7 +100,8 @@ import {
 import { snapToPixelGrid } from "./pixel-perfect";
 import { createSkyboxMesh, resolveSkyboxCubeTexture } from "./skybox";
 import { createText3DMesh } from "./text3d-mesh";
-import { createText2DMesh, text2DBitmapBytes } from "./text2d-mesh";
+import { createText2DMesh, text2DBitmapBytes, updateText2DAppear } from "./text2d-mesh";
+import { createPainter2DMesh, updatePainter2DMesh } from "./painter2d-mesh";
 import { BitmapAllocationLimitError } from "./text2d-bitmap";
 import { retireBoneAttachments, updateBoneAttachments, type BoneAttachment } from "./bone-attachment";
 export { applyAttachToBone } from "./bone-attachment";
@@ -125,6 +128,16 @@ const scratchBoneSlot: ActorSlot = {
 
 export type AssignMeshCommand = Extract<CommandMessage, { type: "assignMesh" }>;
 export type AssignMeshPart = NonNullable<AssignMeshCommand["parts"]>[number];
+
+type ComponentIllumination = {
+  mesh: Mesh;
+  componentId?: string;
+  light?: Light;
+  camera?: Camera;
+  lightProperties?: AuthoredLightProperties;
+};
+const componentIllumination = new WeakMap<Mesh, ComponentIllumination>();
+const actorIllumination = new WeakMap<Mesh, ComponentIllumination[]>();
 
 export interface SnapshotSceneBinding extends MeshAssetContext {
   ragdoll?: import("./ragdoll-pose").RagdollPoseController;
@@ -413,6 +426,7 @@ function wantsOverlayUnlitMaterial(
     case "2dmaterial":
     case "2dbutton":
     case "2dpanel":
+    case "2dpainter":
     case "2dtext":
     case "2drichtext":
       return true;
@@ -454,6 +468,8 @@ export function applyMaterialToActorMeshes(
 ): void {
   const targets: Mesh[] = [root, ...root.getChildMeshes().filter(isMesh)];
   for (const target of targets) {
+    // Text Materials are composed with glyph coverage by the text builder.
+    if (target.metadata?.text2d || target.metadata?.text2dGlyph) continue;
     if (isTilemapChunkMesh(target)) continue;
     const componentId = componentIdForPlayMesh(target, slotId, binding);
     const guid = assignedMaterialGuid(binding, slotId, componentId);
@@ -516,7 +532,7 @@ function partsNeedOrigin(
   parts: readonly AssignMeshPart[] | undefined,
 ): boolean {
   if (!parts || parts.length === 0) return false;
-  if (parts.length > 1 || parts.some((part) => part.meshKind === "water" || part.meshKind === "waterRemoval" || part.meshKind === "cable")) return true;
+  if (parts.length > 1 || parts.some((part) => part.light || part.camera || part.parentTransforms?.length || part.meshKind === "water" || part.meshKind === "waterRemoval" || part.meshKind === "cable" || part.meshKind === "dynamicRuntimeMesh")) return true;
   const part = parts[0]!;
   return (
     Boolean(part.landscape || part.foliage) ||
@@ -576,6 +592,64 @@ function applyPlayShadows(scene: Scene): void {
 const rejectedTextAssignments = new WeakMap<SnapshotSceneBinding, Map<number, string>>();
 const rejectedPreparedAssignments = new WeakMap<SnapshotSceneBinding, Map<number, string>>();
 const pendingVisualReplacements = new WeakMap<SnapshotSceneBinding, Map<number, Mesh>>();
+/** Exact component roots belong to one visual generation, including prepared successors. */
+const playVisualComponents = new WeakMap<Mesh, ReadonlyMap<string, Mesh>>();
+
+function rememberPlayVisualComponents(root: Mesh, components: ReadonlyMap<string, Mesh>): void {
+  playVisualComponents.set(root, components);
+  root.onDisposeObservable.addOnce(() => playVisualComponents.delete(root));
+}
+
+function updateVisualTextAppear(root: Mesh | undefined, componentId: string, progress: number): void {
+  if (!root || root.isDisposed()) return;
+  const mesh = playVisualComponents.get(root)?.get(componentId);
+  if (mesh && !mesh.isDisposed()) updateText2DAppear(mesh, progress);
+}
+
+/** Keep live and prepared text visuals on the same simulation-owned reveal sample. */
+export function applyText2DAppearCommand(binding: SnapshotSceneBinding, command: Extract<CommandMessage, { type: "setText2DAppear" }>): void {
+  if (!Number.isFinite(command.progress)) return;
+  const parts = binding.meshParts.get(command.slotId);
+  let part: AssignMeshPart | undefined;
+  if (parts) {
+    for (let index = 0; index < parts.length; index++) {
+      const entry = parts[index]!;
+      if (entry.componentId === command.componentId && entry.meshKind === "2drichtext") {
+        part = entry;
+        break;
+      }
+    }
+  }
+  const primary = binding.primaryComponentIds.get(command.slotId) === command.componentId && binding.meshKinds.get(command.slotId) === "2drichtext";
+  if (!part && !primary) return;
+  const progress = Math.min(1, Math.max(0, command.progress));
+  if (part?.text2d) part.text2d.appearProgress = progress;
+  if (primary) {
+    const properties = binding.text2dProps.get(command.slotId);
+    if (properties) properties.appearProgress = progress;
+  }
+  const live = binding.meshes.get(command.slotId);
+  const prepared = pendingVisualReplacements.get(binding)?.get(command.slotId);
+  updateVisualTextAppear(live, command.componentId, progress);
+  if (prepared !== live) updateVisualTextAppear(prepared, command.componentId, progress);
+}
+
+export function applyPainter2DCommand(binding: SnapshotSceneBinding, command: Extract<CommandMessage, { type: "setPainter2D" }>): void {
+  const parts = binding.meshParts.get(command.slotId);
+  const part = parts?.find((entry) => entry.componentId === command.componentId && entry.meshKind === "2dpainter");
+  if (!part) return;
+  part.painter = command.painter;
+  for (const root of [binding.meshes.get(command.slotId), pendingVisualReplacements.get(binding)?.get(command.slotId)]) {
+    if (!root || root.isDisposed()) continue;
+    if (!partsNeedOrigin(parts)) updatePainter2DMesh(root, command.painter);
+    else {
+      const name = playComponentMeshName(command.slotId, command.componentId);
+      const mesh = root.getChildMeshes().find((child) => child.name === name);
+      if (mesh instanceof Mesh) updatePainter2DMesh(mesh, command.painter);
+    }
+  }
+  binding.onVisualChanged?.(command.slotId);
+}
 // A material command supersedes preparation for the exact pending visual, not
 // the already published model generation or another incarnation of this slot.
 const pendingMaterialPreparations = new WeakMap<SnapshotSceneBinding, Map<number, () => void>>();
@@ -618,6 +692,10 @@ export function applyAssignMesh(
   binding: SnapshotSceneBinding,
   command: AssignMeshCommand,
 ): void {
+  const previousParts = binding.meshParts.get(command.slotId);
+  const reusable = !pendingVisualReplacements.get(binding)?.has(command.slotId) &&
+    binding.meshKinds.get(command.slotId) === (command.meshKind ?? null) &&
+    binding.meshAssetGuids.get(command.slotId) === command.meshAssetGuid;
   cancelPendingVisualReplacement(binding, command.slotId);
   const primaryId = !partsNeedOrigin(command.parts)
     ? (command.primaryComponentId ?? command.parts?.[0]?.componentId)
@@ -706,7 +784,31 @@ export function applyAssignMesh(
     }
   }
   const existingLight = binding.lights.get(command.slotId);
-  if (existingLight && command.light) {
+  const componentHelpers = command.parts?.some(part => part.light || part.camera);
+  const existingRoot = binding.meshes.get(command.slotId);
+  if (componentHelpers && reusable && existingRoot?.getScene() === scene && previousParts && command.parts &&
+    actorIllumination.has(existingRoot) && sameComponentVisuals(previousParts, command.parts)) {
+    const parts = new Map(command.parts.map(part => [part.componentId, part]));
+    let selectedCamera: Camera | undefined;
+    for (const helper of actorIllumination.get(existingRoot)!) {
+      const part = helper.componentId ? parts.get(helper.componentId) : undefined;
+      if (helper.light && part?.light) {
+        helper.lightProperties = part.light;
+        applyAuthoredLightProperties(helper.light, part.light);
+      }
+      if (helper.camera && part?.camera) {
+        applyAuthoredCameraProperties(helper.camera, part.camera);
+        if (!selectedCamera || part.camera.isDefault) selectedCamera = helper.camera;
+      }
+    }
+    if (selectedCamera) binding.cameras.set(command.slotId, selectedCamera);
+    stampOverlayPick(existingRoot, command);
+    applyPlayVisualSorting(existingRoot, command.slotId, binding);
+    applyPlayShadows(scene);
+    refreshPlayActiveCamera(scene, binding);
+    return;
+  }
+  if (existingLight && command.light && !componentHelpers) {
     applyAuthoredLightProperties(existingLight, command.light);
     applyPlayShadows(scene);
     refreshPlayActiveCamera(scene, binding);
@@ -714,7 +816,7 @@ export function applyAssignMesh(
   }
   const existingCamera = binding.cameras.get(command.slotId);
   const hasSpringArm = command.parts?.some((part) => part.meshKind === SPRING_ARM_MESH_KIND);
-  if (existingCamera && command.camera && !hasSpringArm) {
+  if (existingCamera && command.camera && !hasSpringArm && !componentHelpers) {
     applyAuthoredCameraProperties(existingCamera, command.camera);
     refreshPlayActiveCamera(scene, binding);
     return;
@@ -822,9 +924,16 @@ export function applyAssignMesh(
         if (props) applyAuthoredLightProperties(light, props); else light.setEnabled(true);
       }
       for (const [slot, camera] of targets.cameras) binding.cameras.set(slot, camera);
+      for (const helper of actorIllumination.get(staged) ?? []) {
+        if (helper.light) {
+          if (helper.lightProperties) applyAuthoredLightProperties(helper.light, helper.lightProperties);
+          else helper.light.setEnabled(true);
+        }
+      }
       adopted = true;
       rejected.delete(command.slotId);
       staged.setEnabled(true);
+      updateComponentIllumination(staged);
       // The adopted root inherits the last snapshot flag, not live membership.
       setPlayVisualVisibility(binding, staged,
         appliedPlayVisibility.get(working) ?? binding.liveSlots.has(command.slotId));
@@ -884,6 +993,7 @@ export function applyAssignMesh(
   releaseRetainedMaterialOwners(binding, command.slotId);
   const rebuilt = stagedText ?? createPlayVisual(scene, command.slotId, binding);
   binding.meshes.set(command.slotId, rebuilt);
+  updateComponentIllumination(rebuilt);
   for (const start of deferredModels) void start().catch(() => {});
   stampOverlayPick(rebuilt, command);
   // A rebuilt mesh loses its material, so re-apply the recorded assignment.
@@ -1240,6 +1350,8 @@ function createPlayVisual(
   const assetGuid = binding.meshAssetGuids.get(slotId);
   if (!partsNeedOrigin(parts)) {
     const mesh = createPlayMesh(scene, slotId, meshKind, assetGuid, binding, undefined, undefined, undefined, deferredModels, undefined, targets);
+    const componentId = binding.primaryComponentIds.get(slotId);
+    if (meshKind === "2drichtext" && componentId) rememberPlayVisualComponents(mesh, new Map([[componentId, mesh]]));
     applyPlayVisualSorting(mesh, slotId, binding);
     return mesh;
   }
@@ -1251,6 +1363,7 @@ function createPlayVisual(
   root.isVisible = false;
   root.metadata = { ...(root.metadata ?? {}), playActorOrigin: true };
   const meshes = new Map<string, Mesh>();
+  const illumination: ComponentIllumination[] = [];
   let retainedBitmapBytes = text2DBitmapBytes(binding.meshes.get(slotId));
   try {
     for (const part of parts ?? []) {
@@ -1271,19 +1384,37 @@ function createPlayVisual(
         part.water,
         part.waterRemoval,
         part.cable,
+        part.dynamicMesh,
+        part.painter,
+        part,
       );
       child.parent = root;
       retainedBitmapBytes += text2DBitmapBytes(child);
       applyPartTransform(child, part);
       meshes.set(part.componentId, child);
+      const helper = componentIllumination.get(child);
+      if (helper) illumination.push(helper);
     }
     for (const part of parts ?? []) {
       const child = meshes.get(part.componentId);
       if (!child) continue;
       const parent = part.parentId ? meshes.get(part.parentId) : undefined;
       child.parent = parent ?? root;
+      let attachment: TransformNode = child;
+      for (const transform of part.parentTransforms ?? []) {
+        const ancestor = new TransformNode(`${child.name}-attachment`, scene);
+        ancestor.position.copyFromFloats(transform.position.x, transform.position.y, transform.position.z);
+        ancestor.rotationQuaternion = new Quaternion(transform.rotation.x, transform.rotation.y, transform.rotation.z, transform.rotation.w);
+        ancestor.scaling.copyFromFloats(transform.scale.x, transform.scale.y, transform.scale.z);
+        ancestor.parent = parent ?? root;
+        attachment.parent = ancestor;
+        attachment = ancestor;
+      }
     }
     attachPlaySpringArms(binding, root, slotId, parts ?? [], meshes);
+    if (illumination.length) actorIllumination.set(root, illumination);
+    if (!targets && illumination.some(helper => helper.light)) applyPlayShadows(scene);
+    if (parts?.some((part) => part.meshKind === "2drichtext")) rememberPlayVisualComponents(root, meshes);
     applyPlayVisualSorting(root, slotId, binding);
     return root;
   } catch (error) {
@@ -1336,7 +1467,14 @@ function attachPlaySpringArms(
   for (const part of parts) {
     const child = meshes.get(part.componentId);
     const parent = part.parentId ? meshes.get(part.parentId) : undefined;
-    if (child && parent) child.parent = attachmentParentFor(parent);
+    if (child && parent) {
+      let attachment: TransformNode = child;
+      // Preserve nonvisual component ancestors when redirecting to an arm socket.
+      for (let i = 0; i < (part.parentTransforms?.length ?? 0); i++) {
+        if (attachment.parent instanceof TransformNode) attachment = attachment.parent;
+      }
+      attachment.parent = attachmentParentFor(parent);
+    }
   }
   const cameraPart = parts.find((part) => part.meshKind === "camera");
   const anchor = cameraPart ? meshes.get(cameraPart.componentId) : undefined;
@@ -1362,7 +1500,7 @@ function updatePlaySpringArms(binding: SnapshotSceneBinding, nowMs: number): voi
     for (const rig of rigs) updateSpringArmRig(rig, state.store, dtSeconds);
     const camera = binding.cameras.get(slotId);
     const anchor = springArmCameraAnchorOf(root);
-    if (!camera || !anchor) continue;
+    if (!camera || !anchor || actorIllumination.has(root)) continue;
     anchor.computeWorldMatrix(true).decompose(scratchAnchorScale, scratchAnchorRotation, scratchAnchorPosition);
     updateAuthoredCameraTransform(camera, scratchAnchorPosition, scratchAnchorRotation);
   }
@@ -1393,8 +1531,21 @@ export function createPlayMesh(
   water?: import("@babylonslate/core").WaterBodyProperties,
   waterRemoval?: import("@babylonslate/core").WaterRemovalProperties,
   cable?: import("@babylonslate/core").CableProperties & { simulationId?: number },
+  dynamicMesh?: { meshId: number; update: import("@babylonslate/core").DynamicMeshUpdate },
+  painter?: import("@babylonslate/core").Painter2DProperties,
+  illuminationPart?: AssignMeshPart,
 ): Mesh {
   const name = meshName ?? `actor-${slotId}`;
+  if (meshKind === "dynamicRuntimeMesh") return finishPlayWorldMesh(createDynamicRuntimeMesh(scene, name, dynamicMesh));
+  if (meshKind === "2dlayout") {
+    const mesh = new Mesh(name, scene);
+    mesh.isPickable = false;
+    return mesh;
+  }
+  if (meshKind === "2dpainter") {
+    const properties = painter ?? binding?.meshParts.get(slotId)?.find((part) => part.meshKind === "2dpainter" && (!meshName || playComponentMeshName(slotId, part.componentId) === meshName))?.painter;
+    return createPainter2DMesh(scene, name, properties);
+  }
   if (meshKind === "cable" && cable) {
     const mesh = createCableMesh(scene, name, cable, cable.simulationId, (id) => binding?.meshes.get(id));
     if (cable.materialGuid) mesh.material = binding?.resolveMaterial?.(cable.materialGuid, { scene }) ?? null;
@@ -1570,9 +1721,11 @@ export function createPlayMesh(
   if (isPlayHelperMeshKind(meshKind)) {
     const mesh = createPrimitiveMesh(scene, name, null);
     markPlayHelperVisual(mesh);
+    const helper: ComponentIllumination = { mesh, componentId: illuminationPart?.componentId };
     if (meshKind?.startsWith("light:") && binding) {
       const kind = meshKind.slice("light:".length);
-      const lightName = `${AUTHORED_LIGHT_PREFIX}${slotId}`;
+      const lights = targets?.lights ?? binding.lights;
+      const lightName = `${AUTHORED_LIGHT_PREFIX}${slotId}${lights.has(slotId) ? `|${illuminationPart?.componentId ?? name}` : ""}`;
       const light =
         kind === "hemispheric"
           ? new HemisphericLight(lightName, new Vector3(0, 1, 0), scene)
@@ -1588,15 +1741,18 @@ export function createPlayMesh(
                   scene,
                 )
               : new PointLight(lightName, Vector3.Zero(), scene);
-      const props = binding.lightProps.get(slotId);
+      const props = illuminationPart?.light ?? binding.lightProps.get(slotId);
       if (props) applyAuthoredLightProperties(light, props);
-      (targets?.lights ?? binding.lights).set(slotId, light);
+      if (!lights.has(slotId)) lights.set(slotId, light);
+      helper.light = light;
+      helper.lightProperties = props;
       if (targets) light.setEnabled(false);
-      else applyPlayShadows(scene);
+      else if (!illuminationPart) applyPlayShadows(scene);
     }
     if (meshKind === "camera" && binding) {
+      const cameras = targets?.cameras ?? binding.cameras;
       const camera = new UniversalCamera(
-        `${AUTHORED_CAMERA_PREFIX}${slotId}`,
+        `${AUTHORED_CAMERA_PREFIX}${slotId}${cameras.has(slotId) ? `|${illuminationPart?.componentId ?? name}` : ""}`,
         Vector3.Zero(),
         scene,
       );
@@ -1606,10 +1762,23 @@ export function createPlayMesh(
       camera.rotation.set(0, 0, 0);
       camera.detachControl();
       camera.inputs.clear();
-      const props = binding.cameraProps.get(slotId);
+      const props = illuminationPart?.camera ?? binding.cameraProps.get(slotId);
       if (props) applyAuthoredCameraProperties(camera, props);
-      (targets?.cameras ?? binding.cameras).set(slotId, camera);
+      if (!cameras.has(slotId) || props?.isDefault) cameras.set(slotId, camera);
+      helper.camera = camera;
       if (!targets) refreshPlayActiveCamera(scene, binding);
+    }
+    if (helper.light || helper.camera) {
+      componentIllumination.set(mesh, helper);
+      actorIllumination.set(mesh, [helper]);
+      mesh.onDisposeObservable.addOnce(() => {
+        helper.light?.dispose();
+        helper.camera?.dispose();
+        const lights = targets?.lights ?? binding?.lights;
+        const cameras = targets?.cameras ?? binding?.cameras;
+        if (helper.light && lights?.get(slotId) === helper.light) lights.delete(slotId);
+        if (helper.camera && cameras?.get(slotId) === helper.camera) cameras.delete(slotId);
+      });
     }
     return finishPlayWorldMesh(mesh);
   }
@@ -1619,6 +1788,24 @@ export function createPlayMesh(
 function finishPlayWorldMesh(mesh: Mesh): Mesh {
   applyWorldVisualGroup(mesh, { components: [] });
   return mesh;
+}
+
+/** Component meshes include every attachment and spring-arm socket transform. */
+function updateComponentIllumination(root: Mesh): void {
+  for (const helper of actorIllumination.get(root) ?? []) {
+    helper.mesh.computeWorldMatrix(true).decompose(scratchAnchorScale, scratchAnchorRotation, scratchAnchorPosition);
+    if (helper.light) updateAuthoredLightTransform(helper.light, scratchAnchorPosition, scratchAnchorRotation);
+    if (helper.camera) updateAuthoredCameraTransform(helper.camera, scratchAnchorPosition, scratchAnchorRotation);
+  }
+}
+
+function sameComponentVisuals(previous: readonly AssignMeshPart[], next: readonly AssignMeshPart[]): boolean {
+  if (previous.length !== next.length) return false;
+  // Illumination property writes must not replace an actor's working meshes or
+  // reset its spring-arm lag. Every other part field still requires assignment.
+  return previous.every((part, index) =>
+    JSON.stringify({ ...part, light: undefined, camera: undefined }) ===
+    JSON.stringify({ ...next[index], light: undefined, camera: undefined }));
 }
 
 function snapshotSlotWantsOverlay(
@@ -1703,6 +1890,7 @@ export function applySnapshotToScene(
       mesh,
       (actor.flags & SNAPSHOT_FLAG_VISIBLE) === SNAPSHOT_FLAG_VISIBLE,
     );
+    if (actorIllumination.has(mesh)) continue;
     const light = binding.lights.get(actor.slotId);
     if (light) {
       const composed = composeSlotPartTransform(actor, binding, actor.slotId);
@@ -1728,6 +1916,8 @@ export function applySnapshotToScene(
   }
   for (const [slotId, attachment] of binding.boneAttachments) {
     if (!attachment.applied) continue;
+    const root = binding.meshes.get(slotId);
+    if (root && actorIllumination.has(root)) continue;
     const light = binding.lights.get(slotId);
     const camera = binding.cameras.get(slotId);
     if (!light && !camera) continue;
@@ -1741,6 +1931,7 @@ export function applySnapshotToScene(
     if (camera) updateAuthoredCameraTransform(camera, composed.position, composed.rotation);
   }
   updatePlaySpringArms(binding, performance.now());
+  for (const root of binding.snapshotMeshes) if (root) updateComponentIllumination(root);
   refreshPlayActiveCamera(scene, binding);
   // Camera-dependent passes wait for every camera pose, including later slots
   // and bone attachments, and for this snapshot's active camera.

@@ -2,6 +2,52 @@ import { describe, expect, it } from "vitest";
 import { physicsActorDiagnostics } from "./pairing";
 
 describe("physicsActorDiagnostics", () => {
+  it.each(["RigidBodyComponent", "NavAgentComponent", "RagdollComponent", "WaterBuoyancyComponent"])(
+    "reports a Movement conflict with %s even when a mesh supplies collision",
+    (classId) => {
+      const actor = { id: "hero", components: [
+        { id: "visual", classId: "MeshComponent" },
+        { id: "other-controller", classId },
+        { id: "motor", classId: "MovementComponent" },
+      ] };
+      expect(physicsActorDiagnostics(actor)).toEqual([
+        expect.objectContaining({
+          severity: "warning", code: "physics.movement_conflict", actorId: "hero", componentId: "motor",
+        }),
+      ]);
+      actor.components.splice(1, 1);
+      expect(physicsActorDiagnostics(actor)).toEqual([]);
+    },
+  );
+
+  it("locates duplicate Movement warnings on each motor and clears them when only one remains", () => {
+    const actor = { id: "hero", components: [
+      { id: "motor", classId: "MovementComponent" },
+      { id: "extra-motor", classId: "MovementComponent" },
+    ] };
+    expect(physicsActorDiagnostics(actor)).toEqual([
+      expect.objectContaining({ code: "physics.movement_conflict", componentId: "motor" }),
+      expect.objectContaining({ code: "physics.movement_conflict", componentId: "extra-motor" }),
+    ]);
+    actor.components.pop();
+    expect(physicsActorDiagnostics(actor)).toEqual([]);
+  });
+
+  it("does not suggest a conflicting rigid body for a Movement actor with an extra collider", () => {
+    expect(physicsActorDiagnostics({ id: "mover", components: [
+      { id: "movement", classId: "MovementComponent" },
+      { id: "collider", classId: "ColliderComponent" },
+    ] })).toEqual([]);
+  });
+  it("accepts an enabled runtime mesh as a rigid body's collision source", () => {
+    const actor = { id: "mesh", components: [
+      { id: "body", classId: "RigidBodyComponent", properties: {} },
+      { id: "surface", classId: "DynamicRuntimeMeshComponent", properties: { enableCollision: true } },
+    ] };
+    expect(physicsActorDiagnostics(actor)).toEqual([]);
+    actor.components[1]!.properties.enableCollision = false;
+    expect(physicsActorDiagnostics(actor)[0]?.code).toBe("physics.body_without_collider");
+  });
   it("warns when a collider has no rigid body and no tilemap", () => {
     expect(
       physicsActorDiagnostics({

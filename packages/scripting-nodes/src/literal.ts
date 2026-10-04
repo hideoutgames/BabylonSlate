@@ -26,6 +26,7 @@ function makeLiteral(
     title,
     category: "literal",
     pure: true,
+    referentiallyTransparent: true,
     pins: () => [
       pin("in", "In", "in", type),
       pin("out", "Out", "out", type),

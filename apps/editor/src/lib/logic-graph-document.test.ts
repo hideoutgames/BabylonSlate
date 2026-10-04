@@ -1,16 +1,20 @@
 import { describe, expect, it } from "vitest";
 import type { SerializedGraph } from "@babylonslate/core";
 import { createDefaultAnimGraph } from "@babylonslate/anim-graph";
+import { DocumentEditStack, SetAssetDocumentCommand } from "@babylonslate/edit";
 import {
   classGraphFromHeaderPayload,
   collectClassGraphsForPalette,
   collectFunctionLibrariesForPalette,
   collectGraphTypeAssets,
   collectSceneDocumentsForPalette,
+  collectSubsystemClassesForPalette,
   commitLogicGraph,
   replaceSerializedGraphInDocument,
   serializedGraphFromDocument,
 } from "./logic-graph-document";
+import { classParentLookup } from "./content-browser-helpers";
+import { classIdForGraphPath } from "../services/script-compiler";
 
 const graph: SerializedGraph = {
   nodes: [{ id: "n1", type: "flow.event.beginPlay", position: { x: 0, y: 0 }, data: {} }],
@@ -52,6 +56,32 @@ describe("replaceSerializedGraphInDocument", () => {
   it("replaces a Class document body", () => {
     const next: SerializedGraph = { nodes: [], edges: [], members: [] };
     expect(replaceSerializedGraphInDocument("graph", graph, next)).toEqual(next);
+  });
+});
+
+describe("collectSubsystemClassesForPalette", () => {
+  it("lists every project and plugin subsystem class by compile id with its base", () => {
+    const assets = [
+      { path: "assets/Rain-Weather.class.babasset", header: { type: "Class", name: "Rain-Weather", parentClass: "Weather" } },
+      { path: "assets/Weather.class.babasset", header: { type: "Class", name: "Weather", parentClass: "SceneSubsystem" } },
+      { path: "assets/Save.class.babasset", header: { type: "Class", name: "Save", parentClass: "GameSubsystem" } },
+      { path: "assets/Hero.class.babasset", header: { type: "Class", name: "Hero", parentClass: "Actor" } },
+      { path: "assets/MyGame.class.babasset", header: { type: "Class", name: "MyGame", parentClass: "GameInstance" } },
+      { path: "plugins/pack/assets/Quest.class.babasset", header: { type: "Class", name: "Quest", parentClass: "GameSubsystem" } },
+    ];
+    expect(
+      collectSubsystemClassesForPalette({
+        assets,
+        openDocuments: [{ ref: { kind: "graph", path: "assets/Save.class.babasset" } }],
+        parentOf: classParentLookup(assets),
+        classIdForPath: classIdForGraphPath,
+      }),
+    ).toEqual([
+      { classId: "Quest", base: "GameSubsystem" },
+      { classId: "Rain_Weather", base: "SceneSubsystem" },
+      { classId: "Save", base: "GameSubsystem" },
+      { classId: "Weather", base: "SceneSubsystem" },
+    ]);
   });
 });
 
@@ -385,6 +415,27 @@ describe("commitLogicGraph", () => {
       nodes: next.nodes,
       edges: next.edges,
     });
+  });
+
+  it("records an Animation Object pin default scrub as one undo step", () => {
+    const stack = new DocumentEditStack<Record<string, unknown>>({ maxEntries: 50, maxBytes: 1_000_000 });
+    const initial = createDefaultAnimGraph() as unknown as Record<string, unknown>;
+    let current = initial;
+    const scrub = (value: number) => {
+      const graph = serializedGraphFromDocument("anim-graph", current)!;
+      const [first, ...rest] = graph.nodes;
+      const commit = commitLogicGraph("anim-graph", current, {
+        ...graph,
+        nodes: [{ ...first!, data: { ...first!.data, "default:rate": value } }, ...rest],
+      });
+      if (commit.kind !== "anim-graph") throw new Error("expected an Animation Object commit");
+      current = stack.apply(current, new SetAssetDocumentCommand(current, commit.payload, commit.mergeKey)).doc;
+    };
+    scrub(0.5);
+    scrub(0.75);
+    scrub(1);
+    expect(stack.undoDepth).toBe(1);
+    expect(stack.undo(current)!.doc).toEqual(initial);
   });
 });
 

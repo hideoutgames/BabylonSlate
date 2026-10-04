@@ -303,6 +303,8 @@ Play frame pacing uses a timestamp captured before render work, committed only a
 
 ## Resource cache
 
+Content Browser Material and Actor Prefab captures use `captureAssetThumbnailPng`: a transparent 128px RTT on the project Engine, a sphere for surface Materials, and `EditorSceneSync` for saved prefab geometry. Captures frame visible authored meshes (excluding editor helpers), wait for models/materials, and never start a render loop or execute gameplay scripts. Their scoped MaterialLibrary borrows texture leases from the existing Engine ResourceCache; cancellation, failure and successful readback all release temporary scene, material and target resources. Model/Animation captures retain their construction-GLB path. See [thumbnail caching and scheduling](asset-registry.md#thumbnails).
+
 Imported ENV and linear-float prefiltered DDS cubes use the retained source with an explicit `.env`/`.dds` loader extension, including Blob URLs in Scene, Play and packed assets. Native CubeTexture prefiltered loading preserves roughness mips, linear decoding and available irradiance; it does not perform authoring convolution. Cache-owned cubes belong to the Engine and are shared without per-scene texture mutations. Ordinary 2D material bindings reject cube data before allocating a sampler. [Supported imports and metadata](asset-registry.md#importers) describe the bounded format contract. Scene environment lighting and raw Scene cube sampling follow the contracts below; general cube Texture Parameters remain separate work.
 
 The additive `render.environmentLighting` project contract and sparse `Scene.settings.environmentLighting` overrides preserve existing IBL with Enabled=true, Intensity=1, Rotation Y=0°. CEL Strength defaults to zero. Disabled settings retain the selected cube and authored values; removing a scene override resumes live project inheritance. These settings are independent of clear color, fog and PBR/CEL mode.
@@ -445,6 +447,7 @@ Prefab instances track Material GUID and source as one override: explicit None s
 - Mesh flags: `ignoreCameraMaxZ`, `applyFog = false` (Babylon 9 fog flag is on the mesh), `receiveShadows = false`, **always** `isPickable = false`, `renderingGroupId` background. **Not** `infiniteDistance` — position/rotation/scale come from the Skybox actor world transform (component `size` is the box edge length)
 - Authored perspective cameras keep their explicit render/preview aspect while allowing Babylon to recalculate depth for `ignoreCameraMaxZ`. A size-10,000 skybox remains visible with Far Clip 1,000; ordinary geometry retains the authored clipping range after the skybox draw. Skybox materials disable depth writes so their infinite-far depth cannot cover geometry inside Far Clip.
 - Missing authored faces fall back to the matching engine default cubemap face (`engine-content/skybox/{face}.png`)
+- Scene and preview skyboxes retain their textured background in PBR, Unlit, and Wireframe viewport modes. The session shading overlay skips them: Babylon's PBR `unlit` flag removes the reflection path used to display the cubemap.
 - Shadows, nav bake, and `frameActor` skip skyboxes (`isSkyboxMesh`; framing a 1000-unit backdrop is a no-op)
 - Dispose the mesh when the actor is removed; rebuild when size or face guids change
 - Six-face cubes are Engine-owned; skybox materials null `reflectionTexture` on dispose so Play overlay `scene.dispose()` / material teardown cannot drop a ResourceCache cube the editor still uses
@@ -552,9 +555,31 @@ Models get Babylon mesh LOD levels automatically (`model-lod.ts`). Texture strea
 
 See [asset-registry.md](asset-registry.md) and [anim-graph.md](anim-graph.md).
 
+Authored lights and cameras retain actor-plus-component identity. Play carries
+their properties on `assignMesh.parts` alongside ordinary visuals, so several
+lights or cameras can share an actor without replacing its mesh. Each native
+helper follows its component hierarchy, including spring-arm sockets; the
+Default Camera selects the saved component ID. Property-only illumination
+updates retain working visuals and camera identities, while component removal
+or visual retirement disposes every owned native helper.
+
+Rendering admission continues applying requested shadow settings and preparing
+replacement resources while shaders are unready. A failed strict probe cannot
+strand the previous shadow profile; drawing and dynamic geometry uploads still
+wait for successful scene admission. Admission distinguishes missing or stale
+resources from a temporary readiness check on current resources: only the former
+starts asynchronous preparation, so the latter can present its next ready frame.
+Renderer diagnostics also snapshot scheduler and view admission gates, making a
+paused or obstructed viewport distinguishable from shader/resource waiting.
+
 ## AudioService (P16)
 
 Main-thread owner shared by overlay Play and `apps/player`. Wraps Babylon 9 AudioV2 behind `AudioPlaybackBackend`. Unit tests use `FakeAudioPlaybackBackend`; `babylon-audio-backend.ts` is coverage-excluded (needs a real audio context).
+
+`EngineHandle.setAudioReverbField(bytes)` replaces the active scene's baked field;
+pass `null` for a scene without a bake. Engine disposal detaches all owned canvas
+input handlers, including overlay wheel scrolling, even when the host retains
+the canvas for another session.
 
 - Play library loads at session start; **source bytes load on first `playSound`** (`loadSourceBytes` / overlay `createPlayAudioSourceLoader` / player `createGameAudioSourceLoader`). `createEngine` still accepts eager `audioBytes` (player-hydrated clips, tests); overlay Play passes only the loader. `setLibrary` sanitizes missing channel/attenuation refs and cyclic channel parents. Scene `audioReverb` extra chunks feed `setReverbField`. Project Settings audio (occlusion + reverb scales) feed `setProjectAudioSettings`.
 - Worker emits `playSound` / `stopSound` / `setChannelVolume` / `setGlobalVolume` only (`emitterActorGuid` / `voiceId` identity). `playSound` loops when the command **or** the Audio asset sets `loop`. Set Channel / Set Global update voices that are already playing. Spatial voices follow interpolated snapshot poses; the listener is `scene.activeCamera` (possessed, else Default Camera, else Play fallback) synced once per applied snapshot (world position and orientation) — pose and listener sync live in the deduplicated snapshot-apply path, not render admission, so a frame-cap-skipped draw still syncs exactly once. Doppler `playbackRate` uses snapshot dt only, composed with authored pitch. `AudioPlaybackBackend.onVoiceEnded` fires when a non-looping voice finishes (Babylon `onEndedObservable`; Fake `finish()`).
@@ -1080,7 +1105,7 @@ Each Play world and SceneLayer owns a `SceneRenderCoordinator` around the Forwar
 
 Strict scene/graph readiness is probed only at admission and after invalidation, never once per frame in steady state. `ForwardSceneFrameGraph` caches a passed strict probe: `prepare()` marks readiness dirty and clears it when its readiness loop succeeds, while `render()`/`readiness()` re-run the probe only while dirty and keep the explicit classic fallback until it passes. Invalidation comes from `invalidate()`, post-process attach/replacement, prepared-output changes, and Scene observables — mesh add/remove plus each mesh's `onMaterialChangedObservable`, material, texture, camera, active-camera and skeleton add/remove, and each light's `onEnabledStateChangedObservable` — and from `markSceneReadinessDirty`, which the render-mode CEL/PBR replacement and settings changes, scene-lighting sync, shadow-controller generator/caster/allocation changes, texture-parameter assignment and environment-lighting swaps call. `SceneRenderCoordinator.isReady()` and `SceneLayerCompositor.isReady()` reuse the same dirty state so unchanged frames run zero strict probes; the `strictReadinessChecks` counter exposes probe volume for tests and diagnostics.
 
-Authored interface, custom-event and object-function calls use the same owner admission as ticks, including calls from GameInstance into pending actors or component logic. Unavailable interface targets return their output defaults, functions return an empty result, and events do not run or queue. Native property preparation remains possible; forwarded authored component events wait for admission. Ready retained layers, GameInstance, static functions and independent Objects remain callable. A previously activated owner's destruction callback (and GameInstance shutdown `onSceneExit`/`onEnd`) may call its own helpers synchronously; that exception does not cross into another owner or survive an asynchronous continuation.
+Authored interface, custom-event and object-function calls use the same owner admission as ticks, including calls from GameInstance into pending actors or component logic. Unavailable interface targets return their output defaults, functions return an empty result, and events do not run or queue. Native property preparation remains possible; forwarded authored component events wait for admission. Ready retained layers, GameInstance, static functions and independent Objects remain callable. GameSubsystems are admitted like GameInstance and stay callable during Stop until their own On End. A SceneSubsystem is callable while its main Scene is current, including preparation, but its On Init, Tick, notifications and delays wait for that Scene's readiness ([subsystems](scripting.md#subsystems)). A previously activated owner's destruction callback (and GameInstance shutdown `onSceneExit`/`onEnd`, or a subsystem's On End) may call its own helpers synchronously; that exception does not cross into another owner or survive an asynchronous continuation.
 
 Texture readiness includes scene-owned native texture work, including environment BRDF RGBD decode even when the active CEL material no longer samples it. The texture load observable alone is insufficient: decode can issue a later render and only then mark the internal texture ready. Other scenes' cached resources do not block this owner.
 
@@ -1754,3 +1779,26 @@ Only two dedicated graph nodes are added:
 | MaterialGraph | Water Surface | Reads world-unit wave displacement, bank distance, scaled water depth, simulation time and world current from the rendered mesh. Ordinary meshes return zero. Global shading clamps bank distance to 10,000 metres. |
 
 A Water asset's **Custom Material** accepts a Surface MaterialGraph; it replaces built-in shading while retaining geometry waves and buoyancy. Use Water Surface to blend foam by bank distance or animate effects with the water clock. Additional graph position offsets affect rendering only. Existing component variable Get/Set nodes expose water assignment, dimensions, current, waves, enabled state and buoyancy tuning. Water content is loaded before scene realization in Play and the player; simulation time travels through the worker bridge and freezes with Play pause.
+
+## Dynamic Runtime Mesh
+
+`DynamicRuntimeMeshComponent` is a world component, available from **Add Component → Rendering → Dynamic Runtime Mesh** or `Add Component` during Play. It starts empty. It has no asset type or Place Actors preset; generated geometry belongs to the running component and is discarded on clear, component destruction, scene removal, or Stop.
+
+Drag its object reference into a NodeGraph to find its target-bound functions. Geometry uses component-local coordinates and flat numeric arrays; JavaScript callers may also supply typed arrays through `ctx.callComponentFunction(component, runtimeName, arguments)`.
+
+| Function | Runtime Name | Inputs / Behavior |
+| --- | --- | --- |
+| Set Geometry | `setDynamicMeshGeometry` | `positions` (XYZ), `indices` (triangle triples), optional `normals` (XYZ) and `uvs` (UV). Replaces topology; returns `success`. Missing/empty normals are generated once; missing/empty UVs become zero. |
+| Update Vertices | `updateDynamicMeshVertices` | `firstVertex` (zero-based), optional `positions`, `normals`, `uvs`. Writes contiguous ranges, retaining omitted/empty channels and topology; returns `success`. |
+| Clear Geometry | `clearDynamicMeshGeometry` | Releases vertex/index storage and removes collision on the next physics step. Retains component settings and material assignment. |
+| Recalculate Normals | `recalculateDynamicMeshNormals` | Explicit whole-mesh normal rebuild after deformation. Supply normals with Update Vertices to avoid this scan. |
+| Recalculate Bounds | `recalculateDynamicMeshBounds` | Tightens bounds after geometry shrinks. Partial position edits otherwise expand conservative bounds by scanning only changed vertices. |
+
+**Set Material** and **Get Material Object** use the normal component-targeted property API, including per-component material parameters. Material changes retain geometry. Cast Shadows, Receive Shadows, Enable Collision, Layer and Mask are component properties. Invalid indices, mismatched channels, non-finite values, out-of-range edits, or geometry exceeding one million vertices / six million indices are rejected before mutation. Attribute magnitudes are limited to `1e10` to keep float geometry and generated normals finite. Input arrays are copied, so callers can reuse them immediately.
+
+Performance contract:
+
+- Fixed-size edits and replacements reuse CPU arrays and GPU buffers. Resizing reallocates affected buffers; clear releases them. Index buffers support 32-bit vertex indices.
+- Edits coalesce per component per simulation tick into bounded dirty ranges. Only changed channels cross the worker bridge, using owned transferable arrays. Clean ticks send no geometry. Play and the exported player use the same command handler.
+- Rendering coalesces packets before admission into one GPU upload per changed channel. CPU data remains available for picking and graphics-context restoration; bounds and picking caches update with geometry. Revision-tracked shadows can stay cached while geometry is unchanged.
+- Geometry collision is **disabled by default**. Enabling it uses the current triangles in 3D physics; no Rigid Body means an implicit static body, while an attached Rigid Body owns motion. Position/topology edits recook at the next physics step; normal, UV and material edits do not. Collision cooking is proportional to mesh size, so keep it disabled for frequently deforming visuals that do not need exact triangle collision. Collapsed triangles contribute no collision surface.

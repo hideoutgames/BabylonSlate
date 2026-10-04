@@ -22,7 +22,8 @@ import {
 } from "../lib/prefab-preview";
 import { applyPrefabTreeSelect } from "../lib/prefab-tree-select";
 import { IconActionButton } from "../components/icon-action-button";
-import { AddComponentDialog } from "../components/add-component-dialog";
+import { AddComponentMenu } from "../components/add-component-menu";
+import { anchorBelow } from "../lib/menu-anchor";
 import {
   prefabComponentLabel,
   physicsWorldFromOpenDocuments,
@@ -107,7 +108,7 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
   const { documentId } = useDocumentWorkspace();
   const { setSelectedMemberId, setSelectedNodeIds } = useGraphEditing();
   const { frameActor } = useSceneEditing();
-  const [addOpen, setAddOpen] = useState(false);
+  const [addAnchor, setAddAnchor] = useState<{ x: number; y: number } | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const listedAssets = assetRegistry?.list() ?? [];
   const overlay = useMemo(() => {
@@ -152,7 +153,7 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => setAddOpen(true)}
+            onClick={(event) => setAddAnchor(anchorBelow(event.currentTarget))}
             data-testid="prefab-add-component"
           >
             <PlusIcon data-icon="inline-start" />
@@ -203,9 +204,12 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
           data-testid="prefab-tree"
         />
       </div>
-      <AddComponentDialog
-        open={addOpen}
-        onOpenChange={setAddOpen}
+      <AddComponentMenu
+        open={addAnchor !== null}
+        onOpenChange={(open) => {
+          if (!open) setAddAnchor(null);
+        }}
+        anchor={addAnchor}
         onSelect={addComponent}
         projectItems={projectItems}
         overlay={overlay}

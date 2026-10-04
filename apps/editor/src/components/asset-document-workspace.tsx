@@ -441,7 +441,7 @@ function AssetSettingsEditor({
   assetType: string;
   dependencies: string[];
   payload: Record<string, unknown>;
-  onChange: (next: Record<string, unknown>) => void;
+  onChange: (next: Record<string, unknown>, mergeKey?: string) => void;
 }) {
   const rows: PropertyRow[] = [];
   for (const [key, value] of Object.entries(payload)) {
@@ -451,7 +451,8 @@ function AssetSettingsEditor({
         kind: "number",
         label: key,
         value,
-        onChange: (next) => onChange({ ...payload, [key]: next }),
+        onChange: (next) =>
+          onChange({ ...payload, [key]: next }, `asset-settings:${key}`),
       });
     } else if (typeof value === "boolean") {
       rows.push({

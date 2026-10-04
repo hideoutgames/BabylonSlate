@@ -1,7 +1,8 @@
 interface BuildIdentity {
   applicationVersion: string;
   channel: "test" | "release";
-  windowsVersion: string;
+  packageVersion: string;
+  androidVersionCode: number;
   appleBuildNumber: string;
   sourceSha: string;
   runNumber: number;

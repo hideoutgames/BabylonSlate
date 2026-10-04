@@ -17,6 +17,8 @@ import {
   AtlasTileGrid,
   BindingCodePicker,
   CatalogDialog,
+  CatalogCard,
+  CatalogCardGrid,
   CatalogResultRow,
   ClassPicker,
   CurveField,
@@ -33,6 +35,7 @@ import {
   FolderBreadcrumbs,
   NamedListEditor,
   EntryListEditor,
+  ArrayProperty,
   DisclosureSection,
   NamePromptDialog,
   AddFunctionDialog,
@@ -733,6 +736,7 @@ function GalleryComposites() {
   const [addFunctionOpen, setAddFunctionOpen] = useState(false);
   const [layers, setLayers] = useState(["Default", "Foreground"]);
   const [entryItems, setEntryItems] = useState(["One", "Two"]);
+  const [arrayItems, setArrayItems] = useState(["foreground"]);
   const [parameters, setParameters] = useState<ParameterRow[]>([
     { id: "gallery-amount", name: "amount", type: "float" },
   ]);
@@ -1183,6 +1187,19 @@ function GalleryComposites() {
           )}
         />
       </div>
+      <div className="rounded-lg border border-border p-3">
+        <ArrayProperty
+          label="Array Property" value={arrayItems} onChange={setArrayItems}
+          options={[
+            { id: "background", label: "Background", value: "background" },
+            { id: "foreground", label: "Foreground", value: "foreground" },
+            { id: "overlay", label: "Overlay", value: "overlay" },
+          ]}
+          unique defaultValue={[]} emptyLabel="No Layers"
+          description="Each layer can appear once. Add, replace, reorder, or remove entries."
+          data-testid="gallery-array-property"
+        />
+      </div>
       <SearchDialog
         open={searchOpen}
         onOpenChange={setSearchOpen}
@@ -1287,6 +1304,24 @@ function GalleryCatalogRows() {
             onSelect={() => setSelected(item.classId)}
           />
         ))}
+      </div>
+      <h2 className="text-lg font-medium">Catalog Cards</h2>
+      <div className="max-w-xl" data-testid="gallery-catalog-cards">
+        <CatalogCardGrid label="Catalog Cards">
+          {[
+            { title: "Box", subtitle: "Shapes", visual: resolveTypeVisual({ classId: "MeshComponent", family: "class" }) },
+            { title: "Point Light", subtitle: "Lights", visual: resolveTypeVisual({ classId: "LightComponent", family: "class" }) },
+            { title: "Hero", subtitle: "Model", visual: resolveTypeVisual({ assetType: "Model" }) },
+          ].map((item) => (
+            <CatalogCard
+              key={item.title}
+              title={item.title}
+              subtitle={item.subtitle}
+              visual={item.visual}
+              onSelect={() => setSelected(item.title)}
+            />
+          ))}
+        </CatalogCardGrid>
       </div>
     </section>
   );

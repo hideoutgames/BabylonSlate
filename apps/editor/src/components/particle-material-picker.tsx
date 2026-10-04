@@ -31,7 +31,8 @@ export function ParticleMaterialPicker({
       open={open}
       onOpenChange={onOpenChange}
       assets={assets}
-      allowedTypes={["Material"]}
+      allowedTypes={["Material", "MaterialInstance"]}
+      createTypes={["Material"]}
       createOptions={{ materialDomain: "particle" }}
       title="Pick Particle Material"
       allowNone

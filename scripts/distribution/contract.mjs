@@ -1,6 +1,21 @@
 const numericVersion = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const exactSha = /^[a-f0-9]{40}$/;
 
+export const PLATFORM_CHOICES = ["all", "desktop", "mobile", "ipados", "android", "windows", "macos", "linux"];
+export const GITHUB_RELEASE_PLATFORMS = ["windows", "macos", "linux", "android"];
+const platforms = ["android", "ipados", "linux", "macos", "windows"];
+
+export function requestedPlatforms(choice) {
+  const choices = {
+    all: platforms,
+    desktop: ["linux", "macos", "windows"],
+    mobile: ["android", "ipados"],
+  };
+  const requested = choices[choice] ?? (platforms.includes(choice) ? [choice] : undefined);
+  if (!requested) throw new Error("Unsupported platforms");
+  return [...requested].sort();
+}
+
 export function existingAppleIdentity(declared, request) {
   requireValue(request.platforms === "ipados", "Finalization-only requests require ipados");
   requireValue(numericVersion.test(request.existingBuildNumber), "An exact existing Apple build number is required");
@@ -20,30 +35,32 @@ function integer(value, min, max, name) {
 }
 
 export function createIdentity(request) {
-  const { version, declaredVersion, channel, platforms, sourceSha, runNumber, runAttempt, appleSequenceOffset = 0 } = request;
+  const { version, declaredVersion, channel, sourceSha, runNumber, runAttempt, appleSequenceOffset = 0 } = request;
   requireValue(numericVersion.test(version) && version === declaredVersion, "Version must match the numeric version at the selected commit");
   requireValue(["test", "release"].includes(channel), "Unsupported channel");
-  requireValue(["ipados", "windows", "both"].includes(platforms), "Unsupported platforms");
+  requireValue(PLATFORM_CHOICES.includes(request.platforms), "Unsupported platforms");
   requireValue(exactSha.test(sourceSha), "An exact source SHA is required");
   integer(runNumber, 1, Number.MAX_SAFE_INTEGER, "Run number");
   integer(runAttempt, 1, 99, "Run attempt");
   integer(appleSequenceOffset, 0, 9998, "Apple sequence offset");
   const sequence = runNumber + appleSequenceOffset;
   integer(sequence, 1, 9999, "Apple sequence; migrate the sequence explicitly before exhaustion");
-  const windowsVersion = channel === "test" ? `${version}-indev.${runNumber}.${runAttempt}` : `${version}-release`;
+  const channelCode = channel === "test" ? 0 : 1;
+  const packageVersion = channel === "test" ? `${version}-indev.${runNumber}.${runAttempt}` : `${version}-release`;
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     applicationVersion: version,
     channel,
-    platforms,
+    platforms: request.platforms,
     sourceSha,
     runNumber,
     runAttempt,
-    windowsVersion,
+    packageVersion,
+    androidVersionCode: sequence * 1000 + channelCode * 100 + runAttempt,
     appleMarketingVersion: version,
-    appleBuildNumber: `${sequence}.${channel === "test" ? 0 : 1}.${runAttempt}`,
-    tag: `v${windowsVersion}`,
-    title: `[${channel.toUpperCase()}] BabylonSlate ${windowsVersion}`,
+    appleBuildNumber: `${sequence}.${channelCode}.${runAttempt}`,
+    tag: `v${packageVersion}`,
+    title: `[${channel.toUpperCase()}] BabylonSlate ${packageVersion}`,
     prerelease: channel === "test",
     makeLatest: channel === "test" ? "false" : "legacy",
     testFlightGroup: channel === "test" ? "Test Builds" : "Release Candidates",
@@ -82,12 +99,37 @@ export function releaseDisposition(identity, tagSha, release) {
   return release ? "resume-draft" : "create-draft";
 }
 
-export function windowsArtifactNames(version) {
-  const installer = `BabylonSlate-${version}-x64.exe`;
-  return [installer, "SHA256SUMS.txt", "build-manifest.json", ...(version.endsWith("-release") ? ["latest.yml", `${installer}.blockmap`] : [])];
+export function artifactNames(platform, version) {
+  const release = version.endsWith("-release");
+  if (platform === "windows") {
+    const installer = `BabylonSlate-${version}-x64.exe`;
+    return [installer, ...(release ? ["latest.yml", `${installer}.blockmap`] : [])];
+  }
+  if (platform === "macos") {
+    const names = ["arm64", "x64"].flatMap(arch => [
+      `BabylonSlate-${version}-${arch}.dmg`,
+      `BabylonSlate-${version}-${arch}.zip`,
+    ]);
+    return [...names, ...(release ? ["latest-mac.yml"] : [])];
+  }
+  if (platform === "linux") return [`BabylonSlate-${version}-x64.AppImage`, ...(release ? ["latest-linux.yml"] : [])];
+  if (platform === "android") return [`BabylonSlate-${version}-android.apk`];
+  throw new Error("Unsupported artifact platform");
 }
 
-export function validateArtifacts(version, names) {
-  const expected = windowsArtifactNames(version);
-  requireValue(names.length === expected.length && new Set(names).size === names.length && expected.every(name => names.includes(name)), "Windows artifacts must exactly match the public allowlist");
+export function platformArtifactNames(platform, version) {
+  return [...artifactNames(platform, version), "SHA256SUMS.txt", "build-manifest.json"];
+}
+
+export function releaseAssetNames(requested, version) {
+  const names = new Set(["SHA256SUMS.txt", "build-manifest.json"]);
+  for (const platform of requested) {
+    requireValue(GITHUB_RELEASE_PLATFORMS.includes(platform), "Unsupported artifact platform");
+    for (const name of artifactNames(platform, version)) names.add(name);
+  }
+  return [...names];
+}
+
+export function validateArtifacts(expected, names) {
+  requireValue(names.length === expected.length && new Set(names).size === names.length && expected.every(name => names.includes(name)), "Artifacts must exactly match the public allowlist");
 }

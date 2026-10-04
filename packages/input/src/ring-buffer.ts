@@ -69,8 +69,21 @@ function readString(
 
 /** Encode a batch of raw input events into a transferable ArrayBuffer. */
 export function encodeInputEvents(events: readonly RawInputEvent[]): ArrayBuffer {
-  // Over-allocate then slice.
-  const scratch = new ArrayBuffer(Math.max(64, events.length * 96));
+  // Samples may contain more controls than a standard gamepad, and identifiers
+  // are UTF-8 strings. Size the actual wire payload rather than an event average.
+  let size = 4;
+  const encoder = new TextEncoder();
+  for (const event of events) {
+    size += 5;
+    switch (event.kind) {
+      case "pointer": size += 12; break;
+      case "key": size += 3 + encoder.encode(event.code).length; break;
+      case "gamepad": size += 3 + 4 * (event.axes.length + event.buttons.length); break;
+      case "touchAxis": size += 6 + encoder.encode(event.controlId).length; break;
+      case "gamepadDisconnect": size += 1; break;
+    }
+  }
+  const scratch = new ArrayBuffer(size);
   const view = new DataView(scratch);
   let o = 0;
   view.setUint32(o, events.length, true);
@@ -119,7 +132,7 @@ export function encodeInputEvents(events: readonly RawInputEvent[]): ArrayBuffer
       o += 1;
     }
   }
-  return scratch.slice(0, o);
+  return scratch;
 }
 
 export function decodeInputEvents(

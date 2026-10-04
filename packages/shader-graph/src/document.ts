@@ -68,6 +68,11 @@ export interface MaterialDocument {
   preview: MaterialPreviewSettings;
   nodes: MaterialGraphNode[];
   edges: MaterialGraphEdge[];
+  /**
+   * Root Material guid when this document is a materialized Material Instance.
+   * Runtime-only: never persisted, so saved Materials never carry it.
+   */
+  instanceOf?: string;
 }
 
 export interface MaterialFunctionPin {
@@ -172,7 +177,7 @@ function normalizeEdges(value: unknown): MaterialGraphEdge[] {
   });
 }
 
-function normalizePreview(value: unknown): MaterialPreviewSettings {
+export function normalizeMaterialPreviewSettings(value: unknown): MaterialPreviewSettings {
   const record = asRecord(value);
   const selectedMesh = MATERIAL_PREVIEW_MESHES.includes(
     record.mesh as MaterialPreviewMesh,
@@ -317,7 +322,9 @@ export function createDefaultMaterialDocument(
   domain: MaterialDomain = "surface",
 ): MaterialDocument {
   const graph =
-    domain === "postProcess"
+    domain === "text"
+      ? { nodes: [{ id: "output", type: "output.text", position: { x: 300, y: 0 }, properties: {} }], edges: [] }
+      : domain === "postProcess"
       ? defaultPostProcessGraph()
       : domain === "particle"
         ? defaultParticleGraph()
@@ -326,12 +333,12 @@ export function createDefaultMaterialDocument(
     schemaVersion: MATERIAL_SCHEMA_VERSION,
     name,
     domain,
-    shadingModel: domain === "particle" ? "unlit" : "pbr",
-    blendMode: domain === "particle" ? "additive" : "opaque",
-    twoSided: false,
+    shadingModel: domain === "particle" || domain === "text" ? "unlit" : "pbr",
+    blendMode: domain === "text" ? "translucent" : domain === "particle" ? "additive" : "opaque",
+    twoSided: domain === "text",
     defaultNormals: "model",
     alphaCutoff: 0.5,
-    preview: { mesh: "cube", customMeshGuid: null },
+    preview: { mesh: domain === "text" ? "plane" : "cube", customMeshGuid: null },
     nodes: graph.nodes,
     edges: graph.edges,
   };
@@ -463,18 +470,18 @@ export function normalizeMaterialDocument(
     schemaVersion: Math.max(asNumber(record.schemaVersion, MATERIAL_SCHEMA_VERSION), MATERIAL_SCHEMA_VERSION),
     name: asString(record.name, fallbackName),
     domain,
-    shadingModel: record.shadingModel === "unlit" ? "unlit" : "pbr",
+    shadingModel: domain === "text" || record.shadingModel === "unlit" ? "unlit" : "pbr",
     blendMode:
-      record.blendMode === "masked" ||
+      domain === "text" ? (record.blendMode === "additive" ? "additive" : "translucent") : record.blendMode === "masked" ||
       record.blendMode === "translucent" ||
       record.blendMode === "additive"
         ? record.blendMode
         : "opaque",
-    twoSided: record.twoSided === true,
+    twoSided: domain === "text" || record.twoSided === true,
     defaultNormals: record.defaultNormals === "flat" ? "flat" : "model",
     alphaCutoff: asNumber(record.alphaCutoff, 0.5),
     ...(asNumber(record.boundsPadding, 0) > 0 ? { boundsPadding: asNumber(record.boundsPadding, 0) } : {}),
-    preview: normalizePreview(record.preview),
+    preview: normalizeMaterialPreviewSettings(record.preview),
     nodes,
     edges: normalizeColorParameterEdges(record, nodes, MATERIAL_SCHEMA_VERSION),
   };

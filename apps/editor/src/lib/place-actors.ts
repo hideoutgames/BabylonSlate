@@ -5,6 +5,8 @@ import {
   createSceneStreamingActor,
   createText3DComponent,
   identitySerializedTransform,
+  isFocusTargetClass,
+  isSceneLayerAnchorActor,
   isSceneLayerDeniedComponent,
   type SerializedActor,
   type SerializedComponent,
@@ -49,9 +51,17 @@ export type PlaceActorKind =
       type: "overlay-2d";
       classId:
         | "2DAnchorComponent"
+        | "2DScrollBoxComponent"
+        | "2DVerticalBoxComponent"
+        | "2DHorizontalBoxComponent"
+        | "2DOverlayBoxComponent"
+        | "2DPaddingComponent"
+        | "2DSpacerComponent"
+        | "2DPainterComponent"
         | "2DTextureComponent"
         | "2DMaterialComponent"
         | "2DButtonComponent"
+        | "2DFocusTargetComponent"
         | "2DPanelComponent"
         | "2DTextComponent"
         | "2DRichTextComponent";
@@ -60,6 +70,7 @@ export type PlaceActorKind =
       type: "asset";
       name: string;
       guid: string;
+      path?: string;
       assetType?: string;
       classId?: string;
       components?: SerializedComponent[];
@@ -174,6 +185,8 @@ export const ENGINE_PLACE_ACTORS: PlaceActorItem[] = [
 ];
 
 const OVERLAY_PLACE_ACTORS: PlaceActorItem[] = [
+  ...(["ScrollBox", "VerticalBox", "HorizontalBox", "OverlayBox", "Padding", "Spacer"] as const).map(name => ({ id: `2d-${name.toLowerCase()}`, title: `2D ${name.replace(/Box$/, " Box")}`, category: "Overlay", kind: { type: "overlay-2d" as const, classId: `2D${name}Component` as const } })),
+  { id: "2d-painter", title: "2D Painter", category: "Overlay", kind: { type: "overlay-2d", classId: "2DPainterComponent" } },
   {
     id: "2d-anchor",
     title: "2D Anchor",
@@ -198,6 +211,7 @@ const OVERLAY_PLACE_ACTORS: PlaceActorItem[] = [
     category: "Overlay",
     kind: { type: "overlay-2d", classId: "2DButtonComponent" },
   },
+  { id: "2d-focus-target", title: "2D Focus Target", category: "Overlay", kind: { type: "overlay-2d", classId: "2DFocusTargetComponent" } },
   {
     id: "2d-panel",
     title: "2D Panel",
@@ -236,6 +250,26 @@ export function placeActorsForHost(options: { overlay: boolean }): PlaceActorIte
   ];
 }
 
+/** Place Actors' default page, in display order; ids absent from the host are skipped. */
+export const FEATURED_PLACE_ACTOR_IDS: readonly string[] = [
+  "empty",
+  "shape-box",
+  "shape-sphere",
+  "shape-plane",
+  "light-point",
+  "light-directional",
+  "camera",
+  "skybox",
+  "fog-volume",
+  "water-lake",
+  "audio",
+  "particle",
+  "2d-text",
+  "2d-button",
+  "2d-panel",
+  "2d-texture",
+];
+
 export const PLACEABLE_PROJECT_TYPES = new Set([
   "Class",
   "Model",
@@ -243,7 +277,6 @@ export const PLACEABLE_PROJECT_TYPES = new Set([
   "ParticleSystem",
   "Water",
   "Tilemap",
-  "Scene",
 ]);
 
 export function prefabComponentsForGuid(
@@ -313,7 +346,7 @@ export function projectPlaceActors(
   );
   const overlay = options?.overlay === true;
   return assets
-    .filter((asset) => PLACEABLE_PROJECT_TYPES.has(asset.header.type ?? "") && !(overlay && (asset.header.type === "Water" || asset.header.type === "Scene")))
+    .filter((asset) => PLACEABLE_PROJECT_TYPES.has(asset.header.type ?? "") && !(overlay && asset.header.type === "Water"))
     .filter((asset) => {
       if (asset.header.type !== "Class") return true;
       const classId = classIdFromClassAsset({
@@ -328,11 +361,12 @@ export function projectPlaceActors(
     .map((asset) => ({
       id: `asset-${asset.header.guid}`,
       title: asset.header.name,
-      category: "Project",
+      category: asset.header.type === "Model" ? "Models" : "Project",
       kind: {
         type: "asset" as const,
         name: asset.header.name,
         guid: asset.header.guid,
+        path: asset.path,
         assetType: asset.header.type,
         classId:
           asset.header.type === "Class"
@@ -611,9 +645,6 @@ export function spawnPlacedActor(
     }));
   }
   if (kind.type === "asset") {
-    if (kind.assetType === "Scene") {
-      return finish(createSceneStreamingActor(id, kind.guid, kind.name, transform));
-    }
     if (kind.assetType === "Class") {
       return finish(createActor(id, kind.name, {
         classId: kind.classId ?? kind.name,
@@ -697,6 +728,16 @@ function applyOverlayPlace(
   };
 }
 
+function remapFocusNeighbors(component: SerializedComponent, references: ReadonlyMap<string, string>): SerializedComponent {
+  if (!isFocusTargetClass(component.classId)) return component;
+  const properties = { ...component.properties };
+  for (const key of ["focusUp", "focusDown", "focusLeft", "focusRight"]) {
+    const target = properties[key];
+    if (typeof target === "string" && references.has(target)) properties[key] = references.get(target)!;
+  }
+  return { ...component, properties };
+}
+
 export function duplicateSceneActor(
   scene: SerializedScene,
   source: SerializedActor,
@@ -711,7 +752,8 @@ export function duplicateSceneActor(
   const componentIds = new Map(copy.components.map((component, index) => [
     component.id, `${copy.id}-${component.classId}-${index + 1}`,
   ]));
-  copy.components = copy.components.map((component) => ({
+  const focusReferences = new Map([[source.id, copy.id], ...componentIds]);
+  copy.components = copy.components.map((component) => remapFocusNeighbors({
     ...component,
     id: componentIds.get(component.id)!,
     ...(component.parentId ? { parentId: componentIds.get(component.parentId) ?? component.parentId } : {}),
@@ -723,11 +765,13 @@ export function duplicateSceneActor(
           ? componentIds.get(component.properties.targetComponentId) ?? component.properties.targetComponentId
           : null,
       } } : {}),
-  }));
+  }, focusReferences));
   if (options && "parentId" in options) {
     copy.parentId = options.parentId ?? null;
   }
-  if (options?.position) {
+  if (isSceneLayerAnchorActor(copy)) {
+    copy.transform = identitySerializedTransform();
+  } else if (options?.position) {
     copy.transform = { ...copy.transform, position: options.position };
   }
   return copy;
@@ -751,9 +795,11 @@ export function duplicateSceneActors(
     copies.push(copy);
     next = { ...next, actors: [...next.actors, copy] };
   }
+  const focusReferences = new Map([...actorCopies, ...[...componentCopies.values()].flatMap((ids) => [...ids])]);
   return copies.map((copy) => ({
     ...copy,
     components: copy.components.map((component) => {
+      if (isFocusTargetClass(component.classId)) return remapFocusNeighbors(component, focusReferences);
       if (component.classId === "RenderTargetCaptureComponent" && Array.isArray(component.properties.actorIds)) {
         return { ...component, properties: { ...component.properties, actorIds: component.properties.actorIds.map((id: unknown) => typeof id === "string" ? actorCopies.get(id) ?? id : id) } };
       }

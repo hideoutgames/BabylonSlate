@@ -1,4 +1,5 @@
 import { RenderQualityFields } from "./render-quality-fields";
+import { FocusNavigationFields } from "./focus-navigation-fields";
 import { RenderPipelineFields } from "./render-pipeline-fields";
 import { renderingDraft, mergeRenderingDraft, type RenderingDraft } from "../lib/render-settings-draft";
 import { ShadowSettingsFields } from "./shadow-settings-fields";
@@ -126,6 +127,7 @@ const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> = [
     label: "Physics",
     keywords: "collision layers collide mask havok",
   },
+  { id: "focusNavigation", label: "Focus Navigation", keywords: "focus keyboard gamepad navigation repeat wrap input activate" },
   {
     id: "fonts",
     label: "Fonts",
@@ -177,6 +179,7 @@ const PROJECT_GROUPS: CatalogCategoryGroup[] = [
       "general",
       "game",
       "physics",
+      "focusNavigation",
       "fonts",
       "audio",
       "rendering",
@@ -206,6 +209,11 @@ const ENGINE_CATEGORIES: Array<
     id: "undo",
     label: "Undo",
     keywords: "undo history length stack",
+  },
+  {
+    id: "debugger",
+    label: "Debugger",
+    keywords: "trace babtrace snapshot recording frames memory budget",
   },
   {
     id: "viewport",
@@ -274,6 +282,7 @@ const ENGINE_GROUPS: CatalogCategoryGroup[] = [
     ids: [
       "appearance",
       "undo",
+      "debugger",
       "viewport",
       "graph",
       "assets",
@@ -994,6 +1003,12 @@ export function SettingsModal({
           </FieldSet>
         </FieldGroup>
       ) : null}
+
+      {showProjectBody && projectDocument && activeCategoryId === "focusNavigation" ? <FocusNavigationFields
+        value={projectDocument.settings.focusNavigation}
+        onChange={(focusNavigation) => updateProjectSettings({ focusNavigation })}
+        assets={(assetRegistry?.list() ?? []).map((asset) => ({ guid: asset.header.guid, name: asset.header.name, type: asset.header.type, path: asset.path, valueType: asset.header.payload?.valueType }))}
+      /> : null}
 
       {showProjectBody && projectDocument && activeCategoryId === "audio" ? (
         <FieldGroup>

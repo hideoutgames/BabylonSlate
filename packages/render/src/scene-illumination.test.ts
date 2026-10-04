@@ -457,6 +457,29 @@ describe("syncAuthoredIllumination", () => {
     expect(scene.activeCamera).not.toBe(orbit);
   });
 
+  it("preserves component identity for multiple lights and cameras on one actor", () => {
+    const { scene } = createHandle();
+    setupDefaultViewport(scene);
+    const data = sceneWith([createActor("rig", "Rig", { components: [
+      { id: "point", classId: "LightComponent", properties: { lightKind: "point", intensity: 2 } },
+      { id: "fill", classId: HEMISPHERIC_FILL_LIGHT_CLASS_ID, properties: { intensity: 0.3 } },
+      { id: "wide", classId: "CameraComponent", properties: { fieldOfView: 80 } },
+      { id: "detail", classId: "CameraComponent", properties: { fieldOfView: 35 }, transform: { position: [5, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] } },
+    ] })], { mainCameraActorId: "rig", mainCameraComponentId: "detail" });
+    syncAuthoredIllumination(scene, data, { stealActiveCamera: true });
+    expect(scene.lights.filter(light => light.name.startsWith(AUTHORED_LIGHT_PREFIX))).toHaveLength(2);
+    const selected = scene.activeCamera!;
+    expect(selected.fov).toBeCloseTo(35 * Math.PI / 180);
+    expect(selected.position.asArray()).toEqual([5, 0, 0]);
+    data.actors[0]!.components.reverse();
+    syncAuthoredIllumination(scene, data, { stealActiveCamera: true });
+    expect(scene.activeCamera).toBe(selected);
+    const pivot = MeshBuilder.CreateBox("pivot", {}, scene);
+    pivot.position.x = 10;
+    syncAuthoredCamerasFromMeshes(scene, data, () => pivot);
+    expect(selected.position.asArray()).toEqual([15, 0, 0]);
+  });
+
   it("keeps the existing active camera when Default Camera is missing or stale", () => {
     const { scene } = createHandle();
     setupDefaultViewport(scene);

@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { createContentBrowserAsset, openAssetFromBrowser, openTestProject } from "./open-test-project";
+import { findOpfsProjectDirectory } from "./opfs-project";
 import { saveAllIfEnabled } from "./save-all";
 
 type TestHost = {
@@ -22,29 +23,56 @@ async function recoverAfterReload(page: Page) {
 }
 
 async function journalCommands(page: Page) {
-  return page.evaluate(async () => {
-    const root = await navigator.storage.getDirectory();
-    const storage = await root.getDirectoryHandle("opfs:__babylonslate_derived__");
-    const derived = await storage.getDirectoryHandle("derived");
+  const directoryName = await findOpfsProjectDirectory(page, "opfs:__babylonslate_derived__");
+  // The first poll may precede creation of the derived store.
+  if (directoryName === null) return [];
+  return page.evaluate(async (storageDirectory) => {
     type Command = { type: string; to?: unknown; commands?: Command[] };
     const commands: Command[] = [];
+    const root = await navigator.storage.getDirectory();
+    const storage = await root.getDirectoryHandle(storageDirectory);
+    let derived: FileSystemDirectoryHandle;
+    try {
+      derived = await storage.getDirectoryHandle("derived");
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === "NotFoundError")) throw error;
+      // Journal writes are batched, so the first poll can precede the first
+      // flush that creates the derived-data folders.
+      return commands;
+    }
     const append = (command: Command) => {
       if (command.type === "edit.batch") command.commands?.forEach(append);
       else commands.push(command);
     };
-    const directories = derived as FileSystemDirectoryHandle & {
-      values(): AsyncIterableIterator<FileSystemDirectoryHandle>;
+    type Listable = FileSystemDirectoryHandle & {
+      values(): AsyncIterableIterator<FileSystemHandle>;
     };
-    for await (const directory of directories.values()) {
+    const readLines = async (file: FileSystemFileHandle) =>
+      (await (await file.getFile()).text()).trim().split("\n").filter(Boolean)
+        .forEach((line) => append(JSON.parse(line).command));
+    for await (const directory of (derived as Listable).values()) {
       if (directory.kind !== "directory") continue;
+      const project = directory as FileSystemDirectoryHandle;
+      // An older single-file journal, then the ordered segments.
       try {
-        const file = await (await directory.getFileHandle("journal.jsonl")).getFile();
-        (await file.text()).trim().split("\n").filter(Boolean)
-          .forEach((line) => append(JSON.parse(line).command));
-      } catch { /* A project without unsaved edits has no journal. */ }
+        await readLines(await project.getFileHandle("journal.jsonl"));
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "NotFoundError")) throw error;
+      }
+      try {
+        const segments = await project.getDirectoryHandle("journal");
+        const files: FileSystemFileHandle[] = [];
+        for await (const entry of (segments as Listable).values()) {
+          if (entry.kind === "file") files.push(entry as FileSystemFileHandle);
+        }
+        files.sort((a, b) => a.name.localeCompare(b.name));
+        for (const file of files) await readLines(file);
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "NotFoundError")) throw error;
+      }
     }
     return commands;
-  });
+  }, directoryName);
 }
 
 test("H6/M4: recovery retains Undo and survives a second reload before Save", async ({ page }) => {

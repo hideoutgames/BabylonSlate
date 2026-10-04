@@ -1301,7 +1301,10 @@ function GraphEditorCanvas({
 
       const activePin = pendingPinRef.current;
       if (!activePin) return;
-      if (activePin.nodeId === nodeId) {
+      const sourcePin = pinOnNode(graphStateRef.current.nodes, activePin.nodeId, activePin.pinId);
+      const targetPin = pinOnNode(graphStateRef.current.nodes, nodeId, pinId);
+      if (activePin.nodeId === nodeId && (sourcePin?.kind !== "exec" || targetPin?.kind !== "exec")) {
+        pendingPinRef.current = null;
         setPendingPin(null);
         return;
       }
@@ -1669,13 +1672,13 @@ function GraphEditorCanvas({
   const copySelection = useCallback(() => {
     const selected = selectedNodes.filter((node) => !isProtectedNode(node));
     if (selected.length === 0) return;
+    const ids = new Set(selected.map((node) => node.id));
     clipboardRef.current = {
       nodes: selected.map((node) => ({
         ...node,
         data: { ...node.data },
       })),
       edges: graphStateRef.current.edges.filter((edge) => {
-        const ids = new Set(selected.map((node) => node.id));
         return ids.has(edge.source) && ids.has(edge.target);
       }),
     };

@@ -57,8 +57,10 @@ import {
   validateMaterialFunctionDocument,
   type MaterialDocument,
   type MaterialFunctionDocument,
+  type MaterialDomain,
   type MaterialFunctionPin,
   type MaterialPreviewMesh,
+  type MaterialPreviewSettings,
 } from "@babylonslate/shader-graph";
 import {
   BoxIcon,
@@ -467,6 +469,25 @@ function MaterialParameterNamePrompt<T extends MaterialGraphDocument>({
 export function MaterialPreviewPanel(_props: IDockviewPanelProps) {
   void _props;
   const { document, commit } = useMaterialDocument();
+  return (
+    <MaterialPreviewSurface
+      preview={document.preview}
+      domain={document.domain}
+      onPreviewChange={(preview) => commit({ ...document, preview })}
+    />
+  );
+}
+
+/** The preview canvas with its mesh picker; shared by Materials and Material Instances. */
+export function MaterialPreviewSurface({
+  preview,
+  domain,
+  onPreviewChange,
+}: {
+  preview: MaterialPreviewSettings;
+  domain: MaterialDomain | null;
+  onPreviewChange: (preview: MaterialPreviewSettings) => void;
+}) {
   const editing = useMaterialEditing();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const customPickNeedsFallbackRef = useRef(false);
@@ -495,8 +516,8 @@ export function MaterialPreviewPanel(_props: IDockviewPanelProps) {
   const status = editing.previewState.status;
   const openCustomMeshPicker = () => {
     customPickNeedsFallbackRef.current =
-      document.preview.mesh !== "custom" ||
-      !document.preview.customMeshGuid;
+      preview.mesh !== "custom" ||
+      !preview.customMeshGuid;
     customPickCommittedRef.current = false;
     setMeshPickOpen(true);
   };
@@ -504,7 +525,7 @@ export function MaterialPreviewPanel(_props: IDockviewPanelProps) {
   return (
     <PanelFrame className="flex-1" data-testid="material-preview-panel">
       <div className="relative flex h-full min-h-0 flex-col">
-        {document.domain !== "particle" ? <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-2">
+        {domain !== "particle" && domain !== "text" ? <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-2">
           <div
             className="pointer-events-auto flex flex-wrap items-center gap-1 rounded-lg border border-border bg-popover p-1 shadow-md"
             data-testid="material-preview-overlay"
@@ -513,7 +534,7 @@ export function MaterialPreviewPanel(_props: IDockviewPanelProps) {
               variant="outline"
               size="sm"
               spacing={1}
-              value={[document.preview.mesh]}
+              value={[preview.mesh]}
               onValueChange={(value) => {
                 const next = value[0] as MaterialPreviewMesh | undefined;
                 if (!next) return;
@@ -521,13 +542,7 @@ export function MaterialPreviewPanel(_props: IDockviewPanelProps) {
                   openCustomMeshPicker();
                   return;
                 }
-                commit({
-                  ...document,
-                  preview: {
-                    mesh: next,
-                    customMeshGuid: null,
-                  },
-                });
+                onPreviewChange({ mesh: next, customMeshGuid: null });
               }}
               aria-label="Preview Mesh"
               data-testid="material-preview-mesh"
@@ -576,10 +591,7 @@ export function MaterialPreviewPanel(_props: IDockviewPanelProps) {
               customPickNeedsFallbackRef.current &&
               !customPickCommittedRef.current
             ) {
-              commit({
-                ...document,
-                preview: { mesh: "cube", customMeshGuid: null },
-              });
+              onPreviewChange({ mesh: "cube", customMeshGuid: null });
             }
             if (!open) {
               customPickNeedsFallbackRef.current = false;
@@ -593,12 +605,9 @@ export function MaterialPreviewPanel(_props: IDockviewPanelProps) {
           allowNone
           onPick={(guid) => {
             customPickCommittedRef.current = true;
-            commit({
-              ...document,
-              preview: guid
-                ? { mesh: "custom", customMeshGuid: guid }
-                : { mesh: "cube", customMeshGuid: null },
-            });
+            onPreviewChange(guid
+              ? { mesh: "custom", customMeshGuid: guid }
+              : { mesh: "cube", customMeshGuid: null });
             setMeshPickOpen(false);
           }}
           data-testid="material-preview-mesh-picker"
@@ -636,6 +645,7 @@ function MaterialDocumentDetails() {
         { value: "landscape", label: "Landscape" },
         { value: "postProcess", label: "Post Process" },
         { value: "particle", label: "Particle" },
+        { value: "text", label: "Text" },
       ],
       onChange: (value) =>
         commit(setMaterialDomain(document, parseMaterialDomain(value))),
@@ -693,10 +703,10 @@ function MaterialDocumentDetails() {
       onChange: (value) => commit({ ...document, defaultNormals: value === "flat" ? "flat" : "model" }),
     },
   ];
-  if ((document.domain === "surface" || document.domain === "landscape")) rows.push({ id: "boundsPadding", kind: "number", label: "Bounds Padding (Local)", value: document.boundsPadding ?? 0, min: 0, onChange: (boundsPadding) => commit({ ...document, boundsPadding }) });
+  if ((document.domain === "surface" || document.domain === "landscape")) rows.push({ id: "boundsPadding", kind: "number", label: "Bounds Padding (Local)", value: document.boundsPadding ?? 0, min: 0, onChange: (boundsPadding) => commit({ ...document, boundsPadding }, "material:boundsPadding") });
   if ((document.domain !== "surface" && document.domain !== "landscape")) {
     // Particle emitters own blending (their Render module), so particle Materials hide Blend Mode.
-    const hidden = document.domain === "particle" ? ["shadingModel", "blendMode", "twoSided", "defaultNormals"] : ["shadingModel", "twoSided", "defaultNormals"];
+    const hidden = document.domain === "particle" || document.domain === "text" ? ["shadingModel", "blendMode", "twoSided", "defaultNormals"] : ["shadingModel", "twoSided", "defaultNormals"];
     for (let i = rows.length - 1; i >= 0; i--) if (hidden.includes(rows[i]!.id)) rows.splice(i, 1);
   }
   if ((document.domain === "surface" || document.domain === "landscape") && document.blendMode === "masked") {
@@ -707,7 +717,7 @@ function MaterialDocumentDetails() {
       value: document.alphaCutoff,
       min: 0,
       max: 1,
-      onChange: (value) => commit({ ...document, alphaCutoff: value }),
+      onChange: (value) => commit({ ...document, alphaCutoff: value }, "material:alphaCutoff"),
     });
   }
 
@@ -760,13 +770,13 @@ function MaterialCostSummary() {
 }
 
 /** Per-node properties for the selected graph node. */
-function MaterialNodeDetails({
+function MaterialNodeDetails<T extends MaterialGraphDocument>({
   document,
   commit,
   selectedNodeId,
 }: {
-  document: MaterialGraphDocument;
-  commit: (next: MaterialGraphDocument) => void;
+  document: T;
+  commit: (next: T, mergeKey?: string) => void;
   selectedNodeId: string | null;
 }) {
   const { assetRegistry, registryVersion } = useDocuments();
@@ -789,6 +799,8 @@ function MaterialNodeDetails({
   }, [assetRegistry, registryVersion, pickOpen, isTextureNode]);
   if (!node) return null;
 
+  // Keyed by node and property names: a value scrub, color drag or typed
+  // field is one undo step, while each separate click still starts a new one.
   const setProperties = (properties: Record<string, unknown>) => {
     const pins = node.type === "custom.glsl" && (properties.inputs || properties.outputs) ? customGlslInterface({ ...node.properties, ...properties }) : null;
     commit({
@@ -799,7 +811,7 @@ function MaterialNodeDetails({
           ? { ...entry, properties: { ...entry.properties, ...properties } }
           : entry,
       ),
-    });
+    }, `material-node:${node.id}:${Object.keys(properties).sort().join(",")}`);
   };
 
   const rows: PropertyRow[] = materialPinDefaultRows(
@@ -952,14 +964,14 @@ function MaterialNodeDetails({
   );
 }
 
-function MaterialFunctionPicker({
+function MaterialFunctionPicker<T extends MaterialGraphDocument>({
   node,
   document,
   commit,
 }: {
   node: string;
-  document: MaterialGraphDocument;
-  commit: (next: MaterialGraphDocument) => void;
+  document: T;
+  commit: (next: T) => void;
 }) {
   const { assetRegistry, registryVersion } = useDocuments();
   const [open, setOpen] = useState(false);
@@ -1104,7 +1116,7 @@ export function MaterialFunctionInterfacePanel(_props: IDockviewPanelProps) {
   const [selectedInput, selectInput] = useState<string | null>(null);
   const [selectedOutput, selectOutput] = useState<string | null>(null);
   const input = document.inputs.find((pin) => pin.id === selectedInput);
-  const setDefault = (defaultValue: number[]) => commit({ ...document, inputs: document.inputs.map((pin) => pin.id === selectedInput ? { ...pin, defaultValue } : pin) });
+  const setDefault = (defaultValue: number[]) => commit({ ...document, inputs: document.inputs.map((pin) => pin.id === selectedInput ? { ...pin, defaultValue } : pin) }, `material-function:input:${selectedInput}:defaultValue`);
   return (
     <PanelFrame
       className="flex-1"
@@ -1187,7 +1199,7 @@ export function MaterialCompilerResultsPanel(_props: IDockviewPanelProps) {
           <EmptyDescription>This material compiles cleanly.</EmptyDescription>
         </Empty>
       ) : (
-        <ScrollArea className="min-h-0 flex-1 p-2">
+        <ScrollArea className="min-h-0 flex-1 py-1">
           <WindowedList
             itemCount={rows.length}
             rowHeight={WINDOWED_LIST_TOUCH_ROW_HEIGHT}
@@ -1198,6 +1210,8 @@ export function MaterialCompilerResultsPanel(_props: IDockviewPanelProps) {
                 <DiagnosticResultRow
                   severity={row.severity}
                   message={row.message}
+                  code={row.code}
+                  selected={selected !== null && row.code === selected.code && row.message === selected.message && row.nodeId === selected.nodeId}
                   onSelect={() => {
                     setSelectedDiagnostic(row);
                     if (row.nodeId) editing.focusNode(row.nodeId);

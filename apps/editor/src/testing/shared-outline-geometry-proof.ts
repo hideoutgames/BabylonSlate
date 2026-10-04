@@ -83,8 +83,16 @@ export async function runSharedOutlineGeometryProof(backend: "webgl2" | "webgpu"
   const material = new StandardMaterial("Gray Control", scene);
   material.disableLighting = true; material.emissiveColor = new Color3(0.4, 0.4, 0.4);
   const waitFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-  const captures = [];
-  const cases = [];
+  type Capture = ReturnType<typeof pixelSummary> & {
+    name: string;
+    heldCandidates: number;
+    tasks: ReturnType<SceneRenderCoordinator["taskNames"]>;
+    outline: ReturnType<SceneRenderCoordinator["sharedOutlineDiagnostics"]>;
+    owner: ReturnType<typeof owner.diagnostics>;
+    reservations: ReturnType<typeof managedRenderReservations>;
+  };
+  const captures: Capture[] = [];
+  const cases: (ReturnType<typeof compareEdges> & { name: string; native: Capture; rendered: Capture })[] = [];
   const capture = async (name: string, coordinator = renderer) => {
     await onProgress?.({ stage: name, state: "preparing" });
     // Direct fixture edits bypass editor transaction invalidation. Re-probe

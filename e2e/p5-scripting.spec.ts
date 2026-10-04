@@ -166,6 +166,33 @@ function selectPinVisual(
 }
 
 test.describe("P5 visual scripting acceptance", () => {
+  test("special node icons stay centered on the top-right corner", async ({ page }) => {
+    await openTestProject(page);
+    await setMainGraphContent(page, {
+      nodes: [
+        { id: "event", type: "flow.event.beginPlay", position: { x: 0, y: 0 }, data: {} },
+        { id: "delay", type: "timers.delay", position: { x: 450, y: 0 }, data: {} },
+        { id: "interface", type: "interface.call", position: { x: 0, y: 300 }, data: {} },
+        { id: "async", type: "debug.executeJavaScript", position: { x: 450, y: 300 }, data: { async: true } },
+      ],
+      edges: [],
+    });
+    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
+    const graph = page.getByTestId("graph-panel");
+    for (const [id, label] of [["event", "Event"], ["delay", "Latent Action"], ["interface", "Script Interface Function"], ["async", "Latent Action"]]) {
+      const node = graph.locator(`.react-flow__node[data-id="${id}"]`);
+      const marker = node.getByRole("img", { name: label, exact: true });
+      await expect(marker).toBeVisible();
+      await expect.poll(async () => {
+        const shell = await node.locator("[data-node-role]").boundingBox();
+        const icon = await marker.boundingBox();
+        if (!shell || !icon) return Infinity;
+        return Math.max(Math.abs(icon.x + icon.width / 2 - shell.x - shell.width), Math.abs(icon.y + icon.height / 2 - shell.y));
+      }).toBeLessThan(1);
+    }
+    await test.info().attach("node-corner-icons", { body: await graph.screenshot(), contentType: "image/png" });
+  });
+
   test("a scripted actor compiles and runs in Preview", async ({ page }) => {
     await openTestProject(page);
 

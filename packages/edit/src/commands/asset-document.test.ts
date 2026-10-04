@@ -3,6 +3,26 @@ import { DocumentEditStack } from "../stack";
 import { SetAssetDocumentCommand, createSetAssetDocumentCommandFromJson } from "./asset-document";
 
 describe("SetAssetDocumentCommand", () => {
+  it("applies a large asset edit without retaining history beyond the byte ceiling", () => {
+    const stack = new DocumentEditStack<Record<string, unknown>>({ maxEntries: 100, maxBytes: 1_024 });
+    const payload = { cells: Array.from({ length: 500 }, (_, index) => ({ x: index, tile: "stone" })) };
+    const result = stack.apply({}, new SetAssetDocumentCommand({}, payload));
+    expect(result.doc).toEqual(payload);
+    expect(stack.canUndo).toBe(false);
+    expect(stack.undoBytes).toBe(0);
+  });
+
+  it("counts the original snapshot retained by a merged gesture when later edits trim history", () => {
+    const stack = new DocumentEditStack<Record<string, unknown>>({ maxEntries: 100, maxBytes: 1_000 });
+    const original = { text: "x".repeat(800) };
+    let { doc } = stack.apply(original, new SetAssetDocumentCommand(original, { n: 1 }, "edit-text"));
+    ({ doc } = stack.apply(doc, new SetAssetDocumentCommand(doc, { n: 2 }, "edit-text")));
+    expect(stack.undoDepth).toBe(1);
+    ({ doc } = stack.apply(doc, new SetAssetDocumentCommand(doc, { text: "y".repeat(250) })));
+    expect(stack.undo(doc)?.doc).toEqual({ n: 2 });
+    expect(stack.canUndo).toBe(false);
+  });
+
   it("replaces and inverts the payload", () => {
     const from = { name: "A" };
     const to = { name: "B" };

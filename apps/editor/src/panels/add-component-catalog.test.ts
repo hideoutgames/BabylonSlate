@@ -88,10 +88,11 @@ describe("Add Component catalog", () => {
       "Overlay",
       "Physics",
     ]);
-    expect(byCategory.get("General")).toEqual(["SplineComponent"]);
+    expect(byCategory.get("General")).toEqual(["MovementComponent", "SplineComponent"]);
     expect(byCategory.get("Rendering")).toEqual([
       "MeshComponent",
       "SpriteComponent",
+      "DynamicRuntimeMeshComponent",
       "TilemapComponent",
       "LightComponent",
       "AreaRectLightComponent",
@@ -130,6 +131,7 @@ describe("Add Component catalog", () => {
   });
 
   it("seeds Sprite and Tilemap asset-guid defaults", () => {
+    expect(defaultPropertiesFor("DynamicRuntimeMeshComponent").enableCollision).toBe(false);
     expect(defaultPropertiesFor("AnimationGraphComponent")).toEqual({
       graphGuid: null,
     });

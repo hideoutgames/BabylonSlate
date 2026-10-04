@@ -57,6 +57,9 @@ export type NodeDefinition = {
   /** Pure expression nodes return a map of output pin name → expression. */
   codegen: (ctx: CodegenContext) => void | Record<string, string>;
   pure?: boolean;
+  /** No observable reads/effects beyond inputs. Allows caching immutable outputs
+   * only when every dependency is also referentially transparent. */
+  referentiallyTransparent?: boolean;
   latent?: boolean;
   /** Hidden from runtime graph palettes unless the host is an editor graph. */
   editorOnly?: boolean;

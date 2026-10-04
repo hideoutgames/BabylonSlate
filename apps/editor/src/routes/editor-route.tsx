@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { CONTENT_BROWSER_ID } from "@babylonslate/core";
 import { Button } from "@babylonslate/ui/components/button";
 import {
@@ -24,6 +24,7 @@ import { ExternalChangeDialogs } from "../components/external-change-dialogs";
 import { useDocuments } from "../context/document-context";
 import { AssetOpenDocumentsProvider } from "../context/asset-open-provider";
 import { AssetCreateDocumentsProvider } from "../context/asset-create-provider";
+import { EditorSessionStateProvider } from "../context/editor-session-state-context";
 import { PlayProvider, usePlay } from "../context/play-context";
 import { KeybindProvider } from "../context/keybind-context";
 import { ProjectSearchProvider } from "../context/project-search-context";
@@ -57,12 +58,14 @@ function DirtyCloseDialog({
   onSave,
   onDiscard,
   onCancel,
+  saving,
 }: {
   dirtyNames: string[];
   open: boolean;
   onSave: () => void;
   onDiscard: () => void;
   onCancel: () => void;
+  saving: boolean;
 }) {
   return (
     <AlertDialog
@@ -87,11 +90,12 @@ function DirtyCloseDialog({
             variant="secondary"
             data-testid="dirty-discard"
             onClick={onDiscard}
+            disabled={saving}
           >
             Discard
           </Button>
-          <AlertDialogAction data-testid="dirty-save" onClick={onSave}>
-            Save All
+          <AlertDialogAction data-testid="dirty-save" onClick={onSave} disabled={saving}>
+            {saving ? "Saving…" : "Save All"}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
@@ -195,6 +199,10 @@ function EditorLayout() {
     cancelPlayMigration,
   } = usePlay();
   const [dirtyPrompt, setDirtyPrompt] = useState<string[] | null>(null);
+  const closeRequest = useRef(0);
+  const [savingBeforeClose, setSavingBeforeClose] = useState(false);
+  const openDocumentsRef = useRef(openDocuments);
+  openDocumentsRef.current = openDocuments;
   const [showMigrate, setShowMigrate] = useState(false);
   const [pendingTabClose, setPendingTabClose] = useState<
     | {
@@ -244,6 +252,7 @@ function EditorLayout() {
     : (dirtyPrompt ?? exclusiveDirtyNames);
 
   const requestCloseDocument = (id: string) => {
+    closeRequest.current += 1;
     const doc = openDocuments.find((entry) => entry.id === id);
     if (!doc) return;
     if (tabCloseDecision(doc.dirty) === "prompt") {
@@ -256,6 +265,7 @@ function EditorLayout() {
   };
 
   const requestCloseAllDocuments = () => {
+    closeRequest.current += 1;
     const tabs = openDocuments.filter((doc) => doc.id !== CONTENT_BROWSER_ID);
     if (tabs.some((doc) => doc.dirty)) {
       setPendingTabClose(
@@ -292,6 +302,7 @@ function EditorLayout() {
       </main>
       <EditorStatusBar />
       <DirtyCloseDialog
+        saving={savingBeforeClose}
         dirtyNames={promptNames}
         open={
           dirtyPrompt !== null ||
@@ -299,11 +310,14 @@ function EditorLayout() {
           pendingTabClose !== null
         }
         onCancel={() => {
+          closeRequest.current += 1;
+          setSavingBeforeClose(false);
           setDirtyPrompt(null);
           setPendingTabClose(null);
           cancelExclusiveSceneOpen();
         }}
         onDiscard={() => {
+          closeRequest.current += 1;
           if (pendingTabClose) {
             for (const doc of pendingTabClose) closeDocument(doc.id);
             setPendingTabClose(null);
@@ -317,26 +331,30 @@ function EditorLayout() {
           void forceCloseProject();
         }}
         onSave={() => {
-          if (pendingTabClose) {
-            const tabs = pendingTabClose;
-            void (async () => {
-              if (migrationPending.length > 0) {
-                setShowMigrate(true);
+          const request = ++closeRequest.current;
+          setSavingBeforeClose(true);
+          void (async () => {
+            try {
+              if (pendingExclusiveScene && !pendingTabClose) {
+                await confirmExclusiveSceneOpen("save");
                 return;
               }
-              const saved = await saveAll();
-              if (!saved) return;
-              setPendingTabClose(null);
-              for (const doc of tabs) closeDocument(doc.id);
-            })();
-            return;
-          }
-          if (pendingExclusiveScene) {
-            void confirmExclusiveSceneOpen("save");
-            return;
-          }
-          void (async () => {
-            if (await requestSave()) await requestClose();
+              const saved = await requestSave();
+              if (request !== closeRequest.current || !saved) return;
+              if (pendingTabClose) {
+                const tabs = openDocumentsRef.current.filter((doc) => pendingTabClose.some((tab) => tab.id === doc.id));
+                // A successful write can leave newer edits dirty. Keep the
+                // request open until those edits are saved or discarded.
+                if (tabs.some((doc) => doc.dirty)) {
+                  setPendingTabClose(tabs.map((doc) => ({ id: doc.id, name: doc.ref.label, dirty: doc.dirty })));
+                  return;
+                }
+                setPendingTabClose(null);
+                for (const doc of tabs) closeDocument(doc.id);
+              } else await requestClose();
+            } finally {
+              if (request === closeRequest.current) setSavingBeforeClose(false);
+            }
           })();
         }}
       />
@@ -380,31 +398,51 @@ function PlayAwareKeybinds({ children }: { children: ReactNode }) {
   return <KeybindProvider suspended={playing}>{children}</KeybindProvider>;
 }
 
+/**
+ * Reads the document identity feed here rather than in EditorRoute: a
+ * document change re-renders only this wrapper, and its unchanged `children`
+ * keep the rest of the editor from re-rendering with it.
+ */
+function ProjectSessionState({ children }: { children: ReactNode }) {
+  const { subscribeDocumentIdentity } = useDocuments();
+  return (
+    <EditorSessionStateProvider
+      subscribeDocumentIdentity={subscribeDocumentIdentity}
+    >
+      {children}
+    </EditorSessionStateProvider>
+  );
+}
+
 export default function EditorRoute({
   gallery = false,
 }: {
   gallery?: boolean;
 }) {
+  // Homepage is the only way into a project and closing one returns there,
+  // so this route (and the session view state it owns) mounts once per project.
   return (
-    <AssetOpenDocumentsProvider>
-      <AssetCreateDocumentsProvider>
-        <ValidationProvider>
-          <PlayProvider>
-            <MaterialRenderControlProvider>
-              <EditorUtilityRuntime />
-              <EditorExtensionsRuntime />
-              <TestAudioHostStats />
-              <TestParticleHostStats />
-              <ModelThumbnailCaptureHost />
-              <ProjectSearchProvider>
-                <PlayAwareKeybinds>
-                  {gallery ? <ComponentGallery /> : <EditorLayout />}
-                </PlayAwareKeybinds>
-              </ProjectSearchProvider>
-            </MaterialRenderControlProvider>
-          </PlayProvider>
-        </ValidationProvider>
-      </AssetCreateDocumentsProvider>
-    </AssetOpenDocumentsProvider>
+    <ProjectSessionState>
+      <AssetOpenDocumentsProvider>
+        <AssetCreateDocumentsProvider>
+          <ValidationProvider>
+            <PlayProvider>
+              <MaterialRenderControlProvider>
+                <EditorUtilityRuntime />
+                <EditorExtensionsRuntime />
+                <TestAudioHostStats />
+                <TestParticleHostStats />
+                <ModelThumbnailCaptureHost />
+                <ProjectSearchProvider>
+                  <PlayAwareKeybinds>
+                    {gallery ? <ComponentGallery /> : <EditorLayout />}
+                  </PlayAwareKeybinds>
+                </ProjectSearchProvider>
+              </MaterialRenderControlProvider>
+            </PlayProvider>
+          </ValidationProvider>
+        </AssetCreateDocumentsProvider>
+      </AssetOpenDocumentsProvider>
+    </ProjectSessionState>
   );
 }

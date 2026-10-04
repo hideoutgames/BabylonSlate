@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
@@ -96,6 +96,19 @@ describe("babproject codec", () => {
       gpuBackend: "webgpu",
       mode: "cel",
     });
+  });
+
+  it("rejects a full backup when a subtree cannot be listed", async () => {
+    const storage = new MemoryStorageAdapter();
+    await storage.openDocumentsProject("Backup");
+    await writeProjectTree(storage, createEmptyProjectFiles({ guid: "backup", name: "Backup" }));
+    await storage.writeText("assets/source.txt", "must be included");
+    const readdir = storage.readdir.bind(storage);
+    vi.spyOn(storage, "readdir").mockImplementation(async (path) => {
+      if (path === "assets") throw new Error("Provider is offline");
+      return readdir(path);
+    });
+    await expect(exportProjectZip(storage)).rejects.toThrow("Provider is offline");
   });
 
   it("parameterises manifest kind for plugins", () => {

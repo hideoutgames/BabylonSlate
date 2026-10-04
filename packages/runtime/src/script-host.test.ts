@@ -5,10 +5,7 @@ import { interfaceHandlerKey } from "@babylonslate/object-model";
 import { createActor, createDefaultSceneSettings, createMeshComponent } from "@babylonslate/core";
 import {
   compileGraph,
-  pin,
-  EXEC,
   FLOAT,
-  STRING,
   VEC2,
   VEC3,
   type GraphNode,
@@ -122,6 +119,32 @@ function withFunctionExport(
 }
 
 describe("script host runs compiled graphs", () => {
+  it("uses the session seed for script random streams", async () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "random", kind: "event",
+      nodes: [node(registry, "tick", "flow.event.tick"), node(registry, "random", "math.random"), node(registry, "log", "debug.log")],
+      edges: [edge("exec", "tick", "execOut", "log", "execIn"), edge("value", "random", "out", "log", "message")],
+    };
+    const run = async (seed: number) => {
+      const messages: string[] = [];
+      const runtime = createInProcessRuntime({ seed, seedDemoActors: false, preferSoftwarePhysics: true,
+        onCommand: (command) => { if (command.type === "log") messages.push(command.message); } });
+      try {
+        await runtime.loadScripts([toScript(graph, registry, "RandomActor", "random")]);
+        runtime.spawnScriptedActor({ classId: "RandomActor" });
+        runtime.start();
+        runtime.tick();
+        runtime.tick();
+        return messages;
+      } finally { runtime.stop(); }
+    };
+    const first = await run(42);
+    expect(first).toHaveLength(2);
+    expect(await run(42)).toEqual(first);
+    expect(await run(43)).not.toEqual(first);
+  });
+
   it.each([
     ["project.getName", "name", "Orbit Workshop"],
     ["project.getVersion", "version", "2.4.0-beta.3"],
@@ -495,19 +518,20 @@ describe("script host runs compiled graphs", () => {
     runtime.stop();
   });
 
-  it("does not re-enter a latent entry point while it is pending", async () => {
+  it("continues a latent Tick cycle without stacking new entry runs", async () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
       id: "event-graph",
       kind: "event",
       nodes: [
         node(registry, "tick", "flow.event.tick"),
-        node(registry, "delay", "timers.delay", { duration: 5 }),
+        node(registry, "delay", "timers.delay", { duration: 0.25 }),
         node(registry, "log", "debug.log", { message: "after delay" }),
       ],
       edges: [
         edge("e1", "tick", "execOut", "delay", "execIn"),
         edge("e2", "delay", "execOut", "log", "execIn"),
+        edge("cycle", "log", "execOut", "delay", "execIn"),
       ],
     };
 
@@ -515,6 +539,7 @@ describe("script host runs compiled graphs", () => {
     const runtime = createInProcessRuntime({
       seed: 1,
       seedDemoActors: false,
+      dt: 0.1,
       onCommand: (command) => commands.push(command),
     });
     const script = toScript(graph, registry, "Waiter", "waiter-asset");
@@ -526,15 +551,13 @@ describe("script host runs compiled graphs", () => {
     await runtime.loadScripts([script]);
     runtime.spawnScriptedActor({ classId: "Waiter" });
     runtime.start();
-    runtime.tick();
-    runtime.tick();
-    runtime.tick();
+    for (let tick = 0; tick < 10; tick++) {
+      runtime.tick();
+      await Promise.resolve();
+    }
+    expect(commands.filter((c) => c.type === "log")).toHaveLength(3);
+    runtime.stop();
     await Promise.resolve();
-
-    expect(commands.filter((c) => c.type === "log")).toHaveLength(0);
-    void STRING;
-    void EXEC;
-    void pin;
   });
 
   it("runs OnCommandRun from the console and ExecuteConsoleCommand", async () => {

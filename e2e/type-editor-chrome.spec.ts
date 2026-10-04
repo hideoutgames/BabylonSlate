@@ -5,6 +5,7 @@ import {
   openMainScene,
   openTestProject,
 } from "./open-test-project";
+import { pickCatalogItem } from "./pick-catalog-item";
 
 async function showContentBrowser(page: Page): Promise<void> {
   await page
@@ -294,9 +295,12 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     });
     await expect(page.getByTestId("tree-row-prefab-mesh")).toBeVisible();
     await page.getByTestId("prefab-add-component").click();
-    await page
-      .getByTestId("prefab-add-component-catalog-item-LightComponent")
-      .click();
+    await pickCatalogItem(
+      page,
+      "prefab-add-component-catalog",
+      "LightComponent",
+      "Scene light",
+    );
     await expect(page.getByTestId("prefab-add-component-catalog")).toHaveCount(
       0,
     );
@@ -319,6 +323,10 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     await showContentBrowser(page);
     const heroTile = page.locator('[data-asset-path="assets/hero.babasset"]');
     await page.getByTestId("content-browser-search").fill("hero");
+    // The grid applies a search at low priority; count only once it has.
+    await expect(
+      page.getByTestId("content-browser-asset-grid"),
+    ).not.toHaveAttribute("aria-busy", "true");
     if ((await heroTile.count()) === 0) {
       await page.getByTestId("content-browser-search").fill("");
       await page
@@ -379,9 +387,12 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
       timeout: 15_000,
     });
     await page.getByTestId("prefab-add-component").click();
-    await page
-      .getByTestId("prefab-add-component-catalog-item-LightComponent")
-      .click();
+    await pickCatalogItem(
+      page,
+      "prefab-add-component-catalog",
+      "LightComponent",
+      "Scene light",
+    );
     await expect(page.getByTestId("save-all-dirty")).toBeVisible();
     await page
       .locator('[data-testid="document-tab"][data-document-kind="graph"]')

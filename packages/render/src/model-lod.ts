@@ -14,6 +14,7 @@ import type { MeshoptSimplifier as Simplifier } from "meshoptimizer/simplifier";
 import { simplifyLevels, type LodLevelIndices, type LodSimplifyInput } from "./model-lod-simplify";
 import type { ModelLodWorkerReply, ModelLodWorkerRequest } from "./model-lod.worker";
 import { sceneRenderingSettings } from "./render-settings";
+import { sharedVertexBuffer } from "./shared-vertex-buffer";
 
 export { AUTO_LOD_SCREEN_SIZES } from "./model-lod-simplify";
 
@@ -332,28 +333,6 @@ export async function generateModelLods(
       records.clear();
     },
   };
-}
-
-type AlignedVertexBuffer = VertexBuffer & { effectiveByteStride?: number; effectiveByteOffset?: number };
-
-/**
- * Wrap a source attribute's GPU buffer without owning it. The container keeps
- * the only reference, so level Geometries can come and go (and survive a
- * context restore) without releasing the model's vertex data.
- */
-function sharedVertexBuffer(source: AlignedVertexBuffer): VertexBuffer {
-  return new VertexBuffer(source.engine, source.getWrapperBuffer(), source.getKind(), {
-    // WebGPU may substitute a 4-byte-aligned copy with its own layout.
-    stride: source.effectiveByteStride ?? source.byteStride,
-    offset: source.effectiveByteOffset ?? source.byteOffset,
-    size: source.getSize(),
-    type: source.type,
-    normalized: source.normalized,
-    useBytes: true,
-    instanced: source.getIsInstanced(),
-    divisor: source.getInstanceDivisor(),
-    takeBufferOwnership: false,
-  });
 }
 
 /**

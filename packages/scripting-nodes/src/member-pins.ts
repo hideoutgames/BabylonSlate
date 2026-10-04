@@ -1,7 +1,6 @@
 import {
   pin,
   defaultValueLiteral,
-  pinTypeForMember,
   pinTypeForVariable,
 } from "@babylonslate/scripting";
 import { mapDefaultLiteral } from "@babylonslate/core";
@@ -22,6 +21,9 @@ export type MemberPinRow = {
   typeId?: string;
   typeClassId?: string;
   direction?: string;
+  container?: string;
+  keyTypeId?: string;
+  keyTypeClassId?: string;
 };
 
 export function jsIdent(name: string): string {
@@ -58,7 +60,7 @@ export function dataMemberPins(
         row.name,
         row.name,
         direction,
-        pinTypeForMember(row.typeId, row.typeClassId),
+        pinTypeForVariable(row),
       ),
     ];
   });

@@ -1,5 +1,7 @@
 import { SCALABILITY_ENUMS, SCALABILITY_STRUCTS } from "./scalability-types";
 import { INPUT_KEYS, SCENE_STREAMING_STATES, ENGINE_RENDER_TARGET_MODE_ENUM_ID, RENDER_TARGET_MODES } from "@babylonslate/core";
+import { ENGINE_TEXT2D_APPEAR_MODE_ENUM_ID, ENGINE_TEXT2D_APPEAR_TRANSITION_ENUM_ID, ENGINE_TEXT2D_APPEAR_START_ENUM_ID,
+  TEXT2D_APPEAR_MODES, TEXT2D_APPEAR_TRANSITIONS, TEXT2D_APPEAR_STARTS } from "@babylonslate/core";
 export { ENGINE_RENDER_TARGET_MODE_ENUM_ID } from "@babylonslate/core";
 /** Engine enum/struct registry (stable ids, not Content Browser assets). */
 
@@ -37,6 +39,21 @@ export type EngineStruct = {
 /** Built-in engine enums (`engine:CollisionChannel`, …). */
 export const ENGINE_ENUMS: readonly EngineEnum[] = [
   ...SCALABILITY_ENUMS,
+  {
+    id: ENGINE_TEXT2D_APPEAR_MODE_ENUM_ID,
+    name: "Text 2D Appear Mode",
+    members: TEXT2D_APPEAR_MODES.map((name, value) => ({ name, value })),
+  },
+  {
+    id: ENGINE_TEXT2D_APPEAR_TRANSITION_ENUM_ID,
+    name: "Text 2D Appear Transition",
+    members: TEXT2D_APPEAR_TRANSITIONS.map((name, value) => ({ name, value })),
+  },
+  {
+    id: ENGINE_TEXT2D_APPEAR_START_ENUM_ID,
+    name: "Text 2D Appear Start",
+    members: TEXT2D_APPEAR_STARTS.map((name, value) => ({ name, value })),
+  },
   {
     id: ENGINE_SCENE_STREAMING_STATE_ENUM_ID,
     name: "Scene Streaming State",

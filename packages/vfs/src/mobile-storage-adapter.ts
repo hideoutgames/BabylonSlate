@@ -3,13 +3,14 @@ import type {
   FileStat,
   ProjectFolderHandle,
   ProjectStorage,
+  ProjectStorageReader,
 } from "@babylonslate/core";
 import { DocumentsStorageAdapter } from "./documents-adapter";
 import { ScopedStorageAdapter } from "./scoped-storage-adapter";
 
 /**
- * Composite iPad storage: durable Documents default tier (no picker) plus
- * opt-in external folders (picker + bookmarks + Reconnect).
+ * Composite mobile storage: durable app default tier (no picker) plus opt-in
+ * external folders (iOS bookmarks or Android persisted SAF permissions).
  */
 export class MobileStorageAdapter implements ProjectStorage {
   private readonly documents: DocumentsStorageAdapter;
@@ -96,6 +97,12 @@ export class MobileStorageAdapter implements ProjectStorage {
   async readText(path: string): Promise<string> {
     await this.init();
     return this.port().readText(path);
+  }
+
+  async withReadScope<T>(operation: (storage: ProjectStorageReader) => Promise<T>): Promise<T> {
+    await this.init();
+    const storage = this.port();
+    return storage.withReadScope ? storage.withReadScope(operation) : operation(storage);
   }
 
   async writeText(path: string, data: string): Promise<void> {

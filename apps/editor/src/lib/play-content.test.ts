@@ -28,6 +28,7 @@ import {
   playAnimGraphsFromGuids,
   playLoadTilemapsControl,
   readPlayNavmeshBytes,
+  readPlaySceneBakes,
   readPlayAudioReverbBytes,
   playSpriteAnimationPayloadsFromGuids,
   playSpritePayloadsFromGuids,
@@ -57,7 +58,7 @@ import {
   playFontGuidsFromScenes,
   sceneLayerGuidsFromGraphs,
   sceneLayerGuidsFromScenes,
-  sceneLayerMaterialGuidsFromGraphs,
+  materialGuidsFromGraphs,
 } from "./play-content";
 
 describe("playPrefabDependencyScene", () => {
@@ -623,6 +624,15 @@ describe("scene-referenced Play content", () => {
     expect(materialAssetGuidsFromScene(scene)).toEqual(["terrain", "leaves"]);
   });
 
+  it("loads Text Materials referenced by plain and rich SceneLayer labels", () => {
+    const scene = createDefaultScene();
+    scene.actors = [createActor("labels", "Labels", { components: [
+      { id: "plain", classId: "2DTextComponent", properties: { materialGuid: "plain-fill" } },
+      { id: "rich", classId: "2DRichTextComponent", properties: { materialGuid: "rich-fill" } },
+    ] })];
+    expect(materialAssetGuidsFromScene(scene)).toEqual(["plain-fill", "rich-fill"]);
+  });
+
   it("collects post-process stack guids in authored order, including disabled entries", () => {
     const scene = createDefaultScene();
     scene.settings.postProcessStack = [
@@ -687,11 +697,23 @@ describe("scene-referenced Play content", () => {
       ...materialAssetGuidsFromScene(scene),
       ...postProcessMaterialGuidsFromScene(scene),
     ];
-    expect(materialClosureFromGuids(guids, (guid) => docs[guid] ?? null)).toEqual({
+    expect(materialClosureFromGuids(guids, (guid) => docs[guid] ?? null)).toMatchObject({
       materials: ["mat-rock", "pp-blur"],
       functions: ["fn-tint", "fn-inner"],
       textures: ["tex-albedo", "tex-lut"],
     });
+  });
+
+  it("follows Material Instance parents to the root Material and reports unloaded references", () => {
+    const docs: Record<string, unknown> = {
+      "inst-red": { kind: "materialInstance", parentGuid: "inst-base", overrides: { Albedo: { kind: "texture", textureAssetGuid: "tex-red" } } },
+      "inst-base": { kind: "materialInstance", parentGuid: "mat-root", overrides: {} },
+      "mat-root": { nodes: [{ id: "call", type: "function.call", properties: { functionGuid: "fn-missing" } }], edges: [] },
+    };
+    const closure = materialClosureFromGuids(["inst-red"], (guid) => docs[guid] ?? null);
+    expect(closure).toMatchObject({ materials: ["mat-root"], instances: ["inst-red", "inst-base"], textures: ["tex-red"] });
+    // Callers load referenced guids that had no content yet, then retry.
+    expect(closure.referenced).toContain("fn-missing");
   });
 
   it("unions material guids across Play library scenes", () => {
@@ -723,6 +745,23 @@ describe("scene-referenced Play content", () => {
 });
 
 describe("readPlayNavmeshBytes", () => {
+  it("collects each scene's bakes by GUID and isolates missing or failed chunks", async () => {
+    const reads: string[] = [];
+    const errors: string[] = [];
+    const result = await readPlaySceneBakes([
+      { guid: "one", path: "one.scene.babasset" }, { guid: "two", path: "two.scene.babasset" },
+      { guid: "one", path: "one.scene.babasset" }, { guid: "unsaved" },
+    ], async (path, chunkId) => {
+      reads.push(`${path}:${chunkId}`);
+      if (path.startsWith("one")) return chunkId === "navmesh" ? new Uint8Array([1]) : null;
+      if (chunkId === "navmesh") throw new Error("Unavailable");
+      return new Uint8Array([2]);
+    }, (guid, chunkId) => errors.push(`${guid}:${chunkId}`));
+    expect([...result.navmeshes]).toEqual([["one", new Uint8Array([1])]]);
+    expect([...result.audioReverbs]).toEqual([["two", new Uint8Array([2])]]);
+    expect(errors).toEqual(["two:navmesh"]);
+    expect(reads).toHaveLength(4);
+  });
   it("reads the Scene navmesh extra chunk and never invents bytes", async () => {
     const bytes = new Uint8Array([9, 8, 7]);
     const readChunk = async (path: string, chunkId: string) => {
@@ -838,7 +877,7 @@ describe("SceneLayer Play collection", () => {
     expect(spriteAssetGuidsFromScene(scenes[0])).toEqual(["sprite-hud"]);
   });
 
-  it("collects Register Scene Layer Post-processing material pin defaults", () => {
+  it("collects Material pin defaults from Scene Layer Post-processing and Set Material Instance nodes", () => {
     const graph: SerializedGraph = {
       nodes: [
         {
@@ -847,10 +886,16 @@ describe("SceneLayer Play collection", () => {
           position: { x: 0, y: 0 },
           data: { properties: { "default:material": "pp-blur" } },
         },
+        {
+          id: "swap",
+          type: "material.setMaterialInstance",
+          position: { x: 0, y: 0 },
+          data: { properties: { "default:instance": "rock-wet" } },
+        },
       ],
       edges: [],
     };
-    expect(sceneLayerMaterialGuidsFromGraphs([graph])).toEqual(["pp-blur"]);
+    expect(materialGuidsFromGraphs([graph])).toEqual(["pp-blur", "rock-wet"]);
   });
 });
 

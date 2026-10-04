@@ -43,13 +43,13 @@ describe("input asset graph authoring", () => {
     expect(events.every((event) => event.category === generic.category)).toBe(
       true,
     );
-    expect(events[1]!.pins.find((pin) => pin.id === "value")?.type.kind).toBe(
+    expect(events[1]!.pins?.find((pin) => pin.id === "value")?.type.kind).toBe(
       "vec2",
     );
     expect(
       nodes
         .find((node) => node.id === "input.onAnyKeyPressed")
-        ?.pins.find((pin) => pin.id === "key")?.type,
+        ?.pins?.find((pin) => pin.id === "key")?.type,
     ).toEqual({ kind: "enumRef", guid: "engine:Key" });
     for (const options of [
       { activeFunctionId: "fn" },
@@ -180,7 +180,7 @@ describe("input asset graph authoring", () => {
       (node) => node.id === "struct.make:engine:InputBinding",
     )!;
     expect(make.title).toBe("Make Input Binding");
-    expect(make.pins.find((pin) => pin.id === "Key")?.type).toEqual({
+    expect(make.pins?.find((pin) => pin.id === "Key")?.type).toEqual({
       kind: "enumRef",
       guid: "engine:Key",
     });

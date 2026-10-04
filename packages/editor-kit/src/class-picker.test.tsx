@@ -44,6 +44,35 @@ describe("ClassPicker", () => {
     expect(onPick).toHaveBeenCalledWith("MyGame");
   });
 
+  it("shows a project class with the glyph of the engine base in its ancestry", () => {
+    render(
+      <ClassPicker
+        open
+        onOpenChange={() => {}}
+        classes={[
+          {
+            id: "Weather",
+            name: "Weather",
+            group: "Project",
+            ancestry: ["Weather", "SceneSubsystem", "Subsystem", "BObject"],
+          },
+          { id: "Loose", name: "Loose", group: "Project" },
+          { id: "GameSubsystem", name: "GameSubsystem", group: "Engine" },
+        ]}
+        allowNone={false}
+        onPick={() => {}}
+      />,
+    );
+    const glyph = (id: string) =>
+      screen
+        .getByTestId(`search-item-${id}`)
+        .querySelector("[data-type-icon]")
+        ?.getAttribute("data-type-icon");
+    expect(glyph("Weather")).toBe("SceneSubsystem");
+    expect(glyph("Loose")).toBe("File");
+    expect(glyph("GameSubsystem")).toBe("GameSubsystem");
+  });
+
   it("shows Class as the type line instead of Engine or Project", () => {
     render(
       <ClassPicker

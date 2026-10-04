@@ -9,17 +9,18 @@ import {
   PrefabEditingProvider,
   usePrefabEditing,
 } from "./prefab-editing-context";
-import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
+import { PREFAB_ROOT_ID, type PrefabComponentView } from "../lib/prefab-preview";
 
 const applyGraphChange = vi.hoisted(() => vi.fn<(id: string, graph: SerializedGraph) => Promise<boolean>>(async () => true));
 const documentOverrides = vi.hoisted(() => ({
   value: {} as Record<string, unknown>,
 }));
+const workspace = vi.hoisted(() => ({
+  documentId: "graph:assets/Hero.class.babasset",
+}));
 
 vi.mock("./document-workspace-context", () => ({
-  useDocumentWorkspace: () => ({
-    documentId: "graph:assets/Hero.class.babasset",
-  }),
+  useDocumentWorkspace: () => ({ documentId: workspace.documentId }),
 }));
 
 vi.mock("./document-context", () => ({
@@ -160,6 +161,181 @@ afterEach(() => {
   cleanup();
   applyGraphChange.mockClear();
   documentOverrides.value = {};
+  workspace.documentId = "graph:assets/Hero.class.babasset";
+});
+
+function ComponentsProbe({ seen }: { seen: PrefabComponentView[][] }) {
+  const { components } = usePrefabEditing();
+  seen.push(components);
+  return (
+    <span data-testid="prefab-component-ids">
+      {components.map((component) => component.id).join(",")}
+    </span>
+  );
+}
+
+function ValueProbe({ seen }: { seen: ReturnType<typeof usePrefabEditing>[] }) {
+  seen.push(usePrefabEditing());
+  return null;
+}
+
+describe("PrefabEditingContext inherited components", () => {
+  const baseGraph = {
+    id: "graph:assets/Base.class.babasset",
+    ref: { kind: "graph", path: "assets/Base.class.babasset" },
+    content: {
+      nodes: [],
+      edges: [],
+      members: [],
+      components: [createMeshComponent("inherited-mesh", "sphere")],
+    },
+  };
+
+  it("follows a Class reparented in place in the registry", () => {
+    const heroGraph = {
+      id: "graph:assets/Hero.class.babasset",
+      ref: { kind: "graph", path: "assets/Hero.class.babasset" },
+      content: {
+        nodes: [],
+        edges: [],
+        members: [],
+        components: [createMeshComponent("prefab-mesh", "box")],
+      },
+    };
+    const hero = {
+      path: "assets/Hero.class.babasset",
+      header: { type: "Class", name: "Hero", parentClass: "Actor" },
+    };
+    const registry = {
+      list: () => [
+        hero,
+        {
+          path: "assets/Base.class.babasset",
+          header: { type: "Class", name: "Base", parentClass: "Actor" },
+        },
+      ],
+    };
+    documentOverrides.value = {
+      openDocuments: [heroGraph, baseGraph],
+      assetRegistry: registry,
+    };
+    const view = render(
+      <PrefabEditingProvider>
+        <ComponentsProbe seen={[]} />
+      </PrefabEditingProvider>,
+    );
+    expect(screen.getByTestId("prefab-component-ids").textContent).toBe(
+      "prefab-mesh",
+    );
+
+    hero.header.parentClass = "Base";
+    view.rerender(
+      <PrefabEditingProvider>
+        <ComponentsProbe seen={[]} />
+      </PrefabEditingProvider>,
+    );
+    expect(screen.getByTestId("prefab-component-ids").textContent).toBe(
+      "inherited-mesh,prefab-mesh",
+    );
+  });
+
+  it("keeps the published components when an unrelated edit re-renders the editor", () => {
+    const heroGraph = {
+      id: "graph:assets/Hero.class.babasset",
+      ref: { kind: "graph", path: "assets/Hero.class.babasset" },
+      content: {
+        nodes: [],
+        edges: [],
+        members: [],
+        components: [createMeshComponent("prefab-mesh", "box")],
+      },
+    };
+    const assets = [
+      {
+        path: "assets/Hero.class.babasset",
+        header: { type: "Class", name: "Hero", parentClass: "Base" },
+      },
+      {
+        path: "assets/Base.class.babasset",
+        header: {
+          type: "Class",
+          name: "Base",
+          parentClass: "Actor",
+          payload: { components: [createMeshComponent("inherited-mesh", "sphere")] },
+        },
+      },
+    ];
+    const seen: PrefabComponentView[][] = [];
+    documentOverrides.value = {
+      openDocuments: [heroGraph],
+      assetRegistry: { list: () => assets.map((asset) => ({ ...asset })) },
+    };
+    const view = render(
+      <PrefabEditingProvider>
+        <ComponentsProbe seen={seen} />
+      </PrefabEditingProvider>,
+    );
+    documentOverrides.value = {
+      ...documentOverrides.value,
+      openDocuments: [heroGraph, { ...baseGraph, id: "sprite:assets/Other.sprite.babasset", ref: { kind: "sprite", path: "assets/Other.sprite.babasset" } }],
+    };
+    view.rerender(
+      <PrefabEditingProvider>
+        <ComponentsProbe seen={seen} />
+      </PrefabEditingProvider>,
+    );
+    expect(seen.at(-1)!.map((component) => component.id)).toEqual([
+      "inherited-mesh",
+      "prefab-mesh",
+    ]);
+    expect(seen.at(-1)).toBe(seen[0]);
+  });
+
+  it("keeps the published value for a Scene workspace while scene and Class documents change", () => {
+    workspace.documentId = "scene:assets/Main.scene.babasset";
+    const scene = {
+      id: "scene:assets/Main.scene.babasset",
+      ref: { kind: "scene", path: "assets/Main.scene.babasset" },
+      content: { name: "Main", actors: [], settings: {} },
+    };
+    const seen: ReturnType<typeof usePrefabEditing>[] = [];
+    documentOverrides.value = {
+      openDocuments: [scene, baseGraph],
+      assetRegistry: {
+        list: () => [
+          {
+            path: "assets/Base.class.babasset",
+            header: { type: "Class", name: "Base", parentClass: "Actor" },
+          },
+        ],
+      },
+    };
+    const view = render(
+      <PrefabEditingProvider>
+        <ValueProbe seen={seen} />
+      </PrefabEditingProvider>,
+    );
+    documentOverrides.value = {
+      ...documentOverrides.value,
+      openDocuments: [
+        { ...scene, content: { ...scene.content, name: "Main Edited" } },
+        {
+          ...baseGraph,
+          content: {
+            ...baseGraph.content,
+            components: [createMeshComponent("inherited-mesh", "cylinder")],
+          },
+        },
+      ],
+    };
+    view.rerender(
+      <PrefabEditingProvider>
+        <ValueProbe seen={seen} />
+      </PrefabEditingProvider>,
+    );
+    expect(seen.length).toBeGreaterThan(1);
+    expect(seen.at(-1)).toBe(seen[0]);
+  });
 });
 
 function BatchTransformProbe({

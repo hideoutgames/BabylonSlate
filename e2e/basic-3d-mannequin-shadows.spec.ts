@@ -54,6 +54,12 @@ for (const variant of cases) test(`Basic 3D mannequin ${variant.backend} ${varia
     await expect.poll(() => page.evaluate(() => window.__babylonslateViewportTest?.shadowDiagnostics()?.backend.actual), { timeout: 30_000 }).toBe("webgpu");
     await waitForSceneViewportReady(page);
     await expect(page.getByTestId("project-rendering-dialog")).toHaveCount(0);
+    const initializedFrames = await page.evaluate(() => window.__babylonslateViewportTest.renderingBaseline().frameCount);
+    // Loading's first frames can precede resumed browser frame delivery after
+    // a software WebGPU switch. Establish presentation before timing an edit.
+    await expect.poll(() => page.evaluate(() => window.__babylonslateViewportTest.renderingBaseline().frameCount), {
+      timeout: 30_000, message: "WebGPU viewport resumes presenting after backend initialization",
+    }).toBeGreaterThan(initializedFrames + 2);
   }
   if (variant.alternate) {
     const scene = await page.evaluate(() => (window as unknown as { __babylonslateTest: { activeSceneContent(): SerializedScene } }).__babylonslateTest.activeSceneContent());
@@ -70,11 +76,34 @@ for (const variant of cases) test(`Basic 3D mannequin ${variant.backend} ${varia
     quality: normalizeRenderingQuality({ resolution: { scale: 1, minScale: 1, dynamic: false } }),
   };
   await page.evaluate(alternate => window.__babylonslateViewportTest.setShadowCaptureView(alternate ? [-3, 2, 4] : [3, 2, 4], [0, 1.35, 0], 0.7), variant.alternate);
+  const beforeSettings = await page.evaluate(() => window.__babylonslateViewportTest.renderingBaseline());
   await page.evaluate(settings => window.__babylonslateViewportTest.setRenderSettings(settings), settings);
-  await expect.poll(() => page.evaluate(() => {
-    const state = window.__babylonslateViewportTest.shadowDiagnostics();
-    return [state?.surfaceMode, state?.requestedShadows.profile, state?.lights.find(light => light.generator)?.generator?.map?.width];
-  })).toEqual([variant.mode, variant.profile, variant.profile === "low" ? 1024 : 2048]);
+  try {
+    await expect.poll(() => page.evaluate(() => {
+      const state = window.__babylonslateViewportTest.shadowDiagnostics();
+      return [state?.surfaceMode, state?.requestedShadows.profile, state?.lights.find(light => light.generator)?.generator?.map?.width];
+    })).toEqual([variant.mode, variant.profile, variant.profile === "low" ? 1024 : 2048]);
+  } catch (error) {
+    const stalled = await page.evaluate(() => ({
+      baseline: window.__babylonslateViewportTest.renderingBaseline(),
+      shadows: window.__babylonslateViewportTest.shadowDiagnostics(),
+      documentVisibility: document.visibilityState,
+    }));
+    const animationFrameProbe = await page.evaluate(async () => {
+      const started = performance.now();
+      let fired = false;
+      const frame = requestAnimationFrame(() => { fired = true; });
+      await new Promise<void>(resolve => setTimeout(resolve, 1_000));
+      cancelAnimationFrame(frame);
+      return { fired, elapsedMs: performance.now() - started,
+        baseline: window.__babylonslateViewportTest.renderingBaseline() };
+    });
+    await testInfo.attach("shadow-profile-stall", {
+      body: JSON.stringify({ beforeSettings, ...stalled, animationFrameProbe, errors }, null, 2),
+      contentType: "application/json",
+    });
+    throw error;
+  }
   const geometry = await page.evaluate(() => window.__babylonslateViewportTest.mannequinShadowProbe(false));
   const frames = async () => {
     const id = await page.evaluate(() => window.__babylonslateViewportTest.renderingBaseline().frameCount);

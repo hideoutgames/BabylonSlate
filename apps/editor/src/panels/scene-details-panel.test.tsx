@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
-import type { SerializedScene, ShadowSettings, RenderPath } from "@babylonslate/core";
+import type { SerializedComponent, SerializedScene, ShadowSettings, RenderPath } from "@babylonslate/core";
 import {
   createActor,
   createDefaultScene,
@@ -18,6 +18,7 @@ import {
 } from "@babylonslate/core";
 import { AssetCreateProvider } from "@babylonslate/editor-kit";
 import { SceneDetailsPanel } from "./scene-details-panel";
+import { diffSceneCommands, EditSession } from "@babylonslate/edit";
 import type { SceneShapeEditTarget } from "../context/scene-editing-context";
 
 if (
@@ -37,6 +38,7 @@ const harness = vi.hoisted(() => ({
   shapeEditTarget: null as SceneShapeEditTarget | null,
   setShapeEditTarget: vi.fn<(target: SceneShapeEditTarget | null) => void>(),
   scene: null as SerializedScene | null,
+  prefabComponents: [] as SerializedComponent[],
   documentKind: "scene" as "scene" | "scene-layer",
   documentId: "scene:assets/Main.scene.babasset",
   render: { mode: "pbr" as "pbr" | "cel", cel: { shadowBands: 4 }, shadows: undefined as ShadowSettings | undefined, renderPath: undefined as RenderPath | undefined },
@@ -84,6 +86,13 @@ vi.mock("../context/document-context", () => ({
     },
     assetRegistry: {
       list: () => [
+        ...(harness.prefabComponents.length ? [{
+          header: {
+            guid: "class-rich-label", name: "RichLabel", type: "Class", parentClass: "Actor",
+            payload: { components: harness.prefabComponents },
+          },
+          path: "assets/RichLabel.class.babasset",
+        }] : []),
         {
           header: { guid: "scene-cave", name: "Cave", type: "Scene", parentClass: null },
           path: "assets/Cave.scene.babasset",
@@ -169,6 +178,7 @@ beforeEach(() => {
   harness.render.shadows = undefined;
   harness.render.renderPath = undefined;
   harness.scene = createDefaultScene();
+  harness.prefabComponents = [];
   harness.applySceneChange.mockClear();
 });
 
@@ -447,6 +457,39 @@ describe("shared actor Details", () => {
 });
 
 describe("SceneDetailsPanel authoring", () => {
+  it("edits an Outliner anchor's offsets without exposing a transform or visibility", () => {
+    scene().actors = [createActor("pin", "2D Anchor", { components: [
+      { id: "anchor", classId: "2DAnchorComponent", properties: { anchor: "topLeft", offsetX: 0, offsetY: 0 } },
+    ] })];
+    scene().viewportMode = "2d";
+    harness.documentKind = "scene-layer";
+    harness.selectedActorIds = ["pin"];
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    for (const id of ["actor-position-x", "actor-rotation-z", "actor-scale-x", "actor-z-order", "actor-visible"]) {
+      expect(screen.queryByTestId(`property-${id}`)).toBeNull();
+    }
+    fireEvent.change(screen.getByTestId("property-pin-anchor-offsetX"), { target: { value: "3" } });
+    expect(harness.applySceneChange.mock.calls.at(-1)![1].actors[0]!.components[0]!.properties.offsetX).toBe(3);
+  });
+
+  it("excludes Outliner anchors from mixed-selection transform and visibility edits", () => {
+    scene().actors = [
+      createActor("pin", "2D Anchor", { components: [{ id: "anchor", classId: "2DAnchorComponent", properties: {} }] }),
+      createActor("visual", "Visual"),
+    ];
+    scene().actors[0]!.visible = false;
+    harness.selectedActorIds = ["pin", "visual"];
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    fireEvent.change(screen.getByTestId("property-actor-position-x"), { target: { value: "9" } });
+    const next = harness.applySceneChange.mock.calls.at(-1)![1];
+    expect(next.actors[0]!.transform).toEqual(identitySerializedTransform());
+    expect(next.actors[1]!.transform.position).toEqual([9, 0, 0]);
+    const visible = screen.getByTestId("property-actor-visible");
+    expect(visible.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(visible);
+    expect(harness.applySceneChange.mock.calls.at(-1)![1].actors.map((actor) => actor.visible)).toEqual([false, false]);
+  });
+
   it("shows inherited model materials and lets None persist and reset through the Material picker", async () => {
     harness.selectedActorIds = ["actor-1"];
     const mesh = createMeshComponent("mesh", "box");
@@ -929,6 +972,26 @@ describe("SceneDetailsPanel authoring", () => {
     });
   });
 
+  it("adds a distinct component after deleting a middle row without changing the remaining component", () => {
+    const actor = createActor("actor-1", "Actor", { components: [
+      createMeshComponent("actor-1-component-1", "box"),
+      { id: "actor-1-component-3", classId: "PointLightComponent", properties: { intensity: 5 } },
+    ] });
+    scene().actors = [actor];
+    const before = scene();
+    harness.selectedActorIds = [actor.id];
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    fireEvent.click(screen.getByTestId("details-add-component"));
+    fireEvent.click(screen.getByTestId("add-component-catalog-item-asset-mesh-1"));
+    const intended = harness.applySceneChange.mock.lastCall![1];
+    const result = new EditSession().applyBatch("scene", before, diffSceneCommands(before, intended))!;
+    const components = result.doc.actors[0]!.components;
+    expect(components).toHaveLength(3);
+    expect(new Set(components.map((component) => component.id)).size).toBe(3);
+    expect(components[1]).toEqual(actor.components[1]);
+    expect(components[2]).toMatchObject({ classId: "MeshComponent", properties: { assetGuid: "mesh-1" } });
+  });
+
   it("reorders, disables, and removes a post-process pass", () => {
     scene().settings.postProcessStack = [
       { materialGuid: "pp-a", enabled: true },
@@ -1198,6 +1261,24 @@ describe("SceneDetailsPanel authoring", () => {
     expect(screen.getByTestId("text2d-text-rich").textContent).toContain(
       "[color=green]",
     );
+  });
+
+  it("resets a rich-text mode override to its prefab's modes", () => {
+    const prefab = createRichText2DComponent("prefab-rich");
+    prefab.properties.appearModes = ["fade"];
+    harness.prefabComponents = [prefab];
+    scene().actors = [createActor("hud", "Rich", {
+      classId: "RichLabel",
+      components: [{
+        ...prefab, id: "rich", sourceId: "prefab-rich", overrideKeys: ["appearModes"],
+        properties: { ...prefab.properties, appearModes: ["scale"] },
+      }],
+    })];
+    harness.selectedActorIds = ["hud"];
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    fireEvent.click(screen.getByRole("button", { name: "Reset Appear Modes" }));
+    const next = harness.applySceneChange.mock.calls.at(-1)![1];
+    expect(next.actors[0]?.components[0]?.properties.appearModes).toEqual(["fade"]);
   });
 
   it("opens markup tag suggestions for 2D Rich Text in the modal editor", () => {

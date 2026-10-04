@@ -3,6 +3,7 @@ import type {
   FileStat,
   ProjectFolderHandle,
   ProjectStorage,
+  ProjectStorageReader,
 } from "@babylonslate/core";
 import { Preferences } from "@capacitor/preferences";
 import { projectRelativePath as scopedStoragePath } from "./project-path";
@@ -23,6 +24,7 @@ const STALE_PREF_KEY = "babylonslate:scoped-stale";
 interface FolderRef {
   id: string;
   name?: string;
+  supportsReadScope?: boolean;
 }
 
 function toHandle(folder: FolderRef): ProjectFolderHandle {
@@ -74,13 +76,15 @@ function toFileStat(stat: NativeFileStat): FileStat {
 
 /**
  * Opt-in external-folder tier via our own Capacitor scoped-storage plugin.
- * Bookmarks are kept in native storage keyed by a stable folder id.
+ * Native scope identities are kept in native storage under a stable folder id.
  * @see docs/architecture/vfs.md
  */
 export class ScopedStorageAdapter implements ProjectStorage {
   private folder: FolderRef | null = null;
   private stale = false;
   private readonly plugin: BabylonSlateScopedStoragePlugin;
+  private readScopeId: string | undefined;
+  private readScopeClosed = false;
 
   constructor(
     plugin: BabylonSlateScopedStoragePlugin = BabylonSlateScopedStorage,
@@ -235,6 +239,7 @@ export class ScopedStorageAdapter implements ProjectStorage {
       () =>
         this.plugin.readFile({
           folder: folder.id,
+          ...(this.readScopeId ? { readScope: this.readScopeId } : {}),
           path,
           encoding: "utf8",
         }),
@@ -263,6 +268,7 @@ export class ScopedStorageAdapter implements ProjectStorage {
       () =>
         this.plugin.readFile({
           folder: folder.id,
+          ...(this.readScopeId ? { readScope: this.readScopeId } : {}),
           path,
           encoding: "base64",
         }),
@@ -288,16 +294,16 @@ export class ScopedStorageAdapter implements ProjectStorage {
     path = scopedStoragePath(path, true);
     const folder = this.getFolder();
     const { exists } = await this.withScope(() =>
-      this.plugin.exists({ folder: folder.id, path }),
+      this.plugin.exists({ folder: folder.id, path, ...(this.readScopeId ? { readScope: this.readScopeId } : {}) }),
     );
     return exists;
   }
 
   async readdir(path: string): Promise<DirEntry[]> {
-    path = scopedStoragePath(path, true);
+    path = scopedStoragePath(path === "." ? "" : path, true);
     const folder = this.getFolder();
     const { entries } = await this.withScope(() =>
-      this.plugin.readdir({ folder: folder.id, path }),
+      this.plugin.readdir({ folder: folder.id, path, ...(this.readScopeId ? { readScope: this.readScopeId } : {}) }),
     );
     return entries.map(toDirEntry);
   }
@@ -333,7 +339,7 @@ export class ScopedStorageAdapter implements ProjectStorage {
     path = scopedStoragePath(path, true);
     const folder = this.getFolder();
     const stat = await this.withScope(
-      () => this.plugin.stat({ folder: folder.id, path }),
+      () => this.plugin.stat({ folder: folder.id, path, ...(this.readScopeId ? { readScope: this.readScopeId } : {}) }),
       { path },
     );
     return toFileStat(stat);
@@ -346,6 +352,7 @@ export class ScopedStorageAdapter implements ProjectStorage {
   }
 
   private getFolder(): FolderRef {
+    if (this.readScopeClosed) throw new Error("Read scope is closed");
     if (!this.folder) {
       throw new Error("No project folder selected");
     }
@@ -353,5 +360,21 @@ export class ScopedStorageAdapter implements ProjectStorage {
       throw new Error("Project folder bookmark is stale; reconnect required");
     }
     return this.folder;
+  }
+
+  async withReadScope<T>(operation: (storage: ProjectStorageReader) => Promise<T>): Promise<T> {
+    const folder = this.getFolder();
+    if (!folder.supportsReadScope || !this.plugin.beginReadScope || !this.plugin.endReadScope) return operation(this);
+    const { readScope } = await this.withScope(() => this.plugin.beginReadScope!({ folder: folder.id }));
+    // A distinct reader keeps simultaneous scans and ordinary I/O independent.
+    const reader = new ScopedStorageAdapter(this.plugin);
+    reader.folder = folder;
+    reader.readScopeId = readScope;
+    try { return await operation(reader); }
+    finally {
+      reader.readScopeClosed = true;
+      if (reader.stale && this.folder?.id === folder.id) this.stale = true;
+      await this.plugin.endReadScope({ readScope });
+    }
   }
 }

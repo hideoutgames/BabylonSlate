@@ -596,7 +596,7 @@ export function ClassMembersView({
   });
 
   const accessVariable = variableForAccessDrop(
-    graph,
+    graph ?? undefined,
     members,
     accessDrop?.memberId,
   );
@@ -920,7 +920,7 @@ export function MyClassPanel(_props: MyClassPanelProps) {
     if (!doc) return;
     const commit = commitLogicGraph(doc.ref.kind, doc.content, next);
     if (commit.kind !== "graph") {
-      void applyAssetDocumentChange(documentId, commit.payload);
+      void applyAssetDocumentChange(documentId, commit.payload, commit.mergeKey);
       return;
     }
     void applyGraphChange(documentId, commit.graph);

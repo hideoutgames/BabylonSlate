@@ -113,6 +113,8 @@ export type ColliderChanges = {
 export type LineTraceOptions = {
   /** Exclude every collider owned by these actors before selecting a hit. */
   ignoreActorIds?: readonly string[];
+  /** False excludes sensor/trigger geometry; omitted retains backend defaults. */
+  includeTriggers?: boolean;
 };
 
 export type HitResult = {
@@ -133,6 +135,17 @@ export type CharacterControllerDesc = {
   id: string;
   bodyId: string;
   offset: number;
+  /** Upright capsule dimensions in world units; height includes both rounded ends. */
+  radius?: number;
+  height?: number;
+  maxSlopeAngle?: number;
+  groundSnapDistance?: number;
+};
+
+/** Resolved world motion, including support after the collision solve. */
+export type CharacterMovementResult = PhysicsTransform & {
+  velocity: Vec3;
+  grounded: boolean;
 };
 
 export type PhysicsContactEvent = {

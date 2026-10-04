@@ -212,6 +212,43 @@ describe("DebugConsole", () => {
     );
   });
 
+  it("places command output among play logs by time, ahead of logs from the same millisecond", async () => {
+    const now = vi.spyOn(Date, "now").mockReturnValue(20);
+    try {
+      render(
+        <DebugConsole
+          open
+          onOpenChange={() => {}}
+          commands={createCommandRegistry().list()}
+          logs={[
+            { id: 1, timestamp: 10, severity: "info", message: "Before" },
+            { id: 2, timestamp: 20, severity: "info", message: "Same time" },
+            { id: 3, timestamp: 30, severity: "info", message: "After" },
+          ]}
+          onExecute={async () => ({ success: true, output: "Ran" })}
+        />,
+      );
+      fireEvent.change(screen.getByTestId("debug-console-input"), {
+        target: { value: "help" },
+      });
+      fireEvent.click(screen.getByTestId("debug-console-submit"));
+      await screen.findByText("Ran");
+      const rows = Array.from(
+        screen.getByTestId("debug-console-transcript").children,
+        (row) => row.textContent,
+      ).filter(Boolean);
+      expect(rows).toEqual([
+        "[info] Before",
+        "> help",
+        "Ran",
+        "[info] Same time",
+        "[info] After",
+      ]);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
   it("reports rejected execution without losing the command or blocking the next run", async () => {
     const execute = vi
       .fn()

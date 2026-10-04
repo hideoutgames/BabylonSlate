@@ -51,4 +51,21 @@ describe("derived rectangular emission", () => {
     expect(progress.at(-1)).toBe(1);
     await expect(filterAreaEmission(source, 16, (value) => { if (value >= 0.5) throw new Error("cancelled"); })).rejects.toThrow("cancelled");
   });
+
+  it("smooths independent color axes without mixing channels, orientation, or alpha", async () => {
+    const edge = 16;
+    const source = new Uint8Array(edge * edge * 4);
+    for (let y = 0; y < edge; y++) for (let x = 0; x < edge; x++)
+      source.set([x < 8 ? 255 : 0, y < 8 ? 255 : 0, 0, y * edge + x], (y * edge + x) * 4);
+    const filtered = await filterAreaEmission(source, edge);
+    const pixel = (x: number, y: number) => filtered.slice((y * edge + x) * 4, (y * edge + x + 1) * 4);
+    expect(pixel(6, 8)[0]).toBeGreaterThan(pixel(9, 8)[0]!);
+    expect(pixel(6, 8)[0]).toBeLessThan(255);
+    expect(pixel(9, 8)[0]).toBeGreaterThan(0);
+    expect(pixel(8, 6)[1]).toBeGreaterThan(pixel(8, 9)[1]!);
+    for (let y = 0; y < edge; y++) for (let x = 0; x < edge; x++) {
+      expect(pixel(x, y)[2]).toBe(0);
+      expect(pixel(x, y)[3]).toBe(y * edge + x);
+    }
+  });
 });

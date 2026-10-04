@@ -81,7 +81,7 @@ export function attachInputCapture(
       return;
     }
     if (canvas.ownerDocument.activeElement !== canvas) return;
-    if (event.code === "Space" && !event.ctrlKey && !event.altKey && !event.metaKey) event.preventDefault();
+    if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.code) && !event.ctrlKey && !event.altKey && !event.metaKey) event.preventDefault();
     if (heldKeys.has(event.code)) return;
     heldKeys.add(event.code);
     push({ kind: "key", tick, code: event.code, phase });

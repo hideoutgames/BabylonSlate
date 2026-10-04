@@ -4,6 +4,7 @@ import { ForwardSceneFrameGraph, type ForwardSceneGraphResult } from "./framegra
 import { onSceneReadinessDirty } from "./scene-perf";
 import type { SharedOutlineView } from "./shared-outline";
 import { flushSceneCables } from "./cable-mesh";
+import { flushDynamicRuntimeMeshes } from "./dynamic-runtime-mesh";
 
 class PreparationChanged extends Error {}
 
@@ -171,8 +172,11 @@ export class SceneRenderCoordinator {
     if (this.failure) throw this.failure;
     if (this.pending) return false;
     const camera = this.scene.activeCamera;
-    if (this.disposed || this.scene.isDisposed || !camera ||
-      !this.graph.sceneStrictlyReady(camera)) return false;
+    if (this.disposed || this.scene.isDisposed || !camera) return false;
+    if (!this.graph.sceneStrictlyReady(camera)) {
+      this.advanceReadiness(camera);
+      return false;
+    }
     // The strict scene probe is cached behind the graph's dirty flag; its own
     // readiness() re-probes only after an invalidation.
     const status = this.graph.readiness(camera);
@@ -186,12 +190,16 @@ export class SceneRenderCoordinator {
   render(validatePresentation = true): ForwardSceneGraphResult & { rendered: boolean; readyForPresentation: boolean } {
     this.refreshOutline();
     const camera = this.scene.activeCamera;
-    if (this.disposed || this.scene.isDisposed || !camera ||
-      !this.graph.sceneStrictlyReady(camera))
+    if (this.disposed || this.scene.isDisposed || !camera)
       return { path: "classic", reason: "Scene is not ready to render.", rendered: false, readyForPresentation: false };
+    if (!this.graph.sceneStrictlyReady(camera)) {
+      this.advanceReadiness(camera);
+      return { path: "classic", reason: "Scene is not ready to render.", rendered: false, readyForPresentation: false };
+    }
     // Dynamic cable bounds must reach shadow admission before its cached caster
     // decision. The scene observer covers direct/native Scene.render callers.
     flushSceneCables(this.scene);
+    flushDynamicRuntimeMeshes(this.scene);
     const status = this.graph.readiness(camera);
     if (!status.ready) this.requestPreparation();
     // Draw on readiness's admission; graph preparation or invalidation re-admits.
@@ -220,6 +228,16 @@ export class SceneRenderCoordinator {
     void this.prepare().catch((error: unknown) => {
       if (!this.disposed && generation === this.generation) this.failure = error;
     });
+  }
+
+  private advanceReadiness(camera: Camera): void {
+    // A shader probe can still refer to the previous shadow layout. Admit the
+    // requested lights/maps and prepare their graph even while that probe is
+    // false, or neither the old shaders nor the new resources can progress.
+    // A temporary check on current resources must recover on the next ready
+    // frame without starting an unnecessary asynchronous preparation wait.
+    // Dynamic geometry uploads remain behind successful scene admission.
+    if (this.graph.readiness(camera).preparationRequired) this.requestPreparation();
   }
 
   /** A corrected contribution may retry a failed preparation. Style changes

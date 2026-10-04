@@ -14,6 +14,7 @@ import {
   selectContentBrowserAssetsFolder,
 } from "./open-test-project";
 import { saveAllIfEnabled } from "./save-all";
+import { opfsProjectDirectory } from "./opfs-project";
 
 test("H9: a large References graph focuses its asset and keeps Close inside the viewport", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
@@ -33,9 +34,10 @@ test("H9: a large References graph focuses its asset and keeps Close inside the 
       payload: { ...createDefaultScene(), actors: [createActor(`actor-${index}`, "Placed Class", { classId: "Mannequin" })] },
     }, { dependencies: index === 0 ? [guid!, "qa-referrer-0", "qa-missing"] : [guid!] })),
   })));
-  await page.evaluate(async (assets) => {
+  const directoryName = await opfsProjectDirectory(page, "opfs:TestProject");
+  await page.evaluate(async ({ assets, projectDirectory }) => {
     const root = await navigator.storage.getDirectory();
-    const project = await root.getDirectoryHandle("opfs:TestProject");
+    const project = await root.getDirectoryHandle(projectDirectory);
     const folder = await project.getDirectoryHandle("assets");
     for (const asset of assets) {
       const stream = await (await folder.getFileHandle(asset.name, { create: true })).createWritable();
@@ -44,7 +46,7 @@ test("H9: a large References graph focuses its asset and keeps Close inside the 
     }
     await (globalThis as unknown as { __babylonslateTest: { runForegroundRescan: () => Promise<void> } })
       .__babylonslateTest.runForegroundRescan();
-  }, files);
+  }, { assets: files, projectDirectory: directoryName });
   await page.getByTestId("external-change-reload-project-cancel").click();
   await expect(page.getByTestId("external-change-reload-project")).toHaveCount(0);
   await page.getByTestId("content-browser-search").fill("Mannequin");
@@ -70,6 +72,24 @@ test("H9: a large References graph focuses its asset and keeps Close inside the 
   await page.mouse.move(beforeDrag!.x + 160, beforeDrag!.y + 80, { steps: 8 });
   await page.mouse.up();
   await expect(rootNode.locator("..")).toHaveAttribute("style", nodePosition!);
+  const canvasBounds = (await dialog.getByTestId("asset-reference-canvas").boundingBox())!;
+  const linkPoint = await dialog.locator(".react-flow__edge-path").evaluateAll((paths, canvas) => {
+    for (const path of paths as SVGPathElement[]) {
+      const point = path.getPointAtLength(path.getTotalLength() / 2).matrixTransform(path.getScreenCTM()!);
+      if (point.x > canvas.x + 40 && point.x < canvas.x + canvas.width - 200 && point.y > canvas.y + 40 && point.y < canvas.y + canvas.height - 120) {
+        return { x: point.x, y: point.y };
+      }
+    }
+    return null;
+  }, canvasBounds);
+  expect(linkPoint).not.toBeNull();
+  const beforePan = (await rootNode.boundingBox())!;
+  await page.mouse.move(linkPoint!.x, linkPoint!.y);
+  await page.mouse.down();
+  await page.mouse.move(linkPoint!.x + 120, linkPoint!.y + 60, { steps: 8 });
+  await page.mouse.up();
+  await expect.poll(async () => Math.round((await rootNode.boundingBox())!.x - beforePan.x)).toBe(120);
+  await expect(rootNode).toHaveAttribute("data-selected", "true");
   await dialog.getByRole("button", { name: "Focus Asset", exact: true }).click();
   await page.keyboard.press("Delete");
   await expect(rootNode).toBeVisible();

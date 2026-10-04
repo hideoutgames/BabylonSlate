@@ -127,15 +127,16 @@ describe("AudioService", () => {
     service.dispose();
   });
 
-  it("loads only the chosen weighted clip chunkId", async () => {
+  it("loads an alternate weighted clip after the default clip was cached", async () => {
     const backend = new FakeAudioPlaybackBackend();
     const reads: string[] = [];
+    const choices = [0, 0.99];
     const service = new AudioService({
       backend,
-      random: () => 0.99,
+      random: () => choices.shift() ?? 0.99,
       loadSourceBytes: async ({ assetGuid, chunkId }) => {
         reads.push(`${assetGuid}:${chunkId}`);
-        return new Uint8Array([1, 2, 3, 4]);
+        return new Uint8Array(chunkId === "source" ? [1] : [2]);
       },
     });
     service.setLibrary(
@@ -158,9 +159,64 @@ describe("AudioService", () => {
       frameId: 1,
     });
     await service.flush();
-    expect(reads).toEqual(["jump:source:2"]);
-    expect(backend.plays).toHaveLength(1);
+    service.handleCommand({ type: "playSound", assetGuid: "jump", volume: 1, frameId: 2 });
+    await service.flush();
+    expect(reads).toEqual(["jump:source", "jump:source:2"]);
+    expect(backend.plays.map((play) => [...play.source])).toEqual([[1], [2]]);
     service.dispose();
+  });
+
+  it.each(["load", "decode"] as const)("drops old-scene audio pending in %s and queued behind it", async (stage) => {
+    const backend = new FakeAudioPlaybackBackend();
+    let resolve!: () => void;
+    let entered!: () => void;
+    const started = new Promise<void>((done) => { entered = done; });
+    const pending = new Promise<void>((done) => { resolve = done; });
+    if (stage === "decode") vi.spyOn(backend, "decode").mockImplementationOnce(async () => {
+      entered();
+      await pending;
+      return { pcmBytes: 4 };
+    });
+    const service = new AudioService({
+      backend,
+      loadSourceBytes: async () => {
+        if (stage === "load") { entered(); await pending; }
+        return new Uint8Array([1]);
+      },
+    });
+    service.setLibrary(library({ audio: { jump: createDefaultAudioPayload() } }));
+    await service.unlockAsync();
+    service.handleCommand({ type: "playSound", assetGuid: "jump", volume: 1, frameId: 1, voiceId: "loading" });
+    service.handleCommand({ type: "playSound", assetGuid: "jump", volume: 1, frameId: 1, voiceId: "queued" });
+    await started;
+    service.resetSession();
+    service.handleCommand({ type: "playSound", assetGuid: "jump", volume: 1, frameId: 2, voiceId: "new-scene" });
+    resolve();
+    await service.flush();
+    expect(backend.plays.map((play) => play.voiceId)).toEqual(["new-scene"]);
+    expect(service.stats().voices).toBe(1);
+    service.dispose();
+  });
+
+  it("does not recreate audio resources when source loading finishes after disposal", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const cache = new AudioBufferCache();
+    let resolve!: (bytes: Uint8Array) => void;
+    let entered!: () => void;
+    const started = new Promise<void>((done) => { entered = done; });
+    const service = new AudioService({ backend, cache, loadSourceBytes: () => {
+      entered();
+      return new Promise<Uint8Array>((done) => { resolve = done; });
+    } });
+    await service.unlockAsync();
+    service.handleCommand({ type: "playSound", assetGuid: "jump", volume: 1, frameId: 1 });
+    await started;
+    service.dispose();
+    resolve(new Uint8Array([1]));
+    await service.flush();
+    expect(backend.plays).toEqual([]);
+    expect(cache.accountedBytes()).toBe(0);
+    expect(service.stats().voices).toBe(0);
   });
 
   it("diagnoses a lazy load miss without throwing", async () => {
@@ -1350,7 +1406,7 @@ describe("AudioService", () => {
   it("replays the same voiceId without leaking a cache pin", async () => {
     const evicted: string[] = [];
     const cache = new AudioBufferCache({
-      byteCeiling: 50,
+      byteCeiling: 20,
       onEvict: (guid) => evicted.push(guid),
     });
     const backend = new FakeAudioPlaybackBackend();
@@ -1380,6 +1436,7 @@ describe("AudioService", () => {
     await service.flush();
     expect(backend.plays).toHaveLength(2);
     expect(service.stats().voices).toBe(1);
+    expect(backend.disposedBuffers).toEqual([]);
     service.handleCommand({ type: "stopSound", voiceId: "same" });
     await service.flush();
     cache.put("other", new Uint8Array(30), 30);

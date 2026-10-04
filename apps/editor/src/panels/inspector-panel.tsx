@@ -4,6 +4,7 @@ import { MODEL_MATERIALS_PICKER_ENTRY } from "../lib/mesh-material-properties";
 import { RagdollBoneNamesEditor } from "../components/ragdoll-bone-names-editor";
 import { normalizeRenderTargetCaptureProperties, type SerializedScene } from "@babylonslate/core";
 import { RenderTargetCaptureActorsField } from "../components/render-target-capture-actors-field";
+import { RichTextAppearModesField } from "../components/rich-text-appear-modes-field";
 import {
   AssetPicker,
   AssetPickerControl,
@@ -48,6 +49,7 @@ import {
   isEditorGraphHost,
   parseOverlayPanelProperties,
   parseText2DProperties,
+  parseText2DAppearProperties,
   parseText3DProperties,
   type GraphClassMember,
   type SerializedComponent,
@@ -116,13 +118,14 @@ import {
 } from "../lib/graph-inspector";
 import { defaultValueForMember, keepsTypeClassId, pinDefaultPropertyKey } from "@babylonslate/scripting";
 import { canRenameCustomEvent, customEventRenameError, patchClassMember, renameCustomEvent } from "../lib/class-members";
-import { classDocumentShowsPrefab, classIdFromClassAsset, classParentLookup, filterInspectorPinPickerAssets } from "../lib/content-browser-helpers";
+import { classDocumentShowsPrefab, classIdFromClassAsset, classParentLookup, filterInspectorPinPickerAssets, materialDomainsFromAssets } from "../lib/content-browser-helpers";
 import { physicsWorldFromOpenDocuments, prefabComponentLabel } from "./add-component-catalog";
 import {
   commitLogicGraph,
   collectClassGraphsForPalette,
   collectGraphTypeAssets,
   collectScriptInterfacesForPalette,
+  logicGraphEditMergeKey,
   serializedGraphFromDocument,
   typeAssetPickerEntries,
   typeSchemasFromGraphAssets,
@@ -842,12 +845,13 @@ function PrefabComponentDetails({
 }) {
   const { assetRegistry, openDocuments } = useDocuments();
   const [assetPick, setAssetPick] = useState<AssetPickRequest | null>(null);
+  const materialDomains = materialDomainsFromAssets(assetRegistry?.list() ?? [], openDocuments);
   return (
     <div
       className="flex flex-col gap-3 p-3"
       data-testid="inspector-prefab-component"
     >
-      <PropertyGrid
+      {component.classId !== "2DAnchorComponent" && component.classId !== "MovementComponent" && <PropertyGrid
         title="Transform"
         rows={spatialTransformPropertyRows(
           component.id,
@@ -856,7 +860,7 @@ function PrefabComponentDetails({
           onUpdateTransform,
         )}
         data-testid="prefab-component-transform-grid"
-      />
+      />}
       <div className="overflow-hidden rounded-lg border border-border/60 bg-sidebar">
         <div className="flex items-center gap-2 border-b border-border/60 bg-panel-header px-2 py-1">
           <span className="flex min-w-0 items-center gap-2 truncate text-sm font-medium">
@@ -873,6 +877,13 @@ function PrefabComponentDetails({
             {component.classId}
           </span>
         </div>
+        {component.classId === "2DRichTextComponent" ? (
+          <RichTextAppearModesField
+            value={parseText2DAppearProperties(component.properties).appearModes}
+            onChange={(appearModes) => onUpdate("appearModes", appearModes)}
+            data-testid={`rich-text-appear-modes-${component.id}`}
+          />
+        ) : null}
         <PropertyGrid
           rows={componentPropertyRows(PREFAB_ROOT_ID, component, onUpdate, {
             sortingLayers,
@@ -889,6 +900,7 @@ function PrefabComponentDetails({
             physicsWorld,
             onPickAsset: setAssetPick,
             actorComponents: (targetId) => targetId === PREFAB_ROOT_ID ? components : [],
+            focusTargets: components.filter((entry) => entry.classId === "2DButtonComponent" || entry.classId === "2DFocusTargetComponent").map((entry, index) => ({ value: entry.id, label: `${entry.classId === "2DButtonComponent" ? "2D Button" : "2D Focus Target"} ${index + 1}` })),
           })}
         />
         {component.classId === "2DPanelComponent" ? (
@@ -946,7 +958,7 @@ function PrefabComponentDetails({
         onOpenChange={(open) => {
           if (!open) setAssetPick(null);
         }}
-        assets={assetPick?.property === "materialGuid" && component.classId === "MeshComponent" && component.properties.assetGuid
+        assets={assetPick?.materialDomain === "text" ? pickerAssets.filter((asset) => materialDomains[asset.guid] === "text") : assetPick?.property === "materialGuid" && component.classId === "MeshComponent" && component.properties.assetGuid
           ? [MODEL_MATERIALS_PICKER_ENTRY, ...pickerAssets]
           : pickerAssets}
         allowedTypes={assetPick?.allowedTypes}
@@ -954,6 +966,7 @@ function PrefabComponentDetails({
         allowNone
         onPick={(guid) => {
           if (!assetPick) return;
+          if (guid && assetPick.materialDomain === "text" && materialDomains[guid] !== "text") return;
           onUpdate(assetPick.property, guid);
           if (
             assetPick.property === "fontAssetGuid" &&
@@ -1063,17 +1076,19 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
   const persistGraph = (next: SerializedGraph) => {
     if (!doc) return;
     if (ruleTransition && parsedAnim) {
+      const ruleKey = logicGraphEditMergeKey(graph, next);
       void applyAssetDocumentChange(
         documentId,
         patchTransition(parsedAnim, ruleTransition.id, {
           ruleGraph: persistTransitionRuleGraph(next),
         }) as unknown as Record<string, unknown>,
+        ruleKey ? `anim-rule:${ruleTransition.id}:${ruleKey}` : undefined,
       );
       return;
     }
     const commit = commitLogicGraph(doc.ref.kind, doc.content, next);
     if (commit.kind !== "graph") {
-      void applyAssetDocumentChange(documentId, commit.payload);
+      void applyAssetDocumentChange(documentId, commit.payload, commit.mergeKey);
       return;
     }
     void applyGraphChange(documentId, commit.graph);

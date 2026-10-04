@@ -90,8 +90,9 @@ export function AudioMixerDetailsPanel(_props: IDockviewPanelProps) {
     null,
   );
   const channels = assetRegistry?.list() ?? [];
-  const commit = (next: typeof mixer) => {
-    void applyAssetDocumentChange(documentId, next as unknown as Record<string, unknown>);
+  /** `mergeKey` groups one volume scrub into one undo entry. */
+  const commit = (next: typeof mixer, mergeKey?: string) => {
+    void applyAssetDocumentChange(documentId, next as unknown as Record<string, unknown>, mergeKey);
   };
   const duplicate = !validateAudioMixer(mixer).ok;
 
@@ -104,7 +105,10 @@ export function AudioMixerDetailsPanel(_props: IDockviewPanelProps) {
       min: 0,
       max: 1,
       onChange: (globalVolume) =>
-        commit({ ...mixer, globalVolume: clampAudioGain(globalVolume) }),
+        commit(
+          { ...mixer, globalVolume: clampAudioGain(globalVolume) },
+          "audio-mixer:globalVolume",
+        ),
     },
   ];
 
@@ -138,7 +142,7 @@ export function AudioMixerDetailsPanel(_props: IDockviewPanelProps) {
           const next = mixer.channels.map((row, i) =>
             i === index ? { ...row, volume: clampAudioGain(volume) } : row,
           );
-          commit({ ...mixer, channels: next });
+          commit({ ...mixer, channels: next }, `audio-mixer:channel:${index}:volume`);
         },
       },
     );
@@ -271,10 +275,11 @@ export function SoundAttenuationDetailsPanel(_props: IDockviewPanelProps) {
   const { openDocuments, applyAssetDocumentChange } = useDocuments();
   const doc = openDocuments.find((entry) => entry.id === documentId);
   const attenuation = normalizeSoundAttenuationPayload(asRecord(doc?.content));
-  const commit = (next: SoundAttenuationPayload) => {
+  const commit = (next: SoundAttenuationPayload, field?: string) => {
     void applyAssetDocumentChange(
       documentId,
       normalizeSoundAttenuationPayload(next) as unknown as Record<string, unknown>,
+      field ? `sound-attenuation:${field}` : undefined,
     );
   };
 

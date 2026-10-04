@@ -3,9 +3,12 @@ import {
   useCallback,
   useContext,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
+import type { IndexedAsset } from "@babylonslate/assets";
+import type { OpenDocument } from "../services/document-service";
 import {
   identitySerializedTransform,
   setSceneStreamingTarget,
@@ -99,6 +102,63 @@ function stripInheritance(
   });
 }
 
+type PrefabAncestor = {
+  classId: string;
+  components: readonly SerializedComponent[];
+};
+
+const NO_ASSETS: readonly IndexedAsset[] = [];
+const NO_ANCESTORS: readonly PrefabAncestor[] = [];
+
+/** Changes whenever a Class asset is added, removed, renamed or reparented. */
+function classParentSignature(assets: readonly IndexedAsset[]): string {
+  let signature = "";
+  for (const asset of assets) {
+    if (asset.header.type !== "Class") continue;
+    signature += `${asset.path}\u0000${asset.header.name}\u0000${asset.header.parentClass ?? ""}\n`;
+  }
+  return signature;
+}
+
+/**
+ * Ancestor classes (root first) that contribute prefab components. Only the
+ * ancestor chain's assets and open documents are read, with the same lookup
+ * and open-document precedence as the Class palette.
+ */
+function prefabAncestors(
+  classId: string | null,
+  parentOf: (id: string) => string | null,
+  assets: readonly IndexedAsset[],
+  openDocuments: readonly OpenDocument[],
+): readonly PrefabAncestor[] {
+  const chain: string[] = [];
+  const seen = new Set<string>();
+  let current = classId ? parentOf(classId) : null;
+  while (current && !seen.has(current)) {
+    seen.add(current);
+    chain.push(current);
+    current = parentOf(current);
+  }
+  if (chain.length === 0) return NO_ANCESTORS;
+  const graphs = collectClassGraphsForPalette({
+    assets: assets.filter(
+      (asset) =>
+        seen.has(asset.header.name) || seen.has(classIdForGraphPath(asset.path)),
+    ),
+    openDocuments: openDocuments.filter(
+      (entry) =>
+        entry.ref.kind === "graph" && seen.has(classIdForGraphPath(entry.ref.path)),
+    ),
+    classIdForPath: classIdForGraphPath,
+  });
+  const ancestors: PrefabAncestor[] = [];
+  for (const id of chain.reverse()) {
+    const components = graphs[id]?.components;
+    if (components?.length) ancestors.push({ classId: id, components });
+  }
+  return ancestors.length > 0 ? ancestors : NO_ANCESTORS;
+}
+
 export function PrefabEditingProvider({
   children,
   initialSelectedId = PREFAB_ROOT_ID,
@@ -111,10 +171,9 @@ export function PrefabEditingProvider({
   const { documentId } = useDocumentWorkspace();
   const { openDocuments, applyGraphChange, assetRegistry } = useDocuments();
   const viewportMode = useOptionalSceneEditing()?.viewportMode ?? "3d";
-  const physicsWorld = useMemo(
-    () => physicsWorldFromOpenDocuments(openDocuments),
-    [openDocuments],
-  );
+  // Read when a component is added, not on every document change.
+  const openDocumentsRef = useRef(openDocuments);
+  openDocumentsRef.current = openDocuments;
   const [selectedIds, setSelectedIds] = useState<string[]>(() => {
     if (initialSelectedIds && initialSelectedIds.length > 0) {
       return [...initialSelectedIds];
@@ -126,31 +185,38 @@ export function PrefabEditingProvider({
     setSelectedIds(id ? [id] : []);
   }, []);
 
-  const graph = useMemo(() => {
-    const doc = openDocuments.find((entry) => entry.id === documentId);
-    if (doc?.ref.kind !== "graph" || !doc.content) return null;
-    return doc.content as SerializedGraph;
-  }, [documentId, openDocuments]);
+  const doc = openDocuments.find((entry) => entry.id === documentId);
+  // Only Class documents have prefab components; Scene and Scene Layer
+  // workspaces skip the registry walk entirely.
+  const graph =
+    doc?.ref.kind === "graph" && doc.content
+      ? (doc.content as SerializedGraph)
+      : null;
+  const classId = graph && doc ? classIdForGraphPath(doc.ref.path) : null;
+  const assets = graph ? (assetRegistry?.list() ?? NO_ASSETS) : NO_ASSETS;
 
-  const classId = useMemo(() => {
-    const doc = openDocuments.find((entry) => entry.id === documentId);
-    return doc?.ref.path ? classIdForGraphPath(doc.ref.path) : null;
-  }, [documentId, openDocuments]);
-
+  // Keyed by the class parents, not the registry instance: a reparent updates
+  // the registry header in place.
+  const parentSignature = classParentSignature(assets);
   const parentOf = useMemo(
-    () => classParentLookup(assetRegistry?.list() ?? []),
-    [assetRegistry],
+    () => classParentLookup(assets),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- parentSignature is the input that matters
+    [parentSignature],
   );
 
-  const parentGraphs = useMemo(
-    () =>
-      collectClassGraphsForPalette({
-        assets: assetRegistry?.list() ?? [],
-        openDocuments,
-        classIdForPath: classIdForGraphPath,
-      }),
-    [assetRegistry, openDocuments],
+  const ancestorsRef = useRef<readonly PrefabAncestor[]>(NO_ANCESTORS);
+  const latestAncestors = prefabAncestors(
+    classId,
+    parentOf,
+    assets,
+    openDocuments,
   );
+  // Header payloads parse into fresh arrays; keep the previous list while the
+  // inherited components are unchanged so the published value stays stable.
+  if (JSON.stringify(latestAncestors) !== JSON.stringify(ancestorsRef.current)) {
+    ancestorsRef.current = latestAncestors;
+  }
+  const ancestors = ancestorsRef.current;
 
   const localComponents = useMemo(
     () => prefabComponentsFromGraph(graph),
@@ -158,24 +224,6 @@ export function PrefabEditingProvider({
   );
 
   const components = useMemo(() => {
-    const ancestors: Array<{
-      classId: string;
-      components: SerializedComponent[];
-    }> = [];
-    const seen = new Set<string>();
-    let current = classId ? parentOf(classId) : null;
-    const chain: string[] = [];
-    while (current && !seen.has(current)) {
-      seen.add(current);
-      chain.push(current);
-      current = parentOf(current);
-    }
-    // Root-first for merge.
-    for (const id of [...chain].reverse()) {
-      const parentGraph = parentGraphs[id];
-      if (!parentGraph?.components?.length) continue;
-      ancestors.push({ classId: id, components: parentGraph.components });
-    }
     // When local is still the default singleton and parents contribute, prefer merge.
     const local =
       graph && Array.isArray(graph.components)
@@ -184,7 +232,7 @@ export function PrefabEditingProvider({
           ? []
           : localComponents;
     return mergePrefabComponents(ancestors, local);
-  }, [classId, graph, localComponents, parentGraphs, parentOf]);
+  }, [ancestors, graph, localComponents]);
 
   const persistLocal = useCallback(
     (nextLocal: SerializedComponent[]) => {
@@ -219,7 +267,7 @@ export function PrefabEditingProvider({
           properties: {
             ...defaultPropertiesFor(
               selection.classId,
-              physicsWorld,
+              physicsWorldFromOpenDocuments(openDocumentsRef.current),
               viewportMode,
             ),
             ...selection.properties,
@@ -231,7 +279,7 @@ export function PrefabEditingProvider({
       upsertLocalFromViews(next);
       setSelectedIds([id]);
     },
-    [components, physicsWorld, selectedId, upsertLocalFromViews, viewportMode],
+    [components, selectedId, upsertLocalFromViews, viewportMode],
   );
 
   const removeSelected = useCallback(() => {

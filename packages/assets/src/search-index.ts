@@ -72,7 +72,8 @@ export class ProjectSearchIndex {
   private readonly catalogClassIds: readonly string[];
   private readonly nodeTitles: Readonly<Record<string, string>>;
   private readonly limit: number;
-  private entries: SearchEntry[] = [];
+  private records: SearchRecord[] = [];
+  private rebuildRevision = 0;
 
   constructor(storage: ProjectStorage, options: ProjectSearchIndexOptions = {}) {
     this.storage = storage;
@@ -83,11 +84,12 @@ export class ProjectSearchIndex {
   }
 
   get size(): number {
-    return this.entries.length;
+    return this.records.length;
   }
 
   clear(): void {
-    this.entries = [];
+    this.rebuildRevision += 1;
+    this.records = [];
   }
 
   async rebuild(
@@ -95,34 +97,48 @@ export class ProjectSearchIndex {
     options: ProjectSearchRebuildOptions = {},
   ): Promise<void> {
     throwIfAborted(options.signal);
-    const previous = this.entries;
-    this.entries = [];
+    const revision = ++this.rebuildRevision;
+    const snapshot = new ProjectSearchIndex(this.storage, {
+      blobs: this.blobs,
+      catalogClassIds: this.catalogClassIds,
+      nodeTitles: this.nodeTitles,
+      limit: this.limit,
+    });
+    const checkCurrent = () => {
+      throwIfAborted(options.signal);
+      if (revision !== this.rebuildRevision) {
+        throw new DOMException("Search rebuild superseded", "AbortError");
+      }
+    };
     const overlays = new Map(
       (options.openDocuments ?? []).map((document) => [
         document.path,
         document.payload,
       ]),
     );
-    try {
-      await yieldSearchSlice();
-      throwIfAborted(options.signal);
-      for (const asset of registry.list()) {
-        throwIfAborted(options.signal);
-        const overlay = overlays.get(asset.path);
-        if (overlay) {
-          this.upsertDocument(asset, overlay);
-        } else {
-          await this.indexAsset(asset, registry);
-        }
-        await yieldSearchSlice();
-        throwIfAborted(options.signal);
+    await yieldSearchSlice();
+    checkCurrent();
+    let sliceStarted = performance.now();
+    for (const asset of registry.list()) {
+      checkCurrent();
+      const overlay = overlays.get(asset.path);
+      if (overlay) {
+        snapshot.addHeaderEntries(asset);
+        snapshot.addDocumentEntries(asset, overlay);
+      } else {
+        // Registry entries are unique; a fresh snapshot needs no repeated removal scan.
+        await snapshot.indexAsset(asset, registry, false);
       }
-      this.addCatalogClasses();
-      throwIfAborted(options.signal);
-    } catch (error) {
-      this.entries = previous;
-      throw error;
+      checkCurrent();
+      if (performance.now() - sliceStarted >= 8) {
+        await yieldSearchSlice();
+        checkCurrent();
+        sliceStarted = performance.now();
+      }
     }
+    snapshot.addCatalogClasses();
+    checkCurrent();
+    this.records = snapshot.records;
   }
 
   async upsertAsset(registry: AssetRegistry, path: string): Promise<void> {
@@ -144,28 +160,40 @@ export class ProjectSearchIndex {
     this.removeBySource(pathOrGuid, pathOrGuid);
   }
 
+  /**
+   * Case-insensitive substring query. Hits rank by match tier (exact label,
+   * label prefix, label, description, keyword), then label collation, then
+   * index order; the first `limit` are selected without sorting every hit.
+   */
   query(needle: string, limit = this.limit): SearchEntry[] {
     const normalized = needle.trim().toLowerCase();
     if (!normalized) return [];
 
-    const scored: Array<{ entry: SearchEntry; score: number }> = [];
-    for (const entry of this.entries) {
-      const score = matchScore(entry, normalized);
-      if (score === null) continue;
-      scored.push({ entry, score });
+    const tiers: SearchEntry[][] = Array.from({ length: MATCH_TIERS }, () => []);
+    for (const record of this.records) {
+      const tier = matchTier(record, normalized);
+      if (tier !== null) tiers[tier]!.push(record.entry);
     }
-    scored.sort((a, b) => {
-      if (a.score !== b.score) return a.score - b.score;
-      return a.entry.label.localeCompare(b.entry.label);
-    });
-    return scored.slice(0, limit).map((row) => row.entry);
+    const count = limit > 0 ? Math.floor(limit) : 0;
+    const hits: SearchEntry[] = [];
+    for (const tier of tiers) {
+      const room = count - hits.length;
+      if (room <= 0) break;
+      for (const entry of firstByLabel(tier, room)) hits.push(entry);
+    }
+    return hits;
+  }
+
+  private add(entry: SearchEntry): void {
+    this.records.push(searchRecord(entry));
   }
 
   private async indexAsset(
     asset: IndexedAsset,
     registry?: AssetRegistry,
+    replaceExisting = true,
   ): Promise<void> {
-    this.removeBySource(asset.header.guid, asset.path);
+    if (replaceExisting) this.removeBySource(asset.header.guid, asset.path);
     this.addHeaderEntries(asset);
     if (asset.placeholder || asset.header.type === "Unresolved") return;
     if (!DOCUMENT_TYPES.has(asset.header.type)) return;
@@ -182,7 +210,7 @@ export class ProjectSearchIndex {
 
   private addHeaderEntries(asset: IndexedAsset): void {
     const { header, path } = asset;
-    this.entries.push({
+    this.add({
       id: `asset:${header.guid}`,
       kind: "asset",
       label: header.name,
@@ -204,7 +232,7 @@ export class ProjectSearchIndex {
     });
 
     if (header.type !== "Class") return;
-    this.entries.push({
+    this.add({
       id: `class:${header.name}`,
       kind: "class",
       label: header.name,
@@ -248,7 +276,7 @@ export class ProjectSearchIndex {
       if (!actorId) continue;
       const name = stringField(actor.name) || actorId;
       const classId = stringField(actor.classId);
-      this.entries.push({
+      this.add({
         id: `actor:${asset.header.guid}:${actorId}`,
         kind: "actor",
         label: name,
@@ -271,7 +299,7 @@ export class ProjectSearchIndex {
         if (!componentId) continue;
         const componentClass = stringField(component.classId);
         const propertyStrings = collectStringLeaves(component.properties);
-        this.entries.push({
+        this.add({
           id: `component:${asset.header.guid}:${actorId}:${componentId}`,
           kind: "component",
           label: componentClass || componentId,
@@ -307,7 +335,7 @@ export class ProjectSearchIndex {
           : {};
       const propertyStrings = collectStringLeaves(data);
       const title = this.nodeTitles[typeId] ?? typeId;
-      this.entries.push({
+      this.add({
         id: `graph-node:${asset.header.guid}:${nodeId}`,
         kind: "graph-node",
         label: title || nodeId,
@@ -326,7 +354,7 @@ export class ProjectSearchIndex {
       const variableName =
         stringField(data.variableName) || stringField(data.name);
       if (!variableName) continue;
-      this.entries.push({
+      this.add({
         id: `variable:${asset.header.guid}:${nodeId}:${variableName}`,
         kind: "variable",
         label: variableName,
@@ -346,15 +374,15 @@ export class ProjectSearchIndex {
 
   private addCatalogClasses(): void {
     const existing = new Set(
-      this.entries
-        .filter((entry) => entry.kind === "class")
-        .map((entry) =>
+      this.records
+        .filter(({ entry }) => entry.kind === "class")
+        .map(({ entry }) =>
           entry.target.kind === "class" ? entry.target.classId : "",
         ),
     );
     for (const classId of this.catalogClassIds) {
       if (!classId || existing.has(classId)) continue;
-      this.entries.push({
+      this.add({
         id: `class:${classId}`,
         kind: "class",
         label: classId,
@@ -367,20 +395,15 @@ export class ProjectSearchIndex {
   }
 
   private removeBySource(guid: string, path: string): void {
-    this.entries = this.entries.filter(
-      (entry) => entry.sourceGuid !== guid && entry.sourcePath !== path,
+    this.records = this.records.filter(
+      ({ entry }) => entry.sourceGuid !== guid && entry.sourcePath !== path,
     );
   }
 }
 
 function yieldSearchSlice(): Promise<void> {
-  return new Promise((resolve) => {
-    if (typeof requestAnimationFrame === "function") {
-      requestAnimationFrame(() => resolve());
-    } else {
-      setTimeout(resolve, 0);
-    }
-  });
+  // Yield a task, not one display frame per asset; also works in hidden windows.
+  return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 function throwIfAborted(signal?: AbortSignal): void {
@@ -414,15 +437,63 @@ function collectStringLeaves(value: unknown, out: string[] = []): string[] {
   return out;
 }
 
-function matchScore(entry: SearchEntry, needle: string): number | null {
-  const label = entry.label.toLowerCase();
-  if (label === needle) return 0;
-  if (label.startsWith(needle)) return 1;
-  if (label.includes(needle)) return 2;
-  const description = (entry.description ?? "").toLowerCase();
-  if (description.includes(needle)) return 3;
-  if (entry.keywords.some((keyword) => keyword.toLowerCase().includes(needle))) {
-    return 4;
-  }
+/** An entry with the lowercased text a query matches, built once when indexed. */
+interface SearchRecord {
+  entry: SearchEntry;
+  label: string;
+  description: string;
+  keywords: string[];
+}
+
+function searchRecord(entry: SearchEntry): SearchRecord {
+  return {
+    entry,
+    label: entry.label.toLowerCase(),
+    description: (entry.description ?? "").toLowerCase(),
+    keywords: entry.keywords.map((keyword) => keyword.toLowerCase()),
+  };
+}
+
+const MATCH_TIERS = 5;
+
+function matchTier(record: SearchRecord, needle: string): number | null {
+  if (record.label === needle) return 0;
+  if (record.label.startsWith(needle)) return 1;
+  if (record.label.includes(needle)) return 2;
+  if (record.description.includes(needle)) return 3;
+  if (record.keywords.some((keyword) => keyword.includes(needle))) return 4;
   return null;
+}
+
+/** Same order as `label.localeCompare(other)`. */
+const LABEL_COLLATOR = new Intl.Collator();
+
+function compareLabels(left: SearchEntry, right: SearchEntry): number {
+  return LABEL_COLLATOR.compare(left.label, right.label);
+}
+
+/**
+ * The first `count` entries of `entries` stably sorted by label: equal labels
+ * keep their index order. A tier that fits is sorted; a larger one keeps a
+ * bounded sorted buffer instead of sorting every hit.
+ */
+function firstByLabel(entries: SearchEntry[], count: number): SearchEntry[] {
+  if (entries.length <= count) return entries.sort(compareLabels);
+  const top: SearchEntry[] = [];
+  for (const entry of entries) {
+    if (top.length === count && compareLabels(entry, top[count - 1]!) >= 0) {
+      continue;
+    }
+    // Insert after equal labels so earlier entries stay first.
+    let low = 0;
+    let high = top.length;
+    while (low < high) {
+      const middle = (low + high) >>> 1;
+      if (compareLabels(entry, top[middle]!) < 0) high = middle;
+      else low = middle + 1;
+    }
+    top.splice(low, 0, entry);
+    if (top.length > count) top.pop();
+  }
+  return top;
 }

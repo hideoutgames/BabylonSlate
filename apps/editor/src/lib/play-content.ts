@@ -40,9 +40,12 @@ import {
   type SerializedSceneLayer,
 } from "@babylonslate/core";
 import {
+  isMaterialInstanceContent,
   materialDependencies,
+  materialInstanceDependencies,
   normalizeMaterialDocument,
   normalizeMaterialFunctionDocument,
+  normalizeMaterialInstanceDocument,
 } from "@babylonslate/shader-graph";
 import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
 
@@ -246,21 +249,26 @@ export function sceneLayerGuidsFromGraphs(
   return guids;
 }
 
-/** Post-process Material guids on SceneLayer Register/Unregister nodes. */
-export function sceneLayerMaterialGuidsFromGraphs(
+const GRAPH_MATERIAL_PINS: Readonly<Record<string, string>> = {
+  "scene-layer.registerPostProcess": "material",
+  "scene-layer.unregisterPostProcess": "material",
+  "material.setMaterialInstance": "instance",
+};
+
+/**
+ * Material guids that only graphs reference: post-process Materials on
+ * SceneLayer Register/Unregister nodes and Set Material Instance assets.
+ */
+export function materialGuidsFromGraphs(
   graphs: readonly SerializedGraph[],
 ): string[] {
   const guids: string[] = [];
   const seen = new Set<string>();
   for (const graph of graphs) {
     for (const node of serializedGraphNodes(graph)) {
-      if (
-        node.type !== "scene-layer.registerPostProcess" &&
-        node.type !== "scene-layer.unregisterPostProcess"
-      ) {
-        continue;
-      }
-      const guid = pinDefaultFromNodeData(node.data, "material");
+      const pinId = GRAPH_MATERIAL_PINS[node.type];
+      if (!pinId) continue;
+      const guid = pinDefaultFromNodeData(node.data, pinId);
       if (!guid || seen.has(guid)) continue;
       seen.add(guid);
       guids.push(guid);
@@ -602,6 +610,8 @@ export function materialAssetGuidsFromScene(
     ...(scene?.actors.flatMap((actor) => actor.components.flatMap((component) => component.classId === "FoliageComponent" ? parseFoliageProperties(component.properties).batches.flatMap((batch) => batch.materialGuid ? [batch.materialGuid] : []) : [])) ?? []),
     ...componentGuidsFromScene(scene, "2DMaterialComponent", ["materialGuid"]),
     ...componentGuidsFromScene(scene, "2DPanelComponent", ["materialGuid"]),
+    ...componentGuidsFromScene(scene, "2DTextComponent", ["materialGuid"]),
+    ...componentGuidsFromScene(scene, "2DRichTextComponent", ["materialGuid"]),
   ]) {
     if (seen.has(guid)) continue;
     seen.add(guid);
@@ -679,17 +689,21 @@ export function playSceneByGuid(
 }
 
 /**
- * Materials plus every Material Function they call, transitively.
- * Play and export both need the closure, not just the directly referenced set.
+ * Materials plus every Material Function they call, transitively, and each
+ * Material Instance's parent chain. Play and export both need the closure, not
+ * just the directly referenced set. `referenced` lists every guid visited,
+ * including ones whose content is not loaded yet, so callers can load and retry.
  */
 export function materialClosureFromGuids(
   guids: readonly string[],
   documentForGuid: (guid: string) => unknown | null,
-): { materials: string[]; functions: string[]; textures: string[] } {
+): { materials: string[]; instances: string[]; functions: string[]; textures: string[]; referenced: string[] } {
   const materials: string[] = [];
+  const instances: string[] = [];
   const functions: string[] = [];
   const textures = new Set<string>();
   const seen = new Set<string>();
+  const queue = [...guids];
 
   const visitFunction = (guid: string) => {
     if (seen.has(guid)) return;
@@ -704,17 +718,25 @@ export function materialClosureFromGuids(
     for (const nested of deps.functions) visitFunction(nested);
   };
 
-  for (const guid of guids) {
+  for (let index = 0; index < queue.length; index++) {
+    const guid = queue[index]!;
     if (seen.has(guid)) continue;
     seen.add(guid);
     const content = documentForGuid(guid);
     if (!content) continue;
+    if (isMaterialInstanceContent(content)) {
+      instances.push(guid);
+      const deps = materialInstanceDependencies(normalizeMaterialInstanceDocument(content));
+      for (const texture of deps.textures) textures.add(texture);
+      if (deps.parent) queue.push(deps.parent);
+      continue;
+    }
     materials.push(guid);
     const deps = materialDependencies(normalizeMaterialDocument(content));
     for (const texture of deps.textures) textures.add(texture);
     for (const fn of deps.functions) visitFunction(fn);
   }
-  return { materials, functions, textures: [...textures].sort() };
+  return { materials, instances, functions, textures: [...textures].sort(), referenced: [...seen] };
 }
 
 /** Model asset guids on MeshComponent.assetGuid (imported GLB). */
@@ -787,6 +809,27 @@ export function skyboxFaceGuidsFromScene(
     }
   }
   return found;
+}
+
+/** Collect per-scene baked data without discarding other bakes after a read failure. */
+export async function readPlaySceneBakes(
+  scenes: readonly { guid: string; path?: string }[],
+  readChunk: (path: string, chunkId: string) => Promise<Uint8Array | null>,
+  onError: (guid: string, chunkId: string, error: unknown) => void,
+): Promise<{ navmeshes: Map<string, Uint8Array>; audioReverbs: Map<string, Uint8Array> }> {
+  const navmeshes = new Map<string, Uint8Array>();
+  const audioReverbs = new Map<string, Uint8Array>();
+  // Startup may also be in the scene library. Load its authored path once.
+  const unique = new Map(scenes.filter((scene) => scene.path).map((scene) => [scene.guid, scene.path!]));
+  for (const [guid, path] of unique) {
+    for (const [chunkId, destination] of [[NAVMESH_CHUNK_ID, navmeshes], [AUDIO_REVERB_CHUNK_ID, audioReverbs]] as const) {
+      try {
+        const bytes = await readChunk(path, chunkId);
+        if (bytes?.byteLength) destination.set(guid, bytes);
+      } catch (error) { onError(guid, chunkId, error); }
+    }
+  }
+  return { navmeshes, audioReverbs };
 }
 
 /** Scene `navmesh` extra chunk for Play import. Never generates. */

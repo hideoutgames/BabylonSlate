@@ -3,6 +3,7 @@ import { MeshBuilder, NullEngine, Scene, Texture, TextureBlock } from "@babylonj
 import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
+  materializeMaterialInstance,
   type MaterialDocument,
   type MaterialFunctionDocument,
 } from "@babylonslate/shader-graph";
@@ -395,6 +396,25 @@ describe("material library", () => {
     const second = library.acquire(scene, "mat-1", doc);
     if (!second.ok) throw new Error("Expected a compiled material");
     expect(second.material).not.toBe(first.material);
+  });
+
+  it("compiles a Material Instance as its own material on its root Material's GPU program", async () => {
+    const scene = host();
+    const library = new MaterialLibrary();
+    const root = createDefaultMaterialDocument();
+    root.nodes.push({ id: "tint", type: "param.color", position: { x: 0, y: 0 }, properties: { name: "Tint", value: [1, 1, 1, 1] } });
+    root.edges = [{ id: "tint-base", sourceNodeId: "tint", sourcePinId: "rgb", targetNodeId: "output", targetPinId: "baseColor" }];
+    const instance = materializeMaterialInstance(root, "root", { Tint: { kind: "color", value: [1, 0, 0, 1] } });
+    const parent = library.acquire(scene, "root", root);
+    const child = library.acquire(scene, "inst", instance);
+    if (!parent.ok || !child.ok) throw new Error("acquire failed");
+    expect(await parent.ready).toEqual([]);
+    expect(await child.ready).toEqual([]);
+    expect(child.material).not.toBe(parent.material);
+    expect(child.material.name).toBe("material:inst");
+    expect(child.material.buildId).toBe(parent.material.buildId);
+    expect(library.getParameter(scene, "inst", "Tint")).toEqual({ kind: "color", value: [1, 0, 0, 1] });
+    expect(library.getParameter(scene, "root", "Tint")).toEqual({ kind: "color", value: [1, 1, 1, 1] });
   });
 
   it("never shares one material instance across two scenes", () => {

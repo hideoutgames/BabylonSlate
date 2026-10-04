@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, fireEvent, render } from "@testing-library/react";
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
 import { WINDOWED_SLICE_OVERSCAN } from "./windowed-slice";
 import {
@@ -86,6 +86,21 @@ describe("WindowedList", () => {
     ).toBe(80);
   });
 
+  it("positions rows by per-row heights", () => {
+    const { getByTestId } = render(
+      <ScrollArea>
+        <WindowedList itemCount={3} rowHeight={(index) => (index === 0 ? 28 : 44)}>
+          {(index) => <div data-testid={`windowed-row-${index}`}>{index}</div>}
+        </WindowedList>
+      </ScrollArea>,
+    );
+    const slot = (index: number) => getByTestId(`windowed-row-${index}`).parentElement!;
+    expect(slot(0).style.height).toBe("28px");
+    expect(slot(1).style.top).toBe("28px");
+    expect(slot(2).style.top).toBe("72px");
+    expect(slot(0).parentElement!.style.height).toBe("116px");
+  });
+
   it("mounts only viewport-near rows plus overscan for a 500-row list", () => {
     const restore = stubScrollViewportHeight(280);
     try {
@@ -127,6 +142,51 @@ describe("WindowedList", () => {
       expect(mounted.length).toBeLessThan(40);
       expect(queryByTestId("windowed-row-0")).toBeTruthy();
       expect(queryByTestId("windowed-row-499")).toBeNull();
+    } finally {
+      restore();
+    }
+  });
+});
+
+describe("WindowedList scrolling", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  function mountedRange(): [number, number] {
+    const indices = [
+      ...document.querySelectorAll('[data-testid^="windowed-row-"]'),
+    ].map((row) => Number(row.textContent));
+    return [Math.min(...indices), Math.max(...indices)];
+  }
+
+  it("mounts the rows around the scroll position, including overscan rows", () => {
+    const restore = stubNativeScrollerHeight("native-scroller", 280);
+    try {
+      const { getByTestId } = render(
+        <div data-testid="native-scroller" style={{ overflowY: "auto" }}>
+          <WindowedList itemCount={500} rowHeight={28}>
+            {(index) => (
+              <div data-testid={`windowed-row-${index}`}>{index}</div>
+            )}
+          </WindowedList>
+        </div>,
+      );
+      const scroller = getByTestId("native-scroller");
+      const scrollTo = (top: number) => {
+        scroller.scrollTop = top;
+        fireEvent.scroll(scroller);
+      };
+      // Ten 28px rows fill the viewport, plus four overscan rows.
+      expect(mountedRange()).toEqual([0, 13]);
+      scrollTo(30);
+      expect(mountedRange()).toEqual([0, 15]);
+      scrollTo(50);
+      expect(mountedRange()).toEqual([0, 15]);
+      scrollTo(200);
+      expect(mountedRange()).toEqual([3, 21]);
+      scrollTo(0);
+      expect(mountedRange()).toEqual([0, 13]);
     } finally {
       restore();
     }

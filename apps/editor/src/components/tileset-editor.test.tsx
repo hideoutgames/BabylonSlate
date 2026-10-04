@@ -163,7 +163,7 @@ describe("TilesetEditor", () => {
     fireEvent.change(screen.getByTestId("property-animationFrameDurationMs"), { target: { value: "250" } });
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
       tiles: expect.arrayContaining([expect.objectContaining({ id: 1, animationFrameDurationMs: 250 })]),
-    }));
+    }), expect.any(String));
   });
 
   it("keeps atlas size fields read-only", () => {

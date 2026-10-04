@@ -33,6 +33,12 @@ export interface AssetPickerProps {
    * that an AssetCreateProvider can create.
    */
   createOptions?: AssetCreateOptions;
+  /**
+   * Narrows Create New rows to these of the allowed types, e.g. only Material
+   * when a picker also lists Material Instances but its domain applies to
+   * Materials alone.
+   */
+  createTypes?: readonly string[];
   "data-testid"?: string;
 }
 
@@ -51,6 +57,7 @@ export function AssetPicker({
   title = "Pick Asset",
   allowNone = true,
   createOptions,
+  createTypes,
   "data-testid": testId,
 }: AssetPickerProps) {
   const api = useAssetCreate();
@@ -68,8 +75,11 @@ export function AssetPicker({
     ) {
       return [];
     }
-    return [...new Set(allowedTypes)].filter((type) => api.canCreate(type));
-  }, [allowedTypes, api]);
+    return [...new Set(allowedTypes)].filter(
+      (type) =>
+        (!createTypes || createTypes.includes(type)) && api.canCreate(type),
+    );
+  }, [allowedTypes, api, createTypes]);
   const items = useMemo<SearchDialogItem[]>(() => {
     const filtered =
       allowedTypes && allowedTypes.length > 0

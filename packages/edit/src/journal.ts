@@ -34,6 +34,7 @@ import {
   createSetActorTransformCommandFromJson,
   createSetActorsTransformsCommandFromJson,
   createSetComponentPropertyCommandFromJson,
+  createSetComponentLinkageCommandFromJson,
   createSetComponentTransformCommandFromJson,
   createSetSceneNameCommandFromJson,
   createSetSceneSettingCommandFromJson,
@@ -89,6 +90,27 @@ export function reviveCommand(
   return reviver(payload);
 }
 
+/**
+ * Journal-only marker, not an `EditCommand`: an open document moved from
+ * `command.from` to `docId`. Replay gives the earlier lines under `from` to the
+ * renamed document, so its unsaved edits and a later Undo replay together.
+ */
+export const JOURNAL_REPATH_TYPE = "document.repath";
+export const JOURNAL_DISCARD_TYPE = "document.discard";
+
+/** Ends recovery for earlier edits to this document, without clearing others. */
+export function journalDiscardLine(docId: string, at: string): JournalLine {
+  return { v: 1, docId, at, command: { type: JOURNAL_DISCARD_TYPE } };
+}
+
+export function journalRepathLine(
+  oldId: string,
+  newId: string,
+  at: string,
+): JournalLine {
+  return { v: 1, docId: newId, at, command: { type: JOURNAL_REPATH_TYPE, from: oldId } };
+}
+
 export function serializeJournalLine(line: JournalLine): string {
   return JSON.stringify(line);
 }
@@ -132,6 +154,7 @@ export function commandToJournalPayload(
         nodeId: move.nodeId,
         from: move.from,
         to: move.to,
+        mergeKey: move.mergeKey,
       };
     }
     case "graph.addEdge": {
@@ -205,11 +228,62 @@ export function commandToJournalPayload(
         command.type.startsWith("scene.") ||
         command.type.startsWith("asset.")
       ) {
-        return { ...(command as object) } as { type: string };
+        // Undo bookkeeping is not target identity; snapshot sizes vary during a scrub.
+        const { byteSize: _byteSize, ...payload } = command;
+        void _byteSize;
+        return payload;
       }
       return { type: command.type };
     }
   }
+}
+
+/**
+ * Commands whose `apply` writes only `to` onto the target named by their other
+ * payload fields, so a later record for the same target supersedes an earlier one.
+ */
+const SUPERSEDING_COMMAND_TYPES = new Set([
+  "asset.setDocument",
+  "graph.moveNode",
+  "graph.setNodeData",
+  "scene.setActorTransform",
+  "scene.setComponentProperty",
+  "scene.setComponentTransform",
+  "scene.setSceneSetting",
+  "scene.renameActor",
+  "scene.renameFolder",
+]);
+
+/**
+ * Fold two consecutive journal records of one continuous gesture (same
+ * document, command type, merge key and target) into one record carrying the
+ * first `from` and the last `to`. Replay applies only `to` for these commands,
+ * so recovering the folded record gives the same document as recovering both.
+ * Returns null when the records must stay separate.
+ */
+export function coalesceJournalLines(
+  previous: JournalLine,
+  next: JournalLine,
+): JournalLine | null {
+  const earlier = previous.command;
+  const later = next.command;
+  if (
+    previous.v !== next.v ||
+    previous.docId !== next.docId ||
+    earlier.type !== later.type ||
+    !SUPERSEDING_COMMAND_TYPES.has(later.type) ||
+    typeof later.mergeKey !== "string" ||
+    later.mergeKey.length === 0
+  ) {
+    return null;
+  }
+  const { from, to: _earlierTo, ...earlierTarget } = earlier;
+  const { from: _laterFrom, to: _laterTo, ...laterTarget } = later;
+  void _earlierTo;
+  void _laterFrom;
+  void _laterTo;
+  if (JSON.stringify(earlierTarget) !== JSON.stringify(laterTarget)) return null;
+  return { ...next, command: { ...later, from } };
 }
 
 export function registerGraphCommandRevivers(): void {
@@ -234,6 +308,7 @@ export function registerGraphCommandRevivers(): void {
 }
 
 export function registerSceneCommandRevivers(): void {
+  registerCommandReviver("scene.setComponentLinkage", createSetComponentLinkageCommandFromJson);
   registerCommandReviver("scene.addActor", createAddActorCommandFromJson);
   registerCommandReviver("scene.removeActor", createRemoveActorCommandFromJson);
   registerCommandReviver(
