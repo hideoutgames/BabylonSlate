@@ -11,6 +11,7 @@ import { Button } from "@babylonslate/ui/components/button";
 import { brandIconSrc } from "../lib/branding";
 import { useHomepageScheme } from "./homepage-scheme";
 import { useLauncherTransition } from "./launcher-transition";
+import { useMobileDemoSession } from "../context/mobile-demo-context";
 import homepageStyles from "./homepage.css?inline";
 
 const NativeAccountGate = lazy(() => import("./homepage-account-native"));
@@ -34,6 +35,8 @@ export function HomepageMobileAccountFrame({
   children: ReactNode;
 }) {
   const [scheme] = useHomepageScheme();
+  const demo = useMobileDemoSession();
+  const host = getHostPlatform();
   const { ready } = useLauncherTransition();
   useEffect(() => {
     ready("home");
@@ -49,7 +52,20 @@ export function HomepageMobileAccountFrame({
         <img src={brandIconSrc(scheme)} alt="" />
         <span>Slate</span>
       </div>
-      <section className="homepage-mobile-auth-content">{children}</section>
+      <section className="homepage-mobile-auth-content">
+        {children}
+        {demo && !demo.active && (host === "ios" || host === "android") && (
+          <>
+            <Button variant="outline" onClick={demo.start}>
+              Use Temporary Demo Account
+            </Button>
+            <p>
+              Local testing only, without signing in or cloud access. Demo access
+              ends when the app restarts; projects stay on this device.
+            </p>
+          </>
+        )}
+      </section>
     </main>
   );
 }
@@ -79,9 +95,11 @@ export function HomepageMobileAccountGate({
   children: ReactNode;
 }) {
   const [attempt, setAttempt] = useState(0);
+  const demo = useMobileDemoSession();
   const host = getHostPlatform();
   if (host !== "ios" && host !== "android") return children;
   if (isTestModeEnabled()) return children;
+  if (demo?.active) return children;
   const publishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY?.trim();
   if (!publishableKey) {
     return (
