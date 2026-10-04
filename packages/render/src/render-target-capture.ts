@@ -1,7 +1,7 @@
 import {
   Color4, Constants, LinesMesh, Material, Matrix, MultiMaterial, Quaternion, RawTexture,
   RenderTargetTexture, Texture, UniversalCamera, Vector3,
-  type AbstractMesh, type InternalTexture, type IParticleSystem, type Mesh, type Node, type NodeMaterial, type Observer, type Scene,
+  type AbstractMesh, type InternalTexture, type IParticleSystem, type Node, type NodeMaterial, type Observer, type Scene,
 } from "@babylonjs/core";
 import { FloatingOriginCurrentScene } from "@babylonjs/core/Materials/floatingOriginMatrixOverrides";
 import {
@@ -16,7 +16,7 @@ import { drawBorrowedTarget } from "./framegraph-borrowed-draw";
 import { createRenderTargetDepthMaterial, createRenderTargetNormalMaterial } from "./render-target-normal-material";
 import type { ResourceLease } from "./resource-cache";
 import { renderTargetCaptureDrawing } from "./render-target-capture-state";
-import { isViewportShadingTarget } from "./viewport-shading-mode";
+import { isEditorHelperMesh } from "./helper-mesh";
 import { particleMaterialForSystem } from "./node-material-particles";
 import { admittedSceneMeshes, admittedSceneParticles } from "./scene-stream-admission";
 
@@ -26,9 +26,7 @@ import { admittedSceneMeshes, admittedSceneParticles } from "./scene-stream-admi
  * preview uses the same rule so it shows what the capture lens records.
  */
 export function isRenderTargetCaptureCandidate(mesh: AbstractMesh): boolean {
-  if (mesh instanceof LinesMesh || !isViewportShadingTarget(mesh as Mesh)) return false;
-  const metadata = mesh.metadata as Record<string, unknown> | null;
-  return !(metadata?.editorPickProxy || metadata?.editorCameraModel || metadata?.editorBillboard || metadata?.editorVolume || metadata?.playHelperVisual || metadata?.playActorOrigin || metadata?.playDebugOverlay || metadata?.editorColliderVisual);
+  return !(mesh instanceof LinesMesh) && !isEditorHelperMesh(mesh);
 }
 
 const controllers = new WeakMap<Scene, RenderTargetCaptures>();
