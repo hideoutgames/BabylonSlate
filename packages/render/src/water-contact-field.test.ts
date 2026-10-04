@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ArcRotateCamera, Matrix, Mesh, MeshBuilder, NullEngine, Scene, Vector3, VertexData } from "@babylonjs/core";
+import { ArcRotateCamera, Matrix, Mesh, MeshBuilder, NullEngine, Scene, Vector3, VertexBuffer, VertexData } from "@babylonjs/core";
 import { createDefaultWaterDefinition, normalizeWaterBody } from "@babylonslate/core";
 import { createEditorGrid } from "./editor-grid";
 import { createWaterMesh, setSceneWaterTime, updateSceneWater } from "./water-mesh";
@@ -126,6 +126,66 @@ describe("Water contact field", () => {
     // The base placement is not drawn once thin instances exist.
     expect(contactAt(field, 0, 3, 0)).toBeGreaterThan(1.9);
     field.dispose();
+  });
+
+  it("follows thin instances that move after their placements were cached", () => {
+    setup();
+    const posts = MeshBuilder.CreateBox("posts", { width: 1, height: 4, depth: 1 }, scene);
+    const matrices = new Float32Array(32);
+    Matrix.Translation(-5, 0, 0).copyToArray(matrices, 0);
+    Matrix.Translation(5, 0, 0).copyToArray(matrices, 16);
+    posts.thinInstanceSetBuffer("matrix", matrices, 16, false);
+    frame();
+    const field = new WaterContactField(scene, flatSurface(scene, 0.5));
+    field.update(0);
+    // A static forest is reused between scans...
+    field.update(150);
+    expect(Math.abs(contactAt(field, 5.52, 0, 0))).toBeLessThan(0.1);
+    // ...until an instance moves.
+    posts.thinInstanceSetMatrixAt(1, Matrix.Translation(9, 0, 0));
+    frame();
+    field.update(300);
+    expect(Math.abs(contactAt(field, 9.52, 0, 0))).toBeLessThan(0.1);
+    expect(contactAt(field, 5.52, 0, 0)).toBeGreaterThan(1.9);
+    expect(Math.abs(contactAt(field, -4.48, 0, 0))).toBeLessThan(0.1);
+    field.dispose();
+  });
+
+  it("re-slices a mesh whose vertices are rewritten in place under a fixed transform, like a simulated cable", () => {
+    setup();
+    const strip = MeshBuilder.CreateBox("cable", { width: 0.4, height: 4, depth: 0.4, updatable: true }, scene);
+    frame();
+    const field = new WaterContactField(scene, flatSurface(scene, 0.3));
+    field.update(0);
+    expect(Math.abs(contactAt(field, 0.25, 0, 0))).toBeLessThan(0.1);
+    const positions = strip.getVerticesData(VertexBuffer.PositionKind)!;
+    for (let i = 0; i < positions.length; i += 3) positions[i] = positions[i]! + 3;
+    strip.updateVerticesData(VertexBuffer.PositionKind, positions, true);
+    frame();
+    // Between scene scans, within a moving object's rebuild interval.
+    field.update(50);
+    expect(Math.abs(contactAt(field, 3.25, 0, 0))).toBeLessThan(0.1);
+    expect(contactAt(field, 0.25, 0, 0)).toBeGreaterThan(1.9);
+    field.dispose();
+  });
+
+  it("cuts an object on a sloped river at the rest height beneath each part of it", () => {
+    setup();
+    // A river falling 2 m over 20 m along Z (rest height -z / 10) and a 16 m log along it, 1 m tall around y = 0.
+    const river = createWaterMesh(scene, "river", normalizeWaterBody({ points: [[0, 1, -10], [0, -1, 10]], width: 6 }, "river"), createDefaultWaterDefinition());
+    const log = MeshBuilder.CreateBox("log", { width: 1, height: 1, depth: 16 }, scene);
+    frame();
+    const contacts = contactsOf(river);
+    contacts.update(1000, true);
+    // Mid-river the water crosses the log's sides...
+    expect(Math.abs(contactAt(contacts, 0.55, 0, 0))).toBeLessThan(0.15);
+    // ...upstream its end lies fully under the raised water, and downstream it stands clear above it: only its
+    // top (or bottom) face, a few centimetres from the water a metre or more away, counts as near.
+    expect(contactAt(contacts, 0.55, -7, 0)).toBeGreaterThan(1);
+    expect(contactAt(contacts, 0.55, 7, 0)).toBeGreaterThan(1);
+    // The sloping water crosses its horizontal top: the layer a third of the envelope below rest meets it near z = -5.4.
+    expect(Math.abs(layers(contacts, 0, -5.4)[1]!)).toBeLessThan(0.15);
+    log.dispose();
   });
 
   it("keeps a pier whose centre stands on land beyond a finite body's footprint", () => {

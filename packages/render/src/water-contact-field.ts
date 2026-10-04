@@ -11,9 +11,11 @@ import {
   VertexBuffer,
   type AbstractEngine,
   type AbstractMesh,
+  type Geometry,
   type Scene,
   type ThinEngine,
 } from "@babylonjs/core";
+import { geometryRevision, unwatchGeometry, watchGeometry } from "./geometry-revision";
 import { isEditorHelperMesh } from "./helper-mesh";
 import { RENDERING_GROUP } from "./sorting";
 import { distanceTransform, type WaterFieldSurface } from "./water-field";
@@ -35,6 +37,9 @@ const SCAN_MS = 100;
 const MOVE_MS = 33;
 /** Surfaces above or below a layer count a little more than horizontal ones, so nearness is not contact. */
 const VERTICAL_WEIGHT = 1.5;
+/** Most rest-height samples per side over an object on a sloped body (rivers, tilted volumes), bilinearly interpolated. */
+const REST_GRID = 17;
+const REST_SPACING = 1;
 const INF = 1e20;
 
 /** Meshes that can meet the water: visible world geometry, not editor helpers, terrain or water. */
@@ -59,28 +64,51 @@ type Piece = {
   /** Thin-instance index, or -1. */
   instance: number;
   matrix: Float64Array;
+  /** The watched geometry and its position revision when last sliced (NaN when its updates cannot be counted). */
+  geometry: Geometry | null;
+  revision: number;
   stale: boolean;
   /** XZ bounds of the triangles inside the wave envelope; null when none reach it. */
   bounds: Rect | null;
-  level: number;
   /** Per layer: x0, z0, x1, z1 cross-section segments at that layer's height. */
   contours: Float64Array[];
   /** Per layer: the cross-section closes, so its interior is known. */
   closed: boolean[];
-  /** World triangles within the envelope (x, y, z for three corners). */
+  /** Triangles within the envelope: world x, height above the local rest height, world z for three corners. */
   triangles: Float64Array;
 };
 
-const localBounds = new WeakMap<object, { min: Vector3; max: Vector3 }>();
-function geometryBounds(positions: ArrayLike<number>): { min: Vector3; max: Vector3 } {
+/**
+ * The last scan's placements of one thin-instanced mesh. They are reused until its transform, geometry or
+ * instance matrices change, so a static forest is not walked instance by instance every scan.
+ */
+type ThinPlacements = {
+  scan: number;
+  surface: number;
+  geometry: Geometry;
+  revision: number;
+  world: Float64Array;
+  /** Babylon replaces these matrix objects when instances are set or moved. */
+  matrices: readonly Matrix[];
+  /** Keys of the instances that reach the wave envelope. */
+  keys: string[];
+};
+
+const sourceGeometry = (mesh: AbstractMesh): Geometry | null => (mesh instanceof InstancedMesh ? mesh.sourceMesh : mesh as Mesh).geometry ?? null;
+/** Position revision of a watched geometry, or NaN when its updates cannot be counted (never equal, so never cached). */
+const positionRevision = (geometry: Geometry | null) => geometry ? geometryRevision(geometry)?.positions ?? NaN : NaN;
+
+const localBounds = new WeakMap<object, { min: Vector3; max: Vector3; revision: number }>();
+/** Local bounds of a geometry's vertices, cached until its positions are rewritten, e.g. by a simulated cable. */
+function geometryBounds(positions: ArrayLike<number>, revision: number): { min: Vector3; max: Vector3 } {
   let bounds = localBounds.get(positions as object);
-  if (!bounds) {
+  if (!bounds || bounds.revision !== revision) {
     const min = new Vector3(Infinity, Infinity, Infinity), max = new Vector3(-Infinity, -Infinity, -Infinity);
     for (let i = 0; i + 2 < positions.length; i += 3) {
       min.minimizeInPlaceFromFloats(positions[i]!, positions[i + 1]!, positions[i + 2]!);
       max.maximizeInPlaceFromFloats(positions[i]!, positions[i + 1]!, positions[i + 2]!);
     }
-    bounds = { min, max };
+    bounds = { min, max, revision };
     localBounds.set(positions as object, bounds);
   }
   return bounds;
@@ -107,9 +135,11 @@ const union = (a: Rect | null, b: Rect | null): Rect | null => !a ? b : !b ? a
 /**
  * Per-surface, objects-only contact texture: the signed horizontal distance to every object
  * crossing the water at four heights across the wave envelope (negative inside closed objects).
- * Surfaces just above or below a layer add a weighted vertical distance, so shallow hulls, rafts
- * and deck undersides between layers still meet the rising and falling water. Rebuilt only when
- * objects move, appear or disappear, or the surface or wave envelope changes; waves never rebake it.
+ * Heights are relative to the local rest height, so sloped rivers cut each part of an object at
+ * its own waterline. Surfaces just above or below a layer add a weighted vertical distance, so
+ * shallow hulls, rafts and deck undersides between layers still meet the rising and falling water.
+ * Rebuilt only when objects move, deform, appear or disappear, or the surface or wave envelope
+ * changes; waves never rebake it.
  */
 export class WaterContactField {
   texture: RawTexture | null = null;
@@ -125,6 +155,10 @@ export class WaterContactField {
   private cell = 1;
   private rect: Rect | null = null;
   private readonly pieces = new Map<string, Piece>();
+  private readonly thin = new Map<Mesh, ThinPlacements>();
+  private scans = 0;
+  /** Bumped when the surface changes, which invalidates every cached thin-instance placement. */
+  private surfaceEpoch = 0;
   private dirty: Rect[] = [];
   private lastScan = -Infinity;
   private lastBuild = -Infinity;
@@ -142,7 +176,7 @@ export class WaterContactField {
   /** Track objects and rebuild what changed. Returns true when the texture changed. */
   update(now: number, force = false): boolean {
     const full = this.syncSurface() || force;
-    if (full) for (const piece of this.pieces.values()) piece.stale = true;
+    if (full) { this.surfaceEpoch++; for (const piece of this.pieces.values()) piece.stale = true; }
     if (full || now - this.lastScan >= SCAN_MS) { this.lastScan = now; this.scan(); }
     else this.track();
     let stale = full || this.dirty.length > 0;
@@ -167,7 +201,25 @@ export class WaterContactField {
     return changed;
   }
 
-  dispose(): void { this.release(); this.pieces.clear(); }
+  dispose(): void {
+    this.release();
+    for (const piece of this.pieces.values()) if (piece.geometry) unwatchGeometry(piece.geometry);
+    for (const placements of this.thin.values()) unwatchGeometry(placements.geometry);
+    this.pieces.clear(); this.thin.clear();
+  }
+
+  /** True when the mesh now draws another geometry or its positions were rewritten since the last slice. */
+  private geometryChanged(piece: Piece): boolean {
+    const geometry = sourceGeometry(piece.mesh);
+    if (geometry !== piece.geometry) {
+      if (piece.geometry) unwatchGeometry(piece.geometry);
+      if (geometry) watchGeometry(geometry);
+      piece.geometry = geometry;
+      return true;
+    }
+    // An uncountable geometry (NaN) keeps its last slice; matrix changes still rebuild it.
+    return !Number.isNaN(piece.revision) && positionRevision(geometry) !== piece.revision;
+  }
 
   private release(): void {
     this.texture?.dispose(); this.texture = null; this.data = null; this.rect = null;
@@ -175,6 +227,7 @@ export class WaterContactField {
 
   /** Candidate placements of every mesh that reaches the wave envelope near this surface. */
   private scan(): void {
+    const scan = ++this.scans;
     const seen = new Set<string>();
     const box = this.surface.mesh.getBoundingInfo().boundingBox, margin = this.range, amplitude = this.amplitude;
     // The rendered surface's world box bounds every rest height, so most meshes need no height query.
@@ -182,17 +235,19 @@ export class WaterContactField {
       && (this.surface.unbounded || (max.x >= box.minimumWorld.x - margin && min.x <= box.maximumWorld.x + margin && max.z >= box.minimumWorld.z - margin && min.z <= box.maximumWorld.z + margin));
     const reaches = (min: Vector3, max: Vector3) => {
       if (!near(min, max)) return false;
-      const level = this.levelIn(min, max);
-      return level !== null && min.y <= level + amplitude && max.y >= level - amplitude;
+      const levels = this.levelsIn(min, max);
+      return levels !== null && min.y <= levels[1] + amplitude && max.y >= levels[0] - amplitude;
     };
     const visit = (key: string, mesh: AbstractMesh, instance: number, matrix: ArrayLike<number>) => {
       seen.add(key);
       const piece = this.pieces.get(key);
       if (!piece) {
-        this.pieces.set(key, { mesh, instance, matrix: new Float64Array(matrix), stale: true, bounds: null, level: 0, contours: [], closed: [], triangles: new Float64Array() });
+        const geometry = sourceGeometry(mesh);
+        if (geometry) watchGeometry(geometry);
+        this.pieces.set(key, { mesh, instance, matrix: new Float64Array(matrix), geometry, revision: NaN, stale: true, bounds: null, contours: [], closed: [], triangles: new Float64Array() });
       } else if (piece.mesh !== mesh || !sameMatrix(piece.matrix, matrix)) {
         piece.mesh = mesh; piece.matrix.set(matrix); piece.stale = true;
-      }
+      } else if (this.geometryChanged(piece)) piece.stale = true;
     };
     const centre = new Vector3(), sphereMin = new Vector3(), sphereMax = new Vector3();
     for (const mesh of this.scene.meshes) {
@@ -202,11 +257,26 @@ export class WaterContactField {
       if (!near(min, max)) continue;
       if (mesh instanceof Mesh && mesh.hasThinInstances) {
         // Thin instances (e.g. foliage) each place the geometry; the mesh bounds already cover them all.
-        const positions = mesh.getVerticesData(VertexBuffer.PositionKind);
-        if (!positions) continue;
-        const local = geometryBounds(positions);
-        const localCentre = local.min.add(local.max).scaleInPlace(0.5), localRadius = Vector3.Distance(local.min, local.max) / 2;
+        const geometry = mesh.geometry, positions = mesh.getVerticesData(VertexBuffer.PositionKind);
+        if (!geometry || !positions) continue;
         const instances = mesh.thinInstanceGetWorldMatrices();
+        let placements = this.thin.get(mesh);
+        if (placements && placements.geometry !== geometry) { unwatchGeometry(placements.geometry); this.thin.delete(mesh); placements = undefined; }
+        if (!placements) {
+          watchGeometry(geometry);
+          placements = { scan, surface: NaN, geometry, revision: NaN, world: new Float64Array(16), matrices: [], keys: [] };
+          this.thin.set(mesh, placements);
+        }
+        placements.scan = scan;
+        const revision = positionRevision(geometry);
+        if (placements.surface === this.surfaceEpoch && placements.revision === revision && sameMatrix(placements.world, world.m)
+          && sameInstances(placements.matrices, instances) && placements.keys.every((key) => this.pieces.has(key))) {
+          for (const key of placements.keys) seen.add(key);
+          continue;
+        }
+        const local = geometryBounds(positions, revision);
+        const localCentre = local.min.add(local.max).scaleInPlace(0.5), localRadius = Vector3.Distance(local.min, local.max) / 2;
+        const keys: string[] = [];
         for (let i = 0; i < instances.length; i++) {
           instances[i]!.multiplyToRef(world, this.scratch);
           const m = this.scratch.m, scale = Math.sqrt(Math.max(m[0]! ** 2 + m[1]! ** 2 + m[2]! ** 2, m[4]! ** 2 + m[5]! ** 2 + m[6]! ** 2, m[8]! ** 2 + m[9]! ** 2 + m[10]! ** 2));
@@ -215,8 +285,14 @@ export class WaterContactField {
           sphereMin.set(centre.x - radius, centre.y - radius, centre.z - radius); sphereMax.set(centre.x + radius, centre.y + radius, centre.z + radius);
           if (!near(sphereMin, sphereMax)) continue;
           const placed = worldBox(local.min, local.max, this.scratch);
-          if (reaches(placed.min, placed.max)) visit(`${mesh.uniqueId}:${i}`, mesh, i, m);
+          if (!reaches(placed.min, placed.max)) continue;
+          const key = `${mesh.uniqueId}:${i}`;
+          keys.push(key);
+          visit(key, mesh, i, m);
         }
+        placements.surface = this.surfaceEpoch; placements.revision = revision;
+        placements.matrices = instances.slice(); placements.keys = keys;
+        placements.world.set(world.m);
         continue;
       }
       if (reaches(min, max)) visit(`${mesh.uniqueId}`, mesh, -1, world.m);
@@ -224,52 +300,68 @@ export class WaterContactField {
     for (const [key, piece] of this.pieces) {
       if (seen.has(key)) continue;
       if (piece.bounds) this.dirty.push(piece.bounds);
+      if (piece.geometry) unwatchGeometry(piece.geometry);
       this.pieces.delete(key);
+    }
+    for (const [mesh, placements] of this.thin) {
+      if (placements.scan === scan) continue;
+      unwatchGeometry(placements.geometry);
+      this.thin.delete(mesh);
     }
   }
 
-  /** Between scans, only already-tracked placements are checked for movement. */
+  /** Every frame, tracked placements are checked for rewritten vertices and (except thin instances) movement. */
   private track(): void {
     for (const piece of this.pieces.values()) {
-      if (piece.stale || piece.instance >= 0) continue;
+      if (piece.stale) continue;
       if (piece.mesh.isDisposed()) { piece.stale = true; continue; }
+      if (this.geometryChanged(piece)) { piece.stale = true; continue; }
+      if (piece.instance >= 0) continue;
       const world = piece.mesh.computeWorldMatrix();
       if (!sameMatrix(piece.matrix, world.m)) { piece.matrix.set(world.m); piece.stale = true; }
     }
   }
 
-  /** Rest height beneath a box: its centre first, then its corners and edges, e.g. a pier centred on land. */
-  private levelIn(min: Vector3, max: Vector3): number | null {
-    const cx = (min.x + max.x) / 2, cz = (min.z + max.z) / 2;
+  /**
+   * Lowest and highest rest height beneath a box, from its centre, corners and edges (e.g. a pier centred on
+   * land); level bodies stop at the first sample inside the footprint. Null when the box misses the body.
+   */
+  private levelsIn(min: Vector3, max: Vector3): [number, number] | null {
+    const cx = (min.x + max.x) / 2, cz = (min.z + max.z) / 2, varies = this.surface.restVaries === true;
+    let low = Infinity, high = -Infinity;
     for (const [x, z] of [[cx, cz], [min.x, min.z], [max.x, min.z], [min.x, max.z], [max.x, max.z], [cx, min.z], [cx, max.z], [min.x, cz], [max.x, cz]] as const) {
       const level = this.surface.surfaceY(x, z);
-      if (level !== null) return level;
+      if (level === null) continue;
+      low = Math.min(low, level); high = Math.max(high, level);
+      if (!varies) break;
     }
-    return null;
+    return low <= high ? [low, high] : null;
   }
 
-  /** Cross-sections and envelope triangles of one placement, in world space. */
+  /** Cross-sections and envelope triangles of one placement: world X/Z, heights relative to the local rest height. */
   private slice(piece: Piece): void {
     piece.stale = false; piece.bounds = null; piece.contours = []; piece.closed = []; piece.triangles = new Float64Array();
     const mesh = piece.mesh;
     if (mesh.isDisposed()) return;
     const source = mesh instanceof InstancedMesh ? mesh.sourceMesh : mesh as Mesh;
+    this.geometryChanged(piece);
+    piece.revision = positionRevision(piece.geometry);
     const positions = source.getVerticesData(VertexBuffer.PositionKind), indices = source.getIndices();
     if (!positions || !indices) return;
     // A mesh that kept moving while its rebuild was throttled is sliced where it is now.
     if (piece.instance < 0) piece.matrix.set(mesh.computeWorldMatrix().m);
     const matrix = Matrix.FromArray(piece.matrix);
-    const local = geometryBounds(positions);
+    const local = geometryBounds(positions, piece.revision);
     const placed = worldBox(local.min, local.max, matrix);
-    const level = this.levelIn(placed.min, placed.max);
-    if (level === null) return;
-    piece.level = level;
-    const amplitude = this.amplitude, low = level - amplitude, high = level + amplitude;
-    const heights = WATER_CONTACT_LAYER_OFFSETS.map((offset) => level + offset * amplitude);
+    const levels = this.levelsIn(placed.min, placed.max);
+    if (levels === null) return;
+    const amplitude = this.amplitude, low = -amplitude, high = amplitude;
+    const heights = WATER_CONTACT_LAYER_OFFSETS.map((offset) => offset * amplitude);
+    const rest = this.restHeights(placed.min, placed.max, levels[0]);
     const world = new Float64Array(positions.length), point = new Vector3();
     for (let i = 0; i + 2 < positions.length; i += 3) {
       Vector3.TransformCoordinatesFromFloatsToRef(positions[i]!, positions[i + 1]!, positions[i + 2]!, matrix, point);
-      world[i] = point.x; world[i + 1] = point.y; world[i + 2] = point.z;
+      world[i] = point.x; world[i + 1] = point.y - rest(point.x, point.z); world[i + 2] = point.z;
     }
     const triangles: number[] = [], contours: number[][] = heights.map(() => []);
     let bounds: Rect | null = null;
@@ -313,6 +405,28 @@ export class WaterContactField {
       }
       return segments.length > 0 && open.size === 0;
     });
+  }
+
+  /**
+   * Rest height under a world X/Z within a box. Level bodies use one height; sloped ones (rivers, tilted volumes)
+   * interpolate a grid of rest samples, so a long object is cut at its own waterline along its whole length.
+   */
+  private restHeights(min: Vector3, max: Vector3, level: number): (x: number, z: number) => number {
+    const restY = this.surface.restY;
+    if (!this.surface.restVaries || !restY) return () => level;
+    // About a sample per metre: rest heights vary smoothly, so small objects need only their corners.
+    const count = (extent: number) => Math.max(2, Math.min(REST_GRID, Math.ceil(extent / REST_SPACING) + 1));
+    const nx = count(max.x - min.x), nz = count(max.z - min.z);
+    const sx = Math.max(1e-6, max.x - min.x) / (nx - 1), sz = Math.max(1e-6, max.z - min.z) / (nz - 1);
+    const grid = new Float64Array(nx * nz);
+    for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) grid[j * nx + i] = restY(min.x + i * sx, min.z + j * sz);
+    return (x, z) => {
+      const u = Math.max(0, Math.min(nx - 1, (x - min.x) / sx)), v = Math.max(0, Math.min(nz - 1, (z - min.z) / sz));
+      const i = Math.min(nx - 2, Math.floor(u)), j = Math.min(nz - 2, Math.floor(v)), fu = u - i, fv = v - j;
+      const a = grid[j * nx + i]! + (grid[j * nx + i + 1]! - grid[j * nx + i]!) * fu;
+      const b = grid[(j + 1) * nx + i]! + (grid[(j + 1) * nx + i + 1]! - grid[(j + 1) * nx + i]!) * fu;
+      return a + (b - a) * fv;
+    };
   }
 
   private rebuild(full: boolean): boolean {
@@ -406,7 +520,7 @@ export class WaterContactField {
     for (let k = 0; k < LAYERS; k++) {
       seed.fill(INF); inside.fill(0);
       for (const piece of pieces) {
-        const y = piece.level + WATER_CONTACT_LAYER_OFFSETS[k]! * this.amplitude;
+        const y = WATER_CONTACT_LAYER_OFFSETS[k]! * this.amplitude;
         const segments = piece.contours[k]!;
         for (let s = 0; s < segments.length; s += 4) {
           seedSegment(seed, cw, ch, u(segments[s]!), v(segments[s + 1]!), u(segments[s + 2]!), v(segments[s + 3]!));
@@ -447,6 +561,13 @@ export class WaterContactField {
       engine.updateTextureData(internal, part, w.x0, w.z0, w.x1 - w.x0, w.z1 - w.z0);
     }
   }
+}
+
+/** The same thin-instance matrix objects, in the same order. */
+function sameInstances(a: readonly Matrix[], b: readonly Matrix[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
 }
 
 /** Exact squared distances (cell units) from nearby cell centres to a cross-section segment. */

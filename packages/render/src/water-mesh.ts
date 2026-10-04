@@ -232,14 +232,17 @@ function updateSurface(s: Surface, time: number): void {
 }
 
 const scratch = new Vector3();
-/** Rest surface height (no waves) at a world X/Z, or null outside the body's footprint. */
-function waterSurfaceY(s: Surface, x: number, z: number): number | null {
+/** Rest surface height (no waves) at a world X/Z, or null outside the body's footprint (unless `beyond`). */
+function waterSurfaceY(s: Surface, x: number, z: number, beyond = false): number | null {
   Vector3.TransformCoordinatesFromFloatsToRef(x, s.world.m[13]!, z, s.inverse, scratch);
   const footprint = waterFootprint(s.body, scratch.x, scratch.z);
-  if (!footprint.inside) return null;
+  if (!footprint.inside && !beyond) return null;
   Vector3.TransformCoordinatesFromFloatsToRef(scratch.x, footprint.height, scratch.z, s.world, scratch);
   return scratch.y;
 }
+
+/** Rivers and volumes tilted out of the horizontal have a rest height that varies across the body. */
+const restVaries = (s: Surface) => s.body.kind === "river" || Math.abs(s.world.m[1]!) > 1e-9 || Math.abs(s.world.m[9]!) > 1e-9;
 
 /** The live body of a built water mesh, or null for other meshes. */
 export function waterMeshBody(mesh: Mesh): Readonly<WaterBodyProperties> | null {
@@ -301,6 +304,8 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
       mesh, unbounded: body.kind === "global", contactRange: contactRange(water),
       get amplitude() { return water.waveHeight * body.waveScale * 1.3 + 0.05; },
       surfaceY: (x, z) => waterSurfaceY(surface, x, z),
+      get restVaries() { return restVaries(surface); },
+      restY: (x, z) => waterSurfaceY(surface, x, z, true)!,
     };
     const field = new WaterField(scene, fieldSurface), contacts = new WaterContactField(scene, fieldSurface);
     surface.field = field; surface.contacts = contacts;

@@ -12,6 +12,7 @@ import {
 } from "@babylonjs/core";
 import { canCacheShadowMaterial } from "./shadow-material-policy";
 import { hasRevisionTrackedCableGeometry } from "./cable-mesh";
+import { geometryRevision, unwatchGeometry, watchGeometry } from "./geometry-revision";
 import { isAutoLodMaster, peekAutoLodLevel } from "./model-lod";
 
 /** Reused scalar/object snapshot; unchanged frames allocate no signature arrays. */
@@ -33,12 +34,6 @@ class Snapshot {
   }
 }
 
-type GeometryWatch = {
-  users: number;
-  revision: number;
-  previous: Geometry["onGeometryUpdated"];
-  notify: Geometry["onGeometryUpdated"];
-};
 type Caster = {
   snapshot: Snapshot;
   geometry: Geometry | null;
@@ -51,7 +46,6 @@ type Caster = {
 /** Conservative scene-wide invalidation for local maps with static opaque content. */
 export class ShadowMapRefresh {
   private readonly casters = new Map<AbstractMesh, Caster>();
-  private readonly geometries = new Map<Geometry, GeometryWatch>();
   private readonly maps = new WeakMap<ShadowGenerator, Snapshot>();
   /** Drawn level of each visible automatic-LOD caster for the scene camera. */
   private readonly lodLevels = new Map<AbstractMesh, number>();
@@ -65,41 +59,13 @@ export class ShadowMapRefresh {
     this.casterChanged = casterChanged;
   }
 
-  private watch(geometry: Geometry): void {
-    const existing = this.geometries.get(geometry);
-    if (existing) {
-      existing.users++;
-      return;
-    }
-    const previous = geometry.onGeometryUpdated;
-    const record: GeometryWatch = {
-      users: 1,
-      revision: 0,
-      previous,
-      notify: (changed, kind) => {
-        previous?.call(geometry, changed, kind);
-        record.revision++;
-      },
-    };
-    geometry.onGeometryUpdated = record.notify;
-    this.geometries.set(geometry, record);
-  }
-
-  private unwatch(geometry: Geometry): void {
-    const record = this.geometries.get(geometry);
-    if (!record || --record.users > 0) return;
-    if (geometry.onGeometryUpdated === record.notify)
-      geometry.onGeometryUpdated = record.previous;
-    this.geometries.delete(geometry);
-  }
-
   syncCasters(scene: Scene, meshes: ReadonlySet<AbstractMesh>): void {
     let changed = false;
     let continuous = false;
     this.lodLevels.clear();
     for (const [mesh, record] of this.casters) {
       if (meshes.has(mesh)) continue;
-      if (record.geometry) this.unwatch(record.geometry);
+      if (record.geometry) unwatchGeometry(record.geometry);
       this.casters.delete(mesh);
       changed = true;
     }
@@ -119,11 +85,12 @@ export class ShadowMapRefresh {
       }
       const geometry = mesh instanceof Mesh ? mesh.geometry : null;
       if (record.geometry !== geometry) {
-        if (record.geometry) this.unwatch(record.geometry);
+        if (record.geometry) unwatchGeometry(record.geometry);
         record.geometry = geometry;
-        if (geometry) this.watch(geometry);
+        if (geometry) watchGeometry(geometry);
       }
-      const geometryWatch = geometry ? this.geometries.get(geometry) : null;
+      // Null once another owner replaced the shared update hook: updates are no longer counted.
+      const geometryWatch = geometry ? geometryRevision(geometry) : null;
       const state = record.snapshot;
       state.begin();
       // freezeWorldMatrix(matrix), used by bone attachments, can replace/update
@@ -196,7 +163,7 @@ export class ShadowMapRefresh {
         (autoLod || !mesh.getLODLevels().length) &&
         !mesh.onBeforeRenderObservable.hasObservers() &&
         !mesh.onBeforeDrawObservable.hasObservers() &&
-        geometryWatch?.notify === geometry?.onGeometryUpdated;
+        (!geometry || geometryWatch !== null);
       state.value(safeMesh);
       state.end();
       if (state.changed) {
@@ -299,7 +266,7 @@ export class ShadowMapRefresh {
 
   dispose(): void {
     for (const record of this.casters.values())
-      if (record.geometry) this.unwatch(record.geometry);
+      if (record.geometry) unwatchGeometry(record.geometry);
     this.casters.clear();
     this.lodLevels.clear();
   }
