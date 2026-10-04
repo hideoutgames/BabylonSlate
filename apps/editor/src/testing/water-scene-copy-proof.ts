@@ -34,9 +34,12 @@ export async function runWaterSceneCopyProof(backend: "webgl2" | "webgpu", pipel
     camera.setTarget(Vector3.Zero());
     camera.minZ = 1; camera.maxZ = 100;
     scene.activeCamera = camera;
-    // An unlit opaque wall over the left half of the view, ten units in front of the camera.
+    // An unlit opaque wall over the left half of the view, ten units in front of the camera. Its right
+    // edge falls between output columns 46 and 47, inside copy texel 23, whose 2×2 footprint then holds
+    // both wall and sky.
     const wall = MeshBuilder.CreatePlane("wall", { width: 20, height: 20 }, scene);
-    wall.position.x = -10;
+    const edgeColumn = canvas.width / 2 - 1;
+    wall.position.x = -10 + (2 * edgeColumn / canvas.width - 1) * 10 * Math.tan(camera.fov / 2) * (canvas.width / canvas.height);
     const paint = new StandardMaterial("wall", scene);
     paint.disableLighting = true;
     paint.emissiveColor = new Color3(0.8, 0.4, 0.2);
@@ -88,6 +91,8 @@ export async function runWaterSceneCopyProof(backend: "webgl2" | "webgpu", pipel
     const copy = {
       width: texture.width, height: texture.height, invSize: [...entry.invSize], scale: entry.scale,
       wall: texel(Math.floor(texture.width * 0.25)), sky: texel(Math.floor(texture.width * 0.75)),
+      // The texel straddling the wall edge, and its sky-only neighbour.
+      edge: texel(Math.floor(edgeColumn * entry.scale)), beyondEdge: texel(Math.floor(edgeColumn * entry.scale) + 1),
     };
     const visibleWork = graph.waterSceneCopyDiagnostics()!;
     // Without visible water the direct path draws the same frame and no copy runs.

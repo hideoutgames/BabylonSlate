@@ -55,6 +55,14 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       expect(result.copy.wall[3]).toBeCloseTo(10, 1);
       // The 65000 sky sentinel is stored as the nearest half float (64992); readers treat a >= 64000 as sky.
       expect(result.copy.sky[3]).toBeGreaterThanOrEqual(64000);
+      // A downsampled texel keeps the nearest depth of its 2×2 footprint (wall over sky) and averages its colour.
+      expect(result.copy.edge[3]).toBeCloseTo(10, 1);
+      expect(result.copy.beyondEdge[3]).toBeGreaterThanOrEqual(64000);
+      for (let channel = 0; channel < 3; channel += 1) {
+        const wall = linear(result.outputVisible.wall[channel]!), sky = linear(result.outputVisible.sky[channel]!);
+        expect(result.copy.edge[channel]).toBeCloseTo((wall + sky) / 2, 1.7);
+        expect(result.copy.beyondEdge[channel]).toBeCloseTo(sky, 1.7);
+      }
       // Splitting the object pass (and swapping onto the own pair) draws the same output as the direct path.
       expect(result.outputVisible.wall[0]).toBeGreaterThan(150);
       for (let channel = 0; channel < 3; channel += 1) {

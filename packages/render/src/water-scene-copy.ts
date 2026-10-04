@@ -157,7 +157,8 @@ void main(void) {
   float sky = reverseDepth > 0.5 ? step(raw, 0.0) : step(1.0, raw);
   vec4 view = inverseProjection * vec4(vUV * 2.0 - 1.0, raw * depthRange.x + depthRange.y, 1.0);
   float w = abs(view.w) > 1e-8 ? view.w : 1e-8;
-  float viewZ = clamp(view.z / w, 0.0, ${WATER_SCENE_COPY_SKY_DEPTH}.0);
+  // Positive distance along the view axis for either handedness.
+  float viewZ = clamp(abs(view.z / w), 0.0, ${WATER_SCENE_COPY_SKY_DEPTH}.0);
   gl_FragColor = vec4(min(rgb, vec3(${WATER_SCENE_COPY_SKY_DEPTH}.0)), mix(viewZ, ${WATER_SCENE_COPY_SKY_DEPTH}.0, sky));
 }
 `;
@@ -195,7 +196,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   let sky = select(step(1.0, raw), step(raw, 0.0), uniforms.reverseDepth > 0.5);
   let view = uniforms.inverseProjection * vec4f(uv * 2.0 - 1.0, raw * uniforms.depthRange.x + uniforms.depthRange.y, 1.0);
   let w = select(1e-8, view.w, abs(view.w) > 1e-8);
-  let viewZ = clamp(view.z / w, 0.0, ${WATER_SCENE_COPY_SKY_DEPTH}.0);
+  let viewZ = clamp(abs(view.z / w), 0.0, ${WATER_SCENE_COPY_SKY_DEPTH}.0);
   fragmentOutputs.color = vec4f(min(rgb, vec3f(${WATER_SCENE_COPY_SKY_DEPTH}.0)), mix(viewZ, ${WATER_SCENE_COPY_SKY_DEPTH}.0, sky));
 }
 `;

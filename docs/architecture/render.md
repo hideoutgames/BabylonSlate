@@ -1188,6 +1188,60 @@ Environment Sample uses the corresponding WGSL vec3 color decoder for gamma-enco
 
 Post-process retirement tracks every detached generation with separate bounded cleanup reports and actual CPU/native release. A timeout remains reportable but does not authorize freeing a Scene or Material library; confirmed late release can complete ownership cleanup. Failed actual release remains quarantined. Settled promises are removed while failures remain recorded.
 
+### Forward FrameGraph task order
+
+`ForwardSceneFrameGraph` (`framegraph-forward-scene.ts`) records these tasks; `taskNames()` lists them for diagnostics and proofs:
+
+1. `Forward admitted shadows`, `Clustered light mask`.
+2. `Forward clear` → `Forward cull`, then authored geometry or spatial-effect geometry tasks when a chain needs them.
+3. `Forward objects`: the main object pass (`isMainObjectRenderer`).
+4. Authored post-process tasks, settings effects and shared outlines.
+5. `Scene post-process output`, only when a chain exists.
+
+A view with no chain, no outline and no admitted water copy has exactly the first five tasks.
+
+**Water scene copy** (`water-scene-copy.ts`): refraction infrastructure. Screen-space reflections reuse the same copy. The water shader does not sample it yet.
+
+- **Admission.** `waterSceneCopyScale(scene, camera)` is the copy scale, or 0 when no copy is admitted. A copy is admitted only when all of these hold:
+  - device-effective Refraction, Screen Space reflections, or Planar's screen-space fallback (`sceneWaterQualityDeviceClamp`);
+  - at least one surface with a `WaterMaterialPlugin` (custom-material water cannot sample the copy);
+  - half-float render targets;
+  - Forward lighting (no clustered target);
+  - no per-group depth clear in rendering groups 1–3. `configureEditorRenderingGroups` turns these clears off. Babylon's default clear would wipe the opaque depth before the transparent pass.
+  - when the output cannot be sampled, a scene that auto-clears colour and depth.
+
+  The prepared graph records the value and compares it each frame without allocating. Any change re-plans the graph.
+- **Shared form**, used when an effect chain's scene targets or an imported output with a depth-only attachment can be sampled: `Forward clear → Forward cull → Water split → Forward objects → Water scene copy → Forward transparent →` chain.
+- **Backbuffer form**, used with no chain or when the output depth has stencil: `Forward cull → Water split → Forward clear → Forward objects → Water clear → Water opaque → Water scene copy → Forward transparent → Water output`.
+  - Frames without visible copy-sampling water draw through `Forward clear` / `Forward objects` exactly as before.
+  - Frames with it draw into an own colour + `DEPTH32_FLOAT` pair, and `Water output` copies that colour to the output.
+  - Like an effect chain, those frames leave the output depth unwritten.
+- **`Water split`** runs once per frame after culling, without allocating. It:
+  - scans the cull output for enabled plugin water whose asset samples the copy: Refraction above 0 while refraction runs, or Object Reflections while a screen-space march runs;
+  - fills the transparent pass's own list of alpha-blended meshes;
+  - toggles the opaque pass's transparent, particle and sprite flags and the disabled state of the water passes. Flags change only when visibility changes.
+
+  Without such water, every water pass runs an empty disabled pass, so the frame costs what it did before.
+- **`Water scene copy`** writes RGBA16F at `round(output size × Refraction Resolution)`:
+  - rgb is linear colour: an exact sRGB decode (`toLinearSpace`) under Legacy Display and CEL, or Scene Linear colour as-is;
+  - a is positive linear view depth, unprojected with the inverse projection (reverse-depth and half-Z aware). Sky is 65000, stored as 64992; readers treat 64000 and above as sky (`WATER_SCENE_COPY_SKY_THRESHOLD`);
+  - a downsampled texel keeps the nearest depth and the average colour of its 2×2 footprint.
+
+  It is a direct `FrameGraphTask` with an empty disabled pass. A disabled post-process task would still copy its source.
+- **`Forward transparent`** draws alpha-blended meshes, particles and sprites after the copy, into the opaque pass's targets. It has:
+  - main-pass projection semantics (`mainView`) and cutout sorting;
+  - the admitted shadow maps (`ManagedShadowsTask.addReceiver`);
+  - every rendering-group auto-clear off;
+  - a `"water"` texture dependency that keeps the copy alive.
+
+  Transparents of a lower rendering group now draw after opaques of a higher group. The shared depth buffer keeps depth-tested results unchanged. Readiness probes this pass with only the alpha-blended candidates, so opaque materials prepare no draw wrapper for its pass id.
+- **Registry.** `waterSceneCopyForPass(scene, renderPassId)` returns `{ texture, invSize, scale, revision }` for a `Forward transparent` pass, and null for any other pass. `texture` is a CLAMP `ThinTexture`; `invSize` is 1 / output size. `isMainWaterPass(scene, renderPassId)` tests for such a pass.
+  - The pass id is registered when the task is constructed, before the first readiness probe. Frozen Play materials therefore never need re-dirtying, and a rebuild gets a new pass id.
+  - The texture is attached after the build.
+  - The pass id is unregistered at actual graph disposal; a retained graph keeps its entry until it is released.
+  - Classic frames, captures, previews and thumbnails use other pass ids, so they get null.
+- **Budget.** The copy (8 bytes per copy texel) and any own pair (8 bytes per output pixel) are reserved in the managed ledger's `water` category before the build, committed after it and released after graph disposal. A refused reservation logs a warning and builds the graph without the copy.
+
 ### Color pipeline
 
 Project render settings carry a versioned color pipeline (`render.effects.colorPipeline.version = 1`) with two modes that share one ordered effect chain. `legacyDisplay` is the default for existing and new projects until Scene Linear is qualified; `sceneLinear` renders PBR output as linear HDR and resolves display color in a post-process stage. The normalized `RenderEffectsSettings` block lives in `packages/core/src/render-effects.ts`, persists with project settings and the exported player manifest, and is classified `independent` in the ownership map.
@@ -1196,7 +1250,7 @@ Project render settings carry a versioned color pipeline (`render.effects.colorP
 
 **CEL identity rule.** CEL renders display-space by construction, so `planSceneEffects` only honors `sceneLinear` for `mode === "pbr"`; under CEL the Display Color stage runs with tone mapping, exposure and contrast at identity while bloom, vignette and FXAA still apply. The session post-processing toggle (`setSceneEffectsEnabled`) also restores per-material image processing so Scene Linear never leaves materials emitting linear color without a display stage to convert it.
 
-**One output owner.** The "Scene post-process output" copy task in `framegraph-forward-scene.ts` is the only writer of the view's output: every chain — authored stack output, settings effects, or both — feeds that copy, and SceneLayers composite after it unchanged.
+**One output owner.** The "Scene post-process output" copy task in `framegraph-forward-scene.ts` is the only writer of the view's output: every chain — authored stack output, settings effects, or both — feeds that copy, and SceneLayers composite after it unchanged. The water scene copy's `Water output` copy exists only when there is no chain (see Forward FrameGraph task order).
 
 **Real-time reflections and volumetric lighting.** Project Settings / Rendering / Post Processing adds two optional blocks, persisted in `render.effects` and carried into Play/export. Older projects keep both disabled. Reflections use Babylon 9.20 screen-space ray tracing on PBR surfaces (default half resolution, 32 steps, 50-unit distance), a separable roughness blur and full-resolution Fresnel composition. Existing environment IBL remains the fallback when a ray misses; geometry outside the camera view, transparent surfaces and hidden surfaces cannot be reflected. This avoids rendering six additional scene views for a dynamic cube probe. Metallic/roughness and base color feed reflectivity for authored graph materials as well as native PBR materials.
 
@@ -1794,6 +1848,7 @@ To start, create a **Water** asset and choose **Realistic** or **Stylized**. Ope
 - Transforms resize and position the water volume, including signed scales. Waves, ripples, foam width and current speed use world metres: moving or stretching a volume does not stretch or drag their pattern. Wave Direction is a world X/Z heading; waves displace vertically and, with Steepness, horizontally (see Wave model below). Vertical surfaces cannot be sampled as water height.
 - Surface Resolution (8-128) controls target world-space detail. Ocean, Lake, Puddle and River geometry is anchored to the world: an evenly spaced grid (up to 161 by 161 vertices; rivers up to 65 across and roughly 530 rows along) depends only on the body and the volume's rotation and scale, never on the camera, so moving the view does not reshape the surface or flatten its waves. Wave components shorter than the grid spacing fade uniformly across the surface; per-pixel normals retain the detail. Only Global Water Volume follows the camera, with world-snapped inner cells and graded outer cells. Physics queries retain the full analytic waves at all distances.
 - Each water material compiles only its own style: the plugin sets `SLATE_WATER_STYLIZED` from the asset's Style, so the shader-size budget is spent once. Editing Style rebuilds the water in the asset preview, the editor scene and Play.
+- Refraction infrastructure: views on the Forward FrameGraph split their object pass around a packed colour and linear-depth copy while copy-sampling water is visible (see Forward FrameGraph task order). Built-in shading does not sample it yet.
 - Project Scalability **Water** caps render-only cost (shading detail, mesh density, contact resolution, refraction, reflections, FFT detail); see the Water tier table under rendering scalability. Water rendering gates on the device-effective `sceneWaterQualityDeviceClamp(scene).quality` (and `screenSpaceFallback` for Planar on non-flat water) and compares `sceneWaterQualityRevision(scene)` on its next prepare; queries and buoyancy never read it.
 - Realistic is lit PBR (Beer-Lambert water in the style of Unreal Water, Crest and Atlas):
   - Fresnel (F0 ≈ 0.02) weights the sky reflection against the body. Output is premultiplied by coverage (`CUSTOM_FRAGMENT_BEFORE_FOG` divides by alpha), so the reflection stays visible over clear shallows while the background shows through (1 − F) × transmittance. Bright glints raise coverage instead of clipping.
