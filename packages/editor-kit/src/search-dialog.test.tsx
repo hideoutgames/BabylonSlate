@@ -626,6 +626,30 @@ describe("AssetPicker Create New rows", () => {
     expect(screen.queryByTestId("search-item-__create__Material")).toBeNull();
   });
 
+  it("narrows create rows to createTypes while still listing every allowed type", () => {
+    const api = createApi({
+      canCreate: (type) => type === "Material" || type === "MaterialInstance",
+    });
+    render(
+      <AssetCreateProvider value={api}>
+        <AssetPicker
+          open
+          onOpenChange={() => {}}
+          assets={[
+            ...assets,
+            { guid: "i1", name: "Stone Wet", type: "MaterialInstance", path: "assets/Stone Wet" },
+          ]}
+          allowedTypes={["Material", "MaterialInstance"]}
+          createTypes={["Material"]}
+          onPick={() => {}}
+        />
+      </AssetCreateProvider>,
+    );
+    expect(screen.getByTestId("search-item-i1")).toBeTruthy();
+    expect(screen.getByTestId("search-item-__create__Material")).toBeTruthy();
+    expect(screen.queryByTestId("search-item-__create__MaterialInstance")).toBeNull();
+  });
+
   it("names the asset after the search text, then picks it and closes", async () => {
     const api = createApi();
     const onPick = vi.fn();
