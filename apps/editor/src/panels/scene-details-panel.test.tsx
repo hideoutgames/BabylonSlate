@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import type { SerializedComponent, SerializedScene, ShadowSettings, RenderPath } from "@babylonslate/core";
 import {
@@ -39,6 +40,8 @@ const harness = vi.hoisted(() => ({
   setShapeEditTarget: vi.fn<(target: SceneShapeEditTarget | null) => void>(),
   scene: null as SerializedScene | null,
   prefabComponents: [] as SerializedComponent[],
+  /** Assets a test creates after mount; the registry mock lists them. */
+  createdAssets: [] as Array<{ header: Record<string, unknown>; path: string }>,
   documentKind: "scene" as "scene" | "scene-layer",
   documentId: "scene:assets/Main.scene.babasset",
   render: { mode: "pbr" as "pbr" | "cel", cel: { shadowBands: 4 }, shadows: undefined as ShadowSettings | undefined, renderPath: undefined as RenderPath | undefined },
@@ -86,6 +89,7 @@ vi.mock("../context/document-context", () => ({
     },
     assetRegistry: {
       list: () => [
+        ...harness.createdAssets,
         ...(harness.prefabComponents.length ? [{
           header: {
             guid: "class-rich-label", name: "RichLabel", type: "Class", parentClass: "Actor",
@@ -179,6 +183,7 @@ beforeEach(() => {
   harness.render.renderPath = undefined;
   harness.scene = createDefaultScene();
   harness.prefabComponents = [];
+  harness.createdAssets = [];
   harness.applySceneChange.mockClear();
 });
 
@@ -647,6 +652,46 @@ describe("SceneDetailsPanel authoring", () => {
     const saved = harness.applySceneChange.mock.calls[0]![1];
     expect(saved.actors[0]!.components[0]!.properties.renderTargetGuid).toBe("rt-new");
     await waitFor(() => expect(screen.queryByTestId("details-asset-picker")).toBeNull());
+  });
+
+  it("creates a text-domain Material from Text Material and assigns it", async () => {
+    let refreshDocuments = () => {};
+    const createAsset = vi.fn(async () => {
+      harness.createdAssets.push({
+        header: { guid: "mat-glyph", name: "Glyph", type: "Material", parentClass: null, payload: { domain: "text" } },
+        path: "assets/Glyph.material.babasset",
+      });
+      // The real provider re-renders document consumers once the registry indexed the asset.
+      act(() => refreshDocuments());
+      return "mat-glyph";
+    });
+    scene().actors = [createActor("label", "Label", { components: [createText2DComponent("text")] })];
+    harness.selectedActorIds = ["label"];
+    function Host() {
+      const [, setTick] = useState(0);
+      refreshDocuments = () => setTick((tick) => tick + 1);
+      return (
+        <AssetCreateProvider
+          value={{
+            canCreate: (type) => type === "Material" || type === "MaterialInstance",
+            typeLabel: (type) => type,
+            createAsset,
+          }}
+        >
+          <SceneDetailsPanel {...({} as IDockviewPanelProps)} />
+        </AssetCreateProvider>
+      );
+    }
+    render(<Host />);
+    fireEvent.click(screen.getByTestId("property-label-text-materialGuid"));
+    const create = await screen.findByTestId("search-item-__create__Material");
+    // A parentless Material Instance has no text domain, so the row would be refused.
+    expect(screen.queryByTestId("search-item-__create__MaterialInstance")).toBeNull();
+    fireEvent.click(create);
+    await waitFor(() => expect(harness.applySceneChange).toHaveBeenCalledTimes(1));
+    expect(createAsset).toHaveBeenCalledWith({ type: "Material", materialDomain: "text" });
+    const saved = harness.applySceneChange.mock.calls[0]![1];
+    expect(saved.actors[0]!.components[0]!.properties.materialGuid).toBe("mat-glyph");
   });
 
   it("selects and clears a streaming scene and its read-only name in one document edit", async () => {

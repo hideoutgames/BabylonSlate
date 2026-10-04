@@ -1520,6 +1520,10 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
           ? [MODEL_MATERIALS_PICKER_ENTRY, ...pickerAssets]
           : pickerAssets}
         allowedTypes={assetPick?.allowedTypes}
+        // Domain rows (Text Material) only accept Materials of that domain, so
+        // Create New makes one; a parentless Material Instance would be refused.
+        createTypes={assetPick?.materialDomain ? ["Material"] : undefined}
+        createOptions={assetPick?.materialDomain ? { materialDomain: assetPick.materialDomain } : undefined}
         title={assetPick?.title ?? "Pick Asset"}
         allowNone
         onPick={(guid) => {

@@ -25,12 +25,12 @@ export function AssetCreateDocumentsProvider({
 }: {
   children: ReactNode;
 }) {
-  const { assetRegistry, refreshAssetRegistry, openDocuments, activeDocumentId } =
+  const { assetRegistry, noteAssetsCreated, openDocuments, activeDocumentId } =
     useDocuments();
   // Read at create time so document edits do not re-render every picker.
-  const latest = useRef({ refreshAssetRegistry, openDocuments, activeDocumentId });
+  const latest = useRef({ noteAssetsCreated, openDocuments, activeDocumentId });
   useLayoutEffect(() => {
-    latest.current = { refreshAssetRegistry, openDocuments, activeDocumentId };
+    latest.current = { noteAssetsCreated, openDocuments, activeDocumentId };
   });
 
   const value = useMemo<AssetCreateApi>(() => {
@@ -58,7 +58,9 @@ export function AssetCreateDocumentsProvider({
         parentClass: request.parentClass,
         materialDomain: request.materialDomain,
       });
-      await latest.current.refreshAssetRegistry();
+      // The mounted registry indexed the new asset on write; a full remount
+      // would rescan every root while the picker waits.
+      latest.current.noteAssetsCreated();
       return created;
     };
     return {

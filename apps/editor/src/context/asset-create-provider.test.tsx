@@ -63,13 +63,15 @@ describe("AssetCreateDocumentsProvider", () => {
   it("creates beside the owner (default: the active document) and refreshes before resolving", async () => {
     const registry = await projectRegistry();
     let listedAtRefresh = false;
-    const refreshAssetRegistry = vi.fn(async () => {
+    const noteAssetsCreated = vi.fn(() => {
       listedAtRefresh = registry
         .list()
         .some((asset) => asset.path === "assets/Levels/Rock.material.babasset");
     });
+    const refreshAssetRegistry = vi.fn();
     docs.value = {
       assetRegistry: registry,
+      noteAssetsCreated,
       refreshAssetRegistry,
       activeDocumentId: "scene:main",
       openDocuments: [
@@ -107,7 +109,9 @@ describe("AssetCreateDocumentsProvider", () => {
     await expect(
       api.createClass!({ parentClass: "GameInstance", name: "My Game" }),
     ).resolves.toBe("My_Game");
-    expect(refreshAssetRegistry).toHaveBeenCalledTimes(3);
+    expect(noteAssetsCreated).toHaveBeenCalledTimes(3);
+    // The registry indexed each asset on write; no full remount blocks the pick.
+    expect(refreshAssetRegistry).not.toHaveBeenCalled();
     await expect(api.createAsset({ type: "Audio" })).rejects.toThrow(
       /cannot be created/,
     );
@@ -116,6 +120,7 @@ describe("AssetCreateDocumentsProvider", () => {
   it("offers nothing without a project registry", () => {
     docs.value = {
       assetRegistry: null,
+      noteAssetsCreated: vi.fn(),
       refreshAssetRegistry: vi.fn(),
       activeDocumentId: null,
       openDocuments: [],

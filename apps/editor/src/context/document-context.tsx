@@ -305,6 +305,12 @@ interface DocumentContextValue {
   /** Bumps when encode/import mutates registry payloads in place. */
   registryVersion: number;
   refreshAssetRegistry: () => Promise<void>;
+  /**
+   * Re-reads the project's scene/graph lists and re-renders after assets were
+   * created through the mounted registry, which indexes them on write. Much
+   * cheaper than `refreshAssetRegistry`, which remounts and rescans every root.
+   */
+  noteAssetsCreated: () => void;
   pluginDescriptors: PluginDescriptor[];
   pluginDiagnostics: PluginDiagnostic[];
   showPluginContent: boolean;
@@ -1119,8 +1125,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     }
   }, [captureLayoutForId, documentService]);
 
-  const refreshAssetRegistry = useCallback(async () => {
-    await projectService.remountRegistry();
+  const noteAssetsCreated = useCallback(() => {
     const paths = projectService.registry?.listDocumentPaths({ rootId: "project" });
     if (projectDocument && paths) {
       setProjectDocument({
@@ -1131,6 +1136,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     }
     bump();
   }, [bump, projectDocument, projectService]);
+
+  const refreshAssetRegistry = useCallback(async () => {
+    await projectService.remountRegistry();
+    noteAssetsCreated();
+  }, [noteAssetsCreated, projectService]);
 
   const reloadDocumentsFromDisk = useCallback(
     async (paths: string[]) => {
@@ -4541,6 +4551,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       projectGuid: projectService.guid,
       registryVersion,
       refreshAssetRegistry,
+      noteAssetsCreated,
       pluginDescriptors: projectService.plugins,
       pluginDiagnostics: projectService.pluginGraphDiagnostics,
       showPluginContent:
@@ -4614,6 +4625,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       documentService,
       projectService,
       refreshAssetRegistry,
+      noteAssetsCreated,
       setShowPluginContent,
       applyPluginOverrides,
       createProjectPlugin,
