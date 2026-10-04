@@ -8,13 +8,24 @@ import { sceneWaterRemovals, waterRemovalShapeVector, waterRemovalWorldRadius } 
  * Wind-chop octaves: [heading offset (radians), wavenumber multiplier, slope, speed, phase].
  * Sharp-crested `exp(sin - 1)` waves with a little domain drag read as wind chop rather than
  * the regular interference of plain sines. All are world-space and advect with the current.
- * Realistic uses all six (the WebGL shader-size budget; the browser proof shades it under seven lights); Stylized uses three.
+ * Realistic uses all six plus `CAPILLARY_OCTAVES` (the WebGL shader-size budget; the browser proof shades it under
+ * seven lights); Stylized uses three.
  */
 const DETAIL_OCTAVES = [
   [0.0, 1.0, 0.22, 1.0, 0.0], [0.9, 1.61, 0.2, 0.93, 1.7], [-0.7, 2.59, 0.17, 1.07, 4.1],
   [2.1, 4.17, 0.14, 0.9, 2.3], [-1.9, 6.71, 0.11, 1.1, 5.6], [0.35, 10.8, 0.08, 0.95, 0.9],
 ] as const;
 const STYLIZED_OCTAVES = 3;
+/**
+ * Realistic only: capillary ripples down to about a tenth of the chop's base wavelength, in the same format. Their
+ * slopes stay high like real wind ripples, so close water breaks reflections into fine glitter; they only shade
+ * (no crest height or domain drag) and fade with the pixel footprint along their own direction.
+ */
+const CAPILLARY_OCTAVES = [
+  [1.25, 17.4, 0.18, 1.0, 3.3], [-2.45, 28.1, 0.17, 0.96, 0.4], [2.75, 45.3, 0.15, 1.04, 2.2],
+] as const;
+/** Slope variance the realistic chop and capillaries carry when fully resolved (see `swLostDetail`). */
+const DETAIL_VARIANCE = [...DETAIL_OCTAVES, ...CAPILLARY_OCTAVES].reduce((sum, [, , slope]) => sum + 0.07 * slope * slope, 0);
 
 /** Compile-time style switch: each material compiles only its own style's shading. */
 const WATER_STYLIZED_DEFINE = "SLATE_WATER_STYLIZED";
@@ -76,12 +87,19 @@ float swOK${i} = swBaseK * ${f(multiplier)};
 vec2 swOD${i} = vec2(cos(U.slateWaterWaves.w + ${f(turn)}), sin(U.slateWaterWaves.w + ${f(turn)}));
 float swOX${i} = swOK${i} * dot(swOD${i}, swChop) - sqrt(9.81 * swOK${i}) * ${f(speed)} * U.slateWaterWaves.z * swTime + ${f(phase)};
 float swOW${i} = exp(sin(swOX${i}) - 1.0);
-float swOFd${i} = 1.0 - smoothstep(0.3, 1.1, swOK${i} * swFoot);
+float swOFd${i} = 1.0 - ${realistic ? `smoothstep(0.4, 1.4, swOK${i} * (abs(dot(swOD${i}, swChopFootX)) + abs(dot(swOD${i}, swChopFootY))))` : `smoothstep(0.3, 1.1, swOK${i} * swFoot)`};
 float swOA${i} = ${f(realistic ? slope : slope * (1 - Math.min(0.85, i * 0.14)))} * swOFd${i};
 swDetail += swOD${i} * (swOW${i} * cos(swOX${i}) * swOA${i});
 swChopH += (swOW${i} - 0.37) * swOA${i};
 swChop -= swOD${i} * (swOW${i} * cos(swOX${i}) * 0.3 / swOK${i});${realistic ? `
 swLostDetail += ${f(0.07 * slope * slope)} * (1.0 - swOFd${i} * swOFd${i});` : ""}`).join("");
+  const capillaries = realistic ? CAPILLARY_OCTAVES.map(([turn, multiplier, slope, speed, phase], i) => `
+float swCK${i} = swBaseK * ${f(multiplier)};
+vec2 swCD${i} = vec2(cos(U.slateWaterWaves.w + ${f(turn)}), sin(U.slateWaterWaves.w + ${f(turn)}));
+float swCX${i} = swCK${i} * dot(swCD${i}, swRippleDomain) - sqrt(9.81 * swCK${i}) * ${f(speed)} * U.slateWaterWaves.z * swTime + ${f(phase)};
+float swCFd${i} = 1.0 - smoothstep(0.4, 1.4, swCK${i} * (abs(dot(swCD${i}, swChopFootX)) + abs(dot(swCD${i}, swChopFootY))));
+swDetail += swCD${i} * (exp(sin(swCX${i}) - 1.0) * cos(swCX${i}) * ${f(slope)} * swCFd${i} * swRipplePatch);
+swLostDetail += ${f(0.07 * slope * slope)} * (1.0 - swCFd${i} * swCFd${i});`).join("") : "";
   return `
 vec2 swWorld = swPosW.xz;
 float swTime = U.slateWaterMotion.x;
@@ -105,14 +123,26 @@ float swChopShape = U.slateWaterShape.x;
 float swSpread = U.slateWaterShape.y * 2.0;
 ${swell}
 float swBaseK = 6.2831853 * U.slateWaterMotion.y / 6.0;
+float swMedium = swNoise(swFlowed * 0.43 + vec2(swTime * 0.03, 0.0));
+float swFine = swNoise(swFlowed * 2.9 - vec2(0.0, swTime * 0.09));
 // Anti-tiling: the chop domain turns slowly across the surface and gusts roughen or calm patches.
 float swLarge = swNoise(swWorld * 0.07);
 float swGust = swNoise(swWorld * 0.013 + vec2(swTime * 0.004, 0.0));
 float swTurn = (swNoise(swWorld * 0.021 + vec2(3.7, 1.3)) - 0.5) * 1.6;
-vec2 swChop = vec2(swFlowed.x * cos(swTurn) - swFlowed.y * sin(swTurn), swFlowed.x * sin(swTurn) + swFlowed.y * cos(swTurn));
+vec2 swChop = vec2(swFlowed.x * cos(swTurn) - swFlowed.y * sin(swTurn), swFlowed.x * sin(swTurn) + swFlowed.y * cos(swTurn));${realistic ? `
+// Bend the chop domain gently too, so crossing octaves never settle into a regular quilt in the sun's reflection;
+// the bend fades before its noise would alias.
+swChop += vec2(swMedium - 0.5, swLarge - 0.5) * ((1.0 - smoothstep(0.3, 1.0, swFoot)) * 0.6);` : ""}
 vec2 swDetail = vec2(0.0);
-float swChopH = 0.0;
-${detail}
+float swChopH = 0.0;${realistic ? `
+// The pixel footprint in the turned chop domain, so each octave fades by the footprint along its own direction:
+// ripples running across a grazing view stay sharp much further than an isotropic footprint would allow.
+vec2 swChopFootX = vec2(swFootX.x * cos(swTurn) - swFootX.y * sin(swTurn), swFootX.x * sin(swTurn) + swFootX.y * cos(swTurn));
+vec2 swChopFootY = vec2(swFootY.x * cos(swTurn) - swFootY.y * sin(swTurn), swFootY.x * sin(swTurn) + swFootY.y * cos(swTurn));` : ""}
+${detail}${realistic ? `
+// Capillaries ride a noise-bent domain and gather in drifting patches, so they never form a regular lattice.
+vec2 swRippleDomain = swChop + (vec2(swFine, swMedium) - vec2(0.5)) * 0.45;
+float swRipplePatch = 0.6 + 0.8 * swMedium;` : ""}${capillaries}
 // What meets the water: terrain shoreline and true depth, and objects crossing the surface.
 // Values stay continuous at the field's edges and range limits, so derivative-based antialiasing never spikes.
 float swFieldShore = mix(${f(SHORE[1])}, swTerrainShore, swFieldOn);
@@ -121,8 +151,6 @@ float swKnown = swField.a * swFieldOn;
 float swObject = abs(swContactSigned);
 float swBank = min(min(max(0.0, IN.vSlateWater.y), max(0.0, swFieldShore)), ${f(SHORE[1])});
 float swBodyDepth = max(0.01, IN.vSlateWater.z);
-float swMedium = swNoise(swFlowed * 0.43 + vec2(swTime * 0.03, 0.0));
-float swFine = swNoise(swFlowed * 2.9 - vec2(0.0, swTime * 0.09));
 float swFoamWidth = max(0.001, U.slateWaterMotion.w);
 float swCalm = smoothstep(0.0, swFoamWidth * 2.0 + 0.5, swBank);
 vec3 swBaseNormal = normalize(IN.vSlateWaterBaseNormal);
@@ -139,7 +167,7 @@ float swNearContact = 1.0 - smoothstep(0.55, 0.95, swObject / max(0.001, U.slate
 float swRippleFade = exp(-swOutside / (swContactW * 1.4)) * smoothstep(-0.05, 0.08, swContactSigned) * swRippleAA * swNearContact;
 float swAgitate = exp(-swObject / swContactW) * swRippleAA * swNearContact;
 vec2 swRipple = swContactDir * (cos(swRipplePhase) * swRippleFade * (0.1 + 0.3 * U.slateWaterMotion.z) * (0.45 + 0.55 * swRippleNoise));
-float swChopGain = U.slateWaterMotion.z * (0.35 + 0.65 * swCalm + swAgitate) * (0.5 + swGust);
+float swChopGain = U.slateWaterMotion.z * (0.35 + 0.65 * swCalm + swAgitate) * ${realistic ? "(0.7 + 0.6 * swGust)" : "(0.5 + swGust)"};
 vec2 swSlope = swGradient + swDetail * swChopGain + swRipple;
 float swBaseX = swBaseNormal.x / max(0.001, swBaseNormal.y);
 float swBaseZ = swBaseNormal.z / max(0.001, swBaseNormal.y);
@@ -214,7 +242,7 @@ vec3 swScatter = swCol * (swAmb * 0.75 + swSun * (0.3 * swSwellDotV * swSwellDot
 // Foam: a clumpy, bubbly pattern thresholded by a foam density (Crest-style), so dense foam is solid, then
 // breaks into lace and scattered patches as it thins.
 vec2 swFoamUv = swFlowed * 1.1 + swSlope * 0.4 + vec2(swMedium - 0.5, swFine - 0.5) * 0.8;
-float swFoamFade = smoothstep(0.2, 0.8, swFoot * 2.4);
+float swFoamFade = smoothstep(0.3, 0.9, swFoot * 1.6);
 float swWebA = swCells(swFoamUv);
 float swWebB = swCells(swFoamUv * 2.3 + vec2(3.1, swTime * 0.07));
 float swClump = swNoise(swFoamUv * 0.5 + vec2(7.3, swTime * 0.02));
@@ -222,7 +250,7 @@ float swBlob = swNoise(swFoamUv * 1.7 + vec2(1.9, swTime * -0.05));
 float swLace = 1.0 - smoothstep(0.0, 0.3, swWebA);
 float swBubbles = 1.0 - smoothstep(0.0, 0.25, swWebB);
 // Spread over 0-1 so a foam density maps evenly to coverage.
-float swFoamTex = mix(smoothstep(0.05, 0.85, swClump * 0.4 + swBlob * 0.25 + swLace * 0.22 + swBubbles * 0.13), 0.45, swFoamFade);
+float swFoamTex = smoothstep(0.05, 0.85, swClump * 0.4 + swBlob * 0.25 + swLace * 0.22 + swBubbles * 0.13);
 // Shores wash in bands. Whitecaps form where crests steepen (Crest Foam sets coverage) and leave streaky foam
 // trailing on their windward backs.
 float swWashPhase = swBank / swFoamWidth - swTime * 0.45 + swMedium * 1.4;
@@ -237,23 +265,30 @@ float swCap = smoothstep(1.0 - U.slateWaterShape.z, 1.5 - U.slateWaterShape.z, s
 vec2 swWindUv = vec2(dot(swFlowed, swWindDir), dot(swFlowed, vec2(-swWindDir.y, swWindDir.x)));
 float swTrailTex = swNoise(swWindUv * vec2(0.3, 2.2) + swSlope * 0.5 + vec2(swTime * 0.05, 0.0));
 float swTrail = smoothstep(0.75 - U.slateWaterShape.z, 1.2 - U.slateWaterShape.z, swCapDrive + swBack * swRough * 0.8) * smoothstep(0.3, 0.8, swTrailTex) * 0.6 * swCrestOn;
-// Wind streaks: long, thin foam lines drawn out along the wind where gusts are strong (Surface Foam).
-float swStreak = smoothstep(0.66, 0.95, swNoise(swWindUv * vec2(0.05, 1.3) + swSlope * 0.25 + vec2(swLarge * 2.0, 0.0)) * 0.75 + swGust * 0.35) * U.slateWaterSunColor.w * (0.3 + swGust) * swCalm * 1.4;
+// Wind streaks: long, thin foam lines drawn out along the wind, denser where gusts are strong. Surface Foam sets
+// how much of the sea they cover as well as how thick they are.
+float swStreakNoise = swNoise(swWindUv * vec2(0.05, 1.3) + swSlope * 0.25 + vec2(swLarge * 2.0, 0.0)) * 0.8 + swGust * 0.2;
+float swStreakCut = mix(0.92, 0.5, U.slateWaterSunColor.w);
+float swStreak = smoothstep(swStreakCut, swStreakCut + 0.18, swStreakNoise) * (0.35 + 0.65 * U.slateWaterSunColor.w) * (0.5 + 0.7 * swGust) * smoothstep(0.0, 0.03, U.slateWaterSunColor.w) * swCalm;
 float swDensity = clamp(max(max(swWash, swCap), max(swTrail, swStreak)), 0.0, 1.0);
 float swFoamSoft = 0.1 + 0.15 * (1.0 - swDensity) + fwidth(swFoamTex);
 // Bubble grain keeps the foam from reading as flat paint; it averages out before it would alias.
 float swGrain = mix(swNoise(swFoamUv * 9.0 + vec2(0.0, swTime * 0.2)), 0.5, swFoamFade);
-float swRealFoam = smoothstep(1.0 - swDensity, 1.0 - swDensity + swFoamSoft, swFoamTex) * (0.45 + 0.55 * swDensity);
+// Where the pattern is too fine to resolve, foam keeps the coverage its density would give rather than turning into
+// solid shapes wherever the density is high.
+float swRealFoam = mix(smoothstep(1.0 - swDensity, 1.0 - swDensity + swFoamSoft, swFoamTex), swDensity * swDensity * (3.0 - 2.0 * swDensity) * 0.8, swFoamFade) * (0.3 + 0.7 * swDensity);
 float swShoreLine = 1.0 - smoothstep(0.0, 0.2 * swFoamWidth + 0.05, swBank);
-swRealFoam = max(swRealFoam, swShoreLine * (0.6 + 0.35 * smoothstep(0.2, 0.5, swFoamTex)));
-// Contact foam hugs the actual waterline on objects: a dense churned band where the water meets them,
-// breaking into lace and patches that ripple crests carry outward.
-float swHug = clamp(exp(-swObject / swContactW * 3.2) * (0.55 + 0.9 * swClump) + max(0.0, cos(swRipplePhase)) * swRippleFade * 0.2, 0.0, 1.0);
-float swBubbleTex = mix(smoothstep(0.1, 0.8, swClump * 0.3 + swBlob * 0.3 + swBubbles * 0.25 + swLace * 0.15), 0.45, swFoamFade);
-float swHugSoft = 0.08 + 0.12 * (1.0 - swHug) + fwidth(swBubbleTex);
-float swRealContact = smoothstep(1.0 - swHug, 1.0 - swHug + swHugSoft, swBubbleTex) * (0.35 + 0.65 * swHug);
-float swContactLine = 1.0 - smoothstep(0.0, 0.1 * swContactW + 0.06 + fwidth(swObject), swObject);
-swRealContact = max(swRealContact, swContactLine * (0.8 + 0.2 * smoothstep(0.15, 0.5, swBubbleTex)));
+swRealFoam = max(swRealFoam, swShoreLine * (0.6 + 0.35 * smoothstep(0.2, 0.5, mix(swFoamTex, 0.45, swFoamFade))));
+// Contact foam hugs the actual waterline on objects: a dense churned band where the water meets them that breaks,
+// within about half a contact width, into sparse patches; ripple crests carry a few flecks further out.
+float swHug = clamp(exp(-swObject / swContactW * 6.0) * (0.45 + 1.1 * swClump) + max(0.0, cos(swRipplePhase)) * swRippleFade * 0.1 * swClump, 0.0, 1.0);
+// Bubbly patches: the low-frequency clumps carry the bubble web, so thinning foam breaks into islands, not a net.
+float swPatchTex = mix(smoothstep(0.12, 0.85, (swClump * 0.5 + swBlob * 0.5) * (0.75 + 0.25 * swBubbles) + swLace * 0.12), 0.45, swFoamFade);
+float swHugSoft = 0.06 + 0.1 * (1.0 - swHug) + fwidth(swPatchTex);
+// Thinner foam is sparser and more translucent.
+float swRealContact = smoothstep(1.0 - swHug, 1.0 - swHug + swHugSoft, swPatchTex) * (0.3 + 0.7 * swHug);
+float swContactLine = 1.0 - smoothstep(0.0, 0.12 * swContactW + 0.06 + fwidth(swObject), swObject + (swBlob - 0.5) * 0.06 * swContactW);
+swRealContact = max(swRealContact, swContactLine * (0.75 + 0.25 * smoothstep(0.2, 0.6, swPatchTex)));
 float swFoam = clamp(max(swRealFoam * swFoamAmount * 1.35, swRealContact * swContactStrength), 0.0, 1.0);
 // Air churned under foam lightens and clouds the water around it, without a pattern.
 float swAerated = max(swDensity * swFoamAmount, swHug * 0.6);
@@ -267,16 +302,19 @@ vec3 swReflected = reflect(-swV, normalW);
 float swRL = max(dot(swReflected, swL), 0.0);
 float swLobeWiden = U.slateWaterOrigin.w * U.slateWaterOrigin.w * 0.5 + 4.0 * swSlopeVariance;
 float swSparkLobe = 0.0006 + swLobeWiden;
-float swPathLobe = 0.012 + 0.02 * swChopGain * swChopGain + swLobeWiden;
+float swPathLobe = 0.008 + 0.02 * swChopGain * swChopGain + swLobeWiden;
+// Close up the resolved ripples already scatter the sun into glitter, so the broad path takes over only as they are
+// filtered away with distance.
+float swPathShare = 0.15 + 0.85 * smoothstep(0.1, 0.8, swLostDetail / ${f(DETAIL_VARIANCE)});
 float swSunFres = 0.02 + 0.98 * pow(1.0 - clamp(dot(swV, normalize(swV + swL)), 0.0, 1.0), 5.0);
-vec3 swGlint = swSun * (swSunFres * step(0.0, swL.y) * 0.0796 * (exp((swRL - 1.0) / swSparkLobe) / swSparkLobe + exp((swRL - 1.0) / swPathLobe) / swPathLobe));
+vec3 swGlint = swSun * (swSunFres * step(0.0, swL.y) * 0.1592 * ((1.0 - swPathShare) * exp((swRL - 1.0) / swSparkLobe) / swSparkLobe + swPathShare * exp((swRL - 1.0) / swPathLobe) / swPathLobe));
 float swSpark = swSparkBase * 3.0 * pow(swRL, 40.0) * (1.0 - swFoam);
 
 // Foam is matte and lit: PBR shades it as albedo, and its roughness and coverage remove the mirror.
 float swEdgeFade = smoothstep(0.0, 0.2, swBank + 0.02);
 float swGloss = (1.0 - swFoam) * swEdgeFade;
 // Thicker foam is brighter; bubbles vary it slightly.
-surfaceAlbedo = U.slateWaterFoam.rgb * (swFoam * swEdgeFade * (0.78 + 0.22 * swGrain));
+surfaceAlbedo = U.slateWaterFoam.rgb * (swFoam * swEdgeFade * (0.7 + 0.3 * swGrain));
 swMatte = swFoam;
 vec3 swEmissive = swScatter * ((1.0 - swFres) * (1.0 - swTransmit) * swGloss) + (swGlint + vec3(swSpark) * swSun) * swGloss;
 alpha = (1.0 - (1.0 - swFres) * swTransmit * (1.0 - swFoam)) * swEdgeFade;
