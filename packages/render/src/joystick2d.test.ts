@@ -82,9 +82,10 @@ describe("SceneLayer joystick", () => {
     const second = createJoystick2DMesh(layer.scene, "second", { radius: 2, joystickRadius: 1, deadZone: 0 });
     second.position.x = 4;
     second.metadata = { ...second.metadata, overlayActorGuid: "second" };
-    input.down(1, hits(), 400, 225);
+    second.computeWorldMatrix(true);
+    expect(input.down(1, hits(), 400, 225)).toBe(true);
     input.move(1, 412.5, 225);
-    input.down(2, hits(500, 225), 500, 225);
+    expect(input.down(2, hits(500, 225), 500, 225)).toBe(true);
     input.move(2, 525, 225);
     expect(value()).toEqual({ x: 1, y: 0 });
     input.release(2);

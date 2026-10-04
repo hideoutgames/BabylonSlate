@@ -10,12 +10,19 @@ export class Joystick2DInput {
   private readonly captures = new Map<number, Capture>();
   private readonly ignoredPointers = new Set<number>();
   private readonly emitted = new Map<string, number>();
+  private readonly layerFor: (id: string) => SceneLayerView | undefined;
+  private readonly size: () => { width: number; height: number };
+  private readonly emit: (controlId: string, value: number) => void;
 
   constructor(
-    private readonly layerFor: (id: string) => SceneLayerView | undefined,
-    private readonly size: () => { width: number; height: number },
-    private readonly emit: (controlId: string, value: number) => void,
-  ) {}
+    layerFor: (id: string) => SceneLayerView | undefined,
+    size: () => { width: number; height: number },
+    emit: (controlId: string, value: number) => void,
+  ) {
+    this.layerFor = layerFor;
+    this.size = size;
+    this.emit = emit;
+  }
 
   owns(pointerId: number): boolean {
     return this.captures.has(pointerId) || this.ignoredPointers.has(pointerId);
