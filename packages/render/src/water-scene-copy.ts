@@ -141,19 +141,23 @@ uniform float reverseDepth;
 uniform float decodeSrgb;
 #include<helperFunctions>
 float slateNearer(float a, float b) { return reverseDepth > 0.5 ? max(a, b) : min(a, b); }
+// Decode each tap before averaging: display colour must not be averaged in sRGB.
+vec3 slateSceneColor(vec2 uv) {
+  vec3 c = texture2D(sceneColor, uv).rgb;
+  return decodeSrgb > 0.5 ? toLinearSpace(c) : c;
+}
 void main(void) {
 #ifdef SLATE_COPY_FOOTPRINT
   vec2 uvA = vUV - footprint;
   vec2 uvB = vUV + vec2(footprint.x, -footprint.y);
   vec2 uvC = vUV + vec2(-footprint.x, footprint.y);
   vec2 uvD = vUV + footprint;
-  vec3 rgb = 0.25 * (texture2D(sceneColor, uvA).rgb + texture2D(sceneColor, uvB).rgb + texture2D(sceneColor, uvC).rgb + texture2D(sceneColor, uvD).rgb);
+  vec3 rgb = 0.25 * (slateSceneColor(uvA) + slateSceneColor(uvB) + slateSceneColor(uvC) + slateSceneColor(uvD));
   float raw = slateNearer(slateNearer(texture2D(sceneDepth, uvA).r, texture2D(sceneDepth, uvB).r), slateNearer(texture2D(sceneDepth, uvC).r, texture2D(sceneDepth, uvD).r));
 #else
-  vec3 rgb = texture2D(sceneColor, vUV).rgb;
+  vec3 rgb = slateSceneColor(vUV);
   float raw = texture2D(sceneDepth, vUV).r;
 #endif
-  if (decodeSrgb > 0.5) rgb = toLinearSpace(rgb);
   float sky = reverseDepth > 0.5 ? step(raw, 0.0) : step(1.0, raw);
   vec4 view = inverseProjection * vec4(vUV * 2.0 - 1.0, raw * depthRange.x + depthRange.y, 1.0);
   float w = abs(view.w) > 1e-8 ? view.w : 1e-8;
@@ -175,7 +179,10 @@ uniform reverseDepth: f32;
 uniform decodeSrgb: f32;
 #include<helperFunctions>
 fn slateNearer(a: f32, b: f32) -> f32 { return select(min(a, b), max(a, b), uniforms.reverseDepth > 0.5); }
-fn slateSceneColor(uv: vec2f) -> vec3f { return textureSampleLevel(sceneColor, sceneColorSampler, uv, 0.0).rgb; }
+fn slateSceneColor(uv: vec2f) -> vec3f {
+  let c = textureSampleLevel(sceneColor, sceneColorSampler, uv, 0.0).rgb;
+  return select(c, toLinearSpaceVec3(c), uniforms.decodeSrgb > 0.5);
+}
 fn slateSceneDepth(uv: vec2f) -> f32 { return textureSampleLevel(sceneDepth, sceneDepthSampler, uv, 0.0).r; }
 @fragment
 fn main(input: FragmentInputs) -> FragmentOutputs {
@@ -186,13 +193,12 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   let uvB = uv + vec2f(offset.x, -offset.y);
   let uvC = uv + vec2f(-offset.x, offset.y);
   let uvD = uv + offset;
-  var rgb = 0.25 * (slateSceneColor(uvA) + slateSceneColor(uvB) + slateSceneColor(uvC) + slateSceneColor(uvD));
+  let rgb = 0.25 * (slateSceneColor(uvA) + slateSceneColor(uvB) + slateSceneColor(uvC) + slateSceneColor(uvD));
   let raw = slateNearer(slateNearer(slateSceneDepth(uvA), slateSceneDepth(uvB)), slateNearer(slateSceneDepth(uvC), slateSceneDepth(uvD)));
 #else
-  var rgb = slateSceneColor(uv);
+  let rgb = slateSceneColor(uv);
   let raw = slateSceneDepth(uv);
 #endif
-  if (uniforms.decodeSrgb > 0.5) { rgb = toLinearSpaceVec3(rgb); }
   let sky = select(step(1.0, raw), step(raw, 0.0), uniforms.reverseDepth > 0.5);
   let view = uniforms.inverseProjection * vec4f(uv * 2.0 - 1.0, raw * uniforms.depthRange.x + uniforms.depthRange.y, 1.0);
   let w = select(1e-8, view.w, abs(view.w) > 1e-8);

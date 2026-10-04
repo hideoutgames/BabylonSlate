@@ -1225,7 +1225,7 @@ A view with no chain, no outline and no admitted water copy has exactly the firs
 - **`Water scene copy`** writes RGBA16F at `round(output size × Refraction Resolution)`:
   - rgb is linear colour: an exact sRGB decode (`toLinearSpace`) under Legacy Display and CEL, or Scene Linear colour as-is;
   - a is positive linear view depth, unprojected with the inverse projection (reverse-depth and half-Z aware). Sky is 65000, stored as 64992; readers treat 64000 and above as sky (`WATER_SCENE_COPY_SKY_THRESHOLD`);
-  - a downsampled texel keeps the nearest depth and the average colour of its 2×2 footprint.
+  - a downsampled texel keeps the nearest depth and the average linear colour (each tap decoded before averaging) of its 2×2 footprint.
 
   It is a direct `FrameGraphTask` with an empty disabled pass. A disabled post-process task would still copy its source.
 - **`Forward transparent`** draws alpha-blended meshes, particles and sprites after the copy, into the opaque pass's targets. It has:
