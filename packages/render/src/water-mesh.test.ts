@@ -66,9 +66,10 @@ describe("Water rendering", () => {
       const waterData = mesh.getVerticesData("slateWaterData")!;
       const matrix = mesh.computeWorldMatrix(true);
       const transform = { position: mesh.position, rotation: mesh.rotationQuaternion, scale: mesh.scaling };
-      // Interior vertices compare the renderer and the public physics query, not a duplicate wave formula.
+      // Vertices compare the renderer and the public physics query, not a duplicate wave formula, including the
+      // bank fade of the Gerstner offset near the edges.
       for (let i = 15; i < positions.length - 15; i += 57) {
-        if (waterData[i / 3 * 4 + 1]! < 1) continue;
+        if (waterData[i / 3 * 4 + 1]! < 0.001) continue;
         const point = Vector3.TransformCoordinates(Vector3.FromArray(positions, i), matrix);
         const sample = sampleWaterSurface(water, body, point, 1.7, transform);
         expect(sample.found).toBe(true);
@@ -87,16 +88,20 @@ describe("Water rendering", () => {
       const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 50, length: 30, waveScale: 1 }));
       const global = createWaterMesh(scene, "global", normalizeWaterBody({}, "global"));
       setSceneWaterTime(scene, 4); updateSceneWater(scene);
-      // Culling bounds are the authored footprint padded by the farthest Gerstner waves move its edges.
+      // Culling bounds are the authored footprint padded by the wave envelopes (horizontally too, for tilted volumes).
       const reach = waterHorizontalEnvelope(createDefaultWaterDefinition(), 1), bounds = [-30 - reach, 30 + reach, -20 - reach, 20 + reach];
       expect(reach).toBeGreaterThan(0.1);
       const before = ocean.getBoundingInfo().boundingBox;
       for (const [i, value] of [before.minimum.x, before.maximum.x, before.minimum.z, before.maximum.z].entries()) expect(value).toBeCloseTo(bounds[i]!, 5);
+      // Gerstner motion fades out at the banks, so the rendered edge stays on the authored footprint.
       const vertices = ocean.getVerticesData(VertexBuffer.PositionKind)!;
+      let widest = 0;
       for (let i = 0; i < vertices.length; i += 3) {
-        expect(Math.abs(vertices[i]!)).toBeLessThanOrEqual(30 + reach + 1e-4);
-        expect(Math.abs(vertices[i + 2]!)).toBeLessThanOrEqual(20 + reach + 1e-4);
+        expect(Math.abs(vertices[i]!)).toBeLessThanOrEqual(30 + 1e-4);
+        expect(Math.abs(vertices[i + 2]!)).toBeLessThanOrEqual(20 + 1e-4);
+        widest = Math.max(widest, Math.abs(vertices[i]!));
       }
+      expect(widest).toBeCloseTo(30, 4);
       const lakeSurface = Array.from(lake.getVerticesData(VertexBuffer.PositionKind)!);
       camera.position.set(10000, 4, -5000); updateSceneWater(scene);
       // Finite water is anchored to the world: the camera neither reshapes nor flattens its waves.
@@ -191,6 +196,10 @@ describe("Water rendering", () => {
       // Gerstner waves carry the centre vertex sideways; the query at its displaced X/Z finds the same surface.
       expect(Math.hypot(positions[middle]!, positions[middle + 2]!)).toBeGreaterThan(0.01);
       expect(height).toBeCloseTo(sampleWaterSurface(water, body, { x: positions[middle]!, y: 0, z: positions[middle + 2]! }, 2).height, 5);
+      // The built-in shader subtracts this per-vertex offset from the displaced position to find its rest point.
+      const offsets = mesh.getVerticesData("slateWaterOffset")!;
+      expect(offsets[centreVertex(mesh) * 2]).toBeCloseTo(positions[middle]!, 5);
+      expect(offsets[centreVertex(mesh) * 2 + 1]).toBeCloseTo(positions[middle + 2]!, 5);
       const uploads = vi.spyOn(engine, "updateDynamicVertexBuffer");
       updateSceneWater(scene);
       expect(uploads).not.toHaveBeenCalled();

@@ -40,6 +40,7 @@ export async function runWaterRenderingProof(backend: "webgl2" | "webgpu") {
     const pan: Record<string, number> = {};
     const whitecaps: Record<string, { calm: number; breaking: number; calmChange: number }> = {};
     const surfaceFoam: Record<string, { clear: number; foamy: number }> = {};
+    const gerstner: Record<string, { classic: number; ocean: number; change: number }> = {};
     const subsurface: Record<string, { off: number; on: number }> = {};
     // Mean brightness of the view centre.
     const centreLight = (pixels: number[]) => {
@@ -132,6 +133,14 @@ export async function runWaterRenderingProof(backend: "webgl2" | "webgpu") {
       const breaking = await shoot(sea(0.8));
       evidence[style + "-whitecaps"] = breaking.png;
       whitecaps[style] = { calm: whiteShare(calm.pixels), breaking: whiteShare(breaking.pixels), calmChange: waterChange(calm.pixels, foamless.pixels) };
+      // Steep Gerstner seas, Classic and Ocean Spectrum (eight components): the shader shades the swell at each
+      // fragment's rest point with the geometry's own components, so both models compile and light like the sea.
+      const steep = (waveModel: "classic" | "ocean") => createWaterMesh(scene, "gerstner", ocean300, { ...rough, steepness: 1, waveModel });
+      const classicSea = await shoot(steep("classic"));
+      const spectrumSea = await shoot(steep("ocean"));
+      evidence[style + "-gerstner-classic"] = classicSea.png;
+      evidence[style + "-gerstner-ocean-spectrum"] = spectrumSea.png;
+      gerstner[style] = { classic: waterLight(classicSea.pixels), ocean: waterLight(spectrumSea.pixels), change: waterChange(classicSea.pixels, spectrumSea.pixels) };
       // Surface Foam adds open-water foam (Realistic wind streaks, Stylized drifting patches) to an otherwise clear sea.
       const open = (overrides: Partial<typeof water>) => createWaterMesh(scene, "open-sea", ocean300, { ...water, crestFoam: 0, sparkles: 0, ...overrides });
       const clearSea = await shoot(open({ surfaceFoam: 0 }));
@@ -331,7 +340,7 @@ export async function runWaterRenderingProof(backend: "webgl2" | "webgpu") {
     const waveTerrain = { crestHeight: crest.height, troughHeight: trough.height,
       crestDifference: difference(high.pixels), troughDifference: difference(low.pixels) };
     water.dispose(); terrain.dispose();
-    return { evidence, differences, brightness, crowded, pan, whitecaps, surfaceFoam, subsurface, clearReflection, waveTerrain, contact, ripples };
+    return { evidence, differences, brightness, crowded, pan, whitecaps, surfaceFoam, gerstner, subsurface, clearReflection, waveTerrain, contact, ripples };
   } finally {
     const device = (engine as { _device?: { queue: { onSubmittedWorkDone(): Promise<void> } } })._device;
     engine.flushFramebuffer(); await device?.queue.onSubmittedWorkDone();

@@ -340,6 +340,27 @@ describe("Water surfaces", () => {
       expect(sampleWaterSurface(water, body, { x: body.width / 2 + 0.01, y: -1, z: 0 }, 1.5).found).toBe(false);
     }
   });
+  it("sharpens crests and widens troughs as Steepness rises, for both wave models", () => {
+    const body = normalizeWaterBody({}, "global");
+    for (const waveModel of ["classic", "ocean"] as const) {
+      // One heading and a rounded profile, so only the Gerstner motion shapes the crests.
+      const profile = (steepness: number) => {
+        const water = { ...createDefaultWaterDefinition(), waveSpread: 0, choppiness: 0, waveDirection: 0, waveModel, steepness };
+        let above = 0, steepest = 0;
+        for (let i = 0; i < 6000; i++) {
+          const sample = sampleWaterSurface(water, body, { x: i * 0.05, y: -2, z: 1.3 }, 3.1);
+          if (sample.height > 0) above++;
+          steepest = Math.max(steepest, Math.abs(sample.normal.x / sample.normal.y));
+        }
+        return { above: above / 6000, steepest };
+      };
+      const rounded = profile(0), sharp = profile(1);
+      // Water gathers under narrower, steeper crests: the surface spends less of each wavelength above its mean.
+      expect(rounded.above).toBeGreaterThan(0.47);
+      expect(sharp.above).toBeLessThan(0.42);
+      expect(sharp.steepest).toBeGreaterThan(rounded.steepest * 1.25);
+    }
+  });
   it("re-weights the waves' mean drift for a drag-coupled support so it rocks in place at any coupling", () => {
     const body = normalizeWaterBody({}, "global"), fixed = { x: 0, z: 0 }, coupled = { x: 0, z: 0 };
     for (const water of [createDefaultWaterDefinition(), storm]) {

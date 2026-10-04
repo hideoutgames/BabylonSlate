@@ -1,7 +1,8 @@
 import { ArcRotateCamera, Matrix, Mesh, PBRMaterial, Vector3, VertexBuffer, VertexData, type Material, type Scene, type SubMesh } from "@babylonjs/core";
 import {
-  createDefaultWaterDefinition, createWaterWaveOutput, evaluateWaterWaves, normalizeWaterBody, normalizeWaterDefinition, waterFootprint,
-  waterHorizontalEnvelope, waterRiverCentreline, waterWaveEnvelope, waterWaveSet, type WaterBodyProperties, type WaterDefinition,
+  createDefaultWaterDefinition, createWaterWaveOutput, evaluateWaterWaves, normalizeWaterBody, normalizeWaterDefinition, waterBankFadeLength,
+  waterBankGain, waterEulerianGradient, waterFootprint, waterHorizontalEnvelope, waterRiverCentreline, waterWaveEnvelope, waterWaveQ, waterWaveSet,
+  type WaterBodyProperties, type WaterDefinition,
 } from "@babylonslate/core";
 import { updateDynamicMaterialBounds } from "./material-bounds";
 import { configureWaterMaterial, contactRange, WaterMaterialPlugin } from "./water-material";
@@ -15,6 +16,12 @@ type Surface = {
   world: Matrix; inverse: Matrix;
   layout: string; frame: string; time: number | null; version: number; base: Float32Array; worldBase: Float32Array; positions: Float32Array; normals: Float32Array;
   baseNormals: Float32Array; data: Float32Array; flow: Float32Array; spacing: Float32Array;
+  /** World X/Z Gerstner offset per vertex (the built-in shader subtracts it to find each fragment's rest point). */
+  offsets: Float32Array;
+  /** World X/Z direction in which each vertex's bank distance grows; the bank fade's gradient follows it. */
+  bankGradient: Float32Array;
+  /** Whether the last uploaded offsets were all zero, so calm water skips re-uploading them. */
+  offsetsZero: boolean;
   /** Sub-meshes whose culling bounds were last padded (shadow partitioning may replace them later). */
   boundedSubMeshes: number; boundedFirst: SubMesh | null;
 };
@@ -180,6 +187,7 @@ function updateLayout(s: Surface, world: Matrix, inverse: Matrix): void {
   s.normals = new Float32Array(positions.length); s.baseNormals = new Float32Array(positions.length);
   s.data = new Float32Array(positions.length / 3 * 4); s.flow = new Float32Array(positions.length);
   s.spacing = new Float32Array(positions.length / 3);
+  s.offsets = new Float32Array(positions.length / 3 * 2); s.bankGradient = new Float32Array(positions.length / 3 * 2); s.offsetsZero = true;
   const a = new Vector3(), b = new Vector3();
   for (let row = 0; row <= rows; row++) for (let col = 0; col <= columns; col++) {
     const index = row * (columns + 1) + col;
@@ -197,9 +205,10 @@ function updateLayout(s: Surface, world: Matrix, inverse: Matrix): void {
   mesh.setVerticesData("slateWaterData", s.data, true, 4);
   mesh.setVerticesData("slateWaterFlow", s.flow, true, 3);
   mesh.setVerticesData("slateWaterBaseNormal", s.baseNormals, true, 3);
+  mesh.setVerticesData("slateWaterOffset", s.offsets, true, 2);
 }
 
-const waveOut = createWaterWaveOutput();
+const waveOut = createWaterWaveOutput(), gainOut = new Float64Array(2), slopeOut = new Float64Array(2);
 const normalMatrix = new Matrix(), toLocalNormal = new Matrix();
 const up = new Vector3(), across = new Vector3(), along = new Vector3(), boundsMin = new Vector3(), boundsMax = new Vector3(), boundsPad = new Vector3();
 
@@ -254,6 +263,8 @@ function updateSurface(s: Surface, time: number): void {
   Vector3.TransformNormalFromFloatsToRef(0, 0, 1, inverse, along);
   const depth = s.body.depth * Vector3.TransformNormal(Vector3.Up(), world).length();
   const set = waterWaveSet(s.water), scale = s.body.waveScale, o = waveOut;
+  // Finite bodies fade the horizontal offset to zero at their banks, exactly as queries do (`waterBankGain`).
+  const fadeLength = s.body.kind === "global" ? 0 : waterBankFadeLength(s.water, scale), gerstner = waterWaveQ(set, scale) > 0;
   const point = new Vector3(), baseNormal = new Vector3(), localNormal = new Vector3(), flow = new Vector3(), edge = new Vector3();
   for (let i = 0; i < s.base.length; i += 3) {
     const x = s.base[i]!, y = s.base[i + 1]!, z = s.base[i + 2]!;
@@ -266,28 +277,35 @@ function updateSurface(s: Surface, time: number): void {
       baseNormal.scaleInPlace(baseNormal.y < 0 ? -1 : 1).normalize();
       baseNormal.toArray(s.baseNormals, i);
       edge.set(footprint.edgeX, 0, footprint.edgeZ); Vector3.TransformNormalToRef(edge, normalMatrix, edge);
+      const outward = edge.length() || 1;
+      s.bankGradient[i / 3 * 2] = -edge.x / outward; s.bankGradient[i / 3 * 2 + 1] = -edge.z / outward;
       flow.set(footprint.flowX, footprint.flowY, footprint.flowZ); Vector3.TransformNormalToRef(flow, world, flow);
       flow.scaleInPlace(s.body.flowSpeed / Math.max(1e-6, Math.hypot(flow.x, flow.z))).toArray(s.flow, i);
       s.data[d + 1] = Math.min(10000, Math.max(0, footprint.edge / (edge.length() || 1)));
       s.data[d + 2] = depth;
     }
     // Forward evaluation at this vertex's world rest point: the mesh never inverts, queries do.
-    evaluateWaterWaves(set, s.worldBase[i]!, s.worldBase[i + 2]!, time, s.spacing[i / 3]!, o, scale);
+    const v = i / 3 * 2;
+    waterBankGain(s.data[d + 1]!, fadeLength, gainOut);
+    evaluateWaterWaves(set, s.worldBase[i]!, s.worldBase[i + 2]!, time, s.spacing[i / 3]!, o, scale,
+      gainOut[0]!, gainOut[1]! * s.bankGradient[v]!, gainOut[1]! * s.bankGradient[v + 1]!);
     const height = o[0]!, offsetX = o[1]!, offsetZ = o[2]!;
+    s.offsets[v] = offsetX; s.offsets[v + 1] = offsetZ;
     s.positions[i] = x + up.x * height + across.x * offsetX + along.x * offsetZ;
     s.positions[i + 1] = y + up.y * height + across.y * offsetX + along.y * offsetZ;
     s.positions[i + 2] = z + up.z * height + across.z * offsetX + along.z * offsetZ;
     // Eulerian world slope J⁻ᵀ(∇rest + ∇H), the same normal a query at the displaced point reports.
     const ny = Math.max(1e-6, s.baseNormals[i + 1]!);
-    const gx = o[3]! - s.baseNormals[i]! / ny, gz = o[4]! - s.baseNormals[i + 2]! / ny;
-    const jxx = o[5]!, jxz = o[6]!, jzz = o[7]!, inv = 1 / Math.max(jxx * jzz - jxz * jxz, 1e-6);
-    localNormal.set(-(jzz * gx - jxz * gz) * inv, 1, -(jxx * gz - jxz * gx) * inv);
+    waterEulerianGradient(o, o[3]! - s.baseNormals[i]! / ny, o[4]! - s.baseNormals[i + 2]! / ny, slopeOut);
+    localNormal.set(-slopeOut[0]!, 1, -slopeOut[1]!);
     Vector3.TransformNormalToRef(localNormal, toLocalNormal, localNormal); localNormal.normalize().toArray(s.normals, i);
     s.data[d] = height; s.data[d + 3] = time;
   }
   s.mesh.updateVerticesData(VertexBuffer.PositionKind, s.positions, false);
   s.mesh.updateVerticesData(VertexBuffer.NormalKind, s.normals);
   s.mesh.updateVerticesData("slateWaterData", s.data);
+  if (gerstner || !s.offsetsZero) s.mesh.updateVerticesData("slateWaterOffset", s.offsets);
+  s.offsetsZero = !gerstner;
   if (moved) {
     s.mesh.updateVerticesData("slateWaterFlow", s.flow);
     s.mesh.updateVerticesData("slateWaterBaseNormal", s.baseNormals);
@@ -352,7 +370,7 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
     mesh.onDisposeObservable.addOnce(() => material.dispose());
   }
   const empty = new Float32Array();
-  const surface: Surface = { mesh, water, body, plugin, field: null, contacts: null, world: Matrix.Identity(), inverse: Matrix.Identity(), layout: "", frame: "", time: null, version: 0, base: empty, worldBase: empty, positions: empty, normals: empty, baseNormals: empty, data: empty, flow: empty, spacing: empty, boundedSubMeshes: -1, boundedFirst: null };
+  const surface: Surface = { mesh, water, body, plugin, field: null, contacts: null, world: Matrix.Identity(), inverse: Matrix.Identity(), layout: "", frame: "", time: null, version: 0, base: empty, worldBase: empty, positions: empty, normals: empty, baseNormals: empty, data: empty, flow: empty, spacing: empty, offsets: empty, bankGradient: empty, offsetsZero: true, boundedSubMeshes: -1, boundedFirst: null };
   let entries = surfaces.get(scene);
   if (!entries) {
     entries = new Set(); surfaces.set(scene, entries);
