@@ -71,6 +71,34 @@ describe("editor-edit render profile", () => {
     }
   });
 
+  it("counts one commit for a region id rendered by several instances", () => {
+    const recorder = createRenderProfileRecorder(true);
+    const { components } = createRenderProfileRegions(recorder.onRender);
+    const { value: ValuePanel } = components<{ value: number }>("panel:", {
+      value: ({ value }) => <span>Value {value}</span>,
+    });
+    function Documents() {
+      const [value, setValue] = useState(0);
+      return (
+        <>
+          <button type="button" onClick={() => setValue((current) => current + 1)}>
+            Edit
+          </button>
+          <ValuePanel value={value} />
+          <ValuePanel value={value} />
+        </>
+      );
+    }
+    render(<Documents />);
+    recorder.reset();
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+
+    const edited = recorder.snapshot();
+    expect(screen.getAllByText("Value 1")).toHaveLength(2);
+    expect(edited.commits).toBe(1);
+    expect(edited.regions["panel:value"]).toMatchObject({ commits: 1, updates: 2 });
+  });
+
   it("mounts no Profilers outside test mode", () => {
     const panels = { counter: Counter };
     expect(profileComponents("panel:", panels)).toBe(panels);

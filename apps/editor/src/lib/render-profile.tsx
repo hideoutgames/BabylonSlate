@@ -6,18 +6,25 @@ import {
 } from "react";
 import { isTestModeEnabled } from "@babylonslate/vfs";
 
-/** React commits that rendered one profiled region, with React's own timings. */
+/**
+ * React commits that rendered one profiled region, with React's own timings.
+ * One region id can have several mounted instances (a `panel:<component>` per
+ * open document), so phase counts and durations add up every rendered
+ * instance while `commits` counts each commit once.
+ */
 export interface RenderProfileRegion {
-  /** Commits in which anything inside the region rendered. */
+  /** Distinct commits in which anything inside the region rendered. */
   commits: number;
+  /** Rendered instances by phase; one per commit for single-instance regions. */
   mounts: number;
   updates: number;
-  /** Commits scheduled synchronously from the previous commit's layout phase. */
+  /** Renders scheduled synchronously from the previous commit's layout phase. */
   nestedUpdates: number;
   /** Sum of `actualDuration`: time spent rendering the region in those commits. */
   actualMs: number;
   /** Sum of `baseDuration`: estimated cost of re-rendering the whole region unmemoized. */
   baseMs: number;
+  /** Largest `actualDuration` of one rendered instance. */
   maxActualMs: number;
 }
 
@@ -39,6 +46,9 @@ export function createRenderProfileRecorder(
   enabled: boolean,
 ): RenderProfileRecorder {
   let regions = new Map<string, RenderProfileRegion>();
+  // Commit time of each region's latest report, so instances sharing an id
+  // in one commit add a single commit.
+  let regionCommitTimes = new Map<string, number>();
   let commits = 0;
   let lastCommitTime: number | null = null;
   return {
@@ -62,7 +72,10 @@ export function createRenderProfileRecorder(
         };
         regions.set(id, region);
       }
-      region.commits += 1;
+      if (regionCommitTimes.get(id) !== commitTime) {
+        region.commits += 1;
+        regionCommitTimes.set(id, commitTime);
+      }
       if (phase === "mount") region.mounts += 1;
       else if (phase === "nested-update") region.nestedUpdates += 1;
       else region.updates += 1;
@@ -79,6 +92,7 @@ export function createRenderProfileRecorder(
     }),
     reset: () => {
       regions = new Map();
+      regionCommitTimes = new Map();
       commits = 0;
       lastCommitTime = null;
     },
