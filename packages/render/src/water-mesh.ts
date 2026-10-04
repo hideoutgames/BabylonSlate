@@ -209,6 +209,7 @@ const up = new Vector3(), across = new Vector3(), along = new Vector3(), boundsM
  * therefore never rebuild per frame, and no per-frame extents pass runs.
  */
 function updateBounds(s: Surface, world: Matrix, inverse: Matrix): void {
+  if (!s.base.length) return;
   const vertical = waterWaveEnvelope(s.water, s.body.waveScale);
   const horizontal = s.body.kind === "global" ? 0 : waterHorizontalEnvelope(s.water, s.body.waveScale);
   const m = inverse.m;
