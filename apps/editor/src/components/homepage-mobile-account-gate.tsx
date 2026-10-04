@@ -40,7 +40,7 @@ export function HomepageMobileAccountFrame({
   }, [ready]);
   return (
     <main
-      className="homepage-theme homepage-mobile-auth safe-frame"
+      className="homepage-theme homepage-mobile-auth safe-frame safe-frame-top"
       data-testid="homepage-mobile-auth"
       data-slate-theme={scheme}
     >
