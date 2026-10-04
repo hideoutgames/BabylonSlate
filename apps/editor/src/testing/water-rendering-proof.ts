@@ -78,7 +78,7 @@ async function measureVertexParity(scene: Scene, camera: ArcRotateCamera, captur
       water: { ...createDefaultWaterDefinition("stylized"), ...quiet, waveHeight: 0.4, waveLength: 4, steepness: 1, choppiness: 0.5 },
     },
   };
-  const results = {} as Record<"ocean" | "bank", { columns: number; meanPx: number; maxPx: number; meanMetres: number; maxMetres: number; reliefMetres: number; motionPx: number }>;
+  const results = {} as Record<"ocean" | "bank", { columns: number; meanPx: number; maxPx: number; meanMetres: number; maxMetres: number; reliefMetres: number; motionPx: number; queryMeanMetres: number }>;
   try {
     for (const name of ["ocean", "bank"] as const) {
       const { body, water } = cases[name];
@@ -95,9 +95,17 @@ async function measureVertexParity(scene: Scene, camera: ArcRotateCamera, captur
       evidence[`vertex-parity-${name}-gpu`] = png(gpuShot.pixels); evidence[`vertex-parity-${name}-cpu`] = png(cpuShot.pixels);
       const gpu = profile(gpuShot.pixels), cpu = profile(cpuShot.pixels), later = profile(laterShot.pixels);
       const parity = compare(gpu, cpu), heights = gpu.filter((value): value is number => value !== null);
+      // The GPU profile against the physics query along the slice (z = 0): slab thickness and pixels allow about 1.5 cm.
+      let queryError = 0;
+      for (let x = 0; x < gpu.length; x++) {
+        if (gpu[x] === null) continue;
+        const query = sampleWaterSurface(water, body, { x: -PARITY_HALF_WIDTH + (x + 0.5) * metresPerPixel, y: 0, z: 0 }, 2.3);
+        queryError += Math.abs((gpu[x]! + 0.5) * metresPerPixel - PARITY_HALF_HEIGHT - query.height);
+      }
       results[name] = {
         ...parity, meanMetres: parity.meanPx * metresPerPixel, maxMetres: parity.maxPx * metresPerPixel,
         reliefMetres: heights.length ? (Math.max(...heights) - Math.min(...heights)) * metresPerPixel : 0, motionPx: compare(gpu, later).meanPx,
+        queryMeanMetres: heights.length ? queryError / heights.length : Infinity,
       };
     }
   } finally {

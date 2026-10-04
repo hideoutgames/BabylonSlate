@@ -77,6 +77,8 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       expect(parity.meanMetres).toBeLessThan(1e-3);
       expect(parity.maxPx).toBeLessThanOrEqual(2);
       expect(parity.reliefMetres).toBeGreaterThan(0.05);
+      // And both follow the physics query along the slice.
+      expect(parity.queryMeanMetres).toBeLessThan(0.02);
       expect(parity.motionPx).toBeGreaterThan(4);
     }
     expect(result.waveTerrain.crestHeight).toBeGreaterThan(1.6);

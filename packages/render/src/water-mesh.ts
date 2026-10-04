@@ -493,6 +493,13 @@ export function setWaterGpuWaves(mesh: Mesh, enabled: boolean): boolean {
   if (surface.gpu === enabled) return true;
   surface.gpu = enabled;
   surface.plugin.gpuWaves = enabled;
+  // The previous shader must never draw the new vertex layout (it would displace CPU-displaced vertices again): skip
+  // the surface while the new variant compiles, then restore shader hot swapping at its first bind.
+  const material = mesh.material;
+  if (material?.allowShaderHotSwapping) {
+    material.allowShaderHotSwapping = false;
+    material.onBindObservable.addOnce(() => { material.allowShaderHotSwapping = true; });
+  }
   // The vertex data layout changes with the path: rewrite every static attribute.
   surface.placed.fill(NaN);
   refreshSurface(surface, clocks.get(mesh.getScene())?.time ?? 0);
