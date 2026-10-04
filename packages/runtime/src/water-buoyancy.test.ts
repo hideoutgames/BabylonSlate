@@ -86,12 +86,38 @@ describe("Water buoyancy with native collision response", () => {
         sway.push(boat.transform.position.x * along.x + boat.transform.position.z * along.z);
       }
       expect(Math.max(...heights) - Math.min(...heights)).toBeGreaterThan(0.2);
-      // Drag follows the waves' orbital motion: the hull rocks along Wave Direction without drifting away.
+      // Drag follows the waves' orbital motion: the hull rocks along Wave Direction.
       expect(Math.max(...sway) - Math.min(...sway)).toBeGreaterThan(0.2);
-      expect(Math.abs(sway.reduce((sum, value) => sum + value, 0) / sway.length)).toBeLessThan(0.1);
       const p = boat.transform.position;
       expect(sync.lineTrace({ ...p, y: p.y + 3 }, { ...p, y: p.y - 3 }).actorId).toBe("float");
       expect(Math.abs(p.y)).toBeLessThan(0.6);
+    } finally { sync.dispose(); }
+  });
+  it.each([{ drag: 2.5 }, { drag: 20 }])("rocks a hull in place for a minute instead of drifting with the waves (drag $drag)", async ({ drag }) => {
+    const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: -9.81, z: 0 }, allowSoftwareFallback: false });
+    const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
+    const sync = new PhysicsWorldSync(backend);
+    // Default water: Realistic Gerstner waves (Steepness 0.5) heading 25° from +X.
+    const sea = world.createActor({ classId: "Actor", guid: "sea" });
+    sea.attachComponent(world.createComponent({ classId: "WaterOceanComponent" }));
+    world.spawnActorNow(sea);
+    const boat = world.createActor({ classId: "Actor", guid: "float" });
+    boat.attachComponent(world.createComponent({ classId: "WaterBuoyancyComponent", variables: { drag } }));
+    world.spawnActorNow(boat);
+    const along = { x: Math.cos(25 * Math.PI / 180), z: Math.sin(25 * Math.PI / 180) };
+    const early: number[] = [], late: number[] = [];
+    try {
+      for (let i = 0; i < 65 * 60; i++) {
+        sync.step(1 / 60, world, i / 60);
+        const position = boat.transform.position.x * along.x + boat.transform.position.z * along.z;
+        if (i >= 5 * 60 && i < 15 * 60) early.push(position);
+        if (i >= 55 * 60) late.push(position);
+      }
+      const mean = (values: number[]) => values.reduce((sum, value) => sum + value, 0) / values.length;
+      expect(Math.max(...late) - Math.min(...late)).toBeGreaterThan(0.2);
+      // A fixed-point drift correction with drag weighted by instantaneous submersion moved this hull 3.4 m upwind
+      // (drag 2.5) and 4.2 m downwind (drag 20) between these windows, 50 s apart.
+      expect(Math.abs(mean(late) - mean(early))).toBeLessThan(0.5);
     } finally { sync.dispose(); }
   });
   it("floats a body, dips under a falling rigid body, and retains its added load", async () => {

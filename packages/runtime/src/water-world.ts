@@ -1,7 +1,7 @@
 import {
   createDefaultWaterDefinition, emptyWaterSample, normalizeWaterBody,
   normalizeWaterBuoyancy, normalizeWaterDefinition, normalizeWaterRemoval, parseLandscapeProperties, quatRotateVector,
-  sampleWaterSurface, waterCutAt, waterKindForClass,
+  sampleWaterSurface, waterCutAt, waterKindForClass, waterSurfaceDrift,
   type LandscapeProperties, type Transform, type Vec3, type WaterBodyProperties, type WaterCutters, type WaterDefinition, type WaterSample,
 } from "@babylonslate/core";
 import type { Actor, ActorComponent } from "@babylonslate/object-model";
@@ -9,6 +9,8 @@ import type { PhysicsBackend } from "@babylonslate/physics";
 import { actorParentGuid, actorWorldTransforms, composeParentChildTransform } from "./actor-world-transform";
 
 type WaterBody = { actorId: string; definition: WaterDefinition; body: WaterBodyProperties; transform: Transform };
+/** Seconds over which a support's peak submersion settles before it weights horizontal drag (several wave periods). */
+const WATER_DRAG_WETNESS_SECONDS = 8;
 export type WaterWorldSample = WaterSample & { actorId: string | null; density: number; waterDepth: number };
 type Normalized<T> = { kind: string; values: unknown[]; value: T };
 
@@ -106,6 +108,12 @@ export class WaterWorld {
   private refreshed: { time: number; actors: readonly Actor[] } | null = null;
   private readonly inputs = new RefreshInputs();
   private readonly defaultWater = createDefaultWaterDefinition();
+  /** The body that produced the last `sample` result (null when nothing was found). */
+  private sampled: WaterBody | null = null;
+  private readonly fixedDrift = { x: 0, z: 0 };
+  private readonly coupledDrift = { x: 0, z: 0 };
+  /** Per buoyancy component: each support's recent peak submersion, which weights its horizontal drag. */
+  private readonly wetness = new WeakMap<ActorComponent, Float64Array>();
   get hasBodies(): boolean { return this.bodies.length > 0; }
 
   setContent(content: ReadonlyMap<string, WaterDefinition> | Readonly<Record<string, WaterDefinition>>): void {
@@ -138,11 +146,11 @@ export class WaterWorld {
         if (!parent || this.inputs.has(parent)) break;
         this.inputs.record(parent); parentId = parent.parentId;
       }
-      byGuid ??= new Map(actors.map((entry) => [entry.guid, entry]));
       for (let owner: Actor | undefined = actor; owner && !this.inputs.has(owner);) {
         this.inputs.record(owner);
         const parentId = actorParentGuid(owner);
-        owner = parentId ? byGuid.get(parentId) : undefined;
+        // Only attached actors need the index, so unparented water adds no per-tick map.
+        owner = parentId ? (byGuid ??= new Map(actors.map((entry) => [entry.guid, entry]))).get(parentId) : undefined;
       }
     };
     this.bodies = [];
@@ -189,6 +197,7 @@ export class WaterWorld {
 
   sample(position: Vec3, actorId: string | null = null): WaterWorldSample {
     let result: WaterWorldSample = { ...emptyWaterSample(), actorId: null, density: 0, waterDepth: 0 };
+    this.sampled = null;
     for (const water of this.bodies) {
       if (actorId && water.actorId !== actorId) continue;
       const sample = sampleWaterSurface(water.definition, water.body, position, this.time, water.transform);
@@ -196,6 +205,7 @@ export class WaterWorld {
       if (sample.found && waterCutAt(this.cutters, { x: position.x, y: sample.height, z: position.z })) continue;
       if (sample.found && (!result.found || sample.height > result.height)) {
         result = { ...sample, actorId: water.actorId, density: water.definition.density, waterDepth: water.body.depth * Math.abs(water.transform.scale.y) };
+        this.sampled = water;
       }
     }
     return result;
@@ -204,7 +214,9 @@ export class WaterWorld {
   /**
    * Lift and point drag add to native collision impulses; authored poses are never overwritten. Drag pulls each
    * support toward the water's horizontal velocity (current plus the waves' orbital motion, so hulls sway with the
-   * swell); the vertical spring follows the surface's height rate at the support's X/Z.
+   * swell); the vertical spring follows the surface's height rate at the support's X/Z. The waves' mean-drift
+   * correction is re-weighted for the hull's drag coupling (`waterSurfaceDrift`), so hulls with any drag rock in
+   * place and only the current carries them.
    */
   applyBuoyancy(actor: Actor, bodyId: string, backend: PhysicsBackend, mass: number, gravity: number, dt: number): void {
     if (backend.kind !== "3d" || dt <= 0 || mass <= 0) return;
@@ -221,7 +233,14 @@ export class WaterWorld {
       point: Vec3; r: Vec3; sample: WaterWorldSample; drag: number; stiffness: number; maximumLift: number;
       response: { linear: Vec3; angular: Vec3 };
     }> = [];
+    const wetted: Array<{ point: Vec3; sample: WaterWorldSample; water: WaterBody; submerged: number; index: number }> = [];
+    let wetness = this.wetness.get(component);
+    const fresh = !wetness;
+    wetness ??= new Float64Array(4);
+    this.wetness.set(component, wetness);
+    let index = -1;
     for (const x of [-0.5, 0.5]) for (const z of [-0.5, 0.5]) {
+      index++;
       const offset = quatRotateVector(transform.rotation, {
         x: (props.offset[0] + x * props.width) * transform.scale.x,
         y: props.offset[1] * transform.scale.y,
@@ -229,9 +248,21 @@ export class WaterWorld {
       });
       const point = { x: transform.position.x + offset.x, y: transform.position.y + offset.y, z: transform.position.z + offset.z };
       const sample = this.sample(point, props.waterActorId);
-      if (!sample.found || sample.depth > sample.waterDepth + height / 2) continue;
-      const submerged = Math.max(0, Math.min(sample.waterDepth, sample.depth + height / 2) - Math.max(0, sample.depth - height / 2)) / height;
-      if (submerged === 0) continue;
+      const found = sample.found && this.sampled !== null && sample.depth <= sample.waterDepth + height / 2;
+      const submerged = found ? Math.max(0, Math.min(sample.waterDepth, sample.depth + height / 2) - Math.max(0, sample.depth - height / 2)) / height : 0;
+      // Horizontal drag follows each support's recent peak submersion, which rises at once and settles over a few
+      // wave periods: the instantaneous value would correlate with the orbital velocity and push hulls along the waves.
+      const previous = wetness[index]!;
+      wetness[index] = fresh ? submerged : Math.max(submerged, previous + (submerged - previous) * Math.min(1, dt / WATER_DRAG_WETNESS_SECONDS));
+      if (submerged > 0) wetted.push({ point, sample, water: this.sampled!, submerged, index });
+    }
+    // The hull relaxes toward the water's horizontal velocity at this rate (1/s): each wetted support pulls with
+    // min(1, drag·dt)·wetness / 4 of the body's momentum per step.
+    const coupling = wetted.reduce((sum, entry) => sum + wetness[entry.index]!, 0) * Math.min(1, props.drag * dt) / (4 * dt);
+    for (const { point, sample, water, submerged, index } of wetted) {
+      const fixed = waterSurfaceDrift(water.definition, water.body, sample.edgeDistance, this.fixedDrift);
+      const coupled = waterSurfaceDrift(water.definition, water.body, sample.edgeDistance, this.coupledDrift, coupling);
+      sample.velocity.x += coupled.x - fixed.x; sample.velocity.z += coupled.z - fixed.z;
       const volume = props.volume > 0 ? props.volume * Math.abs(transform.scale.x * transform.scale.y * transform.scale.z) : 2 * mass / sample.density;
       const response = backend.getBodyImpulseResponse?.(bodyId, { x: 0, y: 1, z: 0 }, point);
       const center = response?.centerOfMass ?? pose.position;
@@ -245,17 +276,18 @@ export class WaterWorld {
         // Custom backends without inertia queries retain unit-inertia behavior.
         response: response ?? { linear: { x: 0, y: 1 / mass, z: 0 }, angular: { x: -r.z / mass, y: 0, z: r.x / mass } },
       });
+      const sideways = mass * Math.min(1, props.drag * dt) * wetness[index]! / 4;
       backend.addImpulseAtPoint(bodyId, {
-        x: (sample.velocity.x - v.x - spin * (a.y * r.z - a.z * r.y)) * drag,
+        x: (sample.velocity.x - v.x - spin * (a.y * r.z - a.z * r.y)) * sideways,
         y: 0,
-        z: (sample.velocity.z - v.z - spin * (a.x * r.y - a.y * r.x)) * drag,
+        z: (sample.velocity.z - v.z - spin * (a.x * r.y - a.y * r.x)) * sideways,
       }, point);
     }
     if (!supports.length) return;
     const afterDrag = backend.getBodyVelocity(bodyId)!;
     // All four springs share the same body's translation and rotation. Solve them
     // together using collider inertia; independent springs can flip a light hull.
-    const coupling = supports.map(({ r }) => supports.map(({ response }) => ({
+    const solve = supports.map(({ r }) => supports.map(({ response }) => ({
       linear: response.linear.y, angular: response.angular.z * r.x - response.angular.x * r.z,
     })));
     const free = supports.map(({ r, sample }) => ({
@@ -269,7 +301,7 @@ export class WaterWorld {
       let change = 0;
       for (let n = 0; n < supports.length; n++) {
         const i = iteration % 2 ? supports.length - n - 1 : n;
-        const support = supports[i]!, row = coupling[i]!;
+        const support = supports[i]!, row = solve[i]!;
         let relative = free[i]!.linear + free[i]!.angular;
         let dragVelocity = free[i]!.linear + props.angularDrag * free[i]!.angular;
         for (let j = 0; j < supports.length; j++) if (j !== i) {

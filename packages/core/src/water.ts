@@ -1,6 +1,6 @@
 import type { Transform, Vec3 } from "./math-rng";
 import { createSeededRng, identityTransform } from "./math-rng";
-import { inverseQuat, quatRotateVector } from "./euler";
+import { inverseQuat, quatRotateVector, type QuatObject } from "./euler";
 import { sampleSplinePath, SPLINE_SUBDIVISIONS } from "./spline-component";
 
 export type WaterStyle = "realistic" | "stylized";
@@ -267,16 +267,25 @@ export const WATER_JACOBIAN_FLOOR = 0.1;
 export const WATER_WAVE_MAX_COMPONENTS = 8;
 /** Newton steps after the Picard start when a query inverts world X/Z to its rest point. Fixed, so every host agrees. */
 export const WATER_WAVE_NEWTON_STEPS = 4;
+/** Inversion stops once the displaced rest point lands within this distance (metres) of the queried X/Z. */
+export const WATER_WAVE_INVERT_TOLERANCE = 1e-6;
+/**
+ * Finite bodies fade the Gerstner horizontal offset to zero at their banks over this many horizontal envelopes
+ * (`waterBankFadeLength`), so the rendered edge stays on the rest edge against walls and docks and the surface
+ * covers exactly the rest footprint.
+ */
+export const WATER_BANK_FADE_ENVELOPES = 4;
 
 /**
- * Slots of the `out` array written by `evaluateWaterWaves` (0-10) and `invertWaterWaves` (0-12). Derivatives are
- * taken with respect to the rest (Lagrangian) point x0/z0; the Jacobian includes the identity, J = I + ∂D/∂x0.
+ * Slots of the `out` array written by `evaluateWaterWaves` (0-10 and 13) and `invertWaterWaves` (0-13). Derivatives
+ * are taken with respect to the rest (Lagrangian) point x0/z0. The Jacobian J = ∂(x0 + D)/∂(x0, z0) includes the
+ * identity: `jacobianXZ` is ∂x/∂z0 and `jacobianZX` is ∂z/∂x0, equal unless a bank fade varies across the point.
  */
 export const WaterWaveSlot = {
   height: 0, offsetX: 1, offsetZ: 2, slopeX: 3, slopeZ: 4, jacobianXX: 5, jacobianXZ: 6, jacobianZZ: 7,
-  heightRate: 8, offsetRateX: 9, offsetRateZ: 10, restX: 11, restZ: 12,
+  heightRate: 8, offsetRateX: 9, offsetRateZ: 10, restX: 11, restZ: 12, jacobianZX: 13,
 } as const;
-export const WATER_WAVE_OUTPUT_SIZE = 13;
+export const WATER_WAVE_OUTPUT_SIZE = 14;
 /** Reusable output for `evaluateWaterWaves` and `invertWaterWaves`. */
 export const createWaterWaveOutput = (): Float64Array => new Float64Array(WATER_WAVE_OUTPUT_SIZE);
 
@@ -320,29 +329,47 @@ export interface WaterWaveSet {
    */
   readonly driftX: number;
   readonly driftZ: number;
-  /** 2π / Wave Length (rad/m): the Ocean Spectrum's peak wavenumber. */
+  /** 2π / Wave Length (rad/m): the spectrum's peak wavenumber. */
   readonly peakK: number;
-  /** Ocean Spectrum: the highest wavenumber the analytic components represent; render-only detail starts here. Classic: Infinity. */
+  /**
+   * The highest wavenumber the analytic components represent (4 × peakK for both models; Classic's shortest swell is
+   * 3.53 × peakK). Render-only detail (Detail Waves, the FFT band) synthesizes only wavenumbers above it.
+   */
   readonly cutoffK: number;
   /**
-   * Ocean Spectrum: omnidirectional variance density S(k) = spectrumScale · shape(k / peakK) (m³ at Wave Scale 1), the
-   * normalization the analytic components were drawn from (`waterOceanSpectrumDensity`). Classic: 0.
+   * Omnidirectional variance density S(k) = spectrumScale · shape(k / peakK, spectrumSharpness) (m³ at Wave Scale 1)
+   * (`waterOceanSpectrumDensity`). Ocean Spectrum: the normalization its analytic components were drawn from.
+   * Classic: the same JONSWAP shape normalized so the analytic band carries the Classic swell's variance.
    */
   readonly spectrumScale: number;
-  /** Ocean Spectrum: significant height (4σ, metres at Wave Scale 1) of the spectrum above `cutoffK`, before Detail Waves. Classic: 0. */
+  /** JONSWAP peak enhancement γ of the density: Peak Sharpness for Ocean Spectrum, 3.3 for Classic. */
+  readonly spectrumSharpness: number;
+  /** Significant height (4σ, metres at Wave Scale 1) of the spectrum above `cutoffK`, before Detail Waves. */
   readonly detailHeight: number;
 }
 
 const TAU = 2 * Math.PI;
 /** Σ a² of the Classic table: the Ocean Spectrum matches its significant height, Hs = 4·sqrt(Σ a²/2) ≈ 1.69 × Wave Height. */
 const CLASSIC_ENERGY = waterWaveComponents.reduce((sum, [, , amplitude]) => sum + amplitude * amplitude, 0);
-/** Analytic Ocean Spectrum band in multiples of the peak wavenumber. */
+/** Analytic band in multiples of the peak wavenumber: Ocean Spectrum draws its components here, and both models' render-only detail starts above it. */
 const OCEAN_BAND = [0.7, 4] as const;
+/** JONSWAP peak enhancement of the Classic model's detail density (the JONSWAP mean; Peak Sharpness is Ocean Spectrum only). */
+const CLASSIC_SPECTRUM_SHARPNESS = 3.3;
 
 /** Deep-water JONSWAP shape in wavenumber (k^-3 tail), relative to the peak wavenumber; constants normalize away. */
 function oceanShape(kRel: number, gamma: number): number {
   const sigma = kRel <= 1 ? 0.07 : 0.09, offset = Math.sqrt(kRel) - 1;
   return kRel ** -3 * Math.exp(-1.25 / (kRel * kRel)) * gamma ** Math.exp(-(offset * offset) / (2 * sigma * sigma));
+}
+
+/** ∫ shape d(kRel) over [low, high] (log-spaced trapezoid with a fixed step count, so every host agrees). */
+function shapeIntegral(low: number, high: number, gamma: number, steps: number): number {
+  let sum = 0, previous = low, previousValue = oceanShape(low, gamma);
+  for (let i = 1; i <= steps; i++) {
+    const k = low * (high / low) ** (i / steps), value = oceanShape(k, gamma);
+    sum += (k - previous) * (value + previousValue) / 2; previous = k; previousValue = value;
+  }
+  return sum;
 }
 
 /** Inverse CDF of a cos² heading distribution on [-π/2, π/2] (fixed bisection, so every host agrees). */
@@ -367,7 +394,8 @@ function buildWaveSet(water: WaterDefinition): WaterWaveSet {
     waveHeight: water.waveHeight, waveLength: water.waveLength, waveSpeed: water.waveSpeed, waveDirection: water.waveDirection,
     waveSpread: water.waveSpread, choppiness: water.choppiness, steepness: water.steepness, peakSharpness: water.peakSharpness,
     waveSeed: water.waveSeed, detailWaves: water.detailWaves,
-    slopeSum: 0, amplitudeSum: 0, driftX: 0, driftZ: 0, peakK: TAU / water.waveLength, cutoffK: Infinity, spectrumScale: 0, detailHeight: 0,
+    slopeSum: 0, amplitudeSum: 0, driftX: 0, driftZ: 0, peakK: TAU / water.waveLength, cutoffK: TAU / water.waveLength * OCEAN_BAND[1],
+    spectrumScale: 0, spectrumSharpness: ocean ? water.peakSharpness : CLASSIC_SPECTRUM_SHARPNESS, detailHeight: 0,
   };
   const headings = new Float64Array(count);
   if (!ocean) {
@@ -377,6 +405,9 @@ function buildWaveSet(water: WaterDefinition): WaterWaveSet {
       headings[i] = angle + turn * water.waveSpread * 2;
       set.frequency[i] = frequency; set.amplitude[i] = amplitude; set.phase[i] = phase;
     });
+    // Detail above the swell follows the JONSWAP shape, scaled so the analytic band holds the Classic variance.
+    set.spectrumScale = water.waveHeight * water.waveHeight * CLASSIC_ENERGY / 2
+      / (set.peakK * shapeIntegral(OCEAN_BAND[0], OCEAN_BAND[1], CLASSIC_SPECTRUM_SHARPNESS, 128));
   } else {
     // Stratified log-k over the analytic band, seeded jitter inside each stratum, amplitudes from the JONSWAP density.
     const rng = createSeededRng(water.waveSeed), gamma = water.peakSharpness;
@@ -403,17 +434,13 @@ function buildWaveSet(water: WaterDefinition): WaterWaveSet {
         headings[order[rank + m]!] = angle + 2 * water.waveSpread * spreadAngle(0.5 + (m === 0 ? side : -side) * offset);
       }
     }
-    set.cutoffK = set.peakK * OCEAN_BAND[1];
     set.spectrumScale = water.waveHeight * water.waveHeight * normalize * normalize / set.peakK;
-    // Variance above the analytic band (log-spaced trapezoid plus the k^-3 tail), for render-only detail bounds.
-    let band = 0, previous: number = OCEAN_BAND[1], previousValue = oceanShape(previous, gamma);
-    for (let i = 1; i <= 64; i++) {
-      const k = OCEAN_BAND[1] * 64 ** (i / 64), value = oceanShape(k, gamma);
-      band += (k - previous) * (value + previousValue) / 2; previous = k; previousValue = value;
-    }
-    band += 1 / (2 * previous * previous);
-    set.detailHeight = 4 * Math.sqrt(set.spectrumScale * set.peakK * band);
   }
+  // Variance above the analytic band (log-spaced trapezoid plus the k^-3 tail beyond 64 × the cutoff), for render-only
+  // detail bounds.
+  const tailStart = OCEAN_BAND[1] * 64;
+  const detail = shapeIntegral(OCEAN_BAND[1], tailStart, set.spectrumSharpness, 64) + 1 / (2 * tailStart * tailStart);
+  set.detailHeight = 4 * Math.sqrt(set.spectrumScale * set.peakK * detail);
   for (let i = 0; i < count; i++) {
     set.dirX[i] = Math.cos(headings[i]!); set.dirZ[i] = Math.sin(headings[i]!);
     set.omega[i] = Math.sqrt(9.81 * set.k[i]!) * water.waveSpeed;
@@ -456,13 +483,18 @@ export function waterWaveQ(set: WaterWaveSet, scale = 1): number {
 
 /**
  * Forward Gerstner evaluation at the rest point (x0, z0), allocation-free: writes height H, horizontal offset D,
- * ∇₀H, the Jacobian J = I + ∇₀D, ∂H/∂t and ∂D/∂t into `out` (`WaterWaveSlot` 0-10). The rendered surface point is
- * (x0 + Dx, rest height + H, z0 + Dz). `spacing` (metres between mesh vertices) fades unresolvable components;
- * physics passes 0. q never depends on spacing, so mesh detail never changes horizontal motion.
+ * ∇₀H, the Jacobian J = ∂(x0 + D)/∂(x0, z0), ∂H/∂t and ∂D/∂t into `out` (`WaterWaveSlot` 0-10 and 13). The rendered
+ * surface point is (x0 + Dx, rest height + H, z0 + Dz). `spacing` (metres between mesh vertices) fades unresolvable
+ * components; physics passes 0. q never depends on spacing, so mesh detail never changes horizontal motion.
+ * `gain` (with its rest-space gradient) scales the horizontal offset: finite bodies pass `waterBankGain`, which fades
+ * it to zero at their banks; open water passes 1.
  */
-export function evaluateWaterWaves(set: WaterWaveSet, x0: number, z0: number, time: number, spacing: number, out: Float64Array, scale = 1): void {
+export function evaluateWaterWaves(
+  set: WaterWaveSet, x0: number, z0: number, time: number, spacing: number, out: Float64Array, scale = 1,
+  gain = 1, gainX = 0, gainZ = 0,
+): void {
   const q = waterWaveQ(set, scale), chop = set.choppiness, waveHeight = set.waveHeight, waveLength = set.waveLength;
-  let height = 0, dx = 0, dz = 0, hx = 0, hz = 0, jxx = 1, jxz = 0, jzz = 1, rate = 0, dxt = 0, dzt = 0;
+  let height = 0, dx = 0, dz = 0, hx = 0, hz = 0, sxx = 0, sxz = 0, szz = 0, rate = 0, dxt = 0, dzt = 0;
   for (let i = 0; i < set.count; i++) {
     const k = set.k[i]!, ax = set.dirX[i]!, az = set.dirZ[i]!, omega = set.omega[i]!, frequency = set.frequency[i]!;
     const filter = clamp(2 - spacing * frequency * 4 / waveLength, 0, 1);
@@ -479,46 +511,100 @@ export function evaluateWaterWaves(set: WaterWaveSet, x0: number, z0: number, ti
       // D = Σ q·a·d·cos p: water gathers under each crest (sin p = 1) and spreads in the troughs.
       const d = q * a, dk = d * k * sin, dw = d * omega * sin;
       dx += d * ax * cos; dz += d * az * cos;
-      jxx -= dk * ax * ax; jxz -= dk * ax * az; jzz -= dk * az * az;
+      sxx += dk * ax * ax; sxz += dk * ax * az; szz += dk * az * az;
       dxt += dw * ax; dzt += dw * az;
     }
   }
-  out[0] = height; out[1] = dx; out[2] = dz; out[3] = hx; out[4] = hz;
-  out[5] = jxx; out[6] = jxz; out[7] = jzz; out[8] = rate; out[9] = dxt; out[10] = dzt;
+  out[0] = height; out[1] = gain * dx; out[2] = gain * dz; out[3] = hx; out[4] = hz;
+  // J = I + gain·∇₀D + D ⊗ ∇₀gain, with ∇₀D = −Σ q·a·k·sin p·d ⊗ d.
+  out[5] = 1 - gain * sxx + dx * gainX; out[6] = -gain * sxz + dx * gainZ;
+  out[13] = -gain * sxz + dz * gainX; out[7] = 1 - gain * szz + dz * gainZ;
+  out[8] = rate; out[9] = gain * dxt; out[10] = gain * dzt;
+}
+
+/** Horizontal gain of the Gerstner offset at a rest point: writes the gain and its rest-space gradient into `out` 0-2. */
+export interface WaterWaveGain {
+  sample(x0: number, z0: number, out: Float64Array): void;
+}
+
+const gainScratch = new Float64Array(3);
+
+function evaluateWithGain(
+  set: WaterWaveSet, x0: number, z0: number, time: number, spacing: number, out: Float64Array, scale: number, gain: WaterWaveGain | undefined,
+): void {
+  if (!gain) { evaluateWaterWaves(set, x0, z0, time, spacing, out, scale); return; }
+  gain.sample(x0, z0, gainScratch);
+  evaluateWaterWaves(set, x0, z0, time, spacing, out, scale, gainScratch[0]!, gainScratch[1]!, gainScratch[2]!);
 }
 
 /**
  * Finds the rest point whose displaced surface lies over world (x, z): a Picard start, then at most
- * `WATER_WAVE_NEWTON_STEPS` Newton steps (det J ≥ WATER_JACOBIAN_FLOOR, so each step is well defined). Leaves the
- * evaluation at that rest point in `out` 0-10 and the rest point in `out` 11-12. With q = 0 the rest point is (x, z).
+ * `WATER_WAVE_NEWTON_STEPS` Newton steps until it lands within `WATER_WAVE_INVERT_TOLERANCE` (det J ≥
+ * WATER_JACOBIAN_FLOOR without a bank fade, so each step is well defined). Leaves the evaluation at that rest point in
+ * `out` 0-10 and 13 and the rest point in `out` 11-12. With q = 0 the rest point is (x, z). `gain` is a finite body's
+ * bank fade, sampled at every iterate exactly as the mesh applies it.
  */
-export function invertWaterWaves(set: WaterWaveSet, x: number, z: number, time: number, spacing: number, out: Float64Array, scale = 1): void {
+export function invertWaterWaves(
+  set: WaterWaveSet, x: number, z: number, time: number, spacing: number, out: Float64Array, scale = 1, gain?: WaterWaveGain,
+): void {
   let x0 = x, z0 = z;
-  evaluateWaterWaves(set, x0, z0, time, spacing, out, scale);
+  evaluateWithGain(set, x0, z0, time, spacing, out, scale, gain);
   if (waterWaveQ(set, scale) > 0) {
+    const tolerance = WATER_WAVE_INVERT_TOLERANCE * WATER_WAVE_INVERT_TOLERANCE;
     x0 = x - out[1]!; z0 = z - out[2]!;
     let solved = false;
     for (let step = 0; step < WATER_WAVE_NEWTON_STEPS; step++) {
-      evaluateWaterWaves(set, x0, z0, time, spacing, out, scale);
+      evaluateWithGain(set, x0, z0, time, spacing, out, scale, gain);
       const rx = x0 + out[1]! - x, rz = z0 + out[2]! - z;
-      if (rx * rx + rz * rz < 1e-20) { solved = true; break; }
-      const a = out[5]!, b = out[6]!, d = out[7]!, det = a * d - b * b;
-      if (det > 1e-6) { x0 -= (d * rx - b * rz) / det; z0 -= (a * rz - b * rx) / det; }
+      if (rx * rx + rz * rz < tolerance) { solved = true; break; }
+      const a = out[5]!, b = out[6]!, c = out[13]!, d = out[7]!, det = a * d - b * c;
+      if (det > 1e-6) { x0 -= (d * rx - b * rz) / det; z0 -= (a * rz - c * rx) / det; }
       else { x0 -= rx; z0 -= rz; }
     }
-    if (!solved) evaluateWaterWaves(set, x0, z0, time, spacing, out, scale);
+    if (!solved) evaluateWithGain(set, x0, z0, time, spacing, out, scale, gain);
   }
   out[11] = x0; out[12] = z0;
 }
 
 /**
- * Mean horizontal velocity (m/s) added to queried water velocity with Gerstner waves: q²·scale²·(driftX, driftZ). It
- * cancels the backward average a fixed point sees, so a stationary support feels no net push, while a hull carried
- * by the orbit drifts slowly downwind as with Stokes drift. Zero at Steepness 0.
+ * Bank fade length (world metres) of a finite body's Gerstner offset: `WATER_BANK_FADE_ENVELOPES` horizontal
+ * envelopes, so the offset stays well inside every bank and the faded surface never folds. Zero without Gerstner.
  */
-export function waterWaveDrift(set: WaterWaveSet, scale: number, out: { x: number; z: number }): { x: number; z: number } {
+export function waterBankFadeLength(water: WaterDefinition, scale = 1): number {
+  return WATER_BANK_FADE_ENVELOPES * waterHorizontalEnvelope(water, scale);
+}
+
+/**
+ * Gain of the horizontal offset at a rest point `bank` world metres inside a finite body's edge: a smoothstep from 0
+ * at the bank to 1 at `fadeLength`, written to out[0], and its derivative along the bank distance, written to out[1].
+ * The mesh, queries and the built-in shader share it, so they agree on the faded surface. `fadeLength` 0 (no
+ * Gerstner) gives 1.
+ */
+export function waterBankGain(bank: number, fadeLength: number, out: Float64Array): void {
+  if (!(fadeLength > 0) || bank >= fadeLength) { out[0] = 1; out[1] = 0; return; }
+  const t = Math.max(0, bank / fadeLength);
+  out[0] = t * t * (3 - 2 * t); out[1] = 6 * t * (1 - t) / fadeLength;
+}
+
+/**
+ * Mean horizontal velocity (m/s) added to queried water velocity with Gerstner waves. A fixed point under Gerstner
+ * waves sees the orbital velocity average to −q²·scale²·Σ k·A²·ω·d / 2 (upwind), while a support carried along the
+ * orbit sees a zero mean. `couplingRate` (1/s) is how quickly a floating support relaxes toward the water's velocity:
+ * component i is cancelled by the share ω²/(ω² + rate²) such a support still sees. The default 0 (a fixed point, such
+ * as Sample Water Surface) cancels it fully; buoyancy passes its drag rate. Either way the waves rock objects without
+ * a net push, and only the current carries them. Zero at Steepness 0.
+ */
+export function waterWaveDrift(set: WaterWaveSet, scale: number, out: { x: number; z: number }, couplingRate = 0): { x: number; z: number } {
   const factor = (waterWaveQ(set, scale) * scale) ** 2;
-  out.x = factor * set.driftX; out.z = factor * set.driftZ;
+  if (!(couplingRate > 0) || factor === 0) { out.x = factor * set.driftX; out.z = factor * set.driftZ; return out; }
+  const rate = couplingRate * couplingRate;
+  let x = 0, z = 0;
+  for (let i = 0; i < set.count; i++) {
+    const omega = set.omega[i]!, amplitude = set.waveHeight * set.amplitude[i]!;
+    const drift = set.k[i]! * amplitude * amplitude * omega / 2 * (omega * omega / (omega * omega + rate));
+    x += drift * set.dirX[i]!; z += drift * set.dirZ[i]!;
+  }
+  out.x = factor * x; out.z = factor * z;
   return out;
 }
 
@@ -544,15 +630,15 @@ export function waterWaveShaderConstants(set: WaterWaveSet, scale: number, origi
 }
 
 /**
- * Ocean Spectrum variance density S(k) (m³ at Wave Scale 1) with the analytic components' normalization: render-only
- * detail synthesizes k above `set.cutoffK` from it, so the bands never double count. Headings follow Wave Direction
- * plus 2 · Wave Spread · Θ, Θ distributed as cos²Θ on [−π/2, π/2]. Classic returns 0.
+ * Variance density S(k) (m³ at Wave Scale 1) of the sea the analytic components belong to, for both wave models:
+ * render-only detail synthesizes k above `set.cutoffK` from it, so the bands never double count. Headings follow Wave
+ * Direction plus 2 · Wave Spread · Θ, Θ distributed as cos²Θ on [−π/2, π/2].
  */
 export function waterOceanSpectrumDensity(set: WaterWaveSet, k: number): number {
-  return set.model === "ocean" && k > 0 ? set.spectrumScale * oceanShape(k / set.peakK, set.peakSharpness) : 0;
+  return k > 0 ? set.spectrumScale * oceanShape(k / set.peakK, set.spectrumSharpness) : 0;
 }
 
-/** Bound on |H| for a body (metres): every analytic component plus, for Ocean Spectrum, its Detail Waves band (4σ). */
+/** Bound on |H| for a body (metres): every analytic component plus the Detail Waves band (4σ of the spectrum above the cutoff). */
 export function waterWaveEnvelope(water: WaterDefinition, scale = 1): number {
   const set = waterWaveSet(water);
   return Math.abs(scale) * (set.amplitudeSum + set.detailHeight * set.detailWaves);
@@ -564,7 +650,16 @@ export function waterHorizontalEnvelope(water: WaterDefinition, scale = 1): numb
   return waterWaveQ(set, scale) * Math.abs(scale) * set.amplitudeSum;
 }
 
-const waveScratch = createWaterWaveOutput();
+/**
+ * Eulerian surface gradient J⁻ᵀ·g of a rest-space gradient g (for example ∇rest + ∇₀H) at an evaluated point, with
+ * the determinant clamped so a degenerate input never divides by zero. Writes x to out[0] and z to out[1].
+ */
+export function waterEulerianGradient(wave: Float64Array, gx: number, gz: number, out: Float64Array): void {
+  const a = wave[5]!, b = wave[6]!, c = wave[13]!, d = wave[7]!, inv = 1 / Math.max(a * d - b * c, 1e-6);
+  out[0] = (d * gx - c * gz) * inv; out[1] = (a * gz - b * gx) * inv;
+}
+
+const waveScratch = createWaterWaveOutput(), gradientScratch = new Float64Array(2);
 
 /**
  * Surface waves under world (x, z) in world metres, independent of the volume's transform (spacing filters distant
@@ -576,8 +671,8 @@ export function sampleWaterWaves(water: WaterDefinition, x: number, z: number, t
   invertWaterWaves(set, x, z, time, spacing, o, scale);
   let sx = o[3]!, sz = o[4]!, velocity = o[8]!;
   if (waterWaveQ(set, scale) > 0) {
-    const jxx = o[5]!, jxz = o[6]!, jzz = o[7]!, inv = 1 / Math.max(jxx * jzz - jxz * jxz, 1e-6);
-    sx = (jzz * o[3]! - jxz * o[4]!) * inv; sz = (jxx * o[4]! - jxz * o[3]!) * inv;
+    waterEulerianGradient(o, o[3]!, o[4]!, gradientScratch);
+    sx = gradientScratch[0]!; sz = gradientScratch[1]!;
     velocity = o[8]! - (sx * o[9]! + sz * o[10]!);
   }
   const n = Math.hypot(sx, 1, sz);
@@ -641,14 +736,93 @@ export function waterRiverCentreline(body: WaterBodyProperties): WaterRiverSampl
   return line;
 }
 
-const surfaceScratch = createWaterWaveOutput(), driftScratch = { x: 0, z: 0 };
+type WaterFootprint = ReturnType<typeof waterFootprint>;
+
+/**
+ * The volume's rest base under world (x, z) along world vertical, starting from height y: Newton iteration preserves
+ * actor/component pitch, roll and signed scales. `ray` is world up in scaled local coordinates. Null when the base is
+ * vertical there or the iteration fails.
+ */
+function restBase(
+  body: WaterBodyProperties, transform: Transform, inverse: QuatObject, ray: Vec3, x: number, y: number, z: number,
+): { distance: number; footprint: WaterFootprint } | null {
+  const { x: sx, y: sy, z: sz } = transform.scale;
+  const local = quatRotateVector(inverse, { x: x - transform.position.x, y: y - transform.position.y, z: z - transform.position.z });
+  const origin = { x: local.x / sx, y: local.y / sy, z: local.z / sz };
+  let distance = -origin.y / ray.y;
+  for (let i = 0; i < 12; i++) {
+    const footprint = waterFootprint(body, origin.x + ray.x * distance, origin.z + ray.z * distance);
+    const residual = origin.y + ray.y * distance - footprint.height;
+    if (Math.abs(residual) < 1e-5) break;
+    const derivative = ray.y - footprint.slopeX * ray.x - footprint.slopeZ * ray.z;
+    if (Math.abs(derivative) < 1e-6) return null;
+    distance -= residual / derivative;
+  }
+  const footprint = waterFootprint(body, origin.x + ray.x * distance, origin.z + ray.z * distance);
+  if (!Number.isFinite(distance) || Math.abs(origin.y + ray.y * distance - footprint.height) > 0.001) return null;
+  return { distance, footprint };
+}
+
+/**
+ * World-metre bank distance of a local footprint (as the mesh and `edgeDistance` measure it) and, in `gradient`, the
+ * world X/Z direction in which it grows (inward).
+ */
+function bankDistance(footprint: WaterFootprint, transform: Transform, gradient: Float64Array): number {
+  const { x: sx, z: sz } = transform.scale;
+  const outward = quatRotateVector(transform.rotation, { x: footprint.edgeX / sx, y: 0, z: footprint.edgeZ / sz });
+  const length = Math.hypot(outward.x, outward.y, outward.z) || 1;
+  gradient[0] = -outward.x / length; gradient[1] = -outward.z / length;
+  return footprint.edge / length;
+}
+
+/** Bank fade of one finite body, sampled at query inversion iterates exactly as the mesh applies it at vertices. */
+class BankGain implements WaterWaveGain {
+  body: WaterBodyProperties | null = null;
+  transform: Transform = identityTransform();
+  inverse: QuatObject = { x: 0, y: 0, z: 0, w: 1 };
+  ray: Vec3 = { x: 0, y: 1, z: 0 };
+  y = 0;
+  fadeLength = 0;
+  private readonly gradient = new Float64Array(2);
+  private readonly gain = new Float64Array(2);
+  sample(x0: number, z0: number, out: Float64Array): void {
+    const hit = this.body ? restBase(this.body, this.transform, this.inverse, this.ray, x0, this.y, z0) : null;
+    // Off the base there is no horizontal motion (the fade is zero at and beyond every bank).
+    if (!hit) { out[0] = 0; out[1] = 0; out[2] = 0; return; }
+    waterBankGain(bankDistance(hit.footprint, this.transform, this.gradient), this.fadeLength, this.gain);
+    out[0] = this.gain[0]!; out[1] = this.gain[1]! * this.gradient[0]!; out[2] = this.gain[1]! * this.gradient[1]!;
+  }
+}
+
+const surfaceScratch = createWaterWaveOutput(), driftScratch = { x: 0, z: 0 }, bankScratch = new Float64Array(2);
+const gainScratchOut = new Float64Array(2), slopeScratch = new Float64Array(2), bankGain = new BankGain();
+
+/**
+ * The mean-drift term (m/s) `sampleWaterSurface` adds to X/Z water velocity at a sample `edgeDistance` metres inside
+ * a body (`waterWaveDrift`, faded with the horizontal offset near finite banks). Buoyancy swaps the fixed-point term
+ * (`couplingRate` 0) for its supports' coupling rate, so hulls with any drag rock in place instead of drifting.
+ */
+export function waterSurfaceDrift(
+  water: WaterDefinition, body: WaterBodyProperties, edgeDistance: number, out: { x: number; z: number }, couplingRate = 0,
+): { x: number; z: number } {
+  const set = waterWaveSet(water);
+  waterWaveDrift(set, body.waveScale, out, couplingRate);
+  if (body.kind !== "global") {
+    waterBankGain(edgeDistance, waterBankFadeLength(water, body.waveScale), gainScratchOut);
+    const fade = gainScratchOut[0]! * gainScratchOut[0]!;
+    out.x *= fade; out.z *= fade;
+  }
+  return out;
+}
 
 /**
  * World-space waves first: the world X/Z inverts to the rest point whose displaced surface lies above it, which
  * meets the transformed volume's base along world vertical (so tilted volumes and rivers match the mesh exactly);
  * waves then add their height there. `inside` and bank distance use that rest point, like the rendered surface.
+ * Finite bodies fade the horizontal offset to zero at their banks (`waterBankGain`), so their displaced surface
+ * covers exactly the rest footprint: a point outside it returns at once, without inverting the waves.
  * Velocity is the current plus, in X/Z, the wave's horizontal orbital (particle) velocity with its mean drift
- * (`waterWaveDrift`), and in Y the Eulerian rate of surface height at this fixed X/Z. Steepness 0 reproduces the
+ * (`waterSurfaceDrift`), and in Y the Eulerian rate of surface height at this fixed X/Z. Steepness 0 reproduces the
  * vertical-only results exactly.
  */
 export function sampleWaterSurface(
@@ -658,28 +832,31 @@ export function sampleWaterSurface(
   if (!body.enabled || ![time, position.x, position.y, position.z].every(Number.isFinite)) return emptyWaterSample();
   const { x: sx, y: sy, z: sz } = transform.scale;
   if (Math.min(Math.abs(sx), Math.abs(sy), Math.abs(sz)) < 1e-6) return emptyWaterSample();
-  const set = waterWaveSet(water), wave = surfaceScratch, gerstner = waterWaveQ(set, body.waveScale) > 0;
-  invertWaterWaves(set, position.x, position.z, time, 0, wave, body.waveScale);
   const inverse = inverseQuat(transform.rotation);
-  const local = quatRotateVector(inverse, { x: wave[11]! - transform.position.x, y: position.y - transform.position.y, z: wave[12]! - transform.position.z });
   const up = quatRotateVector(inverse, { x: 0, y: 1, z: 0 });
-  const origin = { x: local.x / sx, y: local.y / sy, z: local.z / sz };
   const ray = { x: up.x / sx, y: up.y / sy, z: up.z / sz };
   if (Math.abs(ray.y) < 1e-6) return emptyWaterSample();
-  let distance = -origin.y / ray.y;
-  // Newton iteration preserves actor/component pitch, roll and signed scales.
-  for (let i = 0; i < 12; i++) {
-    const x = origin.x + ray.x * distance, z = origin.z + ray.z * distance;
-    const footprint = waterFootprint(body, x, z);
-    const residual = origin.y + ray.y * distance - footprint.height;
-    if (Math.abs(residual) < 1e-5) break;
-    const derivative = ray.y - footprint.slopeX * ray.x - footprint.slopeZ * ray.z;
-    if (Math.abs(derivative) < 1e-6) return emptyWaterSample();
-    distance -= residual / derivative;
+  const set = waterWaveSet(water), scale = body.waveScale, wave = surfaceScratch, gerstner = waterWaveQ(set, scale) > 0;
+  let hit = restBase(body, transform, inverse, ray, position.x, position.y, position.z);
+  if (!hit?.footprint.inside) return emptyWaterSample();
+  if (gerstner) {
+    const fadeLength = body.kind === "global" ? 0 : waterBankFadeLength(water, scale);
+    let gain: WaterWaveGain | undefined;
+    // A rest point within the fade band lies at most one horizontal envelope from the query; further inside, the
+    // rest point is unfaded and the plain inversion is exact.
+    if (fadeLength > 0 && bankDistance(hit.footprint, transform, bankScratch) < fadeLength + waterHorizontalEnvelope(water, scale)) {
+      Object.assign(bankGain, { body, transform, inverse, ray, y: position.y, fadeLength });
+      gain = bankGain;
+    }
+    invertWaterWaves(set, position.x, position.z, time, 0, wave, scale, gain);
+    bankGain.body = null;
+    hit = restBase(body, transform, inverse, ray, wave[11]!, position.y, wave[12]!);
+    if (!hit?.footprint.inside) return emptyWaterSample();
+  } else {
+    invertWaterWaves(set, position.x, position.z, time, 0, wave, scale);
   }
-  const x = origin.x + ray.x * distance, z = origin.z + ray.z * distance;
-  const footprint = waterFootprint(body, x, z);
-  if (!footprint.inside || !Number.isFinite(distance) || Math.abs(origin.y + ray.y * distance - footprint.height) > 0.001) return emptyWaterSample();
+  const footprint = hit.footprint;
+  let distance = hit.distance;
   const normal = quatRotateVector(transform.rotation, {
     x: -footprint.slopeX / sx,
     y: 1 / sy,
@@ -696,13 +873,13 @@ export function sampleWaterSurface(
     const speed = Math.abs(body.flowSpeed) / flowLength;
     velocity.x *= speed; velocity.y *= speed; velocity.z *= speed;
   }
+  const edgeDistance = footprint.edge / (Math.hypot(footprint.edgeX / sx, footprint.edgeZ / sz) || 1);
   if (gerstner) {
     // Eulerian slope J⁻ᵀ(∇rest + ∇H) at the rest point, and the height rate under this fixed X/Z as water moves past.
-    const gx = wave[3]! - normal.x / normal.y, gz = wave[4]! - normal.z / normal.y;
-    const jxx = wave[5]!, jxz = wave[6]!, jzz = wave[7]!, inv = 1 / Math.max(jxx * jzz - jxz * jxz, 1e-6);
-    const ex = (jzz * gx - jxz * gz) * inv, ez = (jxx * gz - jxz * gx) * inv;
+    waterEulerianGradient(wave, wave[3]! - normal.x / normal.y, wave[4]! - normal.z / normal.y, slopeScratch);
+    const ex = slopeScratch[0]!, ez = slopeScratch[1]!;
     normal.x = -ex; normal.z = -ez;
-    const drift = waterWaveDrift(set, body.waveScale, driftScratch);
+    const drift = waterSurfaceDrift(water, body, edgeDistance, driftScratch);
     velocity.x += wave[9]! + drift.x; velocity.z += wave[10]! + drift.z;
     velocity.y += wave[8]! - (ex * wave[9]! + ez * wave[10]!);
   } else {
@@ -717,6 +894,6 @@ export function sampleWaterSurface(
   return {
     found: true, height: position.y + distance, depth: distance,
     normal: { x: normal.x / magnitude, y: normal.y / magnitude, z: normal.z / magnitude },
-    velocity, edgeDistance: footprint.edge / (Math.hypot(footprint.edgeX / sx, footprint.edgeZ / sz) || 1),
+    velocity, edgeDistance,
   };
 }

@@ -2,10 +2,11 @@ import { describe, expect, it } from "vitest";
 import { identityTransform } from "./math-rng";
 import { eulerDegreesToQuaternion, quatRotateVector } from "./euler";
 import {
-  WATER_CREST_MEAN, WATER_CREST_RANGE, WATER_JACOBIAN_FLOOR, WATER_WAVE_SHADER_STRIDE, createDefaultWaterDefinition, createWaterWaveOutput,
-  evaluateWaterWaves, invertWaterWaves, normalizeWaterBody, normalizeWaterDefinition, sampleWaterSurface, sampleWaterWaves,
-  waterHorizontalEnvelope, waterRiverCentreline, waterWaveComponents, waterWaveDrift, waterWaveEnvelope, waterWaveQ, waterWaveSet,
-  waterWaveShaderConstants, type WaterDefinition,
+  WATER_CREST_MEAN, WATER_CREST_RANGE, WATER_JACOBIAN_FLOOR, WATER_WAVE_INVERT_TOLERANCE, WATER_WAVE_SHADER_STRIDE, createDefaultWaterDefinition,
+  createWaterWaveOutput, evaluateWaterWaves, invertWaterWaves, normalizeWaterBody, normalizeWaterDefinition, sampleWaterSurface, sampleWaterWaves,
+  waterBankFadeLength, waterBankGain, waterFootprint, waterHorizontalEnvelope, waterOceanSpectrumDensity, waterRiverCentreline,
+  waterSurfaceDrift, waterWaveComponents, waterWaveDrift, waterWaveEnvelope, waterWaveQ, waterWaveSet, waterWaveShaderConstants,
+  type WaterDefinition,
 } from "./water";
 
 /** The vertical-only kernel as it was before Gerstner waves: the Steepness 0 reference. */
@@ -167,8 +168,7 @@ describe("Water surfaces", () => {
       for (const [x, z, time] of [[2, 3, 1], [-17.3, 41.9, 120.4], [5.5, -8.25, 7.75]] as const) {
         // The rest point carries the offset that lands exactly on the queried world X/Z.
         invertWaterWaves(set, x, z, time, 0, out);
-        expect(out[11]! + out[1]!).toBeCloseTo(x, 9);
-        expect(out[12]! + out[2]!).toBeCloseTo(z, 9);
+        expect(Math.hypot(out[11]! + out[1]! - x, out[12]! + out[2]! - z)).toBeLessThanOrEqual(WATER_WAVE_INVERT_TOLERANCE);
         // Forward derivatives at the rest point: offsets in x0 (Jacobian), height in x0 and offsets in time.
         const [x0, z0] = [out[11]!, out[12]!];
         evaluateWaterWaves(set, x0 + h, z0, time, 0, ahead); evaluateWaterWaves(set, x0 - h, z0, time, 0, behind);
@@ -285,5 +285,88 @@ describe("Water surfaces", () => {
       expect(c[4]!).toBeCloseTo(ocean.waveHeight * scale * set.amplitude[i]!, 12);
       expect(c[6]!).toBeCloseTo(q * c[4]!, 12);
     }
+  });
+  it("gives both wave models one detail spectrum above the analytic swell, bounded by the envelope", () => {
+    for (const model of ["classic", "ocean"] as const) {
+      const water = { ...createDefaultWaterDefinition(), waveModel: model }, set = waterWaveSet(water);
+      // Render-only detail starts above every analytic component, at the same cutoff for both models.
+      expect(set.cutoffK / set.peakK).toBeCloseTo(4, 12);
+      for (const k of set.k) expect(k).toBeLessThan(set.cutoffK);
+      // The analytic band of the density carries the swell's variance (Σ A² / 2), so detail never double counts it.
+      let variance = 0;
+      for (let i = 0, steps = 4000; i < steps; i++) {
+        const low = set.peakK * 0.7 * (4 / 0.7) ** (i / steps), high = set.peakK * 0.7 * (4 / 0.7) ** ((i + 1) / steps);
+        variance += (high - low) * (waterOceanSpectrumDensity(set, low) + waterOceanSpectrumDensity(set, high)) / 2;
+      }
+      const swell = Array.from(set.amplitude).reduce((sum, a) => sum + (a * water.waveHeight) ** 2, 0) / 2;
+      expect(variance / swell).toBeGreaterThan(model === "ocean" ? 0.85 : 0.999);
+      expect(variance / swell).toBeLessThan(model === "ocean" ? 1.15 : 1.001);
+      expect(waterOceanSpectrumDensity(set, set.cutoffK * 1.5)).toBeGreaterThan(0);
+      // Detail Waves widens the vertical envelope by the detail band's significant height, for Classic too.
+      expect(set.detailHeight).toBeGreaterThan(0);
+      expect(waterWaveEnvelope(water, 2) - waterWaveEnvelope({ ...water, detailWaves: 0 }, 2)).toBeCloseTo(2 * set.detailHeight, 12);
+    }
+    // The same sea size gives nearly the same detail whichever model draws the swell.
+    const classic = waterWaveSet(createDefaultWaterDefinition()), spectrum = waterWaveSet({ ...createDefaultWaterDefinition(), waveModel: "ocean" });
+    expect(waterOceanSpectrumDensity(classic, classic.cutoffK * 2) / waterOceanSpectrumDensity(spectrum, spectrum.cutoffK * 2)).toBeCloseTo(1, 1);
+  });
+  it("fades the horizontal motion to the bank of finite bodies, so edges stay put and queries match the faded surface", () => {
+    const out = createWaterWaveOutput(), plain = createWaterWaveOutput(), gain = new Float64Array(2);
+    const bodies = [normalizeWaterBody({ width: 40, length: 30 }, "ocean"), normalizeWaterBody({ width: 30, length: 20, waveScale: 1 }, "lake")];
+    for (const water of [{ ...createDefaultWaterDefinition(), steepness: 1 }, storm, ocean]) for (const body of bodies) {
+      const set = waterWaveSet(water), fade = waterBankFadeLength(water, body.waveScale);
+      expect(fade).toBeGreaterThan(waterHorizontalEnvelope(water, body.waveScale));
+      let near = 0;
+      for (let i = 0; i < 3000; i++) {
+        const x0 = Math.sin(i * 12.9898) * 25, z0 = Math.cos(i * 78.233) * 25, time = (i % 97) * 0.31;
+        const rest = waterFootprint(body, x0, z0);
+        if (!rest.inside) continue;
+        // The renderer's forward map: the gain at the vertex's bank, with its gradient pointing inward.
+        waterBankGain(rest.edge, fade, gain);
+        evaluateWaterWaves(set, x0, z0, time, 0, out, body.waveScale, gain[0]!, -rest.edgeX * gain[1]!, -rest.edgeZ * gain[1]!);
+        evaluateWaterWaves(set, x0, z0, time, 0, plain, body.waveScale);
+        const reach = Math.hypot(out[1]!, out[2]!);
+        if (rest.edge >= fade) expect(reach).toBeCloseTo(Math.hypot(plain[1]!, plain[2]!), 12);
+        else near++;
+        // Displaced water never leaves the rest footprint, and its edge stays on the bank.
+        expect(reach).toBeLessThan(Math.max(rest.edge, 1e-9));
+        expect(out[5]! * out[7]! - out[6]! * out[13]!).toBeGreaterThan(0);
+        const sample = sampleWaterSurface(water, body, { x: x0 + out[1]!, y: -4, z: z0 + out[2]! }, time);
+        expect(sample.found).toBe(true);
+        expect(sample.height).toBeCloseTo(out[0]!, 4);
+      }
+      expect(near).toBeGreaterThan(50);
+      // Just outside a bank there is no water, even where unfaded waves would have carried it.
+      expect(sampleWaterSurface(water, body, { x: body.width / 2 + 0.01, y: -1, z: 0 }, 1.5).found).toBe(false);
+    }
+  });
+  it("re-weights the waves' mean drift for a drag-coupled support so it rocks in place at any coupling", () => {
+    const body = normalizeWaterBody({}, "global"), fixed = { x: 0, z: 0 }, coupled = { x: 0, z: 0 };
+    for (const water of [createDefaultWaterDefinition(), storm]) {
+      const along = { x: Math.cos(water.waveDirection * Math.PI / 180), z: Math.sin(water.waveDirection * Math.PI / 180) };
+      for (const rate of [1, 8, 30]) {
+        const travel = (correct: boolean) => {
+          let x = 0, z = 0, vx = 0, vz = 0;
+          const dt = 1 / 60, seconds = 300;
+          for (let i = 0; i < seconds / dt; i++) {
+            // A support relaxing toward the queried water velocity, as buoyancy drag does.
+            const sample = sampleWaterSurface(water, body, { x, y: -0.1, z }, i * dt);
+            let ux = sample.velocity.x, uz = sample.velocity.z;
+            if (correct) {
+              waterSurfaceDrift(water, body, sample.edgeDistance, fixed);
+              waterSurfaceDrift(water, body, sample.edgeDistance, coupled, rate);
+              ux += coupled.x - fixed.x; uz += coupled.z - fixed.z;
+            }
+            vx += (ux - vx) * Math.min(1, rate * dt); vz += (uz - vz) * Math.min(1, rate * dt);
+            x += vx * dt; z += vz * dt;
+          }
+          return (x * along.x + z * along.z) / seconds;
+        };
+        // The fixed-point term alone carries well-coupled supports downwind; the coupled term leaves them in place.
+        if (rate >= 8) expect(travel(false)).toBeGreaterThan(0.05);
+        expect(Math.abs(travel(true))).toBeLessThan(0.015);
+      }
+    }
+    expect(waterSurfaceDrift({ ...storm, steepness: 0 }, body, Infinity, fixed, 4)).toEqual({ x: 0, z: 0 });
   });
 });
