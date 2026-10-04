@@ -297,7 +297,8 @@ export function updateWaterMeshDefinition(mesh: Mesh, input: unknown): boolean {
   // A paused clock repeats the cached time, which would otherwise skip the resample.
   surface.time = null;
   updateSurface(surface, clocks.get(mesh.getScene())?.time ?? 0);
-  // The terrain field's change key omits the contact range its margin uses; the contact field tracks both itself.
+  // The terrain field's change key omits the contact range its margin uses; the contact field notices range and
+  // wave-envelope changes itself.
   surface.field?.update(contactRange(water) !== range);
   surface.contacts?.update(performance.now());
   return true;

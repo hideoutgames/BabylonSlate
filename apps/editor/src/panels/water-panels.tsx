@@ -94,7 +94,8 @@ export function WaterPreviewPanel(_props: IDockviewPanelProps) {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !engine) return;
-    void closureKey; // Reload the Custom Material when it, its Material Functions or its Textures change.
+    // Style compiles into the water shader; the Custom Material reloads when it or anything it reaches changes.
+    void style; void closureKey;
     const host = createParticlePreviewScene(engine, { skybox: true });
     const sun = new DirectionalLight("water-preview-sun", new Vector3(-0.3, -1, 0.6), host.scene);
     sun.intensity = 1.4;
