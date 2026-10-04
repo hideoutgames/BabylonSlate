@@ -34,19 +34,31 @@ export function actorWorldTransforms(
 ): Map<string, Transform> {
   const byGuid = new Map<string, Actor>();
   for (const actor of actors) byGuid.set(actor.guid, actor);
+  return composeActorWorldTransforms((guid) => byGuid.get(guid), selected);
+}
+
+/**
+ * Compose selected actors and their ancestors through a caller-owned parent
+ * lookup, so a frame that already indexes actors by guid need not rebuild one.
+ * The lookup must answer like the last-wins index `actorWorldTransforms` builds.
+ */
+export function composeActorWorldTransforms(
+  lookup: (guid: string) => Actor | undefined,
+  selected: Iterable<Actor>,
+): Map<string, Transform> {
   const resolved = new Map<string, Transform>();
-  composeActorWorldTransforms(byGuid, selected, resolved);
+  composeActorWorldTransformsInto(lookup, selected, resolved);
   return resolved;
 }
 
 /**
  * Compose `selected` and their ancestors into `resolved` through a caller-owned
- * guid index. Returns true when a parent cycle was reached: poses on a cycle
+ * parent lookup. Returns true when a parent cycle was reached: poses on a cycle
  * depend on resolution order, so callers that must match a whole-world pass
  * recompose in world order instead.
  */
-export function composeActorWorldTransforms(
-  byGuid: ReadonlyMap<string, Actor>,
+export function composeActorWorldTransformsInto(
+  lookup: (guid: string) => Actor | undefined,
   selected: Iterable<Actor>,
   resolved: Map<string, Transform>,
 ): boolean {
@@ -64,7 +76,7 @@ export function composeActorWorldTransforms(
 
     resolving.add(actor.guid);
     const parentId = actorParentGuid(actor);
-    const parent = parentId ? byGuid.get(parentId) : undefined;
+    const parent = parentId ? lookup(parentId) : undefined;
     if (parent && resolving.has(parent.guid)) cyclic = true;
     const world =
       parent && !resolving.has(parent.guid)

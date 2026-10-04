@@ -1103,6 +1103,7 @@ describe("collectExportReachability", () => {
         asset({ guid: "tex-1", type: "Texture", name: "BannerTex" }),
         asset({ guid: "tex-panel", type: "Texture", name: "PanelTex" }),
         asset({ guid: "mat-panel", type: "Material", name: "PanelMat" }),
+        asset({ guid: "mat-joystick", type: "MaterialInstance", name: "Joystick" }),
         asset({ guid: "mat-text", type: "Material", name: "TextMat" }),
         asset({ guid: "tex-text", type: "Texture", name: "TextFill" }),
         asset({ guid: "tex-inline", type: "Texture", name: "Inline" }),
@@ -1129,6 +1130,10 @@ describe("collectExportReachability", () => {
                   {
                     classId: "2DTextureComponent",
                     properties: { textureGuid: "tex-1" },
+                  },
+                  {
+                    classId: "2DJoystickComponent",
+                    properties: { backgroundMaterialGuid: "mat-panel", joystickMaterialGuid: "mat-joystick" },
                   },
                   {
                     classId: "2DPanelComponent",
@@ -1164,6 +1169,7 @@ describe("collectExportReachability", () => {
         "tex-1",
         "tex-panel",
         "mat-panel",
+        "mat-joystick",
         "mat-text",
         "tex-text",
         "tex-inline",

@@ -19,7 +19,7 @@ export function useMaterialInstanceSources(
   selfDocumentId: string,
   parentGuid: string | null,
 ): ReadonlyMap<string, MaterialSource> | null {
-  const { assetRegistry, registryVersion, openDocuments, readAssetChunk } = useDocuments();
+  const { assetRegistry, registryEpoch, openDocuments, readAssetChunk } = useDocuments();
   // Only other open material tabs matter; the instance's own edits must not reload the chain.
   const openRef = useRef<ReadonlyArray<readonly [string, unknown]>>([]);
   const openMaterials = useMemo(() => {
@@ -38,7 +38,7 @@ export function useMaterialInstanceSources(
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      void registryVersion; // Registry contents mutate without replacing its instance.
+      void registryEpoch; // Saved parents change without replacing the registry instance.
       const next = new Map<string, MaterialSource>();
       let guid = parentGuid;
       while (guid && !next.has(guid) && next.size <= MATERIAL_INSTANCE_MAX_DEPTH) {
@@ -65,7 +65,7 @@ export function useMaterialInstanceSources(
       if (!cancelled) setSources(next);
     })();
     return () => { cancelled = true; };
-  }, [assetRegistry, openMaterials, parentGuid, readAssetChunk, registryVersion]);
+  }, [assetRegistry, openMaterials, parentGuid, readAssetChunk, registryEpoch]);
 
   return sources;
 }

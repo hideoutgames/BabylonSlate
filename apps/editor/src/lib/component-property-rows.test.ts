@@ -67,6 +67,25 @@ function rowsFor(
   return { rows, update, onPickAsset };
 }
 
+it("edits the joystick's two material references independently using the existing material picker", () => {
+  const { rows, update, onPickAsset } = rowsFor({ id: "stick", classId: "2DJoystickComponent",
+    properties: { ...defaultPropertiesFor("2DJoystickComponent"), backgroundMaterialGuid: "base", joystickMaterialGuid: "thumb" } });
+  const background = rows.find(row => row.label === "Background Material");
+  const joystick = rows.find(row => row.label === "Joystick Material");
+  if (background?.kind !== "asset" || joystick?.kind !== "asset") throw new Error("Missing joystick material controls");
+  expect([background.value, joystick.value]).toEqual(["base", "thumb"]);
+  background.onPick();
+  expect(onPickAsset).toHaveBeenLastCalledWith(expect.objectContaining({ property: "backgroundMaterialGuid", allowedTypes: ["Material", "MaterialInstance"] }));
+  joystick.onPick();
+  expect(onPickAsset).toHaveBeenLastCalledWith(expect.objectContaining({ property: "joystickMaterialGuid", allowedTypes: ["Material", "MaterialInstance"] }));
+  joystick.onChange(null);
+  expect(update).toHaveBeenLastCalledWith("joystickMaterialGuid", null);
+  const axis = rows.find(row => row.label === "Horizontal Axis");
+  if (axis?.kind !== "enum") throw new Error("Missing joystick axis control");
+  axis.onChange("dpad-x");
+  expect(update).toHaveBeenLastCalledWith("horizontalControl", "dpad-x");
+});
+
 it("edits capture settings through typed controls and keeps actor filtering opt-in", () => {
   const { rows, update, onPickAsset } = rowsFor({ id: "capture", classId: "RenderTargetCaptureComponent", properties: defaultPropertiesFor("RenderTargetCaptureComponent") });
   const target = rows.find((row) => row.label === "Render Target");
@@ -198,6 +217,23 @@ describe("componentPropertyRows", () => {
     target.onChange("");
     expect(update).toHaveBeenCalledWith("targetComponentId", null);
     expect(patchInspectorComponentProperty(cable, "targetActorId", null)).toMatchObject({ targetActorId: null, targetComponentId: null });
+  });
+
+  it("attaches a retargeted cable end at the target origin and keeps Self cables from collapsing", () => {
+    const cable = { id: "cable", classId: "CableComponent", properties: { endPosition: [3, 0, 0] } };
+    const onActor = patchInspectorComponentProperty(cable, "targetActorId", "hook");
+    expect(onActor).toMatchObject({ targetActorId: "hook", targetComponentId: null, endPosition: [0, 0, 0] });
+    const onComponent = patchInspectorComponentProperty({ ...cable, properties: onActor }, "targetComponentId", "grip");
+    expect(onComponent).toMatchObject({ targetActorId: "hook", targetComponentId: "grip", endPosition: [0, 0, 0] });
+    // The other actor's origin keeps the zero offset.
+    expect(patchInspectorComponentProperty({ ...cable, properties: onComponent }, "targetComponentId", "")).toMatchObject({ targetActorId: "hook", targetComponentId: null, endPosition: [0, 0, 0] });
+    // Self with a zero offset would be a zero-length cable: restore the default offset.
+    expect(patchInspectorComponentProperty({ ...cable, properties: onComponent }, "targetActorId", null)).toMatchObject({ targetActorId: null, targetComponentId: null, endPosition: [3, 0, 0] });
+    const local = patchInspectorComponentProperty(cable, "targetComponentId", "grip");
+    expect(local).toMatchObject({ targetComponentId: "grip", endPosition: [0, 0, 0] });
+    expect(patchInspectorComponentProperty({ ...cable, properties: local }, "targetComponentId", "")).toMatchObject({ targetComponentId: null, endPosition: [3, 0, 0] });
+    // Authored offsets survive a return to Self.
+    expect(patchInspectorComponentProperty({ ...cable, properties: { targetActorId: "hook", endPosition: [1, 2, 3] } }, "targetActorId", null)).toMatchObject({ endPosition: [1, 2, 3] });
   });
 
   it("selects only Scene assets for streaming targets and keeps the cached name out of editable properties", () => {

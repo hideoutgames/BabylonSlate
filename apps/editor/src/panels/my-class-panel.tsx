@@ -898,7 +898,7 @@ export function ClassMembersView({
 export function MyClassPanel(_props: MyClassPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyGraphChange, applyAssetDocumentChange, assetRegistry, openDocument } =
+  const { openDocuments, applyGraphChange, applyAssetDocumentChange, assetRegistry, registryEpoch, openDocument } =
     useDocuments();
   const { setFocusDiagnostic } = useValidation();
   const {
@@ -926,33 +926,43 @@ export function MyClassPanel(_props: MyClassPanelProps) {
     void applyGraphChange(documentId, commit.graph);
   };
   const className = doc?.ref.path ? classIdForGraphPath(doc.ref.path) : null;
-  const interfaceAssets = (assetRegistry?.list() ?? [])
-    .filter((asset) => asset.header.type === "ScriptInterface")
-    .map((asset) => ({
-      guid: asset.header.guid,
-      name: asset.header.name,
-      type: asset.header.type,
-    }));
-  const indexed = (assetRegistry?.list() ?? []).find(
-    (asset) => asset.path === doc?.ref.path,
-  );
-  const parentOf = classParentLookup(assetRegistry?.list() ?? []);
-  const parentGraphs = collectClassGraphsForPalette({
-    assets: assetRegistry?.list() ?? [],
-    openDocuments,
-    classIdForPath: classIdForGraphPath,
-  });
-  const membersOptions = {
-    classId: className ?? undefined,
-    parentClass: indexed?.header.parentClass ?? null,
-    parentOf,
-    parentGraphs,
-    assetType: indexed?.header.type,
-    scriptInterfaces: collectScriptInterfacesForPalette({
-      assets: assetRegistry?.list() ?? [],
-      openDocuments,
-    }),
-  };
+  const docPath = doc?.ref.path;
+  // Registry-only views follow the registry epoch, not edits of this Class.
+  const { interfaceAssets, indexed, parentOf } = useMemo(() => {
+    void registryEpoch;
+    const assets = assetRegistry?.list() ?? [];
+    return {
+      interfaceAssets: assets
+        .filter((asset) => asset.header.type === "ScriptInterface")
+        .map((asset) => ({
+          guid: asset.header.guid,
+          name: asset.header.name,
+          type: asset.header.type,
+        })),
+      indexed: assets.find((asset) => asset.path === docPath),
+      parentOf: classParentLookup(assets),
+    };
+  }, [assetRegistry, docPath, registryEpoch]);
+  // Parent graphs and interfaces also read open (unsaved) documents.
+  const membersOptions = useMemo(() => {
+    void registryEpoch;
+    const assets = assetRegistry?.list() ?? [];
+    return {
+      classId: className ?? undefined,
+      parentClass: indexed?.header.parentClass ?? null,
+      parentOf,
+      parentGraphs: collectClassGraphsForPalette({
+        assets,
+        openDocuments,
+        classIdForPath: classIdForGraphPath,
+      }),
+      assetType: indexed?.header.type,
+      scriptInterfaces: collectScriptInterfacesForPalette({
+        assets,
+        openDocuments,
+      }),
+    };
+  }, [assetRegistry, className, indexed, openDocuments, parentOf, registryEpoch]);
 
   const focusEvent = (nodeId: string, name: string) => {
     setActiveFunctionId(null);

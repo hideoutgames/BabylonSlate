@@ -277,6 +277,8 @@ export function PluginSettingsDetailsPanel(_props: IDockviewPanelProps) {
         open={utilityPick}
         onOpenChange={setUtilityPick}
         allowNone={false}
+        createBaseClass="EditorUtilityObject"
+        createOptions={{ ownerPath: doc?.ref.path }}
         classes={editorUtilityObjectClassEntries(assetRegistry?.list() ?? [])}
         onPick={(classId) => {
           if (!classId) return;

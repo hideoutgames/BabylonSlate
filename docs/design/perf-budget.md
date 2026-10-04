@@ -19,6 +19,7 @@ with another view are not per-viewport GPU measurements.
 | Warm non-CB document workspaces | **≤ 3** | Active + open Scene tabs + recent (`MAX_WARM_DOCUMENT_WORKSPACES`). Open Scenes always mount and count. Content Browser always mounted |
 | Idle inactive chrome tab | Unmount after **2 min** | `DOCUMENT_IDLE_UNMOUNT_MS`; pause clock while app backgrounded |
 | Game tick (combined) | &lt; 8 ms | ~5 ms scripts + ~3 ms physics in one worker |
+| Snapshot publish | Measured, outside the tick budget | Stats `publishMs`: per-tick SceneLayer overlay layout and removal pass plus one world composition and buffer write per `advance()` burst. Shown beside script/physics; not in `isTickOverBudget` |
 | Draw calls | Low hundreds | Prefer instancing; surface in stats HUD |
 
 ## Memory
@@ -37,7 +38,7 @@ Bytes per texel (unit-tested): RGBA8 = 4, ASTC 4×4 = 1, plus ~⅓ for mipmaps.
 
 Per fixed tick, inside the ~3 ms physics share of the combined game-tick budget. Main and SceneLayer overlay physics follow the same rules ([physics](../architecture/physics.md#per-tick-transform-work)):
 
-- One pre-step world-pose composition of physics participants and their ancestors; it is the tick's cycle/shear validation boundary. No other per-tick pass composes the whole world, except the water and readback fallbacks below.
+- One pre-step world-pose composition of physics participants and their ancestors; it is the tick's cycle/shear validation boundary. No other per-tick physics or water pass composes the whole world, except the water and readback fallbacks below (snapshot publishing composes once per published frame; see the worker rule below).
 - Body membership scans each eligible actor's components once. Unchanged collider, rigid-body, mesh-source and static-pose descriptors are compared in scratch and copied only on change.
 - Water: no transform work without an enabled water surface (a Landscape alone costs nothing). Otherwise only water, removal-volume, Landscape and buoyant actors plus their ancestors. Any duplicate actor guid in the world, or a parent cycle on a selected chain, falls back to composing the whole world. Each script `sampleWater` call follows the same rule.
 - Readback: no composition when no body is parented; otherwise only the parented bodies' ancestor chains. A tick whose Movement transition events ran scripts recomposes the whole world, as before.
@@ -66,13 +67,23 @@ Deterministic counts, not timings, guard these rules: `physics-tick-composition.
 - No per-actor per-frame allocation in snapshot apply (reuse scratch math objects). `SnapshotInterpolator.push` copies into two owned `Float32Array`s (ping-pong); do not `slice()` a new buffer per snapshot. Each sampled snapshot identity (`frameId`, α, layout generation) applies once per frame even though registered-view admission and the render loop both sample; audio pose/listener sync rides the same apply so capped draws still sync once.
 - Play overlay / packaged-player HUD must not `setState` (or rewrite chrome DOM) at 60 Hz. Worker `stats` is ~5 Hz; rAF FPS sampling is 1 Hz. Tick stamp and worker timings also live on the snapshot header.
 
+## Runtime tick rules (agents)
+
+The worker counterpart to the snapshot-apply rule: no whole-world work or per-actor allocation per tick unless its output needs it.
+
+- Compose every actor's world pose once per published frame. `advance()` defers the composition and buffer write of its catch-up ticks to one write when the burst ends; each tick still lays out SceneLayer overlays (the next tick's focus navigation and scripts read the arranged poses) and runs its removal pass (stream retirement, `despawn`, slot release). A bare `tick()` and explicit publishes (scene, layer and stream readiness, SceneLayer scrolling) write immediately.
+- Other per-tick passes compose only the actors they read: the crowd composes NavAgent actors and their ancestors, ragdolls their owners (`actorWorldTransforms(actors, selected)` / `composeActorWorldTransforms`).
+- Build the frame's guid index (`navFrameActors`) only when behaviour trees or a navmesh can read it, with a plain loop.
+- Reuse scratch `Set`s / arrays owned by the driver for per-tick bookkeeping and prune long-lived maps in place; avoid spreading a `Map`/`Set` to iterate it unless the loop can reenter and mutate it.
+- `snapshot-publish.test.ts` bounds whole-world compositions per burst and per crowd tick, and checks bursts publish the frames per-tick publishing would.
+
 
 ## CI
 
 `p14-perf-smoke` is in `pnpm verify` (Vitest):
 
 - Tiny in-process scene: `lastScriptMs`, `lastPhysicsMs`, and combined tick `< TICK_BUDGET_MS` (8 ms). Keep the fixture small so GitHub runners stay under budget.
-- 120 ticks → `stats` command count is ~5 Hz (not 120); snapshot header `tickIndex` is still 120. 2000 ticks with one looping `AudioComponent`: one `playSound`, `stats` stays ~5 Hz, last-100 median tick cost is not much worse than first-100.
+- 120 ticks → `stats` command count is ~5 Hz (not 120), each with a finite `publishMs`; snapshot header `tickIndex` is still 120. 2000 ticks with one looping `AudioComponent`: one `playSound`, `stats` stays ~5 Hz, last-100 median tick cost is not much worse than first-100.
 - Accounted texture + geometry bytes vs committed ceilings (`TEXTURE_BYTE_CEILING` 2 GB, `GEOMETRY_BYTE_CEILING` 512 MB). Drift fails CI.
 - Obstructed / hidden editor: `RenderScheduler.shouldRender() === false` (zero frames).
 - Draw-call ceiling (`DRAW_CALL_WARN_CEILING` 400) as HUD warnings.

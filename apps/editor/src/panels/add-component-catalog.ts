@@ -11,6 +11,7 @@ import {
   emptySkyboxFaces,
   parseText3DProperties,
   parsePainter2DProperties,
+  parseJoystick2DProperties,
   parseAreaRectLightProperties,
   parseFogVolumeProperties,
   parseOutlineProperties,
@@ -159,6 +160,7 @@ export const ADDABLE_COMPONENT_CLASSES: readonly AddComponentItem[] = [
   engineComponent("WaterRemovalVolumeComponent", "Water Removal Volume", "Removes water inside a box, sphere, cylinder or capsule", "Water"),
   engineComponent("WaterBuoyancyComponent", "Water Buoyancy", "Float with waves and respond to physics impacts", "Water"),
   ...OVERLAY_LAYOUT_CLASSES.map(classId => engineComponent(classId, humanizePropertyLabel(classId.replace(/Component$/, "")), classId === "2DPaddingComponent" ? "Insets the parent content without drawing a surface" : "Nested SceneLayer layout", "Overlay")),
+  engineComponent("2DJoystickComponent", "2D Joystick", "Touch joystick with configurable background and joystick materials", "Overlay"),
   engineComponent("2DPainterComponent", "2D Painter", "Draw shapes, paths, curves and masks with graph nodes", "Overlay"),
   engineComponent(
     "2DAnchorComponent",
@@ -330,6 +332,7 @@ export function defaultPropertiesFor(
       };
     case "2DAnchorComponent":
       return { anchor: "center", offsetX: 0, offsetY: 0 };
+    case "2DJoystickComponent": return { ...parseJoystick2DProperties({}) };
     case "2DPainterComponent": return { ...parsePainter2DProperties({}) };
     case "2DButtonComponent":
       return { hitTest: "block", focusEnabled: true, focusInitial: false, focusUp: null, focusDown: null, focusLeft: null, focusRight: null };

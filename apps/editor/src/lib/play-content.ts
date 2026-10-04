@@ -608,6 +608,7 @@ export function materialAssetGuidsFromScene(
     ...componentGuidsFromScene(scene, "CableComponent", ["materialGuid"]),
     ...componentGuidsFromScene(scene, "LandscapeComponent", ["materialGuid"]),
     ...(scene?.actors.flatMap((actor) => actor.components.flatMap((component) => component.classId === "FoliageComponent" ? parseFoliageProperties(component.properties).batches.flatMap((batch) => batch.materialGuid ? [batch.materialGuid] : []) : [])) ?? []),
+    ...componentGuidsFromScene(scene, "2DJoystickComponent", ["backgroundMaterialGuid", "joystickMaterialGuid"]),
     ...componentGuidsFromScene(scene, "2DMaterialComponent", ["materialGuid"]),
     ...componentGuidsFromScene(scene, "2DPanelComponent", ["materialGuid"]),
     ...componentGuidsFromScene(scene, "2DTextComponent", ["materialGuid"]),

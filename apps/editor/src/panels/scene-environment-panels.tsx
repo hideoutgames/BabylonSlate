@@ -152,7 +152,7 @@ export function LandscapeSettingsPanel(_props: IDockviewPanelProps) {
       <PropertySectionTitle>Landscape</PropertySectionTitle>
       <p className="px-2 py-3 text-xs text-muted-foreground" data-testid="landscape-settings-empty">Select a landscape in Landscape Outliner to edit its size, cells, and Material.</p>
     </>}
-    <AssetPicker open={materialPicker} onOpenChange={setMaterialPicker} assets={materials} allowedTypes={["Material", "MaterialInstance"]} allowNone title="Landscape Material" onPick={(materialGuid) => { if (data) setData({ ...data, materialGuid }); setMaterialPicker(false); }} />
+    <AssetPicker open={materialPicker} onOpenChange={setMaterialPicker} assets={materials} allowedTypes={["Material", "MaterialInstance"]} createTypes={["Material"]} createOptions={{ materialDomain: "landscape" }} allowNone title="Landscape Material" onPick={(materialGuid) => { if (data) setData({ ...data, materialGuid }); setMaterialPicker(false); }} />
   </div></PanelFrame>;
 }
 

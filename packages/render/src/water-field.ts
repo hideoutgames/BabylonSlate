@@ -1,32 +1,34 @@
 import {
   Constants,
-  InstancedMesh,
-  LinesMesh,
   Matrix,
   Mesh,
   Quaternion,
   RawTexture,
   Texture,
   Vector3,
-  VertexBuffer,
-  type AbstractMesh,
   type Scene,
 } from "@babylonjs/core";
 import { landscapeWorldHeightAt, type LandscapeProperties, type Transform } from "@babylonslate/core";
 import { landscapeMeshData } from "./landscape-mesh";
-import { RENDERING_GROUP } from "./sorting";
 
-/** Encoded ranges of the RGBA8 field: R shore distance, G depth over terrain, B object distance, A terrain known. */
+/**
+ * Encoded ranges of the RGBA8 field: R shore distance, G depth over terrain, B the same depth at fine precision
+ * over the shallows (`fineDepthSpan` metres from `fineDepthMin`), A terrain known.
+ * Objects live in the separate, height-aware `WaterContactField`.
+ */
 export const WATER_FIELD_SHORE_RANGE: readonly [number, number] = [-8, 24];
 export const WATER_FIELD_DEPTH_RANGE: readonly [number, number] = [-8, 32];
+/** Smallest fine span: about 2 cm per step, so gentle shores shade and foam without depth terraces. */
+export const WATER_FIELD_FINE_DEPTH_SPAN = 5;
 const MAX_CELLS = 512;
 const MIN_CELL = 0.2;
-const OBJECT_REFRESH_MS = 100;
-const MAX_SLICE_INDICES = 600_000;
 
 const INF = 1e20;
-/** Squared Euclidean distance transform (Felzenszwalb-Huttenlocher), in cell units, in place. */
-export function distanceTransform(grid: Float64Array, width: number, height: number): Float64Array {
+/**
+ * Squared Euclidean distance transform (Felzenszwalb-Huttenlocher), in cell units, in place.
+ * Seeds may carry a non-zero squared offset, e.g. a vertical gap, which the transform preserves.
+ */
+export function distanceTransform<T extends Float32Array | Float64Array>(grid: T, width: number, height: number): T {
   const size = Math.max(width, height);
   const f = new Float64Array(size), d = new Float64Array(size), v = new Int32Array(size), z = new Float64Array(size + 1);
   const pass = (n: number, get: (i: number) => number, set: (i: number, value: number) => void) => {
@@ -52,18 +54,6 @@ export function distanceTransform(grid: Float64Array, width: number, height: num
 const encode = (value: number, [min, max]: readonly [number, number]) =>
   Math.round(Math.max(0, Math.min(1, (value - min) / (max - min))) * 255);
 
-/** Meshes that can meet the water: visible world geometry, not editor helpers, terrain or water. */
-export function isWaterContactMesh(mesh: AbstractMesh): boolean {
-  // LOD levels share their master's placement; the master already counts.
-  if (mesh.isBlocked || !(mesh instanceof Mesh || mesh instanceof InstancedMesh) || mesh instanceof LinesMesh) return false;
-  // Foreground and UI groups are overlays, not world geometry.
-  if (!mesh.isEnabled() || !mesh.isVisible || mesh.visibility <= 0 || mesh.renderingGroupId > RENDERING_GROUP.world) return false;
-  const meta = mesh.metadata as Record<string, unknown> | null;
-  if (meta && (meta.slateWater || meta.slateWaterRemoval || meta.landscapeRoot || meta.slateLandscape || meta.skybox ||
-    meta.editorVolume || meta.editorBillboard || meta.editorCameraModel || meta.editorColliderVisual || meta.editorUnpickable)) return false;
-  return mesh.getTotalIndices() > 0;
-}
-
 function toTransform(matrix: Matrix): Transform {
   const scaling = new Vector3(), rotation = new Quaternion(), position = new Vector3();
   matrix.decompose(scaling, rotation, position);
@@ -78,11 +68,11 @@ export interface WaterFieldSurface {
   mesh: Mesh;
   /** World surface height (without waves) at a world X/Z, or null outside the body. */
   surfaceY: (x: number, z: number) => number | null;
-  /** Current rendered height for wave-aware contacts, or null outside the rendered surface. */
-  contactY?: (x: number, z: number) => number | null;
-  /** Changes when the rendered contact surface changes; a paused clock keeps its field. */
-  contactRevision?: () => number;
-  /** True for unbounded water, whose field covers only the terrain and objects that reach it. */
+  /** True when the rest height varies across the body: rivers and tilted volumes. */
+  restVaries?: boolean;
+  /** The rest height extended beyond the footprint, for cutting objects on bodies whose rest height varies. */
+  restY?: (x: number, z: number) => number;
+  /** True for unbounded water, whose fields cover only the terrain and objects that reach it. */
   unbounded: boolean;
   /** Metres either side of the rest height that waves reach. */
   amplitude: number;
@@ -93,9 +83,9 @@ export interface WaterFieldSurface {
 type Rect = { minX: number; minZ: number; maxX: number; maxZ: number };
 
 /**
- * Per-surface world-aligned texture describing what meets the water: terrain shorelines and the
- * true depth over terrain, plus distance to objects crossing the surface. Built on the CPU from
- * authored terrain and mesh cross-sections, so it works on every render path and backend.
+ * Per-surface world-aligned texture describing the terrain beneath the water: the signed
+ * distance to its shorelines and the true depth over it. Built on the CPU from authored terrain,
+ * so it works on every render path and backend.
  */
 export class WaterField {
   texture: RawTexture | null = null;
@@ -106,9 +96,6 @@ export class WaterField {
   private height = 0;
   private rect: Rect | null = null;
   private terrainKey = "";
-  private objectKey = "";
-  private lastObjectCheck = -Infinity;
-  private contactSamples: Float64Array | null = null;
   private readonly terrainOwner = new WeakMap<object, number>();
   private terrainIds = 0;
 
@@ -125,28 +112,39 @@ export class WaterField {
     return [Math.min(WATER_FIELD_DEPTH_RANGE[0], -this.surface.amplitude - 1), Math.max(WATER_FIELD_DEPTH_RANGE[1], this.surface.amplitude + 1)];
   }
 
-  /** Refresh when terrain, the surface or nearby objects change. Returns true when the texture changed. */
-  update(now: number, force = false): boolean {
+  /** One cell in texture coordinates (u, v). */
+  get texelSize(): readonly [number, number] {
+    return [1 / Math.max(1, this.width), 1 / Math.max(1, this.height)];
+  }
+
+  /** Floor of the fine depth channel: below the lowest trough, so clamped cells still read as dry land. */
+  get fineDepthMin(): number {
+    return Math.min(-1, -this.surface.amplitude - 0.25);
+  }
+
+  /**
+   * Metres the fine depth channel covers from `fineDepthMin`: every displaced waterline (rest depth -amplitude to
+   * +amplitude) plus a few metres of shallows beyond the lowest trough, so tall waves still find their shore.
+   */
+  get fineDepthSpan(): number {
+    return Math.max(WATER_FIELD_FINE_DEPTH_SPAN, 2 * this.surface.amplitude + 4);
+  }
+
+  /** Refresh when terrain or the surface changes. Returns true when the texture changed. */
+  update(force = false): boolean {
     const landscapes = this.landscapes();
     const surfaceBox = this.surface.mesh.getBoundingInfo().boundingBox;
     const terrainKey = landscapes.map(({ root, data }) => this.idOf(data) + ":" + Array.from(root.getWorldMatrix().m).join(",")).join("|")
       + "@" + Array.from(this.surface.mesh.getWorldMatrix().m).join(",")
-      + "@" + this.depthRange.join(",")
+      + "@" + this.depthRange.join(",") + "," + this.fineDepthMin + "," + this.fineDepthSpan
       + "@" + (this.surface.unbounded ? "" : [surfaceBox.minimumWorld.x, surfaceBox.minimumWorld.z, surfaceBox.maximumWorld.x, surfaceBox.maximumWorld.z].join(","));
-    const terrainChanged = force || terrainKey !== this.terrainKey;
-    if (!terrainChanged && now - this.lastObjectCheck < OBJECT_REFRESH_MS) return false;
-    this.lastObjectCheck = now;
-    const objects = this.objects();
-    const objectKey = objects.map((mesh) => mesh.uniqueId + ":" + Array.from(mesh.getWorldMatrix().m).map((n) => n.toFixed(3)).join(",")).join("|")
-      + (this.surface.contactY && objects.length ? "@" + (this.surface.contactRevision?.() ?? 0) : "");
-    if (!terrainChanged && objectKey === this.objectKey) return false;
-    const rect = this.measure(landscapes, objects);
-    const resized = !this.rect || !rect || rect.minX !== this.rect.minX || rect.minZ !== this.rect.minZ || rect.maxX !== this.rect.maxX || rect.maxZ !== this.rect.maxZ;
-    this.terrainKey = terrainKey; this.objectKey = objectKey;
-    if (!rect) { this.release(); return true; }
+    if (!force && terrainKey === this.terrainKey) return false;
+    this.terrainKey = terrainKey;
+    const rect = this.measure(landscapes);
+    if (!rect) { const had = this.texture !== null; this.release(); return had; }
+    const resized = !this.rect || rect.minX !== this.rect.minX || rect.minZ !== this.rect.minZ || rect.maxX !== this.rect.maxX || rect.maxZ !== this.rect.maxZ;
     if (resized) this.allocate(rect);
-    if (terrainChanged || resized) this.fillTerrain(landscapes);
-    this.fillObjects(objects);
+    this.fillTerrain(landscapes);
     if (!this.texture) {
       this.texture = RawTexture.CreateRGBATexture(this.data!, this.width, this.height, this.scene, false, false, Texture.BILINEAR_SAMPLINGMODE, Constants.TEXTURETYPE_UNSIGNED_BYTE);
       this.texture.name = `${this.surface.mesh.name}:water-field`;
@@ -159,7 +157,6 @@ export class WaterField {
 
   private release(): void {
     this.texture?.dispose(); this.texture = null; this.data = null; this.rect = null;
-    this.contactSamples = null;
   }
 
   private idOf(data: object): number {
@@ -178,23 +175,7 @@ export class WaterField {
     return found;
   }
 
-  private objects(): AbstractMesh[] {
-    const box = this.surface.mesh.getBoundingInfo().boundingBox;
-    const margin = this.surface.contactRange;
-    const found: AbstractMesh[] = [];
-    for (const mesh of this.scene.meshes) {
-      if (!isWaterContactMesh(mesh)) continue;
-      const bounds = mesh.getBoundingInfo().boundingBox;
-      const { minimumWorld: min, maximumWorld: max } = bounds;
-      if (!this.surface.unbounded && (max.x < box.minimumWorld.x - margin || min.x > box.maximumWorld.x + margin || max.z < box.minimumWorld.z - margin || min.z > box.maximumWorld.z + margin)) continue;
-      const level = this.surface.surfaceY(bounds.centerWorld.x, bounds.centerWorld.z);
-      if (level === null || min.y > level + this.surface.amplitude || max.y < level - this.surface.amplitude) continue;
-      found.push(mesh);
-    }
-    return found;
-  }
-
-  private measure(landscapes: Array<{ root: Mesh; data: LandscapeProperties }>, objects: AbstractMesh[]): Rect | null {
+  private measure(landscapes: Array<{ root: Mesh; data: LandscapeProperties }>): Rect | null {
     const margin = this.surface.contactRange + 1;
     let rect: Rect | null = null;
     const add = (min: Vector3, max: Vector3) => {
@@ -209,15 +190,14 @@ export class WaterField {
         const level = this.surface.surfaceY((min.x + max.x) / 2, (min.z + max.z) / 2);
         if (level !== null && min.y <= level + this.surface.amplitude) add(min, max);
       }
-      for (const mesh of objects) add(mesh.getBoundingInfo().boundingBox.minimumWorld, mesh.getBoundingInfo().boundingBox.maximumWorld);
       if (!rect) return null;
     } else {
-      if (landscapes.length === 0 && objects.length === 0) return null;
+      if (landscapes.length === 0) return null;
       const box = this.surface.mesh.getBoundingInfo().boundingBox;
       rect = { minX: box.minimumWorld.x - 1, minZ: box.minimumWorld.z - 1, maxX: box.maximumWorld.x + 1, maxZ: box.maximumWorld.z + 1 };
     }
     const r = rect as Rect;
-    // Snap to whole cells so small object moves reuse the allocation.
+    // Snap to whole cells so small terrain moves reuse the allocation.
     const cell = Math.max(MIN_CELL, Math.max(r.maxX - r.minX, r.maxZ - r.minZ) / MAX_CELLS);
     const snap = (n: number, up: boolean) => (up ? Math.ceil(n / (cell * 8)) : Math.floor(n / (cell * 8))) * cell * 8;
     return { minX: snap(r.minX, false), minZ: snap(r.minZ, false), maxX: snap(r.maxX, true), maxZ: snap(r.maxZ, true) };
@@ -241,7 +221,8 @@ export class WaterField {
 
   private fillTerrain(landscapes: Array<{ root: Mesh; data: LandscapeProperties }>): void {
     const { width, height } = this, data = this.data!, count = width * height;
-    const depthRange = this.depthRange;
+    const depthRange = this.depthRange, fineMin = this.fineDepthMin;
+    const fineRange = [fineMin, fineMin + this.fineDepthSpan] as const;
     const transforms = landscapes.map(({ root, data }) => ({ data, transform: toTransform(root.computeWorldMatrix(true)) }));
     const depth = new Float64Array(count), known = new Uint8Array(count);
     for (let z = 0; z < height; z++) for (let x = 0; x < width; x++) {
@@ -270,169 +251,8 @@ export class WaterField {
         : (Math.sqrt(toLand[i]!) - 0.5) * cell;
       data[i * 4] = encode(shore, WATER_FIELD_SHORE_RANGE);
       data[i * 4 + 1] = known[i] ? encode(depth[i]!, depthRange) : 255;
+      data[i * 4 + 2] = known[i] ? encode(depth[i]!, fineRange) : 255;
       data[i * 4 + 3] = known[i] ? 255 : 0;
     }
-  }
-
-  /** Slice each object at the waterline and store the distance to that cross-section outline. */
-  private fillObjects(objects: AbstractMesh[]): void {
-    const { width, height } = this, data = this.data!, count = width * height, r = this.rect!;
-    if (objects.length === 0) {
-      for (let i = 0; i < count; i++) data[i * 4 + 2] = 255;
-      return;
-    }
-    const outline = new Float64Array(count).fill(INF);
-    const cellX = (r.maxX - r.minX) / width, cellZ = (r.maxZ - r.minZ) / height, step = Math.min(cellX, cellZ) * 0.5;
-    const mark = (x: number, z: number) => {
-      const cx = Math.floor((x - r.minX) / cellX), cz = Math.floor((z - r.minZ) / cellZ);
-      if (cx >= 0 && cz >= 0 && cx < width && cz < height) outline[cz * width + cx] = 0;
-    };
-    const contactY = this.surface.contactY;
-    // Scanline samples share a lattice across every object, so overlapping faces sample the
-    // rendered water only once per location. Endpoints and narrow faces also keep their edges.
-    const sampleWidth = width * 2 + 1, sampleCount = sampleWidth * (height * 2 + 1);
-    if (contactY && this.contactSamples?.length !== sampleCount) this.contactSamples = new Float64Array(sampleCount);
-    const contactSamples = contactY ? this.contactSamples!.fill(NaN) : null;
-    const contactHeight = (x: number, z: number, index = -1): number => {
-      if (index < 0) return contactY!(x, z) ?? Infinity;
-      let value = contactSamples![index]!;
-      if (Number.isNaN(value)) { value = contactY!(x, z) ?? Infinity; contactSamples![index] = value; }
-      return value;
-    };
-    const contactSegment = (x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, row = -1, column = -1) => {
-      // Clip before sampling: a very large mesh must not trace beyond this field's bounds.
-      const dx = x1 - x0, dy = y1 - y0, dz = z1 - z0;
-      let lo = 0, hi = 1;
-      if (dx === 0) { if (x0 < r.minX || x0 > r.maxX) return; }
-      else {
-        const a = (r.minX - x0) / dx, b = (r.maxX - x0) / dx;
-        lo = Math.max(lo, Math.min(a, b)); hi = Math.min(hi, Math.max(a, b));
-      }
-      if (dz === 0) { if (z0 < r.minZ || z0 > r.maxZ) return; }
-      else {
-        const a = (r.minZ - z0) / dz, b = (r.maxZ - z0) / dz;
-        lo = Math.max(lo, Math.min(a, b)); hi = Math.min(hi, Math.max(a, b));
-      }
-      if (lo > hi) return;
-      let previousX = x0 + dx * lo, previousZ = z0 + dz * lo;
-      let previous = y0 + dy * lo - contactHeight(previousX, previousZ);
-      const sample = (t: number, index = -1) => {
-        const x = x0 + dx * t, z = z0 + dz * t;
-        const value = y0 + dy * t - contactHeight(x, z, index);
-        if (Number.isFinite(previous) && Number.isFinite(value) && (previous <= 0) !== (value <= 0)) {
-          const f = previous / (previous - value);
-          mark(previousX + (x - previousX) * f, previousZ + (z - previousZ) * f);
-        }
-        previousX = x; previousZ = z; previous = value;
-      };
-      if (row >= 0 && dx !== 0) {
-        const start = (x0 + dx * lo - r.minX) / (cellX * 0.5), end = (x0 + dx * hi - r.minX) / (cellX * 0.5);
-        const direction = dx > 0 ? 1 : -1;
-        const first = Math.max(0, Math.min(width * 2, dx > 0 ? Math.ceil(start) : Math.floor(start)));
-        const last = Math.max(0, Math.min(width * 2, dx > 0 ? Math.floor(end) : Math.ceil(end)));
-        for (let col = first; dx > 0 ? col <= last : col >= last; col += direction) {
-          sample((r.minX + col * cellX * 0.5 - x0) / dx, (row * 2 + 1) * sampleWidth + col);
-        }
-      } else if (column >= 0 && dz !== 0) {
-        const start = (z0 + dz * lo - r.minZ) / (cellZ * 0.5), end = (z0 + dz * hi - r.minZ) / (cellZ * 0.5);
-        const direction = dz > 0 ? 1 : -1;
-        const first = Math.max(0, Math.min(height * 2, dz > 0 ? Math.ceil(start) : Math.floor(start)));
-        const last = Math.max(0, Math.min(height * 2, dz > 0 ? Math.floor(end) : Math.ceil(end)));
-        for (let sampleRow = first; dz > 0 ? sampleRow <= last : sampleRow >= last; sampleRow += direction) {
-          sample((r.minZ + sampleRow * cellZ * 0.5 - z0) / dz, sampleRow * sampleWidth + column * 2 + 1);
-        }
-      } else {
-        const steps = Math.max(1, Math.ceil(Math.max(Math.abs(dx) / cellX, Math.abs(dz) / cellZ) * (hi - lo) * 2));
-        for (let s = 1; s < steps; s++) sample(lo + (hi - lo) * s / steps);
-      }
-      sample(hi);
-    };
-    let budget = MAX_SLICE_INDICES;
-    const surfaceBounds = this.surface.mesh.getBoundingInfo().boundingBox;
-    const minContactY = surfaceBounds.minimumWorld.y - this.surface.amplitude;
-    const maxContactY = surfaceBounds.maximumWorld.y + this.surface.amplitude;
-    const a = new Vector3(), b = new Vector3(), c = new Vector3();
-    for (const mesh of objects) {
-      const source = mesh instanceof InstancedMesh ? mesh.sourceMesh : mesh as Mesh;
-      const positions = source.getVerticesData(VertexBuffer.PositionKind), indices = source.getIndices();
-      if (!positions || !indices || indices.length > budget) continue;
-      budget -= indices.length;
-      const matrix = mesh.computeWorldMatrix(true), center = mesh.getBoundingInfo().boundingBox.centerWorld;
-      const level = this.surface.surfaceY(center.x, center.z);
-      if (level === null) continue;
-      const world = new Float32Array(positions.length);
-      for (let i = 0; i < positions.length; i += 3) {
-        Vector3.TransformCoordinatesFromFloatsToRef(positions[i]!, positions[i + 1]!, positions[i + 2]!, matrix, a);
-        world[i] = a.x; world[i + 1] = contactY ? a.y : a.y - level; world[i + 2] = a.z;
-      }
-      for (let t = 0; t + 2 < indices.length; t += 3) {
-        const i0 = indices[t]! * 3, i1 = indices[t + 1]! * 3, i2 = indices[t + 2]! * 3;
-        a.set(world[i0]!, world[i0 + 1]!, world[i0 + 2]!); b.set(world[i1]!, world[i1 + 1]!, world[i1 + 2]!); c.set(world[i2]!, world[i2 + 1]!, world[i2 + 2]!);
-        if (contactY) {
-          if (Math.min(a.y, b.y, c.y) > maxContactY || Math.max(a.y, b.y, c.y) < minContactY) continue;
-          // A face can contain several contacts even when its original vertices all sit above
-          // or below the waves. Trace its interior at field resolution, not only its vertices.
-          const firstRow = Math.max(0, Math.ceil((Math.min(a.z, b.z, c.z) - r.minZ) / cellZ - 0.5));
-          const lastRow = Math.min(height - 1, Math.floor((Math.max(a.z, b.z, c.z) - r.minZ) / cellZ - 0.5));
-          for (let row = firstRow; row <= lastRow; row++) {
-            const z = r.minZ + (row + 0.5) * cellZ;
-            let points = 0, x0 = 0, y0 = 0, x1 = 0, y1 = 0;
-            for (let edge = 0; edge < 3; edge++) {
-              const p = edge === 0 ? a : edge === 1 ? b : c;
-              const q = edge === 0 ? b : edge === 1 ? c : a;
-              if ((p.z <= z) === (q.z <= z)) continue;
-              const f = (z - p.z) / (q.z - p.z);
-              const x = p.x + (q.x - p.x) * f, y = p.y + (q.y - p.y) * f;
-              if (points === 0) { x0 = x; y0 = y; }
-              else { x1 = x; y1 = y; }
-              points++;
-            }
-            if (points === 2) contactSegment(x0, y0, z, x1, y1, z, row);
-          }
-          // Both directions are required: a contact can run parallel to either set of rows,
-          // even across the interior of a broad face whose corners never meet the wave.
-          const firstCol = Math.max(0, Math.ceil((Math.min(a.x, b.x, c.x) - r.minX) / cellX - 0.5));
-          const lastCol = Math.min(width - 1, Math.floor((Math.max(a.x, b.x, c.x) - r.minX) / cellX - 0.5));
-          for (let col = firstCol; col <= lastCol; col++) {
-            const x = r.minX + (col + 0.5) * cellX;
-            let points = 0, y0 = 0, z0 = 0, y1 = 0, z1 = 0;
-            for (let edge = 0; edge < 3; edge++) {
-              const p = edge === 0 ? a : edge === 1 ? b : c;
-              const q = edge === 0 ? b : edge === 1 ? c : a;
-              if ((p.x <= x) === (q.x <= x)) continue;
-              const f = (x - p.x) / (q.x - p.x);
-              const y = p.y + (q.y - p.y) * f, z = p.z + (q.z - p.z) * f;
-              if (points === 0) { y0 = y; z0 = z; }
-              else { y1 = y; z1 = z; }
-              points++;
-            }
-            if (points === 2) contactSegment(x, y0, z0, x, y1, z1, -1, col);
-          }
-          contactSegment(a.x, a.y, a.z, b.x, b.y, b.z);
-          contactSegment(b.x, b.y, b.z, c.x, c.y, c.z);
-          contactSegment(c.x, c.y, c.z, a.x, a.y, a.z);
-          continue;
-        }
-        let points = 0, x0 = 0, z0 = 0, x1 = 0, z1 = 0;
-        for (let edge = 0; edge < 3; edge++) {
-          const p = edge === 0 ? a : edge === 1 ? b : c;
-          const q = edge === 0 ? b : edge === 1 ? c : a;
-          if ((p.y <= 0) === (q.y <= 0)) continue;
-          const f = p.y / (p.y - q.y);
-          const x = p.x + (q.x - p.x) * f, z = p.z + (q.z - p.z) * f;
-          if (points === 0) { x0 = x; z0 = z; }
-          else { x1 = x; z1 = z; }
-          points++;
-        }
-        if (points !== 2) continue;
-        const steps = Math.max(1, Math.ceil(Math.hypot(x1 - x0, z1 - z0) / step));
-        for (let s = 0; s <= steps; s++) mark(x0 + (x1 - x0) * s / steps, z0 + (z1 - z0) * s / steps);
-      }
-    }
-    const range = this.surface.contactRange;
-    const any = outline.some((n) => n === 0);
-    if (any) distanceTransform(outline, width, height);
-    const cell = Math.min(cellX, cellZ);
-    for (let i = 0; i < count; i++) data[i * 4 + 2] = any ? Math.round(Math.min(1, Math.sqrt(outline[i]!) * cell / range) * 255) : 255;
   }
 }

@@ -1,4 +1,5 @@
 import { LinesMesh, type AbstractMesh } from "@babylonjs/core";
+import { isEditorHelperMesh } from "./helper-mesh";
 import { isSkyboxMesh } from "./skybox";
 export type ShadowParticipation = {
   castShadows?: boolean;
@@ -17,39 +18,8 @@ export function authoredShadowParticipation(
   }
   return {};
 }
-const SHADOW_SKIP_NAME_PREFIXES = [
-  "debugLight:",
-  "debugCamera",
-  "navmeshDebug",
-  "playConsoleViz:",
-  // Visible geometry-less particle emitters would otherwise refresh shadow maps every frame.
-  "particleEmitter:",
-] as const;
-function shadowSkipMetadata(mesh: AbstractMesh): boolean {
-  const meta = mesh.metadata as {
-    editorActorOrigin?: boolean;
-    editorPickProxy?: boolean;
-    editorBillboard?: string;
-    editorCameraModel?: boolean;
-    editorVolume?: boolean;
-    editorColliderVisual?: boolean;
-    playHelperVisual?: boolean;
-    playActorOrigin?: boolean;
-    playDebugOverlay?: boolean;
-  } | null;
-  if (!meta) return false;
-  return Boolean(
-    meta.editorActorOrigin ||
-    meta.editorPickProxy ||
-    meta.editorBillboard ||
-    meta.editorCameraModel ||
-    meta.editorVolume ||
-    meta.editorColliderVisual ||
-    meta.playHelperVisual ||
-    meta.playActorOrigin ||
-    meta.playDebugOverlay,
-  );
-}
+/** Visible geometry-less particle emitters would otherwise refresh shadow maps every frame. */
+const PARTICLE_EMITTER_PREFIX = "particleEmitter:";
 
 export function participatesInShadows(mesh: AbstractMesh): boolean {
   // A LOD level is drawn by its master's shadow-map entry.
@@ -57,12 +27,8 @@ export function participatesInShadows(mesh: AbstractMesh): boolean {
   if (mesh.name.startsWith("__")) return false;
   if (isSkyboxMesh(mesh)) return false;
   if (mesh instanceof LinesMesh) return false;
-  if (
-    SHADOW_SKIP_NAME_PREFIXES.some((prefix) => mesh.name.startsWith(prefix))
-  ) {
-    return false;
-  }
-  return !shadowSkipMetadata(mesh);
+  if (mesh.name.startsWith(PARTICLE_EMITTER_PREFIX)) return false;
+  return !isEditorHelperMesh(mesh);
 }
 
 /** Bind-pose bounds cannot certify where GPU-deformed vertices will be. */

@@ -53,7 +53,7 @@ Order (from P3): `gameInstance` → `actors` → `components` → **`physics`** 
 
 1. Script phases may call sync queries on the live backend.
 2. `physics` phase: `backend.step(dt)`, then write body transforms back to Actors, then `pollContacts()` (see Contact events).
-3. `RuntimeDriver` times script phases and the physics phase separately into snapshot/`stats` `scriptMs` and `physicsMs`.
+3. `RuntimeDriver` times script phases and the physics phase separately into snapshot/`stats` `scriptMs` and `physicsMs`; snapshot publish time is reported separately as `stats` `publishMs`.
 
 ### Per-tick transform work
 

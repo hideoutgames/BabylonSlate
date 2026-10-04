@@ -217,11 +217,11 @@ function collideParticle(query: SphereSweepQuery, previous: Float32Array, positi
   const i = particle * 3;
   const sx = previous[i]!, sy = previous[i + 1]!, sz = previous[i + 2]!;
   const dx = positions[i]! - sx, dy = positions[i + 1]! - sy, dz = positions[i + 2]! - sz;
-  const distance = Math.hypot(dx, dy, dz);
+  const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
   const hit = query.sweep(sx, sy, sz, sx + dx, sy + dy, sz + dz);
   if (!hit.hit || !hit.normal) return;
   const normal = hit.normal;
-  const length = Math.hypot(normal.x, normal.y, normal.z);
+  const length = Math.sqrt(normal.x * normal.x + normal.y * normal.y + normal.z * normal.z);
   if (!(length > 1e-9)) return;
   const nx = normal.x / length, ny = normal.y / length, nz = normal.z / length;
   const fraction = distance > 1e-9 ? Math.max(0, Math.min(1, hit.distance / distance)) : 0;

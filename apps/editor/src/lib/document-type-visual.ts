@@ -6,7 +6,10 @@ import {
   visualForIndexedAsset,
 } from "./content-browser-helpers";
 
-/** Share within a render; a new resolver observes in-place registry updates. */
+/**
+ * Caches class ancestry on first use, so a reparented Class needs a new
+ * resolver: key it on `[assetRegistry, registryEpoch]`.
+ */
 export function createDocumentTypeVisualResolver(
   registry: AssetRegistry | null | undefined,
 ) {

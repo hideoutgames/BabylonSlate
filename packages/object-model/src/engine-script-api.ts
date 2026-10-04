@@ -837,6 +837,19 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
     ],
   },
   {
+    classId: "2DJoystickComponent",
+    variables: [
+      { name: "Enabled", typeId: "bool", propertyKey: "enabled" },
+      { name: "Background Material", typeId: "asset", typeClassId: "Material", propertyKey: "backgroundMaterialGuid" },
+      { name: "Joystick Material", typeId: "asset", typeClassId: "Material", propertyKey: "joystickMaterialGuid" },
+      { name: "Background Radius", typeId: "float", propertyKey: "radius" },
+      { name: "Joystick Radius", typeId: "float", propertyKey: "joystickRadius" },
+      { name: "Dead Zone", typeId: "float", propertyKey: "deadZone" },
+      { name: "Horizontal Axis", typeId: "string", propertyKey: "horizontalControl" },
+      { name: "Vertical Axis", typeId: "string", propertyKey: "verticalControl" },
+    ],
+  },
+  {
     classId: "2DButtonComponent",
     variables: [HIT_TEST, ...FOCUS_VARIABLES],
     events: [...BUTTON_MOUSE_EVENTS, ...FOCUS_EVENTS],

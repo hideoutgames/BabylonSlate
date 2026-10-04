@@ -6,7 +6,7 @@ import {
 } from "@babylonslate/core";
 import type { Actor, ActorComponent } from "@babylonslate/object-model";
 import type { PhysicsBackend } from "@babylonslate/physics";
-import { actorWorldTransforms, composeActorWorldTransforms, composeParentChildTransform } from "./actor-world-transform";
+import { actorWorldTransforms, composeActorWorldTransformsInto, composeParentChildTransform } from "./actor-world-transform";
 
 type WaterBody = { actorId: string; definition: WaterDefinition; body: WaterBodyProperties; transform: Transform };
 export type WaterWorldSample = WaterSample & { actorId: string | null; density: number; waterDepth: number };
@@ -120,7 +120,7 @@ export class WaterWorld {
     if (byGuid.size === actors.length) {
       const transforms = this.transforms;
       transforms.clear();
-      if (!composeActorWorldTransforms(byGuid, this.composed, transforms)) return transforms;
+      if (!composeActorWorldTransformsInto((guid) => byGuid.get(guid), this.composed, transforms)) return transforms;
     }
     this.transforms = actorWorldTransforms(actors);
     return this.transforms;

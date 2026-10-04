@@ -377,18 +377,21 @@ export interface PlayHudStats {
   fps: number;
   scriptMs: number;
   physicsMs: number;
+  /** Snapshot publish time, reported apart from the tick's script/physics budget. */
+  publishMs: number;
   frameId: number;
   liveActors?: number;
   snapshotCapacity?: number;
 }
 
-/** Worker `stats` commands are the source of truth for script/physics ms. */
+/** Worker `stats` commands are the source of truth for script/physics/publish ms. */
 export function applyWorkerPlayStats(
   previous: PlayHudStats | undefined,
   command: {
     fps?: number;
     scriptMs: number;
     physicsMs: number;
+    publishMs?: number;
     frameId: number;
     liveActors?: number;
     snapshotCapacity?: number;
@@ -398,6 +401,7 @@ export function applyWorkerPlayStats(
     fps: previous?.fps ?? 0,
     scriptMs: command.scriptMs,
     physicsMs: command.physicsMs,
+    publishMs: command.publishMs ?? 0,
     frameId: command.frameId,
     liveActors: command.liveActors ?? previous?.liveActors ?? 0,
     snapshotCapacity:
@@ -414,6 +418,7 @@ export function applyPlayFpsSample(
     fps,
     scriptMs: previous?.scriptMs ?? 0,
     physicsMs: previous?.physicsMs ?? 0,
+    publishMs: previous?.publishMs ?? 0,
     frameId: previous?.frameId ?? 0,
     liveActors: previous?.liveActors ?? 0,
     snapshotCapacity: previous?.snapshotCapacity ?? 0,
@@ -460,6 +465,7 @@ export function startPlaySession(options: {
     fps: number;
     scriptMs: number;
     physicsMs: number;
+    publishMs: number;
     frameId: number;
   }) => void;
   onLog?: (message: string, severity: string) => void;
@@ -652,6 +658,9 @@ export function startPlaySession(options: {
         diagnostic.message,
         diagnostic.severity === "error" ? "error" : "warning",
       );
+    },
+    onTouchAxis: (controlId, value) => {
+      input?.ring.push({ kind: "touchAxis", controlId, value, tick: playInputStampTick(runtime?.getWorld().clock.tickIndex, lastWorkerTickIndex) });
     },
     onSceneLayerScroll: (event) => {
       const control = { type: "sceneLayerScroll" as const, ...event };
@@ -850,6 +859,7 @@ export function startPlaySession(options: {
           fps: command.fps,
           scriptMs: command.scriptMs ?? 0,
           physicsMs: command.physicsMs ?? 0,
+          publishMs: command.publishMs,
           frameId: command.frameId ?? 0,
           liveActors: command.liveActors,
           snapshotCapacity: command.snapshotCapacity,

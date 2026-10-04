@@ -67,6 +67,7 @@ describe("SceneLayer object model", () => {
       "2DPaddingComponent",
       "2DSpacerComponent",
       "2DPainterComponent",
+      "2DJoystickComponent",
       "2DButtonComponent",
       "2DFocusTargetComponent",
       "2DMaterialComponent",

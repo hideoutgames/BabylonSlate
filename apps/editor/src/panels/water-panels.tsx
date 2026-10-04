@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { DirectionalLight, Vector3 } from "@babylonjs/core";
 import type { IDockviewPanelProps } from "dockview-react";
 import { AssetPicker, PanelFrame, PropertyGrid, assetRowIdentity, humanizePropertyLabel, type PropertyRow } from "@babylonslate/editor-kit";
@@ -14,17 +14,21 @@ const controls = [
   ["opacity", 0, 1], ["roughness", 0.02, 1], ["reflectionStrength", 0, 2],
   ["depthColorDistance", 0.01, 1000], ["waveHeight", 0, 20], ["waveLength", 0.1, 1000],
   ["waveSpeed", 0, 20], ["waveDirection", -360, 360], ["choppiness", 0, 1], ["waveSpread", 0, 1], ["rippleStrength", 0, 1],
-  ["rippleScale", 0.1, 100], ["foamAmount", 0, 1], ["foamWidth", 0, 20], ["crestFoam", 0, 1], ["contactFoamWidth", 0, 8],
-  ["colorBands", 0, 12], ["sparkles", 0, 1], ["density", 1, 20000],
+  ["rippleScale", 0.1, 100], ["foamAmount", 0, 1], ["foamWidth", 0, 20], ["crestFoam", 0, 1], ["surfaceFoam", 0, 1], ["contactFoamWidth", 0, 8],
+  ["subsurface", 0, 2], ["colorBands", 0, 12], ["sparkles", 0, 1], ["density", 1, 20000],
 ] as const;
 const descriptions: Partial<Record<(typeof controls)[number][0], string>> = {
   opacity: "Maximum opacity of deep water. Shallow water near banks stays clearer.",
+  roughness: "Realistic: how far the sun glint and sky reflection spread. Stylized: size of the sun highlight.",
+  reflectionStrength: "Realistic: strength of the sky reflection. Stylized: strength of the lighter rim toward the horizon.",
   depthColorDistance: "Metres of water that absorb most light. Smaller values look deeper and darker sooner.",
   rippleScale: "Higher values make smaller wind ripples.",
   choppiness: "0 gives rounded swell; 1 gives sharp crests and flat troughs. Floating objects follow the same shape.",
   waveSpread: "How far wave headings fan out from Wave Direction: 0 is one swell, 1 is a confused sea.",
   foamWidth: "Metres of shoreline foam measured from the bank or terrain shoreline.",
-  crestFoam: "Whitecaps on steep, choppy crests.",
+  crestFoam: "Whitecap coverage on the steepest, sharpest crests. Gentle swell and small lake waves stay clear.",
+  surfaceFoam: "Open-water foam: wind streaks on Realistic water, drifting foam patches on Stylized water.",
+  subsurface: "Realistic: sunlight glowing green through wave crests. Stylized: the lighter tint on wave tops.",
   contactFoamWidth: "Metres of foam around objects and terrain that cross the surface.",
   colorBands: "Stylized depth bands. Zero or one keeps a smooth gradient.",
   sparkles: "Twinkling sun glints on the surface.",
@@ -34,14 +38,19 @@ const descriptions: Partial<Record<(typeof controls)[number][0], string>> = {
 export function WaterDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyAssetDocumentChange, assetRegistry } = useDocuments();
+  const { openDocuments, applyAssetDocumentChange, assetRegistry, registryEpoch } = useDocuments();
   const [picking, setPicking] = useState(false);
   const doc = openDocuments.find((entry) => entry.id === documentId);
   const water = normalizeWaterDefinition(doc?.content);
   const defaults = createDefaultWaterDefinition(water.style);
   /** `field` names the per-field merge key: one scrub or color drag is one undo step. */
   const commit = (next: WaterDefinition, field?: string) => { void applyAssetDocumentChange(documentId, normalizeWaterDefinition(next) as unknown as Record<string, unknown>, field ? `water:${field}` : undefined); };
-  const assets = (assetRegistry?.list() ?? []).filter((asset) => isMaterialAssetType(asset.header.type) && (!asset.header.payload?.domain || asset.header.payload.domain === "surface"));
+  // Surface Materials change with the registry, not with edits of this Water.
+  const assets = useMemo(() => {
+    void registryEpoch;
+    return (assetRegistry?.list() ?? []).filter((asset) => isMaterialAssetType(asset.header.type) && (!asset.header.payload?.domain || asset.header.payload.domain === "surface"));
+  }, [assetRegistry, registryEpoch]);
+  const pickerAssets = useMemo(() => assets.map((asset) => ({ guid: asset.header.guid, name: asset.header.name, type: asset.header.type, path: asset.path })), [assets]);
   const selected = assets.find((asset) => asset.header.guid === water.materialGuid);
   const rows: PropertyRow[] = [
     { id: "water-style", kind: "enum", label: "Style", value: water.style, options: [{ value: "realistic", label: "Realistic" }, { value: "stylized", label: "Stylized" }], description: "Changes shading style. Your colors and wave settings are retained.", onChange: (style) => commit({ ...water, style: style === "stylized" ? "stylized" : "realistic" }) },
@@ -50,7 +59,7 @@ export function WaterDetailsPanel(_props: IDockviewPanelProps) {
     { id: "water-material", kind: "asset", label: "Custom Material", value: water.materialGuid, placeholder: "Built-In Water", description: "Optional Surface Material. Wave displacement and buoyancy remain active.", ...(selected ? assetRowIdentity({ name: selected.header.name, type: selected.header.type }) : {}), onPick: () => setPicking(true), onChange: (materialGuid) => commit({ ...water, materialGuid }) },
   ];
   return <PanelFrame data-testid="water-details-panel"><div className="min-h-0 flex-1 overflow-auto p-2"><PropertyGrid rows={rows} /></div>
-    <AssetPicker open={picking} onOpenChange={setPicking} allowedTypes={["Material", "MaterialInstance"]} assets={assets.map((asset) => ({ guid: asset.header.guid, name: asset.header.name, type: asset.header.type, path: asset.path }))} onPick={(materialGuid) => { commit({ ...water, materialGuid }); setPicking(false); }} />
+    <AssetPicker open={picking} onOpenChange={setPicking} allowedTypes={["Material", "MaterialInstance"]} assets={pickerAssets} onPick={(materialGuid) => { commit({ ...water, materialGuid }); setPicking(false); }} />
   </PanelFrame>;
 }
 
