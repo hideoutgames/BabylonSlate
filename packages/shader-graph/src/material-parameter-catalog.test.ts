@@ -79,6 +79,16 @@ function fixture() {
 }
 
 describe("worker Material parameter catalog", () => {
+  it("keeps Text graphs and their exposed parameters across the host/worker boundary", () => {
+    const document = createDefaultMaterialDocument("Text Fill", "text");
+    document.nodes.push({ id: "tint", type: "param.color", position: { x: 0, y: 0 }, properties: { name: "Tint", value: [0.2, 0.4, 0.6, 1] } });
+    document.edges = [{ id: "fill", sourceNodeId: "tint", sourcePinId: "out", targetNodeId: "output", targetPinId: "color" }];
+    const catalog = buildMaterialParameterCatalog(new Map([["text", document]]));
+    expect(normalizeMaterialParameterCatalog(structuredClone(catalog)).text).toMatchObject({
+      domain: "text", parameters: { Tint: { kind: "color", value: [0.2, 0.4, 0.6, 1] } },
+    });
+  });
+
   it("requires full function lowering and exposes only the actual root parameter bindings", () => {
     const { document, fn } = fixture();
     const documents = new Map([["post", document]]);

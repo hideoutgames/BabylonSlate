@@ -170,6 +170,25 @@ export class RenderScheduler {
     };
   }
 
+  /** Snapshot the gates that can hold a ready viewport without drawing. */
+  gateState() {
+    return {
+      paused: this.paused,
+      pausedFrameRequested: this.pausedFrameRequested,
+      documentVisible: this.documentVisible,
+      visible: this.visible,
+      obstructed: this.obstructed,
+      obstructionLeases: this.obstructionLeases,
+      resizing: this.resizing,
+      alwaysRender: this.alwaysRender,
+      continuous: this.continuous,
+      dirty: this.dirty,
+      frameCap: this.frameCap,
+      nextRenderAt: this.nextRenderAt,
+      lastRenderAt: this.lastRenderAt,
+    };
+  }
+
   private rollStats(): void {
     const now = nowMs();
     const elapsed = now - this.lastSecond;

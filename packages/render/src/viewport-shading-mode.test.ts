@@ -24,6 +24,10 @@ import { compileMaterialPlan } from "./material-compiler";
 import { createTestEngine } from "./create-null-engine";
 import { CAMERA_BOUNDS_MESH_NAME, GRID_MESH_NAME } from "./editor-grid";
 import { EditorSceneSync } from "./editor-scene-sync";
+import { installPreviewEnvironment } from "./preview-environment";
+import { applySceneToBabylonScene } from "./scene-loader";
+import { isSkyboxMesh } from "./skybox";
+import { mockCubeTextureIO } from "./texture-test-fixtures";
 import {
   isViewportShadingTarget,
   ViewportShadingOverlay,
@@ -102,6 +106,43 @@ describe("isViewportShadingTarget", () => {
 });
 
 describe("ViewportShadingOverlay", () => {
+  it.each(["scene", "preview"] as const)(
+    "preserves the %s skybox cubemap shader across viewport modes",
+    async (host) => {
+      const { engine, scene } = createTestEngine();
+      try {
+        mockCubeTextureIO(engine);
+        const overlay = new ViewportShadingOverlay(scene);
+        // Preview environments may arrive after the viewport enters Unlit.
+        if (host === "preview") overlay.setMode("unlit");
+        if (host === "scene") applySceneToBabylonScene(scene, createDefaultScene());
+        else installPreviewEnvironment(scene);
+        const sky = scene.meshes.find(isSkyboxMesh) as Mesh;
+        const material = sky.material as PBRMaterial;
+        const surface = MeshBuilder.CreateBox("subject", {}, scene);
+        surface.material = compiledPbr(scene);
+        material.freeze();
+
+        for (const mode of ["unlit", "wireframe", "pbr"] as const) {
+          overlay.setMode(mode);
+          overlay.apply();
+          const defines = await shaderDefines(scene, sky);
+          expect(defines).toContain("#define REFLECTIONMAP_SKYBOX");
+          expect(defines).not.toContain("#define UNLIT");
+          expect(material.wireframe).toBe(false);
+          expect(material.disableLighting).toBe(true);
+          expect(material.isFrozen).toBe(true);
+          const surfaceDefines = await shaderDefines(scene, surface);
+          if (mode === "unlit") expect(surfaceDefines).toContain("#define UNLIT");
+          else expect(surfaceDefines).not.toContain("#define UNLIT");
+          expect(surface.material.wireframe).toBe(mode === "wireframe");
+        }
+      } finally {
+        engine.dispose();
+      }
+    },
+  );
+
   it.each(["pbr", "unlit"] as const)(
     "finishes an asynchronous %s shader switch on a frozen surface",
     async (nextMode) => {

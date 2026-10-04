@@ -1,5 +1,6 @@
 import type { SerializedGraph } from "@babylonslate/core";
 import type { EditCommand } from "../command";
+import { snapshotBytes } from "../snapshot-bytes";
 
 export class MoveNodeCommand implements EditCommand<SerializedGraph> {
   readonly type = "graph.moveNode";
@@ -137,6 +138,7 @@ export class AddNodeCommand implements EditCommand<SerializedGraph> {
   readonly type = "graph.addNode";
   readonly node: SerializedGraph["nodes"][number];
   readonly index?: number;
+  readonly byteSize: number;
 
   constructor(
     node: SerializedGraph["nodes"][number],
@@ -144,6 +146,7 @@ export class AddNodeCommand implements EditCommand<SerializedGraph> {
   ) {
     this.node = node;
     this.index = index;
+    this.byteSize = snapshotBytes(node);
   }
 
   apply(doc: SerializedGraph): SerializedGraph {
@@ -169,6 +172,7 @@ export class RemoveNodeCommand implements EditCommand<SerializedGraph> {
   readonly type = "graph.removeNode";
   readonly node: SerializedGraph["nodes"][number];
   readonly index?: number;
+  readonly byteSize: number;
 
   constructor(
     node: SerializedGraph["nodes"][number],
@@ -176,6 +180,7 @@ export class RemoveNodeCommand implements EditCommand<SerializedGraph> {
   ) {
     this.node = node;
     this.index = index;
+    this.byteSize = snapshotBytes(node);
   }
 
   apply(doc: SerializedGraph): SerializedGraph {
@@ -197,6 +202,7 @@ export class SetGraphMembersCommand implements EditCommand<SerializedGraph> {
   readonly type = "graph.setMembers";
   readonly from: SerializedGraph["members"];
   readonly to: SerializedGraph["members"];
+  readonly byteSize: number;
 
   constructor(
     from: SerializedGraph["members"],
@@ -204,6 +210,7 @@ export class SetGraphMembersCommand implements EditCommand<SerializedGraph> {
   ) {
     this.from = from;
     this.to = to;
+    this.byteSize = snapshotBytes({ from, to });
   }
 
   apply(doc: SerializedGraph): SerializedGraph {
@@ -224,6 +231,7 @@ export class SetGraphComponentsCommand implements EditCommand<SerializedGraph> {
   readonly type = "graph.setComponents";
   readonly from: SerializedGraph["components"];
   readonly to: SerializedGraph["components"];
+  readonly byteSize: number;
 
   constructor(
     from: SerializedGraph["components"],
@@ -231,6 +239,7 @@ export class SetGraphComponentsCommand implements EditCommand<SerializedGraph> {
   ) {
     this.from = from;
     this.to = to;
+    this.byteSize = snapshotBytes({ from, to });
   }
 
   apply(doc: SerializedGraph): SerializedGraph {
@@ -251,6 +260,7 @@ export class SetGraphFunctionGraphsCommand implements EditCommand<SerializedGrap
   readonly type = "graph.setFunctionGraphs";
   readonly from: SerializedGraph["functionGraphs"];
   readonly to: SerializedGraph["functionGraphs"];
+  readonly byteSize: number;
 
   constructor(
     from: SerializedGraph["functionGraphs"],
@@ -258,6 +268,7 @@ export class SetGraphFunctionGraphsCommand implements EditCommand<SerializedGrap
   ) {
     this.from = from;
     this.to = to;
+    this.byteSize = snapshotBytes({ from, to });
   }
 
   apply(doc: SerializedGraph): SerializedGraph {

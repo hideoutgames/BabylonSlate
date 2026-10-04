@@ -116,6 +116,8 @@ export type PlayerTestHandle = Pick<PlayerBootHandle,
 export type PlayerBootOptions = {
   canvas: HTMLCanvasElement;
   game: LoadedGame;
+  /** Preview host's trace budget; omitted by standalone games. */
+  traceByteBudget?: number;
   sharedEngine?: AbstractEngine;
   content?: PackedGameContent;
   /** Runs after every player resource has attempted cleanup, including startup rollback. */
@@ -317,6 +319,11 @@ function initializePlayer(
       });
       options.onDiagnostic?.(diagnostics);
     },
+    onSceneLayerScroll: (event) => {
+      const control = { type: "sceneLayerScroll" as const, ...event };
+      if (worker) worker.postControl(control);
+      else runtime?.applySceneLayerScroll(event.layerId, event.actorId, event.componentId, event.deltaX, event.deltaY);
+    },
     onSceneLayerPointer: (event) => {
       const control = { type: "sceneLayerPointer" as const, ...event };
       if (worker) worker.postControl(control);
@@ -419,6 +426,7 @@ function initializePlayer(
   }));
   const loadControl = {
     frameCap: manifest.playFrameCap,
+    traceByteBudget: options.traceByteBudget,
     renderSettings: manifest.render,
     project: manifest.project,
     type: "load" as const,
@@ -427,6 +435,9 @@ function initializePlayer(
     physicsWorld: manifest.physicsWorld,
     inputAssets: manifest.inputAssets,
     inputMappings: manifest.inputMappings,
+    focusNavigation: manifest.focusNavigation,
+    pixelsPerUnit: content.pixelsPerUnit,
+    texturePixelSizes: Object.fromEntries(content.texturePixelSizes),
     gravity: scene.settings.gravity,
     havokWasmUrl: havokWasmUrl(),
     gameInstanceClass:
@@ -438,6 +449,7 @@ function initializePlayer(
       undefined,
     scenes,
     sceneLayers,
+    sceneNavmeshBytes: Object.fromEntries(content.navmeshByScene),
     ...loopGuardLoadFields(manifest),
     audioAssetGuids: [...content.audioLibrary.audio.keys()],
     materialParameterCatalog: buildMaterialParameterCatalog(content.materialDocuments, content.materialFunctions),
@@ -503,7 +515,7 @@ function initializePlayer(
       },
     },
     activate: ({ sceneAssetGuid }) => {
-      if (!applyPlayerActiveScene(handle, game.scenes, { type: "activeScene", sceneAssetGuid }, hostSceneGuid, receivedActiveScene)) {
+      if (!applyPlayerActiveScene(handle, game.scenes, { type: "activeScene", sceneAssetGuid }, hostSceneGuid, receivedActiveScene, content.audioReverbByScene)) {
         throw new Error("The requested scene is not available in this build.");
       }
       hostSceneGuid = sceneAssetGuid;
@@ -613,6 +625,12 @@ function initializePlayer(
     const ownedWorker = createPlayerWorkerHost();
     worker = ownedWorker;
     releaseWorker = own(() => ownedWorker.terminate());
+    worker.onError((error) => {
+      if (halted) return;
+      diagnostics.push({ code: "player.worker.failed", severity: "error", message: error.message });
+      try { options.onDiagnostic?.(diagnostics); }
+      finally { haltPlayback(); }
+    });
     worker.onCommand((cmd) => onCommand(cmd as never));
     worker.onSnapshot((buffer) => {
       if (halted) return;

@@ -1,6 +1,7 @@
 import { Mesh, type AbstractMesh, type Camera, type Material, type Node, type Scene } from "@babylonjs/core";
 import { applyMaterialBounds } from "./material-bounds";
-import { DEFAULT_SORTING_LAYERS } from "@babylonslate/core";
+import { DEFAULT_SORTING_LAYERS, isSceneLayerAnchorActor, resolveOverlayLayout } from "@babylonslate/core";
+import { applyEditorLayoutClips } from "./overlay-layout-render";
 import type {
   SerializedActor,
   SerializedComponent,
@@ -26,6 +27,7 @@ import {
   applyComponentChildTransforms,
   createActorMesh,
   editorComponentMeshName,
+  editorActorParentId,
   editorModelLoadTarget,
   freezeStaticActorWorldMatrix,
   isEditorActorOrigin,
@@ -46,7 +48,7 @@ import { isColliderVisualMesh, isColliderVisualTree } from "./collider-visual";
 import { visualMeshes } from "./visual-meshes";
 import { isTilemapChunkMesh } from "./tilemap-mesh";
 import { BitmapAllocationLimitError } from "./text2d-bitmap";
-import { text2DBitmapBytes } from "./text2d-mesh";
+import { refreshText2DMaterials, text2DBitmapBytes } from "./text2d-mesh";
 
 export type EditorSceneSyncOptions = {
   /** FrameGraph owns its camera-specific active queue; world matrices still freeze. */
@@ -253,6 +255,8 @@ export class EditorSceneSync {
   }
 
   private *applySteps(sceneData: SerializedScene, rebuild = false, cooperative = false): Generator<number, void, unknown> {
+    const layout = resolveOverlayLayout(sceneData.actors, { pixelsPerUnit: this.assets?.pixelsPerUnit, textureSize: guid => this.assets?.texturePixelSizes?.get(guid) });
+    sceneData = { ...sceneData, actors: layout.actors };
     rebuild ||= this.assetsNeedRebuild;
     // Blocking loads already require final readiness; skip the immediate path's
     // full-document structural pre-scan and unfreeze before phased planning.
@@ -267,6 +271,7 @@ export class EditorSceneSync {
     const actorCount = Math.max(1, sceneData.actors.length);
     let index = 0;
     for (const actor of sceneData.actors) {
+      if (isSceneLayerAnchorActor(actor)) continue;
       liveIds.add(actor.id);
       const kind = actorVisualFingerprint(actor, assets, sceneData.actors);
       nextKinds.set(actor.id, kind);
@@ -288,6 +293,7 @@ export class EditorSceneSync {
     }
     index = 0;
     for (const actor of sceneData.actors) {
+      if (!liveIds.has(actor.id)) continue;
       let mesh = this.meshes.get(actor.id);
       let prepared = false;
       const descriptor = `${nextKinds.get(actor.id)}|${this.lastAssetFingerprint}|${this.scene.getEngine().getCaps().maxTextureSize}`;
@@ -318,8 +324,10 @@ export class EditorSceneSync {
                 this.pendingVisuals.get(actor.id) === candidate && this.meshes.get(actor.id) === previous;
               const onAdopted = () => {
                 if (!ownsLoad()) return;
-                const current = (this.applyingScene ?? this.lastScene)?.actors.find((entry) => entry.id === actor.id);
-                if (current) this.prepareActorVisual(current, candidate);
+                // Ownership pins this load to the current apply generation.
+                // Its actor is already arranged; the stored document keeps the
+                // authored pose and must not undo that arrangement on adoption.
+                this.prepareActorVisual(actor, candidate);
                 candidate.parent = previous.parent;
                 for (const child of this.meshes.values()) if (child.parent === previous) child.parent = candidate;
                 this.meshes.set(actor.id, candidate);
@@ -328,6 +336,7 @@ export class EditorSceneSync {
                 this.pendingVisuals.delete(actor.id);
                 candidate.setEnabled(true);
                 previous.dispose();
+                applyEditorLayoutClips(this.scene, layout.entries);
                 freezeStaticActorWorldMatrix(candidate);
                 if (!this.applyingScene) {
                   this.freezeActiveQueue();
@@ -397,15 +406,18 @@ export class EditorSceneSync {
       yield 0.5 + 0.1 * ++index / Math.max(1, oldMeshes.length);
     }
     index = 0;
+    const actorsById = new Map(sceneData.actors.map((actor) => [actor.id, actor]));
     for (const actor of sceneData.actors) {
       const mesh = this.meshes.get(actor.id);
       if (mesh) {
-        const parent = actor.parentId ? this.meshes.get(actor.parentId) ?? null : null;
+        const parentId = editorActorParentId(actor, actorsById);
+        const parent = parentId ? this.meshes.get(parentId) ?? null : null;
         if (mesh.parent !== parent) mesh.parent = parent;
       }
       yield 0.6 + 0.1 * ++index / actorCount;
     }
     syncEditorCablePreviews(this.scene, sceneData.actors);
+    applyEditorLayoutClips(this.scene, layout.entries);
     for (const progress of syncAuthoredIlluminationSteps(this.scene, sceneData, {
       stealActiveCamera: this.stealActiveCamera,
       restoreCamera: this.restoreCamera,
@@ -549,9 +561,9 @@ export class EditorSceneSync {
     const signal = this.pendingApply?.signal;
     const load = ready.then(() => {
       if (generation !== this.applyGeneration || signal?.aborted || this.disposed || root.isDisposed() || this.meshes.get(actor.id) !== root) return;
-      const current = (this.applyingScene ?? this.lastScene)?.actors.find((entry) => entry.id === actor.id);
-      if (!current) return;
-      this.prepareActorVisual(current, root);
+      // This generation's actor includes the resolved layout pose. The stored
+      // scene remains authored and must not overwrite it after preparation.
+      this.prepareActorVisual(actor, root);
       freezeStaticActorWorldMatrix(root);
       if (!this.applyingScene) {
         this.freezeActiveQueue();
@@ -738,10 +750,8 @@ export class EditorSceneSync {
       () => {
         if (!ownsLoad()) return;
         publication?.onAdopted();
-        const current = (this.applyingScene ?? this.lastScene)?.actors.find((entry) => entry.id === actor.id);
-        if (!current) return;
         const wasFrozen = root.isWorldMatrixFrozen;
-        applyActorTransform(root, current);
+        applyActorTransform(root, actor);
         // Adoption may land at a yield after this actor's final freeze step.
         // Restore that matrix without announcing a partially realized scene.
         if (wasFrozen || !this.applyingScene) freezeStaticActorWorldMatrix(root);
@@ -753,11 +763,10 @@ export class EditorSceneSync {
       },
       ownsLoad,
       (prepared) => {
-        const current = (this.applyingScene ?? this.lastScene)?.actors.find((entry) => entry.id === actor.id);
-        if (!current || !ownsLoad()) return;
-        this.restoreMeshComponentConstruction(current, prepared);
-        this.applyModelSlots(current, prepared);
-        this.bindActorMeshMaterials(current, prepared);
+        if (!ownsLoad()) return;
+        this.restoreMeshComponentConstruction(actor, prepared);
+        this.applyModelSlots(actor, prepared);
+        this.bindActorMeshMaterials(actor, prepared);
       },
     );
   }
@@ -782,6 +791,9 @@ export class EditorSceneSync {
   }
 
   private bindActorMeshMaterials(actor: SerializedActor, root: Mesh): void {
+    refreshText2DMaterials(root, {
+      resolveMaterial: (guid, options) => this.resolveMaterial?.(guid, options) ?? this.assets?.resolveMaterial?.(guid, options) ?? null,
+    });
     for (const component of actor.components) {
       if (component.classId === "2DMaterialComponent") {
         this.bindMaterialOverride(
@@ -831,7 +843,7 @@ export class EditorSceneSync {
   ): void {
     if (!guid) return;
     const targets = meshAndDescendantMeshes(visual).filter(
-      (target) => !isTilemapChunkMesh(target),
+      (target) => !isTilemapChunkMesh(target) && !target.metadata?.text2d && !target.metadata?.text2dGlyph,
     );
     for (const target of targets) {
       if (isColliderVisualTree(target)) continue;

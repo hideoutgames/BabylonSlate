@@ -20,7 +20,11 @@ export function runtimeOptionsFromLoadControl(
   RuntimeDriverOptions,
   | "seed"
   | "frameCap"
+  | "traceByteBudget"
   | "renderSettings"
+  | "focusNavigation"
+  | "pixelsPerUnit"
+  | "texturePixelSizes"
   | "project"
   | "inputAssets"
   | "inputMappings"
@@ -32,6 +36,7 @@ export function runtimeOptionsFromLoadControl(
   | "seedDemoActors"
   | "gameInstanceClass"
   | "sceneLibrary"
+  | "sceneNavmeshBytes"
   | "sceneGuidByKey"
   | "sceneLayerLibrary"
   | "includeDebugCommands"
@@ -68,7 +73,11 @@ export function runtimeOptionsFromLoadControl(
     seed: msg.seed ?? 1,
     cooperativeSceneLoading: true,
     ...(msg.frameCap !== undefined ? { frameCap: msg.frameCap } : {}),
+    ...(msg.traceByteBudget !== undefined ? { traceByteBudget: msg.traceByteBudget } : {}),
     renderSettings: msg.renderSettings,
+    focusNavigation: msg.focusNavigation,
+    pixelsPerUnit: msg.pixelsPerUnit,
+    texturePixelSizes: msg.texturePixelSizes,
     ...(msg.materialParameterCatalog !== undefined ? { materialParameterCatalog: msg.materialParameterCatalog } : {}),
     ...(msg.materialTextureAssetGuids !== undefined ? { materialTextureAssetGuids: msg.materialTextureAssetGuids } : {}),
     renderTargets: msg.renderTargets,
@@ -84,6 +93,7 @@ export function runtimeOptionsFromLoadControl(
     seedDemoActors: msg.scene ? false : true,
     gameInstanceClass: msg.gameInstanceClass,
     sceneLibrary: Object.keys(sceneLibrary).length > 0 ? sceneLibrary : undefined,
+    ...(msg.sceneNavmeshBytes ? { sceneNavmeshBytes: msg.sceneNavmeshBytes } : {}),
     sceneGuidByKey:
       Object.keys(sceneGuidByKey).length > 0 ? sceneGuidByKey : undefined,
     sceneLayerLibrary:

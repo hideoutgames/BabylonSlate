@@ -568,6 +568,28 @@ describe("P11 §18 acceptance", () => {
     runtime.stop();
   });
 
+  it("finishes a delayed custom task and writes to the current blackboard after intervening ticks", async () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1, dt: 0.02, seedDemoActors: false, preferSoftwarePhysics: true,
+      playScene: classScene("tree-1"),
+      behaviourTrees: { "tree-1": { name: "Delayed", rootId: "wait", blackboardGuid: null,
+        nodes: [{ id: "wait", kind: "task", classId: "BTTask_Delayed", children: [], decorators: [], services: [], properties: {} }] } },
+      onCommand: (command) => commands.push(command),
+    });
+    try {
+      await runtime.loadScripts([{ assetGuid: "delayed", classId: "BTTask_Delayed", anchors: [],
+        source: 'export async function activate(ctx) { await ctx.delay(0.05); ctx.setBlackboard("done", true); ctx.btFinish("success"); }',
+        entryPoints: [{ name: "activate", event: "onActivate", isAsync: true }] }]);
+      runtime.start();
+      runtime.realizePlayWorld();
+      for (let i = 0; i < 8; i++) { runtime.tick(); await Promise.resolve(); }
+      expect(commands.filter((command) => command.type === "btState")).toContainEqual(
+        expect.objectContaining({ status: "success", blackboard: expect.objectContaining({ done: true }) }),
+      );
+    } finally { runtime.stop(); }
+  });
+
   it("a visual-scripted task throw reports btNodeId on the session diagnostic", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({

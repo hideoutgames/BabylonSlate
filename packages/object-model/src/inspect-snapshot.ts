@@ -3,7 +3,11 @@ import { BObject } from "./objects";
 import type { Actor } from "./objects";
 import type { World } from "./world";
 
-export type DebugInspectKind = "gameInstance" | "actor" | "component";
+export type DebugInspectKind =
+  | "gameInstance"
+  | "subsystem"
+  | "actor"
+  | "component";
 
 export type DebugInspectNode = {
   id: string;
@@ -133,22 +137,35 @@ function visitActor(
   }
 }
 
+function rootObjectNode(
+  object: BObject,
+  kind: "gameInstance" | "subsystem",
+  world: World,
+): DebugInspectNode {
+  const variables = sortedSanitizedVariables(object.variables);
+  return {
+    id: object.guid,
+    kind,
+    label: inspectLabel(object.variables, object.classId),
+    classId: object.classId,
+    ancestry: world.classRegistry.ancestry(object.classId),
+    parentId: null,
+    variables,
+    variableTypes: classVariableTypes(world, object.classId, variables),
+  };
+}
+
 /** Live Play inspector tree. Separate from harness world snapshots. */
 export function createDebugInspectSnapshot(world: World): DebugInspectSnapshot {
   const nodes: DebugInspectNode[] = [];
   const gi = world.gameInstance;
-  if (gi) {
-    const variables = sortedSanitizedVariables(gi.variables);
-    nodes.push({
-      id: gi.guid,
-      kind: "gameInstance",
-      label: inspectLabel(gi.variables, gi.classId),
-      classId: gi.classId,
-      ancestry: world.classRegistry.ancestry(gi.classId),
-      parentId: null,
-      variables,
-      variableTypes: classVariableTypes(world, gi.classId, variables),
-    });
+  if (gi) nodes.push(rootObjectNode(gi, "gameInstance", world));
+  // GameSubsystems, then the current main Scene's SceneSubsystems.
+  for (const subsystem of [
+    ...world.getGameSubsystems(),
+    ...world.getSceneSubsystems(),
+  ]) {
+    nodes.push(rootObjectNode(subsystem, "subsystem", world));
   }
 
   const actors = [...world.getActors()];

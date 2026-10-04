@@ -8,6 +8,13 @@ import {
 export { ENGINE_COMPONENT_CLASS_IDS, SCENE_LAYER_EXCLUSIVE_COMPONENT_CLASS_IDS };
 export type { EngineComponentClassId };
 
+/** Hidden abstract base of both subsystem kinds; never user-selectable or instantiated. */
+export const SUBSYSTEM_CLASS_ID = "Subsystem";
+/** Session-lifetime subsystem base users can parent to. */
+export const GAME_SUBSYSTEM_CLASS_ID = "GameSubsystem";
+/** Main-scene-lifetime subsystem base users can parent to. */
+export const SCENE_SUBSYSTEM_CLASS_ID = "SceneSubsystem";
+
 /** Stable engine base class ids (Content Browser / class registry). */
 export const ENGINE_BASE_CLASS_IDS = [
   "BObject",
@@ -20,6 +27,9 @@ export const ENGINE_BASE_CLASS_IDS = [
   "SceneStreamingActor",
   "ActorComponent",
   "GameInstance",
+  SUBSYSTEM_CLASS_ID,
+  GAME_SUBSYSTEM_CLASS_ID,
+  SCENE_SUBSYSTEM_CLASS_ID,
   "FunctionLibrary",
   "BDebugCommand",
   "EditorUtilityObject",
@@ -29,6 +39,16 @@ export const ENGINE_BASE_CLASS_IDS = [
   "BTService",
   "BTComposite",
 ] as const;
+
+/**
+ * Engine bases that stay locked and known to validation but are never offered
+ * in parent, type or Cast pickers.
+ */
+export const HIDDEN_ENGINE_BASE_CLASS_IDS = [SUBSYSTEM_CLASS_ID] as const;
+
+export function isHiddenEngineBaseClassId(classId: string): boolean {
+  return (HIDDEN_ENGINE_BASE_CLASS_IDS as readonly string[]).includes(classId);
+}
 
 export function isSceneLayerAllowedComponent(classId: string): boolean {
   return !isSceneLayerDeniedComponent(classId);

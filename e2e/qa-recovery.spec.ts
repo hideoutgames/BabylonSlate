@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { createContentBrowserAsset, openAssetFromBrowser, openTestProject } from "./open-test-project";
+import { findOpfsProjectDirectory } from "./opfs-project";
 import { saveAllIfEnabled } from "./save-all";
 
 type TestHost = {
@@ -22,15 +23,19 @@ async function recoverAfterReload(page: Page) {
 }
 
 async function journalCommands(page: Page) {
-  return page.evaluate(async () => {
+  const directoryName = await findOpfsProjectDirectory(page, "opfs:__babylonslate_derived__");
+  // The first poll may precede creation of the derived store.
+  if (directoryName === null) return [];
+  return page.evaluate(async (storageDirectory) => {
     type Command = { type: string; to?: unknown; commands?: Command[] };
     const commands: Command[] = [];
     const root = await navigator.storage.getDirectory();
+    const storage = await root.getDirectoryHandle(storageDirectory);
     let derived: FileSystemDirectoryHandle;
     try {
-      const storage = await root.getDirectoryHandle("opfs:__babylonslate_derived__");
       derived = await storage.getDirectoryHandle("derived");
-    } catch {
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === "NotFoundError")) throw error;
       // Journal writes are batched, so the first poll can precede the first
       // flush that creates the derived-data folders.
       return commands;
@@ -51,7 +56,9 @@ async function journalCommands(page: Page) {
       // An older single-file journal, then the ordered segments.
       try {
         await readLines(await project.getFileHandle("journal.jsonl"));
-      } catch { /* No legacy journal. */ }
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "NotFoundError")) throw error;
+      }
       try {
         const segments = await project.getDirectoryHandle("journal");
         const files: FileSystemFileHandle[] = [];
@@ -60,10 +67,12 @@ async function journalCommands(page: Page) {
         }
         files.sort((a, b) => a.name.localeCompare(b.name));
         for (const file of files) await readLines(file);
-      } catch { /* A project without unsaved edits has no journal. */ }
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "NotFoundError")) throw error;
+      }
     }
     return commands;
-  });
+  }, directoryName);
 }
 
 test("H6/M4: recovery retains Undo and survives a second reload before Save", async ({ page }) => {

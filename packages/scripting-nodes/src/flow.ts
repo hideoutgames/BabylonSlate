@@ -41,6 +41,13 @@ const EVENT_EXPORT_BY_TYPE: Record<string, string> = {
   "flow.event.sceneStartLoading": "onSceneStartLoading",
   "flow.event.sceneFinishLoading": "onSceneFinishLoading",
   "flow.event.sceneExit": "onSceneExit",
+  "flow.event.sceneLoaded": "onSceneLoaded",
+  "flow.event.streamedSceneLoaded": "onStreamedSceneLoaded",
+  "flow.event.streamedSceneUnloaded": "onStreamedSceneUnloaded",
+  "flow.event.sceneLayerAdded": "onSceneLayerAdded",
+  "flow.event.sceneLayerRemoved": "onSceneLayerRemoved",
+  "flow.event.sceneActorSpawned": "onSceneActorSpawned",
+  "flow.event.sceneActorDestroyed": "onSceneActorDestroyed",
   "flow.event.hit": "onHit",
   "flow.event.beginOverlap": "onBeginOverlap",
   "flow.event.endOverlap": "onEndOverlap",
@@ -55,15 +62,112 @@ const EVENT_EXPORT_BY_TYPE: Record<string, string> = {
   "flow.event.onClick": "onClick",
   "flow.event.onPressStart": "onPressStart",
   "flow.event.onPressEnd": "onPressEnd",
+  "flow.event.focusEnter": "onFocusEnter",
+  "flow.event.focusLeave": "onFocusLeave",
+  "flow.event.focusActivate": "onFocusActivate",
   "flow.event.textChanged": "onTextChanged",
   "flow.event.audioFinished": "onAudioFinished",
+  "flow.event.movementStarted": "onMovementStarted",
+  "flow.event.movementStopped": "onMovementStopped",
+  "flow.event.movementJumped": "onMovementJumped",
+  "flow.event.movementLeftGround": "onMovementLeftGround",
+  "flow.event.movementLanded": "onMovementLanded",
   "bt.event.activate": "onActivate",
   "bt.event.tick": "onBtTick",
   "bt.event.abort": "onAbort",
   "bt.event.evaluate": "onEvaluate",
 };
 
+type EventArgPin = { id: string; name: string; type: PinType };
+
+/** Catalog event entry whose data outputs read `ctx.args[<pin id>]`. */
+function argsEvent(
+  id: string,
+  title: string,
+  args: readonly EventArgPin[],
+): NodeDefinition {
+  return {
+    id,
+    title,
+    category: "flow",
+    pure: true,
+    pins: () => [
+      pin("execOut", "then", "out", EXEC),
+      ...args.map((arg) => pin(arg.id, arg.name, "out", arg.type)),
+    ],
+    codegen: () =>
+      Object.fromEntries(args.map((arg) => [arg.id, `(ctx.args.${arg.id})`])),
+  };
+}
+
+const STREAMED_SCENE_ARGS: readonly EventArgPin[] = [
+  {
+    id: "streamingActor",
+    name: "Streaming Actor",
+    type: actorRef("SceneStreamingActor"),
+  },
+  { id: "scene", name: "Scene", type: objectRef("Scene") },
+];
+const SCENE_LAYER_ARGS: readonly EventArgPin[] = [
+  { id: "sceneLayer", name: "Scene Layer", type: objectRef("SceneLayer") },
+];
+const SCENE_ACTOR_ARGS: readonly EventArgPin[] = [
+  { id: "actor", name: "Actor", type: actorRef("Actor") },
+];
+
+/** Scene Subsystem events beyond On Init / Tick / On End. */
+const sceneSubsystemEventNodes: NodeDefinition[] = [
+  argsEvent("flow.event.sceneLoaded", "Event On Scene Loaded", [
+    { id: "sceneName", name: "Scene Name", type: STRING },
+  ]),
+  argsEvent(
+    "flow.event.streamedSceneLoaded",
+    "Event On Streamed Scene Loaded",
+    STREAMED_SCENE_ARGS,
+  ),
+  argsEvent(
+    "flow.event.streamedSceneUnloaded",
+    "Event On Streamed Scene Unloaded",
+    STREAMED_SCENE_ARGS,
+  ),
+  argsEvent(
+    "flow.event.sceneLayerAdded",
+    "Event On Scene Layer Added",
+    SCENE_LAYER_ARGS,
+  ),
+  argsEvent(
+    "flow.event.sceneLayerRemoved",
+    "Event On Scene Layer Removed",
+    SCENE_LAYER_ARGS,
+  ),
+  argsEvent(
+    "flow.event.sceneActorSpawned",
+    "Event On Scene Actor Spawned",
+    SCENE_ACTOR_ARGS,
+  ),
+  argsEvent(
+    "flow.event.sceneActorDestroyed",
+    "Event On Scene Actor Destroyed",
+    SCENE_ACTOR_ARGS,
+  ),
+];
+
 export const flowNodes: NodeDefinition[] = [
+  ...([
+    ["movementStarted", "Movement Started"],
+    ["movementStopped", "Movement Stopped"],
+    ["movementJumped", "Movement Jumped"],
+    ["movementLeftGround", "Movement Left Ground"],
+    ["movementLanded", "Movement Landed"],
+  ] as const).map(([id, label]) => argsEvent(`flow.event.${id}`, `Event On ${label}`, [
+    { id: "velocity", name: "Velocity", type: VEC3 },
+    { id: "speed", name: "Speed", type: FLOAT },
+  ])),
+  ...([ ["focusEnter", "Focus Enter"], ["focusLeave", "Focus Leave"], ["focusActivate", "Focus Activate"] ] as const).map(([id, label]): NodeDefinition => ({
+    id: `flow.event.${id}`, title: `Event On ${label}`, category: "flow", pure: true,
+    pins: () => [pin("execOut", "then", "out", EXEC)],
+    codegen: () => {},
+  })),
   {
     id: "flow.event.beginPlay",
     title: "Event Begin Play",
@@ -149,6 +253,7 @@ export const flowNodes: NodeDefinition[] = [
     ],
     codegen: () => ({ sceneName: "(ctx.args.sceneName)" }),
   },
+  ...sceneSubsystemEventNodes,
   {
     id: "flow.event.destroyed",
     title: "Event On Actor Destroyed",

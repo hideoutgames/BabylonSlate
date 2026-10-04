@@ -105,6 +105,7 @@ export interface PlayOverlayProps {
   loopCount?: number;
   inputAssets?: import("@babylonslate/core").InputAssetDefinition[];
   inputMappings?: ProjectInputSettings;
+  focusNavigation?: import("@babylonslate/core").FocusNavigationSettings;
   /** Project Play Preview letterbox; snapshotted when the session starts. */
   playPreview?: PlayPreviewProjectSettings;
   /** Project render size; snapshotted when the session starts. */
@@ -148,6 +149,8 @@ export interface PlayOverlayProps {
   pixelPerfect?: boolean;
   touchMinTargetPx?: number;
   navmeshBytes?: Uint8Array | null;
+  sceneNavmeshBytes?: ReadonlyMap<string, Uint8Array>;
+  audioReverbByScene?: ReadonlyMap<string, Uint8Array>;
   audioReverbBytes?: Uint8Array | null;
   audioProjectSettings?: Partial<
     Pick<
@@ -193,6 +196,7 @@ export function PlayOverlay({
   loopCount,
   inputAssets,
   inputMappings,
+  focusNavigation,
   playPreview = DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
   render = DEFAULT_RENDER_PROJECT_SETTINGS,
   animGraphs,
@@ -231,6 +235,8 @@ export function PlayOverlay({
   pixelPerfect,
   touchMinTargetPx,
   navmeshBytes,
+  sceneNavmeshBytes,
+  audioReverbByScene,
   audioReverbBytes,
   audioProjectSettings,
   pauseOnPlay = false,
@@ -361,6 +367,10 @@ export function PlayOverlay({
   materialFunctionsRef.current = materialFunctions;
   const navmeshBytesRef = useRef(navmeshBytes);
   navmeshBytesRef.current = navmeshBytes;
+  const sceneNavmeshBytesRef = useRef(sceneNavmeshBytes);
+  sceneNavmeshBytesRef.current = sceneNavmeshBytes;
+  const audioReverbBySceneRef = useRef(audioReverbByScene);
+  audioReverbBySceneRef.current = audioReverbByScene;
   const audioReverbBytesRef = useRef(audioReverbBytes);
   audioReverbBytesRef.current = audioReverbBytes;
   const audioProjectSettingsRef = useRef(audioProjectSettings);
@@ -397,8 +407,10 @@ export function PlayOverlay({
   const initialLoopCountRef = useRef(loopCount);
   const initialInputAssetsRef = useRef(inputAssets);
   const initialInputMappingsRef = useRef(inputMappings);
+  const initialFocusNavigationRef = useRef(focusNavigation);
   const initialPlayPreviewRef = useRef(playPreview);
   const { settings: localEngineSettings } = useAppSettings();
+  const initialTraceByteBudgetRef = useRef(localEngineSettings.traceByteBudget);
   const initialRenderRef = useRef(render);
   const runtimeRenderRef = useRef(render);
   const initialConsoleRenderRef = useRef({ ...render, quality: resolveRenderingQuality(render, {}, localRenderingQualityOverrides(localEngineSettings)) });
@@ -479,10 +491,12 @@ export function PlayOverlay({
       scenes: sceneRef.current.scenes,
       sceneLayers: sceneRef.current.sceneLayers,
       frameCap: initialFrameCapRef.current,
+      traceByteBudget: initialTraceByteBudgetRef.current,
       infiniteLoopDetection: initialInfiniteLoopDetectionRef.current,
       loopCount: initialLoopCountRef.current,
       inputAssets: initialInputAssetsRef.current,
       inputMappings: initialInputMappingsRef.current,
+      focusNavigation: initialFocusNavigationRef.current,
       animGraphs: animGraphsRef.current,
       behaviourTrees: behaviourTreesRef.current,
       blackboards: blackboardsRef.current,
@@ -521,6 +535,8 @@ export function PlayOverlay({
       touchMinTargetPx: touchMinTargetPxRef.current,
       pixelPerfect: pixelPerfectRef.current,
       navmeshBytes: navmeshBytesRef.current,
+      sceneNavmeshBytes: sceneNavmeshBytesRef.current,
+      audioReverbByScene: audioReverbBySceneRef.current,
       audioReverbBytes: audioReverbBytesRef.current,
       audioProjectSettings: audioProjectSettingsRef.current,
       pauseOnPlay: initialPauseOnPlayRef.current,

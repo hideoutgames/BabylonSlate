@@ -61,3 +61,36 @@ describe("Line Trace actor exclusions", () => {
     }
   });
 });
+
+describe("Line Trace surface normals", () => {
+  it.each([
+    { label: "software 3D", kind: "3d" as const, preferSoftware: true },
+    { label: "Rapier 2D", kind: "2d" as const, preferSoftware: false },
+  ])("$label returns the contacted face normal", async (options) => {
+    const backend = await createPhysicsBackend({
+      ...options, gravity: { x: 0, y: 0, z: 0 }, allowSoftwareFallback: false,
+    });
+    try {
+      backend.createBody({ id: "box", actorId: "box", motionType: "static", mass: 0,
+        linearDamping: 0, angularDamping: 0, gravityScale: 0,
+        transform: { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 } } });
+      backend.createCollider({ id: "shape", bodyId: "box",
+        shape: options.kind === "2d"
+          ? { kind: "box2d", halfExtents: { x: 1, y: 1 } }
+          : { kind: "box", halfExtents: { x: 1, y: 1, z: 1 } },
+        friction: 0.5, restitution: 0, isTrigger: false, layer: 1, mask: 0xffffffff });
+      for (const [start, expected] of [
+        [{ x: -3, y: 0, z: 0 }, { x: -1, y: 0, z: 0 }],
+        [{ x: 3, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }],
+        [{ x: 0, y: -3, z: 0 }, { x: 0, y: -1, z: 0 }],
+      ] as const) {
+        const hit = backend.lineTrace(start, { x: 0, y: 0, z: 0 });
+        expect(hit.hit).toBe(true);
+        expect(hit.distance).toBeCloseTo(2, 4);
+        expect(hit.normal?.x).toBeCloseTo(expected.x, 4);
+        expect(hit.normal?.y).toBeCloseTo(expected.y, 4);
+        expect(hit.normal?.z).toBeCloseTo(expected.z, 4);
+      }
+    } finally { backend.dispose(); }
+  });
+});

@@ -13,6 +13,11 @@ async function openLauncher(page: Page) {
   const response = await page.goto("/__test_identity");
   expect(response?.ok()).toBe(true);
   const names = ["Touch One", "Touch Two", "Touch Three", "Touch Four"];
+  const templateLibrary = {
+    id: "opfs:__slate_templates__",
+    name: "__slate_templates__",
+    directory: "launcher-touch-templates",
+  };
   const settings = defaultEngineSettings();
   settings.recents = names.map((name) => ({
     id: `opfs:${name}`,
@@ -27,7 +32,7 @@ async function openLauncher(page: Page) {
     })),
     // Enough installed templates to overflow the tablet template gallery.
     ...Array.from({ length: 12 }, (_, index) => ({
-      root: `opfs:__slate_templates__/Touch Starter ${index + 1}`,
+      root: `${templateLibrary.directory}/Touch Starter ${index + 1}`,
       name: `Touch Starter ${index + 1}`,
     })),
   ].map(({ root, name }) => ({
@@ -40,7 +45,7 @@ async function openLauncher(page: Page) {
     ),
   }));
   await page.evaluate(
-    async ({ libraries, settings }) => {
+    async ({ libraries, settings, templateLibrary }) => {
       const origin = await navigator.storage.getDirectory();
       for (const library of libraries) {
         for (const { path, data } of library.files) {
@@ -66,11 +71,14 @@ async function openLauncher(page: Page) {
         "babylonslate:opfs-meta",
         JSON.stringify({
           currentId: null,
-          projects: settings.recents.map(({ id, name }) => ({ id, name })),
+          projects: [
+            ...settings.recents.map(({ id, name }) => ({ id, name })),
+            templateLibrary,
+          ],
         }),
       );
     },
-    { libraries, settings },
+    { libraries, settings, templateLibrary },
   );
   await page.goto("/?test=1");
   await page.waitForFunction(() => window.crossOriginIsolated, undefined, {
@@ -242,6 +250,16 @@ for (const device of [
       });
       const cards = region.locator(".homepage-template-card");
       await expect(cards.first()).toBeVisible();
+      await expect(cards.filter({ hasText: /Touch Starter \d+/ })).toHaveCount(
+        12,
+      );
+      await expect
+        .poll(() =>
+          region.evaluate(
+            (element) => element.scrollHeight - element.clientHeight,
+          ),
+        )
+        .toBeGreaterThan(40);
       const fullyVisibleCard = async (lowest: boolean) => {
         const index = await region.evaluate((element, lowest) => {
           const bounds = element.getBoundingClientRect();

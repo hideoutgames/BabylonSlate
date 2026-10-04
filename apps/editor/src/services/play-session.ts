@@ -157,6 +157,7 @@ export function applyPlayActiveScene(options: {
     ) => void;
     applySceneEnvironment: (scene: SerializedScene) => void;
     resetAudioSession: () => void;
+    setAudioReverbField?: (bytes: Uint8Array | null) => void;
     resetParticleSession: () => void;
   };
   command: { type: string; sceneAssetGuid?: string };
@@ -164,6 +165,7 @@ export function applyPlayActiveScene(options: {
   boot: { guid?: string; scene?: SerializedScene };
   currentSceneGuid: string | null;
   forceReload?: boolean;
+  audioReverbByScene?: ReadonlyMap<string, Uint8Array>;
 }): string | null {
   if (
     options.command.type !== "activeScene" ||
@@ -180,6 +182,7 @@ export function applyPlayActiveScene(options: {
   options.handle.loadScene(scene, { sceneAssetGuid: guid });
   options.handle.applySceneEnvironment(scene);
   options.handle.resetAudioSession();
+  options.handle.setAudioReverbField?.(options.audioReverbByScene?.get(guid) ?? null);
   options.handle.resetParticleSession();
   return guid;
 }
@@ -474,6 +477,8 @@ export function startPlaySession(options: {
   }) => void;
   /** Project `playFrameCap`; omitted or invalid → 60. */
   frameCap?: number;
+  /** Engine Settings trace retention budget, captured when Play starts. */
+  traceByteBudget?: number;
   /** AnimationGraph documents for `loadAnimGraphs` / `registerAnimGraph`. */
   animGraphs?: ReadonlyArray<{ guid: string; document: unknown }>;
   /** BehaviourTree / Blackboard documents for worker load. */
@@ -533,10 +538,13 @@ export function startPlaySession(options: {
   touchMinTargetPx?: number;
   /** Baked Scene navmesh bytes; Play imports and never generates. */
   navmeshBytes?: Uint8Array | null;
+  sceneNavmeshBytes?: ReadonlyMap<string, Uint8Array>;
+  audioReverbByScene?: ReadonlyMap<string, Uint8Array>;
   infiniteLoopDetection?: boolean;
   loopCount?: number;
   inputAssets?: import("@babylonslate/core").InputAssetDefinition[];
   inputMappings?: import("@babylonslate/core").ProjectInputSettings;
+  focusNavigation?: import("@babylonslate/core").FocusNavigationSettings;
   /** Called when a session-fatal diagnostic (infinite loop) arrives. */
   onFatalDiagnostic?: () => void;
   /** When true, pause after Play boot so `boot.play`'s resume cannot undo it. */
@@ -651,6 +659,11 @@ export function startPlaySession(options: {
         diagnostic.severity === "error" ? "error" : "warning",
       );
     },
+    onSceneLayerScroll: (event) => {
+      const control = { type: "sceneLayerScroll" as const, ...event };
+      if (worker) worker.postControl(control);
+      else runtime?.applySceneLayerScroll(event.layerId, event.actorId, event.componentId, event.deltaX, event.deltaY);
+    },
     onSceneLayerPointer: (event) => {
       const control = { type: "sceneLayerPointer" as const, ...event };
       if (worker) worker.postControl(control);
@@ -741,6 +754,7 @@ export function startPlaySession(options: {
         boot: { guid: options.sceneAssetGuid, scene: options.scene },
         currentSceneGuid: hostSceneGuid,
         forceReload: receivedActiveScene,
+        audioReverbByScene: options.audioReverbByScene,
       });
       receivedActiveScene = true;
     },
@@ -905,6 +919,7 @@ export function startPlaySession(options: {
   });
   const loadControl = playLoadControl({
     frameCap: resolvePlayFrameCap(options.frameCap),
+    traceByteBudget: options.traceByteBudget,
     renderSettings: options.consoleRenderSettings ?? options.renderSettings,
     sceneAssetGuid: options.sceneAssetGuid ?? "play-scene",
     scene: options.scene,
@@ -913,11 +928,15 @@ export function startPlaySession(options: {
     project: options.project,
     gameInstanceClass: options.gameInstanceClass,
     scenes: options.scenes,
+    sceneNavmeshBytes: Object.fromEntries(options.sceneNavmeshBytes ?? []),
     sceneLayers: options.sceneLayers,
     infiniteLoopDetection: options.infiniteLoopDetection,
     loopCount: options.loopCount,
     inputAssets: options.inputAssets,
     inputMappings: options.inputMappings,
+    focusNavigation: options.focusNavigation,
+    pixelsPerUnit: options.pixelsPerUnit,
+    texturePixelSizes: Object.fromEntries(options.texturePixelSizes ?? []),
     audioAssetGuids: [...(options.audioLibrary?.audio.keys() ?? [])],
     materialParameterCatalog: buildMaterialParameterCatalog(options.materialDocuments ?? new Map(), options.materialFunctions),
     materialTextureAssetGuids: materialParameterTextureAssetGuids(options.textureBytes, options.renderTargetTextures),

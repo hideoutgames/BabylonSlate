@@ -490,3 +490,100 @@ it("retains the mesh MaterialObject API for catalog-backed typed reads and compi
     runtime.stop();
   }
 });
+
+describe("Material Instance nodes", () => {
+  const instanceCatalog: MaterialParameterCatalog = {
+    surface: { domain: "surface", planHash: "root", parameters: { Gain: { kind: "float", value: 0.5 } } },
+    inst: { domain: "surface", planHash: "root", parameters: { Gain: { kind: "float", value: 0.9 } } },
+  };
+  function meshScene() {
+    const scene = createDefaultScene();
+    const mesh = createMeshComponent("mesh", "box");
+    mesh.properties.materialGuid = "surface";
+    scene.actors = [createActor("hero", "Hero", { classId: "Hero", components: [mesh] })];
+    return scene;
+  }
+
+  it("compiles Set Material Instance into a mesh material swap that returns the new Material Object", async () => {
+    const registry = createDefaultNodeRegistry();
+    const node = (id: string, typeId: string, properties: Record<string, unknown> = {}): GraphNode =>
+      ({ id, typeId, position: { x: 0, y: 0 }, properties, pins: registry.get(typeId)!.pins(properties) });
+    const edge = (sourceNodeId: string, sourcePinId: string, targetNodeId: string, targetPinId: string, index: number) =>
+      ({ id: `edge-${index}`, sourceNodeId, sourcePinId, targetNodeId, targetPinId });
+    const compiled = compileGraph({
+      id: "entry-graph",
+      kind: "event",
+      nodes: [
+        node("begin", "flow.event.beginPlay"),
+        node("mesh", "component.getNamed", { componentClassId: "MeshComponent", implicitSelf: true }),
+        node("swap", "material.setMaterialInstance", { "default:instance": "inst" }),
+        node("set", "material.setFloatParameter", { "default:name": "Gain", "default:value": 0.1 }),
+      ],
+      edges: [
+        edge("begin", "execOut", "swap", "execIn", 0),
+        edge("mesh", "out", "swap", "target", 1),
+        edge("swap", "execOut", "set", "execIn", 2),
+        edge("swap", "material", "set", "material", 3),
+      ],
+    }, { assetGuid: "hero", registry });
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      preferSoftwarePhysics: true,
+      playScene: meshScene(),
+      materialParameterCatalog: instanceCatalog,
+      onCommand: (command) => commands.push(command),
+    });
+    try {
+      await runtime.loadScripts([{ ...compiled, assetGuid: "hero", classId: "Hero", parentClassId: "Actor" }]);
+      runtime.realizePlayWorld();
+      expect(commands.filter((command) => command.type === "diagnostic")).toEqual([]);
+      const component = runtime.getWorld().getActors()[0]!.components[0]!;
+      expect(component.getVariable("materialGuid")).toBe("inst");
+      expect(commands.filter((command) => command.type === "setMaterialParameter").map((command) => command.parameter))
+        .toEqual([{ kind: "float", value: 0.1 }]);
+    } finally {
+      runtime.stop();
+    }
+  });
+
+  it("keeps runtime values when the current asset is applied again and reports the rendered asset", async () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      preferSoftwarePhysics: true,
+      playScene: meshScene(),
+      materialParameterCatalog: instanceCatalog,
+      onCommand: (command) => commands.push(command),
+    });
+    try {
+      await runtime.loadScripts([{
+        assetGuid: "hero",
+        classId: "Hero",
+        parentClassId: "Actor",
+        anchors: [],
+        entryPoints: [{ name: "onBeginPlay", event: "onBeginPlay", isAsync: false }],
+        source: `export function onBeginPlay(ctx) {
+        const component = ctx.getComponentById(ctx.self, "mesh");
+        const material = ctx.setMeshMaterial(component, "inst");
+        ctx.self.setVariable("default", ctx.getMaterialFloatParameter(material, "Gain"));
+        ctx.setMaterialFloatParameter(material, "Gain", 0.2);
+        const again = ctx.setMeshMaterial(component, "inst");
+        ctx.self.setVariable("same", again === material);
+        ctx.self.setVariable("kept", ctx.getMaterialFloatParameter(again, "Gain"));
+        ctx.self.setVariable("asset", ctx.getMaterialAsset(again));
+        ctx.self.setVariable("notMesh", ctx.setMeshMaterial(null, "inst"));
+      }`,
+      }]);
+      runtime.realizePlayWorld();
+      const actor = runtime.getWorld().getActors()[0]!;
+      expect(actor.getVariable("default")).toEqual({ found: true, value: 0.9 });
+      expect(actor.getVariable("same")).toBe(true);
+      expect(actor.getVariable("kept")).toEqual({ found: true, value: 0.2 });
+      expect(actor.getVariable("asset")).toBe("inst");
+      expect(actor.getVariable("notMesh")).toBeNull();
+    } finally {
+      runtime.stop();
+    }
+  });
+});

@@ -4,10 +4,12 @@ import type {
   JointData,
   RevoluteImpulseJoint,
   QueryFilterFlags,
+  PhysicsHooks,
 } from "@dimforge/rapier2d-compat";
 import type { PhysicsBackend } from "./backend";
 import type {
   CharacterControllerDesc,
+  CharacterMovementResult,
   BodyVelocity,
   ConstraintDesc,
   ColliderDesc,
@@ -40,10 +42,12 @@ type RapierApi = {
   EventQueue: new (autoDrain: boolean) => RapierEventQueue;
   ActiveEvents: { COLLISION_EVENTS: number };
   ActiveCollisionTypes: { ALL: number };
+  ActiveHooks: { FILTER_CONTACT_PAIRS: number; FILTER_INTERSECTION_PAIRS: number };
+  SolverFlags: { COMPUTE_IMPULSE: number };
   World: new (gravity: { x: number; y: number }) => {
     gravity: { x: number; y: number };
     timestep: number;
-    step(eventQueue?: RapierEventQueue): void;
+    step(eventQueue?: RapierEventQueue, hooks?: PhysicsHooks): void;
     propagateModifiedBodyPositionsToColliders(): void;
     updateSceneQueries(): void;
     free(): void;
@@ -55,7 +59,7 @@ type RapierApi = {
     removeCollider(collider: RapierCollider, wakeUp: boolean): void;
     createCharacterController(offset: number): RapierCharacterController;
     removeCharacterController(controller: RapierCharacterController): void;
-    castRay(
+    castRayAndGetNormal(
       ray: unknown,
       maxToi: number,
       solid: boolean,
@@ -64,7 +68,7 @@ type RapierApi = {
       filterExcludeCollider?: RapierCollider,
       filterExcludeRigidBody?: RapierRigidBody,
       filterPredicate?: (collider: RapierCollider) => boolean,
-    ): { timeOfImpact: number; collider: RapierCollider } | null;
+    ): { timeOfImpact: number; collider: RapierCollider; normal: { x: number; y: number } } | null;
     intersectionsWithPoint(
       point: { x: number; y: number },
       callback: (collider: RapierCollider) => boolean,
@@ -118,6 +122,7 @@ type RapierColliderDesc = {
   setRotation(angle: number): RapierColliderDesc;
   setActiveEvents(events: number): RapierColliderDesc;
   setActiveCollisionTypes(types: number): RapierColliderDesc;
+  setActiveHooks(hooks: number): RapierColliderDesc;
 };
 
 type RapierRigidBody = {
@@ -155,8 +160,15 @@ type RapierCharacterController = {
   computeColliderMovement(
     collider: RapierCollider,
     desired: { x: number; y: number },
+    filterFlags?: QueryFilterFlags,
+    filterGroups?: InteractionGroups,
+    filterPredicate?: (collider: RapierCollider) => boolean,
   ): void;
   computedMovement(): { x: number; y: number };
+  computedGrounded(): boolean;
+  setMaxSlopeClimbAngle(angle: number): void;
+  setMinSlopeSlideAngle(angle: number): void;
+  enableSnapToGround(distance: number): void;
 };
 
 type BodyRecord = {
@@ -205,6 +217,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
   private readonly bodyIdByHandle = new Map<number, string>();
   private readonly colliderIdByHandle = new Map<number, string>();
   private readonly eventQueue: RapierEventQueue;
+  private readonly collisionHooks: PhysicsHooks;
   private readonly pendingContacts: PhysicsContactEvent[] = [];
   private readonly blockingKeys = new Set<string>();
   private readonly triggerKeys = new Set<string>();
@@ -215,6 +228,12 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     this.RAPIER = RAPIER;
     this.world = new RAPIER.World({ x: gravity.x, y: gravity.y });
     this.eventQueue = new RAPIER.EventQueue(true);
+    // Rapier interaction groups only contain 16 membership bits; authored
+    // BabylonSlate masks have 32. Hooks retain all bits for contacts and sensors.
+    this.collisionHooks = {
+      filterContactPair: (a, b) => this.collisionPairAllowed(a, b) ? RAPIER.SolverFlags.COMPUTE_IMPULSE : null,
+      filterIntersectionPair: (a, b) => this.collisionPairAllowed(a, b),
+    };
   }
 
   static async create(
@@ -507,6 +526,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
         .setRestitution(desc.restitution)
         .setSensor(desc.isTrigger)
         .setActiveEvents(this.RAPIER.ActiveEvents.COLLISION_EVENTS)
+        .setActiveHooks(this.RAPIER.ActiveHooks.FILTER_CONTACT_PAIRS | this.RAPIER.ActiveHooks.FILTER_INTERSECTION_PAIRS)
         .setActiveCollisionTypes(this.RAPIER.ActiveCollisionTypes.ALL);
       colliderDesc
         .setTranslation(desc.translation!.x, desc.translation!.y)
@@ -582,7 +602,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
 
   step(dt: number): void {
     this.world.timestep = dt;
-    this.world.step(this.eventQueue);
+    this.world.step(this.eventQueue, this.collisionHooks);
     this.queriesDirty = false;
     this.eventQueue.drainCollisionEvents((handleA, handleB, started) => {
       this.recordCollisionEvent(handleA, handleB, started);
@@ -600,7 +620,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
       { x: dx / len, y: dy / len },
     );
     const ignored = new Set(options?.ignoreActorIds);
-    const hit = this.world.castRay(
+    const hit = this.world.castRayAndGetNormal(
       ray,
       len,
       true,
@@ -608,7 +628,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
       undefined,
       undefined,
       undefined,
-      ignored.size
+      ignored.size || options?.includeTriggers === false
         ? (collider) => {
             const bodyId = this.bodyIdByHandle.get(
               collider.parent()?.handle ?? -1,
@@ -616,7 +636,9 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
             const actorId = bodyId
               ? this.bodies.get(bodyId)?.desc.actorId
               : undefined;
-            return actorId === undefined || !ignored.has(actorId);
+            const desc = this.colliders.get(this.colliderIdByHandle.get(collider.handle) ?? "")?.desc;
+            return (actorId === undefined || !ignored.has(actorId)) &&
+              !(options?.includeTriggers === false && desc?.isTrigger);
           }
         : undefined,
     );
@@ -629,20 +651,27 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     return {
       hit: true,
       location: { x: point.x, y: point.y, z: 0 },
-      normal: { x: 0, y: 1, z: 0 },
+      normal: { x: hit.normal.x, y: hit.normal.y, z: 0 },
       distance: hit.timeOfImpact,
       actorId,
       bodyId: bodyId ?? null,
     };
   }
 
-  sphereOverlap(center: Vec3, radius: number): OverlapResult {
+  sphereOverlap(center: Vec3, radius: number, options?: LineTraceOptions): OverlapResult {
     this.flushSceneQueries();
+    const ignored = new Set(options?.ignoreActorIds);
+    const allowed = (collider: RapierCollider) => {
+      const desc = this.colliders.get(this.colliderIdByHandle.get(collider.handle) ?? "")?.desc;
+      const actorId = desc ? this.bodies.get(desc.bodyId)?.desc.actorId : undefined;
+      return actorId !== undefined && !ignored.has(actorId) && !(options?.includeTriggers === false && desc?.isTrigger);
+    };
     const actorIds: string[] = [];
     const bodyIds: string[] = [];
     this.world.intersectionsWithPoint(
       { x: center.x, y: center.y },
       (collider) => {
+        if (!allowed(collider)) return true;
         const bodyId = this.bodyIdByHandle.get(collider.parent()?.handle ?? -1);
         if (!bodyId) return true;
         const body = this.bodies.get(bodyId);
@@ -661,6 +690,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
         0,
         shape,
         (collider) => {
+          if (!allowed(collider)) return true;
           const bodyId = this.bodyIdByHandle.get(
             collider.parent()?.handle ?? -1,
           );
@@ -681,12 +711,19 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     _shape: ColliderDesc["shape"],
     start: PhysicsTransform,
     end: PhysicsTransform,
+    options?: LineTraceOptions,
   ): HitResult {
-    return this.lineTrace(start.position, end.position);
+    return this.lineTrace(start.position, end.position, options);
   }
 
   createCharacterController(desc: CharacterControllerDesc): void {
+    if (this.characters.has(desc.id)) this.destroyCharacterController(desc.id);
     const controller = this.world.createCharacterController(desc.offset);
+    const angle = (desc.maxSlopeAngle ?? 50) * Math.PI / 180;
+    controller.setMaxSlopeClimbAngle(angle);
+    controller.setMinSlopeSlideAngle(angle);
+    if ((desc.groundSnapDistance ?? 0.1) > 0)
+      controller.enableSnapToGround(desc.groundSnapDistance ?? 0.1);
     this.characters.set(desc.id, { desc: { ...desc }, controller });
   }
 
@@ -701,33 +738,65 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     id: string,
     translation: Vec3,
     dt: number,
-  ): PhysicsTransform | null {
-    void dt;
+    startPose?: PhysicsTransform,
+  ): CharacterMovementResult | null {
+    if (!Number.isFinite(dt) || dt < 0) return null;
+    // Collision resolution takes a displacement, including events outside a tick.
+    const inverseDt = dt > 0 ? 1 / dt : 0;
+    this.flushSceneQueries();
     const character = this.characters.get(id);
     if (!character) return null;
     const bodyRecord = this.bodies.get(character.desc.bodyId);
     if (!bodyRecord) return null;
     const collider = [...this.colliders.values()].find(
-      (c) => c.desc.bodyId === bodyRecord.desc.id,
+      (c) => c.desc.bodyId === bodyRecord.desc.id && !c.desc.isTrigger,
     );
     if (!collider) return null;
-    character.controller.computeColliderMovement(collider.collider, {
-      x: translation.x,
-      y: translation.y,
-    });
-    const movement = character.controller.computedMovement();
     const current = bodyRecord.body.translation();
+    const currentRotation = bodyRecord.body.rotation();
+    const start = startPose ? normalizedPhysicsPose(startPose) : undefined;
+    const position = start?.position ?? current;
+    const rotation = start ? quatToPlanarAngle(start.rotation) : currentRotation;
+    const reposition = position.x !== current.x || position.y !== current.y || rotation !== currentRotation;
+    try {
+      if (reposition) {
+        // Query from the authored pose, including inherited parent motion.
+        bodyRecord.body.setTranslation(position, true);
+        bodyRecord.body.setRotation(rotation, true);
+        this.queriesDirty = true;
+        this.flushSceneQueries();
+      }
+      character.controller.computeColliderMovement(collider.collider, {
+        x: translation.x,
+        y: translation.y,
+      }, undefined, undefined, (candidate) => {
+        const candidateId = this.colliderIdByHandle.get(candidate.handle);
+        const other = candidateId ? this.colliders.get(candidateId)?.desc : undefined;
+        return !!other && other.bodyId !== bodyRecord.desc.id && !other.isTrigger &&
+          (other.layer & collider.desc.mask) !== 0 && (collider.desc.layer & other.mask) !== 0;
+      });
+    } finally {
+      if (reposition) {
+        // Keep native contacts and old-to-target kinematic integration intact.
+        bodyRecord.body.setTranslation(current, true);
+        bodyRecord.body.setRotation(currentRotation, true);
+        this.queriesDirty = true;
+      }
+    }
+    const movement = character.controller.computedMovement();
     bodyRecord.body.setNextKinematicTranslation({
-      x: current.x + movement.x,
-      y: current.y + movement.y,
+      x: position.x + movement.x,
+      y: position.y + movement.y,
     });
     return {
       position: {
-        x: current.x + movement.x,
-        y: current.y + movement.y,
+        x: position.x + movement.x,
+        y: position.y + movement.y,
         z: 0,
       },
-      rotation: identityRotation(),
+      rotation: this.getBodyTransform(character.desc.bodyId)?.rotation ?? identityRotation(),
+      velocity: { x: movement.x * inverseDt, y: movement.y * inverseDt, z: 0 },
+      grounded: translation.y <= 0 && character.controller.computedGrounded(),
     };
   }
 
@@ -787,6 +856,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
       .setRestitution(desc.restitution)
       .setSensor(desc.isTrigger)
       .setActiveEvents(this.RAPIER.ActiveEvents.COLLISION_EVENTS)
+      .setActiveHooks(this.RAPIER.ActiveHooks.FILTER_CONTACT_PAIRS | this.RAPIER.ActiveHooks.FILTER_INTERSECTION_PAIRS)
       .setActiveCollisionTypes(this.RAPIER.ActiveCollisionTypes.ALL);
     segment
       .setTranslation(desc.translation?.x ?? 0, desc.translation?.y ?? 0)
@@ -834,6 +904,12 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
         normal: { x: 0, y: 1, z: 0 },
       });
     }
+  }
+
+  private collisionPairAllowed(handleA: number, handleB: number): boolean {
+    const a = this.colliders.get(this.colliderIdByHandle.get(handleA) ?? "")?.desc;
+    const b = this.colliders.get(this.colliderIdByHandle.get(handleB) ?? "")?.desc;
+    return !!a && !!b && (a.layer & b.mask) !== 0 && (b.layer & a.mask) !== 0;
   }
 
   private recordCollisionEvent(

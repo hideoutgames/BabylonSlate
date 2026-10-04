@@ -7,6 +7,7 @@ import {
   ColorSplitterBlock,
   InstancesBlock,
   MorphTargetsBlock,
+  MultiplyBlock,
   Constants,
   DiscardBlock,
   FragmentOutputBlock,
@@ -30,6 +31,7 @@ import {
   VectorSplitterBlock,
   VertexOutputBlock,
   ViewDirectionBlock,
+  type AbstractEngine,
   type Effect,
   type NodeMaterialBlock,
   type NodeMaterialConnectionPoint,
@@ -74,6 +76,7 @@ import { registerCacheableShadowMaterial } from "./shadow-material-policy";
 import { prepareNodeMaterialParticleBindings } from "./node-material-particles";
 import type { MaterialParameterValue } from "@babylonslate/bridge";
 import { SharedOutlineIdentityBlock, SharedOutlineOutputBlock } from "./shared-outline-output-block";
+import { TextMaterialBlock } from "./text-material-block";
 
 export interface CompileMaterialOptions {
   /** Internal coverage variant; retains authored deformation and alpha discard. */
@@ -222,7 +225,7 @@ export function compileMaterialPlan(
       : ShaderLanguage.GLSL,
   });
   if (scene.getEngine().isWebGPU) rebindEmptiedDrawContexts(material);
-  material.metadata = { boundsPadding: plan.boundsPadding ?? 0 };
+  material.metadata = { boundsPadding: plan.boundsPadding ?? 0, materialDomain: plan.domain };
   const configureSurface = () => {
     if (outlineMask) {
       material.backFaceCulling = plan.twoSided !== true;
@@ -251,6 +254,7 @@ export function compileMaterialPlan(
     created.push(origin);
   }
   const outputNodes: NodeMaterialBlock[] = [];
+  let textGlyph: TextMaterialBlock | undefined;
 
   const fail = (): CompileMaterialResult => {
     for (const block of created) block.dispose();
@@ -282,6 +286,15 @@ export function compileMaterialPlan(
       outputNodes.push(
         ...createSurfacePlumbing(options.name, created, plumbing),
       );
+    }
+    if (plan.domain === "text") {
+      textGlyph = new TextMaterialBlock(`${options.name}_textGlyph`);
+      const uv = new InputBlock(`${options.name}_glyphUV`, undefined, NodeMaterialBlockConnectionPointTypes.Vector2);
+      uv.setAsAttribute("uv");
+      uv.output.connectTo(textGlyph.glyphUV);
+      plumbing.uv = textGlyph.uv;
+      created.push(uv, textGlyph);
+      plumbing.worldPosition?.connectTo(plumbing.clipPosition!);
     }
   } catch (error) {
     diagnostics.push({
@@ -561,7 +574,15 @@ export function compileMaterialPlan(
   };
 
   try {
-    if (plan.domain === "postProcess" || plan.domain === "particle") {
+    if (plan.domain === "text" && textGlyph) {
+      const fragment = new FragmentOutputBlock(`${options.name}_fragment`);
+      const multiply = new MultiplyBlock(`${options.name}_textFill`);
+      outputPoint("color", `${options.name}_color`, true)?.connectTo(multiply.left);
+      textGlyph.color.connectTo(multiply.right);
+      multiply.output.connectTo(fragment.rgba);
+      created.push(fragment, multiply);
+      outputNodes.push(fragment);
+    } else if (plan.domain === "postProcess" || plan.domain === "particle") {
       const fragment = new FragmentOutputBlock(`${options.name}_fragment`);
       created.push(fragment);
       const color = outputPoint("color", `${options.name}_color`, true);
@@ -729,19 +750,25 @@ export function compileMaterialPlan(
     }
   });
   // Frozen NodeMaterials skip forced bindings when another mesh shared the effect.
-  // Bone palettes and morph weights belong to each mesh, even when its material is static.
-  const deformationBlocks = created.filter(
-    (block): block is BonesBlock | MorphTargetsBlock =>
-      block instanceof BonesBlock || block instanceof MorphTargetsBlock,
+  // Bone palettes, morph weights and text atlases belong to each mesh, even
+  // when their material is static.
+  const perMeshBlocks = created.filter(
+    (block): block is BonesBlock | MorphTargetsBlock | TextMaterialBlock =>
+      block instanceof BonesBlock || block instanceof MorphTargetsBlock || block instanceof TextMaterialBlock,
   );
-  if (deformationBlocks.length > 0) {
+  if (perMeshBlocks.length > 0) {
     material.onBindObservable.add((mesh) => {
       if (!(mesh instanceof Mesh) || !material.isFrozen) return;
       const effect = material.getEffect();
       if (effect) {
-        for (const block of deformationBlocks) block.bind(effect, material, mesh);
+        for (const block of perMeshBlocks) block.bind(effect, material, mesh);
       }
     });
+  }
+  // Custom GLSL keeps its own readiness probe; everything else in Material
+  // mode may reuse a byte-identical program compiled for another material.
+  if (material.mode === NodeMaterialModes.Material && plan.cost.customBlocks === 0) {
+    shareCompiledProgram(material, JSON.stringify([options.name, options.surfaceVariant ?? null, material.shaderLanguage]));
   }
   try {
     if (plan.operations.some((operation) => operation.nodeType === "input.environmentSample")) {
@@ -910,6 +937,49 @@ export function compileMaterialPlan(
   };
 }
 
+const sharedPrograms = new WeakMap<AbstractEngine, Map<string, { buildId: number; shaders: string }>>();
+
+function freshBuildId(): number {
+  // Babylon's own build-id source, so an assigned id can never collide.
+  return (NodeMaterial as unknown as { _BuildIdGenerator: number })._BuildIdGenerator++;
+}
+
+/**
+ * Babylon keys a NodeMaterial effect by build id, so each build compiles and
+ * links its own GPU program even when the generated code is identical, as it
+ * is for Material Instances and per-component parameter copies. After each
+ * build, adopt the build id of an earlier build under the same key whose
+ * generated vertex and fragment code is byte-identical: the engine's effect
+ * cache then returns the already compiled program and only uniforms differ.
+ * Source equality is checked on every build, so a changed graph or a
+ * texture-dependent variant never reuses a mismatched program.
+ */
+export function shareCompiledProgram(material: NodeMaterial, key: string): void {
+  const engine = material.getScene().getEngine();
+  let programs = sharedPrograms.get(engine);
+  if (!programs) sharedPrograms.set(engine, (programs = new Map()));
+  const registry = programs;
+  let adopted: number | undefined;
+  let firstBuild = true;
+  // First observer: later observers (shadow/cluster policies) record the final id.
+  material.onBuildObservable.add(() => {
+    // A rebuild that kept an adopted id may no longer match that program.
+    if (adopted !== undefined && material.buildId === adopted) material.buildId = freshBuildId();
+    adopted = undefined;
+    const shaders = material.compiledShaders;
+    const known = registry.get(key);
+    // Only the compiler's own first build adopts: any later rebuild keeps a
+    // new id so policies that trust a compiled build id still see the change.
+    if (firstBuild && known?.shaders === shaders) {
+      firstBuild = false;
+      material.buildId = adopted = known.buildId;
+      return;
+    }
+    firstBuild = false;
+    registry.set(key, { buildId: material.buildId, shaders });
+  }, undefined, true);
+}
+
 /** Drop ResourceCache textures so NodeMaterial.dispose cannot free engine-owned GPU wrappers. */
 function detachEngineOwnedTextures(material: NodeMaterial): void {
   for (const block of material.attachedBlocks) {
@@ -957,6 +1027,13 @@ function applyAuthoredSurfaceBlend(
   material: NodeMaterial,
   plan: MaterialBuildPlan,
 ): void {
+  if (plan.domain === "text") {
+    material.backFaceCulling = false;
+    material.alphaMode = plan.blendMode === "additive" ? Constants.ALPHA_ADD : Constants.ALPHA_COMBINE;
+    material.transparencyMode = Material.MATERIAL_ALPHABLEND;
+    material.needDepthPrePass = false;
+    return;
+  }
   if (plan.domain === "postProcess" || plan.domain === "particle") {
     return;
   }
@@ -1426,6 +1503,10 @@ export async function prewarmMaterial(
   if (!mesh) return;
   if (material.mode === NodeMaterialModes.Particle) return;
   if (!nodeMaterialTexturesSampleReady(material)) return;
+  // Glyph atlases are bound per mesh rather than through TextureBlocks. As
+  // with authored textures, rendering readiness owns their pending upload;
+  // do not start Babylon's uncancellable compilation poll before it finishes.
+  if (material.attachedBlocks.some((block) => block instanceof TextMaterialBlock && !block.isReady(mesh))) return;
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     await Promise.race([

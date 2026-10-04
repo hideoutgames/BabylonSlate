@@ -7,6 +7,17 @@ import {
 } from "./ring-buffer";
 
 describe("input ring buffer", () => {
+  it("round-trips large controllers and UTF-8 identifiers without truncation", () => {
+    const events: RawInputEvent[] = [
+      { kind: "gamepad", tick: 1, gamepadIndex: 0,
+        axes: [0.5, -0.25, 0, 1, -1, 0.75], buttons: Array.from({ length: 32 }, (_, i) => i % 2) },
+      { kind: "touchAxis", tick: 2, controlId: "操縦".repeat(90), value: 0.5 },
+      { kind: "key", tick: 3, code: "KeyW", phase: "down" },
+    ];
+    expect(decodeInputEvents(encodeInputEvents(events))).toEqual(events);
+    expect(decodeInputEvents(encodeInputEvents([events[0]!]))).toEqual([events[0]]);
+  });
+
   it("round-trips tick-stamped raw events", () => {
     const events: RawInputEvent[] = [
       {

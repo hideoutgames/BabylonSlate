@@ -76,6 +76,38 @@ function resetter(kind: "Float" | "Color" | "Texture"): NodeDefinition {
 
 export const materialNodes: NodeDefinition[] = [
   {
+    id: "material.setMaterialInstance",
+    title: "Set Material Instance",
+    description:
+      "Assigns a Material Instance to a mesh component and returns its Material Object. Instances share their root Material's shader, so switching never compiles.",
+    category: "material",
+    pins: () => [
+      pin("execIn", "Exec", "in", EXEC),
+      pin("execOut", "Then", "out", EXEC),
+      pin("target", "Target", "in", objectRef("ActorComponent")),
+      pin("instance", "Instance", "in", assetRef("MaterialInstance")),
+      pin("material", "Material", "out", objectRef("MaterialObject")),
+    ],
+    codegen: (ctx) =>
+      ctx.emit(
+        `${ctx.output("Material")} = ctx.setMeshMaterial(${ctx.input("Target")}, ${ctx.input("Instance")});`,
+      ),
+  },
+  {
+    id: "material.getMaterialAsset",
+    title: "Get Material Asset",
+    description: "The Material or Material Instance asset a Material Object renders.",
+    category: "material",
+    pure: true,
+    pins: () => [
+      pin("material", "Material", "in", objectRef("MaterialObject")),
+      pin("asset", "Asset", "out", assetRef("Material")),
+    ],
+    codegen: (ctx) => ({
+      Asset: `ctx.getMaterialAsset(${ctx.input("Material")})`,
+    }),
+  },
+  {
     id: "material.getPostProcessEntry",
     title: "Get Post Process Entry",
     category: "material",

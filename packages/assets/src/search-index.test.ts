@@ -3,7 +3,7 @@ import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { encodeAssetDocument } from "./asset-document";
 import { encodeBabasset } from "./babasset";
 import { projectContentRoot } from "./content-root";
-import { AssetRegistry } from "./registry";
+import { AssetRegistry, type IndexedAsset } from "./registry";
 import { ProjectSearchIndex } from "./search-index";
 
 const decodeAssetDocument = vi.hoisted(() => vi.fn());
@@ -533,10 +533,170 @@ describe("ProjectSearchIndex", () => {
       index.query("spherehero").some((hit) => hit.kind === "actor"),
     ).toBe(true);
   });
+
+  it.each([false, true])("keeps the newer search snapshot when an older read finishes (aborted: %s)", async (abortOlder) => {
+    const storage = await createStorage();
+    const path = "assets/main.scene.babasset";
+    await writeDocument(storage, path, {
+      guid: "scene-1", type: "Scene", name: "Main",
+      payload: { actors: [{ id: "actor-1", name: "OldHero", components: [] }] },
+    });
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const index = new ProjectSearchIndex(storage);
+    await index.rebuild(registry);
+    let startRead!: () => void;
+    let finishRead!: () => void;
+    const started = new Promise<void>((resolve) => { startRead = resolve; });
+    const held = new Promise<void>((resolve) => { finishRead = resolve; });
+    const read = storage.readBinary.bind(storage);
+    vi.spyOn(storage, "readBinary").mockImplementationOnce(async (file) => {
+      startRead();
+      await held;
+      return read(file);
+    });
+    const controller = new AbortController();
+    const older = index.rebuild(registry, { signal: controller.signal });
+    const rejected = expect(older).rejects.toMatchObject({ name: "AbortError" });
+    await started;
+    // The last published snapshot remains usable during the read.
+    expect(index.query("OldHero").some((hit) => hit.kind === "actor")).toBe(true);
+    if (abortOlder) controller.abort();
+    await index.rebuild(registry, {
+      openDocuments: [{ path, payload: { actors: [{ id: "actor-1", name: "NewHero", components: [] }] } }],
+    });
+    finishRead();
+    await rejected;
+    expect(index.query("OldHero")).toEqual([]);
+    expect(index.query("NewHero").filter((hit) => hit.kind === "actor")).toHaveLength(1);
+  });
+
+  it("does not republish a pending rebuild after the project index is cleared", async () => {
+    const storage = await createStorage();
+    const registry = new AssetRegistry(storage);
+    registry.indexPlaceholder("old-project-asset");
+    const index = new ProjectSearchIndex(storage);
+    const pending = index.rebuild(registry);
+    const rejected = expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    index.clear();
+    await rejected;
+    expect(index.query("old-project-asset")).toEqual([]);
+    expect(index.size).toBe(0);
+  });
+
+  it("makes a large header-only index searchable without waiting one display frame per asset", async () => {
+    const storage = await createStorage();
+    const registry = new AssetRegistry(storage);
+    for (let i = 0; i < 1000; i++) registry.indexPlaceholder(`asset-${i}`);
+    const index = new ProjectSearchIndex(storage);
+    vi.useFakeTimers();
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) =>
+      setTimeout(() => callback(performance.now()), 16));
+    try {
+      let ready = false;
+      const pending = index.rebuild(registry).then(() => { ready = true; });
+      // A virtual 100 ms permits several cooperative tasks, but only six display frames.
+      await vi.advanceTimersByTimeAsync(100);
+      expect(ready).toBe(true);
+      await pending;
+      expect(index.size).toBe(1000);
+      expect(index.query("asset-999").map((hit) => hit.sourceGuid)).toEqual(["asset-999"]);
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
 });
 
 afterEach(() => {
   decodeAssetDocument.mockClear();
 });
 
+describe("ProjectSearchIndex ranking", () => {
+  const scene: IndexedAsset = {
+    rootId: "project",
+    path: "assets/level.scene.babasset",
+    header: {
+      guid: "scene-1",
+      type: "Scene",
+      name: "Level",
+      engineVersion: "0.0.0",
+      version: 1,
+      mode: "thin",
+      dependencies: [],
+      parentClass: null,
+      payload: {},
+      chunks: [],
+    },
+  };
 
+  function indexActors(
+    actors: Array<{ id: string; name: string; classId?: string }>,
+    limit?: number,
+  ): ProjectSearchIndex {
+    const index = new ProjectSearchIndex(new MemoryStorageAdapter("documents"), {
+      limit,
+    });
+    index.upsertDocument(scene, {
+      actors: actors.map((actor) => ({
+        classId: "Actor",
+        components: [],
+        ...actor,
+      })),
+    });
+    return index;
+  }
+
+  const actorIds = (hits: ReturnType<ProjectSearchIndex["query"]>) =>
+    hits.map((hit) => (hit.target.kind === "scene-actor" ? hit.target.actorId : hit.id));
+
+  it("ranks exact, prefix, label, description, then keyword hits, by label with ties in index order", () => {
+    const index = indexActors([
+      { id: "a1", name: "Stone" },
+      { id: "a2", name: "stone" },
+      { id: "a3", name: "Gravestone" },
+      { id: "a4", name: "Stonework" },
+      { id: "a5", name: "Cobblestone" },
+      { id: "a6", name: "Pebble", classId: "StoneGolem" },
+      { id: "stone-rock", name: "Rock" },
+      { id: "a8", name: "Stonework" },
+    ]);
+
+    expect(actorIds(index.query("STONE"))).toEqual([
+      "a2",
+      "a1",
+      "a4",
+      "a8",
+      "a5",
+      "a3",
+      "a6",
+      "stone-rock",
+    ]);
+    // A limit that ends inside a tier keeps its earliest equal label.
+    expect(actorIds(index.query("stone", 3))).toEqual(["a2", "a1", "a4"]);
+    expect(actorIds(index.query("stone", 5))).toEqual(["a2", "a1", "a4", "a8", "a5"]);
+  });
+
+  it("selects the same first hits as ranking every match when many entries match", () => {
+    const words = ["Core", "core", "Ore", "ore", "Ore Cart", "ore cart", "Store", "Score", "Chore", "Explorer", "Ore", "Adore"];
+    let seed = 7;
+    const next = () => {
+      seed = (seed * 48271) % 2147483647;
+      return seed;
+    };
+    const actors = Array.from({ length: 400 }, (_, index) => {
+      const roll = next() % 10;
+      if (roll === 0) return { id: `ore-${index}`, name: `Rock ${index % 7}` };
+      if (roll === 1) return { id: `a${index}`, name: `Cart ${index % 5}`, classId: "OreCart" };
+      return { id: `a${index}`, name: words[next() % words.length]! };
+    });
+    const index = indexActors(actors);
+    const every = index.query("ore", Number.POSITIVE_INFINITY);
+    expect(every.length).toBeGreaterThan(300);
+
+    expect(index.query("ore")).toEqual(every.slice(0, 80));
+    for (const limit of [1, 2, 7, 33, 150, every.length - 1]) {
+      expect(index.query("ore", limit)).toEqual(every.slice(0, limit));
+    }
+  });
+});

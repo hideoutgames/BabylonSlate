@@ -65,10 +65,12 @@ Override guids with **no discovered plugin** become Unresolved placeholders. Dis
 
 - **Export Plugin** — opens a modal offering **Export To Download** or **Export To Engine Plugins**. Both use `encodeProjectZip` with `kind: "plugin"`, PluginSettings, `assets/`, and per-plugin blobs. Engine-library duplicate names (case-insensitive) or GUIDs require a separate **Replace** confirmation for user-added entries, preserving their global default; bundled collisions give an error. Cancelling leaves the existing entry intact. Engine Settings Export only downloads.
 - **Import Plugin** — unpack under `plugins/<safeName>/`. Dedupe by **plugin guid + version**; same guid+version → Keep / Replace; same guid newer/older version → update in place; guid remap only if the incoming PluginSettings guid collides with a **different** plugin (or another occupied guid). `.babplugin` files are never listed as assets.
+- Import validates relative archive paths and portable filename conflicts before writing, and accepts ordinary ZIP directory records. Replacement stages incoming files outside discovery and backs up the installed tree before removing it. A failed replacement restores the previous plugin; if restoration also fails, the error identifies the retained recovery directory. These copies handle I/O failures but are not an atomic filesystem transaction across a process crash.
 - **Export Project** remains a full backup (includes disabled project plugins on disk).
 
 Game export resolves dependencies after project and export-preset overrides, reporting named plugin errors before packing and retaining version warnings in the successful artifact. Preview Build writes those warnings to Output Log without a popup; blocking preparation errors appear in **Preview Build Failed** with Retry and Close. A separate registry loads the resolved plugin roots, allowing preset-enabled plugins to export even when disabled in the editor without changing editor mounts.
 - `resolveExportPluginGraph` (project plus export-preset layer-3 overrides) yields the enabled plugin guids that `collectExportReachability` walks for the P14 tree-shake. Disabled roots are absent from the itch zip / Preview pack. See [exporter.md](exporter.md).
+- GameSubsystem / SceneSubsystem Classes in an enabled plugin run automatically in Play, Preview Build and export, like project ones; a disabled plugin's subsystems do not run or ship. See [subsystems](scripting.md#subsystems).
 
 ## Editor ScriptHost
 

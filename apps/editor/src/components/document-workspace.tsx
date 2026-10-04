@@ -314,7 +314,8 @@ export function DocumentWorkspace() {
 
         if (
           doc.ref.kind === "material" ||
-          doc.ref.kind === "material-function"
+          doc.ref.kind === "material-function" ||
+          doc.ref.kind === "material-instance"
         ) {
           if (!shouldMount) return null;
           return (
@@ -616,7 +617,7 @@ export function DocumentWorkspace() {
           walkAncestry(
             indexed
               ? classIdFromClassAsset(indexed)
-              : (indexed?.header.parentClass ?? "Actor"),
+              : "Actor",
             parentOf,
           ).includes("SceneLayerActor");
         const overlayWorkspace =

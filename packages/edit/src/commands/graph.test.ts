@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 import type { SerializedGraph } from "@babylonslate/core";
+import { DocumentEditStack } from "../stack";
 import {
   AddEdgeCommand,
   AddNodeCommand,
@@ -37,6 +38,21 @@ function graphWithNode(node: SerializedGraph["nodes"][number]): SerializedGraph 
 }
 
 describe("graph commands", () => {
+  const largeNode = { id: "large", type: "logMessage", position: { x: 0, y: 0 }, data: { text: "x".repeat(2_048) } };
+  it.each([
+    new AddNodeCommand(largeNode),
+    new RemoveNodeCommand(largeNode),
+    new SetGraphMembersCommand(undefined, Array.from({ length: 100 }, (_, i) => ({ id: `fn-${i}`, kind: "function" as const, name: `Function ${i}` }))),
+    new SetGraphComponentsCommand(undefined, [{ id: "component", classId: "Component", parentId: null, properties: { text: "x".repeat(2_048) } }]),
+    new SetGraphFunctionGraphsCommand(undefined, { fn: { nodes: [largeNode], edges: [] } }),
+  ])("enforces the byte ceiling for $type snapshots", (command) => {
+    const stack = new DocumentEditStack<SerializedGraph>({ maxEntries: 100, maxBytes: 1_024 });
+    const doc = { nodes: command instanceof AddNodeCommand ? [] : [largeNode], edges: [] };
+    const result = stack.apply(doc, command);
+    expect(stack.undo(result.doc)).toBeNull();
+    expect(stack.undoBytes).toBe(0);
+  });
+
   it("MoveNodeCommand apply-then-invert restores the document", () => {
     fc.assert(
       fc.property(nodeArb, positionArb, positionArb, (node, from, to) => {

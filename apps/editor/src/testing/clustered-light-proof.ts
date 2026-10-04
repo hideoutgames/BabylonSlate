@@ -16,6 +16,7 @@ import {
   ShaderMaterial,
   SpotLight,
   Vector3,
+  type Material,
 } from "@babylonjs/core";
 import {
   applyAuthoredLightProperties,
@@ -363,7 +364,7 @@ export async function runClusteredLightProof() {
               ?.pickedPoint?.asArray();
             scene.render(false);
             const referenceSettled = await read();
-            const effectiveMaterial = surface.material;
+            const effectiveMaterial: Material | null = surface.material;
             const referenceDefines = surface.subMeshes[0]?.effect?.defines
               .split("\n")
               .filter((line) => /LIGHT|CEL/.test(line));

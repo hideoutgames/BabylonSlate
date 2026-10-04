@@ -83,6 +83,8 @@ Main → worker when a **non-looping** voice ends: `{ type: "audioVoiceEnded"; v
 
 ## Unlock and cache
 
+Weighted clips keep separate source identities: the asset-level source fallback applies only to the default clip, so playing it first cannot replace a later alternate clip. Scene changes invalidate queued and loading/decoding playback from the previous scene; late completion cannot start an old voice. Disposal also prevents pending loads from rebuilding the service's resources.
+
 Preview Build forwards native app, interruption, and route events into its same-origin player window and replays current state when the player reports Ready. Editor and packaged player share visibility/native pause handling. The player pauses its worker or in-process runtime, frame pump, rendering, and audio together; resume resets frame timing, and Stop removes the lifecycle listeners.
 
 Play and asset previews share `attachAudioLifecycle`: user pause, hidden pages, native app inactivity, and audio interruptions remain independent pause sources. An interruption that forbids automatic resume waits for another gesture. Suspended or WebKit-interrupted contexts recover on foreground/route events only when no pause source remains; Babylon's automatic resume timer is disabled so it cannot override these decisions. Native listeners are removed even when registration finishes after cleanup.
@@ -95,7 +97,7 @@ Asset-document preview **prefetches** clip bytes when the tab opens and starts p
 
 Preview Build’s iframe uses `outline-none` / `focus-visible:outline-none`; the packaged player also sets `canvas:focus { outline: none }` so a click does not draw a browser focus ring. Packing already includes Audio (BSAU); `export-game-inputs` loads documents as kind `audio`.
 
-`AudioBufferCache` is guid-keyed PCM with active-voice pins and a **256 MiB** LRU (Engine Settings `audioByteCeiling` / `audioBudgetEnabled`; 64 MiB is an iPad suggestion), separate from the texture `ResourceCache` (default 2 GB). Evicting a clip disposes its AudioV2 `StaticSoundBuffer` and the session encoded `sourceBytes` for that key. Max concurrent voices: Engine Settings `audioMaxVoices` (default 32, range 8–128). Overlay Play applies both live. The packaged player uses the code defaults. Overlay Play and the packaged player wire `backend.onVoiceEnded` through `AudioService`: a finished **non-looping** voice is unpinned and removed; looping voices ignore `onEnded`. Replaying the same `voiceId` calls `stopVoice` (unpin) before pin/play so pins cannot grow.
+`AudioBufferCache` is guid-keyed PCM with active-voice pins and a **256 MiB** LRU (Engine Settings `audioByteCeiling` / `audioBudgetEnabled`; 64 MiB is an iPad suggestion), separate from the texture `ResourceCache` (default 2 GB). Evicting a clip disposes its AudioV2 `StaticSoundBuffer` and the session encoded `sourceBytes` for that key. Max concurrent voices: Engine Settings `audioMaxVoices` (default 32, range 8–128). Overlay Play applies both live. The packaged player uses the code defaults. Overlay Play and the packaged player wire `backend.onVoiceEnded` through `AudioService`: a finished **non-looping** voice is unpinned and removed; looping voices ignore `onEnded`. Unpinning immediately reclaims any unreferenced buffers above the ceiling. Replaying the same `voiceId` transfers its pin before stopping the previous voice, preserving its buffer without growing the final pin count.
 
 ## Spatial
 
@@ -106,6 +108,14 @@ Worker emits identity only (`emitterActorGuid` / `voiceId`). Main thread follows
 Mirrors nav bake: main-thread collect of **static** `MeshComponent` triangles (chunked, 8 actors per yield), worker occupancy + flood-fill + sparse probes, debounce 1_500 ms after the last static geometry edit, cancel, geometry-hash cache, timeout 8_000 ms. Dynamic rigid bodies do not invalidate.
 
 Save/export join matching in-flight geometry work through chunk persistence and registry refresh. A background bake that is still writing must finish before Save continues; it does not start a duplicate bake and concurrent Scene rewrite. Changed static geometry still requests a new result.
+
+Background baking never saves authored Scene edits. A result for unsaved geometry stays in the project session until Save writes that geometry and its matching chunk together. A result matching the saved geometry updates only the persisted container's `audioReverb` chunk, under the same per-asset write queue as Save; the saved document, metadata and other chunks remain intact. Discarding a tab therefore cannot publish its unsaved actors or transforms through a delayed bake.
+
+If a geometry edit reaches Save before its matching bake, Save removes the older reverb chunk. The Scene remains dry until a matching result is available instead of using probes from a different layout.
+
+Export flushes bakes against the persisted Scene snapshots it packages, so an open dirty tab cannot substitute different geometry. Material-only changes reuse cached bake bytes and associate them with the new authored snapshot without repeating the geometry bake. Manual navmesh writes share the Scene write queue and preserve the other derived chunks.
+
+Both Save and manual navmesh baking reconcile reverb with the Scene geometry they write: they attach a matching staged result or remove probes belonging to the previous geometry. A later export can safely join an already completed bake.
 
 Versioned Scene extra chunk `audioReverb` (magic `BSAR`, same extra-chunk pattern as `navmesh`). **v2** appends a bit-packed occupancy bitmap after the probes (~1 KiB at 24×24×16); v1 chunks omit occupancy and stay unoccluded until Save rebakes. Stay under 64 KiB. Save/export await a current result for **every** Scene asset in the Play library (open or closed), not only open tabs, or write a marked dry fallback (`audio.reverb_bake_failed`); they never hang. Export packs a sidecar `type: "AudioReverb"`, guid `audioReverb:<sceneGuid>`. Packed Audio is a **BSAU** envelope (JSON payload + source bytes, or JSON + a length-prefixed clip table).
 

@@ -70,6 +70,7 @@ export type GameManifest = {
   project?: { name: string; version: string };
   inputAssets?: import("@babylonslate/core").InputAssetDefinition[];
   inputMappings?: ProjectInputSettings;
+  focusNavigation?: import("@babylonslate/core").FocusNavigationSettings;
   startupSceneGuid: string;
   gameInstanceClass?: string;
   audioMixerGuid?: string;
@@ -101,6 +102,7 @@ export type ExportGameOptions = {
   project?: { name: string; version: string };
   inputAssets?: import("@babylonslate/core").InputAssetDefinition[];
   inputMappings?: ProjectInputSettings;
+  focusNavigation?: import("@babylonslate/core").FocusNavigationSettings;
   mode?: ExportMode;
   bundleDebugger: boolean;
   startupSceneGuid: string;

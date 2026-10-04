@@ -423,42 +423,6 @@ export function stampUserComponentOverrides(
   };
 }
 
-export function copyInstanceLinkage(
-  from: SerializedScene,
-  onto: SerializedScene,
-): SerializedScene {
-  const fromActors = new Map(from.actors.map((actor) => [actor.id, actor]));
-  return {
-    ...onto,
-    actors: onto.actors.map((actor) => {
-      const source = fromActors.get(actor.id);
-      if (!source) return actor;
-      const fromComponents = new Map(
-        source.components.map((component) => [component.id, component]),
-      );
-      const nextComponents = actor.components.map((component) => {
-        const linked = fromComponents.get(component.id);
-        if (!linked) return component;
-        const rest = withoutOverrideKeys(component);
-        const next = {
-          ...rest,
-          ...(linked.sourceId ? { sourceId: linked.sourceId } : {}),
-          ...withOverrideKeys(overrideSet(linked.overrideKeys)),
-        };
-        return next.sourceId === component.sourceId &&
-          sameOverrideKeys(next.overrideKeys, component.overrideKeys)
-          ? component
-          : next;
-      });
-      return nextComponents.every(
-        (component, index) => component === actor.components[index],
-      )
-        ? actor
-        : { ...actor, components: nextComponents };
-    }),
-  };
-}
-
 export function scenesEqualForPrefabSync(
   left: SerializedScene,
   right: SerializedScene,

@@ -14,6 +14,7 @@ export type ClassMemberSymbol = {
   keyTypeId?: string;
   keyTypeClassId?: string;
   pins?: Array<{
+    container?: "single" | "array" | "map";
     name: string;
     typeId: string;
     direction: "in" | "out";

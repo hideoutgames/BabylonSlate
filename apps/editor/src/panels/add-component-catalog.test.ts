@@ -88,7 +88,7 @@ describe("Add Component catalog", () => {
       "Overlay",
       "Physics",
     ]);
-    expect(byCategory.get("General")).toEqual(["SplineComponent"]);
+    expect(byCategory.get("General")).toEqual(["MovementComponent", "SplineComponent"]);
     expect(byCategory.get("Rendering")).toEqual([
       "MeshComponent",
       "SpriteComponent",

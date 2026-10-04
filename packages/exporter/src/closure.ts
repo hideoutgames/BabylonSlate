@@ -1,5 +1,6 @@
 import {
   classIdsFromVariableMembers,
+  assetVariableGuidsFromGraph,
   areaEmissionTextureGuids,
   err,
   isEditorOnlyAsset,
@@ -11,6 +12,10 @@ import {
   type SerializedGraph,
   type SerializedScene,
 } from "@babylonslate/core";
+import {
+  subsystemBaseClassIdOf,
+  type SubsystemClassHierarchy,
+} from "@babylonslate/object-model";
 import { MISSING_STARTUP_SCENE_MESSAGE } from "./constants";
 import type {
   ExportClosureInput,
@@ -74,6 +79,40 @@ function isIncluded(
   );
 }
 
+/** Class ancestry through the project's class headers, class id first. */
+function classHierarchy(
+  parentOf: ExportClosureInput["parentOf"],
+): SubsystemClassHierarchy {
+  return {
+    ancestry(classId) {
+      const chain: string[] = [];
+      const seen = new Set<string>();
+      let current: string | undefined = classId;
+      while (current && !seen.has(current)) {
+        seen.add(current);
+        chain.push(current);
+        current = parentOf(current)?.trim();
+      }
+      return chain;
+    },
+  };
+}
+
+/**
+ * GameSubsystem / SceneSubsystem classes run without being referenced, so every
+ * Class whose parent chain reaches either base ships. The walk starts at the
+ * header parent: the engine bases are never assets, so they are never roots.
+ */
+function isSubsystemClassAsset(
+  asset: ExportIndexedAsset,
+  hierarchy: SubsystemClassHierarchy,
+): boolean {
+  const parentClass = asset.type === "Class" ? asset.parentClass?.trim() : "";
+  return (
+    !!parentClass && subsystemBaseClassIdOf(hierarchy, parentClass) !== null
+  );
+}
+
 export function collectExportReachability(
   input: ExportClosureInput,
 ): Result<ExportReachability, string> {
@@ -104,6 +143,7 @@ export function collectExportReachability(
     }
   }
 
+  const hierarchy = classHierarchy(input.parentOf);
   const bySceneGuid = new Map<string, Set<string>>();
   const pendingScenes = [startup];
   const traversedScenes = new Set<string>();
@@ -119,6 +159,7 @@ export function collectExportReachability(
     const seen = new Set<string>([sceneRoot]);
     if (sceneRoot === startup) {
       for (const asset of sortedAssets) if (asset.type === "InputAction" || asset.type === "InputAxis") pending.push(asset.guid);
+      for (const asset of sortedAssets) if (isSubsystemClassAsset(asset, hierarchy)) pending.push(asset.guid);
       for (const ref of [input.gameInstanceClass, input.audioMixerGuid]) {
         if (ref?.trim()) pending.push(ref.trim());
       }
@@ -163,6 +204,7 @@ export function collectExportReachability(
         if (graph) {
           collectTypedRefs(graph, refs);
           for (const classId of classIdsFromVariableMembers(graph.members ?? [])) refs.add(classId);
+          for (const guid of assetVariableGuidsFromGraph(graph)) refs.add(guid);
           for (const guid of materialParameterTextureGuidsFromGraph(graph)) refs.add(guid);
           for (const guid of renderTargetAssetGuidsFromGraph(graph)) refs.add(guid);
           for (const guid of areaEmissionTextureGuids(graph)) refs.add(guid);

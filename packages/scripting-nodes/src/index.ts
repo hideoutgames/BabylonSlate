@@ -19,6 +19,7 @@ import { sceneNodes } from "./scene";
 import { sceneStreamingNodes } from "./scene-streaming";
 import { projectNodes } from "./project";
 import { gameInstanceNodes } from "./game-instance";
+import { subsystemNodes } from "./subsystem";
 import { sceneLayerNodes, registerSceneLayerValidationRules } from "./scene-layer";
 import { scalabilityNodes } from "./scalability";
 import { renderNodes } from "./render";
@@ -61,6 +62,7 @@ export * from "./scene";
 export * from "./scene-streaming";
 export * from "./project";
 export * from "./game-instance";
+export * from "./subsystem";
 export * from "./scene-layer";
 export * from "./render";
 export * from "./render-target";
@@ -106,6 +108,7 @@ export function allNodeDefinitions(): NodeDefinition[] {
     ...sceneStreamingNodes,
     ...projectNodes,
     ...gameInstanceNodes,
+    ...subsystemNodes,
     ...sceneLayerNodes,
     ...renderNodes,
     ...renderTargetNodes,

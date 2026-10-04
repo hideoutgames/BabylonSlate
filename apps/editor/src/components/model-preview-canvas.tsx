@@ -190,7 +190,7 @@ export function ModelPreviewCanvas({
             gizmos.forwardPointer(type, x, y, { ...pointerCanvas(), pointerId });
           },
           onTap: (x, y) => {
-            const pick = host.scene.pick(x, y);
+            const pick = host?.scene.pick(x, y);
             let node = pick?.pickedMesh ?? null;
             while (node) {
               if (node instanceof Mesh && isColliderVisualMesh(node)) {

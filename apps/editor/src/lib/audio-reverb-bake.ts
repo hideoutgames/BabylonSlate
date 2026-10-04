@@ -24,17 +24,19 @@ export type AudioReverbBakeScene = {
   actors?: readonly SerializedActor[];
 } & Record<string, unknown>;
 
+export type AudioReverbBakeSceneEntry = { path: string; scene: AudioReverbBakeScene };
+
 export type AudioReverbBakeController = {
   schedule(path: string, scene: AudioReverbBakeScene): void;
   flush(path: string, scene: AudioReverbBakeScene): Promise<void>;
   flushAll(
-    scenes: ReadonlyArray<{ path: string; scene: AudioReverbBakeScene }>,
+    scenes: readonly AudioReverbBakeSceneEntry[],
   ): Promise<void>;
   drain(): Promise<void>;
   dispose(): void;
 };
 
-function actorsOf(scene: AudioReverbBakeScene): readonly SerializedActor[] {
+function actorsOf(scene: Pick<AudioReverbBakeScene, "actors">): readonly SerializedActor[] {
   return Array.isArray(scene.actors) ? scene.actors : [];
 }
 
@@ -58,7 +60,7 @@ function isDynamicRigidBody(actor: SerializedActor): boolean {
 
 /** Cheap key so background debounce is not reset by unrelated document bumps. */
 export function staticAudioGeometryFingerprint(
-  scene: AudioReverbBakeScene,
+  scene: Pick<AudioReverbBakeScene, "actors">,
 ): string {
   const parts: string[] = [];
   for (const actor of actorsOf(scene)) {
@@ -103,7 +105,7 @@ export function createAudioReverbBakeController(options: {
 
   const pending = new Map<string, ReturnType<typeof setTimeout>>();
   const inflight = new Map<string, { fingerprint: string; work: Promise<void> }>();
-  const lastHash = new Map<string, string>();
+  const completed = new Map<string, { hash: string; fingerprint: string; bytes: Uint8Array }>();
   const generation = new Map<string, number>();
 
   const bump = (path: string) => {
@@ -119,7 +121,7 @@ export function createAudioReverbBakeController(options: {
     // another rewrite while that job's hash has yet to enter the completed cache.
     if (existing?.fingerprint === fingerprint) return existing.work;
     const gen = bump(path);
-    const work = bakePath(path, scene, gen);
+    const work = bakePath(path, scene, gen, fingerprint);
     const entry = { fingerprint, work };
     inflight.set(path, entry);
     return work.finally(() => {
@@ -131,15 +133,26 @@ export function createAudioReverbBakeController(options: {
     path: string,
     scene: AudioReverbBakeScene,
     gen: number,
+    fingerprint: string,
   ): Promise<void> {
     const abort = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
-    let hash = lastHash.get(path) ?? "0";
+    let hash = completed.get(path)?.hash ?? "0";
     try {
       const geometry = await collect(scene);
       if (generation.get(path) !== gen) return;
       hash = geometryHashForAudioBake(geometry);
-      if (lastHash.get(path) === hash) return;
+      const cached = completed.get(path);
+      if (cached?.hash === hash) {
+        // A material or other non-geometric mesh edit may change the cheap
+        // fingerprint without changing triangles. Reuse the bake, but associate
+        // it with this snapshot so its later Save can persist the matching chunk.
+        if (cached.fingerprint !== fingerprint) {
+          await options.write({ path, bytes: cached.bytes, payload: scene });
+          completed.set(path, { ...cached, fingerprint });
+        }
+        return;
+      }
       const timeout = new Promise<Uint8Array>((_, reject) => {
         timer = setTimeout(() => {
           abort.abort();
@@ -154,7 +167,7 @@ export function createAudioReverbBakeController(options: {
         bytes,
         payload: scene as Record<string, unknown>,
       });
-      lastHash.set(path, hash);
+      completed.set(path, { hash, fingerprint, bytes });
     } catch {
       if (generation.get(path) !== gen) return;
       options.onDiagnostic?.({
@@ -162,12 +175,13 @@ export function createAudioReverbBakeController(options: {
         message:
           "Audio reverb bake failed; writing a marked dry fallback so Save and export can continue.",
       });
+      const bytes = dryAudioReverbFallbackBytes(hash);
       await options.write({
         path,
-        bytes: dryAudioReverbFallbackBytes(hash),
+        bytes,
         payload: scene as Record<string, unknown>,
       });
-      lastHash.set(path, hash);
+      completed.set(path, { hash, fingerprint, bytes });
     } finally {
       if (timer !== undefined) clearTimeout(timer);
     }
@@ -209,18 +223,18 @@ export function createAudioReverbBakeController(options: {
   };
 }
 
-let saveFlush: (() => Promise<void>) | null = null;
+let saveFlush: ((scenes?: readonly AudioReverbBakeSceneEntry[]) => Promise<void>) | null = null;
 
 export function registerAudioReverbSaveFlush(
-  flush: (() => Promise<void>) | null,
+  flush: typeof saveFlush,
 ): void {
   saveFlush = flush;
 }
 
 /** Save/export await the current bake or a dry fallback. Never throws. */
-export async function flushAudioReverbForSave(): Promise<void> {
+export async function flushAudioReverbForSave(scenes?: readonly AudioReverbBakeSceneEntry[]): Promise<void> {
   try {
-    await saveFlush?.();
+    await saveFlush?.(scenes);
   } catch {
     // Dry fallback is written by the controller; Save must not hang or fail.
   }
@@ -239,8 +253,8 @@ export function sceneFromDocument(
 export async function collectAudioReverbFlushScenes(options: {
   paths: readonly string[];
   load: (path: string) => Promise<unknown | null>;
-}): Promise<Array<{ path: string; scene: AudioReverbBakeScene }>> {
-  const scenes: Array<{ path: string; scene: AudioReverbBakeScene }> = [];
+}): Promise<AudioReverbBakeSceneEntry[]> {
+  const scenes: AudioReverbBakeSceneEntry[] = [];
   for (const path of options.paths) {
     const scene = sceneFromDocument(await options.load(path));
     if (scene) scenes.push({ path, scene });

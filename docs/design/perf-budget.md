@@ -19,7 +19,7 @@ with another view are not per-viewport GPU measurements.
 | Warm non-CB document workspaces | **≤ 3** | Active + open Scene tabs + recent (`MAX_WARM_DOCUMENT_WORKSPACES`). Open Scenes always mount and count. Content Browser always mounted |
 | Idle inactive chrome tab | Unmount after **2 min** | `DOCUMENT_IDLE_UNMOUNT_MS`; pause clock while app backgrounded |
 | Game tick (combined) | &lt; 8 ms | ~5 ms scripts + ~3 ms physics in one worker |
-| Snapshot publish | Measured, outside the tick budget | Stats `publishMs`: per-tick removal pass plus one world composition and buffer write per `advance()` burst. Shown beside script/physics; not in `isTickOverBudget` |
+| Snapshot publish | Measured, outside the tick budget | Stats `publishMs`: per-tick SceneLayer overlay layout and removal pass plus one world composition and buffer write per `advance()` burst. Shown beside script/physics; not in `isTickOverBudget` |
 | Draw calls | Low hundreds | Prefer instancing; surface in stats HUD |
 
 ## Memory
@@ -59,7 +59,7 @@ Bytes per texel (unit-tested): RGBA8 = 4, ASTC 4×4 = 1, plus ~⅓ for mipmaps.
 
 The worker counterpart to the snapshot-apply rule: no whole-world work or per-actor allocation per tick unless its output needs it.
 
-- Compose every actor's world pose once per published frame. `advance()` defers the composition and buffer write of its catch-up ticks to one write when the burst ends; each tick still runs its removal pass (stream retirement, `despawn`, slot release). A bare `tick()` and explicit publishes (scene, layer and stream readiness) write immediately.
+- Compose every actor's world pose once per published frame. `advance()` defers the composition and buffer write of its catch-up ticks to one write when the burst ends; each tick still lays out SceneLayer overlays (the next tick's focus navigation and scripts read the arranged poses) and runs its removal pass (stream retirement, `despawn`, slot release). A bare `tick()` and explicit publishes (scene, layer and stream readiness, SceneLayer scrolling) write immediately.
 - Other per-tick passes compose only the actors they read: the crowd composes NavAgent actors and their ancestors, ragdolls their owners (`actorWorldTransforms(actors, selected)` / `composeActorWorldTransforms`).
 - Build the frame's guid index (`navFrameActors`) only when behaviour trees or a navmesh can read it, with a plain loop.
 - Reuse scratch `Set`s / arrays owned by the driver for per-tick bookkeeping and prune long-lived maps in place; avoid spreading a `Map`/`Set` to iterate it unless the loop can reenter and mutate it.

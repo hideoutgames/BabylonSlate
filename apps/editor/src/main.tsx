@@ -11,7 +11,11 @@ import App from "./App";
 initializeCapacitorLifecycle();
 initializeCapacitorAudioLifecycle();
 
-if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("renderTargetProof")) {
+if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("overlayLayoutProof")) {
+  void import("./testing/overlay-layout-proof").then(({ runOverlayLayoutProof }) => Object.assign(window, { __overlayLayoutProof: runOverlayLayoutProof }));
+} else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("textMaterialProof")) {
+  void import("./testing/text-material-proof").then(({ runTextMaterialProof }) => Object.assign(window, { __textMaterialProof: runTextMaterialProof }));
+} else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("renderTargetProof")) {
   void import("./testing/render-target-proof").then(({ runRenderTargetProof }) => Object.assign(window, { __renderTargetProof: runRenderTargetProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("spatialEffectsProof")) {
   void import("./testing/spatial-effects-proof").then(({ runSpatialEffectsProof }) => Object.assign(window, { __spatialEffectsProof: runSpatialEffectsProof }));

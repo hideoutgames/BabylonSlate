@@ -20,12 +20,14 @@ export function applyPlayerActiveScene(
     ) => void;
     applySceneEnvironment: (scene: SerializedScene) => void;
     resetAudioSession?: () => void;
+    setAudioReverbField?: (bytes: Uint8Array | null) => void;
     resetParticleSession?: () => void;
   },
   scenes: ReadonlyMap<string, SerializedScene>,
   command: { type: string; sceneAssetGuid?: unknown },
   currentSceneGuid?: string | null,
   forceReload = false,
+  audioReverbByScene?: ReadonlyMap<string, Uint8Array>,
 ): boolean {
   if (command.type !== "activeScene" || typeof command.sceneAssetGuid !== "string") {
     return false;
@@ -38,6 +40,7 @@ export function applyPlayerActiveScene(
   handle.loadScene(scene, { sceneAssetGuid: command.sceneAssetGuid });
   handle.applySceneEnvironment(scene);
   handle.resetAudioSession?.();
+  handle.setAudioReverbField?.(audioReverbByScene?.get(command.sceneAssetGuid) ?? null);
   handle.resetParticleSession?.();
   return true;
 }

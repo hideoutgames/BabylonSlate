@@ -38,6 +38,7 @@ import { DocumentService } from "./document-service";
 import { createDefaultLogicGraphSerialized } from "./graph-validation";
 import { MANNEQUIN_CLASS_FILE } from "../lib/scaffold-empty-3d";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
+import { collectAudioReverbFlushScenes, createAudioReverbBakeController } from "../lib/audio-reverb-bake";
 
 const DEFAULT_3D_CLASS_FILE = `assets/${MANNEQUIN_CLASS_FILE}`;
 
@@ -105,6 +106,24 @@ async function scaffolded(authentic = false) {
 }
 
 describe("project documents as .babasset", () => {
+  it.each(["read", "decode"])("rejects a Class %s failure instead of opening an empty graph", async (failure) => {
+    const { service, storage } = await scaffolded();
+    const path = "assets/Unreadable.class.babasset";
+    await service.saveDocument("graph", path, { nodes: [], edges: [], properties: { label: "Keep me" } });
+    if (failure === "decode") await storage.writeBinary(path, new Uint8Array([1, 2, 3]));
+    const bytes = await storage.readBinary(path);
+    const read = storage.readBinary.bind(storage);
+    const readSpy = vi.spyOn(storage, "readBinary").mockImplementation(async (requested) => {
+      if (failure === "read" && requested === path) throw new Error("Storage temporarily unavailable");
+      return read(requested);
+    });
+    const documents = new DocumentService();
+    await expect(documents.openDocument(service, { kind: "graph", path, label: "Unreadable" })).rejects.toThrow();
+    expect(documents.getDocument(documentId({ kind: "graph", path }))).toBeUndefined();
+    readSpy.mockRestore();
+    expect(await storage.readBinary(path)).toEqual(bytes);
+  });
+
   it.each([false, true])("persists one Class replacement across all usages (None=%s)", async (none) => {
     const { service, storage } = await scaffolded();
     const sourcePath = "assets/Hero.class.babasset";
@@ -1299,6 +1318,181 @@ describe("project documents as .babasset", () => {
         )) as SerializedScene
       ).name,
     ).toBe("AfterSave");
+  });
+
+  it("stages reverb for dirty geometry until that Scene is saved", async () => {
+    const { storage, service } = await scaffolded();
+    const savedScene = { ...createDefaultScene(), actors: [createActor("wall", "Wall", {
+      components: [createMeshComponent("wall-mesh", "box")],
+    })] };
+    await service.saveDocument("scene", MAIN_SCENE_FILE, savedScene);
+    const savedBytes = await storage.readBinary(MAIN_SCENE_FILE);
+    const dirtyScene = structuredClone(savedScene);
+    dirtyScene.name = "Unsaved rename";
+    dirtyScene.actors[0]!.transform.position[0] = 50;
+    const reverb = new Uint8Array([9, 8, 7]);
+    await service.writeSceneAudioReverbChunk(MAIN_SCENE_FILE, reverb, dirtyScene as unknown as Record<string, unknown>);
+    // Closing/discarding this tab can leave no authored or derived disk changes.
+    expect(await storage.readBinary(MAIN_SCENE_FILE)).toEqual(savedBytes);
+    await service.saveDocument("scene", MAIN_SCENE_FILE, dirtyScene);
+    const decoded = await decodeBabasset(await storage.readBinary(MAIN_SCENE_FILE));
+    expect(decoded.chunks.get(AUDIO_REVERB_CHUNK_ID)).toEqual(reverb);
+    expect((await service.loadDocument("scene", MAIN_SCENE_FILE) as SerializedScene).actors[0]!.transform.position[0]).toBe(50);
+  });
+
+  it("serializes reverb with Save and preserves the latest saved Scene and its other chunks", async () => {
+    const { storage, service } = await scaffolded();
+    const scene = await service.loadDocument("scene", MAIN_SCENE_FILE) as SerializedScene;
+    await service.writeSceneNavmeshChunk(MAIN_SCENE_FILE, new Uint8Array([4, 5]), scene as unknown as Record<string, unknown>);
+    let finishWrite!: () => void;
+    let startedWrite!: () => void;
+    const started = new Promise<void>((resolve) => { startedWrite = resolve; });
+    const gate = new Promise<void>((resolve) => { finishWrite = resolve; });
+    const write = storage.writeBinary.bind(storage);
+    const writes = vi.spyOn(storage, "writeBinary").mockImplementation(async (path, bytes) => {
+      if (path === MAIN_SCENE_FILE && writes.mock.calls.length === 1) {
+        startedWrite();
+        await gate;
+      }
+      await write(path, bytes);
+    });
+    const save = service.saveDocument("scene", MAIN_SCENE_FILE, { ...scene, name: "Explicitly saved" });
+    await started;
+    const bake = service.writeSceneAudioReverbChunk(MAIN_SCENE_FILE, new Uint8Array([7, 8]), {
+      ...scene, name: "Still unsaved",
+    });
+    finishWrite();
+    await Promise.all([save, bake]);
+    writes.mockRestore();
+    const bytes = await storage.readBinary(MAIN_SCENE_FILE);
+    expect((await decodeAssetDocument(bytes)).payload.name).toBe("Explicitly saved");
+    const decoded = await decodeBabasset(bytes);
+    expect(decoded.chunks.get(NAVMESH_CHUNK_ID)).toEqual(new Uint8Array([4, 5]));
+    expect(decoded.chunks.get(AUDIO_REVERB_CHUNK_ID)).toEqual(new Uint8Array([7, 8]));
+  });
+
+  it("drops an older reverb chunk when a saved edit outpaces the matching bake", async () => {
+    const { service } = await scaffolded();
+    const scene = { ...createDefaultScene(), actors: [createActor("wall", "Wall", {
+      components: [createMeshComponent("wall-mesh", "box")],
+    })] };
+    await service.saveDocument("scene", MAIN_SCENE_FILE, scene);
+    await service.writeSceneAudioReverbChunk(MAIN_SCENE_FILE, new Uint8Array([7]), scene as unknown as Record<string, unknown>);
+    const lateEdit = structuredClone(scene);
+    lateEdit.actors[0]!.transform.position[0] = 12;
+    await service.saveDocument("scene", MAIN_SCENE_FILE, lateEdit);
+    expect(await service.readAssetChunk(MAIN_SCENE_FILE, AUDIO_REVERB_CHUNK_ID)).toBeNull();
+  });
+
+  it("bakes the persisted Scene for export after staging unsaved geometry", async () => {
+    const { storage, service } = await scaffolded();
+    const scene = { ...createDefaultScene(), actors: [createActor("wall", "Wall", {
+      components: [createMeshComponent("wall-mesh", "box")],
+    })] };
+    await service.saveDocument("scene", MAIN_SCENE_FILE, scene);
+    let baked = 0;
+    const controller = createAudioReverbBakeController({
+      bake: async () => new Uint8Array([++baked]),
+      write: (entry) => service.writeSceneAudioReverbChunk(entry.path, entry.bytes, entry.payload),
+    });
+    const dirty = structuredClone(scene);
+    dirty.actors[0]!.transform.position[0] = 50;
+    await controller.flush(MAIN_SCENE_FILE, dirty as unknown as Record<string, unknown>);
+    const persisted = await collectAudioReverbFlushScenes({
+      paths: [MAIN_SCENE_FILE], load: (path) => service.loadDocument("scene", path),
+    });
+    await controller.flushAll(persisted);
+    const saved = await decodeAssetDocument(await storage.readBinary(MAIN_SCENE_FILE));
+    expect((saved.payload as unknown as SerializedScene).actors[0]!.transform.position[0]).toBe(0);
+    expect(await service.readAssetChunk(MAIN_SCENE_FILE, AUDIO_REVERB_CHUNK_ID)).toEqual(new Uint8Array([2]));
+    controller.dispose();
+  });
+
+  it.each([false, true])("reconciles reverb when manual nav bake saves changed geometry (staged=%s)", async (staged) => {
+    const { service } = await scaffolded();
+    const scene = { ...createDefaultScene(), actors: [createActor("wall", "Wall", {
+      components: [createMeshComponent("wall-mesh", "box")],
+    })] };
+    await service.saveDocument("scene", MAIN_SCENE_FILE, scene);
+    let baked = 0;
+    const controller = createAudioReverbBakeController({
+      bake: async () => new Uint8Array([++baked]),
+      write: (entry) => service.writeSceneAudioReverbChunk(entry.path, entry.bytes, entry.payload),
+    });
+    await controller.flush(MAIN_SCENE_FILE, scene as unknown as Record<string, unknown>);
+    const next = structuredClone(scene);
+    next.actors[0]!.transform.position[0] = 20;
+    if (staged) await controller.flush(MAIN_SCENE_FILE, next as unknown as Record<string, unknown>);
+    await service.writeSceneNavmeshChunk(MAIN_SCENE_FILE, new Uint8Array([9]), next as unknown as Record<string, unknown>);
+    expect(await service.readAssetChunk(MAIN_SCENE_FILE, AUDIO_REVERB_CHUNK_ID)).toEqual(staged ? new Uint8Array([2]) : null);
+    // Export either joins its completed bake or bakes the now-saved geometry.
+    await controller.flushAll(await collectAudioReverbFlushScenes({
+      paths: [MAIN_SCENE_FILE], load: (path) => service.loadDocument("scene", path),
+    }));
+    expect(await service.readAssetChunk(MAIN_SCENE_FILE, AUDIO_REVERB_CHUNK_ID)).toEqual(new Uint8Array([2]));
+    expect(await service.readAssetChunk(MAIN_SCENE_FILE, NAVMESH_CHUNK_ID)).toEqual(new Uint8Array([9]));
+    controller.dispose();
+  });
+
+  it.each(["save", "navmesh", "reverb"] as const)("follows a queued rename before a %s write without recreating the old file", async (kind) => {
+    const { storage, service } = await scaffolded();
+    const path = "assets/Queued.scene.babasset";
+    const scene = createDefaultScene();
+    await service.saveDocument("scene", path, scene);
+    const guid = service.guidForPath(path)!;
+    const rename = service.registry!.renameAsset(guid, "Renamed");
+    const payload = scene as unknown as Record<string, unknown>;
+    const write = kind === "save" ? service.saveDocument("scene", path, scene)
+      : kind === "navmesh" ? service.writeSceneNavmeshChunk(path, new Uint8Array([5]), payload)
+        : service.writeSceneAudioReverbChunk(path, new Uint8Array([7]), payload);
+    const [renamed] = await Promise.all([rename, write]);
+    expect(await storage.exists(path)).toBe(false);
+    expect(service.registry!.getByGuid(guid)?.path).toBe(renamed.path);
+    expect((await decodeAssetDocument(await storage.readBinary(renamed.path))).guid).toBe(guid);
+    if (kind !== "save") expect(await service.readAssetChunk(renamed.path, kind === "navmesh" ? NAVMESH_CHUNK_ID : AUDIO_REVERB_CHUNK_ID)).not.toBeNull();
+  });
+
+  it("does not recreate an asset deleted ahead of a queued Save", async () => {
+    const { storage, service } = await scaffolded();
+    const path = "assets/Deleted.scene.babasset";
+    const scene = createDefaultScene();
+    await service.saveDocument("scene", path, scene);
+    const deletion = service.registry!.deleteAsset(service.guidForPath(path)!);
+    const save = service.saveDocument("scene", path, scene);
+    await expect(save).rejects.toThrow(/closed or deleted/);
+    await deletion;
+    expect(await storage.exists(path)).toBe(false);
+  });
+
+  it.each(["rename", "delete"] as const)("creates a fresh GUID when a path is reused after %s", async (operation) => {
+    const { service } = await scaffolded();
+    const path = "assets/Reusable.class.babasset";
+    await service.saveDocument("graph", path, { nodes: [], edges: [] });
+    await service.loadDocument("graph", path); // Populate the pre-registry path cache.
+    const previousGuid = service.guidForPath(path)!;
+    const moved = operation === "rename" ? await service.registry!.renameAsset(previousGuid, "Moved") : null;
+    if (operation === "delete") await service.registry!.deleteAsset(previousGuid);
+    expect(service.guidForPath(path)).toBeNull();
+    await service.saveDocument("graph", path, { nodes: [], edges: [] });
+    const newGuid = service.guidForPath(path);
+    expect(newGuid).not.toBeNull();
+    expect(newGuid).not.toBe(previousGuid);
+    if (moved) expect(service.registry!.getByGuid(previousGuid)?.path).toBe(moved.path);
+    else expect(service.registry!.getByGuid(previousGuid)).toBeUndefined();
+  });
+
+  it("uses reindexed on-disk identity instead of a previously loaded path GUID", async () => {
+    const { service, storage } = await scaffolded();
+    const path = "assets/Replaced.class.babasset";
+    await service.saveDocument("graph", path, { nodes: [], edges: [] });
+    await service.loadDocument("graph", path);
+    const replacement = await decodeAssetDocument(await storage.readBinary(path));
+    replacement.guid = "replaced-guid";
+    await storage.writeBinary(path, await encodeAssetDocument(replacement));
+    await service.registry!.reindexPath(path);
+    expect(service.guidForPath(path)).toBe("replaced-guid");
+    await service.saveDocument("graph", path, { nodes: [], edges: [], properties: { edited: true } });
+    expect((await decodeAssetDocument(await storage.readBinary(path))).guid).toBe("replaced-guid");
   });
 
   it("writes a Scene audioReverb extra chunk and keeps navmesh", async () => {

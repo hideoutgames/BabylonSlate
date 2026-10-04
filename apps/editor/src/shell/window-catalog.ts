@@ -15,6 +15,7 @@ export type DockviewDocumentKind =
   | "tilemap"
   | "material"
   | "material-function"
+  | "material-instance"
   | "plugin-settings"
   | "anim-graph"
   | "behaviour-tree"
@@ -51,6 +52,7 @@ const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
   "tilemap",
   "material",
   "material-function",
+  "material-instance",
   "plugin-settings",
   "anim-graph",
   "behaviour-tree",
@@ -111,6 +113,7 @@ const DOCK_PRIMARY_PANEL: Record<DockviewDocumentKind, string> = {
   tilemap: "tilemap-paint",
   material: "material-graph",
   "material-function": "material-function-graph",
+  "material-instance": "material-instance-preview",
   "plugin-settings": "plugin-settings-details",
   "anim-graph": "anim-graph-graph",
   "behaviour-tree": "behaviour-tree-graph",
@@ -707,6 +710,21 @@ const MATERIAL_WINDOWS: DockWindowDefinition[] = [
   },
 ];
 
+/** Material Instance: Preview primary with the parameter overrides on the right. */
+const MATERIAL_INSTANCE_WINDOWS: DockWindowDefinition[] = [
+  { id: "material-instance-preview", component: "material-instance-preview", title: "Preview" },
+  {
+    id: "material-instance-details",
+    component: "material-instance-details",
+    title: "Details",
+    defaultPosition: {
+      referencePanelId: "material-instance-preview",
+      direction: "right",
+      initialWidth: MATERIAL_SIDE_STACK_WIDTH,
+    },
+  },
+];
+
 /** The Material layout: Graph primary, Preview and Details stacked on the left. */
 const PARTICLE_GRAPH_WINDOWS: DockWindowDefinition[] = [
   {
@@ -983,6 +1001,9 @@ export function listDockWindows(
   }
   if (kind === "material-function") {
     return withOptionalLocks(kind, MATERIAL_FUNCTION_WINDOWS, options);
+  }
+  if (kind === "material-instance") {
+    return withOptionalLocks(kind, MATERIAL_INSTANCE_WINDOWS, options);
   }
   if (kind === "plugin-settings") {
     return withOptionalLocks(kind, PLUGIN_SETTINGS_WINDOWS, options);

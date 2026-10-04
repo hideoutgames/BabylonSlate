@@ -6,6 +6,27 @@ import type { ProjectInputSettings, SerializedComponent, SerializedScene, Serial
 /** Serializable runtime override of one named Material Graph parameter. */
 export type { MaterialParameterValue } from "@babylonslate/core";
 
+export interface PlayLightProperties {
+  color: [number, number, number];
+  intensity: number;
+  enabled: boolean;
+  range?: number;
+  innerAngle?: number;
+  outerAngle?: number;
+  castShadows?: boolean;
+  shadowPriority?: number;
+  groundColor?: [number, number, number];
+}
+
+export interface PlayCameraProperties {
+  projectionMode?: "perspective" | "orthographic";
+  fieldOfView?: number;
+  orthographicSize?: number;
+  nearClip?: number;
+  farClip?: number;
+  isDefault?: boolean;
+}
+
 /** Source anchor mapping a generated line back to a graph node. */
 export type ScriptAnchorPayload = {
   line: number;
@@ -77,12 +98,17 @@ export type ControlMessage =
       type: "load";
       /** Initial session render cap, shared with the renderer for console readback. */
       frameCap?: number;
+      /** Serialized trace retention budget in bytes for this session. */
+      traceByteBudget?: number;
   renderSettings?: Partial<RenderProjectSettings>;
       project?: { name: string; version: string };
       sceneAssetGuid: string;
       /** Authored project mappings; omitted legacy loads use defaults. */
       inputAssets?: import("@babylonslate/core").InputAssetDefinition[];
   inputMappings?: ProjectInputSettings;
+      focusNavigation?: import("@babylonslate/core").FocusNavigationSettings;
+      pixelsPerUnit?: number;
+      texturePixelSizes?: Record<string, { width: number; height: number }>;
       /** Authored scene document. When present, Play instantiates these actors. */
       scene?: SerializedScene;
       seed?: number;
@@ -95,6 +121,8 @@ export type ControlMessage =
       gameInstanceClass?: string;
       /** Extra authored scenes `changescene` can instantiate by guid or name. */
       scenes?: Array<{ guid: string; scene: SerializedScene }>;
+      /** Baked navigation by canonical scene guid, selected before Begin Play. */
+      sceneNavmeshBytes?: Record<string, Uint8Array>;
       /** Overlay documents the session compositor can instantiate by guid or name. */
       sceneLayers?: Array<{ guid: string; layer: SerializedSceneLayer }>;
       /** When false, debug-tier console commands are stripped in the player. */
@@ -174,6 +202,7 @@ export type ControlMessage =
   | { type: "setPaused"; paused: boolean }
   | { type: "console"; line: string }
   | { type: "inspect" }
+  | { type: "sceneLayerScroll"; layerId: string; actorId: string; componentId: string; deltaX: number; deltaY: number }
   | {
       type: "sceneLayerPointer";
       layerId: string;
@@ -300,6 +329,7 @@ export type DebugBehaviourTree = {
 };
 
 export type CommandMessage =
+  | { type: "setPainter2D"; slotId: number; componentId: string; painter: import("@babylonslate/core").Painter2DProperties }
   | { type: "dynamicMeshUpdate"; meshId: number; update: import("@babylonslate/core").DynamicMeshUpdate }
   /** Cable records: ID, count, start/end actor slots, two actor-local anchors, world xyz particles. */
   | { type: "cableFrame"; frameId: number; data: Float32Array }
@@ -360,27 +390,13 @@ export type CommandMessage =
       sortingLayer?: string;
       /** Sprite / tilemap order within that sorting layer. */
       orderInLayer?: number;
-      light?: {
-        color: [number, number, number];
-        intensity: number;
-        enabled: boolean;
-        range?: number;
-        innerAngle?: number;
-        outerAngle?: number;
-        castShadows?: boolean;
-        shadowPriority?: number;
-        groundColor?: [number, number, number];
-      };
-      camera?: {
-        projectionMode?: "perspective" | "orthographic";
-        fieldOfView?: number;
-        orthographicSize?: number;
-        nearClip?: number;
-        farClip?: number;
-        isDefault?: boolean;
-      };
+      light?: PlayLightProperties;
+      camera?: PlayCameraProperties;
       /** Extra renderable components parented to the actor origin mesh. */
       parts?: Array<{
+        light?: PlayLightProperties;
+        camera?: PlayCameraProperties;
+        painter?: import("@babylonslate/core").Painter2DProperties;
         dynamicMesh?: { meshId: number; update: import("@babylonslate/core").DynamicMeshUpdate };
         /** Nonvisual ancestors between this component and its nearest visual parent, nearest first. */
         parentTransforms?: import("@babylonslate/core").Transform[];
@@ -419,7 +435,15 @@ export type CommandMessage =
           alignment: "left" | "center" | "right";
         };
         text2d?: {
+          appearModes?: import("@babylonslate/core").Text2DProperties["appearModes"];
+          appearTransition?: import("@babylonslate/core").Text2DProperties["appearTransition"];
+          appearInterval?: number;
+          appearDuration?: number;
+          appearStart?: import("@babylonslate/core").Text2DProperties["appearStart"];
+          appearProgress?: number;
           text: string;
+          materialGuid?: string | null;
+          materialUv?: "text" | "glyph";
           size: number;
           color: [number, number, number];
           fontAssetGuid: string | null;
@@ -457,7 +481,15 @@ export type CommandMessage =
         alignment: "left" | "center" | "right";
       };
       text2d?: {
+        appearModes?: import("@babylonslate/core").Text2DProperties["appearModes"];
+        appearTransition?: import("@babylonslate/core").Text2DProperties["appearTransition"];
+        appearInterval?: number;
+        appearDuration?: number;
+        appearStart?: import("@babylonslate/core").Text2DProperties["appearStart"];
+        appearProgress?: number;
         text: string;
+        materialGuid?: string | null;
+        materialUv?: "text" | "glyph";
         size: number;
         color: [number, number, number];
         fontAssetGuid: string | null;
@@ -562,7 +594,7 @@ export type CommandMessage =
       tickIndex: number;
       scriptMs: number;
       physicsMs: number;
-      /** Most recent snapshot publish: removal pass, world composition and buffer write. */
+      /** Most recent snapshot publish: overlay layout and removal pass, world composition and buffer write. */
       publishMs?: number;
       fps?: number;
       liveActors?: number;
@@ -593,7 +625,7 @@ export type CommandMessage =
         tickIndex: number;
         nodes: Array<{
           id: string;
-          kind: "gameInstance" | "actor" | "component";
+          kind: "gameInstance" | "subsystem" | "actor" | "component";
           label: string;
           classId: string;
           parentId: string | null;
@@ -610,6 +642,12 @@ export type CommandMessage =
     | {
       type: "trace";
       payload: Record<string, unknown>;
+    }
+  | {
+      type: "setText2DAppear";
+      slotId: number;
+      componentId: string;
+      progress: number;
     }
   | {
       type: "tilemapAnimationTime";
@@ -704,6 +742,7 @@ export type CommandMessage =
     }
   | { type: "sceneLayerRemove"; layerId: string }
   | { type: "sceneLayerClear" }
+  | { type: "sceneLayerLayout"; layerId: string; entries: Array<import("@babylonslate/core").OverlayLayoutEntry & { slotId: number; transform?: import("@babylonslate/core").SerializedTransform }> }
   | {
       type: "sceneLayerPostProcess";
       layerId: string;

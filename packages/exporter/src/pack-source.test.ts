@@ -3,6 +3,34 @@ import { encodeBabpack } from "./babpack";
 import { createHttpPackSource, createMemoryPackSource } from "./pack-source";
 
 describe("pack sources", () => {
+  it.each([true, false])("shares the index probe across simultaneous reads (range-capable=%s)", async (rangesSupported) => {
+    const pack = await encodeBabpack([{ guid: "a", bytes: new Uint8Array([1]) }, { guid: "b", bytes: new Uint8Array([2]) }]);
+    const ranges: string[] = [];
+    const source = createHttpPackSource("boot.babpack", undefined, async (_url, init) => {
+      const range = new Headers(init?.headers).get("Range") ?? "";
+      ranges.push(range);
+      await Promise.resolve();
+      if (!rangesSupported) return new Response(pack, { status: 200 });
+      const match = /^bytes=(\d+)-(\d+)$/.exec(range)!;
+      return new Response(pack.subarray(Number(match[1]), Number(match[2]) + 1), { status: 206 });
+    });
+    expect(await Promise.all([source.read("a"), source.read("b")])).toEqual([new Uint8Array([1]), new Uint8Array([2])]);
+    expect(ranges.filter((range) => range === "bytes=0-7")).toHaveLength(1);
+    expect(ranges).toHaveLength(rangesSupported ? 4 : 1);
+  });
+
+  it("retries an index request after a shared failure", async () => {
+    const pack = await encodeBabpack([{ guid: "a", bytes: new Uint8Array([1]) }]);
+    let attempts = 0;
+    const source = createHttpPackSource("boot.babpack", undefined, async () => {
+      if (++attempts === 1) throw new Error("Offline");
+      return new Response(pack, { status: 200 });
+    });
+    const failures = await Promise.allSettled([source.read("a"), source.read("a")]);
+    expect(failures.every((result) => result.status === "rejected")).toBe(true);
+    expect(await source.read("a")).toEqual(new Uint8Array([1]));
+    expect(attempts).toBe(2);
+  });
   it("reads an asset from an in-memory pack", async () => {
     const bytes = new TextEncoder().encode("payload");
     const pack = await encodeBabpack([{ guid: "a", bytes }]);

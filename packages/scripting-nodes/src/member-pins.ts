@@ -1,7 +1,6 @@
 import {
   pin,
   defaultValueLiteral,
-  pinTypeForMember,
   pinTypeForVariable,
 } from "@babylonslate/scripting";
 import { mapDefaultLiteral } from "@babylonslate/core";
@@ -61,7 +60,7 @@ export function dataMemberPins(
         row.name,
         row.name,
         direction,
-        pinTypeForMember(row.typeId, row.typeClassId),
+        pinTypeForVariable(row),
       ),
     ];
   });

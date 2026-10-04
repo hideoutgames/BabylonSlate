@@ -2,6 +2,11 @@ export {
   ENGINE_BASE_CLASS_IDS,
   ENGINE_BT_BUILTIN_CLASSES,
   ENGINE_COMPONENT_CLASS_IDS,
+  GAME_SUBSYSTEM_CLASS_ID,
+  HIDDEN_ENGINE_BASE_CLASS_IDS,
+  SCENE_SUBSYSTEM_CLASS_ID,
+  SUBSYSTEM_CLASS_ID,
+  isHiddenEngineBaseClassId,
   isLockedEngineClassId,
   isSceneAssetClassId,
   isSceneLayerAllowedComponent,
@@ -12,8 +17,10 @@ export {
 export {
   BUTTON_MOUSE_EVENTS,
   COLLIDER_EVENTS,
+  MOVEMENT_EVENTS,
   ENGINE_CLASS_SCRIPT_APIS,
   engineEventTypeClassIds,
+  engineNativeEventsFor,
   engineScriptApiFor,
   engineScriptEventsFor,
   type EngineClassScriptApi,
@@ -49,11 +56,16 @@ export {
   getPostProcessMaterialObject,
   type MaterialInstanceObject,
   GameInstance,
+  GameSubsystem,
   Scene,
   SceneLayer,
   SceneStreamingActor,
+  SceneSubsystem,
+  Subsystem,
   type GameInstanceHooks,
+  type GameSubsystemHooks,
   type LifecycleHooks,
+  type SceneSubsystemHooks,
   type TickContext,
   type WorldLike,
 } from "./objects";
@@ -63,6 +75,16 @@ export {
   type PhaseHook,
   type TickPhase,
 } from "./tick";
+export {
+  compareClassIds,
+  gameSubsystemGuid,
+  instantiableSubsystemClassIds,
+  sceneSubsystemGuid,
+  subsystemBaseClassIdOf,
+  subsystemClassIdsForGet,
+  type SubsystemBaseClassId,
+  type SubsystemClassHierarchy,
+} from "./subsystems";
 export { World, type WorldOptions, type WorldInputProvider } from "./world";
 export {
   attachSerializedComponents,
@@ -74,6 +96,7 @@ export {
   createWorldSnapshot,
   stringifyWorldSnapshot,
   type WorldSnapshot,
+  type WorldSnapshotObject,
 } from "./snapshot";
 export {
   createDebugInspectSnapshot,

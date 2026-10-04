@@ -698,7 +698,7 @@ it("rebuilds the effect chain on a settings change without drawing stale output"
     path: "classic",
     rendered: false,
   });
-  expect(graph.readiness(camera)).toEqual({ path: "frameGraph", ready: false });
+  expect(graph.readiness(camera)).toEqual({ path: "frameGraph", ready: false, preparationRequired: true });
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
   expect(graph.taskNames()).toContain("Scene Effects FXAA");
   expect(graph.render(camera)).toEqual({ path: "frameGraph" });
@@ -721,7 +721,7 @@ it("keeps a graph stale when settings change while it is being prepared", async 
   expect(await pending).toEqual({ path: "frameGraph" });
   // The finished graph was built from the previous settings.
   expect(graph.taskNames()).not.toContain("Scene Effects FXAA");
-  expect(graph.readiness(camera)).toEqual({ path: "frameGraph", ready: false });
+  expect(graph.readiness(camera)).toEqual({ path: "frameGraph", ready: false, preparationRequired: true });
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
   expect(graph.taskNames()).toContain("Scene Effects FXAA");
   graph.dispose();

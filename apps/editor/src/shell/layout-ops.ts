@@ -45,7 +45,8 @@ export function focusKeepPanelIds(
   if (kind === "anim-graph" && options?.animEditorMode === "animationObject") {
     return panels.animGraphObject;
   }
-  return panels[kind];
+  const configured: Partial<Record<FocusDocumentKind, readonly string[]>> = panels;
+  return configured[kind];
 }
 
 /**
@@ -70,23 +71,23 @@ export function resolveFocusKeepPanelIds(
   return keep;
 }
 
-export interface FocusablePanelApi {
+export interface FocusablePanelApi<Group = unknown> {
   maximize?: () => void;
   close: () => void;
-  moveTo?: (options: { position?: string; group?: unknown }) => void;
+  moveTo?: (options: { position?: "bottom"; group?: Group }) => void;
 }
 
-export interface FocusableDockApi {
+export interface FocusableDockApi<Group = unknown> {
   getPanel: (
     id: string,
-  ) => { api: FocusablePanelApi; group?: unknown } | undefined;
+  ) => { api: FocusablePanelApi<Group>; group?: Group } | undefined;
   panels?: ReadonlyArray<{ id: string }>;
 }
 
 /** Collapse the dock to keep-listed panels that are already open. */
-export function applyFocusLayout(
+export function applyFocusLayout<Group>(
   kind: FocusDocumentKind,
-  api: FocusableDockApi,
+  api: FocusableDockApi<Group>,
   keepPanelIds?: readonly string[],
   options?: FocusKeepOptions,
 ): void {
@@ -125,7 +126,7 @@ export function restoreDockviewLayout(
 }
 
 /** Drop retired panels and restack Class under Components. */
-export function migrateRestoredLayout(api: FocusableDockApi): void {
+export function migrateRestoredLayout<Group>(api: FocusableDockApi<Group>): void {
   api.getPanel("mini-asset-browser")?.api.close();
   const myClass = api.getPanel("my-class");
   const components = api.getPanel("actor-prefab");

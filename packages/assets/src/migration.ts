@@ -205,6 +205,11 @@ export function createDefaultMigrationRegistry(): MigrationRegistry {
         >,
     ],
   });
+  // Header payload is a summary ({ domain, parentGuid }); the document chunk holds the instance.
+  registry.register({
+    type: "MaterialInstance",
+    migrations: [(payload) => ({ ...payload })],
+  });
   const asRecord = <T extends object>(value: T): Record<string, unknown> =>
     value as unknown as Record<string, unknown>;
   for (const type of ["InputAction", "InputAxis"] as const) {

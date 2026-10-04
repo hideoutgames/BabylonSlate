@@ -6,6 +6,7 @@ import {
   normalizeCelShadingSettings,
   normalizeShadowSettings,
   normalizeRenderingQuality,
+  normalizeFocusNavigationSettings,
 } from "@babylonslate/core";
 import { exportGame, zipExport, unzipExport, parseGameManifest, SAFE_ZIP_MTIME } from "./export-game";
 import { parseScriptRegistry } from "./scripts";
@@ -23,6 +24,20 @@ function stubPlayer(): Map<string, Uint8Array> {
 }
 
 describe("exportGame", () => {
+  it("preserves focus input selections and normalizes unsafe repeat values through player manifests", async () => {
+    const result = await exportGame({ mode: "packed", bundleDebugger: false, startupSceneGuid: "scene-1", scripts: [], assets: [], playerFiles: stubPlayer(),
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
+      focusNavigation: normalizeFocusNavigationSettings({ navigationInputGuid: "menu-axis", activateInputGuid: "accept", wrap: true }),
+    });
+    if (!result.ok) throw new Error(result.error);
+    const json = new TextDecoder().decode(result.value.files.get(GAME_MANIFEST_FILE));
+    expect(parseGameManifest(json).focusNavigation).toMatchObject({ navigationInputGuid: "menu-axis", activateInputGuid: "accept", wrap: true });
+    const malformed = JSON.parse(json);
+    malformed.focusNavigation.repeatInterval = -10;
+    expect(parseGameManifest(JSON.stringify(malformed)).focusNavigation?.repeatInterval).toBe(0.02);
+    delete malformed.focusNavigation;
+    expect(parseGameManifest(JSON.stringify(malformed)).focusNavigation?.enabled).toBe(true);
+  });
   it.each(["packed", "loose"] as const)("normalizes the complete %s render contract at export and player read", async (mode) => {
     const authored = {
       ...DEFAULT_RENDER_PROJECT_SETTINGS,

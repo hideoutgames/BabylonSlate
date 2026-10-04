@@ -61,6 +61,41 @@ export function windowedGridSlice({
   };
 }
 
+/**
+ * The grid window for an unbounded item count. It changes only when the first
+ * or last mounted row or the column count changes, so a scroll handler can keep
+ * it as state and skip updates between row boundaries. Clamp with
+ * `clampGridSlice` for a concrete item count.
+ */
+export function unboundedGridWindow(
+  input: Omit<WindowedGridSliceInput, "itemCount">,
+): WindowedGridSlice {
+  return windowedGridSlice({ ...input, itemCount: Number.POSITIVE_INFINITY });
+}
+
+/** Same result as `windowedGridSlice` with the window's inputs and `itemCount`. */
+export function clampGridSlice(
+  gridWindow: WindowedGridSlice,
+  itemCount: number,
+): WindowedGridSlice {
+  return {
+    firstIndex: gridWindow.firstIndex,
+    lastIndex: Math.min(itemCount, gridWindow.lastIndex),
+    columnCount: gridWindow.columnCount,
+  };
+}
+
+export function sameGridSlice(
+  left: WindowedGridSlice,
+  right: WindowedGridSlice,
+): boolean {
+  return (
+    left.firstIndex === right.firstIndex &&
+    left.lastIndex === right.lastIndex &&
+    left.columnCount === right.columnCount
+  );
+}
+
 export function contentBrowserGridHeight(
   itemCount: number,
   columnCount: number,

@@ -10,6 +10,7 @@ import {
 } from "./catalog";
 
 function materialDomainLabel(domain: MaterialDomain): string {
+  if (domain === "text") return "text";
   if (domain === "landscape") return "landscape";
   if (domain === "postProcess") return "post-process";
   if (domain === "particle") return "particle";
@@ -17,6 +18,7 @@ function materialDomainLabel(domain: MaterialDomain): string {
 }
 
 function materialTerminalTitle(domain: MaterialDomain): string {
+  if (domain === "text") return "Text Output";
   if (domain === "postProcess") return "Post Process Output";
   if (domain === "particle") return "Particle Output";
   return "Material Output";
@@ -184,32 +186,42 @@ export function collectFunctionDependencies(
   functions: Record<string, MaterialFunctionDocument>,
   visiting: readonly string[] = [],
 ): { guids: string[]; recursion: string[] | null; missing: string[] } {
-  const guids: string[] = [];
-  const missing: string[] = [];
+  const guids = new Set<string>();
+  const missing = new Set<string>();
+  const active = new Set(visiting);
+  const path = [...visiting];
+  const stack: Array<{ graph: GraphLike; index: number; guid?: string }> = [{ graph, index: 0 }];
   let recursion: string[] | null = null;
-  for (const node of graph.nodes) {
+  while (stack.length) {
+    const frame = stack[stack.length - 1]!;
+    const node = frame.graph.nodes[frame.index++];
+    if (!node) {
+      stack.pop();
+      if (frame.guid !== undefined) {
+        active.delete(frame.guid);
+        path.pop();
+      }
+      continue;
+    }
     if (node.type !== "function.call") continue;
     const guid = node.properties.functionGuid;
     if (typeof guid !== "string" || guid === "") continue;
-    if (visiting.includes(guid)) {
-      recursion ??= [...visiting, guid];
+    if (active.has(guid)) {
+      recursion ??= [...path, guid];
       continue;
     }
+    if (guids.has(guid) || missing.has(guid)) continue;
     const fn = functions[guid];
     if (!fn) {
-      missing.push(guid);
+      missing.add(guid);
       continue;
     }
-    guids.push(guid);
-    const nested = collectFunctionDependencies(fn, functions, [
-      ...visiting,
-      guid,
-    ]);
-    guids.push(...nested.guids);
-    missing.push(...nested.missing);
-    recursion ??= nested.recursion;
+    guids.add(guid);
+    active.add(guid);
+    path.push(guid);
+    stack.push({ graph: fn, index: 0, guid });
   }
-  return { guids: [...new Set(guids)], recursion, missing: [...new Set(missing)] };
+  return { guids: [...guids], recursion, missing: [...missing] };
 }
 
 interface ValidateGraphOptions extends MaterialValidationContext {
@@ -759,27 +771,36 @@ function validateCalledFunctions(
   graph: GraphLike,
   context: MaterialValidationContext,
   domain?: MaterialDomain,
-  visiting: readonly string[] = [],
-  prefix = "",
 ): MaterialDiagnostic[] {
   const functions = context.functions ?? {};
   const diagnostics: MaterialDiagnostic[] = [];
-  for (const call of graph.nodes) {
+  // Body validation is independent of call-site input values. Anchor a shared
+  // body's diagnostics at its first call path instead of expanding every path.
+  const visited = new Set<string>();
+  const stack = [{ graph, index: 0, prefix: "" }];
+  while (stack.length) {
+    const frame = stack[stack.length - 1]!;
+    const call = frame.graph.nodes[frame.index++];
+    if (!call) {
+      stack.pop();
+      continue;
+    }
     if (call.type !== "function.call") continue;
     const guid = call.properties.functionGuid;
-    if (typeof guid !== "string" || visiting.includes(guid)) continue;
+    if (typeof guid !== "string" || visited.has(guid)) continue;
+    visited.add(guid);
     const fn = functions[guid];
     if (!fn) continue; // validateGraph reports the missing call at this level.
-    const callPrefix = `${prefix}${call.id}/`;
+    const callPrefix = `${frame.prefix}${call.id}/`;
     const local = [
       ...validateGraph(fn, { ...context, functions, domain, functionInterface: fn }),
       ...validateFunctionInterface(fn),
     ];
     diagnostics.push(...local.map((diagnostic) => ({
       ...diagnostic,
-      nodeId: diagnostic.nodeId ? `${callPrefix}${diagnostic.nodeId}` : `${prefix}${call.id}`,
+      nodeId: diagnostic.nodeId ? `${callPrefix}${diagnostic.nodeId}` : `${frame.prefix}${call.id}`,
     })));
-    diagnostics.push(...validateCalledFunctions(fn, context, domain, [...visiting, guid], callPrefix));
+    stack.push({ graph: fn, index: 0, prefix: callPrefix });
   }
   return diagnostics;
 }

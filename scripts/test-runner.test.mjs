@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { runStage, unitProfile } from "./test-runner.mjs";
+import { runStage, runTests, unitProfile } from "./test-runner.mjs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -69,6 +69,38 @@ test("explicit Node and docs tests use the lighter unit workload", () => {
   assert.equal(unitProfile(["playwright.config.test.ts"]), "unit");
   assert.equal(unitProfile(["apps/editor/src/panel.test.tsx"]), "focused");
   assert.equal(unitProfile([]), "dom");
+});
+
+test("scoped lint and typecheck preserve the selected files and workspace", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "scoped lint "));
+  const config = join(directory, "resources.json");
+  const manager = join(directory, "package-manager.mjs");
+  const originalManager = process.env.npm_execpath;
+  let lease;
+  t.after(async () => {
+    if (originalManager === undefined) delete process.env.npm_execpath;
+    else process.env.npm_execpath = originalManager;
+    await lease?.release();
+    await rm(directory, { recursive: true, force: true });
+  });
+  await writeFile(config, JSON.stringify({ version: 1, profile: "standard" }));
+  await writeFile(manager, "console.log(JSON.stringify(process.argv.slice(2)));\n");
+  const env = { BL_EXECUTION_POLICY: "local", BL_TEST_PROFILE: "shared", LOCALAPPDATA: directory, BL_LOCAL_RESOURCE_CONFIG: config };
+  lease = await acquireResources(
+    { workers: 3, browsers: 0, memoryGiB: 2 },
+    { directory, env, freeMemory: () => 16 * 1024 ** 3 },
+  );
+  process.env.npm_execpath = manager;
+  const options = { capture: true, env: { ...env, BL_TEST_LEASE: JSON.stringify({ ticket: lease.ticket, token: lease.token }) } };
+  const scoped = await runTests("lint", ["scripts/test-runner.mjs"], options);
+  assert.deepEqual(JSON.parse(scoped.output), ["exec", "eslint", "scripts/test-runner.mjs"]);
+  const all = await runTests("lint", [], options);
+  assert.deepEqual(JSON.parse(all.output), ["exec", "eslint", "."]);
+  const types = await runTests("typecheck", ["--filter", "editor", "--noEmit"], options);
+  assert.deepEqual(JSON.parse(types.output), ["--workspace-concurrency=1", "--filter", "editor", "-r", "typecheck", "--noEmit"]);
+  const equals = await runTests("typecheck", ["--filter=docs-site"], options);
+  assert.deepEqual(JSON.parse(equals.output), ["--workspace-concurrency=1", "--filter=docs-site", "-r", "typecheck"]);
+  await assert.rejects(runTests("typecheck", ["--filter"], options), /requires a workspace selector/);
 });
 
 test("one resolved policy reaches child worker settings regardless of local CI flags", async (t) => {

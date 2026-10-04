@@ -36,6 +36,21 @@ import {
 
 const decoder = new TextDecoder();
 
+/** Bound HTTP/decode work without serializing every asset behind its predecessor. */
+async function mapAssets<T, R>(entries: readonly T[], load: (entry: T) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(entries.length);
+  let next = 0;
+  let failed = false;
+  await Promise.all(Array.from({ length: Math.min(6, entries.length) }, async () => {
+    while (!failed && next < entries.length) {
+      const index = next++;
+      try { results[index] = await load(entries[index]!); }
+      catch (error) { failed = true; throw error; }
+    }
+  }));
+  return results;
+}
+
 export type LoadedGame = {
   manifest: GameManifest;
   scripts: ScriptBundleEntry[];
@@ -126,9 +141,14 @@ export async function loadGameFromFiles(
     );
   }
 
-  for (const entry of manifest.assets ?? []) {
+  const assets = manifest.assets ?? [];
+  const assetBytes = await mapAssets(assets, (entry) => {
     const source = entry.pack ? packSources.get(entry.pack) ?? null : null;
-    const bytes = await readAssetBytes(source, files, entry.guid, entry.path);
+    return readAssetBytes(source, files, entry.guid, entry.path);
+  });
+  // Hydrate in manifest order even when requests finish out of order.
+  for (const [index, entry] of assets.entries()) {
+    const bytes = assetBytes[index]!;
     payloads.set(entry.guid, bytes);
     if (entry.type === "Scene") {
       scenes.set(entry.guid, normalizeScene(parseJsonAsset(bytes)));
@@ -264,13 +284,12 @@ export async function loadGameFromHttp(
     [manifest.scriptsFile, new Uint8Array(await scriptsRes.arrayBuffer())],
   ]);
   if (manifest.mode === "loose") {
-    for (const entry of manifest.assets ?? []) {
-      if (!entry.path) continue;
+    await mapAssets(manifest.assets ?? [], async (entry) => {
+      if (!entry.path) return;
       const response = await fetchImpl(new URL(entry.path, baseUrl).href);
-      if (response.ok) {
-        files.set(entry.path, new Uint8Array(await response.arrayBuffer()));
-      }
-    }
+      if (!response.ok) throw new Error(`Export is missing ${entry.path}`);
+      files.set(entry.path, new Uint8Array(await response.arrayBuffer()));
+    });
   }
   return loadGameFromFiles(files, { fetchImpl, baseUrl });
 }
