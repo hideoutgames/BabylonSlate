@@ -59,7 +59,7 @@ describe("P14 perf smoke", () => {
     runtime.stop();
   });
 
-  it("posts stats near 5 Hz while snapshot tickIndex stays per tick", () => {
+  it("posts stats near 5 Hz with publish time while snapshot tickIndex stays per tick", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 14,
@@ -73,6 +73,10 @@ describe("P14 perf smoke", () => {
     const stats = commands.filter((command) => command.type === "stats");
     expect(stats.length).toBeGreaterThanOrEqual(1);
     expect(stats.length).toBeLessThanOrEqual(8);
+    // Publish time is reported beside, not inside, the script/physics split.
+    for (const command of stats) {
+      expect(command.type === "stats" && Number.isFinite(command.publishMs)).toBe(true);
+    }
     const buf = new Float32Array(snapshotFloatCount(8));
     expect(runtime.copySnapshot(buf)).toBe(true);
     expect(readSnapshotHeader(buf).tickIndex).toBe(120);

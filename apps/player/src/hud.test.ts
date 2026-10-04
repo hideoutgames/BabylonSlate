@@ -11,10 +11,11 @@ import {
 } from "./hud";
 
 describe("applyPlayerFpsSample", () => {
-  it("sets fps without zeroing worker script and physics ms", () => {
+  it("sets fps without zeroing worker script, physics and publish ms", () => {
     const fromWorker = applyWorkerPlayerStats(undefined, {
       scriptMs: 3,
       physicsMs: 2,
+      publishMs: 0.5,
       liveActors: 300,
       snapshotCapacity: 512,
     });
@@ -23,6 +24,7 @@ describe("applyPlayerFpsSample", () => {
     expect(afterFps.fps).toBe(60);
     expect(afterFps.scriptMs).toBe(3);
     expect(afterFps.physicsMs).toBe(2);
+    expect(afterFps.publishMs).toBe(0.5);
     expect(afterFps.ticks).toBe(0);
     expect(afterFps.liveActors).toBe(300);
     expect(afterFps.snapshotCapacity).toBe(512);
