@@ -1,8 +1,9 @@
 import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import type { Scene } from "@babylonjs/core/scene";
-import { parseCableProperties, type CableProperties } from "@babylonslate/core";
+import { CableSimulation, cablePropertiesEqual, parseCableProperties, writeCableRestShape, type CableProperties } from "@babylonslate/core";
 import { updateDynamicMaterialBounds } from "./material-bounds";
 
 const HISTORY_SIZE = 16;
@@ -38,6 +39,9 @@ type CableSurface = {
   normal: Vector3;
   previewEnd: Vector3;
   previewStart: Vector3;
+  previewAcceleration: Vector3;
+  /** World-space vertices under a mirrored world matrix reverse the ring to keep outward faces. */
+  mirrored: boolean;
   minimum: Vector3;
   maximum: Vector3;
   history?: CableHistory;
@@ -52,6 +56,12 @@ const sceneSurfaces = new WeakMap<Scene, Set<CableSurface>>();
 // finishes. Both receive the same frame; disposal only removes that mesh.
 const runtimeSurfaces = new WeakMap<Scene, Map<number, Set<CableSurface>>>();
 const snapshots = new WeakMap<Scene, CableSnapshot>();
+// Editor (non-Play) cable meshes by name. Replacement visuals can briefly share
+// a name with their predecessor, so each name keeps every live candidate.
+const editorMeshes = new WeakMap<Scene, Map<string, Set<Mesh>>>();
+const DEFAULT_GRAVITY: readonly number[] = [0, -9.81, 0];
+const previewStart = new Float64Array(3);
+const previewAcceleration = new Float64Array(3);
 
 /** Only this owner writes these dynamic buffers, and always emits geometry revisions. */
 export function hasRevisionTrackedCableGeometry(mesh: Mesh): boolean {
@@ -161,15 +171,22 @@ function pinCableEndpoints(surface: CableSurface): void {
   }
 }
 
-function updateSurface(surface: CableSurface): void {
+/** Rebuild the tube when its points changed or its world frame moved; returns whether it uploaded. */
+function updateSurface(surface: CableSurface): boolean {
   const { mesh, points, positions, normals, circle, properties } = surface;
   const world = mesh.computeWorldMatrix();
-  if (!surface.dirty && (!surface.worldSpace || surface.world.equals(world))) return;
-  if (surface.worldSpace) {
-    if (Math.abs(world.determinant()) < 1e-12) return;
+  const worldChanged = surface.worldSpace && !surface.world.equals(world);
+  if (!surface.dirty && !worldChanged) return false;
+  if (worldChanged) {
+    const determinant = world.determinant();
+    if (Math.abs(determinant) < 1e-12) return false;
     world.invertToRef(surface.inverse);
     surface.world.copyFrom(world);
+    // Babylon flips culling for a negative determinant. Vertices already in
+    // world space must reverse their ring so the flipped faces still face out.
+    surface.mirrored = determinant < 0;
   }
+  const mirror = surface.worldSpace && surface.mirrored ? -1 : 1;
   const radius = properties.cableWidth / 2;
   const count = points.length / 3;
   const sides = properties.numSides;
@@ -183,26 +200,26 @@ function updateSurface(surface: CableSurface): void {
     let dx = points[next]! - points[previous]!;
     let dy = points[next + 1]! - points[previous + 1]!;
     let dz = points[next + 2]! - points[previous + 2]!;
-    let length = Math.hypot(dx, dy, dz);
+    let length = Math.sqrt(dx * dx + dy * dy + dz * dz);
     if (length < 1e-8 && i < count - 1) {
       dx = points[next]! - points[i * 3]!;
       dy = points[next + 1]! - points[i * 3 + 1]!;
       dz = points[next + 2]! - points[i * 3 + 2]!;
-      length = Math.hypot(dx, dy, dz);
+      length = Math.sqrt(dx * dx + dy * dy + dz * dz);
     }
     if (length >= 1e-8) { tx = dx / length; ty = dy / length; tz = dz / length; }
     // Parallel transport avoids the twists caused by choosing a fresh up axis
     // for every ring, including vertical and coincident particles.
     const along = nx * tx + ny * ty + nz * tz;
     nx -= along * tx; ny -= along * ty; nz -= along * tz;
-    length = Math.hypot(nx, ny, nz);
+    length = Math.sqrt(nx * nx + ny * ny + nz * nz);
     if (length < 1e-8) {
       if (Math.abs(ty) < 0.9) { nx = -ty * tx; ny = 1 - ty * ty; nz = -ty * tz; }
       else { nx = 1 - tx * tx; ny = -tx * ty; nz = -tx * tz; }
-      length = Math.hypot(nx, ny, nz);
+      length = Math.sqrt(nx * nx + ny * ny + nz * nz);
     }
     nx /= length; ny /= length; nz /= length;
-    const bx = ty * nz - tz * ny, by = tz * nx - tx * nz, bz = tx * ny - ty * nx;
+    const bx = (ty * nz - tz * ny) * mirror, by = (tz * nx - tx * nz) * mirror, bz = (tx * ny - ty * nx) * mirror;
     for (let side = 0; side <= sides; side++) {
       const cosine = circle[side * 2]!, sine = circle[side * 2 + 1]!;
       const rx = nx * cosine + bx * sine, ry = ny * cosine + by * sine, rz = nz * cosine + bz * sine;
@@ -231,35 +248,56 @@ function updateSurface(surface: CableSurface): void {
   // The single global submesh shares these bounds, including its picking path.
   updateDynamicMaterialBounds(mesh, surface.minimum, surface.maximum);
   surface.dirty = false;
+  return true;
 }
 
-/** Static authored preview; no simulation or editor render-loop subscription. */
-export function updateCablePreview(mesh: Mesh, end: readonly number[], start?: readonly number[]): void {
+/**
+ * Static settled preview (the shared rest shape) for loads and thumbnails, and
+ * for Play before the first packet. World-space when `start` is given;
+ * otherwise local to the mesh. Editor viewports simulate via `bindEditorCable`.
+ */
+export function updateCablePreview(mesh: Mesh, end: readonly number[], start?: readonly number[], gravity: readonly number[] = DEFAULT_GRAVITY): void {
   const surface = surfaces.get(mesh);
   if (!surface || surface.history?.latest !== undefined && surface.history.latest >= 0) return;
   // Document edits can change an ancestor after its matrix was cached in this
   // render ID. Refresh the hierarchy before projecting world-space endpoints;
   // the later static freeze must not apply that ancestor transform a second time.
   if (start) mesh.computeWorldMatrix(true);
-  const sx = start?.[0] ?? 0, sy = start?.[1] ?? 0, sz = start?.[2] ?? 0;
-  if (surface.previewEnd.x === end[0] && surface.previewEnd.y === end[1] && surface.previewEnd.z === end[2] && surface.previewStart.x === sx && surface.previewStart.y === sy && surface.previewStart.z === sz && (!start || surface.world.equals(mesh.computeWorldMatrix()))) return;
-  surface.previewEnd.set(end[0]!, end[1]!, end[2]!);
-  surface.previewStart.set(sx, sy, sz);
   const { points, properties } = surface;
-  const dx = end[0]! - sx, dy = end[1]! - sy, dz = end[2]! - sz;
-  const distance = Math.hypot(dx, dy, dz);
-  // Parabolic rest preview gives a readable slack silhouette without paying
-  // for a settled simulation on each editor document update.
-  const sag = properties.attachEnd ? Math.sqrt(Math.max(0, properties.cableLength ** 2 - distance ** 2)) / 2 : 0;
-  for (let i = 0; i <= properties.numSegments; i++) {
-    const t = i / properties.numSegments;
-    points[i * 3] = sx + dx * t;
-    points[i * 3 + 1] = sy + dy * t - sag * 4 * t * (1 - t);
-    points[i * 3 + 2] = sz + dz * t;
+  previewStart[0] = start?.[0] ?? 0; previewStart[1] = start?.[1] ?? 0; previewStart[2] = start?.[2] ?? 0;
+  for (let axis = 0; axis < 3; axis++) {
+    const value = gravity[axis];
+    previewAcceleration[axis] = (Number.isFinite(value) ? value! : 0) * properties.gravityScale + properties.cableForce[axis]!;
   }
+  if (surface.previewEnd.x === end[0] && surface.previewEnd.y === end[1] && surface.previewEnd.z === end[2] &&
+    surface.previewStart.x === previewStart[0] && surface.previewStart.y === previewStart[1] && surface.previewStart.z === previewStart[2] &&
+    surface.previewAcceleration.x === previewAcceleration[0] && surface.previewAcceleration.y === previewAcceleration[1] &&
+    surface.previewAcceleration.z === previewAcceleration[2] &&
+    surface.worldSpace === !!start && (!start || surface.world.equals(mesh.computeWorldMatrix()))) return;
+  surface.previewEnd.set(end[0]!, end[1]!, end[2]!);
+  surface.previewStart.set(previewStart[0]!, previewStart[1]!, previewStart[2]!);
+  surface.previewAcceleration.set(previewAcceleration[0]!, previewAcceleration[1]!, previewAcceleration[2]!);
+  writeCableRestShape(points, previewStart, end, properties.cableLength, previewAcceleration, properties.attachStart, properties.attachEnd, properties.numSegments);
   surface.worldSpace = !!start;
   surface.dirty = true;
   updateSurface(surface);
+}
+
+/**
+ * Apply property edits that keep this mesh's topology (segments, sides and
+ * tiling rebuild the visual instead). The next preview or editor binding uses
+ * the new values without disposing the mesh or its simulation.
+ */
+export function configureCableMesh(mesh: Mesh, input: Partial<CableProperties>): void {
+  const surface = surfaces.get(mesh);
+  if (!surface) return;
+  const properties = parseCableProperties(input);
+  if (cablePropertiesEqual(surface.properties, properties)) return;
+  const current = surface.properties;
+  if (properties.numSegments !== current.numSegments || properties.numSides !== current.numSides || properties.tileMaterial !== current.tileMaterial) return;
+  surface.properties = properties;
+  surface.previewEnd.set(NaN, NaN, NaN);
+  surface.dirty = true;
 }
 
 /** Allocate topology once. Only position/normal buffers change during Play. */
@@ -281,17 +319,20 @@ export function createCableMesh(scene: Scene, name: string, input: Partial<Cable
     uvs[a * 2 + 1] = ring / properties.numSegments * properties.tileMaterial;
     if (ring < rings - 1 && side < columns - 1) {
       const offset = (ring * properties.numSides + side) * 6;
-      indices.set([a, a + 1, a + columns, a + 1, a + columns + 1, a + columns], offset);
+      // Counter-clockwise seen from outside: front faces point away from the axis.
+      indices[offset] = a; indices[offset + 1] = a + columns; indices[offset + 2] = a + 1;
+      indices[offset + 3] = a + 1; indices[offset + 4] = a + columns; indices[offset + 5] = a + columns + 1;
     }
   }
   mesh.setVerticesData(VertexBuffer.PositionKind, positions, true);
   mesh.setVerticesData(VertexBuffer.NormalKind, normals, true);
   mesh.setVerticesData(VertexBuffer.UVKind, uvs, false);
   mesh.setIndices(indices, null, false);
-  const surface: CableSurface = { mesh, properties, points: new Float32Array(rings * 3), positions, normals, circle, world: Matrix.Identity(), inverse: Matrix.Identity(), point: new Vector3(), normal: new Vector3(), minimum: new Vector3(), maximum: new Vector3(), previewEnd: new Vector3(NaN, NaN, NaN), previewStart: new Vector3(NaN, NaN, NaN), actorForSlot, worldSpace: false, dirty: true };
+  const surface: CableSurface = { mesh, properties, points: new Float32Array(rings * 3), positions, normals, circle, world: Matrix.Identity(), inverse: Matrix.Identity(), point: new Vector3(), normal: new Vector3(), minimum: new Vector3(), maximum: new Vector3(), previewEnd: new Vector3(NaN, NaN, NaN), previewStart: new Vector3(NaN, NaN, NaN), previewAcceleration: new Vector3(NaN, NaN, NaN), mirrored: false, actorForSlot, worldSpace: false, dirty: true };
   surfaces.set(mesh, surface);
   updateCablePreview(mesh, properties.endPosition);
-  if (simulationId !== undefined && Number.isSafeInteger(simulationId) && simulationId > 0) {
+  if (simulationId === undefined || !Number.isSafeInteger(simulationId) || simulationId <= 0) registerEditorCableMesh(scene, mesh);
+  else {
     surface.history = { frames: new Float64Array(HISTORY_SIZE).fill(-1), points: new Float32Array(surface.points.length * HISTORY_SIZE), anchors: new Float64Array(HISTORY_SIZE * 8), cursor: 0, latest: -1, previous: new Float32Array(surface.points.length), next: new Float32Array(surface.points.length), previousAnchors: new Float64Array(8), nextAnchors: new Float64Array(8), previousFrame: -1, nextFrame: -1, previousPacket: -1, nextPacket: -1, alpha: -1, pending: false };
     let entries = sceneSurfaces.get(scene);
     if (!entries) {
@@ -354,4 +395,255 @@ export function applyCableFrame(scene: Scene, data: Float32Array, frameId: numbe
     }
     offset = end;
   }
+}
+
+// Editor viewport simulation. Cables in scene and Class viewports gently
+// simulate on the main thread so they react while actors or targets are
+// dragged, then sleep. There is no physics world in the editor, so editor
+// cables never collide, and Enable Collision cables sleep too. An idle cable
+// skips the solver and uploads: it costs a liveness and enabled check, two
+// cached world-matrix reads and two update-flag compares per frame.
+type EditorCable = {
+  name: string;
+  surface: CableSurface;
+  properties: CableProperties;
+  simulation: CableSimulation;
+  /** Node framing `endLocal`: the target actor root, or the cable mesh for a self target. */
+  endNode: TransformNode;
+  endSelf: boolean;
+  endActorId: string | null;
+  rootForActor: ((actorId: string) => TransformNode | null | undefined) | null;
+  endLocal: Vector3;
+  start: [number, number, number];
+  end: [number, number, number];
+  gravity: [number, number, number];
+  startFlag: number;
+  endFlag: number;
+  /** The surface does not show the simulation state yet (new or replaced mesh). */
+  pending: boolean;
+};
+
+/** `list` mirrors `cables` so the per-frame loop iterates without allocating. */
+type EditorCables = { cables: Map<string, EditorCable>; list: EditorCable[]; lastTime: number | null };
+const editorCables = new WeakMap<Scene, EditorCables>();
+const ORIGIN: readonly number[] = [0, 0, 0];
+
+export type EditorCableBinding = {
+  /** Node whose world matrix frames `endLocal`: the target actor root, or the cable mesh itself. */
+  endNode: TransformNode;
+  endLocal: readonly number[];
+  gravity: readonly number[];
+  /** Re-resolves the target root when its visual is replaced between document applies. */
+  endActorId?: string;
+  rootForActor?: (actorId: string) => TransformNode | null | undefined;
+};
+
+function registerEditorCableMesh(scene: Scene, mesh: Mesh): void {
+  let names = editorMeshes.get(scene);
+  if (!names) {
+    names = new Map();
+    editorMeshes.set(scene, names);
+  }
+  const name = mesh.name;
+  let meshes = names.get(name);
+  if (!meshes) {
+    meshes = new Set();
+    names.set(name, meshes);
+  }
+  meshes.add(mesh);
+  const owner = names;
+  mesh.onDisposeObservable.addOnce(() => {
+    const current = owner.get(name);
+    current?.delete(mesh);
+    if (current?.size === 0) owner.delete(name);
+  });
+}
+
+/** Whether this scene holds editor (non-Play) cable meshes. */
+export function hasEditorCableMeshes(scene: Scene): boolean {
+  return (editorMeshes.get(scene)?.size ?? 0) > 0;
+}
+
+/** Resolve an editor cable mesh by name in O(1), preferring the one under `root`. */
+export function findEditorCableMesh(scene: Scene, name: string, root?: TransformNode | null): Mesh | null {
+  const meshes = editorMeshes.get(scene)?.get(name);
+  if (!meshes) return null;
+  let fallback: Mesh | null = null;
+  for (const mesh of meshes) {
+    if (mesh.isDisposed()) continue;
+    if (!root || mesh.isDescendantOf(root)) return mesh;
+    fallback ??= mesh;
+  }
+  return fallback;
+}
+
+/**
+ * Attach an editor cable mesh to its per-scene simulation, keyed by mesh name
+ * (actor and component). A rebuilt mesh with the same segment count keeps the
+ * existing simulation state; property edits reconfigure it in place.
+ */
+export function bindEditorCable(mesh: Mesh, binding: EditorCableBinding): void {
+  const surface = surfaces.get(mesh);
+  if (!surface || surface.history) return;
+  const scene = mesh.getScene();
+  let registry = editorCables.get(scene);
+  if (!registry) {
+    registry = { cables: new Map(), list: [], lastTime: null };
+    editorCables.set(scene, registry);
+  }
+  const properties = surface.properties;
+  const endSelf = binding.endNode === mesh;
+  // A document apply may have moved ancestors after this render ID cached them.
+  const startMatrix = mesh.computeWorldMatrix(true);
+  const endMatrix = endSelf ? startMatrix : binding.endNode.computeWorldMatrix(true);
+  const existing = registry.cables.get(mesh.name);
+  let cable = existing;
+  if (!cable || cable.simulation.positions.length !== surface.points.length) {
+    cable = {
+      name: mesh.name, surface, properties, simulation: new CableSimulation(properties, ORIGIN, ORIGIN),
+      endNode: binding.endNode, endSelf, endActorId: null, rootForActor: null, endLocal: new Vector3(),
+      start: [0, 0, 0], end: [0, 0, 0], gravity: [0, 0, 0], startFlag: -1, endFlag: -1, pending: true,
+    };
+    registry.cables.set(mesh.name, cable);
+    const index = existing ? registry.list.indexOf(existing) : -1;
+    if (index >= 0) registry.list[index] = cable;
+    else registry.list.push(cable);
+  } else {
+    if (cable.surface !== surface) {
+      cable.surface = surface;
+      cable.pending = true;
+    }
+    if (!cablePropertiesEqual(cable.properties, properties)) {
+      cable.properties = properties;
+      cable.simulation.configure(properties);
+    }
+  }
+  cable.endNode = binding.endNode;
+  cable.endSelf = endSelf;
+  cable.endActorId = binding.endActorId ?? null;
+  cable.rootForActor = binding.rootForActor ?? null;
+  cable.endLocal.set(binding.endLocal[0] ?? 0, binding.endLocal[1] ?? 0, binding.endLocal[2] ?? 0);
+  for (let axis = 0; axis < 3; axis++) {
+    const value = binding.gravity[axis];
+    cable.gravity[axis] = Number.isFinite(value) ? value! : 0;
+  }
+  readEditorAnchors(cable, startMatrix, endMatrix);
+  if (!properties.attachStart && !properties.attachEnd) cable.simulation.reset(cable.start, cable.end);
+  const changed = cable.simulation.update(0, cable.start, cable.end, cable.gravity);
+  if (cable.pending || changed || !cable.simulation.sleeping) writeEditorCable(cable);
+  else updateSurface(surface);
+}
+
+/** Drop simulations whose cables were not bound by the latest document apply. */
+export function pruneEditorCables(scene: Scene, keep?: ReadonlySet<string>): void {
+  const registry = editorCables.get(scene);
+  if (!registry) return;
+  for (const name of registry.cables.keys()) if (!keep?.has(name)) registry.cables.delete(name);
+  if (registry.list.length !== registry.cables.size) {
+    registry.list.length = 0;
+    for (const cable of registry.cables.values()) registry.list.push(cable);
+  }
+  if (registry.cables.size === 0) registry.lastTime = null;
+}
+
+/**
+ * Advance editor cables to `nowMs` (editor render loop, before drawing).
+ * Sleeping cables whose anchors' world matrices are unchanged skip the solver
+ * and upload nothing. Returns whether any tube was updated.
+ */
+export function stepEditorCables(scene: Scene, nowMs: number): boolean {
+  const registry = editorCables.get(scene);
+  if (!registry || registry.cables.size === 0) return false;
+  const last = registry.lastTime;
+  registry.lastTime = nowMs;
+  // The simulation drops any backlog beyond Max Substeps, e.g. after a hidden view.
+  const dt = last === null ? 0 : Math.min(1, Math.max(0, (nowMs - last) / 1000));
+  // Gizmo drags move nodes between frames; a new render ID makes the
+  // world-matrix reads below observe them instead of last frame's cache.
+  scene.incrementRenderId();
+  let changed = false;
+  const list = registry.list;
+  let kept = 0;
+  for (let index = 0; index < list.length; index++) {
+    const cable = list[index]!;
+    if (!adoptLiveMesh(scene, cable)) {
+      registry.cables.delete(cable.name);
+      continue;
+    }
+    list[kept++] = cable;
+    if (stepEditorCable(cable, dt)) changed = true;
+  }
+  list.length = kept;
+  return changed;
+}
+
+function stepEditorCable(cable: EditorCable, dt: number): boolean {
+  const surface = cable.surface;
+  const mesh = surface.mesh;
+  const properties = cable.properties;
+  if (!properties.enabled || !mesh.isEnabled()) return false;
+  let endNode: TransformNode = mesh;
+  if (!cable.endSelf) {
+    endNode = cable.endNode;
+    if (endNode.isDisposed()) {
+      const replacement = cable.endActorId ? cable.rootForActor?.(cable.endActorId) : null;
+      if (!replacement || replacement.isDisposed()) return false;
+      cable.endNode = endNode = replacement;
+      cable.endFlag = -1;
+    }
+  }
+  const startMatrix = mesh.computeWorldMatrix();
+  const endMatrix = endNode === mesh ? startMatrix : endNode.computeWorldMatrix();
+  const sleeping = cable.simulation.sleeping;
+  const moved = startMatrix.updateFlag !== cable.startFlag || endMatrix.updateFlag !== cable.endFlag;
+  if (moved) readEditorAnchors(cable, startMatrix, endMatrix);
+  else if (sleeping && !cable.pending) return false;
+  // Released at both ends, a cable would fall forever: show its authored line.
+  if (!properties.attachStart && !properties.attachEnd) {
+    if (!moved && !cable.pending) return false;
+    cable.simulation.reset(cable.start, cable.end);
+    return writeEditorCable(cable);
+  }
+  const changed = cable.simulation.update(dt, cable.start, cable.end, cable.gravity);
+  if (!changed && sleeping && !cable.pending) return updateSurface(surface);
+  return writeEditorCable(cable);
+}
+
+function readEditorAnchors(cable: EditorCable, startMatrix: Matrix, endMatrix: Matrix): void {
+  const s = startMatrix.m, e = endMatrix.m, local = cable.endLocal;
+  cable.start[0] = s[12]!; cable.start[1] = s[13]!; cable.start[2] = s[14]!;
+  cable.end[0] = local.x * e[0]! + local.y * e[4]! + local.z * e[8]! + e[12]!;
+  cable.end[1] = local.x * e[1]! + local.y * e[5]! + local.z * e[9]! + e[13]!;
+  cable.end[2] = local.x * e[2]! + local.y * e[6]! + local.z * e[10]! + e[14]!;
+  cable.startFlag = startMatrix.updateFlag;
+  cable.endFlag = endMatrix.updateFlag;
+}
+
+function writeEditorCable(cable: EditorCable): boolean {
+  const surface = cable.surface;
+  cable.simulation.writeInterpolated(surface.points);
+  cable.pending = false;
+  surface.worldSpace = true;
+  surface.dirty = true;
+  return updateSurface(surface);
+}
+
+/** Follow a visual replaced outside a document apply (e.g. an adopted model load). */
+function adoptLiveMesh(scene: Scene, cable: EditorCable): boolean {
+  if (!cable.surface.mesh.isDisposed()) return true;
+  const meshes = editorMeshes.get(scene)?.get(cable.name);
+  if (!meshes) return false;
+  for (const mesh of meshes) {
+    const surface = surfaces.get(mesh);
+    if (!surface || mesh.isDisposed() || !mesh.isEnabled() || surface.points.length !== cable.simulation.positions.length) continue;
+    cable.surface = surface;
+    cable.startFlag = cable.endFlag = -1;
+    cable.pending = true;
+    if (!cablePropertiesEqual(cable.properties, surface.properties)) {
+      cable.properties = surface.properties;
+      cable.simulation.configure(surface.properties);
+    }
+    return true;
+  }
+  return false;
 }

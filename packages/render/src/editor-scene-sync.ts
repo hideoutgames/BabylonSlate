@@ -47,6 +47,7 @@ import { visualMeshes } from "./visual-meshes";
 import { isTilemapChunkMesh } from "./tilemap-mesh";
 import { BitmapAllocationLimitError } from "./text2d-bitmap";
 import { text2DBitmapBytes } from "./text2d-mesh";
+import { pruneEditorCables } from "./cable-mesh";
 
 export type EditorSceneSyncOptions = {
   /** FrameGraph owns its camera-specific active queue; world matrices still freeze. */
@@ -405,7 +406,12 @@ export class EditorSceneSync {
       }
       yield 0.6 + 0.1 * ++index / actorCount;
     }
-    syncEditorCablePreviews(this.scene, sceneData.actors);
+    // Editor cables simulate per frame from the live actor roots (no collision).
+    syncEditorCablePreviews(this.scene, sceneData.actors, {
+      rootForActor: (actorId) => this.meshes.get(actorId) ?? null,
+      gravity: sceneData.settings.gravity,
+      simulate: true,
+    });
     for (const progress of syncAuthoredIlluminationSteps(this.scene, sceneData, {
       stealActiveCamera: this.stealActiveCamera,
       restoreCamera: this.restoreCamera,
@@ -864,6 +870,7 @@ export class EditorSceneSync {
     }
     this.meshes.clear();
     this.meshKinds.clear();
+    pruneEditorCables(this.scene);
   }
 }
 
