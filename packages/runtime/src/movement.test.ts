@@ -299,4 +299,56 @@ describe("Movement through the shared Play/player runtime", () => {
       expect((actor.getVariable("events") as Array<{ name: string }>).filter((event) => event.name === "onMovementJumped")).toHaveLength(1);
     } finally { runtime.stop(); }
   });
+
+  it.each([
+    // Local (30, 3, 0) under the carrier at x=-20 is world x=10.
+    ["the follower", "follower", { x: 30, y: 3, z: 0 }, 30 + 5 / 60, 10 + 5 / 60],
+    // The body-less carrier moves from x=-20 to x=40; the follower keeps its local pose.
+    ["the follower's parent", "ctx.getParent(follower)", { x: 40, y: 0, z: 0 }, 5 / 60, 40 + 5 / 60],
+  ])("a later motor starts from %s's Set Actor Location in an earlier motor's transition event", async (_case, target, location, localX, worldX) => {
+    const go = (id: string) => `export function go(ctx) {
+      ctx.callComponentFunction(ctx.getComponentById(ctx.self, "${id}"), "setMovementInput", { direction: { x: 1, y: 0, z: 0 } });
+    }`;
+    const scripts: CompiledScript[] = [{
+      assetGuid: "leader-script", classId: "Leader", parentClassId: "Actor", anchors: [],
+      source: `${go("leader-motor")}
+        export function onMovementStarted(ctx) {
+          const follower = ctx.getActorOfClass("Follower");
+          ctx.setActorLocation(${target}, ${JSON.stringify(location)});
+        }`,
+      entryPoints: [
+        { name: "go", event: "go", isAsync: false },
+        { name: "onMovementStarted", event: "onMovementStarted", isAsync: false, componentId: "leader-motor" },
+      ],
+    }, {
+      assetGuid: "follower-script", classId: "Follower", parentClassId: "Actor", anchors: [],
+      source: go("follower-motor"), entryPoints: [{ name: "go", event: "go", isAsync: false }],
+    }];
+    const motor = (id: string) => ({ id, classId: "MovementComponent", properties: { gravityScale: 0, acceleration: 600, airControl: 1 } });
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      physicsWorld: "3d", playScene: { name: "Movement", viewportMode: "3d", settings: createDefaultSceneSettings(), folders: [], actors: [
+        // The leader's motor registers first, so its event runs before the follower's motor.
+        createActor("leader", "Leader", { classId: "Leader", components: [motor("leader-motor")] }),
+        createActor("carrier", "Carrier", { transform: { position: [-20, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] } }),
+        createActor("follower", "Follower", { classId: "Follower", parentId: "carrier",
+          transform: { position: [0, 3, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }, components: [motor("follower-motor")] }),
+      ] } });
+    try {
+      await runtime.loadScripts(scripts);
+      runtime.realizePlayWorld(); runtime.start();
+      runtime.tick();
+      const world = runtime.getWorld();
+      const follower = world.findActor("follower")!;
+      runtime.invokeScriptEvent("Leader", "go", world.findActor("leader")!);
+      runtime.invokeScriptEvent("Follower", "go", follower);
+      runtime.tick();
+      expect(runtime.getDiagnostics().entries()).toEqual([]);
+      // Starting from the pre-step pose would undo the write (follower case)
+      // or leave the follower behind its moved parent (parent case).
+      expect(follower.transform.position.x).toBeCloseTo(localX, 9);
+      expect(follower.transform.position.y).toBeCloseTo(3, 9);
+      const body = runtime.getPhysicsSync()!.getBackend().getBodyTransform("body:follower")!;
+      expect(body.position.x).toBeCloseTo(worldX, 9);
+    } finally { runtime.stop(); }
+  });
 });

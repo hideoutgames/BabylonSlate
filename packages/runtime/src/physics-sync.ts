@@ -37,6 +37,7 @@ import type { Actor, ActorComponent, World } from "@babylonslate/object-model";
 import {
   PreparedColliderGeometry,
   sameDescriptor,
+  physicsChainTransforms,
   physicsWorldTransforms,
 } from "./physics-preparation";
 import { componentColliderPhysicsId } from "./physics-collider-id";
@@ -123,7 +124,20 @@ export class PhysicsWorldSync {
   private spriteInstallation = 0;
   private tileInstallation = 0;
   private actors: readonly Actor[] = [];
+  /** The live world whose `findActor` answers call-time parent lookups. */
+  private world: World | null = null;
+  /**
+   * The last pre-step composition. Only that pass, its constraint sync and the
+   * Movement step hook (until `passStale`) and readback that follow it in
+   * `step` read this map; call-time writes and queries resolve their own chains.
+   */
   private worldTransforms: ActorTransformMap = new Map();
+  /**
+   * Set when a script pose write (`teleportActor`, `moveCharacter`) ran since
+   * the last pre-step composition. Movement motors that run after such a write
+   * in a transition event's script resolve their chains instead of the pass.
+   */
+  private passStale = false;
   private tilemaps = new Map<string, TilemapPayload>();
   private tilesets = new Map<string, TilesetPayload>();
   private sprites = new Map<string, SpritePayload>();
@@ -333,12 +347,14 @@ export class PhysicsWorldSync {
     this.sprites.clear();
     this.spriteAnimations.clear();
     this.actors = [];
+    this.world = null;
     this.worldTransforms = new Map();
+    this.passStale = false;
   }
 
   /** Ensure every physics-bearing actor has backend bodies (idempotent). */
   syncFromWorld(world: World): void {
-    this.actors = world.getActors();
+    this.bindWorld(world);
     this.indexActors();
     this.worldTransforms = physicsWorldTransforms(
       this.actors,
@@ -346,6 +362,7 @@ export class PhysicsWorldSync {
       this.backend.kind,
       this.actorFilter,
     );
+    this.passStale = false;
     const live = this.liveActors;
     live.clear();
     for (const actor of this.actors) {
@@ -353,56 +370,119 @@ export class PhysicsWorldSync {
       if (!this.actorFilter(actor) || this.suppressedActors.has(actor)) continue;
       const source = this.classifyActor(actor);
       if (source === false) continue;
-      // Movement never coexists with RigidBody or buoyancy, so one source suffices.
-      const movement = source?.classId === "MovementComponent" ? source : null;
-      const rigid = movement ? null : source;
       live.add(actor.guid);
-      if (
-        this.bodyOwnerByActor.has(actor.guid) &&
-        this.bodyOwnerByActor.get(actor.guid) !== actor
-      )
-        this.retireActor(actor.guid);
-      if (!this.bodyByActor.has(actor.guid)) {
-        this.createForActor(actor);
-      } else {
-        const bodyId = this.bodyByActor.get(actor.guid)!;
-        if (movement) {
-          this.applyBodyPolicy(actor.guid, bodyId, movement, MOVEMENT_BODY_PROPERTIES);
-          this.backend.setBodyTargetTransform(bodyId, actorWorldPhysicsTransform(actor, this.worldTransforms));
-        } else if (rigid) {
-          const props = this.rigidProps(rigid);
-          this.applyBodyPolicy(actor.guid, bodyId, rigid, props);
-          if (props.motionType === "kinematic") {
-            this.backend.setBodyTargetTransform(
-              bodyId,
-              actorWorldPhysicsTransform(actor, this.worldTransforms),
-            );
-          } else if (props.motionType === "static") {
-            this.syncStaticPose(actor, bodyId);
-          }
-        } else {
-          this.applyBodyPolicy(
-            actor.guid,
-            bodyId,
-            null,
-            STATIC_BODY_PROPERTIES,
-          );
-          this.syncStaticPose(actor, bodyId);
-        }
-        this.applyActorColliders(actor, bodyId, movement);
-      }
-      if (!movement && this.movementControllerDescriptors.has(actor.guid)) {
-        this.backend.destroyCharacterController(actor.guid);
-        this.characterByActor.delete(actor.guid);
-        this.movementControllerDescriptors.delete(actor.guid);
-      }
+      this.reconcileActor(actor, source, this.passWorldTransform);
     }
     for (const actorId of this.bodyByActor.keys()) {
       if (!live.has(actorId)) this.retireActor(actorId);
     }
     live.clear();
-    this.syncConstraints();
+    this.syncConstraints((actor) => this.passWorldTransform(actor).scale);
   }
+
+  /**
+   * Reconcile one actor at call time as the per-tick pass would: create, retire
+   * or update its body policy, pose and colliders from its current ancestor
+   * chain. Joints are reconciled only when its body was created. Other actors,
+   * including ones whose ragdolls changed meanwhile, wait for the next step.
+   */
+  syncActor(actor: Actor, world: World): void {
+    this.bindWorld(world);
+    if (world.findActor(actor.guid) !== actor) return;
+    const source =
+      actor.destroyed || !this.actorFilter(actor) || this.suppressedActors.has(actor)
+        ? false
+        : this.classifyActor(actor);
+    if (source === false) {
+      // Retiring a body already releases the joints attached to it.
+      if (this.bodyByActor.has(actor.guid)) this.retireActor(actor.guid);
+      return;
+    }
+    let transforms: Map<string, Transform> | undefined;
+    const created = this.reconcileActor(actor, source, (target) =>
+      (transforms ??= this.liveTransforms(target)).get(target.guid)!,
+    );
+    if (created) this.syncLiveConstraints();
+  }
+
+  /**
+   * Body membership, policy, pose and colliders for one live actor whose body
+   * `source` was classified by the caller. `world` resolves its current world
+   * pose; it is read only when the actor owns or creates a body. Returns true
+   * when this call created the body.
+   */
+  private reconcileActor(
+    actor: Actor,
+    source: ActorComponent | null,
+    world: (actor: Actor) => Transform,
+  ): boolean {
+    // Movement never coexists with RigidBody or buoyancy, so one source suffices.
+    const movement = source?.classId === "MovementComponent" ? source : null;
+    const rigid = movement ? null : source;
+    if (
+      this.bodyOwnerByActor.has(actor.guid) &&
+      this.bodyOwnerByActor.get(actor.guid) !== actor
+    )
+      this.retireActor(actor.guid);
+    let created = false;
+    if (!this.bodyByActor.has(actor.guid)) {
+      this.createForActor(actor, world);
+      created = this.bodyByActor.has(actor.guid);
+    } else {
+      const bodyId = this.bodyByActor.get(actor.guid)!;
+      const pose = world(actor);
+      if (movement) {
+        this.applyBodyPolicy(actor.guid, bodyId, movement, MOVEMENT_BODY_PROPERTIES);
+        this.backend.setBodyTargetTransform(bodyId, physicsPose(pose));
+      } else if (rigid) {
+        const props = this.rigidProps(rigid);
+        this.applyBodyPolicy(actor.guid, bodyId, rigid, props);
+        if (props.motionType === "kinematic") {
+          this.backend.setBodyTargetTransform(bodyId, physicsPose(pose));
+        } else if (props.motionType === "static") {
+          this.syncStaticPose(actor, bodyId, pose);
+        }
+      } else {
+        this.applyBodyPolicy(
+          actor.guid,
+          bodyId,
+          null,
+          STATIC_BODY_PROPERTIES,
+        );
+        this.syncStaticPose(actor, bodyId, pose);
+      }
+      this.applyActorColliders(actor, bodyId, pose, movement);
+    }
+    if (!movement && this.movementControllerDescriptors.has(actor.guid)) {
+      this.backend.destroyCharacterController(actor.guid);
+      this.characterByActor.delete(actor.guid);
+      this.movementControllerDescriptors.delete(actor.guid);
+    }
+    return created;
+  }
+
+  private bindWorld(world: World): void {
+    this.world = world;
+    this.actors = world.getActors();
+  }
+
+  /** First live match, as the per-tick index answers; that index before any world is bound. */
+  private readonly findLiveActor = (guid: string): Actor | undefined =>
+    this.world ? this.world.findActor(guid) : this.actorById.get(guid);
+
+  /**
+   * Current world poses of `actor` and its own ancestor chain only, with the
+   * pre-step pass's lookup, cycle and shear rules. Call-time writes and
+   * queries use this: the pre-step composition predates this tick's script
+   * writes, physics readback and navigation moves.
+   */
+  private liveTransforms(actor: Actor): Map<string, Transform> {
+    return physicsChainTransforms([actor], this.findLiveActor, this.backend.kind);
+  }
+
+  /** An actor's pose in the last pre-step composition. */
+  private readonly passWorldTransform = (actor: Actor): Transform =>
+    this.worldTransforms.get(actor.guid) ?? actor.transform;
 
   /**
    * One membership scan per actor and tick. Returns false for an actor without
@@ -467,14 +547,32 @@ export class PhysicsWorldSync {
       : false;
   }
 
-  private syncConstraints(): void {
+  private syncConstraints(worldScale: (actor: Actor) => Vec3): void {
     this.constraints.sync({
       actors: this.actors,
       actorById: this.actorById,
-      transforms: this.worldTransforms,
+      worldScale,
       bodies: this.bodyByActor,
       bodyOwners: this.bodyOwnerByActor,
       eligible: this.actorFilter,
+    });
+  }
+
+  /**
+   * Call-time joint reconciliation. Finding constraint owners and targets still
+   * scans and indexes the world, but only connected endpoints compose their
+   * own ancestor chains for anchor scale, instead of every physics participant.
+   */
+  private syncLiveConstraints(): void {
+    this.indexActors();
+    const resolved = new Map<string, Transform>();
+    this.syncConstraints((actor) => {
+      let transform = resolved.get(actor.guid);
+      if (!transform) {
+        for (const [guid, entry] of this.liveTransforms(actor)) resolved.set(guid, entry);
+        transform = resolved.get(actor.guid)!;
+      }
+      return transform.scale;
     });
   }
 
@@ -491,9 +589,8 @@ export class PhysicsWorldSync {
     this.staticPoses.delete(actorId);
   }
 
-  private syncStaticPose(actor: Actor, bodyId: string): void {
+  private syncStaticPose(actor: Actor, bodyId: string, world: Transform): void {
     // Same layout as `physicsPoseDescriptor`, which creation stores.
-    const world = this.worldTransforms.get(actor.guid) ?? actor.transform;
     const descriptor = this.poseScratch;
     descriptor[0] = world.position.x;
     descriptor[1] = world.position.y;
@@ -503,10 +600,7 @@ export class PhysicsWorldSync {
     descriptor[5] = world.rotation.z;
     descriptor[6] = world.rotation.w;
     if (sameDescriptor(this.staticPoses.get(actor.guid), descriptor)) return;
-    this.backend.teleportBody(
-      bodyId,
-      actorWorldPhysicsTransform(actor, this.worldTransforms),
-    );
+    this.backend.teleportBody(bodyId, physicsPose(world));
     this.staticPoses.set(actor.guid, descriptor.slice());
   }
 
@@ -694,34 +788,33 @@ export class PhysicsWorldSync {
     if (bodyId) this.backend.setBodyLinearVelocity(bodyId, velocity);
   }
 
-  /** Explicit authored pose writes are visible to the next synchronous query. */
+  /**
+   * Explicit authored pose writes are visible to the next synchronous query.
+   * Scripts and inspector writes may run before the next fixed tick and can
+   * also change a parent, so the pose is resolved now, from the actor's own
+   * ancestor chain only. An actor that neither owns nor can create a body
+   * (a light, camera or prop without collision) returns before any composition.
+   */
   teleportActor(actor: Actor, world: World, options?: TeleportOptions): void {
+    // Even a body-less write moves its descendants, including Movement actors.
+    this.passStale = true;
     if (actor.destroyed || !this.actorFilter(actor)) return;
-    // Scripts and inspector writes may run before the next fixed tick and can
-    // also change a parent. Resolve current authored world poses at this boundary.
-    this.actors = world.getActors();
-    this.indexActors();
-    if (this.actorById.get(actor.guid) !== actor) return;
-    this.worldTransforms = physicsWorldTransforms(
-      this.actors,
-      this.actorById,
-      this.backend.kind,
-      this.actorFilter,
-    );
+    this.bindWorld(world);
+    if (world.findActor(actor.guid) !== actor) return;
     if (
       this.bodyOwnerByActor.has(actor.guid) &&
       this.bodyOwnerByActor.get(actor.guid) !== actor
     )
       this.retireActor(actor.guid);
-    if (!this.bodyByActor.has(actor.guid)) this.createForActor(actor);
+    let transforms: Map<string, Transform> | undefined;
+    const current = (target: Actor) =>
+      (transforms ??= this.liveTransforms(target)).get(target.guid)!;
+    if (!this.bodyByActor.has(actor.guid)) this.createForActor(actor, current);
     const bodyId = this.bodyByActor.get(actor.guid);
     if (!bodyId) return;
-    this.applyActorColliders(actor, bodyId);
-    this.backend.teleportBody(
-      bodyId,
-      actorWorldPhysicsTransform(actor, this.worldTransforms),
-      options,
-    );
+    const pose = current(actor);
+    this.applyActorColliders(actor, bodyId, pose);
+    this.backend.teleportBody(bodyId, physicsPose(pose), options);
   }
 
   /** Apply mid-Play RigidBody / Collider inspector knobs to the live backend. */
@@ -735,9 +828,7 @@ export class PhysicsWorldSync {
       return;
     if (!this.actorFilter(owner)) return;
     if (component.classId === "PhysicsConstraintComponent") {
-      this.indexActors();
-      this.worldTransforms = physicsWorldTransforms(this.actors, this.actorById, this.backend.kind, this.actorFilter);
-      this.syncConstraints();
+      this.syncLiveConstraints();
       return;
     }
     const bodyId = this.bodyByActor.get(owner.guid);
@@ -759,20 +850,16 @@ export class PhysicsWorldSync {
         "MovementComponent",
       ].includes(component.classId)
     ) {
-      this.indexActors();
-      this.worldTransforms = physicsWorldTransforms(
-        this.actors,
-        this.actorById,
-        this.backend.kind,
-        this.actorFilter,
-      );
-      this.applyActorColliders(owner, bodyId);
+      // Collider scale and Movement capsule tilt follow the owner's current chain.
+      this.applyActorColliders(owner, bodyId, this.liveTransforms(owner).get(owner.guid)!);
     }
   }
 
   /**
    * Lazy character controller keyed by actor guid. Applies the resolved
    * transform to the actor immediately so the next kinematic sync keeps it.
+   * The world-to-local conversion uses the parent's pose at call time: scripts,
+   * readback and navigation may have moved it since the last pre-step pass.
    */
   moveCharacter(
     actor: Actor,
@@ -780,11 +867,14 @@ export class PhysicsWorldSync {
     dt: number,
     offset?: number,
   ): void {
+    this.passStale = true;
     if (actor.destroyed || !this.actorFilter(actor)) return;
     const owner = this.bodyOwnerByActor.get(actor.guid);
     if (owner && owner !== actor) return;
+    let transforms: Map<string, Transform> | undefined;
+    const current = () => (transforms ??= this.liveTransforms(actor));
     if (!this.bodyByActor.has(actor.guid)) {
-      this.createForActor(actor);
+      this.createForActor(actor, (target) => current().get(target.guid)!);
     }
     const bodyId = this.bodyByActor.get(actor.guid);
     if (!bodyId) return;
@@ -802,7 +892,7 @@ export class PhysicsWorldSync {
     const localTransform = actorLocalPhysicsTransform(
       moved,
       actor,
-      this.worldTransforms,
+      current(),
     );
     actor.transform.position.x = localTransform.position.x;
     actor.transform.position.y = localTransform.position.y;
@@ -824,7 +914,15 @@ export class PhysicsWorldSync {
       !this.movementComponent(actor) || !Number.isFinite(dt) || dt <= 0) return null;
     const owner = this.bodyOwnerByActor.get(actor.guid);
     if (owner && owner !== actor) return null;
-    if (!this.bodyByActor.has(actor.guid)) this.createForActor(actor);
+    // Motors run as `step`'s hook after its pre-step composition and reuse that
+    // pass. Once a transition event's script has written a pose through
+    // `teleportActor` or `moveCharacter`, later motors resolve their own chain
+    // instead, so the write is neither undone nor applied under a stale parent.
+    let live: Map<string, Transform> | undefined;
+    const transforms = (): ActorTransformMap =>
+      this.passStale ? (live ??= this.liveTransforms(actor)) : this.worldTransforms;
+    const world = (target: Actor): Transform => transforms().get(target.guid) ?? target.transform;
+    if (!this.bodyByActor.has(actor.guid)) this.createForActor(actor, world);
     const bodyId = this.bodyByActor.get(actor.guid);
     if (!bodyId) return null;
     const descriptor = [props.radius, props.height, props.maxSlopeAngle, props.groundSnapDistance];
@@ -839,13 +937,13 @@ export class PhysicsWorldSync {
     }
     // Parent transforms are authored repositioning, separate from the motor's
     // displacement and velocity. Native kinematic targets have not stepped yet.
-    const startPose = actorWorldPhysicsTransform(actor, this.worldTransforms);
+    const startPose = physicsPose(world(actor));
     const moved = this.backend.moveCharacter(actor.guid, translation, dt, startPose);
     if (!moved) return null;
     // Native kinematic targets have not stepped yet: preserve the actor's
     // authored facing instead of overwriting it with last tick's body rotation.
     moved.rotation = startPose.rotation;
-    const local = actorLocalPhysicsTransform(moved, actor, this.worldTransforms);
+    const local = actorLocalPhysicsTransform(moved, actor, transforms());
     Object.assign(actor.transform.position, local.position);
     Object.assign(actor.transform.rotation, local.rotation);
     // Replace the pre-movement target captured at the start of this physics tick.
@@ -872,7 +970,11 @@ export class PhysicsWorldSync {
       ?? (this.backend.kind === "3d" ? actor.components.find((c) => c.classId === "WaterBuoyancyComponent" && live(c)) : undefined);
   }
 
-  private createForActor(actor: Actor): void {
+  /**
+   * `world` resolves the actor's current world pose; it runs only after the
+   * actor is known to have a body source, so body-less actors compose nothing.
+   */
+  private createForActor(actor: Actor, world: (actor: Actor) => Transform): void {
     if (this.suppressedActors.has(actor)) return;
     const rigid = this.rigidComponent(actor);
     const movement = this.movementComponent(actor);
@@ -904,7 +1006,8 @@ export class PhysicsWorldSync {
           mass: 0,
           gravityScale: 0,
         });
-    const pose = actorWorldPhysicsTransform(actor, this.worldTransforms);
+    const resolved = world(actor);
+    const pose = physicsPose(resolved);
     this.backend.createBody({
       id: bodyId,
       actorId: actor.guid,
@@ -916,7 +1019,7 @@ export class PhysicsWorldSync {
       transform: pose,
     });
     try {
-      this.applyActorColliders(actor, bodyId, movement ?? null);
+      this.applyActorColliders(actor, bodyId, resolved, movement ?? null);
       this.bodyByActor.set(actor.guid, bodyId);
       this.bodyOwnerByActor.set(actor.guid, actor);
       this.appliedBodyProperties.set(actor.guid, {
@@ -936,14 +1039,17 @@ export class PhysicsWorldSync {
 
   /**
    * Prepare one complete logical collider set, then publish one native batch.
-   * Per-tick callers pass the Movement component they already classified.
+   * `world` is the actor's resolved world pose: the pre-step pass for per-tick
+   * callers, its own current chain for call-time callers. Per-tick callers pass
+   * the Movement component they already classified.
    */
   private applyActorColliders(
     actor: Actor,
     bodyId: string,
+    world: Transform,
     movement: ActorComponent | null = this.movementComponent(actor) ?? null,
   ): void {
-    const current = this.actorCollisionDescriptor(actor, movement);
+    const current = this.actorCollisionDescriptor(actor, movement, world);
     const prepared = this.preparedByActor.get(actor.guid);
     if (current.matches(prepared?.actor === actor ? prepared.descriptor : undefined))
       return;
@@ -952,7 +1058,7 @@ export class PhysicsWorldSync {
     if (movement) {
       const props = parseMovementProperties(Object.fromEntries(movement.variables));
       const id = componentColliderPhysicsId(actor.guid, movement.guid);
-      const rotation = uprightCapsuleRotation(actorWorldPhysicsTransform(actor, this.worldTransforms).rotation);
+      const rotation = uprightCapsuleRotation(world.rotation);
       colliders.set(id, {
         id, bodyId,
         shape: { kind: this.backend.kind === "3d" ? "capsule" : "capsule2d", radius: props.radius, halfHeight: props.height / 2 - props.radius },
@@ -961,6 +1067,7 @@ export class PhysicsWorldSync {
     }
 
     if (!movement) {
+      const scale = { ...world.scale };
       for (const component of actor.components) {
         if (
           component.classId !== "ColliderComponent" ||
@@ -973,7 +1080,7 @@ export class PhysicsWorldSync {
         const baked = this.geometry(component, "ordinary").prepare(
           collider.shape,
           component.transform,
-          worldScale(actor, this.worldTransforms),
+          scale,
         );
         const id = componentColliderPhysicsId(actor.guid, component.guid);
         colliders.set(id, {
@@ -997,7 +1104,7 @@ export class PhysicsWorldSync {
           component.owner === actor,
       );
       if (blocking)
-        this.collectBlockingVolumeCollider(actor, bodyId, blocking, colliders);
+        this.collectBlockingVolumeCollider(actor, bodyId, blocking, scale, colliders);
       const tilemap = actor.components.find(
         (component) =>
           component.classId === "TilemapComponent" &&
@@ -1022,11 +1129,11 @@ export class PhysicsWorldSync {
       } else {
         this.tilemapCollidersByActor.delete(actor.guid);
       }
-      this.collectSpriteColliders(actor, bodyId, colliders);
-      this.collectMeshColliders(actor, bodyId, colliders);
-      this.collectLandscapeColliders(actor, bodyId, colliders);
+      this.collectSpriteColliders(actor, bodyId, scale, colliders);
+      this.collectMeshColliders(actor, bodyId, scale, colliders);
+      this.collectLandscapeColliders(actor, bodyId, scale, colliders);
       for (const component of this.dynamicMeshPhysicsComponents(actor)) {
-        const shape = this.dynamicMeshCollisions.prepare(component, worldScale(actor, this.worldTransforms));
+        const shape = this.dynamicMeshCollisions.prepare(component, scale);
         if (!shape) continue;
         const id = componentColliderPhysicsId(actor.guid, component.guid);
         colliders.set(id, { id, bodyId, shape, friction: 0.5, restitution: 0, isTrigger: false,
@@ -1040,7 +1147,7 @@ export class PhysicsWorldSync {
         const transform = { ...buoyancy.transform, position: { ...buoyancy.transform.position } };
         const offset = rotateVector(transform.rotation, { x: props.offset[0] * transform.scale.x, y: props.offset[1] * transform.scale.y, z: props.offset[2] * transform.scale.z });
         transform.position.x += offset.x; transform.position.y += offset.y; transform.position.z += offset.z;
-        const baked = this.geometry(buoyancy, "water").prepare({ kind: "box", halfExtents: { x: props.width / 2, y: props.height / 2, z: props.length / 2 } }, transform, worldScale(actor, this.worldTransforms));
+        const baked = this.geometry(buoyancy, "water").prepare({ kind: "box", halfExtents: { x: props.width / 2, y: props.height / 2, z: props.length / 2 } }, transform, scale);
         const id = componentColliderPhysicsId(actor.guid, buoyancy.guid);
         colliders.set(id, { ...collider, ...baked, id, bodyId });
       }
@@ -1131,8 +1238,8 @@ export class PhysicsWorldSync {
   private actorCollisionDescriptor(
     actor: Actor,
     movement: ActorComponent | null,
+    world: Transform,
   ): DescriptorScratch {
-    const world = this.worldTransforms.get(actor.guid) ?? actor.transform;
     const descriptor = this.collisionScratch;
     descriptor.begin();
     descriptor.push(actor);
@@ -1223,7 +1330,7 @@ export class PhysicsWorldSync {
     return enabled;
   }
 
-  private collectLandscapeColliders(actor: Actor, bodyId: string, colliders: Map<string, ColliderDesc>): void {
+  private collectLandscapeColliders(actor: Actor, bodyId: string, scale: Vec3, colliders: Map<string, ColliderDesc>): void {
     for (const component of this.landscapePhysicsComponents(actor)) {
       const names = ["width", "depth", "subdivisions", "heights", "collisionsEnabled"];
       const descriptor = names.map((name) => component.getVariable(name));
@@ -1233,7 +1340,7 @@ export class PhysicsWorldSync {
         this.landscapeSources.set(component, source);
       }
       if (!source.shape) continue;
-      const baked = this.geometry(component, "landscape").prepare(source.shape, component.transform, worldScale(actor, this.worldTransforms));
+      const baked = this.geometry(component, "landscape").prepare(source.shape, component.transform, scale);
       const id = componentColliderPhysicsId(actor.guid, component.guid);
       colliders.set(id, { id, bodyId, ...baked, friction: 0.5, restitution: 0, isTrigger: false,
         layer: parseMeshCollisionLayer(component.getVariable("layer")), mask: parseMeshCollisionMask(component.getVariable("mask")) });
@@ -1283,6 +1390,7 @@ export class PhysicsWorldSync {
   private collectMeshColliders(
     actor: Actor,
     bodyId: string,
+    scale: Vec3,
     colliders: Map<string, ColliderDesc>,
   ): void {
     for (const component of this.meshPhysicsComponents(actor)) {
@@ -1318,7 +1426,7 @@ export class PhysicsWorldSync {
             },
           },
           component.transform,
-          worldScale(actor, this.worldTransforms),
+          scale,
         );
         colliders.set(colliderId, {
           id: colliderId,
@@ -1340,9 +1448,9 @@ export class PhysicsWorldSync {
     actor: Actor,
     bodyId: string,
     component: Actor["components"][number],
+    scale: Vec3,
     colliders: Map<string, ColliderDesc>,
   ): void {
-    const scale = worldScale(actor, this.worldTransforms);
     const hx = Math.max(Math.abs(scale.x) / 2, 0.05);
     const hy = Math.max(Math.abs(scale.y) / 2, 0.05);
     const hz = Math.max(Math.abs(scale.z) / 2, 0.05);
@@ -1365,6 +1473,7 @@ export class PhysicsWorldSync {
   private collectSpriteColliders(
     actor: Actor,
     bodyId: string,
+    scale: Vec3,
     colliders: Map<string, ColliderDesc>,
   ): void {
     const sprite = actor.components.find(
@@ -1422,7 +1531,7 @@ export class PhysicsWorldSync {
           rotation: component.transform.rotation,
           scale: component.transform.scale,
         },
-        worldScale(actor, this.worldTransforms),
+        scale,
       );
       colliders.set(colliderId, {
         id: colliderId,
@@ -1497,23 +1606,12 @@ export class PhysicsWorldSync {
   }
 }
 
-function actorWorldPhysicsTransform(
-  actor: Actor,
-  transforms: ActorTransformMap,
-): PhysicsTransform {
-  const world = transforms.get(actor.guid) ?? actor.transform;
+/** A resolved world pose as a native body pose; scale stays with colliders. */
+function physicsPose(world: Transform): PhysicsTransform {
   return {
     position: { ...world.position },
     rotation: { ...world.rotation },
   };
-}
-
-function worldScale(
-  actor: Actor,
-  transforms: ActorTransformMap,
-): { x: number; y: number; z: number } {
-  const world = transforms.get(actor.guid) ?? actor.transform;
-  return { ...world.scale };
 }
 
 export function actorLocalPhysicsTransform(

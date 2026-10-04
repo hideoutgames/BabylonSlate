@@ -5,7 +5,6 @@ import {
   type PhysicsBackend,
   type Vec3,
 } from "@babylonslate/physics";
-import type { ActorTransformMap } from "./actor-world-transform";
 import { sameDescriptor } from "./physics-preparation";
 
 type ConstraintProperties = ReturnType<typeof parseConstraintProperties>;
@@ -42,7 +41,8 @@ export class PhysicsConstraintSync {
   sync(options: {
     actors: readonly Actor[];
     actorById: ReadonlyMap<string, Actor>;
-    transforms: ActorTransformMap;
+    /** World scale of a connected actor; resolved only for constraint endpoints. */
+    worldScale: (actor: Actor) => Vec3;
     bodies: ReadonlyMap<string, string>;
     bodyOwners: ReadonlyMap<string, Actor>;
     eligible: (actor: Actor) => boolean;
@@ -88,8 +88,8 @@ export class PhysicsConstraintSync {
             this.remove(id);
             continue;
           }
-          const scaleA = options.transforms.get(owner.guid)?.scale ?? owner.transform.scale;
-          const scaleB = options.transforms.get(target.guid)?.scale ?? target.transform.scale;
+          const scaleA = options.worldScale(owner);
+          const scaleB = options.worldScale(target);
           const descriptor = this.appliedScratch;
           descriptor[0] = props;
           descriptor[1] = bodyAId;
