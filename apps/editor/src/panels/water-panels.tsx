@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { DirectionalLight, Vector3 } from "@babylonjs/core";
+import { DirectionalLight, Vector3, type AbstractEngine, type Mesh } from "@babylonjs/core";
 import type { IDockviewPanelProps } from "dockview-react";
 import { AssetPicker, PanelFrame, PropertyGrid, assetRowIdentity, humanizePropertyLabel, type PropertyRow } from "@babylonslate/editor-kit";
 import { createDefaultWaterDefinition, normalizeWaterBody, normalizeWaterDefinition, type WaterDefinition } from "@babylonslate/core";
-import { createMaterialPreviewPresenter, createParticlePreviewScene, createWaterMesh, setSceneWaterTime, MaterialLibrary, installTextureBytes, acquireMaterialTexture, resourceCacheForEngine } from "@babylonslate/render";
+import { createMaterialPreviewPresenter, createParticlePreviewScene, createWaterMesh, setSceneWaterTime, updateWaterMeshDefinition, MaterialLibrary, installTextureBytes, acquireMaterialTexture, resourceCacheForEngine } from "@babylonslate/render";
 import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useOptionalPlay } from "../context/play-context";
 import { isMaterialAssetType } from "../lib/content-browser-helpers";
+import { materialClosureRevision } from "../lib/material-closure-revision";
 
 const controls = [
   ["opacity", 0, 1], ["roughness", 0.02, 1], ["reflectionStrength", 0, 2],
@@ -63,21 +64,46 @@ export function WaterDetailsPanel(_props: IDockviewPanelProps) {
   </PanelFrame>;
 }
 
+/** A finite Lake: its layout depends only on the body, never on the orbiting preview camera. */
+const PREVIEW_BODY = { width: 24, length: 24, waveScale: 1, depth: 5 };
+
+/**
+ * Live preview of the open Water asset. The scene and mesh are built once per engine, Style, Custom Material and
+ * revision of everything that material reaches; other edits, such as each step of a Details scrub, apply to the
+ * existing mesh, so the wave clock keeps running.
+ */
 export function WaterPreviewPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, collectPlayMaterialLibrary, collectPlayTextureBytes } = useDocuments();
+  const { openDocuments, assetRegistry, registryEpoch, collectPlayMaterialLibrary, collectPlayTextureBytes } = useDocuments();
   const play = useOptionalPlay();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [error, setError] = useState<string | null>(null);
-  const key = JSON.stringify(normalizeWaterDefinition(openDocuments.find((entry) => entry.id === documentId)?.content));
+  const [engine, setEngine] = useState<AbstractEngine | null>(null);
+  // The Play context changes identity on every document edit; only its shared engine matters here.
+  useEffect(() => { setEngine(play?.ensureSharedEngine() ?? null); }, [play]);
+  const definition = normalizeWaterDefinition(openDocuments.find((entry) => entry.id === documentId)?.content);
+  const definitionKey = JSON.stringify(definition);
+  /** The latest definition, for a mesh whose Custom Material finishes loading after later edits. */
+  const definitionRef = useRef(definition);
+  definitionRef.current = definition;
+  const { style, materialGuid } = definition;
+  const closureKey = useMemo(() => {
+    void registryEpoch; // Registry contents change without replacing its instance.
+    return materialGuid ? materialClosureRevision(materialGuid, assetRegistry, openDocuments) : "";
+  }, [materialGuid, assetRegistry, registryEpoch, openDocuments]);
+  const loadersRef = useRef({ collectPlayMaterialLibrary, collectPlayTextureBytes });
+  loadersRef.current = { collectPlayMaterialLibrary, collectPlayTextureBytes };
+  const meshRef = useRef<Mesh | null>(null);
+
   useEffect(() => {
-    const canvas = canvasRef.current, engine = play?.ensureSharedEngine();
+    const canvas = canvasRef.current;
     if (!canvas || !engine) return;
+    // Style compiles into the water shader; the Custom Material reloads when it or anything it reaches changes.
+    void style; void closureKey;
     const host = createParticlePreviewScene(engine, { skybox: true });
     const sun = new DirectionalLight("water-preview-sun", new Vector3(-0.3, -1, 0.6), host.scene);
     sun.intensity = 1.4;
-    const water = JSON.parse(key) as WaterDefinition;
     host.camera.radius = 28;
     host.camera.lowerRadiusLimit = 8;
     host.camera.upperRadiusLimit = 80;
@@ -98,9 +124,10 @@ export function WaterPreviewPanel(_props: IDockviewPanelProps) {
     };
     void (async () => {
       let customMaterial = null;
-      if (water.materialGuid) {
-        const library = await collectPlayMaterialLibrary(undefined, [], [water.materialGuid]);
-        const bytes = await collectPlayTextureBytes(new Map(), new Map(), library.textureGuids);
+      if (materialGuid) {
+        const { collectPlayMaterialLibrary: collectLibrary, collectPlayTextureBytes: collectTextures } = loadersRef.current;
+        const library = await collectLibrary(undefined, [], [materialGuid]);
+        const bytes = await collectTextures(new Map(), new Map(), library.textureGuids);
         if (cancelled) return;
         const sources = installTextureBytes(bytes);
         const cache = resourceCacheForEngine(engine);
@@ -111,9 +138,9 @@ export function WaterPreviewPanel(_props: IDockviewPanelProps) {
             return source ? acquireMaterialTexture(cache, guid, engine, source, { hasAlpha: true }) : null;
           },
         });
-        const document = library.documents.get(water.materialGuid);
+        const document = library.documents.get(materialGuid);
         if (!document) throw new Error("The selected Water material is unavailable.");
-        const acquired = materials.acquire(host.scene, water.materialGuid, document);
+        const acquired = materials.acquire(host.scene, materialGuid, document);
         if (acquired.ok === false) throw new Error(acquired.diagnostics.map((entry) => entry.message).join("\n"));
         const diagnostics = await acquired.ready;
         if (cancelled) return;
@@ -121,11 +148,17 @@ export function WaterPreviewPanel(_props: IDockviewPanelProps) {
         customMaterial = acquired.material;
       }
       if (cancelled) return;
-      createWaterMesh(host.scene, "water-preview", normalizeWaterBody({ width: 24, length: 24, waveScale: 1, depth: 5 }), water, customMaterial);
+      meshRef.current = createWaterMesh(host.scene, "water-preview", normalizeWaterBody(PREVIEW_BODY), definitionRef.current, customMaterial);
       frame = requestAnimationFrame(tick);
     })().catch((cause) => { if (!cancelled) setError(cause instanceof Error ? cause.message : "Water preview could not load."); });
-    return () => { cancelled = true; cancelAnimationFrame(frame); presenter.dispose(); host.dispose(); materials?.dispose(); };
-  }, [key, play, collectPlayMaterialLibrary, collectPlayTextureBytes]);
+    return () => { cancelled = true; meshRef.current = null; cancelAnimationFrame(frame); presenter.dispose(); host.dispose(); materials?.dispose(); };
+  }, [engine, style, materialGuid, closureKey]);
+
+  useEffect(() => {
+    const mesh = meshRef.current;
+    if (mesh) updateWaterMeshDefinition(mesh, JSON.parse(definitionKey));
+  }, [definitionKey]);
+
   return <PanelFrame data-testid="water-preview-panel">
     <canvas ref={canvasRef} className="min-h-0 h-full w-full touch-none" aria-label="Water Preview" data-testid="water-preview-canvas" />
     {error ? <Alert variant="destructive"><AlertTitle>Preview Failed</AlertTitle><AlertDescription>{error}</AlertDescription></Alert> : null}
