@@ -557,8 +557,9 @@ export interface CreateEngineOptions {
   navmeshBytes?: Uint8Array | null;
   /** NavMesh Blocker volumes drawn with Play `shownav`. */
   navBlockers?: readonly NavDebugBlockerPose[] | null;
-  /** Overlay 2DButton graph events (Play compositor). */
+  /** Authored SceneLayer joystick input for the host input ring. */
   onTouchAxis?: (controlId: string, value: number) => void;
+  /** Overlay 2DButton graph events (Play compositor). */
   onSceneLayerPointer?: (event: {
     layerId: string;
     actorGuid: string;
@@ -2518,7 +2519,6 @@ function initializeEngine(
     if (joysticks.owns(event.pointerId)) return;
     const scrollTarget = event.pointerType === "touch" || event.pointerType === "pen" ? scrollTargetAt(x, y) : undefined;
     if (scrollTarget) scrollDrag = { pointerId: event.pointerId, startX: x, startY: y, x, y, active: false, target: scrollTarget };
-    playCursor?.notePointer(event.pointerType ?? "mouse", x, y);
     if (blocked) { scheduler.invalidate("selection"); return; }
     const hit = pickAtCanvas(scene, x, y);
     if (hit) {

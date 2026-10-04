@@ -1,7 +1,6 @@
 import { NullEngine, StandardMaterial, Vector3 } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { createActor, createDefaultScene, parseJoystick2DProperties, walkOverlayPointerHits } from "@babylonslate/core";
-import { InputResolver, type RawInputEvent } from "@babylonslate/input";
 import { Joystick2DInput } from "./joystick2d-input";
 import { createJoystick2DMesh, joystick2DMesh, refreshJoystick2DMaterials } from "./joystick2d-mesh";
 import { SceneLayerCompositor } from "./scene-layer-compositor";
@@ -28,15 +27,12 @@ describe("SceneLayer joystick", () => {
     const root = binding.meshes.get(1)!;
     const mesh = root.getChildMeshes().find(child => joystick2DMesh(child))!;
     const visual = joystick2DMesh(mesh)!;
-    const events: RawInputEvent[] = [];
+    const axes = new Map<string, number>();
     const input = new Joystick2DInput(id => compositor.layers().find(entry => entry.layerId === id),
-      () => ({ width: 800, height: 450 }), (controlId, value) => events.push({ kind: "touchAxis", tick: 1, controlId, value }));
+      () => ({ width: 800, height: 450 }), (controlId, value) => axes.set(controlId, value));
     const hits = (x = 400, y = 225) => walkOverlayPointerHits(compositor.pickHits(x, y)).targets;
-    const resolver = new InputResolver({ actions: [], axes: [{ name: "Move", kind: "2d", bindings: [
-      { device: "touch", code: "joystick-x", component: "x" }, { device: "touch", code: "joystick-y", component: "y" },
-    ] }] });
-    const value = () => resolver.resolve(events.splice(0)).axes2D.Move;
-    return { layer, compositor, binding, command, root, visual, input, hits, events, value };
+    const value = () => ({ x: axes.get("joystick-x") ?? 0, y: axes.get("joystick-y") ?? 0 });
+    return { layer, compositor, binding, command, root, visual, input, hits, value };
   }
 
   it("routes a picked runtime component into Touch input, clamps travel, and resets only its owning pointer", () => {
