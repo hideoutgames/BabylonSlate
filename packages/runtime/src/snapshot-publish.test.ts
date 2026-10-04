@@ -8,9 +8,11 @@ import {
 } from "@babylonslate/bridge";
 import {
   createActor,
+  createDefaultSceneLayer,
   createDefaultSceneSettings,
   type SerializedActor,
   type SerializedScene,
+  type SerializedSceneLayer,
 } from "@babylonslate/core";
 import { generateNavMesh, initNavigation } from "@babylonslate/navigation";
 import type { Actor } from "@babylonslate/object-model";
@@ -25,9 +27,9 @@ function pose(position: Vec3, rotation: [number, number, number, number] = [0, 0
 
 const navAgent = { id: "nav", classId: "NavAgentComponent", properties: { radius: 0.5, height: 2, maxSpeed: 3.5 } };
 
-function tickScript(classId: string, body: string): CompiledScript {
+function tickScript(classId: string, body: string, parentClassId = "Actor"): CompiledScript {
   return {
-    classId, parentClassId: "Actor", assetGuid: `${classId}-script`, anchors: [],
+    classId, parentClassId, assetGuid: `${classId}-script`, anchors: [],
     source: `export function onTick(ctx) { ${body} }`,
     entryPoints: [{ name: "onTick", event: "onTick", isAsync: false }],
   };
@@ -41,10 +43,31 @@ const scripts: CompiledScript[] = [
     ctx.loadSceneBlocking(ctx.getAllActorsOfClass("SceneStreamingActor")[0]).catch(() => {});`),
   tickScript("Spawner", 'if (ctx.tickIndex === 3) ctx.spawnActor("Mover", { position: { x: 0, y: 1, z: 0 } });'),
   tickScript("LateDoomed", "if (ctx.tickIndex === 6) ctx.destroyActor(ctx.self);"),
+  tickScript("LayerBlocker", `if (ctx.tickIndex !== 2) return;
+    ctx.setActorLocation(ctx.self, { x: 5, y: 5, z: 0 });
+    ctx.loadSceneBlocking(ctx.getAllActorsOfClass("SceneStreamingActor")[0]).catch(() => {});`, "SceneLayerActor"),
 ];
 
 function scene(actors: SerializedActor[]): SerializedScene {
   return { name: "Publish", viewportMode: "3d", settings: createDefaultSceneSettings(), folders: [], actors };
+}
+
+/** A vertical box whose second row moves itself out of the box, then starts a blocking load. */
+function overlayList(): SerializedSceneLayer {
+  const row = (id: string, classId: string) => createActor(id, id, {
+    classId, parentId: "list", components: [{ id: "panel", classId: "2DPanelComponent", properties: {} }],
+  });
+  return {
+    ...createDefaultSceneLayer(),
+    actors: [
+      createActor("list", "List", {
+        classId: "SceneLayerActor",
+        components: [{ id: "box", classId: "2DVerticalBoxComponent", properties: { width: 4, heightMode: "content", gap: 1 } }],
+      }),
+      row("first", "SceneLayerActor"),
+      row("second", "LayerBlocker"),
+    ],
+  };
 }
 
 const streamTarget = () => createActor("stream", "Stream", {
@@ -59,6 +82,7 @@ async function launch(playScene: SerializedScene, navMesh?: Uint8Array) {
   const runtime: RuntimeDriver = createInProcessRuntime({
     seed: 7, maxActors: 32, seedDemoActors: false, preferSoftwarePhysics: true,
     playScene, sceneLibrary: { child: scene([createActor("streamed", "Streamed", { classId: "Mover" })]) },
+    sceneLayerLibrary: { list: overlayList() },
     onCommand: (command) => {
       commands.push(command);
       if (command.type === "spawn") slots.set(command.actorGuid, command.slotId);
@@ -269,6 +293,29 @@ describe("snapshot publishing", () => {
       expect(deferred.commands.filter((command) => command.type === "despawn")).toEqual([
         { type: "despawn", slotId: deferred.slots.get("doomed"), actorGuid: "doomed" },
       ]);
+      expect(comparable(deferred.runtime)).toEqual(comparable(perTick.runtime));
+    } finally {
+      deferred.runtime.stop();
+      perTick.runtime.stop();
+    }
+  });
+
+  it("lays out overlay actors moved by a tick stopped by a blocking load before writing the burst", async () => {
+    const playScene = () => ({
+      ...scene([streamTarget()]),
+      settings: { ...createDefaultSceneSettings(), sceneLayers: [{ assetGuid: "list", zOrder: 0, enabled: true }] },
+    });
+    const deferred = await launch(playScene());
+    const perTick = await launch(playScene());
+    try {
+      const before = slotPose(published(deferred.runtime), deferred.slots.get("second"));
+      expect(before).toBeDefined();
+      burst(deferred.runtime);
+      for (let tick = 0; tick < 4; tick += 1) perTick.runtime.tick();
+      // The row moved itself in the third tick (ctx.tickIndex 2); the box puts it back.
+      const frame = published(deferred.runtime);
+      expect(frame.header.tickIndex).toBe(2);
+      expect(slotPose(frame, deferred.slots.get("second"))).toEqual(before);
       expect(comparable(deferred.runtime)).toEqual(comparable(perTick.runtime));
     } finally {
       deferred.runtime.stop();

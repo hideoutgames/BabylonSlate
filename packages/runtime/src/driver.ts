@@ -5855,9 +5855,11 @@ class InProcessRuntime implements RuntimeDriver {
     const start = nowMs();
     // A later tick stopped before its publish point (blocking load, scene change)
     // leaves its removals to the next publish, as per-tick writes did; the write
-    // below already omits actors that left the World. Overlay layout is not
-    // repeated: the last publishing tick laid it out and nothing ran after it.
+    // below already omits actors that left the World. Its scripts may have moved
+    // layout-managed overlay actors, so lay them out first, as every write does.
+    // Otherwise the last publishing tick laid them out and nothing ran after it.
     if (this.canTickScene() || this.hasReadyLayers()) this.retireRemovedSnapshotActors();
+    else this.applyOverlayLayouts();
     const header = this.pendingSnapshotHeader;
     this.writeSnapshot(header.frameId, header.tickIndex, header.scriptMs, header.physicsMs);
     this._lastPublishMs = spent + (nowMs() - start);
