@@ -33,10 +33,11 @@ rewrite project defaults, survive scene transitions, and reset through **Reset
 to Project Defaults** or a new session. Outline component property setters keep
 actor ownership separate from global settings and do not rebuild mesh assets.
 **Set Water Quality** sends a whole **Water Quality** struct (defaults equal the
-Medium tier; **Water Shading Detail** and **Water Reflection Mode** enums) as a
-session patch; fields round or snap like project settings, and device limits
-appear in the effective readback as Clamped. Buoyancy and Sample Water Surface
-are unaffected.
+Medium tier; **Water Shading Detail** and **Water Reflection Mode** enums;
+pins and inspector rows keep the acronym, as in **FFT Size**) as a session
+patch; fields round or snap like project settings, and device limits appear in
+the effective readback as Clamped. Buoyancy and Sample Water Surface are
+unaffected.
 
 | Package | Owns | Must not import |
 | --- | --- | --- |

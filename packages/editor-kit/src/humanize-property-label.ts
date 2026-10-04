@@ -18,6 +18,7 @@ const ACRONYMS: Record<string, string> = {
   lod: "LOD",
   fov: "FOV",
   fps: "FPS",
+  fft: "FFT",
   js: "JS",
   msdf: "MSDF",
 };
