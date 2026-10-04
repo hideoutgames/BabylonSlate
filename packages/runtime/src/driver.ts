@@ -1180,7 +1180,7 @@ class InProcessRuntime implements RuntimeDriver {
         return actor;
       },
       sampleWater: (position, actorId) => {
-        this.physicsSync.water.update(this.world.getActors(), this.world.clock.tickIndex * this.dt);
+        this.physicsSync.water.sync(this.world.getActors(), this.world.clock.tickIndex * this.dt);
         return this.physicsSync.water.sample(position, actorId);
       },
       lineTrace: (start, end, options) =>

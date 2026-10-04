@@ -10,6 +10,26 @@ import { actorWorldTransforms, composeParentChildTransform } from "./actor-world
 
 type WaterBody = { actorId: string; definition: WaterDefinition; body: WaterBodyProperties; transform: Transform };
 export type WaterWorldSample = WaterSample & { actorId: string | null; density: number; waterDepth: number };
+type Normalized<T> = { kind: string; values: unknown[]; value: T };
+
+/**
+ * A component's normalized properties, reused while its variables hold the same values (compared by identity).
+ * Scripts and the editor replace variable values, so long-lived objects such as a river's body keep their
+ * caches (for example the sampled centreline) across ticks instead of being rebuilt per tick or per query.
+ */
+function normalized<T>(cache: WeakMap<ActorComponent, Normalized<T>>, component: ActorComponent, kind: string, normalize: () => T): T {
+  const entry = cache.get(component), variables = component.variables;
+  if (entry && entry.kind === kind && entry.values.length === variables.size * 2) {
+    let i = 0, same = true;
+    for (const [key, value] of variables) if (entry.values[i++] !== key || entry.values[i++] !== value) { same = false; break; }
+    if (same) return entry.value;
+  }
+  const values: unknown[] = [];
+  for (const [key, value] of variables) values.push(key, value);
+  const value = normalize();
+  cache.set(component, { kind, values, value });
+  return value;
+}
 
 /** Component attachments have the same transform meaning in physics and rendering. */
 function componentWorldTransform(component: ActorComponent, actor: Actor, world: Transform): Transform {
@@ -34,18 +54,34 @@ export class WaterWorld {
   private cutters: WaterCutters = { removals: [], landscapes: [] };
   /** Parsed terrain per authored heights array; sculpting replaces the array. */
   private readonly terrain = new WeakMap<object, { size: string; data: LandscapeProperties }>();
+  private readonly normalizedBodies = new WeakMap<ActorComponent, Normalized<WaterBodyProperties>>();
+  private readonly normalizedRemovals = new WeakMap<ActorComponent, Normalized<ReturnType<typeof normalizeWaterRemoval>>>();
   private transforms = new Map<string, Transform>();
   private time = 0;
+  /** Simulation time and actor list of the last refresh; `sync` refreshes at most once per tick. */
+  private refreshed: { time: number; actors: readonly Actor[] } | null = null;
   private readonly defaultWater = createDefaultWaterDefinition();
   get hasBodies(): boolean { return this.bodies.length > 0; }
 
   setContent(content: ReadonlyMap<string, WaterDefinition> | Readonly<Record<string, WaterDefinition>>): void {
     const entries = content instanceof Map ? content.entries() : Object.entries(content);
     this.definitions = new Map(Array.from(entries, ([id, value]) => [id, normalizeWaterDefinition(value)]));
+    this.refreshed = null;
   }
 
+  /**
+   * Script queries: refresh only when the simulation tick (its time) or actor list differs from the last refresh,
+   * so any number of Sample Water Surface calls in one tick share one scan. Edits made later in the same tick
+   * apply from the next tick (or the physics step, which always refreshes).
+   */
+  sync(actors: readonly Actor[], time: number): void {
+    if (this.refreshed?.time !== time || this.refreshed.actors !== actors) this.update(actors, time);
+  }
+
+  /** Refresh bodies, transforms and cutters now. Unchanged components keep their normalized properties. */
   update(actors: readonly Actor[], time: number): void {
     this.time = time;
+    this.refreshed = { time, actors };
     let transforms: Map<string, Transform> | undefined;
     this.bodies = [];
     const removals: Array<WaterCutters["removals"][number]> = [], landscapes: Array<WaterCutters["landscapes"][number]> = [];
@@ -67,14 +103,14 @@ export class WaterWorld {
             }
             landscapes.push({ data: entry.data, transform });
           } else {
-            const volume = normalizeWaterRemoval(Object.fromEntries(component.variables));
+            const volume = normalized(this.normalizedRemovals, component, "removal", () => normalizeWaterRemoval(Object.fromEntries(component.variables)));
             if (volume.enabled) removals.push({ volume, transform });
           }
           continue;
         }
         const kind = waterKindForClass(component.classId);
         if (!kind || component.destroyed) continue;
-        const body = normalizeWaterBody(Object.fromEntries(component.variables), kind);
+        const body = normalized(this.normalizedBodies, component, kind, () => normalizeWaterBody(Object.fromEntries(component.variables), kind));
         if (!body.enabled) continue;
         const definition = body.assetGuid ? (this.definitions.get(body.assetGuid) ?? this.defaultWater) : this.defaultWater;
         transforms ??= actorWorldTransforms(actors);
@@ -101,7 +137,11 @@ export class WaterWorld {
     return result;
   }
 
-  /** Lift and point drag add to native collision impulses; authored poses are never overwritten. */
+  /**
+   * Lift and point drag add to native collision impulses; authored poses are never overwritten. Drag pulls each
+   * support toward the water's horizontal velocity (current plus the waves' orbital motion, so hulls sway with the
+   * swell); the vertical spring follows the surface's height rate at the support's X/Z.
+   */
   applyBuoyancy(actor: Actor, bodyId: string, backend: PhysicsBackend, mass: number, gravity: number, dt: number): void {
     if (backend.kind !== "3d" || dt <= 0 || mass <= 0) return;
     const component = actor.components.find((c) => c.classId === "WaterBuoyancyComponent" && !c.destroyed && c.getVariable("enabled") !== false);

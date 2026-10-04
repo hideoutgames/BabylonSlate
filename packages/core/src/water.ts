@@ -313,6 +313,13 @@ export interface WaterWaveSet {
   readonly slopeSum: number;
   /** Σ A at Wave Scale 1: the vertical envelope of the analytic waves (the crest profile stays within ±1). */
   readonly amplitudeSum: number;
+  /**
+   * Σ k·A²·ω·d / 2 at Wave Scale 1 and q = 1 (m/s). Under Gerstner waves a fixed point sees the orbital velocity
+   * average to −q²·scale² times this; `waterWaveDrift` cancels that, so waves rock floating objects without pushing
+   * them upwind.
+   */
+  readonly driftX: number;
+  readonly driftZ: number;
   /** 2π / Wave Length (rad/m): the Ocean Spectrum's peak wavenumber. */
   readonly peakK: number;
   /** Ocean Spectrum: the highest wavenumber the analytic components represent; render-only detail starts here. Classic: Infinity. */
@@ -360,7 +367,7 @@ function buildWaveSet(water: WaterDefinition): WaterWaveSet {
     waveHeight: water.waveHeight, waveLength: water.waveLength, waveSpeed: water.waveSpeed, waveDirection: water.waveDirection,
     waveSpread: water.waveSpread, choppiness: water.choppiness, steepness: water.steepness, peakSharpness: water.peakSharpness,
     waveSeed: water.waveSeed, detailWaves: water.detailWaves,
-    slopeSum: 0, amplitudeSum: 0, peakK: TAU / water.waveLength, cutoffK: Infinity, spectrumScale: 0, detailHeight: 0,
+    slopeSum: 0, amplitudeSum: 0, driftX: 0, driftZ: 0, peakK: TAU / water.waveLength, cutoffK: Infinity, spectrumScale: 0, detailHeight: 0,
   };
   const headings = new Float64Array(count);
   if (!ocean) {
@@ -412,6 +419,8 @@ function buildWaveSet(water: WaterDefinition): WaterWaveSet {
     set.omega[i] = Math.sqrt(9.81 * set.k[i]!) * water.waveSpeed;
     const amplitude = water.waveHeight * set.amplitude[i]!;
     set.amplitudeSum += amplitude; set.slopeSum += set.k[i]! * amplitude;
+    const drift = set.k[i]! * amplitude * amplitude * set.omega[i]! / 2;
+    set.driftX += drift * set.dirX[i]!; set.driftZ += drift * set.dirZ[i]!;
   }
   return set;
 }
@@ -500,6 +509,17 @@ export function invertWaterWaves(set: WaterWaveSet, x: number, z: number, time: 
     if (!solved) evaluateWaterWaves(set, x0, z0, time, spacing, out, scale);
   }
   out[11] = x0; out[12] = z0;
+}
+
+/**
+ * Mean horizontal velocity (m/s) added to queried water velocity with Gerstner waves: q²·scale²·(driftX, driftZ). It
+ * cancels the backward average a fixed point sees, so a stationary support feels no net push, while a hull carried
+ * by the orbit drifts slowly downwind as with Stokes drift. Zero at Steepness 0.
+ */
+export function waterWaveDrift(set: WaterWaveSet, scale: number, out: { x: number; z: number }): { x: number; z: number } {
+  const factor = (waterWaveQ(set, scale) * scale) ** 2;
+  out.x = factor * set.driftX; out.z = factor * set.driftZ;
+  return out;
 }
 
 /** Floats per component written by `waterWaveShaderConstants`: two vec4s. */
@@ -621,14 +641,15 @@ export function waterRiverCentreline(body: WaterBodyProperties): WaterRiverSampl
   return line;
 }
 
-const surfaceScratch = createWaterWaveOutput();
+const surfaceScratch = createWaterWaveOutput(), driftScratch = { x: 0, z: 0 };
 
 /**
  * World-space waves first: the world X/Z inverts to the rest point whose displaced surface lies above it, which
  * meets the transformed volume's base along world vertical (so tilted volumes and rivers match the mesh exactly);
  * waves then add their height there. `inside` and bank distance use that rest point, like the rendered surface.
- * Velocity is the current plus the wave's horizontal orbital (particle) velocity in X/Z and the Eulerian rate of
- * surface height at this fixed X/Z in Y. Steepness 0 reproduces the vertical-only results exactly.
+ * Velocity is the current plus, in X/Z, the wave's horizontal orbital (particle) velocity with its mean drift
+ * (`waterWaveDrift`), and in Y the Eulerian rate of surface height at this fixed X/Z. Steepness 0 reproduces the
+ * vertical-only results exactly.
  */
 export function sampleWaterSurface(
   water: WaterDefinition, body: WaterBodyProperties, position: Vec3, time: number,
@@ -681,7 +702,8 @@ export function sampleWaterSurface(
     const jxx = wave[5]!, jxz = wave[6]!, jzz = wave[7]!, inv = 1 / Math.max(jxx * jzz - jxz * jxz, 1e-6);
     const ex = (jzz * gx - jxz * gz) * inv, ez = (jxx * gz - jxz * gx) * inv;
     normal.x = -ex; normal.z = -ez;
-    velocity.x += wave[9]!; velocity.z += wave[10]!;
+    const drift = waterWaveDrift(set, body.waveScale, driftScratch);
+    velocity.x += wave[9]! + drift.x; velocity.z += wave[10]! + drift.z;
     velocity.y += wave[8]! - (ex * wave[9]! + ez * wave[10]!);
   } else {
     const n = Math.hypot(wave[3]!, 1, wave[4]!);

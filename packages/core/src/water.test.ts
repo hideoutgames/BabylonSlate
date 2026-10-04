@@ -4,7 +4,7 @@ import { eulerDegreesToQuaternion, quatRotateVector } from "./euler";
 import {
   WATER_CREST_MEAN, WATER_CREST_RANGE, WATER_JACOBIAN_FLOOR, WATER_WAVE_SHADER_STRIDE, createDefaultWaterDefinition, createWaterWaveOutput,
   evaluateWaterWaves, invertWaterWaves, normalizeWaterBody, normalizeWaterDefinition, sampleWaterSurface, sampleWaterWaves,
-  waterHorizontalEnvelope, waterRiverCentreline, waterWaveComponents, waterWaveEnvelope, waterWaveQ, waterWaveSet,
+  waterHorizontalEnvelope, waterRiverCentreline, waterWaveComponents, waterWaveDrift, waterWaveEnvelope, waterWaveQ, waterWaveSet,
   waterWaveShaderConstants, type WaterDefinition,
 } from "./water";
 
@@ -209,11 +209,26 @@ describe("Water surfaces", () => {
     const h = 1e-4, next = sampleWaterSurface(water, body, { ...surface, x: surface.x + h }, 2.5, transform);
     expect(-sample.normal.x / sample.normal.y).toBeCloseTo((next.height - sample.height) / h, 3);
     const later = sampleWaterSurface(water, body, surface, 2.5 + h, transform), earlier = sampleWaterSurface(water, body, surface, 2.5 - h, transform);
-    // Current plus orbital motion horizontally; the Eulerian height rate vertically.
+    // Current plus orbital motion and its mean drift horizontally; the Eulerian height rate vertically.
     const current = sampleWaterSurface({ ...water, waveHeight: 0 }, body, surface, 2.5, transform).velocity;
-    expect(sample.velocity.x).toBeCloseTo(current.x + out[9]!, 6);
-    expect(sample.velocity.z).toBeCloseTo(current.z + out[10]!, 6);
+    const drift = waterWaveDrift(waterWaveSet(water), body.waveScale, { x: 0, z: 0 });
+    expect(sample.velocity.x).toBeCloseTo(current.x + out[9]! + drift.x, 6);
+    expect(sample.velocity.z).toBeCloseTo(current.z + out[10]! + drift.z, 6);
     expect(sample.velocity.y - current.y).toBeCloseTo((later.height - earlier.height) / (2 * h), 4);
+  });
+  it("rocks water back and forth at a fixed point without a net horizontal push", () => {
+    const body = normalizeWaterBody({}, "global");
+    for (const water of [createDefaultWaterDefinition(), storm, ocean]) {
+      let x = 0, z = 0, swing = 0;
+      const samples = 20000;
+      for (let i = 0; i < samples; i++) {
+        const { velocity } = sampleWaterSurface(water, body, { x: 3.5, y: -1, z: -2 }, i * 0.0731);
+        x += velocity.x / samples; z += velocity.z / samples; swing = Math.max(swing, Math.hypot(velocity.x, velocity.z));
+      }
+      // Orbital speeds reach about a metre per second, yet they average out under a stationary support.
+      expect(swing).toBeGreaterThan(0.3);
+      expect(Math.hypot(x, z)).toBeLessThan(swing * 0.01);
+    }
   });
   it("draws a deterministic Ocean Spectrum with the Classic significant height", () => {
     const significant = (water: WaterDefinition) => {

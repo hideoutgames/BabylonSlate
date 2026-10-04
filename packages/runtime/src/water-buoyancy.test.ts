@@ -75,13 +75,20 @@ describe("Water buoyancy with native collision response", () => {
     const boat = world.createActor({ classId: "Actor", guid: "float" });
     boat.attachComponent(world.createComponent({ classId: "WaterBuoyancyComponent", variables: { drag: 8 } }));
     world.spawnActorNow(boat);
-    const heights: number[] = [];
+    const heights: number[] = [], sway: number[] = [];
+    // Default waves head 25° from +X.
+    const along = { x: Math.cos(25 * Math.PI / 180), z: Math.sin(25 * Math.PI / 180) };
     try {
       for (let i = 0; i < 360; i++) {
         sync.step(1 / 60, world, i / 60);
-        if (i > 180) heights.push(boat.transform.position.y);
+        if (i <= 180) continue;
+        heights.push(boat.transform.position.y);
+        sway.push(boat.transform.position.x * along.x + boat.transform.position.z * along.z);
       }
       expect(Math.max(...heights) - Math.min(...heights)).toBeGreaterThan(0.2);
+      // Drag follows the waves' orbital motion: the hull rocks along Wave Direction without drifting away.
+      expect(Math.max(...sway) - Math.min(...sway)).toBeGreaterThan(0.2);
+      expect(Math.abs(sway.reduce((sum, value) => sum + value, 0) / sway.length)).toBeLessThan(0.1);
       const p = boat.transform.position;
       expect(sync.lineTrace({ ...p, y: p.y + 3 }, { ...p, y: p.y - 3 }).actorId).toBe("float");
       expect(Math.abs(p.y)).toBeLessThan(0.6);
