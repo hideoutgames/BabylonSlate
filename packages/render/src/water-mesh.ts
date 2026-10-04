@@ -277,6 +277,32 @@ export function updateWaterMeshBody(mesh: Mesh, input: unknown): boolean {
   return true;
 }
 
+/**
+ * Apply an edited Water definition to a built surface without rebuilding it, e.g. while a Details value scrubs.
+ * Built-in shading reads the definition on every bind and the CPU waves on every resample, so this refreshes the
+ * material's own scalars, the contact range of both fields and the wave samples, also under a paused clock; the
+ * scene's water clock keeps running. Returns false, changing nothing, for other meshes and for edits that need a
+ * rebuild: Style compiles into the shader and Custom Material replaces it.
+ */
+export function updateWaterMeshDefinition(mesh: Mesh, input: unknown): boolean {
+  const surface = surfaceByMesh.get(mesh);
+  if (!surface) return false;
+  const water = surface.water, next = normalizeWaterDefinition(input);
+  if (next.style !== water.style || next.materialGuid !== water.materialGuid) return false;
+  const range = contactRange(water);
+  // The tessellation step follows Wave Length, which Global Water's camera-following layout key omits.
+  if (next.waveLength !== water.waveLength) surface.layout = "";
+  Object.assign(water, next);
+  if (surface.plugin && mesh.material instanceof PBRMaterial) configureWaterMaterial(mesh.material, water);
+  // A paused clock repeats the cached time, which would otherwise skip the resample.
+  surface.time = null;
+  updateSurface(surface, clocks.get(mesh.getScene())?.time ?? 0);
+  // The terrain field's change key omits the contact range its margin uses; the contact field tracks both itself.
+  surface.field?.update(contactRange(water) !== range);
+  surface.contacts?.update(performance.now());
+  return true;
+}
+
 /** Finite volumes keep fixed bounds; only Global Water Volume follows the camera. */
 export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProperties, definition?: WaterDefinition, customMaterial?: Material | null): Mesh {
   const body = normalizeWaterBody(input, input.kind), water = normalizeWaterDefinition(definition ?? createDefaultWaterDefinition());
@@ -313,7 +339,9 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
   updateSurface(surface, clocks.get(scene)?.time ?? 0);
   if (plugin) {
     const fieldSurface: WaterFieldSurface = {
-      mesh, unbounded: body.kind === "global", contactRange: contactRange(water),
+      mesh, unbounded: body.kind === "global",
+      // Read live: `updateWaterMeshDefinition` edits the shared definition in place.
+      get contactRange() { return contactRange(water); },
       get amplitude() { return water.waveHeight * body.waveScale * 1.3 + 0.05; },
       surfaceY: (x, z) => waterSurfaceY(surface, x, z),
       get restVaries() { return restVaries(surface); },

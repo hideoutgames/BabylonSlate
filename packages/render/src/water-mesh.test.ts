@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { ArcRotateCamera, CubeTexture, FreeCamera, type Mesh, NullEngine, PBRMaterial, Quaternion, Scene, SphericalPolynomial, Texture, Vector3, VertexBuffer } from "@babylonjs/core";
-import { createDefaultWaterDefinition, normalizeWaterBody, sampleWaterSurface } from "@babylonslate/core";
-import { createWaterMesh, setSceneWaterTime, updateSceneWater, updateWaterMeshBody, waterMeshBody } from "./water-mesh";
+import { ArcRotateCamera, CubeTexture, FreeCamera, type Mesh, MeshBuilder, NullEngine, PBRMaterial, Quaternion, Scene, SphericalPolynomial, Texture, type UniformBuffer, Vector3, VertexBuffer } from "@babylonjs/core";
+import { createDefaultWaterDefinition, normalizeWaterBody, sampleWaterSurface, type WaterDefinition } from "@babylonslate/core";
+import { createWaterMesh, setSceneWaterTime, updateSceneWater, updateWaterMeshBody, updateWaterMeshDefinition, waterMeshBody } from "./water-mesh";
+import type { WaterMaterialPlugin } from "./water-material";
+import { createLandscapeMesh } from "./landscape-mesh";
 import { applyAssignMesh, createPlayMesh, createSnapshotSceneBinding } from "./snapshot-apply";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@babylonslate/shader-graph";
 import { compileMaterialPlan, prewarmMaterial } from "./material-compiler";
@@ -14,6 +16,21 @@ function centreVertex(mesh: Mesh): number {
   const positions = mesh.getVerticesData(VertexBuffer.PositionKind)!;
   for (let i = 0; i < positions.length; i += 3) if (Math.hypot(positions[i]!, positions[i + 2]!) < 1e-6) return i / 3;
   throw new Error("No centre vertex");
+}
+
+/** Bind the built-in surface's shader inputs through its real material plugin; record the uploaded vectors. */
+function bindWater(mesh: Mesh): Map<string, number[]> {
+  const vectors = new Map<string, number[]>();
+  const buffer = { updateFloat4: (name: string, ...values: number[]) => vectors.set(name, values), updateMatrix: () => {} } as unknown as UniformBuffer;
+  (mesh.material as PBRMaterial).pluginManager!.getPlugin<WaterMaterialPlugin>("SlateWater")!.hardBindForSubMesh(buffer, mesh.getScene());
+  return vectors;
+}
+
+/** X coordinates of the first grid row, in order. */
+function rowXs(mesh: Mesh): number[] {
+  const positions = mesh.getVerticesData(VertexBuffer.PositionKind)!, xs: number[] = [];
+  for (let i = 0; i < positions.length && (i === 0 || positions[i]! > positions[i - 3]!); i += 3) xs.push(positions[i]!);
+  return xs;
 }
 
 describe("Water rendering", () => {
@@ -115,13 +132,76 @@ describe("Water rendering", () => {
     try {
       const global = createWaterMesh(scene, "global", normalizeWaterBody({}, "global"));
       updateSceneWater(scene);
-      // One row of the grid: its X coordinates, sorted.
-      const positions = global.getVerticesData(VertexBuffer.PositionKind)!, xs: number[] = [];
-      for (let i = 0; i < positions.length && (i === 0 || positions[i]! > positions[i - 3]!); i += 3) xs.push(positions[i]!);
+      const xs = rowXs(global);
       const gap = (x: number) => { const k = xs.findIndex((value) => value > x); return xs[k]! - xs[k - 1]!; };
       // Default Global Water cells are 0.5 m, at the target and at the water nearest the eye alike.
       expect(gap(30)).toBeLessThanOrEqual(0.5 + 1e-4);
       expect(gap(camera.position.x + 3)).toBeLessThanOrEqual(0.5 + 1e-4);
+    } finally { scene.dispose(); engine.dispose(); }
+  });
+  it("applies an edited definition to a built surface in place and refuses edits that need a rebuild", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    try {
+      // A post crossing the lake gives it a contact field, whose range the shader then reads.
+      MeshBuilder.CreateBox("post", { width: 1, height: 6, depth: 1 }, scene).position.set(6, 0, 0);
+      scene.incrementRenderId();
+      const water = createDefaultWaterDefinition();
+      const mesh = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 30, length: 30, waveScale: 1 }), water);
+      const material = mesh.material as PBRMaterial;
+      // Default Contact Foam Width 1.2 m: distances clamp at three widths.
+      expect(bindWater(mesh).get("slateWaterContactInfo")!.slice(0, 2)).toEqual([1, expect.closeTo(3.6, 6)]);
+      const edited: WaterDefinition = { ...water, shallowColor: [1, 0, 0], roughness: 0.5, reflectionStrength: 0.25, foamAmount: 0.2, crestFoam: 0.8, contactFoamWidth: 2.5 };
+      expect(updateWaterMeshDefinition(mesh, edited)).toBe(true);
+      expect(mesh.material).toBe(material);
+      expect([material.roughness, material.environmentIntensity]).toEqual([0.5, 0.25]);
+      const vectors = bindWater(mesh);
+      expect(vectors.get("slateWaterShallow")).toEqual([1, 0, 0, water.opacity]);
+      expect(vectors.get("slateWaterFoam")![3]).toBe(0.2);
+      expect(vectors.get("slateWaterShape")).toEqual([water.choppiness, water.waveSpread, 0.8, 2.5]);
+      expect(vectors.get("slateWaterContactInfo")!.slice(0, 2)).toEqual([1, 7.5]);
+      // Style compiles into the shader and a Custom Material replaces it: those edits change nothing here.
+      expect(updateWaterMeshDefinition(mesh, { ...edited, style: "stylized", roughness: 0.9 })).toBe(false);
+      expect(updateWaterMeshDefinition(mesh, { ...edited, materialGuid: "custom", roughness: 0.9 })).toBe(false);
+      expect(material.roughness).toBe(0.5);
+      expect(updateWaterMeshDefinition(MeshBuilder.CreateBox("box", {}, scene), edited)).toBe(false);
+    } finally { scene.dispose(); engine.dispose(); }
+  });
+  it("resamples waves for an edited definition while the water clock is paused", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    const water = createDefaultWaterDefinition(), body = normalizeWaterBody({ width: 10, length: 10, waveScale: 1, resolution: 8 });
+    try {
+      setSceneWaterTime(scene, 2);
+      const mesh = createWaterMesh(scene, "lake", body, water);
+      updateSceneWater(scene);
+      const middle = centreVertex(mesh) * 3, height = () => mesh.getVerticesData(VertexBuffer.PositionKind)![middle + 1]!;
+      const before = height();
+      const edited = { ...water, waveHeight: 1.2 };
+      expect(updateWaterMeshDefinition(mesh, edited)).toBe(true);
+      // The next frame repeats the paused time.
+      updateSceneWater(scene);
+      expect(height()).toBeCloseTo(sampleWaterSurface(edited, body, { x: 0, y: 0, z: 0 }, 2).height, 5);
+      expect(Math.abs(height() - before)).toBeGreaterThan(0.05);
+    } finally { scene.dispose(); engine.dispose(); }
+  });
+  it("re-tessellates Global Water for a new Wave Length and widens its terrain field for a new Contact Foam Width", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    new FreeCamera("camera", new Vector3(0, 4, 0), scene);
+    try {
+      // A 40 m landscape floor centred on the origin, 4 m under the water.
+      createLandscapeMesh(scene, "land", { width: 40, depth: 40, subdivisions: 4, heights: Array.from({ length: 25 }, () => -4) });
+      const water = createDefaultWaterDefinition();
+      const ocean = createWaterMesh(scene, "ocean", normalizeWaterBody({}, "global"), water);
+      updateSceneWater(scene);
+      const gapAtOrigin = () => { const xs = rowXs(ocean), k = xs.findIndex((x) => x > 0); return xs[k]! - xs[k - 1]!; };
+      const fieldMinX = () => bindWater(ocean).get("slateWaterFieldBounds")![0]!;
+      // The field covers the landscape plus the contact range (three Contact Foam Widths) and a metre.
+      expect(fieldMinX()).toBeGreaterThan(-20 - (2.5 * 3 + 1));
+      expect(gapAtOrigin()).toBeCloseTo(0.5, 4);
+      expect(updateWaterMeshDefinition(ocean, { ...water, waveLength: 24, contactFoamWidth: 2.5 })).toBe(true);
+      updateSceneWater(scene);
+      expect(fieldMinX()).toBeLessThanOrEqual(-20 - (2.5 * 3 + 1));
+      // Cells scale with Wave Length even though the camera-following layout has not moved.
+      expect(gapAtOrigin()).toBeCloseTo(1, 4);
     } finally { scene.dispose(); engine.dispose(); }
   });
   it("realizes and resizes an identity-transform Water component received from Play", () => {
