@@ -1756,7 +1756,10 @@ export class ProjectService {
       path,
     });
     if (migrated.pending) {
-      this.migrationPending.push(migrated.pending);
+      // Loading an unmigrated asset again keeps one entry for its path.
+      const existing = this.migrationPending.findIndex((entry) => entry.path === path);
+      if (existing === -1) this.migrationPending.push(migrated.pending);
+      else this.migrationPending[existing] = migrated.pending;
     }
     // PluginSettings.version is an author label, separate from the asset header schema version.
     if (raw.type === "PluginSettings") return migrated.payload;

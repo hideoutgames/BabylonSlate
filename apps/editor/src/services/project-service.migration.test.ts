@@ -61,6 +61,17 @@ describe("migrate-on-load and migrate-on-save approval", () => {
     expect(await storage.readBinary(MAIN_SCENE_FILE)).toEqual(before);
   });
 
+  it("lists an unmigrated asset once however often it loads", async () => {
+    const { service } = await projectWithOldScene(0);
+
+    await service.loadDocument("scene", MAIN_SCENE_FILE);
+    await service.loadDocument("scene", MAIN_SCENE_FILE);
+
+    expect(service.pendingMigrations).toEqual([
+      { type: "Scene", fromVersion: 0, toVersion: 4, path: MAIN_SCENE_FILE },
+    ]);
+  });
+
   it("refuses to save a migrated asset before the user approves", async () => {
     const { service } = await projectWithOldScene(0);
     const scene = await service.loadDocument("scene", MAIN_SCENE_FILE);

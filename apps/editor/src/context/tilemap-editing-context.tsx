@@ -5,10 +5,13 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { TilesetPayloadLoader } from "./tilemap-tileset-payloads";
 
 export interface TilemapEditingContextValue {
   selectedTile: { guid: string; localId: number } | null;
   setSelectedTile: (tile: { guid: string; localId: number } | null) => void;
+  /** Referenced Tileset payloads shared by the document's Details, Palette and Paint. */
+  tilesetLoader: TilesetPayloadLoader;
 }
 
 const TilemapEditingContext = createContext<TilemapEditingContextValue | null>(
@@ -17,9 +20,10 @@ const TilemapEditingContext = createContext<TilemapEditingContextValue | null>(
 
 export function TilemapEditingProvider({ children }: { children: ReactNode }) {
   const [selectedTile, setSelectedTile] = useState<TilemapEditingContextValue["selectedTile"]>(null);
+  const [tilesetLoader] = useState(() => new TilesetPayloadLoader());
   const value = useMemo(
-    () => ({ selectedTile, setSelectedTile }),
-    [selectedTile],
+    () => ({ selectedTile, setSelectedTile, tilesetLoader }),
+    [selectedTile, tilesetLoader],
   );
   return (
     <TilemapEditingContext.Provider value={value}>
