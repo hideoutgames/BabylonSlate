@@ -147,9 +147,25 @@ These have already produced false-passing tests, so check against them before tr
 
 - **jsdom has no `PointerEvent`.** `fireEvent.pointerDown` degrades to a bare `Event` with `clientX`, `pointerId` and `pointerType` all `undefined`, so pointer-gesture assertions silently pass without exercising anything. Use `dispatchPointerEvent` from `packages/editor-kit/src/test-support/pointer-events.ts`, which dispatches a `MouseEvent` with the pointer fields defined.
 - **jsdom has no `ResizeObserver` or `DOMMatrixReadOnly`.** React Flow touches both on mount; `vitest.setup.jsdom.ts` installs minimal stand-ins. It also stubs `HTMLCanvasElement.getContext` (`measureText` width 8) so FontEditor glyph checks do not throw per character. Anything genuinely layout-dependent belongs in Playwright.
-- **No unit test mounts `DocumentProvider`.** Editor tests mock `useDocuments`, so a consumer test sets `registryEpoch` itself: it proves what the consumer keys on, not that the provider leaves the epoch unchanged across edits, tab switches and dirty changes. That rule rests on how the provider builds the epoch (registry generation plus its own registry counter, separate from the per-edit `bump()`). Mounting the provider would need stand-ins for its OPFS, derived and settings storage, engine plugin libraries, templates and Babylon render import.
+- **No unit test mounts `DocumentProvider`.** Editor tests mock the module with `documentContextMock` from `apps/editor/src/testing/document-context-mock.ts` (see [Document context mocks](#document-context-mocks)), so a consumer test sets `registryEpoch` itself: it proves what the consumer keys on, not that the provider leaves the epoch unchanged across edits, tab switches and dirty changes. That rule rests on how the provider builds the epoch (registry generation plus its own registry counter, separate from the per-edit `bump()`). Mounting the provider would need stand-ins for its OPFS, derived and settings storage, engine plugin libraries, templates and Babylon render import.
 - **`vi.stubEnv` does not reach `import.meta.env`.** The `VITE_TEST_MODE` branch of `isTestModeEnabled` is therefore covered by Playwright, which builds with `VITE_TEST_MODE=true`, not by a unit test.
 - **`?test` only activates on QA-compiled bundles.** `isTestModeEnabled` honors the query flag when the bundle was built by the Vite dev server (`import.meta.env.DEV`) or with `VITE_TEST_QUERY=true`; production output ignores it (and `?test=false` never enables). Distribution builds hard-fail on either flag. `apps/editor/test-mode-bundle.test.ts` proves the boundary against real `vite build` output — flagless bundles ignore `?test`, `VITE_TEST_MODE` bakes it on, and `VITE_TEST_QUERY` restores query activation. Ad-hoc simulator/QA web builds that need query activation pass `VITE_TEST_QUERY=true`.
+
+## Document context mocks
+
+Editor tests replace `context/document-context` with one shared module instead of hand-written factories. Load it inside the factory so mock hoisting cannot reorder the import:
+
+```ts
+vi.mock("../context/document-context", async () =>
+  (await import("../testing/document-context-mock")).documentContextMock(() => ({
+    openDocuments: harness.documents,
+  })),
+);
+```
+
+- The callback runs inside `useDocuments()` (hooks allowed) and returns only the fields the test controls. That object is used as-is: getters and later mutations stay live, and returning the same object keeps the value's identity.
+- Every other field reads an inert default: no project, no open documents, actions that do nothing, loaders that find nothing. Defaults that would have to invent project content (Export Game, Audio, Particles, plugin import) reject. `getOpenDocuments()` reads the latest value's `openDocuments`. The defaults are typed against the real context value, so adding a context field fails typecheck there until it has a default.
+- `DocumentProvider` renders its children and `useDockWindowTick` returns 0 (override with `{ useDockWindowTick }`). An export added to `document-context.tsx` later resolves without touching every mock: an unknown `use…` hook returns the same documents value, which suits narrow hooks returning a slice of it. Other new exports need an entry in the helper.
 
 ## Playwright
 

@@ -32,55 +32,53 @@ vi.mock("../context/document-workspace-context", () => ({
   }),
 }));
 
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => ({
-    openDocuments: [
-      {
-        id: "graph:assets/Hero.class.babasset",
-        ref: {
-          kind: "graph",
-          path: "assets/Hero.class.babasset",
-          label: "Hero Class",
-        },
-        content: {
-          nodes: [
-            {
-              id: "evt-1",
-              type: "flow.event.custom",
-              position: { x: 80, y: 80 },
-              data: {
-                title: "Event On Hit",
-                name: "On Hit",
-                pins: [],
-                __nodeType: "flow.event.custom",
-                eventQualifier: eventState.qualifier,
-              },
-            },
-            {
-              id: "call-1",
-              type: "flow.event.call",
-              position: { x: 280, y: 80 },
-              data: {
-                title: "Call On Hit",
-                name: "On Hit",
-                classId: "Hero",
-                implicitSelf: true,
-                __nodeType: "flow.event.call",
-              },
-            },
-          ],
-          edges: [],
-          members: [{ id: "evt-1", kind: "event", name: "On Hit", pins: [] }],
-        },
-        layout: null,
-        dirty: false,
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
+  openDocuments: [
+    {
+      id: "graph:assets/Hero.class.babasset",
+      ref: {
+        kind: "graph",
+        path: "assets/Hero.class.babasset",
+        label: "Hero Class",
       },
-    ],
-    applyGraphChange,
-    projectDocument: { settings: { input: { actions: [], axes: [] } } },
-    assetRegistry: { list: () => [] },
-  }),
-}));
+      content: {
+        nodes: [
+          {
+            id: "evt-1",
+            type: "flow.event.custom",
+            position: { x: 80, y: 80 },
+            data: {
+              title: "Event On Hit",
+              name: "On Hit",
+              pins: [],
+              __nodeType: "flow.event.custom",
+              eventQualifier: eventState.qualifier,
+            },
+          },
+          {
+            id: "call-1",
+            type: "flow.event.call",
+            position: { x: 280, y: 80 },
+            data: {
+              title: "Call On Hit",
+              name: "On Hit",
+              classId: "Hero",
+              implicitSelf: true,
+              __nodeType: "flow.event.call",
+            },
+          },
+        ],
+        edges: [],
+        members: [{ id: "evt-1", kind: "event", name: "On Hit", pins: [] }],
+      },
+      layout: null,
+      dirty: false,
+    },
+  ],
+  applyGraphChange,
+  projectDocument: { settings: { input: { actions: [], axes: [] } } },
+  assetRegistry: { list: () => [] },
+})));
 
 vi.mock("../context/validation-context", () => ({
   useValidation: () => ({

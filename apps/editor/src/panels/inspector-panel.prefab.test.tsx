@@ -34,55 +34,53 @@ vi.mock("../context/document-workspace-context", () => ({
   }),
 }));
 
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => ({
-    openDocuments: [
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
+  openDocuments: [
+    {
+      id: "graph:assets/Hero.class.babasset",
+      ref: {
+        kind: "graph",
+        path: "assets/Hero.class.babasset",
+        label: "Hero Class",
+      },
+      content: {
+        nodes: [],
+        edges: [],
+        members: [
+          { id: "var-1", kind: "variable", name: "Health", typeId: "bool" },
+        ],
+        components: [
+          createMeshComponent("prefab-mesh", "box"),
+          createMeshComponent("prefab-sphere", "sphere"),
+          { id: "prefab-movement", classId: "MovementComponent", properties: {} },
+        ],
+      },
+      layout: null,
+      dirty: false,
+    },
+  ],
+  applyGraphChange,
+  assetRegistry: {
+    list: () => [
       {
-        id: "graph:assets/Hero.class.babasset",
-        ref: {
-          kind: "graph",
-          path: "assets/Hero.class.babasset",
-          label: "Hero Class",
+        path: "assets/Hero.class.babasset",
+        header: {
+          type: "Class",
+          name: "Hero",
+          parentClass: classState.parentClass,
+          guid: "hero-1",
         },
-        content: {
-          nodes: [],
-          edges: [],
-          members: [
-            { id: "var-1", kind: "variable", name: "Health", typeId: "bool" },
-          ],
-          components: [
-            createMeshComponent("prefab-mesh", "box"),
-            createMeshComponent("prefab-sphere", "sphere"),
-            { id: "prefab-movement", classId: "MovementComponent", properties: {} },
-          ],
-        },
-        layout: null,
-        dirty: false,
       },
     ],
-    applyGraphChange,
-    assetRegistry: {
-      list: () => [
-        {
-          path: "assets/Hero.class.babasset",
-          header: {
-            type: "Class",
-            name: "Hero",
-            parentClass: classState.parentClass,
-            guid: "hero-1",
-          },
-        },
-      ],
+  },
+  projectDocument: {
+    settings: {
+      twoD: { sortingLayers: ["Default"] },
+      input: { actions: [], axes: [] },
     },
-    projectDocument: {
-      settings: {
-        twoD: { sortingLayers: ["Default"] },
-        input: { actions: [], axes: [] },
-      },
-    },
-    reparentClassDocument: vi.fn(async () => null),
-  }),
-}));
+  },
+  reparentClassDocument: vi.fn(async () => null),
+})));
 
 vi.mock("../context/scene-editing-context", () => ({
   useOptionalSceneEditing: () => ({ viewportMode: sceneEditing.viewportMode }),

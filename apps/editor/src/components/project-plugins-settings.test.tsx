@@ -10,29 +10,27 @@ const harness = vi.hoisted(() => ({
   overrides: {} as Record<string, PluginEnableOverride>,
 }));
 
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => {
-    const [project, setProject] = useState(() => ({
-      ...createEmptyProject("Plugins"),
-      settings: { ...createEmptyProject("Plugins").settings, pluginOverrides: harness.overrides },
-    }));
-    return {
-      projectDocument: project,
-      pluginDescriptors: harness.plugins,
-      pluginDiagnostics: resolvePluginGraph(
-        harness.plugins.filter((plugin) => project.settings.pluginOverrides[plugin.pluginGuid]?.enabled ?? plugin.settings.enabledByDefault),
-        undefined,
-        project.settings.pluginOverrides,
-      ).diagnostics,
-      assetRegistry: null,
-      showPluginContent: false,
-      applyPluginOverrides: async () => {},
-      updateProjectSettings: (patch: { pluginOverrides: Record<string, PluginEnableOverride> }) => {
-        harness.overrides = patch.pluginOverrides;
-        setProject({ ...project, settings: { ...project.settings, ...patch } });
-      },
-    };
-  },
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => {
+  const [project, setProject] = useState(() => ({
+    ...createEmptyProject("Plugins"),
+    settings: { ...createEmptyProject("Plugins").settings, pluginOverrides: harness.overrides },
+  }));
+  return {
+    projectDocument: project,
+    pluginDescriptors: harness.plugins,
+    pluginDiagnostics: resolvePluginGraph(
+      harness.plugins.filter((plugin) => project.settings.pluginOverrides[plugin.pluginGuid]?.enabled ?? plugin.settings.enabledByDefault),
+      undefined,
+      project.settings.pluginOverrides,
+    ).diagnostics,
+    assetRegistry: null,
+    showPluginContent: false,
+    applyPluginOverrides: async () => {},
+    updateProjectSettings: (patch: { pluginOverrides: Record<string, PluginEnableOverride> }) => {
+      harness.overrides = patch.pluginOverrides;
+      setProject({ ...project, settings: { ...project.settings, ...patch } });
+    },
+  };
 }));
 
 function plugin(guid: string): PluginDescriptor {

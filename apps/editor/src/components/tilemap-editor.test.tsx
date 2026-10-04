@@ -74,15 +74,13 @@ const documentApi = vi.hoisted(() => {
   return api;
 });
 
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => ({
-    assetRegistry: documentApi.assetRegistry,
-    openDocuments: documentApi.openDocuments,
-    loadAssetDocument,
-    readAssetChunk,
-    projectDocument: documentApi.projectDocument,
-  }),
-}));
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
+  assetRegistry: documentApi.assetRegistry,
+  openDocuments: documentApi.openDocuments,
+  loadAssetDocument,
+  readAssetChunk,
+  projectDocument: documentApi.projectDocument,
+})));
 
 function mapWithGround(): TilemapPayload {
   return {

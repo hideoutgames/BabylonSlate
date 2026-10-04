@@ -13,9 +13,7 @@ const docs = vi.hoisted(() => ({
   value: {} as Record<string, unknown>,
 }));
 
-vi.mock("./document-context", () => ({
-  useDocuments: () => docs.value,
-}));
+vi.mock("./document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => docs.value));
 
 afterEach(() => {
   cleanup();

@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
 import {
   bakeAudioReverb,
   type AudioReverbGeometry,
@@ -45,14 +45,18 @@ export function AudioReverbBakeProvider({ children }: { children: ReactNode }) {
   const workerRef = useRef<ReturnType<typeof createAudioReverbWorker> | null>(
     null,
   );
-  const writeRef = useRef(writeSceneAudioReverbChunk);
-  writeRef.current = writeSceneAudioReverbChunk;
-  const loadAssetDocumentRef = useRef(loadAssetDocument);
-  loadAssetDocumentRef.current = loadAssetDocument;
-  const projectDocumentRef = useRef(projectDocument);
-  projectDocumentRef.current = projectDocument;
-  const assetRegistryRef = useRef(assetRegistry);
-  assetRegistryRef.current = assetRegistry;
+  // The bake controller and Save flush outlive renders and read these when
+  // they run. Updated after commit, never during render.
+  const latest = {
+    write: writeSceneAudioReverbChunk,
+    loadAssetDocument,
+    projectDocument,
+    assetRegistry,
+  };
+  const latestRef = useRef(latest);
+  useLayoutEffect(() => {
+    latestRef.current = latest;
+  });
 
   const fingerprints = useRef(new Map<string, string>());
 
@@ -60,7 +64,7 @@ export function AudioReverbBakeProvider({ children }: { children: ReactNode }) {
     const controller = createAudioReverbBakeController({
       bake: createBakeFn(workerRef),
       write: async (entry) => {
-        await writeRef.current(entry.path, entry.bytes, entry.payload);
+        await latestRef.current.write(entry.path, entry.bytes, entry.payload);
       },
     });
     controllerRef.current = controller;
@@ -69,13 +73,14 @@ export function AudioReverbBakeProvider({ children }: { children: ReactNode }) {
         await controller.flushAll(persistedScenes);
         return;
       }
+      const { projectDocument, assetRegistry } = latestRef.current;
       const paths = playSceneLibraryPaths(
-        projectDocumentRef.current?.scenes ?? [],
-        assetRegistryRef.current?.list() ?? [],
+        projectDocument?.scenes ?? [],
+        assetRegistry?.list() ?? [],
       );
       const scenes = await collectAudioReverbFlushScenes({
         paths,
-        load: (path) => loadAssetDocumentRef.current("scene", path),
+        load: (path) => latestRef.current.loadAssetDocument("scene", path),
       });
       await controller.flushAll(scenes);
     });

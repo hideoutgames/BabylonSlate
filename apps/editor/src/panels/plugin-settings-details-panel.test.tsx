@@ -24,31 +24,29 @@ const harness = vi.hoisted(() => ({
 vi.mock("../context/document-workspace-context", () => ({
   useDocumentWorkspace: () => ({ documentId: "plugin-settings:pack" }),
 }));
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => {
-    const [content, setContent] = useState(harness.content);
-    return {
-      openDocuments: [
-        {
-          id: "plugin-settings:pack",
-          ref: { path: "plugins/pack/pack.plugin.babasset", label: "Pack" },
-          content,
-        },
-      ],
-      pluginDescriptors: harness.plugins,
-      assetRegistry: null,
-      applyAssetDocumentChange: async (
-        _id: string,
-        value: PluginSettingsPayload,
-      ) => {
-        harness.content = normalizePluginSettings(value, {
-          pluginGuid: "pack",
-        });
-        setContent(harness.content);
-        return true;
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => {
+  const [content, setContent] = useState(harness.content);
+  return {
+    openDocuments: [
+      {
+        id: "plugin-settings:pack",
+        ref: { path: "plugins/pack/pack.plugin.babasset", label: "Pack" },
+        content,
       },
-    };
-  },
+    ],
+    pluginDescriptors: harness.plugins,
+    assetRegistry: null,
+    applyAssetDocumentChange: async (
+      _id: string,
+      value: PluginSettingsPayload,
+    ) => {
+      harness.content = normalizePluginSettings(value, {
+        pluginGuid: "pack",
+      });
+      setContent(harness.content);
+      return true;
+    },
+  };
 }));
 
 function plugin(guid: string, displayName: string): PluginDescriptor {

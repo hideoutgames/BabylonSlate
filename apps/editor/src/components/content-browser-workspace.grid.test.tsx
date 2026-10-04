@@ -62,9 +62,7 @@ vi.mock("../shell/use-platform-layout", () => ({
   usePhoneLayout: () => layout.phone,
 }));
 
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => docs,
-}));
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => docs));
 
 vi.mock("../context/project-search-context", () => ({
   useProjectSearch: () => ({

@@ -39,12 +39,10 @@ vi.mock("@babylonslate/runtime", () => ({
 }));
 
 vi.mock("../context/play-context", () => ({
-  usePlay: () => ({ appendLog: vi.fn() }),
+  usePlayDiagnosticsActions: () => ({ appendLog: vi.fn() }),
 }));
 
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => docs,
-}));
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => docs));
 
 afterEach(() => {
   cleanup();

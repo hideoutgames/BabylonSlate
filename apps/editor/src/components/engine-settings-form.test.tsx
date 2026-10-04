@@ -16,12 +16,10 @@ if (typeof window !== "undefined") {
   });
 }
 
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => ({
-    assetRegistry: { list: () => [] },
-    openDocuments: [],
-  }),
-}));
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
+  assetRegistry: { list: () => [] },
+  openDocuments: [],
+})));
 
 afterEach(() => {
   cleanup();

@@ -66,92 +66,90 @@ vi.mock("@babylonslate/vfs", async (importOriginal) => {
 
 vi.mock("../context/document-context", async () => {
   const { createEmptyProject: emptyProject } = await import("@babylonslate/core");
-  return {
-    useDocuments: () => {
-      const projectDocument = emptyProject("Demo");
-      if (lastProjectRender.current) projectDocument.settings.render = lastProjectRender.current;
-      if (lastProjectInput.current) {
-        projectDocument.settings.input =
-          lastProjectInput.current as typeof projectDocument.settings.input;
-      }
-      if (sourceControlEnabled.current) {
-        projectDocument.settings.sourceControl = {
-          ...projectDocument.settings.sourceControl,
-          enabled: true,
-        };
-      }
-      return {
-      projectDocument,
-      projectGuid: "test-project",
-      activeDocumentId: "active-scene",
-      exportProject,
-      exportGameArtifact,
-      zipExportedGame: vi.fn(),
-      retryFailedTextureEncoding: vi.fn(),
-      // Context providers may recreate callbacks during unrelated updates.
-      updateProjectSettings: (...args: Parameters<typeof updateProjectSettings>) => updateProjectSettings(...args),
-      updateProjectVersion,
-      sourceControl,
-      prefillSourceControlFromGit: sourceControl.readGitPrefill,
-      assetRegistry: {
-        list: () => [
-          {
-            header: { guid: "font-1", name: "Display", type: "Font" },
-            path: "assets/Display.font.babasset",
+  return (await import("../testing/document-context-mock")).documentContextMock(() => {
+    const projectDocument = emptyProject("Demo");
+    if (lastProjectRender.current) projectDocument.settings.render = lastProjectRender.current;
+    if (lastProjectInput.current) {
+      projectDocument.settings.input =
+        lastProjectInput.current as typeof projectDocument.settings.input;
+    }
+    if (sourceControlEnabled.current) {
+      projectDocument.settings.sourceControl = {
+        ...projectDocument.settings.sourceControl,
+        enabled: true,
+      };
+    }
+    return {
+    projectDocument,
+    projectGuid: "test-project",
+    activeDocumentId: "active-scene",
+    exportProject,
+    exportGameArtifact,
+    zipExportedGame: vi.fn(),
+    retryFailedTextureEncoding: vi.fn(),
+    // Context providers may recreate callbacks during unrelated updates.
+    updateProjectSettings: (...args: Parameters<typeof updateProjectSettings>) => updateProjectSettings(...args),
+    updateProjectVersion,
+    sourceControl,
+    prefillSourceControlFromGit: sourceControl.readGitPrefill,
+    assetRegistry: {
+      list: () => [
+        {
+          header: { guid: "font-1", name: "Display", type: "Font" },
+          path: "assets/Display.font.babasset",
+        },
+        {
+          header: { guid: "scene-1", name: "Main", type: "Scene" },
+          path: "assets/main.scene.babasset",
+        },
+        {
+          header: { guid: "scene-2", name: "Arena", type: "Scene" },
+          path: "assets/Arena.scene.babasset",
+        },
+        {
+          header: {
+            guid: "class-tools",
+            name: "Tools",
+            type: "Class",
+            parentClass: "EditorUtilityObject",
           },
-          {
-            header: { guid: "scene-1", name: "Main", type: "Scene" },
-            path: "assets/main.scene.babasset",
+          path: "assets/Tools.class.babasset",
+        },
+        {
+          header: {
+            guid: "class-game",
+            name: "MyGame",
+            type: "Class",
+            parentClass: "GameInstance",
           },
-          {
-            header: { guid: "scene-2", name: "Arena", type: "Scene" },
-            path: "assets/Arena.scene.babasset",
-          },
-          {
-            header: {
-              guid: "class-tools",
-              name: "Tools",
-              type: "Class",
-              parentClass: "EditorUtilityObject",
-            },
-            path: "assets/Tools.class.babasset",
-          },
-          {
-            header: {
-              guid: "class-game",
-              name: "MyGame",
-              type: "Class",
-              parentClass: "GameInstance",
-            },
-            path: "assets/MyGame.class.babasset",
-          },
-          {
-            header: { guid: "mixer-1", name: "Master", type: "AudioMixer" },
-            path: "assets/Master.mixer.babasset",
-          },
-        ],
-        getByGuid: (guid: string) =>
-          guid === "font-1"
-            ? {
-                header: { guid: "font-1", name: "Display", type: "Font" },
-                path: "assets/Display.font.babasset",
-              }
-            : undefined,
-      },
-      openDocuments: [],
-      pluginDescriptors,
-      pluginDiagnostics: [],
-      showPluginContent: false,
-      setShowPluginContent,
-      applyPluginOverrides,
-      createProjectPlugin: vi.fn(),
-      deleteProjectPlugin: vi.fn(),
-      exportPlugin: vi.fn(),
-      importPlugin,
-      openDocument: vi.fn(),
-    };
+          path: "assets/MyGame.class.babasset",
+        },
+        {
+          header: { guid: "mixer-1", name: "Master", type: "AudioMixer" },
+          path: "assets/Master.mixer.babasset",
+        },
+      ],
+      getByGuid: (guid: string) =>
+        guid === "font-1"
+          ? {
+              header: { guid: "font-1", name: "Display", type: "Font" },
+              path: "assets/Display.font.babasset",
+            }
+          : undefined,
     },
+    openDocuments: [],
+    pluginDescriptors,
+    pluginDiagnostics: [],
+    showPluginContent: false,
+    setShowPluginContent,
+    applyPluginOverrides,
+    createProjectPlugin: vi.fn(),
+    deleteProjectPlugin: vi.fn(),
+    exportPlugin: vi.fn(),
+    importPlugin,
+    openDocument: vi.fn(),
   };
+  });
 });
 
 afterEach(() => {

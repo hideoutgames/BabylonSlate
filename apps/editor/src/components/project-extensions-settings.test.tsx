@@ -18,21 +18,19 @@ vi.mock("@babylonslate/vfs", async (importOriginal) => ({
   ...await importOriginal<typeof import("@babylonslate/vfs")>(),
   pickImportFiles: harness.pick,
 }));
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => {
-    const [project, setProject] = useState(() => {
-      const empty = createEmptyProject("Extensions");
-      return { ...empty, settings: { ...empty.settings, extensionOverrides: harness.overrides } };
-    });
-    return {
-      extensionService: harness.service,
-      projectDocument: project,
-      updateProjectSettings: (patch: { extensionOverrides: ExtensionOverrides }) => {
-        harness.overrides = patch.extensionOverrides;
-        setProject((previous) => ({ ...previous, settings: { ...previous.settings, ...patch } }));
-      },
-    };
-  },
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => {
+  const [project, setProject] = useState(() => {
+    const empty = createEmptyProject("Extensions");
+    return { ...empty, settings: { ...empty.settings, extensionOverrides: harness.overrides } };
+  });
+  return {
+    extensionService: harness.service,
+    projectDocument: project,
+    updateProjectSettings: (patch: { extensionOverrides: ExtensionOverrides }) => {
+      harness.overrides = patch.extensionOverrides;
+      setProject((previous) => ({ ...previous, settings: { ...previous.settings, ...patch } }));
+    },
+  };
 }));
 
 const source = `export function activate(api) {

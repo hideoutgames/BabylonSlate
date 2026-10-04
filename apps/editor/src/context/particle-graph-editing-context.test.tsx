@@ -14,41 +14,39 @@ const DOC_ID = "particle-graph:assets/Embers.particlegraph.babasset";
 
 const harness = vi.hoisted(() => ({ content: null as unknown }));
 
-vi.mock("./document-context", () => ({
-  useDocuments: () => ({
-    openDocuments: [
+vi.mock("./document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
+  openDocuments: [
+    {
+      id: DOC_ID,
+      ref: { kind: "particle-graph", path: "assets/Embers.particlegraph.babasset" },
+      content: harness.content,
+    },
+  ],
+  assetRegistry: {
+    list: () => [
       {
-        id: DOC_ID,
-        ref: { kind: "particle-graph", path: "assets/Embers.particlegraph.babasset" },
-        content: harness.content,
+        path: "assets/Sparks.material.babasset",
+        header: {
+          guid: "mat-sparks",
+          name: "Sparks",
+          type: "Material",
+          payload: { domain: "particle" },
+        },
+      },
+      {
+        path: "assets/Rock.material.babasset",
+        header: {
+          guid: "mat-rock",
+          name: "Rock",
+          type: "Material",
+          payload: { domain: "surface" },
+        },
       },
     ],
-    assetRegistry: {
-      list: () => [
-        {
-          path: "assets/Sparks.material.babasset",
-          header: {
-            guid: "mat-sparks",
-            name: "Sparks",
-            type: "Material",
-            payload: { domain: "particle" },
-          },
-        },
-        {
-          path: "assets/Rock.material.babasset",
-          header: {
-            guid: "mat-rock",
-            name: "Rock",
-            type: "Material",
-            payload: { domain: "surface" },
-          },
-        },
-      ],
-    },
-    registryEpoch: 0,
-    applyAssetDocumentChange: vi.fn(),
-  }),
-}));
+  },
+  registryEpoch: 0,
+  applyAssetDocumentChange: vi.fn(),
+})));
 
 afterEach(() => {
   cleanup();

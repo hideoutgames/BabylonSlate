@@ -24,7 +24,7 @@ if (typeof window !== "undefined") {
 }
 
 vi.mock("../context/play-context", () => ({ useOptionalPlay: () => null }));
-vi.mock("../context/document-context", () => {
+vi.mock("../context/document-context", async () => {
   const documents = {
     assetRegistry: {
       list: () => [
@@ -40,7 +40,7 @@ vi.mock("../context/document-context", () => {
     },
     openDocuments: [],
   };
-  return { useDocuments: () => documents };
+  return (await import("../testing/document-context-mock")).documentContextMock(() => documents);
 });
 
 afterEach(() => {

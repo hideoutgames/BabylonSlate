@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -373,60 +374,36 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       layer: import("@babylonslate/core").SerializedSceneLayer;
     }>
   >([]);
+  const documents = useDocuments();
   const {
-    collectPlayPreviewScripts,
-    collectPlayAnimGraphs,
-    collectPlayBehaviourTrees,
-    collectPlayBlackboards,
-    collectPlaySpritePayloads,
-    collectPlaySpriteAnimationPayloads,
-    collectPlayWaterContent,
-    collectPlayRenderTargets,
-    collectPlayTilemapContent,
-    collectPlayTextureBytes,
-    collectPlayTexturePixelSizes,
-    collectPlayFontFacetypeBytes,
-    collectPlayAreaEmissions,
-    collectPlayFontMsdfPair,
-    collectPlayFontFaceEntries,
-    collectPlayFontCssStacks,
-    collectPlayModelBytes,
-    collectPlayModelPayloads,
-    collectPlayInputAssets,
-    collectPlayAudio,
-    collectPlayParticles,
-    collectPlayMaterialLibrary,
-    collectPlaySceneLibrary,
-    collectPlaySceneLayers,
-    exportGameArtifact,
-    openDocuments,
     activeDocumentId,
-    setActiveDocument,
+    assetRegistry,
+    collectPlayMaterialLibrary,
+    migrationPending,
+    onSessionDiagnostic,
     openDocument,
+    openDocuments,
     openRecordedTrace,
     projectDocument,
     projectGuid,
-    dirtyDocuments,
-    projectDirty,
-    graphsNeedCompile,
-    migrationPending,
-    saveAll,
-    assetRegistry,
-    readAssetChunk,
-    onSessionDiagnostic,
-    playPreviewBundles,
-    playPreviewDiagnostics,
-    playLoadedSignature,
-    currentGraphSignature,
-  } = useDocuments();
+    registryEpoch,
+    setActiveDocument,
+  } = documents;
   const projectOpen = projectDocument != null;
   const requestedBackend = normalizeRenderingPipeline(projectDocument?.settings.render).gpuBackend;
   const projectOpenRef = useRef(projectOpen);
   projectOpenRef.current = projectOpen;
   const { setDiagnostics, setFocusDiagnostic } = useValidation();
-  const guidForPath = (path: string) =>
-    assetRegistry?.list().find((asset) => asset.path === path)?.header.guid ??
-    null;
+  // First indexed asset per path; rebuilt only when the registry reports a change.
+  const guidByPath = useMemo(() => {
+    void registryEpoch;
+    const guids = new Map<string, string>();
+    for (const asset of assetRegistry?.list() ?? []) {
+      if (!guids.has(asset.path)) guids.set(asset.path, asset.header.guid);
+    }
+    return guids;
+  }, [assetRegistry, registryEpoch]);
+  const guidForPath = (path: string) => guidByPath.get(path) ?? null;
   const openPlayScene = playSceneFromOpenDocuments(
     openDocuments,
     activeDocumentId,
@@ -458,6 +435,15 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const playPhysics = playScene
     ? playPhysicsFromSceneSettings(playScene.scene.settings)
     : playPhysicsFromOpenDocuments(openDocuments, activeDocumentId);
+
+  // Play requests read documents, dirty state and collectors as they are when
+  // Play is pressed. Keeping that per-edit state out of the callbacks'
+  // dependencies keeps the Play context value stable while documents change.
+  const playRequestInputs = { documents, openPlaySceneGuid, hasStartupScene };
+  const playRequestInputsRef = useRef(playRequestInputs);
+  useLayoutEffect(() => {
+    playRequestInputsRef.current = playRequestInputs;
+  });
 
   useEffect(() => {
     const applyOverlay = (defaults?: Partial<PlayDebuggerOverlaySettings>) => {
@@ -747,6 +733,19 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
 
   const requestPreviewBuild = useCallback(async () => {
     if (playing || preparingRef.current) return;
+    // Read at call time (see playRequestInputsRef); shadows the render values.
+    const {
+      documents: {
+        assetRegistry,
+        dirtyDocuments,
+        exportGameArtifact,
+        migrationPending,
+        projectDirty,
+        projectDocument,
+        saveAll,
+      },
+      openPlaySceneGuid,
+    } = playRequestInputsRef.current;
     const effectiveStartup = resolvePreviewStartupGuid({
       playFromScene,
       openSceneGuid: openPlaySceneGuid,
@@ -835,20 +834,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         setPreviewPhase(null);
       }
     }
-  }, [
-    appendLog,
-    appSettings.traceByteBudget,
-    assetRegistry,
-    dirtyDocuments.length,
-    projectDirty,
-    exportGameArtifact,
-    migrationPending.length,
-    openPlaySceneGuid,
-    playFromScene,
-    playing,
-    projectDocument,
-    saveAll,
-  ]);
+  }, [appendLog, appSettings.traceByteBudget, playFromScene, playing]);
 
   const requestPlay = useCallback(
     async (options?: PlayOptions) => {
@@ -857,6 +843,51 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         return;
       }
       if (playing || preparingRef.current) return;
+      // Read at call time (see playRequestInputsRef); shadows the render values.
+      const {
+        documents: {
+          activeDocumentId,
+          assetRegistry,
+          collectPlayAnimGraphs,
+          collectPlayAreaEmissions,
+          collectPlayAudio,
+          collectPlayBehaviourTrees,
+          collectPlayBlackboards,
+          collectPlayFontCssStacks,
+          collectPlayFontFaceEntries,
+          collectPlayFontFacetypeBytes,
+          collectPlayFontMsdfPair,
+          collectPlayInputAssets,
+          collectPlayMaterialLibrary,
+          collectPlayModelBytes,
+          collectPlayModelPayloads,
+          collectPlayParticles,
+          collectPlayPreviewScripts,
+          collectPlayRenderTargets,
+          collectPlaySceneLayers,
+          collectPlaySceneLibrary,
+          collectPlaySpriteAnimationPayloads,
+          collectPlaySpritePayloads,
+          collectPlayTextureBytes,
+          collectPlayTexturePixelSizes,
+          collectPlayTilemapContent,
+          collectPlayWaterContent,
+          currentGraphSignature,
+          dirtyDocuments,
+          graphsNeedCompile,
+          migrationPending,
+          openDocuments,
+          playLoadedSignature,
+          playPreviewBundles,
+          playPreviewDiagnostics,
+          projectDirty,
+          projectDocument,
+          readAssetChunk,
+          saveAll,
+        },
+        hasStartupScene,
+        openPlaySceneGuid,
+      } = playRequestInputsRef.current;
       if (
         !playIsEnabled(openDocuments, activeDocumentId, {
           playFromScene,
@@ -1284,52 +1315,12 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     },
     [
       appendLog,
-      collectPlayPreviewScripts,
-      collectPlayAnimGraphs,
-      collectPlayBehaviourTrees,
-      collectPlayBlackboards,
-      collectPlaySpritePayloads,
-      collectPlaySpriteAnimationPayloads,
-      collectPlayWaterContent,
-    collectPlayRenderTargets,
-    collectPlayTilemapContent,
-      collectPlayTextureBytes,
-      collectPlayTexturePixelSizes,
-      collectPlayFontFacetypeBytes,
-      collectPlayAreaEmissions,
-      collectPlayFontMsdfPair,
-      collectPlayFontFaceEntries,
-      collectPlayFontCssStacks,
-      collectPlayModelBytes,
-      collectPlayModelPayloads,
-      collectPlayInputAssets,
-    collectPlayAudio,
-      collectPlayParticles,
-      collectPlayMaterialLibrary,
-      collectPlaySceneLibrary,
-      collectPlaySceneLayers,
-      dirtyDocuments,
-      projectDirty,
       launchPlay,
-      migrationPending.length,
-      playing,
       playFromScene,
-      hasStartupScene,
-      openPlaySceneGuid,
+      playing,
       previewBuild,
       requestPreviewBuild,
-      openDocuments,
-      activeDocumentId,
-      assetRegistry,
-      readAssetChunk,
-      saveAll,
-      playPreviewBundles,
-      playPreviewDiagnostics,
-      playLoadedSignature,
-      currentGraphSignature,
-      graphsNeedCompile,
       setDiagnostics,
-      projectDocument,
     ],
   );
 
@@ -1340,8 +1331,8 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!playResumeRequested || migrationPending.length > 0) return;
-    // The approval dialog holds a callback from before the save. Resume only
-    // after the cleared migrations and current project reach this render.
+    // Resume only after the cleared migrations and current project reach this
+    // render; requestPlay reads them from the inputs its layout effect stored.
     setPlayResumeRequested(false);
     void requestPlay(pendingPlayOptionsRef.current);
   }, [migrationPending.length, playResumeRequested, requestPlay]);
@@ -1669,6 +1660,21 @@ export function usePlay(): PlayContextValue {
 
 export function useOptionalPlay(): PlayContextValue | null {
   return useContext(PlayContext);
+}
+
+/**
+ * Output Log and live BT writers only. Stable for the provider's lifetime, so
+ * a caller that only logs does not re-render when Play state changes.
+ */
+export function usePlayDiagnosticsActions(): Pick<
+  PlayContextValue,
+  "appendLog" | "reportBtState"
+> {
+  const actions = useContext(PlayDiagnosticsActionsContext);
+  if (!actions) {
+    throw new Error("usePlayDiagnosticsActions requires PlayProvider");
+  }
+  return actions;
 }
 
 export function useOutputLog(): { lines: string[] } {

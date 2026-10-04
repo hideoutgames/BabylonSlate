@@ -53,8 +53,7 @@ const store = vi.hoisted(() => {
 
 vi.mock("../context/document-context", async () => {
   const { useSyncExternalStore } = await import("react");
-  return {
-  useDocuments: () => {
+  return (await import("../testing/document-context-mock")).documentContextMock(() => {
     const content = useSyncExternalStore(store.subscribe, store.getSnapshot);
     return {
       openDocuments: [
@@ -159,8 +158,7 @@ vi.mock("../context/document-context", async () => {
                     : undefined,
       },
     };
-  },
-  };
+  });
 });
 
 vi.mock("../context/play-context", () => ({

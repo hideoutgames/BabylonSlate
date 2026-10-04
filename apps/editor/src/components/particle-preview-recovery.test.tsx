@@ -86,7 +86,7 @@ vi.mock("../context/play-context", () => {
   const play = { ensureSharedEngine: () => engine };
   return { useOptionalPlay: () => play };
 });
-vi.mock("../context/document-context", () => {
+vi.mock("../context/document-context", async () => {
   const documents = {
     assetRegistry: { getByGuid: (guid: string) => harness.textures.get(guid) },
     collectPlayMaterialLibrary: async () => ({
@@ -96,7 +96,7 @@ vi.mock("../context/document-context", () => {
     }),
     collectPlayTextureBytes: async () => new Map(harness.textureBytes),
   };
-  return { useDocuments: () => ({ ...documents, registryEpoch: harness.registryEpoch }) };
+  return (await import("../testing/document-context-mock")).documentContextMock(() => ({ ...documents, registryEpoch: harness.registryEpoch }));
 });
 
 beforeEach(() => {

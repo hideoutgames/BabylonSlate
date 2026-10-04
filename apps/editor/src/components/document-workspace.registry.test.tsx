@@ -12,24 +12,22 @@ const state = vi.hoisted(() => ({
   passthrough: ({ children }: { children: ReactNode }) => children,
 }));
 
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => ({
-    tabOrder: state.tabs,
-    activeDocumentId: state.tabs[0],
-    openDocuments: state.tabs.map((id) => ({
-      id,
-      ref: { kind: "graph", path: `assets/${id}.class.babasset` },
-      content: null,
-      layout: null,
-    })),
-    projectDocument: { metadata: { name: "Test" } },
-    assetRegistry: state.registry,
-    registryEpoch: state.registry?.generation ?? 0,
-    sourceControl: { enabled: false },
-    captureLayoutForId: () => {},
-    unregisterDockviewApi: () => {},
-  }),
-}));
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
+  tabOrder: state.tabs,
+  activeDocumentId: state.tabs[0],
+  openDocuments: state.tabs.map((id) => ({
+    id,
+    ref: { kind: "graph", path: `assets/${id}.class.babasset` },
+    content: null,
+    layout: null,
+  })),
+  projectDocument: { metadata: { name: "Test" } },
+  assetRegistry: state.registry,
+  registryEpoch: state.registry?.generation ?? 0,
+  sourceControl: { enabled: false },
+  captureLayoutForId: () => {},
+  unregisterDockviewApi: () => {},
+})));
 vi.mock("../lib/document-working-set", () => ({
   useDocumentWorkingSet: () => state.mountedIds,
 }));

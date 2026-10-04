@@ -42,34 +42,32 @@ vi.mock("../context/document-workspace-context", () => ({
   }),
 }));
 
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => ({
-    openDocuments: [
-      {
-        id: "graph:assets/Hero.class.babasset",
-        ref: {
-          kind: "graph",
-          path: "assets/Hero.class.babasset",
-          label: "Hero Class",
-        },
-        content: {
-          nodes: [],
-          edges: [],
-          members: [
-            { id: "fn-1", kind: "function", name: "Jump", pins: [] },
-            { id: "var-1", kind: "variable", name: "Health", typeId: "float" },
-            { id: "if-1", kind: "interface", name: "Damageable" },
-          ],
-          functionGraphs: { "fn-1": { nodes: [], edges: [] } },
-        },
-        layout: null,
-        dirty: false,
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
+  openDocuments: [
+    {
+      id: "graph:assets/Hero.class.babasset",
+      ref: {
+        kind: "graph",
+        path: "assets/Hero.class.babasset",
+        label: "Hero Class",
       },
-    ],
-    applyGraphChange,
-    assetRegistry: { list: () => [] },
-  }),
-}));
+      content: {
+        nodes: [],
+        edges: [],
+        members: [
+          { id: "fn-1", kind: "function", name: "Jump", pins: [] },
+          { id: "var-1", kind: "variable", name: "Health", typeId: "float" },
+          { id: "if-1", kind: "interface", name: "Damageable" },
+        ],
+        functionGraphs: { "fn-1": { nodes: [], edges: [] } },
+      },
+      layout: null,
+      dirty: false,
+    },
+  ],
+  applyGraphChange,
+  assetRegistry: { list: () => [] },
+})));
 
 vi.mock("../context/validation-context", () => ({
   useValidation: () => ({ setFocusDiagnostic: vi.fn() }),

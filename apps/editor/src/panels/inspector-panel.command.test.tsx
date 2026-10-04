@@ -30,44 +30,42 @@ vi.mock("../context/document-workspace-context", () => ({
   }),
 }));
 
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => ({
-    openDocuments: [
-      {
-        id: "graph:assets/Heal.class.babasset",
-        ref: {
-          kind: "graph",
-          path: "assets/Heal.class.babasset",
-          label: "Heal Class",
-        },
-        content: {
-          nodes: [
-            {
-              id: "cmd-1",
-              type: "flow.event.commandRun",
-              position: { x: 80, y: 80 },
-              data: {
-                title: "Event On Command Run",
-                commandName: "pause",
-                description: "Heal",
-                category: "game",
-                parameters: [],
-                __nodeType: "flow.event.commandRun",
-              },
-            },
-          ],
-          edges: [],
-          members: [],
-        },
-        layout: null,
-        dirty: false,
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
+  openDocuments: [
+    {
+      id: "graph:assets/Heal.class.babasset",
+      ref: {
+        kind: "graph",
+        path: "assets/Heal.class.babasset",
+        label: "Heal Class",
       },
-    ],
-    applyGraphChange,
-    projectDocument: { settings: { input: { actions: [], axes: [] } } },
-    assetRegistry: { list: () => [] },
-  }),
-}));
+      content: {
+        nodes: [
+          {
+            id: "cmd-1",
+            type: "flow.event.commandRun",
+            position: { x: 80, y: 80 },
+            data: {
+              title: "Event On Command Run",
+              commandName: "pause",
+              description: "Heal",
+              category: "game",
+              parameters: [],
+              __nodeType: "flow.event.commandRun",
+            },
+          },
+        ],
+        edges: [],
+        members: [],
+      },
+      layout: null,
+      dirty: false,
+    },
+  ],
+  applyGraphChange,
+  projectDocument: { settings: { input: { actions: [], axes: [] } } },
+  assetRegistry: { list: () => [] },
+})));
 
 vi.mock("../context/validation-context", () => ({
   useValidation: () => ({

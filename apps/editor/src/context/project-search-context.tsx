@@ -2,6 +2,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -44,7 +45,7 @@ export function ProjectSearchProvider({ children }: { children: ReactNode }) {
     assetRegistry,
     openDocument,
     setActiveDocument,
-    openDocuments,
+    getOpenDocuments,
   } = useDocuments();
   const { setFocusDiagnostic } = useValidation();
   const [pendingTarget, setPendingTarget] = useState<SearchOpenTarget | null>(
@@ -53,12 +54,13 @@ export function ProjectSearchProvider({ children }: { children: ReactNode }) {
   const [searchStatus, setSearchStatus] = useState<ProjectSearchStatus>("idle");
   const abortRef = useRef<AbortController | null>(null);
   const generationRef = useRef(0);
-  const searchIndexRef = useRef(searchIndex);
-  const assetRegistryRef = useRef(assetRegistry);
-  const openDocumentsRef = useRef(openDocuments);
-  searchIndexRef.current = searchIndex;
-  assetRegistryRef.current = assetRegistry;
-  openDocumentsRef.current = openDocuments;
+  // Rebuilds start from events; read the index and registry as of the last
+  // commit and the open documents live, so edits need not re-render this.
+  const latest = { searchIndex, assetRegistry, getOpenDocuments };
+  const latestRef = useRef(latest);
+  useLayoutEffect(() => {
+    latestRef.current = latest;
+  });
 
   const cancelSearchRebuild = useCallback(() => {
     abortRef.current?.abort();
@@ -72,14 +74,14 @@ export function ProjectSearchProvider({ children }: { children: ReactNode }) {
     const controller = new AbortController();
     abortRef.current = controller;
     const generation = ++generationRef.current;
-    const index = searchIndexRef.current;
-    const registry = assetRegistryRef.current;
+    const { searchIndex: index, assetRegistry: registry } = latestRef.current;
     if (!index || !registry) {
       setSearchStatus("idle");
       return;
     }
     setSearchStatus("pending");
-    const overlays = openDocumentsRef.current
+    const overlays = latestRef.current
+      .getOpenDocuments()
       .filter((doc) => doc.content && doc.ref.path)
       .map((doc) => ({
         path: doc.ref.path,
@@ -124,7 +126,7 @@ export function ProjectSearchProvider({ children }: { children: ReactNode }) {
 
       if (dest.kind !== "content-browser") {
         const id = documentId({ kind: dest.kind, path: dest.path });
-        const alreadyOpen = openDocuments.some((doc) => doc.id === id);
+        const alreadyOpen = getOpenDocuments().some((doc) => doc.id === id);
         if (alreadyOpen) {
           setActiveDocument(id);
         } else {
@@ -150,7 +152,7 @@ export function ProjectSearchProvider({ children }: { children: ReactNode }) {
 
       setActiveDocument(CONTENT_BROWSER_ID);
     },
-    [openDocument, openDocuments, setActiveDocument, setFocusDiagnostic],
+    [getOpenDocuments, openDocument, setActiveDocument, setFocusDiagnostic],
   );
 
   const value = useMemo<ProjectSearchContextValue>(

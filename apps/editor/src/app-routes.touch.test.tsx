@@ -4,7 +4,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { AppRoutes } from "./app-routes";
 
 const state = vi.hoisted(() => ({ route: "home" }));
-vi.mock("./context/document-context", () => ({ useDocuments: () => state }));
+vi.mock("./context/document-context", async () => (await import("./testing/document-context-mock")).documentContextMock(() => state));
 vi.mock("./routes/home-route", () => ({ default: () => null }));
 vi.mock("./routes/editor-route", () => ({ default: () => null }));
 vi.mock("./components/launcher-transition", () => ({

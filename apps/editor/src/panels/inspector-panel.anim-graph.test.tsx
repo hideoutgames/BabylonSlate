@@ -50,23 +50,21 @@ vi.mock("../context/document-workspace-context", () => ({
 
 vi.mock("../context/document-context", async () => {
   const { useSyncExternalStore } = await import("react");
-  return {
-    useDocuments: () => {
-      useSyncExternalStore(store.subscribe, store.getSnapshot);
-      return {
-        openDocuments: [{
-          id: DOC_ID,
-          ref: { kind: "anim-graph", path: "assets/Loco.anim.babasset" },
-          content: store.content(),
-        }],
-        activeDocumentId: DOC_ID,
-        animEditorMode: store.mode(),
-        applyAssetDocumentChange: store.applyAssetDocumentChange,
-        projectDocument: { settings: { input: { actions: [], axes: [] } } },
-        assetRegistry: { list: () => [] },
-      };
-    },
-  };
+  return (await import("../testing/document-context-mock")).documentContextMock(() => {
+    useSyncExternalStore(store.subscribe, store.getSnapshot);
+    return {
+      openDocuments: [{
+        id: DOC_ID,
+        ref: { kind: "anim-graph", path: "assets/Loco.anim.babasset" },
+        content: store.content(),
+      }],
+      activeDocumentId: DOC_ID,
+      animEditorMode: store.mode(),
+      applyAssetDocumentChange: store.applyAssetDocumentChange,
+      projectDocument: { settings: { input: { actions: [], axes: [] } } },
+      assetRegistry: { list: () => [] },
+    };
+  });
 });
 
 vi.mock("../context/validation-context", () => ({
