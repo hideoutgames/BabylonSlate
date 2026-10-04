@@ -36,6 +36,7 @@ function vector(value: unknown): Vec3 {
 export class MovementWorldSync {
   private readonly states = new Map<ActorComponent, MovementState>();
   private readonly host: MovementHost;
+  private scripted = false;
 
   constructor(host: MovementHost) { this.host = host; }
 
@@ -120,8 +121,13 @@ export class MovementWorldSync {
     return { x: x * Math.cos(heading) + z * Math.sin(heading), y: 0, z: z * Math.cos(heading) - x * Math.sin(heading) };
   }
 
-  step(dt: number, physics: PhysicsWorldSync): void {
-    if (!(dt > 0) || !Number.isFinite(dt)) return;
+  /**
+   * Returns true when a component event ran scripts during this step. Without
+   * one, motors changed only their own actors' poses through `moveMovement`.
+   */
+  step(dt: number, physics: PhysicsWorldSync): boolean {
+    this.scripted = false;
+    if (!(dt > 0) || !Number.isFinite(dt)) return false;
     // Creation hooks register motors, so scenes without Movement pay no actor scan.
     for (const [component, state] of this.states) {
       const actor = component.owner;
@@ -142,6 +148,7 @@ export class MovementWorldSync {
       }
       this.advance(actor, component, state, props, dt);
     }
+    return this.scripted;
   }
 
   private advance(actor: Actor, component: ActorComponent, state: MovementState, props: MovementProperties, dt: number): void {
@@ -211,6 +218,7 @@ export class MovementWorldSync {
     if (wasMoving !== moving) events.push(moving ? "onMovementStarted" : "onMovementStopped");
     for (const event of events) {
       if (component.destroyed || !component.owner || component.owner.destroyed || !this.host.eligible(component.owner)) break;
+      this.scripted = true;
       this.host.event(component, event, { velocity: { ...state.velocity }, speed: Math.hypot(state.velocity.x, state.velocity.z) });
     }
   }
