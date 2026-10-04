@@ -1,7 +1,104 @@
-import { Camera, Color3, DirectionalLight, Engine, MeshBuilder, PointLight, StandardMaterial, Vector3, type PBRMaterial } from "@babylonjs/core";
-import { createDefaultWaterDefinition, normalizeWaterBody, sampleWaterSurface } from "@babylonslate/core";
-import { createAppWebGpuEngine, createParticlePreviewScene, createWaterMesh, setSceneWaterTime, updateSceneWater } from "@babylonslate/render";
+import { Camera, Color3, Color4, DirectionalLight, Engine, MeshBuilder, PointLight, StandardMaterial, Vector3, type ArcRotateCamera, type PBRMaterial, type Scene } from "@babylonjs/core";
+import {
+  createDefaultWaterDefinition, normalizeRenderingQuality, normalizeWaterBody, qualityPresetPatch, sampleWaterSurface,
+  type WaterBodyProperties, type WaterDefinition,
+} from "@babylonslate/core";
+import { createAppWebGpuEngine, createParticlePreviewScene, createWaterMesh, setSceneWaterTime, setWaterGpuWaves, updateSceneWater } from "@babylonslate/render";
 import { createLandscapeMesh } from "../../../../packages/render/src/landscape-mesh";
+import { sceneRenderingSettings, updateSceneRenderingSettings } from "../../../../packages/render/src/render-settings";
+
+type Capture = () => Promise<{ pixels: number[]; png: string }>;
+
+/** Side-on parity view: 1.6 m × 1 m over the 640 × 400 canvas (2.5 mm per pixel), 3 m from the slice. */
+const PARITY_HALF_WIDTH = 0.8, PARITY_HALF_HEIGHT = 0.5, PARITY_DISTANCE = 3, PARITY_SLAB = 0.03;
+
+/**
+ * CPU-vs-GPU vertex parity. A side-on orthographic camera whose near and far planes keep only a 6 cm slab of depth
+ * sees the displaced surface as a thin ribbon, so each pixel column's topmost water pixel is the surface height there.
+ * Built-in water draws that profile from its vertex shader (GPU waves); `setWaterGpuWaves(mesh, false)` draws the same
+ * water from CPU-displaced vertices (the Custom Material path). Cases: a steep Ocean Spectrum sea (eight components,
+ * open water, Ultra mesh density) and a narrow Classic volume whose horizontal motion fades toward both banks.
+ */
+async function measureVertexParity(scene: Scene, camera: ArcRotateCamera, capture: Capture, backend: "webgl2" | "webgpu", canvas: HTMLCanvasElement, evidence: Record<string, string>) {
+  const saved = {
+    mode: camera.mode, alpha: camera.alpha, beta: camera.beta, radius: camera.radius, target: camera.target.clone(), minZ: camera.minZ, maxZ: camera.maxZ,
+    ortho: [camera.orthoLeft, camera.orthoRight, camera.orthoTop, camera.orthoBottom] as const, clear: scene.clearColor.clone(),
+    quality: sceneRenderingSettings(scene).project.quality,
+  };
+  const shown = scene.meshes.filter((mesh) => mesh.isVisible);
+  for (const mesh of shown) mesh.isVisible = false;
+  scene.clearColor = new Color4(1, 0, 1, 1);
+  updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality(qualityPresetPatch("ultra")) });
+  camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
+  camera.orthoLeft = -PARITY_HALF_WIDTH; camera.orthoRight = PARITY_HALF_WIDTH; camera.orthoTop = PARITY_HALF_HEIGHT; camera.orthoBottom = -PARITY_HALF_HEIGHT;
+  camera.setTarget(Vector3.Zero(), false, false, true);
+  camera.alpha = -Math.PI / 2; camera.beta = Math.PI / 2; camera.radius = PARITY_DISTANCE;
+  camera.minZ = PARITY_DISTANCE - PARITY_SLAB; camera.maxZ = PARITY_DISTANCE + PARITY_SLAB;
+  const metresPerPixel = 2 * PARITY_HALF_HEIGHT / canvas.height;
+  // Height (pixel rows above the bottom of the view) of each column's topmost water pixel; null where it shows none.
+  const profile = (pixels: number[]) => Array.from({ length: canvas.width }, (_, x) => {
+    let top: number | null = null;
+    for (let row = 0; row < canvas.height; row++) {
+      const i = (row * canvas.width + x) * 4;
+      if (Math.abs(pixels[i]! - 255) + pixels[i + 1]! + Math.abs(pixels[i + 2]! - 255) < 90) continue;
+      const above = backend === "webgl2" ? row : canvas.height - 1 - row;
+      top = top === null ? above : Math.max(top, above);
+    }
+    return top;
+  });
+  const compare = (a: (number | null)[], b: (number | null)[]) => {
+    let sum = 0, max = 0, columns = 0;
+    for (let x = 0; x < a.length; x++) {
+      if (a[x] === null || b[x] === null) continue;
+      const difference = Math.abs(a[x]! - b[x]!);
+      sum += difference; max = Math.max(max, difference); columns++;
+    }
+    return { columns, meanPx: columns ? sum / columns : Infinity, maxPx: max };
+  };
+  const quiet = { opacity: 1, foamAmount: 0, crestFoam: 0, surfaceFoam: 0, sparkles: 0 };
+  const cases: Record<"ocean" | "bank", { body: WaterBodyProperties; water: WaterDefinition }> = {
+    ocean: {
+      body: normalizeWaterBody({ resolution: 128 }, "global"),
+      water: { ...createDefaultWaterDefinition("stylized"), ...quiet, waveModel: "ocean", waveSeed: 11, waveHeight: 0.4, waveLength: 6, steepness: 1, choppiness: 0.6 },
+    },
+    bank: {
+      body: normalizeWaterBody({ width: 3, length: 6, resolution: 128 }, "ocean"),
+      water: { ...createDefaultWaterDefinition("stylized"), ...quiet, waveHeight: 0.4, waveLength: 4, steepness: 1, choppiness: 0.5 },
+    },
+  };
+  const results = {} as Record<"ocean" | "bank", { columns: number; meanPx: number; maxPx: number; meanMetres: number; maxMetres: number; reliefMetres: number; motionPx: number }>;
+  try {
+    for (const name of ["ocean", "bank"] as const) {
+      const { body, water } = cases[name];
+      setSceneWaterTime(scene, 2.3);
+      const mesh = createWaterMesh(scene, `parity-${name}`, body, water);
+      const gpuShot = await capture();
+      setWaterGpuWaves(mesh, false);
+      const cpuShot = await capture();
+      // Later on the GPU path only the clock changes: the waves must still move.
+      setWaterGpuWaves(mesh, true);
+      setSceneWaterTime(scene, 3);
+      const laterShot = await capture();
+      mesh.dispose();
+      evidence[`vertex-parity-${name}-gpu`] = gpuShot.png; evidence[`vertex-parity-${name}-cpu`] = cpuShot.png;
+      const gpu = profile(gpuShot.pixels), cpu = profile(cpuShot.pixels), later = profile(laterShot.pixels);
+      const parity = compare(gpu, cpu), heights = gpu.filter((value): value is number => value !== null);
+      results[name] = {
+        ...parity, meanMetres: parity.meanPx * metresPerPixel, maxMetres: parity.maxPx * metresPerPixel,
+        reliefMetres: heights.length ? (Math.max(...heights) - Math.min(...heights)) * metresPerPixel : 0, motionPx: compare(gpu, later).meanPx,
+      };
+    }
+  } finally {
+    camera.mode = saved.mode; camera.minZ = saved.minZ; camera.maxZ = saved.maxZ;
+    [camera.orthoLeft, camera.orthoRight, camera.orthoTop, camera.orthoBottom] = saved.ortho;
+    camera.setTarget(saved.target, false, false, true);
+    camera.alpha = saved.alpha; camera.beta = saved.beta; camera.radius = saved.radius;
+    scene.clearColor = saved.clear;
+    updateSceneRenderingSettings(scene, { quality: saved.quality });
+    for (const mesh of shown) mesh.isVisible = true;
+  }
+  return { metresPerPixel, width: canvas.width, ...results };
+}
 
 /** Test-build-only captures of production water, including a fixed-world transform comparison. */
 export async function runWaterRenderingProof(backend: "webgl2" | "webgpu") {
@@ -340,7 +437,8 @@ export async function runWaterRenderingProof(backend: "webgl2" | "webgpu") {
     const waveTerrain = { crestHeight: crest.height, troughHeight: trough.height,
       crestDifference: difference(high.pixels), troughDifference: difference(low.pixels) };
     water.dispose(); terrain.dispose();
-    return { evidence, differences, brightness, crowded, pan, whitecaps, surfaceFoam, gerstner, subsurface, clearReflection, waveTerrain, contact, ripples };
+    const vertexParity = await measureVertexParity(scene, camera, capture, backend, canvas, evidence);
+    return { evidence, differences, brightness, crowded, pan, whitecaps, surfaceFoam, gerstner, subsurface, clearReflection, waveTerrain, contact, ripples, vertexParity };
   } finally {
     const device = (engine as { _device?: { queue: { onSubmittedWorkDone(): Promise<void> } } })._device;
     engine.flushFramebuffer(); await device?.queue.onSubmittedWorkDone();

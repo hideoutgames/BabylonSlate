@@ -65,6 +65,18 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     // Under the app's large-world rendering, panning the camera must reveal different, world-anchored water.
     expect(result.pan.realistic).toBeGreaterThan(0.5);
     expect(result.pan.stylized).toBeGreaterThan(0.5);
+    // Built-in water displaces its rest grid in the vertex shader: seen side-on through a thin depth slab, it draws the
+    // same profile as CPU-displaced vertices to about a millimetre (2.5 mm pixels), for the eight-component Ocean
+    // Spectrum at Ultra mesh density and a narrow volume whose horizontal motion fades at its banks; and with only the
+    // clock changing, the profile moves.
+    for (const name of ["ocean", "bank"] as const) {
+      const parity = result.vertexParity[name];
+      expect(parity.columns).toBeGreaterThan(result.vertexParity.width * 0.6);
+      expect(parity.meanMetres).toBeLessThan(1e-3);
+      expect(parity.maxPx).toBeLessThanOrEqual(2);
+      expect(parity.reliefMetres).toBeGreaterThan(0.05);
+      expect(parity.motionPx).toBeGreaterThan(4);
+    }
     expect(result.waveTerrain.crestHeight).toBeGreaterThan(1.6);
     expect(result.waveTerrain.troughHeight).toBeLessThan(-0.4);
     expect(result.waveTerrain.crestDifference).toBeGreaterThan(10);
