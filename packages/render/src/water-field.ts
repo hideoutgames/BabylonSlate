@@ -13,12 +13,12 @@ import { landscapeMeshData } from "./landscape-mesh";
 
 /**
  * Encoded ranges of the RGBA8 field: R shore distance, G depth over terrain, B the same depth at fine precision
- * over the shallows (`WATER_FIELD_FINE_DEPTH_SPAN` metres from `fineDepthMin`), A terrain known.
+ * over the shallows (`fineDepthSpan` metres from `fineDepthMin`), A terrain known.
  * Objects live in the separate, height-aware `WaterContactField`.
  */
 export const WATER_FIELD_SHORE_RANGE: readonly [number, number] = [-8, 24];
 export const WATER_FIELD_DEPTH_RANGE: readonly [number, number] = [-8, 32];
-/** About 2 cm per step, so gentle shores shade and foam without depth terraces. */
+/** Smallest fine span: about 2 cm per step, so gentle shores shade and foam without depth terraces. */
 export const WATER_FIELD_FINE_DEPTH_SPAN = 5;
 const MAX_CELLS = 512;
 const MIN_CELL = 0.2;
@@ -68,6 +68,10 @@ export interface WaterFieldSurface {
   mesh: Mesh;
   /** World surface height (without waves) at a world X/Z, or null outside the body. */
   surfaceY: (x: number, z: number) => number | null;
+  /** True when the rest height varies across the body: rivers and tilted volumes. */
+  restVaries?: boolean;
+  /** The rest height extended beyond the footprint, for cutting objects on bodies whose rest height varies. */
+  restY?: (x: number, z: number) => number;
   /** True for unbounded water, whose fields cover only the terrain and objects that reach it. */
   unbounded: boolean;
   /** Metres either side of the rest height that waves reach. */
@@ -118,13 +122,21 @@ export class WaterField {
     return Math.min(-1, -this.surface.amplitude - 0.25);
   }
 
+  /**
+   * Metres the fine depth channel covers from `fineDepthMin`: every displaced waterline (rest depth -amplitude to
+   * +amplitude) plus a few metres of shallows beyond the lowest trough, so tall waves still find their shore.
+   */
+  get fineDepthSpan(): number {
+    return Math.max(WATER_FIELD_FINE_DEPTH_SPAN, 2 * this.surface.amplitude + 4);
+  }
+
   /** Refresh when terrain or the surface changes. Returns true when the texture changed. */
   update(force = false): boolean {
     const landscapes = this.landscapes();
     const surfaceBox = this.surface.mesh.getBoundingInfo().boundingBox;
     const terrainKey = landscapes.map(({ root, data }) => this.idOf(data) + ":" + Array.from(root.getWorldMatrix().m).join(",")).join("|")
       + "@" + Array.from(this.surface.mesh.getWorldMatrix().m).join(",")
-      + "@" + this.depthRange.join(",") + "," + this.fineDepthMin
+      + "@" + this.depthRange.join(",") + "," + this.fineDepthMin + "," + this.fineDepthSpan
       + "@" + (this.surface.unbounded ? "" : [surfaceBox.minimumWorld.x, surfaceBox.minimumWorld.z, surfaceBox.maximumWorld.x, surfaceBox.maximumWorld.z].join(","));
     if (!force && terrainKey === this.terrainKey) return false;
     this.terrainKey = terrainKey;
@@ -210,7 +222,7 @@ export class WaterField {
   private fillTerrain(landscapes: Array<{ root: Mesh; data: LandscapeProperties }>): void {
     const { width, height } = this, data = this.data!, count = width * height;
     const depthRange = this.depthRange, fineMin = this.fineDepthMin;
-    const fineRange = [fineMin, fineMin + WATER_FIELD_FINE_DEPTH_SPAN] as const;
+    const fineRange = [fineMin, fineMin + this.fineDepthSpan] as const;
     const transforms = landscapes.map(({ root, data }) => ({ data, transform: toTransform(root.computeWorldMatrix(true)) }));
     const depth = new Float64Array(count), known = new Uint8Array(count);
     for (let z = 0; z < height; z++) for (let x = 0; x < width; x++) {

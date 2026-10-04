@@ -231,11 +231,12 @@ float swBack = max(dot(swGradient, swWindDir), 0.0) / max(0.0001, swSteep);
 // Only some crests break at a time: breaking zones drift slowly downwind.
 float swBreakZone = swNoise(swWorld * 0.045 - swWindDir * (swTime * 0.12) + vec2(5.1, 2.7));
 float swCapDrive = (swFoldN * 1.8 + swBack * 0.5 + swChopH * 0.8 + (swBreakZone - 0.5) * 0.7 + (swGust - 0.5) * 0.4) * swRough;
-// Never solid: even the densest cap keeps bubbles and holes.
-float swCap = smoothstep(1.0 - U.slateWaterShape.z, 1.5 - U.slateWaterShape.z, swCapDrive) * (0.55 + 0.35 * swClump);
+// Never solid: even the densest cap keeps bubbles and holes. Crest Foam 0 turns caps and their trails off.
+float swCrestOn = smoothstep(0.0, 0.05, U.slateWaterShape.z);
+float swCap = smoothstep(1.0 - U.slateWaterShape.z, 1.5 - U.slateWaterShape.z, swCapDrive) * (0.55 + 0.35 * swClump) * swCrestOn;
 vec2 swWindUv = vec2(dot(swFlowed, swWindDir), dot(swFlowed, vec2(-swWindDir.y, swWindDir.x)));
 float swTrailTex = swNoise(swWindUv * vec2(0.3, 2.2) + swSlope * 0.5 + vec2(swTime * 0.05, 0.0));
-float swTrail = smoothstep(0.75 - U.slateWaterShape.z, 1.2 - U.slateWaterShape.z, swCapDrive + swBack * swRough * 0.8) * smoothstep(0.3, 0.8, swTrailTex) * 0.6;
+float swTrail = smoothstep(0.75 - U.slateWaterShape.z, 1.2 - U.slateWaterShape.z, swCapDrive + swBack * swRough * 0.8) * smoothstep(0.3, 0.8, swTrailTex) * 0.6 * swCrestOn;
 // Wind streaks: long, thin foam lines drawn out along the wind where gusts are strong (Surface Foam).
 float swStreak = smoothstep(0.66, 0.95, swNoise(swWindUv * vec2(0.05, 1.3) + swSlope * 0.25 + vec2(swLarge * 2.0, 0.0)) * 0.75 + swGust * 0.35) * U.slateWaterSunColor.w * (0.3 + swGust) * swCalm * 1.4;
 float swDensity = clamp(max(max(swWash, swCap), max(swTrail, swStreak)), 0.0, 1.0);
@@ -393,9 +394,9 @@ function cutSource(wgsl: boolean): string {
   const sampleContacts = wgsl
     ? "var swContactTex: vec4f = textureSampleLevel(slateWaterContactSampler, slateWaterContactSamplerSampler, swContactUv, 0.0);"
     : "vec4 swContactTex = texture2D(slateWaterContactSampler, swContactUv);";
-  const fineAt = (uv: string) => wgsl
-    ? `textureSampleLevel(slateWaterFieldSampler, slateWaterFieldSamplerSampler, ${uv}, 0.0).b`
-    : `texture2D(slateWaterFieldSampler, ${uv}).b`;
+  const tap = (name: string, uv: string) => wgsl
+    ? `var ${name}: vec4f = textureSampleLevel(slateWaterFieldSampler, slateWaterFieldSamplerSampler, ${uv}, 0.0);`
+    : `vec4 ${name} = texture2D(slateWaterFieldSampler, ${uv});`;
   const removals = Array.from({ length: WATER_REMOVAL_SLOTS }, (_, i) => `swRemoval(U.slateWaterRemoval${i}, U.slateWaterRemovalShape${i}, swPosW)`);
   return `
 // Large-world rendering makes vPositionW eye-relative; rebuild the absolute world position.
@@ -404,10 +405,12 @@ vec2 swFieldUv = (swPosW.xz - U.slateWaterFieldBounds.xy) * U.slateWaterFieldBou
 ${sample}
 float swFieldOn = U.slateWaterFieldInfo.x * step(0.0, swFieldUv.x) * step(swFieldUv.x, 1.0) * step(0.0, swFieldUv.y) * step(swFieldUv.y, 1.0);
 // Geometry displacement, not the unfiltered per-pixel normal waves, sets the waterline. Shallows read the fine
-// depth channel, so gentle shores have no terraces; deeper water falls back to the full-range channel.
+// depth channel (sized to the wave envelope), so gentle shores have no terraces; deeper water falls back to the
+// full-range channel.
+float swFineSpan = U.slateWaterFieldStep.z;
 float swCoarseDepth = mix(U.slateWaterFieldInfo.z, U.slateWaterFieldInfo.w, swField.g);
-float swFineDepth = U.slateWaterFieldInfo.y + swField.b * ${f(WATER_FIELD_FINE_DEPTH_SPAN)};
-float swFineTop = U.slateWaterFieldInfo.y + ${f(WATER_FIELD_FINE_DEPTH_SPAN)};
+float swFineDepth = U.slateWaterFieldInfo.y + swField.b * swFineSpan;
+float swFineTop = U.slateWaterFieldInfo.y + swFineSpan;
 float swTerrainDepth = mix(swFineDepth, swCoarseDepth, smoothstep(swFineTop - 0.8, swFineTop - 0.2, swFineDepth)) + IN.vSlateWater.x;
 float swTerrainShore = mix(${f(SHORE[0])}, ${f(SHORE[1])}, swField.r);
 // Objects: signed distances at four heights across rest +/- the wave envelope (negative inside). Blending the
@@ -420,11 +423,20 @@ vec4 swLayerW = max(vec4(0.0), vec4(1.0) - abs(vec4(0.0, 1.0, 2.0, 3.0) - vec4(s
 float swContactSigned = mix(1.0, dot(swContactTex, swLayerW) * 2.0 - 1.0, swContactOn) * U.slateWaterContactInfo.y;
 vec2 swContactDerivative = vec2(dFdx(swContactSigned), dFdy(swContactSigned));
 // Convert wave-relative depth to a local world-space shoreline distance: the displaced depth over the terrain
-// slope. Central differences of the fine depth one cell apart keep that slope continuous (a bilinear field's own
-// gradient steps at every cell). Rest-height distance stays exact when waves are off.
+// slope. Central differences one cell apart keep that slope continuous (a bilinear field's own gradient steps at
+// every cell). They read the fine depth, or the full-range depth where a tap is clamped beyond the fine range, so
+// steep coasts and storm waves keep their shoreline. Rest-height distance stays exact when waves are off.
 vec2 swFieldStep = U.slateWaterFieldStep.xy;
-vec2 swTerrainSlope = vec2(${fineAt("swFieldUv + vec2(swFieldStep.x, 0.0)")} - ${fineAt("swFieldUv - vec2(swFieldStep.x, 0.0)")},
-  ${fineAt("swFieldUv + vec2(0.0, swFieldStep.y)")} - ${fineAt("swFieldUv - vec2(0.0, swFieldStep.y)")}) * ${f(WATER_FIELD_FINE_DEPTH_SPAN * 0.5)} / max(swFieldStep / U.slateWaterFieldBounds.zw, vec2(0.000001));
+${tap("swTapE", "swFieldUv + vec2(swFieldStep.x, 0.0)")}
+${tap("swTapW", "swFieldUv - vec2(swFieldStep.x, 0.0)")}
+${tap("swTapN", "swFieldUv + vec2(0.0, swFieldStep.y)")}
+${tap("swTapS", "swFieldUv - vec2(0.0, swFieldStep.y)")}
+vec2 swCellMetres = max(swFieldStep / U.slateWaterFieldBounds.zw, vec2(0.000001));
+vec2 swFineSlope = vec2(swTapE.b - swTapW.b, swTapN.b - swTapS.b) * (swFineSpan * 0.5) / swCellMetres;
+vec2 swCoarseSlope = vec2(swTapE.g - swTapW.g, swTapN.g - swTapS.g) * ((U.slateWaterFieldInfo.w - U.slateWaterFieldInfo.z) * 0.5) / swCellMetres;
+float swFineClamped = max(smoothstep(0.93, 0.99, max(max(swTapE.b, swTapW.b), max(swTapN.b, swTapS.b))),
+  1.0 - smoothstep(0.01, 0.07, min(min(swTapE.b, swTapW.b), min(swTapN.b, swTapS.b))));
+vec2 swTerrainSlope = mix(swFineSlope, swCoarseSlope, swFineClamped);
 // Derivatives before discard.
 vec2 swDx = dFdx(swPosW.xz);
 vec2 swDy = dFdy(swPosW.xz);
@@ -611,7 +623,7 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
     buffer.updateFloat4("slateWaterFieldBounds", bounds[0]!, bounds[1]!, bounds[2]!, bounds[3]!);
     buffer.updateFloat4("slateWaterFieldInfo", field ? 1 : 0, field?.fineDepthMin ?? 0, ...(field?.depthRange ?? WATER_FIELD_DEPTH_RANGE));
     const texel = field?.texelSize ?? [1, 1];
-    buffer.updateFloat4("slateWaterFieldStep", texel[0], texel[1], 0, 0);
+    buffer.updateFloat4("slateWaterFieldStep", texel[0], texel[1], field?.fineDepthSpan ?? WATER_FIELD_FINE_DEPTH_SPAN, 0);
     const contacts = this.contacts?.texture ? this.contacts : null;
     const contactBounds = contacts?.bounds ?? [0, 0, 1, 1];
     buffer.updateFloat4("slateWaterContactBounds", contactBounds[0]!, contactBounds[1]!, contactBounds[2]!, contactBounds[3]!);
