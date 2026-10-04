@@ -18,6 +18,7 @@ import {
 } from "../shell/anim-document-layout";
 import { dockviewApiKey, type DockviewSurface } from "../shell/dockview-surface";
 import { captureAdaptiveDockviewLayout } from "../shell/phone-dock-layout";
+import type { DocumentsOverrides } from "../testing/document-context-mock";
 
 const SPRITE = "sprite:assets/Hero.sprite.babasset";
 const ANIM = "anim-graph:assets/Loco.anim.babasset";
@@ -37,7 +38,7 @@ const harness = vi.hoisted(() => ({
   passthrough: ({ children }: { children: ReactNode }) => children,
 }));
 
-vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => harness.docs));
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => harness.docs as DocumentsOverrides));
 // Editing sessions and panel bodies are outside the dock registration contract.
 vi.mock("../context/audio-reverb-bake-context", () => ({
   AudioReverbBakeProvider: harness.passthrough,
