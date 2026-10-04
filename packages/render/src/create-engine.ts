@@ -3447,6 +3447,7 @@ function pendingSceneTextureWork(scene: Scene): string[] {
 
 function isOverlayOnlyMeshKind(meshKind: string | null | undefined): boolean {
   switch (meshKind) {
+    case "2djoystick":
     case "2dtexture":
     case "2dmaterial":
     case "2dbutton":
