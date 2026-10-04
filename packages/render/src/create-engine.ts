@@ -200,6 +200,8 @@ import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";
 import { applyBoneAttachmentAudioPoses } from "./bone-attachment";
 import { pickAtCanvas } from "./picking";
 import { mapCanvasPointer } from "./pick-coords";
+import { refreshJoystick2DMaterials } from "./joystick2d-mesh";
+import { Joystick2DInput } from "./joystick2d-input";
 import { SceneLayerCompositor } from "./scene-layer-compositor";
 import { attachPlayCursor } from "./play-cursor";
 import {
@@ -555,6 +557,8 @@ export interface CreateEngineOptions {
   navmeshBytes?: Uint8Array | null;
   /** NavMesh Blocker volumes drawn with Play `shownav`. */
   navBlockers?: readonly NavDebugBlockerPose[] | null;
+  /** Authored SceneLayer joystick input for the host input ring. */
+  onTouchAxis?: (controlId: string, value: number) => void;
   /** Overlay 2DButton graph events (Play compositor). */
   onSceneLayerPointer?: (event: {
     layerId: string;
@@ -1187,7 +1191,7 @@ function initializeEngine(
       // Rebuilding here releases the ready material and starts compilation again.
       if (materialScene === scene) editorSync?.refreshMaterials();
       for (const root of binding.meshes.values()) {
-        if (root.getScene() === materialScene) refreshText2DMaterials(root, binding);
+        if (root.getScene() === materialScene) { refreshText2DMaterials(root, binding); refreshJoystick2DMaterials(root, binding); }
       }
       scheduler.invalidate("asset");
     },
@@ -1391,6 +1395,12 @@ function initializeEngine(
     }
   };
   const overlayPointerState = createOverlayPointerState();
+  const joysticks = new Joystick2DInput(
+    id => layerLoads.get(id)?.ready === false ? undefined : sceneLayerCompositor?.layers().find(layer => layer.layerId === id),
+    pointerCanvas,
+    (controlId, value) => options.onTouchAxis?.(controlId, value),
+  );
+  onRollback(() => joysticks.reset());
   const overlayLayouts = new OverlayLayoutRenderer(id => sceneLayerCompositor?.layers().find(layer => layer.layerId === id)?.scene);
   onRollback(() => overlayLayouts.dispose());
   const playCursor = options.playMode ? attachPlayCursor(canvas) : null;
@@ -1415,6 +1425,7 @@ function initializeEngine(
     phase: OverlayPointerPhase,
     canvasX: number,
     canvasY: number,
+    pointerId?: number,
   ): boolean => {
     if (!sceneLayerCompositor) return false;
     const mapped = mapCanvasPointer(scene, canvasX, canvasY, pointerCanvas());
@@ -1425,6 +1436,7 @@ function initializeEngine(
         canvasCssHeight: canvasSize.height,
       }),
     );
+    if (phase === "down" && !binding.paused && pointerId !== undefined && joysticks.down(pointerId, walked.targets, canvasX, canvasY)) return true;
     const events = applyOverlayPointer(
       overlayPointerState,
       phase,
@@ -2346,6 +2358,7 @@ function initializeEngine(
         else coherentFrame = false;
       });
       else engine.clear(scene.clearColor, true, true, true);
+      joysticks.refresh();
       sceneLayerCompositor?.render(presentingLayers, (layerId, draw, fallback) => drawOwner(`layer:${layerId}`, draw, fallback));
       if (!coherentFrame) {
         for (const pending of frameOwners.values()) {
@@ -2501,13 +2514,12 @@ function initializeEngine(
     const rect = canvas.getBoundingClientRect();
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
+    playCursor?.notePointer(event.pointerType ?? "mouse", x, y);
+    const blocked = dispatchOverlayPointer("down", x, y, event.pointerId);
+    if (joysticks.owns(event.pointerId)) return;
     const scrollTarget = event.pointerType === "touch" || event.pointerType === "pen" ? scrollTargetAt(x, y) : undefined;
     if (scrollTarget) scrollDrag = { pointerId: event.pointerId, startX: x, startY: y, x, y, active: false, target: scrollTarget };
-    playCursor?.notePointer(event.pointerType ?? "mouse", x, y);
-    if (dispatchOverlayPointer("down", x, y)) {
-      scheduler.invalidate("selection");
-      return;
-    }
+    if (blocked) { scheduler.invalidate("selection"); return; }
     const hit = pickAtCanvas(scene, x, y);
     if (hit) {
       scheduler.invalidate("selection");
@@ -2515,6 +2527,7 @@ function initializeEngine(
   };
   const onPointerMove = (event: PointerEvent) => {
     const { x, y } = overlayPointerCanvasCoords(event);
+    if (joysticks.move(event.pointerId, x, y)) return;
     if (scrollDrag?.pointerId === event.pointerId) {
       if (!scrollDrag.active && Math.hypot(x - scrollDrag.startX, y - scrollDrag.startY) >= 8) {
         scrollDrag.active = true;
@@ -2532,6 +2545,7 @@ function initializeEngine(
     dispatchOverlayPointer("move", x, y);
   };
   const onPointerUp = (event: PointerEvent) => {
+    if (joysticks.release(event.pointerId)) return;
     const wasScrolling = scrollDrag?.pointerId === event.pointerId && scrollDrag.active;
     if (scrollDrag?.pointerId === event.pointerId) scrollDrag = null;
     if (wasScrolling) return;
@@ -2540,11 +2554,15 @@ function initializeEngine(
     dispatchOverlayPointer("up", x, y);
   };
   const onPointerCancel = (event: PointerEvent) => {
+    if (joysticks.release(event.pointerId)) return;
     if (scrollDrag?.pointerId === event.pointerId) scrollDrag = null;
     const { x, y } = overlayPointerCanvasCoords(event);
     playCursor?.notePointer(event.pointerType ?? "mouse", x, y);
     dispatchOverlayPointer("cancel", x, y);
   };
+  const resetJoysticks = () => joysticks.reset();
+  const onJoystickVisibility = () => { if (typeof document !== "undefined" && document.hidden) resetJoysticks(); };
+  const onJoystickLostCapture = (event: PointerEvent) => { joysticks.release(event.pointerId); };
   const onOverlayTouch = (event: TouchEvent) => {
     event.preventDefault();
   };
@@ -2557,6 +2575,10 @@ function initializeEngine(
       canvas.removeEventListener("touchstart", onOverlayTouch);
       canvas.removeEventListener("touchmove", onOverlayTouch);
       canvas.removeEventListener("wheel", onOverlayWheel);
+      canvas.removeEventListener("lostpointercapture", onJoystickLostCapture);
+      canvas.removeEventListener("blur", resetJoysticks);
+      if (typeof window !== "undefined") window.removeEventListener("blur", resetJoysticks);
+      if (typeof document !== "undefined") document.removeEventListener("visibilitychange", onJoystickVisibility);
     });
     canvas.addEventListener("pointerdown", onPointerDown);
     if (options.playMode && sceneLayerCompositor) {
@@ -2566,6 +2588,10 @@ function initializeEngine(
       canvas.addEventListener("touchstart", onOverlayTouch, { passive: false });
       canvas.addEventListener("touchmove", onOverlayTouch, { passive: false });
       canvas.addEventListener("wheel", onOverlayWheel, { passive: false });
+      canvas.addEventListener("lostpointercapture", onJoystickLostCapture);
+      canvas.addEventListener("blur", resetJoysticks);
+      if (typeof window !== "undefined") window.addEventListener("blur", resetJoysticks);
+      if (typeof document !== "undefined") document.addEventListener("visibilitychange", onJoystickVisibility);
     }
   }
 
@@ -2588,6 +2614,7 @@ function initializeEngine(
   const applyPause = () => {
     const paused = callerPaused || sceneStreamingPaused;
     binding.paused = paused;
+    if (paused) joysticks.reset();
     scheduler.setPaused(paused);
     audioService?.setPaused(paused);
     particleService?.setPaused(paused);
@@ -3244,7 +3271,7 @@ function initializeEngine(
       functions?: ReadonlyMap<string, MaterialFunctionDocument>,
     ) => {
       if (!installMaterialDocuments(documents, functions)) return;
-      for (const root of binding.meshes.values()) refreshText2DMaterials(root, binding);
+      for (const root of binding.meshes.values()) { refreshText2DMaterials(root, binding); refreshJoystick2DMaterials(root, binding); }
       rebuildPostProcessStack();
       const serialized = editorSync?.serializedScene();
       if (editorSync && serialized) editorSync.apply(serialized);
@@ -3420,6 +3447,7 @@ function pendingSceneTextureWork(scene: Scene): string[] {
 
 function isOverlayOnlyMeshKind(meshKind: string | null | undefined): boolean {
   switch (meshKind) {
+    case "2djoystick":
     case "2dtexture":
     case "2dmaterial":
     case "2dbutton":

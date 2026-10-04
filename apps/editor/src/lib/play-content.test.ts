@@ -848,6 +848,7 @@ describe("SceneLayer Play collection", () => {
             classId: "2DMaterialComponent",
             properties: { materialGuid: "mat-unlit" },
           },
+          { id: "stick", classId: "2DJoystickComponent", properties: { backgroundMaterialGuid: "mat-background", joystickMaterialGuid: "mat-joystick" } },
           {
             id: "sprite",
             classId: "SpriteComponent",
@@ -873,7 +874,7 @@ describe("SceneLayer Play collection", () => {
       "tex-inline",
     ]);
     expect(playFontGuidsFromScenes(scenes)).toEqual(["font-hud"]);
-    expect(materialAssetGuidsFromScene(scenes[0])).toEqual(["mat-unlit"]);
+    expect(materialAssetGuidsFromScene(scenes[0])).toEqual(["mat-background", "mat-joystick", "mat-unlit"]);
     expect(spriteAssetGuidsFromScene(scenes[0])).toEqual(["sprite-hud"]);
   });
 

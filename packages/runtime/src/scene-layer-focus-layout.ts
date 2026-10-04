@@ -3,7 +3,7 @@ import type { Actor, ActorComponent, World } from "@babylonslate/object-model";
 import type { SceneLayerLayout } from "./scene-layer-layout";
 import { actorParentGuid } from "./actor-world-transform";
 
-const VISUALS = new Set(["2DTextureComponent", "2DMaterialComponent", "2DPanelComponent", "2DTextComponent", "2DRichTextComponent", "2DPainterComponent", "SpriteComponent", "MeshComponent"]);
+const VISUALS = new Set(["2DJoystickComponent", "2DTextureComponent", "2DMaterialComponent", "2DPanelComponent", "2DTextComponent", "2DRichTextComponent", "2DPainterComponent", "SpriteComponent", "MeshComponent"]);
 /** Focus helpers use their visual attachment; the layout rectangle remains reachable outside clips. */
 export function focusLayoutEntry(layout: SceneLayerLayout, world: World, actor: Actor, component: ActorComponent): OverlayLayoutEntry | undefined {
   if (!actor.sceneLayerId) return undefined;

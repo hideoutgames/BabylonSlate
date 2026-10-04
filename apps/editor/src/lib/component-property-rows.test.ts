@@ -67,6 +67,25 @@ function rowsFor(
   return { rows, update, onPickAsset };
 }
 
+it("edits the joystick's two material references independently using the existing material picker", () => {
+  const { rows, update, onPickAsset } = rowsFor({ id: "stick", classId: "2DJoystickComponent",
+    properties: { ...defaultPropertiesFor("2DJoystickComponent"), backgroundMaterialGuid: "base", joystickMaterialGuid: "thumb" } });
+  const background = rows.find(row => row.label === "Background Material");
+  const joystick = rows.find(row => row.label === "Joystick Material");
+  if (background?.kind !== "asset" || joystick?.kind !== "asset") throw new Error("Missing joystick material controls");
+  expect([background.value, joystick.value]).toEqual(["base", "thumb"]);
+  background.onPick();
+  expect(onPickAsset).toHaveBeenLastCalledWith(expect.objectContaining({ property: "backgroundMaterialGuid", allowedTypes: ["Material", "MaterialInstance"] }));
+  joystick.onPick();
+  expect(onPickAsset).toHaveBeenLastCalledWith(expect.objectContaining({ property: "joystickMaterialGuid", allowedTypes: ["Material", "MaterialInstance"] }));
+  joystick.onChange(null);
+  expect(update).toHaveBeenLastCalledWith("joystickMaterialGuid", null);
+  const axis = rows.find(row => row.label === "Horizontal Axis");
+  if (axis?.kind !== "enum") throw new Error("Missing joystick axis control");
+  axis.onChange("dpad-x");
+  expect(update).toHaveBeenLastCalledWith("horizontalControl", "dpad-x");
+});
+
 it("edits capture settings through typed controls and keeps actor filtering opt-in", () => {
   const { rows, update, onPickAsset } = rowsFor({ id: "capture", classId: "RenderTargetCaptureComponent", properties: defaultPropertiesFor("RenderTargetCaptureComponent") });
   const target = rows.find((row) => row.label === "Render Target");

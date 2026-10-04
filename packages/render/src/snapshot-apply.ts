@@ -101,6 +101,7 @@ import { snapToPixelGrid } from "./pixel-perfect";
 import { createSkyboxMesh, resolveSkyboxCubeTexture } from "./skybox";
 import { createText3DMesh } from "./text3d-mesh";
 import { createText2DMesh, text2DBitmapBytes, updateText2DAppear } from "./text2d-mesh";
+import { createJoystick2DMesh, joystick2DMesh } from "./joystick2d-mesh";
 import { createPainter2DMesh, updatePainter2DMesh } from "./painter2d-mesh";
 import { BitmapAllocationLimitError } from "./text2d-bitmap";
 import { retireBoneAttachments, updateBoneAttachments, type BoneAttachment } from "./bone-attachment";
@@ -426,6 +427,7 @@ function wantsOverlayUnlitMaterial(
     case "2dmaterial":
     case "2dbutton":
     case "2dpanel":
+    case "2djoystick":
     case "2dpainter":
     case "2dtext":
     case "2drichtext":
@@ -532,7 +534,7 @@ function partsNeedOrigin(
   parts: readonly AssignMeshPart[] | undefined,
 ): boolean {
   if (!parts || parts.length === 0) return false;
-  if (parts.length > 1 || parts.some((part) => part.light || part.camera || part.parentTransforms?.length || part.meshKind === "water" || part.meshKind === "waterRemoval" || part.meshKind === "cable" || part.meshKind === "dynamicRuntimeMesh")) return true;
+  if (parts.length > 1 || parts.some((part) => part.light || part.camera || part.parentTransforms?.length || part.meshKind === "water" || part.meshKind === "waterRemoval" || part.meshKind === "cable" || part.meshKind === "2djoystick" || part.meshKind === "dynamicRuntimeMesh")) return true;
   const part = parts[0]!;
   return (
     Boolean(part.landscape || part.foliage) ||
@@ -854,7 +856,7 @@ export function applyAssignMesh(
     kind === "skybox" || kind === "sprite" || kind === "tilemap";
   const stagesModels = Boolean(command.parts?.some((part) => part.foliage)) || Boolean(existing && modelSource && command.meshAssetGuid && !partsNeedOrigin(command.parts)) ||
     (partsNeedOrigin(command.parts) && command.parts?.some((part) =>
-      part.meshAssetGuid && !["water", "sprite", "tilemap", "2dpanel", "2dtexture", "2dmaterial", "2dbutton", "2dtext", "2drichtext"].includes(part.meshKind ?? "")));
+      part.meshAssetGuid && !["water", "sprite", "tilemap", "2djoystick", "2dpanel", "2dtexture", "2dmaterial", "2dbutton", "2dtext", "2drichtext"].includes(part.meshKind ?? "")));
   if (stagesModels || (existing && (ownsTexture(meshKind) || command.parts?.some((part) => ownsTexture(part.meshKind))))) {
     const working = existing ?? createModelActorRoot(scene, `actor-${command.slotId}`);
     if (!existing) binding.meshes.set(command.slotId, working);
@@ -1085,7 +1087,14 @@ function stampOverlayPick(mesh: Mesh, command: AssignMeshCommand): void {
       overlayHasButton: command.hasButton === true,
       overlayButtonComponentId: command.buttonComponentId,
     };
-    if (command.hitTest) {
+    const joystick = joystick2DMesh(target);
+    if (joystick) {
+      target.metadata.overlayHitTest = joystick.properties.enabled ? "block" : "ignore";
+      target.metadata.overlayHasButton = false;
+      target.isPickable = joystick.properties.enabled;
+    } else if (target.metadata?.joystick2DThumb) {
+      target.isPickable = false;
+    } else if (command.hitTest) {
       target.isPickable = command.hitTest !== "ignore";
     }
   };
@@ -1542,6 +1551,7 @@ export function createPlayMesh(
     mesh.isPickable = false;
     return mesh;
   }
+  if (meshKind === "2djoystick") return createJoystick2DMesh(scene, name, illuminationPart?.joystick, binding);
   if (meshKind === "2dpainter") {
     const properties = painter ?? binding?.meshParts.get(slotId)?.find((part) => part.meshKind === "2dpainter" && (!meshName || playComponentMeshName(slotId, part.componentId) === meshName))?.painter;
     return createPainter2DMesh(scene, name, properties);

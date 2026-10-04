@@ -396,6 +396,7 @@ export type CommandMessage =
       parts?: Array<{
         light?: PlayLightProperties;
         camera?: PlayCameraProperties;
+        joystick?: import("@babylonslate/core").Joystick2DProperties;
         painter?: import("@babylonslate/core").Painter2DProperties;
         dynamicMesh?: { meshId: number; update: import("@babylonslate/core").DynamicMeshUpdate };
         /** Nonvisual ancestors between this component and its nearest visual parent, nearest first. */
