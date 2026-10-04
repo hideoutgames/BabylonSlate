@@ -1,11 +1,20 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import {
   filterSearchItems,
   groupSearchItems,
   SearchDialog,
 } from "./search-dialog";
 import { AssetPicker } from "./asset-picker";
+import { AssetCreateProvider, type AssetCreateApi } from "./asset-create-context";
 
 const LIST_BODY = '[data-testid="picker-body"]';
 
@@ -53,6 +62,24 @@ describe("filterSearchItems", () => {
     expect(filterSearchItems(items, "alp").map((item) => item.id)).toEqual([
       "a",
     ]);
+  });
+
+  it("keeps pinned items for any query, after the matches", () => {
+    const withPinned = [
+      { id: "create", label: "Create New Material", pinned: true },
+      ...items,
+    ];
+    expect(filterSearchItems(withPinned, "").map((item) => item.id)).toEqual([
+      "create",
+      "a",
+      "b",
+    ]);
+    expect(
+      filterSearchItems(withPinned, "beta").map((item) => item.id),
+    ).toEqual(["b", "create"]);
+    expect(
+      filterSearchItems(withPinned, "zeta").map((item) => item.id),
+    ).toEqual(["create"]);
   });
 });
 
@@ -105,8 +132,41 @@ describe("SearchDialog", () => {
     fireEvent.change(query, { target: { value: "Alpha" } });
     fireEvent.keyDown(query, { key: "ArrowDown" });
     fireEvent.keyDown(query, { key: "Enter" });
-    expect(onSelect).toHaveBeenCalledWith("a");
+    expect(onSelect).toHaveBeenCalledWith("a", "Alpha");
     expect(onSelect).toHaveBeenCalledTimes(1);
+  });
+
+  it("enters the list on an unpinned row unless only pinned rows are listed", () => {
+    const onSelect = vi.fn();
+    render(
+      <SearchDialog
+        open
+        onOpenChange={() => {}}
+        title="Pick"
+        items={[
+          { id: "create", label: "Create New Material", pinned: true, keepOpen: true },
+          ...items,
+        ]}
+        onSelect={onSelect}
+        data-testid="picker"
+      />,
+    );
+    const query = screen.getByTestId("picker-query");
+    query.focus();
+    fireEvent.keyDown(query, { key: "ArrowDown" });
+    fireEvent.keyDown(query, { key: "Enter" });
+    expect(onSelect).toHaveBeenLastCalledWith("a", "");
+
+    // Still reachable: one step up from the first unpinned row.
+    fireEvent.keyDown(query, { key: "ArrowDown" });
+    fireEvent.keyDown(query, { key: "ArrowUp" });
+    fireEvent.keyDown(query, { key: "Enter" });
+    expect(onSelect).toHaveBeenLastCalledWith("create", "");
+
+    fireEvent.change(query, { target: { value: "Gamma" } });
+    fireEvent.keyDown(query, { key: "ArrowDown" });
+    fireEvent.keyDown(query, { key: "Enter" });
+    expect(onSelect).toHaveBeenLastCalledWith("create", "Gamma");
   });
 
   it("keeps a keyboard-active result mounted beyond the virtual list's first page", () => {
@@ -134,7 +194,7 @@ describe("SearchDialog", () => {
       expect(active?.textContent).toContain("Item 99");
       expect(body.scrollTop).toBeGreaterThan(0);
       fireEvent.keyDown(body, { key: "Enter" });
-      expect(onSelect).toHaveBeenCalledWith("item-99");
+      expect(onSelect).toHaveBeenCalledWith("item-99", "");
     } finally {
       restore();
     }
@@ -177,7 +237,7 @@ describe("SearchDialog", () => {
     expect(screen.queryByTestId("search-item-a")).toBeNull();
 
     screen.getByTestId("search-item-b").click();
-    expect(onSelect).toHaveBeenCalledWith("b");
+    expect(onSelect).toHaveBeenCalledWith("b", "beta");
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
@@ -202,7 +262,7 @@ describe("SearchDialog", () => {
     fireEvent.keyDown(input, { key: "Enter", isComposing: true });
     expect(onSelect).not.toHaveBeenCalled();
     fireEvent.keyDown(input, { key: "Enter" });
-    expect(onSelect).toHaveBeenCalledWith("b");
+    expect(onSelect).toHaveBeenCalledWith("b", "");
     onSelect.mockClear();
     fireEvent.change(input, { target: { value: "missing" } });
     fireEvent.keyDown(input, { key: "Enter" });
@@ -258,12 +318,12 @@ describe("SearchDialog", () => {
     );
     const row = screen.getByTestId("search-item-a");
     fireEvent.keyDown(row, { key: "Enter" });
-    expect(onSelect).toHaveBeenCalledWith("a");
+    expect(onSelect).toHaveBeenCalledWith("a", "");
     expect(onOpenChange).toHaveBeenCalledWith(false);
     onSelect.mockClear();
     onOpenChange.mockClear();
     fireEvent.keyDown(screen.getByTestId("search-item-b"), { key: " " });
-    expect(onSelect).toHaveBeenCalledWith("b");
+    expect(onSelect).toHaveBeenCalledWith("b", "");
   });
 
   it("gives the list a definite height so rows are visible in a content-sized dialog", () => {
@@ -498,5 +558,190 @@ describe("AssetPicker", () => {
     });
     expect(screen.getByTestId("search-item-g1")).toBeTruthy();
     expect(screen.queryByTestId("search-item-g2")).toBeNull();
+  });
+});
+
+describe("AssetPicker Create New rows", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  const assets = [
+    { guid: "m1", name: "Stone", type: "Material", path: "assets/Stone" },
+    { guid: "a1", name: "Wind", type: "Audio", path: "assets/Wind" },
+  ];
+
+  function createApi(overrides: Partial<AssetCreateApi> = {}): AssetCreateApi {
+    return {
+      canCreate: (type) => type === "Material" || type === "RenderTarget",
+      typeLabel: (type) => (type === "RenderTarget" ? "Render Target" : type),
+      createAsset: vi.fn(async () => "new-guid"),
+      ...overrides,
+    };
+  }
+
+  it("offers rows only for creatable allowed types under a provider", () => {
+    const api = createApi();
+    const view = render(
+      <AssetCreateProvider value={api}>
+        <AssetPicker
+          open
+          onOpenChange={() => {}}
+          assets={assets}
+          allowedTypes={["Material", "RenderTarget", "Audio"]}
+          onPick={() => {}}
+        />
+      </AssetCreateProvider>,
+    );
+    expect(
+      screen.getByTestId("search-item-__create__RenderTarget").textContent,
+    ).toContain("Create New Render Target");
+    expect(screen.getByTestId("search-item-__create__Material")).toBeTruthy();
+    expect(screen.queryByTestId("search-item-__create__Audio")).toBeNull();
+
+    view.rerender(
+      <AssetCreateProvider value={api}>
+        <AssetPicker
+          open
+          onOpenChange={() => {}}
+          assets={assets}
+          allowedTypes={["Audio"]}
+          onPick={() => {}}
+        />
+      </AssetCreateProvider>,
+    );
+    expect(screen.getByTestId("search-item-a1")).toBeTruthy();
+    expect(screen.queryByTestId(/search-item-__create__/)).toBeNull();
+
+    view.rerender(
+      <AssetPicker
+        open
+        onOpenChange={() => {}}
+        assets={assets}
+        allowedTypes={["Material"]}
+        onPick={() => {}}
+      />,
+    );
+    expect(screen.getByTestId("search-item-m1")).toBeTruthy();
+    expect(screen.queryByTestId("search-item-__create__Material")).toBeNull();
+  });
+
+  it("names the asset after the search text, then picks it and closes", async () => {
+    const api = createApi();
+    const onPick = vi.fn();
+    const onOpenChange = vi.fn();
+    render(
+      <AssetCreateProvider value={api}>
+        <AssetPicker
+          open
+          onOpenChange={onOpenChange}
+          assets={assets}
+          allowedTypes={["Material"]}
+          createOptions={{ materialDomain: "particle" }}
+          onPick={onPick}
+        />
+      </AssetCreateProvider>,
+    );
+    fireEvent.change(screen.getByTestId("asset-picker-query"), {
+      target: { value: "  Lava Glow " },
+    });
+    expect(screen.queryByTestId("search-item-m1")).toBeNull();
+    fireEvent.click(screen.getByTestId("search-item-__create__Material"));
+
+    await waitFor(() => expect(onPick).toHaveBeenCalledWith("new-guid"));
+    expect(api.createAsset).toHaveBeenCalledTimes(1);
+    expect(api.createAsset).toHaveBeenCalledWith({
+      type: "Material",
+      name: "Lava Glow",
+      materialDomain: "particle",
+    });
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("picks the matching asset with type, ArrowDown, Enter instead of creating", () => {
+    const api = createApi();
+    const onPick = vi.fn();
+    render(
+      <AssetCreateProvider value={api}>
+        <AssetPicker
+          open
+          onOpenChange={() => {}}
+          assets={assets}
+          allowedTypes={["Material"]}
+          onPick={onPick}
+        />
+      </AssetCreateProvider>,
+    );
+    const query = screen.getByTestId("asset-picker-query");
+    query.focus();
+    fireEvent.change(query, { target: { value: "Stone" } });
+    fireEvent.keyDown(query, { key: "ArrowDown" });
+    fireEvent.keyDown(query, { key: "Enter" });
+
+    expect(onPick).toHaveBeenCalledWith("m1");
+    expect(api.createAsset).not.toHaveBeenCalled();
+  });
+
+  it("keeps the dialog open with the error when creation fails", async () => {
+    const api = createApi({
+      createAsset: vi.fn(async () => {
+        throw new Error("Project storage unavailable");
+      }),
+    });
+    const onPick = vi.fn();
+    const onOpenChange = vi.fn();
+    render(
+      <AssetCreateProvider value={api}>
+        <AssetPicker
+          open
+          onOpenChange={onOpenChange}
+          assets={assets}
+          allowedTypes={["Material"]}
+          onPick={onPick}
+        />
+      </AssetCreateProvider>,
+    );
+    fireEvent.click(screen.getByTestId("search-item-__create__Material"));
+
+    expect(
+      (await screen.findByTestId("asset-picker-error")).textContent,
+    ).toContain("Project storage unavailable");
+    expect(api.createAsset).toHaveBeenCalledWith({ type: "Material" });
+    expect(onPick).not.toHaveBeenCalled();
+    expect(onOpenChange).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId("search-item-m1"));
+    expect(onPick).toHaveBeenCalledWith("m1");
+  });
+
+  it("drops the pick when the dialog closes before creation finishes", async () => {
+    let finish: (guid: string) => void = () => {};
+    const api = createApi({
+      createAsset: vi.fn(
+        () => new Promise<string>((resolve) => (finish = resolve)),
+      ),
+    });
+    const onPick = vi.fn();
+    const picker = (open: boolean) => (
+      <AssetCreateProvider value={api}>
+        <AssetPicker
+          open={open}
+          onOpenChange={() => {}}
+          assets={assets}
+          allowedTypes={["Material"]}
+          onPick={onPick}
+        />
+      </AssetCreateProvider>
+    );
+    const view = render(picker(true));
+    fireEvent.click(screen.getByTestId("search-item-__create__Material"));
+    fireEvent.click(screen.getByTestId("search-item-m1"));
+    expect(onPick).not.toHaveBeenCalled();
+    view.rerender(picker(false));
+    await act(async () => {
+      finish("late-guid");
+    });
+    view.rerender(picker(true));
+    fireEvent.click(screen.getByTestId("search-item-m1"));
+    expect(onPick.mock.calls).toEqual([["m1"]]);
   });
 });

@@ -202,6 +202,16 @@ export {
   type AssetOpenApi,
 } from "./asset-picker-control";
 export {
+  AssetCreateProvider,
+  useAssetCreate,
+  type AssetCreateApi,
+  type AssetCreateMaterialDomain,
+  type AssetCreateOptions,
+  type AssetCreateRequest,
+  type ClassCreateOptions,
+  type ClassCreateRequest,
+} from "./asset-create-context";
+export {
   ClassPicker,
   type ClassPickerEntry,
   type ClassPickerProps,

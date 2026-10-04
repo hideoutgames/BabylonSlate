@@ -18,6 +18,7 @@ import {
   assetRowIdentity,
   classRowIdentity,
   selectedPickerIdentity,
+  type AssetCreateOptions,
   type CatalogCategory,
   type CatalogCategoryGroup,
 } from "@babylonslate/editor-kit";
@@ -253,6 +254,12 @@ const ENGINE_CATEGORIES: Array<
     keywords: "keyboard shortcuts hotkeys keybinds keys bindings",
   },
 ];
+
+/**
+ * Project Settings pickers create in the project content root, never beside
+ * the active tab (which may sit in a plugin that can be disabled).
+ */
+const PROJECT_ASSET_CREATE_OPTIONS: AssetCreateOptions = { ownerPath: null };
 
 const GENERIC_FONT_FALLBACKS = [
   "sans-serif",
@@ -1683,6 +1690,7 @@ export function SettingsModal({
               path: asset.path,
             }))}
           allowedTypes={["AudioMixer"]}
+          createOptions={PROJECT_ASSET_CREATE_OPTIONS}
           title="Pick Audio Mixer"
           allowNone
           onPick={(guid) => {
@@ -1711,6 +1719,7 @@ export function SettingsModal({
               path: asset.path,
             }))}
           allowedTypes={["Scene"]}
+          createOptions={PROJECT_ASSET_CREATE_OPTIONS}
           title="Pick Scene"
           allowNone
           onPick={(guid) => {
@@ -1728,6 +1737,8 @@ export function SettingsModal({
           classes={gameInstanceClassEntries(assetRegistry?.list() ?? [])}
           title="Pick Game Instance"
           allowNone
+          createBaseClass="GameInstance"
+          createOptions={PROJECT_ASSET_CREATE_OPTIONS}
           onPick={(classId) => {
             if (!projectDocument) return;
             updateProjectSettings({ gameInstanceClass: classId });
@@ -1745,6 +1756,8 @@ export function SettingsModal({
           classes={editorUtilityObjectClassEntries(assetRegistry?.list() ?? [])}
           title="Pick Editor Utility Object"
           allowNone={false}
+          createBaseClass="EditorUtilityObject"
+          createOptions={PROJECT_ASSET_CREATE_OPTIONS}
           onPick={(classId) => {
             if (!projectDocument || !classId) {
               setUtilityPick(null);
