@@ -1,8 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { FreeCamera, MeshBuilder, NullEngine, Scene, Vector3, type Mesh } from "@babylonjs/core";
 import { createDefaultWaterDefinition, normalizeWaterBody } from "@babylonslate/core";
 import { createLandscapeMesh } from "./landscape-mesh";
-import { createWaterMesh, updateSceneWater } from "./water-mesh";
+import { createWaterMesh, setSceneWaterTime, updateSceneWater } from "./water-mesh";
 import { createWaterRemovalMesh, sceneWaterRemovals } from "./water-removal-mesh";
 import { applyAssignMesh, createSnapshotSceneBinding } from "./snapshot-apply";
 import { distanceTransform, WATER_FIELD_DEPTH_RANGE, WATER_FIELD_SHORE_RANGE, WaterField } from "./water-field";
@@ -130,5 +130,19 @@ describe("Water field", () => {
       field.update();
       expect(texel(field as unknown as FieldView, 0, 0).depth).toBeCloseTo(45, 0);
     } finally { field?.dispose(); scene.dispose(); engine.dispose(); }
+  });
+
+  it("keeps a finite body's terrain field while Gerstner waves sway its edges", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    new FreeCamera("camera", new Vector3(0, 30, -30), scene);
+    try {
+      createLandscapeMesh(scene, "floor", { width: 40, depth: 40, subdivisions: 4, heights: Array(25).fill(-3) });
+      const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 30, length: 30, waveScale: 1 }), createDefaultWaterDefinition());
+      expect(texel(fieldOf(lake), 0, 0).depth).toBeCloseTo(3, 0);
+      // The field is keyed on the surface bounds, so they must not follow the moving edges frame by frame.
+      const uploads = [vi.spyOn(engine, "updateRawTexture"), vi.spyOn(engine, "createRawTexture")];
+      for (let step = 1; step <= 5; step++) { setSceneWaterTime(scene, step * 0.37); updateSceneWater(scene); }
+      for (const upload of uploads) expect(upload).not.toHaveBeenCalled();
+    } finally { scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
   });
 });

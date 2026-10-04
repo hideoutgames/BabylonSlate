@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { ArcRotateCamera, CubeTexture, FreeCamera, type Mesh, NullEngine, PBRMaterial, Quaternion, Scene, SphericalPolynomial, Texture, Vector3, VertexBuffer } from "@babylonjs/core";
-import { createDefaultWaterDefinition, normalizeWaterBody, sampleWaterSurface } from "@babylonslate/core";
+import { createDefaultWaterDefinition, normalizeWaterBody, sampleWaterSurface, waterHorizontalEnvelope } from "@babylonslate/core";
 import { createWaterMesh, setSceneWaterTime, updateSceneWater, updateWaterMeshBody, waterMeshBody } from "./water-mesh";
 import { applyAssignMesh, createPlayMesh, createSnapshotSceneBinding } from "./snapshot-apply";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@babylonslate/shader-graph";
@@ -9,10 +9,10 @@ import { buildFloatDdsCubeFixture } from "@babylonslate/test-kit/environment-fix
 import { resourceCacheForEngine, type ResourceLease } from "./resource-cache";
 import { createSkyboxMesh } from "./skybox";
 
-/** The vertex over the component origin; vertical waves never move it sideways. */
+/** The vertex whose rest point is the component origin (Gerstner waves move it sideways). */
 function centreVertex(mesh: Mesh): number {
-  const positions = mesh.getVerticesData(VertexBuffer.PositionKind)!;
-  for (let i = 0; i < positions.length; i += 3) if (Math.hypot(positions[i]!, positions[i + 2]!) < 1e-6) return i / 3;
+  const uvs = mesh.getVerticesData(VertexBuffer.UVKind)!;
+  for (let i = 0; i < uvs.length; i += 2) if (uvs[i] === 0.5 && uvs[i + 1] === 0.5) return i / 2;
   throw new Error("No centre vertex");
 }
 
@@ -87,14 +87,24 @@ describe("Water rendering", () => {
       const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 50, length: 30, waveScale: 1 }));
       const global = createWaterMesh(scene, "global", normalizeWaterBody({}, "global"));
       setSceneWaterTime(scene, 4); updateSceneWater(scene);
+      // Culling bounds are the authored footprint padded by the farthest Gerstner waves move its edges.
+      const reach = waterHorizontalEnvelope(createDefaultWaterDefinition(), 1), bounds = [-30 - reach, 30 + reach, -20 - reach, 20 + reach];
+      expect(reach).toBeGreaterThan(0.1);
       const before = ocean.getBoundingInfo().boundingBox;
-      expect([before.minimum.x, before.maximum.x, before.minimum.z, before.maximum.z]).toEqual([-30, 30, -20, 20]);
+      for (const [i, value] of [before.minimum.x, before.maximum.x, before.minimum.z, before.maximum.z].entries()) expect(value).toBeCloseTo(bounds[i]!, 5);
+      const vertices = ocean.getVerticesData(VertexBuffer.PositionKind)!;
+      for (let i = 0; i < vertices.length; i += 3) {
+        expect(Math.abs(vertices[i]!)).toBeLessThanOrEqual(30 + reach + 1e-4);
+        expect(Math.abs(vertices[i + 2]!)).toBeLessThanOrEqual(20 + reach + 1e-4);
+      }
       const lakeSurface = Array.from(lake.getVerticesData(VertexBuffer.PositionKind)!);
       camera.position.set(10000, 4, -5000); updateSceneWater(scene);
       // Finite water is anchored to the world: the camera neither reshapes nor flattens its waves.
       expect(Array.from(lake.getVerticesData(VertexBuffer.PositionKind)!)).toEqual(lakeSurface);
+      // Neither the camera nor animated waves change those bounds.
+      setSceneWaterTime(scene, 5.5); updateSceneWater(scene);
       const after = ocean.getBoundingInfo().boundingBox;
-      expect([after.minimum.x, after.maximum.x, after.minimum.z, after.maximum.z]).toEqual([-30, 30, -20, 20]);
+      for (const [i, value] of [after.minimum.x, after.maximum.x, after.minimum.z, after.maximum.z].entries()) expect(value).toBeCloseTo(bounds[i]!, 5);
       const horizon = global.getBoundingInfo().boundingBox;
       expect(horizon.minimum.x).toBeLessThan(8500);
       expect(horizon.maximum.x).toBeGreaterThan(11500);
@@ -178,7 +188,9 @@ describe("Water rendering", () => {
       const positions = mesh.getVerticesData(VertexBuffer.PositionKind)!;
       const middle = centreVertex(mesh) * 3;
       const height = positions[middle + 1]!;
-      expect(height).toBeCloseTo(sampleWaterSurface(water, body, { x: 0, y: 0, z: 0 }, 2).height, 5);
+      // Gerstner waves carry the centre vertex sideways; the query at its displaced X/Z finds the same surface.
+      expect(Math.hypot(positions[middle]!, positions[middle + 2]!)).toBeGreaterThan(0.01);
+      expect(height).toBeCloseTo(sampleWaterSurface(water, body, { x: positions[middle]!, y: 0, z: positions[middle + 2]! }, 2).height, 5);
       const uploads = vi.spyOn(engine, "updateDynamicVertexBuffer");
       updateSceneWater(scene);
       expect(uploads).not.toHaveBeenCalled();
