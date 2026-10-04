@@ -13,7 +13,7 @@ import type { AssetContainer } from "@babylonjs/core/assetContainer";
 import type { MeshoptSimplifier as Simplifier } from "meshoptimizer/simplifier";
 import { simplifyLevels, type LodLevelIndices, type LodSimplifyInput } from "./model-lod-simplify";
 import type { ModelLodWorkerReply, ModelLodWorkerRequest } from "./model-lod.worker";
-import { sceneRenderingSettings } from "./render-settings";
+import { renderSettingsOwner, sceneRenderingSettings } from "./render-settings";
 import { sharedVertexBuffer } from "./shared-vertex-buffer";
 
 export { AUTO_LOD_SCREEN_SIZES } from "./model-lod-simplify";
@@ -366,8 +366,6 @@ type SceneLods = {
 const sceneLods = new WeakMap<Scene, SceneLods>();
 /** Frozen active-mesh queues keep full detail, as they did before automatic LOD. */
 const pinnedScenes = new WeakSet<Scene>();
-/** Scenes (such as SceneLayers) whose Geometry quality follows another Scene. */
-const settingsOwners = new WeakMap<Scene, Scene>();
 
 /** Render state Babylon reads from the drawn LOD mesh rather than its master. */
 function mirrorLodState(master: Mesh, lod: Mesh): void {
@@ -416,7 +414,8 @@ function levelForCoverage(binding: LodBinding, coverage: number, previous: numbe
 
 function selectLevel(binding: LodBinding, camera: Camera, commit: boolean): number {
   const scene = binding.master.getScene();
-  const settings = sceneRenderingSettings(settingsOwners.get(scene) ?? scene);
+  // SceneLayers resolve Geometry quality through the Scene they follow.
+  const settings = sceneRenderingSettings(renderSettingsOwner(scene));
   if (!settings.autoLod || pinnedScenes.has(scene)) {
     if (commit) binding.current.delete(camera);
     return 0;
@@ -467,11 +466,6 @@ function lodsFor(scene: Scene): SceneLods {
 export function setAutoLodPinned(scene: Scene, pinned: boolean): void {
   if (pinned) pinnedScenes.add(scene);
   else pinnedScenes.delete(scene);
-}
-
-/** Resolve a Scene's Geometry quality from another Scene, e.g. SceneLayers from the world. */
-export function followAutoLodSettings(scene: Scene, owner: Scene): void {
-  if (scene !== owner) settingsOwners.set(scene, owner);
 }
 
 /** Master meshes whose levels were attached by automatic LOD. */

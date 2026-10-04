@@ -10,7 +10,7 @@ import { liveSceneEffectsKey } from "./spatial-effects";
 import type { SharedOutlineView } from "./shared-outline";
 import { FrameGraphSharedOutlineTask } from "./shared-outline-task";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
-import { sceneRenderingSettings } from "./render-settings";
+import { sceneRenderingSettings, sceneWaterQualityRevision } from "./render-settings";
 import type { AttachedPostProcessStack, AttachPostProcessStackOptions } from "./post-process-material";
 import { Constants } from "@babylonjs/core";
 import type { AbstractMesh, Camera, FrameGraphObjectList, InternalTexture, Light, Observable, Observer, Scene } from "@babylonjs/core";
@@ -108,6 +108,8 @@ export class ForwardSceneFrameGraph {
   private postProcessRevision = 0;
   private preparedPostProcessRevision = -1;
   private preparedEffectsKey: string | undefined;
+  /** Water quality the graph's water-owned passes were planned for. */
+  private preparedWaterRevision = -1;
   private retirement: Promise<void> | undefined;
   private released: Promise<void> | undefined;
   private readonly postProcessRetirement = new PostProcessRetirement();
@@ -395,12 +397,12 @@ export class ForwardSceneFrameGraph {
     // A settings change stales a prepared graph like a stack revision; a
     // graphless classic path has no baked chain to re-key.
     if (!this.readinessDirtyFlag &&
-      (!this.graph || this.preparedEffectsKey === this.effectsKey(camera) && this.outlineMatches()))
+      (!this.graph || this.preparedEffectsKey === this.effectsKey(camera) && this.outlineMatches() && this.waterMatches()))
       return true;
     if (
       this.graph && !this.pending &&
       this.preparedPostProcessRevision === this.postProcessRevision &&
-      this.preparedEffectsKey === this.effectsKey(camera) && this.outlineMatches()
+      this.preparedEffectsKey === this.effectsKey(camera) && this.outlineMatches() && this.waterMatches()
     ) {
       this.objects!.camera = camera;
       this.cull!.camera = camera;
@@ -509,7 +511,8 @@ export class ForwardSceneFrameGraph {
     if (this.graph && !outputCurrent) this.markReadinessDirty();
     if (this.pending) return { path: "frameGraph", ready: false };
     if (!this.graph || this.preparedPostProcessRevision !== this.postProcessRevision ||
-      this.preparedEffectsKey !== this.effectsKey(camera) || !this.outlineMatches() || this.shadows?.needsPreparation() ||
+      this.preparedEffectsKey !== this.effectsKey(camera) || !this.outlineMatches() || !this.waterMatches() ||
+      this.shadows?.needsPreparation() ||
       this.clustered?.needsPreparation(camera) ||
       !outputCurrent)
       return { path: "frameGraph", ready: false, preparationRequired: true };
@@ -547,7 +550,7 @@ export class ForwardSceneFrameGraph {
         : undefined) ??
       (this.pending ||
       !this.graph || this.preparedPostProcessRevision !== this.postProcessRevision ||
-      this.preparedEffectsKey !== this.effectsKey(camera) || !this.outlineMatches() ||
+      this.preparedEffectsKey !== this.effectsKey(camera) || !this.outlineMatches() || !this.waterMatches() ||
       !outputCurrent
         ? "FrameGraph preparation is required."
         : undefined);
@@ -761,7 +764,7 @@ export class ForwardSceneFrameGraph {
       assertCurrent();
       const output = this.output(camera);
       if (this.preparedPostProcessRevision !== this.postProcessRevision ||
-        this.preparedEffectsKey !== this.effectsKey(camera) || !this.outlineMatches() ||
+        this.preparedEffectsKey !== this.effectsKey(camera) || !this.outlineMatches() || !this.waterMatches() ||
         this.clustered?.needsPreparation(camera) ||
         this.outputColor !== output.color || this.outputDepth !== output.depth ||
         (this.postProcessGraph || this.effectsGraph || this.outlineTask) &&
@@ -771,6 +774,7 @@ export class ForwardSceneFrameGraph {
       // below must leave this graph stale.
       const postProcessRevision = this.postProcessRevision;
       const effectsKey = this.effectsKey(camera);
+      const waterRevision = sceneWaterQualityRevision(scene);
       if (!this.graph) {
         this.graph = new FrameGraph(scene);
         this.preparedOutlineView = this.outlineView?.active ? this.outlineView : undefined;
@@ -954,6 +958,7 @@ export class ForwardSceneFrameGraph {
       assertCurrent();
       this.preparedPostProcessRevision = postProcessRevision;
       this.preparedEffectsKey = effectsKey;
+      this.preparedWaterRevision = waterRevision;
       this.preparedWidth = width;
       this.preparedHeight = height;
       this.failure = undefined;
@@ -987,6 +992,12 @@ export class ForwardSceneFrameGraph {
    * activation or an attached-view change alters the graph structure. */
   private outlineMatches(): boolean {
     return this.preparedOutlineView === (this.outlineView?.active ? this.outlineView : undefined);
+  }
+
+  /** Water-owned passes (scene copy, planar, FFT) are planned with the graph,
+   * so a project Water quality change re-plans it. A number compare per frame. */
+  private waterMatches(): boolean {
+    return this.preparedWaterRevision === sceneWaterQualityRevision(this.scene);
   }
 
   private output(camera: Camera) {
@@ -1118,6 +1129,7 @@ export class ForwardSceneFrameGraph {
     this.outlineTask = undefined;
     this.preparedOutlineView = undefined;
     this.preparedEffectsKey = undefined;
+    this.preparedWaterRevision = -1;
     this.outputCopy = undefined;
     this.objects = undefined;
     this.shadows = undefined;

@@ -57,8 +57,8 @@ import type {
 } from "@babylonslate/core";
 import { createDefaultScene, engineCommandBus } from "@babylonslate/core";
 import { setSceneRenderSettings } from "./scene-render-mode";
-import { followAutoLodSettings, liveMeshCount } from "./model-lod";
-import { applyMaterialTextureAnisotropy, sceneRenderingSettings, resolveSceneRenderingQuality, setSceneEffectsEnabled, type RenderShadingSettings } from "./render-settings";
+import { liveMeshCount } from "./model-lod";
+import { applyMaterialTextureAnisotropy, followSceneRenderSettings, sceneRenderingSettings, sceneWaterQualityDeviceClamp, sceneWaterQualityRevision, resolveSceneRenderingQuality, setSceneEffectsEnabled, type RenderShadingSettings } from "./render-settings";
 import type {
   SpriteAnimationPayload,
   SpritePayload,
@@ -1297,6 +1297,7 @@ function initializeEngine(
 
   let appliedQuality: ReturnType<typeof resolveRenderingQuality> | undefined;
   let appliedEffectsKey: string | undefined;
+  let appliedWaterRevision: number | undefined;
   let appliedProject: unknown;
   let appliedSceneOverrides: unknown;
   let appliedSessionOverrides: unknown;
@@ -1335,6 +1336,13 @@ function initializeEngine(
       worldRenderer.invalidate();
     }
     appliedEffectsKey = effectsKey;
+    // Each forward graph re-plans its water-owned passes (scene copy, planar,
+    // FFT) when the revision it was built for is stale; this supersedes a
+    // world preparation that is already under way.
+    const waterRevision = sceneWaterQualityRevision(scene);
+    if (appliedWaterRevision !== undefined && appliedWaterRevision !== waterRevision)
+      worldRenderer.invalidate();
+    appliedWaterRevision = waterRevision;
   };
   // Apply at the host boundary below, never inside Scene.render. WebGPU
   // attachment resizing emits beginFrame and can re-enter view admission.
@@ -2251,9 +2259,12 @@ function initializeEngine(
         const state = sceneRenderingSettings(scene);
         const { shadows, ...quality } = resolveSceneRenderingQuality(scene);
         quality.textures = { ...quality.textures, anisotropy: state.textureAnisotropy };
+        const water = sceneWaterQualityDeviceClamp(scene);
+        quality.water = { ...quality.water, ...water.quality };
         const pipeline = sceneRenderPathStatus(scene);
-        return { revision: transaction.revision, status: transaction.clamped || pipeline.limits.length || quality.textures.anisotropy !== transaction.settings.render.quality?.textures.anisotropy ? "clamped" : "applied",
-          message: pipeline.limits.join(" ") || (transaction.clamped ? "Clamped rendering settings presented." : "Rendering settings presented."), pipeline,
+        const limits = [...pipeline.limits, ...water.limits];
+        return { revision: transaction.revision, status: transaction.clamped || limits.length || quality.textures.anisotropy !== transaction.settings.render.quality?.textures.anisotropy ? "clamped" : "applied",
+          message: limits.join(" ") || (transaction.clamped ? "Clamped rendering settings presented." : "Rendering settings presented."), pipeline,
           effective: { frameCap: transaction.settings.frameCap, render: { ...transaction.settings.render,
             ...pipeline.effective, quality, shadows, cel: state.cel, mode: state.mode,
             environmentLighting: state.environmentLighting, effects: state.effects } } };
@@ -2858,8 +2869,8 @@ function initializeEngine(
       }
       if (command.type === "sceneLayerCreate") {
         const layer = sceneLayerCompositor?.create(command);
-        // Layer models follow the world view's Geometry quality.
-        if (layer) followAutoLodSettings(layer.scene, scene);
+        // Layers resolve project quality (Geometry, Water) through the world view.
+        if (layer) followSceneRenderSettings(layer.scene, scene);
         syncOverlayLayer(command.layerId);
         scheduler.invalidate("snapshot");
       }
