@@ -365,6 +365,13 @@ interface DocumentContextValue {
   textureUsageBlockedReason: (guid: string) => string | null;
   onSessionDiagnostic: (listener: (line: string) => void) => () => void;
   openDocuments: OpenDocument[];
+  /**
+   * The open documents at call time, read from the document service. Stable
+   * identity: handlers, guards and async continuations use it instead of a
+   * render-time `openDocuments` snapshot, so they stay correct without
+   * re-rendering on every edit.
+   */
+  getOpenDocuments: () => OpenDocument[];
   tabOrder: string[];
   activeDocumentId: string | null;
   listedProjects: ListedProject[];
@@ -1354,6 +1361,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const subscribeDocumentIdentity = useCallback(
     (listener: DocumentIdentityListener) =>
       documentService.onIdentityChange(listener),
+    [documentService],
+  );
+
+  const getOpenDocuments = useCallback(
+    () => documentService.getOpenDocumentsOrdered(),
     [documentService],
   );
 
@@ -4464,6 +4476,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       projectDocument,
       projectName: projectDocument?.metadata.name ?? null,
       openDocuments: documentService.getOpenDocumentsOrdered(),
+      getOpenDocuments,
       tabOrder: [...documentService.getState().tabOrder],
       activeDocumentId: documentService.getState().activeDocumentId,
       listedProjects,
@@ -4652,6 +4665,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       importPlugin,
       repathDocument,
       subscribeDocumentIdentity,
+      getOpenDocuments,
       retryFailedTextureEncoding,
       prepareAreaEmission,
       collectPlayAreaEmissions,

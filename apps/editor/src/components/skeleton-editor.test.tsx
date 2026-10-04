@@ -6,19 +6,17 @@ vi.mock("../context/play-context", () => ({
   useOptionalPlay: () => null,
 }));
 
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => ({
-    assetRegistry: {
-      list: () => [
-        {
-          header: { guid: "model-1", name: "Hero", type: "Model" },
-          path: "assets/Hero.babasset",
-        },
-      ],
-    },
-    readAssetChunk: async () => null,
-  }),
-}));
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
+  assetRegistry: {
+    list: () => [
+      {
+        header: { guid: "model-1", name: "Hero", type: "Model" },
+        path: "assets/Hero.babasset",
+      },
+    ],
+  },
+  readAssetChunk: async () => null,
+})));
 
 afterEach(() => {
   cleanup();

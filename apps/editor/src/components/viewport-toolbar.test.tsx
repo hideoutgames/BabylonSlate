@@ -112,24 +112,22 @@ vi.mock("../context/scene-editing-context", () => ({
   }),
 }));
 
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => ({
-    openDocuments: [
-      {
-        id: "scene:assets/Main.scene.babasset",
-        ref: {
-          kind: harness.documentKind,
-          path: "assets/Main.scene.babasset",
-          label: "Main Scene",
-        },
-        content: harness.scene,
-        layout: null,
-        dirty: false,
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
+  openDocuments: [
+    {
+      id: "scene:assets/Main.scene.babasset",
+      ref: {
+        kind: harness.documentKind,
+        path: "assets/Main.scene.babasset",
+        label: "Main Scene",
       },
-    ],
-    applySceneChange: harness.applySceneChange,
-  }),
-}));
+      content: harness.scene,
+      layout: null,
+      dirty: false,
+    },
+  ],
+  applySceneChange: harness.applySceneChange,
+})));
 
 beforeEach(() => {
   harness.gizmoTool = "translate";

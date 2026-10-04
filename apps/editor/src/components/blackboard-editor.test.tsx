@@ -3,12 +3,10 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createDefaultBlackboard } from "@babylonslate/behaviour-tree";
 import { BlackboardEditor } from "./blackboard-editor";
 
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => ({
-    openDocuments: [],
-    assetRegistry: { list: () => [] },
-  }),
-}));
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
+  openDocuments: [],
+  assetRegistry: { list: () => [] },
+})));
 
 if (typeof window !== "undefined") {
   class PointerEventPolyfill extends MouseEvent {

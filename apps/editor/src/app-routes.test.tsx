@@ -17,26 +17,24 @@ const documentState = vi.hoisted(() => ({
 }));
 
 // Project I/O and the GPU editor are the two external sides of this route boundary.
-vi.mock("./context/document-context", () => ({
-  useDocuments: () => ({
-    route: documentState.route,
-    listedProjects: [],
-    homepageReady: true,
-    templates: [],
-    needsReconnect: false,
-    recoveryAvailable: documentState.recoveryAvailable,
-    createEmptyProject: async () => {},
-    createFromTemplate: async () => {},
-    openProject: async () => {},
-    openListedProject: async () => {},
-    updateListedProject: async () => {},
-    removeListedProject: async () => {},
-    reconnectProject: async () => {},
-    keepRecovery: documentState.keepRecovery,
-    dismissRecovery: async () => {},
-    refreshTemplates: async () => {},
-  }),
-}));
+vi.mock("./context/document-context", async () => (await import("./testing/document-context-mock")).documentContextMock(() => ({
+  route: documentState.route,
+  listedProjects: [],
+  homepageReady: true,
+  templates: [],
+  needsReconnect: false,
+  recoveryAvailable: documentState.recoveryAvailable,
+  createEmptyProject: async () => {},
+  createFromTemplate: async () => {},
+  openProject: async () => {},
+  openListedProject: async () => {},
+  updateListedProject: async () => {},
+  removeListedProject: async () => {},
+  reconnectProject: async () => {},
+  keepRecovery: documentState.keepRecovery,
+  dismissRecovery: async () => {},
+  refreshTemplates: async () => {},
+})));
 vi.mock("./routes/editor-route", () => ({
   default: () => <main aria-label="Editor Workspace" />,
 }));

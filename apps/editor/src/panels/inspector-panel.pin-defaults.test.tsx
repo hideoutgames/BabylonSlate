@@ -33,61 +33,59 @@ vi.mock("../context/document-workspace-context", () => ({
   }),
 }));
 
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => ({
-    openDocuments: [
-      {
-        id: "graph:assets/Hero.class.babasset",
-        ref: {
-          kind: "graph",
-          path: "assets/Hero.class.babasset",
-          label: "Hero Class",
-        },
-        content: {
-          nodes: [
-            {
-              id: "play-1",
-              type: fixture.kind === "asset" ? "audio.play" : "actor.getAllOfClass",
-              position: { x: 80, y: 80 },
-              data: fixture.kind === "asset" ? {
-                title: "Play Sound",
-                __nodeType: "audio.play",
-                __pins: [
-                  pin("asset", "Asset", "in", assetRef("Audio")),
-                ],
-                "default:asset": "audio-1",
-              } : {
-                title: "Get All Actors Of Class",
-                __nodeType: "actor.getAllOfClass",
-                __pins: [pin("classId", "Class", "in", classRef("Actor"))],
-                "default:classId": "Pawn",
-              },
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
+  openDocuments: [
+    {
+      id: "graph:assets/Hero.class.babasset",
+      ref: {
+        kind: "graph",
+        path: "assets/Hero.class.babasset",
+        label: "Hero Class",
+      },
+      content: {
+        nodes: [
+          {
+            id: "play-1",
+            type: fixture.kind === "asset" ? "audio.play" : "actor.getAllOfClass",
+            position: { x: 80, y: 80 },
+            data: fixture.kind === "asset" ? {
+              title: "Play Sound",
+              __nodeType: "audio.play",
+              __pins: [
+                pin("asset", "Asset", "in", assetRef("Audio")),
+              ],
+              "default:asset": "audio-1",
+            } : {
+              title: "Get All Actors Of Class",
+              __nodeType: "actor.getAllOfClass",
+              __pins: [pin("classId", "Class", "in", classRef("Actor"))],
+              "default:classId": "Pawn",
             },
-          ],
-          edges: [],
-          members: [],
+          },
+        ],
+        edges: [],
+        members: [],
+      },
+      layout: null,
+      dirty: false,
+    },
+  ],
+  applyGraphChange,
+  projectDocument: { settings: { input: { actions: [], axes: [] } } },
+  assetRegistry: {
+    list: () => [
+      {
+        header: {
+          guid: "audio-2",
+          name: "Hit",
+          type: "Audio",
+          parentClass: null,
         },
-        layout: null,
-        dirty: false,
+        path: "assets/Hit.audio.babasset",
       },
     ],
-    applyGraphChange,
-    projectDocument: { settings: { input: { actions: [], axes: [] } } },
-    assetRegistry: {
-      list: () => [
-        {
-          header: {
-            guid: "audio-2",
-            name: "Hit",
-            type: "Audio",
-            parentClass: null,
-          },
-          path: "assets/Hit.audio.babasset",
-        },
-      ],
-    },
-  }),
-}));
+  },
+})));
 
 vi.mock("../context/validation-context", () => ({
   useValidation: () => ({

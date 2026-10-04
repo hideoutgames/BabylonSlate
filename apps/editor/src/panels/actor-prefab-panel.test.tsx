@@ -46,12 +46,10 @@ vi.mock("../context/graph-editing-context", () => ({
   }),
 }));
 
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => ({
-    assetRegistry: { list: () => harness.assets },
-    openDocuments: [],
-  }),
-}));
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
+  assetRegistry: { list: () => harness.assets },
+  openDocuments: [],
+})));
 
 vi.mock("../context/document-workspace-context", () => ({
   useDocumentWorkspace: () => ({ documentId: "graph:assets/Hero.class.babasset" }),

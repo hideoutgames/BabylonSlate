@@ -40,20 +40,18 @@ vi.mock("../context/document-workspace-context", () => ({
   useDocumentWorkspace: () => ({ documentId: "material:assets/Rock.material.babasset" }),
 }));
 
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => ({
-    openDocuments: [
-      {
-        id: "material:assets/Rock.material.babasset",
-        ref: { kind: harness.kind, path: "assets/Rock.material.babasset" },
-        content: harness.content,
-      },
-    ],
-    applyAssetDocumentChange: harness.applyAssetDocumentChange,
-    assetRegistry,
-    registryEpoch: harness.registryEpoch,
-  }),
-}));
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
+  openDocuments: [
+    {
+      id: "material:assets/Rock.material.babasset",
+      ref: { kind: harness.kind, path: "assets/Rock.material.babasset" },
+      content: harness.content,
+    },
+  ],
+  applyAssetDocumentChange: harness.applyAssetDocumentChange,
+  assetRegistry,
+  registryEpoch: harness.registryEpoch,
+})));
 
 vi.mock("../context/material-editing-context", () => ({
   useMaterialEditing: () => ({

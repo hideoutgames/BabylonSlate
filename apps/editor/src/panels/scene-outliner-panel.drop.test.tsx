@@ -55,22 +55,20 @@ vi.mock("../context/scene-editing-context", () => ({
   selectionAfterLockChange: (ids: string[]) => ids,
 }));
 
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => ({
-    openDocuments: [
-      {
-        id: "scene:assets/Main.scene.babasset",
-        ref: { kind: "scene", path: "assets/Main.scene.babasset", label: "Main" },
-        content: harness.scene,
-        layout: null,
-        dirty: false,
-      },
-    ],
-    applySceneChange,
-    assetRegistry: { list: () => [] },
-    loadGraphDocument: vi.fn(),
-  }),
-}));
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
+  openDocuments: [
+    {
+      id: "scene:assets/Main.scene.babasset",
+      ref: { kind: "scene", path: "assets/Main.scene.babasset", label: "Main" },
+      content: harness.scene,
+      layout: null,
+      dirty: false,
+    },
+  ],
+  applySceneChange,
+  assetRegistry: { list: () => [] },
+  loadGraphDocument: vi.fn(),
+})));
 
 afterEach(() => {
   cleanup();

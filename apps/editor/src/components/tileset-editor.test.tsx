@@ -29,25 +29,23 @@ const readAssetChunk = vi.hoisted(() =>
   vi.fn(async () => new Uint8Array([137, 80, 78, 71])),
 );
 
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => ({
-    assetRegistry: {
-      getByGuid(guid: string) {
-        return this.list().find((asset) => asset.header.guid === guid);
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
+  assetRegistry: {
+    getByGuid(guid: string) {
+      return this.list().find((asset) => asset.header.guid === guid);
+    },
+    list: () => [
+      {
+        header: { guid: "tex-1", name: "GroundAtlas", type: "Texture" },
+        path: "assets/GroundAtlas.texture.babasset",
       },
-      list: () => [
-        {
-          header: { guid: "tex-1", name: "GroundAtlas", type: "Texture" },
-          path: "assets/GroundAtlas.texture.babasset",
-        },
-      ],
-    },
-    readAssetChunk,
-    projectDocument: {
-      settings: { twoD: { sortingLayers: ["Default", "Foreground"] } },
-    },
-  }),
-}));
+    ],
+  },
+  readAssetChunk,
+  projectDocument: {
+    settings: { twoD: { sortingLayers: ["Default", "Foreground"] } },
+  },
+})));
 
 afterEach(() => {
   cleanup();

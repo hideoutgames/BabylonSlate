@@ -17,85 +17,83 @@ const readAssetChunk = vi.hoisted(() =>
   vi.fn(async () => new Uint8Array([0x89, 0x50, 0x4e, 0x47])),
 );
 
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => ({
-    openDocuments: [
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
+  openDocuments: [
+    {
+      id: "font:assets/Display.font.babasset",
+      ref: {
+        kind: "font",
+        path: "assets/Display.font.babasset",
+        label: "Display Font",
+      },
+      content: createFontPayload("Display"),
+      layout: null,
+      dirty: false,
+    },
+    {
+      id: "asset-settings:assets/Stats.structure.babasset",
+      ref: {
+        kind: "asset-settings",
+        path: "assets/Stats.structure.babasset",
+        label: "Stats",
+      },
+      content: {
+        kind: "structure",
+        guid: "s1",
+        name: "Stats",
+        fields: [{ name: "Health", typeId: "float" }],
+      },
+      layout: null,
+      dirty: false,
+    },
+  ],
+  applyAssetDocumentChange,
+  projectDocument: {
+    settings: {
+      fonts: { defaultFontGuid: null, globalFallback: "sans-serif" },
+      textures: { maxTextureDimension: 2048 },
+    },
+  },
+  assetRegistry: {
+    list: () => [
       {
-        id: "font:assets/Display.font.babasset",
-        ref: {
-          kind: "font",
-          path: "assets/Display.font.babasset",
-          label: "Display Font",
+        header: {
+          guid: "font-1",
+          name: "Display",
+          type: "Font",
+          payload: { family: "Display" },
         },
-        content: createFontPayload("Display"),
-        layout: null,
-        dirty: false,
+        path: "assets/Display.font.babasset",
       },
       {
-        id: "asset-settings:assets/Stats.structure.babasset",
-        ref: {
-          kind: "asset-settings",
-          path: "assets/Stats.structure.babasset",
-          label: "Stats",
+        header: {
+          guid: "font-2",
+          name: "Body",
+          type: "Font",
+          payload: { family: "Body" },
         },
-        content: {
-          kind: "structure",
-          guid: "s1",
-          name: "Stats",
-          fields: [{ name: "Health", typeId: "float" }],
-        },
-        layout: null,
-        dirty: false,
+        path: "assets/Body.font.babasset",
+      },
+      {
+        header: { guid: "s1", name: "Stats", type: "Structure", payload: {} },
+        path: "assets/Stats.structure.babasset",
       },
     ],
-    applyAssetDocumentChange,
-    projectDocument: {
-      settings: {
-        fonts: { defaultFontGuid: null, globalFallback: "sans-serif" },
-        textures: { maxTextureDimension: 2048 },
-      },
-    },
-    assetRegistry: {
-      list: () => [
-        {
-          header: {
-            guid: "font-1",
-            name: "Display",
-            type: "Font",
-            payload: { family: "Display" },
-          },
-          path: "assets/Display.font.babasset",
-        },
-        {
-          header: {
-            guid: "font-2",
-            name: "Body",
-            type: "Font",
-            payload: { family: "Body" },
-          },
-          path: "assets/Body.font.babasset",
-        },
-        {
-          header: { guid: "s1", name: "Stats", type: "Structure", payload: {} },
-          path: "assets/Stats.structure.babasset",
-        },
-      ],
-      getByGuid: (guid: string) =>
-        guid === "font-2"
-          ? {
-              header: {
-                guid: "font-2",
-                name: "Body",
-                type: "Font",
-                payload: { family: "Body" },
-              },
-              path: "assets/Body.font.babasset",
-            }
-          : undefined,
-    },
-    readAssetChunk,
-  }),
-}));
+    getByGuid: (guid: string) =>
+      guid === "font-2"
+        ? {
+            header: {
+              guid: "font-2",
+              name: "Body",
+              type: "Font",
+              payload: { family: "Body" },
+            },
+            path: "assets/Body.font.babasset",
+          }
+        : undefined,
+  },
+  readAssetChunk,
+})));
 
 afterEach(() => {
   cleanup();

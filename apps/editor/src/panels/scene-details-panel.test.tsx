@@ -64,113 +64,111 @@ vi.mock("../context/scene-editing-context", () => ({
   selectionAfterLockChange: (ids: string[]) => ids,
 }));
 
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => ({
-    openDocuments: [
-      {
-        id: harness.documentId,
-        ref: {
-          kind: harness.documentKind,
-          path: "assets/Main.scene.babasset",
-          label: "Main Scene",
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
+  openDocuments: [
+    {
+      id: harness.documentId,
+      ref: {
+        kind: harness.documentKind,
+        path: "assets/Main.scene.babasset",
+        label: "Main Scene",
+      },
+      content: harness.scene,
+      layout: null,
+      dirty: false,
+    },
+  ],
+  applySceneChange: harness.applySceneChange,
+  projectDocument: {
+    settings: {
+      twoD: { sortingLayers: ["Background", "Default", "UI"] },
+      gameInstanceClass: "MyGame",
+      render: harness.render,
+    },
+  },
+  assetRegistry: {
+    list: () => [
+      ...harness.createdAssets,
+      ...(harness.prefabComponents.length ? [{
+        header: {
+          guid: "class-rich-label", name: "RichLabel", type: "Class", parentClass: "Actor",
+          payload: { components: harness.prefabComponents },
         },
-        content: harness.scene,
-        layout: null,
-        dirty: false,
+        path: "assets/RichLabel.class.babasset",
+      }] : []),
+      {
+        header: { guid: "scene-cave", name: "Cave", type: "Scene", parentClass: null },
+        path: "assets/Cave.scene.babasset",
+      },
+      {
+        header: {
+          guid: "mesh-1",
+          name: "Rock",
+          type: "Mesh",
+          parentClass: null,
+        },
+        path: "assets/Rock.mesh.babasset",
+      },
+      {
+        header: {
+          guid: "tex-1",
+          name: "Atlas",
+          type: "Texture",
+          parentClass: null,
+        },
+        path: "assets/Atlas.texture.babasset",
+      },
+      {
+        header: {
+          guid: "class-1",
+          name: "MyGame",
+          type: "Class",
+          parentClass: "GameInstance",
+        },
+        path: "assets/MyGame.class.babasset",
+      },
+      {
+        header: {
+          guid: "pp-blur",
+          name: "Blur",
+          type: "Material",
+          parentClass: null,
+          payload: { domain: "postProcess" },
+        },
+        path: "assets/Blur.material.babasset",
+      },
+      {
+        header: {
+          guid: "mat-rock",
+          name: "Rock",
+          type: "Material",
+          parentClass: null,
+          payload: { domain: "surface" },
+        },
+        path: "assets/Rock.material.babasset",
+      },
+      {
+        header: {
+          guid: "layer-hud",
+          name: "HUD",
+          type: "SceneLayer",
+          parentClass: null,
+        },
+        path: "assets/Hud.scenelayer.babasset",
       },
     ],
-    applySceneChange: harness.applySceneChange,
-    projectDocument: {
-      settings: {
-        twoD: { sortingLayers: ["Background", "Default", "UI"] },
-        gameInstanceClass: "MyGame",
-        render: harness.render,
-      },
-    },
-    assetRegistry: {
-      list: () => [
-        ...harness.createdAssets,
-        ...(harness.prefabComponents.length ? [{
-          header: {
-            guid: "class-rich-label", name: "RichLabel", type: "Class", parentClass: "Actor",
-            payload: { components: harness.prefabComponents },
-          },
-          path: "assets/RichLabel.class.babasset",
-        }] : []),
-        {
-          header: { guid: "scene-cave", name: "Cave", type: "Scene", parentClass: null },
-          path: "assets/Cave.scene.babasset",
-        },
-        {
-          header: {
-            guid: "mesh-1",
-            name: "Rock",
-            type: "Mesh",
-            parentClass: null,
-          },
-          path: "assets/Rock.mesh.babasset",
-        },
-        {
-          header: {
-            guid: "tex-1",
-            name: "Atlas",
-            type: "Texture",
-            parentClass: null,
-          },
-          path: "assets/Atlas.texture.babasset",
-        },
-        {
-          header: {
-            guid: "class-1",
-            name: "MyGame",
-            type: "Class",
-            parentClass: "GameInstance",
-          },
-          path: "assets/MyGame.class.babasset",
-        },
-        {
-          header: {
-            guid: "pp-blur",
-            name: "Blur",
-            type: "Material",
-            parentClass: null,
-            payload: { domain: "postProcess" },
-          },
-          path: "assets/Blur.material.babasset",
-        },
-        {
-          header: {
-            guid: "mat-rock",
-            name: "Rock",
-            type: "Material",
-            parentClass: null,
-            payload: { domain: "surface" },
-          },
-          path: "assets/Rock.material.babasset",
-        },
-        {
-          header: {
-            guid: "layer-hud",
-            name: "HUD",
-            type: "SceneLayer",
-            parentClass: null,
-          },
-          path: "assets/Hud.scenelayer.babasset",
-        },
-      ],
-      getByGuid: (guid: string) =>
-        guid === "mesh-1"
-          ? {
-              header: {
-                guid: "mesh-1", name: "Rock", type: "Mesh",
-                payload: { materialSlots: [{ index: 0, name: "Rock", materialGuid: "mat-rock" }] },
-              },
-              path: "assets/Rock.mesh.babasset",
-            }
-          : undefined,
-    },
-  }),
-}));
+    getByGuid: (guid: string) =>
+      guid === "mesh-1"
+        ? {
+            header: {
+              guid: "mesh-1", name: "Rock", type: "Mesh",
+              payload: { materialSlots: [{ index: 0, name: "Rock", materialGuid: "mat-rock" }] },
+            },
+            path: "assets/Rock.mesh.babasset",
+          }
+        : undefined,
+  },
+})));
 
 beforeEach(() => {
   harness.selectedActorIds = [];

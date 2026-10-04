@@ -15,33 +15,31 @@ vi.mock("../context/play-context", () => ({
   }),
 }));
 
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => ({
-    assetRegistry: {
-      list: () => [
-        {
-          header: { guid: "mat-1", name: "HeroMat", type: "Material", chunks: [], payload: {} },
-          path: "assets/HeroMat.material.babasset",
-        },
-        {
-          header: { guid: "mat-2", name: "AltMat", type: "Material", chunks: [], payload: {} },
-          path: "assets/AltMat.material.babasset",
-        },
-        {
-          header: { guid: "tex-1", name: "Albedo", type: "Texture", chunks: [], payload: {} },
-          path: "assets/Albedo.texture.babasset",
-        },
-      ],
-    },
-    collectPlayMaterialLibrary: async () => ({
-      documents: new Map(),
-      functions: new Map(),
-      textureGuids: [],
-    }),
-    collectPlayTextureBytes: async () => new Map(),
-    collectPlayTexturePixelSizes: () => new Map(),
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
+  assetRegistry: {
+    list: () => [
+      {
+        header: { guid: "mat-1", name: "HeroMat", type: "Material", chunks: [], payload: {} },
+        path: "assets/HeroMat.material.babasset",
+      },
+      {
+        header: { guid: "mat-2", name: "AltMat", type: "Material", chunks: [], payload: {} },
+        path: "assets/AltMat.material.babasset",
+      },
+      {
+        header: { guid: "tex-1", name: "Albedo", type: "Texture", chunks: [], payload: {} },
+        path: "assets/Albedo.texture.babasset",
+      },
+    ],
+  },
+  collectPlayMaterialLibrary: async () => ({
+    documents: new Map(),
+    functions: new Map(),
+    textureGuids: [],
   }),
-}));
+  collectPlayTextureBytes: async () => new Map(),
+  collectPlayTexturePixelSizes: () => new Map(),
+})));
 
 if (typeof window.PointerEvent === "undefined")
   window.PointerEvent = MouseEvent as unknown as typeof PointerEvent;

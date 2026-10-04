@@ -127,25 +127,23 @@ const assetRegistry = {
   getByGuid: (guid: string) => guid === harness.textureAsset.header.guid ? harness.textureAsset : null,
 };
 
-vi.mock("./document-context", () => ({
-  useDocuments: () => ({
-    openDocuments: [
-      {
-        id: "material:assets/Rock.material.babasset",
-        ref: { kind: "material", path: "assets/Rock.material.babasset" },
-        get content() {
-          return harness.content;
-        },
+vi.mock("./document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
+  openDocuments: [
+    {
+      id: "material:assets/Rock.material.babasset",
+      ref: { kind: "material", path: "assets/Rock.material.babasset" },
+      get content() {
+        return harness.content;
       },
-    ],
-    assetRegistry,
-    get registryEpoch() {
-      return harness.registryEpoch;
     },
-    projectDocument: { settings: { playFrameCap: 60 } },
-    readAssetChunk: harness.readAssetChunk,
-  }),
-}));
+  ],
+  assetRegistry,
+  get registryEpoch() {
+    return harness.registryEpoch;
+  },
+  projectDocument: { settings: { playFrameCap: 60 } },
+  readAssetChunk: harness.readAssetChunk,
+})));
 
 vi.mock("@babylonslate/render", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@babylonslate/render")>();

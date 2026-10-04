@@ -11,7 +11,7 @@ const documents = vi.hoisted(() => ({
     loadSourceBytes: import("./play-audio").PlayAudioSourceLoader;
   }>>(),
 }));
-vi.mock("../context/document-context", () => ({ useDocuments: () => documents }));
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => documents));
 
 afterEach(() => {
   cleanup();

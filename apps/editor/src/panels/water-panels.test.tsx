@@ -32,20 +32,18 @@ vi.mock("../context/play-context", () => ({ useOptionalPlay: () => null }));
 vi.mock("../context/document-workspace-context", () => ({
   useDocumentWorkspace: () => ({ documentId: "water:assets/Lake.water.babasset" }),
 }));
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => ({
-    openDocuments: [{ id: "water:assets/Lake.water.babasset", content: harness.content }],
-    assetRegistry: { list: () => [] },
-    applyAssetDocumentChange: async (
-      _id: string,
-      next: Record<string, unknown>,
-      mergeKey?: string,
-    ) => {
-      harness.apply(next, mergeKey);
-      return true;
-    },
-  }),
-}));
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
+  openDocuments: [{ id: "water:assets/Lake.water.babasset", content: harness.content }],
+  assetRegistry: { list: () => [] },
+  applyAssetDocumentChange: async (
+    _id: string,
+    next: Record<string, unknown>,
+    mergeKey?: string,
+  ) => {
+    harness.apply(next, mergeKey);
+    return true;
+  },
+})));
 
 afterEach(() => {
   cleanup();

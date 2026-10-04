@@ -38,25 +38,23 @@ beforeAll(async () => {
   }
 });
 
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => ({
-    prepareAreaEmission,
-    retryTextureEncoding,
-    textureAlignmentStale,
-    textureUsageBlockedReason,
-    readAssetChunk,
-    assetRegistry,
-    registryEpoch: 0,
-    openDocuments: [
-      { id: "other", ref: { path: "assets/tex-other.babasset" }, content: {} },
-      {
-        id: "active",
-        ref: { path: "assets/tex-active.babasset" },
-        content: { usage: "albedo", compressionState: "encode_failed", encodeError: "Encoding failed" },
-      },
-    ],
-  }),
-}));
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
+  prepareAreaEmission,
+  retryTextureEncoding,
+  textureAlignmentStale,
+  textureUsageBlockedReason,
+  readAssetChunk,
+  assetRegistry,
+  registryEpoch: 0,
+  openDocuments: [
+    { id: "other", ref: { path: "assets/tex-other.babasset" }, content: {} },
+    {
+      id: "active",
+      ref: { path: "assets/tex-active.babasset" },
+      content: { usage: "albedo", compressionState: "encode_failed", encodeError: "Encoding failed" },
+    },
+  ],
+})));
 
 const ENVIRONMENT = { usage: "skybox", dimension: "cube", container: "dds", encoding: "linearFloat32", width: 2, height: 2, mipLevels: 2, prefiltered: true };
 

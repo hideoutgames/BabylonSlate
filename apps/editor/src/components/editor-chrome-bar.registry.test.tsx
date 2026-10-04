@@ -25,17 +25,15 @@ const state = vi.hoisted(() => ({
   errorCount: 0,
 }));
 
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => ({
-    projectName: "Test",
-    openDocuments: state.documents,
-    activeDocumentId: "first",
-    dirtyDocuments: state.documents.filter((doc) => doc.dirty),
-    projectDirty: false,
-    assetRegistry: state.registry,
-    registryEpoch: state.registry?.generation ?? 0,
-  }),
-}));
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
+  projectName: "Test",
+  openDocuments: state.documents,
+  activeDocumentId: "first",
+  dirtyDocuments: state.documents.filter((doc) => doc.dirty),
+  projectDirty: false,
+  assetRegistry: state.registry,
+  registryEpoch: state.registry?.generation ?? 0,
+})));
 vi.mock("../context/play-context", () => ({
   usePlay: () => ({ playing: false, preparing: false, canPlay: false }),
 }));

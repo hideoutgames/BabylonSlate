@@ -24,25 +24,22 @@ vi.mock("../lib/content-browser-helpers", () => ({
   classParentLookup: () => new Map(),
 }));
 
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => ({
-    projectName: "Demo",
-    openDocuments: [
-      {
-        id: `${docs.kind}:${docs.path}`,
-        ref: { kind: docs.kind, path: docs.path },
-      },
-    ],
-    activeDocumentId: `${docs.kind}:${docs.path}`,
-    toggleDockWindow: docs.toggleDockWindow,
-    isDockWindowOpen: docs.isDockWindowOpen,
-    getOpenDockWindowCount: docs.getOpenDockWindowCount,
-    assetRegistry: { list: () => docs.assets },
-    sourceControl: { enabled: false },
-    animEditorMode: "stateMachine",
-  }),
-  useDockWindowTick: () => 0,
-}));
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
+  projectName: "Demo",
+  openDocuments: [
+    {
+      id: `${docs.kind}:${docs.path}`,
+      ref: { kind: docs.kind, path: docs.path },
+    },
+  ],
+  activeDocumentId: `${docs.kind}:${docs.path}`,
+  toggleDockWindow: docs.toggleDockWindow,
+  isDockWindowOpen: docs.isDockWindowOpen,
+  getOpenDockWindowCount: docs.getOpenDockWindowCount,
+  assetRegistry: { list: () => docs.assets },
+  sourceControl: { enabled: false },
+  animEditorMode: "stateMachine",
+})));
 
 afterEach(() => {
   cleanup();

@@ -8,13 +8,13 @@ const harness = vi.hoisted(() => ({
   commit: vi.fn(),
 }));
 vi.mock("../context/document-workspace-context", () => ({ useDocumentWorkspace: () => ({ documentId: "target" }) }));
-vi.mock("../context/document-context", () => ({ useDocuments: () => ({
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
   openDocuments: [{ id: "target", content: harness.content }], applyAssetDocumentChange: harness.commit,
   assetRegistry: { list: () => [
     { header: { guid: "depth", name: "Depth Capture", type: "RenderTarget" }, path: "assets/depth.rendertarget.babasset" },
     { header: { guid: "image", name: "Image", type: "Texture" }, path: "assets/image.texture.babasset" },
   ] },
-}) }));
+})));
 afterEach(() => { cleanup(); harness.commit.mockReset(); harness.content = {}; });
 
 it("saves the selected engine render mode while retaining the resolution", async () => {

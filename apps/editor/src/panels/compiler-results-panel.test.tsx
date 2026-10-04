@@ -36,31 +36,29 @@ vi.mock("../context/document-workspace-context", () => ({
   }),
 }));
 
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => ({
-    openDocuments: [
-      {
-        id: "scene:assets/Main.scene.babasset",
-        ref: {
-          kind: "scene",
-          path: "assets/Main.scene.babasset",
-          label: "Main",
-        },
-        content: {
-          name: "Main",
-          actors: [
-            {
-              id: "hero",
-              components: [{ id: "rb", classId: "RigidBodyComponent" }],
-            },
-          ],
-        },
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
+  openDocuments: [
+    {
+      id: "scene:assets/Main.scene.babasset",
+      ref: {
+        kind: "scene",
+        path: "assets/Main.scene.babasset",
+        label: "Main",
       },
-    ],
-    setActiveDocument,
-    activeDocumentId: "scene:assets/Main.scene.babasset",
-  }),
-}));
+      content: {
+        name: "Main",
+        actors: [
+          {
+            id: "hero",
+            components: [{ id: "rb", classId: "RigidBodyComponent" }],
+          },
+        ],
+      },
+    },
+  ],
+  setActiveDocument,
+  activeDocumentId: "scene:assets/Main.scene.babasset",
+})));
 
 vi.mock("../context/validation-context", () => ({
   useValidation: () => ({

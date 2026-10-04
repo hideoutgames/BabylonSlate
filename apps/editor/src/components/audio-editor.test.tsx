@@ -22,25 +22,23 @@ if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined")
   window.PointerEvent = PointerEventPolyfill as unknown as typeof PointerEvent;
 }
 
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => ({
-    assetRegistry: {
-      list: () => [
-        {
-          header: { guid: "ch-1", name: "SFX", type: "AudioChannel" },
-          path: "assets/SFX.channel.babasset",
-        },
-        {
-          header: { guid: "att-1", name: "Near", type: "SoundAttenuation" },
-          path: "assets/Near.atten.babasset",
-        },
-      ],
-    },
-    readAssetChunk: vi.fn(async () => new Uint8Array([1, 2, 3, 4])),
-    writeAudioClipChunk: audioIO.write,
-    removeAudioClipChunk: audioIO.remove,
-  }),
-}));
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
+  assetRegistry: {
+    list: () => [
+      {
+        header: { guid: "ch-1", name: "SFX", type: "AudioChannel" },
+        path: "assets/SFX.channel.babasset",
+      },
+      {
+        header: { guid: "att-1", name: "Near", type: "SoundAttenuation" },
+        path: "assets/Near.atten.babasset",
+      },
+    ],
+  },
+  readAssetChunk: vi.fn(async () => new Uint8Array([1, 2, 3, 4])),
+  writeAudioClipChunk: audioIO.write,
+  removeAudioClipChunk: audioIO.remove,
+})));
 
 afterEach(() => {
   cleanup();

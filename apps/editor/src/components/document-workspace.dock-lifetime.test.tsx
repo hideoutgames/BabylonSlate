@@ -37,9 +37,7 @@ const harness = vi.hoisted(() => ({
   passthrough: ({ children }: { children: ReactNode }) => children,
 }));
 
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => harness.docs,
-}));
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => harness.docs));
 // Editing sessions and panel bodies are outside the dock registration contract.
 vi.mock("../context/audio-reverb-bake-context", () => ({
   AudioReverbBakeProvider: harness.passthrough,

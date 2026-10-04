@@ -56,12 +56,10 @@ beforeAll(async () => {
   }
 });
 
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => ({
-    assetRegistry,
-    readAssetChunk,
-  }),
-}));
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
+  assetRegistry,
+  readAssetChunk,
+})));
 
 afterEach(() => {
   cleanup();
