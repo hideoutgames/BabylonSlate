@@ -1,3 +1,4 @@
+import { refreshJoystick2DMaterials } from "./joystick2d-mesh";
 import { Mesh, type AbstractMesh, type Camera, type Material, type Node, type Scene } from "@babylonjs/core";
 import { applyMaterialBounds } from "./material-bounds";
 import { DEFAULT_SORTING_LAYERS, isSceneLayerAnchorActor, resolveOverlayLayout } from "@babylonslate/core";
@@ -791,6 +792,9 @@ export class EditorSceneSync {
   }
 
   private bindActorMeshMaterials(actor: SerializedActor, root: Mesh): void {
+    refreshJoystick2DMaterials(root, {
+      resolveMaterial: (guid, options) => this.resolveMaterial?.(guid, options) ?? this.assets?.resolveMaterial?.(guid, options) ?? null,
+    });
     refreshText2DMaterials(root, {
       resolveMaterial: (guid, options) => this.resolveMaterial?.(guid, options) ?? this.assets?.resolveMaterial?.(guid, options) ?? null,
     });
@@ -843,7 +847,7 @@ export class EditorSceneSync {
   ): void {
     if (!guid) return;
     const targets = meshAndDescendantMeshes(visual).filter(
-      (target) => !isTilemapChunkMesh(target) && !target.metadata?.text2d && !target.metadata?.text2dGlyph,
+      (target) => !isTilemapChunkMesh(target) && !target.metadata?.text2d && !target.metadata?.text2dGlyph && !target.metadata?.overlayJoystickMeshName && !target.metadata?.joystick2DThumb,
     );
     for (const target of targets) {
       if (isColliderVisualTree(target)) continue;

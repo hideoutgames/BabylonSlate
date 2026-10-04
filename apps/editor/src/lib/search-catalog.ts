@@ -28,6 +28,7 @@ export const SEARCH_CATALOG_CLASS_IDS: readonly string[] = [
   "AudioComponent",
   "ParticleComponent",
   "2DAnchorComponent",
+  "2DJoystickComponent",
   "2DPainterComponent",
   "2DButtonComponent",
   "2DFocusTargetComponent",

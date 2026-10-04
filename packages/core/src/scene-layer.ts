@@ -324,6 +324,8 @@ export type OverlayPointerHit = {
   actorGuid: string;
   hitTest: SceneLayerHitTest;
   hasButton?: boolean;
+  /** Scene-local mesh identity of a built-in joystick surface. */
+  joystickMeshName?: string;
   componentId?: string;
 };
 
