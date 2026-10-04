@@ -21,12 +21,11 @@ import { loadModelContainer } from "./model-container";
 import {
   attachModelLods,
   autoLodDiagnostics,
-  followAutoLodSettings,
   generateModelLods,
   isAutoLodMaster,
   setAutoLodPinned,
 } from "./model-lod";
-import { updateSceneRenderingSettings } from "./render-settings";
+import { followSceneRenderSettings, updateSceneRenderingSettings } from "./render-settings";
 import { participatesInShadows } from "./shadow-mesh-policy";
 import { visualMeshes } from "./visual-meshes";
 
@@ -318,7 +317,7 @@ describe("automatic model LOD", () => {
     const owner = createTestEngine();
     handles.push(owner);
     updateSceneRenderingSettings(owner.scene, { quality: normalizeRenderingQuality({ geometry: { autoLod: false, lodDistanceScale: 1 } }) });
-    followAutoLodSettings(scene, owner.scene);
+    followSceneRenderSettings(scene, owner.scene);
     expect(scene.customLODSelector!(master, new FreeCamera("fresh", camera.position.clone(), scene))).toBe(master);
   });
 

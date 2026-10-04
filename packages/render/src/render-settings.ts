@@ -21,12 +21,16 @@ import {
   type EnvironmentLightingOverrides,
   normalizeRenderEffectsSettings,
   type RenderEffectsSettings,
+  WATER_QUALITY_FIELDS,
+  type WaterQuality,
 } from "@babylonslate/core";
 import {
   planSceneEffects,
   sceneEffectsKey,
   type SceneEffectsPlan,
 } from "./scene-effects";
+import { markSceneReadinessDirty } from "./scene-readiness-signal";
+import { clampWaterQualityToDevice, type WaterQualityDeviceClamp } from "./water-quality-device";
 
 export type RenderShadingSettings = Partial<
   Pick<RenderProjectSettings, "mode" | "cel" | "shadows" | "quality" | "environmentLighting" | "renderPath" | "gpuBackend" | "effects">
@@ -42,6 +46,13 @@ type SceneRendering = {
   /** Automatic Model LOD selection; false keeps every model on full detail. */
   autoLod: boolean;
   lodDistanceScale: number;
+  /** Resolved Water quality values (no preset metadata); replaced only on a real change. */
+  water: Readonly<WaterQuality>;
+  /** Process-unique, so a Scene that starts following another never reuses a stale value. */
+  waterRevision: number;
+  waterDevice: { revision: number; clamp: WaterQualityDeviceClamp } | null;
+  /** Scenes (such as SceneLayers) resolving their quality through this Scene. */
+  followers: Set<Scene>;
   localLightBudget: number;
   cel: CelShadingSettings;
   project: RenderShadingSettings;
@@ -63,6 +74,15 @@ type SceneRendering = {
   listeners: Set<(mode: RenderMode) => void>;
 };
 const scenes = new WeakMap<Scene, SceneRendering>();
+/** Scenes whose project quality resolves through another Scene (SceneLayers follow the world). */
+const settingsOwners = new WeakMap<Scene, Scene>();
+let waterRevisions = 0;
+
+function waterQualityValues(quality: Readonly<WaterQuality>): Readonly<WaterQuality> {
+  const values: Record<string, unknown> = {};
+  for (const field of WATER_QUALITY_FIELDS) values[field] = quality[field];
+  return Object.freeze(values as unknown as WaterQuality);
+}
 
 /** Render targets own their sampling contract (notably hardware shadow PCF). */
 export function applyMaterialTextureAnisotropy(texture: BaseTexture, level: number): void {
@@ -76,6 +96,7 @@ export function sceneRenderingSettings(scene: Scene): SceneRendering {
   let state = scenes.get(scene);
   if (!state) {
     const effects = normalizeRenderEffectsSettings(undefined);
+    const quality = resolveRenderingQuality();
     state = {
       mode: "pbr",
       qualityOverrides: {},
@@ -84,13 +105,17 @@ export function sceneRenderingSettings(scene: Scene): SceneRendering {
       lightsDebug: false,
       textureLodBias: 0,
       textureAnisotropy: 4,
-      autoLod: resolveRenderingQuality().geometry.autoLod,
-      lodDistanceScale: resolveRenderingQuality().geometry.lodDistanceScale,
-      localLightBudget: resolveLocalLightBudget(resolveRenderingQuality().lighting),
+      autoLod: quality.geometry.autoLod,
+      lodDistanceScale: quality.geometry.lodDistanceScale,
+      water: waterQualityValues(quality.water),
+      waterRevision: ++waterRevisions,
+      waterDevice: null,
+      followers: new Set(),
+      localLightBudget: resolveLocalLightBudget(quality.lighting),
       cel: normalizeCelShadingSettings(undefined),
       project: {},
       overrides: {},
-      shadows: resolveRenderingQuality().shadows,
+      shadows: quality.shadows,
       shadowOverrides: {},
       environmentLighting: normalizeEnvironmentLightingSettings(undefined),
       environmentOverrides: {},
@@ -105,6 +130,8 @@ export function sceneRenderingSettings(scene: Scene): SceneRendering {
     const owned = state;
     scene.onDisposeObservable.addOnce(() => {
       owned.listeners.clear();
+      for (const follower of owned.followers) settingsOwners.delete(follower);
+      owned.followers.clear();
       scenes.delete(scene);
     });
   }
@@ -131,6 +158,7 @@ export function updateSceneRenderingSettings(
   state.textureLodBias = quality.textures.lodBias;
   state.autoLod = quality.geometry.autoLod;
   state.lodDistanceScale = quality.geometry.lodDistanceScale;
+  syncWaterQuality(scene, state, quality.water);
   state.textureAnisotropy = Math.min(quality.textures.anisotropy, scene.getEngine().getCaps().maxAnisotropy ?? 1);
   for (const texture of scene.textures) applyMaterialTextureAnisotropy(texture, state.textureAnisotropy);
   const mode = resolved.mode === "cel" ? "cel" : "pbr";
@@ -190,6 +218,67 @@ function syncImageProcessingMode(
     state.mode === "pbr";
   if (scene.imageProcessingConfiguration.applyByPostProcess !== linear)
     scene.imageProcessingConfiguration.applyByPostProcess = linear;
+}
+
+function sameWaterQuality(a: Readonly<WaterQuality>, b: Readonly<WaterQuality>): boolean {
+  return WATER_QUALITY_FIELDS.every((field) => a[field] === b[field]);
+}
+
+/** Replace the cached values only on a real change, then invalidate readiness once per Scene. */
+function syncWaterQuality(scene: Scene, state: SceneRendering, next: Readonly<WaterQuality>): void {
+  if (sameWaterQuality(state.water, next)) return;
+  state.water = waterQualityValues(next);
+  state.waterRevision = ++waterRevisions;
+  markSceneReadinessDirty(scene);
+  for (const follower of state.followers) markSceneReadinessDirty(follower);
+}
+
+/** The Scene whose project quality `scene` renders with: itself unless it follows another. */
+export function renderSettingsOwner(scene: Scene): Scene {
+  return settingsOwners.get(scene) ?? scene;
+}
+
+/**
+ * Resolve `scene`'s project quality (Geometry, Water) through `owner`, as
+ * SceneLayers do through the world view. Only the owner receives settings.
+ */
+export function followSceneRenderSettings(scene: Scene, owner: Scene): void {
+  const root = renderSettingsOwner(owner);
+  const previous = settingsOwners.get(scene);
+  if (root === scene || previous === root) return;
+  const before = sceneWaterQuality(scene);
+  if (previous) scenes.get(previous)?.followers.delete(scene);
+  else
+    scene.onDisposeObservable.addOnce(() => {
+      const current = settingsOwners.get(scene);
+      if (current) scenes.get(current)?.followers.delete(scene);
+      settingsOwners.delete(scene);
+    });
+  settingsOwners.set(scene, root);
+  sceneRenderingSettings(root).followers.add(scene);
+  if (!sameWaterQuality(before, sceneWaterQuality(scene))) markSceneReadinessDirty(scene);
+}
+
+/**
+ * Project Water quality for `scene` (local editor overrides, then session
+ * overrides). Cached: the same frozen object is returned until a value changes.
+ */
+export function sceneWaterQuality(scene: Scene): Readonly<WaterQuality> {
+  return sceneRenderingSettings(renderSettingsOwner(scene)).water;
+}
+
+/** Changes only when `sceneWaterQuality(scene)` resolves to different values. */
+export function sceneWaterQualityRevision(scene: Scene): number {
+  return sceneRenderingSettings(renderSettingsOwner(scene)).waterRevision;
+}
+
+/** Water quality this Scene's device can honour, cached per revision; see clampWaterQualityToDevice. */
+export function sceneWaterQualityDeviceClamp(scene: Scene): WaterQualityDeviceClamp {
+  const state = sceneRenderingSettings(scene);
+  const revision = sceneWaterQualityRevision(scene);
+  if (state.waterDevice?.revision !== revision)
+    state.waterDevice = { revision, clamp: clampWaterQualityToDevice(sceneWaterQuality(scene), scene.getEngine().getCaps()) };
+  return state.waterDevice.clamp;
 }
 
 /** Explicit editor preferences precede session commands and never change authored settings. */
