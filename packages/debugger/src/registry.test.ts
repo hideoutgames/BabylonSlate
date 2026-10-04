@@ -124,6 +124,10 @@ describe("createCommandRegistry", () => {
     expect(registry.execute("quality resolution scale 0.75", host).success).toBe(true);
     expect(registry.execute("quality geometry lod off", host).success).toBe(true);
     expect(registry.execute("quality geometry distance 2", host).success).toBe(true);
+    // Water setting names are canonicalized; their values stay for core to validate.
+    expect(registry.execute("quality water meshdensity 1.25", host).success).toBe(true);
+    expect(registry.execute("quality water reflections screenSpace", host).success).toBe(true);
+    expect(registry.execute("quality water octaves 3", host).success).toBe(false);
     expect(registry.execute("framecap 30", host).success).toBe(true);
     expect(registry.execute("volume 0.5", host).success).toBe(true);
     expect(registry.execute("quit", host)).toEqual({
@@ -137,6 +141,8 @@ describe("createCommandRegistry", () => {
       "quality:resolution:scale:0.75",
       "quality:geometry:lod:off",
       "quality:geometry:distance:2",
+      "quality:water:meshDensity:1.25",
+      "quality:water:reflections:screenSpace",
       "framecap:30",
       "volume:0.5",
       "quit",
