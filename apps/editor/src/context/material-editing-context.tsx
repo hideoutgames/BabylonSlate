@@ -115,7 +115,7 @@ export function MaterialEditingProvider({
   active?: boolean;
   children: ReactNode;
 }) {
-  const { openDocuments, assetRegistry, registryVersion, projectDocument, readAssetChunk } =
+  const { openDocuments, assetRegistry, registryEpoch, projectDocument, readAssetChunk } =
     useDocuments();
   const play = usePlay();
   const { register: registerRenderControl } = useMaterialRenderControl();
@@ -174,7 +174,7 @@ export function MaterialEditingProvider({
 
   const functionAssetsRef = useRef<IndexedAsset[]>([]);
   const functionAssets = useMemo(() => {
-    void registryVersion; // Registry contents mutate without replacing its instance.
+    void registryEpoch; // Registry contents mutate without replacing its instance.
     const next = (assetRegistry?.list() ?? []).filter(
       (asset) => asset.header.type === "MaterialFunction",
     );
@@ -187,7 +187,7 @@ export function MaterialEditingProvider({
     }
     functionAssetsRef.current = next;
     return next;
-  }, [assetRegistry, registryVersion]);
+  }, [assetRegistry, registryEpoch]);
   const [savedFunctions, setSavedFunctions] = useState<Record<string, MaterialFunctionDocument>>({});
   const [loadedFunctionAssets, setLoadedFunctionAssets] = useState<typeof functionAssets | null>(null);
   const functionsReady = functionAssets.length === 0 || loadedFunctionAssets === functionAssets;
@@ -420,7 +420,7 @@ export function MaterialEditingProvider({
     return () => {
       cancelled = true;
     };
-  }, [assetRegistry, registryVersion, readAssetChunk, textureGuidsKey]);
+  }, [assetRegistry, registryEpoch, readAssetChunk, textureGuidsKey]);
 
   const costClassRef = useRef(costClass);
   costClassRef.current = costClass;

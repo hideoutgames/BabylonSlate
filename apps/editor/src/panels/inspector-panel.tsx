@@ -815,6 +815,7 @@ function PrefabComponentDetails({
   physicsWorld,
   viewportMode,
   pickerAssets,
+  parentOf,
   assetLabel,
   assetType,
   fontHasFacetype,
@@ -835,6 +836,8 @@ function PrefabComponentDetails({
     type: string;
     path?: string;
   }>;
+  /** Class ancestry from the Inspector, shared until the registry changes. */
+  parentOf: (id: string) => string | null;
   assetLabel: (guid: string | null | undefined) => string | undefined;
   assetType: (guid: string | null | undefined) => string | undefined;
   fontHasFacetype?: (guid: string | null | undefined) => boolean;
@@ -843,9 +846,13 @@ function PrefabComponentDetails({
   onUpdate: (property: string, value: unknown) => void;
   onUpdateTransform: (transform: SerializedTransform) => void;
 }) {
-  const { assetRegistry, openDocuments } = useDocuments();
+  const { assetRegistry, openDocuments, registryEpoch } = useDocuments();
   const [assetPick, setAssetPick] = useState<AssetPickRequest | null>(null);
-  const materialDomains = materialDomainsFromAssets(assetRegistry?.list() ?? [], openDocuments);
+  // An open Material tab's unsaved domain wins over its saved header.
+  const materialDomains = useMemo(() => {
+    void registryEpoch;
+    return materialDomainsFromAssets(assetRegistry?.list() ?? [], openDocuments);
+  }, [assetRegistry, openDocuments, registryEpoch]);
   return (
     <div
       className="flex flex-col gap-3 p-3"
@@ -867,10 +874,7 @@ function PrefabComponentDetails({
             <TypeVisualIcon
               visual={resolveTypeVisual({
                 classId: component.classId,
-                ancestry: walkAncestry(
-                  component.classId,
-                  classParentLookup(assetRegistry?.list() ?? []),
-                ),
+                ancestry: walkAncestry(component.classId, parentOf),
               })}
               data-testid={`inspector-prefab-type-icon-${component.id}`}
             />
@@ -996,7 +1000,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     reparentClassDocument,
     projectDocument,
     assetRegistry,
-    registryVersion,
+    registryEpoch,
     animEditorMode,
   } = useDocuments();
   const { focusDiagnostic } = useValidation();
@@ -1027,22 +1031,60 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
   } | null>(null);
 
   const doc = openDocuments.find((entry) => entry.id === documentId);
-  const indexed = (assetRegistry?.list() ?? []).find(
-    (asset) => asset.path === doc?.ref.path,
-  );
+  const docPath = doc?.ref.path;
+  const indexed = useMemo(() => {
+    void registryEpoch;
+    return (assetRegistry?.list() ?? []).find((asset) => asset.path === docPath);
+  }, [assetRegistry, docPath, registryEpoch]);
   const parentClass = indexed?.header.parentClass ?? null;
   const parentOf = useMemo(
     () => {
-      void registryVersion;
+      void registryEpoch;
       return classParentLookup(assetRegistry?.list() ?? []);
     },
-    [assetRegistry, registryVersion],
+    [assetRegistry, registryEpoch],
   );
   const editorGraph = isEditorGraphHost({
     parentClass,
     parentOf,
     assetType: indexed?.header.type,
   });
+  // Registry-derived pickers and class lists: rebuilt when the registry
+  // changes, not on every edit of the inspected document.
+  const registryViews = useMemo(() => {
+    void registryEpoch;
+    const assets = assetRegistry?.list() ?? [];
+    return {
+      interfaceAssets: assets
+        .filter((asset) => asset.header.type === "ScriptInterface")
+        .map((asset) => ({
+          guid: asset.header.guid,
+          name: asset.header.name,
+          type: asset.header.type,
+        })),
+      pickerAssets: assets.map((asset) => ({
+        guid: asset.header.guid,
+        name: asset.header.name,
+        type: asset.header.type,
+        path: asset.path,
+      })),
+      bobjectClassEntries: subclassClassEntries("BObject", assets, { editorGraph }),
+      projectClasses: assets
+        .filter((asset) => asset.header.type === "Class")
+        .map((asset) => ({
+          id: classIdFromClassAsset(asset),
+          name: asset.header.name,
+          group: "Project",
+          parentClass: asset.header.parentClass,
+        })),
+    };
+  }, [assetRegistry, editorGraph, registryEpoch]);
+  const { interfaceAssets, pickerAssets, bobjectClassEntries, projectClasses } = registryViews;
+  // Open Enum tabs' unsaved members win over saved headers.
+  const enumMembers = useMemo(() => {
+    void registryEpoch;
+    return collectEnumMemberNames(openDocuments, assetRegistry?.list() ?? []);
+  }, [assetRegistry, openDocuments, registryEpoch]);
   const parsedAnim = useMemo(
     () =>
       doc?.ref.kind === "anim-graph"
@@ -1108,13 +1150,13 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
 
   const typeCatalog = useMemo(
     () => {
-      void registryVersion;
+      void registryEpoch;
       return collectGraphTypeAssets({
         assets: assetRegistry?.list() ?? [],
         openDocuments,
       });
     },
-    [assetRegistry, openDocuments, registryVersion],
+    [assetRegistry, openDocuments, registryEpoch],
   );
   const typeSchemas = useMemo(
     () => typeSchemasFromGraphAssets(typeCatalog),
@@ -1178,20 +1220,6 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
       ) ?? null
     : selectedSerializedNode;
 
-  const interfaceAssets = (assetRegistry?.list() ?? [])
-    .filter((asset) => asset.header.type === "ScriptInterface")
-    .map((asset) => ({
-      guid: asset.header.guid,
-      name: asset.header.name,
-      type: asset.header.type,
-    }));
-
-  const pickerAssets = (assetRegistry?.list() ?? []).map((asset) => ({
-    guid: asset.header.guid,
-    name: asset.header.name,
-    type: asset.header.type,
-    path: asset.path,
-  }));
   const sortingLayers =
     projectDocument?.settings.twoD?.sortingLayers ?? DEFAULT_SORTING_LAYERS;
   const collisionLayers =
@@ -1281,6 +1309,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
           physicsWorld={physicsWorld}
           viewportMode={viewportMode}
           pickerAssets={pickerAssets}
+          parentOf={parentOf}
           assetLabel={assetLabel}
           assetType={assetType}
           fontHasFacetype={fontHasFacetype}
@@ -1309,18 +1338,11 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
           graph={graph}
           member={selectedMember}
           interfaceAssets={interfaceAssets}
-          classEntries={subclassClassEntries(
-            "BObject",
-            assetRegistry?.list() ?? [],
-            { editorGraph },
-          )}
+          classEntries={bobjectClassEntries}
           typeAssets={typeAssets}
           pickerAssets={pickerAssets}
           schemas={typeSchemas}
-          enumMembers={collectEnumMemberNames(
-            openDocuments,
-            assetRegistry?.list() ?? [],
-          )}
+          enumMembers={enumMembers}
           onChange={persistGraph}
         />
       </PanelFrame>
@@ -1346,14 +1368,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     });
     const parentOptions: ClassPickerEntry[] = [
       { id: "Actor", name: "Actor", group: "Engine" },
-      ...(assetRegistry?.list() ?? [])
-        .filter((asset) => asset.header.type === "Class")
-        .map((asset) => ({
-          id: classIdFromClassAsset(asset),
-          name: asset.header.name,
-          group: "Project",
-          parentClass: asset.header.parentClass,
-        }))
+      ...projectClasses
         .filter(
           (entry) =>
             entry.id !== selfClassId &&
@@ -1522,21 +1537,13 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     persistGraph(next);
   };
 
-  const enumMembers = collectEnumMemberNames(
-    openDocuments,
-    assetRegistry?.list() ?? [],
-  );
   const pinDefaultRows = pinDefaultPropertyRows(
     inspectorLiteralPinDefaults(selectedNode, graph.edges).filter((entry) =>
       !((selectedNode.type === "input.actionEvent" || selectedNode.type === "input.axisEvent") && entry.pinId === "binding")),
     updateNodeData,
     {
       enumMembers,
-      classEntries: subclassClassEntries(
-        "BObject",
-        assetRegistry?.list() ?? [],
-        { editorGraph },
-      ),
+      classEntries: bobjectClassEntries,
       onPickClass: (pinId, constraintClassId) => {
         setClassPinPick({ pinId, constraintClassId });
       },
@@ -1662,7 +1669,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
               rows={javaScriptPinRows(inputs, "in")}
               showContainer showOptional={false} showDefault={false}
               selectedId={selectedJsPin} onSelect={selectJsPin}
-              classEntries={subclassClassEntries("BObject", assetRegistry?.list() ?? [], { editorGraph })}
+              classEntries={bobjectClassEntries}
               typeAssets={typeAssets}
               testIdPrefix="js-input"
               onChange={(rows) => {
@@ -1680,7 +1687,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
               rows={javaScriptPinRows(outputs, "out")}
               showContainer showOptional={false} showDefault={false}
               selectedId={selectedJsPin} onSelect={selectJsPin}
-              classEntries={subclassClassEntries("BObject", assetRegistry?.list() ?? [], { editorGraph })}
+              classEntries={bobjectClassEntries}
               typeAssets={typeAssets}
               testIdPrefix="js-output"
               onChange={(rows) => {
@@ -1789,11 +1796,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
             title="Outputs"
             rows={eventOutputRows}
             types={PIN_PICKER_TYPES}
-            classEntries={subclassClassEntries(
-              "BObject",
-              assetRegistry?.list() ?? [],
-              { editorGraph },
-            )}
+            classEntries={bobjectClassEntries}
             typeAssets={typeAssets}
             testIdPrefix="event-out"
             data-testid="inspector-event-outputs"
@@ -1874,12 +1877,17 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
         onOpenChange={(open) => {
           if (!open) setAssetPinPick(null);
         }}
-        assets={filterInspectorPinPickerAssets(
-          pickerAssets,
-          assetRegistry?.list() ?? [],
-          openDocuments,
-          { nodeType: selectedNode.type },
-        )}
+        assets={
+          // Only while picking: every edit of the graph re-renders this branch.
+          assetPinPick
+            ? filterInspectorPinPickerAssets(
+                pickerAssets,
+                assetRegistry?.list() ?? [],
+                openDocuments,
+                { nodeType: selectedNode.type },
+              )
+            : []
+        }
         allowedTypes={assetPinPick?.allowedTypes}
         createOptions={
           selectedNode.type === "scene-layer.registerPostProcess" ||

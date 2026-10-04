@@ -19,7 +19,7 @@ type MaterialLibraryResult = { documents: Map<string, unknown>; functions: Map<s
 const harness = vi.hoisted(() => ({
   documents: [] as OpenDocument[],
   assets: new Map<string, IndexedAsset>(),
-  registryVersion: 0,
+  registryEpoch: 0,
   engine: { id: "shared-engine" },
   play: null as { ensureSharedEngine: () => unknown } | null,
   hosts: [] as PreviewHost[],
@@ -68,7 +68,7 @@ vi.mock("../context/document-context", () => ({
   useDocuments: () => ({
     openDocuments: harness.documents,
     assetRegistry: { getByGuid: (guid: string) => harness.assets.get(guid), list: () => [...harness.assets.values()] },
-    registryVersion: harness.registryVersion,
+    registryEpoch: harness.registryEpoch,
     collectPlayMaterialLibrary: (_scene: unknown, _extra: unknown, guids: string[]) => harness.loadLibrary(guids[0]!),
     collectPlayTextureBytes: async () => new Map(),
   }),
@@ -109,7 +109,7 @@ afterEach(() => {
   cleanup();
   harness.documents = [];
   harness.assets.clear();
-  harness.registryVersion = 0;
+  harness.registryEpoch = 0;
   harness.hosts.length = 0;
   harness.meshes.length = 0;
   harness.applied.length = 0;
@@ -162,14 +162,14 @@ describe("WaterPreviewPanel", () => {
     // Encode progress re-indexes the Texture without changing the bytes the preview loads.
     for (const progress of [{ compressionState: "encoding" }, { compressionState: "encode_failed", encodeError: "Encoder failed.", encodeWallMs: 12 }]) {
       harness.assets.set("tex", texture(progress, ["source-1"]));
-      harness.registryVersion++;
+      harness.registryEpoch++;
       rerender();
     }
     expect(harness.hosts).toHaveLength(2);
 
     // A committed encode (or a reimport) changes the saved bytes, which the preview loads from the asset.
     harness.assets.set("tex", texture({ compressionState: "compressed", ktx2Sha256: "ktx2-1" }, ["source-1", "ktx2-1"]));
-    harness.registryVersion++;
+    harness.registryEpoch++;
     rerender();
     await waitFor(() => expect(builds()).toBe(3));
 

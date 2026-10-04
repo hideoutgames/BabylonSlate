@@ -39,14 +39,19 @@ const descriptions: Partial<Record<(typeof controls)[number][0], string>> = {
 export function WaterDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyAssetDocumentChange, assetRegistry } = useDocuments();
+  const { openDocuments, applyAssetDocumentChange, assetRegistry, registryEpoch } = useDocuments();
   const [picking, setPicking] = useState(false);
   const doc = openDocuments.find((entry) => entry.id === documentId);
   const water = normalizeWaterDefinition(doc?.content);
   const defaults = createDefaultWaterDefinition(water.style);
   /** `field` names the per-field merge key: one scrub or color drag is one undo step. */
   const commit = (next: WaterDefinition, field?: string) => { void applyAssetDocumentChange(documentId, normalizeWaterDefinition(next) as unknown as Record<string, unknown>, field ? `water:${field}` : undefined); };
-  const assets = (assetRegistry?.list() ?? []).filter((asset) => isMaterialAssetType(asset.header.type) && (!asset.header.payload?.domain || asset.header.payload.domain === "surface"));
+  // Surface Materials change with the registry, not with edits of this Water.
+  const assets = useMemo(() => {
+    void registryEpoch;
+    return (assetRegistry?.list() ?? []).filter((asset) => isMaterialAssetType(asset.header.type) && (!asset.header.payload?.domain || asset.header.payload.domain === "surface"));
+  }, [assetRegistry, registryEpoch]);
+  const pickerAssets = useMemo(() => assets.map((asset) => ({ guid: asset.header.guid, name: asset.header.name, type: asset.header.type, path: asset.path })), [assets]);
   const selected = assets.find((asset) => asset.header.guid === water.materialGuid);
   const rows: PropertyRow[] = [
     { id: "water-style", kind: "enum", label: "Style", value: water.style, options: [{ value: "realistic", label: "Realistic" }, { value: "stylized", label: "Stylized" }], description: "Changes shading style. Your colors and wave settings are retained.", onChange: (style) => commit({ ...water, style: style === "stylized" ? "stylized" : "realistic" }) },
@@ -55,7 +60,7 @@ export function WaterDetailsPanel(_props: IDockviewPanelProps) {
     { id: "water-material", kind: "asset", label: "Custom Material", value: water.materialGuid, placeholder: "Built-In Water", description: "Optional Surface Material. Wave displacement and buoyancy remain active.", ...(selected ? assetRowIdentity({ name: selected.header.name, type: selected.header.type }) : {}), onPick: () => setPicking(true), onChange: (materialGuid) => commit({ ...water, materialGuid }) },
   ];
   return <PanelFrame data-testid="water-details-panel"><div className="min-h-0 flex-1 overflow-auto p-2"><PropertyGrid rows={rows} /></div>
-    <AssetPicker open={picking} onOpenChange={setPicking} allowedTypes={["Material", "MaterialInstance"]} assets={assets.map((asset) => ({ guid: asset.header.guid, name: asset.header.name, type: asset.header.type, path: asset.path }))} onPick={(materialGuid) => { commit({ ...water, materialGuid }); setPicking(false); }} />
+    <AssetPicker open={picking} onOpenChange={setPicking} allowedTypes={["Material", "MaterialInstance"]} assets={pickerAssets} onPick={(materialGuid) => { commit({ ...water, materialGuid }); setPicking(false); }} />
   </PanelFrame>;
 }
 
@@ -70,7 +75,7 @@ const PREVIEW_BODY = { width: 24, length: 24, waveScale: 1, depth: 5 };
 export function WaterPreviewPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, assetRegistry, registryVersion, collectPlayMaterialLibrary, collectPlayTextureBytes } = useDocuments();
+  const { openDocuments, assetRegistry, registryEpoch, collectPlayMaterialLibrary, collectPlayTextureBytes } = useDocuments();
   const play = useOptionalPlay();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [error, setError] = useState<string | null>(null);
@@ -84,9 +89,9 @@ export function WaterPreviewPanel(_props: IDockviewPanelProps) {
   definitionRef.current = definition;
   const { style, materialGuid } = definition;
   const closureKey = useMemo(() => {
-    void registryVersion; // Registry contents change without replacing its instance.
+    void registryEpoch; // Registry contents change without replacing its instance.
     return materialGuid ? materialClosureRevision(materialGuid, assetRegistry, openDocuments) : "";
-  }, [materialGuid, assetRegistry, registryVersion, openDocuments]);
+  }, [materialGuid, assetRegistry, registryEpoch, openDocuments]);
   const loadersRef = useRef({ collectPlayMaterialLibrary, collectPlayTextureBytes });
   loadersRef.current = { collectPlayMaterialLibrary, collectPlayTextureBytes };
   const meshRef = useRef<Mesh | null>(null);

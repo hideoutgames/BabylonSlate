@@ -211,7 +211,7 @@ export function ParticlePreviewCanvas({
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const play = useOptionalPlay();
-  const { assetRegistry, collectPlayMaterialLibrary, collectPlayTextureBytes, registryVersion } =
+  const { assetRegistry, collectPlayMaterialLibrary, collectPlayTextureBytes, registryEpoch } =
     useDocuments();
   const textureByGuid = useCallback(
     (guid: string) => assetRegistry?.getByGuid(guid),
@@ -442,7 +442,7 @@ export function ParticlePreviewCanvas({
     if (textureHeadersKey(textureByGuid, loaded.guids) === loaded.key) return;
     loadedTexturesRef.current = null;
     setAttempt((value) => value + 1);
-  }, [registryVersion, textureByGuid]);
+  }, [registryEpoch, textureByGuid]);
 
   useEffect(() => {
     const service = serviceRef.current;

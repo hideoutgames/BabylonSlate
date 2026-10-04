@@ -14,6 +14,8 @@ export type PlayerHudStats = {
   fps: number;
   scriptMs: number;
   physicsMs: number;
+  /** Snapshot publish ms from the worker, apart from the script/physics tick. */
+  publishMs?: number;
   draws: number;
   geometryBytes?: number;
   liveActors?: number;
@@ -28,7 +30,7 @@ export type PlayerHudStats = {
   systemAvailableBytes?: number;
 };
 
-/** Worker `stats` commands are the source of truth for script/physics ms. */
+/** Worker `stats` commands are the source of truth for script/physics/publish ms. */
 export function applyWorkerPlayerStats(
   previous: PlayerHudStats | undefined,
   command: {
@@ -36,6 +38,7 @@ export function applyWorkerPlayerStats(
     fps?: number;
     scriptMs: number;
     physicsMs: number;
+    publishMs?: number;
     liveActors?: number;
     snapshotCapacity?: number;
   },
@@ -45,6 +48,7 @@ export function applyWorkerPlayerStats(
     fps: previous?.fps ?? 0,
     scriptMs: command.scriptMs,
     physicsMs: command.physicsMs,
+    publishMs: command.publishMs ?? 0,
     draws: previous?.draws ?? 0,
     geometryBytes: previous?.geometryBytes,
     liveActors: command.liveActors ?? previous?.liveActors ?? 0,
@@ -67,6 +71,7 @@ export function applyPlayerFpsSample(
     fps,
     scriptMs: previous?.scriptMs ?? 0,
     physicsMs: previous?.physicsMs ?? 0,
+    publishMs: previous?.publishMs ?? 0,
     draws: previous?.draws ?? 0,
     geometryBytes: previous?.geometryBytes,
     liveActors: previous?.liveActors ?? 0,
@@ -126,7 +131,7 @@ export function mountPlayerHud(
     element.dataset.fps = String(Math.round(stats.fps));
     element.dataset.ticks = String(stats.ticks);
     fields.get("threads")!.textContent = `fps ${stats.fps.toFixed(0)}`;
-    fields.get("unit")!.textContent = `script ${stats.scriptMs.toFixed(2)}ms  phys ${stats.physicsMs.toFixed(2)}ms`;
+    fields.get("unit")!.textContent = `script ${stats.scriptMs.toFixed(2)}ms  phys ${stats.physicsMs.toFixed(2)}ms  publish ${(stats.publishMs ?? 0).toFixed(2)}ms`;
     fields.get("actors")!.textContent = `actors ${stats.liveActors ?? 0}/${stats.snapshotCapacity ?? 0}`;
     fields.get("draws")!.textContent = `draws ${stats.draws}`;
     const mb = (bytes: number) => `${(bytes / (1024 * 1024)).toFixed(1)}MB`;

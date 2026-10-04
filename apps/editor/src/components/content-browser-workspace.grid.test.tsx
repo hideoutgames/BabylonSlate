@@ -29,7 +29,7 @@ const { docs, loadAssetThumbnail, layout } = vi.hoisted(() => {
       startupSceneGuid: "",
     } },
     assetRegistry: null as unknown,
-    registryVersion: 1,
+    registryEpoch: 1,
     refreshAssetRegistry: vi.fn(),
     repathDocument: vi.fn(),
     openDocument: vi.fn(),
