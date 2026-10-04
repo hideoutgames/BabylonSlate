@@ -38,11 +38,18 @@ import { setPreviewScene } from "./preview-parity";
  * Env: BL_PERF_EDITS (edits per burst, default 12), BL_PERF_SEARCH (Content
  *      Browser query, default PerfClass1), BL_PERF_QUIET_MS (commit-free time
  *      that ends a measurement, default 750), BL_PERF_LABEL (recorded label).
+ *      Unset, non-numeric or out-of-range numeric values use the default.
  */
+function envInteger(name: string, fallback: number, min: number): number {
+  const raw = process.env[name]?.trim();
+  const parsed = raw ? Number(raw) : Number.NaN;
+  return Number.isFinite(parsed) && parsed >= min ? Math.floor(parsed) : fallback;
+}
+
 const PROFILING_BUILD = process.env.VITE_REACT_PROFILING === "true";
-const EDITS = Math.max(1, Number(process.env.BL_PERF_EDITS ?? 12));
+const EDITS = envInteger("BL_PERF_EDITS", 12, 1);
 const SEARCH = process.env.BL_PERF_SEARCH ?? "PerfClass1";
-const QUIET_MS = Number(process.env.BL_PERF_QUIET_MS ?? 750);
+const QUIET_MS = envInteger("BL_PERF_QUIET_MS", 750, 0);
 const SETTLE_TIMEOUT_MS = 20_000;
 const IDLE_MS = 3_000;
 const EXTRA_CLASSES = 64;
