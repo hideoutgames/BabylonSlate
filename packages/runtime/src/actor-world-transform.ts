@@ -27,6 +27,23 @@ export function actorWorldTransform(
   return transform;
 }
 
+/**
+ * One actor's current pose through a live guid lookup such as `World.findActor`,
+ * visiting only its own ancestors. Null on a parent cycle, as `actorWorldTransform`.
+ */
+export function actorChainWorldTransform(
+  actor: Actor,
+  findActor: (guid: string) => Actor | undefined,
+): Transform | null {
+  const chain = new Map<string, Actor>();
+  for (let current: Actor | undefined = actor; current && !chain.has(current.guid);) {
+    chain.set(current.guid, current);
+    const parent = actorParentGuid(current);
+    current = parent ? findActor(parent) : undefined;
+  }
+  return actorWorldTransform(actor, chain);
+}
+
 /** Compose selected actors and their ancestors; default to the whole world. */
 export function actorWorldTransforms(
   actors: readonly Actor[],

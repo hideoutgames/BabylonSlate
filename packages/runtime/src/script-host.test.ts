@@ -2108,6 +2108,89 @@ describe("script host runs compiled graphs", () => {
     runtime.stop();
   });
 
+  it("Project Cursor To Scene casts from a parented Play camera's world pose", async () => {
+    const runtime = createInProcessRuntime({
+      seed: 11,
+      maxActors: 8,
+      preferSoftwarePhysics: true,
+      physicsWorld: "3d",
+      seedDemoActors: false,
+    });
+    const world = runtime.getWorld();
+    // A quarter turn about +Y maps the camera's local forward (+Z) to world +X.
+    const rig = world.createActor({
+      classId: "Actor",
+      transform: {
+        position: { x: 5, y: 0, z: 0 },
+        rotation: { x: 0, y: Math.SQRT1_2, z: 0, w: Math.SQRT1_2 },
+        scale: { x: 1, y: 1, z: 1 },
+      },
+    });
+    world.spawnActorNow(rig);
+    const camera = world.createActor({
+      classId: "Actor",
+      variables: { parentId: rig.guid },
+      transform: {
+        position: { x: 0, y: 0, z: -10 },
+        rotation: { x: 0, y: 0, z: 0, w: 1 },
+        scale: { x: 1, y: 1, z: 1 },
+      },
+    });
+    camera.attachComponent(world.createComponent({
+      classId: "CameraComponent",
+      variables: { projectionMode: "perspective", fieldOfView: 60, nearClip: 0.1, farClip: 1000 },
+    }));
+    world.spawnActorNow(camera);
+    const ground = world.createActor({
+      classId: "Actor",
+      transform: {
+        position: { x: 0, y: 0, z: 0 },
+        rotation: { x: 0, y: 0, z: 0, w: 1 },
+        scale: { x: 1, y: 1, z: 1 },
+      },
+    });
+    ground.attachComponent(world.createComponent({
+      classId: "RigidBodyComponent",
+      variables: { motionType: "static", mass: 0, gravityScale: 0 },
+    }));
+    ground.attachComponent(world.createComponent({
+      classId: "ColliderComponent",
+      variables: { shape: { kind: "box", halfExtents: { x: 2, y: 2, z: 2 } } },
+    }));
+    world.spawnActorNow(ground);
+    await runtime.loadScripts([{
+      assetGuid: "aim-world-asset",
+      classId: "AimWorld",
+      parentClassId: "Actor",
+      anchors: [],
+      source: [
+        "export function aim(ctx) {",
+        "  const ray = ctx.projectCursorToScene(undefined, { drawDebug: false });",
+        "  ctx.setVariable('origin', ray.worldOrigin);",
+        "  ctx.setVariable('direction', ray.worldDirection);",
+        "  ctx.setVariable('location', ray.location);",
+        "}",
+      ].join("\n"),
+      entryPoints: [{ name: "aim", event: "Aim", isAsync: false }],
+    }]);
+    const aimer = runtime.spawnScriptedActor({ classId: "AimWorld" })!;
+    runtime.applySceneLayerResize(16, 9, 800, 600);
+    runtime.start();
+    runtime.pushInput([
+      { kind: "pointer", tick: 0, pointerId: 1, phase: "move", x: 400, y: 300, button: 0 },
+    ]);
+    runtime.tick();
+    runtime.invokeScriptEvent("AimWorld", "Aim", aimer);
+    // World camera position: (5, 0, 0) + quarter turn of (0, 0, -10) = (-5, 0, 0).
+    // The centre ray starts one near-clip distance along +X and meets the box face at x = -2.
+    const near = (x: number, y: number, z: number) =>
+      ({ x: expect.closeTo(x, 6), y: expect.closeTo(y, 6), z: expect.closeTo(z, 6) });
+    expect(aimer.getVariable("origin")).toEqual(near(-4.9, 0, 0));
+    expect(aimer.getVariable("direction")).toEqual(near(1, 0, 0));
+    expect(aimer.getVariable("location")).toEqual(near(-2, 0, 0));
+    runtime.stop();
+  });
+
   it("Show Cursor and Hide Cursor emit setCursorVisible commands", async () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
