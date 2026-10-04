@@ -233,4 +233,50 @@ describe("map nodes", () => {
     const compiled = compileGraph(graph, { assetGuid: "a", registry });
     expect(runLog(compiled.source)).toEqual(["first"]);
   });
+
+  it("matches Vector keys by value across Make, Set, Has, Get and Remove", () => {
+    const registry = createDefaultNodeRegistry();
+    const key = { x: 1, y: 2, z: 3 };
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "entry", "flow.entry"),
+        node(registry, "vec", "vector.make3", { x: 1, y: 2, z: 3 }),
+        node(registry, "make", "map.make", { count: 1, "default:value0": 1 }),
+        node(registry, "set", "map.set", {
+          "default:key": key,
+          "default:value": 2,
+        }),
+        node(registry, "has", "map.has", { "default:key": key }),
+        node(registry, "get", "map.get", { "default:key": key }),
+        node(registry, "size", "map.size"),
+        node(registry, "remove", "map.remove", { "default:key": key }),
+        node(registry, "logHas", "debug.log"),
+        node(registry, "logGet", "debug.log"),
+        node(registry, "logSize", "debug.log"),
+        node(registry, "logRemoved", "debug.log"),
+      ],
+      edges: [
+        edge("e1", "vec", "out", "make", "key0"),
+        edge("e2", "entry", "execOut", "set", "execIn"),
+        edge("e3", "make", "out", "set", "map"),
+        edge("e4", "set", "out", "has", "map"),
+        edge("e5", "set", "out", "get", "map"),
+        edge("e6", "set", "out", "size", "map"),
+        edge("e7", "set", "out", "remove", "map"),
+        edge("e8", "set", "execOut", "logHas", "execIn"),
+        edge("e9", "logHas", "execOut", "logGet", "execIn"),
+        edge("e10", "logGet", "execOut", "logSize", "execIn"),
+        edge("e11", "logSize", "execOut", "remove", "execIn"),
+        edge("e12", "remove", "execOut", "logRemoved", "execIn"),
+        edge("e13", "has", "out", "logHas", "message"),
+        edge("e14", "get", "out", "logGet", "message"),
+        edge("e15", "size", "out", "logSize", "message"),
+        edge("e16", "remove", "removed", "logRemoved", "message"),
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "a", registry });
+    expect(runLog(compiled.source)).toEqual(["true", "2", "1", "true"]);
+  });
 });
