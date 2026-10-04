@@ -1,5 +1,8 @@
 import { Color3, DirectionalLight, HemisphericLight, MaterialPluginBase, Matrix, PBRMaterial, type MaterialDefines, RawTexture, ShaderLanguage, Texture, Vector3, type AbstractMesh, type Scene, type UniformBuffer } from "@babylonjs/core";
-import { WATER_CREST_MEAN, WATER_CREST_RANGE, waterWaveComponents, type WaterBodyProperties, type WaterColor, type WaterDefinition } from "@babylonslate/core";
+import {
+  WATER_CREST_MEAN, WATER_CREST_RANGE, WATER_JACOBIAN_FLOOR, WATER_WAVE_MAX_COMPONENTS, WATER_WAVE_SHADER_STRIDE, waterBankFadeLength, waterWaveComponents,
+  waterWaveQ, waterWaveSet, waterWaveShaderConstants, type WaterBodyProperties, type WaterColor, type WaterDefinition,
+} from "@babylonslate/core";
 import type { WaterContactField } from "./water-contact-field";
 import { WATER_FIELD_DEPTH_RANGE, WATER_FIELD_FINE_DEPTH_SPAN, WATER_FIELD_SHORE_RANGE as SHORE, type WaterField } from "./water-field";
 import { sceneWaterRemovals, waterRemovalShapeVector, waterRemovalWorldRadius } from "./water-removal-mesh";
@@ -29,6 +32,10 @@ const DETAIL_VARIANCE = [...DETAIL_OCTAVES, ...CAPILLARY_OCTAVES].reduce((sum, [
 
 /** Compile-time style switch: each material compiles only its own style's shading. */
 const WATER_STYLIZED_DEFINE = "SLATE_WATER_STYLIZED";
+/** Ocean Spectrum evaluates all `WATER_WAVE_MAX_COMPONENTS` swell components; Classic compiles only its five. */
+const WATER_OCEAN_DEFINE = "SLATE_WATER_OCEAN";
+const SWELL_DIRECTION = Array.from({ length: WATER_WAVE_MAX_COMPONENTS }, (_, i) => `slateWaterSwellDir${i}`);
+const SWELL_AMPLITUDE = Array.from({ length: WATER_WAVE_MAX_COMPONENTS }, (_, i) => `slateWaterSwellAmp${i}`);
 
 /** GLSL-shaped source that also compiles as WGSL after `toWgsl`; see `waterShaderSource`. */
 const HELPERS = `
@@ -65,11 +72,17 @@ type WaterShaderStyle = "realistic" | "stylized";
 /** Swell, wind chop, contacts and depth shared by both styles; Stylized runs fewer chop octaves. */
 function surfaceSource(style: WaterShaderStyle): string {
   const realistic = style === "realistic";
-  const swell = waterWaveComponents.map(([turn, frequency, amplitude, phase], i) => `
-float swK${i} = ${f(2 * Math.PI * frequency)} / U.slateWaterWaves.y;
-vec2 swD${i} = vec2(cos(U.slateWaterWaves.w + ${f(turn)} * swSpread), sin(U.slateWaterWaves.w + ${f(turn)} * swSpread));
-float swP${i} = swK${i} * dot(swD${i}, swWorld) - sqrt(9.81 * swK${i}) * U.slateWaterWaves.z * swTime + ${f(phase)};
-float swA${i} = U.slateWaterWaves.x * ${f(amplitude)};
+  // The shared kernel's components (`waterWaveShaderConstants`) at this fragment's rest point: the same swell, crest
+  // profile and Gerstner offset the mesh, queries and buoyancy use. Phases arrive reduced on the CPU relative to the
+  // floating origin, so no large-argument trigonometry runs here.
+  const swell = Array.from({ length: WATER_WAVE_MAX_COMPONENTS }, (_, i) => {
+    const code = `
+vec4 swWD${i} = U.${SWELL_DIRECTION[i]};
+vec4 swWA${i} = U.${SWELL_AMPLITUDE[i]};
+float swK${i} = swWD${i}.z;
+vec2 swD${i} = swWD${i}.xy;
+float swP${i} = swK${i} * dot(swD${i}, swRest) + swWA${i}.y;
+float swA${i} = swWA${i}.x;
 float swFd${i} = 1.0 - smoothstep(0.6, 2.2, swK${i} * (abs(dot(swD${i}, swFootX)) + abs(dot(swD${i}, swFootY))));
 float swF${i} = swFd${i} * swA${i};
 float swS${i} = sin(swP${i});
@@ -80,7 +93,12 @@ swGradient += swD${i} * (mix(swC${i}, swE${i} * swC${i} / ${f(WATER_CREST_RANGE)
 swFold += swK${i} * swF${i} * mix(swS${i}, swE${i} * (swS${i} - swC${i} * swC${i}) / ${f(WATER_CREST_RANGE)}, swChopShape);
 swSteep += swK${i} * swA${i};
 swResolved += swK${i} * swF${i};${realistic ? `
-swLost += swK${i} * swA${i} * swK${i} * swA${i} * (1.0 - swFd${i} * swFd${i});` : ""}`).join("");
+swLost += swK${i} * swA${i} * swK${i} * swA${i} * (1.0 - swFd${i} * swFd${i});` : ""}
+float swQ${i} = swWA${i}.z * swFd${i};
+swOffset += swD${i} * (swQ${i} * swC${i});
+swShear += vec3(swD${i}.x * swD${i}.x, swD${i}.x * swD${i}.y, swD${i}.y * swD${i}.y) * (swQ${i} * swK${i} * swS${i});`;
+    return i < waterWaveComponents.length ? code : `\n#ifdef ${WATER_OCEAN_DEFINE}${code}\n#endif`;
+  }).join("");
   const octaves = realistic ? DETAIL_OCTAVES : DETAIL_OCTAVES.slice(0, STYLIZED_OCTAVES);
   const detail = octaves.map(([turn, multiplier, slope, speed, phase], i) => `
 float swOK${i} = swBaseK * ${f(multiplier)};
@@ -110,7 +128,10 @@ vec2 swRestXZ = viewDirectionW.xz * (swEyeAbove / max(abs(viewDirectionW.y), 0.0
 vec2 swFootX = dFdx(swRestXZ);
 vec2 swFootY = dFdy(swRestXZ);
 float swFoot = length(swFootX) + length(swFootY);
-vec2 swFlowed = swWorld - IN.vSlateWaterFlow.xz * swTime;
+vec2 swFlowed = swWorld - IN.vSlateWaterFlow.xy * swTime;
+// Rest (Lagrangian) point of this fragment relative to the floating origin: the interpolated Gerstner offset is
+// exact for the displaced triangle, since the mesh adds it to a planar rest grid.
+vec2 swRest = IN.vPositionW.xz - IN.vSlateWaterFlow.zw;
 float swHeight = 0.0;
 vec2 swGradient = vec2(0.0);
 // Crest sharpness a*k*(-P''): positive and largest on steep, sharp crests.
@@ -120,8 +141,33 @@ float swResolved = 0.0;${realistic ? `
 float swLost = 0.0;
 float swLostDetail = 0.0;` : ""}
 float swChopShape = U.slateWaterShape.x;
-float swSpread = U.slateWaterShape.y * 2.0;
+// Unfaded Gerstner offset and sum(q*a*k*sin(p) * d d^T) (xx, xz, zz) at the rest point, filtered like the swell.
+vec2 swOffset = vec2(0.0);
+vec3 swShear = vec3(0.0);
 ${swell}
+vec3 swBaseNormal = normalize(IN.vSlateWaterBaseNormal);
+float swBaseX = swBaseNormal.x / max(0.001, swBaseNormal.y);
+float swBaseZ = swBaseNormal.z / max(0.001, swBaseNormal.y);
+// Finite bodies fade the horizontal offset to zero at their banks (\`waterBankGain\`), from the interpolated bank
+// distance; its rest-space gradient comes from screen derivatives and is a unit vector for a distance field.
+float swFadeLength = max(U.slateWaterSwellInfo.x, 0.000001);
+float swFadeOn = step(0.000001, U.slateWaterSwellInfo.x);
+float swBankT = clamp(IN.vSlateWater.y / swFadeLength, 0.0, 1.0);
+float swGain = mix(1.0, swBankT * swBankT * (3.0 - 2.0 * swBankT), swFadeOn);
+vec2 swRestDx = dFdx(swRest);
+vec2 swRestDy = dFdy(swRest);
+float swBankDx = dFdx(IN.vSlateWater.y);
+float swBankDy = dFdy(IN.vSlateWater.y);
+vec2 swBankGrad = vec2(swBankDx * swRestDy.y - swBankDy * swRestDx.y, swRestDx.x * swBankDy - swRestDy.x * swBankDx);
+vec2 swGainGrad = swBankGrad / max(length(swBankGrad), 0.000001) * (6.0 * swBankT * (1.0 - swBankT) / swFadeLength * swFadeOn);
+// J = I + gain * grad(D) + D grad(gain)^T. The swell's Eulerian slope is J^-T (rest slope + grad H); det J < 1 where water gathers.
+float swJxx = 1.0 - swGain * swShear.x + swOffset.x * swGainGrad.x;
+float swJxz = swOffset.x * swGainGrad.y - swGain * swShear.y;
+float swJzx = swOffset.y * swGainGrad.x - swGain * swShear.y;
+float swJzz = 1.0 - swGain * swShear.z + swOffset.y * swGainGrad.y;
+float swDetJ = swJxx * swJzz - swJxz * swJzx;
+vec2 swRestSlope = swGradient - vec2(swBaseX, swBaseZ);
+swGradient = vec2(swBaseX, swBaseZ) + vec2(swJzz * swRestSlope.x - swJzx * swRestSlope.y, swJxx * swRestSlope.y - swJxz * swRestSlope.x) / max(swDetJ, ${f(WATER_JACOBIAN_FLOOR / 2)});
 float swBaseK = 6.2831853 * U.slateWaterMotion.y / 6.0;
 float swMedium = swNoise(swFlowed * 0.43 + vec2(swTime * 0.03, 0.0));
 float swFine = swNoise(swFlowed * 2.9 - vec2(0.0, swTime * 0.09));
@@ -153,7 +199,6 @@ float swBank = min(min(max(0.0, IN.vSlateWater.y), max(0.0, swFieldShore)), ${f(
 float swBodyDepth = max(0.01, IN.vSlateWater.z);
 float swFoamWidth = max(0.001, U.slateWaterMotion.w);
 float swCalm = smoothstep(0.0, swFoamWidth * 2.0 + 0.5, swBank);
-vec3 swBaseNormal = normalize(IN.vSlateWaterBaseNormal);
 // Small waves around objects that cut the surface: they travel outward at the deep-water speed of their
 // wavelength, fade with distance, and a drifting noise bends and breaks them so they never read as perfect rings.
 float swContactW = max(0.05, U.slateWaterShape.w);
@@ -169,8 +214,6 @@ float swAgitate = exp(-swObject / swContactW) * swRippleAA * swNearContact;
 vec2 swRipple = swContactDir * (cos(swRipplePhase) * swRippleFade * (0.1 + 0.3 * U.slateWaterMotion.z) * (0.45 + 0.55 * swRippleNoise));
 float swChopGain = U.slateWaterMotion.z * (0.35 + 0.65 * swCalm + swAgitate) * ${realistic ? "(0.7 + 0.6 * swGust)" : "(0.5 + swGust)"};
 vec2 swSlope = swGradient + swDetail * swChopGain + swRipple;
-float swBaseX = swBaseNormal.x / max(0.001, swBaseNormal.y);
-float swBaseZ = swBaseNormal.z / max(0.001, swBaseNormal.y);
 normalW = normalize(vec3(swBaseX - swSlope.x, 1.0, swBaseZ - swSlope.y));
 // The swell alone, without chop: the large-scale wave shape used for lighting through crests.
 vec3 swSwellNormal = normalize(vec3(swBaseX - swGradient.x, 1.0, swBaseZ - swGradient.y));
@@ -185,6 +228,8 @@ float swCrest = swHeight / max(0.001, U.slateWaterWaves.x);
 // lake waves never break) and by how much of the swell is still resolved, so distant filtered swell never breaks
 // in regular rows.
 float swFoldN = swFold / max(0.0001, swSteep * (1.0 + swChopShape * ${f(1 / WATER_CREST_RANGE - 1)}));
+// Jacobian foam: Gerstner crests that gather water (det J below 1) break like sharp crests.
+swFoldN = mix(swFoldN, max(swFoldN, (1.0 - swDetJ) / ${f(1 - WATER_JACOBIAN_FLOOR)}), U.slateWaterSwellInfo.y);
 float swRough = smoothstep(0.03, 0.35, swSteep) * smoothstep(0.5, 0.9, swResolved / max(0.0001, swSteep));
 vec2 swWindDir = vec2(cos(U.slateWaterWaves.w), sin(U.slateWaterWaves.w));
 
@@ -613,8 +658,9 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
   private bindingRender = -1;
   private removalMesh: AbstractMesh | null = null;
   private selectedRemovals: WaterRemovalCandidate[] = [];
+  private readonly swell = new Float32Array(WATER_WAVE_MAX_COMPONENTS * WATER_WAVE_SHADER_STRIDE);
   constructor(material: PBRMaterial, water: WaterDefinition, body: WaterBodyProperties) {
-    super(material, "SlateWater", 180, { SLATE_WATER: true, [WATER_STYLIZED_DEFINE]: false }, true, false);
+    super(material, "SlateWater", 180, { SLATE_WATER: true, [WATER_STYLIZED_DEFINE]: false, [WATER_OCEAN_DEFINE]: false }, true, false);
     this.water = water;
     this.body = body;
     this.doNotSerialize = true;
@@ -623,10 +669,13 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
   }
   override isCompatible(): boolean { return true; }
   override getClassName(): string { return "WaterMaterialPlugin"; }
-  override prepareDefines(defines: MaterialDefines): void { defines[WATER_STYLIZED_DEFINE] = this.water.style === "stylized"; }
-  override getAttributes(attributes: string[]): void { attributes.push("slateWaterData", "slateWaterFlow", "slateWaterBaseNormal"); }
+  override prepareDefines(defines: MaterialDefines): void {
+    defines[WATER_STYLIZED_DEFINE] = this.water.style === "stylized";
+    defines[WATER_OCEAN_DEFINE] = waterWaveSet(this.water).count > waterWaveComponents.length;
+  }
+  override getAttributes(attributes: string[]): void { attributes.push("slateWaterData", "slateWaterFlow", "slateWaterBaseNormal", "slateWaterOffset"); }
   override getUniforms() {
-    const vectors = ["slateWaterShallow", "slateWaterDeep", "slateWaterFoam", "slateWaterMotion", "slateWaterLook", "slateWaterWaves", "slateWaterSun", "slateWaterSunColor", "slateWaterLight", "slateWaterShape", "slateWaterFieldBounds", "slateWaterFieldInfo", "slateWaterFieldStep", "slateWaterContactBounds", "slateWaterContactInfo", "slateWaterOrigin"];
+    const vectors = ["slateWaterShallow", "slateWaterDeep", "slateWaterFoam", "slateWaterMotion", "slateWaterLook", "slateWaterWaves", "slateWaterSun", "slateWaterSunColor", "slateWaterLight", "slateWaterShape", "slateWaterFieldBounds", "slateWaterFieldInfo", "slateWaterFieldStep", "slateWaterContactBounds", "slateWaterContactInfo", "slateWaterOrigin", "slateWaterSwellInfo", ...SWELL_DIRECTION, ...SWELL_AMPLITUDE];
     const removals = Array.from({ length: WATER_REMOVAL_SLOTS }, (_, i) => i);
     return { ubo: [
       ...[...vectors, ...removals.map((i) => `slateWaterRemovalShape${i}`)].map((name) => ({ name, size: 4, type: "vec4" })),
@@ -655,6 +704,17 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
     // With floating origin, shaders see positions relative to this offset (the eye); patterns must stay world-anchored.
     const origin = scene.floatingOriginMode ? scene.floatingOriginOffset : Vector3.ZeroReadOnly;
     buffer.updateFloat4("slateWaterOrigin", origin.x, origin.y, origin.z, w.roughness);
+    // Swell components relative to the same origin at this frame's simulation time, so eye-relative fragment
+    // positions evaluate small phases; unused slots stay zero.
+    const set = waterWaveSet(w), swell = this.swell;
+    swell.fill(0);
+    waterWaveShaderConstants(set, b.waveScale, origin.x, origin.z, this.time, swell);
+    for (let i = 0; i < WATER_WAVE_MAX_COMPONENTS; i++) {
+      const o = i * WATER_WAVE_SHADER_STRIDE;
+      buffer.updateFloat4(SWELL_DIRECTION[i]!, swell[o]!, swell[o + 1]!, swell[o + 2]!, swell[o + 3]!);
+      buffer.updateFloat4(SWELL_AMPLITUDE[i]!, swell[o + 4]!, swell[o + 5]!, swell[o + 6]!, swell[o + 7]!);
+    }
+    buffer.updateFloat4("slateWaterSwellInfo", b.kind === "global" ? 0 : waterBankFadeLength(w, b.waveScale), waterWaveQ(set, b.waveScale) > 0 ? 1 : 0, 0, 0);
     buffer.updateFloat4("slateWaterShape", w.choppiness, w.waveSpread, w.crestFoam, w.contactFoamWidth);
     const field = this.field?.texture ? this.field : null;
     const bounds = field?.bounds ?? [0, 0, 1, 1];
@@ -689,15 +749,21 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
   }
   override getCustomCode(shaderType: string, language = ShaderLanguage.GLSL): Record<string, string> | null {
     const wgsl = language === ShaderLanguage.WGSL;
-    const v3 = wgsl ? "vec3f" : "vec3";
+    const v3 = wgsl ? "vec3f" : "vec3", v4 = wgsl ? "vec4f" : "vec4";
     // Babylon's shader processors are line-based: every attribute, varying and sampler needs its own line.
     const varying = (type: string, name: string) => (wgsl ? `varying ${name}: ${type};` : `varying ${type} ${name};`) + "\n";
-    const varyings = varying(wgsl ? "vec4f" : "vec4", "vSlateWater") + varying(v3, "vSlateWaterFlow") + varying(v3, "vSlateWaterBaseNormal");
+    // vSlateWaterFlow packs the world current (x, z) and the Gerstner offset (Dx, Dz), so the fragment finds its rest point.
+    const varyings = varying(v4, "vSlateWater") + varying(v4, "vSlateWaterFlow") + varying(v3, "vSlateWaterBaseNormal");
+    const output = wgsl ? "vertexOutputs." : "", input = wgsl ? "vertexInputs." : "";
     if (shaderType === "vertex") return {
       CUSTOM_VERTEX_DEFINITIONS: (wgsl
-        ? "attribute slateWaterData: vec4f;\nattribute slateWaterFlow: vec3f;\nattribute slateWaterBaseNormal: vec3f;\n"
-        : "attribute vec4 slateWaterData;\nattribute vec3 slateWaterFlow;\nattribute vec3 slateWaterBaseNormal;\n") + varyings,
-      CUSTOM_VERTEX_MAIN_END: ["Water", "WaterFlow", "WaterBaseNormal"].map((name) => `${wgsl ? "vertexOutputs." : ""}vSlate${name} = ${wgsl ? "vertexInputs." : ""}slate${name === "Water" ? "WaterData" : name};`).join("\n"),
+        ? "attribute slateWaterData: vec4f;\nattribute slateWaterFlow: vec3f;\nattribute slateWaterBaseNormal: vec3f;\nattribute slateWaterOffset: vec2f;\n"
+        : "attribute vec4 slateWaterData;\nattribute vec3 slateWaterFlow;\nattribute vec3 slateWaterBaseNormal;\nattribute vec2 slateWaterOffset;\n") + varyings,
+      CUSTOM_VERTEX_MAIN_END: [
+        `${output}vSlateWater = ${input}slateWaterData;`,
+        `${output}vSlateWaterFlow = ${v4}(${input}slateWaterFlow.xz, ${input}slateWaterOffset);`,
+        `${output}vSlateWaterBaseNormal = ${input}slateWaterBaseNormal;`,
+      ].join("\n"),
     };
     if (shaderType !== "fragment") return null;
     const source = waterShaderSource(language);

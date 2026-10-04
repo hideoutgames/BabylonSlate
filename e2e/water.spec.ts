@@ -54,6 +54,11 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       // Surface Foam adds open-water foam, and Subsurface lightens waves seen toward a low sun.
       expect(result.surfaceFoam[style].foamy).toBeGreaterThan(result.surfaceFoam[style].clear + 6);
       expect(result.subsurface[style].on).toBeGreaterThan(result.subsurface[style].off + 3);
+      // Steep Gerstner seas shade from the shared kernel for both wave models: lit (not black), and the eight
+      // Ocean Spectrum components draw a different sea from the five Classic ones.
+      expect(result.gerstner[style].classic).toBeGreaterThan(20);
+      expect(result.gerstner[style].ocean).toBeGreaterThan(20);
+      expect(result.gerstner[style].change).toBeGreaterThan(1);
     }
     // Clear water over a black floor still shows the sky's reflection.
     expect(result.clearReflection.water).toBeGreaterThan(result.clearReflection.floor + 15);

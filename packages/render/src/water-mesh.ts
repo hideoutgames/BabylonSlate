@@ -1,5 +1,10 @@
-import { ArcRotateCamera, Matrix, Mesh, PBRMaterial, Vector3, VertexBuffer, VertexData, type Material, type Scene } from "@babylonjs/core";
-import { createDefaultWaterDefinition, normalizeWaterBody, normalizeWaterDefinition, sampleWaterWaves, waterFootprint, waterRiverCentreline, type WaterBodyProperties, type WaterDefinition } from "@babylonslate/core";
+import { ArcRotateCamera, Matrix, Mesh, PBRMaterial, Vector3, VertexBuffer, VertexData, type Material, type Scene, type SubMesh } from "@babylonjs/core";
+import {
+  createDefaultWaterDefinition, createWaterWaveOutput, evaluateWaterWaves, normalizeWaterBody, normalizeWaterDefinition, waterBankFadeLength,
+  waterBankGain, waterEulerianGradient, waterFootprint, waterHorizontalEnvelope, waterRiverCentreline, waterWaveEnvelope, waterWaveQ, waterWaveSet,
+  type WaterBodyProperties, type WaterDefinition,
+} from "@babylonslate/core";
+import { updateDynamicMaterialBounds } from "./material-bounds";
 import { configureWaterMaterial, contactRange, WaterMaterialPlugin } from "./water-material";
 import { WaterContactField } from "./water-contact-field";
 import { WaterField, type WaterFieldSurface } from "./water-field";
@@ -11,6 +16,14 @@ type Surface = {
   world: Matrix; inverse: Matrix;
   layout: string; frame: string; time: number | null; version: number; base: Float32Array; worldBase: Float32Array; positions: Float32Array; normals: Float32Array;
   baseNormals: Float32Array; data: Float32Array; flow: Float32Array; spacing: Float32Array;
+  /** World X/Z Gerstner offset per vertex (the built-in shader subtracts it to find each fragment's rest point). */
+  offsets: Float32Array;
+  /** World X/Z direction in which each vertex's bank distance grows; the bank fade's gradient follows it. */
+  bankGradient: Float32Array;
+  /** Whether the last uploaded offsets were all zero, so calm water skips re-uploading them. */
+  offsetsZero: boolean;
+  /** Sub-meshes whose culling bounds were last padded (shadow partitioning may replace them later). */
+  boundedSubMeshes: number; boundedFirst: SubMesh | null;
 };
 const surfaces = new WeakMap<Scene, Set<Surface>>();
 const surfaceByMesh = new WeakMap<Mesh, Surface>();
@@ -174,6 +187,7 @@ function updateLayout(s: Surface, world: Matrix, inverse: Matrix): void {
   s.normals = new Float32Array(positions.length); s.baseNormals = new Float32Array(positions.length);
   s.data = new Float32Array(positions.length / 3 * 4); s.flow = new Float32Array(positions.length);
   s.spacing = new Float32Array(positions.length / 3);
+  s.offsets = new Float32Array(positions.length / 3 * 2); s.bankGradient = new Float32Array(positions.length / 3 * 2); s.offsetsZero = true;
   const a = new Vector3(), b = new Vector3();
   for (let row = 0; row <= rows; row++) for (let col = 0; col <= columns; col++) {
     const index = row * (columns + 1) + col;
@@ -191,23 +205,66 @@ function updateLayout(s: Surface, world: Matrix, inverse: Matrix): void {
   mesh.setVerticesData("slateWaterData", s.data, true, 4);
   mesh.setVerticesData("slateWaterFlow", s.flow, true, 3);
   mesh.setVerticesData("slateWaterBaseNormal", s.baseNormals, true, 3);
+  mesh.setVerticesData("slateWaterOffset", s.offsets, true, 2);
+}
+
+const waveOut = createWaterWaveOutput(), gainOut = new Float64Array(2), slopeOut = new Float64Array(2);
+const normalMatrix = new Matrix(), toLocalNormal = new Matrix();
+const up = new Vector3(), across = new Vector3(), along = new Vector3(), boundsMin = new Vector3(), boundsMax = new Vector3(), boundsPad = new Vector3();
+
+/**
+ * Culling bounds stay fixed while waves animate: the rest extents padded by the wave envelopes (horizontally only for
+ * finite bodies, whose edges move with Gerstner waves), converted to local space. Fields keyed on the mesh bounds
+ * therefore never rebuild per frame, and no per-frame extents pass runs.
+ */
+function updateBounds(s: Surface, world: Matrix, inverse: Matrix): void {
+  if (!s.base.length) return;
+  const vertical = waterWaveEnvelope(s.water, s.body.waveScale);
+  const horizontal = s.body.kind === "global" ? 0 : waterHorizontalEnvelope(s.water, s.body.waveScale);
+  const m = inverse.m;
+  boundsPad.set(
+    Math.abs(m[0]!) * horizontal + Math.abs(m[4]!) * vertical + Math.abs(m[8]!) * horizontal,
+    Math.abs(m[1]!) * horizontal + Math.abs(m[5]!) * vertical + Math.abs(m[9]!) * horizontal,
+    Math.abs(m[2]!) * horizontal + Math.abs(m[6]!) * vertical + Math.abs(m[10]!) * horizontal,
+  );
+  boundsMin.setAll(Infinity); boundsMax.setAll(-Infinity);
+  for (let i = 0; i < s.base.length; i += 3) {
+    boundsMin.minimizeInPlaceFromFloats(s.base[i]!, s.base[i + 1]!, s.base[i + 2]!);
+    boundsMax.maximizeInPlaceFromFloats(s.base[i]!, s.base[i + 1]!, s.base[i + 2]!);
+  }
+  updateDynamicMaterialBounds(s.mesh, boundsMin.subtractInPlace(boundsPad), boundsMax.addInPlace(boundsPad));
+  const subMeshes = s.mesh.subMeshes ?? [];
+  for (const subMesh of subMeshes) if (!subMesh.IsGlobal) {
+    const info = subMesh.refreshBoundingInfo(s.base).getBoundingInfo();
+    boundsMin.copyFrom(info.minimum).subtractInPlace(boundsPad); boundsMax.copyFrom(info.maximum).addInPlace(boundsPad);
+    info.reConstruct(boundsMin, boundsMax, world);
+  }
+  s.boundedSubMeshes = subMeshes.length; s.boundedFirst = subMeshes[0] ?? null;
 }
 
 function updateSurface(s: Surface, time: number): void {
   const world = s.mesh.computeWorldMatrix(true);
   if (Math.abs(world.determinant()) < 1e-12) return;
-  const inverse = world.clone().invert();
-  s.world.copyFrom(world); s.inverse.copyFrom(inverse);
+  s.world.copyFrom(world); world.invertToRef(s.inverse);
+  const inverse = s.inverse;
   updateLayout(s, world, inverse);
   const frame = s.layout + ":" + [world.m[12], world.m[13], world.m[14]].join(",");
   const moved = frame !== s.frame;
   if (s.plugin) s.plugin.time = time;
+  const subMeshes = s.mesh.subMeshes ?? [];
+  if (moved || subMeshes.length !== s.boundedSubMeshes || (subMeshes[0] ?? null) !== s.boundedFirst) updateBounds(s, world, inverse);
   // Paused simulation frames keep their GPU buffers, but transforms and horizon changes still resample.
   if (!moved && s.time === time) return;
   s.frame = frame;
-  const normalMatrix = Matrix.Transpose(inverse), toLocalNormal = Matrix.Transpose(world);
-  const up = Vector3.TransformNormal(Vector3.Up(), inverse);
+  inverse.transposeToRef(normalMatrix); world.transposeToRef(toLocalNormal);
+  // World-axis displacements (vertical waves, Gerstner X/Z offsets) expressed in the mesh's local space.
+  Vector3.TransformNormalFromFloatsToRef(0, 1, 0, inverse, up);
+  Vector3.TransformNormalFromFloatsToRef(1, 0, 0, inverse, across);
+  Vector3.TransformNormalFromFloatsToRef(0, 0, 1, inverse, along);
   const depth = s.body.depth * Vector3.TransformNormal(Vector3.Up(), world).length();
+  const set = waterWaveSet(s.water), scale = s.body.waveScale, o = waveOut;
+  // Finite bodies fade the horizontal offset to zero at their banks, exactly as queries do (`waterBankGain`).
+  const fadeLength = s.body.kind === "global" ? 0 : waterBankFadeLength(s.water, scale), gerstner = waterWaveQ(set, scale) > 0;
   const point = new Vector3(), baseNormal = new Vector3(), localNormal = new Vector3(), flow = new Vector3(), edge = new Vector3();
   for (let i = 0; i < s.base.length; i += 3) {
     const x = s.base[i]!, y = s.base[i + 1]!, z = s.base[i + 2]!;
@@ -220,22 +277,35 @@ function updateSurface(s: Surface, time: number): void {
       baseNormal.scaleInPlace(baseNormal.y < 0 ? -1 : 1).normalize();
       baseNormal.toArray(s.baseNormals, i);
       edge.set(footprint.edgeX, 0, footprint.edgeZ); Vector3.TransformNormalToRef(edge, normalMatrix, edge);
+      const outward = edge.length() || 1;
+      s.bankGradient[i / 3 * 2] = -edge.x / outward; s.bankGradient[i / 3 * 2 + 1] = -edge.z / outward;
       flow.set(footprint.flowX, footprint.flowY, footprint.flowZ); Vector3.TransformNormalToRef(flow, world, flow);
       flow.scaleInPlace(s.body.flowSpeed / Math.max(1e-6, Math.hypot(flow.x, flow.z))).toArray(s.flow, i);
       s.data[d + 1] = Math.min(10000, Math.max(0, footprint.edge / (edge.length() || 1)));
       s.data[d + 2] = depth;
     }
-    const wave = sampleWaterWaves(s.water, s.worldBase[i]!, s.worldBase[i + 2]!, time, s.body.waveScale, s.spacing[i / 3]);
-    s.positions[i] = x + up.x * wave.height; s.positions[i + 1] = y + up.y * wave.height; s.positions[i + 2] = z + up.z * wave.height;
-    baseNormal.copyFromFloats(s.baseNormals[i]!, s.baseNormals[i + 1]!, s.baseNormals[i + 2]!);
-    const ny = Math.max(1e-6, baseNormal.y);
-    localNormal.set(baseNormal.x / ny + wave.normal.x / wave.normal.y, 1, baseNormal.z / ny + wave.normal.z / wave.normal.y);
+    // Forward evaluation at this vertex's world rest point: the mesh never inverts, queries do.
+    const v = i / 3 * 2;
+    waterBankGain(s.data[d + 1]!, fadeLength, gainOut);
+    evaluateWaterWaves(set, s.worldBase[i]!, s.worldBase[i + 2]!, time, s.spacing[i / 3]!, o, scale,
+      gainOut[0]!, gainOut[1]! * s.bankGradient[v]!, gainOut[1]! * s.bankGradient[v + 1]!);
+    const height = o[0]!, offsetX = o[1]!, offsetZ = o[2]!;
+    s.offsets[v] = offsetX; s.offsets[v + 1] = offsetZ;
+    s.positions[i] = x + up.x * height + across.x * offsetX + along.x * offsetZ;
+    s.positions[i + 1] = y + up.y * height + across.y * offsetX + along.y * offsetZ;
+    s.positions[i + 2] = z + up.z * height + across.z * offsetX + along.z * offsetZ;
+    // Eulerian world slope J⁻ᵀ(∇rest + ∇H), the same normal a query at the displaced point reports.
+    const ny = Math.max(1e-6, s.baseNormals[i + 1]!);
+    waterEulerianGradient(o, o[3]! - s.baseNormals[i]! / ny, o[4]! - s.baseNormals[i + 2]! / ny, slopeOut);
+    localNormal.set(-slopeOut[0]!, 1, -slopeOut[1]!);
     Vector3.TransformNormalToRef(localNormal, toLocalNormal, localNormal); localNormal.normalize().toArray(s.normals, i);
-    s.data[d] = wave.height; s.data[d + 3] = time;
+    s.data[d] = height; s.data[d + 3] = time;
   }
-  s.mesh.updateVerticesData(VertexBuffer.PositionKind, s.positions, true);
+  s.mesh.updateVerticesData(VertexBuffer.PositionKind, s.positions, false);
   s.mesh.updateVerticesData(VertexBuffer.NormalKind, s.normals);
   s.mesh.updateVerticesData("slateWaterData", s.data);
+  if (gerstner || !s.offsetsZero) s.mesh.updateVerticesData("slateWaterOffset", s.offsets);
+  s.offsetsZero = !gerstner;
   if (moved) {
     s.mesh.updateVerticesData("slateWaterFlow", s.flow);
     s.mesh.updateVerticesData("slateWaterBaseNormal", s.baseNormals);
@@ -300,7 +370,7 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
     mesh.onDisposeObservable.addOnce(() => material.dispose());
   }
   const empty = new Float32Array();
-  const surface: Surface = { mesh, water, body, plugin, field: null, contacts: null, world: Matrix.Identity(), inverse: Matrix.Identity(), layout: "", frame: "", time: null, version: 0, base: empty, worldBase: empty, positions: empty, normals: empty, baseNormals: empty, data: empty, flow: empty, spacing: empty };
+  const surface: Surface = { mesh, water, body, plugin, field: null, contacts: null, world: Matrix.Identity(), inverse: Matrix.Identity(), layout: "", frame: "", time: null, version: 0, base: empty, worldBase: empty, positions: empty, normals: empty, baseNormals: empty, data: empty, flow: empty, spacing: empty, offsets: empty, bankGradient: empty, offsetsZero: true, boundedSubMeshes: -1, boundedFirst: null };
   let entries = surfaces.get(scene);
   if (!entries) {
     entries = new Set(); surfaces.set(scene, entries);
@@ -314,7 +384,8 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
   if (plugin) {
     const fieldSurface: WaterFieldSurface = {
       mesh, unbounded: body.kind === "global", contactRange: contactRange(water),
-      get amplitude() { return water.waveHeight * body.waveScale * 1.3 + 0.05; },
+      // The envelope bounds |H| exactly; the margin keeps the outermost contact layers off the clamp.
+      get amplitude() { return waterWaveEnvelope(water, body.waveScale) + 0.05; },
       surfaceY: (x, z) => waterSurfaceY(surface, x, z),
       get restVaries() { return restVaries(surface); },
       restY: (x, z) => waterSurfaceY(surface, x, z, true)!,

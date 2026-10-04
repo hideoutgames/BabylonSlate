@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { DirectionalLight, FreeCamera, HemisphericLight, Matrix, MeshBuilder, NullEngine, PBRMaterial, PointLight, Scene, Texture, TransformNode, Vector3, type UniformBuffer } from "@babylonjs/core";
-import { createDefaultWaterDefinition, normalizeWaterBody } from "@babylonslate/core";
+import {
+  WATER_WAVE_MAX_COMPONENTS, createDefaultWaterDefinition, createWaterWaveOutput, evaluateWaterWaves, normalizeWaterBody, normalizeWaterDefinition,
+  waterWaveSet,
+} from "@babylonslate/core";
 import { WaterMaterialPlugin } from "./water-material";
 import { createWaterMesh } from "./water-mesh";
 import { createWaterRemovalMesh } from "./water-removal-mesh";
@@ -127,8 +130,8 @@ describe("Water material binding", () => {
       new DirectionalLight("sun", new Vector3(0, -1, 0.3), scene);
       new PointLight("lamp", new Vector3(0, 3, 0), scene);
       // Preview, editor scenes and Play all build water through createWaterMesh; an edited asset rebuilds it.
-      const compiled = async (style: "realistic" | "stylized") => {
-        const mesh = createWaterMesh(scene, style, normalizeWaterBody({ resolution: 8 }), createDefaultWaterDefinition(style));
+      const compiled = async (style: "realistic" | "stylized", waveModel: "classic" | "ocean" = "classic") => {
+        const mesh = createWaterMesh(scene, style, normalizeWaterBody({ resolution: 8 }), { ...createDefaultWaterDefinition(style), waveModel });
         const material = mesh.material as PBRMaterial, subMesh = mesh.subMeshes[0]!;
         await material.forceCompilationAsync(mesh);
         expect(material.isReadyForSubMesh(mesh, subMesh)).toBe(true);
@@ -144,7 +147,45 @@ describe("Water material binding", () => {
       expect(realistic).not.toContain("#define SLATE_WATER_STYLIZED");
       expect(realistic).not.toContain("#define UNLIT");
       expect(realistic).toContain("#define LIGHT1");
+      // Classic compiles only its five swell components; Ocean Spectrum adds its other three.
+      expect(realistic).not.toContain("#define SLATE_WATER_OCEAN");
+      expect(await compiled("stylized", "ocean")).toContain("#define SLATE_WATER_OCEAN");
     } finally { scene.dispose(); engine.dispose(); }
+  });
+
+  it("binds the shared swell relative to the floating origin and clock, so eye-relative rest points reproduce the kernel", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    try {
+      const definition = normalizeWaterDefinition({ ...createDefaultWaterDefinition(), waveModel: "ocean", waveSeed: 7, choppiness: 0, steepness: 0.8 });
+      const body = normalizeWaterBody({ width: 40, length: 40, waveScale: 0.6 }, "ocean"), output = uniforms();
+      const plugin = new WaterMaterialPlugin(new PBRMaterial("water", scene), definition, body);
+      plugin.mesh = MeshBuilder.CreateGround("surface", { width: 2, height: 2 }, scene);
+      plugin.time = 98765.4;
+      // Large-world rendering: shaders see positions relative to the eye, which sits far from the world origin.
+      const origin = new Vector3(81234.5, 3, -40321.25);
+      vi.spyOn(scene, "floatingOriginMode", "get").mockReturnValue(true);
+      vi.spyOn(scene, "floatingOriginOffset", "get").mockReturnValue(origin);
+      plugin.hardBindForSubMesh(output.buffer, scene);
+      const rest = { x: 3.25, z: -1.5 }, kernel = createWaterWaveOutput();
+      evaluateWaterWaves(waterWaveSet(definition), origin.x + rest.x, origin.z + rest.z, plugin.time, 0, kernel, body.waveScale);
+      let height = 0, offsetX = 0, offsetZ = 0;
+      for (let i = 0; i < WATER_WAVE_MAX_COMPONENTS; i++) {
+        const [dx, dz, k] = output.vectors.get(`slateWaterSwellDir${i}`)!, [amplitude, phase, gerstner] = output.vectors.get(`slateWaterSwellAmp${i}`)!;
+        const p = k! * (dx! * rest.x + dz! * rest.z) + phase!;
+        height += amplitude! * Math.sin(p); offsetX += gerstner! * dx! * Math.cos(p); offsetZ += gerstner! * dz! * Math.cos(p);
+      }
+      // Float32 uniforms keep the phases small, so the shader's swell matches the float64 kernel closely.
+      expect(height).toBeCloseTo(kernel[0]!, 4);
+      expect(offsetX).toBeCloseTo(kernel[1]!, 4);
+      expect(offsetZ).toBeCloseTo(kernel[2]!, 4);
+      // Finite bodies fade the offset at their banks; Gerstner foam switches on only with horizontal motion.
+      const [fadeLength, gerstnerOn] = output.vectors.get("slateWaterSwellInfo")!;
+      expect(fadeLength).toBeGreaterThan(0);
+      expect(gerstnerOn).toBe(1);
+      definition.steepness = 0;
+      plugin.hardBindForSubMesh(output.buffer, scene);
+      expect(output.vectors.get("slateWaterSwellInfo")!.slice(0, 2)).toEqual([0, 0]);
+    } finally { scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
   });
 
   it("keeps scene snapshots separate and preserves insertion order for equally near removals", () => {
