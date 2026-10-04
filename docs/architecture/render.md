@@ -1756,7 +1756,7 @@ Water velocity from a query (and so buoyancy) has two parts:
 - Floating objects rock in place; only the current carries them:
   - A hull that follows the orbit sees no backward average, so buoyancy re-weights the term per wave component by the share a support relaxing at the hull's drag rate still sees, ω²/(ω² + rate²) (`waterWaveDrift(..., couplingRate)`).
   - Horizontal drag uses each support's recent peak submersion: it rises at once and settles over 8 s. The instantaneous value correlates with the orbital velocity and pushed hulls metres per minute along or against the waves.
-  - Residual drift in the buoyancy tests is under 0.5 m per minute at drag 2.5 and 20 on default waves.
+  - A small residual drift remains, depending on hull size and drag. On default waves the buoyancy tests' hull moves 0.16 m (drag 2.5) and 0.28 m (drag 20) in 50 s; with only the fixed-point term and instantaneous submersion it moved 3.4 m and 4.2 m.
 - Y: the current's slope component plus the Eulerian rate of surface height at the queried X/Z, which drives the buoyancy spring/damper.
 
 Worker caching:
