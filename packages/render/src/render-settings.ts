@@ -260,8 +260,9 @@ export function followSceneRenderSettings(scene: Scene, owner: Scene): void {
 }
 
 /**
- * Project Water quality for `scene` (local editor overrides, then session
- * overrides). Cached: the same frozen object is returned until a value changes.
+ * Requested project Water quality for `scene` (local editor overrides, then
+ * session overrides). Cached: the same frozen object is returned until a value
+ * changes. Rendering gates on `sceneWaterQualityDeviceClamp(scene).quality`.
  */
 export function sceneWaterQuality(scene: Scene): Readonly<WaterQuality> {
   return sceneRenderingSettings(renderSettingsOwner(scene)).water;
@@ -275,7 +276,10 @@ export function sceneWaterQualityRevision(scene: Scene): number {
   return sceneRenderingSettings(renderSettingsOwner(scene)).waterRevision;
 }
 
-/** Water quality this Scene's device can honour, cached per revision; see clampWaterQualityToDevice. */
+/**
+ * Water quality this Scene's device can honour, cached per revision; see
+ * clampWaterQualityToDevice. Water rendering reads this, as Play readback does.
+ */
 export function sceneWaterQualityDeviceClamp(scene: Scene): WaterQualityDeviceClamp {
   const state = sceneRenderingSettings(scene);
   const revision = sceneWaterQualityRevision(scene);

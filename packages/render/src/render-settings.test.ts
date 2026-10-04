@@ -139,8 +139,17 @@ it("reports device-clamped water features while keeping the requested quality", 
   expect(clamped.limits).toHaveLength(3);
   expect(sceneWaterQuality(scene)).toMatchObject({ fft: true, refraction: true, reflections: "screenSpace" });
 
+  // Planar stays for flat water, but its Screen Space fallback has no scene copy to march.
+  const planar = fixture();
+  Object.assign(planar.getEngine().getCaps(), { textureFloatRender: true, textureHalfFloatRender: false });
+  updateSceneRenderingSettings(planar, tier("ultra"));
+  const planarClamp = sceneWaterQualityDeviceClamp(planar);
+  expect(planarClamp.quality).toMatchObject({ reflections: "planar", refraction: false, fft: true });
+  expect(planarClamp.screenSpaceFallback).toBe(false);
+  expect(planarClamp.limits).toEqual([expect.stringContaining("Water Refraction"), expect.stringContaining("Planar")]);
+
   const capable = fixture();
   Object.assign(capable.getEngine().getCaps(), { textureFloatRender: true, textureHalfFloatRender: true });
   updateSceneRenderingSettings(capable, tier("ultra"));
-  expect(sceneWaterQualityDeviceClamp(capable)).toEqual({ quality: sceneWaterQuality(capable), limits: [] });
+  expect(sceneWaterQualityDeviceClamp(capable)).toEqual({ quality: sceneWaterQuality(capable), screenSpaceFallback: true, limits: [] });
 });

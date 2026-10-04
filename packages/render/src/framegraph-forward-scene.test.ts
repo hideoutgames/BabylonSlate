@@ -23,7 +23,7 @@ import type { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
 import { FrameGraphObjectRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/objectRendererTask";
 import { afterEach, expect, it, vi } from "vitest";
 import { normalizeParticleEmitterPayload } from "@babylonslate/assets";
-import { DEFAULT_RENDER_EFFECTS } from "@babylonslate/core";
+import { DEFAULT_RENDER_EFFECTS, normalizeRenderingQuality } from "@babylonslate/core";
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
 import { ParticleService } from "./particle-service";
 import {
@@ -724,6 +724,29 @@ it("keeps a graph stale when settings change while it is being prepared", async 
   expect(graph.readiness(camera)).toEqual({ path: "frameGraph", ready: false, preparationRequired: true });
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
   expect(graph.taskNames()).toContain("Scene Effects FXAA");
+  graph.dispose();
+});
+
+it("re-plans the graph when project Water quality changes, including during preparation", async () => {
+  const { scene, camera } = host();
+  const graph = new ForwardSceneFrameGraph(scene);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  const release = vi.spyOn(FrameGraphObjectRendererTask.prototype, "dispose");
+  // Water-owned passes (scene copy, planar, FFT) are planned at graph build.
+  updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ water: { refraction: false } }) });
+  expect(graph.readiness(camera)).toEqual({ path: "frameGraph", ready: false, preparationRequired: true });
+  expect(graph.render(camera)).toMatchObject({ path: "classic", reason: "FrameGraph preparation is required." });
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  expect(release).toHaveBeenCalledTimes(1);
+  expect(graph.readiness(camera)).toEqual({ path: "frameGraph", ready: true });
+
+  // A change while a build awaits readiness leaves that build stale.
+  const pending = graph.prepare(camera);
+  updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ water: { refraction: true } }) });
+  expect(await pending).toEqual({ path: "frameGraph" });
+  expect(graph.readiness(camera)).toEqual({ path: "frameGraph", ready: false, preparationRequired: true });
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
   graph.dispose();
 });
 

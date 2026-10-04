@@ -1336,7 +1336,9 @@ function initializeEngine(
       worldRenderer.invalidate();
     }
     appliedEffectsKey = effectsKey;
-    // Water-owned passes (scene copy, planar, FFT) are planned with the graph.
+    // Each forward graph re-plans its water-owned passes (scene copy, planar,
+    // FFT) when the revision it was built for is stale; this supersedes a
+    // world preparation that is already under way.
     const waterRevision = sceneWaterQualityRevision(scene);
     if (appliedWaterRevision !== undefined && appliedWaterRevision !== waterRevision)
       worldRenderer.invalidate();
