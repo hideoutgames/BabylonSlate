@@ -267,7 +267,10 @@ export function sceneWaterQuality(scene: Scene): Readonly<WaterQuality> {
   return sceneRenderingSettings(renderSettingsOwner(scene)).water;
 }
 
-/** Changes only when `sceneWaterQuality(scene)` resolves to different values. */
+/**
+ * Changes when `sceneWaterQuality(scene)` resolves to different values, or when
+ * the Scene starts following another; never per frame. Compare it in prepare.
+ */
 export function sceneWaterQualityRevision(scene: Scene): number {
   return sceneRenderingSettings(renderSettingsOwner(scene)).waterRevision;
 }
