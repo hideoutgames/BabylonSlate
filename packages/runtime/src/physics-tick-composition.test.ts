@@ -195,6 +195,7 @@ describe("physics tick composition work", () => {
       const world = runtime.getWorld();
       const meshes = world.getActors().filter((actor) => actor.guid.startsWith("mesh-"));
       const lamp = world.findActor("lamp")!, crate = world.findActor("crate")!;
+      expect(meshes).toHaveLength(512);
       const reads = countTransformReads(meshes);
       runtime.invokeScriptEvent("Mover", "Nudge", lamp);
       const lampReads = reads.count;
@@ -248,6 +249,7 @@ describe("physics tick composition work", () => {
       const world = runtime.getWorld();
       const meshes = world.getActors().filter((actor) => actor.guid.startsWith("mesh-"));
       const shore = world.findActor("shore")!;
+      expect(meshes).toHaveLength(512);
       const meshReads = countTransformReads(meshes);
       const raftReads = countTransformReads([world.findActor("raft")!]);
       runtime.invokeScriptEvent("Prober", "Probe", shore);
