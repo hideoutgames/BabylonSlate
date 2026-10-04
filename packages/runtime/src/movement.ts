@@ -1,7 +1,7 @@
 import { parseMovementProperties, type MovementProperties } from "@babylonslate/core";
 import type { Actor, ActorComponent, World } from "@babylonslate/object-model";
 import type { Vec3 } from "@babylonslate/physics";
-import { actorParentGuid, actorWorldTransform, rotateVector } from "./actor-world-transform";
+import { actorChainWorldTransform, rotateVector } from "./actor-world-transform";
 import type { PhysicsWorldSync } from "./physics-sync";
 
 type MovementState = {
@@ -104,14 +104,7 @@ export class MovementWorldSync {
     let heading = (props.inputYaw + yaw) % 360 * Math.PI / 180;
     if (props.inputSpace === "actor") {
       // Resolve only this ancestry, using the world's existing ID index.
-      const actors = new Map<string, Actor>();
-      let current: Actor | undefined = actor;
-      while (current && !actors.has(current.guid)) {
-        actors.set(current.guid, current);
-        const parent = actorParentGuid(current);
-        current = parent ? this.host.world.findActor(parent) : undefined;
-      }
-      const pose = actorWorldTransform(actor, actors);
+      const pose = actorChainWorldTransform(actor, (guid) => this.host.world.findActor(guid));
       if (pose) {
         const forward = rotateVector(pose.rotation, { x: 0, y: 0, z: 1 });
         heading += Math.atan2(forward.x, forward.z);

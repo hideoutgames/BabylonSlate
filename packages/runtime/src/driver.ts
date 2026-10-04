@@ -169,7 +169,7 @@ import {
   formatDumpActors,
   formatInspectActor,
 } from "./console-inspect";
-import { actorParentGuid, actorWorldTransform, actorWorldTransforms, composeActorWorldTransforms } from "./actor-world-transform";
+import { actorChainWorldTransform, actorParentGuid, actorWorldTransform, actorWorldTransforms, composeActorWorldTransforms } from "./actor-world-transform";
 import { SceneLayerLayout } from "./scene-layer-layout";
 import { isOverlayLayoutClass, overlayLayoutKey } from "@babylonslate/core";
 import { composeParentChildTransform } from "./actor-world-transform";
@@ -1192,10 +1192,9 @@ class InProcessRuntime implements RuntimeDriver {
         if (!actor || actor.destroyed) return undefined;
         return actor;
       },
-      sampleWater: (position, actorId) => {
-        this.physicsSync.water.update(this.world.getActors(), this.world.clock.tickIndex * this.dt);
-        return this.physicsSync.water.sample(position, actorId);
-      },
+      sampleWater: (position, actorId) =>
+        // Fresh at call time in its own state; the step keeps its own evaluation and clock.
+        this.physicsSync.water.query(this.world.getActors(), this.world.clock.tickIndex * this.dt, position, actorId),
       lineTrace: (start, end, options) =>
         this.physicsSync.lineTrace(start, end, options),
       projectCursorToScene: (channel, options) =>
@@ -1331,11 +1330,12 @@ class InProcessRuntime implements RuntimeDriver {
         const sync = owner.sceneLayerId
           ? this.overlayPhysicsSync
           : this.physicsSync;
-        sync.applyComponent(component);
         if (component.classId === "RagdollComponent" || component.classId === "MeshComponent") {
+          // Ragdoll and mesh-collision edits can create or retire the owner's
+          // body; reconcile that one actor from its own chain.
           this.ragdolls.sync();
-          sync.syncFromWorld(this.world);
-        }
+          sync.syncActor(owner, this.world);
+        } else sync.applyComponent(component);
       },
       playSound: (asset, volume, options) => {
         this.emit({
@@ -5038,12 +5038,15 @@ class InProcessRuntime implements RuntimeDriver {
     );
     if (!camera || !component) return miss;
     const projection = component.getVariable("projectionMode");
+    // Cast from the camera's world pose at call time; a parented camera's
+    // local transform is relative to its parent.
+    const pose = actorChainWorldTransform(camera, (guid) => this.world.findActor(guid)) ?? camera.transform;
     const ray = deprojectCursorRay(
       this.resolvedInput.cursor,
       { width: this.playCanvasWidth, height: this.playCanvasHeight },
       {
-        position: camera.transform.position,
-        rotation: camera.transform.rotation,
+        position: pose.position,
+        rotation: pose.rotation,
         lens: {
           projectionMode:
             projection === "orthographic" ? "orthographic" : "perspective",
@@ -5056,6 +5059,10 @@ class InProcessRuntime implements RuntimeDriver {
         },
       },
     );
+    // Unlike Line Trace, this query keeps one whole pre-step pass: it is the
+    // only way the ray sees bodies of actors spawned this tick, retires bodies
+    // of actors destroyed this tick, and re-publishes static bodies whose
+    // ancestors moved. Those native updates are the ones the next step makes.
     this.physicsSync.syncFromWorld(this.world);
     const hit = this.physicsSync.lineTrace(ray.origin, ray.end, { channel });
     const drawDebug = options?.drawDebug !== false;
