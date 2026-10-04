@@ -85,6 +85,16 @@ describe("Water surfaces", () => {
     const next = sampleWaterSurface(flat, body, { ...point, x: point.x + 0.001 }, 0, transform);
     expect(-sample.normal.x / sample.normal.y).toBeCloseTo((next.height - sample.height) / 0.001, 4);
   });
+  it("fills Surface Foam and Subsurface from the chosen style and clamps authored values", () => {
+    // Assets saved before these properties existed take the defaults of their own style.
+    const legacyStylized = normalizeWaterDefinition({ style: "stylized", foamAmount: 0.5 });
+    const legacyRealistic = normalizeWaterDefinition({ foamAmount: 0.5 });
+    expect(legacyStylized).toMatchObject({ surfaceFoam: createDefaultWaterDefinition("stylized").surfaceFoam, subsurface: createDefaultWaterDefinition("stylized").subsurface });
+    expect(legacyRealistic).toMatchObject({ surfaceFoam: createDefaultWaterDefinition().surfaceFoam, subsurface: createDefaultWaterDefinition().subsurface });
+    expect(normalizeWaterDefinition({ surfaceFoam: 3, subsurface: -1 })).toMatchObject({ surfaceFoam: 1, subsurface: 0 });
+    expect(normalizeWaterDefinition({ surfaceFoam: 0.25, subsurface: 5 })).toMatchObject({ surfaceFoam: 0.25, subsurface: 2 });
+    expect(normalizeWaterDefinition({ surfaceFoam: "lots", subsurface: NaN })).toMatchObject({ surfaceFoam: createDefaultWaterDefinition().surfaceFoam, subsurface: createDefaultWaterDefinition().subsurface });
+  });
   it("bounds malformed asset inputs before they reach sampling and rendering", () => {
     const water = normalizeWaterDefinition({ style: "stylized", waveLength: 0, waveHeight: NaN, shallowColor: [-1, 4, 0.2], density: -20 });
     expect(water).toMatchObject({ style: "stylized", shallowColor: [0, 1, 0.2], density: 1 });

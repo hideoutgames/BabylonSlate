@@ -146,7 +146,7 @@ const {
       selectedIds: string[];
     },
     prefabDocs: {
-      registryVersion: 0,
+      registryEpoch: 0,
       openDocuments: [] as Array<{
         id: string;
         ref: { kind: string; path: string; label: string };
@@ -218,7 +218,7 @@ vi.mock("../context/document-context", () => ({
     projectDocument: null,
     openDocuments: prefabDocs.openDocuments,
     assetRegistry: prefabDocs.assetRegistry,
-    registryVersion: prefabDocs.registryVersion,
+    registryEpoch: prefabDocs.registryEpoch,
   }),
 }));
 
@@ -319,7 +319,7 @@ describe("PrefabViewportPanel engine", () => {
     viewportState.tool = "translate";
     prefabDocs.openDocuments = [];
     prefabDocs.assetRegistry = null;
-    prefabDocs.registryVersion = 0;
+    prefabDocs.registryEpoch = 0;
     play.ensureSharedEngine.mockClear();
     play.sharedEngineGeneration = 1;
     play.ensureSharedEngine.mockReturnValue({ id: "shared-engine" });
@@ -647,7 +647,7 @@ describe("PrefabViewportPanel engine", () => {
       textureGuids: [],
     });
     asset = await savedAsset(2);
-    prefabDocs.registryVersion += 1;
+    prefabDocs.registryEpoch += 1;
     rerender(<PrefabViewportPanel {...({} as IDockviewPanelProps)} />);
     await waitFor(() =>
       expect(handle.setMaterialDocuments).toHaveBeenLastCalledWith(

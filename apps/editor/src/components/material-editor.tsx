@@ -779,14 +779,14 @@ function MaterialNodeDetails<T extends MaterialGraphDocument>({
   commit: (next: T, mergeKey?: string) => void;
   selectedNodeId: string | null;
 }) {
-  const { assetRegistry, registryVersion } = useDocuments();
+  const { assetRegistry, registryEpoch } = useDocuments();
   const editing = useMaterialEditing();
   const [pickOpen, setPickOpen] = useState(false);
   const node = document.nodes.find((entry) => entry.id === selectedNodeId);
   const isTextureNode = node?.type === "param.texture" ||
     node?.type === "texture.sample" || node?.type === "texture.sampleLod";
   const textureAssets = useMemo(() => {
-    void registryVersion; // Registry contents mutate without replacing its instance.
+    void registryEpoch; // Registry contents mutate without replacing its instance.
     if (!pickOpen || !isTextureNode) return [];
     return (assetRegistry?.list() ?? [])
       .filter((asset) => isMaterialSamplerTextureAsset(asset.header))
@@ -796,7 +796,7 @@ function MaterialNodeDetails<T extends MaterialGraphDocument>({
         type: asset.header.type,
         path: asset.path,
       }));
-  }, [assetRegistry, registryVersion, pickOpen, isTextureNode]);
+  }, [assetRegistry, registryEpoch, pickOpen, isTextureNode]);
   if (!node) return null;
 
   // Keyed by node and property names: a value scrub, color drag or typed
@@ -973,7 +973,7 @@ function MaterialFunctionPicker<T extends MaterialGraphDocument>({
   document: T;
   commit: (next: T) => void;
 }) {
-  const { assetRegistry, registryVersion } = useDocuments();
+  const { assetRegistry, registryEpoch } = useDocuments();
   const [open, setOpen] = useState(false);
   const current = document.nodes.find((entry) => entry.id === node);
   const guid =
@@ -981,7 +981,7 @@ function MaterialFunctionPicker<T extends MaterialGraphDocument>({
       ? current.properties.functionGuid
       : "";
   const functionAssets = useMemo(() => {
-    void registryVersion; // Registry contents mutate without replacing its instance.
+    void registryEpoch; // Registry contents mutate without replacing its instance.
     if (!open) return [];
     return (assetRegistry?.list() ?? [])
       .filter((asset) => asset.header.type === "MaterialFunction")
@@ -991,7 +991,7 @@ function MaterialFunctionPicker<T extends MaterialGraphDocument>({
         type: asset.header.type,
         path: asset.path,
       }));
-  }, [assetRegistry, registryVersion, open]);
+  }, [assetRegistry, registryEpoch, open]);
   return (
     <div className="px-3">
       <AssetPickerControl value={guid}>

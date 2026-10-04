@@ -653,6 +653,9 @@ export function startPlaySession(options: {
         diagnostic.severity === "error" ? "error" : "warning",
       );
     },
+    onTouchAxis: (controlId, value) => {
+      input?.ring.push({ kind: "touchAxis", controlId, value, tick: playInputStampTick(runtime?.getWorld().clock.tickIndex, lastWorkerTickIndex) });
+    },
     onSceneLayerScroll: (event) => {
       const control = { type: "sceneLayerScroll" as const, ...event };
       if (worker) worker.postControl(control);

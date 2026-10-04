@@ -2,9 +2,9 @@ import { registerClusteredUnlitMaterial } from "./clustered-material-policy";
 import { Color3, Effect, Mesh, MeshBuilder, Scene, ShaderLanguage, ShaderMaterial, ShaderStore, type AbstractMesh, type ArcRotateCamera } from "@babylonjs/core";
 import type { ViewportMode } from "@babylonslate/core";
 import { configureEditorRenderingGroups, RENDERING_GROUP } from "./sorting";
+import { CAMERA_BOUNDS_MESH_NAME, GRID_MESH_NAME, markEditorHelperMesh } from "./helper-mesh";
 
-export const GRID_MESH_NAME = "__editor-grid__";
-export const CAMERA_BOUNDS_MESH_NAME = "__editor-camera-bounds__";
+export { CAMERA_BOUNDS_MESH_NAME, GRID_MESH_NAME };
 /** Screen-space border width (px) for the orange 2D camera / 2DAnchor frame. */
 export const CAMERA_BOUNDS_LINE_WIDTH = 2;
 const CAMERA_BOUNDS_COLOR = new Color3(0.9, 0.7, 0.2);
@@ -303,6 +303,8 @@ export function createEditorGrid(
     scene,
   );
   mesh.isPickable = false;
+  // Water contacts, captures and shadows must never treat the grid plane as world geometry.
+  markEditorHelperMesh(mesh);
   mesh.doNotSyncBoundingInfo = true;
   mesh.alwaysSelectAsActiveMesh = true;
   mesh.isVisible = true;
@@ -359,6 +361,7 @@ export function createEditorGrid(
     scene,
   );
   boundsMesh.isPickable = false;
+  markEditorHelperMesh(boundsMesh);
   boundsMesh.alwaysSelectAsActiveMesh = true;
   boundsMesh.isVisible = true;
   boundsMesh.visibility = 1;

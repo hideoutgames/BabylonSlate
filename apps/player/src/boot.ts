@@ -319,6 +319,9 @@ function initializePlayer(
       });
       options.onDiagnostic?.(diagnostics);
     },
+    onTouchAxis: (controlId, value) => {
+      input?.ring.push({ kind: "touchAxis", controlId, value, tick: playInputStampTick(runtime?.getWorld().clock.tickIndex, lastWorkerTickIndex) });
+    },
     onSceneLayerScroll: (event) => {
       const control = { type: "sceneLayerScroll" as const, ...event };
       if (worker) worker.postControl(control);

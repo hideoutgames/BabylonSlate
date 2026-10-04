@@ -24,6 +24,7 @@ export function WindowsMenu() {
     isDockWindowOpen,
     getOpenDockWindowCount,
     assetRegistry,
+    registryEpoch,
     sourceControl,
     animEditorMode,
     sceneMode,
@@ -31,20 +32,22 @@ export function WindowsMenu() {
   useDockWindowTick();
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const activeKind = openDocuments.find((doc) => doc.id === activeDocumentId)
-    ?.ref.kind;
-  const canToggleWindows = isDockviewDocumentKind(activeKind);
-  const parentOf = classParentLookup(assetRegistry?.list() ?? []);
   const activeDoc = openDocuments.find((doc) => doc.id === activeDocumentId);
-  const indexed = assetRegistry
-    ?.list()
-    .find((asset) => asset.path === activeDoc?.ref.path);
-  const actorPrefab =
-    activeKind !== "graph" ||
-    !indexed ||
-    classDocumentShowsPrefab(indexed.header.parentClass, parentOf, {
-      assetType: indexed.header.type,
-    });
+  const activeKind = activeDoc?.ref.kind;
+  const activePath = activeDoc?.ref.path;
+  const canToggleWindows = isDockviewDocumentKind(activeKind);
+  // Class ancestry only changes with the registry, not with document edits.
+  const actorPrefab = useMemo(() => {
+    void registryEpoch;
+    if (activeKind !== "graph" || !activePath) return true;
+    const indexed = assetRegistry?.list().find((asset) => asset.path === activePath);
+    if (!indexed) return true;
+    return classDocumentShowsPrefab(
+      indexed.header.parentClass,
+      classParentLookup(assetRegistry?.list() ?? []),
+      { assetType: indexed.header.type },
+    );
+  }, [activeKind, activePath, assetRegistry, registryEpoch]);
   const openDockWindowCount = getOpenDockWindowCount();
 
   useEffect(() => {

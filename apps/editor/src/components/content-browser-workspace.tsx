@@ -151,7 +151,6 @@ import {
   addSelectedFolderPath,
   applyContentBrowserTreeSelect,
   applyContentBrowserTileSelect,
-  buildNewAssetResult,
   classIdFromClassAsset,
   classParentLookup,
   classDocumentShowsPrefab,
@@ -163,7 +162,6 @@ import {
   contentBrowserMovePreviewName,
   contentBrowserTreeDropMoves,
   lastSceneClassDeleteLines,
-  defaultParentClassForType,
   CONTENT_BROWSER_SORT_OPTIONS,
   displayAssetTitle,
   filterAssets,
@@ -175,9 +173,9 @@ import {
   isContentBrowserEmptyGridDoubleClickTarget,
   isNewAssetNameTaken,
   isRenameNameTaken,
+  newAssetFileName,
   joinAssetFolderPath,
   listChildFoldersFromTrees,
-  newAssetFileName,
   parentFolderPath,
   remapPathAfterFolderMove,
   rootSelectedFolderPaths,
@@ -217,6 +215,7 @@ import {
 } from "./content-browser-grid-tiles";
 import { ContentBrowserMoveDialog } from "./content-browser-move-dialog";
 import { ContentBrowserNewAssetDialog } from "./content-browser-new-asset-dialog";
+import { createProjectAsset } from "../lib/create-project-asset";
 import { ContentBrowserSelectionActions } from "./content-browser-selection-actions";
 import { usePhoneLayout } from "../shell/use-platform-layout";
 
@@ -283,7 +282,7 @@ export function ContentBrowserWorkspace({
   const {
     projectDocument,
     assetRegistry,
-    registryVersion,
+    registryEpoch,
     refreshAssetRegistry,
     repathDocument,
     openDocument,
@@ -476,7 +475,7 @@ export function ContentBrowserWorkspace({
         },
       ];
     });
-  }, [assetRegistry, browserRoots, registryVersion]);
+  }, [assetRegistry, browserRoots, registryEpoch]);
 
   useEffect(() => {
     setCollapsedFolders((current) => {
@@ -505,14 +504,14 @@ export function ContentBrowserWorkspace({
       if (!assetRegistry.getRoot(root.id)) return [];
       return assetRegistry.list({ rootId: root.id });
     });
-  }, [assetRegistry, browserRoots, registryVersion]);
+  }, [assetRegistry, browserRoots, registryEpoch]);
 
   const referenceAssets = useMemo(
     () => {
-      void registryVersion;
+      void registryEpoch;
       return assetRegistry?.list() ?? [];
     },
-    [assetRegistry, registryVersion],
+    [assetRegistry, registryEpoch],
   );
   const assetsByGuid = useMemo(
     () => new Map(allAssets.map((asset) => [asset.header.guid, asset])),
@@ -2222,19 +2221,15 @@ export function ContentBrowserWorkspace({
     setOperationError(null);
     try {
       const type = newAssetType;
-      const relative = selectedRoot.relative;
-      const fileName = newAssetFileName(type, name);
-      if (!fileName) return;
-      const result = buildNewAssetResult({
-        waterStyle: newWaterStyle,
+      const created = await createProjectAsset({
+        registry: assetRegistry,
+        rootId: selectedRoot.rootId,
+        folderRelative: selectedRoot.relative,
         type,
         name,
-        guid: newAssetGuid(),
-        parentClass:
-          type === "Class"
-            ? newAssetParent
-            : defaultParentClassForType(type),
-        parentOf: classParentOf,
+        parentClass: type === "Class" ? newAssetParent : null,
+        waterStyle: newWaterStyle,
+        classParentOf,
         parentGraphs:
           type === "Class"
             ? collectClassGraphsForPalette({
@@ -2244,11 +2239,6 @@ export function ContentBrowserWorkspace({
               })
             : undefined,
       });
-      const created = await assetRegistry.createAsset(
-        selectedRoot.rootId,
-        relative ? `${relative}/${fileName}` : fileName,
-        result,
-      );
       setNewAssetOpen(false);
       await refreshAssetRegistry();
       if (type === "Scene") {

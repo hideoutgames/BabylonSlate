@@ -38,12 +38,25 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       await testInfo.attach(name, { body: bytes, contentType: "image/png" });
       await import("node:fs/promises").then((fs) => fs.writeFile(testInfo.outputPath(name + ".png"), bytes));
     }
+    await testInfo.attach("metrics", { body: JSON.stringify({ ...result, evidence: undefined }), contentType: "application/json" });
     expect(errors).toEqual([]);
     expect(result.differences.realistic).toBeLessThan(2);
     expect(result.differences.stylized).toBeLessThan(2);
-    // The preview lights plus a sun must still shade the water, not collapse it to black.
+    // The preview lights plus a sun must still shade the water, not collapse it to black, even with seven lights.
     expect(result.brightness.realistic).toBeGreaterThan(20);
     expect(result.brightness.stylized).toBeGreaterThan(40);
+    expect(result.crowded.realistic).toBeGreaterThan(20);
+    expect(result.crowded.stylized).toBeGreaterThan(40);
+    for (const style of ["realistic", "stylized"] as const) {
+      // Crest Foam breaks steep waves into whitecaps; at 0 the sea looks exactly as it does with no foam at all.
+      expect(result.whitecaps[style].calmChange).toBeLessThan(0.5);
+      expect(result.whitecaps[style].breaking).toBeGreaterThan(result.whitecaps[style].calm + 0.02);
+      // Surface Foam adds open-water foam, and Subsurface lightens waves seen toward a low sun.
+      expect(result.surfaceFoam[style].foamy).toBeGreaterThan(result.surfaceFoam[style].clear + 6);
+      expect(result.subsurface[style].on).toBeGreaterThan(result.subsurface[style].off + 3);
+    }
+    // Clear water over a black floor still shows the sky's reflection.
+    expect(result.clearReflection.water).toBeGreaterThan(result.clearReflection.floor + 15);
     // Under the app's large-world rendering, panning the camera must reveal different, world-anchored water.
     expect(result.pan.realistic).toBeGreaterThan(0.5);
     expect(result.pan.stylized).toBeGreaterThan(0.5);
@@ -51,6 +64,17 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     expect(result.waveTerrain.troughHeight).toBeLessThan(-0.4);
     expect(result.waveTerrain.crestDifference).toBeGreaterThan(10);
     expect(result.waveTerrain.troughDifference).toBeLessThan(1);
+    // A post through a lake gets a bright foam ring on its waterline in both styles, even at the
+    // realistic preset's low Foam Amount, well above open water beyond its foam and ripples.
+    // On a cone the foam follows the rendered wave height: inward at a crest, outward in a trough.
+    // Small waves ride outward from the post: next to it the water is far more broken up than open water.
+    for (const style of ["realistic", "stylized"] as const) {
+      const { ring, open, crest, trough } = result.contact[style];
+      expect(result.ripples[style].near).toBeGreaterThan(result.ripples[style].open + 5);
+      expect(ring).toBeGreaterThan(open + 30);
+      expect(crest.inner).toBeGreaterThan(trough.inner + 20);
+      expect(trough.outer).toBeGreaterThan(crest.outer + 20);
+    }
   });
   test(`Water presets and a custom Water Surface material render on ${backend}`, async ({ page }, testInfo) => {
     test.setTimeout(120_000);

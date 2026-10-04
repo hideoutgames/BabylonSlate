@@ -49,6 +49,7 @@ export const ENGINE_COMPONENT_DESCRIPTORS = [
   { classId: "2DPaddingComponent", placement: "overlay" },
   { classId: "2DSpacerComponent", placement: "overlay" },
   { classId: "2DPainterComponent", placement: "overlay" },
+  { classId: "2DJoystickComponent", placement: "overlay" },
   { classId: "2DButtonComponent", placement: "overlay" },
   { classId: "2DFocusTargetComponent", placement: "overlay" },
   { classId: "2DMaterialComponent", placement: "overlay" },

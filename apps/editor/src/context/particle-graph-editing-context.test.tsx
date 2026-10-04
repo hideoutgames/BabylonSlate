@@ -45,7 +45,7 @@ vi.mock("./document-context", () => ({
         },
       ],
     },
-    registryVersion: 0,
+    registryEpoch: 0,
     applyAssetDocumentChange: vi.fn(),
   }),
 }));

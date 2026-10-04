@@ -2,6 +2,34 @@ import { DEFAULT_CABLE_PROPERTIES, parseCableProperties, type SerializedComponen
 import { humanizePropertyLabel, type PropertyRow } from "@babylonslate/editor-kit";
 import type { ComponentPropertyContext } from "./component-property-rows";
 
+function isZeroOffset(value: readonly number[]): boolean {
+  return value[0] === 0 && value[1] === 0 && value[2] === 0;
+}
+
+/**
+ * Change a cable's end target. Picking another actor or a component attaches
+ * the end at that frame's origin (End Position `[0, 0, 0]`). Returning to the
+ * cable's own origin from a zero offset restores the default End Position so
+ * the cable does not collapse to zero length.
+ */
+export function retargetCableProperties(
+  properties: Record<string, unknown>,
+  property: "targetActorId" | "targetComponentId",
+  value: unknown,
+): Record<string, unknown> {
+  const current = parseCableProperties(properties);
+  const target = typeof value === "string" && value.length > 0 ? value : null;
+  const next: Record<string, unknown> = { ...properties, [property]: target };
+  if (property === "targetActorId") next.targetComponentId = null;
+  const targetActorId = property === "targetActorId" ? target : current.targetActorId;
+  const targetComponentId = property === "targetComponentId" ? target : null;
+  if (target) next.endPosition = [0, 0, 0];
+  else if (!targetActorId && !targetComponentId && isZeroOffset(current.endPosition)) {
+    next.endPosition = [...DEFAULT_CABLE_PROPERTIES.endPosition];
+  }
+  return next;
+}
+
 /** Cable authoring shares the standard Scene and Class property controls. */
 export function cablePropertyRows(
   actorId: string,
@@ -37,7 +65,7 @@ export function cablePropertyRows(
   }
   const selectedComponent = targetComponents.find((entry) => entry.sourceId === properties.targetComponentId)?.id ?? properties.targetComponentId;
   return [
-    boolean("enabled", "Enabled", "Simulate and display this cable during Play."),
+    boolean("enabled", "Enabled", "Simulate and display this cable. It also simulates gently in editor viewports, without collision."),
     number("cableLength", "Cable Length", 0.01, 10000, "Rest length in world units. A length longer than the endpoint separation lets the cable sag."),
     number("numSegments", "Segments", 1, 64, "Simulation segments. More segments increase both solver and rendering work.", true),
     number("cableWidth", "Cable Width", 0.001, 10, "Rendered cable diameter in world units."),
@@ -62,7 +90,7 @@ export function cablePropertyRows(
       kind: "enum", id: id("targetComponentId"), label: "Target Component",
       value: selectedComponent ?? "", defaultValue: "",
       options: [{ value: "", label: properties.targetActorId ? "Actor Origin" : "Cable Origin" }, ...targetComponentOptions],
-      description: "Optional component on the target actor, or on this actor when Target Actor is Self.",
+      description: "Optional component on the target actor, or on this actor when Target Actor is Self. Choosing a target attaches the end at its origin.",
       onChange: (value) => update("targetComponentId", value || null),
     },
     {
@@ -82,7 +110,7 @@ export function cablePropertyRows(
     number("damping", "Damping", 0, 1, "Fraction of velocity removed per 1/60 second; 0 retains motion and 1 removes it."),
     number("substepTime", "Substep Time", 1 / 120, 1 / 15, "Fixed simulation interval in seconds. Smaller steps cost more."),
     number("maxSubsteps", "Max Substeps", 1, 8, "Maximum catch-up steps per frame, bounding work after a slow frame.", true),
-    boolean("enableCollision", "Enable Collision", "Opt into scene collision. Disabled by default to keep large cable counts inexpensive."),
+    boolean("enableCollision", "Enable Collision", "Opt into scene collision during Play. Disabled by default to keep large cable counts inexpensive. Editor viewports never collide."),
     { ...number("collisionFriction", "Collision Friction", 0, 1, "Tangential velocity removed when contacting scene geometry."), disabled: !properties.enableCollision },
     number("sleepThreshold", "Sleep Threshold", 0, 1, "Particle speed in world units per second below which the cable can sleep. 0 disables sleeping; endpoint or setting changes wake it."),
     number("sleepDelay", "Sleep Delay", 0, 10, "Seconds of low motion before sleeping."),

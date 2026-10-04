@@ -73,7 +73,19 @@ vi.mock("../context/document-context", () => ({
     ],
     applyGraphChange,
     projectDocument: { settings: { input: { actions: [], axes: [] } } },
-    assetRegistry: { list: () => [] },
+    assetRegistry: {
+      list: () => [
+        {
+          header: {
+            guid: "audio-2",
+            name: "Hit",
+            type: "Audio",
+            parentClass: null,
+          },
+          path: "assets/Hit.audio.babasset",
+        },
+      ],
+    },
   }),
 }));
 
@@ -127,6 +139,15 @@ describe("Inspector node pin Defaults", () => {
     const next = applyGraphChange.mock.calls.at(-1)![1];
     expect(next.nodes[0]!.data["default:asset"]).toBe("");
     expect(next.nodes[0]!.data).not.toHaveProperty("default:Asset");
+  });
+
+  it("replaces an asset default with a project asset from the picker", async () => {
+    renderPlaySoundInspector();
+    fireEvent.click(screen.getByTestId("property-asset"));
+    fireEvent.click(await screen.findByTestId("search-item-audio-2"));
+    await waitFor(() => expect(applyGraphChange).toHaveBeenCalled());
+    const next = applyGraphChange.mock.calls.at(-1)![1];
+    expect(next.nodes[0]!.data["default:asset"]).toBe("audio-2");
   });
 
   it("replaces an existing class default through the picker using the pin ID", async () => {

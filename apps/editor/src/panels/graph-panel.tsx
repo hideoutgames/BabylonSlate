@@ -72,7 +72,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     applyGraphChange,
     applyAssetDocumentChange,
     assetRegistry,
-    registryVersion,
+    registryEpoch,
     activeDocumentId,
     animEditorMode,
   } = useDocuments();
@@ -97,18 +97,18 @@ export function GraphPanel(_props: IDockviewPanelProps) {
 
   const doc = openDocuments.find((entry) => entry.id === documentId);
   const indexed = useMemo(() => {
-    void registryVersion;
+    void registryEpoch;
     return (assetRegistry?.list() ?? []).find(
       (asset) => asset.path === doc?.ref.path,
     );
-  }, [assetRegistry, registryVersion, doc?.ref.path]);
+  }, [assetRegistry, registryEpoch, doc?.ref.path]);
   const parentClass =
     indexed?.header.parentClass ??
     (doc?.ref.kind === "anim-graph" ? "BObject" : null);
   const parentOf = useMemo(() => {
-    void registryVersion;
+    void registryEpoch;
     return classParentLookup(assetRegistry?.list() ?? []);
-  }, [assetRegistry, registryVersion]);
+  }, [assetRegistry, registryEpoch]);
   const classId = doc?.ref.path ? classIdForGraphPath(doc.ref.path) : undefined;
   const graphContent = useMemo(
     () => serializedGraphFromDocument(doc?.ref.kind ?? "", doc?.content),

@@ -100,13 +100,13 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     projectDocument,
     openDocuments,
     assetRegistry,
-    registryVersion,
+    registryEpoch,
   } = useDocuments();
   const previewComponents = useMemo(() => sceneStreamingEditorComponents(components, (guid) => {
-    void registryVersion; // Registry headers mutate without replacing the registry.
+    void registryEpoch; // Registry headers mutate without replacing the registry.
     const asset = assetRegistry?.getByGuid?.(guid);
     return asset?.header.type === "Scene" ? asset.header.name : undefined;
-  }), [components, assetRegistry, registryVersion]);
+  }), [components, assetRegistry, registryEpoch]);
   const previewComponentsRef = useRef(previewComponents);
   previewComponentsRef.current = previewComponents;
   const { documentId } = useDocumentWorkspace();
@@ -294,9 +294,9 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
 
   const previewLoadKey = prefabPreviewLoadKey(previewComponents);
   const materialLibraryKey = useMemo(() => {
-    void registryVersion;
+    void registryEpoch;
     return savedMaterialLibraryKey(assetRegistry?.list() ?? []);
-  }, [assetRegistry, registryVersion]);
+  }, [assetRegistry, registryEpoch]);
   const areaTextureGuids = useMemo(() => areaEmissionTextureGuids(components), [components]);
   const areaEmissionKey = savedAreaEmissionKey(areaTextureGuids, (guid) => assetRegistry?.getByGuid(guid));
   const textureLodKey = `${editorTextureLodEnabled}:${editorTextureLodQuality}`;
@@ -621,7 +621,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
         ref={previewCanvasRef}
         hidden
         data-testid="camera-preview"
-        className="pointer-events-none absolute bottom-3 right-3 z-10 h-[180px] w-[320px] rounded-md border border-border bg-black"
+        className="pointer-events-none absolute bottom-3 right-3 z-10 h-[180px] w-[320px] rounded-md border border-border bg-black object-contain"
       />
       {joystickEnabled ? (
         <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex justify-start p-4">

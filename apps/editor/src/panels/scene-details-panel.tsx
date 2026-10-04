@@ -162,7 +162,7 @@ function PostProcessEntryId({ id, index }: { id: string; index: number }) {
 export function SceneDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applySceneChange, projectDocument, assetRegistry } =
+  const { openDocuments, applySceneChange, projectDocument, assetRegistry, registryEpoch } =
     useDocuments();
   const { selectedActorIds, setSelectedActorIds, shapeEditTarget, setShapeEditTarget } = useSceneEditing();
   const navBake = useOptionalNavBake();
@@ -231,27 +231,45 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
   const [sceneLayerPick, setSceneLayerPick] = useState<"add" | number | null>(
     null,
   );
-  const parentOf = classParentLookup(assetRegistry?.list() ?? []);
-  const pickerAssets = (assetRegistry?.list() ?? []).map((asset) => ({
-    guid: asset.header.guid,
-    name: asset.header.name,
-    type: asset.header.type,
-    path: asset.path,
-  }));
-  const materialDomains = materialDomainsFromAssets(assetRegistry?.list() ?? [], openDocuments);
-  const postProcessPickerAssets = (assetRegistry?.list() ?? [])
-    .filter((asset) => isPostProcessMaterialForPicker(asset, openDocuments))
-    .map((asset) => ({
+  // Registry-derived views: rebuilt when the registry changes, not on every
+  // edit of this Scene.
+  const registryViews = useMemo(() => {
+    void registryEpoch;
+    const assets = assetRegistry?.list() ?? [];
+    const pickerAssets = assets.map((asset) => ({
       guid: asset.header.guid,
       name: asset.header.name,
       type: asset.header.type,
       path: asset.path,
     }));
-  const environmentGuids = new Set((assetRegistry?.list() ?? [])
-    .filter((asset) => isEnvironmentTexturePayload(asset.header.payload))
-    .map((asset) => asset.header.guid));
-  const environmentPickerAssets = pickerAssets.filter((entry) => environmentGuids.has(entry.guid));
-  const classEntries = gameInstanceClassEntries(assetRegistry?.list() ?? []);
+    const environmentGuids = new Set(assets
+      .filter((asset) => isEnvironmentTexturePayload(asset.header.payload))
+      .map((asset) => asset.header.guid));
+    return {
+      parentOf: classParentLookup(assets),
+      pickerAssets,
+      environmentPickerAssets: pickerAssets.filter((entry) => environmentGuids.has(entry.guid)),
+      classEntries: gameInstanceClassEntries(assets),
+      projectComponentItems: projectAddComponentItems(assets),
+    };
+  }, [assetRegistry, registryEpoch]);
+  const { parentOf, pickerAssets, environmentPickerAssets, classEntries, projectComponentItems } = registryViews;
+  // An open Material tab's unsaved domain wins over its saved header.
+  const materialDomains = useMemo(() => {
+    void registryEpoch;
+    return materialDomainsFromAssets(assetRegistry?.list() ?? [], openDocuments);
+  }, [assetRegistry, openDocuments, registryEpoch]);
+  const postProcessPickerAssets = useMemo(() => {
+    void registryEpoch;
+    return (assetRegistry?.list() ?? [])
+      .filter((asset) => isPostProcessMaterialForPicker(asset, openDocuments))
+      .map((asset) => ({
+        guid: asset.header.guid,
+        name: asset.header.name,
+        type: asset.header.type,
+        path: asset.path,
+      }));
+  }, [assetRegistry, openDocuments, registryEpoch]);
   const sortingLayers =
     projectDocument?.settings.twoD.sortingLayers ?? DEFAULT_SORTING_LAYERS;
   const collisionLayers =
@@ -982,6 +1000,8 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
           }}
           assets={postProcessPickerAssets}
           allowedTypes={["Material", "MaterialInstance"]}
+          createTypes={["Material"]}
+          createOptions={{ materialDomain: "postProcess" }}
           title="Pick Post-Process Material"
           allowNone={postProcessPick !== "add"}
           onPick={(materialGuid) => {
@@ -1518,6 +1538,10 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
           ? [MODEL_MATERIALS_PICKER_ENTRY, ...pickerAssets]
           : pickerAssets}
         allowedTypes={assetPick?.allowedTypes}
+        // Domain rows (Text Material) only accept Materials of that domain, so
+        // Create New makes one; a parentless Material Instance would be refused.
+        createTypes={assetPick?.materialDomain ? ["Material"] : undefined}
+        createOptions={assetPick?.materialDomain ? { materialDomain: assetPick.materialDomain } : undefined}
         title={assetPick?.title ?? "Pick Asset"}
         allowNone
         onPick={(guid) => {
@@ -1579,7 +1603,9 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
           updateActor((entry) => ({
             ...entry,
             components: entry.components.map((component) => component.id === constraintTargetPick.componentId
-              ? { ...component, properties: { ...component.properties, targetActorId: pickingCableTarget ? targetActorId || null : targetActorId, ...(pickingCableTarget ? { targetComponentId: null } : {}) } }
+              ? { ...component, properties: pickingCableTarget
+                ? patchInspectorComponentProperty(component, "targetActorId", targetActorId || null)
+                : { ...component.properties, targetActorId } }
               : component),
           }));
           setConstraintTargetPick(null);
@@ -1592,7 +1618,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
           if (!open) setAddComponentAnchor(null);
         }}
         anchor={addComponentAnchor}
-        projectItems={projectAddComponentItems(assetRegistry?.list() ?? [])}
+        projectItems={projectComponentItems}
         overlay={overlay}
         physicsWorld={scene.settings.physicsWorld}
         onSelect={(selection) =>

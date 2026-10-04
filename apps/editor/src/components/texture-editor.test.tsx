@@ -46,7 +46,7 @@ vi.mock("../context/document-context", () => ({
     textureUsageBlockedReason,
     readAssetChunk,
     assetRegistry,
-    registryVersion: 0,
+    registryEpoch: 0,
     openDocuments: [
       { id: "other", ref: { path: "assets/tex-other.babasset" }, content: {} },
       {

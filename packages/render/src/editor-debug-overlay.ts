@@ -16,7 +16,11 @@ import {
 import {
   DEFAULT_CAMERA_FIELD_OF_VIEW,
   DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
+  normalizeRenderTargetCaptureProperties,
+  normalizeRenderTargetPayload,
   parseAreaRectLightProperties,
+  type RenderTargetCaptureProperties,
+  type RenderTargetPayload,
   type SerializedActor,
   type SerializedComponent,
   type SerializedScene,
@@ -27,16 +31,27 @@ import {
   applyAuthoredCameraLens,
   type AuthoredCameraProperties,
 } from "./scene-illumination";
-import { editorComponentMeshName, editorMeshName } from "./scene-loader";
+import { actorIdFromMeshName, editorComponentMeshName, editorMeshName } from "./scene-loader";
+import { actorMeshName } from "./picking";
 import { authoredComponentActorTransform } from "./authored-transform-matrices";
 import { createRttCanvasBlitter } from "./flip-read-pixels";
 import { withSceneReadinessState } from "./scene-perf";
+import { isRenderTargetCaptureCandidate, samplesRenderTargetOutput } from "./render-target-capture";
+import { admittedSceneMeshes } from "./scene-stream-admission";
 import type { AudioLibrary } from "./audio-service";
 
 export const CAMERA_PREVIEW_INTERVAL_MS = 1000;
 export const CAMERA_PREVIEW_WIDTH = 320;
 export const CAMERA_PREVIEW_HEIGHT = 180;
 const CAMERA_PREVIEW_ASPECT = CAMERA_PREVIEW_WIDTH / CAMERA_PREVIEW_HEIGHT;
+
+/** Largest preview bitmap with the lens aspect that fits the 320×180 PIP box. */
+function lensPreviewSize(aspect: number): { width: number; height: number } {
+  if (aspect >= CAMERA_PREVIEW_ASPECT) {
+    return { width: CAMERA_PREVIEW_WIDTH, height: Math.max(1, Math.round(CAMERA_PREVIEW_WIDTH / aspect)) };
+  }
+  return { width: Math.max(1, Math.round(CAMERA_PREVIEW_HEIGHT * aspect)), height: CAMERA_PREVIEW_HEIGHT };
+}
 
 export type LightDebugKind = "point" | "spot" | "directional" | "area";
 
@@ -45,6 +60,24 @@ type OverlaySync = {
   selectedActorIds: readonly string[];
   selectedComponentIds?: readonly string[];
   audioLibrary?: Pick<AudioLibrary, "audio" | "attenuations">;
+};
+
+export type EditorDebugOverlayOptions = {
+  /** Test clock; the overlay then ticks only when the caller asks. */
+  now?: () => number;
+  /** Installed Render Target assets; a selected capture takes its aspect from its target. */
+  renderTargets?: () => ReadonlyMap<string, RenderTargetPayload> | undefined;
+};
+
+/** Lens drawn for the selected Camera or Render Target Capture. */
+type LensDebug = {
+  lens: AuthoredCameraProperties;
+  /** Width / height of the image the lens produces. */
+  aspect: number;
+  /** Meshes the lens renders. */
+  renderList: AbstractMesh[];
+  /** Normalized settings of a capture lens; undefined for a camera. */
+  capture?: RenderTargetCaptureProperties;
 };
 
 const DEBUG_FAR_MIN = 8;
@@ -75,33 +108,29 @@ function dashedLines(
   return mesh;
 }
 
-function buildFrustumCornersLocal(component: SerializedComponent): Vector3[] {
-  const near = Math.max(0.01, asNumber(component.properties.nearClip, 0.1));
-  const farClip = Math.max(near + 0.01, asNumber(component.properties.farClip, 1000));
-  const far = debugFarDistance(near, farClip);
+function buildFrustumCornersLocal(lens: AuthoredCameraProperties, aspect: number): Vector3[] {
+  const near = asNumber(lens.nearClip, 0.1);
+  const far = debugFarDistance(near, asNumber(lens.farClip, 1000));
   let nearH: number;
   let nearW: number;
   let farH: number;
   let farW: number;
-  if (component.properties.projectionMode === "orthographic") {
+  if (lens.projectionMode === "orthographic") {
     const ortho = Math.max(
       0.01,
-      asNumber(component.properties.orthographicSize, DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE),
+      asNumber(lens.orthographicSize, DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE),
     );
     nearH = ortho;
     farH = ortho;
-    nearW = ortho * CAMERA_PREVIEW_ASPECT;
+    nearW = ortho * aspect;
     farW = nearW;
   } else {
-    const fov =
-      (asNumber(component.properties.fieldOfView, DEFAULT_CAMERA_FIELD_OF_VIEW) *
-        Math.PI) /
-      180;
+    const fov = (asNumber(lens.fieldOfView, DEFAULT_CAMERA_FIELD_OF_VIEW) * Math.PI) / 180;
     const t = Math.tan(fov / 2);
     nearH = t * near;
     farH = t * far;
-    nearW = nearH * CAMERA_PREVIEW_ASPECT;
-    farW = farH * CAMERA_PREVIEW_ASPECT;
+    nearW = nearH * aspect;
+    farW = farH * aspect;
   }
   return [
     new Vector3(-nearW, -nearH, near),
@@ -134,8 +163,9 @@ function ringPoints(center: Vector3, axis: Vector3, radius: number, segments = 3
 }
 
 /**
- * Editor-only frustum, light/audio influence, and 1 Hz camera preview RTT.
- * Does not replace the orbit camera or the hemispheric fill light.
+ * Editor-only frustum, light/audio influence, and 1 Hz lens preview RTT for a
+ * selected Camera or Render Target Capture. Does not replace the orbit camera
+ * or the hemispheric fill light.
  */
 export class EditorDebugOverlay {
   frustumMesh: Node | null = null;
@@ -149,6 +179,11 @@ export class EditorDebugOverlay {
   private readonly useExternalClock: boolean;
   private previewCamera: FreeCamera | null = null;
   private previewLens: AuthoredCameraProperties | null = null;
+  private previewAspect = CAMERA_PREVIEW_ASPECT;
+  /** Settings of the previewed capture; null for a camera or no lens. */
+  private previewCapture: RenderTargetCaptureProperties | null = null;
+  private lastSync: OverlaySync | null = null;
+  private readonly renderTargets: EditorDebugOverlayOptions["renderTargets"];
   private previewCanvas: HTMLCanvasElement | null = null;
   private lastPreviewMs = Number.NEGATIVE_INFINITY;
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -165,10 +200,11 @@ export class EditorDebugOverlay {
     origin: AbstractMesh | null;
   }> = [];
 
-  constructor(scene: Scene, options?: { now?: () => number }) {
+  constructor(scene: Scene, options?: EditorDebugOverlayOptions) {
     this.scene = scene;
     this.now = options?.now ?? (() => Date.now());
     this.useExternalClock = Boolean(options?.now);
+    this.renderTargets = options?.renderTargets;
     this.audioPoseObserver = scene.onBeforeRenderObservable.add(() => this.updateAudioDebugPoses());
   }
 
@@ -179,15 +215,27 @@ export class EditorDebugOverlay {
 
   sync(options: OverlaySync): void {
     this.disposeVisuals();
+    this.lastSync = options;
     const sceneData = options.sceneData;
     if (!sceneData) {
       this.updatePreviewCanvasVisibility();
       return;
     }
     const selected = collectSelected(sceneData, options);
-    const camera = selected.find((entry) => entry.component.classId === "CameraComponent");
+    // One lens at a time: the first selected Camera or Render Target Capture.
+    const lens = selected.find((entry) =>
+      entry.component.classId === "CameraComponent" ||
+      entry.component.classId === "RenderTargetCaptureComponent");
     const light = selected.find((entry) => entry.component.classId === "LightComponent" || entry.component.classId === "AreaRectLightComponent");
-    if (camera) this.buildCameraDebug(camera.actor, camera.component);
+    if (lens) {
+      this.buildLensDebug(
+        lens.actor,
+        lens.component,
+        lens.component.classId === "CameraComponent"
+          ? this.cameraLens(lens.component)
+          : this.captureLens(lens.component),
+      );
+    }
     if (light) this.buildLightDebug(light.actor, light.component, sceneData.actors);
     for (const { actor, component } of selected) {
       if (component.classId !== "AudioComponent") continue;
@@ -204,6 +252,22 @@ export class EditorDebugOverlay {
     this.followLivePose();
     this.updatePreviewCanvasVisibility();
     this.ensureTimer();
+  }
+
+  /**
+   * After asset installation, rebuild a selected capture's frustum and preview
+   * when its Render Target's aspect changed. Otherwise keep the RTT and only
+   * re-filter its meshes: installs can rebuild meshes or change which ones
+   * sample the target's own output.
+   */
+  refreshRenderTargets(): void {
+    const capture = this.previewCapture;
+    if (this.stopped || !this.lastSync || !capture) return;
+    if (this.captureAspect(capture.renderTargetGuid) !== this.previewAspect) {
+      this.sync(this.lastSync);
+      return;
+    }
+    if (this.previewTexture) this.previewTexture.renderList = this.captureRenderList(capture);
   }
 
   /**
@@ -235,11 +299,7 @@ export class EditorDebugOverlay {
     if (now - this.lastPreviewMs < CAMERA_PREVIEW_INTERVAL_MS) return;
     this.lastPreviewMs = now;
     if (this.previewLens) {
-      applyAuthoredCameraLens(
-        this.previewCamera,
-        this.previewLens,
-        CAMERA_PREVIEW_ASPECT,
-      );
+      applyAuthoredCameraLens(this.previewCamera, this.previewLens, this.previewAspect);
     }
     const engine = this.scene.getEngine();
     const target = engine._currentRenderTarget;
@@ -305,12 +365,85 @@ export class EditorDebugOverlay {
     this.previewCamera?.dispose();
     this.previewCamera = null;
     this.previewLens = null;
+    this.previewAspect = CAMERA_PREVIEW_ASPECT;
+    this.previewCapture = null;
     this.previewRenderCount = 0;
     this.lastPreviewMs = Number.NEGATIVE_INFINITY;
     this.clearTimer();
   }
 
-  private buildCameraDebug(actor: SerializedActor, component: SerializedComponent): void {
+  /** Camera lenses keep the fixed 16:9 PIP aspect and their existing mesh list. */
+  private cameraLens(component: SerializedComponent): LensDebug {
+    const nearClip = Math.max(0.01, asNumber(component.properties.nearClip, 0.1));
+    return {
+      lens: {
+        projectionMode:
+          component.properties.projectionMode === "orthographic"
+            ? "orthographic"
+            : "perspective",
+        fieldOfView: asNumber(component.properties.fieldOfView, DEFAULT_CAMERA_FIELD_OF_VIEW),
+        orthographicSize: asNumber(
+          component.properties.orthographicSize,
+          DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
+        ),
+        nearClip,
+        farClip: Math.max(nearClip + 0.01, asNumber(component.properties.farClip, 1000)),
+      },
+      aspect: CAMERA_PREVIEW_ASPECT,
+      renderList: this.scene.meshes.filter(
+        (mesh) => !mesh.name.startsWith("debug") && !isEditorCameraModel(mesh),
+      ),
+    };
+  }
+
+  /**
+   * A capture previews its own lens: normalized FOV and clips, the assigned
+   * target's aspect (1:1 when unassigned) and the capture's mesh eligibility.
+   * It shows the lens even while the capture is disabled or manual.
+   */
+  private captureLens(component: SerializedComponent): LensDebug {
+    const settings = normalizeRenderTargetCaptureProperties(component.properties);
+    return {
+      lens: {
+        projectionMode: "perspective",
+        fieldOfView: settings.fieldOfView,
+        nearClip: settings.nearClip,
+        farClip: settings.farClip,
+      },
+      aspect: this.captureAspect(settings.renderTargetGuid),
+      capture: settings,
+      renderList: this.captureRenderList(settings),
+    };
+  }
+
+  /**
+   * Meshes the capture records: capture candidates, filtered by Capture Only
+   * Actors, and for Scene Color never a mesh sampling the target's own output.
+   */
+  private captureRenderList(settings: RenderTargetCaptureProperties): AbstractMesh[] {
+    const included = settings.captureOnlyActors ? new Set(settings.actorIds) : null;
+    const guid = settings.renderTargetGuid;
+    const ownOutput = guid && this.captureTarget(guid).mode === "SceneColor" ? guid : null;
+    return (admittedSceneMeshes(this.scene) ?? this.scene.meshes).filter((mesh) => {
+      if (!isRenderTargetCaptureCandidate(mesh)) return false;
+      if (ownOutput && samplesRenderTargetOutput(mesh, ownOutput)) return false;
+      // Nearest actor owner, so an attached child actor needs its own entry.
+      return !included || included.has(actorIdFromMeshName(actorMeshName(mesh)) ?? "");
+    });
+  }
+
+  /** Installed Render Target asset, or the default (512² Scene Color) when unassigned or missing. */
+  private captureTarget(renderTargetGuid: string | null): RenderTargetPayload {
+    const definition = renderTargetGuid ? this.renderTargets?.()?.get(renderTargetGuid) : undefined;
+    return normalizeRenderTargetPayload(definition);
+  }
+
+  private captureAspect(renderTargetGuid: string | null): number {
+    const { width, height } = this.captureTarget(renderTargetGuid);
+    return width / height;
+  }
+
+  private buildLensDebug(actor: SerializedActor, component: SerializedComponent, debug: LensDebug): void {
     const composed = composeActorComponentTransform(actor, component);
     const root = new TransformNode(`debugFrustum:${actor.id}`, this.scene);
     const origin = this.scene.getMeshByName(editorMeshName(actor.id));
@@ -329,7 +462,7 @@ export class EditorDebugOverlay {
       root.position.copyFrom(composed.position);
       root.rotationQuaternion = composed.rotation.clone();
     }
-    const corners = buildFrustumCornersLocal(component);
+    const corners = buildFrustumCornersLocal(debug.lens, debug.aspect);
     const edges: Array<[number, number]> = [
       [0, 1], [1, 2], [2, 3], [3, 0],
       [4, 5], [5, 6], [6, 7], [7, 4],
@@ -351,38 +484,21 @@ export class EditorDebugOverlay {
       this.scene,
       false,
     );
-    camera.minZ = Math.max(0.01, asNumber(component.properties.nearClip, 0.1));
-    camera.maxZ = Math.max(camera.minZ + 0.01, asNumber(component.properties.farClip, 1000));
     camera.rotationQuaternion = composed.rotation.clone();
     camera.rotation.set(0, 0, 0);
-    this.previewLens = {
-      projectionMode:
-        component.properties.projectionMode === "orthographic"
-          ? "orthographic"
-          : "perspective",
-      fieldOfView: asNumber(
-        component.properties.fieldOfView,
-        DEFAULT_CAMERA_FIELD_OF_VIEW,
-      ),
-      orthographicSize: asNumber(
-        component.properties.orthographicSize,
-        DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
-      ),
-      nearClip: camera.minZ,
-      farClip: camera.maxZ,
-    };
-    applyAuthoredCameraLens(camera, this.previewLens, CAMERA_PREVIEW_ASPECT);
+    this.previewLens = debug.lens;
+    this.previewAspect = debug.aspect;
+    this.previewCapture = debug.capture ?? null;
+    applyAuthoredCameraLens(camera, debug.lens, debug.aspect);
     this.previewCamera = camera;
     const rtt = new RenderTargetTexture(
       `debugCameraPreview:${actor.id}`,
-      { width: CAMERA_PREVIEW_WIDTH, height: CAMERA_PREVIEW_HEIGHT },
+      lensPreviewSize(debug.aspect),
       this.scene,
       false,
     );
     rtt.activeCamera = camera;
-    rtt.renderList = this.scene.meshes.filter(
-      (mesh) => !mesh.name.startsWith("debug") && !isEditorCameraModel(mesh),
-    );
+    rtt.renderList = debug.renderList;
     this.previewTexture = rtt;
     this.tick(this.now());
   }

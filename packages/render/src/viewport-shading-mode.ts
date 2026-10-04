@@ -5,13 +5,7 @@ import {
   PBRMetallicRoughnessBlock,
   type Scene,
 } from "@babylonjs/core";
-import { isColliderVisualMesh } from "./collider-visual";
-import { isEditorBillboardMesh } from "./editor-billboard";
-import { isEditorCameraModel } from "./editor-camera-model";
-import { CAMERA_BOUNDS_MESH_NAME, GRID_MESH_NAME } from "./editor-grid";
-import { isEditorVolumeMesh } from "./editor-volume";
-import { isEditorModelPlaceholder } from "./glb-anim";
-import { isEditorActorOrigin } from "./scene-loader";
+import { isEditorHelperMesh } from "./helper-mesh";
 import { isSkyboxMesh } from "./skybox";
 
 export type ViewportShadingMode = "pbr" | "unlit" | "wireframe";
@@ -29,25 +23,9 @@ type ShadingRestore = {
   pbrBlocks: { block: PBRMetallicRoughnessBlock; unlit: boolean }[];
 };
 
-const SKIP_NAME_PREFIXES = [
-  "debugFrustum:",
-  "debugLight:",
-  "debugAudio:",
-  "debugPreviewCam:",
-  "debugCameraPreview:",
-  "navmeshDebug",
-] as const;
-
+/** Viewport modes restyle authored world meshes only, never editor or debug helpers. */
 export function isViewportShadingTarget(mesh: Mesh): boolean {
-  if (isEditorCameraModel(mesh)) return false;
-  if (isEditorBillboardMesh(mesh)) return false;
-  if (isEditorVolumeMesh(mesh)) return false;
-  if (isColliderVisualMesh(mesh)) return false;
-  if (isEditorActorOrigin(mesh)) return false;
-  if (isEditorModelPlaceholder(mesh)) return false;
-  if (mesh.name === GRID_MESH_NAME) return false;
-  if (mesh.name === CAMERA_BOUNDS_MESH_NAME) return false;
-  return !SKIP_NAME_PREFIXES.some((prefix) => mesh.name.startsWith(prefix));
+  return !isEditorHelperMesh(mesh);
 }
 
 function lightingMaterial(material: Material): LightingMaterial {

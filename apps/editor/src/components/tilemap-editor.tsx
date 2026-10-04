@@ -186,13 +186,8 @@ export function TilemapDetails({
     tilemap.layers[0]?.id ?? "layer-1",
   );
   const editing = useOptionalTilemapEditing();
-  const { assetRegistry, projectDocument, loadAssetDocument } = useDocuments();
-  const assets = (assetRegistry?.list() ?? []).map((asset) => ({
-    guid: asset.header.guid,
-    name: asset.header.name,
-    type: asset.header.type,
-    path: asset.path,
-  }));
+  const { projectDocument, loadAssetDocument } = useDocuments();
+  const assets = useRegistryPickerAssets();
   const sortingLayers = projectDocument?.settings.twoD.sortingLayers ?? [
     "Background",
     "Default",
@@ -512,14 +507,9 @@ export function TilemapPalette({
   const editing = useOptionalTilemapEditing();
   const [query, setQuery] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
-  const { assetRegistry, loadAssetDocument } = useDocuments();
+  const { loadAssetDocument } = useDocuments();
   const atlases = useTilesetAtlases(payloads);
-  const assets = (assetRegistry?.list() ?? []).map((asset) => ({
-    guid: asset.header.guid,
-    name: asset.header.name,
-    type: asset.header.type,
-    path: asset.path,
-  }));
+  const assets = useRegistryPickerAssets();
   const needle = query.trim().toLowerCase();
 
   const addTileset = async (guid: string | null) => {
@@ -701,16 +691,11 @@ export function TilemapPaint({
   } | null>(null);
   const viewRef = useRef({ pan, cellSize });
   viewRef.current = { pan, cellSize };
-  const { assetRegistry, loadAssetDocument } = useDocuments();
+  const { loadAssetDocument } = useDocuments();
   const atlases = useTilesetAtlases(payloads);
   const layer =
     tilemap.layers.find((entry) => entry.id === layerId) ?? tilemap.layers[0];
-  const assets = (assetRegistry?.list() ?? []).map((asset) => ({
-    guid: asset.header.guid,
-    name: asset.header.name,
-    type: asset.header.type,
-    path: asset.path,
-  }));
+  const assets = useRegistryPickerAssets();
   const { projectDocument } = useDocuments();
   const sortingLayers = projectDocument?.settings.twoD.sortingLayers ?? DEFAULT_SORTING_LAYERS;
   const decoded = decodeTileGid(tilemap, selectedGid, payloads);
@@ -1244,6 +1229,20 @@ function selectedTileGid(
   const ref = tilemap.tilesets.find((entry) => entry.guid === selected.guid);
   if (!ref || selected.localId > ref.tileCount) return -1;
   return encodeTileGid(ref.firstGid, selected.localId);
+}
+
+/** Picker rows for every indexed asset, rebuilt when the registry changes rather than per edit. */
+function useRegistryPickerAssets() {
+  const { assetRegistry, registryEpoch } = useDocuments();
+  return useMemo(() => {
+    void registryEpoch;
+    return (assetRegistry?.list() ?? []).map((asset) => ({
+      guid: asset.header.guid,
+      name: asset.header.name,
+      type: asset.header.type,
+      path: asset.path,
+    }));
+  }, [assetRegistry, registryEpoch]);
 }
 
 /**

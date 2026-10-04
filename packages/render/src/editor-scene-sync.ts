@@ -1,3 +1,4 @@
+import { refreshJoystick2DMaterials } from "./joystick2d-mesh";
 import { Mesh, type AbstractMesh, type Camera, type Material, type Node, type Scene } from "@babylonjs/core";
 import { applyMaterialBounds } from "./material-bounds";
 import { DEFAULT_SORTING_LAYERS, isSceneLayerAnchorActor, resolveOverlayLayout } from "@babylonslate/core";
@@ -49,6 +50,7 @@ import { visualMeshes } from "./visual-meshes";
 import { isTilemapChunkMesh } from "./tilemap-mesh";
 import { BitmapAllocationLimitError } from "./text2d-bitmap";
 import { refreshText2DMaterials, text2DBitmapBytes } from "./text2d-mesh";
+import { pruneEditorCables } from "./cable-mesh";
 
 export type EditorSceneSyncOptions = {
   /** FrameGraph owns its camera-specific active queue; world matrices still freeze. */
@@ -416,7 +418,12 @@ export class EditorSceneSync {
       }
       yield 0.6 + 0.1 * ++index / actorCount;
     }
-    syncEditorCablePreviews(this.scene, sceneData.actors);
+    // Editor cables simulate per frame from the live actor roots (no collision).
+    syncEditorCablePreviews(this.scene, sceneData.actors, {
+      rootForActor: (actorId) => this.meshes.get(actorId) ?? null,
+      gravity: sceneData.settings.gravity,
+      simulate: true,
+    });
     applyEditorLayoutClips(this.scene, layout.entries);
     for (const progress of syncAuthoredIlluminationSteps(this.scene, sceneData, {
       stealActiveCamera: this.stealActiveCamera,
@@ -791,6 +798,9 @@ export class EditorSceneSync {
   }
 
   private bindActorMeshMaterials(actor: SerializedActor, root: Mesh): void {
+    refreshJoystick2DMaterials(root, {
+      resolveMaterial: (guid, options) => this.resolveMaterial?.(guid, options) ?? this.assets?.resolveMaterial?.(guid, options) ?? null,
+    });
     refreshText2DMaterials(root, {
       resolveMaterial: (guid, options) => this.resolveMaterial?.(guid, options) ?? this.assets?.resolveMaterial?.(guid, options) ?? null,
     });
@@ -843,7 +853,7 @@ export class EditorSceneSync {
   ): void {
     if (!guid) return;
     const targets = meshAndDescendantMeshes(visual).filter(
-      (target) => !isTilemapChunkMesh(target) && !target.metadata?.text2d && !target.metadata?.text2dGlyph,
+      (target) => !isTilemapChunkMesh(target) && !target.metadata?.text2d && !target.metadata?.text2dGlyph && !target.metadata?.overlayJoystickMeshName && !target.metadata?.joystick2DThumb,
     );
     for (const target of targets) {
       if (isColliderVisualTree(target)) continue;
@@ -876,6 +886,7 @@ export class EditorSceneSync {
     }
     this.meshes.clear();
     this.meshKinds.clear();
+    pruneEditorCables(this.scene);
   }
 }
 

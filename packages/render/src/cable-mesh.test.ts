@@ -1,16 +1,44 @@
-import { Mesh, Ray, StandardMaterial, TransformNode, Vector3, VertexBuffer } from "@babylonjs/core";
+import { Mesh, Ray, StandardMaterial, TransformNode, Vector3, VertexBuffer, VertexData } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createActor, createDefaultScene, identitySerializedTransform, parseCableProperties } from "@babylonslate/core";
+import { createActor, createDefaultScene, identitySerializedTransform, parseCableProperties, type SerializedScene } from "@babylonslate/core";
 import { SNAPSHOT_FLAG_VISIBLE } from "@babylonslate/bridge";
-import { applyCableFrame, createCableMesh, sampleCableFrame } from "./cable-mesh";
+import { applyCableFrame, createCableMesh, sampleCableFrame, stepEditorCables } from "./cable-mesh";
 import { applyMaterialBounds } from "./material-bounds";
 import { createTestEngine } from "./create-null-engine";
-import { applySceneToBabylonScene, clearSceneMeshes, editorComponentMeshName } from "./scene-loader";
+import { applySceneToBabylonScene, clearSceneMeshes, editorComponentMeshName, unfreezeActorWorldMatrix } from "./scene-loader";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { applyAssignMesh, applySnapshotToScene, createSnapshotSceneBinding, retirePlaySlot } from "./snapshot-apply";
 
 function packet(id: number, points: number[], anchors = [-1, -1, 0, 0, 0, 0, 0, 0]): Float32Array {
   return new Float32Array([id, points.length / 3, ...anchors, ...points]);
+}
+
+/** World-space tube axis: the mean of each ring's distinct vertices. */
+function ringCenters(mesh: Mesh, sides: number): Vector3[] {
+  const positions = mesh.getVerticesData(VertexBuffer.PositionKind)!;
+  const world = mesh.computeWorldMatrix(true);
+  const centers: Vector3[] = [];
+  for (let ring = 0; ring * (sides + 1) * 3 < positions.length; ring++) {
+    const center = Vector3.Zero();
+    for (let side = 0; side < sides; side++) center.addInPlace(Vector3.FromArray(positions, (ring * (sides + 1) + side) * 3));
+    centers.push(Vector3.TransformCoordinates(center.scaleInPlace(1 / sides), world));
+  }
+  return centers;
+}
+
+function polylineLength(points: readonly Vector3[]): number {
+  let length = 0;
+  for (let index = 1; index < points.length; index++) length += Vector3.Distance(points[index - 1]!, points[index]!);
+  return length;
+}
+
+/** Rope targeting a Hook actor's origin; both actors start at the world origin frame. */
+function ropeScene(cable: Record<string, unknown>, hook: [number, number, number] = [3, 0, 0], gravity: [number, number, number] = [0, -9.81, 0]): SerializedScene {
+  const rope = createActor("rope", "Rope", { components: [{ id: "cable", classId: "CableComponent", properties: { targetActorId: "hook", endPosition: [0, 0, 0], numSides: 4, ...cable } }] });
+  const target = createActor("hook", "Hook", { components: [] });
+  target.transform.position = hook;
+  const document = createDefaultScene();
+  return { ...document, settings: { ...document.settings, gravity }, actors: [rope, target] };
 }
 
 describe("cable rendering", () => {
@@ -203,5 +231,186 @@ describe("cable rendering", () => {
     expect((positions[1]! + positions[7]!) / 2).toBeCloseTo(5);
     expect((positions[30]! + positions[36]!) / 2).toBeCloseTo(15);
     expect((positions[31]! + positions[37]!) / 2).toBeCloseTo(5);
+  });
+
+  it("winds tube faces outward, including world-space tubes under a mirrored parent", () => {
+    const { scene } = setup();
+    for (const [id, scaleX] of [[1, 1], [2, -1]] as const) {
+      const mesh = createCableMesh(scene, `cable-${id}`, { numSegments: 3, numSides: 6, cableWidth: 0.4 }, id);
+      const parent = new TransformNode(`parent-${id}`, scene);
+      parent.scaling.set(scaleX, 1, 1);
+      mesh.parent = parent;
+      applyCableFrame(scene, packet(id, [0, 0, 0, 1, 0.5, 0, 2, 0.5, 0.5, 3, 0, 1]), id);
+      scene.onBeforeRenderObservable.notifyObservers(scene);
+      const local = mesh.getVerticesData(VertexBuffer.PositionKind)!;
+      const world = mesh.computeWorldMatrix(true);
+      const positions: number[] = [];
+      for (let offset = 0; offset < local.length; offset += 3) positions.push(...Vector3.TransformCoordinates(Vector3.FromArray(local, offset), world).asArray());
+      const faceNormals: number[] = [];
+      VertexData.ComputeNormals(positions, mesh.getIndices()!, faceNormals);
+      const axis = ringCenters(mesh, 6);
+      // Babylon culls the opposite winding when the world determinant is negative.
+      const facing = world.determinant() < 0 ? -1 : 1;
+      for (let vertex = 0; vertex < positions.length / 3; vertex++) {
+        const outward = Vector3.FromArray(positions, vertex * 3).subtract(axis[Math.floor(vertex / 7)]!);
+        expect(facing * Vector3.Dot(Vector3.FromArray(faceNormals, vertex * 3), outward)).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it("previews the settled length and sags along scene gravity", () => {
+    const { scene } = setup();
+    for (const [gravity, sagAxis] of [[[0, -9.81, 0], 1], [[0, 0, -9.81], 2]] as const) {
+      applySceneToBabylonScene(scene, ropeScene({ numSegments: 16 }, [3, 0, 0], [...gravity]));
+      const mesh = scene.getMeshByName(editorComponentMeshName("rope", "cable")) as Mesh;
+      const axis = ringCenters(mesh, 4);
+      expect(polylineLength(axis) / 4).toBeGreaterThan(0.98);
+      expect(polylineLength(axis) / 4).toBeLessThan(1.02);
+      // Catenary for level pins 3 apart with 4 units of cable: 1.177 deep.
+      expect(axis[8]!.asArray()[sagAxis]).toBeCloseTo(-1.177, 2);
+      expect(axis[8]!.asArray()[3 - sagAxis]).toBeCloseTo(0, 5);
+    }
+  });
+
+  it("simulates editor cables toward a target dragged without a document apply, then sleeps without uploads", () => {
+    const { scene } = setup();
+    const sync = new EditorSceneSync(scene);
+    sync.apply(ropeScene({}));
+    const mesh = scene.getMeshByName(editorComponentMeshName("rope", "cable")) as Mesh;
+    let now = 0;
+    const settle = (frames: number) => { for (let frame = 0; frame < frames; frame++) stepEditorCables(scene, now += 1000 / 60); };
+    settle(600);
+    const hook = sync.meshForActor("hook")!;
+    unfreezeActorWorldMatrix(hook); // As a gizmo drag does.
+    hook.position.set(3, 2, 0);
+    expect(stepEditorCables(scene, now += 1000 / 60)).toBe(true);
+    const moved = ringCenters(mesh, 4);
+    expect(moved.at(-1)!.asArray().map((value) => Number(value.toFixed(4)))).toEqual([3, 2, 0]);
+    settle(600);
+    const upload = vi.spyOn(mesh, "updateVerticesData");
+    let changed = false;
+    for (let frame = 0; frame < 30; frame++) changed = stepEditorCables(scene, now += 1000 / 60) || changed;
+    expect(changed).toBe(false);
+    expect(upload).not.toHaveBeenCalled();
+    upload.mockRestore();
+    sync.dispose();
+  });
+
+  it("simulates a default Self cable dragged with its own actor, then sleeps without uploads even with Enable Collision on", () => {
+    const { scene } = setup();
+    // No Target Actor or Component: both ends ride the cable's own actor. The
+    // editor has no physics world, so an Enable Collision cable must still sleep.
+    const actor = createActor("rope", "Rope", { components: [{ id: "cable", classId: "CableComponent", properties: { numSides: 4, enableCollision: true } }] });
+    const sync = new EditorSceneSync(scene);
+    sync.apply({ ...createDefaultScene(), actors: [actor] });
+    const mesh = scene.getMeshByName(editorComponentMeshName("rope", "cable")) as Mesh;
+    let now = 0;
+    const step = (frames: number) => {
+      let changed = false;
+      for (let frame = 0; frame < frames; frame++) changed = stepEditorCables(scene, now += 1000 / 60) || changed;
+      return changed;
+    };
+    step(600);
+    const owner = sync.meshForActor("rope")!;
+    unfreezeActorWorldMatrix(owner); // As a gizmo drag does.
+    // Drag 1.5 along z over half a second; each frame's move is drag motion.
+    let changed = false;
+    for (let frame = 1; frame <= 30; frame++) {
+      owner.position.set(0, 0, 0.05 * frame);
+      changed = step(1) || changed;
+    }
+    expect(changed).toBe(true);
+    const dragged = ringCenters(mesh, 4);
+    const rounded = (point: Vector3) => point.asArray().map((value) => Number(value.toFixed(4)) + 0); // + 0 folds -0.
+    expect(rounded(dragged[0]!)).toEqual([0, 0, 1.5]);
+    expect(rounded(dragged.at(-1)!)).toEqual([3, 0, 1.5]);
+    // The interior trails the pins instead of moving rigidly with the actor.
+    expect(dragged[8]!.z).toBeLessThan(1.4);
+    step(600);
+    expect(ringCenters(mesh, 4)[8]!.z).toBeCloseTo(1.5, 2);
+    const upload = vi.spyOn(mesh, "updateVerticesData");
+    expect(step(30)).toBe(false);
+    expect(upload).not.toHaveBeenCalled();
+    upload.mockRestore();
+    sync.dispose();
+  });
+
+  it("carries an editor cable through a typed Location edit or a snapped jump instead of whipping it", () => {
+    const { scene } = setup();
+    const sync = new EditorSceneSync(scene);
+    sync.apply(ropeScene({}));
+    const mesh = scene.getMeshByName(editorComponentMeshName("rope", "cable")) as Mesh;
+    let now = 0;
+    const peakMid = (frames: number) => {
+      let peak = -Infinity;
+      for (let frame = 0; frame < frames; frame++) {
+        stepEditorCables(scene, now += 1000 / 60);
+        peak = Math.max(peak, ringCenters(mesh, 4)[8]!.y);
+      }
+      return peak;
+    };
+    peakMid(600);
+    // Details raises the cable's owner by 1 (a document apply).
+    const raised = ropeScene({});
+    raised.actors[0]!.transform.position = [0, 1, 0];
+    sync.apply(raised);
+    expect(ringCenters(mesh, 4)[0]!.y).toBeCloseTo(1, 4);
+    // The midpoint stays below the lower pin; fed as motion it would fly above both.
+    expect(peakMid(600)).toBeLessThan(0);
+    // A snapped gizmo step jumps the hook by a whole unit between frames.
+    const hook = sync.meshForActor("hook")!;
+    unfreezeActorWorldMatrix(hook);
+    hook.position.set(3, 1, 0);
+    expect(peakMid(600)).toBeLessThan(1);
+    expect(ringCenters(mesh, 4).at(-1)!.y).toBeCloseTo(1, 4);
+    sync.dispose();
+  });
+
+  it("rebuilds an editor cable for Material edits, so clearing the Material drops it, without resetting the swing", () => {
+    const { scene } = setup();
+    const materials: Record<string, StandardMaterial> = { rope: new StandardMaterial("rope", scene), steel: new StandardMaterial("steel", scene) };
+    const sync = new EditorSceneSync(scene, undefined, { resolveMaterial: (guid) => materials[guid] ?? null });
+    const name = editorComponentMeshName("rope", "cable");
+    sync.apply(ropeScene({ materialGuid: "rope" }));
+    expect(scene.getMeshByName(name)!.material).toBe(materials.rope);
+    let now = 0;
+    for (let frame = 0; frame < 600; frame++) stepEditorCables(scene, now += 1000 / 60);
+    const hook = sync.meshForActor("hook")!;
+    unfreezeActorWorldMatrix(hook);
+    hook.position.set(3, 1.5, 0);
+    for (let frame = 0; frame < 8; frame++) stepEditorCables(scene, now += 1000 / 60);
+    const swinging = ringCenters(scene.getMeshByName(name) as Mesh, 4);
+    sync.apply(ropeScene({ materialGuid: "steel" }, [3, 1.5, 0]));
+    const rebuilt = scene.getMeshByName(name) as Mesh;
+    expect(rebuilt.material).toBe(materials.steel);
+    const shown = ringCenters(rebuilt, 4);
+    for (let ring = 1; ring < swinging.length - 1; ring++) expect(Vector3.Distance(shown[ring]!, swinging[ring]!)).toBeLessThan(1e-4);
+    sync.apply(ropeScene({ materialGuid: null }, [3, 1.5, 0]));
+    expect(scene.getMeshByName(name)!.material).toBeNull();
+    sync.dispose();
+  });
+
+  it("keeps a swinging editor cable's state through property-only edits", () => {
+    const { scene } = setup();
+    const sync = new EditorSceneSync(scene);
+    sync.apply(ropeScene({}));
+    const mesh = scene.getMeshByName(editorComponentMeshName("rope", "cable")) as Mesh;
+    const geometry = mesh.geometry;
+    let now = 0;
+    for (let frame = 0; frame < 600; frame++) stepEditorCables(scene, now += 1000 / 60);
+    const hook = sync.meshForActor("hook")!;
+    unfreezeActorWorldMatrix(hook);
+    hook.position.set(3, 1.5, 0);
+    for (let frame = 0; frame < 8; frame++) stepEditorCables(scene, now += 1000 / 60);
+    const swinging = ringCenters(mesh, 4);
+    // The drag commits with a wider tube and more damping.
+    sync.apply(ropeScene({ cableWidth: 0.2, damping: 0.1 }, [3, 1.5, 0]));
+    expect(scene.getMeshByName(mesh.name)).toBe(mesh);
+    expect(mesh.geometry).toBe(geometry);
+    const rebound = ringCenters(mesh, 4);
+    for (let ring = 1; ring < swinging.length - 1; ring++) expect(Vector3.Distance(rebound[ring]!, swinging[ring]!)).toBeLessThan(1e-4);
+    const positions = mesh.getVerticesData(VertexBuffer.PositionKind)!;
+    expect(Vector3.Distance(Vector3.FromArray(positions, 0), Vector3.FromArray(positions, 6))).toBeCloseTo(0.2, 4);
+    sync.dispose();
   });
 });
