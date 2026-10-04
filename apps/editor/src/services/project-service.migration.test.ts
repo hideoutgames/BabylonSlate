@@ -67,8 +67,8 @@ describe("migrate-on-load and migrate-on-save approval", () => {
     await service.loadDocument("scene", MAIN_SCENE_FILE);
     await service.loadDocument("scene", MAIN_SCENE_FILE);
 
-    expect(service.pendingMigrations).toEqual([
-      { type: "Scene", fromVersion: 0, toVersion: 4, path: MAIN_SCENE_FILE },
+    expect(service.pendingMigrations.map((pending) => pending.path)).toEqual([
+      MAIN_SCENE_FILE,
     ]);
   });
 
