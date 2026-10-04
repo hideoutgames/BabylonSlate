@@ -96,11 +96,13 @@ export const WATER_FFT_SIZES = [64, 128, 256] as const;
 export const WATER_FFT_CASCADES_MIN = 1;
 export const WATER_FFT_CASCADES_MAX = 3;
 export type WaterQualityField = Exclude<keyof WaterQuality, keyof QualitySelection>;
-/** Console setting names for `quality water <field> <value>`, in display order. */
-export const WATER_QUALITY_FIELDS: readonly WaterQualityField[] = [
-  "shadingDetail", "meshDensity", "contactResolution", "refraction", "refractionScale",
-  "reflections", "reflectionSteps", "planarScale", "fft", "fftSize", "fftCascades",
-];
+// A Record keeps the list complete when WaterQuality gains a field.
+const WATER_QUALITY_FIELD_SET: Record<WaterQualityField, true> = {
+  shadingDetail: true, meshDensity: true, contactResolution: true, refraction: true, refractionScale: true,
+  reflections: true, reflectionSteps: true, planarScale: true, fft: true, fftSize: true, fftCascades: true,
+};
+/** Every value field, in display order; also the console names for `quality water <field> <value>`. */
+export const WATER_QUALITY_FIELDS = Object.keys(WATER_QUALITY_FIELD_SET) as readonly WaterQualityField[];
 /** Strict console parsing: out-of-range or non-integer values are rejected, never clamped. */
 export function parseWaterQualitySetting(field: string, value: string): Partial<WaterQuality> | undefined {
   const lower = value.toLowerCase();
