@@ -96,17 +96,21 @@ function drawnBy(scene: Scene, mesh: Mesh): string[] {
 /**
  * Water's first frame creates its field textures. NullEngine never completes
  * a raw upload: stand in for that GPU boundary, then render until a frame
- * draws with readiness settled.
+ * draws with readiness settled. The contact field rescans objects every
+ * 100 ms and may then replace its texture, so settle once more after a scan.
  */
 async function settle(graph: ForwardSceneFrameGraph, camera: FreeCamera): Promise<void> {
   const scene = camera.getScene();
-  await vi.waitFor(() => {
+  const drawn = () => vi.waitFor(() => {
     for (const texture of scene.textures) {
       const internal = texture.getInternalTexture();
       if (internal) internal.isReady = true;
     }
     expect(graph.render(camera)).toEqual({ path: "frameGraph" });
   });
+  await drawn();
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  await drawn();
 }
 
 /** Split frames, frames with visible copy-sampling water, and copy draws during `run`. */
@@ -220,7 +224,10 @@ it("shares an effect chain's scene targets, deferring transparents only while wa
   });
   expect(work).toEqual({ frames: 1, visibleFrames: 1, copies: 1 });
   expect(glassDraws).toEqual(["Forward transparent"]);
-  water.setEnabled(false);
+  // Enabled water outside the view frustum is not in the cull output: nothing is deferred or copied.
+  water.position.x = 500;
+  // Moving a surface rebuilds its contact field.
+  await settle(graph, camera);
   work = frames(graph, () => {
     glassDraws.length = 0;
     expect(graph.render(camera)).toEqual({ path: "frameGraph" });
