@@ -24,10 +24,11 @@ import {
   sceneRenderingSettings,
   updateSceneRenderingSettings,
 } from "./render-settings";
-import { normalizeShadowSettings, qualityPresetPatch } from "@babylonslate/core";
+import { normalizeShadowSettings, normalizeWaterBody, qualityPresetPatch } from "@babylonslate/core";
 import { otherShadowReservations } from "./shadow-admission";
 import { retainAreaLightLookup } from "./area-light-resources";
 import { createColliderVisualMesh } from "./collider-visual";
+import { createWaterMesh } from "./water-mesh";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -444,6 +445,19 @@ describe("shared shadow lifecycle", () => {
       "active",
     ]);
     expect(controller.diagnostics()[1]?.passes).toBe(6);
+  });
+  it("keeps water out of shadow maps even when authored to cast, while it still receives shadows", () => {
+    const { scene, controller } = fixture();
+    const sun = new DirectionalLight("sun", new Vector3(0.3, -1, 0.2), scene);
+    const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 10, length: 10, resolution: 8 }));
+    const rock = MeshBuilder.CreateBox("rock", {}, scene);
+    controller.setParticipation(lake, { castShadows: true, receiveShadows: true });
+    controller.register(sun, true);
+    controller.sync();
+    const casters = controller.generator(sun)!.getShadowMap()!.renderList!;
+    expect(casters).toContain(rock);
+    expect(casters).not.toContain(lake);
+    expect(lake.receiveShadows).toBe(true);
   });
   it("keeps helper meshes out of shadow maps and responds to camera replacement", () => {
     const { scene, controller } = fixture();

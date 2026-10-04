@@ -34,6 +34,11 @@ const DETAIL_VARIANCE = [...DETAIL_OCTAVES, ...CAPILLARY_OCTAVES].reduce((sum, [
 const WATER_STYLIZED_DEFINE = "SLATE_WATER_STYLIZED";
 /** Ocean Spectrum evaluates all `WATER_WAVE_MAX_COMPONENTS` swell components; Classic compiles only its five. */
 const WATER_OCEAN_DEFINE = "SLATE_WATER_OCEAN";
+/**
+ * Built-in water evaluates the swell in its vertex shader from the same uniforms the fragment uses: the mesh uploads a
+ * static rest grid and only the clock advances. Custom Material water keeps CPU-displaced vertices.
+ */
+export const WATER_GPU_WAVES_DEFINE = "SLATE_WATER_GPU_WAVES";
 const SWELL_DIRECTION = Array.from({ length: WATER_WAVE_MAX_COMPONENTS }, (_, i) => `slateWaterSwellDir${i}`);
 const SWELL_AMPLITUDE = Array.from({ length: WATER_WAVE_MAX_COMPONENTS }, (_, i) => `slateWaterSwellAmp${i}`);
 
@@ -536,6 +541,70 @@ if (swCut < 0.0 || (swField.a * swFieldOn > 0.5 && swTerrainDepth <= 0.0)) { dis
 `;
 }
 
+/**
+ * Vertex stage of `SLATE_WATER_GPU_WAVES`, at CUSTOM_VERTEX_UPDATE_WORLDPOS: the kernel's forward evaluation
+ * (`evaluateWaterVertex`) at this vertex's world rest point, unrolled over the swell uniforms. The rest grid carries
+ * its mesh spacing in `slateWaterData.x` (the filter of unresolvable components) and its bank distance in `.y` (the
+ * finite-body fade of the horizontal offset). Phases arrive reduced relative to the floating origin, so eye-relative
+ * `worldPos` needs no large-argument trigonometry. Writes the displaced world position (the clip position, fog,
+ * shadows and clip planes follow it) and leaves the height and offset for the varyings in `swvH` / `swvD`.
+ * GLSL-shaped: `A.` attributes, `U.` uniforms and `O.` outputs are bound per language, then `toWgsl` translates it.
+ */
+function vertexWaveSource(): string {
+  const swell = Array.from({ length: WATER_WAVE_MAX_COMPONENTS }, (_, i) => {
+    const code = `
+vec4 swvWD${i} = U.${SWELL_DIRECTION[i]};
+vec4 swvWA${i} = U.${SWELL_AMPLITUDE[i]};
+float swvF${i} = clamp(2.0 - swvSpacing * swvWA${i}.w, 0.0, 1.0);
+swvF${i} = swvF${i} * swvF${i} * (3.0 - 2.0 * swvF${i});
+float swvP${i} = swvWD${i}.z * dot(swvWD${i}.xy, swvRest) + swvWA${i}.y;
+float swvS${i} = sin(swvP${i});
+float swvC${i} = cos(swvP${i});
+swvH += mix(swvS${i}, (exp(swvS${i} - 1.0) - ${f(WATER_CREST_MEAN)}) / ${f(WATER_CREST_RANGE)}, swvChop) * (swvWA${i}.x * swvF${i});
+swvD += swvWD${i}.xy * (swvWA${i}.z * swvF${i} * swvC${i});`;
+    return i < waterWaveComponents.length ? code : `\n#ifdef ${WATER_OCEAN_DEFINE}${code}\n#endif`;
+  }).join("");
+  return `
+#ifdef ${WATER_GPU_WAVES_DEFINE}
+float swvSpacing = A.slateWaterData.x;
+float swvChop = U.slateWaterShape.x;
+vec2 swvRest = worldPos.xz;
+float swvH = 0.0;
+vec2 swvD = vec2(0.0);
+${swell}
+float swvFade = U.slateWaterSwellInfo.x;
+float swvBankT = clamp(A.slateWaterData.y / max(swvFade, 0.000001), 0.0, 1.0);
+swvD = swvD * mix(1.0, swvBankT * swvBankT * (3.0 - 2.0 * swvBankT), step(0.000001, swvFade));
+worldPos = vec4(worldPos.xyz + vec3(swvD.x, swvH, swvD.y), worldPos.w);
+O.vPositionW = worldPos.xyz;
+#endif
+`;
+}
+
+/**
+ * Varyings at CUSTOM_VERTEX_MAIN_END, which runs after the world-position hook: GPU waves pass their own height and
+ * offset, so the attribute copy must not overwrite them.
+ */
+const VERTEX_VARYINGS = `
+#ifdef ${WATER_GPU_WAVES_DEFINE}
+O.vSlateWater = vec4(swvH, A.slateWaterData.yzw);
+O.vSlateWaterFlow = vec4(A.slateWaterFlow.xz, swvD);
+#else
+O.vSlateWater = A.slateWaterData;
+O.vSlateWaterFlow = vec4(A.slateWaterFlow.xz, A.slateWaterOffset);
+#endif
+O.vSlateWaterBaseNormal = A.slateWaterBaseNormal;
+`;
+
+/** Vertex hooks for one language: the GPU swell and the varyings. */
+export function waterVertexSource(language: ShaderLanguage): { worldPosition: string; end: string } {
+  const wgsl = language === ShaderLanguage.WGSL;
+  const bind = (code: string) => code.replace(/\bU\./g, wgsl ? "uniforms." : "").replace(/\bA\./g, wgsl ? "vertexInputs." : "").replace(/\bO\./g, wgsl ? "vertexOutputs." : "");
+  return wgsl
+    ? { worldPosition: bind(toWgsl(vertexWaveSource())), end: bind(toWgsl(VERTEX_VARYINGS)) }
+    : { worldPosition: bind(vertexWaveSource()), end: bind(VERTEX_VARYINGS) };
+}
+
 /** Translate the restricted GLSL-shaped source above. Only the constructs it uses are supported. */
 export function toWgsl(source: string): string {
   const type = (t: string) => ({ float: "f32", vec2: "vec2f", vec3: "vec3f", vec4: "vec4f", mat4: "mat4x4f" })[t] ?? t;
@@ -659,8 +728,9 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
   private removalMesh: AbstractMesh | null = null;
   private selectedRemovals: WaterRemovalCandidate[] = [];
   private readonly swell = new Float32Array(WATER_WAVE_MAX_COMPONENTS * WATER_WAVE_SHADER_STRIDE);
+  private _gpuWaves = false;
   constructor(material: PBRMaterial, water: WaterDefinition, body: WaterBodyProperties) {
-    super(material, "SlateWater", 180, { SLATE_WATER: true, [WATER_STYLIZED_DEFINE]: false, [WATER_OCEAN_DEFINE]: false }, true, false);
+    super(material, "SlateWater", 180, { SLATE_WATER: true, [WATER_STYLIZED_DEFINE]: false, [WATER_OCEAN_DEFINE]: false, [WATER_GPU_WAVES_DEFINE]: false }, true, false);
     this.water = water;
     this.body = body;
     this.doNotSerialize = true;
@@ -672,6 +742,19 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
   override prepareDefines(defines: MaterialDefines): void {
     defines[WATER_STYLIZED_DEFINE] = this.water.style === "stylized";
     defines[WATER_OCEAN_DEFINE] = waterWaveSet(this.water).count > waterWaveComponents.length;
+    defines[WATER_GPU_WAVES_DEFINE] = this._gpuWaves;
+  }
+  /**
+   * True when the vertex shader evaluates the swell (`SLATE_WATER_GPU_WAVES`) and the mesh keeps a static rest grid.
+   * The water mesh owns this: its vertex data layout must change with it (see `setWaterGpuWaves`).
+   */
+  get gpuWaves(): boolean { return this._gpuWaves; }
+  set gpuWaves(value: boolean) {
+    if (this._gpuWaves === value) return;
+    this._gpuWaves = value;
+    this.markAllDefinesAsDirty();
+    // Frozen materials (Play) re-evaluate defines only when marked dirty.
+    if (this._material.isFrozen) this._material.markDirty(true);
   }
   override getAttributes(attributes: string[]): void { attributes.push("slateWaterData", "slateWaterFlow", "slateWaterBaseNormal", "slateWaterOffset"); }
   override getUniforms() {
@@ -754,17 +837,16 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
     const varying = (type: string, name: string) => (wgsl ? `varying ${name}: ${type};` : `varying ${type} ${name};`) + "\n";
     // vSlateWaterFlow packs the world current (x, z) and the Gerstner offset (Dx, Dz), so the fragment finds its rest point.
     const varyings = varying(v4, "vSlateWater") + varying(v4, "vSlateWaterFlow") + varying(v3, "vSlateWaterBaseNormal");
-    const output = wgsl ? "vertexOutputs." : "", input = wgsl ? "vertexInputs." : "";
-    if (shaderType === "vertex") return {
-      CUSTOM_VERTEX_DEFINITIONS: (wgsl
-        ? "attribute slateWaterData: vec4f;\nattribute slateWaterFlow: vec3f;\nattribute slateWaterBaseNormal: vec3f;\nattribute slateWaterOffset: vec2f;\n"
-        : "attribute vec4 slateWaterData;\nattribute vec3 slateWaterFlow;\nattribute vec3 slateWaterBaseNormal;\nattribute vec2 slateWaterOffset;\n") + varyings,
-      CUSTOM_VERTEX_MAIN_END: [
-        `${output}vSlateWater = ${input}slateWaterData;`,
-        `${output}vSlateWaterFlow = ${v4}(${input}slateWaterFlow.xz, ${input}slateWaterOffset);`,
-        `${output}vSlateWaterBaseNormal = ${input}slateWaterBaseNormal;`,
-      ].join("\n"),
-    };
+    if (shaderType === "vertex") {
+      const vertex = waterVertexSource(language);
+      return {
+        CUSTOM_VERTEX_DEFINITIONS: (wgsl
+          ? "attribute slateWaterData: vec4f;\nattribute slateWaterFlow: vec3f;\nattribute slateWaterBaseNormal: vec3f;\nattribute slateWaterOffset: vec2f;\n"
+          : "attribute vec4 slateWaterData;\nattribute vec3 slateWaterFlow;\nattribute vec3 slateWaterBaseNormal;\nattribute vec2 slateWaterOffset;\n") + varyings,
+        CUSTOM_VERTEX_UPDATE_WORLDPOS: vertex.worldPosition,
+        CUSTOM_VERTEX_MAIN_END: vertex.end,
+      };
+    }
     if (shaderType !== "fragment") return null;
     const source = waterShaderSource(language);
     return {

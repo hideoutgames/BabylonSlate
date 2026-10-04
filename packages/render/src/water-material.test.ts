@@ -147,6 +147,8 @@ describe("Water material binding", () => {
       expect(realistic).not.toContain("#define SLATE_WATER_STYLIZED");
       expect(realistic).not.toContain("#define UNLIT");
       expect(realistic).toContain("#define LIGHT1");
+      // Built-in water displaces its static rest grid in the vertex shader.
+      expect(realistic).toContain("#define SLATE_WATER_GPU_WAVES");
       // Classic compiles only its five swell components; Ocean Spectrum adds its other three.
       expect(realistic).not.toContain("#define SLATE_WATER_OCEAN");
       expect(await compiled("stylized", "ocean")).toContain("#define SLATE_WATER_OCEAN");

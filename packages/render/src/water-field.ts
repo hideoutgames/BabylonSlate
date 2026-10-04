@@ -78,6 +78,8 @@ export interface WaterFieldSurface {
   amplitude: number;
   /** Object distances are stored up to this range, in metres. */
   contactRange: number;
+  /** Most contact-texture cells per side (project Contact Resolution); beyond it cells grow. Defaults to 1024. */
+  contactCells?: number;
 }
 
 type Rect = { minX: number; minZ: number; maxX: number; maxZ: number };

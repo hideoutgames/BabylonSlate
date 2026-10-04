@@ -586,6 +586,24 @@ export function waterBankGain(bank: number, fadeLength: number, out: Float64Arra
   out[0] = t * t * (3 - 2 * t); out[1] = 6 * t * (1 - t) / fadeLength;
 }
 
+const vertexGain = new Float64Array(2);
+
+/**
+ * CPU reference for one rendered water vertex, allocation-free: `evaluateWaterWaves` at the vertex's world rest point
+ * (x0, z0) with its mesh `spacing` filter and a finite body's bank fade (`waterBankGain` of `bank`, the world metres
+ * inside the edge, over `fadeLength`; 0 for open water). (gradX, gradZ) is the unit rest-space direction in which the
+ * bank distance grows; it only shapes the Jacobian, never the displacement. The built-in water vertex shader
+ * (`SLATE_WATER_GPU_WAVES`) evaluates exactly this from its uniforms; the CPU mesh path (Custom Material water) and
+ * tests call it, so the GPU and CPU surfaces agree to float32 precision.
+ */
+export function evaluateWaterVertex(
+  set: WaterWaveSet, x0: number, z0: number, time: number, spacing: number, scale: number,
+  bank: number, fadeLength: number, gradX: number, gradZ: number, out: Float64Array,
+): void {
+  waterBankGain(bank, fadeLength, vertexGain);
+  evaluateWaterWaves(set, x0, z0, time, spacing, out, scale, vertexGain[0]!, vertexGain[1]! * gradX, vertexGain[1]! * gradZ);
+}
+
 /**
  * Mean horizontal velocity (m/s) added to queried water velocity with Gerstner waves. A fixed point under Gerstner
  * waves sees the orbital velocity average to −q²·scale²·Σ k·A²·ω·d / 2 (upwind), while a support carried along the
