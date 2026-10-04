@@ -132,6 +132,30 @@ describe("Water field", () => {
     } finally { field?.dispose(); scene.dispose(); engine.dispose(); }
   });
 
+  it("follows landscapes added, moved, hidden and removed after the water, and refills nothing on unchanged frames", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    new FreeCamera("camera", new Vector3(0, 30, -30), scene).setTarget(Vector3.Zero());
+    try {
+      const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 30, length: 30 }), createDefaultWaterDefinition());
+      const field = liveField(lake);
+      expect(field.texture).toBeNull();
+      const floor = createLandscapeMesh(scene, "floor", { width: 40, depth: 40, subdivisions: 4, heights: Array(25).fill(-3) });
+      updateSceneWater(scene);
+      expect(texel(fieldOf(lake), 0, 0).depth).toBeCloseTo(3, 0);
+      floor.position.y = -2; floor.computeWorldMatrix(true); updateSceneWater(scene);
+      expect(texel(fieldOf(lake), 0, 0).depth).toBeCloseTo(5, 0);
+      const uploads = [vi.spyOn(engine, "updateRawTexture"), vi.spyOn(engine, "createRawTexture")];
+      for (let frame = 0; frame < 3; frame++) updateSceneWater(scene);
+      for (const upload of uploads) expect(upload).not.toHaveBeenCalled();
+      floor.setEnabled(false); updateSceneWater(scene);
+      expect(field.texture).toBeNull();
+      floor.setEnabled(true); updateSceneWater(scene);
+      expect(texel(fieldOf(lake), 0, 0).depth).toBeCloseTo(5, 0);
+      floor.dispose(); updateSceneWater(scene);
+      expect(field.texture).toBeNull();
+    } finally { scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
+  });
+
   it("keeps a finite body's terrain field while Gerstner waves sway its edges", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     new FreeCamera("camera", new Vector3(0, 30, -30), scene);

@@ -9,7 +9,7 @@ import {
   type Scene,
 } from "@babylonjs/core";
 import { landscapeWorldHeightAt, type LandscapeProperties, type Transform } from "@babylonslate/core";
-import { landscapeMeshData } from "./landscape-mesh";
+import { landscapeMeshData, sceneLandscapeRoots } from "./landscape-mesh";
 
 /**
  * Encoded ranges of the RGBA8 field: R shore distance, G depth over terrain, B the same depth at fine precision
@@ -97,7 +97,13 @@ export class WaterField {
   private width = 0;
   private height = 0;
   private rect: Rect | null = null;
-  private terrainKey = "";
+  /**
+   * What the texture was filled from, as numbers: per enabled landscape its data id and world matrix, then the surface
+   * world matrix, the wave amplitude (which sets the depth encodings) and, for a bounded body, its world X/Z bounds.
+   */
+  private key = new Float64Array(64).fill(NaN);
+  private keyLength = -1;
+  private keyChanged = false;
   private readonly terrainOwner = new WeakMap<object, number>();
   private terrainIds = 0;
 
@@ -132,16 +138,13 @@ export class WaterField {
     return Math.max(WATER_FIELD_FINE_DEPTH_SPAN, 2 * this.surface.amplitude + 4);
   }
 
-  /** Refresh when terrain or the surface changes. Returns true when the texture changed. */
+  /**
+   * Refresh when terrain or the surface changes. Returns true when the texture changed. Called every frame for every
+   * visible water surface, so an unchanged frame compares numbers only: no scene scan, strings or allocation.
+   */
   update(force = false): boolean {
+    if (!this.inputsChanged() && !force) return false;
     const landscapes = this.landscapes();
-    const surfaceBox = this.surface.mesh.getBoundingInfo().boundingBox;
-    const terrainKey = landscapes.map(({ root, data }) => this.idOf(data) + ":" + Array.from(root.getWorldMatrix().m).join(",")).join("|")
-      + "@" + Array.from(this.surface.mesh.getWorldMatrix().m).join(",")
-      + "@" + this.depthRange.join(",") + "," + this.fineDepthMin + "," + this.fineDepthSpan
-      + "@" + (this.surface.unbounded ? "" : [surfaceBox.minimumWorld.x, surfaceBox.minimumWorld.z, surfaceBox.maximumWorld.x, surfaceBox.maximumWorld.z].join(","));
-    if (!force && terrainKey === this.terrainKey) return false;
-    this.terrainKey = terrainKey;
     const rect = this.measure(landscapes);
     if (!rect) { const had = this.texture !== null; this.release(); return had; }
     const resized = !this.rect || rect.minX !== this.rect.minX || rect.minZ !== this.rect.minZ || rect.maxX !== this.rect.maxX || rect.maxZ !== this.rect.maxZ;
@@ -169,12 +172,48 @@ export class WaterField {
 
   private landscapes(): Array<{ root: Mesh; data: LandscapeProperties }> {
     const found: Array<{ root: Mesh; data: LandscapeProperties }> = [];
-    for (const mesh of this.scene.meshes) {
-      if (!(mesh instanceof Mesh) || !(mesh.metadata as { slateLandscape?: boolean } | null)?.slateLandscape || !mesh.isEnabled()) continue;
-      const data = landscapeMeshData(mesh);
-      if (data) found.push({ root: mesh, data });
+    for (const root of sceneLandscapeRoots(this.scene)) {
+      const data = root.isEnabled() ? landscapeMeshData(root) : null;
+      if (data) found.push({ root, data });
     }
     return found;
+  }
+
+  /** Writes the current inputs into `key`; true when any differs from the last call. */
+  private inputsChanged(): boolean {
+    this.keyChanged = false;
+    let n = 0;
+    const roots = sceneLandscapeRoots(this.scene);
+    for (let i = 0; i < roots.length; i++) {
+      const root = roots[i]!;
+      const data = root.isEnabled() ? landscapeMeshData(root) : null;
+      if (!data) continue;
+      n = this.put(n, this.idOf(data));
+      n = this.putMatrix(n, root.getWorldMatrix().m);
+    }
+    n = this.putMatrix(n, this.surface.mesh.getWorldMatrix().m);
+    n = this.put(n, this.surface.amplitude);
+    if (!this.surface.unbounded) {
+      const box = this.surface.mesh.getBoundingInfo().boundingBox;
+      n = this.put(n, box.minimumWorld.x); n = this.put(n, box.minimumWorld.z);
+      n = this.put(n, box.maximumWorld.x); n = this.put(n, box.maximumWorld.z);
+    }
+    if (n !== this.keyLength) { this.keyLength = n; this.keyChanged = true; }
+    return this.keyChanged;
+  }
+
+  private putMatrix(n: number, m: ArrayLike<number>): number {
+    for (let j = 0; j < 16; j++) n = this.put(n, m[j]!);
+    return n;
+  }
+
+  private put(n: number, value: number): number {
+    if (n >= this.key.length) {
+      const grown = new Float64Array(this.key.length * 2).fill(NaN);
+      grown.set(this.key); this.key = grown;
+    }
+    if (this.key[n] !== value) { this.key[n] = value; this.keyChanged = true; }
+    return n + 1;
   }
 
   private measure(landscapes: Array<{ root: Mesh; data: LandscapeProperties }>): Rect | null {
