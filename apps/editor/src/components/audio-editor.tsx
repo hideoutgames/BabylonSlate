@@ -33,7 +33,7 @@ import { BabylonAudioPlaybackBackend } from "@babylonslate/render";
 import { pickImportFiles } from "@babylonslate/vfs";
 import { IconActionButton } from "./icon-action-button";
 import { AudioPreviewWaveform } from "./audio-preview-waveform";
-import { useDocuments } from "../context/document-context";
+import { useDocumentActions, useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { createAudioPreviewSession } from "../lib/audio-preview";
 import { decodeAudioWaveformPeaks } from "../lib/audio-waveform-decode";
@@ -133,7 +133,7 @@ export function AudioPreview({
   payload: Record<string, unknown>;
   onChange?: (next: Record<string, unknown>) => void;
 }) {
-  const { readAssetChunk } = useDocuments();
+  const { readAssetChunk } = useDocumentActions();
   const audio = normalizeAudioPayload(payload);
   const [playing, setPlaying] = useState(false);
   const [waveformPeaks, setWaveformPeaks] = useState<AudioWaveformPeak[]>([]);
@@ -467,7 +467,7 @@ export function AudioClips({
   /** A Weight scrub passes one merge key per clip so it is one undo step. */
   onChange?: (next: Record<string, unknown>, mergeKey?: string) => void;
 }) {
-  const { writeAudioClipChunk, removeAudioClipChunk } = useDocuments();
+  const { writeAudioClipChunk, removeAudioClipChunk } = useDocumentActions();
   const audio = fillEmptySourceClipName(payload, assetName);
   const [busy, setBusy] = useState(false);
   const pendingRef = useRef(false);
