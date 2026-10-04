@@ -62,6 +62,10 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       expect(result.rendered.outline.drawingPassCount, result.name).toBeLessThanOrEqual(4);
       expect(result.rendered.outline.renderRecordCount, result.name).toBeLessThanOrEqual(7);
     }
+    // Edge-on GPU water is only its waves: a real band of pixels whose outline the loop above matched to the material.
+    const water = at("gpu-water-waves").native;
+    expect(water.count).toBeGreaterThan(2_000);
+    expect(water.bounds!.bottom - water.bounds!.top).toBeGreaterThan(8);
     const submeshes = at("multi-material-cutout");
     expect(at("cel-default-material").native.count).toBeGreaterThan(1_000);
     expect(at("cel-native-cutout").native.count).toBeGreaterThan(0);

@@ -1,4 +1,4 @@
-import { Color3, DirectionalLight, HemisphericLight, MaterialPluginBase, Matrix, PBRMaterial, type MaterialDefines, RawTexture, ShaderLanguage, Texture, Vector3, type AbstractMesh, type Scene, type UniformBuffer } from "@babylonjs/core";
+import { Color3, DirectionalLight, HemisphericLight, MaterialPluginBase, Matrix, PBRMaterial, type MaterialDefines, RawTexture, ShaderLanguage, Texture, Vector3, type AbstractMesh, type Effect, type Material, type Scene, type UniformBuffer } from "@babylonjs/core";
 import {
   WATER_CREST_MEAN, WATER_CREST_RANGE, WATER_JACOBIAN_FLOOR, WATER_WAVE_MAX_COMPONENTS, WATER_WAVE_SHADER_STRIDE, waterBankFadeLength, waterWaveComponents,
   waterWaveQ, waterWaveSet, waterWaveShaderConstants, type WaterBodyProperties, type WaterColor, type WaterDefinition,
@@ -549,8 +549,10 @@ if (swCut < 0.0 || (swField.a * swFieldOn > 0.5 && swTerrainDepth <= 0.0)) { dis
  * `worldPos` needs no large-argument trigonometry. Writes the displaced world position (the clip position, fog,
  * shadows and clip planes follow it) and leaves the height and offset for the varyings in `swvH` / `swvD`.
  * GLSL-shaped: `A.` attributes, `U.` uniforms and `O.` outputs are bound per language, then `toWgsl` translates it.
+ * Other passes that draw built-in water with their own vertex shader (the shared outline mask) include the same
+ * displacement through `waterOutlineVertexSource`, without the material's `vPositionW` output.
  */
-function vertexWaveSource(): string {
+function vertexWaveSource(materialOutputs: boolean): string {
   const swell = Array.from({ length: WATER_WAVE_MAX_COMPONENTS }, (_, i) => {
     const code = `
 vec4 swvWD${i} = U.${SWELL_DIRECTION[i]};
@@ -575,8 +577,7 @@ ${swell}
 float swvFade = U.slateWaterSwellInfo.x;
 float swvBankT = clamp(A.slateWaterData.y / max(swvFade, 0.000001), 0.0, 1.0);
 swvD = swvD * mix(1.0, swvBankT * swvBankT * (3.0 - 2.0 * swvBankT), step(0.000001, swvFade));
-worldPos = vec4(worldPos.xyz + vec3(swvD.x, swvH, swvD.y), worldPos.w);
-O.vPositionW = worldPos.xyz;
+worldPos = vec4(worldPos.xyz + vec3(swvD.x, swvH, swvD.y), worldPos.w);${materialOutputs ? "\nO.vPositionW = worldPos.xyz;" : ""}
 #endif
 `;
 }
@@ -596,13 +597,48 @@ O.vSlateWaterFlow = vec4(A.slateWaterFlow.xz, A.slateWaterOffset);
 O.vSlateWaterBaseNormal = A.slateWaterBaseNormal;
 `;
 
+/** Binds the GLSL-shaped `A.` / `U.` / `O.` prefixes for one language. */
+function bindVertexSource(code: string, wgsl: boolean): string {
+  return code.replace(/\bU\./g, wgsl ? "uniforms." : "").replace(/\bA\./g, wgsl ? "vertexInputs." : "").replace(/\bO\./g, wgsl ? "vertexOutputs." : "");
+}
+
 /** Vertex hooks for one language: the GPU swell and the varyings. */
 export function waterVertexSource(language: ShaderLanguage): { worldPosition: string; end: string } {
   const wgsl = language === ShaderLanguage.WGSL;
-  const bind = (code: string) => code.replace(/\bU\./g, wgsl ? "uniforms." : "").replace(/\bA\./g, wgsl ? "vertexInputs." : "").replace(/\bO\./g, wgsl ? "vertexOutputs." : "");
   return wgsl
-    ? { worldPosition: bind(toWgsl(vertexWaveSource())), end: bind(toWgsl(VERTEX_VARYINGS)) }
-    : { worldPosition: bind(vertexWaveSource()), end: bind(VERTEX_VARYINGS) };
+    ? { worldPosition: bindVertexSource(toWgsl(vertexWaveSource(true)), true), end: bindVertexSource(toWgsl(VERTEX_VARYINGS), true) }
+    : { worldPosition: bindVertexSource(vertexWaveSource(true), false), end: bindVertexSource(VERTEX_VARYINGS, false) };
+}
+
+/** Uniforms the vertex swell reads (`WaterMaterialPlugin.bindVertexWaves` sets them on another pass's effect). */
+export const WATER_VERTEX_WAVE_UNIFORMS: readonly string[] = ["slateWaterShape", "slateWaterSwellInfo", ...SWELL_DIRECTION, ...SWELL_AMPLITUDE];
+const CLASSIC_VERTEX_WAVE_DEFINES: readonly string[] = [`#define ${WATER_GPU_WAVES_DEFINE}`];
+const OCEAN_VERTEX_WAVE_DEFINES: readonly string[] = [`#define ${WATER_GPU_WAVES_DEFINE}`, `#define ${WATER_OCEAN_DEFINE}`];
+
+/**
+ * The GPU swell for another pass's vertex shader that computes a `worldPos` vec4 from the same world matrix (the
+ * shared outline mask): declarations of its attribute and uniforms, and the displacement to insert after `worldPos`.
+ * Both compile only under `SLATE_WATER_GPU_WAVES` (and components 5-7 under `SLATE_WATER_OCEAN`), so the pass's other
+ * programs are unchanged.
+ */
+export function waterOutlineVertexSource(language: ShaderLanguage): { declarations: string; displacement: string } {
+  const wgsl = language === ShaderLanguage.WGSL;
+  const uniforms = WATER_VERTEX_WAVE_UNIFORMS.map((name) => (wgsl ? `uniform ${name}: vec4f;` : `uniform vec4 ${name};`)).join("\n");
+  const attribute = wgsl ? "attribute slateWaterData: vec4f;" : "attribute vec4 slateWaterData;";
+  const displacement = vertexWaveSource(false);
+  return {
+    declarations: `\n#ifdef ${WATER_GPU_WAVES_DEFINE}\n${attribute}\n${uniforms}\n#endif\n`,
+    displacement: bindVertexSource(wgsl ? toWgsl(displacement) : displacement, wgsl),
+  };
+}
+
+/**
+ * The plugin of built-in water whose vertex shader displaces this mesh (GPU waves on, rest grid present), or null:
+ * passes that draw the mesh with their own vertex shader add its displacement for exactly these.
+ */
+export function gpuWaterWaves(material: Material | null | undefined, mesh: AbstractMesh): WaterMaterialPlugin | null {
+  const plugin = material?.pluginManager?.getPlugin<WaterMaterialPlugin>("SlateWater");
+  return plugin instanceof WaterMaterialPlugin && plugin.gpuWaves && mesh.isVerticesDataPresent("slateWaterData") ? plugin : null;
 }
 
 /** Translate the restricted GLSL-shaped source above. Only the constructs it uses are supported. */
@@ -787,17 +823,13 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
     // With floating origin, shaders see positions relative to this offset (the eye); patterns must stay world-anchored.
     const origin = scene.floatingOriginMode ? scene.floatingOriginOffset : Vector3.ZeroReadOnly;
     buffer.updateFloat4("slateWaterOrigin", origin.x, origin.y, origin.z, w.roughness);
-    // Swell components relative to the same origin at this frame's simulation time, so eye-relative fragment
-    // positions evaluate small phases; unused slots stay zero.
-    const set = waterWaveSet(w), swell = this.swell;
-    swell.fill(0);
-    waterWaveShaderConstants(set, b.waveScale, origin.x, origin.z, this.time, swell);
+    const swell = this.swellConstants(scene);
     for (let i = 0; i < WATER_WAVE_MAX_COMPONENTS; i++) {
       const o = i * WATER_WAVE_SHADER_STRIDE;
       buffer.updateFloat4(SWELL_DIRECTION[i]!, swell[o]!, swell[o + 1]!, swell[o + 2]!, swell[o + 3]!);
       buffer.updateFloat4(SWELL_AMPLITUDE[i]!, swell[o + 4]!, swell[o + 5]!, swell[o + 6]!, swell[o + 7]!);
     }
-    buffer.updateFloat4("slateWaterSwellInfo", b.kind === "global" ? 0 : waterBankFadeLength(w, b.waveScale), waterWaveQ(set, b.waveScale) > 0 ? 1 : 0, 0, 0);
+    buffer.updateFloat4("slateWaterSwellInfo", this.bankFade(), waterWaveQ(waterWaveSet(w), b.waveScale) > 0 ? 1 : 0, 0, 0);
     buffer.updateFloat4("slateWaterShape", w.choppiness, w.waveSpread, w.crestFoam, w.contactFoamWidth);
     const field = this.field?.texture ? this.field : null;
     const bounds = field?.bounds ?? [0, 0, 1, 1];
@@ -829,6 +861,32 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
       entry.inverse ??= entry.mesh.getWorldMatrix().clone().invert();
       buffer.updateMatrix(`slateWaterRemoval${i}`, entry.inverse);
     }
+  }
+  /**
+   * Swell components relative to the floating origin at this frame's simulation time, so eye-relative positions
+   * evaluate small phases; unused slots stay zero. Allocation-free.
+   */
+  private swellConstants(scene: Scene): Float32Array {
+    const origin = scene.floatingOriginMode ? scene.floatingOriginOffset : Vector3.ZeroReadOnly;
+    this.swell.fill(0);
+    waterWaveShaderConstants(waterWaveSet(this.water), this.body.waveScale, origin.x, origin.z, this.time, this.swell);
+    return this.swell;
+  }
+  private bankFade(): number { return this.body.kind === "global" ? 0 : waterBankFadeLength(this.water, this.body.waveScale); }
+  /** Defines another pass's program needs for `waterOutlineVertexSource` to match this material's vertex shader. */
+  vertexWaveDefines(): readonly string[] {
+    return waterWaveSet(this.water).count > waterWaveComponents.length ? OCEAN_VERTEX_WAVE_DEFINES : CLASSIC_VERTEX_WAVE_DEFINES;
+  }
+  /** Sets `WATER_VERTEX_WAVE_UNIFORMS` on another pass's effect for this frame, as `hardBindForSubMesh` does. */
+  bindVertexWaves(effect: Effect, scene: Scene): void {
+    const swell = this.swellConstants(scene);
+    for (let i = 0; i < WATER_WAVE_MAX_COMPONENTS; i++) {
+      const o = i * WATER_WAVE_SHADER_STRIDE;
+      effect.setFloat4(SWELL_DIRECTION[i]!, swell[o]!, swell[o + 1]!, swell[o + 2]!, swell[o + 3]!);
+      effect.setFloat4(SWELL_AMPLITUDE[i]!, swell[o + 4]!, swell[o + 5]!, swell[o + 6]!, swell[o + 7]!);
+    }
+    effect.setFloat4("slateWaterSwellInfo", this.bankFade(), 0, 0, 0);
+    effect.setFloat4("slateWaterShape", this.water.choppiness, 0, 0, 0);
   }
   override getCustomCode(shaderType: string, language = ShaderLanguage.GLSL): Record<string, string> | null {
     const wgsl = language === ShaderLanguage.WGSL;

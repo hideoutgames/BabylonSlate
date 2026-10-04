@@ -5,7 +5,10 @@ import {
   Skeleton, StandardMaterial, Texture, Vector3, VertexBuffer, FreeCamera,
 } from "@babylonjs/core";
 import "@babylonjs/core/Meshes/thinInstanceMesh";
-import { compileMaterialPlan, createAppWebGpuEngine, requestRenderPath, setSceneRenderSettings, SharedOutlineOwner } from "@babylonslate/render";
+import { createDefaultWaterDefinition, normalizeWaterBody } from "@babylonslate/core";
+import {
+  compileMaterialPlan, createAppWebGpuEngine, createWaterMesh, requestRenderPath, setSceneRenderSettings, setSceneWaterTime, SharedOutlineOwner,
+} from "@babylonslate/render";
 import { SceneRenderCoordinator } from "@babylonslate/render/scene-render-coordinator";
 import { managedRenderReservations } from "@babylonslate/render/managed-render-resources";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@babylonslate/shader-graph";
@@ -325,6 +328,16 @@ export async function runSharedOutlineGeometryProof(backend: "webgl2" | "webgpu"
     await pair("skeleton-rest", [contribution([skinned])]);
     bone.setPosition(new Vector3(-0.9, 0, 0));
     await pair("skeleton-pose", [contribution([skinned])]);
+    clear();
+
+    // Built-in water displaces a flat rest grid in its vertex shader. Seen edge-on, its whole silhouette is the waves,
+    // so a mask that drew the rest grid would cover nothing and leave every wave edge without an outline.
+    setSceneWaterTime(scene, 2.3);
+    const sea = createWaterMesh(scene, "GPU Water", normalizeWaterBody({ width: 8, length: 1.2, resolution: 128 }, "ocean"), {
+      ...createDefaultWaterDefinition("stylized"), opacity: 1, foamAmount: 0, crestFoam: 0, surfaceFoam: 0, sparkles: 0,
+      waveHeight: 0.5, waveLength: 2.2, steepness: 0.6,
+    });
+    await pair("gpu-water-waves", [contribution([sea])]);
     clear();
 
     const doc = createDefaultMaterialDocument(); doc.shadingModel = "unlit"; doc.blendMode = "masked"; doc.alphaCutoff = 0.5;
