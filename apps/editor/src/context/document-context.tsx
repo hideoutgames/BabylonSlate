@@ -286,6 +286,11 @@ import {
 import { animClipCatalogFromAssets } from "../lib/anim-clip-catalog";
 import { loadPlayParticleLibrary } from "../lib/play-particles";
 import {
+  renderProfile,
+  resetRenderProfile,
+  type RenderProfile,
+} from "../lib/render-profile";
+import {
   materializeMaterialInstances,
   normalizeMaterialDocument,
   normalizeMaterialFunctionDocument,
@@ -3839,6 +3844,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           error?: string;
         } | null;
         dirtyDocuments: () => { kind: string; id: string }[];
+        /** Per-region React commits since the last reset (editor-edit profiling builds). */
+        renderProfile: () => RenderProfile;
+        resetRenderProfile: () => void;
         /** Texture alignment passes run and queued, and the Textures they requeued. */
         textureAlignment: () => { runs: number; pending: number; requeued: string[] };
         textureEncodeState: (path: string) => {
@@ -4098,6 +4106,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       clearDocumentDirtyTrace,
       saveAllProgress,
       saveAllTrace,
+      renderProfile,
+      resetRenderProfile,
       dirtyDocuments: () => [
         ...documentService.getDirtyDocuments().map((doc) => ({
           kind: doc.ref.kind,

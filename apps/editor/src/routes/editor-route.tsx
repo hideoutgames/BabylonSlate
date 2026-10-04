@@ -35,6 +35,7 @@ import { EditorExtensionsRuntime } from "../components/editor-extensions-runtime
 import { ModelThumbnailCaptureHost } from "../components/model-thumbnail-capture-host";
 import { TestAudioHostStats } from "../lib/test-audio-host-stats";
 import { TestParticleHostStats } from "../lib/test-particle-host-stats";
+import { profileRegion } from "../lib/render-profile";
 import {
   shouldPromptBeforeUnload,
   tabCloseDecision,
@@ -290,17 +291,20 @@ function EditorLayout() {
 
   return (
     <div className="safe-frame flex h-full min-h-0 flex-col overflow-clip bg-background text-foreground">
-      <EditorChromeBar
-        onCloseProject={() => void requestClose()}
-        onSaveProject={requestSave}
-        onCloseDocument={requestCloseDocument}
-        onCloseAllDocuments={requestCloseAllDocuments}
-      />
+      {profileRegion(
+        "editor-chrome-bar",
+        <EditorChromeBar
+          onCloseProject={() => void requestClose()}
+          onSaveProject={requestSave}
+          onCloseDocument={requestCloseDocument}
+          onCloseAllDocuments={requestCloseAllDocuments}
+        />,
+      )}
       <RecoveryBanner />
       <main className="flex min-h-0 flex-1 flex-col">
-        <DocumentWorkspace />
+        {profileRegion("document-workspace", <DocumentWorkspace />)}
       </main>
-      <EditorStatusBar />
+      {profileRegion("editor-status-bar", <EditorStatusBar />)}
       <DirtyCloseDialog
         saving={savingBeforeClose}
         dirtyNames={promptNames}
@@ -421,7 +425,8 @@ export default function EditorRoute({
 }) {
   // Homepage is the only way into a project and closing one returns there,
   // so this route (and the session view state it owns) mounts once per project.
-  return (
+  return profileRegion(
+    "editor-route",
     <ProjectSessionState>
       <AssetOpenDocumentsProvider>
         <AssetCreateDocumentsProvider>
@@ -435,7 +440,9 @@ export default function EditorRoute({
                 <ModelThumbnailCaptureHost />
                 <ProjectSearchProvider>
                   <PlayAwareKeybinds>
-                    {gallery ? <ComponentGallery /> : <EditorLayout />}
+                    {gallery
+                      ? <ComponentGallery />
+                      : profileRegion("editor-layout", <EditorLayout />)}
                   </PlayAwareKeybinds>
                 </ProjectSearchProvider>
               </MaterialRenderControlProvider>
@@ -443,6 +450,6 @@ export default function EditorRoute({
           </ValidationProvider>
         </AssetCreateDocumentsProvider>
       </AssetOpenDocumentsProvider>
-    </ProjectSessionState>
+    </ProjectSessionState>,
   );
 }
