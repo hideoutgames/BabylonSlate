@@ -1,4 +1,4 @@
-import { ArcRotateCamera, Matrix, Mesh, PBRMaterial, Vector3, VertexBuffer, VertexData, type Material, type Scene, type SubMesh } from "@babylonjs/core";
+import { ArcRotateCamera, Matrix, Mesh, PBRMaterial, Vector3, VertexBuffer, VertexData, type AbstractMesh, type Material, type Scene, type SubMesh } from "@babylonjs/core";
 import {
   createDefaultWaterDefinition, createWaterWaveOutput, evaluateWaterWaves, normalizeWaterBody, normalizeWaterDefinition, waterBankFadeLength,
   waterBankGain, waterEulerianGradient, waterFootprint, waterHorizontalEnvelope, waterRiverCentreline, waterWaveEnvelope, waterWaveQ, waterWaveSet,
@@ -26,7 +26,9 @@ type Surface = {
   boundedSubMeshes: number; boundedFirst: SubMesh | null;
 };
 const surfaces = new WeakMap<Scene, Set<Surface>>();
-const surfaceByMesh = new WeakMap<Mesh, Surface>();
+const surfaceByMesh = new WeakMap<AbstractMesh, Surface>();
+/** Live built-in (WaterMaterialPlugin) surfaces per Scene, so presence checks stay O(1) per frame. */
+const builtInCounts = new WeakMap<Scene, number>();
 const clocks = new WeakMap<Scene, { time: number; runtime: boolean }>();
 const reflections = new WeakMap<Scene, WaterReflection>();
 
@@ -329,6 +331,22 @@ function waterSurfaceY(s: Surface, x: number, z: number, beyond = false): number
 /** Rivers and volumes tilted out of the horizontal have a rest height that varies across the body. */
 const restVaries = (s: Surface) => s.body.kind === "river" || Math.abs(s.world.m[1]!) > 1e-9 || Math.abs(s.world.m[9]!) > 1e-9;
 
+/** Live water surfaces in `scene` shaded by the built-in material (a custom material has no WaterMaterialPlugin). */
+export function sceneBuiltInWaterCount(scene: Scene): number {
+  return builtInCounts.get(scene) ?? 0;
+}
+
+/**
+ * Whether `mesh` is built-in water whose asset can sample the view's scene copy: Refraction above zero while
+ * refraction runs, or Object Reflections while a screen-space march runs. A per-frame check: no allocation.
+ */
+export function waterMeshSamplesSceneCopy(mesh: AbstractMesh, refraction: boolean, screenSpace: boolean): boolean {
+  if ((mesh.metadata as { slateWater?: unknown } | null)?.slateWater !== true) return false;
+  const surface = surfaceByMesh.get(mesh);
+  if (!surface?.plugin) return false;
+  return (refraction && surface.water.refraction > 0) || (screenSpace && surface.water.objectReflections);
+}
+
 /** The live body of a built water mesh, or null for other meshes. */
 export function waterMeshBody(mesh: Mesh): Readonly<WaterBodyProperties> | null {
   return surfaceByMesh.get(mesh)?.body ?? null;
@@ -382,7 +400,11 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
   }
   entries.add(surface);
   surfaceByMesh.set(mesh, surface);
-  mesh.onDisposeObservable.addOnce(() => entries.delete(surface));
+  if (plugin) builtInCounts.set(scene, (builtInCounts.get(scene) ?? 0) + 1);
+  mesh.onDisposeObservable.addOnce(() => {
+    entries.delete(surface);
+    if (plugin) builtInCounts.set(scene, Math.max(0, (builtInCounts.get(scene) ?? 1) - 1));
+  });
   updateSurface(surface, clocks.get(scene)?.time ?? 0);
   if (plugin) {
     const fieldSurface: WaterFieldSurface = {
