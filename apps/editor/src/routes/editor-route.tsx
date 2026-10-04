@@ -21,7 +21,10 @@ import { EditorChromeBar } from "../components/editor-chrome-bar";
 import { EditorStatusBar } from "../components/editor-status-bar";
 import { DocumentWorkspace } from "../components/document-workspace";
 import { ExternalChangeDialogs } from "../components/external-change-dialogs";
-import { useDocuments } from "../context/document-context";
+import {
+  useDocumentActions,
+  useDocuments,
+} from "../context/document-context";
 import { AssetOpenDocumentsProvider } from "../context/asset-open-provider";
 import { AssetCreateDocumentsProvider } from "../context/asset-create-provider";
 import { EditorSessionStateProvider } from "../context/editor-session-state-context";
@@ -174,25 +177,32 @@ function RecoveryBanner() {
   );
 }
 
-function EditorLayout() {
+/**
+ * The chrome bar and the prompts its requests open: unsaved documents,
+ * migrate-on-save and external changes. It subscribes to the dirty lists
+ * those prompts show, so EditorLayout and the workspace beside it do not
+ * re-render on every edit. Request handlers read open documents when they run.
+ */
+function EditorChromeAndPrompts() {
+  const {
+    dirtyDocuments,
+    migrationPending,
+    pendingExclusiveScene,
+    externalChangePrompt,
+  } = useDocuments();
   const {
     closeProject,
     forceCloseProject,
     saveAll,
-    dirtyDocuments,
-    projectDirty,
-    migrationPending,
-    pendingExclusiveScene,
     confirmExclusiveSceneOpen,
     cancelExclusiveSceneOpen,
     approveMigrationsAndSave,
     closeDocument,
-    openDocuments,
-    externalChangePrompt,
+    getOpenDocuments,
     confirmExternalChangeReloadProject,
     confirmExternalChangeReloadDocs,
     dismissExternalChange,
-  } = useDocuments();
+  } = useDocumentActions();
   const {
     playAwaitingMigration,
     resumePlayAfterMigration,
@@ -201,8 +211,6 @@ function EditorLayout() {
   const [dirtyPrompt, setDirtyPrompt] = useState<string[] | null>(null);
   const closeRequest = useRef(0);
   const [savingBeforeClose, setSavingBeforeClose] = useState(false);
-  const openDocumentsRef = useRef(openDocuments);
-  openDocumentsRef.current = openDocuments;
   const [showMigrate, setShowMigrate] = useState(false);
   const [pendingTabClose, setPendingTabClose] = useState<
     | {
@@ -216,21 +224,6 @@ function EditorLayout() {
   useEffect(() => {
     if (playAwaitingMigration) setShowMigrate(true);
   }, [playAwaitingMigration]);
-
-  useEffect(() => {
-    const onBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (
-        !shouldPromptBeforeUnload(
-          dirtyDocuments.length + Number(Boolean(projectDirty)),
-        )
-      )
-        return;
-      event.preventDefault();
-      event.returnValue = "";
-    };
-    window.addEventListener("beforeunload", onBeforeUnload);
-    return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [dirtyDocuments.length, projectDirty]);
 
   const requestClose = async () => {
     const result = await closeProject();
@@ -253,7 +246,7 @@ function EditorLayout() {
 
   const requestCloseDocument = (id: string) => {
     closeRequest.current += 1;
-    const doc = openDocuments.find((entry) => entry.id === id);
+    const doc = getOpenDocuments().find((entry) => entry.id === id);
     if (!doc) return;
     if (tabCloseDecision(doc.dirty) === "prompt") {
       setPendingTabClose([
@@ -266,7 +259,7 @@ function EditorLayout() {
 
   const requestCloseAllDocuments = () => {
     closeRequest.current += 1;
-    const tabs = openDocuments.filter((doc) => doc.id !== CONTENT_BROWSER_ID);
+    const tabs = getOpenDocuments().filter((doc) => doc.id !== CONTENT_BROWSER_ID);
     if (tabs.some((doc) => doc.dirty)) {
       setPendingTabClose(
         tabs.map((doc) => ({
@@ -289,18 +282,13 @@ function EditorLayout() {
   };
 
   return (
-    <div className="safe-frame flex h-full min-h-0 flex-col overflow-clip bg-background text-foreground">
+    <>
       <EditorChromeBar
         onCloseProject={() => void requestClose()}
         onSaveProject={requestSave}
         onCloseDocument={requestCloseDocument}
         onCloseAllDocuments={requestCloseAllDocuments}
       />
-      <RecoveryBanner />
-      <main className="flex min-h-0 flex-1 flex-col">
-        <DocumentWorkspace />
-      </main>
-      <EditorStatusBar />
       <DirtyCloseDialog
         saving={savingBeforeClose}
         dirtyNames={promptNames}
@@ -342,7 +330,7 @@ function EditorLayout() {
               const saved = await requestSave();
               if (request !== closeRequest.current || !saved) return;
               if (pendingTabClose) {
-                const tabs = openDocumentsRef.current.filter((doc) => pendingTabClose.some((tab) => tab.id === doc.id));
+                const tabs = getOpenDocuments().filter((doc) => pendingTabClose.some((tab) => tab.id === doc.id));
                 // A successful write can leave newer edits dirty. Keep the
                 // request open until those edits are saved or discarded.
                 if (tabs.some((doc) => doc.dirty)) {
@@ -386,9 +374,46 @@ function EditorLayout() {
         onKeepEdits={dismissExternalChange}
         onDismiss={dismissExternalChange}
       />
-      <span className="sr-only" data-testid="dirty-count">
-        {dirtyDocuments.length + Number(Boolean(projectDirty))}
-      </span>
+    </>
+  );
+}
+
+/** Browser leave protection and the dirty count while anything is unsaved. */
+function UnsavedChangesGuard() {
+  const { dirtyDocuments, projectDirty } = useDocuments();
+  const unsaved = dirtyDocuments.length + Number(Boolean(projectDirty));
+
+  useEffect(() => {
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!shouldPromptBeforeUnload(unsaved)) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [unsaved]);
+
+  return (
+    <span className="sr-only" data-testid="dirty-count">
+      {unsaved}
+    </span>
+  );
+}
+
+/**
+ * Subscribes to no document state: edits re-render only the children that
+ * read documents themselves, not this frame or the workspace mount.
+ */
+function EditorLayout() {
+  return (
+    <div className="safe-frame flex h-full min-h-0 flex-col overflow-clip bg-background text-foreground">
+      <EditorChromeAndPrompts />
+      <RecoveryBanner />
+      <main className="flex min-h-0 flex-1 flex-col">
+        <DocumentWorkspace />
+      </main>
+      <EditorStatusBar />
+      <UnsavedChangesGuard />
     </div>
   );
 }
@@ -398,31 +423,19 @@ function PlayAwareKeybinds({ children }: { children: ReactNode }) {
   return <KeybindProvider suspended={playing}>{children}</KeybindProvider>;
 }
 
-/**
- * Reads the document identity feed here rather than in EditorRoute: a
- * document change re-renders only this wrapper, and its unchanged `children`
- * keep the rest of the editor from re-rendering with it.
- */
-function ProjectSessionState({ children }: { children: ReactNode }) {
-  const { subscribeDocumentIdentity } = useDocuments();
-  return (
-    <EditorSessionStateProvider
-      subscribeDocumentIdentity={subscribeDocumentIdentity}
-    >
-      {children}
-    </EditorSessionStateProvider>
-  );
-}
-
 export default function EditorRoute({
   gallery = false,
 }: {
   gallery?: boolean;
 }) {
+  // A stable action: document edits do not re-render this route.
+  const { subscribeDocumentIdentity } = useDocumentActions();
   // Homepage is the only way into a project and closing one returns there,
   // so this route (and the session view state it owns) mounts once per project.
   return (
-    <ProjectSessionState>
+    <EditorSessionStateProvider
+      subscribeDocumentIdentity={subscribeDocumentIdentity}
+    >
       <AssetOpenDocumentsProvider>
         <AssetCreateDocumentsProvider>
           <ValidationProvider>
@@ -443,6 +456,6 @@ export default function EditorRoute({
           </ValidationProvider>
         </AssetCreateDocumentsProvider>
       </AssetOpenDocumentsProvider>
-    </ProjectSessionState>
+    </EditorSessionStateProvider>
   );
 }

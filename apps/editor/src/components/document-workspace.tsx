@@ -2,8 +2,8 @@ import { InputAssetEditingProvider } from "../context/input-asset-editing-contex
 import { SceneToolsProvider } from "../context/scene-tools-context";
 import { CONTENT_BROWSER_ID, isAssetDocumentKind, isSceneWorkspaceKind, type SerializedScene } from "@babylonslate/core";
 import type { DockviewApi } from "dockview-react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
-import { useDocuments } from "../context/document-context";
+import { useCallback, useEffect, useLayoutEffect, useMemo } from "react";
+import { useDocumentActions, useDocuments } from "../context/document-context";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
 import { useProjectSearch } from "../context/project-search-context";
 import {
@@ -86,8 +86,9 @@ function RegisteredDockviewShell({
   sceneMode?: SceneMode;
   surface?: import("../shell/dockview-surface").DockviewSurface;
 }) {
-  const { registerDockviewApi, unregisterDockviewApi, captureLayoutForId, sourceControl } =
-    useDocuments();
+  const { sourceControl } = useDocuments();
+  const { registerDockviewApi, unregisterDockviewApi, captureLayoutForId } =
+    useDocumentActions();
   const onReady = useCallback(
     (api: DockviewApi) => {
       registerDockviewApi(id, api, surface);
@@ -95,19 +96,14 @@ function RegisteredDockviewShell({
     [id, registerDockviewApi, surface],
   );
   // Dockview reports its API only once per mount, so only unmount may release
-  // it. Context callbacks change identity with provider state (Animation Graph
-  // modes), so read them through refs instead of re-running this cleanup.
-  const captureLayoutRef = useRef(captureLayoutForId);
-  captureLayoutRef.current = captureLayoutForId;
-  const unregisterRef = useRef(unregisterDockviewApi);
-  unregisterRef.current = unregisterDockviewApi;
-
+  // it. The document actions keep their identity across edits and Animation
+  // Graph mode changes, so this cleanup runs only on unmount.
   useLayoutEffect(() => {
     return () => {
-      captureLayoutRef.current(id);
-      unregisterRef.current(id, surface);
+      captureLayoutForId(id);
+      unregisterDockviewApi(id, surface);
     };
-  }, [id, surface]);
+  }, [captureLayoutForId, id, surface, unregisterDockviewApi]);
 
   return (
     <DockviewShell

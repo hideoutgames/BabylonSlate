@@ -29,7 +29,7 @@ import {
   shouldCompressTexture,
   type AreaEmissionProgress,
 } from "@babylonslate/assets";
-import { useDocuments } from "../context/document-context";
+import { useDocumentActions, useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import {
   applyTextureCompressionQualityChange,
@@ -136,7 +136,7 @@ export function TexturePreview({
   path: string;
   payload: Record<string, unknown>;
 }) {
-  const { readAssetChunk } = useDocuments();
+  const { readAssetChunk } = useDocumentActions();
   const environment = isEnvironmentTexturePayload(payload);
   const [url, setUrl] = useState<string | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "missing">("loading");
