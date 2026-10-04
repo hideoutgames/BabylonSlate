@@ -17,6 +17,7 @@ describe("SceneLayer joystick", () => {
     const compositor = new SceneLayerCompositor({ engine });
     const layer = compositor.create({ type: "sceneLayerCreate", layerId: "controls", assetGuid: "controls", zOrder: 0, ownerSceneGuid: null, postProcessStack: [] });
     const binding = createSnapshotSceneBinding();
+    binding.liveSlots.add(1);
     const command: AssignMeshCommand = {
       type: "assignMesh", slotId: 1, actorGuid: "stick", sceneLayerId: "controls", meshKind: "2djoystick", meshAssetGuid: null, hitTest: "block",
       parts: [{ componentId: "joystick", meshKind: "2djoystick", meshAssetGuid: null, parentId: null,
