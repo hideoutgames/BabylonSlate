@@ -259,7 +259,8 @@ export async function runWaterRenderingProof(backend: "webgl2" | "webgpu") {
       // Long, tall swell lifts the water around the spire almost uniformly: its foam ring must follow
       // the rendered height inward at a crest and outward in a trough, without rebuilding contacts.
       place("spire");
-      const swell = { ...water, waveHeight: 1.2, waveLength: 100, choppiness: 0, crestFoam: 0 };
+      // Vertical-only swell (Steepness 0) isolates the waterline's height response.
+      const swell = { ...water, waveHeight: 1.2, waveLength: 100, choppiness: 0, steepness: 0, crestFoam: 0 };
       const heights = Array.from({ length: 80 }, (_, i) => ({ time: i * 0.25, height: sampleWaterSurface(swell, body, { x: 0, y: 0, z: 0 }, i * 0.25).height }));
       const high = heights.reduce((a, b) => a.height > b.height ? a : b), low = heights.reduce((a, b) => a.height < b.height ? a : b);
       const rising = createWaterMesh(scene, "contact-swell", body, swell);
@@ -306,7 +307,7 @@ export async function runWaterRenderingProof(backend: "webgl2" | "webgpu") {
     const terrain = createLandscapeMesh(scene, "wave-floor", { width: 20, depth: 20, subdivisions: 8, heights: Array(81).fill(0.6) });
     for (const mesh of terrain.getChildMeshes()) mesh.isVisible = false;
     const empty = await capture();
-    const definition = { ...createDefaultWaterDefinition("stylized"), waveHeight: 4, waveLength: 100, choppiness: 0,
+    const definition = { ...createDefaultWaterDefinition("stylized"), waveHeight: 4, waveLength: 100, choppiness: 0, steepness: 0,
       foamAmount: 0, sparkles: 0, reflectionStrength: 0, opacity: 1 };
     const body = normalizeWaterBody({ width: 20, length: 20 }, "ocean");
     const samples = Array.from({ length: 80 }, (_, i) => ({ time: i * 0.25,
