@@ -26,6 +26,12 @@ const TELEPORT_MINIMUM_DISTANCE = 1;
 const TELEPORT_MOTION_RATIO = 4;
 /** Seconds for remembered anchor motion to decay to 1/e. */
 const TELEPORT_MOTION_DECAY = 0.25;
+/**
+ * Constraint passes that restore segment lengths after `carry`. A carried
+ * cable pulled taut needs several Gauss–Seidel passes to straighten; any
+ * correction left over would become velocity and overshoot.
+ */
+const CARRY_RELAX_PASSES = 8;
 
 /**
  * Engine-neutral fixed-step Verlet cable. Long-range tethers bound every free
@@ -61,6 +67,8 @@ export class CableSimulation {
   private headRight = 0.5;
   private tailLeft = 0.5;
   private tailRight = 0.5;
+  /** Per-particle velocity kept across `carry`; allocated on first use. */
+  private carried: Float32Array | null = null;
 
   constructor(properties: CableProperties, start: readonly number[], end: readonly number[]) {
     this.properties = parseCableProperties(properties);
@@ -178,6 +186,67 @@ export class CableSimulation {
   }
 
   /**
+   * Move the attached ends to `start` / `end` and carry the cable with them,
+   * for discrete edits such as a typed Location or an undo, which would whip
+   * the cable if `update` turned the jump into velocity. Each particle shifts
+   * by its blend of the two end moves (the whole cable follows a single
+   * attached end), previous positions alike, then the segment constraints are
+   * satisfied without changing any particle's velocity, and the cable settles
+   * gently from its carried shape. A move beyond the teleport distance
+   * re-poses the rest shape, as `update` would. Returns whether positions
+   * changed.
+   */
+  carry(start: readonly number[], end: readonly number[]): boolean {
+    const props = this.properties;
+    if (!props.enabled) return false;
+    this.startFrom.set(this.start);
+    this.endFrom.set(this.end);
+    const startMoved = readAnchor(start, this.start) && props.attachStart;
+    const endMoved = readAnchor(end, this.end) && props.attachEnd;
+    if (!startMoved && !endMoved) return false;
+    this.wake();
+    // Not yet posed with a known acceleration: the next update poses it.
+    if (this.restPending) return true;
+    const moved = Math.sqrt(Math.max(
+      startMoved ? distanceSquared(this.start, this.startFrom) : 0,
+      endMoved ? distanceSquared(this.end, this.endFrom) : 0,
+    ));
+    if (moved > Math.max(props.cableLength * TELEPORT_LENGTH_FRACTION, TELEPORT_MINIMUM_DISTANCE)) {
+      this.writeRestShape();
+      this.anchorMotion = 0;
+      return true;
+    }
+    let sx = 0, sy = 0, sz = 0, ex = 0, ey = 0, ez = 0;
+    if (props.attachStart) {
+      sx = this.start[0]! - this.startFrom[0]!; sy = this.start[1]! - this.startFrom[1]!; sz = this.start[2]! - this.startFrom[2]!;
+    }
+    if (props.attachEnd) {
+      ex = this.end[0]! - this.endFrom[0]!; ey = this.end[1]! - this.endFrom[1]!; ez = this.end[2]! - this.endFrom[2]!;
+    }
+    if (!props.attachStart) { sx = ex; sy = ey; sz = ez; }
+    if (!props.attachEnd) { ex = sx; ey = sy; ez = sz; }
+    const current = this.current, previous = this.previous;
+    const segments = props.numSegments;
+    for (let particle = 0; particle <= segments; particle++) {
+      const t = particle / segments, offset = particle * 3;
+      const dx = sx + (ex - sx) * t, dy = sy + (ey - sy) * t, dz = sz + (ez - sz) * t;
+      current[offset] += dx; current[offset + 1] += dy; current[offset + 2] += dz;
+      previous[offset] += dx; previous[offset + 1] += dy; previous[offset + 2] += dz;
+    }
+    this.pinAnchors(1);
+    if (!this.carried || this.carried.length !== current.length) this.carried = new Float32Array(current.length);
+    const velocity = this.carried;
+    for (let index = 0; index < current.length; index++) velocity[index] = current[index]! - previous[index]!;
+    // The carried shape is slightly sheared. Restore segment lengths as a
+    // position change only, so the correction does not launch the cable.
+    for (let pass = 0; pass < CARRY_RELAX_PASSES; pass++) this.constrain();
+    for (let index = 0; index < current.length; index++) previous[index] = current[index]! - velocity[index]!;
+    this.startFrom.set(this.start);
+    this.endFrom.set(this.end);
+    return true;
+  }
+
+  /**
    * Write positions blended between the last two substeps by `stepAlpha`, so a
    * display refreshing faster than the substep sees continuous motion.
    * Attached ends are written exactly at their current anchors.
@@ -277,7 +346,6 @@ export class CableSimulation {
     const props = this.properties;
     const current = this.current;
     const previous = this.previous;
-    const segments = props.numSegments;
     const firstOffset = this.firstFree * 3;
     const lastOffset = this.lastFree * 3;
     const velocityScale = this.velocityScale;
@@ -294,34 +362,7 @@ export class CableSimulation {
       previous[offset + 2] = z;
     }
 
-    // An overstretched pair of pins has no solution at the authored length.
-    // Stretch to their separation instead of accumulating impossible tension.
-    let segmentLength = props.cableLength / segments;
-    const endOffset = segments * 3;
-    if (props.attachStart && props.attachEnd) {
-      const dx = current[endOffset]! - current[0]!;
-      const dy = current[endOffset + 1]! - current[1]!;
-      const dz = current[endOffset + 2]! - current[2]!;
-      const separation = Math.sqrt(dx * dx + dy * dy + dz * dz);
-      if (separation > props.cableLength) segmentLength = separation / segments;
-    }
-    // Long-range attachment tethers: particle i may be at most i segments from
-    // the start pin (and n - i from the end pin). One projection before the
-    // distance sweeps bounds total stretch under brisk motion, independently
-    // of the segment count; the sweeps then smooth the projected particles.
-    if (props.attachStart || props.attachEnd) this.tether(segmentLength);
-    for (let iteration = 0; iteration < props.solverIterations; iteration++) {
-      if (props.enableStiffness) this.relaxBending(segmentLength * 2);
-      if ((iteration & 1) === 0) {
-        relax(current, 0, 3, segmentLength, this.headLeft, this.headRight);
-        for (let offset = 3; offset < endOffset - 3; offset += 3) relax(current, offset, offset + 3, segmentLength, 0.5, 0.5);
-        if (segments > 1) relax(current, endOffset - 3, endOffset, segmentLength, this.tailLeft, this.tailRight);
-      } else {
-        if (segments > 1) relax(current, endOffset - 3, endOffset, segmentLength, this.tailLeft, this.tailRight);
-        for (let offset = endOffset - 6; offset >= 3; offset -= 3) relax(current, offset, offset + 3, segmentLength, 0.5, 0.5);
-        relax(current, 0, 3, segmentLength, this.headLeft, this.headRight);
-      }
-    }
+    this.constrain();
 
     // Only a cable that actually collides stays awake for moving obstacles.
     // Editor cables step without a callback and sleep like any other cable.
@@ -349,6 +390,41 @@ export class CableSimulation {
           previous.set(current);
         }
       } else this.quietTime = 0;
+    }
+  }
+
+  /** Tethers, then the distance (and optional bending) sweeps, on `current` only. */
+  private constrain(): void {
+    const props = this.properties;
+    const current = this.current;
+    const segments = props.numSegments;
+    // An overstretched pair of pins has no solution at the authored length.
+    // Stretch to their separation instead of accumulating impossible tension.
+    let segmentLength = props.cableLength / segments;
+    const endOffset = segments * 3;
+    if (props.attachStart && props.attachEnd) {
+      const dx = current[endOffset]! - current[0]!;
+      const dy = current[endOffset + 1]! - current[1]!;
+      const dz = current[endOffset + 2]! - current[2]!;
+      const separation = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (separation > props.cableLength) segmentLength = separation / segments;
+    }
+    // Long-range attachment tethers: particle i may be at most i segments from
+    // the start pin (and n - i from the end pin). One projection before the
+    // distance sweeps bounds total stretch under brisk motion, independently
+    // of the segment count; the sweeps then smooth the projected particles.
+    if (props.attachStart || props.attachEnd) this.tether(segmentLength);
+    for (let iteration = 0; iteration < props.solverIterations; iteration++) {
+      if (props.enableStiffness) this.relaxBending(segmentLength * 2);
+      if ((iteration & 1) === 0) {
+        relax(current, 0, 3, segmentLength, this.headLeft, this.headRight);
+        for (let offset = 3; offset < endOffset - 3; offset += 3) relax(current, offset, offset + 3, segmentLength, 0.5, 0.5);
+        if (segments > 1) relax(current, endOffset - 3, endOffset, segmentLength, this.tailLeft, this.tailRight);
+      } else {
+        if (segments > 1) relax(current, endOffset - 3, endOffset, segmentLength, this.tailLeft, this.tailRight);
+        for (let offset = endOffset - 6; offset >= 3; offset -= 3) relax(current, offset, offset + 3, segmentLength, 0.5, 0.5);
+        relax(current, 0, 3, segmentLength, this.headLeft, this.headRight);
+      }
     }
   }
 

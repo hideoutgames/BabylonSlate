@@ -419,6 +419,11 @@ type EditorCable = {
   gravity: [number, number, number];
   startFlag: number;
   endFlag: number;
+  /** Anchors from the previous frame, to tell a discrete jump from a drag. */
+  lastStart: [number, number, number];
+  lastEnd: [number, number, number];
+  /** The anchors moved on the previous frame (a live drag in progress). */
+  anchorsMoving: boolean;
   /** The surface does not show the simulation state yet (new or replaced mesh). */
   pending: boolean;
 };
@@ -502,7 +507,8 @@ export function bindEditorCable(mesh: Mesh, binding: EditorCableBinding): void {
     cable = {
       name: mesh.name, surface, properties, simulation: new CableSimulation(properties, ORIGIN, ORIGIN),
       endNode: binding.endNode, endSelf, endActorId: null, rootForActor: null, endLocal: new Vector3(),
-      start: [0, 0, 0], end: [0, 0, 0], gravity: [0, 0, 0], startFlag: -1, endFlag: -1, pending: true,
+      start: [0, 0, 0], end: [0, 0, 0], gravity: [0, 0, 0], startFlag: -1, endFlag: -1,
+      lastStart: [0, 0, 0], lastEnd: [0, 0, 0], anchorsMoving: false, pending: true,
     };
     registry.cables.set(mesh.name, cable);
     const index = existing ? registry.list.indexOf(existing) : -1;
@@ -529,7 +535,12 @@ export function bindEditorCable(mesh: Mesh, binding: EditorCableBinding): void {
   }
   readEditorAnchors(cable, startMatrix, endMatrix);
   if (!properties.attachStart && !properties.attachEnd) cable.simulation.reset(cable.start, cable.end);
-  const changed = cable.simulation.update(0, cable.start, cable.end, cable.gravity);
+  // A document apply (Details edit, undo, drag commit) moves anchors in one
+  // jump; carry the cable with them so the jump does not whip it.
+  const carried = cable === existing && !cable.pending && cable.simulation.carry(cable.start, cable.end);
+  cable.anchorsMoving = false;
+  rememberEditorAnchors(cable);
+  const changed = cable.simulation.update(0, cable.start, cable.end, cable.gravity) || carried;
   if (cable.pending || changed || !cable.simulation.sleeping) writeEditorCable(cable);
   else updateSurface(surface);
 }
@@ -596,17 +607,44 @@ function stepEditorCable(cable: EditorCable, dt: number): boolean {
   const endMatrix = endNode === mesh ? startMatrix : endNode.computeWorldMatrix();
   const sleeping = cable.simulation.sleeping;
   const moved = startMatrix.updateFlag !== cable.startFlag || endMatrix.updateFlag !== cable.endFlag;
-  if (moved) readEditorAnchors(cable, startMatrix, endMatrix);
-  else if (sleeping && !cable.pending) return false;
+  let jumped = false;
+  if (moved) {
+    readEditorAnchors(cable, startMatrix, endMatrix);
+    // Anchors that were still and now jump further than a fraction of a
+    // segment moved discretely (not by a drag): carry rather than whip.
+    jumped = !cable.anchorsMoving && editorAnchorJump(cable) > properties.cableLength / properties.numSegments * EDITOR_CARRY_SEGMENT_FRACTION;
+  } else if (sleeping && !cable.pending) {
+    cable.anchorsMoving = false;
+    return false;
+  }
+  cable.anchorsMoving = moved && !jumped && editorAnchorJump(cable) > 0;
+  rememberEditorAnchors(cable);
   // Released at both ends, a cable would fall forever: show its authored line.
   if (!properties.attachStart && !properties.attachEnd) {
     if (!moved && !cable.pending) return false;
     cable.simulation.reset(cable.start, cable.end);
     return writeEditorCable(cable);
   }
-  const changed = cable.simulation.update(dt, cable.start, cable.end, cable.gravity);
+  const carried = jumped && !cable.pending && cable.simulation.carry(cable.start, cable.end);
+  const changed = cable.simulation.update(dt, cable.start, cable.end, cable.gravity) || carried;
   if (!changed && sleeping && !cable.pending) return updateSurface(surface);
   return writeEditorCable(cable);
+}
+
+/** Below this fraction of a segment, a still anchor's move is fed as motion. */
+const EDITOR_CARRY_SEGMENT_FRACTION = 0.25;
+
+function editorAnchorJump(cable: EditorCable): number {
+  const s = cable.start, e = cable.end, ls = cable.lastStart, le = cable.lastEnd;
+  const sx = s[0] - ls[0], sy = s[1] - ls[1], sz = s[2] - ls[2];
+  const ex = e[0] - le[0], ey = e[1] - le[1], ez = e[2] - le[2];
+  return Math.sqrt(Math.max(sx * sx + sy * sy + sz * sz, ex * ex + ey * ey + ez * ez));
+}
+
+function rememberEditorAnchors(cable: EditorCable): void {
+  const s = cable.start, e = cable.end, ls = cable.lastStart, le = cable.lastEnd;
+  ls[0] = s[0]; ls[1] = s[1]; ls[2] = s[2];
+  le[0] = e[0]; le[1] = e[1]; le[2] = e[2];
 }
 
 function readEditorAnchors(cable: EditorCable, startMatrix: Matrix, endMatrix: Matrix): void {

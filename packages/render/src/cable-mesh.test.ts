@@ -313,8 +313,13 @@ describe("cable rendering", () => {
     step(600);
     const owner = sync.meshForActor("rope")!;
     unfreezeActorWorldMatrix(owner); // As a gizmo drag does.
-    owner.position.set(0, 0, 1.5);
-    expect(step(1)).toBe(true);
+    // Drag 1.5 along z over half a second; each frame's move is drag motion.
+    let changed = false;
+    for (let frame = 1; frame <= 30; frame++) {
+      owner.position.set(0, 0, 0.05 * frame);
+      changed = step(1) || changed;
+    }
+    expect(changed).toBe(true);
     const dragged = ringCenters(mesh, 4);
     const rounded = (point: Vector3) => point.asArray().map((value) => Number(value.toFixed(4)) + 0); // + 0 folds -0.
     expect(rounded(dragged[0]!)).toEqual([0, 0, 1.5]);
@@ -327,6 +332,37 @@ describe("cable rendering", () => {
     expect(step(30)).toBe(false);
     expect(upload).not.toHaveBeenCalled();
     upload.mockRestore();
+    sync.dispose();
+  });
+
+  it("carries an editor cable through a typed Location edit or a snapped jump instead of whipping it", () => {
+    const { scene } = setup();
+    const sync = new EditorSceneSync(scene);
+    sync.apply(ropeScene({}));
+    const mesh = scene.getMeshByName(editorComponentMeshName("rope", "cable")) as Mesh;
+    let now = 0;
+    const peakMid = (frames: number) => {
+      let peak = -Infinity;
+      for (let frame = 0; frame < frames; frame++) {
+        stepEditorCables(scene, now += 1000 / 60);
+        peak = Math.max(peak, ringCenters(mesh, 4)[8]!.y);
+      }
+      return peak;
+    };
+    peakMid(600);
+    // Details raises the cable's owner by 1 (a document apply).
+    const raised = ropeScene({});
+    raised.actors[0]!.transform.position = [0, 1, 0];
+    sync.apply(raised);
+    expect(ringCenters(mesh, 4)[0]!.y).toBeCloseTo(1, 4);
+    // The midpoint stays below the lower pin; fed as motion it would fly above both.
+    expect(peakMid(600)).toBeLessThan(0);
+    // A snapped gizmo step jumps the hook by a whole unit between frames.
+    const hook = sync.meshForActor("hook")!;
+    unfreezeActorWorldMatrix(hook);
+    hook.position.set(3, 1, 0);
+    expect(peakMid(600)).toBeLessThan(1);
+    expect(ringCenters(mesh, 4).at(-1)!.y).toBeCloseTo(1, 4);
     sync.dispose();
   });
 

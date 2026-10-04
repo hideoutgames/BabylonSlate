@@ -301,6 +301,33 @@ describe("CableSimulation", () => {
     expect(Array.from(cable.positions.subarray(3, -3))).toEqual(Array.from(before.subarray(3, -3)));
   });
 
+  it("carries a cable with a discrete pin edit and settles without whipping", () => {
+    const peakAfter = (edit: (cable: CableSimulation, start: number[]) => void, start: number[]) => {
+      const cable = new CableSimulation(parseCableProperties({}), START, END);
+      for (let frame = 0; frame < 300; frame++) cable.update(STEP, START, END, GRAVITY);
+      edit(cable, start);
+      expect(cable.positions[0]).toBeCloseTo(start[0]!, 5);
+      expect(cable.positions[1]).toBeCloseTo(start[1]!, 5);
+      let peak = -Infinity, longest = 0;
+      for (let frame = 0; frame < 600; frame++) {
+        cable.update(STEP, start, END, GRAVITY);
+        peak = Math.max(peak, cable.positions[8 * 3 + 1]!);
+        longest = Math.max(longest, totalLength(cable.positions));
+      }
+      expect(cable.sleeping).toBe(true);
+      return { peak, longest };
+    };
+    // Raising the start pin by 1 (a typed Location): the midpoint stays below
+    // the lower pin. Feeding the same jump as motion flings it far above both.
+    const raised = [0, 1, 0];
+    const carried = peakAfter((cable, start) => cable.carry(start, END), raised);
+    expect(carried.peak).toBeLessThan(0);
+    expect(carried.longest).toBeLessThan(4.1);
+    expect(peakAfter((cable, start) => cable.update(0, start, END, GRAVITY), raised).peak).toBeGreaterThan(1);
+    // Pulled exactly taut, the carried cable straightens without overshooting the pins.
+    expect(peakAfter((cable, start) => cable.carry(start, END), [-1, 0, 0]).peak).toBeLessThan(0.05);
+  });
+
   it("responds on the frame a sleeping cable's pin moves, even below one substep", () => {
     const cable = new CableSimulation(parseCableProperties({}), START, END);
     for (let frame = 0; frame < 600 && !cable.sleeping; frame++) cable.update(STEP, START, END, GRAVITY);
