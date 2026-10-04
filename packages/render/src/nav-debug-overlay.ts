@@ -17,6 +17,7 @@ import {
   createNavDebugBlockerMesh,
   type EditorVolumeKind,
 } from "./editor-volume";
+import { markEditorHelperMesh } from "./helper-mesh";
 import { RENDERING_GROUP } from "./sorting";
 
 export const NAVMESH_DEBUG_Y_OFFSET = 0.04;
@@ -111,6 +112,7 @@ export class NavMeshDebugOverlay {
     if (positions.length > 0) {
       const mesh = new Mesh("navmeshDebug", this.scene);
       mesh.isPickable = false;
+      markEditorHelperMesh(mesh);
       mesh.receiveShadows = false;
       const data = new VertexData();
       data.positions = positions;

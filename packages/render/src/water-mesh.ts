@@ -1,16 +1,16 @@
-import { Matrix, Mesh, PBRMaterial, Vector3, VertexBuffer, VertexData, type Material, type Scene } from "@babylonjs/core";
+import { ArcRotateCamera, Matrix, Mesh, PBRMaterial, Vector3, VertexBuffer, VertexData, type Material, type Scene } from "@babylonjs/core";
 import { createDefaultWaterDefinition, normalizeWaterBody, normalizeWaterDefinition, sampleWaterWaves, waterFootprint, waterRiverCentreline, type WaterBodyProperties, type WaterDefinition } from "@babylonslate/core";
 import { configureWaterMaterial, contactRange, WaterMaterialPlugin } from "./water-material";
-import { WaterField } from "./water-field";
+import { WaterContactField } from "./water-contact-field";
+import { WaterField, type WaterFieldSurface } from "./water-field";
 import { WaterReflection } from "./water-reflection";
-import { WaterSurfaceSampler } from "./water-surface-sampler";
 
 type Surface = {
-  mesh: Mesh; water: WaterDefinition; body: WaterBodyProperties; plugin: WaterMaterialPlugin | null; field: WaterField | null;
+  mesh: Mesh; water: WaterDefinition; body: WaterBodyProperties; plugin: WaterMaterialPlugin | null;
+  field: WaterField | null; contacts: WaterContactField | null;
   world: Matrix; inverse: Matrix;
   layout: string; frame: string; time: number | null; version: number; base: Float32Array; worldBase: Float32Array; positions: Float32Array; normals: Float32Array;
   baseNormals: Float32Array; data: Float32Array; flow: Float32Array; spacing: Float32Array;
-  contact: { frame: string; sampler: WaterSurfaceSampler } | null; contactRevision: number;
 };
 const surfaces = new WeakMap<Scene, Set<Surface>>();
 const surfaceByMesh = new WeakMap<Mesh, Surface>();
@@ -30,15 +30,20 @@ export function updateSceneWater(scene: Scene): void {
   const now = performance.now();
   for (const surface of surfaces.get(scene) ?? []) if (surface.mesh.isEnabled()) {
     updateSurface(surface, clock.time);
-    surface.field?.update(now);
+    // Waves never rebake either field: the shader reads contacts at each fragment's rendered height.
+    surface.field?.update();
+    surface.contacts?.update(now);
   }
 }
+
+/** Dense cells of an axis with `count` cells: the middle half. */
+const denseCells = (count: number) => count - 2 * Math.floor(count / 4);
 
 /** Fixed endpoints, dense world-sized cells near the camera, smoothly graded outer cells. */
 function axis(min: number, max: number, spacing: number, camera: number, budget = 192): number[] {
   const count = Math.min(budget, Math.max(8, Math.ceil((max - min) / spacing / 2) * 2));
   if ((max - min) <= count * spacing) return Array.from({ length: count + 1 }, (_, i) => min + (max - min) * i / count);
-  const outer = Math.floor(count / 4), inner = count - 2 * outer;
+  const outer = Math.floor(count / 4), inner = denseCells(count);
   const half = inner * spacing / 2;
   const center = Math.max(min + half, Math.min(max - half, Math.round(camera / spacing) * spacing));
   const left = center - half, right = center + half;
@@ -107,8 +112,17 @@ function updateLayout(s: Surface, world: Matrix, inverse: Matrix): void {
   if (body.kind === "global") {
     const camera = mesh.getScene().activeCamera;
     // Read the camera's current position, including a parent, without waiting for Scene.render's camera update.
-    const cameraWorld = camera ? (camera.parent ? Vector3.TransformCoordinates(camera.position, camera.parent.getWorldMatrix()) : camera.position) : Vector3.Zero();
-    const local = Vector3.TransformCoordinates(cameraWorld, inverse);
+    const toWorld = (point: Vector3) => camera?.parent ? Vector3.TransformCoordinates(point, camera.parent.getWorldMatrix()) : point;
+    const local = Vector3.TransformCoordinates(camera ? toWorld(camera.position) : Vector3.Zero(), inverse);
+    // An orbiting camera looks at its target: shift the dense cells toward it (up to most of their half width), so
+    // the wave geometry, and the waterline contacts that follow it, cover both the near water and what is in focus.
+    if (camera instanceof ArcRotateCamera) {
+      const target = Vector3.TransformCoordinates(toWorld(camera.target), inverse);
+      const dx = (target.x - local.x) * sx, dz = (target.z - local.z) * sz, reach = Math.hypot(dx, dz);
+      const half = denseCells(Math.max(32, body.resolution + body.resolution % 2)) * step / 2;
+      const shift = reach > 1e-6 ? Math.min(reach / 2, half * 0.85) / reach : 0;
+      local.x += dx * shift / sx; local.z += dz * shift / sz;
+    }
     extent = Math.max(256, (camera?.maxZ ?? 1000) * 1.2);
     cx = Math.round(local.x * sx / step) * step / sx; cz = Math.round(local.z * sz / step) * step / sz;
     key = `${cx},${cz},${extent}`;
@@ -227,27 +241,20 @@ function updateSurface(s: Surface, time: number): void {
     s.mesh.updateVerticesData("slateWaterBaseNormal", s.baseNormals);
   }
   s.time = time;
-  if (moved || (s.water.waveHeight > 0 && s.body.waveScale > 0 && s.water.waveSpeed > 0)) s.contactRevision++;
-}
-
-function waterContactY(s: Surface, x: number, z: number): number | null {
-  if (!s.contact || s.contact.frame !== s.frame) {
-    const indices = s.mesh.getIndices();
-    if (!indices) return null;
-    s.contact = { frame: s.frame, sampler: new WaterSurfaceSampler(s.worldBase, s.data, indices) };
-  }
-  return s.contact.sampler.heightAt(x, z);
 }
 
 const scratch = new Vector3();
-/** Rest surface height (no waves) at a world X/Z, or null outside the body's footprint. */
-function waterSurfaceY(s: Surface, x: number, z: number): number | null {
+/** Rest surface height (no waves) at a world X/Z, or null outside the body's footprint (unless `beyond`). */
+function waterSurfaceY(s: Surface, x: number, z: number, beyond = false): number | null {
   Vector3.TransformCoordinatesFromFloatsToRef(x, s.world.m[13]!, z, s.inverse, scratch);
   const footprint = waterFootprint(s.body, scratch.x, scratch.z);
-  if (!footprint.inside) return null;
+  if (!footprint.inside && !beyond) return null;
   Vector3.TransformCoordinatesFromFloatsToRef(scratch.x, footprint.height, scratch.z, s.world, scratch);
   return scratch.y;
 }
+
+/** Rivers and volumes tilted out of the horizontal have a rest height that varies across the body. */
+const restVaries = (s: Surface) => s.body.kind === "river" || Math.abs(s.world.m[1]!) > 1e-9 || Math.abs(s.world.m[9]!) > 1e-9;
 
 /** The live body of a built water mesh, or null for other meshes. */
 export function waterMeshBody(mesh: Mesh): Readonly<WaterBodyProperties> | null {
@@ -265,7 +272,8 @@ export function updateWaterMeshBody(mesh: Mesh, input: unknown): boolean {
   surface.version++; surface.layout = ""; surface.frame = "";
   mesh.setEnabled(surface.body.enabled);
   updateSurface(surface, clocks.get(mesh.getScene())?.time ?? 0);
-  surface.field?.update(performance.now(), true);
+  surface.field?.update(true);
+  surface.contacts?.update(performance.now(), true);
   return true;
 }
 
@@ -282,14 +290,17 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
     configureWaterMaterial(material, water);
     plugin = new WaterMaterialPlugin(material, water, body);
     plugin.mesh = mesh;
-    let reflection = reflections.get(scene);
-    if (!reflection) { reflection = new WaterReflection(scene); reflections.set(scene, reflection); }
-    reflection.add(material);
+    // Unlit Stylized water never samples a reflection.
+    if (water.style !== "stylized") {
+      let reflection = reflections.get(scene);
+      if (!reflection) { reflection = new WaterReflection(scene); reflections.set(scene, reflection); }
+      reflection.add(material);
+    }
     mesh.material = material;
     mesh.onDisposeObservable.addOnce(() => material.dispose());
   }
   const empty = new Float32Array();
-  const surface: Surface = { mesh, water, body, plugin, field: null, world: Matrix.Identity(), inverse: Matrix.Identity(), layout: "", frame: "", time: null, version: 0, base: empty, worldBase: empty, positions: empty, normals: empty, baseNormals: empty, data: empty, flow: empty, spacing: empty, contact: null, contactRevision: 0 };
+  const surface: Surface = { mesh, water, body, plugin, field: null, contacts: null, world: Matrix.Identity(), inverse: Matrix.Identity(), layout: "", frame: "", time: null, version: 0, base: empty, worldBase: empty, positions: empty, normals: empty, baseNormals: empty, data: empty, flow: empty, spacing: empty };
   let entries = surfaces.get(scene);
   if (!entries) {
     entries = new Set(); surfaces.set(scene, entries);
@@ -301,17 +312,19 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
   mesh.onDisposeObservable.addOnce(() => entries.delete(surface));
   updateSurface(surface, clocks.get(scene)?.time ?? 0);
   if (plugin) {
-    const contactHeight = (x: number, z: number) => waterContactY(surface, x, z);
-    const field = new WaterField(scene, {
+    const fieldSurface: WaterFieldSurface = {
       mesh, unbounded: body.kind === "global", contactRange: contactRange(water),
       get amplitude() { return water.waveHeight * body.waveScale * 1.3 + 0.05; },
       surfaceY: (x, z) => waterSurfaceY(surface, x, z),
-      get contactY() { return water.waveHeight > 0 && body.waveScale > 0 ? contactHeight : undefined; },
-      contactRevision: () => surface.contactRevision,
-    });
-    surface.field = field; plugin.field = field;
-    field.update(performance.now(), true);
-    mesh.onDisposeObservable.addOnce(() => field.dispose());
+      get restVaries() { return restVaries(surface); },
+      restY: (x, z) => waterSurfaceY(surface, x, z, true)!,
+    };
+    const field = new WaterField(scene, fieldSurface), contacts = new WaterContactField(scene, fieldSurface);
+    surface.field = field; surface.contacts = contacts;
+    plugin.field = field; plugin.contacts = contacts;
+    field.update(true);
+    contacts.update(performance.now(), true);
+    mesh.onDisposeObservable.addOnce(() => { field.dispose(); contacts.dispose(); });
   }
   return mesh;
 }

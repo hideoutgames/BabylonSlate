@@ -982,6 +982,8 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
           }}
           assets={postProcessPickerAssets}
           allowedTypes={["Material", "MaterialInstance"]}
+          createTypes={["Material"]}
+          createOptions={{ materialDomain: "postProcess" }}
           title="Pick Post-Process Material"
           allowNone={postProcessPick !== "add"}
           onPick={(materialGuid) => {
@@ -1518,6 +1520,10 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
           ? [MODEL_MATERIALS_PICKER_ENTRY, ...pickerAssets]
           : pickerAssets}
         allowedTypes={assetPick?.allowedTypes}
+        // Domain rows (Text Material) only accept Materials of that domain, so
+        // Create New makes one; a parentless Material Instance would be refused.
+        createTypes={assetPick?.materialDomain ? ["Material"] : undefined}
+        createOptions={assetPick?.materialDomain ? { materialDomain: assetPick.materialDomain } : undefined}
         title={assetPick?.title ?? "Pick Asset"}
         allowNone
         onPick={(guid) => {
@@ -1579,7 +1585,9 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
           updateActor((entry) => ({
             ...entry,
             components: entry.components.map((component) => component.id === constraintTargetPick.componentId
-              ? { ...component, properties: { ...component.properties, targetActorId: pickingCableTarget ? targetActorId || null : targetActorId, ...(pickingCableTarget ? { targetComponentId: null } : {}) } }
+              ? { ...component, properties: pickingCableTarget
+                ? patchInspectorComponentProperty(component, "targetActorId", targetActorId || null)
+                : { ...component.properties, targetActorId } }
               : component),
           }));
           setConstraintTargetPick(null);

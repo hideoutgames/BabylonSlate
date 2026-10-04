@@ -73,6 +73,10 @@ vi.mock("../context/asset-open-provider", () => ({
   AssetOpenDocumentsProvider: ({ children }: { children: ReactNode }) =>
     children,
 }));
+vi.mock("../context/asset-create-provider", () => ({
+  AssetCreateDocumentsProvider: ({ children }: { children: ReactNode }) =>
+    children,
+}));
 vi.mock("../context/validation-context", () => ({
   ValidationProvider: ({ children }: { children: ReactNode }) => children,
 }));

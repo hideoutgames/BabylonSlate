@@ -1,12 +1,12 @@
 import { createDynamicRuntimeMesh } from "./dynamic-runtime-mesh";
-import { Color3, Mesh, MeshBuilder, Quaternion, Scene, Vector3, StandardMaterial } from "@babylonjs/core";
+import { Color3, Mesh, MeshBuilder, Quaternion, Scene, Vector3, StandardMaterial, type Matrix, type TransformNode } from "@babylonjs/core";
 import { normalizeWaterBody, waterKindForClass } from "@babylonslate/core";
 import { OVERLAY_LAYOUT_CLASSES, isOverlayLayoutClass, parseOverlayLayoutProperties, resolveOverlayLayout } from "@babylonslate/core";
 import { applyEditorLayoutClips } from "./overlay-layout-render";
 import { createWaterMesh } from "./water-mesh";
 import { createSplineMesh } from "./spline-mesh";
 import { createWaterRemovalMesh } from "./water-removal-mesh";
-import { createCableMesh, updateCablePreview } from "./cable-mesh";
+import { bindEditorCable, configureCableMesh, createCableMesh, findEditorCableMesh, hasEditorCableMeshes, pruneEditorCables, updateCablePreview } from "./cable-mesh";
 import { authoredActorMatrices, authoredComponentActorTransform, authoredTransformMatrix } from "./authored-transform-matrices";
 import { createFogVolumeGuide, syncFogVolumeGuideAttachments } from "./fog-volume-guide";
 import type { SerializedActor, SerializedComponent, SerializedScene, SerializedTransform } from "@babylonslate/core";
@@ -472,7 +472,15 @@ function componentVisualKind(
   }
   if (component.classId === "SceneStreamingComponent") return editorBillboardKind("default");
   const asset = stringProp(component.properties.assetGuid) ?? "";
-  if (component.classId === "CableComponent") return `cable:${JSON.stringify(parseCableProperties(component.properties))}`;
+  if (component.classId === "CableComponent") {
+    // Only topology, Enabled (which the frozen active-mesh queue must see) and
+    // Material rebuild the tube; other edits apply live in syncEditorCablePreviews.
+    // Construction assigns the Material, and editor material binding restores a
+    // mesh's construction material when the guid is cleared, so a Material
+    // change needs a fresh mesh. The rebuilt mesh keeps its editor simulation.
+    const cable = parseCableProperties(component.properties);
+    return `cable:${cable.enabled}:${cable.numSegments}:${cable.numSides}:${cable.tileMaterial}:${JSON.stringify(cable.materialGuid)}`;
+  }
   if (component.classId === "DynamicRuntimeMeshComponent") return "dynamicRuntimeMesh";
   if (component.classId === "SplineComponent") return `spline:${JSON.stringify(component.properties)}`;
   if (waterKindForClass(component.classId)) return `water:${component.classId}:${JSON.stringify(component.properties)}`;
@@ -1384,19 +1392,55 @@ export function unfreezeActorWorldMatrix(root: Mesh): void {
   }
 }
 
-/** Update attached cable endpoints after document transforms, without ticking the editor. */
-export function syncEditorCablePreviews(scene: Scene, actors: readonly SerializedActor[]): void {
-  const actorsById = new Map(actors.map((actor) => [actor.id, actor]));
-  const actorMatrix = authoredActorMatrices(actors);
+export type EditorCableSyncOptions = {
+  /** Live actor roots. With `simulate`, cables bind to the editor simulation. */
+  rootForActor?: (actorId: string) => TransformNode | null | undefined;
+  /** Scene gravity (default `[0, -9.81, 0]`). */
+  gravity?: readonly number[];
+  /** Simulate in the editor render loop instead of drawing a static rest shape. */
+  simulate?: boolean;
+};
+
+/**
+ * Apply cable properties and endpoints after a document apply. Static callers
+ * (loads, thumbnails) draw the settled rest shape; editor viewports pass
+ * `simulate` and live roots so `stepEditorCables` animates the cable.
+ */
+export function syncEditorCablePreviews(scene: Scene, actors: readonly SerializedActor[], options: EditorCableSyncOptions = {}): void {
+  const bound = options.simulate ? new Set<string>() : null;
+  if (!hasEditorCableMeshes(scene)) {
+    if (bound) pruneEditorCables(scene, bound);
+    return;
+  }
+  const gravity = options.gravity ?? [0, -9.81, 0];
+  const rootForActor = options.rootForActor;
+  let actorsById: Map<string, SerializedActor> | null = null;
+  let actorMatrix: ((actor: SerializedActor) => Matrix) | null = null;
   for (const actor of actors) for (const component of actor.components) {
     if (component.classId !== "CableComponent") continue;
-    const mesh = scene.getMeshByName(editorComponentMeshName(actor.id, component.id));
-    if (!(mesh instanceof Mesh)) continue;
+    const name = editorComponentMeshName(actor.id, component.id);
+    const mesh = findEditorCableMesh(scene, name, rootForActor?.(actor.id));
+    if (!mesh) continue;
     const properties = parseCableProperties(component.properties);
+    configureCableMesh(mesh, properties);
+    actorsById ??= new Map(actors.map((entry) => [entry.id, entry]));
     const targetActor = (properties.targetActorId ? actorsById.get(properties.targetActorId) : undefined) ?? actor;
     const targetComponent = properties.targetComponentId
       ? targetActor.components.find((entry) => entry.id === properties.targetComponentId || entry.sourceId === properties.targetComponentId)
       : properties.targetActorId ? undefined : component;
+    if (bound && rootForActor) {
+      const self = targetComponent === component;
+      const endNode = self ? mesh : rootForActor(targetActor.id);
+      if (endNode && !endNode.isDisposed()) {
+        const endLocal = !self && targetComponent
+          ? Vector3.TransformCoordinates(Vector3.FromArray(properties.endPosition), authoredTransformMatrix(authoredComponentActorTransform(targetActor, targetComponent))).asArray()
+          : properties.endPosition;
+        bindEditorCable(mesh, { endNode, endLocal, gravity, endActorId: self ? undefined : targetActor.id, rootForActor });
+        bound.add(name);
+        continue;
+      }
+    }
+    actorMatrix ??= authoredActorMatrices(actors);
     const target = targetComponent
       ? authoredTransformMatrix(authoredComponentActorTransform(targetActor, targetComponent)).multiply(actorMatrix(targetActor))
       : actorMatrix(targetActor);
@@ -1404,8 +1448,9 @@ export function syncEditorCablePreviews(scene: Scene, actors: readonly Serialize
     if (Math.abs(cableWorld.determinant()) < 1e-12) continue;
     const end = Vector3.TransformCoordinates(Vector3.FromArray(properties.endPosition), target);
     const start = Vector3.TransformCoordinates(Vector3.Zero(), cableWorld);
-    updateCablePreview(mesh, [end.x, end.y, end.z], [start.x, start.y, start.z]);
+    updateCablePreview(mesh, [end.x, end.y, end.z], [start.x, start.y, start.z], gravity);
   }
+  if (bound) pruneEditorCables(scene, bound);
 }
 
 /** GLB instantiate target: MeshComponent child under an origin, else the actor root. */
@@ -1506,7 +1551,7 @@ export function applySceneToBabylonScene(
     }
   }
 
-  syncEditorCablePreviews(scene, sceneData.actors);
+  syncEditorCablePreviews(scene, sceneData.actors, { gravity: sceneData.settings.gravity });
   applyEditorLayoutClips(scene, layout.entries);
   for (const mesh of meshes.values()) {
     freezeStaticActorWorldMatrix(mesh);

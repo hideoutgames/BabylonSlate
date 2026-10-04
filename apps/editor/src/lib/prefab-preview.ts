@@ -372,13 +372,34 @@ export function applyPrefabPivotDelta(
 }
 
 function previewVisualComponent(
+  components: readonly SerializedComponent[],
   component: SerializedComponent,
 ): SerializedComponent {
   return {
     ...component,
     parentId: null,
     transform: identitySerializedTransform(),
+    properties: previewCableTarget(components, component) ?? component.properties,
   };
+}
+
+/**
+ * Each Class component previews as its own actor whose id is the component id,
+ * so a cable's local Target Component is that preview actor's origin. Without
+ * this the cable would look for the target on its own single-component actor.
+ */
+function previewCableTarget(
+  components: readonly SerializedComponent[],
+  component: SerializedComponent,
+): SerializedComponent["properties"] | null {
+  if (component.classId !== "CableComponent") return null;
+  const { targetActorId, targetComponentId } = component.properties;
+  if (targetActorId || typeof targetComponentId !== "string" || !targetComponentId) return null;
+  const target = components.find(
+    (entry) => entry.id === targetComponentId || entry.sourceId === targetComponentId,
+  );
+  if (!target) return null;
+  return { ...component.properties, targetActorId: target.id, targetComponentId: null };
 }
 
 function prefabRootPreviewActor() {
@@ -473,7 +494,7 @@ export function previewSceneFor(
         createActor(component.id, component.classId, {
           parentId: component.parentId ?? null,
           transform: previewTransformFor(components, component),
-          components: [previewVisualComponent(component)],
+          components: [previewVisualComponent(components, component)],
         }),
       ),
     ],

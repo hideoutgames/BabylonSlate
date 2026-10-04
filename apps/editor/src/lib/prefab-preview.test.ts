@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { Mesh } from "@babylonjs/core";
+import { Mesh, Vector3, VertexBuffer } from "@babylonjs/core";
 import {
+  EditorSceneSync,
   applySceneToBabylonScene,
   createTestEngine,
   editorComponentMeshName,
@@ -12,6 +13,8 @@ import {
   createMeshComponent,
   createSceneStreamingActor,
   createSkyboxComponent,
+  identitySerializedTransform,
+  type SerializedComponent,
 } from "@babylonslate/core";
 import {
   PREFAB_ROOT_ID,
@@ -307,6 +310,46 @@ describe("previewSceneFor", () => {
     const ids = scene.actors.map((actor) => actor.id);
     expect(ids).not.toContain("actor-skybox");
     expect(ids).not.toContain("actor-sun");
+  });
+
+  it("attaches a Class cable's end at its Target Component in the editor preview", () => {
+    const mount = {
+      ...createMeshComponent("mount", "box"),
+      transform: { ...identitySerializedTransform(), position: [1, 0, 0] as [number, number, number] },
+    };
+    const hook = {
+      ...createMeshComponent("hook", "sphere"),
+      parentId: "mount",
+      transform: { ...identitySerializedTransform(), position: [2, -1, 0] as [number, number, number] },
+    };
+    // Picking a Target Component resets End Position to the target's origin.
+    const cable: SerializedComponent = {
+      id: "cable",
+      classId: "CableComponent",
+      parentId: null,
+      transform: identitySerializedTransform(),
+      properties: { targetComponentId: "hook", endPosition: [0, 0, 0], cableLength: 5, numSegments: 4, numSides: 4 },
+    };
+    const { scene, engine } = createTestEngine();
+    const sync = new EditorSceneSync(scene);
+    try {
+      sync.apply(previewSceneFor([mount, hook, cable]));
+      const mesh = scene.getMeshByName(editorComponentMeshName("cable", "cable"))!;
+      const positions = mesh.getVerticesData(VertexBuffer.PositionKind)!;
+      const world = mesh.computeWorldMatrix(true);
+      // Mean of the last ring's four distinct vertices: the simulated end particle.
+      const end = Vector3.Zero();
+      for (let side = 0; side < 4; side++) end.addInPlace(Vector3.FromArray(positions, (4 * 5 + side) * 3));
+      Vector3.TransformCoordinatesToRef(end.scaleInPlace(0.25), world, end);
+      expect(end.x).toBeCloseTo(3, 4);
+      expect(end.y).toBeCloseTo(-1, 4);
+      expect(end.z).toBeCloseTo(0, 4);
+      expect(cable.properties.targetComponentId).toBe("hook");
+    } finally {
+      sync.dispose();
+      scene.dispose();
+      engine.dispose();
+    }
   });
 
   it("still previews an authored SkyboxComponent", () => {

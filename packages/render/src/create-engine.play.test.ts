@@ -2064,6 +2064,32 @@ describe("Play createEngine view", () => {
     }
   });
 
+  it("sizes a selected Render Target Capture preview from the installed target assets", () => {
+    const engine = sharedEngine();
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    try {
+      const editor = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, editor: true });
+      handles.push(editor);
+      const target = (width: number, height: number) =>
+        new Map([["target", { mode: "SceneColor" as const, width, height }]]);
+      editor.setMeshAssets({ renderTargets: target(16, 8) });
+      const capture = createActor("rt", "Render Target Capture", {
+        components: [{
+          id: "capture",
+          classId: "RenderTargetCaptureComponent",
+          properties: { ...createDefaultRenderTargetCaptureProperties(), renderTargetGuid: "target" },
+        }],
+      });
+      editor.editor!.syncSelectionDebug({ sceneData: { ...createDefaultScene(), actors: [capture] }, selectedActorIds: [capture.id] });
+      const preview = () => editor.scene.getTextureByName("debugCameraPreview:rt")?.getSize();
+      expect(preview()).toEqual({ width: 320, height: 160 });
+      editor.setMeshAssets({ renderTargets: target(8, 16) });
+      expect(preview()).toEqual({ width: 90, height: 180 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("awaits a rendering-quality replaced post-process generation at shared teardown", async () => {
     const engine = sharedEngine();
     const document = createDefaultMaterialDocument("Blur", "postProcess");

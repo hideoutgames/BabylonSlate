@@ -1,4 +1,5 @@
 import { patchComponentProperties, type SerializedComponent } from "@babylonslate/core";
+import { retargetCableProperties } from "./cable-property-rows";
 
 /** Picker-only value; persisted components store a source and an optional guid. */
 export const MODEL_MATERIALS_PICKER_VALUE = "__model_materials__";
@@ -14,8 +15,9 @@ export function patchInspectorComponentProperty(
   property: string,
   value: unknown,
 ): Record<string, unknown> {
-  if (component.classId === "CableComponent" && property === "targetActorId" && value !== component.properties.targetActorId) {
-    return { ...component.properties, targetActorId: value || null, targetComponentId: null };
+  if (component.classId === "CableComponent" && (property === "targetActorId" || property === "targetComponentId") &&
+    (value || null) !== (component.properties[property] || null)) {
+    return retargetCableProperties(component.properties, property, value);
   }
   if (component.classId === "MeshComponent" && property === "materialGuid") {
     const inherit = value === MODEL_MATERIALS_PICKER_VALUE;

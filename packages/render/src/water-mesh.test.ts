@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { CubeTexture, FreeCamera, type Mesh, MeshBuilder, NullEngine, PBRMaterial, Quaternion, Scene, SphericalPolynomial, Texture, Vector3, VertexBuffer } from "@babylonjs/core";
+import { ArcRotateCamera, CubeTexture, FreeCamera, type Mesh, NullEngine, PBRMaterial, Quaternion, Scene, SphericalPolynomial, Texture, Vector3, VertexBuffer } from "@babylonjs/core";
 import { createDefaultWaterDefinition, normalizeWaterBody, sampleWaterSurface } from "@babylonslate/core";
 import { createWaterMesh, setSceneWaterTime, updateSceneWater, updateWaterMeshBody, waterMeshBody } from "./water-mesh";
 import { applyAssignMesh, createPlayMesh, createSnapshotSceneBinding } from "./snapshot-apply";
@@ -8,7 +8,6 @@ import { compileMaterialPlan, prewarmMaterial } from "./material-compiler";
 import { buildFloatDdsCubeFixture } from "@babylonslate/test-kit/environment-fixtures";
 import { resourceCacheForEngine, type ResourceLease } from "./resource-cache";
 import { createSkyboxMesh } from "./skybox";
-import type { WaterField, WaterFieldSurface } from "./water-field";
 
 /** The vertex over the component origin; vertical waves never move it sideways. */
 function centreVertex(mesh: Mesh): number {
@@ -18,41 +17,6 @@ function centreVertex(mesh: Mesh): number {
 }
 
 describe("Water rendering", () => {
-  it("supplies the contact field with the rendered filtered triangles as waves and transforms change", () => {
-    const engine = new NullEngine(), scene = new Scene(engine);
-    try {
-      MeshBuilder.CreateBox("contact", { width: 2, height: 30, depth: 2 }, scene);
-      setSceneWaterTime(scene, 1.5);
-      // A coarse grid deliberately filters the short waves; analytic point sampling would disagree.
-      const mesh = createWaterMesh(scene, "ocean", normalizeWaterBody({ width: 40, length: 40, resolution: 8 }, "ocean"), { ...createDefaultWaterDefinition(), waveHeight: 4 });
-      const plugins = (mesh.material as unknown as { pluginManager: { _plugins: Array<{ field?: WaterField | null }> } }).pluginManager._plugins;
-      const field = plugins.find((plugin) => plugin.field)!.field!;
-      const surface = (field as unknown as { surface: WaterFieldSurface }).surface;
-      const renderedHeight = () => {
-        const positions = mesh.getVerticesData(VertexBuffer.PositionKind)!, indices = mesh.getIndices()!, world = mesh.computeWorldMatrix(true);
-        const offset = Math.floor(indices.length / 6) * 3;
-        const vertices = [0, 1, 2].map((i) => Vector3.TransformCoordinates(Vector3.FromArray(positions, indices[offset + i]! * 3), world));
-        const midpoint = vertices[0]!.add(vertices[1]!).addInPlace(vertices[2]!).scaleInPlace(1 / 3);
-        expect(surface.contactY!(midpoint.x, midpoint.z)).toBeCloseTo(midpoint.y, 4);
-        return midpoint.y;
-      };
-      const first = renderedHeight();
-      setSceneWaterTime(scene, 5); updateSceneWater(scene);
-      expect(Math.abs(renderedHeight() - first)).toBeGreaterThan(0.05);
-      const now = performance.now();
-      field.update(now + 200);
-      expect(field.update(now + 400)).toBe(false);
-      mesh.position.set(7, 3, -4); mesh.scaling.set(1.5, 2, 0.7);
-      mesh.rotationQuaternion = Quaternion.RotationYawPitchRoll(0.2, 0.1, -0.05);
-      updateSceneWater(scene);
-      renderedHeight();
-      expect(surface.contactY!(1000, 1000)).toBeNull();
-      updateWaterMeshBody(mesh, { ...waterMeshBody(mesh), waveScale: 0 });
-      expect(surface.contactY).toBeUndefined();
-      updateWaterMeshBody(mesh, { ...waterMeshBody(mesh), waveScale: 1 });
-      renderedHeight();
-    } finally { scene.dispose(); engine.dispose(); }
-  });
   it("shares owned water reflection views without changing the skybox, and honors an explicit environment", () => {
     const engine = new NullEngine(), scene = new Scene(engine), cache = resourceCacheForEngine(engine);
     // Only native upload IO is substituted: keep real cube views, materials and cache leases.
@@ -141,6 +105,23 @@ describe("Water rendering", () => {
       const expanded = global.getBoundingInfo().boundingBox;
       expect(expanded.maximum.x - expanded.minimum.x).toBeCloseTo(7200, 3);
       expect(expanded.maximum.z - expanded.minimum.z).toBeCloseTo(7200, 3);
+    } finally { scene.dispose(); engine.dispose(); }
+  });
+  it("keeps Global Water's fine wave cells under an orbit camera's target as well as near its eye", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    // The eye stands about 20 m from the target horizontally, beyond the dense cells' half width around the eye.
+    const camera = new ArcRotateCamera("orbit", Math.PI, 1.2, 22, new Vector3(30, 0, 0), scene);
+    camera.getViewMatrix(true);
+    try {
+      const global = createWaterMesh(scene, "global", normalizeWaterBody({}, "global"));
+      updateSceneWater(scene);
+      // One row of the grid: its X coordinates, sorted.
+      const positions = global.getVerticesData(VertexBuffer.PositionKind)!, xs: number[] = [];
+      for (let i = 0; i < positions.length && (i === 0 || positions[i]! > positions[i - 3]!); i += 3) xs.push(positions[i]!);
+      const gap = (x: number) => { const k = xs.findIndex((value) => value > x); return xs[k]! - xs[k - 1]!; };
+      // Default Global Water cells are 0.5 m, at the target and at the water nearest the eye alike.
+      expect(gap(30)).toBeLessThanOrEqual(0.5 + 1e-4);
+      expect(gap(camera.position.x + 3)).toBeLessThanOrEqual(0.5 + 1e-4);
     } finally { scene.dispose(); engine.dispose(); }
   });
   it("realizes and resizes an identity-transform Water component received from Play", () => {

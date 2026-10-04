@@ -85,7 +85,7 @@ import {
 } from "./editor-place";
 import { createEditorGrid, type EditorGrid } from "./editor-grid";
 import { EditorSceneSync } from "./editor-scene-sync";
-import { applyCableFrame } from "./cable-mesh";
+import { applyCableFrame, stepEditorCables } from "./cable-mesh";
 import { calculateEditorDropTransforms, type EditorDropTransform } from "./editor-drop";
 import { createPreviewLighting } from "./preview-lighting";
 import {
@@ -611,7 +611,7 @@ export interface EditorTools {
   setSelectedActors: (actorIds: string[]) => void;
   /** Pure collision query; the caller commits the resulting authored transforms. */
   dropSelectedActors: (actorIds: readonly string[], maxDistance?: number) => EditorDropTransform[];
-  /** Frustum / light / audio debug + 1 Hz camera preview for the current selection. */
+  /** Frustum / light / audio debug + 1 Hz Camera or Render Target Capture preview for the current selection. */
   syncSelectionDebug: (options: {
     sceneData: SerializedScene | null;
     selectedActorIds: readonly string[];
@@ -1615,6 +1615,7 @@ function initializeEngine(
     rebuildPostProcessStack();
     lastSceneAssetGuid = load.sceneAssetGuid;
     if (lastSelectedActorIds.length > 0) editor?.setSelectedActors(lastSelectedActorIds);
+    if (assets) debugOverlay?.refreshRenderTargets();
   };
 
   const loadScene = (
@@ -1729,7 +1730,9 @@ function initializeEngine(
       return live;
     };
     const gizmosRef: { host: GizmoHost | null } = { host: null };
-    const debugOverlayInstance = new EditorDebugOverlay(scene);
+    const debugOverlayInstance = new EditorDebugOverlay(scene, {
+      renderTargets: () => binding.renderTargets,
+    });
     onRollback(() => debugOverlayInstance.dispose());
     debugOverlay = debugOverlayInstance;
     const gizmos = createGizmoHost(scene, {
@@ -2300,6 +2303,9 @@ function initializeEngine(
     if (rttPresent) rttPresent.bind();
     if (!options.playMode) {
       updateSceneTilemapAnimations(scene, frameStart - tilemapPreviewStart);
+      // Editor cables simulate only while this view renders (never in Play or
+      // hidden/paused views); sleeping cables skip their anchor math.
+      if (stepEditorCables(scene, frameStart)) scheduler.invalidate("asset");
     }
     try {
       const presentingLayers = new Set([...pendingPresentations.values()].flatMap((pending) => pending.owner ? [pending.owner.layerId] : []));
@@ -3213,6 +3219,8 @@ function initializeEngine(
       if (rebuilt && lastSelectedActorIds.length > 0) {
         editor?.setSelectedActors(lastSelectedActorIds);
       }
+      // After any mesh rebuild, so a resized target re-parents to live meshes.
+      debugOverlay?.refreshRenderTargets();
     },
     applySceneEnvironment: (sceneData: SerializedScene) => {
       setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {}, sceneData.settings.shadowOverrides ?? {});

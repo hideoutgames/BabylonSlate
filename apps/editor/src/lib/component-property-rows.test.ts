@@ -219,6 +219,23 @@ describe("componentPropertyRows", () => {
     expect(patchInspectorComponentProperty(cable, "targetActorId", null)).toMatchObject({ targetActorId: null, targetComponentId: null });
   });
 
+  it("attaches a retargeted cable end at the target origin and keeps Self cables from collapsing", () => {
+    const cable = { id: "cable", classId: "CableComponent", properties: { endPosition: [3, 0, 0] } };
+    const onActor = patchInspectorComponentProperty(cable, "targetActorId", "hook");
+    expect(onActor).toMatchObject({ targetActorId: "hook", targetComponentId: null, endPosition: [0, 0, 0] });
+    const onComponent = patchInspectorComponentProperty({ ...cable, properties: onActor }, "targetComponentId", "grip");
+    expect(onComponent).toMatchObject({ targetActorId: "hook", targetComponentId: "grip", endPosition: [0, 0, 0] });
+    // The other actor's origin keeps the zero offset.
+    expect(patchInspectorComponentProperty({ ...cable, properties: onComponent }, "targetComponentId", "")).toMatchObject({ targetActorId: "hook", targetComponentId: null, endPosition: [0, 0, 0] });
+    // Self with a zero offset would be a zero-length cable: restore the default offset.
+    expect(patchInspectorComponentProperty({ ...cable, properties: onComponent }, "targetActorId", null)).toMatchObject({ targetActorId: null, targetComponentId: null, endPosition: [3, 0, 0] });
+    const local = patchInspectorComponentProperty(cable, "targetComponentId", "grip");
+    expect(local).toMatchObject({ targetComponentId: "grip", endPosition: [0, 0, 0] });
+    expect(patchInspectorComponentProperty({ ...cable, properties: local }, "targetComponentId", "")).toMatchObject({ targetComponentId: null, endPosition: [3, 0, 0] });
+    // Authored offsets survive a return to Self.
+    expect(patchInspectorComponentProperty({ ...cable, properties: { targetActorId: "hook", endPosition: [1, 2, 3] } }, "targetActorId", null)).toMatchObject({ endPosition: [1, 2, 3] });
+  });
+
   it("selects only Scene assets for streaming targets and keeps the cached name out of editable properties", () => {
     const { rows, onPickAsset, update } = rowsFor({ id: "stream", classId: "SceneStreamingComponent", properties: { sceneGuid: "cave", sceneName: "Cave" } }, { assetLabel: () => "Cave", assetType: () => "Scene" });
     expect(rows).toHaveLength(1);

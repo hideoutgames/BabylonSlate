@@ -23,6 +23,7 @@ import { DocumentWorkspace } from "../components/document-workspace";
 import { ExternalChangeDialogs } from "../components/external-change-dialogs";
 import { useDocuments } from "../context/document-context";
 import { AssetOpenDocumentsProvider } from "../context/asset-open-provider";
+import { AssetCreateDocumentsProvider } from "../context/asset-create-provider";
 import { EditorSessionStateProvider } from "../context/editor-session-state-context";
 import { PlayProvider, usePlay } from "../context/play-context";
 import { KeybindProvider } from "../context/keybind-context";
@@ -423,22 +424,24 @@ export default function EditorRoute({
   return (
     <ProjectSessionState>
       <AssetOpenDocumentsProvider>
-        <ValidationProvider>
-          <PlayProvider>
-            <MaterialRenderControlProvider>
-              <EditorUtilityRuntime />
-              <EditorExtensionsRuntime />
-              <TestAudioHostStats />
-              <TestParticleHostStats />
-              <ModelThumbnailCaptureHost />
-              <ProjectSearchProvider>
-                <PlayAwareKeybinds>
-                  {gallery ? <ComponentGallery /> : <EditorLayout />}
-                </PlayAwareKeybinds>
-              </ProjectSearchProvider>
-            </MaterialRenderControlProvider>
-          </PlayProvider>
-        </ValidationProvider>
+        <AssetCreateDocumentsProvider>
+          <ValidationProvider>
+            <PlayProvider>
+              <MaterialRenderControlProvider>
+                <EditorUtilityRuntime />
+                <EditorExtensionsRuntime />
+                <TestAudioHostStats />
+                <TestParticleHostStats />
+                <ModelThumbnailCaptureHost />
+                <ProjectSearchProvider>
+                  <PlayAwareKeybinds>
+                    {gallery ? <ComponentGallery /> : <EditorLayout />}
+                  </PlayAwareKeybinds>
+                </ProjectSearchProvider>
+              </MaterialRenderControlProvider>
+            </PlayProvider>
+          </ValidationProvider>
+        </AssetCreateDocumentsProvider>
       </AssetOpenDocumentsProvider>
     </ProjectSessionState>
   );

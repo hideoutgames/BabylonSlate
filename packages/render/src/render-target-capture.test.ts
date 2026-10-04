@@ -5,7 +5,7 @@ import {
 import { afterEach, expect, it, vi } from "vitest";
 import { FloatingOriginCurrentScene } from "@babylonjs/core/Materials/floatingOriginMatrixOverrides";
 import { createDefaultRenderTargetCaptureProperties } from "@babylonslate/core";
-import { RenderTargetCaptures } from "./render-target-capture";
+import { RenderTargetCaptures, samplesRenderTargetOutput } from "./render-target-capture";
 import { managedRenderReservations, limitManagedRenderBytes } from "./managed-render-resources";
 import { GRID_MESH_NAME, CAMERA_BOUNDS_MESH_NAME } from "./editor-grid";
 import * as normalMaterial from "./render-target-normal-material";
@@ -139,6 +139,9 @@ it("excludes a color mesh sampling its own output without excluding unrelated re
   captures.request("capture"); captures.render();
   expect(draws[1]).toContain(other);
   expect(draws[1]).not.toContain(screen);
+  // The editor preview's shared rule names the same mesh, for this target only.
+  expect([screen, other].map((mesh) => samplesRenderTargetOutput(mesh, "target"))).toEqual([true, false]);
+  expect(samplesRenderTargetOutput(screen, "another target")).toBe(false);
 });
 
 it("omits editor grids, camera bounds, debug geometry and pick proxies from world captures", () => {
