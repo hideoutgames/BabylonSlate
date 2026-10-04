@@ -1,6 +1,7 @@
 import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  MAIN_CLASS_FILE,
   MAIN_SCENE_FILE,
   documentId,
   type DocumentRef,
@@ -8,6 +9,8 @@ import {
 } from "@babylonslate/core";
 import { createMemoryOpfsRoot } from "../../../../packages/vfs/src/test-support/memory-opfs";
 import { createProjectAsset } from "../lib/create-project-asset";
+import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
+import type { OpenDocument } from "../services/document-service";
 import {
   DocumentProvider,
   useAppRoute,
@@ -54,16 +57,21 @@ vi.mock("@babylonslate/render", async (importOriginal) => ({
 
 type Documents = ReturnType<typeof useDocuments>;
 
+const CLASS_KINDS = ["graph"] as const;
+
 const seen: {
   actions: DocumentActions | null;
   documents: Documents | null;
   route: AppRoute | null;
-} = { actions: null, documents: null, route: null };
+  /** What a Class-keyed memo (palettes, prefab ancestors) is keyed on. */
+  classDocuments: OpenDocument[] | null;
+} = { actions: null, documents: null, route: null, classDocuments: null };
 
 function Probe() {
   seen.actions = useDocumentActions();
   seen.documents = useDocuments();
   seen.route = useAppRoute();
+  seen.classDocuments = useOpenDocumentsOfKinds(CLASS_KINDS);
   return null;
 }
 
@@ -122,6 +130,7 @@ afterEach(async () => {
   seen.actions = null;
   seen.documents = null;
   seen.route = null;
+  seen.classDocuments = null;
   // Engine Settings (recent projects) persist in localStorage.
   localStorage.clear();
   delete (navigator as { storage?: unknown }).storage;
@@ -229,6 +238,43 @@ describe("DocumentProvider actions and route", () => {
         .openDocuments.filter((doc) => doc.ref.kind === "scene")
         .map((doc) => doc.id),
     ).toEqual([secondId]);
+  });
+
+  it("keeps document lists through registry-only updates and tab switches, and Class inputs through Scene edits", async () => {
+    const actions = await openProject();
+    const classId = documentId({ kind: "graph", path: MAIN_CLASS_FILE });
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    await act(() =>
+      actions.openDocument({ kind: "graph", path: MAIN_CLASS_FILE, label: "Main" }),
+    );
+    const before = documents();
+    const classDocuments = seen.classDocuments;
+    expect(classDocuments?.map((doc) => doc.id)).toEqual([classId]);
+
+    // Show Plugin Content is registry-only, like encode progress or plugins.
+    act(() => actions.setShowPluginContent(!before.showPluginContent));
+    expect(documents().registryEpoch).not.toBe(before.registryEpoch);
+    expect(documents().openDocuments).toBe(before.openDocuments);
+    expect(documents().tabOrder).toBe(before.tabOrder);
+    expect(documents().dirtyDocuments).toBe(before.dirtyDocuments);
+    expect(seen.classDocuments).toBe(classDocuments);
+
+    // Switching tabs moves no tab and edits no document.
+    act(() => actions.setActiveDocument(MAIN_SCENE_ID));
+    expect(documents().activeDocumentId).toBe(MAIN_SCENE_ID);
+    expect(documents().openDocuments).toBe(before.openDocuments);
+    expect(documents().tabOrder).toBe(before.tabOrder);
+
+    // A Scene edit reaches the scene's readers but no Class-keyed input.
+    const edited = movedScene(openScene(MAIN_SCENE_ID), 3);
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, edited));
+    expect(openScene(MAIN_SCENE_ID).actors[0]!.transform.position).toEqual(
+      edited.actors[0]!.transform.position,
+    );
+    expect(documents().dirtyDocuments.map((doc) => doc.id)).toEqual([MAIN_SCENE_ID]);
+    expect(documents().documentRevisions.scene).not.toBe(before.documentRevisions.scene);
+    expect(documents().documentRevisions.graph).toBe(before.documentRevisions.graph);
+    expect(seen.classDocuments).toBe(classDocuments);
   });
 
   it("reports the route through useAppRoute as projects open and close", async () => {

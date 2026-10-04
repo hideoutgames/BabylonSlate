@@ -93,8 +93,10 @@ import { sceneAssetClassId } from "@babylonslate/object-model";
 import type { TracePayload } from "@babylonslate/debugger";
 import {
   DocumentService,
+  documentKindsRevision,
   type DocumentContent,
   type DocumentIdentityListener,
+  type DocumentRevisions,
   type OpenDocument,
 } from "../services/document-service";
 import { attachEditGestureBoundaries } from "../services/edit-gesture-boundaries";
@@ -366,6 +368,13 @@ interface DocumentContextValue {
    */
   textureUsageBlockedReason: (guid: string) => string | null;
   onSessionDiagnostic: (listener: (line: string) => void) => () => void;
+  /**
+   * Open documents in tab order. The array keeps its identity until a
+   * document revision advances or the tab order changes, so registry-only
+   * updates, tab switches and other context updates leave it alone. Its
+   * entries are mutated in place (content, dirty, layout), so entry identity
+   * is not a change signal: key memos on `documentRevisions`.
+   */
   openDocuments: OpenDocument[];
   /**
    * The open documents at call time, read from the document service. Stable
@@ -374,11 +383,23 @@ interface DocumentContextValue {
    * re-rendering on every edit.
    */
   getOpenDocuments: () => OpenDocument[];
+  /**
+   * One revision per document kind, advanced when a document of that kind
+   * opens, closes, moves, is reordered, edited (including Undo / Redo,
+   * reloads and patches), relaid out or changes dirty state. Memos that read
+   * other documents key on the kinds they read (`documentKindsRevision`,
+   * `useOpenDocumentsOfKinds`) instead of on `openDocuments`.
+   */
+  documentRevisions: DocumentRevisions;
+  /** Advances when the open set, the tab order or the active tab changes. */
+  tabsRevision: number;
+  /** Keeps its identity while the tab ids and their order are unchanged. */
   tabOrder: string[];
   activeDocumentId: string | null;
   listedProjects: ListedProject[];
   needsReconnect: boolean;
   recoveryAvailable: boolean;
+  /** Recomputed only when a document revision advances. */
   dirtyDocuments: OpenDocument[];
   projectDirty: boolean;
   migrationPending: MigrationPending[];
@@ -649,7 +670,11 @@ interface DocumentContextValue {
   scriptsStale: boolean;
   /** True when Compile should run: never compiled this session, or open graphs changed. */
   graphsNeedCompile: boolean;
-  /** Open-graph compile fingerprint (node positions omitted). */
+  /**
+   * Open-graph compile fingerprint (node positions omitted). Recomputed only
+   * when Class graph or Input Action / Axis documents change, or the registry
+   * epoch advances.
+   */
   currentGraphSignature: string;
   /** Last full-project bundles written by `collectPlayPreviewScripts` (toolbar Compile or Play). */
   playPreviewBundles: ScriptBundleEntry[];
@@ -699,6 +724,9 @@ function useRefState<T>(
   );
   return [state, set];
 }
+
+/** Kinds `currentGraphSignature` reads: Class graphs and their Input assets. */
+const GRAPH_SIGNATURE_KINDS = ["graph", "input-action", "input-axis"] as const;
 
 function openGraphCompileDocuments(
   documentService: DocumentService,
@@ -4747,16 +4775,56 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     ],
   );
 
+  // Every service mutation is followed by a context update, so reading the
+  // revisions on each provider render sees the latest ones.
+  const documentRevisions = documentService.getRevisions();
+  const tabsRevision = documentService.getTabsRevision();
+  const tabOrderRef = useRef<string[]>([]);
+  const tabOrder = useMemo(() => {
+    void tabsRevision;
+    const next = documentService.getState().tabOrder;
+    const previous = tabOrderRef.current;
+    // Switching tabs advances the tabs revision without moving any tab.
+    if (
+      previous.length === next.length &&
+      previous.every((id, index) => id === next[index])
+    ) {
+      return previous;
+    }
+    const copy = [...next];
+    tabOrderRef.current = copy;
+    return copy;
+  }, [documentService, tabsRevision]);
+  // Entries are mutated in place, so these follow the revisions rather than
+  // entry identity; registry-only and other unrelated updates keep them.
+  const openDocuments = useMemo(() => {
+    void documentRevisions;
+    void tabOrder;
+    return documentService.getOpenDocumentsOrdered();
+  }, [documentRevisions, documentService, tabOrder]);
+  const dirtyDocuments = useMemo(() => {
+    void documentRevisions;
+    return documentService.getDirtyDocuments();
+  }, [documentRevisions, documentService]);
+  const graphSignatureRevision = documentKindsRevision(
+    documentRevisions,
+    GRAPH_SIGNATURE_KINDS,
+  );
+  const currentGraphSignature = useMemo(() => {
+    void graphSignatureRevision;
+    void registryEpoch;
+    return graphCompileSignature(
+      openGraphCompileDocuments(documentService),
+      inputAssetCatalog(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
+    );
+  }, [documentService, graphSignatureRevision, projectService, registryEpoch]);
+
   /** The `useDocuments()` facade: the stable actions plus per-edit state. */
   const value = useMemo<DocumentContextValue>(
     () => {
       void sourceControlTick;
-      // Service state read below (open documents, tabs, dirty flags) changed.
+      // Service state read below (active tab, undo stacks, layouts) changed.
       void contextTick;
-      const currentGraphSignature = graphCompileSignature(
-        openGraphCompileDocuments(documentService),
-        inputAssetCatalog(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
-      );
       const activeId = documentService.getState().activeDocumentId;
       const activeDoc = activeId ? documentService.getDocument(activeId) : undefined;
       const activeStack = activeId ? editSessionRef.current.getStack(activeId) : null;
@@ -4770,13 +4838,15 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         route,
         projectDocument,
         projectName: projectDocument?.metadata.name ?? null,
-        openDocuments: documentService.getOpenDocumentsOrdered(),
-        tabOrder: [...documentService.getState().tabOrder],
+        openDocuments,
+        documentRevisions,
+        tabsRevision,
+        tabOrder,
         activeDocumentId: activeId,
         listedProjects,
         needsReconnect,
         recoveryAvailable,
-        dirtyDocuments: documentService.getDirtyDocuments(),
+        dirtyDocuments,
         projectDirty: projectSaveState.current.isDirty(projectDocument),
         migrationPending,
         templates,
@@ -4822,6 +4892,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       actions,
       contextTick,
       registryEpoch,
+      openDocuments,
+      documentRevisions,
+      tabsRevision,
+      tabOrder,
+      dirtyDocuments,
+      currentGraphSignature,
       route,
       projectDocument,
       documentService,

@@ -10,6 +10,10 @@ import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useOptionalPlay } from "../context/play-context";
 import { isMaterialAssetType } from "../lib/content-browser-helpers";
 import { materialClosureRevision } from "../lib/material-closure-revision";
+import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
+
+/** Open tabs whose unsaved content a Custom Material's library load reads. */
+const MATERIAL_CLOSURE_KINDS = ["material", "material-instance", "material-function"] as const;
 
 const controls = [
   ["opacity", 0, 1], ["roughness", 0.02, 1], ["reflectionStrength", 0, 2],
@@ -88,10 +92,11 @@ export function WaterPreviewPanel(_props: IDockviewPanelProps) {
   const definitionRef = useRef(definition);
   definitionRef.current = definition;
   const { style, materialGuid } = definition;
+  const materialDocuments = useOpenDocumentsOfKinds(MATERIAL_CLOSURE_KINDS);
   const closureKey = useMemo(() => {
     void registryEpoch; // Registry contents change without replacing its instance.
-    return materialGuid ? materialClosureRevision(materialGuid, assetRegistry, openDocuments) : "";
-  }, [materialGuid, assetRegistry, registryEpoch, openDocuments]);
+    return materialGuid ? materialClosureRevision(materialGuid, assetRegistry, materialDocuments) : "";
+  }, [materialGuid, assetRegistry, registryEpoch, materialDocuments]);
   const loadersRef = useRef({ collectPlayMaterialLibrary, collectPlayTextureBytes });
   loadersRef.current = { collectPlayMaterialLibrary, collectPlayTextureBytes };
   const meshRef = useRef<Mesh | null>(null);

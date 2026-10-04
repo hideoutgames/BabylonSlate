@@ -7,6 +7,10 @@ import {
 } from "@babylonslate/shader-graph";
 import { isLegacyMaterialAssetType } from "@babylonslate/core";
 import { useDocuments } from "./document-context";
+import {
+  MATERIAL_DOCUMENT_KINDS,
+  useOpenDocumentsOfKinds,
+} from "../lib/use-open-documents-of-kinds";
 
 const decoder = new TextDecoder();
 
@@ -19,20 +23,20 @@ export function useMaterialInstanceSources(
   selfDocumentId: string,
   parentGuid: string | null,
 ): ReadonlyMap<string, MaterialSource> | null {
-  const { assetRegistry, registryEpoch, openDocuments, readAssetChunk } = useDocuments();
+  const { assetRegistry, registryEpoch, readAssetChunk } = useDocuments();
+  const materialDocuments = useOpenDocumentsOfKinds(MATERIAL_DOCUMENT_KINDS);
   // Only other open material tabs matter; the instance's own edits must not reload the chain.
   const openRef = useRef<ReadonlyArray<readonly [string, unknown]>>([]);
   const openMaterials = useMemo(() => {
-    const next = openDocuments
-      .filter((entry) => entry.id !== selfDocumentId && entry.content &&
-        (entry.ref.kind === "material" || entry.ref.kind === "material-instance"))
+    const next = materialDocuments
+      .filter((entry) => entry.id !== selfDocumentId && entry.content)
       .map((entry) => [entry.ref.path, entry.content] as const);
     const previous = openRef.current;
     if (previous.length === next.length && next.every(([path, content], index) =>
       previous[index]![0] === path && previous[index]![1] === content)) return previous;
     openRef.current = next;
     return next;
-  }, [openDocuments, selfDocumentId]);
+  }, [materialDocuments, selfDocumentId]);
   const [sources, setSources] = useState<ReadonlyMap<string, MaterialSource> | null>(null);
 
   useEffect(() => {
