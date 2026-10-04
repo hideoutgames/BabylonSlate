@@ -88,8 +88,7 @@ import type {
   PlayBlackboardEntry,
 } from "../lib/play-content";
 import {
-  readPlayNavmeshBytes,
-  readPlayAudioReverbBytes,
+  readPlaySceneBakes,
   modelSlotMaterialGuidsFromPayloads,
   overlayTextureGuidsFromScenes,
   playPrefabDependencyScene,
@@ -277,6 +276,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const [previewCanCancel, setPreviewCanCancel] = useState(true);
   const previewIframeRef = useRef<HTMLIFrameElement | null>(null);
   const previewFilesRef = useRef<Map<string, Uint8Array> | null>(null);
+  const previewTraceByteBudgetRef = useRef<number | undefined>(undefined);
   const previewRequestRef = useRef(0);
   const previewClosingRef = useRef(false);
   const previewDiagnosticsRef = useRef<SessionReportEntry[]>([]);
@@ -359,6 +359,8 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const [playNavmeshBytes, setPlayNavmeshBytes] = useState<Uint8Array | null>(
     null,
   );
+  const [playSceneNavmeshBytes, setPlaySceneNavmeshBytes] = useState<ReadonlyMap<string, Uint8Array>>(() => new Map());
+  const [playAudioReverbByScene, setPlayAudioReverbByScene] = useState<ReadonlyMap<string, Uint8Array>>(() => new Map());
   const [playAudioReverbBytes, setPlayAudioReverbBytes] = useState<Uint8Array | null>(
     null,
   );
@@ -656,6 +658,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       frame.contentWindow.postMessage({ type: PREVIEW_STOP_MESSAGE }, previewOriginRef.current);
     }
     previewFilesRef.current = null;
+    previewTraceByteBudgetRef.current = undefined;
     setPreviewOpen(false);
     setPreviewPhase(null);
     setPreviewError(null);
@@ -683,7 +686,9 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       return;
     }
     try {
-      frame.postMessage(previewPackFromFiles(handoff.files), previewOriginRef.current);
+      frame.postMessage(previewPackFromFiles(handoff.files, {
+        traceByteBudget: previewTraceByteBudgetRef.current,
+      }), previewOriginRef.current);
     } catch (error) {
       setPreviewError(
         `Preview Build could not send the game data: ${
@@ -761,6 +766,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       return;
     }
     const requestId = ++previewRequestRef.current;
+    const traceByteBudget = appSettings.traceByteBudget;
     const isCurrentRequest = () => previewRequestRef.current === requestId;
     const fail = (message: string) => {
       const reason = message || "Preview Build could not prepare the game.";
@@ -808,6 +814,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       }
       const previewTarget = previewTargetFromSrc(playerPreviewSrc(Date.now()), window.location.href);
       previewFilesRef.current = packed.value.files;
+      previewTraceByteBudgetRef.current = traceByteBudget;
       setPreviewCanCancel(false);
       setPreviewPhase("Launching");
       setEncodeQueuePauseReason("play", true);
@@ -830,6 +837,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     }
   }, [
     appendLog,
+    appSettings.traceByteBudget,
     assetRegistry,
     dirtyDocuments.length,
     projectDirty,
@@ -1237,26 +1245,18 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
           setPlayAudioSourceLoader(undefined);
           setPlayAudioLibrary(emptyPlayAudioLibrary());
         }
-        try {
-          setPlayNavmeshBytes(
-            await readPlayNavmeshBytes(resolvedScene?.path, readAssetChunk),
-          );
-        } catch (error) {
-          appendLog(
-            `Navmesh load failed: ${error instanceof Error ? error.message : String(error)}`,
-          );
-          setPlayNavmeshBytes(null);
-        }
-        try {
-          setPlayAudioReverbBytes(
-            await readPlayAudioReverbBytes(resolvedScene?.path, readAssetChunk),
-          );
-        } catch (error) {
-          appendLog(
-            `Audio reverb load failed: ${error instanceof Error ? error.message : String(error)}`,
-          );
-          setPlayAudioReverbBytes(null);
-        }
+        const bakedSceneGuid = canonicalPlaySceneGuid(resolvedScene, (path) =>
+          assetRegistry?.list().find((asset) => asset.path === path)?.header.guid ?? null);
+        const sceneBakes = await readPlaySceneBakes([
+          ...playLibrary.map(({ guid }) => ({ guid, path: assetRegistry?.getByGuid(guid)?.path })),
+          { guid: bakedSceneGuid, path: resolvedScene.path },
+        ], readAssetChunk, (guid, chunkId, error) => {
+          appendLog(`${chunkId} load failed for ${guid}: ${error instanceof Error ? error.message : String(error)}`);
+        });
+        setPlaySceneNavmeshBytes(sceneBakes.navmeshes);
+        setPlayAudioReverbByScene(sceneBakes.audioReverbs);
+        setPlayNavmeshBytes(sceneBakes.navmeshes.get(bakedSceneGuid) ?? null);
+        setPlayAudioReverbBytes(sceneBakes.audioReverbs.get(bakedSceneGuid) ?? null);
 
         setPrepareState(null);
 
@@ -1565,10 +1565,13 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             hardwareScalingLevel={hardwareScalingLevel}
             pauseOnPlay={pauseOnPlay}
             navmeshBytes={playNavmeshBytes}
+            sceneNavmeshBytes={playSceneNavmeshBytes}
+            audioReverbByScene={playAudioReverbByScene}
             audioReverbBytes={playAudioReverbBytes}
             audioProjectSettings={projectDocument?.settings.audio}
             inputAssets={playInputAssets}
             inputMappings={projectDocument?.settings.input}
+            focusNavigation={projectDocument?.settings.focusNavigation}
             sortingLayers={projectDocument?.settings.twoD.sortingLayers}
             pixelsPerUnit={
               projectDocument?.settings.twoD.pixelsPerUnit ?? 100

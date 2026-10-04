@@ -3,72 +3,115 @@ import {
   normalizeAnimationPayload,
   normalizeModelPayload,
 } from "@babylonslate/assets";
-import { captureModelThumbnailPng } from "@babylonslate/render";
+import { captureAssetThumbnailPng, captureModelThumbnailPng } from "@babylonslate/render";
 import { useDocuments } from "../context/document-context";
 import { useOptionalPlay } from "../context/play-context";
 import {
   subscribeModelThumbnailJobs,
   type ModelThumbnailJob,
 } from "../lib/model-thumbnail-queue";
+import { prepareAssetThumbnailInput } from "../lib/asset-thumbnail-input";
 
 /**
- * Capture Model/Animation Content Browser thumbs on the shared Engine.
- * Construction GLB only — no slot MaterialLibrary or extra ResourceCache
- * (those upload a second 512MiB texture set and can lose the WebGL context).
+ * One serialized queue for Content Browser captures on the shared Engine.
+ * Model/Animation keep construction GLB materials; saved Materials and Actor
+ * Prefabs resolve just their own dependencies through the shared resource cache.
  * Must sit under PlayProvider. Never holds the Importing overlay.
  */
 export function ModelThumbnailCaptureHost() {
   const play = useOptionalPlay();
   const {
     assetRegistry,
+    projectGuid,
+    projectDocument,
     thumbnailsEnabled,
     readAssetChunk,
     writeAssetThumbnail,
+    collectPlayTextureBytes,
   } = useDocuments();
   const tail = useRef(Promise.resolve());
-  const pending = useRef(new Set<string>());
-  const attemptedMissing = useRef(new Set<string>());
-  const mounted = useRef(true);
+  const latest = useRef({ assetRegistry, play, readAssetChunk, writeAssetThumbnail, collectPlayTextureBytes, projectDocument });
+  latest.current = { assetRegistry, play, readAssetChunk, writeAssetThumbnail, collectPlayTextureBytes, projectDocument };
 
   useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    return subscribeModelThumbnailJobs((jobs) => {
+    let cancelled = false;
+    let draining = false;
+    let activeKey: string | null = null;
+    const pending = new Map<string, ModelThumbnailJob>();
+    const attemptedMissing = new Set<string>();
+    const jobKey = (job: ModelThumbnailJob) => job.cacheKey ?? JSON.stringify([job.guid, job.path, job.payload]);
+    const unsubscribe = subscribeModelThumbnailJobs((jobs) => {
       if (!thumbnailsEnabled) return;
-      const engine = play?.ensureSharedEngine() ?? null;
-      if (!engine) return;
       for (const job of jobs) {
-        const key = JSON.stringify([job.guid, job.path, job.payload]);
+        if (job.projectGuid && job.projectGuid !== projectGuid) continue;
+        const key = jobKey(job);
         if (
-          pending.current.has(key) ||
-          (job.onlyIfMissing && attemptedMissing.current.has(key))
+          key === activeKey ||
+          (job.onlyIfMissing && attemptedMissing.has(key))
         )
           continue;
-        pending.current.add(key);
-        if (job.onlyIfMissing) attemptedMissing.current.add(key);
-        // Serialize throwaway Scenes, including jobs from separate import/save
-        // batches, so captures cannot compete for the shared Engine.
-        tail.current = tail.current.then(async () => {
-          try {
-            await captureJob(job);
-          } catch {
-            // A broken source keeps its icon and must not stop later jobs.
-          } finally {
-            pending.current.delete(key);
-          }
-        });
+        // A later save replaces queued work for that asset. Bound the backlog
+        // during fast scrolling; dropped jobs can be requested on the next visit.
+        pending.delete(job.guid);
+        pending.set(job.guid, job);
+        if (pending.size > 128) pending.delete(pending.keys().next().value!);
       }
+      if (draining || pending.size === 0) return;
+      draining = true;
+      tail.current = tail.current.then(async () => {
+        try {
+          while (!cancelled && pending.size > 0) {
+            const [guid, job] = pending.entries().next().value!;
+            pending.delete(guid);
+            activeKey = jobKey(job);
+            if (job.onlyIfMissing) {
+              attemptedMissing.add(activeKey);
+              if (attemptedMissing.size > 256) attemptedMissing.delete(attemptedMissing.values().next().value!);
+            }
+            try {
+              await captureJob(job);
+            } catch {
+              // A broken source keeps its icon and must not stop later jobs.
+            } finally {
+              activeKey = null;
+            }
+            // Give input/painting a turn between captures, including cache hits.
+            if (!cancelled && pending.size) await new Promise((resolve) => setTimeout(resolve, 0));
+          }
+        } finally {
+          draining = false;
+        }
+      });
     });
 
     async function captureJob(job: ModelThumbnailJob): Promise<void> {
-      if (!mounted.current) return;
+      const shouldContinue = () => !cancelled && (!pending.has(job.guid) || jobKey(pending.get(job.guid)!) === jobKey(job));
+      if (!shouldContinue()) return;
+      const { assetRegistry, play, readAssetChunk, writeAssetThumbnail, collectPlayTextureBytes, projectDocument } = latest.current;
       const engine = play?.ensureSharedEngine() ?? null;
       if (!engine) return;
+      const write = async (png: Uint8Array | null) => {
+        if (!png || !shouldContinue()) return;
+        if (job.cacheKey && job.projectGuid) {
+          await writeAssetThumbnail(job.guid, png, { cacheKey: job.cacheKey, projectGuid: job.projectGuid });
+        } else {
+          await writeAssetThumbnail(job.guid, png);
+        }
+      };
+      if (job.type === "Material" || job.type === "Class" || job.type === "Graph") {
+        const asset = assetRegistry?.getByGuid(job.guid);
+        if (!asset || !assetRegistry) return;
+        const input = await prepareAssetThumbnailInput({
+          asset,
+          registry: assetRegistry,
+          readAssetChunk,
+          collectTextureBytes: (guids) => collectPlayTextureBytes(new Map(), new Map(), guids),
+          shouldContinue,
+          pixelsPerUnit: projectDocument?.settings.twoD.pixelsPerUnit,
+        });
+        if (input && shouldContinue()) await write(await captureAssetThumbnailPng(engine, input, shouldContinue));
+        return;
+      }
       const animation =
         job.type === "Animation"
           ? normalizeAnimationPayload(job.payload)
@@ -97,7 +140,7 @@ export function ModelThumbnailCaptureHost() {
         sourceClipBytes = await readAssetChunk(sourceModel.path, "source");
         if (!sourceClipBytes?.byteLength) return;
       }
-      if (!mounted.current) return;
+      if (!shouldContinue()) return;
       const png = await captureModelThumbnailPng(
         engine,
         bytes,
@@ -111,15 +154,14 @@ export function ModelThumbnailCaptureHost() {
             : {}),
         },
       );
-      if (png && mounted.current) await writeAssetThumbnail(job.guid, png);
+      await write(png);
     }
-  }, [
-    assetRegistry,
-    play,
-    readAssetChunk,
-    thumbnailsEnabled,
-    writeAssetThumbnail,
-  ]);
+    return () => {
+      cancelled = true;
+      pending.clear();
+      unsubscribe();
+    };
+  }, [projectGuid, thumbnailsEnabled]);
 
   return null;
 }

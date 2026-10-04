@@ -19,6 +19,7 @@ import {
   SetActorTransformCommand,
   SetActorsTransformsCommand,
   SetComponentPropertyCommand,
+  SetComponentLinkageCommand,
   SetComponentTransformCommand,
   SetSceneNameCommand,
   SetSceneSettingCommand,
@@ -166,6 +167,7 @@ describe("journal", () => {
       ),
       new ReorderComponentCommand(actorId, componentId, 0, 0),
       new ReparentComponentCommand(actorId, componentId, null, null),
+      new SetComponentLinkageCommand(actorId, componentId, {}, { sourceId: "prefab-mesh", overrideKeys: ["meshKind"] }),
       new SetComponentPropertyCommand(
         actorId,
         componentId,

@@ -28,6 +28,8 @@ export type NavAgentDebugState = {
 };
 
 export type NavigationBackend = {
+  /** Release native query, crowd, tile cache and imported allocation resources. Idempotent. */
+  dispose(): void;
   importNavMesh(bytes: Uint8Array): void;
   findPath(from: NavPoint, to: NavPoint): NavPoint[];
   closestPoint(point: NavPoint): NavPoint | null;

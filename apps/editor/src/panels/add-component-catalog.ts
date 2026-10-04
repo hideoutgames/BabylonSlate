@@ -1,4 +1,5 @@
 import { normalizeWaterBody, normalizeWaterBuoyancy, normalizeWaterRemoval, waterKindForClass } from "@babylonslate/core";
+import { OVERLAY_LAYOUT_CLASSES, isOverlayLayoutClass, parseOverlayLayoutProperties } from "@babylonslate/core";
 import type {
   PhysicsWorldKind,
   SerializedScene,
@@ -9,10 +10,12 @@ import {
   DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
   emptySkyboxFaces,
   parseText3DProperties,
+  parsePainter2DProperties,
   parseAreaRectLightProperties,
   parseFogVolumeProperties,
   parseOutlineProperties,
   parseRagdollProperties,
+  parseMovementProperties,
   parseSpringArmProperties,
   parseCableProperties,
   parseSplineProperties,
@@ -62,6 +65,12 @@ function engineComponent(
 }
 
 export const ADDABLE_COMPONENT_CLASSES: readonly AddComponentItem[] = [
+  engineComponent(
+    "MovementComponent",
+    "Movement",
+    "Actor movement, jumping, and air control driven by graph calls",
+    "General",
+  ),
   engineComponent(
     "SplineComponent",
     "Spline",
@@ -149,6 +158,8 @@ export const ADDABLE_COMPONENT_CLASSES: readonly AddComponentItem[] = [
   engineComponent("WaterPuddleComponent", "Water Puddle", "Shallow water with small ripples", "Water"),
   engineComponent("WaterRemovalVolumeComponent", "Water Removal Volume", "Removes water inside a box, sphere, cylinder or capsule", "Water"),
   engineComponent("WaterBuoyancyComponent", "Water Buoyancy", "Float with waves and respond to physics impacts", "Water"),
+  ...OVERLAY_LAYOUT_CLASSES.map(classId => engineComponent(classId, humanizePropertyLabel(classId.replace(/Component$/, "")), classId === "2DPaddingComponent" ? "Insets the parent content without drawing a surface" : "Nested SceneLayer layout", "Overlay")),
+  engineComponent("2DPainterComponent", "2D Painter", "Draw shapes, paths, curves and masks with graph nodes", "Overlay"),
   engineComponent(
     "2DAnchorComponent",
     "2D Anchor",
@@ -158,9 +169,10 @@ export const ADDABLE_COMPONENT_CLASSES: readonly AddComponentItem[] = [
   engineComponent(
     "2DButtonComponent",
     "2D Button",
-    "Pointer enter, leave, click, and press events",
+    "Pointer events and keyboard or gamepad focus navigation",
     "Overlay",
   ),
+  engineComponent("2DFocusTargetComponent", "2D Focus Target", "Keyboard and gamepad focus for any overlay element", "Overlay"),
   engineComponent(
     "2DMaterialComponent",
     "2D Material",
@@ -223,11 +235,14 @@ export function defaultPropertiesFor(
   physicsWorld: PhysicsWorldKind = "3d",
   viewportMode: ViewportMode = "3d",
 ): Record<string, unknown> {
+  if (isOverlayLayoutClass(classId)) return { ...parseOverlayLayoutProperties({}, classId) };
   const waterKind = waterKindForClass(classId);
   if (waterKind) return { ...normalizeWaterBody({}, waterKind) };
   if (classId === "WaterBuoyancyComponent") return { ...normalizeWaterBuoyancy({}), mass: 1 };
   if (classId === "WaterRemovalVolumeComponent") return { ...normalizeWaterRemoval({}) };
   switch (classId) {
+    case "MovementComponent":
+      return { ...parseMovementProperties({}) };
     case "DynamicRuntimeMeshComponent":
       return { materialGuid: null, enableCollision: false, castShadows: true, receiveShadows: true, layer: 1, mask: 0xffffffff };
     case "MeshComponent":
@@ -315,8 +330,11 @@ export function defaultPropertiesFor(
       };
     case "2DAnchorComponent":
       return { anchor: "center", offsetX: 0, offsetY: 0 };
+    case "2DPainterComponent": return { ...parsePainter2DProperties({}) };
     case "2DButtonComponent":
-      return { hitTest: "block" };
+      return { hitTest: "block", focusEnabled: true, focusInitial: false, focusUp: null, focusDown: null, focusLeft: null, focusRight: null };
+    case "2DFocusTargetComponent":
+      return { focusEnabled: true, focusInitial: false, focusUp: null, focusDown: null, focusLeft: null, focusRight: null };
     case "2DMaterialComponent":
       return { materialGuid: null, hitTest: "ignore" };
     case "2DTextureComponent":

@@ -7,6 +7,18 @@ import {
 
 export const gameInstanceNodes: NodeDefinition[] = [
   {
+    id: "gameInstance.get",
+    title: "Get Game Instance",
+    category: "game-instance",
+    description:
+      "Returns the session Game Instance. Cast it to the project's Game Instance class.",
+    pure: true,
+    pins: () => [
+      pin("gameInstance", "Game Instance", "out", objectRef("GameInstance")),
+    ],
+    codegen: () => ({ gameInstance: "ctx.getGameInstance()" }),
+  },
+  {
     id: "gameInstance.getSceneLoadingProgress",
     title: "Get Scene Loading Progress",
     category: "game-instance",

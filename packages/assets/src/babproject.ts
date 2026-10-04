@@ -55,12 +55,7 @@ export async function readProjectTree(
   const out: ProjectTreeFile[] = [];
 
   async function walk(dir: string): Promise<void> {
-    let entries;
-    try {
-      entries = await storage.readdir(dir || ".");
-    } catch {
-      return;
-    }
+    const entries = await storage.readdir(dir || ".");
     for (const entry of entries) {
       const path = dir ? `${dir}/${entry.name}` : entry.name;
       if (entry.isDir) {

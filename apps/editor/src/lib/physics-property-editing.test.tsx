@@ -45,6 +45,32 @@ function physicsEditor(classId: string, properties: Record<string, unknown>, wor
 }
 
 describe("physics Details authoring", () => {
+  it("tunes Movement and input conversion while preserving Class reset values", () => {
+    const editor = physicsEditor("MovementComponent", {}, "3d", {
+      id: "movement-template", classId: "MovementComponent", properties: { maxSpeed: 7 },
+    });
+    editor.edit("maxSpeed", "9");
+    editor.edit("jumpSpeed", "8");
+    editor.edit("inputYaw", "90");
+    editor.edit("inputScale", "0.5");
+    editor.edit("deadZone", "0.2");
+    expect(editor.current()).toMatchObject({ maxSpeed: 9, jumpSpeed: 8, inputYaw: 90, inputScale: 0.5, deadZone: 0.2 });
+    fireEvent.click(editor.getByRole("button", { name: "Reset Max Speed" }));
+    expect(editor.current().maxSpeed).toBe(7);
+  });
+
+  it("keeps 2D Movement planar and capsule dimensions valid while editing", () => {
+    const editor = physicsEditor("MovementComponent", {}, "2d");
+    expect(editor.queryByTestId("property-actor-physics-inputYaw")).toBeNull();
+    expect(editor.queryByTestId("property-actor-physics-inputSpace")).toBeNull();
+    editor.edit("height", "0.1");
+    expect(editor.current().height).toBe(0.8);
+    editor.edit("radius", "2");
+    expect(editor.current().radius).toBe(0.4);
+    editor.edit("airControl", "2");
+    expect(editor.current().airControl).toBe(1);
+  });
+
   it("edits hinge anchors and degree limits while preserving the target", () => {
     const editor = physicsEditor("PhysicsConstraintComponent", { kind: "hinge", targetActorId: "ceiling" });
     editor.edit("anchorA-x", "2.5");

@@ -33,7 +33,6 @@ import { documentId, parseDocumentId, isAssetDocumentKind, isSceneWorkspaceKind,
 import {
   appendJournalLines,
   getTile,
-  hasJournal,
   normalizeTilemapPayload,
   readJournalLines,
   readThumbnail,
@@ -69,6 +68,7 @@ import {
   diffSceneCommands,
   EditSession,
   journalRepathLine,
+  journalDiscardLine,
   replayJournalLines,
   resolveJournalLines,
   SetAssetDocumentCommand,
@@ -144,7 +144,7 @@ import {
 import { loadExportDocuments } from "../services/export-game-inputs";
 import { collectFontAssetEntries, collectFontCssStacks, collectFontFacetypeBytes, collectFontMsdfPair } from "../lib/play-fonts";
 import { loadPlayerDistFiles } from "../services/load-player-files";
-import { flushAudioReverbForSave } from "../lib/audio-reverb-bake";
+import { collectAudioReverbFlushScenes, flushAudioReverbForSave } from "../lib/audio-reverb-bake";
 import {
   flushNavBakeForSave,
   lastNavBakeSaveResult,
@@ -155,7 +155,7 @@ import {
   knownClassIdSet,
   validateSerializedGraph,
 } from "../services/graph-validation";
-import { collectClassGraphsForPalette, collectGraphTypeAssets, collectSceneDocumentsForPalette, typeSchemasFromGraphAssets } from "../lib/logic-graph-document";
+import { collectClassGraphsForPalette, collectGraphTypeAssets, collectSceneDocumentsForPalette, collectSubsystemClassesForPalette, typeSchemasFromGraphAssets } from "../lib/logic-graph-document";
 import { applyFocusLayout, focusKeepPanelIds } from "../shell/layout-ops";
 import {
   capturePanelPlacement,
@@ -195,7 +195,6 @@ import {
 } from "../lib/scene-layer-document";
 import { tryReparentUserClass } from "../lib/reparent-class";
 import {
-  copyInstanceLinkage,
   descendantClassIds,
   prefabTemplatesByClassId,
   scenesEqualForPrefabSync,
@@ -260,7 +259,7 @@ import {
   materialClosureFromGuids,
   sceneLayerGuidsFromScenes,
   sceneLayerGuidsFromGraphs,
-  sceneLayerMaterialGuidsFromGraphs,
+  materialGuidsFromGraphs,
   overlayEditorScenesFromLayers,
   playFontGuidsFromScenes,
   type PlayAnimGraphEntry,
@@ -280,11 +279,17 @@ import {
   saveAllTrace,
 } from "../lib/dirty-trace";
 import { enqueueModelThumbnailJobs } from "../lib/model-thumbnail-queue";
+import {
+  createAssetThumbnailRevisionIndex,
+  type AssetThumbnailWriteIdentity,
+} from "../lib/asset-thumbnail-revision";
 import { animClipCatalogFromAssets } from "../lib/anim-clip-catalog";
 import { loadPlayParticleLibrary } from "../lib/play-particles";
 import {
+  materializeMaterialInstances,
   normalizeMaterialDocument,
   normalizeMaterialFunctionDocument,
+  normalizeMaterialInstanceDocument,
   type MaterialDocument,
   type MaterialFunctionDocument,
 } from "@babylonslate/shader-graph";
@@ -492,7 +497,7 @@ interface DocumentContextValue {
   toggleLayoutFocus: () => void;
   /** Lazy CB thumbnail decode (derived-data LRU, separate from scene cache). */
   loadAssetThumbnail: (assetGuid: string) => Promise<Uint8Array | null>;
-  writeAssetThumbnail: (assetGuid: string, bytes: Uint8Array) => Promise<void>;
+  writeAssetThumbnail: (assetGuid: string, bytes: Uint8Array, expected?: AssetThumbnailWriteIdentity) => Promise<void>;
   thumbnailVersions: Readonly<Record<string, number>>;
   thumbnailsEnabled: boolean;
   /** Compile and validate every project graph for the Play prepare path. */
@@ -668,7 +673,7 @@ function dockOptionsForIndexed(
     actorPrefab:
       kind !== "graph" ||
       !indexed ||
-      classDocumentShowsPrefab(indexed.header.parentClass, parentOf, {
+      classDocumentShowsPrefab(indexed.header.parentClass, (id) => parentOf(id) ?? null, {
         assetType: indexed.header.type,
       }),
     sourceControl: sourceControlEnabled,
@@ -764,9 +769,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     () => new Set(),
   );
   const saveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Keyed by asset guid, and projects made from one template share guids:
+  // Keyed by saved revision, and projects made from one template share guids:
   // enterEditor replaces it so one project never shows another's thumbnails.
   const thumbnailLruRef = useRef(new ThumbnailDecodeLru(THUMBNAIL_DECODE_LRU_ENTRIES));
+  const requestedThumbnailRevisionsRef = useRef(new Map<string, string>());
   const thumbnailsEnabledRef = useRef(true);
   const [thumbnailVersions, setThumbnailVersions] = useState<Record<string, number>>({});
 
@@ -786,10 +792,43 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const [homepageReady, setHomepageReady] = useState(false);
   const [templates, setTemplates] = useState<ProjectTemplate[]>([]);
   const [registryVersion, setRegistryVersion] = useState(0);
+  const previousThumbnailIndexRef = useRef<ReturnType<typeof createAssetThumbnailRevisionIndex> | null>(null);
+  const thumbnailRevisionIndex = useMemo(
+    () => {
+      void registryVersion;
+      const assets = projectService.registry?.list() ?? [];
+      const previous = previousThumbnailIndexRef.current;
+      // Document edits also bump registryVersion. Reuse saved revisions until
+      // an indexed header actually changes, without hashing on every gesture.
+      const pixelsPerUnit = projectDocument?.settings.twoD.pixelsPerUnit;
+      const next = previous?.matches(assets, pixelsPerUnit) ? previous : createAssetThumbnailRevisionIndex(assets, pixelsPerUnit);
+      previousThumbnailIndexRef.current = next;
+      return next;
+    },
+    [projectDocument?.settings.twoD.pixelsPerUnit, projectService, registryVersion],
+  );
+  const thumbnailRevisionIndexRef = useRef(thumbnailRevisionIndex);
+  thumbnailRevisionIndexRef.current = thumbnailRevisionIndex;
+  useEffect(() => {
+    const changed: string[] = [];
+    for (const [guid, previous] of requestedThumbnailRevisionsRef.current) {
+      const next = thumbnailRevisionIndex.revision(guid);
+      if (next === previous) continue;
+      if (next === null) requestedThumbnailRevisionsRef.current.delete(guid);
+      else requestedThumbnailRevisionsRef.current.set(guid, next);
+      changed.push(guid);
+    }
+    if (changed.length) setThumbnailVersions((versions) => {
+      const next = { ...versions };
+      for (const guid of changed) next[guid] = (next[guid] ?? 0) + 1;
+      return next;
+    });
+  }, [thumbnailRevisionIndex]);
   const [dockWindowTick, setDockWindowTick] = useState(0);
   const [thumbnailsEnabled, setThumbnailsEnabled] = useState(true);
   const [pendingExclusiveScene, setPendingExclusiveScene] =
     useState<DocumentRef | null>(null);
+  const exclusiveSceneRequest = useRef(0);
   const [lastCompiledSignature, setLastCompiledSignature] = useState<
     string | null
   >(null);
@@ -1107,7 +1146,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           );
           documentService.replaceLoadedContent(
             doc.id,
-            editorTabContentForKind(doc.ref.kind, loaded) as typeof doc.content,
+            editorTabContentForKind(doc.ref.kind, loaded) as NonNullable<typeof doc.content>,
           );
           editSessionRef.current.dropDocument(doc.id);
         } catch {
@@ -1403,6 +1442,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       setFocusedLayoutIds(new Set());
       editSessionRef.current.clear();
       thumbnailLruRef.current = new ThumbnailDecodeLru(THUMBNAIL_DECODE_LRU_ENTRIES);
+      requestedThumbnailRevisionsRef.current.clear();
+      setThumbnailVersions({});
       try {
         await documentService.initializeFromProject(
           projectService,
@@ -1447,7 +1488,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       projectService.setDerivedStorage(derived);
       const guid = projectService.guid;
       if (guid) {
-        setRecoveryAvailable(await hasJournal(derived, guid));
+        setRecoveryAvailable(resolveJournalLines(await readJournalLines(derived, guid)).length > 0);
       }
       await refreshProjectList();
       await captureMtimeSnapshot();
@@ -1887,8 +1928,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       /** When set, overrides `playerFilesHaveKtx2Transcoder` for Texture packing. */
       transcoderAvailable?: boolean;
     }) => {
-      await flushAudioReverbForSave();
       const exportDocument = options?.projectSnapshot ?? projectDocument;
+      // Export consumes persisted sources even when a tab contains unsaved edits.
+      await flushAudioReverbForSave(await collectAudioReverbFlushScenes({
+        paths: playSceneLibraryPaths(exportDocument?.scenes ?? [], projectService.registry?.list() ?? []),
+        load: (path) => projectService.loadDocument("scene", path),
+      }));
       const preset =
         exportDocument?.settings.exportPresets[0] ?? defaultExportPreset();
       const plugins = projectService.plugins;
@@ -1978,6 +2023,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           exportDocument?.settings.infiniteLoopDetection,
         loopCount: exportDocument?.settings.loopCount,
         inputMappings: exportDocument?.settings.input,
+        focusNavigation: exportDocument?.settings.focusNavigation,
         playerFiles,
         previewBuild: options?.previewBuild,
         onPhase: options?.onPhase,
@@ -2005,6 +2051,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   const closeDocument = useCallback(
     (id: string) => {
+      const doc = documentService.getDocument(id);
+      const guid = projectService.guid;
+      if (doc && doc.ref.kind !== "content-browser" && guid) {
+        journalBuffer.append(guid, journalDiscardLine(id, new Date().toISOString()));
+      }
       for (const key of dockviewApiKeysForDocument(id)) {
         dockviewApisRef.current.delete(key);
         preFocusLayoutsRef.current.delete(key);
@@ -2028,7 +2079,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       void journalBuffer.flush();
       bump();
     },
-    [bump, disposeDockSubscriptions, documentService, journalBuffer],
+    [bump, disposeDockSubscriptions, documentService, journalBuffer, projectService],
   );
 
   const closeDocumentsForPaths = useCallback(
@@ -2198,6 +2249,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const openDocument = useCallback(
     async (ref: DocumentRef) => {
       if (ref.kind === "scene") {
+        exclusiveSceneRequest.current += 1;
         const blocking = dirtyScenesBlockingOpen(
           documentService.getDirtyDocuments(),
           documentId(ref),
@@ -2235,17 +2287,20 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     async (mode: "save" | "discard") => {
       const ref = pendingExclusiveScene;
       if (!ref) return;
+      const request = exclusiveSceneRequest.current;
       if (mode === "save") {
         const saved = await saveAll();
-        if (!saved) return;
+        if (!saved || request !== exclusiveSceneRequest.current ||
+          dirtyScenesBlockingOpen(documentService.getDirtyDocuments(), documentId(ref)).length > 0) return;
       }
       setPendingExclusiveScene(null);
       await finishOpenDocument(ref);
     },
-    [finishOpenDocument, pendingExclusiveScene, saveAll],
+    [documentService, finishOpenDocument, pendingExclusiveScene, saveAll],
   );
 
   const cancelExclusiveSceneOpen = useCallback(() => {
+    exclusiveSceneRequest.current += 1;
     setPendingExclusiveScene(null);
   }, []);
 
@@ -2524,8 +2579,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         return true;
       }
       const result = editSessionRef.current.applyBatch(id, previous, commands)!;
-      const current = copyInstanceLinkage(intended, result.doc);
-      documentService.updateScene(id, current);
+      documentService.updateScene(id, result.doc);
       await notifyAppliedCommand(id, result.command);
       void afterMutatingApply(sourceControlRef.current, doc.ref.path);
       return true;
@@ -2846,6 +2900,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       assets,
       openDocuments,
     }).map((scene) => sceneAssetClassId(scene.guid));
+    const subsystemClasses = collectSubsystemClassesForPalette({
+      assets,
+      openDocuments,
+      parentOf,
+      classIdForPath: classIdForGraphPath,
+    });
     const diagnostics = documents.flatMap((doc) =>
       validateSerializedGraph(doc.content, {
         assetGuid: doc.path,
@@ -2866,6 +2926,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         ),
         parentOf,
         otherClassGraphs: classGraphs,
+        subsystemClasses,
       }),
     );
     const bundles = [
@@ -2902,6 +2963,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         | "tilemap"
         | "material"
         | "material-function"
+        | "material-instance"
         | "audio-mixer"
         | "audio-channel"
         | "sound-attenuation"
@@ -3469,7 +3531,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
             ? "material-function"
             : asset.header.type === "Material"
               ? "material"
-              : null;
+              : asset.header.type === "MaterialInstance"
+                ? "material-instance"
+                : null;
         if (!kind) return;
         const content = await loadPlayAssetContent(kind, asset.path);
         if (content) loaded.set(guid, content);
@@ -3487,7 +3551,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         const closure = materialClosureFromGuids([...needed], (guid) =>
           loaded.get(guid) ?? null,
         );
-        for (const guid of [...closure.materials, ...closure.functions]) {
+        for (const guid of closure.referenced) {
           if (needed.has(guid)) continue;
           needed.add(guid);
           grew = true;
@@ -3507,6 +3571,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         if (content) {
           functions.set(guid, normalizeMaterialFunctionDocument(content));
         }
+      }
+      // Instances render as their root graph with replaced parameter values.
+      const instances = new Map(closure.instances.flatMap((guid) => {
+        const content = loaded.get(guid);
+        return content ? [[guid, normalizeMaterialInstanceDocument(content)] as const] : [];
+      }));
+      for (const [guid, document] of materializeMaterialInstances(documents, instances)) {
+        documents.set(guid, document);
       }
       return { documents, functions, textureGuids: closure.textures };
     },
@@ -3600,7 +3672,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       return {
         layers,
         overlayScenes: overlayEditorScenesFromLayers(layers),
-        graphMaterialGuids: sceneLayerMaterialGuidsFromGraphs(graphs),
+        graphMaterialGuids: materialGuidsFromGraphs(graphs),
       };
     },
     [
@@ -3616,24 +3688,40 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       if (!thumbnailsEnabledRef.current) return null;
       // A read that finishes after a project switch fills the old cache only.
       const lru = thumbnailLruRef.current;
-      const cached = lru.get(assetGuid);
-      if (cached) return cached;
       const guid = projectService.guid;
       if (!guid) return null;
-      const derived = await ensureDerived();
       const asset = projectService.registry?.getByGuid(assetGuid);
       const rendered = asset?.header.type === "Model" || asset?.header.type === "Animation";
+      const revisionIndex = thumbnailRevisionIndexRef.current;
+      const revision = revisionIndex.revision(assetGuid);
+      if (revision !== null) {
+        const requested = requestedThumbnailRevisionsRef.current;
+        requested.delete(assetGuid);
+        requested.set(assetGuid, revision);
+        if (requested.size > 512) requested.delete(requested.keys().next().value!);
+      }
+      else if (asset?.header.type === "Class" || asset?.header.type === "Graph") return null;
       // Regenerate old one-frame captures that may have been cached before
       // their materials were ready. Texture thumbnail keys stay unchanged.
-      const key = rendered ? `${assetGuid}.render-v2` : assetGuid;
+      const key = revision !== null ? await revisionIndex.cacheKey(assetGuid) :
+        rendered ? `${assetGuid}.render-v2` : assetGuid;
+      if (!key || projectService.guid !== guid || thumbnailLruRef.current !== lru ||
+        thumbnailRevisionIndexRef.current.revision(assetGuid) !== revision) return null;
+      const cached = lru.get(key);
+      if (cached) return cached;
+      const derived = await ensureDerived();
       const bytes = await readThumbnail(derived, guid, key);
-      if (bytes) lru.set(assetGuid, bytes);
-      else if (asset && rendered) {
+      if (projectService.guid !== guid || thumbnailLruRef.current !== lru ||
+        thumbnailRevisionIndexRef.current.revision(assetGuid) !== revision) return null;
+      if (bytes) lru.set(key, bytes);
+      else if (asset && (rendered || revision !== null)) {
         enqueueModelThumbnailJobs([{
           guid: assetGuid,
           path: asset.path,
           payload: asset.header.payload ?? {},
-          type: asset.header.type as "Model" | "Animation",
+          type: asset.header.type as "Model" | "Animation" | "Material" | "Class" | "Graph",
+          projectGuid: guid,
+          cacheKey: key,
           onlyIfMissing: true,
         }]);
       }
@@ -3643,14 +3731,21 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   );
 
   const writeAssetThumbnail = useCallback(
-    async (assetGuid: string, bytes: Uint8Array): Promise<void> => {
+    async (assetGuid: string, bytes: Uint8Array, expected?: AssetThumbnailWriteIdentity): Promise<void> => {
       const guid = projectService.guid;
-      if (!guid) return;
+      if (!guid || (expected && expected.projectGuid !== guid)) return;
+      const lru = thumbnailLruRef.current;
       const derived = await ensureDerived();
       const type = projectService.registry?.getByGuid(assetGuid)?.header.type;
-      const key = type === "Model" || type === "Animation" ? `${assetGuid}.render-v2` : assetGuid;
+      const revisionIndex = createAssetThumbnailRevisionIndex(projectService.registry?.list() ?? [], projectDocumentRef.current?.settings.twoD.pixelsPerUnit);
+      const revision = revisionIndex.revision(assetGuid);
+      const key = revision !== null ? await revisionIndex.cacheKey(assetGuid) :
+        type === "Model" || type === "Animation" ? `${assetGuid}.render-v2` : assetGuid;
+      if (!key || projectService.guid !== guid || thumbnailLruRef.current !== lru ||
+        (expected && expected.cacheKey !== key)) return;
       await writeThumbnail(derived, guid, key, bytes);
-      thumbnailLruRef.current.delete(assetGuid);
+      if (projectService.guid !== guid || thumbnailLruRef.current !== lru) return;
+      lru.delete(key);
       setThumbnailVersions((versions) => ({
         ...versions,
         [assetGuid]: (versions[assetGuid] ?? 0) + 1,
@@ -3752,7 +3847,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         const guid = projectService.guid;
         if (!guid) return false;
         const derived = await ensureDerived();
-        return journalBuffer.afterFlush(guid, () => hasJournal(derived, guid));
+        return journalBuffer.afterFlush(guid, async () =>
+          resolveJournalLines(await readJournalLines(derived, guid)).length > 0,
+        );
       },
       /** Open main graph without activating it (avoids GraphEditor stomping edits). */
       ensureMainGraphOpen: async () => {

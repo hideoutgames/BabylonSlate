@@ -46,7 +46,11 @@ function TraceSession({
   const [index, setIndexState] = useState(Math.max(0, length - 1));
   const [snapshot, setSnapshot] = useState<TraceSnapshotState>(() => ({
     mode: "tree", query: "", selectedId: null, changeId: null,
-    expanded: new Set(["/snapshot/actors", "/snapshot/gameInstance"]),
+    expanded: new Set([
+      "/snapshot/actors",
+      "/snapshot/gameInstance",
+      "/snapshot/subsystems",
+    ]),
   }));
   const [log, setLog] = useState<TraceLogState>({
     query: "",

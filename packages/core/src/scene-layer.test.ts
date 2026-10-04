@@ -142,12 +142,13 @@ describe("SceneLayer schema", () => {
     expect(restored.settings.layerBounds).toEqual({ width: 24, height: 12 });
   });
 
-  it("bakes identity-transform 2DAnchor offsets into authored XY so 16x9 layout does not jump", () => {
+  it("keeps an Outliner anchor pose-free without consuming its layout offsets on save", () => {
     const layer = normalizeSceneLayer({
       name: "HUD",
       settings: { layerBounds: { width: 16, height: 9 } },
       actors: [
-        createActor("badge", "Badge", {
+        {
+          ...createActor("badge", "Badge", {
           classId: "SceneLayerActor",
           components: [
             {
@@ -156,13 +157,17 @@ describe("SceneLayer schema", () => {
               properties: { anchor: "topLeft", offsetX: 1, offsetY: -0.5 },
             },
           ],
-        }),
+          }),
+          transform: { position: [3, 4, 5], rotation: [0, 0, 1, 0], scale: [2, 3, 4] },
+        },
       ],
     });
-    expect(layer.actors[0]?.transform.position[0]).toBe(-7);
-    expect(layer.actors[0]?.transform.position[1]).toBe(4);
-    expect(layer.actors[0]?.components[0]?.properties.offsetX).toBe(0);
-    expect(layer.actors[0]?.components[0]?.properties.offsetY).toBe(0);
+    expect(layer.actors[0]?.transform).toEqual({
+      position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1],
+    });
+    expect(layer.actors[0]?.components[0]?.transform).toBeUndefined();
+    expect(layer.actors[0]?.components[0]?.properties).toEqual({ anchor: "topLeft", offsetX: 1, offsetY: -0.5 });
+    expect(editorSceneToSceneLayer(sceneLayerToEditorScene(layer))).toEqual(layer);
   });
 
   it("round-trips an editor scene back to a SceneLayer payload", () => {

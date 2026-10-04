@@ -32,6 +32,21 @@ function node(
 }
 
 describe("functions.call", () => {
+  it("passes point arrays intact to native Painter functions", () => {
+    const registry = createDefaultNodeRegistry();
+    const call = node(registry, "draw", "functions.call", {
+      classId: "2DPainterComponent", functionName: "Draw Polyline", runtime: "painterDrawPolyline", implicitSelf: true,
+      pins: [{ name: "exec", typeId: "exec", direction: "in" }, { name: "then", typeId: "exec", direction: "out" }, { name: "points", typeId: "vec2", container: "array", direction: "in" }],
+      "default:points": [{ x: -1, y: 2 }, { x: 3, y: 4 }],
+    });
+    expect(call.pins.find((pin) => pin.name === "points")?.type).toEqual({ kind: "array", element: { kind: "vec2" } });
+    const graph: LogicGraph = { id: "g", kind: "event", nodes: [node(registry, "begin", "flow.event.beginPlay"), call], edges: [{ id: "e", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "draw", targetPinId: "exec" }] };
+    const compiled = compileGraph(graph, { assetGuid: "painter", registry });
+    const run = new Function(`${compiled.source.replace(/^export /gm, "")}\nreturn onBeginPlay;`)() as (context: unknown) => void;
+    const received: unknown[] = [];
+    run({ self: "painter", callComponentFunction: (...args: unknown[]) => received.push(args) });
+    expect(received).toEqual([["painter", "painterDrawPolyline", { points: [{ x: -1, y: 2 }, { x: 3, y: 4 }] }]]);
+  });
   it("is registered under the functions category", () => {
     expect(functionCallNodes.map((entry) => entry.id)).toContain(
       "functions.call",

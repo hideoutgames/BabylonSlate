@@ -518,6 +518,11 @@ describe("material dock catalog", () => {
     );
   });
 
+  it("opens a Material Instance on its Preview with Details beside it", () => {
+    expect(listDockWindows("material-instance").map((entry) => entry.title)).toEqual(["Preview", "Details"]);
+    expect(primaryDockPanel("material-instance")).toBe("material-instance-preview");
+  });
+
   it("anchors Locks under the material graph when source control is on", () => {
     expect(
       listDockWindows("material", { sourceControl: true }).find(

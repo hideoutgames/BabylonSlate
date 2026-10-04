@@ -13,6 +13,7 @@ export const ASSET_DOCUMENT_KINDS = [
   "blackboard",
   "material",
   "material-function",
+  "material-instance",
   "tileset",
   "tilemap",
   "enum",
@@ -97,6 +98,8 @@ export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
       return "Material";
     case "material-function":
       return "MaterialFunction";
+    case "material-instance":
+      return "MaterialInstance";
     case "tileset":
       return "Tileset";
     case "tilemap":
@@ -197,6 +200,8 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
       return "material";
     case "MaterialFunction":
       return "material-function";
+    case "MaterialInstance":
+      return "material-instance";
     case "Tileset":
       return "tileset";
     case "Tilemap":
@@ -274,6 +279,8 @@ export function documentKindLabel(kind: AssetDocumentKind): string {
       return "Material";
     case "material-function":
       return "Material Function";
+    case "material-instance":
+      return "Material Instance";
     case "tileset":
       return "Tileset";
     case "tilemap":

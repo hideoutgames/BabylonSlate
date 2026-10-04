@@ -231,7 +231,7 @@ export function ModelEditor({
           if (!open) setPickIndex(null);
         }}
         assets={assets}
-        allowedTypes={["Material"]}
+        allowedTypes={["Material", "MaterialInstance"]}
         onPick={(guid) => {
           if (pickIndex !== null) setSlotGuid(pickIndex, guid);
           setPickIndex(null);

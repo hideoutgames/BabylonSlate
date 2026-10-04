@@ -9,6 +9,7 @@ import {
   formatValue,
   inverseQuat,
   inverseRotator,
+  isSceneLayerAnchorActor,
   lerpRotator,
   lookAtRotator,
   multiplyQuats,
@@ -34,6 +35,8 @@ import {
   SceneLayer,
   dispatchInterface,
   interfaceHandlerKey,
+  isLockedEngineClassId,
+  SUBSYSTEM_CLASS_ID,
   type ClassRegistry,
   type InterfaceDispatchTarget,
   type InterfaceRegistry,
@@ -73,6 +76,8 @@ export type ScriptColor = { x: number; y: number; z: number; w: number };
  * node from a later phase runs instead of throwing.
  */
 export interface ScriptHostServices {
+  /** Session seed shared with the world and trace metadata. */
+  seed?: number;
   /** Whether an object may receive authored calls during its owner's load. */
   canRunOwner?(owner: BObject): boolean;
   inputBindings?: InputBindingControls;
@@ -87,6 +92,15 @@ export interface ScriptHostServices {
   getActors?(): readonly Actor[];
   /** Live Scene instance for the active Play scene, if any. */
   getSceneReference?(owner?: BObject | null): Scene | null;
+  /**
+   * `Get <Subsystem>`: the live (never ended) GameSubsystem, or the current
+   * main Scene's SceneSubsystem, whose class isA `classId`. Compiled graphs
+   * call it at every use, so it must be cheap and side-effect free. Hosts
+   * without subsystems (Editor Utility) omit it and the node reads null.
+   */
+  getSubsystem?(classId: string): BObject | null;
+  /** `Get Game Instance`: the session Game Instance, if the host has one. */
+  getGameInstance?(): BObject | null;
   getTargetSceneName?(target: unknown): string;
   loadScene?(target: unknown, blocking: boolean): Promise<void>;
   unloadScene?(target: unknown, blocking: boolean): Promise<void>;
@@ -126,7 +140,7 @@ export interface ScriptHostServices {
    */
   findActor?(actorId: string): Actor | undefined;
   sampleWater?(position: Vec3, actorId: string | null): WaterSample & { actorId: string | null };
-  lineTrace?(start: Vec3, end: Vec3, options?: LineTraceOptions): HitResult;
+  lineTrace?(start: Vec3, end: Vec3, options?: LineTraceOptions & { channel?: string }): HitResult;
   projectCursorToScene?(
     channel?: string,
     options?: { drawDebug?: boolean; duration?: number },
@@ -134,11 +148,12 @@ export interface ScriptHostServices {
     worldOrigin: Vec3;
     worldDirection: Vec3;
   };
-  sphereOverlap?(center: Vec3, radius: number): OverlapResult;
+  sphereOverlap?(center: Vec3, radius: number, channel?: string): OverlapResult;
   shapeSweep?(
     shape: ColliderShape,
     start: PhysicsTransform,
     end: PhysicsTransform,
+    channel?: string,
   ): HitResult;
   addImpulse?(
     actor: Actor | null | undefined,
@@ -160,6 +175,8 @@ export interface ScriptHostServices {
   ): SceneLayer | null;
   removeSceneLayer?(layerGuid: string): void;
   clearSceneLayers?(): void;
+  setFocusTarget?(target: unknown): boolean;
+  clearFocusTarget?(target: unknown): void;
   registerSceneLayerPostProcess?(
     layerGuid: string,
     materialGuid: string,
@@ -200,8 +217,12 @@ export interface ScriptHostServices {
   getRenderTargetTextureTarget?(guid: string): string | null;
   captureRenderTarget?(target: Actor): void;
   updateIllumination?(target: unknown): void;
+  paint2D?(component: ActorComponent, operation: string, args: Record<string, unknown>): boolean;
+  text2DAppear?(component: ActorComponent, operation: "triggerAppear" | "play" | "playReverse"): void;
+  text2DAppearProgress?(component: ActorComponent): number;
   refreshComponent?(component: ActorComponent, propertyName?: string): void;
   dynamicMeshFunction?(component: ActorComponent, name: string, args: Record<string, unknown>): Record<string, unknown>;
+  movementFunction?(component: ActorComponent, name: string, args: Record<string, unknown>): Record<string, unknown>;
   /** Apply live world-scene gravity from a Scene Gravity Set. */
   setWorldGravity?(gravity: { x: number; y: number; z: number }): void;
   findPathTo?(
@@ -391,6 +412,10 @@ export interface ScriptContext {
   getProjectName(): string;
   getProjectVersion(): string;
   getSceneReference(): Scene | null;
+  /** Live subsystem whose class isA `classId`, or null (`Get <Subsystem>`). */
+  getSubsystem(classId: string): BObject | null;
+  /** The session Game Instance, or null in hosts without one. */
+  getGameInstance(): BObject | null;
   getAnimGraphVariable(target: unknown, name: string): unknown;
   setAnimGraphVariable(target: unknown, name: string, value: unknown): void;
   getAnimGraphCurrentState(target: unknown): { id: string; name: string } | null;
@@ -492,6 +517,8 @@ export interface ScriptContext {
   createSceneLayer(assetGuid: string, zOrder?: number): SceneLayer | null;
   removeSceneLayer(layer: BObject | string | null | undefined): void;
   clearSceneLayers(): void;
+  setFocusTarget(target: unknown): boolean;
+  clearFocusTarget(target: unknown): void;
   registerSceneLayerPostProcess(
     layer: BObject | string | null | undefined,
     materialGuid: string,
@@ -525,6 +552,8 @@ export interface ScriptContext {
   resetMaterialFloatParameter(material: unknown, name: string): boolean;
   resetMaterialColorParameter(material: unknown, name: string): boolean;
   resetMaterialTextureParameter(material: unknown, name: string): boolean;
+  setMeshMaterial(component: unknown, materialGuid: string | null): MaterialObject | null;
+  getMaterialAsset(material: unknown): string | null;
   possessCamera(target: unknown): void;
   getRenderTargetMode(guid: string | null): RenderTargetMode;
   getRenderTargetTextureTarget(guid: string | null): string | null;
@@ -589,6 +618,12 @@ type LoadedScript = {
  */
 export class ScriptHost {
   private readonly byClassId = new Map<string, LoadedScript[]>();
+  /**
+   * `scriptLineage` per class id. `hooksFor` resolves it on every tick for
+   * every component and actor, so it is cached; `load` clears it, and the
+   * runtime only changes the ClassRegistry immediately before a `load`.
+   */
+  private readonly lineageByClassId = new Map<string, readonly LoadedScript[][]>();
   private readonly pending = new WeakMap<BObject, Set<string>>();
   private readonly flowStates = new WeakMap<
     BObject,
@@ -602,17 +637,22 @@ export class ScriptHost {
   private invokingOwner: BObject | null = null;
   private finalizingOwner: BObject | null = null;
   private commandResult = { success: true, output: "" };
-  private readonly rng: Rng = createSeededRng(1);
+  private readonly rng: Rng;
 
   constructor(services: ScriptHostServices) {
     this.services = services;
+    this.rng = createSeededRng(services.seed ?? 1);
   }
 
   async load(script: CompiledScript): Promise<void> {
+    // The class was just registered (or its parent repaired): drop lineages
+    // resolved against the previous hierarchy before the module import yields.
+    this.lineageByClassId.clear();
     const exports = await loadCompiledModule(script.source, script.assetGuid);
     const list = this.byClassId.get(script.classId) ?? [];
     list.push({ script, exports });
     this.byClassId.set(script.classId, list);
+    this.lineageByClassId.clear();
   }
 
   classIds(): string[] {
@@ -623,24 +663,82 @@ export class ScriptHost {
     return (this.byClassId.get(classId) ?? []).map((entry) => entry.script);
   }
 
-  /** Lifecycle hooks that run every entry point registered for `classId`. */
+  /**
+   * Loaded scripts of `classId`, then of each user-class ancestor, nearest
+   * first. Scripts keyed by a locked engine id answer only for that exact id
+   * and are never inherited.
+   */
+  private scriptLineage(classId: string): readonly LoadedScript[][] {
+    const cached = this.lineageByClassId.get(classId);
+    if (cached) return cached;
+    const lineage: LoadedScript[][] = [];
+    const own = this.byClassId.get(classId);
+    if (own && own.length > 0) lineage.push(own);
+    const ancestry = this.services.classRegistry?.ancestry(classId) ?? [];
+    for (const ancestorId of ancestry.slice(1)) {
+      const loaded = this.byClassId.get(ancestorId);
+      if (!loaded || loaded.length === 0) continue;
+      // Engine bases only have engine ancestors.
+      if (isLockedEngineClassId(ancestorId)) break;
+      lineage.push(loaded);
+    }
+    this.lineageByClassId.set(classId, lineage);
+    return lineage;
+  }
+
+  /**
+   * The nearest class in `classId`'s lineage that implements `event`. A class
+   * that implements an event replaces its ancestors' implementation; Call
+   * Parent (`ctx.invokeEvent`) reaches an ancestor explicitly.
+   */
+  private eventScriptsFor(
+    classId: string,
+    event: string,
+    self: BObject | null,
+    componentId?: string,
+  ): LoadedScript[] | undefined {
+    return this.scriptLineage(classId).find((loaded) =>
+      loaded.some((entry) =>
+        entry.script.entryPoints.some(
+          (point) =>
+            point.event === event &&
+            typeof entry.exports[point.name] === "function" &&
+            entryMatchesComponentInvoke(point.componentId, componentId, self),
+        ),
+      ),
+    );
+  }
+
+  /** The nearest class in `classId`'s lineage that exports function `exportName`. */
+  private functionScriptsFor(
+    classId: string,
+    exportName: string,
+  ): LoadedScript[] | undefined {
+    return this.scriptLineage(classId).find((loaded) =>
+      loaded.some((entry) => typeof entry.exports[exportName] === "function"),
+    );
+  }
+
+  /**
+   * Lifecycle hooks for `classId`. Each event runs the nearest implementation
+   * in the class lineage, so a child inherits its parent's events. Creation is
+   * On Init for the Game Instance and subsystems, Begin Play for the rest.
+   */
   hooksFor(classId: string): LifecycleHooks<BObject> | undefined {
-    const loaded = this.byClassId.get(classId);
-    if (!loaded || loaded.length === 0) return undefined;
-    const isGameInstance =
-      this.services.classRegistry?.isA(classId, "GameInstance") ??
-      classId === "GameInstance";
+    if (this.scriptLineage(classId).length === 0) return undefined;
+    const ancestry = this.services.classRegistry?.ancestry(classId) ?? [classId];
+    const creationEvent =
+      ancestry.includes("GameInstance") || ancestry.includes(SUBSYSTEM_CLASS_ID)
+        ? "onInit"
+        : "onBeginPlay";
     return {
       onCreation: (self) => {
-        this.dispatchEvent(
-          loaded,
-          isGameInstance ? "onInit" : "onBeginPlay",
-          self,
-          0,
-          0,
-        );
+        const loaded = this.eventScriptsFor(classId, creationEvent, self);
+        if (loaded) this.dispatchEvent(loaded, creationEvent, self, 0, 0);
       },
       onTick: (self, ctx: TickContext) => {
+        const loaded = this.eventScriptsFor(classId, "onTick", self);
+        if (!loaded) return;
         this.dispatchEvent(
           loaded,
           "onTick",
@@ -653,7 +751,8 @@ export class ScriptHost {
       },
       onDestroyed: (self) => {
         this.clearFlowState(self);
-        this.dispatchFinalEvent(loaded, "onDestroyed", self);
+        const loaded = this.eventScriptsFor(classId, "onDestroyed", self);
+        if (loaded) this.dispatchFinalEvent(loaded, "onDestroyed", self);
       },
     };
   }
@@ -671,9 +770,13 @@ export class ScriptHost {
     return this.commandResult;
   }
 
-  /** The driver calls this only for the actual GameInstance shutdown lifecycle. */
+  /**
+   * Final-lifecycle dispatch: the driver calls this only for the Game
+   * Instance's shutdown events and a subsystem's On End. Only the dying
+   * object's synchronous calls into itself bypass owner admission.
+   */
   invokeGameShutdownEvent(classId: string, event: "onEnd" | "onSceneExit", self: BObject, args: Record<string, unknown> = {}): void {
-    const loaded = this.byClassId.get(classId);
+    const loaded = this.eventScriptsFor(classId, event, self);
     if (loaded) this.dispatchFinalEvent(loaded, event, self, args);
   }
 
@@ -712,8 +815,8 @@ export class ScriptHost {
     args: Record<string, unknown> = {},
     componentId?: string,
   ): void {
-    const loaded = this.byClassId.get(classId);
-    if (!loaded || loaded.length === 0) return;
+    const loaded = this.eventScriptsFor(classId, event, self, componentId);
+    if (!loaded) return;
     if (self && !this.canInvokeOwner(self)) return;
     this.dispatchEvent(loaded, event, self, 0, 0, args, undefined, undefined, componentId);
   }
@@ -780,48 +883,77 @@ export class ScriptHost {
 
   /**
    * Register compiled function implementations as interface handlers on `object`.
-   * Keys match `interfaceHandlerKey` (`guid:method`).
+   * Keys match `interfaceHandlerKey` (`guid:method`). Implementations declared by
+   * user ancestors are inherited; the nearest declaring class wins.
    */
   bindInterfaceHandlers(object: BObject): void {
-    const loaded = this.byClassId.get(object.classId);
-    if (!loaded || loaded.length === 0) return;
+    const lineage = this.scriptLineage(object.classId);
+    if (lineage.length === 0) return;
     for (const iface of object.implementedInterfaces) {
-      for (const entry of loaded) {
-        for (const impl of entry.script.interfaceImplementations ?? []) {
-          if (impl.interfaceGuid !== iface) continue;
-          const exportName = impl.exportName;
-          const key = interfaceHandlerKey(iface, impl.method);
-          object.interfaceHandlers.set(key, (args) => {
-            if (!this.canInvokeOwner(object)) return {};
-            const fn = entry.exports[exportName];
-            if (typeof fn !== "function") return {};
-            const ctx = this.createContext(
-              object,
-              0,
-              0,
-              args,
-              undefined,
-              undefined,
-              entry.script.assetGuid,
+      // Farthest ancestor first so nearer declarations replace its handlers.
+      for (const loaded of [...lineage].reverse()) {
+        for (const entry of loaded) {
+          for (const impl of entry.script.interfaceImplementations ?? []) {
+            if (impl.interfaceGuid !== iface) continue;
+            const exportName = impl.exportName;
+            const key = interfaceHandlerKey(iface, impl.method);
+            object.interfaceHandlers.set(key, (args) =>
+              this.invokeInterfaceHandler(object, loaded, entry, exportName, args),
             );
-            try {
-              const result = this.invokeOwned(object, () => (fn as (ctx: ScriptContext) => unknown)(ctx));
-              if (result instanceof Promise) {
-                void result.catch((error) => this.services.reportError(error));
-                return {};
-              }
-              return (
-                result && typeof result === "object" && !Array.isArray(result)
-                  ? result
-                  : {}
-              ) as Record<string, unknown>;
-            } catch (error) {
-              this.services.reportError(error);
-              return {};
-            }
-          });
+          }
         }
       }
+    }
+  }
+
+  /**
+   * Run an interface implementation on `object`. A class between `object` and
+   * the declaring class that overrides the implementing function runs instead.
+   */
+  private invokeInterfaceHandler(
+    object: BObject,
+    declaringScripts: readonly LoadedScript[],
+    declaringEntry: LoadedScript,
+    exportName: string,
+    args: Record<string, unknown>,
+  ): Record<string, unknown> {
+    if (!this.canInvokeOwner(object)) return {};
+    let entry = declaringEntry;
+    for (const loaded of this.scriptLineage(object.classId)) {
+      if (loaded === declaringScripts) break;
+      const override = loaded.find(
+        (candidate) => typeof candidate.exports[exportName] === "function",
+      );
+      if (override) {
+        entry = override;
+        break;
+      }
+    }
+    const fn = entry.exports[exportName];
+    if (typeof fn !== "function") return {};
+    const ctx = this.createContext(
+      object,
+      0,
+      0,
+      args,
+      undefined,
+      undefined,
+      entry.script.assetGuid,
+    );
+    try {
+      const result = this.invokeOwned(object, () => (fn as (ctx: ScriptContext) => unknown)(ctx));
+      if (result instanceof Promise) {
+        void result.catch((error) => this.services.reportError(error));
+        return {};
+      }
+      return (
+        result && typeof result === "object" && !Array.isArray(result)
+          ? result
+          : {}
+      ) as Record<string, unknown>;
+    } catch (error) {
+      this.services.reportError(error);
+      return {};
     }
   }
 
@@ -962,6 +1094,11 @@ export class ScriptHost {
       },
       getVariableFrom: (target, name) => {
         const object = target ?? self;
+        if (object instanceof ActorComponent && object.classId === "2DRichTextComponent" &&
+          (name === "appearProgress" || name === "isRevealed")) {
+          const progress = services.text2DAppearProgress?.(object) ?? 1;
+          return name === "isRevealed" ? progress === 1 : progress;
+        }
         if (object instanceof ActorComponent && object.classId === "RenderTargetCaptureComponent" && name === "actorIds") {
           return this.canInvokeOwner(object) ? captureActorReferences(object, (id) => services.findActor?.(id)) : [];
         }
@@ -1011,6 +1148,22 @@ export class ScriptHost {
       resetMaterialFloatParameter: (material, name) => this.resetMaterialParameter(material, name, "float"),
       resetMaterialColorParameter: (material, name) => this.resetMaterialParameter(material, name, "color"),
       resetMaterialTextureParameter: (material, name) => this.resetMaterialParameter(material, name, "texture"),
+      setMeshMaterial: (component, materialGuid) => {
+        const target = asActorComponent(component);
+        if (!target || (target.classId !== "MeshComponent" && target.classId !== "DynamicRuntimeMeshComponent") ||
+          !this.canInvokeOwner(target)) return null;
+        const guid = typeof materialGuid === "string" ? materialGuid.trim() : "";
+        // Re-applying the current asset keeps the runtime parameter values.
+        if (target.getVariable("materialGuid") !== guid) {
+          target.setVariable("materialGuid", guid);
+          this.applyComponentVariable(target, "materialGuid", guid);
+        }
+        return (target.getVariable("materialObject") as MaterialObject | null) ?? null;
+      },
+      getMaterialAsset: (material) =>
+        (material instanceof MaterialObject || material instanceof PostProcessMaterialObject) && !material.destroyed
+          ? material.materialAssetGuid
+          : null,
       setMaterialFloatParameter: (material, name, value) => {
         if (typeof value !== "number" || !Number.isFinite(value)) return;
         this.setMaterialParameter(material, name, { kind: "float", value });
@@ -1048,7 +1201,7 @@ export class ScriptHost {
       },
       setActorLocation: (actor, location) => {
         const target = asActor(actor ?? self);
-        if (!target || !location) return;
+        if (!target || !location || isSceneLayerAnchorActor(target)) return;
         target.transform.position.x = Number(location.x ?? 0);
         target.transform.position.y = Number(location.y ?? 0);
         target.transform.position.z = Number(location.z ?? 0);
@@ -1056,7 +1209,7 @@ export class ScriptHost {
       },
       addActorWorldOffset: (actor, offset) => {
         const target = asActor(actor ?? self);
-        if (!target || !offset) return;
+        if (!target || !offset || isSceneLayerAnchorActor(target)) return;
         target.transform.position.x += Number(offset.x ?? 0);
         target.transform.position.y += Number(offset.y ?? 0);
         target.transform.position.z += Number(offset.z ?? 0);
@@ -1064,7 +1217,7 @@ export class ScriptHost {
       },
       setActorRotation: (actor, rotation) => {
         const target = asActor(actor ?? self);
-        if (!target) return;
+        if (!target || isSceneLayerAnchorActor(target)) return;
         const quat = rotatorToQuat(rotation);
         target.transform.rotation.x = quat.x;
         target.transform.rotation.y = quat.y;
@@ -1074,7 +1227,7 @@ export class ScriptHost {
       },
       setActorScale: (actor, scale) => {
         const target = asActor(actor ?? self);
-        if (!target || !scale) return;
+        if (!target || !scale || isSceneLayerAnchorActor(target)) return;
         target.transform.scale.x = Number(scale.x ?? 1);
         target.transform.scale.y = Number(scale.y ?? 1);
         target.transform.scale.z = Number(scale.z ?? 1);
@@ -1082,7 +1235,7 @@ export class ScriptHost {
       },
       setActorTransform: (actor, transform, options) => {
         const target = asActor(actor ?? self);
-        if (!target || !transform) return;
+        if (!target || !transform || isSceneLayerAnchorActor(target)) return;
         if (transform.position) {
           target.transform.position.x = Number(transform.position.x ?? 0);
           target.transform.position.y = Number(transform.position.y ?? 0);
@@ -1256,6 +1409,11 @@ export class ScriptHost {
         const scene = services.getSceneReference?.(self) ?? null;
         return scene && !scene.destroyed ? scene : null;
       },
+      getSubsystem: (classId) => {
+        const id = typeof classId === "string" ? classId.trim() : "";
+        return id ? (services.getSubsystem?.(id) ?? null) : null;
+      },
+      getGameInstance: () => services.getGameInstance?.() ?? null,
       isA: (instance, classId) => {
         if (instance == null || typeof instance !== "object") return false;
         const id = (instance as { classId?: unknown }).classId;
@@ -1280,8 +1438,8 @@ export class ScriptHost {
       invokeCustomEvent: (target, eventName, eventArgs) => {
         const receiver = (target ?? self) as BObject | null;
         if (!receiver || !this.canInvokeOwner(receiver) || typeof eventName !== "string" || !eventName) return;
-        const loaded = this.byClassId.get(receiver.classId);
-        if (loaded && loaded.length > 0) {
+        const loaded = this.eventScriptsFor(receiver.classId, eventName, receiver);
+        if (loaded) {
           this.dispatchEvent(
             loaded,
             eventName,
@@ -1305,8 +1463,9 @@ export class ScriptHost {
         if (self && !this.canInvokeOwner(self)) return;
         if (typeof classId !== "string" || !classId.trim()) return;
         if (typeof eventName !== "string" || !eventName) return;
-        const loaded = this.byClassId.get(classId.trim());
-        if (!loaded || loaded.length === 0) return;
+        // Call Parent passes the parent class; resolve from there, never from self.
+        const loaded = this.eventScriptsFor(classId.trim(), eventName, self);
+        if (!loaded) return;
         this.dispatchEvent(
           loaded,
           eventName,
@@ -1325,14 +1484,14 @@ export class ScriptHost {
         let loaded: LoadedScript[] | undefined;
         let receiver: BObject | null = null;
         if (typeof target === "string") {
-          loaded = this.byClassId.get(target);
+          loaded = this.functionScriptsFor(target, functionName);
         } else {
           const object = (target ?? self) as BObject | null;
           if (!object || !this.canInvokeOwner(object)) return {};
           receiver = object;
-          loaded = this.byClassId.get(object.classId);
+          loaded = this.functionScriptsFor(object.classId, functionName);
         }
-        if (!loaded || loaded.length === 0) return {};
+        if (!loaded) return {};
         let result: unknown = {};
         for (const entry of loaded) {
           const fn = entry.exports[functionName];
@@ -1402,7 +1561,7 @@ export class ScriptHost {
         const sample = services.sampleWater?.(position, waterActor?.guid ?? null);
         return sample ? { ...sample, actor: resolveLiveActor(services, sample.actorId) } : { ...emptyWaterSample(), actor: null };
       },
-      lineTrace: (start, end, _channel, options) => {
+      lineTrace: (start, end, channel, options) => {
         const ignoreActorIds = [
           ...new Set(
             (options?.actorsToIgnore ?? [])
@@ -1410,7 +1569,7 @@ export class ScriptHost {
               .map((actor) => actor.guid),
           ),
         ];
-        const hit = services.lineTrace?.(start, end, { ignoreActorIds }) ?? {
+        const hit = services.lineTrace?.(start, end, { ignoreActorIds, ...(channel ? { channel } : {}) }) ?? {
           hit: false,
           location: null,
           actorId: null,
@@ -1470,8 +1629,8 @@ export class ScriptHost {
           worldDirection: hit.worldDirection ?? { x: 0, y: 0, z: 0 },
         };
       },
-      sphereOverlap: (center, radius) => {
-        const overlap = services.sphereOverlap?.(center, radius) ?? {
+      sphereOverlap: (center, radius, channel) => {
+        const overlap = services.sphereOverlap?.(center, radius, channel) ?? {
           actorIds: [],
           bodyIds: [],
         };
@@ -1481,8 +1640,8 @@ export class ScriptHost {
           actors: resolveLiveActors(services, overlap.actorIds),
         };
       },
-      shapeSweep: (shape, start, end) => {
-        const hit = services.shapeSweep?.(shape, start, end) ?? {
+      shapeSweep: (shape, start, end, channel) => {
+        const hit = services.shapeSweep?.(shape, start, end, channel) ?? {
           hit: false,
           location: null,
           normal: null,
@@ -1550,6 +1709,8 @@ export class ScriptHost {
       clearSceneLayers: () => {
         services.clearSceneLayers?.();
       },
+      setFocusTarget: (target) => services.setFocusTarget?.(target) ?? false,
+      clearFocusTarget: (target) => { services.clearFocusTarget?.(target); },
       registerSceneLayerPostProcess: (layer, materialGuid) => {
         const guid = sceneLayerGuidOf(layer);
         if (guid) {
@@ -1697,9 +1858,24 @@ export class ScriptHost {
   ): Record<string, unknown> {
     const component = asActorComponent(target);
     if (!component || !name) return {};
+    if (component.classId === "2DRichTextComponent" &&
+      (name === "triggerAppear" || name === "play" || name === "playReverse")) {
+      if (this.canInvokeOwner(component)) this.services.text2DAppear?.(component, name);
+      return {};
+    }
+    if (name === "setFocusTarget") return { success: this.canInvokeOwner(component) && this.services.setFocusTarget?.(component) === true };
+    if (name === "clearFocusTarget") {
+      if (this.canInvokeOwner(component)) this.services.clearFocusTarget?.(component);
+      return {};
+    }
+    if (name.startsWith("painter")) return { success: this.canInvokeOwner(component) && this.services.paint2D?.(component, name, args) === true };
     if (component.classId === "DynamicRuntimeMeshComponent") {
       if (!this.canInvokeOwner(component)) return { success: false };
       return this.services.dynamicMeshFunction?.(component, name, args) ?? { success: false };
+    }
+    if (component.classId === "MovementComponent") {
+      if (!this.canInvokeOwner(component)) return {};
+      return this.services.movementFunction?.(component, name, args) ?? {};
     }
     if (name === "setText") {
       const text = String(args.text ?? "");

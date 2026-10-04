@@ -1672,13 +1672,13 @@ function GraphEditorCanvas({
   const copySelection = useCallback(() => {
     const selected = selectedNodes.filter((node) => !isProtectedNode(node));
     if (selected.length === 0) return;
+    const ids = new Set(selected.map((node) => node.id));
     clipboardRef.current = {
       nodes: selected.map((node) => ({
         ...node,
         data: { ...node.data },
       })),
       edges: graphStateRef.current.edges.filter((edge) => {
-        const ids = new Set(selected.map((node) => node.id));
         return ids.has(edge.source) && ids.has(edge.target);
       }),
     };

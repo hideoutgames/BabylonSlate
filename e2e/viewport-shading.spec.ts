@@ -3,6 +3,7 @@ import {
   createActor,
   createDefaultScene,
   createMeshComponent,
+  createSkyboxComponent,
 } from "../packages/core/src/index.ts";
 import {
   createContentBrowserAsset,
@@ -46,6 +47,26 @@ async function setShading(page: Page, mode: "pbr" | "unlit", prefix = "") {
   await expect(page.getByTestId(`${prefix}viewport-settings-menu`)).toHaveCount(
     0,
   );
+}
+
+async function expectSkyboxPixels(canvas: Locator) {
+  await expect.poll(() => canvas.evaluate((node: HTMLCanvasElement) => {
+    if (!node.width || !node.height) return 0;
+    const copy = document.createElement("canvas");
+    copy.width = copy.height = 32;
+    const context = copy.getContext("2d")!;
+    context.drawImage(node, 0, 0, 32, 32);
+    const pixels = context.getImageData(0, 0, 32, 32).data;
+    let sky = 0;
+    for (let i = 0; i < pixels.length; i += 4) {
+      // The default cubemap is blue; white albedo, black clear, and the green
+      // test subject cannot satisfy this check.
+      if (pixels[i + 2]! > pixels[i]! + 20 &&
+          pixels[i + 2]! > pixels[i + 1]! + 10 &&
+          pixels[i + 1]! > 40 && pixels[i + 3]! > 240) sky++;
+    }
+    return sky;
+  }), { timeout: 20_000 }).toBeGreaterThan(100);
 }
 
 test("Emissive surface stays self-lit on a curved mesh without scene lights", async ({
@@ -119,7 +140,7 @@ test("Emissive surface stays self-lit on a curved mesh without scene lights", as
     .toBeLessThan(50);
 });
 
-test("Unlit preserves PBR model color in Scene, Prefab, and Model Preview", async ({
+test("Unlit preserves skyboxes and PBR model color in Scene, Prefab, and Model Preview", async ({
   page,
 }, testInfo) => {
   test.setTimeout(180_000);
@@ -150,12 +171,14 @@ test("Unlit preserves PBR model color in Scene, Prefab, and Model Preview", asyn
   await expect
     .poll(() => greenPixels(preview), { timeout: 20_000 })
     .toBeGreaterThan(500);
+  await expectSkyboxPixels(preview);
   await preview.screenshot({ path: testInfo.outputPath("model-unlit.png") });
   await page.getByTestId("model-preview-shading").click();
   await page.getByTestId("model-preview-shading-pbr").click();
   await expect
     .poll(() => greenPixels(preview), { timeout: 20_000 })
     .toBeGreaterThan(500);
+  await expectSkyboxPixels(preview);
   await preview.screenshot({ path: testInfo.outputPath("model-pbr.png") });
   await saveAllIfEnabled(page);
 
@@ -167,6 +190,9 @@ test("Unlit preserves PBR model color in Scene, Prefab, and Model Preview", asyn
   scene.settings.grid.showGrid = false;
   scene.actors = [
     createActor("unlit-model", "Unlit Model", { components: [mesh] }),
+    createActor("sky", "Skybox", {
+      components: [createSkyboxComponent("sky-component")],
+    }),
   ];
   await openMainScene(page);
   await setPreviewScene(page, scene);
@@ -183,9 +209,11 @@ test("Unlit preserves PBR model color in Scene, Prefab, and Model Preview", asyn
   await expect
     .poll(() => greenPixels(viewport), { timeout: 20_000 })
     .toBeGreaterThan(500);
+  await expectSkyboxPixels(viewport);
   await viewport.screenshot({ path: testInfo.outputPath("scene-unlit.png") });
   await setShading(page, "pbr");
   await expect.poll(() => greenPixels(viewport)).toBeLessThan(100);
+  await expectSkyboxPixels(viewport);
   await setShading(page, "unlit");
   await expect.poll(() => greenPixels(viewport)).toBeGreaterThan(500);
 

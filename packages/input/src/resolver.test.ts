@@ -12,6 +12,26 @@ function key(tick: number, code: string, phase: "down" | "up"): RawInputEvent {
 }
 
 describe("InputResolver event transitions", () => {
+  it.each([
+    ["shift", "ShiftLeft", "ShiftRight"],
+    ["ctrl", "ControlLeft", "ControlRight"],
+    ["alt", "AltLeft", "AltRight"],
+    ["meta", "MetaLeft", "MetaRight"],
+  ])("keeps %s bindings held until both modifier keys are released", (modifier, left, right) => {
+    const resolver = new InputResolver({ actions: [{ name: "Modified", bindings: [
+      { device: "key", code: "Space", modifiers: { [modifier]: true } },
+    ] }], axes: [] });
+    expect(resolver.resolve([key(0, left, "down"), key(0, right, "down"), key(0, "Space", "down")]).actions.Modified.held).toBe(true);
+    expect(resolver.resolve([key(1, left, "up")]).actions.Modified).toEqual({ held: true, pressed: false, released: false });
+    expect(resolver.resolve([key(2, right, "up")]).actions.Modified).toEqual({ held: false, pressed: false, released: true });
+  });
+
+  it("preserves a released axis tap direction for navigation without keeping it active next tick", () => {
+    const resolver = new InputResolver({ actions: [], axes: [{ id: "nav", name: "Menu", kind: "2d", bindings: [{ device: "key", code: "ArrowLeft", digitalValue: -1 }] }] });
+    const state = resolver.resolve([key(0, "ArrowLeft", "down"), key(0, "ArrowLeft", "up")]).inputs.nav;
+    expect(state).toMatchObject({ value: { x: 0, y: 0 }, activeValue: { x: -1, y: 0 }, held: false, started: true, released: true });
+    expect(resolver.resolve([]).inputs.nav.activeValue).toBeUndefined();
+  });
   it("reports every physical press once, including taps and gamepad threshold crossings", () => {
     const resolver = new InputResolver({ actions: [], axes: [] });
     const pad = (buttons: number[], axes: number[]): RawInputEvent => ({ kind: "gamepad", tick: 0, gamepadIndex: 1, buttons, axes });

@@ -596,7 +596,7 @@ export function ClassMembersView({
   });
 
   const accessVariable = variableForAccessDrop(
-    graph,
+    graph ?? undefined,
     members,
     accessDrop?.memberId,
   );

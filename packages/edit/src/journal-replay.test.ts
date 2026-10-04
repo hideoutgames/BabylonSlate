@@ -6,6 +6,7 @@ import {
   coalesceJournalLines,
   commandToJournalPayload,
   journalRepathLine,
+  journalDiscardLine,
   serializeJournalLine,
   type JournalLine,
 } from "./journal";
@@ -38,7 +39,7 @@ describe("journal coalescing", () => {
     const session = new EditSession();
     let doc: Record<string, unknown> = initial;
     const records: JournalLine[] = [];
-    for (const waveHeight of [1.5, 2, 2.5]) {
+    for (const waveHeight of [1.5, 20, 250]) {
       const command = new SetAssetDocumentCommand(doc, { ...doc, waveHeight }, "water:waveHeight");
       doc = session.apply(docId, doc, command).doc;
       records.push(journalRecord(docId, command));
@@ -48,10 +49,10 @@ describe("journal coalescing", () => {
 
     const folded = fold(records);
     expect(folded).toHaveLength(2);
-    expect(folded[0]!.command).toMatchObject({ from: initial, to: { waveHeight: 2.5, opacity: 0.8 } });
+    expect(folded[0]!.command).toMatchObject({ from: initial, to: { waveHeight: 250, opacity: 0.8 } });
     const replay = (lines: JournalLine[]) =>
       replayJournalLines(lines.map(serializeJournalLine), new Map([[docId, initial]])).documents.get(docId);
-    expect(replay(folded.slice(0, 1))).toEqual({ waveHeight: 2.5, opacity: 0.8 });
+    expect(replay(folded.slice(0, 1))).toEqual({ waveHeight: 250, opacity: 0.8 });
     expect(replay(folded)).toEqual(initial);
     expect(replay(folded)).toEqual(replay(records));
   });
@@ -85,6 +86,40 @@ describe("journal coalescing", () => {
 });
 
 describe("journal replay", () => {
+  it("offers no recovery for a stream containing only discarded edits and close markers", () => {
+    const at = "2026-10-02T00:00:00Z";
+    const id = "graph:closed";
+    const lines = [
+      serializeJournalLine(journalRecord(id, new MoveNodeCommand("node", { x: 0, y: 0 }, { x: 99, y: 0 }))),
+      serializeJournalLine(journalDiscardLine(id, at)),
+      serializeJournalLine(journalDiscardLine("graph:clean", at)),
+    ];
+    expect(resolveJournalLines(lines)).toEqual([]);
+    expect(replayJournalLines(lines, new Map()).skipped).toEqual([]);
+  });
+
+  it.each([false, true])("discards only a closed document's earlier edits, including renames=%s", (renamed) => {
+    const graph: SerializedGraph = {
+      nodes: [{ id: "node", type: "print", position: { x: 0, y: 0 }, data: {} }], edges: [],
+    };
+    const [a, b, other] = ["graph:a", "graph:b", "graph:other"];
+    const at = "2026-10-02T00:00:00Z";
+    const move = (id: string, x: number) => serializeJournalLine(journalRecord(id,
+      new MoveNodeCommand("node", { x: 0, y: 0 }, { x, y: 0 })));
+    const id = renamed ? b : a;
+    const lines = [move(a, 99), move(other, 5)];
+    if (renamed) lines.push(serializeJournalLine(journalRepathLine(a, b, at)));
+    lines.push(serializeJournalLine(journalDiscardLine(id, at)));
+    expect(resolveJournalLines(lines).map((line) => line.docId)).toEqual([other]);
+    expect(replayJournalLines(lines, new Map([[id, graph], [other, graph]])).documents.get(id)).toEqual(graph);
+    // Reopening starts a fresh recovery history at the same path.
+    lines.push(move(id, 7));
+    const replayed = replayJournalLines(lines, new Map([[id, graph], [other, graph]]));
+    expect(replayed.documents.get(id)?.nodes[0]?.position.x).toBe(7);
+    expect(replayed.documents.get(other)?.nodes[0]?.position.x).toBe(5);
+    expect(replayed.skipped).toEqual([]);
+  });
+
   it("recovers batched deletion, Undo and Redo as complete graph changes", () => {
     const docId = "graph:assets/history.class.babasset";
     const graph: SerializedGraph = {

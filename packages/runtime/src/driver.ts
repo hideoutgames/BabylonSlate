@@ -1,6 +1,11 @@
+import { overlayAnchorBindings } from "./overlay-anchor-layout";
 import { RuntimeMaterialParameters } from "./runtime-material-parameters";
+import { SceneLayerFocusNavigation } from "./scene-layer-focus";
+import { focusLayoutEntry, revealFocusedElement } from "./scene-layer-focus-layout";
+import type { FocusNavigationSettings } from "@babylonslate/core";
 import { CableWorldSync } from "./cable-sync";
 import { DynamicRuntimeMeshSync } from "./dynamic-runtime-mesh";
+import { MovementWorldSync } from "./movement";
 import { captureComponent, captureLocalTransform, captureProperties } from "./render-targets";
 import { createDefaultRenderTargetCaptureProperties, normalizeRenderTargetPayload, normalizeRenderTargetTexturePayload, type RenderTargetPayload, type RenderTargetTexturePayload } from "@babylonslate/core";
 import { normalizeWaterDefinition, normalizeWaterBody, normalizeWaterRemoval, waterKindForClass, type WaterDefinition } from "@babylonslate/core";
@@ -31,16 +36,28 @@ import {
   ActorComponent,
   BObject,
   GameInstance,
+  GameSubsystem,
   MaterialObject,
   PostProcessMaterialObject,
   getPostProcessMaterialObject,
   type MaterialInstanceObject,
   Scene,
   SceneLayer,
+  SceneStreamingActor,
+  SceneSubsystem,
+  GAME_SUBSYSTEM_CLASS_ID,
+  SCENE_SUBSYSTEM_CLASS_ID,
+  instantiableSubsystemClassIds,
+  isLockedEngineClassId,
   isSceneLayerExclusiveComponent,
   sceneAssetClassId,
+  hydrateClassVariableValue,
   type ClassKind,
   type DebugInspectSnapshot,
+  type GameSubsystemHooks,
+  type SceneSubsystemHooks,
+  type Subsystem,
+  type TickContext,
   type TickPhase,
   type SceneActorHooks,
 } from "@babylonslate/object-model";
@@ -63,6 +80,8 @@ import {
   normalizeSceneLayer,
   newGuid,
   sceneLayerRelativeAnchorWorldPosition,
+  isSceneLayerAnchorActor,
+  identityTransform,
   SCENE_LAYER_DEFAULT_LAYER_BOUNDS,
   deprojectCursorRay,
   type MaterialParameterCatalog,
@@ -119,6 +138,8 @@ import {
   type RuntimeDiagnostic,
 } from "./diagnostics";
 import { mapStackToAnchor, type AnchorEntry } from "./stack-map";
+import { Painter2DRuntime } from "./painter2d-runtime";
+import { Text2DAppearRuntime } from "./text2d-appear-runtime";
 import {
   animGraphScriptClassId,
   animRuleScriptClassId,
@@ -148,6 +169,8 @@ import {
   formatInspectActor,
 } from "./console-inspect";
 import { actorParentGuid, actorWorldTransform, actorWorldTransforms } from "./actor-world-transform";
+import { SceneLayerLayout } from "./scene-layer-layout";
+import { isOverlayLayoutClass, overlayLayoutKey } from "@babylonslate/core";
 import { composeParentChildTransform } from "./actor-world-transform";
 import { blackboardTargetPosition, snapshotBlackboard } from "./bt-blackboard";
 import type { ModelPayload, SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
@@ -169,6 +192,8 @@ export interface RuntimeDriverOptions {
   renderSettings?: Partial<RenderProjectSettings>;
   /** Initial render cap for console readback; does not change the simulation step. */
   frameCap?: number;
+  /** Serialized trace retention budget in bytes for this session. */
+  traceByteBudget?: number;
   project?: { name: string; version: string };
   seed: number;
   dt?: number;
@@ -177,6 +202,7 @@ export interface RuntimeDriverOptions {
   /** Project Settings input mappings; defaults when omitted. */
   inputAssets?: InputAssetDefinition[];
   inputMappings?: InputMappings;
+  focusNavigation?: Partial<FocusNavigationSettings>;
   /** Demo actors exist so an empty project still shows motion in Preview. */
   seedDemoActors?: boolean;
   /** Scene physics world kind (defaults to 3d). */
@@ -193,6 +219,8 @@ export interface RuntimeDriverOptions {
   gameInstanceClass?: string;
   /** Extra authored scenes `changescene` can instantiate by guid or name. */
   sceneLibrary?: Readonly<Record<string, SerializedScene>>;
+  /** Baked navigation keyed by canonical scene guid, selected before Begin Play. */
+  sceneNavmeshBytes?: Readonly<Record<string, Uint8Array>>;
   /** Display name or library key → canonical scene asset guid. */
   sceneGuidByKey?: Readonly<Record<string, string>>;
   /** Overlay documents the session compositor can instantiate by guid or name. */
@@ -229,6 +257,7 @@ export interface RuntimeDriverOptions {
     >
   >;
   pixelsPerUnit?: number;
+  texturePixelSizes?: Readonly<Record<string, { width: number; height: number }>>;
   /**
    * Hold OnSceneFinishLoading until `notifySceneModelsReady`. Play overlay and
    * the exported player set this; in-process tests leave it false.
@@ -322,6 +351,7 @@ export interface RuntimeDriver {
   applySceneLayerPointer(
     message: Extract<ControlMessage, { type: "sceneLayerPointer" }>,
   ): void;
+  applySceneLayerScroll(layerId: string, actorId: string, componentId: string, deltaX: number, deltaY: number): void;
   applyAudioVoiceEnded(
     message: Extract<ControlMessage, { type: "audioVoiceEnded" }>,
   ): void;
@@ -394,6 +424,11 @@ export function createInProcessRuntime(
   return new InProcessRuntime(options);
 }
 
+// Shallow BT memory copies retain this live activation, while trace JSON omits
+// it. A resumed task writes to its current board and cannot finish a later run.
+const BT_TASK_ACTIVATION = Symbol("btTaskActivation");
+type BtTaskActivation = { active: boolean; blackboard: BlackboardValues; result?: "success" | "failure" };
+
 interface SceneDeparture {
   guid: string;
   sceneInstance: Scene | null;
@@ -413,6 +448,7 @@ interface SceneRealization {
   finished: boolean;
   departure: SceneDeparture | null;
   painted: (() => void) | null;
+  refreshNavigation: boolean;
 }
 
 interface SceneStream {
@@ -435,11 +471,24 @@ interface SceneStream {
   origin?: Transform;
 }
 
+/** Hooks both `GameInstanceHooks` and `GameSubsystemHooks` accept. */
+type GameLifecycleHooks = {
+  onCreation: (self: BObject) => void;
+  onTick: (self: BObject, ctx: TickContext) => void;
+  onGameEnd: (self: BObject) => void;
+  onSceneStartLoading: (self: BObject, sceneName: string) => void;
+  onSceneFinishLoading: (self: BObject, sceneName: string) => void;
+  onFirstSceneLoaded: (self: BObject, sceneName: string) => void;
+  onSceneExit: (self: BObject, sceneName: string) => void;
+};
+
 class InProcessRuntime implements RuntimeDriver {
   private readonly world: World;
   private snapshots: SeqLockSnapshotPair;
   private readonly input = new InputRingBuffer(512);
   private readonly resolver: InputResolver;
+  private readonly focusNavigation: SceneLayerFocusNavigation;
+  private readonly overlayLayout = new SceneLayerLayout();
   private resolvedInput: ResolvedInputTick = {
     inputs: {},
     actions: {},
@@ -456,10 +505,13 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly logs = new LogRingBuffer(512);
   private readonly diagnostics = new SessionDiagnosticAggregator();
   private readonly anchors = new Map<string, readonly AnchorEntry[]>();
+  private readonly painters = new Painter2DRuntime();
+  private readonly textAppear = new Text2DAppearRuntime();
   private readonly onCommand?: (command: CommandMessage) => void;
   private readonly maxCatchUp = 4;
   private readonly dt: number;
-  private readonly physicsWorldKind: PhysicsWorldKind;
+  private physicsWorldKind: PhysicsWorldKind;
+  private physicsGeneration = 0;
   private gravity: [number, number, number];
   private readonly havokWasmUrl: string | undefined;
   private readonly preferSoftwarePhysics: boolean;
@@ -502,6 +554,7 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly ragdolls: RagdollWorldSync;
   private readonly cables: CableWorldSync;
   private readonly dynamicMeshes: DynamicRuntimeMeshSync;
+  private readonly movement: MovementWorldSync;
   private readonly overlayGravity: [number, number, number];
   private readonly overlayDesignPose = new Map<string, { x: number; y: number }>();
   private playCanvasWidth = 1;
@@ -523,7 +576,24 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly layerLoads = new Map<string, { layer: SceneLayer; loadId: number; realized: boolean; presented: boolean; ready: boolean }>();
   private readonly independentLayerWork = new Map<string, { layer: SceneLayer; loadId: number; controller: AbortController; painted: () => void }>();
   private readonly pendingOwnerActions = new Map<BObject, Array<() => void>>();
+  /** Nonzero while `flushOwnerActions` runs queued owner work. */
+  private flushingOwnerActions = 0;
   private readonly createdScriptObjects = new WeakSet<BObject>();
+  /**
+   * Actors each SceneSubsystem heard enter play (Scene Actor Spawned); only
+   * these report Scene Actor Destroyed to it.
+   */
+  private readonly sceneSubsystemActors = new WeakMap<SceneSubsystem, WeakSet<Actor>>();
+  /** Streams announced as Streamed Scene Loaded; only these report Unloaded. */
+  private readonly announcedSceneStreams = new WeakSet<SceneStream>();
+  /**
+   * Nonzero while the main Scene's own teardown removes its streams, layers
+   * and actors: its SceneSubsystems hear none of those notifications.
+   */
+  private sceneTeardownDepth = 0;
+  /** `Get <Subsystem>` matches by class id; cleared when live subsystems change. */
+  private readonly subsystemMatches = new Map<string, readonly Subsystem[]>();
+  private readonly ambiguousSubsystemWarnings = new Set<string>();
   private readonly cooperativeSceneLoading: CooperativeSceneLoadingOptions | null;
   private realization: SceneRealization | null = null;
   private sceneWorkBlocked = false;
@@ -544,7 +614,7 @@ class InProcessRuntime implements RuntimeDriver {
   private possessedCameraSlotId: number | null = null;
   private readonly commands: CommandRegistry;
   private readonly loopGuard: InfiniteLoopGuard;
-  private readonly trace = new TraceRecorder();
+  private readonly trace: TraceRecorder;
   private lastTrace: TracePayload | null = null;
   private readonly seed: number;
   private tickPrints: Array<{ message: string; key: string }> = [];
@@ -571,9 +641,13 @@ class InProcessRuntime implements RuntimeDriver {
   >();
   private pendingAnimJumpByComponent = new Map<string, string>();
   private pixelsPerUnit = 100;
+  private readonly texturePixelSizes: Readonly<Record<string, { width: number; height: number }>>;
   private readonly delayWaiters: Array<{ remaining: number; resolve: () => void; owner?: BObject | null }> =
     [];
   private nav: NavigationBackend | null = null;
+  private readonly sceneNavmeshBytes = new Map<string, Uint8Array>();
+  private navSceneGuid: string | null = null;
+  private navigationInitialized = false;
   private readonly navAgentByActor = new Map<string, string>();
   private readonly navYawByActor = new Map<string, number>();
   private readonly navTargetByActor = new Map<string, NavPoint>();
@@ -602,6 +676,7 @@ class InProcessRuntime implements RuntimeDriver {
   get snapshotGeneration(): number { return this._snapshotGeneration; }
 
   constructor(options: RuntimeDriverOptions) {
+    this.trace = new TraceRecorder({ byteBudget: options.traceByteBudget });
     this.materialParameters = new RuntimeMaterialParameters(options.materialParameterCatalog, options.materialTextureAssetGuids);
     this.validateLegacyMeshParameters = options.materialParameterCatalog !== undefined;
     this.scalabilityProjectRenderPath = options.renderSettings?.renderPath ?? "forward";
@@ -619,6 +694,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.preferSoftwarePhysics = options.preferSoftwarePhysics ?? false;
     this.playScene = options.playScene;
     this.playSceneGuid = options.playSceneGuid ?? "play-scene";
+    for (const [guid, bytes] of Object.entries(options.sceneNavmeshBytes ?? {})) this.sceneNavmeshBytes.set(guid, bytes);
     this.gameInstanceClass = options.gameInstanceClass ?? "GameInstance";
     this.deferSceneModelsReady = options.deferSceneModelsReady === true;
     this.deferSceneLoadingPaint = options.deferSceneLoadingPaint === true;
@@ -692,6 +768,7 @@ class InProcessRuntime implements RuntimeDriver {
         this.blackboards.set(guid, document);
       }
     }
+    this.texturePixelSizes = options.texturePixelSizes ?? {};
     if (options.pixelsPerUnit && options.pixelsPerUnit > 0) {
       this.pixelsPerUnit = options.pixelsPerUnit;
     }
@@ -788,6 +865,7 @@ class InProcessRuntime implements RuntimeDriver {
         if (!registry.isA(classId, "ActorComponent")) return undefined;
         return {
           onCreation: (self) => {
+            this.movement.initialize(self);
             this.scriptHost.bindInterfaceHandlers(self);
             this.runOwnerCreation(self, () => this.scriptHost.hooksFor(classId)?.onCreation?.(self));
           },
@@ -796,18 +874,23 @@ class InProcessRuntime implements RuntimeDriver {
           onDestroyed: (self) => {
             this.runOwnerDestroyed(self, () => this.scriptHost.hooksFor(classId)?.onDestroyed?.(self));
             this.dynamicMeshes.remove(self);
+            this.textAppear.remove(self);
           },
         };
       },
+      sceneSubsystemHooksFor: (classId) => this.sceneSubsystemHooks(classId),
+      // Strict gate: Tick only after On Init, while the main Scene may run.
+      canTickSceneSubsystem: (subsystem) =>
+        this.createdScriptObjects.has(subsystem) && this.canRunSceneSubsystem(subsystem),
       onPhysics: (ctx) => {
         this.dynamicMeshes.flush();
         this.ragdolls.sync();
         if (this.canTickScene()) {
           const time = ctx.tickIndex * ctx.dt;
-          this.physicsSync.step(ctx.dt, this.world, time, -this.gravity[1]);
+          this.physicsSync.step(ctx.dt, this.world, time, -this.gravity[1], () => this.movement.step(ctx.dt, this.physicsSync));
           if (this.physicsSync.water.hasBodies) this.emit({ type: "waterTime", seconds: time });
         }
-        if (this.hasReadyLayers()) this.overlayPhysicsSync.step(ctx.dt, this.world);
+        if (this.hasReadyLayers()) this.overlayPhysicsSync.step(ctx.dt, this.world, undefined, undefined, () => this.movement.step(ctx.dt, this.overlayPhysicsSync));
         this.ragdolls.afterStep();
         if (this.canTickScene()) this.cables.step(ctx.dt, this.gravity, this.frameId + 1);
         this.dispatchCollisionEvents();
@@ -820,6 +903,18 @@ class InProcessRuntime implements RuntimeDriver {
         return slot !== undefined && this.slotOwners.get(slot) === actor ? slot : undefined;
       },
       emit: (command) => this.emit(command),
+    });
+    this.movement = new MovementWorldSync({
+      world: this.world,
+      physics: (actor) => actor.sceneLayerId ? this.overlayPhysicsSync : this.physicsSync,
+      eligible: (actor) => this.canTickActor(actor),
+      gravity: (actor) => -(actor.sceneLayerId ? this.overlayGravity[1] : this.gravity[1]),
+      warn: (component) => this.emit({ type: "log", severity: "warning", category: "Movement",
+        message: `Movement on ${component.owner?.guid ?? "actor"} could not create its motor. Use one Movement component without Rigid Body, Nav Agent, Ragdoll or Water Buoyancy components.`, frameId: this.frameId }),
+      event: (component, event, args) => {
+        const actor = component.owner;
+        if (actor) this.guardScript(() => this.scriptHost.invokeEvent(actor.classId, event, actor, args, component.guid));
+      },
     });
     this.cables = new CableWorldSync({
       world: this.world,
@@ -842,6 +937,18 @@ class InProcessRuntime implements RuntimeDriver {
       deferNative: !this.preferSoftwarePhysics,
       emit: (command) => this.emit(command),
       error: (error) => { this.reportError(error); },
+    });
+    this.focusNavigation = new SceneLayerFocusNavigation(this.world, options.focusNavigation, {
+      canRun: (actor) => this.canTickActor(actor),
+      event: (actor, component, event) => this.scriptHost.invokeEvent(actor.classId, event, actor, {}, component.guid),
+      bounds: (actor, component) => {
+        const entry = focusLayoutEntry(this.overlayLayout, this.world, actor, component);
+        const visual = entry?.componentId ? this.world.findActor(entry.actorId)?.components.find((target) => target.guid === entry.componentId) : undefined;
+        if (visual?.getVariable("visible") === false || visual?.getVariable("enabled") === false) return null;
+        return entry?.rect;
+      },
+      onFocusChange: (actor, component) => revealFocusedElement(this.overlayLayout, this.world, actor, component,
+        (layerId, actorId, componentId, x, y) => this.applySceneLayerScroll(layerId, actorId, componentId, x, y)),
     });
     const resolved = () => this.resolvedInput;
     const connections = this.connectionBox;
@@ -877,6 +984,7 @@ class InProcessRuntime implements RuntimeDriver {
     });
 
     this.scriptHost = new ScriptHost({
+      seed: options.seed,
       canRunOwner: (owner) => this.canRunOwner(owner),
       inputBindings: this.resolver.bindings,
       getInputState: (input) => this.resolver.getInputState(input),
@@ -1029,9 +1137,12 @@ class InProcessRuntime implements RuntimeDriver {
         this.emit({ type: "attachToBone", slotId, targetSlotId, boneName });
       },
       getSceneReference: (owner) => {
+        // Subsystems have no stream, so they read the main Scene.
         const scene = this.streamForOwner(owner)?.scene ?? this.world.currentScene;
         return scene && !scene.destroyed ? scene : null;
       },
+      getSubsystem: (classId) => this.findSubsystem(classId),
+      getGameInstance: () => this.world.gameInstance,
       getSceneLoadingProgress: () => {
         const value = this.sceneLoadingProgress;
         if (!Number.isFinite(value)) return 0;
@@ -1075,10 +1186,10 @@ class InProcessRuntime implements RuntimeDriver {
         this.physicsSync.lineTrace(start, end, options),
       projectCursorToScene: (channel, options) =>
         this.projectCursorToScene(channel, options),
-      sphereOverlap: (center, radius) =>
-        this.physicsSync.sphereOverlap(center, radius),
-      shapeSweep: (shape, start, end) =>
-        this.physicsSync.shapeSweep(shape, start, end),
+      sphereOverlap: (center, radius, channel) =>
+        this.physicsSync.sphereOverlap(center, radius, { channel }),
+      shapeSweep: (shape, start, end, channel) =>
+        this.physicsSync.shapeSweep(shape, start, end, { channel }),
       addImpulse: (actor, impulse, strength) => {
         const target = actor;
         if (!target) return;
@@ -1111,6 +1222,8 @@ class InProcessRuntime implements RuntimeDriver {
       clearSceneLayers: () => {
         this.clearSceneLayers();
       },
+      setFocusTarget: (target) => this.focusNavigation.setFocus(target),
+      clearFocusTarget: (target) => this.focusNavigation.clearFocus(target),
       registerSceneLayerPostProcess: (layerGuid, materialGuid) => {
         this.registerSceneLayerPostProcess(layerGuid, materialGuid);
       },
@@ -1151,11 +1264,29 @@ class InProcessRuntime implements RuntimeDriver {
       updateIllumination: (target) => {
         this.reemitIllumination(target);
       },
+      paint2D: (component, operation, args) => {
+        const changed = this.painters.execute(component, operation, args);
+        if (!this.processingTick) this.flushPainters();
+        return changed;
+      },
       dynamicMeshFunction: (component, name, args) => this.dynamicMeshes.invoke(component, name, args),
+      movementFunction: (component, name, args) => this.movement.invoke(component, name, args),
+      text2DAppearProgress: (component) => this.textAppear.progress(component),
+      text2DAppear: (component, operation) => {
+        this.textAppear.execute(component, operation);
+        if (!this.processingTick) this.flushTextAppear();
+      },
       refreshComponent: (component, propertyName) => {
         const owner = component.owner;
         if (!owner || owner.destroyed) return;
-        this.applyOverlayAnchor(owner);
+        if (component.classId === "2DRichTextComponent") this.textAppear.refresh(component);
+        if (owner.sceneLayerId && component.classId === "2DAnchorComponent") {
+          for (const _ of this.applyOverlayAnchors(this.world.getActors())) void _;
+        }
+        if (owner.sceneLayerId) this.applyOverlayLayouts();
+        // Steering/tuning is consumed by the next motor tick; only dimensions
+        // need immediate collider/query refresh after a property write.
+        if (component.classId === "MovementComponent" && propertyName && propertyName !== "radius" && propertyName !== "height") return;
         const slotId = this.slotByGuid.get(owner.guid);
         if (component.classId === "DynamicRuntimeMeshComponent" &&
           (propertyName === "materialGuid" || propertyName === "enableCollision" || propertyName === "layer" || propertyName === "mask")) {
@@ -1167,7 +1298,7 @@ class InProcessRuntime implements RuntimeDriver {
           if (component.classId === "RenderTargetCaptureComponent") this.emitRenderTargetCapture(owner, slotId);
           else if (component.classId === "OutlineComponent") this.emitActorOutlines(owner, slotId);
           else if (component.classId === "FogVolumeComponent") this.emitActorFogVolumes(owner, slotId);
-          else if (component.classId !== "PhysicsConstraintComponent" && component.classId !== "RagdollComponent") this.emitMeshAssignment(owner, slotId);
+          else if (component.classId !== "PhysicsConstraintComponent" && component.classId !== "RagdollComponent" && component.classId !== "MovementComponent") this.emitMeshAssignment(owner, slotId);
         }
         if (component.classId === "ParticleComponent") {
           this.emitParticleComponents(owner);
@@ -1453,6 +1584,14 @@ class InProcessRuntime implements RuntimeDriver {
       stream.resolve();
       for (const pending of [...this.sceneStreams.values()]) this.publishSceneStreamRealized(pending);
       this.flushOwnerActions();
+      // After the streamed actors' Begin Play, as Scene Loaded follows the main
+      // scene's: the stream's Scene is admitted with its actors (not while paused).
+      this.runOwnerAction(stream.scene, () => {
+        if (this.sceneStreams.get(actorGuid) !== stream || stream.state !== "Loaded" ||
+          !(stream.actor instanceof SceneStreamingActor)) return;
+        this.announcedSceneStreams.add(stream);
+        this.world.notifyStreamedSceneLoaded(stream.actor, stream.scene);
+      });
     } catch (error) {
       this.retireSceneStream(stream, error);
     }
@@ -1528,6 +1667,10 @@ class InProcessRuntime implements RuntimeDriver {
     stream.scene.destroyed = true;
     stream.scene.callOnDestroyed();
     this.pendingOwnerActions.delete(stream.scene);
+    // Paired with Streamed Scene Loaded; a stream that never became ready is silent.
+    if (this.announcedSceneStreams.delete(stream) && stream.actor instanceof SceneStreamingActor) {
+      this.world.notifyStreamedSceneUnloaded(stream.actor, stream.scene);
+    }
     for (const obstacle of stream.navObstacles) this.nav?.removeObstacle(obstacle);
     // A graph may retain a destroyed actor reference. Its WeakMap ownership
     // must not retain the rest of the unloaded instance through this set.
@@ -1542,7 +1685,8 @@ class InProcessRuntime implements RuntimeDriver {
   async loadPhysics(): Promise<void> {
     if (this.stopped) throw sceneRealizationCancelled();
     const lifecycleId = this.lifecycleId;
-    const current = () => !this.stopped && lifecycleId === this.lifecycleId;
+    const generation = this.physicsGeneration;
+    const current = () => !this.stopped && lifecycleId === this.lifecycleId && generation === this.physicsGeneration;
     if (this.preferSoftwarePhysics) return;
     if (!(this.physicsSync.getBackend() instanceof SoftwarePhysicsBackend)) {
       return;
@@ -1811,10 +1955,9 @@ class InProcessRuntime implements RuntimeDriver {
       this.ensureOverlayDesignPose(actor);
       yield;
     }
-    for (const actor of actors) {
+    for (const _ of this.applyOverlayAnchors(actors)) {
       checkpoint();
-      this.applyOverlayAnchor(actor);
-      yield;
+      yield _;
     }
     for (const actor of actors) {
       checkpoint();
@@ -1847,10 +1990,37 @@ class InProcessRuntime implements RuntimeDriver {
     }
   }
 
+  private applyOverlayLayouts(): void {
+    const actors = this.world.getActors();
+    for (const layer of this.world.getSceneLayers()) {
+      const result = this.overlayLayout.update(layer.guid, actors, this.pixelsPerUnit, this.texturePixelSizes);
+      if (!result) continue;
+      const transforms = new Map(result.actors.flatMap(actor => actor.components.map(component => [overlayLayoutKey(actor.id, component.id), component.transform] as const)));
+      this.emit({ type: "sceneLayerLayout", layerId: layer.guid, entries: [...result.entries].flatMap(([key, entry]) => {
+        const slotId = this.slotByGuid.get(entry.actorId);
+        return slotId === undefined ? [] : [{ ...entry, slotId, transform: transforms.get(key) }];
+      }) });
+    }
+  }
+
+  applySceneLayerScroll(layerId: string, actorId: string, componentId: string, deltaX: number, deltaY: number): void {
+    const actor = this.world.findActor(actorId);
+    if (!actor || actor.sceneLayerId !== layerId || !this.canTickActor(actor)) return;
+    const component = actor.components.find(c => c.guid === componentId && c.classId === "2DScrollBoxComponent" && !c.destroyed);
+    const state = this.overlayLayout.entries(layerId).get(overlayLayoutKey(actorId, componentId))?.scroll;
+    if (!component || !state) return;
+    component.setVariable("scrollX", Math.max(0, Math.min(state.maxX, state.x + (Number.isFinite(deltaX) ? deltaX : 0))));
+    component.setVariable("scrollY", Math.max(0, Math.min(state.maxY, state.y + (Number.isFinite(deltaY) ? deltaY : 0))));
+    this.applyOverlayLayouts();
+    this.publishSnapshot();
+  }
+
   removeSceneLayer(layerGuid: string): void {
     const layer = this.world.findSceneLayer(layerGuid);
     if (!layer) return;
     this.layerLoads.delete(layerGuid);
+    this.overlayLayout.remove(layerGuid);
+    this.focusNavigation.refresh();
     const work = this.independentLayerWork.get(layerGuid);
     if (work?.layer === layer) {
       this.independentLayerWork.delete(layerGuid);
@@ -1921,10 +2091,7 @@ class InProcessRuntime implements RuntimeDriver {
     if (typeof canvasHeight === "number" && canvasHeight > 0) {
       this.playCanvasHeight = canvasHeight;
     }
-    for (const actor of this.world.getActors()) {
-      this.ensureOverlayDesignPose(actor);
-      this.applyOverlayAnchor(actor);
-    }
+    for (const _ of this.applyOverlayAnchors(this.world.getActors())) void _;
     this.overlayPhysicsSync.syncFromWorld(this.world);
   }
 
@@ -1938,6 +2105,8 @@ class InProcessRuntime implements RuntimeDriver {
       typeof message.componentId === "string" ? message.componentId.trim() : "";
     const resolved = resolveOverlayPointerButton(this.world, actor, requested);
     if (!resolved) return;
+    if (resolved.button?.getVariable("enabled") === false) return;
+    if (message.event === "onPressStart" && resolved.button) this.focusNavigation.setFocus(resolved.button);
     this.scriptHost.invokeEvent(
       resolved.owner.classId,
       message.event,
@@ -1992,7 +2161,8 @@ class InProcessRuntime implements RuntimeDriver {
   applyScalabilityStatus(acknowledgement: ScalabilityAcknowledgement): void {
     if (!this.scalability.acknowledge(acknowledgement)) return;
     const snapshot = this.scalability.snapshot();
-    const owners = [this.world.gameInstance, this.world.currentScene, ...this.world.getSceneLayers(), ...this.world.getActors().flatMap((actor) => [actor, ...actor.components])];
+    // GameSubsystems share the Game Instance's native events, Scalability Changed included.
+    const owners = [this.world.gameInstance, ...this.world.getGameSubsystems(), this.world.currentScene, ...this.world.getSceneLayers(), ...this.world.getActors().flatMap((actor) => [actor, ...actor.components])];
     for (const owner of owners) if (owner && this.canRunOwner(owner)) {
       this.scriptHost.invokeEvent(owner.classId, "onScalabilityChanged", owner, { settings: snapshot });
     }
@@ -2007,21 +2177,39 @@ class InProcessRuntime implements RuntimeDriver {
     });
   }
 
-  private applyOverlayAnchor(actor: Actor): void {
-    if (!actor.sceneLayerId) return;
-    const ownAnchor = liveOverlayAnchor(actor);
-    const parentId = actorParentGuid(actor);
-    const parent = parentId ? this.world.findActor(parentId) : undefined;
-    if (ownAnchor && parent?.sceneLayerId) {
-      if (!liveOverlayAnchor(parent)) {
-        this.applyRelativeOverlayAnchor(parent, ownAnchor);
+  private readonly anchoredOverlayActors = new Set<string>();
+
+  private *applyOverlayAnchors(actors: readonly Actor[]): Generator<void, void, unknown> {
+    const bindings = overlayAnchorBindings(actors);
+    for (const actor of actors) {
+      if (!actor.sceneLayerId || actor.destroyed) continue;
+      this.ensureOverlayDesignPose(actor);
+      if (isSceneLayerAnchorActor(actor)) actor.transform = identityTransform();
+      const anchor = bindings.get(actor);
+      if (anchor) {
+        this.applyRelativeOverlayAnchor(actor, anchor);
+        this.anchoredOverlayActors.add(actor.guid);
+      } else if (this.anchoredOverlayActors.delete(actor.guid)) {
+        const authored = this.overlayDesignPose.get(actor.guid)!;
+        actor.transform.position.x = authored.x;
+        actor.transform.position.y = authored.y;
       }
-      actor.transform.position.x = 0;
-      actor.transform.position.y = 0;
-      return;
+      yield;
     }
-    if (!ownAnchor) return;
-    this.applyRelativeOverlayAnchor(actor, ownAnchor);
+  }
+
+  private flushPainters(): void {
+    this.painters.flush((component, painter) => {
+      const slotId = component.owner ? this.slotByGuid.get(component.owner.guid) : undefined;
+      if (slotId !== undefined) this.emit({ type: "setPainter2D", slotId, componentId: component.guid, painter });
+    });
+  }
+
+  private flushTextAppear(): void {
+    this.textAppear.flush((component, progress) => {
+      const slotId = component.owner ? this.slotByGuid.get(component.owner.guid) : undefined;
+      if (slotId !== undefined) this.emit({ type: "setText2DAppear", slotId, componentId: component.guid, progress });
+    });
   }
 
   private applyRelativeOverlayAnchor(actor: Actor, anchorComp: ActorComponent): void {
@@ -2084,30 +2272,101 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   async loadScripts(scripts: readonly CompiledScript[]): Promise<void> {
-    for (const script of scripts) {
-      this.registerScriptClass(script);
-      await this.scriptHost.load(script);
-      if (script.anchors.length > 0) {
-        this.registerAnchors(script.assetGuid, script.anchors);
+    const ordered = parentFirstScriptOrder(scripts, (classId) =>
+      this.world.classRegistry.has(classId),
+    );
+    try {
+      for (const script of ordered) {
+        this.registerScriptClass(script);
+        await this.scriptHost.load(script);
+        if (script.anchors.length > 0) {
+          this.registerAnchors(script.assetGuid, script.anchors);
+        }
+        if (script.command) {
+          this.bindUserCommand({
+            ...script.command,
+            classId: script.classId,
+          });
+        }
       }
-      if (script.command) {
-        this.bindUserCommand({
-          ...script.command,
-          classId: script.classId,
-        });
-      }
+    } finally {
+      this.applyGameInstanceClassDefaults();
+      this.installSubsystems();
     }
   }
 
+  /**
+   * Instantiate the leaf subsystem classes the registry now knows. Real hosts
+   * load scripts once, before `World.start()`, so GameSubsystems' On Init can
+   * precede the Game Instance's. Scripts loaded after the World started (only
+   * a headless caller can do that) cannot honour that order: the installed
+   * GameSubsystems stay and new ones are reported, never started late.
+   * SceneSubsystem classes apply to every later main Scene.
+   */
+  private installSubsystems(): void {
+    const classes = this.world.classRegistry;
+    const classIds = classes.classIds();
+    this.subsystemMatches.clear();
+    this.world.setSceneSubsystemClasses(
+      instantiableSubsystemClassIds(classes, classIds, SCENE_SUBSYSTEM_CLASS_ID),
+    );
+    const gameClassIds = instantiableSubsystemClassIds(classes, classIds, GAME_SUBSYSTEM_CLASS_ID);
+    const subsystems = gameClassIds.map((classId) =>
+      this.world.createGameSubsystem({ classId, hooks: this.gameSubsystemHooks(classId) }));
+    try {
+      this.world.setGameSubsystems(subsystems);
+    } catch {
+      const installed = this.world.getGameSubsystems().map((subsystem) => subsystem.classId);
+      const missing = gameClassIds.filter((classId) => !installed.includes(classId));
+      if (missing.length > 0) {
+        this.reportLog(`GameSubsystems loaded after Play started are not created: ${missing.join(", ")}`, "warning", "subsystem");
+      }
+      return;
+    }
+    for (const subsystem of subsystems) this.scriptHost.bindInterfaceHandlers(subsystem);
+  }
+
+  /**
+   * The Game Instance is created before scripts register its class, so apply
+   * its class variable defaults, inherited interfaces and interface handlers
+   * once they are known (before `World.start()` fires On Init). Values already
+   * on the instance win, as with `World.createGameInstance`.
+   */
+  private applyGameInstanceClassDefaults(): void {
+    const gameInstance = this.world.gameInstance;
+    if (!gameInstance) return;
+    const classes = this.world.classRegistry;
+    for (const variable of classes.inheritedVariables(gameInstance.classId)) {
+      if (gameInstance.variables.has(variable.name)) continue;
+      const value = hydrateClassVariableValue(variable);
+      if (value !== undefined) gameInstance.setVariable(variable.name, value);
+    }
+    const interfaces = new Set(gameInstance.implementedInterfaces);
+    for (const iface of classes.inheritedInterfaces(gameInstance.classId)) {
+      interfaces.add(iface);
+    }
+    gameInstance.implementedInterfaces = [...interfaces];
+    this.scriptHost.bindInterfaceHandlers(gameInstance);
+  }
+
   private registerScriptClass(script: CompiledScript): void {
+    const classes = this.world.classRegistry;
     const requestedParent =
       script.parentClassId?.trim() || "Actor";
-    const parentClassId = this.world.classRegistry.has(requestedParent)
+    const parentClassId = classes.has(requestedParent)
       ? requestedParent
       : "Actor";
     const kind: ClassKind =
-      this.world.classRegistry.get(parentClassId)?.kind ?? "actor";
-    this.world.classRegistry.ensure({
+      classes.get(parentClassId)?.kind ?? "actor";
+    const existingParent = classes.get(script.classId)?.parentClassId;
+    // `ensure` keeps an existing class's parent. Repair a user class registered
+    // before its script (the built-in demo `Enemy : Actor`) to the registered
+    // parent the script names; `reparent` refuses cycles, keeping the old one.
+    if (existingParent !== undefined && parentClassId === requestedParent &&
+      existingParent !== requestedParent && !isLockedEngineClassId(script.classId)) {
+      classes.reparent(script.classId, requestedParent);
+    }
+    classes.ensure({
       id: script.classId,
       parentClassId,
       kind,
@@ -2225,6 +2484,14 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private canRunOwner(owner: BObject): boolean {
+    if (owner instanceof GameSubsystem) return this.canRunGameSubsystem(owner);
+    // Callable from creation until its On End returns, even while its Scene
+    // prepares or Play stops (a sibling's On End may still call it); its own
+    // lifecycle waits for the Scene (canRunSceneSubsystem).
+    if (owner instanceof SceneSubsystem) {
+      return !owner.destroyed && owner.scene === this.world.currentScene &&
+        (this.stopped || this.streamBlockingCount === 0);
+    }
     if (this.stopped || owner.destroyed || this.streamBlockingCount > 0) return false;
     if (owner instanceof PostProcessMaterialObject)
       return owner.isCurrent() && this.canRunOwner(owner.owner);
@@ -2241,8 +2508,37 @@ class InProcessRuntime implements RuntimeDriver {
     return !(owner instanceof ActorComponent || owner instanceof MaterialObject || owner instanceof GameInstance);
   }
 
+  /**
+   * GameSubsystems wrap the Game Instance: admitted like it while Play runs,
+   * and through the whole Stop lifecycle until their own On End has run, so
+   * the Game Instance's On End (which runs first) can still call them.
+   */
+  private canRunGameSubsystem(subsystem: GameSubsystem): boolean {
+    if (subsystem.destroyed || !this.world.getGameSubsystems().includes(subsystem)) return false;
+    return this.stopped || this.streamBlockingCount === 0;
+  }
+
+  /** A SceneSubsystem's On Init, Tick and notifications: its Scene may run. */
+  private canRunSceneSubsystem(subsystem: SceneSubsystem): boolean {
+    return !subsystem.ended && subsystem.scene === this.world.currentScene && this.canTickScene();
+  }
+
+  /**
+   * Deferred owner work waits for the owner (a SceneSubsystem's for its
+   * Scene). World actors and their components also wait while a current
+   * SceneSubsystem has queued work (On Init first), so every subsystem hears
+   * Spawned right before the actor's Begin Play.
+   */
+  private canRunOwnerActions(owner: BObject): boolean {
+    if (owner instanceof SceneSubsystem) return this.canRunSceneSubsystem(owner);
+    if (!this.canRunOwner(owner)) return false;
+    const actor = owner instanceof Actor ? owner : owner instanceof ActorComponent ? owner.owner : null;
+    return !actor || !!actor.sceneLayerId || this.world.getSceneSubsystems().every(
+      (subsystem) => subsystem.ended || !this.pendingOwnerActions.get(subsystem)?.length);
+  }
+
   private runOwnerAction(owner: BObject, action: () => void): void {
-    if (this.canRunOwner(owner)) { action(); return; }
+    if (this.canRunOwnerActions(owner)) { action(); return; }
     if (this.stopped || owner.destroyed) return;
     const actions = this.pendingOwnerActions.get(owner) ?? [];
     actions.push(action);
@@ -2251,6 +2547,8 @@ class InProcessRuntime implements RuntimeDriver {
 
   private runOwnerCreation(owner: BObject, create: () => void): void {
     this.runOwnerAction(owner, () => {
+      // Spawned before a SceneSubsystem existed: it hears about it now.
+      if (owner instanceof Actor) this.world.notifyActorEnteringPlay(owner);
       this.createdScriptObjects.add(owner);
       this.guardScript(create);
     });
@@ -2262,11 +2560,24 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private flushOwnerActions(): void {
-    for (const [owner, actions] of this.pendingOwnerActions) {
-      if (owner.destroyed) { this.pendingOwnerActions.delete(owner); continue; }
-      while (actions.length && this.canRunOwner(owner)) actions.shift()!();
-      if (actions.length === 0) this.pendingOwnerActions.delete(owner);
+    this.flushingOwnerActions++;
+    try {
+      // SceneSubsystems first: their On Init precedes the Begin Play it releases.
+      for (const owner of this.pendingOwnerActions.keys()) {
+        if (owner instanceof SceneSubsystem) this.drainOwnerActions(owner);
+      }
+      for (const owner of this.pendingOwnerActions.keys()) this.drainOwnerActions(owner);
+    } finally {
+      this.flushingOwnerActions--;
     }
+  }
+
+  private drainOwnerActions(owner: BObject): void {
+    const actions = this.pendingOwnerActions.get(owner);
+    if (!actions) return;
+    if (owner.destroyed) { this.pendingOwnerActions.delete(owner); return; }
+    while (actions.length && this.canRunOwnerActions(owner)) actions.shift()!();
+    if (actions.length === 0 && this.pendingOwnerActions.get(owner) === actions) this.pendingOwnerActions.delete(owner);
   }
 
   notifySceneLayerReady(layerId: string, layerLoadId: number): void {
@@ -2355,7 +2666,10 @@ class InProcessRuntime implements RuntimeDriver {
       if (ownsSlot()) this.emit({ type: "despawn", slotId: slotId!, actorGuid: actor.guid });
     } finally {
       if (ownsSlot()) this.releaseSlot(actor.guid, slotId!);
-      if (this.world.findActor(actor.guid) === actor) this.overlayDesignPose.delete(actor.guid);
+      if (this.world.findActor(actor.guid) === actor) {
+        this.overlayDesignPose.delete(actor.guid);
+        this.anchoredOverlayActors.delete(actor.guid);
+      }
       this.world.destroyActorInstance(actor);
       this.removingActors.delete(actor);
     }
@@ -2367,7 +2681,7 @@ class InProcessRuntime implements RuntimeDriver {
       return;
     }
     if (!this.playWorldRealized) this.beginSceneRealization();
-    if (this.cooperativeSceneLoading) return this.waitForSceneRealization();
+    if (this.cooperativeSceneLoading || this.realization?.promise) return this.waitForSceneRealization();
   }
 
   /** Follow a replacement begun by Game Instance while the boot caller awaits. */
@@ -2401,14 +2715,35 @@ class InProcessRuntime implements RuntimeDriver {
       controller: new AbortController(), scene: this.playScene, guid: this.playSceneGuid,
       loadId: ++this.sceneLoadId, actors: [], layers: [], sceneInstance: null,
       promise: null, finished: false, departure, painted: null,
+      refreshNavigation: departure !== null,
     };
     this.realization = work;
     this.sceneLoadingProgress = 0;
     const steps = this.realizeSceneSteps(work);
-    if (this.cooperativeSceneLoading) {
+    const retirement = this.retireSceneSteps(work);
+    const nextKind = work.scene?.settings.physicsWorld ?? this.physicsWorldKind;
+    const replaceNative = nextKind !== this.physicsWorldKind && !(this.physicsSync.getBackend() instanceof SoftwarePhysicsBackend);
+    const initializeNavigation = this.sceneNavmeshBytes.has(work.guid) && !this.navigationInitialized;
+    if (this.cooperativeSceneLoading || replaceNative || initializeNavigation) {
       work.promise = Promise.resolve().then(async () => {
         await this.prepareSceneLoading(work);
-        await runSceneRealizationWork(steps, work.controller.signal, this.cooperativeSceneLoading!);
+        await runSceneRealizationWork(retirement, work.controller.signal, this.cooperativeSceneLoading ?? {});
+        if (nextKind !== this.physicsWorldKind && !(this.physicsSync.getBackend() instanceof SoftwarePhysicsBackend)) {
+          const gravity = work.scene?.settings.gravity ?? this.gravity;
+          const acquisition = createPhysicsBackend({ kind: nextKind, gravity: { x: gravity[0], y: gravity[1], z: gravity[2] },
+            havokWasmUrl: this.havokWasmUrl, allowSoftwareFallback: false }).then((backend) => {
+            try { this.checkRealization(work); } catch (error) { backend.dispose(); throw error; }
+            return backend;
+          });
+          const backend = await waitForSceneWork(acquisition, work.controller.signal);
+          this.installScenePhysics(work, backend);
+        }
+        if (initializeNavigation) {
+          await waitForSceneWork(initNavigation(), work.controller.signal);
+          this.navigationInitialized = true;
+        }
+        this.prepareSceneBackends(work);
+        await runSceneRealizationWork(steps, work.controller.signal, this.cooperativeSceneLoading ?? {});
       }).catch((error: unknown) => {
         this.failRealization(work);
         throw error;
@@ -2425,12 +2760,58 @@ class InProcessRuntime implements RuntimeDriver {
       return;
     }
     try {
+      while (!retirement.next().done) { /* Retire before replacing native ownership. */ }
+      this.prepareSceneBackends(work);
       while (!steps.next().done) { /* Immediate consumers retain synchronous ordering. */ }
     } catch (error) {
       this.failRealization(work);
       if (!isInfiniteLoopError(error) && !work.controller.signal.aborted) throw error;
     } finally {
+      retirement.return();
       steps.return();
+    }
+  }
+
+  private installScenePhysics(work: SceneRealization, backend: PhysicsBackend): void {
+    let sync: PhysicsWorldSync | undefined;
+    try {
+      this.checkRealization(work);
+      sync = new PhysicsWorldSync(backend, {
+        actorFilter: (actor) => actor.sceneLayerId == null && this.streamActorReady(actor),
+        deferUnsupportedConstraints: !this.preferSoftwarePhysics && backend instanceof SoftwarePhysicsBackend,
+      });
+      this.bindPhysicsContent(sync);
+      sync.syncFromWorld(this.world);
+    } catch (error) {
+      if (sync) sync.dispose(); else backend.dispose();
+      throw error;
+    }
+    this.physicsSync.dispose();
+    this.physicsSync = sync;
+    this.physicsWorldKind = backend.kind;
+    this.physicsGeneration++;
+  }
+
+  private prepareSceneBackends(work: SceneRealization): void {
+    this.checkRealization(work);
+    const kind = work.scene?.settings.physicsWorld ?? this.physicsWorldKind;
+    if (kind !== this.physicsWorldKind) {
+      const gravity = work.scene?.settings.gravity ?? this.gravity;
+      this.installScenePhysics(work, createSoftwarePhysicsBackend(kind, { x: gravity[0], y: gravity[1], z: gravity[2] }));
+    }
+    const bytes = this.sceneNavmeshBytes.get(work.guid);
+    if (bytes && (work.refreshNavigation || this.navSceneGuid !== work.guid)) {
+      const nav = createNavigationBackend();
+      try { nav.importNavMesh(bytes); } catch (error) { nav.dispose(); throw error; }
+      this.clearNavAgents();
+      this.nav?.dispose();
+      this.nav = nav;
+      this.navSceneGuid = work.guid;
+    } else if (!bytes) {
+      this.clearNavAgents();
+      this.nav?.dispose();
+      this.nav = null;
+      this.navSceneGuid = null;
     }
   }
 
@@ -2500,22 +2881,23 @@ class InProcessRuntime implements RuntimeDriver {
     // Keep the failed promise/gate attached: a later ready acknowledgement must
     // never turn a partial scene into a successful load.
     this.pendingSceneFinish = null;
-    for (const actor of work.departure?.actors ?? []) this.removeOwnedActor(actor);
-    for (const layer of work.departure?.layers ?? []) {
-      if (this.world.findSceneLayer(layer.guid) === layer) this.removeSceneLayer(layer.guid);
-    }
-    for (const actor of work.actors) this.removeOwnedActor(actor);
-    for (const layer of work.layers) {
-      if (this.world.findSceneLayer(layer.guid) === layer) this.removeSceneLayer(layer.guid);
-    }
-    this.world.flushPending();
+    // Objects leave before the Scene exits (its SceneSubsystems' On End), silently.
+    this.duringSceneTeardown(() => {
+      for (const actor of work.departure?.actors ?? []) this.removeOwnedActor(actor);
+      for (const layer of work.departure?.layers ?? []) {
+        if (this.world.findSceneLayer(layer.guid) === layer) this.removeSceneLayer(layer.guid);
+      }
+      for (const actor of work.actors) this.removeOwnedActor(actor);
+      for (const layer of work.layers) {
+        if (this.world.findSceneLayer(layer.guid) === layer) this.removeSceneLayer(layer.guid);
+      }
+      this.world.flushPending();
+    });
     if (this.world.currentScene === work.sceneInstance) this.world.exitActiveScene();
   }
 
   private *realizeSceneSteps(work: SceneRealization): Generator<void, void, unknown> {
     const checkpoint = () => this.checkRealization(work);
-    checkpoint();
-    yield* this.retireSceneSteps(work);
     checkpoint();
     this.tilemapAnimationTimeMs = 0;
     if (this.hasAnimatedTiles) this.emit({ type: "tilemapAnimationTime", elapsedMs: 0 });
@@ -2612,7 +2994,10 @@ class InProcessRuntime implements RuntimeDriver {
       return;
     }
     if (this.stopped) return;
-    for (const stream of [...this.sceneStreams.values()]) this.retireSceneStream(stream);
+    // The departing Scene's teardown starts here; its SceneSubsystems End at the exit.
+    this.duringSceneTeardown(() => {
+      for (const stream of [...this.sceneStreams.values()]) this.retireSceneStream(stream);
+    });
     const changeId = ++this.sceneChangeId;
     const current = () => !this.stopped && this.sceneChangeId === changeId;
     this.sceneWorkBlocked = true;
@@ -2826,10 +3211,15 @@ class InProcessRuntime implements RuntimeDriver {
 
   async loadNavMesh(bytes: Uint8Array): Promise<void> {
     const lifecycleId = this.lifecycleId;
+    const sceneGuid = this.playSceneGuid;
+    this.sceneNavmeshBytes.set(sceneGuid, bytes);
     await initNavigation();
     if (this.stopped || lifecycleId !== this.lifecycleId) throw sceneRealizationCancelled();
+    this.navigationInitialized = true;
+    if (sceneGuid !== this.playSceneGuid) return;
     this.nav ??= createNavigationBackend();
     this.nav.importNavMesh(bytes);
+    this.navSceneGuid = sceneGuid;
     this.clearNavAgents();
     if (this.playWorldRealized) {
       this.registerNavAgents();
@@ -3375,14 +3765,24 @@ class InProcessRuntime implements RuntimeDriver {
       return this.tickPlaySound(actor, node, memory);
     }
     if (!this.scriptHost.hasClass(node.classId)) return "failure";
+    const liveMemory = memory as Record<string | symbol, unknown>;
+    let activation = liveMemory[BT_TASK_ACTIVATION] as BtTaskActivation | undefined;
+    if (!activation) {
+      activation = { active: true, blackboard };
+      liveMemory[BT_TASK_ACTIVATION] = activation;
+      memory.__activated = false;
+    }
+    activation.blackboard = blackboard;
+    const current = activation;
+    const isLive = () => current.active && !actor.destroyed && !this.stopped;
     const extras = {
       btFinish: (result: "success" | "failure") => {
-        memory.__btResult = result;
+        if (isLive()) current.result = result;
       },
       btEvaluate: () => undefined,
-      getBlackboard: (key: string) => blackboard[key],
+      getBlackboard: (key: string) => current.blackboard[key],
       setBlackboard: (key: string, value: unknown) => {
-        blackboard[key] = value;
+        if (isLive()) current.blackboard[key] = value;
       },
     };
     if (memory.__activated !== true) {
@@ -3396,8 +3796,12 @@ class InProcessRuntime implements RuntimeDriver {
       );
     }
     this.scriptHost.invokeBtEvent(node.classId, "onBtTick", actor, dtSeconds, extras);
-    const result = memory.__btResult;
-    if (result === "success" || result === "failure") return result;
+    const result = current.result;
+    if (result === "success" || result === "failure") {
+      current.active = false;
+      memory.__btResult = result;
+      return result;
+    }
     return "running";
   }
 
@@ -3626,6 +4030,10 @@ class InProcessRuntime implements RuntimeDriver {
     blackboard: BlackboardValues,
     memory: Record<string, unknown>,
   ): void {
+    const liveMemory = memory as Record<string | symbol, unknown>;
+    const activation = liveMemory[BT_TASK_ACTIVATION] as BtTaskActivation | undefined;
+    if (activation) activation.active = false;
+    delete liveMemory[BT_TASK_ACTIVATION];
     memory.__activated = false;
     delete memory.__btResult;
     delete memory.__moveRequested;
@@ -4154,8 +4562,12 @@ class InProcessRuntime implements RuntimeDriver {
               ),
             ),
             ...(component.classId === "CableComponent" ? { cable: this.cables.assign(component) } : {}),
+            ...(component.classId === "2DPainterComponent" ? { painter: this.painters.payload(component) } : {}),
+            ...(component.classId === "2DRichTextComponent" ? { text2d: text2dAssignPayload(component, this.textAppear.progress(component)) } : {}),
             ...(component.classId === "DynamicRuntimeMeshComponent" ? { dynamicMesh: this.dynamicMeshes.assign(component) } : {}),
-            ...(component.classId === "DynamicRuntimeMeshComponent" ? { parentTransforms: dynamicMeshParentTransforms(component, componentsByGuid, renderableIds) } : {}),
+            ...(component.classId === "LightComponent" || component.classId === "HemisphericFillLightComponent" ? { light: lightAssignPayload(component) } : {}),
+            ...(component.classId === "CameraComponent" ? { camera: this.cameraAssignPayload(actor, component) } : {}),
+            parentTransforms: dynamicMeshParentTransforms(component, componentsByGuid, renderableIds),
           }))
         : undefined;
       const skyboxComp = renderables.find(
@@ -4169,16 +4581,16 @@ class InProcessRuntime implements RuntimeDriver {
           component.classId === "2DTextComponent" ||
           component.classId === "2DRichTextComponent",
       );
-      const armCamera = renderables.find(
-        (component) => component.classId === "CameraComponent",
-      );
+      const cameras = renderables.filter(component => component.classId === "CameraComponent");
+      const camera = cameras.find(component => this.cameraAssignPayload(actor, component).isDefault) ?? cameras[0];
+      const light = renderables.find(component => component.classId === "LightComponent" || component.classId === "HemisphericFillLightComponent");
       this.emit({
         type: "assignMesh",
         slotId,
         meshAssetGuid: typeof assetGuid === "string" ? assetGuid : null,
         meshKind,
         actorGuid: actor.guid,
-        ...(!parts && primary.classId === "MeshComponent"
+        ...(!parts && (primary.classId === "MeshComponent" || primary.classId === "2DRichTextComponent")
           ? { primaryComponentId: primary.guid }
           : {}),
         ...(meshKind === "sprite" || meshKind === "tilemap"
@@ -4203,82 +4615,19 @@ class InProcessRuntime implements RuntimeDriver {
               text3d: text3dAssignPayload(text3dComp),
             }
           : {}),
-        ...(text2dComp ? { text2d: text2dAssignPayload(text2dComp) } : {}),
-        ...(armCamera ? { camera: this.cameraAssignPayload(actor, armCamera) } : {}),
+        ...(text2dComp ? { text2d: text2dAssignPayload(text2dComp,
+          text2dComp.classId === "2DRichTextComponent" ? this.textAppear.progress(text2dComp) : 1) } : {}),
+        ...(camera ? { camera: this.cameraAssignPayload(actor, camera) } : {}),
+        ...(light ? { light: lightAssignPayload(light) } : {}),
         ...(overlayPanel ? { overlayPanel } : {}),
         ...(parts ? { parts } : {}),
       });
       this.emitMaterialAssignments(renderables, slotId, Boolean(parts));
       return;
     }
-    const fill = actor.components.find(
-      (component) =>
-        component.classId === "HemisphericFillLightComponent" &&
-        !component.destroyed,
-    );
-    if (fill) {
-      const color = rgbTuple(fill.getVariable("color"));
-      const ground = fill.getVariable("groundColor");
-      this.emit({
-        type: "assignMesh",
-        slotId,
-        meshAssetGuid: null,
-        meshKind: "light:hemispheric",
-        light: {
-          color,
-          intensity: Number(fill.getVariable("intensity") ?? 0.9),
-          enabled: fill.getVariable("enabled") !== false,
-          groundColor: ground == null ? [0, 0, 0] : rgbTuple(ground),
-        },
-        parts: [playMeshPartOf(fill)],
-      });
-      return;
-    }
-    const light = actor.components.find(
-      (component) =>
-        component.classId === "LightComponent" && !component.destroyed,
-    );
-    if (light) {
-      const kind = light.getVariable("lightKind");
-      const color = rgbTuple(light.getVariable("color"));
-      this.emit({
-        type: "assignMesh",
-        slotId,
-        actorGuid: actor.guid,
-        meshAssetGuid: null,
-        meshKind: `light:${typeof kind === "string" ? kind : "point"}`,
-        light: {
-          color,
-          intensity: Number(light.getVariable("intensity") ?? 1),
-          enabled: light.getVariable("enabled") !== false,
-          range: Number(light.getVariable("range") ?? 10),
-          innerAngle: Number(light.getVariable("innerAngle") ?? 30),
-          outerAngle: Number(light.getVariable("outerAngle") ?? 45),
-          castShadows: light.getVariable("castShadows") === true,
-          shadowPriority: Number(light.getVariable("shadowPriority") ?? 0),
-        },
-        parts: [playMeshPartOf(light)],
-      });
-      return;
-    }
     const capture = captureComponent(actor);
     if (capture) {
       this.emit({ type: "assignMesh", slotId, actorGuid: actor.guid, meshAssetGuid: null, meshKind: "renderTargetCapture", parts: [playMeshPartOf(capture)] });
-      return;
-    }
-    const camera = actor.components.find(
-      (component) =>
-        component.classId === "CameraComponent" && !component.destroyed,
-    );
-    if (camera) {
-      this.emit({
-        type: "assignMesh",
-        slotId,
-        meshAssetGuid: null,
-        meshKind: "camera",
-        camera: this.cameraAssignPayload(actor, camera),
-        parts: [playMeshPartOf(camera)],
-      });
       return;
     }
     const audio = actor.components.find(
@@ -4441,7 +4790,11 @@ class InProcessRuntime implements RuntimeDriver {
     checkpoint();
     this.world.spawnActorNow(actor);
     checkpoint();
-    this.flushOwnerActions();
+    // Spawned from queued work (an On Init or Begin Play): only this actor's
+    // work runs now; other owners wait until that handler returns.
+    if (this.flushingOwnerActions > 0) {
+      for (const owner of [actor, ...actor.components]) this.drainOwnerActions(owner);
+    } else this.flushOwnerActions();
     checkpoint();
     this.navFrameActors?.set(actor.guid, actor);
   }
@@ -4536,6 +4889,7 @@ class InProcessRuntime implements RuntimeDriver {
     multipart: boolean,
   ): void {
     for (const component of renderables) {
+      if (component.classId === "2DTextComponent" || component.classId === "2DRichTextComponent") continue;
       const value = component.getVariable("materialGuid");
       const guid = typeof value === "string" && value.trim() ? value : null;
       if (guid) this.componentsWithMaterialAssignment.add(component);
@@ -4596,7 +4950,7 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private projectCursorToScene(
-    _channel?: string,
+    channel?: string,
     options?: { drawDebug?: boolean; duration?: number },
   ) {
     const miss = {
@@ -4634,7 +4988,7 @@ class InProcessRuntime implements RuntimeDriver {
       },
     );
     this.physicsSync.syncFromWorld(this.world);
-    const hit = this.physicsSync.lineTrace(ray.origin, ray.end);
+    const hit = this.physicsSync.lineTrace(ray.origin, ray.end, { channel });
     const drawDebug = options?.drawDebug !== false;
     if (drawDebug) {
       const duration =
@@ -4788,6 +5142,7 @@ class InProcessRuntime implements RuntimeDriver {
       this.ragdolls.retire(owner);
       this.cables.retire(owner);
       this.dynamicMeshes.retire(owner);
+      for (const component of owner.components) this.textAppear.remove(component);
     }
     this.areaLightSlots.delete(slotId);
     this.outlineSlots.delete(slotId);
@@ -4808,71 +5163,178 @@ class InProcessRuntime implements RuntimeDriver {
     if (this.gameInstanceBound) return;
     this.gameInstanceBound = true;
     const classId = this.gameInstanceClass;
+    const hooks = this.gameLifecycleHooks(classId);
     this.world.setGameInstance(
       this.world.createGameInstance({
         classId,
         guid: "runtime-gi",
         variables: { ticks: 0 },
         hooks: {
-          onCreation: (self) => {
-            const hooks = this.scriptHost.hooksFor(classId);
-            this.guardScript(() => hooks?.onCreation?.(self));
-          },
+          ...hooks,
           onTick: (self, ctx) => {
             self.setVariable(
               "ticks",
               Number(self.getVariable("ticks")) + 1,
             );
-            const hooks = this.scriptHost.hooksFor(classId);
-            this.guardScript(() => hooks?.onTick?.(self, ctx));
-          },
-          onGameEnd: (self) => {
-            this.guardScript(() =>
-              this.scriptHost.invokeGameShutdownEvent(classId, "onEnd", self),
-            );
-          },
-          onSceneStartLoading: (self, sceneName) => {
-            this.guardScript(() =>
-              this.scriptHost.invokeEvent(
-                classId,
-                "onSceneStartLoading",
-                self,
-                { sceneName },
-              ),
-            );
-          },
-          onSceneFinishLoading: (self, sceneName) => {
-            this.guardScript(() =>
-              this.scriptHost.invokeEvent(
-                classId,
-                "onSceneFinishLoading",
-                self,
-                { sceneName },
-              ),
-            );
-          },
-          onFirstSceneLoaded: (self, sceneName) => {
-            this.guardScript(() =>
-              this.scriptHost.invokeEvent(
-                classId,
-                "onFirstSceneLoaded",
-                self,
-                { sceneName },
-              ),
-            );
-          },
-          onSceneExit: (self, sceneName) => {
-            this.guardScript(() => {
-              if (this.stopped) {
-                this.scriptHost.invokeGameShutdownEvent(classId, "onSceneExit", self, { sceneName });
-              } else {
-                this.scriptHost.invokeEvent(classId, "onSceneExit", self, { sceneName });
-              }
-            });
+            hooks.onTick(self, ctx);
           },
         },
       }),
     );
+  }
+
+  /**
+   * Script binding shared by the Game Instance and GameSubsystems (full
+   * parity). Scripts resolve lazily, so objects built before `loadScripts`
+   * still run them. On End, and On Scene Exit once Play stops, are the final
+   * lifecycle.
+   */
+  private gameLifecycleHooks(classId: string): GameLifecycleHooks {
+    const sceneEvent = (event: string) => (self: BObject, sceneName: string) => {
+      this.guardScript(() => this.scriptHost.invokeEvent(classId, event, self, { sceneName }));
+    };
+    return {
+      onCreation: (self) => {
+        const hooks = this.scriptHost.hooksFor(classId);
+        this.guardScript(() => hooks?.onCreation?.(self));
+      },
+      onTick: (self, ctx) => {
+        const hooks = this.scriptHost.hooksFor(classId);
+        this.guardScript(() => hooks?.onTick?.(self, ctx));
+      },
+      onGameEnd: (self) => {
+        this.guardScript(() =>
+          this.scriptHost.invokeGameShutdownEvent(classId, "onEnd", self),
+        );
+      },
+      onSceneStartLoading: sceneEvent("onSceneStartLoading"),
+      onSceneFinishLoading: sceneEvent("onSceneFinishLoading"),
+      onFirstSceneLoaded: sceneEvent("onFirstSceneLoaded"),
+      onSceneExit: (self, sceneName) => {
+        this.guardScript(() => {
+          if (this.stopped) {
+            this.scriptHost.invokeGameShutdownEvent(classId, "onSceneExit", self, { sceneName });
+          } else {
+            this.scriptHost.invokeEvent(classId, "onSceneExit", self, { sceneName });
+          }
+        });
+      },
+    };
+  }
+
+  private gameSubsystemHooks(classId: string): GameSubsystemHooks {
+    const hooks = this.gameLifecycleHooks(classId);
+    return {
+      ...hooks,
+      onGameEnd: (self) => {
+        this.subsystemMatches.clear();
+        hooks.onGameEnd(self);
+      },
+    };
+  }
+
+  /**
+   * Script binding for a SceneSubsystem the World creates with the main Scene.
+   * Interface handlers bind at creation, so it is callable while the Scene
+   * prepares. On Init and every notification wait in its owner queue until
+   * the Scene may run, preserving the World's order (On Init first). On End
+   * is final and always runs, dropping anything still queued.
+   */
+  private sceneSubsystemHooks(classId: string): SceneSubsystemHooks {
+    const notify = (self: SceneSubsystem, event: string, args: Record<string, unknown>) => {
+      if (!this.sceneSubsystemNotificationsMuted()) this.runSceneSubsystemEvent(self, classId, event, args);
+    };
+    return {
+      onCreation: (self) => {
+        this.subsystemMatches.clear();
+        this.scriptHost.bindInterfaceHandlers(self);
+        this.runOwnerCreation(self, () => this.scriptHost.hooksFor(classId)?.onCreation?.(self));
+      },
+      onTick: (self, ctx) =>
+        this.guardScript(() => this.scriptHost.hooksFor(classId)?.onTick?.(self, ctx)),
+      onEnd: (self) => {
+        this.subsystemMatches.clear();
+        this.pendingOwnerActions.delete(self);
+        this.guardScript(() => this.scriptHost.invokeGameShutdownEvent(classId, "onEnd", self));
+      },
+      onSceneLoaded: (self, sceneName) => notify(self, "onSceneLoaded", { sceneName }),
+      onStreamedSceneLoaded: (self, streamingActor, scene) =>
+        notify(self, "onStreamedSceneLoaded", { streamingActor, scene }),
+      onStreamedSceneUnloaded: (self, streamingActor, scene) =>
+        notify(self, "onStreamedSceneUnloaded", { streamingActor, scene }),
+      onSceneLayerAdded: (self, sceneLayer) => notify(self, "onSceneLayerAdded", { sceneLayer }),
+      onSceneLayerRemoved: (self, sceneLayer) => notify(self, "onSceneLayerRemoved", { sceneLayer }),
+      onSceneActorSpawned: (self, actor) => {
+        if (this.sceneSubsystemNotificationsMuted()) return;
+        // The World announces at spawn commit; the actor enters play when its
+        // own queue runs, so Spawned waits there, right before its Begin Play.
+        this.runOwnerAction(actor, () => {
+          if (self.ended) return;
+          let entered = this.sceneSubsystemActors.get(self);
+          if (!entered) this.sceneSubsystemActors.set(self, entered = new WeakSet());
+          entered.add(actor);
+          this.runSceneSubsystemEvent(self, classId, "onSceneActorSpawned", { actor });
+        });
+      },
+      onSceneActorDestroyed: (self, actor) => {
+        if (this.sceneSubsystemActors.get(self)?.delete(actor)) notify(self, "onSceneActorDestroyed", { actor });
+      },
+    };
+  }
+
+  /**
+   * The main Scene's own teardown is silent for its SceneSubsystems: Stop
+   * (streams, layers, the cancelled realization), Change Scene's stream
+   * retirement and a failed realization's cleanup.
+   */
+  private sceneSubsystemNotificationsMuted(): boolean {
+    return this.stopped || this.sceneTeardownDepth > 0;
+  }
+
+  private duringSceneTeardown(teardown: () => void): void {
+    this.sceneTeardownDepth++;
+    try {
+      teardown();
+    } finally {
+      this.sceneTeardownDepth--;
+    }
+  }
+
+  /** Dispatch after On Init and any earlier queued notification, in order. */
+  private runSceneSubsystemEvent(
+    subsystem: SceneSubsystem,
+    classId: string,
+    event: string,
+    args: Record<string, unknown>,
+  ): void {
+    const dispatch = () =>
+      this.guardScript(() => this.scriptHost.invokeEvent(classId, event, subsystem, args));
+    // An empty queue is one being drained (its On Init may be running).
+    const queued = this.pendingOwnerActions.get(subsystem);
+    if (queued && queued.length > 0) queued.push(dispatch);
+    else this.runOwnerAction(subsystem, dispatch);
+  }
+
+  /**
+   * `Get <Subsystem>`: compiled graphs evaluate it at every use, so matches
+   * are cached until the live subsystems change. More than one match takes
+   * the first (class-id order) and warns once per class id.
+   */
+  private findSubsystem(classId: string): Subsystem | null {
+    let matches = this.subsystemMatches.get(classId);
+    if (!matches) {
+      matches = this.world.findSubsystems(classId);
+      this.subsystemMatches.set(classId, matches);
+      if (matches.length > 1 && !this.ambiguousSubsystemWarnings.has(classId)) {
+        this.ambiguousSubsystemWarnings.add(classId);
+        this.reportLog(
+          `Get ${classId} matches ${matches.length} subsystems (${matches.map((match) => match.classId).join(", ")}); using ${matches[0]!.classId}.`,
+          "warning",
+          "subsystem",
+        );
+      }
+    }
+    return matches[0] ?? null;
   }
 
   private registerPlaySceneTypes(): void {
@@ -4941,6 +5403,8 @@ class InProcessRuntime implements RuntimeDriver {
   stop(): void {
     if (this.stopped) return;
     this.stopped = true;
+    this.focusNavigation.clearFocus();
+    this.overlayLayout.clear();
     this.lifecycleId++;
     this.sceneChangeId++;
     this.running = false;
@@ -4963,6 +5427,7 @@ class InProcessRuntime implements RuntimeDriver {
         if (!component.destroyed) {
           component.destroyed = true;
           component.callOnDestroyed();
+          this.textAppear.remove(component);
         }
       }
     }
@@ -4972,8 +5437,13 @@ class InProcessRuntime implements RuntimeDriver {
     this.ragdolls.dispose();
     this.cables.dispose();
     this.dynamicMeshes.dispose();
+    this.movement.dispose();
     this.physicsSync.dispose();
     this.overlayPhysicsSync.dispose();
+    this.clearNavAgents();
+    this.nav?.dispose();
+    this.nav = null;
+    this.sceneNavmeshBytes.clear();
     if (this.showPathfinding || this.showNavAgent) {
       this.emit({ type: "debugNavigation", agents: [], world: this.physicsWorldKind });
     }
@@ -5051,7 +5521,10 @@ class InProcessRuntime implements RuntimeDriver {
     this.phaseMark = nowMs();
 
     this.loopGuard.reset();
+    this.textAppear.advance(this.world.getActors(), simDt, (actor) => this.canTickActor(actor));
+    this.painters.beginFrame(this.world.getActors(), (actor) => this.canTickActor(actor));
     try {
+      this.focusNavigation.tick(pending, this.resolvedInput, simDt);
       this.world.tick();
       if (this.canTickScene()) {
         for (const stream of this.sceneStreams.values()) {
@@ -5083,6 +5556,9 @@ class InProcessRuntime implements RuntimeDriver {
     this._lastScriptMs = this.phaseScriptMs;
     this._lastPhysicsMs = this.phasePhysicsMs;
 
+    this.flushPainters();
+    this.flushTextAppear();
+    const completedFrameId = this.frameId;
     this.frameId += 1;
     if (this.canTickScene() || this.hasReadyLayers()) {
       this.publishSnapshot();
@@ -5111,7 +5587,7 @@ class InProcessRuntime implements RuntimeDriver {
         physicsMs: this._lastPhysicsMs,
         logs: this.logs
           .entries()
-          .filter((entry) => entry.frameId === this.frameId)
+          .filter((entry) => entry.frameId === completedFrameId)
           .map((entry) => ({
             severity: entry.severity,
             category: entry.category,
@@ -5246,7 +5722,8 @@ class InProcessRuntime implements RuntimeDriver {
     const due: Array<() => void> = [];
     for (const waiter of this.delayWaiters) {
       if (waiter.owner?.destroyed) continue;
-      if (waiter.owner && !this.canRunOwner(waiter.owner)) {
+      // A SceneSubsystem's time runs with its Scene, not with its call admission.
+      if (waiter.owner && !this.canRunOwnerActions(waiter.owner)) {
         remaining.push(waiter);
         continue;
       }
@@ -5263,6 +5740,7 @@ class InProcessRuntime implements RuntimeDriver {
   private snapshotOriginGeneration = 0;
 
   private publishSnapshot(): void {
+    this.applyOverlayLayouts();
     for (const stream of [...this.sceneStreams.values()]) {
       if (stream.actor.destroyed || stream.actor.world !== this.world) this.retireSceneStream(stream);
     }
@@ -5286,6 +5764,8 @@ class InProcessRuntime implements RuntimeDriver {
     }
     let count = 0;
     for (const actor of actors) {
+      // Layout-only anchors must not create fallback visuals from pose snapshots.
+      if (isSceneLayerAnchorActor(actor)) continue;
       const slotId = this.slotByGuid.get(actor.guid);
       if (slotId === undefined) continue;
       const world = worldTransforms.get(actor.guid);
@@ -5322,13 +5802,18 @@ class InProcessRuntime implements RuntimeDriver {
 
   private canSpawnActorClass(classId: string): boolean {
     if (!shouldSpawnScriptedActor(classId)) return false;
-    if (this.world.classRegistry.isA(classId, "SceneLayerActor")) return false;
-    const kind = this.world.classRegistry.get(classId)?.kind;
+    const classes = this.world.classRegistry;
+    if (classes.isA(classId, "SceneLayerActor")) return false;
+    // Registration copies the parent's kind; a repaired parent (see
+    // registerScriptClass) can change it, so read it from the engine base.
+    const engineBase = classes.ancestry(classId).find(isLockedEngineClassId);
+    const kind = classes.get(engineBase ?? classId)?.kind;
     return kind !== "object" && kind !== "gameInstance";
   }
 }
 
 const OVERLAY_BUTTON_VISUAL_CLASS_IDS = new Set([
+  "2DPainterComponent",
   "2DTextureComponent",
   "2DMaterialComponent",
   "2DPanelComponent",
@@ -5354,13 +5839,6 @@ function overlayButtonHasParentVisual(actor: Actor, world: World): boolean {
   if (!parentId) return false;
   const parent = world.findActor(parentId);
   return parent ? overlayActorHasVisual(parent) : false;
-}
-
-function liveOverlayAnchor(actor: Actor): ActorComponent | undefined {
-  return actor.components.find(
-    (component) =>
-      component.classId === "2DAnchorComponent" && !component.destroyed,
-  );
 }
 
 function liveOverlayButtons(actor: Actor): ActorComponent[] {
@@ -5459,6 +5937,8 @@ function isPlayRenderable(
   skipButtonMesh: boolean,
 ): boolean {
   if (component.destroyed || component.getVariable("editorOnly") === true) return false;
+  if (isOverlayLayoutClass(component.classId)) return true;
+  if (component.classId === "LightComponent" || component.classId === "HemisphericFillLightComponent" || component.classId === "CameraComponent" || component.classId === SPRING_ARM_COMPONENT_CLASS_ID) return true;
   if (waterKindForClass(component.classId) || component.classId === "WaterRemovalVolumeComponent") return true;
   if (component.classId === "2DButtonComponent") return !skipButtonMesh;
   if (
@@ -5474,6 +5954,7 @@ function isPlayRenderable(
     component.classId === "2DTextureComponent" ||
     component.classId === "2DMaterialComponent" ||
     component.classId === "2DPanelComponent" ||
+    component.classId === "2DPainterComponent" ||
     component.classId === "2DTextComponent" ||
     component.classId === "2DRichTextComponent"
   ) {
@@ -5485,33 +5966,12 @@ function isPlayRenderable(
   );
 }
 
-/**
- * Renderable components, then spring arms and the first camera attached below
- * one, so the camera follows the lagged arm socket.
- */
+/** Components that contribute visuals, illumination or camera poses to Play. */
 function playRenderablesOf(
   components: readonly ActorComponent[],
   skipButtonMesh: boolean,
 ): ActorComponent[] {
-  const renderables = components.filter((component) =>
-    isPlayRenderable(component, skipButtonMesh),
-  );
-  const arms = components.filter(
-    (component) =>
-      component.classId === SPRING_ARM_COMPONENT_CLASS_ID && !component.destroyed,
-  );
-  if (arms.length === 0) return renderables;
-  const armIds = new Set(arms.map((component) => component.guid));
-  const componentsByGuid = new Map(
-    components.map((component) => [component.guid, component]),
-  );
-  const camera = components.find(
-    (component) =>
-      component.classId === "CameraComponent" &&
-      !component.destroyed &&
-      nearestVisualParentId(component, componentsByGuid, armIds) !== null,
-  );
-  return [...renderables, ...arms, ...(camera ? [camera] : [])];
+  return components.filter(component => isPlayRenderable(component, skipButtonMesh));
 }
 
 function overlayHitTestOf(
@@ -5526,6 +5986,7 @@ function overlayHitTestOf(
       (component.classId === "2DTextureComponent" ||
         component.classId === "2DMaterialComponent" ||
         component.classId === "2DPanelComponent" ||
+        component.classId === "2DPainterComponent" ||
         component.classId === "2DTextComponent" ||
         component.classId === "2DRichTextComponent") &&
       !component.destroyed,
@@ -5551,6 +6012,7 @@ function playSortingOf(component: ActorComponent): {
 }
 
 function playMeshKindOf(component: ActorComponent): string | null {
+  if (isOverlayLayoutClass(component.classId)) return "2dlayout";
   if (component.classId === "CableComponent") return "cable";
   if (component.classId === "DynamicRuntimeMeshComponent") return "dynamicRuntimeMesh";
   if (waterKindForClass(component.classId)) return "water";
@@ -5566,6 +6028,7 @@ function playMeshKindOf(component: ActorComponent): string | null {
   if (component.classId === "2DTextureComponent") return "2dtexture";
   if (component.classId === "2DMaterialComponent") return "2dmaterial";
   if (component.classId === "2DPanelComponent") return "2dpanel";
+  if (component.classId === "2DPainterComponent") return "2dpainter";
   if (component.classId === "2DButtonComponent") return "2dbutton";
   if (component.classId === "ColliderComponent") {
     const shape = component.getVariable("shape");
@@ -5606,6 +6069,8 @@ function isIdentityComponentTransform(component: ActorComponent): boolean {
 
 function playPartsNeeded(components: readonly ActorComponent[]): boolean {
   return (
+    components.some((component) => isOverlayLayoutClass(component.classId) || component.classId === "LightComponent" || component.classId === "HemisphericFillLightComponent" || component.classId === "CameraComponent") ||
+    components.some((component) => component.classId === "2DPainterComponent") ||
     components.some((component) => component.classId === "CableComponent") ||
     components.some((component) => component.classId === "DynamicRuntimeMeshComponent") ||
     components.some((component) => waterKindForClass(component.classId) !== null || component.classId === "WaterRemovalVolumeComponent") ||
@@ -5630,10 +6095,13 @@ function text3dAssignPayload(
 
 function text2dAssignPayload(
   component: ActorComponent,
+  appearProgress = 1,
 ): NonNullable<Extract<CommandMessage, { type: "assignMesh" }>["text2d"]> {
   const parsed = parseText2DProperties(
     {
       text: component.getVariable("text"),
+      materialGuid: component.getVariable("materialGuid"),
+      materialUv: component.getVariable("materialUv"),
       fontAssetGuid:
         component.getVariable("fontAssetGuid") ?? component.assetGuid,
       size: component.getVariable("size"),
@@ -5648,11 +6116,18 @@ function text2dAssignPayload(
       underline: component.getVariable("underline"),
       wrapWidth: component.getVariable("wrapWidth"),
       wrapHeight: component.getVariable("wrapHeight"),
+      appearModes: component.getVariable("appearModes"),
+      appearTransition: component.getVariable("appearTransition"),
+      appearInterval: component.getVariable("appearInterval"),
+      appearDuration: component.getVariable("appearDuration"),
+      appearStart: component.getVariable("appearStart"),
     },
     { rich: component.classId === "2DRichTextComponent" },
   );
   return {
     text: parsed.text,
+    materialGuid: parsed.materialGuid,
+    materialUv: parsed.materialUv,
     fontAssetGuid: parsed.fontAssetGuid,
     size: parsed.size,
     color: parsed.color,
@@ -5666,6 +6141,29 @@ function text2dAssignPayload(
     underline: parsed.underline,
     wrapWidth: parsed.wrapWidth,
     wrapHeight: parsed.wrapHeight,
+    appearModes: parsed.appearModes,
+    appearTransition: parsed.appearTransition,
+    appearInterval: parsed.appearInterval,
+    appearDuration: parsed.appearDuration,
+    appearStart: parsed.appearStart,
+    appearProgress,
+  };
+}
+
+function lightAssignPayload(component: ActorComponent): NonNullable<Extract<CommandMessage, { type: "assignMesh" }>["light"]> {
+  const fill = component.classId === "HemisphericFillLightComponent";
+  const ground = component.getVariable("groundColor");
+  return {
+    color: rgbTuple(component.getVariable("color")),
+    intensity: Number(component.getVariable("intensity") ?? (fill ? 0.9 : 1)),
+    enabled: component.getVariable("enabled") !== false,
+    ...(fill ? { groundColor: ground == null ? [0, 0, 0] as [number, number, number] : rgbTuple(ground) } : {
+      range: Number(component.getVariable("range") ?? 10),
+      innerAngle: Number(component.getVariable("innerAngle") ?? 30),
+      outerAngle: Number(component.getVariable("outerAngle") ?? 45),
+      castShadows: component.getVariable("castShadows") === true,
+      shadowPriority: Number(component.getVariable("shadowPriority") ?? 0),
+    }),
   };
 }
 
@@ -5853,9 +6351,48 @@ function* remapOverlaySerializedActors(
     parentId: actor.parentId
       ? (idMap.get(actor.parentId) ?? actor.parentId)
       : null,
+    components: actor.components.map((component) => ({
+      ...component,
+      properties: Object.fromEntries(Object.entries(component.properties).map(([key, value]) => [
+        key,
+        ["focusUp", "focusDown", "focusLeft", "focusRight"].includes(key) && typeof value === "string"
+          ? idMap.get(value) ?? value : value,
+      ])),
+    })),
     });
     yield;
   }
   return remapped;
+}
+
+/**
+ * Order scripts so a user parent class registers before its children; the
+ * incoming order is kept otherwise. A parent that is missing, or reached again
+ * through a parent cycle, falls back to `Actor` like any unknown parent.
+ */
+function parentFirstScriptOrder(
+  scripts: readonly CompiledScript[],
+  isRegistered: (classId: string) => boolean,
+): CompiledScript[] {
+  const indicesByClassId = new Map<string, number[]>();
+  scripts.forEach((script, index) => {
+    const indices = indicesByClassId.get(script.classId) ?? [];
+    indices.push(index);
+    indicesByClassId.set(script.classId, indices);
+  });
+  const visited = new Set<number>();
+  const ordered: CompiledScript[] = [];
+  const visit = (index: number): void => {
+    if (visited.has(index)) return;
+    visited.add(index);
+    const script = scripts[index]!;
+    const parentClassId = script.parentClassId?.trim();
+    if (parentClassId && parentClassId !== script.classId && !isRegistered(parentClassId)) {
+      for (const parentIndex of indicesByClassId.get(parentClassId) ?? []) visit(parentIndex);
+    }
+    ordered.push(script);
+  };
+  scripts.forEach((_, index) => visit(index));
+  return ordered;
 }
 import { parseLandscapeProperties, parseFoliageProperties } from "@babylonslate/core";

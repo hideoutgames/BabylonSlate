@@ -13,7 +13,7 @@ async function projectWithOldScene(sceneVersion: number) {
   const storage = new MemoryStorageAdapter("documents");
   await storage.openDocumentsProject("Migrate.babproject");
   const service = new ProjectService(storage);
-  await service.loadCurrentProject();
+  const { document, layouts } = await service.loadCurrentProject();
 
   await storage.writeBinary(
     MAIN_SCENE_FILE,
@@ -25,6 +25,10 @@ async function projectWithOldScene(sceneVersion: number) {
       payload: { name: "Old" },
     }),
   );
+  // Replacing a mounted fixture must update both the index and its references.
+  await service.registry!.reindexPath(MAIN_SCENE_FILE);
+  document.settings.startupSceneGuid = "scene-guid";
+  await service.saveProject(document, layouts);
   return { storage, service };
 }
 
@@ -78,6 +82,8 @@ describe("migrate-on-load and migrate-on-save approval", () => {
     );
     expect(header.version).toBe(4);
     expect(header.guid).toBe("scene-guid");
+    expect(service.guidForPath(MAIN_SCENE_FILE)).toBe("scene-guid");
+    expect(JSON.parse(await storage.readText(PROJECT_FILE)).settings.startupSceneGuid).toBe("scene-guid");
     expect(service.pendingMigrations).toEqual([]);
   });
 

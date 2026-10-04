@@ -14,6 +14,7 @@ import {
 import { openMainScene, openTestProject } from "./open-test-project";
 import { clickPlayAndWaitForOverlay } from "./play";
 import { guidForPath } from "./material-graph";
+import { opfsProjectDirectory } from "./opfs-project";
 
 const CLASS_PATH = "assets/Mannequin.class.babasset";
 const ANIM_PATH = "assets/Mannequin/Mannequin.anim.babasset";
@@ -56,11 +57,12 @@ async function documentPayload<T>(page: Page, path: string): Promise<T> {
 }
 
 async function assetBytes(page: Page, path: string): Promise<Uint8Array> {
+  const directoryName = await opfsProjectDirectory(page, "opfs:TestProject");
   return new Uint8Array(
-    await page.evaluate(async (assetPath) => {
+    await page.evaluate(async ({ assetPath, projectDirectory }) => {
       let folder = await (
         await navigator.storage.getDirectory()
-      ).getDirectoryHandle("opfs:TestProject");
+      ).getDirectoryHandle(projectDirectory);
       const parts = assetPath.split("/");
       for (const part of parts.slice(0, -1))
         folder = await folder.getDirectoryHandle(part);
@@ -71,7 +73,7 @@ async function assetBytes(page: Page, path: string): Promise<Uint8Array> {
           ).arrayBuffer(),
         ),
       );
-    }, path),
+    }, { assetPath: path, projectDirectory: directoryName }),
   );
 }
 
@@ -130,9 +132,10 @@ test("H16: Space jumps the wired Mannequin graph to a visible Walk pose and retu
     await assetBytes(page, ANIM_PATH),
   );
   const animation = animationAsset.payload as unknown as AnimGraphDocument;
-  const walkPath = await page.evaluate(async () => {
+  const directoryName = await opfsProjectDirectory(page, "opfs:TestProject");
+  const walkPath = await page.evaluate(async (projectDirectory) => {
     const root = await navigator.storage.getDirectory();
-    const project = await root.getDirectoryHandle("opfs:TestProject");
+    const project = await root.getDirectoryHandle(projectDirectory);
     const folder = await (
       await project.getDirectoryHandle("assets")
     ).getDirectoryHandle("Mannequin");
@@ -141,7 +144,7 @@ test("H16: Space jumps the wired Mannequin graph to a visible Walk pose and retu
         return `assets/Mannequin/${name}`;
     }
     throw new Error("Imported Mannequin Walk Animation is missing");
-  });
+  }, directoryName);
   const walk = await decodeAssetDocument(await assetBytes(page, walkPath));
   expect(walk.type).toBe("Animation");
   animation.states[0]!.speed = 0;
@@ -164,10 +167,10 @@ test("H16: Space jumps the wired Mannequin graph to a visible Walk pose and retu
     dependencies: animation.clips.map((clip) => clip.assetGuid),
   });
   await page.evaluate(
-    async ({ path, bytes }) => {
+    async ({ path, bytes, projectDirectory }) => {
       let folder = await (
         await navigator.storage.getDirectory()
-      ).getDirectoryHandle("opfs:TestProject");
+      ).getDirectoryHandle(projectDirectory);
       const parts = path.split("/");
       for (const part of parts.slice(0, -1))
         folder = await folder.getDirectoryHandle(part);
@@ -177,7 +180,7 @@ test("H16: Space jumps the wired Mannequin graph to a visible Walk pose and retu
       await writer.write(new Uint8Array(bytes));
       await writer.close();
     },
-    { path: ANIM_PATH, bytes: Array.from(encoded) },
+    { path: ANIM_PATH, bytes: Array.from(encoded), projectDirectory: directoryName },
   );
   await page.reload();
   await openTestProject(page);

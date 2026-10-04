@@ -119,6 +119,32 @@ function withFunctionExport(
 }
 
 describe("script host runs compiled graphs", () => {
+  it("uses the session seed for script random streams", async () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "random", kind: "event",
+      nodes: [node(registry, "tick", "flow.event.tick"), node(registry, "random", "math.random"), node(registry, "log", "debug.log")],
+      edges: [edge("exec", "tick", "execOut", "log", "execIn"), edge("value", "random", "out", "log", "message")],
+    };
+    const run = async (seed: number) => {
+      const messages: string[] = [];
+      const runtime = createInProcessRuntime({ seed, seedDemoActors: false, preferSoftwarePhysics: true,
+        onCommand: (command) => { if (command.type === "log") messages.push(command.message); } });
+      try {
+        await runtime.loadScripts([toScript(graph, registry, "RandomActor", "random")]);
+        runtime.spawnScriptedActor({ classId: "RandomActor" });
+        runtime.start();
+        runtime.tick();
+        runtime.tick();
+        return messages;
+      } finally { runtime.stop(); }
+    };
+    const first = await run(42);
+    expect(first).toHaveLength(2);
+    expect(await run(42)).toEqual(first);
+    expect(await run(43)).not.toEqual(first);
+  });
+
   it.each([
     ["project.getName", "name", "Orbit Workshop"],
     ["project.getVersion", "version", "2.4.0-beta.3"],

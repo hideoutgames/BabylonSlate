@@ -757,4 +757,43 @@ describe("Game Instance native events and scene APIs", () => {
     expect(logMessages(commands)).toContain("g:8:scene-2");
     runtime.stop();
   });
+
+  it("applies the Game Instance class defaults and interfaces before OnInit", async () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      preferSoftwarePhysics: true,
+      gameInstanceClass: "SessionGI",
+      playScene: sceneNamed("Level1"),
+      playSceneGuid: "scene-1",
+      onCommand: (command) => commands.push(command),
+    });
+    const sessionGi: CompiledScript = {
+      assetGuid: "session-gi",
+      classId: "SessionGI",
+      parentClassId: "GameInstance",
+      source: [
+        "export function onInit(ctx) {",
+        '  ctx.log("log", "Script", "lives:" + ctx.getVariable("lives"));',
+        '  ctx.log("log", "Script", "greet:" + ctx.callInterface(ctx.self, "iface-greeter", "Greet", {}).text);',
+        "}",
+        'export function Greet() { return { text: "hello" }; }',
+      ].join("\n"),
+      anchors: [],
+      entryPoints: [{ name: "onInit", event: "onInit", isAsync: false }],
+      variables: [{ name: "lives", type: "int", defaultValue: 3 }],
+      implementedInterfaces: ["iface-greeter"],
+      interfaceImplementations: [
+        { interfaceGuid: "iface-greeter", method: "Greet", exportName: "Greet" },
+      ],
+    };
+    await runtime.loadScripts([sessionGi]);
+    runtime.realizePlayWorld();
+    expect(logMessages(commands).filter((message) => /^(lives|greet):/.test(message))).toEqual([
+      "lives:3",
+      "greet:hello",
+    ]);
+    runtime.stop();
+  });
 });

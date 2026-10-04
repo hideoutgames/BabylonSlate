@@ -1,9 +1,29 @@
 # Testing architecture
 
+## Dependency advisory maintenance
+
+Vitest and its coverage provider use the patched 4.1.11 release line. Narrow workspace overrides update xmldom 0.9, brace-expansion 1/2/5, DOMPurify 3, fast-uri 3, js-yaml 4, Hono 4, ip-address 10, qs 6 and Undici 7 within their consumers' existing release lines. The lockfile records the resolved versions; review and remove or advance overrides when upgrading consumers.
+
+Two upstream constraints remain. VitePress 1.6.4 declares Vite 5, whose dev server has no compatible fixes for [optimized-dependency traversal](https://github.com/advisories/GHSA-4w7w-66w2-5vf9), [Windows denied-file bypass](https://github.com/advisories/GHSA-fx2h-pf6j-xcff) and [Windows UNC editor paths](https://github.com/advisories/GHSA-v6wh-96g9-6wx3). Keep docs development local; the Windows UNC issue can still affect a local server. Published docs are static files. Vite also retains esbuild 0.21's [development-server cross-origin advisory](https://github.com/advisories/GHSA-67mh-4wv8-2f99), but the normal VitePress path uses esbuild's build/transform APIs, not its affected serve API.
+
+Capacitor's Xcode tooling retains uuid 7 through xcode 3.0.1; its consumer uses `v4()` without a caller buffer, while the [reported bounds issue](https://github.com/advisories/GHSA-w5hq-g745-h8pq) concerns buffered v3/v5/v6 calls. Resolve these constraints through compatible upstream upgrades rather than unqualified major-version overrides.
+
+## Verification scope
+
+Asset migration fixtures keep on-disk headers, the mounted registry, and project references consistent. Direct storage writes after project open require reindexing before document saves; migration checks preserve the asset GUID and its startup-scene reference.
+
+Browser probes of persisted OPFS assets, journals, and thumbnails resolve each logical project ID through its registered catalog directory. Newly created projects use isolated physical directories; explicit legacy fixtures keep their registered legacy mapping. Recovery polling tolerates a journal subtree that has not been created yet, while unexpected storage or parse errors fail the check.
+
+Security scans keep pull-request, push and individual comment events in separate cancellation groups. A comment cannot cancel the PR commit scan, and newer comments cannot cancel scans of earlier comments. Root Node tooling and distribution scripts use ESLint's recommended JavaScript rules, including undefined-name and unused-binding checks. `pnpm lint <files>` checks only those paths, and `pnpm typecheck --filter <workspace>` selects that workspace before invoking its script; unfiltered commands retain the full CI scope.
+
+GPU proof harnesses keep typed capture and lifecycle records. Missing native preprocessing textures or active WebGL sampler locations fail qualification with an explicit diagnostic.
+
 Agents run only explicit targeted test files/cases for changed behavior and directly affected consumers, with scoped static checks where relevant. Full local suites, coverage, all browser tests, workspace-wide checks and the cumulative `verify:local` diagnostic require an explicit user request; they are not automatic PR prerequisites. Prose/instruction-only changes use diff/link review. After repairs, rerun only affected checks and document why reused results still apply. Required GitHub CI is unchanged. The cumulative tooling described below remains available as an opt-in diagnostic; its `deliveryEligible` certificate is not required for targeted agent delivery.
 
 
 Launcher regressions cover project creation/edit/removal, explicit web folder/ZIP import actions, template selection, shared theme persistence, account menus, native sign-in gates, and route unmounting. Their jsdom fixtures supply font/image readiness and media queries; Clerk and native account transports are mocked at the integration boundary without requiring credentials or a GPU.
+
+The launcher touch browser fixture registers its installed-template library with an explicit OPFS metadata directory. Native swipe checks wait for the installed cards and an overflowing gallery before asserting scroll movement and cancellation without card activation.
 
 `pnpm verify:local` is an opt-in diagnostic over the cumulative branch diff from the merge base with main plus untracked files. It always runs `git diff --check`, lints changed JavaScript/TypeScript files, and selects the checks below. Unit files are batched at 50. Its certificate requires a clean, unchanged commit; targeted agent delivery instead records the selected checks, revision, and result. `pnpm verify` is an explicit full local diagnostic, not a routine PR requirement.
 
@@ -17,7 +37,7 @@ Launcher regressions cover project creation/edit/removal, explicit web folder/ZI
 | Agent rules, Cursor adapters, PR metadata, or non-site prose | Diff check only; no test, typecheck, or build process |
 | Root package/compiler/test configuration or an unknown path | All workspace typechecks and all root tooling contracts |
 
-For public API changes, select directly affected consumers for scoped typechecking. Workspace-wide `pnpm typecheck` still requires an explicit broader-run request. GitHub Verify independently reruns the full workspace typecheck, all tooling and distribution contracts, unsharded package coverage, uncovered editor tests, and every browser partition; local selection never removes those merge gates.
+For public API changes, select directly affected consumers for scoped typechecking. The editor application uses TypeScript strict checking, including its unit fixtures and browser proof hooks. Workspace-wide `pnpm typecheck` still requires an explicit broader-run request. GitHub Verify independently reruns the full workspace typecheck, all tooling and distribution contracts, unsharded package coverage, uncovered editor tests, and every browser partition; local selection never removes those merge gates.
 
 ## Responsive editor checks
 
@@ -133,6 +153,12 @@ These have already produced false-passing tests, so check against them before tr
 ## Playwright
 
 Projects: `desktop-chrome` (full suite) and `ipad-landscape` (`hasTouch`, device scale factor 2, iPad Pro 11 landscape 1194×834). iPad portrait is unsupported — there is no `ipad-portrait` project. The suite builds with `VITE_TEST_MODE=true` and serves an exact-source artifact on an owned ephemeral loopback port. Default test timeout is 60s. Dirty Play shows the Preparing Play dialog before `play-overlay` mounts; specs that click Play after editing use `clickPlayAndWaitForOverlay` in `e2e/play.ts` (60s overlay wait) rather than the 5s default visibility timeout. Long dirty-Play cases (`p7`, `p10`, `p11` NavMesh, scene post-process) also raise `test.setTimeout`.
+
+The Basic 3D mannequin shadow test waits for three additional presented viewport
+frames after a WebGPU backend switch, within its 30 s startup budget. Loading's
+first frames can precede resumed browser frame delivery on software WebGPU. The
+subsequent shadow-profile edit keeps its 5 s assertion deadline and pixel checks.
+These software fixtures qualify functionality, not device performance.
 
 Material browser regressions also check parameter name uniqueness and RGBA defaults, link breaking inside a pin's safe zone, and saved graph edits reaching live Scene and Prefab shader inputs while preserving mesh identity. The viewport test hosts expose the assigned NodeMaterial input values and mesh/material IDs only in test mode.
 
@@ -263,7 +289,7 @@ For local GLB regressions, `BL_TEST_MODEL_SOURCE` can point `e2e/model-pose.spec
 
 Testing uses only standard GitHub-hosted runners in this public repository. `scripts/workflow-runner-policy.test.mjs` checks all workflows and recursively checks local reusable workflows against a literal standard-runner allowlist, including matrix values. Paid/larger runners, runner groups, self-hosted testing, and uncontrolled runner expressions are rejected. A visibility change requires a new cost review. Do not add paid services or expand storage allowances. Standard public compute is free; storage has separate allowances ([GitHub billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions)). Keep existing short retention, and establish account entitlement before adding optional uploads; unavailable billing access is not proof of zero storage charges.
 
-- Static builds the test artifact once after typecheck; browser shards download that run's artifact and validate its identity before serving it. Pages retains its separate base-path build. Browser timings and failure traces are uploaded for three days.
+- Browser shards build their own immutable test artifact with the hosted-only `ci-bundle` mode; the static job retains full workspace typechecking. Pages retains its separate base-path build. Browser timings and failure traces are uploaded for three days.
 - `scripts/verification-policy.mjs` remains at seven browser shards and two ready PR slots until measured runner-work and latency targets justify four shards/three slots. Required GitHub contexts remain unchanged during this stage.
 - `scripts/browser-timings.json` records measured CI durations. Partitioning uses deterministic longest-group-first placement, grouping by file and browser project so serial suites never split. New tests default to 30 seconds; discovery includes all tests regardless of whether they have a recorded weight.
 - Camera-preview, mannequin and shadow-host probes have measured weights to distribute their different rendering costs across those shards. Timing updates affect placement only; all cases, assertions, retries and job limits remain in force. Identify any conservative successful-retry sample in the timing data's source notes.

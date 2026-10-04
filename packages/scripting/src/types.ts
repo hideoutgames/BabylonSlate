@@ -155,7 +155,9 @@ export function isAssignable(
       from.assetType.trim() === "" ||
       to.assetType.trim() === "" ||
       from.assetType === to.assetType ||
-      (from.assetType === "RenderTargetTexture" && to.assetType === "Texture")
+      (from.assetType === "RenderTargetTexture" && to.assetType === "Texture") ||
+      // A Material Instance renders wherever its parent Material can.
+      (from.assetType === "MaterialInstance" && to.assetType === "Material")
     );
   }
 

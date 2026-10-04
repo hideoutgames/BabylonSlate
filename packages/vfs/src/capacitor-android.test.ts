@@ -145,7 +145,7 @@ describe("Capacitor 8 Android host", () => {
     }
   });
 
-  it("implements every non-optional scoped-storage plugin method", () => {
+  it("implements required scoped-storage methods and Android read scopes", () => {
     const typescript = readFileSync(
       join(vfsDir, "capacitor-scoped-storage.ts"),
       "utf8",
@@ -155,7 +155,7 @@ describe("Capacitor 8 Android host", () => {
     )?.[1];
     expect(body).toBeDefined();
     const methods = [...body!.matchAll(/^\s{2}(\w+)(\?)?\(/gm)]
-      .filter((match) => match[2] !== "?")
+      .filter((match) => match[2] !== "?" || ["beginReadScope", "endReadScope"].includes(match[1]!))
       .map((match) => match[1])
       .sort();
     const java = readFileSync(

@@ -1,10 +1,10 @@
 import type { MaterialValueType } from "./types";
 
 /** Surface shades a mesh; post-process shades a camera pass; particle shades GPUParticleSystem quads. */
-export type MaterialDomain = "surface" | "landscape" | "postProcess" | "particle";
+export type MaterialDomain = "surface" | "landscape" | "postProcess" | "particle" | "text";
 
 export function parseMaterialDomain(value: unknown): MaterialDomain {
-  if (value === "postProcess" || value === "particle" || value === "landscape") {
+  if (value === "postProcess" || value === "particle" || value === "landscape" || value === "text") {
     return value;
   }
   return "surface";
@@ -785,6 +785,18 @@ const FUNCTION_NODES: MaterialNodeDefinition[] = [
 
 const OUTPUT_NODES: MaterialNodeDefinition[] = [
   {
+    type: "output.text",
+    title: "Text Output",
+    category: "Output",
+    domains: ["text"],
+    terminal: "text",
+    cost: 0,
+    inputs: [
+      { id: "color", name: "Color", type: VEC4, colorHint: true, defaultValue: [1, 1, 1, 1] },
+    ],
+    outputs: [],
+  },
+  {
     type: "output.surface",
     title: "Material Output",
     category: "Output",
@@ -931,6 +943,7 @@ export function materialPaletteEntries(
 }
 
 export function terminalNodeTypeFor(domain: MaterialDomain): string {
+  if (domain === "text") return "output.text";
   if (domain === "postProcess") return "output.postProcess";
   if (domain === "particle") return "output.particle";
   return "output.surface";

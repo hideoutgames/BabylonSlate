@@ -24,6 +24,93 @@ describe("formatLockAge", () => {
 });
 
 describe("SourceControlService", () => {
+  it("requires Save Token to authorize a repository host, including legacy credentials", async () => {
+    const secrets = new MemorySecretStore();
+    await secrets.set("source-control:proj", "legacy-fixture");
+    const requests: Array<{ url: string; headers: Record<string, string> }> = [];
+    const service = new SourceControlService();
+    const config = { settings: enabled, projectGuid: "proj", platform: "electron", testMode: false, secretStore: secrets,
+      nativeHttp: async (request: { url: string; headers: Record<string, string> }) => {
+        requests.push(request);
+        return { status: 200, bodyText: '{"ours":[],"theirs":[]}' };
+      } };
+    try {
+      await service.configure(config);
+      service.pausePolling();
+      await service.refresh();
+      expect(service.hasToken).toBe(false);
+      expect(requests).toEqual([]);
+      expect(await secrets.get("source-control:proj")).toBe("legacy-fixture");
+      await service.saveToken("authorized-fixture");
+      await service.refresh();
+      expect(requests.map((request) => new URL(request.url).origin)).toEqual(["https://github.com"]);
+      expect(requests[0].headers.Authorization).toBe(`Basic ${btoa("x-access-token:authorized-fixture")}`);
+      await service.configure({ ...config, settings: { ...enabled, repositoryUrl: "https://changed.example/repo" } });
+      service.pausePolling();
+      await service.refresh();
+      expect(service.hasToken).toBe(false);
+      expect(requests).toHaveLength(1);
+      await service.saveToken("second-fixture");
+      await service.refresh();
+      expect(new URL(requests[1].url).origin).toBe("https://changed.example");
+      expect(requests[1].headers.Authorization).toBe(`Basic ${btoa("x-access-token:second-fixture")}`);
+    } finally { service.dispose(); }
+  });
+
+  it("does not revive a disposed service when its secret lookup finishes", async () => {
+    const service = new SourceControlService();
+    const secrets = new MemorySecretStore();
+    let finish!: (value: string | null) => void;
+    vi.spyOn(secrets, "get").mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    const fake = new FakeLockProvider();
+    const verify = vi.spyOn(fake, "verify");
+    const pending = service.configure({ settings: enabled, projectGuid: "proj", platform: "electron", testMode: true, secretStore: secrets, nativeHttp: null, fake });
+    service.dispose();
+    finish(null);
+    await pending;
+    expect(service.enabled).toBe(false);
+    expect(service.refreshState.status).toBe("idle");
+    expect(verify).not.toHaveBeenCalled();
+  });
+
+  it("keeps the newer provider when configuration lookups finish out of order", async () => {
+    const service = new SourceControlService();
+    const secrets = new MemorySecretStore();
+    let finish!: (value: string | null) => void;
+    vi.spyOn(secrets, "get").mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    const first = new FakeLockProvider();
+    const second = new FakeLockProvider();
+    const config = { settings: enabled, projectGuid: "first", platform: "electron", testMode: true, secretStore: secrets, nativeHttp: null, fake: first };
+    try {
+      const pending = service.configure(config);
+      await service.configure({ ...config, projectGuid: "second", fake: second });
+      service.pausePolling();
+      finish(null);
+      await pending;
+      await service.autoLock("assets/current.babasset");
+      expect(first.snapshot()).toEqual([]);
+      expect(second.snapshot().map((lock) => lock.path)).toEqual(["assets/current.babasset"]);
+    } finally { service.dispose(); }
+  });
+
+  it.each(["unlock", "create"] as const)("reports a failed transfer %s and permits locking the moved path later", async (stage) => {
+    const service = new SourceControlService();
+    const fake = new FakeLockProvider();
+    try {
+      await service.configure({ settings: enabled, projectGuid: "proj", platform: "electron", testMode: true, secretStore: new MemorySecretStore(), nativeHttp: null, fake });
+      service.pausePolling();
+      await service.autoLock("assets/old.babasset");
+      vi.spyOn(fake, stage).mockResolvedValueOnce(err({ kind: "offline", message: "Connection lost" }));
+      await expect(service.transferLock("assets/old.babasset", "assets/new.babasset")).rejects.toThrow("Connection lost");
+      expect(service.operationError).toContain("Connection lost");
+      expect(service.bannerFor("assets/new.babasset")?.kind).toBe("unlocked");
+      expect(Boolean(service.lockForPath("assets/old.babasset"))).toBe(stage === "unlock");
+      await service.autoLock("assets/new.babasset");
+      expect(service.lockForPath("assets/new.babasset")?.ours).toBe(true);
+      expect(service.bannerFor("assets/new.babasset")).toBeNull();
+    } finally { service.dispose(); }
+  });
+
   it("ignores an old unlock failure after switching projects", async () => {
     const service = new SourceControlService();
     const fake = new FakeLockProvider();
@@ -45,6 +132,37 @@ describe("SourceControlService", () => {
       expect(service.locks).toHaveLength(0);
     } finally { service.dispose(); }
   });
+
+  it("does not reuse an old project's pending auto-lock for the same path in a new project", async () => {
+    const service = new SourceControlService();
+    const first = new FakeLockProvider({ selfName: "First Project" });
+    const second = new FakeLockProvider({ selfName: "Second Project" });
+    const path = "assets/hero.scene.babasset";
+    const config = { settings: enabled, projectGuid: "first", platform: "electron", testMode: true, secretStore: new MemorySecretStore(), nativeHttp: null, fake: first };
+    const createFirstLock = first.create.bind(first);
+    let finish!: () => void;
+    const response = new Promise<void>((resolve) => { finish = resolve; });
+    vi.spyOn(first, "create").mockImplementationOnce(async (requestedPath) => {
+      await response;
+      return createFirstLock(requestedPath);
+    });
+    try {
+      await service.configure(config);
+      service.pausePolling();
+      const pending = service.autoLock(path);
+      service.dispose();
+      await service.configure({ ...config, projectGuid: "second", fake: second });
+      service.pausePolling();
+      finish();
+      await pending;
+      expect(service.lockForPath(path)).toBeUndefined();
+      expect(service.bannerFor(path)).toBeNull();
+      await service.autoLock(path);
+      expect(service.lockForPath(path)?.ownerName).toBe("Second Project");
+      expect(second.snapshot()).toMatchObject([{ path, ours: true }]);
+    } finally { service.dispose(); }
+  });
+
   it("explains a rejected unlock without removing the cached lock", async () => {
     const service = new SourceControlService();
     const fake = new FakeLockProvider();
@@ -54,14 +172,20 @@ describe("SourceControlService", () => {
     try {
       await service.refresh();
       const lock = service.lockForPath("assets/hero.scene.babasset")!;
+      service.onOpenDocument(lock.path);
+      expect(service.isDocumentReadOnly(lock.path)).toBe(true);
       const unlock = vi.spyOn(fake, "unlock").mockResolvedValueOnce(err({ kind: "http", status: 403, message: "No permission to unlock" }));
       await service.forceUnlock(lock.id);
       expect(service.operationError).toBe("No permission to unlock");
       expect(service.lockForPath(lock.path)).toEqual(lock);
+      expect(service.isDocumentReadOnly(lock.path)).toBe(true);
+      expect(service.bannerFor(lock.path)?.kind).toBe("theirs");
       unlock.mockRestore();
       await service.forceUnlock(lock.id);
       expect(service.operationError).toBeNull();
       expect(service.lockForPath(lock.path)).toBeUndefined();
+      expect(service.isDocumentReadOnly(lock.path)).toBe(false);
+      expect(service.bannerFor(lock.path)).toBeNull();
     } finally { service.dispose(); }
   });
   it("reports a failed refresh, preserves cached locks, and clears the error after retry", async () => {
@@ -73,15 +197,40 @@ describe("SourceControlService", () => {
     try {
       await service.refresh();
       expect(service.refreshState.status).toBe("ready");
+      service.onOpenDocument("assets/hero.scene.babasset");
       const lastSuccess = service.refreshState.lastSuccessAt;
       const verify = vi.spyOn(fake, "verify").mockResolvedValueOnce(err({ kind: "http", status: 401, message: "Token expired" }));
       await service.refresh();
       expect(service.refreshState).toEqual({ status: "error", error: "Token expired", lastSuccessAt: lastSuccess });
       expect(service.locks).toHaveLength(1);
+      expect(service.isDocumentReadOnly("assets/hero.scene.babasset")).toBe(true);
+      expect(service.bannerFor("assets/hero.scene.babasset")?.kind).toBe("theirs");
       await service.refresh();
       expect(service.refreshState.status).toBe("ready");
       expect(service.refreshState.error).toBeNull();
       verify.mockRestore();
+    } finally { service.dispose(); }
+  });
+
+  it.each(["unlocked", "ours"] as const)("restores editing when refresh confirms a former owner's lock is %s", async (state) => {
+    const service = new SourceControlService();
+    const fake = new FakeLockProvider();
+    const path = "assets/hero.scene.babasset";
+    const oldLock = fake.addTheirs(path, "Ada");
+    try {
+      await service.configure({ settings: enabled, projectGuid: "proj", platform: "electron", testMode: true, secretStore: new MemorySecretStore(), nativeHttp: null, fake });
+      service.pausePolling();
+      await service.refresh();
+      service.onOpenDocument(path);
+      expect(service.isDocumentReadOnly(path)).toBe(true);
+      await fake.unlock(oldLock.id, { force: true });
+      if (state === "ours") await fake.create(path);
+      await service.refresh();
+      expect(service.isDocumentReadOnly(path)).toBe(false);
+      expect(service.bannerFor(path)).toBeNull();
+      service.onOpenDocument(path);
+      expect(service.isDocumentReadOnly(path)).toBe(false);
+      expect(service.lockStateForPath(path)).toBe(state === "ours" ? "mine" : null);
     } finally { service.dispose(); }
   });
   it("does nothing when source control is disabled", async () => {
@@ -197,7 +346,10 @@ describe("SourceControlService", () => {
     expect(service.isDocumentReadOnly("assets/hero.scene.babasset")).toBe(true);
     expect(service.bannerFor("assets/hero.scene.babasset")?.kind).toBe("theirs");
     service.setEditAnyway("assets/hero.scene.babasset");
+    await service.refresh();
     expect(service.isDocumentReadOnly("assets/hero.scene.babasset")).toBe(false);
+    expect(service.bannerFor("assets/hero.scene.babasset")).toMatchObject({ kind: "theirs", lock: { ownerName: "Bob" } });
+    service.dispose();
   });
 
   it("never blocks an edit when create conflicts or is offline", async () => {
@@ -220,7 +372,7 @@ describe("SourceControlService", () => {
 
   it("keeps a Git LFS 409 already-ours lock as held", async () => {
     const secrets = new MemorySecretStore();
-    await secrets.set("source-control:proj", "token");
+    await secrets.set("source-control:proj", JSON.stringify({ version: 1, origin: "https://github.com", token: "token" }));
     const lock = {
       id: "lock-1",
       path: "assets/a.babasset",
@@ -297,7 +449,7 @@ describe("SourceControlService", () => {
     });
     await service.saveToken("ghp_secret");
     expect(service.hasToken).toBe(true);
-    expect(await secrets.get("source-control:proj-1")).toBe("ghp_secret");
+    expect(JSON.parse((await secrets.get("source-control:proj-1"))!)).toEqual({ version: 1, origin: "https://github.com", token: "ghp_secret" });
     await service.clearToken();
     expect(service.hasToken).toBe(false);
     expect(await secrets.get("source-control:proj-1")).toBeNull();

@@ -28,6 +28,21 @@ function asset(
 }
 
 describe("collectExportReachability", () => {
+  it("packs non-texture variable assets and their transitive dependencies", () => {
+    const graph: SerializedGraph = { nodes: [], edges: [], members: [
+      { id: "clips", kind: "variable", name: "Clips", typeId: "asset", typeClassId: "Audio", container: "array", defaultValue: ["clip"] },
+      { id: "name", kind: "variable", name: "Name", typeId: "string", defaultValue: "unused" },
+    ] };
+    const result = collectExportReachability({ startupSceneGuid: "scene", pluginEnabledGuids: new Set(), parentOf: () => "Actor",
+      assets: [
+        asset({ guid: "scene", name: "Scene", type: "Scene", dependencies: ["host"] }),
+        asset({ guid: "host", name: "Host", type: "Class" }),
+        asset({ guid: "clip", name: "Clip", type: "Audio", dependencies: ["channel"] }),
+        asset({ guid: "channel", name: "Channel", type: "AudioChannel" }),
+        asset({ guid: "unused", name: "Unused", type: "Audio" }),
+      ], sceneByGuid: () => createDefaultScene(), graphByGuid: (guid) => guid === "host" ? graph : null });
+    expect(result).toMatchObject({ ok: true, value: { guids: ["channel", "clip", "host", "scene"] } });
+  });
   it("packs nested streamed scenes and their assets without requiring a Change Scene node", () => {
     const stream = (id: string, target: string) => createActor(id, id, { classId: "SceneStreamingActor", components: [
       { id: `${id}-component`, classId: "SceneStreamingComponent", properties: { sceneGuid: target, sceneName: target } },
@@ -1088,6 +1103,8 @@ describe("collectExportReachability", () => {
         asset({ guid: "tex-1", type: "Texture", name: "BannerTex" }),
         asset({ guid: "tex-panel", type: "Texture", name: "PanelTex" }),
         asset({ guid: "mat-panel", type: "Material", name: "PanelMat" }),
+        asset({ guid: "mat-text", type: "Material", name: "TextMat" }),
+        asset({ guid: "tex-text", type: "Texture", name: "TextFill" }),
         asset({ guid: "tex-inline", type: "Texture", name: "Inline" }),
         asset({ guid: "font-1", type: "Font", name: "Display" }),
         asset({ guid: "unused-layer", type: "SceneLayer", name: "Unused" }),
@@ -1097,6 +1114,7 @@ describe("collectExportReachability", () => {
       sceneByGuid: () => scene,
       graphByGuid: (guid) => (guid === "class-game" ? graph : null),
       payloadByGuid: (guid) => {
+        if (guid === "mat-text") return { domain: "text", nodes: [{ type: "texture.sample", properties: { textureGuid: "tex-text" } }] };
         if (guid === "hud") {
           return {
             name: "HUD",
@@ -1124,6 +1142,7 @@ describe("collectExportReachability", () => {
                     properties: {
                       text: "[img=tex-inline]Hi",
                       fontAssetGuid: "font-1",
+                      materialGuid: "mat-text",
                     },
                   },
                 ],
@@ -1145,6 +1164,8 @@ describe("collectExportReachability", () => {
         "tex-1",
         "tex-panel",
         "mat-panel",
+        "mat-text",
+        "tex-text",
         "tex-inline",
         "font-1",
       ]),
@@ -1162,4 +1183,55 @@ it("packs enabled input assets at startup even when no graph currently reference
     asset({ guid: "disabled", name: "Plugin Input", type: "InputAction", rootId: "plugin:disabled" }),
   ], pluginEnabledGuids: new Set(), parentOf: () => null, sceneByGuid: () => createDefaultScene(), graphByGuid: () => null });
   expect(result).toMatchObject({ ok: true, value: { guids: ["action", "axis", "scene"] } });
+});
+
+describe("collectExportReachability subsystem roots", () => {
+  function subsystemClosure(
+    classes: ReadonlyArray<Pick<ExportIndexedAsset, "guid" | "name" | "parentClass"> & { rootId?: string }>,
+    pluginEnabledGuids: ReadonlySet<string> = new Set(),
+  ) {
+    // Mirrors the editor's class-header parent lookup: user classes by name, engine ids unknown.
+    const parents = new Map(classes.map((entry) => [entry.name, entry.parentClass ?? null]));
+    return collectExportReachability({
+      startupSceneGuid: "scene",
+      assets: [
+        asset({ guid: "scene", type: "Scene", name: "Main" }),
+        ...classes.map((entry) => asset({ ...entry, type: "Class" })),
+      ],
+      pluginEnabledGuids,
+      parentOf: (id) => parents.get(id) ?? null,
+      sceneByGuid: () => createDefaultScene(),
+      graphByGuid: () => ({ nodes: [], edges: [] }),
+    });
+  }
+
+  it("packs unreferenced Game and Scene Subsystem classes but no other unreferenced class", () => {
+    const result = subsystemClosure([
+      { guid: "save", name: "SaveSubsystem", parentClass: "GameSubsystem" },
+      { guid: "weather", name: "WeatherSubsystem", parentClass: "SceneSubsystem" },
+      { guid: "enemy-base", name: "EnemyBase", parentClass: "Actor" },
+      { guid: "enemy", name: "Enemy", parentClass: "EnemyBase" },
+      { guid: "helper", name: "Helper", parentClass: "BObject" },
+    ]);
+    expect(result).toMatchObject({ ok: true, value: { guids: ["save", "scene", "weather"] } });
+  });
+
+  it("packs a subsystem that reaches its engine base only through a user parent class", () => {
+    const result = subsystemClosure([
+      { guid: "leaf", name: "HardcoreSave", parentClass: "SaveBase" },
+      { guid: "base", name: "SaveBase", parentClass: "GameSubsystem" },
+    ]);
+    expect(result).toMatchObject({ ok: true, value: { guids: ["base", "leaf", "scene"] } });
+  });
+
+  it("packs subsystem classes from enabled plugins only", () => {
+    const result = subsystemClosure(
+      [
+        { guid: "on", name: "EnabledSubsystem", parentClass: "GameSubsystem", rootId: "plugin:on" },
+        { guid: "off", name: "DisabledSubsystem", parentClass: "SceneSubsystem", rootId: "plugin:off" },
+      ],
+      new Set(["on"]),
+    );
+    expect(result).toMatchObject({ ok: true, value: { guids: ["on", "scene"] } });
+  });
 });

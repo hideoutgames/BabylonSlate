@@ -17,7 +17,7 @@ Shared surface for simulation in the game worker (engineplan §2.1, §2.3, §13.
 | `PhysicsWorldKind` | `"3d"` \| `"2d"` — one kind per scene |
 | `createPhysicsBackend` | Lazy factory; dynamic-imports only the needed engine |
 | `bakeColliderLocal` | Actor × component scale into shape sizes; scaled local translation; local rotation on `ColliderDesc` |
-| `physicsActorDiagnostics` | Pairing warnings (`physics.collider_without_body` / `physics.body_without_collider`); tilemaps exempt |
+| `physicsActorDiagnostics` | Body/collider pairing warnings and `physics.movement_conflict` setup warnings; implicit collision sources exempt from ordinary pairing warnings |
 | Shape / body / hit types | Shared descriptors shaped primarily around Havok |
 
 Depends on `@babylonslate/core` at the type layer plus `@babylonjs/core` Physics V2 and `@babylonjs/havok` for 3D. No React, no Capacitor, no editor Babylon packages (gui/loaders/inspector). `@babylonslate/runtime` still must not import Babylon.
@@ -44,6 +44,8 @@ Rejected alternative for 2D: constraining Havok (companion anchor + 6DOF per bod
 ## Scene declaration
 
 `SceneSettings.physicsWorld: "3d" | "2d"` (defaults from `viewportMode` on create). A scene never mixes worlds. Overlay **SceneLayer** actors always simulate in a dedicated Rapier 2D world on the Play session, independent of that world setting — overlay and world bodies do not collide. See [scene-layers.md](scene-layers.md). Explicit collider shapes that do not apply to the active world are rejected by `parseColliderProperties`; an omitted shape still uses that world's default box.
+
+Change Scene retires departing actors before replacing the main physics backend when the target dimension differs. The target Havok/Rapier backend is ready before its actors begin; loading failures stay visible and cancellation disposes any late native allocation. The overlay world survives this replacement. Software-only/headless sessions make the equivalent dimension change synchronously.
 
 ## Tick integration
 
@@ -83,6 +85,36 @@ The Babylon 9.20.0 adapter detaches the final shape through `HavokPlugin.setShap
 Native fixtures exercise the packaged Havok solver in NullEngine, separately from browser/device rendering; the unresolved gates are recorded below. Collision preparation uses a fixed-size local TRS decomposition independently of vertex scaling. ColliderComponent shape assignments copy and freeze their geometry at construction/setVariable/variables.set; replace a shape to edit its content instead of mutating retained vertices in place. This gives the preparation cache a content identity without geometry scans during simulation.
 
 ## Components
+
+### Movement component
+
+Add **General → Movement** to an actor in a 3D or 2D world scene. It owns an upright capsule centered on the actor, with dimensions in world units. The default radius is 0.4 and total height is 1.8. Place the actor above a collision surface; world +Y is up. Ground movement uses XZ in 3D and X in 2D, with Y reserved for jumping and falling. SceneLayers do not support Movement.
+
+Use one Movement per actor. It supplies its own kinematic body and sole collision capsule, so an additional Rigid Body is unnecessary. Rigid Body, Nav Agent, Ragdoll, Water Buoyancy, or multiple Movement components on the same actor prevent Movement simulation. While Movement owns the actor, mesh collision and authored Collider components do not add shapes to its body. Actor/component scale and the component's local transform do not resize or offset the capsule; adjust Radius and Height directly. Spawn without penetrating another collider. Moving-platform carry is not guaranteed.
+
+Compiler Results reports incompatible component combinations before Play. The Class/Prefab Inspector omits Movement's ineffective local Transform controls and explains graph setup beside Enabled. Sprite animation frames, visual transforms and actor scale do not recreate the Movement capsule or restart its trigger overlaps.
+
+- Movement is controlled through graphs. Connect a 2D Input Axis event to **Convert Input**, then pass Direction to **Set Movement Input**; send zero when the axis is released. Connect an Input Action press to **Jump**. A 1D axis can supply X with a zero Y value.
+- **Convert Input** maps a Vec2 through the radial **Dead Zone** (default 0.1), **Input Scale** (1), **Input Space** (World or Actor), and **Input Yaw** plus its extra yaw argument. It returns a world direction; 2D uses X only. Actor space follows the actor's heading, without tilting the movement plane. Graph Input Space strings ignore surrounding whitespace and letter case.
+- **Set Movement Input** stores world-space input until changed. **Add Movement Input** contributes to the next physics tick and then clears. Their sum is clamped to unit length, retaining analog strength while preventing faster diagonal movement.
+- **Set Velocity** replaces world velocity; **Add Velocity** adds a world velocity change. **Stop Immediately** clears velocity, input and buffered jumping. Disabling Movement clears velocity and requests while retaining a stationary capsule.
+- **Jump** buffers a request. **Coyote Time** allows a jump shortly after walking off an edge; **Jump Buffer Time** retains an early press until landing. Both default to 0.1 seconds. A successful jump consumes the coyote allowance, so repeated calls cannot create an extra midair jump.
+
+| Setting | Default | Effect |
+| --- | --- | --- |
+| Max Speed | 5 | Maximum commanded horizontal speed, world units/s |
+| Acceleration / Braking | 30 / 40 | Approach the desired speed / slow when input is released, world units/s² |
+| Air Control | 0.35 | Fraction of horizontal steering available in the air |
+| Gravity Scale / Max Fall Speed | 1 / 40 | Scale scene gravity / cap downward speed |
+| Jump Speed | 6 | Upward launch speed, world units/s |
+| Max Slope Angle | 50° | Steepest surface considered walkable |
+| Ground Snap Distance | 0.1 | Distance used to maintain contact with nearby ground |
+
+Get-only **Velocity**, horizontal **Speed**, **Is Grounded**, **Is In Air**, and **Is Moving** expose current state. Is Moving uses horizontal speed above 0.01 world units/s. Component events report **Started**, **Stopped**, **Jumped**, **Left Ground**, and **Landed**, each with the resulting Velocity and Speed. The same runtime path serves Play and exported players. Movement currently provides ground travel and jumping; flying modes and automatic stair climbing are outside its contract.
+
+Havok and Rapier apply the slope limit through their native character controllers. Ground snapping only follows nearby supporting ground after a grounded frame; it does not add a downward impulse when leaving a ledge. Havok uses a short capsule cast and Rapier uses native snapping, so their exact edge response may differ. The software test/fallback backend uses swept bounding boxes and cannot represent slopes. Ordinary movement preserves trigger overlap lifetimes; explicit teleports retain the separate physics teleport contract.
+
+Each solve begins at the actor's current authored world pose, including changes inherited from its parent. This inherited repositioning does not become motor velocity and is not swept movement or moving-platform carry. Havok installs the inherited pose before its motor target so the native speed limit cannot clip parent updates; Rapier retains its previous-to-final kinematic target. Both preserve native body membership and trigger overlap continuity. A failed Havok pose update restores the prior body/controller pose; failed rollback prevents further simulation of that body until teardown. Motor updates visit registered Movement components, including paused motors when they resume, without scanning unrelated actors. Graph commands and simulation read live component settings.
 
 ### Constraints and ragdolls
 
@@ -171,6 +203,8 @@ In 3D worlds, dynamic actors with `NavAgentComponent` retain physics position au
 
 Project Settings → **Physics** stores `settings.physics.collisionLayers` (`NamedListEditor`, default `["Default"]`, cap 32, same normalize pattern as sorting layers). Bit storage stays 32-bit for Havok membership/collide masks (`layer` = `1 << index`; Default → `1`). Collider Details: **Layer** is a single-bit Select; **Collides With** is a `FlagsField` of named bits only. No collision matrix in this slice.
 
+Rapier contact and sensor-pair hooks preserve the same 32-bit membership/mask contract, including layers above bit 15. Both colliders must admit the other layer before collision response or contact/overlap events occur; the software fallback uses the same pair rule.
+
 ### Editor / Play visuals
 
 RigidBody-only actors use a camera-facing **`default.png` billboard** (Play `playHelperVisual`) — never a 0.25 cube. `ColliderComponent` is an `EditorSceneSync` **world visual** (opaque dashed segment meshes, `RENDERING_GROUP.world`, depth-tested). Editor always draws ColliderComponent dashes. MeshComponent simple/complex dashes follow session **Show Collisions** in Viewport Settings (default **off**; 2D worlds stay off). Play/export draws ColliderComponent dashes only when `renderInGame` is true (`meshKind` `collider:{json}`). Mesh collision dashes stay editor-only; Play uses console `showcollision` (`listDebugColliders()`, including capsules, convex hulls from generated/cone simple collision, Blocking Volume static boxes, and Mesh colliders). See [render.md](render.md) and [scene-editing.md](scene-editing.md).
@@ -184,6 +218,8 @@ Editor clicks are **mesh picks**, not physics. Collider dashes are unpickable in
 
 ## Scripting
 
+Line Trace normals follow the contacted surface in Rapier 2D, including walls and slopes. The software fallback reports the entry face of its approximate AABB; a trace starting strictly inside that box has distance zero and no entry normal (the zero vector).
+
 Sync nodes (exec pin continues in the same tick): `physics.lineTrace`, `physics.sphereOverlap`, `physics.shapeSweep`, `physics.addImpulse`, `physics.moveCharacter`. Dragging off **Get Rigid Body** also Calls **Add Impulse** (`callComponentFunction` `addImpulse`) on that owner.
 
 - **Line Trace** returns Hit Result plus exploded Hit, Location, Normal, Distance, and a live Actor reference. **Draw Debug** defaults on: misses draw a red line to End; hits draw a green line to the impact and a red circle aligned to its surface. Draws last one frame. **Actors To Ignore** accepts an Actor array (default empty); every collider on those actors is excluded before selecting the closest hit, so ignored actors cannot hide a target behind them. Software, Havok, and Rapier use the same exclusion contract (`LineTraceOptions.ignoreActorIds`); Havok restores temporarily masked shapes after each synchronous query.
@@ -191,6 +227,7 @@ Sync nodes (exec pin continues in the same tick): `physics.lineTrace`, `physics.
 - **Sphere Shape Sweep** exposes Radius and returns the same Hit Result / exploded query fields as Line Trace.
 - Query misses return false, null vectors/Actor, and zero Distance rather than leaking backend ids or typed `undefined`. Radius defaults at or below zero emit `physics.radius`.
 - Every query has an optional **Collision Channel** (default All). In 2D, authored `vec3` points use XY.
+- Channels filter live physics candidates before choosing a hit: **WorldStatic** selects static bodies, **WorldDynamic** selects dynamic/kinematic bodies, **Pawn** selects actors owned by a valid Movement component, and **Visibility** excludes triggers. **All** retains the existing backend defaults. These are built-in query categories, not configurable per-channel collision responses. Havok overlap remains a body-AABB approximation; Visibility excludes trigger-only bodies from that approximation.
 
 `moveCharacter` takes an Actor (defaults to `self`), lazily creates a character controller on that actor’s rigid body (`id` = actor guid, optional `offset` default 0.01), and applies the returned transform to the actor immediately so the next kinematic sync keeps it. Destroy follows the rigid body. No `CharacterControllerComponent` in this slice.
 

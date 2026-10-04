@@ -18,6 +18,7 @@ import {
 } from "@babylonslate/editor-kit";
 import {
   actorSubtree,
+  isSceneLayerAnchorActor,
   folderSubtree,
   nextFolderId,
   type SerializedActor,
@@ -660,7 +661,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
       if (target?.kind !== "actor") return;
       if (!viewportDropApi?.containsClientPoint(clientX, clientY)) return;
       const source = scene.actors.find((actor) => actor.id === target.id);
-      if (!source) return;
+      if (!source || isSceneLayerAnchorActor(source)) return;
       const position = viewportDropApi.worldPositionAtClient(clientX, clientY);
       if (!position) return;
       const copy = duplicateSceneActor(scene, source, {
@@ -683,13 +684,13 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
         setDropHint({ clientX, clientY, allowed: false });
         return;
       }
-      const name =
-        scene?.actors.find((actor) => actor.id === target.id)?.name ?? "Actor";
+      const actor = scene?.actors.find((actor) => actor.id === target.id);
+      const name = actor?.name ?? "Actor";
       setDropHint({
         clientX,
         clientY,
         allowed: Boolean(
-          viewportDropApi?.containsClientPoint(clientX, clientY),
+          actor && !isSceneLayerAnchorActor(actor) && viewportDropApi?.containsClientPoint(clientX, clientY),
         ),
         label: name,
       });

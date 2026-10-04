@@ -115,6 +115,7 @@ export class PreparedColliderGeometry {
 const PARTICIPANT_CLASSES = new Set([
   "RigidBodyComponent",
   "WaterBuoyancyComponent",
+  "MovementComponent",
   "ColliderComponent",
   "MeshComponent",
   "DynamicRuntimeMeshComponent",

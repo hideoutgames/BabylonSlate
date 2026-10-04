@@ -166,10 +166,14 @@ export function resolvePreviewStartupGuid(options: {
 
 export function playLoadControl(options: {
   frameCap?: number;
+  traceByteBudget?: number;
   renderSettings?: Partial<import("@babylonslate/core").RenderProjectSettings>;
   project?: { name: string; version: string };
   inputAssets?: import("@babylonslate/core").InputAssetDefinition[];
   inputMappings?: ProjectInputSettings;
+  focusNavigation?: import("@babylonslate/core").FocusNavigationSettings;
+  pixelsPerUnit?: number;
+  texturePixelSizes?: Record<string, { width: number; height: number }>;
   sceneAssetGuid?: string;
   scene?: SerializedScene;
   seed?: number;
@@ -177,6 +181,7 @@ export function playLoadControl(options: {
   gravity?: [number, number, number];
   gameInstanceClass?: string;
   scenes?: Array<{ guid: string; scene: SerializedScene }>;
+  sceneNavmeshBytes?: Record<string, Uint8Array>;
   sceneLayers?: Array<{ guid: string; layer: SerializedSceneLayer }>;
   infiniteLoopDetection?: boolean;
   loopCount?: number;
@@ -202,10 +207,14 @@ export function playLoadControl(options: {
   return {
     type: "load",
     frameCap: options.frameCap,
+    traceByteBudget: options.traceByteBudget,
     renderSettings: options.renderSettings,
     ...(options.project ? { project: options.project } : {}),
     inputAssets: options.inputAssets,
     inputMappings: options.inputMappings,
+    focusNavigation: options.focusNavigation,
+    pixelsPerUnit: options.pixelsPerUnit,
+    texturePixelSizes: options.texturePixelSizes,
     sceneAssetGuid: options.sceneAssetGuid ?? "play-scene",
     scene: options.scene,
     seed: options.seed,
@@ -214,6 +223,7 @@ export function playLoadControl(options: {
     havokWasmUrl: editorHavokWasmUrl(),
     gameInstanceClass: options.gameInstanceClass,
     scenes: options.scenes,
+    sceneNavmeshBytes: options.sceneNavmeshBytes,
     sceneLayers: options.sceneLayers,
     infiniteLoopDetection: options.infiniteLoopDetection,
     loopCount: options.loopCount,

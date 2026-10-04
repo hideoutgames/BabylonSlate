@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -228,7 +229,10 @@ describe("document tab close requests", () => {
   it.each([true, false])(
     "closes tabs only after a successful save (save result: %s)",
     async (saved) => {
-      state.saveAll.mockResolvedValue(saved);
+      state.saveAll.mockImplementation(async () => {
+        if (saved) state.documents.forEach((doc) => { doc.dirty = false; });
+        return saved;
+      });
       render(<EditorRoute />);
       requestBulkClose();
       fireEvent.click(screen.getByTestId("dirty-save"));
@@ -242,6 +246,43 @@ describe("document tab close requests", () => {
       );
     },
   );
+
+  it.each(["tabs", "project"] as const)("Cancel stops a pending Save-close request for %s", async (target) => {
+    let finishSave!: (saved: boolean) => void;
+    state.saveAll.mockImplementation(() => new Promise((resolve) => { finishSave = resolve; }));
+    if (target === "project") {
+      state.documents.forEach((doc) => { doc.dirty = false; });
+      state.projectDirty = true;
+    }
+    render(<EditorRoute />);
+    if (target === "tabs") requestBulkClose();
+    else fireEvent.click(screen.getByRole("button", { name: "Close Project" }));
+    await screen.findByTestId("dirty-close-dialog");
+    fireEvent.click(screen.getByTestId("dirty-save"));
+    expect(screen.getByTestId("dirty-save")).toHaveProperty("disabled", true);
+    fireEvent.click(screen.getByTestId("dirty-cancel"));
+    await act(async () => {
+      state.documents.forEach((doc) => { doc.dirty = false; });
+      state.projectDirty = false;
+      finishSave(true);
+    });
+    expect(state.closeDocument).not.toHaveBeenCalled();
+    expect(state.closeProject).toHaveBeenCalledTimes(target === "project" ? 1 : 0);
+    await waitFor(() => expect(screen.queryByTestId("dirty-close-dialog")).toBeNull());
+  });
+
+  it("keeps tabs open when edits remain dirty after a successful save", async () => {
+    state.saveAll.mockImplementation(async () => {
+      state.documents.forEach((doc) => { doc.dirty = doc.id === "graph"; });
+      return true;
+    });
+    render(<EditorRoute />);
+    requestBulkClose();
+    fireEvent.click(screen.getByTestId("dirty-save"));
+    await waitFor(() => expect(screen.getByTestId("dirty-save")).toHaveProperty("disabled", false));
+    expect(state.closeDocument).not.toHaveBeenCalled();
+    expect(screen.getAllByRole("listitem").map((item) => item.textContent)).toEqual(["Hero Class"]);
+  });
 
   it("still closes only the active tab for the individual close action", () => {
     render(<EditorRoute />);

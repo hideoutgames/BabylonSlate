@@ -32,13 +32,20 @@ Out of v1: ExecuteJavaScript `body` text, binary payloads, on-disk search cache.
 
 - Do **not** rebuild on project open or keep a warm index across edits.
 - **Rebuild when Global Search is initiated** (toolbar / `Ctrl/Cmd+K` opens the dialog). Include **open document** JSON so unsaved edits are in that snapshot.
-- Rebuild is **async / chunked** (yield between assets) so open does not freeze WKWebView. Query waits until that rebuild finishes (`data-testid="global-search-pending"` Empty spinner). Cancel an in-flight rebuild if the dialog closes or a newer open starts.
+- Rebuild is **async / chunked** with short time-budgeted task slices, so open does not freeze WKWebView or wait one display frame per asset. Query waits until that rebuild finishes (`data-testid="global-search-pending"` Empty spinner). Cancel an in-flight rebuild if the dialog closes or a newer open starts.
+- Each rebuild prepares an isolated snapshot and publishes it only while it is current. Older reads cannot overwrite newer results; cancellation preserves the last published snapshot, and Close Project invalidates pending work.
 - Drop continuous upsert / rebuild-on-import as the source of truth.
 - **Clear** on Close Project.
 - Result cap ~80 stays; the result body is **not** virtualised (`p20-log-virtualize` windows `SearchDialog` pick lists, not this hit list).
 - Still no on-disk search cache, no ExecuteJavaScript body, no binary payloads.
 
 In-memory only, keyed by the open project. Query is case-insensitive substring; empty needle returns no rows.
+
+## Query ranking
+
+- Each entry stores its lowercase label, description, and keywords when it is indexed (rebuild or upsert), so a query does not lowercase the index per keystroke.
+- Hits rank by match tier: exact label, label prefix, label substring, description, keyword. Within a tier, labels compare with the default collation (`localeCompare`); equal labels keep index order.
+- `query` fills the cap tier by tier and keeps a bounded sorted buffer for a tier that overflows it, so it returns the same first hits as sorting every match without doing so.
 
 ## UI
 
@@ -47,6 +54,7 @@ In-memory only, keyed by the open project. Query is case-insensitive substring; 
 - While a rebuild is pending, the body is empty/spinner; queries wait until the snapshot is ready.
 - Results live in a native scroller (`data-testid="global-search-results"`, `min-h-0 flex-1 overflow-y-auto`) so long hit lists scroll instead of growing the popup. Cap ~80; do not window-virtualise this list.
 - Results grouped by kind, each hit showing the same type icon/color as the Content Browser. `Ctrl/Cmd+K` toggles on desktop.
+- The result list renders from `useDeferredValue(needle)`, so typing stays responsive. Enter and ArrowUp/ArrowDown act on the typed text: when the list still shows an older query they re-query synchronously. Enter is still ignored during IME composition and while indexing.
 
 ## Navigation
 
