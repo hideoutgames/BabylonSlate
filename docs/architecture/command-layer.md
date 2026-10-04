@@ -100,7 +100,7 @@ Queued document and Scene bake writes resolve the asset's current path from its 
 
 The mounted asset registry is authoritative for path-to-GUID lookup. Reusing a moved or deleted path creates a fresh asset identity; replacing and reindexing a file also replaces any earlier cached identity for that path.
 
-Per-edit update cost: each applied edit bumps the document context once. Consumers that recompute on that bump keep their published values when nothing they depend on changed:
+Per-edit update cost: each applied edit bumps the document context once. That bump does not change `registryEpoch` ([asset-registry.md](asset-registry.md#generation)): registry-derived views (Details and Inspector pickers and class lists, My Class ancestry, Windows and workspace class lookups, tab type icons, Tilemap and Water pickers, Material preview Texture reads, Texture alignment checks, audio selection metadata, Content Browser thumbnail revisions) are keyed on `[assetRegistry, registryEpoch]` and are not rebuilt by edits. Consumers that recompute on the bump keep their published values when nothing they depend on changed:
 
 - `ValidationProvider.setDiagnostics` keeps the current list when a panel recomputes an equal one (Compiler Results for a scene, graph validation), so a selected diagnostic stays selected and its consumers do not re-render.
 - `PrefabEditingProvider` (mounted for every Scene, Scene Layer and Class workspace) walks the registry and ancestor class graphs only for Class documents, keeps its components while the inherited ones are unchanged, and keys its parent lookup on the Class parents so an in-place reparent is picked up.

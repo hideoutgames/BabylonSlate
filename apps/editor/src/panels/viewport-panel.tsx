@@ -114,7 +114,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     collectPlayMaterialLibrary,
     readAssetChunk,
     assetRegistry,
-    registryVersion,
+    registryEpoch,
   } = useDocuments();
   const {
     selectedActorIds,
@@ -260,10 +260,10 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     ? (doc.content as SerializedScene)
     : null;
   const editorScene = useMemo(() => scene && sceneStreamingEditorScene(scene, (guid) => {
-    void registryVersion; // Registry headers mutate without replacing the registry.
+    void registryEpoch; // Registry headers mutate without replacing the registry.
     const asset = assetRegistry?.getByGuid?.(guid);
     return asset?.header.type === "Scene" ? asset.header.name : undefined;
-  }), [scene, assetRegistry, registryVersion]);
+  }), [scene, assetRegistry, registryEpoch]);
   const brushStateRef = useRef<SceneBrushState | null>(null);
   const group = scene?.settings.foliageGroups?.find((entry) => entry.id === sceneTools.groupId);
   brushStateRef.current = {
@@ -638,7 +638,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
 
   const textureLodKey = `${editorTextureLodEnabled}:${editorTextureLodQuality}`;
   const { materialLibraryKey, viewportAssetsKey } = useMemo(() => {
-    void registryVersion;
+    void registryEpoch;
     const assets = assetRegistry?.list() ?? [];
     return {
       materialLibraryKey: savedMaterialLibraryKey(assets),
@@ -651,7 +651,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     };
   }, [
     assetRegistry,
-    registryVersion,
+    registryEpoch,
     scene,
     textureLodKey,
     projectDocument?.settings.twoD,

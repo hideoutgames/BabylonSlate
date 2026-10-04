@@ -33,6 +33,7 @@ vi.mock("../context/document-context", () => ({
     dirtyDocuments: state.documents.filter((doc) => doc.dirty),
     projectDirty: false,
     assetRegistry: state.registry,
+    registryEpoch: state.registry?.generation ?? 0,
   }),
 }));
 vi.mock("../context/play-context", () => ({
@@ -145,7 +146,18 @@ describe("chrome document icons", () => {
       ).toBe("Actor");
       expect(list.mock.calls.length).toBeLessThanOrEqual(1);
 
-      registry.getByGuid("base")!.header.parentClass = "ActorComponent";
+      // Resaved with another parent: the registry reindexes a new header.
+      await registry.deleteAsset("base");
+      await registry.createAsset("project", "base.class.babasset", {
+        guid: "base",
+        name: "Shared Base",
+        type: "Class",
+        parentClass: "ActorComponent",
+        version: 1,
+        dependencies: [],
+        payload: {},
+        chunks: [],
+      });
       state.documents[2]!.dirty = true;
       state.errorCount = 2;
       list.mockClear();

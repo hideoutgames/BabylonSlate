@@ -84,7 +84,7 @@ vi.mock("../context/document-context", async () => {
           },
         ],
         assetRegistry,
-        registryVersion: 0,
+        registryEpoch: 0,
         applyAssetDocumentChange: store.applyAssetDocumentChange,
       };
     },

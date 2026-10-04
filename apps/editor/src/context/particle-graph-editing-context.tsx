@@ -111,7 +111,7 @@ export function ParticleGraphEditingProvider({
   documentId: string;
   children: ReactNode;
 }) {
-  const { openDocuments, assetRegistry, registryVersion, applyAssetDocumentChange } =
+  const { openDocuments, assetRegistry, registryEpoch, applyAssetDocumentChange } =
     useDocuments();
   const content = openDocuments.find((entry) => entry.id === documentId)?.content;
   const document = useMemo(
@@ -132,7 +132,7 @@ export function ParticleGraphEditingProvider({
 
   // Material domains by guid; an open Material tab's domain wins over its header.
   const validationContext = useMemo<ParticleGraphValidationContext>(() => {
-    void registryVersion; // Registry contents mutate without replacing its instance.
+    void registryEpoch; // Registry contents mutate without replacing its instance.
     if (!assetRegistry) return {};
     const assets = assetRegistry.list();
     const materials = new Set(
@@ -145,7 +145,7 @@ export function ParticleGraphEditingProvider({
       materialDomain: (guid) =>
         materials.has(guid) ? (domains[guid] ?? "surface") : null,
     };
-  }, [assetRegistry, openDocuments, registryVersion]);
+  }, [assetRegistry, openDocuments, registryEpoch]);
 
   const diagnostics = useMemo(
     () => validateParticleGraphDocument(document, validationContext),

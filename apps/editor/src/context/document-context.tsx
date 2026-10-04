@@ -302,8 +302,16 @@ interface DocumentContextValue {
   assetRegistry: AssetRegistry | null;
   extensionService: ProjectService["extensions"];
   projectGuid: string | null;
-  /** Bumps when encode/import mutates registry payloads in place. */
-  registryVersion: number;
+  /**
+   * Registry epoch: changes only when what `assetRegistry` reports changes
+   * (its generation: imports, saves, deletes, moves, encodes, remounts) or a
+   * registry-adjacent ProjectService change arrives (plugins, search index,
+   * Show Plugin Content). Document edits, tab changes, saves' dirty-state
+   * changes and other per-edit context updates leave it alone, so key
+   * registry-derived memos and effects on it instead of on the context value.
+   * Monotonic; never repeats.
+   */
+  registryEpoch: number;
   refreshAssetRegistry: () => Promise<void>;
   /**
    * Re-reads the project's scene/graph lists and re-renders after assets were
@@ -797,21 +805,26 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   );
   const [homepageReady, setHomepageReady] = useState(false);
   const [templates, setTemplates] = useState<ProjectTemplate[]>([]);
-  const [registryVersion, setRegistryVersion] = useState(0);
+  /** Re-derives the context value after service state it reads changed (edits, tabs, saves). */
+  const [contextTick, setContextTick] = useState(0);
+  /** Registry-adjacent changes outside the registry itself; part of `registryEpoch`. */
+  const [registryTick, setRegistryTick] = useState(0);
+  // Both terms only rise, so the sum changes exactly when either does.
+  const registryEpoch = projectService.registryGeneration + registryTick;
   const previousThumbnailIndexRef = useRef<ReturnType<typeof createAssetThumbnailRevisionIndex> | null>(null);
   const thumbnailRevisionIndex = useMemo(
     () => {
-      void registryVersion;
+      void registryEpoch;
       const assets = projectService.registry?.list() ?? [];
       const previous = previousThumbnailIndexRef.current;
-      // Document edits also bump registryVersion. Reuse saved revisions until
-      // an indexed header actually changes, without hashing on every gesture.
+      // Plugin and search-index changes also advance the epoch. Reuse saved
+      // revisions until an indexed header actually changes.
       const pixelsPerUnit = projectDocument?.settings.twoD.pixelsPerUnit;
       const next = previous?.matches(assets, pixelsPerUnit) ? previous : createAssetThumbnailRevisionIndex(assets, pixelsPerUnit);
       previousThumbnailIndexRef.current = next;
       return next;
     },
-    [projectDocument?.settings.twoD.pixelsPerUnit, projectService, registryVersion],
+    [projectDocument?.settings.twoD.pixelsPerUnit, projectService, registryEpoch],
   );
   const thumbnailRevisionIndexRef = useRef(thumbnailRevisionIndex);
   thumbnailRevisionIndexRef.current = thumbnailRevisionIndex;
@@ -867,7 +880,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setPlayPreviewDiagnostics([]);
   }, []);
 
-  const bump = useCallback(() => setRegistryVersion((v) => v + 1), []);
+  const bump = useCallback(() => setContextTick((v) => v + 1), []);
+  /** Plugins, search index or Show Plugin Content changed: advance `registryEpoch`. */
+  const bumpRegistry = useCallback(() => setRegistryTick((v) => v + 1), []);
   const bumpDockWindows = useCallback(() => {
     setDockWindowTick((v) => v + 1);
   }, []);
@@ -1054,8 +1069,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   }, [bump, documentService, refreshProjectList, refreshTemplates, settingsStore]);
 
   useEffect(
-    () => projectService.onRegistryChange(bump),
-    [bump, projectService],
+    () => projectService.onRegistryChange(bumpRegistry),
+    [bumpRegistry, projectService],
   );
 
   const captureLayoutForId = useCallback(
@@ -1811,9 +1826,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     (show: boolean) => {
       documentService.setShowPluginContent(show);
       scheduleDebouncedSave();
-      bump();
+      bumpRegistry();
     },
-    [bump, documentService, scheduleDebouncedSave],
+    [bumpRegistry, documentService, scheduleDebouncedSave],
   );
 
   const createProjectPlugin = useCallback(
@@ -4438,6 +4453,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const value = useMemo<DocumentContextValue>(
     () => {
       void sourceControlTick;
+      // Service state read below (open documents, tabs, dirty flags) changed.
+      void contextTick;
       const currentGraphSignature = graphCompileSignature(
         openGraphCompileDocuments(documentService),
         inputAssetCatalog(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
@@ -4549,7 +4566,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       assetRegistry: projectService.registry,
       extensionService: projectService.extensions,
       projectGuid: projectService.guid,
-      registryVersion,
+      registryEpoch,
       refreshAssetRegistry,
       noteAssetsCreated,
       pluginDescriptors: projectService.plugins,
@@ -4619,7 +4636,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     };
     },
     [
-      registryVersion,
+      contextTick,
+      registryEpoch,
       route,
       projectDocument,
       documentService,
