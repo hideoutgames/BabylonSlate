@@ -29,6 +29,15 @@ type Surface = {
   gpu: boolean;
   /** Inputs of the current grid (`LAYOUT_STATE`); NaN until built. */
   layoutState: Float64Array;
+  /**
+   * Global Water's grid lines relative to its snapped centre, in local units: a recentre adds the new centre to these
+   * instead of building the grid again.
+   */
+  gridX: Float64Array; gridZ: Float64Array;
+  /** Local extents of the rest grid, kept with it so bounds never rescan the vertices. */
+  restMin: Vector3; restMax: Vector3;
+  /** Local X/Z by which the last recentre moved the grid (shifts sub-mesh bounds). */
+  shift: Float64Array;
   /** World matrix the per-vertex rest data was computed for; NaN forces a recompute. */
   placed: Float64Array;
   time: number | null; version: number;
@@ -36,6 +45,11 @@ type Surface = {
   qualityRevision: number; density: number;
   /** Drawn by any pass since the last water update (the main view, a capture or another view's camera). */
   drawn: boolean;
+  /**
+   * Rest grid (local) and its world rest points. Every other per-vertex rest input (spacing, normals, current, bank
+   * distance, depth) depends only on the volume's rotation and scale; `worldBase` is the CPU path's input and goes stale
+   * on the GPU path while the volume only translates.
+   */
   base: Float32Array; worldBase: Float32Array; positions: Float32Array; normals: Float32Array;
   baseNormals: Float32Array; data: Float32Array; flow: Float32Array; spacing: Float32Array;
   /** World X/Z Gerstner offset per vertex on the CPU path (the built-in shader subtracts it to find each fragment's rest point). */
@@ -194,12 +208,16 @@ function syncQuality(s: Surface): void {
   if (density !== s.density) { s.density = density; s.version++; }
 }
 
+const UNCHANGED = 0, RECENTRED = 1, REBUILT = 2;
+type LayoutChange = typeof UNCHANGED | typeof RECENTRED | typeof REBUILT;
+
 /**
- * Rebuilds the rest grid when its inputs change. When Global Water's centre only moves by whole cells, the vertex
- * count, indices and UVs stay the same, so its arrays and GPU buffers are rewritten in place; any other change builds a
- * new grid. Returns true when the grid changed.
+ * Keeps the rest grid current. When Global Water's centre only moves by whole cells, the grid is the same one
+ * translated (its lines are fixed offsets from the snapped centre, and every other rest input is uniform over open
+ * water), so only its rest positions move: `RECENTRED`, with no per-vertex rest data, allocation or new buffers. Any
+ * other input change builds a new grid: `REBUILT`.
  */
-function updateLayout(s: Surface, world: Matrix, inverse: Matrix): boolean {
+function updateLayout(s: Surface, world: Matrix, inverse: Matrix): LayoutChange {
   const { body, water, mesh } = s;
   const m = world.m;
   const sx = Math.hypot(m[0]!, m[1]!, m[2]!), sz = Math.hypot(m[8]!, m[9]!, m[10]!);
@@ -228,13 +246,20 @@ function updateLayout(s: Surface, world: Matrix, inverse: Matrix): boolean {
   let shape = true;
   for (let i = 0; i < 12; i++) if (state[i] !== m[i]) shape = false;
   if (state[L_VERSION] !== s.version || state[L_STEP] !== step || state[L_BUDGET] !== budget || state[L_EXTENT] !== extent) shape = false;
-  if (shape && state[L_CX] === cx && state[L_CZ] === cz) return false;
+  if (shape && state[L_CX] === cx && state[L_CZ] === cz) return UNCHANGED;
+  s.shift[0] = cx - state[L_CX]!; s.shift[1] = cz - state[L_CZ]!;
   for (let i = 0; i < 12; i++) state[i] = m[i]!;
   state[L_VERSION] = s.version; state[L_STEP] = step; state[L_BUDGET] = budget; state[L_CX] = cx; state[L_CZ] = cz; state[L_EXTENT] = extent;
-  let xs: number[], zs: number[], strip: RiverRow[] | null = null;
+  if (shape && body.kind === "global" && s.base.length) {
+    placeGlobalGrid(s, cx, cz);
+    return RECENTRED;
+  }
+  let xs: ArrayLike<number>, zs: ArrayLike<number>, strip: RiverRow[] | null = null;
   if (body.kind === "global") {
-    xs = axis(cx - extent / sx, cx + extent / sx, step / sx, cx, budget);
-    zs = axis(cz - extent / sz, cz + extent / sz, step / sz, cz, budget);
+    // Grid lines around a centre of zero, so a recentre only adds the new centre to them.
+    s.gridX = Float64Array.from(axis(-extent / sx, extent / sx, step / sx, 0, budget));
+    s.gridZ = Float64Array.from(axis(-extent / sz, extent / sz, step / sz, 0, budget));
+    xs = s.gridX.map((x) => cx + x); zs = s.gridZ.map((z) => cz + z);
   } else if (body.kind === "river") {
     strip = riverRows(body, sx, sz, step);
     const widest = Math.max(...strip.map((row) => row.halfWidth)) * 2 * Math.max(sx, sz);
@@ -246,17 +271,14 @@ function updateLayout(s: Surface, world: Matrix, inverse: Matrix): boolean {
     zs = uniformAxis(-body.length / 2, body.length / 2, body.length * sz, step);
   }
   const columns = xs.length - 1, rows = zs.length - 1, count = (columns + 1) * (rows + 1);
-  // Only the centre moved and the grid kept its shape: reuse every array and GPU buffer.
-  const recentre = shape && body.kind === "global" && count * 3 === s.base.length;
-  if (!recentre) {
-    s.base = new Float32Array(count * 3); s.positions = new Float32Array(count * 3);
-    s.worldBase = new Float32Array(count * 3);
-    s.normals = new Float32Array(count * 3); s.baseNormals = new Float32Array(count * 3);
-    s.data = new Float32Array(count * 4); s.flow = new Float32Array(count * 3);
-    s.spacing = new Float32Array(count);
-    s.offsets = new Float32Array(count * 2); s.bankGradient = new Float32Array(count * 2); s.offsetsZero = true;
-  }
+  s.base = new Float32Array(count * 3); s.positions = new Float32Array(count * 3);
+  s.worldBase = new Float32Array(count * 3);
+  s.normals = new Float32Array(count * 3); s.baseNormals = new Float32Array(count * 3);
+  s.data = new Float32Array(count * 4); s.flow = new Float32Array(count * 3);
+  s.spacing = new Float32Array(count);
+  s.offsets = new Float32Array(count * 2); s.bankGradient = new Float32Array(count * 2); s.offsetsZero = true;
   const base = s.base, worldBase = s.worldBase;
+  s.restMin.setAll(Infinity); s.restMax.setAll(-Infinity);
   for (let row = 0; row <= rows; row++) for (let col = 0; col <= columns; col++) {
     let x = xs[col]!, z = zs[row]!;
     if (strip) {
@@ -272,6 +294,8 @@ function updateLayout(s: Surface, world: Matrix, inverse: Matrix): boolean {
     }
     const i = (row * (columns + 1) + col) * 3;
     base[i] = x; base[i + 1] = waterFootprint(body, x, z).height; base[i + 2] = z;
+    s.restMin.minimizeInPlaceFromFloats(base[i]!, base[i + 1]!, base[i + 2]!);
+    s.restMax.maximizeInPlaceFromFloats(base[i]!, base[i + 1]!, base[i + 2]!);
     Vector3.TransformCoordinatesFromFloatsToRef(base[i]!, base[i + 1]!, base[i + 2]!, world, eye).toArray(worldBase, i);
   }
   // World X/Z distance to the farthest neighbour: the filter of components the grid cannot resolve.
@@ -287,7 +311,6 @@ function updateLayout(s: Surface, world: Matrix, inverse: Matrix): boolean {
     );
   }
   s.positions.set(base);
-  if (recentre) return true;
   const indices: number[] = [], uvs: number[] = [];
   for (let row = 0; row <= rows; row++) for (let col = 0; col <= columns; col++) {
     uvs.push(col / columns, row / rows);
@@ -304,7 +327,24 @@ function updateLayout(s: Surface, world: Matrix, inverse: Matrix): boolean {
   mesh.setVerticesData("slateWaterFlow", s.flow, true, 3);
   mesh.setVerticesData("slateWaterBaseNormal", s.baseNormals, true, 3);
   mesh.setVerticesData("slateWaterOffset", s.offsets, true, 2);
-  return true;
+  return REBUILT;
+}
+
+/**
+ * Moves Global Water's grid to a new snapped centre: rest positions and extents only, allocation-free. Open water's
+ * height, normal, current, bank distance, depth and mesh spacing are the same everywhere, so nothing else changes.
+ */
+function placeGlobalGrid(s: Surface, cx: number, cz: number): void {
+  const xs = s.gridX, zs = s.gridZ, base = s.base, columns = xs.length - 1;
+  for (let row = 0; row < zs.length; row++) {
+    const z = cz + zs[row]!;
+    for (let col = 0; col <= columns; col++) {
+      const i = (row * (columns + 1) + col) * 3;
+      base[i] = cx + xs[col]!; base[i + 2] = z;
+    }
+  }
+  s.restMin.x = base[0]!; s.restMin.z = base[2]!;
+  s.restMax.x = base[base.length - 3]!; s.restMax.z = base[base.length - 1]!;
 }
 
 const waveOut = createWaterWaveOutput(), slopeOut = new Float64Array(2);
@@ -317,7 +357,7 @@ const point = new Vector3(), baseNormal = new Vector3(), localNormal = new Vecto
  * finite bodies, whose edges move with Gerstner waves), converted to local space. GPU-displaced vertices stay inside
  * them, fields keyed on the mesh bounds never rebuild per frame, and no per-frame extents pass runs.
  */
-function updateBounds(s: Surface, world: Matrix, inverse: Matrix): void {
+function updateBounds(s: Surface, world: Matrix, inverse: Matrix, recentred: boolean): void {
   if (!s.base.length) return;
   const vertical = waterWaveEnvelope(s.water, s.body.waveScale);
   const horizontal = s.body.kind === "global" ? 0 : waterHorizontalEnvelope(s.water, s.body.waveScale);
@@ -327,14 +367,18 @@ function updateBounds(s: Surface, world: Matrix, inverse: Matrix): void {
     Math.abs(m[1]!) * horizontal + Math.abs(m[5]!) * vertical + Math.abs(m[9]!) * horizontal,
     Math.abs(m[2]!) * horizontal + Math.abs(m[6]!) * vertical + Math.abs(m[10]!) * horizontal,
   );
-  boundsMin.setAll(Infinity); boundsMax.setAll(-Infinity);
-  for (let i = 0; i < s.base.length; i += 3) {
-    boundsMin.minimizeInPlaceFromFloats(s.base[i]!, s.base[i + 1]!, s.base[i + 2]!);
-    boundsMax.maximizeInPlaceFromFloats(s.base[i]!, s.base[i + 1]!, s.base[i + 2]!);
-  }
-  updateDynamicMaterialBounds(s.mesh, boundsMin.subtractInPlace(boundsPad), boundsMax.addInPlace(boundsPad));
+  updateDynamicMaterialBounds(s.mesh, boundsMin.copyFrom(s.restMin).subtractInPlace(boundsPad), boundsMax.copyFrom(s.restMax).addInPlace(boundsPad));
   const subMeshes = s.mesh.subMeshes ?? [];
+  // Padded sub-mesh bounds that a recentre translated keep their padding; new or rebuilt ones rescan their vertices.
+  const shift = recentred && subMeshes.length === s.boundedSubMeshes && (subMeshes[0] ?? null) === s.boundedFirst;
   for (const subMesh of subMeshes) if (!subMesh.IsGlobal) {
+    if (shift) {
+      const info = subMesh.getBoundingInfo();
+      boundsMin.copyFrom(info.minimum).addInPlaceFromFloats(s.shift[0]!, 0, s.shift[1]!);
+      boundsMax.copyFrom(info.maximum).addInPlaceFromFloats(s.shift[0]!, 0, s.shift[1]!);
+      info.reConstruct(boundsMin, boundsMax, world);
+      continue;
+    }
     const info = subMesh.refreshBoundingInfo(s.base).getBoundingInfo();
     boundsMin.copyFrom(info.minimum).subtractInPlace(boundsPad); boundsMax.copyFrom(info.maximum).addInPlace(boundsPad);
     info.reConstruct(boundsMin, boundsMax, world);
@@ -343,17 +387,19 @@ function updateBounds(s: Surface, world: Matrix, inverse: Matrix): void {
 }
 
 /**
- * Every frame for every enabled surface, allocation-free unless the grid changes: advances the shader clock, keeps the
- * grid and padded bounds current, and recomputes per-vertex rest data (world rest points, base normals, current, bank
- * distance, depth) only when the grid or the volume's transform changed. The GPU path uploads that static data here and
- * nothing per frame.
+ * Every frame for every enabled surface, allocation-free unless the grid is rebuilt: advances the shader clock and keeps
+ * the grid and padded bounds current. Per-vertex rest data (base normals, current, bank distance, depth, spacing) depend
+ * only on the grid and the volume's rotation and scale, so only a rebuilt grid or a rotated or scaled volume recomputes
+ * and uploads them. On the GPU path a translated volume uploads nothing (the shader reads world positions) and a Global
+ * recentre uploads only its rest positions; the CPU path re-derives its world rest points for its next animation step.
  */
 function placeSurface(s: Surface, time: number): void {
   if (s.plugin) s.plugin.time = time;
   const placed = s.placed, m = s.mesh.computeWorldMatrix(true).m;
-  let moved = false;
-  for (let i = 0; i < 16; i++) if (placed[i] !== m[i]) { moved = true; break; }
-  if (moved) {
+  let linear = false, translated = false;
+  for (let i = 0; i < 12; i++) if (placed[i] !== m[i]) { linear = true; break; }
+  for (let i = 12; i < 16; i++) if (placed[i] !== m[i]) { translated = true; break; }
+  if (linear || translated) {
     // A degenerate (zero-scale) transform keeps the last valid placement until it becomes invertible again.
     const world = s.mesh.getWorldMatrix();
     if (Math.abs(world.determinant()) < 1e-12) return;
@@ -362,10 +408,29 @@ function placeSurface(s: Surface, time: number): void {
   }
   const world = s.world, inverse = s.inverse;
   syncQuality(s);
-  if (updateLayout(s, world, inverse)) moved = true;
+  const layout = updateLayout(s, world, inverse);
+  const rebuilt = linear || layout === REBUILT;
   const subMeshes = s.mesh.subMeshes ?? [];
-  if (moved || subMeshes.length !== s.boundedSubMeshes || (subMeshes[0] ?? null) !== s.boundedFirst) updateBounds(s, world, inverse);
-  if (!moved) return;
+  // A translation alone needs no new bounds: Babylon moves the local bounds with the world matrix.
+  if (rebuilt || layout === RECENTRED || subMeshes.length !== s.boundedSubMeshes || (subMeshes[0] ?? null) !== s.boundedFirst) {
+    updateBounds(s, world, inverse, !rebuilt && layout === RECENTRED);
+  }
+  if (rebuilt) { placeRestData(s); return; }
+  if (layout === RECENTRED && s.gpu) {
+    s.positions.set(s.base);
+    s.mesh.updateVerticesData(VertexBuffer.PositionKind, s.positions, false);
+  }
+  if ((layout === RECENTRED || translated) && !s.gpu) {
+    for (let i = 0; i < s.base.length; i += 3) {
+      Vector3.TransformCoordinatesFromFloatsToRef(s.base[i]!, s.base[i + 1]!, s.base[i + 2]!, world, point).toArray(s.worldBase, i);
+    }
+    s.time = null;
+  }
+}
+
+/** Recomputes and uploads every per-vertex rest input of the current grid and placement. */
+function placeRestData(s: Surface): void {
+  const world = s.world, inverse = s.inverse;
   inverse.transposeToRef(normalMatrix);
   const depth = s.body.depth * Vector3.TransformNormalFromFloatsToRef(0, 1, 0, world, point).length();
   for (let i = 0; i < s.base.length; i += 3) {
@@ -532,7 +597,8 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
   const empty = new Float32Array();
   const surface: Surface = {
     mesh, water, body, plugin, field: null, contacts: null, world: Matrix.Identity(), inverse: Matrix.Identity(), gpu: plugin !== null,
-    layoutState: new Float64Array(LAYOUT_STATE).fill(NaN), placed: new Float64Array(16).fill(NaN), time: null, version: 0,
+    layoutState: new Float64Array(LAYOUT_STATE).fill(NaN), gridX: new Float64Array(), gridZ: new Float64Array(),
+    restMin: new Vector3(), restMax: new Vector3(), shift: new Float64Array(2), placed: new Float64Array(16).fill(NaN), time: null, version: 0,
     qualityRevision: NaN, density: 1, drawn: true,
     base: empty, worldBase: empty, positions: empty, normals: empty, baseNormals: empty, data: empty, flow: empty, spacing: empty,
     offsets: empty, bankGradient: empty, offsetsZero: true, boundedSubMeshes: -1, boundedFirst: null,
