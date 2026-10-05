@@ -378,6 +378,7 @@ export type CommandMessage =
       actorGuid?: string | null;
       /** Stable component identity when one visual uses the optimized actor mesh. */
       primaryComponentId?: string;
+      overlayStyle?: import("@babylonslate/core").OverlayVisualStyle;
       /** Overlay HitTest for the actor visual (`ignore` is not pickable). */
       hitTest?: "ignore" | "block" | "passThrough";
       /** Overlay actor has a `2DButtonComponent`. */
@@ -408,6 +409,7 @@ export type CommandMessage =
         landscape?: import("@babylonslate/core").LandscapeProperties;
         foliage?: import("@babylonslate/core").FoliageProperties;
         componentId: string;
+        overlayStyle?: import("@babylonslate/core").OverlayVisualStyle;
         castShadows?: boolean;
         receiveShadows?: boolean;
         meshKind?: string | null;
@@ -649,6 +651,12 @@ export type CommandMessage =
       slotId: number;
       componentId: string;
       progress: number;
+    }
+  | {
+      type: "setOverlayVisualStyle";
+      slotId: number;
+      componentId: string;
+      style: import("@babylonslate/core").OverlayVisualStyle;
     }
   | {
       type: "tilemapAnimationTime";

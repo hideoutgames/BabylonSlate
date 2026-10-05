@@ -39,6 +39,8 @@ describe("engine script API catalog", () => {
   it("exposes 2DPanel source, guids, margins, and Hit Test", () => {
     const panel = engineScriptApiFor("2DPanelComponent");
     expect(names(panel?.variables)).toEqual([
+      "Opacity",
+      "Tint",
       "Source",
       "Texture",
       "Material",
@@ -77,6 +79,8 @@ describe("engine script API catalog", () => {
       "size",
       "color",
       "fontAssetGuid",
+      "opacity",
+      "tint",
       "alignment",
     ]);
     const setText = engineScriptApiFor("Text3DComponent")?.functions?.find(

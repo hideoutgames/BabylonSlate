@@ -36,6 +36,8 @@ import {
   parseSpringArmProperties,
   parseText2DProperties,
   parseText3DProperties,
+  parseOverlayVisualStyle,
+  type OverlayVisualStyle,
   type SkyboxFaces,
   type Text2DProperties,
   type Text3DProperties,
@@ -103,6 +105,7 @@ import { createText3DMesh } from "./text3d-mesh";
 import { createText2DMesh, text2DBitmapBytes, updateText2DAppear } from "./text2d-mesh";
 import { createJoystick2DMesh, joystick2DMesh } from "./joystick2d-mesh";
 import { createPainter2DMesh, updatePainter2DMesh } from "./painter2d-mesh";
+import { applyOverlayVisualStyle } from "./overlay-visual-style";
 import { BitmapAllocationLimitError } from "./text2d-bitmap";
 import { retireBoneAttachments, updateBoneAttachments, type BoneAttachment } from "./bone-attachment";
 export { applyAttachToBone } from "./bone-attachment";
@@ -157,6 +160,7 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
   text3dProps: Map<number, Text3DProperties>;
   text2dProps: Map<number, Text2DProperties>;
   overlayPanelProps: Map<number, OverlayPanelMeshOptions>;
+  overlayStyles: Map<number, Map<string, OverlayVisualStyle>>;
   /** Snap the Play camera to the pixel grid (project `twoD.pixelPerfect`). */
   pixelPerfect?: boolean;
   /** Worker simulation clock, retained while paused and across visual rebuilds. */
@@ -253,6 +257,7 @@ export function createSnapshotSceneBinding(): SnapshotSceneBinding {
     text3dProps: new Map(),
     text2dProps: new Map(),
     overlayPanelProps: new Map(),
+    overlayStyles: new Map(),
     liveSlots: new Set(),
     snapshotMeshes: [],
     seenSlots: new Set(),
@@ -608,6 +613,24 @@ function updateVisualTextAppear(root: Mesh | undefined, componentId: string, pro
   if (mesh && !mesh.isDisposed()) updateText2DAppear(mesh, progress);
 }
 
+/** Style changes retain both live and prepared component meshes and their texture resources. */
+export function applyOverlayVisualStyleCommand(binding: SnapshotSceneBinding, command: Extract<CommandMessage, { type: "setOverlayVisualStyle" }>): void {
+  const styles = binding.overlayStyles.get(command.slotId);
+  if (!styles?.has(command.componentId)) return;
+  const style = parseOverlayVisualStyle(command.style);
+  styles.set(command.componentId, style);
+  const part = binding.meshParts.get(command.slotId)?.find((entry) => entry.componentId === command.componentId);
+  if (part) part.overlayStyle = style;
+  const live = binding.meshes.get(command.slotId);
+  const prepared = pendingVisualReplacements.get(binding)?.get(command.slotId);
+  for (const root of prepared && prepared !== live ? [live, prepared] : [live]) {
+    const mesh = root && playVisualComponents.get(root)?.get(command.componentId);
+    if (mesh && !mesh.isDisposed()) applyOverlayVisualStyle(mesh, style);
+  }
+}
+
+const overlayVisualKinds = new Set(["2dtexture", "2dmaterial", "2dpanel", "2dtext", "2drichtext", "2dpainter", "2djoystick"]);
+
 /** Keep live and prepared text visuals on the same simulation-owned reveal sample. */
 export function applyText2DAppearCommand(binding: SnapshotSceneBinding, command: Extract<CommandMessage, { type: "setText2DAppear" }>): void {
   if (!Number.isFinite(command.progress)) return;
@@ -704,6 +727,10 @@ export function applyAssignMesh(
     : undefined;
   if (primaryId) binding.primaryComponentIds.set(command.slotId, primaryId);
   else binding.primaryComponentIds.delete(command.slotId);
+  const styles = new Map<string, OverlayVisualStyle>();
+  for (const part of command.parts ?? []) if (overlayVisualKinds.has(part.meshKind ?? "")) styles.set(part.componentId, parseOverlayVisualStyle(part.overlayStyle));
+  if (primaryId && overlayVisualKinds.has(command.meshKind ?? "") && !styles.has(primaryId)) styles.set(primaryId, parseOverlayVisualStyle(command.overlayStyle));
+  binding.overlayStyles.set(command.slotId, styles);
   const componentIds = command.parts?.length
     ? new Set(command.parts.map((part) => part.componentId))
     : primaryId
@@ -1264,6 +1291,7 @@ export function retirePlaySlot(
   binding.meshParts.delete(slotId);
   binding.meshSorting.delete(slotId);
   binding.primaryComponentIds.delete(slotId);
+  binding.overlayStyles.delete(slotId);
   binding.materialAssetGuids.delete(slotId);
   releaseRetainedMaterialOwners(binding, slotId, true);
   for (const key of binding.materialParameters.keys()) {
@@ -1360,7 +1388,11 @@ function createPlayVisual(
   if (!partsNeedOrigin(parts)) {
     const mesh = createPlayMesh(scene, slotId, meshKind, assetGuid, binding, undefined, undefined, undefined, deferredModels, undefined, targets);
     const componentId = binding.primaryComponentIds.get(slotId);
-    if (meshKind === "2drichtext" && componentId) rememberPlayVisualComponents(mesh, new Map([[componentId, mesh]]));
+    if (componentId) {
+      const style = binding.overlayStyles.get(slotId)?.get(componentId);
+      if (style) applyOverlayVisualStyle(mesh, style);
+      rememberPlayVisualComponents(mesh, new Map([[componentId, mesh]]));
+    }
     applyPlayVisualSorting(mesh, slotId, binding);
     return mesh;
   }
@@ -1398,6 +1430,8 @@ function createPlayVisual(
         part,
       );
       child.parent = root;
+      const style = binding.overlayStyles.get(slotId)?.get(part.componentId);
+      if (style) applyOverlayVisualStyle(child, style);
       retainedBitmapBytes += text2DBitmapBytes(child);
       applyPartTransform(child, part);
       meshes.set(part.componentId, child);
@@ -1423,7 +1457,7 @@ function createPlayVisual(
     attachPlaySpringArms(binding, root, slotId, parts ?? [], meshes);
     if (illumination.length) actorIllumination.set(root, illumination);
     if (!targets && illumination.some(helper => helper.light)) applyPlayShadows(scene);
-    if (parts?.some((part) => part.meshKind === "2drichtext")) rememberPlayVisualComponents(root, meshes);
+    rememberPlayVisualComponents(root, meshes);
     applyPlayVisualSorting(root, slotId, binding);
     return root;
   } catch (error) {
@@ -2020,6 +2054,7 @@ export function disposeSnapshotBinding(binding: SnapshotSceneBinding): void {
   binding.meshParts.clear();
   binding.meshSorting.clear();
   binding.primaryComponentIds.clear();
+  binding.overlayStyles.clear();
   binding.defaultCameraSlotId = null;
   binding.possessedCameraSlotId = null;
 }

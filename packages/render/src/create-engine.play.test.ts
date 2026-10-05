@@ -2,6 +2,7 @@ import { mockCubeTextureIO, mockDepthTextureIO } from "./texture-test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Camera, Constants, InputBlock, KhronosTextureContainer2, Matrix, MeshBuilder, NodeMaterial, NullEngine, PBRMaterial, RawTexture, RenderTargetTexture, Scene, UniversalCamera, Vector3, type Mesh } from "@babylonjs/core";
 import { DracoDecoder } from "@babylonjs/core/Meshes/Compression/dracoDecoder";
+import { overlayVisualStyle } from "./overlay-visual-style";
 import {
   SNAPSHOT_FLAG_OVERLAY,
   SNAPSHOT_FLAG_VISIBLE,
@@ -2360,7 +2361,7 @@ describe("Play createEngine view", () => {
     expect(order).toEqual(["world", "back", "front"]);
   });
 
-  it("retains rich-text reveal commands while its overlay scene is not created yet", () => {
+  it("retains rich-text reveal and style commands while its overlay scene is not created yet", () => {
     const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
       sharedEngine: sharedEngine(), playMode: true,
     });
@@ -2370,10 +2371,16 @@ describe("Play createEngine view", () => {
       text2d: parseText2DProperties({ text: "AB", appearModes: ["fade"], appearTransition: "linear", appearInterval: 0, appearProgress: 0 }, { rich: true }) });
     handle.applyCommand({ type: "setText2DAppear", slotId: 4, componentId: "rich", progress: 0.5 });
     handle.applyCommand({ type: "setText2DAppear", slotId: 4, componentId: "wrong", progress: 1 });
+    handle.applyCommand({ type: "setOverlayVisualStyle", slotId: 4, componentId: "rich", style: { opacity: 0.4, tint: [0.2, 0.5, 1, 0.5] } });
+    handle.applyCommand({ type: "setOverlayVisualStyle", slotId: 4, componentId: "wrong", style: { opacity: 0, tint: [0, 0, 0, 0] } });
     handle.applyCommand({ type: "sceneLayerCreate", layerId: "late", assetGuid: "hud", zOrder: 0, ownerSceneGuid: null, postProcessStack: [] });
     const layer = handle.sceneLayerScenes()[0]!.scene;
     const root = layer.getMeshByName("actor-4")!;
     expect(root.getChildMeshes().map((glyph) => glyph.visibility)).toEqual([0.5, 0.5]);
+    expect(root.getChildMeshes().map((glyph) => overlayVisualStyle(glyph))).toEqual([
+      { opacity: 0.4, tint: [0.2, 0.5, 1, 0.5] },
+      { opacity: 0.4, tint: [0.2, 0.5, 1, 0.5] },
+    ]);
     expect(handle.scene.getMeshByName("actor-4")).toBeNull();
   });
 

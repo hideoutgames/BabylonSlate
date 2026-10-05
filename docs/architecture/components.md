@@ -127,6 +127,8 @@ Edge styling indexes source nodes once per pass, giving O(nodes + edges) node lo
 
 Pin connection visuals and input-default visibility share a wired-pin index per immutable React Flow edge array. Updates retaining that array reuse it, so each pin checks membership without scanning edges. Replacing the array builds one new index, including when virtualization creates a filtered edge snapshot during a drag. Weak references let unused snapshots be collected, and separate graph canvases remain independent.
 
+Writable-reference inputs such as Tween Target omit literal previews and Inspector defaults. Script graph connection rules accept only mutable variable outputs of the exact type; ordinary value pins keep their existing conversion rules.
+
 `GraphEditor` waits for its requested focus node to be measured before framing it; programmatic selection remains available in read-only mode without accepting topology or position edits.
 
 Pin display types and styled edges are reused while only node positions, selection, or measurements change. Pin edits and connection changes still refresh the full graph, including external Inspector and undo/redo updates. Edge selection and custom edge properties remain live; connection-assistant previews continue to validate proposed links separately.

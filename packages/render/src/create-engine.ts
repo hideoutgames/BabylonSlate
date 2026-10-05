@@ -183,6 +183,7 @@ import {
   applyAssignMesh,
   applyPainter2DCommand,
   applyText2DAppearCommand,
+  applyOverlayVisualStyleCommand,
   applyPossessCamera,
   assignedMaterialGuids as listAssignedMaterialGuids,
   createSnapshotSceneBinding,
@@ -2791,6 +2792,14 @@ function initializeEngine(
           }
         }
         applyText2DAppearCommand(binding, command);
+        scheduler.invalidate("asset");
+      }
+      if (command.type === "setOverlayVisualStyle") {
+        const pending = pendingOverlayAssign.get(command.slotId);
+        const part = pending?.parts?.find((entry) => entry.componentId === command.componentId);
+        if (part) part.overlayStyle = command.style;
+        if (pending?.primaryComponentId === command.componentId) pending.overlayStyle = command.style;
+        applyOverlayVisualStyleCommand(binding, command);
         scheduler.invalidate("asset");
       }
       if (command.type === "setCursorVisible") {

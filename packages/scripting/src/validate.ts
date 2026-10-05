@@ -7,7 +7,8 @@ import {
   type TypeContext,
   type ValidateOptions,
 } from "./type-context";
-import { isAssignable } from "./types";
+import { isAssignable, pinTypeEquals } from "./types";
+import { isWritableVariableOutput } from "./variable-references";
 import {
   isClassConstraintTypeId,
   isStructOrEnumTypeId,
@@ -255,6 +256,7 @@ function validateStructural(
 function validatePinTyping(
   graph: LogicGraph,
   ctx: TypeContext,
+  registry: ValidateOptions["registry"],
 ): Diagnostic[] {
   const out: Diagnostic[] = [];
   const wildcards = resolveWildcardPinTypes(graph);
@@ -335,6 +337,16 @@ function validatePinTyping(
       const from =
         wildcards.resolved.get(pinTypeKey(source.id, sp.id)) ?? sp.type;
       const to = wildcards.resolved.get(pinTypeKey(target.id, tp.id)) ?? tp.type;
+      const requiresReference = tp.reference === "required" ||
+        registry?.get(target.typeId)?.pins(target.properties).find((pin) => pin.id === tp.id)?.reference === "required";
+      if (requiresReference && (!isWritableVariableOutput(source, sp, ctx.members) || !pinTypeEquals(from, to))) {
+        out.push(diagnostic({
+          code: "pin.invalid_reference",
+          message: `Input "${tp.name}" requires a writable ${to.kind} variable; values and read-only properties cannot be tween targets`,
+          assetGuid: ctx.assetGuid, graphId: graph.id, nodeId: target.id,
+          pinId: tp.id, relatedNodeId: source.id,
+        }));
+      }
       if (
         !isAssignable(from, to, {
           hierarchy: ctx.hierarchy,
@@ -388,7 +400,9 @@ function validatePinTyping(
       );
       const stored = readPinDefaultForPin(node.properties, pin);
       const hasStored = stored !== undefined;
-      if (hasStored && pinRejectsStoredDefault(pin.type)) {
+      const requiresReference = pin.reference === "required" ||
+        registry?.get(node.typeId)?.pins(node.properties).find((entry) => entry.id === pin.id)?.reference === "required";
+      if (hasStored && (requiresReference || pinRejectsStoredDefault(pin.type))) {
         out.push(
           diagnostic({
             code: "pin.invalid_default",
@@ -406,7 +420,7 @@ function validatePinTyping(
           node.properties.implicitSelf === true &&
           (pin.type.kind === "objectRef" || pin.type.kind === "actorRef");
         const defaultClearsMissing =
-          hasStored &&
+          !requiresReference && hasStored &&
           (pinAcceptsLiteralDefault(pin.type) ||
             pin.type.kind === "boxedWildcard");
         if (!defaultClearsMissing && !implicitSelfTarget) {
@@ -423,7 +437,7 @@ function validatePinTyping(
               Boolean(owner?.implementsInterface));
           out.push(
             diagnostic({
-              severity: liveRef || interfaceOutput ? "error" : "warning",
+              severity: requiresReference || liveRef || interfaceOutput ? "error" : "warning",
               code: "pin.missing_input",
               message: `Required input "${pin.name}" is not connected`,
               assetGuid: ctx.assetGuid,
@@ -1021,7 +1035,7 @@ export function validateGraphs(
       ...keep(validateStructural(graph, ctx, compiled, options.registry)),
     );
     diagnostics.push(...keep(validateBreakContext(graph, ctx, compiled, options)));
-    diagnostics.push(...keep(validatePinTyping(graph, ctx)));
+    diagnostics.push(...keep(validatePinTyping(graph, ctx, options.registry)));
     diagnostics.push(...keep(validateExecuteJavaScript(graph, ctx)));
     diagnostics.push(...keep(validateMemberBindings(graph, ctx)));
     diagnostics.push(...keep(validateComponentAndInheritedBindings(graph, ctx)));

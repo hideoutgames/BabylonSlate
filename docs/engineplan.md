@@ -639,6 +639,7 @@ The conversion family (`WildcardToString`, `WildcardToObject`, `WildcardToFloat`
 - Exec flow becomes straight-line statements; Branch, Sequence and loop nodes become native `if`, `for` and `while`. Execution cycles use labeled loops with editor loop-budget checks, including cycles through latent actions.
 - Pure data nodes inline as expressions with common-subexpression elimination.
 - Latent nodes (Delay, async ExecuteJavaScript, and latent Call Function) use async entry functions that await each action on every iteration.
+- Global Tween nodes add nine writable-reference value variants, eight Actor/component Local or World transform variants, and ten SceneLayer appearance/layout/text variants. Duration defaults to 2 seconds and the shared engine Easing Curve enum defaults to Linear. Simulation-owned actions capture their endpoints and storage identity, respect pause/time dilation, replace conflicting property writes, and cancel on teardown without executing Completed. See [Tween nodes](architecture/scripting.md#tweens).
 - FunctionLibrary classes emit a module of static functions. Palette injects static Call Function rows from open FL docs and the header signature index. EditorFunctionLibrary calls stay on editor hosts.
 - Output is deterministic text, so compiler golden tests are the primary correctness gate.
 - Compiled modules load through a blob-URL dynamic import inside the worker. That needs a CSP allowing blob URLs plus a spike to confirm behaviour in WKWebView under Capacitor.

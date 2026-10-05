@@ -77,8 +77,11 @@ import { prepareNodeMaterialParticleBindings } from "./node-material-particles";
 import type { MaterialParameterValue } from "@babylonslate/bridge";
 import { SharedOutlineIdentityBlock, SharedOutlineOutputBlock } from "./shared-outline-output-block";
 import { TextMaterialBlock } from "./text-material-block";
+import { OverlayStyleBlock } from "./overlay-style-block";
 
 export interface CompileMaterialOptions {
+  /** SceneLayer surfaces bind independent tint/opacity and retain smooth transparency. */
+  overlay?: boolean;
   /** Internal coverage variant; retains authored deformation and alpha discard. */
   surfaceVariant?: "outlineMask";
   /** Internal FrameGraph variant; shared resources are bound by its render pass. */
@@ -231,7 +234,11 @@ export function compileMaterialPlan(
       material.backFaceCulling = plan.twoSided !== true;
       material.transparencyMode = Material.MATERIAL_OPAQUE;
       material.alphaMode = Constants.ALPHA_DISABLE;
-    } else { applyAuthoredSurfaceBlend(material, plan); syncSceneLighting(scene); }
+    } else {
+      applyAuthoredSurfaceBlend(material, plan);
+      if (options.overlay) { material.transparencyMode = Material.MATERIAL_ALPHABLEND; material.needDepthPrePass = false; }
+      syncSceneLighting(scene);
+    }
   };
   material.mode =
     plan.domain === "postProcess"
@@ -579,8 +586,12 @@ export function compileMaterialPlan(
       const multiply = new MultiplyBlock(`${options.name}_textFill`);
       outputPoint("color", `${options.name}_color`, true)?.connectTo(multiply.left);
       textGlyph.color.connectTo(multiply.right);
-      multiply.output.connectTo(fragment.rgba);
-      created.push(fragment, multiply);
+      const style = new OverlayStyleBlock(`${options.name}_overlayStyle`);
+      const styled = new MultiplyBlock(`${options.name}_overlayFill`);
+      multiply.output.connectTo(styled.left);
+      style.rgba.connectTo(styled.right);
+      styled.output.connectTo(fragment.rgba);
+      created.push(fragment, multiply, style, styled);
       outputNodes.push(fragment);
     } else if (plan.domain === "postProcess" || plan.domain === "particle") {
       const fragment = new FragmentOutputBlock(`${options.name}_fragment`);
@@ -753,8 +764,8 @@ export function compileMaterialPlan(
   // Bone palettes, morph weights and text atlases belong to each mesh, even
   // when their material is static.
   const perMeshBlocks = created.filter(
-    (block): block is BonesBlock | MorphTargetsBlock | TextMaterialBlock =>
-      block instanceof BonesBlock || block instanceof MorphTargetsBlock || block instanceof TextMaterialBlock,
+    (block): block is BonesBlock | MorphTargetsBlock | TextMaterialBlock | OverlayStyleBlock =>
+      block instanceof BonesBlock || block instanceof MorphTargetsBlock || block instanceof TextMaterialBlock || block instanceof OverlayStyleBlock,
   );
   if (perMeshBlocks.length > 0) {
     material.onBindObservable.add((mesh) => {
@@ -768,7 +779,7 @@ export function compileMaterialPlan(
   // Custom GLSL keeps its own readiness probe; everything else in Material
   // mode may reuse a byte-identical program compiled for another material.
   if (material.mode === NodeMaterialModes.Material && plan.cost.customBlocks === 0) {
-    shareCompiledProgram(material, JSON.stringify([options.name, options.surfaceVariant ?? null, material.shaderLanguage]));
+    shareCompiledProgram(material, JSON.stringify([options.name, options.surfaceVariant ?? null, options.overlay === true, material.shaderLanguage]));
   }
   try {
     if (plan.operations.some((operation) => operation.nodeType === "input.environmentSample")) {
@@ -1398,9 +1409,24 @@ function attachSurfaceShading(
       baseColor && emissive
         ? addColor(baseColor, emissive, "unlitEmission")
         : (baseColor ?? emissive);
-    if (color) color.connectTo(fragment.rgb);
     const opacity = outputPoint("opacity", `${options.name}_opacity`, false);
-    if (opacity) opacity.connectTo(fragment.a);
+    if (options.overlay) {
+      const style = new OverlayStyleBlock(`${options.name}_overlayStyle`);
+      created.push(style);
+      if (color) {
+        const tint = new MultiplyBlock(`${options.name}_overlayColor`);
+        color.connectTo(tint.left); style.rgb.connectTo(tint.right); tint.output.connectTo(fragment.rgb);
+        created.push(tint);
+      }
+      if (opacity) {
+        const alpha = new MultiplyBlock(`${options.name}_overlayAlpha`);
+        opacity.connectTo(alpha.left); style.alpha.connectTo(alpha.right); alpha.output.connectTo(fragment.a);
+        created.push(alpha);
+      } else style.alpha.connectTo(fragment.a);
+    } else {
+      if (color) color.connectTo(fragment.rgb);
+      if (opacity) opacity.connectTo(fragment.a);
+    }
     return fragment;
   }
 

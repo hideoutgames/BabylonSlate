@@ -44,6 +44,11 @@ function mockCtx(
       inputs.push(name);
       return "0";
     },
+    reference: (name) => {
+      inputs.push(name);
+      return "null";
+    },
+    continueIf: (expression) => { emits.push(`if (${expression}) {}`); },
     output: (name) => {
       outputs.push(name);
       return `_out_${name}`;

@@ -12,6 +12,7 @@ export type SerializedPin = {
   type: { kind: string; [key: string]: unknown };
   optional?: boolean;
   defaultValue?: unknown;
+  reference?: "required" | "writable";
   colorHint?: boolean;
   /**
    * The pin keeps one link: a new connection replaces its old one instead of

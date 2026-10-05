@@ -3,6 +3,7 @@ import { parseJoystick2DProperties, type Joystick2DProperties } from "@babylonsl
 import type { MeshAssetContext } from "./mesh-assets";
 import { createOverlayUnlitMaterial } from "./overlay-texture-quad";
 import { VisualBundle } from "./visual-bundle";
+import { applyOverlayVisualStyle, enableOverlayVisualMaterial } from "./overlay-visual-style";
 
 export interface Joystick2DMesh {
   mesh: Mesh;
@@ -24,6 +25,8 @@ export function refreshJoystick2DMaterials(root: Mesh, assets?: MeshAssetContext
       guid ? assets?.resolveMaterial?.(guid, { scene: mesh.getScene(), unlit: true }) ?? fallback : fallback;
     mesh.material = resolve(visual.properties.backgroundMaterialGuid, visual.fallbacks.background);
     visual.thumb.material = resolve(visual.properties.joystickMaterialGuid, visual.fallbacks.joystick);
+    enableOverlayVisualMaterial(mesh);
+    enableOverlayVisualMaterial(visual.thumb);
   }
 }
 
@@ -58,6 +61,7 @@ export function createJoystick2DMesh(
     mesh.isPickable = true;
     joysticks.set(mesh, { mesh, thumb, properties, fallbacks: { background: background.fallback, joystick: joystick.fallback } });
     refreshJoystick2DMaterials(mesh, assets);
+    applyOverlayVisualStyle(mesh, source);
     mesh.onDisposeObservable.addOnce(() => { joysticks.delete(mesh); bundle.dispose(); });
     return mesh;
   } catch (error) {

@@ -14,6 +14,10 @@ export type CodegenContext = {
   node: GraphNode;
   /** Resolved expression text for an input data pin (or default). */
   input(pinName: string): string;
+  /** Resolve a writable variable input without evaluating its current value. */
+  reference?(pinName: string): string;
+  /** Run this node's outgoing execution chain only when this expression is true. */
+  continueIf?(expression: string): void;
   /**
    * Static type of the source pin wired into an input data pin (resolved in
    * compileGraph; declared in transition-rule graphs). Undefined when the
