@@ -106,6 +106,15 @@ describe("runtime scalability session", () => {
     expect(result.message).toContain("clamped");
     expect(settings.requested.render.quality?.geometry).toMatchObject({ autoLod: false, lodDistanceScale: 4, preset: "custom" });
   });
+  it("rejects unknown water modes and clamps water cost fields into a Custom group", () => {
+    const { settings, transactions } = session();
+    expect(settings.request({ kind: "patch", render: { quality: { water: { reflections: "mirror" } } } } as never).status).toBe("failed");
+    expect(settings.request({ kind: "patch", render: { quality: { water: { shadingDetail: "extreme" } } } } as never).status).toBe("failed");
+    expect(transactions).toHaveLength(0);
+    const result = settings.request({ kind: "patch", render: { quality: { water: { reflections: "planar", fftSize: 100, meshDensity: 3 } } } });
+    expect(result.message).toContain("clamped");
+    expect(settings.requested.render.quality?.water).toMatchObject({ reflections: "planar", fftSize: 128, meshDensity: 1.5, preset: "custom" });
+  });
   it("requires restart for backend changes and does not partially apply their transaction", () => {
     const { settings, transactions } = session();
     expect(settings.request({ kind: "patch", render: { gpuBackend: "webgpu", mode: "pbr" }, frameCap: 50 }).status).toBe("restartRequired");

@@ -57,6 +57,9 @@ const resultOut = pin({
 });
 
 describe("pinDefaultPreview", () => {
+  it("never presents a literal value for a writable-reference target", () => {
+    expect(pinDefaultPreview({ ...amount, reference: "required" }, { a: 12 }, false)).toBeNull();
+  });
   it("returns an unchecked bool when the pin has no authored default", () => {
     expect(pinDefaultPreview(condition, {}, false)).toEqual({
       kind: "bool",

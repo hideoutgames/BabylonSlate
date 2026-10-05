@@ -41,6 +41,7 @@ import {
 
 const SIZE = 384;
 export { runNativeShadowProof } from "./shadow-native-proof";
+export { runAuthoredShadowProof } from "./authored-shadow-proof";
 
 export async function runShadowSelfShadowingProof(
   backend: "webgl2" | "webgpu",

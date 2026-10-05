@@ -5,6 +5,7 @@ export const waterNodes: NodeDefinition[] = [{
   id: "water.sampleSurface",
   title: "Sample Water Surface",
   category: "physics",
+  description: "Samples the rendered water surface at a world position, including Gerstner wave motion. Water Velocity is the current plus, in X and Z, the waves' orbital motion (it rocks back and forth and averages to zero at a fixed point) and, in Y, how fast the surface height changes at this X/Z.",
   searchAliases: ["water", "buoyancy", "waves", "current", "immersion"],
   pins: () => [
     pin("execIn", "Exec", "in", EXEC),

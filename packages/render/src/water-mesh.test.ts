@@ -1,9 +1,18 @@
 import { describe, expect, it, vi } from "vitest";
 import { ArcRotateCamera, CubeTexture, FreeCamera, type Mesh, MeshBuilder, NullEngine, PBRMaterial, Quaternion, Scene, SphericalPolynomial, Texture, type UniformBuffer, Vector3, VertexBuffer } from "@babylonjs/core";
-import { createDefaultWaterDefinition, normalizeWaterBody, sampleWaterSurface, type WaterDefinition } from "@babylonslate/core";
-import { createWaterMesh, setSceneWaterTime, updateSceneWater, updateWaterMeshBody, updateWaterMeshDefinition, waterMeshBody } from "./water-mesh";
+import {
+  createDefaultWaterDefinition, createWaterWaveOutput, evaluateWaterVertex, normalizeRenderingQuality, normalizeWaterBody, qualityPresetPatch,
+  RENDER_QUALITY_PROFILES, sampleWaterSurface, waterBankFadeLength, waterHorizontalEnvelope, waterWaveSet,
+  type QualityLevel, type WaterBodyProperties, type WaterDefinition,
+} from "@babylonslate/core";
+import {
+  createWaterMesh, sceneWaterSamplesSceneCopy, setSceneWaterTime, setWaterGpuWaves, updateSceneWater, updateWaterMeshBody, updateWaterMeshDefinition,
+  waterMeshBody, WATER_FINITE_CELL_BUDGET, WATER_GLOBAL_CELL_BUDGET,
+} from "./water-mesh";
+import { updateSceneRenderingSettings } from "./render-settings";
 import type { WaterMaterialPlugin } from "./water-material";
 import { createLandscapeMesh } from "./landscape-mesh";
+import { WATER_FIELD_EDGE_RAMP } from "./water-field";
 import { applyAssignMesh, createPlayMesh, createSnapshotSceneBinding } from "./snapshot-apply";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@babylonslate/shader-graph";
 import { compileMaterialPlan, prewarmMaterial } from "./material-compiler";
@@ -11,12 +20,27 @@ import { buildFloatDdsCubeFixture } from "@babylonslate/test-kit/environment-fix
 import { resourceCacheForEngine, type ResourceLease } from "./resource-cache";
 import { createSkyboxMesh } from "./skybox";
 
-/** The vertex over the component origin; vertical waves never move it sideways. */
+/** The vertex whose rest point is the component origin (Gerstner waves move it sideways). */
 function centreVertex(mesh: Mesh): number {
-  const positions = mesh.getVerticesData(VertexBuffer.PositionKind)!;
-  for (let i = 0; i < positions.length; i += 3) if (Math.hypot(positions[i]!, positions[i + 2]!) < 1e-6) return i / 3;
+  const uvs = mesh.getVerticesData(VertexBuffer.UVKind)!;
+  for (let i = 0; i < uvs.length; i += 2) if (uvs[i] === 0.5 && uvs[i + 1] === 0.5) return i / 2;
   throw new Error("No centre vertex");
 }
+
+/**
+ * World position of vertex `index` as the built-in vertex shader (`SLATE_WATER_GPU_WAVES`) displaces it: the static rest
+ * grid plus the shared CPU reference (`evaluateWaterVertex`) of its uploaded spacing and bank distance.
+ */
+function gpuVertex(mesh: Mesh, water: WaterDefinition, body: WaterBodyProperties, index: number, time: number): Vector3 {
+  const positions = mesh.getVerticesData(VertexBuffer.PositionKind)!, data = mesh.getVerticesData("slateWaterData")!;
+  const rest = Vector3.TransformCoordinates(Vector3.FromArray(positions, index * 3), mesh.computeWorldMatrix(true));
+  const out = createWaterWaveOutput(), fade = body.kind === "global" ? 0 : waterBankFadeLength(water, body.waveScale);
+  evaluateWaterVertex(waterWaveSet(water), rest.x, rest.z, time, data[index * 4]!, body.waveScale, data[index * 4 + 1]!, fade, 0, 0, out);
+  return new Vector3(rest.x + out[1]!, rest.y + out[0]!, rest.z + out[2]!);
+}
+
+const pluginOf = (mesh: Mesh) => (mesh.material as PBRMaterial).pluginManager!.getPlugin<WaterMaterialPlugin>("SlateWater")!;
+const setQuality = (scene: Scene, level: QualityLevel) => updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality(qualityPresetPatch(level)) });
 
 /** Bind the built-in surface's shader inputs through its real material plugin; record the uploaded vectors. */
 function bindWater(mesh: Mesh): Map<string, number[]> {
@@ -79,17 +103,26 @@ describe("Water rendering", () => {
       mesh.rotationQuaternion = Quaternion.RotationYawPitchRoll(0.2, 0.12, -0.05);
       updateSceneWater(scene);
       expect(mesh.getTotalVertices()).toBeGreaterThan(initialVertices * 3);
-      const positions = mesh.getVerticesData(VertexBuffer.PositionKind)!;
-      const waterData = mesh.getVerticesData("slateWaterData")!;
-      const matrix = mesh.computeWorldMatrix(true);
+      const count = mesh.getTotalVertices(), waterData = mesh.getVerticesData("slateWaterData")!;
       const transform = { position: mesh.position, rotation: mesh.rotationQuaternion, scale: mesh.scaling };
-      // Interior vertices compare the renderer and the public physics query, not a duplicate wave formula.
-      for (let i = 15; i < positions.length - 15; i += 57) {
-        if (waterData[i / 3 * 4 + 1]! < 1) continue;
-        const point = Vector3.TransformCoordinates(Vector3.FromArray(positions, i), matrix);
+      // The built-in shader displaces a static rest grid: its uploaded inputs, through the shared CPU reference, must
+      // reproduce the public physics query (not a duplicate wave formula), including the bank fade near the edges.
+      const sampled = new Map<number, Vector3>();
+      for (let i = 5; i < count - 5; i += 19) {
+        if (waterData[i * 4 + 1]! < 0.001) continue;
+        const point = gpuVertex(mesh, water, body, i, 1.7);
         const sample = sampleWaterSurface(water, body, point, 1.7, transform);
         expect(sample.found).toBe(true);
         expect(sample.height).toBeCloseTo(point.y, 4);
+        sampled.set(i, point);
+      }
+      expect(sampled.size).toBeGreaterThan(10);
+      // Custom Material water uploads CPU-displaced vertices from the same reference: the two paths draw one surface.
+      expect(setWaterGpuWaves(mesh, false)).toBe(true);
+      const positions = mesh.getVerticesData(VertexBuffer.PositionKind)!, matrix = mesh.computeWorldMatrix(true);
+      for (const [i, expected] of sampled) {
+        const point = Vector3.TransformCoordinates(Vector3.FromArray(positions, i * 3), matrix);
+        expect(Vector3.Distance(point, expected)).toBeLessThan(1e-4);
       }
       mesh.scaling.setAll(0); updateSceneWater(scene);
       expect(Array.from(mesh.getVerticesData(VertexBuffer.PositionKind)!).every(Number.isFinite)).toBe(true);
@@ -104,14 +137,29 @@ describe("Water rendering", () => {
       const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 50, length: 30, waveScale: 1 }));
       const global = createWaterMesh(scene, "global", normalizeWaterBody({}, "global"));
       setSceneWaterTime(scene, 4); updateSceneWater(scene);
+      // Culling bounds are the authored footprint padded by the wave envelopes (horizontally too, for tilted volumes).
+      const reach = waterHorizontalEnvelope(createDefaultWaterDefinition(), 1), bounds = [-30 - reach, 30 + reach, -20 - reach, 20 + reach];
+      expect(reach).toBeGreaterThan(0.1);
       const before = ocean.getBoundingInfo().boundingBox;
-      expect([before.minimum.x, before.maximum.x, before.minimum.z, before.maximum.z]).toEqual([-30, 30, -20, 20]);
-      const lakeSurface = Array.from(lake.getVerticesData(VertexBuffer.PositionKind)!);
+      for (const [i, value] of [before.minimum.x, before.maximum.x, before.minimum.z, before.maximum.z].entries()) expect(value).toBeCloseTo(bounds[i]!, 5);
+      // Gerstner motion fades out at the banks, so the rendered edge stays on the authored footprint.
+      const oceanBody = waterMeshBody(ocean)!, oceanWater = createDefaultWaterDefinition();
+      let widest = 0;
+      for (let i = 0; i < ocean.getTotalVertices(); i++) {
+        const vertex = gpuVertex(ocean, oceanWater, oceanBody, i, 4);
+        expect(Math.abs(vertex.x)).toBeLessThanOrEqual(30 + 1e-4);
+        expect(Math.abs(vertex.z)).toBeLessThanOrEqual(20 + 1e-4);
+        widest = Math.max(widest, Math.abs(vertex.x));
+      }
+      expect(widest).toBeCloseTo(30, 4);
+      const lakeGrid = [VertexBuffer.PositionKind, "slateWaterData"].map((kind) => Array.from(lake.getVerticesData(kind)!));
       camera.position.set(10000, 4, -5000); updateSceneWater(scene);
-      // Finite water is anchored to the world: the camera neither reshapes nor flattens its waves.
-      expect(Array.from(lake.getVerticesData(VertexBuffer.PositionKind)!)).toEqual(lakeSurface);
+      // Finite water is anchored to the world: the camera neither reshapes its grid nor changes what the shader filters.
+      expect([VertexBuffer.PositionKind, "slateWaterData"].map((kind) => Array.from(lake.getVerticesData(kind)!))).toEqual(lakeGrid);
+      // Neither the camera nor animated waves change those bounds.
+      setSceneWaterTime(scene, 5.5); updateSceneWater(scene);
       const after = ocean.getBoundingInfo().boundingBox;
-      expect([after.minimum.x, after.maximum.x, after.minimum.z, after.maximum.z]).toEqual([-30, 30, -20, 20]);
+      for (const [i, value] of [after.minimum.x, after.maximum.x, after.minimum.z, after.maximum.z].entries()) expect(value).toBeCloseTo(bounds[i]!, 5);
       const horizon = global.getBoundingInfo().boundingBox;
       expect(horizon.minimum.x).toBeLessThan(8500);
       expect(horizon.maximum.x).toBeGreaterThan(11500);
@@ -124,6 +172,31 @@ describe("Water rendering", () => {
       expect(expanded.maximum.z - expanded.minimum.z).toBeCloseTo(7200, 3);
     } finally { scene.dispose(); engine.dispose(); }
   });
+  it("pads a finite body's culling bounds by the FFT detail band's horizontal bound only while its vertex shader adds the band", () => {
+    const engine = new NullEngine();
+    Object.assign(engine.getCaps(), { textureFloatRender: true, textureHalfFloatRender: true });
+    const scene = new Scene(engine);
+    new FreeCamera("camera", new Vector3(0, 4, -20), scene);
+    try {
+      const water = { ...createDefaultWaterDefinition(), steepness: 0.8 };
+      const ocean = createWaterMesh(scene, "ocean", normalizeWaterBody({ width: 60, length: 40, waveScale: 0.7 }, "ocean"), water);
+      const width = () => { const box = ocean.getBoundingInfo().boundingBox; return box.maximum.x - box.minimum.x; };
+      const analytic = 60 + 2 * waterHorizontalEnvelope(water, 0.7);
+      updateSceneWater(scene);
+      // Medium samples no band: the analytic envelope alone.
+      expect(width()).toBeCloseTo(analytic, 4);
+      // At Ultra the vertex shader adds the band's offset: λ (Steepness at most) times its 4σ height at this Wave Scale,
+      // on each side.
+      setQuality(scene, "ultra"); updateSceneWater(scene);
+      expect(width()).toBeCloseTo(analytic + 2 * 0.8 * waterWaveSet(water).detailHeight * 0.7, 4);
+      // CPU-displaced vertices never carry the band, and Medium drops it again.
+      setWaterGpuWaves(ocean, false); updateSceneWater(scene);
+      expect(width()).toBeCloseTo(analytic, 4);
+      setWaterGpuWaves(ocean, true); setQuality(scene, "medium"); updateSceneWater(scene);
+      expect(width()).toBeCloseTo(analytic, 4);
+    } finally { scene.dispose(); engine.dispose(); }
+  });
+
   it("keeps Global Water's fine wave cells under an orbit camera's target as well as near its eye", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     // The eye stands about 20 m from the target horizontally, beyond the dense cells' half width around the eye.
@@ -134,9 +207,11 @@ describe("Water rendering", () => {
       updateSceneWater(scene);
       const xs = rowXs(global);
       const gap = (x: number) => { const k = xs.findIndex((value) => value > x); return xs[k]! - xs[k - 1]!; };
-      // Default Global Water cells are 0.5 m, at the target and at the water nearest the eye alike.
-      expect(gap(30)).toBeLessThanOrEqual(0.5 + 1e-4);
-      expect(gap(camera.position.x + 3)).toBeLessThanOrEqual(0.5 + 1e-4);
+      // Default Global Water cells are 0.5 m at Mesh Density 1 (the default Medium tier scales them), at the target and
+      // at the water nearest the eye alike.
+      const cell = 0.5 / RENDER_QUALITY_PROFILES.medium.water.meshDensity;
+      expect(gap(30)).toBeLessThanOrEqual(cell + 1e-4);
+      expect(gap(camera.position.x + 3)).toBeLessThanOrEqual(cell + 1e-4);
     } finally { scene.dispose(); engine.dispose(); }
   });
   it("applies an edited definition to a built surface in place and refuses edits that need a rebuild", () => {
@@ -166,24 +241,81 @@ describe("Water rendering", () => {
       expect(updateWaterMeshDefinition(MeshBuilder.CreateBox("box", {}, scene), edited)).toBe(false);
     } finally { scene.dispose(); engine.dispose(); }
   });
-  it("resamples waves for an edited definition while the water clock is paused", () => {
+  it("resamples CPU-displaced waves for an edited definition while the water clock is paused", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     const water = createDefaultWaterDefinition(), body = normalizeWaterBody({ width: 10, length: 10, waveScale: 1, resolution: 8 });
     try {
       setSceneWaterTime(scene, 2);
       const mesh = createWaterMesh(scene, "lake", body, water);
+      // Custom Material water (and this parity switch) displaces its vertices on the CPU.
+      setWaterGpuWaves(mesh, false);
       updateSceneWater(scene);
-      const middle = centreVertex(mesh) * 3, height = () => mesh.getVerticesData(VertexBuffer.PositionKind)![middle + 1]!;
-      const before = height();
+      const middle = centreVertex(mesh) * 3, vertex = () => Vector3.FromArray(mesh.getVerticesData(VertexBuffer.PositionKind)!, middle);
+      const before = vertex().y;
       const edited = { ...water, waveHeight: 1.2 };
       expect(updateWaterMeshDefinition(mesh, edited)).toBe(true);
-      // The next frame repeats the paused time.
+      // The next frame repeats the paused time. Gerstner waves carry the vertex sideways: the query at its X/Z agrees.
       updateSceneWater(scene);
-      expect(height()).toBeCloseTo(sampleWaterSurface(edited, body, { x: 0, y: 0, z: 0 }, 2).height, 5);
-      expect(Math.abs(height() - before)).toBeGreaterThan(0.05);
+      const after = vertex();
+      expect(after.y).toBeCloseTo(sampleWaterSurface(edited, body, { x: after.x, y: 0, z: after.z }, 2).height, 4);
+      expect(Math.abs(after.y - before)).toBeGreaterThan(0.05);
     } finally { scene.dispose(); engine.dispose(); }
   });
-  it("re-tessellates Global Water for a new Wave Length and widens its terrain field for a new Contact Foam Width", () => {
+  it("applies Water v2 edits in place exactly as a rebuilt surface binds, compiles, bounds and asks for the scene copy", async () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    // FFT Ocean Detail needs float render targets; Ultra runs every feature an asset can ask for.
+    Object.assign(engine.getCaps(), { textureFloatRender: true, textureHalfFloatRender: true });
+    try {
+      new FreeCamera("camera", new Vector3(0, 5, -10), scene);
+      setQuality(scene, "ultra");
+      setSceneWaterTime(scene, 2);
+      const body = normalizeWaterBody({ width: 12, length: 12, waveScale: 1, resolution: 8 });
+      const compiled = async (mesh: Mesh) => {
+        const material = mesh.material as PBRMaterial, subMesh = mesh.subMeshes[0]!;
+        await vi.waitFor(() => expect(material.isReadyForSubMesh(mesh, subMesh)).toBe(true));
+        return subMesh.effect!.defines;
+      };
+      const shaderInputs = [
+        ...Array.from({ length: 8 }, (_, i) => [`slateWaterSwellDir${i}`, `slateWaterSwellAmp${i}`]).flat(),
+        "slateWaterSea", "slateWaterSwellInfo", "slateWaterShape", "slateWaterWaves", "slateWaterLook", "slateWaterTerms", "slateWaterMotion",
+      ];
+      // No scene copy intent, no detail band, Classic waves and no Sparkles to start with.
+      let definition: WaterDefinition = { ...createDefaultWaterDefinition(), refraction: 0, objectReflections: false, detailWaves: 0, sparkles: 0 };
+      const lake = createWaterMesh(scene, "lake", body, definition);
+      const material = lake.material;
+      await compiled(lake);
+      expect(sceneWaterSamplesSceneCopy(scene, true, true)).toBe(false);
+      const edits: Array<Partial<WaterDefinition>> = [
+        // Uniform-only fields; Steepness also widens a finite body's culling bounds.
+        { steepness: 0.9, colorVariation: 0.1, waveHeight: 1.4 },
+        // Wave Model, Peak Sharpness and Wave Seed change the components; Ocean Spectrum compiles its other three.
+        { waveModel: "ocean", peakSharpness: 6, waveSeed: 42 },
+        // Features crossing zero recompile: refraction intent, the planar mirror, the FFT band and Sparkles.
+        { refraction: 0.6, objectReflections: true, detailWaves: 0.8, sparkles: 0.5 },
+      ];
+      for (const edit of edits) {
+        definition = { ...definition, ...edit };
+        expect(updateWaterMeshDefinition(lake, definition)).toBe(true);
+        const rebuilt = createWaterMesh(scene, "rebuilt", body, definition);
+        updateSceneWater(scene);
+        expect(lake.material).toBe(material);
+        expect(await compiled(lake)).toBe(await compiled(rebuilt));
+        const live = bindWater(lake), fresh = bindWater(rebuilt);
+        for (const name of shaderInputs) expect([name, live.get(name)]).toEqual([name, fresh.get(name)]);
+        const bounds = (mesh: Mesh) => [...mesh.getBoundingInfo().boundingBox.minimum.asArray(), ...mesh.getBoundingInfo().boundingBox.maximum.asArray()];
+        expect(bounds(lake)).toEqual(bounds(rebuilt).map((value) => expect.closeTo(value, 6)));
+        rebuilt.dispose();
+      }
+      expect(await compiled(lake)).toContain("#define SLATE_WATER_OCEAN");
+      expect(await compiled(lake)).toContain("#define SLATE_WATER_SPARKLES\n");
+      // Refraction and Object Reflections now ask for the scene copy; the count leaves with the surface.
+      expect(sceneWaterSamplesSceneCopy(scene, true, false)).toBe(true);
+      expect(sceneWaterSamplesSceneCopy(scene, false, true)).toBe(true);
+      lake.dispose();
+      expect(sceneWaterSamplesSceneCopy(scene, true, true)).toBe(false);
+    } finally { scene.dispose(); engine.dispose(); }
+  });
+  it("re-tessellates Global Water for a new Wave Length and keeps its terrain field over the landscape and edge ramp", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     new FreeCamera("camera", new Vector3(0, 4, 0), scene);
     try {
@@ -195,23 +327,30 @@ describe("Water rendering", () => {
       updateSceneWater(scene);
       const gapAtOrigin = () => { const xs = rowXs(ocean), k = xs.findIndex((x) => x > 0); return xs[k]! - xs[k - 1]!; };
       const fieldMinX = () => bindWater(ocean).get("slateWaterFieldBounds")![0]!;
-      // The field covers the landscape plus the contact range (three Contact Foam Widths) and a metre.
-      expect(fieldMinX()).toBeGreaterThan(-20 - (2.5 * 3 + 1));
-      expect(gapAtOrigin()).toBeCloseTo(0.5, 4);
+      // Unbounded water's field covers the landscape plus the larger of the contact range (three Contact Foam Widths,
+      // at most 8 m) and the depth ramp past the terrain, and a metre.
+      const before = fieldMinX();
+      expect(before).toBeLessThanOrEqual(-20 - (WATER_FIELD_EDGE_RAMP + 1));
+      // Default Global Water cells are 0.5 m at Mesh Density 1; the default Medium tier scales them.
+      const cell = 0.5 / RENDER_QUALITY_PROFILES.medium.water.meshDensity;
+      expect(gapAtOrigin()).toBeCloseTo(cell, 4);
       const edited = { ...water, waveLength: 24, contactFoamWidth: 2.5 };
       expect(updateWaterMeshDefinition(ocean, edited)).toBe(true);
       updateSceneWater(scene);
-      expect(fieldMinX()).toBeLessThanOrEqual(-20 - (2.5 * 3 + 1));
+      // The wider contact range (7.5 m) stays inside the ramp, so the re-measured field keeps its extent.
+      expect(fieldMinX()).toBe(before);
       // Cells scale with Wave Length even though the camera-following layout has not moved.
-      expect(gapAtOrigin()).toBeCloseTo(1, 4);
-      // Each new vertex samples the waves at its own world X/Z and carries the body's depth and open-water edge.
+      expect(gapAtOrigin()).toBeCloseTo(2 * cell, 4);
+      // Each new rest vertex sits at its own world X/Z with the new cell size as its wave filter and the body's depth
+      // and open-water edge, so the vertex shader displaces it onto the queried surface.
       const positions = ocean.getVerticesData(VertexBuffer.PositionKind)!, data = ocean.getVerticesData("slateWaterData")!;
       let checked = 0;
       for (let i = 0; i < positions.length; i += 3) {
         const x = positions[i]!, z = positions[i + 2]!;
-        if (Math.abs(x) > 6 || Math.abs(z) > 6) continue;
-        expect(positions[i + 1]).toBeCloseTo(sampleWaterSurface(edited, body, { x, y: 0, z }, 1.5).height, 4);
-        expect([data[i / 3 * 4 + 1], data[i / 3 * 4 + 2]]).toEqual([10000, body.depth]);
+        if (Math.abs(x) > 8 || Math.abs(z) > 8) continue;
+        const vertex = i / 3, rendered = gpuVertex(ocean, edited, body, vertex, 1.5);
+        expect(rendered.y).toBeCloseTo(sampleWaterSurface(edited, body, { x: rendered.x, y: 0, z: rendered.z }, 1.5).height, 4);
+        expect([data[vertex * 4]!, data[vertex * 4 + 1], data[vertex * 4 + 2]]).toEqual([expect.closeTo(2 * cell, 4), 10000, body.depth]);
         checked++;
       }
       expect(checked).toBeGreaterThan(100);
@@ -260,36 +399,151 @@ describe("Water rendering", () => {
       result.dispose();
     } finally { scene.dispose(); engine.dispose(); }
   });
-  it("moves the rendered surface with the simulation clock and releases owned resources", () => {
+  it("animates built-in water on the GPU from the clock alone, keeps the CPU path for parity, and releases owned resources", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     const water = createDefaultWaterDefinition("stylized"), body = normalizeWaterBody({ width: 10, length: 10, waveScale: 1, resolution: 8 });
     try {
       const mesh = createWaterMesh(scene, "lake", body, water);
-      const material = mesh.material;
+      const material = mesh.material, plugin = pluginOf(mesh);
       setSceneWaterTime(scene, 2);
       updateSceneWater(scene);
-      const positions = mesh.getVerticesData(VertexBuffer.PositionKind)!;
-      const middle = centreVertex(mesh) * 3;
-      const height = positions[middle + 1]!;
-      expect(height).toBeCloseTo(sampleWaterSurface(water, body, { x: 0, y: 0, z: 0 }, 2).height, 5);
+      const middle = centreVertex(mesh);
+      // The static rest grid stays put; the shader's clock follows the simulation, so frames upload no vertex data.
+      expect(Vector3.FromArray(mesh.getVerticesData(VertexBuffer.PositionKind)!, middle * 3).length()).toBeCloseTo(0, 6);
+      expect(plugin.gpuWaves).toBe(true);
+      expect(plugin.time).toBe(2);
       const uploads = vi.spyOn(engine, "updateDynamicVertexBuffer");
+      setSceneWaterTime(scene, 3); updateSceneWater(scene);
+      expect(uploads).not.toHaveBeenCalled();
+      expect(plugin.time).toBe(3);
+      // Gerstner waves carry the centre vertex sideways; the query at its displaced X/Z finds the same surface.
+      const moving = gpuVertex(mesh, water, body, middle, 3);
+      expect(Math.hypot(moving.x, moving.z)).toBeGreaterThan(0.01);
+      expect(moving.y).toBeCloseTo(sampleWaterSurface(water, body, { x: moving.x, y: 0, z: moving.z }, 3).height, 5);
+      // The CPU path displaces and uploads the same vertex, and only when the clock moves.
+      setWaterGpuWaves(mesh, false);
+      expect(plugin.gpuWaves).toBe(false);
+      const positions = mesh.getVerticesData(VertexBuffer.PositionKind)!;
+      expect(Vector3.FromArray(positions, middle * 3).subtract(moving).length()).toBeLessThan(1e-5);
+      // The built-in shader subtracts this per-vertex offset from the displaced position to find its rest point.
+      const offsets = mesh.getVerticesData("slateWaterOffset")!;
+      expect(offsets[middle * 2]).toBeCloseTo(positions[middle * 3]!, 5);
+      expect(offsets[middle * 2 + 1]).toBeCloseTo(positions[middle * 3 + 2]!, 5);
+      uploads.mockClear();
       updateSceneWater(scene);
       expect(uploads).not.toHaveBeenCalled();
-      setSceneWaterTime(scene, 3);
-      updateSceneWater(scene);
+      setSceneWaterTime(scene, 4); updateSceneWater(scene);
       expect(uploads).toHaveBeenCalled();
-      expect(Math.abs(mesh.getVerticesData(VertexBuffer.PositionKind)![middle + 1]! - height)).toBeGreaterThan(0.05);
+      expect(Math.abs(mesh.getVerticesData(VertexBuffer.PositionKind)![middle * 3 + 1]! - moving.y)).toBeGreaterThan(0.05);
+      // A translated CPU-path volume samples its waves at its new world rest points.
+      mesh.position.set(-5, 1, 6); updateSceneWater(scene);
+      const shifted = Vector3.TransformCoordinates(Vector3.FromArray(mesh.getVerticesData(VertexBuffer.PositionKind)!, middle * 3), mesh.computeWorldMatrix(true));
+      const at = { position: mesh.position, rotation: Quaternion.Identity(), scale: mesh.scaling };
+      expect(shifted.y).toBeCloseTo(sampleWaterSurface(water, body, { x: shifted.x, y: 0, z: shifted.z }, 4, at).height, 4);
+      mesh.position.setAll(0);
+      // Back on the GPU path the grid returns to rest. Moving the volume then uploads nothing (the shader reads world
+      // positions and the bounds follow the world matrix), and its waves still agree with world-space queries.
+      setWaterGpuWaves(mesh, true); updateSceneWater(scene);
+      const moves = vi.spyOn(mesh, "updateVerticesData");
       mesh.position.set(7, 3, -4); updateSceneWater(scene);
-      const point = Vector3.TransformCoordinates(Vector3.FromArray(mesh.getVerticesData(VertexBuffer.PositionKind)!, middle), mesh.computeWorldMatrix(true));
-      const sample = sampleWaterSurface(water, body, point, 3, { position: mesh.position, rotation: Quaternion.Identity(), scale: mesh.scaling });
+      expect(moves).not.toHaveBeenCalled();
+      moves.mockRestore();
+      const centre = mesh.getBoundingInfo().boundingBox.centerWorld;
+      expect(Vector3.Distance(centre, new Vector3(7, 3, -4))).toBeLessThan(1e-4);
+      const point = gpuVertex(mesh, water, body, middle, 4);
+      const sample = sampleWaterSurface(water, body, point, 4, { position: mesh.position, rotation: Quaternion.Identity(), scale: mesh.scaling });
       expect(sample.found).toBe(true);
       expect(point.y).toBeCloseTo(sample.height, 5);
       mesh.dispose();
       expect(scene.materials).not.toContain(material);
       // A disposed surface leaves the per-scene set, so later frames never resample it.
       const resample = vi.spyOn(mesh, "updateVerticesData");
-      setSceneWaterTime(scene, 4); updateSceneWater(scene);
+      setSceneWaterTime(scene, 5); updateSceneWater(scene);
       expect(resample).not.toHaveBeenCalled();
+    } finally { scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
+  });
+  it("scales grids with Water Mesh Density within the hard caps and rebuilds them when quality changes", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    new FreeCamera("camera", new Vector3(0, 4, 0), scene);
+    try {
+      const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 60, length: 60, resolution: 64 }));
+      const sea = createWaterMesh(scene, "sea", normalizeWaterBody({ width: 2000, length: 2000, resolution: 128 }, "ocean"));
+      const global = createWaterMesh(scene, "global", normalizeWaterBody({ resolution: 128 }, "global"));
+      const cells = (mesh: Mesh) => Math.sqrt(mesh.getTotalVertices()) - 1;
+      const levels: QualityLevel[] = ["low", "medium", "high", "ultra"];
+      const sizes = levels.map((level) => {
+        // The camera never moves: a quality change alone must rebuild every grid, Global Water included.
+        setQuality(scene, level); updateSceneWater(scene);
+        return { lake: cells(lake), sea: cells(sea), global: cells(global) };
+      });
+      // Surface Resolution × density on the 60 m lake: 64 × 0.5 gives 1.5 m cells, 64 × 1.5 gives 0.5 m cells.
+      expect(sizes.map((size) => size.lake)).toEqual(levels.map((level) => 60 / (48 / (64 * RENDER_QUALITY_PROFILES[level].water.meshDensity))));
+      expect(sizes.map((size) => size.global)).toEqual(levels.map((level) => 128 * RENDER_QUALITY_PROFILES[level].water.meshDensity));
+      // The caps hold at the densest tier: Global Water and large finite volumes stop growing there.
+      expect(sizes[3]!.global).toBe(WATER_GLOBAL_CELL_BUDGET);
+      expect(sizes.every((size) => size.sea === WATER_FINITE_CELL_BUDGET)).toBe(true);
+    } finally { scene.dispose(); engine.dispose(); }
+  });
+  it("recentres Global Water as the camera moves by uploading only its rest positions into the same buffers", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    const camera = new FreeCamera("camera", new Vector3(0, 4, 0), scene);
+    try {
+      const global = createWaterMesh(scene, "global", normalizeWaterBody({}, "global"));
+      updateSceneWater(scene);
+      const kinds = [VertexBuffer.PositionKind, VertexBuffer.NormalKind, "slateWaterData", "slateWaterFlow", "slateWaterBaseNormal", "slateWaterOffset"];
+      const buffers = kinds.map((kind) => global.getVertexBuffer(kind)!.getBuffer());
+      const count = global.getTotalVertices(), before = Array.from(global.getVerticesData(VertexBuffer.PositionKind)!);
+      const created = [vi.spyOn(engine, "createVertexBuffer"), vi.spyOn(engine, "createDynamicVertexBuffer"), vi.spyOn(engine, "createIndexBuffer")];
+      const uploads = vi.spyOn(global, "updateVerticesData");
+      camera.position.x += 7.3; camera.position.z -= 2.1; updateSceneWater(scene);
+      // The dense cells follow the eye without new GPU buffers or rest data: only the positions of the same grid move.
+      for (const spy of created) expect(spy).not.toHaveBeenCalled();
+      expect(uploads.mock.calls.map(([kind]) => kind)).toEqual([VertexBuffer.PositionKind]);
+      kinds.forEach((kind, i) => expect(global.getVertexBuffer(kind)!.getBuffer()).toBe(buffers[i]));
+      expect(global.getTotalVertices()).toBe(count);
+      const after = global.getVerticesData(VertexBuffer.PositionKind)!;
+      expect(Array.from(after)).not.toEqual(before);
+      const xs: number[] = [];
+      for (let i = 0; i < after.length && (i === 0 || after[i]! > after[i - 3]!); i += 3) xs.push(after[i]!);
+      const k = xs.findIndex((value) => value > camera.position.x);
+      expect(xs[k]! - xs[k - 1]!).toBeLessThanOrEqual(0.5 / RENDER_QUALITY_PROFILES.medium.water.meshDensity + 1e-4);
+      // The recentred grid draws exactly what a grid built at this camera position draws: the same vertices, the same
+      // static shader inputs (to float32 precision of the kilometre-wide outer cells) and the same culling bounds.
+      uploads.mockRestore();
+      const fresh = createWaterMesh(scene, "fresh", normalizeWaterBody({}, "global"));
+      for (const kind of kinds) {
+        const a = global.getVerticesData(kind)!, b = fresh.getVerticesData(kind)!;
+        expect(a.length).toBe(b.length);
+        let worst = 0;
+        for (let i = 0; i < a.length; i++) worst = Math.max(worst, Math.abs(a[i]! - b[i]!) / Math.max(1, Math.abs(b[i]!)));
+        expect(worst, kind).toBeLessThan(1e-5);
+      }
+      const box = global.getBoundingInfo().boundingBox, expected = fresh.getBoundingInfo().boundingBox;
+      expect(Vector3.Distance(box.minimumWorld, expected.minimumWorld)).toBeLessThan(1e-3);
+      expect(Vector3.Distance(box.maximumWorld, expected.maximumWorld)).toBeLessThan(1e-3);
+      // A longer view distance widens the grid: that builds a new one.
+      camera.maxZ = 4000; updateSceneWater(scene);
+      expect(created[1]).toHaveBeenCalled();
+    } finally { scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
+  });
+  it("pauses CPU vertex work for surfaces out of view and resumes it in the frame they come back", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    const camera = new FreeCamera("camera", new Vector3(0, 5, -20), scene);
+    camera.setTarget(Vector3.Zero());
+    try {
+      const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 10, length: 10, waveScale: 1, resolution: 8 }));
+      setWaterGpuWaves(lake, false);
+      setSceneWaterTime(scene, 2); updateSceneWater(scene);
+      camera.setTarget(new Vector3(0, 5, -60));
+      // Nothing draws it in this headless scene, and the camera looks away: the next steps skip its vertices.
+      updateSceneWater(scene);
+      const uploads = vi.spyOn(lake, "updateVerticesData");
+      setSceneWaterTime(scene, 3); updateSceneWater(scene);
+      expect(uploads).not.toHaveBeenCalled();
+      camera.setTarget(Vector3.Zero());
+      updateSceneWater(scene);
+      expect(uploads).toHaveBeenCalled();
+      expect(lake.getVerticesData("slateWaterData")![centreVertex(lake) * 4 + 3]).toBe(3);
     } finally { scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
   });
   it("fills a curved, widening river inside its query footprint and reshapes it live", () => {

@@ -102,6 +102,7 @@ export interface MaterialPlumbing {
   worldNormal?: NodeMaterialConnectionPoint;
   /** Vector 4 for Babylon blocks that register a Vector 4 normal. */
   worldNormal4?: NodeMaterialConnectionPoint;
+  worldTangent?: NodeMaterialConnectionPoint;
   cameraPosition?: NodeMaterialConnectionPoint;
   viewDirection?: NodeMaterialConnectionPoint;
   uv?: NodeMaterialConnectionPoint;
@@ -829,6 +830,7 @@ ADAPTERS["landscape.blend"] = ({ name }) => {
 };
 
 ADAPTERS["input.worldTangent"] = ({ name, plumbing }) => {
+  if (plumbing.worldTangent) return { blocks: [], inputs: {}, outputs: { tangent: plumbing.worldTangent } };
   const blocks: NodeMaterialBlock[] = [];
   let tangent = plumbing.localTangent;
   if (!tangent) {

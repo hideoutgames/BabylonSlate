@@ -2,10 +2,11 @@ import { Material, Mesh, StandardMaterial } from "@babylonjs/core";
 import { installAssetBytes } from "@babylonslate/assets";
 import { installTextureBytes } from "./mesh-assets";
 import { afterEach, expect, it, vi } from "vitest";
-import { parseText2DProperties } from "@babylonslate/core";
+import { identityTransform, parseText2DProperties } from "@babylonslate/core";
 import { createTestEngine } from "./create-null-engine";
 import { createText2DMesh, updateText2DAppear } from "./text2d-mesh";
-import { applyAssignMesh, applyText2DAppearCommand, createSnapshotSceneBinding, createPlayMesh, playComponentMeshName, retirePlaySlot, type AssignMeshPart } from "./snapshot-apply";
+import { applyAssignMaterial, applyAssignMesh, applyComponentTransformsCommand, applyOverlayVisualStyleCommand, applyText2DAppearCommand, createSnapshotSceneBinding, createPlayMesh, playComponentMeshName, retirePlaySlot, type AssignMeshPart } from "./snapshot-apply";
+import { overlayVisualStyle } from "./overlay-visual-style";
 import type { GlyphMetricsProvider } from "./text2d-layout";
 import { ResourceCache } from "./resource-cache";
 import { encodeParentedAnimatedTriangleGlb } from "./glb-test-fixtures";
@@ -144,7 +145,7 @@ it("routes nested component reveals without walking glyph hierarchies and replac
   expect(reusedB.visibility).toBe(0);
 });
 
-it("keeps live and prepared component indexes separate through topology changes and asynchronous publication", async () => {
+it("retains reveal, style and motion through topology changes and restarted asynchronous publication", async () => {
   const { scene } = host();
   const binding = createSnapshotSceneBinding();
   binding.modelSources = new Map([["model", installAssetBytes(encodeParentedAnimatedTriangleGlb("model"))]]);
@@ -169,7 +170,7 @@ it("keeps live and prepared component indexes separate through topology changes 
       position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1],
     }],
   });
-  const load = binding.slotAnimLoads!.get(0)!;
+  let load = binding.slotAnimLoads!.get(0)!;
   try {
     const prepared = scene.meshes.find((mesh) => mesh.name === "actor-0" && mesh !== live) as Mesh;
     const preparedA = partGlyph(prepared, "a"), preparedB = partGlyph(prepared, "b");
@@ -177,19 +178,32 @@ it("keeps live and prepared component indexes separate through topology changes 
     const preparedTraversal = vi.spyOn(prepared, "getChildMeshes");
     applyText2DAppearCommand(binding, { type: "setText2DAppear", slotId: 0, componentId: "a", progress: 0.4 });
     applyText2DAppearCommand(binding, { type: "setText2DAppear", slotId: 0, componentId: "b", progress: 0.7 });
+    applyOverlayVisualStyleCommand(binding, { type: "setOverlayVisualStyle", slotId: 0, componentId: "a", style: { opacity: 0.25, tint: [0.5, 1, 1, 1] } });
+    applyComponentTransformsCommand(binding, { type: "setComponentTransforms", slotId: 0,
+      parts: [{ componentId: "a", transform: { ...identityTransform(), position: { x: 2, y: 3, z: 0 } } }] });
     expect(binding.meshes.get(0)).toBe(live);
     expect(liveGlyph.visibility).toBeCloseTo(0.4);
     expect(preparedA.visibility).toBeCloseTo(0.4);
     expect(preparedB.visibility).toBeCloseTo(0.7);
+    expect(overlayVisualStyle(liveGlyph).opacity).toBe(0.25);
+    expect(overlayVisualStyle(preparedA).opacity).toBe(0.25);
+    expect((preparedA.parent as Mesh).position.asArray()).toEqual([2, 3, 0]);
     expect(liveTraversal).not.toHaveBeenCalled();
     expect(preparedTraversal).not.toHaveBeenCalled();
+    applyAssignMaterial(scene, binding, { type: "assignMaterial", slotId: 0, componentId: "model", materialAssetGuid: "replacement" });
+    load = binding.slotAnimLoads!.get(0)!;
+    const restarted = scene.meshes.find((mesh) => mesh.name === "actor-0" && mesh !== live && !mesh.isDisposed()) as Mesh;
+    const restartedA = partGlyph(restarted, "a"), restartedB = partGlyph(restarted, "b");
+    expect(prepared.isDisposed()).toBe(true);
+    expect(overlayVisualStyle(restartedA).opacity).toBe(0.25);
+    expect((restartedA.parent as Mesh).position.asArray()).toEqual([2, 3, 0]);
     finishLoad();
     await load;
-    expect(binding.meshes.get(0)).toBe(prepared);
+    expect(binding.meshes.get(0)).toBe(restarted);
     expect(live.isDisposed()).toBe(true);
     applyText2DAppearCommand(binding, { type: "setText2DAppear", slotId: 0, componentId: "a", progress: 0.9 });
-    expect(preparedA.visibility).toBeCloseTo(0.9);
-    expect(preparedB.visibility).toBeCloseTo(0.7);
+    expect(restartedA.visibility).toBeCloseTo(0.9);
+    expect(restartedB.visibility).toBeCloseTo(0.7);
   } finally {
     finishLoad();
     await load.catch(() => {});

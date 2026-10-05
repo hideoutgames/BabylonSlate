@@ -6,7 +6,7 @@ export const TEXTURE_DOWNSAMPLE_OPTIONS = [1, 2, 4, 8, 16] as const;
 export type TextureDownsample = (typeof TEXTURE_DOWNSAMPLE_OPTIONS)[number];
 
 export function isTextureLodExemptUsage(usage: string): boolean {
-  return usage === "skybox" || usage === "pixelArt";
+  return usage === "skybox" || usage === "pixelArt" || usage === "colorGrading";
 }
 
 export function normalizeTextureDownsample(value: unknown): TextureDownsample {

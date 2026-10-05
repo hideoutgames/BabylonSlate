@@ -387,6 +387,7 @@ export function SettingsModal({
   const [tokenDraft, setTokenDraft] = useState("");
   const [fontPickerOpen, setFontPickerOpen] = useState(false);
   const [mixerPickerOpen, setMixerPickerOpen] = useState(false);
+  const [lutPickerOpen, setLutPickerOpen] = useState(false);
   const [scenePickerOpen, setScenePickerOpen] = useState(false);
   const [gameInstancePickerOpen, setGameInstancePickerOpen] = useState(false);
   const [exportGameError, setExportGameError] = useState<string | null>(null);
@@ -1191,7 +1192,33 @@ export function SettingsModal({
               <EnvironmentLightingFields hideTitle cel={projectDocument.settings.render.mode === "cel"} project={projectDocument.settings.render.environmentLighting} onChange={(environmentLighting) => updateProjectSettings({ render: { ...projectDocument.settings.render, environmentLighting: normalizeEnvironmentLightingSettings(environmentLighting) } })} />
             </DisclosureSection>
             <DisclosureSection title="Post Processing" {...renderingSection("postProcessing")}>
-              <RenderEffectsFields hideTitle project={normalizeRenderEffectsSettings(projectDocument.settings.render.effects)} onChange={(effects) => updateProjectSettings({ render: { ...projectDocument.settings.render, effects: normalizeRenderEffectsSettings(effects) } })} />
+              <RenderEffectsFields
+                hideTitle
+                project={normalizeRenderEffectsSettings(projectDocument.settings.render.effects)}
+                onChange={(effects) => updateProjectSettings({ render: { ...projectDocument.settings.render, effects: normalizeRenderEffectsSettings(effects) } })}
+                lutControl={
+                  <AssetPickerControl value={normalizeRenderEffectsSettings(projectDocument.settings.render.effects).colorGrading.lutTextureGuid}>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="min-h-[var(--chrome-row,28px)] h-auto w-full justify-start"
+                      onClick={() => setLutPickerOpen(true)}
+                      data-testid="project-effects-lut"
+                      id="project-effects-lut"
+                    >
+                      {selectedPickerIdentity(
+                        assetRowIdentity(
+                          (() => {
+                            const guid = normalizeRenderEffectsSettings(projectDocument.settings.render.effects).colorGrading.lutTextureGuid;
+                            const asset = guid ? assetRegistry?.getByGuid(guid) : undefined;
+                            return asset ? { name: asset.header.name, type: asset.header.type } : undefined;
+                          })(),
+                        ),
+                      )}
+                    </Button>
+                  </AssetPickerControl>
+                }
+              />
             </DisclosureSection>
             {projectDocument.settings.render.mode === "cel" ? (
               <DisclosureSection title="CEL Shading" {...renderingSection("cel")}>
@@ -1703,6 +1730,35 @@ export function SettingsModal({
             setFontPickerOpen(false);
           }}
           data-testid="settings-default-font-picker"
+        />
+      ) : null}
+      {scope === "project" ? (
+        <AssetPicker
+          open={lutPickerOpen}
+          onOpenChange={setLutPickerOpen}
+          assets={(assetRegistry?.list() ?? [])
+            .filter((asset) => asset.header.type === "Texture")
+            .map((asset) => ({
+              guid: asset.header.guid,
+              name: asset.header.name,
+              type: asset.header.type,
+              path: asset.path,
+            }))}
+          allowedTypes={["Texture"]}
+          title="Pick LUT Texture"
+          allowNone
+          onPick={(lutTextureGuid) => {
+            if (!projectDocument) return;
+            const effects = normalizeRenderEffectsSettings(projectDocument.settings.render.effects);
+            updateProjectSettings({
+              render: {
+                ...projectDocument.settings.render,
+                effects: { ...effects, colorGrading: { ...effects.colorGrading, lutTextureGuid } },
+              },
+            });
+            setLutPickerOpen(false);
+          }}
+          data-testid="project-effects-lut-picker"
         />
       ) : null}
       {scope === "project" ? (

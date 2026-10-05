@@ -10,6 +10,34 @@ import { applyMaterialBounds } from "./material-bounds";
 const CHUNK_CELLS = 32;
 type Chunk = { mesh: Mesh; x: number; z: number; width: number; depth: number };
 const landscapes = new WeakMap<Mesh, { data: LandscapeProperties; chunks: Chunk[] }>();
+/** Landscape roots in each scene, kept by creation and scene membership so per-frame readers never scan the scene. */
+const sceneRoots = new WeakMap<Scene, Mesh[]>();
+const NO_ROOTS: readonly Mesh[] = [];
+
+function registerLandscape(scene: Scene, root: Mesh): void {
+  let roots = sceneRoots.get(scene);
+  if (!roots) {
+    const list: Mesh[] = roots = [];
+    sceneRoots.set(scene, list);
+    const removed = scene.onMeshRemovedObservable.add((mesh) => {
+      const index = list.indexOf(mesh as Mesh);
+      if (index >= 0) list.splice(index, 1);
+    });
+    // A root moved out of the scene and back (e.g. by an asset container) returns to the list.
+    const added = scene.onNewMeshAddedObservable.add((mesh) => {
+      if (mesh instanceof Mesh && landscapes.has(mesh) && !mesh.isDisposed() && !list.includes(mesh)) list.push(mesh);
+    });
+    scene.onDisposeObservable.addOnce(() => {
+      scene.onMeshRemovedObservable.remove(removed); scene.onNewMeshAddedObservable.remove(added); sceneRoots.delete(scene);
+    });
+  }
+  if (!roots.includes(root)) roots.push(root);
+}
+
+/** Landscape roots currently in the scene (enabled or not), without scanning `scene.meshes`. */
+export function sceneLandscapeRoots(scene: Scene): readonly Mesh[] {
+  return sceneRoots.get(scene) ?? NO_ROOTS;
+}
 
 function chunkData(data: LandscapeProperties, chunk: Omit<Chunk, "mesh">): VertexData {
   const positions: number[] = []; const normals: number[] = []; const uvs: number[] = []; const colors: number[] = []; const indices: number[] = [];
@@ -56,6 +84,7 @@ export function createLandscapeMesh(scene: Scene, name: string, properties: unkn
     chunks.push(chunk);
   }
   landscapes.set(root, { data, chunks });
+  registerLandscape(scene, root);
   updateLandscapeMesh(root, data, assets);
   return root;
 }

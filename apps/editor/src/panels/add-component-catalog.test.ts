@@ -98,6 +98,7 @@ describe("Add Component catalog", () => {
       "AreaRectLightComponent",
       "FogVolumeComponent",
       "OutlineComponent",
+      "DeformerComponent",
       "HemisphericFillLightComponent",
       "SkyboxComponent",
       "Text3DComponent",

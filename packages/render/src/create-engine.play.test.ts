@@ -2,6 +2,7 @@ import { mockCubeTextureIO, mockDepthTextureIO } from "./texture-test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Camera, Constants, InputBlock, KhronosTextureContainer2, Matrix, MeshBuilder, NodeMaterial, NullEngine, PBRMaterial, RawTexture, RenderTargetTexture, Scene, UniversalCamera, Vector3, type Mesh } from "@babylonjs/core";
 import { DracoDecoder } from "@babylonjs/core/Meshes/Compression/dracoDecoder";
+import { overlayVisualStyle } from "./overlay-visual-style";
 import {
   SNAPSHOT_FLAG_OVERLAY,
   SNAPSHOT_FLAG_VISIBLE,
@@ -1612,6 +1613,33 @@ describe("Play createEngine view", () => {
     }
   });
 
+  it("applies component motion against the same snapshot without recreating the actor visual", () => {
+    const engine = sharedEngine();
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
+    const { handle } = playHandle(engine);
+    const renderLoop = runRenderLoop.mock.calls[0]![0]!;
+    const frame = () => {
+      engine.onBeginFrameObservable.notifyObservers(engine);
+      renderLoop();
+      engine.onEndFrameObservable.notifyObservers(engine);
+    };
+    handle.applyCommand({ type: "assignMesh", slotId: 0, primaryComponentId: "visual", meshKind: "box", meshAssetGuid: null });
+    handle.pushSnapshot(actorSnapshot(1, 4));
+    frame();
+    const mesh = handle.scene.getMeshByName("actor-0")!;
+    const material = mesh.material;
+    handle.applyCommand({ type: "setComponentTransforms", slotId: 0, parts: [{ componentId: "visual", transform: {
+      position: { x: 3, y: 2, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 2, y: 2, z: 2 },
+    } }] });
+    frame();
+    expect(handle.scene.getMeshByName("actor-0")).toBe(mesh);
+    expect(mesh.getAbsolutePosition().asArray()).toEqual([7, 3, 0]);
+    expect(mesh.getWorldMatrix().getRow(0)!.asArray()).toEqual([2, 0, 0, 0]);
+    expect(mesh.material).toBe(material);
+    frame();
+    expect(mesh.getAbsolutePosition().asArray()).toEqual([7, 3, 0]);
+  });
+
   it("re-applies the same snapshot frame when the sampled alpha changes", () => {
     const engine = sharedEngine();
     const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
@@ -2360,7 +2388,7 @@ describe("Play createEngine view", () => {
     expect(order).toEqual(["world", "back", "front"]);
   });
 
-  it("retains rich-text reveal commands while its overlay scene is not created yet", () => {
+  it("retains rich-text reveal and style commands while its overlay scene is not created yet", () => {
     const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
       sharedEngine: sharedEngine(), playMode: true,
     });
@@ -2370,10 +2398,16 @@ describe("Play createEngine view", () => {
       text2d: parseText2DProperties({ text: "AB", appearModes: ["fade"], appearTransition: "linear", appearInterval: 0, appearProgress: 0 }, { rich: true }) });
     handle.applyCommand({ type: "setText2DAppear", slotId: 4, componentId: "rich", progress: 0.5 });
     handle.applyCommand({ type: "setText2DAppear", slotId: 4, componentId: "wrong", progress: 1 });
+    handle.applyCommand({ type: "setOverlayVisualStyle", slotId: 4, componentId: "rich", style: { opacity: 0.4, tint: [0.2, 0.5, 1, 0.5] } });
+    handle.applyCommand({ type: "setOverlayVisualStyle", slotId: 4, componentId: "wrong", style: { opacity: 0, tint: [0, 0, 0, 0] } });
     handle.applyCommand({ type: "sceneLayerCreate", layerId: "late", assetGuid: "hud", zOrder: 0, ownerSceneGuid: null, postProcessStack: [] });
     const layer = handle.sceneLayerScenes()[0]!.scene;
     const root = layer.getMeshByName("actor-4")!;
     expect(root.getChildMeshes().map((glyph) => glyph.visibility)).toEqual([0.5, 0.5]);
+    expect(root.getChildMeshes().map((glyph) => overlayVisualStyle(glyph))).toEqual([
+      { opacity: 0.4, tint: [0.2, 0.5, 1, 0.5] },
+      { opacity: 0.4, tint: [0.2, 0.5, 1, 0.5] },
+    ]);
     expect(handle.scene.getMeshByName("actor-4")).toBeNull();
   });
 
@@ -3898,7 +3932,7 @@ describe("Play createEngine view", () => {
         expect(replacement).toMatchObject({ color: [1, 0, 0], width: 3 });
       }
       const predecessor = replacement.targets[0]!.meshes[0]!;
-      handle.applyCommand({ ...assign, parts: ["model-a", "model-b"].map((guid, index) => ({
+      handle.applyCommand({ ...assign, parts: ["model-a", "model-b"].map((guid, index): NonNullable<snapshotApply.AssignMeshCommand["parts"]>[number] => ({
         componentId: `part-${index}`, parentId: null, meshKind: "box", meshAssetGuid: guid,
         position: [index * 2, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1],
       })) });

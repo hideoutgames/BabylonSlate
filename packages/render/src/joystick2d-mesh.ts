@@ -3,6 +3,7 @@ import { parseJoystick2DProperties, type Joystick2DProperties } from "@babylonsl
 import type { MeshAssetContext } from "./mesh-assets";
 import { createOverlayUnlitMaterial } from "./overlay-texture-quad";
 import { VisualBundle } from "./visual-bundle";
+import { applyOverlayVisualStyle, enableOverlayVisualMaterial } from "./overlay-visual-style";
 
 export interface Joystick2DMesh {
   mesh: Mesh;
@@ -24,6 +25,8 @@ export function refreshJoystick2DMaterials(root: Mesh, assets?: MeshAssetContext
       guid ? assets?.resolveMaterial?.(guid, { scene: mesh.getScene(), unlit: true }) ?? fallback : fallback;
     mesh.material = resolve(visual.properties.backgroundMaterialGuid, visual.fallbacks.background);
     visual.thumb.material = resolve(visual.properties.joystickMaterialGuid, visual.fallbacks.joystick);
+    enableOverlayVisualMaterial(mesh);
+    enableOverlayVisualMaterial(visual.thumb);
   }
 }
 
@@ -50,14 +53,18 @@ export function createJoystick2DMesh(
     const mesh = background.mesh;
     const thumb = joystick.mesh;
     thumb.parent = mesh;
-    thumb.position.z = -0.01;
+    // Distance sorting can put a dragged thumb before the background. Give
+    // both surfaces explicit priorities (Babylon defaults to Number.MAX_VALUE).
+    mesh.alphaIndex = 0;
     thumb.alphaIndex = 1;
+    thumb.position.z = -0.01;
     thumb.isPickable = false;
     thumb.metadata = { joystick2DThumb: true };
     mesh.metadata = { overlayJoystickMeshName: name, overlayHitTest: properties.enabled ? "block" : "ignore" };
     mesh.isPickable = true;
     joysticks.set(mesh, { mesh, thumb, properties, fallbacks: { background: background.fallback, joystick: joystick.fallback } });
     refreshJoystick2DMaterials(mesh, assets);
+    applyOverlayVisualStyle(mesh, source);
     mesh.onDisposeObservable.addOnce(() => { joysticks.delete(mesh); bundle.dispose(); });
     return mesh;
   } catch (error) {

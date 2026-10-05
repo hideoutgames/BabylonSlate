@@ -89,6 +89,8 @@ const TEXT_VARIABLES: readonly EngineScriptVariable[] = [
 
 const TEXT2D_VARIABLES: readonly EngineScriptVariable[] = [
   ...TEXT_VARIABLES,
+  { name: "Opacity", typeId: "float", propertyKey: "opacity" },
+  { name: "Tint", typeId: "color", propertyKey: "tint" },
   { name: "Text Material", typeId: "asset", typeClassId: "Material", propertyKey: "materialGuid" },
   { name: "Material UV", typeId: "string", propertyKey: "materialUv" },
   HIT_TEST,
@@ -298,6 +300,8 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
   {
     classId: "2DPainterComponent",
     variables: [
+      { name: "Opacity", typeId: "float", propertyKey: "opacity" },
+      { name: "Tint", typeId: "color", propertyKey: "tint" },
       { name: "Width", typeId: "float", propertyKey: "width" },
       { name: "Height", typeId: "float", propertyKey: "height" },
       { name: "Pixels Per Unit", typeId: "float", propertyKey: "pixelsPerUnit" },
@@ -579,6 +583,26 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
     ],
   },
   {
+    classId: "DeformerComponent",
+    variables: [
+      { name: "Enabled", typeId: "bool", propertyKey: "enabled" },
+      { name: "Target Mesh Component ID", typeId: "string", propertyKey: "targetMeshComponentId" },
+      { name: "Strength", typeId: "float", propertyKey: "strength" },
+      { name: "Resolution", typeId: "vec3", propertyKey: "resolution" },
+      { name: "Control Point Offsets", typeId: "float", container: "array", propertyKey: "offsets" },
+      { name: "Fit To Mesh", typeId: "bool", propertyKey: "fitToMesh" },
+      { name: "Bounds Min", typeId: "vec3", propertyKey: "boundsMin" },
+      { name: "Bounds Max", typeId: "vec3", propertyKey: "boundsMax" },
+    ],
+    functions: [
+      { name: "Set Control Point Offset", runtime: "setDeformerControlPointOffset",
+        description: "Set one lattice control offset in target-local units. Index is X + Resolution X * (Y + Resolution Y * Z). Tick edits are batched; this changes visual geometry only.",
+        pins: [EXEC_IN, EXEC_OUT, { name: "index", typeId: "int", direction: "in" },
+          { name: "offset", typeId: "vec3", direction: "in" }, { name: "success", typeId: "bool", direction: "out" }] },
+      { name: "Reset Control Points", runtime: "resetDeformerControlPoints", pins: [EXEC_IN, EXEC_OUT] },
+    ],
+  },
+  {
     classId: "CableComponent",
     variables: [
       { name: "Enabled", typeId: "bool", propertyKey: "enabled" },
@@ -839,6 +863,8 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
   {
     classId: "2DJoystickComponent",
     variables: [
+      { name: "Opacity", typeId: "float", propertyKey: "opacity" },
+      { name: "Tint", typeId: "color", propertyKey: "tint" },
       { name: "Enabled", typeId: "bool", propertyKey: "enabled" },
       { name: "Background Material", typeId: "asset", typeClassId: "Material", propertyKey: "backgroundMaterialGuid" },
       { name: "Joystick Material", typeId: "asset", typeClassId: "Material", propertyKey: "joystickMaterialGuid" },
@@ -872,6 +898,8 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
   {
     classId: "2DTextureComponent",
     variables: [
+      { name: "Opacity", typeId: "float", propertyKey: "opacity" },
+      { name: "Tint", typeId: "color", propertyKey: "tint" },
       {
         name: "Texture",
         typeId: "asset",
@@ -884,6 +912,8 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
   {
     classId: "2DMaterialComponent",
     variables: [
+      { name: "Opacity", typeId: "float", propertyKey: "opacity" },
+      { name: "Tint", typeId: "color", propertyKey: "tint" },
       {
         name: "Material",
         typeId: "asset",
@@ -896,6 +926,8 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
   {
     classId: "2DPanelComponent",
     variables: [
+      { name: "Opacity", typeId: "float", propertyKey: "opacity" },
+      { name: "Tint", typeId: "color", propertyKey: "tint" },
       { name: "Source", typeId: "string", propertyKey: "source" },
       {
         name: "Texture",

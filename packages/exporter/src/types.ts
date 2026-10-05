@@ -25,6 +25,8 @@ export type ExportClosureInput = {
   gameInstanceClass?: string | null;
   /** Project AudioMixer guid; packed even when no scene actor references it. */
   audioMixerGuid?: string | null;
+  /** Assets referenced by project render settings, such as the grading LUT. */
+  renderAssetGuids?: readonly string[];
   assets: readonly ExportIndexedAsset[];
   pluginEnabledGuids: ReadonlySet<string>;
   parentOf: (classId: string) => string | null | undefined;

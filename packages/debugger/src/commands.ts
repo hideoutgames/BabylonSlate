@@ -1,4 +1,4 @@
-import { isRenderPath, QUALITY_GROUPS, QUALITY_LEVELS, RENDER_PATHS, type QualityGroup, type RenderPath } from "@babylonslate/core";
+import { isRenderPath, QUALITY_GROUPS, QUALITY_LEVELS, RENDER_PATHS, WATER_QUALITY_FIELDS, type QualityGroup, type RenderPath } from "@babylonslate/core";
 import { fail, ok } from "./parser";
 import type {
   CommandParameter,
@@ -121,7 +121,7 @@ export function builtinCommands(): RegisteredCommand[] {
       name: group ? `quality ${group}` : "quality", tier: "core", category: "engine",
       description: "Query, set or reset rendering scalability",
       parameters: [
-        { name: "choice", type: "enum", optional: true, enumValues: [...QUALITY_LEVELS, "reset", ...(group === "shadows" ? ["budget", "distance", "enabled"] : group === "lighting" ? ["budget"] : group === "resolution" ? ["scale"] : group === "geometry" ? ["lod", "distance"] : [])] },
+        { name: "choice", type: "enum", optional: true, enumValues: [...QUALITY_LEVELS, "reset", ...(group === "shadows" ? ["budget", "distance", "enabled"] : group === "lighting" ? ["budget"] : group === "resolution" ? ["scale"] : group === "geometry" ? ["lod", "distance"] : group === "water" ? WATER_QUALITY_FIELDS : [])] },
         { name: "value", type: "string", optional: true },
       ],
       run: (args, host) => host.quality(group, args.choice as string | undefined, args.value as string | undefined),

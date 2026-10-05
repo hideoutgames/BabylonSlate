@@ -214,6 +214,62 @@ describe("snapshot publishing", () => {
     }
   });
 
+  it("resolves a duplicated parent guid to its first-spawned actor in the published poses, the crowd and physics", async () => {
+    // Both children precede the parents in spawn order, so neither resolution
+    // order nor a whole-world pass can pick the first parent by accident. The
+    // later copy is offset and turned a quarter about Y.
+    const duplicated = await launch(scene([
+      createActor("probe", "Probe", { parentId: "base", ...pose([0, 0, 2]), components: [
+        { id: "body", classId: "RigidBodyComponent", properties: { motionType: "static", mass: 0, gravityScale: 0 } },
+        { id: "collider", classId: "ColliderComponent", properties: { shape: { kind: "sphere", radius: 0.25 } } },
+      ] }),
+      createActor("agent", "Agent", { parentId: "base", ...pose([-5, 0, -5]), components: [navAgent] }),
+      createActor("base", "Base", pose([1, 0, 1])),
+      createActor("base", "Base Copy", pose([3, 0, -3], [0, Math.SQRT1_2, 0, Math.SQRT1_2])),
+    ]), navMesh);
+    // The first Base places the agent at world (-4, 0, -4); the copy would place it at (-2, 0, 2).
+    const root = await launch(scene([
+      createActor("agent", "Agent", { ...pose([-4, 0, -4]), components: [navAgent] }),
+    ]), navMesh);
+    try {
+      for (const { runtime } of [duplicated, root]) {
+        expect(runtime.setNavAgentTarget("agent", { x: 4, y: 0, z: -2 })).toBe(true);
+      }
+      for (let tick = 0; tick < 30; tick += 1) {
+        duplicated.runtime.tick();
+        root.runtime.tick();
+      }
+      const frame = published(duplicated.runtime);
+      // Only the first Base's own render slot is written, once, with its pose;
+      // the copy's slot (the guid's latest spawn) gets no entry.
+      const [baseSlot, copySlot] = duplicated.commands.flatMap((command) =>
+        command.type === "spawn" && command.actorGuid === "base" ? [command.slotId] : []);
+      const base = frame.poses.filter((entry) => entry.slotId === baseSlot);
+      expect(base).toHaveLength(1);
+      expect(slotPose(frame, copySlot)).toBeUndefined();
+      expect(base[0]!.position).toEqual({ x: 1, y: 0, z: 1 });
+      expect(base[0]!.rotation).toEqual({ x: 0, y: 0, z: 0, w: 1 });
+      const probe = slotPose(frame, duplicated.slots.get("probe"))!;
+      expect(probe.position.x).toBeCloseTo(1, 5);
+      expect(probe.position.y).toBeCloseTo(0, 5);
+      expect(probe.position.z).toBeCloseTo(3, 5);
+
+      const physics = duplicated.runtime.getPhysicsSync()!.getBackend();
+      expect(physics.sphereOverlap({ x: 1, y: 0, z: 3 }, 0.1).actorIds).toEqual(["probe"]);
+      expect(physics.sphereOverlap({ x: 5, y: 0, z: -3 }, 0.1).actorIds).toEqual([]);
+
+      const expected = slotPose(published(root.runtime), root.slots.get("agent"))!;
+      const agent = slotPose(frame, duplicated.slots.get("agent"))!;
+      expect(expected.position.x).toBeGreaterThan(-3.5);
+      for (const axis of ["x", "y", "z"] as const) {
+        expect(agent.position[axis]).toBeCloseTo(expected.position[axis], 4);
+      }
+    } finally {
+      duplicated.runtime.stop();
+      root.runtime.stop();
+    }
+  });
+
   it("publishes a burst's final tick after despawning actors removed in earlier ticks", async () => {
     const { runtime, commands, slots, despawnTicks } = await launch(scene([
       createActor("doomed", "Doomed", { classId: "Doomed" }),

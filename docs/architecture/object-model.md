@@ -2,6 +2,15 @@
 
 Shared surface for the headless runtime object graph (engineplan §5, §16). Implementation lives in `@babylonslate/object-model`. Deterministic harness lives in `@babylonslate/test-kit`.
 
+## Deformer Component
+
+- `DeformerComponent` targets one `MeshComponent` on its own actor by `targetMeshComponentId`; both primitive meshes and imported models are eligible. Exact component IDs take precedence over inherited source IDs. The first enabled cage per target wins; disabled cages do not reserve a target. It is unavailable in SceneLayers.
+- Enabled defaults off. `strength` clamps to 0–1; `resolution` is a tuple of 2–4 integer controls per axis (64 maximum). `offsets` stores XYZ offsets in target-local units, with control index `x + resolutionX * (y + resolutionY * z)`. Missing/nonfinite offsets become zero. Changing resolution resets offsets. `fitToMesh` defaults true; manual `boundsMin`/`boundsMax` default to −0.5/+0.5 and require a positive span on each axis.
+- Graph Get/Set exposes these properties. **Set Control Point Offset** accepts a control index and Vector 3, returning false for an invalid index/offset or unavailable target. **Reset Control Points** clears offsets. Both calls target the component; they do not redirect to an actor or sibling.
+- The worker sends revisioned `setActorDeformers` control snapshots, coalesces tick edits per actor and omits unchanged snapshots. It never sends or scans mesh vertices. Disabling the last cage sends an empty snapshot. Slot retirement discards retained state.
+- Serialized offset and bound coordinates clamp to ±10¹⁰ before Float32 upload, matching dynamic geometry's envelope. Set Control Point Offset rejects values outside that envelope.
+- Deformation follows model animation and material World Position Offset in the renderer. This is visual geometry: physics, navigation and CPU picking keep the original shape. GPU cost scales with affected vertices and rendering passes; the control limit is not a device performance guarantee.
+
 ## Package API (`@babylonslate/object-model`)
 
 | Export | Role |
@@ -91,6 +100,15 @@ Mid-tick `destroy` and `spawn` enqueue work. Deferred queues flush after the cur
 `World.findActor` uses an incrementally maintained GUID index, so navigation and contact dispatch lookups do not scan the actor array. The index changes when spawn/destroy commits, before lifecycle callbacks; queued spawns remain invisible and queued destroys remain visible until then. Temporary duplicate GUIDs resolve to the first actor in spawn order. Tick/snapshot iteration still uses the ordered array, and removing actors still maintains dense spawn indices.
 
 Preparation rollback uses `World.destroyActorInstance` to target the owned object rather than a reusable guid. An actor cancelled before spawn is removed from the pending queue without firing creation/destruction hooks; an already spawned actor follows normal deferred destruction. Repeated cleanup cannot destroy a later actor with the same guid. SceneLayer destruction removes the owned layer from the live registry before its destruction hooks and removes actors by identity, protecting layers/actors created reentrantly by those hooks.
+
+## Actor parent hierarchy
+
+An actor's `parentId` variable names its parent actor's guid. The runtime applies one policy (`packages/runtime/src/actor-world-transform.ts`):
+
+- **Duplicate guids resolve to the first-spawned live actor.** Live actors can share a guid (legacy saves, a replacement spawned before its predecessor leaves). Every runtime parent lookup then answers the earliest live actor, as `World.findActor` and physics do: snapshot composition, the crowd and its frame index, nav agents and obstacles, ragdolls, Behaviour Tree blackboard targets, SceneLayer focus, overlay anchors, movement and camera chains. Guid-keyed pose maps hold that actor's pose. Only it owns the guid's crowd agent, and each snapshot writes only its own render slot (spawn class and mesh), with its pose. A later duplicate's own slot gets no snapshot entry until it becomes the guid's first-spawned live actor.
+- **Exception: water.** `WaterWorld` (owned separately) keeps its last-wins guid lookup through the legacy `actorWorldTransforms` (see [physics.md](physics.md#per-tick-transform-work)).
+- **Parent cycles in loaded data are broken at load.** Main-scene realization, streamed scenes and SceneLayers check each batch once it has spawned, before readiness, Begin Play, physics or the crowd see it. A load started inside a tick on the immediate runtime only queues its actors, so the check also resolves those queued actors and orders them after every live actor. Applying links in spawn order, the link that would close a cycle (the parent link of the cycle's last-spawned member) is cleared, as a script write closing it would be refused. A streamed actor is re-rooted under its streaming actor, like an authored root of that scene; other actors lose their `parentId`. Each cleared link logs one `warning` (category `actor`) naming the actor and its former parent with their guids. Acyclic and dangling links load unchanged.
+- Class prefabs carry only component hierarchies, and scripted spawns receive fresh guids, so neither introduces actor cycles. A cycle formed later in another way, such as destroying the first of two same-guid actors so a lookup moves to the later one, still meets the resolvers' defensive cycle handling, and physics composition still throws for it.
 
 ## Snapshot (harness, not bridge)
 

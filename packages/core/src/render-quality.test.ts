@@ -10,6 +10,7 @@ import {
   applyProjectQualityPatch,
   resolveLocalLightBudget,
   normalizeRenderingQuality,
+  RENDER_QUALITY_PROFILES,
 } from "./render-quality";
 import {
   DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -141,6 +142,51 @@ describe("rendering quality sessions", () => {
     expect(low.geometry).toMatchObject({ lodDistanceScale: 0.5, preset: "low" });
     const mixed = normalizeRenderingQuality({ ...saved("ultra"), textures: saved("low").textures });
     expect(mixed.geometry).toMatchObject({ autoLod: true, lodDistanceScale: 1, preset: "medium" });
+  });
+  it("gives projects saved before Water (and before Geometry) their shared tier instead of Custom", () => {
+    const saved = (level: "low" | "high" | "ultra", ...omit: ("geometry" | "water")[]) => {
+      const quality: Record<string, unknown> = { ...normalizeRenderingQuality(qualityPresetPatch(level)) };
+      for (const group of omit) delete quality[group];
+      return quality;
+    };
+    const overall = (quality: unknown) => {
+      const effective = resolveRenderingQuality({ quality: normalizeRenderingQuality(quality) });
+      return QUALITY_GROUPS.filter((group) => group !== "shadows").map((group) => qualityGroupLabel(effective, group));
+    };
+    const beforeWater = normalizeRenderingQuality(saved("ultra", "water"));
+    expect(beforeWater.water).toEqual({ ...RENDER_QUALITY_PROFILES.ultra.water, profile: "ultra", preset: "ultra" });
+    expect(new Set(overall(saved("ultra", "water")))).toEqual(new Set(["ultra"]));
+    const beforeGeometry = normalizeRenderingQuality(saved("low", "geometry", "water"));
+    expect(beforeGeometry.geometry.preset).toBe("low");
+    expect(beforeGeometry.water).toMatchObject({ shadingDetail: "low", refraction: false, preset: "low" });
+    expect(new Set(overall(saved("low", "geometry", "water")))).toEqual(new Set(["low"]));
+    // A saved Geometry group that targeted another tier means the project had no shared tier.
+    const mixed = normalizeRenderingQuality({ ...saved("high", "water"), geometry: saved("low").geometry });
+    expect(mixed.water).toMatchObject({ ...RENDER_QUALITY_PROFILES.medium.water, preset: "medium" });
+  });
+  it("fills water fields added by later releases from the saved water tier, not Medium", () => {
+    const { profile, preset, shadingDetail, refraction } = qualityPresetPatch("high").water!;
+    const quality = normalizeRenderingQuality({ water: { profile, preset, shadingDetail, refraction, reflections: "mirror" } });
+    expect(quality.water).toEqual({ ...RENDER_QUALITY_PROFILES.high.water, profile: "high", preset: "high" });
+    const low = normalizeRenderingQuality({ water: { profile: "low", meshDensity: 9, fftSize: 100, reflectionSteps: 3.6, contactResolution: 300.4 } });
+    expect(low.water).toMatchObject({ meshDensity: 1.5, fftSize: 128, reflectionSteps: 4, contactResolution: 300, refraction: false, preset: "custom" });
+  });
+  it("sets, rejects and resets individual water settings from the console", () => {
+    const session = new RenderingQualitySession();
+    expect(session.execute("water", "refraction", "off").success).toBe(true);
+    expect(session.execute("water", "reflections", "screenspace").success).toBe(true);
+    expect(session.execute("water", "fftSize", "256").success).toBe(true);
+    expect(session.execute("water", "meshDensity", "1.25").success).toBe(true);
+    expect(session.effective().water).toMatchObject({
+      refraction: false, reflections: "screenSpace", fftSize: 256, meshDensity: 1.25, preset: "custom",
+    });
+    for (const [field, value] of [["fftSize", "100"], ["reflectionSteps", "3.5"], ["meshDensity", "2"],
+      ["reflections", "mirror"], ["fft", "yes"], ["contactResolution", "128"], ["octaves", "3"], ["meshDensity", ""]])
+      expect(session.execute("water", field, value).success).toBe(false);
+    expect(session.execute("geometry", "meshDensity", "1").success).toBe(false);
+    expect(session.effective().water).toMatchObject({ fftSize: 256, meshDensity: 1.25, contactResolution: 512 });
+    session.execute("water", "reset");
+    expect(session.effective().water).toMatchObject({ ...RENDER_QUALITY_PROFILES.medium.water, preset: "medium" });
   });
   it("switches automatic LOD and its distance scale from the console", () => {
     const session = new RenderingQualitySession();

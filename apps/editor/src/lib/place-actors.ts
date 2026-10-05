@@ -759,6 +759,9 @@ export function duplicateSceneActor(
     ...component,
     id: componentIds.get(component.id)!,
     ...(component.parentId ? { parentId: componentIds.get(component.parentId) ?? component.parentId } : {}),
+    ...(component.classId === "DeformerComponent" && typeof component.properties.targetMeshComponentId === "string"
+      ? { properties: { ...component.properties, targetMeshComponentId:
+        componentIds.get(component.properties.targetMeshComponentId) ?? component.properties.targetMeshComponentId } } : {}),
     ...(component.classId === "CableComponent" && (!component.properties.targetActorId || component.properties.targetActorId === source.id)
       ? { properties: {
         ...component.properties,

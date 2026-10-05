@@ -27,8 +27,12 @@ import { distanceTransform, type WaterFieldSurface } from "./water-field";
  */
 export const WATER_CONTACT_LAYER_OFFSETS: readonly number[] = [-1, -1 / 3, 1 / 3, 1];
 const LAYERS = WATER_CONTACT_LAYER_OFFSETS.length;
-/** Texels per side; beyond this the cells grow rather than the texture. */
+/**
+ * Most texels per side (the Contact Resolution cap, `WaterFieldSurface.contactCells`); beyond it the cells grow
+ * rather than the texture.
+ */
 const MAX_CELLS = 1024;
+const MIN_CELLS = 64;
 const MIN_CELL = 0.06;
 const MAX_TARGET_CELL = 0.25;
 /** Scene scans for added, removed and re-enabled objects. */
@@ -153,6 +157,8 @@ export class WaterContactField {
   private width = 0;
   private height = 0;
   private cell = 1;
+  /** Texels per side this surface may use (Contact Resolution). */
+  private maxCells = MAX_CELLS;
   private rect: Rect | null = null;
   private readonly pieces = new Map<string, Piece>();
   private readonly thin = new Map<Mesh, ThinPlacements>();
@@ -162,7 +168,7 @@ export class WaterContactField {
   private dirty: Rect[] = [];
   private lastScan = -Infinity;
   private lastBuild = -Infinity;
-  private readonly surfaceState = new Float64Array(18).fill(NaN);
+  private readonly surfaceState = new Float64Array(19).fill(NaN);
   private readonly scratch = new Matrix();
 
   private readonly scene: Scene;
@@ -187,17 +193,18 @@ export class WaterContactField {
   }
 
   /**
-   * True when the surface placement, wave envelope or contact range changed. Reshaping a body
+   * True when the surface placement, wave envelope, contact range or cell cap changed. Reshaping a body
    * forces an update instead, so animated wave bounds never trigger a rebuild.
    */
   private syncSurface(): boolean {
     const amplitude = Math.max(0.01, this.surface.amplitude), range = this.surface.contactRange;
+    const cells = Math.max(MIN_CELLS, Math.min(MAX_CELLS, Math.round(this.surface.contactCells ?? MAX_CELLS) || MAX_CELLS));
     const state = this.surfaceState, m = this.surface.mesh.getWorldMatrix().m;
     let changed = false;
     const set = (i: number, value: number) => { if (state[i] !== value) { state[i] = value; changed = true; } };
     for (let i = 0; i < 16; i++) set(i, m[i]!);
-    set(16, amplitude); set(17, range);
-    this.amplitude = amplitude; this.range = range;
+    set(16, amplitude); set(17, range); set(18, cells);
+    this.amplitude = amplitude; this.range = range; this.maxCells = cells;
     return changed;
   }
 
@@ -447,11 +454,13 @@ export class WaterContactField {
     const target = Math.max(MIN_CELL, Math.min(MAX_TARGET_CELL, this.range / 24));
     const margin = this.range + 2 * target;
     const needed = { minX: reach.minX - margin, minZ: reach.minZ - margin, maxX: reach.maxX + margin, maxZ: reach.maxZ + margin };
-    // Widely spread objects coarsen the cells in doublings, so small moves keep the allocation.
-    const spread = Math.max(needed.maxX - needed.minX, needed.maxZ - needed.minZ) / (MAX_CELLS * target);
+    // Widely spread objects coarsen the cells in doublings, so small moves keep the allocation. Snapping to 16-cell
+    // blocks adds under 32 cells per side, so the cap leaves room for it.
+    const spread = Math.max(needed.maxX - needed.minX, needed.maxZ - needed.minZ) / ((this.maxCells - 32) * target);
     const cell = target * (spread > 1 ? 2 ** Math.ceil(Math.log2(spread)) : 1);
     const current = this.rect;
-    const fits = current && this.cell === cell && current.minX <= needed.minX && current.minZ <= needed.minZ && current.maxX >= needed.maxX && current.maxZ >= needed.maxZ
+    const fits = current && this.cell === cell && Math.max(this.width, this.height) <= this.maxCells
+      && current.minX <= needed.minX && current.minZ <= needed.minZ && current.maxX >= needed.maxX && current.maxZ >= needed.maxZ
       // Release most of an oversized field once objects leave.
       && (current.maxX - current.minX) * (current.maxZ - current.minZ) <= 4 * (needed.maxX - needed.minX + 16 * cell) * (needed.maxZ - needed.minZ + 16 * cell);
     if (!fits) { this.allocate(needed, cell); full = true; }

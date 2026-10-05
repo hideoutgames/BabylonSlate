@@ -18,6 +18,7 @@ export const ENGINE_COMPONENT_DESCRIPTORS = [
   { classId: "AreaRectLightComponent", placement: "world" },
   { classId: "FogVolumeComponent", placement: "world" },
   { classId: "OutlineComponent", placement: "world" },
+  { classId: "DeformerComponent", placement: "world" },
   { classId: "HemisphericFillLightComponent", placement: "world" },
   { classId: "SkyboxComponent", placement: "world" },
   { classId: "Text3DComponent", placement: "any" },

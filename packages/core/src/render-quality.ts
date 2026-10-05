@@ -15,6 +15,7 @@ export type QualityGroup =
   | "resolution"
   | "textures"
   | "geometry"
+  | "water"
   | "postprocessing"
   | "lighting";
 export const QUALITY_GROUPS: readonly QualityGroup[] = [
@@ -22,6 +23,7 @@ export const QUALITY_GROUPS: readonly QualityGroup[] = [
   "resolution",
   "textures",
   "geometry",
+  "water",
   "postprocessing",
   "lighting",
 ];
@@ -49,6 +51,93 @@ export interface GeometryQuality extends QualitySelection {
 }
 export const LOD_DISTANCE_SCALE_MIN = 0.25;
 export const LOD_DISTANCE_SCALE_MAX = 4;
+/** Shader terms compiled into built-in water; one level per project tier. */
+export type WaterShadingDetail = "low" | "medium" | "high" | "ultra";
+export const WATER_SHADING_DETAILS: readonly WaterShadingDetail[] = ["low", "medium", "high", "ultra"];
+/** sky = environment only; screenSpace marches the scene copy; planar mirrors flat bodies. */
+export type WaterReflectionMode = "sky" | "screenSpace" | "planar";
+export const WATER_REFLECTION_MODES: readonly WaterReflectionMode[] = ["sky", "screenSpace", "planar"];
+/**
+ * Render-only water cost caps. Physics never reads these: buoyancy and surface
+ * queries sample the same analytic waves on every tier and device.
+ */
+export interface WaterQuality extends QualitySelection {
+  /** SLATE_WATER_QUALITY 0..3 (shader terms per tier). */
+  shadingDetail: WaterShadingDetail;
+  /** Multiplies each body's Surface Resolution; hard vertex caps still apply. */
+  meshDensity: number;
+  /** Contact-field cells per side (cap). */
+  contactResolution: number;
+  /** Scene colour + depth copy after opaques (frame-graph path only). */
+  refraction: boolean;
+  /** Scene copy resolution scale; the copy also feeds screen-space reflections. */
+  refractionScale: number;
+  reflections: WaterReflectionMode;
+  /** Screen-space march steps (compile-time define). */
+  reflectionSteps: number;
+  /** Planar reflection target scale. */
+  planarScale: number;
+  /** GPU FFT detail band (render-only). */
+  fft: boolean;
+  /** FFT grid size per cascade: 64, 128 or 256. */
+  fftSize: number;
+  fftCascades: number;
+}
+export const WATER_MESH_DENSITY_MIN = 0.5;
+export const WATER_MESH_DENSITY_MAX = 1.5;
+export const WATER_CONTACT_RESOLUTION_MIN = 256;
+export const WATER_CONTACT_RESOLUTION_MAX = 1024;
+/** Bounds shared by refractionScale and planarScale. */
+export const WATER_TARGET_SCALE_MIN = 0.25;
+export const WATER_TARGET_SCALE_MAX = 1;
+export const WATER_REFLECTION_STEPS_MIN = 4;
+export const WATER_REFLECTION_STEPS_MAX = 32;
+export const WATER_FFT_SIZES = [64, 128, 256] as const;
+export const WATER_FFT_CASCADES_MIN = 1;
+export const WATER_FFT_CASCADES_MAX = 3;
+export type WaterQualityField = Exclude<keyof WaterQuality, keyof QualitySelection>;
+// A Record keeps the list complete when WaterQuality gains a field.
+const WATER_QUALITY_FIELD_SET: Record<WaterQualityField, true> = {
+  shadingDetail: true, meshDensity: true, contactResolution: true, refraction: true, refractionScale: true,
+  reflections: true, reflectionSteps: true, planarScale: true, fft: true, fftSize: true, fftCascades: true,
+};
+/** Every value field, in display order; also the console names for `quality water <field> <value>`. */
+export const WATER_QUALITY_FIELDS = Object.keys(WATER_QUALITY_FIELD_SET) as readonly WaterQualityField[];
+/** Strict console parsing: out-of-range or non-integer values are rejected, never clamped. */
+export function parseWaterQualitySetting(field: string, value: string): Partial<WaterQuality> | undefined {
+  const lower = value.toLowerCase();
+  const numeric = value.trim() === "" ? NaN : Number(value);
+  const within = (min: number, max: number, integer = false) =>
+    Number.isFinite(numeric) && numeric >= min && numeric <= max && (!integer || Number.isInteger(numeric));
+  switch (field as WaterQualityField) {
+    case "shadingDetail": {
+      const detail = WATER_SHADING_DETAILS.find((entry) => entry === lower);
+      return detail ? { shadingDetail: detail } : undefined;
+    }
+    case "reflections": {
+      const mode = WATER_REFLECTION_MODES.find((entry) => entry.toLowerCase() === lower);
+      return mode ? { reflections: mode } : undefined;
+    }
+    case "refraction":
+    case "fft":
+      return lower === "on" || lower === "off" ? { [field]: lower === "on" } : undefined;
+    case "meshDensity":
+      return within(WATER_MESH_DENSITY_MIN, WATER_MESH_DENSITY_MAX) ? { meshDensity: numeric } : undefined;
+    case "contactResolution":
+      return within(WATER_CONTACT_RESOLUTION_MIN, WATER_CONTACT_RESOLUTION_MAX, true) ? { contactResolution: numeric } : undefined;
+    case "refractionScale":
+    case "planarScale":
+      return within(WATER_TARGET_SCALE_MIN, WATER_TARGET_SCALE_MAX) ? { [field]: numeric } : undefined;
+    case "reflectionSteps":
+      return within(WATER_REFLECTION_STEPS_MIN, WATER_REFLECTION_STEPS_MAX, true) ? { reflectionSteps: numeric } : undefined;
+    case "fftSize":
+      return (WATER_FFT_SIZES as readonly number[]).includes(numeric) ? { fftSize: numeric } : undefined;
+    case "fftCascades":
+      return within(WATER_FFT_CASCADES_MIN, WATER_FFT_CASCADES_MAX, true) ? { fftCascades: numeric } : undefined;
+    default:
+      return undefined;
+  }
+}
 export interface PostProcessingQuality extends QualitySelection {
   resolutionScale: number;
 }
@@ -60,6 +149,7 @@ export interface RenderingQuality {
   resolution: ResolutionQuality;
   textures: TextureQuality;
   geometry: GeometryQuality;
+  water: WaterQuality;
   postprocessing: PostProcessingQuality;
   lighting: LightingQuality;
 }
@@ -89,6 +179,11 @@ export const RENDER_QUALITY_PROFILES: Record<QualityLevel, RenderingQuality> = {
     resolution: { scale: 0.75, dynamic: true, minScale: 0.5, targetFps: 60 },
     textures: { lodBias: 1, anisotropy: 2, byteBudget: 256 * MIB },
     geometry: { autoLod: true, lodDistanceScale: 0.5 },
+    water: {
+      shadingDetail: "low", meshDensity: 0.5, contactResolution: 256,
+      refraction: false, refractionScale: 0.5, reflections: "sky", reflectionSteps: 8,
+      planarScale: 0.5, fft: false, fftSize: 64, fftCascades: 1,
+    },
     postprocessing: { resolutionScale: 0.5 },
   },
   medium: {
@@ -96,6 +191,11 @@ export const RENDER_QUALITY_PROFILES: Record<QualityLevel, RenderingQuality> = {
     resolution: { scale: 1, dynamic: true, minScale: 0.75, targetFps: 60 },
     textures: { lodBias: 0, anisotropy: 4, byteBudget: 512 * MIB },
     geometry: { autoLod: true, lodDistanceScale: 1 },
+    water: {
+      shadingDetail: "medium", meshDensity: 0.75, contactResolution: 512,
+      refraction: true, refractionScale: 0.5, reflections: "sky", reflectionSteps: 8,
+      planarScale: 0.5, fft: false, fftSize: 64, fftCascades: 1,
+    },
     postprocessing: { resolutionScale: 0.75 },
   },
   high: {
@@ -103,6 +203,11 @@ export const RENDER_QUALITY_PROFILES: Record<QualityLevel, RenderingQuality> = {
     resolution: { scale: 1, dynamic: true, minScale: 0.75, targetFps: 60 },
     textures: { lodBias: 0, anisotropy: 8, byteBudget: 1024 * MIB },
     geometry: { autoLod: true, lodDistanceScale: 1.5 },
+    water: {
+      shadingDetail: "high", meshDensity: 1, contactResolution: 1024,
+      refraction: true, refractionScale: 0.75, reflections: "screenSpace", reflectionSteps: 16,
+      planarScale: 0.5, fft: true, fftSize: 128, fftCascades: 2,
+    },
     postprocessing: { resolutionScale: 1 },
   },
   ultra: {
@@ -110,6 +215,11 @@ export const RENDER_QUALITY_PROFILES: Record<QualityLevel, RenderingQuality> = {
     resolution: { scale: 1, dynamic: false, minScale: 1, targetFps: 60 },
     textures: { lodBias: 0, anisotropy: 16, byteBudget: 2048 * MIB },
     geometry: { autoLod: true, lodDistanceScale: 2 },
+    water: {
+      shadingDetail: "ultra", meshDensity: 1.5, contactResolution: 1024,
+      refraction: true, refractionScale: 1, reflections: "planar", reflectionSteps: 24,
+      planarScale: 0.75, fft: true, fftSize: 256, fftCascades: 3,
+    },
     postprocessing: { resolutionScale: 1 },
   },
 };
@@ -137,15 +247,17 @@ export function normalizeRenderingQuality(value: unknown): RenderingQuality {
       ? (value as Partial<RenderingQuality>)
       : {};
   const defaults = RENDER_QUALITY_PROFILES.medium;
-  // Projects saved before Geometry existed follow their other groups' shared tier.
-  const savedProfiles = [source.resolution, source.textures, source.postprocessing, source.lighting]
-    .map((group) => group?.profile)
-    .filter(isQualityLevel);
-  const inheritedGeometry = !source.geometry && savedProfiles.length === 4 &&
-    savedProfiles.every((profile) => profile === savedProfiles[0])
-    ? { ...RENDER_QUALITY_PROFILES[savedProfiles[0]!].geometry, profile: savedProfiles[0] }
-    : undefined;
-  const geometry: Partial<GeometryQuality> | undefined = source.geometry ?? inheritedGeometry;
+  // Projects saved before a group existed follow their other groups' shared tier.
+  const legacyGroups = [source.resolution, source.textures, source.postprocessing, source.lighting];
+  const geometryTier = source.geometry ? undefined : sharedQualityTier(legacyGroups);
+  const geometry: Partial<GeometryQuality> | undefined = source.geometry ??
+    (geometryTier ? { ...RENDER_QUALITY_PROFILES[geometryTier].geometry, profile: geometryTier } : undefined);
+  const savedWater = isRecord(source.water) ? (source.water as Partial<WaterQuality>) : undefined;
+  const waterTier = savedWater
+    ? undefined
+    : sharedQualityTier(source.geometry ? [...legacyGroups, source.geometry] : legacyGroups);
+  const water = savedWater ??
+    (waterTier ? { ...RENDER_QUALITY_PROFILES[waterTier].water, profile: waterTier } : undefined);
   const finite = (n: unknown, fallback: number, min: number, max: number) =>
     typeof n === "number" && Number.isFinite(n)
       ? Math.min(max, Math.max(min, n))
@@ -199,6 +311,7 @@ export function normalizeRenderingQuality(value: unknown): RenderingQuality {
         LOD_DISTANCE_SCALE_MAX,
       ),
     },
+    water: normalizeWaterQuality(water),
     postprocessing: {
       ...selection(source.postprocessing),
       resolutionScale: finite(
@@ -221,12 +334,60 @@ export function normalizeRenderingQuality(value: unknown): RenderingQuality {
     "resolution",
     "textures",
     "geometry",
+    "water",
     "postprocessing",
     "lighting",
   ] as const) {
     normalized[group].preset = qualityValueLabel(normalized[group], group);
   }
   return normalized;
+}
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+/** The tier every listed group last targeted, or undefined when any differs or is missing. */
+function sharedQualityTier(
+  groups: readonly (QualitySelection | undefined)[],
+): QualityLevel | undefined {
+  const first = groups[0]?.profile;
+  return isQualityLevel(first) && groups.every((group) => group?.profile === first)
+    ? first
+    : undefined;
+}
+function snapWaterFftSize(value: number): number {
+  return WATER_FFT_SIZES.reduce((best, size) =>
+    Math.abs(Math.log2(size / value)) < Math.abs(Math.log2(best / value)) ? size : best);
+}
+/**
+ * Missing or invalid fields take the saved profile's tier (never plain Medium),
+ * so fields added by later releases keep a saved Low/High/Ultra group labelled.
+ */
+function normalizeWaterQuality(source: Partial<WaterQuality> | undefined): WaterQuality {
+  const tier = RENDER_QUALITY_PROFILES[isQualityLevel(source?.profile) ? source.profile : "medium"].water;
+  const number = (key: "meshDensity" | "contactResolution" | "refractionScale" | "reflectionSteps" | "planarScale" | "fftSize" | "fftCascades", min: number, max: number) => {
+    const value = source?.[key];
+    return typeof value === "number" && Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : tier[key];
+  };
+  const flag = (key: "refraction" | "fft") =>
+    typeof source?.[key] === "boolean" ? source[key] : tier[key];
+  return {
+    ...selection(source),
+    shadingDetail: WATER_SHADING_DETAILS.includes(source?.shadingDetail as WaterShadingDetail)
+      ? source!.shadingDetail!
+      : tier.shadingDetail,
+    meshDensity: number("meshDensity", WATER_MESH_DENSITY_MIN, WATER_MESH_DENSITY_MAX),
+    contactResolution: Math.round(number("contactResolution", WATER_CONTACT_RESOLUTION_MIN, WATER_CONTACT_RESOLUTION_MAX)),
+    refraction: flag("refraction"),
+    refractionScale: number("refractionScale", WATER_TARGET_SCALE_MIN, WATER_TARGET_SCALE_MAX),
+    reflections: WATER_REFLECTION_MODES.includes(source?.reflections as WaterReflectionMode)
+      ? source!.reflections!
+      : tier.reflections,
+    reflectionSteps: Math.round(number("reflectionSteps", WATER_REFLECTION_STEPS_MIN, WATER_REFLECTION_STEPS_MAX)),
+    planarScale: number("planarScale", WATER_TARGET_SCALE_MIN, WATER_TARGET_SCALE_MAX),
+    fft: flag("fft"),
+    fftSize: snapWaterFftSize(number("fftSize", WATER_FFT_SIZES[0], WATER_FFT_SIZES[WATER_FFT_SIZES.length - 1]!)),
+    fftCascades: Math.round(number("fftCascades", WATER_FFT_CASCADES_MIN, WATER_FFT_CASCADES_MAX)),
+  };
 }
 function mergeQualityValues<T extends QualitySelection>(
   base: T,
@@ -267,6 +428,7 @@ export function resolveRenderingQuality(
       resolution: mergeQualityValues(base.resolution, session.resolution),
       textures: mergeQualityValues(base.textures, session.textures),
       geometry: mergeQualityValues(base.geometry, session.geometry),
+      water: mergeQualityValues(base.water, session.water),
       postprocessing: mergeQualityValues(
         base.postprocessing,
         session.postprocessing,
@@ -293,6 +455,7 @@ export function qualityPresetPatch(
     resolution: { ...profile.resolution, profile: level, preset: level },
     textures: { ...profile.textures, profile: level, preset: level },
     geometry: { ...profile.geometry, profile: level, preset: level },
+    water: { ...profile.water, profile: level, preset: level },
     postprocessing: {
       ...profile.postprocessing,
       profile: level,
@@ -417,7 +580,15 @@ export class RenderingQualitySession {
       };
     } else if (choice !== undefined) {
       const numeric = value === undefined ? NaN : Number(value);
-      if (
+      const water = group === "water" && value !== undefined
+        ? parseWaterQualitySetting(choice, value)
+        : undefined;
+      if (water)
+        this.overrides = {
+          ...this.overrides,
+          water: { ...this.overrides.water, ...water },
+        };
+      else if (
         group === "lighting" &&
         choice === "budget" &&
         (value === "auto" || (Number.isSafeInteger(numeric) && numeric >= 0))

@@ -16,6 +16,8 @@ export const SCALABILITY_ENUMS: EngineEnum[] = [
   enumeration("CelLightMixing", ["strongest", "additive", "blend"]),
   enumeration("ToneMapping", ["none", "standard", "aces", "neutral"]),
   enumeration("ColorPipeline", ["legacyDisplay", "sceneLinear"]),
+  enumeration("WaterShadingDetail", ["low", "medium", "high", "ultra"]),
+  enumeration("WaterReflectionMode", ["sky", "screenSpace", "planar"]),
 ];
 const field = (name: string, typeId: string, defaultValue?: unknown, typeClassId?: string): StructField =>
   ({ name, typeId, ...(defaultValue !== undefined ? { defaultValue } : {}), ...(typeClassId ? { typeClassId: `engine:${typeClassId}` } : {}) });
@@ -30,6 +32,11 @@ export const SCALABILITY_STRUCTS: EngineStruct[] = [
   define("ResolutionQuality", [number("scale", 1), bool("dynamic", true), number("minScale", 0.75), number("targetFps", 60)]),
   define("TextureQuality", [number("lodBias", 0), number("anisotropy", 4), number("byteBudget", 512 * 1024 ** 2)]),
   define("GeometryQuality", [bool("autoLod", true), number("lodDistanceScale", 1)]),
+  // Defaults equal the Medium tier; normalization rounds integer fields and snaps FFT Size.
+  define("WaterQuality", [choice("shadingDetail", "WaterShadingDetail", "medium"), number("meshDensity", 0.75),
+    number("contactResolution", 512), bool("refraction", true), number("refractionScale", 0.5),
+    choice("reflections", "WaterReflectionMode", "sky"), number("reflectionSteps", 8), number("planarScale", 0.5),
+    bool("fft", false), number("fftSize", 64), number("fftCascades", 1)]),
   define("PostProcessingQuality", [number("resolutionScale", 0.75)]),
   define("LightingQuality", [choice("localLightMode", "LightBudgetMode", "auto"), number("maxLocalLights", 16)]),
   define("ShadowQuality", [bool("enabled", true), number("distance", 200), number("fadeFraction", 0.1), number("mapSize", 2048),
@@ -47,7 +54,8 @@ export const SCALABILITY_STRUCTS: EngineStruct[] = [
   define("RenderEffects", [structure("colorPipeline", "ColorPipelineSettings"), choice("toneMapping", "ToneMapping", "none"), number("exposure", 1),
     number("contrast", 1), structure("vignette", "VignetteSettings"), structure("bloom", "BloomSettings"), bool("fxaa", false)]),
   define("RenderingQuality", [structure("resolution", "ResolutionQuality"), structure("textures", "TextureQuality"),
-    structure("geometry", "GeometryQuality"), structure("lighting", "LightingQuality"), structure("postprocessing", "PostProcessingQuality")]),
+    structure("geometry", "GeometryQuality"), structure("water", "WaterQuality"), structure("lighting", "LightingQuality"),
+    structure("postprocessing", "PostProcessingQuality")]),
   define("RenderSettings", [choice("renderPath", "RenderPath", "forward"), choice("gpuBackend", "GpuBackend", "webgl2"), choice("mode", "RenderMode", "pbr"),
     structure("quality", "RenderingQuality"), structure("shadows", "ShadowQuality"), structure("cel", "CelShading"), structure("effects", "RenderEffects"),
     structure("environmentLighting", "EnvironmentLighting"), bool("customResolution", false), number("width", 1920), number("height", 1080), bool("blackBars", false)]),

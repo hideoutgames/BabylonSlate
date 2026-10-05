@@ -24,6 +24,7 @@ export type ClassMemberSymbol = {
   overrides?: { classId: string; name: string };
   componentId?: string;
   propertyKey?: string;
+  getOnly?: boolean;
   runtime?: string;
 };
 

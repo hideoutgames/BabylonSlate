@@ -499,14 +499,15 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
         const bodyA = this.bodies.get(colliderA.desc.bodyId);
         const bodyB = this.bodies.get(colliderB.desc.bodyId);
         if (!bodyA || !bodyB || bodyA === bodyB) continue;
-        if (bodyA.desc.actorId === bodyB.desc.actorId) continue;
+        // Contacts name each shape's owner, including hosted child shapes.
+        let actorAId = colliderA.desc.actorId ?? bodyA.desc.actorId;
+        let actorBId = colliderB.desc.actorId ?? bodyB.desc.actorId;
+        if (actorAId === actorBId) continue;
         const boxA = aabbForCollider(colliderA.desc, bodyA.transform);
         const boxB = aabbForCollider(colliderB.desc, bodyB.transform);
         if (!aabbOverlap(boxA, boxB)) continue;
         const centerA = aabbCenter(boxA);
         const centerB = aabbCenter(boxB);
-        let actorAId = bodyA.desc.actorId;
-        let actorBId = bodyB.desc.actorId;
         let colliderAId = colliderA.desc.id;
         let colliderBId = colliderB.desc.id;
         const location = {
@@ -651,7 +652,9 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
     let best: HitResult = miss();
     for (const collider of this.colliders.values()) {
       const body = this.bodies.get(collider.desc.bodyId);
-      if (!body || ignored.has(body.desc.actorId) || (options?.includeTriggers === false && collider.desc.isTrigger)) continue;
+      if (!body) continue;
+      const actorId = collider.desc.actorId ?? body.desc.actorId;
+      if (ignored.has(actorId) || (options?.includeTriggers === false && collider.desc.isTrigger)) continue;
       const box = aabbForCollider(collider.desc, body.transform);
       const intersection = rayAabb(start, dir, box.min, box.max);
       if (!intersection) continue;
@@ -668,7 +671,7 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
         location,
         normal: intersection.normal,
         distance: Math.hypot(dir.x, dir.y, dir.z) * t,
-        actorId: body.desc.actorId,
+        actorId,
         bodyId: body.desc.id,
       };
     }
@@ -681,7 +684,9 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
     const bodyIds: string[] = [];
     for (const collider of this.colliders.values()) {
       const body = this.bodies.get(collider.desc.bodyId);
-      if (!body || ignored.has(body.desc.actorId) || (options?.includeTriggers === false && collider.desc.isTrigger)) continue;
+      if (!body) continue;
+      const actorId = collider.desc.actorId ?? body.desc.actorId;
+      if (ignored.has(actorId) || (options?.includeTriggers === false && collider.desc.isTrigger)) continue;
       const box = aabbForCollider(collider.desc, body.transform);
       const cx = Math.max(box.min.x, Math.min(center.x, box.max.x));
       const cy = Math.max(box.min.y, Math.min(center.y, box.max.y));
@@ -690,7 +695,7 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
       const dy = center.y - cy;
       const dz = center.z - cz;
       if (dx * dx + dy * dy + dz * dz <= radius * radius) {
-        actorIds.push(body.desc.actorId);
+        actorIds.push(actorId);
         bodyIds.push(body.desc.id);
       }
     }
@@ -745,7 +750,9 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
     // Discrete graph events can request a displacement before the first tick.
     const inverseDt = dt > 0 ? 1 / dt : 0;
     const before = { ...body.transform.position };
-    const self = [...this.colliders.values()].find((c) => c.desc.bodyId === body.desc.id && !c.desc.isTrigger);
+    // The controller's own shape, never a child shape that the body hosts.
+    const self = [...this.colliders.values()].find((c) => c.desc.bodyId === body.desc.id && !c.desc.isTrigger &&
+      (c.desc.actorId ?? body.desc.actorId) === body.desc.actorId);
     const obstacles = [...this.colliders.values()].flatMap((c) => {
       const other = this.bodies.get(c.desc.bodyId);
       if (!self || !other || c.desc.bodyId === body.desc.id || c.desc.isTrigger ||

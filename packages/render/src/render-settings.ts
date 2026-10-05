@@ -21,12 +21,18 @@ import {
   type EnvironmentLightingOverrides,
   normalizeRenderEffectsSettings,
   type RenderEffectsSettings,
+  WATER_QUALITY_FIELDS,
+  type WaterQuality,
 } from "@babylonslate/core";
+import { ColorGradingSource } from "./color-grading";
+import type { MeshAssetContext } from "./mesh-assets";
 import {
   planSceneEffects,
   sceneEffectsKey,
   type SceneEffectsPlan,
 } from "./scene-effects";
+import { markSceneReadinessDirty } from "./scene-readiness-signal";
+import { clampWaterQualityToDevice, type WaterQualityDeviceClamp } from "./water-quality-device";
 
 export type RenderShadingSettings = Partial<
   Pick<RenderProjectSettings, "mode" | "cel" | "shadows" | "quality" | "environmentLighting" | "renderPath" | "gpuBackend" | "effects">
@@ -42,6 +48,14 @@ type SceneRendering = {
   /** Automatic Model LOD selection; false keeps every model on full detail. */
   autoLod: boolean;
   lodDistanceScale: number;
+  /** Resolved Water quality values (no preset metadata); replaced only on a real change. */
+  water: Readonly<WaterQuality>;
+  /** Process-unique, so a Scene that starts following another never reuses a stale value. */
+  waterRevision: number;
+  /** Device clamp of one revision and colour pipeline (Scene Linear changes which reflections a device can draw). */
+  waterDevice: { revision: number; sceneLinear: boolean; clamp: WaterQualityDeviceClamp } | null;
+  /** Scenes (such as SceneLayers) resolving their quality through this Scene. */
+  followers: Set<Scene>;
   localLightBudget: number;
   cel: CelShadingSettings;
   project: RenderShadingSettings;
@@ -55,6 +69,9 @@ type SceneRendering = {
   effectsEnabled: boolean;
   /** Local components request the shared fog pass without changing project settings. */
   fogVolumesPresent: boolean;
+  /** Loads the requested LUT asset; only a ready texture enters the plan. */
+  colorGrading: ColorGradingSource;
+  colorGradingTexture: BaseTexture | null;
   /** Baked identity of the live effects settings; rebuilt only on a settings
    * change so per-frame readiness probes never serialize the block again. */
   effectsKey: string;
@@ -63,6 +80,15 @@ type SceneRendering = {
   listeners: Set<(mode: RenderMode) => void>;
 };
 const scenes = new WeakMap<Scene, SceneRendering>();
+/** Scenes whose project quality resolves through another Scene (SceneLayers follow the world). */
+const settingsOwners = new WeakMap<Scene, Scene>();
+let waterRevisions = 0;
+
+function waterQualityValues(quality: Readonly<WaterQuality>): Readonly<WaterQuality> {
+  const values: Record<string, unknown> = {};
+  for (const field of WATER_QUALITY_FIELDS) values[field] = quality[field];
+  return Object.freeze(values as unknown as WaterQuality);
+}
 
 /** Render targets own their sampling contract (notably hardware shadow PCF). */
 export function applyMaterialTextureAnisotropy(texture: BaseTexture, level: number): void {
@@ -76,6 +102,7 @@ export function sceneRenderingSettings(scene: Scene): SceneRendering {
   let state = scenes.get(scene);
   if (!state) {
     const effects = normalizeRenderEffectsSettings(undefined);
+    const quality = resolveRenderingQuality();
     state = {
       mode: "pbr",
       qualityOverrides: {},
@@ -84,27 +111,40 @@ export function sceneRenderingSettings(scene: Scene): SceneRendering {
       lightsDebug: false,
       textureLodBias: 0,
       textureAnisotropy: 4,
-      autoLod: resolveRenderingQuality().geometry.autoLod,
-      lodDistanceScale: resolveRenderingQuality().geometry.lodDistanceScale,
-      localLightBudget: resolveLocalLightBudget(resolveRenderingQuality().lighting),
+      autoLod: quality.geometry.autoLod,
+      lodDistanceScale: quality.geometry.lodDistanceScale,
+      water: waterQualityValues(quality.water),
+      waterRevision: ++waterRevisions,
+      waterDevice: null,
+      followers: new Set(),
+      localLightBudget: resolveLocalLightBudget(quality.lighting),
       cel: normalizeCelShadingSettings(undefined),
       project: {},
       overrides: {},
-      shadows: resolveRenderingQuality().shadows,
+      shadows: quality.shadows,
       shadowOverrides: {},
       environmentLighting: normalizeEnvironmentLightingSettings(undefined),
       environmentOverrides: {},
       effects,
       effectsEnabled: true,
       fogVolumesPresent: false,
+      colorGrading: undefined as unknown as ColorGradingSource,
+      colorGradingTexture: null,
       effectsKey: sceneEffectsKey(effects, "pbr", true),
       effectsPlan: planSceneEffects(effects, "pbr", true),
       listeners: new Set(),
     };
     scenes.set(scene, state);
     const owned = state;
+    owned.colorGrading = new ColorGradingSource(scene, (texture) => {
+      owned.colorGradingTexture = texture;
+      replanSceneEffects(owned);
+    });
     scene.onDisposeObservable.addOnce(() => {
+      owned.colorGrading.dispose();
       owned.listeners.clear();
+      for (const follower of owned.followers) settingsOwners.delete(follower);
+      owned.followers.clear();
       scenes.delete(scene);
     });
   }
@@ -131,6 +171,7 @@ export function updateSceneRenderingSettings(
   state.textureLodBias = quality.textures.lodBias;
   state.autoLod = quality.geometry.autoLod;
   state.lodDistanceScale = quality.geometry.lodDistanceScale;
+  syncWaterQuality(scene, state, quality.water);
   state.textureAnisotropy = Math.min(quality.textures.anisotropy, scene.getEngine().getCaps().maxAnisotropy ?? 1);
   for (const texture of scene.textures) applyMaterialTextureAnisotropy(texture, state.textureAnisotropy);
   const mode = resolved.mode === "cel" ? "cel" : "pbr";
@@ -143,19 +184,27 @@ export function updateSceneRenderingSettings(
     state.mode = mode;
     for (const listener of state.listeners) listener(mode);
   }
-  state.effectsKey = sceneEffectsKey(
-    state.effects,
-    state.mode,
-    state.effectsEnabled,
-    state.fogVolumesPresent,
+  // A newly requested LUT publishes asynchronously and replans once ready.
+  state.colorGrading.sync(
+    state.effectsEnabled && state.effects.colorGrading.enabled ? state.effects.colorGrading.lutTextureGuid : null,
   );
-  state.effectsPlan = planSceneEffects(
-    state.effects,
-    state.mode,
-    state.effectsEnabled,
-    state.fogVolumesPresent,
-  );
+  replanSceneEffects(state);
   syncImageProcessingMode(scene, state);
+}
+
+function replanSceneEffects(state: SceneRendering): void {
+  const inputs = {
+    fogVolumesPresent: state.fogVolumesPresent,
+    colorGradingTexture: state.colorGradingTexture,
+  };
+  state.effectsKey = sceneEffectsKey(state.effects, state.mode, state.effectsEnabled, inputs);
+  state.effectsPlan = planSceneEffects(state.effects, state.mode, state.effectsEnabled, inputs);
+}
+
+/** Texture bytes for project-level effect assets such as the grading LUT. */
+export function setSceneEffectsAssets(scene: Scene, assets: MeshAssetContext | undefined): void {
+  if (scene.isDisposed) return;
+  sceneRenderingSettings(scene).colorGrading.setAssets(assets);
 }
 
 /**
@@ -175,21 +224,104 @@ export function setSceneFogVolumesPresent(scene: Scene, present: boolean): void 
   const state = sceneRenderingSettings(scene);
   if (state.fogVolumesPresent === present || scene.isDisposed) return;
   state.fogVolumesPresent = present;
-  state.effectsKey = sceneEffectsKey(state.effects, state.mode, state.effectsEnabled, present);
-  state.effectsPlan = planSceneEffects(state.effects, state.mode, state.effectsEnabled, present);
+  replanSceneEffects(state);
 }
 
-/** Materials emit linear HDR only while a Scene Linear display stage exists. */
+/**
+ * Materials emit linear HDR only while a Scene Linear display stage exists. This is the configured colour pipeline;
+ * the live `applyByPostProcess` flag also changes for the duration of a capture's draw.
+ */
+function configuredSceneLinear(state: SceneRendering): boolean {
+  return (
+    state.effectsEnabled &&
+    state.effects.colorPipeline.mode === "sceneLinear" &&
+    state.mode === "pbr"
+  );
+}
+
 function syncImageProcessingMode(
   scene: Scene,
   state: SceneRendering,
 ): void {
-  const linear =
-    state.effectsEnabled &&
-    state.effects.colorPipeline.mode === "sceneLinear" &&
-    state.mode === "pbr";
+  const linear = configuredSceneLinear(state);
   if (scene.imageProcessingConfiguration.applyByPostProcess !== linear)
     scene.imageProcessingConfiguration.applyByPostProcess = linear;
+}
+
+function sameWaterQuality(a: Readonly<WaterQuality>, b: Readonly<WaterQuality>): boolean {
+  return WATER_QUALITY_FIELDS.every((field) => a[field] === b[field]);
+}
+
+/** Replace the cached values only on a real change, then invalidate readiness once per Scene. */
+function syncWaterQuality(scene: Scene, state: SceneRendering, next: Readonly<WaterQuality>): void {
+  if (sameWaterQuality(state.water, next)) return;
+  state.water = waterQualityValues(next);
+  state.waterRevision = ++waterRevisions;
+  markSceneReadinessDirty(scene);
+  for (const follower of state.followers) markSceneReadinessDirty(follower);
+}
+
+/** The Scene whose project quality `scene` renders with: itself unless it follows another. */
+export function renderSettingsOwner(scene: Scene): Scene {
+  return settingsOwners.get(scene) ?? scene;
+}
+
+/**
+ * Resolve `scene`'s project quality (Geometry, Water) through `owner`, as
+ * SceneLayers do through the world view. Only the owner receives settings.
+ */
+export function followSceneRenderSettings(scene: Scene, owner: Scene): void {
+  const root = renderSettingsOwner(owner);
+  const previous = settingsOwners.get(scene);
+  if (root === scene || previous === root) return;
+  const before = sceneWaterQuality(scene);
+  if (previous) scenes.get(previous)?.followers.delete(scene);
+  else
+    scene.onDisposeObservable.addOnce(() => {
+      const current = settingsOwners.get(scene);
+      if (current) scenes.get(current)?.followers.delete(scene);
+      settingsOwners.delete(scene);
+    });
+  settingsOwners.set(scene, root);
+  sceneRenderingSettings(root).followers.add(scene);
+  if (!sameWaterQuality(before, sceneWaterQuality(scene))) markSceneReadinessDirty(scene);
+}
+
+/**
+ * Requested project Water quality for `scene` (local editor overrides, then
+ * session overrides). Cached: the same frozen object is returned until a value
+ * changes. Rendering gates on `sceneWaterQualityDeviceClamp(scene).quality`.
+ */
+export function sceneWaterQuality(scene: Scene): Readonly<WaterQuality> {
+  return sceneRenderingSettings(renderSettingsOwner(scene)).water;
+}
+
+/**
+ * Changes when `sceneWaterQuality(scene)` resolves to different values, or when
+ * the Scene starts following another; never per frame. Compare it in prepare.
+ */
+export function sceneWaterQualityRevision(scene: Scene): number {
+  return sceneRenderingSettings(renderSettingsOwner(scene)).waterRevision;
+}
+
+/**
+ * Water quality this Scene's device can honour, cached per revision and
+ * configured colour pipeline: the same object until either changes, so
+ * consumers may compare it by identity. The pipeline is the configured one,
+ * not the live image-processing flag a capture overrides while it draws, and
+ * counts only where it changes the result (no half-float render targets). See
+ * clampWaterQualityToDevice. Water rendering reads this, as Play readback does.
+ */
+export function sceneWaterQualityDeviceClamp(scene: Scene): WaterQualityDeviceClamp {
+  const state = sceneRenderingSettings(scene);
+  const revision = sceneWaterQualityRevision(scene);
+  const caps = scene.getEngine().getCaps();
+  const sceneLinear = !caps.textureHalfFloatRender && configuredSceneLinear(state);
+  const cached = state.waterDevice;
+  if (cached && cached.revision === revision && cached.sceneLinear === sceneLinear) return cached.clamp;
+  const clamp = clampWaterQualityToDevice(sceneWaterQuality(scene), caps, { sceneLinear });
+  state.waterDevice = { revision, sceneLinear, clamp };
+  return clamp;
 }
 
 /** Explicit editor preferences precede session commands and never change authored settings. */

@@ -10,6 +10,9 @@ import { SHARED_OUTLINE_ATTRIBUTE, type SharedOutlineGroup, type SharedOutlineVi
 import { SHARED_OUTLINE_MASK_SHADER } from "./shared-outline-shaders";
 import { acquireAuthoredOutlineVariant, type AuthoredOutlineVariant } from "./material-compiler";
 import { CelMaterial } from "./cel-material";
+import { bindMeshLatticeDeformer, hasMeshLatticeDeformer } from "./lattice-deformer-binding";
+import { LATTICE_UNIFORMS } from "./lattice-deformer-shader";
+import { gpuWaterWaves, WATER_FFT_SAMPLER, WATER_VERTEX_WAVE_UNIFORMS } from "./water-material";
 
 type MaskProgram = {
   source: Material; wrapper?: DrawWrapper; variant?: AuthoredOutlineVariant;
@@ -136,6 +139,7 @@ export class SharedOutlineMaskRenderer {
       throw new Error(`Shared outlines do not yet qualify alpha texture UV set ${unsupported.coordinatesIndex + 1} on "${source.name}".`);
     const attributes = [VertexBuffer.PositionKind];
     const defines = ["#define STORE_CAMERASPACE_Z"];
+    if (hasMeshLatticeDeformer(subMesh.getEffectiveMesh())) defines.push("#define SLATE_LATTICE");
     const uv1 = (samplesUV1(texture) || samplesUV1(opacity)) && mesh.isVerticesDataPresent(VertexBuffer.UVKind);
     const uv2 = (samplesUV2(texture) || samplesUV2(opacity)) && mesh.isVerticesDataPresent(VertexBuffer.UV2Kind);
     if (texture || opacity) {
@@ -170,6 +174,10 @@ export class SharedOutlineMaskRenderer {
       defines.push("#define BAKED_VERTEX_ANIMATION_TEXTURE");
       if (hardware) attributes.push("bakedVertexAnimationSettingsInstanced");
     }
+    // Built-in water displaces its static rest grid in the vertex shader: the mask applies the same displacement,
+    // including the FFT detail band's when the material samples it.
+    const water = gpuWaterWaves(source, mesh);
+    if (water) { defines.push(...water.vertexWaveDefines()); attributes.push("slateWaterData"); }
     PrepareStringDefinesForClipPlanes(source, this.view.scene, defines);
     const joined = defines.join("\n");
     let wrapper = subMesh._getDrawWrapper(this.renderer.renderPassId, true)!;
@@ -180,11 +188,12 @@ export class SharedOutlineMaskRenderer {
       if (cpuSkinning) fallbacks.addCPUSkinningFallback(0, mesh);
       const uniforms = ["world", "viewProjection", "view", "selectionId", "tableSize", "discardNonmembers", "alphaCutoff", "coverageAlpha", "coverageMode", "coverageDiffuse", "diffuseMatrix", "opacityMatrix", "opacityOptions",
         "mBones", "boneTextureInfo", "morphTargetInfluences", "morphTargetCount", "morphTargetTextureInfo", "morphTargetTextureIndices",
-        "bakedVertexAnimationSettings", "bakedVertexAnimationTextureSizeInverted", "bakedVertexAnimationTime"];
+        "bakedVertexAnimationSettings", "bakedVertexAnimationTextureSizeInverted", "bakedVertexAnimationTime", ...(water ? WATER_VERTEX_WAVE_UNIFORMS : [])];
+      uniforms.push(...LATTICE_UNIFORMS);
       AddClipPlaneUniforms(uniforms);
       wrapper.setEffect(this.view.scene.getEngine().createEffect(SHARED_OUTLINE_MASK_SHADER, {
         attributes, uniformsNames: uniforms, uniformBuffersNames: [],
-        samplers: ["styleSampler", "diffuseSampler", "opacitySampler", "boneSampler", "morphTargets", "bakedVertexAnimationTexture"],
+        samplers: ["styleSampler", "diffuseSampler", "opacitySampler", "boneSampler", "morphTargets", "bakedVertexAnimationTexture", "latticeData", ...(water ? [WATER_FFT_SAMPLER] : [])],
         defines: joined, fallbacks, onCompiled: null, onError: null,
         indexParameters: { maxSimultaneousMorphTargets: morphs },
         shaderLanguage: this.view.scene.getEngine().isWebGPU ? ShaderLanguage.WGSL : ShaderLanguage.GLSL,
@@ -219,6 +228,7 @@ export class SharedOutlineMaskRenderer {
     if (!hardware) mesh._bind(subMesh, effect, original.fillMode);
     if (program.variant) program.variant.compiled.material.bindForSubMesh(effective.getWorldMatrix(), mesh, subMesh);
     else {
+      bindMeshLatticeDeformer(effect, effective);
       effect.setMatrix("world", effective.getWorldMatrix());
       effect.setMatrix("viewProjection", this.view.scene.getTransformMatrix());
       effect.setMatrix("view", this.view.scene.getViewMatrix());
@@ -238,6 +248,7 @@ export class SharedOutlineMaskRenderer {
       BindBonesParameters(mesh, effect); BindMorphTargetParameters(mesh, effect);
       if (mesh.morphTargetManager?.isUsingTextureForTargets) mesh.morphTargetManager._bind(effect);
       mesh.bakedVertexAnimationManager?.bind(effect, hardware);
+      gpuWaterWaves(original, mesh)?.bindVertexWaves(effect, this.view.scene);
       BindClipPlane(effect, original, this.view.scene);
     }
     effect.setFloat("coverageAlpha", original.alpha * effective.visibility);

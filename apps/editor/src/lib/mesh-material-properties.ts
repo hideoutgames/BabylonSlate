@@ -1,4 +1,4 @@
-import { patchComponentProperties, type SerializedComponent } from "@babylonslate/core";
+import { patchComponentProperties, updateDeformerProperties, type SerializedComponent } from "@babylonslate/core";
 import { retargetCableProperties } from "./cable-property-rows";
 
 /** Picker-only value; persisted components store a source and an optional guid. */
@@ -15,6 +15,7 @@ export function patchInspectorComponentProperty(
   property: string,
   value: unknown,
 ): Record<string, unknown> {
+  if (component.classId === "DeformerComponent") return { ...updateDeformerProperties(component.properties, property, value) };
   if (component.classId === "CableComponent" && (property === "targetActorId" || property === "targetComponentId") &&
     (value || null) !== (component.properties[property] || null)) {
     return retargetCableProperties(component.properties, property, value);

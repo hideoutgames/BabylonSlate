@@ -1,11 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { FreeCamera, MeshBuilder, NullEngine, Scene, Vector3, type Mesh } from "@babylonjs/core";
 import { createDefaultWaterDefinition, normalizeWaterBody } from "@babylonslate/core";
 import { createLandscapeMesh } from "./landscape-mesh";
-import { createWaterMesh, updateSceneWater } from "./water-mesh";
+import { createWaterMesh, setSceneWaterTime, updateSceneWater } from "./water-mesh";
 import { createWaterRemovalMesh, sceneWaterRemovals } from "./water-removal-mesh";
 import { applyAssignMesh, createSnapshotSceneBinding } from "./snapshot-apply";
-import { distanceTransform, WATER_FIELD_DEPTH_RANGE, WATER_FIELD_SHORE_RANGE, WaterField } from "./water-field";
+import {
+  distanceTransform, WATER_FIELD_DEPTH_RANGE, WATER_FIELD_EDGE_RAMP, WATER_FIELD_SHORE_RANGE, WATER_FIELD_TERRAIN_ALPHA, WaterField,
+} from "./water-field";
 
 type FieldView = { data: Uint8Array; width: number; height: number; bounds: number[]; depthRange?: readonly [number, number]; fineDepthMin: number; fineDepthSpan: number };
 const liveField = (mesh: Mesh) => (mesh.material as unknown as { pluginManager: { _plugins: Array<{ field?: WaterField | null }> } })
@@ -18,6 +20,7 @@ function texel(field: FieldView, x: number, z: number) {
   return {
     shore: decode(field.data[i]!, WATER_FIELD_SHORE_RANGE), depth: decode(field.data[i + 1]!, field.depthRange ?? WATER_FIELD_DEPTH_RANGE),
     fineDepth: decode(field.data[i + 2]!, [field.fineDepthMin, field.fineDepthMin + field.fineDepthSpan]), known: field.data[i + 3] === 255,
+    alpha: field.data[i + 3]!,
   };
 }
 
@@ -119,6 +122,65 @@ describe("Water field", () => {
     } finally { field?.dispose(); scene.dispose(); engine.dispose(); }
   });
 
+  it("carries an underwater landscape edge's depth past it with fading alpha, so the edge reads as no slope and no shore", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    let field: WaterField | undefined;
+    try {
+      // A 40 m floor 4 m under a 100 m body: the field covers the body, so most of it lies beyond the landscape.
+      const surface = MeshBuilder.CreateGround("water", { width: 100, height: 100 }, scene);
+      surface.metadata = { slateWater: true };
+      createLandscapeMesh(scene, "floor", { width: 40, depth: 40, subdivisions: 4, heights: Array(25).fill(-4) });
+      field = new WaterField(scene, { mesh: surface, unbounded: false, amplitude: 0.5, contactRange: 1, surfaceY: () => 0 });
+      field.update();
+      const view = field as unknown as FieldView, cell = 1 / (view.bounds[2]! * view.width);
+      const inside = texel(view, 20 - cell * 0.5, 0);
+      expect(inside).toMatchObject({ known: true, alpha: 255 });
+      // Cells beyond the edge keep the edge depth (both channels), so central differences across it find a flat
+      // floor, while alpha falls cell by cell over the ramp and the terrain depth hands over to the shelving
+      // estimate gradually. Every extended cell stays below the alpha at which the shader treats terrain as real
+      // (removing water and measuring the shore from depth over slope).
+      expect(texel(view, 20 + cell * 0.5, 0).alpha / 255).toBeLessThan(WATER_FIELD_TERRAIN_ALPHA - 0.01);
+      let previous = 255;
+      for (let x = 20 + cell * 0.5; x < 20 + WATER_FIELD_EDGE_RAMP - cell; x += cell) {
+        const extended = texel(view, x, 0);
+        expect(extended.depth).toBeCloseTo(inside.depth, 1);
+        expect(extended.fineDepth).toBeCloseTo(inside.fineDepth, 1);
+        expect(extended.alpha).toBeLessThan(previous);
+        expect(extended.alpha).toBeGreaterThan(0);
+        previous = extended.alpha;
+      }
+      expect(texel(view, 20 + WATER_FIELD_EDGE_RAMP + 2 * cell, 0).alpha).toBe(0);
+    } finally { field?.dispose(); scene.dispose(); engine.dispose(); }
+  });
+
+  it("leaves water past a landscape edge above the water unknown, measuring its shore from the real land", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    let field: WaterField | undefined;
+    try {
+      // A 40 m tile in a 100 m body: dry (1 m up) along its west edge, 4 m under water along its east edge.
+      const surface = MeshBuilder.CreateGround("water", { width: 100, height: 100 }, scene);
+      surface.metadata = { slateWater: true };
+      const side = 9, heights = Array.from({ length: side * side }, (_, i) => [1, 1, 1, 1, -1.5, -4, -4, -4, -4][i % side]!);
+      createLandscapeMesh(scene, "coast", { width: 40, depth: 40, subdivisions: side - 1, heights });
+      field = new WaterField(scene, { mesh: surface, unbounded: false, amplitude: 0.5, contactRange: 1, surfaceY: () => 0 });
+      field.update();
+      const view = field as unknown as FieldView, cell = 1 / (view.bounds[2]! * view.width);
+      expect(texel(view, -20 + cell * 0.5, 0)).toMatchObject({ known: true, alpha: 255 });
+      // Past the dry edge there is no terrain under the water: those cells are not terrain at all (never removed and
+      // no shoreline from a dry depth with no slope), and their shore distance grows from the land as usual...
+      for (const gap of [0.5, 2, 5, 8, 12]) {
+        const open = texel(view, -20 - gap, 0);
+        expect(open.alpha).toBe(0);
+        expect(open.shore).toBeGreaterThan(gap - 2 * cell);
+        expect(open.shore).toBeLessThan(gap + 2 * cell);
+      }
+      // ...while the underwater edge still extends its depth.
+      const east = texel(view, 20 + 2, 0);
+      expect(east.alpha).toBeGreaterThan(0);
+      expect(east.depth).toBeCloseTo(4, 0);
+    } finally { field?.dispose(); scene.dispose(); engine.dispose(); }
+  });
+
   it("retains terrain depth throughout the high-wave envelope", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     let field: WaterField | undefined;
@@ -130,5 +192,43 @@ describe("Water field", () => {
       field.update();
       expect(texel(field as unknown as FieldView, 0, 0).depth).toBeCloseTo(45, 0);
     } finally { field?.dispose(); scene.dispose(); engine.dispose(); }
+  });
+
+  it("follows landscapes added, moved, hidden and removed after the water, and refills nothing on unchanged frames", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    new FreeCamera("camera", new Vector3(0, 30, -30), scene).setTarget(Vector3.Zero());
+    try {
+      const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 30, length: 30 }), createDefaultWaterDefinition());
+      const field = liveField(lake);
+      expect(field.texture).toBeNull();
+      const floor = createLandscapeMesh(scene, "floor", { width: 40, depth: 40, subdivisions: 4, heights: Array(25).fill(-3) });
+      updateSceneWater(scene);
+      expect(texel(fieldOf(lake), 0, 0).depth).toBeCloseTo(3, 0);
+      floor.position.y = -2; floor.computeWorldMatrix(true); updateSceneWater(scene);
+      expect(texel(fieldOf(lake), 0, 0).depth).toBeCloseTo(5, 0);
+      const uploads = [vi.spyOn(engine, "updateRawTexture"), vi.spyOn(engine, "createRawTexture")];
+      for (let frame = 0; frame < 3; frame++) updateSceneWater(scene);
+      for (const upload of uploads) expect(upload).not.toHaveBeenCalled();
+      floor.setEnabled(false); updateSceneWater(scene);
+      expect(field.texture).toBeNull();
+      floor.setEnabled(true); updateSceneWater(scene);
+      expect(texel(fieldOf(lake), 0, 0).depth).toBeCloseTo(5, 0);
+      floor.dispose(); updateSceneWater(scene);
+      expect(field.texture).toBeNull();
+    } finally { scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
+  });
+
+  it("keeps a finite body's terrain field while Gerstner waves sway its edges", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    new FreeCamera("camera", new Vector3(0, 30, -30), scene);
+    try {
+      createLandscapeMesh(scene, "floor", { width: 40, depth: 40, subdivisions: 4, heights: Array(25).fill(-3) });
+      const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 30, length: 30, waveScale: 1 }), createDefaultWaterDefinition());
+      expect(texel(fieldOf(lake), 0, 0).depth).toBeCloseTo(3, 0);
+      // The field is keyed on the surface bounds, so they must not follow the moving edges frame by frame.
+      const uploads = [vi.spyOn(engine, "updateRawTexture"), vi.spyOn(engine, "createRawTexture")];
+      for (let step = 1; step <= 5; step++) { setSceneWaterTime(scene, step * 0.37); updateSceneWater(scene); }
+      for (const upload of uploads) expect(upload).not.toHaveBeenCalled();
+    } finally { scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
   });
 });

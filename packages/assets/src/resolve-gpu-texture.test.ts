@@ -84,6 +84,16 @@ describe("resolveGpuTexture", () => {
     expect(pixelArt?.bytes).toBe(png);
     expect(pixelArt?.targetEdge).toBe(4);
     expect(pixelArt?.missingPreferred).toBe(false);
+
+    // LUT samples address exact texels; a retained encode would grade wrongly.
+    asset.payload.usage = "colorGrading";
+    const lut = await resolveGpuTexture({
+      header: asset,
+      readChunk: async (id) => byId[id] ?? null,
+      editorLod: { enabled: true, quality: 0.5 },
+    });
+    expect(lut?.kind).toBe("source");
+    expect(lut?.bytes).toBe(png);
   });
 
   it("never binds a block-misaligned KTX2 for a Particle Texture", async () => {

@@ -31,7 +31,7 @@ import type {
   SerializedScene,
   SerializedSceneLayer,
 } from "@babylonslate/core";
-import { documentId, parseDocumentId, isAssetDocumentKind, isSceneWorkspaceKind, normalizeProjectSettings, normalizeScene, defaultExportPreset, DEFAULT_RENDER_PROJECT_SETTINGS, DEFAULT_PLAY_FRAME_CAP, DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS } from "@babylonslate/core";
+import { ASSET_DOCUMENT_KINDS, documentId, parseDocumentId, isAssetDocumentKind, isSceneWorkspaceKind, normalizeProjectSettings, normalizeScene, defaultExportPreset, DEFAULT_RENDER_PROJECT_SETTINGS, DEFAULT_PLAY_FRAME_CAP, DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS } from "@babylonslate/core";
 import {
   appendJournalLines,
   getTile,
@@ -114,6 +114,7 @@ import {
 } from "../lib/document-lock-apply";
 import { dirtyScenesBlockingOpen } from "../lib/exclusive-scene";
 import { moveKeyedEntry } from "../lib/move-keyed-entry";
+import { documentContentIdentity } from "../lib/document-content-identity";
 import { notifyDocumentEdited } from "../lib/notify-document-edited";
 import { advanceTestIdleClock } from "../lib/document-working-set";
 import { shouldApplyAssetDocumentChange } from "../lib/asset-document-change";
@@ -974,6 +975,20 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   useEffect(() => attachEditGestureBoundaries(() => {
     const id = documentService.getState().activeDocumentId;
     if (id) editSessionRef.current.getStack(id).endGesture();
+  }), [documentService]);
+  // History kept from a closed tab resumes only on the content it was built
+  // on; a reopen that loads anything else (external or source control
+  // changes, repaired references) starts empty.
+  useEffect(() => documentService.onIdentityChange((event) => {
+    if (event.type !== "opened") return;
+    const content = documentService.getDocument(event.id)?.content;
+    if (!content) {
+      editSessionRef.current.dropDocument(event.id);
+      return;
+    }
+    editSessionRef.current.reopenDocument(event.id, () =>
+      documentContentIdentity(content),
+    );
   }), [documentService]);
   const collectGraphTypeSchemas = useCallback(() => {
     return typeSchemasFromGraphAssets(
@@ -2198,7 +2213,17 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         return next;
       });
       documentService.closeDocument(id);
-      editSessionRef.current.dropDocument(id);
+      if (doc?.content && !doc.dirty) {
+        // Saved content: a reopen that loads the same content resumes Undo.
+        const content = doc.content;
+        editSessionRef.current.closeDocument(id, () =>
+          documentContentIdentity(content),
+        );
+      } else {
+        // Closing with unsaved edits discards them (the Discard choice), and
+        // their history only fits the discarded content.
+        editSessionRef.current.dropDocument(id);
+      }
       void journalBuffer.flush();
       bump();
     },
@@ -2215,6 +2240,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const closeDocumentsForPaths = useCallback(
     (paths: Iterable<string>) => {
       const pathSet = paths instanceof Set ? paths : new Set(paths);
+      // The assets are being deleted: their history, open or kept from a
+      // closed tab, must not reach a new asset created at the same path.
+      for (const path of pathSet) {
+        for (const kind of ASSET_DOCUMENT_KINDS) {
+          editSessionRef.current.dropDocument(documentId({ kind, path }));
+        }
+      }
       const ids: string[] = [];
       for (const doc of documentService.getOpenDocumentsOrdered()) {
         if (doc.ref.kind === "content-browser") continue;
@@ -2750,6 +2782,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     const next = syncSceneActorsFromPrefabs(scene, templates);
     if (scenesEqualForPrefabSync(scene, next)) return;
     if (options?.quiet) {
+      // The open-time sync rewrites instances without a command, so history
+      // recorded before it (such as history kept from a closed tab) no longer
+      // fits the content and must not replay onto it.
+      editSessionRef.current.dropDocument(sceneDoc.id);
       documentService.patchLoadedContent(sceneDoc.id, next);
       bump();
       return;

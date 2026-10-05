@@ -1,6 +1,6 @@
-import { Color3, Color4, Engine, FreeCamera, Material, Mesh, MeshBuilder, RawTexture, Scene, StandardMaterial, Texture, Vector3, VertexBuffer } from "@babylonjs/core";
+import { Color3, Color4, Engine, FreeCamera, Material, Mesh, MeshBuilder, RawTexture, RenderTargetTexture, Scene, StandardMaterial, Texture, Vector3, VertexBuffer } from "@babylonjs/core";
 import { createDefaultRenderTargetCaptureProperties, type RenderTargetMode } from "@babylonslate/core";
-import { createAppWebGpuEngine, MaterialLibrary, RenderTargetCaptures } from "@babylonslate/render";
+import { createAppWebGpuEngine, disposeMeshLatticeDeformer, MaterialLibrary, RenderTargetCaptures, setMeshLatticeDeformer } from "@babylonslate/render";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { managedRenderReservations } from "@babylonslate/render/managed-render-resources";
 
@@ -73,14 +73,19 @@ export async function runRenderTargetProof(backend: "webgl2" | "webgpu") {
       const texture = captures.acquireTexture("texture")!.resource;
       captures.request("capture");
       const deadline = performance.now() + 10000;
+      let captured = false;
       do {
+        const target = scene.textures.find((entry) => entry.name === "renderTarget:target") as RenderTargetTexture | undefined;
+        const observer = target?.onAfterRenderObservable.add(() => { captured = true; });
+        captures.request("capture");
         engine.beginFrame(); captures.render(); engine.endFrame();
+        if (observer) target!.onAfterRenderObservable.remove(observer);
         if (scene.activeCamera !== main) throw new Error("Capture replaced the main camera.");
         if (!scene.imageProcessingConfiguration.applyByPostProcess) throw new Error("Capture changed the main image-processing configuration.");
-        if (texture.getSize().width === 32) break;
+        if (captured && texture.getSize().width === 32) break;
         await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
       } while (performance.now() < deadline);
-      if (texture.getSize().width !== 32) throw new Error(`Capture shader did not become ready: ${mode}`);
+      if (!captured || texture.getSize().width !== 32) throw new Error(`Capture shader did not become ready: ${mode}`);
       const pixels = await texture.readPixels(0, 0, null, true, false, 16, 16, 1, 1);
       if (!pixels) throw new Error("Capture returned no pixels.");
       const values = Array.from(pixels as Uint8Array | Float32Array);
@@ -106,6 +111,55 @@ export async function runRenderTargetProof(backend: "webgl2" | "webgpu") {
     await capture("SceneColor", false, "Authored SceneColor");
     await sampleMaterial("Material Color After Mode Change");
     await capture("WorldNormal", true);
+    // Frozen authored material: geometry captures must retain the WPO/clip
+    // subgraphs and observe live parameter edits without recreating the source.
+    const displacedGraph = createDefaultMaterialDocument("Displaced Cutout");
+    displacedGraph.shadingModel = "unlit"; displacedGraph.blendMode = "masked"; displacedGraph.alphaCutoff = 0.5;
+    displacedGraph.nodes.push(
+      { id: "x", type: "param.float", properties: { name: "Shift X", value: [0] }, position: { x: 0, y: 0 } },
+      { id: "z", type: "param.float", properties: { name: "Shift Z", value: [2] }, position: { x: 0, y: 0 } },
+      { id: "cutout", type: "param.float", properties: { name: "Cutout", value: [1] }, position: { x: 0, y: 0 } },
+      { id: "offset", type: "vector.combine", properties: {}, position: { x: 0, y: 0 } },
+    );
+    displacedGraph.edges.push(
+      { id: "x-offset", sourceNodeId: "x", sourcePinId: "out", targetNodeId: "offset", targetPinId: "x" },
+      { id: "z-offset", sourceNodeId: "z", sourcePinId: "out", targetNodeId: "offset", targetPinId: "z" },
+      { id: "offset-output", sourceNodeId: "offset", sourcePinId: "xyz", targetNodeId: "output", targetPinId: "worldPositionOffset" },
+      { id: "cutout-output", sourceNodeId: "cutout", sourcePinId: "out", targetNodeId: "output", targetPinId: "alphaClip" },
+    );
+    const displaced = library.acquire(scene, "displaced-source", displacedGraph);
+    if (!displaced.ok) throw new Error(JSON.stringify(displaced.diagnostics));
+    const displacedDiagnostics = await displaced.ready;
+    if (displacedDiagnostics.length) throw new Error(JSON.stringify(displacedDiagnostics));
+    plane.material = displaced.material;
+    await displaced.material.forceCompilationAsync(plane);
+    displaced.material.freeze();
+    for (const mode of ["DepthPass", "WorldNormal"] as const) {
+      await capture(mode, false, `Authored WPO ${mode}`);
+      library.setParameter(scene, "displaced-source", "Shift X", { kind: "float", value: 5 });
+      await capture(mode, false, `Authored Moved ${mode}`);
+      library.resetParameter(scene, "displaced-source", "Shift X");
+      library.setParameter(scene, "displaced-source", "Cutout", { kind: "float", value: 0 });
+      await capture(mode, false, `Authored Discard ${mode}`);
+      library.resetParameter(scene, "displaced-source", "Cutout");
+      library.setParameter(scene, "displaced-source", "Shift Z", { kind: "float", value: 1 });
+      await capture(mode, false, `Authored Edited ${mode}`);
+      library.resetParameter(scene, "displaced-source", "Shift Z");
+      await capture(mode, false, `Authored Reset ${mode}`);
+    }
+    // z' = 2z + 0.5x + 1: scaling the authored z-offset proves the cage runs
+    // after WPO, while the tilted plane exposes inverse-transpose normals.
+    const controls: number[] = [];
+    for (const z of [-4, 4]) for (const y of [-4, 4]) for (const x of [-4, 4]) {
+      void y; controls.push(0, 0, z + 0.5 * x + 1);
+    }
+    for (const [label, surface] of [["Native Lattice", material], ["Authored Lattice", displaced.material]] as const) {
+      plane.material = surface;
+      setMeshLatticeDeformer(plane, { enabled: true, resolution: [2, 2, 2], strength: 1, offsets: controls,
+        fitToMesh: false, boundsMin: [-4, -4, -4], boundsMax: [4, 4, 4] });
+      for (const mode of ["DepthPass", "WorldNormal"] as const) await capture(mode, false, `${label} ${mode}`);
+      disposeMeshLatticeDeformer(plane);
+    }
     // Opposing constant UV channels isolate mask selection from interpolation.
     plane.setVerticesData(VertexBuffer.UVKind, [0.25, 0.5, 0.25, 0.5, 0.25, 0.5, 0.25, 0.5]);
     plane.setVerticesData(VertexBuffer.UV2Kind, [0.75, 0.5, 0.75, 0.5, 0.75, 0.5, 0.75, 0.5]);

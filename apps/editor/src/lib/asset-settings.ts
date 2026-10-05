@@ -15,6 +15,7 @@ export const TEXTURE_USAGE_OPTIONS = [
   "ui",
   "skybox",
   "particle",
+  "colorGrading",
 ] as const;
 
 export const TEXTURE_DOWNSAMPLE_LABELS: Record<string, string> = {

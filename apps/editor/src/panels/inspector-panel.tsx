@@ -867,7 +867,7 @@ function PrefabComponentDetails({
       className="flex flex-col gap-3 p-3"
       data-testid="inspector-prefab-component"
     >
-      {component.classId !== "2DAnchorComponent" && component.classId !== "MovementComponent" && <PropertyGrid
+      {component.classId !== "2DAnchorComponent" && component.classId !== "MovementComponent" && component.classId !== "DeformerComponent" && <PropertyGrid
         title="Transform"
         rows={spatialTransformPropertyRows(
           component.id,

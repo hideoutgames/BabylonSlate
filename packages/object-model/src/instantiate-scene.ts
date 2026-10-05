@@ -114,11 +114,17 @@ export function attachSerializedComponents(
     if (actor.sceneLayerId && isSceneLayerDeniedComponent(component.classId)) {
       continue;
     }
+    const properties = structuredClone(component.properties);
+    if (component.classId === "DeformerComponent" && typeof properties.targetMeshComponentId === "string") {
+      const target = components.find((entry) => entry.classId === "MeshComponent" && entry.id === properties.targetMeshComponentId)
+        ?? components.find((entry) => entry.classId === "MeshComponent" && entry.sourceId === properties.targetMeshComponentId);
+      if (target) properties.targetMeshComponentId = ids.get(target.id)!;
+    }
     actor.attachComponent(
       world.createComponent({
         guid: ids.get(component.id),
         classId: component.classId,
-        variables: structuredClone(component.properties),
+        variables: properties,
         assetGuid: componentAssetGuid(component),
         sourceId: options.freshIds
           ? component.id

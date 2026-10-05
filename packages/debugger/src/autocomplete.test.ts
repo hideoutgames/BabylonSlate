@@ -89,6 +89,9 @@ describe("suggestConsoleCompletions", () => {
     expect(
       suggestConsoleCompletions("quality resolution ", registry.list()),
     ).toEqual(["choice=", "low", "medium", "high", "ultra", "reset", "scale"]);
+    expect(
+      suggestConsoleCompletions("quality water refr", registry.list()),
+    ).toEqual(["refraction", "refractionScale"]);
   });
 
   it("suggests on/off for bool flags", () => {

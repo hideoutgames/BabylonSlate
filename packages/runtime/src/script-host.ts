@@ -1,4 +1,4 @@
-import { emptyWaterSample, type WaterSample } from "@babylonslate/core";
+import { emptyWaterSample, parseDeformerProperties, updateDeformerProperties, DEFORMER_PROPERTY_KEYS, DEFORMER_MAX_COORDINATE, type WaterSample } from "@babylonslate/core";
 import { createDefaultRenderTargetCaptureProperties, type RenderTargetMode, type RenderTargetCaptureProperty } from "@babylonslate/core";
 import { captureActorReferences, captureComponent, captureProperties, setCaptureProperty } from "./render-targets";
 import type { ScalabilityRequest, ScalabilityResult, ScalabilitySnapshot, InputKey, InputTypeValue, InputValueState, SceneStreamingState } from "@babylonslate/core";
@@ -58,8 +58,13 @@ import type {
 } from "@babylonslate/anim-graph";
 import { loadCompiledModule, type CompiledModuleExports } from "./module-loader";
 import type { LogSeverity } from "./log-ring";
+import { actorLabel } from "./actor-world-transform";
 import { isInfiniteLoopError } from "@babylonslate/debugger";
 import type { InputBindingControls } from "@babylonslate/input";
+import type { TweenValueType } from "@babylonslate/core";
+import type { TweenReference, TweenRequest } from "./tween-runtime";
+import { tweenOwnerAlive } from "./tween-runtime";
+import { isReadOnlyTweenProperty, propertyTweenReference, tweenStorageValue } from "./tween-targets";
 
 export type AnimGraphControl = {
   getVariable(name: string): unknown;
@@ -131,6 +136,8 @@ export interface ScriptHostServices {
   destroyActor(actor: Actor | null | undefined): void;
   executeConsoleCommand(command: string): { success: boolean; output: string };
   delay(seconds: number, owner?: BObject | null): Promise<void>;
+  tween?(request: TweenRequest): Promise<boolean>;
+  isTweenSessionActive?(): boolean;
   reportError(error: unknown): void;
   /** Debugger loop guard; omitted in release players. */
   checkInfiniteLoop?(): void;
@@ -256,6 +263,9 @@ export interface ScriptContext {
   drawDebug(payload: Record<string, unknown>): void;
   getVariable(name: string): unknown;
   setVariable(name: string, value: unknown): void;
+  variableReference(target: BObject | null | undefined, name: string, implicitSelf?: boolean): TweenReference | null;
+  tweenValue(reference: TweenReference | null, type: TweenValueType, a: unknown, b: unknown, duration: number, curve: unknown): Promise<boolean>;
+  tweenProperty(target: unknown, property: string, type: TweenValueType, a: unknown, b: unknown, duration: number, curve: unknown, space?: unknown): Promise<boolean>;
   getVariableFrom(target: BObject | null | undefined, name: string): unknown;
   setVariableOn(
     target: BObject | null | undefined,
@@ -603,6 +613,8 @@ type BtScriptExtras = Pick<
 export type ScriptExtras = Partial<BtScriptExtras> & {
   animFacts?: AnimStateFacts;
   variableStore?: VariableStore;
+  /** Static library contexts have no Self; their tweens retain the calling owner's lifetime. */
+  tweenOwner?: BObject | null;
 };
 
 export type CompiledScript = ScriptBundleEntry;
@@ -1061,7 +1073,8 @@ export class ScriptHost {
   ): ScriptContext {
     const services = this.services;
     const store = extras?.variableStore ?? self;
-    return {
+    const tweenOwner = self ?? extras?.tweenOwner ?? null;
+    const context: ScriptContext = {
       self,
       deltaSeconds,
       tickIndex,
@@ -1085,6 +1098,29 @@ export class ScriptHost {
         services.drawDebug?.(payload);
       },
       getVariable: (name) => store?.getVariable(name),
+      variableReference: (target, name, implicitSelf = false) => {
+        const object = implicitSelf ? store : target;
+        if (!object || typeof name !== "string" || !name ||
+          (object instanceof BObject && (object.destroyed || isReadOnlyTweenProperty(object, name)))) return null;
+        return {
+          identity: object, property: `variable:${name}`,
+          owner: object instanceof BObject ? object : tweenOwner ?? undefined,
+          set: (value) => {
+            if (object instanceof BObject) context.setVariableOn(object, name, tweenStorageValue(object, name, value));
+            else object.setVariable(name, value);
+          },
+        };
+      },
+      tweenValue: (reference, type, a, b, duration, curve) => {
+        if (!reference) return Promise.resolve(false);
+        if (!services.tween) return Promise.reject(new Error("Tween actions are unavailable in this script host."));
+        return services.tween({ reference, type, a, b, duration, curve, owner: tweenOwner }).then(completed =>
+          completed && tweenOwnerAlive(tweenOwner) && tweenOwnerAlive(reference.owner) && services.isTweenSessionActive?.() !== false);
+      },
+      tweenProperty: (target, property, type, a, b, duration, curve, space) => {
+        const reference = propertyTweenReference(target, property, type, space, services);
+        return context.tweenValue(reference, type, a, b, duration, curve);
+      },
       setVariable: (name, value) => {
         if (store instanceof Actor && name === "parentId") {
           writeParentId(services, store, value);
@@ -1106,6 +1142,14 @@ export class ScriptHost {
       },
       setVariableOn: (target, name, value) => {
         const object = target ?? self;
+        if (object instanceof ActorComponent && object.classId === "DeformerComponent" &&
+          (DEFORMER_PROPERTY_KEYS as readonly string[]).includes(name)) {
+          if (!this.canInvokeOwner(object)) return;
+          const next = updateDeformerProperties(Object.fromEntries(DEFORMER_PROPERTY_KEYS.map((key) => [key, object.getVariable(key)])), name, value);
+          for (const key of DEFORMER_PROPERTY_KEYS) object.setVariable(key, next[key]);
+          this.applyComponentVariable(object, name, next[name as keyof typeof next]);
+          return;
+        }
         if (object instanceof ActorComponent && object.classId === "RenderTargetCaptureComponent") {
           if (this.canInvokeOwner(object) && setCaptureProperty(object, name as RenderTargetCaptureProperty, value, (id) => services.findActor?.(id))) {
             this.applyComponentVariable(object, name, value);
@@ -1502,7 +1546,7 @@ export class ScriptHost {
             tickIndex,
             fnArgs ?? {},
             tick,
-            extras,
+            receiver ? extras : { ...extras, tweenOwner },
             entry.script.assetGuid,
           );
           try {
@@ -1812,6 +1856,7 @@ export class ScriptHost {
       getBlackboard: extras?.getBlackboard ?? (() => undefined),
       setBlackboard: extras?.setBlackboard ?? (() => undefined),
     };
+    return context;
   }
 
   private setMaterialParameter(
@@ -1872,6 +1917,24 @@ export class ScriptHost {
     if (component.classId === "DynamicRuntimeMeshComponent") {
       if (!this.canInvokeOwner(component)) return { success: false };
       return this.services.dynamicMeshFunction?.(component, name, args) ?? { success: false };
+    }
+    if (component.classId === "DeformerComponent" &&
+      (name === "setDeformerControlPointOffset" || name === "resetDeformerControlPoints")) {
+      if (!this.canInvokeOwner(component)) return { success: false };
+      const properties = parseDeformerProperties({ resolution: component.getVariable("resolution"), offsets: component.getVariable("offsets") });
+      if (name === "resetDeformerControlPoints") properties.offsets.fill(0);
+      else {
+        const index = args.index;
+        const value = args.offset;
+        const offset = Array.isArray(value) ? value : value && typeof value === "object"
+          ? [(value as Record<string, unknown>).x, (value as Record<string, unknown>).y, (value as Record<string, unknown>).z] : [];
+        if (typeof index !== "number" || !Number.isInteger(index) || index < 0 || index >= properties.offsets.length / 3 ||
+          ![0, 1, 2].every((axis) => typeof offset[axis] === "number" && Number.isFinite(offset[axis]) && Math.abs(offset[axis]) <= DEFORMER_MAX_COORDINATE)) return { success: false };
+        for (const axis of [0, 1, 2]) properties.offsets[index * 3 + axis] = offset[axis] as number;
+      }
+      component.setVariable("offsets", properties.offsets);
+      this.applyComponentVariable(component, "offsets", properties.offsets);
+      return { success: true };
     }
     if (component.classId === "MovementComponent") {
       if (!this.canInvokeOwner(component)) return {};
@@ -2136,11 +2199,6 @@ function writeParentId(
     : typeof value === "string" ? resolveLiveActor(services, value) : null;
   if (parent && refuseParentCycle(services, child, parent, "Set parentId")) return;
   child.setVariable("parentId", value);
-}
-
-function actorLabel(actor: Actor): string {
-  const name = actor.getVariable("name");
-  return `${typeof name === "string" && name.trim() ? name : actor.classId} (${actor.guid})`;
 }
 
 function readActorLink(

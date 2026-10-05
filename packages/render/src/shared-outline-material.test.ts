@@ -1,13 +1,14 @@
 import { afterEach, expect, it } from "vitest";
 import { NullEngine, Scene } from "@babylonjs/core";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@babylonslate/shader-graph";
-import { acquireAuthoredOutlineVariant, compileMaterialPlan } from "./material-compiler";
+import { acquireAuthoredMaterialVariant, acquireAuthoredOutlineVariant, compileMaterialPlan, ensureAuthoredShadowDepthWrapper } from "./material-compiler";
 import { isDisposedNodeMaterial } from "./gpu-resource-live";
+import { ensureLatticeShadowAdapter, releaseLatticeShadowAdapter } from "./lattice-deformer-binding";
 
 const engines: NullEngine[] = [];
 afterEach(() => { for (const engine of engines.splice(0)) engine.dispose(); });
 
-it("shares authored outline coverage and keeps parameter edits and reset synchronized until the last consumer releases", async () => {
+it.each(["outlineMask", "captureDepth", "captureNormal"] as const)("shares authored %s coverage and keeps parameter edits and reset synchronized until the last consumer releases", async (kind) => {
   const engine = new NullEngine(); engines.push(engine);
   const scene = new Scene(engine);
   const doc = createDefaultMaterialDocument();
@@ -22,8 +23,8 @@ it("shares authored outline coverage and keeps parameter edits and reset synchro
   if (!source.ok) throw new Error(JSON.stringify(source.diagnostics));
   expect(await source.ready).toEqual([]);
   source.setParameter("Cutout", { kind: "float", value: 0.2 });
-  const first = acquireAuthoredOutlineVariant(source.material)!;
-  const second = acquireAuthoredOutlineVariant(source.material)!;
+  const first = acquireAuthoredMaterialVariant(source.material, kind)!;
+  const second = acquireAuthoredMaterialVariant(source.material, kind)!;
   expect(await first.compiled.ready).toEqual([]);
   expect(second.compiled.material).toBe(first.compiled.material);
   expect(first.compiled.getParameter("Cutout")).toEqual({ kind: "float", value: 0.2 });
@@ -36,6 +37,54 @@ it("shares authored outline coverage and keeps parameter edits and reset synchro
   await second.release();
   expect(isDisposedNodeMaterial(second.compiled.material, scene)).toBe(true);
   expect(isDisposedNodeMaterial(source.material, scene)).toBe(false);
-  source.dispose();
+  await source.whenReleased();
   expect(acquireAuthoredOutlineVariant(source.material)).toBeUndefined();
+});
+
+it("retains an independent shadow variant through source disposal while a pass still borrows it", async () => {
+  const engine = new NullEngine(); engines.push(engine);
+  const scene = new Scene(engine);
+  const lowered = lowerMaterialDocument(createDefaultMaterialDocument());
+  if (!lowered.ok) throw new Error(JSON.stringify(lowered.diagnostics));
+  const source = compileMaterialPlan(lowered.plan, { scene, name: "static-surface" });
+  if (!source.ok) throw new Error(JSON.stringify(source.diagnostics));
+  expect(await source.ready).toEqual([]);
+  // Ordinary opaque identity-WPO surfaces keep the native cached shadow path.
+  expect(source.material.shadowDepthWrapper).toBeNull();
+  expect(ensureAuthoredShadowDepthWrapper(source.material)).toBe(true);
+  const wrapper = source.material.shadowDepthWrapper!;
+  const retained = acquireAuthoredMaterialVariant(source.material, "shadowDepth")!;
+  expect(await retained.compiled.ready).toEqual([]);
+  expect(wrapper.baseMaterial).toBe(retained.compiled.material);
+  expect(ensureAuthoredShadowDepthWrapper(source.material)).toBe(true);
+  expect(source.material.shadowDepthWrapper).toBe(wrapper);
+  const normal = acquireAuthoredMaterialVariant(source.material, "captureNormal")!;
+  expect(normal.compiled.material).not.toBe(wrapper.baseMaterial);
+  await normal.release();
+  await source.whenReleased();
+  expect(isDisposedNodeMaterial(retained.compiled.material, scene)).toBe(false);
+  expect(acquireAuthoredMaterialVariant(source.material, "shadowDepth")).toBeUndefined();
+  await retained.release();
+  expect(isDisposedNodeMaterial(retained.compiled.material, scene)).toBe(true);
+});
+
+it.each([false, true])("releases only cage-owned authored shadows after the last cage detaches (WPO=%s)", async (wpo) => {
+  const engine = new NullEngine(); engines.push(engine);
+  const scene = new Scene(engine);
+  const document = createDefaultMaterialDocument();
+  if (wpo) document.nodes.find((node) => node.type === "output.surface")!.properties["default:worldPositionOffset"] = [0, 1, 0];
+  const lowered = lowerMaterialDocument(document);
+  if (!lowered.ok) throw new Error(JSON.stringify(lowered.diagnostics));
+  const source = compileMaterialPlan(lowered.plan, { scene, name: "shared-cage-source" });
+  if (!source.ok) throw new Error(JSON.stringify(source.diagnostics));
+  expect(await source.ready).toEqual([]);
+  expect(ensureLatticeShadowAdapter(source.material)).toBe(true);
+  expect(ensureLatticeShadowAdapter(source.material)).toBe(true);
+  const wrapper = source.material.shadowDepthWrapper;
+  releaseLatticeShadowAdapter(source.material);
+  expect(source.material.shadowDepthWrapper).toBe(wrapper);
+  releaseLatticeShadowAdapter(source.material);
+  expect(source.material.shadowDepthWrapper).toBe(wpo ? wrapper : null);
+  expect(isDisposedNodeMaterial(source.material, scene)).toBe(false);
+  await source.whenReleased();
 });

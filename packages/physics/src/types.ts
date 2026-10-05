@@ -102,6 +102,12 @@ export type ColliderDesc = {
   translation?: Vec3;
   /** Local rotation relative to the rigid body (component transform rotation). */
   rotation?: Quat;
+  /**
+   * Actor that owns this shape when it is not the body's actor: a collidable
+   * static descendant hosted as a child shape of a simulated ancestor's body.
+   * Backends that resolve contacts and queries per shape name this actor.
+   */
+  actorId?: string;
 };
 
 /** A body's collider mutation is prepared and published as one transaction. */

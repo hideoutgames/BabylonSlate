@@ -15,6 +15,7 @@ import { findSceneShadowController } from "./shadow-controller";
 import { drawBorrowedTarget, type BorrowedDrawPolicy } from "./framegraph-borrowed-draw";
 import { isMeshFrameReady, withSceneReadinessState } from "./scene-perf";
 import { configureCutoutSorting } from "./sorting";
+import { attachObjectRendererDepthPrePass, type TransparentDepthPrePass } from "./transparent-depth-pre-pass";
 
 type BorrowedMap = {
   generator: ShadowGenerator;
@@ -31,18 +32,29 @@ const SHADOW_DRAW: BorrowedDrawPolicy = {
 
 /** Official object renderer with the pinned, protected shadow-binding hook exposed. */
 export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTask {
+  /**
+   * Draws part of the main view (such as the transparent half of a split
+   * object pass) with main-pass semantics, without becoming the graph's
+   * isMainObjectRenderer, which Babylon uses to find the frame's camera.
+   */
+  mainView = false;
+
+  /** Transparent depth pre-passes draw under their own render pass id (see TransparentDepthPrePass). */
+  private readonly depthPrePass: TransparentDepthPrePass;
+
   constructor(...args: ConstructorParameters<typeof FrameGraphObjectRendererTask>) {
     super(...args);
     configureCutoutSorting(this._renderer);
     const renderer = this._renderer;
     const render = renderer.render;
     const scene = this._frameGraph.scene;
+    this.depthPrePass = attachObjectRendererDepthPrePass(scene, renderer);
     renderer.render = (...renderArgs) => {
       const intermediate = scene._intermediateRendering;
       // Babylon 9.20 marks every graph ObjectRenderer as intermediate, even
       // its main scene pass. Mesh.ignoreCameraMaxZ must retain native main-pass
       // behavior; geometry and shadow passes keep their intermediate context.
-      if (this.isMainObjectRenderer) scene._intermediateRendering = false;
+      if (this.isMainObjectRenderer || this.mainView) scene._intermediateRendering = false;
       try { return render.apply(renderer, renderArgs); }
       finally { scene._intermediateRendering = intermediate; }
     };
@@ -54,7 +66,7 @@ export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTas
   >();
 
   setOwnedTextureDependencies(
-    owner: "shadows" | "clustered",
+    owner: "shadows" | "clustered" | "water",
     handles: readonly FrameGraphTextureHandle[],
   ): void {
     const previous = this.textureDependencies.get(owner);
@@ -81,11 +93,17 @@ export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTas
       // Only override the readiness probe. Actual rendering keeps the official
       // renderer's readiness/cache behavior and any existing custom callback.
       this._renderer.customIsReadyFunction = (mesh, rate, preWarm) =>
-        (!previous || previous(mesh, rate, preWarm)) && isMeshFrameReady(mesh);
+        (!previous || previous(mesh, rate, preWarm)) && isMeshFrameReady(mesh) &&
+        (this._renderer.disableDepthPrePass || this.depthPrePass.isReady(mesh));
       return super.isReady();
     } finally {
       this._renderer.customIsReadyFunction = previous;
     }
+  }
+
+  override dispose(): void {
+    this.depthPrePass.dispose();
+    super.dispose();
   }
 
   protected override _setLightsForShadow(): void {
@@ -195,6 +213,8 @@ export class ManagedShadowsTask extends FrameGraphTask {
   private changedDuringFrame = false;
   private readonly scene: Scene;
   private readonly objects: ManagedShadowObjectRendererTask;
+  /** Further main-view passes (a split object pass) that receive the same maps. */
+  private readonly receivers: ManagedShadowObjectRendererTask[] = [];
 
   constructor(
     graph: FrameGraph,
@@ -204,6 +224,16 @@ export class ManagedShadowsTask extends FrameGraphTask {
     super("Forward admitted shadows", graph);
     this.scene = scene;
     this.objects = objects;
+  }
+
+  /** Bind another main-view pass to the admitted maps, before the graph builds. */
+  addReceiver(task: ManagedShadowObjectRendererTask): void {
+    if (task !== this.objects && !this.receivers.includes(task)) this.receivers.push(task);
+  }
+
+  private bindReceivers(generators: readonly ShadowGenerator[]): void {
+    this.objects.bindManagedShadows(generators, this.objects.camera);
+    for (const receiver of this.receivers) receiver.bindManagedShadows(generators, this.objects.camera);
   }
 
   /**
@@ -263,7 +293,7 @@ export class ManagedShadowsTask extends FrameGraphTask {
       });
       this.changedDuringFrame ||= this.recorded;
     }
-    this.objects.bindManagedShadows(current, this.objects.camera);
+    this.bindReceivers(current);
   }
 
   override record(): void {
@@ -313,11 +343,10 @@ export class ManagedShadowsTask extends FrameGraphTask {
       // It has not participated in this pass and needs fresh preparation.
       if (this.borrowed.some((entry) => !this.isCurrent(entry))) {
         this.changedDuringFrame = true;
-        this.objects.bindManagedShadows(
+        this.bindReceivers(
           this.borrowed
             .filter((entry) => this.isCurrent(entry))
             .map((entry) => entry.generator),
-          this.objects.camera,
         );
       }
     });
@@ -354,6 +383,7 @@ export class ManagedShadowsTask extends FrameGraphTask {
 
   override dispose(): void {
     this.borrowed = [];
+    this.receivers.length = 0;
     super.dispose();
   }
 }

@@ -20,6 +20,7 @@ import {
   engineCommandBus,
   isErr,
   normalizeRenderingPipeline,
+  renderEffectsAssetGuids,
   resolveGameInstanceClass,
 } from "@babylonslate/core";
 import type { SessionReportEntry } from "@babylonslate/runtime";
@@ -1009,9 +1010,13 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         const resourceScenes = [...overlayScenes, ...prefabScenes];
         const skyboxTextureGuids = [resolvedScene.scene, ...resourceScenes]
           .flatMap(skyboxFaceGuidsFromScene);
-        const environmentTextureGuids = environmentTextureGuidsFromScenes([
-          resolvedScene.scene, ...playLibrary.map((entry) => entry.scene), ...resourceScenes,
-        ]);
+        // Project effect textures (the grading LUT) load with scene environment cubes.
+        const environmentTextureGuids = [...new Set([
+          ...environmentTextureGuidsFromScenes([
+            resolvedScene.scene, ...playLibrary.map((entry) => entry.scene), ...resourceScenes,
+          ]),
+          ...renderEffectsAssetGuids(projectDocument?.settings.render.effects),
+        ])];
         const postProcessTextureGuids = postProcessTextureGuidsFromScenes([
           resolvedScene.scene, ...playLibrary.map((entry) => entry.scene), ...resourceScenes,
         ]);
