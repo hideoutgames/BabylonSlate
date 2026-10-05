@@ -292,6 +292,15 @@ export function EditorChromeBar({
   const [settingsScope, setSettingsScope] = useState<
     "project" | "engine" | null
   >(null);
+  // A closed Settings modal still runs all of its hooks on every document
+  // edit, so each scope mounts on first open and then stays mounted.
+  const [openedSettings, setOpenedSettings] = useState({
+    project: false,
+    engine: false,
+  });
+  if (settingsScope && !openedSettings[settingsScope]) {
+    setOpenedSettings({ ...openedSettings, [settingsScope]: true });
+  }
   const [searchOpen, setSearchOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
   const phone = usePhoneLayout();
@@ -830,21 +839,25 @@ export function EditorChromeBar({
       </div>
 
       <GlobalSearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
-      <SettingsModal
-        open={settingsScope === "project"}
-        onOpenChange={(open) => {
-          if (!open) setSettingsScope(null);
-        }}
-        scope="project"
-        onCloseProject={onCloseProject}
-      />
-      <SettingsModal
-        open={settingsScope === "engine"}
-        onOpenChange={(open) => {
-          if (!open) setSettingsScope(null);
-        }}
-        scope="engine"
-      />
+      {openedSettings.project ? (
+        <SettingsModal
+          open={settingsScope === "project"}
+          onOpenChange={(open) => {
+            if (!open) setSettingsScope(null);
+          }}
+          scope="project"
+          onCloseProject={onCloseProject}
+        />
+      ) : null}
+      {openedSettings.engine ? (
+        <SettingsModal
+          open={settingsScope === "engine"}
+          onOpenChange={(open) => {
+            if (!open) setSettingsScope(null);
+          }}
+          scope="engine"
+        />
+      ) : null}
     </div>
   );
 }
