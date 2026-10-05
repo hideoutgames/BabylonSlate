@@ -229,17 +229,21 @@ class WaterFftSimulation {
   private readonly evolve: EffectWrapper;
   private readonly butterfly: EffectWrapper;
   private readonly restored: Observer<AbstractEngine>;
+  readonly engine: AbstractEngine;
+  key: string;
+  layout: WaterFftLayout;
+  private readonly spectrum: Float32Array;
+  private readonly h0: InternalTexture;
+  private readonly work: [RenderTargetWrapper, RenderTargetWrapper];
+  private readonly output: RenderTargetWrapper;
+  private readonly lease: ManagedRenderLease;
 
   private constructor(
-    readonly engine: AbstractEngine,
-    public key: string,
-    public layout: WaterFftLayout,
-    private readonly spectrum: Float32Array,
-    private readonly h0: InternalTexture,
-    private readonly work: [RenderTargetWrapper, RenderTargetWrapper],
-    private readonly output: RenderTargetWrapper,
-    private readonly lease: ManagedRenderLease,
+    engine: AbstractEngine, key: string, layout: WaterFftLayout, spectrum: Float32Array, h0: InternalTexture,
+    work: [RenderTargetWrapper, RenderTargetWrapper], output: RenderTargetWrapper, lease: ManagedRenderLease,
   ) {
+    this.engine = engine; this.key = key; this.layout = layout; this.spectrum = spectrum; this.h0 = h0;
+    this.work = work; this.output = output; this.lease = lease;
     const outputTexture = output.texture!;
     // The wrapper holds its own reference, so the material's texture and the render target release independently.
     outputTexture.incrementReferences();
