@@ -176,6 +176,41 @@ async function measureLandscapeEdge(scene: Scene, camera: ArcRotateCamera, captu
   return result;
 }
 
+/**
+ * A gentle floor deeper than any wave trough reaches is no shore: Stylized Global Water over a hidden landscape whose
+ * floor undulates 3.4-4.6 m down, across the end of the terrain field's fine depth range (4 m for these waves), seen
+ * obliquely from about 60 m with every other foam off, against the same view with no landscape. Where the fine depth
+ * clamps, measuring the shoreline from the full-range depth's 8-bit steps drew contour rings of shore foam far from any
+ * shore, as specks and broken lines. Returns the share of pixels the floor brightens by more than a foam fleck would
+ * (the floor's depth only tints the water slightly) and whether it reached the water's terrain field.
+ */
+async function measureDeepFloor(scene: Scene, camera: ArcRotateCamera, capture: Capture, evidence: Record<string, string>) {
+  camera.mode = Camera.PERSPECTIVE_CAMERA;
+  camera.setTarget(new Vector3(0, 0, 0), false, false, true);
+  camera.upperRadiusLimit = null;
+  camera.alpha = -Math.PI / 2 - 0.4; camera.beta = 0.95; camera.radius = 60;
+  setSceneWaterTime(scene, 1.7);
+  const sea = createWaterMesh(scene, "deep-floor-water", normalizeWaterBody({}, "global"),
+    { ...createDefaultWaterDefinition("stylized"), crestFoam: 0, surfaceFoam: 0, sparkles: 0 });
+  const open = await capture();
+  const side = 40, heights: number[] = [];
+  for (let z = 0; z <= side; z++) for (let x = 0; x <= side; x++) {
+    heights.push(-4 + 0.6 * Math.sin((x / side * 120 - 60) * 0.21) * Math.cos((z / side * 120 - 60) * 0.17));
+  }
+  const floor = createLandscapeMesh(scene, "deep-floor", { width: 120, depth: 120, subdivisions: side, heights });
+  for (const mesh of floor.getChildMeshes()) mesh.isVisible = false;
+  const shot = await capture();
+  evidence["stylized-deep-floor"] = shot.png;
+  // The floor reached the water's terrain field.
+  const field = (sea.material?.pluginManager?.getPlugin("SlateWater") as { field?: { texture: unknown } | null } | null)?.field?.texture ?? null;
+  let rise = 0;
+  for (let i = 0; i < shot.pixels.length; i += 4) {
+    if (shot.pixels[i]! + shot.pixels[i + 1]! + shot.pixels[i + 2]! - open.pixels[i]! - open.pixels[i + 1]! - open.pixels[i + 2]! > 60) rise++;
+  }
+  floor.dispose(); sea.dispose();
+  return { rise: rise / (shot.pixels.length / 4), field: field !== null };
+}
+
 /** Test-build-only captures of production water, including a fixed-world transform comparison. */
 export async function runWaterRenderingProof(backend: "webgl2" | "webgpu") {
   const canvas = document.createElement("canvas");
@@ -514,8 +549,12 @@ export async function runWaterRenderingProof(backend: "webgl2" | "webgpu") {
       crestDifference: difference(high.pixels), troughDifference: difference(low.pixels) };
     water.dispose(); terrain.dispose();
     const landscapeEdge = await measureLandscapeEdge(scene, camera, capture, canvas, evidence);
+    const deepFloor = await measureDeepFloor(scene, camera, capture, evidence);
     const vertexParity = await measureVertexParity(scene, camera, capture, backend, canvas, evidence);
-    return { evidence, differences, brightness, crowded, pan, whitecaps, surfaceFoam, gerstner, subsurface, clearReflection, waveTerrain, contact, ripples, landscapeEdge, vertexParity };
+    return {
+      evidence, differences, brightness, crowded, pan, whitecaps, surfaceFoam, gerstner, subsurface, clearReflection, waveTerrain, contact, ripples,
+      landscapeEdge, deepFloor, vertexParity,
+    };
   } finally {
     const device = (engine as { _device?: { queue: { onSubmittedWorkDone(): Promise<void> } } })._device;
     engine.flushFramebuffer(); await device?.queue.onSubmittedWorkDone();
