@@ -737,7 +737,7 @@ vec2 swRipple = swContactDir * (cos(swRipplePhase) * swRippleFade * (0.1 + 0.3 *
 float swChopGain = U.slateWaterMotion.z * (0.35 + 0.65 * swCalm + swAgitate) * ${realistic ? "(0.7 + 0.6 * swGust) * U.slateWaterTerms.w" : "(0.5 + swGust)"};
 vec2 swSlope = swGradient + swDetail * swChopGain + swRipple;${ifFft(`
 swSlope += swFftSlope;`)}
-normalW =normalize(vec3(swBaseX - swSlope.x, 1.0, swBaseZ - swSlope.y));
+normalW = normalize(vec3(swBaseX - swSlope.x, 1.0, swBaseZ - swSlope.y));
 // The swell alone, without chop: the large-scale wave shape used for lighting through crests.
 vec3 swSwellNormal = normalize(vec3(swBaseX - swGradient.x, 1.0, swBaseZ - swGradient.y));
 
@@ -1785,9 +1785,9 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
   /**
    * The FFT detail band for `cascades` and its uniforms (`fftValues`): (g, Steepness, view footprint per metre of
    * depth, constant footprint), per cascade 4 / longest wavelength, and per cascade (1 / patch size, uv offset, highest
-   * wavenumber). The uv offset is fract(origin / patch size) + 0.5 / N in float64,
-   * so the floating origin never reaches the shader as a large coordinate. The footprint is metres per pixel of the
-   * pass's projection and target height. Returns the band only when it is ready and matches `cascades`.
+   * wavenumber). The uv offset is fract(origin / patch size) + 0.5 / N in float64, so the floating origin never reaches
+   * the shader as a large coordinate. The footprint is metres per pixel of the pass's projection and target height.
+   * Returns the band only when it is ready and matches `cascades`.
    */
   private fftState(scene: Scene, cascades: number): WaterFftResult | null {
     const result = waterFftForSurface(scene, this.water);
