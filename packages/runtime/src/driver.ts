@@ -937,8 +937,14 @@ class InProcessRuntime implements RuntimeDriver {
         !!actor.sceneLayerId && !!this.world.findSceneLayer(actor.sceneLayerId),
       spawn: (parent, classId, defaults) => this.spawnSceneLayerActor(parent, classId, defaults),
       remove: (actor) => this.removeSceneLayerActorSubtree(actor),
-      event: (actor, event, args) => this.runOwnerAction(actor, () =>
-        this.guardScript(() => this.scriptHost.invokeEvent(actor.classId, event, actor, args))),
+      event: (actor, event, args) => {
+        // Switching during Tick queues the new actor's World spawn. Its Begin
+        // Play and Switched To precede the switcher's completion notification.
+        const readyOwner = event === "onSceneLayerActorSwitched" && args.currentActor instanceof Actor
+          ? args.currentActor : actor;
+        this.runOwnerAction(readyOwner, () =>
+          this.guardScript(() => this.scriptHost.invokeEvent(actor.classId, event, actor, args)));
+      },
     });
     this.dynamicMeshes = new DynamicRuntimeMeshSync({
       eligible: (actor) => !actor.sceneLayerId && this.canRunOwner(actor),
@@ -5842,6 +5848,9 @@ class InProcessRuntime implements RuntimeDriver {
     try {
       this.focusNavigation.tick(pending, this.resolvedInput, simDt);
       this.world.tick();
+      // World committed actors queued by this tick; deliver their deferred
+      // notifications after actor and component creation hooks have completed.
+      this.flushOwnerActions();
       if (this.canTickScene()) {
         for (const stream of this.sceneStreams.values()) {
           if (!this.canTickScene()) break;

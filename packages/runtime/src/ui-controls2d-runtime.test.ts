@@ -122,7 +122,7 @@ describe("SceneLayer control runtime integration", () => {
       playScene: createDefaultScene(), sceneLayerLibrary: { radios: layer }, onCommand: (command) => commands.push(command) });
     try {
       runtime.realizePlayWorld(); runtime.createSceneLayer("radios");
-      const parts = commands.filter((command) => command.type === "assignMesh" && command.sceneLayerId).flatMap((command) => command.parts ?? []);
+      const parts = commands.flatMap((command) => command.type === "assignMesh" && command.sceneLayerId ? command.parts ?? [] : []);
       expect(parts.map((part) => [part.componentId, part.uiControl?.properties.checked])).toEqual([
         ["first", true], ["second", false], ["other", true], ["later-radio", false],
       ]);

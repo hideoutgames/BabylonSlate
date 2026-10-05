@@ -249,6 +249,11 @@ editor, Play and exported player. Width, Height and Font Size use layer units.
 - Maximum Length counts Unicode code points (`0` means unrestricted). Numeric
   values clamp to their bounds and snap from Minimum. Radio selection updates
   the group before change handlers run.
+- Text and numeric inputs draw caret and selection feedback using measured 2D
+  Text glyphs. Native editing supplies clipboard actions and composition;
+  pointer dragging selects text. Enter commits and Escape restores the draft's
+  original value. Keyboard Tab, arrows, Space, Home and End operate controls;
+  Shift selects the upper range-slider handle for keyboard adjustment.
 
 ## Virtualized collections, masks and safe areas
 
@@ -297,3 +302,6 @@ first spawned entry (`-1` leaves the switcher empty).
   native actor settings. Switcher entries serialize as a class ID string or
   `{ classId, defaults }`. Class references and their dependencies participate in
   Play/export content collection.
+- The graph **Scene Layer Actors** getter returns a typed class array. Setting
+  that array replaces the configured entries and their per-entry overrides;
+  editor-authored defaults remain intact when reading or switching entries.

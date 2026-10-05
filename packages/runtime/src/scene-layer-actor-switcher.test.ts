@@ -23,7 +23,7 @@ describe("SceneLayer actor switcher", () => {
           entryPoints: entryPoints("onBeginPlay", "onDestroyed", "onSceneLayerActorSwitchedTo", "onSceneLayerActorSwitchedFrom"),
           source: `export function onBeginPlay(ctx) { ctx.self.setVariable("beganWith", ctx.self.getVariable("title")); }
             export function onDestroyed(ctx) { ctx.self.setVariable("ended", true); }
-            export function onSceneLayerActorSwitchedTo(ctx) { ctx.self.setVariable("entered", ctx.args.index); }
+            export function onSceneLayerActorSwitchedTo(ctx) { ctx.self.setVariable("entered", ctx.args.index); ctx.self.setVariable("beganWhenEntered", ctx.self.getVariable("beganWith")); }
             export function onSceneLayerActorSwitchedFrom(ctx) { ctx.self.setVariable("left", ctx.args.index); }`,
         },
         { assetGuid: "panel", classId: "Panel", parentClassId: "BasePanel", anchors: [], entryPoints: [], source: "" },
@@ -45,7 +45,7 @@ describe("SceneLayer actor switcher", () => {
             }
           }
           export function onSceneLayerActorSwitching(ctx) { ctx.self.setVariable("switchingIndex", ctx.args.index); }
-          export function onSceneLayerActorSwitched(ctx) { ctx.self.setVariable("switchedIndex", ctx.args.index); }`,
+          export function onSceneLayerActorSwitched(ctx) { ctx.self.setVariable("switchedIndex", ctx.args.index); ctx.self.setVariable("enteredAtSwitch", ctx.args.currentActor?.getVariable("entered")); }`,
         },
       ]);
       runtime.realizePlayWorld();
@@ -83,6 +83,8 @@ describe("SceneLayer actor switcher", () => {
       expect(switcher.getVariable("switchingIndex")).toBe(1);
       expect(switcher.getVariable("switchedIndex")).toBe(1);
       expect(second.getVariable("entered")).toBe(1);
+      expect(second.getVariable("beganWhenEntered")).toBe("Second");
+      expect(switcher.getVariable("enteredAtSwitch")).toBe(1);
 
       switcher.setVariable("nextIndex", 2);
       runtime.tick();
