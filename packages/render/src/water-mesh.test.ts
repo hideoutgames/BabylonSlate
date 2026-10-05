@@ -12,6 +12,7 @@ import {
 import { updateSceneRenderingSettings } from "./render-settings";
 import type { WaterMaterialPlugin } from "./water-material";
 import { createLandscapeMesh } from "./landscape-mesh";
+import { WATER_FIELD_EDGE_RAMP } from "./water-field";
 import { applyAssignMesh, createPlayMesh, createSnapshotSceneBinding } from "./snapshot-apply";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@babylonslate/shader-graph";
 import { compileMaterialPlan, prewarmMaterial } from "./material-compiler";
@@ -314,7 +315,7 @@ describe("Water rendering", () => {
       expect(sceneWaterSamplesSceneCopy(scene, true, true)).toBe(false);
     } finally { scene.dispose(); engine.dispose(); }
   });
-  it("re-tessellates Global Water for a new Wave Length and widens its terrain field for a new Contact Foam Width", () => {
+  it("re-tessellates Global Water for a new Wave Length and keeps its terrain field over the landscape and edge ramp", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     new FreeCamera("camera", new Vector3(0, 4, 0), scene);
     try {
@@ -326,25 +327,30 @@ describe("Water rendering", () => {
       updateSceneWater(scene);
       const gapAtOrigin = () => { const xs = rowXs(ocean), k = xs.findIndex((x) => x > 0); return xs[k]! - xs[k - 1]!; };
       const fieldMinX = () => bindWater(ocean).get("slateWaterFieldBounds")![0]!;
-      // The field covers the landscape plus the contact range (three Contact Foam Widths) and a metre.
-      expect(fieldMinX()).toBeGreaterThan(-20 - (2.5 * 3 + 1));
-      expect(gapAtOrigin()).toBeCloseTo(0.5, 4);
+      // Unbounded water's field covers the landscape plus the larger of the contact range (three Contact Foam Widths,
+      // at most 8 m) and the depth ramp past the terrain, and a metre.
+      const before = fieldMinX();
+      expect(before).toBeLessThanOrEqual(-20 - (WATER_FIELD_EDGE_RAMP + 1));
+      // Default Global Water cells are 0.5 m at Mesh Density 1; the default Medium tier scales them.
+      const cell = 0.5 / RENDER_QUALITY_PROFILES.medium.water.meshDensity;
+      expect(gapAtOrigin()).toBeCloseTo(cell, 4);
       const edited = { ...water, waveLength: 24, contactFoamWidth: 2.5 };
       expect(updateWaterMeshDefinition(ocean, edited)).toBe(true);
       updateSceneWater(scene);
-      expect(fieldMinX()).toBeLessThanOrEqual(-20 - (2.5 * 3 + 1));
+      // The wider contact range (7.5 m) stays inside the ramp, so the re-measured field keeps its extent.
+      expect(fieldMinX()).toBe(before);
       // Cells scale with Wave Length even though the camera-following layout has not moved.
-      expect(gapAtOrigin()).toBeCloseTo(1, 4);
+      expect(gapAtOrigin()).toBeCloseTo(2 * cell, 4);
       // Each new rest vertex sits at its own world X/Z with the new cell size as its wave filter and the body's depth
       // and open-water edge, so the vertex shader displaces it onto the queried surface.
       const positions = ocean.getVerticesData(VertexBuffer.PositionKind)!, data = ocean.getVerticesData("slateWaterData")!;
       let checked = 0;
       for (let i = 0; i < positions.length; i += 3) {
         const x = positions[i]!, z = positions[i + 2]!;
-        if (Math.abs(x) > 6 || Math.abs(z) > 6) continue;
+        if (Math.abs(x) > 8 || Math.abs(z) > 8) continue;
         const vertex = i / 3, rendered = gpuVertex(ocean, edited, body, vertex, 1.5);
         expect(rendered.y).toBeCloseTo(sampleWaterSurface(edited, body, { x: rendered.x, y: 0, z: rendered.z }, 1.5).height, 4);
-        expect([data[vertex * 4]!, data[vertex * 4 + 1], data[vertex * 4 + 2]]).toEqual([expect.closeTo(1, 4), 10000, body.depth]);
+        expect([data[vertex * 4]!, data[vertex * 4 + 1], data[vertex * 4 + 2]]).toEqual([expect.closeTo(2 * cell, 4), 10000, body.depth]);
         checked++;
       }
       expect(checked).toBeGreaterThan(100);
