@@ -401,6 +401,16 @@ test("editor-edit profiling route", async ({ page }, testInfo) => {
         ),
         "The artifact must be built with VITE_REACT_PROFILING=true so test-mode Profilers mount",
       ).toBe(true);
+      // Dock panels render through Dockview portals; their regions must report
+      // like the document regions do, or per-panel attribution is silently lost.
+      expect(
+        await page.evaluate(
+          () =>
+            (globalThis as unknown as ProfileHost).__babylonslateTest.renderProfile()
+              .regions["panel:viewport"]?.commits ?? 0,
+        ),
+        "Dock panels must report panel:<component> Profiler regions",
+      ).toBeGreaterThan(0);
     },
     { timeout: SETUP_TIMEOUT_MS },
   );

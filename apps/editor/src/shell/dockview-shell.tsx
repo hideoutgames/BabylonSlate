@@ -26,11 +26,20 @@ import { listDockWindows } from "./window-catalog";
 import { profileComponents } from "../lib/render-profile";
 
 const SPACED_THEME: DockviewTheme = { ...themeAbyss, gap: 4 };
-/** Each dock panel kind is one `panel:<component>` profiling region in test builds. */
-const dockPanelComponents = profileComponents<IDockviewPanelProps>(
-  "panel:",
-  panelComponents,
-);
+let dockPanelComponents: typeof panelComponents | undefined;
+/**
+ * Each dock panel kind is one `panel:<component>` profiling region in test
+ * builds. Wrapped on first render, not at import: a bundle chunk cycle can
+ * evaluate this module before `render-profile` has initialized, which would
+ * silently keep the unwrapped registry. One map serves every shell, so a kind
+ * keeps one wrapper type across documents.
+ */
+function profiledDockPanelComponents() {
+  return (dockPanelComponents ??= profileComponents<IDockviewPanelProps>(
+    "panel:",
+    panelComponents,
+  ) as typeof panelComponents);
+}
 
 export interface DockviewShellProps {
   documentKind: DockviewDocumentKind;
@@ -204,7 +213,7 @@ export function DockviewShell({
           disableDnd={platformOptions.singleWindow}
           disableFloatingGroups={platformOptions.disableFloatingGroups}
           onReady={handleReady}
-          components={dockPanelComponents}
+          components={profiledDockPanelComponents()}
         />
       </div>
       {platformOptions.singleWindow && (
