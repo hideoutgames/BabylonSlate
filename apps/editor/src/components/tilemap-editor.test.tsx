@@ -555,11 +555,9 @@ describe("TilemapPaint", () => {
         height: 256,
         toJSON: () => {},
       }) as DOMRect;
-    dispatchPointerEvent(canvas, "pointerdown", {
-      pointerId: 1,
-      clientX: 16,
-      clientY: 240,
-    });
+    for (const type of ["pointerdown", "pointerup"] as const) {
+      dispatchPointerEvent(canvas, type, { pointerId: 1, clientX: 16, clientY: 240 });
+    }
     await waitFor(() => expect(onChange).toHaveBeenCalled());
     const painted = normalizeTilemapPayload(onChange.mock.calls.at(-1)?.[0]);
     expect(getTile(painted, "layer-1", 0, 0)).toBe(encodeTileGid(1, 1));
@@ -593,12 +591,10 @@ describe("TilemapPaint", () => {
         height: 256,
         toJSON: () => {},
       }) as DOMRect;
-    dispatchPointerEvent(canvas, "pointerdown", {
-      pointerId: 1,
-      clientX: 16,
-      clientY: 240,
-    });
-    await waitFor(() => expect(onChange).toHaveBeenCalled());
+    for (const type of ["pointerdown", "pointerup"] as const) {
+      dispatchPointerEvent(canvas, type, { pointerId: 1, clientX: 16, clientY: 240 });
+    }
+    await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
     expect(
       getTile(
         normalizeTilemapPayload(onChange.mock.calls.at(-1)?.[0]),
@@ -607,22 +603,11 @@ describe("TilemapPaint", () => {
         0,
       ),
     ).toBe(encodeTileGid(1, 1));
-    onChange.mockClear();
-    dispatchPointerEvent(canvas, "pointerup", { pointerId: 1, clientX: 16, clientY: 240 });
-    dispatchPointerEvent(canvas, "pointerdown", {
-      pointerId: 2,
-      clientX: 80,
-      clientY: 240,
-    });
-    await waitFor(() => expect(onChange).toHaveBeenCalled());
-    expect(
-      getTile(
-        normalizeTilemapPayload(onChange.mock.calls.at(-1)?.[0]),
-        "layer-1",
-        2,
-        0,
-      ),
-    ).toBe(0);
+    // A stroke entirely outside the 2x2 map changes nothing, so it adds no edit.
+    for (const type of ["pointerdown", "pointerup"] as const) {
+      dispatchPointerEvent(canvas, type, { pointerId: 2, clientX: 80, clientY: 240 });
+    }
+    expect(onChange).toHaveBeenCalledTimes(1);
   });
 
   it("drops an in-progress paint stroke when a second finger lands", async () => {
@@ -652,30 +637,23 @@ describe("TilemapPaint", () => {
       clientX: 16,
       clientY: 240,
     });
-    await waitFor(() => expect(onChange).toHaveBeenCalled());
-    expect(
-      getTile(
-        normalizeTilemapPayload(onChange.mock.calls.at(-1)?.[0]),
-        "layer-1",
-        0,
-        0,
-      ),
-    ).toBe(encodeTileGid(1, 1));
     dispatchPointerEvent(canvas, "pointerdown", {
       pointerId: 2,
       clientX: 80,
       clientY: 240,
     });
-    await waitFor(() => {
-      expect(
-        getTile(
-          normalizeTilemapPayload(onChange.mock.calls.at(-1)?.[0]),
-          "layer-1",
-          0,
-          0,
-        ),
-      ).toBe(0);
-    });
+    for (const pointerId of [2, 1]) {
+      dispatchPointerEvent(canvas, "pointerup", { pointerId, clientX: 16, clientY: 240 });
+    }
+    expect(onChange).not.toHaveBeenCalled();
+    // The next stroke starts from the unpainted map, not the dropped stroke.
+    for (const type of ["pointerdown", "pointerup"] as const) {
+      dispatchPointerEvent(canvas, type, { pointerId: 3, clientX: 48, clientY: 240 });
+    }
+    await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
+    const painted = normalizeTilemapPayload(onChange.mock.calls[0]![0]);
+    expect(getTile(painted, "layer-1", 1, 0)).toBe(encodeTileGid(1, 1));
+    expect(getTile(painted, "layer-1", 0, 0)).toBe(0);
   });
 
   it("pinches to change the paint cell size", async () => {

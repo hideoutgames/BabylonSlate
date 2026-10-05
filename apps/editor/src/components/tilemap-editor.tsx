@@ -682,13 +682,18 @@ export function TilemapPaint({
   const strokeRef = useRef<{
     id: string;
     base: TilemapPayload;
-    original: TilemapPayload;
+    /** `base` with the stroke so far; shown locally and committed on release. */
+    painted: TilemapPayload;
     gid: number;
     start: { x: number; y: number };
     last: { x: number; y: number };
     cells: Array<{ x: number; y: number }>;
     seen: Set<string>;
   } | null>(null);
+  // The stroke in progress draws from local state, so only this canvas
+  // re-renders per cell; the document receives one edit when it ends.
+  const [strokePreview, setStrokePreview] = useState<TilemapPayload | null>(null);
+  const shown = strokePreview ?? tilemap;
   const viewRef = useRef({ pan, cellSize });
   viewRef.current = { pan, cellSize };
   const { loadAssetDocument } = useDocuments();
@@ -738,14 +743,14 @@ export function TilemapPaint({
       cssSize.width,
       cssSize.height,
       dpr,
-      tilemap,
+      shown,
       pan,
       cellSize,
       payloads,
       atlases,
       sortingLayers,
     );
-  }, [atlases, cellSize, cssSize, pan, payloads, tilemap, sortingLayers]);
+  }, [atlases, cellSize, cssSize, pan, payloads, shown, sortingLayers]);
 
   const cellAt = (clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
@@ -762,8 +767,25 @@ export function TilemapPaint({
     });
   };
 
-  const commitStroke = (next: TilemapPayload, strokeId: string) => {
-    onChange(next as unknown as Record<string, unknown>, tilemapStrokeMergeKey(strokeId));
+  /** Commit the stroke in progress as one document edit, if it changed anything. */
+  const finishStroke = () => {
+    const stroke = strokeRef.current;
+    strokeRef.current = null;
+    setStrokePreview(null);
+    if (!stroke || stroke.painted === stroke.base) return;
+    onChange(
+      stroke.painted as unknown as Record<string, unknown>,
+      tilemapStrokeMergeKey(stroke.id),
+    );
+  };
+
+  /** Drop the stroke in progress without editing the document. */
+  const cancelStroke = () => {
+    const stroke = strokeRef.current;
+    if (!stroke) return;
+    strokeRef.current = null;
+    latestRef.current = stroke.base;
+    setStrokePreview(null);
   };
 
   const paintAt = (
@@ -773,10 +795,12 @@ export function TilemapPaint({
     if (!layer || !isTilemapPaintStrokeTool(tool)) return;
     if (tool !== "eraser" && (selectedGid < 0 || (selectedGid > 0 && !decoded))) return;
     if (pointerType === "down") {
+      // A stroke whose release never arrived (lost capture) still lands.
+      finishStroke();
       strokeRef.current = {
         id: newStrokeId(),
         base: latestRef.current,
-        original: authored,
+        painted: latestRef.current,
         gid: selectedGid,
         start: cell,
         last: cell,
@@ -786,35 +810,48 @@ export function TilemapPaint({
     }
     const stroke = strokeRef.current;
     if (!stroke) return;
+    // Brush and eraser cells only add up, so apply just the new ones to the
+    // stroke so far; shape tools re-derive from the stroke's base.
+    let painted: TilemapPayload;
     if (tool === "brush" || tool === "eraser") {
-      const extra = cellsAlongSegment(stroke.last, cell);
-      for (const entry of extra) {
+      const fresh =
+        pointerType === "down" ? [cell] : [];
+      for (const entry of cellsAlongSegment(stroke.last, cell)) {
         const key = `${entry.x},${entry.y}`;
         if (stroke.seen.has(key)) continue;
         stroke.seen.add(key);
         stroke.cells.push(entry);
+        fresh.push(entry);
       }
       stroke.last = cell;
+      if (fresh.length === 0) return;
+      painted = applyTilemapPaint(stroke.painted, {
+        tool,
+        layerId: layer.id,
+        tileId: stroke.gid,
+        start: stroke.start,
+        end: stroke.last,
+        cells: fresh,
+      });
     } else {
       stroke.last = cell;
+      if ((tool === "bucket" || tool === "stamp") && pointerType !== "down") return;
+      painted = applyTilemapPaint(stroke.base, {
+        tool,
+        layerId: layer.id,
+        tileId: stroke.gid,
+        start: stroke.start,
+        end: stroke.last,
+        cells: stroke.cells,
+        stamp:
+          tool === "stamp"
+            ? { width: 2, height: 2, tiles: [stroke.gid, stroke.gid, stroke.gid, stroke.gid] }
+            : undefined,
+      });
     }
-    if (tool === "bucket" || tool === "stamp") {
-      if (pointerType !== "down") return;
-    }
-    const painted = applyTilemapPaint(stroke.base, {
-      tool,
-      layerId: layer.id,
-      tileId: stroke.gid,
-      start: stroke.start,
-      end: stroke.last,
-      cells: stroke.cells,
-      stamp:
-        tool === "stamp"
-          ? { width: 2, height: 2, tiles: [stroke.gid, stroke.gid, stroke.gid, stroke.gid] }
-          : undefined,
-    });
+    stroke.painted = painted;
     latestRef.current = painted;
-    commitStroke(painted, stroke.id);
+    setStrokePreview(painted);
   };
 
   const addTileset = async (guid: string | null) => {
@@ -1006,12 +1043,7 @@ export function TilemapPaint({
               y: event.clientY,
             });
             if (pointersRef.current.size >= 2) {
-              const stroke = strokeRef.current;
-              if (stroke) {
-                latestRef.current = stroke.base;
-                commitStroke(stroke.original, stroke.id);
-                strokeRef.current = null;
-              }
+              cancelStroke();
               panDragRef.current = null;
               pendingPickerRef.current = null;
               pinchActiveRef.current = true;
@@ -1124,7 +1156,7 @@ export function TilemapPaint({
                   pickTileId(tilemap, layer.id, pending.x, pending.y),
                 );
               }
-              strokeRef.current = null;
+              finishStroke();
               pinchActiveRef.current = false;
             }
           }}
@@ -1137,7 +1169,7 @@ export function TilemapPaint({
             if (pointersRef.current.size < 2) pinchStartRef.current = null;
             if (pointersRef.current.size === 0) {
               pendingPickerRef.current = null;
-              strokeRef.current = null;
+              finishStroke();
               pinchActiveRef.current = false;
             }
           }}
