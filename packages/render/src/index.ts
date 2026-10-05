@@ -110,6 +110,7 @@ export * from "./shared-outline";
 export * from "./shared-outline-task";
 export { createWaterMesh, setSceneWaterTime, setWaterGpuWaves, updateSceneWater, updateWaterMeshBody, waterMeshBody } from "./water-mesh";
 export { createWaterRemovalMesh, sceneWaterRemovals, waterRemovalOutline } from "./water-removal-mesh";
+export { isMainWaterPass, WATER_SCENE_COPY_SKY_DEPTH, WATER_SCENE_COPY_SKY_THRESHOLD, waterSceneCopyForPass, waterSceneCopyScale, type WaterSceneCopy } from "./water-scene-copy";
 export { WaterField, distanceTransform } from "./water-field";
 export { WaterContactField, isWaterContactMesh } from "./water-contact-field";
 export { createWaterHandles, dragWaterHandle, insertRiverPoint, removeRiverPoint, waterHandles, waterOutline, type WaterHandle, type WaterHandleTarget, type WaterShapeEdit } from "./water-handles";

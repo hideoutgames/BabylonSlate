@@ -1,4 +1,4 @@
-import { ArcRotateCamera, Matrix, Mesh, PBRMaterial, Vector3, VertexBuffer, VertexData, type Camera, type Material, type Scene, type SubMesh } from "@babylonjs/core";
+import { ArcRotateCamera, Matrix, Mesh, PBRMaterial, Vector3, VertexBuffer, VertexData, type AbstractMesh, type Camera, type Material, type Scene, type SubMesh } from "@babylonjs/core";
 import {
   createDefaultWaterDefinition, createWaterWaveOutput, evaluateWaterVertex, normalizeWaterBody, normalizeWaterDefinition, waterBankFadeLength,
   waterEulerianGradient, waterFootprint, waterHorizontalEnvelope, waterRiverCentreline, waterWaveEnvelope, waterWaveQ, waterWaveSet,
@@ -62,7 +62,12 @@ type Surface = {
   boundedSubMeshes: number; boundedFirst: SubMesh | null;
 };
 const surfaces = new WeakMap<Scene, Set<Surface>>();
-const surfaceByMesh = new WeakMap<Mesh, Surface>();
+const surfaceByMesh = new WeakMap<AbstractMesh, Surface>();
+/**
+ * Live built-in (WaterMaterialPlugin) surfaces per Scene whose asset can sample a scene copy, so
+ * admission stays O(1) per frame. An asset is fixed per surface: editing it rebuilds the mesh.
+ */
+const copyIntents = new WeakMap<Scene, { refracting: number; reflecting: number }>();
 const clocks = new WeakMap<Scene, { time: number; runtime: boolean }>();
 const reflections = new WeakMap<Scene, WaterReflection>();
 
@@ -531,6 +536,34 @@ function waterSurfaceY(s: Surface, x: number, z: number, beyond = false): number
 /** Rivers and volumes tilted out of the horizontal have a rest height that varies across the body. */
 const restVaries = (s: Surface) => s.body.kind === "river" || Math.abs(s.world.m[1]!) > 1e-9 || Math.abs(s.world.m[9]!) > 1e-9;
 
+/**
+ * Whether any live built-in water in `scene` (a custom material has no WaterMaterialPlugin) has an asset that samples
+ * the scene copy under the given device-effective features: Refraction above zero while refraction runs, or Object
+ * Reflections while a screen-space march runs. The scene-level form of `waterMeshSamplesSceneCopy`; O(1).
+ */
+export function sceneWaterSamplesSceneCopy(scene: Scene, refraction: boolean, screenSpace: boolean): boolean {
+  const intents = copyIntents.get(scene);
+  return intents !== undefined && ((refraction && intents.refracting > 0) || (screenSpace && intents.reflecting > 0));
+}
+
+function countCopyIntent(scene: Scene, water: WaterDefinition, delta: 1 | -1): void {
+  let intents = copyIntents.get(scene);
+  if (!intents) { intents = { refracting: 0, reflecting: 0 }; copyIntents.set(scene, intents); }
+  if (water.refraction > 0) intents.refracting = Math.max(0, intents.refracting + delta);
+  if (water.objectReflections) intents.reflecting = Math.max(0, intents.reflecting + delta);
+}
+
+/**
+ * Whether `mesh` is built-in water whose asset can sample the view's scene copy: Refraction above zero while
+ * refraction runs, or Object Reflections while a screen-space march runs. A per-frame check: no allocation.
+ */
+export function waterMeshSamplesSceneCopy(mesh: AbstractMesh, refraction: boolean, screenSpace: boolean): boolean {
+  if ((mesh.metadata as { slateWater?: unknown } | null)?.slateWater !== true) return false;
+  const surface = surfaceByMesh.get(mesh);
+  if (!surface?.plugin) return false;
+  return (refraction && surface.water.refraction > 0) || (screenSpace && surface.water.objectReflections);
+}
+
 /** The live body of a built water mesh, or null for other meshes. */
 export function waterMeshBody(mesh: Mesh): Readonly<WaterBodyProperties> | null {
   return surfaceByMesh.get(mesh)?.body ?? null;
@@ -617,7 +650,11 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
   surfaceByMesh.set(mesh, surface);
   // Any pass that draws the surface (views, captures, depth pre-pass) keeps its CPU work running next frame.
   mesh.onBeforeRenderObservable.add(() => { surface.drawn = true; });
-  mesh.onDisposeObservable.addOnce(() => entries.delete(surface));
+  if (plugin) countCopyIntent(scene, water, 1);
+  mesh.onDisposeObservable.addOnce(() => {
+    entries.delete(surface);
+    if (plugin) countCopyIntent(scene, water, -1);
+  });
   refreshSurface(surface, clocks.get(scene)?.time ?? 0);
   if (plugin) {
     const fieldSurface: WaterFieldSurface = {
