@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useState,
+  type RefObject,
+} from "react";
 import {
   applyPrintHudCommand,
   nextPrintHudTimeoutMs,
@@ -45,15 +52,19 @@ export function PrintOverlay({ entries }: PrintOverlayProps) {
   );
 }
 
+export type PrintHudOptions = {
+  message: string;
+  key?: string;
+  duration?: number;
+  color?: string | PrintHudColor;
+};
+
+export type PrintHudPrint = (options: PrintHudOptions) => void;
+
 export function usePrintRegistry() {
   const [entries, setEntries] = useState<PrintOverlayEntry[]>([]);
 
-  const print = (options: {
-    message: string;
-    key?: string;
-    duration?: number;
-    color?: string | PrintHudColor;
-  }) => {
+  const print = useCallback<PrintHudPrint>((options) => {
     const color =
       typeof options.color === "string"
         ? parseCssColor(options.color)
@@ -66,9 +77,25 @@ export function usePrintRegistry() {
         color,
       }),
     );
-  };
+  }, []);
 
   return { entries, print, setEntries };
+}
+
+/**
+ * The Print HUD with its own state, so a print re-renders only this overlay
+ * and not its host. Prints apply at once (not per frame): a duration-0 print
+ * must still show for one frame. The host calls `printRef.current`.
+ */
+export function PrintHud({ printRef }: { printRef: RefObject<PrintHudPrint | null> }) {
+  const { entries, print } = usePrintRegistry();
+  useLayoutEffect(() => {
+    printRef.current = print;
+    return () => {
+      if (printRef.current === print) printRef.current = null;
+    };
+  }, [print, printRef]);
+  return <PrintOverlay entries={entries} />;
 }
 
 function parseCssColor(color: string): PrintHudColor | undefined {
