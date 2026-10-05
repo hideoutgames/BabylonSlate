@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronRightIcon } from "lucide-react";
+import { Button } from "@babylonslate/ui/components/button";
 import {
   Dialog,
   DialogContent,
@@ -37,7 +38,10 @@ export interface CatalogMenuProps<T extends CatalogMenuItem> {
   onSelect: (item: T) => void;
   /** Viewport point the popup opens from. Without one it is centered. */
   anchor?: { x: number; y: number } | null;
-  /** `modal` fills the viewport like other large catalogs and ignores `anchor`. */
+  /**
+   * `modal` fills the viewport like other large catalogs, ignores `anchor`, and
+   * adds a category sidebar (hidden on phones) unless `flat`.
+   */
   presentation?: "popup" | "modal";
   /** Defaults to a title / category / description substring match. */
   filterItems?: (items: readonly T[], query: string) => T[];
@@ -59,7 +63,7 @@ export interface CatalogMenuProps<T extends CatalogMenuItem> {
 
 type MenuRow<T> =
   | { kind: "category"; key: string; category: string; count: number; expanded: boolean }
-  | { kind: "item"; key: string; item: T; nested: boolean };
+  | { kind: "item"; key: string; item: T; nested: boolean; flatCategory?: boolean };
 
 function defaultFilter<T extends CatalogMenuItem>(
   items: readonly T[],
@@ -141,6 +145,8 @@ export function CatalogMenu<T extends CatalogMenuItem>({
   const [search, setSearch] = useState("");
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+  /** Sidebar filter in the modal; `null` lists every category. */
+  const [sidebarCategory, setSidebarCategory] = useState<string | null>(null);
   const listId = useId();
   const searchRef = useRef<HTMLInputElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -152,6 +158,7 @@ export function CatalogMenu<T extends CatalogMenuItem>({
     setSearch("");
     setActiveKey(null);
     setCollapsed(new Set());
+    setSidebarCategory(null);
   }, [open]);
 
   const filtered = useMemo(
@@ -159,9 +166,25 @@ export function CatalogMenu<T extends CatalogMenuItem>({
     [filterItems, formatCategory, items, search],
   );
 
+  const sidebar = modal && !flat;
+  const sidebarCategories = useMemo(() => {
+    if (!sidebar) return [];
+    const counts = new Map<string, number>();
+    for (const item of items) counts.set(item.category, 0);
+    for (const item of filtered) counts.set(item.category, (counts.get(item.category) ?? 0) + 1);
+    return [...counts.entries()]
+      .map(([category, count]) => ({ category, count }))
+      .sort((a, b) => formatCategory(a.category).localeCompare(formatCategory(b.category)));
+  }, [filtered, formatCategory, items, sidebar]);
+
   const rows = useMemo((): MenuRow<T>[] => {
     if (flat) {
       return filtered.map((item) => ({ kind: "item", key: item.id, item, nested: false }));
+    }
+    if (sidebar && sidebarCategory !== null) {
+      return filtered
+        .filter((item) => item.category === sidebarCategory)
+        .map((item) => ({ kind: "item", key: item.id, item, nested: false, flatCategory: true }));
     }
     const groups = new Map<string, T[]>();
     for (const item of filtered) {
@@ -188,7 +211,7 @@ export function CatalogMenu<T extends CatalogMenuItem>({
       }
     }
     return result;
-  }, [collapsed, filtered, flat, formatCategory]);
+  }, [collapsed, filtered, flat, formatCategory, sidebar, sidebarCategory]);
 
   const activeIndex = rows.findIndex((row) => row.key === activeKey);
   const firstItemIndex = rows.findIndex((row) => row.kind === "item");
@@ -310,11 +333,49 @@ export function CatalogMenu<T extends CatalogMenuItem>({
             data-testid={`${testId}-search`}
           />
         </div>
+        <div className="flex min-h-0 flex-1">
+        {sidebar ? (
+          <nav
+            aria-label="Categories"
+            className="catalog-sidebar flex w-48 shrink-0 flex-col gap-1 overflow-y-auto overscroll-y-contain border-r bg-sidebar p-2"
+            data-testid={`${testId}-sidebar`}
+          >
+            {[{ category: null, count: filtered.length }, ...sidebarCategories].map(
+              ({ category, count }) => {
+                const active = sidebarCategory === category;
+                return (
+                  <Button
+                    key={category ?? "__all__"}
+                    type="button"
+                    size="sm"
+                    variant={active ? "secondary" : "ghost"}
+                    className={cn(
+                      "justify-between rounded-md",
+                      count === 0 && !active && "text-muted-foreground/60",
+                    )}
+                    aria-current={active ? "true" : undefined}
+                    data-testid={`${testId}-sidebar-${category ?? "all"}`}
+                    onClick={() => {
+                      setSidebarCategory(category);
+                      setActiveKey(null);
+                      if (bodyRef.current) bodyRef.current.scrollTop = 0;
+                    }}
+                  >
+                    <span className="truncate">
+                      {category === null ? "All Categories" : formatCategory(category)}
+                    </span>
+                    <span className="text-xs text-muted-foreground tabular-nums">{count}</span>
+                  </Button>
+                );
+              },
+            )}
+          </nav>
+        ) : null}
         <div
           ref={bodyRef}
           tabIndex={-1}
           className={cn(
-            "min-h-0 flex-1 overflow-y-auto overscroll-y-contain outline-none",
+            "min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-y-contain outline-none",
             modal ? "px-3 py-1" : "p-1",
           )}
           style={{ overflowY: "auto" }}
@@ -325,7 +386,7 @@ export function CatalogMenu<T extends CatalogMenuItem>({
           ) : (
             <div role="tree" id={listId} aria-label={treeLabel}>
               <WindowedList
-                key={`${search}:${listKey}`}
+                key={`${search}:${listKey}:${sidebarCategory ?? ""}`}
                 itemCount={rows.length}
                 rowHeight={rowHeight}
                 activeIndex={activeIndex}
@@ -388,7 +449,7 @@ export function CatalogMenu<T extends CatalogMenuItem>({
                           {item.description}
                         </span>
                       ) : null}
-                      {row.nested ? null : (
+                      {row.nested || row.flatCategory ? null : (
                         <span className="truncate text-xs text-muted-foreground">
                           {formatCategory(item.category)}
                         </span>
@@ -399,6 +460,7 @@ export function CatalogMenu<T extends CatalogMenuItem>({
               </WindowedList>
             </div>
           )}
+        </div>
         </div>
         <div
           className={cn(
@@ -411,7 +473,7 @@ export function CatalogMenu<T extends CatalogMenuItem>({
             <Kbd>↓</Kbd>
             Navigate
           </span>
-          {flat ? null : (
+          {flat || (sidebar && sidebarCategory !== null) ? null : (
             <span className="flex items-center gap-1">
               <Kbd>←</Kbd>
               <Kbd>→</Kbd>
