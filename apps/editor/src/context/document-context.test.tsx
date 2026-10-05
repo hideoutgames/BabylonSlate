@@ -7,9 +7,11 @@ import {
   type DocumentRef,
   type SerializedScene,
 } from "@babylonslate/core";
+import { OpfsStorageAdapter } from "@babylonslate/vfs";
 import { createProjectAsset } from "../lib/create-project-asset";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 import type { OpenDocument } from "../services/document-service";
+import { ProjectService } from "../services/project-service";
 import {
   installMemoryOpfs,
   unmountDocumentProvider,
@@ -105,6 +107,34 @@ async function openProject(): Promise<DocumentActions> {
   return actions;
 }
 
+/** Creates a Scene asset in the project root, as Content Browser New Asset does. */
+async function createScene(actions: DocumentActions, name: string) {
+  const scene = await act(() =>
+    createProjectAsset({
+      registry: documents().assetRegistry!,
+      rootId: "project",
+      folderRelative: "",
+      type: "Scene",
+      name,
+    }),
+  );
+  act(() => actions.noteAssetsCreated());
+  return scene;
+}
+
+/** Saves the unsaved Main scene and opens `path`, which closes Main. */
+async function saveAndSwitchScene(actions: DocumentActions, path: string) {
+  await act(async () => {
+    await actions.openDocument(sceneRef(path));
+    await actions.confirmExclusiveSceneOpen("save");
+  });
+  expect(documents().openDocuments.some((doc) => doc.id === MAIN_SCENE_ID)).toBe(false);
+}
+
+function firstActorPosition(id: string) {
+  return openScene(id).actors[0]!.transform.position;
+}
+
 beforeEach(installMemoryOpfs);
 
 afterEach(async () => {
@@ -185,16 +215,7 @@ describe("DocumentProvider actions and route", () => {
 
   it("opens an exclusive scene confirmed in the same event that requested it", async () => {
     const actions = await openProject();
-    const second = await act(() =>
-      createProjectAsset({
-        registry: documents().assetRegistry!,
-        rootId: "project",
-        folderRelative: "",
-        type: "Scene",
-        name: "Second",
-      }),
-    );
-    act(() => actions.noteAssetsCreated());
+    const second = await createScene(actions, "Second");
     await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
     await act(() =>
       actions.applySceneChange(
@@ -217,6 +238,10 @@ describe("DocumentProvider actions and route", () => {
         .openDocuments.filter((doc) => doc.ref.kind === "scene")
         .map((doc) => doc.id),
     ).toEqual([secondId]);
+
+    // The discarded edit's history cannot reapply to the saved Main.
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    expect(documents().canUndoActiveDocument).toBe(false);
   });
 
   it("keeps document lists through registry-only updates and tab switches, and Class inputs through Scene edits", async () => {
@@ -271,5 +296,89 @@ describe("DocumentProvider actions and route", () => {
 
     await act(() => actions.forceCloseProject());
     expect(seen.route).toBe("home");
+  });
+});
+
+describe("DocumentProvider closed document history", () => {
+  it("restores Main's pre-edit value with Undo after the exclusive switch closed it and it reopened", async () => {
+    const actions = await openProject();
+    const second = await createScene(actions, "Second");
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    const before = structuredClone(firstActorPosition(MAIN_SCENE_ID));
+    await act(() =>
+      actions.applySceneChange(
+        MAIN_SCENE_ID,
+        movedScene(openScene(MAIN_SCENE_ID), 2),
+      ),
+    );
+    await saveAndSwitchScene(actions, second.path);
+
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    expect(documents().canUndoActiveDocument).toBe(true);
+    await act(async () => actions.undoActiveDocument());
+
+    expect(firstActorPosition(MAIN_SCENE_ID)).toEqual(before);
+  });
+
+  it("reopens Main with empty history when its file changed while it was closed", async () => {
+    const actions = await openProject();
+    const second = await createScene(actions, "Second");
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    await act(() =>
+      actions.applySceneChange(
+        MAIN_SCENE_ID,
+        movedScene(openScene(MAIN_SCENE_ID), 2),
+      ),
+    );
+    await saveAndSwitchScene(actions, second.path);
+
+    // Another writer (a sync tool, another editor window) saves Main.
+    const storage = new OpfsStorageAdapter();
+    await storage.openDocumentsProject("Stable");
+    const external = new ProjectService(storage);
+    await external.loadCurrentProject();
+    const saved = (await external.loadDocument(
+      "scene",
+      MAIN_SCENE_FILE,
+    )) as SerializedScene;
+    const changed = movedScene(saved, 5);
+    await external.saveDocument("scene", MAIN_SCENE_FILE, changed);
+    await external.closeProject();
+
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    expect(firstActorPosition(MAIN_SCENE_ID)).toEqual(
+      changed.actors[0]!.transform.position,
+    );
+    expect(documents().canUndoActiveDocument).toBe(false);
+  });
+
+  it("gives a Scene created at a deleted Scene's path none of the deleted Scene's history", async () => {
+    const actions = await openProject();
+    const second = await createScene(actions, "Second");
+    const secondId = documentId({ kind: "scene", path: second.path });
+    await act(() => actions.openDocument(sceneRef(second.path)));
+    const original = structuredClone(openScene(secondId));
+    // Edit and Undo, then save: the history waits in Redo on unchanged content.
+    await act(() => actions.applySceneChange(secondId, movedScene(original, 2)));
+    await act(async () => actions.undoActiveDocument());
+    await act(() => actions.saveAll());
+    expect(documents().canRedoActiveDocument).toBe(true);
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+
+    // Content Browser Delete.
+    const registry = documents().assetRegistry!;
+    await act(async () => {
+      actions.closeDocumentsForPaths([second.path]);
+      await registry.deleteAsset(second.header.guid);
+      await actions.repairAfterAssetDelete(new Set([second.header.guid]));
+    });
+    const recreated = await createScene(actions, "Second");
+    expect(recreated.path).toBe(second.path);
+    await act(() => actions.openDocument(sceneRef(second.path)));
+
+    // Same path and the same content the old history was built on.
+    expect(openScene(secondId)).toEqual(original);
+    expect(documents().canUndoActiveDocument).toBe(false);
+    expect(documents().canRedoActiveDocument).toBe(false);
   });
 });

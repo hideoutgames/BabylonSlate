@@ -749,7 +749,7 @@ The rule for agents: if changing a setting should change the exported game, it b
 
 ### 7.3 Undo, redo and destructive actions
 
-Undo is **per document, not global**. Each open document owns its own stack, so undoing inside a graph can never rewind an unrelated scene edit, and closing a document drops its history. `packages/edit` holds the transaction layer: every reversible mutation is a command object with `apply`, `invert` and a merge key, and no editing surface is allowed to mutate a document model directly.
+Undo is **per document, not global**. Each open document owns its own stack, so undoing inside a graph can never rewind an unrelated scene edit, and a closed document's history is kept for the project session (within the undo byte budget) but resumes only if the document reopens with the content that history was built on; discarded edits, deletion and project close or open drop it. `packages/edit` holds the transaction layer: every reversible mutation is a command object with `apply`, `invert` and a merge key, and no editing surface is allowed to mutate a document model directly.
 
 Scope, drawing the line at the file boundary:
 - **Undoable**: everything inside a document. Property and detail-panel edits, transform and gizmo drags, rename, reorder and reparent, graph node moves, pin connections and disconnections, and **adding or removing actors in a scene**, nodes in a graph, components on an actor, variables, functions and widgets. These live in the document's in-memory model until save, so inverting them is cheap and safe, and deleting an actor is one of the edits users undo most.
