@@ -1,0 +1,139 @@
+import { describe, expect, it } from "vitest";
+import { createDefaultWaterDefinition, createSeededRng, normalizeWaterDefinition, waterWaveSet, type WaterDefinition } from "@babylonslate/core";
+import {
+  WATER_FFT_PERIOD, waterFftBandVariance, waterFftCycle, waterFftInitialSpectrum, waterFftInverse, waterFftLayout,
+  waterFftSynthesize, type WaterFftLayout,
+} from "./water-fft-spectrum";
+
+const TAU = 2 * Math.PI;
+const water = (patch: Partial<WaterDefinition> = {}) => normalizeWaterDefinition({ ...createDefaultWaterDefinition(), ...patch });
+
+/** Direct O(N⁴) inverse DFT of one atlas segment, both complex pairs of every RGBA texel. */
+function inverseDft(input: Float64Array, width: number, size: number, segment: number): Float64Array {
+  const out = new Float64Array(size * size * 4);
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const o = (y * size + x) * 4;
+    for (let v = 0; v < size; v++) for (let u = 0; u < size; u++) {
+      const angle = TAU * (u * x + v * y) / size, c = Math.cos(angle), s = Math.sin(angle);
+      const i = (v * width + segment * size + u) * 4;
+      for (let pair = 0; pair < 4; pair += 2) {
+        out[o + pair] += input[i + pair]! * c - input[i + pair + 1]! * s;
+        out[o + pair + 1] += input[i + pair]! * s + input[i + pair + 1]! * c;
+      }
+    }
+  }
+  return out;
+}
+
+const maxDifference = (a: ArrayLike<number>, b: ArrayLike<number>) => {
+  let max = 0;
+  for (let i = 0; i < a.length; i++) max = Math.max(max, Math.abs(a[i]! - b[i]!));
+  return max;
+};
+
+/**
+ * Each mode as its own travelling wave, independent of the packed transform: a mode k with h0(k) adds
+ * 2·Re(F(k)·h0(k)·e^{i(k·x − θ)}) to a field whose spectral factor is F (1 for H, i·k̂ for D, i·k for ∇H, …).
+ */
+function travellingWaves(spectrum: Float32Array, layout: WaterFftLayout, cycle: number): Float64Array[] {
+  const { size, cascades } = layout, width = size * cascades;
+  const layers = Array.from({ length: 2 * cascades }, () => new Float64Array(size * size * 4));
+  for (let cascade = 0; cascade < cascades; cascade++) {
+    const patch = layout.patchSizes[cascade]!, scale = TAU / patch;
+    for (let my = 0; my < size; my++) for (let mx = 0; mx < size; mx++) {
+      const i = (my * width + cascade * size + mx) * 4, re = spectrum[i]!, im = spectrum[i + 1]!;
+      if (re === 0 && im === 0) continue;
+      const kx = (mx < size / 2 ? mx : mx - size) * scale, kz = (my < size / 2 ? my : my - size) * scale, kl = Math.hypot(kx, kz);
+      const theta = TAU * (spectrum[i + 2]! * cycle - Math.floor(spectrum[i + 2]! * cycle));
+      // [real factor, imaginary factor] of F for each output channel, in output packing order.
+      const factors: [number, number][][] = [
+        [[0, kx / kl], [1, 0], [0, kz / kl], [-kx * kz / kl, 0]],
+        [[0, kx], [0, kz], [-kx * kx / kl, 0], [-kz * kz / kl, 0]],
+      ];
+      for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+        const phase = kx * x * patch / size + kz * y * patch / size - theta, c = Math.cos(phase), s = Math.sin(phase);
+        const wre = re * c - im * s, wim = re * s + im * c; // h0·e^{i·phase}
+        for (let half = 0; half < 2; half++) for (let channel = 0; channel < 4; channel++) {
+          const [fr, fi] = factors[half]![channel]!;
+          layers[2 * cascade + half]![(y * size + x) * 4 + channel] += 2 * (fr * wre - fi * wim);
+        }
+      }
+    }
+  }
+  return layers;
+}
+
+describe("FFT ocean spectrum and CPU reference", () => {
+  it("runs the GPU's Stockham pass sequence to the natural-order inverse DFT of every atlas segment", () => {
+    for (const [size, segments] of [[8, 2], [16, 4]] as const) {
+      const rng = createSeededRng(size);
+      const work = Float64Array.from({ length: segments * size * size * 4 }, () => rng.nextFloat() * 2 - 1);
+      const expected = Array.from({ length: segments }, (_, segment) => inverseDft(work, segments * size, size, segment));
+      const layers = waterFftInverse(work.slice(), size, segments);
+      expect(layers).toHaveLength(segments);
+      for (let segment = 0; segment < segments; segment++) expect(maxDifference(layers[segment]!, expected[segment]!)).toBeLessThan(1e-9);
+    }
+  });
+
+  it("synthesizes real height, Gerstner offset, slope and Jacobian fields that travel downwind like the analytic swell", () => {
+    const set = waterWaveSet(water({ waveDirection: 25, waveSpread: 0.6, waveSeed: 9 }));
+    const layout = waterFftLayout(set, 16, 2);
+    const spectrum = waterFftInitialSpectrum(set, layout);
+    for (const time of [0, 3.7, 1000.25]) {
+      const cycle = waterFftCycle(time);
+      const layers = waterFftSynthesize(spectrum, layout, cycle), expected = travellingWaves(spectrum, layout, cycle);
+      for (let layer = 0; layer < layers.length; layer++) {
+        let magnitude = 0;
+        for (const value of expected[layer]!) magnitude = Math.max(magnitude, Math.abs(value));
+        expect(magnitude).toBeGreaterThan(0);
+        expect(maxDifference(layers[layer]!, expected[layer]!)).toBeLessThan(magnitude * 1e-9);
+      }
+    }
+    // The band repeats after exactly one period, so the GPU phase never needs large arguments.
+    const start = waterFftSynthesize(spectrum, layout, waterFftCycle(12.5));
+    const later = waterFftSynthesize(spectrum, layout, waterFftCycle(12.5 + 7 * WATER_FFT_PERIOD));
+    expect(maxDifference(start[0]!, later[0]!)).toBeLessThan(1e-9);
+  });
+
+  it("holds the core density's variance above the analytic cutoff, downwind, and nothing below it", () => {
+    for (const waveModel of ["classic", "ocean"] as const) {
+      const definition = water({ waveModel, waveDirection: 40, waveSpread: 0.2 });
+      const set = waterWaveSet(definition);
+      const layout = waterFftLayout(set, 64, 2);
+      expect(layout.bandEdges[0]).toBe(set.cutoffK);
+      let ratio = 0, sumX = 0, sumZ = 0;
+      const seeds = 24;
+      for (let seed = 0; seed < seeds; seed++) {
+        const seeded = waterWaveSet(water({ waveModel, waveDirection: 40, waveSpread: 0.2, waveSeed: seed * 101 + 7 }));
+        const spectrum = waterFftInitialSpectrum(seeded, layout);
+        const layers = waterFftSynthesize(spectrum, layout, waterFftCycle(seed * 1.3));
+        for (let cascade = 0; cascade < layout.cascades; cascade++) {
+          const scale = TAU / layout.patchSizes[cascade]!;
+          for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
+            const i = (y * 64 * layout.cascades + cascade * 64 + x) * 4, power = spectrum[i]! ** 2 + spectrum[i + 1]! ** 2;
+            const kx = (x < 32 ? x : x - 64) * scale, kz = (y < 32 ? y : y - 64) * scale, k = Math.hypot(kx, kz);
+            // Inside the cascade's own band only, so neither the analytic band nor another cascade counts twice.
+            if (k < layout.bandEdges[cascade]! || k >= layout.bandEdges[cascade + 1]!) expect(power).toBe(0);
+            if (k > 0) { sumX += power * kx / k; sumZ += power * kz / k; }
+          }
+          let variance = 0;
+          const height = layers[2 * cascade]!;
+          for (let i = 1; i < height.length; i += 4) variance += height[i]! ** 2;
+          ratio += variance / (64 * 64) / waterFftBandVariance(seeded, layout.bandEdges[cascade]!, layout.bandEdges[cascade + 1]!) / layout.cascades;
+        }
+      }
+      // Realized height variance matches ∫S(k)dk over the bands (averaged over seeds and cascades).
+      expect(ratio / seeds).toBeGreaterThan(0.85);
+      expect(ratio / seeds).toBeLessThan(1.15);
+      // Energy-weighted mean heading is the asset's Wave Direction.
+      expect(Math.atan2(sumZ, sumX) * 180 / Math.PI).toBeCloseTo(40, -1);
+    }
+  });
+
+  it("draws the same spectrum for the same asset and a different one for another Wave Seed", () => {
+    const layout = waterFftLayout(waterWaveSet(water()), 32, 1);
+    const first = waterFftInitialSpectrum(waterWaveSet(water({ waveSeed: 3 })), layout);
+    expect(waterFftInitialSpectrum(waterWaveSet(water({ waveSeed: 3 })), layout)).toEqual(first);
+    expect(maxDifference(waterFftInitialSpectrum(waterWaveSet(water({ waveSeed: 4 })), layout), first)).toBeGreaterThan(0);
+  });
+});

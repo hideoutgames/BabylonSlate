@@ -5,6 +5,7 @@ import {
   type WaterBodyProperties, type WaterDefinition,
 } from "@babylonslate/core";
 import { updateDynamicMaterialBounds } from "./material-bounds";
+import { requestWaterFft, updateSceneWaterFft } from "./water-fft";
 import { configureWaterMaterial, contactRange, WaterMaterialPlugin } from "./water-material";
 import { WaterContactField } from "./water-contact-field";
 import { WaterField, type WaterFieldSurface } from "./water-field";
@@ -46,7 +47,10 @@ export function updateSceneWater(scene: Scene): void {
     // Waves never rebake either field: the shader reads contacts at each fragment's rendered height.
     surface.field?.update();
     surface.contacts?.update(now);
+    // Visible built-in water asks for its FFT detail band; the simulations run once below, after every request.
+    if (surface.plugin) requestWaterFft(scene, surface.mesh, surface.water);
   }
+  updateSceneWaterFft(scene, clock.time);
 }
 
 /** Dense cells of an axis with `count` cells: the middle half. */

@@ -109,6 +109,11 @@ export { renderPathSession, requestRenderPath, subscribeRenderPathSession } from
 export * from "./shared-outline";
 export * from "./shared-outline-task";
 export { createWaterMesh, setSceneWaterTime, updateSceneWater, updateWaterMeshBody, waterMeshBody } from "./water-mesh";
+export { WATER_FFT_IDLE_RUNS, requestWaterFft, updateSceneWaterFft, waterFftDiagnostics, waterFftForSurface, type WaterFftDiagnostics, type WaterFftResult } from "./water-fft";
+export {
+  WATER_FFT_CASCADE_RATIO, WATER_FFT_MIN_SPREAD, WATER_FFT_PERIOD, waterFftBandVariance, waterFftButterfly, waterFftCycle, waterFftEvolve,
+  waterFftInitialSpectrum, waterFftInverse, waterFftLayout, waterFftStages, waterFftSynthesize, type WaterFftLayout,
+} from "./water-fft-spectrum";
 export { createWaterRemovalMesh, sceneWaterRemovals, waterRemovalOutline } from "./water-removal-mesh";
 export { WaterField, distanceTransform } from "./water-field";
 export { WaterContactField, isWaterContactMesh } from "./water-contact-field";
