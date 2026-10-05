@@ -8,7 +8,7 @@ import {
 } from "@babylonslate/core";
 import {
   createAppWebGpuEngine, createParticlePreviewScene, createWaterMesh, setSceneRenderSettings, setSceneWaterTime, setWaterGpuWaves, updateSceneWater,
-  waterPlanarReflectionDiagnostics,
+  waterPlanarReflectionDiagnostics, waterPlanarReflectionForCamera,
 } from "@babylonslate/render";
 import { SceneRenderCoordinator } from "@babylonslate/render/scene-render-coordinator";
 import { createLandscapeMesh } from "../../../../packages/render/src/landscape-mesh";
@@ -906,9 +906,18 @@ export async function runWaterObjectProof(backend: "webgl2" | "webgpu", options:
     };
     // On screen: the march finds the beacon in the scene copy; the planar mirror draws it too.
     const onScreen = await reflectionCase("reflection-on-screen", new Vector3(0, 2.2, 10), new Vector3(0, 2.2, -10), new Vector3(0, 0.6, 8));
-    // Above the top of the view: only the planar mirror can reflect it.
-    const offScreen = await reflectionCase("reflection-off-screen", new Vector3(0, 7, 8), new Vector3(0, 3, -6), new Vector3(0, -2.5, 8));
+    // Above the top of a low view: only the planar mirror can reflect it.
+    const offScreen = await reflectionCase("reflection-off-screen", new Vector3(0, 6, 14), new Vector3(0, 1, -6), new Vector3(0, -2.75, 8));
     reflectionLake.dispose();
+    // At Ultra, a small flat pond that is not the view's dominant body (a large lake filling the lower left of the
+    // view is) marches instead.
+    const pond = createWaterMesh(scene, "reflection-pond", normalizeWaterBody({ width: 4, length: 4, depth: 4, waveScale: 0 }), mirror);
+    const dominant = createWaterMesh(scene, "reflection-dominant", normalizeWaterBody({ width: 50, length: 50, depth: 4, waveScale: 0 }), mirror);
+    dominant.position.set(-30, 0, 0);
+    const nonDominant = await reflectionCase("reflection-non-dominant", new Vector3(0, 2.2, 10), new Vector3(0, 2.2, -10), new Vector3(0, 0.6, 8));
+    // The body the view's planar reflection mirrored in the last render.
+    const planarBody = waterPlanarReflectionForCamera(scene, camera)?.mesh.name ?? null;
+    pond.dispose(); dominant.dispose();
     beacon.isVisible = false;
 
     // Every Water Shading Detail, both styles, with the copy and reflection features each tier runs.
@@ -929,7 +938,7 @@ export async function runWaterObjectProof(backend: "webgl2" | "webgpu", options:
       }
       lake.dispose();
     }
-    return { refraction, onScreen, offScreen, tiers, graphTasks, evidence };
+    return { refraction, onScreen, offScreen, nonDominant, planarBody, tiers, graphTasks, evidence };
   } finally {
     coordinator?.dispose();
     const device = (engine as { _device?: { queue: { onSubmittedWorkDone(): Promise<void> } } })._device;

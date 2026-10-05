@@ -198,7 +198,10 @@ float swLeak = step(swSceneZ1, swWaterZ);
 swRefrUv = mix(swRefrUv, swScreenUv, swLeak);
 float swSceneZ = mix(swSceneZ1, swSceneZ0, swLeak);
 vec3 swBackground = swSceneColor(swRefrUv);
-swDepth = min(swDepth, max(swSceneZ - swWaterZ, 0.0) / max(swWaterZ, 0.001) * abs(S.vEyePosition.y - IN.vPositionW.y));`);
+// Beside the silhouette of something in front of the water, a downsampled copy texel holds that object (its
+// nearest depth): there the copy is not what lies behind this point, so the pixel keeps the blended surface.
+float swRefracts = step(swWaterZ, swSceneZ);
+swDepth = mix(swDepth, min(swDepth, max(swSceneZ - swWaterZ, 0.0) / max(swWaterZ, 0.001) * abs(S.vEyePosition.y - IN.vPositionW.y)), swRefracts);`);
 }
 
 /**
@@ -779,8 +782,8 @@ swEmissive += surfaceAlbedo * (swSun * max(dot(swWaveN, swL), 0.0) * 0.8 + swAmb
 alpha = (1.0 - (1.0 - swFres) * swTransmit * (1.0 - swFoam)) * swEdgeFade;${ifDefined(REFRACTION, `
 // The refracted scene replaces the blended background: the light transmitted through the water is the copy behind
 // this point, so coverage keeps only the shore fade.
-swEmissive += swBackground * ((1.0 - swFres) * swTransmit * (1.0 - swFoam) * swEdgeFade);
-alpha = swEdgeFade;`)}
+swEmissive += swBackground * ((1.0 - swFres) * swTransmit * (1.0 - swFoam) * swEdgeFade * swRefracts);
+alpha = mix(alpha, swEdgeFade, swRefracts);`)}
 ${objectReflectionSource("normalize(swRefl)", "sqrt(sqrt(U.slateWaterOrigin.w * U.slateWaterOrigin.w * U.slateWaterOrigin.w * U.slateWaterOrigin.w + 2.0 * swSlopeVariance))")}
 `;
 }
@@ -913,8 +916,8 @@ swEmissive = mix(swEmissive, swObjRefl.rgb, swReflWeight);
 alpha = max(alpha, swReflWeight);
 #endif${ifDefined(REFRACTION, `
 // The refracted scene replaces the blended background; Opacity still sets how much of it shows.
-swEmissive = mix(swBackground, swEmissive, alpha);
-alpha = 1.0;`)}
+swEmissive = mix(swEmissive, mix(swBackground, swEmissive, alpha), swRefracts);
+alpha = mix(alpha, 1.0, swRefracts);`)}
 `;
 }
 
@@ -1432,16 +1435,22 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
    */
   private bindObjectFeatures(buffer: UniformBuffer, scene: Scene, subMesh: SubMesh | undefined): void {
     const defines = subMesh?.materialDefines as MaterialDefines | null | undefined;
-    const copy = defines?.[REFRACTION] || defines?.[SSR] ? waterSceneCopyForPass(scene, scene.getEngine().currentRenderPassId) : null;
-    this.boundCopy = copy;
+    this.boundCopy = this.boundPlanar = null;
     const camera = scene.activeCamera;
-    const distance = Math.min(camera && camera.maxZ > 0 ? camera.maxZ : SSR_MAX_DISTANCE, SSR_MAX_DISTANCE);
-    buffer.updateFloat4("slateWaterScreen", copy ? copy.invSize[0] : 0, copy ? copy.invSize[1] : 0, this.water.refraction, distance);
-    const planar = defines?.[PLANAR] ? waterPlanarReflectionForCamera(scene, camera) : null;
-    const mine = planar && planar.mesh === this.mesh ? planar : null;
-    this.boundPlanar = mine;
-    buffer.updateFloat4("slateWaterPlanar", mine ? 1 : 0, mine?.gammaSpace ? 1 : 0, PLANAR_DISTORTION, 0);
-    buffer.updateMatrix("slateWaterPlanarMatrix", mine ? mine.viewProjection : Matrix.IdentityReadOnly);
+    if (defines?.[REFRACTION] || defines?.[SSR]) {
+      const copy = waterSceneCopyForPass(scene, scene.getEngine().currentRenderPassId);
+      this.boundCopy = copy;
+      const distance = Math.min(camera && camera.maxZ > 0 ? camera.maxZ : SSR_MAX_DISTANCE, SSR_MAX_DISTANCE);
+      buffer.updateFloat4("slateWaterScreen", copy ? copy.invSize[0] : 0, copy ? copy.invSize[1] : 0, this.water.refraction, distance);
+    }
+    // The planar uniform also selects the march for bodies that are not the view's dominant one.
+    if (defines?.[PLANAR] || defines?.[SSR]) {
+      const planar = defines?.[PLANAR] ? waterPlanarReflectionForCamera(scene, camera) : null;
+      const mine = planar && planar.mesh === this.mesh ? planar : null;
+      this.boundPlanar = mine;
+      buffer.updateFloat4("slateWaterPlanar", mine ? 1 : 0, mine?.gammaSpace ? 1 : 0, PLANAR_DISTORTION, 0);
+      if (mine) buffer.updateMatrix("slateWaterPlanarMatrix", mine.viewProjection);
+    }
   }
   override hardBindForSubMesh(buffer: UniformBuffer, scene: Scene, _engine?: AbstractEngine, subMesh?: SubMesh): void {
     this.bindObjectFeatures(buffer, scene, subMesh);

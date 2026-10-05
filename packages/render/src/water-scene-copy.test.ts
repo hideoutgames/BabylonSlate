@@ -7,6 +7,7 @@ import {
   ParticleSystem,
   Scene,
   StandardMaterial,
+  type UniformBuffer,
   Vector3,
 } from "@babylonjs/core";
 import { FrameGraphRenderContext } from "@babylonjs/core/FrameGraph/frameGraphRenderContext";
@@ -336,12 +337,57 @@ it("registers the transparent pass before its first readiness probe and unregist
   expect(waterSceneCopyForPass(scene, second)).toBeNull();
 });
 
+it("compiles refraction and the screen-space march only into the copy's pass, for the features each asset asks for", async () => {
+  const { scene, camera } = host();
+  const quality = (profile: "low" | "medium" | "high") =>
+    updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ water: { profile } }) });
+  quality("high");
+  const sampling = lake(scene, { ...createDefaultWaterDefinition(), refraction: 0.35, objectReflections: true });
+  const plain = createWaterMesh(scene, "plain", normalizeWaterBody({ width: 4, length: 4, resolution: 8 }),
+    { ...createDefaultWaterDefinition(), refraction: 0, objectReflections: false });
+  plain.position.x = 1;
+  const graph = new ForwardSceneFrameGraph(scene);
+  /** Compiled defines of `mesh` in render pass `pass` ("" before that pass has an effect). */
+  const compiled = (mesh: Mesh, pass: number) => mesh.subMeshes[0]!._getDrawWrapper(pass)?.effect?.defines ?? "";
+  const plan = async () => {
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    await settle(graph, camera);
+    return graph.waterSceneCopyDiagnostics()?.renderPassId ?? null;
+  };
+  // High: Refraction and a 16-step Screen Space march, only where the asset asks and only in the copy's pass.
+  const high = (await plan())!;
+  expect(compiled(sampling, high)).toContain("#define SLATE_WATER_REFRACTION\n");
+  expect(compiled(sampling, high)).toContain("#define SLATE_WATER_SSR\n");
+  expect(compiled(sampling, high)).toContain("#define SLATE_WATER_SSR_STEPS 16\n");
+  expect(compiled(plain, high)).not.toContain("SLATE_WATER_REFRACTION\n");
+  expect(compiled(plain, high)).not.toContain("SLATE_WATER_SSR\n");
+  // The main object pass (and any pass without a copy: captures, previews, classic frames) compiles neither.
+  const objectsPass = () => scene.objectRenderers.filter((renderer) => renderer.name === "Forward objects").at(-1)!.renderPassId;
+  const objects = objectsPass();
+  expect(compiled(sampling, objects)).toContain("#define SLATE_WATER\n");
+  expect(compiled(sampling, objects)).not.toContain("SLATE_WATER_REFRACTION\n");
+  expect(compiled(sampling, objects)).not.toContain("SLATE_WATER_SSR\n");
+  // Medium refracts and reflects the sky only; Low plans no copy, and the water compiles neither feature.
+  quality("medium");
+  const medium = (await plan())!;
+  expect(compiled(sampling, medium)).toContain("#define SLATE_WATER_REFRACTION\n");
+  expect(compiled(sampling, medium)).not.toContain("SLATE_WATER_SSR\n");
+  expect(compiled(sampling, medium)).toContain("#define SLATE_WATER_SSR_STEPS 0\n");
+  quality("low");
+  expect(await plan()).toBeNull();
+  for (const pass of [objectsPass(), camera.renderPassId]) {
+    expect(compiled(sampling, pass)).not.toContain("SLATE_WATER_REFRACTION\n");
+    expect(compiled(sampling, pass)).not.toContain("SLATE_WATER_SSR\n");
+  }
+  graph.dispose();
+});
+
 it("follows a backbuffer resize in place, keeping every task and render pass id", async () => {
   const options = new NullEngineOptions();
   options.renderWidth = 320;
   options.renderHeight = 200;
   const { engine, scene, camera } = host({ options });
-  lake(scene);
+  const water = lake(scene);
   const graph = new ForwardSceneFrameGraph(scene);
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
   await settle(graph, camera);
@@ -367,7 +413,12 @@ it("follows a backbuffer resize in place, keeping every task and render pass id"
   // The resized copy and own pair replace the previous charge.
   expect(managedRenderReservations(engine)).toMatchObject({ pendingBytes: 0 });
   expect(managedRenderReservations(engine).categoryBytes.water).toBe(128 * 80 * 8 + 256 * 160 * 8);
+  // Water reads the copy's size on every draw, so its refraction and march follow the resize without recompiling.
+  const binds = vi.spyOn((water.material as unknown as { _uniformBuffer: UniformBuffer })._uniformBuffer, "updateFloat4");
   await settle(graph, camera);
+  const screens = binds.mock.calls.filter(([name]) => name === "slateWaterScreen");
+  expect(screens.length).toBeGreaterThan(0);
+  expect(screens.at(-1)!.slice(1, 3)).toEqual([1 / 256, 1 / 160]);
   graph.dispose();
 });
 

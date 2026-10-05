@@ -167,11 +167,16 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     // and not with Sky Only.
     expect(result.onScreen.screenSpace).toBeGreaterThan(result.onScreen.sky + 40);
     expect(result.onScreen.planar).toBeGreaterThan(result.onScreen.sky + 40);
-    // Above the top of the view no screen-space march can find it; the planar mirror still reflects it.
+    // Above the top of the view no screen-space march can find it; the planar mirror still reflects it (weaker: the
+    // Fresnel of this steeper view is lower).
     expect(result.offScreen.directNdcY).toBeGreaterThan(1);
-    expect(result.offScreen.planar).toBeGreaterThan(result.offScreen.sky + 40);
-    expect(result.offScreen.screenSpace).toBeLessThan(result.offScreen.sky + 10);
+    expect(result.offScreen.planar).toBeGreaterThan(result.offScreen.sky + 20);
+    expect(result.offScreen.screenSpace).toBeLessThan(result.offScreen.sky + 5);
     expect(result.offScreen.planarDiagnostics?.draws).toBeGreaterThan(0);
+    // At Ultra a flat pond that is not the view's dominant body (the planar mirror serves the large lake) still
+    // reflects the beacon through the screen-space march.
+    expect(result.planarBody).toBe("reflection-dominant");
+    expect(result.nonDominant.planar).toBeGreaterThan(result.nonDominant.sky + 40);
     // Every Water Shading Detail in both styles draws lit water, with its copy and reflection features on.
     expect(result.tiers).toHaveLength(8);
     for (const { tier, style, light, water } of result.tiers) {

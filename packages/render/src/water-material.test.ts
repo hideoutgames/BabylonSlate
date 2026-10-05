@@ -229,6 +229,45 @@ describe("Water material binding", () => {
     } finally { scene.dispose(); engine.dispose(); }
   });
 
+  it("compiles the planar reflection only for flat bodies with Object Reflections at Planar, and no scene-copy feature outside a copy's pass", async () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    try {
+      new FreeCamera("camera", new Vector3(0, 5, -10), scene);
+      new DirectionalLight("sun", new Vector3(0, -1, 0.3), scene);
+      const level = (preset: QualityLevel) => updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality(qualityPresetPatch(preset)) });
+      level("ultra");
+      const compiled = async (mesh: ReturnType<typeof createWaterMesh>) => {
+        const material = mesh.material as PBRMaterial, subMesh = mesh.subMeshes[0]!;
+        await vi.waitFor(() => expect(material.isReadyForSubMesh(mesh, subMesh)).toBe(true));
+        return subMesh.effect!.defines;
+      };
+      const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ resolution: 8 }), createDefaultWaterDefinition("realistic"));
+      const ultra = await compiled(lake);
+      expect(ultra).toContain("#define SLATE_WATER_PLANAR\n");
+      // This pass has no scene copy (classic frames, captures and previews draw like it): Ultra still compiles no
+      // refraction or march into it.
+      expect(ultra).not.toContain("SLATE_WATER_REFRACTION\n");
+      expect(ultra).not.toContain("SLATE_WATER_SSR\n");
+      // Play freezes materials: tilting the volume out of level, or leaving Planar, still recompiles without it.
+      (lake.material as PBRMaterial).freeze();
+      lake.rotation.z = 0.2;
+      updateSceneWater(scene);
+      expect(await compiled(lake)).not.toContain("SLATE_WATER_PLANAR\n");
+      lake.rotation.z = 0;
+      updateSceneWater(scene);
+      expect(await compiled(lake)).toContain("SLATE_WATER_PLANAR\n");
+      level("high");
+      updateSceneWater(scene);
+      expect(await compiled(lake)).not.toContain("SLATE_WATER_PLANAR\n");
+      lake.dispose();
+      // Without Object Reflections (the Stylized default) nothing is reflected, whatever the quality.
+      level("ultra");
+      const stylized = createWaterMesh(scene, "stylized", normalizeWaterBody({ resolution: 8 }), createDefaultWaterDefinition("stylized"));
+      expect(await compiled(stylized)).not.toContain("SLATE_WATER_PLANAR\n");
+      stylized.dispose();
+    } finally { scene.dispose(); engine.dispose(); }
+  });
+
   it("binds the shared swell relative to the floating origin and clock, so eye-relative rest points reproduce the kernel", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     try {
