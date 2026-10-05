@@ -127,6 +127,33 @@ describe("TreeView", () => {
     }
   });
 
+  it("renders one window rather than every row while inside a hidden tab", () => {
+    // jsdom has no layout; a hidden tab's view reports no visible box.
+    Object.defineProperty(HTMLElement.prototype, "checkVisibility", {
+      configurable: true,
+      value: () => false,
+    });
+    try {
+      render(
+        <TreeView
+          nodes={Array.from({ length: 500 }, (_, index) => ({
+            id: `item-${index}`,
+            label: `Item ${index}`,
+            depth: 0,
+            hasChildren: false,
+            expanded: false,
+          }))}
+          aria-label="Hidden Tree"
+        />,
+      );
+      const rows = screen.getAllByRole("treeitem");
+      expect(rows.length).toBeGreaterThan(0);
+      expect(rows.length).toBeLessThan(60);
+    } finally {
+      delete (HTMLElement.prototype as Partial<HTMLElement>).checkVisibility;
+    }
+  });
+
   it("keeps keyboard navigation available after clicking a disclosure", () => {
     const onSelect = vi.fn();
     render(
