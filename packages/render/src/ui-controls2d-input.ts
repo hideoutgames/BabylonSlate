@@ -9,7 +9,7 @@ export type SceneLayerControlEvent = {
   value?: number | boolean | string; secondaryValue?: number;
 };
 type Target = { visual: UIControl2DMesh; layer: SceneLayerView; actorGuid: string; componentId: string };
-type Capture = Target & { rangeThumb: "lower" | "upper"; x: number; y: number };
+type Capture = Target & { rangeThumb: "lower" | "upper"; x: number; y: number; startX: number; startY: number };
 
 /** SceneLayer control capture plus an invisible native editor for IME/mobile keyboards. */
 export class UIControls2DInput {
@@ -93,12 +93,13 @@ export class UIControls2DInput {
         this.ignoredPointers.add(pointerId); return true;
       }
       this.focus(target);
+      if (!this.usable(target)) return true;
       const local = this.local(target, x, y);
       if (!local) return true;
       const p = visual.properties;
       const sampled = uiControl2DValueAt(local.x, local.y, p);
       const rangeThumb = Math.abs(sampled - p.lowerValue) <= Math.abs(sampled - p.upperValue) ? "lower" : "upper";
-      this.captures.set(pointerId, { ...target, rangeThumb, x, y });
+      this.captures.set(pointerId, { ...target, rangeThumb, x, y, startX: x, startY: y });
       if (visual.classId === "2DSliderComponent" || visual.classId === "2DRangeSliderComponent") this.move(pointerId, x, y);
       if (visual.classId === "2DTextInputComponent" || (visual.classId === "2DNumericInputComponent" && local.x < p.width * 0.3)) this.openEditor(target);
       return true;
@@ -136,7 +137,8 @@ export class UIControls2DInput {
     const local = this.local(capture, x ?? capture.x, y ?? capture.y);
     if (!local) return true;
     if (visual.classId === "2DSliderComponent" || visual.classId === "2DRangeSliderComponent") { this.commit(capture); return true; }
-    const inside = Math.abs(local.x) <= p.width / 2 && Math.abs(local.y) <= p.height / 2;
+    const inside = (Math.abs(local.x) <= p.width / 2 && Math.abs(local.y) <= p.height / 2)
+      || Math.hypot((x ?? capture.x) - capture.startX, (y ?? capture.y) - capture.startY) < 8;
     if (visual.classId === "2DDropdownComponent" && visual.expanded && Math.abs(local.x) <= p.width / 2 && local.y < -p.height / 2) {
       const index = Math.floor((-local.y - p.height / 2) / p.height);
       if (index >= 0 && index < p.options.length) { this.change(capture, index); this.commit(capture); visual.setExpanded(false); }

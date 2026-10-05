@@ -61,4 +61,13 @@ describe("SceneLayer containers", () => {
     expect(panelOnly.entries.get("root/panel")!.clip).toBeNull();
     expect(panelOnly.entries.get("root/content")!.clip).toEqual({ x: 0.5, y: 0, width: 3, height: 4 });
   });
+
+  it("lets a mask-only helper actor clip its parent actor without occupying a layout slot", () => {
+    const root = createActor("root", "Root", { components: [component("visual", "2DMaterialComponent")] });
+    const helper = createActor("mask", "Mask", { parentId: "root", components: [component("mask", "2DMaskComponent", { width: 0.5, height: 0.5 })] });
+    helper.transform.position[0] = 0.25;
+    const result = resolveOverlayLayout([root, helper]);
+    expect(result.entries.get("root/visual")!.rect).toEqual({ x: 0, y: 0, width: 1, height: 1 });
+    expect(result.entries.get("root/visual")!.clip).toEqual({ x: 0.25, y: 0, width: 0.5, height: 0.5 });
+  });
 });

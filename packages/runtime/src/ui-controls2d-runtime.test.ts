@@ -121,7 +121,7 @@ describe("SceneLayer control runtime integration", () => {
     try {
       await runtime.loadScripts([{ assetGuid: "controls-script", classId: "Controls", parentClassId: "SceneLayerActor", anchors: [],
         source: `
-          export function Set(ctx) { const c = ctx.getComponentById(ctx.self, "slider"); const result = ctx.callComponentFunction(c, "setUIControlValue", { value: 7.1 }); ctx.setVariable("success", result.success); ctx.setVariable("readback", ctx.getVariableFrom(c, "value")); }
+          export function Set(ctx) { const c = ctx.getComponentById(ctx.self, "slider"); const result = ctx.callComponentFunction(c, "setUIControlValue", { value: 7.1 }); ctx.setVariable("success", result.success); ctx.setVariable("readback", ctx.getVariableFrom(c, "value")); ctx.setVariable("defaults", [ctx.getVariableFrom(c, "width"), ctx.getVariableFrom(c, "enabled"), ctx.getVariableFrom(c, "opacity")]); }
           export function Changed(ctx) { ctx.setVariable("eventValue", ctx.args.value); ctx.setVariable("changes", Number(ctx.getVariable("changes") || 0) + 1); }
           export function Toggled(ctx) { ctx.setVariable("eventChecked", ctx.args.checked); }
         `,
@@ -141,6 +141,7 @@ describe("SceneLayer control runtime integration", () => {
       const assignments = commands.filter((command) => command.type === "assignMesh").length;
       runtime.invokeScriptEvent("Controls", "Set", actor);
       expect([actor.getVariable("success"), actor.getVariable("readback"), actor.getVariable("eventValue")]).toEqual([true, 8, 8]);
+      expect(actor.getVariable("defaults")).toEqual([4, true, 1]);
       const input: Extract<ControlMessage, { type: "sceneLayerControl" }> = {
         type: "sceneLayerControl", layerId: liveLayer.guid, actorGuid: actor.guid, componentId: "slider", action: "change", value: 3,
       };

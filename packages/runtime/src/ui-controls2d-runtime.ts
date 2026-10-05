@@ -19,7 +19,6 @@ type ControlHost = {
 
 const numericClasses = new Set(["2DSliderComponent", "2DNumericInputComponent", "2DProgressBarComponent"]);
 const checkedClasses = new Set(["2DCheckboxComponent", "2DRadioButtonComponent", "2DToggleComponent"]);
-const valueKeys = ["value", "lowerValue", "upperValue", "checked", "text", "selectedIndex"] as const;
 const finite = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
 
 /** Component state is authoritative; render hosts only propose input values. */
@@ -74,7 +73,7 @@ export class UIControls2DRuntime {
   }
 
   private store(component: ActorComponent, properties: UIControl2DProperties): void {
-    for (const key of valueKeys) component.setVariable(key, properties[key]);
+    for (const [key, value] of Object.entries(properties)) component.setVariable(key, value);
     this.previous.set(component, properties);
   }
 

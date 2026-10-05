@@ -296,7 +296,10 @@ export function resolveOverlayLayout(source: readonly SerializedActor[], options
   // sibling components and actor descendants without changing their layout.
   for (const mask of nodes.values()) {
     if (mask.classId !== "2DMaskComponent" || !visible(mask)) continue;
-    const bounds = entries.get(mask.key)?.rect, owner = actorNodes.get(mask.actor.id);
+    const bounds = entries.get(mask.key)?.rect;
+    let owner = actorNodes.get(mask.actor.id);
+    // A mask-only helper actor decorates its spatial parent, matching Padding.
+    if (owner && paddingOnly(owner) && owner.actualParent) owner = owner.actualParent;
     if (!bounds || !owner) continue;
     for (const node of nodes.values()) {
       let ancestor: Node | null = node;

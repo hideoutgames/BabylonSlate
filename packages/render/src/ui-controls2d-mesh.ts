@@ -177,6 +177,11 @@ export function createUIControl2DMesh(scene: Scene, name: string, source: UICont
       } else if (visual.expanded) {
         p.options.forEach((_option, index) => labels.get(`option-label:${index}`)?.mesh.setEnabled(true));
       }
+      for (const row of menu) {
+        row.isPickable = interactive;
+        row.metadata = { ...row.metadata, overlayHitTest: interactive ? "block" : "ignore" };
+        applyOverlayVisualStyle(row, p);
+      }
       applyOverlayVisualStyle(mesh, p);
       refreshUIControl2DMaterials(mesh, assets);
     };

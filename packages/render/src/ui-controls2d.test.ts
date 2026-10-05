@@ -105,6 +105,20 @@ describe("SceneLayer controls", () => {
     }
   });
 
+  it("accepts graph focus without echoing navigation and edits numeric values through keyboard and spinner buttons", () => {
+    const { visual, input, key, events, hits } = setup("2DNumericInputComponent", { value: 3 });
+    input.syncFocus(visual.mesh, true);
+    expect(visual.focused).toBe(true);
+    expect(events).toEqual([]);
+    key("ArrowUp");
+    expect(visual.properties.value).toBe(4);
+    input.down(1, hits(440, 220), 440, 220); input.release(1);
+    expect(visual.properties.value).toBe(5);
+    input.syncFocus(visual.mesh, false);
+    expect(key("ArrowUp")).toBe(false);
+    expect(events.some(event => event.action === "focus" || event.action === "blur")).toBe(false);
+  });
+
   it("renders controls in the editor, refreshes borrowed per-part materials, and releases texture leases on disposal", () => {
     const { layer } = setup();
     const material = new StandardMaterial("authored", layer.scene);

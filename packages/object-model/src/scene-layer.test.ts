@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { ClassRegistry } from "./class-registry";
 import {
-  SCENE_LAYER_EXCLUSIVE_COMPONENT_CLASS_IDS,
   isSceneLayerAllowedComponent,
+  isSceneLayerExclusiveComponent,
 } from "./ids";
 import { SceneLayer } from "./objects";
 import { World } from "./world";
@@ -58,24 +58,23 @@ describe("SceneLayer object model", () => {
     );
     expect(isSceneLayerAllowedComponent("LandscapeComponent")).toBe(false);
     expect(isSceneLayerAllowedComponent("FoliageComponent")).toBe(false);
-    expect([...SCENE_LAYER_EXCLUSIVE_COMPONENT_CLASS_IDS]).toEqual([
-      "2DAnchorComponent",
-      "2DScrollBoxComponent",
-      "2DVerticalBoxComponent",
-      "2DHorizontalBoxComponent",
-      "2DOverlayBoxComponent",
-      "2DPaddingComponent",
-      "2DSpacerComponent",
-      "2DPainterComponent",
-      "2DJoystickComponent",
-      "2DButtonComponent",
-      "2DFocusTargetComponent",
-      "2DMaterialComponent",
-      "2DTextureComponent",
-      "2DTextComponent",
-      "2DRichTextComponent",
-      "2DPanelComponent",
-    ]);
+    expect(isSceneLayerExclusiveComponent("SpriteComponent")).toBe(false);
+    expect(isSceneLayerExclusiveComponent("RigidBodyComponent")).toBe(false);
+    expect(isSceneLayerExclusiveComponent("ColliderComponent")).toBe(false);
+  });
+
+  it.each([
+    "2DAnchorComponent", "2DScrollBoxComponent", "2DVerticalBoxComponent", "2DHorizontalBoxComponent",
+    "2DOverlayBoxComponent", "2DPaddingComponent", "2DSpacerComponent", "2DPainterComponent", "2DJoystickComponent",
+    "2DButtonComponent", "2DFocusTargetComponent", "2DMaterialComponent", "2DTextureComponent", "2DTextComponent",
+    "2DRichTextComponent", "2DPanelComponent", "2DSliderComponent", "2DRangeSliderComponent", "2DCheckboxComponent",
+    "2DRadioButtonComponent", "2DToggleComponent", "2DTextInputComponent", "2DNumericInputComponent", "2DDropdownComponent",
+    "2DProgressBarComponent", "2DVirtualizedListComponent", "2DVirtualizedGridComponent", "2DMaskPanelComponent",
+    "2DMaskComponent", "2DSafeAreaComponent",
+  ])("registers %s for SceneLayer component authoring and excludes it from world-only authoring", (classId) => {
+    expect(new ClassRegistry().isA(classId, "ActorComponent")).toBe(true);
+    expect(isSceneLayerAllowedComponent(classId)).toBe(true);
+    expect(isSceneLayerExclusiveComponent(classId)).toBe(true);
   });
 
   it("destroys a SceneLayer instance without requiring it to be an Actor", () => {

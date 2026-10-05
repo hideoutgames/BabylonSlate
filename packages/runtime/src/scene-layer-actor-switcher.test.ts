@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createActor, createDefaultScene, createDefaultSceneLayer } from "@babylonslate/core";
-import { Actor, SceneLayerActorSwitcher, World } from "@babylonslate/object-model";
+import { Actor, ClassRegistry, SceneLayerActorSwitcher, World } from "@babylonslate/object-model";
 import type { CommandMessage } from "@babylonslate/bridge";
 import { createInProcessRuntime } from "./driver";
 import { SceneLayerActorSwitchers } from "./scene-layer-actor-switcher";
@@ -26,7 +26,7 @@ describe("SceneLayer actor switcher", () => {
             export function onSceneLayerActorSwitchedTo(ctx) { ctx.self.setVariable("entered", ctx.args.index); }
             export function onSceneLayerActorSwitchedFrom(ctx) { ctx.self.setVariable("left", ctx.args.index); }`,
         },
-        { assetGuid: "panel", classId: "Panel", parentClassId: "BasePanel", anchors: [], entryPoints: [], source: "export {};" },
+        { assetGuid: "panel", classId: "Panel", parentClassId: "BasePanel", anchors: [], entryPoints: [], source: "" },
         { assetGuid: "menu", classId: "Menu", parentClassId: "SceneLayerActorSwitcher", anchors: [],
           actorDefaults: { properties: { initialIndex: -1 } },
           entryPoints: entryPoints("onTick", "onSceneLayerActorSwitching", "onSceneLayerActorSwitched"),
@@ -107,7 +107,7 @@ describe("SceneLayer actor switcher", () => {
     layer.actors = [createActor("root", "Root", { classId: "RecursiveMenu" })];
     const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, playScene: scene, sceneLayerLibrary: { menu: layer } });
     try {
-      await runtime.loadScripts([{ assetGuid: "recursive", classId: "RecursiveMenu", parentClassId: "SceneLayerActorSwitcher", anchors: [], entryPoints: [], source: "export {};", actorDefaults: { properties: { sceneLayerActors: ["RecursiveMenu"] } } }]);
+      await runtime.loadScripts([{ assetGuid: "recursive", classId: "RecursiveMenu", parentClassId: "SceneLayerActorSwitcher", anchors: [], entryPoints: [], source: "", actorDefaults: { properties: { sceneLayerActors: ["RecursiveMenu"] } } }]);
       runtime.realizePlayWorld();
       expect(runtime.getWorld().findActor("world-switcher")).toBeUndefined();
       const liveLayer = runtime.createSceneLayer("menu")!;
@@ -119,7 +119,7 @@ describe("SceneLayer actor switcher", () => {
   });
 
   it("retires the pending replacement when an outgoing actor destroys its switcher", () => {
-    const world = new World({ seed: 1 });
+    const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
     const layer = world.createSceneLayer({ assetGuid: "menu", zOrder: 0 });
     const switcher = world.createActor({ classId: "SceneLayerActorSwitcher", sceneLayerId: layer.guid, variables: { sceneLayerActors: ["SceneLayerActor", "SceneLayerActor"] } }) as SceneLayerActorSwitcher;
     world.spawnActorNow(switcher);
