@@ -54,9 +54,6 @@ import { useMaterialInstanceSources } from "./material-instance-sources";
 const IDLE_DEBOUNCE_MS = 220;
 export const MANUAL_RENDER_COOLDOWN_MS = 3_000;
 
-// Material previews have no scene capture; RTT samples use opaque black.
-const RENDER_TARGET_PREVIEW_BYTES = encodeRgbaPng(1, 1, new Uint8Array([0, 0, 0, 255]));
-
 /** A parameter the root Material exposes, with the value this instance inherits. */
 export interface MaterialInstanceParameter {
   name: string;
@@ -407,7 +404,8 @@ export function MaterialEditingProvider({
         const asset = assetRegistry?.getByGuid(guid);
         if (!asset) continue;
         if (asset.header.type === "RenderTargetTexture") {
-          next.set(guid, RENDER_TARGET_PREVIEW_BYTES);
+          // This preview has no scene capture; RTT samples use opaque black.
+          next.set(guid, encodeRgbaPng(1, 1, new Uint8Array([0, 0, 0, 255])));
           continue;
         }
         if (!readAssetChunk) continue;
