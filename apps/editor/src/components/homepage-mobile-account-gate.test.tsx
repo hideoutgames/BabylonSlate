@@ -9,6 +9,7 @@ import {
 } from "@testing-library/react";
 import { HomepageMobileAccountGate } from "./homepage-mobile-account-gate";
 import { HomepageAccount } from "./homepage-account";
+import { MobileDemoProvider } from "../context/mobile-demo-context";
 
 const auth = vi.hoisted(() => ({
   host: "web",
@@ -59,18 +60,73 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function renderMobile() {
-  auth.host = "ios";
-  vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", "pk_test_example");
-  return render(
-    <HomepageMobileAccountGate>
-      <button>Create Project</button>
-      <HomepageAccount />
-    </HomepageMobileAccountGate>,
+function mobileHome(gateKey = 0) {
+  return (
+    <MobileDemoProvider>
+      <HomepageMobileAccountGate key={gateKey}>
+        <button>Create Project</button>
+        <HomepageAccount />
+      </HomepageMobileAccountGate>
+    </MobileDemoProvider>
   );
 }
 
+function renderMobile(host = "ios", publishableKey = "pk_test_example") {
+  auth.host = host;
+  vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", publishableKey);
+  return render(mobileHome());
+}
+
 describe("native mobile account requirement", () => {
+  it.each(["ios", "android"])(
+    "opens local %s projects only after explicit demo entry and closes them on End Demo",
+    async (host) => {
+      renderMobile(host, "");
+      expect(screen.queryByRole("button", { name: "Create Project" })).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "Use Temporary Demo Account" }));
+      expect(screen.getByRole("button", { name: "Create Project" })).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "Profile" }));
+      expect(await screen.findByText("Temporary Demo")).toBeTruthy();
+      expect(screen.getByText("Local Testing Only · Not Signed In")).toBeTruthy();
+      fireEvent.click(screen.getByRole("menuitem", { name: "End Demo" }));
+      expect(await screen.findByRole("heading", { name: "Sign-In Is Not Set Up" })).toBeTruthy();
+      expect(screen.queryByRole("button", { name: "Create Project" })).toBeNull();
+      expect(auth.create).not.toHaveBeenCalled();
+      expect(auth.signOut).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps demo access through homepage remounts but not a fresh app session", () => {
+    const view = renderMobile("ios", "");
+    fireEvent.click(screen.getByRole("button", { name: "Use Temporary Demo Account" }));
+    view.rerender(mobileHome(1));
+    expect(screen.getByRole("button", { name: "Create Project" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Use Temporary Demo Account" })).toBeNull();
+    view.unmount();
+    renderMobile("ios", "");
+    expect(screen.queryByRole("button", { name: "Create Project" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Use Temporary Demo Account" })).toBeTruthy();
+  });
+
+  it("allows demo during a pending account restore without accepting its late session", async () => {
+    let finishRestore: (value: typeof session) => void = () => {};
+    auth.restoreSession.mockReturnValueOnce(new Promise((resolve) => {
+      finishRestore = resolve;
+    }));
+    renderMobile();
+    await waitFor(() => expect(auth.restoreSession).toHaveBeenCalledOnce());
+    fireEvent.click(screen.getByRole("button", { name: "Use Temporary Demo Account" }));
+    await act(async () => finishRestore(session));
+    fireEvent.click(screen.getByRole("button", { name: "Profile" }));
+    expect(await screen.findByText("Temporary Demo")).toBeTruthy();
+    expect(screen.queryByText("Ada Lovelace")).toBeNull();
+    fireEvent.click(screen.getByRole("menuitem", { name: "End Demo" }));
+    expect(await screen.findByLabelText("Email Address")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Create Project" })).toBeNull();
+    expect(auth.signOut).not.toHaveBeenCalled();
+    expect(auth.verifyCode).not.toHaveBeenCalled();
+  });
+
   it.each(["web", "electron"])(
     "keeps phone-sized %s project access available without an account",
     (host) => {

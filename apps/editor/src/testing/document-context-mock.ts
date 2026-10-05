@@ -15,11 +15,20 @@
  * open documents, actions that do nothing, and loaders that find nothing.
  * Defaults that would have to invent project content reject instead.
  *
- * Exports added to `document-context.tsx` later resolve without editing every
- * mock: an unknown `use…` hook returns the same documents value (narrow hooks
- * return slices of it). Add an explicit entry here for anything else.
+ * Unless the test supplies them, `documentRevisions` (every kind) and
+ * `tabsRevision` advance whenever the value's `openDocuments` array is
+ * replaced, so memos keyed on revisions follow the test's documents as they
+ * would follow edits in the real provider.
+ *
+ * `useDocumentActions()` returns that same value (it carries every action) and
+ * `useAppRoute()` its `route`. Exports added to `document-context.tsx` later
+ * resolve without editing every mock: an unknown `use…` hook returns the same
+ * documents value (narrow hooks return slices of it). Add an explicit entry
+ * here for anything else, such as a hook returning a single field.
  */
 import type { ReactNode } from "react";
+import { ASSET_DOCUMENT_KINDS, type DocumentKind } from "@babylonslate/core";
+import type { DocumentRevisions } from "../services/document-service";
 import type { ExtensionSnapshot } from "../services/editor-extension-service";
 import { SourceControlService } from "../services/source-control-service";
 
@@ -60,7 +69,27 @@ function inertExtensionService(): DocumentsValue["extensionService"] {
   return service as unknown as DocumentsValue["extensionService"];
 }
 
+const KINDS: readonly DocumentKind[] = ["content-browser", ...ASSET_DOCUMENT_KINDS];
+
+/** One revision per `openDocuments` array: replacing the array advances every kind. */
+function revisionsFollowingDocuments(): (documents: unknown) => DocumentRevisions {
+  const byDocuments = new WeakMap<object, DocumentRevisions>();
+  const none = Object.fromEntries(KINDS.map((kind) => [kind, 0])) as DocumentRevisions;
+  let sequence = 0;
+  return (documents) => {
+    if (typeof documents !== "object" || documents === null) return none;
+    let revisions = byDocuments.get(documents);
+    if (!revisions) {
+      sequence += 1;
+      revisions = Object.fromEntries(KINDS.map((kind) => [kind, sequence])) as DocumentRevisions;
+      byDocuments.set(documents, revisions);
+    }
+    return revisions;
+  };
+}
+
 function inertDocuments(current: () => DocumentsValue | undefined): DocumentsValue {
+  const revisionsFor = revisionsFollowingDocuments();
   return {
     route: "home",
     projectDocument: null,
@@ -92,6 +121,12 @@ function inertDocuments(current: () => DocumentsValue | undefined): DocumentsVal
     openDocuments: [],
     // Live like the provider's: reads the latest value's open documents.
     getOpenDocuments: () => current()?.openDocuments ?? [],
+    get documentRevisions() {
+      return revisionsFor(current()?.openDocuments);
+    },
+    get tabsRevision() {
+      return revisionsFor(current()?.openDocuments).scene;
+    },
     tabOrder: [],
     activeDocumentId: null,
     listedProjects: [],
@@ -253,6 +288,9 @@ export function documentContextMock(
   const moduleExports = {
     DocumentProvider: ({ children }: { children: ReactNode }) => children,
     useDocuments,
+    // The documents value carries every action, so it serves the narrow hooks.
+    useDocumentActions: useDocuments,
+    useAppRoute: () => useDocuments().route,
     useDockWindowTick: options.useDockWindowTick ?? (() => 0),
   };
   return new Proxy(moduleExports, {

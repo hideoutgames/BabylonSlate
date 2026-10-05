@@ -1,3 +1,4 @@
+import { unzlibSync } from "fflate";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   act,
@@ -39,6 +40,16 @@ function sampledRock() {
     targetPinId: "baseColor",
   });
   return doc;
+}
+
+function readBlobBytes(blob: Blob): Promise<Uint8Array> {
+  // jsdom's Blob implements FileReader, but not Blob.arrayBuffer().
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(new Uint8Array(reader.result as ArrayBuffer));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsArrayBuffer(blob);
+  });
 }
 
 const harness = vi.hoisted(() => ({
@@ -451,14 +462,41 @@ describe("MaterialEditingProvider preview isolation", () => {
     });
     expect(harness.cachedTextures).toHaveLength(1);
     expect(harness.cachedTextures[0]!.guid).toBe("tex-1");
-    // jsdom's Blob implements FileReader, but not Blob.arrayBuffer().
-    const bytes = await new Promise<ArrayBuffer>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as ArrayBuffer);
-      reader.onerror = () => reject(reader.error);
-      reader.readAsArrayBuffer(harness.cachedTextures[0]!.bytes);
-    });
-    expect(new Uint8Array(bytes)).toEqual(new Uint8Array([9, 9, 9]));
+    expect(await readBlobBytes(harness.cachedTextures[0]!.bytes)).toEqual(new Uint8Array([9, 9, 9]));
+  });
+
+  it("resolves RenderTargetTexture samples to opaque black without reading image chunks", async () => {
+    harness.content = sampledRock();
+    harness.textureAsset.header.type = "RenderTargetTexture";
+    const view = mount();
+    await waitFor(() => expect(harness.acquireCalls).toBeGreaterThan(0));
+
+    expect(harness.libraryOptions?.acquireTexture?.("tex-1")).not.toBeNull();
+    expect(harness.readAssetChunk).not.toHaveBeenCalled();
+    const png = await readBlobBytes(harness.cachedTextures[0]!.bytes);
+    const data = new DataView(png.buffer, png.byteOffset, png.byteLength);
+    const compressed: Uint8Array[] = [];
+    for (let offset = 8; offset < png.length;) {
+      const length = data.getUint32(offset);
+      const type = new TextDecoder().decode(png.subarray(offset + 4, offset + 8));
+      if (type === "IHDR") {
+        expect([data.getUint32(offset + 8), data.getUint32(offset + 12)]).toEqual([1, 1]);
+      }
+      if (type === "IDAT") compressed.push(png.subarray(offset + 8, offset + 8 + length));
+      offset += length + 12;
+    }
+    // One unfiltered RGBA texel: opaque black, not transparent or missing.
+    const pixels = unzlibSync(new Uint8Array(compressed.flatMap((chunk) => [...chunk])));
+    expect([...pixels]).toEqual([0, 0, 0, 0, 255]);
+
+    // A later registry change must not hide missing ordinary image data.
+    harness.textureAsset.header.type = "Texture";
+    harness.readAssetChunk.mockResolvedValue(null);
+    harness.registryEpoch += 1;
+    const compiled = harness.acquireCalls;
+    view.rerender(materialTree());
+    await waitFor(() => expect(harness.acquireCalls).toBeGreaterThan(compiled));
+    expect(harness.libraryOptions?.acquireTexture?.("tex-1")).toBeNull();
   });
 
   it("keeps loaded Texture bytes across edits and reloads them when the Texture's registry entry changes", async () => {

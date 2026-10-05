@@ -2,8 +2,8 @@ import { InputAssetEditingProvider } from "../context/input-asset-editing-contex
 import { SceneToolsProvider } from "../context/scene-tools-context";
 import { CONTENT_BROWSER_ID, isAssetDocumentKind, isSceneWorkspaceKind, type SerializedScene } from "@babylonslate/core";
 import type { DockviewApi } from "dockview-react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
-import { useDocuments } from "../context/document-context";
+import { useCallback, useEffect, useLayoutEffect, useMemo } from "react";
+import { useDocumentActions, useDocuments } from "../context/document-context";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
 import { useProjectSearch } from "../context/project-search-context";
 import {
@@ -86,8 +86,9 @@ function RegisteredDockviewShell({
   sceneMode?: SceneMode;
   surface?: import("../shell/dockview-surface").DockviewSurface;
 }) {
-  const { registerDockviewApi, unregisterDockviewApi, captureLayoutForId, sourceControl } =
-    useDocuments();
+  const { sourceControl } = useDocuments();
+  const { registerDockviewApi, unregisterDockviewApi, captureLayoutForId } =
+    useDocumentActions();
   const onReady = useCallback(
     (api: DockviewApi) => {
       registerDockviewApi(id, api, surface);
@@ -95,19 +96,14 @@ function RegisteredDockviewShell({
     [id, registerDockviewApi, surface],
   );
   // Dockview reports its API only once per mount, so only unmount may release
-  // it. Context callbacks change identity with provider state (Animation Graph
-  // modes), so read them through refs instead of re-running this cleanup.
-  const captureLayoutRef = useRef(captureLayoutForId);
-  captureLayoutRef.current = captureLayoutForId;
-  const unregisterRef = useRef(unregisterDockviewApi);
-  unregisterRef.current = unregisterDockviewApi;
-
+  // it. The document actions keep their identity across edits and Animation
+  // Graph mode changes, so this cleanup runs only on unmount.
   useLayoutEffect(() => {
     return () => {
-      captureLayoutRef.current(id);
-      unregisterRef.current(id, surface);
+      captureLayoutForId(id);
+      unregisterDockviewApi(id, surface);
     };
-  }, [id, surface]);
+  }, [captureLayoutForId, id, surface, unregisterDockviewApi]);
 
   return (
     <DockviewShell
@@ -282,7 +278,7 @@ export function DocumentWorkspace() {
         if (doc.ref.kind === "content-browser") {
           if (!shouldMount) return null;
           return (
-            <WorkspaceErrorBoundary key={id}>
+            <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
               <div
                 className={active ? "flex min-h-0 flex-1 flex-col" : "hidden"}
                 data-testid="document-workspace-content-browser"
@@ -299,7 +295,7 @@ export function DocumentWorkspace() {
         ) {
           if (!shouldMount) return null;
           return (
-            <WorkspaceErrorBoundary key={id}>
+            <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
               <DocumentShell
                 path={doc.ref.path}
                 testId={`document-workspace-${doc.ref.kind}`}
@@ -323,7 +319,7 @@ export function DocumentWorkspace() {
         ) {
           if (!shouldMount) return null;
           return (
-            <WorkspaceErrorBoundary key={id}>
+            <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
               <DocumentWorkspaceProvider documentId={id}>
                 <MaterialEditingProvider documentId={id} active={active}>
                   <DocumentShell
@@ -346,7 +342,7 @@ export function DocumentWorkspace() {
         if (doc.ref.kind === "particle-graph") {
           if (!shouldMount) return null;
           return (
-            <WorkspaceErrorBoundary key={id}>
+            <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
               <DocumentWorkspaceProvider documentId={id}>
                 <ParticleGraphEditingProvider documentId={id}>
                   <DocumentShell
@@ -369,7 +365,7 @@ export function DocumentWorkspace() {
         if (doc.ref.kind === "anim-graph") {
           if (!shouldMount) return null;
           return (
-            <WorkspaceErrorBoundary key={id}>
+            <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
               <DocumentWorkspaceProvider documentId={id}>
                 <AnimGraphEditingProvider>
                   <PrefabEditingProvider initialSelectedId={null}>
@@ -392,7 +388,7 @@ export function DocumentWorkspace() {
         if (doc.ref.kind === "behaviour-tree") {
           if (!shouldMount) return null;
           return (
-            <WorkspaceErrorBoundary key={id}>
+            <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
               <DocumentWorkspaceProvider documentId={id}>
                 <BehaviourTreeEditingProvider>
                   <DocumentShell
@@ -415,7 +411,7 @@ export function DocumentWorkspace() {
         if (doc.ref.kind === "sprite-animation") {
           if (!shouldMount) return null;
           return (
-            <WorkspaceErrorBoundary key={id}>
+            <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
               <DocumentWorkspaceProvider documentId={id}>
                 <SpriteAnimationEditingProvider>
                   <DocumentShell
@@ -438,7 +434,7 @@ export function DocumentWorkspace() {
         if (doc.ref.kind === "tileset") {
           if (!shouldMount) return null;
           return (
-            <WorkspaceErrorBoundary key={id}>
+            <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
               <DocumentWorkspaceProvider documentId={id}>
                 <TilesetEditingProvider>
                   <DocumentShell
@@ -461,7 +457,7 @@ export function DocumentWorkspace() {
         if (doc.ref.kind === "tilemap") {
           if (!shouldMount) return null;
           return (
-            <WorkspaceErrorBoundary key={id}>
+            <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
               <DocumentWorkspaceProvider documentId={id}>
                 <TilemapEditingProvider>
                   <DocumentShell
@@ -484,7 +480,7 @@ export function DocumentWorkspace() {
         if (doc.ref.kind === "trace") {
           if (!shouldMount) return null;
           return (
-            <WorkspaceErrorBoundary key={id}>
+            <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
               <DocumentWorkspaceProvider documentId={id}>
                 <TracePlaybackProvider documentId={id}>
                   <DocumentShell
@@ -507,7 +503,7 @@ export function DocumentWorkspace() {
         if (doc.ref.kind === "model") {
           if (!shouldMount) return null;
           return (
-            <WorkspaceErrorBoundary key={id}>
+            <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
               <DocumentWorkspaceProvider documentId={id}>
                 <ModelColliderSessionProvider>
                   <DocumentShell
@@ -530,7 +526,7 @@ export function DocumentWorkspace() {
         if (doc.ref.kind === "input-action" || doc.ref.kind === "input-axis") {
           if (!shouldMount) return null;
           return (
-            <WorkspaceErrorBoundary key={id}>
+            <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
               <DocumentWorkspaceProvider documentId={id}>
                 <InputAssetEditingProvider>
                   <DocumentShell path={doc.ref.path} testId={`document-workspace-${doc.ref.kind}`} active={active}>
@@ -561,7 +557,7 @@ export function DocumentWorkspace() {
         ) {
           if (!shouldMount) return null;
           return (
-            <WorkspaceErrorBoundary key={id}>
+            <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
               <DocumentWorkspaceProvider documentId={id}>
                 <DocumentShell
                   path={doc.ref.path}
@@ -582,7 +578,7 @@ export function DocumentWorkspace() {
         if (isTypeAsset) {
           if (!shouldMount) return null;
           return (
-            <WorkspaceErrorBoundary key={id}>
+            <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
               <DocumentWorkspaceProvider documentId={id}>
                 <TypeAssetEditingProvider>
                   <DocumentShell
@@ -628,7 +624,7 @@ export function DocumentWorkspace() {
           doc.ref.kind === "scene-layer" || overlayPrefab;
 
         return (
-          <WorkspaceErrorBoundary key={id}>
+          <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
             <DocumentWorkspaceProvider documentId={id}>
               <SceneEditingProvider
                 documentId={id}

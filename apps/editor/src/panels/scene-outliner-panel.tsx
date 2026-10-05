@@ -92,6 +92,9 @@ import {
   outlinerRowTarget,
   outlinerTreeDropMoves,
 } from "../lib/outliner-drop";
+import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
+
+const CLASS_KINDS = ["graph"] as const;
 
 const QUIET_ROW_ACTION =
   "[@media(hover:hover)_and_(pointer:fine)]:opacity-0 [@media(hover:hover)_and_(pointer:fine)]:[[role=treeitem]:hover_&]:opacity-100 [@media(hover:hover)_and_(pointer:fine)]:[[role=treeitem]:focus-within_&]:opacity-100";
@@ -281,6 +284,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
   const { documentId } = useDocumentWorkspace();
   const {
     openDocuments,
+    getOpenDocuments,
     applySceneChange,
     assetRegistry,
     registryEpoch,
@@ -289,6 +293,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
     loadAssetThumbnail,
     thumbnailVersions,
   } = useDocuments();
+  const classDocuments = useOpenDocumentsOfKinds(CLASS_KINDS);
   const {
     selectedActorIds,
     selectActor,
@@ -400,6 +405,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
   );
 
   const projectItems = useMemo(() => {
+    void registryEpoch; // Registry headers mutate without replacing the registry.
     const assets = assetRegistry?.list() ?? [];
     return projectPlaceActors(
       assets,
@@ -407,16 +413,14 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
         prefabComponentsForGuid(guid, {
           assets,
           graphForPath: (path) => {
-            const open = openDocuments.find(
-              (entry) => entry.ref.kind === "graph" && entry.ref.path === path,
-            );
+            const open = classDocuments.find((entry) => entry.ref.path === path);
             if (open?.content) return open.content as SerializedGraph;
             return diskGraphs.get(path);
           },
         }),
       { overlay },
     );
-  }, [assetRegistry, diskGraphs, openDocuments, overlay]);
+  }, [assetRegistry, classDocuments, diskGraphs, overlay, registryEpoch]);
 
   useEffect(() => {
     if (!placeOpen) return;
@@ -478,7 +482,8 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
                     assets: assetRegistry?.list() ?? [],
                     graphForPath: (path) => {
                       if (path === asset.path && graph) return graph;
-                      const open = openDocuments.find(
+                      // Read when the load finishes, not at the click.
+                      const open = getOpenDocuments().find(
                         (entry) =>
                           entry.ref.kind === "graph" && entry.ref.path === path,
                       );
@@ -498,9 +503,9 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
     [
       assetRegistry,
       diskGraphs,
+      getOpenDocuments,
       loadGraphDocument,
       mutate,
-      openDocuments,
       scene,
       selectActor,
       viewportDropApi,

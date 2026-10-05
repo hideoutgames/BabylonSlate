@@ -8,6 +8,7 @@ import {
   mkdtemp,
   readFile,
   readdir,
+  realpath,
   rm,
   symlink,
   writeFile,
@@ -21,7 +22,9 @@ const execute = promisify(execFile);
 const scripts = dirname(fileURLToPath(import.meta.url));
 
 async function fixture(t) {
-  const root = await mkdtemp(join(tmpdir(), "slate shared artifacts "));
+  const root = await realpath(
+    await mkdtemp(join(tmpdir(), "slate shared artifacts ")),
+  );
   t.after(() => rm(root, { recursive: true, force: true }));
   const cache = join(root, "shared");
   const worktree = async (name) => {

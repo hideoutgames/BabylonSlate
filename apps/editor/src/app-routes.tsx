@@ -5,7 +5,7 @@ import {
   useSuppressNativeContextMenu,
 } from "@babylonslate/editor-kit";
 import { isTestModeEnabled } from "@babylonslate/vfs";
-import { useDocuments } from "./context/document-context";
+import { useAppRoute } from "./context/document-context";
 import { useOrientationScrollReset } from "./shell/use-orientation-scroll-reset";
 
 import {
@@ -17,7 +17,7 @@ const HomeRoute = lazy(() => import("./routes/home-route"));
 const EditorRoute = lazy(() => import("./routes/editor-route"));
 
 export function AppRoutes() {
-  const { route } = useDocuments();
+  const route = useAppRoute();
   const gallery =
     isTestModeEnabled() &&
     new URLSearchParams(window.location.search).has("gallery");

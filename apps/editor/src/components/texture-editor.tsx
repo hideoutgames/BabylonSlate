@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { BoxIcon, ImageIcon, Maximize2Icon, ScanIcon } from "lucide-react";
 import {
@@ -29,7 +29,7 @@ import {
   shouldCompressTexture,
   type AreaEmissionProgress,
 } from "@babylonslate/assets";
-import { useDocuments } from "../context/document-context";
+import { useDocumentActions, useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import {
   applyTextureCompressionQualityChange,
@@ -129,14 +129,19 @@ function usageLabel(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
-export function TexturePreview({
+/**
+ * Memoized because it reads only the stable document actions and its panel
+ * passes the document's own content object, so an edit to another document
+ * re-renders the subscribing panel but skips this preview.
+ */
+export const TexturePreview = memo(function TexturePreview({
   path,
   payload,
 }: {
   path: string;
   payload: Record<string, unknown>;
 }) {
-  const { readAssetChunk } = useDocuments();
+  const { readAssetChunk } = useDocumentActions();
   const environment = isEnvironmentTexturePayload(payload);
   const [url, setUrl] = useState<string | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "missing">("loading");
@@ -276,7 +281,7 @@ export function TexturePreview({
       </div>
     </div>
   );
-}
+});
 
 function TexturePreviewEmpty({
   icon,
