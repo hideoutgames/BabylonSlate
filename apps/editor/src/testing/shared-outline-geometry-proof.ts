@@ -343,12 +343,16 @@ export async function runSharedOutlineGeometryProof(backend: "webgl2" | "webgpu"
     await pair("gpu-water-waves", [contribution([sea])]);
     clear();
 
-    // With FFT Ocean Detail on (64²×1 here), the GPU water vertex shader also adds the FFT detail band's displacement:
-    // the mask adds the same, from the same band. The band is drawn once it is ready and the clock is fixed, so the
-    // native and outlined captures see the same surface. Zoomed in (6.7 mm pixels), the band moves the silhouette by
-    // several pixels, more than the comparison's tolerance, so a mask without it leaves wave edges unoutlined.
+    // With FFT Ocean Detail on, the GPU water vertex shader also adds the FFT detail band's displacement: the mask adds
+    // the same, from the same band. Vertices only take cascades their grid resolves completely, so this case uses three
+    // cascades (64²) and Mesh Density 1.5: the 5 cm cells resolve the first cascade (shortest wavelength 23 cm at Wave
+    // Length 2.2 m). The band is drawn once it is ready and the clock is fixed, so the native and outlined captures see
+    // the same surface. Zoomed in (6.7 mm pixels), the band moves the silhouette by several pixels, more than the
+    // comparison's tolerance, so a mask without it leaves wave edges unoutlined.
     const quality = normalizeRenderingQuality(qualityPresetPatch("medium"));
-    setSceneRenderSettings(scene, { quality: { ...quality, water: { ...quality.water, fft: true, fftSize: 64, fftCascades: 1, preset: "custom" } } });
+    setSceneRenderSettings(scene, {
+      quality: { ...quality, water: { ...quality.water, fft: true, fftSize: 64, fftCascades: 3, meshDensity: 1.5, preset: "custom" } },
+    });
     camera.orthoLeft = -0.8; camera.orthoRight = 0.8; camera.orthoTop = 0.4; camera.orthoBottom = -0.4;
     const detailed = createWaterMesh(scene, "GPU Water Detail", normalizeWaterBody({ width: 8, length: 1.2, resolution: 128 }, "ocean"), {
       ...createDefaultWaterDefinition("stylized"), opacity: 1, foamAmount: 0, crestFoam: 0, surfaceFoam: 0, sparkles: 0, refraction: 0,

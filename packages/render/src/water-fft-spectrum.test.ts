@@ -147,6 +147,45 @@ describe("FFT ocean spectrum and CPU reference", () => {
     }
   });
 
+  it("splits the same band more finely, on larger patches, with three cascades than with two", () => {
+    for (const waveLength of [3, 12, 80]) {
+      const set = waterWaveSet(water({ waveLength }));
+      const high = waterFftLayout(set, 128, 2), ultra = waterFftLayout(set, 256, 3);
+      // Both run from the analytic cutoff to the same shortest wavelength: a third cascade adds no ripples that only a
+      // footprint within arm's length would resolve.
+      expect(ultra.bandEdges[0]).toBe(high.bandEdges[0]);
+      expect(ultra.bandEdges[3]! / high.bandEdges[2]! - 1).toBeCloseTo(0, 9);
+      // Instead each cascade is narrower, so a consumer fading a cascade by its shortest wavelength keeps the band's
+      // longer waves at footprints and mesh spacings where High's wide first cascade is gone, and the patches carrying
+      // the same waves are twice as large, so they repeat half as often.
+      expect(ultra.bandEdges[1]! / ultra.bandEdges[0]!).toBeLessThan(high.bandEdges[1]! / high.bandEdges[0]! / 2);
+      expect(ultra.bandEdges[2]! / high.bandEdges[1]! - 1).toBeCloseTo(0, 9);
+      expect(ultra.patchSizes[0]! / high.patchSizes[0]!).toBeCloseTo(2, 9);
+      expect(ultra.patchSizes[2]! / high.patchSizes[1]!).toBeCloseTo(2, 9);
+    }
+    // The drawn spectrum follows that split: every mode inside its own cascade's band, each band holding its share of
+    // the density's variance (phase-averaged, over seeds).
+    let ratio = 0;
+    const seeds = 8;
+    for (let seed = 0; seed < seeds; seed++) {
+      const set = waterWaveSet(water({ waveDirection: 40, waveSpread: 0.2, waveSeed: seed * 37 + 5 }));
+      const layout = waterFftLayout(set, 64, 3), spectrum = waterFftInitialSpectrum(set, layout);
+      for (let cascade = 0; cascade < 3; cascade++) {
+        const scale = TAU / layout.patchSizes[cascade]!, low = layout.bandEdges[cascade]!, high = layout.bandEdges[cascade + 1]!;
+        let variance = 0;
+        for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
+          const i = (y * 64 * 3 + cascade * 64 + x) * 4, power = spectrum[i]! ** 2 + spectrum[i + 1]! ** 2;
+          const k = Math.hypot((x < 32 ? x : x - 64) * scale, (y < 32 ? y : y - 64) * scale);
+          if (k < low * (1 - 1e-9) || k >= high * (1 + 1e-9)) expect(power).toBe(0);
+          variance += 2 * layout.amplitude ** 2 * power;
+        }
+        ratio += variance / waterFftBandVariance(set, low, high) / 3;
+      }
+    }
+    expect(ratio / seeds).toBeGreaterThan(0.85);
+    expect(ratio / seeds).toBeLessThan(1.15);
+  });
+
   it("serves every Wave Height, Wave Length and Wave Speed from one unit spectrum scaled by the layout", () => {
     const asset = { waveModel: "ocean" as const, waveDirection: 40, waveSpread: 0.2, waveSeed: 11 };
     const base = waterFftLayout(waterWaveSet(water(asset)), 64, 2);

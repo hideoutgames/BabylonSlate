@@ -244,14 +244,32 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       expect(entry.on.black, tier).toBe(0);
       expect(entry.on.light, tier).toBeGreaterThan(20);
     }
+    // Ultra splits the same band more finely than High, and each cascade fades by its shortest wavelength, so Ultra's band
+    // adds clearly more detail than High's, and still adds some over the farther water, where High's has faded.
+    const gain = (entry: (typeof result.tiers)[number], key: "detail" | "farDetail") => entry.on[key] - entry.off[key];
+    expect(gain(tiers.ultra!, "detail"), "Ultra over High").toBeGreaterThan(1.5 * gain(tiers.high!, "detail"));
+    expect(gain(tiers.ultra!, "farDetail"), "Ultra over High, farther").toBeGreaterThan(Math.max(0.05, 2 * gain(tiers.high!, "farDetail")));
     for (const [name, stats] of Object.entries(result.extra)) {
       expect(stats.black, name).toBe(0);
       expect(stats.light, name).toBeGreaterThan(20);
     }
-    // Over a twentieth of a second the detail moves a little with the waves.
-    for (const step of result.sequence) expect(step).toBeGreaterThan(0.05);
-    // Side on, the band displaces the GPU vertices within its bound; the CPU vertex path draws the analytic surface.
-    expect(result.profile.band.columns).toBeGreaterThan(300);
+    // The band is dispatched once per step at that step's water time, and its own part of the capture (Detail Waves 1
+    // minus 0 at the same time) changes between steps: it animates rather than freezing.
+    for (const [index, step] of result.clock.entries()) {
+      expect(step.simulationTime, `step ${index}`).toBeCloseTo(step.time, 9);
+      if (index) expect(step.dispatches, `step ${index}`).toBe(result.clock[index - 1]!.dispatches + 1);
+    }
+    for (const step of result.sequence) expect(step).toBeGreaterThan(0.3);
+    // Far from the world origin, straight down: moving the camera moves the band's own part with the world (the
+    // floating-origin uv offset), not with the camera. (The analytic surface alone correlates at about 0.97 there, and a
+    // difference of two captures doubles its residual, so the band part lands near 0.83 rather than 1.)
+    expect(result.anchoring.bandLevel).toBeGreaterThan(1);
+    expect(result.anchoring.analytic).toBeGreaterThan(0.9);
+    expect(result.anchoring.world).toBeGreaterThan(0.7);
+    expect(result.anchoring.camera).toBeLessThan(0.2);
+    // Side on, the band displaces the GPU vertices within its bound (Ultra's first cascade, which the 0.125 m grid
+    // resolves; finer cascades stay per-pixel); the CPU vertex path draws the analytic surface.
+    expect(result.profile.band.columns).toBeGreaterThan(200);
     expect(result.profile.band.meanMetres).toBeGreaterThan(0.004);
     expect(result.profile.band.maxMetres).toBeLessThan(2 * result.profile.bound);
     expect(result.profile.cpu.meanMetres).toBeLessThan(1e-3);

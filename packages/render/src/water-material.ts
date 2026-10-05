@@ -122,15 +122,21 @@ const FFT = WATER_FFT_DEFINE;
 /**
  * Per cascade c, (1 / patch size, uv offset x, uv offset z, upper band edge k_hi): the uv offset is
  * fract(floating origin / patch size) + 0.5 / N from the CPU in float64, so eye-relative rest points sample the
- * world-anchored band without large coordinates.
+ * world-anchored band without large coordinates. k_hi (rad/m, the cascade's shortest wavelength) is both stages' fade
+ * frequency: the vertex mesh filter and the fragment footprint fade.
  */
 const FFT_CASCADE_UNIFORMS = Array.from({ length: WATER_FFT_CASCADES_MAX }, (_, c) => `slateWaterFftCascade${c}`);
 /**
  * Uniforms of the band: `slateWaterFft` = (g = Detail Waves · Wave Scale, 0 until the band is ready; Steepness, the
  * horizontal scale before the bank fade; view footprint per metre of view depth and its constant part, metres per pixel)
- * and `slateWaterFftBand` = per cascade 4 / (longest wavelength), the vertex filter's frequency.
+ * and the cascades'.
  */
-const FFT_UNIFORMS = ["slateWaterFft", "slateWaterFftBand", ...FFT_CASCADE_UNIFORMS];
+const FFT_UNIFORMS = ["slateWaterFft", ...FFT_CASCADE_UNIFORMS];
+/**
+ * k_hi of every cascade while the band is not ready (or does not match the compiled cascades): faded at any footprint
+ * or mesh spacing above a few nanometres, so both stages skip every tap and pay only the fade arithmetic until it is.
+ */
+const FFT_FADED = 1e9;
 /** Lowest tier evaluating each realistic chop octave, capillary, and Stylized chop octave. */
 const CHOP_TIER = [0, 0, 1, 1, 2, 2] as const;
 const CAPILLARY_TIER = [1, 2, 2] as const;
@@ -371,18 +377,21 @@ vec2 swFftSlope = vec2(swFftJzz * swFftGrad.x - swFftJzx * swFftGrad.y, swFftJxx
 /**
  * FFT ocean detail in the vertex stage (`SLATE_WATER_GPU_WAVES` with `SLATE_WATER_FFT`), after the swell and before
  * the bank fade: (Dx, H, Dz) of each cascade at this vertex's rest point, scaled by g and λ = Steepness (the bank fade
- * then scales the horizontal part with the swell's). A cascade fades, by the swell's mesh filter on the cascade's
- * longest wavelength, with the larger of the mesh spacing and twice the view footprint at the vertex (metres per pixel
- * at its view depth), so the coarse outer grid and distant vertices never sample detail they cannot resolve. The
- * horizontal detail shrinks where it would fold the mesh: the combined determinant (the swell's `swvShear` plus the
- * band's ∂D terms) stays at or above `WATER_JACOBIAN_FLOOR`. Faded cascades skip their taps.
+ * then scales the horizontal part with the swell's). A cascade fades by the swell's mesh filter on the cascade's
+ * shortest wavelength (its upper band edge k_hi: full weight while the reach is under a quarter of it, none from half
+ * of it, the mesh's Nyquist limit), with the reach the larger of the mesh spacing and twice the view footprint at the
+ * vertex (metres per pixel at its view depth). The band has no mips, so a vertex point-samples every wavelength of a
+ * cascade it keeps: only cascades the mesh resolves completely displace it, and the fragment carries the rest, so no
+ * part of the band aliases into the geometry or crawls along silhouettes. The horizontal detail shrinks where it would
+ * fold the mesh: the combined determinant (the swell's `swvShear` plus the band's ∂D terms) stays at or above
+ * `WATER_JACOBIAN_FLOOR`. Faded cascades skip their taps.
  */
 function fftVertexSource(): string {
   const floor = f(WATER_JACOBIAN_FLOOR);
   const cascades = Array.from({ length: WATER_FFT_CASCADES_MAX }, (_, c) => {
     const code = `
 vec4 swvFc${c} = U.${FFT_CASCADE_UNIFORMS[c]};
-float swvFw${c} = clamp(2.0 - swvReach * U.slateWaterFftBand.${"xyz"[c]}, 0.0, 1.0);
+float swvFw${c} = clamp(2.0 - swvReach * swvFc${c}.w * ${f(4 / TAU)}, 0.0, 1.0);
 swvFw${c} = swvFw${c} * swvFw${c} * (3.0 - 2.0 * swvFw${c});
 if (swvFw${c} > 0.0) {
   vec2 swvFu${c} = swvRest * swvFc${c}.x + swvFc${c}.yz;
@@ -1305,7 +1314,7 @@ export function waterVertexSource(language: ShaderLanguage): { definitions: stri
  * on another pass's effect, with `WATER_FFT_SAMPLER`).
  */
 export const WATER_VERTEX_WAVE_UNIFORMS: readonly string[] = [
-  "slateWaterShape", "slateWaterSwellInfo", ...SWELL_DIRECTION, ...SWELL_AMPLITUDE, "slateWaterFft", "slateWaterFftBand", ...FFT_CASCADE_UNIFORMS,
+  "slateWaterShape", "slateWaterSwellInfo", ...SWELL_DIRECTION, ...SWELL_AMPLITUDE, "slateWaterFft", ...FFT_CASCADE_UNIFORMS,
 ];
 /** `vertexWaveDefines` per wave model (Classic, Ocean Spectrum) and cascades sampled (0-3): built once. */
 const VERTEX_WAVE_DEFINES: ReadonlyArray<ReadonlyArray<readonly string[]>> = [false, true].map((ocean) =>
@@ -1587,12 +1596,12 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
   private fftCascades = 0;
   /** The band bound for the current draw: ready and matching the compiled cascades, or null (placeholder, gain 0). */
   private boundFft: WaterFftResult | null = null;
-  /** Patch sizes of the layout `fftBand` was derived from: the band's per-cascade constants change only with them. */
+  /** Patch sizes of the layout `fftEdges` was derived from: the band's per-cascade constants change only with them. */
   private fftPatches: readonly number[] | null = null;
-  /** Per cascade: highest and lowest band wavenumber (rad/m). */
-  private readonly fftBand = new Float64Array(WATER_FFT_CASCADES_MAX * 2);
-  /** `slateWaterFft`, `slateWaterFftBand` and the cascades' vec4s, as last computed. */
-  private readonly fftValues = new Float32Array((2 + WATER_FFT_CASCADES_MAX) * 4);
+  /** Per cascade: the upper band edge k_hi (rad/m). */
+  private readonly fftEdges = new Float64Array(WATER_FFT_CASCADES_MAX);
+  /** `slateWaterFft` and the cascades' vec4s, as last computed. */
+  private readonly fftValues = new Float32Array((1 + WATER_FFT_CASCADES_MAX) * 4);
   constructor(material: PBRMaterial, water: WaterDefinition, body: WaterBodyProperties) {
     super(material, "SlateWater", 180, {
       SLATE_WATER: true, [WATER_STYLIZED_DEFINE]: false, [WATER_OCEAN_DEFINE]: false, [WATER_GPU_WAVES_DEFINE]: false, [Q]: DEFAULT_TIER,
@@ -1769,25 +1778,25 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
   }
   /**
    * Per draw of a variant that samples the FFT detail band: asks for it (`waterFftForSurface`, the band's demand), and
-   * uploads its uniforms. Until the band is ready (or when it does not match the compiled cascades) every uniform is 0,
-   * so the placeholder bound instead contributes nothing. Allocation-free.
+   * uploads its uniforms. Until the band is ready (or when it does not match the compiled cascades) the gain is 0 and
+   * every cascade is faded (`FFT_FADED`), so no tap runs and the placeholder bound instead contributes nothing.
+   * Allocation-free.
    */
   private bindFft(buffer: UniformBuffer, scene: Scene, subMesh: SubMesh | undefined): void {
     const cascades = (subMesh?.materialDefines as MaterialDefines | null | undefined)?.[FFT] as number | undefined;
     if (!cascades) { this.boundFft = null; return; }
     this.boundFft = this.fftState(scene, cascades);
     const v = this.fftValues;
-    for (let i = 0; i < 2 + WATER_FFT_CASCADES_MAX; i++) {
-      const name = i === 0 ? "slateWaterFft" : i === 1 ? "slateWaterFftBand" : FFT_CASCADE_UNIFORMS[i - 2]!;
-      buffer.updateFloat4(name, v[i * 4]!, v[i * 4 + 1]!, v[i * 4 + 2]!, v[i * 4 + 3]!);
+    for (let i = 0; i < 1 + WATER_FFT_CASCADES_MAX; i++) {
+      buffer.updateFloat4(i === 0 ? "slateWaterFft" : FFT_CASCADE_UNIFORMS[i - 1]!, v[i * 4]!, v[i * 4 + 1]!, v[i * 4 + 2]!, v[i * 4 + 3]!);
     }
   }
   /**
    * The FFT detail band for `cascades` and its uniforms (`fftValues`): (g, Steepness, view footprint per metre of
-   * depth, constant footprint), per cascade 4 / longest wavelength, and per cascade (1 / patch size, uv offset, highest
-   * wavenumber). The uv offset is fract(origin / patch size) + 0.5 / N in float64, so the floating origin never reaches
-   * the shader as a large coordinate. The footprint is metres per pixel of the pass's projection and target height.
-   * Returns the band only when it is ready and matches `cascades`.
+   * depth, constant footprint) and per cascade (1 / patch size, uv offset, upper band edge k_hi). The uv offset is
+   * fract(origin / patch size) + 0.5 / N in float64, so the floating origin never reaches the shader as a large
+   * coordinate. The footprint is metres per pixel of the pass's projection and target height. Returns the band only
+   * when it is ready and matches `cascades`; otherwise g is 0 and every k_hi is `FFT_FADED`.
    */
   private fftState(scene: Scene, cascades: number): WaterFftResult | null {
     const result = waterFftForSurface(scene, this.water);
@@ -1797,24 +1806,28 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
     const projection = scene.getProjectionMatrix().m, height = scene.getEngine().getRenderHeight();
     const perPixel = 2 / Math.max(Math.abs(projection[5]!) * Math.max(1, height), 1e-6), orthographic = Math.abs(projection[11]!) < 0.5;
     v[2] = orthographic ? 0 : perPixel; v[3] = orthographic ? perPixel : 0;
-    if (!band) return null;
-    const size = sceneWaterQualityDeviceClamp(scene).quality.fftSize, patches = band.patchSizes, constants = this.fftBand;
+    if (!band) {
+      for (let c = 0; c < WATER_FFT_CASCADES_MAX; c++) v[(1 + c) * 4 + 3] = FFT_FADED;
+      return null;
+    }
+    const size = sceneWaterQualityDeviceClamp(scene).quality.fftSize, patches = band.patchSizes, edges = this.fftEdges;
     if (patches !== this.fftPatches) {
       // Once per change of the band's layout: its edges (allocates).
-      const edges = waterFftLayout(waterWaveSet(this.water), size, cascades).bandEdges;
-      for (let c = 0; c < cascades; c++) { constants[c * 2] = edges[c + 1]!; constants[c * 2 + 1] = edges[c]!; }
+      const layout = waterFftLayout(waterWaveSet(this.water), size, cascades).bandEdges;
+      for (let c = 0; c < cascades; c++) edges[c] = layout[c + 1]!;
       this.fftPatches = patches;
     }
     const g = band.amplitudeGain * this.body.waveScale;
     const origin = scene.floatingOriginMode ? scene.floatingOriginOffset : Vector3.ZeroReadOnly;
     v[0] = g; v[1] = this.water.steepness;
-    for (let c = 0; c < cascades; c++) {
-      const patch = patches[c]!, o = (2 + c) * 4, texel = 0.5 / size;
-      v[4 + c] = 4 * constants[c * 2 + 1]! / TAU;
+    for (let c = 0; c < WATER_FFT_CASCADES_MAX; c++) {
+      const o = (1 + c) * 4;
+      if (c >= cascades) { v[o + 3] = FFT_FADED; continue; }
+      const patch = patches[c]!, texel = 0.5 / size;
       v[o] = 1 / patch;
       v[o + 1] = origin.x / patch - Math.floor(origin.x / patch) + texel;
       v[o + 2] = origin.z / patch - Math.floor(origin.z / patch) + texel;
-      v[o + 3] = constants[c * 2]!;
+      v[o + 3] = edges[c]!;
     }
     return band;
   }
@@ -1949,9 +1962,8 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
     if (!this.fftCascades) return;
     const band = this.fftState(scene, this.fftCascades), v = this.fftValues;
     effect.setFloat4("slateWaterFft", v[0]!, v[1]!, v[2]!, v[3]!);
-    effect.setFloat4("slateWaterFftBand", v[4]!, v[5]!, v[6]!, v[7]!);
     for (let c = 0; c < WATER_FFT_CASCADES_MAX; c++) {
-      const o = (2 + c) * 4;
+      const o = (1 + c) * 4;
       effect.setFloat4(FFT_CASCADE_UNIFORMS[c]!, v[o]!, v[o + 1]!, v[o + 2]!, v[o + 3]!);
     }
     effect.setTexture(WATER_FFT_SAMPLER, band?.texture ?? placeholderFft(scene));

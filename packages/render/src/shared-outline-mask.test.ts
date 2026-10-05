@@ -240,12 +240,12 @@ it("adds the FFT detail band's displacement in the mask from the band the water 
     const plugin = material.pluginManager!.getPlugin<WaterMaterialPlugin>("SlateWater")!;
     const drawn = new Map<string, number[]>();
     plugin.hardBindForSubMesh({ updateFloat4: (name: string, ...values: number[]) => drawn.set(name, values), updateMatrix: () => {} } as unknown as UniformBuffer, scene, engine, subMesh);
-    // The same band, gain, λ, filter frequencies and world-anchored cascades as the material's own vertex shader (the
-    // view footprint follows each pass's own target).
+    // The same band, gain, λ and world-anchored cascades with their filter frequencies as the material's own vertex
+    // shader (the view footprint follows each pass's own target).
     expect(textures.get(WATER_FFT_SAMPLER)).toBe(waterFftForSurface(scene, plugin.water)!.texture);
     expect(bound.get("slateWaterFft")!.slice(0, 2)).toEqual(drawn.get("slateWaterFft")!.slice(0, 2));
     expect(bound.get("slateWaterFft")![0]).toBeCloseTo(0.8, 6);
-    for (const name of ["slateWaterFftBand", "slateWaterFftCascade0", "slateWaterFftCascade1"]) expect(bound.get(name), name).toEqual(drawn.get(name));
+    for (const name of ["slateWaterFftCascade0", "slateWaterFftCascade1"]) expect(bound.get(name), name).toEqual(drawn.get(name));
   } finally {
     mask.dispose(); objects.dispose(); view.dispose();
     await owner.whenReleased();

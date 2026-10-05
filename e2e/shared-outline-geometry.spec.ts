@@ -68,7 +68,7 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     expect(water.bounds!.bottom - water.bounds!.top).toBeGreaterThan(8);
     // With the FFT detail band compiled in and ready, the mask adds the band's displacement too (matched above).
     expect(report.fftDetail.ready).toBe(true);
-    expect(report.fftDetail.defines).toContain("#define SLATE_WATER_FFT 1\n");
+    expect(report.fftDetail.defines).toContain("#define SLATE_WATER_FFT 3\n");
     expect(at("gpu-water-fft-detail").native.count).toBeGreaterThan(2_000);
     const submeshes = at("multi-material-cutout");
     expect(at("cel-default-material").native.count).toBeGreaterThan(1_000);

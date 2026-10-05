@@ -26,10 +26,24 @@ const GRAVITY = 9.81;
  */
 export const WATER_FFT_PERIOD = 256;
 /**
- * Patch size (and band) ratio between consecutive cascades: 3 + 2√2 is irrational, so cascades never repeat in step,
- * and below 8, so each cascade's band stays inside its grid.
+ * Patch size (and band) ratio between consecutive cascades of a two-cascade layout: 3 + 2√2 is irrational, so cascades
+ * never repeat in step, and below 8, so each cascade's band stays inside its grid. See `waterFftCascadeRatio`.
  */
 export const WATER_FFT_CASCADE_RATIO = 3 + 2 * Math.SQRT2;
+/**
+ * Patch size (and band) ratio between consecutive cascades of a `cascades`-cascade layout: `WATER_FFT_CASCADE_RATIO`
+ * with up to two, its (cascades − 1)th root with more (1 + √2 with three, also irrational). Every layout of two or
+ * more cascades therefore spans the same band, from the analytic cutoff to 8 · `WATER_FFT_CASCADE_RATIO` (about 47)
+ * times it, since the last cascade runs 8× to its Nyquist radius. More cascades split that band more finely, each on a
+ * larger patch: a consumer fades each cascade by its shortest wavelength, so a narrower first cascade keeps the
+ * band's longer waves (and vertex displacement) at footprints and mesh spacings where a wide one is already gone, and
+ * fine detail repeats less often. Extending the band further instead would only add centimetre ripples that every
+ * footprint beyond arm's length fades away.
+ */
+export function waterFftCascadeRatio(cascades: number): number {
+  if (cascades <= 2) return WATER_FFT_CASCADE_RATIO;
+  return cascades === 3 ? 1 + Math.SQRT2 : WATER_FFT_CASCADE_RATIO ** (1 / (cascades - 1));
+}
 /** Narrowest heading spread (Wave Spread units) of the detail band: short waves are never all parallel. */
 export const WATER_FFT_MIN_SPREAD = 0.3;
 /**
@@ -84,16 +98,16 @@ const lowBin = (size: number) => Math.max(1, size / 16);
 
 /**
  * Cascade layout for a wave set. Every cascade starts its band `size / 16` bins from its own centre and ends
- * `WATER_FFT_CASCADE_RATIO` times higher, where the next, smaller patch takes over; the last cascade runs to its
- * Nyquist radius. Bands never overlap and nothing below the analytic cutoff is synthesized, so no wavenumber is
- * counted twice. Allocates; call when the waves or the Water quality change, never per frame.
+ * `waterFftCascadeRatio(cascades)` times higher, where the next, smaller patch takes over; the last cascade runs to its
+ * Nyquist radius (8× its start). Bands never overlap and nothing below the analytic cutoff is synthesized, so no
+ * wavenumber is counted twice. Allocates; call when the waves or the Water quality change, never per frame.
  */
 export function waterFftLayout(set: WaterWaveSet, size: number, cascades: number): WaterFftLayout {
   if (!Number.isInteger(size) || size < 8 || (size & (size - 1)) !== 0) throw new Error("FFT size must be a power of two of at least 8.");
   if (!Number.isInteger(cascades) || cascades < 1) throw new Error("FFT cascades must be a positive integer.");
-  const patchSizes: number[] = [], bandEdges: number[] = [];
+  const patchSizes: number[] = [], bandEdges: number[] = [], ratio = waterFftCascadeRatio(cascades);
   for (let i = 0; i < cascades; i++) {
-    const low = set.cutoffK * WATER_FFT_CASCADE_RATIO ** i;
+    const low = set.cutoffK * ratio ** i;
     bandEdges.push(low);
     patchSizes.push(TAU * lowBin(size) / low);
   }
@@ -186,10 +200,10 @@ class SpectrumBuild implements WaterFftSpectrumBuild {
 
   private nextCascade(): void {
     if (++this.cascade === this.cascades) { this.done = true; return; }
-    const low = lowBin(this.size);
-    this.binK = this.layout.cutoff * WATER_FFT_CASCADE_RATIO ** this.cascade / low;
+    const low = lowBin(this.size), ratio = waterFftCascadeRatio(this.cascades);
+    this.binK = this.layout.cutoff * ratio ** this.cascade / low;
     this.lowN2 = low * low;
-    this.highN2 = this.cascade === this.cascades - 1 ? (this.size / 2) ** 2 : (WATER_FFT_CASCADE_RATIO * low) ** 2;
+    this.highN2 = this.cascade === this.cascades - 1 ? (this.size / 2) ** 2 : (ratio * low) ** 2;
     this.radial.fill(Number.NaN);
     this.sum = 0;
   }
@@ -226,7 +240,7 @@ class SpectrumBuild implements WaterFftSpectrumBuild {
     }
     if (++this.row < size) return;
     const lowK = binK * lowBin(size), highK = binK * Math.sqrt(high);
-    const target = waterFftBandVariance(this.unit, lowK, this.cascade === this.cascades - 1 ? highK : lowK * WATER_FFT_CASCADE_RATIO);
+    const target = waterFftBandVariance(this.unit, lowK, this.cascade === this.cascades - 1 ? highK : lowK * waterFftCascadeRatio(this.cascades));
     this.scale = this.sum > 0 ? target / this.sum : 0;
     this.rng = createSeededRng(cascadeSeed(layout.seed, this.cascade));
     this.drawing = true; this.row = 0;

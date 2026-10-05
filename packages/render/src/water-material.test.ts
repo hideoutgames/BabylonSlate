@@ -379,9 +379,11 @@ describe("Water material binding", () => {
       vi.spyOn(plugin, "hardBindForSubMesh").mockImplementation((buffer, ...rest) => hardBind(record(buffer), ...rest));
       vi.spyOn(plugin, "bindForSubMesh").mockImplementation((buffer, ...rest) => bind(record(buffer), ...rest));
       await vi.waitFor(() => { scene.render(); expect(fft.has("slateWaterFft")).toBe(true); });
-      // Before the band is ready: gain 0 and a placeholder, which leave the analytic surface exactly as it is.
+      // Before the band is ready: gain 0 and a placeholder, which leave the analytic surface exactly as it is, and every
+      // cascade faded even at a micrometre footprint or mesh spacing, so neither stage pays for a single tap.
       expect(fft.get("slateWaterFft")!.slice(0, 2)).toEqual([0, 0]);
       expect(textures.at(-1)).toBe("water-fft-placeholder");
+      for (const c of [0, 1]) expect(fft.get(`slateWaterFftCascade${c}`)![3]! * 1e-6, `cascade ${c}`).toBeGreaterThan(2.2);
       // Nothing but the water's draws asks for the band; it becomes ready within a few frames.
       await vi.waitFor(() => { scene.render(); expect(waterFftDiagnostics(scene).simulations.some((simulation) => simulation.ready)).toBe(true); });
       scene.render();

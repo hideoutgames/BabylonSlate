@@ -705,21 +705,25 @@ export async function runWaterTierProof(backend: "webgl2" | "webgpu", options: {
   }
 }
 
-/** Top-down RGBA pixel statistics of the FFT detail proof, over the water (the lower two thirds of the view). */
+/**
+ * Top-down RGBA pixel statistics of the FFT detail proof, over the water (the lower two thirds of the view): mean
+ * brightness, black pixels, and small-scale detail (each pixel against its four neighbours) over the nearer half of
+ * the view (`detail`) and the band of farther water above it (`farDetail`).
+ */
 function fftViewStats(pixels: readonly number[], width: number, height: number) {
   const luma = (i: number) => (pixels[i]! + pixels[i + 1]! + pixels[i + 2]!) / 3;
-  let light = 0, black = 0, count = 0, detail = 0, detailCount = 0;
+  let light = 0, black = 0, count = 0, detail = 0, detailCount = 0, farDetail = 0, farCount = 0;
   for (let y = Math.floor(height / 3); y < height; y++) for (let x = 0; x < width; x++) {
     const i = (y * width + x) * 4;
     light += luma(i); count++;
     // Black (or NaN, which blends to black) water.
     if (Math.max(pixels[i]!, pixels[i + 1]!, pixels[i + 2]!) < 3) black++;
-    // Small-scale detail: each pixel against its four neighbours, over the nearer half of the view.
-    if (y >= height / 2 && y < height - 1 && x > 0 && x < width - 1) {
-      detail += Math.abs(4 * luma(i) - luma(i - 4) - luma(i + 4) - luma(i - width * 4) - luma(i + width * 4)) / 4; detailCount++;
+    if (y < height - 1 && x > 0 && x < width - 1) {
+      const laplacian = Math.abs(4 * luma(i) - luma(i - 4) - luma(i + 4) - luma(i - width * 4) - luma(i + width * 4)) / 4;
+      if (y >= height / 2) { detail += laplacian; detailCount++; } else { farDetail += laplacian; farCount++; }
     }
   }
-  return { light: light / count, black, detail: detail / detailCount };
+  return { light: light / count, black, detail: detail / detailCount, farDetail: farDetail / farCount };
 }
 
 /**
@@ -728,8 +732,12 @@ function fftViewStats(pixels: readonly number[], width: number, height: number) 
  * - Realistic Global Water at a typical eye height at every preset tier, with Detail Waves 1 and 0: Low and Medium
  *   compile no band and draw the same water either way; High and Ultra compile their cascades, the band becomes ready,
  *   and it adds small-scale detail without black or NaN pixels.
- * - At Ultra, the sea from high above (where a repeating patch would show), far from the world origin (the
- *   floating-origin uv offset), and a short time sequence (detail must move with the waves, not swim over them).
+ * - At Ultra, each also with Detail Waves 0 so the band's own part (Detail Waves 1 minus 0) can be isolated: the sea
+ *   from high above (where a repeating patch would show); far from the world origin; straight down (orthographic)
+ *   there from two camera positions a whole number of pixels and grid cells apart, where a world-anchored band (the
+ *   floating-origin uv offset) shifts with the world rather than following the camera; and a short time sequence in
+ *   which the band is dispatched at every step's water time and its own part changes. Stills only: whether detail
+ *   rides the waves rather than sliding over them (rest-point sampling) is not measured.
  * - Side on through a thin depth slab at Ultra (as the vertex parity proof): the band displaces the GPU vertices, within
  *   its bound, while the CPU vertex path (`setWaterGpuWaves(mesh, false)`) draws exactly the analytic surface.
  * Pixels are top-down RGBA; evidence PNGs are the captures.
@@ -792,6 +800,14 @@ export async function runWaterFftDetailProof(backend: "webgl2" | "webgpu") {
     camera.setTarget(new Vector3(...target), false, false, true);
     camera.alpha = -Math.PI / 2 - 0.4; camera.beta = beta; camera.radius = radius;
   };
+  /** Orthographic, straight down on `target` (image right is +X, image up is +Z), `metresPerPixel` across. */
+  const topDown = (target: [number, number, number], metresPerPixel: number) => {
+    camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
+    camera.orthoLeft = -width * metresPerPixel / 2; camera.orthoRight = width * metresPerPixel / 2;
+    camera.orthoTop = height * metresPerPixel / 2; camera.orthoBottom = -height * metresPerPixel / 2;
+    camera.setTarget(new Vector3(...target), false, false, true);
+    camera.alpha = -Math.PI / 2; camera.beta = 0.01; camera.radius = 60;
+  };
   const sea = (detailWaves: number) => createWaterMesh(scene, `fft-sea-${detailWaves}`, normalizeWaterBody({}, "global"),
     { ...createDefaultWaterDefinition("realistic"), detailWaves });
   try {
@@ -824,10 +840,14 @@ export async function runWaterFftDetailProof(backend: "webgl2" | "webgpu") {
       });
       if (tier === "ultra") ultraSea = on; else on.dispose();
     }
-    // Ultra: from high above (a repeating patch would show here), far from the world origin, and a short time sequence;
-    // each also without the band (Detail Waves 0) for comparison.
+    // Ultra: from high above (a repeating patch would show here), far from the world origin, straight down there from
+    // two places, and a short time sequence; each also without the band (Detail Waves 0), indexed by Detail Waves.
     const extra: Record<string, ReturnType<typeof fftViewStats>> = highOverhead ? { "high-overhead": highOverhead } : {};
-    const sequence: number[] = [];
+    const close: number[][][] = [[], []], anchor: number[][][] = [[], []];
+    const clock: Array<{ time: number; simulationTime: number; dispatches: number }> = [];
+    // Straight down at 4 cm per pixel: the second view is 4 m east and 2 m north of the first, 100 and 50 pixels and
+    // a whole number of Ultra's Global cells (a third of a metre at the default Wave Length), so the grid moves with it.
+    const metresPerPixel = 0.04, anchorShift: [number, number] = [4, 2], anchorTarget: [number, number, number] = [4000, 0, -2000];
     let pixels: number[];
     for (const detailWaves of [1, 0]) {
       const mesh = detailWaves ? ultraSea! : sea(0);
@@ -836,29 +856,89 @@ export async function runWaterFftDetailProof(backend: "webgl2" | "webgpu") {
       view(0.7, 45);
       pixels = await capture(); pixels = await capture();
       evidence[`fft-ultra-overhead${suffix}`] = png(pixels); extra[`overhead${suffix}`] = fftViewStats(pixels, width, height);
-      view(1.15, 18, [4000, 0, -2000]);
+      view(1.15, 18, anchorTarget);
       pixels = await capture(); pixels = await capture();
       evidence[`fft-ultra-far${suffix}`] = png(pixels); extra[`far${suffix}`] = fftViewStats(pixels, width, height);
+      for (const [index, offset] of [[0, 0], anchorShift].entries()) {
+        topDown([anchorTarget[0] + offset[0]!, 0, anchorTarget[2] + offset[1]!], metresPerPixel);
+        pixels = await capture(); pixels = await capture();
+        evidence[`fft-ultra-anchor-${index}${suffix}`] = png(pixels);
+        anchor[detailWaves]!.push(pixels);
+      }
       view(1.1, 9);
-      let previous: number[] | null = null;
       for (const [index, time] of [2.4, 2.45, 2.5].entries()) {
         setSceneWaterTime(scene, time);
         pixels = await capture();
         evidence[`fft-ultra-close-${index}${suffix}`] = png(pixels);
-        if (previous && detailWaves) sequence.push(fftChange(pixels, previous, width, height));
-        previous = pixels;
+        close[detailWaves]!.push(pixels);
+        const simulation = waterFftDiagnostics(scene).simulations.find((entry) => entry.cascades === 3);
+        if (detailWaves) clock.push({ time, simulationTime: simulation?.time ?? Number.NaN, dispatches: simulation?.dispatches ?? 0 });
       }
       extra[`close${suffix}`] = fftViewStats(pixels, width, height);
       mesh.dispose();
     }
+    // The band's own part of each close capture, and how much it changes per step (the swell alone changes the whole
+    // capture by several levels per step, so the whole capture's change says nothing about the band).
+    const sequence = [1, 2].map((i) => fftBandChange(close[1]![i]!, close[0]![i]!, close[1]![i - 1]!, close[0]![i - 1]!, width, height));
+    const anchoring = fftAnchoring(anchor, [Math.round(anchorShift[0] / metresPerPixel), -Math.round(anchorShift[1] / metresPerPixel)], width, height);
     const profile = await measureFftProfile(scene, camera, capture, png, evidence, width, height);
-    return { tiers, extra, sequence, profile, diagnostics: waterFftDiagnostics(scene), evidence };
+    return { tiers, extra, sequence, clock, anchoring, profile, diagnostics: waterFftDiagnostics(scene), evidence };
   } finally {
     updateSceneRenderingSettings(scene, { quality });
     const device = (engine as { _device?: { queue: { onSubmittedWorkDone(): Promise<void> } } })._device;
     engine.flushFramebuffer(); await device?.queue.onSubmittedWorkDone();
     host.dispose(); await host.whenReleased(); engine.dispose(); canvas.remove();
   }
+}
+
+/**
+ * Mean per-channel change, over the water (the lower two thirds), of the band's own part (Detail Waves 1 minus 0 at the
+ * same time) between two times.
+ */
+function fftBandChange(
+  on: readonly number[], off: readonly number[], onBefore: readonly number[], offBefore: readonly number[], width: number, height: number,
+): number {
+  let sum = 0, count = 0;
+  for (let y = Math.floor(height / 3); y < height; y++) for (let x = 0; x < width; x++) for (let c = 0; c < 3; c++) {
+    const i = (y * width + x) * 4 + c;
+    sum += Math.abs((on[i]! - off[i]!) - (onBefore[i]! - offBefore[i]!)); count++;
+  }
+  return sum / count;
+}
+
+/**
+ * World anchoring of the band under the floating origin. `captures[detailWaves][view]` are top-down orthographic
+ * captures from two camera positions; the second sees every world point `shift` pixels (x, y) from where the first did.
+ * Over the pixels both views see, returns the correlation of the band's own part (luma of Detail Waves 1 minus 0) of
+ * the second view with the first's at the shifted pixel (`world`: high when the band is anchored to the world) and at
+ * the same pixel (`camera`: what a band that followed the camera would match), and for reference the same shifted
+ * correlation of the analytic surface alone (`analytic`, Detail Waves 0: sun glitter and 8-bit rounding keep even it
+ * below 1, and a difference of two captures doubles that residual), plus the band part's mean level.
+ */
+function fftAnchoring(captures: number[][][], shift: [number, number], width: number, height: number) {
+  const luma = (pixels: readonly number[], x: number, y: number) => {
+    const i = (y * width + x) * 4;
+    return (pixels[i]! + pixels[i + 1]! + pixels[i + 2]!) / 3;
+  };
+  const band = (view: number, x: number, y: number) => luma(captures[1]![view]!, x, y) - luma(captures[0]![view]!, x, y);
+  const analytic = (view: number, x: number, y: number) => luma(captures[0]![view]!, x, y);
+  const correlation = (field: (view: number, x: number, y: number) => number, dx: number, dy: number) => {
+    let n = 0, sa = 0, sb = 0, saa = 0, sbb = 0, sab = 0;
+    for (let y = Math.max(0, -shift[1]); y < Math.min(height, height - shift[1]); y++) {
+      for (let x = Math.max(0, -shift[0]); x < Math.min(width, width - shift[0]); x++) {
+        const a = field(1, x, y), b = field(0, x + dx, y + dy);
+        n++; sa += a; sb += b; saa += a * a; sbb += b * b; sab += a * b;
+      }
+    }
+    const cov = sab / n - sa / n * (sb / n), va = saa / n - (sa / n) ** 2, vb = sbb / n - (sb / n) ** 2;
+    return cov / Math.sqrt(Math.max(va * vb, 1e-12));
+  };
+  let energy = 0;
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) energy += Math.abs(band(1, x, y));
+  return {
+    world: correlation(band, shift[0], shift[1]), camera: correlation(band, 0, 0), analytic: correlation(analytic, shift[0], shift[1]),
+    bandLevel: energy / (width * height),
+  };
 }
 
 /** Mean per-channel difference of two top-down RGBA captures over the water (the lower two thirds). */

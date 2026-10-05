@@ -116,7 +116,7 @@ export {
 } from "./water-fft";
 export {
   WATER_FFT_BUILD_TEXELS, WATER_FFT_CASCADE_RATIO, WATER_FFT_MIN_SPREAD, WATER_FFT_PERIOD, waterFftBandVariance, waterFftButterfly,
-  waterFftCycle, waterFftEvolve, waterFftInitialSpectrum, waterFftInverse, waterFftLayout, waterFftSpectrumBuild, waterFftStages,
+  waterFftCascadeRatio, waterFftCycle, waterFftEvolve, waterFftInitialSpectrum, waterFftInverse, waterFftLayout, waterFftSpectrumBuild, waterFftStages,
   waterFftSynthesize, type WaterFftLayout, type WaterFftSpectrumBuild,
 } from "./water-fft-spectrum";
 export { createWaterRemovalMesh, sceneWaterRemovals, waterRemovalOutline } from "./water-removal-mesh";
