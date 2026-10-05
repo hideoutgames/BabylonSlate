@@ -22,6 +22,16 @@ import {
 } from "../testing/real-document-provider";
 import { GraphPanel } from "./graph-panel";
 
+// jsdom has no PointerEvent; the palette's Base UI checkbox dispatches one on click.
+if (typeof window.PointerEvent === "undefined") {
+  class PointerEventPolyfill extends MouseEvent {
+    constructor(type: string, init?: MouseEventInit) {
+      super(type, init);
+    }
+  }
+  window.PointerEvent = PointerEventPolyfill as unknown as typeof PointerEvent;
+}
+
 // Stand-ins shared by real-provider tests: see ../testing/real-document-provider.
 const provider = vi.hoisted(() => () => import("../testing/real-document-provider"));
 vi.mock("../lib/engine-plugins", async (importOriginal) => ({
