@@ -1,4 +1,4 @@
-import { inflateSync } from "node:zlib";
+import { unzlibSync } from "fflate";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   act,
@@ -486,7 +486,8 @@ describe("MaterialEditingProvider preview isolation", () => {
       offset += length + 12;
     }
     // One unfiltered RGBA texel: opaque black, not transparent or missing.
-    expect([...inflateSync(Buffer.concat(compressed))]).toEqual([0, 0, 0, 0, 255]);
+    const pixels = unzlibSync(new Uint8Array(compressed.flatMap((chunk) => [...chunk])));
+    expect([...pixels]).toEqual([0, 0, 0, 0, 255]);
 
     // A later registry change must not hide missing ordinary image data.
     harness.textureAsset.header.type = "Texture";
