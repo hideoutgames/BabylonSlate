@@ -97,6 +97,10 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       expect(edge.near, `${name} edge`).toBeLessThan(edge.far + 0.02);
       expect(edge.water, `${name} edge`).toBeGreaterThan(10);
     }
+    // A gentle floor deeper than any wave trough reaches is no shore: Stylized water over it draws no foam the same view
+    // without it lacks (measuring the shoreline from the full-range depth's 8-bit steps drew contour rings of foam there).
+    expect(result.deepFloor.field).toBe(true);
+    expect(result.deepFloor.rise).toBeLessThan(0.0002);
     // A post through a lake gets a bright foam ring on its waterline in both styles, even at the
     // realistic preset's low Foam Amount, well above open water beyond its foam and ripples.
     // On a cone the foam follows the rendered wave height: inward at a crest, outward in a trough.
