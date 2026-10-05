@@ -11,8 +11,15 @@
  * (`waterPlanarReflectionForCamera`) while the device-effective Reflections are Planar; only views of a scene
  * retained by `retainWaterPlanarReflections` (SceneRenderCoordinator) can ever draw one, so previews,
  * thumbnails and Render Target Captures never do. A view allocates its target only when an eligible body is
- * visible, draws every frame while its camera moves and every other frame while it is static, and releases the
- * target after it has been unused for `RELEASE_FRAMES`. The owner's per-frame work allocates nothing.
+ * visible, draws on every render while its camera moves and every other render while it is static, and frees the
+ * target's storage after `RELEASE_RENDERS` renders unused. Every window counts the owner's own renders, never
+ * engine frames, so frame caps, paused views and display refresh rates do not change them. The owner's per-frame
+ * work allocates nothing; once every view is idle its observers detach.
+ *
+ * Readiness: the mirror camera and target never join the scene's cameras or textures (their construction blocks
+ * entity collection), and idle release frees only GPU storage, so allocating, releasing and reallocating never
+ * changes scene membership, never re-probes strict readiness and never drops a presented frame. They are
+ * disposed only with their view (camera disposal, Reflections leaving Planar, a colour-type change, owner release).
  *
  * Colour space: the pass keeps the view's image-processing setting, so reflected materials reuse the view's
  * shader variants and target formats. Scene Linear views (`applyByPostProcess`) store linear HDR colour in
@@ -22,7 +29,7 @@
  */
 import {
   Camera, Color4, Constants, Frustum, Matrix, MultiMaterial, RenderTargetTexture, Texture, ThinTexture, Vector3,
-  type AbstractMesh, type IParticleSystem, type Node, type Observer, type Scene,
+  type AbstractEngine, type AbstractMesh, type IParticleSystem, type Mesh, type Node, type Observer, type Scene,
 } from "@babylonjs/core";
 import { FloatingOriginCurrentScene } from "@babylonjs/core/Materials/floatingOriginMatrixOverrides";
 import { clusteredLightTarget } from "./clustered-light-policy";
@@ -36,20 +43,23 @@ import { renderTargetCaptureDrawing } from "./render-target-capture-state";
 import { managedRenderTargetResources, renderTargetAllocationBytes } from "./render-target-resource-cost";
 import { admittedSceneMeshes } from "./scene-stream-admission";
 import type { WaterMaterialPlugin } from "./water-material";
+import { waterMeshRestVaries } from "./water-mesh";
 
-/** One view's planar reflection, valid for the engine frame in which it was returned. */
+/** One view's planar reflection, valid for the scene render in which it was returned. */
 export interface WaterPlanarReflection {
   /**
-   * The reflected opaque scene, CLAMP and bilinear: RGBA16F linear colour for Scene Linear views, otherwise RGBA8
-   * display-encoded colour (`gammaSpace`). Alpha is coverage (0 where nothing was reflected).
+   * The reflected opaque scene, CLAMP and bilinear: RGBA16F linear colour for Scene Linear views, otherwise 8-bit
+   * display-encoded colour (`gammaSpace`; stored BGRA on a bgra8unorm WebGPU swap chain, sampled as RGBA). Alpha
+   * is coverage (0 where nothing was reflected).
    */
   readonly texture: ThinTexture;
   /**
    * Mirrored camera view × oblique projection, taking positions relative to the origin the water shader uses
    * (`slateWaterOrigin`: the view camera's position under floating origin, otherwise the world origin). A water
-   * fragment at that relative position projects to the clip-space position whose texel holds what it reflects.
-   * Clip space follows the engine's conventions (NDC depth range, reverse depth); the per-backend NDC-to-uv
-   * mapping is the sampling shader's to choose and prove with a known hit on WebGL2 and WebGPU.
+   * fragment at that relative position projects to clip position c, and the texel holding what it reflects is at
+   * u = 0.5 + 0.5·c.x/c.w with v = 0.5 + 0.5·c.y/c.w on WebGL2 (GLSL) or v = 0.5 − 0.5·c.y/c.w on WebGPU (WGSL),
+   * as e2e/water-planar-reflection.spec.ts reads back on both backends. Clip depth follows the engine's NDC depth
+   * range and reverse depth; the water plane is the near plane.
    */
   readonly viewProjection: Matrix;
   /** World height of the reflecting rest plane. */
@@ -62,22 +72,25 @@ export interface WaterPlanarReflection {
 
 /** Counters for proofs and tests; null when the scene has no retained planar owner. */
 export interface WaterPlanarReflectionDiagnostics {
-  /** Cameras whose water asked for a reflection recently. */
+  /** Cameras whose water asked for a reflection (idle views keep their mirror camera and target, without storage). */
   readonly views: number;
-  /** Views holding an allocated target. */
+  /** Views holding GPU storage for their target. */
   readonly targets: number;
   /** Mirror passes drawn. */
   readonly draws: number;
-  /** Frames a static view reused its previous draw. */
+  /** Renders a static view reused its previous draw. */
   readonly reusedFrames: number;
 }
 
 const PLUGIN_NAME = "SlateWater";
-/** A lookup within this many engine frames keeps a view drawing (tolerates frames a view skips). */
-const DEMAND_FRAMES = 4;
-/** Frames a view keeps its target after its last valid reflection, so brief occlusion never reallocates. */
-const RELEASE_FRAMES = 120;
-/** A static view redraws every this many frames (scene content may still move). */
+/**
+ * A view keeps drawing while its water looked the reflection up within this many of the view's own renders, so a
+ * render that skips the water (shaders still compiling) does not stop it.
+ */
+const DEMAND_RENDERS = 4;
+/** Scene renders a target may go unused before its storage is freed, so brief occlusion never reallocates. */
+const RELEASE_RENDERS = 120;
+/** A static view redraws every this many of its renders (scene content may still move). */
 const STATIC_REDRAW_INTERVAL = 2;
 /** Eyes closer than this to the rest plane (or below it) get no reflection: the mirror degenerates. */
 const MIN_EYE_HEIGHT = 1e-3;
@@ -108,23 +121,35 @@ class MirrorTarget extends RenderTargetTexture {
     this._objectRenderer.enableOutlineRendering = false;
     this._objectRenderer.disableDepthPrePass = true;
   }
+
+  /** Frees the colour and depth storage; the target, its object renderer and its render pass stay for reuse. */
+  releaseStorage(): void {
+    this._renderTarget?.dispose();
+    this._renderTarget = null;
+    this._texture = null;
+  }
 }
 
 type Result = { texture: ThinTexture; viewProjection: Matrix; planeY: number; mesh: AbstractMesh; gammaSpace: boolean };
+/**
+ * A view's mirror camera and target, kept for the view's lifetime outside scene membership. `lease` is null while
+ * the target holds no GPU storage.
+ */
 type Target = {
   texture: MirrorTarget;
   thin: ThinTexture;
   mirror: WaterMirrorCamera;
-  lease: ManagedRenderLease;
+  /** The mirror camera's frozen oblique projection, rewritten in place. */
+  projection: Matrix;
+  lease: ManagedRenderLease | null;
   width: number;
   height: number;
   type: number;
-  /** The mirror camera's frozen oblique projection, rewritten in place. */
-  projection: Matrix;
   /** Absolute mirror view × projection of the last draw. */
   drawn: Matrix;
-  drawnFrame: number;
-  /** Body of the last draw; null forces the next frame to draw (new or resized target). */
+  /** The view's render count at the last draw. */
+  drawnRender: number;
+  /** Body of the last draw; null forces the next render to draw (new, resized or reallocated storage). */
   drawnMesh: AbstractMesh | null;
   ready: boolean;
   meshes: AbstractMesh[];
@@ -133,11 +158,15 @@ type Target = {
 type View = {
   camera: Camera;
   disposeObserver: Observer<Node> | null;
-  /** Engine frame of the latest lookup. */
+  /** Renders of this view: owner updates while its camera is the active camera. */
+  renders: number;
+  /** `renders` at the latest lookup. */
   requested: number;
-  /** Engine frame whose lookups may use the target's result. */
+  /** Owner render of the latest lookup. */
+  seen: number;
+  /** Owner render whose lookups may use the target's result; -1 for none. */
   valid: number;
-  /** Engine frame the target was last in use (drawn, reused or waiting for shaders). */
+  /** Owner render in which the target's storage was last in use (drawn, reused or waiting for shaders). */
   active: number;
   target: Target | null;
 };
@@ -158,6 +187,15 @@ function targetBytes(width: number, height: number, type: number): number {
   return renderTargetAllocationBytes({ width, height, format: Constants.TEXTUREFORMAT_RGBA, type }) +
     // Conservative depth bound; actual WebGL renderbuffers and WebGPU depth textures commit their real size.
     renderTargetAllocationBytes({ width, height, format: Constants.TEXTUREFORMAT_DEPTH32FLOAT_STENCIL8, renderbuffer: true });
+}
+
+/**
+ * The view's colour format (critique C17): display colour on a bgra8unorm WebGPU swap chain is stored BGRA, and
+ * WebGPU depth carries the main pass's stencil, so reflected materials reuse the view's WebGPU render pipelines.
+ */
+function targetFormat(engine: AbstractEngine, type: number): number {
+  const swapChain = engine.isWebGPU ? (engine as unknown as { _options?: { swapChainFormat?: string } })._options?.swapChainFormat : undefined;
+  return swapChain === "bgra8unorm" && type === Constants.TEXTURETYPE_UNSIGNED_BYTE ? Constants.TEXTUREFORMAT_BGRA : Constants.TEXTUREFORMAT_RGBA;
 }
 
 /** A target dimension: `scale` of the view's, snapped up to SIZE_STEP pixels. */
@@ -207,12 +245,19 @@ class WaterPlanarReflections {
   private drawing = false;
   /** Water quality revision of a failed draw: retried only after the quality changes. */
   private failedRevision = -1;
-  private frame = 0;
+  /** The owner's own render count (one per scene render while attached); windows never count engine frames. */
+  private tick = 0;
+  /** Set while sweeping when some view still needs per-render updates. */
+  private busy = false;
   private readonly floatingOriginScene: () => Scene | undefined;
   private readonly sweepView = (view: View) => {
     if (view.camera.isDisposed()) { this.removeView(view); return; }
-    if (view.target && this.frame - view.active > RELEASE_FRAMES) this.releaseTarget(view);
-    if (!view.target && this.frame - view.requested > RELEASE_FRAMES) this.removeView(view);
+    const target = view.target;
+    if (target?.lease && this.tick - view.active > RELEASE_RENDERS) this.releaseStorage(view, target);
+    if (target?.lease || this.tick - view.seen <= RELEASE_RENDERS) this.busy = true;
+    // A view that never allocated holds nothing worth keeping; one with a target keeps it (without storage) so
+    // returning to the water never changes scene membership.
+    else if (!target) this.removeView(view);
   };
   private readonly releaseView = (view: View) => this.removeView(view);
   private drawTarget: Target | null = null;
@@ -252,25 +297,28 @@ class WaterPlanarReflections {
 
   diagnostics(): WaterPlanarReflectionDiagnostics {
     let targets = 0;
-    this.views.forEach((view) => { if (view.target) targets++; });
+    this.views.forEach((view) => { if (view.target?.lease) targets++; });
     return { views: this.views.size, targets, draws: this.draws, reusedFrames: this.reusedFrames };
   }
 
   forCamera(camera: Camera): WaterPlanarReflection | null {
     const scene = this.scene;
     if (this.disposed || this.drawing || renderTargetCaptureDrawing.has(scene) || camera.getScene() !== scene) return null;
-    const frame = scene.getEngine().frameId;
+    // After a failed draw nothing is created per lookup until Water quality changes.
+    if (sceneWaterQualityRevision(scene) === this.failedRevision) return null;
     let view = this.views.get(camera);
     if (!view) {
       if (camera.isDisposed() || sceneWaterQualityDeviceClamp(scene).quality.reflections !== "planar") return null;
-      view = { camera, disposeObserver: null, requested: frame, valid: -1, active: frame, target: null };
+      view = { camera, disposeObserver: null, renders: 0, requested: 0, seen: 0, valid: -1, active: 0, target: null };
       const created = view;
       view.disposeObserver = camera.onDisposeObservable.add(() => this.releaseView(created));
       this.views.set(camera, view);
-      this.attach();
     }
-    view.requested = frame;
-    return view.valid === frame && view.target?.result ? view.target.result : null;
+    view.requested = view.renders;
+    view.seen = this.tick;
+    if (!this.beforeRender) this.attach();
+    const target = view.target;
+    return view.valid === this.tick && target?.lease && target.result ? target.result : null;
   }
 
   dispose(): void {
@@ -281,7 +329,7 @@ class WaterPlanarReflections {
     this.scene.onDisposeObservable.remove(this.sceneDispose);
   }
 
-  /** Per-frame observers exist only while some view has asked for a reflection. */
+  /** Per-render observers exist only while some view has asked for a reflection recently or holds storage. */
   private attach(): void {
     if (this.beforeRender) return;
     const scene = this.scene;
@@ -303,32 +351,30 @@ class WaterPlanarReflections {
   private update(): void {
     const scene = this.scene;
     if (this.disposed || this.drawing || renderTargetCaptureDrawing.has(scene)) return;
-    const frame = scene.getEngine().frameId;
-    this.frame = frame;
+    const tick = ++this.tick;
     const quality = sceneWaterQualityDeviceClamp(scene).quality;
     const revision = sceneWaterQualityRevision(scene);
-    if (quality.reflections !== "planar" || revision === this.failedRevision) {
-      this.views.forEach(this.releaseView);
-    } else {
+    if (quality.reflections === "planar" && revision !== this.failedRevision) {
       const camera = scene.activeCamera;
       const view = camera ? this.views.get(camera) : undefined;
-      if (view && frame - view.requested <= DEMAND_FRAMES) {
+      if (view && ++view.renders - view.requested <= DEMAND_RENDERS) {
         try {
-          if (this.renderView(view, quality.planarScale, frame)) view.valid = frame;
+          if (this.renderView(view, quality.planarScale, tick)) view.valid = tick;
         } catch (error) {
-          // An optional effect must not break the frame: drop every target and retry after a quality change.
+          // An optional effect must not break the frame: drop every view and retry after a quality change.
           this.failedRevision = revision;
-          this.views.forEach(this.releaseView);
           console.warn(`[render] Water planar reflections are off until Water quality changes: ${String(error)}`);
         }
       }
-      this.views.forEach(this.sweepView);
     }
-    if (!this.views.size) this.detach();
+    if (quality.reflections !== "planar" || revision === this.failedRevision) this.views.forEach(this.releaseView);
+    this.busy = false;
+    this.views.forEach(this.sweepView);
+    if (!this.busy) this.detach();
   }
 
-  /** Draws (or reuses) `view`'s reflection for this frame; false when it has none. */
-  private renderView(view: View, scale: number, frame: number): boolean {
+  /** Draws (or reuses) `view`'s reflection for this render; false when it has none. */
+  private renderView(view: View, scale: number, tick: number): boolean {
     const scene = this.scene, engine = scene.getEngine(), camera = view.camera;
     // Rig/XR and multi-camera frames draw with other matrices; clustered views use another light binding.
     if (camera.mode !== Camera.PERSPECTIVE_CAMERA || camera.rigCameras.length > 0 || (scene.activeCameras?.length ?? 0) > 1) return false;
@@ -351,12 +397,12 @@ class WaterPlanarReflections {
     const type = linear ? Constants.TEXTURETYPE_HALF_FLOAT : Constants.TEXTURETYPE_UNSIGNED_BYTE;
     const target = this.ensureTarget(view, targetSize(viewWidth, scale, maxSize), targetSize(viewHeight, scale, maxSize), type);
     if (!target) return false;
-    // In use (drawn or waiting for shaders) keeps the target; only an unused one is released.
-    view.active = frame;
+    // In use (drawn or waiting for shaders) keeps the storage; only an unused target is released.
+    view.active = tick;
     if (!this.mirror(camera, planeY, target)) return false;
     target.mirror.mirrorView.multiplyToRef(target.projection, this.nextViewProjection);
     if (target.result && target.drawnMesh === mesh && target.drawn.equals(this.nextViewProjection) &&
-      frame - target.drawnFrame < STATIC_REDRAW_INTERVAL) {
+      view.renders - target.drawnRender < STATIC_REDRAW_INTERVAL) {
       this.reusedFrames++;
       return true;
     }
@@ -373,7 +419,7 @@ class WaterPlanarReflections {
     if (!this.draw(target)) return false;
     this.draws++;
     target.drawn.copyFrom(this.nextViewProjection);
-    target.drawnFrame = frame;
+    target.drawnRender = view.renders;
     target.drawnMesh = mesh;
     // The shader's positions are relative to the floating origin (the view's eye) when it is on.
     const origin = scene.floatingOriginMode ? camera.globalPosition : Vector3.ZeroReadOnly;
@@ -445,12 +491,10 @@ class WaterPlanarReflections {
   private reflectingPlane(mesh: AbstractMesh, layerMask: number): number {
     if (mesh.isDisposed() || !mesh.isEnabled() || !mesh.isVisible || mesh.visibility <= 0 || !(mesh.layerMask & layerMask)) return NaN;
     const plugin = mesh.material?.pluginManager?.getPlugin<WaterMaterialPlugin>(PLUGIN_NAME);
-    if (!plugin || !plugin.water.objectReflections || plugin.body.kind === "river") return NaN;
-    // Rivers and volumes tilted out of the horizontal have a rest height that varies across the body
-    // (water-mesh restVaries); a level body's rest surface is its local y = 0 plane.
-    const m = mesh.computeWorldMatrix().m;
-    if (Math.abs(m[1]!) > 1e-9 || Math.abs(m[9]!) > 1e-9) return NaN;
-    return m[13]!;
+    // Flat as WaterField and contacts define it (not a river or a volume tilted out of level).
+    if (!plugin || !plugin.water.objectReflections || waterMeshRestVaries(mesh as Mesh) !== false) return NaN;
+    // A level body rests on its local y = 0 plane.
+    return mesh.computeWorldMatrix().m[13]!;
   }
 
   /** Fraction of the view covered by the body's rest rectangle (its bounds at `planeY`), clipped to the frustum. */
@@ -558,24 +602,26 @@ class WaterPlanarReflections {
     list.length = count;
   }
 
+  /** The view's target holding storage of this size and type, allocating or resizing it in place; null over budget. */
   private ensureTarget(view: View, width: number, height: number, type: number): Target | null {
     let target = view.target;
-    if (target && target.type !== type) { this.releaseTarget(view); target = null; }
+    // A colour-type change (Scene Linear on or off) is a settings change: rebuild the target for its new format.
+    if (target && target.type !== type) { this.disposeTarget(view); target = null; }
     if (!target) return this.createTarget(view, width, height, type);
-    if (target.width === width && target.height === height) return target;
+    if (target.lease && target.width === width && target.height === height) return target;
     const engine = this.scene.getEngine();
-    // Reserve the resized target while the current one stays charged.
+    // Reserve the new storage while any current storage stays charged.
     const lease = beginManagedRenderAllocation(engine, targetBytes(width, height, type));
-    if (!lease) { this.releaseTarget(view); return null; }
+    if (!lease) { this.releaseStorage(view, target); return null; }
     try {
       target.texture.resize({ width, height });
       lease.commit(waterResources(target.texture));
     } catch (error) {
       lease.release();
-      this.releaseTarget(view);
+      this.releaseStorage(view, target);
       throw error;
     }
-    void releaseManagedRenderLeaseAfterDisposal(engine, target.lease);
+    if (target.lease) void releaseManagedRenderLeaseAfterDisposal(engine, target.lease);
     target.lease = lease;
     target.width = width;
     target.height = height;
@@ -592,16 +638,26 @@ class WaterPlanarReflections {
     let texture: MirrorTarget | undefined;
     try {
       const name = `waterPlanarReflection:${view.camera.name}`;
-      mirror = new WaterMirrorCamera(name, Vector3.Zero(), scene, false);
+      // Neither joins scene.cameras or scene.textures: membership changes would re-probe strict readiness.
+      const blocked = scene._blockEntityCollection;
+      scene._blockEntityCollection = true;
+      try {
+        mirror = new WaterMirrorCamera(name, Vector3.Zero(), scene, false);
+        texture = new MirrorTarget(name, { width, height }, scene, {
+          generateMipMaps: false, doNotChangeAspectRatio: true, type, format: targetFormat(engine, type),
+          samplingMode: Texture.BILINEAR_SAMPLINGMODE, generateDepthBuffer: true,
+          generateStencilBuffer: engine.isWebGPU && engine.isStencilEnable,
+        });
+      } finally {
+        scene._blockEntityCollection = blocked;
+      }
       mirror.doNotSerialize = true;
       const projection = Matrix.Identity();
       mirror.freezeProjectionMatrix(projection);
-      texture = new MirrorTarget(name, { width, height }, scene, {
-        generateMipMaps: false, doNotChangeAspectRatio: true, type, format: Constants.TEXTUREFORMAT_RGBA,
-        samplingMode: Texture.BILINEAR_SAMPLINGMODE, generateDepthBuffer: true, generateStencilBuffer: false,
-      });
       texture.configurePass();
       texture.activeCamera = mirror;
+      // Level of detail follows the view (and reuses its per-frame choice), never a mirror camera.
+      texture.cameraForLOD = view.camera;
       texture.ignoreCameraViewport = true;
       texture.useCameraPostProcesses = false;
       texture.renderParticles = false;
@@ -616,7 +672,7 @@ class WaterPlanarReflections {
       const thin = new ThinTexture(texture.getInternalTexture());
       thin.wrapU = thin.wrapV = Texture.CLAMP_ADDRESSMODE;
       const target: Target = {
-        texture, thin, mirror, lease, width, height, type, projection, drawn: new Matrix(), drawnFrame: -Infinity,
+        texture, thin, mirror, projection, lease, width, height, type, drawn: new Matrix(), drawnRender: -Infinity,
         drawnMesh: null, ready: false, meshes, result: null,
       };
       view.target = target;
@@ -629,20 +685,29 @@ class WaterPlanarReflections {
     }
   }
 
-  private releaseTarget(view: View): void {
+  /** Frees the target's GPU storage and charge; the mirror camera and target stay, outside scene membership. */
+  private releaseStorage(view: View, target: Target): void {
+    view.valid = -1;
+    const lease = target.lease;
+    if (!lease) return;
+    target.lease = null;
+    // The wrapper borrows the target's texture.
+    target.thin._texture = null;
+    target.texture.releaseStorage();
+    void releaseManagedRenderLeaseAfterDisposal(this.scene.getEngine(), lease);
+  }
+
+  private disposeTarget(view: View): void {
     const target = view.target;
     if (!target) return;
+    this.releaseStorage(view, target);
     view.target = null;
-    view.valid = -1;
-    // The wrapper borrows the target's texture; the target disposes it.
-    target.thin._texture = null;
     target.texture.dispose();
     target.mirror.dispose();
-    void releaseManagedRenderLeaseAfterDisposal(this.scene.getEngine(), target.lease);
   }
 
   private removeView(view: View): void {
-    this.releaseTarget(view);
+    this.disposeTarget(view);
     view.camera.onDisposeObservable.remove(view.disposeObserver);
     view.disposeObserver = null;
     this.views.delete(view.camera);
@@ -718,12 +783,14 @@ export function retainWaterPlanarReflections(scene: Scene): () => void {
 }
 
 /**
- * The planar reflection `camera`'s view drew this frame, or null: Reflections are not Planar on this device, no
- * eligible body (built-in, Object Reflections on, flat: not a river or tilted volume) is visible above the eye's
- * plane, the scene is not a retained view (previews, thumbnails), the camera belongs to a Render Target Capture or
- * the mirror pass itself, or the reflection is not ready yet. Each lookup also requests the reflection for the
- * following frames, so a view's first request returns null and later frames return its result. The returned object
- * is reused and updated in place; check `mesh` before sampling.
+ * The planar reflection `camera`'s view drew in this scene render, or null: Reflections are not Planar on this
+ * device, no eligible body (built-in, Object Reflections on, flat: not a river or tilted volume) is visible below
+ * the eye, the view is excluded (orthographic, rig/XR, several active cameras, clustered lighting, Scene Linear
+ * without half-float targets), the scene is not a retained view (previews, thumbnails), the camera belongs to a
+ * Render Target Capture or the mirror pass itself, a draw failed (until Water quality changes), or the reflection
+ * is not ready yet. Each lookup also requests the reflection for the view's next renders: a view's first request
+ * returns null, and a view whose water stops looking it up for `DEMAND_RENDERS` renders stops drawing. The
+ * returned object is reused and updated in place; check `mesh` before sampling.
  */
 export function waterPlanarReflectionForCamera(scene: Scene, camera: Camera | null | undefined): WaterPlanarReflection | null {
   if (!camera) return null;
