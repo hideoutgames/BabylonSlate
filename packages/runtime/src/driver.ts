@@ -9,7 +9,7 @@ import { MovementWorldSync } from "./movement";
 import { captureComponent, captureLocalTransform, captureProperties } from "./render-targets";
 import { createDefaultRenderTargetCaptureProperties, normalizeRenderTargetPayload, normalizeRenderTargetTexturePayload, type RenderTargetPayload, type RenderTargetTexturePayload } from "@babylonslate/core";
 import { normalizeWaterDefinition, normalizeWaterBody, normalizeWaterRemoval, waterKindForClass, type WaterDefinition } from "@babylonslate/core";
-import { areaRectLightBindings, fogVolumeBindings, outlineBindings } from "@babylonslate/core";
+import { areaRectLightBindings, fogVolumeBindings, outlineBindings, deformerBindings, DEFORMER_PROPERTY_KEYS } from "@babylonslate/core";
 import { ScalabilitySession, type ScalabilityRequest, type ScalabilityResult, type ScalabilitySnapshot, type ScalabilityAcknowledgement, type RenderPath, type RenderProjectSettings } from "@babylonslate/core";
 import type { InputAssetDefinition } from "@babylonslate/core";
 import { inputMappingsFromAssets } from "@babylonslate/input";
@@ -537,6 +537,9 @@ class InProcessRuntime implements RuntimeDriver {
   private slotByGuid = new Map<string, number>();
   private areaLightSlots = new Set<number>();
   private outlineSlots = new Set<number>();
+  private readonly deformerSnapshots = new Map<number, string>();
+  private readonly dirtyDeformerActors = new Set<Actor>();
+  private deformerRevision = 0;
   private captureSlots = new Set<number>();
   private fogVolumeSlots = new Set<number>();
   private readonly slotOwners = new Map<number, Actor>();
@@ -1109,6 +1112,13 @@ class InProcessRuntime implements RuntimeDriver {
         const owner = target.owner;
         if (!(owner instanceof Actor) || owner.destroyed) return null;
         const slotId = this.slotByGuid.get(owner.guid);
+        if (component.classId === "DeformerComponent") {
+          if (slotId !== undefined) {
+            if (this.processingTick) this.dirtyDeformerActors.add(owner);
+            else this.emitActorDeformers(owner, slotId);
+          }
+          return;
+        }
         const guid = this.animGraphGuid(target);
         const document = guid ? this.animGraphs.get(guid) : undefined;
         const evalKey = target.guid;
@@ -4508,6 +4518,30 @@ class InProcessRuntime implements RuntimeDriver {
     }
   }
 
+  private emitActorDeformers(actor: Actor, slotId: number): void {
+    this.dirtyDeformerActors.delete(actor);
+    const components = actor.components.filter((component) => !component.destroyed &&
+      (component.classId === "DeformerComponent" || component.classId === "MeshComponent"));
+    if (!components.some((component) => component.classId === "DeformerComponent") && !this.deformerSnapshots.has(slotId)) return;
+    const deformers = actor.sceneLayerId ? [] : deformerBindings(actor.guid, components.map((component) => ({
+      id: component.guid, classId: component.classId, ...(component.sourceId ? { sourceId: component.sourceId } : {}),
+      properties: component.classId === "DeformerComponent"
+        ? Object.fromEntries(DEFORMER_PROPERTY_KEYS.map((key) => [key, component.getVariable(key)])) : {},
+    })));
+    const snapshot = JSON.stringify(deformers);
+    if (snapshot === this.deformerSnapshots.get(slotId) || (!deformers.length && !this.deformerSnapshots.has(slotId))) return;
+    this.deformerSnapshots.set(slotId, snapshot);
+    this.emit({ type: "setActorDeformers", slotId, actorId: actor.guid, revision: ++this.deformerRevision, deformers });
+  }
+
+  private flushDeformers(): void {
+    for (const actor of this.dirtyDeformerActors) {
+      const slotId = this.slotByGuid.get(actor.guid);
+      if (!actor.destroyed && slotId !== undefined) this.emitActorDeformers(actor, slotId);
+    }
+    this.dirtyDeformerActors.clear();
+  }
+
   private emitActorFogVolumes(actor: Actor, slotId: number): void {
     const hasVolume = !actor.sceneLayerId && actor.components.some((component) =>
       !component.destroyed && component.classId === "FogVolumeComponent");
@@ -4565,6 +4599,7 @@ class InProcessRuntime implements RuntimeDriver {
     if (this.world.classRegistry.isA(actor.classId, "SceneStreamingActor")) return;
     this.emitRenderTargetCapture(actor, slotId);
     this.emitActorOutlines(actor, slotId);
+    this.emitActorDeformers(actor, slotId);
     this.emitActorFogVolumes(actor, slotId);
     const hasAreaLight = actor.components.some((component) => component.classId === "AreaRectLightComponent" && !component.destroyed);
     if (hasAreaLight || this.areaLightSlots.has(slotId)) {
@@ -5222,6 +5257,8 @@ class InProcessRuntime implements RuntimeDriver {
     }
     this.areaLightSlots.delete(slotId);
     this.outlineSlots.delete(slotId);
+    this.deformerSnapshots.delete(slotId);
+    if (owner) this.dirtyDeformerActors.delete(owner);
     this.captureSlots.delete(slotId);
     this.fogVolumeSlots.delete(slotId);
     if (this.slotByGuid.get(actorGuid) === slotId) this.slotByGuid.delete(actorGuid);
@@ -5635,6 +5672,7 @@ class InProcessRuntime implements RuntimeDriver {
 
     this.flushPainters();
     this.flushTextAppear();
+    this.flushDeformers();
     const completedFrameId = this.frameId;
     this.frameId += 1;
     if (this.canTickScene() || this.hasReadyLayers()) {

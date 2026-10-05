@@ -59,6 +59,7 @@ export { normalizeMaterialParameterCatalog, type MaterialParameterCatalog } from
 export * from "./area-rect-light";
 export * from "./fog-volume";
 export * from "./outline-component";
+export * from "./deformer-component";
 export * from "./ragdoll";
 export * from "./movement";
 export * from "./water";

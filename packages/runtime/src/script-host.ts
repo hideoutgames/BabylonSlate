@@ -1,4 +1,4 @@
-import { emptyWaterSample, type WaterSample } from "@babylonslate/core";
+import { emptyWaterSample, parseDeformerProperties, updateDeformerProperties, DEFORMER_PROPERTY_KEYS, DEFORMER_MAX_COORDINATE, type WaterSample } from "@babylonslate/core";
 import { createDefaultRenderTargetCaptureProperties, type RenderTargetMode, type RenderTargetCaptureProperty } from "@babylonslate/core";
 import { captureActorReferences, captureComponent, captureProperties, setCaptureProperty } from "./render-targets";
 import type { ScalabilityRequest, ScalabilityResult, ScalabilitySnapshot, InputKey, InputTypeValue, InputValueState, SceneStreamingState } from "@babylonslate/core";
@@ -1106,6 +1106,14 @@ export class ScriptHost {
       },
       setVariableOn: (target, name, value) => {
         const object = target ?? self;
+        if (object instanceof ActorComponent && object.classId === "DeformerComponent" &&
+          (DEFORMER_PROPERTY_KEYS as readonly string[]).includes(name)) {
+          if (!this.canInvokeOwner(object)) return;
+          const next = updateDeformerProperties(Object.fromEntries(DEFORMER_PROPERTY_KEYS.map((key) => [key, object.getVariable(key)])), name, value);
+          for (const key of DEFORMER_PROPERTY_KEYS) object.setVariable(key, next[key]);
+          this.applyComponentVariable(object, name, next[name as keyof typeof next]);
+          return;
+        }
         if (object instanceof ActorComponent && object.classId === "RenderTargetCaptureComponent") {
           if (this.canInvokeOwner(object) && setCaptureProperty(object, name as RenderTargetCaptureProperty, value, (id) => services.findActor?.(id))) {
             this.applyComponentVariable(object, name, value);
@@ -1872,6 +1880,24 @@ export class ScriptHost {
     if (component.classId === "DynamicRuntimeMeshComponent") {
       if (!this.canInvokeOwner(component)) return { success: false };
       return this.services.dynamicMeshFunction?.(component, name, args) ?? { success: false };
+    }
+    if (component.classId === "DeformerComponent" &&
+      (name === "setDeformerControlPointOffset" || name === "resetDeformerControlPoints")) {
+      if (!this.canInvokeOwner(component)) return { success: false };
+      const properties = parseDeformerProperties({ resolution: component.getVariable("resolution"), offsets: component.getVariable("offsets") });
+      if (name === "resetDeformerControlPoints") properties.offsets.fill(0);
+      else {
+        const index = args.index;
+        const value = args.offset;
+        const offset = Array.isArray(value) ? value : value && typeof value === "object"
+          ? [(value as Record<string, unknown>).x, (value as Record<string, unknown>).y, (value as Record<string, unknown>).z] : [];
+        if (typeof index !== "number" || !Number.isInteger(index) || index < 0 || index >= properties.offsets.length / 3 ||
+          ![0, 1, 2].every((axis) => typeof offset[axis] === "number" && Number.isFinite(offset[axis]) && Math.abs(offset[axis]) <= DEFORMER_MAX_COORDINATE)) return { success: false };
+        for (const axis of [0, 1, 2]) properties.offsets[index * 3 + axis] = offset[axis] as number;
+      }
+      component.setVariable("offsets", properties.offsets);
+      this.applyComponentVariable(component, "offsets", properties.offsets);
+      return { success: true };
     }
     if (component.classId === "MovementComponent") {
       if (!this.canInvokeOwner(component)) return {};

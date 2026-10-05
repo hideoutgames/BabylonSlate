@@ -226,6 +226,10 @@ The shared type visual registry recognizes this component for object-reference p
 
 **Add Component → Rendering → Dynamic Runtime Mesh** reuses the component catalog and PropertyGrid in Scene Details and the Class/Prefab Inspector for Material, Enable Collision (off by default), collision filters and shadow controls. Geometry is created through component-targeted NodeGraph calls during Play; there is no mesh asset editor or Place Actors preset.
 
+### Deformer
+
+**Add Component → Rendering → Deformer** uses the shared component catalog and PropertyGrid in Scene Details and the Class/Prefab Inspector. Target Mesh lists only Mesh Components on the same actor; Enabled defaults off. Strength, 2–4 controls per axis, automatic or manual target-local bounds, and up to 64 vector control offsets use existing compact controls. Resolution changes reset offsets. Inherited control resets, duplication and Class previews retain the cage's own mesh target. The type registry uses the existing mesh glyph. Deformation is visual only; collision and picking retain the original geometry.
+
 ### Spline and river path editing
 
 Add Component > General > **Spline** exposes a general-purpose 3D path in Scene Details and the Class/Prefab Inspector. Spline and Water River share the typed Curvature, Path Point Count and XYZ point rows. Spline adds Closed Loop; Water River retains per-point Width Scale. Both use the same viewport handle lifecycle for live point dragging, midpoint insertion and double-click removal, with one history entry per released gesture in scenes and prefabs. Desktop control density is unchanged.
