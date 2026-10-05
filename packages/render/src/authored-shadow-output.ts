@@ -58,9 +58,11 @@ export class AuthoredShadowFragmentOutput extends NodeMaterialBlock {
     super(name, Targets.Fragment, true);
     this.registerInput("opacity", Types.Float, true);
     this.registerInput("nativeOpacityMap", Types.Vector4, true);
+    this.registerInput("nativeAlphaCutoff", Types.Float, true);
   }
   get opacity(): NodeMaterialConnectionPoint { return this._inputs[0]!; }
   get nativeOpacityMap(): NodeMaterialConnectionPoint { return this._inputs[1]!; }
+  get nativeAlphaCutoff(): NodeMaterialConnectionPoint { return this._inputs[2]!; }
   override getClassName(): string { return "AuthoredShadowFragmentOutput"; }
   protected override _buildBlock(state: NodeMaterialBuildState): this {
     super._buildBlock(state);
@@ -80,7 +82,8 @@ export class AuthoredShadowFragmentOutput extends NodeMaterialBlock {
       state._injectAtEnd += `${state._declareLocalVar(alpha, Types.Float)} = ${sample}.a;\n`;
       const vector = state.shaderLanguage === 1 ? "vec3f" : "vec3";
       state._injectAtEnd += `#if SM_SOFTTRANSPARENTSHADOW == 1 && defined(SLATE_NATIVE_OPACITY_RGB)\n${alpha} = dot(${sample}.rgb, ${vector}(0.3, 0.59, 0.11));\n#endif\n`;
-      state._injectAtEnd += `#ifdef ALPHATESTVALUE\nif (${alpha} < ALPHATESTVALUE) { discard; }\n#endif\n`;
+      if (this.nativeAlphaCutoff.isConnected)
+        state._injectAtEnd += `if (${alpha} < ${this.nativeAlphaCutoff.associatedVariableName}) { discard; }\n`;
     }
     state._injectAtEnd += state._emitCodeFromInclude("shadowMapFragmentSoftTransparentShadow", "", {
       replaceStrings: [{ search: /\balpha\b/g, replace: `(${alpha})` }],
@@ -94,7 +97,8 @@ export function createAuthoredShadowVertexOutput(
   name: string, created: NodeMaterialBlock[], plumbing: MaterialPlumbing,
 ): NodeMaterialBlock {
   const output = new AuthoredShadowVertexOutput(`${name}_shadowVertex`);
-  const viewProjection = new InputBlock(`${name}_shadowViewProjection`);
+  // Match the system-matrix prefix used by Babylon's floating-origin adapter.
+  const viewProjection = new InputBlock(`ViewProjection_${name}_shadow`);
   viewProjection.setAsSystemValue(NodeMaterialSystemValues.ViewProjection);
   plumbing.worldPosition!.connectTo(output.position);
   plumbing.worldNormal!.connectTo(output.normal);

@@ -1,7 +1,7 @@
 import {
   Constants, InputBlock, Material, NodeMaterial, NodeMaterialBlockConnectionPointTypes, PBRBaseMaterial,
-  ShaderLanguage, ShadowDepthWrapper, StandardMaterial, Texture, TextureBlock,
-  type DrawWrapper, type NodeMaterialBlock, type ShadowGenerator, type SubMesh,
+  ShaderLanguage, ShadowDepthWrapper, ShadowGenerator, StandardMaterial, Texture, TextureBlock,
+  type DrawWrapper, type NodeMaterialBlock, type SubMesh,
 } from "@babylonjs/core";
 import { AuthoredShadowDepthWrapper } from "./authored-shadow-depth-wrapper";
 import { AuthoredShadowFragmentOutput, createAuthoredShadowVertexOutput } from "./authored-shadow-output";
@@ -11,7 +11,7 @@ import type { MaterialPlumbing } from "./material-block-registry";
 import { createSurfacePlumbing } from "./surface-material-plumbing";
 import { rebindEmptiedDrawContexts } from "./webgpu-node-material-rebind";
 
-type Generation = { material: NodeMaterial; wrapper: AuthoredShadowDepthWrapper; texture: Texture | null; uv: number };
+type Generation = { material: NodeMaterial; wrapper: AuthoredShadowDepthWrapper; texture: Texture | null; uv: number; cutoff?: InputBlock };
 
 function createGeneration(source: Material, texture: Texture | null): Generation {
   const scene = source.getScene();
@@ -31,6 +31,7 @@ function createGeneration(source: Material, texture: Texture | null): Generation
   const fragment = new AuthoredShadowFragmentOutput(`${material.name}_fragment`);
   blocks.push(fragment);
   let sample: TextureBlock | undefined;
+  let cutoff: InputBlock | undefined;
   if (texture) {
     sample = new TextureBlock("nativeShadowOpacity");
     sample.texture = texture;
@@ -44,7 +45,12 @@ function createGeneration(source: Material, texture: Texture | null): Generation
       uv.output.connectTo(sample.uv); blocks.push(uv);
     }
     sample.rgba.connectTo(fragment.nativeOpacityMap);
-    blocks.push(sample);
+    // Coverage must also survive the standalone base compilation. A cutoff
+    // defined only by ShadowGenerator lets WebGL optimize out this sampler
+    // before ShadowDepthWrapper copies the base effect's active sampler list.
+    cutoff = new InputBlock("nativeShadowCutoff"); cutoff.value = 0;
+    cutoff.output.connectTo(fragment.nativeAlphaCutoff);
+    blocks.push(sample, cutoff);
   }
   material.onDisposeObservable.addOnce(() => {
     if (sample) sample.texture = null; // source retains the borrowed texture
@@ -53,7 +59,7 @@ function createGeneration(source: Material, texture: Texture | null): Generation
   material.addOutputNode(vertex); material.addOutputNode(fragment);
   try { material.build(); }
   catch (error) { material.dispose(false, false); throw error; }
-  return { material, wrapper: new AuthoredShadowDepthWrapper(material), texture, uv: texture?.coordinatesIndex ?? 0 };
+  return { material, wrapper: new AuthoredShadowDepthWrapper(material), texture, uv: texture?.coordinatesIndex ?? 0, cutoff };
 }
 
 /** Babylon's wrapper remains responsible for light/filter permutations, bias,
@@ -87,6 +93,8 @@ class NativeLatticeShadowDepthWrapper extends ShadowDepthWrapper {
     }
     generation.material.backFaceCulling = this.source.backFaceCulling;
     generation.material.cullBackFaces = this.source.cullBackFaces;
+    if (generation.cutoff) generation.cutoff.value = this.source.needAlphaTestingForMesh(mesh)
+      ? (this.source as StandardMaterial).alphaCutOff ?? ShadowGenerator.DEFAULT_ALPHA_CUTOFF : 0;
     this.selected = generation;
     return generation;
   }
@@ -98,10 +106,6 @@ class NativeLatticeShadowDepthWrapper extends ShadowDepthWrapper {
     const coverage = [...defines];
     if (generation.texture) {
       if (!generation.texture.isReady()) return false;
-      if (this.source.needAlphaTestingForMesh(subMesh.getMesh())) {
-        const cutoff = (this.source as StandardMaterial).alphaCutOff ?? 0.4;
-        coverage.push(`#define ALPHATESTVALUE ${cutoff}${Number.isInteger(cutoff) ? "." : ""}`);
-      }
       if (generation.texture.getAlphaFromRGB) coverage.push("#define SLATE_NATIVE_OPACITY_RGB");
     }
     return generation.wrapper.isReadyForSubMesh(subMesh, coverage, generator, instances, passId);
