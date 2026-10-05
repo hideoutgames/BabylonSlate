@@ -122,11 +122,11 @@ describe("SceneLayer control runtime integration", () => {
       playScene: createDefaultScene(), sceneLayerLibrary: { radios: layer }, onCommand: (command) => commands.push(command) });
     try {
       runtime.realizePlayWorld(); runtime.createSceneLayer("radios");
-      const parts = commands.filter((command) => command.type === "assignMesh").flatMap((command) => command.parts ?? []);
+      const parts = commands.filter((command) => command.type === "assignMesh" && command.sceneLayerId).flatMap((command) => command.parts ?? []);
       expect(parts.map((part) => [part.componentId, part.uiControl?.properties.checked])).toEqual([
         ["first", true], ["second", false], ["other", true], ["later-radio", false],
       ]);
-      expect(runtime.getWorld().getActors().flatMap((actor) => actor.components).map((component) => component.getVariable("checked"))).toEqual([true, false, true, false]);
+      expect(runtime.getWorld().getActors().filter((actor) => actor.sceneLayerId).flatMap((actor) => actor.components).map((component) => component.getVariable("checked"))).toEqual([true, false, true, false]);
       const anotherLayer = runtime.createSceneLayer("radios")!;
       expect(runtime.getWorld().getActors().filter((actor) => actor.sceneLayerId === anotherLayer.guid)
         .flatMap((actor) => actor.components).map((component) => component.getVariable("checked"))).toEqual([true, false, true, false]);
