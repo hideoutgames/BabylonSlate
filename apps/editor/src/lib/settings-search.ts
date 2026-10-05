@@ -120,6 +120,7 @@ export const PROJECT_SETTING_FIELDS = fields([
   ["rendering", "Vignette", "project-effects-vignette"],
   ["rendering", "Vignette Weight", "project-effects-vignette-weight"],
   ["rendering", "Vignette Color", "project-effects-vignette-color"],
+  ["rendering", "Color Grading LUT Lookup Table", "project-effects-color-grading"],
   ["rendering", "FXAA", "project-effects-fxaa"],
   ["rendering", "Local Light Budget Auto Manual", "quality-lighting-mode"],
   ["rendering", "Shadow Distance", "project-shadow-distance"],

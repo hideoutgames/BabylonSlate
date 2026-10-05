@@ -287,6 +287,7 @@ describe("SettingsModal project authoring", () => {
     ["texture anisotropy", /Texture Anisotropy/, "Scalability", "quality-textures-anisotropy"],
     ["reflections", /Real-Time Reflections/, "Post Processing", "project-effects-reflections"],
     ["ssao", /Ambient Occlusion/, "Post Processing", "project-effects-ambient-occlusion"],
+    ["lut", /Color Grading/, "Post Processing", "project-effects-color-grading"],
     ["volumetric lighting", /Volumetric Fog/, "Post Processing", "project-effects-volumetric"],
     ["fog density", /Volumetric Fog/, "Post Processing", "project-effects-volumetric"],
   ])("opens the Rendering section holding %s from search", async (query, result, section, targetId) => {
@@ -315,6 +316,9 @@ describe("SettingsModal project authoring", () => {
     fireEvent.click(screen.getByTestId("project-effects-ambient-occlusion"));
     fireEvent.change(screen.getByLabelText("Occlusion Radius"), { target: { value: "1.5" } });
     fireEvent.blur(screen.getByLabelText("Occlusion Radius"));
+    expect(screen.queryByTestId("project-effects-lut")).toBeNull();
+    fireEvent.click(screen.getByTestId("project-effects-color-grading"));
+    expect(screen.getByTestId("project-effects-lut")).toBeTruthy();
     fireEvent.click(screen.getByTestId("project-effects-volumetric"));
     fireEvent.change(screen.getByLabelText("Scene-Wide Fog Density"), { target: { value: "0.0085" } });
     fireEvent.blur(screen.getByLabelText("Scene-Wide Fog Density"));
@@ -323,7 +327,7 @@ describe("SettingsModal project authoring", () => {
     expect(screen.getByLabelText("Volumetric Steps")).toHaveProperty("value", "32");
     expect(lastProjectRender.current).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
-    expect(lastProjectRender.current).toMatchObject({ effects: { fxaa: true, ambientOcclusion: { enabled: true, radius: 1.5 }, reflections: { enabled: true }, volumetricLighting: { enabled: false, density: 0.0085, steps: 32 } } });
+    expect(lastProjectRender.current).toMatchObject({ effects: { fxaa: true, colorGrading: { enabled: true, lutTextureGuid: null }, ambientOcclusion: { enabled: true, radius: 1.5 }, reflections: { enabled: true }, volumetricLighting: { enabled: false, density: 0.0085, steps: 32 } } });
   });
   it("keeps input authoring in assets rather than Project Settings", () => {
     render(<SettingsModal open onOpenChange={() => {}} scope="project" />);

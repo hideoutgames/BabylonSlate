@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_RENDER_EFFECTS,
   normalizeRenderEffectsSettings,
+  renderEffectsAssetGuids,
 } from "./render-effects";
 import { normalizeProjectSettings } from "./project";
 
@@ -95,6 +96,7 @@ describe("render effects settings", () => {
           toneMapping: "neutral",
           bloom: { ...DEFAULT_RENDER_EFFECTS.bloom, enabled: true },
           ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true, radius: 1.5 },
+          colorGrading: { enabled: true, lutTextureGuid: " lut-guid " },
           reflections: { ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true, maxSteps: 48 },
           volumetricLighting: { ...DEFAULT_RENDER_EFFECTS.volumetricLighting, enabled: true, density: 0.08 },
           fxaa: true,
@@ -111,6 +113,9 @@ describe("render effects settings", () => {
       DEFAULT_RENDER_EFFECTS.bloom.kernel,
     );
     expect(settings.render.effects?.fxaa).toBe(true);
+    expect(settings.render.effects?.colorGrading).toEqual({ enabled: true, lutTextureGuid: "lut-guid" });
+    expect(renderEffectsAssetGuids(settings.render.effects)).toEqual(["lut-guid"]);
+    expect(renderEffectsAssetGuids({ ...settings.render.effects!, colorGrading: { enabled: false, lutTextureGuid: "lut-guid" } })).toEqual([]);
     expect(settings.render.effects?.ambientOcclusion).toEqual({ ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true, radius: 1.5 });
     expect(settings.render.effects?.reflections).toEqual({ ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true, maxSteps: 48 });
     expect(settings.render.effects?.volumetricLighting).toEqual({ ...DEFAULT_RENDER_EFFECTS.volumetricLighting, enabled: true, density: 0.08 });

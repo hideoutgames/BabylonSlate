@@ -25,7 +25,7 @@ import {
   type EditorSceneLoadOptions,
 } from "@babylonslate/render";
 import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
-import { type SerializedScene, areaEmissionTextureGuids, isSceneWorkspaceKind, requestEditorDrop, engineCommandBus } from "@babylonslate/core";
+import { type SerializedScene, areaEmissionTextureGuids, renderEffectsAssetGuids, isSceneWorkspaceKind, requestEditorDrop, engineCommandBus } from "@babylonslate/core";
 import { useDocuments } from "../context/document-context";
 import { useKeybindChord, useKeybindCommand } from "../context/keybind-context";
 import { subscribeAppSettings } from "../context/app-settings-context";
@@ -642,6 +642,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   }, [playing, preparing, sceneReady, engineEpoch]);
 
   const textureLodKey = `${editorTextureLodEnabled}:${editorTextureLodQuality}`;
+  const effectsAssetGuidsKey = JSON.stringify(renderEffectsAssetGuids(projectDocument?.settings.render.effects));
   const { materialLibraryKey, viewportAssetsKey } = useMemo(() => {
     void registryEpoch;
     const assets = assetRegistry?.list() ?? [];
@@ -650,6 +651,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       viewportAssetsKey: JSON.stringify([
         sceneViewportAssetKey(scene, assets),
         textureLodKey,
+        effectsAssetGuidsKey,
         projectDocument?.settings.twoD,
         projectDocument?.settings.fonts,
       ]),
@@ -659,6 +661,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     registryEpoch,
     scene,
     textureLodKey,
+    effectsAssetGuidsKey,
     projectDocument?.settings.twoD,
     projectDocument?.settings.fonts,
   ]);
@@ -736,6 +739,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           ...materials.textureGuids,
           ...skyboxFaceGuidsFromScene(scene),
           ...overlayTextureGuidsFromScene(scene),
+          ...(JSON.parse(effectsAssetGuidsKey) as string[]),
         ];
         const textureBytes = await collectPlayTextureBytes(
           sprites,
@@ -868,6 +872,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     materialLibraryKey,
     areaEmissionKey,
     textureLodKey,
+    effectsAssetGuidsKey,
     collectPlaySpritePayloads,
     collectPlayWaterContent,
     collectPlayRenderTargets,

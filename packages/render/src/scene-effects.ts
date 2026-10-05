@@ -1,4 +1,4 @@
-import { Color4, ImageProcessingConfiguration } from "@babylonjs/core";
+import { Color4, ImageProcessingConfiguration, type BaseTexture } from "@babylonjs/core";
 import type {
   RenderEffectsSettings,
   RenderEffectsToneMapping,
@@ -11,6 +11,16 @@ export interface SceneEffectsImageProcessingPlan {
   /** Linear HDR scene color resolves through the configured display stage. */
   sceneLinear: boolean;
   vignette: RenderEffectsSettings["vignette"] | null;
+  /** Ready LUT strip graded after tone mapping, in display space. */
+  colorGrading: BaseTexture | null;
+}
+
+/** Scene state beyond the project settings that changes the compiled chain. */
+export interface SceneEffectsInputs {
+  /** Local Fog Volumes request the volumetric pass with zero scene density. */
+  fogVolumesPresent?: boolean;
+  /** The project's LUT, once loaded; null leaves color grading off. */
+  colorGradingTexture?: BaseTexture | null;
 }
 
 /** Composed effect chain: authored stack output → ambient occlusion →
@@ -38,17 +48,19 @@ export function planSceneEffects(
   effects: RenderEffectsSettings,
   mode: RenderMode,
   enabled = true,
-  fogVolumesPresent = false,
+  inputs: SceneEffectsInputs = {},
 ): SceneEffectsPlan | null {
   if (!enabled) return null;
+  const fogVolumesPresent = inputs.fogVolumesPresent === true;
   const sceneLinear =
     mode === "pbr" && effects.colorPipeline.mode === "sceneLinear";
   const bloom = effects.bloom.enabled ? effects.bloom : null;
   const vignette = effects.vignette.enabled ? effects.vignette : null;
+  const colorGrading = effects.colorGrading.enabled ? inputs.colorGradingTexture ?? null : null;
   // The display stage is required to convert linear HDR scene color, and is
-  // the only pass which can apply the vignette on either pipeline.
+  // the only pass which can apply the vignette or LUT on either pipeline.
   const imageProcessing =
-    sceneLinear || vignette ? { sceneLinear, vignette } : null;
+    sceneLinear || vignette || colorGrading ? { sceneLinear, vignette, colorGrading } : null;
   const fxaa = effects.fxaa;
   const ambientOcclusion = mode === "pbr" && effects.ambientOcclusion.enabled ? effects.ambientOcclusion : null;
   const reflections = mode === "pbr" && effects.reflections.enabled ? effects.reflections : null;
@@ -102,6 +114,11 @@ export function sceneEffectsImageProcessingConfiguration(
     );
     config.vignetteBlendMode = ImageProcessingConfiguration.VIGNETTEMODE_MULTIPLY;
   }
+  if (plan.colorGrading) {
+    // A 3D LUT: Babylon's 2D-strip polyfill is GLSL-only on Babylon 9.20.
+    config.colorGradingTexture = plan.colorGrading;
+    config.colorGradingEnabled = true;
+  }
   return config;
 }
 
@@ -113,7 +130,9 @@ export function sceneEffectsKey(
   effects: RenderEffectsSettings,
   mode: RenderMode,
   enabled: boolean,
-  fogVolumesPresent = false,
+  inputs: SceneEffectsInputs = {},
 ): string {
-  return enabled ? `${mode}${JSON.stringify(effects)}${fogVolumesPresent ? ":fogVolumes" : ""}` : "off";
+  if (!enabled) return "off";
+  const lut = effects.colorGrading.enabled ? inputs.colorGradingTexture?.uniqueId : undefined;
+  return `${mode}${JSON.stringify(effects)}${inputs.fogVolumesPresent ? ":fogVolumes" : ""}${lut === undefined ? "" : `:lut${lut}`}`;
 }

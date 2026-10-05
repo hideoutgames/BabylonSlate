@@ -15,6 +15,8 @@ export type TextureUsage =
   | "ui"
   | "font"
   | "pixelArt"
+  /** Color grading lookup tables: exact source pixels, never resized. */
+  | "colorGrading"
   | "skybox"
   | "particle";
 
@@ -39,10 +41,11 @@ export const DEFAULT_TEXTURE_ENCODE_SETTINGS: TextureEncodeSettings = {
   generateMipmaps: true,
 };
 
-/** Policy defaults: pixel art / sprites / UI / fonts / skyboxes stay uncompressed. */
+/** Policy defaults: pixel art / sprites / UI / fonts / skyboxes / LUTs stay uncompressed. */
 export function shouldCompressTexture(usage: TextureUsage | string): boolean {
   return (
     usage !== "pixelArt" &&
+    usage !== "colorGrading" &&
     usage !== "sprite" &&
     usage !== "ui" &&
     usage !== "font" &&

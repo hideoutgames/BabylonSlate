@@ -28,6 +28,18 @@ export interface AmbientOcclusionSettings {
   maxDistance: number;
 }
 
+/**
+ * Display-space color grading through a 2D lookup-table strip: N square
+ * slices side by side (for example 256x16 or 1024x32), blue selecting the
+ * slice, red across and green down each slice. Identity output maps every
+ * color to itself.
+ */
+export interface ColorGradingSettings {
+  enabled: boolean;
+  /** Texture asset holding the LUT strip; null grades nothing. */
+  lutTextureGuid: string | null;
+}
+
 export interface VolumetricLightingSettings {
   enabled: boolean;
   resolutionScale: number;
@@ -60,6 +72,7 @@ export interface RenderEffectsSettings {
     scale: number;
   };
   fxaa: boolean;
+  colorGrading: ColorGradingSettings;
   ambientOcclusion: AmbientOcclusionSettings;
   reflections: ReflectionSettings;
   volumetricLighting: VolumetricLightingSettings;
@@ -98,6 +111,7 @@ export const DEFAULT_RENDER_EFFECTS: Readonly<RenderEffectsSettings> = {
   vignette: { enabled: false, weight: 1.5, color: [0, 0, 0] },
   bloom: { enabled: false, threshold: 0.9, weight: 0.15, kernel: 64, scale: 0.5 },
   fxaa: false,
+  colorGrading: { enabled: false, lutTextureGuid: null },
   ambientOcclusion: {
     enabled: false, resolutionScale: 0.5, samples: 16,
     radius: 0.5, strength: 1, maxDistance: 100,
@@ -146,6 +160,7 @@ export function normalizeRenderEffectsSettings(
   const colorPipeline = object(source.colorPipeline);
   const vignette = object(source.vignette);
   const bloom = object(source.bloom);
+  const colorGrading = object(source.colorGrading);
   const ambientOcclusion = object(source.ambientOcclusion);
   const reflections = object(source.reflections);
   const volumetric = object(source.volumetricLighting);
@@ -212,6 +227,13 @@ export function normalizeRenderEffectsSettings(
       ),
     },
     fxaa: source.fxaa === true,
+    colorGrading: {
+      enabled: colorGrading.enabled === true,
+      lutTextureGuid:
+        typeof colorGrading.lutTextureGuid === "string" && colorGrading.lutTextureGuid.trim()
+          ? colorGrading.lutTextureGuid.trim()
+          : null,
+    },
     ambientOcclusion: {
       enabled: ambientOcclusion.enabled === true,
       resolutionScale: occlusionNumber("resolutionScale", RENDER_EFFECTS_LIMITS.spatialResolutionScale),
@@ -239,4 +261,10 @@ export function normalizeRenderEffectsSettings(
       anisotropy: volumetricNumber("anisotropy", RENDER_EFFECTS_LIMITS.volumetricAnisotropy),
     },
   };
+}
+
+/** Project assets the effects block references; exports and Play must load them. */
+export function renderEffectsAssetGuids(effects: RenderEffectsSettings | undefined): string[] {
+  const guid = effects?.colorGrading.enabled ? effects.colorGrading.lutTextureGuid : null;
+  return guid ? [guid] : [];
 }
