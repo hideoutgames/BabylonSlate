@@ -52,7 +52,7 @@ export function HomepageApplicationSettings({
       data-testid="application-settings-modal"
       footer={
         <div className="flex items-center justify-end gap-2">
-          <Button size="sm" variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
             Done
           </Button>
         </div>

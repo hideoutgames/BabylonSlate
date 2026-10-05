@@ -584,7 +584,6 @@ export function SettingsModal({
             </Button>
           ) : null}
           <Button
-            size="sm"
             variant="outline"
             onClick={() => changeOpen(false)}
           >
