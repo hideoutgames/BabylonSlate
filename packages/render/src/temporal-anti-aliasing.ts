@@ -109,22 +109,19 @@ export class TemporalJitter {
     this.scene.setTransformMatrix(this.camera.getViewMatrix(), this.camera.getProjectionMatrix());
   }
 
-  /** Jitter a FrameGraph object renderer's draws for this camera. */
+  /** Jitter a FrameGraph object renderer's draws for this camera. Babylon's
+   * graph tasks recompute the projection just before drawing; jitter after. */
   jitterRenderer(renderer: ObjectRenderer): void {
-    const previous = renderer.dontSetTransformationMatrix;
-    renderer.dontSetTransformationMatrix = true;
-    const init = renderer.onInitRenderingObservable.add(() => {
-      const camera = renderer.activeCamera ?? this.scene.activeCamera;
-      if (camera === this.camera) this.scene.setTransformMatrix(camera.getViewMatrix(), this.projection());
-      else if (camera) this.scene.setTransformMatrix(camera.getViewMatrix(), camera.getProjectionMatrix(true));
+    const draw = renderer.onBeforeRenderingManagerRenderObservable.add(() => {
+      if ((renderer.activeCamera ?? this.scene.activeCamera) === this.camera)
+        this.scene.setTransformMatrix(this.camera.getViewMatrix(), this.projection());
     });
     const finish = renderer.onFinishRenderingObservable.add(() => {
       if ((renderer.activeCamera ?? this.scene.activeCamera) === this.camera) this.restore();
     });
     this.cleanup.push(() => {
-      renderer.onInitRenderingObservable.remove(init);
+      renderer.onBeforeRenderingManagerRenderObservable.remove(draw);
       renderer.onFinishRenderingObservable.remove(finish);
-      renderer.dontSetTransformationMatrix = previous;
     });
   }
 
