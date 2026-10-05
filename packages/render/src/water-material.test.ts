@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { DirectionalLight, FreeCamera, HemisphericLight, Matrix, MeshBuilder, NullEngine, PBRMaterial, PointLight, Scene, Texture, TransformNode, Vector3, type UniformBuffer } from "@babylonjs/core";
 import {
-  WATER_WAVE_MAX_COMPONENTS, createDefaultWaterDefinition, createWaterWaveOutput, evaluateWaterWaves, normalizeWaterBody, normalizeWaterDefinition,
-  waterWaveSet,
+  WATER_WAVE_MAX_COMPONENTS, createDefaultWaterDefinition, createWaterWaveOutput, evaluateWaterWaves, normalizeRenderingQuality, normalizeWaterBody,
+  normalizeWaterDefinition, qualityPresetPatch, waterWaveSet, type QualityLevel, type WaterDefinition,
 } from "@babylonslate/core";
+import { updateSceneRenderingSettings } from "./render-settings";
 import { WaterMaterialPlugin } from "./water-material";
-import { createWaterMesh } from "./water-mesh";
+import { createWaterMesh, updateSceneWater } from "./water-mesh";
 import { createWaterRemovalMesh } from "./water-removal-mesh";
 
 /** Capture the shader upload boundary while using real scene objects and binding logic. */
@@ -152,6 +153,79 @@ describe("Water material binding", () => {
       // Classic compiles only its five swell components; Ocean Spectrum adds its other three.
       expect(realistic).not.toContain("#define SLATE_WATER_OCEAN");
       expect(await compiled("stylized", "ocean")).toContain("#define SLATE_WATER_OCEAN");
+    } finally { scene.dispose(); engine.dispose(); }
+  });
+
+  it("compiles the project's Water Shading Detail, draws Realistic Low unlit, and compiles out asset features set to zero", async () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    try {
+      new FreeCamera("camera", new Vector3(0, 5, -10), scene);
+      new DirectionalLight("sun", new Vector3(0, -1, 0.3), scene);
+      new PointLight("lamp", new Vector3(0, 3, 0), scene);
+      const tier = (level: QualityLevel) => updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality(qualityPresetPatch(level)) });
+      const compiled = async (style: "realistic" | "stylized", overrides: Partial<WaterDefinition> = {}) => {
+        const mesh = createWaterMesh(scene, style, normalizeWaterBody({ resolution: 8 }), { ...createDefaultWaterDefinition(style), ...overrides });
+        const material = mesh.material as PBRMaterial, subMesh = mesh.subMeshes[0]!;
+        await material.forceCompilationAsync(mesh);
+        expect(material.isReadyForSubMesh(mesh, subMesh)).toBe(true);
+        const defines = subMesh.effect!.defines;
+        mesh.dispose();
+        return defines;
+      };
+      const levels: QualityLevel[] = ["low", "medium", "high", "ultra"];
+      for (const [index, level] of levels.entries()) {
+        tier(level);
+        const realistic = await compiled("realistic"), stylized = await compiled("stylized");
+        expect(realistic).toContain(`#define SLATE_WATER_QUALITY ${index}`);
+        expect(stylized).toContain(`#define SLATE_WATER_QUALITY ${index}`);
+        // Low drops the PBR light loop (its shader lights foam and the sun itself); other tiers keep scene lights.
+        if (level === "low") expect(realistic).not.toContain("#define LIGHT0");
+        else expect(realistic).toContain("#define LIGHT1");
+      }
+      tier("high");
+      // Realistic defaults: Crest Foam, Surface Foam and Subsurface on, Sparkles off.
+      const defaults = await compiled("realistic");
+      for (const define of ["SLATE_WATER_CREST_FOAM", "SLATE_WATER_SURFACE_FOAM", "SLATE_WATER_SSS"]) expect(defaults).toContain(`#define ${define}\n`);
+      expect(defaults).not.toContain("SLATE_WATER_SPARKLES\n");
+      const inverted = await compiled("realistic", { crestFoam: 0, surfaceFoam: 0, subsurface: 0, sparkles: 0.5 });
+      for (const define of ["SLATE_WATER_CREST_FOAM", "SLATE_WATER_SURFACE_FOAM", "SLATE_WATER_SSS"]) expect(inverted).not.toContain(`#define ${define}\n`);
+      expect(inverted).toContain("#define SLATE_WATER_SPARKLES\n");
+    } finally { scene.dispose(); engine.dispose(); }
+  });
+
+  it("recompiles live water, including a frozen Play material, when only the project Water Shading Detail changes", async () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    try {
+      new FreeCamera("camera", new Vector3(0, 5, -10), scene);
+      new DirectionalLight("sun", new Vector3(0, -1, 0.3), scene);
+      // Medium everywhere except Shading Detail, so the grid (and its sub-meshes) stays the same.
+      const detail = (shadingDetail: QualityLevel) => {
+        const quality = normalizeRenderingQuality(qualityPresetPatch("medium"));
+        updateSceneRenderingSettings(scene, { quality: { ...quality, water: { ...quality.water, shadingDetail, preset: "custom" } } });
+      };
+      detail("medium");
+      const mesh = createWaterMesh(scene, "lake", normalizeWaterBody({ resolution: 8 }), createDefaultWaterDefinition("realistic"));
+      const material = mesh.material as PBRMaterial, subMesh = mesh.subMeshes[0]!;
+      const ready = async () => {
+        await vi.waitFor(() => expect(material.isReadyForSubMesh(mesh, subMesh)).toBe(true));
+        return subMesh.effect!.defines;
+      };
+      expect(await ready()).toContain("#define SLATE_WATER_QUALITY 1");
+      // Play freezes materials after their first ready: readiness then returns early without preparing defines, so
+      // the per-frame water update must carry the new tier (and Low's unlit flag) into the frozen material.
+      material.freeze();
+      expect(material.isReadyForSubMesh(mesh, subMesh)).toBe(true);
+      detail("low");
+      updateSceneWater(scene);
+      expect(mesh.subMeshes[0]).toBe(subMesh);
+      const low = await ready();
+      expect(low).toContain("#define SLATE_WATER_QUALITY 0");
+      expect(low).not.toContain("#define LIGHT0");
+      detail("ultra");
+      updateSceneWater(scene);
+      const ultra = await ready();
+      expect(ultra).toContain("#define SLATE_WATER_QUALITY 3");
+      expect(ultra).toContain("#define LIGHT0");
     } finally { scene.dispose(); engine.dispose(); }
   });
 

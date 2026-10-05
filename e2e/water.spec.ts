@@ -8,7 +8,7 @@ import { createDefaultMaterialDocument } from "../packages/shader-graph/src/docu
 import { openMinimalTestProject } from "./minimal-project";
 import { openAssetFromBrowser, openMainScene } from "./open-test-project";
 import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
-import type { runWaterRenderingProof } from "../apps/editor/src/testing/water-rendering-proof";
+import type { runWaterRenderingProof, runWaterTierProof } from "../apps/editor/src/testing/water-rendering-proof";
 
 test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 
@@ -96,6 +96,26 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       expect(crest.inner).toBeGreaterThan(trough.inner + 20);
       expect(trough.outer).toBeGreaterThan(crest.outer + 20);
     }
+  });
+  test(`Water compiles and shades every Water Shading Detail in both styles on ${backend}`, async ({ page }, testInfo) => {
+    test.setTimeout(240_000);
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    page.on("console", (message) => {
+      if (["error", "warning"].includes(message.type()) && /shader|WebGPU uncaptured|VALIDATE_STATUS|ERROR: 0:|GL_INVALID/i.test(message.text())) errors.push(message.text());
+    });
+    await page.goto("/?test=1&waterRenderingProof=1");
+    await page.waitForFunction(() => typeof (window as unknown as { __babylonslateWaterTierProof?: unknown }).__babylonslateWaterTierProof === "function");
+    const result = await page.evaluate((backend) => (window as unknown as { __babylonslateWaterTierProof: typeof runWaterTierProof }).__babylonslateWaterTierProof(backend), backend);
+    for (const [name, png] of Object.entries(result.evidence)) {
+      await testInfo.attach(name, { body: Buffer.from(png.split(",")[1]!, "base64"), contentType: "image/png" });
+    }
+    await testInfo.attach("tier-captures", { body: JSON.stringify(result.captures), contentType: "application/json" });
+    // Each tier compiles its own variant (Low to Ultra, both styles, with the asset features on): none may fail to
+    // compile, and none may draw black, including with seven scene lights on Low (unlit) and Ultra.
+    expect(errors).toEqual([]);
+    expect(result.captures).toHaveLength(4 * 6);
+    for (const { tier, view, light } of result.captures) expect(light, `${view} at ${tier}`).toBeGreaterThan(20);
   });
   test(`Water presets and a custom Water Surface material render on ${backend}`, async ({ page }, testInfo) => {
     test.setTimeout(120_000);

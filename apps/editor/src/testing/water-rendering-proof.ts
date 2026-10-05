@@ -1,10 +1,11 @@
-import { Camera, Color3, Color4, DirectionalLight, Engine, MeshBuilder, PointLight, StandardMaterial, Vector3, type ArcRotateCamera, type PBRMaterial, type Scene } from "@babylonjs/core";
+import { AbstractMesh, Camera, Color3, Color4, DirectionalLight, Engine, MeshBuilder, PointLight, StandardMaterial, Vector3, type ArcRotateCamera, type PBRMaterial, type Scene } from "@babylonjs/core";
 import {
   createDefaultWaterDefinition, normalizeRenderingQuality, normalizeWaterBody, qualityPresetPatch, sampleWaterSurface,
-  type WaterBodyProperties, type WaterDefinition,
+  WATER_SHADING_DETAILS, type WaterBodyProperties, type WaterDefinition, type WaterKind, type WaterShadingDetail,
 } from "@babylonslate/core";
 import { createAppWebGpuEngine, createParticlePreviewScene, createWaterMesh, setSceneWaterTime, setWaterGpuWaves, updateSceneWater } from "@babylonslate/render";
 import { createLandscapeMesh } from "../../../../packages/render/src/landscape-mesh";
+import { RENDERING_GROUP } from "../../../../packages/render/src/sorting";
 import { sceneRenderingSettings, updateSceneRenderingSettings } from "../../../../packages/render/src/render-settings";
 
 type Capture = () => Promise<{ pixels: number[]; png: string }>;
@@ -460,6 +461,154 @@ export async function runWaterRenderingProof(backend: "webgl2" | "webgpu") {
     const vertexParity = await measureVertexParity(scene, camera, capture, backend, canvas, evidence);
     return { evidence, differences, brightness, crowded, pan, whitecaps, surfaceFoam, gerstner, subsurface, clearReflection, waveTerrain, contact, ripples, vertexParity };
   } finally {
+    const device = (engine as { _device?: { queue: { onSubmittedWorkDone(): Promise<void> } } })._device;
+    engine.flushFramebuffer(); await device?.queue.onSubmittedWorkDone();
+    host.dispose(); await host.whenReleased(); engine.dispose(); canvas.remove();
+  }
+}
+
+/** One captured view of built-in water: what the water is, what meets it and where the camera and sun are. */
+export interface WaterTierView {
+  name: string;
+  style: "realistic" | "stylized";
+  /** Asset overrides on the style's defaults. */
+  water?: Partial<WaterDefinition>;
+  kind?: WaterKind;
+  body?: Record<string, unknown>;
+  camera: { alpha: number; beta: number; radius: number; target?: [number, number, number] };
+  /** Sun light direction (pointing from the sun); the proof's default sun otherwise. */
+  sun?: [number, number, number];
+  /** A 90 m landscape island whose edges lie 4 m under the water. */
+  island?: boolean;
+  /** Posts and a buoy crossing the surface. */
+  objects?: boolean;
+  /** Four extra point lights over the water (seven lights with the preview's own). */
+  lamps?: boolean;
+  time?: number;
+}
+
+/** Built-in water at every project Water Shading Detail: the CI views, unless `views` are given. */
+const TIER_VIEWS: readonly WaterTierView[] = (["realistic", "stylized"] as const).flatMap((style) => [
+  { name: `${style}-lake`, style, body: { width: 28, length: 24, waveScale: 1 }, camera: { alpha: -Math.PI / 2, beta: 1.03, radius: 24 } },
+  { name: `${style}-lake-seven-lights`, style, body: { width: 28, length: 24, waveScale: 1 }, lamps: true, camera: { alpha: -Math.PI / 2, beta: 1.03, radius: 24 } },
+  {
+    name: `${style}-open-sea`, style, kind: "ocean" as const, body: { width: 300, length: 300 },
+    water: { waveHeight: 1.2, waveLength: 22, choppiness: 0.7, crestFoam: 0.8, surfaceFoam: 1, sparkles: 0.4 },
+    camera: { alpha: -Math.PI / 2 - 0.6, beta: 1.2, radius: 30 },
+  },
+]);
+
+/** Pixels read back from either backend as a PNG data URL (a WebGPU canvas cannot be re-encoded after presenting). */
+function pixelsToPng(pixels: ArrayLike<number>, width: number, height: number, backend: "webgl2" | "webgpu"): string {
+  const out = document.createElement("canvas");
+  out.width = width; out.height = height;
+  const context = out.getContext("2d")!, image = context.createImageData(width, height), stride = width * 4;
+  for (let row = 0; row < height; row++) {
+    const source = (backend === "webgl2" ? height - 1 - row : row) * stride;
+    for (let i = 0; i < stride; i++) image.data[row * stride + i] = pixels[source + i]!;
+  }
+  context.putImageData(image, 0, 0);
+  return out.toDataURL("image/png");
+}
+
+/**
+ * Captures built-in water at each project Water Shading Detail (`SLATE_WATER_QUALITY` 0-3) for every view: each tier
+ * compiles its own shader variant, so a variant that fails to compile, or compiles but draws black, shows here on the
+ * backend that runs it. Returns each capture's mean brightness over the lower two thirds (the water) and its evidence.
+ */
+export async function runWaterTierProof(backend: "webgl2" | "webgpu", options: { views?: readonly WaterTierView[]; tiers?: readonly WaterShadingDetail[]; width?: number; height?: number } = {}) {
+  const width = options.width ?? 480, height = options.height ?? 300;
+  const canvas = document.createElement("canvas");
+  canvas.width = width; canvas.height = height;
+  document.getElementById("root")!.append(canvas);
+  const engine = backend === "webgpu" ? await createAppWebGpuEngine(canvas) : new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true, useLargeWorldRendering: true });
+  const host = createParticlePreviewScene(engine, { skybox: true });
+  const { scene, camera } = host;
+  const sun = new DirectionalLight("sun", new Vector3(-0.3, -1, 0.6), scene);
+  sun.intensity = 1.4;
+  const defaultSun = sun.direction.clone();
+  camera.maxZ = 2000;
+  camera.upperRadiusLimit = null;
+  for (const mesh of scene.meshes) if (mesh.metadata?.skybox) mesh.infiniteDistance = true;
+  const capture = async () => {
+    await scene.whenReadyAsync();
+    camera.getViewMatrix(true);
+    updateSceneWater(scene);
+    await scene.whenReadyAsync();
+    engine.beginFrame();
+    try {
+      scene.render();
+      const raw = await engine.readPixels(0, 0, width, height);
+      if (!raw) throw new Error("Missing water pixels");
+      return new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength);
+    } finally { engine.endFrame(); }
+  };
+  // Mean brightness of the lower two thirds of the view: WebGL reads pixels bottom-up, WebGPU top-down.
+  const rows = backend === "webgl2" ? [0, Math.ceil(height * 2 / 3)] : [Math.floor(height / 3), height];
+  const waterLight = (pixels: Uint8Array) => {
+    let sum = 0, count = 0;
+    for (let y = rows[0]!; y < rows[1]!; y++) for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4;
+      sum += (pixels[i]! + pixels[i + 1]! + pixels[i + 2]!) / 3; count++;
+    }
+    return sum / count;
+  };
+  const island = (() => {
+    const side = 45, heights: number[] = [];
+    for (let z = 0; z <= side; z++) for (let x = 0; x <= side; x++) {
+      const u = x / side * 90 - 45, v = z / side * 90 - 45, r = Math.hypot(u * 1.1, v * 0.9);
+      heights.push(7.5 * Math.exp(-((r / 24) ** 2)) - 4 + 0.6 * Math.sin(u * 0.21) * Math.cos(v * 0.17));
+    }
+    return { width: 90, depth: 90, subdivisions: side, heights };
+  })();
+  const dark = new StandardMaterial("tier-objects", scene);
+  dark.diffuseColor = new Color3(0.35, 0.28, 0.22);
+  const quality = sceneRenderingSettings(scene).project.quality;
+  const captures: Array<{ tier: WaterShadingDetail; view: string; light: number }> = [];
+  const evidence: Record<string, string> = {};
+  try {
+    for (const view of options.views ?? TIER_VIEWS) {
+      const extras: Array<{ dispose(): void }> = [];
+      if (view.island) extras.push(createLandscapeMesh(scene, "tier-island", island));
+      if (view.objects) {
+        const posts = [[-3, 0, 2], [2.5, 0, -1], [6, 0, 4]].map(([x, y, z], i) => {
+          const post = MeshBuilder.CreateBox(`tier-post-${i}`, { width: 0.8, height: 5, depth: 0.8 }, scene);
+          post.position.set(x!, y!, z!); post.material = dark;
+          return post;
+        });
+        const buoy = MeshBuilder.CreateSphere("tier-buoy", { diameter: 2.4, segments: 24 }, scene);
+        buoy.position.set(-0.5, 0.2, -4); buoy.material = dark;
+        extras.push(...posts, buoy);
+      }
+      if (view.lamps) {
+        extras.push(...[-6, -2, 2, 6].map((x, i) => {
+          const lamp = new PointLight(`tier-lamp-${i}`, new Vector3(x, 3, -4), scene);
+          lamp.intensity = 0.2;
+          return lamp;
+        }));
+      }
+      sun.direction = view.sun ? new Vector3(...view.sun) : defaultSun.clone();
+      camera.mode = Camera.PERSPECTIVE_CAMERA;
+      camera.setTarget(new Vector3(...(view.camera.target ?? [0, 0, 0])), false, false, true);
+      camera.alpha = view.camera.alpha; camera.beta = view.camera.beta; camera.radius = view.camera.radius;
+      setSceneWaterTime(scene, view.time ?? 1.7);
+      const definition = { ...createDefaultWaterDefinition(view.style), ...view.water };
+      const water = createWaterMesh(scene, `tier-${view.name}`, normalizeWaterBody(view.body ?? {}, view.kind ?? "lake"), definition);
+      // Landscapes draw in the world rendering group; water and objects join it so depth sorts them together.
+      for (const mesh of [water, ...extras]) if (mesh instanceof AbstractMesh) mesh.renderingGroupId = RENDERING_GROUP.world;
+      if (view.lamps) (water.material as PBRMaterial).maxSimultaneousLights = 8;
+      for (const tier of options.tiers ?? WATER_SHADING_DETAILS) {
+        updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality(qualityPresetPatch(tier)) });
+        const pixels = await capture();
+        captures.push({ tier, view: view.name, light: waterLight(pixels) });
+        evidence[`tier-${tier}-${view.name}`] = pixelsToPng(pixels, width, height, backend);
+      }
+      water.dispose();
+      for (const extra of extras) extra.dispose();
+    }
+    return { captures, evidence };
+  } finally {
+    updateSceneRenderingSettings(scene, { quality });
     const device = (engine as { _device?: { queue: { onSubmittedWorkDone(): Promise<void> } } })._device;
     engine.flushFramebuffer(); await device?.queue.onSubmittedWorkDone();
     host.dispose(); await host.whenReleased(); engine.dispose(); canvas.remove();

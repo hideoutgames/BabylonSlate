@@ -50,7 +50,7 @@ function isLitMaterial(material: Material): material is LitMaterial {
   return typeof material.maxSimultaneousLights === "number";
 }
 
-type SceneLighting = { sync: () => void; limits: () => string[] };
+type SceneLighting = { sync: () => void; invalidate: () => void; limits: () => string[] };
 
 // Shadow layout tokens per enabled light: shadowEnabled, generator, area
 // emission texture, area emission readiness.
@@ -111,6 +111,14 @@ export function syncSceneLighting(scene: Scene): void {
     lightingByScene.set(scene, lighting);
   }
   lighting.sync();
+}
+
+/**
+ * Re-apply the light-slot capacity at the next sync, e.g. when a material
+ * starts using scene lights again. No-op where lighting is not managed.
+ */
+export function invalidateSceneLighting(scene: Scene): void {
+  lightingByScene.get(scene)?.invalidate();
 }
 
 export function sceneLightingLimits(scene: Scene): string[] {
@@ -270,6 +278,7 @@ function installSceneLighting(scene: Scene): SceneLighting {
   });
   return {
     sync,
+    invalidate,
     limits: () =>
       admission.limited.length
         ? [

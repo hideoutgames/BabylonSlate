@@ -13,7 +13,8 @@ import { landscapeMeshData, sceneLandscapeRoots } from "./landscape-mesh";
 
 /**
  * Encoded ranges of the RGBA8 field: R shore distance, G depth over terrain, B the same depth at fine precision
- * over the shallows (`fineDepthSpan` metres from `fineDepthMin`), A terrain known.
+ * over the shallows (`fineDepthSpan` metres from `fineDepthMin`), A terrain known: 255 over real terrain, ramping
+ * toward 0 across the cells extended past a landscape's edge (`WATER_FIELD_EDGE_RINGS`), 0 beyond them.
  * Objects live in the separate, height-aware `WaterContactField`.
  */
 export const WATER_FIELD_SHORE_RANGE: readonly [number, number] = [-8, 24];
@@ -286,14 +287,68 @@ export class WaterField {
     const anyLand = toLand.some((n) => n === 0);
     if (anyLand) { distanceTransform(toLand, width, height); distanceTransform(toWater, width, height); }
     const cell = (this.rect!.maxX - this.rect!.minX) / width;
+    const ring = extendTerrainDepth(depth, known, width, height);
     for (let i = 0; i < count; i++) {
       const shore = !anyLand ? WATER_FIELD_SHORE_RANGE[1] : known[i] === 1 && depth[i]! <= 0
         ? -(Math.sqrt(toWater[i]!) - 0.5) * cell
         : (Math.sqrt(toLand[i]!) - 0.5) * cell;
+      const reached = ring[i]! <= WATER_FIELD_EDGE_RINGS;
       data[i * 4] = encode(shore, WATER_FIELD_SHORE_RANGE);
-      data[i * 4 + 1] = known[i] ? encode(depth[i]!, depthRange) : 255;
-      data[i * 4 + 2] = known[i] ? encode(depth[i]!, fineRange) : 255;
-      data[i * 4 + 3] = known[i] ? 255 : 0;
+      data[i * 4 + 1] = reached ? encode(depth[i]!, depthRange) : 255;
+      data[i * 4 + 2] = reached ? encode(depth[i]!, fineRange) : 255;
+      data[i * 4 + 3] = reached ? Math.round(255 * (1 - ring[i]! / (WATER_FIELD_EDGE_RINGS + 1))) : 0;
     }
   }
+}
+
+/**
+ * Cells beyond a landscape's edge carry its depth this many rings out, with alpha falling from 255 (real terrain)
+ * toward 0. The shader's central differences then find no false slope at the coverage edge (an unknown cell's
+ * sentinel read as a cliff and drew a shore line along it), and the terrain depth fades smoothly into the estimate.
+ */
+export const WATER_FIELD_EDGE_RINGS = 12;
+
+/**
+ * Extends known depths into unknown cells ring by ring (each the mean of its already-reached 8-neighbours), in place.
+ * Returns each cell's ring: 0 for real terrain, 1..`WATER_FIELD_EDGE_RINGS` for extended cells, beyond that unreached.
+ */
+function extendTerrainDepth(depth: Float64Array, known: Uint8Array, width: number, height: number): Uint8Array {
+  const unreached = WATER_FIELD_EDGE_RINGS + 1, ring = new Uint8Array(width * height).fill(unreached);
+  let frontier: number[] = [];
+  for (let i = 0; i < ring.length; i++) if (known[i]) ring[i] = 0;
+  for (let i = 0; i < ring.length; i++) {
+    if (ring[i] !== unreached) continue;
+    const x = i % width, z = (i - x) / width;
+    if ((x > 0 && known[i - 1]) || (x < width - 1 && known[i + 1]) || (z > 0 && known[i - width]) || (z < height - 1 && known[i + width])
+      || (x > 0 && z > 0 && known[i - width - 1]) || (x < width - 1 && z > 0 && known[i - width + 1])
+      || (x > 0 && z < height - 1 && known[i + width - 1]) || (x < width - 1 && z < height - 1 && known[i + width + 1])) frontier.push(i);
+  }
+  for (let r = 1; r <= WATER_FIELD_EDGE_RINGS && frontier.length > 0; r++) {
+    // Every cell of this ring averages only earlier rings, so the result never depends on visiting order.
+    for (const i of frontier) {
+      const x = i % width, z = (i - x) / width;
+      let sum = 0, n = 0;
+      for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+        const nx = x + dx, nz = z + dz;
+        if (nx < 0 || nz < 0 || nx >= width || nz >= height) continue;
+        const j = nz * width + nx;
+        if (ring[j]! < r) { sum += depth[j]!; n++; }
+      }
+      depth[i] = sum / n;
+    }
+    for (const i of frontier) ring[i] = r;
+    const next: number[] = [];
+    for (const i of frontier) {
+      const x = i % width, z = (i - x) / width;
+      for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+        const nx = x + dx, nz = z + dz;
+        if (nx < 0 || nz < 0 || nx >= width || nz >= height) continue;
+        const j = nz * width + nx;
+        if (ring[j] === unreached) { ring[j] = unreached + 1; next.push(j); }
+      }
+    }
+    for (const j of next) ring[j] = unreached;
+    frontier = next;
+  }
+  return ring;
 }

@@ -199,9 +199,13 @@ function cameraWorld(camera: Camera, local: Vector3, out: Vector3): Vector3 {
   return out.copyFrom(local);
 }
 
-/** Water Mesh Density from the project Water quality (device-clamped), re-read only when the quality revision changes. */
+/**
+ * Water Mesh Density from the project Water quality (device-clamped), re-read only when the quality revision changes;
+ * the built-in material follows its Shading Detail here too, which also reaches frozen Play materials.
+ */
 function syncQuality(s: Surface): void {
   const scene = s.mesh.getScene(), revision = sceneWaterQualityRevision(scene);
+  s.plugin?.syncQuality(scene);
   if (revision === s.qualityRevision) return;
   s.qualityRevision = revision;
   const density = sceneWaterQualityDeviceClamp(scene).quality.meshDensity;

@@ -5,7 +5,7 @@ import { createLandscapeMesh } from "./landscape-mesh";
 import { createWaterMesh, setSceneWaterTime, updateSceneWater } from "./water-mesh";
 import { createWaterRemovalMesh, sceneWaterRemovals } from "./water-removal-mesh";
 import { applyAssignMesh, createSnapshotSceneBinding } from "./snapshot-apply";
-import { distanceTransform, WATER_FIELD_DEPTH_RANGE, WATER_FIELD_SHORE_RANGE, WaterField } from "./water-field";
+import { distanceTransform, WATER_FIELD_DEPTH_RANGE, WATER_FIELD_EDGE_RINGS, WATER_FIELD_SHORE_RANGE, WaterField } from "./water-field";
 
 type FieldView = { data: Uint8Array; width: number; height: number; bounds: number[]; depthRange?: readonly [number, number]; fineDepthMin: number; fineDepthSpan: number };
 const liveField = (mesh: Mesh) => (mesh.material as unknown as { pluginManager: { _plugins: Array<{ field?: WaterField | null }> } })
@@ -18,6 +18,7 @@ function texel(field: FieldView, x: number, z: number) {
   return {
     shore: decode(field.data[i]!, WATER_FIELD_SHORE_RANGE), depth: decode(field.data[i + 1]!, field.depthRange ?? WATER_FIELD_DEPTH_RANGE),
     fineDepth: decode(field.data[i + 2]!, [field.fineDepthMin, field.fineDepthMin + field.fineDepthSpan]), known: field.data[i + 3] === 255,
+    alpha: field.data[i + 3]!,
   };
 }
 
@@ -116,6 +117,34 @@ describe("Water field", () => {
         const centre = view.bounds[0]! + (Math.floor((x - view.bounds[0]!) / cell) + 0.5) * cell;
         expect(Math.abs(texel(view, x, 0).fineDepth + centre * 0.5)).toBeLessThan(0.05);
       }
+    } finally { field?.dispose(); scene.dispose(); engine.dispose(); }
+  });
+
+  it("carries a landscape's depth past its edge with fading alpha, so the edge reads as no slope and no shore", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    let field: WaterField | undefined;
+    try {
+      // A 40 m floor 4 m under a 80 m body: the field covers the body, so half of it lies beyond the landscape.
+      const surface = MeshBuilder.CreateGround("water", { width: 80, height: 80 }, scene);
+      surface.metadata = { slateWater: true };
+      createLandscapeMesh(scene, "floor", { width: 40, depth: 40, subdivisions: 4, heights: Array(25).fill(-4) });
+      field = new WaterField(scene, { mesh: surface, unbounded: false, amplitude: 0.5, contactRange: 1, surfaceY: () => 0 });
+      field.update();
+      const view = field as unknown as FieldView, cell = 1 / (view.bounds[2]! * view.width);
+      const inside = texel(view, 20 - cell * 0.5, 0);
+      expect(inside).toMatchObject({ known: true, alpha: 255 });
+      // Rings beyond the edge keep the edge depth (both channels), so central differences across it find a flat
+      // floor, while alpha falls ring by ring and the terrain depth hands over to the shelving estimate smoothly.
+      let previous = 255;
+      for (let ring = 1; ring <= WATER_FIELD_EDGE_RINGS; ring++) {
+        const extended = texel(view, 20 + (ring - 0.5) * cell, 0);
+        expect(extended.depth).toBeCloseTo(inside.depth, 1);
+        expect(extended.fineDepth).toBeCloseTo(inside.fineDepth, 1);
+        expect(extended.alpha).toBeLessThan(previous);
+        expect(extended.alpha).toBeGreaterThan(0);
+        previous = extended.alpha;
+      }
+      expect(texel(view, 20 + (WATER_FIELD_EDGE_RINGS + 1.5) * cell, 0).alpha).toBe(0);
     } finally { field?.dispose(); scene.dispose(); engine.dispose(); }
   });
 

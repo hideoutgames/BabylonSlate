@@ -165,8 +165,8 @@ if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.se
   import.meta.env.VITE_TEST_MODE === "true" &&
   new URLSearchParams(location.search).has("waterRenderingProof")
 ) {
-  void import("./testing/water-rendering-proof").then(({ runWaterRenderingProof }) => {
-    Object.assign(window, { __babylonslateWaterRenderingProof: runWaterRenderingProof });
+  void import("./testing/water-rendering-proof").then(({ runWaterRenderingProof, runWaterTierProof }) => {
+    Object.assign(window, { __babylonslateWaterRenderingProof: runWaterRenderingProof, __babylonslateWaterTierProof: runWaterTierProof });
   });
 } else if (
   import.meta.env.VITE_TEST_MODE === "true" &&
