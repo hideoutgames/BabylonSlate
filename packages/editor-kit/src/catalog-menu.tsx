@@ -394,6 +394,7 @@ export function CatalogMenu<T extends CatalogMenuItem>({
                 {(index) => {
                   const row = rows[index]!;
                   const active = row.key === activeKey;
+                  const stripe = modal && index % 2 === 1 ? "true" : undefined;
                   if (row.kind === "category") {
                     return (
                       <div
@@ -404,6 +405,7 @@ export function CatalogMenu<T extends CatalogMenuItem>({
                         aria-level={1}
                         tabIndex={-1}
                         data-active={active ? "true" : undefined}
+                        data-stripe={stripe}
                         data-testid={`${testId}-category-${row.category}`}
                         className="catalog-menu-row catalog-menu-category"
                         onClick={() => {
@@ -437,6 +439,7 @@ export function CatalogMenu<T extends CatalogMenuItem>({
                       tabIndex={-1}
                       data-active={active ? "true" : undefined}
                       data-nested={row.nested ? "true" : undefined}
+                      data-stripe={stripe}
                       data-testid={`${testId}-item-${item.id}`}
                       className="catalog-menu-row catalog-menu-item"
                       onClick={() => commit(item)}

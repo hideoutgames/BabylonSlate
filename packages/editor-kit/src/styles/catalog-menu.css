@@ -13,6 +13,10 @@
   -webkit-user-select: none;
 }
 
+.catalog-menu-row[data-stripe="true"] {
+  background: oklch(0 0 0 / 0.14);
+}
+
 .catalog-menu-row:hover,
 .catalog-menu-row[data-active="true"] {
   background: var(--accent);
