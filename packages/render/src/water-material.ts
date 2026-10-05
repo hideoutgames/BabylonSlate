@@ -847,7 +847,8 @@ alpha = (1.0 - (1.0 - swFres) * swTransmit * (1.0 - swFoam)) * swEdgeFade;${ifDe
 // The refracted scene replaces the blended background: the light transmitted through the water is the copy behind
 // this point, so coverage keeps only the shore fade. It stays apart from the water's own light (\`swRefracted\`, see
 // CUSTOM_FRAGMENT_BEFORE_FOG), so it never raises the coverage of an HDR target or takes the water's fog twice.
-vec3 swRefracted = swBackground * ((1.0 - swFres) * swTransmit * (1.0 - swFoam) * swEdgeFade * swRefracts);
+float swRefractedWeight = (1.0 - swFres) * swTransmit * (1.0 - swFoam) * swEdgeFade * swRefracts;
+vec3 swRefracted = swBackground * swRefractedWeight;
 alpha = mix(alpha, swEdgeFade, swRefracts);`)}
 ${objectReflectionSource("normalize(swRefl)", "sqrt(sqrt(U.slateWaterOrigin.w * U.slateWaterOrigin.w * U.slateWaterOrigin.w * U.slateWaterOrigin.w + 2.0 * swSlopeVariance))")}
 `;
@@ -982,7 +983,8 @@ alpha = max(alpha, swReflWeight);
 #endif${ifDefined(REFRACTION, `
 // The refracted scene replaces the blended background; Opacity still sets how much of it shows. It joins the output
 // after the water's own fog (\`swRefracted\`, see CUSTOM_FRAGMENT_BEFORE_FOG).
-vec3 swRefracted = swBackground * ((1.0 - alpha) * swRefracts);
+float swRefractedWeight = (1.0 - alpha) * swRefracts;
+vec3 swRefracted = swBackground * swRefractedWeight;
 swEmissive = swEmissive * mix(1.0, alpha, swRefracts);
 alpha = mix(alpha, 1.0, swRefracts);`)}
 `;
@@ -1199,9 +1201,11 @@ export function toWgsl(source: string): string {
  * CUSTOM_FRAGMENT_BEFORE_FOG. Realistic colour is premultiplied by coverage: undo it for Babylon's non-premultiplied
  * blend, fog and image processing. Bright glints and reflections raise coverage instead of clipping in 8-bit targets.
  *
- * The refracted scene (`swRefracted`, `SLATE_WATER_REFRACTION`) is light from behind the surface, already fogged by
- * its own materials: it is pre-divided by the fog factor so the water's fog below leaves it unchanged, as blending
- * left the background. In Scene Linear (`IMAGEPROCESSINGPOSTPROCESS`, an HDR target that never clips at 1) it stays
+ * The refracted scene (`swRefracted`, its share `swRefractedWeight`; `SLATE_WATER_REFRACTION`) is light from behind
+ * the surface, already fogged by its own materials. With the copy the water covers that share too, so Babylon's fog
+ * below would fog the background again and add its fog colour over it: the refracted light is pre-divided by the fog
+ * factor, less the fog colour at its share, so the result equals blending (the water's fog on its own light only).
+ * In Scene Linear (`IMAGEPROCESSINGPOSTPROCESS`, an HDR target that never clips at 1) it stays
  * out of the coverage, so a refracted background brighter than 1 never raises coverage and dims what the shore fade
  * blends over; 8-bit display targets keep counting it (their background never exceeds 1). Stylized water is opaque
  * where it refracts and only adds it.
@@ -1214,7 +1218,8 @@ function beforeFogSource(wgsl: boolean): string {
     `#ifdef ${REFRACTION}`,
     declare(v3, "swRefractedOut", "swRefracted"),
     "#ifdef FOG",
-    "swRefractedOut = swRefracted / max(toLinearSpace(CalcFogFactor()), 0.01);",
+    declare(f1, "swFogKeep", "max(toLinearSpace(CalcFogFactor()), 0.01)"),
+    `swRefractedOut = (swRefracted - ${wgsl ? "uniforms." : ""}vFogColor * ((1.0 - swFogKeep) * swRefractedWeight)) / swFogKeep;`,
     "#endif",
     "#endif",
     `#ifdef ${WATER_STYLIZED_DEFINE}`,
