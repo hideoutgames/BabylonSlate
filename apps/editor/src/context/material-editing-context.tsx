@@ -49,6 +49,9 @@ import { useDocuments } from "./document-context";
 import { usePlay } from "./play-context";
 import { useMaterialRenderControl } from "./material-render-control-context";
 import { useMaterialInstanceSources } from "./material-instance-sources";
+import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
+
+const FUNCTION_KINDS = ["material-function"] as const;
 
 /** Trailing debounce: the last edit always compiles, unlike a rate limiter. */
 const IDLE_DEBOUNCE_MS = 220;
@@ -213,16 +216,17 @@ export function MaterialEditingProvider({
   }, [functionAssets, readAssetChunk]);
 
   /** Open edits override saved document chunks; headers are only legacy fallback. */
+  const functionDocuments = useOpenDocumentsOfKinds(FUNCTION_KINDS);
   const functions = useMemo(() => {
     const map: Record<string, MaterialFunctionDocument> = { ...savedFunctions };
     for (const asset of functionAssets) {
-      const open = openDocuments.find(
+      const open = functionDocuments.find(
         (entry) => entry.ref.path === asset.path && entry.content,
       );
       if (open?.content) map[asset.header.guid] = normalizeMaterialFunctionDocument(open.content);
     }
     return map;
-  }, [functionAssets, openDocuments, savedFunctions]);
+  }, [functionAssets, functionDocuments, savedFunctions]);
   functionsRef.current = functions;
   engineRef.current = sharedEngine;
 

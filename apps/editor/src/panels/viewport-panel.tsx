@@ -71,6 +71,10 @@ import { sceneViewportAssetKey } from "../lib/scene-viewport-assets";
 import { savedAreaEmissionKey } from "../lib/collect-area-emissions";
 import { sceneStreamingEditorScene } from "../lib/scene-streaming-editor-labels";
 import {
+  MATERIAL_DOCUMENT_KINDS,
+  useOpenDocumentsOfKinds,
+} from "../lib/use-open-documents-of-kinds";
+import {
   isSceneViewportRemountLoad,
   runSceneViewportBlockingLoad,
   sceneViewportRenderSettingsKey,
@@ -116,6 +120,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     assetRegistry,
     registryEpoch,
   } = useDocuments();
+  const materialDocuments = useOpenDocumentsOfKinds(MATERIAL_DOCUMENT_KINDS);
   const {
     selectedActorIds,
     shapeEditTarget,
@@ -887,6 +892,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   useEffect(() => {
     const handle = engineRef.current;
     if (!handle) return;
+    void registryEpoch; // Registry headers mutate without replacing the registry.
     const byPath = new Map(
       (assetRegistry?.list() ?? []).filter((asset) => asset.header.type === "Material" || asset.header.type === "MaterialInstance").map((asset) => [
         asset.path,
@@ -894,13 +900,12 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       ]),
     );
     const guids = new Set<string>();
-    for (const doc of openDocuments) {
-      if (doc.ref.kind !== "material" && doc.ref.kind !== "material-instance") continue;
+    for (const doc of materialDocuments) {
       const guid = byPath.get(doc.ref.path);
       if (guid) guids.add(guid);
     }
     handle.setEditingMaterialGuids(guids);
-  }, [openDocuments, assetRegistry, engineEpoch]);
+  }, [materialDocuments, assetRegistry, registryEpoch, engineEpoch]);
 
   useEffect(() => {
     engineRef.current?.editor?.setSelectedActors(sceneMode === "design" ? selectedActorIds : []);

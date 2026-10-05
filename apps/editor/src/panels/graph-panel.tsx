@@ -1,4 +1,3 @@
-import { inputAssetCatalog } from "../lib/input-asset-catalog";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { GlslCodePreview } from "../components/glsl-code-preview";
@@ -22,13 +21,8 @@ import { useValidation } from "../context/validation-context";
 import { useGraphEditing } from "../context/graph-editing-context";
 import { useAppSettings } from "../context/app-settings-context";
 import { useGraphSessionViewport } from "../lib/graph-session-viewport";
-import {
-  classParentLookup,
-  materialDomainsFromAssets,
-} from "../lib/content-browser-helpers";
 import { canRenameCustomEvent, customEventRenameError, functionLibraryShowsEventGraphEmpty, renameCustomEvent } from "../lib/class-members";
 import {
-  classHierarchyFromParentOf,
   classMemberSymbolsFromGraphs,
   createDefaultLogicGraphSerialized,
   hydrateSerializedGraphForEditor,
@@ -46,16 +40,10 @@ import { shouldPublishGraphDiagnostics } from "../lib/graph-diagnostics-scope";
 import { physicsPairingDiagnostics } from "../lib/physics-pairing-diagnostics";
 import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
 import {
-  collectClassGraphsForPalette,
-  collectFunctionLibrariesForPalette,
-  collectSubsystemClassesForPalette,
-  collectGraphTypeAssets,
-  collectSceneDocumentsForPalette,
-  collectScriptInterfacesForPalette,
   commitLogicGraph,
   serializedGraphFromDocument,
-  typeSchemasFromGraphAssets,
 } from "../lib/logic-graph-document";
+import { useGraphPanelCatalogs } from "./graph-panel-catalogs";
 import {
   collectImplementedInterfaceContexts,
   collectParentFunctionSignatures,
@@ -105,75 +93,23 @@ export function GraphPanel(_props: IDockviewPanelProps) {
   const parentClass =
     indexed?.header.parentClass ??
     (doc?.ref.kind === "anim-graph" ? "BObject" : null);
-  const parentOf = useMemo(() => {
-    void registryEpoch;
-    return classParentLookup(assetRegistry?.list() ?? []);
-  }, [assetRegistry, registryEpoch]);
+  const {
+    parentOf,
+    otherClassGraphs,
+    functionLibraries,
+    subsystemClasses,
+    sceneDocuments,
+    scriptInterfaces,
+    typeAssets,
+    typeSchemas,
+    hierarchy,
+    inputAssets,
+    materialDomains,
+  } = useGraphPanelCatalogs();
   const classId = doc?.ref.path ? classIdForGraphPath(doc.ref.path) : undefined;
   const graphContent = useMemo(
     () => serializedGraphFromDocument(doc?.ref.kind ?? "", doc?.content),
     [doc?.ref.kind, doc?.content],
-  );
-  const otherClassGraphs = useMemo(
-    () =>
-      collectClassGraphsForPalette({
-        assets: assetRegistry?.list() ?? [],
-        openDocuments,
-        classIdForPath: classIdForGraphPath,
-      }),
-    [assetRegistry, openDocuments],
-  );
-  const functionLibraries = useMemo(
-    () =>
-      collectFunctionLibrariesForPalette({
-        assets: assetRegistry?.list() ?? [],
-        openDocuments,
-        parentOf,
-        classIdForPath: classIdForGraphPath,
-      }),
-    [assetRegistry, openDocuments, parentOf],
-  );
-  const subsystemClasses = useMemo(
-    () =>
-      collectSubsystemClassesForPalette({
-        assets: assetRegistry?.list() ?? [],
-        openDocuments,
-        parentOf,
-        classIdForPath: classIdForGraphPath,
-      }),
-    [assetRegistry, openDocuments, parentOf],
-  );
-  const sceneDocuments = useMemo(
-    () =>
-      collectSceneDocumentsForPalette({
-        assets: assetRegistry?.list() ?? [],
-        openDocuments,
-      }),
-    [assetRegistry, openDocuments],
-  );
-  const scriptInterfaces = useMemo(
-    () =>
-      collectScriptInterfacesForPalette({
-        assets: assetRegistry?.list() ?? [],
-        openDocuments,
-      }),
-    [assetRegistry, openDocuments],
-  );
-  const typeAssets = useMemo(
-    () =>
-      collectGraphTypeAssets({
-        assets: assetRegistry?.list() ?? [],
-        openDocuments,
-      }),
-    [assetRegistry, openDocuments],
-  );
-  const typeSchemas = useMemo(
-    () => typeSchemasFromGraphAssets(typeAssets),
-    [typeAssets],
-  );
-  const hierarchy = useMemo(
-    () => classHierarchyFromParentOf(parentOf),
-    [parentOf],
   );
   const memberSymbols = useMemo(() => {
     const graphs = { ...otherClassGraphs };
@@ -202,7 +138,6 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     }
     return names;
   }, [typeSchemas]);
-  const inputAssets = useMemo(() => inputAssetCatalog(assetRegistry?.list() ?? [], openDocuments), [assetRegistry, openDocuments]);
   const graph = useMemo(() => {
     const slice =
       activeFunctionId && graphContent?.functionGraphs?.[activeFunctionId]
@@ -297,10 +232,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
           enums: typeSchemas.enums,
           inputAssets,
         structs: typeSchemas.structs,
-          materialDomains: materialDomainsFromAssets(
-            assetRegistry?.list() ?? [],
-            openDocuments,
-          ),
+          materialDomains,
           parentOf,
           otherClassGraphs,
           subsystemClasses,
@@ -336,8 +268,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     inputAssets,
     typeSchemas,
     animEditorMode,
-    assetRegistry,
-    openDocuments,
+    materialDomains,
     subsystemClasses,
   ]);
 
