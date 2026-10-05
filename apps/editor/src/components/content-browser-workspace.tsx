@@ -1,4 +1,5 @@
 import {
+  memo,
   useCallback,
   useDeferredValue,
   useEffect,
@@ -269,11 +270,17 @@ function mountedTileLocksKey(
   return JSON.stringify(locks);
 }
 
-export function ContentBrowserWorkspace({
-  hidden = false,
-}: {
-  hidden?: boolean;
-} = {}) {
+type ContentBrowserWorkspaceBodyProps = {
+  hidden: boolean;
+  documents: ReturnType<typeof useDocuments>;
+  diagnostics: ReturnType<typeof useValidation>["diagnostics"];
+};
+
+function ContentBrowserWorkspaceBody({
+  hidden,
+  documents,
+  diagnostics,
+}: ContentBrowserWorkspaceBodyProps) {
   const phone = usePhoneLayout();
   const [foldersOpen, setFoldersOpen] = useState(false);
   useEffect(() => {
@@ -301,10 +308,9 @@ export function ContentBrowserWorkspace({
     sourceControl,
     activeDocumentId,
     readAssetChunk,
-  } = useDocuments();
+  } = documents;
   const play = useOptionalPlay();
   const { pendingTarget, clearPendingTarget } = useProjectSearch();
-  const { diagnostics } = useValidation();
   const compileErrorGuids = useMemo(() => {
     const set = new Set<string>();
     for (const d of diagnostics) {
@@ -449,7 +455,9 @@ export function ContentBrowserWorkspace({
   );
   const folderRoot = browserRoots.find((root) => root.id === selectedRoot.rootId) ?? browserRoots[0]!;
 
-  useEffect(() => {
+  // Layout effects, so a reveal that is not a discrete event (closing a
+  // dirty tab after Save) never paints a folder the browser is about to leave.
+  useLayoutEffect(() => {
     if (
       !showPluginContent &&
       isPluginContentFolderPath(selectedFolderPath, pluginContentPrefixes)
@@ -477,7 +485,7 @@ export function ContentBrowserWorkspace({
     });
   }, [assetRegistry, browserRoots, registryEpoch]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     setCollapsedFolders((current) => {
       const next = withAutoCollapsedNestedFolders(
         current,
@@ -3276,5 +3284,33 @@ export function ContentBrowserWorkspace({
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  );
+}
+
+/**
+ * Skips every render while the browser stays hidden behind another tab: it
+ * shows nothing per-edit state can change there. The hide itself still
+ * renders (tiles unmount, decode pauses), and showing it renders the current
+ * documents, registry, thumbnails, locks and diagnostics. Context updates the
+ * body reads itself (search reveals, Play, phone layout) still reach it.
+ */
+const MemoContentBrowserWorkspaceBody = memo(
+  ContentBrowserWorkspaceBody,
+  (previous, next) => previous.hidden && next.hidden,
+);
+
+export function ContentBrowserWorkspace({
+  hidden = false,
+}: {
+  hidden?: boolean;
+} = {}) {
+  const documents = useDocuments();
+  const { diagnostics } = useValidation();
+  return (
+    <MemoContentBrowserWorkspaceBody
+      hidden={hidden}
+      documents={documents}
+      diagnostics={diagnostics}
+    />
   );
 }
