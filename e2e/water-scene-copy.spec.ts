@@ -10,6 +10,9 @@ const linear = (channel: number) => {
   return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
 };
 
+/** Babylon Constants.TEXTUREFORMAT_* values. */
+const FORMAT = { rgba: 5, bgra: 12, depth24Stencil8: 13, depth32Float: 14 };
+
 const TASKS = {
   // The default Play/backbuffer view: the copy draws through an own pair only while water is visible,
   // and the split decides before the output clear runs.
@@ -25,9 +28,16 @@ const TASKS = {
   ],
 };
 
+// Medium's half-resolution copy on both forms, and Refraction Resolution 0.25, where one copy texel covers 4×4 pixels.
+const CASES = [
+  { pipeline: "legacyDisplay", scale: 0.5 },
+  { pipeline: "sceneLinear", scale: 0.5 },
+  { pipeline: "legacyDisplay", scale: 0.25 },
+] as const;
+
 for (const backend of ["webgl2", "webgpu"] as const) {
-  for (const pipeline of ["legacyDisplay", "sceneLinear"] as const) {
-    test(`Water scene copy holds linear colour and view depth after the opaque pass on ${backend} ${pipeline}`, async ({ page }, testInfo) => {
+  for (const { pipeline, scale } of CASES) {
+    test(`Water scene copy holds linear colour and view depth after the opaque pass on ${backend} ${pipeline} at ${scale}`, async ({ page }, testInfo) => {
       test.setTimeout(90_000);
       const errors: string[] = [];
       page.on("pageerror", (error) => errors.push(error.message));
@@ -36,16 +46,22 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       });
       await page.goto("/?test=1&waterSceneCopyProof=1");
       await page.waitForFunction(() => typeof (window as unknown as { __babylonslateWaterSceneCopyProof?: unknown }).__babylonslateWaterSceneCopyProof === "function");
-      const result = await page.evaluate(({ backend, pipeline }) =>
+      const result = await page.evaluate(({ backend, pipeline, scale }) =>
         (window as unknown as { __babylonslateWaterSceneCopyProof: typeof runWaterSceneCopyProof })
-          .__babylonslateWaterSceneCopyProof(backend, pipeline), { backend, pipeline });
+          .__babylonslateWaterSceneCopyProof(backend, pipeline, scale), { backend, pipeline, scale });
       await testInfo.attach("water-scene-copy", { body: JSON.stringify(result), contentType: "application/json" });
       expect(errors).toEqual([]);
       expect(result.prepared).toEqual({ path: "frameGraph" });
       expect(result.tasks).toEqual(TASKS[pipeline]);
       expect(result.visibleWork.ownTargets).toBe(pipeline === "legacyDisplay");
-      // Medium quality copies at half resolution.
-      expect(result.copy).toMatchObject({ width: 48, height: 32, scale: 0.5, invSize: [1 / 96, 1 / 64] });
+      // Babylon formats: the RGBA16F copy, then the own pair. On WebGPU the pair matches the swap chain colour and
+      // the main pass's depth24plus-stencil8, so its draws reuse the direct path's render pipelines.
+      const own = backend === "webgpu"
+        ? [result.swapChainFormat === "bgra8unorm" ? FORMAT.bgra : FORMAT.rgba, FORMAT.depth24Stencil8]
+        : [FORMAT.rgba, FORMAT.depth32Float];
+      expect(result.visibleWork.formats).toEqual(pipeline === "legacyDisplay" ? [FORMAT.rgba, ...own] : [FORMAT.rgba]);
+      // The copy is the output size × Refraction Resolution; invSize stays 1 / output size.
+      expect(result.copy).toMatchObject({ width: 96 * scale, height: 64 * scale, scale, invSize: [1 / 96, 1 / 64] });
       // rgb is the opaque frame's colour in linear space (decoded from display colour, or the Scene Linear
       // colour as-is); a is linear view depth (the wall is ten units away).
       for (let channel = 0; channel < 3; channel += 1) {
@@ -55,12 +71,15 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       expect(result.copy.wall[3]).toBeCloseTo(10, 1);
       // The 65000 sky sentinel is stored as the nearest half float (64992); readers treat a >= 64000 as sky.
       expect(result.copy.sky[3]).toBeGreaterThanOrEqual(64000);
-      // A downsampled texel keeps the nearest depth of its 2×2 footprint (wall over sky) and averages its colour.
+      // A downsampled texel keeps the nearest depth of its whole footprint: here a single wall column (a
+      // one-pixel occluder) beside sky. Its colour is the linear average of every covered pixel.
+      const footprint = result.copy.footprint;
+      expect(footprint).toBe(1 / scale);
       expect(result.copy.edge[3]).toBeCloseTo(10, 1);
       expect(result.copy.beyondEdge[3]).toBeGreaterThanOrEqual(64000);
       for (let channel = 0; channel < 3; channel += 1) {
         const wall = linear(result.outputVisible.wall[channel]!), sky = linear(result.outputVisible.sky[channel]!);
-        expect(result.copy.edge[channel]).toBeCloseTo((wall + sky) / 2, 1.7);
+        expect(result.copy.edge[channel]).toBeCloseTo((wall + (footprint - 1) * sky) / footprint, 1.7);
         expect(result.copy.beyondEdge[channel]).toBeCloseTo(sky, 1.7);
       }
       // Splitting the object pass (and swapping onto the own pair) draws the same output as the direct path.

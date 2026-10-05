@@ -99,7 +99,7 @@ function sampleableOutput(camera: Camera): boolean {
   return depth !== null && depth !== undefined && !HasStencilAspect(depth.format);
 }
 
-/** A copy texel's size for an output dimension, as FrameGraph resolves a percentage size. */
+/** A target dimension for an output dimension and scale, as FrameGraph resolves a percentage size. */
 function copyDimension(output: number, scale: number): number {
   return Math.floor((scale * 100 * output) / 100);
 }
@@ -461,7 +461,7 @@ export class WaterSceneCopyGraph {
     const engine = options.frameGraph.engine;
     const specs = targetSpecs(options.frameGraph.scene, engine, options.scale, !options.scene);
     const followsBackbuffer = !options.scene && !options.output.texture;
-    const lease = beginManagedRenderAllocation(engine, plannedBytes(specs, options.width, options.height, followsBackbuffer));
+    const lease = beginManagedRenderAllocation(engine, plannedBytes(specs, options.width, options.height));
     if (!lease) {
       console.warn("Water scene copy disabled: shared Engine render-target budget is exhausted.");
       return undefined;
@@ -498,7 +498,7 @@ export class WaterSceneCopyGraph {
       const handle = textures.createRenderTargetTexture(spec.name, {
         size: followsBackbuffer
           ? { width: spec.scale * 100, height: spec.scale * 100 }
-          : { width: Math.max(1, Math.round(options.width * spec.scale)), height: Math.max(1, Math.round(options.height * spec.scale)) },
+          : { width: Math.max(1, copyDimension(options.width, spec.scale)), height: Math.max(1, copyDimension(options.height, spec.scale)) },
         sizeIsPercentage: followsBackbuffer,
         options: { createMipMaps: false, samples: 1, types: [spec.type], formats: [spec.format], useSRGBBuffers: [false] },
       });
@@ -603,7 +603,7 @@ export class WaterSceneCopyGraph {
   resize(width: number, height: number): boolean {
     if (!this.followsBackbuffer || this.tasksDisposed) return false;
     const specs = this.targets.map((target) => target.spec);
-    const lease = beginManagedRenderAllocation(this.graph.engine, plannedBytes(specs, width, height, true));
+    const lease = beginManagedRenderAllocation(this.graph.engine, plannedBytes(specs, width, height));
     if (!lease) {
       console.warn("Water scene copy resize refused: shared Engine render-target budget is exhausted.");
       return false;
@@ -721,10 +721,16 @@ export class WaterSceneCopyGraph {
   }
 
   /** Planning and per-frame work, for diagnostics, tests and proofs. */
-  diagnostics(): { ownTargets: boolean; scale: number; renderPassId: number; frames: number; visibleFrames: number; copies: number } {
+  diagnostics(): {
+    ownTargets: boolean; scale: number; renderPassId: number; frames: number; visibleFrames: number; copies: number;
+    /** Allocated Babylon texture formats: the copy, then any own colour and depth (-1 before allocation). */
+    formats: number[];
+  } {
+    const textures = this.graph.textureManager;
     return {
       ownTargets: this.ownTargets, scale: this.scale, renderPassId: this.passId,
       frames: this.frames, visibleFrames: this.visibleFrames, copies: this.copy.draws,
+      formats: this.targets.map(({ handle }) => textures.getTextureFromHandle(handle)?.format ?? -1),
     };
   }
 
@@ -792,12 +798,12 @@ function targetSpecs(scene: Scene, engine: AbstractEngine, scale: number, own: b
 }
 
 /** The ledger charge for `specs` at an output size, as FrameGraph will size them. */
-function plannedBytes(specs: readonly TargetSpec[], width: number, height: number, followsBackbuffer: boolean): number {
+function plannedBytes(specs: readonly TargetSpec[], width: number, height: number): number {
   let bytes = 0;
   for (const spec of specs) {
     bytes += renderTargetAllocationBytes({
-      width: followsBackbuffer ? copyDimension(width, spec.scale) : Math.max(1, Math.round(width * spec.scale)),
-      height: followsBackbuffer ? copyDimension(height, spec.scale) : Math.max(1, Math.round(height * spec.scale)),
+      width: Math.max(1, copyDimension(width, spec.scale)),
+      height: Math.max(1, copyDimension(height, spec.scale)),
       format: spec.format, type: spec.type,
     });
   }

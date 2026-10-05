@@ -1,6 +1,6 @@
 /** Test-build-only readback of the water scene copy a ForwardSceneFrameGraph view produces. */
 import { Color3, Color4, Engine, FreeCamera, HemisphericLight, MeshBuilder, Scene, StandardMaterial, Vector3 } from "@babylonjs/core";
-import { createDefaultWaterDefinition, DEFAULT_RENDER_EFFECTS, normalizeWaterBody } from "@babylonslate/core";
+import { createDefaultWaterDefinition, DEFAULT_RENDER_EFFECTS, normalizeRenderingQuality, normalizeWaterBody } from "@babylonslate/core";
 import { createAppWebGpuEngine, createWaterMesh, setSceneRenderSettings, waterSceneCopyForPass } from "@babylonslate/render";
 import { ForwardSceneFrameGraph } from "@babylonslate/render/framegraph-forward-scene";
 import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
@@ -13,7 +13,10 @@ function fromHalf(bits: number): number {
   return sign * 2 ** (exponent - 15) * (1 + fraction / 1024);
 }
 
-export async function runWaterSceneCopyProof(backend: "webgl2" | "webgpu", pipeline: "legacyDisplay" | "sceneLinear" = "legacyDisplay") {
+/** `scale` is the Refraction Resolution: 0.5 (Medium) or 0.25, where one copy texel covers 4×4 output pixels. */
+export async function runWaterSceneCopyProof(
+  backend: "webgl2" | "webgpu", pipeline: "legacyDisplay" | "sceneLinear" = "legacyDisplay", scale: 0.5 | 0.25 = 0.5,
+) {
   const canvas = document.createElement("canvas");
   canvas.width = 96; canvas.height = 64;
   document.getElementById("root")!.append(canvas);
@@ -26,19 +29,24 @@ export async function runWaterSceneCopyProof(backend: "webgl2" | "webgpu", pipel
     // Play and the editor share one depth buffer across rendering groups.
     for (let group = 0; group < 4; group += 1) scene.setRenderingAutoClearDepthStencil(group, false);
     // Scene Linear adds a display stage: the copy then shares the chain's half-float scene targets.
-    if (pipeline === "sceneLinear")
-      setSceneRenderSettings(scene, { mode: "pbr", effects: { ...DEFAULT_RENDER_EFFECTS, colorPipeline: { version: 1, mode: "sceneLinear" } } });
+    if (pipeline === "sceneLinear" || scale !== 0.5)
+      setSceneRenderSettings(scene, {
+        ...(pipeline === "sceneLinear" ? { mode: "pbr", effects: { ...DEFAULT_RENDER_EFFECTS, colorPipeline: { version: 1, mode: "sceneLinear" } } } : {}),
+        ...(scale !== 0.5 ? { quality: normalizeRenderingQuality({ water: { refractionScale: scale } }) } : {}),
+      });
     scene.clearColor = new Color4(0.3, 0.55, 0.85, 1);
     new HemisphericLight("light", Vector3.Up(), scene);
     const camera = new FreeCamera("camera", new Vector3(0, 0, -10), scene);
     camera.setTarget(Vector3.Zero());
     camera.minZ = 1; camera.maxZ = 100;
     scene.activeCamera = camera;
-    // An unlit opaque wall over the left half of the view, ten units in front of the camera. Its right
-    // edge falls between output columns 46 and 47, inside copy texel 23, whose 2×2 footprint then holds
-    // both wall and sky.
+    // An unlit opaque wall over the left half of the view, ten units in front of the camera. Its last
+    // column is the first of a copy texel's footprint (column 46 of texel 23 at 0.5; 44 of texel 11 at
+    // 0.25), so that texel holds one wall column and the rest sky: a one-pixel occluder.
     const wall = MeshBuilder.CreatePlane("wall", { width: 20, height: 20 }, scene);
-    const edgeColumn = canvas.width / 2 - 1;
+    const footprint = Math.round(1 / scale);
+    const edgeTexel = Math.floor((canvas.width / 2 - 1) / footprint);
+    const edgeColumn = edgeTexel * footprint + 1;
     wall.position.x = -10 + (2 * edgeColumn / canvas.width - 1) * 10 * Math.tan(camera.fov / 2) * (canvas.width / canvas.height);
     const paint = new StandardMaterial("wall", scene);
     paint.disableLighting = true;
@@ -91,8 +99,8 @@ export async function runWaterSceneCopyProof(backend: "webgl2" | "webgpu", pipel
     const copy = {
       width: texture.width, height: texture.height, invSize: [...entry.invSize], scale: entry.scale,
       wall: texel(Math.floor(texture.width * 0.25)), sky: texel(Math.floor(texture.width * 0.75)),
-      // The texel straddling the wall edge, and its sky-only neighbour.
-      edge: texel(Math.floor(edgeColumn * entry.scale)), beyondEdge: texel(Math.floor(edgeColumn * entry.scale) + 1),
+      // The texel straddling the wall edge (one wall column of `footprint`), and its sky-only neighbour.
+      footprint, edge: texel(edgeTexel), beyondEdge: texel(edgeTexel + 1),
     };
     const visibleWork = graph.waterSceneCopyDiagnostics()!;
     // Without visible water the direct path draws the same frame and no copy runs.
@@ -100,7 +108,8 @@ export async function runWaterSceneCopyProof(backend: "webgl2" | "webgpu", pipel
     const hidden = await frame();
     const hiddenWork = graph.waterSceneCopyDiagnostics()!;
     return {
-      backend, pipeline, prepared, visibleResult: visible.result, hiddenResult: hidden.result, tasks: graph.taskNames(), copy,
+      backend, pipeline, scale, prepared,
+      swapChainFormat: engine.isWebGPU ? (engine as unknown as { _options: { swapChainFormat?: string } })._options.swapChainFormat : undefined, visibleResult: visible.result, hiddenResult: hidden.result, tasks: graph.taskNames(), copy,
       outputVisible: visible.output, outputHidden: hidden.output, visibleWork, hiddenWork,
     };
   } finally {
