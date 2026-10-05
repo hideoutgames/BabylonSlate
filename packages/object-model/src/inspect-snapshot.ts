@@ -89,7 +89,10 @@ export function sanitizeInspectValue(value: unknown): unknown {
           return formatValue(current);
         }
         if (current instanceof Map) {
-          return [...current].map(([key, entryValue]) => ({ key, value: entryValue }));
+          const entries = [...current];
+          return entries.every(([key]) => typeof key === "string")
+            ? Object.fromEntries(entries)
+            : entries.map(([key, entryValue]) => ({ key, value: entryValue }));
         }
         return current;
       }),

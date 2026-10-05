@@ -204,10 +204,19 @@ describe("createDebugInspectSnapshot", () => {
 });
 
 describe("sanitizeInspectValue", () => {
-  it("retains distinct numeric and text map keys", () => {
-    expect(sanitizeInspectValue(new Map<unknown, unknown>([[2, 7], ["2", { Tags: [9] }]]))).toEqual([
-      { key: 2, value: 7 }, { key: "2", value: { Tags: [9] } },
-    ]);
+  it.each([
+    { name: "numeric", entries: [[2, 7], [3, { Tags: [9] }]], expected: [{ key: 2, value: 7 }, { key: 3, value: { Tags: [9] } }] },
+    { name: "mixed numeric and text", entries: [[2, 7], ["2", { Tags: [9] }]], expected: [{ key: 2, value: 7 }, { key: "2", value: { Tags: [9] } }] },
+  ])("retains $name map keys as typed entries", ({ entries, expected }) => {
+    expect(sanitizeInspectValue(new Map(entries as Array<[unknown, unknown]>))).toEqual(expected);
+  });
+
+  it("preserves string-key map objects and sanitizes their nested references", () => {
+    const actor = new Actor({ classId: "Actor", guid: "a1" });
+    expect(sanitizeInspectValue(new Map([["Collection", new Map([["Target", actor]])]]))).toEqual({
+      Collection: { Target: { guid: "a1", classId: "Actor" } },
+    });
+    expect(sanitizeInspectValue(new Map())).toEqual({});
   });
 
   it("keeps primitives and converts BObject refs", () => {

@@ -11,12 +11,15 @@ describe("playInspectPropertyRows", () => {
     const rows = playInspectPropertyRows([
       { id: "states", label: "States", type: "array:tag", value: [2, 7] },
       { id: "rules", label: "Rules", type: "map:tag=>struct:engine:TagContainer", value: [{ key: 2, value: { Tags: [7, 9] } }] },
+      { id: "named", label: "Named", type: "map:string=>tag", value: { Alive: 7 } },
     ]);
     expect(rows).toMatchObject([
       { id: "states:0", kind: "tag", value: 2, disabled: true },
       { id: "states:1", kind: "tag", value: 7, disabled: true },
       { id: "rules:0:key", kind: "tag", value: 2, disabled: true },
       { id: "rules:0:value", kind: "tag-container", value: { Tags: [7, 9] }, disabled: true },
+      { id: "named:0:key", kind: "text", value: "Alive", disabled: true },
+      { id: "named:0:value", kind: "tag", value: 7, disabled: true },
     ]);
   });
 
