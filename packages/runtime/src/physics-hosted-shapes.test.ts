@@ -108,8 +108,11 @@ describe("collidable static descendants of simulated bodies", () => {
       // The paddle's face ends at x = 4.5; the ball it pushed stays in front of it.
       expect(ball.transform.position.x - 0.5).toBeGreaterThan(4.45);
       expect(sync.getBackend().getBodyVelocity("body:ball")!.linear.x).toBeGreaterThan(2.5);
-      // Casts report the hosted shape's own actor.
-      expect(sync.lineTrace({ x: 4, y: 3, z: 0 }, { x: 4, y: -3, z: 0 }).actorId).toBe("paddle");
+      // Havok queries are per body and name the host; ignoring the hosted
+      // child still skips its shape, which collision channels rely on.
+      const start = { x: 4, y: 3, z: 0 }, end = { x: 4, y: -3, z: 0 };
+      expect(sync.lineTrace(start, end).actorId).toBe("pusher");
+      expect(sync.lineTrace(start, end, { ignoreActorIds: ["paddle"] }).hit).toBe(false);
     } finally {
       sync.dispose();
     }
