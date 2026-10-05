@@ -36,6 +36,8 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { normalizeTag, normalizeTagContainer } from "@babylonslate/core";
+import { pinDefaultPropertyKey } from "@babylonslate/scripting";
 import { PlusIcon } from "lucide-react";
 import { Button } from "@babylonslate/ui/components/button";
 import {
@@ -2161,10 +2163,28 @@ function GraphEditorCanvas({
     return edgeStyleForPin({ kind: "exec" });
   }, [nodes, pendingConnect, pendingPin, pinDisplayTypes]);
 
+  const onPinDefaultChange = useCallback((nodeId: string, pinId: string, value: unknown) => {
+    if (readOnly) return;
+    const current = graphStateRef.current;
+    const node = current.nodes.find((entry) => entry.id === nodeId);
+    if (!node || isDisabledNode(node) || !hasSerializedPins(node.data)) return;
+    const pin = node.data.__pins.find((entry) => entry.id === pinId);
+    if (!pin || pin.direction !== "in" || pin.kind !== "data" || pin.reference === "required") return;
+    const type = pinDisplayTypesRef.current.get(pinTypeKey(nodeId, pinId)) ?? pin.type;
+    if (type.kind !== "tag" && !(type.kind === "structRef" && type.guid === "engine:TagContainer")) return;
+    const normalized = type.kind === "tag" ? normalizeTag(value) : normalizeTagContainer(value);
+    const next = current.nodes.map((entry) => entry.id === nodeId
+      ? { ...entry, data: { ...entry.data, [pinDefaultPropertyKey(pinId)]: normalized } } : entry);
+    graphStateRef.current = { ...current, nodes: next };
+    setNodes(next);
+    emitChange(next, current.edges);
+  }, [emitChange, readOnly]);
+
   const contextValue = useMemo(
     () => ({
       pendingPin,
       onPinTap,
+      onPinDefaultChange: readOnly ? undefined : onPinDefaultChange,
       nodeErrorCount,
       pinHasError,
       pinDisplayType,
@@ -2189,6 +2209,8 @@ function GraphEditorCanvas({
       nodeErrorCount,
       onNavigateRequest,
       onPinTap,
+      onPinDefaultChange,
+      readOnly,
       pendingPin,
       pinDisplayType,
       pinTypeNames,

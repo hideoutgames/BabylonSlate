@@ -316,3 +316,5 @@ export {
   pinShapeForContainer,
   type PinShape,
 } from "./pin-shape-glyph";
+
+export { TagPicker, TagProvider, useTags, tagDisplayName, type TagApi, type TagPickerProps } from "./tag-picker";

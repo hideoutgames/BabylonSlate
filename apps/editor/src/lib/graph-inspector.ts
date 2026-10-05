@@ -1,4 +1,4 @@
-import { INPUT_KEYS } from "@babylonslate/core";
+import { INPUT_KEYS, normalizeTag, normalizeTagContainer } from "@babylonslate/core";
 import type {
   ParameterRow,
   PinListRow,
@@ -12,6 +12,7 @@ import {
   humanizePropertyLabel,
 } from "@babylonslate/editor-kit";
 import type { GraphPin, LiteralPinDefault, PinType } from "@babylonslate/scripting";
+import { displayPinTypesForGraph } from "@babylonslate/graph-ui";
 import {
   BOOL,
   ENGINE_ENUMS,
@@ -35,6 +36,7 @@ import {
   pinDefaultPropertyKey,
   pinTypeForMember,
   pinTypeForVariable,
+  pinTypeKey,
   variableTypeFromPinType,
   vec3TupleToObject,
   vec4TupleToObject,
@@ -61,10 +63,18 @@ export function pinsFromNodeData(data: Record<string, unknown>): GraphPin[] {
 
 export function inspectorLiteralPinDefaults(
   node: { id: string; data: Record<string, unknown> },
-  edges: ReadonlyArray<{ target: string; targetHandle?: string }>,
+  edges: ReadonlyArray<{ source?: string; sourceHandle?: string; target: string; targetHandle?: string }>,
+  nodes?: ReadonlyArray<{ id: string; data: Record<string, unknown> }>,
 ) {
+  const display = nodes ? displayPinTypesForGraph(nodes, edges.map((edge) => ({
+    ...edge,
+    source: edge.source ?? "",
+  }))) : undefined;
   return listUnconnectedLiteralPinDefaults(
-    pinsFromNodeData(node.data),
+    pinsFromNodeData(node.data).map((pin) => ({
+      ...pin,
+      type: display?.get(pinTypeKey(node.id, pin.id)) ?? pin.type,
+    })),
     node.data,
     connectedInputPinIds(edges, node.id),
   );
@@ -159,7 +169,7 @@ function flattenStructFieldRows(
       rows.push(inputTypeRow(fieldValue, (next) => onChange({ ...instance, [field.name]: next }), mapping?.assetEntries, label));
       continue;
     }
-    if (type.kind === "structRef") {
+    if (type.kind === "structRef" && type.guid !== "engine:TagContainer") {
       const nested = type.guid ? schemas?.structs[type.guid] : undefined;
       if (nested) {
         rows.push(
@@ -240,6 +250,16 @@ export function pinDefaultPropertyRows(
     const key = pinDefaultPropertyKey(entry.pinId);
     const typeDefault = defaultJsValue(entry.type);
     switch (entry.type.kind) {
+      case "tag":
+        rows.push({
+          kind: "tag",
+          id: entry.pinId,
+          label: entry.name,
+          value: normalizeTag(entry.value),
+          defaultValue: 0,
+          onChange: (value) => onPatch({ [key]: value }),
+        });
+        break;
       case "bool":
         rows.push({
           kind: "boolean",
@@ -420,6 +440,17 @@ export function pinDefaultPropertyRows(
         break;
       }
       case "structRef": {
+        if (entry.type.guid === "engine:TagContainer") {
+          rows.push({
+            kind: "tag-container",
+            id: entry.pinId,
+            label: entry.name,
+            value: normalizeTagContainer(entry.value),
+            defaultValue: { Tags: [] },
+            onChange: (value) => onPatch({ [key]: value }),
+          });
+          break;
+        }
         if (entry.type.guid === "engine:InputType") {
           rows.push(inputTypeRow(entry.value, (next) => onPatch({ [pinDefaultPropertyKey(entry.pinId)]: next }), mappingNames?.assetEntries, entry.name));
           break;
@@ -485,7 +516,7 @@ export function variableDefaultPropertyRows(
     onPickClass: options?.onPickClass,
   };
   if (type.kind === "structRef" && type.guid === "engine:InputType") return [inputTypeRow(value, onChange, options?.assetEntries, label)];
-  if (type.kind === "structRef") {
+  if (type.kind === "structRef" && type.guid !== "engine:TagContainer") {
     const schema = type.guid ? options?.schemas?.structs[type.guid] : undefined;
     if (!schema) return [];
     return flattenStructFieldRows(
@@ -505,6 +536,36 @@ export function variableDefaultPropertyRows(
     },
     mapping,
   );
+}
+
+/** Dynamic Tag cases keep numeric IDs for execution and readable pin names. */
+export function tagNodePropertyRows(
+  typeId: string,
+  data: Record<string, unknown>,
+  onPatch: (patch: Record<string, unknown>) => void,
+  tags: ReadonlyArray<{ id: number; path: string }>,
+): PropertyRow[] {
+  if (typeId !== "tags.switch" && typeId !== "tags.select") return [];
+  return [{
+    kind: "tag-container",
+    id: "cases",
+    label: "Cases",
+    value: normalizeTagContainer({ Tags: data.cases }),
+    defaultValue: { Tags: [] },
+    onChange: (value) => {
+      const cases = normalizeTagContainer(value).Tags;
+      const priorNames = data.caseNames && typeof data.caseNames === "object"
+        ? data.caseNames as Record<string, unknown> : {};
+      const names = new Map(tags.map((tag) => [tag.id, tag.path]));
+      onPatch({
+        cases,
+        caseNames: Object.fromEntries(cases.map((id) => [
+          id,
+          names.get(id) ?? (typeof priorNames[id] === "string" ? priorNames[id] : "Unresolved Tag"),
+        ])),
+      });
+    },
+  }];
 }
 
 export function enumNodePropertyRows(

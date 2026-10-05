@@ -1,6 +1,6 @@
 import { defaultJsValue } from "./pin-defaults";
 import type { PinType } from "./types";
-import { pinTypeForMember } from "./member-pin-type";
+import { pinTypeForMember, pinTypeForVariable } from "./member-pin-type";
 import { ENGINE_ENUMS, ENGINE_STRUCTS } from "./engine-types";
 import type { EnumMember, StructField } from "./type-assets";
 
@@ -52,8 +52,9 @@ export function defaultValueForPinType(
     return first || defaultJsValue(type);
   }
   if (type.kind === "structRef") {
+    if (type.guid === "engine:TagContainer") return { Tags: [] };
     const schema = type.guid ? schemas?.structs[type.guid] : undefined;
-    if (!schema) return {};
+    if (!schema) return defaultJsValue(type);
     return structInstanceDefault(schema.fields, schemas, new Set([type.guid]));
   }
   return defaultJsValue(type);
@@ -85,9 +86,13 @@ function defaultValueForStructField(
   schemas: TypeSchemas | undefined,
   visiting: ReadonlySet<string>,
 ): unknown {
-  if (field.defaultValue !== undefined) return field.defaultValue;
-  const type = pinTypeForMember(field.typeId, field.typeClassId);
+  if (field.defaultValue !== undefined) {
+    return field.container === "array" && Array.isArray(field.defaultValue)
+      ? [...field.defaultValue] : field.defaultValue;
+  }
+  const type = pinTypeForVariable(field);
   if (type.kind === "structRef" && type.guid) {
+    if (type.guid === "engine:TagContainer") return { Tags: [] };
     if (visiting.has(type.guid)) return {};
     const nested = schemas?.structs[type.guid];
     if (!nested) return {};
@@ -112,7 +117,7 @@ export function hydrateStructInstance(
   for (const field of fields) {
     if (!field.name) continue;
     if (Object.prototype.hasOwnProperty.call(authored, field.name)) {
-      const type = pinTypeForMember(field.typeId, field.typeClassId);
+      const type = pinTypeForVariable(field);
       if (type.kind === "structRef") {
         const nested = type.guid ? schemas?.structs[type.guid] : undefined;
         result[field.name] = nested

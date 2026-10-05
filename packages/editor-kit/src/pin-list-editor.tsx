@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { normalizeTag } from "@babylonslate/core";
+import { TagPicker } from "./tag-picker";
 import { VariableTypeFields, type VariableContainer } from "./variable-type-fields";
 import { Button } from "@babylonslate/ui/components/button";
 import { ListRowActions } from "./list-row-actions";
@@ -82,8 +84,9 @@ function patchRow(
 ): PinListRow[] {
   return rows.map((row) => {
     if (row.id !== id) return row;
-    const next = { ...row, ...patch };
-    if ("type" in patch && !pinPickerKeepsTypeClassId(String(patch.type))) {
+    const resolved = patch.type === "tagContainer" ? { ...patch, type: "struct", typeClassId: "engine:TagContainer" } : patch;
+    const next = { ...row, ...resolved };
+    if ("type" in resolved && !pinPickerKeepsTypeClassId(String(resolved.type))) {
       delete next.typeClassId;
     }
     return next;
@@ -223,7 +226,7 @@ export function PinListEditor({
                 }
               />
               <PinTypePicker
-                value={row.type}
+                value={row.type === "struct" && row.typeClassId === "engine:TagContainer" ? "tagContainer" : row.type}
                 types={types}
                 onChange={(type) => {
                   if (readOnly) return;
@@ -341,7 +344,13 @@ export function PinListEditor({
                     <FieldLabel htmlFor={`${testIdPrefix}-${row.id}-default`}>
                       Default
                     </FieldLabel>
-                    <Input
+                    {row.type === "tag" ? <TagPicker
+                      mode="single"
+                      id={`${testIdPrefix}-${row.id}-default`}
+                      value={normalizeTag(Number(row.defaultValue ?? 0))}
+                      onChange={(tag) => onChange(patchRow(rows, row.id, { defaultValue: String(tag) }))}
+                      data-testid={`${testIdPrefix}-${row.id}-default`}
+                    /> : <Input
                       id={`${testIdPrefix}-${row.id}-default`}
                       className="h-7 min-h-7"
                       value={row.defaultValue ?? ""}
@@ -353,7 +362,7 @@ export function PinListEditor({
                           }),
                         )
                       }
-                    />
+                    />}
                   </Field>
                 ) : null}
                 {showEnumValues ? (

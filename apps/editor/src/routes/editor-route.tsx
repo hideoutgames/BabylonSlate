@@ -27,6 +27,7 @@ import {
 } from "../context/document-context";
 import { AssetOpenDocumentsProvider } from "../context/asset-open-provider";
 import { AssetCreateDocumentsProvider } from "../context/asset-create-provider";
+import { TagDocumentsProvider } from "../context/tag-documents-provider";
 import { EditorSessionStateProvider } from "../context/editor-session-state-context";
 import { PlayProvider, usePlay } from "../context/play-context";
 import { KeybindProvider } from "../context/keybind-context";
@@ -443,6 +444,7 @@ export default function EditorRoute({
     >
       <AssetOpenDocumentsProvider>
         <AssetCreateDocumentsProvider>
+        <TagDocumentsProvider>
           <ValidationProvider>
             <PlayProvider>
               <MaterialRenderControlProvider>
@@ -461,6 +463,7 @@ export default function EditorRoute({
               </MaterialRenderControlProvider>
             </PlayProvider>
           </ValidationProvider>
+        </TagDocumentsProvider>
         </AssetCreateDocumentsProvider>
       </AssetOpenDocumentsProvider>
     </EditorSessionStateProvider>,

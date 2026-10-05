@@ -29,6 +29,47 @@ function aiScene(properties: Record<string, unknown>): SerializedScene {
 }
 
 describe("runtime behaviour tree evaluation", () => {
+  it("inspects the tree's declared Tag blackboard before its first tick without losing map keys", () => {
+    const commands: CommandMessage[] = [];
+    const tree = createDefaultBehaviourTree("Tags");
+    tree.blackboardGuid = "board";
+    const runtime = createInProcessRuntime({
+      seed: 1, seedDemoActors: false,
+      playScene: aiScene({ treeGuid: "tree" }),
+      behaviourTrees: { tree },
+      blackboards: {
+        board: {
+          name: "State",
+          keys: [
+            { name: "Current", type: { kind: "tag" }, defaultValue: 2 },
+            { name: "Allowed", type: { kind: "structRef", guid: "engine:TagContainer" }, defaultValue: { Tags: [2, 3] } },
+            { name: "History", type: { kind: "array", element: { kind: "tag" } }, defaultValue: [2, 3] },
+            { name: "Lookup", type: { kind: "map", key: { kind: "tag" }, value: { kind: "structRef", guid: "engine:TagContainer" } }, defaultValue: new Map([[2, { Tags: [3] }]]) },
+          ],
+        },
+      },
+      onCommand: (command) => commands.push(command),
+    });
+    runtime.start();
+    runtime.realizePlayWorld();
+    runtime.pause();
+    runtime.executeConsoleCommand("behaviourtreedebug on");
+    expect(commands.filter((command) => command.type === "behaviourTreeSnapshot").at(-1)).toMatchObject({
+      trees: [{
+        status: "idle",
+        blackboard: {
+          Current: 2, Allowed: { Tags: [2, 3] }, History: [2, 3],
+          Lookup: [{ key: 2, value: { Tags: [3] } }],
+        },
+        blackboardTypes: {
+          Current: "tag", Allowed: "struct:engine:TagContainer", History: "array:tag",
+          Lookup: "map:tag=>struct:engine:TagContainer",
+        },
+      }],
+    });
+    runtime.stop();
+  });
+
   it("safely inspects cyclic and bigint custom blackboard values without changing runtime values", async () => {
     const commands: CommandMessage[] = [];
     const tree = createDefaultBehaviourTree("Custom Logic");

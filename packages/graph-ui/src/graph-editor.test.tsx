@@ -2,7 +2,7 @@ import { act, fireEvent, render, cleanup, screen, waitFor } from "@testing-libra
 import { useStore } from "@xyflow/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDefaultGraph } from "@babylonslate/core";
-import { DRAG_ARM_MS } from "@babylonslate/editor-kit";
+import { DRAG_ARM_MS, TagProvider } from "@babylonslate/editor-kit";
 import {
   GRAPH_DEFAULT_ZOOM,
   GRAPH_MIN_ZOOM,
@@ -4632,3 +4632,50 @@ describe("Particle Graph canvas", () => {
   });
 });
 
+
+
+it("edits a Tag pin through its hierarchy and serializes the numeric default", () => {
+  const onChange = vi.fn();
+  const graph: GraphDocument = { nodes: [{ id: "tag-node", type: "tags.make", position: { x: 0, y: 0 }, data: {
+    __nodeType: "tags.make", title: "Make Tag", __pins: [{ id: "value", name: "Value", kind: "data", direction: "in", type: { kind: "tag" } }],
+  } }], edges: [] };
+  const { rerender } = render(<TagProvider entries={[{ id: 8, path: "State", parentId: 0 }]}>
+    <GraphEditor initialGraph={graph} onChange={onChange} />
+  </TagProvider>);
+  fireEvent.click(screen.getByTestId("pin-tag-tag-node-value"));
+  fireEvent.keyDown(screen.getByRole("tree", { name: "Tags" }), { key: "Enter" });
+  expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ nodes: [expect.objectContaining({
+    data: expect.objectContaining({ "default:value": 8 }),
+  })] }), expect.anything());
+  expect(screen.getByTestId("pin-tag-tag-node-value").textContent).toContain("State");
+  rerender(<TagProvider entries={[{ id: 8, path: "State", parentId: 0 }]}>
+    <GraphEditor initialGraph={graph} onChange={onChange} readOnly />
+  </TagProvider>);
+  expect(screen.getByTestId("pin-tag-tag-node-value").hasAttribute("disabled")).toBe(true);
+});
+
+
+it.each([
+  [{ kind: "tag" }, "pin-tag-select-option:8", 8],
+  [{ kind: "structRef", guid: "engine:TagContainer" }, "pin-tags-select-option:8", { Tags: [8] }],
+])("edits Select By Tag wildcard defaults after resolving %j", (type, pickerId, expected) => {
+  const onChange = vi.fn();
+  const graph: GraphDocument = { nodes: [
+    { id: "select", type: "tags.select", position: { x: 0, y: 0 }, data: { __nodeType: "tags.select", title: "Select By Tag", __pins: [
+      { id: "default", name: "Default", kind: "data", direction: "in", type: { kind: "resolvingWildcard" } },
+      { id: "option:8", name: "State", kind: "data", direction: "in", type: { kind: "resolvingWildcard" } },
+      { id: "out", name: "Value", kind: "data", direction: "out", type: { kind: "resolvingWildcard" } },
+    ] } },
+    { id: "consumer", type: "tags.consumer", position: { x: 400, y: 0 }, data: { __pins: [
+      { id: "value", name: "Value", kind: "data", direction: "in", type },
+    ] } },
+  ], edges: [{ id: "link", source: "select", sourceHandle: "out", target: "consumer", targetHandle: "value" }] };
+  render(<TagProvider entries={[{ id: 8, path: "State", parentId: 0 }]}>
+    <GraphEditor initialGraph={graph} onChange={onChange} />
+  </TagProvider>);
+  fireEvent.click(screen.getByTestId(String(pickerId)));
+  fireEvent.keyDown(screen.getByRole("tree", { name: "Tags" }), { key: "Enter" });
+  expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ nodes: expect.arrayContaining([expect.objectContaining({
+    id: "select", data: expect.objectContaining({ "default:option:8": expected }),
+  })]) }), expect.anything());
+});

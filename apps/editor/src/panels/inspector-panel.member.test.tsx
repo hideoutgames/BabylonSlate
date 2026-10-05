@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import type { SerializedGraph } from "@babylonslate/core";
 import { AssetOpenProvider } from "@babylonslate/editor-kit";
@@ -238,6 +238,17 @@ function expectDocumentOrder(earlier: HTMLElement, later: HTMLElement) {
 }
 
 describe("Inspector class member details", () => {
+  it("changes a structure variable to TagContainer with an empty selection", async () => {
+    renderMemberInspector("var-struct");
+    fireEvent.click(screen.getByTestId("inspector-member-type"));
+    fireEvent.click(await screen.findByTestId("search-item-tagContainer"));
+    await waitFor(() => expect(applyGraphChange).toHaveBeenCalled());
+    const member = applyGraphChange.mock.calls.at(-1)![1].members?.find((entry) => entry.id === "var-struct");
+    expect(member).toMatchObject({
+      typeId: "struct", typeClassId: "engine:TagContainer", defaultValue: { Tags: [] },
+    });
+  });
+
   it("shows PinTypePicker for a selected variable", () => {
     renderMemberInspector("var-1", true);
     expect(screen.getByTestId("class-var-type-var-1")).toBeTruthy();

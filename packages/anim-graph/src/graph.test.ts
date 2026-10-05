@@ -582,6 +582,26 @@ describe("anim graph v2 document", () => {
     expect(parsed?.parameters).toEqual(["moving", "attack"]);
   });
 
+  it("preserves Tag variable types and normalizes serialized TagContainer defaults", () => {
+    const parsed = parseAnimGraphDocument({
+      name: "Tagged State",
+      states: [], transitions: [], clips: [], parameters: [],
+      variables: [
+        { id: "current", name: "Current", typeId: "tag", defaultValue: 300 },
+        { id: "tags", name: "Tags", typeId: "struct", typeClassId: "engine:TagContainer", defaultValue: { Tags: [300, 300, 0, -1, "300", 301] } },
+        { id: "empty", name: "Empty", typeId: "tag", defaultValue: "300" },
+      ],
+    });
+    expect(parsed?.variables).toEqual([
+      { id: "current", name: "Current", typeId: "tag", defaultValue: 300 },
+      { id: "tags", name: "Tags", typeId: "struct", typeClassId: "engine:TagContainer", defaultValue: { Tags: [300, 301] } },
+      { id: "empty", name: "Empty", typeId: "tag", defaultValue: 0 },
+    ]);
+    expect(animGraphMembersFromVariables(parsed!.variables)[1]).toMatchObject({
+      typeId: "struct", typeClassId: "engine:TagContainer", defaultValue: { Tags: [300, 301] },
+    });
+  });
+
   it("migrates a named condition onto Exit State and leaves Enter State disconnected", () => {
     const parsed = parseAnimGraphDocument({
       name: "Loco",

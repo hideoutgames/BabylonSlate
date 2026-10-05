@@ -26,6 +26,23 @@ function createInspectWorld() {
 }
 
 describe("createDebugInspectSnapshot", () => {
+  it("preserves collection types and Tag map keys in inspect snapshots", () => {
+    const world = createInspectWorld();
+    world.classRegistry.register({
+      id: "TaggedActor", parentClassId: "Actor", kind: "actor", implementedInterfaces: [],
+      variables: [
+        { name: "states", type: "tag", container: "array", defaultValue: [2, 7] },
+        { name: "rules", type: "struct:engine:TagContainer", container: "map", keyTypeId: "tag", defaultValue: [{ key: 2, value: { Tags: [7] } }] },
+      ],
+    });
+    world.spawnActorNow(world.createActor({ guid: "tagged", classId: "TaggedActor" }));
+    const node = createDebugInspectSnapshot(world).nodes.find((entry) => entry.id === "tagged");
+    expect(node).toMatchObject({
+      variableTypes: { states: "array:tag", rules: "map:tag=>struct:engine:TagContainer" },
+      variables: { states: [2, 7], rules: [{ key: 2, value: { Tags: [7] } }] },
+    });
+  });
+
   it("lists Game Instance, parented actors, and components as a parentId tree", () => {
     const world = createInspectWorld();
     const parent = world.createActor({
@@ -187,6 +204,12 @@ describe("createDebugInspectSnapshot", () => {
 });
 
 describe("sanitizeInspectValue", () => {
+  it("retains distinct numeric and text map keys", () => {
+    expect(sanitizeInspectValue(new Map<unknown, unknown>([[2, 7], ["2", { Tags: [9] }]]))).toEqual([
+      { key: 2, value: 7 }, { key: "2", value: { Tags: [9] } },
+    ]);
+  });
+
   it("keeps primitives and converts BObject refs", () => {
     expect(sanitizeInspectValue(7)).toBe(7);
     expect(sanitizeInspectValue("ok")).toBe("ok");

@@ -8,6 +8,7 @@ import {
   UnlockIcon,
 } from "lucide-react";
 import { useState } from "react";
+import { TagGallery } from "./tag-gallery";
 import {
   AssetCreateProvider,
   type AssetCreateApi,
@@ -1589,6 +1590,8 @@ export function ComponentGallery() {
           </section>
 
           <GalleryForms />
+
+          <TagGallery />
 
           <GalleryResizable />
 

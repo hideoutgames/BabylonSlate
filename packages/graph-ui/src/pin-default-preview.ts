@@ -1,3 +1,4 @@
+import { normalizeTag, normalizeTagContainer, type TagContainer } from "@babylonslate/core";
 import {
   defaultJsValue,
   pinAcceptsLiteralDefault,
@@ -16,6 +17,8 @@ import { humanizePropertyLabel } from "@babylonslate/editor-kit";
 export type PinTypeNames = Readonly<Record<string, string>>;
 
 export type PinDefaultPreview =
+  | { kind: "tag"; value: number }
+  | { kind: "tag-container"; value: TagContainer }
   | { kind: "bool"; checked: boolean }
   | { kind: "color"; rgb: string }
   | {
@@ -151,6 +154,12 @@ export function pinDefaultPreview(
   if (connected) return null;
   if (pin.reference === "required") return null;
   if (pin.direction !== "in" || pin.kind !== "data") return null;
+  if (pin.type.kind === "tag") {
+    return { kind: "tag", value: normalizeTag(readPreviewValue(pin, properties)) };
+  }
+  if (pin.type.kind === "structRef" && pin.type.guid === "engine:TagContainer") {
+    return { kind: "tag-container", value: normalizeTagContainer(readPreviewValue(pin, properties)) };
+  }
   if (pin.type.kind === "enumRef") {
     return {
       kind: "enumRef",

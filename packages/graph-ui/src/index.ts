@@ -14,6 +14,7 @@ export * from "./graph-format";
 export * from "./graph-marquee";
 export * from "./graph-drop-hint";
 export * from "./node-theme";
+export { displayPinTypesForGraph, type PinDisplayLookup } from "./wildcard-display";
 export {
   BlueprintNodeShell,
   graphNodeTypes,
