@@ -3,11 +3,10 @@ import {
   EffectRenderer,
   EffectWrapper,
   ShaderStore,
-  type AbstractEngine,
   type CubeTexture,
   type RenderTargetWrapper,
-  type ThinEngine,
 } from "@babylonjs/core";
+import { withDrawingState } from "./engine-drawing-state";
 
 const shaderName = "slateEnvironmentBaseRadiance";
 for (const wgsl of [false, true]) {
@@ -193,71 +192,5 @@ export async function readEnvironmentBaseRadiance(
     target?.dispose();
     renderer?.dispose();
     effect.dispose();
-  }
-}
-
-/** Pinned 9.20 adapter: preserve exact framebuffer attachment and render state. */
-function withDrawingState<T>(engine: AbstractEngine, draw: () => T): T {
-  const viewport = engine.currentViewport && { ...engine.currentViewport };
-  const width = engine.getRenderWidth(),
-    height = engine.getRenderHeight();
-  const target = engine._currentRenderTarget;
-  const webgl = engine.isWebGPU ? null : (engine as ThinEngine);
-  const framebuffer = webgl?._currentFramebuffer;
-  const webgpu = engine as AbstractEngine & {
-    _rttRenderPassWrapper?: {
-      colorAttachmentViewDescriptor?: {
-        baseArrayLayer?: number;
-        baseMipLevel?: number;
-      };
-    };
-  };
-  const attachment =
-    webgpu._rttRenderPassWrapper?.colorAttachmentViewDescriptor;
-  const layer = attachment?.baseArrayLayer ?? 0,
-    mip = attachment?.baseMipLevel ?? 0;
-  const depth = engine.depthCullingState;
-  const savedDepth = {
-    depthTest: depth.depthTest,
-    depthMask: depth.depthMask,
-    depthFunc: depth.depthFunc,
-    cull: depth.cull,
-    cullFace: depth.cullFace,
-    frontFace: depth.frontFace,
-    zOffset: depth.zOffset,
-    zOffsetUnits: depth.zOffsetUnits,
-  };
-  const stencil = engine.stencilState.stencilTest;
-  const stencilMaterial = engine.stencilStateComposer.stencilMaterial;
-  const alpha = engine.getAlphaMode(),
-    color = engine.getColorWrite();
-  try {
-    return draw();
-  } finally {
-    if (webgl) {
-      webgl._bindUnboundFramebuffer(framebuffer ?? null);
-      engine._currentRenderTarget = target;
-    } else if (target) {
-      engine.bindFramebuffer(
-        target,
-        target.isCube ? layer % 6 : 0,
-        width,
-        height,
-        true,
-        mip,
-        target.isCube ? Math.floor(layer / 6) : layer,
-      );
-    } else engine.restoreDefaultFramebuffer();
-    engine.setViewport(
-      viewport ?? { x: 0, y: 0, width: 1, height: 1 },
-      width,
-      height,
-    );
-    engine.setAlphaMode(alpha);
-    engine.setColorWrite(color);
-    Object.assign(depth, savedDepth);
-    engine.stencilState.stencilTest = stencil;
-    engine.stencilStateComposer.stencilMaterial = stencilMaterial;
-    engine.wipeCaches();
   }
 }

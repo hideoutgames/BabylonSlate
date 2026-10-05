@@ -5,7 +5,9 @@ import {
   type WaterBodyProperties, type WaterDefinition,
 } from "@babylonslate/core";
 import { updateDynamicMaterialBounds } from "./material-bounds";
+import { inActiveView } from "./active-view";
 import { sceneWaterQualityDeviceClamp, sceneWaterQualityRevision } from "./render-settings";
+import { requestWaterFft, updateSceneWaterFft } from "./water-fft";
 import { configureWaterMaterial, contactRange, WaterMaterialPlugin } from "./water-material";
 import { WaterContactField } from "./water-contact-field";
 import { WaterField, type WaterFieldSurface } from "./water-field";
@@ -75,23 +77,6 @@ export function setSceneWaterTime(scene: Scene, seconds: number): void {
   if (Number.isFinite(seconds)) clocks.set(scene, { time: seconds, runtime: true });
 }
 
-/** This frame's frustum: Scene.render recomputes camera matrices only after before-render observers run. */
-function sees(camera: Camera, mesh: Mesh): boolean {
-  camera.getViewMatrix(); camera.getProjectionMatrix();
-  return camera.isInFrustum(mesh);
-}
-
-/** True when an active camera of the scene sees the surface's wave-padded bounds; a scene without a camera counts as seeing it. */
-function inActiveView(scene: Scene, mesh: Mesh): boolean {
-  const cameras = scene.activeCameras;
-  if (cameras && cameras.length > 0) {
-    for (const camera of cameras) if (sees(camera, mesh)) return true;
-    return false;
-  }
-  const camera: Camera | null = scene.activeCamera;
-  return !camera || sees(camera, mesh);
-}
-
 /**
  * Called once per scene render; runtime water advances only with the worker clock. Every enabled surface advances its
  * shader clock and keeps its grid and bounds current. Surfaces neither drawn last frame nor inside an active camera's
@@ -115,7 +100,11 @@ export function updateSceneWater(scene: Scene): void {
     // Waves never rebake either field: the shader reads contacts at each fragment's rendered height.
     surface.field?.update();
     surface.contacts?.update(now);
+    // Visible built-in water asks for its FFT detail band (it is already known to be drawn or in view); the
+    // simulations run once below, after every request.
+    if (surface.plugin) requestWaterFft(scene, surface.mesh, surface.water, surface.mesh.isVisible && surface.mesh.visibility > 0);
   }
+  updateSceneWaterFft(scene, clock.time);
 }
 
 /** Dense cells of an axis with `count` cells: the middle half. */
