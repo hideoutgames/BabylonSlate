@@ -26,12 +26,12 @@ export function uiControlPropertyRows(actorId: string, component: SerializedComp
   if (kind === "2DRadioButtonComponent") rows.push(text("group"));
   if (kind === "2DTextInputComponent") rows.push(text("text"), text("placeholder"), number("maxLength", 0), bool("readOnly"));
   if (numeric) rows.push(bool("readOnly"));
-  if (kind === "2DDropdownComponent") rows.push(number("selectedIndex", -1, p.options.length - 1));
+  if (kind === "2DDropdownComponent") rows.push(text("placeholder"), number("selectedIndex", -1, p.options.length - 1));
   if (kind === "2DTextInputComponent" || numeric || kind === "2DDropdownComponent") {
     rows.push(number("fontSize", 0.01), { kind: "color", id: id("textColor"), label: "Text Color", value: colorFromHex(p.textColor), onChange: value => update("textColor", colorToHex(value)) });
   }
   rows.push(number("opacity", 0, 1), { kind: "color4", id: id("tint"), label: "Tint", value: p.tint, onChange: value => update("tint", value) });
-  const parts = ["background", ...(slider || progress || kind === "2DToggleComponent" ? ["track", "fill"] : []), ...(slider || kind === "2DToggleComponent" ? ["thumb"] : []), ...(["2DCheckboxComponent", "2DRadioButtonComponent", "2DDropdownComponent"].includes(kind) ? ["indicator"] : [])];
+  const parts = ["background", ...(slider || progress || kind === "2DToggleComponent" ? ["track", "fill"] : []), ...(slider || kind === "2DToggleComponent" ? ["thumb"] : []), ...(["2DCheckboxComponent", "2DRadioButtonComponent", "2DDropdownComponent", "2DTextInputComponent", "2DNumericInputComponent"].includes(kind) ? ["indicator"] : [])];
   for (const part of parts) rows.push(asset(`${part}MaterialGuid`, `${humanizePropertyLabel(part)} Material`, ["Material", "MaterialInstance"]), asset(`${part}TextureGuid`, `${humanizePropertyLabel(part)} Texture`, ["Texture"]));
   if (!progress) rows.push(...focusPropertyRows(actorId, component, update, context.focusTargets));
   return rows;

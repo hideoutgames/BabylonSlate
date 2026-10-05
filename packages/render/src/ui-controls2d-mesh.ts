@@ -3,7 +3,7 @@ import { parseUIControl2DProperties, uiControl2DFraction, type UIControl2DProper
 import { applyAlbedoTexture, restoreAlbedoMaterial, type MeshAssetContext } from "./mesh-assets";
 import { createOverlayUnlitMaterial } from "./overlay-texture-quad";
 import { applyOverlayVisualStyle, enableOverlayVisualMaterial } from "./overlay-visual-style";
-import { createText2DMesh } from "./text2d-mesh";
+import { createText2DMesh, text2DMeshLayout } from "./text2d-mesh";
 import { VisualBundle } from "./visual-bundle";
 
 type Surface = { mesh: Mesh; role: "background" | "track" | "fill" | "thumb" | "indicator"; fallback: StandardMaterial };
@@ -18,6 +18,8 @@ export interface UIControl2DMesh {
   update(source: UIControl2DSource): void;
   setExpanded(expanded: boolean): void;
   setFocused(focused: boolean): void;
+  setEditing(text: string | null, start?: number, end?: number): void;
+  textOffsetAt(x: number, y: number): number;
 }
 
 const controls = new WeakMap<AbstractMesh, UIControl2DMesh>();
@@ -71,7 +73,10 @@ export function createUIControl2DMesh(scene: Scene, name: string, source: UICont
     const thumb = surface("thumb", `${name}:thumb`, "#eeeeee");
     const upperThumb = surface("thumb", `${name}:upper-thumb`, "#eeeeee");
     const indicator = surface("indicator", `${name}:indicator`, "#539ce3");
-    for (const [index, child] of [track, fill, thumb, upperThumb, indicator].entries()) {
+    const caret = surface("indicator", `${name}:caret`, "#eeeeee");
+    const selection = surface("indicator", `${name}:selection`, "#539ce3");
+    surfaces.find(entry => entry.mesh === selection)!.fallback.alpha = 0.4;
+    for (const [index, child] of [track, fill, thumb, upperThumb, indicator, caret, selection].entries()) {
       child.parent = mesh;
       child.position.z = -0.002 * (index + 1);
       child.metadata = { uiControl2DDecoration: true };
@@ -79,18 +84,21 @@ export function createUIControl2DMesh(scene: Scene, name: string, source: UICont
     // Keep the parent at unit scale: component transforms and authored layout
     // apply to it, while vertex dimensions provide its intrinsic hit rectangle.
     let dimensions = "";
+    let editingText: string | null = null;
+    let selectionStart = 0;
+    let selectionEnd = 0;
     let menu: Mesh[] = [];
     let menuKey = "";
-    const label = (id: string, text: string, width: number, height: number, x = 0, y = 0) => {
+    const label = (id: string, text: string, width: number, height: number, x = 0, y = 0, singleLine = false) => {
       const p = visual.properties;
-      const key = JSON.stringify([text, width, height, p.fontSize, p.textColor]);
+      const key = JSON.stringify([text, width, height, p.fontSize, p.textColor, singleLine]);
       let entry = labels.get(id);
       if (entry?.key !== key) {
         entry?.mesh.dispose();
         const ppu = assets?.pixelsPerUnit ?? 100;
         const next = createText2DMesh(scene, `${name}:${id}`, {
           text, renderer: "bitmap", size: p.fontSize * ppu, color: Color3.FromHexString(p.textColor).asArray(),
-          alignment: "center", verticalAlignment: "center", wrapWidth: width * ppu, wrapHeight: height * ppu, hitTest: "ignore",
+          alignment: "center", verticalAlignment: "center", wrapWidth: singleLine ? 0 : width * ppu, wrapHeight: height * ppu, hitTest: "ignore",
         }, assets);
         next.parent = mesh;
         for (const child of [next, ...next.getChildMeshes()]) {
@@ -102,6 +110,8 @@ export function createUIControl2DMesh(scene: Scene, name: string, source: UICont
         labels.set(id, entry);
       }
       entry.mesh.position.set(x, y, -0.02);
+      const measured = text2DMeshLayout(entry.mesh);
+      entry.mesh.scaling.setAll(singleLine && measured && measured.width > width ? width / measured.width : 1);
       entry.mesh.setEnabled(true);
       applyOverlayVisualStyle(entry.mesh, p);
     };
@@ -113,11 +123,21 @@ export function createUIControl2DMesh(scene: Scene, name: string, source: UICont
     const render = () => {
       const p = visual.properties;
       const kind = visual.classId;
-      if (dimensions !== `${p.width}:${p.height}`) {
-        VertexData.CreatePlane({ width: p.width, height: p.height }).applyToMesh(mesh);
-        dimensions = `${p.width}:${p.height}`;
+      const radio = kind === "2DRadioButtonComponent";
+      const discBackground = radio && !p.backgroundMaterialGuid && !p.backgroundTextureGuid;
+      const discIndicator = radio && !p.indicatorMaterialGuid && !p.indicatorTextureGuid;
+      const shapeKey = `${p.width}:${p.height}:${discBackground}:${discIndicator}`;
+      if (dimensions !== shapeKey) {
+        const geometry = discBackground ? VertexData.CreateDisc({ radius: 0.5, tessellation: 48 }) : VertexData.CreatePlane({ size: 1 });
+        if (geometry.positions) for (let index = 0; index < geometry.positions.length; index += 3) {
+          geometry.positions[index] = geometry.positions[index]! * p.width;
+          geometry.positions[index + 1] = geometry.positions[index + 1]! * p.height;
+        }
+        geometry.applyToMesh(mesh);
+        (discIndicator ? VertexData.CreateDisc({ radius: 0.5, tessellation: 48 }) : VertexData.CreatePlane({ size: 1 })).applyToMesh(indicator);
+        dimensions = shapeKey;
       }
-      for (const part of [track, fill, thumb, upperThumb, indicator]) part.setEnabled(false);
+      for (const part of [track, fill, thumb, upperThumb, indicator, caret, selection]) part.setEnabled(false);
       for (const entry of labels.values()) entry.mesh.setEnabled(false);
       const interactive = p.enabled && kind !== "2DProgressBarComponent";
       mesh.isPickable = interactive;
@@ -145,14 +165,36 @@ export function createUIControl2DMesh(scene: Scene, name: string, source: UICont
         if (p.checked) place(fill, p.width * 0.9, p.height * 0.7);
         place(thumb, p.height * 0.65, p.height * 0.65, (p.checked ? 1 : -1) * Math.max(0, p.width - p.height) * 0.4);
       } else if (kind === "2DTextInputComponent") {
-        label("label", p.text || p.placeholder, p.width * 0.94, p.height * 0.9);
+        label("label", editingText ?? (p.text || p.placeholder), p.width * 0.94, p.height * 0.9, 0, 0, true);
       } else if (kind === "2DNumericInputComponent") {
-        label("label", String(p.value), p.width * 0.78, p.height * 0.9, -p.width * 0.1);
+        label("label", editingText ?? String(p.value), p.width * 0.78, p.height * 0.9, -p.width * 0.1, 0, true);
         label("increment", "+", p.width * 0.2, p.height * 0.45, p.width * 0.4, p.height * 0.25);
         label("decrement", "−", p.width * 0.2, p.height * 0.45, p.width * 0.4, -p.height * 0.25);
       } else if (kind === "2DDropdownComponent") {
         label("label", p.options[p.selectedIndex] ?? p.placeholder, p.width * 0.85, p.height * 0.9, -p.width * 0.05);
-        label("arrow", visual.expanded ? "−" : "+", p.width * 0.15, p.height * 0.8, p.width * 0.42);
+        if (p.indicatorMaterialGuid || p.indicatorTextureGuid) {
+          const size = Math.min(p.width * 0.14, p.height * 0.7);
+          place(indicator, size, size, p.width * 0.42);
+        } else label("arrow", visual.expanded ? "−" : "+", p.width * 0.15, p.height * 0.8, p.width * 0.42);
+      }
+      if (visual.focused && editingText !== null) {
+        const textMesh = labels.get("label")?.mesh;
+        const items = textMesh && text2DMeshLayout(textMesh)?.items.filter(item => item.kind === "glyph");
+        if (textMesh && items) {
+          const startIndex = Array.from(editingText.slice(0, selectionStart)).length;
+          const endIndex = Array.from(editingText.slice(0, selectionEnd)).length;
+          const point = (index: number) => {
+            const item = items[index]; const last = items.at(-1);
+            return item ? item.x - item.width / 2 : last ? last.x + last.width / 2 : 0;
+          };
+          const start = point(startIndex) * textMesh.scaling.x + textMesh.position.x;
+          const end = point(endIndex) * textMesh.scaling.x + textMesh.position.x;
+          const height = Math.min(p.fontSize * 1.2, p.height * 0.85);
+          if (selectionStart === selectionEnd) place(caret, Math.max(0.012, p.fontSize * 0.045), height, start);
+          else place(selection, Math.max(0.001, end - start), height, (start + end) / 2);
+          caret.position.z = -0.06; selection.position.z = -0.025;
+          caret.alphaIndex = 24; selection.alphaIndex = 19;
+        }
       }
       const nextMenuKey = visual.expanded ? JSON.stringify([p.options, p.width, p.height, p.fontSize, p.textColor]) : "";
       if (nextMenuKey !== menuKey) {
@@ -191,6 +233,19 @@ export function createUIControl2DMesh(scene: Scene, name: string, source: UICont
       update(next) { visual.classId = next.classId; visual.properties = parseUIControl2DProperties(next.classId, next.properties); render(); },
       setExpanded(expanded) { if (visual.expanded !== expanded) { visual.expanded = expanded; render(); } },
       setFocused(focused) { if (visual.focused !== focused) { visual.focused = focused; render(); } },
+      setEditing(text, start = 0, end = start) {
+        if (editingText === text && selectionStart === start && selectionEnd === end) return;
+        editingText = text; selectionStart = start; selectionEnd = end; render();
+      },
+      textOffsetAt(x, _y) {
+        const entry = labels.get("label");
+        const text = editingText ?? (visual.classId === "2DNumericInputComponent" ? String(visual.properties.value) : visual.properties.text);
+        const items = entry && text2DMeshLayout(entry.mesh)?.items.filter(item => item.kind === "glyph");
+        if (!entry || !items) return text.length;
+        const local = (x - entry.mesh.position.x) / entry.mesh.scaling.x;
+        const index = items.findIndex(item => local < item.x);
+        return index < 0 ? text.length : Array.from(text).slice(0, index).join("").length;
+      },
     };
     controls.set(mesh, visual);
     mesh.onDisposeObservable.addOnce(() => { controls.delete(mesh); for (const entry of labels.values()) entry.mesh.dispose(); bundle.dispose(); });

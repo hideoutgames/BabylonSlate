@@ -6,11 +6,11 @@ import { SceneLayerSwitcherFields } from "./scene-layer-switcher-fields";
 
 const documents = vi.hoisted(() => {
   const assets = [
-    { path: "assets/Base.class", header: { guid: "base", name: "Base", type: "Class", parentClass: "SceneLayerActor" } },
-    { path: "assets/Screen.class", header: { guid: "screen", name: "Screen", type: "Class", parentClass: "Base" } },
-    { path: "assets/WorldActor.class", header: { guid: "world", name: "WorldActor", type: "Class", parentClass: "Actor" } },
+    { path: "assets/Base.class.babasset", header: { guid: "base", name: "Base", type: "Class", parentClass: "SceneLayerActor" } },
+    { path: "assets/Screen.class.babasset", header: { guid: "screen", name: "Screen", type: "Class", parentClass: "Base" } },
+    { path: "assets/WorldActor.class.babasset", header: { guid: "world", name: "WorldActor", type: "Class", parentClass: "Actor" } },
   ];
-  return { assetRegistry: { list: () => assets }, registryEpoch: 0, openDocuments: [], loadGraphDocument: vi.fn(async (path: string): Promise<SerializedGraph> => ({ nodes: [], edges: [], members: path.endsWith("Base.class") ? [{ id: "title", kind: "variable", name: "Title", typeId: "string", defaultValue: "Inherited Title" }] : [] })) };
+  return { assetRegistry: { list: () => assets }, registryEpoch: 0, openDocuments: [], loadGraphDocument: vi.fn(async (path: string): Promise<SerializedGraph> => ({ nodes: [], edges: [], members: path.endsWith("Base.class.babasset") ? [{ id: "title", kind: "variable", name: "Title", typeId: "string", defaultValue: "Inherited Title" }] : [] })) };
 });
 vi.mock("../context/document-context", () => ({ useDocuments: () => documents }));
 afterEach(cleanup);

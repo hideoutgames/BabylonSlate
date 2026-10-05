@@ -9,7 +9,7 @@ export type SceneLayerControlEvent = {
   value?: number | boolean | string; secondaryValue?: number;
 };
 type Target = { visual: UIControl2DMesh; layer: SceneLayerView; actorGuid: string; componentId: string };
-type Capture = Target & { rangeThumb: "lower" | "upper"; x: number; y: number; startX: number; startY: number };
+type Capture = Target & { rangeThumb: "lower" | "upper"; x: number; y: number; startX: number; startY: number; selectionAnchor?: number };
 
 /** SceneLayer control capture plus an invisible native editor for IME/mobile keyboards. */
 export class UIControls2DInput {
@@ -19,14 +19,19 @@ export class UIControls2DInput {
   private editor: HTMLInputElement | null = null;
   private composing = false;
   private editorValue = "";
+  private removeSelectionListener: (() => void) | null = null;
   private synchronizingFocus = false;
+  private readonly layers: () => readonly SceneLayerView[];
+  private readonly size: () => { width: number; height: number };
+  private readonly emit: (event: SceneLayerControlEvent) => void;
+  private readonly canvas?: HTMLCanvasElement;
 
   constructor(
-    private readonly layers: () => readonly SceneLayerView[],
-    private readonly size: () => { width: number; height: number },
-    private readonly emit: (event: SceneLayerControlEvent) => void,
-    private readonly canvas?: HTMLCanvasElement,
-  ) {}
+    layers: () => readonly SceneLayerView[],
+    size: () => { width: number; height: number },
+    emit: (event: SceneLayerControlEvent) => void,
+    canvas?: HTMLCanvasElement,
+  ) { this.layers = layers; this.size = size; this.emit = emit; this.canvas = canvas; }
 
   owns(pointerId: number): boolean { return this.captures.has(pointerId) || this.ignoredPointers.has(pointerId); }
 
@@ -99,9 +104,17 @@ export class UIControls2DInput {
       const p = visual.properties;
       const sampled = uiControl2DValueAt(local.x, local.y, p);
       const rangeThumb = Math.abs(sampled - p.lowerValue) <= Math.abs(sampled - p.upperValue) ? "lower" : "upper";
-      this.captures.set(pointerId, { ...target, rangeThumb, x, y, startX: x, startY: y });
+      const capture: Capture = { ...target, rangeThumb, x, y, startX: x, startY: y };
+      this.captures.set(pointerId, capture);
       if (visual.classId === "2DSliderComponent" || visual.classId === "2DRangeSliderComponent") this.move(pointerId, x, y);
-      if (visual.classId === "2DTextInputComponent" || (visual.classId === "2DNumericInputComponent" && local.x < p.width * 0.3)) this.openEditor(target);
+      if (visual.classId === "2DTextInputComponent" || (visual.classId === "2DNumericInputComponent" && local.x < p.width * 0.3)) {
+        this.openEditor(target);
+        if (this.editor) {
+          capture.selectionAnchor = visual.textOffsetAt(local.x, local.y);
+          this.editor.setSelectionRange(capture.selectionAnchor, capture.selectionAnchor);
+          this.updateEditing(target);
+        }
+      }
       return true;
     }
     this.focus(null);
@@ -117,6 +130,12 @@ export class UIControls2DInput {
     const local = this.local(capture, x, y);
     if (!local) { this.release(pointerId, true); return true; }
     const p = capture.visual.properties;
+    if (this.editor && this.focused?.visual === capture.visual && capture.selectionAnchor !== undefined) {
+      const offset = capture.visual.textOffsetAt(local.x, local.y);
+      this.editor.setSelectionRange(Math.min(offset, capture.selectionAnchor), Math.max(offset, capture.selectionAnchor), offset < capture.selectionAnchor ? "backward" : "forward");
+      this.updateEditing(capture);
+      return true;
+    }
     const value = uiControl2DValueAt(local.x, local.y, p);
     if (capture.visual.classId === "2DSliderComponent") this.change(capture, value);
     else if (capture.visual.classId === "2DRangeSliderComponent") {
@@ -245,8 +264,13 @@ export class UIControls2DInput {
     input.style.left = `${rect.left}px`; input.style.top = `${rect.top}px`;
     this.editor = input; this.editorValue = input.value;
     input.addEventListener("compositionstart", () => { this.composing = true; });
-    input.addEventListener("compositionend", () => { this.composing = false; this.edit(target); });
-    input.addEventListener("input", () => { if (!this.composing) this.edit(target); });
+    input.addEventListener("compositionend", () => { this.composing = false; this.edit(target); this.updateEditing(target); });
+    input.addEventListener("input", () => { if (!this.composing) this.edit(target); this.updateEditing(target); });
+    input.addEventListener("select", () => this.updateEditing(target));
+    input.addEventListener("keyup", () => this.updateEditing(target));
+    const onSelection = () => { if (doc.activeElement === input) this.updateEditing(target); };
+    doc.addEventListener("selectionchange", onSelection);
+    this.removeSelectionListener = () => doc.removeEventListener("selectionchange", onSelection);
     input.addEventListener("keydown", event => {
       event.stopPropagation();
       if (this.composing || event.isComposing) return;
@@ -258,6 +282,12 @@ export class UIControls2DInput {
     doc.body.append(input);
     input.focus({ preventScroll: true });
     input.select();
+    this.updateEditing(target);
+  }
+
+  private updateEditing(target: Target): void {
+    if (!this.editor || !this.usable(target)) return;
+    target.visual.setEditing(this.editor.value, this.editor.selectionStart ?? 0, this.editor.selectionEnd ?? 0);
   }
 
   private edit(target: Target): void {
@@ -273,6 +303,7 @@ export class UIControls2DInput {
     const input = this.editor; const target = this.focused;
     if (!input) return;
     this.editor = null; this.composing = false;
+    this.removeSelectionListener?.(); this.removeSelectionListener = null;
     if (target && this.usable(target)) {
       const text = commit ? input.value : this.editorValue;
       if (target.visual.classId === "2DNumericInputComponent") {
@@ -281,6 +312,7 @@ export class UIControls2DInput {
       } else this.change(target, normalizeUIControl2DText(text, target.visual.properties));
       if (commit) this.commit(target);
     }
+    if (target && !target.visual.mesh.isDisposed()) target.visual.setEditing(null);
     input.remove();
   }
 
