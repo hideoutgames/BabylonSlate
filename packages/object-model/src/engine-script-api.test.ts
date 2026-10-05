@@ -79,8 +79,6 @@ describe("engine script API catalog", () => {
       "size",
       "color",
       "fontAssetGuid",
-      "opacity",
-      "tint",
       "alignment",
     ]);
     const setText = engineScriptApiFor("Text3DComponent")?.functions?.find(
@@ -271,6 +269,8 @@ describe("engine script API catalog", () => {
       "size",
       "color",
       "fontAssetGuid",
+      "opacity",
+      "tint",
       "materialGuid",
       "materialUv",
       "hitTest",

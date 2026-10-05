@@ -4,7 +4,6 @@ import { createActor, identitySerializedTransform, parseText2DProperties } from 
 import { createTestEngine } from "./create-null-engine";
 import { applyOverlayVisualStyle, overlayVisualStyle } from "./overlay-visual-style";
 import { applyAssignMesh, applyOverlayVisualStyleCommand, applyText2DAppearCommand, createSnapshotSceneBinding, playComponentMeshName } from "./snapshot-apply";
-import { prewarmMaterial } from "./material-compiler";
 import { createMeshForComponent } from "./scene-loader";
 import { createJoystick2DMesh, joystick2DMesh } from "./joystick2d-mesh";
 
@@ -23,7 +22,7 @@ it("binds distinct tints through a shared frozen native material without changin
   first.material = second.material = material;
   applyOverlayVisualStyle(first, { opacity: 0.4, tint: [1, 0.5, 0.25, 0.5] });
   applyOverlayVisualStyle(second, { opacity: 0.8, tint: [0.25, 1, 0.5, 1] });
-  for (const mesh of [first, second]) { await prewarmMaterial(material, mesh); expect(material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!)).toBe(true); }
+  for (const mesh of [first, second]) { await material.forceCompilationAsync(mesh); expect(material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!)).toBe(true); }
   material.freeze();
   for (const mesh of [first, second, first]) {
     const effect = mesh.subMeshes[0]!.effect!;
