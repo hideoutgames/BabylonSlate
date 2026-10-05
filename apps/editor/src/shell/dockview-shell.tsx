@@ -9,7 +9,13 @@ import {
 import type { DockviewDocumentKind } from "./default-layout";
 import "dockview-react/dist/styles/dockview.css";
 import "./dockview-theme.css";
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type FunctionComponent,
+} from "react";
 import { cn } from "@babylonslate/ui/lib/utils";
 import { createDefaultLayoutForKind } from "./default-layout";
 import { migrateRestoredLayout, restoreDockviewLayout } from "./layout-ops";
@@ -26,7 +32,9 @@ import { listDockWindows } from "./window-catalog";
 import { profileComponents } from "../lib/render-profile";
 
 const SPACED_THEME: DockviewTheme = { ...themeAbyss, gap: 4 };
-let dockPanelComponents: typeof panelComponents | undefined;
+let dockPanelComponents:
+  | Record<string, FunctionComponent<IDockviewPanelProps>>
+  | undefined;
 /**
  * Each dock panel kind is one `panel:<component>` profiling region in test
  * builds. Wrapped on first render, not at import: a bundle chunk cycle can
@@ -38,7 +46,7 @@ function profiledDockPanelComponents() {
   return (dockPanelComponents ??= profileComponents<IDockviewPanelProps>(
     "panel:",
     panelComponents,
-  ) as typeof panelComponents);
+  ));
 }
 
 export interface DockviewShellProps {
