@@ -570,6 +570,15 @@ export function waterMeshBody(mesh: Mesh): Readonly<WaterBodyProperties> | null 
 }
 
 /**
+ * Whether a built water mesh's rest height varies across it (a river, or a volume tilted out of level), the same
+ * test its WaterField and contacts use; null for other meshes. A level body rests on its local y = 0 plane.
+ */
+export function waterMeshRestVaries(mesh: Mesh): boolean | null {
+  const surface = surfaceByMesh.get(mesh);
+  return surface ? restVaries(surface) : null;
+}
+
+/**
  * Reshape a water mesh in place, e.g. while an editor handle drags. The authored
  * component remains the source of truth; a committed change rebuilds the mesh.
  */
