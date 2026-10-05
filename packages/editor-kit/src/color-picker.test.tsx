@@ -75,7 +75,9 @@ describe("ColorPicker", () => {
     expect(onChange).toHaveBeenCalledExactlyOnceWith([0.75, 0.375, 0.375, 0.625]);
   });
 
-  it("restores a cancelled palette gesture and offers keyboard saturation, brightness, and hue controls", () => {
+  it("restores a cancelled palette gesture and offers keyboard saturation, brightness, and hue controls", async () => {
+    // Inset slider thumbs become accessible once their track has a measured size.
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 200, 20));
     const onChange = vi.fn();
     render(<ColorPicker value={[1, 0, 0, 1]} onChange={onChange} withAlpha={false} />);
     openPicker();
@@ -91,7 +93,7 @@ describe("ColorPicker", () => {
     expect((screen.getByRole("textbox", { name: "Hex" }) as HTMLInputElement).value).toBe("#e6e6e6");
     fireEvent.keyDown(palette, { key: "End" });
     fireEvent.keyDown(palette, { key: "ArrowUp", shiftKey: true });
-    const hue = screen.getByRole("slider", { name: "Hue" });
+    const hue = await screen.findByRole("slider", { name: "Hue" });
     fireEvent.change(hue, { target: { value: "120" } });
     expect(screen.queryByRole("textbox", { name: "Alpha Value" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Done" }));

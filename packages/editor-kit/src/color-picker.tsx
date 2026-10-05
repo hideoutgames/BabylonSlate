@@ -163,20 +163,20 @@ export function ColorPicker({
       <span className="h-3.5 min-w-6 flex-1 rounded-sm border border-border" style={{ background: colorBackground(value) }} aria-hidden="true" />
       <ChevronDownIcon data-icon="inline-end" />
     </Button>
-    {current ? <Dialog open onOpenChange={(open) => { if (!open) close(); }}>
+    {current ? <Dialog open onOpenChange={(open, details) => {
+      if (details.reason === "escape-key" && (details.event.isComposing || details.event.keyCode === 229)) {
+        details.cancel();
+        return;
+      }
+      if (!open) close();
+    }}>
       <DialogContent showCloseButton={false} overlayClassName="catalog-menu-overlay bg-transparent"
         finalFocus={triggerRef} initialFocus={paletteRef}
         className="catalog-menu catalog-menu-popup flex max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-lg p-0 sm:max-w-none"
         style={popupMenuFrame(current.anchor, { width: 360, height: withAlpha ? (coarse ? 492 : 440) : (coarse ? 420 : 368) })}
         data-testid={`${testId}-dialog`}
         onPointerDown={(event) => event.stopPropagation()}
-        onKeyDown={(event) => {
-          event.stopPropagation();
-          if (event.key === "Escape" && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) {
-            event.preventDefault();
-            close();
-          }
-        }}>
+        onKeyDown={(event) => event.stopPropagation()}>
         <div className="shrink-0 px-3 pt-3 pb-2">
           <DialogTitle className="text-sm">Select Color</DialogTitle>
         </div>

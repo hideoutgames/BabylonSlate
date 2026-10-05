@@ -1,5 +1,6 @@
 import { act, fireEvent, render, cleanup, screen, waitFor } from "@testing-library/react";
 import { useStore } from "@xyflow/react";
+import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDefaultGraph } from "@babylonslate/core";
 import { DRAG_ARM_MS, TagProvider } from "@babylonslate/editor-kit";
@@ -2181,7 +2182,10 @@ describe("GraphEditor", () => {
       '[data-id="branch"] [data-pin-label="condition"]',
     );
     expect(preview).not.toBeNull();
-    const checkbox = screen.getByRole("checkbox", { name: "Condition" });
+    // React Flow nodes have no measured size in jsdom, so their DOM remains
+    // visibility-hidden even though the authored controls are mounted.
+    const checkbox = screen.getByTestId("pin-default-branch-condition");
+    expect(checkbox.getAttribute("aria-label")).toBe("Condition");
     expect(checkbox.getAttribute("aria-checked")).toBe("true");
     expect(checkbox.getAttribute("aria-disabled")).toBe("true");
     expect(preview?.textContent).toBe("On");
@@ -4707,7 +4711,16 @@ describe("inline pin editing", () => {
   it("commits one text edit and accepts host undo/redo snapshots without adding history entries", async () => {
     const before = literalGraph();
     const onChange = vi.fn();
-    const { rerender } = render(<GraphEditor initialGraph={before} onChange={onChange} />);
+    let replaceSnapshot: (graph: GraphDocument) => void = () => {};
+    function ControlledHost() {
+      const [snapshot, setSnapshot] = useState(before);
+      replaceSnapshot = setSnapshot;
+      return <GraphEditor initialGraph={snapshot} onChange={(next, meta) => {
+        onChange(next, meta);
+        setSnapshot(next);
+      }} />;
+    }
+    render(<ControlledHost />);
     const input = screen.getByTestId("pin-default-sink-value");
     fireEvent.change(input, { target: { value: "After" } });
     expect(onChange).not.toHaveBeenCalled();
@@ -4720,9 +4733,9 @@ describe("inline pin editing", () => {
     expect(after.nodes.find((node) => node.id === "source")?.position).toEqual({ x: -300, y: 0 });
 
     onChange.mockClear();
-    rerender(<GraphEditor initialGraph={before} onChange={onChange} />);
+    act(() => replaceSnapshot(before));
     await waitFor(() => expect(screen.getByTestId("pin-default-sink-value")).toHaveProperty("value", "Before"));
-    rerender(<GraphEditor initialGraph={after} onChange={onChange} />);
+    act(() => replaceSnapshot(after));
     await waitFor(() => expect(screen.getByTestId("pin-default-sink-value")).toHaveProperty("value", "After"));
     expect(onChange).not.toHaveBeenCalled();
   });
@@ -4735,8 +4748,27 @@ describe("inline pin editing", () => {
     const onChange = vi.fn();
     render(<GraphEditor initialGraph={literalGraph({ kind }, initial)} onChange={onChange} />);
     const field = screen.getByTestId("pin-default-sink-value");
-    if (kind === "bool") fireEvent.click(field);
-    else {
+    if (kind === "bool") {
+      // Base UI forwards checkbox clicks through PointerEvent; jsdom does
+      // not supply that browser constructor in this test environment.
+      const descriptor = Object.getOwnPropertyDescriptor(window, "PointerEvent");
+      if (!window.PointerEvent) {
+        class CheckboxPointerEvent extends MouseEvent {
+          readonly pointerType: string;
+          constructor(type: string, init: PointerEventInit = {}) {
+            super(type, init);
+            this.pointerType = init.pointerType ?? "mouse";
+          }
+        }
+        Object.defineProperty(window, "PointerEvent", { configurable: true, writable: true, value: CheckboxPointerEvent });
+      }
+      try {
+        fireEvent.click(field);
+      } finally {
+        if (descriptor) Object.defineProperty(window, "PointerEvent", descriptor);
+        else delete (window as { PointerEvent?: unknown }).PointerEvent;
+      }
+    } else {
       fireEvent.change(field, { target: { value: String(expected) } });
       fireEvent.blur(field);
     }
@@ -4761,9 +4793,10 @@ describe("inline pin editing", () => {
   it("commits an inline Particle vector component once while preserving the other numeric components", () => {
     const onChange = vi.fn();
     render(<GraphEditor initialGraph={literalGraph({ kind: "vec3" }, [1, 2, 3], { __particleRole: "update" })} onChange={onChange} />);
-    const x = screen.getByRole("textbox", { name: "Value X" });
-    expect(screen.getByRole("textbox", { name: "Value Y" })).toHaveProperty("value", "2");
-    expect(screen.getByRole("textbox", { name: "Value Z" })).toHaveProperty("value", "3");
+    const x = screen.getByTestId("pin-default-sink-value-x");
+    expect(x.getAttribute("aria-label")).toBe("Value X");
+    expect(screen.getByTestId("pin-default-sink-value-y")).toHaveProperty("value", "2");
+    expect(screen.getByTestId("pin-default-sink-value-z")).toHaveProperty("value", "3");
     fireEvent.change(x, { target: { value: "7" } });
     expect(onChange).not.toHaveBeenCalled();
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -4775,7 +4808,8 @@ describe("inline pin editing", () => {
   it("commits the final inline rotator component while retaining named untouched components", () => {
     const onChange = vi.fn();
     render(<GraphEditor initialGraph={literalGraph({ kind: "rotator" }, { pitch: 10, yaw: 20.123456789, roll: 30 })} onChange={onChange} />);
-    const pitch = screen.getByRole("textbox", { name: "Value Pitch" });
+    const pitch = screen.getByTestId("pin-default-sink-value-pitch");
+    expect(pitch.getAttribute("aria-label")).toBe("Value Pitch");
     fireEvent.change(pitch, { target: { value: "4" } });
     fireEvent.change(pitch, { target: { value: "45" } });
     expect(onChange).not.toHaveBeenCalled();
@@ -4798,14 +4832,14 @@ describe("inline pin editing", () => {
     expect(screen.getByTestId("pin-default-sink-value")).toHaveProperty("disabled", true);
     expect(screen.getByTestId("pin-default-sink-value")).toHaveProperty("value", "Before");
     expect(container.querySelector('[data-id="sink"] [data-pin-default="string"]')).not.toBeNull();
-    expect(screen.getByTestId("graph-add-node")).toBeTruthy();
+    expect(screen.getByTestId("graph-toolbar")).toBeTruthy();
     rerender(show(false, true));
     expect(screen.getByTestId("pin-default-sink-value")).toHaveProperty("disabled", true);
-    expect(screen.queryByTestId("graph-add-node")).toBeNull();
+    expect(screen.queryByTestId("graph-toolbar")).toBeNull();
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  it.each(["wired", "node-disabled", "reference-required", "graph-readonly", "preference-readonly"] as const)(
+  it.each(["wired", "node-disabled", "reference-required", "ordinary-struct", "transform", "graph-readonly", "preference-readonly"] as const)(
     "rejects a pending editor commit after its pin becomes %s",
     (guard) => {
       const graph = literalGraph();
@@ -4825,6 +4859,10 @@ describe("inline pin editing", () => {
       if (guard === "node-disabled") sink.data.__disabled = true;
       if (guard === "reference-required") sink.data.__pins = [{
         id: "value", name: "Value", kind: "data", direction: "in", type: { kind: "string" }, reference: "required",
+      }];
+      if (guard === "ordinary-struct" || guard === "transform") sink.data.__pins = [{
+        id: "value", name: "Value", kind: "data", direction: "in",
+        type: guard === "ordinary-struct" ? { kind: "structRef", guid: "custom-struct" } : { kind: "transform" },
       }];
       rerender(<GraphEditor
         initialGraph={next}

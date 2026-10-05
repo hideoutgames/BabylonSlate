@@ -39,7 +39,9 @@ describe("project-backed inline pin defaults", () => {
     const input = request({ kind: "enumRef", guid: "mood" }, "Ready");
     render(<GraphPinDefaultEditor request={input} catalogs={catalogs} />);
     fireEvent.click(screen.getByRole("combobox", { name: "Value" }));
-    fireEvent.click(await screen.findByRole("option", { name: "In Motion" }));
+    const option = await screen.findByRole("option", { name: "In Motion" });
+    fireEvent.pointerDown(option, { pointerType: "mouse" });
+    fireEvent.click(option);
     expect(input.onChange).toHaveBeenCalledWith("inMotion");
   });
 
