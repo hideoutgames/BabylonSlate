@@ -1,19 +1,21 @@
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { useDocuments } from "../context/document-context";
 
 /** Mirrors editor utility startup while keeping code modules out of Play. */
 export function EditorExtensionsRuntime() {
-  const { extensionService, projectDocument, openDocuments, projectGuid } = useDocuments();
-  const documents = useRef(openDocuments);
-  documents.current = openDocuments;
+  const { extensionService, projectDocument, getOpenDocuments, projectGuid } = useDocuments();
   const overrides = JSON.stringify(projectDocument?.settings.extensionOverrides ?? {});
   useEffect(() => {
-    if (!extensionService || !projectGuid) return;
+    if (!extensionService) return;
+    // Checks the tabs open when the Extension writes, not those at the last render.
     extensionService.setAssetWriteGuard((path) => {
-      if (documents.current.some((document) => document.ref.path === path)) {
+      if (getOpenDocuments().some((document) => document.ref.path === path)) {
         throw new Error("Close this asset's editor tab before modifying it through an Extension.");
       }
     });
+  }, [extensionService, getOpenDocuments]);
+  useEffect(() => {
+    if (!extensionService || !projectGuid) return;
     void extensionService.refresh(JSON.parse(overrides)).catch(() => { /* Settings displays startup diagnostics. */ });
   }, [extensionService, projectGuid, overrides]);
   useEffect(() => () => {

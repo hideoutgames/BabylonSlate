@@ -7,26 +7,25 @@ const readAssetChunk = vi.hoisted(() =>
   vi.fn<() => Promise<Uint8Array | null>>(async () => null),
 );
 
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => ({
+vi.mock("../context/document-context", async () => {
+  const assets = [
+    {
+      header: { guid: "tex-1", name: "HeroAtlas", type: "Texture" },
+      path: "assets/HeroAtlas.texture.babasset",
+    },
+    {
+      header: { guid: "mesh-1", name: "Cube", type: "Mesh" },
+      path: "assets/Cube.mesh.babasset",
+    },
+  ];
+  return (await import("../testing/document-context-mock")).documentContextMock(() => ({
     readAssetChunk,
     assetRegistry: {
-      getByGuid(guid: string) {
-        return this.list().find((asset) => asset.header.guid === guid);
-      },
-      list: () => [
-        {
-          header: { guid: "tex-1", name: "HeroAtlas", type: "Texture" },
-          path: "assets/HeroAtlas.texture.babasset",
-        },
-        {
-          header: { guid: "mesh-1", name: "Cube", type: "Mesh" },
-          path: "assets/Cube.mesh.babasset",
-        },
-      ],
+      getByGuid: (guid: string) => assets.find((asset) => asset.header.guid === guid),
+      list: () => assets,
     },
-  }),
-}));
+  }));
+});
 
 afterEach(() => {
   cleanup();

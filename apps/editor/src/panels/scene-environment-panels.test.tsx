@@ -21,13 +21,11 @@ function scene(): SerializedScene {
 }
 
 vi.mock("../context/document-workspace-context", () => ({ useDocumentWorkspace: () => ({ documentId: "scene:main" }) }));
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => ({
-    openDocuments: [{ id: "scene:main", ref: { kind: "scene" }, content: scene() }],
-    applySceneChange: harness.applySceneChange,
-    assetRegistry: { list: () => [{ path: "assets/tree.babasset", header: { guid: MODEL, name: "Tree", type: "Model" } }] },
-  }),
-}));
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
+  openDocuments: [{ id: "scene:main", ref: { kind: "scene" }, content: scene() }],
+  applySceneChange: harness.applySceneChange,
+  assetRegistry: { list: () => [{ path: "assets/tree.babasset", header: { guid: MODEL, name: "Tree", type: "Model" } }] },
+})));
 vi.mock("../context/scene-editing-context", () => ({ useSceneEditing: () => ({ selectedActorIds: [], selectActor: vi.fn(), frameActor: vi.fn() }) }));
 vi.mock("../context/scene-tools-context", () => ({ useSceneTools: () => harness.tools }));
 

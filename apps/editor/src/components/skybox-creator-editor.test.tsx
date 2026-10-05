@@ -20,30 +20,28 @@ const decodeSourceToRgba = vi.hoisted(() =>
   }),
 );
 
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => ({
-    assetRegistry: {
-      list: () => [
-        {
-          header: { guid: "tex-1", name: "Sky", type: "Texture" },
-          path: "assets/Sky.babasset",
-          rootId: "project",
-        },
-        {
-          header: { guid: "face-px", name: "Day_px", type: "Texture" },
-          path: "assets/Old_px.babasset",
-          rootId: "project",
-        },
-      ],
-      getRoot: () => ({ id: "project", pathPrefix: "assets" }),
-      createAsset,
-      deleteAsset,
-    },
-    openDocuments: [],
-    readAssetChunk,
-    refreshAssetRegistry,
-  }),
-}));
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
+  assetRegistry: {
+    list: () => [
+      {
+        header: { guid: "tex-1", name: "Sky", type: "Texture" },
+        path: "assets/Sky.babasset",
+        rootId: "project",
+      },
+      {
+        header: { guid: "face-px", name: "Day_px", type: "Texture" },
+        path: "assets/Old_px.babasset",
+        rootId: "project",
+      },
+    ],
+    getRoot: () => ({ id: "project", pathPrefix: "assets" }),
+    createAsset,
+    deleteAsset,
+  },
+  openDocuments: [],
+  readAssetChunk,
+  refreshAssetRegistry,
+})));
 
 vi.mock("@babylonslate/assets", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@babylonslate/assets")>();

@@ -27,21 +27,19 @@ const state = vi.hoisted(() => ({
   }),
 }));
 
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => ({
-    openDocuments: state.documents,
-    dirtyDocuments: state.documents.filter((doc) => doc.dirty),
-    projectDirty: state.projectDirty,
-    closeProject: state.closeProject,
-    forceCloseProject: state.forceCloseProject,
-    migrationPending: [],
-    pendingExclusiveScene: null,
-    externalChangePrompt: null,
-    cancelExclusiveSceneOpen: vi.fn(),
-    saveAll: state.saveAll,
-    closeDocument: state.closeDocument,
-  }),
-}));
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
+  openDocuments: state.documents,
+  dirtyDocuments: state.documents.filter((doc) => doc.dirty),
+  projectDirty: state.projectDirty,
+  closeProject: state.closeProject,
+  forceCloseProject: state.forceCloseProject,
+  migrationPending: [],
+  pendingExclusiveScene: null,
+  externalChangePrompt: null,
+  cancelExclusiveSceneOpen: vi.fn(),
+  saveAll: state.saveAll,
+  closeDocument: state.closeDocument,
+})));
 
 // Keep the document menu and close dialogs real; omit unrelated engine hosts.
 vi.mock("../components/editor-chrome-bar", async () => {

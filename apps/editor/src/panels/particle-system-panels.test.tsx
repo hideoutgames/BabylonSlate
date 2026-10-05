@@ -70,32 +70,30 @@ vi.mock("../context/play-context", () => {
   const play = { ensureSharedEngine: () => engine };
   return { useOptionalPlay: () => play };
 });
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => ({
-    assetRegistry: {
-      list: () => [
-        {
-          header: { guid: "em-1", name: "Sparks", type: "ParticleEmitter" },
-          path: "assets/Sparks.emitter.babasset",
-        },
-        {
-          header: { guid: "em-2", name: "Smoke", type: "ParticleEmitter" },
-          path: "assets/Smoke.emitter.babasset",
-        },
-        {
-          header: { guid: "pg-1", name: "Embers", type: "ParticleGraph" },
-          path: GRAPH_PATH,
-        },
-        {
-          header: { guid: "mat-1", name: "SparksMat", type: "Material" },
-          path: "assets/SparksMat.material.babasset",
-        },
-      ],
-    },
-    openDocuments: harness.openDocuments,
-    loadAssetDocument: harness.loadAssetDocument,
-  }),
-}));
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
+  assetRegistry: {
+    list: () => [
+      {
+        header: { guid: "em-1", name: "Sparks", type: "ParticleEmitter" },
+        path: "assets/Sparks.emitter.babasset",
+      },
+      {
+        header: { guid: "em-2", name: "Smoke", type: "ParticleEmitter" },
+        path: "assets/Smoke.emitter.babasset",
+      },
+      {
+        header: { guid: "pg-1", name: "Embers", type: "ParticleGraph" },
+        path: GRAPH_PATH,
+      },
+      {
+        header: { guid: "mat-1", name: "SparksMat", type: "Material" },
+        path: "assets/SparksMat.material.babasset",
+      },
+    ],
+  },
+  openDocuments: harness.openDocuments,
+  loadAssetDocument: harness.loadAssetDocument,
+})));
 
 afterEach(() => {
   cleanup();

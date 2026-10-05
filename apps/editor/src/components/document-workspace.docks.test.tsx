@@ -12,9 +12,7 @@ const docs = vi.hoisted(() => ({
   sourceControl: { enabled: false },
 }));
 
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => docs,
-}));
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => docs));
 
 vi.mock("../shell/dockview-shell", () => ({
   DockviewShell: (props: {

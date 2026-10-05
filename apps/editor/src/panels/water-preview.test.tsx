@@ -64,15 +64,13 @@ vi.mock("../context/play-context", () => ({ useOptionalPlay: () => harness.play 
 vi.mock("../context/document-workspace-context", () => ({
   useDocumentWorkspace: () => ({ documentId: `water:${WATER_PATH}` }),
 }));
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => ({
-    openDocuments: harness.documents,
-    assetRegistry: { getByGuid: (guid: string) => harness.assets.get(guid), list: () => [...harness.assets.values()] },
-    registryEpoch: harness.registryEpoch,
-    collectPlayMaterialLibrary: (_scene: unknown, _extra: unknown, guids: string[]) => harness.loadLibrary(guids[0]!),
-    collectPlayTextureBytes: async () => new Map(),
-  }),
-}));
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
+  openDocuments: harness.documents,
+  assetRegistry: { getByGuid: (guid: string) => harness.assets.get(guid), list: () => [...harness.assets.values()] },
+  registryEpoch: harness.registryEpoch,
+  collectPlayMaterialLibrary: (_scene: unknown, _extra: unknown, guids: string[]) => harness.loadLibrary(guids[0]!),
+  collectPlayTextureBytes: async () => new Map(),
+})));
 
 function asset(guid: string, type: string, path: string, dependencies: string[] = [], payload: Record<string, unknown> = {}, chunkSha256s: string[] = []): IndexedAsset {
   const chunks = chunkSha256s.map((sha256, index) => ({ id: `chunk-${index}`, kind: "image", mime: "image/png", sha256, locator: { blob: sha256 } }));

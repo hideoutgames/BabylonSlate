@@ -17,13 +17,11 @@ const docs = vi.hoisted(() => ({
   ],
 }));
 
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => ({
-    assetRegistry: { list: () => docs.assets },
-    readAssetChunk: docs.readAssetChunk,
-    loadAssetDocument: docs.loadAssetDocument,
-  }),
-}));
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
+  assetRegistry: { list: () => docs.assets },
+  readAssetChunk: docs.readAssetChunk,
+  loadAssetDocument: docs.loadAssetDocument,
+})));
 
 afterEach(() => {
   cleanup();

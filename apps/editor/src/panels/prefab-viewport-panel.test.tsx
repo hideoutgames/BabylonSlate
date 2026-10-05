@@ -198,29 +198,27 @@ vi.mock("../context/prefab-editing-context", () => ({
   }),
 }));
 
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => ({
-    collectPlaySpritePayloads,
-    collectPlayTilemapContent,
-    collectPlayTextureBytes,
-    collectPlayTexturePixelSizes,
-    collectPlayFontFacetypeBytes,
-  collectPlayAreaEmissions,
-    collectPlayFontMsdfPair,
-    collectPlayFontFaceEntries,
-    collectPlayFontCssStacks,
-    collectPlayModelBytes,
-    collectPlayModelPayloads,
-    collectPlayAudio,
-    collectPlayWaterContent,
-  collectPlayRenderTargets,
-    collectPlayMaterialLibrary,
-    projectDocument: null,
-    openDocuments: prefabDocs.openDocuments,
-    assetRegistry: prefabDocs.assetRegistry,
-    registryEpoch: prefabDocs.registryEpoch,
-  }),
-}));
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
+  collectPlaySpritePayloads,
+  collectPlayTilemapContent,
+  collectPlayTextureBytes,
+  collectPlayTexturePixelSizes,
+  collectPlayFontFacetypeBytes,
+collectPlayAreaEmissions,
+  collectPlayFontMsdfPair,
+  collectPlayFontFaceEntries,
+  collectPlayFontCssStacks,
+  collectPlayModelBytes,
+  collectPlayModelPayloads,
+  collectPlayAudio,
+  collectPlayWaterContent,
+collectPlayRenderTargets,
+  collectPlayMaterialLibrary,
+  projectDocument: null,
+  openDocuments: prefabDocs.openDocuments,
+  assetRegistry: prefabDocs.assetRegistry,
+  registryEpoch: prefabDocs.registryEpoch,
+})));
 
 vi.mock("../context/document-workspace-context", () => ({
   useDocumentWorkspace: () => ({

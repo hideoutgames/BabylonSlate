@@ -23,30 +23,28 @@ vi.mock("./document-workspace-context", () => ({
   useDocumentWorkspace: () => ({ documentId: workspace.documentId }),
 }));
 
-vi.mock("./document-context", () => ({
-  useDocuments: () => ({
-    openDocuments: [
-      {
-        id: "graph:assets/Hero.class.babasset",
-        ref: {
-          kind: "graph",
-          path: "assets/Hero.class.babasset",
-          label: "Hero Class",
-        },
-        content: {
-          nodes: [],
-          edges: [],
-          members: [],
-          components: [createMeshComponent("prefab-mesh", "box")],
-        },
-        layout: null,
-        dirty: false,
+vi.mock("./document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
+  openDocuments: [
+    {
+      id: "graph:assets/Hero.class.babasset",
+      ref: {
+        kind: "graph",
+        path: "assets/Hero.class.babasset",
+        label: "Hero Class",
       },
-    ],
-    applyGraphChange,
-    ...documentOverrides.value,
-  }),
-}));
+      content: {
+        nodes: [],
+        edges: [],
+        members: [],
+        components: [createMeshComponent("prefab-mesh", "box")],
+      },
+      layout: null,
+      dirty: false,
+    },
+  ],
+  applyGraphChange,
+  ...documentOverrides.value,
+})));
 
 function SelectionProbe() {
   const {
