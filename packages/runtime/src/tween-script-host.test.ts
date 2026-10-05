@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { Actor, ActorComponent } from "@babylonslate/object-model";
 import { identityTransform } from "@babylonslate/core";
+import { compileGraph, type GraphNode, type LogicGraph } from "@babylonslate/scripting";
+import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
 import { ScriptHost, type ScriptHostServices } from "./script-host";
 import { TweenRuntime } from "./tween-runtime";
 
@@ -26,7 +28,7 @@ describe("Tween script targets", () => {
   it("writes retained scalar references and native color storage through the property refresh path", async () => {
     const { ctx, component, tweens, actor, refresh } = harness();
     const text = component("2DTextComponent", { color: [1, 1, 1] });
-    const scalar = ctx.tweenValue(ctx.variableReference(null, "score"), "float", 10, 20, 2, "linear");
+    const scalar = ctx.tweenValue(ctx.variableReference(null, "score", true), "float", 10, 20, 2, "linear");
     const color = ctx.tweenValue(ctx.variableReference(text, "color"), "color", [1, 0, 0], [0, 0, 1], 2, "linear");
     tweens.advance(1);
     expect(actor.getVariable("score")).toBe(15);
@@ -35,6 +37,52 @@ describe("Tween script targets", () => {
     tweens.advance(1);
     expect(await scalar).toBe(true); expect(await color).toBe(true);
     expect(ctx.variableReference(component("2DRichTextComponent"), "appearProgress")).toBeNull();
+  });
+
+  it("compiles explicit missing targets without falling back to the caller's variable or transform", async () => {
+    const { ctx, actor, tweens } = harness();
+    const registry = createDefaultNodeRegistry();
+    const node = (id: string, typeId: string, properties: Record<string, unknown> = {}): GraphNode =>
+      ({ id, typeId, properties, position: { x: 0, y: 0 }, pins: registry.get(typeId)!.pins(properties) });
+    const edge = (source: string, sourcePin: string, target: string, targetPin: string) =>
+      ({ id: `${source}:${target}:${targetPin}`, sourceNodeId: source, sourcePinId: sourcePin, targetNodeId: target, targetPinId: targetPin });
+    actor.setVariable("score", 3);
+    actor.setVariable("Other", null);
+    const variable = node("variable", "variables.get", { variableName: "score", typeId: "float", classId: "Actor" });
+    const graph: LogicGraph = { id: "targets", kind: "event", nodes: [node("entry", "flow.entry"),
+      node("owner", "variables.get", { variableName: "Other", typeId: "object", typeClassId: "Actor", implicitSelf: true }),
+      variable, node("tween", "tween.float", { a: 10, b: 20, duration: 1 }),
+      node("done", "debug.log", { message: "completed" })],
+      edges: [edge("entry", "execOut", "tween", "execIn"), edge("owner", "value", "variable", "target"),
+        edge("variable", "value", "tween", "target"), edge("tween", "execOut", "done", "execIn")] };
+    const run = () => {
+      const compiled = compileGraph(graph, { assetGuid: "missing-tween-target", registry });
+      const source = compiled.source.replace(/export\s+(async\s+)?function\s+/g, "$1function ");
+      return new Function(`${source}\nreturn run;`)()(ctx) as Promise<void>;
+    };
+    const completed = vi.fn(); ctx.log = completed;
+    const missing = run();
+    tweens.advance(1);
+    await missing;
+    expect(actor.getVariable("score")).toBe(3);
+    expect(completed).not.toHaveBeenCalled();
+
+    variable.properties.implicitSelf = true;
+    variable.pins = registry.get(variable.typeId)!.pins(variable.properties);
+    graph.edges = graph.edges.filter((entry) => entry.targetNodeId !== "variable");
+    const implicit = run();
+    expect(actor.getVariable("score")).toBe(10);
+    tweens.advance(1); await implicit;
+    expect(actor.getVariable("score")).toBe(20);
+    expect(completed).toHaveBeenCalledOnce();
+
+    graph.nodes = [node("entry", "flow.entry"), node("tween", "tween.actorPosition", {
+      a: { x: 10, y: 0, z: 0 }, b: { x: 20, y: 0, z: 0 }, duration: 0,
+    }), node("done", "debug.log", { message: "completed" })];
+    graph.edges = [edge("entry", "execOut", "tween", "execIn"), edge("tween", "execOut", "done", "execIn")];
+    await run();
+    expect(actor.transform.position).toEqual({ x: 0, y: 0, z: 0 });
+    expect(completed).toHaveBeenCalledOnce();
   });
 
   it("makes named property tweens and ordinary writable references replace each other", async () => {

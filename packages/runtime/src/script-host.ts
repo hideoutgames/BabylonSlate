@@ -262,7 +262,7 @@ export interface ScriptContext {
   drawDebug(payload: Record<string, unknown>): void;
   getVariable(name: string): unknown;
   setVariable(name: string, value: unknown): void;
-  variableReference(target: BObject | null | undefined, name: string): TweenReference | null;
+  variableReference(target: BObject | null | undefined, name: string, implicitSelf?: boolean): TweenReference | null;
   tweenValue(reference: TweenReference | null, type: TweenValueType, a: unknown, b: unknown, duration: number, curve: unknown): Promise<boolean>;
   tweenProperty(target: unknown, property: string, type: TweenValueType, a: unknown, b: unknown, duration: number, curve: unknown, space?: unknown): Promise<boolean>;
   getVariableFrom(target: BObject | null | undefined, name: string): unknown;
@@ -1097,8 +1097,8 @@ export class ScriptHost {
         services.drawDebug?.(payload);
       },
       getVariable: (name) => store?.getVariable(name),
-      variableReference: (target, name) => {
-        const object = target ?? store;
+      variableReference: (target, name, implicitSelf = false) => {
+        const object = implicitSelf ? store : target;
         if (!object || typeof name !== "string" || !name ||
           (object instanceof BObject && (object.destroyed || isReadOnlyTweenProperty(object, name)))) return null;
         return {
@@ -1117,7 +1117,7 @@ export class ScriptHost {
           completed && tweenOwnerAlive(tweenOwner) && tweenOwnerAlive(reference.owner) && services.isTweenSessionActive?.() !== false);
       },
       tweenProperty: (target, property, type, a, b, duration, curve, space) => {
-        const reference = propertyTweenReference(target ?? self, property, type, space, services);
+        const reference = propertyTweenReference(target, property, type, space, services);
         return context.tweenValue(reference, type, a, b, duration, curve);
       },
       setVariable: (name, value) => {

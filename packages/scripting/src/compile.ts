@@ -408,9 +408,9 @@ export function compileGraph(
       ? source.properties.propertyKey : name;
     const ownerPin = pinForCodegen(source, "target", "in");
     const connected = ownerPin && edgeToInput(graph, source.id, ownerPin.id);
-    const owner = !ownerPin || (!connected && source.properties.implicitSelf === true)
-      ? "null" : pinExpr(source, ownerPin);
-    return `ctx.variableReference(${owner}, ${JSON.stringify(property)})`;
+    const implicitSelf = !ownerPin || (!connected && source.properties.implicitSelf === true);
+    const owner = implicitSelf ? "null" : pinExpr(source, ownerPin!);
+    return `ctx.variableReference(${owner}, ${JSON.stringify(property)}, ${implicitSelf})`;
   }
 
   function makeCtx(node: GraphNode, continuation?: (expression: string) => void): CodegenContext {
