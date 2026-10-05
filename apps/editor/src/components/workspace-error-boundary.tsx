@@ -6,9 +6,12 @@ import {
 } from "@babylonslate/ui/components/alert";
 import { SelectableText } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
+import { profileRegion } from "../lib/render-profile";
 
 interface WorkspaceErrorBoundaryProps {
   children: ReactNode;
+  /** Editor-edit profiling region for this document subtree (test builds only). */
+  renderProfileId?: string;
 }
 
 interface WorkspaceErrorBoundaryState {
@@ -53,6 +56,7 @@ export class WorkspaceErrorBoundary extends Component<
         </Alert>
       );
     }
-    return this.props.children;
+    const { children, renderProfileId } = this.props;
+    return renderProfileId ? profileRegion(renderProfileId, children) : children;
   }
 }

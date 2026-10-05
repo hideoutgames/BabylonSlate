@@ -38,6 +38,7 @@ import { EditorExtensionsRuntime } from "../components/editor-extensions-runtime
 import { ModelThumbnailCaptureHost } from "../components/model-thumbnail-capture-host";
 import { TestAudioHostStats } from "../lib/test-audio-host-stats";
 import { TestParticleHostStats } from "../lib/test-particle-host-stats";
+import { profileRegion } from "../lib/render-profile";
 import {
   shouldPromptBeforeUnload,
   tabCloseDecision,
@@ -283,12 +284,15 @@ function EditorChromeAndPrompts() {
 
   return (
     <>
-      <EditorChromeBar
-        onCloseProject={() => void requestClose()}
-        onSaveProject={requestSave}
-        onCloseDocument={requestCloseDocument}
-        onCloseAllDocuments={requestCloseAllDocuments}
-      />
+      {profileRegion(
+        "editor-chrome-bar",
+        <EditorChromeBar
+          onCloseProject={() => void requestClose()}
+          onSaveProject={requestSave}
+          onCloseDocument={requestCloseDocument}
+          onCloseAllDocuments={requestCloseAllDocuments}
+        />,
+      )}
       <DirtyCloseDialog
         saving={savingBeforeClose}
         dirtyNames={promptNames}
@@ -410,9 +414,9 @@ function EditorLayout() {
       <EditorChromeAndPrompts />
       <RecoveryBanner />
       <main className="flex min-h-0 flex-1 flex-col">
-        <DocumentWorkspace />
+        {profileRegion("document-workspace", <DocumentWorkspace />)}
       </main>
-      <EditorStatusBar />
+      {profileRegion("editor-status-bar", <EditorStatusBar />)}
       <UnsavedChangesGuard />
     </div>
   );
@@ -432,7 +436,8 @@ export default function EditorRoute({
   const { subscribeDocumentIdentity } = useDocumentActions();
   // Homepage is the only way into a project and closing one returns there,
   // so this route (and the session view state it owns) mounts once per project.
-  return (
+  return profileRegion(
+    "editor-route",
     <EditorSessionStateProvider
       subscribeDocumentIdentity={subscribeDocumentIdentity}
     >
@@ -448,7 +453,9 @@ export default function EditorRoute({
                 <ModelThumbnailCaptureHost />
                 <ProjectSearchProvider>
                   <PlayAwareKeybinds>
-                    {gallery ? <ComponentGallery /> : <EditorLayout />}
+                    {gallery
+                      ? <ComponentGallery />
+                      : profileRegion("editor-layout", <EditorLayout />)}
                   </PlayAwareKeybinds>
                 </ProjectSearchProvider>
               </MaterialRenderControlProvider>
@@ -456,6 +463,6 @@ export default function EditorRoute({
           </ValidationProvider>
         </AssetCreateDocumentsProvider>
       </AssetOpenDocumentsProvider>
-    </EditorSessionStateProvider>
+    </EditorSessionStateProvider>,
   );
 }

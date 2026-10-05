@@ -278,7 +278,7 @@ export function DocumentWorkspace() {
         if (doc.ref.kind === "content-browser") {
           if (!shouldMount) return null;
           return (
-            <WorkspaceErrorBoundary key={id}>
+            <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
               <div
                 className={active ? "flex min-h-0 flex-1 flex-col" : "hidden"}
                 data-testid="document-workspace-content-browser"
@@ -295,7 +295,7 @@ export function DocumentWorkspace() {
         ) {
           if (!shouldMount) return null;
           return (
-            <WorkspaceErrorBoundary key={id}>
+            <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
               <DocumentShell
                 path={doc.ref.path}
                 testId={`document-workspace-${doc.ref.kind}`}
@@ -319,7 +319,7 @@ export function DocumentWorkspace() {
         ) {
           if (!shouldMount) return null;
           return (
-            <WorkspaceErrorBoundary key={id}>
+            <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
               <DocumentWorkspaceProvider documentId={id}>
                 <MaterialEditingProvider documentId={id} active={active}>
                   <DocumentShell
@@ -342,7 +342,7 @@ export function DocumentWorkspace() {
         if (doc.ref.kind === "particle-graph") {
           if (!shouldMount) return null;
           return (
-            <WorkspaceErrorBoundary key={id}>
+            <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
               <DocumentWorkspaceProvider documentId={id}>
                 <ParticleGraphEditingProvider documentId={id}>
                   <DocumentShell
@@ -365,7 +365,7 @@ export function DocumentWorkspace() {
         if (doc.ref.kind === "anim-graph") {
           if (!shouldMount) return null;
           return (
-            <WorkspaceErrorBoundary key={id}>
+            <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
               <DocumentWorkspaceProvider documentId={id}>
                 <AnimGraphEditingProvider>
                   <PrefabEditingProvider initialSelectedId={null}>
@@ -388,7 +388,7 @@ export function DocumentWorkspace() {
         if (doc.ref.kind === "behaviour-tree") {
           if (!shouldMount) return null;
           return (
-            <WorkspaceErrorBoundary key={id}>
+            <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
               <DocumentWorkspaceProvider documentId={id}>
                 <BehaviourTreeEditingProvider>
                   <DocumentShell
@@ -411,7 +411,7 @@ export function DocumentWorkspace() {
         if (doc.ref.kind === "sprite-animation") {
           if (!shouldMount) return null;
           return (
-            <WorkspaceErrorBoundary key={id}>
+            <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
               <DocumentWorkspaceProvider documentId={id}>
                 <SpriteAnimationEditingProvider>
                   <DocumentShell
@@ -434,7 +434,7 @@ export function DocumentWorkspace() {
         if (doc.ref.kind === "tileset") {
           if (!shouldMount) return null;
           return (
-            <WorkspaceErrorBoundary key={id}>
+            <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
               <DocumentWorkspaceProvider documentId={id}>
                 <TilesetEditingProvider>
                   <DocumentShell
@@ -457,7 +457,7 @@ export function DocumentWorkspace() {
         if (doc.ref.kind === "tilemap") {
           if (!shouldMount) return null;
           return (
-            <WorkspaceErrorBoundary key={id}>
+            <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
               <DocumentWorkspaceProvider documentId={id}>
                 <TilemapEditingProvider>
                   <DocumentShell
@@ -480,7 +480,7 @@ export function DocumentWorkspace() {
         if (doc.ref.kind === "trace") {
           if (!shouldMount) return null;
           return (
-            <WorkspaceErrorBoundary key={id}>
+            <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
               <DocumentWorkspaceProvider documentId={id}>
                 <TracePlaybackProvider documentId={id}>
                   <DocumentShell
@@ -503,7 +503,7 @@ export function DocumentWorkspace() {
         if (doc.ref.kind === "model") {
           if (!shouldMount) return null;
           return (
-            <WorkspaceErrorBoundary key={id}>
+            <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
               <DocumentWorkspaceProvider documentId={id}>
                 <ModelColliderSessionProvider>
                   <DocumentShell
@@ -526,7 +526,7 @@ export function DocumentWorkspace() {
         if (doc.ref.kind === "input-action" || doc.ref.kind === "input-axis") {
           if (!shouldMount) return null;
           return (
-            <WorkspaceErrorBoundary key={id}>
+            <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
               <DocumentWorkspaceProvider documentId={id}>
                 <InputAssetEditingProvider>
                   <DocumentShell path={doc.ref.path} testId={`document-workspace-${doc.ref.kind}`} active={active}>
@@ -557,7 +557,7 @@ export function DocumentWorkspace() {
         ) {
           if (!shouldMount) return null;
           return (
-            <WorkspaceErrorBoundary key={id}>
+            <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
               <DocumentWorkspaceProvider documentId={id}>
                 <DocumentShell
                   path={doc.ref.path}
@@ -578,7 +578,7 @@ export function DocumentWorkspace() {
         if (isTypeAsset) {
           if (!shouldMount) return null;
           return (
-            <WorkspaceErrorBoundary key={id}>
+            <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
               <DocumentWorkspaceProvider documentId={id}>
                 <TypeAssetEditingProvider>
                   <DocumentShell
@@ -624,7 +624,7 @@ export function DocumentWorkspace() {
           doc.ref.kind === "scene-layer" || overlayPrefab;
 
         return (
-          <WorkspaceErrorBoundary key={id}>
+          <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
             <DocumentWorkspaceProvider documentId={id}>
               <SceneEditingProvider
                 documentId={id}

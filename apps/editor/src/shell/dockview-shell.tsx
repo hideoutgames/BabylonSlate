@@ -4,6 +4,7 @@ import {
   type DockviewApi,
   type DockviewReadyEvent,
   type DockviewTheme,
+  type IDockviewPanelProps,
 } from "dockview-react";
 import type { DockviewDocumentKind } from "./default-layout";
 import "dockview-react/dist/styles/dockview.css";
@@ -22,8 +23,14 @@ import {
 } from "./phone-dock-layout";
 import { PhoneWindowSwitcher } from "./phone-window-switcher";
 import { listDockWindows } from "./window-catalog";
+import { profileComponents } from "../lib/render-profile";
 
 const SPACED_THEME: DockviewTheme = { ...themeAbyss, gap: 4 };
+/** Each dock panel kind is one `panel:<component>` profiling region in test builds. */
+const dockPanelComponents = profileComponents<IDockviewPanelProps>(
+  "panel:",
+  panelComponents,
+);
 
 export interface DockviewShellProps {
   documentKind: DockviewDocumentKind;
@@ -197,7 +204,7 @@ export function DockviewShell({
           disableDnd={platformOptions.singleWindow}
           disableFloatingGroups={platformOptions.disableFloatingGroups}
           onReady={handleReady}
-          components={panelComponents}
+          components={dockPanelComponents}
         />
       </div>
       {platformOptions.singleWindow && (
