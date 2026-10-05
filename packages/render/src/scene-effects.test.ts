@@ -44,7 +44,7 @@ it("adds the Scene Linear and Display Color stages for PBR only", () => {
   });
   expect(planSceneEffects(linear, "pbr")).toEqual({
     sceneLinear: true,
-    reflections: null, volumetricLighting: null,
+    ambientOcclusion: null, reflections: null, volumetricLighting: null,
     bloom: null,
     imageProcessing: { sceneLinear: true, vignette: null },
     fxaa: false,
@@ -63,7 +63,7 @@ it("keeps CEL effects display-space with identity processing", () => {
   const plan = planSceneEffects(linear, "cel")!;
   expect(plan).toEqual({
     sceneLinear: false,
-    reflections: null, volumetricLighting: null,
+    ambientOcclusion: null, reflections: null, volumetricLighting: null,
     bloom: { enabled: true, threshold: 0.5, weight: 0.4, kernel: 32, scale: 0.25 },
     imageProcessing: null,
     fxaa: false,
@@ -155,10 +155,16 @@ it("changes the effects key on mode, settings and the session toggle", () => {
   expect(sceneEffectsKey(linear, "pbr", true)).toBe(base);
 });
 
-it("enables PBR scene reflections and scene-light fog independently", () => {
+it("enables PBR ambient occlusion, scene reflections and scene-light fog independently", () => {
   const settings = effects({ reflections: { ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true },
+    ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true },
     volumetricLighting: { ...DEFAULT_RENDER_EFFECTS.volumetricLighting, enabled: true } });
-  expect(planSceneEffects(settings, "pbr")).toMatchObject({ reflections: settings.reflections, volumetricLighting: settings.volumetricLighting });
-  expect(planSceneEffects(settings, "cel")).toMatchObject({ reflections: null, volumetricLighting: settings.volumetricLighting });
+  expect(planSceneEffects(settings, "pbr")).toMatchObject({ ambientOcclusion: settings.ambientOcclusion,
+    reflections: settings.reflections, volumetricLighting: settings.volumetricLighting });
+  expect(planSceneEffects(settings, "cel")).toMatchObject({ ambientOcclusion: null, reflections: null,
+    volumetricLighting: settings.volumetricLighting });
+  const occlusionOnly = effects({ ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true } });
+  expect(planSceneEffects(occlusionOnly, "pbr")?.ambientOcclusion).toEqual(occlusionOnly.ambientOcclusion);
+  expect(planSceneEffects(occlusionOnly, "cel")).toBeNull();
   expect(planSceneEffects(settings, "pbr", false)).toBeNull();
 });

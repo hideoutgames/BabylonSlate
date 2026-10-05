@@ -13,7 +13,8 @@ export interface SceneEffectsImageProcessingPlan {
   vignette: RenderEffectsSettings["vignette"] | null;
 }
 
-/** Composed effect chain: authored stack output → bloom → image processing →
+/** Composed effect chain: authored stack output → ambient occlusion →
+ * reflections → volumetric lighting → bloom → image processing →
  * FXAA → output. Null means the project renders exactly as it always has. */
 export interface SceneEffectsPlan {
   /** Half-float linear intermediates and the linear→display conversion. */
@@ -21,6 +22,7 @@ export interface SceneEffectsPlan {
   bloom: RenderEffectsSettings["bloom"] | null;
   imageProcessing: SceneEffectsImageProcessingPlan | null;
   fxaa: boolean;
+  ambientOcclusion: RenderEffectsSettings["ambientOcclusion"] | null;
   reflections: RenderEffectsSettings["reflections"] | null;
   volumetricLighting: RenderEffectsSettings["volumetricLighting"] | null;
 }
@@ -29,7 +31,8 @@ export interface SceneEffectsPlan {
  * Resolve the normalized settings into the renderable chain. CEL renders
  * display-space by construction, so the Scene Linear stage (and therefore
  * tone mapping, exposure and contrast) only applies to PBR projects; vignette,
- * bloom and FXAA remain available in every mode.
+ * bloom and FXAA remain available in every mode. Ambient occlusion and
+ * reflections are PBR-only so CEL keeps its hard-stepped shading.
  */
 export function planSceneEffects(
   effects: RenderEffectsSettings,
@@ -47,11 +50,13 @@ export function planSceneEffects(
   const imageProcessing =
     sceneLinear || vignette ? { sceneLinear, vignette } : null;
   const fxaa = effects.fxaa;
+  const ambientOcclusion = mode === "pbr" && effects.ambientOcclusion.enabled ? effects.ambientOcclusion : null;
   const reflections = mode === "pbr" && effects.reflections.enabled ? effects.reflections : null;
   const volumetricLighting = effects.volumetricLighting.enabled ? effects.volumetricLighting
     : fogVolumesPresent ? { ...effects.volumetricLighting, enabled: true, density: 0 } : null;
-  if (!sceneLinear && !bloom && !imageProcessing && !fxaa && !reflections && !volumetricLighting) return null;
-  return { sceneLinear, bloom, imageProcessing, fxaa, reflections, volumetricLighting };
+  if (!sceneLinear && !bloom && !imageProcessing && !fxaa && !ambientOcclusion && !reflections && !volumetricLighting)
+    return null;
+  return { sceneLinear, bloom, imageProcessing, fxaa, ambientOcclusion, reflections, volumetricLighting };
 }
 
 const TONE_MAPPING_TYPES: Record<RenderEffectsToneMapping, number> = {
