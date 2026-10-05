@@ -1,5 +1,5 @@
 import {
-  Color3, Constants, DirectionalLight, HemisphericLight, MaterialPluginBase, Matrix, PBRMaterial, type MaterialDefines, RawTexture, RawTexture2DArray, ShaderLanguage,
+  BaseTexture, Color3, Constants, DirectionalLight, HemisphericLight, MaterialPluginBase, Matrix, PBRMaterial, type MaterialDefines, RawTexture, ShaderLanguage,
   Texture, ThinTexture, Vector3, type AbstractEngine, type AbstractMesh, type Effect, type Material, type Scene, type SubMesh, type UniformBuffer,
 } from "@babylonjs/core";
 import {
@@ -1439,18 +1439,26 @@ function placeholderField(scene: Scene): RawTexture {
   return texture;
 }
 
-const fftPlaceholders = new WeakMap<Scene, RawTexture2DArray>();
+const fftPlaceholders = new WeakMap<Scene, BaseTexture>();
 /**
- * One zero texel of the FFT band's type (a 2D array; out-of-range layers clamp to it) for variants that sample the band
- * while it is not ready: their gain is 0 then, so it contributes nothing.
+ * One zero texel of the FFT band's type for variants that sample the band while it is not ready (their gain is 0 then,
+ * so it contributes nothing): a 2D array of one layer, which out-of-range layers clamp to. Allocated as a never-drawn
+ * one-layer render target, as the band's own output is (resources start zeroed on WebGL2 and WebGPU).
  */
-function placeholderFft(scene: Scene): RawTexture2DArray {
+function placeholderFft(scene: Scene): BaseTexture {
   let texture = fftPlaceholders.get(scene);
   if (!texture) {
-    texture = new RawTexture2DArray(new Uint8Array(4), 1, 1, 1, Constants.TEXTUREFORMAT_RGBA, scene, false, false, Texture.NEAREST_SAMPLINGMODE);
-    texture.name = "water-fft-placeholder";
-    fftPlaceholders.set(scene, texture);
-    scene.onDisposeObservable.addOnce(() => { texture!.dispose(); fftPlaceholders.delete(scene); });
+    const engine = scene.getEngine();
+    const target = engine.createRenderTargetTexture({ width: 1, height: 1, layers: 1 }, {
+      type: Constants.TEXTURETYPE_UNSIGNED_BYTE, format: Constants.TEXTUREFORMAT_RGBA, samplingMode: Constants.TEXTURE_NEAREST_SAMPLINGMODE,
+      generateMipMaps: false, generateDepthBuffer: false, generateStencilBuffer: false, label: "Water FFT placeholder",
+    });
+    // The wrapper holds its own reference, so the texture and the render target release independently.
+    target.texture!.incrementReferences();
+    const placeholder = texture = new BaseTexture(engine, target.texture);
+    placeholder.name = "water-fft-placeholder";
+    fftPlaceholders.set(scene, placeholder);
+    scene.onDisposeObservable.addOnce(() => { placeholder.dispose(); target.dispose(); fftPlaceholders.delete(scene); });
   }
   return texture;
 }

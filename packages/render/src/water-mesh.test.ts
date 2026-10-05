@@ -155,6 +155,31 @@ describe("Water rendering", () => {
       expect(expanded.maximum.z - expanded.minimum.z).toBeCloseTo(7200, 3);
     } finally { scene.dispose(); engine.dispose(); }
   });
+  it("pads a finite body's culling bounds by the FFT detail band's horizontal bound only while its vertex shader adds the band", () => {
+    const engine = new NullEngine();
+    Object.assign(engine.getCaps(), { textureFloatRender: true, textureHalfFloatRender: true });
+    const scene = new Scene(engine);
+    new FreeCamera("camera", new Vector3(0, 4, -20), scene);
+    try {
+      const water = { ...createDefaultWaterDefinition(), steepness: 0.8 };
+      const ocean = createWaterMesh(scene, "ocean", normalizeWaterBody({ width: 60, length: 40, waveScale: 0.7 }, "ocean"), water);
+      const width = () => { const box = ocean.getBoundingInfo().boundingBox; return box.maximum.x - box.minimum.x; };
+      const analytic = 60 + 2 * waterHorizontalEnvelope(water, 0.7);
+      updateSceneWater(scene);
+      // Medium samples no band: the analytic envelope alone.
+      expect(width()).toBeCloseTo(analytic, 4);
+      // At Ultra the vertex shader adds the band's offset: λ (Steepness at most) times its 4σ height at this Wave Scale,
+      // on each side.
+      setQuality(scene, "ultra"); updateSceneWater(scene);
+      expect(width()).toBeCloseTo(analytic + 2 * 0.8 * waterWaveSet(water).detailHeight * 0.7, 4);
+      // CPU-displaced vertices never carry the band, and Medium drops it again.
+      setWaterGpuWaves(ocean, false); updateSceneWater(scene);
+      expect(width()).toBeCloseTo(analytic, 4);
+      setWaterGpuWaves(ocean, true); setQuality(scene, "medium"); updateSceneWater(scene);
+      expect(width()).toBeCloseTo(analytic, 4);
+    } finally { scene.dispose(); engine.dispose(); }
+  });
+
   it("keeps Global Water's fine wave cells under an orbit camera's target as well as near its eye", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     // The eye stands about 20 m from the target horizontally, beyond the dense cells' half width around the eye.
