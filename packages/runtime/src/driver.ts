@@ -1112,13 +1112,6 @@ class InProcessRuntime implements RuntimeDriver {
         const owner = target.owner;
         if (!(owner instanceof Actor) || owner.destroyed) return null;
         const slotId = this.slotByGuid.get(owner.guid);
-        if (component.classId === "DeformerComponent") {
-          if (slotId !== undefined) {
-            if (this.processingTick) this.dirtyDeformerActors.add(owner);
-            else this.emitActorDeformers(owner, slotId);
-          }
-          return;
-        }
         const guid = this.animGraphGuid(target);
         const document = guid ? this.animGraphs.get(guid) : undefined;
         const evalKey = target.guid;
@@ -1311,6 +1304,13 @@ class InProcessRuntime implements RuntimeDriver {
         // need immediate collider/query refresh after a property write.
         if (component.classId === "MovementComponent" && propertyName && propertyName !== "radius" && propertyName !== "height") return;
         const slotId = this.slotByGuid.get(owner.guid);
+        if (component.classId === "DeformerComponent") {
+          if (slotId !== undefined) {
+            if (this.processingTick) this.dirtyDeformerActors.add(owner);
+            else this.emitActorDeformers(owner, slotId);
+          }
+          return;
+        }
         if (component.classId === "DynamicRuntimeMeshComponent" &&
           (propertyName === "materialGuid" || propertyName === "enableCollision" || propertyName === "layer" || propertyName === "mask")) {
           if (propertyName === "materialGuid" && slotId !== undefined) this.emitMaterialAssignments([component], slotId, true);
