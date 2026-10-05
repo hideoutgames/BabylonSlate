@@ -4,8 +4,8 @@ import {
   waterEulerianGradient, waterFootprint, waterHorizontalEnvelope, waterRiverCentreline, waterWaveEnvelope, waterWaveQ, waterWaveSet,
   type WaterBodyProperties, type WaterDefinition,
 } from "@babylonslate/core";
-import { updateDynamicMaterialBounds } from "./material-bounds";
 import { inActiveView } from "./active-view";
+import { updateDynamicMaterialBounds } from "./material-bounds";
 import { sceneWaterQualityDeviceClamp, sceneWaterQualityRevision } from "./render-settings";
 import { requestWaterFft, updateSceneWaterFft } from "./water-fft";
 import { configureWaterMaterial, contactRange, WaterMaterialPlugin } from "./water-material";
@@ -80,7 +80,8 @@ export function setSceneWaterTime(scene: Scene, seconds: number): void {
 /**
  * Called once per scene render; runtime water advances only with the worker clock. Every enabled surface advances its
  * shader clock and keeps its grid and bounds current. Surfaces neither drawn last frame nor inside an active camera's
- * frustum skip their CPU vertex work (Custom Material water) and their terrain and contact refreshes until they are.
+ * frustum skip their CPU vertex work (Custom Material water), their terrain and contact refreshes and their FFT detail
+ * request until they are; the FFT simulations then update once for the whole scene.
  */
 export function updateSceneWater(scene: Scene): void {
   const clock = clocks.get(scene) ?? { time: 0, runtime: false };
