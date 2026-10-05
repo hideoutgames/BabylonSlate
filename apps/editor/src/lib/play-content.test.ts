@@ -22,6 +22,7 @@ import {
   blackboardGuidsFromScene,
   collectPlayScriptDocuments,
   playPrefabDependencyScene,
+  overlayTextureGuidsFromScenes,
   mergePlayAnimGraphs,
   collectAnimGraphCompileDocuments,
   playAnimGraphsFromOpenDocuments,

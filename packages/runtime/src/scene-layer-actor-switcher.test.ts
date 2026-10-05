@@ -11,7 +11,7 @@ describe("SceneLayer actor switcher", () => {
   it("spawns inherited prefab components with per-entry defaults, switches through graph functions and disposes stale selections", async () => {
     const layer = createDefaultSceneLayer();
     layer.actors = [createActor("switcher", "Menu", { classId: "Menu", properties: {
-      initialIndex: 0, sceneLayerActors: [{ classId: "Panel", defaults: { title: "First", data: { count: 1 } } }, { classId: "Panel", defaults: { title: "Second" } }, "Actor"],
+      initialIndex: 0, sceneLayerActors: [{ classId: "Panel", defaults: { title: "First", data: { count: 1 }, labels: [{ key: "locale", value: "en" }] } }, { classId: "Panel", defaults: { title: "Second" } }, "Actor"],
     } })];
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, playScene: createDefaultScene(), sceneLayerLibrary: { menu: layer }, onCommand: command => commands.push(command) });
@@ -19,7 +19,7 @@ describe("SceneLayer actor switcher", () => {
       await runtime.loadScripts([
         { assetGuid: "base", classId: "BasePanel", parentClassId: "SceneLayerActor", anchors: [],
           components: [{ id: "caption", classId: "2DTextComponent", properties: { text: "Panel" } }],
-          variables: [{ name: "title", type: "string", defaultValue: "Default" }],
+          variables: [{ name: "title", type: "string", defaultValue: "Default" }, { name: "labels", type: "string", container: "map", keyTypeId: "string", defaultValue: [] }],
           entryPoints: entryPoints("onBeginPlay", "onDestroyed", "onSceneLayerActorSwitchedTo", "onSceneLayerActorSwitchedFrom"),
           source: `export function onBeginPlay(ctx) { ctx.self.setVariable("beganWith", ctx.self.getVariable("title")); }
             export function onDestroyed(ctx) { ctx.self.setVariable("ended", true); }
@@ -51,6 +51,7 @@ describe("SceneLayer actor switcher", () => {
       expect(first.sceneLayerId).toBe(liveLayer.guid);
       expect(first.getVariable("parentId")).toBe(switcher.guid);
       expect(first.getVariable("title")).toBe("First");
+      expect(first.getVariable("labels")).toEqual(new Map([["locale", "en"]]));
       expect(first.getVariable("beganWith")).toBe("First");
       expect(first.getVariable("entered")).toBe(0);
       expect(first.components[0]).toMatchObject({ sourceId: "caption", classId: "2DTextComponent" });
@@ -59,12 +60,15 @@ describe("SceneLayer actor switcher", () => {
       (first.getVariable("data") as { count: number }).count = 5;
       expect((switcher.getVariable("sceneLayerActors") as Array<{ defaults: { data: { count: number } } }>)[0]!.defaults.data.count).toBe(1);
 
+      const nested = runtime.getWorld().createActor({ classId: "SceneLayerActor", sceneLayerId: liveLayer.guid, variables: { parentId: first.guid } });
+      runtime.getWorld().spawnActorNow(nested);
       switcher.setVariable("nextIndex", 1);
       runtime.tick();
       const second = switcher.currentActor!;
       expect(second).not.toBe(first);
       expect(second.getVariable("title")).toBe("Second");
       expect(first.destroyed).toBe(true);
+      expect(nested.destroyed).toBe(true);
       expect(first.getVariable("left")).toBe(0);
       expect(first.getVariable("ended")).toBe(true);
       expect(switcher.getVariable("returned")).toBe(second);

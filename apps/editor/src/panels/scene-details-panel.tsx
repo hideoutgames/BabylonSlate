@@ -1291,7 +1291,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
             data-testid="primary-actor-grid"
           />
         ) : null}
-        {!multiSelection && walkAncestry(actor.classId, parentOf).includes("SceneLayerActorSwitcher") && matches("Scene Layer Actors Switcher Initial Index Defaults") ? <SceneLayerSwitcherFields properties={actor.properties ?? {}} onChange={properties => updateActor(entry => ({ ...entry, properties }))} /> : null}
+        {!multiSelection && walkAncestry(actor.classId, parentOf).includes("SceneLayerActorSwitcher") && matches("Scene Layer Actors Switcher Initial Index Defaults") ? <SceneLayerSwitcherFields classId={actor.classId} properties={actor.properties ?? {}} onChange={properties => updateActor(entry => ({ ...entry, properties }))} /> : null}
         {!visibleTransformRows.length && !componentDetails.length
           ? noMatchingProperties
           : null}

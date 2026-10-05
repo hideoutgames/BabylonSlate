@@ -54,7 +54,7 @@ export type PlaceActorKind =
   | { type: "scene-layer-switcher" }
   | {
       type: "overlay-2d";
-      classId: UIControl2DClassId | (typeof OVERLAY_LAYOUT_CLASSES)[number] |
+      classId: UIControl2DClassId | (typeof OVERLAY_LAYOUT_CLASSES)[number]
         | "2DAnchorComponent"
         | "2DScrollBoxComponent"
         | "2DVerticalBoxComponent"

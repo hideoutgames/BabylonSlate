@@ -34,7 +34,10 @@ const FOCUS_EVENTS: EngineScriptEvent[] = ["Enter", "Leave", "Activate"].map((su
   name: `On Focus ${suffix}`, eventType: `flow.event.focus${suffix}`, exportName: `onFocus${suffix}`,
 }));
 const SET_VALUE = fn("Set Value", "setUIControlValue", [["value", "float"]]);
-const INCREMENT = fn("Increment", "incrementUIControl", [["delta", "float"]]);
+const INCREMENT: EngineScriptFunction = {
+  ...fn("Increment", "incrementUIControl", [["delta", "float"]]),
+  description: "Add Delta steps to Value. Use 1 to increase by one step or -1 to decrease. A zero Step uses one unit.",
+};
 const SET_CHECKED = fn("Set Checked", "setUIControlChecked", [["checked", "bool"]]);
 const VALUE_CHANGED = event("On Value Changed", "ValueChanged");
 const CHECKED_CHANGED = event("On Checked Changed", "CheckedChanged");

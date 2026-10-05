@@ -12,7 +12,7 @@ describe("SceneLayer layout runtime", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({ seed: 1, maxActors: 32, preferSoftwarePhysics: true, playScene: createDefaultScene(), sceneLayerLibrary: { menu: layer }, onCommand: command => commands.push(command) });
     try {
-      await runtime.loadScripts([{ assetGuid: "row-class", classId: "Row", parentClassId: "SceneLayerActor", source: "export {};", anchors: [], entryPoints: [],
+      await runtime.loadScripts([{ assetGuid: "row-class", classId: "Row", parentClassId: "SceneLayerActor", source: "", anchors: [], entryPoints: [],
         components: [{ id: "surface", classId: "2DMaterialComponent", properties: {} }] }]);
       runtime.realizePlayWorld();
       const liveLayer = runtime.createSceneLayer("menu")!;
@@ -29,24 +29,6 @@ describe("SceneLayer layout runtime", () => {
       expect(commands.some(command => command.type === "despawn" && command.actorGuid === retired.guid)).toBe(true);
       runtime.removeSceneLayer(liveLayer.guid);
       expect(rows()).toHaveLength(0);
-    } finally { runtime.stop(); }
-  });
-
-  it("reflows safe-area contents when CSS pixel device insets change", () => {
-    const layer = createDefaultSceneLayer();
-    layer.actors = [createActor("menu", "Menu", { classId: "SceneLayerActor", components: [
-      { id: "safe", classId: "2DSafeAreaComponent", properties: { width: 10, height: 8 } },
-      { id: "content", classId: "2DMaterialComponent", parentId: "safe", properties: { widthMode: "fill", heightMode: "fill" } },
-    ] })];
-    const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, playScene: createDefaultScene(), sceneLayerLibrary: { menu: layer }, onCommand: command => commands.push(command) });
-    try {
-      runtime.realizePlayWorld(); runtime.createSceneLayer("menu");
-      runtime.applySceneLayerResize(10, 8, 1000, 800, { left: 100, right: 0, top: 50, bottom: 0 });
-      const latest = () => commands.filter((command): command is Extract<CommandMessage, { type: "sceneLayerLayout" }> => command.type === "sceneLayerLayout").at(-1)?.entries.find(entry => entry.componentId === "content")?.rect;
-      expect(latest()).toEqual({ x: 0.5, y: -0.25, width: 9, height: 7.5 });
-      runtime.applySceneLayerResize(10, 8, 1000, 800, { left: 0, right: 0, top: 0, bottom: 0 });
-      expect(latest()).toEqual({ x: 0, y: 0, width: 10, height: 8 });
     } finally { runtime.stop(); }
   });
 
@@ -74,6 +56,8 @@ describe("SceneLayer layout runtime", () => {
       runtime.applySceneLayerResize(50, 50, 200, 200, { left: 10, top: 20 });
       expect(rect("small")).toEqual({ x: 0.25, y: -0.5, width: 9.5, height: 9 });
       expect(rect("large")).toEqual({ x: 0.5, y: -1, width: 9, height: 8 });
+      runtime.applySceneLayerResize(50, 50, 200, 200, { left: 0, top: 0 });
+      expect(rect("small")).toEqual({ x: 0, y: 0, width: 10, height: 10 });
     } finally { runtime.stop(); }
   });
 

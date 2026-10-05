@@ -936,7 +936,7 @@ class InProcessRuntime implements RuntimeDriver {
       alive: (actor) => !this.stopped && !actor.destroyed && !this.removingActors.has(actor) &&
         !!actor.sceneLayerId && !!this.world.findSceneLayer(actor.sceneLayerId),
       spawn: (parent, classId, defaults) => this.spawnSceneLayerActor(parent, classId, defaults),
-      remove: (actor) => this.removeOwnedActor(actor),
+      remove: (actor) => this.removeSceneLayerActorSubtree(actor),
       event: (actor, event, args) => this.runOwnerAction(actor, () =>
         this.guardScript(() => this.scriptHost.invokeEvent(actor.classId, event, actor, args))),
     });
@@ -2577,6 +2577,21 @@ class InProcessRuntime implements RuntimeDriver {
     return actor;
   }
 
+  /** Selection-owned descendants must never outlive their removed screen. */
+  private removeSceneLayerActorSubtree(root: Actor): void {
+    const descendants = [root];
+    const seen = new Set<Actor>(descendants);
+    const actors = [...this.world.getActors()];
+    for (let index = 0; index < descendants.length; index++) {
+      const parent = descendants[index]!;
+      for (const actor of actors) {
+        if (seen.has(actor) || actor.sceneLayerId !== root.sceneLayerId || actor.getVariable("parentId") !== parent.guid) continue;
+        descendants.push(actor); seen.add(actor);
+      }
+    }
+    for (const actor of descendants.reverse()) this.removeOwnedActor(actor);
+  }
+
   /** Spawn a prefab in its owner's overlay; transforms stay local to the parent. */
   private spawnSceneLayerActor(parent: Actor, classId: string, defaults: Record<string, unknown> = {}): Actor | null {
     if (this.stopped || parent.destroyed || !parent.sceneLayerId || !this.world.findSceneLayer(parent.sceneLayerId) ||
@@ -2584,9 +2599,14 @@ class InProcessRuntime implements RuntimeDriver {
     this.sceneLayerSpawnDepth++;
     let actor: Actor | null = null;
     try {
+      const variables = structuredClone(defaults);
+      for (const variable of this.world.classRegistry.inheritedVariables(classId)) {
+        if (!Object.hasOwn(variables, variable.name) || !variable.container) continue;
+        variables[variable.name] = hydrateClassVariableValue({ ...variable, defaultValue: variables[variable.name] });
+      }
       actor = this.world.createActor({
         classId, sceneLayerId: parent.sceneLayerId,
-        variables: { ...structuredClone(defaults), parentId: parent.guid },
+        variables: { ...variables, parentId: parent.guid },
         hooks: this.sceneActorHooks(classId),
       });
       const components = this.scriptHost.scriptsFor(classId).find((script) => script.components !== undefined)?.components;
