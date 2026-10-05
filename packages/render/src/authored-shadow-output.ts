@@ -65,7 +65,13 @@ export class AuthoredShadowFragmentOutput extends NodeMaterialBlock {
   protected override _buildBlock(state: NodeMaterialBuildState): this {
     super._buildBlock(state);
     shadowUniforms(state);
-    state._emitFunctionFromInclude("shadowMapFragmentExtraDeclaration", "");
+    // Standalone NodeMaterial readiness compiles once before the generator
+    // supplies SM_FLOAT. Its stock fragment falls back to packed depth, so
+    // packing must also exist in that initial program with no shadow defines.
+    state._emitFunctionFromInclude("packingFunctions", "");
+    state._emitFunctionFromInclude("shadowMapFragmentExtraDeclaration", "", {
+      replaceStrings: [{ search: /#include<packingFunctions>/g, replace: "" }],
+    });
     let alpha = this.opacity.isConnected ? this.opacity.associatedVariableName : "1.0";
     if (this.nativeOpacityMap.isConnected) {
       // Preserve the stock generator's cutoff and alpha-from-RGB behavior.
