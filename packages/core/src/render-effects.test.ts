@@ -34,6 +34,7 @@ describe("render effects settings", () => {
       vignette: { enabled: true, weight: 2.25, color: [0.1, 0.2, 0.3] },
       bloom: { enabled: true, threshold: 0.75, weight: 0.4, kernel: 96, scale: 0.25 },
       fxaa: true,
+      temporalAntiAliasing: { enabled: true, samples: 16, blend: 0.2 },
     });
     expect(normalized).toEqual({
       ...DEFAULT_RENDER_EFFECTS,
@@ -44,12 +45,14 @@ describe("render effects settings", () => {
       vignette: { enabled: true, weight: 2.25, color: [0.1, 0.2, 0.3] },
       bloom: { enabled: true, threshold: 0.75, weight: 0.4, kernel: 96, scale: 0.25 },
       fxaa: true,
+      temporalAntiAliasing: { enabled: true, samples: 16, blend: 0.2 },
     });
     const clamped = normalizeRenderEffectsSettings({
       exposure: 1000,
       contrast: -4,
       vignette: { enabled: true, weight: 50, color: [2, -1, 0.5, 9] },
       bloom: { enabled: true, threshold: -3, weight: 99, kernel: 8192.7, scale: 0 },
+      temporalAntiAliasing: { enabled: true, samples: 99.6, blend: 0 },
     });
     expect(clamped.exposure).toBe(100);
     expect(clamped.contrast).toBe(0);
@@ -59,6 +62,7 @@ describe("render effects settings", () => {
     expect(clamped.bloom.weight).toBe(10);
     expect(clamped.bloom.kernel).toBe(512);
     expect(clamped.bloom.scale).toBe(0.05);
+    expect(clamped.temporalAntiAliasing).toEqual({ enabled: true, samples: 32, blend: 0.02 });
   });
 
   it("accepts only declared enum values", () => {

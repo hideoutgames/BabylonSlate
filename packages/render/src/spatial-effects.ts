@@ -32,6 +32,7 @@ import {
   ambientOcclusionCompositeShader,
   ambientOcclusionShader,
 } from "./ambient-occlusion-shader";
+import { temporalAntiAliasingShader } from "./temporal-anti-aliasing";
 import { retireOwnedEffect } from "./owned-effect-retirement";
 import { beginManagedRenderAllocation } from "./managed-render-resources";
 import { bindFogVolumes, hasFogVolumes } from "./fog-volumes";
@@ -77,6 +78,8 @@ export interface SpatialStage {
   /** Index of the stage whose input is the full-resolution color to compose. */
   mainInput?: number;
   geometry: boolean;
+  /** Renders into a persistent history target and samples the previous one. */
+  history?: boolean;
   bind(effect: Effect): void;
 }
 
@@ -90,13 +93,13 @@ export function spatialEffectsUnsupported(scene: Scene): string | undefined {
     !caps.textureFloatRender ||
     !caps.depthTextureExtension
   )
-    return "Ambient occlusion, reflections and volumetric lighting require four render targets, half-float textures and depth sampling.";
+    return "Ambient occlusion, reflections, volumetric lighting and temporal anti-aliasing require four render targets, half-float textures and depth sampling.";
   return undefined;
 }
 
 /** The plan has at least one stage composed by the spatial geometry chain. */
 export function hasSpatialEffects(plan: SceneEffectsPlan | null): plan is SceneEffectsPlan {
-  return !!plan && !!(plan.ambientOcclusion || plan.reflections || plan.volumetricLighting);
+  return !!plan && !!(plan.ambientOcclusion || plan.reflections || plan.volumetricLighting || plan.temporalAntiAliasing);
 }
 
 /** Reserve MRTs, color/depth and effect targets before any native allocation.
@@ -126,6 +129,9 @@ export function reserveSpatialEffects(
     bytes += pixels * 16 + scaledBytes(plan.reflections.resolutionScale) * 3;
   if (plan.volumetricLighting)
     bytes += pixels * 8 + scaledBytes(plan.volumetricLighting.resolutionScale);
+  // Half-float velocity and two half-float history targets; native adds the
+  // resolve pass input.
+  if (plan.temporalAntiAliasing) bytes += pixels * (native ? 32 : 24);
   return beginManagedRenderAllocation(scene.getEngine(), bytes);
 }
 
@@ -428,6 +434,31 @@ export function createSpatialStages(
         },
       });
     }
+    const temporal = plan.temporalAntiAliasing;
+    if (temporal) {
+      // Last spatial stage: it also resolves the noise of the stages above.
+      const resolve = own(
+        customWrapper(
+          scene,
+          "Scene Temporal Anti-Aliasing",
+          temporalAntiAliasingShader(engine.isWebGPU),
+          ["taaSettings"],
+          ["historySampler", "velocitySampler"],
+        ),
+      );
+      // The first frame of a generation has no valid history to blend.
+      let reset = true;
+      stages.push({
+        wrapper: resolve,
+        scale: 1,
+        geometry: true,
+        history: true,
+        bind: (effect) => {
+          effect.setFloat4("taaSettings", temporal.blend, reset ? 1 : 0, 1 / width, 1 / height);
+          reset = false;
+        },
+      });
+    }
     return stages;
   } catch (error) {
     for (const wrapper of wrappers) {
@@ -448,5 +479,6 @@ export function spatialGeometryTypes(plan: SceneEffectsPlan): number[] {
       ? [Constants.PREPASS_WORLD_NORMAL_TEXTURE_TYPE]
       : []),
     ...(plan.reflections ? [Constants.PREPASS_REFLECTIVITY_TEXTURE_TYPE] : []),
+    ...(plan.temporalAntiAliasing ? [Constants.PREPASS_VELOCITY_LINEAR_TEXTURE_TYPE] : []),
   ];
 }

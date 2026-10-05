@@ -32,6 +32,7 @@ export interface SceneEffectsPlan {
   bloom: RenderEffectsSettings["bloom"] | null;
   imageProcessing: SceneEffectsImageProcessingPlan | null;
   fxaa: boolean;
+  temporalAntiAliasing: RenderEffectsSettings["temporalAntiAliasing"] | null;
   ambientOcclusion: RenderEffectsSettings["ambientOcclusion"] | null;
   reflections: RenderEffectsSettings["reflections"] | null;
   volumetricLighting: RenderEffectsSettings["volumetricLighting"] | null;
@@ -62,13 +63,14 @@ export function planSceneEffects(
   const imageProcessing =
     sceneLinear || vignette || colorGrading ? { sceneLinear, vignette, colorGrading } : null;
   const fxaa = effects.fxaa;
+  const temporalAntiAliasing = effects.temporalAntiAliasing.enabled ? effects.temporalAntiAliasing : null;
   const ambientOcclusion = mode === "pbr" && effects.ambientOcclusion.enabled ? effects.ambientOcclusion : null;
   const reflections = mode === "pbr" && effects.reflections.enabled ? effects.reflections : null;
   const volumetricLighting = effects.volumetricLighting.enabled ? effects.volumetricLighting
     : fogVolumesPresent ? { ...effects.volumetricLighting, enabled: true, density: 0 } : null;
-  if (!sceneLinear && !bloom && !imageProcessing && !fxaa && !ambientOcclusion && !reflections && !volumetricLighting)
+  if (!sceneLinear && !bloom && !imageProcessing && !fxaa && !temporalAntiAliasing && !ambientOcclusion && !reflections && !volumetricLighting)
     return null;
-  return { sceneLinear, bloom, imageProcessing, fxaa, ambientOcclusion, reflections, volumetricLighting };
+  return { sceneLinear, bloom, imageProcessing, fxaa, temporalAntiAliasing, ambientOcclusion, reflections, volumetricLighting };
 }
 
 const TONE_MAPPING_TYPES: Record<RenderEffectsToneMapping, number> = {
