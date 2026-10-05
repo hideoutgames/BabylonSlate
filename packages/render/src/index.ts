@@ -4,7 +4,7 @@ export { sceneRenderTargetCaptures, RenderTargetCaptures } from "./render-target
 export { setSceneRenderSettings } from "./scene-render-mode";
 export type { RenderShadingSettings } from "./render-settings";
 export { sceneWaterQuality, sceneWaterQualityRevision, sceneWaterQualityDeviceClamp } from "./render-settings";
-export { clampWaterQualityToDevice, type WaterQualityDeviceClamp, type WaterDeviceCapabilities } from "./water-quality-device";
+export { clampWaterQualityToDevice, type WaterQualityDeviceClamp, type WaterDeviceCapabilities, type WaterDeviceView } from "./water-quality-device";
 export { retainWaterPlanarReflections, waterPlanarReflectionDiagnostics, waterPlanarReflectionForCamera, type WaterPlanarReflection, type WaterPlanarReflectionDiagnostics } from "./water-planar-reflection";
 export * from "./canvas-drawing-buffer";
 export * from "./draw-calls";

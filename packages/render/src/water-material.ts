@@ -1,14 +1,20 @@
-import { Color3, DirectionalLight, HemisphericLight, MaterialPluginBase, Matrix, PBRMaterial, type MaterialDefines, RawTexture, ShaderLanguage, Texture, Vector3, type AbstractMesh, type Effect, type Material, type Scene, type UniformBuffer } from "@babylonjs/core";
+import {
+  Color3, DirectionalLight, HemisphericLight, MaterialPluginBase, Matrix, PBRMaterial, type MaterialDefines, RawTexture, ShaderLanguage, Texture, ThinTexture,
+  Vector3, type AbstractEngine, type AbstractMesh, type Effect, type Material, type Scene, type SubMesh, type UniformBuffer,
+} from "@babylonjs/core";
 import {
   WATER_CREST_MEAN, WATER_CREST_RANGE, WATER_JACOBIAN_FLOOR, WATER_WAVE_MAX_COMPONENTS, WATER_WAVE_SHADER_STRIDE, waterBankFadeLength, waterWaveComponents,
   waterWaveQ, waterWaveSet, waterWaveShaderConstants, type WaterBodyProperties, type WaterColor, type WaterDefinition, type WaterShadingDetail,
   type WaterWaveSet,
 } from "@babylonslate/core";
-import { sceneWaterQualityDeviceClamp, sceneWaterQualityRevision } from "./render-settings";
+import { sceneWaterQualityDeviceClamp } from "./render-settings";
 import { invalidateSceneLighting } from "./scene-lighting";
 import type { WaterContactField } from "./water-contact-field";
 import { WATER_FIELD_DEPTH_RANGE, WATER_FIELD_FINE_DEPTH_SPAN, WATER_FIELD_SHORE_RANGE as SHORE, WATER_FIELD_TERRAIN_ALPHA, type WaterField } from "./water-field";
+import { waterPlanarReflectionForCamera, type WaterPlanarReflection } from "./water-planar-reflection";
+import type { WaterQualityDeviceClamp } from "./water-quality-device";
 import { sceneWaterRemovals, waterRemovalShapeVector, waterRemovalWorldRadius } from "./water-removal-mesh";
+import { isMainWaterPass, waterSceneCopyForPass, type WaterSceneCopy } from "./water-scene-copy";
 
 /**
  * Wind-chop octaves: [heading offset (radians), wavenumber multiplier, slope, speed, phase].
@@ -59,6 +65,42 @@ export const WATER_FEATURE_DEFINES = {
 } as const satisfies Partial<Record<keyof WaterDefinition, string>>;
 const FEATURES = Object.entries(WATER_FEATURE_DEFINES) as Array<[keyof typeof WATER_FEATURE_DEFINES, string]>;
 const Q = WATER_QUALITY_DEFINE;
+/**
+ * Scene-copy and reflection features. Each compiles only where it can run: device-effective project Water quality,
+ * the asset's intent (Refraction above 0, Object Reflections) and, for the two that sample the view's scene copy, a
+ * copy registered for the render pass being drawn (`isMainWaterPass`). Classic frames, captures, previews and Low or
+ * Medium water therefore compile none of the code they do not run.
+ *
+ * - `SLATE_WATER_REFRACTION`: the refracted scene copy replaces the blended background.
+ * - `SLATE_WATER_SSR`: a screen-space march against the copy's linear depth, `SLATE_WATER_SSR_STEPS` steps
+ *   (Reflection Steps, a compile-time loop bound).
+ * - `SLATE_WATER_PLANAR`: the view's planar reflection, for flat bodies at Planar quality; a uniform says per draw
+ *   whether this body is the view's dominant one (otherwise it marches, when the copy exists, or keeps the sky).
+ */
+export const WATER_OBJECT_DEFINES = {
+  refraction: "SLATE_WATER_REFRACTION", screenSpace: "SLATE_WATER_SSR", screenSpaceSteps: "SLATE_WATER_SSR_STEPS", planar: "SLATE_WATER_PLANAR",
+} as const;
+const { refraction: REFRACTION, screenSpace: SSR, screenSpaceSteps: SSR_STEPS, planar: PLANAR } = WATER_OBJECT_DEFINES;
+/** Sampler of the view's scene copy (rgb linear colour, a linear view depth); one binding serves both features. */
+export const WATER_SCENE_SAMPLER = "slateWaterSceneSampler";
+/** Sampler of the view's planar reflection. */
+export const WATER_PLANAR_SAMPLER = "slateWaterPlanarSampler";
+/** Preprocessor tests for the copy's sampler and for an object reflection term. */
+const SAMPLES_COPY = `defined(${REFRACTION}) || defined(${SSR})`;
+const REFLECTS_OBJECTS = `defined(${SSR}) || defined(${PLANAR})`;
+/** Binary refinement steps after the march's first hit. */
+const SSR_REFINE_STEPS = 4;
+/** Longest reflected ray the march follows (world units), shortened to the view's far plane. */
+const SSR_MAX_DISTANCE = 500;
+/** Bound where a copy or planar feature has no source this draw: Babylon binds its empty texture (alpha 0). */
+const EMPTY_TEXTURE = new ThinTexture(null);
+/** Planar reflection uv offset per unit of view-space surface tilt. */
+const PLANAR_DISTORTION = 0.08;
+/** Refraction: screen offset per unit of view-space tilt, per metre of water behind the surface, at Refraction 1. */
+const REFRACTION_SHIFT = 1.2;
+/** Water thickness (metres) beyond which the refracted shift stops growing, and the largest shift (uv). */
+const REFRACTION_DEPTH_CAP = 3;
+const REFRACTION_SHIFT_CAP = 0.06;
 /** Lowest tier evaluating each realistic chop octave, capillary, and Stylized chop octave. */
 const CHOP_TIER = [0, 0, 1, 1, 2, 2] as const;
 const CAPILLARY_TIER = [1, 2, 2] as const;
@@ -131,6 +173,198 @@ function footprintFade(prefix: string, i: number, k: string, dir: string): strin
   return fromTier(2, `
 float ${prefix}${i} = 1.0 - smoothstep(0.4, 1.4, ${k} * (abs(dot(${dir}, swFootX)) + abs(dot(${dir}, swFootY))));`, `
 float ${prefix}${i} = 1.0 - smoothstep(0.4, 1.4, ${k} * swFoot * 0.64);`);
+}
+
+/**
+ * Refraction (`SLATE_WATER_REFRACTION`), right after the bottom estimate: the view ray bends by the surface tilt (in
+ * view space), more through thicker water and less far away, and reads the view's scene copy there. A shifted ray
+ * that lands on something in front of the water (an object above it) keeps the straight ray, so nothing above the
+ * surface leaks into it. The copy's depth also bounds the bottom estimate (similar triangles along the view ray), so
+ * absorption follows whatever actually lies below: the bed shows through shallows, deep water fades to its colour.
+ * GLSL-shaped; `SW_FRAG_COORD` and the copy helpers are bound per language.
+ */
+function refractionSource(): string {
+  return ifDefined(REFRACTION, `
+vec2 swScreenUv = SW_FRAG_COORD.xy * U.slateWaterScreen.xy;
+float swWaterZ = abs((S.view * vec4(IN.vPositionW, 1.0)).z);
+float swSceneZ0 = swSceneDepth(swScreenUv);
+vec2 swTiltV = (S.view * vec4(-swSlope.x, 0.0, -swSlope.y, 0.0)).xy;
+float swRefrDepth = min(max(swSceneZ0 - swWaterZ, 0.0), ${f(REFRACTION_DEPTH_CAP)});
+vec2 swRefrShift = swTiltV * vec2(S.projection[0][0], S.projection[1][1]) * (U.slateWaterScreen.z * ${f(REFRACTION_SHIFT)} * swRefrDepth / max(swWaterZ, 0.05));
+swRefrShift = swRefrShift * min(1.0, ${f(REFRACTION_SHIFT_CAP)} / max(length(swRefrShift), 0.000001));
+vec2 swRefrUv = swScreenUv + swRefrShift;
+float swSceneZ1 = swSceneDepth(swRefrUv);
+float swLeak = step(swSceneZ1, swWaterZ);
+swRefrUv = mix(swRefrUv, swScreenUv, swLeak);
+float swSceneZ = mix(swSceneZ1, swSceneZ0, swLeak);
+vec3 swBackground = swSceneColor(swRefrUv);
+swDepth = min(swDepth, max(swSceneZ - swWaterZ, 0.0) / max(swWaterZ, 0.001) * abs(S.vEyePosition.y - IN.vPositionW.y));`);
+}
+
+/**
+ * Object reflections (`SLATE_WATER_SSR`, `SLATE_WATER_PLANAR`) along `ray` (a world direction): `swObjRefl` holds
+ * linear colour and coverage, 0 where nothing was found (the sky or environment reflection stays). The planar
+ * reflection is projected from this fragment's eye-relative position through the mirrored view-projection, at the
+ * uv the planar browser proof reads back on both backends (0.5 + 0.5·clip.xy/clip.w), shifted by the surface tilt;
+ * its alpha is coverage and display views store it display-encoded. Without it (another body is the view's
+ * dominant one), the screen-space march runs. Sharp hits fade out as the surface gets rough.
+ */
+function objectReflectionSource(ray: string, roughness: string): string {
+  return `
+#if ${REFLECTS_OBJECTS}
+vec4 swObjRefl = vec4(0.0);
+vec2 swReflTilt = (S.view * vec4(-swSlope.x, 0.0, -swSlope.y, 0.0)).xy;
+vec3 swReflRay = ${ray};
+swReflRay = normalize(vec3(swReflRay.x, max(swReflRay.y, 0.02), swReflRay.z));${ifDefined(PLANAR, `
+if (U.slateWaterPlanar.x > 0.5) {
+  vec4 swPlanarClip = U.slateWaterPlanarMatrix * vec4(IN.vPositionW, 1.0);
+  vec2 swPlanarUv = swPlanarClip.xy / swPlanarClip.w * 0.5 + vec2(0.5) + swReflTilt * U.slateWaterPlanar.z;
+  vec4 swPlanarHit = swPlanarTexel(swPlanarUv);
+  vec3 swPlanarColor = swPlanarHit.rgb / max(swPlanarHit.a, 0.001);
+  swObjRefl = vec4(mix(swPlanarColor, SW_TO_LINEAR(swPlanarColor), U.slateWaterPlanar.y), swPlanarHit.a);
+}`)}${ifDefined(SSR, `
+if (U.slateWaterPlanar.x < 0.5) {
+  swObjRefl = swMarch(IN.vPositionW, swReflRay);
+}`)}
+swObjRefl.a = swObjRefl.a * (1.0 - smoothstep(0.2, 0.45, ${roughness}));
+#endif`;
+}
+
+/**
+ * Per-language samplers and helpers of the scene-copy and reflection features, declared only with their defines.
+ * The copy's colour is filtered; its depth is read from the nearest texel (filtered depth would halo silhouettes).
+ * All reads use an explicit level, so they are legal in any control flow.
+ */
+function objectHelpers(wgsl: boolean): string {
+  const copy = wgsl ? `
+var ${WATER_SCENE_SAMPLER}Sampler: sampler;
+var ${WATER_SCENE_SAMPLER}: texture_2d<f32>;
+fn swSceneColor(uv: vec2f) -> vec3f { return textureSampleLevel(${WATER_SCENE_SAMPLER}, ${WATER_SCENE_SAMPLER}Sampler, uv, 0.0).rgb; }
+fn swSceneDepth(uv: vec2f) -> f32 {
+  let swSize = vec2i(textureDimensions(${WATER_SCENE_SAMPLER}, 0));
+  return textureLoad(${WATER_SCENE_SAMPLER}, clamp(vec2i(uv * vec2f(swSize)), vec2i(0), swSize - vec2i(1)), 0).a;
+}` : `
+uniform sampler2D ${WATER_SCENE_SAMPLER};
+vec3 swSceneColor(vec2 uv) { return texture2DLodEXT(${WATER_SCENE_SAMPLER}, uv, 0.0).rgb; }
+float swSceneDepth(vec2 uv) {
+  ivec2 swSize = textureSize(${WATER_SCENE_SAMPLER}, 0);
+  return texelFetch(${WATER_SCENE_SAMPLER}, clamp(ivec2(uv * vec2(swSize)), ivec2(0), swSize - ivec2(1)), 0).a;
+}`;
+  const planar = wgsl ? `
+var ${WATER_PLANAR_SAMPLER}Sampler: sampler;
+var ${WATER_PLANAR_SAMPLER}: texture_2d<f32>;
+fn swPlanarTexel(uv: vec2f) -> vec4f { return textureSampleLevel(${WATER_PLANAR_SAMPLER}, ${WATER_PLANAR_SAMPLER}Sampler, uv, 0.0); }` : `
+uniform sampler2D ${WATER_PLANAR_SAMPLER};
+vec4 swPlanarTexel(vec2 uv) { return texture2DLodEXT(${WATER_PLANAR_SAMPLER}, uv, 0.0); }`;
+  return `\n#if ${SAMPLES_COPY}${copy}\n#endif${ifDefined(SSR, marchSource(wgsl))}${ifDefined(PLANAR, planar)}\n`;
+}
+
+/**
+ * The screen-space march (`SLATE_WATER_SSR`), per language (loops do not pass `toWgsl`). The reflected ray runs from
+ * the eye-relative surface point until the march distance (`slateWaterScreen.w`), the screen edge or just short of
+ * the eye; `SLATE_WATER_SSR_STEPS` samples are evenly spaced on screen along it, with depth interpolated
+ * perspective-correctly (also exact for orthographic views). The first sample behind the copy's depth within a
+ * thickness that grows with distance and step length is a hit, refined by bisection. Hits fade toward the screen
+ * edge and the end of the march; one whose scene point lies under the water plane is rejected (the copy holds
+ * submerged geometry). Returns linear colour and coverage.
+ */
+function marchSource(wgsl: boolean): string {
+  const steps = SSR_STEPS, refine = SSR_REFINE_STEPS;
+  return wgsl ? `
+fn swMarchAt(swC0w: f32, swC1w: f32, swU: f32) -> f32 { return swU * swC0w / max(swU * swC0w + (1.0 - swU) * swC1w, 0.000001); }
+fn swMarch(swOrigin: vec3f, swRay: vec3f) -> vec4f {
+  let swC0 = scene.viewProjection * vec4f(swOrigin, 1.0);
+  let swDir = scene.viewProjection * vec4f(swRay, 0.0);
+  let swLength = min(uniforms.slateWaterScreen.w, 0.9 * swC0.w / max(-swDir.w, 0.00001));
+  let swC1 = swC0 + swDir * swLength;
+  let swN0 = swC0.xy / swC0.w;
+  let swN1 = swC1.xy / swC1.w;
+  let swSpan = swN1 - swN0;
+  let swSide = mix(vec2f(-1.0), vec2f(1.0), step(vec2f(0.0), swSpan));
+  let swExit = (swSide - swN0) / (max(abs(swSpan), vec2f(0.00001)) * swSide);
+  let swEnd = clamp(min(swExit.x, swExit.y), 0.0, 1.0);
+  let swZ0 = (scene.view * vec4f(swOrigin, 1.0)).z;
+  let swZ1 = (scene.view * vec4f(swOrigin + swRay * swLength, 1.0)).z;
+  let swForward = sign(swZ0);
+  var swPrev: f32 = 0.0;
+  var swPrevZ: f32 = abs(swZ0);
+  var swHit: f32 = -1.0;
+  for (var swI: i32 = 1; swI <= ${steps}; swI++) {
+    let swU = swEnd * f32(swI) / f32(${steps});
+    let swRayZ = mix(swZ0, swZ1, swMarchAt(swC0.w, swC1.w, swU)) * swForward;
+    let swSceneZ = swSceneDepth(mix(swN0, swN1, swU) * 0.5 + 0.5);
+    let swThick = max(0.2 + 0.02 * swRayZ, 2.0 * abs(swRayZ - swPrevZ));
+    if (swRayZ > swSceneZ && swRayZ - swSceneZ < swThick) { swHit = swU; break; }
+    swPrev = swU;
+    swPrevZ = swRayZ;
+  }
+  if (swHit < 0.0) { return vec4f(0.0); }
+  var swA: f32 = swPrev;
+  var swB: f32 = swHit;
+  for (var swJ: i32 = 0; swJ < ${refine}; swJ++) {
+    let swM = 0.5 * (swA + swB);
+    let swMidZ = mix(swZ0, swZ1, swMarchAt(swC0.w, swC1.w, swM)) * swForward;
+    if (swMidZ > swSceneDepth(mix(swN0, swN1, swM) * 0.5 + 0.5)) { swB = swM; } else { swA = swM; }
+  }
+  let swUv = mix(swN0, swN1, swB) * 0.5 + 0.5;
+  let swS = swMarchAt(swC0.w, swC1.w, swB);
+  let swRayZ = mix(swZ0, swZ1, swS) * swForward;
+  let swSceneZ = swSceneDepth(swUv);
+  let swEye = scene.vEyePosition.xyz;
+  let swPoint = swOrigin + swRay * (swLength * swS);
+  let swSceneY = swEye.y + (swPoint.y - swEye.y) * swSceneZ / max(swRayZ, 0.000001);
+  let swEdge = min(swUv, vec2f(1.0) - swUv);
+  let swFade = smoothstep(0.0, 0.06, min(swEdge.x, swEdge.y)) * (1.0 - smoothstep(0.7, 1.0, swS)) * step(swOrigin.y - 0.05, swSceneY)
+    * step(swRayZ - swSceneZ, max(0.2 + 0.02 * swRayZ, 0.1 * swRayZ));
+  return vec4f(swSceneColor(swUv), swFade);
+}` : `
+float swMarchAt(float swC0w, float swC1w, float swU) { return swU * swC0w / max(swU * swC0w + (1.0 - swU) * swC1w, 0.000001); }
+vec4 swMarch(vec3 swOrigin, vec3 swRay) {
+  vec4 swC0 = viewProjection * vec4(swOrigin, 1.0);
+  vec4 swDir = viewProjection * vec4(swRay, 0.0);
+  float swLength = min(slateWaterScreen.w, 0.9 * swC0.w / max(-swDir.w, 0.00001));
+  vec4 swC1 = swC0 + swDir * swLength;
+  vec2 swN0 = swC0.xy / swC0.w;
+  vec2 swN1 = swC1.xy / swC1.w;
+  vec2 swSpan = swN1 - swN0;
+  vec2 swSide = mix(vec2(-1.0), vec2(1.0), step(vec2(0.0), swSpan));
+  vec2 swExit = (swSide - swN0) / (max(abs(swSpan), vec2(0.00001)) * swSide);
+  float swEnd = clamp(min(swExit.x, swExit.y), 0.0, 1.0);
+  float swZ0 = (view * vec4(swOrigin, 1.0)).z;
+  float swZ1 = (view * vec4(swOrigin + swRay * swLength, 1.0)).z;
+  float swForward = sign(swZ0);
+  float swPrev = 0.0;
+  float swPrevZ = abs(swZ0);
+  float swHit = -1.0;
+  for (int swI = 1; swI <= ${steps}; swI++) {
+    float swU = swEnd * float(swI) / float(${steps});
+    float swRayZ = mix(swZ0, swZ1, swMarchAt(swC0.w, swC1.w, swU)) * swForward;
+    float swSceneZ = swSceneDepth(mix(swN0, swN1, swU) * 0.5 + 0.5);
+    float swThick = max(0.2 + 0.02 * swRayZ, 2.0 * abs(swRayZ - swPrevZ));
+    if (swRayZ > swSceneZ && swRayZ - swSceneZ < swThick) { swHit = swU; break; }
+    swPrev = swU;
+    swPrevZ = swRayZ;
+  }
+  if (swHit < 0.0) { return vec4(0.0); }
+  float swA = swPrev;
+  float swB = swHit;
+  for (int swJ = 0; swJ < ${refine}; swJ++) {
+    float swM = 0.5 * (swA + swB);
+    float swMidZ = mix(swZ0, swZ1, swMarchAt(swC0.w, swC1.w, swM)) * swForward;
+    if (swMidZ > swSceneDepth(mix(swN0, swN1, swM) * 0.5 + 0.5)) { swB = swM; } else { swA = swM; }
+  }
+  vec2 swUv = mix(swN0, swN1, swB) * 0.5 + 0.5;
+  float swS = swMarchAt(swC0.w, swC1.w, swB);
+  float swRayZ = mix(swZ0, swZ1, swS) * swForward;
+  float swSceneZ = swSceneDepth(swUv);
+  vec3 swEye = vEyePosition.xyz;
+  vec3 swPoint = swOrigin + swRay * (swLength * swS);
+  float swSceneY = swEye.y + (swPoint.y - swEye.y) * swSceneZ / max(swRayZ, 0.000001);
+  vec2 swEdge = min(swUv, vec2(1.0) - swUv);
+  float swFade = smoothstep(0.0, 0.06, min(swEdge.x, swEdge.y)) * (1.0 - smoothstep(0.7, 1.0, swS)) * step(swOrigin.y - 0.05, swSceneY)
+    * step(swRayZ - swSceneZ, max(0.2 + 0.02 * swRayZ, 0.1 * swRayZ));
+  return vec4(swSceneColor(swUv), swFade);
+}`;
 }
 
 /** Swell, wind chop, contacts and depth shared by both styles; Stylized runs fewer chop octaves. */
@@ -307,7 +541,7 @@ vec3 swSwellNormal = normalize(vec3(swBaseX - swGradient.x, 1.0, swBaseZ - swGra
 
 // Bottom estimate: a shelving bank with an irregular floor, capped by the component Depth.
 float swShelf = 0.28 + 0.35 * swLarge;
-float swDepth = mix(swBodyDepth * (1.0 - exp(-swBank * swShelf / swBodyDepth)), max(0.0, swTerrainDepth), swKnown);
+float swDepth = mix(swBodyDepth * (1.0 - exp(-swBank * swShelf / swBodyDepth)), max(0.0, swTerrainDepth), swKnown);${refractionSource()}
 float swAbsorb = max(0.01, U.slateWaterLook.y);
 float swTone = 1.0 - exp(-swDepth * 2.0 / swAbsorb);
 float swCrest = swHeight / max(0.001, U.slateWaterWaves.x);
@@ -542,7 +776,12 @@ swMatte = swFoam;
 vec3 swEmissive = swScatter * ((1.0 - swFres) * (1.0 - swTransmit) * swGloss) + (swGlint + vec3(swSpark) * swSun) * swGloss;${fromTier(1, "", `
 // Low is unlit: the sun and sky light the foam here.
 swEmissive += surfaceAlbedo * (swSun * max(dot(swWaveN, swL), 0.0) * 0.8 + swAmb * 0.45);`)}
-alpha = (1.0 - (1.0 - swFres) * swTransmit * (1.0 - swFoam)) * swEdgeFade;
+alpha = (1.0 - (1.0 - swFres) * swTransmit * (1.0 - swFoam)) * swEdgeFade;${ifDefined(REFRACTION, `
+// The refracted scene replaces the blended background: the light transmitted through the water is the copy behind
+// this point, so coverage keeps only the shore fade.
+swEmissive += swBackground * ((1.0 - swFres) * swTransmit * (1.0 - swFoam) * swEdgeFade);
+alpha = swEdgeFade;`)}
+${objectReflectionSource("normalize(swRefl)", "sqrt(sqrt(U.slateWaterOrigin.w * U.slateWaterOrigin.w * U.slateWaterOrigin.w * U.slateWaterOrigin.w + 2.0 * swSlopeVariance))")}
 `;
 }
 
@@ -666,6 +905,16 @@ vec3 swFoamLit = U.slateWaterFoam.rgb * clamp(swLitScale * 1.1, vec3(0.35), vec3
 vec3 swEmissive = mix(mix(swLit, swFoamLit, swSurfTint * swFoamAmount), swFoamLit, swFoam) + vec3(swSpec * 0.95 * (1.0 - swFoam) + swSpark);
 surfaceAlbedo = vec3(0.0);
 alpha = clamp(max(mix(U.slateWaterShallow.a * 0.55, U.slateWaterShallow.a, smoothstep(0.0, 0.5, swTone)), max(swFoam, max(swSpec, swSpark))), 0.0, 1.0);
+${objectReflectionSource("reflect(-swV, normalW)", "U.slateWaterOrigin.w")}
+#if ${REFLECTS_OBJECTS}
+// Reflected objects join the flat colour where the rim would brighten it (Reflection Strength), never over foam.
+float swReflWeight = swObjRefl.a * (0.3 + 0.7 * smoothstep(0.2, 1.0, 1.0 - swNdotV)) * U.slateWaterDeep.w * (1.0 - swFoam);
+swEmissive = mix(swEmissive, swObjRefl.rgb, swReflWeight);
+alpha = max(alpha, swReflWeight);
+#endif${ifDefined(REFRACTION, `
+// The refracted scene replaces the blended background; Opacity still sets how much of it shows.
+swEmissive = mix(swBackground, swEmissive, alpha);
+alpha = 1.0;`)}
 `;
 }
 
@@ -883,7 +1132,10 @@ function fragmentSource(): string {
 
 export function waterShaderSource(language: ShaderLanguage): { helpers: string; cut: string; main: string } {
   const wgsl = language === ShaderLanguage.WGSL;
-  const bind = (code: string) => code.replace(/\bU\./g, wgsl ? "uniforms." : "").replace(/\bIN\./g, wgsl ? "fragmentInputs." : "").replace(/\bS\./g, wgsl ? "scene." : "");
+  const bind = (code: string) => code.replace(/\bU\./g, wgsl ? "uniforms." : "").replace(/\bIN\./g, wgsl ? "fragmentInputs." : "").replace(/\bS\./g, wgsl ? "scene." : "")
+    // The fragment's framebuffer position (on render targets both backends store rows in the same order as uv).
+    .replace(/\bSW_FRAG_COORD\b/g, wgsl ? "fragmentInputs.position" : "gl_FragCoord")
+    .replace(/\bSW_TO_LINEAR\(/g, wgsl ? "toLinearSpaceVec3(" : "toLinearSpace(");
   const samplerDeclaration = wgsl
     ? "var slateWaterFieldSamplerSampler: sampler;\nvar slateWaterFieldSampler: texture_2d<f32>;\nvar slateWaterContactSamplerSampler: sampler;\nvar slateWaterContactSampler: texture_2d<f32>;\n"
     : "uniform sampler2D slateWaterFieldSampler;\nuniform sampler2D slateWaterContactSampler;\n";
@@ -892,8 +1144,8 @@ export function waterShaderSource(language: ShaderLanguage): { helpers: string; 
     ? "var<private> swSlopeVariance: f32 = 0.0;\nvar<private> swMatte: f32 = 0.0;\n"
     : "float swSlopeVariance = 0.0;\nfloat swMatte = 0.0;\n";
   return wgsl
-    ? { helpers: samplerDeclaration + roughnessGlobals + toWgsl(HELPERS + REMOVAL_HELPER), cut: bind(toWgsl(cutSource(true))), main: bind(toWgsl(fragmentSource())) }
-    : { helpers: samplerDeclaration + roughnessGlobals + HELPERS + REMOVAL_HELPER, cut: bind(cutSource(false)), main: bind(fragmentSource()) };
+    ? { helpers: samplerDeclaration + roughnessGlobals + toWgsl(HELPERS + REMOVAL_HELPER) + objectHelpers(true), cut: bind(toWgsl(cutSource(true))), main: bind(toWgsl(fragmentSource())) }
+    : { helpers: samplerDeclaration + roughnessGlobals + HELPERS + REMOVAL_HELPER + objectHelpers(false), cut: bind(cutSource(false)), main: bind(fragmentSource()) };
 }
 
 /** Object contact distances are encoded up to three contact-foam widths (1-8 m). */
@@ -1019,12 +1271,24 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
   private readonly sea = new Float64Array(4);
   private readonly octaves = new Float64Array(ALL_OCTAVES.length * 4);
   private _gpuWaves = false;
-  private qualityRevision = NaN;
+  /** Device-clamped quality the features below follow; compared by identity (it changes with the revision). */
+  private clamp: WaterQualityDeviceClamp | null = null;
   private tier = DEFAULT_TIER;
+  /** Rest height is level across the body (no river, no tilted volume): a planar reflection can mirror it. */
+  private _flat = true;
+  /** Device-effective features this asset asks for; the copy features also need a copy for the pass drawn. */
+  private refracts = false;
+  private marches = false;
+  private mirrors = false;
+  private marchSteps = 0;
+  /** The scene copy and planar reflection of the current draw (`hardBindForSubMesh`), bound by `bindForSubMesh`. */
+  private boundCopy: WaterSceneCopy | null = null;
+  private boundPlanar: WaterPlanarReflection | null = null;
   constructor(material: PBRMaterial, water: WaterDefinition, body: WaterBodyProperties) {
     super(material, "SlateWater", 180, {
       SLATE_WATER: true, [WATER_STYLIZED_DEFINE]: false, [WATER_OCEAN_DEFINE]: false, [WATER_GPU_WAVES_DEFINE]: false, [Q]: DEFAULT_TIER,
       ...Object.fromEntries(FEATURES.map(([, define]) => [define, false])),
+      [REFRACTION]: false, [SSR]: false, [SSR_STEPS]: 0, [PLANAR]: false,
     }, true, false);
     this.water = water;
     this.body = body;
@@ -1038,21 +1302,22 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
   /** The shading tier compiled into this material (`SLATE_WATER_QUALITY`): 0 Low to 3 Ultra. */
   get shadingTier(): number { return this.tier; }
   /**
-   * Follows the scene's device-clamped project Water quality. Unchanged quality costs one revision compare; a new
-   * Shading Detail marks the defines dirty (and resets a frozen Play material's cached readiness). Realistic Low draws
-   * unlit; this also restores that flag after the editor's Unlit viewport mode, which owns it while active. Called
-   * every frame by the water update and before each readiness check, ahead of define preparation.
+   * Follows the scene's device-clamped project Water quality. Unchanged quality costs one cached-clamp compare; a new
+   * Shading Detail, or a change in the refraction and reflection features this asset runs, marks the defines dirty
+   * (and resets a frozen Play material's cached readiness). Realistic Low draws unlit; this also restores that flag
+   * after the editor's Unlit viewport mode, which owns it while active. Called every frame by the water update and
+   * before each readiness check, ahead of define preparation.
    */
   syncQuality(scene: Scene = this._material.getScene()): void {
-    const revision = sceneWaterQualityRevision(scene);
-    if (revision !== this.qualityRevision) {
-      this.qualityRevision = revision;
-      const tier = WATER_SHADING_TIERS[sceneWaterQualityDeviceClamp(scene).quality.shadingDetail];
+    const clamp = sceneWaterQualityDeviceClamp(scene);
+    if (clamp !== this.clamp) {
+      this.clamp = clamp;
+      const tier = WATER_SHADING_TIERS[clamp.quality.shadingDetail];
       if (tier !== this.tier) {
         this.tier = tier;
-        this.markAllDefinesAsDirty();
-        if (this._material.isFrozen) this._material.markDirty(true);
+        this.markDefinesDirty();
       }
+      this.syncObjectFeatures();
     }
     const material = this._material as PBRMaterial;
     if (this.water.style === "stylized" || material.unlit) return;
@@ -1063,11 +1328,48 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
     // Lit again: the scene's light-slot capacity reaches this material at its next lighting sync.
     invalidateSceneLighting(scene);
   }
+  /** Defines changed outside define preparation; a frozen Play material re-prepares only when marked dirty. */
+  private markDefinesDirty(): void {
+    this.markAllDefinesAsDirty();
+    if (this._material.isFrozen) this._material.markDirty(true);
+  }
+  /**
+   * Refraction, the screen-space march and the planar reflection this asset runs at the device-effective quality:
+   * Refraction above 0 with Water Refraction on; Object Reflections under Screen Space reflections or Planar's Screen
+   * Space fallback; Object Reflections at Planar on a flat body. Recompiles only when one of them changes.
+   */
+  private syncObjectFeatures(): void {
+    const clamp = this.clamp;
+    if (!clamp) return;
+    const q = clamp.quality, w = this.water;
+    const refracts = q.refraction && w.refraction > 0;
+    const marches = w.objectReflections && (q.reflections === "screenSpace" || (q.reflections === "planar" && clamp.screenSpaceFallback));
+    const mirrors = w.objectReflections && q.reflections === "planar" && this._flat;
+    const steps = marches ? Math.round(q.reflectionSteps) : 0;
+    if (refracts === this.refracts && marches === this.marches && mirrors === this.mirrors && steps === this.marchSteps) return;
+    this.refracts = refracts; this.marches = marches; this.mirrors = mirrors; this.marchSteps = steps;
+    this.markDefinesDirty();
+  }
+  /**
+   * Whether the body's rest height is level (no river, no volume tilted out of level), as its planar reflection
+   * requires; the water mesh keeps it current when the volume's rotation changes.
+   */
+  get flat(): boolean { return this._flat; }
+  set flat(value: boolean) {
+    if (this._flat === value) return;
+    this._flat = value;
+    this.syncObjectFeatures();
+  }
   override isReadyForSubMesh(_defines: MaterialDefines, scene: Scene): boolean {
     this.syncQuality(scene);
     return true;
   }
-  override prepareDefines(defines: MaterialDefines): void {
+  /**
+   * Defines are prepared per render pass (each pass has its own draw wrapper): the copy features compile only into a
+   * pass with a registered scene copy, which is registered before that pass's first readiness probe and never
+   * changes for the pass, so no later dirtying is needed.
+   */
+  override prepareDefines(defines: MaterialDefines, scene: Scene): void {
     const w = this.water;
     let changed = setDefine(defines, WATER_STYLIZED_DEFINE, w.style === "stylized");
     changed = setDefine(defines, WATER_OCEAN_DEFINE, waterWaveSet(w).count > waterWaveComponents.length) || changed;
@@ -1077,6 +1379,11 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
       const [field, define] = FEATURES[i]!;
       changed = setDefine(defines, define, w[field] > 0) || changed;
     }
+    const copy = (this.refracts || this.marches) && isMainWaterPass(scene, scene.getEngine().currentRenderPassId);
+    changed = setDefine(defines, REFRACTION, this.refracts && copy) || changed;
+    changed = setDefine(defines, SSR, this.marches && copy) || changed;
+    changed = setDefine(defines, SSR_STEPS, this.marches && copy ? this.marchSteps : 0) || changed;
+    changed = setDefine(defines, PLANAR, this.mirrors) || changed;
     if (changed) defines.markAsUnprocessed();
   }
   /**
@@ -1087,9 +1394,7 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
   set gpuWaves(value: boolean) {
     if (this._gpuWaves === value) return;
     this._gpuWaves = value;
-    this.markAllDefinesAsDirty();
-    // Frozen materials (Play) re-evaluate defines only when marked dirty.
-    if (this._material.isFrozen) this._material.markDirty(true);
+    this.markDefinesDirty();
   }
   override getAttributes(attributes: string[]): void { attributes.push("slateWaterData", "slateWaterFlow", "slateWaterBaseNormal", "slateWaterOffset"); }
   override getUniforms() {
@@ -1097,20 +1402,49 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
       "slateWaterShallow", "slateWaterDeep", "slateWaterFoam", "slateWaterMotion", "slateWaterLook", "slateWaterWaves", "slateWaterSun", "slateWaterSunColor",
       "slateWaterLight", "slateWaterShape", "slateWaterFieldBounds", "slateWaterFieldInfo", "slateWaterFieldStep", "slateWaterContactBounds", "slateWaterContactInfo",
       "slateWaterOrigin", "slateWaterSwellInfo", "slateWaterSea", "slateWaterRipple", "slateWaterTerms",
+      // (1 / output width, 1 / output height, Refraction, march distance) and (planar on, display-encoded,
+      // distortion, 0): per draw, from the pass's scene copy and the view's planar reflection.
+      "slateWaterScreen", "slateWaterPlanar",
       ...SWELL_DIRECTION, ...SWELL_AMPLITUDE, ...CHOP_UNIFORMS, ...CAPILLARY_UNIFORMS,
     ];
     const removals = Array.from({ length: WATER_REMOVAL_SLOTS }, (_, i) => i);
     return { ubo: [
       ...[...vectors, ...removals.map((i) => `slateWaterRemovalShape${i}`)].map((name) => ({ name, size: 4, type: "vec4" })),
       ...removals.map((i) => ({ name: `slateWaterRemoval${i}`, size: 16, type: "mat4" })),
+      { name: "slateWaterPlanarMatrix", size: 16, type: "mat4" },
     ] };
   }
-  override getSamplers(samplers: string[]): void { samplers.push("slateWaterFieldSampler", "slateWaterContactSampler"); }
-  override bindForSubMesh(buffer: UniformBuffer, scene: Scene): void {
+  // Unused names are dropped by Babylon: the copy and planar samplers bind only in variants that declare them.
+  override getSamplers(samplers: string[]): void { samplers.push("slateWaterFieldSampler", "slateWaterContactSampler", WATER_SCENE_SAMPLER, WATER_PLANAR_SAMPLER); }
+  override bindForSubMesh(buffer: UniformBuffer, scene: Scene, _engine?: AbstractEngine, subMesh?: SubMesh): void {
     buffer.setTexture("slateWaterFieldSampler", this.field?.texture ?? placeholderField(scene));
     buffer.setTexture("slateWaterContactSampler", this.contacts?.texture ?? placeholderField(scene));
+    // The variant drawn in this pass declares the copy and planar samplers only with their features; a placeholder
+    // (Babylon's empty texture) keeps a declared binding valid in a frame without its source.
+    const defines = subMesh?.materialDefines as MaterialDefines | null | undefined;
+    if (defines?.[REFRACTION] || defines?.[SSR]) buffer.setTexture(WATER_SCENE_SAMPLER, this.boundCopy?.texture ?? EMPTY_TEXTURE);
+    if (defines?.[PLANAR]) buffer.setTexture(WATER_PLANAR_SAMPLER, this.boundPlanar?.texture ?? EMPTY_TEXTURE);
   }
-  override hardBindForSubMesh(buffer: UniformBuffer, scene: Scene): void {
+  /**
+   * Per draw: the pass's scene copy (its output size can change in place, so `invSize` is read every draw) and the
+   * view's planar reflection, looked up only when the variant drawn samples them. The planar lookup also requests
+   * the reflection for the view's next renders, so only water that draws it keeps it alive. Allocation-free.
+   */
+  private bindObjectFeatures(buffer: UniformBuffer, scene: Scene, subMesh: SubMesh | undefined): void {
+    const defines = subMesh?.materialDefines as MaterialDefines | null | undefined;
+    const copy = defines?.[REFRACTION] || defines?.[SSR] ? waterSceneCopyForPass(scene, scene.getEngine().currentRenderPassId) : null;
+    this.boundCopy = copy;
+    const camera = scene.activeCamera;
+    const distance = Math.min(camera && camera.maxZ > 0 ? camera.maxZ : SSR_MAX_DISTANCE, SSR_MAX_DISTANCE);
+    buffer.updateFloat4("slateWaterScreen", copy ? copy.invSize[0] : 0, copy ? copy.invSize[1] : 0, this.water.refraction, distance);
+    const planar = defines?.[PLANAR] ? waterPlanarReflectionForCamera(scene, camera) : null;
+    const mine = planar && planar.mesh === this.mesh ? planar : null;
+    this.boundPlanar = mine;
+    buffer.updateFloat4("slateWaterPlanar", mine ? 1 : 0, mine?.gammaSpace ? 1 : 0, PLANAR_DISTORTION, 0);
+    buffer.updateMatrix("slateWaterPlanarMatrix", mine ? mine.viewProjection : Matrix.IdentityReadOnly);
+  }
+  override hardBindForSubMesh(buffer: UniformBuffer, scene: Scene, _engine?: AbstractEngine, subMesh?: SubMesh): void {
+    this.bindObjectFeatures(buffer, scene, subMesh);
     const w = this.water, b = this.body;
     const material = this._material as PBRMaterial;
     const data = sceneWaterBindingData(scene);
@@ -1258,13 +1592,22 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
       CUSTOM_FRAGMENT_UPDATE_METALLICROUGHNESS:
         "metallicRoughness.g = mix(sqrt(sqrt(metallicRoughness.g * metallicRoughness.g * metallicRoughness.g * metallicRoughness.g + 2.0 * swSlopeVariance)), 1.0, swMatte);",
       // Foam and the mesh edge hide the mirror; without an environment, the scene light estimate stands in for the sky.
+      // Reflected objects (screen-space or planar) replace the sky or environment where found, with the water's own
+      // Fresnel and Reflection Strength.
       CUSTOM_FRAGMENT_BEFORE_FINALCOLORCOMPOSITION: [
         "finalEmissive += swEmissive;",
         `#ifndef ${WATER_STYLIZED_DEFINE}`,
         "#ifdef REFLECTION",
+        `#if ${REFLECTS_OBJECTS}`,
+        `finalRadianceScaled = mix(finalRadianceScaled, swObjRefl.rgb * (swFres * ${wgsl ? "uniforms." : ""}slateWaterDeep.w), swObjRefl.a);`,
+        "#endif",
         "finalRadianceScaled *= swGloss;",
         "#else",
+        `#if ${REFLECTS_OBJECTS}`,
+        `finalEmissive += mix(swAmb * 0.35, swObjRefl.rgb * ${wgsl ? "uniforms." : ""}slateWaterDeep.w, swObjRefl.a) * (swFres * swGloss);`,
+        "#else",
         "finalEmissive += swAmb * (swFres * swGloss * 0.35);",
+        "#endif",
         "#endif",
         "#ifdef SPECULARTERM",
         "finalSpecularScaled *= swGloss;",

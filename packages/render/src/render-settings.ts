@@ -50,7 +50,8 @@ type SceneRendering = {
   water: Readonly<WaterQuality>;
   /** Process-unique, so a Scene that starts following another never reuses a stale value. */
   waterRevision: number;
-  waterDevice: { revision: number; clamp: WaterQualityDeviceClamp } | null;
+  /** Device clamp of one revision and colour pipeline (Scene Linear changes which reflections a device can draw). */
+  waterDevice: { revision: number; sceneLinear: boolean; clamp: WaterQualityDeviceClamp } | null;
   /** Scenes (such as SceneLayers) resolving their quality through this Scene. */
   followers: Set<Scene>;
   localLightBudget: number;
@@ -277,15 +278,20 @@ export function sceneWaterQualityRevision(scene: Scene): number {
 }
 
 /**
- * Water quality this Scene's device can honour, cached per revision; see
- * clampWaterQualityToDevice. Water rendering reads this, as Play readback does.
+ * Water quality this Scene's device can honour, cached per revision and colour
+ * pipeline: the same object until either changes, so consumers may compare it
+ * by identity. See clampWaterQualityToDevice. Water rendering reads this, as
+ * Play readback does.
  */
 export function sceneWaterQualityDeviceClamp(scene: Scene): WaterQualityDeviceClamp {
   const state = sceneRenderingSettings(scene);
   const revision = sceneWaterQualityRevision(scene);
-  if (state.waterDevice?.revision !== revision)
-    state.waterDevice = { revision, clamp: clampWaterQualityToDevice(sceneWaterQuality(scene), scene.getEngine().getCaps()) };
-  return state.waterDevice.clamp;
+  const sceneLinear = scene.imageProcessingConfiguration.applyByPostProcess;
+  const cached = state.waterDevice;
+  if (cached && cached.revision === revision && cached.sceneLinear === sceneLinear) return cached.clamp;
+  const clamp = clampWaterQualityToDevice(sceneWaterQuality(scene), scene.getEngine().getCaps(), { sceneLinear });
+  state.waterDevice = { revision, sceneLinear, clamp };
+  return clamp;
 }
 
 /** Explicit editor preferences precede session commands and never change authored settings. */

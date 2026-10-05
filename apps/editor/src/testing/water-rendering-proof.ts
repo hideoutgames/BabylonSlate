@@ -1,12 +1,21 @@
-import { AbstractMesh, Camera, Color3, Color4, DirectionalLight, Engine, MeshBuilder, PointLight, StandardMaterial, Vector3, type ArcRotateCamera, type PBRMaterial, type Scene } from "@babylonjs/core";
+import {
+  AbstractMesh, Camera, Color3, Color4, DirectionalLight, Engine, FreeCamera, HemisphericLight, MeshBuilder, PointLight, Scene, StandardMaterial, Vector3,
+  type AbstractEngine, type ArcRotateCamera, type Mesh, type PBRMaterial,
+} from "@babylonjs/core";
 import {
   createDefaultWaterDefinition, normalizeRenderingQuality, normalizeWaterBody, qualityPresetPatch, sampleWaterSurface,
-  WATER_SHADING_DETAILS, type WaterBodyProperties, type WaterDefinition, type WaterKind, type WaterShadingDetail,
+  WATER_SHADING_DETAILS, type QualityLevel, type WaterBodyProperties, type WaterDefinition, type WaterKind, type WaterQuality, type WaterShadingDetail,
 } from "@babylonslate/core";
-import { createAppWebGpuEngine, createParticlePreviewScene, createWaterMesh, setSceneWaterTime, setWaterGpuWaves, updateSceneWater } from "@babylonslate/render";
+import {
+  createAppWebGpuEngine, createParticlePreviewScene, createWaterMesh, setSceneRenderSettings, setSceneWaterTime, setWaterGpuWaves, updateSceneWater,
+  waterPlanarReflectionDiagnostics,
+} from "@babylonslate/render";
+import { SceneRenderCoordinator } from "@babylonslate/render/scene-render-coordinator";
 import { createLandscapeMesh } from "../../../../packages/render/src/landscape-mesh";
+import { installPreviewEnvironment } from "../../../../packages/render/src/preview-environment";
 import { RENDERING_GROUP } from "../../../../packages/render/src/sorting";
 import { sceneRenderingSettings, updateSceneRenderingSettings } from "../../../../packages/render/src/render-settings";
+import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
 type Capture = () => Promise<{ pixels: number[]; png: string }>;
 
@@ -692,5 +701,239 @@ export async function runWaterTierProof(backend: "webgl2" | "webgpu", options: {
     const device = (engine as { _device?: { queue: { onSubmittedWorkDone(): Promise<void> } } })._device;
     engine.flushFramebuffer(); await device?.queue.onSubmittedWorkDone();
     host.dispose(); await host.whenReleased(); engine.dispose(); canvas.remove();
+  }
+}
+
+/** Where an eye sees `point` mirrored in the plane y = planeY: the eye-to-reflected-point ray meets the plane. */
+function mirroredOnPlane(eye: Vector3, point: Vector3, planeY: number): Vector3 {
+  const reflected = new Vector3(point.x, 2 * planeY - point.y, point.z);
+  return Vector3.Lerp(eye, reflected, (eye.y - planeY) / (eye.y - reflected.y));
+}
+
+/** Quality for a preset, optionally with some Water fields overridden (a custom Water selection). */
+function waterQualityPatch(level: QualityLevel, water: Partial<WaterQuality> = {}) {
+  const quality = normalizeRenderingQuality(qualityPresetPatch(level));
+  return Object.keys(water).length ? { ...quality, water: { ...quality.water, ...water, preset: "custom" as const } } : quality;
+}
+
+/**
+ * Built-in water drawn the way views draw it: through SceneRenderCoordinator (Forward FrameGraph, the scene copy and
+ * planar reflections), on an app-like engine (large-world rendering, exact sRGB) with the default sky. Proves:
+ * - Refraction: a coloured box under the surface shows through refracted water where it lies (not flipped or
+ *   offset), and the refracted floor moves with the waves' normals (it does not with Refraction 0).
+ * - Screen-space reflections: a bright beacon above calm water appears at its mirrored screen position with Screen
+ *   Space reflections and Object Reflections on, and not with Sky Only.
+ * - Planar reflections at Ultra: the same known hit, and a beacon above the top of the view (which no screen-space
+ *   march can find) still reflects.
+ * - Every Water Shading Detail in both styles still draws lit water with its copy and reflection features on.
+ * Pixels are top-down RGBA; evidence PNGs are the captures.
+ */
+export async function runWaterObjectProof(backend: "webgl2" | "webgpu", options: { tiers?: readonly WaterShadingDetail[] } = {}) {
+  const width = 480, height = 300;
+  const canvas = document.createElement("canvas");
+  canvas.width = width; canvas.height = height;
+  document.getElementById("root")!.append(canvas);
+  const engine: AbstractEngine = backend === "webgpu" ? await createAppWebGpuEngine(canvas) : new Engine(canvas, false, {
+    preserveDrawingBuffer: true, stencil: true, useLargeWorldRendering: true, useExactSrgbConversions: true,
+  });
+  const scene = new Scene(engine);
+  let coordinator: SceneRenderCoordinator | undefined;
+  const evidence: Record<string, string> = {};
+  try {
+    // Play and the editor share one depth buffer across rendering groups (the scene copy requires it).
+    for (let group = 0; group < 4; group += 1) scene.setRenderingAutoClearDepthStencil(group, false);
+    scene.clearColor = new Color4(0.3, 0.55, 0.85, 1);
+    installPreviewEnvironment(scene);
+    const sky = new HemisphericLight("sky", Vector3.Up(), scene);
+    sky.intensity = 0.7;
+    const sun = new DirectionalLight("sun", new Vector3(-0.3, -1, 0.6), scene);
+    sun.intensity = 1.2;
+    const camera = new FreeCamera("camera", new Vector3(0, 7, -9), scene);
+    camera.minZ = 0.1; camera.maxZ = 600;
+    scene.activeCamera = camera;
+    const unlit = (name: string, color: Color3) => {
+      const material = new StandardMaterial(name, scene);
+      material.disableLighting = true;
+      material.emissiveColor = color;
+      return material;
+    };
+    // A striped floor 1.2 m under the water, and a green box whose top lies 0.3 m under the surface.
+    const floor: Mesh[] = [];
+    const light = unlit("strip-light", new Color3(0.85, 0.8, 0.7)), dark = unlit("strip-dark", new Color3(0.12, 0.16, 0.26));
+    for (let i = 0; i < 24; i += 1) {
+      const strip = MeshBuilder.CreateGround(`strip-${i}`, { width: 1, height: 40 }, scene);
+      strip.position.set(-12 + i + 0.5, -1.2, 6);
+      strip.material = i % 2 ? dark : light;
+      floor.push(strip);
+    }
+    const box = MeshBuilder.CreateBox("submerged", { width: 2.5, height: 0.6, depth: 2.5 }, scene);
+    box.position.set(1.5, -0.6, 3);
+    box.material = unlit("submerged", new Color3(0.1, 0.85, 0.2));
+    // A bright beacon above the water.
+    const beacon = MeshBuilder.CreateBox("beacon", { size: 2.4 }, scene);
+    beacon.material = unlit("beacon", new Color3(1, 0.85, 0.05));
+    beacon.isVisible = false;
+    coordinator = new SceneRenderCoordinator(scene);
+    const view = coordinator;
+    const order = readbackChannelOrder(engine.isWebGPU);
+    const sleep = () => new Promise((resolve) => setTimeout(resolve, 16));
+    /** Renders through the coordinator until `frames` graph frames have drawn, then reads the last one top-down. */
+    const capture = async (name?: string, frames = 6) => {
+      let drawn = 0;
+      const results: unknown[] = [];
+      for (let attempt = 0; attempt < 1200; attempt += 1) {
+        if (!view.isReady()) { await sleep(); continue; }
+        engine.beginFrame();
+        let result: ReturnType<SceneRenderCoordinator["render"]>;
+        try { result = view.render(); } finally { engine.endFrame(); }
+        results.push({ path: result.path, rendered: result.rendered });
+        if (result.rendered && result.path === "frameGraph" && ++drawn >= frames) {
+          // Read this frame before a later frame replaces WebGPU's canvas texture.
+          const raw = await engine.readPixels(0, 0, width, height);
+          const rgba = toRgbaPixels(new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength), order);
+          const pixels = new Array<number>(rgba.length), stride = width * 4;
+          for (let row = 0; row < height; row++) {
+            const source = (engine.isWebGPU ? row : height - 1 - row) * stride;
+            for (let i = 0; i < stride; i++) pixels[row * stride + i] = rgba[source + i]!;
+          }
+          if (name) {
+            const out = document.createElement("canvas");
+            out.width = width; out.height = height;
+            const context = out.getContext("2d")!, image = context.createImageData(width, height);
+            image.data.set(pixels);
+            context.putImageData(image, 0, 0);
+            evidence[name] = out.toDataURL("image/png");
+          }
+          return pixels;
+        }
+        await sleep();
+      }
+      throw new Error(`The coordinated water view never drew: ${JSON.stringify(results.slice(-4))}`);
+    };
+    /** Mean RGB over a square of `radius` pixels around a top-down pixel position. */
+    const around = (pixels: number[], x: number, y: number, radius = 3) => {
+      const sum = [0, 0, 0];
+      let count = 0;
+      for (let dy = -radius; dy <= radius; dy++) for (let dx = -radius; dx <= radius; dx++) {
+        const px = Math.round(x) + dx, py = Math.round(y) + dy;
+        if (px < 0 || py < 0 || px >= width || py >= height) continue;
+        const i = (py * width + px) * 4;
+        for (let c = 0; c < 3; c++) sum[c] += pixels[i + c]!;
+        count++;
+      }
+      return sum.map((value) => value / Math.max(1, count)) as [number, number, number];
+    };
+    /** Top-down pixel of a world point in the current camera. */
+    const pixelOf = (point: Vector3) => {
+      camera.getViewMatrix(true);
+      const ndc = Vector3.TransformCoordinates(point, camera.getViewMatrix().multiply(camera.getProjectionMatrix()));
+      return { x: (0.5 + 0.5 * ndc.x) * width, y: (0.5 - 0.5 * ndc.y) * height, ndcY: ndc.y };
+    };
+    /** Mean per-channel difference over a rectangle of rows and columns (fractions of the view). */
+    const change = (a: number[], b: number[], [x0, x1, y0, y1] = [0, 1, 0, 1]) => {
+      let sum = 0, count = 0;
+      for (let y = Math.floor(y0 * height); y < Math.floor(y1 * height); y++) for (let x = Math.floor(x0 * width); x < Math.floor(x1 * width); x++) {
+        for (let c = 0; c < 3; c++) { const i = (y * width + x) * 4 + c; sum += Math.abs(a[i]! - b[i]!); count++; }
+      }
+      return sum / Math.max(1, count);
+    };
+    const meanLight = (pixels: number[], [y0, y1] = [0.4, 1]) => {
+      let sum = 0, count = 0;
+      for (let y = Math.floor(y0 * height); y < Math.floor(y1 * height); y++) for (let x = 0; x < width; x++) {
+        const i = (y * width + x) * 4;
+        sum += (pixels[i]! + pixels[i + 1]! + pixels[i + 2]!) / 3; count++;
+      }
+      return sum / count;
+    };
+    const yellow = ([r, g, b]: readonly number[]) => (r! + g!) / 2 - b!;
+    const green = ([r, g, b]: readonly number[]) => g! - (r! + b!) / 2;
+    const quiet = { foamAmount: 0, crestFoam: 0, surfaceFoam: 0, sparkles: 0 };
+    const lakeBody = (waveScale: number) => normalizeWaterBody({ width: 24, length: 24, depth: 1.5, waveScale });
+    const graphTasks: Record<string, string[]> = {};
+
+    // Refraction (High): the box and the floor under clear water, Refraction on and 0 (the blended surface).
+    setSceneRenderSettings(scene, { quality: waterQualityPatch("high") });
+    camera.position.set(0, 7, -9); camera.setTarget(new Vector3(0, -0.6, 4));
+    const clear = { ...createDefaultWaterDefinition("realistic"), ...quiet, depthColorDistance: 8, objectReflections: false };
+    const bare = await capture("refraction-bare");
+    const boxPixel = pixelOf(new Vector3(1.5, 0, 3));
+    const refraction = {} as Record<"on" | "off", { calm: number; calmNoBox: number; boxGreen: number; motion: number }>;
+    for (const mode of ["on", "off"] as const) {
+      const definition = { ...clear, refraction: mode === "on" ? 0.35 : 0 };
+      const calmLake = createWaterMesh(scene, `refraction-${mode}-calm`, lakeBody(0), { ...definition, rippleStrength: 0 });
+      setSceneWaterTime(scene, 1);
+      const calm = await capture(`refraction-${mode}-calm`);
+      graphTasks[`refraction-${mode}`] = view.taskNames();
+      box.isVisible = false;
+      const calmNoBox = await capture();
+      box.isVisible = true;
+      calmLake.dispose();
+      const wavy = createWaterMesh(scene, `refraction-${mode}-waves`, lakeBody(1), definition);
+      setSceneWaterTime(scene, 1);
+      const first = await capture(`refraction-${mode}-waves-a`);
+      setSceneWaterTime(scene, 1.7);
+      const second = await capture(`refraction-${mode}-waves-b`);
+      wavy.dispose();
+      refraction[mode] = {
+        calm: green(around(calm, boxPixel.x, boxPixel.y, 6)), calmNoBox: green(around(calmNoBox, boxPixel.x, boxPixel.y, 6)),
+        boxGreen: green(around(bare, boxPixel.x, boxPixel.y, 6)),
+        // How much the water over the floor changes between two wave phases (rows of the lake).
+        motion: change(first, second, [0.15, 0.85, 0.45, 0.95]),
+      };
+    }
+
+    // Reflections: calm, dark water in front of a beacon standing above it.
+    beacon.isVisible = true;
+    for (const mesh of [...floor, box]) mesh.isVisible = false;
+    const mirror = { ...createDefaultWaterDefinition("realistic"), ...quiet, rippleStrength: 0, depthColorDistance: 0.5, objectReflections: true, reflectionStrength: 1 };
+    const reflectionLake = createWaterMesh(scene, "reflection-lake", normalizeWaterBody({ width: 60, length: 60, depth: 4, waveScale: 0 }), mirror);
+    setSceneWaterTime(scene, 1);
+    const reflectionCase = async (name: string, beaconAt: Vector3, eye: Vector3, target: Vector3) => {
+      beacon.position.copyFrom(beaconAt);
+      beacon.computeWorldMatrix(true);
+      camera.position.copyFrom(eye); camera.setTarget(target);
+      const hit = pixelOf(mirroredOnPlane(eye, beaconAt, 0)), direct = pixelOf(beaconAt);
+      const shots: Record<string, number> = {};
+      for (const [mode, patch] of [
+        ["sky", waterQualityPatch("high", { reflections: "sky" })], ["screenSpace", waterQualityPatch("high")], ["planar", waterQualityPatch("ultra")],
+      ] as const) {
+        setSceneRenderSettings(scene, { quality: patch });
+        const pixels = await capture(`${name}-${mode}`);
+        graphTasks[`${name}-${mode}`] = view.taskNames();
+        shots[mode] = yellow(around(pixels, hit.x, hit.y));
+      }
+      return { ...shots, hit: [hit.x, hit.y], direct: [direct.x, direct.y], directNdcY: direct.ndcY, planarDiagnostics: waterPlanarReflectionDiagnostics(scene) };
+    };
+    // On screen: the march finds the beacon in the scene copy; the planar mirror draws it too.
+    const onScreen = await reflectionCase("reflection-on-screen", new Vector3(0, 2.2, 10), new Vector3(0, 2.2, -10), new Vector3(0, 0.6, 8));
+    // Above the top of the view: only the planar mirror can reflect it.
+    const offScreen = await reflectionCase("reflection-off-screen", new Vector3(0, 7, 8), new Vector3(0, 3, -6), new Vector3(0, -2.5, 8));
+    reflectionLake.dispose();
+    beacon.isVisible = false;
+
+    // Every Water Shading Detail, both styles, with the copy and reflection features each tier runs.
+    for (const mesh of [...floor, box]) mesh.isVisible = true;
+    beacon.isVisible = true;
+    beacon.position.set(-4, 1.6, 9);
+    camera.position.set(0, 6, -11); camera.setTarget(new Vector3(0, -0.4, 5));
+    const tiers: Array<{ tier: WaterShadingDetail; style: string; light: number; water: number; tasks: string[] }> = [];
+    for (const style of ["realistic", "stylized"] as const) {
+      setSceneRenderSettings(scene, { quality: waterQualityPatch("high") });
+      const without = await capture();
+      const lake = createWaterMesh(scene, `tier-${style}`, lakeBody(1), { ...createDefaultWaterDefinition(style), objectReflections: true });
+      setSceneWaterTime(scene, 1.3);
+      for (const tier of options.tiers ?? WATER_SHADING_DETAILS) {
+        setSceneRenderSettings(scene, { quality: waterQualityPatch(tier) });
+        const pixels = await capture(`tier-${tier}-${style}`);
+        tiers.push({ tier, style, light: meanLight(pixels), water: change(pixels, without, [0, 1, 0.4, 1]), tasks: view.taskNames() });
+      }
+      lake.dispose();
+    }
+    return { refraction, onScreen, offScreen, tiers, graphTasks, evidence };
+  } finally {
+    coordinator?.dispose();
+    const device = (engine as { _device?: { queue: { onSubmittedWorkDone(): Promise<void> } } })._device;
+    engine.flushFramebuffer(); await device?.queue.onSubmittedWorkDone();
+    scene.dispose(); engine.dispose(); canvas.remove();
   }
 }

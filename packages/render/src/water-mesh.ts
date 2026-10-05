@@ -404,6 +404,8 @@ function placeSurface(s: Surface, time: number): void {
     if (Math.abs(world.determinant()) < 1e-12) return;
     s.world.copyFrom(world); world.invertToRef(s.inverse);
     for (let i = 0; i < 16; i++) placed[i] = m[i]!;
+    // A level body can take the view's planar reflection; tilting a volume out of level recompiles without it.
+    if (linear && s.plugin) s.plugin.flat = !restVaries(s);
   }
   const world = s.world, inverse = s.inverse;
   syncQuality(s);

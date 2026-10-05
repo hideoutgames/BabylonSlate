@@ -8,7 +8,7 @@ import { createDefaultMaterialDocument } from "../packages/shader-graph/src/docu
 import { openMinimalTestProject } from "./minimal-project";
 import { openAssetFromBrowser, openMainScene } from "./open-test-project";
 import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
-import type { runWaterRenderingProof, runWaterTierProof } from "../apps/editor/src/testing/water-rendering-proof";
+import type { runWaterObjectProof, runWaterRenderingProof, runWaterTierProof } from "../apps/editor/src/testing/water-rendering-proof";
 
 test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 
@@ -135,6 +135,49 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     // The tier reaches the GPU: Low (unlit Realistic, fewer terms) draws each view differently from High.
     expect(Object.keys(result.lowToHigh)).toHaveLength(6);
     for (const [view, change] of Object.entries(result.lowToHigh)) expect(change, view).toBeGreaterThan(LOW_TO_HIGH);
+  });
+  test(`Water refracts the scene copy and reflects objects in screen space and planar on ${backend}`, async ({ page }, testInfo) => {
+    test.setTimeout(300_000);
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    page.on("console", (message) => {
+      if (["error", "warning"].includes(message.type()) && /shader|WebGPU uncaptured|VALIDATE_STATUS|ERROR: 0:|GL_INVALID|planar|scene copy/i.test(message.text())) errors.push(message.text());
+    });
+    await page.goto("/?test=1&waterRenderingProof=1");
+    await page.waitForFunction(() => typeof (window as unknown as { __babylonslateWaterObjectProof?: unknown }).__babylonslateWaterObjectProof === "function");
+    const result = await page.evaluate((backend) => (window as unknown as { __babylonslateWaterObjectProof: typeof runWaterObjectProof }).__babylonslateWaterObjectProof(backend), backend);
+    for (const [name, png] of Object.entries(result.evidence)) {
+      const bytes = Buffer.from(png.split(",")[1]!, "base64");
+      await testInfo.attach(name, { body: bytes, contentType: "image/png" });
+      await import("node:fs/promises").then((fs) => fs.writeFile(testInfo.outputPath(name + ".png"), bytes));
+    }
+    const metrics = JSON.stringify({ ...result, evidence: undefined }, null, 1);
+    await testInfo.attach("metrics", { body: metrics, contentType: "application/json" });
+    await import("node:fs/promises").then((fs) => fs.writeFile(testInfo.outputPath("metrics.json"), metrics));
+    expect(errors).toEqual([]);
+    // Views draw on the Forward FrameGraph with the scene copy whenever refraction or a screen-space march runs.
+    expect(result.graphTasks["refraction-on"]).toContain("Water scene copy");
+    expect(result.graphTasks["reflection-on-screen-screenSpace"]).toContain("Water scene copy");
+    // Refraction: the green box under the surface shows through the refracted water where it lies (a flipped or
+    // offset copy lookup would lose it), and the refracted floor moves with the waves' normals far more than the
+    // blended surface (Refraction 0) changes between the same two wave phases.
+    expect(result.refraction.on.calm - result.refraction.on.calmNoBox).toBeGreaterThan(20);
+    expect(result.refraction.on.motion).toBeGreaterThan(result.refraction.off.motion * 1.5 + 1);
+    // A beacon above calm water appears at its mirrored screen position with Screen Space and Planar reflections,
+    // and not with Sky Only.
+    expect(result.onScreen.screenSpace).toBeGreaterThan(result.onScreen.sky + 40);
+    expect(result.onScreen.planar).toBeGreaterThan(result.onScreen.sky + 40);
+    // Above the top of the view no screen-space march can find it; the planar mirror still reflects it.
+    expect(result.offScreen.directNdcY).toBeGreaterThan(1);
+    expect(result.offScreen.planar).toBeGreaterThan(result.offScreen.sky + 40);
+    expect(result.offScreen.screenSpace).toBeLessThan(result.offScreen.sky + 10);
+    expect(result.offScreen.planarDiagnostics?.draws).toBeGreaterThan(0);
+    // Every Water Shading Detail in both styles draws lit water, with its copy and reflection features on.
+    expect(result.tiers).toHaveLength(8);
+    for (const { tier, style, light, water } of result.tiers) {
+      expect(light, `${style} at ${tier}`).toBeGreaterThan(20);
+      expect(water, `${style} at ${tier} against no water`).toBeGreaterThan(WATER_OVER_VIEW);
+    }
   });
   test(`Water presets and a custom Water Surface material render on ${backend}`, async ({ page }, testInfo) => {
     test.setTimeout(120_000);
