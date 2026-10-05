@@ -1068,15 +1068,28 @@ export async function runWaterObjectProof(backend: "webgl2" | "webgpu", options:
       return dips[dips.length >> 1]!;
     };
     const sceneLinear = {} as Record<"on" | "off", { contour: number; compiled: boolean; tasks: string[] }>;
+    // The same view in scene fog: the floor seen through refracting water carries its own fog once, as blending
+    // (Refraction 0) leaves it, so the two views match.
+    const fogged = {} as Record<"on" | "off", { pixels: number[]; compiled: boolean }>;
     for (const mode of ["on", "off"] as const) {
       const lake = createWaterMesh(scene, `scene-linear-${mode}`, lakeBody(0), { ...glass, rippleStrength: 0, refraction: mode === "on" ? 0.35 : 0 });
       setSceneWaterTime(scene, 1);
       const pixels = await capture(`scene-linear-edge-${mode}`);
       sceneLinear[mode] = { contour: contour(pixels), compiled: compiles(lake, "SLATE_WATER_REFRACTION", "IMAGEPROCESSINGPOSTPROCESS"), tasks: view.taskNames() };
+      scene.fogMode = Scene.FOGMODE_EXP2;
+      scene.fogDensity = 0.08;
+      scene.fogColor = new Color3(0.35, 0.45, 0.6);
+      fogged[mode] = { pixels: await capture(`scene-linear-fog-${mode}`), compiled: compiles(lake, "SLATE_WATER_REFRACTION", "FOG") };
+      scene.fogMode = Scene.FOGMODE_NONE;
       lake.dispose();
     }
+    const fog = {
+      compiled: fogged.on.compiled,
+      // Mean difference over the lake (the left of the lower view), refraction against the blended surface.
+      difference: change(fogged.on.pixels, fogged.off.pixels, [0, 0.3, 0.5, 1]),
+    };
     bright.dispose();
-    return { refraction, orthographic, onScreen, offScreen, nonDominant, planarBody, tiers, sevenLights, sceneLinear, graphTasks, evidence };
+    return { refraction, orthographic, onScreen, offScreen, nonDominant, planarBody, tiers, sevenLights, sceneLinear, fog, graphTasks, evidence };
   } finally {
     coordinator?.dispose();
     const device = (engine as { _device?: { queue: { onSubmittedWorkDone(): Promise<void> } } })._device;

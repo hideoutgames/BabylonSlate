@@ -204,6 +204,9 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     // blended surface.
     expect(result.sceneLinear.on.compiled).toBe(true);
     expect(result.sceneLinear.on.contour).toBeLessThan(result.sceneLinear.off.contour + 8);
+    // In scene fog the refracted floor keeps its own fog only, matching the blended surface.
+    expect(result.fog.compiled).toBe(true);
+    expect(result.fog.difference).toBeLessThan(2);
   });
   test(`Water presets and a custom Water Surface material render on ${backend}`, async ({ page }, testInfo) => {
     test.setTimeout(120_000);
