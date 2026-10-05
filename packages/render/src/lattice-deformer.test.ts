@@ -68,6 +68,7 @@ describe("component lattice resource ownership", () => {
     const effect = { setFloat: vi.fn(), setTexture: vi.fn(), setMatrix: (name: string, matrix: Matrix) => matrices.set(name, matrix.clone()), setVector3: (name: string, value: Vector3) => vectors.set(name, value.asArray()), setFloat3: (name: string, ...value: number[]) => vectors.set(name, value) } as unknown as Effect;
     bindMeshLatticeDeformer(effect, lod);
     expect(vectors.get("lattice_min")).toEqual([-1, -1, -1]);
+    expect(vectors.get("lattice_max")).toEqual([1, 1, 1]);
     expect(Vector3.TransformCoordinates(new Vector3(10, 0, 0), matrices.get("slateWorldToLattice")!).asArray()).toEqual([0, 0, 0]);
     bindMeshLatticeDeformer(effect, attached);
     expect(effect.setFloat).toHaveBeenLastCalledWith("slateLatticeEnabled", 0);

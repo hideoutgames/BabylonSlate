@@ -33,7 +33,10 @@ describe("runtime deformers", () => {
       const owner = runtime.getWorld().findActor("owner")!;
       const initial = updates().length;
       const meshAssignments = commands.filter((command) => command.type === "assignMesh").length;
-      const physics = runtime.getPhysicsSync()!.getBackend();
+      const physicsSync = runtime.getPhysicsSync()!;
+      // Runtime normally creates primitive colliders lazily in its first tick.
+      physicsSync.syncFromWorld(runtime.getWorld());
+      const physics = physicsSync.getBackend();
       const originalColliders = structuredClone(physics.listDebugColliders());
       runtime.tick();
       expect(updates()).toHaveLength(initial + 1);

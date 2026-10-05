@@ -154,12 +154,12 @@ class LatticeOwner {
       if (node instanceof AbstractMesh && !isEditorHelperMesh(node) && node.getTotalVertices() > 0) {
         found.add(node);
         if (!this.parts.has(node)) {
-          const box = materialBaseBounds(node);
+          const box = materialBaseBounds(node._masterMesh ?? node);
           this.parts.set(node, { minimum: box.minimum.clone(), maximum: box.maximum.clone(), matrixFlag: -1, bounds: new BoundingInfo(box.minimum, box.maximum), material: node.material, slots: [], materialObserver: node.onMaterialChangedObservable.add(() => { this.materialsDirty = true; }) });
           this.fit = undefined;
           this.materialsDirty = true;
         } else if (geometryChanged) {
-          const base = materialBaseBounds(node), part = this.parts.get(node)!;
+          const base = materialBaseBounds(node._masterMesh ?? node), part = this.parts.get(node)!;
           part.minimum.copyFrom(base.minimum); part.maximum.copyFrom(base.maximum); part.matrixFlag = -1;
         }
       }
@@ -271,13 +271,17 @@ class LatticeOwner {
     const min = new Vector3(Infinity, Infinity, Infinity), max = new Vector3(-Infinity, -Infinity, -Infinity);
     this.root.computeWorldMatrix(true).invertToRef(this.inverse);
     for (const [mesh, part] of this.parts) {
-      mesh.computeWorldMatrix(true).multiplyToRef(this.inverse, this.relative);
+      mesh.computeWorldMatrix(true);
+      // Parentless LODs borrow their master's rendered transform and bounds.
+      // computeWorldMatrix returns the LOD's own transform; getWorldMatrix
+      // resolves Babylon's master override used by the actual draw.
+      mesh.getWorldMatrix().multiplyToRef(this.inverse, this.relative);
       this.corners(part.minimum, part.maximum, (point) => { Vector3.TransformCoordinatesToRef(point, this.relative, point); min.minimizeInPlace(point); max.maximizeInPlace(point); });
     }
     return { min, max };
   }
-  private corners(min: Vector3, max: Vector3, use: (point: Vector3) => void): void {
-    for (let i = 0; i < 8; i++) { this.point.set(i & 1 ? max.x : min.x, i & 2 ? max.y : min.y, i & 4 ? max.z : min.z); use(this.point); }
+  private corners(min: Vector3, max: Vector3, visit: (point: Vector3) => void): void {
+    for (let i = 0; i < 8; i++) { this.point.set(i & 1 ? max.x : min.x, i & 2 ? max.y : min.y, i & 4 ? max.z : min.z); visit(this.point); }
   }
   private updateBounds(force: boolean): void {
     const lattice = this.resource?.lattice;
@@ -286,7 +290,8 @@ class LatticeOwner {
     force ||= this.rootFlag !== rootMatrix.updateFlag; this.rootFlag = rootMatrix.updateFlag;
     for (const [mesh, part] of this.parts) {
       if (mesh.isDisposed()) continue;
-      const world = mesh.computeWorldMatrix();
+      mesh.computeWorldMatrix();
+      const world = mesh.getWorldMatrix();
       if (!force && part.matrixFlag === world.updateFlag) continue;
       part.matrixFlag = world.updateFlag;
       world.invertToRef(this.inverse); rootMatrix.multiplyToRef(this.inverse, this.relative);
