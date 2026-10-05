@@ -16,6 +16,7 @@ import {
   stepSpringArmLag,
   type SpringArmPose,
   type SpringArmProperties,
+  type Transform,
 } from "@babylonslate/core";
 import { RENDERING_GROUP } from "./sorting";
 
@@ -122,6 +123,13 @@ export function createPlaySpringArmRig(
 
 export function springArmRigsOf(root: Mesh): readonly SpringArmRig[] {
   return rigsByRoot.get(root) ?? [];
+}
+
+/** Change the component's lag target without discarding its accumulated lag. */
+export function setSpringArmAuthoredTransform(rig: SpringArmRig, transform: Transform): void {
+  rig.authored.position.copyFromFloats(transform.position.x, transform.position.y, transform.position.z);
+  rig.authored.rotation.copyFromFloats(transform.rotation.x, transform.rotation.y, transform.rotation.z, transform.rotation.w);
+  rig.authored.scaling.copyFromFloats(transform.scale.x, transform.scale.y, transform.scale.z);
 }
 
 /** A slot's camera follows this part mesh instead of the actor pose. */

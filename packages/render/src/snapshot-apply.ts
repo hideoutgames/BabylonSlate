@@ -115,6 +115,7 @@ import {
   attachmentParentFor,
   createPlaySpringArmRig,
   setSpringArmCameraAnchor,
+  setSpringArmAuthoredTransform,
   springArmCameraAnchorOf,
   springArmRigsOf,
   SPRING_ARM_MESH_KIND,
@@ -645,6 +646,7 @@ function updateVisualComponentPoses(root: Mesh, poses: Iterable<ComponentPose>):
   if (!components || root.isDisposed()) return;
   const chains = playVisualAncestors.get(root) ?? new Map<string, TransformNode[]>();
   playVisualAncestors.set(root, chains);
+  const armRigs = springArmRigsOf(root);
   for (const pose of poses) {
     const mesh = components.get(pose.componentId);
     if (!mesh || mesh.isDisposed()) continue;
@@ -661,6 +663,8 @@ function updateVisualComponentPoses(root: Mesh, poses: Iterable<ComponentPose>):
       if (shouldFreezeStaticWorldMatrix(mesh)) mesh.freezeWorldMatrix();
       continue;
     }
+    const rig = armRigs.find(entry => entry.arm === mesh);
+    if (rig) setSpringArmAuthoredTransform(rig, pose.transform);
     writeComponentPose(mesh, pose.transform);
     const ancestors = chains.get(pose.componentId) ?? [];
     chains.set(pose.componentId, ancestors);
