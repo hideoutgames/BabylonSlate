@@ -208,15 +208,23 @@ export function setSceneFogVolumesPresent(scene: Scene, present: boolean): void 
   state.effectsPlan = planSceneEffects(state.effects, state.mode, state.effectsEnabled, present);
 }
 
-/** Materials emit linear HDR only while a Scene Linear display stage exists. */
+/**
+ * Materials emit linear HDR only while a Scene Linear display stage exists. This is the configured colour pipeline;
+ * the live `applyByPostProcess` flag also changes for the duration of a capture's draw.
+ */
+function configuredSceneLinear(state: SceneRendering): boolean {
+  return (
+    state.effectsEnabled &&
+    state.effects.colorPipeline.mode === "sceneLinear" &&
+    state.mode === "pbr"
+  );
+}
+
 function syncImageProcessingMode(
   scene: Scene,
   state: SceneRendering,
 ): void {
-  const linear =
-    state.effectsEnabled &&
-    state.effects.colorPipeline.mode === "sceneLinear" &&
-    state.mode === "pbr";
+  const linear = configuredSceneLinear(state);
   if (scene.imageProcessingConfiguration.applyByPostProcess !== linear)
     scene.imageProcessingConfiguration.applyByPostProcess = linear;
 }
@@ -278,18 +286,21 @@ export function sceneWaterQualityRevision(scene: Scene): number {
 }
 
 /**
- * Water quality this Scene's device can honour, cached per revision and colour
- * pipeline: the same object until either changes, so consumers may compare it
- * by identity. See clampWaterQualityToDevice. Water rendering reads this, as
- * Play readback does.
+ * Water quality this Scene's device can honour, cached per revision and
+ * configured colour pipeline: the same object until either changes, so
+ * consumers may compare it by identity. The pipeline is the configured one,
+ * not the live image-processing flag a capture overrides while it draws, and
+ * counts only where it changes the result (no half-float render targets). See
+ * clampWaterQualityToDevice. Water rendering reads this, as Play readback does.
  */
 export function sceneWaterQualityDeviceClamp(scene: Scene): WaterQualityDeviceClamp {
   const state = sceneRenderingSettings(scene);
   const revision = sceneWaterQualityRevision(scene);
-  const sceneLinear = scene.imageProcessingConfiguration.applyByPostProcess;
+  const caps = scene.getEngine().getCaps();
+  const sceneLinear = !caps.textureHalfFloatRender && configuredSceneLinear(state);
   const cached = state.waterDevice;
   if (cached && cached.revision === revision && cached.sceneLinear === sceneLinear) return cached.clamp;
-  const clamp = clampWaterQualityToDevice(sceneWaterQuality(scene), scene.getEngine().getCaps(), { sceneLinear });
+  const clamp = clampWaterQualityToDevice(sceneWaterQuality(scene), caps, { sceneLinear });
   state.waterDevice = { revision, sceneLinear, clamp };
   return clamp;
 }

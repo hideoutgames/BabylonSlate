@@ -3,7 +3,7 @@ import {
   type AbstractEngine, type ArcRotateCamera, type Mesh, type PBRMaterial,
 } from "@babylonjs/core";
 import {
-  createDefaultWaterDefinition, normalizeRenderingQuality, normalizeWaterBody, qualityPresetPatch, sampleWaterSurface,
+  createDefaultWaterDefinition, DEFAULT_RENDER_EFFECTS, normalizeRenderingQuality, normalizeWaterBody, qualityPresetPatch, sampleWaterSurface,
   WATER_SHADING_DETAILS, type QualityLevel, type WaterBodyProperties, type WaterDefinition, type WaterKind, type WaterQuality, type WaterShadingDetail,
 } from "@babylonslate/core";
 import {
@@ -719,13 +719,19 @@ function waterQualityPatch(level: QualityLevel, water: Partial<WaterQuality> = {
 /**
  * Built-in water drawn the way views draw it: through SceneRenderCoordinator (Forward FrameGraph, the scene copy and
  * planar reflections), on an app-like engine (large-world rendering, exact sRGB) with the default sky. Proves:
- * - Refraction: a coloured box under the surface shows through refracted water where it lies (not flipped or
- *   offset), and the refracted floor moves with the waves' normals (it does not with Refraction 0).
+ * - Refraction: a coloured box under the surface, in the lower part of the view, shows through refracted water where
+ *   it lies and not at the vertically mirrored rows (a flipped copy lookup would swap them), and the refracted floor
+ *   moves with the waves' normals (it does not with Refraction 0), also in a distant orthographic view.
  * - Screen-space reflections: a bright beacon above calm water appears at its mirrored screen position with Screen
- *   Space reflections and Object Reflections on, and not with Sky Only.
+ *   Space reflections and Object Reflections on, and not with Sky Only. Its reflection covers the rows of the
+ *   beacon's mirrored front face, and every other row the planar mirror fills either reflects the beacon or keeps the
+ *   sky: no seam of background colour.
  * - Planar reflections at Ultra: the same known hit, and a beacon above the top of the view (which no screen-space
  *   march can find) still reflects.
- * - Every Water Shading Detail in both styles still draws lit water with its copy and reflection features on.
+ * - Every Water Shading Detail in both styles still draws lit water with its copy and reflection features on, and
+ *   Ultra Realistic's largest variant (refraction, march and planar mirror) compiles and lights with seven lights.
+ * - Scene Linear: refraction over a background brighter than 1 blends through the shore fade like Refraction 0
+ *   does, with no dark contour.
  * Pixels are top-down RGBA; evidence PNGs are the captures.
  */
 export async function runWaterObjectProof(backend: "webgl2" | "webgpu", options: { tiers?: readonly WaterShadingDetail[] } = {}) {
@@ -767,10 +773,11 @@ export async function runWaterObjectProof(backend: "webgl2" | "webgpu", options:
       floor.push(strip);
     }
     const box = MeshBuilder.CreateBox("submerged", { width: 2.5, height: 0.6, depth: 2.5 }, scene);
-    box.position.set(1.5, -0.6, 3);
+    box.position.set(2.5, -0.6, -0.5);
     box.material = unlit("submerged", new Color3(0.1, 0.85, 0.2));
     // A bright beacon above the water.
-    const beacon = MeshBuilder.CreateBox("beacon", { size: 2.4 }, scene);
+    const beaconSize = 2.4;
+    const beacon = MeshBuilder.CreateBox("beacon", { size: beaconSize }, scene);
     beacon.material = unlit("beacon", new Color3(1, 0.85, 0.05));
     beacon.isVisible = false;
     coordinator = new SceneRenderCoordinator(scene);
@@ -847,6 +854,10 @@ export async function runWaterObjectProof(backend: "webgl2" | "webgpu", options:
     };
     const yellow = ([r, g, b]: readonly number[]) => (r! + g!) / 2 - b!;
     const green = ([r, g, b]: readonly number[]) => g! - (r! + b!) / 2;
+    /** Effect defines of every variant `mesh` compiled (one per render pass that drew it). */
+    const variants = (mesh: AbstractMesh) => (mesh.subMeshes[0] as unknown as { _drawWrappers: Array<{ effect?: { defines?: string } | null } | undefined> })
+      ._drawWrappers.map((wrapper) => wrapper?.effect?.defines ?? "").filter(Boolean);
+    const compiles = (mesh: AbstractMesh, ...defines: string[]) => variants(mesh).some((source) => defines.every((define) => source.includes(`#define ${define}\n`)));
     const quiet = { foamAmount: 0, crestFoam: 0, surfaceFoam: 0, sparkles: 0 };
     const lakeBody = (waveScale: number) => normalizeWaterBody({ width: 24, length: 24, depth: 1.5, waveScale });
     const graphTasks: Record<string, string[]> = {};
@@ -856,14 +867,20 @@ export async function runWaterObjectProof(backend: "webgl2" | "webgpu", options:
     camera.position.set(0, 7, -9); camera.setTarget(new Vector3(0, -0.6, 4));
     const clear = { ...createDefaultWaterDefinition("realistic"), ...quiet, depthColorDistance: 8, objectReflections: false };
     const bare = await capture("refraction-bare");
-    const boxPixel = pixelOf(new Vector3(1.5, 0, 3));
-    const refraction = {} as Record<"on" | "off", { calm: number; calmNoBox: number; boxGreen: number; motion: number }>;
+    // The box lies in the lower part of the view; the rows mirrored about the view's centre show only the floor.
+    const boxPixel = pixelOf(new Vector3(box.position.x, 0, box.position.z));
+    const flipped = { x: boxPixel.x, y: height - boxPixel.y };
+    const refraction = {} as Record<"on" | "off", {
+      calm: number; calmNoBox: number; flipped: number; flippedNoBox: number; boxGreen: number; motion: number; compiled: boolean;
+    }>;
+    const motion = (first: number[], second: number[]) => change(first, second, [0.15, 0.85, 0.45, 0.95]);
     for (const mode of ["on", "off"] as const) {
       const definition = { ...clear, refraction: mode === "on" ? 0.35 : 0 };
       const calmLake = createWaterMesh(scene, `refraction-${mode}-calm`, lakeBody(0), { ...definition, rippleStrength: 0 });
       setSceneWaterTime(scene, 1);
       const calm = await capture(`refraction-${mode}-calm`);
       graphTasks[`refraction-${mode}`] = view.taskNames();
+      const compiled = compiles(calmLake, "SLATE_WATER_REFRACTION");
       box.isVisible = false;
       const calmNoBox = await capture();
       box.isVisible = true;
@@ -876,11 +893,31 @@ export async function runWaterObjectProof(backend: "webgl2" | "webgpu", options:
       wavy.dispose();
       refraction[mode] = {
         calm: green(around(calm, boxPixel.x, boxPixel.y, 6)), calmNoBox: green(around(calmNoBox, boxPixel.x, boxPixel.y, 6)),
+        flipped: green(around(calm, flipped.x, flipped.y, 6)), flippedNoBox: green(around(calmNoBox, flipped.x, flipped.y, 6)),
         boxGreen: green(around(bare, boxPixel.x, boxPixel.y, 6)),
         // How much the water over the floor changes between two wave phases (rows of the lake).
-        motion: change(first, second, [0.15, 0.85, 0.45, 0.95]),
+        motion: motion(first, second), compiled,
       };
     }
+
+    // Refraction in a distant orthographic view (an isometric-style camera 60 m away): the bend is the same
+    // view-space amount at every distance, so the floor still moves with the waves.
+    camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
+    camera.orthoLeft = -8; camera.orthoRight = 8; camera.orthoBottom = -5; camera.orthoTop = 5;
+    const isoTarget = new Vector3(0, -0.6, 3), pitch = 35 * Math.PI / 180;
+    camera.position.copyFrom(isoTarget.add(new Vector3(0, Math.sin(pitch), -Math.cos(pitch)).scale(60)));
+    camera.setTarget(isoTarget);
+    const orthographic = {} as Record<"on" | "off", { motion: number; compiled: boolean }>;
+    for (const mode of ["on", "off"] as const) {
+      const wavy = createWaterMesh(scene, `ortho-${mode}`, lakeBody(1), { ...clear, refraction: mode === "on" ? 0.35 : 0 });
+      setSceneWaterTime(scene, 1);
+      const first = await capture(`refraction-ortho-${mode}-a`);
+      setSceneWaterTime(scene, 1.7);
+      const second = await capture(`refraction-ortho-${mode}-b`);
+      orthographic[mode] = { motion: motion(first, second), compiled: compiles(wavy, "SLATE_WATER_REFRACTION") };
+      wavy.dispose();
+    }
+    camera.mode = Camera.PERSPECTIVE_CAMERA;
 
     // Reflections: calm, dark water in front of a beacon standing above it.
     beacon.isVisible = true;
@@ -888,21 +925,52 @@ export async function runWaterObjectProof(backend: "webgl2" | "webgpu", options:
     const mirror = { ...createDefaultWaterDefinition("realistic"), ...quiet, rippleStrength: 0, depthColorDistance: 0.5, objectReflections: true, reflectionStrength: 1 };
     const reflectionLake = createWaterMesh(scene, "reflection-lake", normalizeWaterBody({ width: 60, length: 60, depth: 4, waveScale: 0 }), mirror);
     setSceneWaterTime(scene, 1);
+    /** Rows of the longest run where the column around `x` reads as the beacon. */
+    const beaconRun = (pixels: number[], x: number) => {
+      let best: [number, number] | null = null, start = -1;
+      for (let y = 0; y <= height; y++) {
+        const on = y < height && yellow(around(pixels, x, y, 0)) > 20 && yellow(around(pixels, x - 2, y, 0)) > 20 && yellow(around(pixels, x + 2, y, 0)) > 20;
+        if (on && start < 0) start = y;
+        if (!on && start >= 0) {
+          if (!best || y - 1 - start > best[1] - best[0]) best = [start, y - 1];
+          start = -1;
+        }
+      }
+      return best;
+    };
     const reflectionCase = async (name: string, beaconAt: Vector3, eye: Vector3, target: Vector3) => {
       beacon.position.copyFrom(beaconAt);
       beacon.computeWorldMatrix(true);
       camera.position.copyFrom(eye); camera.setTarget(target);
       const hit = pixelOf(mirroredOnPlane(eye, beaconAt, 0)), direct = pixelOf(beaconAt);
-      const shots: Record<string, number> = {};
+      // The beacon's front face (the one the view sees) mirrored in the water: its lower edge reflects nearest the
+      // horizon, its upper edge lowest on screen.
+      const half = beaconSize / 2, face = beaconAt.z - half;
+      const front = [mirroredOnPlane(eye, new Vector3(beaconAt.x, beaconAt.y - half, face), 0), mirroredOnPlane(eye, new Vector3(beaconAt.x, beaconAt.y + half, face), 0)]
+        .map((point) => pixelOf(point).y);
+      const shots: Record<string, number> = {}, pixels: Record<string, number[]> = {};
       for (const [mode, patch] of [
         ["sky", waterQualityPatch("high", { reflections: "sky" })], ["screenSpace", waterQualityPatch("high")], ["planar", waterQualityPatch("ultra")],
       ] as const) {
         setSceneRenderSettings(scene, { quality: patch });
-        const pixels = await capture(`${name}-${mode}`);
+        pixels[mode] = await capture(`${name}-${mode}`);
         graphTasks[`${name}-${mode}`] = view.taskNames();
-        shots[mode] = yellow(around(pixels, hit.x, hit.y));
+        shots[mode] = yellow(around(pixels[mode], hit.x, hit.y));
       }
-      return { ...shots, hit: [hit.x, hit.y], direct: [direct.x, direct.y], directNdcY: direct.ndcY, planarDiagnostics: waterPlanarReflectionDiagnostics(scene) };
+      // Row extent at the beacon's column: how much of the mirrored front face the march reflects, and how many rows
+      // the planar mirror fills where the march shows neither the beacon nor the Sky Only colour (a seam).
+      const screenSpace = beaconRun(pixels.screenSpace!, hit.x), planar = beaconRun(pixels.planar!, hit.x);
+      const [faceTop, faceBottom] = [Math.ceil(front[0]!), Math.floor(front[1]!)];
+      let covered = 0, seam = 0;
+      for (let y = faceTop; y <= faceBottom; y++) if (yellow(around(pixels.screenSpace!, hit.x, y, 0)) > 20) covered++;
+      if (planar) for (let y = Math.max(0, planar[0] - 3); y <= Math.min(height - 1, planar[1] + 3); y++) {
+        const marched = around(pixels.screenSpace!, hit.x, y, 0), sky = around(pixels.sky!, hit.x, y, 0);
+        if (yellow(marched) <= 20 && Math.max(...marched.map((value, c) => Math.abs(value - sky[c]!))) > 30) seam++;
+      }
+      return {
+        ...shots, hit: [hit.x, hit.y], direct: [direct.x, direct.y], directNdcY: direct.ndcY, planarDiagnostics: waterPlanarReflectionDiagnostics(scene),
+        extent: { front, screenSpace, planar, coverage: covered / Math.max(1, faceBottom - faceTop + 1), seam },
+      };
     };
     // On screen: the march finds the beacon in the scene copy; the planar mirror draws it too.
     const onScreen = await reflectionCase("reflection-on-screen", new Vector3(0, 2.2, 10), new Vector3(0, 2.2, -10), new Vector3(0, 0.6, 8));
@@ -926,33 +994,82 @@ export async function runWaterObjectProof(backend: "webgl2" | "webgpu", options:
     beacon.position.set(-4, 1.6, 9);
     camera.position.set(0, 6, -11); camera.setTarget(new Vector3(0, -0.4, 5));
     const tiers: Array<{ tier: WaterShadingDetail; style: string; light: number; water: number; tasks: string[] }> = [];
-    let sevenLights = { light: 0, water: 0 };
+    let sevenLights = { lights: 0, largestVariant: false, light: 0, water: 0, lamps: 0 };
     for (const style of ["realistic", "stylized"] as const) {
       setSceneRenderSettings(scene, { quality: waterQualityPatch("high") });
       const without = await capture();
       const lake = createWaterMesh(scene, `tier-${style}`, lakeBody(1), { ...createDefaultWaterDefinition(style), objectReflections: true });
       setSceneWaterTime(scene, 1.3);
+      let ultra: number[] | null = null;
       for (const tier of options.tiers ?? WATER_SHADING_DETAILS) {
         setSceneRenderSettings(scene, { quality: waterQualityPatch(tier) });
         const pixels = await capture(`tier-${tier}-${style}`);
+        if (tier === "ultra") ultra = pixels;
         tiers.push({ tier, style, light: meanLight(pixels), water: change(pixels, without, [0, 1, 0.4, 1]), tasks: view.taskNames() });
       }
       if (style === "realistic") {
-        // The largest variant: Ultra's refraction, march and planar mirror under seven scene lights.
-        const lamps = [-6, -2, 2, 6].map((x, i) => {
-          const lamp = new PointLight(`object-lamp-${i}`, new Vector3(x, 3, -2), scene);
-          lamp.intensity = 0.2;
+        // The largest variant: Ultra's refraction, march and planar mirror under seven scene lights (the sky, the sun
+        // and five lamps over the lake).
+        const lamps = [-8, -4, 0, 4, 8].map((x, i) => {
+          const lamp = new PointLight(`object-lamp-${i}`, new Vector3(x, 2.5, 1), scene);
+          lamp.intensity = 1.5;
+          lamp.diffuse = new Color3(1, 0.55, 0.3);
           return lamp;
         });
         (lake.material as PBRMaterial).maxSimultaneousLights = 8;
         setSceneRenderSettings(scene, { quality: waterQualityPatch("ultra") });
         const pixels = await capture("tier-ultra-realistic-seven-lights");
-        sevenLights = { light: meanLight(pixels), water: change(pixels, without, [0, 1, 0.4, 1]) };
+        sevenLights = {
+          lights: scene.lights.length,
+          // One compiled variant carries the seventh light slot together with every copy and reflection feature.
+          largestVariant: compiles(lake, "LIGHT6", "SLATE_WATER_REFRACTION", "SLATE_WATER_SSR", "SLATE_WATER_PLANAR"),
+          light: meanLight(pixels), water: change(pixels, without, [0, 1, 0.4, 1]),
+          // The lamps light the water: the capture differs from Ultra without them.
+          lamps: ultra ? change(pixels, ultra, [0, 1, 0.4, 1]) : 0,
+        };
         for (const lamp of lamps) lamp.dispose();
       }
       lake.dispose();
     }
-    return { refraction, onScreen, offScreen, nonDominant, planarBody, tiers, sevenLights, graphTasks, evidence };
+
+    // Scene Linear: a floor far brighter than 1 (linear 3, shown at exposure 0.3) under clear, calm water, seen across
+    // the lake's edge. The shore fade must blend the refracted floor into the bare floor beyond the edge without a
+    // dark contour, as the blended surface (Refraction 0) does.
+    for (const mesh of [...floor, box, beacon]) mesh.isVisible = false;
+    const bright = MeshBuilder.CreateGround("bright-floor", { width: 60, height: 60 }, scene);
+    bright.position.set(0, -0.3, 0);
+    bright.material = unlit("bright-floor", new Color3(3, 3, 3));
+    setSceneRenderSettings(scene, {
+      mode: "pbr", quality: waterQualityPatch("high"),
+      effects: { ...DEFAULT_RENDER_EFFECTS, colorPipeline: { version: 1, mode: "sceneLinear" }, exposure: 0.3 },
+    });
+    camera.position.set(12, 2.5, 1.5); camera.setTarget(new Vector3(12, -0.3, 6));
+    const glass = { ...clear, opacity: 0, depthColorDistance: 50, reflectionStrength: 0.2 };
+    /** Per row of the lower view, how far the darkest pixel across the edge falls below the row's median. */
+    const contour = (pixels: number[]) => {
+      const dips: number[] = [];
+      for (let y = Math.floor(0.55 * height); y < Math.floor(0.95 * height); y++) {
+        const row: number[] = [];
+        for (let x = Math.floor(0.2 * width); x < Math.floor(0.8 * width); x++) {
+          const i = (y * width + x) * 4;
+          row.push((pixels[i]! + pixels[i + 1]! + pixels[i + 2]!) / 3);
+        }
+        row.sort((a, b) => a - b);
+        dips.push(row[row.length >> 1]! - row[0]!);
+      }
+      dips.sort((a, b) => a - b);
+      return dips[dips.length >> 1]!;
+    };
+    const sceneLinear = {} as Record<"on" | "off", { contour: number; compiled: boolean; tasks: string[] }>;
+    for (const mode of ["on", "off"] as const) {
+      const lake = createWaterMesh(scene, `scene-linear-${mode}`, lakeBody(0), { ...glass, rippleStrength: 0, refraction: mode === "on" ? 0.35 : 0 });
+      setSceneWaterTime(scene, 1);
+      const pixels = await capture(`scene-linear-edge-${mode}`);
+      sceneLinear[mode] = { contour: contour(pixels), compiled: compiles(lake, "SLATE_WATER_REFRACTION", "IMAGEPROCESSINGPOSTPROCESS"), tasks: view.taskNames() };
+      lake.dispose();
+    }
+    bright.dispose();
+    return { refraction, orthographic, onScreen, offScreen, nonDominant, planarBody, tiers, sevenLights, sceneLinear, graphTasks, evidence };
   } finally {
     coordinator?.dispose();
     const device = (engine as { _device?: { queue: { onSubmittedWorkDone(): Promise<void> } } })._device;

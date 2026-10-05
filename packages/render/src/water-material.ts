@@ -92,6 +92,11 @@ const REFLECTS_OBJECTS = `defined(${SSR}) || defined(${PLANAR})`;
 const SSR_REFINE_STEPS = 4;
 /** Longest reflected ray the march follows (world units), shortened to the view's far plane. */
 const SSR_MAX_DISTANCE = 500;
+/**
+ * Thickness (metres) an object is assumed to have behind its visible surface, base plus per metre of view depth (also
+ * well above the copy's half-float depth precision): a reflected ray this far behind a surface still hits it.
+ */
+const SSR_THICKNESS = [0.2, 0.03] as const;
 /** Bound where a copy or planar feature has no source this draw: Babylon binds its empty texture (alpha 0). */
 const EMPTY_TEXTURE = new ThinTexture(null);
 /** Planar reflection uv offset per unit of view-space surface tilt. */
@@ -181,6 +186,8 @@ float ${prefix}${i} = 1.0 - smoothstep(0.4, 1.4, ${k} * swFoot * 0.64);`);
  * that lands on something in front of the water (an object above it) keeps the straight ray, so nothing above the
  * surface leaks into it. The copy's depth also bounds the bottom estimate (similar triangles along the view ray), so
  * absorption follows whatever actually lies below: the bed shows through shallows, deep water fades to its colour.
+ * Orthographic views (`projection[3][3]` is 1) bend by the same view-space amount at every distance, and their view
+ * rays are parallel: the bound follows the camera's forward axis instead of the ray through the eye.
  * GLSL-shaped; `SW_FRAG_COORD` and the copy helpers are bound per language.
  */
 function refractionSource(): string {
@@ -190,7 +197,8 @@ float swWaterZ = abs((S.view * vec4(IN.vPositionW, 1.0)).z);
 float swSceneZ0 = swSceneDepth(swScreenUv);
 vec2 swTiltV = (S.view * vec4(-swSlope.x, 0.0, -swSlope.y, 0.0)).xy;
 float swRefrDepth = min(max(swSceneZ0 - swWaterZ, 0.0), ${f(REFRACTION_DEPTH_CAP)});
-vec2 swRefrShift = swTiltV * vec2(S.projection[0][0], S.projection[1][1]) * (U.slateWaterScreen.z * ${f(REFRACTION_SHIFT)} * swRefrDepth / max(swWaterZ, 0.05));
+float swOrtho = S.projection[3][3];
+vec2 swRefrShift = swTiltV * vec2(S.projection[0][0], S.projection[1][1]) * (U.slateWaterScreen.z * ${f(REFRACTION_SHIFT)} * swRefrDepth * mix(1.0 / max(swWaterZ, 0.05), 1.0, swOrtho));
 swRefrShift = swRefrShift * min(1.0, ${f(REFRACTION_SHIFT_CAP)} / max(length(swRefrShift), 0.000001));
 vec2 swRefrUv = swScreenUv + swRefrShift;
 float swSceneZ1 = swSceneDepth(swRefrUv);
@@ -201,7 +209,9 @@ vec3 swBackground = swSceneColor(swRefrUv);
 // Beside the silhouette of something in front of the water, a downsampled copy texel holds that object (its
 // nearest depth): there the copy is not what lies behind this point, so the pixel keeps the blended surface.
 float swRefracts = step(swWaterZ, swSceneZ);
-swDepth = mix(swDepth, min(swDepth, max(swSceneZ - swWaterZ, 0.0) / max(swWaterZ, 0.001) * abs(S.vEyePosition.y - IN.vPositionW.y)), swRefracts);`);
+// Height lost per metre of view depth along this pixel's view ray.
+float swDropPerDepth = mix(abs(S.vEyePosition.y - IN.vPositionW.y) / max(swWaterZ, 0.001), abs(S.view[1][2]), swOrtho);
+swDepth = mix(swDepth, min(swDepth, max(swSceneZ - swWaterZ, 0.0) * swDropPerDepth), swRefracts);`);
 }
 
 /**
@@ -235,24 +245,27 @@ swObjRefl.a = swObjRefl.a * (1.0 - smoothstep(0.2, 0.45, ${roughness}));
 
 /**
  * Per-language samplers and helpers of the scene-copy and reflection features, declared only with their defines.
- * The copy's colour is filtered; its depth is read from the nearest texel (filtered depth would halo silhouettes).
- * All reads use an explicit level, so they are legal in any control flow.
+ * Refraction filters the copy's colour; depth is read from the nearest texel (filtered depth would halo silhouettes),
+ * and a reflection hit takes its colour from that same texel. All reads use an explicit level, so they are legal in
+ * any control flow.
  */
 function objectHelpers(wgsl: boolean): string {
   const copy = wgsl ? `
 var ${WATER_SCENE_SAMPLER}Sampler: sampler;
 var ${WATER_SCENE_SAMPLER}: texture_2d<f32>;
 fn swSceneColor(uv: vec2f) -> vec3f { return textureSampleLevel(${WATER_SCENE_SAMPLER}, ${WATER_SCENE_SAMPLER}Sampler, uv, 0.0).rgb; }
-fn swSceneDepth(uv: vec2f) -> f32 {
+fn swSceneTexel(uv: vec2f) -> vec4f {
   let swSize = vec2i(textureDimensions(${WATER_SCENE_SAMPLER}, 0));
-  return textureLoad(${WATER_SCENE_SAMPLER}, clamp(vec2i(uv * vec2f(swSize)), vec2i(0), swSize - vec2i(1)), 0).a;
-}` : `
+  return textureLoad(${WATER_SCENE_SAMPLER}, clamp(vec2i(uv * vec2f(swSize)), vec2i(0), swSize - vec2i(1)), 0);
+}
+fn swSceneDepth(uv: vec2f) -> f32 { return swSceneTexel(uv).a; }` : `
 uniform sampler2D ${WATER_SCENE_SAMPLER};
 vec3 swSceneColor(vec2 uv) { return texture2DLodEXT(${WATER_SCENE_SAMPLER}, uv, 0.0).rgb; }
-float swSceneDepth(vec2 uv) {
+vec4 swSceneTexel(vec2 uv) {
   ivec2 swSize = textureSize(${WATER_SCENE_SAMPLER}, 0);
-  return texelFetch(${WATER_SCENE_SAMPLER}, clamp(ivec2(uv * vec2(swSize)), ivec2(0), swSize - ivec2(1)), 0).a;
-}`;
+  return texelFetch(${WATER_SCENE_SAMPLER}, clamp(ivec2(uv * vec2(swSize)), ivec2(0), swSize - ivec2(1)), 0);
+}
+float swSceneDepth(vec2 uv) { return swSceneTexel(uv).a; }`;
   const planar = wgsl ? `
 var ${WATER_PLANAR_SAMPLER}Sampler: sampler;
 var ${WATER_PLANAR_SAMPLER}: texture_2d<f32>;
@@ -266,13 +279,20 @@ vec4 swPlanarTexel(vec2 uv) { return texture2DLodEXT(${WATER_PLANAR_SAMPLER}, uv
  * The screen-space march (`SLATE_WATER_SSR`), per language (loops do not pass `toWgsl`). The reflected ray runs from
  * the eye-relative surface point until the march distance (`slateWaterScreen.w`), the screen edge or just short of
  * the eye; `SLATE_WATER_SSR_STEPS` samples are evenly spaced on screen along it, with depth interpolated
- * perspective-correctly (also exact for orthographic views). The first sample behind the copy's depth within a
- * thickness that grows with distance and step length is a hit, refined by bisection. Hits fade toward the screen
- * edge and the end of the march; one whose scene point lies under the water plane is rejected (the copy holds
- * submerged geometry). Returns linear colour and coverage.
+ * perspective-correctly (also exact for orthographic views).
+ * - A sample is a hit when the ray lies behind the copy's depth there and crossed that depth during the step, not
+ *   when it passes behind something in front of the whole step.
+ * - When the ray only passes the depth the previous sample saw while this sample sees something farther (the far
+ *   side of a face, such as the top of a wall, shorter on screen than one step), one probe where the ray reached
+ *   that depth catches it.
+ * - Bisection refines the hit, which stands only on the surface its texel holds (within `SSR_THICKNESS`) and takes
+ *   that texel's colour: a refinement that settles beside a silhouette misses (the sky stays) instead of reflecting
+ *   the background there.
+ * Hits fade toward the screen edge and the end of the march; one whose scene point lies under the water plane is
+ * rejected (the copy holds submerged geometry). Returns linear colour and coverage.
  */
 function marchSource(wgsl: boolean): string {
-  const steps = SSR_STEPS, refine = SSR_REFINE_STEPS;
+  const steps = SSR_STEPS, refine = SSR_REFINE_STEPS, base = f(SSR_THICKNESS[0]), slope = f(SSR_THICKNESS[1]);
   return wgsl ? `
 fn swMarchAt(swC0w: f32, swC1w: f32, swU: f32) -> f32 { return swU * swC0w / max(swU * swC0w + (1.0 - swU) * swC1w, 0.000001); }
 fn swMarch(swOrigin: vec3f, swRay: vec3f) -> vec4f {
@@ -287,39 +307,46 @@ fn swMarch(swOrigin: vec3f, swRay: vec3f) -> vec4f {
   let swExit = (swSide - swN0) / (max(abs(swSpan), vec2f(0.00001)) * swSide);
   let swEnd = clamp(min(swExit.x, swExit.y), 0.0, 1.0);
   let swZ0 = (scene.view * vec4f(swOrigin, 1.0)).z;
-  let swZ1 = (scene.view * vec4f(swOrigin + swRay * swLength, 1.0)).z;
   let swForward = sign(swZ0);
-  var swPrev: f32 = 0.0;
-  var swPrevZ: f32 = abs(swZ0);
-  var swHit: f32 = -1.0;
+  let swD0 = swZ0 * swForward;
+  let swD1 = (scene.view * vec4f(swOrigin + swRay * swLength, 1.0)).z * swForward;
+  var swPrevU: f32 = 0.0;
+  var swPrevZ: f32 = swD0;
+  var swPrevScene: f32 = 65000.0;
+  var swA: f32 = 0.0;
+  var swB: f32 = -1.0;
   for (var swI: i32 = 1; swI <= ${steps}; swI++) {
     let swU = swEnd * f32(swI) / f32(${steps});
-    let swRayZ = mix(swZ0, swZ1, swMarchAt(swC0.w, swC1.w, swU)) * swForward;
+    let swRayZ = mix(swD0, swD1, swMarchAt(swC0.w, swC1.w, swU));
     let swSceneZ = swSceneDepth(mix(swN0, swN1, swU) * 0.5 + 0.5);
-    let swThick = max(0.2 + 0.02 * swRayZ, 2.0 * abs(swRayZ - swPrevZ));
-    if (swRayZ > swSceneZ && swRayZ - swSceneZ < swThick) { swHit = swU; break; }
-    swPrev = swU;
+    let swThick = ${base} + ${slope} * swRayZ;
+    if (swRayZ > swSceneZ) {
+      if (swSceneZ > swPrevZ - swThick) { swA = swPrevU; swB = swU; break; }
+    } else if (swRayZ > swPrevScene && swPrevZ <= swPrevScene) {
+      let swProbeU = swMarchAt(swC1.w, swC0.w, clamp((swPrevScene - swD0) / max(swD1 - swD0, 0.000001), 0.0, 1.0));
+      if (abs(swPrevScene - swSceneDepth(mix(swN0, swN1, swProbeU) * 0.5 + 0.5)) < swThick) { swA = swPrevU; swB = swProbeU; break; }
+    }
+    swPrevU = swU;
     swPrevZ = swRayZ;
+    swPrevScene = swSceneZ;
   }
-  if (swHit < 0.0) { return vec4f(0.0); }
-  var swA: f32 = swPrev;
-  var swB: f32 = swHit;
+  if (swB < 0.0) { return vec4f(0.0); }
   for (var swJ: i32 = 0; swJ < ${refine}; swJ++) {
     let swM = 0.5 * (swA + swB);
-    let swMidZ = mix(swZ0, swZ1, swMarchAt(swC0.w, swC1.w, swM)) * swForward;
+    let swMidZ = mix(swD0, swD1, swMarchAt(swC0.w, swC1.w, swM));
     if (swMidZ > swSceneDepth(mix(swN0, swN1, swM) * 0.5 + 0.5)) { swB = swM; } else { swA = swM; }
   }
   let swUv = mix(swN0, swN1, swB) * 0.5 + 0.5;
   let swS = swMarchAt(swC0.w, swC1.w, swB);
-  let swRayZ = mix(swZ0, swZ1, swS) * swForward;
-  let swSceneZ = swSceneDepth(swUv);
+  let swRayZ = mix(swD0, swD1, swS);
+  let swHit = swSceneTexel(swUv);
   let swEye = scene.vEyePosition.xyz;
   let swPoint = swOrigin + swRay * (swLength * swS);
-  let swSceneY = swEye.y + (swPoint.y - swEye.y) * swSceneZ / max(swRayZ, 0.000001);
+  let swSceneY = swEye.y + (swPoint.y - swEye.y) * swHit.a / max(swRayZ, 0.000001);
   let swEdge = min(swUv, vec2f(1.0) - swUv);
   let swFade = smoothstep(0.0, 0.06, min(swEdge.x, swEdge.y)) * (1.0 - smoothstep(0.7, 1.0, swS)) * step(swOrigin.y - 0.05, swSceneY)
-    * step(swRayZ - swSceneZ, max(0.2 + 0.02 * swRayZ, 0.1 * swRayZ));
-  return vec4f(swSceneColor(swUv), swFade);
+    * step(abs(swRayZ - swHit.a), ${base} + ${slope} * swRayZ);
+  return vec4f(swHit.rgb, swFade);
 }` : `
 float swMarchAt(float swC0w, float swC1w, float swU) { return swU * swC0w / max(swU * swC0w + (1.0 - swU) * swC1w, 0.000001); }
 vec4 swMarch(vec3 swOrigin, vec3 swRay) {
@@ -334,39 +361,46 @@ vec4 swMarch(vec3 swOrigin, vec3 swRay) {
   vec2 swExit = (swSide - swN0) / (max(abs(swSpan), vec2(0.00001)) * swSide);
   float swEnd = clamp(min(swExit.x, swExit.y), 0.0, 1.0);
   float swZ0 = (view * vec4(swOrigin, 1.0)).z;
-  float swZ1 = (view * vec4(swOrigin + swRay * swLength, 1.0)).z;
   float swForward = sign(swZ0);
-  float swPrev = 0.0;
-  float swPrevZ = abs(swZ0);
-  float swHit = -1.0;
+  float swD0 = swZ0 * swForward;
+  float swD1 = (view * vec4(swOrigin + swRay * swLength, 1.0)).z * swForward;
+  float swPrevU = 0.0;
+  float swPrevZ = swD0;
+  float swPrevScene = 65000.0;
+  float swA = 0.0;
+  float swB = -1.0;
   for (int swI = 1; swI <= ${steps}; swI++) {
     float swU = swEnd * float(swI) / float(${steps});
-    float swRayZ = mix(swZ0, swZ1, swMarchAt(swC0.w, swC1.w, swU)) * swForward;
+    float swRayZ = mix(swD0, swD1, swMarchAt(swC0.w, swC1.w, swU));
     float swSceneZ = swSceneDepth(mix(swN0, swN1, swU) * 0.5 + 0.5);
-    float swThick = max(0.2 + 0.02 * swRayZ, 2.0 * abs(swRayZ - swPrevZ));
-    if (swRayZ > swSceneZ && swRayZ - swSceneZ < swThick) { swHit = swU; break; }
-    swPrev = swU;
+    float swThick = ${base} + ${slope} * swRayZ;
+    if (swRayZ > swSceneZ) {
+      if (swSceneZ > swPrevZ - swThick) { swA = swPrevU; swB = swU; break; }
+    } else if (swRayZ > swPrevScene && swPrevZ <= swPrevScene) {
+      float swProbeU = swMarchAt(swC1.w, swC0.w, clamp((swPrevScene - swD0) / max(swD1 - swD0, 0.000001), 0.0, 1.0));
+      if (abs(swPrevScene - swSceneDepth(mix(swN0, swN1, swProbeU) * 0.5 + 0.5)) < swThick) { swA = swPrevU; swB = swProbeU; break; }
+    }
+    swPrevU = swU;
     swPrevZ = swRayZ;
+    swPrevScene = swSceneZ;
   }
-  if (swHit < 0.0) { return vec4(0.0); }
-  float swA = swPrev;
-  float swB = swHit;
+  if (swB < 0.0) { return vec4(0.0); }
   for (int swJ = 0; swJ < ${refine}; swJ++) {
     float swM = 0.5 * (swA + swB);
-    float swMidZ = mix(swZ0, swZ1, swMarchAt(swC0.w, swC1.w, swM)) * swForward;
+    float swMidZ = mix(swD0, swD1, swMarchAt(swC0.w, swC1.w, swM));
     if (swMidZ > swSceneDepth(mix(swN0, swN1, swM) * 0.5 + 0.5)) { swB = swM; } else { swA = swM; }
   }
   vec2 swUv = mix(swN0, swN1, swB) * 0.5 + 0.5;
   float swS = swMarchAt(swC0.w, swC1.w, swB);
-  float swRayZ = mix(swZ0, swZ1, swS) * swForward;
-  float swSceneZ = swSceneDepth(swUv);
+  float swRayZ = mix(swD0, swD1, swS);
+  vec4 swHit = swSceneTexel(swUv);
   vec3 swEye = vEyePosition.xyz;
   vec3 swPoint = swOrigin + swRay * (swLength * swS);
-  float swSceneY = swEye.y + (swPoint.y - swEye.y) * swSceneZ / max(swRayZ, 0.000001);
+  float swSceneY = swEye.y + (swPoint.y - swEye.y) * swHit.a / max(swRayZ, 0.000001);
   vec2 swEdge = min(swUv, vec2(1.0) - swUv);
   float swFade = smoothstep(0.0, 0.06, min(swEdge.x, swEdge.y)) * (1.0 - smoothstep(0.7, 1.0, swS)) * step(swOrigin.y - 0.05, swSceneY)
-    * step(swRayZ - swSceneZ, max(0.2 + 0.02 * swRayZ, 0.1 * swRayZ));
-  return vec4(swSceneColor(swUv), swFade);
+    * step(abs(swRayZ - swHit.a), ${base} + ${slope} * swRayZ);
+  return vec4(swHit.rgb, swFade);
 }`;
 }
 
@@ -781,8 +815,9 @@ vec3 swEmissive = swScatter * ((1.0 - swFres) * (1.0 - swTransmit) * swGloss) + 
 swEmissive += surfaceAlbedo * (swSun * max(dot(swWaveN, swL), 0.0) * 0.8 + swAmb * 0.45);`)}
 alpha = (1.0 - (1.0 - swFres) * swTransmit * (1.0 - swFoam)) * swEdgeFade;${ifDefined(REFRACTION, `
 // The refracted scene replaces the blended background: the light transmitted through the water is the copy behind
-// this point, so coverage keeps only the shore fade.
-swEmissive += swBackground * ((1.0 - swFres) * swTransmit * (1.0 - swFoam) * swEdgeFade * swRefracts);
+// this point, so coverage keeps only the shore fade. It stays apart from the water's own light (\`swRefracted\`, see
+// CUSTOM_FRAGMENT_BEFORE_FOG), so it never raises the coverage of an HDR target or takes the water's fog twice.
+vec3 swRefracted = swBackground * ((1.0 - swFres) * swTransmit * (1.0 - swFoam) * swEdgeFade * swRefracts);
 alpha = mix(alpha, swEdgeFade, swRefracts);`)}
 ${objectReflectionSource("normalize(swRefl)", "sqrt(sqrt(U.slateWaterOrigin.w * U.slateWaterOrigin.w * U.slateWaterOrigin.w * U.slateWaterOrigin.w + 2.0 * swSlopeVariance))")}
 `;
@@ -915,8 +950,10 @@ float swReflWeight = swObjRefl.a * (0.3 + 0.7 * smoothstep(0.2, 1.0, 1.0 - swNdo
 swEmissive = mix(swEmissive, swObjRefl.rgb, swReflWeight);
 alpha = max(alpha, swReflWeight);
 #endif${ifDefined(REFRACTION, `
-// The refracted scene replaces the blended background; Opacity still sets how much of it shows.
-swEmissive = mix(swEmissive, mix(swBackground, swEmissive, alpha), swRefracts);
+// The refracted scene replaces the blended background; Opacity still sets how much of it shows. It joins the output
+// after the water's own fog (\`swRefracted\`, see CUSTOM_FRAGMENT_BEFORE_FOG).
+vec3 swRefracted = swBackground * ((1.0 - alpha) * swRefracts);
+swEmissive = swEmissive * mix(1.0, alpha, swRefracts);
 alpha = mix(alpha, 1.0, swRefracts);`)}
 `;
 }
@@ -1126,6 +1163,47 @@ export function toWgsl(source: string): string {
     .replace(/^(\s*)(float|vec2|vec3|vec4) (\w+) = /gm, (_, indent: string, t: string, name: string) => `${indent}var ${name}: ${type(t)} = `)
     .replace(/\bvec([234])\(/g, "vec$1f(")
     .replace(/\bdFdx\(/g, "dpdx(").replace(/\bdFdy\(/g, "dpdy(");
+}
+
+/**
+ * CUSTOM_FRAGMENT_BEFORE_FOG. Realistic colour is premultiplied by coverage: undo it for Babylon's non-premultiplied
+ * blend, fog and image processing. Bright glints and reflections raise coverage instead of clipping in 8-bit targets.
+ *
+ * The refracted scene (`swRefracted`, `SLATE_WATER_REFRACTION`) is light from behind the surface, already fogged by
+ * its own materials: it is pre-divided by the fog factor so the water's fog below leaves it unchanged, as blending
+ * left the background. In Scene Linear (`IMAGEPROCESSINGPOSTPROCESS`, an HDR target that never clips at 1) it stays
+ * out of the coverage, so a refracted background brighter than 1 never raises coverage and dims what the shore fade
+ * blends over; 8-bit display targets keep counting it (their background never exceeds 1). Stylized water is opaque
+ * where it refracts and only adds it.
+ */
+function beforeFogSource(wgsl: boolean): string {
+  const v3 = wgsl ? "vec3f" : "vec3", v4 = wgsl ? "vec4f" : "vec4", f1 = wgsl ? "f32" : "float";
+  const declare = (type: string, name: string, value: string) => (wgsl ? `var ${name}: ${type} = ${value};` : `${type} ${name} = ${value};`);
+  const brightest = (c: string) => `max(${c}.r, max(${c}.g, ${c}.b))`;
+  return [
+    `#ifdef ${REFRACTION}`,
+    declare(v3, "swRefractedOut", "swRefracted"),
+    "#ifdef FOG",
+    "swRefractedOut = swRefracted / max(toLinearSpace(CalcFogFactor()), 0.01);",
+    "#endif",
+    "#endif",
+    `#ifdef ${WATER_STYLIZED_DEFINE}`,
+    `#ifdef ${REFRACTION}`,
+    `finalColor = ${v4}(finalColor.rgb + swRefractedOut, finalColor.a);`,
+    "#endif",
+    "#else",
+    `#if defined(${REFRACTION}) && !defined(IMAGEPROCESSINGPOSTPROCESS)`,
+    declare(v3, "swCovered", "finalColor.rgb + swRefracted"),
+    declare(f1, "swCover", `clamp(max(finalColor.a, ${brightest("swCovered")}), 0.02, 1.0)`),
+    "#else",
+    declare(f1, "swCover", `clamp(max(finalColor.a, ${brightest("finalColor")}), 0.02, 1.0)`),
+    "#endif",
+    `#ifdef ${REFRACTION}`,
+    `finalColor = ${v4}(finalColor.rgb + swRefractedOut, finalColor.a);`,
+    "#endif",
+    `finalColor = ${v4}(finalColor.rgb / swCover, swCover);`,
+    "#endif",
+  ].join("\n");
 }
 
 /** Both styles, selected by `SLATE_WATER_STYLIZED` so each material compiles only one (each directive on its own line). */
@@ -1623,14 +1701,7 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
         "#endif",
         "#endif",
       ].join("\n"),
-      // Realistic colour is premultiplied by coverage: undo it for Babylon's non-premultiplied blend, fog and image
-      // processing. Bright glints and reflections raise coverage instead of clipping in 8-bit targets.
-      CUSTOM_FRAGMENT_BEFORE_FOG: [
-        `#ifndef ${WATER_STYLIZED_DEFINE}`,
-        `${wgsl ? "var swCover: f32 =" : "float swCover ="} clamp(max(finalColor.a, max(finalColor.r, max(finalColor.g, finalColor.b))), 0.02, 1.0);`,
-        `finalColor = ${wgsl ? "vec4f" : "vec4"}(finalColor.rgb / swCover, swCover);`,
-        "#endif",
-      ].join("\n"),
+      CUSTOM_FRAGMENT_BEFORE_FOG: beforeFogSource(wgsl),
     };
   }
 }

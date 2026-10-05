@@ -158,15 +158,25 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     // Views draw on the Forward FrameGraph with the scene copy whenever refraction or a screen-space march runs.
     expect(result.graphTasks["refraction-on"]).toContain("Water scene copy");
     expect(result.graphTasks["reflection-on-screen-screenSpace"]).toContain("Water scene copy");
-    // Refraction: the green box under the surface shows through the refracted water where it lies (a flipped or
-    // offset copy lookup would lose it), and the refracted floor moves with the waves' normals far more than the
-    // blended surface (Refraction 0) changes between the same two wave phases.
+    // Refraction: the green box in the lower part of the view shows through the refracted water where it lies and not
+    // at the vertically mirrored rows, where a flipped copy lookup would put it, and the refracted floor moves with
+    // the waves' normals far more than the blended surface (Refraction 0) changes between the same two wave phases.
+    expect(result.refraction.on.compiled).toBe(true);
+    expect(result.refraction.off.compiled).toBe(false);
     expect(result.refraction.on.calm - result.refraction.on.calmNoBox).toBeGreaterThan(20);
+    expect(Math.abs(result.refraction.on.flipped - result.refraction.on.flippedNoBox)).toBeLessThan(6);
     expect(result.refraction.on.motion).toBeGreaterThan(result.refraction.off.motion * 1.5 + 1);
+    // A distant orthographic view bends just as much.
+    expect(result.orthographic.on.compiled).toBe(true);
+    expect(result.orthographic.on.motion).toBeGreaterThan(result.orthographic.off.motion * 1.5 + 1);
     // A beacon above calm water appears at its mirrored screen position with Screen Space and Planar reflections,
     // and not with Sky Only.
     expect(result.onScreen.screenSpace).toBeGreaterThan(result.onScreen.sky + 40);
     expect(result.onScreen.planar).toBeGreaterThan(result.onScreen.sky + 40);
+    // The march reflects the whole mirrored front face, and every other row the planar mirror fills shows either the
+    // beacon or the Sky Only colour: no seam where the march settled beside the silhouette.
+    expect(result.onScreen.extent.coverage).toBeGreaterThan(0.9);
+    expect(result.onScreen.extent.seam).toBeLessThanOrEqual(2);
     // Above the top of the view no screen-space march can find it; the planar mirror still reflects it (weaker: the
     // Fresnel of this steeper view is lower).
     expect(result.offScreen.directNdcY).toBeGreaterThan(1);
@@ -177,15 +187,24 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     // reflects the beacon through the screen-space march.
     expect(result.planarBody).toBe("reflection-dominant");
     expect(result.nonDominant.planar).toBeGreaterThan(result.nonDominant.sky + 40);
+    expect(result.nonDominant.extent.coverage).toBeGreaterThan(0.9);
     // Every Water Shading Detail in both styles draws lit water, with its copy and reflection features on.
     expect(result.tiers).toHaveLength(8);
     for (const { tier, style, light, water } of result.tiers) {
       expect(light, `${style} at ${tier}`).toBeGreaterThan(20);
       expect(water, `${style} at ${tier} against no water`).toBeGreaterThan(WATER_OVER_VIEW);
     }
-    // The largest variant (Ultra Realistic with refraction, the march and the planar mirror) under seven lights.
+    // The largest variant (Ultra Realistic with refraction, the march and the planar mirror) compiles with a seventh
+    // light slot, and the lamps light it.
+    expect(result.sevenLights.lights).toBe(7);
+    expect(result.sevenLights.largestVariant).toBe(true);
     expect(result.sevenLights.light).toBeGreaterThan(20);
     expect(result.sevenLights.water).toBeGreaterThan(WATER_OVER_VIEW);
+    expect(result.sevenLights.lamps).toBeGreaterThan(0.5);
+    // Scene Linear: refraction over a floor brighter than 1 crosses the shore fade without a dark contour, like the
+    // blended surface.
+    expect(result.sceneLinear.on.compiled).toBe(true);
+    expect(result.sceneLinear.on.contour).toBeLessThan(result.sceneLinear.off.contour + 8);
   });
   test(`Water presets and a custom Water Surface material render on ${backend}`, async ({ page }, testInfo) => {
     test.setTimeout(120_000);

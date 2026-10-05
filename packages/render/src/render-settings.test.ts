@@ -4,7 +4,7 @@ import {
   Scene, ShadowGenerator, Vector3,
 } from "@babylonjs/core";
 import {
-  normalizeRenderingQuality, qualityPresetPatch, qualitySettingPatch, RENDER_QUALITY_PROFILES, ScalabilitySession, type QualityLevel,
+  DEFAULT_RENDER_EFFECTS, normalizeRenderingQuality, qualityPresetPatch, qualitySettingPatch, RENDER_QUALITY_PROFILES, ScalabilitySession, type QualityLevel,
 } from "@babylonslate/core";
 import {
   applyMaterialTextureAnisotropy, followSceneRenderSettings, sceneRenderingSettings, sceneWaterQuality,
@@ -148,19 +148,30 @@ it("reports device-clamped water features while keeping the requested quality", 
   expect(planarClamp.screenSpaceFallback).toBe(false);
   expect(planarClamp.limits).toEqual([expect.stringContaining("Water Refraction"), expect.stringContaining("Planar")]);
   // Scene Linear mirrors into a half-float target too: no planar pass can run, so readback reports Sky Only, and
-  // the clamp follows the colour pipeline without a Water quality change.
-  planar.imageProcessingConfiguration.applyByPostProcess = true;
+  // the clamp follows the configured colour pipeline without a Water quality change.
+  const sceneLinear = { ...tier("ultra"), effects: { ...DEFAULT_RENDER_EFFECTS, colorPipeline: { version: 1 as const, mode: "sceneLinear" as const } } };
+  updateSceneRenderingSettings(planar, sceneLinear);
+  expect(planar.imageProcessingConfiguration.applyByPostProcess).toBe(true);
   const linearClamp = sceneWaterQualityDeviceClamp(planar);
   expect(linearClamp).not.toBe(planarClamp);
   expect(linearClamp.quality.reflections).toBe("sky");
   expect(linearClamp.screenSpaceFallback).toBe(false);
   expect(linearClamp.limits).toEqual([expect.stringContaining("Water Refraction"), expect.stringContaining("Scene Linear")]);
+  // A colour capture lowers the live flag only while it draws (water's readiness checks run inside): the clamp is
+  // neither rebuilt nor changed, so nothing recompiles twice per frame.
+  planar.imageProcessingConfiguration._applyByPostProcess = false;
   expect(sceneWaterQualityDeviceClamp(planar)).toBe(linearClamp);
-  planar.imageProcessingConfiguration.applyByPostProcess = false;
+  planar.imageProcessingConfiguration._applyByPostProcess = true;
+  expect(sceneWaterQualityDeviceClamp(planar)).toBe(linearClamp);
+  updateSceneRenderingSettings(planar, tier("ultra"));
   expect(sceneWaterQualityDeviceClamp(planar).quality.reflections).toBe("planar");
 
   const capable = fixture();
   Object.assign(capable.getEngine().getCaps(), { textureFloatRender: true, textureHalfFloatRender: true });
   updateSceneRenderingSettings(capable, tier("ultra"));
-  expect(sceneWaterQualityDeviceClamp(capable)).toEqual({ quality: sceneWaterQuality(capable), screenSpaceFallback: true, limits: [] });
+  const capableClamp = sceneWaterQualityDeviceClamp(capable);
+  expect(capableClamp).toEqual({ quality: sceneWaterQuality(capable), screenSpaceFallback: true, limits: [] });
+  // With half-float targets the colour pipeline cannot change what runs, so switching it keeps the same clamp.
+  updateSceneRenderingSettings(capable, sceneLinear);
+  expect(sceneWaterQualityDeviceClamp(capable)).toBe(capableClamp);
 });
