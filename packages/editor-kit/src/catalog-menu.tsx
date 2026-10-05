@@ -86,7 +86,11 @@ function cssPixels(name: string): number {
   return Number.isFinite(value) ? value : 0;
 }
 
-function popupFrame(anchor: { x: number; y: number } | null | undefined) {
+/** Viewport-clamped placement for anchored popup menus; centered without an anchor. */
+export function popupMenuFrame(
+  anchor: { x: number; y: number } | null | undefined,
+  size: { width: number; height: number } = { width: POPUP_WIDTH, height: POPUP_HEIGHT },
+) {
   const insets = {
     top: cssPixels("--safe-top"),
     right: cssPixels("--safe-right"),
@@ -95,8 +99,8 @@ function popupFrame(anchor: { x: number; y: number } | null | undefined) {
   };
   const vw = window.innerWidth;
   const vh = window.innerHeight;
-  const width = Math.min(POPUP_WIDTH, vw - insets.left - insets.right - POPUP_MARGIN * 2);
-  const height = Math.min(POPUP_HEIGHT, vh - insets.top - insets.bottom - POPUP_MARGIN * 2);
+  const width = Math.min(size.width, vw - insets.left - insets.right - POPUP_MARGIN * 2);
+  const height = Math.min(size.height, vh - insets.top - insets.bottom - POPUP_MARGIN * 2);
   const origin = anchor ?? { x: (vw - width) / 2, y: (vh - height) / 2 };
   const { x, y } = clampOverlayMenuPosition({
     ...origin,
@@ -255,7 +259,7 @@ export function CatalogMenu<T extends CatalogMenuItem>({
     setActiveKey(rows[next]!.key);
   };
 
-  const frame = modal ? null : popupFrame(anchor);
+  const frame = modal ? null : popupMenuFrame(anchor);
   const activeDescendant = activeIndex >= 0 ? rowId(listId, rows[activeIndex]!.key) : undefined;
 
   return (

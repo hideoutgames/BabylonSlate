@@ -4,7 +4,11 @@ import {
   AlertDescription,
   AlertTitle,
 } from "@babylonslate/ui/components/alert";
-import { SearchDialog, type SearchDialogItem } from "./search-dialog";
+import {
+  PickerCreateGlyph,
+  SearchDialog,
+  type SearchDialogItem,
+} from "./search-dialog";
 import { displayPickerTitle } from "./picker-identity";
 import { TypeVisualIcon, resolveTypeVisual } from "./type-visuals";
 import { useAssetCreate, type ClassCreateOptions } from "./asset-create-context";
@@ -93,24 +97,17 @@ export function ClassPicker({
             label: "Create New Class",
             description:
               creatingId === CREATE_ID ? "Creating…" : `Child of ${baseName}`,
-            leading: (
-              <TypeVisualIcon
-                visual={resolveTypeVisual({
-                  assetType: "Class",
-                  parentClass: base,
-                })}
-              />
-            ),
+            leading: <PickerCreateGlyph />,
             pinned: true,
             keepOpen: true,
           },
         ]
       : [];
     return [
+      ...createRows,
       ...(allowNone
         ? [{ id: NONE_ID, label: "None", description: "Clear reference" }]
         : []),
-      ...createRows,
       ...rows,
     ];
   }, [allowNone, base, classes, createClass, creatingId]);

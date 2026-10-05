@@ -4,7 +4,11 @@ import {
   AlertDescription,
   AlertTitle,
 } from "@babylonslate/ui/components/alert";
-import { SearchDialog, type SearchDialogItem } from "./search-dialog";
+import {
+  PickerCreateGlyph,
+  SearchDialog,
+  type SearchDialogItem,
+} from "./search-dialog";
 import { displayPickerTitle } from "./picker-identity";
 import { TypeVisualIcon, resolveTypeVisual } from "./type-visuals";
 import { useAssetCreate, type AssetCreateOptions } from "./asset-create-context";
@@ -102,19 +106,17 @@ export function AssetPicker({
             label: `Create New ${api.typeLabel(type)}`,
             description:
               creatingId === id ? "Creating…" : "Uses the search text as its name",
-            leading: (
-              <TypeVisualIcon visual={resolveTypeVisual({ assetType: type })} />
-            ),
+            leading: <PickerCreateGlyph />,
             pinned: true,
             keepOpen: true,
           };
         })
       : [];
     return [
+      ...createRows,
       ...(allowNone
         ? [{ id: NONE_ID, label: "None", description: "Clear reference" }]
         : []),
-      ...createRows,
       ...rows,
     ];
   }, [allowNone, allowedTypes, api, assets, creatingId, offeredCreateTypes]);
