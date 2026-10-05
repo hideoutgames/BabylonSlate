@@ -9,7 +9,7 @@ for (const backend of ["webgl2", "webgpu"] as const) for (const kind of ["direct
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     page.on("console", (message) => {
-      if (["warning", "error"].includes(message.type()) && /shader|WebGPU uncaptured|VALIDATE_STATUS|ERROR: 0:|context lost|fatal error/i.test(message.text())) errors.push(message.text());
+      if (["warning", "error"].includes(message.type()) && /shader|WebGPU uncaptured|GPUValidation|validation error|INVALID_|VALIDATE_STATUS|ERROR: 0:|context lost|fatal error/i.test(message.text())) errors.push(message.text());
     });
     await page.goto("/?test=1&shadowSelfShadowingProof=1");
     await page.waitForFunction(() => typeof (window as unknown as { __babylonslateAuthoredShadowProof?: unknown }).__babylonslateAuthoredShadowProof === "function");
