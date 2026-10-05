@@ -12,7 +12,7 @@
  * retained by `retainWaterPlanarReflections` (SceneRenderCoordinator) can ever draw one, so previews,
  * thumbnails and Render Target Captures never do. A view allocates its target only when an eligible body is
  * visible, draws every frame while its camera moves and every other frame while it is static, and releases the
- * target after it has been unused for `RELEASE_FRAMES`. Per-frame work allocates nothing.
+ * target after it has been unused for `RELEASE_FRAMES`. The owner's per-frame work allocates nothing.
  *
  * Colour space: the pass keeps the view's image-processing setting, so reflected materials reuse the view's
  * shader variants and target formats. Scene Linear views (`applyByPostProcess`) store linear HDR colour in
@@ -47,8 +47,9 @@ export interface WaterPlanarReflection {
   /**
    * Mirrored camera view × oblique projection, taking positions relative to the origin the water shader uses
    * (`slateWaterOrigin`: the view camera's position under floating origin, otherwise the world origin). A water
-   * fragment at that relative position projects to the clip-space position whose texel holds what it reflects;
-   * flip clip y for texture v on WebGL as for any render target.
+   * fragment at that relative position projects to the clip-space position whose texel holds what it reflects.
+   * Clip space follows the engine's conventions (NDC depth range, reverse depth); the per-backend NDC-to-uv
+   * mapping is the sampling shader's to choose and prove with a known hit on WebGL2 and WebGPU.
    */
   readonly viewProjection: Matrix;
   /** World height of the reflecting rest plane. */
@@ -136,7 +137,7 @@ type View = {
   requested: number;
   /** Engine frame whose lookups may use the target's result. */
   valid: number;
-  /** Engine frame of the latest valid result. */
+  /** Engine frame the target was last in use (drawn, reused or waiting for shaders). */
   active: number;
   target: Target | null;
 };
@@ -172,7 +173,7 @@ function obliqueDepth(w: number, plane: number, reverse: boolean, half: boolean)
 
 /** Sutherland–Hodgman clip of an (x, y, w) polygon against `a·x + b·y + c·w + k ≥ 0`. */
 function clipPolygon(source: Float64Array, count: number, target: Float64Array, plane: readonly [number, number, number, number]): number {
-  const [a, b, c, k] = plane;
+  const a = plane[0], b = plane[1], c = plane[2], k = plane[3];
   let out = 0;
   for (let i = 0; i < count; i++) {
     const j = i + 1 === count ? 0 : i + 1;
