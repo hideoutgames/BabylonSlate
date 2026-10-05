@@ -123,6 +123,7 @@ type RapierColliderDesc = {
   setActiveEvents(events: number): RapierColliderDesc;
   setActiveCollisionTypes(types: number): RapierColliderDesc;
   setActiveHooks(hooks: number): RapierColliderDesc;
+  setDensity(density: number): RapierColliderDesc;
 };
 
 type RapierRigidBody = {
@@ -221,6 +222,8 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
   private readonly pendingContacts: PhysicsContactEvent[] = [];
   private readonly blockingKeys = new Set<string>();
   private readonly triggerKeys = new Set<string>();
+  /** Open overlaps of replaced colliders, which the next step must re-confirm. */
+  private readonly refreshingTriggerKeys = new Set<string>();
   private disposed = false;
   private queriesDirty = false;
 
@@ -255,6 +258,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     this.colliderIdByHandle.clear();
     this.blockingKeys.clear();
     this.triggerKeys.clear();
+    this.refreshingTriggerKeys.clear();
     this.pendingContacts.length = 0;
     this.eventQueue.free();
     this.world.free();
@@ -512,13 +516,16 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
       changes.upsert.length
     )
       throw new Error("Duplicate collider upsert identity");
+    const removed = new Set(changes.remove);
+    // A replacement that keeps its ID and contact policy (a new pose or shape)
+    // keeps its overlaps open until the next step re-confirms or ends them.
+    const refreshed = new Set<string>();
     const prepared = changes.upsert.map(copyColliderDesc).map((desc) => {
-      if (
-        desc.bodyId !== bodyId ||
-        (this.colliders.has(desc.id) &&
-          this.colliders.get(desc.id)!.desc.bodyId !== bodyId)
-      )
+      const existing = this.colliders.get(desc.id);
+      if (desc.bodyId !== bodyId || (existing && existing.desc.bodyId !== bodyId))
         throw new Error("Collider transaction crosses body ownership");
+      if (existing && !removed.has(desc.id) && sameContactPolicy(existing.desc, desc))
+        refreshed.add(desc.id);
       const colliderDesc = this.toColliderDesc(desc);
       if (!colliderDesc) throw new Error("Unsupported planar collider shape");
       colliderDesc
@@ -531,6 +538,10 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
       colliderDesc
         .setTranslation(desc.translation!.x, desc.translation!.y)
         .setRotation(quatToPlanarAngle(desc.rotation!));
+      // Hosted child shapes are massless: the host keeps the mass and center
+      // of mass that its authored mass and its own colliders give it.
+      if (desc.actorId !== undefined && desc.actorId !== body.desc.actorId)
+        colliderDesc.setDensity(0);
       return { desc, colliderDesc };
     });
     const provisional: ColliderRecord[] = [];
@@ -555,7 +566,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
       ...prepared.map(({ desc }) => desc.id),
     ])) {
       if (this.colliders.get(id)?.desc.bodyId === bodyId)
-        this.destroyCollider(id);
+        this.removeCollider(id, refreshed.has(id));
     }
     for (const record of provisional) {
       this.colliders.set(record.desc.id, record);
@@ -567,9 +578,14 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
   }
 
   destroyCollider(colliderId: string): void {
+    this.removeCollider(colliderId, false);
+  }
+
+  private removeCollider(colliderId: string, refresh: boolean): void {
     const record = this.colliders.get(colliderId);
     if (!record) return;
-    this.retireColliderContacts(colliderId);
+    if (refresh) this.refreshColliderContacts(colliderId);
+    else this.retireColliderContacts(colliderId);
     this.colliderIdByHandle.delete(record.collider.handle);
     if (record.extra) this.colliderIdByHandle.delete(record.extra.handle);
     this.world.removeCollider(record.collider, true);
@@ -607,6 +623,18 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     this.eventQueue.drainCollisionEvents((handleA, handleB, started) => {
       this.recordCollisionEvent(handleA, handleB, started);
     });
+    // A replaced collider's overlap that this step did not start again ended.
+    for (const key of this.refreshingTriggerKeys) {
+      const pair = parseContactKey(key);
+      if (!pair || !this.triggerKeys.delete(key)) continue;
+      this.pendingContacts.push({
+        kind: "overlapEnd",
+        ...pair,
+        location: { x: 0, y: 0, z: 0 },
+        normal: { x: 0, y: 1, z: 0 },
+      });
+    }
+    this.refreshingTriggerKeys.clear();
   }
 
   lineTrace(start: Vec3, end: Vec3, options?: LineTraceOptions): HitResult {
@@ -900,6 +928,24 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     }
   }
 
+  /**
+   * A collider replaced under the same ID and contact policy keeps its open
+   * overlaps, as a teleport does: the next step's intersection events confirm
+   * them, and the step ends the rest. Blocking pairs restart with that step.
+   */
+  private refreshColliderContacts(colliderId: string): void {
+    for (const key of this.blockingKeys) {
+      const pair = parseContactKey(key);
+      if (pair && (pair.colliderAId === colliderId || pair.colliderBId === colliderId))
+        this.blockingKeys.delete(key);
+    }
+    for (const key of this.triggerKeys) {
+      const pair = parseContactKey(key);
+      if (pair && (pair.colliderAId === colliderId || pair.colliderBId === colliderId))
+        this.refreshingTriggerKeys.add(key);
+    }
+  }
+
   /** The shape's owner: a hosted child shape's actor, otherwise its body's actor. */
   private colliderActorId(collider: RapierCollider): string | null {
     const desc = this.colliders.get(this.colliderIdByHandle.get(collider.handle) ?? "")?.desc;
@@ -946,7 +992,11 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     const isTrigger = colliderA.desc.isTrigger || colliderB.desc.isTrigger;
     if (isTrigger) {
       if (started) {
-        if (this.triggerKeys.has(key)) return;
+        if (this.triggerKeys.has(key)) {
+          // A replaced collider's overlap continues without a second begin.
+          this.refreshingTriggerKeys.delete(key);
+          return;
+        }
         this.triggerKeys.add(key);
         this.pendingContacts.push({
           kind: "overlapBegin",
@@ -1005,6 +1055,16 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     if (!record) return { x: 0, y: 0 };
     return record.collider.translation();
   }
+}
+
+/** Whether a replacement reports the same pairs: same trigger, filter and owner. */
+function sameContactPolicy(a: ColliderDesc, b: ColliderDesc): boolean {
+  return (
+    a.isTrigger === b.isTrigger &&
+    a.layer === b.layer &&
+    a.mask === b.mask &&
+    a.actorId === b.actorId
+  );
 }
 
 function contactKey(

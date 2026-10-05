@@ -47,13 +47,24 @@ const fallingBody: Components[number] = [
   "RigidBodyComponent",
   { motionType: "dynamic", mass: 1, gravityScale: 1, linearDamping: 0, angularDamping: 0 },
 ];
-const box = (kind: "2d" | "3d", x: number, y = x, z = x): Components[number] => [
+const kinematicBody: Components[number] = [
+  "RigidBodyComponent",
+  { motionType: "kinematic", mass: 1, gravityScale: 0 },
+];
+const box = (kind: "2d" | "3d", x: number, y = x, z = x, isTrigger = false): Components[number] => [
   "ColliderComponent",
   {
+    ...(isTrigger ? { isTrigger } : {}),
     shape: kind === "3d"
       ? { kind: "box", halfExtents: { x, y, z } }
       : { kind: "box2d", halfExtents: { x, y } },
   },
+];
+const trigger = (kind: "2d" | "3d", x: number) => box(kind, x, x, x, true);
+const everyBackend = [
+  { backend: "software", kind: "3d" as const },
+  { backend: "Rapier", kind: "2d" as const },
+  { backend: "Havok", kind: "3d" as const },
 ];
 const nativeBackend = (kind: "2d" | "3d", gravity = 0) =>
   createPhysicsBackend({ kind, gravity: { x: 0, y: gravity, z: 0 }, allowSoftwareFallback: false });
@@ -222,6 +233,99 @@ describe("collidable static descendants of simulated bodies", () => {
       expect(new Set(others.map((other) => JSON.stringify(other)))).toEqual(
         new Set([JSON.stringify({ actor: named, component: colliderGuid(owner) })]),
       );
+    } finally {
+      sync.dispose();
+    }
+  });
+
+  it.each(everyBackend)("$backend keeps a hosted child's trigger off its own shapes", async ({ backend: name, kind }) => {
+    const { world, spawn } = createWorld();
+    const carrier = spawn("carrier", {}, [kinematicBody]);
+    // A pickup's solid shape rides on the carrier inside the pickup's own trigger.
+    spawn("pickup", {}, [staticBody, box(kind, 0.25), trigger(kind, 1)], carrier.guid);
+    // The visitor touches the trigger but not the solid shape.
+    spawn("visitor", { position: { x: 0.8, y: 0, z: 0 } }, [coastingBody, box(kind, 0.1)]);
+    const backend = await backendFor(name, kind, 0);
+    const sync = new PhysicsWorldSync(backend);
+    const overlaps: string[] = [];
+    try {
+      for (let tick = 0; tick < 5; tick++) {
+        sync.step(1 / 60, world);
+        for (const event of backend.pollContacts())
+          if (event.kind !== "hit") overlaps.push(`${event.kind} ${event.actorAId} ${event.actorBId}`);
+      }
+      expect(overlaps).toEqual(["overlapBegin pickup visitor"]);
+    } finally {
+      sync.dispose();
+    }
+  });
+
+  it.each(everyBackend)("$backend keeps an overlap open while a hosted child moves on its host", async ({ backend: name, kind }) => {
+    const { world, spawn } = createWorld();
+    spawn("zone", {}, [staticBody, trigger(kind, 5)]);
+    const carrier = spawn("carrier", {}, [kinematicBody]);
+    const wheel = spawn("wheel", {}, [staticBody, box(kind, 0.25)], carrier.guid);
+    const backend = await backendFor(name, kind, 0);
+    const sync = new PhysicsWorldSync(backend);
+    const overlaps: string[] = [];
+    const step = () => {
+      sync.step(1 / 60, world);
+      for (const event of backend.pollContacts()) if (event.kind !== "hit") overlaps.push(event.kind);
+    };
+    try {
+      // Each move rebuilds the wheel's shape on the carrier inside the zone.
+      for (let tick = 0; tick < 10; tick++) {
+        wheel.transform.position.x = (tick % 2) * 0.5;
+        step();
+      }
+      expect(overlaps).toEqual(["overlapBegin"]);
+      wheel.transform.position.x = 50;
+      for (let tick = 0; tick < 3; tick++) step();
+      expect(overlaps).toEqual(["overlapBegin", "overlapEnd"]);
+    } finally {
+      sync.dispose();
+    }
+  });
+
+  it("Rapier keeps the host's mass when a shape joins its body", async () => {
+    const { world, spawn } = createWorld();
+    const plain = spawn("plain", {}, [coastingBody, box("2d", 0.5)]);
+    const loaded = spawn("loaded", { position: { x: 20, y: 0, z: 0 } }, [coastingBody, box("2d", 0.5)]);
+    spawn("cargo", { position: { x: 0, y: 3, z: 0 } }, [staticBody, box("2d", 2)], loaded.guid);
+    const sync = new PhysicsWorldSync(await nativeBackend("2d"));
+    const velocity = (actor: Actor) => sync.getBackend().getBodyVelocity(`body:${actor.guid}`)!.linear.x;
+    try {
+      // Steps first, so the bodies' mass properties include their colliders.
+      for (let tick = 0; tick < 2; tick++) sync.step(1 / 60, world);
+      for (const actor of [plain, loaded]) sync.addImpulse(actor.guid, { x: 2, y: 0, z: 0 });
+      sync.step(1 / 60, world);
+      expect(velocity(plain)).toBeGreaterThan(0.5);
+      expect(velocity(loaded)).toBeCloseTo(velocity(plain), 6);
+    } finally {
+      sync.dispose();
+    }
+  });
+
+  it("attaches a hosted actor's joint to its host's body", async () => {
+    const { world, spawn } = createWorld();
+    const platform = spawn("platform", {}, [kinematicBody]);
+    // The collidable frame has no body of its own; its joint joins the platform's.
+    spawn("frame", { position: { x: 2, y: 0, z: 0 } }, [
+      staticBody,
+      box("3d", 0.25),
+      ["PhysicsConstraintComponent", { kind: "ballSocket", targetActorId: "door", anchorA: { x: 0, y: -1, z: 0 } }],
+    ], platform.guid);
+    const door = spawn("door", { position: { x: 2, y: -1, z: 0 } }, [coastingBody, box("3d", 0.2)]);
+    const sync = new PhysicsWorldSync(await nativeBackend("3d"));
+    try {
+      for (let tick = 0; tick < 60; tick++) {
+        platform.transform.position.x += 0.05;
+        sync.step(1 / 60, world);
+      }
+      expect(sync.getBackend().getBodyTransform("body:frame")).toBeNull();
+      // The platform carried the joint's anchor from x = 2 to x = 5.
+      expect(Math.abs(door.transform.position.x - 5)).toBeLessThan(0.25);
+      expect(door.transform.position.y).toBeCloseTo(-1, 1);
     } finally {
       sync.dispose();
     }

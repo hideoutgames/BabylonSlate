@@ -661,11 +661,18 @@ export class HavokPhysicsBackend implements PhysicsBackend {
         previous &&
         (previous.isTrigger !== desc.isTrigger ||
           previous.layer !== desc.layer ||
-          previous.mask !== desc.mask)
+          previous.mask !== desc.mask ||
+          previous.actorId !== desc.actorId)
       );
     });
-    if (topologyChanged || changedContactPolicy)
+    const sameColliderIds =
+      next.size === oldColliders.size &&
+      [...next.keys()].every((id) => oldColliders.has(id));
+    // New poses or shapes under the same IDs (a hosted child moving on its
+    // host) keep overlaps open as a teleport does; the next step re-confirms them.
+    if (changedContactPolicy || (topologyChanged && !sameColliderIds))
       this.retireTriggerPairs(record.desc.actorId);
+    else if (topologyChanged) this.refreshTriggerPairs(record.desc.actorId);
     if (topologyChanged) {
       oldContainer?.dispose();
     }
@@ -1073,6 +1080,13 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       type === PhysicsEventType.TRIGGER_ENTERED ||
       type === PhysicsEventType.TRIGGER_EXITED;
     if (isTriggerEvent) {
+      // A hosted actor's trigger body would overlap its own shapes on the
+      // host, and per-body events cannot tell those from the host's shapes.
+      if (
+        this.hostsShapesOf(event.collidedAgainst, actorAId) ||
+        this.hostsShapesOf(event.collider, actorBId)
+      )
+        return;
       kind =
         type === PhysicsEventType.TRIGGER_EXITED
           ? "overlapEnd"
@@ -1170,6 +1184,16 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       if (!preferTrigger || collider.desc.isTrigger) return id;
     }
     return first;
+  }
+
+  /** Whether `body`'s compound includes a child shape hosted for `actorId`. */
+  private hostsShapesOf(body: PhysicsBody | undefined, actorId: string): boolean {
+    const bodyId = body ? this.bodyIdByPhysicsBody.get(body) : undefined;
+    const record = bodyId ? this.bodies.get(bodyId) : undefined;
+    if (!record) return false;
+    for (const collider of record.colliders.values())
+      if (collider.desc.actorId === actorId) return true;
+    return false;
   }
 
   private actorIdForPhysicsBody(body: PhysicsBody | undefined): string | null {

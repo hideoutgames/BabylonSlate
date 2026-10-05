@@ -509,9 +509,11 @@ export class PhysicsWorldSync {
     };
     const lookup = (guid: string) => this.actorById.get(guid);
     for (const [actor, source] of sources) {
-      if (!this.isStaticSource(source) || !this.hasSolidCollision(actor)) continue;
+      if (!this.isStaticSource(source)) continue;
+      // The memoized ancestor walk comes first, so only statics under a
+      // simulated body pay for a second component scan.
       const host = this.simulatedAncestor(actor, motion, lookup, memo);
-      if (host) this.hostActor(actor, host);
+      if (host && this.hasSolidCollision(actor)) this.hostActor(actor, host);
     }
     memo.clear();
   }
@@ -829,6 +831,14 @@ export class PhysicsWorldSync {
       bodies: this.bodyByActor,
       bodyOwners: this.bodyOwnerByActor,
       eligible: this.actorFilter,
+      // A hosted actor's joints attach where its shapes are: on its host's body.
+      hosting: {
+        hostOf: (actor) => this.hostByActor.get(actor.guid),
+        frame: (actor, host) => {
+          const relative = this.hostRelativeTransform(host, worldScale(host), actor);
+          return relative && { ...relative, rotation: unitQuaternion(relative.rotation) };
+        },
+      },
     });
   }
 
