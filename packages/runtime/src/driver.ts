@@ -5148,11 +5148,10 @@ class InProcessRuntime implements RuntimeDriver {
         },
       },
     );
-    // Unlike Line Trace, this query keeps one whole pre-step pass: it is the
-    // only way the ray sees bodies of actors spawned this tick, retires bodies
-    // of actors destroyed this tick, and re-publishes static bodies whose
-    // ancestors moved. Those native updates are the ones the next step makes.
-    this.physicsSync.syncFromWorld(this.world);
+    // Same freshness as Line Trace: bodies as of the last step plus call-time
+    // pose writes and component refreshes. Actors spawned, destroyed or
+    // reparented earlier this tick reach the ray after the next step, so a
+    // script aiming every tick does not pay a whole-world pass per call.
     const hit = this.physicsSync.lineTrace(ray.origin, ray.end, { channel });
     const drawDebug = options?.drawDebug !== false;
     if (drawDebug) {

@@ -217,6 +217,43 @@ describe("physics tick composition work", () => {
     }
   });
 
+  it("projects the cursor without composing unrelated physics participants", async () => {
+    const runtime = await scriptedRuntime([
+      createActor("eye", "Eye", {
+        classId: "Aimer",
+        transform: { position: [0, 0, -10], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
+        components: [{ id: "camera", classId: "CameraComponent", properties: {
+          projectionMode: "perspective", fieldOfView: 60, nearClip: 0.1, farClip: 1000,
+        } }],
+      }),
+      ...renderMeshes(512),
+      createActor("target", "Target", { components: [
+        { id: "body", classId: "RigidBodyComponent", properties: { motionType: "static", mass: 0, gravityScale: 0 } },
+        { id: "box", classId: "ColliderComponent", properties: { shape: { kind: "box", halfExtents: { x: 2, y: 2, z: 2 } } } },
+      ] }),
+    ], "Aimer", {
+      Aim: "ctx.setVariable('hit', ctx.projectCursorToScene(undefined, { drawDebug: false }).actor);",
+    });
+    try {
+      runtime.applySceneLayerResize(16, 9, 800, 600);
+      runtime.pushInput([{ kind: "pointer", tick: 0, pointerId: 1, phase: "move", x: 400, y: 300, button: 0 }]);
+      runtime.tick();
+      const world = runtime.getWorld();
+      const meshes = world.getActors().filter((actor) => actor.guid.startsWith("mesh-"));
+      const eye = world.findActor("eye")!;
+      expect(meshes).toHaveLength(512);
+      const reads = countTransformReads(meshes);
+      // An aim-at-the-mouse script calls this every tick, often several times.
+      for (let call = 0; call < 4; call += 1) runtime.invokeScriptEvent("Aimer", "Aim", eye);
+      console.info("cursor projection transform reads", reads.count);
+      // Each call used to run the whole pre-step pass over all 512 participants.
+      expect(reads.count).toBe(0);
+      expect(eye.getVariable("hit")).toBe(world.findActor("target"));
+    } finally {
+      runtime.stop();
+    }
+  });
+
   it("samples water per script call from current water and cutter chains only", async () => {
     const runtime = await scriptedRuntime([
       ...renderMeshes(512),
