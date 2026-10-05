@@ -3,6 +3,7 @@ import {
   WINDOWED_SLICE_OVERSCAN,
   windowedRowOffsets,
   windowedSlice,
+  windowedViewportHeight,
 } from "./windowed-slice";
 
 /** Matches `--touch-target` for catalog and Compiler Results rows. */
@@ -79,7 +80,7 @@ export function WindowedList({
     const viewport = findWindowedListScrollParent(listRef.current);
     if (!(viewport instanceof HTMLElement)) return;
     const read = () => {
-      setViewportHeight(viewport.clientHeight);
+      setViewportHeight((previous) => windowedViewportHeight(viewport, previous));
       setScrollTop(viewport.scrollTop);
     };
     read();

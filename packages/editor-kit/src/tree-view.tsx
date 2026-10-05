@@ -17,7 +17,11 @@ import {
   CONTEXT_MENU_MOVE_TOLERANCE_PX,
   DRAG_ARM_MS,
 } from "./use-context-menu";
-import { WINDOWED_SLICE_OVERSCAN, windowedSlice } from "./windowed-slice";
+import {
+  WINDOWED_SLICE_OVERSCAN,
+  windowedSlice,
+  windowedViewportHeight,
+} from "./windowed-slice";
 
 /** Row height matches `--chrome-row` (28px). */
 export const TREE_ROW_HEIGHT = 28;
@@ -230,7 +234,7 @@ export function TreeView({
     const element = containerRef.current;
     if (!element || typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(() =>
-      setViewportHeight(element.clientHeight),
+      setViewportHeight((previous) => windowedViewportHeight(element, previous)),
     );
     observer.observe(element);
     return () => observer.disconnect();
@@ -313,7 +317,7 @@ export function TreeView({
   const measure = useCallback((element: HTMLDivElement | null) => {
     containerRef.current = element;
     if (element) {
-      setViewportHeight(element.clientHeight);
+      setViewportHeight((previous) => windowedViewportHeight(element, previous));
     }
   }, []);
 

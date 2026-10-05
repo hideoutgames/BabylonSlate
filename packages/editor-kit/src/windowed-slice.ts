@@ -15,6 +15,25 @@ export type WindowedSlice = {
   lastIndex: number;
 };
 
+/** Viewport height a hidden view windows by before it was ever measured visible. */
+export const HIDDEN_VIEWPORT_HEIGHT = 720;
+
+/**
+ * Height to window `element` by, from a fresh read of its `clientHeight`.
+ * Inside a `display: none` ancestor (an inactive document tab) it measures 0;
+ * it then keeps `previous` (or {@link HIDDEN_VIEWPORT_HEIGHT}) so a hidden
+ * view re-rendering for unrelated edits renders one window, not every row,
+ * and has its rows ready when shown. A visible 0 (jsdom / first paint) stays 0.
+ */
+export function windowedViewportHeight(element: Element, previous: number): number {
+  const height = element.clientHeight;
+  if (height > 0) return height;
+  const hidden =
+    typeof element.checkVisibility === "function" && !element.checkVisibility();
+  if (!hidden) return 0;
+  return previous > 0 ? previous : HIDDEN_VIEWPORT_HEIGHT;
+}
+
 /**
  * Inclusive-start exclusive-end window for a 1D list. A 0-height viewport
  * (jsdom / first paint) returns the full range so tests still see every row.
