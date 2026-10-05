@@ -571,6 +571,10 @@ Material preview resolves Texture chunks the same way Play does: preload
 surfaces as `material.missingTexture` instead of a sampler-less black
 preview. Editor validation also receives `textureExists` from the asset
 registry so Compiler Results can flag a missing Texture before GPU compile.
+RenderTargetTexture samples, including Texture Parameter defaults and Material
+Instance overrides, use an opaque black texture in the Material preview because
+that preview has no scene capture. They do not read image chunks or report a
+missing-texture error. Scene and Play materials continue sampling live captures.
 
 Playwright wires Sample `rgb` → Output `baseColor` without a UV node (and a
 second path Parameter `out` → Sample `texture`) and asserts

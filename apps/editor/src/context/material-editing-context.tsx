@@ -1,5 +1,5 @@
 import { installedAssetIdentity, type IndexedAsset } from "@babylonslate/assets";
-import { installTextureBytes } from "@babylonslate/render";
+import { encodeRgbaPng, installTextureBytes } from "@babylonslate/render";
 import {
   createContext,
   useCallback,
@@ -406,7 +406,13 @@ export function MaterialEditingProvider({
       const next = new Map<string, Uint8Array>();
       for (const guid of guids) {
         const asset = assetRegistry?.getByGuid(guid);
-        if (!asset || asset.header.type === "RenderTargetTexture" || !readAssetChunk) continue;
+        if (!asset) continue;
+        if (asset.header.type === "RenderTargetTexture") {
+          // This preview has no scene capture; RTT samples use opaque black.
+          next.set(guid, encodeRgbaPng(1, 1, new Uint8Array([0, 0, 0, 255])));
+          continue;
+        }
+        if (!readAssetChunk) continue;
         const pixels = await readAssetChunk(asset.path, "pixels");
         if (pixels && pixels.byteLength > 0) {
           next.set(guid, pixels);
