@@ -220,8 +220,6 @@ import { createProjectAsset } from "../lib/create-project-asset";
 import { ContentBrowserSelectionActions } from "./content-browser-selection-actions";
 import { usePhoneLayout } from "../shell/use-platform-layout";
 
-const PROJECT_ROOT_ID = PROJECT_CONTENT_ROOT_ID;
-
 type DeleteTarget =
   | { kind: "assets"; guids: string[] }
   | { kind: "folder"; path: string; guids: string[] }
@@ -475,7 +473,7 @@ function ContentBrowserWorkspaceBody({
         {
           ...tree,
           name:
-            root.id === PROJECT_ROOT_ID
+            root.id === PROJECT_CONTENT_ROOT_ID
               ? tree.name
               : root.readOnly
                 ? `${root.label} (Read Only)`
@@ -2632,7 +2630,7 @@ function ContentBrowserWorkspaceBody({
         >
           <div className="shrink-0 border-b border-border/60 bg-sidebar px-1 py-0.5">
             <FolderBreadcrumbs
-              root={{ path: folderRoot.pathPrefix, label: folderRoot.id === PROJECT_ROOT_ID ? "Content" : folderRoot.label }}
+              root={{ path: folderRoot.pathPrefix, label: folderRoot.id === PROJECT_CONTENT_ROOT_ID ? "Content" : folderRoot.label }}
               path={selectedFolderPath}
               touch={phone}
               onNavigate={(path) => {
