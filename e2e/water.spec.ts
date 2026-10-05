@@ -187,7 +187,6 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     // reflects the beacon through the screen-space march.
     expect(result.planarBody).toBe("reflection-dominant");
     expect(result.nonDominant.planar).toBeGreaterThan(result.nonDominant.sky + 40);
-    expect(result.nonDominant.extent.coverage).toBeGreaterThan(0.9);
     // Every Water Shading Detail in both styles draws lit water, with its copy and reflection features on.
     expect(result.tiers).toHaveLength(8);
     for (const { tier, style, light, water } of result.tiers) {

@@ -1,6 +1,6 @@
 import {
-  AbstractMesh, Camera, Color3, Color4, DirectionalLight, Engine, FreeCamera, HemisphericLight, MeshBuilder, PointLight, Scene, StandardMaterial, Vector3,
-  type AbstractEngine, type ArcRotateCamera, type Mesh, type PBRMaterial,
+  AbstractMesh, Camera, Color3, Color4, DirectionalLight, Engine, FreeCamera, HemisphericLight, MeshBuilder, PBRMaterial, PointLight, Scene, StandardMaterial,
+  Vector3, type AbstractEngine, type ArcRotateCamera, type Mesh,
 } from "@babylonjs/core";
 import {
   createDefaultWaterDefinition, DEFAULT_RENDER_EFFECTS, normalizeRenderingQuality, normalizeWaterBody, qualityPresetPatch, sampleWaterSurface,
@@ -925,10 +925,10 @@ export async function runWaterObjectProof(backend: "webgl2" | "webgpu", options:
     const mirror = { ...createDefaultWaterDefinition("realistic"), ...quiet, rippleStrength: 0, depthColorDistance: 0.5, objectReflections: true, reflectionStrength: 1 };
     const reflectionLake = createWaterMesh(scene, "reflection-lake", normalizeWaterBody({ width: 60, length: 60, depth: 4, waveScale: 0 }), mirror);
     setSceneWaterTime(scene, 1);
-    /** Rows of the longest run where the column around `x` reads as the beacon. */
-    const beaconRun = (pixels: number[], x: number) => {
+    /** Rows (from `top` down) of the longest run where the column around `x` reads as the beacon. */
+    const beaconRun = (pixels: number[], x: number, top: number) => {
       let best: [number, number] | null = null, start = -1;
-      for (let y = 0; y <= height; y++) {
+      for (let y = Math.max(0, Math.ceil(top)); y <= height; y++) {
         const on = y < height && yellow(around(pixels, x, y, 0)) > 20 && yellow(around(pixels, x - 2, y, 0)) > 20 && yellow(around(pixels, x + 2, y, 0)) > 20;
         if (on && start < 0) start = y;
         if (!on && start >= 0) {
@@ -946,6 +946,8 @@ export async function runWaterObjectProof(backend: "webgl2" | "webgpu", options:
       // The beacon's front face (the one the view sees) mirrored in the water: its lower edge reflects nearest the
       // horizon, its upper edge lowest on screen.
       const half = beaconSize / 2, face = beaconAt.z - half;
+      // Reflections lie below the beacon's own lower edge on screen.
+      const below = pixelOf(new Vector3(beaconAt.x, beaconAt.y - half, face)).y + 1;
       const front = [mirroredOnPlane(eye, new Vector3(beaconAt.x, beaconAt.y - half, face), 0), mirroredOnPlane(eye, new Vector3(beaconAt.x, beaconAt.y + half, face), 0)]
         .map((point) => pixelOf(point).y);
       const shots: Record<string, number> = {}, pixels: Record<string, number[]> = {};
@@ -959,7 +961,7 @@ export async function runWaterObjectProof(backend: "webgl2" | "webgpu", options:
       }
       // Row extent at the beacon's column: how much of the mirrored front face the march reflects, and how many rows
       // the planar mirror fills where the march shows neither the beacon nor the Sky Only colour (a seam).
-      const screenSpace = beaconRun(pixels.screenSpace!, hit.x), planar = beaconRun(pixels.planar!, hit.x);
+      const screenSpace = beaconRun(pixels.screenSpace!, hit.x, below), planar = beaconRun(pixels.planar!, hit.x, below);
       const [faceTop, faceBottom] = [Math.ceil(front[0]!), Math.floor(front[1]!)];
       let covered = 0, seam = 0;
       for (let y = faceTop; y <= faceBottom; y++) if (yellow(around(pixels.screenSpace!, hit.x, y, 0)) > 20) covered++;
@@ -1011,8 +1013,8 @@ export async function runWaterObjectProof(backend: "webgl2" | "webgpu", options:
         // The largest variant: Ultra's refraction, march and planar mirror under seven scene lights (the sky, the sun
         // and five lamps over the lake).
         const lamps = [-8, -4, 0, 4, 8].map((x, i) => {
-          const lamp = new PointLight(`object-lamp-${i}`, new Vector3(x, 2.5, 1), scene);
-          lamp.intensity = 1.5;
+          const lamp = new PointLight(`object-lamp-${i}`, new Vector3(x, 1.2, 0), scene);
+          lamp.intensity = 12;
           lamp.diffuse = new Color3(1, 0.55, 0.3);
           return lamp;
         });
@@ -1034,11 +1036,16 @@ export async function runWaterObjectProof(backend: "webgl2" | "webgpu", options:
 
     // Scene Linear: a floor far brighter than 1 (linear 3, shown at exposure 0.3) under clear, calm water, seen across
     // the lake's edge. The shore fade must blend the refracted floor into the bare floor beyond the edge without a
-    // dark contour, as the blended surface (Refraction 0) does.
+    // dark contour, as the blended surface (Refraction 0) does. (Standard materials clamp emissive light at 1.)
     for (const mesh of [...floor, box, beacon]) mesh.isVisible = false;
     const bright = MeshBuilder.CreateGround("bright-floor", { width: 60, height: 60 }, scene);
     bright.position.set(0, -0.3, 0);
-    bright.material = unlit("bright-floor", new Color3(3, 3, 3));
+    const glow = new PBRMaterial("bright-floor", scene);
+    glow.unlit = true;
+    glow.albedoColor = Color3.Black();
+    glow.emissiveColor = Color3.White();
+    glow.emissiveIntensity = 3;
+    bright.material = glow;
     setSceneRenderSettings(scene, {
       mode: "pbr", quality: waterQualityPatch("high"),
       effects: { ...DEFAULT_RENDER_EFFECTS, colorPipeline: { version: 1, mode: "sceneLinear" }, exposure: 0.3 },
