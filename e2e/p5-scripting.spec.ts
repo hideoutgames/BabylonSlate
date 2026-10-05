@@ -166,7 +166,7 @@ function selectPinVisual(
 }
 
 test.describe("P5 visual scripting acceptance", () => {
-  test("special node icons stay centered on the top-right corner", async ({ page }) => {
+  test("special node icons sit diagonally inset from the top-right corner", async ({ page }) => {
     await openTestProject(page);
     await setMainGraphContent(page, {
       nodes: [
@@ -174,12 +174,13 @@ test.describe("P5 visual scripting acceptance", () => {
         { id: "delay", type: "timers.delay", position: { x: 450, y: 0 }, data: {} },
         { id: "interface", type: "interface.call", position: { x: 0, y: 300 }, data: {} },
         { id: "async", type: "debug.executeJavaScript", position: { x: 450, y: 300 }, data: { async: true } },
+        { id: "input", type: "input.onAnyKeyPressed", position: { x: 0, y: 600 }, data: {} },
       ],
       edges: [],
     });
     await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
     const graph = page.getByTestId("graph-panel");
-    for (const [id, label] of [["event", "Event"], ["delay", "Latent Action"], ["interface", "Script Interface Function"], ["async", "Latent Action"]]) {
+    for (const [id, label] of [["event", "Event"], ["delay", "Latent Action"], ["interface", "Script Interface Function"], ["async", "Latent Action"], ["input", "Input Event"]]) {
       const node = graph.locator(`.react-flow__node[data-id="${id}"]`);
       const marker = node.getByRole("img", { name: label, exact: true });
       await expect(marker).toBeVisible();
@@ -187,7 +188,10 @@ test.describe("P5 visual scripting acceptance", () => {
         const shell = await node.locator("[data-node-role]").boundingBox();
         const icon = await marker.boundingBox();
         if (!shell || !icon) return Infinity;
-        return Math.max(Math.abs(icon.x + icon.width / 2 - shell.x - shell.width), Math.abs(icon.y + icon.height / 2 - shell.y));
+        const insetX = shell.x + shell.width - (icon.x + icon.width / 2);
+        const insetY = icon.y + icon.height / 2 - shell.y;
+        if (insetX <= 0 || insetX > icon.width / 2) return Infinity;
+        return Math.abs(insetX - insetY);
       }).toBeLessThan(1);
     }
     await test.info().attach("node-corner-icons", { body: await graph.screenshot(), contentType: "image/png" });

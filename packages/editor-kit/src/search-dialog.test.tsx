@@ -64,7 +64,7 @@ describe("filterSearchItems", () => {
     ]);
   });
 
-  it("keeps pinned items for any query, after the matches", () => {
+  it("keeps pinned items for any query, before the matches", () => {
     const withPinned = [
       { id: "create", label: "Create New Material", pinned: true },
       ...items,
@@ -76,7 +76,7 @@ describe("filterSearchItems", () => {
     ]);
     expect(
       filterSearchItems(withPinned, "beta").map((item) => item.id),
-    ).toEqual(["b", "create"]);
+    ).toEqual(["create", "b"]);
     expect(
       filterSearchItems(withPinned, "zeta").map((item) => item.id),
     ).toEqual(["create"]);
@@ -344,11 +344,11 @@ describe("SearchDialog", () => {
     expect(scroller?.className).not.toMatch(/(?:^|\s)h-0(?:\s|$)/);
     expect(scroller?.className).not.toMatch(/(?:^|\s)flex-1(?:\s|$)/);
     expect(Number.parseFloat((scroller as HTMLElement).style.height)).toBe(
-      items.length * 44,
+      items.length * 44 + 8,
     );
   });
 
-  it("caps a long picker list at 16rem and keeps a non-zero empty height", () => {
+  it("caps long picker rows at 16rem plus list padding and keeps a non-zero empty height", () => {
     const many = Array.from({ length: 20 }, (_, i) => ({
       id: `n${i}`,
       label: `Item ${i}`,
@@ -367,7 +367,7 @@ describe("SearchDialog", () => {
     const longList = screen.getByTestId("search-item-n0");
     const longScroller = longList.closest("[data-testid='picker-body']");
     expect(Number.parseFloat((longScroller as HTMLElement).style.height)).toBe(
-      256,
+      256 + 8,
     );
 
     rerender(
