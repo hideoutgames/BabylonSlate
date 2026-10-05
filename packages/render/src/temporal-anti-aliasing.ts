@@ -17,14 +17,15 @@ function halton(index: number, base: number): number {
  * their motion), clamped to the current neighborhood's YCoCg bounds and
  * blended with luminance weights so HDR highlights cannot dominate.
  *
- * Uniforms: `taaSettings` (current-frame blend, reset flag, texel size).
+ * Uniforms: `taaSettings` (current-frame blend, reset flag, texel size) and
+ * `taaJitter`, the jitter change in UV that velocity includes.
  */
 export function temporalAntiAliasingShader(wgsl: boolean): string {
   const { v2, v3, v4, f, uv, u, decl, field, texture, sample, output, main } = syntax(wgsl);
   const ycocg = (c: string) => `${v3}(dot(${c}, ${v3}(0.25, 0.5, 0.25)), dot(${c}, ${v3}(0.5, 0.0, -0.5)), dot(${c}, ${v3}(-0.25, 0.5, -0.25)))`;
   const header = `${wgsl ? "varying vUV: vec2f;" : "varying vec2 vUV;"}
 ${texture("textureSampler")}${texture("historySampler")}${texture("velocitySampler")}
-${field(v4, "taaSettings")}
+${field(v4, "taaSettings")}${field(v2, "taaJitter")}
 `;
   const taps = [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]].map(([x, y]) => `{
   ${decl(v2, "tap", `${uv} + ${v2}(${x}.0, ${y}.0) * ${u("taaSettings")}.zw`)}
@@ -40,7 +41,7 @@ ${decl(v3, "low", ycocg("current.rgb"))}
 ${decl(v3, "high", "low")}
 ${decl(v2, "velocity", `${sample("velocitySampler", uv)}.xy`)}
 ${taps}
-${decl(v2, "previous", `${uv} + velocity`)}
+${decl(v2, "previous", `${uv} + velocity - ${u("taaJitter")}`)}
 if (${u("taaSettings")}.y > 0.5 || previous.x < 0.0 || previous.y < 0.0 || previous.x > 1.0 || previous.y > 1.0) {
   ${output("current")}
 }
@@ -73,6 +74,8 @@ export class TemporalJitter {
   private index = 0;
   private x = 0;
   private y = 0;
+  private previousX = 0;
+  private previousY = 0;
 
   constructor(scene: Scene, camera: Camera, samples: number, width: number, height: number) {
     this.scene = scene;
@@ -82,12 +85,22 @@ export class TemporalJitter {
     this.height = height;
   }
 
+  /**
+   * Velocity is measured between jittered frames, but history holds resolved
+   * (unjittered) color: this UV offset removes the jitter change from it.
+   */
+  get velocityOffset(): [number, number] {
+    return [(this.previousX - this.x) * 0.5, (this.previousY - this.y) * 0.5];
+  }
+
   /** The camera's projection offset by this frame's sub-pixel jitter. */
   projection(): Matrix {
     const frame = this.scene.getFrameId();
     if (frame !== this.frame) {
       this.frame = frame;
       this.index = (this.index % this.samples) + 1;
+      this.previousX = this.x;
+      this.previousY = this.y;
       // NDC spans two units per axis; offsets stay within half a pixel.
       this.x = (halton(this.index, 2) - 0.5) * 2 / this.width;
       this.y = (halton(this.index, 3) - 0.5) * 2 / this.height;

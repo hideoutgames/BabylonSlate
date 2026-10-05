@@ -32,7 +32,7 @@ import {
   ambientOcclusionCompositeShader,
   ambientOcclusionShader,
 } from "./ambient-occlusion-shader";
-import { temporalAntiAliasingShader } from "./temporal-anti-aliasing";
+import { TemporalJitter, temporalAntiAliasingShader } from "./temporal-anti-aliasing";
 import { retireOwnedEffect } from "./owned-effect-retirement";
 import { beginManagedRenderAllocation } from "./managed-render-resources";
 import { bindFogVolumes, hasFogVolumes } from "./fog-volumes";
@@ -78,8 +78,9 @@ export interface SpatialStage {
   /** Index of the stage whose input is the full-resolution color to compose. */
   mainInput?: number;
   geometry: boolean;
-  /** Renders into a persistent history target and samples the previous one. */
-  history?: boolean;
+  /** Renders into a persistent history target and samples the previous one;
+   * the owner hooks the jitter into its view's draws. */
+  history?: TemporalJitter;
   bind(effect: Effect): void;
 }
 
@@ -442,19 +443,21 @@ export function createSpatialStages(
           scene,
           "Scene Temporal Anti-Aliasing",
           temporalAntiAliasingShader(engine.isWebGPU),
-          ["taaSettings"],
+          ["taaSettings", "taaJitter"],
           ["historySampler", "velocitySampler"],
         ),
       );
+      const jitter = new TemporalJitter(scene, camera, temporal.samples, width, height);
       // The first frame of a generation has no valid history to blend.
       let reset = true;
       stages.push({
         wrapper: resolve,
         scale: 1,
         geometry: true,
-        history: true,
+        history: jitter,
         bind: (effect) => {
           effect.setFloat4("taaSettings", temporal.blend, reset ? 1 : 0, 1 / width, 1 / height);
+          effect.setFloat2("taaJitter", ...jitter.velocityOffset);
           reset = false;
         },
       });

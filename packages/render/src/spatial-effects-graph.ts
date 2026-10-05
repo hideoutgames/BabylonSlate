@@ -10,7 +10,7 @@ import {
   type SpatialStage,
 } from "./spatial-effects";
 import type { SceneEffectsPlan } from "./scene-effects";
-import { TemporalJitter } from "./temporal-anti-aliasing";
+import type { TemporalJitter } from "./temporal-anti-aliasing";
 import {
   releaseManagedRenderLeaseAfterDisposal,
   type ManagedRenderCategory,
@@ -200,8 +200,6 @@ export class SpatialEffectsGraph {
           textureFormat: Constants.TEXTUREFORMAT_RGBA,
         });
         buffers.velocitySampler = this.geometry.geometryLinearVelocityTexture;
-        this.jitter = new TemporalJitter(graph.scene, camera, plan.temporalAntiAliasing.samples, width, height);
-        this.jitter.jitterRenderer(this.geometry.objectRenderer);
       }
       for (const handle of Object.values(buffers))
         this.handles.push({ handle, category: "geometry" });
@@ -213,6 +211,8 @@ export class SpatialEffectsGraph {
         height,
       );
       for (const stage of stages) unattached.add(stage);
+      this.jitter = stages.find((stage) => stage.history)?.history;
+      this.jitter?.jitterRenderer(this.geometry.objectRenderer);
       const inputs: FrameGraphTextureHandle[] = [];
       for (const stage of stages) {
         inputs.push(source);

@@ -23,7 +23,7 @@ import { sceneRenderingSettings } from "./render-settings";
 import "@babylonjs/core/Rendering/prePassRendererSceneComponent";
 import { createSpatialStages, hasSpatialEffects, liveSceneEffectsKey, reserveSpatialEffects, spatialEffectsUnsupported, spatialGeometryTypes, type SpatialStage } from "./spatial-effects";
 import { releaseManagedRenderLeaseAfterDisposal, type ManagedRenderLease } from "./managed-render-resources";
-import { TemporalJitter } from "./temporal-anti-aliasing";
+import type { TemporalJitter } from "./temporal-anti-aliasing";
 
 function planFor(scene: Scene): SceneEffectsPlan | null {
   return sceneRenderingSettings(scene).effectsPlan;
@@ -154,7 +154,7 @@ export class SceneEffectsOwner {
                 written ^= 1;
                 copy.inputTexture = history![written]!;
               });
-              this.jitter = new TemporalJitter(this.scene, camera, plan.temporalAntiAliasing!.samples, width, height);
+              this.jitter = stage.history;
               this.jitter.jitterDrawPhase();
             }
             pass.onApply = (effect) => {
