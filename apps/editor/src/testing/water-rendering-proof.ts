@@ -926,6 +926,7 @@ export async function runWaterObjectProof(backend: "webgl2" | "webgpu", options:
     beacon.position.set(-4, 1.6, 9);
     camera.position.set(0, 6, -11); camera.setTarget(new Vector3(0, -0.4, 5));
     const tiers: Array<{ tier: WaterShadingDetail; style: string; light: number; water: number; tasks: string[] }> = [];
+    let sevenLights = { light: 0, water: 0 };
     for (const style of ["realistic", "stylized"] as const) {
       setSceneRenderSettings(scene, { quality: waterQualityPatch("high") });
       const without = await capture();
@@ -936,9 +937,22 @@ export async function runWaterObjectProof(backend: "webgl2" | "webgpu", options:
         const pixels = await capture(`tier-${tier}-${style}`);
         tiers.push({ tier, style, light: meanLight(pixels), water: change(pixels, without, [0, 1, 0.4, 1]), tasks: view.taskNames() });
       }
+      if (style === "realistic") {
+        // The largest variant: Ultra's refraction, march and planar mirror under seven scene lights.
+        const lamps = [-6, -2, 2, 6].map((x, i) => {
+          const lamp = new PointLight(`object-lamp-${i}`, new Vector3(x, 3, -2), scene);
+          lamp.intensity = 0.2;
+          return lamp;
+        });
+        (lake.material as PBRMaterial).maxSimultaneousLights = 8;
+        setSceneRenderSettings(scene, { quality: waterQualityPatch("ultra") });
+        const pixels = await capture("tier-ultra-realistic-seven-lights");
+        sevenLights = { light: meanLight(pixels), water: change(pixels, without, [0, 1, 0.4, 1]) };
+        for (const lamp of lamps) lamp.dispose();
+      }
       lake.dispose();
     }
-    return { refraction, onScreen, offScreen, nonDominant, planarBody, tiers, graphTasks, evidence };
+    return { refraction, onScreen, offScreen, nonDominant, planarBody, tiers, sevenLights, graphTasks, evidence };
   } finally {
     coordinator?.dispose();
     const device = (engine as { _device?: { queue: { onSubmittedWorkDone(): Promise<void> } } })._device;

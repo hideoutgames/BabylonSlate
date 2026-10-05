@@ -183,6 +183,9 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       expect(light, `${style} at ${tier}`).toBeGreaterThan(20);
       expect(water, `${style} at ${tier} against no water`).toBeGreaterThan(WATER_OVER_VIEW);
     }
+    // The largest variant (Ultra Realistic with refraction, the march and the planar mirror) under seven lights.
+    expect(result.sevenLights.light).toBeGreaterThan(20);
+    expect(result.sevenLights.water).toBeGreaterThan(WATER_OVER_VIEW);
   });
   test(`Water presets and a custom Water Surface material render on ${backend}`, async ({ page }, testInfo) => {
     test.setTimeout(120_000);
