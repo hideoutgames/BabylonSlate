@@ -739,7 +739,7 @@ describe("EditorDebugOverlay", () => {
     overlay.dispose();
   });
 
-  it("leaves out meshes sampling a Scene Color capture's own output, like the capture", () => {
+  it("previews meshes sampling the capture's own output as well as other targets", () => {
     const { scene } = createHandle();
     const captures = sceneRenderTargetCaptures(scene);
     const textures = new Map([
@@ -768,7 +768,7 @@ describe("EditorDebugOverlay", () => {
     });
     const preview = overlay.previewTexture;
     const previewed = () => overlay.previewTexture!.renderList!.map((mesh) => mesh.name);
-    expect(previewed()).toEqual([otherMonitor, wall].map((mesh) => mesh.name));
+    expect(previewed()).toEqual([monitor, otherMonitor, wall].map((mesh) => mesh.name));
 
     // Depth and normal passes replace materials, so they record the monitor.
     targets = new Map<string, RenderTargetPayload>([...targets, ["target", { mode: "DepthPass", width: 16, height: 8 }]]);

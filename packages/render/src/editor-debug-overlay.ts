@@ -36,7 +36,7 @@ import { actorMeshName } from "./picking";
 import { authoredComponentActorTransform } from "./authored-transform-matrices";
 import { createRttCanvasBlitter } from "./flip-read-pixels";
 import { withSceneReadinessState } from "./scene-perf";
-import { isRenderTargetCaptureCandidate, samplesRenderTargetOutput } from "./render-target-capture";
+import { isRenderTargetCaptureCandidate } from "./render-target-capture";
 import { admittedSceneMeshes } from "./scene-stream-admission";
 import type { AudioLibrary } from "./audio-service";
 
@@ -418,15 +418,12 @@ export class EditorDebugOverlay {
 
   /**
    * Meshes the capture records: capture candidates, filtered by Capture Only
-   * Actors, and for Scene Color never a mesh sampling the target's own output.
+   * Actors. Materials may sample the target's last completed capture.
    */
   private captureRenderList(settings: RenderTargetCaptureProperties): AbstractMesh[] {
     const included = settings.captureOnlyActors ? new Set(settings.actorIds) : null;
-    const guid = settings.renderTargetGuid;
-    const ownOutput = guid && this.captureTarget(guid).mode === "SceneColor" ? guid : null;
     return (admittedSceneMeshes(this.scene) ?? this.scene.meshes).filter((mesh) => {
       if (!isRenderTargetCaptureCandidate(mesh)) return false;
-      if (ownOutput && samplesRenderTargetOutput(mesh, ownOutput)) return false;
       // Nearest actor owner, so an attached child actor needs its own entry.
       return !included || included.has(actorIdFromMeshName(actorMeshName(mesh)) ?? "");
     });
