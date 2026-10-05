@@ -257,8 +257,7 @@ export class EditorDebugOverlay {
   /**
    * After asset installation, rebuild a selected capture's frustum and preview
    * when its Render Target's aspect changed. Otherwise keep the RTT and only
-   * re-filter its meshes: installs can rebuild meshes or change which ones
-   * sample the target's own output.
+   * re-filter its meshes, since installs can rebuild captured geometry.
    */
   refreshRenderTargets(): void {
     const capture = this.previewCapture;
