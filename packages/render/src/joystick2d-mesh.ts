@@ -53,7 +53,10 @@ export function createJoystick2DMesh(
     const mesh = background.mesh;
     const thumb = joystick.mesh;
     thumb.parent = mesh;
-    // Keep the same alpha priority so the nearer thumb draws after its background.
+    // Distance sorting can put a dragged thumb before the background. Give
+    // both surfaces explicit priorities (Babylon defaults to Number.MAX_VALUE).
+    mesh.alphaIndex = 0;
+    thumb.alphaIndex = 1;
     thumb.position.z = -0.01;
     thumb.isPickable = false;
     thumb.metadata = { joystick2DThumb: true };
