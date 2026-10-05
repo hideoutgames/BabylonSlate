@@ -162,6 +162,8 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       actorAId: string;
       actorBId: string;
       contacts: number;
+      /** A teleport dropped the native pair; the next step must re-report it. */
+      refreshing: boolean;
     }
   >();
 
@@ -379,8 +381,8 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       throw error;
     }
     record.desc.transform = pose;
-    // World membership refresh retires native pairs without emitting exits.
-    this.retireTriggerPairs(record.desc.actorId);
+    // World membership refresh drops native pairs without emitting exits.
+    this.refreshTriggerPairs(record.desc.actorId);
     for (const character of this.characters.values()) {
       if (character.desc.bodyId === bodyId) {
         character.controller.setPosition(toVector3(pose.position));
@@ -659,11 +661,18 @@ export class HavokPhysicsBackend implements PhysicsBackend {
         previous &&
         (previous.isTrigger !== desc.isTrigger ||
           previous.layer !== desc.layer ||
-          previous.mask !== desc.mask)
+          previous.mask !== desc.mask ||
+          previous.actorId !== desc.actorId)
       );
     });
-    if (topologyChanged || changedContactPolicy)
+    const sameColliderIds =
+      next.size === oldColliders.size &&
+      [...next.keys()].every((id) => oldColliders.has(id));
+    // New poses or shapes under the same IDs (a hosted child moving on its
+    // host) keep overlaps open as a teleport does; the next step re-confirms them.
+    if (changedContactPolicy || (topologyChanged && !sameColliderIds))
       this.retireTriggerPairs(record.desc.actorId);
+    else if (topologyChanged) this.refreshTriggerPairs(record.desc.actorId);
     if (topologyChanged) {
       oldContainer?.dispose();
     }
@@ -701,6 +710,8 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       this.stepping = false;
       this.resetTriggerActors.clear();
     }
+    // Before queued callback mutations, whose teleports await the next step.
+    this.endUnconfirmedTriggerPairs();
     this.flushMutations();
   }
 
@@ -724,19 +735,21 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     // Havok exposes one ignoreBody, but the graph accepts multiple actors.
     // Mask all their shapes for this synchronous query, then restore them.
     // Filtering before raycast also avoids consuming a bounded hit collector.
+    const mask = (shape: PhysicsShape | null | undefined) => {
+      if (!shape || memberships.has(shape)) return;
+      memberships.set(shape, shape.filterMembershipMask);
+      shape.filterMembershipMask = 0;
+    };
     try {
       if (ignored.size || options?.includeTriggers === false) {
         for (const record of this.bodies.values()) {
+          // Hits name the body's actor, so ignoring it excludes the whole
+          // compound; ignoring a hosted child excludes only its own shapes.
           const excluded = ignored.has(record.desc.actorId);
-          const shapes = excluded
-            ? [record.body.shape, ...[...record.colliders.values()].map((c) => c.shape)]
-            : options?.includeTriggers === false
-              ? [...record.colliders.values()].filter((c) => c.desc.isTrigger).map((c) => c.shape)
-              : [];
-          for (const shape of shapes) {
-            if (!shape || memberships.has(shape)) continue;
-            memberships.set(shape, shape.filterMembershipMask);
-            shape.filterMembershipMask = 0;
+          if (excluded) mask(record.body.shape);
+          for (const collider of record.colliders.values()) {
+            if (excluded || (collider.desc.actorId !== undefined && ignored.has(collider.desc.actorId)) ||
+              (options?.includeTriggers === false && collider.desc.isTrigger)) mask(collider.shape);
           }
         }
       }
@@ -1017,8 +1030,8 @@ export class HavokPhysicsBackend implements PhysicsBackend {
         w: 1,
       },
     };
-    // Kinematic movement must keep native contact membership alive. Explicit
-    // teleport refreshes retire overlap pairs, which would re-enter every tick.
+    // Kinematic movement uses a native target, which keeps contact membership
+    // without the world-membership refresh an explicit teleport performs.
     if (body.desc.motionType === "kinematic") this.setBodyTargetTransform(character.desc.bodyId, pose);
     else this.teleportBody(character.desc.bodyId, pose);
     return {
@@ -1067,6 +1080,13 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       type === PhysicsEventType.TRIGGER_ENTERED ||
       type === PhysicsEventType.TRIGGER_EXITED;
     if (isTriggerEvent) {
+      // A hosted actor's trigger body would overlap its own shapes on the
+      // host, and per-body events cannot tell those from the host's shapes.
+      if (
+        this.hostsShapesOf(event.collidedAgainst, actorAId) ||
+        this.hostsShapesOf(event.collider, actorBId)
+      )
+        return;
       kind =
         type === PhysicsEventType.TRIGGER_EXITED
           ? "overlapEnd"
@@ -1106,13 +1126,16 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       const pair = this.activeTriggerPairs.get(pairKey);
       if (kind === "overlapBegin") {
         if (pair) {
+          // Includes a teleported pair re-entering: its overlap never ended.
           pair.contacts += 1;
+          pair.refreshing = false;
           return;
         }
         this.activeTriggerPairs.set(pairKey, {
           actorAId: a,
           actorBId: b,
           contacts: 1,
+          refreshing: false,
         });
       } else {
         if (this.resetTriggerActors.has(a) || this.resetTriggerActors.has(b))
@@ -1154,11 +1177,23 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     let first: string | undefined;
     for (const [id, collider] of this.colliders) {
       const body = this.bodies.get(collider.desc.bodyId);
-      if (body?.desc.actorId !== actorId) continue;
+      // Contacts are per body, so they name the body's actor and its own
+      // colliders; hosted child shapes cannot be told apart from them.
+      if (!body || (collider.desc.actorId ?? body.desc.actorId) !== actorId) continue;
       first ??= id;
       if (!preferTrigger || collider.desc.isTrigger) return id;
     }
     return first;
+  }
+
+  /** Whether `body`'s compound includes a child shape hosted for `actorId`. */
+  private hostsShapesOf(body: PhysicsBody | undefined, actorId: string): boolean {
+    const bodyId = body ? this.bodyIdByPhysicsBody.get(body) : undefined;
+    const record = bodyId ? this.bodies.get(bodyId) : undefined;
+    if (!record) return false;
+    for (const collider of record.colliders.values())
+      if (collider.desc.actorId === actorId) return true;
+    return false;
   }
 
   private actorIdForPhysicsBody(body: PhysicsBody | undefined): string | null {
@@ -1256,6 +1291,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
   ): HitResult {
     if (!hasHit) return miss();
     const bodyId = body ? (this.bodyIdByPhysicsBody.get(body) ?? null) : null;
+    // Casts report a compound's root shape, so hits name the body's actor.
     const actorId = bodyId
       ? (this.bodies.get(bodyId)?.desc.actorId ?? null)
       : null;
@@ -1297,6 +1333,40 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     while (this.pendingMutations.length && !this.disposed)
       this.pendingMutations.shift()!();
     for (const record of this.bodies.values()) this.assertHealthy(record);
+  }
+
+  /**
+   * A successful teleport refreshes native world membership, which drops the
+   * actor's native pairs without exit callbacks. Its actor-pair overlaps stay
+   * open until the next native step: a pair still overlapping re-enters there
+   * without a repeated Begin Overlap, and any other pair ends after that step.
+   */
+  private refreshTriggerPairs(actorId: string): void {
+    this.pendingContacts = this.pendingContacts.filter(
+      (event) =>
+        event.kind !== "hit" ||
+        (event.actorAId !== actorId && event.actorBId !== actorId),
+    );
+    for (const pair of this.activeTriggerPairs.values()) {
+      if (pair.actorAId !== actorId && pair.actorBId !== actorId) continue;
+      pair.contacts = 0;
+      pair.refreshing = true;
+    }
+    this.resetTriggerActors.add(actorId);
+  }
+
+  private endUnconfirmedTriggerPairs(): void {
+    for (const [key, pair] of this.activeTriggerPairs) {
+      if (!pair.refreshing) continue;
+      this.activeTriggerPairs.delete(key);
+      this.pendingContacts.push({
+        kind: "overlapEnd",
+        actorAId: pair.actorAId,
+        actorBId: pair.actorBId,
+        location: { x: 0, y: 0, z: 0 },
+        normal: { x: 0, y: 1, z: 0 },
+      });
+    }
   }
 
   private retireTriggerPairs(actorId: string): void {

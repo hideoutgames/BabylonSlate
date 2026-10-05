@@ -262,6 +262,10 @@ it("uses current parent physics poses during indexed child readback", () => {
   world.spawnActorNow(parent);
   actor.setVariable("parentId", parent.guid);
   actor.transform.position.x = 2;
+  // A resting simulated child keeps its world pose, so its local pose reads
+  // back against the parent's post-step pose. (A static child would instead
+  // keep its local pose and follow the parent; see physics-static-follow.)
+  actor.components[0]!.setVariable("motionType", "dynamic");
   try {
     sync.syncFromWorld(world);
     sync.addImpulse(parent.guid, { x: 6, y: 0, z: 0 });

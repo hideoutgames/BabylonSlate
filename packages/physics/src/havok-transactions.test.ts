@@ -455,6 +455,12 @@ describe("Havok explicit native motion", () => {
       expect(backend.pollContacts().filter((event) => event.kind === "overlapEnd")).toHaveLength(1);
       backend.step(1 / 60);
       expect(backend.pollContacts().filter((event) => event.kind === "overlapBegin")).toHaveLength(1);
+      // A successful teleport that stays inside keeps the same overlap lifetime.
+      for (let i = 1; i <= 3; i++) {
+        backend.teleportBody("visitor", pose(i * 0.1));
+        backend.step(1 / 60);
+      }
+      expect(backend.pollContacts()).toEqual([]);
       backend.teleportBody("visitor", pose(10));
       for (let i = 0; i < 3; i++) backend.step(1 / 60);
       expect(

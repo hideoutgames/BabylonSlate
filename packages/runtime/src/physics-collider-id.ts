@@ -9,6 +9,24 @@ export function componentColliderPhysicsId(
     : `mesh-collider:${JSON.stringify([actorGuid, componentGuid, shapeId])}`;
 }
 
+/**
+ * A hosted child shape on a simulated ancestor's compound. The host guid keeps
+ * it distinct from the child's own-body collider and from another host's copy,
+ * so moving between bodies never reuses a live ID, while component-bound
+ * script events still decode the child's component ID.
+ */
+export function hostedColliderPhysicsId(
+  colliderId: string,
+  hostGuid: string,
+): string {
+  const host = JSON.stringify(`@${hostGuid}`);
+  return (colliderId.startsWith("collider:[") ||
+    colliderId.startsWith("mesh-collider:[")) &&
+    colliderId.endsWith("]")
+    ? `${colliderId.slice(0, -1)},${host}]`
+    : `${colliderId}@${host}`;
+}
+
 /** Restore authored IDs when routing contacts to component-bound script events. */
 export function componentIdFromColliderPhysicsId(
   colliderId: string | undefined,
