@@ -13,9 +13,9 @@ import { landscapeMeshData, sceneLandscapeRoots } from "./landscape-mesh";
 
 /**
  * Encoded ranges of the RGBA8 field: R shore distance, G depth over terrain, B the same depth at fine precision
- * over the shallows (`fineDepthSpan` metres from `fineDepthMin`), A terrain known: 255 over real terrain, ramping
- * to 0 over `WATER_FIELD_EDGE_RAMP` metres past a landscape's edge, whose depth extends across the field.
- * Objects live in the separate, height-aware `WaterContactField`.
+ * over the shallows (`fineDepthSpan` metres from `fineDepthMin`), A terrain known: 255 over real terrain, then a ramp
+ * from `WATER_FIELD_EXTENDED_ALPHA` down to 0 over `WATER_FIELD_EDGE_RAMP` metres past an underwater landscape edge,
+ * whose depth those cells carry. Objects live in the separate, height-aware `WaterContactField`.
  */
 export const WATER_FIELD_SHORE_RANGE: readonly [number, number] = [-8, 24];
 export const WATER_FIELD_DEPTH_RANGE: readonly [number, number] = [-8, 32];
@@ -288,52 +288,69 @@ export class WaterField {
     const anyLand = toLand.some((n) => n === 0);
     if (anyLand) { distanceTransform(toLand, width, height); distanceTransform(toWater, width, height); }
     const cell = (this.rect!.maxX - this.rect!.minX) / width;
-    const ring = extendTerrainDepth(depth, known, width, height), rampRings = Math.max(1, Math.ceil(WATER_FIELD_EDGE_RAMP / cell));
+    const rampRings = Math.max(1, Math.ceil(WATER_FIELD_EDGE_RAMP / cell));
+    const ring = extendTerrainDepth(depth, known, width, height, rampRings + 1);
     for (let i = 0; i < count; i++) {
       const shore = !anyLand ? WATER_FIELD_SHORE_RANGE[1] : known[i] === 1 && depth[i]! <= 0
         ? -(Math.sqrt(toWater[i]!) - 0.5) * cell
         : (Math.sqrt(toLand[i]!) - 0.5) * cell;
-      const reached = ring[i]! !== UNREACHED;
+      const r = ring[i]!, carried = known[i] === 1 || r !== UNREACHED;
       data[i * 4] = encode(shore, WATER_FIELD_SHORE_RANGE);
-      data[i * 4 + 1] = reached ? encode(depth[i]!, depthRange) : 255;
-      data[i * 4 + 2] = reached ? encode(depth[i]!, fineRange) : 255;
-      data[i * 4 + 3] = reached ? Math.round(255 * Math.max(0, 1 - ring[i]! / (rampRings + 1))) : 0;
+      data[i * 4 + 1] = carried ? encode(depth[i]!, depthRange) : 255;
+      data[i * 4 + 2] = carried ? encode(depth[i]!, fineRange) : 255;
+      // Ring 1 starts below the shader's real-terrain threshold and the last ring reaches 0, so the ramp never steps.
+      data[i * 4 + 3] = known[i] ? 255 : carried ? Math.round(WATER_FIELD_EXTENDED_ALPHA * (rampRings + 1 - r) / rampRings) : 0;
     }
   }
 }
 
 /**
- * Metres over which alpha falls from 255 (real terrain) to 0 beyond a landscape's edge. Cells there carry the edge's
- * depth (`extendTerrainDepth`), so the shader's central differences find no false slope at the coverage edge (an
- * unknown cell's sentinel read as a cliff and drew a shore line along it), and the terrain depth hands over to the
- * shelving estimate gradually instead of in a visible step. Unbounded water's field extends this far past the terrain.
+ * Metres over which alpha falls to 0 beyond an underwater landscape edge. Cells there carry the edge's depth
+ * (`extendTerrainDepth`), so the shader's central differences find no false slope at the coverage edge (an unknown
+ * cell's sentinel read as a cliff and drew a shore line along it), and the terrain depth hands over to the shelving
+ * estimate gradually instead of in a visible step. Unbounded water's field extends this far past the terrain.
  */
 export const WATER_FIELD_EDGE_RAMP = 16;
+/**
+ * Alpha above which the shader treats a field sample as real terrain: only there does the terrain remove water and
+ * set the shoreline from depth over slope. Extended cells start below it (`WATER_FIELD_EXTENDED_ALPHA`), so bilinear
+ * filtering puts that boundary about halfway between the last real cell and the first extended one.
+ */
+export const WATER_FIELD_TERRAIN_ALPHA = 0.97;
+/** Alpha of the first extended ring past an underwater edge, out of 255; below `WATER_FIELD_TERRAIN_ALPHA`. */
+export const WATER_FIELD_EXTENDED_ALPHA = 240;
 const UNREACHED = 0xffff;
 
 /**
- * Extends known depths into every unknown cell ring by ring outward from the terrain (each the mean of its
- * already-reached 8-neighbours), in place; each cell is visited once. Returns each cell's ring: 0 for real terrain,
- * then 1, 2, ... outward; `UNREACHED` only when the field holds no terrain at all.
+ * Extends underwater terrain depths into unknown cells ring by ring (each the mean of its already-reached
+ * 8-neighbours), in place, for `rings` rings: the shader reads extended depth only inside the alpha ramp, so nothing
+ * beyond it is visited. Dry cells neither seed nor feed the extension: past a landscape edge above the water there is
+ * no terrain under the water, so those cells stay unknown and keep the shore distance measured from real land.
+ * Returns each unknown cell's ring (1 outward) or `UNREACHED`; known cells read 0.
  */
-function extendTerrainDepth(depth: Float64Array, known: Uint8Array, width: number, height: number): Uint16Array {
-  const ring = new Uint16Array(width * height).fill(UNREACHED), queued = UNREACHED - 1;
-  let frontier: number[] = [];
-  for (let i = 0; i < ring.length; i++) if (known[i]) ring[i] = 0;
-  const enqueue = (i: number, next: number[]) => {
+function extendTerrainDepth(depth: Float64Array, known: Uint8Array, width: number, height: number, rings: number): Uint16Array {
+  const count = width * height, ring = new Uint16Array(count).fill(UNREACHED), queue = new Int32Array(count);
+  // Underwater terrain seeds and feeds the extension (ring 0); dry terrain is known but never reached or averaged.
+  const dry = UNREACHED - 1;
+  for (let i = 0; i < count; i++) if (known[i]) ring[i] = depth[i]! > 0 ? 0 : dry;
+  let tail = 0;
+  const enqueue = (i: number) => {
     const x = i % width, z = (i - x) / width;
     for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
       const nx = x + dx, nz = z + dz;
       if (nx < 0 || nz < 0 || nx >= width || nz >= height) continue;
       const j = nz * width + nx;
-      if (ring[j] === UNREACHED) { ring[j] = queued; next.push(j); }
+      // Claimed for the next ring; its value is assigned once the whole ring is averaged.
+      if (ring[j] === UNREACHED) { ring[j] = dry - 1; queue[tail++] = j; }
     }
   };
-  for (let i = 0; i < ring.length; i++) if (ring[i] === 0) enqueue(i, frontier);
-  for (let r = 1; frontier.length > 0; r++) {
+  for (let i = 0; i < count; i++) if (ring[i] === 0) enqueue(i);
+  let head = 0;
+  for (let r = 1; r <= rings && head < tail; r++) {
+    const end = tail;
     // Every cell of this ring averages only earlier rings, so the result never depends on visiting order.
-    for (const i of frontier) {
-      const x = i % width, z = (i - x) / width;
+    for (let q = head; q < end; q++) {
+      const i = queue[q]!, x = i % width, z = (i - x) / width;
       let sum = 0, n = 0;
       for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
         const nx = x + dx, nz = z + dz;
@@ -343,10 +360,10 @@ function extendTerrainDepth(depth: Float64Array, known: Uint8Array, width: numbe
       }
       depth[i] = sum / n;
     }
-    for (const i of frontier) ring[i] = r;
-    const next: number[] = [];
-    for (const i of frontier) enqueue(i, next);
-    frontier = next;
+    for (let q = head; q < end; q++) ring[queue[q]!] = r;
+    if (r < rings) for (let q = head; q < end; q++) enqueue(queue[q]!);
+    head = end;
   }
+  for (let i = 0; i < count; i++) if (known[i]) ring[i] = 0;
   return ring;
 }

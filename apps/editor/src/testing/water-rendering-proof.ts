@@ -121,6 +121,51 @@ async function measureVertexParity(scene: Scene, camera: ArcRotateCamera, captur
   return { metresPerPixel, width: canvas.width, ...results };
 }
 
+/**
+ * Past a landscape's edge there is no terrain under the water, so Stylized water there must look like open water, not
+ * a band of shore foam. Global Water around a hidden landscape whose border sits above the water (dry) or just under it
+ * (wave troughs reach below it), seen from above with other foam off: the share of white pixels 2.5-7 m past the
+ * edge, against 12-18 m past it, and how much the near band differs from the same view without water.
+ */
+async function measureLandscapeEdge(scene: Scene, camera: ArcRotateCamera, capture: Capture, canvas: HTMLCanvasElement, evidence: Record<string, string>) {
+  camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
+  camera.orthoLeft = -10; camera.orthoRight = 10; camera.orthoTop = 6.25; camera.orthoBottom = -6.25;
+  camera.alpha = -Math.PI / 2; camera.beta = 0.01; camera.radius = 24;
+  // The landscape spans x -10..10, so the view runs from its east edge to 20 m past it, world +X to the right.
+  camera.setTarget(new Vector3(20, 0, 0), false, false, true);
+  // Pixel columns between two world X positions.
+  const columns = (fromX: number, toX: number) =>
+    [fromX, toX].map((x) => Math.round((x - 20 - camera.orthoLeft!) / (camera.orthoRight! - camera.orthoLeft!) * canvas.width)) as [number, number];
+  const measure = (pixels: number[], [from, to]: readonly [number, number], bare?: number[]) => {
+    let white = 0, change = 0, count = 0;
+    for (let y = 0; y < canvas.height; y++) for (let x = from; x < to; x++) {
+      const i = (y * canvas.width + x) * 4;
+      if (Math.min(pixels[i]!, pixels[i + 1]!, pixels[i + 2]!) > 200) white++;
+      if (bare) for (let c = 0; c < 3; c++) change += Math.abs(pixels[i + c]! - bare[i + c]!) / 3;
+      count++;
+    }
+    return { white: white / count, change: change / count };
+  };
+  const result = {} as Record<"dry" | "shallow", { near: number; far: number; water: number }>;
+  setSceneWaterTime(scene, 1.7);
+  // Dry: a basin whose rim stands 1 m above the water around a pool 2 m deep, so the water meets it. Shallow: a floor
+  // 8 cm under the water, which the default waves' troughs reach below.
+  const rim = (i: number) => i % 5 === 0 || i % 5 === 4 || i < 5 || i >= 20;
+  for (const [name, height] of [["dry", (i: number) => (rim(i) ? 1 : -2)], ["shallow", () => -0.08]] as const) {
+    const landscape = createLandscapeMesh(scene, `edge-${name}`, { width: 20, depth: 20, subdivisions: 4, heights: Array.from({ length: 25 }, (_, i) => height(i)) });
+    for (const mesh of landscape.getChildMeshes()) mesh.isVisible = false;
+    const bare = await capture();
+    const sea = createWaterMesh(scene, `edge-${name}-water`, normalizeWaterBody({}, "global"),
+      { ...createDefaultWaterDefinition("stylized"), crestFoam: 0, surfaceFoam: 0, sparkles: 0 });
+    const shot = await capture();
+    evidence[`stylized-landscape-edge-${name}`] = shot.png;
+    const near = measure(shot.pixels, columns(12.5, 17), bare.pixels), far = measure(shot.pixels, columns(22, 28));
+    result[name] = { near: near.white, far: far.white, water: near.change };
+    sea.dispose(); landscape.dispose();
+  }
+  return result;
+}
+
 /** Test-build-only captures of production water, including a fixed-world transform comparison. */
 export async function runWaterRenderingProof(backend: "webgl2" | "webgpu") {
   const canvas = document.createElement("canvas");
@@ -458,8 +503,9 @@ export async function runWaterRenderingProof(backend: "webgl2" | "webgpu") {
     const waveTerrain = { crestHeight: crest.height, troughHeight: trough.height,
       crestDifference: difference(high.pixels), troughDifference: difference(low.pixels) };
     water.dispose(); terrain.dispose();
+    const landscapeEdge = await measureLandscapeEdge(scene, camera, capture, canvas, evidence);
     const vertexParity = await measureVertexParity(scene, camera, capture, backend, canvas, evidence);
-    return { evidence, differences, brightness, crowded, pan, whitecaps, surfaceFoam, gerstner, subsurface, clearReflection, waveTerrain, contact, ripples, vertexParity };
+    return { evidence, differences, brightness, crowded, pan, whitecaps, surfaceFoam, gerstner, subsurface, clearReflection, waveTerrain, contact, ripples, landscapeEdge, vertexParity };
   } finally {
     const device = (engine as { _device?: { queue: { onSubmittedWorkDone(): Promise<void> } } })._device;
     engine.flushFramebuffer(); await device?.queue.onSubmittedWorkDone();
@@ -480,6 +526,8 @@ export interface WaterTierView {
   sun?: [number, number, number];
   /** A 90 m landscape island whose edges lie 4 m under the water. */
   island?: boolean;
+  /** Metres the island is raised: above 4 its edges stand above the water. */
+  islandLift?: number;
   /** Keep the island in the water's terrain field but do not draw it, so only water shading shows its edge. */
   hideIsland?: boolean;
   /** Posts and a buoy crossing the surface. */
@@ -568,16 +616,27 @@ export async function runWaterTierProof(backend: "webgl2" | "webgpu", options: {
     }
     return { width: 90, depth: 90, subdivisions: side, heights };
   })();
+  // Mean per-channel difference between two captures over the same lower two thirds.
+  const change = (a: Uint8Array, b: Uint8Array) => {
+    let sum = 0, count = 0;
+    for (let y = rows[0]!; y < rows[1]!; y++) for (let x = 0; x < width; x++) for (let c = 0; c < 3; c++) {
+      const i = (y * width + x) * 4 + c;
+      sum += Math.abs(a[i]! - b[i]!); count++;
+    }
+    return sum / count;
+  };
   const dark = new StandardMaterial("tier-objects", scene);
   dark.diffuseColor = new Color3(0.35, 0.28, 0.22);
   const quality = sceneRenderingSettings(scene).project.quality;
-  const captures: Array<{ tier: WaterShadingDetail; view: string; light: number }> = [];
+  const captures: Array<{ tier: WaterShadingDetail; view: string; light: number; water: number }> = [];
+  // Per view, how much the Low capture differs from the High one.
+  const lowToHigh: Record<string, number> = {};
   const evidence: Record<string, string> = {};
   try {
     for (const view of options.views ?? TIER_VIEWS) {
       const extras: Array<{ dispose(): void }> = [];
       if (view.island) {
-        const landscape = createLandscapeMesh(scene, "tier-island", island);
+        const landscape = createLandscapeMesh(scene, "tier-island", { ...island, heights: island.heights.map((h) => h + (view.islandLift ?? 0)) });
         if (view.hideIsland) for (const chunk of landscape.getChildMeshes()) chunk.isVisible = false;
         extras.push(landscape);
       }
@@ -605,21 +664,29 @@ export async function runWaterTierProof(backend: "webgl2" | "webgpu", options: {
       camera.setTarget(new Vector3(...(view.camera.target ?? [0, 0, 0])), false, false, true);
       camera.alpha = view.camera.alpha; camera.beta = view.camera.beta; camera.radius = view.camera.radius;
       setSceneWaterTime(scene, view.time ?? 1.7);
+      // Landscapes draw in the world rendering group; objects and water join it so depth sorts them together.
+      for (const extra of extras) if (extra instanceof AbstractMesh) extra.renderingGroupId = RENDERING_GROUP.world;
+      // The same view without water: every tier must draw water over it. Captures are copied, since a readback buffer
+      // may be reused by the next one.
+      const bare = (await capture()).slice();
       const definition = { ...createDefaultWaterDefinition(view.style), ...view.water };
       const water = createWaterMesh(scene, `tier-${view.name}`, normalizeWaterBody(view.body ?? {}, view.kind ?? "lake"), definition);
-      // Landscapes draw in the world rendering group; water and objects join it so depth sorts them together.
-      for (const mesh of [water, ...extras]) if (mesh instanceof AbstractMesh) mesh.renderingGroupId = RENDERING_GROUP.world;
+      water.renderingGroupId = RENDERING_GROUP.world;
       if (view.lamps) (water.material as PBRMaterial).maxSimultaneousLights = 8;
+      const shots = new Map<WaterShadingDetail, Uint8Array>();
       for (const tier of options.tiers ?? WATER_SHADING_DETAILS) {
         updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality(qualityPresetPatch(tier)) });
-        const pixels = await capture();
-        captures.push({ tier, view: view.name, light: waterLight(pixels) });
+        const pixels = (await capture()).slice();
+        shots.set(tier, pixels);
+        captures.push({ tier, view: view.name, light: waterLight(pixels), water: change(pixels, bare) });
         evidence[`tier-${tier}-${view.name}`] = pixelsToPng(pixels, width, height, backend);
       }
+      const low = shots.get("low"), high = shots.get("high");
+      if (low && high) lowToHigh[view.name] = change(low, high);
       water.dispose();
       for (const extra of extras) extra.dispose();
     }
-    return { captures, evidence };
+    return { captures, lowToHigh, evidence };
   } finally {
     updateSceneRenderingSettings(scene, { quality });
     const device = (engine as { _device?: { queue: { onSubmittedWorkDone(): Promise<void> } } })._device;

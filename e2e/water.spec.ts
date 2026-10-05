@@ -12,6 +12,11 @@ import type { runWaterRenderingProof, runWaterTierProof } from "../apps/editor/s
 
 test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 
+/** Mean per-channel change (0-255) a tier capture must show against the same view without water. */
+const WATER_OVER_VIEW = 8;
+/** Mean per-channel change between a view's Low and High captures. */
+const LOW_TO_HIGH = 3;
+
 async function centerColor(canvas: Locator): Promise<number[]> {
   return canvas.evaluate((node: HTMLCanvasElement) => {
     const ctx = node.getContext("2d")!;
@@ -85,6 +90,13 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     expect(result.waveTerrain.troughHeight).toBeLessThan(-0.4);
     expect(result.waveTerrain.crestDifference).toBeGreaterThan(10);
     expect(result.waveTerrain.troughDifference).toBeLessThan(1);
+    // Past a landscape edge there is no terrain: Stylized water there draws no band of shore foam, whether the border
+    // sits above the water or just under it (where troughs dip below it), and it is water, not a hole.
+    for (const name of ["dry", "shallow"] as const) {
+      const edge = result.landscapeEdge[name];
+      expect(edge.near, `${name} edge`).toBeLessThan(edge.far + 0.02);
+      expect(edge.water, `${name} edge`).toBeGreaterThan(10);
+    }
     // A post through a lake gets a bright foam ring on its waterline in both styles, even at the
     // realistic preset's low Foam Amount, well above open water beyond its foam and ripples.
     // On a cone the foam follows the rendered wave height: inward at a crest, outward in a trough.
@@ -110,12 +122,19 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     for (const [name, png] of Object.entries(result.evidence)) {
       await testInfo.attach(name, { body: Buffer.from(png.split(",")[1]!, "base64"), contentType: "image/png" });
     }
-    await testInfo.attach("tier-captures", { body: JSON.stringify(result.captures), contentType: "application/json" });
+    await testInfo.attach("tier-captures", { body: JSON.stringify({ captures: result.captures, lowToHigh: result.lowToHigh }), contentType: "application/json" });
     // Each tier compiles its own variant (Low to Ultra, both styles, with the asset features on): none may fail to
-    // compile, and none may draw black, including with seven scene lights on Low (unlit) and Ultra.
+    // compile, none may draw black, including with seven scene lights on Low (unlit) and Ultra, and every one draws
+    // water over the same view without it.
     expect(errors).toEqual([]);
     expect(result.captures).toHaveLength(4 * 6);
-    for (const { tier, view, light } of result.captures) expect(light, `${view} at ${tier}`).toBeGreaterThan(20);
+    for (const { tier, view, light, water } of result.captures) {
+      expect(light, `${view} at ${tier}`).toBeGreaterThan(20);
+      expect(water, `${view} at ${tier} against no water`).toBeGreaterThan(WATER_OVER_VIEW);
+    }
+    // The tier reaches the GPU: Low (unlit Realistic, fewer terms) draws each view differently from High.
+    expect(Object.keys(result.lowToHigh)).toHaveLength(6);
+    for (const [view, change] of Object.entries(result.lowToHigh)) expect(change, view).toBeGreaterThan(LOW_TO_HIGH);
   });
   test(`Water presets and a custom Water Surface material render on ${backend}`, async ({ page }, testInfo) => {
     test.setTimeout(120_000);

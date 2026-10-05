@@ -5,7 +5,9 @@ import { createLandscapeMesh } from "./landscape-mesh";
 import { createWaterMesh, setSceneWaterTime, updateSceneWater } from "./water-mesh";
 import { createWaterRemovalMesh, sceneWaterRemovals } from "./water-removal-mesh";
 import { applyAssignMesh, createSnapshotSceneBinding } from "./snapshot-apply";
-import { distanceTransform, WATER_FIELD_DEPTH_RANGE, WATER_FIELD_EDGE_RAMP, WATER_FIELD_SHORE_RANGE, WaterField } from "./water-field";
+import {
+  distanceTransform, WATER_FIELD_DEPTH_RANGE, WATER_FIELD_EDGE_RAMP, WATER_FIELD_SHORE_RANGE, WATER_FIELD_TERRAIN_ALPHA, WaterField,
+} from "./water-field";
 
 type FieldView = { data: Uint8Array; width: number; height: number; bounds: number[]; depthRange?: readonly [number, number]; fineDepthMin: number; fineDepthSpan: number };
 const liveField = (mesh: Mesh) => (mesh.material as unknown as { pluginManager: { _plugins: Array<{ field?: WaterField | null }> } })
@@ -120,7 +122,7 @@ describe("Water field", () => {
     } finally { field?.dispose(); scene.dispose(); engine.dispose(); }
   });
 
-  it("carries a landscape's depth past its edge with fading alpha, so the edge reads as no slope and no shore", () => {
+  it("carries an underwater landscape edge's depth past it with fading alpha, so the edge reads as no slope and no shore", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     let field: WaterField | undefined;
     try {
@@ -135,7 +137,9 @@ describe("Water field", () => {
       expect(inside).toMatchObject({ known: true, alpha: 255 });
       // Cells beyond the edge keep the edge depth (both channels), so central differences across it find a flat
       // floor, while alpha falls cell by cell over the ramp and the terrain depth hands over to the shelving
-      // estimate gradually.
+      // estimate gradually. Every extended cell stays below the alpha at which the shader treats terrain as real
+      // (removing water and measuring the shore from depth over slope).
+      expect(texel(view, 20 + cell * 0.5, 0).alpha / 255).toBeLessThan(WATER_FIELD_TERRAIN_ALPHA - 0.01);
       let previous = 255;
       for (let x = 20 + cell * 0.5; x < 20 + WATER_FIELD_EDGE_RAMP - cell; x += cell) {
         const extended = texel(view, x, 0);
@@ -145,9 +149,35 @@ describe("Water field", () => {
         expect(extended.alpha).toBeGreaterThan(0);
         previous = extended.alpha;
       }
-      const beyond = texel(view, 20 + WATER_FIELD_EDGE_RAMP + 2 * cell, 0);
-      expect(beyond.alpha).toBe(0);
-      expect(beyond.depth).toBeCloseTo(inside.depth, 1);
+      expect(texel(view, 20 + WATER_FIELD_EDGE_RAMP + 2 * cell, 0).alpha).toBe(0);
+    } finally { field?.dispose(); scene.dispose(); engine.dispose(); }
+  });
+
+  it("leaves water past a landscape edge above the water unknown, measuring its shore from the real land", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    let field: WaterField | undefined;
+    try {
+      // A 40 m tile in a 100 m body: dry (1 m up) along its west edge, 4 m under water along its east edge.
+      const surface = MeshBuilder.CreateGround("water", { width: 100, height: 100 }, scene);
+      surface.metadata = { slateWater: true };
+      const side = 9, heights = Array.from({ length: side * side }, (_, i) => [1, 1, 1, 1, -1.5, -4, -4, -4, -4][i % side]!);
+      createLandscapeMesh(scene, "coast", { width: 40, depth: 40, subdivisions: side - 1, heights });
+      field = new WaterField(scene, { mesh: surface, unbounded: false, amplitude: 0.5, contactRange: 1, surfaceY: () => 0 });
+      field.update();
+      const view = field as unknown as FieldView, cell = 1 / (view.bounds[2]! * view.width);
+      expect(texel(view, -20 + cell * 0.5, 0)).toMatchObject({ known: true, alpha: 255 });
+      // Past the dry edge there is no terrain under the water: those cells are not terrain at all (never removed and
+      // no shoreline from a dry depth with no slope), and their shore distance grows from the land as usual...
+      for (const gap of [0.5, 2, 5, 8, 12]) {
+        const open = texel(view, -20 - gap, 0);
+        expect(open.alpha).toBe(0);
+        expect(open.shore).toBeGreaterThan(gap - 2 * cell);
+        expect(open.shore).toBeLessThan(gap + 2 * cell);
+      }
+      // ...while the underwater edge still extends its depth.
+      const east = texel(view, 20 + 2, 0);
+      expect(east.alpha).toBeGreaterThan(0);
+      expect(east.depth).toBeCloseTo(4, 0);
     } finally { field?.dispose(); scene.dispose(); engine.dispose(); }
   });
 
