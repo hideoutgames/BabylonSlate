@@ -13,10 +13,11 @@ for (const backend of ["webgl2", "webgpu"] as const) for (const kind of ["direct
     });
     await page.goto("/?test=1&shadowSelfShadowingProof=1");
     await page.waitForFunction(() => typeof (window as unknown as { __babylonslateAuthoredShadowProof?: unknown }).__babylonslateAuthoredShadowProof === "function");
-    const result = await page.evaluate(({ backend, kind }) => (window as unknown as {
+    const { programs, ...result } = await page.evaluate(({ backend, kind }) => (window as unknown as {
       __babylonslateAuthoredShadowProof: typeof runAuthoredShadowProof;
     }).__babylonslateAuthoredShadowProof(backend, kind), { backend, kind });
     await testInfo.attach("authored-shadow-pixels", { body: JSON.stringify(result), contentType: "application/json" });
+    await testInfo.attach("authored-shadow-programs", { body: JSON.stringify(programs), contentType: "application/json" });
     expect(errors).toEqual([]);
     expect(result.observedShadowEffects).toBeGreaterThanOrEqual(2);
     expect(result.shadowEffectsReleased).toBe(true);

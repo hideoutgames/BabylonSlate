@@ -102,7 +102,7 @@ export async function runLatticeDeformerProof(backend: "webgl2" | "webgpu") {
   material.diffuseColor = new Color3(0.6, 0.6, 0.6); material.specularColor = Color3.Black();
   const renderer = new SceneRenderCoordinator(scene);
   const owner = SharedOutlineOwner.forScene(scene), view = owner.createView("lattice-proof");
-  const detach = renderer.attachSharedOutline(view);
+  let detach = () => {};
   const meshes: AbstractMesh[] = [];
   const releases: (() => void)[] = [];
   const cases: (ReturnType<typeof compare> & { name: string; compareLighting: boolean })[] = [];
@@ -148,9 +148,13 @@ export async function runLatticeDeformerProof(backend: "webgl2" | "webgpu") {
     const lattice = new Lattice({ resolutionX: 2, resolutionY: 2, resolutionZ: 2, size: new Vector3(4, 4, 4) });
     for (const plane of lattice.data) for (const row of plane) for (const p of row) p.set(1.5 * p.x + 0.25 * p.y, p.y, p.z + 0.2 * p.x);
     const plugin = new LatticePluginMaterial(lattice, stockMaterial);
-    releases.push(() => plugin.dispose());
     transformReference(stockReference, 0, 1);
     await pair("stock-baseline", [stock], [stockReference], false, false);
+    // The stock plugin deliberately has no shared-outline adapter. Retire its
+    // isolated baseline before enabling the production coverage passes.
+    plugin.dispose(); stock.dispose(); stockReference.dispose(); stockMaterial.dispose();
+    meshes.splice(0, 2);
+    detach = renderer.attachSharedOutline(view);
 
     const native = makeBox("Native"), nativeReference = makeBox("Native Reference");
     const sourcePositions = Array.from(native.getVerticesData(VertexBuffer.PositionKind)!);

@@ -59,6 +59,28 @@ export async function runAuthoredShadowProof(backend: "webgl2" | "webgpu", kind:
     if (diagnostics.length) throw new Error(JSON.stringify(diagnostics));
     authored.material.freeze();
     const shadowEffects = new Set<Effect>();
+    const programs = new Map<string, unknown>();
+    generator.onBeforeShadowMapRenderObservable.add((effect) => {
+      const source = caster.material!;
+      const context = effect.getPipelineContext() as {
+        uniformBuffer?: { getData(): Float32Array };
+        shaderProcessingContext?: { leftOverUniforms?: unknown };
+        program?: WebGLProgram;
+      } | null;
+      const gl = (engine as Engine & { _gl?: WebGLRenderingContext })._gl;
+      const uniforms = gl && context?.program ? Object.fromEntries(effect.getUniformNames().map((name) => {
+        const location = gl.getUniformLocation(context.program!, name);
+        const value: unknown = location ? gl.getUniform(context.program!, location) : null;
+        return [name, ArrayBuffer.isView(value) ? Array.from(value as Float32Array) : value];
+      })) : undefined;
+      programs.set(`${source.name}:${effect.defines}`, {
+        material: source.name, defines: effect.defines,
+        vertex: effect.vertexSourceCode, fragment: effect.fragmentSourceCode,
+        uniforms, uniformLayout: context?.shaderProcessingContext?.leftOverUniforms,
+        uniformData: context?.uniformBuffer ? Array.from(context.uniformBuffer.getData()) : undefined,
+        viewProjection: Array.from(scene.getTransformMatrix().asArray()),
+      });
+    });
     const render = async () => {
       const deadline = performance.now() + 15000;
       let coherent = 0;
@@ -185,7 +207,7 @@ export async function runAuthoredShadowProof(backend: "webgl2" | "webgpu", kind:
     }
     generator.dispose();
     await disposeAuthored(); disposeAuthored = undefined;
-    return { backend, kind, results, latticeResults, nativeCacheRestored,
+    return { backend, kind, results, latticeResults, nativeCacheRestored, programs: [...programs.values()],
       observedShadowEffects: shadowEffects.size, shadowEffectsReleased: [...shadowEffects].every((effect) => effect.isDisposed) };
   } finally {
     await disposeAuthored?.();
