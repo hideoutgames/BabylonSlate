@@ -9,7 +9,7 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     page.on("console", (message) => {
-      if (["warning", "error"].includes(message.type()) && /shader|WebGPU uncaptured|VALIDATE_STATUS|ERROR: 0:|context lost|fatal error/i.test(message.text())) errors.push(message.text());
+      if (["warning", "error"].includes(message.type()) && /shader|WebGPU uncaptured|VALIDATE_STATUS|ERROR: 0:|context lost|fatal error|feedback loop|INVALID_OPERATION|conflicting usages/i.test(message.text())) errors.push(message.text());
     });
     await page.goto("/?test=1&renderTargetProof=1");
     await page.waitForFunction(() => typeof (window as unknown as { __renderTargetProof?: unknown }).__renderTargetProof === "function");
@@ -26,6 +26,11 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       ["Authored SceneColor", [99, 136, 186, 255]],
       ["Material DepthPass", [148, 0, 0, 255]],
       ["Material WorldNormal", [186, 186, 0, 255]],
+      ["Feedback First", [64, 128, 32, 255]],
+      ["Feedback Second", [64, 128, 32, 255]],
+      ["Feedback Updated First", [0, 255, 0, 255]],
+      ["Feedback Updated Second", [0, 255, 0, 255]],
+      ["Material After Feedback", [0, 255, 0, 255]],
     ] as const) for (const [channel, value] of expected.entries()) expect(Math.abs(pixel(mode)[channel]! - value)).toBeLessThanOrEqual(2);
     for (const [source, consumer] of [["SceneColor", "Material Color"], ["Authored SceneColor", "Material Color After Mode Change"]])
       for (let channel = 0; channel < 4; channel++) expect(Math.abs(pixel(source!)[channel]! - pixel(consumer!)[channel]!)).toBeLessThanOrEqual(1);
@@ -36,6 +41,24 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     expect(Math.abs(normal[1]! - 128)).toBeLessThanOrEqual(1);
     expect(normal.slice(2)).toEqual([0, 255]);
     expect(result.results.find((entry) => entry.mode === "Empty Filter")!.pixel).toEqual([0, 0, 0, 0]);
+    for (const label of ["Authored WPO", "Authored Reset", "Authored Edited"]) {
+      expect(pixel(`${label} DepthPass`)[0]).toBeCloseTo(label === "Authored Edited" ? 0.4 : 0.5, 2);
+      expect(pixel(`${label} DepthPass`).slice(1)).toEqual([0, 0, 1]);
+      const normal = pixel(`${label} WorldNormal`);
+      expect(Math.abs(normal[0]! - 128)).toBeLessThanOrEqual(1);
+      expect(Math.abs(normal[1]! - 128)).toBeLessThanOrEqual(1);
+      expect(normal.slice(2)).toEqual([0, 255]);
+    }
+    for (const label of ["Authored Moved", "Authored Discard"]) {
+      expect(pixel(`${label} DepthPass`)).toEqual([1, 0, 0, 1]);
+      expect(pixel(`${label} WorldNormal`)).toEqual([0, 0, 0, 0]);
+    }
+    for (const label of ["Native Lattice", "Authored Lattice"]) {
+      expect(Math.abs(pixel(`${label} DepthPass`)[0]! - (label === "Native Lattice" ? 0.4 : 0.8))).toBeLessThan(0.02);
+      const normal = pixel(`${label} WorldNormal`);
+      for (const [channel, expected] of [185, 128, 13, 255].entries())
+        expect(Math.abs(normal[channel]! - expected), `${label} inverse-transpose normal`).toBeLessThanOrEqual(2);
+    }
     for (const label of ["UV0 Opaque", "UV1 Opaque", "Cutoff Opaque"]) {
       expect(pixel(`${label} DepthPass`)[0]).toBeCloseTo(0.3, 2);
       expect(pixel(`${label} DepthPass`).slice(1)).toEqual([0, 0, 1]);

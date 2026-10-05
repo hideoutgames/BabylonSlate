@@ -16,6 +16,8 @@ import {
 } from "@babylonjs/core";
 import { CelMaterial } from "./cel-material";
 import { TextureQualityPlugin } from "./texture-quality";
+import { LatticeDeformerPlugin } from "./lattice-deformer-native";
+import { hasMeshLatticeDeformer } from "./lattice-deformer-binding";
 
 const compiled = new WeakSet<NodeMaterial>();
 const compiledShape = new WeakMap<
@@ -49,6 +51,7 @@ const nativePlugins = new Set<unknown>([
   PBRSheenConfiguration,
   PBRSubSurfaceConfiguration,
   TextureQualityPlugin,
+  LatticeDeformerPlugin,
 ]);
 
 /** Conservative shape eligibility; the refresh scheduler tracks mutable depth/culling state. */
@@ -56,6 +59,7 @@ export function canCacheShadowMaterial(
   material: Material,
   mesh: AbstractMesh,
 ): boolean {
+  if (hasMeshLatticeDeformer(mesh)) return false;
   const padding = Number(material.metadata?.boundsPadding ?? 0);
   if (!Number.isFinite(padding) || padding > 0) return false;
   if (

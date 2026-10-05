@@ -3,7 +3,7 @@ import type { SerializedGraph } from "@babylonslate/core";
 import { createText3DComponent } from "@babylonslate/core";
 import { objectRef } from "@babylonslate/scripting";
 import { createDefaultNodeRegistry, formatArgPinId, selectOptionPinId } from "@babylonslate/scripting-nodes";
-import { filterPaletteForPin } from "@babylonslate/graph-ui";
+import { filterPaletteForPin, type SerializedPin } from "@babylonslate/graph-ui";
 import {
   classHierarchyFromParentOf,
   classMemberSymbolsFromGraphs,
@@ -968,6 +968,24 @@ describe("classHierarchyFromParentOf", () => {
 });
 
 describe("scriptPinCompatibility", () => {
+  it("accepts only matching writable variables for Tween reference targets", () => {
+    const rule = scriptPinCompatibility();
+    const target = { id: "target", name: "Target", kind: "data" as const, direction: "in" as const,
+      type: { kind: "float" }, reference: "required" as const };
+    const output = { ...target, id: "value", direction: "out" as const, reference: "writable" as const };
+    expect(rule(output, target)).toBe(true);
+    expect(rule({ ...output, reference: undefined }, target)).toBe(false);
+    expect(rule({ ...output, type: { kind: "int" } }, target)).toBe(false);
+    expect(rule({ ...output, reference: undefined }, { ...target, reference: undefined })).toBe(true);
+  });
+  it("restores read-only native access when loading a getter saved before reference metadata", () => {
+    const graph: SerializedGraph = { nodes: [{ id: "progress", type: "variables.get", position: { x: 0, y: 0 },
+      data: { variableName: "Appear Progress", propertyKey: "appearProgress", classId: "2DRichTextComponent", typeId: "float" } }], edges: [] };
+    const hydrated = hydrateSerializedGraphForEditor(graph, registry);
+    const output = (hydrated.nodes[0]!.data.__pins as SerializedPin[]).find((entry) => entry.id === "value")!;
+    const target = registry.get("tween.float")!.pins({}).find((entry) => entry.id === "target")!;
+    expect(scriptPinCompatibility()(output, target)).toBe(false);
+  });
   it.each([
     { sourceClass: "Hero", targetClass: "Actor", retained: true },
     { sourceClass: "MaterialObject", targetClass: "Actor", retained: false },

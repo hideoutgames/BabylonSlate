@@ -17,6 +17,7 @@ import {
 } from "./scene-loader";
 import {
   applyAssignMesh,
+  applyComponentTransformsCommand,
   applySnapshotToScene,
   createSnapshotSceneBinding,
   retirePlaySlot,
@@ -161,6 +162,27 @@ describe("spring arm", () => {
       const binding = createSnapshotSceneBinding();
       assign(scene, binding, { rotation: YAW_90, springArm: parseSpringArmProperties({ armLength: 2 }) });
       expectVector(snapshot(scene, binding, 1000, {}).position, [-2, 1, 0]);
+    });
+
+    it.each([false, true])("retains component motion across actor snapshots with location lag %s", (enableLocationLag) => {
+      const { scene } = createHandle();
+      const binding = createSnapshotSceneBinding();
+      assign(scene, binding, { springArm: parseSpringArmProperties({ armLength: 2, enableLocationLag, locationLagSpeed: 10 }) });
+      const camera = snapshot(scene, binding, 1000, {});
+      const root = binding.meshes.get(0);
+      applyComponentTransformsCommand(binding, { type: "setComponentTransforms", slotId: 0, parts: [{ componentId: "arm", transform: {
+        position: { x: 6, y: 3, z: 0 }, rotation: { x: 0, y: Math.SQRT1_2, z: 0, w: Math.SQRT1_2 }, scale: { x: 2, y: 2, z: 2 },
+      } }] });
+      const alpha = enableLocationLag ? 1 - Math.exp(-0.5) : 1;
+      const pivotX = 6 * alpha, pivotY = 1 + 2 * alpha;
+      expect(snapshot(scene, binding, 1050, {})).toBe(camera);
+      expectVector(camera.position, [pivotX - 4, pivotY, 0]);
+      expect(Math.abs(Quaternion.Dot(camera.rotationQuaternion!, Quaternion.FromArray(YAW_90)))).toBeCloseTo(1, 5);
+      // No second component sample: its target must persist as the actor moves,
+      // while the existing lag continues instead of resetting to that target.
+      snapshot(scene, binding, 1100, { position: { x: 10, y: 0, z: 0 } });
+      expectVector(camera.position, [pivotX + (16 - pivotX) * alpha - 4, pivotY + (3 - pivotY) * alpha, 0]);
+      expect(binding.meshes.get(0)).toBe(root);
     });
 
     it("lags the camera behind a moving actor, frame-rate independently", () => {

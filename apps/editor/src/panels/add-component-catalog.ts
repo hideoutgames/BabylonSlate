@@ -15,6 +15,7 @@ import {
   parseAreaRectLightProperties,
   parseFogVolumeProperties,
   parseOutlineProperties,
+  parseDeformerProperties,
   parseRagdollProperties,
   parseMovementProperties,
   parseSpringArmProperties,
@@ -114,6 +115,7 @@ export const ADDABLE_COMPONENT_CLASSES: readonly AddComponentItem[] = [
   engineComponent("AreaRectLightComponent", "Rectangular Area Light", "Unshadowed rectangular emitter; illuminates through walls", "Rendering"),
   engineComponent("FogVolumeComponent", "Fog Volume", "Local box or sphere of volumetric fog with soft edges", "Rendering"),
   engineComponent("OutlineComponent", "Outline", "Actor silhouette with independent color, width and visibility", "Rendering"),
+  engineComponent("DeformerComponent", "Deformer", "Runtime lattice deformation of a mesh or model after material offsets", "Rendering"),
   engineComponent(
     "HemisphericFillLightComponent",
     "Hemispheric Fill Light",
@@ -299,6 +301,8 @@ export function defaultPropertiesFor(
       return { ...parseFogVolumeProperties({}) };
     case "OutlineComponent":
       return { ...parseOutlineProperties({}) };
+    case "DeformerComponent":
+      return { ...parseDeformerProperties({}) };
     case "SpringArmComponent":
       return { ...parseSpringArmProperties({}) };
     case "CableComponent":

@@ -106,6 +106,8 @@ export { sceneRenderPathStatus, subscribeSceneRenderPath } from "./scene-render-
 export { renderPathSession, requestRenderPath, subscribeRenderPathSession } from "./render-path-session";
 export * from "./shared-outline";
 export * from "./shared-outline-task";
+export * from "./lattice-deformer";
+export * from "./scene-deformer-host";
 export { createWaterMesh, setSceneWaterTime, updateSceneWater, updateWaterMeshBody, updateWaterMeshDefinition, waterMeshBody } from "./water-mesh";
 export { createWaterRemovalMesh, sceneWaterRemovals, waterRemovalOutline } from "./water-removal-mesh";
 export { WaterField, distanceTransform } from "./water-field";

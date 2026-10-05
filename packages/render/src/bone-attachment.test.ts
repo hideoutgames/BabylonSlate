@@ -2,6 +2,7 @@ import { Bone, Matrix, Mesh, Quaternion, Skeleton, SpotLight, TransformNode, Uni
 import { afterEach, describe, expect, it } from "vitest";
 import { isPlayEngineCommandType, readActorSlot, readSnapshotHeader, snapshotFloatCount, SNAPSHOT_FLAG_VISIBLE, type ActorSlot } from "@babylonslate/bridge";
 import { createInProcessRuntime } from "@babylonslate/test-kit";
+import { identityTransform } from "@babylonslate/core";
 import { createTestEngine } from "./create-null-engine";
 import * as snapshot from "./snapshot-apply";
 import * as attachments from "./bone-attachment";
@@ -30,6 +31,34 @@ function fixture() {
 }
 
 describe("render bone attachment", () => {
+  it("retains singleton component motion on a bone without shifting the actor audio pose", () => {
+    const { scene, binding, target, childSlot, targetSlot, attach, apply } = fixture();
+    snapshot.applyAssignMesh(scene, binding, { type: "assignMesh", slotId: 1, primaryComponentId: "visual", meshKind: "box", meshAssetGuid: null });
+    const child = binding.meshes.get(1)!;
+    const hand = new TransformNode("Hand", scene);
+    hand.parent = target;
+    hand.position.y = 2;
+    hand.rotationQuaternion = Quaternion.RotationAxis(Vector3.Up(), Math.PI / 2);
+    targetSlot.position.x = childSlot.position.x = 10;
+    attach("Hand");
+    for (const x of [1, 3]) {
+      snapshot.applyComponentTransformsCommand(binding, { type: "setComponentTransforms", slotId: 1, parts: [{ componentId: "visual", transform: {
+        ...identityTransform(), position: { x, y: 0, z: 0 },
+      } }] });
+      apply();
+      expect(binding.meshes.get(1)).toBe(child);
+      expect(child.getAbsolutePosition().x).toBeCloseTo(10);
+      expect(child.getAbsolutePosition().y).toBeCloseTo(2);
+      expect(child.getAbsolutePosition().z).toBeCloseTo(-x);
+      const poses: SampledAudioPose[] = [];
+      writeSampledAudioPoses({ actors: [childSlot, targetSlot], actorCount: 2 }, poses);
+      attachments.applyBoneAttachmentAudioPoses(binding, poses);
+      expect(poses[0]!.position.x).toBeCloseTo(10);
+      expect(poses[0]!.position.y).toBeCloseTo(2);
+      expect(poses[0]!.position.z).toBeCloseTo(0);
+    }
+  });
+
   it("updates spatial audio poses from animated attachments while keeping other emitters unchanged", () => {
     const { scene, binding, target, childSlot, targetSlot, attach, apply } = fixture();
     const hand = new TransformNode("Hand", scene);

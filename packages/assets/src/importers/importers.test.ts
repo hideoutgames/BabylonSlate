@@ -44,6 +44,16 @@ describe("importers", () => {
     expect(results[0]!.payload.compressionState).toBeUndefined();
   });
 
+  it("imports lookup tables as uncompressed Color Grading textures", async () => {
+    for (const fileName of ["Sunset_LUT.png", "lut-warm.png", "color_grading_teal.png"]) {
+      const [texture] = await importImage(new Uint8Array([1, 2, 3]), { fileName, existingGuids: new Set() });
+      expect(texture!.payload.usage, fileName).toBe("colorGrading");
+      expect(texture!.payload.compressionState, fileName).toBeUndefined();
+    }
+    const [salute] = await importImage(new Uint8Array([1, 2, 3]), { fileName: "salute.png", existingGuids: new Set() });
+    expect(salute!.payload.usage).toBe("albedo");
+  });
+
   it("imports models with material/texture/animation dependents", async () => {
     const results = await importModel(buildMinimalGlbFixture({ animationName: "Walk" }), {
       fileName: "hero.glb",

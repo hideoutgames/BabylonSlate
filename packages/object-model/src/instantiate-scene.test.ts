@@ -32,6 +32,24 @@ function testWorld() {
   });
 }
 
+it("keeps deformer targets local when spawning fresh instances of inherited scene components", () => {
+  const world = testWorld();
+  const first = world.createActor({ classId: "Actor" });
+  const second = world.createActor({ classId: "Actor" });
+  const components = [
+    { id: "placed-mesh", sourceId: "template-mesh", classId: "MeshComponent", properties: {} },
+    { id: "placed-cage", classId: "DeformerComponent", properties: { enabled: true, targetMeshComponentId: "template-mesh", offsets: [1, 0, 0] } },
+  ];
+  attachSerializedComponents(world, first, components, { freshIds: true });
+  attachSerializedComponents(world, second, components, { freshIds: true });
+  expect(first.components[1]!.getVariable("targetMeshComponentId")).toBe(first.components[0]!.guid);
+  expect(second.components[1]!.getVariable("targetMeshComponentId")).toBe(second.components[0]!.guid);
+  expect(first.components[0]!.guid).not.toBe(second.components[0]!.guid);
+  (first.components[1]!.getVariable("offsets") as number[])[0] = 9;
+  expect(second.components[1]!.getVariable("offsets")).toEqual([1, 0, 0]);
+  expect(components[1]!.properties.targetMeshComponentId).toBe("template-mesh");
+});
+
 it("detaches a missing prefab parent while retaining template identity", () => {
   const world = testWorld();
   const actor = world.createActor({ classId: "Actor" });

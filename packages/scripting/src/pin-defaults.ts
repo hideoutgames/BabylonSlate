@@ -103,6 +103,7 @@ export function listUnconnectedLiteralPinDefaults(
   const listed: LiteralPinDefault[] = [];
   for (const pin of pins) {
     if (pin.direction !== "in" || pin.kind !== "data") continue;
+    if (pin.reference === "required") continue;
     if (!pinAcceptsLiteralDefault(pin.type)) continue;
     if (connectedPinIds.has(pin.id)) continue;
     const stored = readPinDefaultForPin(properties, pin);

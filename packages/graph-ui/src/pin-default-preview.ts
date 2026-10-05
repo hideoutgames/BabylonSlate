@@ -149,6 +149,7 @@ export function pinDefaultPreview(
   pinTypeNames?: PinTypeNames,
 ): PinDefaultPreview | null {
   if (connected) return null;
+  if (pin.reference === "required") return null;
   if (pin.direction !== "in" || pin.kind !== "data") return null;
   if (pin.type.kind === "enumRef") {
     return {

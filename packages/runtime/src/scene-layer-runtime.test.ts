@@ -930,8 +930,8 @@ describe("SceneLayer runtime compositor", () => {
       buttonComponentId: "btn",
     });
     expect(
-      assignPair && "parts" in assignPair
-        ? assignPair.parts?.some((part) => part.meshKind === "2dbutton")
+      assignPair?.type === "assignMesh"
+        ? (assignPair.parts?.some((part) => part.meshKind === "2dbutton") ?? false)
         : false,
     ).toBe(false);
   });
@@ -987,8 +987,8 @@ describe("SceneLayer runtime compositor", () => {
       text2d: { text: "Play" },
     });
     expect(
-      assign && "parts" in assign
-        ? assign.parts?.some((part) => part.meshKind === "2dbutton")
+      assign?.type === "assignMesh"
+        ? (assign.parts?.some((part) => part.meshKind === "2dbutton") ?? false)
         : false,
     ).toBe(false);
   });

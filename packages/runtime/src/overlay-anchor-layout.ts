@@ -1,11 +1,11 @@
 import { isSceneLayerAnchorActor } from "@babylonslate/core";
 import type { Actor, ActorComponent } from "@babylonslate/object-model";
-import { actorParentGuid } from "./actor-world-transform";
+import { actorParentGuid, firstSpawnedActorIndex } from "./actor-world-transform";
 
 /** Resolve the uppermost layout owner; descendants inherit its spatial movement. */
 export function overlayAnchorBindings(actors: readonly Actor[]): Map<Actor, ActorComponent> {
   const live = actors.filter((actor) => actor.sceneLayerId && !actor.destroyed);
-  const byId = new Map(live.map((actor) => [actor.guid, actor]));
+  const byId = firstSpawnedActorIndex(live);
   const direct = new Map<Actor, ActorComponent>();
   const anchorOf = (actor: Actor) => actor.components.find(
     (component) => component.classId === "2DAnchorComponent" && !component.destroyed,

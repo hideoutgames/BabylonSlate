@@ -1,4 +1,4 @@
-import { areaEmissionTextureGuids, isInputAssetType, normalizeInputAssetPayload } from "@babylonslate/core";
+import { areaEmissionTextureGuids, isInputAssetType, normalizeInputAssetPayload, renderEffectsAssetGuids } from "@babylonslate/core";
 import {
   collectExportReachability,
   exportGame,
@@ -270,6 +270,7 @@ export async function collectAndExportGame(
     startupSceneGuid: params.startupSceneGuid,
     gameInstanceClass: params.gameInstanceClass,
     audioMixerGuid: params.audioMixerGuid,
+    renderAssetGuids: renderEffectsAssetGuids(params.renderSettings.effects),
     assets: params.assets,
     pluginEnabledGuids,
     parentOf: params.parentOf,

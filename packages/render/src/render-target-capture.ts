@@ -19,6 +19,8 @@ import { renderTargetCaptureDrawing } from "./render-target-capture-state";
 import { isEditorHelperMesh } from "./helper-mesh";
 import { particleMaterialForSystem } from "./node-material-particles";
 import { admittedSceneMeshes, admittedSceneParticles } from "./scene-stream-admission";
+import { acquireAuthoredMaterialVariant, type AuthoredMaterialVariant } from "./material-compiler";
+import { retireOwnedEffect } from "./owned-effect-retirement";
 
 /**
  * Whether a mesh may appear in a Render Target Capture: world geometry only,
@@ -33,8 +35,6 @@ const controllers = new WeakMap<Scene, RenderTargetCaptures>();
 const drawing = renderTargetCaptureDrawing;
 
 class CaptureTexture extends Texture {
-  /** Render Target this wrapper publishes, from its Render Target Texture asset. */
-  renderTargetGuid: string | null = null;
   constructor(scene: Scene, name: string) {
     super(null, scene, true, false, Texture.NEAREST_SAMPLINGMODE);
     this.name = name;
@@ -55,22 +55,6 @@ class CaptureTexture extends Texture {
     this.gammaSpace = gammaSpace;
     return changed;
   }
-}
-
-/**
- * Whether a mesh's material samples `renderTargetGuid`'s own output through a
- * Render Target Texture of the mesh's scene. Once that output is published, a
- * Scene Color capture into the target leaves such a mesh out because it never
- * reads the attachment it writes; the editor capture preview always does.
- */
-export function samplesRenderTargetOutput(mesh: AbstractMesh, renderTargetGuid: string): boolean {
-  const material = mesh.material;
-  if (!material) return false;
-  const scene = mesh.getScene();
-  for (const texture of material.getActiveTextures()) {
-    if (texture instanceof CaptureTexture && texture.renderTargetGuid === renderTargetGuid && texture.getScene() === scene) return true;
-  }
-  return false;
 }
 
 class CaptureRenderTarget extends RenderTargetTexture {
@@ -100,23 +84,26 @@ type Capture = {
   fallback?: Matrix;
   requested: boolean;
 };
-type Target = {
+type CaptureBuffer = { texture: CaptureRenderTarget; lease: ManagedRenderLease };
+type Target = CaptureBuffer & {
   key: string;
   definition: RenderTargetPayload;
-  texture: CaptureRenderTarget;
+  /** Allocated only after a capture needs to sample its published attachment. */
+  spare?: CaptureBuffer;
   owner: string;
   depth?: NodeMaterial;
   normals?: NodeMaterial;
-  normalMaterials: Map<Material, { material: NodeMaterial; mask: Texture | null; uvIndex: number }>;
+  normalMaterials: Map<Material, CaptureMaterial>;
   normalSlots: Map<AbstractMesh, MultiMaterial>;
+  materialRetirement: Promise<void>;
   usedNormalSources: Set<Material>;
-  lease: ManagedRenderLease;
   overrides: Set<AbstractMesh>;
   pendingOverrides: Set<AbstractMesh>;
   meshes: AbstractMesh[];
   particles: IParticleSystem[];
   published: boolean;
 };
+type CaptureMaterial = { material: NodeMaterial; mask: Texture | null; uvIndex: number; authored?: AuthoredMaterialVariant };
 
 /** One scene owns its captures and outputs. Materials only borrow ordinary
  * textures, so sampling cannot enqueue RTTs or recursively render the scene. */
@@ -246,23 +233,12 @@ export class RenderTargetCaptures {
       capture.camera.rotationQuaternion!.copyFrom(this.rotation);
       const target = this.ensureTarget(guid, definition, actorId, capture.camera);
       if (!target) continue;
-      if (!target.depth && !target.normals) target.texture.clearColor = this.scene.clearColor;
       const meshes = this.renderList(capture, target);
-      target.texture.renderList = meshes;
       // Even with renderParticles=false Babylon probes particleSystemList
       // during readiness. Keep non-color passes independent of particles.
-      const attachment = target.texture.getInternalTexture();
       let particleCount = 0;
       if (!target.depth && !target.normals) {
         for (const system of admittedSceneParticles(this.scene) ?? this.scene.particleSystems) {
-          let samplesAttachment = system.particleTexture?.getInternalTexture() === attachment;
-          if (!samplesAttachment) {
-            const activeTextures = particleMaterialForSystem(system)?.getActiveTextures();
-            if (activeTextures) for (const texture of activeTextures) {
-              if (texture.getInternalTexture() === attachment) { samplesAttachment = true; break; }
-            }
-          }
-          if (samplesAttachment) continue;
           if (capture.settings.captureOnlyActors) {
             const emitter = system.emitter;
             if (!emitter || !("parent" in emitter) || !capture.includeIds.has(this.ownerOf(emitter as Node) ?? "")) continue;
@@ -271,7 +247,18 @@ export class RenderTargetCaptures {
         }
       }
       target.particles.length = particleCount;
-      target.texture.particleSystemList = target.particles;
+      if (!target.depth && !target.normals && !target.spare && this.samplesAttachment(target, target.texture)) {
+        target.spare = this.createBuffer(`${guid}:history`, definition, capture.camera);
+        // Keep the previous image and pending manual request if admission fails.
+        if (!target.spare) continue;
+      }
+      const destination = target.spare?.texture ?? target.texture;
+      // Public wrappers read the completed front buffer. Fail closed for a
+      // foreign alias of the back buffer rather than submitting GPU feedback.
+      if (target.spare && this.samplesAttachment(target, destination)) continue;
+      if (!target.depth && !target.normals) destination.clearColor = this.scene.clearColor;
+      destination.renderList = meshes;
+      destination.particleSystemList = target.particles;
       if (target.normals || target.depth) {
         target.pendingOverrides.clear();
         for (const mesh of meshes) target.pendingOverrides.add(mesh);
@@ -288,12 +275,20 @@ export class RenderTargetCaptures {
         }
         for (const [source, material] of target.normalMaterials) if (!target.usedNormalSources.has(source)) {
           target.normalMaterials.delete(source);
-          material.material.dispose(false, false);
+          this.retireCaptureMaterial(target, material);
         }
       }
-      if (!this.draw(target)) continue;
+      if (!this.draw(target, destination)) continue;
       capture.requested = false;
-      if (!target.published) { target.published = true; this.publishTextures(); }
+      const wasPublished = target.published;
+      if (target.spare) {
+        const previous = { texture: target.texture, lease: target.lease };
+        target.texture = target.spare.texture;
+        target.lease = target.spare.lease;
+        target.spare = previous;
+      }
+      target.published = true;
+      if (!wasPublished || target.spare) this.publishTextures(wasPublished);
     }
   }
   private createCamera(actorId: string): UniversalCamera {
@@ -314,6 +309,29 @@ export class RenderTargetCaptures {
     const key = this.targetKey(definition, owner);
     if (previous?.key === key) { previous.definition = definition; return previous; }
     if (previous) this.retire(guid);
+    const buffer = this.createBuffer(guid, definition, camera);
+    if (!buffer) return undefined;
+    let normals: NodeMaterial | undefined;
+    let depth: NodeMaterial | undefined;
+    try {
+      if (definition.mode === "DepthPass") depth = createRenderTargetDepthMaterial(this.scene);
+      if (definition.mode === "WorldNormal") normals = createRenderTargetNormalMaterial(this.scene);
+      const target: Target = {
+        key, definition, ...buffer, owner, depth, normals,
+        normalMaterials: new Map(), normalSlots: new Map(), usedNormalSources: new Set(), materialRetirement: Promise.resolve(),
+        overrides: new Set(), pendingOverrides: new Set(), meshes: [], particles: [], published: false,
+      };
+      this.targets.set(guid, target);
+      return target;
+    } catch (error) {
+      depth?.dispose();
+      normals?.dispose();
+      buffer.texture.dispose();
+      buffer.lease.release();
+      throw error;
+    }
+  }
+  private createBuffer(guid: string, definition: RenderTargetPayload, camera: UniversalCamera): CaptureBuffer | undefined {
     const { width, height, mode } = normalizeRenderTargetPayload(definition);
     const engine = this.scene.getEngine();
     if (width > engine.getCaps().maxTextureSize || height > engine.getCaps().maxTextureSize) return undefined;
@@ -326,9 +344,7 @@ export class RenderTargetCaptures {
       renderTargetAllocationBytes({ width, height, format: Constants.TEXTUREFORMAT_DEPTH32FLOAT_STENCIL8, renderbuffer: true });
     const lease = beginManagedRenderAllocation(engine, bytes);
     if (!lease) return undefined;
-    let texture: RenderTargetTexture | undefined;
-    let normals: NodeMaterial | undefined;
-    let depth: NodeMaterial | undefined;
+    let texture: CaptureRenderTarget | undefined;
     try {
       const captureTexture = new CaptureRenderTarget(`renderTarget:${guid}`, { width, height }, this.scene, {
         generateMipMaps: false, doNotChangeAspectRatio: false, type, format,
@@ -345,23 +361,24 @@ export class RenderTargetCaptures {
       texture.renderSprites = false;
       texture.noPrePassRenderer = true;
       texture.clearColor = mode === "SceneColor" ? this.scene.clearColor.clone() : mode === "DepthPass" ? new Color4(1, 0, 0, 1) : new Color4(0, 0, 0, 0);
-      if (mode === "DepthPass") depth = createRenderTargetDepthMaterial(this.scene);
-      if (mode === "WorldNormal") normals = createRenderTargetNormalMaterial(this.scene);
       lease.commit(managedRenderTargetResources(texture.renderTarget!, { colorCategory: mode === "SceneColor" ? "sceneColor" : "geometry" }));
-      const target: Target = {
-        key, definition, texture: captureTexture, owner, depth, normals, lease,
-        normalMaterials: new Map(), normalSlots: new Map(), usedNormalSources: new Set(),
-        overrides: new Set(), pendingOverrides: new Set(), meshes: [], particles: [], published: false,
-      };
-      this.targets.set(guid, target);
-      return target;
+      return { texture, lease };
     } catch (error) {
-      depth?.dispose();
-      normals?.dispose();
       texture?.dispose();
       lease.release();
       throw error;
     }
+  }
+  private samplesAttachment(target: Target, destination: CaptureRenderTarget): boolean {
+    const attachment = destination.getInternalTexture();
+    for (const mesh of target.meshes) {
+      if (mesh.material?.getActiveTextures().some((texture) => texture.getInternalTexture() === attachment)) return true;
+    }
+    for (const system of target.particles) {
+      if (system.particleTexture?.getInternalTexture() === attachment ||
+        particleMaterialForSystem(system)?.getActiveTextures().some((texture) => texture.getInternalTexture() === attachment)) return true;
+    }
+    return false;
   }
   private renderList(capture: Capture, target: Target): AbstractMesh[] {
     if (capture.settings.captureOnlyActors && this.rootsDirty) {
@@ -373,15 +390,14 @@ export class RenderTargetCaptures {
       this.rootsDirty = false;
     }
     const meshes = admittedSceneMeshes(this.scene) ?? this.scene.meshes;
-    const internal = target.texture.getInternalTexture();
     let count = 0;
     for (const mesh of meshes) {
-      if (this.isEligible(capture, target, internal, mesh)) target.meshes[count++] = mesh;
+      if (this.isEligible(capture, target, mesh)) target.meshes[count++] = mesh;
     }
     target.meshes.length = count;
     return target.meshes;
   }
-  private isEligible(capture: Capture, target: Target, internal: InternalTexture | null, mesh: AbstractMesh): boolean {
+  private isEligible(capture: Capture, target: Target, mesh: AbstractMesh): boolean {
     if (mesh.isDisposed() || !mesh.isEnabled() || !mesh.isVisible || mesh.visibility <= 0 || mesh.getTotalVertices() === 0 || !(mesh.layerMask & capture.camera.layerMask)) return false;
     if (!isRenderTargetCaptureCandidate(mesh)) return false;
     if (capture.settings.captureOnlyActors) {
@@ -397,10 +413,6 @@ export class RenderTargetCaptures {
         }
       } else opaque = !mesh.material.needAlphaBlendingForMesh(mesh) && (!target.depth || !mesh.material.disableDepthWrite);
       if (!opaque) return false;
-    }
-    // Scene color must never read the same attachment it is writing.
-    if (!target.depth && !target.normals && mesh.material) {
-      for (const texture of mesh.material.getActiveTextures()) if (texture.getInternalTexture() === internal) return false;
     }
     return true;
   }
@@ -446,10 +458,32 @@ export class RenderTargetCaptures {
       existing.material.cullBackFaces = source.cullBackFaces;
       return existing.material;
     }
-    existing?.material.dispose(false, false);
-    const material = target.depth ? createRenderTargetDepthMaterial(this.scene, source) : createRenderTargetNormalMaterial(this.scene, source);
-    target.normalMaterials.set(source, { material, mask, uvIndex });
+    if (existing) this.retireCaptureMaterial(target, existing);
+    const authored = acquireAuthoredMaterialVariant(source, target.depth ? "captureDepth" : "captureNormal");
+    const material = authored?.compiled.material ?? (target.depth ? createRenderTargetDepthMaterial(this.scene, source) : createRenderTargetNormalMaterial(this.scene, source));
+    material.backFaceCulling = source.backFaceCulling;
+    material.cullBackFaces = source.cullBackFaces;
+    target.normalMaterials.set(source, { material, mask, uvIndex, authored });
     return material;
+  }
+  private retireCaptureMaterial(target: Target, entry: CaptureMaterial): void {
+    if (!entry.authored) { entry.material.dispose(false, false); return; }
+    // The RTT owns pass wrappers; the compiled variant can be shared by other
+    // captures. Release this pass's references before releasing its variant lease.
+    // A source replacement is uncommon; retiring all this target's wrappers also
+    // handles mixed slots whose source-to-wrapper association just changed.
+    const pending: Promise<void>[] = [];
+    for (const mesh of this.scene.meshes) for (const subMesh of mesh.subMeshes ?? []) {
+      const wrapper = subMesh._getDrawWrapper(target.texture.renderPassId);
+      if (!wrapper) continue;
+      subMesh._removeDrawWrapper(target.texture.renderPassId, false);
+      if (wrapper.effect) subMesh.getRenderingMesh().geometry?._releaseVertexArrayObject(wrapper.effect);
+      pending.push(retireOwnedEffect(wrapper.effect, () => wrapper.dispose(true)).released);
+    }
+    target.materialRetirement = Promise.all([target.materialRetirement, ...pending]).then(() => entry.authored!.release());
+    void target.materialRetirement.catch((error: unknown) => {
+      console.warn(`[render] Capture material is retained until native release: ${String(error)}`);
+    });
   }
   private ownerOf(mesh: Node): string | undefined {
     for (let node: Node | null = mesh; node; node = node.parent) {
@@ -458,7 +492,7 @@ export class RenderTargetCaptures {
     }
     return undefined;
   }
-  private draw(target: Target): boolean {
+  private draw(target: Target, destination: CaptureRenderTarget): boolean {
     const scene = this.scene;
     const camera = scene.activeCamera;
     const cameras = scene.activeCameras;
@@ -490,7 +524,7 @@ export class RenderTargetCaptures {
       // Like Babylon's ObjectRenderer, avoid the setter's scene-wide shader
       // invalidation; the capture has its own material render-pass defines.
       if (!target.depth && !target.normals) imageProcessing._applyByPostProcess = false;
-      return this.drawReady(target);
+      return this.drawReady(destination);
     } finally {
       try {
         imageProcessing._applyByPostProcess = applyByPostProcess;
@@ -511,24 +545,24 @@ export class RenderTargetCaptures {
       }
     }
   }
-  private drawReady(target: Target): boolean {
+  private drawReady(destination: CaptureRenderTarget): boolean {
     let ready = false;
     // Readiness initializes the native renderer and may draw clustered-light
     // targets, so it needs the same framebuffer/state protection as the draw.
-    drawBorrowedTarget(this.scene, target.texture, () => {
+    drawBorrowedTarget(this.scene, destination, () => {
       const engine = this.scene.getEngine();
       engine.setAlphaMode(Constants.ALPHA_DISABLE);
       engine.setDepthBuffer(true);
       engine.setDepthWrite(true);
       engine.setColorWrite(true);
-      ready = target.texture.isReadyForRendering();
-      if (ready) target.texture.renderPrepared();
+      ready = destination.isReadyForRendering();
+      if (ready) destination.renderPrepared();
     }, {
       restoreAlpha: true, wrapDrawFailure: false, message: "Render target capture failed.",
     });
     return ready;
   }
-  private publishTextures(): void {
+  private publishTextures(rebindOnly = false): void {
     if (!this.textures.size) return;
     if (!this.fallback) {
       const lease = beginManagedRenderAllocation(this.scene.getEngine(), 4);
@@ -544,16 +578,35 @@ export class RenderTargetCaptures {
     const changed = new Set<CaptureTexture>();
     for (const [guid, texture] of this.textures) {
       const source = this.textureDefinitions.get(guid)?.renderTargetGuid;
-      texture.renderTargetGuid = source ?? null;
       const target = source ? this.targets.get(source) : undefined;
       const gammaSpace = !!source && this.definitions.get(source)?.mode === "SceneColor";
       if (texture.bind(target?.published ? target.texture.getInternalTexture()! : fallback, gammaSpace)) changed.add(texture);
     }
     if (!changed.size) return;
-    // SceneLayer materials share the world's output. Invalidate their defines
-    // and frozen bindings when the attachment or its color/data contract changes.
-    for (const scene of this.consumerScenes.keys()) for (const material of scene.materials)
-      if (material.getActiveTextures().some((texture) => changed.has(texture as CaptureTexture))) material.markDirty(true);
+    for (const scene of this.consumerScenes.keys()) {
+      const rebound = new Set<Material>();
+      for (const material of scene.materials) {
+        if (!material.getActiveTextures().some((texture) => changed.has(texture as CaptureTexture))) continue;
+        // Mode/size changes still invalidate defines. A history swap keeps the
+        // shader contract and only refreshes frozen material texture bindings.
+        if (rebindOnly) rebound.add(material);
+        else material.markDirty(true);
+      }
+      if (!rebound.size) continue;
+      scene.resetCachedMaterial();
+      // WebGL has no material contexts. Resolve each pass/slot explicitly so
+      // unrelated frozen materials retain their bindings on both backends.
+      for (const mesh of scene.meshes) for (const subMesh of mesh.subMeshes ?? []) {
+        const renderingMesh = subMesh.getRenderingMesh();
+        for (let pass = 0; pass < subMesh._drawWrappers.length; pass++) {
+          const wrapper = subMesh._drawWrappers[pass];
+          if (!wrapper) continue;
+          const root = renderingMesh.getMaterialForRenderPass(pass) ?? renderingMesh.material;
+          const material = root instanceof MultiMaterial ? root.getSubMaterial(subMesh.materialIndex) : root;
+          if (material && rebound.has(material)) wrapper._forceRebindOnNextCall = true;
+        }
+      }
+    }
   }
   private retire(guid: string): void {
     const target = this.targets.get(guid);
@@ -563,10 +616,12 @@ export class RenderTargetCaptures {
     for (const mesh of target.overrides) if (!mesh.isDisposed()) target.texture.setMaterialForRendering(mesh, undefined);
     target.depth?.dispose();
     for (const material of target.normalSlots.values()) material.dispose(false, false);
-    for (const variant of target.normalMaterials.values()) variant.material.dispose(false, false);
+    for (const variant of target.normalMaterials.values()) this.retireCaptureMaterial(target, variant);
     target.normals?.dispose();
     target.texture.dispose();
     target.lease.release();
+    target.spare?.texture.dispose();
+    target.spare?.lease.release();
   }
   clear(): void {
     for (const guid of [...this.targets.keys()]) this.retire(guid);

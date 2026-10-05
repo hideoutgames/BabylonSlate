@@ -314,7 +314,11 @@ not author:
   WPO read the undisplaced vertex; fragment-only World Position nodes compile
   afterwards and see the displaced position. One World Position node wired into
   both keeps the pre-offset value — duplicate the node if you need both. Clip
-  and PBR lighting use the displaced position. Displacement does not inflate
+  and PBR lighting use the displaced position. Authored shadow maps, outlines,
+  and Render Target Depth Pass / World Normal captures retain the same WPO
+  and masked alpha-clip graph, including parameter edits and resets. World Normal
+  captures keep their geometry-normal contract rather than evaluating normal maps.
+  Displacement does not inflate
   the mesh AABB, so large waves can cull early; authors recompute normals on
   the **Normal** channel when they need them.
 - **Post process**: the `position2d` fullscreen quad, its vertex output, and the
@@ -571,6 +575,10 @@ Material preview resolves Texture chunks the same way Play does: preload
 surfaces as `material.missingTexture` instead of a sampler-less black
 preview. Editor validation also receives `textureExists` from the asset
 registry so Compiler Results can flag a missing Texture before GPU compile.
+RenderTargetTexture samples, including Texture Parameter defaults and Material
+Instance overrides, use an opaque black texture in the Material preview because
+that preview has no scene capture. They do not read image chunks or report a
+missing-texture error. Scene and Play materials continue sampling live captures.
 
 Playwright wires Sample `rgb` → Output `baseColor` without a UV node (and a
 second path Parameter `out` → Sample `texture`) and asserts

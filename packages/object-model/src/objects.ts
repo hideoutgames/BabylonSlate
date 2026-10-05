@@ -5,6 +5,7 @@ import {
   normalizeSceneStreamingProperties,
   type ScenePostProcessEntry,
   SCENE_LAYER_DEFAULT_LAYER_BOUNDS,
+  supportsOverlayVisualStyle,
   type Guid,
   type InputKey,
   type GuidFactory,
@@ -232,6 +233,10 @@ export class ActorComponent extends BObject {
   }
 
   override getVariable(name: string): unknown {
+    if (supportsOverlayVisualStyle(this.classId) && !this.variables.has(name)) {
+      if (name === "opacity") return 1;
+      if (name === "tint") return [1, 1, 1, 1];
+    }
     if ((this.classId !== "MeshComponent" && this.classId !== "DynamicRuntimeMeshComponent") || name !== "materialObject") {
       return super.getVariable(name);
     }

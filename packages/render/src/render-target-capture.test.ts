@@ -5,8 +5,8 @@ import {
 import { afterEach, expect, it, vi } from "vitest";
 import { FloatingOriginCurrentScene } from "@babylonjs/core/Materials/floatingOriginMatrixOverrides";
 import { createDefaultRenderTargetCaptureProperties } from "@babylonslate/core";
-import { RenderTargetCaptures, samplesRenderTargetOutput } from "./render-target-capture";
-import { managedRenderReservations, limitManagedRenderBytes } from "./managed-render-resources";
+import { RenderTargetCaptures } from "./render-target-capture";
+import { beginManagedRenderAllocation, managedRenderReservations, limitManagedRenderBytes } from "./managed-render-resources";
 import { GRID_MESH_NAME, CAMERA_BOUNDS_MESH_NAME } from "./editor-grid";
 import * as normalMaterial from "./render-target-normal-material";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
@@ -14,6 +14,7 @@ import { MaterialLibrary, materialUnavailable } from "./material-library";
 import { bindParticleMaterial } from "./particle-system-factory";
 import { createSceneStreamAdmission, registerSceneStreamParticle } from "./scene-stream-admission";
 import { createSnapshotSceneBinding, retirePlaySlot } from "./snapshot-apply";
+import { acquireAuthoredMaterialVariant } from "./material-compiler";
 
 const engines: NullEngine[] = [];
 afterEach(() => { vi.restoreAllMocks(); for (const engine of engines.splice(0)) engine.dispose(); });
@@ -128,20 +129,96 @@ it("actor filtering is opt-in, includes component descendants, and an empty list
   expect(draws[2]).toEqual([]);
 });
 
-it("excludes a color mesh sampling its own output without excluding unrelated receivers", () => {
-  const { scene, captures, draws } = host();
+it("captures self-sampling meshes from the previous output with bounded buffers and one draw per request", () => {
+  const { scene, captures, draws, engine } = host();
   const output = captures.acquireTexture("texture")!.resource;
   const screen = MeshBuilder.CreatePlane("Screen", {}, scene);
   const material = new StandardMaterial("Screen Material", scene);
   material.emissiveTexture = output; screen.material = material;
   const other = MeshBuilder.CreateBox("Other", {}, scene);
+  const sampled: unknown[] = [];
+  const written: unknown[] = [];
+  const draw = vi.mocked(RenderTargetTexture.prototype.render).getMockImplementation()!;
+  vi.mocked(RenderTargetTexture.prototype.render).mockImplementation(function (this: RenderTargetTexture) {
+    sampled.push(output.getInternalTexture());
+    written.push(this.getInternalTexture());
+    draw.call(this);
+  });
   captures.request("capture"); captures.render();
+  const first = output.getInternalTexture();
+  const firstBytes = managedRenderReservations(engine).reservedBytes;
+  // A completed material keeps its shader state across attachment swaps.
+  const dirty = vi.spyOn(material, "markDirty");
   captures.request("capture"); captures.render();
+  const second = output.getInternalTexture();
+  const bufferedBytes = managedRenderReservations(engine).reservedBytes;
+  expect(second).not.toBe(first);
+  expect(bufferedBytes).toBeGreaterThan(firstBytes);
   expect(draws[1]).toContain(other);
-  expect(draws[1]).not.toContain(screen);
-  // The editor preview's shared rule names the same mesh, for this target only.
-  expect([screen, other].map((mesh) => samplesRenderTargetOutput(mesh, "target"))).toEqual([true, false]);
-  expect(samplesRenderTargetOutput(screen, "another target")).toBe(false);
+  expect(draws[1]).toContain(screen);
+  captures.request("capture"); captures.render();
+  expect(output.getInternalTexture()).toBe(first);
+  expect(sampled.slice(1)).toEqual([first, second]);
+  for (let index = 0; index < written.length; index++) expect(written[index]).not.toBe(sampled[index]);
+  expect(draws).toHaveLength(3);
+  expect(managedRenderReservations(engine).reservedBytes).toBe(bufferedBytes);
+  expect(dirty).not.toHaveBeenCalled();
+  captures.render();
+  expect(draws).toHaveLength(3);
+  expect(output.getInternalTexture()).toBe(first);
+  captures.clear();
+  expect(output.getSize()).toEqual({ width: 1, height: 1 });
+  expect(managedRenderReservations(engine).reservedBytes).toBe(4);
+  captures.dispose();
+  expect(managedRenderReservations(engine).reservedBytes).toBe(0);
+});
+
+it("retains the completed self-capture while its spare buffer is unavailable or not ready", () => {
+  const { scene, captures, engine, draws } = host();
+  const output = captures.acquireTexture("texture")!.resource;
+  const screen = MeshBuilder.CreatePlane("Screen", {}, scene);
+  const material = new StandardMaterial("Screen Material", scene);
+  material.emissiveTexture = output; screen.material = material;
+  captures.request("capture"); captures.render();
+  const first = output.getInternalTexture();
+  const used = managedRenderReservations(engine).reservedBytes;
+  limitManagedRenderBytes(engine, 4096);
+  const blocker = beginManagedRenderAllocation(engine, 4096 - used)!;
+  captures.request("capture"); captures.render();
+  expect(draws).toHaveLength(1);
+  expect(output.getInternalTexture()).toBe(first);
+  expect(managedRenderReservations(engine).reservedBytes).toBe(4096);
+  blocker.release();
+  vi.mocked(RenderTargetTexture.prototype.isReadyForRendering).mockReturnValueOnce(false);
+  captures.render();
+  expect(draws).toHaveLength(1);
+  expect(output.getInternalTexture()).toBe(first);
+  vi.mocked(RenderTargetTexture.prototype.render).mockImplementationOnce(() => { throw new Error("Interrupted capture"); });
+  expect(() => captures.render()).toThrow("Interrupted capture");
+  expect(output.getInternalTexture()).toBe(first);
+  captures.render();
+  expect(draws).toHaveLength(2);
+  expect(output.getInternalTexture()).not.toBe(first);
+});
+
+it("captures another target's output without allocating feedback storage", () => {
+  const { scene, captures, root, settings, engine, draws } = host();
+  captures.setAssets(new Map([
+    ["target", { mode: "SceneColor", width: 16, height: 8 }],
+    ["other", { mode: "SceneColor", width: 16, height: 8 }],
+  ]), new Map([["texture", { renderTargetGuid: "other" }]]));
+  captures.configure("other capture", { ...settings, renderTargetGuid: "other", captureOnlyActors: true, actorIds: [] }, () => root);
+  const screen = MeshBuilder.CreatePlane("Screen", {}, scene);
+  const material = new StandardMaterial("Screen Material", scene);
+  material.emissiveTexture = captures.acquireTexture("texture")!.resource; screen.material = material;
+  captures.request("other capture"); captures.render();
+  captures.request("capture"); captures.render();
+  const used = managedRenderReservations(engine).reservedBytes;
+  captures.request("capture"); captures.render();
+  expect(draws.at(-1)).toContain(screen);
+  expect(managedRenderReservations(engine).reservedBytes).toBe(used);
+  captures.clear();
+  expect(managedRenderReservations(engine).reservedBytes).toBe(4);
 });
 
 it("omits editor grids, camera bounds, debug geometry and pick proxies from world captures", () => {
@@ -237,7 +314,7 @@ it("keeps pending streamed meshes, imports and particles out of parent captures"
   admission.clear();
 });
 
-it("excludes particles sampling the capture attachment and admits a replacement material", async () => {
+it("captures particles sampling the previous capture and admits a replacement material", async () => {
   const { scene, captures, particleDraws } = host();
   const document = createDefaultMaterialDocument("Capture Particles", "particle");
   document.nodes.push({ id: "capture", type: "texture.sample", position: { x: 0, y: 0 }, properties: { textureGuid: "texture" } });
@@ -252,12 +329,11 @@ it("excludes particles sampling the capture attachment and admits a replacement 
     const ordinary = new ParticleSystem("Ordinary Particles", 8, scene);
     await bindParticleMaterial(feedback, feedbackMaterial.material);
 
-    // The first frame samples the independent blank fallback. Publishing the
-    // real output then makes this material unsafe for the next capture.
+    // Both the fallback and the previous completed output are safe to sample.
     captures.request("capture"); captures.render();
     expect(particleDraws[0]).toEqual([feedback, ordinary]);
     captures.request("capture"); captures.render();
-    expect(particleDraws[1]).toEqual([ordinary]);
+    expect(particleDraws[1]).toEqual([feedback, ordinary]);
 
     await bindParticleMaterial(feedback, replacement.material);
     library.release(scene, "feedback");
@@ -319,6 +395,35 @@ it.each(["WorldNormal", "DepthPass"] as const)("filters mixed %s slots per mesh 
   expect(scene.materials).not.toContain(sharedVariant);
   captures.clear();
   expect(scene.multiMaterials).not.toContain(slots);
+});
+
+it.each(["WorldNormal", "DepthPass"] as const)("borrows retained authored %s geometry and releases only its capture lease on replacement", async (mode) => {
+  const { scene, captures, engine } = host();
+  engine.getCaps().textureHalfFloatRender = true;
+  const library = new MaterialLibrary();
+  try {
+    const graph = createDefaultMaterialDocument("Displaced Capture");
+    graph.nodes.find((node) => node.type === "output.surface")!.properties["default:worldPositionOffset"] = [0, 0, 2];
+    const source = library.acquire(scene, "source", graph);
+    if (!source.ok) throw new Error(JSON.stringify(source.diagnostics));
+    expect(await source.ready).toEqual([]);
+    const mesh = MeshBuilder.CreateBox("Authored Caster", {}, scene);
+    mesh.material = source.material;
+    captures.setAssets(new Map([["target", { mode, width: 16, height: 8 }]]));
+    captures.request("capture"); captures.render();
+    const target = scene.textures.find((entry) => entry.name === "renderTarget:target") as RenderTargetTexture;
+    const borrowed = acquireAuthoredMaterialVariant(source.material, mode === "DepthPass" ? "captureDepth" : "captureNormal")!;
+    expect(await borrowed.compiled.ready).toEqual([]);
+    expect(mesh.getMaterialForRenderPass(target.renderPassId)).toBe(borrowed.compiled.material);
+    mesh.material = new StandardMaterial("Replacement", scene);
+    captures.request("capture"); captures.render();
+    expect(mesh.getMaterialForRenderPass(target.renderPassId)).not.toBe(borrowed.compiled.material);
+    await Promise.resolve(); await Promise.resolve();
+    expect(scene.materials).toContain(borrowed.compiled.material);
+    await borrowed.release();
+    expect(scene.materials).not.toContain(borrowed.compiled.material);
+    captures.clear();
+  } finally { library.dispose(); }
 });
 
 it("admits no GPU target or draw when the shared rendering ceiling cannot fit it", () => {

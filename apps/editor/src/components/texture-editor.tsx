@@ -125,6 +125,7 @@ export function TextureDetailsPanel(_props: IDockviewPanelProps) {
 
 function usageLabel(value: string): string {
   if (value === "pixelArt") return "Pixel Art";
+  if (value === "colorGrading") return "Color Grading LUT";
   if (value === "ui") return "UI";
   return value.charAt(0).toUpperCase() + value.slice(1);
 }

@@ -5,6 +5,7 @@ import { onSceneReadinessDirty } from "./scene-perf";
 import type { SharedOutlineView } from "./shared-outline";
 import { flushSceneCables } from "./cable-mesh";
 import { flushDynamicRuntimeMeshes } from "./dynamic-runtime-mesh";
+import { flushSceneLatticeDeformers } from "./lattice-deformer";
 
 class PreparationChanged extends Error {}
 
@@ -118,6 +119,7 @@ export class SceneRenderCoordinator {
       const deadline = performance.now() + 10_000;
       for (;;) {
         check();
+        flushSceneLatticeDeformers(this.scene);
         if (performance.now() >= deadline)
           throw new Error("Scene rendering preparation timed out.");
         const camera = this.scene.activeCamera;
@@ -173,6 +175,7 @@ export class SceneRenderCoordinator {
     if (this.pending) return false;
     const camera = this.scene.activeCamera;
     if (this.disposed || this.scene.isDisposed || !camera) return false;
+    flushSceneLatticeDeformers(this.scene);
     if (!this.graph.sceneStrictlyReady(camera)) {
       this.advanceReadiness(camera);
       return false;
@@ -192,6 +195,7 @@ export class SceneRenderCoordinator {
     const camera = this.scene.activeCamera;
     if (this.disposed || this.scene.isDisposed || !camera)
       return { path: "classic", reason: "Scene is not ready to render.", rendered: false, readyForPresentation: false };
+    flushSceneLatticeDeformers(this.scene);
     if (!this.graph.sceneStrictlyReady(camera)) {
       this.advanceReadiness(camera);
       return { path: "classic", reason: "Scene is not ready to render.", rendered: false, readyForPresentation: false };

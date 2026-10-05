@@ -21,6 +21,7 @@ import {
 } from "@babylonjs/core";
 import { CelMaterial } from "./cel-material";
 import { TextureQualityPlugin } from "./texture-quality";
+import { LatticeDeformerPlugin } from "./lattice-deformer-native";
 
 const compiled = new WeakMap<NodeMaterial, number>();
 const unlit = new WeakSet<Material>();
@@ -44,6 +45,7 @@ const nativePlugins = new Set<unknown>([
   PBRSheenConfiguration,
   PBRSubSurfaceConfiguration,
   TextureQualityPlugin,
+  LatticeDeformerPlugin,
 ]);
 
 function compatible(material: Material): boolean {

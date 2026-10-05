@@ -16,14 +16,17 @@ interface TestDoc {
 class IncrementCommand implements EditCommand<TestDoc> {
   readonly type = "test.increment";
 
-  constructor(readonly amount = 1) {}
+  constructor(
+    readonly amount = 1,
+    readonly byteSize?: number,
+  ) {}
 
   apply(doc: TestDoc): TestDoc {
     return { value: doc.value + this.amount };
   }
 
   invert(): EditCommand<TestDoc> {
-    return new IncrementCommand(-this.amount);
+    return new IncrementCommand(-this.amount, this.byteSize);
   }
 }
 
@@ -182,14 +185,73 @@ describe("EditSession", () => {
     expect(session.canUndo("scene:stale")).toBe(false);
   });
 
-  it("drops document stacks on close", () => {
+  it("resumes a closed document's Undo and Redo when it reopens with the content it closed with", () => {
     const session = new EditSession();
     let doc: TestDoc = { value: 0 };
+    ({ doc } = session.apply("scene:a", doc, new IncrementCommand(1)));
+    ({ doc } = session.apply("scene:a", doc, new IncrementCommand(2)));
+    doc = session.undo("scene:a", doc)!.doc;
 
-    ({ doc } = session.apply("doc-a", doc, new IncrementCommand(1)));
-    expect(session.canUndo("doc-a")).toBe(true);
+    session.closeDocument("scene:a", () => "saved-1");
+    expect(session.reopenDocument("scene:a", () => "saved-1")).toBe(true);
 
-    session.dropDocument("doc-a");
-    expect(session.canUndo("doc-a")).toBe(false);
+    expect(session.redo("scene:a", doc)?.doc).toEqual({ value: 3 });
+    expect(session.undo("scene:a", { value: 3 })?.doc).toEqual({ value: 1 });
+    expect(session.undo("scene:a", { value: 1 })?.doc).toEqual({ value: 0 });
+  });
+
+  it("drops closed history when the document reopens with other content or was never kept", () => {
+    const session = new EditSession();
+    session.apply("scene:a", { value: 0 }, new IncrementCommand(1));
+    session.closeDocument("scene:a", () => "saved-1");
+    expect(session.reopenDocument("scene:a", () => "changed")).toBe(false);
+    expect(session.undo("scene:a", { value: 5 })).toBeNull();
+
+    // History left behind without closeDocument has no recorded content.
+    session.apply("scene:b", { value: 0 }, new IncrementCommand(1));
+    expect(session.reopenDocument("scene:b", () => "anything")).toBe(false);
+    expect(session.canUndo("scene:b")).toBe(false);
+  });
+
+  it("forgets closed history on drop and on clear", () => {
+    const session = new EditSession();
+    session.apply("scene:a", { value: 0 }, new IncrementCommand(1));
+    session.closeDocument("scene:a", () => "saved");
+    session.dropDocument("scene:a");
+    expect(session.reopenDocument("scene:a", () => "saved")).toBe(false);
+
+    session.apply("scene:b", { value: 0 }, new IncrementCommand(1));
+    session.closeDocument("scene:b", () => "saved");
+    session.clear();
+    expect(session.reopenDocument("scene:b", () => "saved")).toBe(false);
+  });
+
+  it("moves a closed document's history with a rename and resumes it under the new id", () => {
+    const session = new EditSession();
+    session.apply("scene:old", { value: 0 }, new IncrementCommand(1));
+    session.closeDocument("scene:old", () => "saved");
+
+    session.rekeyDocument("scene:old", "scene:new");
+
+    expect(session.reopenDocument("scene:old", () => "saved")).toBe(false);
+    expect(session.reopenDocument("scene:new", () => "saved")).toBe(true);
+    expect(session.undo("scene:new", { value: 1 })?.doc).toEqual({ value: 0 });
+  });
+
+  it("evicts closed history oldest close first, counting Redo, once all history exceeds the byte budget", () => {
+    const session = new EditSession({ maxBytes: 100 });
+    // 40 bytes waiting in Redo.
+    const first = session.apply("doc:first", { value: 0 }, new IncrementCommand(1, 40));
+    session.undo("doc:first", first.doc);
+    session.closeDocument("doc:first", () => "first");
+    session.apply("doc:second", { value: 0 }, new IncrementCommand(1, 40));
+    session.closeDocument("doc:second", () => "second");
+
+    // 80 + 30 bytes: only the oldest closed history has to go.
+    session.apply("doc:open", { value: 0 }, new IncrementCommand(1, 30));
+
+    expect(session.reopenDocument("doc:first", () => "first")).toBe(false);
+    expect(session.reopenDocument("doc:second", () => "second")).toBe(true);
+    expect(session.undo("doc:open", { value: 1 })?.doc).toEqual({ value: 0 });
   });
 });

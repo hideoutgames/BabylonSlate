@@ -16,7 +16,8 @@ interface BudgetedEntry<TDoc> extends StackEntry<TDoc> {
 
 /**
  * Per-document undo/redo stack with entry + byte budgets and merge-key
- * coalescing. Closing a document drops the stack (owned by EditSession).
+ * coalescing. EditSession owns its lifetime, including retention after the
+ * document closes.
  */
 export class DocumentEditStack<TDoc> {
   private readonly maxEntries: number;
@@ -46,6 +47,14 @@ export class DocumentEditStack<TDoc> {
     return this.undoStack.reduce(
       (sum, entry) => sum + entry.bytes,
       0,
+    );
+  }
+
+  /** Recorded bytes held by both the Undo and the Redo entries. */
+  get historyBytes(): number {
+    return this.redoStack.reduce(
+      (sum, entry) => sum + entry.bytes,
+      this.undoBytes,
     );
   }
 
