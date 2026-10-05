@@ -583,6 +583,26 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
     ],
   },
   {
+    classId: "DeformerComponent",
+    variables: [
+      { name: "Enabled", typeId: "bool", propertyKey: "enabled" },
+      { name: "Target Mesh Component ID", typeId: "string", propertyKey: "targetMeshComponentId" },
+      { name: "Strength", typeId: "float", propertyKey: "strength" },
+      { name: "Resolution", typeId: "vec3", propertyKey: "resolution" },
+      { name: "Control Point Offsets", typeId: "float", container: "array", propertyKey: "offsets" },
+      { name: "Fit To Mesh", typeId: "bool", propertyKey: "fitToMesh" },
+      { name: "Bounds Min", typeId: "vec3", propertyKey: "boundsMin" },
+      { name: "Bounds Max", typeId: "vec3", propertyKey: "boundsMax" },
+    ],
+    functions: [
+      { name: "Set Control Point Offset", runtime: "setDeformerControlPointOffset",
+        description: "Set one lattice control offset in target-local units. Index is X + Resolution X * (Y + Resolution Y * Z). Tick edits are batched; this changes visual geometry only.",
+        pins: [EXEC_IN, EXEC_OUT, { name: "index", typeId: "int", direction: "in" },
+          { name: "offset", typeId: "vec3", direction: "in" }, { name: "success", typeId: "bool", direction: "out" }] },
+      { name: "Reset Control Points", runtime: "resetDeformerControlPoints", pins: [EXEC_IN, EXEC_OUT] },
+    ],
+  },
+  {
     classId: "CableComponent",
     variables: [
       { name: "Enabled", typeId: "bool", propertyKey: "enabled" },

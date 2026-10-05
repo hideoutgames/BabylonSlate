@@ -44,27 +44,63 @@ export function actorChainWorldTransform(
   return actorWorldTransform(actor, chain);
 }
 
-/** Compose selected actors and their ancestors; default to the whole world. */
+/**
+ * Guid index over `actors` in spawn order where each guid answers its
+ * first-spawned live actor, as `World.findActor` and physics do. Later actors
+ * that share a guid (legacy saves, replacements) are never answered.
+ */
+export function firstSpawnedActorIndex(actors: Iterable<Actor>): Map<string, Actor> {
+  const index = new Map<string, Actor>();
+  for (const actor of actors) {
+    if (!actor.destroyed && !index.has(actor.guid)) index.set(actor.guid, actor);
+  }
+  return index;
+}
+
+/**
+ * Compose selected actors and their ancestors with first-spawned parents;
+ * default to the whole world. Poses are keyed by guid, and each entry is the
+ * guid's first-spawned actor (see `composeActorWorldTransforms`).
+ */
+export function firstSpawnedWorldTransforms(
+  actors: readonly Actor[],
+  selected: Iterable<Actor> = actors,
+): Map<string, Transform> {
+  const index = firstSpawnedActorIndex(actors);
+  return composeActorWorldTransforms((guid) => index.get(guid), selected);
+}
+
+/**
+ * Legacy composition through a last-wins guid index (a later actor replaces an
+ * earlier one with the same guid). Only the water pass still uses it; its
+ * owner keeps that contract. Every other runtime pass resolves first-spawned
+ * parents through `firstSpawnedWorldTransforms` or `composeActorWorldTransforms`.
+ */
 export function actorWorldTransforms(
   actors: readonly Actor[],
   selected: Iterable<Actor> = actors,
 ): Map<string, Transform> {
   const byGuid = new Map<string, Actor>();
   for (const actor of actors) byGuid.set(actor.guid, actor);
-  return composeActorWorldTransforms((guid) => byGuid.get(guid), selected);
+  const resolved = new Map<string, Transform>();
+  composeInto((guid) => byGuid.get(guid), selected, resolved, false);
+  return resolved;
 }
 
 /**
- * Compose selected actors and their ancestors through a caller-owned parent
- * lookup, so a frame that already indexes actors by guid need not rebuild one.
- * The lookup must answer like the last-wins index `actorWorldTransforms` builds.
+ * Compose selected actors and their ancestors through a caller-owned lookup
+ * that answers a guid with its first-spawned live actor (`World.findActor`, or
+ * a frame's `firstSpawnedActorIndex`), so a frame that already indexes actors
+ * need not rebuild one. Poses are keyed by guid and describe the actor the
+ * lookup answers: a selected later duplicate resolves as its guid's
+ * first-spawned actor, so the result never depends on selection order.
  */
 export function composeActorWorldTransforms(
   lookup: (guid: string) => Actor | undefined,
   selected: Iterable<Actor>,
 ): Map<string, Transform> {
   const resolved = new Map<string, Transform>();
-  composeActorWorldTransformsInto(lookup, selected, resolved);
+  composeInto(lookup, selected, resolved, true);
   return resolved;
 }
 
@@ -78,6 +114,15 @@ export function composeActorWorldTransformsInto(
   lookup: (guid: string) => Actor | undefined,
   selected: Iterable<Actor>,
   resolved: Map<string, Transform>,
+): boolean {
+  return composeInto(lookup, selected, resolved, false);
+}
+
+function composeInto(
+  lookup: (guid: string) => Actor | undefined,
+  selected: Iterable<Actor>,
+  resolved: Map<string, Transform>,
+  canonical: boolean,
 ): boolean {
   const resolving = new Set<string>();
   let cyclic = false;
@@ -104,8 +149,82 @@ export function composeActorWorldTransformsInto(
     return world;
   };
 
-  for (const actor of selected) resolve(actor);
+  for (const actor of selected) resolve(canonical ? (lookup(actor.guid) ?? actor) : actor);
   return cyclic;
+}
+
+/** Name (or class) plus guid, as hierarchy warnings identify actors. */
+export function actorLabel(actor: Actor): string {
+  const name = actor.getVariable("name");
+  return `${typeof name === "string" && name.trim() ? name : actor.classId} (${actor.guid})`;
+}
+
+/** A parent link that load-time cycle breaking cleared. */
+export interface BrokenParentLink {
+  child: Actor;
+  parent: Actor;
+}
+
+/**
+ * Break parent cycles that a spawned batch closed among live actors. Parents
+ * resolve through `findActor` (the first-spawned live actor), then through
+ * batch actors still queued for spawn: a load inside a World tick only queues
+ * its actors, which commit after every live actor, in batch order. Applying
+ * parent links in spawn order, the link that closes a cycle is the one of the
+ * cycle's last-spawned member, so that actor's `parentId` is cleared, as a
+ * script write closing the cycle would be refused. `detach` re-roots it
+ * (default: no parent). Every cycle a batch closes passes through one of its
+ * actors, so only their chains are walked. Returns the cleared links in
+ * discovery order.
+ */
+export function breakParentCycles(
+  batch: Iterable<Actor>,
+  findActor: (guid: string) => Actor | undefined,
+  detach: (child: Actor) => void = (child) => child.setVariable("parentId", null),
+): BrokenParentLink[] {
+  const actors = Array.from(batch);
+  const queuedByGuid = new Map<string, Actor>();
+  const queuedOrder = new Map<Actor, number>();
+  for (const actor of actors) {
+    if (actor.destroyed || actor.world) continue;
+    queuedOrder.set(actor, queuedOrder.size);
+    if (!queuedByGuid.has(actor.guid)) queuedByGuid.set(actor.guid, actor);
+  }
+  const resolve = (guid: string) => findActor(guid) ?? queuedByGuid.get(guid);
+  const spawnsAfter = (actor: Actor, other: Actor) => {
+    const queued = queuedOrder.get(actor);
+    const otherQueued = queuedOrder.get(other);
+    if (queued === undefined && otherQueued === undefined) return actor.spawnIndex > other.spawnIndex;
+    return (queued ?? -1) > (otherQueued ?? -1);
+  };
+  const broken: BrokenParentLink[] = [];
+  const settled = new Set<Actor>();
+  const path: Actor[] = [];
+  const onPath = new Map<Actor, number>();
+  for (const start of actors) {
+    if (start.destroyed || settled.has(start)) continue;
+    let current: Actor | undefined = start;
+    while (current && !settled.has(current) && !onPath.has(current)) {
+      onPath.set(current, path.length);
+      path.push(current);
+      const parentId = actorParentGuid(current);
+      current = parentId ? resolve(parentId) : undefined;
+    }
+    const loopStart = current ? onPath.get(current) : undefined;
+    if (loopStart !== undefined) {
+      let closing = path[loopStart]!;
+      for (let index = loopStart + 1; index < path.length; index += 1) {
+        if (spawnsAfter(path[index]!, closing)) closing = path[index]!;
+      }
+      const parent = resolve(actorParentGuid(closing)!)!;
+      detach(closing);
+      broken.push({ child: closing, parent });
+    }
+    for (const actor of path) settled.add(actor);
+    path.length = 0;
+    onPath.clear();
+  }
+  return broken;
 }
 
 export function actorParentGuid(actor: Actor): string | null {

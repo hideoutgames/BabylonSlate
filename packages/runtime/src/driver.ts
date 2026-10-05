@@ -9,7 +9,7 @@ import { MovementWorldSync } from "./movement";
 import { captureComponent, captureLocalTransform, captureProperties } from "./render-targets";
 import { createDefaultRenderTargetCaptureProperties, normalizeRenderTargetPayload, normalizeRenderTargetTexturePayload, type RenderTargetPayload, type RenderTargetTexturePayload } from "@babylonslate/core";
 import { normalizeWaterDefinition, normalizeWaterBody, normalizeWaterRemoval, waterKindForClass, type WaterDefinition } from "@babylonslate/core";
-import { areaRectLightBindings, fogVolumeBindings, outlineBindings } from "@babylonslate/core";
+import { areaRectLightBindings, fogVolumeBindings, outlineBindings, deformerBindings, DEFORMER_PROPERTY_KEYS } from "@babylonslate/core";
 import { ScalabilitySession, type ScalabilityRequest, type ScalabilityResult, type ScalabilitySnapshot, type ScalabilityAcknowledgement, type RenderPath, type RenderProjectSettings } from "@babylonslate/core";
 import type { InputAssetDefinition } from "@babylonslate/core";
 import { inputMappingsFromAssets } from "@babylonslate/input";
@@ -171,7 +171,7 @@ import {
   formatDumpActors,
   formatInspectActor,
 } from "./console-inspect";
-import { actorChainWorldTransform, actorParentGuid, actorWorldTransform, actorWorldTransforms, composeActorWorldTransforms } from "./actor-world-transform";
+import { actorChainWorldTransform, actorLabel, actorParentGuid, breakParentCycles, composeActorWorldTransforms, firstSpawnedActorIndex, firstSpawnedWorldTransforms } from "./actor-world-transform";
 import { SceneLayerLayout } from "./scene-layer-layout";
 import { isOverlayLayoutClass, overlayLayoutKey } from "@babylonslate/core";
 import { composeParentChildTransform } from "./actor-world-transform";
@@ -541,9 +541,14 @@ class InProcessRuntime implements RuntimeDriver {
   private slotByGuid = new Map<string, number>();
   private areaLightSlots = new Set<number>();
   private outlineSlots = new Set<number>();
+  private readonly deformerSnapshots = new Map<number, string>();
+  private readonly dirtyDeformerActors = new Set<Actor>();
+  private deformerRevision = 0;
   private captureSlots = new Set<number>();
   private fogVolumeSlots = new Set<number>();
   private readonly slotOwners = new Map<number, Actor>();
+  /** Each actor's own slot; `slotByGuid` holds a guid's latest-assigned one. */
+  private readonly slotByActor = new WeakMap<Actor, number>();
   private readonly removingActors = new WeakSet<Actor>();
   private readonly componentsWithMaterialAssignment = new WeakSet<ActorComponent>();
   private readonly freeSlots: number[] = [];
@@ -1321,6 +1326,13 @@ class InProcessRuntime implements RuntimeDriver {
         // need immediate collider/query refresh after a property write.
         if (component.classId === "MovementComponent" && propertyName && propertyName !== "radius" && propertyName !== "height") return;
         const slotId = this.slotByGuid.get(owner.guid);
+        if (component.classId === "DeformerComponent") {
+          if (slotId !== undefined) {
+            if (this.processingTick) this.dirtyDeformerActors.add(owner);
+            else this.emitActorDeformers(owner, slotId);
+          }
+          return;
+        }
         if (component.classId === "DynamicRuntimeMeshComponent" &&
           (propertyName === "materialGuid" || propertyName === "enableCollision" || propertyName === "layer" || propertyName === "mask")) {
           if (propertyName === "materialGuid" && slotId !== undefined) this.emitMaterialAssignments([component], slotId, true);
@@ -1583,6 +1595,11 @@ class InProcessRuntime implements RuntimeDriver {
       yield;
     }
     checkpoint();
+    // A streamed actor without a scene parent is a root of its instance.
+    this.breakLoadedParentCycles(stream.actors, (actor) => {
+      actor.setVariable("parentId", stream.actor.guid);
+      actor.transform = composeParentChildTransform(origin, actor.transform);
+    });
     this.scriptHost.bindInterfaceHandlers(stream.scene);
     stream.scene.callOnCreation();
     this.world.flushPending();
@@ -1986,6 +2003,7 @@ class InProcessRuntime implements RuntimeDriver {
       checkpoint();
       yield;
     }
+    this.breakLoadedParentCycles(actors);
     for (const actor of actors) {
       checkpoint();
       this.ensureOverlayDesignPose(actor);
@@ -2977,6 +2995,7 @@ class InProcessRuntime implements RuntimeDriver {
         this.sceneLoadingProgress = (++realized / work.actors.length) * 0.5;
         yield;
       }
+      this.breakLoadedParentCycles(work.actors);
       this.sceneLoadingProgress = 0.5;
     }
     checkpoint();
@@ -3364,39 +3383,25 @@ class InProcessRuntime implements RuntimeDriver {
     return !!rigid && parseRigidBodyProperties(Object.fromEntries(rigid.variables)).motionType === "dynamic";
   }
 
+  /** Current pose through the actor's own chain; parents resolve first-spawned. */
   private navActorWorldPosition(actor: Actor): NavPoint {
-    const actors = this.navFrameActors ?? this.indexActorsByGuid();
-    return actorWorldTransform(actor, actors)?.position ?? actor.transform.position;
-  }
-
-  /** Last-wins guid index over the live world, matching `actorWorldTransforms`. */
-  private indexActorsByGuid(): Map<string, Actor> {
-    const index = new Map<string, Actor>();
-    for (const actor of this.world.getActors()) index.set(actor.guid, actor);
-    return index;
+    return actorChainWorldTransform(actor, (guid) => this.world.findActor(guid))?.position ?? actor.transform.position;
   }
 
   /**
-   * Resolve a parent through the frame index. Actors committed or destroyed
-   * after the index was built fall back to the live world's last-wins answer.
+   * Resolve an actor through the frame index, which answers each guid with its
+   * first-spawned live actor (`World.findActor`). An indexed actor destroyed
+   * since the index was built falls back to the live World's answer.
    */
   private navFrameActor(index: ReadonlyMap<string, Actor>, guid: string): Actor | undefined {
     const indexed = index.get(guid);
     if (indexed && !indexed.destroyed && indexed.world === this.world) return indexed;
-    if (!this.world.findActor(guid)) return undefined;
-    const actors = this.world.getActors();
-    for (let index = actors.length - 1; index >= 0; index -= 1) {
-      if (actors[index]!.guid === guid) return actors[index];
-    }
-    return undefined;
+    return this.world.findActor(guid);
   }
 
   /** Compose NavAgent actors and their ancestors, not the whole world. */
   private navAgentWorldTransforms(index: ReadonlyMap<string, Actor>): Map<string, Transform> {
     const actors = this.world.getActors();
-    // A guid-keyed map is resolution-order dependent when guids repeat; keep
-    // the whole-world pass for that case so crowd inputs stay identical.
-    if (index.size !== actors.length) return actorWorldTransforms(actors);
     const agents = this.navAgentActors;
     agents.length = 0;
     for (const actor of actors) {
@@ -3415,7 +3420,7 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private registerNavAgents(
-    transforms = actorWorldTransforms(this.world.getActors()),
+    transforms = firstSpawnedWorldTransforms(this.world.getActors()),
   ): void {
     if (!this.nav) return;
     for (const actor of this.world.getActors()) {
@@ -3429,6 +3434,8 @@ class InProcessRuntime implements RuntimeDriver {
   ): void {
     if (!this.nav || actor.destroyed || !this.streamActorReady(actor)) return;
     if (this.navAgentByActor.has(actor.guid)) return;
+    // Agents are keyed by guid; only the guid's first-spawned actor owns one.
+    if (this.world.findActor(actor.guid) !== actor) return;
     const component = actor.components.find(
       (entry) => entry.classId === "NavAgentComponent" && !entry.destroyed,
     );
@@ -3461,7 +3468,7 @@ class InProcessRuntime implements RuntimeDriver {
 
   private registerNavObstacles(actors: readonly Actor[] = this.world.getActors(), acquired?: string[]): void {
     if (!this.nav) return;
-    const transforms = actorWorldTransforms(this.world.getActors(), actors);
+    const transforms = firstSpawnedWorldTransforms(this.world.getActors(), actors);
     for (const actor of actors) {
       if (actor.destroyed || !this.streamActorReady(actor)) continue;
       const component = actor.components.find(
@@ -3562,7 +3569,7 @@ class InProcessRuntime implements RuntimeDriver {
     physicalAgents.clear();
     let removed = false;
     for (const [actorGuid, agentId] of this.navAgentByActor) {
-      const actor = actors.get(actorGuid);
+      const actor = this.navFrameActor(actors, actorGuid);
       if (!actor || actor.destroyed || !this.streamActorReady(actor) || !actor.components.some((component) =>
         component.classId === "NavAgentComponent" && !component.destroyed)) {
         this.stopNavAgent(actorGuid);
@@ -3589,7 +3596,7 @@ class InProcessRuntime implements RuntimeDriver {
     }
     this.nav.stepCrowd(this.simulationDt());
     for (const [actorGuid, agentId] of this.navAgentByActor) {
-      const actor = actors.get(actorGuid);
+      const actor = this.navFrameActor(actors, actorGuid);
       if (!actor || actor.destroyed) continue;
       if (physicalAgents.has(actorGuid)) {
         if (this.navTargetByActor.has(actorGuid)) {
@@ -4532,6 +4539,30 @@ class InProcessRuntime implements RuntimeDriver {
     }
   }
 
+  private emitActorDeformers(actor: Actor, slotId: number): void {
+    this.dirtyDeformerActors.delete(actor);
+    const components = actor.components.filter((component) => !component.destroyed &&
+      (component.classId === "DeformerComponent" || component.classId === "MeshComponent"));
+    if (!components.some((component) => component.classId === "DeformerComponent") && !this.deformerSnapshots.has(slotId)) return;
+    const deformers = actor.sceneLayerId ? [] : deformerBindings(actor.guid, components.map((component) => ({
+      id: component.guid, classId: component.classId, ...(component.sourceId ? { sourceId: component.sourceId } : {}),
+      properties: component.classId === "DeformerComponent"
+        ? Object.fromEntries(DEFORMER_PROPERTY_KEYS.map((key) => [key, component.getVariable(key)])) : {},
+    })));
+    const snapshot = JSON.stringify(deformers);
+    if (snapshot === this.deformerSnapshots.get(slotId) || (!deformers.length && !this.deformerSnapshots.has(slotId))) return;
+    this.deformerSnapshots.set(slotId, snapshot);
+    this.emit({ type: "setActorDeformers", slotId, actorId: actor.guid, revision: ++this.deformerRevision, deformers });
+  }
+
+  private flushDeformers(): void {
+    for (const actor of this.dirtyDeformerActors) {
+      const slotId = this.slotByGuid.get(actor.guid);
+      if (!actor.destroyed && slotId !== undefined) this.emitActorDeformers(actor, slotId);
+    }
+    this.dirtyDeformerActors.clear();
+  }
+
   private emitActorFogVolumes(actor: Actor, slotId: number): void {
     const hasVolume = !actor.sceneLayerId && actor.components.some((component) =>
       !component.destroyed && component.classId === "FogVolumeComponent");
@@ -4601,6 +4632,7 @@ class InProcessRuntime implements RuntimeDriver {
     if (this.world.classRegistry.isA(actor.classId, "SceneStreamingActor")) return;
     this.emitRenderTargetCapture(actor, slotId);
     this.emitActorOutlines(actor, slotId);
+    this.emitActorDeformers(actor, slotId);
     this.emitActorFogVolumes(actor, slotId);
     const hasAreaLight = actor.components.some((component) => component.classId === "AreaRectLightComponent" && !component.destroyed);
     if (hasAreaLight || this.areaLightSlots.has(slotId)) {
@@ -4879,6 +4911,23 @@ class InProcessRuntime implements RuntimeDriver {
     );
   }
 
+  /**
+   * Loaded data can hold parent cycles that script writes would refuse. Once a
+   * scene, streamed scene or SceneLayer batch has spawned (before readiness,
+   * Begin Play, physics or the crowd see it), clear the link that closes each
+   * cycle in spawn order and warn once per cleared link. `detach` gives the
+   * actor the parent a root of its batch has (default: none).
+   */
+  private breakLoadedParentCycles(batch: Iterable<Actor>, detach?: (child: Actor) => void): void {
+    for (const { child, parent } of breakParentCycles(batch, (guid) => this.world.findActor(guid), detach)) {
+      this.reportLog(
+        `Loaded parent cycle broken: ${actorLabel(child)} is no longer parented to ${actorLabel(parent)}.`,
+        "warning",
+        "actor",
+      );
+    }
+  }
+
   private realizeActor(actor: Actor, checkpoint: () => void = () => {}): void {
     checkpoint();
     if (this.world.classRegistry.isA(actor.classId, "RenderTargetCapture") && !captureComponent(actor) && !actor.sceneLayerId) {
@@ -4903,7 +4952,9 @@ class InProcessRuntime implements RuntimeDriver {
       for (const owner of [actor, ...actor.components]) this.drainOwnerActions(owner);
     } else this.flushOwnerActions();
     checkpoint();
-    this.navFrameActors?.set(actor.guid, actor);
+    // The frame index answers first-spawned: a new actor enters only when no
+    // earlier live actor already holds its guid.
+    if (this.world.findActor(actor.guid) === actor) this.navFrameActors?.set(actor.guid, actor);
   }
 
   private emitAudioComponents(actor: Actor): void {
@@ -5223,6 +5274,7 @@ class InProcessRuntime implements RuntimeDriver {
     if (slotId === this.nextUnusedSlot) this.nextUnusedSlot += 1;
     this.slotByGuid.set(actor.guid, slotId);
     this.slotOwners.set(slotId, actor);
+    this.slotByActor.set(actor, slotId);
     const stream = this.actorStream.get(actor);
     this.emit({
       type: "spawn",
@@ -5260,9 +5312,12 @@ class InProcessRuntime implements RuntimeDriver {
     }
     this.areaLightSlots.delete(slotId);
     this.outlineSlots.delete(slotId);
+    this.deformerSnapshots.delete(slotId);
+    if (owner) this.dirtyDeformerActors.delete(owner);
     this.captureSlots.delete(slotId);
     this.fogVolumeSlots.delete(slotId);
     if (this.slotByGuid.get(actorGuid) === slotId) this.slotByGuid.delete(actorGuid);
+    if (owner && this.slotByActor.get(owner) === slotId) this.slotByActor.delete(owner);
     this.slotOwners.delete(slotId);
     this.btEvalBySlot.delete(slotId);
     this.lastBtStateJson.delete(slotId);
@@ -5661,10 +5716,10 @@ class InProcessRuntime implements RuntimeDriver {
       this.tilemapAnimationTimeMs += simDt * 1000;
       if (this.hasAnimatedTiles) this.emit({ type: "tilemapAnimationTime", elapsedMs: this.tilemapAnimationTimeMs });
       // Only behaviour trees and the crowd read the frame index.
-      this.navFrameActors = this.nav || this.behaviourTrees.size > 0 ? this.indexActorsByGuid() : null;
+      this.navFrameActors = this.nav || this.behaviourTrees.size > 0 ? firstSpawnedActorIndex(this.world.getActors()) : null;
       try {
         this.tickBehaviourTrees();
-        if (this.nav && this.canTickScene()) this.tickCrowd(this.navFrameActors ?? this.indexActorsByGuid());
+        if (this.nav && this.canTickScene()) this.tickCrowd(this.navFrameActors ?? firstSpawnedActorIndex(this.world.getActors()));
       } finally {
         this.navFrameActors = null;
       }
@@ -5676,6 +5731,7 @@ class InProcessRuntime implements RuntimeDriver {
 
     this.flushPainters();
     this.flushTextAppear();
+    this.flushDeformers();
     const completedFrameId = this.frameId;
     this.frameId += 1;
     if (this.canTickScene() || this.hasReadyLayers()) {
@@ -5953,7 +6009,8 @@ class InProcessRuntime implements RuntimeDriver {
   private writeSnapshot(frameId: number, tickIndex: number, scriptMs: number, physicsMs: number): void {
     const actors = this.world.getActors();
     const buf = this.snapshots.beginWrite();
-    const worldTransforms = actorWorldTransforms(actors);
+    const findActor = (guid: string) => this.world.findActor(guid);
+    const worldTransforms = composeActorWorldTransforms(findActor, actors);
     const cameraActor = this.playCameraActor();
     const cameraPosition = cameraActor ? worldTransforms.get(cameraActor.guid)?.position : undefined;
     if (cameraPosition) {
@@ -5964,7 +6021,11 @@ class InProcessRuntime implements RuntimeDriver {
     for (const actor of actors) {
       // Layout-only anchors must not create fallback visuals from pose snapshots.
       if (isSceneLayerAnchorActor(actor)) continue;
-      const slotId = this.slotByGuid.get(actor.guid);
+      // Only a guid's first-spawned live actor (the one parents, physics and
+      // the crowd resolve) writes its own slot; later duplicates' slots get no
+      // entry, although `slotByGuid` holds the latest-assigned one.
+      if (findActor(actor.guid) !== actor) continue;
+      const slotId = this.slotByActor.get(actor);
       if (slotId === undefined) continue;
       const world = worldTransforms.get(actor.guid);
       if (!world) continue;

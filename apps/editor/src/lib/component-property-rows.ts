@@ -22,6 +22,7 @@ import {
   parseAreaRectLightProperties,
   parseFogVolumeProperties,
   parseOutlineProperties,
+  parseDeformerProperties,
   parseRagdollProperties,
   OUTLINE_WIDTH_LIMITS,
   parseSpringArmProperties,
@@ -67,6 +68,7 @@ import { parseNavMeshActorSettings } from "@babylonslate/navigation";
 import { classParentLookup, classIdFromClassAsset } from "./content-browser-helpers";
 import { physicsConstraintPropertyRows } from "./physics-constraint-property-rows";
 import { cablePropertyRows } from "./cable-property-rows";
+import { deformerPropertyRows } from "./deformer-property-rows";
 import { movementPropertyRows } from "./movement-property-rows";
 import { pathPropertyRows } from "./path-property-rows";
 import { focusPropertyRows } from "./focus-property-rows";
@@ -1517,6 +1519,7 @@ export function componentPropertyRows(
           description: "Show this outline through other geometry. Global CEL outlines remain occluded.", onChange: (next) => update("throughMeshes", next) },
       ];
     }
+    case "DeformerComponent": return deformerPropertyRows(actorId, component, update, context);
     case "SpringArmComponent": {
       const properties = parseSpringArmProperties(component.properties);
       const lagSpeedRow = (key: "locationLagSpeed" | "rotationLagSpeed", label: string, enabled: boolean): PropertyRow => ({
@@ -2194,6 +2197,14 @@ export function applyPrefabPropertyDefaults(
 ): PropertyRow[] {
   if (!prefab) return rows;
   return rows.map((row) => {
+    if (prefab.classId === "DeformerComponent" && row.kind === "vector3") {
+      const index = /-offset-(\d+)$/.exec(row.id)?.[1];
+      if (index !== undefined) {
+        const offsets = parseDeformerProperties(prefab.properties).offsets;
+        const first = Number(index) * 3;
+        return { ...row, defaultValue: [offsets[first] ?? 0, offsets[first + 1] ?? 0, offsets[first + 2] ?? 0] as [number, number, number] };
+      }
+    }
     for (const key of Object.keys(prefab.properties)) {
       if (!row.id.endsWith(`-${key}`)) continue;
       if (prefab.classId === "PhysicsConstraintComponent" && row.kind === "vector3") {

@@ -11,7 +11,11 @@ import App from "./App";
 initializeCapacitorLifecycle();
 initializeCapacitorAudioLifecycle();
 
-if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("overlayLayoutProof")) {
+if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("latticeDeformerCost")) {
+  void import("./testing/lattice-deformer-cost").then(({ runLatticeDeformerCost }) => Object.assign(window, { __latticeDeformerCost: runLatticeDeformerCost }));
+} else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("latticeDeformerProof")) {
+  void import("./testing/lattice-deformer-proof").then(({ runLatticeDeformerProof }) => Object.assign(window, { __latticeDeformerProof: runLatticeDeformerProof }));
+} else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("overlayLayoutProof")) {
   void import("./testing/overlay-layout-proof").then(({ runOverlayLayoutProof }) => Object.assign(window, { __overlayLayoutProof: runOverlayLayoutProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("textMaterialProof")) {
   void import("./testing/text-material-proof").then(({ runTextMaterialProof }) => Object.assign(window, { __textMaterialProof: runTextMaterialProof }));
@@ -40,10 +44,11 @@ if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.se
   import.meta.env.VITE_TEST_MODE === "true" &&
   new URLSearchParams(location.search).has("shadowSelfShadowingProof")
 ) {
-  void import("./testing/shadow-self-shadowing-proof").then(({ runShadowSelfShadowingProof, runNativeShadowProof }) => {
+  void import("./testing/shadow-self-shadowing-proof").then(({ runShadowSelfShadowingProof, runNativeShadowProof, runAuthoredShadowProof }) => {
     Object.assign(window, {
       __babylonslateShadowSelfShadowingProof: runShadowSelfShadowingProof,
       __babylonslateShadowNativeProof: runNativeShadowProof,
+      __babylonslateAuthoredShadowProof: runAuthoredShadowProof,
     });
   });
 } else if (
