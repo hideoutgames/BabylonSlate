@@ -191,7 +191,7 @@ export function CatalogDialog({
         <div className="flex min-h-0 flex-1">
           <nav
             aria-label="Categories"
-            className="catalog-sidebar scroll-fade-bottom flex w-44 shrink-0 flex-col gap-2 overflow-y-auto overscroll-y-contain border-r bg-sidebar p-2"
+            className="catalog-sidebar flex w-44 shrink-0 flex-col gap-2 overflow-y-auto overscroll-y-contain border-r bg-sidebar p-2"
             data-testid={testId ? `${testId}-categories` : undefined}
           >
             {sections.map((section, index) => (
@@ -240,7 +240,7 @@ export function CatalogDialog({
           <div
             ref={bodyRef}
             tabIndex={-1}
-            className="scroll-fade-bottom min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-y-contain outline-none"
+            className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-y-contain outline-none"
             style={{ overflowY: "auto" }}
             data-testid={testId ? `${testId}-body` : undefined}
           >
@@ -248,7 +248,7 @@ export function CatalogDialog({
           </div>
         </div>
         {footer ? (
-          <div className="shrink-0 px-4 pt-3 pb-4">{footer}</div>
+          <div className="shrink-0 border-t bg-muted/40 px-4 py-3">{footer}</div>
         ) : null}
       </DialogContent>
     </Dialog>

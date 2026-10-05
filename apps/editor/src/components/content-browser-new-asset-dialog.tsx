@@ -228,7 +228,7 @@ export function ContentBrowserNewAssetDialog({
               <div
                 ref={bodyRef}
                 tabIndex={-1}
-                className="scroll-fade-bottom min-h-0 flex-1 overflow-y-auto p-4 outline-none"
+                className="min-h-0 flex-1 overflow-y-auto p-4 outline-none"
                 data-testid="new-asset-type"
                 role="radiogroup"
                 aria-label="Asset Type"
@@ -405,7 +405,7 @@ export function ContentBrowserNewAssetDialog({
           ) : null}
         </div>
         {error ? <Alert variant="destructive"><AlertTitle>Could Not Create Asset</AlertTitle><AlertDescription>{error}</AlertDescription></Alert> : null}
-        <div className="flex shrink-0 justify-end gap-2 px-4 pt-3 pb-4">
+        <div className="flex shrink-0 justify-end gap-2 border-t bg-muted/40 px-4 py-3">
           <Button
             type="button"
             variant="outline"
