@@ -480,6 +480,8 @@ export interface WaterTierView {
   sun?: [number, number, number];
   /** A 90 m landscape island whose edges lie 4 m under the water. */
   island?: boolean;
+  /** Keep the island in the water's terrain field but do not draw it, so only water shading shows its edge. */
+  hideIsland?: boolean;
   /** Posts and a buoy crossing the surface. */
   objects?: boolean;
   /** Four extra point lights over the water (seven lights with the preview's own). */
@@ -498,14 +500,19 @@ const TIER_VIEWS: readonly WaterTierView[] = (["realistic", "stylized"] as const
   },
 ]);
 
-/** Pixels read back from either backend as a PNG data URL (a WebGPU canvas cannot be re-encoded after presenting). */
+/**
+ * Pixels read back from either backend as a PNG data URL (a WebGPU canvas cannot be re-encoded after presenting).
+ * WebGL reads rows bottom-up; a WebGPU canvas in its preferred BGRA format reads blue first.
+ */
 function pixelsToPng(pixels: ArrayLike<number>, width: number, height: number, backend: "webgl2" | "webgpu"): string {
   const out = document.createElement("canvas");
   out.width = width; out.height = height;
   const context = out.getContext("2d")!, image = context.createImageData(width, height), stride = width * 4;
+  const gpu = (navigator as { gpu?: { getPreferredCanvasFormat?: () => string } }).gpu;
+  const swap = backend === "webgpu" && gpu?.getPreferredCanvasFormat?.() === "bgra8unorm" ? [2, 0, -2, 0] : [0, 0, 0, 0];
   for (let row = 0; row < height; row++) {
     const source = (backend === "webgl2" ? height - 1 - row : row) * stride;
-    for (let i = 0; i < stride; i++) image.data[row * stride + i] = pixels[source + i]!;
+    for (let i = 0; i < stride; i++) image.data[row * stride + i] = pixels[source + i + swap[i % 4]!]!;
   }
   context.putImageData(image, 0, 0);
   return out.toDataURL("image/png");
@@ -569,7 +576,11 @@ export async function runWaterTierProof(backend: "webgl2" | "webgpu", options: {
   try {
     for (const view of options.views ?? TIER_VIEWS) {
       const extras: Array<{ dispose(): void }> = [];
-      if (view.island) extras.push(createLandscapeMesh(scene, "tier-island", island));
+      if (view.island) {
+        const landscape = createLandscapeMesh(scene, "tier-island", island);
+        if (view.hideIsland) for (const chunk of landscape.getChildMeshes()) chunk.isVisible = false;
+        extras.push(landscape);
+      }
       if (view.objects) {
         const posts = [[-3, 0, 2], [2.5, 0, -1], [6, 0, 4]].map(([x, y, z], i) => {
           const post = MeshBuilder.CreateBox(`tier-post-${i}`, { width: 0.8, height: 5, depth: 0.8 }, scene);
@@ -587,6 +598,8 @@ export async function runWaterTierProof(backend: "webgl2" | "webgpu", options: {
           return lamp;
         }));
       }
+      // Placement settles before the water builds its contact field.
+      for (const extra of extras) if (extra instanceof AbstractMesh) extra.computeWorldMatrix(true);
       sun.direction = view.sun ? new Vector3(...view.sun) : defaultSun.clone();
       camera.mode = Camera.PERSPECTIVE_CAMERA;
       camera.setTarget(new Vector3(...(view.camera.target ?? [0, 0, 0])), false, false, true);

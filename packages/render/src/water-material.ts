@@ -63,6 +63,11 @@ const Q = WATER_QUALITY_DEFINE;
 const CHOP_TIER = [0, 0, 1, 1, 2, 2] as const;
 const CAPILLARY_TIER = [1, 2, 2] as const;
 const STYLIZED_CHOP_TIER = [0, 1, 2] as const;
+/**
+ * Radians each realistic chop octave's phase drifts across the large and the medium anti-tiling noise: its crests
+ * wander instead of running straight, so crossing octaves never form a regular lattice of bumps.
+ */
+const CHOP_PHASE_DRIFT = [[3.1, 2.2], [-4.3, -2.5], [5.2, 1.8], [-6.1, -2.0], [7.4, 1.4], [-8.2, -1.6]] as const;
 /** Low evaluates only this many swell components (the largest slopes) in the fragment shader; the vertex shader keeps all. */
 const LOW_SWELL_COMPONENTS = 3;
 const SWELL_DIRECTION = Array.from({ length: WATER_WAVE_MAX_COMPONENTS }, (_, i) => `slateWaterSwellDir${i}`);
@@ -155,11 +160,13 @@ swLost += U.slateWaterSea.z;` : ""}`);
   const detail = realistic
     ? DETAIL_OCTAVES.map(([, , slope], i) => fromTier(CHOP_TIER[i]!, `
 vec4 swOC${i} = U.${CHOP_UNIFORMS[i]};
-float swOX${i} = swOC${i}.z * dot(swOC${i}.xy, swChop) + swOC${i}.w;
+// The large noise drifts each octave's phase by its own amount, so crossing octaves never lock into a lattice.
+float swOX${i} = swOC${i}.z * dot(swOC${i}.xy, swChop) + swOC${i}.w + swLarge * ${f(CHOP_PHASE_DRIFT[i]![0])} + swMedium * ${f(CHOP_PHASE_DRIFT[i]![1])};
 float swOW${i} = exp(sin(swOX${i}) - 1.0);
 float swOCs${i} = cos(swOX${i});${footprintFade("swOFd", i, `swOC${i}.z`, `swOC${i}.xy`)}
-// Anti-tiling: each octave's strength drifts with the shared noises (longer octaves with the larger one).
-float swOA${i} = ${f(slope)} * swOFd${i} * (0.55 + 0.9 * mix(swMedium, swLarge, ${f(1 - i / (DETAIL_OCTAVES.length - 1))}));
+// Anti-tiling: each octave's strength drifts with the shared noises (longer octaves with the larger one), and the two
+// octaves of each pair drift in opposition, so where one crossing direction dominates the other fades: no lattice.
+float swOA${i} = ${f(slope)} * swOFd${i} * (0.25 + 1.5 * ${i % 2 === 0 ? "" : "(1.0 - "}smoothstep(0.3, 0.7, mix(swMedium, swLarge, ${f(1 - Math.floor(i / 2) / 2)}))${i % 2 === 0 ? "" : ")"});
 swDetail += swOC${i}.xy * (swOW${i} * swOCs${i} * swOA${i});
 swChopH += (swOW${i} - 0.37) * swOA${i};
 swChop -= swOC${i}.xy * (swOW${i} * swOCs${i} * 0.3 / swOC${i}.z);
@@ -241,10 +248,10 @@ float swFine = swMedium;
 float swGust = swLarge;`)}
 // Anti-tiling: a bounded warp bends the chop domain, so crests curve and cross differently across the sea. (A rotation
 // about the world origin would compress the chop without limit far from it.)
-vec2 swChop = swFlowed + vec2(swLarge - 0.5, swGust - 0.5) * vec2(2.4, 9.0);${realistic ? fromTier(2, `
-// Close up, bend it gently at a finer scale too, so crossing octaves never settle into a regular quilt in the sun's
-// reflection; the bend fades before its noise would alias.
-swChop += vec2(swMedium - 0.5, swFine - 0.5) * ((1.0 - smoothstep(0.3, 1.0, swFoot)) * 0.6);`) : ""}
+vec2 swChop = swFlowed + vec2(swLarge - 0.5, swGust - 0.5) * vec2(2.4, 9.0);${realistic ? fromTier(1, `
+// Bend it at a finer scale too, so crossing octaves never settle into a regular quilt in the sun's reflection; the
+// fine part fades before its noise would alias.
+swChop += vec2(swMedium - 0.5, (swFine - 0.5) * (1.0 - smoothstep(0.3, 1.0, swFoot))) * 0.6;`) : ""}
 vec2 swDetail = vec2(0.0);
 float swChopH = 0.0;
 ${detail}${realistic ? fromTier(1, `
@@ -294,9 +301,10 @@ float swCrest = swHeight / max(0.001, U.slateWaterWaves.x);
 // swell and small lake waves never break) and by how much of the swell is still resolved, so distant filtered swell
 // never breaks in regular rows.
 float swFoldN = swFold / U.slateWaterSea.y;
-// Jacobian foam: Gerstner crests that gather water (det J below 1) break like sharp crests.
-swFoldN = mix(swFoldN, max(swFoldN, (1.0 - swDetJ) / ${f(1 - WATER_JACOBIAN_FLOOR)}), U.slateWaterSwellInfo.y);
-float swRough = smoothstep(0.03, 0.35, swSteep) * smoothstep(0.5, 0.9, swResolved / max(0.0001, swSteep));
+// Jacobian foam: on steep seas, Gerstner crests that gather water (det J below 1) break like sharp crests. Steepness
+// normalizes det J to the sea, so the sea's own slope gates it: small lake waves never foam on every crest.
+swFoldN = mix(swFoldN, max(swFoldN, (1.0 - swDetJ) / ${f(1 - WATER_JACOBIAN_FLOOR)} * smoothstep(0.2, 0.5, swSteep)), U.slateWaterSwellInfo.y);
+float swRough = smoothstep(0.08, 0.5, swSteep) * smoothstep(0.5, 0.9, swResolved / max(0.0001, swSteep));
 vec2 swWindDir = U.slateWaterRipple.zw;
 
 vec3 swL = U.slateWaterSun.xyz;
@@ -358,7 +366,7 @@ vec3 swCol = mix(U.slateWaterShallow.rgb, U.slateWaterDeep.rgb, swTone);
 float swFaceV = clamp(dot(swWaveN, swV), 0.0, 1.0);
 float swCrestLift = clamp(swCrest * 0.5 + 0.5, 0.0, 1.0);
 float swGraze = 1.0 - clamp(swV.y, 0.0, 1.0);
-vec3 swScatterCol = mix(U.slateWaterDeep.rgb, U.slateWaterShallow.rgb, clamp(0.18 + 0.25 * swCrestLift + 0.2 * swGraze * swGraze, 0.0, 0.7));
+vec3 swScatterCol = mix(U.slateWaterDeep.rgb, U.slateWaterShallow.rgb, clamp(0.12 + 0.22 * swCrestLift + 0.18 * swGraze * swGraze, 0.0, 0.6));
 float swPatch = smoothstep(0.3, 0.75, swLarge * 0.6 + swGust * 0.4) * U.slateWaterSwellInfo.z;
 swScatterCol = mix(swScatterCol, U.slateWaterShallow.rgb * vec3(0.85, 1.05, 0.9), swPatch * 0.35);
 float swFaceLit = swFaceV * swFaceV * (0.6 + 0.4 * swCrestLift);
@@ -392,10 +400,10 @@ float swBubbles = 0.6;`)}
 float swLace = smoothstep(0.1, 0.45, swHoles);
 // Spread over 0-1 so a foam density maps evenly to coverage.
 float swFoamTex = smoothstep(0.05, 0.85, swClump * 0.4 + swBlob * 0.25 + swLace * 0.22 + swBubbles * 0.13);`, `
-float swBlob = swClump;
-float swLace = 0.5;
+float swBlob = swNoise(swFoamUv * 3.3 + vec2(1.9, swTime * -0.05));
+float swLace = swBlob;
 float swBubbles = 0.5;
-float swFoamTex = smoothstep(0.1, 0.9, swClump);`)}
+float swFoamTex = smoothstep(0.05, 0.85, swClump * 0.4 + swBlob * 0.45 + 0.08);`)}
 // Shores wash in bands. Whitecaps form where crests steepen (Crest Foam sets coverage) and leave foam trailing on
 // their windward backs, drawn out along the wind.
 float swWashPhase = swBank / swFoamWidth - swTime * 0.45 + swMedium * 1.4;
@@ -407,20 +415,23 @@ float swTrail = 0.0;${ifDefined(crestFoam, `
 float swBack = max(dot(swGradient, swWindDir), 0.0) / max(0.0001, swSteep);${fromTier(2, `
 // Only some crests break at a time: breaking zones drift slowly downwind.
 float swBreakZone = swNoise(swWorld * 0.045 - swWindDir * (swTime * 0.12) + vec2(5.1, 2.7));`, `
-float swBreakZone = swGust;`)}
-float swCapDrive = (swFoldN * 1.8 + swBack * 0.5 + swChopH * 0.8 + (swBreakZone - 0.5) * 0.7 + (swGust - 0.5) * 0.4) * swRough;
+float swBreakZone = 1.0 - swLarge;`)}
+float swCapDrive = (swFoldN * 1.8 + swBack * 0.5 + swChopH * 0.5 + (swBreakZone - 0.5) * 0.7 + (swGust - 0.5) * 0.4) * swRough;
 // Caps keep bubbles and holes at their edges; the densest cores stay solid white.
 swCap = smoothstep(1.0 - U.slateWaterShape.z, 1.5 - U.slateWaterShape.z, swCapDrive) * (0.6 + 0.4 * smoothstep(0.25, 0.65, swClump)) * U.slateWaterTerms.y;
-swCapCore = smoothstep(1.3 - U.slateWaterShape.z, 1.9 - U.slateWaterShape.z, swCapDrive) * U.slateWaterTerms.y;${fromTier(1, `
+swCapCore = smoothstep(1.45 - U.slateWaterShape.z, 2.05 - U.slateWaterShape.z, swCapDrive) * U.slateWaterTerms.y;${fromTier(1, `
 // Trails: soft streaks stretched along the wind, not thin scratches.
 float swTrailTex = swNoise(swWindUv * vec2(0.35, 1.1) + swWarp + vec2(swTime * 0.05, 0.0));
 swTrail = smoothstep(0.75 - U.slateWaterShape.z, 1.2 - U.slateWaterShape.z, swCapDrive + swBack * swRough * 0.8) * smoothstep(0.2, 0.9, swTrailTex) * 0.6 * U.slateWaterTerms.y;`)}`)}
 float swStreak = 0.0;${ifDefined(surfaceFoam, `
 // Wind streaks: long foam lines drawn out along the wind, denser where gusts are strong. Surface Foam sets how much
 // of the sea they cover as well as how thick they are.
-float swStreakNoise = swNoise(swWindUv * vec2(0.05, 1.3) + swWarp * 0.6 + vec2(swLarge * 2.0, 0.0)) * 0.8 + swGust * 0.2;
-float swStreakCut = mix(0.92, 0.5, U.slateWaterSunColor.w);
-swStreak = smoothstep(swStreakCut, swStreakCut + 0.18, swStreakNoise) * (0.35 + 0.65 * U.slateWaterSunColor.w) * (0.5 + 0.7 * swGust) * swCalm;`)}
+vec2 swStreakUv = swWindUv * vec2(0.06, 0.8) + vec2(swLarge * 2.0, (swLarge - 0.5) * 2.5 + (swGust - 0.5) * 5.0) + swWarp * 0.6;
+float swStreakRidge = 1.0 - abs(swNoise(swStreakUv) * 2.0 - 1.0);
+float swStreakCut = mix(0.96, 0.7, U.slateWaterSunColor.w);
+float swStreakAA = fwidth(swStreakRidge) * 1.5 + 0.02;
+float swStreakBreak = smoothstep(0.58 - 0.28 * U.slateWaterSunColor.w, 0.85 - 0.2 * U.slateWaterSunColor.w, swClump * 0.7 + swGust * 0.3);
+swStreak = smoothstep(swStreakCut - swStreakAA, swStreakCut + swStreakAA, swStreakRidge) * swStreakBreak * (0.2 + 0.5 * U.slateWaterSunColor.w) * (0.6 + 0.6 * swGust) * swCalm;`)}
 float swDensity = clamp(max(max(swWash, swCap), max(swTrail, swStreak)), 0.0, 1.0);
 // Thinning foam softens: its holes open gradually.
 float swFoamSoft = 0.1 + 0.25 * (1.0 - swDensity) + fwidth(swFoamTex);${fromTier(2, `
@@ -459,26 +470,30 @@ swScatter += mix(swCol, U.slateWaterFoam.rgb, 0.5) * (swAmb + swSun * max(swL.y,
 // water unlit and carries one analytic sun lobe instead.
 vec3 swReflected = reflect(-swV, normalW);
 float swRL = max(dot(swReflected, swL), 0.0);
-float swSunFres = 0.02 + 0.98 * pow(1.0 - clamp(dot(swV, normalize(swV + swL)), 0.0, 1.0), 5.0);${fromTier(1, `
 vec3 swHalf = normalize(swV + swL);
+float swSunFres = 0.02 + 0.98 * pow(1.0 - clamp(dot(swV, swHalf), 0.0, 1.0), 5.0);${fromTier(1, `
 float swNH = max(dot(swWaveN, swHalf), 0.05);
 float swTan2 = (1.0 - swNH * swNH) / (swNH * swNH);${fromTier(3, `
 // Ultra widens the facet spread by this pixel's own slope variation (Toksvig), so grazing glitter stays sparse.
 vec2 swSlopePx = fwidth(swSlope);
-float swFacetVar = 0.0012 * swChopGain * swChopGain + swSlopeVariance + 0.25 * dot(swSlopePx, swSlopePx);`, `
-float swFacetVar = 0.0012 * swChopGain * swChopGain + swSlopeVariance;`)}
-float swFacetP = exp(-swTan2 / (2.0 * max(swFacetVar, 0.00001))) * smoothstep(0.0003, 0.002, swFacetVar);
-vec2 swGlitUv = swFlowed * (7.0 * U.slateWaterMotion.y);
+float swFacetVar = 0.012 * swChopGain * swChopGain + swSlopeVariance + 0.25 * dot(swSlopePx, swSlopePx);`, `
+float swFacetVar = 0.012 * swChopGain * swChopGain + swSlopeVariance;`)}
+// Wind ripples below the smallest capillary octave (centimetres) always tilt facets; calm water has none.
+float swFacetP = exp(-swTan2 / (2.0 * max(swFacetVar, 0.00001))) * smoothstep(0.0005, 0.003, swFacetVar);
+vec2 swGlitUv = swFlowed * (5.0 * U.slateWaterMotion.y);
 vec2 swGlitId = floor(swGlitUv);
 float swGlitRnd = swHash(swGlitId + vec2(41.0, 13.0));
 vec2 swGlitDelta = fract(swGlitUv) - vec2(0.5) - (vec2(swHash(swGlitId + vec2(3.0, 59.0)), swGlitRnd) - vec2(0.5)) * 0.6;
 // The threshold drifts per cell, so facets flash on and off as the waves move.
 float swGlitOn = step(fract(swGlitRnd * 37.13 + swTime * (0.6 + swGlitRnd)), swFacetP * 0.6);
-float swGlitCore = max(0.0, 1.0 - length(swGlitDelta) * 4.0);
-float swGlitFade = 1.0 - smoothstep(0.2, 0.6, swFoot * 7.0 * U.slateWaterMotion.y);
-vec3 swGlint = min(swSun * (swSunFres * step(0.0, swL.y) * 6.0 * swGlitOn * swGlitCore * swGlitCore * swGlitFade), vec3(6.0));`, `
-float swPathLobe = 0.008 + 0.02 * swChopGain * swChopGain + U.slateWaterOrigin.w * U.slateWaterOrigin.w * 0.5 + 4.0 * swSlopeVariance;
-vec3 swGlint = min(swSun * (swSunFres * step(0.0, swL.y) * 0.1592 * exp((swRL - 1.0) / swPathLobe) / swPathLobe), vec3(6.0));`)}
+float swGlitCore = max(0.0, 1.0 - length(swGlitDelta) * 2.8);
+float swGlitFade = 1.0 - smoothstep(0.25, 0.9, sqrt(length(swFootX) * length(swFootY)) * 5.0 * U.slateWaterMotion.y);
+// A facet mirroring the sun shows the sun's own radiance: far brighter than the sky, so it saturates.
+vec3 swGlint = min(swSun * (swSunFres * step(0.0, swL.y) * 40.0 * swGlitOn * swGlitCore * swGlitCore * swGlitFade), vec3(6.0));`, `
+float swLowNH = max(dot(normalW, swHalf), 0.05);
+float swLowA2 = max(U.slateWaterOrigin.w * U.slateWaterOrigin.w * U.slateWaterOrigin.w * U.slateWaterOrigin.w + 2.0 * swSlopeVariance + 0.0008 * swChopGain * swChopGain, 0.0004);
+float swLowD = exp((swLowNH * swLowNH - 1.0) / (swLowNH * swLowNH * swLowA2)) / (3.14159 * swLowA2 * swLowNH * swLowNH * swLowNH * swLowNH);
+vec3 swGlint = min(swSun * (swSunFres * step(0.0, swL.y) * step(0.0, dot(normalW, swL)) * swLowD / (4.0 * max(swNdotV, 0.1))), vec3(6.0));`)}
 float swSpark = swSparkBase * 3.0 * pow(swRL, 40.0) * (1.0 - swFoam);
 
 // Foam is matte and lit: PBR shades it as albedo, and its roughness and coverage remove the mirror.
@@ -513,16 +528,17 @@ float swFacing = smoothstep(-0.02, 0.02, dot(swSwellNormal, swL) - swL.y);
 swLit *= 0.92 + 0.14 * swFacing;
 float swTop = smoothstep(-0.3, 1.1, swCrest + swChopH * 0.5) * clamp(U.slateWaterLook.w, 0.0, 1.0);
 swLit = mix(swLit, swShallowLit * 1.1, swTop * 0.5);
-// Open-sea colour variation (Color Variation): lighter, greener drifts across deep water and a posterised band on
-// the highest crests.
-float swVariation = U.slateWaterSwellInfo.z;
-float swPatch = smoothstep(0.3, 0.75, swLarge * 0.6 + swGust * 0.4);
-swLit = mix(swLit, mix(swLit, swShallowLit, 0.3), swPatch * swTone * swVariation);
-float swHeightAA = fwidth(swCrest) + 0.02;
-swLit *= mix(1.0, mix(0.9, 1.06, smoothstep(0.25 - swHeightAA, 0.25 + swHeightAA, swCrest)), swVariation);
 // Fresnel rim toward a lighter horizon tint (Reflection Strength).
 float swRim = smoothstep(0.4, 1.0, 1.0 - swNdotV) * U.slateWaterDeep.w * 0.75;
-swLit = mix(swLit, swShallowLit * 1.25 + swLitScale * 0.12, clamp(swRim, 0.0, 1.0));${fromTier(1, `
+swLit = mix(swLit, swShallowLit * 1.25 + swLitScale * 0.12, clamp(swRim, 0.0, 1.0));
+// Open-sea colour variation (Color Variation): lighter, greener drifts across deep water, wide lighter and darker
+// areas, and a posterised band on the highest crests.
+float swVariation = U.slateWaterSwellInfo.z;
+float swPatch = smoothstep(0.25, 0.75, swLarge * 0.6 + swGust * 0.4);
+swLit = mix(swLit, swShallowLit * 0.9 + swLit * 0.1, swPatch * swTone * swVariation * 0.6);
+swLit *= 1.0 + (swGust - 0.5) * 0.4 * swVariation;
+float swHeightAA = fwidth(swCrest) + 0.02;
+swLit *= mix(1.0, mix(0.86, 1.1, smoothstep(0.25 - swHeightAA, 0.25 + swHeightAA, swCrest)), swVariation);${fromTier(1, `
 // Caustic cell lines in the shallows.
 vec2 swCausticUv = swFlowed * 0.75 * U.slateWaterMotion.y + vec2(swMedium, swFine) * 0.45 + vec2(swTime * 0.06, swTime * 0.04);
 float swCausticCells = swCells(swCausticUv).y;
@@ -532,7 +548,10 @@ swLit += swShallowLit * (swCaustic * 0.3);`)}
 
 // Toon highlight: a crisp sun reflection, sized by Roughness, on a normal with extra chop and a jittered threshold,
 // so it breaks into glints and streaks instead of a disc on smooth wave faces.
-vec3 swGlintN = normalize(normalW - vec3(swDetail.x, 0.0, swDetail.y) * 1.5);
+${fromTier(1, `
+float swGlintDetail = 1.5;`, `
+float swGlintDetail = 4.0;`)}
+vec3 swGlintN = normalize(normalW - vec3(swDetail.x, 0.0, swDetail.y) * swGlintDetail);
 vec3 swReflected = reflect(-swV, swGlintN);
 float swAlign = dot(swReflected, swL);
 float swSpecThreshold = 1.0 - 0.012 * U.slateWaterOrigin.w - 0.001 + (swFine - 0.5) * 0.008;
@@ -567,9 +586,13 @@ float swCapThreshold = 1.1 - 0.6 * U.slateWaterShape.z;
 float swCapAA = fwidth(swCapDrive) * 0.75 + 0.005;
 float swCapOuter = smoothstep(swCapThreshold - swCapAA, swCapThreshold + swCapAA, swCapDrive);
 float swCapInner = smoothstep(swCapThreshold + 0.1 - swCapAA, swCapThreshold + 0.1 + swCapAA, swCapDrive);
-float swCapBreak = smoothstep(0.42, 0.52, swFine * 0.7 + swMedium * 0.3);
+${fromTier(1, `
+float swCapBreak = smoothstep(0.42, 0.52, swFine * 0.7 + swMedium * 0.3);`, `
+// Low has no fine noise: wavy bands across the crest break the core instead.
+float swCapBreak = smoothstep(-0.25, 0.25, sin(dot(swFlowed, vec2(3.7, 2.3)) + swMedium * 6.0));`)}
 swToonCap = swCapOuter - swCapInner + swCapInner * swCapBreak;`)}
-float swSurf = 0.0;${ifDefined(WATER_FEATURE_DEFINES.surfaceFoam, `
+float swSurf = 0.0;
+float swSurfTint = 0.0;${ifDefined(WATER_FEATURE_DEFINES.surfaceFoam, `
 // Surface foam: thin ridged lines along the drifting noise's mid contour, broken into strokes, plus small flecks;
 // denser near shores and objects (Surface Foam).
 float swNearEdge = clamp(min(swBank / (swFoamWidth * 3.0), swObject / (swContactW * 3.0)), 0.0, 1.0);
@@ -578,17 +601,20 @@ float swSurfNoise = swNoise(swSurfUv);
 float swRidge = 1.0 - abs(swSurfNoise * 2.0 - 1.0);
 float swLineCut = mix(0.985, 0.86, U.slateWaterSunColor.w) * mix(0.96, 1.0, swNearEdge);
 float swRidgeAA = fwidth(swRidge) * 0.75 + 0.004;
-swSurf = smoothstep(swLineCut - swRidgeAA, swLineCut + swRidgeAA, swRidge) * smoothstep(0.42, 0.58, swMedium);${fromTier(1, `
+swSurf = smoothstep(swLineCut - swRidgeAA, swLineCut + swRidgeAA, swRidge) * smoothstep(0.42, 0.58, swMedium * 0.6 + swFine * 0.4);${fromTier(1, `
 float swFleckNoise = swNoise(swSurfUv * 3.1 + vec2(4.1, swTime * 0.07));
 float swFleckCut = mix(0.97, 0.8, U.slateWaterSunColor.w);
 float swFleckAA = fwidth(swFleckNoise) * 0.75 + 0.004;
 swSurf = max(swSurf, smoothstep(swFleckCut - swFleckAA, swFleckCut + swFleckAA, swFleckNoise) * smoothstep(0.35, 0.6, swSurfNoise));`)}
-swSurf *= 1.0 - smoothstep(0.06, 0.2, swFoot * 1.05 * U.slateWaterMotion.y);`)}
+// Beyond where the lines resolve, their coverage becomes a faint lighter tint instead of ending at a visible edge.
+float swSurfFar = smoothstep(0.05, 0.35, swFoot * 1.05 * U.slateWaterMotion.y);
+swSurf *= 1.0 - swSurfFar;
+swSurfTint = swSurfFar * U.slateWaterSunColor.w * 0.12;`)}
 float swFoam = clamp(max(max(max(swOutline, swRing), max(swToonCap, swSurf)) * swFoamAmount, swToonContact * swContactStrength), 0.0, 1.0);
 
 float swSpark = swSparkBase * 2.5 * (0.3 + 1.7 * pow(max(swAlign, 0.0), 5.0)) * (1.0 - swFoam);
 vec3 swFoamLit = U.slateWaterFoam.rgb * clamp(swLitScale * 1.1, vec3(0.35), vec3(1.0));
-vec3 swEmissive = mix(swLit, swFoamLit, swFoam) + vec3(swSpec * 0.95 * (1.0 - swFoam) + swSpark);
+vec3 swEmissive = mix(mix(swLit, swFoamLit, swSurfTint * swFoamAmount), swFoamLit, swFoam) + vec3(swSpec * 0.95 * (1.0 - swFoam) + swSpark);
 surfaceAlbedo = vec3(0.0);
 alpha = clamp(max(mix(U.slateWaterShallow.a * 0.55, U.slateWaterShallow.a, smoothstep(0.0, 0.5, swTone)), max(swFoam, max(swSpec, swSpark))), 0.0, 1.0);
 `;
@@ -1072,7 +1098,7 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
     buffer.updateFloat4("slateWaterRipple", rippleK, wrapPhase(-Math.sqrt(9.81 * rippleK) * this.time), Math.cos(heading), Math.sin(heading));
     buffer.updateFloat4("slateWaterTerms",
       smoothstep(0, 0.1, w.foamAmount) * Math.max(w.foamAmount, 0.85) * smoothstep(0, 0.05, w.contactFoamWidth),
-      smoothstep(0, 0.05, w.crestFoam), 0.004 + 0.02 * smoothstep(0.05, 0.4, steep), 1 + 1.5 * smoothstep(0.25, 0.6, steep));
+      smoothstep(0, 0.05, w.crestFoam), 0.004 + 0.02 * smoothstep(0.05, 0.4, steep), 1 + 0.9 * smoothstep(0.25, 0.6, steep));
     const field = this.field?.texture ? this.field : null;
     const bounds = field?.bounds ?? [0, 0, 1, 1];
     buffer.updateFloat4("slateWaterFieldBounds", bounds[0]!, bounds[1]!, bounds[2]!, bounds[3]!);

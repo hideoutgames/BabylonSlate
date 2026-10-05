@@ -14,7 +14,7 @@ import { landscapeMeshData, sceneLandscapeRoots } from "./landscape-mesh";
 /**
  * Encoded ranges of the RGBA8 field: R shore distance, G depth over terrain, B the same depth at fine precision
  * over the shallows (`fineDepthSpan` metres from `fineDepthMin`), A terrain known: 255 over real terrain, ramping
- * toward 0 across the cells extended past a landscape's edge (`WATER_FIELD_EDGE_RINGS`), 0 beyond them.
+ * to 0 over `WATER_FIELD_EDGE_RAMP` metres past a landscape's edge, whose depth extends across the field.
  * Objects live in the separate, height-aware `WaterContactField`.
  */
 export const WATER_FIELD_SHORE_RANGE: readonly [number, number] = [-8, 24];
@@ -218,7 +218,8 @@ export class WaterField {
   }
 
   private measure(landscapes: Array<{ root: Mesh; data: LandscapeProperties }>): Rect | null {
-    const margin = this.surface.contactRange + 1;
+    // Unbounded water also covers the depth ramp past the terrain, so it reaches zero inside the field.
+    const margin = Math.max(this.surface.contactRange, this.surface.unbounded ? WATER_FIELD_EDGE_RAMP : 0) + 1;
     let rect: Rect | null = null;
     const add = (min: Vector3, max: Vector3) => {
       rect = rect
@@ -287,43 +288,49 @@ export class WaterField {
     const anyLand = toLand.some((n) => n === 0);
     if (anyLand) { distanceTransform(toLand, width, height); distanceTransform(toWater, width, height); }
     const cell = (this.rect!.maxX - this.rect!.minX) / width;
-    const ring = extendTerrainDepth(depth, known, width, height);
+    const ring = extendTerrainDepth(depth, known, width, height), rampRings = Math.max(1, Math.ceil(WATER_FIELD_EDGE_RAMP / cell));
     for (let i = 0; i < count; i++) {
       const shore = !anyLand ? WATER_FIELD_SHORE_RANGE[1] : known[i] === 1 && depth[i]! <= 0
         ? -(Math.sqrt(toWater[i]!) - 0.5) * cell
         : (Math.sqrt(toLand[i]!) - 0.5) * cell;
-      const reached = ring[i]! <= WATER_FIELD_EDGE_RINGS;
+      const reached = ring[i]! !== UNREACHED;
       data[i * 4] = encode(shore, WATER_FIELD_SHORE_RANGE);
       data[i * 4 + 1] = reached ? encode(depth[i]!, depthRange) : 255;
       data[i * 4 + 2] = reached ? encode(depth[i]!, fineRange) : 255;
-      data[i * 4 + 3] = reached ? Math.round(255 * (1 - ring[i]! / (WATER_FIELD_EDGE_RINGS + 1))) : 0;
+      data[i * 4 + 3] = reached ? Math.round(255 * Math.max(0, 1 - ring[i]! / (rampRings + 1))) : 0;
     }
   }
 }
 
 /**
- * Cells beyond a landscape's edge carry its depth this many rings out, with alpha falling from 255 (real terrain)
- * toward 0. The shader's central differences then find no false slope at the coverage edge (an unknown cell's
- * sentinel read as a cliff and drew a shore line along it), and the terrain depth fades smoothly into the estimate.
+ * Metres over which alpha falls from 255 (real terrain) to 0 beyond a landscape's edge. Cells there carry the edge's
+ * depth (`extendTerrainDepth`), so the shader's central differences find no false slope at the coverage edge (an
+ * unknown cell's sentinel read as a cliff and drew a shore line along it), and the terrain depth hands over to the
+ * shelving estimate gradually instead of in a visible step. Unbounded water's field extends this far past the terrain.
  */
-export const WATER_FIELD_EDGE_RINGS = 12;
+export const WATER_FIELD_EDGE_RAMP = 16;
+const UNREACHED = 0xffff;
 
 /**
- * Extends known depths into unknown cells ring by ring (each the mean of its already-reached 8-neighbours), in place.
- * Returns each cell's ring: 0 for real terrain, 1..`WATER_FIELD_EDGE_RINGS` for extended cells, beyond that unreached.
+ * Extends known depths into every unknown cell ring by ring outward from the terrain (each the mean of its
+ * already-reached 8-neighbours), in place; each cell is visited once. Returns each cell's ring: 0 for real terrain,
+ * then 1, 2, ... outward; `UNREACHED` only when the field holds no terrain at all.
  */
-function extendTerrainDepth(depth: Float64Array, known: Uint8Array, width: number, height: number): Uint8Array {
-  const unreached = WATER_FIELD_EDGE_RINGS + 1, ring = new Uint8Array(width * height).fill(unreached);
+function extendTerrainDepth(depth: Float64Array, known: Uint8Array, width: number, height: number): Uint16Array {
+  const ring = new Uint16Array(width * height).fill(UNREACHED), queued = UNREACHED - 1;
   let frontier: number[] = [];
   for (let i = 0; i < ring.length; i++) if (known[i]) ring[i] = 0;
-  for (let i = 0; i < ring.length; i++) {
-    if (ring[i] !== unreached) continue;
+  const enqueue = (i: number, next: number[]) => {
     const x = i % width, z = (i - x) / width;
-    if ((x > 0 && known[i - 1]) || (x < width - 1 && known[i + 1]) || (z > 0 && known[i - width]) || (z < height - 1 && known[i + width])
-      || (x > 0 && z > 0 && known[i - width - 1]) || (x < width - 1 && z > 0 && known[i - width + 1])
-      || (x > 0 && z < height - 1 && known[i + width - 1]) || (x < width - 1 && z < height - 1 && known[i + width + 1])) frontier.push(i);
-  }
-  for (let r = 1; r <= WATER_FIELD_EDGE_RINGS && frontier.length > 0; r++) {
+    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+      const nx = x + dx, nz = z + dz;
+      if (nx < 0 || nz < 0 || nx >= width || nz >= height) continue;
+      const j = nz * width + nx;
+      if (ring[j] === UNREACHED) { ring[j] = queued; next.push(j); }
+    }
+  };
+  for (let i = 0; i < ring.length; i++) if (ring[i] === 0) enqueue(i, frontier);
+  for (let r = 1; frontier.length > 0; r++) {
     // Every cell of this ring averages only earlier rings, so the result never depends on visiting order.
     for (const i of frontier) {
       const x = i % width, z = (i - x) / width;
@@ -338,16 +345,7 @@ function extendTerrainDepth(depth: Float64Array, known: Uint8Array, width: numbe
     }
     for (const i of frontier) ring[i] = r;
     const next: number[] = [];
-    for (const i of frontier) {
-      const x = i % width, z = (i - x) / width;
-      for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
-        const nx = x + dx, nz = z + dz;
-        if (nx < 0 || nz < 0 || nx >= width || nz >= height) continue;
-        const j = nz * width + nx;
-        if (ring[j] === unreached) { ring[j] = unreached + 1; next.push(j); }
-      }
-    }
-    for (const j of next) ring[j] = unreached;
+    for (const i of frontier) enqueue(i, next);
     frontier = next;
   }
   return ring;

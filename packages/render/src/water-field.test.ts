@@ -5,7 +5,7 @@ import { createLandscapeMesh } from "./landscape-mesh";
 import { createWaterMesh, setSceneWaterTime, updateSceneWater } from "./water-mesh";
 import { createWaterRemovalMesh, sceneWaterRemovals } from "./water-removal-mesh";
 import { applyAssignMesh, createSnapshotSceneBinding } from "./snapshot-apply";
-import { distanceTransform, WATER_FIELD_DEPTH_RANGE, WATER_FIELD_EDGE_RINGS, WATER_FIELD_SHORE_RANGE, WaterField } from "./water-field";
+import { distanceTransform, WATER_FIELD_DEPTH_RANGE, WATER_FIELD_EDGE_RAMP, WATER_FIELD_SHORE_RANGE, WaterField } from "./water-field";
 
 type FieldView = { data: Uint8Array; width: number; height: number; bounds: number[]; depthRange?: readonly [number, number]; fineDepthMin: number; fineDepthSpan: number };
 const liveField = (mesh: Mesh) => (mesh.material as unknown as { pluginManager: { _plugins: Array<{ field?: WaterField | null }> } })
@@ -124,8 +124,8 @@ describe("Water field", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     let field: WaterField | undefined;
     try {
-      // A 40 m floor 4 m under a 80 m body: the field covers the body, so half of it lies beyond the landscape.
-      const surface = MeshBuilder.CreateGround("water", { width: 80, height: 80 }, scene);
+      // A 40 m floor 4 m under a 100 m body: the field covers the body, so most of it lies beyond the landscape.
+      const surface = MeshBuilder.CreateGround("water", { width: 100, height: 100 }, scene);
       surface.metadata = { slateWater: true };
       createLandscapeMesh(scene, "floor", { width: 40, depth: 40, subdivisions: 4, heights: Array(25).fill(-4) });
       field = new WaterField(scene, { mesh: surface, unbounded: false, amplitude: 0.5, contactRange: 1, surfaceY: () => 0 });
@@ -133,18 +133,21 @@ describe("Water field", () => {
       const view = field as unknown as FieldView, cell = 1 / (view.bounds[2]! * view.width);
       const inside = texel(view, 20 - cell * 0.5, 0);
       expect(inside).toMatchObject({ known: true, alpha: 255 });
-      // Rings beyond the edge keep the edge depth (both channels), so central differences across it find a flat
-      // floor, while alpha falls ring by ring and the terrain depth hands over to the shelving estimate smoothly.
+      // Cells beyond the edge keep the edge depth (both channels), so central differences across it find a flat
+      // floor, while alpha falls cell by cell over the ramp and the terrain depth hands over to the shelving
+      // estimate gradually.
       let previous = 255;
-      for (let ring = 1; ring <= WATER_FIELD_EDGE_RINGS; ring++) {
-        const extended = texel(view, 20 + (ring - 0.5) * cell, 0);
+      for (let x = 20 + cell * 0.5; x < 20 + WATER_FIELD_EDGE_RAMP - cell; x += cell) {
+        const extended = texel(view, x, 0);
         expect(extended.depth).toBeCloseTo(inside.depth, 1);
         expect(extended.fineDepth).toBeCloseTo(inside.fineDepth, 1);
         expect(extended.alpha).toBeLessThan(previous);
         expect(extended.alpha).toBeGreaterThan(0);
         previous = extended.alpha;
       }
-      expect(texel(view, 20 + (WATER_FIELD_EDGE_RINGS + 1.5) * cell, 0).alpha).toBe(0);
+      const beyond = texel(view, 20 + WATER_FIELD_EDGE_RAMP + 2 * cell, 0);
+      expect(beyond.alpha).toBe(0);
+      expect(beyond.depth).toBeCloseTo(inside.depth, 1);
     } finally { field?.dispose(); scene.dispose(); engine.dispose(); }
   });
 
