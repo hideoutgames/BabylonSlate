@@ -935,3 +935,15 @@ it("includes textures from disabled and duplicate post-process entry overrides i
   ];
   expect(postProcessTextureGuidsFromScenes([null, scene, scene])).toEqual(['mask']);
 });
+
+describe("SceneLayer control and switcher dependencies", () => {
+  it("loads assigned control visuals and inherited switcher default assets for Play", () => {
+    const scene = { ...createDefaultScene(), actors: [createActor("switch", "Switcher", { classId: "SceneLayerActorSwitcher", properties: { sceneLayerActors: [{ classId: "Screen", defaults: { Artwork: "texture-override", Caption: "unused" } }] }, components: [{ id: "slider", classId: "2DSliderComponent", properties: { trackMaterialGuid: "track-material", thumbTextureGuid: "thumb-texture" } }] })] };
+    const dependencies = playPrefabDependencyScene([
+      { classId: "Base", variables: [{ name: "Artwork", type: "asset" }, { name: "Caption", type: "string" }] },
+      { classId: "Screen", parentClassId: "Base" },
+    ], [scene], () => "Texture");
+    expect(overlayTextureGuidsFromScenes([scene, dependencies])).toEqual(["thumb-texture", "texture-override"]);
+    expect(materialGuidsFromScenes([scene, dependencies])).toEqual(["track-material"]);
+  });
+});

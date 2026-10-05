@@ -26,6 +26,9 @@ import {
   tilemapTilesetGuids,
 } from "@babylonslate/assets";
 import {
+  actorPropertyReferences,
+  type GraphClassMember,
+  UI_CONTROL_2D_CLASS_IDS,
   createActor,
   createDefaultSceneSettings,
   isEditorOnlyAsset,
@@ -57,16 +60,33 @@ export interface PlayContentDocument {
 
 /** Read-only dependency input for unplaced prefab assets; never load into a World. */
 export function playPrefabDependencyScene(
-  scripts: readonly Pick<ScriptBundleEntry, "classId" | "components">[],
+  scripts: readonly Pick<ScriptBundleEntry, "classId" | "components" | "parentClassId" | "variables" | "actorDefaults">[],
+  scenes: readonly SerializedScene[] = [],
+  assetType?: (guid: string) => string | undefined,
 ): SerializedScene | null {
   const actors = scripts.flatMap((script, index) =>
-    script.components?.length
+    script.components?.length || script.actorDefaults?.properties
       ? [createActor(`prefab-dependency:${index}`, script.classId, {
           classId: script.classId,
           components: script.components,
+          properties: script.actorDefaults?.properties,
         })]
       : [],
   );
+  const byClassId = new Map(scripts.map(script => [script.classId, script]));
+  const references = actorPropertyReferences([scenes, actors], classId => {
+    const script = byClassId.get(classId);
+    return script ? { parentClassId: script.parentClassId, members: script.variables?.map((variable, index): GraphClassMember => ({ ...variable, id: String(index), kind: "variable", typeId: variable.type })) } : null;
+  });
+  const componentForAsset: Record<string, [string, string]> = {
+    Material: ["2DMaterialComponent", "materialGuid"], MaterialInstance: ["2DMaterialComponent", "materialGuid"], Texture: ["2DTextureComponent", "textureGuid"],
+    Font: ["2DTextComponent", "fontAssetGuid"], Model: ["MeshComponent", "assetGuid"], Sprite: ["SpriteComponent", "assetGuid"], Tilemap: ["TilemapComponent", "assetGuid"],
+    AnimationGraph: ["AnimationGraphComponent", "graphGuid"], BehaviourTree: ["BehaviourTreeComponent", "treeGuid"], Blackboard: ["BehaviourTreeComponent", "blackboardGuid"],
+  };
+  for (const guid of references.assetGuids) {
+    const target = componentForAsset[assetType?.(guid) ?? ""];
+    if (target) actors.push(createActor(`override-dependency:${guid}`, "Override Dependency", { components: [{ id: `override-component:${guid}`, classId: target[0], properties: { [target[1]]: guid } }] }));
+  }
   if (actors.length === 0) return null;
   return {
     name: "Prefab Dependencies",
@@ -290,6 +310,7 @@ export function overlayTextureGuidsFromScene(
   const found: string[] = [];
   const seen = new Set<string>();
   for (const guid of [
+    ...UI_CONTROL_2D_CLASS_IDS.flatMap(classId => componentGuidsFromScene(scene, classId, ["backgroundTextureGuid", "trackTextureGuid", "fillTextureGuid", "thumbTextureGuid", "indicatorTextureGuid"])),
     ...componentGuidsFromScene(scene, "2DTextureComponent", ["textureGuid"]),
     ...componentGuidsFromScene(scene, "2DPanelComponent", ["textureGuid"]),
     ...text2dImageGuidsFromScene(scene),
@@ -608,6 +629,7 @@ export function materialAssetGuidsFromScene(
     ...componentGuidsFromScene(scene, "CableComponent", ["materialGuid"]),
     ...componentGuidsFromScene(scene, "LandscapeComponent", ["materialGuid"]),
     ...(scene?.actors.flatMap((actor) => actor.components.flatMap((component) => component.classId === "FoliageComponent" ? parseFoliageProperties(component.properties).batches.flatMap((batch) => batch.materialGuid ? [batch.materialGuid] : []) : [])) ?? []),
+    ...UI_CONTROL_2D_CLASS_IDS.flatMap(classId => componentGuidsFromScene(scene, classId, ["backgroundMaterialGuid", "trackMaterialGuid", "fillMaterialGuid", "thumbMaterialGuid", "indicatorMaterialGuid"])),
     ...componentGuidsFromScene(scene, "2DJoystickComponent", ["backgroundMaterialGuid", "joystickMaterialGuid"]),
     ...componentGuidsFromScene(scene, "2DMaterialComponent", ["materialGuid"]),
     ...componentGuidsFromScene(scene, "2DPanelComponent", ["materialGuid"]),

@@ -6,6 +6,7 @@ const ACTOR_OUT: EngineScriptPin = { name: "actor", typeId: "object", typeClassI
 
 export const SCENE_LAYER_ACTOR_SCRIPT_API: EngineClassScriptApi = {
   classId: "SceneLayerActor",
+  variables: [{ name: "Item Index", typeId: "int", propertyKey: "itemIndex", getOnly: true }],
   nativeEvents: [
     { name: "On Scene Layer Actor Switched To", eventType: "flow.event.sceneLayerActorSwitchedTo", exportName: "onSceneLayerActorSwitchedTo" },
     { name: "On Scene Layer Actor Switched From", eventType: "flow.event.sceneLayerActorSwitchedFrom", exportName: "onSceneLayerActorSwitchedFrom" },
@@ -25,6 +26,7 @@ export const SCENE_LAYER_SWITCHER_SCRIPT_API: EngineClassScriptApi = {
     { name: "Get Current Scene Layer Actor", runtime: "getCurrentSceneLayerActor", pins: [ACTOR_OUT] },
   ],
   nativeEvents: [
+    ...(SCENE_LAYER_ACTOR_SCRIPT_API.nativeEvents ?? []),
     { name: "On Scene Layer Actor Switching", eventType: "flow.event.sceneLayerActorSwitching", exportName: "onSceneLayerActorSwitching" },
     { name: "On Scene Layer Actor Switched", eventType: "flow.event.sceneLayerActorSwitched", exportName: "onSceneLayerActorSwitched" },
   ],

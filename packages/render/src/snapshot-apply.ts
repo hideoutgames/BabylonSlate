@@ -785,7 +785,11 @@ export function applyUIControl2DCommand(binding: SnapshotSceneBinding, command: 
   for (const root of prepared && prepared !== live ? [live, prepared] : [live]) {
     if (!root || root.isDisposed()) continue;
     const target = uiControl2DMesh(root) ? root : root.getChildMeshes().find(mesh => mesh.metadata?.overlayControlComponentId === command.componentId && uiControl2DMesh(mesh));
-    if (target) uiControl2DMesh(target)?.update(command.uiControl);
+    if (target) {
+      const visual = uiControl2DMesh(target);
+      visual?.update(command.uiControl);
+      if (command.focused !== undefined) visual?.setFocused(command.focused);
+    }
   }
   binding.onVisualChanged?.(command.slotId);
 }

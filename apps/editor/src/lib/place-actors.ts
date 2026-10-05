@@ -1,5 +1,8 @@
 import {
   createActor,
+  UI_CONTROL_2D_CLASS_IDS,
+  OVERLAY_LAYOUT_CLASSES,
+  type UIControl2DClassId,
   createMeshComponent,
   createSkyboxComponent,
   createSceneStreamingActor,
@@ -13,6 +16,7 @@ import {
   type SerializedScene,
 } from "@babylonslate/core";
 import {
+  humanizePropertyLabel,
   resolveActorTypeVisual,
   resolveTypeVisual,
   walkAncestry,
@@ -47,9 +51,10 @@ export type PlaceActorKind =
   | { type: "water"; classId: string }
   | { type: "tilemap" }
   | { type: "empty" }
+  | { type: "scene-layer-switcher" }
   | {
       type: "overlay-2d";
-      classId:
+      classId: UIControl2DClassId | (typeof OVERLAY_LAYOUT_CLASSES)[number] |
         | "2DAnchorComponent"
         | "2DScrollBoxComponent"
         | "2DVerticalBoxComponent"
@@ -186,7 +191,8 @@ export const ENGINE_PLACE_ACTORS: PlaceActorItem[] = [
 ];
 
 const OVERLAY_PLACE_ACTORS: PlaceActorItem[] = [
-  ...(["ScrollBox", "VerticalBox", "HorizontalBox", "OverlayBox", "Padding", "Spacer"] as const).map(name => ({ id: `2d-${name.toLowerCase()}`, title: `2D ${name.replace(/Box$/, " Box")}`, category: "Overlay", kind: { type: "overlay-2d" as const, classId: `2D${name}Component` as const } })),
+  ...[...OVERLAY_LAYOUT_CLASSES, ...UI_CONTROL_2D_CLASS_IDS].map(classId => ({ id: `2d-${classId.slice(2).replace(/Component$/, "").toLowerCase()}`, title: humanizePropertyLabel(classId.replace(/Component$/, "")), category: "Overlay", kind: { type: "overlay-2d" as const, classId } })),
+  { id: "scene-layer-switcher", title: "2D Scene Layer Actor Switcher", category: "Overlay", kind: { type: "scene-layer-switcher" } },
   { id: "2d-joystick", title: "2D Joystick", category: "Overlay", kind: { type: "overlay-2d", classId: "2DJoystickComponent" } },
   { id: "2d-painter", title: "2D Painter", category: "Overlay", kind: { type: "overlay-2d", classId: "2DPainterComponent" } },
   {
@@ -440,6 +446,7 @@ export function visualForPlaceActor(item: PlaceActorItem): TypeVisual {
   if (kind.type === "tilemap") {
     return resolveTypeVisual({ classId: "TilemapComponent", family: "class" });
   }
+  if (kind.type === "scene-layer-switcher") return resolveActorTypeVisual({ classId: "SceneLayerActorSwitcher" });
   if (kind.type === "overlay-2d") {
     return resolveTypeVisual({ classId: kind.classId, family: "class" });
   }
@@ -475,6 +482,7 @@ export function spawnPlacedActor(
   const transform = placedTransform(position);
   const finish = (actor: SerializedActor): SerializedActor =>
     applyOverlayPlace({ ...actor, name: uniqueSceneActorName(scene, actor.name) }, options?.overlay === true);
+  if (kind.type === "scene-layer-switcher") return finish(createActor(id, "Scene Layer Actor Switcher", { classId: "SceneLayerActorSwitcher", transform, properties: { sceneLayerActors: [], initialIndex: 0 } }));
   if (kind.type === "shape") {
     return finish(createActor(id, kind.meshKind, {
       transform,

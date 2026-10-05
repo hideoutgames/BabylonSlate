@@ -260,7 +260,7 @@ describe("nativeEventStubs", () => {
     ).toBe(false);
   });
 
-  it("does not list overlay mouse events as SceneLayerActor natives", () => {
+  it("lists actor selection events but no component mouse events as SceneLayerActor natives", () => {
     expect(
       nativeEventStubs({ parentClass: "SceneLayerActor" }).map(
         (stub) => stub.eventType,
@@ -270,6 +270,8 @@ describe("nativeEventStubs", () => {
       "flow.event.beginPlay",
       "flow.event.tick",
       "flow.event.destroyed",
+      "flow.event.sceneLayerActorSwitchedTo",
+      "flow.event.sceneLayerActorSwitchedFrom",
     ]);
     expect(
       isScriptCatalogNodeAllowed("flow.event.onClick", {
@@ -279,6 +281,18 @@ describe("nativeEventStubs", () => {
     expect(
       isScriptCatalogNodeAllowed("flow.event.onClick", { parentClass: "Actor" }),
     ).toBe(false);
+  });
+
+  it("offers switcher events only on the switcher lineage with readable titles", () => {
+    const parents: Record<string, string> = { CustomMenu: "SceneLayerActorSwitcher", SceneLayerActorSwitcher: "SceneLayerActor", SceneLayerActor: "Actor", Actor: "BObject" };
+    const options = { parentClass: "CustomMenu", parentOf: (id: string) => parents[id] };
+    const events = nativeEventStubs(options);
+    expect(events).toContainEqual({ eventType: "flow.event.sceneLayerActorSwitching", name: "Event On Scene Layer Actor Switching" });
+    expect(events).toContainEqual({ eventType: "flow.event.sceneLayerActorSwitched", name: "Event On Scene Layer Actor Switched" });
+    expect(events).toContainEqual({ eventType: "flow.event.sceneLayerActorSwitchedTo", name: "Event On Scene Layer Actor Switched To" });
+    expect(isScriptCatalogNodeAllowed("flow.event.sceneLayerActorSwitching", options)).toBe(true);
+    expect(isScriptCatalogNodeAllowed("flow.event.sceneLayerActorSwitching", { parentClass: "SceneLayerActor" })).toBe(false);
+    expect(isScriptCatalogNodeAllowed("flow.event.sceneLayerActorSwitchedTo", { parentClass: "Actor" })).toBe(false);
   });
 
   it("lists no native events for FunctionLibrary and EditorFunctionLibrary", () => {

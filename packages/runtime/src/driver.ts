@@ -1000,6 +1000,11 @@ class InProcessRuntime implements RuntimeDriver {
     this.focusNavigation = new SceneLayerFocusNavigation(this.world, options.focusNavigation, {
       canRun: (actor) => this.canTickActor(actor),
       event: (actor, component, event) => {
+        if (isUIControl2DClass(component.classId) && (event === "onFocusEnter" || event === "onFocusLeave")) {
+          const slotId = this.slotByGuid.get(actor.guid);
+          if (slotId !== undefined) this.emit({ type: "setUIControl2D", slotId, componentId: component.guid,
+            uiControl: { classId: component.classId, properties: this.uiControls.payload(component) }, focused: event === "onFocusEnter" });
+        }
         if (event === "onFocusActivate") this.uiControls.activate(component);
         this.scriptHost.invokeEvent(actor.classId, event, actor, {}, component.guid);
       },

@@ -296,7 +296,6 @@ const GET_SCENE_REFERENCE: EngineScriptFunction = {
 };
 
 export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
-  { classId: "SceneLayerActor", variables: [{ name: "Item Index", typeId: "int", propertyKey: "itemIndex", getOnly: true }] },
   ...UI_CONTROL_2D_SCRIPT_APIS,
   SCENE_LAYER_ACTOR_SCRIPT_API,
   SCENE_LAYER_SWITCHER_SCRIPT_API,

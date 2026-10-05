@@ -157,6 +157,7 @@ describe("SceneLayer control runtime integration", () => {
         { kind: "key", tick: 0, code: "Enter", phase: "up" },
       ]); runtime.tick();
       expect(actor.getVariable("eventChecked")).toBe(true);
+      expect(commands.some((command) => command.type === "setUIControl2D" && command.componentId === "toggle" && command.focused === true)).toBe(true);
       runtime.removeSceneLayer(liveLayer.guid);
       runtime.applySceneLayerControl({ ...input, value: 10 });
       expect(actor.getVariable("eventValue")).toBe(4);

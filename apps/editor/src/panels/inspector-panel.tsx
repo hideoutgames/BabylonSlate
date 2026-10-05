@@ -1,3 +1,5 @@
+import { SceneLayerSwitcherFields } from "../components/scene-layer-switcher-fields";
+import { parseUIControl2DProperties } from "@babylonslate/core";
 import { useMemo, useState } from "react";
 import { normalizeModelPayload } from "@babylonslate/assets";
 import { MODEL_MATERIALS_PICKER_ENTRY } from "../lib/mesh-material-properties";
@@ -51,6 +53,7 @@ import {
   parseText2DProperties,
   parseText2DAppearProperties,
   parseText3DProperties,
+  isFocusTargetClass,
   type GraphClassMember,
   type SerializedComponent,
   type SerializedGraph,
@@ -818,6 +821,7 @@ function ClassMemberDetails({
 function PrefabComponentDetails({
   component,
   components,
+  sceneLayerClasses,
   sortingLayers,
   collisionLayers,
   physicsWorld,
@@ -834,6 +838,7 @@ function PrefabComponentDetails({
 }: {
   component: SerializedComponent;
   components: readonly SerializedComponent[];
+  sceneLayerClasses: ClassPickerEntry[];
   sortingLayers: readonly string[];
   collisionLayers: readonly string[];
   physicsWorld: "3d" | "2d";
@@ -913,9 +918,11 @@ function PrefabComponentDetails({
             physicsWorld,
             onPickAsset: setAssetPick,
             actorComponents: (targetId) => targetId === PREFAB_ROOT_ID ? components : [],
-            focusTargets: components.filter((entry) => entry.classId === "2DButtonComponent" || entry.classId === "2DFocusTargetComponent").map((entry, index) => ({ value: entry.id, label: `${entry.classId === "2DButtonComponent" ? "2D Button" : "2D Focus Target"} ${index + 1}` })),
+            sceneLayerClasses: sceneLayerClasses,
+            focusTargets: components.filter((entry) => isFocusTargetClass(entry.classId)).map((entry, index) => ({ value: entry.id, label: `${humanizePropertyLabel(entry.classId.replace(/Component$/, ""))} ${index + 1}` })),
           })}
         />
+        {component.classId === "2DDropdownComponent" ? <NamedListEditor title="Options" values={parseUIControl2DProperties(component.classId, component.properties).options} addLabel="Add Option" onChange={(options) => onUpdate("options", options)} /> : null}
         {component.classId === "2DPanelComponent" ? (
           <NineSlicePreview
             {...parseOverlayPanelProperties(component.properties)}
@@ -1320,6 +1327,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
         <PrefabComponentDetails
           component={selectedPrefabComponent}
           components={prefabComponents}
+          sceneLayerClasses={bobjectClassEntries.filter(entry => walkAncestry(entry.id, parentOf).includes("SceneLayerActor"))}
           sortingLayers={sortingLayers}
           collisionLayers={collisionLayers}
           physicsWorld={physicsWorld}
@@ -1384,6 +1392,8 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     });
     const parentOptions: ClassPickerEntry[] = [
       { id: "Actor", name: "Actor", group: "Engine" },
+      { id: "SceneLayerActor", name: "Scene Layer Actor", group: "Engine" },
+      { id: "SceneLayerActorSwitcher", name: "Scene Layer Actor Switcher", group: "Engine" },
       ...projectClasses
         .filter(
           (entry) =>
@@ -1432,6 +1442,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
             });
           }}
         />
+        {walkAncestry(parentClass ?? "Actor", parentOf).includes("SceneLayerActorSwitcher") ? <SceneLayerSwitcherFields properties={defaults.properties ?? {}} onChange={properties => persistGraph({ ...graph, actorDefaults: { ...defaults, properties } })} /> : null}
         {showActorDefaults ? <>
         <PropertyGrid
           title="Actor Defaults"

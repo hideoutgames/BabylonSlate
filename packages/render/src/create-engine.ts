@@ -2867,6 +2867,10 @@ function initializeEngine(
         const part = pending?.parts?.find(entry => entry.componentId === command.componentId);
         if (part) part.uiControl = command.uiControl;
         applyUIControl2DCommand(binding, command);
+        if (command.focused !== undefined) {
+          const mesh = meshForPlayComponent(binding, command.slotId, command.componentId);
+          if (mesh) uiControls.syncFocus(mesh, command.focused);
+        }
         scheduler.invalidate("asset");
       }
       if (command.type === "setText2DAppear") {

@@ -1,4 +1,4 @@
-import { Matrix, Vector3 } from "@babylonjs/core";
+import { Matrix, Vector3, type Mesh } from "@babylonjs/core";
 import { clampUIControl2DValue, normalizeUIControl2DText, uiControl2DValueAt, type OverlayPointerHit } from "@babylonslate/core";
 import { uiControl2DMesh, type UIControl2DMesh } from "./ui-controls2d-mesh";
 import type { SceneLayerView } from "./scene-layer-compositor";
@@ -19,6 +19,7 @@ export class UIControls2DInput {
   private editor: HTMLInputElement | null = null;
   private composing = false;
   private editorValue = "";
+  private synchronizingFocus = false;
 
   constructor(
     private readonly layers: () => readonly SceneLayerView[],
@@ -161,6 +162,25 @@ export class UIControls2DInput {
     }
     this.focused = target;
     if (target) { target.visual.setFocused(true); this.event(target, "focus"); this.canvas?.focus({ preventScroll: true }); }
+  }
+
+  /** Graph/gamepad focus is authoritative and must not echo another focus event. */
+  syncFocus(mesh: Mesh, focused: boolean): void {
+    if (this.synchronizingFocus) return;
+    const visual = uiControl2DMesh(mesh);
+    const layer = this.layers().find(entry => entry.scene === mesh.getScene());
+    if (!visual || !layer) return;
+    if (focused === (this.focused?.visual === visual)) return;
+    if (!focused && this.focused?.visual !== visual) return;
+    this.synchronizingFocus = true;
+    try {
+      this.closeEditor(true);
+      if (this.focused && !this.focused.visual.mesh.isDisposed()) {
+        this.focused.visual.setExpanded(false); this.focused.visual.setFocused(false);
+      }
+      this.focused = focused ? { visual, layer, actorGuid: String(mesh.metadata?.overlayActorGuid ?? ""), componentId: String(mesh.metadata?.overlayControlComponentId ?? "") } : null;
+      visual.setFocused(focused);
+    } finally { this.synchronizingFocus = false; }
   }
 
   keyDown(event: Pick<KeyboardEvent, "key" | "shiftKey" | "preventDefault" | "stopPropagation">): boolean {

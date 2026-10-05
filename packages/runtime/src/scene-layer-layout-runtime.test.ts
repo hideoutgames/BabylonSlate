@@ -4,6 +4,52 @@ import type { CommandMessage } from "@babylonslate/bridge";
 import { createInProcessRuntime } from "./driver";
 
 describe("SceneLayer layout runtime", () => {
+  it("realizes a bounded prefab actor window for a large virtual list and disposes it with the layer", async () => {
+    const layer = createDefaultSceneLayer();
+    layer.actors = [createActor("menu", "Menu", { classId: "SceneLayerActor", components: [
+      { id: "list", classId: "2DVirtualizedListComponent", properties: { width: 4, height: 3, itemClassId: "Row", itemCount: 10_000, overscan: 1 } },
+    ] })];
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({ seed: 1, maxActors: 32, preferSoftwarePhysics: true, playScene: createDefaultScene(), sceneLayerLibrary: { menu: layer }, onCommand: command => commands.push(command) });
+    try {
+      await runtime.loadScripts([{ assetGuid: "row-class", classId: "Row", parentClassId: "SceneLayerActor", source: "export {};", anchors: [], entryPoints: [],
+        components: [{ id: "surface", classId: "2DMaterialComponent", properties: {} }] }]);
+      runtime.realizePlayWorld();
+      const liveLayer = runtime.createSceneLayer("menu")!;
+      runtime.start(); runtime.tick();
+      const rows = () => runtime.getWorld().getActors().filter(actor => actor.classId === "Row");
+      expect(rows().map(actor => actor.getVariable("itemIndex"))).toEqual([0, 1, 2, 3]);
+      expect(commands.filter(command => command.type === "assignMesh" && command.sceneLayerId === liveLayer.guid && rows().some(row => row.guid === command.actorGuid))).toHaveLength(4);
+      const retired = rows()[0]!, survivor = rows()[2]!;
+      runtime.applySceneLayerScroll(liveLayer.guid, "menu", "list", 0, 2);
+      runtime.tick();
+      expect(rows().map(actor => actor.getVariable("itemIndex"))).toEqual([1, 2, 3, 4, 5]);
+      expect(rows()).toContain(survivor);
+      expect(retired.destroyed).toBe(true);
+      expect(commands.some(command => command.type === "despawn" && command.actorGuid === retired.guid)).toBe(true);
+      runtime.removeSceneLayer(liveLayer.guid);
+      expect(rows()).toHaveLength(0);
+    } finally { runtime.stop(); }
+  });
+
+  it("reflows safe-area contents when CSS pixel device insets change", () => {
+    const layer = createDefaultSceneLayer();
+    layer.actors = [createActor("menu", "Menu", { classId: "SceneLayerActor", components: [
+      { id: "safe", classId: "2DSafeAreaComponent", properties: { width: 10, height: 8 } },
+      { id: "content", classId: "2DMaterialComponent", parentId: "safe", properties: { widthMode: "fill", heightMode: "fill" } },
+    ] })];
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, playScene: createDefaultScene(), sceneLayerLibrary: { menu: layer }, onCommand: command => commands.push(command) });
+    try {
+      runtime.realizePlayWorld(); runtime.createSceneLayer("menu");
+      runtime.applySceneLayerResize(10, 8, 1000, 800, { left: 100, right: 0, top: 50, bottom: 0 });
+      const latest = () => commands.filter((command): command is Extract<CommandMessage, { type: "sceneLayerLayout" }> => command.type === "sceneLayerLayout").at(-1)?.entries.find(entry => entry.componentId === "content")?.rect;
+      expect(latest()).toEqual({ x: 0.5, y: -0.25, width: 9, height: 7.5 });
+      runtime.applySceneLayerResize(10, 8, 1000, 800, { left: 0, right: 0, top: 0, bottom: 0 });
+      expect(latest()).toEqual({ x: 0, y: 0, width: 10, height: 8 });
+    } finally { runtime.stop(); }
+  });
+
   it("converts browser safe insets using each layer's bounds and reapplies them after resize", () => {
     const layer = (id: string, extent: number) => {
       const document = createDefaultSceneLayer();
