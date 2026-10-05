@@ -6,6 +6,7 @@ import type { SharedOutlineView } from "./shared-outline";
 import { flushSceneCables } from "./cable-mesh";
 import { flushDynamicRuntimeMeshes } from "./dynamic-runtime-mesh";
 import { flushSceneLatticeDeformers } from "./lattice-deformer";
+import { retainWaterPlanarReflections } from "./water-planar-reflection";
 
 class PreparationChanged extends Error {}
 
@@ -29,6 +30,8 @@ export class SceneRenderCoordinator {
   private outlineView: SharedOutlineView | undefined;
   private outlineRevision = -1;
   private editorOverlay: ((camera: Camera) => void) | undefined;
+  /** Views may draw planar water reflections; previews and thumbnails never retain one. */
+  private readonly releaseWaterPlanarReflections: () => void;
 
   constructor(scene: Scene) {
     this.scene = scene;
@@ -36,6 +39,7 @@ export class SceneRenderCoordinator {
     this.detachReadinessDirty = onSceneReadinessDirty(scene, () =>
       this.graph.markReadinessDirty(),
     );
+    this.releaseWaterPlanarReflections = retainWaterPlanarReflections(scene);
   }
 
   attachPostProcess(options: AttachPostProcessStackOptions): AttachedPostProcessStack {
@@ -223,6 +227,7 @@ export class SceneRenderCoordinator {
     this.outlineView = undefined;
     this.invalidate();
     this.detachReadinessDirty();
+    this.releaseWaterPlanarReflections();
     this.graph.dispose();
   }
 

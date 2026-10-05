@@ -70,6 +70,8 @@ function pixelBytes(
               Constants.TEXTUREFORMAT_RGB_INTEGER,
               Constants.TEXTUREFORMAT_RGBA,
               Constants.TEXTUREFORMAT_RGBA_INTEGER,
+              // WebGPU swap-chain-matched colour (bgra8unorm).
+              Constants.TEXTUREFORMAT_BGRA,
             ].includes(format)
           ? 4
           : 0;

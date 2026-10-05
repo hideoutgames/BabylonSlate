@@ -1205,7 +1205,8 @@ class InProcessRuntime implements RuntimeDriver {
         return actor;
       },
       sampleWater: (position, actorId) =>
-        // Fresh at call time in its own state; the step keeps its own evaluation and clock.
+        // Current at call time in its own state (reused within the tick while nothing it read changed); the step
+        // keeps its own evaluation and clock.
         this.physicsSync.water.query(this.world.getActors(), this.world.clock.tickIndex * this.dt, position, actorId),
       lineTrace: (start, end, options) =>
         this.physicsSync.lineTrace(start, end, options),

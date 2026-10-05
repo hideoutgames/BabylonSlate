@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useState } from "react";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { DocumentEditStack, SetAssetDocumentCommand } from "@babylonslate/edit";
 import { createDefaultWaterDefinition, normalizeWaterDefinition } from "@babylonslate/core";
@@ -96,6 +96,21 @@ describe("WaterDetailsPanel", () => {
     expect(history.read().opacity).toBe(0.5);
     history.undo();
     expect(history.read().opacity).toBe(before.opacity);
+  });
+
+  it("enables the Ocean Spectrum inputs only for that Wave Model and stores Object Reflections", async () => {
+    const history = renderWithHistory();
+    const seed = () => screen.getByTestId("property-water-waveSeed") as HTMLInputElement;
+    expect(seed().disabled).toBe(true);
+    expect((screen.getByTestId("property-water-steepness") as HTMLInputElement).disabled).toBe(false);
+    fireEvent.click(screen.getByTestId("property-water-waveModel"));
+    const ocean = await screen.findByRole("option", { name: "Ocean Spectrum" });
+    fireEvent.pointerDown(ocean);
+    fireEvent.click(ocean);
+    await waitFor(() => expect(history.read().waveModel).toBe("ocean"));
+    expect(seed().disabled).toBe(false);
+    fireEvent.click(screen.getByTestId("property-water-objectReflections"));
+    expect(history.read()).toMatchObject({ waveModel: "ocean", objectReflections: false });
   });
 
   it("records a color picker drag as one undo step", () => {

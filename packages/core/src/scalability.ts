@@ -1,5 +1,5 @@
 import { normalizePlayFrameCap, normalizeRenderProjectSettings, type RenderProjectSettings } from "./project";
-import { RenderingQualitySession, qualityPresetPatch, qualitySettingPatch, QUALITY_GROUPS, isQualityLevel, type QualityGroup, type QualityOverrides } from "./render-quality";
+import { RenderingQualitySession, qualityPresetPatch, qualitySettingPatch, QUALITY_GROUPS, isQualityLevel, WATER_REFLECTION_MODES, WATER_SHADING_DETAILS, type QualityGroup, type QualityOverrides } from "./render-quality";
 import type { ShadowOverrides } from "./shadows";
 import { normalizeCelShadingOverrides, normalizeCelShadingSettings, type CelShadingOverrides } from "./cel-shading";
 import { normalizeEnvironmentLightingOverrides, type EnvironmentLightingOverrides } from "./environment-lighting";
@@ -43,6 +43,7 @@ const ENUMS: Record<string, readonly unknown[]> = {
   mode: ["pbr", "cel"], "cel.lightMixing": ["strongest", "additive", "blend"],
   "shadows.filter": ["pcf", "pcss"], "shadows.filterQuality": ["low", "medium", "high"],
   "shadows.localLightMode": ["auto", "manual"], "quality.lighting.localLightMode": ["auto", "manual"],
+  "quality.water.shadingDetail": WATER_SHADING_DETAILS, "quality.water.reflections": WATER_REFLECTION_MODES,
   "effects.colorPipeline.mode": ["legacyDisplay", "sceneLinear"],
   "effects.toneMapping": ["none", "standard", "aces", "neutral"],
 };

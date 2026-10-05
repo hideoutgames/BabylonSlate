@@ -10,7 +10,8 @@ import { liveSceneEffectsKey } from "./spatial-effects";
 import type { SharedOutlineView } from "./shared-outline";
 import { FrameGraphSharedOutlineTask } from "./shared-outline-task";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
-import { sceneRenderingSettings } from "./render-settings";
+import { sceneRenderingSettings, sceneWaterQualityRevision } from "./render-settings";
+import { WaterSceneCopyGraph, waterSceneCopyDemand, waterSceneCopyScale } from "./water-scene-copy";
 import type { AttachedPostProcessStack, AttachPostProcessStackOptions } from "./post-process-material";
 import { Constants } from "@babylonjs/core";
 import type { AbstractMesh, Camera, FrameGraphObjectList, InternalTexture, Light, Observable, Observer, Scene } from "@babylonjs/core";
@@ -22,7 +23,9 @@ import {
 } from "@babylonjs/core/FrameGraph/frameGraphTypes";
 import { FrameGraphCullObjectsTask } from "@babylonjs/core/FrameGraph/Tasks/Misc/cullObjectsTask";
 import { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/clearTextureTask";
+import { HasStencilAspect } from "@babylonjs/core/Materials/Textures/textureHelper.functions";
 import { isSceneFrameReady, withSceneReadinessState } from "./scene-perf";
+import { attachSceneDepthPrePass } from "./transparent-depth-pre-pass";
 import { admittedSceneMeshes, admittedSceneParticles, withSceneStreamNativeVisibility } from "./scene-stream-admission";
 import { findSceneShadowController } from "./shadow-controller";
 import { syncSceneLighting } from "./scene-lighting";
@@ -108,6 +111,11 @@ export class ForwardSceneFrameGraph {
   private postProcessRevision = 0;
   private preparedPostProcessRevision = -1;
   private preparedEffectsKey: string | undefined;
+  /** Water quality the graph's water-owned passes were planned for. */
+  private preparedWaterRevision = -1;
+  /** waterSceneCopyDemand when the graph was planned; -1 before any plan. */
+  private preparedWaterDemand = -1;
+  private water: WaterSceneCopyGraph | undefined;
   private retirement: Promise<void> | undefined;
   private released: Promise<void> | undefined;
   private readonly postProcessRetirement = new PostProcessRetirement();
@@ -151,6 +159,8 @@ export class ForwardSceneFrameGraph {
   private readonly lightEnabledObservers = new Map<Light, Observer<boolean>>();
   private readonly beforeRender: Observer<Scene>;
   private readonly onDispose: Observer<Scene>;
+  /** Classic frames' transparent depth pre-passes under their own render pass id (graph tasks have their own). */
+  private readonly detachClassicDepthPrePass: () => void;
   private readonly scene: Scene;
   private readonly effectsOwner: SceneEffectsOwner;
 
@@ -194,6 +204,7 @@ export class ForwardSceneFrameGraph {
       true,
     );
     this.onDispose = scene.onDisposeObservable.add(() => this.dispose());
+    this.detachClassicDepthPrePass = attachSceneDepthPrePass(scene);
   }
 
   attachPostProcess(options: AttachPostProcessStackOptions, invalidate: () => void): AttachedPostProcessStack {
@@ -274,6 +285,11 @@ export class ForwardSceneFrameGraph {
       drawingPassCount: this.outlineTask?.drawingPassCount ?? 0,
       renderRecordCount: this.outlineTask?.renderRecordCount ?? 0,
     };
+  }
+
+  /** The prepared graph's water scene copy plan and per-frame work; null when no copy is planned. */
+  waterSceneCopyDiagnostics(): ReturnType<WaterSceneCopyGraph["diagnostics"]> | null {
+    return this.water?.diagnostics() ?? null;
   }
 
   /** Hold the current valid graph while the view prepares a replacement. Superseded candidates are not retained. */
@@ -395,15 +411,14 @@ export class ForwardSceneFrameGraph {
     // A settings change stales a prepared graph like a stack revision; a
     // graphless classic path has no baked chain to re-key.
     if (!this.readinessDirtyFlag &&
-      (!this.graph || this.preparedEffectsKey === this.effectsKey(camera) && this.outlineMatches()))
+      (!this.graph || this.preparedEffectsKey === this.effectsKey(camera) && this.outlineMatches() && this.waterMatches(camera)))
       return true;
     if (
       this.graph && !this.pending &&
       this.preparedPostProcessRevision === this.postProcessRevision &&
-      this.preparedEffectsKey === this.effectsKey(camera) && this.outlineMatches()
+      this.preparedEffectsKey === this.effectsKey(camera) && this.outlineMatches() && this.waterMatches(camera)
     ) {
-      this.objects!.camera = camera;
-      this.cull!.camera = camera;
+      this.assignCamera(camera);
       this.syncSceneInputs();
       if (!this.isReady()) return false;
     } else {
@@ -509,12 +524,12 @@ export class ForwardSceneFrameGraph {
     if (this.graph && !outputCurrent) this.markReadinessDirty();
     if (this.pending) return { path: "frameGraph", ready: false };
     if (!this.graph || this.preparedPostProcessRevision !== this.postProcessRevision ||
-      this.preparedEffectsKey !== this.effectsKey(camera) || !this.outlineMatches() || this.shadows?.needsPreparation() ||
+      this.preparedEffectsKey !== this.effectsKey(camera) || !this.outlineMatches() || !this.waterMatches(camera) ||
+      this.shadows?.needsPreparation() ||
       this.clustered?.needsPreparation(camera) ||
       !outputCurrent)
       return { path: "frameGraph", ready: false, preparationRequired: true };
-    this.objects!.camera = camera;
-    this.cull!.camera = camera;
+    this.assignCamera(camera);
     this.syncSceneInputs();
     if (this.readinessDirty) {
       if (!this.isReady()) return { path: "frameGraph", ready: false };
@@ -547,7 +562,7 @@ export class ForwardSceneFrameGraph {
         : undefined) ??
       (this.pending ||
       !this.graph || this.preparedPostProcessRevision !== this.postProcessRevision ||
-      this.preparedEffectsKey !== this.effectsKey(camera) || !this.outlineMatches() ||
+      this.preparedEffectsKey !== this.effectsKey(camera) || !this.outlineMatches() || !this.waterMatches(camera) ||
       !outputCurrent
         ? "FrameGraph preparation is required."
         : undefined);
@@ -569,8 +584,7 @@ export class ForwardSceneFrameGraph {
     }
 
     const graph = this.graph!;
-    this.objects!.camera = camera;
-    this.cull!.camera = camera;
+    this.assignCamera(camera);
     this.syncSceneInputs();
     if (this.readinessDirty) {
       const readiness = this.probeReadiness();
@@ -670,6 +684,7 @@ export class ForwardSceneFrameGraph {
     this.lightEnabledObservers.clear();
     this.scene.onBeforeRenderObservable.remove(this.beforeRender);
     this.scene.onDisposeObservable.remove(this.onDispose);
+    this.detachClassicDepthPrePass();
     if (!this.pending) this.releaseGraph();
   }
 
@@ -761,16 +776,23 @@ export class ForwardSceneFrameGraph {
       assertCurrent();
       const output = this.output(camera);
       if (this.preparedPostProcessRevision !== this.postProcessRevision ||
-        this.preparedEffectsKey !== this.effectsKey(camera) || !this.outlineMatches() ||
+        this.preparedEffectsKey !== this.effectsKey(camera) || !this.outlineMatches() || !this.waterMatches(camera) ||
         this.clustered?.needsPreparation(camera) ||
         this.outputColor !== output.color || this.outputDepth !== output.depth ||
         (this.postProcessGraph || this.effectsGraph || this.outlineTask) &&
           (this.preparedWidth !== output.width || this.preparedHeight !== output.height))
         this.releaseGraph();
+      // A water scene copy follows a backbuffer resize in place: like the
+      // default graph, the rebuild keeps every task and render pass id.
+      else if (this.water && (this.preparedWidth !== output.width || this.preparedHeight !== output.height) &&
+        !this.water.resize(output.width, output.height))
+        this.releaseGraph();
       // Record the inputs the tasks are built from; a change during the awaits
       // below must leave this graph stale.
       const postProcessRevision = this.postProcessRevision;
       const effectsKey = this.effectsKey(camera);
+      const waterRevision = sceneWaterQualityRevision(scene);
+      const waterDemand = waterSceneCopyDemand(scene, camera);
       if (!this.graph) {
         this.graph = new FrameGraph(scene);
         this.preparedOutlineView = this.outlineView?.active ? this.outlineView : undefined;
@@ -870,9 +892,31 @@ export class ForwardSceneFrameGraph {
         this.objects.targetTexture = this.clear.outputTexture;
         this.objects.depthTexture = this.clear.outputDepthTexture;
         this.objects.isMainObjectRenderer = true;
-        // Temporal anti-aliasing jitters the scene draw with its geometry pass.
-        this.effectsGraph?.spatial?.jitter?.jitterRenderer(this.objects.objectRenderer);
+        // Clustered lighting rejects the copy; checked only here, since the
+        // graph already re-plans when the cluster target changes.
+        const waterScale = waterDemand > 0 ? waterSceneCopyScale(scene, camera) : 0;
+        if (waterScale > 0) {
+          // Sample the chain's scene targets or an imported output directly;
+          // only the backbuffer (or a stencil depth) needs an own pair.
+          const sceneColor = this.postProcessGraph?.sceneColorTexture ?? this.effectsGraph?.sceneColorTexture;
+          const sceneDepth = this.postProcessGraph?.depthTexture ?? this.effectsGraph?.depthTexture;
+          const sampleable = sceneColor != null && sceneDepth != null
+            ? { color: sceneColor, depth: sceneDepth }
+            : output.color && output.depth && !HasStencilAspect(output.depth.format) ? { color, depth } : undefined;
+          this.water = WaterSceneCopyGraph.create({
+            frameGraph: this.graph, camera, scale: waterScale, width: output.width, height: output.height,
+            clear: this.clear, cull: this.cull, objects: this.objects, scene: sampleable,
+            output: { color, texture: Boolean(output.color) },
+          });
+        }
+        // Temporal anti-aliasing jitters the scene draw with its geometry pass,
+        // including the water split's transparent pass, which draws over the
+        // jittered opaque depth and samples the jittered scene copy.
+        const jitter = this.effectsGraph?.spatial?.jitter;
+        jitter?.jitterRenderer(this.objects.objectRenderer);
+        if (this.water) jitter?.jitterRenderer(this.water.transparent.objectRenderer);
         this.shadows = new ManagedShadowsTask(this.graph, scene, this.objects);
+        for (const receiver of this.water?.shadowReceivers ?? []) this.shadows.addReceiver(receiver);
         this.clustered = new FrameGraphClusteredLightsTask(
           this.graph,
           scene,
@@ -880,14 +924,24 @@ export class ForwardSceneFrameGraph {
         );
         this.graph.addTask(this.shadows);
         this.graph.addTask(this.clustered);
-        this.graph.addTask(this.clear);
-        this.graph.addTask(this.cull);
+        if (this.water?.splitsClear) {
+          // The own-pair split switches the output clear: decide before it runs.
+          this.graph.addTask(this.cull);
+          this.graph.addTask(this.water.split);
+          this.graph.addTask(this.clear);
+        } else {
+          this.graph.addTask(this.clear);
+          this.graph.addTask(this.cull);
+        }
         for (const task of this.postProcessGraph?.geometryTasks ?? []) this.graph.addTask(task);
         if (this.effectsGraph?.spatial) {
           this.graph.addTask(this.effectsGraph.spatial.clear);
           this.graph.addTask(this.effectsGraph.spatial.geometry);
         }
+        if (this.water && !this.water.splitsClear) this.graph.addTask(this.water.split);
         this.graph.addTask(this.objects);
+        // The opaque copy and transparent pass precede every chain and the output copy.
+        for (const task of this.water?.afterObjects ?? []) this.graph.addTask(task);
         for (const task of this.postProcessGraph?.postProcessTasks ?? []) this.graph.addTask(task);
         for (const task of this.effectsGraph?.tasks ?? []) this.graph.addTask(task);
         if (this.outlineTask && !this.effectsGraph) this.graph.addTask(this.outlineTask);
@@ -910,8 +964,7 @@ export class ForwardSceneFrameGraph {
           this.graph.addTask(this.outputCopy);
         }
       }
-      this.objects!.camera = camera;
-      this.cull!.camera = camera;
+      this.assignCamera(camera);
       this.syncSceneInputs();
       const { width, height } = output;
       if (width !== this.preparedWidth || height !== this.preparedHeight) {
@@ -938,6 +991,7 @@ export class ForwardSceneFrameGraph {
         this.postProcessGraph?.reconcile();
         this.effectsGraph?.spatial?.reconcile();
         this.outlineTask?.reconcileResources();
+        this.water?.reconcile();
       }
       // Unlike Babylon whenReadyAsync cancellation, disposal settles our waiter.
       const deadline = performance.now() + 10_000;
@@ -956,6 +1010,8 @@ export class ForwardSceneFrameGraph {
       assertCurrent();
       this.preparedPostProcessRevision = postProcessRevision;
       this.preparedEffectsKey = effectsKey;
+      this.preparedWaterRevision = waterRevision;
+      this.preparedWaterDemand = waterDemand;
       this.preparedWidth = width;
       this.preparedHeight = height;
       this.failure = undefined;
@@ -989,6 +1045,22 @@ export class ForwardSceneFrameGraph {
    * activation or an attached-view change alters the graph structure. */
   private outlineMatches(): boolean {
     return this.preparedOutlineView === (this.outlineView?.active ? this.outlineView : undefined);
+  }
+
+  /** Water-owned passes (scene copy, planar, FFT) are planned with the graph,
+   * so a project Water quality change, or a change in scene-copy demand
+   * (copy-sampling water added or removed, group clears, output), re-plans it.
+   * Number compares per frame, with no allocation. */
+  private waterMatches(camera: Camera): boolean {
+    return this.preparedWaterRevision === sceneWaterQualityRevision(this.scene) &&
+      this.preparedWaterDemand === waterSceneCopyDemand(this.scene, camera);
+  }
+
+  /** Every camera-bound task of the prepared graph follows the frame's camera. */
+  private assignCamera(camera: Camera): void {
+    this.objects!.camera = camera;
+    this.cull!.camera = camera;
+    this.water?.setCamera(camera);
   }
 
   private output(camera: Camera) {
@@ -1030,6 +1102,7 @@ export class ForwardSceneFrameGraph {
       this.objects!.objectList = this.cull!.objectList;
       if (geometry) geometry.objectList = this.cull!.objectList;
       if (spatial) spatial.objectList = this.cull!.objectList;
+      this.water?.beginProbe(this.cull!.objectList);
       return withSceneReadinessState(this.scene, () => {
         const camera = this.objects!.camera;
         // Keep scene-owned camera/material/pass readiness alongside the task's
@@ -1042,6 +1115,7 @@ export class ForwardSceneFrameGraph {
         return { ready: cameraReady && graphReady, nativeReady: cameraReady, revision };
       });
     } finally {
+      this.water?.endProbe();
       this.objects!.objectList = objectList;
       if (geometry && geometryObjects) geometry.objectList = geometryObjects;
       if (spatial && spatialObjects) spatial.objectList = spatialObjects;
@@ -1063,6 +1137,7 @@ export class ForwardSceneFrameGraph {
     this.sceneObjects.particleSystems = admittedSceneParticles(this.scene) ?? this.scene.particleSystems;
     this.cull!.objectList = this.sceneObjects;
     this.objects!.objectList = this.cull!.outputObjectList;
+    this.water?.syncInputs();
     const geometry = this.postProcessGraph?.geometryTask;
     if (geometry) {
       geometry.objectList = this.cull!.outputObjectList;
@@ -1098,10 +1173,12 @@ export class ForwardSceneFrameGraph {
     // Babylon FrameGraph.clear/dispose reset tasks without disposing their
     // ObjectRenderer, OIT renderer and render-pass resources.
     this.postProcessOwner?.clearGraph();
-    const { graph, postProcessGraph, effectsGraph, outlineTask, outputCopy, objects, shadows, clustered, clear, cull } = this;
+    const { graph, postProcessGraph, effectsGraph, outlineTask, outputCopy, objects, shadows, clustered, clear, cull, water } = this;
     const release = () => {
       postProcessGraph?.disposeTasks();
       effectsGraph?.disposeTasks();
+      // Unregisters the transparent pass id together with the tasks that used it.
+      water?.disposeTasks();
       outlineTask?.dispose();
       outputCopy?.dispose(); objects?.dispose(); shadows?.dispose(); clustered?.dispose(); clear?.dispose(); cull?.dispose();
       graph?.dispose();
@@ -1111,6 +1188,8 @@ export class ForwardSceneFrameGraph {
       void effectsGraph?.spatial?.releaseAfterGraphDisposal().catch((error: unknown) => { this.cleanupFailure = error; });
       void outlineTask?.releaseAfterGraphDisposal().catch((error: unknown) => { this.cleanupFailure = error; });
       if (outlineTask) this.postProcessRetirement.add(outlineTask);
+      if (water) this.postProcessRetirement.add(water);
+      void water?.releaseAfterGraphDisposal().catch((error: unknown) => { this.cleanupFailure = error; });
     };
     const retained = graph && this.retainedGraphs.get(graph);
     if (retained && !this.disposed) retained.release = release;
@@ -1120,6 +1199,9 @@ export class ForwardSceneFrameGraph {
     this.outlineTask = undefined;
     this.preparedOutlineView = undefined;
     this.preparedEffectsKey = undefined;
+    this.preparedWaterRevision = -1;
+    this.preparedWaterDemand = -1;
+    this.water = undefined;
     this.outputCopy = undefined;
     this.objects = undefined;
     this.shadows = undefined;

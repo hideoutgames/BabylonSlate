@@ -6,12 +6,21 @@ import "@babylonjs/core/Shaders/selection.fragment";
 import "@babylonjs/core/ShadersWGSL/selection.fragment";
 import "@babylonjs/core/Shaders/postprocess.vertex";
 import "@babylonjs/core/ShadersWGSL/postprocess.vertex";
+import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
 import { SHARED_OUTLINE_ATTRIBUTE, SHARED_OUTLINE_GROUPS, SHARED_OUTLINE_MAX_WIDTH } from "./shared-outline";
 import { checkedShader } from "./checked-shader";
 import { latticeShaderDeclarations, latticeShaderFunctions, LATTICE_WORLD_POSITION_PATTERN, latticeWorldPositionCode } from "./lattice-deformer-shader";
+import { waterOutlineVertexSource } from "./water-material";
 
 export const SHARED_OUTLINE_MASK_SHADER = "babylonSlateSharedOutlineMask";
 export const SHARED_OUTLINE_COMPOSE_SHADER = "babylonSlateSharedOutlineCompose";
+
+/** Replaces the one occurrence of `anchor`, failing loudly if a Babylon upgrade moved it. */
+function replaceAnchor(source: string, anchor: string, replacement: string): string {
+  const at = source.indexOf(anchor);
+  if (at < 0 || source.indexOf(anchor, at + 1) >= 0) throw new Error(`Shared outline mask: expected one "${anchor}" in Babylon's selection shader`);
+  return source.slice(0, at) + replacement + source.slice(at + anchor.length);
+}
 
 function maskVertex(source: string, wgsl: boolean): string {
   const scene = EngineStore.LastCreatedScene;
@@ -20,6 +29,10 @@ function maskVertex(source: string, wgsl: boolean): string {
     .replace("#define CUSTOM_VERTEX_DEFINITIONS", latticeShaderDeclarations(wgsl ? 1 : 0) + latticeShaderFunctions(scene, wgsl ? 1 : 0))
     .replace(new RegExp(LATTICE_WORLD_POSITION_PATTERN), "$1" + latticeWorldPositionCode(wgsl)).value;
   const vec2 = wgsl ? "vec2f" : "vec2", vec4 = wgsl ? "vec4f" : "vec4";
+  // Built-in water displaces its rest grid in its own vertex shader (GPU waves): the mask draws the same surface.
+  const water = waterOutlineVertexSource(wgsl ? ShaderLanguage.WGSL : ShaderLanguage.GLSL);
+  const worldPos = wgsl ? "var worldPos: vec4f=finalWorld*vec4f(positionUpdated,1.0);" : "vec4 worldPos=finalWorld*vec4(positionUpdated,1.0);";
+  source = replaceAnchor(source, worldPos, worldPos + water.displacement);
   const vertex = wgsl ? "vertexInputs." : "", output = wgsl ? "vertexOutputs." : "", uniform = wgsl ? "uniforms." : "";
   const declarations = wgsl ? `
 #ifdef VERTEXALPHA
@@ -44,7 +57,7 @@ uniform mat4 opacityMatrix;
 varying vec2 vOutlineOpacityUV;
 #endif
 `;
-  return declarations + source.replaceAll("instanceSelectionId", SHARED_OUTLINE_ATTRIBUTE)
+  return declarations + water.declarations + source.replaceAll("instanceSelectionId", SHARED_OUTLINE_ATTRIBUTE)
     .replaceAll("#ifdef INSTANCES", "#if defined(INSTANCES) && !defined(THIN_INSTANCES)")
     .replace(`#ifdef UV1\n${output}vUV=`, `#ifdef SLATE_DIFFUSE_UV1\n${output}vUV=`)
     .replace(`#ifdef UV2\n${output}vUV=`, `#ifdef SLATE_DIFFUSE_UV2\n${output}vUV=`)

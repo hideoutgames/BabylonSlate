@@ -31,6 +31,8 @@ if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.se
   void import("./testing/visual-generation-proof").then(({ runVisualGenerationProof }) => Object.assign(window, { __visualGenerationProof: runVisualGenerationProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("textureLeaseProof")) {
   void import("./testing/texture-lease-proof").then(({ runTextureLeaseProof }) => Object.assign(window, { __textureLeaseProof: runTextureLeaseProof }));
+} else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("waterPlanarReflectionProof")) {
+  void import("./testing/water-planar-reflection-proof").then(({ runWaterPlanarReflectionProof }) => Object.assign(window, { __babylonslateWaterPlanarReflectionProof: runWaterPlanarReflectionProof }));
 } else if (
   import.meta.env.VITE_TEST_MODE === "true" &&
   new URLSearchParams(location.search).has("particleLifecycleProof")
@@ -174,8 +176,25 @@ if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.se
   import.meta.env.VITE_TEST_MODE === "true" &&
   new URLSearchParams(location.search).has("waterRenderingProof")
 ) {
-  void import("./testing/water-rendering-proof").then(({ runWaterRenderingProof }) => {
-    Object.assign(window, { __babylonslateWaterRenderingProof: runWaterRenderingProof });
+  void import("./testing/water-rendering-proof").then(({ runWaterRenderingProof, runWaterTierProof, runWaterObjectProof, runWaterFftDetailProof }) => {
+    Object.assign(window, {
+      __babylonslateWaterRenderingProof: runWaterRenderingProof, __babylonslateWaterTierProof: runWaterTierProof,
+      __babylonslateWaterObjectProof: runWaterObjectProof, __babylonslateWaterFftDetailProof: runWaterFftDetailProof,
+    });
+  });
+} else if (
+  import.meta.env.VITE_TEST_MODE === "true" &&
+  new URLSearchParams(location.search).has("waterSceneCopyProof")
+) {
+  void import("./testing/water-scene-copy-proof").then(({ runWaterSceneCopyProof }) => {
+    Object.assign(window, { __babylonslateWaterSceneCopyProof: runWaterSceneCopyProof });
+  });
+} else if (
+  import.meta.env.VITE_TEST_MODE === "true" &&
+  new URLSearchParams(location.search).has("waterFftProof")
+) {
+  void import("./testing/water-fft-proof").then(({ runWaterFftProof }) => {
+    Object.assign(window, { __babylonslateWaterFftProof: runWaterFftProof });
   });
 } else if (
   import.meta.env.VITE_TEST_MODE === "true" &&

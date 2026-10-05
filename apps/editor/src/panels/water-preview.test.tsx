@@ -25,6 +25,8 @@ const harness = vi.hoisted(() => ({
   hosts: [] as PreviewHost[],
   meshes: [] as PreviewMesh[],
   applied: [] as Array<{ mesh: PreviewMesh; definition: WaterDefinition }>,
+  projectDocument: null as { settings: { render: Record<string, unknown> } } | null,
+  renderSettings: [] as Array<{ scene: unknown; settings: Record<string, unknown> }>,
   loadLibrary: async (guid: string): Promise<MaterialLibraryResult> => ({ documents: new Map([[guid, {}]]), functions: new Map(), textureGuids: [] }),
 }));
 
@@ -49,6 +51,7 @@ vi.mock("@babylonslate/render", async () => {
       return true;
     },
     setSceneWaterTime: () => {},
+    setSceneRenderSettings: (scene: unknown, settings: Record<string, unknown>) => { harness.renderSettings.push({ scene, settings }); },
     MaterialLibrary: class {
       acquire(_scene: unknown, guid: string) {
         return { ok: true, material: { customMaterial: guid }, ready: Promise.resolve([]) };
@@ -68,6 +71,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
   openDocuments: harness.documents,
   assetRegistry: { getByGuid: (guid: string) => harness.assets.get(guid), list: () => [...harness.assets.values()] },
   registryEpoch: harness.registryEpoch,
+  projectDocument: harness.projectDocument,
   collectPlayMaterialLibrary: (_scene: unknown, _extra: unknown, guids: string[]) => harness.loadLibrary(guids[0]!),
   collectPlayTextureBytes: async () => new Map(),
 })));
@@ -111,6 +115,8 @@ afterEach(() => {
   harness.hosts.length = 0;
   harness.meshes.length = 0;
   harness.applied.length = 0;
+  harness.projectDocument = null;
+  harness.renderSettings.length = 0;
   harness.loadLibrary = async (guid) => ({ documents: new Map([[guid, {}]]), functions: new Map(), textureGuids: [] });
 });
 
@@ -131,6 +137,21 @@ describe("WaterPreviewPanel", () => {
     expect(harness.hosts).toHaveLength(1);
     expect(harness.hosts[0]!.scene.isDisposed).toBe(false);
     expect(harness.meshes).toHaveLength(1);
+  });
+
+  it("applies project render settings, Water quality included, to the existing preview scene without its post-processing", () => {
+    const effects = { colorPipeline: { version: 1, mode: "sceneLinear" } };
+    harness.projectDocument = { settings: { render: { mode: "pbr", quality: { water: { shadingDetail: "high" } }, effects } } };
+    const rerender = renderPreview();
+    const scene = harness.hosts[0]!.scene;
+    expect(harness.renderSettings).toEqual([{ scene, settings: { mode: "pbr", quality: { water: { shadingDetail: "high" } } } }]);
+    // A project Scalability change reaches the same scene; the preview never rebuilds for it.
+    harness.projectDocument = { settings: { render: { mode: "pbr", quality: { water: { shadingDetail: "low" } }, effects } } };
+    rerender();
+    expect(harness.renderSettings.at(-1)).toEqual({ scene, settings: { mode: "pbr", quality: { water: { shadingDetail: "low" } } } });
+    expect(harness.hosts).toHaveLength(1);
+    expect(harness.meshes).toHaveLength(1);
+    expect(scene.isDisposed).toBe(false);
   });
 
   it("rebuilds for a Style or Custom Material change and for edits to anything that material reaches", async () => {

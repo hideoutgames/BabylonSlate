@@ -5,7 +5,11 @@ import {
   Skeleton, StandardMaterial, Texture, Vector3, VertexBuffer, FreeCamera,
 } from "@babylonjs/core";
 import "@babylonjs/core/Meshes/thinInstanceMesh";
-import { compileMaterialPlan, createAppWebGpuEngine, requestRenderPath, setSceneRenderSettings, SharedOutlineOwner } from "@babylonslate/render";
+import { createDefaultWaterDefinition, normalizeRenderingQuality, normalizeWaterBody, qualityPresetPatch } from "@babylonslate/core";
+import {
+  compileMaterialPlan, createAppWebGpuEngine, createWaterMesh, requestRenderPath, setSceneRenderSettings, setSceneWaterTime, SharedOutlineOwner,
+  waterFftDiagnostics,
+} from "@babylonslate/render";
 import { SceneRenderCoordinator } from "@babylonslate/render/scene-render-coordinator";
 import { managedRenderReservations } from "@babylonslate/render/managed-render-resources";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@babylonslate/shader-graph";
@@ -157,6 +161,8 @@ export async function runSharedOutlineGeometryProof(backend: "webgl2" | "webgpu"
     for (const mesh of [...scene.meshes]) mesh.dispose();
   };
   let disposeAuthored: (() => void) | undefined;
+  /** Whether the FFT detail case drew a ready band, and the defines its water material compiled. */
+  let fftDetail = { ready: false, defines: "" };
   try {
     // Production CEL adaptation must work for the default material as well as
     // assigned cutouts; a hand-written StandardMaterial fixture missed this.
@@ -327,6 +333,42 @@ export async function runSharedOutlineGeometryProof(backend: "webgl2" | "webgpu"
     await pair("skeleton-pose", [contribution([skinned])]);
     clear();
 
+    // Built-in water displaces a flat rest grid in its vertex shader. Seen edge-on, its whole silhouette is the waves,
+    // so a mask that drew the rest grid would cover nothing and leave every wave edge without an outline.
+    setSceneWaterTime(scene, 2.3);
+    const sea = createWaterMesh(scene, "GPU Water", normalizeWaterBody({ width: 8, length: 1.2, resolution: 128 }, "ocean"), {
+      ...createDefaultWaterDefinition("stylized"), opacity: 1, foamAmount: 0, crestFoam: 0, surfaceFoam: 0, sparkles: 0,
+      waveHeight: 0.5, waveLength: 2.2, steepness: 0.6,
+    });
+    await pair("gpu-water-waves", [contribution([sea])]);
+    clear();
+
+    // With FFT Ocean Detail on, the GPU water vertex shader also adds the FFT detail band's displacement: the mask adds
+    // the same, from the same band. Vertices only take cascades their grid resolves completely, so this case uses three
+    // cascades (64²) and Mesh Density 1.5: the 5 cm cells resolve the first cascade (shortest wavelength 23 cm at Wave
+    // Length 2.2 m). The band is drawn once it is ready and the clock is fixed, so the native and outlined captures see
+    // the same surface. Zoomed in (6.7 mm pixels), the band moves the silhouette by several pixels, more than the
+    // comparison's tolerance, so a mask without it leaves wave edges unoutlined.
+    const quality = normalizeRenderingQuality(qualityPresetPatch("medium"));
+    setSceneRenderSettings(scene, {
+      quality: { ...quality, water: { ...quality.water, fft: true, fftSize: 64, fftCascades: 3, meshDensity: 1.5, preset: "custom" } },
+    });
+    camera.orthoLeft = -0.8; camera.orthoRight = 0.8; camera.orthoTop = 0.4; camera.orthoBottom = -0.4;
+    const detailed = createWaterMesh(scene, "GPU Water Detail", normalizeWaterBody({ width: 8, length: 1.2, resolution: 128 }, "ocean"), {
+      ...createDefaultWaterDefinition("stylized"), opacity: 1, foamAmount: 0, crestFoam: 0, surfaceFoam: 0, sparkles: 0, refraction: 0,
+      waveHeight: 0.3, waveLength: 2.2, steepness: 0.6, detailWaves: 1,
+    });
+    for (let frame = 0; frame < 120 && !waterFftDiagnostics(scene).simulations.some((simulation) => simulation.ready); frame++) {
+      engine.beginFrame();
+      try { referenceRenderer.render(); } finally { engine.endFrame(); }
+      await waitFrame();
+    }
+    await pair("gpu-water-fft-detail", [contribution([detailed])]);
+    fftDetail = { ready: waterFftDiagnostics(scene).simulations.some((simulation) => simulation.ready), defines: detailed.subMeshes[0]?.effect?.defines ?? "" };
+    clear();
+    setSceneRenderSettings(scene, { quality });
+    camera.orthoLeft = -3; camera.orthoRight = 3; camera.orthoTop = 1.5; camera.orthoBottom = -1.5;
+
     const doc = createDefaultMaterialDocument(); doc.shadingModel = "unlit"; doc.blendMode = "masked"; doc.alphaCutoff = 0.5;
     doc.nodes.push(
       { id: "cutout", type: "param.float", position: { x: 0, y: 0 }, properties: { name: "Cutout", value: [1] } },
@@ -355,7 +397,7 @@ export async function runSharedOutlineGeometryProof(backend: "webgl2" | "webgpu"
     await pair("authored-parameters-reset", [contribution([authored])]);
     clear();
     await capture("all-geometry-removed");
-    return { ...metadata, cases, captures, warmup: "Three consecutive coherent coordinator draws per captured state; rejected candidates reprepare within five seconds" };
+    return { ...metadata, cases, captures, fftDetail, warmup: "Three consecutive coherent coordinator draws per captured state; rejected candidates reprepare within five seconds" };
   } finally {
     detach(); await renderer.retire(); await referenceRenderer.retire(); view.dispose(); disposeAuthored?.(); scene.dispose(); engine.dispose(); canvas.remove();
   }

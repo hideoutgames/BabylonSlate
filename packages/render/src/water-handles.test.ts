@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { FreeCamera, NullEngine, PointerDragBehavior, Scene, UtilityLayerRenderer, Vector3 } from "@babylonjs/core";
-import { normalizeWaterBody } from "@babylonslate/core";
+import { createDefaultWaterDefinition, normalizeWaterBody, waterHorizontalEnvelope } from "@babylonslate/core";
 import { createWaterMesh, updateWaterMeshBody } from "./water-mesh";
 import { createWaterHandles, dragWaterHandle, insertRiverPoint, removeRiverPoint, waterHandles } from "./water-handles";
 
@@ -39,6 +39,8 @@ describe("Water shape handles", () => {
       const body = normalizeWaterBody({ width: 10, length: 6 });
       const mesh = createWaterMesh(scene, "actor:lake", body);
       mesh.position.set(20, 1, 0);
+      // Culling bounds cover the half width plus the Gerstner waves' horizontal reach.
+      const reach = waterHorizontalEnvelope(createDefaultWaterDefinition(), body.waveScale), halfWidth = (x: number) => x + reach;
       const handles = createWaterHandles(layer, scene, { onCommit: (edit) => commits.push(edit) });
       handles.attach({ actorId: "actor", componentId: "lake", kind: "lake", meshName: "actor:lake", properties: { width: 10, length: 6, assetGuid: "water" } });
       layer.utilityLayerScene.render();
@@ -49,7 +51,7 @@ describe("Water shape handles", () => {
       drag.onDragStartObservable.notifyObservers(event(25) as never);
       drag.onDragObservable.notifyObservers(event(27) as never);
       expect(handles.isDragging()).toBe(true);
-      expect(mesh.getBoundingInfo().boundingBox.maximum.x).toBeCloseTo(7);
+      expect(mesh.getBoundingInfo().boundingBox.maximum.x).toBeCloseTo(halfWidth(7));
       expect(commits).toEqual([]);
       drag.onDragEndObservable.notifyObservers(event(27) as never);
       expect(commits).toEqual([{ actorId: "actor", componentId: "lake", properties: { width: 14, length: 6, assetGuid: "water" } }]);
@@ -58,9 +60,9 @@ describe("Water shape handles", () => {
       expect(pick.position.x).toBeCloseTo(29);
       drag.onDragStartObservable.notifyObservers(event(27) as never);
       drag.onDragObservable.notifyObservers(event(30) as never);
-      expect(mesh.getBoundingInfo().boundingBox.maximum.x).toBeCloseTo(10);
+      expect(mesh.getBoundingInfo().boundingBox.maximum.x).toBeCloseTo(halfWidth(10));
       handles.attach(null);
-      expect(mesh.getBoundingInfo().boundingBox.maximum.x).toBeCloseTo(9);
+      expect(mesh.getBoundingInfo().boundingBox.maximum.x).toBeCloseTo(halfWidth(9));
       expect(commits).toHaveLength(1);
       expect(handles.handleIds()).toEqual([]);
       handles.dispose();

@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ArcRotateCamera, Matrix, Mesh, MeshBuilder, NullEngine, Scene, Vector3, VertexBuffer, VertexData } from "@babylonjs/core";
-import { createDefaultWaterDefinition, normalizeWaterBody } from "@babylonslate/core";
+import { createDefaultWaterDefinition, normalizeRenderingQuality, normalizeWaterBody, qualityPresetPatch, type QualityLevel } from "@babylonslate/core";
 import { createEditorGrid } from "./editor-grid";
+import { updateSceneRenderingSettings } from "./render-settings";
 import { createWaterMesh, setSceneWaterTime, updateSceneWater } from "./water-mesh";
 import { WATER_CONTACT_LAYER_OFFSETS, WaterContactField } from "./water-contact-field";
 import type { WaterFieldSurface } from "./water-field";
@@ -231,5 +232,26 @@ describe("Water contact field", () => {
     for (const mesh of [post, neighbour]) mesh.position.y = 20;
     frame(); clock += 250; updateSceneWater(scene);
     expect(contacts.texture).toBeNull();
+  });
+
+  it("caps the contact texture at the project's Contact Resolution and rebuilds it when that changes", () => {
+    setup();
+    // Two posts far apart need more cells than the lower caps allow at the finest cell size.
+    for (const x of [-60, 60]) MeshBuilder.CreateBox(`post ${x}`, { width: 1, height: 6, depth: 1 }, scene).position.x = x;
+    frame();
+    const ocean = createWaterMesh(scene, "ocean", normalizeWaterBody({ width: 200, length: 40 }, "ocean"), createDefaultWaterDefinition());
+    const contacts = contactsOf(ocean);
+    const side = (level: QualityLevel) => {
+      updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality(qualityPresetPatch(level)) });
+      updateSceneWater(scene);
+      return Math.max(view(contacts).width, view(contacts).height);
+    };
+    // High allows 1024 cells per side; Low's 256 coarsens the cells instead of growing the texture.
+    const high = side("high"), low = side("low");
+    expect(high).toBeGreaterThan(512);
+    expect(high).toBeLessThanOrEqual(1024);
+    expect(low).toBeLessThanOrEqual(256);
+    // Both waterlines survive the coarser cells.
+    for (const x of [-60, 60]) expect(Math.abs(contactAt(contacts, x + 0.55, 0, 0))).toBeLessThan(0.5);
   });
 });

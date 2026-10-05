@@ -139,3 +139,23 @@ it("switches automatic LOD and scales its distances within the Geometry tier", a
   expect(screen.getByLabelText("LOD Distance Scale")).toHaveProperty("value", "0.5");
   expect(selected("Textures Quality")).toBe("High");
 });
+
+it("edits Water quality within its tier and disables rows whose feature is off", async () => {
+  render(<Fields />);
+  expect(selected("Water Quality")).toBe("High");
+  expect(selected("Water Reflections")).toBe("Screen Space");
+  expect(screen.getByLabelText("Reflection Steps")).toHaveProperty("disabled", false);
+  expect(screen.getByLabelText("Planar Resolution")).toHaveProperty("disabled", true);
+  fireEvent.click(screen.getByRole("switch", { name: "FFT Ocean Detail" }));
+  expect(selected("Water Quality")).toBe("Custom");
+  expect(selected("Overall Quality")).toBe("Custom");
+  expect(screen.getByLabelText("FFT Cascades")).toHaveProperty("disabled", true);
+  await select("Water Reflections", "Sky Only");
+  expect(screen.getByLabelText("Reflection Steps")).toHaveProperty("disabled", true);
+  await select("Water Quality", "Low");
+  expect(selected("Water Shading Detail")).toBe("Low");
+  expect(screen.getByRole("switch", { name: "Water Refraction" }).getAttribute("aria-checked")).toBe("false");
+  expect(screen.getByLabelText("Refraction Resolution")).toHaveProperty("disabled", true);
+  expect(screen.getByLabelText("Water Mesh Density")).toHaveProperty("value", "0.5");
+  expect(selected("Geometry Quality")).toBe("High");
+});

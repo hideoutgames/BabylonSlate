@@ -36,6 +36,7 @@ import { hasClusteredLightPolicy } from "./clustered-light-policy";
 import {
   authoredShadowParticipation,
   hasDeformingShadowBounds,
+  neverCastsShadows,
   participatesInShadows,
   type ShadowParticipation,
 } from "./shadow-mesh-policy";
@@ -403,7 +404,7 @@ export class SceneShadowController {
       }
       const participation = authoredShadowParticipation(mesh);
       mesh.receiveShadows = participation.receiveShadows !== false;
-      if (participation.castShadows === false) {
+      if (participation.castShadows === false || neverCastsShadows(mesh)) {
         if (this.meshes.delete(mesh)) {
           this.spatial.remove(mesh);
           for (const entry of this.entries.values())
