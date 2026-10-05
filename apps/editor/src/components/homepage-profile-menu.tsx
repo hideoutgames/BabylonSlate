@@ -44,9 +44,11 @@ export function HomepageProfileMenu({
   disabled,
   name = "Guest",
   email,
+  description,
   imageUrl,
   onSignIn,
   onSignOut,
+  signOutLabel = "Sign Out",
   onManageAccount,
   onSubscription,
   onApplicationSettings,
@@ -57,9 +59,11 @@ export function HomepageProfileMenu({
   disabled?: boolean;
   name?: string;
   email?: string;
+  description?: string;
   imageUrl?: string;
   onSignIn?: () => void;
   onSignOut?: () => Promise<void>;
+  signOutLabel?: string;
   onManageAccount?: () => void;
   onSubscription: () => void;
   onApplicationSettings?: () => void;
@@ -104,7 +108,7 @@ export function HomepageProfileMenu({
             <span className="homepage-profile-menu-text">
               <span className="homepage-profile-menu-name">{name}</span>
               <span className="homepage-profile-menu-email">
-                {email ?? (signedIn ? "Signed In" : "Not Signed In")}
+                {description ?? email ?? (signedIn ? "Signed In" : "Not Signed In")}
               </span>
             </span>
           </DropdownMenuLabel>
@@ -180,7 +184,7 @@ export function HomepageProfileMenu({
                   }}
                 >
                   <LogOutIcon />
-                  Sign Out
+                  {signOutLabel}
                 </DropdownMenuItem>
               )}
             </DropdownMenuGroup>

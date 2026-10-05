@@ -132,6 +132,14 @@ import {
 } from "../lib/logic-graph-document";
 import { hydrateSerializedGraphForEditor } from "../services/graph-validation";
 import { classIdForGraphPath } from "../services/script-compiler";
+import {
+  MATERIAL_DOCUMENT_KINDS,
+  useOpenDocumentsOfKinds,
+} from "../lib/use-open-documents-of-kinds";
+
+const CLASS_KINDS = ["graph"] as const;
+const INTERFACE_KINDS = ["script-interface"] as const;
+const TYPE_KINDS = ["structure", "enum"] as const;
 
 function memberPinRows(
   pins: GraphClassMember["pins"],
@@ -849,10 +857,11 @@ function PrefabComponentDetails({
   const { assetRegistry, openDocuments, registryEpoch } = useDocuments();
   const [assetPick, setAssetPick] = useState<AssetPickRequest | null>(null);
   // An open Material tab's unsaved domain wins over its saved header.
+  const materialDocuments = useOpenDocumentsOfKinds(MATERIAL_DOCUMENT_KINDS);
   const materialDomains = useMemo(() => {
     void registryEpoch;
-    return materialDomainsFromAssets(assetRegistry?.list() ?? [], openDocuments);
-  }, [assetRegistry, openDocuments, registryEpoch]);
+    return materialDomainsFromAssets(assetRegistry?.list() ?? [], materialDocuments);
+  }, [assetRegistry, materialDocuments, registryEpoch]);
   return (
     <div
       className="flex flex-col gap-3 p-3"
@@ -1080,11 +1089,15 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     };
   }, [assetRegistry, editorGraph, registryEpoch]);
   const { interfaceAssets, pickerAssets, bobjectClassEntries, projectClasses } = registryViews;
+  // Other open tabs' unsaved content these catalogs read, by kind.
+  const typeDocuments = useOpenDocumentsOfKinds(TYPE_KINDS);
+  const classDocuments = useOpenDocumentsOfKinds(CLASS_KINDS);
+  const interfaceDocuments = useOpenDocumentsOfKinds(INTERFACE_KINDS);
   // Open Enum tabs' unsaved members win over saved headers.
   const enumMembers = useMemo(() => {
     void registryEpoch;
-    return collectEnumMemberNames(openDocuments, assetRegistry?.list() ?? []);
-  }, [assetRegistry, openDocuments, registryEpoch]);
+    return collectEnumMemberNames(typeDocuments, assetRegistry?.list() ?? []);
+  }, [assetRegistry, registryEpoch, typeDocuments]);
   const parsedAnim = useMemo(
     () =>
       doc?.ref.kind === "anim-graph"
@@ -1153,10 +1166,10 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
       void registryEpoch;
       return collectGraphTypeAssets({
         assets: assetRegistry?.list() ?? [],
-        openDocuments,
+        openDocuments: typeDocuments,
       });
     },
-    [assetRegistry, openDocuments, registryEpoch],
+    [assetRegistry, registryEpoch, typeDocuments],
   );
   const typeSchemas = useMemo(
     () => typeSchemasFromGraphAssets(typeCatalog),
@@ -1188,6 +1201,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
   // hydrated view across selection changes; edits still persist the raw graph.
   const hydratedInspectGraph = useMemo(() => {
     if (!needsPinHydration || !inspectGraph) return null;
+    void registryEpoch; // Registry headers mutate without replacing the registry.
     return hydrateSerializedGraphForEditor(inspectGraph, undefined, {
       parentOf,
       structs: typeSchemas.structs,
@@ -1195,23 +1209,25 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
       classId: doc?.ref.path ? classIdForGraphPath(doc.ref.path) : undefined,
       otherClassGraphs: collectClassGraphsForPalette({
         assets: assetRegistry?.list() ?? [],
-        openDocuments,
+        openDocuments: classDocuments,
         classIdForPath: classIdForGraphPath,
       }),
       functionGraphs: graph?.functionGraphs,
       scriptInterfaces: collectScriptInterfacesForPalette({
         assets: assetRegistry?.list() ?? [],
-        openDocuments,
+        openDocuments: interfaceDocuments,
       }),
     });
   }, [
     assetRegistry,
+    classDocuments,
     doc?.ref.path,
     graph?.functionGraphs,
     inspectGraph,
+    interfaceDocuments,
     needsPinHydration,
-    openDocuments,
     parentOf,
+    registryEpoch,
     typeSchemas,
   ]);
   const selectedNode = hydratedInspectGraph

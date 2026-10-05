@@ -3,6 +3,7 @@ import { DocumentProvider } from "./context/document-context";
 import { AppSettingsProvider } from "./context/app-settings-context";
 import { EditorThemeProvider } from "./context/theme-context";
 import { AppRoutes } from "./app-routes";
+import { MobileDemoProvider } from "./context/mobile-demo-context";
 
 export default function App() {
   return (
@@ -10,7 +11,9 @@ export default function App() {
       <AppSettingsProvider>
         <EditorThemeProvider>
           <DocumentProvider>
-            <AppRoutes />
+            <MobileDemoProvider>
+              <AppRoutes />
+            </MobileDemoProvider>
           </DocumentProvider>
         </EditorThemeProvider>
       </AppSettingsProvider>

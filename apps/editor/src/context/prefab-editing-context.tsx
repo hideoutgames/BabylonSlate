@@ -40,7 +40,10 @@ import {
 } from "../panels/add-component-catalog";
 import { classParentLookup } from "../lib/content-browser-helpers";
 import { collectClassGraphsForPalette } from "../lib/logic-graph-document";
+import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 import { classIdForGraphPath } from "../services/script-compiler";
+
+const CLASS_KINDS = ["graph"] as const;
 
 interface PrefabEditingContextValue {
   components: PrefabComponentView[];
@@ -169,11 +172,15 @@ export function PrefabEditingProvider({
   initialSelectedIds?: readonly string[];
 }) {
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyGraphChange, assetRegistry } = useDocuments();
+  const {
+    openDocuments,
+    getOpenDocuments,
+    applyGraphChange,
+    assetRegistry,
+    registryEpoch,
+  } = useDocuments();
+  const classDocuments = useOpenDocumentsOfKinds(CLASS_KINDS);
   const viewportMode = useOptionalSceneEditing()?.viewportMode ?? "3d";
-  // Read when a component is added, not on every document change.
-  const openDocumentsRef = useRef(openDocuments);
-  openDocumentsRef.current = openDocuments;
   const [selectedIds, setSelectedIds] = useState<string[]>(() => {
     if (initialSelectedIds && initialSelectedIds.length > 0) {
       return [...initialSelectedIds];
@@ -205,18 +212,32 @@ export function PrefabEditingProvider({
   );
 
   const ancestorsRef = useRef<readonly PrefabAncestor[]>(NO_ANCESTORS);
-  const latestAncestors = prefabAncestors(
+  // Rebuilt when the registry or an open Class document changes, not when a
+  // Scene, Material or other non-Class document is edited.
+  const isClassDocument = graph !== null;
+  const ancestors = useMemo(() => {
+    void registryEpoch;
+    const latest = prefabAncestors(
+      classId,
+      parentOf,
+      isClassDocument ? (assetRegistry?.list() ?? NO_ASSETS) : NO_ASSETS,
+      classDocuments,
+    );
+    // Header payloads parse into fresh arrays; keep the previous list while
+    // the inherited components are unchanged so the published value stays
+    // stable.
+    if (JSON.stringify(latest) !== JSON.stringify(ancestorsRef.current)) {
+      ancestorsRef.current = latest;
+    }
+    return ancestorsRef.current;
+  }, [
+    assetRegistry,
+    classDocuments,
     classId,
+    isClassDocument,
     parentOf,
-    assets,
-    openDocuments,
-  );
-  // Header payloads parse into fresh arrays; keep the previous list while the
-  // inherited components are unchanged so the published value stays stable.
-  if (JSON.stringify(latestAncestors) !== JSON.stringify(ancestorsRef.current)) {
-    ancestorsRef.current = latestAncestors;
-  }
-  const ancestors = ancestorsRef.current;
+    registryEpoch,
+  ]);
 
   const localComponents = useMemo(
     () => prefabComponentsFromGraph(graph),
@@ -267,7 +288,8 @@ export function PrefabEditingProvider({
           properties: {
             ...defaultPropertiesFor(
               selection.classId,
-              physicsWorldFromOpenDocuments(openDocumentsRef.current),
+              // Read when the component is added, not on every edit.
+              physicsWorldFromOpenDocuments(getOpenDocuments()),
               viewportMode,
             ),
             ...selection.properties,
@@ -279,7 +301,7 @@ export function PrefabEditingProvider({
       upsertLocalFromViews(next);
       setSelectedIds([id]);
     },
-    [components, selectedId, upsertLocalFromViews, viewportMode],
+    [components, getOpenDocuments, selectedId, upsertLocalFromViews, viewportMode],
   );
 
   const removeSelected = useCallback(() => {

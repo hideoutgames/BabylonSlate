@@ -16,6 +16,9 @@ const repoRoot = path.resolve(rootDir, "../..");
 const manifestPath = path.join(rootDir, "public/build-manifest.json");
 const distributionBuild = process.env.BABYLONSLATE_DISTRIBUTION === "true";
 const queryTestPermitted = process.env.VITE_TEST_QUERY === "true";
+// Editor-edit profiling builds use React's profiling renderer so test-mode
+// Profilers report commit timings (docs/architecture/testing.md).
+const reactProfiling = process.env.VITE_REACT_PROFILING === "true";
 if (
   distributionBuild &&
   (!existsSync(manifestPath) ||
@@ -23,6 +26,9 @@ if (
     queryTestPermitted)
 ) {
   throw new Error("Distribution requires build metadata and production storage");
+}
+if (distributionBuild && reactProfiling) {
+  throw new Error("Distribution cannot use the React profiling build");
 }
 const declaredVersion = JSON.parse(
   readFileSync(path.join(repoRoot, "release/version.json"), "utf8"),
@@ -79,6 +85,7 @@ export default defineConfig({
     alias: {
       "@": path.resolve(rootDir, "./src"),
       "@babylonslate/ui": path.resolve(rootDir, "../../packages/ui/src"),
+      ...(reactProfiling ? { "react-dom/client": "react-dom/profiling" } : {}),
     },
   },
   server: {

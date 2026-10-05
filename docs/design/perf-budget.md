@@ -21,6 +21,7 @@ with another view are not per-viewport GPU measurements.
 | Game tick (combined) | &lt; 8 ms | ~5 ms scripts + ~3 ms physics in one worker |
 | Snapshot publish | Measured, outside the tick budget | Stats `publishMs`: per-tick SceneLayer overlay layout and removal pass plus one world composition and buffer write per `advance()` burst. Shown beside script/physics; not in `isTickOverBudget` |
 | Draw calls | Low hundreds | Prefer instancing; surface in stats HUD |
+| Editor edit (React commits) | Measured, no budget | `e2e/editor-edit-profile.spec.ts` with a `VITE_REACT_PROFILING=true` build reports commits and Profiler durations per region for Scene Details, Class graph, Content Browser search and Tilemap paint edits. See [editor-edit profiling harness](../architecture/testing.md#editor-edit-profiling-harness) |
 
 ## Memory
 

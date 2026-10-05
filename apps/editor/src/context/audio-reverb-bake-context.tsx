@@ -14,6 +14,9 @@ import {
   type AudioReverbBakeController,
 } from "../lib/audio-reverb-bake";
 import { createAudioReverbWorker } from "../services/audio-reverb-worker-host";
+import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
+
+const SCENE_KINDS = ["scene"] as const;
 
 function createBakeFn(workerRef: {
   current: ReturnType<typeof createAudioReverbWorker> | null;
@@ -35,12 +38,13 @@ function createBakeFn(workerRef: {
 
 export function AudioReverbBakeProvider({ children }: { children: ReactNode }) {
   const {
-    openDocuments,
     writeSceneAudioReverbChunk,
     loadAssetDocument,
     projectDocument,
     assetRegistry,
   } = useDocuments();
+  // Only Scene edits can change static audio geometry.
+  const sceneDocuments = useOpenDocumentsOfKinds(SCENE_KINDS);
   const controllerRef = useRef<AudioReverbBakeController | null>(null);
   const workerRef = useRef<ReturnType<typeof createAudioReverbWorker> | null>(
     null,
@@ -96,8 +100,7 @@ export function AudioReverbBakeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const controller = controllerRef.current;
     if (!controller) return;
-    for (const doc of openDocuments) {
-      if (doc.ref.kind !== "scene") continue;
+    for (const doc of sceneDocuments) {
       const scene = sceneFromDocument(doc.content);
       if (!scene) continue;
       const fingerprint = staticAudioGeometryFingerprint(scene);
@@ -105,7 +108,7 @@ export function AudioReverbBakeProvider({ children }: { children: ReactNode }) {
       fingerprints.current.set(doc.ref.path, fingerprint);
       controller.schedule(doc.ref.path, scene);
     }
-  }, [openDocuments]);
+  }, [sceneDocuments]);
 
   return children;
 }

@@ -125,6 +125,12 @@ import { classIdForGraphPath } from "../services/script-compiler";
 import { prefabTemplatesByClassId } from "../lib/prefab-instance-sync";
 import { physicsConstraintTargets } from "../lib/physics-constraint-targets";
 import { sceneActorDisplayNames } from "../lib/scene-actor-names";
+import {
+  MATERIAL_DOCUMENT_KINDS,
+  useOpenDocumentsOfKinds,
+} from "../lib/use-open-documents-of-kinds";
+
+const CLASS_KINDS = ["graph"] as const;
 
 function PostProcessEntryId({ id, index }: { id: string; index: number }) {
   return (
@@ -255,21 +261,23 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
   }, [assetRegistry, registryEpoch]);
   const { parentOf, pickerAssets, environmentPickerAssets, classEntries, projectComponentItems } = registryViews;
   // An open Material tab's unsaved domain wins over its saved header.
+  const materialDocuments = useOpenDocumentsOfKinds(MATERIAL_DOCUMENT_KINDS);
   const materialDomains = useMemo(() => {
     void registryEpoch;
-    return materialDomainsFromAssets(assetRegistry?.list() ?? [], openDocuments);
-  }, [assetRegistry, openDocuments, registryEpoch]);
+    return materialDomainsFromAssets(assetRegistry?.list() ?? [], materialDocuments);
+  }, [assetRegistry, materialDocuments, registryEpoch]);
   const postProcessPickerAssets = useMemo(() => {
     void registryEpoch;
     return (assetRegistry?.list() ?? [])
-      .filter((asset) => isPostProcessMaterialForPicker(asset, openDocuments))
+      .filter((asset) => isPostProcessMaterialForPicker(asset, materialDocuments))
       .map((asset) => ({
         guid: asset.header.guid,
         name: asset.header.name,
         type: asset.header.type,
         path: asset.path,
       }));
-  }, [assetRegistry, openDocuments, registryEpoch]);
+  }, [assetRegistry, materialDocuments, registryEpoch]);
+  const classDocuments = useOpenDocumentsOfKinds(CLASS_KINDS);
   const sortingLayers =
     projectDocument?.settings.twoD.sortingLayers ?? DEFAULT_SORTING_LAYERS;
   const collisionLayers =
@@ -353,10 +361,11 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
   const actorDisplayNames = scene ? sceneActorDisplayNames(scene) : new Map<string, string>();
   const pickingCableTarget = actor?.components.find((component) => component.id === constraintTargetPick?.componentId)?.classId === "CableComponent";
   const prefabTemplates = useMemo(() => {
+    void registryEpoch; // Registry headers mutate without replacing the registry.
     const assets = assetRegistry?.list() ?? [];
     const graphs = collectClassGraphsForPalette({
       assets,
-      openDocuments,
+      openDocuments: classDocuments,
       classIdForPath: classIdForGraphPath,
     });
     return prefabTemplatesByClassId({
@@ -364,7 +373,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       parentOf: classParentLookup(assets),
       graphs,
     });
-  }, [assetRegistry, openDocuments]);
+  }, [assetRegistry, classDocuments, registryEpoch]);
 
   const mutate = useCallback(
     (next: SerializedScene) => {

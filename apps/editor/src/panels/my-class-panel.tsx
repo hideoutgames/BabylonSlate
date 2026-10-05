@@ -60,6 +60,10 @@ import {
   collectOverridableFunctionRows,
 } from "../lib/overridable-functions";
 import { componentGraphMembersForClass } from "../lib/component-graph-members";
+import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
+
+const CLASS_KINDS = ["graph"] as const;
+const INTERFACE_KINDS = ["script-interface"] as const;
 
 export type MyClassMember = {
   kind: "variable" | "function" | "event" | "interface";
@@ -900,6 +904,8 @@ export function MyClassPanel(_props: MyClassPanelProps) {
   const { documentId } = useDocumentWorkspace();
   const { openDocuments, applyGraphChange, applyAssetDocumentChange, assetRegistry, registryEpoch, openDocument } =
     useDocuments();
+  const classDocuments = useOpenDocumentsOfKinds(CLASS_KINDS);
+  const interfaceDocuments = useOpenDocumentsOfKinds(INTERFACE_KINDS);
   const { setFocusDiagnostic } = useValidation();
   const {
     selectedMemberId,
@@ -953,16 +959,16 @@ export function MyClassPanel(_props: MyClassPanelProps) {
       parentOf,
       parentGraphs: collectClassGraphsForPalette({
         assets,
-        openDocuments,
+        openDocuments: classDocuments,
         classIdForPath: classIdForGraphPath,
       }),
       assetType: indexed?.header.type,
       scriptInterfaces: collectScriptInterfacesForPalette({
         assets,
-        openDocuments,
+        openDocuments: interfaceDocuments,
       }),
     };
-  }, [assetRegistry, className, indexed, openDocuments, parentOf, registryEpoch]);
+  }, [assetRegistry, className, classDocuments, indexed, interfaceDocuments, parentOf, registryEpoch]);
 
   const focusEvent = (nodeId: string, name: string) => {
     setActiveFunctionId(null);
