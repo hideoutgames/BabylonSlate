@@ -66,7 +66,9 @@ export function saveEngineDrawingState(engine: AbstractEngine, state: EngineDraw
   state.zOffsetUnits = depth.zOffsetUnits;
   state.stencilTest = engine.stencilState.stencilTest;
   state.stencilMaterial = engine.stencilStateComposer.stencilMaterial;
-  state.alpha = engine.getAlphaMode();
+  // Babylon reports -1 after a cache reset (wipeCaches(true), context restore) while blending is off; handing that
+  // sentinel back to setAlphaMode would enable blending with stale factors, so it restores as ALPHA_DISABLE.
+  state.alpha = Math.max(0, engine.getAlphaMode());
   state.color = engine.getColorWrite();
 }
 
@@ -86,7 +88,10 @@ export function restoreEngineDrawingState(engine: AbstractEngine, state: EngineD
       state.mip,
       target.isCube ? Math.floor(state.layer / 6) : state.layer,
     );
-  } else engine.restoreDefaultFramebuffer();
+  } else {
+    // Unbind only: WebGPU would otherwise open an empty swapchain pass that the next target bind closes again.
+    engine.restoreDefaultFramebuffer(true);
+  }
   engine.setViewport(state.viewport ?? FULL_VIEWPORT, state.width, state.height);
   engine.setAlphaMode(state.alpha);
   engine.setColorWrite(state.color);

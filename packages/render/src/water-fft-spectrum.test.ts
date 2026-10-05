@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { createDefaultWaterDefinition, createSeededRng, normalizeWaterDefinition, waterWaveSet, type WaterDefinition } from "@babylonslate/core";
+import {
+  createDefaultWaterDefinition, createSeededRng, normalizeWaterDefinition, waterWaveSet, type WaterDefinition, type WaterWaveSet,
+} from "@babylonslate/core";
 import {
   WATER_FFT_PERIOD, waterFftBandVariance, waterFftCycle, waterFftInitialSpectrum, waterFftInverse, waterFftLayout,
-  waterFftSynthesize, type WaterFftLayout,
+  waterFftSpectrumBuild, waterFftSynthesize, type WaterFftLayout,
 } from "./water-fft-spectrum";
 
 const TAU = 2 * Math.PI;
@@ -36,7 +38,7 @@ const maxDifference = (a: ArrayLike<number>, b: ArrayLike<number>) => {
  * 2·Re(F(k)·h0(k)·e^{i(k·x − θ)}) to a field whose spectral factor is F (1 for H, i·k̂ for D, i·k for ∇H, …).
  */
 function travellingWaves(spectrum: Float32Array, layout: WaterFftLayout, cycle: number): Float64Array[] {
-  const { size, cascades } = layout, width = size * cascades;
+  const { size, cascades, amplitude } = layout, width = size * cascades;
   const layers = Array.from({ length: 2 * cascades }, () => new Float64Array(size * size * 4));
   for (let cascade = 0; cascade < cascades; cascade++) {
     const patch = layout.patchSizes[cascade]!, scale = TAU / patch;
@@ -55,7 +57,7 @@ function travellingWaves(spectrum: Float32Array, layout: WaterFftLayout, cycle: 
         const wre = re * c - im * s, wim = re * s + im * c; // h0·e^{i·phase}
         for (let half = 0; half < 2; half++) for (let channel = 0; channel < 4; channel++) {
           const [fr, fi] = factors[half]![channel]!;
-          layers[2 * cascade + half]![(y * size + x) * 4 + channel] += 2 * (fr * wre - fi * wim);
+          layers[2 * cascade + half]![(y * size + x) * 4 + channel] += 2 * amplitude * (fr * wre - fi * wim);
         }
       }
     }
@@ -76,11 +78,11 @@ describe("FFT ocean spectrum and CPU reference", () => {
   });
 
   it("synthesizes real height, Gerstner offset, slope and Jacobian fields that travel downwind like the analytic swell", () => {
-    const set = waterWaveSet(water({ waveDirection: 25, waveSpread: 0.6, waveSeed: 9 }));
+    const set = waterWaveSet(water({ waveDirection: 25, waveSpread: 0.6, waveSeed: 9, waveLength: 30, waveSpeed: 1.3 }));
     const layout = waterFftLayout(set, 16, 2);
     const spectrum = waterFftInitialSpectrum(set, layout);
     for (const time of [0, 3.7, 1000.25]) {
-      const cycle = waterFftCycle(time);
+      const cycle = waterFftCycle(time, layout.timeScale);
       const layers = waterFftSynthesize(spectrum, layout, cycle), expected = travellingWaves(spectrum, layout, cycle);
       for (let layer = 0; layer < layers.length; layer++) {
         let magnitude = 0;
@@ -89,9 +91,25 @@ describe("FFT ocean spectrum and CPU reference", () => {
         expect(maxDifference(layers[layer]!, expected[layer]!)).toBeLessThan(magnitude * 1e-9);
       }
     }
+    // Every mode runs at the deep-water frequency √(g|k|) · Wave Speed of its physical wavenumber (quantized below
+    // 0.2%), so Wave Length and Wave Speed act through the layout alone.
+    let modes = 0;
+    for (let cascade = 0; cascade < layout.cascades; cascade++) {
+      const scale = TAU / layout.patchSizes[cascade]!;
+      for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+        const i = (y * 32 + cascade * 16 + x) * 4;
+        if (spectrum[i] === 0 && spectrum[i + 1] === 0) continue;
+        const k = Math.hypot(x < 8 ? x : x - 16, y < 8 ? y : y - 16) * scale;
+        const omega = spectrum[i + 2]! * TAU / WATER_FFT_PERIOD * layout.timeScale;
+        expect(Math.abs(omega / (Math.sqrt(9.81 * k) * 1.3) - 1)).toBeLessThan(0.002);
+        modes++;
+      }
+    }
+    expect(modes).toBeGreaterThan(20);
     // The band repeats after exactly one period, so the GPU phase never needs large arguments.
-    const start = waterFftSynthesize(spectrum, layout, waterFftCycle(12.5));
-    const later = waterFftSynthesize(spectrum, layout, waterFftCycle(12.5 + 7 * WATER_FFT_PERIOD));
+    const period = WATER_FFT_PERIOD / layout.timeScale;
+    const start = waterFftSynthesize(spectrum, layout, waterFftCycle(12.5, layout.timeScale));
+    const later = waterFftSynthesize(spectrum, layout, waterFftCycle(12.5 + 7 * period, layout.timeScale));
     expect(maxDifference(start[0]!, later[0]!)).toBeLessThan(1e-9);
   });
 
@@ -99,27 +117,26 @@ describe("FFT ocean spectrum and CPU reference", () => {
     for (const waveModel of ["classic", "ocean"] as const) {
       const definition = water({ waveModel, waveDirection: 40, waveSpread: 0.2 });
       const set = waterWaveSet(definition);
-      const layout = waterFftLayout(set, 64, 2);
-      expect(layout.bandEdges[0]).toBe(set.cutoffK);
+      expect(waterFftLayout(set, 64, 2).bandEdges[0]).toBe(set.cutoffK);
       let ratio = 0, sumX = 0, sumZ = 0;
       const seeds = 24;
       for (let seed = 0; seed < seeds; seed++) {
         const seeded = waterWaveSet(water({ waveModel, waveDirection: 40, waveSpread: 0.2, waveSeed: seed * 101 + 7 }));
-        const spectrum = waterFftInitialSpectrum(seeded, layout);
-        const layers = waterFftSynthesize(spectrum, layout, waterFftCycle(seed * 1.3));
+        const layout = waterFftLayout(seeded, 64, 2), spectrum = waterFftInitialSpectrum(seeded, layout);
+        const layers = waterFftSynthesize(spectrum, layout, waterFftCycle(seed * 1.3, layout.timeScale));
         for (let cascade = 0; cascade < layout.cascades; cascade++) {
-          const scale = TAU / layout.patchSizes[cascade]!;
+          const scale = TAU / layout.patchSizes[cascade]!, low = layout.bandEdges[cascade]!, high = layout.bandEdges[cascade + 1]!;
           for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
             const i = (y * 64 * layout.cascades + cascade * 64 + x) * 4, power = spectrum[i]! ** 2 + spectrum[i + 1]! ** 2;
             const kx = (x < 32 ? x : x - 64) * scale, kz = (y < 32 ? y : y - 64) * scale, k = Math.hypot(kx, kz);
             // Inside the cascade's own band only, so neither the analytic band nor another cascade counts twice.
-            if (k < layout.bandEdges[cascade]! || k >= layout.bandEdges[cascade + 1]!) expect(power).toBe(0);
+            if (k < low * (1 - 1e-9) || k >= high * (1 + 1e-9)) expect(power).toBe(0);
             if (k > 0) { sumX += power * kx / k; sumZ += power * kz / k; }
           }
           let variance = 0;
           const height = layers[2 * cascade]!;
           for (let i = 1; i < height.length; i += 4) variance += height[i]! ** 2;
-          ratio += variance / (64 * 64) / waterFftBandVariance(seeded, layout.bandEdges[cascade]!, layout.bandEdges[cascade + 1]!) / layout.cascades;
+          ratio += variance / (64 * 64) / waterFftBandVariance(seeded, low, high) / layout.cascades;
         }
       }
       // Realized height variance matches ∫S(k)dk over the bands (averaged over seeds and cascades).
@@ -130,10 +147,42 @@ describe("FFT ocean spectrum and CPU reference", () => {
     }
   });
 
-  it("draws the same spectrum for the same asset and a different one for another Wave Seed", () => {
-    const layout = waterFftLayout(waterWaveSet(water()), 32, 1);
+  it("serves every Wave Height, Wave Length and Wave Speed from one unit spectrum scaled by the layout", () => {
+    const asset = { waveModel: "ocean" as const, waveDirection: 40, waveSpread: 0.2, waveSeed: 11 };
+    const base = waterFftLayout(waterWaveSet(water(asset)), 64, 2);
+    const spectrum = waterFftInitialSpectrum(waterWaveSet(water(asset)), base);
+    /** Phase-averaged variance the layout gives each cascade over the physical density's variance in its band. */
+    const bandRatios = (set: WaterWaveSet, layout: WaterFftLayout) => Array.from({ length: layout.cascades }, (_, cascade) => {
+      let sum = 0;
+      for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
+        const i = (y * 128 + cascade * 64 + x) * 4;
+        sum += 2 * layout.amplitude ** 2 * (spectrum[i]! ** 2 + spectrum[i + 1]! ** 2);
+      }
+      return sum / waterFftBandVariance(set, layout.bandEdges[cascade]!, layout.bandEdges[cascade + 1]!);
+    });
+    const expected = bandRatios(waterWaveSet(water(asset)), base);
+    for (const variant of [{ waveHeight: 2.6, waveLength: 41, waveSpeed: 0.4 }, { waveHeight: 0.3, waveLength: 5 }, { waveModel: "classic" as const, peakSharpness: 3.3 }]) {
+      const set = waterWaveSet(water({ ...asset, ...variant })), layout = waterFftLayout(set, 64, 2);
+      expect(layout.spectrumKey).toBe(base.spectrumKey);
+      expect(layout.key).not.toBe(base.key);
+      expect(layout.bandEdges[0]).toBe(set.cutoffK);
+      const ratios = bandRatios(set, layout);
+      for (let cascade = 0; cascade < 2; cascade++) expect(ratios[cascade]! / expected[cascade]! - 1).toBeCloseTo(0, 9);
+    }
+  });
+
+  it("draws the same spectrum for the same asset however the build is stepped, and a different one for another Wave Seed", () => {
+    const layout = waterFftLayout(waterWaveSet(water({ waveSeed: 3 })), 32, 3);
     const first = waterFftInitialSpectrum(waterWaveSet(water({ waveSeed: 3 })), layout);
     expect(waterFftInitialSpectrum(waterWaveSet(water({ waveSeed: 3 })), layout)).toEqual(first);
-    expect(maxDifference(waterFftInitialSpectrum(waterWaveSet(water({ waveSeed: 4 })), layout), first)).toBeGreaterThan(0);
+    // Drawn three rows per step (resuming mid-cascade and mid-draw), it needs every step and matches bit for bit.
+    const build = waterFftSpectrumBuild(waterWaveSet(water({ waveSeed: 3 })), layout);
+    let steps = 1;
+    while (!build.step(3 * 32)) steps++;
+    expect(steps).toBe(Math.ceil(2 * 3 * 32 / 3));
+    expect(build.data).toEqual(first);
+    const other = waterFftLayout(waterWaveSet(water({ waveSeed: 4 })), 32, 3);
+    expect(other.spectrumKey).not.toBe(layout.spectrumKey);
+    expect(maxDifference(waterFftInitialSpectrum(waterWaveSet(water({ waveSeed: 4 })), other), first)).toBeGreaterThan(0);
   });
 });
