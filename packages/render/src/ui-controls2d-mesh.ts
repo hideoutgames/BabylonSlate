@@ -237,7 +237,7 @@ export function createUIControl2DMesh(scene: Scene, name: string, source: UICont
         if (editingText === text && selectionStart === start && selectionEnd === end) return;
         editingText = text; selectionStart = start; selectionEnd = end; render();
       },
-      textOffsetAt(x, _y) {
+      textOffsetAt(x) {
         const entry = labels.get("label");
         const text = editingText ?? (visual.classId === "2DNumericInputComponent" ? String(visual.properties.value) : visual.properties.text);
         const items = entry && text2DMeshLayout(entry.mesh)?.items.filter(item => item.kind === "glyph");

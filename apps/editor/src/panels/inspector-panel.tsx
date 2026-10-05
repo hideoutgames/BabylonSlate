@@ -1443,7 +1443,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
             });
           }}
         />
-        {walkAncestry(parentClass ?? "Actor", parentOf).includes("SceneLayerActorSwitcher") ? <SceneLayerSwitcherFields properties={defaults.properties ?? {}} onChange={properties => persistGraph({ ...graph, actorDefaults: { ...defaults, properties } })} /> : null}
+        {walkAncestry(parentClass ?? "Actor", parentOf).includes("SceneLayerActorSwitcher") ? <SceneLayerSwitcherFields classId={selfClassId} properties={defaults.properties ?? {}} onChange={properties => persistGraph({ ...graph, actorDefaults: { ...defaults, properties } })} /> : null}
         {showActorDefaults ? <>
         <PropertyGrid
           title="Actor Defaults"
