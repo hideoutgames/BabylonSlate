@@ -1,5 +1,5 @@
 import { installedAssetIdentity, type IndexedAsset } from "@babylonslate/assets";
-import { installTextureBytes } from "@babylonslate/render";
+import { encodeRgbaPng, installTextureBytes } from "@babylonslate/render";
 import {
   createContext,
   useCallback,
@@ -53,6 +53,9 @@ import { useMaterialInstanceSources } from "./material-instance-sources";
 /** Trailing debounce: the last edit always compiles, unlike a rate limiter. */
 const IDLE_DEBOUNCE_MS = 220;
 export const MANUAL_RENDER_COOLDOWN_MS = 3_000;
+
+// Material previews have no scene capture; RTT samples use opaque black.
+const RENDER_TARGET_PREVIEW_BYTES = encodeRgbaPng(1, 1, new Uint8Array([0, 0, 0, 255]));
 
 /** A parameter the root Material exposes, with the value this instance inherits. */
 export interface MaterialInstanceParameter {
@@ -402,7 +405,12 @@ export function MaterialEditingProvider({
       const next = new Map<string, Uint8Array>();
       for (const guid of guids) {
         const asset = assetRegistry?.getByGuid(guid);
-        if (!asset || asset.header.type === "RenderTargetTexture" || !readAssetChunk) continue;
+        if (!asset) continue;
+        if (asset.header.type === "RenderTargetTexture") {
+          next.set(guid, RENDER_TARGET_PREVIEW_BYTES);
+          continue;
+        }
+        if (!readAssetChunk) continue;
         const pixels = await readAssetChunk(asset.path, "pixels");
         if (pixels && pixels.byteLength > 0) {
           next.set(guid, pixels);
