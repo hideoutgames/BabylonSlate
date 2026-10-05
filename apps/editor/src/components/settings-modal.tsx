@@ -82,6 +82,7 @@ import { LogOutIcon } from "lucide-react";
 import { useDocuments } from "../context/document-context";
 import { editorUtilityObjectClassEntries } from "../lib/editor-utility-classes";
 import { gameInstanceClassEntries } from "../lib/component-property-rows";
+import { classIdFromClassAsset } from "../lib/content-browser-helpers";
 import { projectArchiveDownloadName } from "../lib/display-project-name";
 import { exportGameFailureMessage } from "../lib/export-game-failure";
 import {
@@ -791,6 +792,18 @@ export function SettingsModal({
             </Field>
             <Field>
               <FieldLabel>Game Instance</FieldLabel>
+              <AssetPickerControl
+                value={
+                  assetRegistry
+                    ?.list()
+                    .find(
+                      (asset) =>
+                        asset.header.type === "Class" &&
+                        classIdFromClassAsset(asset) ===
+                          projectDocument.settings.gameInstanceClass,
+                    )?.header.guid
+                }
+              >
               <Button
                 type="button"
                 variant="outline"
@@ -812,6 +825,7 @@ export function SettingsModal({
                   ),
                 )}
               </Button>
+              </AssetPickerControl>
               <FieldDescription>
                 GameInstance subclass created for Play, Preview and exported
                 games.
