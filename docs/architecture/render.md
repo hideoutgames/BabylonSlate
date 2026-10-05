@@ -712,9 +712,9 @@ cluster, pending and total reserved managed-lighting bytes. Context restoration
 releases each owner's old resources before allowing its replacement; it never
 clears a sibling's reservation globally.
 
-The same Engine ledger now accepts SceneColor, geometry, depth and post-process
-leases through `beginManagedRenderAllocation`; existing lighting callers keep
-their lower limits and cluster accounting. Category totals partition physical
+The same Engine ledger now accepts SceneColor, geometry, depth, post-process and
+water (water-owned render targets) leases through `beginManagedRenderAllocation`;
+existing lighting callers keep their lower limits and cluster accounting. Category totals partition physical
 handles; a texture aliased across categories is counted once in `sharedBytes`.
 Declared render-target recipes reserve dimensions, array/cube/volume mip storage,
 resolved textures and full lazy MSAA capacity before construction. Actual InternalTexture metadata can reconcile graph-owned handles before lazy
@@ -1795,6 +1795,17 @@ To start, create a **Water** asset and choose **Realistic** or **Stylized**. Ope
 - Surface Resolution (8-128) controls target world-space detail. Ocean, Lake, Puddle and River geometry is anchored to the world: an evenly spaced grid (up to 161 by 161 vertices; rivers up to 65 across and roughly 530 rows along) depends only on the body and the volume's rotation and scale, never on the camera, so moving the view does not reshape the surface or flatten its waves. Wave components shorter than the grid spacing fade uniformly across the surface; per-pixel normals retain the detail. Only Global Water Volume follows the camera, with world-snapped inner cells and graded outer cells. Physics queries retain the full analytic waves at all distances.
 - Each water material compiles only its own style: the plugin sets `SLATE_WATER_STYLIZED` from the asset's Style, so the shader-size budget is spent once. Editing Style rebuilds the water in the asset preview, the editor scene and Play.
 - Project Scalability **Water** caps render-only cost (shading detail, mesh density, contact resolution, refraction, reflections, FFT detail); see the Water tier table under rendering scalability. Water rendering gates on the device-effective `sceneWaterQualityDeviceClamp(scene).quality` (and `screenSpaceFallback` for Planar on non-flat water) and compares `sceneWaterQualityRevision(scene)` on its next prepare; queries and buoyancy never read it.
+- Planar reflection infrastructure (`water-planar-reflection.ts`; built-in shading does not sample it yet):
+  - `waterPlanarReflectionForCamera(scene, camera)` returns `{ texture, viewProjection, planeY, mesh, gammaSpace }` for the reflection that camera's view drew this frame, or null. Each lookup also requests the reflection, so the first returns null and later frames return the drawn result. The object is reused; check `mesh` before sampling.
+  - Only scenes retained by `retainWaterPlanarReflections` (every `SceneRenderCoordinator` view) draw one. Previews, thumbnails, Render Target Captures and the mirror pass itself get null.
+  - It draws only while device-effective Reflections are Planar and an eligible body is visible. Eligible means built-in water with **Object Reflections** on, flat (not a river or a volume tilted out of level) and below the eye. One body per view is chosen: the largest projected rest rectangle, then the nearer plane, then the older mesh.
+  - A rigid camera at the eye mirrored across the rest plane (view x flipped, so winding and back-face culling are unchanged) renders the opaque scene. The water plane is an oblique near plane frozen into its projection, so submerged geometry never reflects and no material compiles a clip-plane variant.
+  - The pass is drawn capture-style from `onBeforeRender` with `drawBorrowedTarget`, under the Render Target Capture readiness exemption. It never enters `scene.customRenderTargets`, works on the FrameGraph and classic paths, and adds no strict readiness probes on steady frames.
+  - The render list is culled by the mirrored frustum and the water plane. It skips water, editor helpers, lines, alpha-blended meshes, particles and sprites.
+  - `viewProjection` takes positions relative to `slateWaterOrigin` (the view's eye under floating origin). Its eye-relative translation is formed in float64, so it stays precise far from the world origin.
+  - Colour keeps the view's image-processing setting, so reflected materials reuse the view's shader variants and target formats. Scene Linear views store linear RGBA16F; display views store display-encoded RGBA8 (`gammaSpace: true`, decode with `toLinearSpace`). Alpha is coverage: 0 where nothing was reflected, so a shader can keep its sky reflection there.
+  - The target is Planar Resolution × the view size, snapped up to 8 px, with depth. It is leased in the managed ledger's `water` category before allocation and resizes in place, reserving the new size before releasing the old charge.
+  - It redraws every frame while the view moves and every other frame while it is static. It is released 120 frames after it was last used, or at once when Reflections leave Planar.
 - Realistic is lit PBR (Beer-Lambert water in the style of Unreal Water, Crest and Atlas):
   - Fresnel (F0 ≈ 0.02) weights the sky reflection against the body. Output is premultiplied by coverage (`CUSTOM_FRAGMENT_BEFORE_FOG` divides by alpha), so the reflection stays visible over clear shallows while the background shows through (1 − F) × transmittance. Bright glints raise coverage instead of clipping.
   - Transmittance is Beer-Lambert absorption down to the floor and back along the refracted ray. Opacity caps deep-water opacity; Depth Color Distance is the absorption length. The body is in-scattered sky and sun light tinted from Shallow to Deep Color.
