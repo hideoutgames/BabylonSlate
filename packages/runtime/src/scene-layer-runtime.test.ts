@@ -930,7 +930,7 @@ describe("SceneLayer runtime compositor", () => {
       buttonComponentId: "btn",
     });
     expect(
-      assignPair && "parts" in assignPair
+      assignPair?.type === "assignMesh"
         ? assignPair.parts?.some((part) => part.meshKind === "2dbutton")
         : false,
     ).toBe(false);
@@ -987,7 +987,7 @@ describe("SceneLayer runtime compositor", () => {
       text2d: { text: "Play" },
     });
     expect(
-      assign && "parts" in assign
+      assign?.type === "assignMesh"
         ? assign.parts?.some((part) => part.meshKind === "2dbutton")
         : false,
     ).toBe(false);

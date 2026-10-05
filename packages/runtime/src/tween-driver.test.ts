@@ -70,7 +70,7 @@ describe("Tween runtime integration", () => {
       { id: "text", classId: "2DTextComponent", properties: { text: "Ready", opacity: 0.8 } },
     ] })];
     const script: CompiledScript = { classId: "FadeLabel", parentClassId: "SceneLayerActor", assetGuid: "fade", anchors: [],
-      entryPoints: [{ name: "onBeginPlay", event: "onBeginPlay", nodeId: "fade", isAsync: true }],
+      entryPoints: [{ name: "onBeginPlay", event: "onBeginPlay", isAsync: true }],
       source: `export async function onBeginPlay(ctx) {
         const text = ctx.getComponentById(ctx.self, "text");
         const move = ctx.tweenProperty(text, "component.position", "vec3", {x:0,y:0,z:0}, {x:2,y:0,z:0}, 2, "linear", "local");
