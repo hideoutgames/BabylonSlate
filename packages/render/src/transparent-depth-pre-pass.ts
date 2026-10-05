@@ -101,7 +101,7 @@ export class TransparentDepthPrePass {
     }
     const sortedGroup = group as SortedGroup | undefined;
     (sorted as SubMesh[]).sort(sortedGroup?._transparentSortCompareFn ?? RenderingGroup.defaultTransparentSortCompare);
-    // A disposed owner (a retained graph's last frames) draws as Babylon does, without a pre-pass of its own id.
+    // Once disposed (its id released), pre-passes draw under the colour pass's id, as Babylon does.
     const prePass = !sortedGroup?.disableDepthPrePass, ownPass = !this.disposed;
     try {
       for (let index = 0; index < count; index += 1) {

@@ -1203,7 +1203,7 @@ A view with no chain, no outline and no admitted water copy has exactly the five
 
 **Transparent depth pre-pass** (`transparent-depth-pre-pass.ts`). A blended material with `needDepthPrePass` (built-in water, translucent and additive authored materials) draws its depth pre-pass under a render pass id of its own. Each graph object pass (`Forward objects`, `Forward transparent`) and the coordinator's classic frames have one.
 
-- Why: Babylon draws both draws through one draw wrapper and picks `DEPTHPREPASS` from the colour-write state. Unfrozen materials re-prepared their effect and rebound every uniform for both draws of every frame. Frozen Play materials (Intermediate priority) kept one variant for both draws: the full shader ran twice per pixel, or, after a define change outside a readiness probe, the depth-only variant drew the colour pass opaque black.
+- Why: Babylon issues the pre-pass and the colour draw through one draw wrapper and picks `DEPTHPREPASS` from the colour-write state. Unfrozen materials re-prepared their effect and rebound every uniform for both draws of every frame. Frozen Play materials (Intermediate priority) kept one variant for both draws: the full shader ran twice per pixel, or, after a define change outside a readiness probe, the depth-only variant drew the colour pass opaque black.
 - Draw order, frozen-list clipping and state changes are Babylon's (`RenderingGroup._RenderSorted`), allocation-free.
 - The graph's strict readiness probe compiles the pre-pass variant with the colour variant. Classic frames compile it at first draw.
 - Render Target Capture and the planar mirror keep the pre-pass off. Per-pass material overrides are not mirrored into the pre-pass; these passes set none.
