@@ -308,7 +308,7 @@ Texture opens a DockView document (Preview + Details). Model, Skeleton, and Anim
 
 ### `graph-ui` rework
 
-- Special scripting nodes show a large Lucide icon centered on the top-right corner: Clock for latent actions (including async JavaScript and latent function calls), Flag for event entries, and Plug for Script Interface calls and implementation endpoints. These markers do not change node size or pin hit areas; errors move to the top-left when a marker is present. Material and Particle role colors do not imply scripting markers.
+- Special scripting nodes show a large Lucide icon centered just inside the top-right corner: Clock for latent actions (including async JavaScript and latent function calls), Flag for event entries, and Plug for Script Interface calls and implementation endpoints. These markers do not change node size or pin hit areas; errors move to the top-left when a marker is present. Material and Particle role colors do not imply scripting markers.
 
 Touch-first React Flow 12 shell (`@babylonslate/graph-ui`):
 

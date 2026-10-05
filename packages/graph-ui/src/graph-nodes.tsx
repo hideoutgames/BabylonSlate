@@ -369,11 +369,11 @@ export function BlueprintNodeShell({
           role="img"
           aria-label={marker.label}
           className={cn(
-            "pointer-events-none absolute right-0 top-0 z-10 flex translate-x-1/2 -translate-y-1/2 items-center justify-center text-foreground drop-shadow-[0_2px_3px_rgb(0_0_0/0.6)]",
+            "pointer-events-none absolute right-1.5 top-1.5 z-10 flex translate-x-1/2 -translate-y-1/2 items-center justify-center text-foreground drop-shadow-[0_2px_3px_rgb(0_0_0/0.6)]",
             disabled && "opacity-50",
           )}
         >
-          <marker.Icon className="size-12" strokeWidth={2} aria-hidden="true" />
+          <marker.Icon className="size-11" strokeWidth={2} aria-hidden="true" />
         </span>
       ) : null}
       <div

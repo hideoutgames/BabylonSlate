@@ -119,7 +119,7 @@ Related hooks (not components): `useContextMenu`, `useSuppressNativeContextMenu`
 
 ## Graph (`@babylonslate/graph-ui`)
 
-`BlueprintNodeShell` places a large 48px Lucide Clock (latent action), Flag (event entry), or Plug (Script Interface call/implementation endpoint) marker at the exact top-right corner, with a drop shadow instead of a disc, so it stays legible when zoomed out. The marker is outside the clipped node body and does not affect node size or pointer input; the title reserves right padding so the marker never covers it; an existing error badge uses the top-left corner when the marker is present. Material and Particle nodes keep their own visual roles.
+`BlueprintNodeShell` places a large 44px Lucide Clock (latent action), Flag (event entry), or Plug (Script Interface call/implementation endpoint) marker centered just inside the top-right corner (6px in on each axis), with a drop shadow instead of a disc, so it stays legible when zoomed out. The marker is outside the clipped node body and does not affect node size or pointer input; the title reserves right padding so the marker never covers it; an existing error badge uses the top-left corner when the marker is present. Material and Particle nodes keep their own visual roles.
 
 Reusable by script, shader, animation, behaviour-tree and particle graphs, and the Content Browser read-only References dialog.
 
