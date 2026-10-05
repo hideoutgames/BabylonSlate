@@ -10,6 +10,8 @@ Capacitor's Xcode tooling retains uuid 7 through xcode 3.0.1; its consumer uses 
 
 ## Verification scope
 
+Shared build-artifact fixtures canonicalize their temporary roots before launching Node. On macOS, `/var` and `/private/var` refer to the same location; artifact locality checks compare canonical paths while retaining their worktree-local versus shared-cache assertions.
+
 Asset migration fixtures keep on-disk headers, the mounted registry, and project references consistent. Direct storage writes after project open require reindexing before document saves; migration checks preserve the asset GUID and its startup-scene reference.
 
 Browser probes of persisted OPFS assets, journals, and thumbnails resolve each logical project ID through its registered catalog directory. Newly created projects use isolated physical directories; explicit legacy fixtures keep their registered legacy mapping. Recovery polling tolerates a journal subtree that has not been created yet, while unexpected storage or parse errors fail the check.
