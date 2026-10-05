@@ -87,6 +87,45 @@ describe("parent cycles in loaded data", () => {
     }
   });
 
+  it("breaks cycles in a scene and a SceneLayer loaded from inside a tick on the immediate runtime", async () => {
+    // Mid-tick, the World only queues the loaded actors until the phase ends.
+    const next: SerializedScene = { ...createDefaultScene(), name: "Next", actors: [
+      createActor("a", "A", { parentId: "b", ...at(1, 0, 0), components: staticSphere }),
+      createActor("b", "B", { parentId: "a", ...at(0, 2, 0) }),
+    ] };
+    const layer = { ...createDefaultSceneLayer(), actors: [
+      createActor("x", "Layer X", { classId: "SceneLayerActor", parentId: "y" }),
+      createActor("y", "Layer Y", { classId: "SceneLayerActor", parentId: "x" }),
+    ] };
+    const { runtime, commands } = launch({ ...createDefaultScene(), name: "Host", actors: [] },
+      { sceneLibrary: { next }, sceneLayerLibrary: { layer } });
+    try {
+      await runtime.realizePlayWorld();
+      runtime.start();
+      const world = runtime.getWorld();
+      let loaded = false;
+      world.setGameInstance(world.createGameInstance({ classId: "GameInstance", hooks: { onTick: () => {
+        if (loaded) return;
+        loaded = true;
+        runtime.executeConsoleCommand("changescene next");
+        runtime.createSceneLayer("layer");
+      } } }));
+      for (let tick = 0; tick < 3; tick += 1) runtime.tick();
+
+      expect(world.findActor("b")!.getVariable("parentId")).toBeNull();
+      expect(world.findActor("a")!.getVariable("parentId")).toBe("b");
+      expect(world.findActor("y")!.getVariable("parentId")).toBeNull();
+      expect(world.findActor("x")!.getVariable("parentId")).toBe("y");
+      expect(runtime.getPhysicsSync()!.getBackend().sphereOverlap({ x: 1, y: 2, z: 0 }, 0.1).actorIds).toEqual(["a"]);
+      const warnings = actorWarnings(commands);
+      expect(warnings).toHaveLength(2);
+      expect(warnings[0]).toContain("B (b)");
+      expect(warnings[1]).toContain("Layer Y (y)");
+    } finally {
+      runtime.stop();
+    }
+  });
+
   it("breaks streamed scene and SceneLayer cycles once each, re-rooting a streamed actor under its streaming actor", async () => {
     const child: SerializedScene = { ...createDefaultScene(), name: "Child", actors: [
       createActor("a", "Streamed A", { parentId: "b", ...at(1, 0, 0), components: staticSphere }),

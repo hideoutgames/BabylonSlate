@@ -240,9 +240,13 @@ describe("snapshot publishing", () => {
         root.runtime.tick();
       }
       const frame = published(duplicated.runtime);
-      // The guid's one render slot carries the first Base's pose, written once.
-      const base = frame.poses.filter((entry) => entry.slotId === duplicated.slots.get("base"));
+      // Only the first Base's own render slot is written, once, with its pose;
+      // the copy's slot (the guid's latest spawn) gets no entry.
+      const [baseSlot, copySlot] = duplicated.commands.flatMap((command) =>
+        command.type === "spawn" && command.actorGuid === "base" ? [command.slotId] : []);
+      const base = frame.poses.filter((entry) => entry.slotId === baseSlot);
       expect(base).toHaveLength(1);
+      expect(slotPose(frame, copySlot)).toBeUndefined();
       expect(base[0]!.position).toEqual({ x: 1, y: 0, z: 1 });
       expect(base[0]!.rotation).toEqual({ x: 0, y: 0, z: 0, w: 1 });
       const probe = slotPose(frame, duplicated.slots.get("probe"))!;

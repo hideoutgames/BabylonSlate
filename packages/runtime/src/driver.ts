@@ -540,6 +540,8 @@ class InProcessRuntime implements RuntimeDriver {
   private captureSlots = new Set<number>();
   private fogVolumeSlots = new Set<number>();
   private readonly slotOwners = new Map<number, Actor>();
+  /** Each actor's own slot; `slotByGuid` holds a guid's latest-assigned one. */
+  private readonly slotByActor = new WeakMap<Actor, number>();
   private readonly removingActors = new WeakSet<Actor>();
   private readonly componentsWithMaterialAssignment = new WeakSet<ActorComponent>();
   private readonly freeSlots: number[] = [];
@@ -5199,6 +5201,7 @@ class InProcessRuntime implements RuntimeDriver {
     if (slotId === this.nextUnusedSlot) this.nextUnusedSlot += 1;
     this.slotByGuid.set(actor.guid, slotId);
     this.slotOwners.set(slotId, actor);
+    this.slotByActor.set(actor, slotId);
     const stream = this.actorStream.get(actor);
     this.emit({
       type: "spawn",
@@ -5239,6 +5242,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.captureSlots.delete(slotId);
     this.fogVolumeSlots.delete(slotId);
     if (this.slotByGuid.get(actorGuid) === slotId) this.slotByGuid.delete(actorGuid);
+    if (owner && this.slotByActor.get(owner) === slotId) this.slotByActor.delete(owner);
     this.slotOwners.delete(slotId);
     this.btEvalBySlot.delete(slotId);
     this.lastBtStateJson.delete(slotId);
@@ -5938,11 +5942,11 @@ class InProcessRuntime implements RuntimeDriver {
     for (const actor of actors) {
       // Layout-only anchors must not create fallback visuals from pose snapshots.
       if (isSceneLayerAnchorActor(actor)) continue;
-      // A guid's render slot is written once, from its first-spawned live actor
-      // (the one parents, physics and the crowd resolve); later duplicates add
-      // no entry of their own.
+      // Only a guid's first-spawned live actor (the one parents, physics and
+      // the crowd resolve) writes its own slot; later duplicates' slots get no
+      // entry, although `slotByGuid` holds the latest-assigned one.
       if (findActor(actor.guid) !== actor) continue;
-      const slotId = this.slotByGuid.get(actor.guid);
+      const slotId = this.slotByActor.get(actor);
       if (slotId === undefined) continue;
       const world = worldTransforms.get(actor.guid);
       if (!world) continue;

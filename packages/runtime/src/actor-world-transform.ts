@@ -167,38 +167,56 @@ export interface BrokenParentLink {
 
 /**
  * Break parent cycles that a spawned batch closed among live actors. Parents
- * resolve through `findActor` (the first-spawned live actor). Applying parent
- * links in spawn order, the link that closes a cycle is the one of the cycle's
- * last-spawned member, so that actor's `parentId` is cleared, as a script
- * write closing the cycle would be refused. `detach` re-roots it (default: no
- * parent). Every cycle a batch closes passes through one of its actors, so only
- * their chains are walked. Returns the cleared links in discovery order.
+ * resolve through `findActor` (the first-spawned live actor), then through
+ * batch actors still queued for spawn: a load inside a World tick only queues
+ * its actors, which commit after every live actor, in batch order. Applying
+ * parent links in spawn order, the link that closes a cycle is the one of the
+ * cycle's last-spawned member, so that actor's `parentId` is cleared, as a
+ * script write closing the cycle would be refused. `detach` re-roots it
+ * (default: no parent). Every cycle a batch closes passes through one of its
+ * actors, so only their chains are walked. Returns the cleared links in
+ * discovery order.
  */
 export function breakParentCycles(
   batch: Iterable<Actor>,
   findActor: (guid: string) => Actor | undefined,
   detach: (child: Actor) => void = (child) => child.setVariable("parentId", null),
 ): BrokenParentLink[] {
+  const actors = Array.from(batch);
+  const queuedByGuid = new Map<string, Actor>();
+  const queuedOrder = new Map<Actor, number>();
+  for (const actor of actors) {
+    if (actor.destroyed || actor.world) continue;
+    queuedOrder.set(actor, queuedOrder.size);
+    if (!queuedByGuid.has(actor.guid)) queuedByGuid.set(actor.guid, actor);
+  }
+  const resolve = (guid: string) => findActor(guid) ?? queuedByGuid.get(guid);
+  const spawnsAfter = (actor: Actor, other: Actor) => {
+    const queued = queuedOrder.get(actor);
+    const otherQueued = queuedOrder.get(other);
+    if (queued === undefined && otherQueued === undefined) return actor.spawnIndex > other.spawnIndex;
+    return (queued ?? -1) > (otherQueued ?? -1);
+  };
   const broken: BrokenParentLink[] = [];
   const settled = new Set<Actor>();
   const path: Actor[] = [];
   const onPath = new Map<Actor, number>();
-  for (const start of batch) {
+  for (const start of actors) {
     if (start.destroyed || settled.has(start)) continue;
     let current: Actor | undefined = start;
     while (current && !settled.has(current) && !onPath.has(current)) {
       onPath.set(current, path.length);
       path.push(current);
       const parentId = actorParentGuid(current);
-      current = parentId ? findActor(parentId) : undefined;
+      current = parentId ? resolve(parentId) : undefined;
     }
     const loopStart = current ? onPath.get(current) : undefined;
     if (loopStart !== undefined) {
       let closing = path[loopStart]!;
       for (let index = loopStart + 1; index < path.length; index += 1) {
-        if (path[index]!.spawnIndex > closing.spawnIndex) closing = path[index]!;
+        if (spawnsAfter(path[index]!, closing)) closing = path[index]!;
       }
-      const parent = findActor(actorParentGuid(closing)!)!;
+      const parent = resolve(actorParentGuid(closing)!)!;
       detach(closing);
       broken.push({ child: closing, parent });
     }
