@@ -289,9 +289,9 @@ vec4 swPlanarTexel(vec2 uv) { return texture2DLodEXT(${WATER_PLANAR_SAMPLER}, uv
  *   that depth catches it.
  * - Bisection refines the hit, which stands only on the surface its texel holds (within `SSR_THICKNESS`) and takes
  *   that texel's colour: a refinement that settles beside a silhouette misses (the sky stays) instead of reflecting
- *   the background there. Where the ray entered the object past a silhouette (it was over something farther just
- *   before), the downsampled copy's edge texel blends the object with that background, so the colour comes from one
- *   texel further along the ray, inside the object.
+ *   the background there. A downsampled copy (below full resolution) averages each texel's colour but keeps its
+ *   nearest depth, so a silhouette texel blends the object with what lies behind it: the hit then takes the colour
+ *   of the neighbouring texel away from the farther side (four depth loads and one texel load, only on a hit).
  * Hits fade toward the screen edge and the end of the march; one whose scene point lies under the water plane is
  * rejected (the copy holds submerged geometry). Returns linear colour and coverage.
  */
@@ -318,7 +318,6 @@ fn swMarch(swOrigin: vec3f, swRay: vec3f) -> vec4f {
   var swPrevZ: f32 = swD0;
   var swPrevScene: f32 = 65000.0;
   var swA: f32 = 0.0;
-  var swADepth: f32 = 65000.0;
   var swB: f32 = -1.0;
   for (var swI: i32 = 1; swI <= ${steps}; swI++) {
     let swU = swEnd * f32(swI) / f32(${steps});
@@ -326,10 +325,10 @@ fn swMarch(swOrigin: vec3f, swRay: vec3f) -> vec4f {
     let swSceneZ = swSceneDepth(mix(swN0, swN1, swU) * 0.5 + 0.5);
     let swThick = ${base} + ${slope} * swRayZ;
     if (swRayZ > swSceneZ) {
-      if (swSceneZ > swPrevZ - swThick) { swA = swPrevU; swADepth = swPrevScene; swB = swU; break; }
+      if (swSceneZ > swPrevZ - swThick) { swA = swPrevU; swB = swU; break; }
     } else if (swRayZ > swPrevScene && swPrevZ <= swPrevScene) {
       let swProbeU = swMarchAt(swC1.w, swC0.w, clamp((swPrevScene - swD0) / max(swD1 - swD0, 0.000001), 0.0, 1.0));
-      if (abs(swPrevScene - swSceneDepth(mix(swN0, swN1, swProbeU) * 0.5 + 0.5)) < swThick) { swA = swPrevU; swADepth = swPrevScene; swB = swProbeU; break; }
+      if (abs(swPrevScene - swSceneDepth(mix(swN0, swN1, swProbeU) * 0.5 + 0.5)) < swThick) { swA = swPrevU; swB = swProbeU; break; }
     }
     swPrevU = swU;
     swPrevZ = swRayZ;
@@ -339,17 +338,23 @@ fn swMarch(swOrigin: vec3f, swRay: vec3f) -> vec4f {
   for (var swJ: i32 = 0; swJ < ${refine}; swJ++) {
     let swM = 0.5 * (swA + swB);
     let swMidZ = mix(swD0, swD1, swMarchAt(swC0.w, swC1.w, swM));
-    let swMidScene = swSceneDepth(mix(swN0, swN1, swM) * 0.5 + 0.5);
-    if (swMidZ > swMidScene) { swB = swM; } else { swA = swM; swADepth = swMidScene; }
+    if (swMidZ > swSceneDepth(mix(swN0, swN1, swM) * 0.5 + 0.5)) { swB = swM; } else { swA = swM; }
   }
   let swUv = mix(swN0, swN1, swB) * 0.5 + 0.5;
   let swS = swMarchAt(swC0.w, swC1.w, swB);
   let swRayZ = mix(swD0, swD1, swS);
   let swThickHit = ${base} + ${slope} * swRayZ;
   var swHit: vec4f = swSceneTexel(swUv);
-  if (swADepth > swHit.a + swThickHit) {
-    let swInner = swSceneTexel(swUv + swSpan / max(length(swSpan), 0.000001) * swSceneTexelUv() * 1.5);
-    if (abs(swInner.a - swHit.a) < swThickHit) { swHit = vec4f(swInner.rgb, swHit.a); }
+  let swTexel = swSceneTexelUv();
+  if (swTexel.x > uniforms.slateWaterScreen.x * 1.01) {
+    let swFar = swHit.a + swThickHit;
+    let swAway = vec2f(
+      step(swFar, swSceneDepth(swUv - vec2f(swTexel.x, 0.0))) - step(swFar, swSceneDepth(swUv + vec2f(swTexel.x, 0.0))),
+      step(swFar, swSceneDepth(swUv - vec2f(0.0, swTexel.y))) - step(swFar, swSceneDepth(swUv + vec2f(0.0, swTexel.y))));
+    if (dot(swAway, swAway) > 0.0) {
+      let swInner = swSceneTexel(swUv + swAway * swTexel);
+      if (abs(swInner.a - swHit.a) < swThickHit) { swHit = vec4f(swInner.rgb, swHit.a); }
+    }
   }
   let swEye = scene.vEyePosition.xyz;
   let swPoint = swOrigin + swRay * (swLength * swS);
@@ -379,7 +384,6 @@ vec4 swMarch(vec3 swOrigin, vec3 swRay) {
   float swPrevZ = swD0;
   float swPrevScene = 65000.0;
   float swA = 0.0;
-  float swADepth = 65000.0;
   float swB = -1.0;
   for (int swI = 1; swI <= ${steps}; swI++) {
     float swU = swEnd * float(swI) / float(${steps});
@@ -387,10 +391,10 @@ vec4 swMarch(vec3 swOrigin, vec3 swRay) {
     float swSceneZ = swSceneDepth(mix(swN0, swN1, swU) * 0.5 + 0.5);
     float swThick = ${base} + ${slope} * swRayZ;
     if (swRayZ > swSceneZ) {
-      if (swSceneZ > swPrevZ - swThick) { swA = swPrevU; swADepth = swPrevScene; swB = swU; break; }
+      if (swSceneZ > swPrevZ - swThick) { swA = swPrevU; swB = swU; break; }
     } else if (swRayZ > swPrevScene && swPrevZ <= swPrevScene) {
       float swProbeU = swMarchAt(swC1.w, swC0.w, clamp((swPrevScene - swD0) / max(swD1 - swD0, 0.000001), 0.0, 1.0));
-      if (abs(swPrevScene - swSceneDepth(mix(swN0, swN1, swProbeU) * 0.5 + 0.5)) < swThick) { swA = swPrevU; swADepth = swPrevScene; swB = swProbeU; break; }
+      if (abs(swPrevScene - swSceneDepth(mix(swN0, swN1, swProbeU) * 0.5 + 0.5)) < swThick) { swA = swPrevU; swB = swProbeU; break; }
     }
     swPrevU = swU;
     swPrevZ = swRayZ;
@@ -400,19 +404,25 @@ vec4 swMarch(vec3 swOrigin, vec3 swRay) {
   for (int swJ = 0; swJ < ${refine}; swJ++) {
     float swM = 0.5 * (swA + swB);
     float swMidZ = mix(swD0, swD1, swMarchAt(swC0.w, swC1.w, swM));
-    float swMidScene = swSceneDepth(mix(swN0, swN1, swM) * 0.5 + 0.5);
-    if (swMidZ > swMidScene) { swB = swM; } else { swA = swM; swADepth = swMidScene; }
+    if (swMidZ > swSceneDepth(mix(swN0, swN1, swM) * 0.5 + 0.5)) { swB = swM; } else { swA = swM; }
   }
   vec2 swUv = mix(swN0, swN1, swB) * 0.5 + 0.5;
   float swS = swMarchAt(swC0.w, swC1.w, swB);
   float swRayZ = mix(swD0, swD1, swS);
   float swThickHit = ${base} + ${slope} * swRayZ;
   vec4 swHit = swSceneTexel(swUv);
-  if (swADepth > swHit.a + swThickHit) {
-    // Entered past a silhouette: the copy's edge texels blend the object with what lies behind it (the copy is
-    // downsampled), so the colour comes from one texel further along the ray, inside the object.
-    vec4 swInner = swSceneTexel(swUv + swSpan / max(length(swSpan), 0.000001) * swSceneTexelUv() * 1.5);
-    if (abs(swInner.a - swHit.a) < swThickHit) { swHit = vec4(swInner.rgb, swHit.a); }
+  vec2 swTexel = swSceneTexelUv();
+  if (swTexel.x > slateWaterScreen.x * 1.01) {
+    // A downsampled copy keeps each texel's nearest depth but averages its colour: at a silhouette the texel blends
+    // the object with what lies behind it, so the colour comes from the neighbour away from the farther side.
+    float swFar = swHit.a + swThickHit;
+    vec2 swAway = vec2(
+      step(swFar, swSceneDepth(swUv - vec2(swTexel.x, 0.0))) - step(swFar, swSceneDepth(swUv + vec2(swTexel.x, 0.0))),
+      step(swFar, swSceneDepth(swUv - vec2(0.0, swTexel.y))) - step(swFar, swSceneDepth(swUv + vec2(0.0, swTexel.y))));
+    if (dot(swAway, swAway) > 0.0) {
+      vec4 swInner = swSceneTexel(swUv + swAway * swTexel);
+      if (abs(swInner.a - swHit.a) < swThickHit) { swHit = vec4(swInner.rgb, swHit.a); }
+    }
   }
   vec3 swEye = vEyePosition.xyz;
   vec3 swPoint = swOrigin + swRay * (swLength * swS);
