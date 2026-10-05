@@ -3,6 +3,7 @@ import { parseJoystick2DProperties } from "./joystick2d";
 import { parsePainter2DProperties } from "./painter2d";
 import { parseText2DProperties } from "./text2d";
 import { parseRichText } from "./rich-text";
+import { isUIControl2DClass, parseUIControl2DProperties, UI_CONTROL_2D_CLASS_IDS } from "./ui-controls2d";
 import { OVERLAY_CONTAINER_CLASSES, isVirtualizedOverlayClass, isOverlayScrollClass, parseOverlayContainerProperties, virtualizedOverlayWindow, type OverlaySafeAreaInsets, type VirtualizedItem, type VirtualizedOverlayWindow } from "./overlay-containers";
 
 export const OVERLAY_LAYOUT_CLASSES = ["2DScrollBoxComponent", "2DVerticalBoxComponent", "2DHorizontalBoxComponent", "2DOverlayBoxComponent", "2DPaddingComponent", "2DSpacerComponent", ...OVERLAY_CONTAINER_CLASSES] as const;
@@ -96,6 +97,7 @@ function nativeSize(component: SerializedComponent, options: OverlayLayoutOption
     const size = options.textureSize?.(String(p.textureGuid ?? ""));
     if (size) return [size.width / ppu, size.height / ppu];
   }
+  if (isUIControl2DClass(component.classId)) { const control = parseUIControl2DProperties(component.classId, p); return [control.width, control.height]; }
   if (component.classId === "2DJoystickComponent") { const joystick = parseJoystick2DProperties(p); return [joystick.radius * 2, joystick.radius * 2]; }
   if (component.classId === "2DPainterComponent") { const painter = parsePainter2DProperties(p); return [painter.width, painter.height]; }
   return [1, 1];
@@ -156,7 +158,7 @@ export function resolveOverlayLayout(source: readonly SerializedActor[], options
     if (parent) node.parent = null; // Malformed cyclic documents remain finite.
     node.parent?.children.push(node);
   }
-  const surfaceClasses = new Set(["2DJoystickComponent", "2DTextureComponent", "2DMaterialComponent", "2DPanelComponent", "2DTextComponent", "2DRichTextComponent", "2DPainterComponent", "SpriteComponent", "MeshComponent"]);
+  const surfaceClasses = new Set<string>([...UI_CONTROL_2D_CLASS_IDS, "2DJoystickComponent", "2DTextureComponent", "2DMaterialComponent", "2DPanelComponent", "2DTextComponent", "2DRichTextComponent", "2DPainterComponent", "SpriteComponent", "MeshComponent"]);
   const interactionOnly = (n: Node) => n.classId === "2DMaskComponent" || n.classId === "2DAnchorComponent" || n.classId === "2DFocusTargetComponent" || n.classId === "2DButtonComponent" && (
     n.actor.components.some(c => surfaceClasses.has(c.classId)) || (n.actor.parentId ? actors.find(a => a.id === n.actor.parentId)?.components.some(c => surfaceClasses.has(c.classId)) : false)
   );

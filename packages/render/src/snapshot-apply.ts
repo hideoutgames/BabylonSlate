@@ -106,6 +106,7 @@ import { createSkyboxMesh, resolveSkyboxCubeTexture } from "./skybox";
 import { createText3DMesh } from "./text3d-mesh";
 import { createText2DMesh, text2DBitmapBytes, updateText2DAppear } from "./text2d-mesh";
 import { createJoystick2DMesh, joystick2DMesh } from "./joystick2d-mesh";
+import { createUIControl2DMesh, uiControl2DMesh } from "./ui-controls2d-mesh";
 import { createPainter2DMesh, updatePainter2DMesh } from "./painter2d-mesh";
 import { applyOverlayVisualStyle } from "./overlay-visual-style";
 import { BitmapAllocationLimitError } from "./text2d-bitmap";
@@ -439,6 +440,7 @@ function wantsOverlayUnlitMaterial(
     case "2dmaterial":
     case "2dbutton":
     case "2dpanel":
+    case "2dcontrol":
     case "2djoystick":
     case "2dpainter":
     case "2dtext":
@@ -557,7 +559,7 @@ function partsNeedOrigin(
   parts: readonly AssignMeshPart[] | undefined,
 ): boolean {
   if (!parts || parts.length === 0) return false;
-  if (parts.length > 1 || parts.some((part) => part.light || part.camera || part.parentTransforms?.length || part.meshKind === "water" || part.meshKind === "waterRemoval" || part.meshKind === "cable" || part.meshKind === "2djoystick" || part.meshKind === "dynamicRuntimeMesh")) return true;
+  if (parts.length > 1 || parts.some((part) => part.light || part.camera || part.parentTransforms?.length || part.meshKind === "water" || part.meshKind === "waterRemoval" || part.meshKind === "cable" || part.meshKind === "2djoystick" || part.meshKind === "2dcontrol" || part.meshKind === "dynamicRuntimeMesh")) return true;
   const part = parts[0]!;
   return (
     Boolean(part.landscape || part.foliage) ||
@@ -741,7 +743,7 @@ export function applyOverlayVisualStyleCommand(binding: SnapshotSceneBinding, co
   }
 }
 
-const overlayVisualKinds = new Set(["2dtexture", "2dmaterial", "2dpanel", "2dtext", "2drichtext", "2dpainter", "2djoystick"]);
+const overlayVisualKinds = new Set(["2dtexture", "2dmaterial", "2dpanel", "2dtext", "2drichtext", "2dpainter", "2djoystick", "2dcontrol"]);
 
 /** Keep live and prepared text visuals on the same simulation-owned reveal sample. */
 export function applyText2DAppearCommand(binding: SnapshotSceneBinding, command: Extract<CommandMessage, { type: "setText2DAppear" }>): void {
@@ -769,6 +771,23 @@ export function applyText2DAppearCommand(binding: SnapshotSceneBinding, command:
   const prepared = pendingVisualReplacements.get(binding)?.get(command.slotId);
   updateVisualTextAppear(live, command.componentId, progress);
   if (prepared !== live) updateVisualTextAppear(prepared, command.componentId, progress);
+}
+
+/** State changes keep pointer capture, compiled materials and texture leases alive. */
+export function applyUIControl2DCommand(binding: SnapshotSceneBinding, command: Extract<CommandMessage, { type: "setUIControl2D" }>): void {
+  const part = binding.meshParts.get(command.slotId)?.find(entry => entry.componentId === command.componentId && entry.meshKind === "2dcontrol");
+  if (part) part.uiControl = command.uiControl;
+  const assignment = visualAssignments.get(binding)?.get(command.slotId);
+  const assignedPart = assignment?.parts?.find(entry => entry.componentId === command.componentId);
+  if (assignedPart) assignedPart.uiControl = command.uiControl;
+  const live = binding.meshes.get(command.slotId);
+  const prepared = pendingVisualReplacements.get(binding)?.get(command.slotId);
+  for (const root of prepared && prepared !== live ? [live, prepared] : [live]) {
+    if (!root || root.isDisposed()) continue;
+    const target = uiControl2DMesh(root) ? root : root.getChildMeshes().find(mesh => mesh.metadata?.overlayControlComponentId === command.componentId && uiControl2DMesh(mesh));
+    if (target) uiControl2DMesh(target)?.update(command.uiControl);
+  }
+  binding.onVisualChanged?.(command.slotId);
 }
 
 export function applyPainter2DCommand(binding: SnapshotSceneBinding, command: Extract<CommandMessage, { type: "setPainter2D" }>): void {
@@ -998,7 +1017,7 @@ export function applyAssignMesh(
     kind === "skybox" || kind === "sprite" || kind === "tilemap";
   const stagesModels = Boolean(command.parts?.some((part) => part.foliage)) || Boolean(existing && modelSource && command.meshAssetGuid && !partsNeedOrigin(command.parts)) ||
     (partsNeedOrigin(command.parts) && command.parts?.some((part) =>
-      part.meshAssetGuid && !["water", "sprite", "tilemap", "2djoystick", "2dpanel", "2dtexture", "2dmaterial", "2dbutton", "2dtext", "2drichtext"].includes(part.meshKind ?? "")));
+      part.meshAssetGuid && !["water", "sprite", "tilemap", "2djoystick", "2dcontrol", "2dpanel", "2dtexture", "2dmaterial", "2dbutton", "2dtext", "2drichtext"].includes(part.meshKind ?? "")));
   if (stagesModels || (existing && (ownsTexture(meshKind) || command.parts?.some((part) => ownsTexture(part.meshKind))))) {
     const working = existing ?? createModelActorRoot(scene, `actor-${command.slotId}`);
     if (!existing) binding.meshes.set(command.slotId, working);
@@ -1229,6 +1248,17 @@ function stampOverlayPick(mesh: Mesh, command: AssignMeshCommand): void {
       overlayHasButton: command.hasButton === true,
       overlayButtonComponentId: command.buttonComponentId,
     };
+    const control = uiControl2DMesh(target);
+    if (control) {
+      target.metadata.overlayHasButton = false;
+      target.metadata.overlayHitTest = control.properties.enabled && control.classId !== "2DProgressBarComponent" ? "block" : "ignore";
+      target.isPickable = target.metadata.overlayHitTest === "block";
+      return;
+    }
+    if (target.metadata?.uiControl2DDecoration || target.metadata?.uiControl2DOption) {
+      target.isPickable = target.metadata?.uiControl2DOption === true;
+      return;
+    }
     const joystick = joystick2DMesh(target);
     if (joystick) {
       target.metadata.overlayHitTest = joystick.properties.enabled ? "block" : "ignore";
@@ -1710,6 +1740,7 @@ export function createPlayMesh(
     mesh.isPickable = false;
     return mesh;
   }
+  if (meshKind === "2dcontrol" && illuminationPart?.uiControl) return createUIControl2DMesh(scene, name, illuminationPart.uiControl, binding, illuminationPart.componentId);
   if (meshKind === "2djoystick") return createJoystick2DMesh(scene, name, illuminationPart?.joystick, binding);
   if (meshKind === "2dpainter") {
     const properties = painter ?? binding?.meshParts.get(slotId)?.find((part) => part.meshKind === "2dpainter" && (!meshName || playComponentMeshName(slotId, part.componentId) === meshName))?.painter;

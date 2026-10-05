@@ -14,6 +14,31 @@ const cleanup: Array<() => void> = [];
 afterEach(() => { while (cleanup.length) cleanup.pop()!(); vi.restoreAllMocks(); });
 
 describe("SceneLayer layout rendering", () => {
+  it.each(["editor", "runtime"] as const)("retires offscreen authored virtual items from %s drawing and restores them on scroll", (mode) => {
+    const { engine, scene } = createTestEngine();
+    const renderer = new OverlayLayoutRenderer(() => scene);
+    cleanup.push(() => { renderer.dispose(); scene.dispose(); engine.dispose(); });
+    const root = new Mesh(mode === "editor" ? "editorActor:item" : "actor-1", scene);
+    const child = MeshBuilder.CreatePlane("visual", {}, scene); child.parent = root;
+    const rect = { x: 0, y: 0, width: 1, height: 1 };
+    const apply = (realized: boolean) => {
+      const entry = { actorId: "item", slotId: 1, rect, clip: rect, scrollAncestors: [], realized };
+      if (mode === "editor") applyEditorLayoutClips(scene, new Map([["item", entry]]));
+      else renderer.apply({ type: "sceneLayerLayout", layerId: "layer", entries: [entry] });
+    };
+    apply(false);
+    expect(child.isEnabled()).toBe(false);
+    apply(true);
+    expect(child.isEnabled()).toBe(true);
+    apply(false);
+    if (mode === "editor") applyEditorLayoutClips(scene, new Map());
+    else renderer.remove("layer");
+    expect(child.isEnabled()).toBe(true);
+    root.setEnabled(false);
+    apply(false); apply(true);
+    expect(root.isEnabled()).toBe(false);
+  });
+
   it.each(["editor", "runtime"] as const)("restores shadow caching when %s clipping is cleared or a mesh leaves its clip", (mode) => {
     const { engine, scene } = createTestEngine();
     const renderer = new OverlayLayoutRenderer(() => scene);

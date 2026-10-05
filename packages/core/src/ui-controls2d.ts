@@ -75,7 +75,7 @@ export function parseUIControl2DProperties(classId: string, source: Partial<UICo
   const authoredMax = finite(source.max, classId === "2DNumericInputComponent" ? 100 : 1);
   const min = Math.min(authoredMin, authoredMax);
   const max = Math.max(authoredMin, authoredMax);
-  const step = Math.max(0, finite(source.step, classId === "2DNumericInputComponent" ? 1 : 0.01));
+  const step = Math.max(0, finite(source.step, classId === "2DNumericInputComponent" ? 1 : classId === "2DProgressBarComponent" ? 0 : 0.01));
   const range = { min, max, step };
   const lower = clampUIControl2DValue(finite(source.lowerValue, min), range);
   const upper = clampUIControl2DValue(finite(source.upperValue, max), range);
@@ -105,7 +105,7 @@ export function parseUIControl2DProperties(classId: string, source: Partial<UICo
     options,
     selectedIndex: Math.max(-1, Math.min(options.length - 1, Math.floor(finite(source.selectedIndex, options.length ? 0 : -1)))),
     fontSize: positive(source.fontSize, 0.32),
-    textColor: typeof source.textColor === "string" && source.textColor ? source.textColor : "#ffffff",
+    textColor: typeof source.textColor === "string" && /^#[\da-f]{6}$/i.test(source.textColor) ? source.textColor : "#ffffff",
   };
 }
 

@@ -31,6 +31,7 @@ describe("SceneLayer controls", () => {
     const extreme = parseUIControl2DProperties("2DSliderComponent", { min: -Number.MAX_VALUE, max: Number.MAX_VALUE });
     expect(uiControl2DFraction(0, extreme)).toBe(0.5);
     expect(uiControl2DValueAt(0, 0, extreme)).toBe(0);
+    expect(parseUIControl2DProperties("2DProgressBarComponent", { value: 0.12345 }).value).toBe(0.12345);
   });
 
   it("normalizes single-line input without splitting surrogate pairs and bounds selection", () => {
@@ -43,11 +44,11 @@ describe("SceneLayer controls", () => {
   it("retains every visual override and prefers a material over a texture", () => {
     const properties = parseUIControl2DProperties("2DSliderComponent", {
       trackMaterialGuid: " track-material ", trackTextureGuid: "track-texture", thumbTextureGuid: "thumb-texture",
-      fillMaterialGuid: " ", opacity: 5, tint: [-1, 0.5, 2, 0.5],
+      fillMaterialGuid: " ", opacity: 5, tint: [-1, 0.5, 2, 0.5], textColor: "#zzzzzz",
     });
     expect(uiControl2DVisualAsset(properties, "track")).toEqual({ kind: "material", guid: "track-material" });
     expect(uiControl2DVisualAsset(properties, "thumb")).toEqual({ kind: "texture", guid: "thumb-texture" });
     expect(uiControl2DVisualAsset(properties, "fill")).toBeNull();
-    expect(properties).toMatchObject({ opacity: 1, tint: [0, 0.5, 2, 0.5] });
+    expect(properties).toMatchObject({ opacity: 1, tint: [0, 0.5, 2, 0.5], textColor: "#ffffff" });
   });
 });

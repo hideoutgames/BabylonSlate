@@ -4,6 +4,33 @@ import type { CommandMessage } from "@babylonslate/bridge";
 import { createInProcessRuntime } from "./driver";
 
 describe("SceneLayer layout runtime", () => {
+  it("converts browser safe insets using each layer's bounds and reapplies them after resize", () => {
+    const layer = (id: string, extent: number) => {
+      const document = createDefaultSceneLayer();
+      document.settings.layerBounds = { width: extent, height: extent };
+      document.actors = [createActor(id, id, { classId: "SceneLayerActor", components: [
+        { id: `${id}-safe`, classId: "2DSafeAreaComponent", properties: { width: 10, height: 10 } },
+        { id: `${id}-content`, classId: "2DMaterialComponent", parentId: `${id}-safe`, properties: { widthMode: "fill", heightMode: "fill" } },
+      ] })];
+      return document;
+    };
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, seedDemoActors: false,
+      playScene: createDefaultScene(), sceneLayerLibrary: { small: layer("small", 10), large: layer("large", 20) },
+      onCommand: (command) => commands.push(command) });
+    try {
+      runtime.realizePlayWorld(); runtime.createSceneLayer("small"); runtime.createSceneLayer("large");
+      runtime.applySceneLayerResize(50, 50, 100, 100, { left: 10, top: 20 });
+      const rect = (id: string) => commands.filter((command) => command.type === "sceneLayerLayout")
+        .flatMap((command) => command.entries).filter((entry) => entry.componentId === `${id}-content`).at(-1)?.rect;
+      expect(rect("small")).toEqual({ x: 0.5, y: -1, width: 9, height: 8 });
+      expect(rect("large")).toEqual({ x: 1, y: -2, width: 8, height: 6 });
+      runtime.applySceneLayerResize(50, 50, 200, 200, { left: 10, top: 20 });
+      expect(rect("small")).toEqual({ x: 0.25, y: -0.5, width: 9.5, height: 9 });
+      expect(rect("large")).toEqual({ x: 0.5, y: -1, width: 9, height: 8 });
+    } finally { runtime.stop(); }
+  });
+
   it("updates nested component transforms and clips after scrolling, retaining design size across ticks", () => {
     const layer = createDefaultSceneLayer();
     layer.actors = [createActor("menu", "Menu", { classId: "SceneLayerActor", components: [

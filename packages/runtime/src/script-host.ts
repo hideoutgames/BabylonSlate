@@ -65,6 +65,7 @@ import type { TweenValueType } from "@babylonslate/core";
 import type { TweenReference, TweenRequest } from "./tween-runtime";
 import { tweenOwnerAlive } from "./tween-runtime";
 import { isReadOnlyTweenProperty, propertyTweenReference, tweenStorageValue } from "./tween-targets";
+import { isUIControl2DClass } from "@babylonslate/core";
 
 export type AnimGraphControl = {
   getVariable(name: string): unknown;
@@ -182,6 +183,8 @@ export interface ScriptHostServices {
   ): SceneLayer | null;
   removeSceneLayer?(layerGuid: string): void;
   clearSceneLayers?(): void;
+  switchSceneLayerActor?(target: unknown, index: unknown): Actor | null;
+  getCurrentSceneLayerActor?(target: unknown): Actor | null;
   setFocusTarget?(target: unknown): boolean;
   clearFocusTarget?(target: unknown): void;
   registerSceneLayerPostProcess?(
@@ -225,6 +228,7 @@ export interface ScriptHostServices {
   captureRenderTarget?(target: Actor): void;
   updateIllumination?(target: unknown): void;
   paint2D?(component: ActorComponent, operation: string, args: Record<string, unknown>): boolean;
+  uiControlFunction?(component: ActorComponent, name: string, args: Record<string, unknown>): boolean;
   text2DAppear?(component: ActorComponent, operation: "triggerAppear" | "play" | "playReverse"): void;
   text2DAppearProgress?(component: ActorComponent): number;
   refreshComponent?(component: ActorComponent, propertyName?: string): void;
@@ -1901,6 +1905,12 @@ export class ScriptHost {
     name: string,
     args: Record<string, unknown>,
   ): Record<string, unknown> {
+    if (target instanceof Actor && name === "switchSceneLayerActor") {
+      return { actor: this.canInvokeOwner(target) ? this.services.switchSceneLayerActor?.(target, args.index) ?? null : null };
+    }
+    if (target instanceof Actor && name === "getCurrentSceneLayerActor") {
+      return { actor: this.services.getCurrentSceneLayerActor?.(target) ?? null };
+    }
     const component = asActorComponent(target);
     if (!component || !name) return {};
     if (component.classId === "2DRichTextComponent" &&
@@ -1914,6 +1924,7 @@ export class ScriptHost {
       return {};
     }
     if (name.startsWith("painter")) return { success: this.canInvokeOwner(component) && this.services.paint2D?.(component, name, args) === true };
+    if (isUIControl2DClass(component.classId)) return { success: this.canInvokeOwner(component) && this.services.uiControlFunction?.(component, name, args) === true };
     if (component.classId === "DynamicRuntimeMeshComponent") {
       if (!this.canInvokeOwner(component)) return { success: false };
       return this.services.dynamicMeshFunction?.(component, name, args) ?? { success: false };

@@ -5,6 +5,18 @@ import type { CommandMessage } from "@babylonslate/bridge";
 type LayoutCommand = Extract<CommandMessage, { type: "sceneLayerLayout" }>;
 const clips = new WeakMap<Node, OverlayLayoutRect | null>();
 const editorClipOwner = {};
+const virtualDisabled = new WeakMap<AbstractMesh, boolean>();
+function restoreVirtualMesh(mesh: AbstractMesh): void {
+  const enabled = virtualDisabled.get(mesh);
+  if (enabled !== undefined) { mesh.setEnabled(enabled); virtualDisabled.delete(mesh); }
+}
+function setVirtualRealized(mesh: AbstractMesh, realized: boolean): void {
+  if (realized) restoreVirtualMesh(mesh);
+  else {
+    if (!virtualDisabled.has(mesh)) virtualDisabled.set(mesh, mesh.isEnabled(false));
+    mesh.setEnabled(false);
+  }
+}
 const sceneClips = new WeakMap<Scene, {
   owners: Set<object>;
   refresh: () => void;
@@ -92,11 +104,11 @@ function setSceneClipOwner(scene: Scene, owner: object, enabled: boolean): void 
   hooks.refresh();
 }
 export function applyEditorLayoutClips(scene: Scene, entries: ReadonlyMap<string, OverlayLayoutEntry>): void {
-  for (const mesh of scene.meshes) clips.delete(mesh);
+  for (const mesh of scene.meshes) { clips.delete(mesh); restoreVirtualMesh(mesh); }
   for (const entry of entries.values()) {
     const name = `editorActor:${entry.actorId}${entry.componentId ? `|${entry.componentId}` : ""}`;
     const mesh = scene.getMeshByName(name);
-    if (mesh) clips.set(mesh, entry.clip);
+    if (mesh) { clips.set(mesh, entry.clip); setVirtualRealized(mesh, entry.realized !== false); }
   }
   setSceneClipOwner(scene, editorClipOwner, [...entries.values()].some((entry) => entry.clip !== null));
 }
@@ -151,7 +163,7 @@ export class OverlayLayoutRenderer {
       binding.meshCount = scene.meshes.length;
     }
     // A reparented child may no longer occur in the new layout command.
-    for (const mesh of this.layerMeshes.get(layerId) ?? []) clips.delete(mesh);
+    for (const mesh of this.layerMeshes.get(layerId) ?? []) { clips.delete(mesh); restoreVirtualMesh(mesh); }
     const currentMeshes = new Set<AbstractMesh>();
     this.layerMeshes.set(layerId, currentMeshes);
     const meshesByName = new Map<string, AbstractMesh>();
@@ -160,6 +172,7 @@ export class OverlayLayoutRenderer {
       const mesh = meshesByName.get(`actor-${entry.slotId}${entry.componentId ? `|${entry.componentId}` : ""}`);
       if (!mesh) continue;
       clips.set(mesh, entry.clip);
+      setVirtualRealized(mesh, entry.realized !== false);
       currentMeshes.add(mesh);
       if (entry.componentId && entry.transform) {
         if (mesh.position.equalsToFloats(...entry.transform.position) &&
@@ -184,7 +197,7 @@ export class OverlayLayoutRenderer {
     this.releaseBinding(layerId);
   }
   private releaseBinding(layerId: string): void {
-    for (const mesh of this.layerMeshes.get(layerId) ?? []) clips.delete(mesh);
+    for (const mesh of this.layerMeshes.get(layerId) ?? []) { clips.delete(mesh); restoreVirtualMesh(mesh); }
     this.layerMeshes.delete(layerId);
     const binding = this.bindings.get(layerId);
     if (!binding) return;

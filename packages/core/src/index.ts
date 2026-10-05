@@ -80,3 +80,5 @@ export * from "./joystick2d";
 export * from "./ui-controls2d";
 export * from "./overlay-containers";
 export * from "./overlay-visual-style";
+
+export * from "./actor-property-references";

@@ -360,8 +360,9 @@ export class SceneLayerCompositor {
       hasButton: boolean,
       componentId?: string,
       joystickMeshName?: string,
+      controlMeshName?: string,
     ) => {
-      const key = joystickMeshName ?? (componentId ? `${actorGuid}:${componentId}` : actorGuid);
+      const key = controlMeshName ?? joystickMeshName ?? (componentId ? `${actorGuid}:${componentId}` : actorGuid);
       if (!actorGuid || seen.has(key)) return;
       seen.add(key);
       hits.push({
@@ -371,6 +372,7 @@ export class SceneLayerCompositor {
         hasButton,
         ...(componentId ? { componentId } : {}),
         ...(joystickMeshName ? { joystickMeshName } : {}),
+        ...(controlMeshName ? { controlMeshName } : {}),
       });
     };
 
@@ -390,7 +392,7 @@ export class SceneLayerCompositor {
         } | null = pick.pickedMesh;
         let slotId: number | null = null;
         let metadata: OverlayMeshMetadata | null = overlayMetadataOf(mesh);
-        const joystick = metadata?.overlayJoystickMeshName ? metadata : null;
+        const interactive = metadata?.overlayJoystickMeshName || metadata?.overlayControlMeshName ? metadata : null;
         while (mesh) {
           const match = /^actor-(\d+)$/.exec(mesh.name);
           if (match) {
@@ -401,7 +403,7 @@ export class SceneLayerCompositor {
           metadata = overlayMetadataOf(mesh) ?? metadata;
           mesh = (mesh.parent as typeof mesh) ?? null;
         }
-        if (joystick) metadata = { ...metadata, ...joystick };
+        if (interactive) metadata = { ...metadata, ...interactive };
         const actorGuid =
           metadata?.overlayActorGuid ??
           (slotId != null ? this.slotActor.get(slotId) : undefined) ??
@@ -412,11 +414,12 @@ export class SceneLayerCompositor {
             actorGuid,
             parseSceneLayerHitTest(metadata?.overlayHitTest, "ignore"),
             metadata?.overlayHasButton === true,
-            typeof metadata?.overlayButtonComponentId === "string" &&
+            metadata?.overlayControlComponentId ?? (typeof metadata?.overlayButtonComponentId === "string" &&
               metadata.overlayButtonComponentId
               ? metadata.overlayButtonComponentId
-              : undefined,
+              : undefined),
             metadata?.overlayJoystickMeshName,
+            metadata?.overlayControlMeshName,
           );
         }
       }
@@ -440,7 +443,7 @@ export class SceneLayerCompositor {
         if (!mesh.isEnabled() || !mesh.isVisible || !mesh.isPickable) continue;
         if (!overlayClipAllowsPoint(mesh, world.x, world.y)) continue;
         const metadata = overlayMetadataOf(mesh);
-        if (!metadata?.overlayHasButton && !metadata?.overlayJoystickMeshName) continue;
+        if (!metadata?.overlayHasButton && !metadata?.overlayJoystickMeshName && !metadata?.overlayControlMeshName) continue;
         const hitTest = parseSceneLayerHitTest(metadata.overlayHitTest, "ignore");
         if (hitTest === "ignore") continue;
         const slotMatch = /^actor-(\d+)$/.exec(mesh.name);
@@ -469,11 +472,12 @@ export class SceneLayerCompositor {
           actorGuid,
           hitTest,
           metadata.overlayHasButton === true,
-          typeof metadata.overlayButtonComponentId === "string" &&
+          metadata.overlayControlComponentId ?? (typeof metadata.overlayButtonComponentId === "string" &&
             metadata.overlayButtonComponentId
             ? metadata.overlayButtonComponentId
-            : undefined,
+            : undefined),
           metadata.overlayJoystickMeshName,
+          metadata.overlayControlMeshName,
         );
       }
     }
@@ -705,6 +709,8 @@ export class SceneLayerCompositor {
 
 type OverlayMeshMetadata = {
   overlayJoystickMeshName?: string;
+  overlayControlMeshName?: string;
+  overlayControlComponentId?: string;
   overlayHitTest?: SceneLayerHitTest;
   overlayActorGuid?: string;
   overlayHasButton?: boolean;
