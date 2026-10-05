@@ -19,7 +19,7 @@ import {
 } from "./scene-effects";
 import { sceneRenderingSettings } from "./render-settings";
 import "@babylonjs/core/Rendering/prePassRendererSceneComponent";
-import { createSpatialStages, liveSceneEffectsKey, reserveSpatialEffects, spatialEffectsUnsupported, spatialGeometryTypes, type SpatialStage } from "./spatial-effects";
+import { createSpatialStages, hasSpatialEffects, liveSceneEffectsKey, reserveSpatialEffects, spatialEffectsUnsupported, spatialGeometryTypes, type SpatialStage } from "./spatial-effects";
 import { releaseManagedRenderLeaseAfterDisposal, type ManagedRenderLease } from "./managed-render-resources";
 
 function planFor(scene: Scene): SceneEffectsPlan | null {
@@ -103,7 +103,7 @@ export class SceneEffectsOwner {
       ? Constants.TEXTURETYPE_HALF_FLOAT
       : Constants.TEXTURETYPE_UNSIGNED_BYTE;
     try {
-      if ((plan.reflections || plan.volumetricLighting) && !spatialEffectsUnsupported(this.scene)) {
+      if (hasSpatialEffects(plan) && !spatialEffectsUnsupported(this.scene)) {
         const size = camera.outputRenderTarget?.getSize();
         const width = size?.width ?? engine.getRenderWidth(true);
         const height = size?.height ?? engine.getRenderHeight(true);

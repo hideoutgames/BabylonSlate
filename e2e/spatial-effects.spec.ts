@@ -195,3 +195,48 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     expect(pixelDifference(result.fogCaptures[0]!.box, result.fogCaptures[1]!.box), "native and graph local fog parity").toBeLessThan(3);
   });
 }
+
+/** Pixels at least `threshold` darker in `after`, red channel only. */
+function darkened(before: number[], after: number[], threshold: number) {
+  return before.filter((value, i) => i % 4 === 0 && value - after[i]! >= threshold).length;
+}
+
+for (const backend of ["webgl2", "webgpu"] as const) {
+  test(`ambient occlusion darkens contact creases and retires on ${backend}`, async ({ page }, testInfo) => {
+    test.setTimeout(90_000);
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    page.on("console", (message) => {
+      if (["warning", "error"].includes(message.type()) &&
+        /shader|WebGPU uncaptured|VALIDATE_STATUS|ERROR: 0:|context lost|fatal error/i.test(message.text()))
+        errors.push(message.text());
+    });
+    await page.goto("/?test=1&spatialEffectsProof=1");
+    await page.waitForFunction(() => typeof (window as unknown as {
+      __spatialEffectsProof?: unknown;
+    }).__spatialEffectsProof === "function");
+    const result = await page.evaluate((backend) => (window as unknown as {
+      __spatialEffectsProof: typeof runSpatialEffectsProof;
+    }).__spatialEffectsProof(backend, "ambientOcclusion"), backend).catch(async (error: unknown) => {
+      await testInfo.attach("occlusion-errors", { body: JSON.stringify(errors), contentType: "application/json" });
+      throw error;
+    });
+    await testInfo.attach("occlusion-pixels", { body: JSON.stringify(result), contentType: "application/json" });
+    expect(errors).toEqual([]);
+    expect(result.reservations.reservedBytes).toBe(0);
+    expect(result.occlusionCaptures).toHaveLength(2);
+    const pixels = 96 * 72;
+    for (const capture of result.occlusionCaptures) {
+      const { path, off, on } = capture;
+      expect(darkened(off, on, 8), `${path}: the crate's contact crease darkens`).toBeGreaterThan(20);
+      // Open floor and the cleared background receive no occlusion.
+      const unchanged = off.filter((value, i) => i % 4 === 0 && Math.abs(value - on[i]!) <= 2).length;
+      expect(unchanged, `${path}: unoccluded pixels keep scene color`).toBeGreaterThan(pixels * 0.6);
+      expect(on.filter((value, i) => i % 4 === 0 && value > off[i]! + 2).length, `${path}: occlusion never brightens`).toBe(0);
+      expect(darkened(off, capture.linear, 8), `${path}: Scene Linear keeps occlusion`).toBeGreaterThan(20);
+      expect(darkened(capture.orthographicOff, capture.orthographic, 8), `${path}: orthographic occlusion`).toBeGreaterThan(20);
+      expect(pixelDifference(off, capture.disabled), `${path}: disabling restores scene color`).toBeLessThan(1);
+    }
+    expect(pixelDifference(result.occlusionCaptures[0]!.on, result.occlusionCaptures[1]!.on), "native and graph parity").toBeLessThan(3);
+  });
+}

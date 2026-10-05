@@ -94,6 +94,7 @@ describe("render effects settings", () => {
           colorPipeline: { version: 1, mode: "sceneLinear" },
           toneMapping: "neutral",
           bloom: { ...DEFAULT_RENDER_EFFECTS.bloom, enabled: true },
+          ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true, radius: 1.5 },
           reflections: { ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true, maxSteps: 48 },
           volumetricLighting: { ...DEFAULT_RENDER_EFFECTS.volumetricLighting, enabled: true, density: 0.08 },
           fxaa: true,
@@ -110,6 +111,7 @@ describe("render effects settings", () => {
       DEFAULT_RENDER_EFFECTS.bloom.kernel,
     );
     expect(settings.render.effects?.fxaa).toBe(true);
+    expect(settings.render.effects?.ambientOcclusion).toEqual({ ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true, radius: 1.5 });
     expect(settings.render.effects?.reflections).toEqual({ ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true, maxSteps: 48 });
     expect(settings.render.effects?.volumetricLighting).toEqual({ ...DEFAULT_RENDER_EFFECTS.volumetricLighting, enabled: true, density: 0.08 });
     expect(normalizeProjectSettings(JSON.parse(JSON.stringify(settings)))).toEqual(settings);
@@ -120,7 +122,9 @@ it("bounds spatial GPU work and preserves authored settings while disabled", () 
   const value = normalizeRenderEffectsSettings({
     reflections: { enabled: "true", maxSteps: 1e8, resolutionScale: 0, thickness: Number.NaN, strength: -1 },
     volumetricLighting: { enabled: false, maxLights: 100, steps: 15.6, density: 0.1, anisotropy: 1, maxDistance: -2 },
+    ambientOcclusion: { enabled: 1, samples: 99.4, resolutionScale: 2, radius: 0, strength: Number.POSITIVE_INFINITY, maxDistance: 20 },
   });
+  expect(value.ambientOcclusion).toEqual({ ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, samples: 32, resolutionScale: 1, radius: 0.05, maxDistance: 20 });
   expect(value.reflections).toEqual({ ...DEFAULT_RENDER_EFFECTS.reflections, maxSteps: 128, resolutionScale: 0.25, strength: 0 });
   expect(value.volumetricLighting).toEqual({ ...DEFAULT_RENDER_EFFECTS.volumetricLighting, maxLights: 4, steps: 16, density: 0.1, anisotropy: 0.9, maxDistance: 0.1 });
 });

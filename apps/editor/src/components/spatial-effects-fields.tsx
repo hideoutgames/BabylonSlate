@@ -20,8 +20,11 @@ type Props = {
 };
 
 export function SpatialEffectsFields({ value, onChange }: Props) {
-  const reflection = value.reflections,
+  const occlusion = value.ambientOcclusion,
+    reflection = value.reflections,
     volume = value.volumetricLighting;
+  const patchOcclusion = (patch: Partial<typeof occlusion>) =>
+    onChange({ ...value, ambientOcclusion: { ...occlusion, ...patch } });
   const patchReflection = (patch: Partial<typeof reflection>) =>
     onChange({ ...value, reflections: { ...reflection, ...patch } });
   const patchVolume = (patch: Partial<typeof volume>) =>
@@ -59,6 +62,69 @@ export function SpatialEffectsFields({ value, onChange }: Props) {
   };
   return (
     <FieldGroup className="gap-2">
+      <Field orientation="horizontal" className="settings-field">
+        <FieldContent>
+          <FieldLabel htmlFor="project-effects-ambient-occlusion">
+            Ambient Occlusion
+          </FieldLabel>
+          <FieldDescription>
+            Darken creases and contact points between visible PBR surfaces.
+          </FieldDescription>
+        </FieldContent>
+        <Switch
+          id="project-effects-ambient-occlusion"
+          data-testid="project-effects-ambient-occlusion"
+          checked={occlusion.enabled}
+          onCheckedChange={(enabled) => patchOcclusion({ enabled })}
+        />
+      </Field>
+      {occlusion.enabled ? (
+        <>
+          {number(
+            "Occlusion Radius",
+            "occlusion-radius",
+            occlusion.radius,
+            RENDER_EFFECTS_LIMITS.ambientOcclusionRadius,
+            (radius) => patchOcclusion({ radius }),
+            0.05,
+            "Distance searched around each surface point, in scene units.",
+          )}
+          {number(
+            "Occlusion Strength",
+            "occlusion-strength",
+            occlusion.strength,
+            RENDER_EFFECTS_LIMITS.ambientOcclusionStrength,
+            (strength) => patchOcclusion({ strength }),
+          )}
+          {number(
+            "Occlusion Distance",
+            "occlusion-distance",
+            occlusion.maxDistance,
+            RENDER_EFFECTS_LIMITS.ambientOcclusionDistance,
+            (maxDistance) => patchOcclusion({ maxDistance }),
+            1,
+            "Occlusion fades out toward this distance from the camera, in scene units.",
+          )}
+          {number(
+            "Occlusion Resolution Scale",
+            "occlusion-scale",
+            occlusion.resolutionScale,
+            RENDER_EFFECTS_LIMITS.spatialResolutionScale,
+            (resolutionScale) => patchOcclusion({ resolutionScale }),
+            0.25,
+            "Multiplies Post Processing Resolution Scale, with a quarter-resolution minimum.",
+          )}
+          {number(
+            "Occlusion Samples",
+            "occlusion-samples",
+            occlusion.samples,
+            RENDER_EFFECTS_LIMITS.ambientOcclusionSamples,
+            (samples) => patchOcclusion({ samples }),
+            1,
+            "More samples reduce noise at a higher rendering cost.",
+          )}
+        </>
+      ) : null}
       <Field orientation="horizontal" className="settings-field">
         <FieldContent>
           <FieldLabel htmlFor="project-effects-reflections">

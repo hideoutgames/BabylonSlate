@@ -92,6 +92,32 @@ async function captureFogVolumes(scene: Scene, camera: FreeCamera, draw: () => P
   }
 }
 
+/** Occlusion darkens the contact crease, keeps open floor and the sky, and
+ * follows an orthographic projection without stale shader state. */
+async function captureAmbientOcclusion(
+  camera: FreeCamera,
+  effects: ReturnType<typeof normalizeRenderEffectsSettings>,
+  draw: () => Promise<number[]>,
+) {
+  const off = await draw();
+  effects.ambientOcclusion.enabled = true;
+  const on = await draw();
+  effects.colorPipeline.mode = "sceneLinear";
+  const linear = await draw();
+  effects.colorPipeline.mode = "legacyDisplay";
+  camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
+  camera.orthoLeft = -4;
+  camera.orthoRight = 4;
+  camera.orthoTop = 3;
+  camera.orthoBottom = -3;
+  const orthographic = await draw();
+  effects.ambientOcclusion.enabled = false;
+  const orthographicOff = await draw();
+  camera.mode = Camera.PERSPECTIVE_CAMERA;
+  const disabled = await draw();
+  return { off, on, linear, orthographic, orthographicOff, disabled };
+}
+
 function normalIdentityDocument() {
   const document = createDefaultMaterialDocument("Normals Identity", "postProcess");
   // World normals are stored as n * 0.5 + 0.5. Decode before length so a unit
@@ -131,7 +157,7 @@ function normalIdentityDocument() {
 /** Actual numeric pixels from authored materials and scene lights, without editor chrome. */
 export async function runSpatialEffectsProof(
   backend: "webgl2" | "webgpu",
-  kind: "reflections" | "point" | "spot" | "sun" | "combined" | "fogVolumes",
+  kind: "reflections" | "point" | "spot" | "sun" | "combined" | "fogVolumes" | "ambientOcclusion",
 ) {
   const canvas = document.createElement("canvas");
   canvas.width = 96;
@@ -147,6 +173,7 @@ export async function runSpatialEffectsProof(
   engine.setSize(96, 72);
   const captures = [];
   const fogCaptures = [];
+  const occlusionCaptures = [];
   try {
     for (const path of ["frameGraph", "classic"] as const) {
       const scene = new Scene(engine);
@@ -187,6 +214,12 @@ export async function runSpatialEffectsProof(
         floor.position.z = 8;
       }
       let light: DirectionalLight | SpotLight | PointLight | undefined;
+      if (kind === "ambientOcclusion") {
+        black.albedoColor.set(0.7, 0.7, 0.7);
+        const crate = MeshBuilder.CreateBox("Occluding Crate", { size: 1.5 }, scene);
+        crate.position.y = 0.75;
+        crate.material = black;
+      }
       if (kind === "reflections" || kind === "combined") {
         const document = createDefaultMaterialDocument("Authored Mirror");
         document.nodes.find(
@@ -214,7 +247,7 @@ export async function runSpatialEffectsProof(
         box.position.y = 1.3;
         box.material = red;
       }
-      if (kind !== "reflections" && kind !== "fogVolumes") {
+      if (kind !== "reflections" && kind !== "fogVolumes" && kind !== "ambientOcclusion") {
         const position = new Vector3(0, 3, 0);
         light =
           kind === "point"
@@ -249,6 +282,7 @@ export async function runSpatialEffectsProof(
         blocker.material = black;
       }
       const effects = normalizeRenderEffectsSettings({
+        ambientOcclusion: { enabled: false, resolutionScale: 1, radius: 0.6, strength: 2 },
         reflections: { enabled: false, maxSteps: 96, thickness: 0.3 },
         volumetricLighting: {
           enabled: false,
@@ -333,6 +367,10 @@ export async function runSpatialEffectsProof(
       try {
         if (kind === "fogVolumes") {
           fogCaptures.push({ path, ...await captureFogVolumes(scene, camera, draw) });
+          continue;
+        }
+        if (kind === "ambientOcclusion") {
+          occlusionCaptures.push({ path, ...await captureAmbientOcclusion(camera, effects, draw) });
           continue;
         }
         const off = await draw();
@@ -456,7 +494,7 @@ export async function runSpatialEffectsProof(
         engine.endFrame();
       }
     }
-    return { captures, fogCaptures, reservations: managedRenderReservations(engine) };
+    return { captures, fogCaptures, occlusionCaptures, reservations: managedRenderReservations(engine) };
   } finally {
     engine.dispose();
     canvas.remove();
