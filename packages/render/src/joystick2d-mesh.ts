@@ -53,8 +53,8 @@ export function createJoystick2DMesh(
     const mesh = background.mesh;
     const thumb = joystick.mesh;
     thumb.parent = mesh;
+    // Keep the same alpha priority so the nearer thumb draws after its background.
     thumb.position.z = -0.01;
-    thumb.alphaIndex = 1;
     thumb.isPickable = false;
     thumb.metadata = { joystick2DThumb: true };
     mesh.metadata = { overlayJoystickMeshName: name, overlayHitTest: properties.enabled ? "block" : "ignore" };
