@@ -1021,8 +1021,8 @@ export class HavokPhysicsBackend implements PhysicsBackend {
         w: 1,
       },
     };
-    // Kinematic movement must keep native contact membership alive. Explicit
-    // teleport refreshes retire overlap pairs, which would re-enter every tick.
+    // Kinematic movement uses a native target, which keeps contact membership
+    // without the world-membership refresh an explicit teleport performs.
     if (body.desc.motionType === "kinematic") this.setBodyTargetTransform(character.desc.bodyId, pose);
     else this.teleportBody(character.desc.bodyId, pose);
     return {

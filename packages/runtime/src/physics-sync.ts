@@ -1046,8 +1046,8 @@ export class PhysicsWorldSync {
         component: movement ?? rigid ?? null,
         value: movement || rigid ? props : STATIC_BODY_PROPERTIES,
       });
-      // Creation already installed this pose. Re-teleporting an unchanged
-      // static trigger on its second tick would end and restart its overlaps.
+      // Creation already installed this pose; caching it keeps later syncs
+      // from teleporting an unchanged static body every tick.
       if (props.motionType === "static") this.staticPoses.set(actor.guid, physicsPoseDescriptor(pose));
     } catch (error) {
       this.backend.destroyBody(bodyId);
