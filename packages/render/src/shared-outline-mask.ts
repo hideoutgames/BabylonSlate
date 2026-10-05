@@ -10,7 +10,7 @@ import { SHARED_OUTLINE_ATTRIBUTE, type SharedOutlineGroup, type SharedOutlineVi
 import { SHARED_OUTLINE_MASK_SHADER } from "./shared-outline-shaders";
 import { acquireAuthoredOutlineVariant, type AuthoredOutlineVariant } from "./material-compiler";
 import { CelMaterial } from "./cel-material";
-import { gpuWaterWaves, WATER_VERTEX_WAVE_UNIFORMS } from "./water-material";
+import { gpuWaterWaves, WATER_FFT_SAMPLER, WATER_VERTEX_WAVE_UNIFORMS } from "./water-material";
 
 type MaskProgram = {
   source: Material; wrapper?: DrawWrapper; variant?: AuthoredOutlineVariant;
@@ -171,7 +171,8 @@ export class SharedOutlineMaskRenderer {
       defines.push("#define BAKED_VERTEX_ANIMATION_TEXTURE");
       if (hardware) attributes.push("bakedVertexAnimationSettingsInstanced");
     }
-    // Built-in water displaces its static rest grid in the vertex shader: the mask applies the same displacement.
+    // Built-in water displaces its static rest grid in the vertex shader: the mask applies the same displacement,
+    // including the FFT detail band's when the material samples it.
     const water = gpuWaterWaves(source, mesh);
     if (water) { defines.push(...water.vertexWaveDefines()); attributes.push("slateWaterData"); }
     PrepareStringDefinesForClipPlanes(source, this.view.scene, defines);
@@ -188,7 +189,7 @@ export class SharedOutlineMaskRenderer {
       AddClipPlaneUniforms(uniforms);
       wrapper.setEffect(this.view.scene.getEngine().createEffect(SHARED_OUTLINE_MASK_SHADER, {
         attributes, uniformsNames: uniforms, uniformBuffersNames: [],
-        samplers: ["styleSampler", "diffuseSampler", "opacitySampler", "boneSampler", "morphTargets", "bakedVertexAnimationTexture"],
+        samplers: ["styleSampler", "diffuseSampler", "opacitySampler", "boneSampler", "morphTargets", "bakedVertexAnimationTexture", ...(water ? [WATER_FFT_SAMPLER] : [])],
         defines: joined, fallbacks, onCompiled: null, onError: null,
         indexParameters: { maxSimultaneousMorphTargets: morphs },
         shaderLanguage: this.view.scene.getEngine().isWebGPU ? ShaderLanguage.WGSL : ShaderLanguage.GLSL,

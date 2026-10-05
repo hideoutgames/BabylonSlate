@@ -119,16 +119,29 @@ function directional(angle: number, heading: number, spread: number): number {
   return Math.abs(theta) <= Math.PI * spread ? Math.cos(theta / (2 * spread)) ** 2 / (Math.PI * spread) : 0;
 }
 
-/** ∫ S(k) dk over [low, high] (log-spaced trapezoid with a fixed step count, so every host agrees). */
-export function waterFftBandVariance(set: WaterWaveSet, low: number, high: number): number {
+/** ∫ k^power · S(k) dk over [low, high] (log-spaced trapezoid with a fixed step count, so every host agrees). */
+function bandMoment(set: WaterWaveSet, low: number, high: number, power: number): number {
   const steps = 256;
-  let sum = 0, previous = low, previousValue = waterOceanSpectrumDensity(set, low);
+  let sum = 0, previous = low, previousValue = waterOceanSpectrumDensity(set, low) * low ** power;
   for (let i = 1; i <= steps; i++) {
-    const k = low * (high / low) ** (i / steps), value = waterOceanSpectrumDensity(set, k);
+    const k = low * (high / low) ** (i / steps), value = waterOceanSpectrumDensity(set, k) * k ** power;
     sum += (k - previous) * (value + previousValue) / 2;
     previous = k; previousValue = value;
   }
   return sum;
+}
+
+/** ∫ S(k) dk over [low, high]: the band's height variance (m² at Wave Scale 1). */
+export function waterFftBandVariance(set: WaterWaveSet, low: number, high: number): number {
+  return bandMoment(set, low, high, 0);
+}
+
+/**
+ * ∫ k² · S(k) dk over [low, high]: the band's mean square slope E|∇H|² at Wave Scale 1, whatever its headings. A water
+ * shader that fades a cascade before it would alias adds the faded share of this to its filtered roughness.
+ */
+export function waterFftBandSlopeVariance(set: WaterWaveSet, low: number, high: number): number {
+  return bandMoment(set, low, high, 2);
 }
 
 /** Seed of one cascade's draw: the asset's Wave Seed and the cascade index, mixed so cascades never share a stream. */

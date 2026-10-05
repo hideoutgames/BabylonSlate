@@ -8,7 +8,7 @@ import { createDefaultMaterialDocument } from "../packages/shader-graph/src/docu
 import { openMinimalTestProject } from "./minimal-project";
 import { openAssetFromBrowser, openMainScene } from "./open-test-project";
 import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
-import type { runWaterObjectProof, runWaterRenderingProof, runWaterTierProof } from "../apps/editor/src/testing/water-rendering-proof";
+import type { runWaterFftDetailProof, runWaterObjectProof, runWaterRenderingProof, runWaterTierProof } from "../apps/editor/src/testing/water-rendering-proof";
 
 test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 
@@ -207,6 +207,55 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     // In scene fog the refracted floor keeps its own fog only, matching the blended surface.
     expect(result.fog.compiled).toBe(true);
     expect(result.fog.difference).toBeLessThan(2);
+  });
+  test(`Water samples the FFT ocean detail band at High and Ultra on ${backend}`, async ({ page }, testInfo) => {
+    test.setTimeout(300_000);
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    page.on("console", (message) => {
+      if (["error", "warning"].includes(message.type()) && /shader|WebGPU uncaptured|VALIDATE_STATUS|ERROR: 0:|GL_INVALID/i.test(message.text())) errors.push(message.text());
+    });
+    await page.goto("/?test=1&waterRenderingProof=1");
+    await page.waitForFunction(() => typeof (window as unknown as { __babylonslateWaterFftDetailProof?: unknown }).__babylonslateWaterFftDetailProof === "function");
+    const result = await page.evaluate((backend) => (window as unknown as { __babylonslateWaterFftDetailProof: typeof runWaterFftDetailProof }).__babylonslateWaterFftDetailProof(backend), backend);
+    for (const [name, png] of Object.entries(result.evidence)) {
+      const bytes = Buffer.from(png.split(",")[1]!, "base64");
+      await testInfo.attach(name, { body: bytes, contentType: "image/png" });
+      await import("node:fs/promises").then((fs) => fs.writeFile(testInfo.outputPath(name + ".png"), bytes));
+    }
+    const metrics = JSON.stringify({ ...result, evidence: undefined }, null, 1);
+    await testInfo.attach("metrics", { body: metrics, contentType: "application/json" });
+    await import("node:fs/promises").then((fs) => fs.writeFile(testInfo.outputPath("metrics.json"), metrics));
+    expect(errors).toEqual([]);
+    const tiers = Object.fromEntries(result.tiers.map((entry) => [entry.tier, entry]));
+    // Low and Medium compile no band: Detail Waves changes nothing they draw.
+    for (const tier of ["low", "medium"] as const) {
+      expect(tiers[tier]!.compiled, tier).toBe(0);
+      expect(tiers[tier]!.change, tier).toBe(0);
+    }
+    // High and Ultra sample their preset cascades once the band is ready: more small-scale detail, still lit water with
+    // no black (or NaN) pixels.
+    for (const [tier, cascades] of [["high", 2], ["ultra", 3]] as const) {
+      const entry = tiers[tier]!;
+      expect(entry.compiled, tier).toBe(cascades);
+      expect(entry.ready, tier).toBe(true);
+      expect(entry.change, tier).toBeGreaterThan(1);
+      expect(entry.on.detail, tier).toBeGreaterThan(entry.off.detail * 1.1);
+      expect(entry.on.black, tier).toBe(0);
+      expect(entry.on.light, tier).toBeGreaterThan(20);
+    }
+    for (const [name, stats] of Object.entries(result.extra)) {
+      expect(stats.black, name).toBe(0);
+      expect(stats.light, name).toBeGreaterThan(20);
+    }
+    // Over a twentieth of a second the detail moves a little with the waves.
+    for (const step of result.sequence) expect(step).toBeGreaterThan(0.05);
+    // Side on, the band displaces the GPU vertices within its bound; the CPU vertex path draws the analytic surface.
+    expect(result.profile.band.columns).toBeGreaterThan(300);
+    expect(result.profile.band.meanMetres).toBeGreaterThan(0.004);
+    expect(result.profile.band.maxMetres).toBeLessThan(2 * result.profile.bound);
+    expect(result.profile.cpu.meanMetres).toBeLessThan(1e-3);
+    expect(result.profile.cpu.maxMetres).toBeLessThanOrEqual(2 * result.profile.metresPerPixel);
   });
   test(`Water presets and a custom Water Surface material render on ${backend}`, async ({ page }, testInfo) => {
     test.setTimeout(120_000);

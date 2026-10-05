@@ -4,17 +4,18 @@ import {
 } from "@babylonjs/core";
 import {
   createDefaultWaterDefinition, DEFAULT_RENDER_EFFECTS, normalizeRenderingQuality, normalizeWaterBody, qualityPresetPatch, sampleWaterSurface,
-  WATER_SHADING_DETAILS, type QualityLevel, type WaterBodyProperties, type WaterDefinition, type WaterKind, type WaterQuality, type WaterShadingDetail,
+  WATER_SHADING_DETAILS, waterWaveSet, type QualityLevel, type WaterBodyProperties, type WaterDefinition, type WaterKind, type WaterQuality,
+  type WaterShadingDetail,
 } from "@babylonslate/core";
 import {
   createAppWebGpuEngine, createParticlePreviewScene, createWaterMesh, setSceneRenderSettings, setSceneWaterTime, setWaterGpuWaves, updateSceneWater,
-  waterPlanarReflectionDiagnostics, waterPlanarReflectionForCamera,
+  waterFftDiagnostics, waterPlanarReflectionDiagnostics, waterPlanarReflectionForCamera,
 } from "@babylonslate/render";
 import { SceneRenderCoordinator } from "@babylonslate/render/scene-render-coordinator";
 import { createLandscapeMesh } from "../../../../packages/render/src/landscape-mesh";
 import { installPreviewEnvironment } from "../../../../packages/render/src/preview-environment";
 import { RENDERING_GROUP } from "../../../../packages/render/src/sorting";
-import { sceneRenderingSettings, updateSceneRenderingSettings } from "../../../../packages/render/src/render-settings";
+import { sceneRenderingSettings, sceneWaterQualityDeviceClamp, updateSceneRenderingSettings } from "../../../../packages/render/src/render-settings";
 import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
 type Capture = () => Promise<{ pixels: number[]; png: string }>;
@@ -701,6 +702,225 @@ export async function runWaterTierProof(backend: "webgl2" | "webgpu", options: {
     const device = (engine as { _device?: { queue: { onSubmittedWorkDone(): Promise<void> } } })._device;
     engine.flushFramebuffer(); await device?.queue.onSubmittedWorkDone();
     host.dispose(); await host.whenReleased(); engine.dispose(); canvas.remove();
+  }
+}
+
+/** Top-down RGBA pixel statistics of the FFT detail proof, over the water (the lower two thirds of the view). */
+function fftViewStats(pixels: readonly number[], width: number, height: number) {
+  const luma = (i: number) => (pixels[i]! + pixels[i + 1]! + pixels[i + 2]!) / 3;
+  let light = 0, black = 0, count = 0, detail = 0, detailCount = 0;
+  for (let y = Math.floor(height / 3); y < height; y++) for (let x = 0; x < width; x++) {
+    const i = (y * width + x) * 4;
+    light += luma(i); count++;
+    // Black (or NaN, which blends to black) water.
+    if (Math.max(pixels[i]!, pixels[i + 1]!, pixels[i + 2]!) < 3) black++;
+    // Small-scale detail: each pixel against its four neighbours, over the nearer half of the view.
+    if (y >= height / 2 && y < height - 1 && x > 0 && x < width - 1) {
+      detail += Math.abs(4 * luma(i) - luma(i - 4) - luma(i + 4) - luma(i - width * 4) - luma(i + width * 4)) / 4; detailCount++;
+    }
+  }
+  return { light: light / count, black, detail: detail / detailCount };
+}
+
+/**
+ * FFT ocean detail in built-in water, drawn as views draw it (the water before-render observer requests and dispatches
+ * the band; the material's bind is its demand), on an app-like engine (large-world rendering):
+ * - Realistic Global Water at a typical eye height at every preset tier, with Detail Waves 1 and 0: Low and Medium
+ *   compile no band and draw the same water either way; High and Ultra compile their cascades, the band becomes ready,
+ *   and it adds small-scale detail without black or NaN pixels.
+ * - At Ultra, the sea from high above (where a repeating patch would show), far from the world origin (the
+ *   floating-origin uv offset), and a short time sequence (detail must move with the waves, not swim over them).
+ * - Side on through a thin depth slab at Ultra (as the vertex parity proof): the band displaces the GPU vertices, within
+ *   its bound, while the CPU vertex path (`setWaterGpuWaves(mesh, false)`) draws exactly the analytic surface.
+ * Pixels are top-down RGBA; evidence PNGs are the captures.
+ */
+export async function runWaterFftDetailProof(backend: "webgl2" | "webgpu") {
+  const width = 480, height = 300;
+  const canvas = document.createElement("canvas");
+  canvas.width = width; canvas.height = height;
+  document.getElementById("root")!.append(canvas);
+  const engine = backend === "webgpu" ? await createAppWebGpuEngine(canvas) : new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true, useLargeWorldRendering: true });
+  const host = createParticlePreviewScene(engine, { skybox: true });
+  const { scene, camera } = host;
+  const sun = new DirectionalLight("sun", new Vector3(-0.3, -1, 0.6), scene);
+  sun.intensity = 1.4;
+  camera.maxZ = 2000;
+  camera.upperRadiusLimit = null;
+  for (const mesh of scene.meshes) if (mesh.metadata?.skybox) mesh.infiniteDistance = true;
+  const order = readbackChannelOrder(engine.isWebGPU);
+  const quality = sceneRenderingSettings(scene).project.quality;
+  const evidence: Record<string, string> = {};
+  const png = (pixels: readonly number[], w = width, h = height) => {
+    const out = document.createElement("canvas");
+    out.width = w; out.height = h;
+    const context = out.getContext("2d")!, image = context.createImageData(w, h);
+    image.data.set(pixels);
+    context.putImageData(image, 0, 0);
+    return out.toDataURL("image/png");
+  };
+  /** One frame: the water observer runs inside Scene.render, then the top-down RGBA readback. */
+  const capture = async (w = width, h = height) => {
+    await scene.whenReadyAsync();
+    camera.getViewMatrix(true);
+    engine.beginFrame();
+    try {
+      scene.render();
+      const raw = await engine.readPixels(0, 0, w, h);
+      if (!raw) throw new Error("Missing water pixels");
+      const rgba = toRgbaPixels(new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength), order);
+      const pixels = new Array<number>(rgba.length), stride = w * 4;
+      for (let row = 0; row < h; row++) {
+        const source = (engine.isWebGPU ? row : h - 1 - row) * stride;
+        for (let i = 0; i < stride; i++) pixels[row * stride + i] = rgba[source + i]!;
+      }
+      return pixels;
+    } finally { engine.endFrame(); }
+  };
+  /** Cascades of the band the water's main variant compiled (`SLATE_WATER_FFT`). */
+  const compiled = (mesh: Mesh) => Number(/#define SLATE_WATER_FFT (\d+)/.exec(mesh.subMeshes[0]?.effect?.defines ?? "")?.[1] ?? NaN);
+  /** Frames until a band of `cascades` is ready (its spectrum is drawn in budgeted steps), then one more capture. */
+  const settle = async (cascades: number) => {
+    let pixels = await capture(), ready = false;
+    for (let frame = 0; frame < 80 && cascades > 0 && !ready; frame++) {
+      ready = waterFftDiagnostics(scene).simulations.some((simulation) => simulation.ready && simulation.cascades === cascades);
+      pixels = await capture();
+    }
+    return { pixels, ready };
+  };
+  const view = (beta: number, radius: number, target: [number, number, number] = [0, 0, 0]) => {
+    camera.mode = Camera.PERSPECTIVE_CAMERA;
+    camera.setTarget(new Vector3(...target), false, false, true);
+    camera.alpha = -Math.PI / 2 - 0.4; camera.beta = beta; camera.radius = radius;
+  };
+  const sea = (detailWaves: number) => createWaterMesh(scene, `fft-sea-${detailWaves}`, normalizeWaterBody({}, "global"),
+    { ...createDefaultWaterDefinition("realistic"), detailWaves });
+  try {
+    const tiers: Array<{
+      tier: WaterShadingDetail; compiled: number; ready: boolean; change: number;
+      on: ReturnType<typeof fftViewStats>; off: ReturnType<typeof fftViewStats>;
+    }> = [];
+    let ultraSea: Mesh | null = null;
+    for (const tier of WATER_SHADING_DETAILS) {
+      updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality(qualityPresetPatch(tier)) });
+      const cascades = sceneWaterQualityDeviceClamp(scene).quality.fft ? sceneWaterQualityDeviceClamp(scene).quality.fftCascades : 0;
+      setSceneWaterTime(scene, 2.4);
+      view(1.25, 22);
+      const off = sea(0);
+      const without = (await settle(0)).pixels;
+      off.dispose();
+      const on = sea(1);
+      const { pixels, ready } = await settle(cascades);
+      evidence[`fft-${tier}-on`] = png(pixels); evidence[`fft-${tier}-off`] = png(without);
+      tiers.push({
+        tier, compiled: compiled(on), ready, change: fftChange(pixels, without, width, height),
+        on: fftViewStats(pixels, width, height), off: fftViewStats(without, width, height),
+      });
+      if (tier === "ultra") ultraSea = on; else on.dispose();
+    }
+    // Ultra: from high above (a repeating patch would show here), far from the world origin, and a short time sequence.
+    const extra: Record<string, ReturnType<typeof fftViewStats>> = {};
+    view(0.7, 45);
+    let pixels = await capture();
+    evidence["fft-ultra-overhead"] = png(pixels); extra.overhead = fftViewStats(pixels, width, height);
+    view(1.15, 18, [4000, 0, -2000]);
+    pixels = await capture(); pixels = await capture();
+    evidence["fft-ultra-far"] = png(pixels); extra.far = fftViewStats(pixels, width, height);
+    view(1.1, 9);
+    const sequence: number[] = [];
+    let previous: number[] | null = null;
+    for (const [index, time] of [2.4, 2.45, 2.5].entries()) {
+      setSceneWaterTime(scene, time);
+      pixels = await capture();
+      evidence[`fft-ultra-close-${index}`] = png(pixels);
+      if (previous) sequence.push(fftChange(pixels, previous, width, height));
+      previous = pixels;
+    }
+    extra.close = fftViewStats(pixels, width, height);
+    ultraSea?.dispose();
+    const profile = await measureFftProfile(scene, camera, capture, png, evidence, width, height);
+    return { tiers, extra, sequence, profile, diagnostics: waterFftDiagnostics(scene), evidence };
+  } finally {
+    updateSceneRenderingSettings(scene, { quality });
+    const device = (engine as { _device?: { queue: { onSubmittedWorkDone(): Promise<void> } } })._device;
+    engine.flushFramebuffer(); await device?.queue.onSubmittedWorkDone();
+    host.dispose(); await host.whenReleased(); engine.dispose(); canvas.remove();
+  }
+}
+
+/** Mean per-channel difference of two top-down RGBA captures over the water (the lower two thirds). */
+function fftChange(a: readonly number[], b: readonly number[], width: number, height: number): number {
+  let sum = 0, count = 0;
+  for (let y = Math.floor(height / 3); y < height; y++) for (let x = 0; x < width; x++) for (let c = 0; c < 3; c++) {
+    const i = (y * width + x) * 4 + c;
+    sum += Math.abs(a[i]! - b[i]!); count++;
+  }
+  return sum / count;
+}
+
+/**
+ * Side-on FFT displacement at Ultra (as `measureVertexParity`: an orthographic slab 6 cm deep, 2.5 mm per pixel): the
+ * profile of Global Water with Detail Waves 1 on the GPU path against Detail Waves 0, and the same water on the CPU
+ * vertex path, which never applies the band (it cannot read it) and so draws the analytic surface exactly.
+ */
+async function measureFftProfile(
+  scene: Scene, camera: ArcRotateCamera, capture: (w?: number, h?: number) => Promise<number[]>, png: (pixels: readonly number[]) => string,
+  evidence: Record<string, string>, width: number, height: number,
+) {
+  const saved = { mode: camera.mode, minZ: camera.minZ, maxZ: camera.maxZ, clear: scene.clearColor.clone(), ortho: [camera.orthoLeft, camera.orthoRight, camera.orthoTop, camera.orthoBottom] as const };
+  const halfHeight = 0.375, halfWidth = halfHeight * width / height, distance = 3, slab = 0.03, metresPerPixel = 2 * halfHeight / height;
+  scene.clearColor = new Color4(1, 0, 1, 1);
+  const shown = scene.meshes.filter((mesh) => mesh.isVisible);
+  for (const mesh of shown) mesh.isVisible = false;
+  camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
+  camera.orthoLeft = -halfWidth; camera.orthoRight = halfWidth; camera.orthoTop = halfHeight; camera.orthoBottom = -halfHeight;
+  camera.setTarget(Vector3.Zero(), false, false, true);
+  camera.alpha = -Math.PI / 2; camera.beta = Math.PI / 2; camera.radius = distance;
+  camera.minZ = distance - slab; camera.maxZ = distance + slab;
+  /** Height (pixels above the bottom) of each column's topmost water pixel, or null. */
+  const profile = (pixels: readonly number[]) => Array.from({ length: width }, (_, x) => {
+    for (let y = 0; y < height; y++) {
+      const i = (y * width + x) * 4;
+      if (Math.abs(pixels[i]! - 255) + pixels[i + 1]! + Math.abs(pixels[i + 2]! - 255) >= 90) return height - 1 - y;
+    }
+    return null;
+  });
+  const compare = (a: (number | null)[], b: (number | null)[]) => {
+    let sum = 0, max = 0, columns = 0;
+    for (let x = 0; x < a.length; x++) {
+      if (a[x] === null || b[x] === null) continue;
+      const difference = Math.abs(a[x]! - b[x]!);
+      sum += difference; max = Math.max(max, difference); columns++;
+    }
+    return { columns, meanMetres: columns ? sum / columns * metresPerPixel : Infinity, maxMetres: max * metresPerPixel };
+  };
+  const water = (detailWaves: number) => ({
+    ...createDefaultWaterDefinition("realistic"), opacity: 1, foamAmount: 0, crestFoam: 0, surfaceFoam: 0, sparkles: 0, waveLength: 6, steepness: 1, detailWaves,
+  });
+  try {
+    setSceneWaterTime(scene, 2.3);
+    const shoot = async (detailWaves: number, gpu = true) => {
+      const mesh = createWaterMesh(scene, `fft-profile-${detailWaves}`, normalizeWaterBody({ resolution: 128 }, "global"), water(detailWaves));
+      setWaterGpuWaves(mesh, gpu);
+      for (let frame = 0; frame < 80; frame++) {
+        await capture();
+        if (!detailWaves || waterFftDiagnostics(scene).simulations.some((simulation) => simulation.ready && simulation.cascades === 3)) break;
+      }
+      const pixels = await capture();
+      mesh.dispose();
+      return pixels;
+    };
+    const analytic = await shoot(0), band = await shoot(1), cpu = await shoot(1, false);
+    evidence["fft-profile-analytic"] = png(analytic); evidence["fft-profile-band"] = png(band); evidence["fft-profile-cpu"] = png(cpu);
+    const [a, b, c] = [profile(analytic), profile(band), profile(cpu)];
+    return {
+      metresPerPixel, band: compare(b, a), cpu: compare(c, a),
+      bound: waterWaveSet(water(1)).detailHeight,
+    };
+  } finally {
+    camera.mode = saved.mode; camera.minZ = saved.minZ; camera.maxZ = saved.maxZ;
+    [camera.orthoLeft, camera.orthoRight, camera.orthoTop, camera.orthoBottom] = saved.ortho;
+    scene.clearColor = saved.clear;
+    for (const mesh of shown) mesh.isVisible = true;
   }
 }
 

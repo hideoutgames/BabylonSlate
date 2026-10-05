@@ -62,6 +62,11 @@ type Surface = {
   offsetsZero: boolean;
   /** Sub-meshes whose culling bounds were last padded (shadow partitioning may replace them later). */
   boundedSubMeshes: number; boundedFirst: SubMesh | null;
+  /**
+   * The vertex shader adds the FFT detail band's displacement (GPU path, band compiled in): finite bodies pad their
+   * bounds by its horizontal bound too. `boundsDirty` re-pads at the next placement when this changes.
+   */
+  fftDisplaced: boolean; boundsDirty: boolean;
 };
 const surfaces = new WeakMap<Scene, Set<Surface>>();
 const surfaceByMesh = new WeakMap<AbstractMesh, Surface>();
@@ -196,7 +201,8 @@ function cameraWorld(camera: Camera, local: Vector3, out: Vector3): Vector3 {
 
 /**
  * Water Mesh Density from the project Water quality (device-clamped), re-read only when the quality revision changes;
- * the built-in material follows its Shading Detail here too, which also reaches frozen Play materials.
+ * the built-in material follows its Shading Detail here too, which also reaches frozen Play materials. A material that
+ * now samples the FFT detail band (or stops) in its vertex shader re-pads the culling bounds.
  */
 function syncQuality(s: Surface): void {
   const scene = s.mesh.getScene(), revision = sceneWaterQualityRevision(scene);
@@ -205,6 +211,7 @@ function syncQuality(s: Surface): void {
   s.qualityRevision = revision;
   const density = sceneWaterQualityDeviceClamp(scene).quality.meshDensity;
   if (density !== s.density) { s.density = density; s.version++; }
+  if (s.fftDisplaced !== (s.gpu && (s.plugin?.fftDetailCascades ?? 0) > 0)) s.boundsDirty = true;
 }
 
 const UNCHANGED = 0, RECENTRED = 1, REBUILT = 2;
@@ -357,9 +364,14 @@ const point = new Vector3(), baseNormal = new Vector3(), localNormal = new Vecto
  * them, fields keyed on the mesh bounds never rebuild per frame, and no per-frame extents pass runs.
  */
 function updateBounds(s: Surface, world: Matrix, inverse: Matrix, recentred: boolean): void {
+  s.boundsDirty = false;
+  s.fftDisplaced = s.gpu && (s.plugin?.fftDetailCascades ?? 0) > 0;
   if (!s.base.length) return;
   const vertical = waterWaveEnvelope(s.water, s.body.waveScale);
-  const horizontal = s.body.kind === "global" ? 0 : waterHorizontalEnvelope(s.water, s.body.waveScale);
+  // The FFT detail band's horizontal displacement (λ = Steepness at most) stays within λ · its 4σ height; the vertical
+  // envelope already includes the band.
+  const detail = s.fftDisplaced ? s.water.steepness * waterWaveSet(s.water).detailHeight * s.water.detailWaves * Math.abs(s.body.waveScale) : 0;
+  const horizontal = s.body.kind === "global" ? 0 : waterHorizontalEnvelope(s.water, s.body.waveScale) + detail;
   const m = inverse.m;
   boundsPad.set(
     Math.abs(m[0]!) * horizontal + Math.abs(m[4]!) * vertical + Math.abs(m[8]!) * horizontal,
@@ -413,8 +425,8 @@ function placeSurface(s: Surface, time: number): void {
   const rebuilt = linear || layout === REBUILT;
   const subMeshes = s.mesh.subMeshes ?? [];
   // A translation alone needs no new bounds: Babylon moves the local bounds with the world matrix.
-  if (rebuilt || layout === RECENTRED || subMeshes.length !== s.boundedSubMeshes || (subMeshes[0] ?? null) !== s.boundedFirst) {
-    updateBounds(s, world, inverse, !rebuilt && layout === RECENTRED);
+  if (rebuilt || layout === RECENTRED || s.boundsDirty || subMeshes.length !== s.boundedSubMeshes || (subMeshes[0] ?? null) !== s.boundedFirst) {
+    updateBounds(s, world, inverse, !rebuilt && !s.boundsDirty && layout === RECENTRED);
   }
   if (rebuilt) { placeRestData(s); return; }
   if (layout === RECENTRED && s.gpu) {
@@ -639,7 +651,7 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
     restMin: new Vector3(), restMax: new Vector3(), shift: new Float64Array(2), placed: new Float64Array(16).fill(NaN), time: null, version: 0,
     qualityRevision: NaN, density: 1, drawn: true,
     base: empty, worldBase: empty, positions: empty, normals: empty, baseNormals: empty, data: empty, flow: empty, spacing: empty,
-    offsets: empty, bankGradient: empty, offsetsZero: true, boundedSubMeshes: -1, boundedFirst: null,
+    offsets: empty, bankGradient: empty, offsetsZero: true, boundedSubMeshes: -1, boundedFirst: null, fftDisplaced: false, boundsDirty: false,
   };
   let entries = surfaces.get(scene);
   if (!entries) {
