@@ -506,6 +506,17 @@ export class EditorSceneSync {
       ? visualForMeshComponent(root, actorId, componentId) : null;
   }
 
+  /** Authored visual boundaries, including attached non-Mesh components.
+   * Imported subparts and another actor's visuals retain their own ownership. */
+  visualComponentRootsForActor(actorId: string): Mesh[] {
+    const actor = this.lastScene?.actors.find((entry) => entry.id === actorId);
+    const root = this.meshes.get(actorId);
+    if (!actor || !root) return [];
+    if (!isEditorActorOrigin(root)) return [root];
+    const names = new Set(actor.components.map((component) => editorComponentMeshName(actorId, component.id)));
+    return visualMeshesOfActorRoot(root).filter((mesh) => names.has(mesh.name));
+  }
+
   visualMeshesForActor(actorId: string): AbstractMesh[] {
     const mesh = this.meshes.get(actorId);
     if (!mesh) return [];

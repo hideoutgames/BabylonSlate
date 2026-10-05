@@ -3,6 +3,7 @@ import {
   createDefaultScene,
   createDefaultSceneSettings,
   createMeshComponent,
+  deformerBindings,
   identitySerializedTransform,
   springArmChildOffset,
   wouldCreateComponentCycle,
@@ -480,6 +481,7 @@ export function previewSceneFor(
   physicsWorld: PhysicsWorldKind = "3d",
 ): SerializedScene {
   const base = createDefaultScene();
+  const deformersByTarget = new Map(deformerBindings(PREFAB_ROOT_ID, components).map((binding) => [binding.targetMeshComponentId, binding]));
   return {
     ...base,
     name: "Prefab preview",
@@ -494,7 +496,12 @@ export function previewSceneFor(
         createActor(component.id, component.classId, {
           parentId: component.parentId ?? null,
           transform: previewTransformFor(components, component),
-          components: [previewVisualComponent(components, component)],
+          components: component.classId === "DeformerComponent" ? [] : [previewVisualComponent(components, component),
+            ...(deformersByTarget.has(component.id) ? [{
+              id: deformersByTarget.get(component.id)!.id, classId: "DeformerComponent",
+              properties: { ...deformersByTarget.get(component.id)! },
+            }] : []),
+          ],
         }),
       ),
     ],

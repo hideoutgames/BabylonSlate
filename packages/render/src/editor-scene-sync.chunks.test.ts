@@ -8,7 +8,7 @@ import {
 } from "@babylonslate/core";
 import { createTestEngine } from "./create-null-engine";
 import { EditorSceneSync, type EditorSceneSyncOptions } from "./editor-scene-sync";
-import { DirectionalLight, StandardMaterial } from "@babylonjs/core";
+import { DirectionalLight, Mesh, StandardMaterial } from "@babylonjs/core";
 import { sceneShadowController } from "./shadow-controller";
 import { updateSceneRenderingSettings } from "./render-settings";
 import { createEditorCamera } from "./editor-camera";
@@ -64,6 +64,30 @@ function document(count = 80): SerializedScene {
     ),
   };
 }
+
+it("enumerates an attached sprite as its own authored visual boundary without broadening asset consumers", () => {
+  const { sync, scene } = fixture({ freezeActiveMeshes: false });
+  const data = createDefaultScene();
+  const actor = createActor("parent", "Parent", { components: [
+    createMeshComponent("body", "box"),
+    { id: "sprite", classId: "SpriteComponent", parentId: "body", properties: {} },
+  ] });
+  data.actors = [actor, createActor("child", "Child", { parentId: "parent", components: [createMeshComponent("child-body", "box")] })];
+  sync.apply(data);
+  const body = sync.meshForComponent("parent", "body")!;
+  const sprite = scene.getMeshByName("editorActor:parent|sprite")!;
+  expect(sprite.parent).toBe(body);
+  const imported = new Mesh("Imported Part", scene); imported.parent = body;
+  expect(sync.visualComponentRootsForActor("parent")).toEqual([body, sprite]);
+  expect(sync.visualComponentRootsForActor("child")).toEqual([sync.meshForActor("child")]);
+  expect(sync.visualComponentRootsForActor("missing")).toEqual([]);
+  expect(sync.meshForComponent("parent", "sprite")).toBeNull();
+  actor.components = [actor.components[0]!];
+  sync.apply(data);
+  expect(sync.visualComponentRootsForActor("parent")).toEqual([sync.meshForComponent("parent", "body")]);
+  expect(sprite.isDisposed()).toBe(true);
+  sync.dispose();
+});
 
 describe("cooperative editor realization", () => {
   it.each(["abort", "replace", "dispose"] as const)("discards a deferred material refresh after %s", async (action) => {

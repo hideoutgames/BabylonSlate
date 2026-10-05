@@ -16,6 +16,7 @@ export const SEARCH_CATALOG_CLASS_IDS: readonly string[] = [
   "LightComponent",
   "AreaRectLightComponent",
   "OutlineComponent",
+  "DeformerComponent",
   "HemisphericFillLightComponent",
   "SkyboxComponent",
   "Text3DComponent",

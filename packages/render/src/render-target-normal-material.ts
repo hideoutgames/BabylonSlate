@@ -1,10 +1,12 @@
 import {
-  Constants, DiscardBlock, FragmentOutputBlock, InputBlock, Material, MultiplyBlock, NodeMaterial, NodeMaterialBlockConnectionPointTypes,
-  NodeMaterialSystemValues, NormalizeBlock, RemapBlock, ShaderLanguage, Texture, TextureBlock, TransformBlock, VectorMergerBlock, VectorSplitterBlock,
+  Constants, DiscardBlock, InputBlock, Material, NodeMaterial, NodeMaterialBlockConnectionPointTypes,
+  ShaderLanguage, Texture, TextureBlock,
   type NodeMaterialBlock, type Scene,
 } from "@babylonjs/core";
-import { createSurfacePlumbing } from "./material-compiler";
+import { createSurfacePlumbing } from "./surface-material-plumbing";
 import type { MaterialPlumbing } from "./material-block-registry";
+import { createGeometryCaptureOutput } from "./geometry-capture-output";
+import { applyLatticeDeformerPlumbing } from "./lattice-deformer-block";
 import { registerClusteredUnlitMaterial } from "./clustered-material-policy";
 
 /** Geometry captures share bones, morphs and instancing with surface materials.
@@ -16,6 +18,7 @@ function createGeometryMaterial(scene: Scene, depth: boolean, source?: Material)
   // Fragment alpha is data, not a request to blend or disable depth writes.
   material.transparencyMode = Material.MATERIAL_OPAQUE;
   material.alphaMode = Constants.ALPHA_DISABLE;
+  material.allowShaderHotSwapping = false;
   if (source) {
     material.backFaceCulling = source.backFaceCulling;
     material.cullBackFaces = source.cullBackFaces;
@@ -24,46 +27,9 @@ function createGeometryMaterial(scene: Scene, depth: boolean, source?: Material)
   const blocks: NodeMaterialBlock[] = [];
   const plumbing: MaterialPlumbing = {};
   const outputs = createSurfacePlumbing(material.name, blocks, plumbing);
+  applyLatticeDeformerPlumbing(material.name, blocks, plumbing, scene);
   plumbing.worldPosition!.connectTo(plumbing.clipPosition!);
-  const fragment = new FragmentOutputBlock("captureGeometryOutput");
-  const alpha = new InputBlock("captureGeometryAlpha");
-  alpha.value = 1;
-  alpha.output.connectTo(fragment.a);
-  blocks.push(fragment, alpha);
-  if (depth) {
-    const viewPosition = new TransformBlock("captureViewPosition");
-    plumbing.worldPosition!.connectTo(viewPosition.vector);
-    plumbing.view!.connectTo(viewPosition.transform);
-    const viewComponents = new VectorSplitterBlock("captureViewComponents");
-    viewPosition.output.connectTo(viewComponents.xyzw);
-    const handedness = new InputBlock("captureDepthHandedness");
-    handedness.value = scene.useRightHandedSystem ? -1 : 1;
-    const distance = new MultiplyBlock("captureCameraDistance");
-    viewComponents.z.connectTo(distance.left);
-    handedness.output.connectTo(distance.right);
-    const camera = new InputBlock("captureCameraParameters");
-    camera.setAsSystemValue(NodeMaterialSystemValues.CameraParameters);
-    const cameraComponents = new VectorSplitterBlock("captureCameraComponents");
-    camera.output.connectTo(cameraComponents.xyzw);
-    const normalized = new RemapBlock("captureNormalizedDepth");
-    distance.output.connectTo(normalized.input);
-    cameraComponents.y.connectTo(normalized.sourceMin);
-    cameraComponents.z.connectTo(normalized.sourceMax);
-    normalized.targetRange.set(0, 1);
-    const red = new VectorMergerBlock("captureDepthRed");
-    normalized.output.connectTo(red.x);
-    red.xyzOut.connectTo(fragment.rgb);
-    blocks.push(viewPosition, viewComponents, handedness, distance, camera, cameraComponents, normalized, red);
-  } else {
-    const normal = new NormalizeBlock("captureNormal");
-    plumbing.worldNormal!.connectTo(normal.input);
-    const encoded = new RemapBlock("encodeNormal");
-    encoded.sourceRange.set(-1, 1);
-    encoded.targetRange.set(0, 1);
-    normal.output.connectTo(encoded.input);
-    encoded.output.connectTo(fragment.rgb);
-    blocks.push(normal, encoded);
-  }
+  const fragment = createGeometryCaptureOutput(scene, depth, blocks, plumbing);
   const maskTexture = source?.needAlphaTesting() ? source.getAlphaTestTexture() : null;
   if (maskTexture instanceof Texture) {
     const sample = new TextureBlock("captureAlphaMask");

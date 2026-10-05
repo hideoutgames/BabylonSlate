@@ -10,6 +10,7 @@ export const PLAY_ENGINE_COMMAND_TYPES = [
   "dynamicMeshUpdate",
   "setAreaLights",
   "setActorOutlines",
+  "setActorDeformers",
   "setFogVolumes",
   "assignMaterial",
   "attachToBone",

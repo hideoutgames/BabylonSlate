@@ -2,6 +2,15 @@
 
 Shared surface for the headless runtime object graph (engineplan §5, §16). Implementation lives in `@babylonslate/object-model`. Deterministic harness lives in `@babylonslate/test-kit`.
 
+## Deformer Component
+
+- `DeformerComponent` targets one `MeshComponent` on its own actor by `targetMeshComponentId`; both primitive meshes and imported models are eligible. Exact component IDs take precedence over inherited source IDs. The first enabled cage per target wins; disabled cages do not reserve a target. It is unavailable in SceneLayers.
+- Enabled defaults off. `strength` clamps to 0–1; `resolution` is a tuple of 2–4 integer controls per axis (64 maximum). `offsets` stores XYZ offsets in target-local units, with control index `x + resolutionX * (y + resolutionY * z)`. Missing/nonfinite offsets become zero. Changing resolution resets offsets. `fitToMesh` defaults true; manual `boundsMin`/`boundsMax` default to −0.5/+0.5 and require a positive span on each axis.
+- Graph Get/Set exposes these properties. **Set Control Point Offset** accepts a control index and Vector 3, returning false for an invalid index/offset or unavailable target. **Reset Control Points** clears offsets. Both calls target the component; they do not redirect to an actor or sibling.
+- The worker sends revisioned `setActorDeformers` control snapshots, coalesces tick edits per actor and omits unchanged snapshots. It never sends or scans mesh vertices. Disabling the last cage sends an empty snapshot. Slot retirement discards retained state.
+- Serialized offset and bound coordinates clamp to ±10¹⁰ before Float32 upload, matching dynamic geometry's envelope. Set Control Point Offset rejects values outside that envelope.
+- Deformation follows model animation and material World Position Offset in the renderer. This is visual geometry: physics, navigation and CPU picking keep the original shape. GPU cost scales with affected vertices and rendering passes; the control limit is not a device performance guarantee.
+
 ## Package API (`@babylonslate/object-model`)
 
 | Export | Role |
