@@ -11,7 +11,11 @@ class ShaderTemplate extends LatticePluginMaterial {
   override refreshData(): void {}
 }
 class Carrier extends Material {
-  constructor(scene: Scene, private readonly language: ShaderLanguage) { super("__latticeCarrier", scene, true); }
+  private readonly language: ShaderLanguage;
+  constructor(scene: Scene, language: ShaderLanguage) {
+    super("__latticeCarrier", scene, true);
+    this.language = language;
+  }
   override get shaderLanguage(): ShaderLanguage { return this.language; }
 }
 const functions = new Map<ShaderLanguage, string>();
@@ -33,7 +37,7 @@ export function latticeShaderFunctions(scene: Scene, language: ShaderLanguage): 
   const adapter = checkedShader(body, `stock lattice ${language}`);
   // At the upper face use the last complete cell (weight 1), preserving the
   // stock position while avoiding a zero derivative from duplicate samples.
-  for (const [index, axis] of [["i0", "x"], ["j0", "y"], ["k0", "z"]]) {
+  for (const axis of ["x", "y", "z"]) {
     const cast = wgsl ? "i32" : "int";
     adapter.replace(`${cast}(floor(localPos.${axis}))`, `min(${cast}(floor(localPos.${axis})), ${cast}(lattice_resolution.${axis}) - 2)`);
   }

@@ -20,10 +20,11 @@ export function isDeformerOnlySceneEdit(previous: SerializedScene | null, next: 
 
 /** Retains component identity across async model replacement, without touching geometry. */
 export class SceneDeformerHost {
+  private readonly scene: Scene;
   private readonly actors = new Map<string, Map<string, Target>>();
   private disposed = false;
 
-  constructor(private readonly scene: Scene) {}
+  constructor(scene: Scene) { this.scene = scene; }
 
   setActor(
     actorId: string,

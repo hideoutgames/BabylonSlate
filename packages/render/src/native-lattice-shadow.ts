@@ -61,12 +61,14 @@ function createGeneration(source: Material, texture: Texture | null): Generation
  * The facade selects native alpha/opacity coverage before the generator binds
  * baseMaterial, avoiding the stock wrapper's GLSL-only fragment injection. */
 class NativeLatticeShadowDepthWrapper extends ShadowDepthWrapper {
+  private readonly source: Material;
   private readonly generations = new Map<number, Generation>();
   private readonly retirements = new Set<Promise<void>>();
   private selected?: Generation;
   private released?: Promise<void>;
-  constructor(private readonly source: Material) {
+  constructor(source: Material) {
     super(source, source.getScene(), { standalone: true, doNotInjectCode: true });
+    this.source = source;
   }
   override get baseMaterial(): Material { return this.selected?.material ?? this.source; }
   private generation(subMesh: SubMesh, generator: ShadowGenerator): Generation {

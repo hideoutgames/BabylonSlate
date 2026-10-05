@@ -6,8 +6,10 @@ import { bindMeshLatticeDeformer, hasMeshLatticeDeformer } from "./lattice-defor
 import { LATTICE_UNIFORMS, latticeShaderDeclarations, latticeShaderFunctions } from "./lattice-deformer-shader";
 
 export class LatticeDeformerBlock extends NodeMaterialBlock {
-  constructor(name: string, private scene?: Scene) {
+  private scene?: Scene;
+  constructor(name: string, scene?: Scene) {
     super(name, NodeMaterialBlockTargets.Vertex);
+    this.scene = scene;
     this.registerInput("position", Types.Vector4);
     this.registerInput("normal", Types.Vector4);
     this.registerInput("tangent", Types.Vector4, true);

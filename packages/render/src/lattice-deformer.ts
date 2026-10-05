@@ -64,11 +64,15 @@ type Part = {
   materialObserver: ReturnType<AbstractMesh["onMaterialChangedObservable"]["add"]>;
 };
 class CageResource {
+  readonly root: AbstractMesh;
+  readonly lattice: Lattice;
   readonly carrier: Material;
   readonly plugin: LatticePluginMaterial;
   readonly bridge: UniformBuffer;
   readonly lease: ManagedRenderLease;
-  constructor(readonly root: AbstractMesh, readonly lattice: Lattice) {
+  constructor(root: AbstractMesh, lattice: Lattice) {
+    this.root = root;
+    this.lattice = lattice;
     const engine = root.getEngine();
     const bytes = lattice.resolutionX * lattice.resolutionY * lattice.resolutionZ * 16;
     const lease = beginManagedRenderAllocation(engine, bytes);
@@ -90,6 +94,7 @@ class CageResource {
 }
 
 class LatticeOwner {
+  private readonly root: AbstractMesh;
   resource?: CageResource;
   get active(): boolean { return !!this.resource; }
   private cageKey = "";
@@ -114,7 +119,8 @@ class LatticeOwner {
   private materialsDirty = false;
   private readonly disposeObserver;
   private frameObserver: Observer<Scene> | null = null;
-  constructor(private readonly root: AbstractMesh) {
+  constructor(root: AbstractMesh) {
+    this.root = root;
     this.disposeObserver = root.onDisposeObservable.add(() => disposeMeshLatticeDeformer(root));
   }
   readonly beforeFrame = (): void => {
