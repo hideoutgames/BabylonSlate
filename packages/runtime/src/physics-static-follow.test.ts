@@ -96,13 +96,14 @@ describe("static bodies follow their actor", () => {
     }
   });
 
-  it("keeps a static child attached to its falling dynamic parent in world space", () => {
+  it("keeps a shape-less static child, such as a joint anchor, attached to its falling parent", () => {
     const { world, spawn } = createWorld();
     const crate = spawn("crate", { position: { x: 0, y: 10, z: 0 } }, [
       ["RigidBodyComponent", { motionType: "dynamic", mass: 1, gravityScale: 1, linearDamping: 0 }],
       box("3d", 0.5),
     ]);
-    const handle = spawn("handle", { position: { x: 2, y: 0, z: 0 } }, [staticBody, box("3d", 0.25)], crate.guid);
+    // Without collidable shapes it is not hosted by the crate and keeps its own body.
+    const handle = spawn("handle", { position: { x: 2, y: 0, z: 0 } }, [staticBody], crate.guid);
     const backend = createSoftwarePhysicsBackend("3d", { x: 0, y: -9.81, z: 0 });
     const sync = new PhysicsWorldSync(backend);
     try {

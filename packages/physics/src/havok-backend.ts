@@ -718,7 +718,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       const hit = engine.raycast(this.tmpFrom, this.tmpTo,
         options?.includeTriggers === undefined ? undefined : { shouldHitTriggers: options.includeTriggers });
       if (!hit.hasHit) return miss();
-      return this.hitFromCast(hit.hasHit, hit.hitPointWorld, hit.hitNormalWorld, hit.hitDistance, hit.body);
+      return this.hitFromCast(hit.hasHit, hit.hitPointWorld, hit.hitNormalWorld, hit.hitDistance, hit.body, hit.shape);
     });
   }
 
@@ -728,20 +728,25 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     // Havok exposes one ignoreBody, but the graph accepts multiple actors.
     // Mask all their shapes for this synchronous query, then restore them.
     // Filtering before raycast also avoids consuming a bounded hit collector.
+    const mask = (shape: PhysicsShape | null | undefined) => {
+      if (!shape || memberships.has(shape)) return;
+      memberships.set(shape, shape.filterMembershipMask);
+      shape.filterMembershipMask = 0;
+    };
     try {
       if (ignored.size || options?.includeTriggers === false) {
         for (const record of this.bodies.values()) {
-          const excluded = ignored.has(record.desc.actorId);
-          const shapes = excluded
-            ? [record.body.shape, ...[...record.colliders.values()].map((c) => c.shape)]
-            : options?.includeTriggers === false
-              ? [...record.colliders.values()].filter((c) => c.desc.isTrigger).map((c) => c.shape)
-              : [];
-          for (const shape of shapes) {
-            if (!shape || memberships.has(shape)) continue;
-            memberships.set(shape, shape.filterMembershipMask);
-            shape.filterMembershipMask = 0;
+          // Hosted child shapes answer for their own actor, so a compound is
+          // masked whole only when its actor and every child shape are excluded.
+          let excluded = 0;
+          for (const collider of record.colliders.values()) {
+            if (ignored.has(collider.desc.actorId ?? record.desc.actorId) ||
+              (options?.includeTriggers === false && collider.desc.isTrigger)) {
+              mask(collider.shape);
+              excluded++;
+            }
           }
+          if (ignored.has(record.desc.actorId) && excluded === record.colliders.size) mask(record.body.shape);
         }
       }
       return query();
@@ -815,6 +820,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
         hit.hitNormal,
         path * hit.hitFraction,
         hit.body,
+        hit.shape,
       );
     } finally {
       queryShape.dispose();
@@ -856,7 +862,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       result.normal = normal;
       result.distance = distance;
       result.bodyId = native.body ? this.bodyIdByPhysicsBody.get(native.body) ?? null : null;
-      result.actorId = result.bodyId ? this.bodies.get(result.bodyId)?.desc.actorId ?? null : null;
+      result.actorId = this.actorIdForHit(result.bodyId, native.shape);
       return result;
     };
     const query: SphereSweepQuery = {
@@ -1161,7 +1167,9 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     let first: string | undefined;
     for (const [id, collider] of this.colliders) {
       const body = this.bodies.get(collider.desc.bodyId);
-      if (body?.desc.actorId !== actorId) continue;
+      // Contacts are per body, so they name the body's actor and its own
+      // colliders; hosted child shapes cannot be told apart from them.
+      if (!body || (collider.desc.actorId ?? body.desc.actorId) !== actorId) continue;
       first ??= id;
       if (!preferTrigger || collider.desc.isTrigger) return id;
     }
@@ -1260,20 +1268,28 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     normal: Vector3,
     distance: number,
     body: PhysicsBody | undefined,
+    shape: PhysicsShape | undefined,
   ): HitResult {
     if (!hasHit) return miss();
     const bodyId = body ? (this.bodyIdByPhysicsBody.get(body) ?? null) : null;
-    const actorId = bodyId
-      ? (this.bodies.get(bodyId)?.desc.actorId ?? null)
-      : null;
     return {
       hit: true,
       location: { x: point.x, y: point.y, z: point.z },
       normal: { x: normal.x, y: normal.y, z: normal.z },
       distance,
-      actorId,
+      actorId: this.actorIdForHit(bodyId, shape),
       bodyId,
     };
+  }
+
+  /** Casts report the leaf shape they hit, so a hosted child shape names its own actor. */
+  private actorIdForHit(bodyId: string | null, shape: PhysicsShape | undefined): string | null {
+    const record = bodyId ? this.bodies.get(bodyId) : undefined;
+    if (!record) return null;
+    if (shape)
+      for (const collider of record.colliders.values())
+        if (collider.shape === shape) return collider.desc.actorId ?? record.desc.actorId;
+    return record.desc.actorId;
   }
 
   private disposeBodyRecord(record: BodyRecord): void {

@@ -630,14 +630,9 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
       undefined,
       ignored.size || options?.includeTriggers === false
         ? (collider) => {
-            const bodyId = this.bodyIdByHandle.get(
-              collider.parent()?.handle ?? -1,
-            );
-            const actorId = bodyId
-              ? this.bodies.get(bodyId)?.desc.actorId
-              : undefined;
+            const actorId = this.colliderActorId(collider);
             const desc = this.colliders.get(this.colliderIdByHandle.get(collider.handle) ?? "")?.desc;
-            return (actorId === undefined || !ignored.has(actorId)) &&
+            return (actorId === null || !ignored.has(actorId)) &&
               !(options?.includeTriggers === false && desc?.isTrigger);
           }
         : undefined,
@@ -645,9 +640,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     if (!hit) return miss();
     const point = ray.pointAt(hit.timeOfImpact);
     const bodyId = this.bodyIdByHandle.get(hit.collider.parent()?.handle ?? -1);
-    const actorId = bodyId
-      ? (this.bodies.get(bodyId)?.desc.actorId ?? null)
-      : null;
+    const actorId = this.colliderActorId(hit.collider);
     return {
       hit: true,
       location: { x: point.x, y: point.y, z: 0 },
@@ -663,8 +656,8 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     const ignored = new Set(options?.ignoreActorIds);
     const allowed = (collider: RapierCollider) => {
       const desc = this.colliders.get(this.colliderIdByHandle.get(collider.handle) ?? "")?.desc;
-      const actorId = desc ? this.bodies.get(desc.bodyId)?.desc.actorId : undefined;
-      return actorId !== undefined && !ignored.has(actorId) && !(options?.includeTriggers === false && desc?.isTrigger);
+      const actorId = desc ? this.colliderActorId(collider) : null;
+      return actorId !== null && !ignored.has(actorId) && !(options?.includeTriggers === false && desc?.isTrigger);
     };
     const actorIds: string[] = [];
     const bodyIds: string[] = [];
@@ -673,12 +666,10 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
       (collider) => {
         if (!allowed(collider)) return true;
         const bodyId = this.bodyIdByHandle.get(collider.parent()?.handle ?? -1);
-        if (!bodyId) return true;
-        const body = this.bodies.get(bodyId);
-        if (!body) return true;
+        if (!bodyId || !this.bodies.has(bodyId)) return true;
         // Point query; approximate radius by also testing nearby with shape.
         bodyIds.push(bodyId);
-        actorIds.push(body.desc.actorId);
+        actorIds.push(this.colliderActorId(collider)!);
         return true;
       },
     );
@@ -694,11 +685,12 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
           const bodyId = this.bodyIdByHandle.get(
             collider.parent()?.handle ?? -1,
           );
-          if (!bodyId) return true;
-          if (!bodyIds.includes(bodyId)) {
+          if (!bodyId || !this.bodies.has(bodyId)) return true;
+          // A host body reports each shape owner once, including hosted children.
+          const actorId = this.colliderActorId(collider)!;
+          if (!bodyIds.some((id, index) => id === bodyId && actorIds[index] === actorId)) {
             bodyIds.push(bodyId);
-            const body = this.bodies.get(bodyId);
-            if (body) actorIds.push(body.desc.actorId);
+            actorIds.push(actorId);
           }
           return true;
         },
@@ -748,8 +740,10 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     if (!character) return null;
     const bodyRecord = this.bodies.get(character.desc.bodyId);
     if (!bodyRecord) return null;
+    // The controller's own shape, never a child shape that the body hosts.
     const collider = [...this.colliders.values()].find(
-      (c) => c.desc.bodyId === bodyRecord.desc.id && !c.desc.isTrigger,
+      (c) => c.desc.bodyId === bodyRecord.desc.id && !c.desc.isTrigger &&
+        (c.desc.actorId ?? bodyRecord.desc.actorId) === bodyRecord.desc.actorId,
     );
     if (!collider) return null;
     const current = bodyRecord.body.translation();
@@ -906,6 +900,14 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     }
   }
 
+  /** The shape's owner: a hosted child shape's actor, otherwise its body's actor. */
+  private colliderActorId(collider: RapierCollider): string | null {
+    const desc = this.colliders.get(this.colliderIdByHandle.get(collider.handle) ?? "")?.desc;
+    if (desc?.actorId) return desc.actorId;
+    const bodyId = this.bodyIdByHandle.get(collider.parent()?.handle ?? -1);
+    return bodyId ? (this.bodies.get(bodyId)?.desc.actorId ?? null) : null;
+  }
+
   private collisionPairAllowed(handleA: number, handleB: number): boolean {
     const a = this.colliders.get(this.colliderIdByHandle.get(handleA) ?? "")?.desc;
     const b = this.colliders.get(this.colliderIdByHandle.get(handleB) ?? "")?.desc;
@@ -925,9 +927,11 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     if (!colliderA || !colliderB) return;
     const bodyA = this.bodies.get(colliderA.desc.bodyId);
     const bodyB = this.bodies.get(colliderB.desc.bodyId);
-    if (!bodyA || !bodyB || bodyA.desc.actorId === bodyB.desc.actorId) return;
-    let actorAId = bodyA.desc.actorId;
-    let actorBId = bodyB.desc.actorId;
+    if (!bodyA || !bodyB || bodyA === bodyB) return;
+    // Contacts name each shape's owner, including hosted child shapes.
+    let actorAId = colliderA.desc.actorId ?? bodyA.desc.actorId;
+    let actorBId = colliderB.desc.actorId ?? bodyB.desc.actorId;
+    if (actorAId === actorBId) return;
     let idA = colliderAId;
     let idB = colliderBId;
     if (actorAId > actorBId) {
