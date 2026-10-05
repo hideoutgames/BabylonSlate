@@ -108,6 +108,31 @@ describe("SceneLayer control state", () => {
 });
 
 describe("SceneLayer control runtime integration", () => {
+  it("reconciles authored radio conflicts before visual assignment, including disabled selections and isolated groups", () => {
+    const layer = createDefaultSceneLayer();
+    layer.actors = [createActor("radios", "Radios", { classId: "SceneLayerActor", components: [
+      { id: "first", classId: "2DRadioButtonComponent", properties: { checked: true, enabled: false, group: "choice" } },
+      { id: "second", classId: "2DRadioButtonComponent", properties: { checked: true, group: "choice" } },
+      { id: "other", classId: "2DRadioButtonComponent", properties: { checked: true, group: "theme" } },
+    ] }), createActor("later", "Later", { classId: "SceneLayerActor", components: [
+      { id: "later-radio", classId: "2DRadioButtonComponent", properties: { checked: true, group: "choice" } },
+    ] })];
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, seedDemoActors: false,
+      playScene: createDefaultScene(), sceneLayerLibrary: { radios: layer }, onCommand: (command) => commands.push(command) });
+    try {
+      runtime.realizePlayWorld(); runtime.createSceneLayer("radios");
+      const parts = commands.filter((command) => command.type === "assignMesh").flatMap((command) => command.parts ?? []);
+      expect(parts.map((part) => [part.componentId, part.uiControl?.properties.checked])).toEqual([
+        ["first", true], ["second", false], ["other", true], ["later-radio", false],
+      ]);
+      expect(runtime.getWorld().getActors().flatMap((actor) => actor.components).map((component) => component.getVariable("checked"))).toEqual([true, false, true, false]);
+      const anotherLayer = runtime.createSceneLayer("radios")!;
+      expect(runtime.getWorld().getActors().filter((actor) => actor.sceneLayerId === anotherLayer.guid)
+        .flatMap((actor) => actor.components).map((component) => component.getVariable("checked"))).toEqual([true, false, true, false]);
+    } finally { runtime.stop(); }
+  });
+
   it("routes graph setters and input to component-bound events without rebuilding visuals, and rejects stale layer input", async () => {
     const layer = createDefaultSceneLayer();
     const components: SerializedComponent[] = [

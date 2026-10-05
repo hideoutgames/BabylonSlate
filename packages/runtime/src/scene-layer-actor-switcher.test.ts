@@ -29,8 +29,14 @@ describe("SceneLayer actor switcher", () => {
         { assetGuid: "panel", classId: "Panel", parentClassId: "BasePanel", anchors: [], entryPoints: [], source: "" },
         { assetGuid: "menu", classId: "Menu", parentClassId: "SceneLayerActorSwitcher", anchors: [],
           actorDefaults: { properties: { initialIndex: -1 } },
-          entryPoints: entryPoints("onTick", "onSceneLayerActorSwitching", "onSceneLayerActorSwitched"),
-          source: `export function onTick(ctx) {
+          entryPoints: entryPoints("onBeginPlay", "onTick", "onSceneLayerActorSwitching", "onSceneLayerActorSwitched"),
+          source: `export function onBeginPlay(ctx) { ctx.self.setVariable("classes", ctx.getVariableFrom(ctx.self, "sceneLayerActors")); }
+          export function onTick(ctx) {
+            const replacementClasses = ctx.self.getVariable("replacementClasses");
+            if (replacementClasses) {
+              ctx.setVariableOn(ctx.self, "sceneLayerActors", replacementClasses);
+              ctx.self.setVariable("replacementClasses", undefined);
+            }
             const next = ctx.self.getVariable("nextIndex");
             if (next !== undefined) {
               ctx.self.setVariable("nextIndex", undefined);
@@ -48,6 +54,7 @@ describe("SceneLayer actor switcher", () => {
       const switcher = runtime.getWorld().findActor("switcher") as SceneLayerActorSwitcher;
       const first = switcher.currentActor!;
       expect(first).toBeInstanceOf(Actor);
+      expect(switcher.getVariable("classes")).toEqual(["Panel", "Panel", "Actor"]);
       expect(first.sceneLayerId).toBe(liveLayer.guid);
       expect(first.getVariable("parentId")).toBe(switcher.guid);
       expect(first.getVariable("title")).toBe("First");
@@ -58,7 +65,7 @@ describe("SceneLayer actor switcher", () => {
       expect(first.components[0]!.guid).not.toBe("caption");
       expect(commands.some(command => command.type === "assignMesh" && command.actorGuid === first.guid)).toBe(true);
       (first.getVariable("data") as { count: number }).count = 5;
-      expect((switcher.getVariable("sceneLayerActors") as Array<{ defaults: { data: { count: number } } }>)[0]!.defaults.data.count).toBe(1);
+      expect((switcher.sceneLayerActorEntries as Array<{ defaults: { data: { count: number } } }>)[0]!.defaults.data.count).toBe(1);
 
       const nested = runtime.getWorld().createActor({ classId: "SceneLayerActor", sceneLayerId: liveLayer.guid, variables: { parentId: first.guid } });
       runtime.getWorld().spawnActorNow(nested);
@@ -94,9 +101,12 @@ describe("SceneLayer actor switcher", () => {
       runtime.getWorld().destroyActor(third.guid);
       runtime.tick();
       expect(switcher.currentActor).toBeNull();
+      switcher.setVariable("replacementClasses", ["Panel"]);
       switcher.setVariable("nextIndex", 0);
       runtime.tick();
       const last = switcher.currentActor!;
+      expect(last.getVariable("title")).toBe("Default");
+      expect(switcher.sceneLayerActorEntries).toEqual(["Panel"]);
       runtime.removeSceneLayer(liveLayer.guid);
       expect(last.destroyed).toBe(true);
       expect(switcher.currentActor).toBeNull();

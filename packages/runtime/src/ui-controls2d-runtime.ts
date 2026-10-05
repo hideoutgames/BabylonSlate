@@ -24,8 +24,9 @@ const finite = (value: unknown): value is number => typeof value === "number" &&
 /** Component state is authoritative; render hosts only propose input values. */
 export class UIControls2DRuntime {
   private readonly previous = new WeakMap<ActorComponent, UIControl2DProperties>();
+  private readonly host: ControlHost;
 
-  constructor(private readonly host: ControlHost) {}
+  constructor(host: ControlHost) { this.host = host; }
 
   private alive(component: ActorComponent): boolean {
     const actor = component.owner;
@@ -68,6 +69,17 @@ export class UIControls2DRuntime {
   /** Normalize persisted values so graph getters and the displayed values agree. */
   payload(component: ActorComponent): UIControl2DProperties {
     const properties = this.read(component);
+    if (!this.previous.has(component) && component.classId === "2DRadioButtonComponent" && properties.checked && component.owner?.sceneLayerId) {
+      // Resolve authored conflicts in world/component order before emitting any
+      // visual. Disabled radios can remain selected; enablement controls input.
+      const actors = this.host.actors();
+      const candidates = actors.includes(component.owner) ? actors : [...actors, component.owner];
+      const selected = candidates.filter((actor) => !actor.destroyed && actor.sceneLayerId === component.owner!.sceneLayerId)
+        .flatMap((actor) => actor.components)
+        .find((peer) => !peer.destroyed && peer.classId === "2DRadioButtonComponent" &&
+          peer.getVariable("checked") === true && this.read(peer).group === properties.group);
+      if (selected !== component) properties.checked = false;
+    }
     this.store(component, properties);
     return properties;
   }

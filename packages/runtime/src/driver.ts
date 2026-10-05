@@ -2609,7 +2609,9 @@ class InProcessRuntime implements RuntimeDriver {
         variables: { ...variables, parentId: parent.guid },
         hooks: this.sceneActorHooks(classId),
       });
-      const components = this.scriptHost.scriptsFor(classId).find((script) => script.components !== undefined)?.components;
+      const components = this.world.classRegistry.ancestry(classId)
+        .flatMap((ancestor) => this.scriptHost.scriptsFor(ancestor))
+        .find((script) => script.components !== undefined)?.components;
       if (components) attachSerializedComponents(this.world, actor, components, { freshIds: true });
       this.scriptHost.bindInterfaceHandlers(actor);
       this.ensureOverlayDesignPose(actor);

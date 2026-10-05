@@ -27,7 +27,9 @@ export class SceneLayerActorSwitchers {
   private readonly owners = new Map<Actor, SceneLayerActorSwitcher>();
   private readonly children = new Map<SceneLayerActorSwitcher, Actor>();
 
-  constructor(private readonly services: SwitcherServices) {}
+  private readonly services: SwitcherServices;
+
+  constructor(services: SwitcherServices) { this.services = services; }
 
   initialize(actor: Actor): void {
     if (!(actor instanceof SceneLayerActorSwitcher) || this.initialized.has(actor) || !this.services.alive(actor)) return;
@@ -47,7 +49,7 @@ export class SceneLayerActorSwitchers {
     if (this.switching.has(target)) return previousActor;
     const previousIndex = previousActor ? target.currentIndex : -1;
     if (typeof index !== "number" || !Number.isInteger(index) || index < -1) return previousActor;
-    const entries = target.getVariable("sceneLayerActors");
+    const entries = target.sceneLayerActorEntries;
     const entry = index === -1 ? null : actorEntry(Array.isArray(entries) ? entries[index] : null);
     if (index !== -1 && (!entry || !this.services.classes.isA(entry.classId, "SceneLayerActor"))) return previousActor;
     if (index === previousIndex && (index === -1 || previousActor)) return previousActor;
