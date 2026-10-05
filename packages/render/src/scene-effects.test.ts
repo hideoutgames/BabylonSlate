@@ -108,8 +108,6 @@ it("grades through the display stage only once the LUT is ready, in either mode"
   const config = sceneEffectsImageProcessingConfiguration(graded, { sceneLinear: false, vignette: null, colorGrading: lut });
   expect(config.colorGradingEnabled).toBe(true);
   expect(config.colorGradingTexture).toBe(lut);
-  expect(config.colorGradingWithGreenDepth).toBe(false);
-  expect(config.colorGradingBGR).toBe(false);
 });
 
 it("plans bloom and FXAA independently in Legacy Display", () => {

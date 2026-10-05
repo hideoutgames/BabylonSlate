@@ -1,4 +1,4 @@
-import { RenderTargetTexture, type BaseTexture, type Scene, type Texture } from "@babylonjs/core";
+import { RenderTargetTexture, type BaseTexture, type Scene } from "@babylonjs/core";
 import {
   mergeRenderSettings,
   type RenderSettingsPatch,
@@ -59,7 +59,7 @@ type SceneRendering = {
   fogVolumesPresent: boolean;
   /** Loads the requested LUT asset; only a ready texture enters the plan. */
   colorGrading: ColorGradingSource;
-  colorGradingTexture: Texture | null;
+  colorGradingTexture: BaseTexture | null;
   /** Baked identity of the live effects settings; rebuilt only on a settings
    * change so per-frame readiness probes never serialize the block again. */
   effectsKey: string;

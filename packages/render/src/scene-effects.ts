@@ -115,11 +115,8 @@ export function sceneEffectsImageProcessingConfiguration(
     config.vignetteBlendMode = ImageProcessingConfiguration.VIGNETTEMODE_MULTIPLY;
   }
   if (plan.colorGrading) {
-    // Horizontal strip: blue selects the slice, red/green address it, and
-    // the sampled RGB replaces the color (Babylon's non-default layout).
+    // A 3D LUT: Babylon's 2D-strip polyfill is GLSL-only on Babylon 9.20.
     config.colorGradingTexture = plan.colorGrading;
-    config.colorGradingWithGreenDepth = false;
-    config.colorGradingBGR = false;
     config.colorGradingEnabled = true;
   }
   return config;
