@@ -45,8 +45,11 @@ export function tweenOwnerAlive(owner?: BObject | null): boolean {
 export class TweenRuntime {
   private readonly active = new Set<ActiveTween>();
   private stopped = false;
+  private readonly canRun: (owner?: BObject | null) => boolean;
 
-  constructor(private readonly canRun: (owner?: BObject | null) => boolean = () => true) {}
+  constructor(canRun: (owner?: BObject | null) => boolean = () => true) {
+    this.canRun = canRun;
+  }
 
   start(request: TweenRequest): Promise<boolean> {
     const { reference } = request;
