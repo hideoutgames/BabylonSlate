@@ -558,19 +558,28 @@ export class RenderTargetCaptures {
     }
     if (!changed.size) return;
     for (const scene of this.consumerScenes.keys()) {
-      const contexts = new Set<Material["_materialContext"]>();
+      const rebound = new Set<Material>();
       for (const material of scene.materials) {
         if (!material.getActiveTextures().some((texture) => changed.has(texture as CaptureTexture))) continue;
         // Mode/size changes still invalidate defines. A history swap keeps the
         // shader contract and only refreshes frozen material texture bindings.
-        if (rebindOnly) contexts.add(material._materialContext);
+        if (rebindOnly) rebound.add(material);
         else material.markDirty(true);
       }
-      if (!contexts.size) continue;
+      if (!rebound.size) continue;
       scene.resetCachedMaterial();
-      for (const mesh of scene.meshes) for (const subMesh of mesh.subMeshes ?? [])
-        for (const wrapper of subMesh._drawWrappers)
-          if (wrapper && contexts.has(wrapper.materialContext)) wrapper._forceRebindOnNextCall = true;
+      // WebGL has no material contexts. Resolve each pass/slot explicitly so
+      // unrelated frozen materials retain their bindings on both backends.
+      for (const mesh of scene.meshes) for (const subMesh of mesh.subMeshes ?? []) {
+        const renderingMesh = subMesh.getRenderingMesh();
+        for (let pass = 0; pass < subMesh._drawWrappers.length; pass++) {
+          const wrapper = subMesh._drawWrappers[pass];
+          if (!wrapper) continue;
+          const root = renderingMesh.getMaterialForRenderPass(pass) ?? renderingMesh.material;
+          const material = root instanceof MultiMaterial ? root.getSubMaterial(subMesh.materialIndex) : root;
+          if (material && rebound.has(material)) wrapper._forceRebindOnNextCall = true;
+        }
+      }
     }
   }
   private retire(guid: string): void {
