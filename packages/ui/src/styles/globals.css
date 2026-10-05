@@ -206,7 +206,7 @@
     --popover-foreground: var(--foreground);
     --primary: oklch(0.92 0.003 85);
     --primary-foreground: oklch(0.23 0.003 75);
-    --secondary: oklch(0.29 0.003 75);
+    --secondary: oklch(0.42 0.004 75);
     --secondary-foreground: var(--foreground);
     --muted: oklch(0.29 0.003 75);
     --muted-foreground: oklch(0.745 0.005 85);
@@ -457,6 +457,30 @@
 
 .catalog-category-picker {
   display: none;
+}
+
+/* Dialog footers sit on the dialog surface without a separator, so a list
+ * clipped above them fades out while more rows remain below. Scroll-driven
+ * animation leaves lists that fit, or are scrolled to the end, unmasked;
+ * engines without it keep the plain edge. */
+@property --scroll-fade-bottom {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@keyframes scroll-fade-bottom {
+  from { --scroll-fade-bottom: 2.5rem; }
+  to { --scroll-fade-bottom: 0px; }
+}
+
+@supports (animation-timeline: scroll()) {
+  .scroll-fade-bottom {
+    mask-image: linear-gradient(to bottom, #000 calc(100% - var(--scroll-fade-bottom)), transparent);
+    animation: scroll-fade-bottom linear both;
+    animation-timeline: scroll(self block);
+    animation-range: calc(100% - 2.5rem) 100%;
+  }
 }
 
 @media (pointer: coarse) {

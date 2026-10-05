@@ -228,7 +228,7 @@ export function ContentBrowserNewAssetDialog({
               <div
                 ref={bodyRef}
                 tabIndex={-1}
-                className="min-h-0 flex-1 overflow-y-auto p-4 outline-none"
+                className="scroll-fade-bottom min-h-0 flex-1 overflow-y-auto p-4 outline-none"
                 data-testid="new-asset-type"
                 role="radiogroup"
                 aria-label="Asset Type"
