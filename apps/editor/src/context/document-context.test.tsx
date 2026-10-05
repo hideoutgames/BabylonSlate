@@ -1,4 +1,4 @@
-import { act, cleanup, render, waitFor } from "@testing-library/react";
+import { act, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   MAIN_CLASS_FILE,
@@ -7,10 +7,13 @@ import {
   type DocumentRef,
   type SerializedScene,
 } from "@babylonslate/core";
-import { createMemoryOpfsRoot } from "../../../../packages/vfs/src/test-support/memory-opfs";
 import { createProjectAsset } from "../lib/create-project-asset";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 import type { OpenDocument } from "../services/document-service";
+import {
+  installMemoryOpfs,
+  unmountDocumentProvider,
+} from "../testing/real-document-provider";
 import {
   DocumentProvider,
   useAppRoute,
@@ -20,35 +23,24 @@ import {
   type DocumentActions,
 } from "./document-context";
 
-// Engine plugins and extensions are fetched from the app's public folder;
-// projects here start without any.
-const engine = vi.hoisted(() => ({
-  storage: async () => {
-    const { MemoryStorageAdapter, createReadOnlyProjectStorage } = await import(
-      "@babylonslate/vfs"
-    );
-    const storage = new MemoryStorageAdapter("opfs");
-    await storage.openDocumentsProject("engine");
-    return createReadOnlyProjectStorage(storage);
-  },
-}));
+// Stand-ins shared by real-provider tests: see ../testing/real-document-provider.
+const provider = vi.hoisted(() => () => import("../testing/real-document-provider"));
 vi.mock("../lib/engine-plugins", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/engine-plugins")>()),
-  ensureEnginePluginStorage: engine.storage,
+  ensureEnginePluginStorage: (await provider()).emptyEngineStorage,
 }));
 vi.mock("../lib/engine-plugin-library", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/engine-plugin-library")>()),
-  ensureEnginePluginLibrary: async () => ({ createStorageSnapshot: engine.storage }),
+  ensureEnginePluginLibrary: (await provider()).emptyEngineLibrary,
 }));
 vi.mock("../lib/engine-extensions", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/engine-extensions")>()),
-  ensureEngineExtensionStorage: engine.storage,
+  ensureEngineExtensionStorage: (await provider()).emptyEngineStorage,
 }));
 vi.mock("../lib/engine-extension-library", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/engine-extension-library")>()),
-  ensureEngineExtensionLibrary: async () => ({ createStorageSnapshot: engine.storage }),
+  ensureEngineExtensionLibrary: (await provider()).emptyEngineLibrary,
 }));
-// The KTX2 transcoder probe and the scene loading paint wait need a GPU page.
 vi.mock("@babylonslate/render", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@babylonslate/render")>()),
   probeKtx2TranscoderAvailable: async () => false,
@@ -113,27 +105,14 @@ async function openProject(): Promise<DocumentActions> {
   return actions;
 }
 
-beforeEach(() => {
-  const root = createMemoryOpfsRoot();
-  Object.defineProperty(navigator, "storage", {
-    configurable: true,
-    value: { getDirectory: async () => root },
-  });
-});
+beforeEach(installMemoryOpfs);
 
 afterEach(async () => {
-  // Clears the autosave timer and the recovery journal before unmounting.
-  if (seen.documents?.projectDocument) {
-    await act(() => seen.actions!.forceCloseProject());
-  }
-  cleanup();
+  await unmountDocumentProvider(seen.documents, seen.actions);
   seen.actions = null;
   seen.documents = null;
   seen.route = null;
   seen.classDocuments = null;
-  // Engine Settings (recent projects) persist in localStorage.
-  localStorage.clear();
-  delete (navigator as { storage?: unknown }).storage;
 });
 
 describe("DocumentProvider actions and route", () => {
