@@ -1,4 +1,4 @@
-import { RenderTargetTexture, type BaseTexture, type Scene } from "@babylonjs/core";
+import { RenderTargetTexture, type BaseTexture, type Scene, type Texture } from "@babylonjs/core";
 import {
   mergeRenderSettings,
   type RenderSettingsPatch,
@@ -22,6 +22,8 @@ import {
   normalizeRenderEffectsSettings,
   type RenderEffectsSettings,
 } from "@babylonslate/core";
+import { ColorGradingSource } from "./color-grading";
+import type { MeshAssetContext } from "./mesh-assets";
 import {
   planSceneEffects,
   sceneEffectsKey,
@@ -55,6 +57,9 @@ type SceneRendering = {
   effectsEnabled: boolean;
   /** Local components request the shared fog pass without changing project settings. */
   fogVolumesPresent: boolean;
+  /** Loads the requested LUT asset; only a ready texture enters the plan. */
+  colorGrading: ColorGradingSource;
+  colorGradingTexture: Texture | null;
   /** Baked identity of the live effects settings; rebuilt only on a settings
    * change so per-frame readiness probes never serialize the block again. */
   effectsKey: string;
@@ -97,13 +102,20 @@ export function sceneRenderingSettings(scene: Scene): SceneRendering {
       effects,
       effectsEnabled: true,
       fogVolumesPresent: false,
+      colorGrading: undefined as unknown as ColorGradingSource,
+      colorGradingTexture: null,
       effectsKey: sceneEffectsKey(effects, "pbr", true),
       effectsPlan: planSceneEffects(effects, "pbr", true),
       listeners: new Set(),
     };
     scenes.set(scene, state);
     const owned = state;
+    owned.colorGrading = new ColorGradingSource(scene, (texture) => {
+      owned.colorGradingTexture = texture;
+      replanSceneEffects(owned);
+    });
     scene.onDisposeObservable.addOnce(() => {
+      owned.colorGrading.dispose();
       owned.listeners.clear();
       scenes.delete(scene);
     });
@@ -143,19 +155,27 @@ export function updateSceneRenderingSettings(
     state.mode = mode;
     for (const listener of state.listeners) listener(mode);
   }
-  state.effectsKey = sceneEffectsKey(
-    state.effects,
-    state.mode,
-    state.effectsEnabled,
-    state.fogVolumesPresent,
+  // A newly requested LUT publishes asynchronously and replans once ready.
+  state.colorGrading.sync(
+    state.effectsEnabled && state.effects.colorGrading.enabled ? state.effects.colorGrading.lutTextureGuid : null,
   );
-  state.effectsPlan = planSceneEffects(
-    state.effects,
-    state.mode,
-    state.effectsEnabled,
-    state.fogVolumesPresent,
-  );
+  replanSceneEffects(state);
   syncImageProcessingMode(scene, state);
+}
+
+function replanSceneEffects(state: SceneRendering): void {
+  const inputs = {
+    fogVolumesPresent: state.fogVolumesPresent,
+    colorGradingTexture: state.colorGradingTexture,
+  };
+  state.effectsKey = sceneEffectsKey(state.effects, state.mode, state.effectsEnabled, inputs);
+  state.effectsPlan = planSceneEffects(state.effects, state.mode, state.effectsEnabled, inputs);
+}
+
+/** Texture bytes for project-level effect assets such as the grading LUT. */
+export function setSceneEffectsAssets(scene: Scene, assets: MeshAssetContext | undefined): void {
+  if (scene.isDisposed) return;
+  sceneRenderingSettings(scene).colorGrading.setAssets(assets);
 }
 
 /**
@@ -175,8 +195,7 @@ export function setSceneFogVolumesPresent(scene: Scene, present: boolean): void 
   const state = sceneRenderingSettings(scene);
   if (state.fogVolumesPresent === present || scene.isDisposed) return;
   state.fogVolumesPresent = present;
-  state.effectsKey = sceneEffectsKey(state.effects, state.mode, state.effectsEnabled, present);
-  state.effectsPlan = planSceneEffects(state.effects, state.mode, state.effectsEnabled, present);
+  replanSceneEffects(state);
 }
 
 /** Materials emit linear HDR only while a Scene Linear display stage exists. */

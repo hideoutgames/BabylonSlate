@@ -1,4 +1,4 @@
-import { ImageProcessingConfiguration } from "@babylonjs/core";
+import { ImageProcessingConfiguration, type BaseTexture } from "@babylonjs/core";
 import {
   DEFAULT_RENDER_EFFECTS,
   normalizeRenderEffectsSettings,
@@ -28,14 +28,14 @@ it("keeps the established pipeline for defaults in every mode", () => {
 it("activates local fog without global density and respects the post-processing switch", () => {
   const settings = effects({ volumetricLighting: { ...DEFAULT_RENDER_EFFECTS.volumetricLighting,
     density: 0.3, steps: 16, resolutionScale: 0.25 } });
-  expect(planSceneEffects(settings, "pbr", true, true)?.volumetricLighting).toMatchObject({
+  expect(planSceneEffects(settings, "pbr", true, { fogVolumesPresent: true })?.volumetricLighting).toMatchObject({
     enabled: true, density: 0, steps: 16, resolutionScale: 0.25,
   });
   expect(settings.volumetricLighting).toMatchObject({ enabled: false, density: 0.3 });
-  expect(planSceneEffects(settings, "pbr", false, true)).toBeNull();
-  expect(planSceneEffects(settings, "pbr", true, false)).toBeNull();
+  expect(planSceneEffects(settings, "pbr", false, { fogVolumesPresent: true })).toBeNull();
+  expect(planSceneEffects(settings, "pbr", true, {})).toBeNull();
   settings.volumetricLighting.enabled = true;
-  expect(planSceneEffects(settings, "pbr", true, true)?.volumetricLighting?.density).toBe(0.3);
+  expect(planSceneEffects(settings, "pbr", true, { fogVolumesPresent: true })?.volumetricLighting?.density).toBe(0.3);
 });
 
 it("adds the Scene Linear and Display Color stages for PBR only", () => {
@@ -46,7 +46,7 @@ it("adds the Scene Linear and Display Color stages for PBR only", () => {
     sceneLinear: true,
     ambientOcclusion: null, reflections: null, volumetricLighting: null,
     bloom: null,
-    imageProcessing: { sceneLinear: true, vignette: null },
+    imageProcessing: { sceneLinear: true, vignette: null, colorGrading: null },
     fxaa: false,
   });
   // CEL is display-space by construction: the linear stage never applies.
@@ -77,6 +77,7 @@ it("uses the display stage for the vignette on either pipeline", () => {
   expect(planSceneEffects(vignette, "pbr")?.imageProcessing).toEqual({
     sceneLinear: false,
     vignette: { enabled: true, weight: 2, color: [0.1, 0.2, 0.3] },
+    colorGrading: null,
   });
   const linear = effects({
     colorPipeline: { version: 1, mode: "sceneLinear" },
@@ -85,7 +86,30 @@ it("uses the display stage for the vignette on either pipeline", () => {
   expect(planSceneEffects(linear, "pbr")?.imageProcessing).toEqual({
     sceneLinear: true,
     vignette: { enabled: true, weight: 1, color: [0, 0, 0] },
+    colorGrading: null,
   });
+});
+
+it("grades through the display stage only once the LUT is ready, in either mode", () => {
+  const lut = { uniqueId: 7 } as unknown as BaseTexture;
+  const graded = effects({ colorGrading: { enabled: true, lutTextureGuid: "lut" } });
+  // Requested but still loading: no stage that would sample an unready texture.
+  expect(planSceneEffects(graded, "pbr")).toBeNull();
+  for (const mode of ["pbr", "cel"] as const)
+    expect(planSceneEffects(graded, mode, true, { colorGradingTexture: lut })?.imageProcessing)
+      .toEqual({ sceneLinear: false, vignette: null, colorGrading: lut });
+  const loading = sceneEffectsKey(graded, "pbr", true);
+  const ready = sceneEffectsKey(graded, "pbr", true, { colorGradingTexture: lut });
+  expect(ready).not.toBe(loading);
+  expect(sceneEffectsKey(graded, "pbr", true, { colorGradingTexture: { uniqueId: 8 } as unknown as BaseTexture })).not.toBe(ready);
+  const disabled = effects({ colorGrading: { enabled: false, lutTextureGuid: "lut" } });
+  expect(planSceneEffects(disabled, "pbr", true, { colorGradingTexture: lut })).toBeNull();
+
+  const config = sceneEffectsImageProcessingConfiguration(graded, { sceneLinear: false, vignette: null, colorGrading: lut });
+  expect(config.colorGradingEnabled).toBe(true);
+  expect(config.colorGradingTexture).toBe(lut);
+  expect(config.colorGradingWithGreenDepth).toBe(false);
+  expect(config.colorGradingBGR).toBe(false);
 });
 
 it("plans bloom and FXAA independently in Legacy Display", () => {
@@ -113,7 +137,7 @@ it("plans nothing while the post-processing toggle is off", () => {
 it("configures display processing only for the linear stage", () => {
   const config = sceneEffectsImageProcessingConfiguration(
     effects({ toneMapping: "aces", exposure: 1.5, contrast: 1.2 }),
-    { sceneLinear: true, vignette: null },
+    { sceneLinear: true, vignette: null, colorGrading: null },
   );
   expect(config.toneMappingEnabled).toBe(true);
   expect(config.toneMappingType).toBe(
@@ -130,6 +154,7 @@ it("holds processing at identity when the stage only carries a vignette", () => 
     {
       sceneLinear: false,
       vignette: { enabled: true, weight: 2, color: [0.25, 0.5, 0.75] },
+      colorGrading: null,
     },
   );
   expect(config.toneMappingEnabled).toBe(false);

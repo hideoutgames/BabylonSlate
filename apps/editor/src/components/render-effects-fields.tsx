@@ -2,6 +2,7 @@ import {
   RENDER_EFFECTS_LIMITS,
   type RenderEffectsSettings,
 } from "@babylonslate/core";
+import type { ReactNode } from "react";
 import { ColorField, NumberField } from "@babylonslate/editor-kit";
 import { Switch } from "@babylonslate/ui/components/switch";
 import { SpatialEffectsFields } from "./spatial-effects-fields";
@@ -38,11 +39,13 @@ type Props = {
   project: RenderEffectsSettings;
   onChange: (value: RenderEffectsSettings) => void;
   hideTitle?: boolean;
+  /** Texture picker control for the grading LUT, owned by the host dialog. */
+  lutControl?: ReactNode;
 };
 
 /** Project Settings → Rendering post-processing group: the color pipeline
  * stage plus the display-space effect chain (bloom, vignette, FXAA). */
-export function RenderEffectsFields({ project, onChange, hideTitle = false }: Props) {
+export function RenderEffectsFields({ project, onChange, hideTitle = false, lutControl }: Props) {
   const patch = (value: Partial<RenderEffectsSettings>) =>
     onChange({ ...project, ...value });
   const patchVignette = (value: Partial<RenderEffectsSettings["vignette"]>) =>
@@ -239,6 +242,29 @@ export function RenderEffectsFields({ project, onChange, hideTitle = false }: Pr
               />
             </Field>
           </>
+        ) : null}
+        <Field orientation="horizontal" className="settings-field">
+          <FieldLabel htmlFor="project-effects-color-grading">Color Grading</FieldLabel>
+          <Switch
+            id="project-effects-color-grading"
+            aria-describedby="project-effects-color-grading-description"
+            data-testid="project-effects-color-grading"
+            checked={project.colorGrading.enabled}
+            onCheckedChange={(enabled) => patch({ colorGrading: { ...project.colorGrading, enabled: enabled === true } })}
+          />
+          <FieldDescription id="project-effects-color-grading-description">
+            Remap final colors through a lookup table; applies in every pipeline mode.
+          </FieldDescription>
+        </Field>
+        {project.colorGrading.enabled ? (
+          <Field className="settings-field">
+            <FieldLabel htmlFor="project-effects-lut">LUT Texture</FieldLabel>
+            {lutControl}
+            <FieldDescription>
+              A horizontal strip of square slices, such as 256×16 or 1024×32. Set the
+              Texture's Usage to Color Grading LUT so it stays uncompressed.
+            </FieldDescription>
+          </Field>
         ) : null}
         <Field orientation="horizontal" className="settings-field">
           <FieldLabel htmlFor="project-effects-fxaa">FXAA</FieldLabel>

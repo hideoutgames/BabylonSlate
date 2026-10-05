@@ -97,7 +97,8 @@ export async function resolveGpuTexture(
     usage,
   });
   // Changing Usage must take effect even when a previous encode is retained.
-  if (usage === "pixelArt" && raster) {
+  // A resized or block-compressed LUT would grade every color incorrectly.
+  if ((usage === "pixelArt" || usage === "colorGrading") && raster) {
     return {
       bytes: raster.bytes,
       kind: "source",

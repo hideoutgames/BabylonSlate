@@ -747,6 +747,26 @@ describe("collectExportReachability", () => {
     );
   });
 
+  it("packs the project grading LUT although no scene references it", () => {
+    const result = collectExportReachability({
+      startupSceneGuid: "scene-1",
+      renderAssetGuids: ["lut-1"],
+      assets: [
+        asset({ guid: "scene-1", type: "Scene", name: "Main" }),
+        asset({ guid: "lut-1", type: "Texture", name: "Warm LUT" }),
+        asset({ guid: "lut-2", type: "Texture", name: "Unused LUT" }),
+      ],
+      pluginEnabledGuids: new Set(),
+      parentOf: () => null,
+      sceneByGuid: () => createDefaultScene(),
+      graphByGuid: () => null,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.guids).toContain("lut-1");
+    expect(result.value.guids).not.toContain("lut-2");
+  });
+
   it("includes the project AudioMixer, its channels, and Audio attenuation refs", () => {
     const scene: SerializedScene = {
       ...createDefaultScene(),

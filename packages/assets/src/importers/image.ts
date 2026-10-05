@@ -17,6 +17,7 @@ const MIME_BY_EXTENSION: Record<string, string> = {
 function usageFromFileName(fileName: string): string {
   const lower = fileName.toLowerCase();
   if (/(pixel|sprite|tileset)/.test(lower)) return "pixelArt";
+  if (/(^|[^a-z])lut([^a-z]|$)|color[_-]?grading/.test(lower)) return "colorGrading";
   if (/(ui[_-]|hud[_-]|button)/.test(lower)) return "ui";
   if (/normal/.test(lower)) return "normal";
   return "albedo";
