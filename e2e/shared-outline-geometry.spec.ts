@@ -69,6 +69,8 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     // With the FFT detail band compiled in and ready, the mask adds the band's displacement too (matched above).
     expect(report.fftDetail.ready).toBe(true);
     expect(report.fftDetail.defines).toContain("#define SLATE_WATER_FFT 3\n");
+    // Its 5 cm cells resolve the first cascade, so the vertex stage (and the mask) displaces by the band.
+    expect(report.fftDetail.defines).toContain("#define SLATE_WATER_FFT_VERTEX 3\n");
     expect(at("gpu-water-fft-detail").native.count).toBeGreaterThan(2_000);
     const submeshes = at("multi-material-cutout");
     expect(at("cel-default-material").native.count).toBeGreaterThan(1_000);

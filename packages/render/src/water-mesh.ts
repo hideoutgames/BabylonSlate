@@ -215,7 +215,7 @@ function syncQuality(s: Surface): void {
   s.qualityRevision = revision;
   const density = sceneWaterQualityDeviceClamp(scene).quality.meshDensity;
   if (density !== s.density) { s.density = density; s.version++; }
-  if (s.fftDisplaced !== (s.gpu && (s.plugin?.fftDetailCascades ?? 0) > 0)) s.boundsDirty = true;
+  if (s.fftDisplaced !== (s.gpu && (s.plugin?.fftVertexCascades ?? 0) > 0)) s.boundsDirty = true;
 }
 
 const UNCHANGED = 0, RECENTRED = 1, REBUILT = 2;
@@ -320,6 +320,12 @@ function updateLayout(s: Surface, world: Matrix, inverse: Matrix): LayoutChange 
       Math.hypot(worldBase[a]! - worldBase[above]!, worldBase[a + 2]! - worldBase[above + 2]!),
     );
   }
+  // The finest spacing decides whether the vertex stage can resolve any of the FFT detail band (a recentre keeps it).
+  if (s.plugin) {
+    let finest = Infinity;
+    for (let index = 0; index < s.spacing.length; index++) finest = Math.min(finest, s.spacing[index]!);
+    s.plugin.meshSpacing = finest;
+  }
   s.positions.set(base);
   const indices: number[] = [], uvs: number[] = [];
   for (let row = 0; row <= rows; row++) for (let col = 0; col <= columns; col++) {
@@ -369,7 +375,7 @@ const point = new Vector3(), baseNormal = new Vector3(), localNormal = new Vecto
  */
 function updateBounds(s: Surface, world: Matrix, inverse: Matrix, recentred: boolean): void {
   s.boundsDirty = false;
-  s.fftDisplaced = s.gpu && (s.plugin?.fftDetailCascades ?? 0) > 0;
+  s.fftDisplaced = s.gpu && (s.plugin?.fftVertexCascades ?? 0) > 0;
   if (!s.base.length) return;
   const vertical = waterWaveEnvelope(s.water, s.body.waveScale);
   // The FFT detail band's horizontal displacement (λ = Steepness at most) stays within λ · its 4σ height; the vertical

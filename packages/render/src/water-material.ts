@@ -116,9 +116,16 @@ const REFRACTION_SHIFT_CAP = 0.06;
  * ready (or is rebuilt) never recompiles the water.
  */
 export const WATER_FFT_DEFINE = "SLATE_WATER_FFT";
+/**
+ * The cascades the vertex stage samples (`#if SLATE_WATER_FFT_VERTEX >= c`): `SLATE_WATER_FFT` where this surface's
+ * finest rest-grid spacing resolves the band's first cascade (under half its shortest wavelength, where the vertex
+ * mesh filter starts to pass it), otherwise 0. Every cascade's vertex weight is exactly 0 on a grid that coarse, so
+ * compiling the vertex part out changes no vertex; High's band stays per-pixel on Global Water and large volumes.
+ */
+export const WATER_FFT_VERTEX_DEFINE = "SLATE_WATER_FFT_VERTEX";
 /** The band's 2D-array texture: one binding shared by the vertex stage (displacement) and the fragment (slopes). */
 export const WATER_FFT_SAMPLER = "slateWaterFftSampler";
-const FFT = WATER_FFT_DEFINE;
+const FFT = WATER_FFT_DEFINE, FFT_VERTEX = WATER_FFT_VERTEX_DEFINE;
 /**
  * Per cascade c, (1 / patch size, uv offset x, uv offset z, upper band edge k_hi): the uv offset is
  * fract(floating origin / patch size) + 0.5 / N from the CPU in float64, so eye-relative rest points sample the
@@ -308,21 +315,22 @@ vec4 swPlanarTexel(vec2 uv) { return texture2DLodEXT(${WATER_PLANAR_SAMPLER}, uv
   return `\n#if ${SAMPLES_COPY}${copy}\n#endif${ifDefined(SSR, marchSource(wgsl))}${ifDefined(PLANAR, planar)}\n`;
 }
 
-/** `code` only when the band is compiled in; every directive on its own line. */
-const ifFft = (code: string, cascades = 1) => `\n#if ${FFT} >= ${cascades}${code}\n#endif`;
+/** `code` only when the band (or, with `FFT_VERTEX`, its vertex part) is compiled in; every directive on its own line. */
+const ifFft = (code: string, cascades = 1, define = FFT) => `\n#if ${define} >= ${cascades}${code}\n#endif`;
 
 /**
  * The band's sampler and its tap, per language, for either stage: an explicit level (the band has no mips), legal in
- * any control flow and in the vertex stage. The vertex and fragment stages declare the same binding (one WebGL2
- * texture unit, one WebGPU binding visible to both). GLSL ES has no default precision for array samplers.
+ * any control flow and in the vertex stage. The vertex stage declares it only with its part of the band (`define`
+ * `SLATE_WATER_FFT_VERTEX`); then both stages declare the same binding (one WebGL2 texture unit, one WebGPU binding
+ * visible to both). GLSL ES has no default precision for array samplers.
  */
-function fftHelpers(wgsl: boolean): string {
+function fftHelpers(wgsl: boolean, define = FFT): string {
   return ifFft(wgsl ? `
 var ${WATER_FFT_SAMPLER}Sampler: sampler;
 var ${WATER_FFT_SAMPLER}: texture_2d_array<f32>;
 fn swFftTap(uv: vec2f, layer: f32) -> vec4f { return textureSampleLevel(${WATER_FFT_SAMPLER}, ${WATER_FFT_SAMPLER}Sampler, uv, i32(layer), 0.0); }` : `
 uniform highp sampler2DArray ${WATER_FFT_SAMPLER};
-vec4 swFftTap(vec2 uv, float layer) { return textureLod(${WATER_FFT_SAMPLER}, vec3(uv, layer), 0.0); }`) + "\n";
+vec4 swFftTap(vec2 uv, float layer) { return textureLod(${WATER_FFT_SAMPLER}, vec3(uv, layer), 0.0); }`, 1, define) + "\n";
 }
 
 /**
@@ -375,7 +383,7 @@ vec2 swFftSlope = vec2(swFftJzz * swFftGrad.x - swFftJzx * swFftGrad.y, swFftJxx
 }
 
 /**
- * FFT ocean detail in the vertex stage (`SLATE_WATER_GPU_WAVES` with `SLATE_WATER_FFT`), after the swell and before
+ * FFT ocean detail in the vertex stage (`SLATE_WATER_GPU_WAVES` with `SLATE_WATER_FFT_VERTEX`), after the swell and before
  * the bank fade: (Dx, H, Dz) of each cascade at this vertex's rest point, scaled by g and λ = Steepness (the bank fade
  * then scales the horizontal part with the swell's). A cascade fades by the swell's mesh filter on the cascade's
  * shortest wavelength (its upper band edge k_hi: full weight while the reach is under a quarter of it, none from half
@@ -401,7 +409,7 @@ if (swvFw${c} > 0.0) {
   swvFftD += swvFa${c}.xz * swvFw${c};
   swvFftJ += vec3(swvFb${c}.z, swvFa${c}.w, swvFb${c}.w) * swvFw${c};
 }`;
-    return c === 0 ? code : ifFft(code, c + 1);
+    return c === 0 ? code : ifFft(code, c + 1, FFT_VERTEX);
   }).join("");
   return ifFft(`
 vec4 swvFft = U.slateWaterFft;
@@ -417,7 +425,7 @@ vec3 swvJb = swvFftJ * (swvFft.x * swvFft.y * swvGain);
 float swvDetB = (swvJxx + swvJb.x) * (swvJzz + swvJb.z) - (swvJxz + swvJb.y) * (swvJxz + swvJb.y);
 float swvKeep = mix(1.0, clamp((swvDetA - ${floor}) / max(swvDetA - swvDetB, 0.000001), 0.0, 1.0), step(swvDetB, ${floor}));
 swvH += swvFftH * swvFft.x;
-swvD += swvFftD * (swvFft.x * swvFft.y * swvKeep);`);
+swvD += swvFftD * (swvFft.x * swvFft.y * swvKeep);`, 1, FFT_VERTEX);
 }
 
 /**
@@ -1237,8 +1245,8 @@ if (swCut < 0.0 || (swField.a * swFieldOn > ${f(WATER_FIELD_TERRAIN_ALPHA)} && s
  * finite-body fade of the horizontal offset). Phases arrive reduced relative to the floating origin, so eye-relative
  * `worldPos` needs no large-argument trigonometry. Writes the displaced world position (the clip position, fog,
  * shadows and clip planes follow it) and leaves the height and offset for the varyings in `swvH` / `swvD`, so the
- * fragment finds its rest point and contacts see the rendered height. With `SLATE_WATER_FFT`, the FFT detail band
- * (`fftVertexSource`) adds its displacement before the bank fade.
+ * fragment finds its rest point and contacts see the rendered height. With `SLATE_WATER_FFT_VERTEX`, the FFT detail
+ * band (`fftVertexSource`) adds its displacement before the bank fade.
  * GLSL-shaped: `A.` attributes, `U.` uniforms, `S.` the view matrix's owner and `O.` outputs are bound per language,
  * then `toWgsl` translates it. Other passes that draw built-in water with their own vertex shader (the shared outline
  * mask) include the same displacement through `waterOutlineVertexSource`, without the material's `vPositionW` output.
@@ -1255,7 +1263,7 @@ float swvS${i} = sin(swvP${i});
 float swvC${i} = cos(swvP${i});
 swvH += mix(swvS${i}, (exp(swvS${i} - 1.0) - ${f(WATER_CREST_MEAN)}) / ${f(WATER_CREST_RANGE)}, swvChop) * (swvWA${i}.x * swvF${i});
 swvD += swvWD${i}.xy * (swvWA${i}.z * swvF${i} * swvC${i});${ifFft(`
-swvShear += vec3(swvWD${i}.x * swvWD${i}.x, swvWD${i}.x * swvWD${i}.y, swvWD${i}.y * swvWD${i}.y) * (swvWA${i}.z * swvF${i} * swvWD${i}.z * swvS${i});`)}`;
+swvShear += vec3(swvWD${i}.x * swvWD${i}.x, swvWD${i}.x * swvWD${i}.y, swvWD${i}.y * swvWD${i}.y) * (swvWA${i}.z * swvF${i} * swvWD${i}.z * swvS${i});`, 1, FFT_VERTEX)}`;
     return i < waterWaveComponents.length ? code : `\n#ifdef ${WATER_OCEAN_DEFINE}${code}\n#endif`;
   }).join("");
   return `
@@ -1265,7 +1273,7 @@ float swvChop = U.slateWaterShape.x;
 vec2 swvRest = worldPos.xz;
 float swvH = 0.0;
 vec2 swvD = vec2(0.0);${ifFft(`
-vec3 swvShear = vec3(0.0);`)}
+vec3 swvShear = vec3(0.0);`, 1, FFT_VERTEX)}
 ${swell}
 float swvFade = U.slateWaterSwellInfo.x;
 float swvBankT = clamp(A.slateWaterData.y / max(swvFade, 0.000001), 0.0, 1.0);
@@ -1300,10 +1308,13 @@ function bindVertexSource(code: string, wgsl: boolean, scene = "scene."): string
     .replace(/\bS\./g, wgsl ? scene : "");
 }
 
-/** Vertex hooks for one language: the band's sampler (with GPU waves and the band), the GPU swell and the varyings. */
+/**
+ * Vertex hooks for one language: the band's sampler (with GPU waves and the band's vertex part), the GPU swell and the
+ * varyings.
+ */
 export function waterVertexSource(language: ShaderLanguage): { definitions: string; worldPosition: string; end: string } {
   const wgsl = language === ShaderLanguage.WGSL;
-  const definitions = `\n#ifdef ${WATER_GPU_WAVES_DEFINE}${fftHelpers(wgsl)}#endif\n`;
+  const definitions = `\n#ifdef ${WATER_GPU_WAVES_DEFINE}${fftHelpers(wgsl, FFT_VERTEX)}#endif\n`;
   return wgsl
     ? { definitions, worldPosition: bindVertexSource(toWgsl(vertexWaveSource(true)), true), end: bindVertexSource(toWgsl(VERTEX_VARYINGS), true) }
     : { definitions, worldPosition: bindVertexSource(vertexWaveSource(true), false), end: bindVertexSource(VERTEX_VARYINGS, false) };
@@ -1316,17 +1327,17 @@ export function waterVertexSource(language: ShaderLanguage): { definitions: stri
 export const WATER_VERTEX_WAVE_UNIFORMS: readonly string[] = [
   "slateWaterShape", "slateWaterSwellInfo", ...SWELL_DIRECTION, ...SWELL_AMPLITUDE, "slateWaterFft", ...FFT_CASCADE_UNIFORMS,
 ];
-/** `vertexWaveDefines` per wave model (Classic, Ocean Spectrum) and cascades sampled (0-3): built once. */
+/** `vertexWaveDefines` per wave model (Classic, Ocean Spectrum) and cascades the vertex samples (0-3): built once. */
 const VERTEX_WAVE_DEFINES: ReadonlyArray<ReadonlyArray<readonly string[]>> = [false, true].map((ocean) =>
   Array.from({ length: WATER_FFT_CASCADES_MAX + 1 }, (_, cascades) => [
-    `#define ${WATER_GPU_WAVES_DEFINE}`, ...(ocean ? [`#define ${WATER_OCEAN_DEFINE}`] : []), ...(cascades ? [`#define ${FFT} ${cascades}`] : []),
+    `#define ${WATER_GPU_WAVES_DEFINE}`, ...(ocean ? [`#define ${WATER_OCEAN_DEFINE}`] : []), ...(cascades ? [`#define ${FFT_VERTEX} ${cascades}`] : []),
   ]));
 
 /**
  * The GPU swell for another pass's vertex shader that computes a `worldPos` vec4 from the same world matrix and has a
  * `view` matrix uniform (the shared outline mask): declarations of its attribute, uniforms and the band's sampler,
  * and the displacement to insert after `worldPos`. Both compile only under `SLATE_WATER_GPU_WAVES` (components 5-7
- * under `SLATE_WATER_OCEAN`, the band under `SLATE_WATER_FFT`), so the pass's other programs are unchanged.
+ * under `SLATE_WATER_OCEAN`, the band under `SLATE_WATER_FFT_VERTEX`), so the pass's other programs are unchanged.
  */
 export function waterOutlineVertexSource(language: ShaderLanguage): { declarations: string; displacement: string } {
   const wgsl = language === ShaderLanguage.WGSL;
@@ -1334,7 +1345,7 @@ export function waterOutlineVertexSource(language: ShaderLanguage): { declaratio
   const attribute = wgsl ? "attribute slateWaterData: vec4f;" : "attribute vec4 slateWaterData;";
   const displacement = vertexWaveSource(false);
   return {
-    declarations: `\n#ifdef ${WATER_GPU_WAVES_DEFINE}\n${attribute}\n${uniforms}${fftHelpers(wgsl)}#endif\n`,
+    declarations: `\n#ifdef ${WATER_GPU_WAVES_DEFINE}\n${attribute}\n${uniforms}${fftHelpers(wgsl, FFT_VERTEX)}#endif\n`,
     displacement: bindVertexSource(wgsl ? toWgsl(displacement) : displacement, wgsl, "uniforms."),
   };
 }
@@ -1594,6 +1605,10 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
   private boundPlanar: WaterPlanarReflection | null = null;
   /** FFT cascades this asset samples at the device-effective quality (`SLATE_WATER_FFT`); 0 without the band. */
   private fftCascades = 0;
+  /** Of those, the cascades the vertex stage samples (`SLATE_WATER_FFT_VERTEX`): all or none, by `meshSpacing`. */
+  private fftVertex = 0;
+  /** Finest world spacing of the surface's rest grid, kept by the water mesh; +∞ until it builds one. */
+  private _meshSpacing = Infinity;
   /** The band bound for the current draw: ready and matching the compiled cascades, or null (placeholder, gain 0). */
   private boundFft: WaterFftResult | null = null;
   /** Patch sizes of the layout `fftEdges` was derived from: the band's per-cascade constants change only with them. */
@@ -1606,7 +1621,7 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
     super(material, "SlateWater", 180, {
       SLATE_WATER: true, [WATER_STYLIZED_DEFINE]: false, [WATER_OCEAN_DEFINE]: false, [WATER_GPU_WAVES_DEFINE]: false, [Q]: DEFAULT_TIER,
       ...Object.fromEntries(FEATURES.map(([, define]) => [define, false])),
-      [REFRACTION]: false, [SSR]: false, [SSR_STEPS]: 0, [PLANAR]: false, [FFT]: 0,
+      [REFRACTION]: false, [SSR]: false, [SSR_STEPS]: 0, [PLANAR]: false, [FFT]: 0, [FFT_VERTEX]: 0,
     }, true, false);
     this.water = water;
     this.body = body;
@@ -1655,7 +1670,8 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
    * Refraction, the screen-space march, the planar reflection and the FFT detail band this asset runs at the
    * device-effective quality: Refraction above 0 with Water Refraction on; Object Reflections under Screen Space
    * reflections or Planar's Screen Space fallback; Object Reflections at Planar on a flat body; FFT Cascades while FFT
-   * Ocean Detail is on and Detail Waves is above 0. Recompiles only when one of them changes.
+   * Ocean Detail is on and Detail Waves is above 0, in the vertex stage too where the rest grid resolves the band's
+   * first cascade. Recompiles only when one of them changes.
    */
   private syncObjectFeatures(): void {
     const clamp = this.clamp;
@@ -1666,12 +1682,29 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
     const mirrors = w.objectReflections && q.reflections === "planar" && this._flat;
     const steps = marches ? Math.round(q.reflectionSteps) : 0;
     const fft = q.fft && w.detailWaves > 0 ? q.fftCascades : 0;
-    if (refracts === this.refracts && marches === this.marches && mirrors === this.mirrors && steps === this.marchSteps && fft === this.fftCascades) return;
+    // The vertex mesh filter passes a cascade only below half its shortest wavelength (π / k_hi); the first cascade's
+    // is the longest. Evaluated only on a quality or grid change (the layout allocates).
+    const vertex = fft > 0 && this._meshSpacing < Math.PI / waterFftLayout(waterWaveSet(w), q.fftSize, fft).bandEdges[1]! ? fft : 0;
+    if (refracts === this.refracts && marches === this.marches && mirrors === this.mirrors && steps === this.marchSteps &&
+      fft === this.fftCascades && vertex === this.fftVertex) return;
     this.refracts = refracts; this.marches = marches; this.mirrors = mirrors; this.marchSteps = steps; this.fftCascades = fft;
+    this.fftVertex = vertex;
     this.markDefinesDirty();
   }
   /** FFT cascades compiled into this material (`SLATE_WATER_FFT`), 0 when it never samples the band. */
   get fftDetailCascades(): number { return this.fftCascades; }
+  /** FFT cascades its vertex stage samples (`SLATE_WATER_FFT_VERTEX`), 0 when the band never displaces the mesh. */
+  get fftVertexCascades(): number { return this.fftVertex; }
+  /**
+   * The finest world spacing of the surface's rest grid: the water mesh sets it whenever it builds a grid (a quality,
+   * shape, rotation or scale change), and the vertex stage samples the band only where it can resolve some of it.
+   */
+  get meshSpacing(): number { return this._meshSpacing; }
+  set meshSpacing(value: number) {
+    if (this._meshSpacing === value) return;
+    this._meshSpacing = value;
+    this.syncObjectFeatures();
+  }
   /**
    * Whether the body's rest height is level (no river, no volume tilted out of level), as its planar reflection
    * requires; the water mesh keeps it current when the volume's rotation changes.
@@ -1708,6 +1741,7 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
     changed = setDefine(defines, SSR_STEPS, this.marches && copy ? this.marchSteps : 0) || changed;
     changed = setDefine(defines, PLANAR, this.mirrors) || changed;
     changed = setDefine(defines, FFT, this.fftCascades) || changed;
+    changed = setDefine(defines, FFT_VERTEX, this.fftVertex) || changed;
     if (changed) defines.markAsUnprocessed();
   }
   /**
@@ -1942,10 +1976,10 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
   private bankFade(): number { return this.body.kind === "global" ? 0 : waterBankFadeLength(this.water, this.body.waveScale); }
   /**
    * Defines another pass's program needs for `waterOutlineVertexSource` to match this material's vertex shader,
-   * including the FFT detail band's cascades. Allocation-free.
+   * including the cascades of the FFT detail band its vertex stage samples. Allocation-free.
    */
   vertexWaveDefines(): readonly string[] {
-    return VERTEX_WAVE_DEFINES[waterWaveSet(this.water).count > waterWaveComponents.length ? 1 : 0]![this.fftCascades]!;
+    return VERTEX_WAVE_DEFINES[waterWaveSet(this.water).count > waterWaveComponents.length ? 1 : 0]![this.fftVertex]!;
   }
   /**
    * Sets `WATER_VERTEX_WAVE_UNIFORMS` and the band's sampler on another pass's effect for this frame, as
@@ -1960,7 +1994,7 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
     }
     effect.setFloat4("slateWaterSwellInfo", this.bankFade(), 0, 0, 0);
     effect.setFloat4("slateWaterShape", this.water.choppiness, 0, 0, 0);
-    if (!this.fftCascades) return;
+    if (!this.fftVertex) return;
     const band = this.fftState(scene, this.fftCascades), v = this.fftValues;
     effect.setFloat4("slateWaterFft", v[0]!, v[1]!, v[2]!, v[3]!);
     for (let c = 0; c < WATER_FFT_CASCADES_MAX; c++) {

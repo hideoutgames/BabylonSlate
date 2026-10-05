@@ -348,6 +348,37 @@ describe("Water material binding", () => {
     }
   });
 
+  it("compiles the band's vertex part only into surfaces whose grid resolves its first cascade, and the outline mask follows", async () => {
+    const engine = new NullEngine();
+    Object.assign(engine.getCaps(), { textureFloatRender: true, textureHalfFloatRender: true });
+    const scene = new Scene(engine);
+    try {
+      new FreeCamera("camera", new Vector3(0, 6, -12), scene).setTarget(Vector3.Zero());
+      updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality(qualityPresetPatch("high")) });
+      const compiled = async (name: string, body: ReturnType<typeof normalizeWaterBody>) => {
+        const mesh = createWaterMesh(scene, name, body, createDefaultWaterDefinition());
+        const material = mesh.material as PBRMaterial, subMesh = mesh.subMeshes[0]!;
+        await vi.waitFor(() => expect(material.isReadyForSubMesh(mesh, subMesh)).toBe(true));
+        const plugin = material.pluginManager!.getPlugin<WaterMaterialPlugin>("SlateWater")!;
+        return { defines: subMesh.effect!.defines, outline: plugin.vertexWaveDefines().join("\n") };
+      };
+      // High's first cascade is short (Wave Length / 23, half of it 26 cm by default): a 30 m lake's cells (at least
+      // half a metre) can never pass it, so only the fragment samples the band.
+      const lake = await compiled("lake", normalizeWaterBody({ width: 30, length: 30 }));
+      expect(lake.defines).toContain("#define SLATE_WATER_FFT 2\n");
+      expect(lake.defines).toContain("#define SLATE_WATER_FFT_VERTEX 0\n");
+      expect(lake.outline).not.toContain("SLATE_WATER_FFT");
+      // A 1 m puddle's 8 cm cells resolve it: its vertex stage, and its outline mask, displace by the band.
+      const puddle = await compiled("puddle", normalizeWaterBody({ width: 1, length: 1 }, "puddle"));
+      expect(puddle.defines).toContain("#define SLATE_WATER_FFT 2\n");
+      expect(puddle.defines).toContain("#define SLATE_WATER_FFT_VERTEX 2\n");
+      expect(puddle.outline).toContain("#define SLATE_WATER_FFT_VERTEX 2");
+    } finally {
+      scene.dispose();
+      engine.dispose();
+    }
+  });
+
   it("asks for the FFT detail band from its own draws and binds it world-anchored, contributing nothing until it is ready", async () => {
     const engine = new NullEngine();
     Object.assign(engine.getCaps(), { textureFloatRender: true, textureHalfFloatRender: true });

@@ -209,7 +209,7 @@ it("adds the FFT detail band's displacement in the mask from the band the water 
   scene.activeCamera = camera;
   updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality(qualityPresetPatch("high")) });
   setSceneWaterTime(scene, 2.5);
-  const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 10, length: 10, waveScale: 0.8, resolution: 8 }), createDefaultWaterDefinition());
+  const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 1, length: 1, waveScale: 0.8, resolution: 8 }), createDefaultWaterDefinition());
   const owner = SharedOutlineOwner.forScene(scene), view = owner.createView("test");
   view.setContribution("lake", { kind: "component", targets: [{ key: "lake", meshes: [lake] }], color: [1, 0, 0], width: 1 });
   registerSharedOutlineShaders();
@@ -230,8 +230,9 @@ it("adds the FFT detail band's displacement in the mask from the band the water 
     await vi.waitFor(() => expect(material.isReadyForSubMesh(lake, subMesh)).toBe(true));
     expect(objects.isReadyForRendering(80, 64)).toBe(true);
     render();
-    // The mask compiles the material's cascades, and its draws alone keep the band running.
-    expect(program().defines).toContain("#define SLATE_WATER_FFT 2");
+    // A grid fine enough to resolve High's first cascade: the mask compiles the material's vertex cascades, and its
+    // draws alone keep the band running.
+    expect(program().defines).toContain("#define SLATE_WATER_FFT_VERTEX 2");
     await vi.waitFor(() => { render(); expect(waterFftDiagnostics(scene).simulations.some((simulation) => simulation.ready)).toBe(true); });
     const bound = new Map<string, number[]>(), textures = new Map<string, unknown>(), effect = program().effect!;
     vi.spyOn(effect, "setFloat4").mockImplementation((name: string, x: number, y: number, z: number, w: number) => { bound.set(name, [x, y, z, w]); return effect; });

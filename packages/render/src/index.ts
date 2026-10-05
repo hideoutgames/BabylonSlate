@@ -5,7 +5,7 @@ export { setSceneRenderSettings } from "./scene-render-mode";
 export type { RenderShadingSettings } from "./render-settings";
 export { sceneWaterQuality, sceneWaterQualityRevision, sceneWaterQualityDeviceClamp } from "./render-settings";
 export { clampWaterQualityToDevice, type WaterQualityDeviceClamp, type WaterDeviceCapabilities, type WaterDeviceView } from "./water-quality-device";
-export { retainWaterPlanarReflections, waterPlanarReflectionDiagnostics, waterPlanarReflectionForCamera, type WaterPlanarReflection, type WaterPlanarReflectionDiagnostics } from "./water-planar-reflection";
+export { waterPlanarReflectionDiagnostics, waterPlanarReflectionForCamera, type WaterPlanarReflection, type WaterPlanarReflectionDiagnostics } from "./water-planar-reflection";
 export * from "./canvas-drawing-buffer";
 export * from "./draw-calls";
 export * from "./create-null-engine";
@@ -110,17 +110,10 @@ export { renderPathSession, requestRenderPath, subscribeRenderPathSession } from
 export * from "./shared-outline";
 export * from "./shared-outline-task";
 export { createWaterMesh, setSceneWaterTime, setWaterGpuWaves, updateSceneWater, updateWaterMeshBody, waterMeshBody } from "./water-mesh";
-export {
-  WATER_FFT_IDLE_RUNS, WATER_FFT_MAX_SIMULATIONS, WATER_FFT_RECYCLE_RUNS, requestWaterFft, updateSceneWaterFft, waterFftDiagnostics,
-  waterFftForSurface, type WaterFftDiagnostics, type WaterFftResult,
-} from "./water-fft";
-export {
-  WATER_FFT_BUILD_TEXELS, WATER_FFT_CASCADE_RATIO, WATER_FFT_MIN_SPREAD, WATER_FFT_PERIOD, waterFftBandVariance, waterFftButterfly,
-  waterFftCascadeRatio, waterFftCycle, waterFftEvolve, waterFftInitialSpectrum, waterFftInverse, waterFftLayout, waterFftSpectrumBuild, waterFftStages,
-  waterFftSynthesize, type WaterFftLayout, type WaterFftSpectrumBuild,
-} from "./water-fft-spectrum";
+export { waterFftDiagnostics, waterFftForSurface, type WaterFftDiagnostics, type WaterFftResult } from "./water-fft";
+export { waterFftCycle, waterFftInitialSpectrum, waterFftLayout, waterFftSynthesize, type WaterFftLayout } from "./water-fft-spectrum";
 export { createWaterRemovalMesh, sceneWaterRemovals, waterRemovalOutline } from "./water-removal-mesh";
-export { isMainWaterPass, WATER_SCENE_COPY_SKY_DEPTH, WATER_SCENE_COPY_SKY_THRESHOLD, waterSceneCopyForPass, waterSceneCopyScale, type WaterSceneCopy } from "./water-scene-copy";
+export { waterSceneCopyForPass, type WaterSceneCopy } from "./water-scene-copy";
 export { WaterField, distanceTransform } from "./water-field";
 export { WaterContactField, isWaterContactMesh } from "./water-contact-field";
 export { createWaterHandles, dragWaterHandle, insertRiverPoint, removeRiverPoint, waterHandles, waterOutline, type WaterHandle, type WaterHandleTarget, type WaterShapeEdit } from "./water-handles";
