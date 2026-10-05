@@ -17,6 +17,11 @@
   background: oklch(0 0 0 / 0.14);
 }
 
+.catalog-menu-modal .catalog-menu-category {
+  background: color-mix(in oklch, var(--popover-foreground) 8%, var(--popover));
+  font-weight: 600;
+}
+
 .catalog-menu-row:hover,
 .catalog-menu-row[data-active="true"] {
   background: var(--accent);

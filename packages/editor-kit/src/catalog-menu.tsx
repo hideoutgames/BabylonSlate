@@ -213,6 +213,20 @@ export function CatalogMenu<T extends CatalogMenuItem>({
     return result;
   }, [collapsed, filtered, flat, formatCategory, sidebar, sidebarCategory]);
 
+  const stripedRows = useMemo(() => {
+    const striped = new Set<number>();
+    let itemIndex = 0;
+    rows.forEach((row, index) => {
+      if (row.kind === "category") {
+        itemIndex = 0;
+        return;
+      }
+      if (itemIndex % 2 === 1) striped.add(index);
+      itemIndex += 1;
+    });
+    return striped;
+  }, [rows]);
+
   const activeIndex = rows.findIndex((row) => row.key === activeKey);
   const firstItemIndex = rows.findIndex((row) => row.kind === "item");
 
@@ -394,7 +408,7 @@ export function CatalogMenu<T extends CatalogMenuItem>({
                 {(index) => {
                   const row = rows[index]!;
                   const active = row.key === activeKey;
-                  const stripe = modal && index % 2 === 1 ? "true" : undefined;
+                  const stripe = modal && stripedRows.has(index) ? "true" : undefined;
                   if (row.kind === "category") {
                     return (
                       <div
@@ -405,7 +419,6 @@ export function CatalogMenu<T extends CatalogMenuItem>({
                         aria-level={1}
                         tabIndex={-1}
                         data-active={active ? "true" : undefined}
-                        data-stripe={stripe}
                         data-testid={`${testId}-category-${row.category}`}
                         className="catalog-menu-row catalog-menu-category"
                         onClick={() => {
