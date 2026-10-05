@@ -371,10 +371,13 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
     [applySceneChange, documentId],
   );
 
-  const selectedRowIds = [
-    ...selectedFolderIds.map((id) => folderRowId(id)),
-    ...selectedActorIds.map((id) => actorRowId(id)),
-  ];
+  const selectedRowIds = useMemo(
+    () => [
+      ...selectedFolderIds.map((id) => folderRowId(id)),
+      ...selectedActorIds.map((id) => actorRowId(id)),
+    ],
+    [selectedActorIds, selectedFolderIds],
+  );
   const selectedRowId = selectedRowIds[0] ?? null;
 
   const setSelectedRowId = useCallback(
@@ -703,7 +706,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
     [scene, viewportDropApi],
   );
 
-  const actorMenuItems = (actorId: string): NestedMenuItem[] => {
+  const actorMenuItems = useCallback((actorId: string): NestedMenuItem[] => {
     const actor = actorById.get(actorId);
     const classAsset = actor ? classAssetById.get(actor.classId) : undefined;
     const items: NestedMenuItem[] = [];
@@ -774,7 +777,19 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
       },
     );
     return items;
-  };
+  }, [
+    actorById,
+    classAssetById,
+    frameActor,
+    keybinds,
+    mutate,
+    openDocument,
+    removeActors,
+    scene,
+    selectActor,
+    selectedActorIdSet,
+    selectedActorIds,
+  ]);
 
   const folderMenuItems = useCallback(
     (folderId: string): NestedMenuItem[] => [
@@ -857,6 +872,131 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
     ? scene?.folders.find((folder) => folder.id === renameFolderId)
     : undefined;
 
+  // Other documents' edits re-render this panel through the document
+  // context; an unchanged scene, selection and registry reuse every row.
+  const tree = useMemo(
+    () => (
+      <TreeView
+        rowHeight={phone ? 44 : undefined}
+        nodes={nodes.map((node) => {
+          const target = outlinerRowTarget(node.id);
+          if (target?.kind === "folder") {
+            return {
+              ...node,
+              trailing: (
+                <NestedMenu
+                  items={folderMenuItems(target.id)}
+                  trigger={
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size={actionSize}
+                      aria-label={`Folder menu for ${node.label}`}
+                      data-testid={`outliner-menu-${node.id}`}
+                    >
+                      <MoreHorizontalIcon />
+                    </Button>
+                  }
+                />
+              ),
+            };
+          }
+          const actorId = target?.id ?? node.id;
+          return {
+            ...node,
+            trailing: (
+              <>
+                <IconActionButton
+                  label={`Toggle visibility of ${node.label}`}
+                  size={actionSize}
+                  variant="ghost"
+                  onClick={() => toggleFlag(actorId, "visible")}
+                  data-testid={`outliner-visibility-${actorId}`}
+                  aria-pressed={!node.muted}
+                  className={node.muted ? undefined : QUIET_ROW_ACTION}
+                >
+                  {node.muted ? <EyeOffIcon /> : <EyeIcon />}
+                </IconActionButton>
+                <Toggle
+                  aria-label={`${lockedIds.has(actorId) ? "Unlock" : "Lock"} ${node.label}`}
+                  title={`${lockedIds.has(actorId) ? "Unlock" : "Lock"} ${node.label}`}
+                  size={phone ? "touch" : "sm"}
+                  variant={lockedIds.has(actorId) ? "outline" : "default"}
+                  onPressedChange={() => toggleFlag(actorId, "locked")}
+                  data-testid={`outliner-lock-${actorId}`}
+                  pressed={lockedIds.has(actorId)}
+                  className="px-0"
+                >
+                  {lockedIds.has(actorId) ? <LockIcon /> : <UnlockIcon />}
+                </Toggle>
+                <NestedMenu
+                  items={actorMenuItems(actorId)}
+                  trigger={
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size={actionSize}
+                      aria-label={`Actor menu for ${node.label}`}
+                      className={QUIET_ROW_ACTION}
+                      data-testid={`outliner-menu-${actorId}`}
+                    >
+                      <MoreHorizontalIcon />
+                    </Button>
+                  }
+                />
+              </>
+            ),
+          };
+        })}
+        selectedId={selectedRowId}
+        selectedIds={selectedRowIds}
+        onSelect={setSelectedRowId}
+        onActivate={(id) => {
+          const target = outlinerRowTarget(id);
+          if (target?.kind === "actor") frameActor(target.id);
+        }}
+        onToggleExpanded={(id) =>
+          setCollapsed((current) => {
+            const next = new Set(current);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+          })
+        }
+        onReparent={reparentRow}
+        onExternalDrop={dropActorRow}
+        onExternalDragMove={moveActorDropHint}
+        onExternalDragEnd={() => setDropHint(null)}
+        emptyLabel={
+          scene
+            ? search.trim()
+              ? "No Matching Actors"
+              : "No Actors Yet"
+            : "Open A Scene"
+        }
+        data-testid="outliner-tree"
+      />
+    ),
+    [
+      actionSize,
+      actorMenuItems,
+      dropActorRow,
+      folderMenuItems,
+      frameActor,
+      lockedIds,
+      moveActorDropHint,
+      nodes,
+      phone,
+      reparentRow,
+      scene,
+      search,
+      selectedRowId,
+      selectedRowIds,
+      setSelectedRowId,
+      toggleFlag,
+    ],
+  );
+
   return (
     <PanelFrame data-testid="scene-outliner-panel">
       <div ref={outlinerRef} className="flex h-full min-h-0 flex-col">
@@ -895,106 +1035,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
           </IconActionButton>
         </div>
         <div className="min-h-0 flex-1">
-          <TreeView
-            rowHeight={phone ? 44 : undefined}
-            nodes={nodes.map((node) => {
-              const target = outlinerRowTarget(node.id);
-              if (target?.kind === "folder") {
-                return {
-                  ...node,
-                  trailing: (
-                    <NestedMenu
-                      items={folderMenuItems(target.id)}
-                      trigger={
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size={actionSize}
-                          aria-label={`Folder menu for ${node.label}`}
-                          data-testid={`outliner-menu-${node.id}`}
-                        >
-                          <MoreHorizontalIcon />
-                        </Button>
-                      }
-                    />
-                  ),
-                };
-              }
-              const actorId = target?.id ?? node.id;
-              return {
-                ...node,
-                trailing: (
-                  <>
-                    <IconActionButton
-                      label={`Toggle visibility of ${node.label}`}
-                      size={actionSize}
-                      variant="ghost"
-                      onClick={() => toggleFlag(actorId, "visible")}
-                      data-testid={`outliner-visibility-${actorId}`}
-                      aria-pressed={!node.muted}
-                      className={node.muted ? undefined : QUIET_ROW_ACTION}
-                    >
-                      {node.muted ? <EyeOffIcon /> : <EyeIcon />}
-                    </IconActionButton>
-                    <Toggle
-                      aria-label={`${lockedIds.has(actorId) ? "Unlock" : "Lock"} ${node.label}`}
-                      title={`${lockedIds.has(actorId) ? "Unlock" : "Lock"} ${node.label}`}
-                      size={phone ? "touch" : "sm"}
-                      variant={lockedIds.has(actorId) ? "outline" : "default"}
-                      onPressedChange={() => toggleFlag(actorId, "locked")}
-                      data-testid={`outliner-lock-${actorId}`}
-                      pressed={lockedIds.has(actorId)}
-                      className="px-0"
-                    >
-                      {lockedIds.has(actorId) ? <LockIcon /> : <UnlockIcon />}
-                    </Toggle>
-                    <NestedMenu
-                      items={actorMenuItems(actorId)}
-                      trigger={
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size={actionSize}
-                          aria-label={`Actor menu for ${node.label}`}
-                          className={QUIET_ROW_ACTION}
-                          data-testid={`outliner-menu-${actorId}`}
-                        >
-                          <MoreHorizontalIcon />
-                        </Button>
-                      }
-                    />
-                  </>
-                ),
-              };
-            })}
-            selectedId={selectedRowId}
-            selectedIds={selectedRowIds}
-            onSelect={setSelectedRowId}
-            onActivate={(id) => {
-              const target = outlinerRowTarget(id);
-              if (target?.kind === "actor") frameActor(target.id);
-            }}
-            onToggleExpanded={(id) =>
-              setCollapsed((current) => {
-                const next = new Set(current);
-                if (next.has(id)) next.delete(id);
-                else next.add(id);
-                return next;
-              })
-            }
-            onReparent={reparentRow}
-            onExternalDrop={dropActorRow}
-            onExternalDragMove={moveActorDropHint}
-            onExternalDragEnd={() => setDropHint(null)}
-            emptyLabel={
-              scene
-                ? search.trim()
-                  ? "No Matching Actors"
-                  : "No Actors Yet"
-                : "Open A Scene"
-            }
-            data-testid="outliner-tree"
-          />
+          {tree}
         </div>
       </div>
       <PlaceActorsDialog
