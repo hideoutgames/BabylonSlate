@@ -141,6 +141,8 @@ import { mapStackToAnchor, type AnchorEntry } from "./stack-map";
 import { parseJoystick2DProperties } from "@babylonslate/core";
 import { Painter2DRuntime } from "./painter2d-runtime";
 import { Text2DAppearRuntime } from "./text2d-appear-runtime";
+import { TweenRuntime } from "./tween-runtime";
+import { parseOverlayVisualStyle, supportsOverlayVisualStyle } from "@babylonslate/core";
 import {
   animGraphScriptClassId,
   animRuleScriptClassId,
@@ -508,6 +510,8 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly anchors = new Map<string, readonly AnchorEntry[]>();
   private readonly painters = new Painter2DRuntime();
   private readonly textAppear = new Text2DAppearRuntime();
+  private readonly tweens = new TweenRuntime((owner) => !this.stopped && !this.paused && this.streamBlockingCount === 0 &&
+    (!owner || this.canRunOwnerActions(owner)));
   private readonly onCommand?: (command: CommandMessage) => void;
   private readonly maxCatchUp = 4;
   private readonly dt: number;
@@ -1083,6 +1087,7 @@ class InProcessRuntime implements RuntimeDriver {
         this.emitAudioStops(actor);
         this.emitParticleStops(actor);
         this.world.destroyActor(actor.guid);
+        this.tweens.cancelInvalid();
       },
       addComponent: (actor, classId, transform) => {
         const target = actor;
@@ -1179,6 +1184,8 @@ class InProcessRuntime implements RuntimeDriver {
         this.setWorldGravity(gravity);
       },
       executeConsoleCommand: (command) => this.executeConsoleCommand(command),
+      tween: (request) => this.tweens.start(request),
+      isTweenSessionActive: () => !this.stopped,
       delay: (seconds, owner) =>
         new Promise<void>((resolve) => {
           this.delayWaiters.push({
@@ -1295,11 +1302,23 @@ class InProcessRuntime implements RuntimeDriver {
       refreshComponent: (component, propertyName) => {
         const owner = component.owner;
         if (!owner || owner.destroyed) return;
+        if ((propertyName === "opacity" || propertyName === "tint") && supportsOverlayVisualStyle(component.classId)) {
+          const slotId = this.slotByGuid.get(owner.guid);
+          if (slotId !== undefined) this.emit({ type: "setOverlayVisualStyle", slotId, componentId: component.guid,
+            style: parseOverlayVisualStyle(Object.fromEntries(component.variables)) });
+          return;
+        }
         if (component.classId === "2DRichTextComponent") this.textAppear.refresh(component);
         if (owner.sceneLayerId && component.classId === "2DAnchorComponent") {
           for (const _ of this.applyOverlayAnchors(this.world.getActors())) void _;
         }
         if (owner.sceneLayerId) this.applyOverlayLayouts();
+        if (owner.sceneLayerId && component.classId === "2DScrollBoxComponent" &&
+          (propertyName === "scroll.offset" || propertyName === "scrollX" || propertyName === "scrollY")) {
+          const scroll = this.overlayLayout.entries(owner.sceneLayerId).get(overlayLayoutKey(owner.guid, component.guid))?.scroll;
+          if (scroll) { component.setVariable("scrollX", scroll.x); component.setVariable("scrollY", scroll.y); }
+        }
+        if (owner.sceneLayerId && (isOverlayLayoutClass(component.classId) || component.classId === "2DAnchorComponent")) return;
         // Steering/tuning is consumed by the next motor tick; only dimensions
         // need immediate collider/query refresh after a property write.
         if (component.classId === "MovementComponent" && propertyName && propertyName !== "radius" && propertyName !== "height") return;
@@ -1321,6 +1340,7 @@ class InProcessRuntime implements RuntimeDriver {
           if (component.classId === "RenderTargetCaptureComponent") this.emitRenderTargetCapture(owner, slotId);
           else if (component.classId === "OutlineComponent") this.emitActorOutlines(owner, slotId);
           else if (component.classId === "FogVolumeComponent") this.emitActorFogVolumes(owner, slotId);
+          else if (propertyName === "transform") this.emitComponentTransforms(owner, slotId);
           else if (component.classId !== "PhysicsConstraintComponent" && component.classId !== "RagdollComponent" && component.classId !== "MovementComponent") this.emitMeshAssignment(owner, slotId);
         }
         if (component.classId === "ParticleComponent") {
@@ -1689,6 +1709,7 @@ class InProcessRuntime implements RuntimeDriver {
     for (const actor of stream.actors) this.removeSceneStreamActor(stream, actor);
     this.world.flushPending();
     stream.scene.destroyed = true;
+    this.tweens.cancelInvalid();
     stream.scene.callOnDestroyed();
     this.pendingOwnerActions.delete(stream.scene);
     // Paired with Streamed Scene Loaded; a stream that never became ready is silent.
@@ -2058,6 +2079,7 @@ class InProcessRuntime implements RuntimeDriver {
     if (this.world.findSceneLayer(layer.guid) !== layer) return;
     this.emit({ type: "sceneLayerRemove", layerId: layer.guid });
     if (this.world.findSceneLayer(layer.guid) === layer) this.world.destroySceneLayer(layer.guid);
+    this.tweens.cancelInvalid();
   }
 
   clearSceneLayers(): void {
@@ -2697,6 +2719,7 @@ class InProcessRuntime implements RuntimeDriver {
         this.anchoredOverlayActors.delete(actor.guid);
       }
       this.world.destroyActorInstance(actor);
+      this.tweens.cancelInvalid();
       this.removingActors.delete(actor);
     }
   }
@@ -4595,6 +4618,18 @@ class InProcessRuntime implements RuntimeDriver {
     if (component) this.captureSlots.add(slotId); else this.captureSlots.delete(slotId);
   }
 
+  private emitComponentTransforms(actor: Actor, slotId: number): void {
+    const renderables = playRenderablesOf(actor.components,
+      overlayButtonHasSiblingVisual(actor) || overlayButtonHasParentVisual(actor, this.world));
+    const ids = new Set(renderables.map(component => component.guid));
+    const components = new Map(actor.components.map(component => [component.guid, component]));
+    this.emit({ type: "setComponentTransforms", slotId, parts: renderables.map(component => ({
+      componentId: component.guid, parentId: nearestVisualParentId(component, components, ids),
+      transform: { position: { ...component.transform.position }, rotation: { ...component.transform.rotation }, scale: { ...component.transform.scale } },
+      parentTransforms: dynamicMeshParentTransforms(component, components, ids),
+    })) });
+  }
+
   private emitMeshAssignment(actor: Actor, slotId: number): void {
     if (this.world.classRegistry.isA(actor.classId, "SceneStreamingActor")) return;
     this.emitRenderTargetCapture(actor, slotId);
@@ -4664,6 +4699,7 @@ class InProcessRuntime implements RuntimeDriver {
                 renderableIds,
               ),
             ),
+            ...(supportsOverlayVisualStyle(component.classId) ? { overlayStyle: parseOverlayVisualStyle(Object.fromEntries(component.variables)) } : {}),
             ...(component.classId === "CableComponent" ? { cable: this.cables.assign(component) } : {}),
             ...(component.classId === "2DJoystickComponent" ? { joystick: parseJoystick2DProperties(Object.fromEntries(component.variables)) } : {}),
             ...(component.classId === "2DPainterComponent" ? { painter: this.painters.payload(component) } : {}),
@@ -4694,9 +4730,10 @@ class InProcessRuntime implements RuntimeDriver {
         meshAssetGuid: typeof assetGuid === "string" ? assetGuid : null,
         meshKind,
         actorGuid: actor.guid,
-        ...(!parts && (primary.classId === "MeshComponent" || primary.classId === "2DRichTextComponent")
+        ...(!parts
           ? { primaryComponentId: primary.guid }
           : {}),
+        ...(supportsOverlayVisualStyle(primary.classId) ? { overlayStyle: parseOverlayVisualStyle(Object.fromEntries(primary.variables)) } : {}),
         ...(meshKind === "sprite" || meshKind === "tilemap"
           ? playSortingOf(primary)
           : {}),
@@ -5516,6 +5553,7 @@ class InProcessRuntime implements RuntimeDriver {
   stop(): void {
     if (this.stopped) return;
     this.stopped = true;
+    this.tweens.stop();
     this.focusNavigation.clearFocus();
     this.overlayLayout.clear();
     this.lifecycleId++;
@@ -5634,6 +5672,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.phaseMark = nowMs();
 
     this.loopGuard.reset();
+    this.tweens.advance(simDt);
     this.textAppear.advance(this.world.getActors(), simDt, (actor) => this.canTickActor(actor));
     this.painters.beginFrame(this.world.getActors(), (actor) => this.canTickActor(actor));
     try {
@@ -5651,6 +5690,7 @@ class InProcessRuntime implements RuntimeDriver {
       if (!isInfiniteLoopError(error)) throw error;
     }
     if (this.stopped) return;
+    this.tweens.cancelInvalid();
     this.advanceDelays();
     if (this.canTickScene() || this.hasReadyLayers()) this.tickAnimGraphs();
     if (this.canTickScene() || this.hasReadyLayers()) {

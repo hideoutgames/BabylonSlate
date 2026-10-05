@@ -242,6 +242,7 @@ export class MaterialLibrary {
       scene,
       name: unlit ? `material:${programGuid}:unlit` : `material:${programGuid}`,
       particlePreview: this.options.particlePreview,
+      overlay: unlit,
       logicalSceneBuffers: options?.logicalSceneBuffers,
       resolveTexture: this.options.acquireTexture ? textures.resolve : this.options.resolveTexture,
       onTextureError: this.options.onTextureError,

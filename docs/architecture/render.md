@@ -1651,7 +1651,9 @@ origin (local `[0, 0, -armLength]`).
   independent), clamps location to `maxLocationLagDistance` when positive, and
   slerps rotation. The socket and children follow through parenting. State is
   keyed `slotId|componentId`, survives script-driven rebuilds, and is cleared on
-  slot retirement.
+  slot retirement. Component transform updates replace the authored lag target
+  without resetting this state, so component Tweens and later actor snapshots
+  keep the same smoothing behavior.
 - **Draw Debug Lag**: a world-space, unpickable line system per arm: target arm
   (yellow), lagged arm (green), pivot/socket lag offsets (red), socket crosses,
   and 48-sample socket trails for both.

@@ -5,6 +5,8 @@ export const PLAY_ENGINE_COMMAND_TYPES = [
   "assignMesh",
   "setPainter2D",
   "setText2DAppear",
+  "setOverlayVisualStyle",
+  "setComponentTransforms",
   "dynamicMeshUpdate",
   "setAreaLights",
   "setActorOutlines",

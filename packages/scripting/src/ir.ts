@@ -12,6 +12,8 @@ export type GraphPin = {
   optional?: boolean;
   /** Catalog fallback when the pin is unconnected and has no stored default. */
   defaultValue?: unknown;
+  /** Required storage input, or a variable output that can supply that storage. */
+  reference?: "required" | "writable";
 };
 
 export type GraphNode = {

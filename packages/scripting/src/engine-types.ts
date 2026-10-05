@@ -1,4 +1,6 @@
 import { SCALABILITY_ENUMS, SCALABILITY_STRUCTS } from "./scalability-types";
+import { ENGINE_EASING_CURVE_ENUM_ID, EASING_CURVES, ENGINE_TWEEN_SPACE_ENUM_ID, TWEEN_SPACES } from "@babylonslate/core";
+export { ENGINE_EASING_CURVE_ENUM_ID, ENGINE_TWEEN_SPACE_ENUM_ID } from "@babylonslate/core";
 import { INPUT_KEYS, SCENE_STREAMING_STATES, ENGINE_RENDER_TARGET_MODE_ENUM_ID, RENDER_TARGET_MODES } from "@babylonslate/core";
 import { ENGINE_TEXT2D_APPEAR_MODE_ENUM_ID, ENGINE_TEXT2D_APPEAR_TRANSITION_ENUM_ID, ENGINE_TEXT2D_APPEAR_START_ENUM_ID,
   TEXT2D_APPEAR_MODES, TEXT2D_APPEAR_TRANSITIONS, TEXT2D_APPEAR_STARTS } from "@babylonslate/core";
@@ -39,6 +41,8 @@ export type EngineStruct = {
 /** Built-in engine enums (`engine:CollisionChannel`, …). */
 export const ENGINE_ENUMS: readonly EngineEnum[] = [
   ...SCALABILITY_ENUMS,
+  { id: ENGINE_EASING_CURVE_ENUM_ID, name: "Easing Curve", members: EASING_CURVES.map((name, value) => ({ name, value })) },
+  { id: ENGINE_TWEEN_SPACE_ENUM_ID, name: "Tween Space", members: TWEEN_SPACES.map((name, value) => ({ name, value })) },
   {
     id: ENGINE_TEXT2D_APPEAR_MODE_ENUM_ID,
     name: "Text 2D Appear Mode",

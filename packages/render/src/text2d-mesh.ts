@@ -39,6 +39,7 @@ import {
 } from "./text2d-bitmap";
 import { VisualBundle } from "./visual-bundle";
 import { bindTextMaterialGlyph } from "./text-material-block";
+import { applyOverlayVisualStyle, overlayVisualStyle } from "./overlay-visual-style";
 import {
   combineText2DEffects,
   layoutText2DFromProperties,
@@ -279,6 +280,7 @@ uniform fillColor: vec3f;
 uniform strokeColor: vec3f;
 uniform strokeWidth: f32;
 uniform glyphOpacity: f32;
+uniform overlayTint: vec4f;
 fn median(r: f32, g: f32, b: f32) -> f32 {
   return max(min(r, g), min(max(r, g), b));
 }
@@ -292,7 +294,7 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
   let color = mix(uniforms.strokeColor, uniforms.fillColor, fill);
   let alpha = max(fill, outline) * uniforms.glyphOpacity;
   if (alpha < 0.01) { discard; }
-  fragmentOutputs.color = vec4f(color, alpha);
+  fragmentOutputs.color = vec4f(color, alpha) * uniforms.overlayTint;
 }
 `;
   Effect.ShadersStore[`${MSDF_SHADER}VertexShader`] = `
@@ -312,6 +314,7 @@ uniform vec3 fillColor;
 uniform vec3 strokeColor;
 uniform float strokeWidth;
 uniform float glyphOpacity;
+uniform vec4 overlayTint;
 float median(float r, float g, float b) {
   return max(min(r, g), min(max(r, g), b));
 }
@@ -326,7 +329,7 @@ void main() {
   vec3 color = mix(strokeColor, fillColor, fill);
   float alpha = max(fill, outline) * glyphOpacity;
   if (alpha < 0.01) discard;
-  gl_FragColor = vec4(color, alpha);
+  gl_FragColor = vec4(color, alpha) * overlayTint;
 }
 `;
 }
@@ -369,7 +372,7 @@ function msdfGlyphMaterial(
       {
         shaderLanguage: scene.getEngine().isWebGPU ? ShaderLanguage.WGSL : ShaderLanguage.GLSL,
         attributes: ["position", "uv"],
-        uniforms: ["worldViewProjection", "fillColor", "strokeColor", "strokeWidth", "glyphOpacity"],
+        uniforms: ["worldViewProjection", "fillColor", "strokeColor", "strokeWidth", "glyphOpacity", "overlayTint"],
         samplers: ["atlas"],
         needAlphaBlending: true,
       },
@@ -385,6 +388,8 @@ function msdfGlyphMaterial(
     material.setFloat("glyphOpacity", 1);
     material.onBindObservable.add((mesh) => {
       material.getEffect()?.setFloat("glyphOpacity", mesh?.visibility ?? 1);
+      const { opacity, tint } = overlayVisualStyle(mesh);
+      material.getEffect()?.setFloat4("overlayTint", tint[0], tint[1], tint[2], tint[3] * opacity);
     });
     material.metadata = { ...(material.metadata ?? {}), msdf: true };
     return material;
@@ -714,6 +719,7 @@ export function createText2DMesh(
       const count = layout.items.reduce((total, item) => Math.max(total, item.index + 1), 0);
       attachEffects(scene, parent, glyphMeshes, bundle, parsed, count, ppu, options.isPaused ?? (() => assets?.paused === true));
     }
+    applyOverlayVisualStyle(parent, properties);
     return parent;
   } catch (error) {
     bundle.dispose();

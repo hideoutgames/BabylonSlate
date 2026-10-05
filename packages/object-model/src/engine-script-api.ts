@@ -89,6 +89,8 @@ const TEXT_VARIABLES: readonly EngineScriptVariable[] = [
 
 const TEXT2D_VARIABLES: readonly EngineScriptVariable[] = [
   ...TEXT_VARIABLES,
+  { name: "Opacity", typeId: "float", propertyKey: "opacity" },
+  { name: "Tint", typeId: "color", propertyKey: "tint" },
   { name: "Text Material", typeId: "asset", typeClassId: "Material", propertyKey: "materialGuid" },
   { name: "Material UV", typeId: "string", propertyKey: "materialUv" },
   HIT_TEST,
@@ -298,6 +300,8 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
   {
     classId: "2DPainterComponent",
     variables: [
+      { name: "Opacity", typeId: "float", propertyKey: "opacity" },
+      { name: "Tint", typeId: "color", propertyKey: "tint" },
       { name: "Width", typeId: "float", propertyKey: "width" },
       { name: "Height", typeId: "float", propertyKey: "height" },
       { name: "Pixels Per Unit", typeId: "float", propertyKey: "pixelsPerUnit" },
@@ -859,6 +863,8 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
   {
     classId: "2DJoystickComponent",
     variables: [
+      { name: "Opacity", typeId: "float", propertyKey: "opacity" },
+      { name: "Tint", typeId: "color", propertyKey: "tint" },
       { name: "Enabled", typeId: "bool", propertyKey: "enabled" },
       { name: "Background Material", typeId: "asset", typeClassId: "Material", propertyKey: "backgroundMaterialGuid" },
       { name: "Joystick Material", typeId: "asset", typeClassId: "Material", propertyKey: "joystickMaterialGuid" },
@@ -892,6 +898,8 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
   {
     classId: "2DTextureComponent",
     variables: [
+      { name: "Opacity", typeId: "float", propertyKey: "opacity" },
+      { name: "Tint", typeId: "color", propertyKey: "tint" },
       {
         name: "Texture",
         typeId: "asset",
@@ -904,6 +912,8 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
   {
     classId: "2DMaterialComponent",
     variables: [
+      { name: "Opacity", typeId: "float", propertyKey: "opacity" },
+      { name: "Tint", typeId: "color", propertyKey: "tint" },
       {
         name: "Material",
         typeId: "asset",
@@ -916,6 +926,8 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
   {
     classId: "2DPanelComponent",
     variables: [
+      { name: "Opacity", typeId: "float", propertyKey: "opacity" },
+      { name: "Tint", typeId: "color", propertyKey: "tint" },
       { name: "Source", typeId: "string", propertyKey: "source" },
       {
         name: "Texture",
