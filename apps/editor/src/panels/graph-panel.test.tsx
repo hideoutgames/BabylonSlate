@@ -131,8 +131,10 @@ describe("Graph panel", () => {
     // Unsaved: only the Helper tab is dirty.
     expect(seen.documents!.dirtyDocuments.map((doc) => doc.id)).toEqual([helperId]);
 
-    // The Main graph has stayed mounted since before the edit.
+    // The Main graph has stayed mounted since before the edit. Calls on
+    // another class need a Target, so Context Sensitive hides them.
     fireEvent.click(screen.getByTestId("graph-add-node"));
+    fireEvent.click(screen.getByTestId("node-palette-context-sensitive"));
     fireEvent.change(screen.getByTestId("node-palette-search"), {
       target: { value: "Launch" },
     });
