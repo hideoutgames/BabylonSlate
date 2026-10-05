@@ -267,6 +267,8 @@ actors and render resources. Each spawned item receives `itemIndex` and
 the range are destroyed; store persistent item state outside those instances.
 Authored children can also be arranged and culled by the same layout. Wheel,
 touch scrolling and Scroll X/Y use the existing Scroll Box path.
+Resource bounds allow up to 2,048 live items per container and 8,192 per layer;
+recursive item classes are rejected, with at most 16 nested virtual containers.
 
 Masks share layout clipping with Scroll Box: nested clips intersect and apply to
 rendering and picking. Safe-area host insets arrive in CSS pixels and are mapped

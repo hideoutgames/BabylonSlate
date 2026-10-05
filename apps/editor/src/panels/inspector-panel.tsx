@@ -27,6 +27,7 @@ import {
   assetRowIdentity,
   classRowIdentity,
   formatEventMemberName,
+  humanizePropertyLabel,
   resolveTypeVisual,
   selectedPickerIdentity,
   walkAncestry,

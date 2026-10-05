@@ -1,5 +1,5 @@
 import { parseUIControl2DProperties, type SerializedComponent } from "@babylonslate/core";
-import { humanizePropertyLabel, type PropertyRow } from "@babylonslate/editor-kit";
+import { colorFromHex, colorToHex, humanizePropertyLabel, type PropertyRow } from "@babylonslate/editor-kit";
 import type { ComponentPropertyContext } from "./component-property-rows";
 import { focusPropertyRows } from "./focus-property-rows";
 
@@ -28,7 +28,7 @@ export function uiControlPropertyRows(actorId: string, component: SerializedComp
   if (numeric) rows.push(bool("readOnly"));
   if (kind === "2DDropdownComponent") rows.push(number("selectedIndex", -1, p.options.length - 1));
   if (kind === "2DTextInputComponent" || numeric || kind === "2DDropdownComponent") {
-    rows.push(number("fontSize", 0.01), { kind: "color", id: id("textColor"), label: "Text Color", value: p.textColor, onChange: value => update("textColor", value) });
+    rows.push(number("fontSize", 0.01), { kind: "color", id: id("textColor"), label: "Text Color", value: colorFromHex(p.textColor), onChange: value => update("textColor", colorToHex(value)) });
   }
   rows.push(number("opacity", 0, 1), { kind: "color4", id: id("tint"), label: "Tint", value: p.tint, onChange: value => update("tint", value) });
   const parts = ["background", ...(slider || progress || kind === "2DToggleComponent" ? ["track", "fill"] : []), ...(slider || kind === "2DToggleComponent" ? ["thumb"] : []), ...(["2DCheckboxComponent", "2DRadioButtonComponent", "2DDropdownComponent"].includes(kind) ? ["indicator"] : [])];

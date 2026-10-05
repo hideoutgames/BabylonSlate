@@ -35,6 +35,7 @@ function isReferenceField(key: string): boolean {
     key === "Asset" ||
     key === "classId" ||
     key === "itemClassId" ||
+    key === "sceneLayerActors" ||
     key === "default:classId" ||
     key === "parentClass" ||
     key === "gameInstanceClass" ||
