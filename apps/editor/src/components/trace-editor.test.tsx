@@ -20,9 +20,7 @@ const traceDocument = vi.hoisted(() => ({
   content: null as unknown,
 }));
 
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => ({ openDocuments: [traceDocument] }),
-}));
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({ openDocuments: [traceDocument] })));
 
 const panelProps = {} as IDockviewPanelProps;
 

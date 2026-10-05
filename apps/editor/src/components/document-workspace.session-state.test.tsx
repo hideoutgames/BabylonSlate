@@ -21,21 +21,19 @@ const state = vi.hoisted(() => ({
   passthrough: ({ children }: { children: ReactNode }) => children,
 }));
 
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => {
-    const { tabOrder, activeDocumentId } = state.service.getState();
-    return {
-      tabOrder: [...tabOrder],
-      activeDocumentId,
-      openDocuments: state.service.getOpenDocumentsOrdered(),
-      projectDocument: { metadata: { name: "Test" } },
-      assetRegistry: null,
-      sourceControl: { enabled: false },
-      registerDockviewApi: () => {},
-      captureLayoutForId: () => {},
-      unregisterDockviewApi: () => {},
-    };
-  },
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => {
+  const { tabOrder, activeDocumentId } = state.service.getState();
+  return {
+    tabOrder: [...tabOrder],
+    activeDocumentId,
+    openDocuments: state.service.getOpenDocumentsOrdered(),
+    projectDocument: { metadata: { name: "Test" } },
+    assetRegistry: null,
+    sourceControl: { enabled: false },
+    registerDockviewApi: () => {},
+    captureLayoutForId: () => {},
+    unregisterDockviewApi: () => {},
+  };
 }));
 vi.mock("../lib/document-working-set", () => ({
   useDocumentWorkingSet: (tabIds: readonly string[]) =>

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   act,
@@ -18,6 +18,7 @@ import {
 } from "../shell/anim-document-layout";
 import { dockviewApiKey, type DockviewSurface } from "../shell/dockview-surface";
 import { captureAdaptiveDockviewLayout } from "../shell/phone-dock-layout";
+import type { DocumentsOverrides } from "../testing/document-context-mock";
 
 const SPRITE = "sprite:assets/Hero.sprite.babasset";
 const ANIM = "anim-graph:assets/Loco.anim.babasset";
@@ -37,9 +38,7 @@ const harness = vi.hoisted(() => ({
   passthrough: ({ children }: { children: ReactNode }) => children,
 }));
 
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => harness.docs,
-}));
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => harness.docs as DocumentsOverrides));
 // Editing sessions and panel bodies are outside the dock registration contract.
 vi.mock("../context/audio-reverb-bake-context", () => ({
   AudioReverbBakeProvider: harness.passthrough,
@@ -76,19 +75,22 @@ vi.mock("../shell/panel-registry", () => {
 
 /**
  * Stands in for DocumentProvider's dock registry and layout store with the
- * same callback identities: the registry callbacks are stable, while
- * captureLayoutForId changes identity when Animation Graph modes change
- * because an Animation Graph capture records its current mode.
+ * same callback identities: every callback is stable, and captureLayoutForId
+ * reads the Animation Graph modes when it runs because an Animation Graph
+ * capture records its current mode.
  */
 function Editor({ initialTabs }: { initialTabs: string[] }) {
   const [tabOrder, setTabs] = useState(initialTabs);
   const [activeDocumentId, setActive] = useState(initialTabs[0]!);
-  const [animEditorModes, setAnimEditorModes] = useState<
-    Record<string, AnimEditorMode>
-  >({});
+  const animEditorModesRef = useRef<Record<string, AnimEditorMode>>({});
+  const [animEditorModes, setAnimEditorModes] = useState(
+    animEditorModesRef.current,
+  );
   const setAnimEditorMode = useCallback(
-    (id: string, mode: AnimEditorMode) =>
-      setAnimEditorModes((current) => ({ ...current, [id]: mode })),
+    (id: string, mode: AnimEditorMode) => {
+      animEditorModesRef.current = { ...animEditorModesRef.current, [id]: mode };
+      setAnimEditorModes(animEditorModesRef.current);
+    },
     [],
   );
   const registerDockviewApi = useCallback(
@@ -118,13 +120,13 @@ function Editor({ initialTabs }: { initialTabs: string[] }) {
       harness.layouts.set(
         id,
         serializeAnimDocumentLayout({
-          animEditorMode: animEditorModes[id] ?? "stateMachine",
+          animEditorMode: animEditorModesRef.current[id] ?? "stateMachine",
           stateMachine: capture("stateMachine") ?? stored.stateMachine,
           animationObject: capture("animationObject") ?? stored.animationObject,
         }),
       );
     },
-    [animEditorModes],
+    [],
   );
   harness.control = { setTabs, setActive };
   harness.docs = {

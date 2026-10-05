@@ -10,6 +10,7 @@ import { prewarmMaterial } from "./material-compiler";
 import { applyAssignMaterial, applyAssignMesh, createSnapshotSceneBinding } from "./snapshot-apply";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { createDefaultScene } from "@babylonslate/core";
+import { applyOverlayVisualStyle } from "./overlay-visual-style";
 
 const disposers: Array<() => void> = [];
 afterEach(() => { while (disposers.length) disposers.pop()!(); });
@@ -44,6 +45,8 @@ describe("Text Materials", () => {
     const second = createText2DMesh(scene, "second", { ...appear, text: "B", color: [0, 1, 0], materialGuid: "letters" }, assets, { rich: true });
     updateText2DAppear(first, 0.25);
     updateText2DAppear(second, 0.75);
+    applyOverlayVisualStyle(first, { opacity: 0.5, tint: [1, 0.5, 0.25, 0.5] });
+    applyOverlayVisualStyle(second, { opacity: 0.8, tint: [0.25, 1, 0.5, 1] });
     const firstGlyph = first.getChildMeshes()[0] as Mesh;
     const secondGlyph = second.getChildMeshes()[0] as Mesh;
     const material = library.resolve(scene, "letters", document)!;
@@ -67,6 +70,7 @@ describe("Text Materials", () => {
     material.freeze();
     const samples: unknown[] = [];
     const opacity: number[] = [];
+    const tints: number[][] = [];
     const effects = new Set<Effect>();
     for (const glyph of [firstGlyph, secondGlyph, firstGlyph, secondGlyph]) {
       const effect = glyph.subMeshes[0]!.effect!;
@@ -82,10 +86,16 @@ describe("Text Materials", () => {
           if (name.startsWith("textGlyphOpacity")) opacity.push(value);
           return setFloat(name, value);
         });
+        const setFloat4 = effect.setFloat4.bind(effect);
+        vi.spyOn(effect, "setFloat4").mockImplementation((name, x, y, z, w) => {
+          if (name.startsWith("overlayVisualTint")) tints.push([x, y, z, w]);
+          return setFloat4(name, x, y, z, w);
+        });
       }
       material.bindForSubMesh(glyph.computeWorldMatrix(true), glyph, glyph.subMeshes[0]!);
       expect(samples.at(-1)).toBe(textMaterialGlyphBinding(glyph)!.atlas);
       expect(opacity.at(-1)).toBe(glyph === firstGlyph ? 0.25 : 0.75);
+      expect(tints.at(-1)).toEqual(glyph === firstGlyph ? [1, 0.5, 0.25, 0.25] : [0.25, 1, 0.5, 0.8]);
     }
     expect(textMaterialGlyphBinding(firstGlyph)!.atlas).not.toBe(textMaterialGlyphBinding(secondGlyph)!.atlas);
     first.dispose();

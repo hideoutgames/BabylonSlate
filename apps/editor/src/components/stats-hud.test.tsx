@@ -30,11 +30,15 @@ describe("StatsHud", () => {
   });
 
   it("stays quiet when the tick is inside budget", () => {
-    render(<StatsHud fps={60} scriptMs={3} physicsMs={2} />);
+    // Publish time is shown on its own and is not part of the tick budget.
+    render(<StatsHud fps={60} scriptMs={3} physicsMs={2} publishMs={4} />);
     expect(screen.queryByTestId("stats-hud-within-budget")).toBeNull();
     expect(screen.queryByTestId("stats-hud-over-budget")).toBeNull();
     expect(screen.getByTestId("play-physics-ms").getAttribute("data-ms")).toBe(
       "2",
+    );
+    expect(screen.getByTestId("play-publish-ms").textContent).toBe(
+      "publish 4.00 ms",
     );
     expect(screen.getByTestId("play-fps").getAttribute("data-fps")).toBe("60");
   });

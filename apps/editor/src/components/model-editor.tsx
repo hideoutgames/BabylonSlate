@@ -33,7 +33,7 @@ import {
   EmptyTitle,
 } from "@babylonslate/ui/components/empty";
 import { Button } from "@babylonslate/ui/components/button";
-import { useDocuments } from "../context/document-context";
+import { useDocumentActions, useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useModelColliderSession } from "../context/model-collider-session";
 import { ModelPreviewCanvas } from "./model-preview-canvas";
@@ -45,7 +45,7 @@ function asRecord(value: unknown): Record<string, unknown> {
 }
 
 function useModelSourceBytes(path: string | undefined): Uint8Array | null {
-  const { readAssetChunk } = useDocuments();
+  const { readAssetChunk } = useDocumentActions();
   const [sourceBytes, setSourceBytes] = useState<Uint8Array | null>(null);
   useEffect(() => {
     if (!path) {

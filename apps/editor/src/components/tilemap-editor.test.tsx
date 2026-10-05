@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import { DocumentEditStack, SetAssetDocumentCommand } from "@babylonslate/edit";
 import {
@@ -31,6 +31,7 @@ if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined")
 
 const GROUND_PATH = "assets/Ground.tileset.babasset";
 const PROPS_PATH = "assets/Props.tileset.babasset";
+const MAP_PATH = "assets/Level.tilemap.babasset";
 
 const twoTileTileset = () =>
   ensureTilesetTiles({
@@ -46,47 +47,40 @@ const loadAssetDocument = vi.hoisted(() => vi.fn());
 const readAssetChunk = vi.hoisted(() =>
   vi.fn(async () => new Uint8Array([137, 80, 78, 71])),
 );
-const documentApi = vi.hoisted(() => ({
-  assetRegistry: {
-    getByGuid(guid: string) {
-      return this.list().find((asset) => asset.header.guid === guid);
+const documentApi = vi.hoisted(() => {
+  type IndexedAssetFixture = {
+    header: { guid: string; name: string; type: string };
+    path: string;
+  };
+  const api = {
+    /** Registry entries keep their identity until a save or reindex replaces them. */
+    assets: [] as IndexedAssetFixture[],
+    assetRegistry: {
+      getByGuid: (guid: string): IndexedAssetFixture | undefined =>
+        api.assets.find((asset) => asset.header.guid === guid),
+      list: (): IndexedAssetFixture[] => api.assets,
     },
-    list: () => [
-      {
-        header: { guid: "ts-ground", name: "Ground", type: "Tileset" },
-        path: "assets/Ground.tileset.babasset",
+    openDocuments: [] as Array<{
+      id: string;
+      ref: { kind: string; path: string };
+      content: unknown;
+    }>,
+    projectDocument: {
+      settings: {
+        twoD: { sortingLayers: ["Background", "Default", "Foreground", "UI"] },
       },
-      {
-        header: { guid: "ts-props", name: "Props", type: "Tileset" },
-        path: "assets/Props.tileset.babasset",
-      },
-      {
-        header: { guid: "tex-1", name: "Atlas", type: "Texture" },
-        path: "assets/Atlas.texture.babasset",
-      },
-    ],
-  },
-  openDocuments: [] as Array<{
-    id: string;
-    ref: { kind: string; path: string };
-    content: unknown;
-  }>,
-  projectDocument: {
-    settings: {
-      twoD: { sortingLayers: ["Background", "Default", "Foreground", "UI"] },
     },
-  },
-}));
+  };
+  return api;
+});
 
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => ({
-    assetRegistry: documentApi.assetRegistry,
-    openDocuments: documentApi.openDocuments,
-    loadAssetDocument,
-    readAssetChunk,
-    projectDocument: documentApi.projectDocument,
-  }),
-}));
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
+  assetRegistry: documentApi.assetRegistry,
+  openDocuments: documentApi.openDocuments,
+  loadAssetDocument,
+  readAssetChunk,
+  projectDocument: documentApi.projectDocument,
+})));
 
 function mapWithGround(): TilemapPayload {
   return {
@@ -122,6 +116,11 @@ function TilemapHarness({
 }) {
   const [payload, setPayload] = useState(initial);
   const commit = (next: Record<string, unknown>, mergeKey?: string) => {
+    // DocumentContext publishes a new open-documents list with every edit.
+    documentApi.openDocuments = [
+      ...documentApi.openDocuments.filter((doc) => doc.id !== "map"),
+      { id: "map", ref: { kind: "tilemap", path: MAP_PATH }, content: next },
+    ];
     setPayload(next);
     onChange(next, mergeKey);
   };
@@ -141,7 +140,20 @@ afterEach(() => {
   readAssetChunk.mockClear();
 });
 
+/** A save or reindex replaces the asset's registry entry. */
+function reindexAsset(guid: string) {
+  documentApi.assets = documentApi.assets.map((asset) =>
+    asset.header.guid === guid ? { ...asset, header: { ...asset.header } } : asset,
+  );
+}
+
 beforeEach(() => {
+  // Each test opens a fresh project index, so no Tileset is loaded yet.
+  documentApi.assets = [
+    { header: { guid: "ts-ground", name: "Ground", type: "Tileset" }, path: GROUND_PATH },
+    { header: { guid: "ts-props", name: "Props", type: "Tileset" }, path: PROPS_PATH },
+    { header: { guid: "tex-1", name: "Atlas", type: "Texture" }, path: "assets/Atlas.texture.babasset" },
+  ];
   loadAssetDocument.mockImplementation(async (_kind: string, path: string) => {
     if (path === GROUND_PATH || path === PROPS_PATH) return twoTileTileset();
     return null;
@@ -384,8 +396,7 @@ describe("TilemapPaint", () => {
     if (state === "shrunk") {
       documentApi.openDocuments = [{ id: "ground", ref: { kind: "tileset", path: GROUND_PATH }, content: createDefaultTilesetPayload() }];
     } else {
-      loadAssetDocument.mockResolvedValue(null);
-      documentApi.openDocuments = [...documentApi.openDocuments];
+      documentApi.assets = documentApi.assets.filter((asset) => asset.header.guid !== "ts-ground");
     }
     view.rerender(<TilemapHarness initial={initial as unknown as Record<string, unknown>} onChange={onChange} />);
     await waitFor(() => expect(screen.queryByTestId("tilemap-palette-tile-2")).toBeNull());
@@ -716,6 +727,89 @@ describe("TilemapPaint", () => {
         32,
       );
     });
+  });
+});
+
+describe("Tilemap Tileset loading", () => {
+  function mapWithGroundAndProps(): Record<string, unknown> {
+    const map = mapWithGround();
+    map.tilesets.push({ guid: "ts-props", firstGid: 3, tileCount: 2 });
+    return map as unknown as Record<string, unknown>;
+  }
+
+  it("reads each closed Tileset once for Details, Paint and a Palette opened later", async () => {
+    const payload = mapWithGroundAndProps();
+    const panels = (withPalette: boolean) => (
+      <TilemapEditingProvider>
+        <TilemapDetails payload={payload} onChange={() => {}} />
+        <TilemapPaint payload={payload} onChange={() => {}} />
+        {withPalette ? <TilemapPalette payload={payload} /> : null}
+      </TilemapEditingProvider>
+    );
+    const view = render(panels(false));
+    await waitFor(() =>
+      expect(screen.getByTestId("tilemap-selected-label").textContent).toBe("Ground · Tile 1"),
+    );
+    view.rerender(panels(true));
+    // The new panel draws the document's loaded Tilesets at once.
+    expect(screen.getByTestId("tilemap-palette-tile-4")).toBeTruthy();
+    expect(loadAssetDocument.mock.calls).toEqual([
+      ["tileset", GROUND_PATH],
+      ["tileset", PROPS_PATH],
+    ]);
+  });
+
+  it("paints several cells without reading closed Tilesets again", async () => {
+    const onChange = vi.fn();
+    render(<TilemapHarness initial={mapWithGroundAndProps()} onChange={onChange} />);
+    await screen.findByTestId("tilemap-palette-tile-4");
+    fireEvent.click(screen.getByTestId("tilemap-tool-brush"));
+    const canvas = screen.getByTestId("tilemap-paint-canvas");
+    dispatchPointerEvent(canvas, "pointerdown", { pointerId: 1, clientX: 16, clientY: 240 });
+    for (const x of [1, 2, 3]) {
+      dispatchPointerEvent(canvas, "pointermove", { pointerId: 1, clientX: x * 32 + 16, clientY: 240 });
+    }
+    dispatchPointerEvent(canvas, "pointerup", { pointerId: 1, clientX: 112, clientY: 240 });
+    await act(async () => {});
+    const painted = normalizeTilemapPayload(onChange.mock.calls.at(-1)![0]);
+    expect([0, 1, 2, 3].map((x) => getTile(painted, "layer-1", x, 0))).toEqual([1, 1, 1, 1]);
+    expect(loadAssetDocument).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows every edit of an open Tileset without reading storage", async () => {
+    const openGround = (content: unknown) => {
+      documentApi.openDocuments = [{ id: "ground", ref: { kind: "tileset", path: GROUND_PATH }, content }];
+    };
+    const initial = mapWithGround() as unknown as Record<string, unknown>;
+    openGround(twoTileTileset());
+    const view = render(<TilemapHarness initial={initial} onChange={() => {}} />);
+    await screen.findByTestId("tilemap-palette-tile-2");
+    openGround(ensureTilesetTiles({ ...twoTileTileset(), atlasWidth: 64 }));
+    view.rerender(<TilemapHarness initial={initial} onChange={() => {}} />);
+    await screen.findByTestId("tilemap-palette-tile-4");
+    openGround(createDefaultTilesetPayload());
+    view.rerender(<TilemapHarness initial={initial} onChange={() => {}} />);
+    await waitFor(() => expect(screen.queryByTestId("tilemap-palette-tile-2")).toBeNull());
+    expect(screen.getByTestId("tilemap-palette-tile-1")).toBeTruthy();
+    expect(loadAssetDocument).not.toHaveBeenCalled();
+  });
+
+  it("reads a closed Tileset again once a save replaces its registry entry", async () => {
+    const initial = mapWithGroundAndProps();
+    const view = render(<TilemapHarness initial={initial} onChange={() => {}} />);
+    await screen.findByTestId("tilemap-palette-tile-4");
+    loadAssetDocument.mockImplementation(async (_kind: string, path: string) =>
+      path === GROUND_PATH ? ensureTilesetTiles({ ...twoTileTileset(), atlasWidth: 64 }) : twoTileTileset(),
+    );
+    reindexAsset("ts-ground");
+    view.rerender(<TilemapHarness initial={initial} onChange={() => {}} />);
+    // Ground grew past the Props range, so its four tiles move to GIDs 5-8.
+    await screen.findByTestId("tilemap-palette-tile-8");
+    expect(loadAssetDocument.mock.calls).toEqual([
+      ["tileset", GROUND_PATH],
+      ["tileset", PROPS_PATH],
+      ["tileset", GROUND_PATH],
+    ]);
   });
 });
 

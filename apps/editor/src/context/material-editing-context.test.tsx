@@ -1,3 +1,4 @@
+import { unzlibSync } from "fflate";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   act,
@@ -41,9 +42,19 @@ function sampledRock() {
   return doc;
 }
 
+function readBlobBytes(blob: Blob): Promise<Uint8Array> {
+  // jsdom's Blob implements FileReader, but not Blob.arrayBuffer().
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(new Uint8Array(reader.result as ArrayBuffer));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsArrayBuffer(blob);
+  });
+}
+
 const harness = vi.hoisted(() => ({
   functionAssets: [] as Array<{ path: string; header: { guid: string; type: string; payload: unknown } }>,
-  registryVersion: 0,
+  registryEpoch: 0,
   playing: false,
   engine: {
     registerView: vi.fn(),
@@ -127,25 +138,23 @@ const assetRegistry = {
   getByGuid: (guid: string) => guid === harness.textureAsset.header.guid ? harness.textureAsset : null,
 };
 
-vi.mock("./document-context", () => ({
-  useDocuments: () => ({
-    openDocuments: [
-      {
-        id: "material:assets/Rock.material.babasset",
-        ref: { kind: "material", path: "assets/Rock.material.babasset" },
-        get content() {
-          return harness.content;
-        },
+vi.mock("./document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
+  openDocuments: [
+    {
+      id: "material:assets/Rock.material.babasset",
+      ref: { kind: "material", path: "assets/Rock.material.babasset" },
+      get content() {
+        return harness.content;
       },
-    ],
-    assetRegistry,
-    get registryVersion() {
-      return harness.registryVersion;
     },
-    projectDocument: { settings: { playFrameCap: 60 } },
-    readAssetChunk: harness.readAssetChunk,
-  }),
-}));
+  ],
+  assetRegistry,
+  get registryEpoch() {
+    return harness.registryEpoch;
+  },
+  projectDocument: { settings: { playFrameCap: 60 } },
+  readAssetChunk: harness.readAssetChunk,
+})));
 
 vi.mock("@babylonslate/render", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@babylonslate/render")>();
@@ -250,7 +259,7 @@ function mount(active = true, children?: ReactNode) {
 describe("MaterialEditingProvider preview isolation", () => {
   beforeEach(() => {
     harness.functionAssets = [];
-    harness.registryVersion = 0;
+    harness.registryEpoch = 0;
     harness.playing = false;
     harness.engine.registerView.mockReset();
     harness.engine.unRegisterView.mockReset();
@@ -274,6 +283,10 @@ describe("MaterialEditingProvider preview isolation", () => {
     harness.contextRestored = null;
     harness.cachedTextures = [];
     harness.content = createDefaultMaterialDocument("Rock");
+    harness.textureAsset = {
+      path: "assets/albedo.babasset",
+      header: { guid: "tex-1", type: "Texture", name: "albedo" },
+    };
     harness.readAssetChunk.mockClear();
     harness.readAssetChunk.mockImplementation(
       async (_path: string, chunkId: string) =>
@@ -292,7 +305,7 @@ describe("MaterialEditingProvider preview isolation", () => {
     await waitFor(() => expect(harness.libraryOptions?.functions?.()).toMatchObject({ wave: { name: "Saved Wave" } }));
   });
 
-  it("does not reload saved Material Functions when the registry version bumps without function changes", async () => {
+  it("does not reload saved Material Functions when the registry epoch advances without function changes", async () => {
     const asset = {
       path: "assets/Wave.material-function.babasset",
       header: { guid: "wave", type: "MaterialFunction", payload: {} },
@@ -308,7 +321,7 @@ describe("MaterialEditingProvider preview isolation", () => {
     const view = mount();
     await waitFor(() => expect(harness.readAssetChunk).toHaveBeenCalledTimes(1));
 
-    harness.registryVersion += 1;
+    harness.registryEpoch += 1;
     view.rerender(materialTree());
     await act(async () => {
       await Promise.resolve();
@@ -316,7 +329,7 @@ describe("MaterialEditingProvider preview isolation", () => {
     expect(harness.readAssetChunk).toHaveBeenCalledTimes(1);
 
     harness.functionAssets = [{ ...asset, header: { ...asset.header } }];
-    harness.registryVersion += 1;
+    harness.registryEpoch += 1;
     view.rerender(materialTree());
     await waitFor(() => expect(harness.readAssetChunk).toHaveBeenCalledTimes(2));
   });
@@ -449,14 +462,73 @@ describe("MaterialEditingProvider preview isolation", () => {
     });
     expect(harness.cachedTextures).toHaveLength(1);
     expect(harness.cachedTextures[0]!.guid).toBe("tex-1");
-    // jsdom's Blob implements FileReader, but not Blob.arrayBuffer().
-    const bytes = await new Promise<ArrayBuffer>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as ArrayBuffer);
-      reader.onerror = () => reject(reader.error);
-      reader.readAsArrayBuffer(harness.cachedTextures[0]!.bytes);
-    });
-    expect(new Uint8Array(bytes)).toEqual(new Uint8Array([9, 9, 9]));
+    expect(await readBlobBytes(harness.cachedTextures[0]!.bytes)).toEqual(new Uint8Array([9, 9, 9]));
+  });
+
+  it("resolves RenderTargetTexture samples to opaque black without reading image chunks", async () => {
+    harness.content = sampledRock();
+    harness.textureAsset.header.type = "RenderTargetTexture";
+    const view = mount();
+    await waitFor(() => expect(harness.acquireCalls).toBeGreaterThan(0));
+
+    expect(harness.libraryOptions?.acquireTexture?.("tex-1")).not.toBeNull();
+    expect(harness.readAssetChunk).not.toHaveBeenCalled();
+    const png = await readBlobBytes(harness.cachedTextures[0]!.bytes);
+    const data = new DataView(png.buffer, png.byteOffset, png.byteLength);
+    const compressed: Uint8Array[] = [];
+    for (let offset = 8; offset < png.length;) {
+      const length = data.getUint32(offset);
+      const type = new TextDecoder().decode(png.subarray(offset + 4, offset + 8));
+      if (type === "IHDR") {
+        expect([data.getUint32(offset + 8), data.getUint32(offset + 12)]).toEqual([1, 1]);
+      }
+      if (type === "IDAT") compressed.push(png.subarray(offset + 8, offset + 8 + length));
+      offset += length + 12;
+    }
+    // One unfiltered RGBA texel: opaque black, not transparent or missing.
+    const pixels = unzlibSync(new Uint8Array(compressed.flatMap((chunk) => [...chunk])));
+    expect([...pixels]).toEqual([0, 0, 0, 0, 255]);
+
+    // A later registry change must not hide missing ordinary image data.
+    harness.textureAsset.header.type = "Texture";
+    harness.readAssetChunk.mockResolvedValue(null);
+    harness.registryEpoch += 1;
+    const compiled = harness.acquireCalls;
+    view.rerender(materialTree());
+    await waitFor(() => expect(harness.acquireCalls).toBeGreaterThan(compiled));
+    expect(harness.libraryOptions?.acquireTexture?.("tex-1")).toBeNull();
+  });
+
+  it("keeps loaded Texture bytes across edits and reloads them when the Texture's registry entry changes", async () => {
+    harness.content = sampledRock();
+    const pixelReads = () =>
+      harness.readAssetChunk.mock.calls.filter(([, chunk]) => chunk === "pixels").length;
+    const view = mount();
+    await waitFor(() => expect(harness.acquireCalls).toBeGreaterThan(0));
+    expect(pixelReads()).toBe(1);
+
+    // Edits replace the content and the open-document list, as the provider
+    // does on every edit, but leave the registry epoch alone.
+    for (const alphaCutoff of [0.25, 0.75]) {
+      harness.content = { ...sampledRock(), alphaCutoff };
+      view.rerender(materialTree());
+      await act(async () => {
+        await Promise.resolve();
+      });
+    }
+    expect(pixelReads()).toBe(1);
+
+    // A re-encode or reimport replaces the Texture's index entry.
+    harness.textureAsset = {
+      ...harness.textureAsset,
+      header: { ...harness.textureAsset.header, name: "albedo (reimported)" },
+    };
+    harness.registryEpoch += 1;
+    const compiled = harness.acquireCalls;
+    view.rerender(materialTree());
+    await waitFor(() => expect(pixelReads()).toBe(2));
+    // The preview recompiles with the reloaded bytes.
+    await waitFor(() => expect(harness.acquireCalls).toBeGreaterThan(compiled));
   });
 
   it("recompiles onto a new preview Scene after the canvas remounts", async () => {

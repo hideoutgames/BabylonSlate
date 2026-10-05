@@ -21,11 +21,10 @@ export function sameDescriptor(
   a: readonly unknown[] | undefined,
   b: readonly unknown[],
 ): boolean {
-  return (
-    !!a &&
-    a.length === b.length &&
-    a.every((value, index) => Object.is(value, b[index]))
-  );
+  if (!a || a.length !== b.length) return false;
+  for (let index = 0; index < a.length; index++)
+    if (!Object.is(a[index], b[index])) return false;
+  return true;
 }
 
 export function transformDescriptor(
@@ -114,16 +113,31 @@ export class PreparedColliderGeometry {
   }
 }
 
-/** Resolve only physics participants and their ancestors, retaining the ordered
- * World list for iteration. A parent without physics still contributes scale. */
-export function physicsWorldTransforms(
-  actors: readonly Actor[],
-  byGuid: ReadonlyMap<string, Actor>,
+const PARTICIPANT_CLASSES = new Set([
+  "RigidBodyComponent",
+  "WaterBuoyancyComponent",
+  "MovementComponent",
+  "ColliderComponent",
+  "MeshComponent",
+  "DynamicRuntimeMeshComponent",
+  "LandscapeComponent",
+  "BlockingVolumeComponent",
+  "TilemapComponent",
+]);
+
+/**
+ * Physics hierarchy semantics shared by the per-tick pass and call-time chains:
+ * `lookup` answers a parent guid with its first live match (as both
+ * `World.findActor` and the per-tick index do), a destroyed parent ends the
+ * chain, a parent cycle throws, and every parented link is checked against the
+ * shear-free, nonzero-scale TRS boundary.
+ */
+function physicsTransformResolver(
+  lookup: (guid: string) => Actor | undefined,
   kind: "2d" | "3d",
-  eligible: (actor: Actor) => boolean,
+  resolved: Map<string, Transform>,
   bodyPoses?: ReadonlyMap<string, PhysicsTransform>,
-): Map<string, Transform> {
-  const resolved = new Map<string, Transform>();
+): (actor: Actor) => Transform {
   const resolving = new Set<Actor>();
   const resolve = (actor: Actor): Transform => {
     const old = resolved.get(actor.guid);
@@ -132,7 +146,7 @@ export function physicsWorldTransforms(
       throw new Error("Physics hierarchy contains a parent cycle");
     resolving.add(actor);
     const parentId = actorParentGuid(actor);
-    const parent = parentId ? byGuid.get(parentId) : undefined;
+    const parent = parentId ? lookup(parentId) : undefined;
     let transform = {
       position: { ...actor.transform.position },
       rotation: { ...actor.transform.rotation },
@@ -160,6 +174,46 @@ export function physicsWorldTransforms(
     resolved.set(actor.guid, transform);
     return transform;
   };
+  return resolve;
+}
+
+/**
+ * Resolve the current world poses of `actors` and only their own ancestor
+ * chains, with the per-tick pass's semantics. Call-time pose writes and
+ * queries use this, so their cost and validation follow the actors they touch
+ * rather than every physics participant in the world.
+ */
+export function physicsChainTransforms(
+  actors: Iterable<Actor>,
+  lookup: (guid: string) => Actor | undefined,
+  kind: "2d" | "3d",
+): Map<string, Transform> {
+  const resolved = new Map<string, Transform>();
+  const resolve = physicsTransformResolver(lookup, kind, resolved);
+  for (const actor of actors) resolve(actor);
+  return resolved;
+}
+
+/** Resolve only physics participants and their ancestors, retaining the ordered
+ * World list for iteration. A parent without physics still contributes scale.
+ * This is the tick's validation boundary: parent cycles and unsupported shear
+ * throw here, before any native body or collider is touched. `bodyPoses`
+ * substitutes post-step body positions and rotations for a whole-world
+ * readback after step hooks may have changed authored actors. */
+export function physicsWorldTransforms(
+  actors: readonly Actor[],
+  byGuid: ReadonlyMap<string, Actor>,
+  kind: "2d" | "3d",
+  eligible: (actor: Actor) => boolean,
+  bodyPoses?: ReadonlyMap<string, PhysicsTransform>,
+): Map<string, Transform> {
+  const resolved = new Map<string, Transform>();
+  const resolve = physicsTransformResolver(
+    (guid) => byGuid.get(guid),
+    kind,
+    resolved,
+    bodyPoses,
+  );
   for (const actor of actors) {
     if (
       !actor.destroyed &&
@@ -173,17 +227,7 @@ export function physicsWorldTransforms(
             (kind === "3d" && component.getVariable("collisionsEnabled") === true)) &&
           (component.classId !== "DynamicRuntimeMeshComponent" ||
             (kind === "3d" && component.getVariable("enableCollision") === true)) &&
-          [
-            "RigidBodyComponent",
-            "WaterBuoyancyComponent",
-            "MovementComponent",
-            "ColliderComponent",
-            "MeshComponent",
-            "DynamicRuntimeMeshComponent",
-            "LandscapeComponent",
-            "BlockingVolumeComponent",
-            "TilemapComponent",
-          ].includes(component.classId),
+          PARTICIPANT_CLASSES.has(component.classId),
       )
     )
       resolve(actor);

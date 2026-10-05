@@ -35,24 +35,22 @@ vi.mock("../context/document-workspace-context", () => ({
   }),
 }));
 
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => ({
-    openDocuments: [
-      {
-        id: "script-interface:assets/IHit.babasset",
-        ref: {
-          kind: "script-interface",
-          path: "assets/IHit.babasset",
-          label: "IHit Script Interface",
-        },
-        content: harness.content,
-        layout: null,
-        dirty: false,
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
+  openDocuments: [
+    {
+      id: "script-interface:assets/IHit.babasset",
+      ref: {
+        kind: "script-interface",
+        path: "assets/IHit.babasset",
+        label: "IHit Script Interface",
       },
-    ],
-    applyAssetDocumentChange,
-  }),
-}));
+      content: harness.content,
+      layout: null,
+      dirty: false,
+    },
+  ],
+  applyAssetDocumentChange,
+})));
 
 afterEach(() => {
   cleanup();

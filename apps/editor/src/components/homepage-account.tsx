@@ -23,6 +23,7 @@ import {
   type NativeHomepageAccount,
 } from "./homepage-account-context";
 import type { NativeClerkSession } from "../services/native-clerk";
+import { useMobileDemoSession } from "../context/mobile-demo-context";
 
 const ClerkAccount = lazy(() => import("./homepage-account-clerk"));
 const DesktopAccount = lazy(() => import("./homepage-account-desktop"));
@@ -53,6 +54,7 @@ export function HomepageAccount({
   onChangelog?: () => void;
 }) {
   const nativeAccount = useNativeHomepageAccount();
+  const demo = useMobileDemoSession();
   const [desktopAccount, setDesktopAccount] =
     useState<NativeHomepageAccount | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -60,6 +62,7 @@ export function HomepageAccount({
   const [subscriptionOpen, setSubscriptionOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
   const host = getHostPlatform();
+  const demoActive = demo?.active && (host === "ios" || host === "android");
   const publishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY?.trim();
   const desktopClient = useMemo(
     () =>
@@ -131,10 +134,16 @@ export function HomepageAccount({
   const fallback = (
     <HomepageProfileMenu
       disabled={disabled}
-      name={account?.session.name || (account ? "Your Account" : "Guest")}
+      name={
+        demoActive
+          ? "Temporary Demo"
+          : account?.session.name || (account ? "Your Account" : "Guest")
+      }
+      description={demoActive ? "Local Testing Only · Not Signed In" : undefined}
       email={account?.session.email}
       imageUrl={account?.session.imageUrl}
-      onSignOut={account?.signOut}
+      onSignOut={demoActive ? async () => demo.end() : account?.signOut}
+      signOutLabel={demoActive ? "End Demo" : undefined}
       onSignIn={
         !account && host === "electron" && publishableKey
           ? () => setAuthOpen(true)

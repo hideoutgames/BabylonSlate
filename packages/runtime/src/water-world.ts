@@ -6,7 +6,7 @@ import {
 } from "@babylonslate/core";
 import type { Actor, ActorComponent } from "@babylonslate/object-model";
 import type { PhysicsBackend } from "@babylonslate/physics";
-import { actorParentGuid, actorWorldTransforms, composeParentChildTransform } from "./actor-world-transform";
+import { actorParentGuid, actorWorldTransforms, composeActorWorldTransformsInto, composeParentChildTransform } from "./actor-world-transform";
 
 type WaterBody = { actorId: string; definition: WaterDefinition; body: WaterBodyProperties; transform: Transform };
 /** Seconds over which a support's peak submersion settles before it weights horizontal drag (several wave periods). */
@@ -77,6 +77,34 @@ class RefreshInputs {
   }
 }
 
+/** One evaluation of the water: enabled surfaces, cutters, their composed poses and clock. */
+class WaterState {
+  readonly bodies: WaterBody[] = [];
+  readonly removals: Array<WaterCutters["removals"][number]> = [];
+  readonly landscapes: Array<WaterCutters["landscapes"][number]> = [];
+  readonly cutters: WaterCutters = { removals: this.removals, landscapes: this.landscapes };
+  transforms = new Map<string, Transform>();
+  time = 0;
+  /** The body that produced the last `sample` result (null when nothing was found). */
+  sampled: WaterBody | null = null;
+
+  sample(position: Vec3, actorId: string | null): WaterWorldSample {
+    let result: WaterWorldSample = { ...emptyWaterSample(), actorId: null, density: 0, waterDepth: 0 };
+    this.sampled = null;
+    for (const water of this.bodies) {
+      if (actorId && water.actorId !== actorId) continue;
+      const sample = sampleWaterSurface(water.definition, water.body, position, this.time, water.transform);
+      // Removal volumes and terrain above the surface take the water away, for queries and buoyancy alike.
+      if (sample.found && waterCutAt(this.cutters, { x: position.x, y: sample.height, z: position.z })) continue;
+      if (sample.found && (!result.found || sample.height > result.height)) {
+        result = { ...sample, actorId: water.actorId, density: water.definition.density, waterDepth: water.body.depth * Math.abs(water.transform.scale.y) };
+        this.sampled = water;
+      }
+    }
+    return result;
+  }
+}
+
 /** Component attachments have the same transform meaning in physics and rendering. */
 function componentWorldTransform(component: ActorComponent, actor: Actor, world: Transform): Transform {
   const chain = [component.transform];
@@ -96,119 +124,181 @@ function componentWorldTransform(component: ActorComponent, actor: Actor, world:
 
 export class WaterWorld {
   private definitions = new Map<string, WaterDefinition>();
-  private bodies: WaterBody[] = [];
-  private cutters: WaterCutters = { removals: [], landscapes: [] };
   /** Parsed terrain per authored heights array; sculpting replaces the array. */
   private readonly terrain = new WeakMap<object, { size: string; data: LandscapeProperties }>();
   private readonly normalizedBodies = new WeakMap<ActorComponent, Normalized<WaterBodyProperties>>();
   private readonly normalizedRemovals = new WeakMap<ActorComponent, Normalized<ReturnType<typeof normalizeWaterRemoval>>>();
-  private transforms = new Map<string, Transform>();
-  private time = 0;
-  /** Simulation time and actor list of the last refresh, and what it read; `sync` reuses it within a tick. */
-  private refreshed: { time: number; actors: readonly Actor[] } | null = null;
-  private readonly inputs = new RefreshInputs();
+  /**
+   * The physics step's evaluation: water sources, cutters and buoyant actors
+   * (with ancestors) at the step clock. Buoyancy reads it during the step.
+   */
+  private readonly stepState = new WaterState();
+  /**
+   * Script queries evaluate into their own state, so a query between steps
+   * never replaces the poses, surfaces or clock the step evaluated.
+   */
+  private readonly queryState = new WaterState();
+  /**
+   * The query state's simulation time, actor list and water actor filter, and what its evaluation read: later
+   * queries in the same tick reuse it while nothing it read changed (`query`).
+   */
+  private queriedTime = NaN;
+  private queriedActors: readonly Actor[] | null = null;
+  private queriedActorId: string | null = null;
+  private readonly queryInputs = new RefreshInputs();
+  // Per-evaluation scratch: surfaces and cutters awaiting a pose, the actors to compose, and the guid index.
+  private readonly sourceActors: Actor[] = [];
+  private readonly sourceComponents: ActorComponent[] = [];
+  private readonly sourceBodies: Array<WaterBodyProperties | null> = [];
+  private readonly composed: Actor[] = [];
+  private readonly byGuid = new Map<string, Actor>();
   private readonly defaultWater = createDefaultWaterDefinition();
-  /** The body that produced the last `sample` result (null when nothing was found). */
-  private sampled: WaterBody | null = null;
   private readonly fixedDrift = { x: 0, z: 0 };
   private readonly coupledDrift = { x: 0, z: 0 };
   /** Per buoyancy component: each support's recent peak submersion, which weights its horizontal drag. */
   private readonly wetness = new WeakMap<ActorComponent, Float64Array>();
-  get hasBodies(): boolean { return this.bodies.length > 0; }
+  get hasBodies(): boolean { return this.stepState.bodies.length > 0; }
 
   setContent(content: ReadonlyMap<string, WaterDefinition> | Readonly<Record<string, WaterDefinition>>): void {
     const entries = content instanceof Map ? content.entries() : Object.entries(content);
     this.definitions = new Map(Array.from(entries, ([id, value]) => [id, normalizeWaterDefinition(value)]));
-    this.refreshed = null;
+    this.queriedActors = null;
   }
 
   /**
-   * Script queries: within one simulation tick, Sample Water Surface calls reuse the last refresh unless something
-   * it read changed (a water, removal or landscape component's variables or transform, an owning actor's
-   * transform or parent, or the number of actors), so repeated queries never rescan or re-normalize. A water
-   * component added to an existing actor mid-tick appears from the next tick.
+   * The physics step's evaluation. Water, removal volumes, landscapes and
+   * buoyant actors compose only their own ancestor chains. Without an enabled
+   * water surface nothing can be sampled, so cutters and poses are left empty
+   * and no transform is composed. Unchanged components keep their normalized
+   * properties.
    */
-  sync(actors: readonly Actor[], time: number): void {
-    if (this.refreshed?.time === time && this.refreshed.actors === actors && this.inputs.unchanged(actors.length)) return;
-    this.update(actors, time);
+  update(actors: readonly Actor[], time: number): void {
+    this.evaluate(this.stepState, actors, time, true, null, null);
   }
 
-  /** Refresh bodies, transforms and cutters now. Unchanged components keep their normalized properties. */
-  update(actors: readonly Actor[], time: number): void {
-    this.time = time;
-    this.refreshed = { time, actors };
-    this.inputs.clear(actors.length);
-    let transforms: Map<string, Transform> | undefined, byGuid: Map<string, Actor> | undefined;
-    const record = (component: ActorComponent, actor: Actor) => {
-      this.inputs.record(component);
-      for (let parentId = component.parentId; parentId;) {
-        const parent = actor.components.find((c) => c.guid === parentId);
-        if (!parent || this.inputs.has(parent)) break;
-        this.inputs.record(parent); parentId = parent.parentId;
-      }
-      for (let owner: Actor | undefined = actor; owner && !this.inputs.has(owner);) {
-        this.inputs.record(owner);
-        const parentId = actorParentGuid(owner);
-        // Only attached actors need the index, so unparented water adds no per-tick map.
-        owner = parentId ? (byGuid ??= new Map(actors.map((entry) => [entry.guid, entry]))).get(parentId) : undefined;
-      }
-    };
-    this.bodies = [];
-    const removals: Array<WaterCutters["removals"][number]> = [], landscapes: Array<WaterCutters["landscapes"][number]> = [];
+  /**
+   * A script query at call time, in its own state: current surfaces, cutters and poses at `time`, without the
+   * buoyant actors only the step needs. With `actorId`, only that water actor's surfaces compose. Within one
+   * simulation tick, later queries reuse the evaluation unless something it read changed (a water, removal or
+   * landscape component's variables or transform, an owning actor's transform or parent, or the number of actors),
+   * so repeated queries never rescan or re-normalize; an unfiltered evaluation also serves filtered queries. A water
+   * component added to an existing actor mid-tick appears from the next tick. Samples equal the step state's for
+   * the same world and time.
+   */
+  query(actors: readonly Actor[], time: number, position: Vec3, actorId: string | null = null): WaterWorldSample {
+    const reusable = this.queriedActors === actors && this.queriedTime === time
+      && (this.queriedActorId === null || this.queriedActorId === actorId) && this.queryInputs.unchanged(actors.length);
+    if (!reusable) {
+      this.evaluate(this.queryState, actors, time, false, actorId, this.queryInputs);
+      this.queriedActors = actors; this.queriedTime = time; this.queriedActorId = actorId;
+    }
+    return this.queryState.sample(position, actorId);
+  }
+
+  private evaluate(
+    state: WaterState,
+    actors: readonly Actor[],
+    time: number,
+    buoyancy: boolean,
+    waterActorId: string | null,
+    inputs: RefreshInputs | null,
+  ): void {
+    state.time = time;
+    inputs?.clear(actors.length);
+    const { bodies, removals, landscapes } = state;
+    const { sourceActors, sourceComponents, sourceBodies, composed } = this;
+    bodies.length = removals.length = landscapes.length = 0;
+    let water = false;
     for (const actor of actors) {
-      if (actor.destroyed || actor.sceneLayerId) continue;
+      const surfaces = !actor.destroyed && !actor.sceneLayerId;
       for (const component of actor.components) {
         if (component.destroyed) continue;
-        if (component.classId === "WaterRemovalVolumeComponent" || component.classId === "LandscapeComponent") {
-          record(component, actor);
-          transforms ??= actorWorldTransforms(actors);
-          const transform = componentWorldTransform(component, actor, transforms.get(actor.guid)!);
-          if (component.classId === "LandscapeComponent") {
-            const heights = component.getVariable("heights");
-            const key = Array.isArray(heights) ? heights : component;
-            const size = ["width", "depth", "subdivisions"].map((name) => String(component.getVariable(name))).join(":");
-            let entry = this.terrain.get(key);
-            if (entry?.size !== size) {
-              entry = { size, data: parseLandscapeProperties(Object.fromEntries(component.variables)) };
-              this.terrain.set(key, entry);
-            }
-            landscapes.push({ data: entry.data, transform });
-          } else {
-            const volume = normalized(this.normalizedRemovals, component, "removal", () => normalizeWaterRemoval(Object.fromEntries(component.variables)));
-            if (volume.enabled) removals.push({ volume, transform });
-          }
-          continue;
+        // Buoyancy reads its actor's pose from the step state during the physics step.
+        if (buoyancy && component.classId === "WaterBuoyancyComponent") composed.push(actor);
+        if (!surfaces) continue;
+        let body: WaterBodyProperties | null = null;
+        if (component.classId !== "WaterRemovalVolumeComponent" && component.classId !== "LandscapeComponent") {
+          const kind = waterKindForClass(component.classId);
+          if (!kind || (waterActorId && actor.guid !== waterActorId)) continue;
+          // A disabled surface is read too: enabling it must reach the next query.
+          inputs?.record(component);
+          body = normalized(this.normalizedBodies, component, kind, () => normalizeWaterBody(Object.fromEntries(component.variables), kind));
+          if (!body.enabled) continue;
+          water = true;
         }
-        const kind = waterKindForClass(component.classId);
-        if (!kind || component.destroyed) continue;
-        record(component, actor);
-        const body = normalized(this.normalizedBodies, component, kind, () => normalizeWaterBody(Object.fromEntries(component.variables), kind));
-        if (!body.enabled) continue;
-        const definition = body.assetGuid ? (this.definitions.get(body.assetGuid) ?? this.defaultWater) : this.defaultWater;
-        transforms ??= actorWorldTransforms(actors);
-        this.bodies.push({ actorId: actor.guid, definition, body,
-          transform: componentWorldTransform(component, actor, transforms.get(actor.guid)!),
-        });
+        sourceActors.push(actor);
+        sourceComponents.push(component);
+        sourceBodies.push(body);
+        composed.push(actor);
       }
     }
-    this.transforms = transforms ?? new Map();
-    this.cutters = { removals, landscapes };
+    if (water) {
+      const transforms = this.composeSources(state, actors);
+      for (let index = 0; index < sourceActors.length; index++) {
+        const actor = sourceActors[index]!, component = sourceComponents[index]!, body = sourceBodies[index];
+        if (inputs) this.recordChain(inputs, component, actor);
+        const transform = componentWorldTransform(component, actor, transforms.get(actor.guid)!);
+        if (body) {
+          const definition = body.assetGuid ? (this.definitions.get(body.assetGuid) ?? this.defaultWater) : this.defaultWater;
+          bodies.push({ actorId: actor.guid, definition, body, transform });
+        } else if (component.classId === "LandscapeComponent") {
+          const heights = component.getVariable("heights");
+          const key = Array.isArray(heights) ? heights : component;
+          const size = ["width", "depth", "subdivisions"].map((name) => String(component.getVariable(name))).join(":");
+          let entry = this.terrain.get(key);
+          if (entry?.size !== size) {
+            entry = { size, data: parseLandscapeProperties(Object.fromEntries(component.variables)) };
+            this.terrain.set(key, entry);
+          }
+          landscapes.push({ data: entry.data, transform });
+        } else {
+          const volume = normalized(this.normalizedRemovals, component, "removal", () => normalizeWaterRemoval(Object.fromEntries(component.variables)));
+          if (volume.enabled) removals.push({ volume, transform });
+        }
+      }
+    } else {
+      state.transforms.clear();
+    }
+    sourceActors.length = sourceComponents.length = sourceBodies.length = composed.length = 0;
+    this.byGuid.clear();
   }
 
-  sample(position: Vec3, actorId: string | null = null): WaterWorldSample {
-    let result: WaterWorldSample = { ...emptyWaterSample(), actorId: null, density: 0, waterDepth: 0 };
-    this.sampled = null;
-    for (const water of this.bodies) {
-      if (actorId && water.actorId !== actorId) continue;
-      const sample = sampleWaterSurface(water.definition, water.body, position, this.time, water.transform);
-      // Removal volumes and terrain above the surface take the water away, for queries and buoyancy alike.
-      if (sample.found && waterCutAt(this.cutters, { x: position.x, y: sample.height, z: position.z })) continue;
-      if (sample.found && (!result.found || sample.height > result.height)) {
-        result = { ...sample, actorId: water.actorId, density: water.definition.density, waterDepth: water.body.depth * Math.abs(water.transform.scale.y) };
-        this.sampled = water;
-      }
+  /**
+   * Records what a source's pose read: the component, its parent components and its actor's ancestor chain (looked
+   * up in the guid index `composeSources` filled), so `query` can confirm cheaply that none of them changed.
+   */
+  private recordChain(inputs: RefreshInputs, component: ActorComponent, actor: Actor): void {
+    inputs.record(component);
+    for (let parentId = component.parentId; parentId;) {
+      const parent = actor.components.find((c) => c.guid === parentId);
+      if (!parent || inputs.has(parent)) break;
+      inputs.record(parent); parentId = parent.parentId;
     }
-    return result;
+    for (let owner: Actor | undefined = actor; owner && !inputs.has(owner);) {
+      inputs.record(owner);
+      const parentId = actorParentGuid(owner);
+      owner = parentId ? this.byGuid.get(parentId) : undefined;
+    }
+  }
+
+  /** Last-wins guid lookup, as the whole-world pass; ambiguous graphs keep that pass. */
+  private composeSources(state: WaterState, actors: readonly Actor[]): Map<string, Transform> {
+    const byGuid = this.byGuid;
+    byGuid.clear();
+    for (const actor of actors) byGuid.set(actor.guid, actor);
+    // Duplicate guids or a parent cycle make poses depend on world order.
+    if (byGuid.size === actors.length) {
+      const transforms = state.transforms;
+      transforms.clear();
+      if (!composeActorWorldTransformsInto((guid) => byGuid.get(guid), this.composed, transforms)) return transforms;
+    }
+    state.transforms = actorWorldTransforms(actors);
+    return state.transforms;
+  }
+
+  /** Sample the physics step's evaluation (the last `update`). */
+  sample(position: Vec3, actorId: string | null = null): WaterWorldSample {
+    return this.stepState.sample(position, actorId);
   }
 
   /**
@@ -223,7 +313,7 @@ export class WaterWorld {
     const component = actor.components.find((c) => c.classId === "WaterBuoyancyComponent" && !c.destroyed && c.getVariable("enabled") !== false);
     if (!component) return;
     const props = normalizeWaterBuoyancy(Object.fromEntries(component.variables));
-    const actorTransform = this.transforms.get(actor.guid);
+    const actorTransform = this.stepState.transforms.get(actor.guid);
     const pose = backend.getBodyTransform(bodyId), velocity = backend.getBodyVelocity(bodyId);
     if (!actorTransform || !pose || !velocity) return;
     const transform = componentWorldTransform(component, actor, { ...actorTransform, ...pose });
@@ -247,14 +337,14 @@ export class WaterWorld {
         z: (props.offset[2] + z * props.length) * transform.scale.z,
       });
       const point = { x: transform.position.x + offset.x, y: transform.position.y + offset.y, z: transform.position.z + offset.z };
-      const sample = this.sample(point, props.waterActorId);
-      const found = sample.found && this.sampled !== null && sample.depth <= sample.waterDepth + height / 2;
+      const sample = this.stepState.sample(point, props.waterActorId);
+      const found = sample.found && this.stepState.sampled !== null && sample.depth <= sample.waterDepth + height / 2;
       const submerged = found ? Math.max(0, Math.min(sample.waterDepth, sample.depth + height / 2) - Math.max(0, sample.depth - height / 2)) / height : 0;
       // Horizontal drag follows each support's recent peak submersion, which rises at once and settles over a few
       // wave periods: the instantaneous value would correlate with the orbital velocity and push hulls along the waves.
       const previous = wetness[index]!;
       wetness[index] = fresh ? submerged : Math.max(submerged, previous + (submerged - previous) * Math.min(1, dt / WATER_DRAG_WETNESS_SECONDS));
-      if (submerged > 0) wetted.push({ point, sample, water: this.sampled!, submerged, index });
+      if (submerged > 0) wetted.push({ point, sample, water: this.stepState.sampled!, submerged, index });
     }
     // The hull relaxes toward the water's horizontal velocity at this rate (1/s): each wetted support pulls with
     // min(1, drag·dt)·wetness / 4 of the body's momentum per step.

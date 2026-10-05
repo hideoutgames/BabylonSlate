@@ -183,6 +183,9 @@ import {
   applyAssignMesh,
   applyPainter2DCommand,
   applyText2DAppearCommand,
+  applyOverlayVisualStyleCommand,
+  applyComponentTransformsCommand,
+  retainAssignMeshComponentTransforms,
   applyPossessCamera,
   assignedMaterialGuids as listAssignedMaterialGuids,
   createSnapshotSceneBinding,
@@ -2803,6 +2806,21 @@ function initializeEngine(
         }
         applyText2DAppearCommand(binding, command);
         scheduler.invalidate("asset");
+      }
+      if (command.type === "setOverlayVisualStyle") {
+        const pending = pendingOverlayAssign.get(command.slotId);
+        const part = pending?.parts?.find((entry) => entry.componentId === command.componentId);
+        if (part) part.overlayStyle = command.style;
+        if (pending?.primaryComponentId === command.componentId) pending.overlayStyle = command.style;
+        applyOverlayVisualStyleCommand(binding, command);
+        scheduler.invalidate("asset");
+      }
+      if (command.type === "setComponentTransforms") {
+        const pending = pendingOverlayAssign.get(command.slotId);
+        if (pending) retainAssignMeshComponentTransforms(pending, command);
+        applyComponentTransformsCommand(binding, command);
+        appliedSnapshotIdentity = null;
+        scheduler.invalidate("snapshot");
       }
       if (command.type === "setCursorVisible") {
         playCursor?.setVisible(command.visible);

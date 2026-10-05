@@ -18,6 +18,10 @@ import {
 } from "@babylonslate/particle-graph";
 import { useDocuments } from "./document-context";
 import { isMaterialAssetType, materialDomainsFromAssets } from "../lib/content-browser-helpers";
+import {
+  MATERIAL_DOCUMENT_KINDS,
+  useOpenDocumentsOfKinds,
+} from "../lib/use-open-documents-of-kinds";
 
 /** A preview build problem as `ParticleService` reports it (node-anchored when known). */
 export interface ParticleGraphBuildDiagnostic {
@@ -111,7 +115,7 @@ export function ParticleGraphEditingProvider({
   documentId: string;
   children: ReactNode;
 }) {
-  const { openDocuments, assetRegistry, registryVersion, applyAssetDocumentChange } =
+  const { openDocuments, assetRegistry, registryEpoch, applyAssetDocumentChange } =
     useDocuments();
   const content = openDocuments.find((entry) => entry.id === documentId)?.content;
   const document = useMemo(
@@ -131,8 +135,9 @@ export function ParticleGraphEditingProvider({
   );
 
   // Material domains by guid; an open Material tab's domain wins over its header.
+  const materialDocuments = useOpenDocumentsOfKinds(MATERIAL_DOCUMENT_KINDS);
   const validationContext = useMemo<ParticleGraphValidationContext>(() => {
-    void registryVersion; // Registry contents mutate without replacing its instance.
+    void registryEpoch; // Registry contents mutate without replacing its instance.
     if (!assetRegistry) return {};
     const assets = assetRegistry.list();
     const materials = new Set(
@@ -140,12 +145,12 @@ export function ParticleGraphEditingProvider({
         .filter((asset) => isMaterialAssetType(asset.header.type))
         .map((asset) => asset.header.guid),
     );
-    const domains = materialDomainsFromAssets(assets, openDocuments);
+    const domains = materialDomainsFromAssets(assets, materialDocuments);
     return {
       materialDomain: (guid) =>
         materials.has(guid) ? (domains[guid] ?? "surface") : null,
     };
-  }, [assetRegistry, openDocuments, registryVersion]);
+  }, [assetRegistry, materialDocuments, registryEpoch]);
 
   const diagnostics = useMemo(
     () => validateParticleGraphDocument(document, validationContext),

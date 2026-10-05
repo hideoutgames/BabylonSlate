@@ -66,92 +66,90 @@ vi.mock("@babylonslate/vfs", async (importOriginal) => {
 
 vi.mock("../context/document-context", async () => {
   const { createEmptyProject: emptyProject } = await import("@babylonslate/core");
-  return {
-    useDocuments: () => {
-      const projectDocument = emptyProject("Demo");
-      if (lastProjectRender.current) projectDocument.settings.render = lastProjectRender.current;
-      if (lastProjectInput.current) {
-        projectDocument.settings.input =
-          lastProjectInput.current as typeof projectDocument.settings.input;
-      }
-      if (sourceControlEnabled.current) {
-        projectDocument.settings.sourceControl = {
-          ...projectDocument.settings.sourceControl,
-          enabled: true,
-        };
-      }
-      return {
-      projectDocument,
-      projectGuid: "test-project",
-      activeDocumentId: "active-scene",
-      exportProject,
-      exportGameArtifact,
-      zipExportedGame: vi.fn(),
-      retryFailedTextureEncoding: vi.fn(),
-      // Context providers may recreate callbacks during unrelated updates.
-      updateProjectSettings: (...args: Parameters<typeof updateProjectSettings>) => updateProjectSettings(...args),
-      updateProjectVersion,
-      sourceControl,
-      prefillSourceControlFromGit: sourceControl.readGitPrefill,
-      assetRegistry: {
-        list: () => [
-          {
-            header: { guid: "font-1", name: "Display", type: "Font" },
-            path: "assets/Display.font.babasset",
+  return (await import("../testing/document-context-mock")).documentContextMock(() => {
+    const projectDocument = emptyProject("Demo");
+    if (lastProjectRender.current) projectDocument.settings.render = lastProjectRender.current;
+    if (lastProjectInput.current) {
+      projectDocument.settings.input =
+        lastProjectInput.current as typeof projectDocument.settings.input;
+    }
+    if (sourceControlEnabled.current) {
+      projectDocument.settings.sourceControl = {
+        ...projectDocument.settings.sourceControl,
+        enabled: true,
+      };
+    }
+    return {
+    projectDocument,
+    projectGuid: "test-project",
+    activeDocumentId: "active-scene",
+    exportProject,
+    exportGameArtifact,
+    zipExportedGame: vi.fn(),
+    retryFailedTextureEncoding: vi.fn(),
+    // Context providers may recreate callbacks during unrelated updates.
+    updateProjectSettings: (...args: Parameters<typeof updateProjectSettings>) => updateProjectSettings(...args),
+    updateProjectVersion,
+    sourceControl,
+    prefillSourceControlFromGit: sourceControl.readGitPrefill,
+    assetRegistry: {
+      list: () => [
+        {
+          header: { guid: "font-1", name: "Display", type: "Font" },
+          path: "assets/Display.font.babasset",
+        },
+        {
+          header: { guid: "scene-1", name: "Main", type: "Scene" },
+          path: "assets/main.scene.babasset",
+        },
+        {
+          header: { guid: "scene-2", name: "Arena", type: "Scene" },
+          path: "assets/Arena.scene.babasset",
+        },
+        {
+          header: {
+            guid: "class-tools",
+            name: "Tools",
+            type: "Class",
+            parentClass: "EditorUtilityObject",
           },
-          {
-            header: { guid: "scene-1", name: "Main", type: "Scene" },
-            path: "assets/main.scene.babasset",
+          path: "assets/Tools.class.babasset",
+        },
+        {
+          header: {
+            guid: "class-game",
+            name: "MyGame",
+            type: "Class",
+            parentClass: "GameInstance",
           },
-          {
-            header: { guid: "scene-2", name: "Arena", type: "Scene" },
-            path: "assets/Arena.scene.babasset",
-          },
-          {
-            header: {
-              guid: "class-tools",
-              name: "Tools",
-              type: "Class",
-              parentClass: "EditorUtilityObject",
-            },
-            path: "assets/Tools.class.babasset",
-          },
-          {
-            header: {
-              guid: "class-game",
-              name: "MyGame",
-              type: "Class",
-              parentClass: "GameInstance",
-            },
-            path: "assets/MyGame.class.babasset",
-          },
-          {
-            header: { guid: "mixer-1", name: "Master", type: "AudioMixer" },
-            path: "assets/Master.mixer.babasset",
-          },
-        ],
-        getByGuid: (guid: string) =>
-          guid === "font-1"
-            ? {
-                header: { guid: "font-1", name: "Display", type: "Font" },
-                path: "assets/Display.font.babasset",
-              }
-            : undefined,
-      },
-      openDocuments: [],
-      pluginDescriptors,
-      pluginDiagnostics: [],
-      showPluginContent: false,
-      setShowPluginContent,
-      applyPluginOverrides,
-      createProjectPlugin: vi.fn(),
-      deleteProjectPlugin: vi.fn(),
-      exportPlugin: vi.fn(),
-      importPlugin,
-      openDocument: vi.fn(),
-    };
+          path: "assets/MyGame.class.babasset",
+        },
+        {
+          header: { guid: "mixer-1", name: "Master", type: "AudioMixer" },
+          path: "assets/Master.mixer.babasset",
+        },
+      ],
+      getByGuid: (guid: string) =>
+        guid === "font-1"
+          ? {
+              header: { guid: "font-1", name: "Display", type: "Font" },
+              path: "assets/Display.font.babasset",
+            }
+          : undefined,
     },
+    openDocuments: [],
+    pluginDescriptors,
+    pluginDiagnostics: [],
+    showPluginContent: false,
+    setShowPluginContent,
+    applyPluginOverrides,
+    createProjectPlugin: vi.fn(),
+    deleteProjectPlugin: vi.fn(),
+    exportPlugin: vi.fn(),
+    importPlugin,
+    openDocument: vi.fn(),
   };
+  });
 });
 
 afterEach(() => {
@@ -289,6 +287,9 @@ describe("SettingsModal project authoring", () => {
     ["texture anisotropy", /Texture Anisotropy/, "Scalability", "quality-textures-anisotropy"],
     ["reflections", /Real-Time Reflections/, "Post Processing", "project-effects-reflections"],
     ["fft ocean", /Water FFT Ocean Detail/, "Scalability", "quality-water-fft"],
+    ["ssao", /Ambient Occlusion/, "Post Processing", "project-effects-ambient-occlusion"],
+    ["lut", /Color Grading/, "Post Processing", "project-effects-color-grading"],
+    ["temporal", /Temporal Anti-Aliasing/, "Post Processing", "project-effects-temporal"],
     ["volumetric lighting", /Volumetric Fog/, "Post Processing", "project-effects-volumetric"],
     ["fog density", /Volumetric Fog/, "Post Processing", "project-effects-volumetric"],
   ])("opens the Rendering section holding %s from search", async (query, result, section, targetId) => {
@@ -312,7 +313,18 @@ describe("SettingsModal project authoring", () => {
     fireEvent.change(screen.getByLabelText("Volumetric Steps"), { target: { value: "32" } });
     fireEvent.blur(screen.getByLabelText("Volumetric Steps"));
     fireEvent.click(screen.getByTestId("project-effects-fxaa"));
+    expect(screen.queryByLabelText("Temporal Blend")).toBeNull();
+    fireEvent.click(screen.getByTestId("project-effects-temporal"));
+    fireEvent.change(screen.getByLabelText("Temporal Blend"), { target: { value: "0.25" } });
+    fireEvent.blur(screen.getByLabelText("Temporal Blend"));
     fireEvent.click(screen.getByTestId("project-effects-reflections"));
+    expect(screen.queryByLabelText("Occlusion Radius")).toBeNull();
+    fireEvent.click(screen.getByTestId("project-effects-ambient-occlusion"));
+    fireEvent.change(screen.getByLabelText("Occlusion Radius"), { target: { value: "1.5" } });
+    fireEvent.blur(screen.getByLabelText("Occlusion Radius"));
+    expect(screen.queryByTestId("project-effects-lut")).toBeNull();
+    fireEvent.click(screen.getByTestId("project-effects-color-grading"));
+    expect(screen.getByTestId("project-effects-lut")).toBeTruthy();
     fireEvent.click(screen.getByTestId("project-effects-volumetric"));
     fireEvent.change(screen.getByLabelText("Scene-Wide Fog Density"), { target: { value: "0.0085" } });
     fireEvent.blur(screen.getByLabelText("Scene-Wide Fog Density"));
@@ -321,7 +333,7 @@ describe("SettingsModal project authoring", () => {
     expect(screen.getByLabelText("Volumetric Steps")).toHaveProperty("value", "32");
     expect(lastProjectRender.current).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
-    expect(lastProjectRender.current).toMatchObject({ effects: { fxaa: true, reflections: { enabled: true }, volumetricLighting: { enabled: false, density: 0.0085, steps: 32 } } });
+    expect(lastProjectRender.current).toMatchObject({ effects: { fxaa: true, temporalAntiAliasing: { enabled: true, blend: 0.25, samples: 8 }, colorGrading: { enabled: true, lutTextureGuid: null }, ambientOcclusion: { enabled: true, radius: 1.5 }, reflections: { enabled: true }, volumetricLighting: { enabled: false, density: 0.0085, steps: 32 } } });
   });
   it("keeps input authoring in assets rather than Project Settings", () => {
     render(<SettingsModal open onOpenChange={() => {}} scope="project" />);

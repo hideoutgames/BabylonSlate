@@ -109,7 +109,7 @@ export { sceneRenderPathStatus, subscribeSceneRenderPath } from "./scene-render-
 export { renderPathSession, requestRenderPath, subscribeRenderPathSession } from "./render-path-session";
 export * from "./shared-outline";
 export * from "./shared-outline-task";
-export { createWaterMesh, setSceneWaterTime, setWaterGpuWaves, updateSceneWater, updateWaterMeshBody, waterMeshBody } from "./water-mesh";
+export { createWaterMesh, setSceneWaterTime, setWaterGpuWaves, updateSceneWater, updateWaterMeshBody, updateWaterMeshDefinition, waterMeshBody } from "./water-mesh";
 export { waterFftDiagnostics, waterFftForSurface, type WaterFftDiagnostics, type WaterFftResult } from "./water-fft";
 export { waterFftCycle, waterFftInitialSpectrum, waterFftLayout, waterFftSynthesize, type WaterFftLayout } from "./water-fft-spectrum";
 export { createWaterRemovalMesh, sceneWaterRemovals, waterRemovalOutline } from "./water-removal-mesh";

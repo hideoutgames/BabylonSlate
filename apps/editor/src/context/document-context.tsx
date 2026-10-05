@@ -9,10 +9,12 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   type ReactNode,
+  type RefObject,
 } from "react";
 import { flushSync } from "react-dom";
 import { SceneLoadingDialog } from "../components/scene-loading-dialog";
@@ -91,8 +93,10 @@ import { sceneAssetClassId } from "@babylonslate/object-model";
 import type { TracePayload } from "@babylonslate/debugger";
 import {
   DocumentService,
+  documentKindsRevision,
   type DocumentContent,
   type DocumentIdentityListener,
+  type DocumentRevisions,
   type OpenDocument,
 } from "../services/document-service";
 import { attachEditGestureBoundaries } from "../services/edit-gesture-boundaries";
@@ -286,6 +290,11 @@ import {
 import { animClipCatalogFromAssets } from "../lib/anim-clip-catalog";
 import { loadPlayParticleLibrary } from "../lib/play-particles";
 import {
+  renderProfile,
+  resetRenderProfile,
+  type RenderProfile,
+} from "../lib/render-profile";
+import {
   materializeMaterialInstances,
   normalizeMaterialDocument,
   normalizeMaterialFunctionDocument,
@@ -302,8 +311,16 @@ interface DocumentContextValue {
   assetRegistry: AssetRegistry | null;
   extensionService: ProjectService["extensions"];
   projectGuid: string | null;
-  /** Bumps when encode/import mutates registry payloads in place. */
-  registryVersion: number;
+  /**
+   * Registry epoch: changes only when what `assetRegistry` reports changes
+   * (its generation: imports, saves, deletes, moves, encodes, remounts) or a
+   * registry-adjacent ProjectService change arrives (plugins, search index,
+   * Show Plugin Content). Document edits, tab changes, saves' dirty-state
+   * changes and other per-edit context updates leave it alone, so key
+   * registry-derived memos and effects on it instead of on the context value.
+   * Monotonic; never repeats.
+   */
+  registryEpoch: number;
   refreshAssetRegistry: () => Promise<void>;
   /**
    * Re-reads the project's scene/graph lists and re-renders after assets were
@@ -356,12 +373,38 @@ interface DocumentContextValue {
    */
   textureUsageBlockedReason: (guid: string) => string | null;
   onSessionDiagnostic: (listener: (line: string) => void) => () => void;
+  /**
+   * Open documents in tab order. The array keeps its identity until a
+   * document revision advances or the tab order changes, so registry-only
+   * updates, tab switches and other context updates leave it alone. Its
+   * entries are mutated in place (content, dirty, layout), so entry identity
+   * is not a change signal: key memos on `documentRevisions`.
+   */
   openDocuments: OpenDocument[];
+  /**
+   * The open documents at call time, read from the document service. Stable
+   * identity: handlers, guards and async continuations use it instead of a
+   * render-time `openDocuments` snapshot, so they stay correct without
+   * re-rendering on every edit.
+   */
+  getOpenDocuments: () => OpenDocument[];
+  /**
+   * One revision per document kind, advanced when a document of that kind
+   * opens, closes, moves, is reordered, edited (including Undo / Redo,
+   * reloads and patches), relaid out or changes dirty state. Memos that read
+   * other documents key on the kinds they read (`documentKindsRevision`,
+   * `useOpenDocumentsOfKinds`) instead of on `openDocuments`.
+   */
+  documentRevisions: DocumentRevisions;
+  /** Advances when the open set, the tab order or the active tab changes. */
+  tabsRevision: number;
+  /** Keeps its identity while the tab ids and their order are unchanged. */
   tabOrder: string[];
   activeDocumentId: string | null;
   listedProjects: ListedProject[];
   needsReconnect: boolean;
   recoveryAvailable: boolean;
+  /** Recomputed only when a document revision advances. */
   dirtyDocuments: OpenDocument[];
   projectDirty: boolean;
   migrationPending: MigrationPending[];
@@ -632,7 +675,11 @@ interface DocumentContextValue {
   scriptsStale: boolean;
   /** True when Compile should run: never compiled this session, or open graphs changed. */
   graphsNeedCompile: boolean;
-  /** Open-graph compile fingerprint (node positions omitted). */
+  /**
+   * Open-graph compile fingerprint (node positions omitted). Recomputed only
+   * when Class graph or Input Action / Axis documents change, or the registry
+   * epoch advances.
+   */
   currentGraphSignature: string;
   /** Last full-project bundles written by `collectPlayPreviewScripts` (toolbar Compile or Play). */
   playPreviewBundles: ScriptBundleEntry[];
@@ -641,6 +688,50 @@ interface DocumentContextValue {
   /** Project-wide search index (headers + Scene/Graph documents). */
   searchIndex: ProjectSearchIndex | null;
 }
+
+type DocumentActionName = {
+  [K in keyof DocumentContextValue]: DocumentContextValue[K] extends (
+    ...args: never[]
+  ) => unknown
+    ? K
+    : never;
+}[keyof DocumentContextValue];
+
+/**
+ * Every callback of the document context. Each keeps its identity for the
+ * provider's lifetime and reads documents, the project, Anim modes and other
+ * provider state when it runs. A component that calls one while rendering
+ * (`isDockWindowOpen`, `textureUsageBlockedReason`, …) and shows the result
+ * must also subscribe to the state it depends on through `useDocuments()`.
+ */
+export type DocumentActions = Pick<DocumentContextValue, DocumentActionName>;
+
+/**
+ * React state mirrored in `ref` for callbacks that read it when they run.
+ * The setter writes both together, never during render, so a callback called
+ * later in the same event (or from a child's layout effect before this
+ * provider commits) already sees the new value without depending on it.
+ */
+function useRefState<T>(
+  ref: RefObject<T>,
+): [T, (next: T | ((current: T) => T)) => void] {
+  const [state, setState] = useState(ref.current);
+  const set = useCallback(
+    (next: T | ((current: T) => T)) => {
+      const value =
+        typeof next === "function"
+          ? (next as (current: T) => T)(ref.current)
+          : next;
+      ref.current = value;
+      setState(value);
+    },
+    [ref],
+  );
+  return [state, set];
+}
+
+/** Kinds `currentGraphSignature` reads: Class graphs and their Input assets. */
+const GRAPH_SIGNATURE_KINDS = ["graph", "input-action", "input-axis"] as const;
 
 function openGraphCompileDocuments(
   documentService: DocumentService,
@@ -655,6 +746,10 @@ function openGraphCompileDocuments(
 }
 
 const DocumentContext = createContext<DocumentContextValue | null>(null);
+/** Created once per provider: action-only consumers never re-render through it. */
+const DocumentActionsContext = createContext<DocumentActions | null>(null);
+/** Changes only when the app moves between Homepage and the editor. */
+const AppRouteContext = createContext<AppRoute | null>(null);
 
 const THUMBNAIL_DECODE_LRU_ENTRIES = 64;
 
@@ -754,13 +849,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const editSessionRef = useRef(
     new EditSession({ maxBytes: DEFAULT_EDIT_BYTE_BUDGET }),
   );
-  const applySceneChangeRef = useRef<
-    (
-      id: string,
-      next: SerializedScene,
-      options?: { prefabSync?: boolean },
-    ) => Promise<boolean>
-  >(async () => false);
   const syncPrefabInstancesRef = useRef<
     (options?: { classIds?: readonly string[]; quiet?: boolean }) => Promise<void>
   >(async () => {});
@@ -768,9 +856,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const dockSubscriptionsRef = useRef(new Map<string, Array<{ dispose: () => void }>>());
   const preFocusLayoutsRef = useRef(new Map<string, PreFocusSnapshot>());
   const sceneFocusedLayoutsRef = useRef(new Map<string, Record<string, unknown>>());
-  const [animEditorModes, setAnimEditorModes] = useState<
-    Record<string, AnimEditorMode>
-  >({});
+  // Actions keep their identity across edits: the state they read when they
+  // run (Anim modes, the project document, templates, the pending exclusive
+  // scene) lives in refs written by these setters, never during render.
+  const animEditorModesRef = useRef<Record<string, AnimEditorMode>>({});
+  const [animEditorModes, setAnimEditorModes] = useRefState(animEditorModesRef);
   const [focusedLayoutIds, setFocusedLayoutIds] = useState<Set<string>>(
     () => new Set(),
   );
@@ -783,12 +873,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const [thumbnailVersions, setThumbnailVersions] = useState<Record<string, number>>({});
 
   const [route, setRoute] = useState<AppRoute>("home");
-  const [projectDocument, setProjectDocument] = useState<ProjectDocument | null>(
-    null,
-  );
   const projectDocumentRef = useRef<ProjectDocument | null>(null);
+  const [projectDocument, setProjectDocument] = useRefState(projectDocumentRef);
   const projectSaveState = useRef(new ProjectSaveState());
-  projectDocumentRef.current = projectDocument;
   const [listedProjects, setListedProjects] = useState<ListedProject[]>([]);
   const [needsReconnect, setNeedsReconnect] = useState(false);
   const [recoveryAvailable, setRecoveryAvailable] = useState(false);
@@ -796,25 +883,33 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [],
   );
   const [homepageReady, setHomepageReady] = useState(false);
-  const [templates, setTemplates] = useState<ProjectTemplate[]>([]);
-  const [registryVersion, setRegistryVersion] = useState(0);
+  const templatesRef = useRef<ProjectTemplate[]>([]);
+  const [templates, setTemplates] = useRefState(templatesRef);
+  /** Re-derives the context value after service state it reads changed (edits, tabs, saves). */
+  const [contextTick, setContextTick] = useState(0);
+  /** Registry-adjacent changes outside the registry itself; part of `registryEpoch`. */
+  const [registryTick, setRegistryTick] = useState(0);
+  // Both terms only rise, so the sum changes exactly when either does.
+  const registryEpoch = projectService.registryGeneration + registryTick;
   const previousThumbnailIndexRef = useRef<ReturnType<typeof createAssetThumbnailRevisionIndex> | null>(null);
   const thumbnailRevisionIndex = useMemo(
     () => {
-      void registryVersion;
+      void registryEpoch;
       const assets = projectService.registry?.list() ?? [];
       const previous = previousThumbnailIndexRef.current;
-      // Document edits also bump registryVersion. Reuse saved revisions until
-      // an indexed header actually changes, without hashing on every gesture.
+      // Plugin and search-index changes also advance the epoch. Reuse saved
+      // revisions until an indexed header actually changes.
       const pixelsPerUnit = projectDocument?.settings.twoD.pixelsPerUnit;
       const next = previous?.matches(assets, pixelsPerUnit) ? previous : createAssetThumbnailRevisionIndex(assets, pixelsPerUnit);
       previousThumbnailIndexRef.current = next;
       return next;
     },
-    [projectDocument?.settings.twoD.pixelsPerUnit, projectService, registryVersion],
+    [projectDocument?.settings.twoD.pixelsPerUnit, projectService, registryEpoch],
   );
   const thumbnailRevisionIndexRef = useRef(thumbnailRevisionIndex);
-  thumbnailRevisionIndexRef.current = thumbnailRevisionIndex;
+  useLayoutEffect(() => {
+    thumbnailRevisionIndexRef.current = thumbnailRevisionIndex;
+  }, [thumbnailRevisionIndex]);
   useEffect(() => {
     const changed: string[] = [];
     for (const [guid, previous] of requestedThumbnailRevisionsRef.current) {
@@ -832,8 +927,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   }, [thumbnailRevisionIndex]);
   const [dockWindowTick, setDockWindowTick] = useState(0);
   const [thumbnailsEnabled, setThumbnailsEnabled] = useState(true);
-  const [pendingExclusiveScene, setPendingExclusiveScene] =
-    useState<DocumentRef | null>(null);
+  const pendingExclusiveSceneRef = useRef<DocumentRef | null>(null);
+  const [pendingExclusiveScene, setPendingExclusiveScene] = useRefState(
+    pendingExclusiveSceneRef,
+  );
   const exclusiveSceneRequest = useRef(0);
   const [lastCompiledSignature, setLastCompiledSignature] = useState<
     string | null
@@ -867,7 +964,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setPlayPreviewDiagnostics([]);
   }, []);
 
-  const bump = useCallback(() => setRegistryVersion((v) => v + 1), []);
+  const bump = useCallback(() => setContextTick((v) => v + 1), []);
+  /** Plugins, search index or Show Plugin Content changed: advance `registryEpoch`. */
+  const bumpRegistry = useCallback(() => setRegistryTick((v) => v + 1), []);
   const bumpDockWindows = useCallback(() => {
     setDockWindowTick((v) => v + 1);
   }, []);
@@ -1031,7 +1130,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   const refreshTemplates = useCallback(async () => {
     setTemplates(await loadTemplateCards());
-  }, []);
+  }, [setTemplates]);
 
   useEffect(() => {
     documentService.ensureContentBrowserTab();
@@ -1054,8 +1153,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   }, [bump, documentService, refreshProjectList, refreshTemplates, settingsStore]);
 
   useEffect(
-    () => projectService.onRegistryChange(bump),
-    [bump, projectService],
+    () => projectService.onRegistryChange(bumpRegistry),
+    [bumpRegistry, projectService],
   );
 
   const captureLayoutForId = useCallback(
@@ -1078,7 +1177,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       }
       if (doc?.ref.kind === "anim-graph") {
         const parsed = parseAnimDocumentLayout(doc.layout);
-        const mode = animEditorModeForDocument(id, animEditorModes, doc);
+        const mode = animEditorModeForDocument(id, animEditorModesRef.current, doc);
         const stateApi = dockviewApisRef.current.get(
           dockviewApiKey(id, "stateMachine"),
         );
@@ -1115,7 +1214,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         documentService.setLayout(id, captureAdaptiveDockviewLayout(api));
       }
     },
-    [documentService, animEditorModes],
+    [documentService],
   );
 
   const captureAllLayouts = useCallback(() => {
@@ -1127,15 +1226,15 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   const noteAssetsCreated = useCallback(() => {
     const paths = projectService.registry?.listDocumentPaths({ rootId: "project" });
-    if (projectDocument && paths) {
-      setProjectDocument({
-        ...projectDocument,
-        scenes: paths.scenes,
-        graphs: paths.graphs,
-      });
+    if (paths) {
+      setProjectDocument((current) =>
+        current
+          ? { ...current, scenes: paths.scenes, graphs: paths.graphs }
+          : current,
+      );
     }
     bump();
-  }, [bump, projectDocument, projectService]);
+  }, [bump, projectService, setProjectDocument]);
 
   const refreshAssetRegistry = useCallback(async () => {
     await projectService.remountRegistry();
@@ -1199,7 +1298,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     }
     next.projectJson = nextProject;
   }, [bump, documentService, projectService]);
-  runForegroundRescanRef.current = runForegroundRescan;
+  useLayoutEffect(() => {
+    runForegroundRescanRef.current = runForegroundRescan;
+  }, [runForegroundRescan]);
 
   const confirmExternalChangeReloadProject = useCallback(async () => {
     const { document } = await projectService.loadCurrentProject();
@@ -1217,6 +1318,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     documentService,
     projectService,
     reloadDocumentsFromDisk,
+    setProjectDocument,
   ]);
 
   const confirmExternalChangeReloadDocs = useCallback(
@@ -1333,12 +1435,18 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       documentService,
       journalBuffer,
       projectService,
+      setAnimEditorModes,
     ],
   );
 
   const subscribeDocumentIdentity = useCallback(
     (listener: DocumentIdentityListener) =>
       documentService.onIdentityChange(listener),
+    [documentService],
+  );
+
+  const getOpenDocuments = useCallback(
+    () => documentService.getOpenDocumentsOrdered(),
     [documentService],
   );
 
@@ -1515,6 +1623,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       captureMtimeSnapshot,
       clearPlayPreviewScripts,
       cancelSceneDocumentLoad,
+      setAnimEditorModes,
+      setProjectDocument,
     ],
   );
 
@@ -1560,7 +1670,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       name: string,
       options?: CreateProjectOptions,
     ) => {
-      const template = templates.find((t) => t.id === templateId);
+      const template = templatesRef.current.find((t) => t.id === templateId);
       if (!template) {
         throw new Error(`Unknown template: ${templateId}`);
       }
@@ -1574,7 +1684,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         });
       await enterEditor(document, layouts, pending);
     },
-    [attachEnginePlugins, enterEditor, projectService, templates],
+    [attachEnginePlugins, enterEditor, projectService],
   );
 
   const openListedProject = useCallback(
@@ -1811,9 +1921,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     (show: boolean) => {
       documentService.setShowPluginContent(show);
       scheduleDebouncedSave();
-      bump();
+      bumpRegistry();
     },
-    [bump, documentService, scheduleDebouncedSave],
+    [bumpRegistry, documentService, scheduleDebouncedSave],
   );
 
   const createProjectPlugin = useCallback(
@@ -1827,6 +1937,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   );
 
   const approveMigrationsAndSave = useCallback(async () => {
+    const projectDocument = projectDocumentRef.current;
     if (!projectDocument) return;
     const projectSave = projectSaveState.current.capture(projectDocument);
     projectService.approveMigrateOnSave();
@@ -1861,7 +1972,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     captureAllLayouts,
     captureMtimeSnapshot,
     documentService,
-    projectDocument,
     projectService,
   ]);
 
@@ -1912,6 +2022,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     refreshProjectList,
     clearPlayPreviewScripts,
     cancelSceneDocumentLoad,
+    setAnimEditorModes,
+    setProjectDocument,
   ]);
 
   const closeProject = useCallback(async () => {
@@ -1938,7 +2050,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       /** When set, overrides `playerFilesHaveKtx2Transcoder` for Texture packing. */
       transcoderAvailable?: boolean;
     }) => {
-      const exportDocument = options?.projectSnapshot ?? projectDocument;
+      const exportDocument =
+        options?.projectSnapshot ?? projectDocumentRef.current;
       // Export consumes persisted sources even when a tab contains unsaved edits.
       await flushAudioReverbForSave(await collectAudioReverbFlushScenes({
         paths: playSceneLibraryPaths(exportDocument?.scenes ?? [], projectService.registry?.list() ?? []),
@@ -2039,7 +2152,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         onPhase: options?.onPhase,
       });
     },
-    [projectDocument, projectService],
+    [projectService],
   );
 
   const zipExportedGame = useCallback((artifact: ExportArtifact) => {
@@ -2089,7 +2202,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       void journalBuffer.flush();
       bump();
     },
-    [bump, disposeDockSubscriptions, documentService, journalBuffer, projectService],
+    [
+      bump,
+      disposeDockSubscriptions,
+      documentService,
+      journalBuffer,
+      projectService,
+      setAnimEditorModes,
+    ],
   );
 
   const closeDocumentsForPaths = useCallback(
@@ -2140,7 +2260,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       else documentService.replaceLoadedContent(doc.id, content);
     }
     bump();
-  }, [bump, documentService, projectService]);
+  }, [bump, documentService, projectService, setProjectDocument]);
 
   const repairAfterAssetDelete = useCallback(
     async (
@@ -2200,6 +2320,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       captureMtimeSnapshot,
       documentService,
       projectService,
+      setProjectDocument,
     ],
   );
 
@@ -2271,7 +2392,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       }
       await finishOpenDocument(ref);
     },
-    [documentService, finishOpenDocument],
+    [documentService, finishOpenDocument, setPendingExclusiveScene],
   );
 
   const openRecordedTrace = useCallback(
@@ -2295,7 +2416,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   const confirmExclusiveSceneOpen = useCallback(
     async (mode: "save" | "discard") => {
-      const ref = pendingExclusiveScene;
+      // Written by openDocument's setter, so a request made earlier in the
+      // same event is already visible here.
+      const ref = pendingExclusiveSceneRef.current;
       if (!ref) return;
       const request = exclusiveSceneRequest.current;
       if (mode === "save") {
@@ -2306,13 +2429,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       setPendingExclusiveScene(null);
       await finishOpenDocument(ref);
     },
-    [documentService, finishOpenDocument, pendingExclusiveScene, saveAll],
+    [documentService, finishOpenDocument, saveAll, setPendingExclusiveScene],
   );
 
   const cancelExclusiveSceneOpen = useCallback(() => {
     exclusiveSceneRequest.current += 1;
     setPendingExclusiveScene(null);
-  }, []);
+  }, [setPendingExclusiveScene]);
 
   const setActiveDocument = useCallback(
     (id: string) => {
@@ -2365,7 +2488,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       metadata: { ...current.metadata, version, updatedAt: new Date().toISOString() },
     } : current);
     scheduleDebouncedSave();
-  }, [scheduleDebouncedSave]);
+  }, [scheduleDebouncedSave, setProjectDocument]);
 
   const updateProjectSettings = useCallback(
     (settings: Partial<ProjectDocument["settings"]>) => {
@@ -2420,7 +2543,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       });
       scheduleDebouncedSave();
     },
-    [scheduleDebouncedSave],
+    [scheduleDebouncedSave, setProjectDocument],
   );
 
   const prefillSourceControlFromGit = useCallback(async () => {
@@ -2604,8 +2727,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     ],
   );
 
-  applySceneChangeRef.current = applySceneChange;
-  syncPrefabInstancesRef.current = async (options) => {
+  const syncPrefabInstances = useCallback(async (
+    options?: { classIds?: readonly string[]; quiet?: boolean },
+  ) => {
     const open = [...documentService.getState().openDocuments.values()];
     const sceneDoc = open.find((entry) => entry.ref.kind === "scene");
     if (!sceneDoc?.content) return;
@@ -2631,7 +2755,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       return;
     }
     await applySceneChange(sceneDoc.id, next, { prefabSync: true });
-  };
+  }, [applySceneChange, bump, documentService, projectService]);
+  // Callbacks declared above (scene open, Class component edits) reach it here.
+  useLayoutEffect(() => {
+    syncPrefabInstancesRef.current = syncPrefabInstances;
+  }, [syncPrefabInstances]);
 
   const applyAssetDocumentChange = useCallback(
     async (
@@ -3492,7 +3620,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     }
     return {
       library: playAudioLibraryFromAssets({
-        mixerGuid: projectDocument?.settings.audio.audioMixerGuid ?? null,
+        mixerGuid: projectDocumentRef.current?.settings.audio.audioMixerGuid ?? null,
         assets: payloads,
       }),
       loadSourceBytes: createPlayAudioSourceLoader({
@@ -3506,7 +3634,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           projectService.readAssetChunk(path, chunkId),
       }),
     };
-  }, [loadPlayAssetContent, projectDocument, projectService]);
+  }, [loadPlayAssetContent, projectService]);
 
   const collectPlayParticles = useCallback(
     () =>
@@ -3618,7 +3746,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     Array<{ guid: string; scene: SerializedScene }>
   > => {
     const paths = playSceneLibraryPaths(
-      projectDocument?.scenes ?? [],
+      projectDocumentRef.current?.scenes ?? [],
       projectService.registry?.list() ?? [],
     );
     const open = documentService.getState().openDocuments;
@@ -3638,7 +3766,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       }
     }
     return scenes;
-  }, [documentService, projectDocument, projectService]);
+  }, [documentService, projectService]);
 
   const collectPlaySceneLayers = useCallback(
     async (
@@ -3824,6 +3952,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           error?: string;
         } | null;
         dirtyDocuments: () => { kind: string; id: string }[];
+        /** Per-region React commits since the last reset (editor-edit profiling builds). */
+        renderProfile: () => RenderProfile;
+        resetRenderProfile: () => void;
         /** Texture alignment passes run and queued, and the Textures they requeued. */
         textureAlignment: () => { runs: number; pending: number; requeued: string[] };
         textureEncodeState: (path: string) => {
@@ -4042,7 +4173,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         };
       },
       projectStartupSceneGuid: () =>
-        projectDocument?.settings.startupSceneGuid?.trim() ?? "",
+        projectDocumentRef.current?.settings.startupSceneGuid?.trim() ?? "",
       pluginGuids: () =>
         projectService.plugins.map((plugin) => plugin.pluginGuid),
       enginePluginLoad: () => ({ ...lastEnginePluginLoad }),
@@ -4083,6 +4214,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       clearDocumentDirtyTrace,
       saveAllProgress,
       saveAllTrace,
+      renderProfile,
+      resetRenderProfile,
       dirtyDocuments: () => [
         ...documentService.getDirtyDocuments().map((doc) => ({
           kind: doc.ref.kind,
@@ -4100,16 +4233,15 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         .__babylonslateTestTouchAxes;
     };
   }, [
-      applyGraphChange,
-      reparentClassDocument,
-      applySceneChange,
+    applyGraphChange,
+    reparentClassDocument,
+    applySceneChange,
     applyAssetDocumentChange,
     bump,
     documentService,
     ensureDerived,
     journalBuffer,
     projectService,
-    projectDocument,
     updateProjectSettings,
   ]);
 
@@ -4250,7 +4382,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     if (doc.ref.kind === "anim-graph") {
       const mode = animEditorModeForDocument(
         activeDocumentId,
-        animEditorModes,
+        animEditorModesRef.current,
         doc,
       );
       return (
@@ -4260,13 +4392,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       );
     }
     return dockviewApisRef.current.get(activeDocumentId);
-  }, [documentService, animEditorModes]);
+  }, [documentService]);
 
   const setAnimEditorMode = useCallback(
     (id: string, mode: AnimEditorMode) => {
       captureLayoutForId(id);
       const doc = documentService.getDocument(id);
-      const currentMode = animEditorModeForDocument(id, animEditorModes, doc);
+      const currentMode = animEditorModeForDocument(id, animEditorModesRef.current, doc);
       if (currentMode !== mode) {
         const snapshot = preFocusLayoutsRef.current.get(id);
         if (snapshot) {
@@ -4294,7 +4426,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       }
       bumpDockWindows();
     },
-    [bumpDockWindows, captureLayoutForId, documentService, animEditorModes],
+    [bumpDockWindows, captureLayoutForId, documentService, setAnimEditorModes],
   );
 
   const setSceneMode = useCallback((id: string, mode: SceneMode) => {
@@ -4329,7 +4461,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       parentOf,
       sourceControlRef.current.enabled,
       doc.ref.kind === "anim-graph"
-        ? animEditorModeForDocument(activeDocumentId, animEditorModes, doc)
+        ? animEditorModeForDocument(activeDocumentId, animEditorModesRef.current, doc)
         : undefined,
       doc.ref.kind === "scene" ? parseSceneDocumentLayout(doc.layout).sceneMode : undefined,
     );
@@ -4351,7 +4483,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       );
     }
     bumpDockWindows();
-  }, [activeDockApi, bumpDockWindows, documentService, projectService, animEditorModes]);
+  }, [activeDockApi, bumpDockWindows, documentService, projectService]);
 
   const isDockWindowOpen = useCallback((panelId: string) => {
     const api = activeDockApi();
@@ -4407,7 +4539,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     const parentOf = classParentLookup(projectService.registry?.list() ?? []);
     const animMode =
       doc.ref.kind === "anim-graph"
-        ? animEditorModeForDocument(activeDocumentId, animEditorModes, doc)
+        ? animEditorModeForDocument(activeDocumentId, animEditorModesRef.current, doc)
         : undefined;
     const dockOptions = dockOptionsForIndexed(
       doc.ref.kind,
@@ -4433,30 +4565,31 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       next.add(focusKey);
       return next;
     });
-  }, [activeDockApi, documentService, projectService, settingsStore, animEditorModes]);
+  }, [activeDockApi, documentService, projectService, settingsStore]);
 
-  const value = useMemo<DocumentContextValue>(
-    () => {
-      void sourceControlTick;
-      const currentGraphSignature = graphCompileSignature(
-        openGraphCompileDocuments(documentService),
-        inputAssetCatalog(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
-      );
-      return {
-      route,
-      projectDocument,
-      projectName: projectDocument?.metadata.name ?? null,
-      openDocuments: documentService.getOpenDocumentsOrdered(),
-      tabOrder: [...documentService.getState().tabOrder],
-      activeDocumentId: documentService.getState().activeDocumentId,
-      listedProjects,
-      needsReconnect,
-      recoveryAvailable,
-      dirtyDocuments: documentService.getDirtyDocuments(),
-      projectDirty: projectSaveState.current.isDirty(projectDocument),
-      migrationPending,
-      templates,
-      homepageReady,
+  // Every callback above keeps its identity for the provider's lifetime (the
+  // state it reads lives in refs or services), so this object is created once
+  // and action-only consumers never re-render when documents change.
+  const actions = useMemo<DocumentActions>(
+    () => ({
+      refreshAssetRegistry,
+      noteAssetsCreated,
+      setShowPluginContent,
+      applyPluginOverrides,
+      createProjectPlugin,
+      deleteProjectPlugin,
+      exportPlugin,
+      importPlugin,
+      repathDocument,
+      subscribeDocumentIdentity,
+      retryFailedTextureEncoding,
+      prepareAreaEmission,
+      collectPlayAreaEmissions,
+      retryTextureEncoding,
+      textureAlignmentStale,
+      textureUsageBlockedReason,
+      onSessionDiagnostic,
+      getOpenDocuments,
       refreshTemplates,
       openProject,
       createEmptyProject,
@@ -4477,7 +4610,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       keepRecovery,
       openDocument,
       openRecordedTrace,
-      pendingExclusiveScene,
       confirmExclusiveSceneOpen,
       cancelExclusiveSceneOpen,
       closeDocument,
@@ -4500,81 +4632,24 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       writeSceneAudioReverbChunk,
       updateProjectVersion,
       updateProjectSettings,
-      sourceControl: sourceControlRef.current,
       prefillSourceControlFromGit,
-      externalChangePrompt,
       confirmExternalChangeReloadProject,
       confirmExternalChangeReloadDocs,
       dismissExternalChange,
       undoActiveDocument,
       redoActiveDocument,
-      canUndoActiveDocument: (() => {
-        const activeId = documentService.getState().activeDocumentId;
-        return activeId
-          ? editSessionRef.current.getStack(activeId).canUndo
-          : false;
-      })(),
-      canRedoActiveDocument: (() => {
-        const activeId = documentService.getState().activeDocumentId;
-        return activeId
-          ? editSessionRef.current.getStack(activeId).canRedo
-          : false;
-      })(),
       registerDockviewApi,
       unregisterDockviewApi,
       captureLayoutForId,
-      animEditorMode: (() => {
-        const activeId = documentService.getState().activeDocumentId;
-        if (!activeId) return "stateMachine" as const;
-        return animEditorModeForDocument(
-          activeId,
-          animEditorModes,
-          documentService.getDocument(activeId),
-        );
-      })(),
       setAnimEditorMode,
-      sceneMode: parseSceneDocumentLayout(documentService.getDocument(documentService.getState().activeDocumentId ?? "")?.layout).sceneMode,
       setSceneMode,
       activateDockPanel,
       toggleDockWindow,
       isDockWindowOpen,
       getOpenDockWindowCount,
-      isLayoutFocused: (() => {
-        const activeId = documentService.getState().activeDocumentId;
-        const doc = activeId ? documentService.getDocument(activeId) : undefined;
-        const key = activeId && doc?.ref.kind === "scene" ? dockviewApiKey(activeId, parseSceneDocumentLayout(doc.layout).sceneMode) : activeId;
-        return key ? focusedLayoutIds.has(key) : false;
-      })(),
       toggleLayoutFocus,
-      assetRegistry: projectService.registry,
-      extensionService: projectService.extensions,
-      projectGuid: projectService.guid,
-      registryVersion,
-      refreshAssetRegistry,
-      noteAssetsCreated,
-      pluginDescriptors: projectService.plugins,
-      pluginDiagnostics: projectService.pluginGraphDiagnostics,
-      showPluginContent:
-        documentService.getState().showPluginContent === true,
-      setShowPluginContent,
-      applyPluginOverrides,
-      createProjectPlugin,
-      deleteProjectPlugin,
-      exportPlugin,
-      importPlugin,
-      repathDocument,
-      subscribeDocumentIdentity,
-      retryFailedTextureEncoding,
-      prepareAreaEmission,
-      collectPlayAreaEmissions,
-      retryTextureEncoding,
-      textureAlignmentStale,
-      textureUsageBlockedReason,
-      onSessionDiagnostic,
       loadAssetThumbnail,
       writeAssetThumbnail,
-      thumbnailVersions,
-      thumbnailsEnabled,
       collectPlayPreviewScripts,
       collectEditorUtilityScripts,
       loadAssetDocument,
@@ -4601,76 +4676,244 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlaySceneLibrary,
       collectPlaySceneLayers,
       loadGraphDocument,
-      graphsNeedCompile: compileSignatureIsStale(
+    }),
+    [
+      refreshAssetRegistry,
+      noteAssetsCreated,
+      setShowPluginContent,
+      applyPluginOverrides,
+      createProjectPlugin,
+      deleteProjectPlugin,
+      exportPlugin,
+      importPlugin,
+      repathDocument,
+      subscribeDocumentIdentity,
+      retryFailedTextureEncoding,
+      prepareAreaEmission,
+      collectPlayAreaEmissions,
+      retryTextureEncoding,
+      textureAlignmentStale,
+      textureUsageBlockedReason,
+      onSessionDiagnostic,
+      getOpenDocuments,
+      refreshTemplates,
+      openProject,
+      createEmptyProject,
+      createFromTemplate,
+      openListedProject,
+      updateListedProject,
+      removeListedProject,
+      reconnectProject,
+      saveProject,
+      saveAll,
+      approveMigrationsAndSave,
+      closeProject,
+      forceCloseProject,
+      exportProject,
+      exportGameArtifact,
+      zipExportedGame,
+      dismissRecovery,
+      keepRecovery,
+      openDocument,
+      openRecordedTrace,
+      confirmExclusiveSceneOpen,
+      cancelExclusiveSceneOpen,
+      closeDocument,
+      closeDocumentsForPaths,
+      replaceClassReferencesBeforeDelete,
+      repairAfterAssetDelete,
+      setActiveDocument,
+      reorderTabs,
+      reorderClosableTabs,
+      updateScene,
+      updateGraph,
+      applyGraphChange,
+      reparentClassDocument,
+      applySceneChange,
+      applyAssetDocumentChange,
+      readAssetChunk,
+      writeAudioClipChunk,
+      removeAudioClipChunk,
+      writeSceneNavmeshChunk,
+      writeSceneAudioReverbChunk,
+      updateProjectVersion,
+      updateProjectSettings,
+      prefillSourceControlFromGit,
+      confirmExternalChangeReloadProject,
+      confirmExternalChangeReloadDocs,
+      dismissExternalChange,
+      undoActiveDocument,
+      redoActiveDocument,
+      registerDockviewApi,
+      unregisterDockviewApi,
+      captureLayoutForId,
+      setAnimEditorMode,
+      setSceneMode,
+      activateDockPanel,
+      toggleDockWindow,
+      isDockWindowOpen,
+      getOpenDockWindowCount,
+      toggleLayoutFocus,
+      loadAssetThumbnail,
+      writeAssetThumbnail,
+      collectPlayPreviewScripts,
+      collectEditorUtilityScripts,
+      loadAssetDocument,
+      collectPlayAnimGraphs,
+      collectPlayBehaviourTrees,
+      collectPlayBlackboards,
+      collectPlaySpritePayloads,
+      collectPlaySpriteAnimationPayloads,
+      collectPlayWaterContent,
+      collectPlayRenderTargets,
+      collectPlayTilemapContent,
+      collectPlayTextureBytes,
+      collectPlayTexturePixelSizes,
+      collectPlayFontFacetypeBytes,
+      collectPlayFontMsdfPair,
+      collectPlayFontFaceEntries,
+      collectPlayFontCssStacks,
+      collectPlayModelBytes,
+      collectPlayModelPayloads,
+      collectPlayInputAssets,
+      collectPlayAudio,
+      collectPlayParticles,
+      collectPlayMaterialLibrary,
+      collectPlaySceneLibrary,
+      collectPlaySceneLayers,
+      loadGraphDocument,
+    ],
+  );
+
+  // Every service mutation is followed by a context update, so reading the
+  // revisions on each provider render sees the latest ones.
+  const documentRevisions = documentService.getRevisions();
+  const tabsRevision = documentService.getTabsRevision();
+  const tabOrderRef = useRef<string[]>([]);
+  const tabOrder = useMemo(() => {
+    void tabsRevision;
+    const next = documentService.getState().tabOrder;
+    const previous = tabOrderRef.current;
+    // Switching tabs advances the tabs revision without moving any tab.
+    if (
+      previous.length === next.length &&
+      previous.every((id, index) => id === next[index])
+    ) {
+      return previous;
+    }
+    const copy = [...next];
+    tabOrderRef.current = copy;
+    return copy;
+  }, [documentService, tabsRevision]);
+  // Entries are mutated in place, so these follow the revisions rather than
+  // entry identity; registry-only and other unrelated updates keep them.
+  const openDocuments = useMemo(() => {
+    void documentRevisions;
+    void tabOrder;
+    return documentService.getOpenDocumentsOrdered();
+  }, [documentRevisions, documentService, tabOrder]);
+  const dirtyDocuments = useMemo(() => {
+    void documentRevisions;
+    return documentService.getDirtyDocuments();
+  }, [documentRevisions, documentService]);
+  const graphSignatureRevision = documentKindsRevision(
+    documentRevisions,
+    GRAPH_SIGNATURE_KINDS,
+  );
+  const currentGraphSignature = useMemo(() => {
+    void graphSignatureRevision;
+    void registryEpoch;
+    return graphCompileSignature(
+      openGraphCompileDocuments(documentService),
+      inputAssetCatalog(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
+    );
+  }, [documentService, graphSignatureRevision, projectService, registryEpoch]);
+
+  /** The `useDocuments()` facade: the stable actions plus per-edit state. */
+  const value = useMemo<DocumentContextValue>(
+    () => {
+      void sourceControlTick;
+      // Service state read below (active tab, undo stacks, layouts) changed.
+      void contextTick;
+      const activeId = documentService.getState().activeDocumentId;
+      const activeDoc = activeId ? documentService.getDocument(activeId) : undefined;
+      const activeStack = activeId ? editSessionRef.current.getStack(activeId) : null;
+      const sceneMode = parseSceneDocumentLayout(activeDoc?.layout).sceneMode;
+      const focusKey =
+        activeId && activeDoc?.ref.kind === "scene"
+          ? dockviewApiKey(activeId, sceneMode)
+          : activeId;
+      return {
+        ...actions,
+        route,
+        projectDocument,
+        projectName: projectDocument?.metadata.name ?? null,
+        openDocuments,
+        documentRevisions,
+        tabsRevision,
+        tabOrder,
+        activeDocumentId: activeId,
+        listedProjects,
+        needsReconnect,
+        recoveryAvailable,
+        dirtyDocuments,
+        projectDirty: projectSaveState.current.isDirty(projectDocument),
+        migrationPending,
+        templates,
+        homepageReady,
+        pendingExclusiveScene,
+        sourceControl: sourceControlRef.current,
+        externalChangePrompt,
+        canUndoActiveDocument: activeStack?.canUndo ?? false,
+        canRedoActiveDocument: activeStack?.canRedo ?? false,
+        animEditorMode: activeId
+          ? animEditorModeForDocument(activeId, animEditorModes, activeDoc)
+          : "stateMachine",
+        sceneMode,
+        isLayoutFocused: focusKey ? focusedLayoutIds.has(focusKey) : false,
+        assetRegistry: projectService.registry,
+        extensionService: projectService.extensions,
+        projectGuid: projectService.guid,
+        registryEpoch,
+        pluginDescriptors: projectService.plugins,
+        pluginDiagnostics: projectService.pluginGraphDiagnostics,
+        showPluginContent:
+          documentService.getState().showPluginContent === true,
+        thumbnailVersions,
+        thumbnailsEnabled,
+        graphsNeedCompile: compileSignatureIsStale(
+          currentGraphSignature,
+          lastCompiledSignature,
+        ),
         currentGraphSignature,
-        lastCompiledSignature,
-      ),
-      currentGraphSignature,
-      scriptsStale: playBundlesNeedCollect({
+        scriptsStale: playBundlesNeedCollect({
+          playLoadedSignature,
+          currentGraphSignature,
+          scriptsLength: playPreviewBundles.length,
+          editorCompileSignature: lastCompiledSignature,
+        }),
+        playPreviewBundles,
+        playPreviewDiagnostics,
         playLoadedSignature,
-        currentGraphSignature,
-        scriptsLength: playPreviewBundles.length,
-        editorCompileSignature: lastCompiledSignature,
-      }),
-      playPreviewBundles,
-      playPreviewDiagnostics,
-      playLoadedSignature,
-      searchIndex: projectService.searchIndex,
-    };
+        searchIndex: projectService.searchIndex,
+      };
     },
     [
-      registryVersion,
+      actions,
+      contextTick,
+      registryEpoch,
+      openDocuments,
+      documentRevisions,
+      tabsRevision,
+      tabOrder,
+      dirtyDocuments,
+      currentGraphSignature,
       route,
       projectDocument,
       documentService,
       projectService,
-      refreshAssetRegistry,
-      noteAssetsCreated,
-      setShowPluginContent,
-      applyPluginOverrides,
-      createProjectPlugin,
-      deleteProjectPlugin,
-      exportPlugin,
-      importPlugin,
-      repathDocument,
-      subscribeDocumentIdentity,
-      retryFailedTextureEncoding,
-      prepareAreaEmission,
-      collectPlayAreaEmissions,
-      retryTextureEncoding,
-      textureAlignmentStale,
-      textureUsageBlockedReason,
-      onSessionDiagnostic,
-      loadAssetThumbnail,
-      writeAssetThumbnail,
       thumbnailVersions,
       thumbnailsEnabled,
-      collectPlayPreviewScripts,
-      collectEditorUtilityScripts,
-      loadAssetDocument,
-      collectPlayAnimGraphs,
-      collectPlayBehaviourTrees,
-      collectPlayBlackboards,
-      collectPlaySpritePayloads,
-      collectPlaySpriteAnimationPayloads,
-      collectPlayWaterContent,
-      collectPlayRenderTargets,
-      collectPlayTilemapContent,
-      collectPlayTextureBytes,
-      collectPlayTexturePixelSizes,
-      collectPlayFontFacetypeBytes,
-      collectPlayFontMsdfPair,
-      collectPlayFontFaceEntries,
-      collectPlayFontCssStacks,
-      collectPlayModelBytes,
-      collectPlayModelPayloads,
-      collectPlayInputAssets,
-      collectPlayAudio,
-      collectPlayParticles,
-      collectPlayMaterialLibrary,
-      collectPlaySceneLibrary,
-      collectPlaySceneLayers,
-      loadGraphDocument,
       lastCompiledSignature,
       playLoadedSignature,
       playPreviewBundles,
@@ -4681,97 +4924,71 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       migrationPending,
       templates,
       homepageReady,
-      refreshTemplates,
-      openProject,
-      createEmptyProject,
-      createFromTemplate,
-      openListedProject,
-      updateListedProject,
-      removeListedProject,
-      reconnectProject,
-      saveProject,
-      saveAll,
-      approveMigrationsAndSave,
-      closeProject,
-      forceCloseProject,
-      exportProject,
-      exportGameArtifact,
-      zipExportedGame,
-      dismissRecovery,
-      keepRecovery,
-      openDocument,
-      openRecordedTrace,
       pendingExclusiveScene,
-      confirmExclusiveSceneOpen,
-      cancelExclusiveSceneOpen,
-      closeDocument,
-      closeDocumentsForPaths,
-      replaceClassReferencesBeforeDelete,
-      repairAfterAssetDelete,
-      setActiveDocument,
-      reorderTabs,
-      reorderClosableTabs,
-      updateScene,
-      updateGraph,
-      applyGraphChange,
-      reparentClassDocument,
-      applySceneChange,
-      applyAssetDocumentChange,
-      readAssetChunk,
-      writeAudioClipChunk,
-      removeAudioClipChunk,
-      writeSceneNavmeshChunk,
-      writeSceneAudioReverbChunk,
-      updateProjectVersion,
-      updateProjectSettings,
-      prefillSourceControlFromGit,
       sourceControlTick,
       externalChangePrompt,
-      confirmExternalChangeReloadProject,
-      confirmExternalChangeReloadDocs,
-      dismissExternalChange,
-      undoActiveDocument,
-      redoActiveDocument,
-      registerDockviewApi,
-      unregisterDockviewApi,
-      captureLayoutForId,
-      setAnimEditorMode,
-      setSceneMode,
       animEditorModes,
-      activateDockPanel,
-      toggleDockWindow,
-      isDockWindowOpen,
-      getOpenDockWindowCount,
-      toggleLayoutFocus,
       focusedLayoutIds,
     ],
   );
 
   return (
-    <DocumentContext.Provider value={value}>
-      <DockWindowTickContext.Provider value={dockWindowTick}>
-        {children}
-      </DockWindowTickContext.Provider>
-      <SceneLoadingDialog
-        open={sceneDocumentLoad !== null}
-        progress={null}
-        phase="Loading Document"
-        failed={sceneDocumentLoad?.failed}
-        onRetry={() => { if (sceneDocumentLoad) void finishOpenDocument(sceneDocumentLoad.ref); }}
-        onDismiss={cancelSceneDocumentLoad}
-      />
-    </DocumentContext.Provider>
+    <DocumentActionsContext.Provider value={actions}>
+      <AppRouteContext.Provider value={route}>
+        <DocumentContext.Provider value={value}>
+          <DockWindowTickContext.Provider value={dockWindowTick}>
+            {children}
+          </DockWindowTickContext.Provider>
+          <SceneLoadingDialog
+            open={sceneDocumentLoad !== null}
+            progress={null}
+            phase="Loading Document"
+            failed={sceneDocumentLoad?.failed}
+            onRetry={() => { if (sceneDocumentLoad) void finishOpenDocument(sceneDocumentLoad.ref); }}
+            onDismiss={cancelSceneDocumentLoad}
+          />
+        </DocumentContext.Provider>
+      </AppRouteContext.Provider>
+    </DocumentActionsContext.Provider>
   );
 }
 
 // Context modules intentionally export the provider plus consumer hooks.
 /* eslint-disable react-refresh/only-export-components -- context module */
+/**
+ * Everything: the stable actions plus documents, project and registry state.
+ * The value changes after every edit, tab change and save, so every caller
+ * re-renders with it. Prefer `useDocumentActions()` when no state is needed.
+ */
 export function useDocuments(): DocumentContextValue {
   const context = useContext(DocumentContext);
   if (!context) {
     throw new Error("useDocuments must be used within DocumentProvider");
   }
   return context;
+}
+
+/**
+ * The document callbacks only. The object and each callback keep their
+ * identity while the provider is mounted, so a component that only acts on
+ * documents does not re-render when they change; each callback reads the
+ * current documents, project and Anim modes when it runs.
+ */
+export function useDocumentActions(): DocumentActions {
+  const actions = useContext(DocumentActionsContext);
+  if (!actions) {
+    throw new Error("useDocumentActions must be used within DocumentProvider");
+  }
+  return actions;
+}
+
+/** Homepage or editor; its callers re-render only when the route changes. */
+export function useAppRoute(): AppRoute {
+  const route = useContext(AppRouteContext);
+  if (route === null) {
+    throw new Error("useAppRoute must be used within DocumentProvider");
+  }
+  return route;
 }
 
 export function useDockWindowTick(): number {

@@ -47,6 +47,7 @@ import {
 import type { ProjectFolderHandle, ProjectStorage } from "@babylonslate/core";
 import {
   AssetRegistry,
+  RegistryGenerationClock,
   type AreaEmissionProgress,
   type AreaEmissionProcessor,
   canUseWorkerEncode,
@@ -349,6 +350,8 @@ export class ProjectService {
   private readonly legacyAtlasCache = new Map<string, readonly string[]>();
   /** Textures an alignment check is requeuing, shared by remounts as the encode queue is. */
   private readonly alignmentRequeues = new Set<string>();
+  /** Change counter shared by every project registry, so remounts never rewind it. */
+  private readonly registryClock = new RegistryGenerationClock();
   private textureAlignmentChain: Promise<unknown> = Promise.resolve();
   private readonly textureAlignment = { runs: 0, pending: 0, requeued: new Set<string>() };
 
@@ -762,6 +765,16 @@ export class ProjectService {
     return this.assetRegistry;
   }
 
+  /**
+   * Monotonic across remounts and project switches: advances whenever the
+   * current registry's contents change, including when a project closes and
+   * its registry is dropped. Plugin and search-index changes are reported by
+   * `onRegistryChange` instead.
+   */
+  get registryGeneration(): number {
+    return this.registryClock.value;
+  }
+
   get plugins(): PluginDescriptor[] {
     return this.pluginDescriptors;
   }
@@ -1029,6 +1042,7 @@ export class ProjectService {
     this.assetGuids.clear();
     this.sceneAudioReverb.clear();
     this.assetRegistry = null;
+    this.registryClock.advance();
     this.projectSearchIndex?.clear();
     this.projectSearchIndex = null;
     this.pluginDescriptors = [];
@@ -1243,6 +1257,7 @@ export class ProjectService {
       blobs: this.blobs,
       legacyAtlasCache: this.legacyAtlasCache,
       alignmentRequeues: this.alignmentRequeues,
+      generationClock: this.registryClock,
     });
     registry.setEncodePipeline(this.encodeQueue, {
       ...DEFAULT_TEXTURE_ENCODE_SETTINGS,
@@ -1756,7 +1771,10 @@ export class ProjectService {
       path,
     });
     if (migrated.pending) {
-      this.migrationPending.push(migrated.pending);
+      // Loading an unmigrated asset again keeps one entry for its path.
+      const existing = this.migrationPending.findIndex((entry) => entry.path === path);
+      if (existing === -1) this.migrationPending.push(migrated.pending);
+      else this.migrationPending[existing] = migrated.pending;
     }
     // PluginSettings.version is an author label, separate from the asset header schema version.
     if (raw.type === "PluginSettings") return migrated.payload;

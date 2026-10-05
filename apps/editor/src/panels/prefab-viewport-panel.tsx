@@ -52,6 +52,10 @@ import { fontMsdfMapsFromPairs } from "../lib/play-fonts";
 import { savedMaterialLibraryKey } from "../lib/material-asset-revision";
 import { savedAreaEmissionKey } from "../lib/collect-area-emissions";
 import { sceneStreamingEditorComponents } from "../lib/scene-streaming-editor-labels";
+import {
+  MATERIAL_DOCUMENT_KINDS,
+  useOpenDocumentsOfKinds,
+} from "../lib/use-open-documents-of-kinds";
 import { physicsWorldFromOpenDocuments } from "./add-component-catalog";
 
 /**
@@ -100,26 +104,28 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     projectDocument,
     openDocuments,
     assetRegistry,
-    registryVersion,
+    registryEpoch,
   } = useDocuments();
   const previewComponents = useMemo(() => sceneStreamingEditorComponents(components, (guid) => {
-    void registryVersion; // Registry headers mutate without replacing the registry.
+    void registryEpoch; // Registry headers mutate without replacing the registry.
     const asset = assetRegistry?.getByGuid?.(guid);
     return asset?.header.type === "Scene" ? asset.header.name : undefined;
-  }), [components, assetRegistry, registryVersion]);
+  }), [components, assetRegistry, registryEpoch]);
   const previewComponentsRef = useRef(previewComponents);
   previewComponentsRef.current = previewComponents;
   const { documentId } = useDocumentWorkspace();
+  const documentPath = openDocuments.find((entry) => entry.id === documentId)?.ref.path;
   const overlayPrefab = useMemo(() => {
-    const doc = openDocuments.find((entry) => entry.id === documentId);
+    void registryEpoch; // Registry headers mutate without replacing the registry.
     const listed = assetRegistry?.list() ?? [];
-    const indexed = listed.find((asset) => asset.path === doc?.ref.path);
+    const indexed = listed.find((asset) => asset.path === documentPath);
     if (!indexed) return false;
     return walkAncestry(
       classIdFromClassAsset(indexed),
       classParentLookup(listed),
     ).includes("SceneLayerActor");
-  }, [assetRegistry, documentId, openDocuments]);
+  }, [assetRegistry, documentPath, registryEpoch]);
+  const materialDocuments = useOpenDocumentsOfKinds(MATERIAL_DOCUMENT_KINDS);
   const prefabPhysicsWorld = overlayPrefab
     ? "2d"
     : physicsWorldFromOpenDocuments(openDocuments);
@@ -294,9 +300,9 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
 
   const previewLoadKey = prefabPreviewLoadKey(previewComponents);
   const materialLibraryKey = useMemo(() => {
-    void registryVersion;
+    void registryEpoch;
     return savedMaterialLibraryKey(assetRegistry?.list() ?? []);
-  }, [assetRegistry, registryVersion]);
+  }, [assetRegistry, registryEpoch]);
   const areaTextureGuids = useMemo(() => areaEmissionTextureGuids(components), [components]);
   const areaEmissionKey = savedAreaEmissionKey(areaTextureGuids, (guid) => assetRegistry?.getByGuid(guid));
   const textureLodKey = `${editorTextureLodEnabled}:${editorTextureLodQuality}`;
@@ -418,8 +424,8 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
       cancelled = true;
     };
     // Key on authored payload + Engine identity, not `components` array
-    // identity. PrefabEditing rebuilds that list whenever `openDocuments`
-    // bumps (compiler, Save All), which cancelled in-flight material binds.
+    // identity. PrefabEditing rebuilds that list on edits that leave the
+    // authored payload unchanged, which would cancel in-flight material binds.
   }, [
     previewLoadKey,
     materialLibraryKey,
@@ -449,6 +455,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   useEffect(() => {
     const handle = engineRef.current;
     if (!handle) return;
+    void registryEpoch; // Registry headers mutate without replacing the registry.
     const byPath = new Map(
       (assetRegistry?.list() ?? []).filter((asset) => asset.header.type === "Material" || asset.header.type === "MaterialInstance").map((asset) => [
         asset.path,
@@ -456,13 +463,12 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
       ]),
     );
     const guids = new Set<string>();
-    for (const doc of openDocuments) {
-      if (doc.ref.kind !== "material" && doc.ref.kind !== "material-instance") continue;
+    for (const doc of materialDocuments) {
       const guid = byPath.get(doc.ref.path);
       if (guid) guids.add(guid);
     }
     handle.setEditingMaterialGuids(guids);
-  }, [openDocuments, assetRegistry, sharedEngine]);
+  }, [materialDocuments, assetRegistry, registryEpoch, sharedEngine]);
 
   useEffect(() => {
     engineRef.current?.editor?.setViewportMode(viewportMode);

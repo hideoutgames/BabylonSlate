@@ -16,6 +16,43 @@ export interface ReflectionSettings {
   strength: number;
 }
 
+export interface AmbientOcclusionSettings {
+  enabled: boolean;
+  /** Occlusion sampling resolution; composition stays full resolution. */
+  resolutionScale: number;
+  samples: number;
+  /** Hemisphere radius in scene units. */
+  radius: number;
+  strength: number;
+  /** View distance beyond which occlusion fades out. */
+  maxDistance: number;
+}
+
+/**
+ * Display-space color grading through a 2D lookup-table strip: N square
+ * slices side by side (for example 256x16 or 1024x32), blue selecting the
+ * slice, red across and green down each slice. Identity output maps every
+ * color to itself.
+ */
+export interface ColorGradingSettings {
+  enabled: boolean;
+  /** Texture asset holding the LUT strip; null grades nothing. */
+  lutTextureGuid: string | null;
+}
+
+/**
+ * Temporal anti-aliasing: the camera projection is jittered by a sub-pixel
+ * sequence each frame and the history is reprojected through motion vectors,
+ * clamped to the current neighborhood and blended with the new frame.
+ */
+export interface TemporalAntiAliasingSettings {
+  enabled: boolean;
+  /** Length of the sub-pixel jitter sequence. */
+  samples: number;
+  /** Weight of the current frame; lower values smooth more and ghost more. */
+  blend: number;
+}
+
 export interface VolumetricLightingSettings {
   enabled: boolean;
   resolutionScale: number;
@@ -48,6 +85,9 @@ export interface RenderEffectsSettings {
     scale: number;
   };
   fxaa: boolean;
+  temporalAntiAliasing: TemporalAntiAliasingSettings;
+  colorGrading: ColorGradingSettings;
+  ambientOcclusion: AmbientOcclusionSettings;
   reflections: ReflectionSettings;
   volumetricLighting: VolumetricLightingSettings;
 }
@@ -61,6 +101,12 @@ export const RENDER_EFFECTS_LIMITS = {
   bloomKernel: [1, 512],
   bloomScale: [0.05, 1],
   spatialResolutionScale: [0.25, 1],
+  temporalSamples: [4, 32],
+  temporalBlend: [0.02, 1],
+  ambientOcclusionSamples: [4, 32],
+  ambientOcclusionRadius: [0.05, 10],
+  ambientOcclusionStrength: [0, 4],
+  ambientOcclusionDistance: [1, 1000],
   reflectionSteps: [8, 128],
   reflectionDistance: [0.1, 1000],
   reflectionThickness: [0.001, 10],
@@ -81,6 +127,12 @@ export const DEFAULT_RENDER_EFFECTS: Readonly<RenderEffectsSettings> = {
   vignette: { enabled: false, weight: 1.5, color: [0, 0, 0] },
   bloom: { enabled: false, threshold: 0.9, weight: 0.15, kernel: 64, scale: 0.5 },
   fxaa: false,
+  temporalAntiAliasing: { enabled: false, samples: 8, blend: 0.1 },
+  colorGrading: { enabled: false, lutTextureGuid: null },
+  ambientOcclusion: {
+    enabled: false, resolutionScale: 0.5, samples: 16,
+    radius: 0.5, strength: 1, maxDistance: 100,
+  },
   reflections: {
     enabled: false, resolutionScale: 0.5, maxSteps: 32,
     maxDistance: 50, thickness: 0.2, strength: 1,
@@ -125,8 +177,13 @@ export function normalizeRenderEffectsSettings(
   const colorPipeline = object(source.colorPipeline);
   const vignette = object(source.vignette);
   const bloom = object(source.bloom);
+  const colorGrading = object(source.colorGrading);
+  const temporal = object(source.temporalAntiAliasing);
+  const ambientOcclusion = object(source.ambientOcclusion);
   const reflections = object(source.reflections);
   const volumetric = object(source.volumetricLighting);
+  const occlusionNumber = (key: Exclude<keyof AmbientOcclusionSettings, "enabled">, limits: readonly [number, number]) =>
+    finite(ambientOcclusion[key], DEFAULT_RENDER_EFFECTS.ambientOcclusion[key], ...limits);
   const reflectionNumber = (key: Exclude<keyof ReflectionSettings, "enabled">, limits: readonly [number, number]) =>
     finite(reflections[key], DEFAULT_RENDER_EFFECTS.reflections[key], ...limits);
   const volumetricNumber = (key: Exclude<keyof VolumetricLightingSettings, "enabled">, limits: readonly [number, number]) =>
@@ -188,6 +245,28 @@ export function normalizeRenderEffectsSettings(
       ),
     },
     fxaa: source.fxaa === true,
+    temporalAntiAliasing: {
+      enabled: temporal.enabled === true,
+      samples: Math.round(finite(temporal.samples, DEFAULT_RENDER_EFFECTS.temporalAntiAliasing.samples,
+        ...RENDER_EFFECTS_LIMITS.temporalSamples)),
+      blend: finite(temporal.blend, DEFAULT_RENDER_EFFECTS.temporalAntiAliasing.blend,
+        ...RENDER_EFFECTS_LIMITS.temporalBlend),
+    },
+    colorGrading: {
+      enabled: colorGrading.enabled === true,
+      lutTextureGuid:
+        typeof colorGrading.lutTextureGuid === "string" && colorGrading.lutTextureGuid.trim()
+          ? colorGrading.lutTextureGuid.trim()
+          : null,
+    },
+    ambientOcclusion: {
+      enabled: ambientOcclusion.enabled === true,
+      resolutionScale: occlusionNumber("resolutionScale", RENDER_EFFECTS_LIMITS.spatialResolutionScale),
+      samples: Math.round(occlusionNumber("samples", RENDER_EFFECTS_LIMITS.ambientOcclusionSamples)),
+      radius: occlusionNumber("radius", RENDER_EFFECTS_LIMITS.ambientOcclusionRadius),
+      strength: occlusionNumber("strength", RENDER_EFFECTS_LIMITS.ambientOcclusionStrength),
+      maxDistance: occlusionNumber("maxDistance", RENDER_EFFECTS_LIMITS.ambientOcclusionDistance),
+    },
     reflections: {
       enabled: reflections.enabled === true,
       resolutionScale: reflectionNumber("resolutionScale", RENDER_EFFECTS_LIMITS.spatialResolutionScale),
@@ -207,4 +286,10 @@ export function normalizeRenderEffectsSettings(
       anisotropy: volumetricNumber("anisotropy", RENDER_EFFECTS_LIMITS.volumetricAnisotropy),
     },
   };
+}
+
+/** Project assets the effects block references; exports and Play must load them. */
+export function renderEffectsAssetGuids(effects: RenderEffectsSettings | undefined): string[] {
+  const guid = effects?.colorGrading.enabled ? effects.colorGrading.lutTextureGuid : null;
+  return guid ? [guid] : [];
 }

@@ -909,6 +909,12 @@ export class ForwardSceneFrameGraph {
             output: { color, texture: Boolean(output.color) },
           });
         }
+        // Temporal anti-aliasing jitters the scene draw with its geometry pass,
+        // including the water split's transparent pass, which draws over the
+        // jittered opaque depth and samples the jittered scene copy.
+        const jitter = this.effectsGraph?.spatial?.jitter;
+        jitter?.jitterRenderer(this.objects.objectRenderer);
+        if (this.water) jitter?.jitterRenderer(this.water.transparent.objectRenderer);
         this.shadows = new ManagedShadowsTask(this.graph, scene, this.objects);
         for (const receiver of this.water?.shadowReceivers ?? []) this.shadows.addReceiver(receiver);
         this.clustered = new FrameGraphClusteredLightsTask(

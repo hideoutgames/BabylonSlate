@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { BoxIcon, ImageIcon, Maximize2Icon, ScanIcon } from "lucide-react";
 import {
@@ -29,7 +29,7 @@ import {
   shouldCompressTexture,
   type AreaEmissionProgress,
 } from "@babylonslate/assets";
-import { useDocuments } from "../context/document-context";
+import { useDocumentActions, useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import {
   applyTextureCompressionQualityChange,
@@ -64,7 +64,7 @@ function useTextureAlignmentStale(
   guid: string | undefined,
   payload: Record<string, unknown>,
   check: (guid: string, usage?: string) => Promise<boolean>,
-  registryVersion: number,
+  registryEpoch: number,
 ): boolean {
   const usage = typeof payload.usage === "string" ? payload.usage : "albedo";
   const key = guid && !isEnvironmentTexturePayload(payload) && shouldCompressTexture(usage) ? `${guid}\n${usage}` : null;
@@ -77,7 +77,7 @@ function useTextureAlignmentStale(
       () => { if (current) setResult({ key, stale: false }); },
     );
     return () => { current = false; };
-  }, [check, guid, key, usage, registryVersion]);
+  }, [check, guid, key, usage, registryEpoch]);
   return key !== null && result?.key === key && result.stale;
 }
 
@@ -125,18 +125,24 @@ export function TextureDetailsPanel(_props: IDockviewPanelProps) {
 
 function usageLabel(value: string): string {
   if (value === "pixelArt") return "Pixel Art";
+  if (value === "colorGrading") return "Color Grading LUT";
   if (value === "ui") return "UI";
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
-export function TexturePreview({
+/**
+ * Memoized because it reads only the stable document actions and its panel
+ * passes the document's own content object, so an edit to another document
+ * re-renders the subscribing panel but skips this preview.
+ */
+export const TexturePreview = memo(function TexturePreview({
   path,
   payload,
 }: {
   path: string;
   payload: Record<string, unknown>;
 }) {
-  const { readAssetChunk } = useDocuments();
+  const { readAssetChunk } = useDocumentActions();
   const environment = isEnvironmentTexturePayload(payload);
   const [url, setUrl] = useState<string | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "missing">("loading");
@@ -276,7 +282,7 @@ export function TexturePreview({
       </div>
     </div>
   );
-}
+});
 
 function TexturePreviewEmpty({
   icon,
@@ -328,8 +334,8 @@ export function TextureDetails({
   /** `mergeKey` groups one scrub's edits into one undo entry. */
   onChange: (next: Record<string, unknown>, mergeKey?: string) => void;
 }) {
-  const { retryTextureEncoding, textureAlignmentStale, textureUsageBlockedReason, prepareAreaEmission, assetRegistry, registryVersion } = useDocuments();
-  const alignmentStale = useTextureAlignmentStale(guid, payload, textureAlignmentStale, registryVersion);
+  const { retryTextureEncoding, textureAlignmentStale, textureUsageBlockedReason, prepareAreaEmission, assetRegistry, registryEpoch } = useDocuments();
+  const alignmentStale = useTextureAlignmentStale(guid, payload, textureAlignmentStale, registryEpoch);
   // A re-encode rewrites the file: not while it is read-only, such as under
   // another user's lock (the tab's banner offers Edit Anyway).
   const encodeBlocked = guid ? textureUsageBlockedReason(guid) !== null : true;

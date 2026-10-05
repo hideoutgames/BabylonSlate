@@ -25,7 +25,7 @@ import {
   type EditorSceneLoadOptions,
 } from "@babylonslate/render";
 import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
-import { type SerializedScene, areaEmissionTextureGuids, isSceneWorkspaceKind, requestEditorDrop, engineCommandBus } from "@babylonslate/core";
+import { type SerializedScene, areaEmissionTextureGuids, renderEffectsAssetGuids, isSceneWorkspaceKind, requestEditorDrop, engineCommandBus } from "@babylonslate/core";
 import { useDocuments } from "../context/document-context";
 import { useKeybindChord, useKeybindCommand } from "../context/keybind-context";
 import { subscribeAppSettings } from "../context/app-settings-context";
@@ -71,6 +71,10 @@ import { sceneViewportAssetKey } from "../lib/scene-viewport-assets";
 import { savedAreaEmissionKey } from "../lib/collect-area-emissions";
 import { sceneStreamingEditorScene } from "../lib/scene-streaming-editor-labels";
 import {
+  MATERIAL_DOCUMENT_KINDS,
+  useOpenDocumentsOfKinds,
+} from "../lib/use-open-documents-of-kinds";
+import {
   isSceneViewportRemountLoad,
   runSceneViewportBlockingLoad,
   sceneViewportRenderSettingsKey,
@@ -114,8 +118,9 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     collectPlayMaterialLibrary,
     readAssetChunk,
     assetRegistry,
-    registryVersion,
+    registryEpoch,
   } = useDocuments();
+  const materialDocuments = useOpenDocumentsOfKinds(MATERIAL_DOCUMENT_KINDS);
   const {
     selectedActorIds,
     shapeEditTarget,
@@ -260,10 +265,10 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     ? (doc.content as SerializedScene)
     : null;
   const editorScene = useMemo(() => scene && sceneStreamingEditorScene(scene, (guid) => {
-    void registryVersion; // Registry headers mutate without replacing the registry.
+    void registryEpoch; // Registry headers mutate without replacing the registry.
     const asset = assetRegistry?.getByGuid?.(guid);
     return asset?.header.type === "Scene" ? asset.header.name : undefined;
-  }), [scene, assetRegistry, registryVersion]);
+  }), [scene, assetRegistry, registryEpoch]);
   const brushStateRef = useRef<SceneBrushState | null>(null);
   const group = scene?.settings.foliageGroups?.find((entry) => entry.id === sceneTools.groupId);
   brushStateRef.current = {
@@ -637,23 +642,26 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   }, [playing, preparing, sceneReady, engineEpoch]);
 
   const textureLodKey = `${editorTextureLodEnabled}:${editorTextureLodQuality}`;
+  const effectsAssetGuidsKey = JSON.stringify(renderEffectsAssetGuids(projectDocument?.settings.render.effects));
   const { materialLibraryKey, viewportAssetsKey } = useMemo(() => {
-    void registryVersion;
+    void registryEpoch;
     const assets = assetRegistry?.list() ?? [];
     return {
       materialLibraryKey: savedMaterialLibraryKey(assets),
       viewportAssetsKey: JSON.stringify([
         sceneViewportAssetKey(scene, assets),
         textureLodKey,
+        effectsAssetGuidsKey,
         projectDocument?.settings.twoD,
         projectDocument?.settings.fonts,
       ]),
     };
   }, [
     assetRegistry,
-    registryVersion,
+    registryEpoch,
     scene,
     textureLodKey,
+    effectsAssetGuidsKey,
     projectDocument?.settings.twoD,
     projectDocument?.settings.fonts,
   ]);
@@ -731,6 +739,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           ...materials.textureGuids,
           ...skyboxFaceGuidsFromScene(scene),
           ...overlayTextureGuidsFromScene(scene),
+          ...(JSON.parse(effectsAssetGuidsKey) as string[]),
         ];
         const textureBytes = await collectPlayTextureBytes(
           sprites,
@@ -863,6 +872,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     materialLibraryKey,
     areaEmissionKey,
     textureLodKey,
+    effectsAssetGuidsKey,
     collectPlaySpritePayloads,
     collectPlayWaterContent,
     collectPlayRenderTargets,
@@ -887,6 +897,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   useEffect(() => {
     const handle = engineRef.current;
     if (!handle) return;
+    void registryEpoch; // Registry headers mutate without replacing the registry.
     const byPath = new Map(
       (assetRegistry?.list() ?? []).filter((asset) => asset.header.type === "Material" || asset.header.type === "MaterialInstance").map((asset) => [
         asset.path,
@@ -894,13 +905,12 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       ]),
     );
     const guids = new Set<string>();
-    for (const doc of openDocuments) {
-      if (doc.ref.kind !== "material" && doc.ref.kind !== "material-instance") continue;
+    for (const doc of materialDocuments) {
       const guid = byPath.get(doc.ref.path);
       if (guid) guids.add(guid);
     }
     handle.setEditingMaterialGuids(guids);
-  }, [openDocuments, assetRegistry, engineEpoch]);
+  }, [materialDocuments, assetRegistry, registryEpoch, engineEpoch]);
 
   useEffect(() => {
     engineRef.current?.editor?.setSelectedActors(sceneMode === "design" ? selectedActorIds : []);

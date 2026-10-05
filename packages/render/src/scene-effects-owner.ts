@@ -5,7 +5,9 @@ import {
   ExtractHighlightsPostProcess,
   FxaaPostProcess,
   ImageProcessingPostProcess,
+  PassPostProcess,
   PostProcess,
+  type RenderTargetWrapper,
   Vector2,
   type Camera,
   type Effect,
@@ -19,8 +21,9 @@ import {
 } from "./scene-effects";
 import { sceneRenderingSettings } from "./render-settings";
 import "@babylonjs/core/Rendering/prePassRendererSceneComponent";
-import { createSpatialStages, liveSceneEffectsKey, reserveSpatialEffects, spatialEffectsUnsupported, spatialGeometryTypes, type SpatialStage } from "./spatial-effects";
+import { createSpatialStages, hasSpatialEffects, liveSceneEffectsKey, reserveSpatialEffects, spatialEffectsUnsupported, spatialGeometryTypes, type SpatialStage } from "./spatial-effects";
 import { releaseManagedRenderLeaseAfterDisposal, type ManagedRenderLease } from "./managed-render-resources";
+import type { TemporalJitter } from "./temporal-anti-aliasing";
 
 function planFor(scene: Scene): SceneEffectsPlan | null {
   return sceneRenderingSettings(scene).effectsPlan;
@@ -52,6 +55,8 @@ export class SceneEffectsOwner {
   private nativeKey: string | undefined;
   private spatialLease: ManagedRenderLease | undefined;
   private ownedPrePass = false;
+  private jitter: TemporalJitter | undefined;
+  private historyTargets: RenderTargetWrapper[] = [];
   private readonly retirement = new PostProcessRetirement();
   private disposed = false;
   private cleanupFailure: unknown;
@@ -103,7 +108,7 @@ export class SceneEffectsOwner {
       ? Constants.TEXTURETYPE_HALF_FLOAT
       : Constants.TEXTURETYPE_UNSIGNED_BYTE;
     try {
-      if ((plan.reflections || plan.volumetricLighting) && !spatialEffectsUnsupported(this.scene)) {
+      if (hasSpatialEffects(plan) && !spatialEffectsUnsupported(this.scene)) {
         const size = camera.outputRenderTarget?.getSize();
         const width = size?.width ?? engine.getRenderWidth(true);
         const height = size?.height ?? engine.getRenderHeight(true);
@@ -116,6 +121,7 @@ export class SceneEffectsOwner {
           if (!prepass) throw new Error("Spatial effects require a pre-pass renderer.");
           prepass.useSpecificClearForDepthTexture = true;
           const spatialPasses: PostProcess[] = [];
+          let historyCopy: PassPostProcess | undefined;
           spatial.forEach((stage, index) => {
             // Native PP size describes its INPUT. The next pass's input is this
             // pass's output, so stage N+1 carries stage N's target scale.
@@ -127,20 +133,47 @@ export class SceneEffectsOwner {
             spatialPasses.push(pass);
             passes.push(pass);
             unattached.delete(stage);
+            // History: the resolve renders into alternating owned targets through
+            // a copy pass, and samples the one it wrote the frame before.
+            let history: [RenderTargetWrapper, RenderTargetWrapper] | undefined;
+            let written = 0;
+            if (stage.history) {
+              const target = () => {
+                const wrapper = engine.createRenderTargetTexture({ width, height }, {
+                  generateMipMaps: false, generateDepthBuffer: false, generateStencilBuffer: false,
+                  type: Constants.TEXTURETYPE_HALF_FLOAT, samplingMode: Constants.TEXTURE_BILINEAR_SAMPLINGMODE,
+                });
+                this.historyTargets.push(wrapper);
+                return wrapper;
+              };
+              history = [target(), target()];
+              const copy = historyCopy = new PassPostProcess(`${stage.wrapper.name} Output`, 1, camera,
+                Constants.TEXTURE_NEAREST_SAMPLINGMODE, engine, false, Constants.TEXTURETYPE_HALF_FLOAT);
+              copy.autoClear = false;
+              pass.onActivateObservable.add(() => {
+                written ^= 1;
+                copy.inputTexture = history![written]!;
+              });
+              this.jitter = stage.history;
+              this.jitter.jitterDrawPhase();
+            }
             pass.onApply = (effect) => {
               if (stage.geometry) {
                 const target = prepass.getRenderTarget();
                 for (const [sampler, type] of [["depthSampler", Constants.PREPASS_DEPTH_TEXTURE_TYPE],
                   ["normalSampler", Constants.PREPASS_WORLD_NORMAL_TEXTURE_TYPE],
-                  ["reflectivitySampler", Constants.PREPASS_REFLECTIVITY_TEXTURE_TYPE]] as const) {
+                  ["reflectivitySampler", Constants.PREPASS_REFLECTIVITY_TEXTURE_TYPE],
+                  ["velocitySampler", Constants.PREPASS_VELOCITY_LINEAR_TEXTURE_TYPE]] as const) {
                   const textureIndex = prepass.getIndex(type);
                   if (textureIndex >= 0) effect.setTexture(sampler, target.textures[textureIndex]!);
                 }
               }
+              if (history) effect._bindTexture("historySampler", history[written ^ 1]!.texture);
               if (stage.mainInput !== undefined) effect.setTextureFromPostProcess("mainSampler", spatialPasses[stage.mainInput]!);
               stage.bind(effect);
             };
           });
+          if (historyCopy) passes.push(historyCopy);
           const texturesRequired = spatialGeometryTypes(plan);
           spatialPasses[0]!._prePassEffectConfiguration = {
             // Babylon caches configurations by name. A borrowed prepass can
@@ -317,6 +350,13 @@ export class SceneEffectsOwner {
   }
 
   private releaseSpatialResources(): void {
+    this.jitter?.dispose();
+    this.jitter = undefined;
+    const targets = this.historyTargets.splice(0);
+    if (targets.length)
+      void this.retirement.whenReleased()
+        .then(() => { for (const target of targets) target.dispose(); })
+        .catch((error: unknown) => { this.cleanupFailure = error; });
     if (this.ownedPrePass) { this.scene.disablePrePassRenderer(); this.ownedPrePass = false; }
     const lease = this.spatialLease;
     this.spatialLease = undefined;

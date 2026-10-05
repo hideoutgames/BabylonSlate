@@ -8,7 +8,7 @@ import { inActiveView } from "./active-view";
 import { updateDynamicMaterialBounds } from "./material-bounds";
 import { sceneWaterQualityDeviceClamp, sceneWaterQualityRevision } from "./render-settings";
 import { requestWaterFft, updateSceneWaterFft } from "./water-fft";
-import { configureWaterMaterial, contactRange, WaterMaterialPlugin } from "./water-material";
+import { applyWaterMaterialScalars, configureWaterMaterial, contactRange, WaterMaterialPlugin } from "./water-material";
 import { WaterContactField } from "./water-contact-field";
 import { WaterField, type WaterFieldSurface } from "./water-field";
 import { WaterReflection } from "./water-reflection";
@@ -74,8 +74,8 @@ const surfaces = new WeakMap<Scene, Set<Surface>>();
 const surfaceByMesh = new WeakMap<AbstractMesh, Surface>();
 /**
  * Enabled built-in (WaterMaterialPlugin) surfaces per Scene whose asset can sample a scene copy, so admission stays
- * O(1) per frame. An asset is fixed per surface: editing it rebuilds the mesh. Enabled state (an authored Enabled
- * off, or a deactivated actor) is followed by `syncCopyIntent`.
+ * O(1) per frame. An in-place asset edit (`updateWaterMeshDefinition`) moves the surface's count to the new values;
+ * enabled state (an authored Enabled off, or a deactivated actor) is followed by `syncCopyIntent`.
  */
 const copyIntents = new WeakMap<Scene, { refracting: number; reflecting: number }>();
 const clocks = new WeakMap<Scene, { time: number; runtime: boolean }>();
@@ -644,6 +644,43 @@ export function setWaterGpuWaves(mesh: Mesh, enabled: boolean): boolean {
   return true;
 }
 
+/**
+ * Apply an edited Water definition to a built surface without rebuilding it, e.g. while a Details value scrubs.
+ * Built-in shading reads the definition on every bind (swell constants with Steepness, Wave Model, Peak Sharpness and
+ * Wave Seed, Color Variation, the Refraction amount and the FFT band's Detail Waves gain) and the CPU waves on every
+ * resample, so this re-applies the material's own scalars (Roughness, Reflection Strength), re-evaluates once the
+ * defines that follow the asset (Wave Model, a feature term crossing zero, Refraction or Detail Waves crossing zero,
+ * Object Reflections), moves the surface's scene-copy intent to the new values, re-pads the culling bounds for the new
+ * wave envelopes, refreshes the contact range of both fields and resamples CPU vertices, also under a paused clock. A
+ * Wave Length edit changes the grid step, so the placement below builds a new rest grid in place (Global Water too).
+ * The scene's water clock keeps running. Returns false, changing nothing, for other meshes and for edits that need a
+ * rebuild: Style compiles into the shader and Custom Material replaces it.
+ */
+export function updateWaterMeshDefinition(mesh: Mesh, input: unknown): boolean {
+  const surface = surfaceByMesh.get(mesh);
+  if (!surface) return false;
+  const water = surface.water, next = normalizeWaterDefinition(input);
+  if (next.style !== water.style || next.materialGuid !== water.materialGuid) return false;
+  const scene = mesh.getScene(), range = contactRange(water);
+  // The copy intent counts this surface by its asset's Refraction and Object Reflections.
+  if (surface.copyCounted) countCopyIntent(scene, water, -1);
+  Object.assign(water, next);
+  if (surface.copyCounted) countCopyIntent(scene, water, 1);
+  if (surface.plugin && mesh.material instanceof PBRMaterial) {
+    applyWaterMaterialScalars(mesh.material, water);
+    surface.plugin.definitionChanged();
+  }
+  surface.boundsDirty = true;
+  // A paused clock repeats the cached time, which would otherwise skip the CPU resample.
+  surface.time = null;
+  refreshSurface(surface, clocks.get(scene)?.time ?? 0);
+  // The terrain field's change key omits the contact range its margin uses; the contact field notices range and
+  // wave-envelope changes itself.
+  surface.field?.update(contactRange(water) !== range);
+  surface.contacts?.update(performance.now());
+  return true;
+}
+
 /** Finite volumes keep fixed bounds; only Global Water Volume follows the camera. */
 export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProperties, definition?: WaterDefinition, customMaterial?: Material | null): Mesh {
   const body = normalizeWaterBody(input, input.kind), water = normalizeWaterDefinition(definition ?? createDefaultWaterDefinition());
@@ -696,7 +733,9 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
   refreshSurface(surface, clocks.get(scene)?.time ?? 0);
   if (plugin) {
     const fieldSurface: WaterFieldSurface = {
-      mesh, unbounded: body.kind === "global", contactRange: contactRange(water),
+      mesh, unbounded: body.kind === "global",
+      // Read live: `updateWaterMeshDefinition` edits the shared definition in place.
+      get contactRange() { return contactRange(water); },
       // The envelope bounds |H| exactly; the margin keeps the outermost contact layers off the clamp.
       get amplitude() { return waterWaveEnvelope(water, body.waveScale) + 0.05; },
       // Contact Resolution caps the contact texture's cells per side; a change rebuilds it.

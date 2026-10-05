@@ -7,28 +7,26 @@ vi.mock("../context/play-context", () => ({
   useOptionalPlay: () => null,
 }));
 
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => ({
-    assetRegistry: {
-      list: () => [
-        {
-          header: { guid: "model-1", name: "Hero", type: "Model" },
-          path: "assets/Hero.babasset",
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
+  assetRegistry: {
+    list: () => [
+      {
+        header: { guid: "model-1", name: "Hero", type: "Model" },
+        path: "assets/Hero.babasset",
+      },
+      {
+        header: {
+          guid: "skel-1",
+          name: "Hero_Skeleton",
+          type: "Skeleton",
+          payload: { modelGuid: "model-1", kind: "hierarchy", boneNames: ["torso"] },
         },
-        {
-          header: {
-            guid: "skel-1",
-            name: "Hero_Skeleton",
-            type: "Skeleton",
-            payload: { modelGuid: "model-1", kind: "hierarchy", boneNames: ["torso"] },
-          },
-          path: "assets/Hero_Skeleton.babasset",
-        },
-      ],
-    },
-    readAssetChunk: async () => null,
-  }),
-}));
+        path: "assets/Hero_Skeleton.babasset",
+      },
+    ],
+  },
+  readAssetChunk: async () => null,
+})));
 
 afterEach(() => {
   cleanup();

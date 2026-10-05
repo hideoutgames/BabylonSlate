@@ -32,7 +32,7 @@ const harness = vi.hoisted(() => ({
   textureGuids: [] as string[],
   textures: new Map<string, IndexedAsset>(),
   textureBytes: new Map<string, Uint8Array>(),
-  registryVersion: 0,
+  registryEpoch: 0,
   /** Each scene's Material resolver options; `acquireTexture` returns the bound bytes. */
   resolvers: [] as Array<{ acquireTexture: (guid: string) => unknown }>,
 }));
@@ -86,7 +86,7 @@ vi.mock("../context/play-context", () => {
   const play = { ensureSharedEngine: () => engine };
   return { useOptionalPlay: () => play };
 });
-vi.mock("../context/document-context", () => {
+vi.mock("../context/document-context", async () => {
   const documents = {
     assetRegistry: { getByGuid: (guid: string) => harness.textures.get(guid) },
     collectPlayMaterialLibrary: async () => ({
@@ -96,7 +96,7 @@ vi.mock("../context/document-context", () => {
     }),
     collectPlayTextureBytes: async () => new Map(harness.textureBytes),
   };
-  return { useDocuments: () => ({ ...documents, registryVersion: harness.registryVersion }) };
+  return (await import("../testing/document-context-mock")).documentContextMock(() => ({ ...documents, registryEpoch: harness.registryEpoch }));
 });
 
 beforeEach(() => {
@@ -112,7 +112,7 @@ afterEach(() => {
   harness.textureGuids = [];
   harness.textures.clear();
   harness.textureBytes.clear();
-  harness.registryVersion = 0;
+  harness.registryEpoch = 0;
   harness.resolvers.length = 0;
 });
 
@@ -270,13 +270,13 @@ describe("Particle preview recovery", () => {
     const view = render(preview());
     await screen.findByTestId("particle-preview-restart");
     // Other saves, and encode progress on this Texture, keep the running scene.
-    harness.registryVersion += 1;
+    harness.registryEpoch += 1;
     view.rerender(preview());
     harness.textures.set(
       "tex-1",
       savedTexture({ usage: "albedo", ktx2ChunkId: "ktx2-1x1", compressionState: "encoding" }, ["ktx2-1x1"]),
     );
-    harness.registryVersion += 1;
+    harness.registryEpoch += 1;
     view.rerender(preview());
     await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
     expect(harness.services).toHaveLength(1);
@@ -285,7 +285,7 @@ describe("Particle preview recovery", () => {
       "tex-1",
       savedTexture({ usage: "particle", ktx2ChunkId: "ktx2-1x1", compressionState: "pending" }, ["ktx2-1x1"]),
     );
-    harness.registryVersion += 1;
+    harness.registryEpoch += 1;
     view.rerender(preview());
     await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
     const loads = harness.services.length;
@@ -299,7 +299,7 @@ describe("Particle preview recovery", () => {
         ["ktx2-1x1", "ktx2-4x4"],
       ),
     );
-    harness.registryVersion += 1;
+    harness.registryEpoch += 1;
     view.rerender(preview());
     await waitFor(() => expect(harness.services).toHaveLength(loads + 1));
     expect(harness.services.at(-2)!.dispose).toHaveBeenCalled();

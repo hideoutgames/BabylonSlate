@@ -27,6 +27,7 @@ import {
 } from "@babylonslate/render";
 import { useDocuments } from "../context/document-context";
 import { useOptionalPlay } from "../context/play-context";
+import { textureUploadSignature } from "../lib/texture-upload-signature";
 import {
   ParticlePreviewSurface,
   type ParticlePreviewState,
@@ -145,13 +146,10 @@ function blockingDiagnostic(
 
 const sentence = (text: string) => (/[.!?]$/.test(text) ? text : `${text}.`);
 
-/** Encode progress fields: rewriting them alone does not change the bytes a Texture uploads. */
-const TEXTURE_PROGRESS_FIELDS = new Set(["compressionState", "encodeWallMs", "encodeError"]);
-
 /**
- * The saved Texture headers that decide which bytes the Preview uploads: the
- * payload (Usage, Downsample, committed KTX2) and the chunks. It changes when a
- * Usage change is saved or an encode commits, not while an encode is running.
+ * The saved Texture headers that decide which bytes the Preview uploads. It
+ * changes when a Usage change is saved or an encode commits, not while an
+ * encode is running.
  */
 function textureHeadersKey(
   textureByGuid: ((guid: string) => IndexedAsset | undefined) | undefined,
@@ -160,11 +158,7 @@ function textureHeadersKey(
   return JSON.stringify(
     guids.map((guid) => {
       const header = textureByGuid?.(guid)?.header;
-      if (!header) return [guid];
-      const payload = Object.entries(header.payload)
-        .filter(([field]) => !TEXTURE_PROGRESS_FIELDS.has(field))
-        .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
-      return [guid, payload, header.chunks.map((chunk) => `${chunk.id}:${chunk.sha256}`)];
+      return header ? [guid, ...textureUploadSignature(header)] : [guid];
     }),
   );
 }
@@ -217,7 +211,7 @@ export function ParticlePreviewCanvas({
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const play = useOptionalPlay();
-  const { assetRegistry, collectPlayMaterialLibrary, collectPlayTextureBytes, registryVersion } =
+  const { assetRegistry, collectPlayMaterialLibrary, collectPlayTextureBytes, registryEpoch } =
     useDocuments();
   const textureByGuid = useCallback(
     (guid: string) => assetRegistry?.getByGuid(guid),
@@ -448,7 +442,7 @@ export function ParticlePreviewCanvas({
     if (textureHeadersKey(textureByGuid, loaded.guids) === loaded.key) return;
     loadedTexturesRef.current = null;
     setAttempt((value) => value + 1);
-  }, [registryVersion, textureByGuid]);
+  }, [registryEpoch, textureByGuid]);
 
   useEffect(() => {
     const service = serviceRef.current;

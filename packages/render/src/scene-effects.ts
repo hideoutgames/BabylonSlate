@@ -1,4 +1,4 @@
-import { Color4, ImageProcessingConfiguration } from "@babylonjs/core";
+import { Color4, ImageProcessingConfiguration, type BaseTexture } from "@babylonjs/core";
 import type {
   RenderEffectsSettings,
   RenderEffectsToneMapping,
@@ -11,9 +11,20 @@ export interface SceneEffectsImageProcessingPlan {
   /** Linear HDR scene color resolves through the configured display stage. */
   sceneLinear: boolean;
   vignette: RenderEffectsSettings["vignette"] | null;
+  /** Ready LUT strip graded after tone mapping, in display space. */
+  colorGrading: BaseTexture | null;
 }
 
-/** Composed effect chain: authored stack output → bloom → image processing →
+/** Scene state beyond the project settings that changes the compiled chain. */
+export interface SceneEffectsInputs {
+  /** Local Fog Volumes request the volumetric pass with zero scene density. */
+  fogVolumesPresent?: boolean;
+  /** The project's LUT, once loaded; null leaves color grading off. */
+  colorGradingTexture?: BaseTexture | null;
+}
+
+/** Composed effect chain: authored stack output → ambient occlusion →
+ * reflections → volumetric lighting → bloom → image processing →
  * FXAA → output. Null means the project renders exactly as it always has. */
 export interface SceneEffectsPlan {
   /** Half-float linear intermediates and the linear→display conversion. */
@@ -21,6 +32,8 @@ export interface SceneEffectsPlan {
   bloom: RenderEffectsSettings["bloom"] | null;
   imageProcessing: SceneEffectsImageProcessingPlan | null;
   fxaa: boolean;
+  temporalAntiAliasing: RenderEffectsSettings["temporalAntiAliasing"] | null;
+  ambientOcclusion: RenderEffectsSettings["ambientOcclusion"] | null;
   reflections: RenderEffectsSettings["reflections"] | null;
   volumetricLighting: RenderEffectsSettings["volumetricLighting"] | null;
 }
@@ -29,29 +42,35 @@ export interface SceneEffectsPlan {
  * Resolve the normalized settings into the renderable chain. CEL renders
  * display-space by construction, so the Scene Linear stage (and therefore
  * tone mapping, exposure and contrast) only applies to PBR projects; vignette,
- * bloom and FXAA remain available in every mode.
+ * bloom and FXAA remain available in every mode. Ambient occlusion and
+ * reflections are PBR-only so CEL keeps its hard-stepped shading.
  */
 export function planSceneEffects(
   effects: RenderEffectsSettings,
   mode: RenderMode,
   enabled = true,
-  fogVolumesPresent = false,
+  inputs: SceneEffectsInputs = {},
 ): SceneEffectsPlan | null {
   if (!enabled) return null;
+  const fogVolumesPresent = inputs.fogVolumesPresent === true;
   const sceneLinear =
     mode === "pbr" && effects.colorPipeline.mode === "sceneLinear";
   const bloom = effects.bloom.enabled ? effects.bloom : null;
   const vignette = effects.vignette.enabled ? effects.vignette : null;
+  const colorGrading = effects.colorGrading.enabled ? inputs.colorGradingTexture ?? null : null;
   // The display stage is required to convert linear HDR scene color, and is
-  // the only pass which can apply the vignette on either pipeline.
+  // the only pass which can apply the vignette or LUT on either pipeline.
   const imageProcessing =
-    sceneLinear || vignette ? { sceneLinear, vignette } : null;
+    sceneLinear || vignette || colorGrading ? { sceneLinear, vignette, colorGrading } : null;
   const fxaa = effects.fxaa;
+  const temporalAntiAliasing = effects.temporalAntiAliasing.enabled ? effects.temporalAntiAliasing : null;
+  const ambientOcclusion = mode === "pbr" && effects.ambientOcclusion.enabled ? effects.ambientOcclusion : null;
   const reflections = mode === "pbr" && effects.reflections.enabled ? effects.reflections : null;
   const volumetricLighting = effects.volumetricLighting.enabled ? effects.volumetricLighting
     : fogVolumesPresent ? { ...effects.volumetricLighting, enabled: true, density: 0 } : null;
-  if (!sceneLinear && !bloom && !imageProcessing && !fxaa && !reflections && !volumetricLighting) return null;
-  return { sceneLinear, bloom, imageProcessing, fxaa, reflections, volumetricLighting };
+  if (!sceneLinear && !bloom && !imageProcessing && !fxaa && !temporalAntiAliasing && !ambientOcclusion && !reflections && !volumetricLighting)
+    return null;
+  return { sceneLinear, bloom, imageProcessing, fxaa, temporalAntiAliasing, ambientOcclusion, reflections, volumetricLighting };
 }
 
 const TONE_MAPPING_TYPES: Record<RenderEffectsToneMapping, number> = {
@@ -97,6 +116,11 @@ export function sceneEffectsImageProcessingConfiguration(
     );
     config.vignetteBlendMode = ImageProcessingConfiguration.VIGNETTEMODE_MULTIPLY;
   }
+  if (plan.colorGrading) {
+    // A 3D LUT: Babylon's 2D-strip polyfill is GLSL-only on Babylon 9.20.
+    config.colorGradingTexture = plan.colorGrading;
+    config.colorGradingEnabled = true;
+  }
   return config;
 }
 
@@ -108,7 +132,9 @@ export function sceneEffectsKey(
   effects: RenderEffectsSettings,
   mode: RenderMode,
   enabled: boolean,
-  fogVolumesPresent = false,
+  inputs: SceneEffectsInputs = {},
 ): string {
-  return enabled ? `${mode}${JSON.stringify(effects)}${fogVolumesPresent ? ":fogVolumes" : ""}` : "off";
+  if (!enabled) return "off";
+  const lut = effects.colorGrading.enabled ? inputs.colorGradingTexture?.uniqueId : undefined;
+  return `${mode}${JSON.stringify(effects)}${inputs.fogVolumesPresent ? ":fogVolumes" : ""}${lut === undefined ? "" : `:lut${lut}`}`;
 }

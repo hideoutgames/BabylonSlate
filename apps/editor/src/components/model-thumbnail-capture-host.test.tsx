@@ -84,17 +84,15 @@ vi.mock("../context/play-context", () => ({
   }),
 }));
 
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => ({
-    thumbnailsEnabled,
-    projectGuid,
-    assetRegistry: { getByGuid: (guid: string) => assets.get(guid) },
-    readAssetChunk,
-    collectPlayMaterialLibrary,
-    collectPlayTextureBytes,
-    writeAssetThumbnail,
-  }),
-}));
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
+  thumbnailsEnabled,
+  projectGuid,
+  assetRegistry: { getByGuid: (guid: string) => assets.get(guid) },
+  readAssetChunk,
+  collectPlayMaterialLibrary,
+  collectPlayTextureBytes,
+  writeAssetThumbnail,
+})));
 
 afterEach(() => {
   cleanup();

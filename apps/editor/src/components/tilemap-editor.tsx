@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { DEFAULT_SORTING_LAYERS } from "@babylonslate/core";
 import {
@@ -72,7 +72,6 @@ import {
   orderedTilemapLayers,
   DEFAULT_PAINT_CELL_SIZE,
   encodeTileGid,
-  ensureTilesetTiles,
   isTilemapPaintStrokeTool,
   normalizeTilemapPayload,
   normalizeTilesetPayload,
@@ -92,6 +91,12 @@ import {
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useOptionalTilemapEditing } from "../context/tilemap-editing-context";
+import {
+  TilesetPayloadLoader,
+  loadTilesetPayloads,
+  resolveTilesetSources,
+  sameTilesetSources,
+} from "../context/tilemap-tileset-payloads";
 
 const TOOLS: Array<{
   id: TilemapPaintTool;
@@ -181,13 +186,8 @@ export function TilemapDetails({
     tilemap.layers[0]?.id ?? "layer-1",
   );
   const editing = useOptionalTilemapEditing();
-  const { assetRegistry, projectDocument, loadAssetDocument } = useDocuments();
-  const assets = (assetRegistry?.list() ?? []).map((asset) => ({
-    guid: asset.header.guid,
-    name: asset.header.name,
-    type: asset.header.type,
-    path: asset.path,
-  }));
+  const { projectDocument, loadAssetDocument } = useDocuments();
+  const assets = useRegistryPickerAssets();
   const sortingLayers = projectDocument?.settings.twoD.sortingLayers ?? [
     "Background",
     "Default",
@@ -507,14 +507,9 @@ export function TilemapPalette({
   const editing = useOptionalTilemapEditing();
   const [query, setQuery] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
-  const { assetRegistry, loadAssetDocument } = useDocuments();
+  const { loadAssetDocument } = useDocuments();
   const atlases = useTilesetAtlases(payloads);
-  const assets = (assetRegistry?.list() ?? []).map((asset) => ({
-    guid: asset.header.guid,
-    name: asset.header.name,
-    type: asset.header.type,
-    path: asset.path,
-  }));
+  const assets = useRegistryPickerAssets();
   const needle = query.trim().toLowerCase();
 
   const addTileset = async (guid: string | null) => {
@@ -696,16 +691,11 @@ export function TilemapPaint({
   } | null>(null);
   const viewRef = useRef({ pan, cellSize });
   viewRef.current = { pan, cellSize };
-  const { assetRegistry, loadAssetDocument } = useDocuments();
+  const { loadAssetDocument } = useDocuments();
   const atlases = useTilesetAtlases(payloads);
   const layer =
     tilemap.layers.find((entry) => entry.id === layerId) ?? tilemap.layers[0];
-  const assets = (assetRegistry?.list() ?? []).map((asset) => ({
-    guid: asset.header.guid,
-    name: asset.header.name,
-    type: asset.header.type,
-    path: asset.path,
-  }));
+  const assets = useRegistryPickerAssets();
   const { projectDocument } = useDocuments();
   const sortingLayers = projectDocument?.settings.twoD.sortingLayers ?? DEFAULT_SORTING_LAYERS;
   const decoded = decodeTileGid(tilemap, selectedGid, payloads);
@@ -1241,45 +1231,48 @@ function selectedTileGid(
   return encodeTileGid(ref.firstGid, selected.localId);
 }
 
+/** Picker rows for every indexed asset, rebuilt when the registry changes rather than per edit. */
+function useRegistryPickerAssets() {
+  const { assetRegistry, registryEpoch } = useDocuments();
+  return useMemo(() => {
+    void registryEpoch;
+    return (assetRegistry?.list() ?? []).map((asset) => ({
+      guid: asset.header.guid,
+      name: asset.header.name,
+      type: asset.header.type,
+      path: asset.path,
+    }));
+  }, [assetRegistry, registryEpoch]);
+}
+
+/**
+ * Payloads of the Tilesets `tilemap` references. A Tilemap document's panels
+ * share its provider's loader; a panel rendered without one keeps its own.
+ */
 function useLoadedTilesets(
   tilemap: TilemapPayload,
 ) {
   const { assetRegistry, loadAssetDocument, openDocuments } = useDocuments();
-  const [payloads, setPayloads] = useState<ReadonlyMap<string, TilesetPayload>>(
-    new Map(),
+  const sharedLoader = useOptionalTilemapEditing()?.tilesetLoader;
+  const [ownLoader] = useState(() => new TilesetPayloadLoader());
+  const loader = sharedLoader ?? ownLoader;
+  const resolved = resolveTilesetSources(
+    tilemapTilesetGuids(tilemap),
+    assetRegistry,
+    openDocuments,
   );
-  const guids = tilemapTilesetGuids(tilemap).join(",");
-  const loadPayloads = useCallback(async () => {
-    const next = new Map<string, TilesetPayload>();
-    for (const guid of guids.split(",").filter(Boolean)) {
-      const asset = assetRegistry?.getByGuid(guid);
-      if (!asset) continue;
-      const open = openDocuments.find((doc) => doc.ref.path === asset.path);
-      const raw = open?.content ?? (loadAssetDocument ? await loadAssetDocument("tileset", asset.path) : null);
-      if (raw) next.set(guid, ensureTilesetTiles(normalizeTilesetPayload(raw)));
-    }
-    return next;
-  }, [assetRegistry, guids, loadAssetDocument, openDocuments]);
+  // Every document edit publishes a new openDocuments list. Keep the same
+  // sources, and skip the load effect, until a referenced Tileset changes.
+  const [sources, setSources] = useState(resolved);
+  if (!sameTilesetSources(sources, resolved)) setSources(resolved);
   useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      const next = await loadPayloads();
-      if (!cancelled) {
-        setPayloads((current) => {
-          if (
-            current.size === next.size &&
-            [...next].every(([guid, value]) => JSON.stringify(current.get(guid)) === JSON.stringify(value))
-          ) {
-            return current;
-          }
-          return next;
-        });
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [loadPayloads]);
+    loader.request(sources, loadAssetDocument);
+  }, [loadAssetDocument, loader, sources]);
+  const payloads = useSyncExternalStore(loader.subscribe, loader.getSnapshot);
+  const loadPayloads = useCallback(
+    () => loadTilesetPayloads(sources, loadAssetDocument),
+    [loadAssetDocument, sources],
+  );
   return { payloads, loadPayloads };
 }
 

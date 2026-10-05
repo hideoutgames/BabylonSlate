@@ -9,7 +9,7 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     page.on("console", (message) => {
-      if (["warning", "error"].includes(message.type()) && /shader|WebGPU uncaptured|VALIDATE_STATUS|ERROR: 0:|context lost|fatal error/i.test(message.text())) errors.push(message.text());
+      if (["warning", "error"].includes(message.type()) && /shader|WebGPU uncaptured|VALIDATE_STATUS|ERROR: 0:|context lost|fatal error|feedback loop|INVALID_OPERATION|conflicting usages/i.test(message.text())) errors.push(message.text());
     });
     await page.goto("/?test=1&renderTargetProof=1");
     await page.waitForFunction(() => typeof (window as unknown as { __renderTargetProof?: unknown }).__renderTargetProof === "function");
@@ -26,6 +26,11 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       ["Authored SceneColor", [99, 136, 186, 255]],
       ["Material DepthPass", [148, 0, 0, 255]],
       ["Material WorldNormal", [186, 186, 0, 255]],
+      ["Feedback First", [64, 128, 32, 255]],
+      ["Feedback Second", [64, 128, 32, 255]],
+      ["Feedback Updated First", [0, 255, 0, 255]],
+      ["Feedback Updated Second", [0, 255, 0, 255]],
+      ["Material After Feedback", [0, 255, 0, 255]],
     ] as const) for (const [channel, value] of expected.entries()) expect(Math.abs(pixel(mode)[channel]! - value)).toBeLessThanOrEqual(2);
     for (const [source, consumer] of [["SceneColor", "Material Color"], ["Authored SceneColor", "Material Color After Mode Change"]])
       for (let channel = 0; channel < 4; channel++) expect(Math.abs(pixel(source!)[channel]! - pixel(consumer!)[channel]!)).toBeLessThanOrEqual(1);

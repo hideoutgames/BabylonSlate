@@ -30,24 +30,22 @@ vi.mock("../context/document-workspace-context", () => ({
   useDocumentWorkspace: () => ({ documentId: "enum:assets/Colors.babasset" }),
 }));
 
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => ({
-    openDocuments: [
-      {
-        id: "enum:assets/Colors.babasset",
-        ref: {
-          kind: harness.kind,
-          path: "assets/Colors.babasset",
-          label: "Colors Enum",
-        },
-        content: harness.content,
-        layout: null,
-        dirty: false,
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
+  openDocuments: [
+    {
+      id: "enum:assets/Colors.babasset",
+      ref: {
+        kind: harness.kind,
+        path: "assets/Colors.babasset",
+        label: "Colors Enum",
       },
-    ],
-    applyAssetDocumentChange,
-  }),
-}));
+      content: harness.content,
+      layout: null,
+      dirty: false,
+    },
+  ],
+  applyAssetDocumentChange,
+})));
 
 afterEach(() => {
   cleanup();

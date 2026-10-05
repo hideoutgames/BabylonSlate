@@ -9,14 +9,12 @@ const state = vi.hoisted(() => ({
   phone: false,
 }));
 
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => ({
-    openDocuments: [{ id: "scene", ref: { label: "Main Scene" } }],
-    activeDocumentId: "scene",
-    dirtyDocuments: state.dirtyDocuments,
-    projectDirty: state.projectDirty,
-  }),
-}));
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
+  openDocuments: [{ id: "scene", ref: { label: "Main Scene" } }],
+  activeDocumentId: "scene",
+  dirtyDocuments: state.dirtyDocuments,
+  projectDirty: state.projectDirty,
+})));
 vi.mock("../context/validation-context", () => ({
   useValidation: () => ({ errorCount: state.errorCount }),
 }));

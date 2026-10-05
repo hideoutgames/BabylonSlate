@@ -28,7 +28,7 @@ const frameActor = vi.hoisted(() => vi.fn());
 const harness = vi.hoisted(() => ({
   phone: false,
   assetListReads: 0,
-  registryVersion: 0,
+  registryEpoch: 0,
   scene: null as SerializedScene | null,
   assets: [] as Array<{
     path: string;
@@ -61,28 +61,26 @@ vi.mock("../context/scene-editing-context", async (importOriginal) => {
   };
 });
 
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => ({
-    openDocuments: [
-      {
-        id: "scene:assets/Main.scene.babasset",
-        ref: {
-          kind: "scene",
-          path: "assets/Main.scene.babasset",
-          label: "Main",
-        },
-        content: harness.scene,
-        layout: null,
-        dirty: false,
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
+  openDocuments: [
+    {
+      id: "scene:assets/Main.scene.babasset",
+      ref: {
+        kind: "scene",
+        path: "assets/Main.scene.babasset",
+        label: "Main",
       },
-    ],
-    applySceneChange,
-    assetRegistry,
-    registryVersion: harness.registryVersion,
-    loadGraphDocument: vi.fn(),
-    openDocument,
-  }),
-}));
+      content: harness.scene,
+      layout: null,
+      dirty: false,
+    },
+  ],
+  applySceneChange,
+  assetRegistry,
+  registryEpoch: harness.registryEpoch,
+  loadGraphDocument: vi.fn(),
+  openDocument,
+})));
 
 afterEach(() => {
   cleanup();
@@ -92,7 +90,7 @@ afterEach(() => {
   harness.assets = [];
   harness.phone = false;
   harness.assetListReads = 0;
-  harness.registryVersion = 0;
+  harness.registryEpoch = 0;
 });
 
 describe("SceneOutlinerPanel menus", () => {
@@ -343,7 +341,7 @@ describe("SceneOutlinerPanel menus", () => {
       path: "assets/Characters/Hero.class.babasset",
       header: { type: "Class", name: "Hero", guid: "hero-guid" },
     };
-    harness.registryVersion += 1;
+    harness.registryEpoch += 1;
     rerender(
       <SceneEditingProvider>
         <SceneOutlinerPanel {...({} as IDockviewPanelProps)} />

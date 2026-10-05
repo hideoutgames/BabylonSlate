@@ -1,3 +1,4 @@
+import { enableOverlayVisualMaterial } from "./overlay-visual-style";
 import {
   Color3,
   ImageProcessingConfiguration,
@@ -339,6 +340,7 @@ export function applyAlbedoTexture(
     // retained material in that case; the borrowed material remains attached.
     if (publishToMesh) {
       mesh.material = material;
+      enableOverlayVisualMaterial(mesh);
       syncAlbedoTransparency(mesh, material);
     }
     const previous = binding.lease;

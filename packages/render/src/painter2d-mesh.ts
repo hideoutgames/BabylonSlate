@@ -1,5 +1,6 @@
 import { Color3, DynamicTexture, MeshBuilder, StandardMaterial, Texture, type Mesh, type Scene } from "@babylonjs/core";
 import { painterTextureSize, parsePainter2DProperties, type Painter2DProperties, type PainterColor, type PainterCommand, type PainterPathSegment } from "@babylonslate/core";
+import { applyOverlayVisualStyle } from "./overlay-visual-style";
 
 type PaintContext = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 function rgba([r, g, b, a]: PainterColor): string { return `rgba(${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)},${a})`; }
@@ -75,6 +76,7 @@ export function createPainter2DMesh(scene: Scene, name: string, value: unknown):
     material.diffuseTexture = texture;
     visuals.set(mesh, { texture, properties });
     updatePainter2DMesh(mesh, properties);
+    applyOverlayVisualStyle(mesh, value);
     return mesh;
   } catch (error) { mesh.dispose(); throw error; }
 }

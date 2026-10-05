@@ -25,43 +25,41 @@ vi.mock("../context/document-workspace-context", () => ({
   }),
 }));
 
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => ({
-    openDocuments: [
-      {
-        id: "script-interface:assets/IHit.babasset",
-        ref: {
-          kind: "script-interface",
-          path: "assets/IHit.babasset",
-          label: "IHit Script Interface",
-        },
-        content: {
-          kind: "scriptInterface",
-          guid: "i1",
-          name: "IHit",
-          methods: [
-            {
-              name: "OnHit",
-              pins: [
-                { name: "amount", typeId: "float", direction: "in" },
-                {
-                  name: "target",
-                  typeId: "object",
-                  direction: "in",
-                  typeClassId: "BObject",
-                },
-              ],
-            },
-          ],
-        },
-        layout: null,
-        dirty: false,
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
+  openDocuments: [
+    {
+      id: "script-interface:assets/IHit.babasset",
+      ref: {
+        kind: "script-interface",
+        path: "assets/IHit.babasset",
+        label: "IHit Script Interface",
       },
-    ],
-    applyAssetDocumentChange,
-    assetRegistry: { list: () => [] },
-  }),
-}));
+      content: {
+        kind: "scriptInterface",
+        guid: "i1",
+        name: "IHit",
+        methods: [
+          {
+            name: "OnHit",
+            pins: [
+              { name: "amount", typeId: "float", direction: "in" },
+              {
+                name: "target",
+                typeId: "object",
+                direction: "in",
+                typeClassId: "BObject",
+              },
+            ],
+          },
+        ],
+      },
+      layout: null,
+      dirty: false,
+    },
+  ],
+  applyAssetDocumentChange,
+  assetRegistry: { list: () => [] },
+})));
 
 function SelectPin({
   memberId,

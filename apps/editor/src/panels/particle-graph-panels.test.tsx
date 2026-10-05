@@ -72,23 +72,21 @@ vi.mock("../context/document-context", async () => {
       },
     ],
   };
-  return {
-    useDocuments: () => {
-      const content = useSyncExternalStore(store.subscribe, store.getSnapshot);
-      return {
-        openDocuments: [
-          {
-            id: DOC_ID,
-            ref: { kind: "particle-graph", path: "assets/Embers.particlegraph.babasset" },
-            content,
-          },
-        ],
-        assetRegistry,
-        registryVersion: 0,
-        applyAssetDocumentChange: store.applyAssetDocumentChange,
-      };
-    },
-  };
+  return (await import("../testing/document-context-mock")).documentContextMock(() => {
+    const content = useSyncExternalStore(store.subscribe, store.getSnapshot);
+    return {
+      openDocuments: [
+        {
+          id: DOC_ID,
+          ref: { kind: "particle-graph", path: "assets/Embers.particlegraph.babasset" },
+          content,
+        },
+      ],
+      assetRegistry,
+      registryEpoch: 0,
+      applyAssetDocumentChange: store.applyAssetDocumentChange,
+    };
+  });
 });
 
 afterEach(() => {

@@ -12,25 +12,23 @@ const documentKind = vi.hoisted(() => ({ value: "input-action" }));
 vi.mock("../context/document-workspace-context", () => ({
   useDocumentWorkspace: () => ({ documentId: "jump" }),
 }));
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => ({
-    activeDocumentId: "jump",
-    openDocuments: [
-      {
-        id: "jump",
-        ref: { kind: documentKind.value, path: "Jump.inputaction.babasset" },
-        content: {
-          valueType: documentKind.value === "input-axis" ? "1d" : "button",
-          bindings: [
-            { id: "keyboard", device: "key", code: "Space" },
-            { id: "pad", device: "gamepadButton", code: "0:0" },
-          ],
-        },
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
+  activeDocumentId: "jump",
+  openDocuments: [
+    {
+      id: "jump",
+      ref: { kind: documentKind.value, path: "Jump.inputaction.babasset" },
+      content: {
+        valueType: documentKind.value === "input-axis" ? "1d" : "button",
+        bindings: [
+          { id: "keyboard", device: "key", code: "Space" },
+          { id: "pad", device: "gamepadButton", code: "0:0" },
+        ],
       },
-    ],
-    applyAssetDocumentChange: apply,
-  }),
-}));
+    },
+  ],
+  applyAssetDocumentChange: apply,
+})));
 afterEach(() => {
   cleanup();
   apply.mockClear();

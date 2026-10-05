@@ -32,7 +32,7 @@ import type { MeshAssetContext } from "./mesh-assets";
 import { sceneShadowController } from "./shadow-controller";
 import { applyEnvironmentLighting } from "./environment-lighting";
 import { sceneClearColor } from "./editor-clear-color";
-import { updateSceneRenderingSettings } from "./render-settings";
+import { setSceneEffectsAssets, updateSceneRenderingSettings } from "./render-settings";
 
 export const AUTHORED_LIGHT_PREFIX = "authoredLight:";
 export const AUTHORED_CAMERA_PREFIX = "authoredCamera:";
@@ -539,6 +539,7 @@ export function applySceneEnvironment(
   }
   updateSceneRenderingSettings(scene, undefined, undefined, undefined, settings.environmentLighting ?? {});
   applyEnvironmentLighting(scene, settings.environmentTextureGuid, options.assets);
+  setSceneEffectsAssets(scene, options.assets);
 }
 
 function resolveDefaultCameraKey(sceneData: SerializedScene): string | null {

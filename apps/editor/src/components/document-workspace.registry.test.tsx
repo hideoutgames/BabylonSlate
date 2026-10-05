@@ -12,23 +12,22 @@ const state = vi.hoisted(() => ({
   passthrough: ({ children }: { children: ReactNode }) => children,
 }));
 
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => ({
-    tabOrder: state.tabs,
-    activeDocumentId: state.tabs[0],
-    openDocuments: state.tabs.map((id) => ({
-      id,
-      ref: { kind: "graph", path: `assets/${id}.class.babasset` },
-      content: null,
-      layout: null,
-    })),
-    projectDocument: { metadata: { name: "Test" } },
-    assetRegistry: state.registry,
-    sourceControl: { enabled: false },
-    captureLayoutForId: () => {},
-    unregisterDockviewApi: () => {},
-  }),
-}));
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
+  tabOrder: state.tabs,
+  activeDocumentId: state.tabs[0],
+  openDocuments: state.tabs.map((id) => ({
+    id,
+    ref: { kind: "graph", path: `assets/${id}.class.babasset` },
+    content: null,
+    layout: null,
+  })),
+  projectDocument: { metadata: { name: "Test" } },
+  assetRegistry: state.registry,
+  registryEpoch: state.registry?.generation ?? 0,
+  sourceControl: { enabled: false },
+  captureLayoutForId: () => {},
+  unregisterDockviewApi: () => {},
+})));
 vi.mock("../lib/document-working-set", () => ({
   useDocumentWorkingSet: () => state.mountedIds,
 }));
@@ -73,6 +72,21 @@ vi.mock("../shell/dockview-shell", () => ({
   ),
 }));
 vi.mock("./document-lock-banner", () => ({ DocumentLockBanner: () => null }));
+
+/** Resave a Class with another parent, as a save or external change reindexes it. */
+async function reparent(registry: AssetRegistry, name: string, parentClass: string) {
+  await registry.deleteAsset(name);
+  await registry.createAsset("project", `${name}.class.babasset`, {
+    guid: name,
+    name,
+    parentClass,
+    type: "Class",
+    version: 1,
+    dependencies: [],
+    payload: {},
+    chunks: [],
+  });
+}
 
 async function createRegistry() {
   const storage = new MemoryStorageAdapter("documents");
@@ -150,16 +164,14 @@ describe("workspace registry traversal", () => {
       "true",
     );
 
-    registry.getByPath("assets/base.class.babasset")!.header.parentClass =
-      "SceneLayerActor";
+    await reparent(registry, "base", "SceneLayerActor");
     rerender(<DocumentWorkspace />);
     expect(screen.getByTestId("first").getAttribute("data-mode")).toBe("2d");
     expect(screen.getByTestId("first").getAttribute("data-shading")).toBe(
       "unlit",
     );
 
-    registry.getByPath("assets/base.class.babasset")!.header.parentClass =
-      "BObject";
+    await reparent(registry, "base", "BObject");
     rerender(<DocumentWorkspace />);
     expect(screen.getByTestId("first").getAttribute("data-mode")).toBe("3d");
     expect(screen.getByTestId("prefab-docks").getAttribute("data-prefab")).toBe(

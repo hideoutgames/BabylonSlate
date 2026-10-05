@@ -1603,6 +1603,8 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
   /** The scene copy and planar reflection of the current draw (`hardBindForSubMesh`), bound by `bindForSubMesh`. */
   private boundCopy: WaterSceneCopy | null = null;
   private boundPlanar: WaterPlanarReflection | null = null;
+  /** `assetDefineMask()` as last compiled: the defines `prepareDefines` derives from the asset itself. */
+  private assetDefines = 0;
   /** FFT cascades this asset samples at the device-effective quality (`SLATE_WATER_FFT`); 0 without the band. */
   private fftCascades = 0;
   /** Of those, the cascades the vertex stage samples (`SLATE_WATER_FFT_VERTEX`): all or none, by `meshSpacing`. */
@@ -1625,6 +1627,7 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
     }, true, false);
     this.water = water;
     this.body = body;
+    this.assetDefines = this.assetDefineMask();
     this.doNotSerialize = true;
     this.registerForExtraEvents = true;
     this._enable(true);
@@ -1690,6 +1693,26 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
     this.refracts = refracts; this.marches = marches; this.mirrors = mirrors; this.marchSteps = steps; this.fftCascades = fft;
     this.fftVertex = vertex;
     this.markDefinesDirty();
+  }
+  /**
+   * The asset was edited in place (`updateWaterMeshDefinition`; Style never changes there). Re-evaluates the features
+   * it runs (Refraction, Object Reflections, Detail Waves) and, only when Wave Model or a feature term crossing zero
+   * changes the asset's own defines, marks them dirty once. Uniform-only fields (Steepness, Peak Sharpness, Wave Seed,
+   * Color Variation, colours, amounts) cost nothing here: every bind reads the definition.
+   */
+  definitionChanged(): void {
+    this.syncObjectFeatures();
+    const mask = this.assetDefineMask();
+    if (mask === this.assetDefines) return;
+    this.assetDefines = mask;
+    this.markDefinesDirty();
+  }
+  /** The asset's own define inputs as a bit mask: Ocean Spectrum, then each `WATER_FEATURE_DEFINES` term above zero. */
+  private assetDefineMask(): number {
+    const w = this.water;
+    let mask = waterWaveSet(w).count > waterWaveComponents.length ? 1 : 0;
+    for (let i = 0; i < FEATURES.length; i++) if (w[FEATURES[i]![0]] > 0) mask |= 2 << i;
+    return mask;
   }
   /** FFT cascades compiled into this material (`SLATE_WATER_FFT`), 0 when it never samples the band. */
   get fftDetailCascades(): number { return this.fftCascades; }
@@ -2066,9 +2089,8 @@ export function configureWaterMaterial(material: PBRMaterial, water: WaterDefini
   material.useSpecularOverAlpha = false;
   material.albedoColor = Color3.White();
   material.metallic = 0;
-  material.roughness = water.roughness;
+  applyWaterMaterialScalars(material, water);
   material.indexOfRefraction = 1.333;
-  material.environmentIntensity = water.reflectionStrength;
   // Realistic water widens its GGX lobe by the slope variance its filtered waves lose; Babylon's derivative-based
   // specular antialiasing would widen it again and dim the sun glitter to nothing.
   material.enableSpecularAntiAliasing = false;
@@ -2077,4 +2099,10 @@ export function configureWaterMaterial(material: PBRMaterial, water: WaterDefini
   material.transparencyMode = PBRMaterial.PBRMATERIAL_ALPHABLEND;
   material.backFaceCulling = false;
   material.needDepthPrePass = true;
+}
+
+/** The PBR scalars a Water definition sets besides its Style (which needs a rebuild): Roughness and Reflection Strength. */
+export function applyWaterMaterialScalars(material: PBRMaterial, water: WaterDefinition): void {
+  material.roughness = water.roughness;
+  material.environmentIntensity = water.reflectionStrength;
 }

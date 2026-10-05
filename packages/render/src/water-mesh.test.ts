@@ -1,16 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
-import { ArcRotateCamera, CubeTexture, FreeCamera, type Mesh, NullEngine, PBRMaterial, Quaternion, Scene, SphericalPolynomial, Texture, Vector3, VertexBuffer } from "@babylonjs/core";
+import { ArcRotateCamera, CubeTexture, FreeCamera, type Mesh, MeshBuilder, NullEngine, PBRMaterial, Quaternion, Scene, SphericalPolynomial, Texture, type UniformBuffer, Vector3, VertexBuffer } from "@babylonjs/core";
 import {
   createDefaultWaterDefinition, createWaterWaveOutput, evaluateWaterVertex, normalizeRenderingQuality, normalizeWaterBody, qualityPresetPatch,
   RENDER_QUALITY_PROFILES, sampleWaterSurface, waterBankFadeLength, waterHorizontalEnvelope, waterWaveSet,
   type QualityLevel, type WaterBodyProperties, type WaterDefinition,
 } from "@babylonslate/core";
 import {
-  createWaterMesh, setSceneWaterTime, setWaterGpuWaves, updateSceneWater, updateWaterMeshBody, waterMeshBody,
-  WATER_FINITE_CELL_BUDGET, WATER_GLOBAL_CELL_BUDGET,
+  createWaterMesh, sceneWaterSamplesSceneCopy, setSceneWaterTime, setWaterGpuWaves, updateSceneWater, updateWaterMeshBody, updateWaterMeshDefinition,
+  waterMeshBody, WATER_FINITE_CELL_BUDGET, WATER_GLOBAL_CELL_BUDGET,
 } from "./water-mesh";
 import { updateSceneRenderingSettings } from "./render-settings";
 import type { WaterMaterialPlugin } from "./water-material";
+import { createLandscapeMesh } from "./landscape-mesh";
 import { applyAssignMesh, createPlayMesh, createSnapshotSceneBinding } from "./snapshot-apply";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@babylonslate/shader-graph";
 import { compileMaterialPlan, prewarmMaterial } from "./material-compiler";
@@ -39,6 +40,21 @@ function gpuVertex(mesh: Mesh, water: WaterDefinition, body: WaterBodyProperties
 
 const pluginOf = (mesh: Mesh) => (mesh.material as PBRMaterial).pluginManager!.getPlugin<WaterMaterialPlugin>("SlateWater")!;
 const setQuality = (scene: Scene, level: QualityLevel) => updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality(qualityPresetPatch(level)) });
+
+/** Bind the built-in surface's shader inputs through its real material plugin; record the uploaded vectors. */
+function bindWater(mesh: Mesh): Map<string, number[]> {
+  const vectors = new Map<string, number[]>();
+  const buffer = { updateFloat4: (name: string, ...values: number[]) => vectors.set(name, values), updateMatrix: () => {} } as unknown as UniformBuffer;
+  (mesh.material as PBRMaterial).pluginManager!.getPlugin<WaterMaterialPlugin>("SlateWater")!.hardBindForSubMesh(buffer, mesh.getScene());
+  return vectors;
+}
+
+/** X coordinates of the first grid row, in order. */
+function rowXs(mesh: Mesh): number[] {
+  const positions = mesh.getVerticesData(VertexBuffer.PositionKind)!, xs: number[] = [];
+  for (let i = 0; i < positions.length && (i === 0 || positions[i]! > positions[i - 3]!); i += 3) xs.push(positions[i]!);
+  return xs;
+}
 
 describe("Water rendering", () => {
   it("shares owned water reflection views without changing the skybox, and honors an explicit environment", () => {
@@ -188,15 +204,150 @@ describe("Water rendering", () => {
     try {
       const global = createWaterMesh(scene, "global", normalizeWaterBody({}, "global"));
       updateSceneWater(scene);
-      // One row of the grid: its X coordinates, sorted.
-      const positions = global.getVerticesData(VertexBuffer.PositionKind)!, xs: number[] = [];
-      for (let i = 0; i < positions.length && (i === 0 || positions[i]! > positions[i - 3]!); i += 3) xs.push(positions[i]!);
+      const xs = rowXs(global);
       const gap = (x: number) => { const k = xs.findIndex((value) => value > x); return xs[k]! - xs[k - 1]!; };
       // Default Global Water cells are 0.5 m at Mesh Density 1 (the default Medium tier scales them), at the target and
       // at the water nearest the eye alike.
       const cell = 0.5 / RENDER_QUALITY_PROFILES.medium.water.meshDensity;
       expect(gap(30)).toBeLessThanOrEqual(cell + 1e-4);
       expect(gap(camera.position.x + 3)).toBeLessThanOrEqual(cell + 1e-4);
+    } finally { scene.dispose(); engine.dispose(); }
+  });
+  it("applies an edited definition to a built surface in place and refuses edits that need a rebuild", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    try {
+      // A post crossing the lake gives it a contact field, whose range the shader then reads.
+      MeshBuilder.CreateBox("post", { width: 1, height: 6, depth: 1 }, scene).position.set(6, 0, 0);
+      scene.incrementRenderId();
+      const water = createDefaultWaterDefinition();
+      const mesh = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 30, length: 30, waveScale: 1 }), water);
+      const material = mesh.material as PBRMaterial;
+      // Default Contact Foam Width 1.2 m: distances clamp at three widths.
+      expect(bindWater(mesh).get("slateWaterContactInfo")!.slice(0, 2)).toEqual([1, expect.closeTo(3.6, 6)]);
+      const edited: WaterDefinition = { ...water, shallowColor: [1, 0, 0], roughness: 0.5, reflectionStrength: 0.25, foamAmount: 0.2, crestFoam: 0.8, contactFoamWidth: 2.5 };
+      expect(updateWaterMeshDefinition(mesh, edited)).toBe(true);
+      expect(mesh.material).toBe(material);
+      expect([material.roughness, material.environmentIntensity]).toEqual([0.5, 0.25]);
+      const vectors = bindWater(mesh);
+      expect(vectors.get("slateWaterShallow")).toEqual([1, 0, 0, water.opacity]);
+      expect(vectors.get("slateWaterFoam")![3]).toBe(0.2);
+      expect(vectors.get("slateWaterShape")).toEqual([water.choppiness, water.waveSpread, 0.8, 2.5]);
+      expect(vectors.get("slateWaterContactInfo")!.slice(0, 2)).toEqual([1, 7.5]);
+      // Style compiles into the shader and a Custom Material replaces it: those edits change nothing here.
+      expect(updateWaterMeshDefinition(mesh, { ...edited, style: "stylized", roughness: 0.9 })).toBe(false);
+      expect(updateWaterMeshDefinition(mesh, { ...edited, materialGuid: "custom", roughness: 0.9 })).toBe(false);
+      expect(material.roughness).toBe(0.5);
+      expect(updateWaterMeshDefinition(MeshBuilder.CreateBox("box", {}, scene), edited)).toBe(false);
+    } finally { scene.dispose(); engine.dispose(); }
+  });
+  it("resamples CPU-displaced waves for an edited definition while the water clock is paused", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    const water = createDefaultWaterDefinition(), body = normalizeWaterBody({ width: 10, length: 10, waveScale: 1, resolution: 8 });
+    try {
+      setSceneWaterTime(scene, 2);
+      const mesh = createWaterMesh(scene, "lake", body, water);
+      // Custom Material water (and this parity switch) displaces its vertices on the CPU.
+      setWaterGpuWaves(mesh, false);
+      updateSceneWater(scene);
+      const middle = centreVertex(mesh) * 3, vertex = () => Vector3.FromArray(mesh.getVerticesData(VertexBuffer.PositionKind)!, middle);
+      const before = vertex().y;
+      const edited = { ...water, waveHeight: 1.2 };
+      expect(updateWaterMeshDefinition(mesh, edited)).toBe(true);
+      // The next frame repeats the paused time. Gerstner waves carry the vertex sideways: the query at its X/Z agrees.
+      updateSceneWater(scene);
+      const after = vertex();
+      expect(after.y).toBeCloseTo(sampleWaterSurface(edited, body, { x: after.x, y: 0, z: after.z }, 2).height, 4);
+      expect(Math.abs(after.y - before)).toBeGreaterThan(0.05);
+    } finally { scene.dispose(); engine.dispose(); }
+  });
+  it("applies Water v2 edits in place exactly as a rebuilt surface binds, compiles, bounds and asks for the scene copy", async () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    // FFT Ocean Detail needs float render targets; Ultra runs every feature an asset can ask for.
+    Object.assign(engine.getCaps(), { textureFloatRender: true, textureHalfFloatRender: true });
+    try {
+      new FreeCamera("camera", new Vector3(0, 5, -10), scene);
+      setQuality(scene, "ultra");
+      setSceneWaterTime(scene, 2);
+      const body = normalizeWaterBody({ width: 12, length: 12, waveScale: 1, resolution: 8 });
+      const compiled = async (mesh: Mesh) => {
+        const material = mesh.material as PBRMaterial, subMesh = mesh.subMeshes[0]!;
+        await vi.waitFor(() => expect(material.isReadyForSubMesh(mesh, subMesh)).toBe(true));
+        return subMesh.effect!.defines;
+      };
+      const shaderInputs = [
+        ...Array.from({ length: 8 }, (_, i) => [`slateWaterSwellDir${i}`, `slateWaterSwellAmp${i}`]).flat(),
+        "slateWaterSea", "slateWaterSwellInfo", "slateWaterShape", "slateWaterWaves", "slateWaterLook", "slateWaterTerms", "slateWaterMotion",
+      ];
+      // No scene copy intent, no detail band, Classic waves and no Sparkles to start with.
+      let definition: WaterDefinition = { ...createDefaultWaterDefinition(), refraction: 0, objectReflections: false, detailWaves: 0, sparkles: 0 };
+      const lake = createWaterMesh(scene, "lake", body, definition);
+      const material = lake.material;
+      await compiled(lake);
+      expect(sceneWaterSamplesSceneCopy(scene, true, true)).toBe(false);
+      const edits: Array<Partial<WaterDefinition>> = [
+        // Uniform-only fields; Steepness also widens a finite body's culling bounds.
+        { steepness: 0.9, colorVariation: 0.1, waveHeight: 1.4 },
+        // Wave Model, Peak Sharpness and Wave Seed change the components; Ocean Spectrum compiles its other three.
+        { waveModel: "ocean", peakSharpness: 6, waveSeed: 42 },
+        // Features crossing zero recompile: refraction intent, the planar mirror, the FFT band and Sparkles.
+        { refraction: 0.6, objectReflections: true, detailWaves: 0.8, sparkles: 0.5 },
+      ];
+      for (const edit of edits) {
+        definition = { ...definition, ...edit };
+        expect(updateWaterMeshDefinition(lake, definition)).toBe(true);
+        const rebuilt = createWaterMesh(scene, "rebuilt", body, definition);
+        updateSceneWater(scene);
+        expect(lake.material).toBe(material);
+        expect(await compiled(lake)).toBe(await compiled(rebuilt));
+        const live = bindWater(lake), fresh = bindWater(rebuilt);
+        for (const name of shaderInputs) expect([name, live.get(name)]).toEqual([name, fresh.get(name)]);
+        const bounds = (mesh: Mesh) => [...mesh.getBoundingInfo().boundingBox.minimum.asArray(), ...mesh.getBoundingInfo().boundingBox.maximum.asArray()];
+        expect(bounds(lake)).toEqual(bounds(rebuilt).map((value) => expect.closeTo(value, 6)));
+        rebuilt.dispose();
+      }
+      expect(await compiled(lake)).toContain("#define SLATE_WATER_OCEAN");
+      expect(await compiled(lake)).toContain("#define SLATE_WATER_SPARKLES\n");
+      // Refraction and Object Reflections now ask for the scene copy; the count leaves with the surface.
+      expect(sceneWaterSamplesSceneCopy(scene, true, false)).toBe(true);
+      expect(sceneWaterSamplesSceneCopy(scene, false, true)).toBe(true);
+      lake.dispose();
+      expect(sceneWaterSamplesSceneCopy(scene, true, true)).toBe(false);
+    } finally { scene.dispose(); engine.dispose(); }
+  });
+  it("re-tessellates Global Water for a new Wave Length and widens its terrain field for a new Contact Foam Width", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    new FreeCamera("camera", new Vector3(0, 4, 0), scene);
+    try {
+      // A 40 m landscape floor centred on the origin, 4 m under the water.
+      createLandscapeMesh(scene, "land", { width: 40, depth: 40, subdivisions: 4, heights: Array.from({ length: 25 }, () => -4) });
+      setSceneWaterTime(scene, 1.5);
+      const water = createDefaultWaterDefinition(), body = normalizeWaterBody({}, "global");
+      const ocean = createWaterMesh(scene, "ocean", body, water);
+      updateSceneWater(scene);
+      const gapAtOrigin = () => { const xs = rowXs(ocean), k = xs.findIndex((x) => x > 0); return xs[k]! - xs[k - 1]!; };
+      const fieldMinX = () => bindWater(ocean).get("slateWaterFieldBounds")![0]!;
+      // The field covers the landscape plus the contact range (three Contact Foam Widths) and a metre.
+      expect(fieldMinX()).toBeGreaterThan(-20 - (2.5 * 3 + 1));
+      expect(gapAtOrigin()).toBeCloseTo(0.5, 4);
+      const edited = { ...water, waveLength: 24, contactFoamWidth: 2.5 };
+      expect(updateWaterMeshDefinition(ocean, edited)).toBe(true);
+      updateSceneWater(scene);
+      expect(fieldMinX()).toBeLessThanOrEqual(-20 - (2.5 * 3 + 1));
+      // Cells scale with Wave Length even though the camera-following layout has not moved.
+      expect(gapAtOrigin()).toBeCloseTo(1, 4);
+      // Each new rest vertex sits at its own world X/Z with the new cell size as its wave filter and the body's depth
+      // and open-water edge, so the vertex shader displaces it onto the queried surface.
+      const positions = ocean.getVerticesData(VertexBuffer.PositionKind)!, data = ocean.getVerticesData("slateWaterData")!;
+      let checked = 0;
+      for (let i = 0; i < positions.length; i += 3) {
+        const x = positions[i]!, z = positions[i + 2]!;
+        if (Math.abs(x) > 6 || Math.abs(z) > 6) continue;
+        const vertex = i / 3, rendered = gpuVertex(ocean, edited, body, vertex, 1.5);
+        expect(rendered.y).toBeCloseTo(sampleWaterSurface(edited, body, { x: rendered.x, y: 0, z: rendered.z }, 1.5).height, 4);
+        expect([data[vertex * 4]!, data[vertex * 4 + 1], data[vertex * 4 + 2]]).toEqual([expect.closeTo(1, 4), 10000, body.depth]);
+        checked++;
+      }
+      expect(checked).toBeGreaterThan(100);
     } finally { scene.dispose(); engine.dispose(); }
   });
   it("realizes and resizes an identity-transform Water component received from Play", () => {

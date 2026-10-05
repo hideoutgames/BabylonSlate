@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { createActor, createDefaultSceneLayer } from "@babylonslate/core";
+import { createActor, createDefaultSceneLayer, createDefaultSceneSettings } from "@babylonslate/core";
 import { createInProcessRuntime } from "./driver";
 import type { CompiledScript } from "./script-host";
 
@@ -158,6 +158,72 @@ it("routes a SceneLayer gameplay pose write to its overlay physics owner", async
         .getBackend()
         .getBodyTransform(`body:${actor.guid}`),
     ).toBeNull();
+  } finally {
+    runtime.stop();
+  }
+});
+
+it("places a parented body and converts Move Character against its parent's pose at call time", async () => {
+  const rider: CompiledScript = {
+    assetGuid: "rider-script",
+    classId: "Rider",
+    parentClassId: "Actor",
+    anchors: [],
+    source: [
+      "export function ride(ctx) {",
+      "  const carrier = ctx.getParent(ctx.self);",
+      // A quarter turn about +Y maps local +X to world -Z.
+      "  ctx.setActorTransform(carrier, { position: { x: 10, y: 0, z: 0 }, rotation: { x: 0, y: Math.SQRT1_2, z: 0, w: Math.SQRT1_2 } });",
+      "  ctx.setActorLocation(ctx.self, { x: 1, y: 0, z: 0 });",
+      "  ctx.setVariable('placed', ctx.lineTrace({ x: 10, y: 2, z: -1 }, { x: 10, y: -2, z: -1 }, undefined, { drawDebug: false }).actor);",
+      "  ctx.moveCharacter(ctx.self, { x: 2, y: 0, z: 0 });",
+      "}",
+    ].join("\n"),
+    entryPoints: [{ name: "ride", event: "Ride", isAsync: false }],
+  };
+  const runtime = createInProcessRuntime({
+    seed: 1,
+    seedDemoActors: false,
+    preferSoftwarePhysics: true,
+    physicsWorld: "3d",
+    gravity: [0, 0, 0],
+    playScene: {
+      name: "Carrier",
+      viewportMode: "3d",
+      settings: createDefaultSceneSettings(),
+      folders: [],
+      actors: [
+        createActor("carrier", "Carrier"),
+        createActor("rider", "Rider", {
+          classId: "Rider",
+          parentId: "carrier",
+          components: [
+            { id: "body", classId: "RigidBodyComponent", properties: { motionType: "kinematic", mass: 1, gravityScale: 0 } },
+            { id: "box", classId: "ColliderComponent", properties: { shape: { kind: "box", halfExtents: { x: 0.25, y: 0.25, z: 0.25 } } } },
+          ],
+        }),
+      ],
+    },
+  });
+  try {
+    await runtime.loadScripts([rider]);
+    runtime.realizePlayWorld();
+    runtime.start();
+    runtime.tick();
+    const actor = runtime.getWorld().findActor("rider")!;
+    runtime.invokeScriptEvent("Rider", "Ride", actor);
+    expect(runtime.getDiagnostics().entries()).toEqual([]);
+    // Local (1, 0, 0) under the moved, turned carrier is world (10, 0, -1).
+    expect(actor.getVariable("placed")).toBe(actor);
+    // The controller moved the body to world (12, 0, -1); relative to the
+    // carrier's current pose that is local (1, 0, 2), so world and body agree.
+    const body = runtime.getPhysicsSync()!.getBackend().getBodyTransform(`body:${actor.guid}`)!;
+    expect(body.position.x).toBeCloseTo(12, 9);
+    expect(body.position.z).toBeCloseTo(-1, 9);
+    expect(actor.transform.position.x).toBeCloseTo(1, 9);
+    expect(actor.transform.position.y).toBeCloseTo(0, 9);
+    expect(actor.transform.position.z).toBeCloseTo(2, 9);
+    expect(actor.transform.rotation.w).toBeCloseTo(1, 9);
   } finally {
     runtime.stop();
   }

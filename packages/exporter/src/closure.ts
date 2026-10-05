@@ -160,7 +160,7 @@ export function collectExportReachability(
     if (sceneRoot === startup) {
       for (const asset of sortedAssets) if (asset.type === "InputAction" || asset.type === "InputAxis") pending.push(asset.guid);
       for (const asset of sortedAssets) if (isSubsystemClassAsset(asset, hierarchy)) pending.push(asset.guid);
-      for (const ref of [input.gameInstanceClass, input.audioMixerGuid]) {
+      for (const ref of [input.gameInstanceClass, input.audioMixerGuid, ...(input.renderAssetGuids ?? [])]) {
         if (ref?.trim()) pending.push(ref.trim());
       }
     }

@@ -5,18 +5,22 @@ import { useEditorAudioDebug } from "./use-editor-audio-debug";
 
 const documents = vi.hoisted(() => ({
   openDocuments: [] as Array<{ id: string; ref: { kind: string }; content: unknown }>,
-  registryVersion: 0,
+  registryEpoch: 0,
+  projectDocument: null as null | {
+    settings: { audio: { audioMixerGuid: string | null }; playFrameCap?: number };
+  },
   collectPlayAudio: vi.fn<() => Promise<{
     library: import("./play-audio").PlayAudioLibrary;
     loadSourceBytes: import("./play-audio").PlayAudioSourceLoader;
   }>>(),
 }));
-vi.mock("../context/document-context", () => ({ useDocuments: () => documents }));
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => documents));
 
 afterEach(() => {
   cleanup();
   documents.openDocuments = [];
-  documents.registryVersion = 0;
+  documents.registryEpoch = 0;
+  documents.projectDocument = null;
   documents.collectPlayAudio.mockReset();
 });
 
@@ -31,9 +35,22 @@ it("refreshes audio drafts and registry changes while ignoring scene edits", asy
   documents.openDocuments.push({ id: "sound-attenuation:A", ref: { kind: "sound-attenuation" }, content: { innerRadius: 7 } });
   rerender();
   await waitFor(() => expect(documents.collectPlayAudio).toHaveBeenCalledTimes(2));
-  documents.registryVersion += 1;
+  documents.registryEpoch += 1;
   rerender();
   await waitFor(() => expect(documents.collectPlayAudio).toHaveBeenCalledTimes(3));
+});
+
+it("reloads when Project Settings select another audio mixer, not for other settings edits", async () => {
+  documents.collectPlayAudio.mockResolvedValue({ library: emptyPlayAudioLibrary(), loadSourceBytes: async () => null });
+  documents.projectDocument = { settings: { audio: { audioMixerGuid: "mixer-a" } } };
+  const { rerender } = renderHook(() => useEditorAudioDebug(true));
+  await waitFor(() => expect(documents.collectPlayAudio).toHaveBeenCalledTimes(1));
+  documents.projectDocument = { settings: { audio: { audioMixerGuid: "mixer-a" }, playFrameCap: 30 } };
+  rerender();
+  expect(documents.collectPlayAudio).toHaveBeenCalledTimes(1);
+  documents.projectDocument = { settings: { audio: { audioMixerGuid: "mixer-b" } } };
+  rerender();
+  await waitFor(() => expect(documents.collectPlayAudio).toHaveBeenCalledTimes(2));
 });
 
 it("discards a superseded metadata load and clears helpers when selection no longer needs audio", async () => {
@@ -43,7 +60,7 @@ it("discards a superseded metadata load and clears helpers when selection no lon
   documents.collectPlayAudio.mockReturnValueOnce(new Promise((resolve) => { finishOld = resolve; }));
   documents.collectPlayAudio.mockResolvedValue({ library: currentLibrary, loadSourceBytes: async () => null });
   const { result, rerender } = renderHook(({ enabled }) => useEditorAudioDebug(enabled), { initialProps: { enabled: true } });
-  documents.registryVersion += 1;
+  documents.registryEpoch += 1;
   rerender({ enabled: true });
   await waitFor(() => expect(result.current).toBe(currentLibrary));
   await act(async () => finishOld({ library: oldLibrary, loadSourceBytes: async () => null }));

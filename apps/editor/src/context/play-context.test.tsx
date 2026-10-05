@@ -1,6 +1,6 @@
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import { engineCommandBus } from "@babylonslate/core";
+import { createDefaultScene, engineCommandBus } from "@babylonslate/core";
 import {
   PlayProvider,
   useLiveBtState,
@@ -12,21 +12,18 @@ import {
 
 const host = vi.hoisted(() => {
   const diagnostics = new Set<(line: string) => void>();
+  const noProject: Record<string, unknown> = {
+    onSessionDiagnostic: (listener: (line: string) => void) => {
+      diagnostics.add(listener);
+      return () => {
+        diagnostics.delete(listener);
+      };
+    },
+  };
   return {
     diagnostics,
-    documents: {
-      openDocuments: [],
-      activeDocumentId: null,
-      projectDocument: null,
-      dirtyDocuments: [],
-      migrationPending: [],
-      onSessionDiagnostic: (listener: (line: string) => void) => {
-        diagnostics.add(listener);
-        return () => {
-          diagnostics.delete(listener);
-        };
-      },
-    },
+    noProject,
+    documents: noProject,
     validation: { setDiagnostics: vi.fn(), setFocusDiagnostic: vi.fn() },
     settings: {
       settings: { debuggerDefaults: { overlayStats: false } },
@@ -36,7 +33,7 @@ const host = vi.hoisted(() => {
 });
 
 // Session data and settings are external to the subscription boundary under test.
-vi.mock("./document-context", () => ({ useDocuments: () => host.documents }));
+vi.mock("./document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => host.documents));
 vi.mock("./validation-context", () => ({
   useValidation: () => host.validation,
 }));
@@ -47,6 +44,7 @@ vi.mock("./app-settings-context", () => ({
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  host.documents = host.noProject;
 });
 
 it("delivers logs and BT snapshots only to their subscribers while Play controls stay live", () => {
@@ -146,4 +144,61 @@ it("delivers logs and BT snapshots only to their subscribers while Play controls
   expect(controls.reportBtState).toBe(writer);
   view.unmount();
   expect(host.diagnostics.size).toBe(0);
+});
+
+it("keeps Play controls stable across document edits while Play saves the newest dirty documents", async () => {
+  const scene = {
+    id: "scene:assets/Main.scene.babasset",
+    ref: { kind: "scene", path: "assets/Main.scene.babasset", label: "Main" },
+    content: createDefaultScene(),
+    dirty: false,
+  };
+  const hero = {
+    id: "graph:assets/Hero.class.babasset",
+    ref: { kind: "graph", path: "assets/Hero.class.babasset", label: "Hero Class" },
+    content: { nodes: [], edges: [] },
+    dirty: false,
+  };
+  // Saving never finishes, so the prepare dialog stays in its Saving phase.
+  const saveAll = vi.fn(() => new Promise<boolean>(() => {}));
+  const clean = {
+    ...host.noProject,
+    openDocuments: [scene, hero],
+    activeDocumentId: scene.id,
+    saveAll,
+  };
+  host.documents = clean;
+  let controls!: ReturnType<typeof usePlay>;
+  function PlayConsumer() {
+    controls = usePlay();
+    return null;
+  }
+  const view = render(
+    <PlayProvider>
+      <PlayConsumer />
+    </PlayProvider>,
+  );
+  const beforeEdit = controls;
+
+  const editedHero = { ...hero, dirty: true };
+  host.documents = {
+    ...clean,
+    openDocuments: [scene, editedHero],
+    dirtyDocuments: [editedHero],
+  };
+  view.rerender(
+    <PlayProvider>
+      <PlayConsumer />
+    </PlayProvider>,
+  );
+  expect(controls).toBe(beforeEdit);
+
+  // A Play button rendered before the edit still saves the edited graph.
+  await act(async () => {
+    void beforeEdit.requestPlay();
+  });
+  expect(saveAll).toHaveBeenCalledTimes(1);
+  const dialog = screen.getByTestId("play-prepare-dialog");
+  expect(dialog.textContent).toContain("Saving 1 Document");
+  expect(dialog.textContent).toContain("Hero Class");
 });

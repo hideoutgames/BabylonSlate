@@ -1,8 +1,8 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { ScriptHost, type ScriptHostServices } from "@babylonslate/runtime";
 import { ClassRegistry } from "@babylonslate/object-model";
 import { useDocuments } from "../context/document-context";
-import { usePlay } from "../context/play-context";
+import { usePlayDiagnosticsActions } from "../context/play-context";
 import {
   EDITOR_UTILITY_EVENTS,
   EDITOR_UTILITY_LIFECYCLE_EVENT,
@@ -45,21 +45,25 @@ export function EditorUtilityRuntime() {
     projectDocument,
     collectEditorUtilityScripts,
     projectName,
-    openDocuments,
+    getOpenDocuments,
     pluginDescriptors,
     assetRegistry,
   } = useDocuments();
-  const { appendLog } = usePlay();
-  const appendLogRef = useRef(appendLog);
-  appendLogRef.current = appendLog;
-  const metadataRef = useRef(projectDocument?.metadata);
-  metadataRef.current = projectDocument?.metadata;
+  const { appendLog } = usePlayDiagnosticsActions();
+  // The host outlives renders: its callbacks read these at call time. Updated
+  // after commit, never during render; open tabs come from the live getter.
+  const latest = {
+    appendLog,
+    metadata: projectDocument?.metadata,
+    collectScripts: collectEditorUtilityScripts,
+    getOpenDocuments,
+  };
+  const latestRef = useRef(latest);
+  useLayoutEffect(() => {
+    latestRef.current = latest;
+  });
   const hostRef = useRef<ScriptHost | null>(null);
   const startedRef = useRef(false);
-  const openDocumentsRef = useRef(openDocuments);
-  openDocumentsRef.current = openDocuments;
-  const collectScriptsRef = useRef(collectEditorUtilityScripts);
-  collectScriptsRef.current = collectEditorUtilityScripts;
   const registeredKey = mergePluginEditorUtilityObjects(
     projectDocument?.settings.editorUtilityObjects ?? [],
     pluginDescriptors
@@ -73,18 +77,18 @@ export function EditorUtilityRuntime() {
     }
     let cancelled = false;
     const host = new ScriptHost({
-      ...editorHostServices((line) => appendLogRef.current(line)),
-      getProjectName: () => metadataRef.current?.name ?? "",
-      getProjectVersion: () => metadataRef.current?.version ?? "",
+      ...editorHostServices((line) => latestRef.current.appendLog(line)),
+      getProjectName: () => latestRef.current.metadata?.name ?? "",
+      getProjectVersion: () => latestRef.current.metadata?.version ?? "",
     });
     hostRef.current = host;
-    void collectScriptsRef.current().then(async (scripts) => {
+    void latestRef.current.collectScripts().then(async (scripts) => {
       if (cancelled) return;
       for (const script of scripts) {
         await host.load(script);
       }
       if (cancelled) return;
-      const hasOpenScene = openDocumentsRef.current.some(
+      const hasOpenScene = latestRef.current.getOpenDocuments().some(
         (doc) => doc.ref.kind === "scene",
       );
       for (const event of editorUtilityBootEvents(hasOpenScene)) {

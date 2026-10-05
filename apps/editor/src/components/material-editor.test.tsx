@@ -20,7 +20,7 @@ const harness: {
   requestRender: ReturnType<typeof vi.fn>;
   focusNode: ReturnType<typeof vi.fn>;
   selectedNodeId: string | null;
-  registryVersion: number;
+  registryEpoch: number;
 } = {
   content: createDefaultMaterialDocument("Rock") as unknown as Record<
     string,
@@ -32,7 +32,7 @@ const harness: {
   requestRender: vi.fn(),
   focusNode: vi.fn(),
   selectedNodeId: null,
-  registryVersion: 0,
+  registryEpoch: 0,
 };
 let assetRegistry: AssetRegistry;
 
@@ -40,20 +40,18 @@ vi.mock("../context/document-workspace-context", () => ({
   useDocumentWorkspace: () => ({ documentId: "material:assets/Rock.material.babasset" }),
 }));
 
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => ({
-    openDocuments: [
-      {
-        id: "material:assets/Rock.material.babasset",
-        ref: { kind: harness.kind, path: "assets/Rock.material.babasset" },
-        content: harness.content,
-      },
-    ],
-    applyAssetDocumentChange: harness.applyAssetDocumentChange,
-    assetRegistry,
-    registryVersion: harness.registryVersion,
-  }),
-}));
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
+  openDocuments: [
+    {
+      id: "material:assets/Rock.material.babasset",
+      ref: { kind: harness.kind, path: "assets/Rock.material.babasset" },
+      content: harness.content,
+    },
+  ],
+  applyAssetDocumentChange: harness.applyAssetDocumentChange,
+  assetRegistry,
+  registryEpoch: harness.registryEpoch,
+})));
 
 vi.mock("../context/material-editing-context", () => ({
   useMaterialEditing: () => ({
@@ -97,7 +95,7 @@ beforeEach(async () => {
       ...asset, version: 1, dependencies: [], chunks: [],
     });
   }
-  harness.registryVersion = 0;
+  harness.registryEpoch = 0;
   harness.content = createDefaultMaterialDocument("Rock") as unknown as Record<
     string,
     unknown
@@ -354,7 +352,7 @@ describe("Material details panel", () => {
     expect(screen.queryByRole("option", { name: /Studio Cube/ })).toBeNull();
     assetRegistry.getByGuid("tex-1")!.header.payload = { dimension: "cube", container: "env" };
     assetRegistry.getByGuid("env-1")!.header.payload = {};
-    harness.registryVersion += 1;
+    harness.registryEpoch += 1;
     rerender(<MaterialDetailsPanel {...panelProps} />);
     expect(await screen.findByRole("option", { name: /Studio Cube/ })).toBeTruthy();
     expect(screen.queryByRole("option", { name: /Bark/ })).toBeNull();
@@ -375,7 +373,7 @@ describe("Material details panel", () => {
     expect(screen.getByTestId(`material-node-${picker}`).textContent).toContain(name);
     for (const value of [0.25, 0.75]) {
       harness.content = { ...harness.content, alphaCutoff: value };
-      harness.registryVersion += 1; // Document edits also bump this shared revision.
+      harness.registryEpoch += 1; // An autosave reindexes the Material: a closed picker still waits.
       rerender(<MaterialDetailsPanel {...panelProps} />);
     }
     harness.selectedNodeId = "output";
@@ -391,7 +389,7 @@ describe("Material details panel", () => {
     expect(list).toHaveBeenCalledTimes(1);
 
     const renamed = await assetRegistry.renameAsset(guid, "Renamed Asset");
-    harness.registryVersion += 1;
+    harness.registryEpoch += 1;
     rerender(<MaterialDetailsPanel {...panelProps} />);
     const renamedOption = await screen.findByRole("option", { name: new RegExp(renamed.header.name) });
     expect(renamedOption.textContent).toContain(renamed.path);
@@ -400,15 +398,15 @@ describe("Material details panel", () => {
     await assetRegistry.createAsset("project", "new.babasset", {
       guid: "new", name: "New Asset", type, version: 1, dependencies: [], payload: {}, chunks: [],
     });
-    harness.registryVersion += 1;
+    harness.registryEpoch += 1;
     rerender(<MaterialDetailsPanel {...panelProps} />);
     expect(await screen.findByRole("option", { name: /New Asset/ })).toBeTruthy();
     expect(screen.queryByRole("option", { name: new RegExp(renamed.header.name) })).toBeNull();
     fireEvent.click(screen.getByTestId("search-item-new"));
     expect(lastCommit().nodes.find((node) => node.id === "pick")?.properties[property]).toBe("new");
     const scans = list.mock.calls.length;
+    // The pick is a document edit: the registry epoch stays put.
     harness.content = lastCommit() as unknown as Record<string, unknown>;
-    harness.registryVersion += 1;
     rerender(<MaterialDetailsPanel {...panelProps} />);
     expect(list).toHaveBeenCalledTimes(scans);
     expect(screen.getByTestId(`material-node-${picker}`).textContent).toContain("New Asset");

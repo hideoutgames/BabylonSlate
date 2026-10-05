@@ -1,5 +1,6 @@
 import type {
   AssetDocumentKind,
+  DocumentKind,
   DocumentRef,
   PanelPlacement,
   ProjectLayouts,
@@ -7,6 +8,7 @@ import type {
   SerializedScene,
 } from "@babylonslate/core";
 import {
+  ASSET_DOCUMENT_KINDS,
   CONTENT_BROWSER_ID,
   CONTENT_BROWSER_REF,
   createDocumentRef,
@@ -60,9 +62,60 @@ export type DocumentIdentityEvent =
 
 export type DocumentIdentityListener = (event: DocumentIdentityEvent) => void;
 
+/**
+ * One revision per document kind. A kind's revision advances whenever what a
+ * reader of that kind's open documents sees changes: a document of the kind
+ * opens, closes, moves, is reordered among the tabs, or has its content,
+ * layout or dirty state changed (edits, Undo / Redo, reloads, patches,
+ * saves). Every advance takes the next value of one service-wide sequence, so
+ * revisions never repeat and {@link documentKindsRevision} combines kinds.
+ */
+export type DocumentRevisions = Readonly<Record<DocumentKind, number>>;
+
+const DOCUMENT_KINDS: readonly DocumentKind[] = [
+  "content-browser",
+  ...ASSET_DOCUMENT_KINDS,
+];
+
+function initialDocumentRevisions(): DocumentRevisions {
+  return Object.fromEntries(
+    DOCUMENT_KINDS.map((kind) => [kind, 0]),
+  ) as Record<DocumentKind, number>;
+}
+
+/**
+ * The latest revision among `kinds`. It changes exactly when a document of one
+ * of them changes, so a memo keyed on it ignores edits to every other kind.
+ */
+export function documentKindsRevision(
+  revisions: DocumentRevisions,
+  kinds: Iterable<DocumentKind>,
+): number {
+  let latest = 0;
+  for (const kind of kinds) latest = Math.max(latest, revisions[kind] ?? 0);
+  return latest;
+}
+
+function sameIds(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((id, index) => id === b[index]);
+}
+
+function sameLayout(
+  a: Record<string, unknown> | null,
+  b: Record<string, unknown> | null,
+): boolean {
+  if (a === b) return true;
+  if (a === null || b === null) return false;
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+type TabsSnapshot = { order: readonly string[]; active: string | null };
+
 export class DocumentService {
-  private readonly contentRevisions = new WeakMap<OpenDocument, number>();
   private readonly identityListeners = new Set<DocumentIdentityListener>();
+  private revisionSequence = 0;
+  private revisions: DocumentRevisions = initialDocumentRevisions();
+  private tabsRevision = 0;
 
   /** `opened` fires when a new tab entry is created; `repathed` on every path change. */
   onIdentityChange(listener: DocumentIdentityListener): () => void {
@@ -76,15 +129,49 @@ export class DocumentService {
     for (const listener of [...this.identityListeners]) listener(event);
   }
 
-  /** Changes even when Undo returns to a previously held content object. */
-  contentRevision(id: string): number {
-    const document = this.state.openDocuments.get(id);
-    return document ? (this.contentRevisions.get(document) ?? 0) : -1;
+  /**
+   * Per-kind revisions (see {@link DocumentRevisions}). The object is replaced
+   * whenever a kind advances and kept otherwise, so callers may key on it.
+   */
+  getRevisions(): DocumentRevisions {
+    return this.revisions;
   }
 
-  private advanceContentRevision(document: OpenDocument): void {
-    this.contentRevisions.set(document, (this.contentRevisions.get(document) ?? 0) + 1);
+  /**
+   * Advances when the open set, the tab order or the active tab changes.
+   * Drawn from the same sequence as the per-kind revisions.
+   */
+  getTabsRevision(): number {
+    return this.tabsRevision;
   }
+
+  private advanceKinds(kinds: Iterable<DocumentKind>): void {
+    const unique = new Set(kinds);
+    if (unique.size === 0) return;
+    const next = ++this.revisionSequence;
+    const revisions: Record<string, number> = { ...this.revisions };
+    for (const kind of unique) revisions[kind] = next;
+    this.revisions = revisions as DocumentRevisions;
+  }
+
+  /** The tabs before a mutation, for `advanceTabsIfChanged` after it. */
+  private tabsSnapshot(): TabsSnapshot {
+    return {
+      order: [...this.state.tabOrder],
+      active: this.state.activeDocumentId,
+    };
+  }
+
+  private advanceTabsIfChanged(before: TabsSnapshot): void {
+    if (
+      before.active === this.state.activeDocumentId &&
+      sameIds(before.order, this.state.tabOrder)
+    ) {
+      return;
+    }
+    this.tabsRevision = ++this.revisionSequence;
+  }
+
   private state: DocumentRegistryState = {
     openDocuments: new Map(),
     tabOrder: [],
@@ -126,8 +213,10 @@ export class DocumentService {
   }
 
   ensureContentBrowserTab(): void {
+    const tabs = this.tabsSnapshot();
     if (this.state.openDocuments.has(CONTENT_BROWSER_ID)) {
       this.pinStickyTabs();
+      this.advanceTabsIfChanged(tabs);
       return;
     }
 
@@ -145,6 +234,8 @@ export class DocumentService {
     if (!this.state.activeDocumentId) {
       this.state.activeDocumentId = CONTENT_BROWSER_ID;
     }
+    this.advanceKinds(["content-browser"]);
+    this.advanceTabsIfChanged(tabs);
   }
 
   private pinStickyTabs(): void {
@@ -173,6 +264,10 @@ export class DocumentService {
     sceneLoadOptions?: DocumentLoadOptions,
   ): Promise<void> {
     sceneLoadOptions?.signal?.throwIfAborted();
+    const closedKinds = [...this.state.openDocuments.values()].map(
+      (doc) => doc.ref.kind,
+    );
+    const tabs = this.tabsSnapshot();
     this.state = {
       openDocuments: new Map(),
       tabOrder: [],
@@ -180,6 +275,9 @@ export class DocumentService {
       panelPlacements: structuredClone(layouts.panelPlacements ?? {}),
       showPluginContent: layouts.showPluginContent === true,
     };
+    // Every previous tab closed; each restored one advances its kind on open.
+    this.advanceKinds(closedKinds);
+    this.advanceTabsIfChanged(tabs);
 
     this.ensureContentBrowserTab();
 
@@ -212,11 +310,13 @@ export class DocumentService {
     }
 
     sceneLoadOptions?.signal?.throwIfAborted();
+    const restored = this.tabsSnapshot();
     this.pinStickyTabs();
 
     // Always land on the Content Browser when opening a project so users
     // don't get dropped into an empty black viewport tab.
     this.state.activeDocumentId = CONTENT_BROWSER_ID;
+    this.advanceTabsIfChanged(restored);
   }
 
   async openDocument(
@@ -228,10 +328,12 @@ export class DocumentService {
   ): Promise<string> {
     options?.signal?.throwIfAborted();
     if (ref.kind === "content-browser") {
+      const tabs = this.tabsSnapshot();
       this.ensureContentBrowserTab();
       if (setActive) {
         this.state.activeDocumentId = CONTENT_BROWSER_ID;
       }
+      this.advanceTabsIfChanged(tabs);
       return CONTENT_BROWSER_ID;
     }
 
@@ -241,6 +343,7 @@ export class DocumentService {
     if (existing) {
       options?.beforeCommit?.(ref);
       options?.signal?.throwIfAborted();
+      const tabs = this.tabsSnapshot();
       if (setActive) {
         this.state.activeDocumentId = id;
       }
@@ -248,6 +351,7 @@ export class DocumentService {
         this.closeOtherSceneDocuments(id);
       }
       this.pinStickyTabs();
+      this.advanceTabsIfChanged(tabs);
       return id;
     }
 
@@ -279,10 +383,12 @@ export class DocumentService {
     }
     // Another opener may have committed and been edited while this read was
     // pending. Keep that tab's identity, layout, content, and dirty revision.
+    const tabs = this.tabsSnapshot();
     const alreadyOpened = this.state.openDocuments.has(id);
     if (!alreadyOpened) {
       this.state.openDocuments.set(id, entry);
       this.state.tabOrder.push(id);
+      this.advanceKinds([fullRef.kind]);
     }
     if (ref.kind === "scene") {
       this.closeOtherSceneDocuments(id);
@@ -291,6 +397,7 @@ export class DocumentService {
     if (setActive) {
       this.state.activeDocumentId = id;
     }
+    this.advanceTabsIfChanged(tabs);
     if (!alreadyOpened) this.emitIdentity({ type: "opened", id });
     return id;
   }
@@ -312,6 +419,8 @@ export class DocumentService {
       return;
     }
 
+    const tabs = this.tabsSnapshot();
+    const closed = this.state.openDocuments.get(id);
     this.state.openDocuments.delete(id);
     this.state.tabOrder = this.state.tabOrder.filter((tabId) => tabId !== id);
     delete this.state.panelPlacements[id];
@@ -319,6 +428,8 @@ export class DocumentService {
       this.state.activeDocumentId = this.state.tabOrder[0] ?? CONTENT_BROWSER_ID;
     }
     this.pinStickyTabs();
+    if (closed) this.advanceKinds([closed.ref.kind]);
+    this.advanceTabsIfChanged(tabs);
   }
 
   /**
@@ -363,6 +474,7 @@ export class DocumentService {
   ): void {
     const doc = this.state.openDocuments.get(oldId);
     if (!doc) return;
+    const tabs = this.tabsSnapshot();
     this.state.openDocuments.delete(oldId);
     const next: OpenDocument = {
       ...doc,
@@ -382,11 +494,15 @@ export class DocumentService {
       this.state.panelPlacements[newId] = placements;
       delete this.state.panelPlacements[oldId];
     }
+    this.advanceKinds([kind]);
+    this.advanceTabsIfChanged(tabs);
   }
 
   setActiveDocument(id: string): void {
     if (this.state.openDocuments.has(id)) {
+      const tabs = this.tabsSnapshot();
       this.state.activeDocumentId = id;
+      this.advanceTabsIfChanged(tabs);
     }
   }
 
@@ -414,18 +530,23 @@ export class DocumentService {
       return;
     }
 
+    const tabs = this.tabsSnapshot();
     const next = [...this.state.tabOrder];
     const [moved] = next.splice(fromIndex, 1);
     next.splice(toIndex, 0, moved);
     this.state.tabOrder = next;
     this.pinStickyTabs();
+    // Readers of the moved document's kind see its documents in a new order.
+    const movedKind = this.state.openDocuments.get(moved)?.ref.kind;
+    if (movedKind) this.advanceKinds([movedKind]);
+    this.advanceTabsIfChanged(tabs);
   }
 
   updateScene(id: string, scene: SerializedScene): void {
     const doc = this.state.openDocuments.get(id);
     if (!doc || !isSceneWorkspaceKind(doc.ref.kind)) return;
     doc.content = scene;
-    this.advanceContentRevision(doc);
+    this.advanceKinds([doc.ref.kind]);
     doc.dirty = true;
     recordDocumentDirty(doc.ref.kind, id);
     doc.ref = {
@@ -438,7 +559,7 @@ export class DocumentService {
     const doc = this.state.openDocuments.get(id);
     if (!doc || doc.ref.kind !== "graph") return;
     doc.content = graph;
-    this.advanceContentRevision(doc);
+    this.advanceKinds([doc.ref.kind]);
     doc.dirty = true;
     recordDocumentDirty(doc.ref.kind, id);
   }
@@ -454,7 +575,7 @@ export class DocumentService {
       return;
     }
     doc.content = content;
-    this.advanceContentRevision(doc);
+    this.advanceKinds([doc.ref.kind]);
     doc.dirty = true;
     recordDocumentDirty(doc.ref.kind, id);
     if (typeof content.name === "string" && content.name.trim() !== "") {
@@ -467,9 +588,11 @@ export class DocumentService {
 
   setLayout(id: string, layout: Record<string, unknown> | null): void {
     const doc = this.state.openDocuments.get(id);
-    if (doc) {
-      doc.layout = layout;
-    }
+    // Tab switches and saves capture every docked layout again; an unchanged
+    // capture changes nothing a reader sees.
+    if (!doc || sameLayout(doc.layout, layout)) return;
+    doc.layout = layout;
+    this.advanceKinds([doc.ref.kind]);
   }
 
   setPanelPlacement(
@@ -499,20 +622,24 @@ export class DocumentService {
 
   /** Clear only revisions whose content was actually written by this save. */
   markAllClean(saved: readonly OpenDocument[]): void {
+    const changed: DocumentKind[] = [];
     for (const snapshot of saved) {
       const doc = this.state.openDocuments.get(snapshot.id);
       if (doc && doc.ref.kind !== "content-browser" && doc.ref.path === snapshot.ref.path) {
-        doc.dirty = doc.content !== snapshot.content;
+        const dirty = doc.content !== snapshot.content;
+        if (doc.dirty !== dirty) changed.push(doc.ref.kind);
+        doc.dirty = dirty;
       }
     }
+    this.advanceKinds(changed);
   }
 
   replaceLoadedContent(id: string, content: DocumentContent): void {
     const doc = this.state.openDocuments.get(id);
     if (!doc || doc.ref.kind === "content-browser") return;
     doc.content = content;
-    this.advanceContentRevision(doc);
     doc.dirty = false;
+    this.advanceKinds([doc.ref.kind]);
   }
 
   /** Update in-memory content without changing the dirty flag. */
@@ -520,7 +647,7 @@ export class DocumentService {
     const doc = this.state.openDocuments.get(id);
     if (!doc || doc.ref.kind === "content-browser") return;
     doc.content = content;
-    this.advanceContentRevision(doc);
+    this.advanceKinds([doc.ref.kind]);
   }
 
   buildLayouts(): ProjectLayouts {

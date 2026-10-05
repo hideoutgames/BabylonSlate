@@ -1,5 +1,5 @@
 import { installedAssetIdentity, type IndexedAsset } from "@babylonslate/assets";
-import { installTextureBytes } from "@babylonslate/render";
+import { encodeRgbaPng, installTextureBytes } from "@babylonslate/render";
 import {
   createContext,
   useCallback,
@@ -49,6 +49,9 @@ import { useDocuments } from "./document-context";
 import { usePlay } from "./play-context";
 import { useMaterialRenderControl } from "./material-render-control-context";
 import { useMaterialInstanceSources } from "./material-instance-sources";
+import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
+
+const FUNCTION_KINDS = ["material-function"] as const;
 
 /** Trailing debounce: the last edit always compiles, unlike a rate limiter. */
 const IDLE_DEBOUNCE_MS = 220;
@@ -115,7 +118,7 @@ export function MaterialEditingProvider({
   active?: boolean;
   children: ReactNode;
 }) {
-  const { openDocuments, assetRegistry, registryVersion, projectDocument, readAssetChunk } =
+  const { openDocuments, assetRegistry, registryEpoch, projectDocument, readAssetChunk } =
     useDocuments();
   const play = usePlay();
   const { register: registerRenderControl } = useMaterialRenderControl();
@@ -174,7 +177,7 @@ export function MaterialEditingProvider({
 
   const functionAssetsRef = useRef<IndexedAsset[]>([]);
   const functionAssets = useMemo(() => {
-    void registryVersion; // Registry contents mutate without replacing its instance.
+    void registryEpoch; // Registry contents mutate without replacing its instance.
     const next = (assetRegistry?.list() ?? []).filter(
       (asset) => asset.header.type === "MaterialFunction",
     );
@@ -187,7 +190,7 @@ export function MaterialEditingProvider({
     }
     functionAssetsRef.current = next;
     return next;
-  }, [assetRegistry, registryVersion]);
+  }, [assetRegistry, registryEpoch]);
   const [savedFunctions, setSavedFunctions] = useState<Record<string, MaterialFunctionDocument>>({});
   const [loadedFunctionAssets, setLoadedFunctionAssets] = useState<typeof functionAssets | null>(null);
   const functionsReady = functionAssets.length === 0 || loadedFunctionAssets === functionAssets;
@@ -213,16 +216,17 @@ export function MaterialEditingProvider({
   }, [functionAssets, readAssetChunk]);
 
   /** Open edits override saved document chunks; headers are only legacy fallback. */
+  const functionDocuments = useOpenDocumentsOfKinds(FUNCTION_KINDS);
   const functions = useMemo(() => {
     const map: Record<string, MaterialFunctionDocument> = { ...savedFunctions };
     for (const asset of functionAssets) {
-      const open = openDocuments.find(
+      const open = functionDocuments.find(
         (entry) => entry.ref.path === asset.path && entry.content,
       );
       if (open?.content) map[asset.header.guid] = normalizeMaterialFunctionDocument(open.content);
     }
     return map;
-  }, [functionAssets, openDocuments, savedFunctions]);
+  }, [functionAssets, functionDocuments, savedFunctions]);
   functionsRef.current = functions;
   engineRef.current = sharedEngine;
 
@@ -402,7 +406,13 @@ export function MaterialEditingProvider({
       const next = new Map<string, Uint8Array>();
       for (const guid of guids) {
         const asset = assetRegistry?.getByGuid(guid);
-        if (!asset || asset.header.type === "RenderTargetTexture" || !readAssetChunk) continue;
+        if (!asset) continue;
+        if (asset.header.type === "RenderTargetTexture") {
+          // This preview has no scene capture; RTT samples use opaque black.
+          next.set(guid, encodeRgbaPng(1, 1, new Uint8Array([0, 0, 0, 255])));
+          continue;
+        }
+        if (!readAssetChunk) continue;
         const pixels = await readAssetChunk(asset.path, "pixels");
         if (pixels && pixels.byteLength > 0) {
           next.set(guid, pixels);
@@ -420,7 +430,7 @@ export function MaterialEditingProvider({
     return () => {
       cancelled = true;
     };
-  }, [assetRegistry, registryVersion, readAssetChunk, textureGuidsKey]);
+  }, [assetRegistry, registryEpoch, readAssetChunk, textureGuidsKey]);
 
   const costClassRef = useRef(costClass);
   costClassRef.current = costClass;
