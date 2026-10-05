@@ -3,8 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   MAIN_CLASS_FILE,
   MAIN_SCENE_FILE,
+  createActor,
   documentId,
   type DocumentRef,
+  type SerializedComponent,
+  type SerializedGraph,
   type SerializedScene,
 } from "@babylonslate/core";
 import { OpfsStorageAdapter } from "@babylonslate/vfs";
@@ -12,6 +15,7 @@ import { createProjectAsset } from "../lib/create-project-asset";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 import type { OpenDocument } from "../services/document-service";
 import { ProjectService } from "../services/project-service";
+import { classIdForGraphPath } from "../services/script-compiler";
 import {
   installMemoryOpfs,
   unmountDocumentProvider,
@@ -350,6 +354,59 @@ describe("DocumentProvider closed document history", () => {
       changed.actors[0]!.transform.position,
     );
     expect(documents().canUndoActiveDocument).toBe(false);
+  });
+
+  it("reopens Main with empty history when the open-time prefab sync updates its Class instance", async () => {
+    const actions = await openProject();
+    const second = await createScene(actions, "Second");
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    const instance = createActor("actor-main-instance", "Main Instance", {
+      classId: classIdForGraphPath(MAIN_CLASS_FILE),
+    });
+    const scene = openScene(MAIN_SCENE_ID);
+    await act(() =>
+      actions.applySceneChange(MAIN_SCENE_ID, {
+        ...scene,
+        actors: [...scene.actors, instance],
+      }),
+    );
+    await saveAndSwitchScene(actions, second.path);
+    // While the Class is unchanged, the history resumes on reopen and stays
+    // kept through the next switch.
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    expect(documents().canUndoActiveDocument).toBe(true);
+    await act(() => actions.openDocument(sceneRef(second.path)));
+
+    // With Main closed, the Main Class gains a prefab component.
+    const classDocId = documentId({ kind: "graph", path: MAIN_CLASS_FILE });
+    await act(() =>
+      actions.openDocument({ kind: "graph", path: MAIN_CLASS_FILE, label: "Main" }),
+    );
+    const graph = documents().openDocuments.find((doc) => doc.id === classDocId)!
+      .content as SerializedGraph;
+    const sprite: SerializedComponent = {
+      id: "component-sprite",
+      classId: "SpriteComponent",
+      properties: {},
+      parentId: null,
+    };
+    await act(() =>
+      actions.applyGraphChange(classDocId, {
+        ...graph,
+        components: [...(graph.components ?? []), sprite],
+      }),
+    );
+
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    const synced = openScene(MAIN_SCENE_ID).actors.find(
+      (actor) => actor.id === instance.id,
+    )!;
+    expect(synced.components.map((component) => component.sourceId)).toEqual([
+      sprite.id,
+    ]);
+    // History from before the sync cannot replay onto the synced instance.
+    expect(documents().canUndoActiveDocument).toBe(false);
+    expect(documents().canRedoActiveDocument).toBe(false);
   });
 
   it("gives a Scene created at a deleted Scene's path none of the deleted Scene's history", async () => {

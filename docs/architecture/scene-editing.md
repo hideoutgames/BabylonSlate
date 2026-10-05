@@ -4,7 +4,7 @@ Scene and Prefab transform handles render after the world and its effects on
 both supported rendering paths. Their viewport-owned utility layer survives
 graph rebuilds; Prefab viewport recreation reapplies the selected transform tool.
 
-Shared-surface design note for viewport, outliner, details, and the edit layer. Authoritative schema: `packages/core/src/scene.ts` (`SCENE_SCHEMA_VERSION = 4`). **One world scene document tab at a time** — opening a scene closes the previous (Unsaved: Save / Discard / Cancel). A Scene closed clean (or after Save) gets its Undo / Redo back when it is reopened with unchanged content during the project session; Discard, or any change to its file while closed, starts it with empty history ([command-layer.md](command-layer.md#per-document-stacks)). Graphs, Content Browser, and **SceneLayer** overlay tabs stay. An **open** Scene tab stays mounted (`p18-inactive-documents`); idle-unmount does **not** close it. Closing or replacing the Scene tab disposes that viewport `Scene` (and cache retains), not the project Engine. Overlay Play uses `ensureSharedEngine` whether or not a Scene tab is open.
+Shared-surface design note for viewport, outliner, details, and the edit layer. Authoritative schema: `packages/core/src/scene.ts` (`SCENE_SCHEMA_VERSION = 4`). **One world scene document tab at a time** — opening a scene closes the previous (Unsaved: Save / Discard / Cancel). A Scene closed clean (or after Save) gets its Undo / Redo back when it is reopened with unchanged content during the project session; Discard, any change to its file while closed, or a Class prefab change that the open-time sync applies to its instances starts it with empty history ([command-layer.md](command-layer.md#per-document-stacks)). Graphs, Content Browser, and **SceneLayer** overlay tabs stay. An **open** Scene tab stays mounted (`p18-inactive-documents`); idle-unmount does **not** close it. Closing or replacing the Scene tab disposes that viewport `Scene` (and cache retains), not the project Engine. Overlay Play uses `ensureSharedEngine` whether or not a Scene tab is open.
 
 SceneLayer is a separate 2D overlay document (`scene-layer`), not a second world scene. See [scene-layers.md](scene-layers.md).
 
@@ -73,6 +73,8 @@ Folders organize the Outliner. They are **not** actors and never reach the objec
 ## Actor Prefab instance sync
 
 Place Actors copies the **ancestor-merged** Class prefab onto the spawned actor (same merge as the Prefab tab) and stamps each row’s `sourceId` to the prefab component id. Actor placement fields (`name`, actor `transform`, `visible`, `locked`, `parentId`, `folderId`) stay instance-owned.
+
+Opening a Scene quietly syncs its instances to the current Class prefabs (`DocumentService.patchLoadedContent`, no command); when that changes the Scene, its Undo / Redo history is dropped so older inverses cannot replay onto the synced instances. Prefab edits while the Scene is open sync through scene commands instead.
 
 Prefab linkage and override keys travel through the same commands as property and transform edits, including continuous scrubs. Undo restores inheritance, Redo restores the override, and recovery preserves which fields remain instance-owned before a later prefab sync. Metadata-only linkage changes are also reversible and journalled.
 

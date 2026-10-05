@@ -2782,6 +2782,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     const next = syncSceneActorsFromPrefabs(scene, templates);
     if (scenesEqualForPrefabSync(scene, next)) return;
     if (options?.quiet) {
+      // The open-time sync rewrites instances without a command, so history
+      // recorded before it (such as history kept from a closed tab) no longer
+      // fits the content and must not replay onto it.
+      editSessionRef.current.dropDocument(sceneDoc.id);
       documentService.patchLoadedContent(sceneDoc.id, next);
       bump();
       return;
