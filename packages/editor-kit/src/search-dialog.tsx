@@ -7,6 +7,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
+import { PlusIcon } from "lucide-react";
 import { buttonVariants } from "@babylonslate/ui/components/button";
 import {
   Dialog,
@@ -16,6 +17,7 @@ import {
   DialogTitle,
 } from "@babylonslate/ui/components/dialog";
 import { cn } from "@babylonslate/ui/lib/utils";
+import { popupMenuFrame } from "./catalog-menu";
 import { SearchInput } from "./search-input";
 import { PickerIdentity } from "./picker-identity";
 import {
@@ -44,8 +46,8 @@ export interface SearchDialogItem {
   leading?: ReactNode;
   trailing?: ReactNode;
   /**
-   * Listed for every query, such as Create New rows. While searching they
-   * follow the matches, and arrow keys enter the list on an unpinned row.
+   * Listed first for every query, such as Create New rows, and set apart from
+   * the results. Arrow keys enter the list on an unpinned row.
    */
   pinned?: boolean;
   /** Selecting keeps the dialog open and the query; the caller closes it. */
@@ -66,7 +68,53 @@ export interface SearchDialogProps {
   busy?: boolean;
   /** Shown under the list, such as an error Alert. */
   status?: ReactNode;
+  /** Popup origin; defaults to just below the control that opened the picker. */
+  anchor?: { x: number; y: number } | null;
   "data-testid"?: string;
+}
+
+const POPUP_WIDTH = 400;
+/** Title, search field and padding around the list. */
+const POPUP_CHROME_HEIGHT = 96;
+
+let lastTriggerAnchor: { x: number; y: number; time: number } | null = null;
+
+if (typeof document !== "undefined") {
+  // Pickers open from many call sites through `open` state, so remember the
+  // pressed control before a menu item that opened the picker unmounts.
+  document.addEventListener(
+    "pointerdown",
+    (event) => {
+      const target = event.target instanceof Element ? event.target : null;
+      const trigger =
+        target?.closest("button, [role='button'], [role='menuitem'], [role='combobox']") ??
+        target;
+      if (!trigger) return;
+      const rect = trigger.getBoundingClientRect();
+      lastTriggerAnchor = { x: rect.left, y: rect.bottom + 4, time: performance.now() };
+    },
+    true,
+  );
+}
+
+function openerAnchor(): { x: number; y: number } | null {
+  if (lastTriggerAnchor && performance.now() - lastTriggerAnchor.time < 1500) {
+    return { x: lastTriggerAnchor.x, y: lastTriggerAnchor.y };
+  }
+  const focused = document.activeElement;
+  if (!focused || focused === document.body) return null;
+  const rect = focused.getBoundingClientRect();
+  if (rect.width === 0 && rect.height === 0) return null;
+  return { x: rect.left, y: rect.bottom + 4 };
+}
+
+/** Leading glyph for pinned Create New rows. */
+export function PickerCreateGlyph() {
+  return (
+    <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
+      <PlusIcon className="size-3.5" aria-hidden="true" />
+    </span>
+  );
 }
 
 export function filterSearchItems(
@@ -87,8 +135,7 @@ export function filterSearchItems(
       matches.push(item);
     }
   }
-  // The first result stays a match, so type → ArrowDown → Enter picks it.
-  return [...matches, ...pinned];
+  return [...pinned, ...matches];
 }
 
 /**
@@ -123,7 +170,7 @@ export function groupSearchItems(items: SearchDialogItem[]): SearchItemGroup[] {
   return groups;
 }
 
-/** Compact searchable dialog used by asset and class pickers. */
+/** Compact searchable popup anchored to its trigger, used by asset and class pickers. */
 export function SearchDialog({
   open,
   onOpenChange,
@@ -135,6 +182,7 @@ export function SearchDialog({
   emptyLabel = "No Matches",
   busy = false,
   status,
+  anchor,
   "data-testid": testId,
 }: SearchDialogProps) {
   const [query, setQuery] = useState("");
@@ -197,6 +245,17 @@ export function SearchDialog({
               );
     setActiveId(filtered[next]!.id);
   };
+  // Placed once per opening so filtering does not move the popup.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const frame = useMemo(() => {
+    if (!open) return null;
+    const { left, top, width, height } = popupMenuFrame(anchor ?? openerAnchor(), {
+      width: POPUP_WIDTH,
+      height: POPUP_CHROME_HEIGHT + pickerListHeightPx(items.length),
+    });
+    return { left, top, width, maxHeight: height };
+  }, [open]);
+  const lastPinnedIndex = filtered.filter((item) => item.pinned).length - 1;
   useLayoutEffect(() => {
     if (!open) {
       resetQuery("");
@@ -229,16 +288,20 @@ export function SearchDialog({
         initialFocus={(interaction) =>
           interaction === "keyboard" ? queryRef.current : listRef.current
         }
-        className="flex max-h-[min(24rem,70vh)] w-full max-w-md flex-col gap-3 overflow-hidden sm:max-w-md"
+        showCloseButton={false}
+        overlayClassName="catalog-menu-overlay bg-transparent"
+        className="catalog-menu-popup flex max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-lg p-0 sm:max-w-none"
+        style={frame ?? undefined}
         data-testid={testId}
       >
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
+        <DialogHeader className="shrink-0 gap-0.5 px-2 pt-2 pb-1.5">
+          <DialogTitle className="text-sm">{title}</DialogTitle>
           {description ? (
-            <DialogDescription>{description}</DialogDescription>
+            <DialogDescription className="text-xs">{description}</DialogDescription>
           ) : null}
         </DialogHeader>
-        <div className="flex min-h-0 flex-1 flex-col gap-2">
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="shrink-0 border-b px-2 pb-2">
           <SearchInput
             ref={queryRef}
             role="combobox"
@@ -247,13 +310,14 @@ export function SearchDialog({
             aria-autocomplete="list"
             aria-activedescendant={activeOptionId}
             onKeyDown={navigate}
-            className="min-h-[var(--touch-target,44px)]"
+            className="h-7 min-h-[var(--chrome-row,28px)]"
             aria-label={placeholder}
             placeholder={placeholder}
             value={query}
             onChange={resetQuery}
             data-testid={testId ? `${testId}-query` : undefined}
           />
+          </div>
           <div
             ref={listRef}
             id={listId}
@@ -262,9 +326,9 @@ export function SearchDialog({
             aria-activedescendant={activeOptionId}
             aria-busy={busy || undefined}
             onKeyDown={navigate}
-            className="min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y"
+            className="min-h-0 overflow-y-auto overscroll-y-contain p-1 touch-pan-y"
             style={{
-              height: pickerListHeightPx(filtered.length),
+              height: pickerListHeightPx(filtered.length) + 8,
               overflowY: "auto",
             }}
             role="listbox"
@@ -281,20 +345,29 @@ export function SearchDialog({
               >
                 {(index) => {
                   const item = filtered[index]!;
+                  const separated =
+                    index === lastPinnedIndex && index < filtered.length - 1;
                   return (
                     <div
                       key={item.id}
+                      className={cn("h-full", separated && "border-b pb-1")}
+                    >
+                    <div
                       id={optionId(item.id)}
                       role="option"
                       tabIndex={-1}
                       aria-selected={index === activeIndex}
                       title={item.group ? `${item.label} · ${item.group}` : undefined}
+                      data-pinned={item.pinned ? "true" : undefined}
                       className={cn(
                         buttonVariants({ variant: "ghost", size: "touch" }),
                         "h-full w-full min-h-0 justify-between gap-2 overflow-hidden text-left touch-pan-y",
+                        item.pinned && "font-medium",
                         index === activeIndex
                           ? "bg-accent text-accent-foreground"
-                          : index % 2 === 1 && "bg-list-stripe",
+                          : !item.pinned &&
+                              (index - lastPinnedIndex - 1) % 2 === 1 &&
+                              "bg-list-stripe",
                       )}
                       onClick={() => commit(item)}
                       onFocus={() => setActiveId(item.id)}
@@ -311,6 +384,7 @@ export function SearchDialog({
                         leading={item.leading}
                       />
                       {item.trailing}
+                    </div>
                     </div>
                   );
                 }}

@@ -248,7 +248,7 @@ export function CatalogDialog({
           </div>
         </div>
         {footer ? (
-          <div className="shrink-0 px-4 pt-3 pb-4">{footer}</div>
+          <div className="shrink-0 border-t bg-muted/40 px-4 py-3">{footer}</div>
         ) : null}
       </DialogContent>
     </Dialog>

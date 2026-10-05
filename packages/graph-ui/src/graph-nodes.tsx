@@ -6,7 +6,7 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 import { useCallback, type MouseEvent, type ReactNode } from "react";
-import { ClockIcon, PlugIcon, ZapIcon } from "lucide-react";
+import { ClockIcon, Gamepad2Icon, PlugIcon, PlugZapIcon } from "lucide-react";
 import {
   ContextMenuOverlay,
   humanizePropertyLabel,
@@ -322,6 +322,14 @@ function shellIsDevelopmentOnly(
   });
 }
 
+const INPUT_EVENT_TYPE_IDS = new Set([
+  "input.actionEvent",
+  "input.axisEvent",
+  "input.onAnyKeyPressed",
+  "input.onGamepadConnected",
+  "input.onGamepadDisconnected",
+]);
+
 function nodeCornerMarker(data: Record<string, unknown> | undefined) {
   if (data?.__material || data?.__particleRole) return null;
   const nodeType = typeof data?.__nodeType === "string" ? data.__nodeType : "";
@@ -331,8 +339,11 @@ function nodeCornerMarker(data: Record<string, unknown> | undefined) {
   if (nodeType === "interface.call" || data?.__interface === true) {
     return { Icon: PlugIcon, label: "Script Interface Function" };
   }
+  if (INPUT_EVENT_TYPE_IDS.has(nodeType)) {
+    return { Icon: Gamepad2Icon, label: "Input Event" };
+  }
   if (Object.hasOwn(EVENT_BY_TYPE_ID, nodeType) || nodeType === "flow.event.custom") {
-    return { Icon: ZapIcon, label: "Event" };
+    return { Icon: PlugZapIcon, label: "Event" };
   }
   return null;
 }
@@ -369,11 +380,11 @@ export function BlueprintNodeShell({
           role="img"
           aria-label={marker.label}
           className={cn(
-            "pointer-events-none absolute right-0 top-0 flex size-6 translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-graph-node text-foreground",
+            "pointer-events-none absolute right-1.5 top-1.5 z-10 flex translate-x-1/2 -translate-y-1/2 items-center justify-center text-foreground drop-shadow-[0_2px_3px_rgb(0_0_0/0.6)]",
             disabled && "opacity-50",
           )}
         >
-          <marker.Icon className="size-4" aria-hidden="true" />
+          <marker.Icon className="size-11" strokeWidth={2} aria-hidden="true" />
         </span>
       ) : null}
       <div
@@ -392,6 +403,7 @@ export function BlueprintNodeShell({
           <div
             className={cn(
               "rounded-t-lg px-4 py-2.5 text-base font-semibold leading-snug whitespace-nowrap text-node-title",
+              marker && "pr-10",
               nodeRoleClass(role),
             )}
           >
