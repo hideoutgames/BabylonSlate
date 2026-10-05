@@ -73,7 +73,9 @@ describe("Tween runtime integration", () => {
       entryPoints: [{ name: "onBeginPlay", event: "onBeginPlay", nodeId: "fade", isAsync: true }],
       source: `export async function onBeginPlay(ctx) {
         const text = ctx.getComponentById(ctx.self, "text");
-        if (await ctx.tweenProperty(text, "overlay.opacity", "float", 0.8, 0, 2, "linear")) ctx.log("log", "Tween", "fade complete");
+        const move = ctx.tweenProperty(text, "component.position", "vec3", {x:0,y:0,z:0}, {x:2,y:0,z:0}, 2, "linear", "local");
+        const fade = await ctx.tweenProperty(text, "overlay.opacity", "float", 0.8, 0, 2, "linear");
+        if (fade && await move) ctx.log("log", "Tween", "fade complete");
       }`,
     };
     const commands: CommandMessage[] = [];
@@ -89,6 +91,9 @@ describe("Tween runtime integration", () => {
       const style = commands.find(command => command.type === "setOverlayVisualStyle" && command.componentId === "text");
       expect(style?.type === "setOverlayVisualStyle" ? style.style.opacity : undefined).toBeCloseTo(0.6);
       expect(style).toMatchObject({ style: { tint: [1, 1, 1, 1] } });
+      expect(commands).toContainEqual(expect.objectContaining({ type: "setComponentTransforms", parts: [
+        expect.objectContaining({ componentId: "text", transform: expect.objectContaining({ position: { x: 0.5, y: 0, z: 0 } }) }),
+      ] }));
       expect(commands.some(command => command.type === "assignMesh")).toBe(false);
       runtime.removeSceneLayer(liveLayer.guid); runtime.tick(); runtime.tick(); runtime.tick(); await flush();
       expect(commands.some(command => command.type === "log" && command.message === "fade complete")).toBe(false);

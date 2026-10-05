@@ -5,7 +5,7 @@ import {
 import { Actor, ActorComponent, BObject, engineScriptApiFor } from "@babylonslate/object-model";
 import type { ScriptHostServices } from "./script-host";
 import type { TweenReference } from "./tween-runtime";
-import { applyTweenTransform, type TweenTransformChannel } from "./tween-transforms";
+import { applyTweenTransform, tweenWorldTransformDepth, type TweenTransformChannel } from "./tween-transforms";
 
 const textClasses = new Set(["2DTextComponent", "2DRichTextComponent"]);
 const transformChannels = ["position", "rotation", "scale", "transform"] as const;
@@ -46,14 +46,18 @@ export function propertyTweenReference(
   if ((kind === "actor" || kind === "component") && transformChannels.includes(channel as TweenTransformChannel)) {
     if (kind === "actor" ? !(target instanceof Actor) : !(target instanceof ActorComponent)) return null;
     const object = target as Actor | ActorComponent;
+    if (object instanceof ActorComponent && (object.classId === "2DAnchorComponent" || object.classId === "MovementComponent")) return null;
     const expected = channel === "rotation" ? "rotator" : channel === "transform" ? "transform" : "vec3";
     if (type !== expected) return null;
+    const world = space === "world" || space === 1;
+    const findActor = (id: string) => services.findActor?.(id);
     return {
       identity: object, property, owner: object,
       channels: (channel === "transform" ? ["position", "rotation", "scale"] : [channel!]).map((name) => `transform:${name}`),
+      ...(world ? { worldTransformDepth: () => tweenWorldTransformDepth(object, findActor) ?? Number.POSITIVE_INFINITY } : {}),
       set(value) {
         if (!applyTweenTransform(object, channel as TweenTransformChannel, value,
-          space === "world" || space === 1 ? "world" : "local", (id) => services.findActor?.(id))) return false;
+          world ? "world" : "local", findActor)) return false;
         if (object instanceof Actor) services.teleportActor?.(object);
         else services.refreshComponent?.(object, "transform");
       },

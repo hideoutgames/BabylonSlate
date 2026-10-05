@@ -1613,6 +1613,33 @@ describe("Play createEngine view", () => {
     }
   });
 
+  it("applies component motion against the same snapshot without recreating the actor visual", () => {
+    const engine = sharedEngine();
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
+    const { handle } = playHandle(engine);
+    const renderLoop = runRenderLoop.mock.calls[0]![0]!;
+    const frame = () => {
+      engine.onBeginFrameObservable.notifyObservers(engine);
+      renderLoop();
+      engine.onEndFrameObservable.notifyObservers(engine);
+    };
+    handle.applyCommand({ type: "assignMesh", slotId: 0, primaryComponentId: "visual", meshKind: "box", meshAssetGuid: null });
+    handle.pushSnapshot(actorSnapshot(1, 4));
+    frame();
+    const mesh = handle.scene.getMeshByName("actor-0")!;
+    const material = mesh.material;
+    handle.applyCommand({ type: "setComponentTransforms", slotId: 0, parts: [{ componentId: "visual", transform: {
+      position: { x: 3, y: 2, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 2, y: 2, z: 2 },
+    } }] });
+    frame();
+    expect(handle.scene.getMeshByName("actor-0")).toBe(mesh);
+    expect(mesh.getAbsolutePosition().asArray()).toEqual([7, 3, 0]);
+    expect(mesh.getWorldMatrix().getRow(0)!.asArray()).toEqual([2, 0, 0, 0]);
+    expect(mesh.material).toBe(material);
+    frame();
+    expect(mesh.getAbsolutePosition().asArray()).toEqual([7, 3, 0]);
+  });
+
   it("re-applies the same snapshot frame when the sampled alpha changes", () => {
     const engine = sharedEngine();
     const runRenderLoop = vi.spyOn(engine, "runRenderLoop");

@@ -362,6 +362,18 @@ export type CommandMessage =
     }
   | { type: "despawn"; slotId: number; actorGuid: string }
   | {
+      /** Update component poses without recreating their visual resources. */
+      type: "setComponentTransforms";
+      slotId: number;
+      parts: Array<{
+        componentId: string;
+        parentId?: string | null;
+        transform: import("@babylonslate/core").Transform;
+        /** Nonvisual ancestors, nearest first, as in assignMesh. */
+        parentTransforms?: import("@babylonslate/core").Transform[];
+      }>;
+    }
+  | {
       /** Render the actor's local TRS relative to a target bone; null clears it. */
       type: "attachToBone";
       slotId: number;

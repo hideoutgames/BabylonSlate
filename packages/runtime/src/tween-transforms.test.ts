@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { identityTransform, quatRotateVector } from "@babylonslate/core";
 import { Actor, ActorComponent } from "@babylonslate/object-model";
-import { applyTweenTransform } from "./tween-transforms";
+import { applyTweenTransform, tweenWorldTransformDepth } from "./tween-transforms";
 
 function fixture() {
   const parent = new Actor({ classId: "Actor", guid: "parent", transform: {
@@ -15,6 +15,37 @@ function fixture() {
 }
 
 describe("tween transform writes", () => {
+  it("reads live actor and component ancestry when ordering world transform writes", () => {
+    const { parent, actor, find } = fixture();
+    const component = new ActorComponent({ classId: "MeshComponent", guid: "mesh", sourceId: "authored-mesh" });
+    const nested = new ActorComponent({ classId: "CameraComponent", parentId: component.sourceId });
+    actor.attachComponent(component);
+    actor.attachComponent(nested);
+    expect(tweenWorldTransformDepth(parent, find)).toBe(0);
+    expect(tweenWorldTransformDepth(actor, find)).toBe(1);
+    expect(tweenWorldTransformDepth(component, find)).toBe(2);
+    expect(tweenWorldTransformDepth(nested, find)).toBe(3);
+    actor.setVariable("parentId", null);
+    nested.parentId = null;
+    expect(tweenWorldTransformDepth(nested, find)).toBe(1);
+    component.parentId = nested.guid;
+    nested.parentId = component.guid;
+    expect(tweenWorldTransformDepth(nested, find)).toBeNull();
+    actor.setVariable("parentId", parent.guid);
+    parent.setVariable("parentId", actor.guid);
+    expect(tweenWorldTransformDepth(actor, find)).toBeNull();
+  });
+
+  it.each(["2DAnchorComponent", "MovementComponent"])("refuses nonspatial %s transform writes", (classId) => {
+    const { actor, find } = fixture();
+    const component = new ActorComponent({ classId });
+    actor.attachComponent(component);
+    expect(applyTweenTransform(component, "position", { x: 1, y: 2, z: 3 }, "local", find)).toBe(false);
+    expect(applyTweenTransform(component, "transform", { ...identityTransform(), position: { x: 1, y: 2, z: 3 } }, "world", find)).toBe(false);
+    expect(component.transform).toEqual(identityTransform());
+    expect(tweenWorldTransformDepth(component, find)).toBeNull();
+  });
+
   it("converts world positions through current parent translation, rotation and scale on every sample", () => {
     const { parent, actor, find } = fixture();
     const rotation = actor.transform.rotation;

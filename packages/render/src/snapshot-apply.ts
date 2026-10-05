@@ -9,6 +9,7 @@ import {
   AbstractMesh,
   DirectionalLight,
   HemisphericLight,
+  Matrix,
   Mesh,
   MeshBuilder,
   PointLight,
@@ -41,6 +42,7 @@ import {
   type SkyboxFaces,
   type Text2DProperties,
   type Text3DProperties,
+  type Transform,
 } from "@babylonslate/core";
 import type { ColliderShape } from "@babylonslate/physics";
 import type { SampledSnapshot } from "./snapshot-sync";
@@ -125,6 +127,8 @@ import type { MaterialResolveOptions } from "./material-library";
 const scratchPos = new Vector3();
 const scratchScale = new Vector3();
 const scratchQuat = new Quaternion();
+const scratchComponentMatrix = new Matrix();
+const scratchParentMatrix = new Matrix();
 const scratchComposedPart = { position: new Vector3(), rotation: new Quaternion() };
 const scratchBoneSlot: ActorSlot = {
   slotId: 0, flags: 0, position: new Vector3(), rotation: new Quaternion(), scale: new Vector3(),
@@ -599,12 +603,101 @@ function applyPlayShadows(scene: Scene): void {
 const rejectedTextAssignments = new WeakMap<SnapshotSceneBinding, Map<number, string>>();
 const rejectedPreparedAssignments = new WeakMap<SnapshotSceneBinding, Map<number, string>>();
 const pendingVisualReplacements = new WeakMap<SnapshotSceneBinding, Map<number, Mesh>>();
+const visualAssignments = new WeakMap<SnapshotSceneBinding, Map<number, AssignMeshCommand>>();
+type ComponentTransformCommand = Extract<CommandMessage, { type: "setComponentTransforms" }>;
+type ComponentPose = ComponentTransformCommand["parts"][number];
+// Pose samples must not change the assignment's topology: an optimized singleton
+// stays a singleton when its initially identity component starts moving.
+const assignmentComponentPoses = new WeakMap<AssignMeshCommand, Map<string, ComponentPose>>();
+const playVisualAncestors = new WeakMap<Mesh, Map<string, TransformNode[]>>();
 /** Exact component roots belong to one visual generation, including prepared successors. */
 const playVisualComponents = new WeakMap<Mesh, ReadonlyMap<string, Mesh>>();
 
 function rememberPlayVisualComponents(root: Mesh, components: ReadonlyMap<string, Mesh>): void {
   playVisualComponents.set(root, components);
-  root.onDisposeObservable.addOnce(() => playVisualComponents.delete(root));
+  root.onDisposeObservable.addOnce(() => {
+    playVisualComponents.delete(root);
+    playVisualAncestors.delete(root);
+  });
+}
+
+/** Also used before a SceneLayer has a render scene or asynchronous assets finish. */
+export function retainAssignMeshComponentTransforms(assignment: AssignMeshCommand, command: ComponentTransformCommand): void {
+  const poses = assignmentComponentPoses.get(assignment) ?? new Map<string, ComponentPose>();
+  assignmentComponentPoses.set(assignment, poses);
+  for (const pose of command.parts) {
+    if (assignment.primaryComponentId === pose.componentId || assignment.parts?.some(part => part.componentId === pose.componentId)) {
+      poses.set(pose.componentId, pose);
+    }
+  }
+}
+
+function writeComponentPose(node: TransformNode, transform: Transform): void {
+  node.unfreezeWorldMatrix();
+  node.position.copyFromFloats(transform.position.x, transform.position.y, transform.position.z);
+  node.rotationQuaternion ??= Quaternion.Identity();
+  node.rotationQuaternion.copyFromFloats(transform.rotation.x, transform.rotation.y, transform.rotation.z, transform.rotation.w);
+  node.scaling.copyFromFloats(transform.scale.x, transform.scale.y, transform.scale.z);
+}
+
+function updateVisualComponentPoses(root: Mesh, poses: Iterable<ComponentPose>): void {
+  const components = playVisualComponents.get(root);
+  if (!components || root.isDisposed()) return;
+  const chains = playVisualAncestors.get(root) ?? new Map<string, TransformNode[]>();
+  playVisualAncestors.set(root, chains);
+  for (const pose of poses) {
+    const mesh = components.get(pose.componentId);
+    if (!mesh || mesh.isDisposed()) continue;
+    if (mesh === root) {
+      composeTransformMatrix(pose.transform, scratchComponentMatrix);
+      for (const parent of pose.parentTransforms ?? []) {
+        composeTransformMatrix(parent, scratchParentMatrix);
+        scratchComponentMatrix.multiplyToRef(scratchParentMatrix, scratchComponentMatrix);
+      }
+      // Native pretransforms preserve shear under nonuniform actor scaling,
+      // and leave snapshot TRS intact for bone attachment and spatial audio.
+      mesh.setPreTransformMatrix(scratchComponentMatrix);
+      mesh.unfreezeWorldMatrix();
+      if (shouldFreezeStaticWorldMatrix(mesh)) mesh.freezeWorldMatrix();
+      continue;
+    }
+    writeComponentPose(mesh, pose.transform);
+    const ancestors = chains.get(pose.componentId) ?? [];
+    chains.set(pose.componentId, ancestors);
+    const parentMesh = pose.parentId ? components.get(pose.parentId) : undefined;
+    const parent = parentMesh ? attachmentParentFor(parentMesh) : root;
+    let attachment: TransformNode = mesh;
+    const transforms = pose.parentTransforms ?? [];
+    for (let index = 0; index < transforms.length; index++) {
+      const ancestor = ancestors[index] ?? new TransformNode(`${mesh.name}-attachment`, mesh.getScene());
+      ancestors[index] = ancestor;
+      writeComponentPose(ancestor, transforms[index]!);
+      attachment.parent = ancestor;
+      attachment = ancestor;
+    }
+    attachment.parent = parent;
+    // Detach the retained chain before retiring obsolete ancestors.
+    for (const obsolete of ancestors.splice(transforms.length)) obsolete.dispose(true);
+    mesh.computeWorldMatrix(true);
+  }
+  updateComponentIllumination(root);
+}
+
+function restoreComponentPoses(binding: SnapshotSceneBinding, slotId: number, root: Mesh): void {
+  const assignment = visualAssignments.get(binding)?.get(slotId);
+  const poses = assignment && assignmentComponentPoses.get(assignment);
+  if (poses) updateVisualComponentPoses(root, poses.values());
+}
+
+/** Keep exact live and prepared meshes, materials, atlases and geometry in place. */
+export function applyComponentTransformsCommand(binding: SnapshotSceneBinding, command: ComponentTransformCommand): void {
+  const assignment = visualAssignments.get(binding)?.get(command.slotId);
+  if (!assignment) return;
+  retainAssignMeshComponentTransforms(assignment, command);
+  const live = binding.meshes.get(command.slotId);
+  const prepared = pendingVisualReplacements.get(binding)?.get(command.slotId);
+  if (live) updateVisualComponentPoses(live, command.parts);
+  if (prepared && prepared !== live) updateVisualComponentPoses(prepared, command.parts);
 }
 
 function updateVisualTextAppear(root: Mesh | undefined, componentId: string, progress: number): void {
@@ -619,6 +712,8 @@ export function applyOverlayVisualStyleCommand(binding: SnapshotSceneBinding, co
   if (!styles?.has(command.componentId)) return;
   const style = parseOverlayVisualStyle(command.style);
   styles.set(command.componentId, style);
+  const assignment = visualAssignments.get(binding)?.get(command.slotId);
+  if (assignment?.primaryComponentId === command.componentId) assignment.overlayStyle = style;
   const part = binding.meshParts.get(command.slotId)?.find((entry) => entry.componentId === command.componentId);
   if (part) part.overlayStyle = style;
   const live = binding.meshes.get(command.slotId);
@@ -717,6 +812,9 @@ export function applyAssignMesh(
   binding: SnapshotSceneBinding,
   command: AssignMeshCommand,
 ): void {
+  const assignments = visualAssignments.get(binding) ?? new Map<number, AssignMeshCommand>();
+  visualAssignments.set(binding, assignments);
+  assignments.set(command.slotId, command);
   const previousParts = binding.meshParts.get(command.slotId);
   const reusable = !pendingVisualReplacements.get(binding)?.has(command.slotId) &&
     binding.meshKinds.get(command.slotId) === (command.meshKind ?? null) &&
@@ -1292,6 +1390,7 @@ export function retirePlaySlot(
   binding.meshSorting.delete(slotId);
   binding.primaryComponentIds.delete(slotId);
   binding.overlayStyles.delete(slotId);
+  visualAssignments.get(binding)?.delete(slotId);
   binding.materialAssetGuids.delete(slotId);
   releaseRetainedMaterialOwners(binding, slotId, true);
   for (const key of binding.materialParameters.keys()) {
@@ -1393,6 +1492,7 @@ function createPlayVisual(
       if (style) applyOverlayVisualStyle(mesh, style);
       rememberPlayVisualComponents(mesh, new Map([[componentId, mesh]]));
     }
+    restoreComponentPoses(binding, slotId, mesh);
     applyPlayVisualSorting(mesh, slotId, binding);
     return mesh;
   }
@@ -1404,6 +1504,8 @@ function createPlayVisual(
   root.isVisible = false;
   root.metadata = { ...(root.metadata ?? {}), playActorOrigin: true };
   const meshes = new Map<string, Mesh>();
+  const chains = new Map<string, TransformNode[]>();
+  playVisualAncestors.set(root, chains);
   const illumination: ComponentIllumination[] = [];
   let retainedBitmapBytes = text2DBitmapBytes(binding.meshes.get(slotId));
   try {
@@ -1444,8 +1546,11 @@ function createPlayVisual(
       const parent = part.parentId ? meshes.get(part.parentId) : undefined;
       child.parent = parent ?? root;
       let attachment: TransformNode = child;
+      const ancestors: TransformNode[] = [];
+      chains.set(part.componentId, ancestors);
       for (const transform of part.parentTransforms ?? []) {
         const ancestor = new TransformNode(`${child.name}-attachment`, scene);
+        ancestors.push(ancestor);
         ancestor.position.copyFromFloats(transform.position.x, transform.position.y, transform.position.z);
         ancestor.rotationQuaternion = new Quaternion(transform.rotation.x, transform.rotation.y, transform.rotation.z, transform.rotation.w);
         ancestor.scaling.copyFromFloats(transform.scale.x, transform.scale.y, transform.scale.z);
@@ -1458,6 +1563,7 @@ function createPlayVisual(
     if (illumination.length) actorIllumination.set(root, illumination);
     if (!targets && illumination.some(helper => helper.light)) applyPlayShadows(scene);
     rememberPlayVisualComponents(root, meshes);
+    restoreComponentPoses(binding, slotId, root);
     applyPlayVisualSorting(root, slotId, binding);
     return root;
   } catch (error) {
@@ -2055,6 +2161,7 @@ export function disposeSnapshotBinding(binding: SnapshotSceneBinding): void {
   binding.meshSorting.clear();
   binding.primaryComponentIds.clear();
   binding.overlayStyles.clear();
+  visualAssignments.delete(binding);
   binding.defaultCameraSlotId = null;
   binding.possessedCameraSlotId = null;
 }
@@ -2080,6 +2187,13 @@ function composeSlotPartTransform(
     scratchComposedPart.rotation,
   );
   return scratchComposedPart;
+}
+
+function composeTransformMatrix(transform: Transform, target: Matrix): void {
+  scratchPos.copyFromFloats(transform.position.x, transform.position.y, transform.position.z);
+  scratchQuat.copyFromFloats(transform.rotation.x, transform.rotation.y, transform.rotation.z, transform.rotation.w);
+  scratchScale.copyFromFloats(transform.scale.x, transform.scale.y, transform.scale.z);
+  Matrix.ComposeToRef(scratchScale, scratchQuat, scratchPos, target);
 }
 
 function writeActorTransform(mesh: Mesh, actor: ActorSlot): void {

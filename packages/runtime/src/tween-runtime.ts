@@ -12,6 +12,8 @@ export type TweenReference = {
   owner?: BObject;
   /** Compound writes claim the same channels as their individual property writers. */
   channels?: readonly string[];
+  /** World writes run after local writes, with live ancestors evaluated first. */
+  worldTransformDepth?: () => number;
 };
 
 export type TweenRequest = {
@@ -71,7 +73,14 @@ export class TweenRuntime {
   advance(deltaSeconds: number): void {
     const delta = Number.isFinite(deltaSeconds) && deltaSeconds > 0 ? deltaSeconds : 0;
     // A setter may synchronously start another action; it begins advancing next tick.
-    for (const tween of [...this.active]) if (this.active.has(tween)) this.advanceOne(tween, delta);
+    const current = [...this.active];
+    for (const tween of current) {
+      if (!tween.reference.worldTransformDepth && this.active.has(tween)) this.advanceOne(tween, delta);
+    }
+    const world = current.filter((tween) => tween.reference.worldTransformDepth && this.active.has(tween))
+      .map((tween) => ({ tween, depth: tween.reference.worldTransformDepth!() }))
+      .sort((a, b) => a.depth - b.depth);
+    for (const { tween } of world) if (this.active.has(tween)) this.advanceOne(tween, delta);
   }
 
   cancelInvalid(): void {

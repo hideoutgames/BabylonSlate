@@ -1315,6 +1315,7 @@ class InProcessRuntime implements RuntimeDriver {
           const scroll = this.overlayLayout.entries(owner.sceneLayerId).get(overlayLayoutKey(owner.guid, component.guid))?.scroll;
           if (scroll) { component.setVariable("scrollX", scroll.x); component.setVariable("scrollY", scroll.y); }
         }
+        if (owner.sceneLayerId && (isOverlayLayoutClass(component.classId) || component.classId === "2DAnchorComponent")) return;
         // Steering/tuning is consumed by the next motor tick; only dimensions
         // need immediate collider/query refresh after a property write.
         if (component.classId === "MovementComponent" && propertyName && propertyName !== "radius" && propertyName !== "height") return;
@@ -1329,6 +1330,7 @@ class InProcessRuntime implements RuntimeDriver {
           if (component.classId === "RenderTargetCaptureComponent") this.emitRenderTargetCapture(owner, slotId);
           else if (component.classId === "OutlineComponent") this.emitActorOutlines(owner, slotId);
           else if (component.classId === "FogVolumeComponent") this.emitActorFogVolumes(owner, slotId);
+          else if (propertyName === "transform") this.emitComponentTransforms(owner, slotId);
           else if (component.classId !== "PhysicsConstraintComponent" && component.classId !== "RagdollComponent" && component.classId !== "MovementComponent") this.emitMeshAssignment(owner, slotId);
         }
         if (component.classId === "ParticleComponent") {
@@ -4582,6 +4584,18 @@ class InProcessRuntime implements RuntimeDriver {
     if (component) this.captureSlots.add(slotId); else this.captureSlots.delete(slotId);
   }
 
+  private emitComponentTransforms(actor: Actor, slotId: number): void {
+    const renderables = playRenderablesOf(actor.components,
+      overlayButtonHasSiblingVisual(actor) || overlayButtonHasParentVisual(actor, this.world));
+    const ids = new Set(renderables.map(component => component.guid));
+    const components = new Map(actor.components.map(component => [component.guid, component]));
+    this.emit({ type: "setComponentTransforms", slotId, parts: renderables.map(component => ({
+      componentId: component.guid, parentId: nearestVisualParentId(component, components, ids),
+      transform: { position: { ...component.transform.position }, rotation: { ...component.transform.rotation }, scale: { ...component.transform.scale } },
+      parentTransforms: dynamicMeshParentTransforms(component, components, ids),
+    })) });
+  }
+
   private emitMeshAssignment(actor: Actor, slotId: number): void {
     if (this.world.classRegistry.isA(actor.classId, "SceneStreamingActor")) return;
     this.emitRenderTargetCapture(actor, slotId);
@@ -4681,7 +4695,7 @@ class InProcessRuntime implements RuntimeDriver {
         meshAssetGuid: typeof assetGuid === "string" ? assetGuid : null,
         meshKind,
         actorGuid: actor.guid,
-        ...(!parts && (primary.classId === "MeshComponent" || supportsOverlayVisualStyle(primary.classId))
+        ...(!parts
           ? { primaryComponentId: primary.guid }
           : {}),
         ...(supportsOverlayVisualStyle(primary.classId) ? { overlayStyle: parseOverlayVisualStyle(Object.fromEntries(primary.variables)) } : {}),

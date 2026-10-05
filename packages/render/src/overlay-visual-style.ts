@@ -64,9 +64,16 @@ class OverlayVisualStylePlugin extends MaterialPluginBase {
     const { opacity, tint } = overlayVisualStyle(subMesh.getMesh());
     buffer.updateFloat4("slateOverlayTint", tint[0], tint[1], tint[2], tint[3] * opacity);
   }
-  override getUniforms() { return { ubo: [{ name: "slateOverlayTint", size: 4, type: "vec4" }] }; }
+  override getUniforms() {
+    return {
+      ubo: [{ name: "slateOverlayTint", size: 4, type: "vec4" }],
+      fragment: this._material.getScene().getEngine().supportsUniformBuffers ? undefined : "uniform vec4 slateOverlayTint;",
+    };
+  }
   override getCustomCode(type: string, language?: ShaderLanguage) {
     if (type !== "fragment") return null;
-    return { CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR: `\n#ifdef SLATE_OVERLAY_STYLE\ncolor *= ${language === 1 ? "uniforms." : ""}slateOverlayTint;\n#endif\n` };
+    const tint = `${language === 1 ? "uniforms." : ""}slateOverlayTint`;
+    const premultiply = language === 1 ? `color = vec4f(color.rgb * ${tint}.a, color.a);` : `color.rgb *= ${tint}.a;`;
+    return { CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR: `\n#ifdef SLATE_OVERLAY_STYLE\ncolor *= ${tint};\n#ifdef PREMULTIPLYALPHA\n${premultiply}\n#endif\n#endif\n` };
   }
 }

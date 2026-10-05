@@ -13,17 +13,17 @@ export type TweenTransformChannel = "position" | "rotation" | "scale" | "transfo
 
 type ActorLookup = (guid: string) => Actor | undefined;
 
-function parentFrame(target: TweenTransformTarget, findActor: ActorLookup): Transform | null {
-  if (target instanceof Actor) {
-    // Validate the entire chain, including cycles that return to the target.
-    if (!actorChainWorldTransform(target, findActor)) return null;
-    const parentId = actorParentGuid(target);
-    const parent = parentId ? findActor(parentId) : undefined;
-    return parent ? actorChainWorldTransform(parent, findActor) : identityTransform();
-  }
-  const owner = target.owner!;
-  let frame = actorChainWorldTransform(owner, findActor);
-  if (!frame) return null;
+function liveSpatialOwner(target: TweenTransformTarget, findActor: ActorLookup): Actor | null {
+  const owner = target instanceof Actor ? target : target.owner;
+  if (!owner || owner.destroyed || target.destroyed || findActor(owner.guid) !== owner) return null;
+  if (target instanceof Actor) return isSceneLayerAnchorActor(target) ? null : target;
+  if (!owner.components.includes(target) || target.classId === "2DAnchorComponent" || target.classId === "MovementComponent") return null;
+  return owner;
+}
+
+function componentParents(target: ActorComponent): ActorComponent[] | null {
+  const owner = target.owner;
+  if (!owner) return null;
   const chain: ActorComponent[] = [];
   const visited = new Set([target.guid]);
   let parentId = target.parentId;
@@ -35,6 +35,44 @@ function parentFrame(target: TweenTransformTarget, findActor: ActorLookup): Tran
     chain.push(parent);
     parentId = parent.parentId;
   }
+  return chain;
+}
+
+/** Live attachment depth for ancestor-before-descendant World tween writes. */
+export function tweenWorldTransformDepth(target: TweenTransformTarget, findActor: ActorLookup): number | null {
+  const owner = liveSpatialOwner(target, findActor);
+  if (!owner) return null;
+  let depth = 0;
+  let actor = owner;
+  const visited = new Set<string>();
+  for (;;) {
+    if (actor.destroyed || visited.has(actor.guid)) return null;
+    visited.add(actor.guid);
+    const parentId = actorParentGuid(actor);
+    const parent = parentId ? findActor(parentId) : undefined;
+    if (!parent) break;
+    depth++;
+    actor = parent;
+  }
+  if (target instanceof ActorComponent) {
+    const parents = componentParents(target);
+    if (!parents) return null;
+    depth += parents.length + 1;
+  }
+  return depth;
+}
+
+function parentFrame(target: TweenTransformTarget, findActor: ActorLookup): Transform | null {
+  if (target instanceof Actor) {
+    // Validate the entire chain, including cycles that return to the target.
+    if (!actorChainWorldTransform(target, findActor)) return null;
+    const parentId = actorParentGuid(target);
+    const parent = parentId ? findActor(parentId) : undefined;
+    return parent ? actorChainWorldTransform(parent, findActor) : identityTransform();
+  }
+  let frame = actorChainWorldTransform(target.owner!, findActor);
+  const chain = componentParents(target);
+  if (!frame || !chain) return null;
   for (let index = chain.length - 1; index >= 0; index--) {
     const parent = chain[index]!;
     frame = composeParentChildTransform(frame, parent.transform);
@@ -58,9 +96,7 @@ export function applyTweenTransform(
   space: TweenTransformSpace,
   findActor: ActorLookup,
 ): boolean {
-  const owner = target instanceof Actor ? target : target.owner;
-  if (!owner || owner.destroyed || target.destroyed || findActor(owner.guid) !== owner) return false;
-  if (target instanceof Actor ? isSceneLayerAnchorActor(target) : !owner.components.includes(target)) return false;
+  if (!liveSpatialOwner(target, findActor)) return false;
   let sample: Partial<Transform>;
   if (channel === "transform") {
     const transform = cloneTweenValue("transform", value);

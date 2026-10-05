@@ -8,17 +8,18 @@ function harness() {
   const tweens = new TweenRuntime();
   const actor = new Actor({ classId: "Actor", guid: "owner" });
   const refresh = vi.fn(), teleport = vi.fn();
+  const actors = new Map([[actor.guid, actor]]);
   const services: ScriptHostServices = {
     log: () => {}, print: () => {}, destroyActor: () => {}, executeConsoleCommand: () => ({ success: true, output: "" }),
     delay: async () => {}, reportError: error => { throw error; }, tween: request => tweens.start(request),
-    refreshComponent: refresh, teleportActor: teleport, findActor: id => id === actor.guid ? actor : undefined,
+    refreshComponent: refresh, teleportActor: teleport, findActor: id => actors.get(id),
   };
   const host = new ScriptHost(services);
   const ctx = host.createContext(actor, 0.5, 1);
   const component = (classId: string, variables: Record<string, unknown> = {}) => {
     const object = new ActorComponent({ classId, variables }); actor.attachComponent(object); return object;
   };
-  return { actor, component, tweens, ctx, refresh, teleport };
+  return { actor, actors, component, tweens, ctx, refresh, teleport };
 }
 
 describe("Tween script targets", () => {
@@ -91,5 +92,32 @@ describe("Tween script targets", () => {
     const replacement = ctx.tweenProperty(actor, "actor.scale", "vec3", { x: 1, y: 1, z: 1 }, { x: 2, y: 2, z: 2 }, 0, "linear");
     expect(await transform).toBe(false); expect(await replacement).toBe(true);
     tweens.advance(1); expect(await position).toBe(true);
+  });
+
+  it("keeps child world endpoints independent of trigger order and live parent changes", async () => {
+    const { ctx, actor, actors, tweens } = harness();
+    const child = new Actor({ classId: "Actor", guid: "child", variables: { parentId: actor.guid } });
+    actors.set(child.guid, child);
+    const mesh = new ActorComponent({ classId: "MeshComponent" });
+    child.attachComponent(mesh);
+    const vector = (x: number) => ({ x, y: 0, z: 0 });
+    // Start deepest first, so insertion order would use the previous parent pose.
+    const pending = [
+      ctx.tweenProperty(mesh, "component.position", "vec3", vector(200), vector(400), 2, "linear", "world"),
+      ctx.tweenProperty(child, "actor.position", "vec3", vector(100), vector(200), 2, "linear", "world"),
+      ctx.tweenProperty(actor, "actor.position", "vec3", vector(0), vector(10), 2, "linear"),
+    ];
+    tweens.advance(1);
+    expect(actor.transform.position.x + child.transform.position.x).toBeCloseTo(150);
+    expect(actor.transform.position.x + child.transform.position.x + mesh.transform.position.x).toBeCloseTo(300);
+    const ancestor = new Actor({ classId: "Actor", guid: "ancestor" });
+    actors.set(ancestor.guid, ancestor);
+    actor.setVariable("parentId", ancestor.guid);
+    pending.push(ctx.tweenProperty(ancestor, "actor.position", "vec3", vector(10), vector(20), 1, "linear", "world"));
+    tweens.advance(1);
+    expect(ancestor.transform.position.x).toBe(20);
+    expect(ancestor.transform.position.x + actor.transform.position.x + child.transform.position.x).toBeCloseTo(200);
+    expect(ancestor.transform.position.x + actor.transform.position.x + child.transform.position.x + mesh.transform.position.x).toBeCloseTo(400);
+    expect(await Promise.all(pending)).toEqual([true, true, true, true]);
   });
 });
