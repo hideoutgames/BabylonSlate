@@ -25,6 +25,7 @@ import { FrameGraphCullObjectsTask } from "@babylonjs/core/FrameGraph/Tasks/Misc
 import { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/clearTextureTask";
 import { HasStencilAspect } from "@babylonjs/core/Materials/Textures/textureHelper.functions";
 import { isSceneFrameReady, withSceneReadinessState } from "./scene-perf";
+import { attachSceneDepthPrePass } from "./transparent-depth-pre-pass";
 import { admittedSceneMeshes, admittedSceneParticles, withSceneStreamNativeVisibility } from "./scene-stream-admission";
 import { findSceneShadowController } from "./shadow-controller";
 import { syncSceneLighting } from "./scene-lighting";
@@ -158,6 +159,8 @@ export class ForwardSceneFrameGraph {
   private readonly lightEnabledObservers = new Map<Light, Observer<boolean>>();
   private readonly beforeRender: Observer<Scene>;
   private readonly onDispose: Observer<Scene>;
+  /** Classic frames' transparent depth pre-passes under their own render pass id (graph tasks have their own). */
+  private readonly detachClassicDepthPrePass: () => void;
   private readonly scene: Scene;
   private readonly effectsOwner: SceneEffectsOwner;
 
@@ -201,6 +204,7 @@ export class ForwardSceneFrameGraph {
       true,
     );
     this.onDispose = scene.onDisposeObservable.add(() => this.dispose());
+    this.detachClassicDepthPrePass = attachSceneDepthPrePass(scene);
   }
 
   attachPostProcess(options: AttachPostProcessStackOptions, invalidate: () => void): AttachedPostProcessStack {
@@ -680,6 +684,7 @@ export class ForwardSceneFrameGraph {
     this.lightEnabledObservers.clear();
     this.scene.onBeforeRenderObservable.remove(this.beforeRender);
     this.scene.onDisposeObservable.remove(this.onDispose);
+    this.detachClassicDepthPrePass();
     if (!this.pending) this.releaseGraph();
   }
 

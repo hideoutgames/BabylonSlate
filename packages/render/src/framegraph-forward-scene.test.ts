@@ -6,6 +6,7 @@ import {
   NullEngine,
   NullEngineOptions,
   PassPostProcess,
+  PBRMaterial,
   PointLight,
   RenderTargetTexture,
   RawTexture,
@@ -454,6 +455,51 @@ it("draws Play particle systems on graph frames, not only on classic fallback fr
   expect(draw).toHaveBeenCalledTimes(3);
   graph.dispose();
   service.dispose();
+});
+
+it("draws a transparent depth pre-pass with its depth-only variant and the colour pass with the full one, frozen or not", async () => {
+  const priorities = [ScenePerformancePriority.BackwardCompatible, ScenePerformancePriority.Intermediate];
+  for (const path of ["frameGraph", "classic"] as const) for (const priority of priorities) {
+    const { engine, scene, camera } = host();
+    scene.performancePriority = priority;
+    // An active camera list keeps the frame on the classic path, through the scene's own rendering manager.
+    if (path === "classic") scene.activeCameras = [camera];
+    const glass = MeshBuilder.CreateBox("glass", {}, scene);
+    const material = new PBRMaterial("glass", scene);
+    material.alpha = 0.5;
+    material.transparencyMode = PBRMaterial.PBRMATERIAL_ALPHABLEND;
+    material.needDepthPrePass = true;
+    glass.material = material;
+    /** Each completed draw of `glass`: its colour writes and whether the effect it bound is the depth-only variant. */
+    const draws: string[] = [];
+    glass.onAfterRenderObservable.add(() => {
+      const depthOnly = glass.subMeshes[0]!.effect?.defines.includes("#define DEPTHPREPASS\n");
+      draws.push(`${engine.getColorWrite() ? "colour" : "depth"}:${depthOnly ? "depth-only" : "full"}`);
+    });
+    const graph = new ForwardSceneFrameGraph(scene);
+    const created = vi.spyOn(engine, "createEffect");
+    expect(await graph.prepare(camera)).toMatchObject({ path });
+    // The graph's strict readiness probe compiles the depth-only variant too, before the first presented frame.
+    if (path === "frameGraph")
+      expect(created.mock.results.some(({ value }) => value.defines.includes("#define DEPTHPREPASS\n"))).toBe(true);
+    const frame = () => {
+      draws.length = 0;
+      expect(graph.render(camera)).toMatchObject({ path });
+      return [...draws];
+    };
+    const expected = ["depth:depth-only", "colour:full"];
+    await vi.waitFor(() => expect(frame()).toEqual(expected));
+    expect(material.isFrozen).toBe(priority === ScenePerformancePriority.Intermediate);
+    // Steady frames prepare no effect: each variant keeps its own draw wrapper.
+    created.mockClear();
+    for (let i = 0; i < 3; i++) expect(frame()).toEqual(expected);
+    expect(created).not.toHaveBeenCalled();
+    // A frozen Play material re-prepares only when marked dirty (a define change outside a readiness probe):
+    // each draw re-prepares its own variant instead of the colour pass inheriting the depth-only one.
+    material.markDirty(true);
+    for (let i = 0; i < 3; i++) expect(frame()).toEqual(expected);
+    graph.dispose();
+  }
 });
 
 it("resizes settings-only effect targets together with the output depth", async () => {

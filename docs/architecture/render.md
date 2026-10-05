@@ -1201,11 +1201,18 @@ Post-process retirement tracks every detached generation with separate bounded c
 
 A view with no chain, no outline and no admitted water copy has exactly the five tasks in items 1–3.
 
+**Transparent depth pre-pass** (`transparent-depth-pre-pass.ts`). A blended material with `needDepthPrePass` (built-in water, translucent and additive authored materials) draws its depth pre-pass under a render pass id of its own. Each graph object pass (`Forward objects`, `Forward transparent`) and the coordinator's classic frames have one.
+
+- Why: Babylon draws both draws through one draw wrapper and picks `DEPTHPREPASS` from the colour-write state. Unfrozen materials re-prepared their effect and rebound every uniform for both draws of every frame. Frozen Play materials (Intermediate priority) kept one variant for both draws: the full shader ran twice per pixel, or, after a define change outside a readiness probe, the depth-only variant drew the colour pass opaque black.
+- Draw order, frozen-list clipping and state changes are Babylon's (`RenderingGroup._RenderSorted`), allocation-free.
+- The graph's strict readiness probe compiles the pre-pass variant with the colour variant. Classic frames compile it at first draw.
+- Render Target Capture and the planar mirror keep the pre-pass off. Per-pass material overrides are not mirrored into the pre-pass; these passes set none.
+
 **Water scene copy** (`water-scene-copy.ts`): what built-in water refracts and marches its screen-space reflections against (see Water: refraction and object reflections).
 
 - **Admission.** `waterSceneCopyScale(scene, camera)` is the copy scale, or 0 when no copy is admitted. A copy is admitted only when all of these hold:
   - device-effective Refraction, Screen Space reflections, or Planar's screen-space fallback (`sceneWaterQualityDeviceClamp`);
-  - a surface with a `WaterMaterialPlugin` whose asset samples one of those features: Refraction above 0 while refraction runs, or Object Reflections while a screen-space march runs. Custom-material water cannot sample the copy. Water with Refraction 0 and no screen-space reflections therefore plans, reserves and allocates nothing;
+  - an enabled surface with a `WaterMaterialPlugin` whose asset samples one of those features: Refraction above 0 while refraction runs, or Object Reflections while a screen-space march runs. Custom-material water cannot sample the copy. Water with Refraction 0 and no screen-space reflections therefore plans, reserves and allocates nothing. Neither does disabled water: Enabled off, or a deactivated actor. The water update checks enabled state every frame (O(1) per surface), so enabling or disabling such water re-plans the view's graph on the next frame;
   - half-float render targets;
   - Forward lighting (no clustered target);
   - no per-group depth clear in rendering groups 1–3. `configureEditorRenderingGroups` turns these clears off. Babylon's default clear would wipe the opaque depth before the transparent pass.
@@ -1245,7 +1252,7 @@ A view with no chain, no outline and no admitted water copy has exactly the five
   - The texture is attached after each build. A resize attaches a new texture with a new `invSize` and `revision`.
   - The pass id is unregistered at actual graph disposal; a retained graph keeps its entry until it is released.
   - Classic frames, captures, previews and thumbnails use other pass ids, so they get null.
-- **Budget.** The copy (8 bytes per copy texel) and any own pair (8 bytes per output pixel; 12 with WebGPU's depth-stencil) are reserved in the managed ledger's `water` category before the build, committed after it and released after graph disposal. A refused reservation logs a warning and builds the graph without the copy. A resize reserves the resized targets while the current ones stay charged, then releases the old charge once the rebuild commits. If that reservation is refused, the view re-plans.
+- **Budget.** The copy (8 bytes per copy texel) and any own pair (8 bytes per output pixel; 12 with WebGPU's depth-stencil) are reserved in the managed ledger's `water` category before the build, committed after it and released after graph disposal. They stay allocated while the graph is planned with the copy, including frames whose copy-sampling water is off screen (only the passes are disabled). At 2360×1640 with a 0.5 copy that is about 31 MB for the own pair and 7.7 MB for the copy. A refused reservation logs a warning and builds the graph without the copy. A resize reserves the resized targets while the current ones stay charged, then releases the old charge once the rebuild commits. If that reservation is refused, the view re-plans.
 
 ### Color pipeline
 

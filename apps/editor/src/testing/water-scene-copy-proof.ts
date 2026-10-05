@@ -103,8 +103,9 @@ export async function runWaterSceneCopyProof(
       footprint, edge: texel(edgeTexel), beyondEdge: texel(edgeTexel + 1),
     };
     const visibleWork = graph.waterSceneCopyDiagnostics()!;
-    // Without visible water the direct path draws the same frame and no copy runs.
-    water.setEnabled(false);
+    // Without visible water (culled: disabled water would also drop the copy from the plan) the direct path draws the
+    // same frame and no copy runs.
+    water.isVisible = false;
     const hidden = await frame();
     const hiddenWork = graph.waterSceneCopyDiagnostics()!;
     return {

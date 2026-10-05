@@ -5,8 +5,11 @@ import {
   NullEngine,
   NullEngineOptions,
   ParticleSystem,
+  PBRMaterial,
   Scene,
+  ScenePerformancePriority,
   StandardMaterial,
+  TransformNode,
   type UniformBuffer,
   Vector3,
 } from "@babylonjs/core";
@@ -22,6 +25,7 @@ import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
 import { limitManagedRenderBytes, managedRenderReservations } from "./managed-render-resources";
 import { updateSceneRenderingSettings } from "./render-settings";
 import { configureEditorRenderingGroups } from "./sorting";
+import type { WaterMaterialPlugin } from "./water-material";
 import { createWaterMesh } from "./water-mesh";
 import { isMainWaterPass, waterSceneCopyForPass } from "./water-scene-copy";
 
@@ -86,11 +90,14 @@ function box(scene: Scene, name: string, alpha = 1): Mesh {
   return mesh;
 }
 
-/** The object renderer (by render pass id) and the bound target, output or an offscreen texture, of the current draw. */
+/**
+ * The object renderer (by render pass id; a depth pre-pass by its pass name) and the bound target, output or an
+ * offscreen texture, of the current draw.
+ */
 function currentPass(scene: Scene): string {
   const engine = scene.getEngine();
   const id = engine.currentRenderPassId;
-  const renderer = scene.objectRenderers.find((candidate) => candidate.renderPassId === id)?.name ?? `pass ${id}`;
+  const renderer = scene.objectRenderers.find((candidate) => candidate.renderPassId === id)?.name ?? engine.getCurrentRenderPassName();
   return `${renderer} → ${engine._currentRenderTarget ? "texture" : "output"}`;
 }
 
@@ -208,14 +215,16 @@ it("swaps the backbuffer view onto an own pair only on frames with visible copy-
   expect(work).toEqual({ frames: 3, visibleFrames: 3, copies: 3 });
   expect(clears).toHaveBeenCalledTimes(3);
   expect(graph.waterSceneCopyDiagnostics()).toMatchObject({ ownTargets: true, scale: 0.5 });
-  // Opaques draw into the own pair; water, transparents and particles after the copy, in the registered pass only.
-  expect(new Set(waterDraws)).toEqual(new Set(["Forward transparent → texture"]));
+  // Opaques draw into the own pair; water, transparents and particles after the copy, in the registered pass only
+  // (water's depth pre-pass under that pass's own pre-pass id).
+  expect(new Set(waterDraws)).toEqual(new Set(["Forward transparent depth pre-pass → texture", "Forward transparent → texture"]));
   expect(opaqueDraws).toEqual(Array(3).fill("Forward objects → texture"));
   expect(glassDraws).toEqual(Array(3).fill("Forward transparent → texture"));
   expect(sparkDraws).toEqual(Array(3).fill("Forward transparent → texture"));
 
-  // Without such water in view the direct path draws everything; the split passes stay empty.
-  water.setEnabled(false);
+  // Without such water in view (culled; disabled water would also drop its copy intent and re-plan the graph) the
+  // direct path draws everything; the split passes stay empty.
+  water.isVisible = false;
   work = frames(graph, () => {
     waterDraws.length = opaqueDraws.length = glassDraws.length = sparkDraws.length = 0;
     for (let frame = 0; frame < 3; frame += 1) expect(graph.render(camera)).toEqual({ path: "frameGraph" });
@@ -227,7 +236,7 @@ it("swaps the backbuffer view onto an own pair only on frames with visible copy-
   expect(glassDraws).toEqual(Array(3).fill("Forward objects → output"));
   expect(sparkDraws).toEqual(Array(3).fill("Forward objects → output"));
 
-  water.setEnabled(true);
+  water.isVisible = true;
   work = frames(graph, () => expect(graph.render(camera)).toEqual({ path: "frameGraph" }));
   expect(work).toEqual({ frames: 1, visibleFrames: 1, copies: 1 });
   expect(clears).toHaveBeenCalledTimes(7);
@@ -286,12 +295,45 @@ it("plans no copy for water whose asset samples none of the features the quality
   await settle(graph, camera);
   waterDraws.length = 0;
   expect(graph.render(camera)).toEqual({ path: "frameGraph" });
-  expect(new Set(waterDraws)).toEqual(new Set(["Forward objects → output"]));
+  expect(new Set(waterDraws)).toEqual(new Set(["Forward objects depth pre-pass → output", "Forward objects → output"]));
   // Screen Space reflections march the copy: the same water now plans it.
   updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ water: { profile: "high" } }) });
   expect(graph.readiness(camera)).toEqual({ path: "frameGraph", ready: false, preparationRequired: true });
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
   expect(graph.taskNames()).toContain("Water scene copy");
+  graph.dispose();
+});
+
+it("plans no copy for disabled copy-sampling water, authored off or under a deactivated actor, and re-plans when it is enabled", async () => {
+  const { engine, scene, camera } = host();
+  createWaterMesh(scene, "authored off", normalizeWaterBody({ width: 4, length: 4, resolution: 8, enabled: false }), createDefaultWaterDefinition());
+  const actor = new TransformNode("actor", scene);
+  actor.setEnabled(false);
+  lake(scene).parent = actor;
+  /** One frame, then NullEngine's never-completing raw uploads (the water fields) stand in as uploaded. */
+  const frame = (render: () => unknown) => {
+    render();
+    for (const texture of scene.textures) {
+      const internal = texture.getInternalTexture();
+      if (internal) internal.isReady = true;
+    }
+  };
+  // The water update follows each surface's enabled state, its own and its ancestors', every frame.
+  frame(() => scene.render());
+  const graph = new ForwardSceneFrameGraph(scene);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.taskNames()).toEqual(DEFAULT_TASKS);
+  expect(managedRenderReservations(engine).categoryBytes.water).toBe(0);
+  actor.setEnabled(true);
+  frame(() => graph.render(camera));
+  expect(graph.readiness(camera)).toMatchObject({ ready: false, preparationRequired: true });
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.taskNames()).toContain("Water scene copy");
+  expect(managedRenderReservations(engine).categoryBytes.water).toBeGreaterThan(0);
+  actor.setEnabled(false);
+  frame(() => graph.render(camera));
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.taskNames()).toEqual(DEFAULT_TASKS);
   graph.dispose();
 });
 
@@ -379,6 +421,37 @@ it("compiles refraction and the screen-space march only into the copy's pass, fo
     expect(compiled(sampling, pass)).not.toContain("SLATE_WATER_REFRACTION\n");
     expect(compiled(sampling, pass)).not.toContain("SLATE_WATER_SSR\n");
   }
+  graph.dispose();
+});
+
+it("keeps frozen Play water's colour draw on its full variant when a tilt re-prepares it without a readiness probe", async () => {
+  const { engine, scene, camera } = host();
+  scene.performancePriority = ScenePerformancePriority.Intermediate;
+  updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ water: { profile: "ultra" } }) });
+  const water = lake(scene, { ...createDefaultWaterDefinition(), refraction: 0.35, objectReflections: true });
+  const material = water.material as PBRMaterial;
+  const plugin = material.pluginManager!.getPlugin<WaterMaterialPlugin>("SlateWater")!;
+  /** Each completed water draw: colour writes, whether the effect is the depth-only variant, and the planar define. */
+  const draws: string[] = [];
+  water.onAfterRenderObservable.add(() => {
+    const defines = water.subMeshes[0]!.effect?.defines ?? "";
+    const variant = defines.includes("#define DEPTHPREPASS\n") ? "depth-only" : "full";
+    draws.push(`${engine.getColorWrite() ? "colour" : "depth"}:${variant}:${defines.includes("#define SLATE_WATER_PLANAR\n") ? "planar" : "no planar"}`);
+  });
+  const graph = new ForwardSceneFrameGraph(scene);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  await settle(graph, camera);
+  const frame = () => {
+    draws.length = 0;
+    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    return [...draws];
+  };
+  expect(frame()).toEqual(["depth:depth-only:planar", "colour:full:planar"]);
+  expect(material.isFrozen).toBe(true);
+  // A volume tilted out of level drops the planar reflection (water-mesh sets `flat`): the defines change and the
+  // frozen material is marked dirty with no readiness probe. Each draw re-prepares its own variant.
+  plugin.flat = false;
+  for (let i = 0; i < 3; i++) expect(frame()).toEqual(["depth:depth-only:no planar", "colour:full:no planar"]);
   graph.dispose();
 });
 

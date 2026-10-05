@@ -67,12 +67,15 @@ type Surface = {
    * bounds by its horizontal bound too. `boundsDirty` re-pads at the next placement when this changes.
    */
   fftDisplaced: boolean; boundsDirty: boolean;
+  /** Counted in `copyIntents`: a built-in surface that is enabled, itself and through its ancestors. */
+  copyCounted: boolean;
 };
 const surfaces = new WeakMap<Scene, Set<Surface>>();
 const surfaceByMesh = new WeakMap<AbstractMesh, Surface>();
 /**
- * Live built-in (WaterMaterialPlugin) surfaces per Scene whose asset can sample a scene copy, so
- * admission stays O(1) per frame. An asset is fixed per surface: editing it rebuilds the mesh.
+ * Enabled built-in (WaterMaterialPlugin) surfaces per Scene whose asset can sample a scene copy, so admission stays
+ * O(1) per frame. An asset is fixed per surface: editing it rebuilds the mesh. Enabled state (an authored Enabled
+ * off, or a deactivated actor) is followed by `syncCopyIntent`.
  */
 const copyIntents = new WeakMap<Scene, { refracting: number; reflecting: number }>();
 const clocks = new WeakMap<Scene, { time: number; runtime: boolean }>();
@@ -97,6 +100,7 @@ export function updateSceneWater(scene: Scene): void {
   if (!entries) return;
   const now = performance.now();
   for (const surface of entries) {
+    syncCopyIntent(scene, surface);
     if (!surface.mesh.isEnabled()) continue;
     placeSurface(surface, clock.time);
     const active = surface.drawn || inActiveView(scene, surface.mesh);
@@ -550,6 +554,18 @@ export function sceneWaterSamplesSceneCopy(scene: Scene, refraction: boolean, sc
   return intents !== undefined && ((refraction && intents.refracting > 0) || (screenSpace && intents.reflecting > 0));
 }
 
+/**
+ * Counts a built-in surface's copy intent only while it is enabled, itself and through its ancestors (a deactivated
+ * actor disables its children without notifying them, so the water update checks every frame: O(1), no allocation).
+ * Disabled water therefore keeps no copy, own pair or ledger charge planned; enabling it re-plans the view's graph.
+ */
+function syncCopyIntent(scene: Scene, s: Surface): void {
+  const counted = s.plugin !== null && !s.mesh.isDisposed() && s.mesh.isEnabled();
+  if (counted === s.copyCounted) return;
+  s.copyCounted = counted;
+  countCopyIntent(scene, s.water, counted ? 1 : -1);
+}
+
 function countCopyIntent(scene: Scene, water: WaterDefinition, delta: 1 | -1): void {
   let intents = copyIntents.get(scene);
   if (!intents) { intents = { refracting: 0, reflecting: 0 }; copyIntents.set(scene, intents); }
@@ -592,6 +608,7 @@ export function updateWaterMeshBody(mesh: Mesh, input: unknown): boolean {
   Object.assign(surface.body, normalizeWaterBody(input, surface.body.kind));
   surface.version++; surface.placed.fill(NaN);
   mesh.setEnabled(surface.body.enabled);
+  syncCopyIntent(mesh.getScene(), surface);
   refreshSurface(surface, clocks.get(mesh.getScene())?.time ?? 0);
   surface.field?.update(true);
   surface.contacts?.update(performance.now(), true);
@@ -652,6 +669,7 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
     qualityRevision: NaN, density: 1, drawn: true,
     base: empty, worldBase: empty, positions: empty, normals: empty, baseNormals: empty, data: empty, flow: empty, spacing: empty,
     offsets: empty, bankGradient: empty, offsetsZero: true, boundedSubMeshes: -1, boundedFirst: null, fftDisplaced: false, boundsDirty: false,
+    copyCounted: false,
   };
   let entries = surfaces.get(scene);
   if (!entries) {
@@ -663,10 +681,11 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
   surfaceByMesh.set(mesh, surface);
   // Any pass that draws the surface (views, captures, depth pre-pass) keeps its CPU work running next frame.
   mesh.onBeforeRenderObservable.add(() => { surface.drawn = true; });
-  if (plugin) countCopyIntent(scene, water, 1);
+  syncCopyIntent(scene, surface);
   mesh.onDisposeObservable.addOnce(() => {
     entries.delete(surface);
-    if (plugin) countCopyIntent(scene, water, -1);
+    if (surface.copyCounted) countCopyIntent(scene, water, -1);
+    surface.copyCounted = false;
   });
   refreshSurface(surface, clocks.get(scene)?.time ?? 0);
   if (plugin) {

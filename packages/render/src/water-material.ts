@@ -1689,7 +1689,8 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
   /**
    * Defines are prepared per render pass (each pass has its own draw wrapper): the copy features compile only into a
    * pass with a registered scene copy, which is registered before that pass's first readiness probe and never
-   * changes for the pass, so no later dirtying is needed.
+   * changes for the pass, so no later dirtying is needed. The depth pre-pass draws under its own pass id
+   * (`TransparentDepthPrePass`) and compiles neither: its variant returns before them, with the same vertex stage.
    */
   override prepareDefines(defines: MaterialDefines, scene: Scene): void {
     const w = this.water;

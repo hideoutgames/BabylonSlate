@@ -15,6 +15,7 @@ import { findSceneShadowController } from "./shadow-controller";
 import { drawBorrowedTarget, type BorrowedDrawPolicy } from "./framegraph-borrowed-draw";
 import { isMeshFrameReady, withSceneReadinessState } from "./scene-perf";
 import { configureCutoutSorting } from "./sorting";
+import { attachObjectRendererDepthPrePass, type TransparentDepthPrePass } from "./transparent-depth-pre-pass";
 
 type BorrowedMap = {
   generator: ShadowGenerator;
@@ -38,12 +39,16 @@ export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTas
    */
   mainView = false;
 
+  /** Transparent depth pre-passes draw under their own render pass id (see TransparentDepthPrePass). */
+  private readonly depthPrePass: TransparentDepthPrePass;
+
   constructor(...args: ConstructorParameters<typeof FrameGraphObjectRendererTask>) {
     super(...args);
     configureCutoutSorting(this._renderer);
     const renderer = this._renderer;
     const render = renderer.render;
     const scene = this._frameGraph.scene;
+    this.depthPrePass = attachObjectRendererDepthPrePass(scene, renderer);
     renderer.render = (...renderArgs) => {
       const intermediate = scene._intermediateRendering;
       // Babylon 9.20 marks every graph ObjectRenderer as intermediate, even
@@ -88,11 +93,17 @@ export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTas
       // Only override the readiness probe. Actual rendering keeps the official
       // renderer's readiness/cache behavior and any existing custom callback.
       this._renderer.customIsReadyFunction = (mesh, rate, preWarm) =>
-        (!previous || previous(mesh, rate, preWarm)) && isMeshFrameReady(mesh);
+        (!previous || previous(mesh, rate, preWarm)) && isMeshFrameReady(mesh) &&
+        (this._renderer.disableDepthPrePass || this.depthPrePass.isReady(mesh));
       return super.isReady();
     } finally {
       this._renderer.customIsReadyFunction = previous;
     }
+  }
+
+  override dispose(): void {
+    this.depthPrePass.dispose();
+    super.dispose();
   }
 
   protected override _setLightsForShadow(): void {
