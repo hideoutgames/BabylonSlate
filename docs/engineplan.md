@@ -23,7 +23,7 @@ A full architecture and delivery plan to grow BabylonSlate into a touch-first Ba
 
 ## 1. Where the project stands today
 
-**Lattice deformation:** `DeformerComponent` applies a component-local cage after authored material WPO to ordinary Mesh/Model visuals, including skin and morph inputs. The renderer reuses Babylon's stock lattice evaluator and texture transport, with bounded controls and pass adapters. Authored WPO shadows and standalone depth/normal captures are prerequisite corrections included in this work. Focused rendering proofs and low-spec performance qualification remain separate gates; this entry does not mark the feature merged or A16-qualified. See [Lattice Deformer](architecture/render.md#lattice-deformer).
+**Lattice deformation:** `DeformerComponent` applies a component-local cage after authored material WPO to ordinary Mesh/Model visuals, including skin and morph inputs. The renderer reuses Babylon's stock lattice evaluator and texture transport, with bounded controls and pass adapters. Authored WPO shadows and standalone depth/normal captures are prerequisite corrections included in this work. Focused rendering checks and low-spec performance qualification remain separate gates; rendering correctness alone does not establish the A16 budget. See [Lattice Deformer](architecture/render.md#lattice-deformer).
 
 Content Browser **Show References** opens a large read-only asset graph dialog, initially selecting and framing the requested asset. It shows the complete connected dependency chain with directed links, compact type-icon nodes, and missing references. See [asset registry](architecture/asset-registry.md).
 
