@@ -12,6 +12,7 @@ afterEach(() => { for (const cleanup of cleanups.splice(0)) cleanup(); vi.restor
 function fixture() {
   const engine = new NullEngine(), scene = new Scene(engine);
   engine.getCaps().textureFloat = true; engine.getCaps().maxVertexTextureImageUnits = 16;
+  vi.spyOn(engine, "webGLVersion", "get").mockReturnValue(2);
   // NullEngine has no 3D GPU texture backend. Keep the real stock lattice and
   // plugin, replacing only the device allocation/upload boundary.
   vi.spyOn(engine, "createRawTexture3D").mockImplementation((_data, width, height, depth) => {

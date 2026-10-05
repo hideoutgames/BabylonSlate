@@ -48,7 +48,7 @@ describe("model pose and clip ranges", () => {
         expect(first.parent).toBe(second.parent);
         const group = container.animationGroups[0]!;
         expect(group.targetedAnimations[0]!.target).toBe(second);
-        expect(group.isStarted).toBe(false);
+        expect(handle.scene.animatables).toHaveLength(0);
         const a = container.instantiateModelsToScene((name) => `a-${name}`, false, { doNotInstantiate: true });
         const b = container.instantiateModelsToScene((name) => `b-${name}`, false, { doNotInstantiate: true });
         let disposedA = false;

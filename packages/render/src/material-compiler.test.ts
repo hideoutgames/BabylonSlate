@@ -1841,7 +1841,7 @@ describe("material compiler", () => {
     ).toBe(true);
   });
 
-  it("reads fragment World Position from the displaced tap", () => {
+  it("reads fragment World Position after WPO and lattice deformation", () => {
     const scene = host();
     const doc = createDefaultMaterialDocument();
     const output = doc.nodes.find((node) => node.type === "output.surface");
@@ -1874,7 +1874,8 @@ describe("material compiler", () => {
     expect(displaced).toBeDefined();
     expect(splitter).toBeDefined();
     const source = splitter?.inputs[0]?.connectedPoint?.ownerBlock;
-    expect(source?.name).toBe(displaced?.name);
+    expect(source?.getClassName()).toBe("LatticeDeformerBlock");
+    expect(source?.inputs.find((input) => input.name === "position")?.connectedPoint?.ownerBlock).toBe(displaced);
   });
 });
 
