@@ -85,7 +85,19 @@ Game logic and physics share one worker; transforms use SAB or transferable snap
 - **Files**: binary `ProjectStorage` via `createStorage()` — never Capacitor from panels.
 - **Containers / registry**: `@babylonslate/assets` encodes containers and owns the content-root-aware guid index (header-only). Enabled plugins mount as extra roots ([plugins.md](plugins.md)); engine plugins unpack into a separate read-only Memory storage. New projects copy them into `plugins/` with the same guids (project copy shadows the engine original).
 - **Editor context updates**: `DocumentProvider` publishes three contexts:
-  - `useDocuments()` is the facade: every action plus documents, project and registry state. It gets a new value after every edit, tab change and save, because it reads open documents and dirty state from the services, so each caller re-renders with it.
+  - `useDocuments()` is the facade: every action plus documents, project and registry state. It gets a new value after every edit, tab change and save, because it reads open documents and dirty state from the services, so each caller re-renders with it. Its document fields change only with what they report:
+
+    | Field | Changes when |
+    | --- | --- |
+    | `documentRevisions` (per kind) | A document of that kind opens, closes, moves, is reordered, edited (Undo / Redo, reloads and patches included), relaid out, or changes dirty state ([document revisions](command-layer.md#document-revisions)) |
+    | `tabsRevision` | The open set, the tab order or the active tab changes |
+    | `openDocuments` | Any document revision advances (entries are mutated in place, so the array, not an entry, signals a change) |
+    | `tabOrder` | Tab ids or their order change; an active-tab change keeps it |
+    | `dirtyDocuments` | Any document revision advances |
+    | `currentGraphSignature` | A Class graph or Input Action / Axis document changes, or `registryEpoch` advances |
+    | `registryEpoch` | The registry or a registry-adjacent setting changes (below) |
+
+    Registry-only updates (encode progress, thumbnails, plugins) and active-tab changes therefore keep `openDocuments`, `tabOrder` and `dirtyDocuments`. A memo that reads other open documents keys on the kinds it reads with `useOpenDocumentsOfKinds`, not on `openDocuments`.
   - `useDocumentActions()` returns only the callbacks. The object and every callback keep their identity for the provider's lifetime; each reads documents, the project document, Anim modes, templates and the pending exclusive scene when it runs. Action-only consumers (`EditorRoute`'s session store wiring, Audio preview and clips, Texture preview, Model source bytes, dock registration) use it, so they no longer subscribe to document state themselves. Of these, only `EditorRoute` stops re-rendering on edits: the others still re-render with their panels, which subscribe through `useDocuments()`, and the dock shell still reads Source Control state from it. Texture preview is the one `React.memo` boundary: it skips its panel's re-render while its path and content object are unchanged.
   - `useAppRoute()` returns only `route` (Homepage or editor). `AppRoutes` reads it, so an edit no longer re-renders the route tree from the top. `EditorLayout` subscribes to nothing; the chrome bar with its unsaved / migration / external-change prompts, the dirty count and `beforeunload` guard, and each panel subscribe themselves.
   - A component that calls an action while rendering (`isDockWindowOpen`, `textureUsageBlockedReason`, …) must also subscribe to the state the result depends on.
