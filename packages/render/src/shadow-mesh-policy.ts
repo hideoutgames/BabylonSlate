@@ -1,6 +1,7 @@
 import { LinesMesh, type AbstractMesh } from "@babylonjs/core";
 import { isEditorHelperMesh } from "./helper-mesh";
 import { isSkyboxMesh } from "./skybox";
+import { hasMeshLatticeDeformer } from "./lattice-deformer-binding";
 export type ShadowParticipation = {
   castShadows?: boolean;
   receiveShadows?: boolean;
@@ -34,6 +35,7 @@ export function participatesInShadows(mesh: AbstractMesh): boolean {
 /** Bind-pose bounds cannot certify where GPU-deformed vertices will be. */
 export function hasDeformingShadowBounds(mesh: AbstractMesh): boolean {
   return (
+    hasMeshLatticeDeformer(mesh) ||
     !!mesh.skeleton ||
     !!mesh.morphTargetManager ||
     Number(mesh.material?.metadata?.boundsPadding ?? 0) > 0

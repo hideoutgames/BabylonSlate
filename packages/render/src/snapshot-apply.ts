@@ -144,6 +144,7 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
   ragdoll?: import("./ragdoll-pose").RagdollPoseController;
   /** Runtime component records outlive asynchronous mesh realization. */
   outlines: Map<number, { actorId: string; bindings: import("@babylonslate/core").OutlineBinding[] }>;
+  deformers: Map<number, { actorId: string; revision: number; bindings: import("@babylonslate/core").DeformerBinding[] }>;
   fogVolumes: Map<number, { actorId: string; bindings: import("@babylonslate/core").FogVolumeBinding[] }>;
   onVisualChanged?: (slotId: number) => void;
   areaLights: Map<number, AreaRectLightGroup>;
@@ -241,6 +242,7 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
 export function createSnapshotSceneBinding(): SnapshotSceneBinding {
   return {
     outlines: new Map(),
+    deformers: new Map(),
     fogVolumes: new Map(),
     meshes: new Map(),
     boneAttachments: new Map(),
@@ -528,6 +530,17 @@ export function playComponentMeshName(
   componentId: string,
 ): string {
   return `actor-${slotId}|${componentId}`;
+}
+
+/** Exact component roots, including the single-component actor fast path. */
+export function meshForPlayComponent(binding: SnapshotSceneBinding, slotId: number, componentId: string): Mesh | null {
+  const root = binding.meshes.get(slotId);
+  if (!root || root.isDisposed()) return null;
+  if (root.metadata?.playActorOrigin !== true) {
+    return binding.primaryComponentIds.get(slotId) === componentId ? root : null;
+  }
+  const name = playComponentMeshName(slotId, componentId);
+  return root.getChildMeshes().find((mesh): mesh is Mesh => mesh instanceof Mesh && mesh.name === name) ?? null;
 }
 
 function partsNeedOrigin(
@@ -1248,6 +1261,7 @@ export function retirePlaySlot(
 ): void {
   binding.ragdoll?.retire(slotId);
   binding.outlines.delete(slotId);
+  binding.deformers.delete(slotId);
   binding.fogVolumes.delete(slotId);
   binding.areaLights.get(slotId)?.dispose();
   binding.areaLights.delete(slotId);
@@ -1303,6 +1317,7 @@ export function retirePlaySlot(
 export function retirePlayWorldSlots(binding: SnapshotSceneBinding): void {
   const slots = new Set<number>([
     ...binding.outlines.keys(),
+    ...binding.deformers.keys(),
     ...binding.fogVolumes.keys(),
     ...binding.areaLights.keys(),
     ...binding.meshes.keys(),
@@ -1972,6 +1987,7 @@ function snapPlayCameraToPixelGrid(
 export function disposeSnapshotBinding(binding: SnapshotSceneBinding): void {
   binding.ragdoll?.dispose();
   binding.outlines.clear();
+  binding.deformers.clear();
   binding.fogVolumes.clear();
   binding.onVisualChanged = undefined;
   const pending = pendingVisualReplacements.get(binding);

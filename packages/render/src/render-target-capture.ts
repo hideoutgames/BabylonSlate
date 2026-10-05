@@ -19,6 +19,8 @@ import { renderTargetCaptureDrawing } from "./render-target-capture-state";
 import { isEditorHelperMesh } from "./helper-mesh";
 import { particleMaterialForSystem } from "./node-material-particles";
 import { admittedSceneMeshes, admittedSceneParticles } from "./scene-stream-admission";
+import { acquireAuthoredMaterialVariant, type AuthoredMaterialVariant } from "./material-compiler";
+import { retireOwnedEffect } from "./owned-effect-retirement";
 
 /**
  * Whether a mesh may appear in a Render Target Capture: world geometry only,
@@ -107,8 +109,9 @@ type Target = {
   owner: string;
   depth?: NodeMaterial;
   normals?: NodeMaterial;
-  normalMaterials: Map<Material, { material: NodeMaterial; mask: Texture | null; uvIndex: number }>;
+  normalMaterials: Map<Material, CaptureMaterial>;
   normalSlots: Map<AbstractMesh, MultiMaterial>;
+  materialRetirement: Promise<void>;
   usedNormalSources: Set<Material>;
   lease: ManagedRenderLease;
   overrides: Set<AbstractMesh>;
@@ -117,6 +120,7 @@ type Target = {
   particles: IParticleSystem[];
   published: boolean;
 };
+type CaptureMaterial = { material: NodeMaterial; mask: Texture | null; uvIndex: number; authored?: AuthoredMaterialVariant };
 
 /** One scene owns its captures and outputs. Materials only borrow ordinary
  * textures, so sampling cannot enqueue RTTs or recursively render the scene. */
@@ -288,7 +292,7 @@ export class RenderTargetCaptures {
         }
         for (const [source, material] of target.normalMaterials) if (!target.usedNormalSources.has(source)) {
           target.normalMaterials.delete(source);
-          material.material.dispose(false, false);
+          this.retireCaptureMaterial(target, material);
         }
       }
       if (!this.draw(target)) continue;
@@ -350,7 +354,7 @@ export class RenderTargetCaptures {
       lease.commit(managedRenderTargetResources(texture.renderTarget!, { colorCategory: mode === "SceneColor" ? "sceneColor" : "geometry" }));
       const target: Target = {
         key, definition, texture: captureTexture, owner, depth, normals, lease,
-        normalMaterials: new Map(), normalSlots: new Map(), usedNormalSources: new Set(),
+        normalMaterials: new Map(), normalSlots: new Map(), usedNormalSources: new Set(), materialRetirement: Promise.resolve(),
         overrides: new Set(), pendingOverrides: new Set(), meshes: [], particles: [], published: false,
       };
       this.targets.set(guid, target);
@@ -446,10 +450,32 @@ export class RenderTargetCaptures {
       existing.material.cullBackFaces = source.cullBackFaces;
       return existing.material;
     }
-    existing?.material.dispose(false, false);
-    const material = target.depth ? createRenderTargetDepthMaterial(this.scene, source) : createRenderTargetNormalMaterial(this.scene, source);
-    target.normalMaterials.set(source, { material, mask, uvIndex });
+    if (existing) this.retireCaptureMaterial(target, existing);
+    const authored = acquireAuthoredMaterialVariant(source, target.depth ? "captureDepth" : "captureNormal");
+    const material = authored?.compiled.material ?? (target.depth ? createRenderTargetDepthMaterial(this.scene, source) : createRenderTargetNormalMaterial(this.scene, source));
+    material.backFaceCulling = source.backFaceCulling;
+    material.cullBackFaces = source.cullBackFaces;
+    target.normalMaterials.set(source, { material, mask, uvIndex, authored });
     return material;
+  }
+  private retireCaptureMaterial(target: Target, entry: CaptureMaterial): void {
+    if (!entry.authored) { entry.material.dispose(false, false); return; }
+    // The RTT owns pass wrappers; the compiled variant can be shared by other
+    // captures. Release this pass's references before releasing its variant lease.
+    // A source replacement is uncommon; retiring all this target's wrappers also
+    // handles mixed slots whose source-to-wrapper association just changed.
+    const pending: Promise<void>[] = [];
+    for (const mesh of this.scene.meshes) for (const subMesh of mesh.subMeshes ?? []) {
+      const wrapper = subMesh._getDrawWrapper(target.texture.renderPassId);
+      if (!wrapper) continue;
+      subMesh._removeDrawWrapper(target.texture.renderPassId, false);
+      if (wrapper.effect) subMesh.getRenderingMesh().geometry?._releaseVertexArrayObject(wrapper.effect);
+      pending.push(retireOwnedEffect(wrapper.effect, () => wrapper.dispose(true)).released);
+    }
+    target.materialRetirement = Promise.all([target.materialRetirement, ...pending]).then(() => entry.authored!.release());
+    void target.materialRetirement.catch((error: unknown) => {
+      console.warn(`[render] Capture material is retained until native release: ${String(error)}`);
+    });
   }
   private ownerOf(mesh: Node): string | undefined {
     for (let node: Node | null = mesh; node; node = node.parent) {
@@ -563,7 +589,7 @@ export class RenderTargetCaptures {
     for (const mesh of target.overrides) if (!mesh.isDisposed()) target.texture.setMaterialForRendering(mesh, undefined);
     target.depth?.dispose();
     for (const material of target.normalSlots.values()) material.dispose(false, false);
-    for (const variant of target.normalMaterials.values()) variant.material.dispose(false, false);
+    for (const variant of target.normalMaterials.values()) this.retireCaptureMaterial(target, variant);
     target.normals?.dispose();
     target.texture.dispose();
     target.lease.release();

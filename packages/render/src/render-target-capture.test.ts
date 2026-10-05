@@ -14,6 +14,7 @@ import { MaterialLibrary, materialUnavailable } from "./material-library";
 import { bindParticleMaterial } from "./particle-system-factory";
 import { createSceneStreamAdmission, registerSceneStreamParticle } from "./scene-stream-admission";
 import { createSnapshotSceneBinding, retirePlaySlot } from "./snapshot-apply";
+import { acquireAuthoredMaterialVariant } from "./material-compiler";
 
 const engines: NullEngine[] = [];
 afterEach(() => { vi.restoreAllMocks(); for (const engine of engines.splice(0)) engine.dispose(); });
@@ -319,6 +320,35 @@ it.each(["WorldNormal", "DepthPass"] as const)("filters mixed %s slots per mesh 
   expect(scene.materials).not.toContain(sharedVariant);
   captures.clear();
   expect(scene.multiMaterials).not.toContain(slots);
+});
+
+it.each(["WorldNormal", "DepthPass"] as const)("borrows retained authored %s geometry and releases only its capture lease on replacement", async (mode) => {
+  const { scene, captures, engine } = host();
+  engine.getCaps().textureHalfFloatRender = true;
+  const library = new MaterialLibrary();
+  try {
+    const graph = createDefaultMaterialDocument("Displaced Capture");
+    graph.nodes.find((node) => node.type === "output.surface")!.properties["default:worldPositionOffset"] = [0, 0, 2];
+    const source = library.acquire(scene, "source", graph);
+    if (!source.ok) throw new Error(JSON.stringify(source.diagnostics));
+    expect(await source.ready).toEqual([]);
+    const mesh = MeshBuilder.CreateBox("Authored Caster", {}, scene);
+    mesh.material = source.material;
+    captures.setAssets(new Map([["target", { mode, width: 16, height: 8 }]]));
+    captures.request("capture"); captures.render();
+    const target = scene.textures.find((entry) => entry.name === "renderTarget:target") as RenderTargetTexture;
+    const borrowed = acquireAuthoredMaterialVariant(source.material, mode === "DepthPass" ? "captureDepth" : "captureNormal")!;
+    expect(await borrowed.compiled.ready).toEqual([]);
+    expect(mesh.getMaterialForRenderPass(target.renderPassId)).toBe(borrowed.compiled.material);
+    mesh.material = new StandardMaterial("Replacement", scene);
+    captures.request("capture"); captures.render();
+    expect(mesh.getMaterialForRenderPass(target.renderPassId)).not.toBe(borrowed.compiled.material);
+    await Promise.resolve(); await Promise.resolve();
+    expect(scene.materials).toContain(borrowed.compiled.material);
+    await borrowed.release();
+    expect(scene.materials).not.toContain(borrowed.compiled.material);
+    captures.clear();
+  } finally { library.dispose(); }
 });
 
 it("admits no GPU target or draw when the shared rendering ceiling cannot fit it", () => {

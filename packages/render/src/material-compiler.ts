@@ -1,11 +1,10 @@
-import { registerClusteredSurfaceMaterial } from "./clustered-material-policy";
+import { registerClusteredSurfaceMaterial, registerClusteredUnlitMaterial } from "./clustered-material-policy";
 import { rebindEmptiedDrawContexts } from "./webgpu-node-material-rebind";
 import {
   AddBlock,
   BonesBlock,
   ClampBlock,
   ColorSplitterBlock,
-  InstancesBlock,
   MorphTargetsBlock,
   MultiplyBlock,
   Constants,
@@ -30,7 +29,6 @@ import {
   VectorMergerBlock,
   VectorSplitterBlock,
   VertexOutputBlock,
-  ViewDirectionBlock,
   type AbstractEngine,
   type Effect,
   type NodeMaterialBlock,
@@ -77,10 +75,19 @@ import { prepareNodeMaterialParticleBindings } from "./node-material-particles";
 import type { MaterialParameterValue } from "@babylonslate/bridge";
 import { SharedOutlineIdentityBlock, SharedOutlineOutputBlock } from "./shared-outline-output-block";
 import { TextMaterialBlock } from "./text-material-block";
+import { createSurfacePlumbing } from "./surface-material-plumbing";
+export { createSurfacePlumbing } from "./surface-material-plumbing";
+import { createGeometryCaptureOutput } from "./geometry-capture-output";
+import { AuthoredShadowFragmentOutput, createAuthoredShadowVertexOutput } from "./authored-shadow-output";
+import { AuthoredShadowDepthWrapper } from "./authored-shadow-depth-wrapper";
+import { applyLatticeDeformerPlumbing, LatticeDeformerBlock } from "./lattice-deformer-block";
+import { registerLatticeShadowAdapter } from "./lattice-deformer-binding";
+
+export type AuthoredSurfaceVariant = "outlineMask" | "captureDepth" | "captureNormal" | "shadowDepth";
 
 export interface CompileMaterialOptions {
   /** Internal coverage variant; retains authored deformation and alpha discard. */
-  surfaceVariant?: "outlineMask";
+  surfaceVariant?: AuthoredSurfaceVariant;
   /** Internal FrameGraph variant; shared resources are bound by its render pass. */
   logicalSceneBuffers?: boolean;
   /** Editor-only single-quad preview; live particle systems retain Particle mode. */
@@ -120,16 +127,33 @@ export interface FailedMaterial {
 export type CompileMaterialResult = CompiledMaterial | FailedMaterial;
 
 const materialBuilds = new WeakMap<NodeMaterial, Promise<readonly MaterialDiagnostic[]>>();
-export interface AuthoredOutlineVariant {
+export interface AuthoredMaterialVariant {
   compiled: CompiledMaterial;
   /** Release after the caller's pass DrawWrappers have released their Effects. */
   release: () => Promise<void>;
 }
-const authoredOutlineFactories = new WeakMap<Material, () => AuthoredOutlineVariant>();
+export type AuthoredOutlineVariant = AuthoredMaterialVariant;
+const authoredVariantFactories = new WeakMap<Material, (kind: AuthoredSurfaceVariant) => AuthoredMaterialVariant>();
+const authoredShadowFactories = new WeakMap<Material, { ensure(): void; acquire(): void; release(): void }>();
 /** Only compiler-owned material generations have reproducible authored coverage. */
 export function acquireAuthoredOutlineVariant(source: Material): AuthoredOutlineVariant | undefined {
-  return authoredOutlineFactories.get(source)?.();
+  return acquireAuthoredMaterialVariant(source, "outlineMask");
 }
+export function acquireAuthoredMaterialVariant(source: Material, kind: AuthoredSurfaceVariant): AuthoredMaterialVariant | undefined {
+  return authoredVariantFactories.get(source)?.(kind);
+}
+/** Enable final-position shadows when a mesh acquires a runtime deformer. */
+export function ensureAuthoredShadowDepthWrapper(source: Material): boolean {
+  const install = authoredShadowFactories.get(source);
+  if (!install) return false;
+  install.ensure();
+  return true;
+}
+registerLatticeShadowAdapter((material) => {
+  const factory = authoredShadowFactories.get(material);
+  if (!factory) return false;
+  factory.acquire(); return true;
+}, (material) => authoredShadowFactories.get(material)?.release());
 
 function isEngineErrorSampler(texture: Texture): boolean {
   const engine =
@@ -217,7 +241,9 @@ export function compileMaterialPlan(
 ): CompileMaterialResult {
   const { scene } = options;
   const outlineMask = options.surfaceVariant === "outlineMask";
-  const cacheableShadowShape = !outlineMask && (plan.domain === "surface" || plan.domain === "landscape") && plan.blendMode === "opaque" &&
+  const auxiliary = options.surfaceVariant !== undefined;
+  const shadowDepth = options.surfaceVariant === "shadowDepth";
+  const cacheableShadowShape = !auxiliary && (plan.domain === "surface" || plan.domain === "landscape") && plan.blendMode === "opaque" &&
     plan.cost.customBlocks === 0 && isIdentityWorldPositionOffset(plan.outputs.worldPositionOffset ?? null);
   const material = new NodeMaterial(options.name, scene, {
     shaderLanguage: scene.getEngine().isWebGPU
@@ -225,9 +251,10 @@ export function compileMaterialPlan(
       : ShaderLanguage.GLSL,
   });
   if (scene.getEngine().isWebGPU) rebindEmptiedDrawContexts(material);
+  if (auxiliary) material.allowShaderHotSwapping = false;
   material.metadata = { boundsPadding: plan.boundsPadding ?? 0, materialDomain: plan.domain };
   const configureSurface = () => {
-    if (outlineMask) {
+    if (auxiliary) {
       material.backFaceCulling = plan.twoSided !== true;
       material.transparencyMode = Material.MATERIAL_OPAQUE;
       material.alphaMode = Constants.ALPHA_DISABLE;
@@ -541,6 +568,7 @@ export function compileMaterialPlan(
         applyWorldPositionOffset(options.name, created, plumbing, offset);
       }
     }
+    applyLatticeDeformerPlumbing(options.name, created, plumbing, scene, plan.operations.some((operation) => operation.nodeType === "input.worldTangent"));
     if (!realizeOperations()) return fail();
     if (plumbing.clipPosition && plumbing.worldPosition) {
       plumbing.worldPosition.connectTo(plumbing.clipPosition);
@@ -598,6 +626,18 @@ export function compileMaterialPlan(
         if (plan.blendMode === "translucent" || plan.blendMode === "additive")
           outputPoint("opacity", `${options.name}_opacity`, false)?.connectTo(output.a);
         created.push(identity, output); outputNodes.push(output);
+      } else if (shadowDepth) {
+        // The shadow pass owns the final projection so native normal bias is
+        // applied after WPO/runtime deformation and before clip conversion.
+        for (let index = outputNodes.length - 1; index >= 0; index--)
+          if (outputNodes[index] instanceof VertexOutputBlock) outputNodes.splice(index, 1);
+        outputNodes.push(createAuthoredShadowVertexOutput(options.name, created, plumbing));
+        const output = new AuthoredShadowFragmentOutput(`${options.name}_shadowFragment`);
+        if (plan.blendMode === "translucent" || plan.blendMode === "additive")
+          outputPoint("opacity", `${options.name}_opacity`, false)?.connectTo(output.opacity);
+        created.push(output); outputNodes.push(output);
+      } else if (options.surfaceVariant === "captureDepth" || options.surfaceVariant === "captureNormal") {
+        outputNodes.push(createGeometryCaptureOutput(scene, options.surfaceVariant === "captureDepth", created, plumbing));
       } else outputNodes.push(attachSurfaceShading(plan, options, created, plumbing, outputPoint));
       if (plan.blendMode === "masked") {
         const discard = new DiscardBlock(`${options.name}_alphaClip`);
@@ -610,7 +650,7 @@ export function compileMaterialPlan(
       }
     }
     for (const node of outputNodes) material.addOutputNode(node);
-    if ((plan.domain === "surface" || plan.domain === "landscape") && !outlineMask) {
+    if ((plan.domain === "surface" || plan.domain === "landscape") && !auxiliary) {
       const surface = outputNodes.find((node) => node instanceof FragmentOutputBlock);
       if (surface) installCelSurface(material, plan, surface, created, plumbing, outputPoint);
     }
@@ -745,7 +785,8 @@ export function compileMaterialPlan(
       }
       buildState = "ready";
       if (cacheableShadowShape) registerCacheableShadowMaterial(material);
-      if (!outlineMask && (plan.domain === "surface" || plan.domain === "landscape") && plan.cost.customBlocks === 0) registerClusteredSurfaceMaterial(material);
+      if (auxiliary) registerClusteredUnlitMaterial(material);
+      else if ((plan.domain === "surface" || plan.domain === "landscape") && plan.cost.customBlocks === 0) registerClusteredSurfaceMaterial(material);
       settleBuild([]);
     }
   });
@@ -753,8 +794,8 @@ export function compileMaterialPlan(
   // Bone palettes, morph weights and text atlases belong to each mesh, even
   // when their material is static.
   const perMeshBlocks = created.filter(
-    (block): block is BonesBlock | MorphTargetsBlock | TextMaterialBlock =>
-      block instanceof BonesBlock || block instanceof MorphTargetsBlock || block instanceof TextMaterialBlock,
+    (block): block is BonesBlock | MorphTargetsBlock | TextMaterialBlock | LatticeDeformerBlock =>
+      block instanceof BonesBlock || block instanceof MorphTargetsBlock || block instanceof TextMaterialBlock || block instanceof LatticeDeformerBlock,
   );
   if (perMeshBlocks.length > 0) {
     material.onBindObservable.add((mesh) => {
@@ -857,48 +898,87 @@ export function compileMaterialPlan(
     material,
     options.resolveTexture,
   );
-  let variant: { compiled: CompiledMaterial; references: number } | undefined;
+  const variants = new Map<AuthoredSurfaceVariant, { compiled: CompiledMaterial; references: number }>();
   const setParameter: CompiledMaterial["setParameter"] = (name, value) => {
     if (!parameters.setParameter(name, value)) return false;
-    variant?.compiled.setParameter(name, value);
+    for (const variant of variants.values()) variant.compiled.setParameter(name, value);
     return true;
   };
   const resetParameter: CompiledMaterial["resetParameter"] = (name) => {
     if (!parameters.resetParameter(name)) return false;
     const value = parameters.getParameter(name);
-    if (value) variant?.compiled.setParameter(name, value);
+    if (value) for (const variant of variants.values()) variant.compiled.setParameter(name, value);
     return true;
   };
-  if ((plan.domain === "surface" || plan.domain === "landscape") && !outlineMask) authoredOutlineFactories.set(material, () => {
-    if (disposed) throw new Error("Cannot outline a disposed authored material.");
-    if (!variant) {
-      const compiled = compileMaterialPlan(plan, { ...options, name: `${options.name}:outlineMask`, surfaceVariant: "outlineMask" });
-      if (materialCompileFailed(compiled)) throw new Error(compiled.diagnostics.map((entry) => entry.message).join("; "));
-      for (const operation of plan.operations) if (operation.nodeType.startsWith("param.") && operation.source.callPath.length === 0) {
-        const name = String(operation.properties.name ?? "").trim();
-        const value = parameters.getParameter(name);
-        if (value) compiled.setParameter(name, value);
+  let shadow: { wrapper: AuthoredShadowDepthWrapper; variant: AuthoredMaterialVariant } | undefined;
+  let shadowReleased: Promise<void> | undefined;
+  let permanentShadow = false, shadowCages = 0;
+  const releaseShadow = () => {
+    if (!shadow) return;
+    const retained = shadow;
+    shadow = undefined;
+    if (material.shadowDepthWrapper === retained.wrapper) material.shadowDepthWrapper = null;
+    retained.wrapper.dispose();
+    const retirement = retained.wrapper.whenReleased().then(() => retained.variant.release());
+    shadowReleased = Promise.all([shadowReleased, retirement]).then(() => {});
+    void shadowReleased.catch((error: unknown) => console.warn(`[render] Authored shadow material release failed: ${String(error)}`));
+  };
+  if ((plan.domain === "surface" || plan.domain === "landscape") && !auxiliary) {
+    authoredVariantFactories.set(material, (kind) => {
+      if (disposed) throw new Error("Cannot retain a disposed authored material.");
+      let variant = variants.get(kind);
+      if (!variant) {
+        const compiled = compileMaterialPlan(plan, { ...options, name: `${options.name}:${kind}`, surfaceVariant: kind });
+        if (materialCompileFailed(compiled)) throw new Error(compiled.diagnostics.map((entry) => entry.message).join("; "));
+        for (const operation of plan.operations) if (operation.nodeType.startsWith("param.") && operation.source.callPath.length === 0) {
+          const name = String(operation.properties.name ?? "").trim();
+          const value = parameters.getParameter(name);
+          if (value) compiled.setParameter(name, value);
+        }
+        variant = { compiled, references: 0 };
+        variants.set(kind, variant);
       }
-      variant = { compiled, references: 0 };
-    }
-    const retained = variant;
-    retained.references++;
-    let released = false;
-    return { compiled: retained.compiled, release: async () => {
-      if (released) return; released = true;
-      if (--retained.references === 0) {
-        if (variant === retained) variant = undefined;
-        await retained.compiled.whenReleased();
-      }
-    } };
-  });
+      const retained = variant;
+      retained.references++;
+      let released = false;
+      return { compiled: retained.compiled, release: async () => {
+        if (released) return; released = true;
+        if (--retained.references === 0) {
+          if (variants.get(kind) === retained) variants.delete(kind);
+          await retained.compiled.whenReleased();
+        }
+      } };
+    });
+    const installShadow = () => {
+      if (shadow || material.shadowDepthWrapper) return;
+      const variant = acquireAuthoredMaterialVariant(material, "shadowDepth")!;
+      const wrapper = new AuthoredShadowDepthWrapper(variant.compiled.material);
+      shadow = { wrapper, variant };
+      material.shadowDepthWrapper = wrapper;
+    };
+    authoredShadowFactories.set(material, {
+      ensure: () => { installShadow(); permanentShadow = true; },
+      acquire: () => { installShadow(); shadowCages++; },
+      release: () => { if (shadowCages > 0 && --shadowCages === 0 && !permanentShadow) releaseShadow(); },
+    });
+    // Static opaque surfaces retain Babylon's cheap native/cached path.
+    if (!isIdentityWorldPositionOffset(plan.outputs.worldPositionOffset ?? null) || plan.blendMode === "masked")
+      ensureAuthoredShadowDepthWrapper(material);
+    material.onDisposeObservable.addOnce(() => {
+      authoredVariantFactories.delete(material);
+      authoredShadowFactories.delete(material);
+      releaseShadow();
+    });
+  }
   // The NodeMaterial stays quarantined until every owned compile-time pass
   // confirms actual native release; a release failure keeps it alive.
   let released: Promise<void> | null = null;
   const disposeCompiled = () => {
     if (disposed) return;
     disposed = true;
-    authoredOutlineFactories.delete(material);
+    authoredVariantFactories.delete(material);
+    authoredShadowFactories.delete(material);
+    releaseShadow();
     finishShaderCheck();
     if (buildState === "pending") {
       buildState = "failed";
@@ -932,7 +1012,7 @@ export function compileMaterialPlan(
     dispose: disposeCompiled,
     whenReleased: () => {
       disposeCompiled();
-      return released ?? Promise.resolve();
+      return Promise.all([released, shadowReleased]).then(() => {});
     },
   };
 }
@@ -1111,21 +1191,6 @@ function connectParticleBlend(
   blend.blendColor.connectTo(target);
 }
 
-function matrixInput(
-  name: string,
-  systemValue: NodeMaterialSystemValues,
-): InputBlock {
-  const block = new InputBlock(
-    // Babylon's floating-origin adapter recognizes u_World/u_View prefixes.
-    // Keep the system matrix first; authored material names may be arbitrary.
-    `${NodeMaterialSystemValues[systemValue]}_${name}`,
-    undefined,
-    NodeMaterialBlockConnectionPointTypes.Matrix,
-  );
-  block.setAsSystemValue(systemValue);
-  return block;
-}
-
 function collectWorldPositionOffsetOperationIds(
   plan: MaterialBuildPlan,
 ): Set<string> {
@@ -1176,116 +1241,6 @@ function applyWorldPositionOffset(
   split.w.connectTo(merge.w);
   created.push(split, add, merge);
   plumbing.worldPosition = merge.xyzw;
-}
-
-/**
- * Vertex transform and world-space geometry every surface material needs.
- * Returns the vertex output node the material must own.
- */
-export function createSurfacePlumbing(
-  name: string,
-  created: NodeMaterialBlock[],
-  plumbing: MaterialPlumbing,
-): NodeMaterialBlock[] {
-  const position = new InputBlock(
-    `${name}_position`,
-    undefined,
-    NodeMaterialBlockConnectionPointTypes.Vector3,
-  );
-  position.setAsAttribute("position");
-  const normal = new InputBlock(
-    `${name}_normal`,
-    undefined,
-    NodeMaterialBlockConnectionPointTypes.Vector3,
-  );
-  normal.setAsAttribute("normal");
-  const uv = new InputBlock(
-    `${name}_uv`,
-    undefined,
-    NodeMaterialBlockConnectionPointTypes.Vector2,
-  );
-  uv.setAsAttribute("uv");
-
-  const world = matrixInput(`${name}_world`, NodeMaterialSystemValues.World);
-  const instances = new InstancesBlock(`${name}_instances`);
-  world.output.connectTo(instances.world);
-  const bones = new BonesBlock(`${name}_bones`);
-  instances.output.connectTo(bones.world);
-  const indicesExtra = new InputBlock(`${name}_indicesExtra`);
-  indicesExtra.setAsAttribute("matricesIndicesExtra");
-  indicesExtra.output.connectTo(bones.matricesIndicesExtra);
-  const weightsExtra = new InputBlock(`${name}_weightsExtra`);
-  weightsExtra.setAsAttribute("matricesWeightsExtra");
-  weightsExtra.output.connectTo(bones.matricesWeightsExtra);
-  const morph = new MorphTargetsBlock(`${name}_morphTargets`);
-  position.output.connectTo(morph.position);
-  normal.output.connectTo(morph.normal);
-  uv.output.connectTo(morph.uv);
-  const viewProjection = matrixInput(
-    `${name}_viewProjection`,
-    NodeMaterialSystemValues.ViewProjection,
-  );
-  const view = matrixInput(`${name}_view`, NodeMaterialSystemValues.View);
-  const cameraPosition = new InputBlock(
-    `${name}_cameraPosition`,
-    undefined,
-    NodeMaterialBlockConnectionPointTypes.Vector3,
-  );
-  cameraPosition.setAsSystemValue(NodeMaterialSystemValues.CameraPosition);
-
-  const worldPosition = new TransformBlock(`${name}_worldPos`);
-  morph.positionOutput.connectTo(worldPosition.vector);
-  bones.output.connectTo(worldPosition.transform);
-
-  const clipPosition = new TransformBlock(`${name}_clipPos`);
-  viewProjection.output.connectTo(clipPosition.transform);
-
-  const worldNormal = new TransformBlock(`${name}_worldNormal`);
-  worldNormal.transformAsDirection = true;
-  morph.normalOutput.connectTo(worldNormal.vector);
-  bones.output.connectTo(worldNormal.transform);
-
-  const viewDirection = new ViewDirectionBlock(`${name}_viewDirection`);
-  worldPosition.output.connectTo(viewDirection.worldPosition);
-  cameraPosition.output.connectTo(viewDirection.cameraPosition);
-
-  const vertexOutput = new VertexOutputBlock(`${name}_vertexOutput`);
-  clipPosition.output.connectTo(vertexOutput.vector);
-
-  created.push(
-    position,
-    normal,
-    uv,
-    world,
-    instances,
-    bones,
-    indicesExtra,
-    weightsExtra,
-    morph,
-    viewProjection,
-    view,
-    cameraPosition,
-    worldPosition,
-    clipPosition,
-    worldNormal,
-    viewDirection,
-    vertexOutput,
-  );
-
-  plumbing.worldPosition = worldPosition.output;
-  plumbing.position = morph.positionOutput;
-  plumbing.localNormal = morph.normalOutput;
-  plumbing.world = bones.output;
-  plumbing.localTangent = morph.tangentOutput;
-  plumbing.clipPosition = clipPosition.vector;
-  plumbing.worldNormal = worldNormal.xyz;
-  plumbing.worldNormal4 = worldNormal.output;
-  plumbing.cameraPosition = cameraPosition.output;
-  plumbing.viewDirection = viewDirection.output;
-  plumbing.uv = morph.uvOutput;
-  plumbing.uv2 = morph.uv2Output;
-  plumbing.view = view.output;
-  return [vertexOutput];
 }
 
 /**

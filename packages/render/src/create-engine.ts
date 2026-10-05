@@ -21,7 +21,7 @@ import { setSceneWaterTime } from "./water-mesh";
 import { RuntimeScalability } from "./runtime-scalability";
 import { RagdollPoseController, type RagdollCaptureResult } from "./ragdoll-pose";
 import { updateBoneAttachments } from "./bone-attachment";
-import { normalizeRenderProjectSettings, normalizePlayFrameCap, playFramebufferSize, fogVolumeBindings, outlineBindings, type RenderProjectSettings, type ScalabilityAcknowledgement } from "@babylonslate/core";
+import { normalizeRenderProjectSettings, normalizePlayFrameCap, playFramebufferSize, fogVolumeBindings, outlineBindings, deformerBindings, type RenderProjectSettings, type ScalabilityAcknowledgement } from "@babylonslate/core";
 import { assetByteFingerprint } from "./asset-byte-fingerprint";
 import { PostProcessParameterState } from "./post-process-parameter-state";
 import { applyPostProcessParameterCommand } from "./post-process-parameter-command";
@@ -31,6 +31,8 @@ import type { RenderPath, ResolvedRenderingPipeline } from "@babylonslate/core";
 import { submitPresentedFrame } from "./presented-frame";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { SceneOutlineHost, isOutlineOnlySceneEdit, type SceneOutlineSelection } from "./scene-outline-host";
+import { SceneDeformerHost, isDeformerOnlySceneEdit } from "./scene-deformer-host";
+import { markLatticeComponentRoot } from "./lattice-deformer";
 import { isTransformOnlySceneEdit } from "./scene-transform-edit";
 import { visualMeshes } from "./visual-meshes";
 import type { SceneLayerLoadIdentity } from "./scene-load-readiness";
@@ -192,6 +194,7 @@ import {
   retirePlaySlot,
   retirePlayWorldSlots,
   migratePlaySlotVisual,
+  meshForPlayComponent,
   type SnapshotSceneBinding,
 } from "./snapshot-apply";
 import { applyAlbedoTexture, installModelSources, installTextureBytes, type MeshAssetContext } from "./mesh-assets";
@@ -965,6 +968,8 @@ function initializeEngine(
   let captureFramePhases = false;
   const outlineHost = new SceneOutlineHost(scene, worldRenderer, () => scheduler.invalidate("selection"));
   onRollback(() => outlineHost.dispose());
+  const deformerHost = new SceneDeformerHost(scene);
+  onRollback(() => deformerHost.dispose());
   let lockedViewSize: { width: number; height: number } | null = null;
   const scaledLockedViewSize = () => lockedViewSize ? {
     width: Math.max(1, Math.floor(lockedViewSize.width / engine.getHardwareScalingLevel())),
@@ -1462,10 +1467,26 @@ function initializeEngine(
     ? new EditorSceneSync(scene, scheduler, {
         freezeActiveMeshes: false,
         resolveMaterial: (guid) => binding.resolveMaterial?.(guid) ?? null,
-        onAfterApply: () => { viewportShading?.apply(); syncEditorOutlines(); syncEditorFogVolumes(); },
+        onAfterApply: () => { viewportShading?.apply(); syncEditorDeformers(); syncEditorOutlines(); syncEditorFogVolumes(); },
       })
     : null;
   onRollback(() => editorSync?.dispose());
+  const syncEditorDeformers = () => {
+    const data = editorSync?.serializedScene();
+    if (!editorSync || !data) return;
+    // Mark every boundary before resolving cages: attached components/actors
+    // remain separate deformation owners, even if they have no deformer.
+    for (const actor of data.actors) {
+      const root = editorSync.meshForActor(actor.id);
+      if (root) markLatticeComponentRoot(root);
+      for (const target of editorSync.visualComponentRootsForActor(actor.id)) markLatticeComponentRoot(target);
+    }
+    for (const actor of data.actors) {
+      deformerHost.setActor(actor.id, deformerBindings(actor.id, actor.components),
+        (id) => editorSync.meshForComponent(actor.id, id), true);
+    }
+    deformerHost.retainActors(new Set(data.actors.map((actor) => actor.id)));
+  };
   const syncEditorOutlines = () => {
     const data = editorSync?.serializedScene();
     if (!editorSync || !data) return;
@@ -1474,6 +1495,27 @@ function initializeEngine(
     outlineHost.refreshSettings();
   };
   const outlineActorBySlot = new Map<number, string>();
+  const deformerActorBySlot = new Map<number, string>();
+  const refreshRuntimeDeformers = (slotId: number, refreshGeometry = true) => {
+    if (options.editor) return;
+    const root = binding.meshes.get(slotId);
+    const authored = binding.deformers.get(slotId);
+    const previous = deformerActorBySlot.get(slotId);
+    if (previous && (!authored || previous !== authored.actorId || !root || root.getScene() !== scene || binding.isOverlaySlot?.(slotId))) {
+      deformerHost.removeActor(previous);
+      deformerActorBySlot.delete(slotId);
+    }
+    if (!root || root.getScene() !== scene || binding.isOverlaySlot?.(slotId)) return;
+    markLatticeComponentRoot(root);
+    for (const part of binding.meshParts.get(slotId) ?? []) {
+      const target = meshForPlayComponent(binding, slotId, part.componentId);
+      if (target) markLatticeComponentRoot(target);
+    }
+    if (!authored) return;
+    deformerHost.setActor(authored.actorId, authored.bindings,
+      (id) => meshForPlayComponent(binding, slotId, id), refreshGeometry);
+    deformerActorBySlot.set(slotId, authored.actorId);
+  };
   const editorFogActors = new Set<string>();
   const syncEditorFogVolumes = () => {
     const data = editorSync?.serializedScene();
@@ -1523,6 +1565,7 @@ function initializeEngine(
     outlineActorBySlot.set(slotId, actorId);
   };
   binding.onVisualChanged = (slotId) => {
+    refreshRuntimeDeformers(slotId);
     refreshRuntimeOutline(slotId);
     refreshRuntimeFogVolumes(slotId);
   };
@@ -1625,6 +1668,7 @@ function initializeEngine(
     assertCurrent(loadGeneration);
     if (editorSync && loadOptions?.sceneAssetGuid === lastSceneAssetGuid &&
       (isTransformOnlySceneEdit(editorSync.serializedScene(), sceneData) ||
+        isDeformerOnlySceneEdit(editorSync.serializedScene(), sceneData) ||
         isFogVolumeOnlySceneEdit(editorSync.serializedScene(), sceneData))) {
       editorSync.apply(sceneData);
       return;
@@ -2665,6 +2709,7 @@ function initializeEngine(
         }
       };
       track(bounded, () => retireAttachedStack());
+      track(bounded, () => deformerHost.dispose());
       track(bounded, () => outlineHost.dispose());
       track(bounded, () => nativeRetirement.whenDisposed());
       track(bounded, () => worldRenderer.retire());
@@ -2913,6 +2958,18 @@ function initializeEngine(
         catch (error) {
           if (previous) binding.outlines.set(command.slotId, previous);
           else binding.outlines.delete(command.slotId);
+          throw error;
+        }
+        scheduler.invalidate("asset");
+      }
+      if (command.type === "setActorDeformers") {
+        const previous = binding.deformers.get(command.slotId);
+        if (previous?.actorId === command.actorId && previous.revision >= command.revision) return;
+        binding.deformers.set(command.slotId, { actorId: command.actorId, revision: command.revision, bindings: command.deformers });
+        try { refreshRuntimeDeformers(command.slotId, false); }
+        catch (error) {
+          if (previous) binding.deformers.set(command.slotId, previous);
+          else binding.deformers.delete(command.slotId);
           throw error;
         }
         scheduler.invalidate("asset");

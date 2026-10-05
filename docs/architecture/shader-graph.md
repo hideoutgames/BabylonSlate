@@ -314,7 +314,11 @@ not author:
   WPO read the undisplaced vertex; fragment-only World Position nodes compile
   afterwards and see the displaced position. One World Position node wired into
   both keeps the pre-offset value — duplicate the node if you need both. Clip
-  and PBR lighting use the displaced position. Displacement does not inflate
+  and PBR lighting use the displaced position. Authored shadow maps, outlines,
+  and Render Target Depth Pass / World Normal captures retain the same WPO
+  and masked alpha-clip graph, including parameter edits and resets. World Normal
+  captures keep their geometry-normal contract rather than evaluating normal maps.
+  Displacement does not inflate
   the mesh AABB, so large waves can cull early; authors recompute normals on
   the **Normal** channel when they need them.
 - **Post process**: the `position2d` fullscreen quad, its vertex output, and the
