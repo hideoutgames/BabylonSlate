@@ -6,7 +6,7 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 import { useCallback, type MouseEvent, type ReactNode } from "react";
-import { ClockIcon, PlugIcon, ZapIcon } from "lucide-react";
+import { ClockIcon, PlugIcon, RadioIcon } from "lucide-react";
 import {
   ContextMenuOverlay,
   humanizePropertyLabel,
@@ -332,7 +332,7 @@ function nodeCornerMarker(data: Record<string, unknown> | undefined) {
     return { Icon: PlugIcon, label: "Script Interface Function" };
   }
   if (Object.hasOwn(EVENT_BY_TYPE_ID, nodeType) || nodeType === "flow.event.custom") {
-    return { Icon: ZapIcon, label: "Event" };
+    return { Icon: RadioIcon, label: "Event" };
   }
   return null;
 }
@@ -369,11 +369,11 @@ export function BlueprintNodeShell({
           role="img"
           aria-label={marker.label}
           className={cn(
-            "pointer-events-none absolute right-0 top-0 flex size-6 translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-graph-node text-foreground",
+            "pointer-events-none absolute right-0 top-0 z-10 flex size-20 translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-border bg-graph-node text-foreground shadow-sm",
             disabled && "opacity-50",
           )}
         >
-          <marker.Icon className="size-4" aria-hidden="true" />
+          <marker.Icon className="size-16" strokeWidth={1.75} aria-hidden="true" />
         </span>
       ) : null}
       <div
@@ -392,6 +392,7 @@ export function BlueprintNodeShell({
           <div
             className={cn(
               "rounded-t-lg px-4 py-2.5 text-base font-semibold leading-snug whitespace-nowrap text-node-title",
+              marker && "pr-14",
               nodeRoleClass(role),
             )}
           >
