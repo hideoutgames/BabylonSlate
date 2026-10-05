@@ -53,7 +53,32 @@ describe("applyPrintHudCommand", () => {
   });
 });
 
+describe("applyPrintHudCommand expiry", () => {
+  it("drops expired prints so a print every frame stays bounded", () => {
+    let entries = applyPrintHudCommand([], { message: "keep", key: "hp", duration: 60 }, 0);
+    for (let frame = 0; frame < 1_000; frame += 1) {
+      entries = applyPrintHudCommand(entries, { message: `tick ${frame}`, duration: 0 }, frame * 16);
+    }
+    // Only this frame's print and the still-live keyed one remain.
+    expect(entries.map((entry) => entry.message)).toEqual(["keep", "tick 999"]);
+    expect(visiblePrintHudEntries(entries, 999 * 16).map((entry) => entry.message)).toEqual([
+      "keep",
+      "tick 999",
+    ]);
+  });
+});
+
 describe("nextPrintHudTimeoutMs", () => {
+  it("handles more visible prints than a spread argument list allows", () => {
+    const entries = Array.from({ length: 300_000 }, (_, index) => ({
+      key: `k${index}`,
+      message: "",
+      color: "",
+      expiresAt: 2_000 + index,
+    }));
+    expect(nextPrintHudTimeoutMs(entries, 1_000)).toBe(1_000);
+  });
+
   it("returns the delay until the soonest visible expiry", () => {
     const entries = applyPrintHudCommand(
       [],

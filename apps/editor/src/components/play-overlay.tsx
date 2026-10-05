@@ -37,8 +37,8 @@ import {
   type LiveEngineSettings,
 } from "../lib/viewport-render-gate";
 import { createCanvasResizeGuard } from "../lib/canvas-resize-guard";
-import { PrintOverlay, usePrintRegistry } from "./print-overlay";
-import { DebugConsole, type DebugConsoleLogEntry } from "./debug-console";
+import { PrintHud, type PrintHudPrint } from "./print-overlay";
+import { DebugConsole } from "./debug-console";
 import { DebugBehaviourTreeDialog } from "./debug-behaviour-tree-dialog";
 import type { DebugBehaviourTree } from "@babylonslate/bridge";
 import { DebugInspectDialog } from "./debug-inspect-dialog";
@@ -86,6 +86,7 @@ import {
   type FontAssetEntry,
 } from "@babylonslate/render";
 import { useInspectWorldPoll } from "../lib/use-inspect-world-poll";
+import { useDebugConsoleLogs } from "../lib/use-debug-console-logs";
 import { usePlay } from "../context/play-context";
 
 export interface PlayOverlayProps {
@@ -259,8 +260,7 @@ export function PlayOverlay({
   const [draws, setDraws] = useState(0);
   const [rendering, setRendering] = useState<RenderDiagnostics>();
   const [bridgeRate, setBridgeRate] = useState(0);
-  const [logs, setLogs] = useState<DebugConsoleLogEntry[]>([]);
-  const logSequence = useRef(0);
+  const { logs, pushLog } = useDebugConsoleLogs();
   const [treeOpen, setTreeOpen] = useState(false);
   const [trees, setTrees] = useState<readonly DebugBehaviourTree[]>([]);
   const [moveX, setMoveX] = useState<number | null>(null);
@@ -286,9 +286,7 @@ export function PlayOverlay({
     phase: "Preparing Scene",
     progress: 0,
   });
-  const { entries: printEntries, print } = usePrintRegistry();
-  const printRef = useRef(print);
-  printRef.current = print;
+  const printRef = useRef<PrintHudPrint | null>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const closedRef = useRef(false);
@@ -571,24 +569,10 @@ export function PlayOverlay({
         setPublishMs(stats.publishMs);
         setMoveX(sessionRef.current?.lastMoveX() ?? null);
       },
-      onLog: (message, severity) => {
-        const entry = {
-          id: ++logSequence.current,
-          timestamp: Date.now(),
-          severity,
-          message,
-        };
-        setLogs((prev) => [...prev.slice(-499), entry]);
-      },
+      onLog: (message, severity) => pushLog(severity, message),
       onPrint: (entry) => {
-        printRef.current(entry);
-        const line = {
-          id: ++logSequence.current,
-          timestamp: Date.now(),
-          severity: "print",
-          message: entry.message,
-        };
-        setLogs((prev) => [...prev.slice(-499), line]);
+        printRef.current?.(entry);
+        pushLog("print", entry.message);
       },
       onBehaviourTreeDebug: (enabled) => {
         setTreeOpen(enabled);
@@ -699,7 +683,7 @@ export function PlayOverlay({
         sessionRef.current = null;
       }
     };
-  }, [sharedEngine, injectFixtureThrow, reportBtState]);
+  }, [sharedEngine, injectFixtureThrow, reportBtState, pushLog]);
 
   useEffect(() => {
     if (!isTestModeEnabled()) return;
@@ -859,7 +843,7 @@ export function PlayOverlay({
           sessionRef.current?.handle.steerPlayFreeCam(forward, right)
         }
       />
-      <PrintOverlay entries={printEntries} />
+      <PrintHud printRef={printRef} />
       {rendering && lightsDebugText(rendering) ? (
         <pre className="pointer-events-none absolute top-12 right-3 m-0 max-h-64 max-w-xl overflow-hidden whitespace-pre-wrap rounded-md bg-background/80 p-2 font-mono text-xs text-foreground" data-testid="lights-debug-overlay">
           <SelectableText>{lightsDebugText(rendering)}</SelectableText>

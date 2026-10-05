@@ -21,7 +21,8 @@ import {
   isExpectedPreviewMessage,
   previewTargetFromSrc,
 } from "../lib/preview-build-handoff";
-import { DebugConsole, type DebugConsoleLogEntry } from "./debug-console";
+import { DebugConsole } from "./debug-console";
+import { useDebugConsoleLogs } from "../lib/use-debug-console-logs";
 import { DebugBehaviourTreeDialog } from "./debug-behaviour-tree-dialog";
 import { Button } from "@babylonslate/ui/components/button";
 import {
@@ -50,7 +51,7 @@ export function PreviewBuildOverlay({
   error = null,
 }: PreviewBuildOverlayProps) {
   const [consoleOpen, setConsoleOpen] = useState(false);
-  const [logs, setLogs] = useState<DebugConsoleLogEntry[]>([]);
+  const { logs, pushLog } = useDebugConsoleLogs();
   const [trees, setTrees] = useState<readonly DebugBehaviourTree[]>([]);
   const [treeOpen, setTreeOpen] = useState(false);
   const [userCommands, setUserCommands] = useState<
@@ -160,14 +161,10 @@ export function PreviewBuildOverlay({
         ["log", "print", "diagnostic"].includes(command?.type) &&
         typeof command.message === "string"
       ) {
-        const entry = {
-          id: ++sequence.current,
-          timestamp: Date.now(),
-          severity:
-            command.type === "print" ? "print" : (command.severity ?? "log"),
-          message: command.message,
-        };
-        setLogs((previous) => [...previous.slice(-499), entry]);
+        pushLog(
+          command.type === "print" ? "print" : (command.severity ?? "log"),
+          command.message,
+        );
       }
       if (command?.type === "setBehaviourTreeDebug") {
         setTreeOpen(command.enabled === true);
@@ -186,7 +183,7 @@ export function PreviewBuildOverlay({
       }
       requests.clear();
     };
-  }, [iframeRef, origin]);
+  }, [iframeRef, origin, pushLog]);
   useEffect(() => {
     if (!consoleOpen) return;
     const refresh = () =>

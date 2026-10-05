@@ -56,7 +56,11 @@ export function applyPrintHudCommand(
   random: () => number = Math.random,
 ): PrintHudEntry[] {
   const key = command.key?.trim() || `print_${now}_${random()}`;
-  const next = entries.filter((entry) => entry.key !== key);
+  // Expired entries are already invisible; dropping them keeps a print every
+  // frame from growing the list (and this filter) for the whole session.
+  const next = entries.filter(
+    (entry) => entry.key !== key && entry.expiresAt > now,
+  );
   next.push({
     key,
     message: command.message,
@@ -78,9 +82,12 @@ export function nextPrintHudTimeoutMs(
   entries: readonly PrintHudEntry[],
   now = Date.now(),
 ): number | null {
-  const visible = visiblePrintHudEntries(entries, now);
-  if (visible.length === 0) return null;
-  const soonest = Math.min(...visible.map((entry) => entry.expiresAt));
+  // A loop, not Math.min(...spread): a large visible set overflows the stack.
+  let soonest = Infinity;
+  for (const entry of entries) {
+    if (entry.expiresAt > now && entry.expiresAt < soonest) soonest = entry.expiresAt;
+  }
+  if (soonest === Infinity) return null;
   const delay = soonest - now;
   return delay > 0 ? delay : null;
 }
