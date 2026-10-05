@@ -374,7 +374,7 @@ float swSlopeLit = max(dot(swSwellNormal, swL), 0.0);
 vec3 swScatter = swScatterCol * (swAmb * (0.55 + 0.45 * swCrestLift) + swSun * (0.35 * swFaceLit + 0.3 * swSlopeLit));${ifDefined(WATER_FEATURE_DEFINES.subsurface, `
 float swBehind = pow(max(dot(swL, -swV), 0.0), 4.0);
 float swPeak = clamp(swCrest * 0.5 + 0.5 + swChopH * 0.6, 0.0, 1.2);
-float swThrough = swBehind * swPeak * pow(clamp(0.5 - 0.5 * dot(swL, swWaveN), 0.0, 1.0), 3.0) * 4.0;
+float swThrough = swBehind * swPeak * pow(clamp(0.5 - 0.5 * dot(swL, swWaveN), 0.0, 1.0), 2.0) * 6.0;
 swScatter += U.slateWaterShallow.rgb * vec3(0.9, 1.15, 0.85) * swSun * (U.slateWaterLook.w * (swThrough + smoothstep(0.2, 0.9, swFoldN) * swRough * 0.15));`)}
 
 // Foam: a clumpy, bubbly pattern thresholded by a foam density (Crest-style), so dense foam is solid, then opens
@@ -587,7 +587,7 @@ float swCapAA = fwidth(swCapDrive) * 0.75 + 0.005;
 float swCapOuter = smoothstep(swCapThreshold - swCapAA, swCapThreshold + swCapAA, swCapDrive);
 float swCapInner = smoothstep(swCapThreshold + 0.1 - swCapAA, swCapThreshold + 0.1 + swCapAA, swCapDrive);
 ${fromTier(1, `
-float swCapBreak = smoothstep(0.42, 0.52, swFine * 0.7 + swMedium * 0.3);`, `
+float swCapBreak = smoothstep(0.36, 0.46, swFine * 0.7 + swMedium * 0.3);`, `
 // Low has no fine noise: wavy bands across the crest break the core instead.
 float swCapBreak = smoothstep(-0.25, 0.25, sin(dot(swFlowed, vec2(3.7, 2.3)) + swMedium * 6.0));`)}
 swToonCap = swCapOuter - swCapInner + swCapInner * swCapBreak;`)}
