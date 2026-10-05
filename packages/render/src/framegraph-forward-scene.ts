@@ -11,7 +11,7 @@ import type { SharedOutlineView } from "./shared-outline";
 import { FrameGraphSharedOutlineTask } from "./shared-outline-task";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
 import { sceneRenderingSettings, sceneWaterQualityRevision } from "./render-settings";
-import { WaterSceneCopyGraph, waterSceneCopyScale } from "./water-scene-copy";
+import { WaterSceneCopyGraph, waterSceneCopyDemand, waterSceneCopyScale } from "./water-scene-copy";
 import type { AttachedPostProcessStack, AttachPostProcessStackOptions } from "./post-process-material";
 import { Constants } from "@babylonjs/core";
 import type { AbstractMesh, Camera, FrameGraphObjectList, InternalTexture, Light, Observable, Observer, Scene } from "@babylonjs/core";
@@ -112,8 +112,8 @@ export class ForwardSceneFrameGraph {
   private preparedEffectsKey: string | undefined;
   /** Water quality the graph's water-owned passes were planned for. */
   private preparedWaterRevision = -1;
-  /** waterSceneCopyScale when the graph was planned (0: no scene copy); -1 before any plan. */
-  private preparedWaterScale = -1;
+  /** waterSceneCopyDemand when the graph was planned; -1 before any plan. */
+  private preparedWaterDemand = -1;
   private water: WaterSceneCopyGraph | undefined;
   private retirement: Promise<void> | undefined;
   private released: Promise<void> | undefined;
@@ -774,15 +774,20 @@ export class ForwardSceneFrameGraph {
         this.preparedEffectsKey !== this.effectsKey(camera) || !this.outlineMatches() || !this.waterMatches(camera) ||
         this.clustered?.needsPreparation(camera) ||
         this.outputColor !== output.color || this.outputDepth !== output.depth ||
-        (this.postProcessGraph || this.effectsGraph || this.outlineTask || this.water) &&
+        (this.postProcessGraph || this.effectsGraph || this.outlineTask) &&
           (this.preparedWidth !== output.width || this.preparedHeight !== output.height))
+        this.releaseGraph();
+      // A water scene copy follows a backbuffer resize in place: like the
+      // default graph, the rebuild keeps every task and render pass id.
+      else if (this.water && (this.preparedWidth !== output.width || this.preparedHeight !== output.height) &&
+        !this.water.resize(output.width, output.height))
         this.releaseGraph();
       // Record the inputs the tasks are built from; a change during the awaits
       // below must leave this graph stale.
       const postProcessRevision = this.postProcessRevision;
       const effectsKey = this.effectsKey(camera);
       const waterRevision = sceneWaterQualityRevision(scene);
-      const waterScale = waterSceneCopyScale(scene, camera);
+      const waterDemand = waterSceneCopyDemand(scene, camera);
       if (!this.graph) {
         this.graph = new FrameGraph(scene);
         this.preparedOutlineView = this.outlineView?.active ? this.outlineView : undefined;
@@ -882,6 +887,9 @@ export class ForwardSceneFrameGraph {
         this.objects.targetTexture = this.clear.outputTexture;
         this.objects.depthTexture = this.clear.outputDepthTexture;
         this.objects.isMainObjectRenderer = true;
+        // Clustered lighting rejects the copy; checked only here, since the
+        // graph already re-plans when the cluster target changes.
+        const waterScale = waterDemand > 0 ? waterSceneCopyScale(scene, camera) : 0;
         if (waterScale > 0) {
           // Sample the chain's scene targets or an imported output directly;
           // only the backbuffer (or a stencil depth) needs an own pair.
@@ -992,7 +1000,7 @@ export class ForwardSceneFrameGraph {
       this.preparedPostProcessRevision = postProcessRevision;
       this.preparedEffectsKey = effectsKey;
       this.preparedWaterRevision = waterRevision;
-      this.preparedWaterScale = waterScale;
+      this.preparedWaterDemand = waterDemand;
       this.preparedWidth = width;
       this.preparedHeight = height;
       this.failure = undefined;
@@ -1029,12 +1037,12 @@ export class ForwardSceneFrameGraph {
   }
 
   /** Water-owned passes (scene copy, planar, FFT) are planned with the graph,
-   * so a project Water quality change, or a change in scene-copy admission
-   * (built-in water added or removed, group clears, output), re-plans it.
+   * so a project Water quality change, or a change in scene-copy demand
+   * (copy-sampling water added or removed, group clears, output), re-plans it.
    * Number compares per frame, with no allocation. */
   private waterMatches(camera: Camera): boolean {
     return this.preparedWaterRevision === sceneWaterQualityRevision(this.scene) &&
-      this.preparedWaterScale === waterSceneCopyScale(this.scene, camera);
+      this.preparedWaterDemand === waterSceneCopyDemand(this.scene, camera);
   }
 
   /** Every camera-bound task of the prepared graph follows the frame's camera. */
@@ -1181,7 +1189,7 @@ export class ForwardSceneFrameGraph {
     this.preparedOutlineView = undefined;
     this.preparedEffectsKey = undefined;
     this.preparedWaterRevision = -1;
-    this.preparedWaterScale = -1;
+    this.preparedWaterDemand = -1;
     this.water = undefined;
     this.outputCopy = undefined;
     this.objects = undefined;

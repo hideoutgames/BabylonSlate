@@ -1,12 +1,13 @@
 import {
   Constants, EffectWrapper, Matrix, MultiMaterial, RenderingManager, ShaderLanguage, Texture, ThinTexture,
-  type AbstractMesh, type Camera, type FrameGraphObjectList, type IParticleSystem, type Scene,
+  type AbstractEngine, type AbstractMesh, type Camera, type FrameGraphObjectList, type IParticleSystem, type Scene,
 } from "@babylonjs/core";
 import { ShaderStore } from "@babylonjs/core/Engines/shaderStore";
 import { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
 import type { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
 import type { FrameGraphCullObjectsTask } from "@babylonjs/core/FrameGraph/Tasks/Misc/cullObjectsTask";
+import { FrameGraphObjectRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/objectRendererTask";
 import { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/clearTextureTask";
 import { FrameGraphCopyToBackbufferColorTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/copyToBackbufferColorTask";
 import { FrameGraphCopyToTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/copyToTextureTask";
@@ -22,8 +23,8 @@ import {
 } from "./managed-render-resources";
 import { retireOwnedEffect, type OwnedEffectRetirement } from "./owned-effect-retirement";
 import { sceneWaterQualityDeviceClamp } from "./render-settings";
-import { managedRenderTextureResource } from "./render-target-resource-cost";
-import { sceneBuiltInWaterCount, waterMeshSamplesSceneCopy } from "./water-mesh";
+import { managedRenderTextureResource, renderTargetAllocationBytes } from "./render-target-resource-cost";
+import { sceneWaterSamplesSceneCopy, waterMeshSamplesSceneCopy } from "./water-mesh";
 import type { WaterQualityDeviceClamp } from "./water-quality-device";
 
 /** Linear view depth written for sky / far-plane pixels (the sentinel volumetric-shader also uses). */
@@ -51,7 +52,7 @@ export interface WaterSceneCopy {
   readonly invSize: readonly [number, number];
   /** Copy resolution relative to the output (device-effective Refraction Resolution). */
   readonly scale: number;
-  /** Process-unique; changes whenever `texture` is (re)attached. */
+  /** Process-unique; changes whenever `texture` is (re)attached or the output is resized. */
   readonly revision: number;
 }
 
@@ -98,23 +99,51 @@ function sampleableOutput(camera: Camera): boolean {
   return depth !== null && depth !== undefined && !HasStencilAspect(depth.format);
 }
 
+/** A copy texel's size for an output dimension, as FrameGraph resolves a percentage size. */
+function copyDimension(output: number, scale: number): number {
+  return Math.floor((scale * 100 * output) / 100);
+}
+
 /**
- * The copy scale this view's graph plans, or 0 when no scene copy is admitted:
- * device-effective Refraction or a screen-space reflection march, a
- * built-in water surface in the scene, half-float render targets, Forward
- * lighting, no per-group depth clear in groups 1–3, and (when the output itself
- * cannot be sampled and an own colour/depth pair stands in) a cleared frame.
- * Cheap and allocation-free; the graph re-plans when the value changes.
+ * The copy scale the scene and view ask for, or 0: device-effective Refraction
+ * or a screen-space reflection march, built-in water whose asset samples that
+ * feature (Refraction above 0, or Object Reflections), half-float render
+ * targets, no per-group depth clear in groups 1–3, (when the output itself
+ * cannot be sampled and an own colour/depth pair stands in) a cleared frame,
+ * and an output large enough for a copy texel. Cheap and allocation-free: a
+ * view compares it every frame and re-plans when it changes. Clustered
+ * lighting is checked only when planning (`waterSceneCopyScale`).
+ */
+export function waterSceneCopyDemand(scene: Scene, camera: Camera): number {
+  const clamp = sceneWaterQualityDeviceClamp(scene);
+  const refraction = refractionDemand(clamp), screenSpace = screenSpaceDemand(clamp);
+  if (!refraction && !screenSpace) return 0;
+  const engine = scene.getEngine();
+  if (!engine.getCaps().textureHalfFloatRender) return 0;
+  if (!sceneWaterSamplesSceneCopy(scene, refraction, screenSpace)) return 0;
+  if (clearsDepthBetweenGroups(scene)) return 0;
+  if (!sampleableOutput(camera) && !(scene.autoClear && scene.autoClearDepthAndStencil)) return 0;
+  const scale = clamp.quality.refractionScale;
+  const target = camera.outputRenderTarget;
+  const width = target ? target.getRenderWidth() : engine.getRenderWidth(true);
+  const height = target ? target.getRenderHeight() : engine.getRenderHeight(true);
+  if (copyDimension(width, scale) < 1 || copyDimension(height, scale) < 1) return 0;
+  return scale;
+}
+
+/**
+ * The copy scale a view's graph plans, or 0 when no scene copy is admitted:
+ * `waterSceneCopyDemand` on Forward lighting (a clustered target rejects the
+ * copy; the graph already re-plans when that target changes).
  */
 export function waterSceneCopyScale(scene: Scene, camera: Camera): number {
-  const clamp = sceneWaterQualityDeviceClamp(scene);
-  if (!refractionDemand(clamp) && !screenSpaceDemand(clamp)) return 0;
-  if (!scene.getEngine().getCaps().textureHalfFloatRender) return 0;
-  if (sceneBuiltInWaterCount(scene) === 0) return 0;
-  if (clearsDepthBetweenGroups(scene)) return 0;
-  if (clusteredLightTarget(scene, camera)) return 0;
-  if (!sampleableOutput(camera) && !(scene.autoClear && scene.autoClearDepthAndStencil)) return 0;
-  return clamp.quality.refractionScale;
+  const scale = waterSceneCopyDemand(scene, camera);
+  return scale > 0 && clusteredLightTarget(scene, camera) ? 0 : scale;
+}
+
+/** Copy taps per axis: every source texel a downsampled texel covers at integer ratios (4×4 at 0.25). */
+function copyTaps(scale: number): number {
+  return scale >= 1 ? 1 : Math.min(4, Math.ceil(1 / scale - 1e-6));
 }
 
 /** Whether any sub-material of `mesh` draws in the transparent queue (RenderingGroup.dispatch's test). */
@@ -129,12 +158,18 @@ function blendsForMesh(mesh: AbstractMesh, scene: Scene): boolean {
   return material.needAlphaBlendingForMesh(mesh);
 }
 
+/** Whether `mesh` is among the first `count` entries of `list`. */
+function listed(list: readonly AbstractMesh[], count: number, mesh: AbstractMesh): boolean {
+  for (let index = 0; index < count; index += 1) if (list[index] === mesh) return true;
+  return false;
+}
+
 function registerWaterSceneCopyShaders(): void {
   ShaderStore.ShadersStore[`${WATER_SCENE_COPY_SHADER}PixelShader`] = `
 varying vec2 vUV;
 uniform sampler2D sceneColor;
 uniform sampler2D sceneDepth;
-uniform vec2 footprint;
+uniform vec2 copyTexel;
 uniform mat4 inverseProjection;
 uniform vec2 depthRange;
 uniform float reverseDepth;
@@ -147,17 +182,18 @@ vec3 slateSceneColor(vec2 uv) {
   return decodeSrgb > 0.5 ? toLinearSpace(c) : c;
 }
 void main(void) {
-#ifdef SLATE_COPY_FOOTPRINT
-  vec2 uvA = vUV - footprint;
-  vec2 uvB = vUV + vec2(footprint.x, -footprint.y);
-  vec2 uvC = vUV + vec2(-footprint.x, footprint.y);
-  vec2 uvD = vUV + footprint;
-  vec3 rgb = 0.25 * (slateSceneColor(uvA) + slateSceneColor(uvB) + slateSceneColor(uvC) + slateSceneColor(uvD));
-  float raw = slateNearer(slateNearer(texture2D(sceneDepth, uvA).r, texture2D(sceneDepth, uvB).r), slateNearer(texture2D(sceneDepth, uvC).r, texture2D(sceneDepth, uvD).r));
-#else
-  vec3 rgb = slateSceneColor(vUV);
-  float raw = texture2D(sceneDepth, vUV).r;
-#endif
+  // SLATE_COPY_TAPS² taps spread evenly over this texel's footprint: at integer ratios, the
+  // centre of every source texel it covers, so even a one-texel occluder keeps its depth.
+  vec3 rgb = vec3(0.0);
+  float raw = reverseDepth > 0.5 ? 0.0 : 1.0;
+  for (int y = 0; y < SLATE_COPY_TAPS; y++) {
+    for (int x = 0; x < SLATE_COPY_TAPS; x++) {
+      vec2 uv = vUV + ((vec2(float(x), float(y)) + 0.5) / float(SLATE_COPY_TAPS) - 0.5) * copyTexel;
+      rgb += slateSceneColor(uv);
+      raw = slateNearer(raw, texture2D(sceneDepth, uv).r);
+    }
+  }
+  rgb /= float(SLATE_COPY_TAPS * SLATE_COPY_TAPS);
   float sky = reverseDepth > 0.5 ? step(raw, 0.0) : step(1.0, raw);
   vec4 view = inverseProjection * vec4(vUV * 2.0 - 1.0, raw * depthRange.x + depthRange.y, 1.0);
   float w = abs(view.w) > 1e-8 ? view.w : 1e-8;
@@ -172,7 +208,7 @@ var sceneColorSampler: sampler;
 var sceneColor: texture_2d<f32>;
 var sceneDepthSampler: sampler;
 var sceneDepth: texture_2d<f32>;
-uniform footprint: vec2f;
+uniform copyTexel: vec2f;
 uniform inverseProjection: mat4x4f;
 uniform depthRange: vec2f;
 uniform reverseDepth: f32;
@@ -187,18 +223,17 @@ fn slateSceneDepth(uv: vec2f) -> f32 { return textureSampleLevel(sceneDepth, sce
 @fragment
 fn main(input: FragmentInputs) -> FragmentOutputs {
   let uv = fragmentInputs.vUV;
-#ifdef SLATE_COPY_FOOTPRINT
-  let offset = uniforms.footprint;
-  let uvA = uv - offset;
-  let uvB = uv + vec2f(offset.x, -offset.y);
-  let uvC = uv + vec2f(-offset.x, offset.y);
-  let uvD = uv + offset;
-  let rgb = 0.25 * (slateSceneColor(uvA) + slateSceneColor(uvB) + slateSceneColor(uvC) + slateSceneColor(uvD));
-  let raw = slateNearer(slateNearer(slateSceneDepth(uvA), slateSceneDepth(uvB)), slateNearer(slateSceneDepth(uvC), slateSceneDepth(uvD)));
-#else
-  let rgb = slateSceneColor(uv);
-  let raw = slateSceneDepth(uv);
-#endif
+  let taps = f32(SLATE_COPY_TAPS);
+  var rgb = vec3f(0.0);
+  var raw: f32 = select(1.0, 0.0, uniforms.reverseDepth > 0.5);
+  for (var y: i32 = 0; y < SLATE_COPY_TAPS; y++) {
+    for (var x: i32 = 0; x < SLATE_COPY_TAPS; x++) {
+      let tap = uv + ((vec2f(f32(x), f32(y)) + 0.5) / taps - 0.5) * uniforms.copyTexel;
+      rgb += slateSceneColor(tap);
+      raw = slateNearer(raw, slateSceneDepth(tap));
+    }
+  }
+  rgb = rgb / (taps * taps);
   let sky = select(step(1.0, raw), step(raw, 0.0), uniforms.reverseDepth > 0.5);
   let view = uniforms.inverseProjection * vec4f(uv * 2.0 - 1.0, raw * uniforms.depthRange.x + uniforms.depthRange.y, 1.0);
   let w = select(1e-8, view.w, abs(view.w) > 1e-8);
@@ -207,6 +242,9 @@ fn main(input: FragmentInputs) -> FragmentOutputs {
 }
 `;
 }
+
+/** A target the split plans, relative to the view's output size. */
+type TargetSpec = { name: string; format: number; type: number; scale: number };
 
 /**
  * The packed copy: one pass and one target. A direct FrameGraphTask with an
@@ -220,8 +258,9 @@ class WaterSceneCopyTask extends FrameGraphTask {
   draws = 0;
   private readonly wrapper: EffectWrapper;
   private readonly inverseProjection = Matrix.Identity();
-  private readonly footprintX: number;
-  private readonly footprintY: number;
+  /** One copy texel in uv, refreshed each time the graph records (a resize re-records). */
+  private texelX = 0;
+  private texelY = 0;
   private readonly sourceColor: FrameGraphTextureHandle;
   private readonly sourceDepth: FrameGraphTextureHandle;
   private retirement: OwnedEffectRetirement | undefined;
@@ -231,30 +270,19 @@ class WaterSceneCopyTask extends FrameGraphTask {
     graph: FrameGraph,
     sourceColor: FrameGraphTextureHandle,
     sourceDepth: FrameGraphTextureHandle,
-    width: number,
-    height: number,
-    footprint: boolean,
+    output: FrameGraphTextureHandle,
+    taps: number,
   ) {
     super(name, graph);
     this.sourceColor = sourceColor;
     this.sourceDepth = sourceDepth;
-    this.outputTexture = graph.textureManager.createRenderTargetTexture(name, {
-      size: { width, height }, sizeIsPercentage: false,
-      options: {
-        createMipMaps: false, samples: 1, types: [Constants.TEXTURETYPE_HALF_FLOAT],
-        formats: [Constants.TEXTUREFORMAT_RGBA], useSRGBBuffers: [false],
-      },
-    });
-    // A quarter output texel each way: at half scale these are the centres of
-    // the 2×2 source texels, so the taps ignore the source's sampling mode.
-    this.footprintX = footprint ? 0.25 / width : 0;
-    this.footprintY = footprint ? 0.25 / height : 0;
+    this.outputTexture = output;
     registerWaterSceneCopyShaders();
     this.wrapper = new EffectWrapper({
       name, engine: graph.engine, useShaderStore: true, fragmentShader: WATER_SCENE_COPY_SHADER,
-      uniformNames: ["footprint", "inverseProjection", "depthRange", "reverseDepth", "decodeSrgb"],
+      uniformNames: ["copyTexel", "inverseProjection", "depthRange", "reverseDepth", "decodeSrgb"],
       samplerNames: ["sceneColor", "sceneDepth"],
-      defines: footprint ? "#define SLATE_COPY_FOOTPRINT" : "",
+      defines: `#define SLATE_COPY_TAPS ${taps}`,
       shaderLanguage: graph.engine.isWebGPU ? ShaderLanguage.WGSL : ShaderLanguage.GLSL,
     });
   }
@@ -265,18 +293,21 @@ class WaterSceneCopyTask extends FrameGraphTask {
 
   override record(): void {
     const graph = this._frameGraph;
+    const size = graph.textureManager.getTextureAbsoluteDimensions(this.outputTexture);
+    this.texelX = 1 / size.width;
+    this.texelY = 1 / size.height;
     const pass = graph.addRenderPass(this.name);
     pass.setRenderTarget(this.outputTexture);
     pass.addDependencies([this.sourceColor, this.sourceDepth]);
     pass.setExecuteFunc((context) => {
-      // Depth is unfilterable on WebGPU; colour uses texel-centre taps and keeps its owner's mode.
+      // Depth is unfilterable on WebGPU; colour taps sit on texel centres at integer ratios.
       context.setTextureSamplingMode(this.sourceDepth, Constants.TEXTURE_NEAREST_SAMPLINGMODE);
       const engine = graph.engine;
       const effect = this.wrapper.effect;
       const drawn = context.applyFullScreenEffect(this.wrapper.drawWrapper, () => {
         // FrameGraph binds the DrawWrapper directly; the postprocess vertex shader still needs its scale.
         effect.setFloat2("scale", 1, 1);
-        effect.setFloat2("footprint", this.footprintX, this.footprintY);
+        effect.setFloat2("copyTexel", this.texelX, this.texelY);
         this.camera.getProjectionMatrix().invertToRef(this.inverseProjection);
         effect.setMatrix("inverseProjection", this.inverseProjection);
         effect.setFloat2("depthRange", engine.isNDCHalfZRange ? 1 : 2, engine.isNDCHalfZRange ? 0 : -1);
@@ -317,6 +348,24 @@ class WaterSplitTask extends FrameGraphTask {
   }
 }
 
+/**
+ * Draws through another task's ObjectRenderer into other targets. The two never
+ * draw in the same frame, so one render pass id, one set of draw wrappers and
+ * one readiness probe serve both: the owner probes the same list on the same
+ * pass, and its shadow toggles, registered on the shared renderer, run for
+ * these draws too.
+ */
+class SharedObjectRendererTask extends FrameGraphObjectRendererTask {
+  constructor(name: string, graph: FrameGraph, owner: FrameGraphObjectRendererTask) {
+    super(name, graph, graph.scene, undefined, owner.objectRenderer);
+  }
+  // The shared renderer keeps its owner's name for diagnostics and inspector lookups.
+  override get name(): string { return this._name; }
+  override set name(value: string) { this._name = value; }
+  protected override _setLightsForShadow(): void {}
+  override isReady(): boolean { return true; }
+}
+
 export interface WaterSceneCopyGraphOptions {
   frameGraph: FrameGraph;
   camera: Camera;
@@ -333,7 +382,7 @@ export interface WaterSceneCopyGraphOptions {
    * Sampleable colour/depth the main object pass draws (an effect chain's
    * scene targets or an imported render-target output). Absent when it draws
    * the backbuffer (or a stencil depth): the split then draws into an own
-   * colour + DEPTH32_FLOAT pair and copies its colour to `output`.
+   * colour + depth pair and copies its colour to `output`.
    */
   scene?: { color: FrameGraphTextureHandle; depth: FrameGraphTextureHandle };
   /** The view's output colour, written by the own pair's final copy. */
@@ -350,11 +399,11 @@ export interface WaterSceneCopyGraphOptions {
  *
  * With no sampleable output the own-pair form keeps the direct path for
  * frames without such water ("Forward clear"/"Forward objects" draw the
- * output as before) and swaps to Water clear → Water opaque → Water scene
- * copy → Forward transparent → Water output on frames with it. The split then
- * decides before the output clear runs: Forward cull → Water split → Forward
- * clear. Either way a frame without visible copy-sampling water runs only
- * empty disabled passes.
+ * output as before) and swaps to Water clear → Water opaque (Forward
+ * objects' renderer) → Water scene copy → Forward transparent → Water output
+ * on frames with it. The split then decides before the output clear runs:
+ * Forward cull → Water split → Forward clear. Either way a frame without
+ * visible copy-sampling water runs only empty disabled passes.
  */
 export class WaterSceneCopyGraph {
   /** Runs after "Forward cull": before "Forward clear" when `splitsClear`, else just before the object pass. */
@@ -363,7 +412,7 @@ export class WaterSceneCopyGraph {
   readonly splitsClear: boolean;
   /** Insert immediately after the main object pass. */
   readonly afterObjects: FrameGraphTask[] = [];
-  /** Main-view passes that must receive the admitted shadow maps. */
+  /** Main-view passes, besides "Forward objects", that must receive the admitted shadow maps. */
   readonly shadowReceivers: ManagedShadowObjectRendererTask[] = [];
   readonly transparent: ManagedShadowObjectRendererTask;
   readonly ownTargets: boolean;
@@ -375,15 +424,23 @@ export class WaterSceneCopyGraph {
   private readonly cull: FrameGraphCullObjectsTask;
   private readonly objects: ManagedShadowObjectRendererTask;
   private readonly ownClear?: FrameGraphClearTextureTask;
-  private readonly ownOpaque?: ManagedShadowObjectRendererTask;
-  private readonly ownHandles: FrameGraphTextureHandle[] = [];
+  private readonly ownOpaque?: SharedObjectRendererTask;
+  /** Targets this split allocates: the copy, then any own colour and depth. */
+  private readonly targets: { handle: FrameGraphTextureHandle; spec: TargetSpec }[] = [];
+  /** Targets sized relative to the backbuffer, so an output resize rebuilds this graph in place. */
+  private readonly followsBackbuffer: boolean;
   /** Tasks this owner disposes (the split's own, never the view's). */
   private readonly owned: FrameGraphTask[] = [];
   /** Tasks enabled only on frames with visible copy-sampling water. */
   private readonly waterPasses: FrameGraphTask[] = [];
   private readonly refraction: boolean;
   private readonly screenSpace: boolean;
-  private readonly lease: ManagedRenderLease;
+  private lease: ManagedRenderLease;
+  /** Leases of targets a resize replaced: released once the rebuilt targets are committed. */
+  private readonly replacedLeases: ManagedRenderLease[] = [];
+  private readonly leaseReleases: Promise<void>[] = [];
+  private width: number;
+  private height: number;
   private readonly entry: RegistryEntry;
   private readonly passId: number;
   private readonly transparentMeshes: AbstractMesh[] = [];
@@ -391,7 +448,7 @@ export class WaterSceneCopyGraph {
   private readonly transparentList: FrameGraphObjectList;
   private readonly probeMeshes: AbstractMesh[] = [];
   private readonly probeList: FrameGraphObjectList = { meshes: null, particleSystems: null };
-  private probing: { transparent: FrameGraphObjectList; opaque?: FrameGraphObjectList } | undefined;
+  private probing: FrameGraphObjectList | undefined;
   private visible: boolean | undefined;
   private frames = 0;
   private visibleFrames = 0;
@@ -401,31 +458,32 @@ export class WaterSceneCopyGraph {
 
   /** Reserve and plan the copy, or undefined (with a warning) when the shared budget refuses it. */
   static create(options: WaterSceneCopyGraphOptions): WaterSceneCopyGraph | undefined {
-    const { width, height, scale } = options;
-    const copyWidth = Math.max(1, Math.round(width * scale));
-    const copyHeight = Math.max(1, Math.round(height * scale));
-    let bytes = copyWidth * copyHeight * 8;
-    if (!options.scene) bytes += width * height * (ownColorType(options.frameGraph.scene) === Constants.TEXTURETYPE_HALF_FLOAT ? 8 : 4) + width * height * 4;
-    const lease = beginManagedRenderAllocation(options.frameGraph.engine, bytes);
+    const engine = options.frameGraph.engine;
+    const specs = targetSpecs(options.frameGraph.scene, engine, options.scale, !options.scene);
+    const followsBackbuffer = !options.scene && !options.output.texture;
+    const lease = beginManagedRenderAllocation(engine, plannedBytes(specs, options.width, options.height, followsBackbuffer));
     if (!lease) {
       console.warn("Water scene copy disabled: shared Engine render-target budget is exhausted.");
       return undefined;
     }
     try {
-      return new WaterSceneCopyGraph(options, lease, copyWidth, copyHeight);
+      return new WaterSceneCopyGraph(options, lease, specs, followsBackbuffer);
     } catch (error) {
       lease.release();
       throw error;
     }
   }
 
-  private constructor(options: WaterSceneCopyGraphOptions, lease: ManagedRenderLease, copyWidth: number, copyHeight: number) {
+  private constructor(options: WaterSceneCopyGraphOptions, lease: ManagedRenderLease, specs: TargetSpec[], followsBackbuffer: boolean) {
     const { frameGraph: graph, camera } = options;
     const scene = graph.scene;
     this.scene = scene;
     this.graph = graph;
     this.lease = lease;
     this.scale = options.scale;
+    this.width = options.width;
+    this.height = options.height;
+    this.followsBackbuffer = followsBackbuffer;
     this.sceneClear = options.clear;
     this.cull = options.cull;
     this.objects = options.objects;
@@ -436,36 +494,33 @@ export class WaterSceneCopyGraph {
     this.screenSpace = screenSpaceDemand(clamp);
     this.transparentList = { meshes: this.transparentMeshes, particleSystems: this.noParticles };
     const textures = graph.textureManager;
+    const handles = specs.map((spec) => {
+      const handle = textures.createRenderTargetTexture(spec.name, {
+        size: followsBackbuffer
+          ? { width: spec.scale * 100, height: spec.scale * 100 }
+          : { width: Math.max(1, Math.round(options.width * spec.scale)), height: Math.max(1, Math.round(options.height * spec.scale)) },
+        sizeIsPercentage: followsBackbuffer,
+        options: { createMipMaps: false, samples: 1, types: [spec.type], formats: [spec.format], useSRGBBuffers: [false] },
+      });
+      this.targets.push({ handle, spec });
+      return handle;
+    });
     let source = options.scene;
-    let opaque: ManagedShadowObjectRendererTask = this.objects;
+    let opaque: FrameGraphObjectRendererTask = this.objects;
     if (!source) {
-      const create = (name: string, format: number, type: number) => {
-        const handle = textures.createRenderTargetTexture(name, {
-          size: { width: options.width, height: options.height }, sizeIsPercentage: false,
-          options: { createMipMaps: false, samples: 1, types: [type], formats: [format], useSRGBBuffers: [false] },
-        });
-        this.ownHandles.push(handle);
-        return handle;
-      };
-      source = {
-        color: create("Water scene color", Constants.TEXTUREFORMAT_RGBA, ownColorType(scene)),
-        depth: create("Water scene Z", Constants.TEXTUREFORMAT_DEPTH32_FLOAT, Constants.TEXTURETYPE_FLOAT),
-      };
+      source = { color: handles[1]!, depth: handles[2]! };
       this.ownClear = new FrameGraphClearTextureTask("Water clear", graph);
       this.ownClear.targetTexture = source.color;
       this.ownClear.depthTexture = source.depth;
-      this.ownOpaque = new ManagedShadowObjectRendererTask("Water opaque", graph, scene, { doNotChangeAspectRatio: false });
-      this.ownOpaque.mainView = true;
+      // Forward objects' own renderer: one pass id and one readiness probe for both paths.
+      this.ownOpaque = new SharedObjectRendererTask("Water opaque", graph, this.objects);
       this.ownOpaque.targetTexture = this.ownClear.outputTexture;
       this.ownOpaque.depthTexture = this.ownClear.outputDepthTexture;
-      this.ownOpaque.renderTransparentMeshes = false;
-      this.ownOpaque.renderParticles = false;
-      this.ownOpaque.renderSprites = false;
+      this.ownOpaque.objectList = this.cull.outputObjectList;
       opaque = this.ownOpaque;
       this.owned.push(this.ownClear, this.ownOpaque);
-      this.shadowReceivers.push(this.ownOpaque);
     }
-    this.copy = new WaterSceneCopyTask("Water scene copy", graph, source.color, source.depth, copyWidth, copyHeight, options.scale < 1);
+    this.copy = new WaterSceneCopyTask("Water scene copy", graph, source.color, source.depth, handles[0]!, copyTaps(options.scale));
     this.owned.push(this.copy);
     const transparent = new ManagedShadowObjectRendererTask("Forward transparent", graph, scene, { doNotChangeAspectRatio: false });
     this.transparent = transparent;
@@ -529,21 +584,42 @@ export class WaterSceneCopyGraph {
     if (this.ownOpaque) this.ownOpaque.camera = camera;
   }
 
-  /** Mirror the view's clear settings and culled list; called with the view's own syncSceneInputs. */
+  /** Mirror the view's clear settings; called with the view's own syncSceneInputs. */
   syncInputs(): void {
-    if (this.ownClear) {
-      this.ownClear.color = this.sceneClear.color;
-      this.ownClear.clearColor = this.sceneClear.clearColor;
-      this.ownClear.clearDepth = this.sceneClear.clearDepth;
-      this.ownClear.clearStencil = this.sceneClear.clearStencil;
+    if (!this.ownClear) return;
+    this.ownClear.color = this.sceneClear.color;
+    this.ownClear.clearColor = this.sceneClear.clearColor;
+    this.ownClear.clearDepth = this.sceneClear.clearDepth;
+    this.ownClear.clearStencil = this.sceneClear.clearStencil;
+  }
+
+  /**
+   * Follow a backbuffer resize in place, before the view graph rebuilds: the
+   * targets re-size with the backbuffer, and every task and render pass id is
+   * kept. Reserves the resized targets while the current ones stay charged;
+   * false (with a warning) when the budget refuses them or the targets cannot
+   * follow this output, and the view must then re-plan.
+   */
+  resize(width: number, height: number): boolean {
+    if (!this.followsBackbuffer || this.tasksDisposed) return false;
+    const specs = this.targets.map((target) => target.spec);
+    const lease = beginManagedRenderAllocation(this.graph.engine, plannedBytes(specs, width, height, true));
+    if (!lease) {
+      console.warn("Water scene copy resize refused: shared Engine render-target budget is exhausted.");
+      return false;
     }
-    if (this.ownOpaque && !this.probing) this.ownOpaque.objectList = this.cull.outputObjectList;
+    this.replacedLeases.push(this.lease);
+    this.lease = lease;
+    this.committed = false;
+    this.width = width;
+    this.height = height;
+    return true;
   }
 
   /** Probe with every current candidate: the transparent pass only with alpha-blended ones. */
   beginProbe(all: FrameGraphObjectList): void {
     if (this.probing) return;
-    this.probing = { transparent: this.transparent.objectList, opaque: this.ownOpaque?.objectList };
+    this.probing = this.transparent.objectList;
     const meshes = all.meshes ?? this.scene.meshes;
     const probe = this.probeMeshes;
     let count = 0;
@@ -555,15 +631,13 @@ export class WaterSceneCopyGraph {
     this.probeList.meshes = probe;
     this.probeList.particleSystems = all.particleSystems ?? this.noParticles;
     this.transparent.objectList = this.probeList;
-    if (this.ownOpaque) this.ownOpaque.objectList = all;
   }
 
   endProbe(): void {
     const saved = this.probing;
     if (!saved) return;
     this.probing = undefined;
-    this.transparent.objectList = saved.transparent;
-    if (this.ownOpaque && saved.opaque) this.ownOpaque.objectList = saved.opaque;
+    this.transparent.objectList = saved;
     this.probeMeshes.length = 0;
     this.probeList.meshes = null;
   }
@@ -585,8 +659,19 @@ export class WaterSceneCopyGraph {
         const mesh = meshes[index]!;
         if (blendsForMesh(mesh, this.scene)) list[count++] = mesh;
       }
+      // Babylon draws a mesh-emitted particle system only while its emitter is
+      // in the pass's list (RenderingGroup._renderParticles), so add the culled
+      // emitters exactly as the direct path's full culled list holds them.
+      const systems = culled.particleSystems ?? this.scene.particleSystems;
+      for (let index = 0; index < systems.length; index += 1) {
+        const system = systems[index]!;
+        const emitter = system.emitter;
+        if (!emitter || !("position" in emitter) || !system.isStarted()) continue;
+        if (listed(list, count, emitter) || meshes.indexOf(emitter) === -1) continue;
+        list[count++] = emitter;
+      }
       list.length = count;
-      this.transparentList.particleSystems = culled.particleSystems ?? this.noParticles;
+      this.transparentList.particleSystems = systems;
     } else if (list.length) {
       // Release references held for a pass that will not run.
       list.length = 0;
@@ -598,15 +683,14 @@ export class WaterSceneCopyGraph {
     if (this.visible === visible) return;
     this.visible = visible;
     for (const task of this.waterPasses) task.disabled = !visible;
+    // The opaque pass leaves transparents, particles and sprites to the transparent pass.
+    this.objects.renderTransparentMeshes = !visible;
+    this.objects.renderParticles = !visible;
+    this.objects.renderSprites = !visible;
     if (this.ownTargets) {
       // The direct path draws the output exactly as before on frames without such water.
       this.sceneClear.disabled = visible;
       this.objects.disabled = visible;
-    } else {
-      // The shared opaque pass leaves transparents, particles and sprites to the transparent pass.
-      this.objects.renderTransparentMeshes = !visible;
-      this.objects.renderParticles = !visible;
-      this.objects.renderSprites = !visible;
     }
   }
 
@@ -615,19 +699,25 @@ export class WaterSceneCopyGraph {
     const textures = this.graph.textureManager;
     const copy = textures.getTextureFromHandle(this.copy.outputTexture);
     if (!copy) throw new Error("Water scene copy target is not allocated.");
-    if (this.entry.texture.getInternalTexture() !== copy) {
+    const invX = 1 / this.width, invY = 1 / this.height;
+    if (this.entry.texture.getInternalTexture() !== copy || this.entry.invSize[0] !== invX || this.entry.invSize[1] !== invY) {
       const texture = new ThinTexture(copy);
       texture.wrapU = texture.wrapV = Texture.CLAMP_ADDRESSMODE;
       this.entry.texture = texture;
+      this.entry.invSize = [invX, invY];
       this.entry.revision = ++revisions;
     }
     if (this.committed) return;
-    const resources = [copy, ...this.ownHandles.map((handle) => textures.getTextureFromHandle(handle))].map((texture) => {
+    const resources = this.targets.map(({ handle }) => {
+      const texture = textures.getTextureFromHandle(handle);
       if (!texture) throw new Error("Water scene copy target is not allocated.");
       return managedRenderTextureResource(texture, "water", { samples: 1, allocatedMipLevels: 1 });
     });
     this.lease.commit(resources);
     this.committed = true;
+    // The build disposed the replaced targets; WebGPU destroys them at the end of its frame.
+    for (const replaced of this.replacedLeases.splice(0))
+      this.leaseReleases.push(releaseManagedRenderLeaseAfterDisposal(this.graph.engine, replaced));
   }
 
   /** Planning and per-frame work, for diagnostics, tests and proofs. */
@@ -663,15 +753,53 @@ export class WaterSceneCopyGraph {
     return this.copy.whenReleased();
   }
 
-  /** Release the reservation once the graph (and its targets) is disposed. */
+  /** Release the reservations once the graph (and its targets) is disposed. */
   releaseAfterGraphDisposal(): Promise<void> {
     if (!this.tasksDisposed) throw new Error("Dispose water scene copy tasks before releasing their graph lease.");
-    return (this.released ??= this.copy.whenReleased().then(() =>
-      releaseManagedRenderLeaseAfterDisposal(this.graph.engine, this.lease)));
+    return (this.released ??= this.copy.whenReleased().then(async () => {
+      const engine = this.graph.engine;
+      const leases = [...this.replacedLeases.splice(0), this.lease];
+      await Promise.all([...this.leaseReleases, ...leases.map((lease) => releaseManagedRenderLeaseAfterDisposal(engine, lease))]);
+    }));
   }
 }
 
 /** Without an effect chain the materials write display colour; Scene Linear keeps half-float. */
 function ownColorType(scene: Scene): number {
   return scene.imageProcessingConfiguration.applyByPostProcess ? Constants.TEXTURETYPE_HALF_FLOAT : Constants.TEXTURETYPE_UNSIGNED_BYTE;
+}
+
+/**
+ * The split's targets. On WebGPU the own pair matches the swap chain's colour
+ * and the main pass's depth format, so its draws reuse the render pipelines
+ * the direct path already created (pipelines are keyed by attachment formats):
+ * water coming into view creates none.
+ */
+function targetSpecs(scene: Scene, engine: AbstractEngine, scale: number, own: boolean): TargetSpec[] {
+  const specs: TargetSpec[] = [{ name: "Water scene copy", format: Constants.TEXTUREFORMAT_RGBA, type: Constants.TEXTURETYPE_HALF_FLOAT, scale }];
+  if (!own) return specs;
+  const colorType = ownColorType(scene);
+  const swapChain = engine.isWebGPU ? (engine as unknown as { _options?: { swapChainFormat?: string } })._options?.swapChainFormat : undefined;
+  const bgra = swapChain === "bgra8unorm" && colorType === Constants.TEXTURETYPE_UNSIGNED_BYTE;
+  const stencilDepth = engine.isWebGPU && engine.isStencilEnable;
+  specs.push(
+    { name: "Water scene color", format: bgra ? Constants.TEXTUREFORMAT_BGRA : Constants.TEXTUREFORMAT_RGBA, type: colorType, scale: 1 },
+    stencilDepth
+      ? { name: "Water scene Z", format: Constants.TEXTUREFORMAT_DEPTH24_STENCIL8, type: Constants.TEXTURETYPE_FLOAT, scale: 1 }
+      : { name: "Water scene Z", format: Constants.TEXTUREFORMAT_DEPTH32_FLOAT, type: Constants.TEXTURETYPE_FLOAT, scale: 1 },
+  );
+  return specs;
+}
+
+/** The ledger charge for `specs` at an output size, as FrameGraph will size them. */
+function plannedBytes(specs: readonly TargetSpec[], width: number, height: number, followsBackbuffer: boolean): number {
+  let bytes = 0;
+  for (const spec of specs) {
+    bytes += renderTargetAllocationBytes({
+      width: followsBackbuffer ? copyDimension(width, spec.scale) : Math.max(1, Math.round(width * spec.scale)),
+      height: followsBackbuffer ? copyDimension(height, spec.scale) : Math.max(1, Math.round(height * spec.scale)),
+      format: spec.format, type: spec.type,
+    });
+  }
+  return bytes;
 }

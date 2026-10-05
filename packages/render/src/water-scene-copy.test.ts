@@ -1,11 +1,13 @@
 import {
   FreeCamera,
+  Mesh,
   MeshBuilder,
   NullEngine,
+  NullEngineOptions,
+  ParticleSystem,
   Scene,
   StandardMaterial,
   Vector3,
-  type Mesh,
 } from "@babylonjs/core";
 import { FrameGraphRenderContext } from "@babylonjs/core/FrameGraph/frameGraphRenderContext";
 import { afterEach, expect, it, vi } from "vitest";
@@ -37,8 +39,8 @@ afterEach(() => {
 });
 
 /** A device with half-float targets and the shared-depth group setup Play and the editor use. */
-function host({ sharedDepth = true } = {}) {
-  const engine = new NullEngine();
+function host({ sharedDepth = true, options = new NullEngineOptions() } = {}) {
+  const engine = new NullEngine(options);
   engines.push(engine);
   engine.getCaps().textureHalfFloatRender = true;
   // Pinned MRT extension installs WebGL calls on ThinEngine without NullEngine
@@ -83,13 +85,37 @@ function box(scene: Scene, name: string, alpha = 1): Mesh {
   return mesh;
 }
 
-/** Name of the object renderer each draw of `mesh` happened in, by its render pass id. */
+/** The object renderer (by render pass id) and the bound target, output or an offscreen texture, of the current draw. */
+function currentPass(scene: Scene): string {
+  const engine = scene.getEngine();
+  const id = engine.currentRenderPassId;
+  const renderer = scene.objectRenderers.find((candidate) => candidate.renderPassId === id)?.name ?? `pass ${id}`;
+  return `${renderer} → ${engine._currentRenderTarget ? "texture" : "output"}`;
+}
+
+/** `currentPass` for each draw of `mesh`. */
 function drawnBy(scene: Scene, mesh: Mesh): string[] {
   const passes: string[] = [];
-  mesh.onBeforeRenderObservable.add(() => {
-    const id = scene.getEngine().currentRenderPassId;
-    passes.push(scene.objectRenderers.find((renderer) => renderer.renderPassId === id)?.name ?? `pass ${id}`);
-  });
+  mesh.onBeforeRenderObservable.add(() => passes.push(currentPass(scene)));
+  return passes;
+}
+
+/**
+ * A started particle system on a geometry-less, always-active emitter mesh, as
+ * ParticleService builds them, and `currentPass` for each of its draws.
+ * NullEngine uploads no texture and compiles no particle effect: stub only
+ * readiness and the native draw.
+ */
+function particles(scene: Scene): string[] {
+  const emitter = new Mesh("particleEmitter:test", scene);
+  emitter.isPickable = false;
+  emitter.alwaysSelectAsActiveMesh = true;
+  const system = new ParticleSystem("sparks", 8, scene);
+  system.emitter = emitter;
+  system.start();
+  vi.spyOn(system, "isReady").mockReturnValue(true);
+  const passes: string[] = [];
+  vi.spyOn(system, "render").mockImplementation(() => { passes.push(currentPass(scene)); return 0; });
   return passes;
 }
 
@@ -161,8 +187,11 @@ it("swaps the backbuffer view onto an own pair only on frames with visible copy-
   const opaque = box(scene, "opaque");
   const glass = box(scene, "glass", 0.5);
   const waterDraws = drawnBy(scene, water), opaqueDraws = drawnBy(scene, opaque), glassDraws = drawnBy(scene, glass);
+  const sparkDraws = particles(scene);
   const graph = new ForwardSceneFrameGraph(scene);
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  // Water opaque draws through Forward objects' renderer: one pass id and one readiness probe serve both.
+  expect(scene.objectRenderers.map((renderer) => renderer.name).sort()).toEqual(["Forward objects", "Forward transparent"]);
   // The split switches the output clear too, so it decides before that clear runs.
   expect(graph.taskNames()).toEqual([
     "Forward admitted shadows", "Clustered light mask", "Forward cull", "Water split", "Forward clear",
@@ -172,28 +201,30 @@ it("swaps the backbuffer view onto an own pair only on frames with visible copy-
   // Exactly one scene clear per frame, including frames where the split swaps paths.
   const clears = vi.spyOn(FrameGraphRenderContext.prototype, "clearAttachments");
   let work = frames(graph, () => {
-    waterDraws.length = opaqueDraws.length = glassDraws.length = 0;
+    waterDraws.length = opaqueDraws.length = glassDraws.length = sparkDraws.length = 0;
     for (let frame = 0; frame < 3; frame += 1) expect(graph.render(camera)).toEqual({ path: "frameGraph" });
   });
   expect(work).toEqual({ frames: 3, visibleFrames: 3, copies: 3 });
   expect(clears).toHaveBeenCalledTimes(3);
   expect(graph.waterSceneCopyDiagnostics()).toMatchObject({ ownTargets: true, scale: 0.5 });
-  // Water draws after the copy, with its depth pre-pass, in the registered pass only.
-  expect(new Set(waterDraws)).toEqual(new Set(["Forward transparent"]));
-  expect(opaqueDraws).toEqual(["Water opaque", "Water opaque", "Water opaque"]);
-  expect(glassDraws).toEqual(["Forward transparent", "Forward transparent", "Forward transparent"]);
+  // Opaques draw into the own pair; water, transparents and particles after the copy, in the registered pass only.
+  expect(new Set(waterDraws)).toEqual(new Set(["Forward transparent → texture"]));
+  expect(opaqueDraws).toEqual(Array(3).fill("Forward objects → texture"));
+  expect(glassDraws).toEqual(Array(3).fill("Forward transparent → texture"));
+  expect(sparkDraws).toEqual(Array(3).fill("Forward transparent → texture"));
 
   // Without such water in view the direct path draws everything; the split passes stay empty.
   water.setEnabled(false);
   work = frames(graph, () => {
-    waterDraws.length = opaqueDraws.length = glassDraws.length = 0;
+    waterDraws.length = opaqueDraws.length = glassDraws.length = sparkDraws.length = 0;
     for (let frame = 0; frame < 3; frame += 1) expect(graph.render(camera)).toEqual({ path: "frameGraph" });
   });
   expect(work).toEqual({ frames: 3, visibleFrames: 0, copies: 0 });
   expect(clears).toHaveBeenCalledTimes(6);
   expect(waterDraws).toEqual([]);
-  expect(opaqueDraws).toEqual(["Forward objects", "Forward objects", "Forward objects"]);
-  expect(glassDraws).toEqual(["Forward objects", "Forward objects", "Forward objects"]);
+  expect(opaqueDraws).toEqual(Array(3).fill("Forward objects → output"));
+  expect(glassDraws).toEqual(Array(3).fill("Forward objects → output"));
+  expect(sparkDraws).toEqual(Array(3).fill("Forward objects → output"));
 
   water.setEnabled(true);
   work = frames(graph, () => expect(graph.render(camera)).toEqual({ path: "frameGraph" }));
@@ -208,6 +239,7 @@ it("shares an effect chain's scene targets, deferring transparents only while wa
   const water = lake(scene);
   const glass = box(scene, "glass", 0.5);
   const glassDraws = drawnBy(scene, glass);
+  const sparkDraws = particles(scene);
   const graph = new ForwardSceneFrameGraph(scene);
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
   const names = graph.taskNames();
@@ -219,37 +251,46 @@ it("shares an effect chain's scene targets, deferring transparents only while wa
   await settle(graph, camera);
   expect(graph.waterSceneCopyDiagnostics()).toMatchObject({ ownTargets: false });
   let work = frames(graph, () => {
-    glassDraws.length = 0;
+    glassDraws.length = sparkDraws.length = 0;
     expect(graph.render(camera)).toEqual({ path: "frameGraph" });
   });
   expect(work).toEqual({ frames: 1, visibleFrames: 1, copies: 1 });
-  expect(glassDraws).toEqual(["Forward transparent"]);
+  expect(glassDraws).toEqual(["Forward transparent → texture"]);
+  expect(sparkDraws).toEqual(["Forward transparent → texture"]);
   // Enabled water outside the view frustum is not in the cull output: nothing is deferred or copied.
   water.position.x = 500;
   // Moving a surface rebuilds its contact field.
   await settle(graph, camera);
   work = frames(graph, () => {
-    glassDraws.length = 0;
+    glassDraws.length = sparkDraws.length = 0;
     expect(graph.render(camera)).toEqual({ path: "frameGraph" });
   });
   expect(work).toEqual({ frames: 1, visibleFrames: 0, copies: 0 });
-  expect(glassDraws).toEqual(["Forward objects"]);
+  expect(glassDraws).toEqual(["Forward objects → texture"]);
+  expect(sparkDraws).toEqual(["Forward objects → texture"]);
   graph.dispose();
 });
 
-it("never copies for water whose asset samples neither refraction nor reflections", async () => {
-  const { scene, camera } = host();
-  const water = lake(scene, { ...createDefaultWaterDefinition(), refraction: 0, objectReflections: false });
+it("plans no copy for water whose asset samples none of the features the quality runs", async () => {
+  const { engine, scene, camera } = host();
+  // Refraction 0 never samples the copy; Object Reflections only sample it under a screen-space march.
+  const water = lake(scene, { ...createDefaultWaterDefinition(), refraction: 0, objectReflections: true });
   const waterDraws = drawnBy(scene, water);
   const graph = new ForwardSceneFrameGraph(scene);
+  // Medium refracts and reflects the sky only: nothing is planned, reserved or allocated.
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.taskNames()).toEqual(DEFAULT_TASKS);
+  expect(graph.waterSceneCopyDiagnostics()).toBeNull();
+  expect(managedRenderReservations(engine).categoryBytes.water).toBe(0);
   await settle(graph, camera);
-  const work = frames(graph, () => {
-    waterDraws.length = 0;
-    for (let frame = 0; frame < 3; frame += 1) expect(graph.render(camera)).toEqual({ path: "frameGraph" });
-  });
-  expect(work).toEqual({ frames: 3, visibleFrames: 0, copies: 0 });
-  expect(new Set(waterDraws)).toEqual(new Set(["Forward objects"]));
+  waterDraws.length = 0;
+  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  expect(new Set(waterDraws)).toEqual(new Set(["Forward objects → output"]));
+  // Screen Space reflections march the copy: the same water now plans it.
+  updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ water: { profile: "high" } }) });
+  expect(graph.readiness(camera)).toEqual({ path: "frameGraph", ready: false, preparationRequired: true });
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.taskNames()).toContain("Water scene copy");
   graph.dispose();
 });
 
@@ -293,6 +334,41 @@ it("registers the transparent pass before its first readiness probe and unregist
   expect(waterSceneCopyForPass(scene, first)).toBeNull();
   graph.dispose();
   expect(waterSceneCopyForPass(scene, second)).toBeNull();
+});
+
+it("follows a backbuffer resize in place, keeping every task and render pass id", async () => {
+  const options = new NullEngineOptions();
+  options.renderWidth = 320;
+  options.renderHeight = 200;
+  const { engine, scene, camera } = host({ options });
+  lake(scene);
+  const graph = new ForwardSceneFrameGraph(scene);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  await settle(graph, camera);
+  const tasks = graph.taskNames();
+  const passes = () => scene.objectRenderers.filter((renderer) => renderer.name.startsWith("Forward "))
+    .map((renderer) => [renderer.name, renderer.renderPassId]);
+  const before = passes();
+  const { renderPassId } = graph.waterSceneCopyDiagnostics()!;
+  const { revision } = waterSceneCopyForPass(scene, renderPassId)!;
+  // NullEngine owns no canvas; its options are the backbuffer boundary (a dynamic-resolution step).
+  options.renderWidth = 256;
+  options.renderHeight = 160;
+  expect(graph.readiness(camera)).toEqual({ path: "frameGraph", ready: false, preparationRequired: true });
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  // Materials keep their draw wrappers and settled variants: no new pass needs a strict probe.
+  expect(graph.taskNames()).toEqual(tasks);
+  expect(passes()).toEqual(before);
+  expect(graph.waterSceneCopyDiagnostics()!.renderPassId).toBe(renderPassId);
+  const copy = waterSceneCopyForPass(scene, renderPassId)!;
+  expect(copy.invSize).toEqual([1 / 256, 1 / 160]);
+  expect(copy.revision).not.toBe(revision);
+  expect(copy.texture.getSize()).toEqual({ width: 128, height: 80 });
+  // The resized copy and own pair replace the previous charge.
+  expect(managedRenderReservations(engine)).toMatchObject({ pendingBytes: 0 });
+  expect(managedRenderReservations(engine).categoryBytes.water).toBe(128 * 80 * 8 + 256 * 160 * 8);
+  await settle(graph, camera);
+  graph.dispose();
 });
 
 it("charges the copy and own pair to the water ledger and releases them with the graph", async () => {

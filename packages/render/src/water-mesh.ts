@@ -27,8 +27,11 @@ type Surface = {
 };
 const surfaces = new WeakMap<Scene, Set<Surface>>();
 const surfaceByMesh = new WeakMap<AbstractMesh, Surface>();
-/** Live built-in (WaterMaterialPlugin) surfaces per Scene, so presence checks stay O(1) per frame. */
-const builtInCounts = new WeakMap<Scene, number>();
+/**
+ * Live built-in (WaterMaterialPlugin) surfaces per Scene whose asset can sample a scene copy, so
+ * admission stays O(1) per frame. An asset is fixed per surface: editing it rebuilds the mesh.
+ */
+const copyIntents = new WeakMap<Scene, { refracting: number; reflecting: number }>();
 const clocks = new WeakMap<Scene, { time: number; runtime: boolean }>();
 const reflections = new WeakMap<Scene, WaterReflection>();
 
@@ -331,9 +334,21 @@ function waterSurfaceY(s: Surface, x: number, z: number, beyond = false): number
 /** Rivers and volumes tilted out of the horizontal have a rest height that varies across the body. */
 const restVaries = (s: Surface) => s.body.kind === "river" || Math.abs(s.world.m[1]!) > 1e-9 || Math.abs(s.world.m[9]!) > 1e-9;
 
-/** Live water surfaces in `scene` shaded by the built-in material (a custom material has no WaterMaterialPlugin). */
-export function sceneBuiltInWaterCount(scene: Scene): number {
-  return builtInCounts.get(scene) ?? 0;
+/**
+ * Whether any live built-in water in `scene` (a custom material has no WaterMaterialPlugin) has an asset that samples
+ * the scene copy under the given device-effective features: Refraction above zero while refraction runs, or Object
+ * Reflections while a screen-space march runs. The scene-level form of `waterMeshSamplesSceneCopy`; O(1).
+ */
+export function sceneWaterSamplesSceneCopy(scene: Scene, refraction: boolean, screenSpace: boolean): boolean {
+  const intents = copyIntents.get(scene);
+  return intents !== undefined && ((refraction && intents.refracting > 0) || (screenSpace && intents.reflecting > 0));
+}
+
+function countCopyIntent(scene: Scene, water: WaterDefinition, delta: 1 | -1): void {
+  let intents = copyIntents.get(scene);
+  if (!intents) { intents = { refracting: 0, reflecting: 0 }; copyIntents.set(scene, intents); }
+  if (water.refraction > 0) intents.refracting = Math.max(0, intents.refracting + delta);
+  if (water.objectReflections) intents.reflecting = Math.max(0, intents.reflecting + delta);
 }
 
 /**
@@ -400,10 +415,10 @@ export function createWaterMesh(scene: Scene, name: string, input: WaterBodyProp
   }
   entries.add(surface);
   surfaceByMesh.set(mesh, surface);
-  if (plugin) builtInCounts.set(scene, (builtInCounts.get(scene) ?? 0) + 1);
+  if (plugin) countCopyIntent(scene, water, 1);
   mesh.onDisposeObservable.addOnce(() => {
     entries.delete(surface);
-    if (plugin) builtInCounts.set(scene, Math.max(0, (builtInCounts.get(scene) ?? 1) - 1));
+    if (plugin) countCopyIntent(scene, water, -1);
   });
   updateSurface(surface, clocks.get(scene)?.time ?? 0);
   if (plugin) {
