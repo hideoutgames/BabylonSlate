@@ -69,7 +69,8 @@ for (const backend of ["webgl2", "webgpu"] as const) {
       expect(capture.projectionRestored, `${path}: the camera projection stays unjittered`).toBe(true);
       expect(trailPixels(capture.moved, capture.movedReference, result.width), `${path}: a moved surface leaves no trail`).toBe(0);
       expect(difference(capture.moved, capture.movedReference).mean, `${path}: a moved surface resolves`).toBeLessThan(6);
-      expect(difference(capture.panned, capture.pannedReference).mean, `${path}: history follows camera motion`).toBeLessThan(8);
+      expect(difference(capture.panned, capture.pannedReference).mean, `${path}: history follows camera motion`).toBeLessThan(5);
     }
+    expect(difference(result.captures[0]!.on, result.captures[1]!.on).mean, "native and graph parity").toBeLessThan(1);
   });
 }
