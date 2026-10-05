@@ -931,7 +931,7 @@ describe("SceneLayer runtime compositor", () => {
     });
     expect(
       assignPair?.type === "assignMesh"
-        ? assignPair.parts?.some((part) => part.meshKind === "2dbutton")
+        ? (assignPair.parts?.some((part) => part.meshKind === "2dbutton") ?? false)
         : false,
     ).toBe(false);
   });
@@ -988,7 +988,7 @@ describe("SceneLayer runtime compositor", () => {
     });
     expect(
       assign?.type === "assignMesh"
-        ? assign.parts?.some((part) => part.meshKind === "2dbutton")
+        ? (assign.parts?.some((part) => part.meshKind === "2dbutton") ?? false)
         : false,
     ).toBe(false);
   });
