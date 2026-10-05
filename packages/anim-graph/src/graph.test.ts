@@ -585,7 +585,9 @@ describe("anim graph v2 document", () => {
   it("preserves Tag variable types and normalizes serialized TagContainer defaults", () => {
     const parsed = parseAnimGraphDocument({
       name: "Tagged State",
-      states: [], transitions: [], clips: [], parameters: [],
+      entryStateId: "idle",
+      states: [{ id: "idle", name: "Idle", clipId: null, speed: 1, loop: true }],
+      transitions: [], clips: [], parameters: [],
       variables: [
         { id: "current", name: "Current", typeId: "tag", defaultValue: 300 },
         { id: "tags", name: "Tags", typeId: "struct", typeClassId: "engine:TagContainer", defaultValue: { Tags: [300, 300, 0, -1, "300", 301] } },

@@ -459,7 +459,6 @@ export function pinDefaultPropertyRows(
           ? mappingNames?.schemas?.structs[entry.type.guid]
           : undefined;
         if (!schema) break;
-        const key = pinDefaultPropertyKey(entry.pinId);
         rows.push(
           ...flattenStructFieldRows(
             schema.fields,
