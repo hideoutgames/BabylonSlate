@@ -66,6 +66,16 @@ const EVENT_EXPORT_BY_TYPE: Record<string, string> = {
   "flow.event.focusLeave": "onFocusLeave",
   "flow.event.focusActivate": "onFocusActivate",
   "flow.event.textChanged": "onTextChanged",
+  "flow.event.uiValueChanged": "onUIValueChanged",
+  "flow.event.uiRangeChanged": "onUIRangeChanged",
+  "flow.event.uiCheckedChanged": "onUICheckedChanged",
+  "flow.event.uiTextChanged": "onUITextChanged",
+  "flow.event.uiTextSubmitted": "onUITextSubmitted",
+  "flow.event.uiSelectionChanged": "onUISelectionChanged",
+  "flow.event.sceneLayerActorSwitching": "onSceneLayerActorSwitching",
+  "flow.event.sceneLayerActorSwitched": "onSceneLayerActorSwitched",
+  "flow.event.sceneLayerActorSwitchedTo": "onSceneLayerActorSwitchedTo",
+  "flow.event.sceneLayerActorSwitchedFrom": "onSceneLayerActorSwitchedFrom",
   "flow.event.audioFinished": "onAudioFinished",
   "flow.event.movementStarted": "onMovementStarted",
   "flow.event.movementStopped": "onMovementStopped",
@@ -355,6 +365,26 @@ export const flowNodes: NodeDefinition[] = [
       /* entry point emitted by the compiler */
     },
   },
+  argsEvent("flow.event.uiValueChanged", "Event On Value Changed", [{ id: "value", name: "Value", type: FLOAT }]),
+  argsEvent("flow.event.uiRangeChanged", "Event On Range Changed", [
+    { id: "lowerValue", name: "Lower Value", type: FLOAT }, { id: "upperValue", name: "Upper Value", type: FLOAT },
+  ]),
+  argsEvent("flow.event.uiCheckedChanged", "Event On Checked Changed", [{ id: "checked", name: "Checked", type: BOOL }]),
+  argsEvent("flow.event.uiTextChanged", "Event On Text Changed", [{ id: "text", name: "Text", type: STRING }]),
+  argsEvent("flow.event.uiTextSubmitted", "Event On Text Submitted", [{ id: "text", name: "Text", type: STRING }]),
+  argsEvent("flow.event.uiSelectionChanged", "Event On Selection Changed", [
+    { id: "index", name: "Index", type: INT }, { id: "value", name: "Value", type: STRING },
+  ]),
+  ...["Switching", "Switched"].map((suffix) => argsEvent(`flow.event.sceneLayerActor${suffix}`, `Event On Scene Layer Actor ${suffix}`, [
+    { id: "previousActor", name: "Previous Actor", type: actorRef("SceneLayerActor") },
+    { id: "currentActor", name: "Current Actor", type: actorRef("SceneLayerActor") },
+    { id: "previousIndex", name: "Previous Index", type: INT },
+    { id: "index", name: "Index", type: INT },
+  ])),
+  ...["To", "From"].map((suffix) => argsEvent(`flow.event.sceneLayerActorSwitched${suffix}`, `Event On Scene Layer Actor Switched ${suffix}`, [
+    { id: "switcher", name: "Switcher", type: actorRef("SceneLayerActorSwitcher") },
+    { id: "index", name: "Index", type: INT },
+  ])),
   {
     id: "flow.event.textChanged",
     title: "Event On Text Changed",

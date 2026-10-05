@@ -1,8 +1,10 @@
+import { isUIControl2DClass } from "./ui-controls2d-classes";
+
 /** Multipliers belong to one visual component, never its shared material asset. */
 export type OverlayVisualStyle = { opacity: number; tint: [number, number, number, number] };
 
 const classes = new Set(["2DTextureComponent", "2DMaterialComponent", "2DPanelComponent", "2DTextComponent", "2DRichTextComponent", "2DPainterComponent", "2DJoystickComponent"]);
-export function supportsOverlayVisualStyle(classId: string): boolean { return classes.has(classId); }
+export function supportsOverlayVisualStyle(classId: string): boolean { return classes.has(classId) || isUIControl2DClass(classId); }
 
 export function parseOverlayVisualStyle(value: unknown): OverlayVisualStyle {
   const source = value && typeof value === "object" ? value as Record<string, unknown> : {};

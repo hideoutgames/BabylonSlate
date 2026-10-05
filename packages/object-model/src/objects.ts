@@ -165,6 +165,37 @@ export class Actor extends BObject {
   }
 }
 
+/** Owns the one live selection of an overlay actor switcher. */
+export class SceneLayerActorSwitcher extends Actor {
+  private selection: Actor | null = null;
+  private selectionIndex = -1;
+
+  get currentActor(): Actor | null {
+    return this.destroyed || this.selection?.destroyed ? null : this.selection;
+  }
+
+  get currentIndex(): number {
+    return this.currentActor ? this.selectionIndex : -1;
+  }
+
+  /** Runtime controller publishes a selection atomically for graph getters. */
+  setSelection(actor: Actor | null, index: number): void {
+    this.selection = actor;
+    this.selectionIndex = actor ? index : -1;
+  }
+
+  override getVariable(name: string): unknown {
+    if (name === "currentActor") return this.currentActor;
+    if (name === "currentIndex") return this.currentIndex;
+    return super.getVariable(name);
+  }
+
+  override setVariable(name: string, value: unknown): void {
+    if (name === "currentActor" || name === "currentIndex") return;
+    super.setVariable(name, value);
+  }
+}
+
 /** Typed live actor identity for a placed additive-scene origin. */
 export class SceneStreamingActor extends Actor {
   get targetSceneGuid(): string {

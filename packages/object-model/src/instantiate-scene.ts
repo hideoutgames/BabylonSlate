@@ -84,6 +84,7 @@ export function createActorFromSerialized(
     guid: serialized.id,
     classId: serialized.classId,
     variables: {
+      ...structuredClone(serialized.properties ?? {}),
       name: serialized.name,
       visible: serialized.visible,
       locked: serialized.locked,

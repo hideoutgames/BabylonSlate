@@ -29,6 +29,7 @@ export {
   type EngineScriptPin,
   type EngineScriptVariable,
 } from "./engine-script-api";
+export { UI_CONTROL_2D_SCRIPT_APIS } from "./ui-controls2d-api";
 export {
   ClassRegistry,
   MAX_CLASS_INHERITANCE_DEPTH,
@@ -59,6 +60,7 @@ export {
   GameSubsystem,
   Scene,
   SceneLayer,
+  SceneLayerActorSwitcher,
   SceneStreamingActor,
   SceneSubsystem,
   Subsystem,

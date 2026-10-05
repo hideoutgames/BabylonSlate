@@ -115,6 +115,16 @@ export class ClassRegistry {
       implementedInterfaces: [],
     });
     this.register({
+      id: "SceneLayerActorSwitcher",
+      parentClassId: "SceneLayerActor",
+      kind: "actor",
+      variables: [
+        { name: "sceneLayerActors", type: "class", container: "array", defaultValue: [] },
+        { name: "initialIndex", type: "int", defaultValue: 0 },
+      ],
+      implementedInterfaces: [],
+    });
+    this.register({
       id: "ActorComponent",
       parentClassId: "BObject",
       kind: "component",
