@@ -1,6 +1,6 @@
 import { Constants, type Camera } from "@babylonjs/core";
 import { SpatialEffectsGraph } from "./spatial-effects-graph";
-import { reserveSpatialEffects, spatialEffectsUnsupported } from "./spatial-effects";
+import { hasSpatialEffects, reserveSpatialEffects, spatialEffectsUnsupported } from "./spatial-effects";
 import type { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
 import type { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
@@ -104,7 +104,7 @@ export class SceneEffectsGraph {
         );
         source = this.sceneColorTexture;
       }
-      if ((plan.reflections || plan.volumetricLighting) && !spatialEffectsUnsupported(graph.scene)) {
+      if (hasSpatialEffects(plan) && !spatialEffectsUnsupported(graph.scene)) {
         const camera = options.camera ?? graph.scene.activeCamera;
         if (!camera) throw new Error("Spatial effects require a camera.");
         const lease = reserveSpatialEffects(graph.scene, plan, options.width, options.height, false);

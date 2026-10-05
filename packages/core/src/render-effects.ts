@@ -16,6 +16,18 @@ export interface ReflectionSettings {
   strength: number;
 }
 
+export interface AmbientOcclusionSettings {
+  enabled: boolean;
+  /** Occlusion sampling resolution; composition stays full resolution. */
+  resolutionScale: number;
+  samples: number;
+  /** Hemisphere radius in scene units. */
+  radius: number;
+  strength: number;
+  /** View distance beyond which occlusion fades out. */
+  maxDistance: number;
+}
+
 export interface VolumetricLightingSettings {
   enabled: boolean;
   resolutionScale: number;
@@ -48,6 +60,7 @@ export interface RenderEffectsSettings {
     scale: number;
   };
   fxaa: boolean;
+  ambientOcclusion: AmbientOcclusionSettings;
   reflections: ReflectionSettings;
   volumetricLighting: VolumetricLightingSettings;
 }
@@ -61,6 +74,10 @@ export const RENDER_EFFECTS_LIMITS = {
   bloomKernel: [1, 512],
   bloomScale: [0.05, 1],
   spatialResolutionScale: [0.25, 1],
+  ambientOcclusionSamples: [4, 32],
+  ambientOcclusionRadius: [0.05, 10],
+  ambientOcclusionStrength: [0, 4],
+  ambientOcclusionDistance: [1, 1000],
   reflectionSteps: [8, 128],
   reflectionDistance: [0.1, 1000],
   reflectionThickness: [0.001, 10],
@@ -81,6 +98,10 @@ export const DEFAULT_RENDER_EFFECTS: Readonly<RenderEffectsSettings> = {
   vignette: { enabled: false, weight: 1.5, color: [0, 0, 0] },
   bloom: { enabled: false, threshold: 0.9, weight: 0.15, kernel: 64, scale: 0.5 },
   fxaa: false,
+  ambientOcclusion: {
+    enabled: false, resolutionScale: 0.5, samples: 16,
+    radius: 0.5, strength: 1, maxDistance: 100,
+  },
   reflections: {
     enabled: false, resolutionScale: 0.5, maxSteps: 32,
     maxDistance: 50, thickness: 0.2, strength: 1,
@@ -125,8 +146,11 @@ export function normalizeRenderEffectsSettings(
   const colorPipeline = object(source.colorPipeline);
   const vignette = object(source.vignette);
   const bloom = object(source.bloom);
+  const ambientOcclusion = object(source.ambientOcclusion);
   const reflections = object(source.reflections);
   const volumetric = object(source.volumetricLighting);
+  const occlusionNumber = (key: Exclude<keyof AmbientOcclusionSettings, "enabled">, limits: readonly [number, number]) =>
+    finite(ambientOcclusion[key], DEFAULT_RENDER_EFFECTS.ambientOcclusion[key], ...limits);
   const reflectionNumber = (key: Exclude<keyof ReflectionSettings, "enabled">, limits: readonly [number, number]) =>
     finite(reflections[key], DEFAULT_RENDER_EFFECTS.reflections[key], ...limits);
   const volumetricNumber = (key: Exclude<keyof VolumetricLightingSettings, "enabled">, limits: readonly [number, number]) =>
@@ -188,6 +212,14 @@ export function normalizeRenderEffectsSettings(
       ),
     },
     fxaa: source.fxaa === true,
+    ambientOcclusion: {
+      enabled: ambientOcclusion.enabled === true,
+      resolutionScale: occlusionNumber("resolutionScale", RENDER_EFFECTS_LIMITS.spatialResolutionScale),
+      samples: Math.round(occlusionNumber("samples", RENDER_EFFECTS_LIMITS.ambientOcclusionSamples)),
+      radius: occlusionNumber("radius", RENDER_EFFECTS_LIMITS.ambientOcclusionRadius),
+      strength: occlusionNumber("strength", RENDER_EFFECTS_LIMITS.ambientOcclusionStrength),
+      maxDistance: occlusionNumber("maxDistance", RENDER_EFFECTS_LIMITS.ambientOcclusionDistance),
+    },
     reflections: {
       enabled: reflections.enabled === true,
       resolutionScale: reflectionNumber("resolutionScale", RENDER_EFFECTS_LIMITS.spatialResolutionScale),

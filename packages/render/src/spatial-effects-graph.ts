@@ -164,20 +164,20 @@ export class SpatialEffectsGraph {
       const buffers: Record<string, FrameGraphTextureHandle> = {
         depthSampler: this.geometry.geometryViewDepthTexture,
       };
-      if (plan.reflections) {
-        this.geometry.textureDescriptions.push(
-          {
-            type: Constants.PREPASS_WORLD_NORMAL_TEXTURE_TYPE,
-            textureType: Constants.TEXTURETYPE_UNSIGNED_BYTE,
-            textureFormat: Constants.TEXTUREFORMAT_RGBA,
-          },
-          {
-            type: Constants.PREPASS_REFLECTIVITY_TEXTURE_TYPE,
-            textureType: Constants.TEXTURETYPE_UNSIGNED_BYTE,
-            textureFormat: Constants.TEXTUREFORMAT_RGBA,
-          },
-        );
+      if (plan.reflections || plan.ambientOcclusion) {
+        this.geometry.textureDescriptions.push({
+          type: Constants.PREPASS_WORLD_NORMAL_TEXTURE_TYPE,
+          textureType: Constants.TEXTURETYPE_UNSIGNED_BYTE,
+          textureFormat: Constants.TEXTUREFORMAT_RGBA,
+        });
         buffers.normalSampler = this.geometry.geometryWorldNormalTexture;
+      }
+      if (plan.reflections) {
+        this.geometry.textureDescriptions.push({
+          type: Constants.PREPASS_REFLECTIVITY_TEXTURE_TYPE,
+          textureType: Constants.TEXTURETYPE_UNSIGNED_BYTE,
+          textureFormat: Constants.TEXTUREFORMAT_RGBA,
+        });
         buffers.reflectivitySampler = this.geometry.geometryReflectivityTexture;
       }
       for (const handle of Object.values(buffers))
