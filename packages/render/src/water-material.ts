@@ -9,7 +9,7 @@ import {
 } from "@babylonslate/core";
 import { sceneWaterQualityDeviceClamp } from "./render-settings";
 import { waterFftForSurface, type WaterFftResult } from "./water-fft";
-import { waterFftBandSlopeVariance, waterFftLayout } from "./water-fft-spectrum";
+import { waterFftLayout } from "./water-fft-spectrum";
 import { invalidateSceneLighting } from "./scene-lighting";
 import type { WaterContactField } from "./water-contact-field";
 import { WATER_FIELD_DEPTH_RANGE, WATER_FIELD_FINE_DEPTH_SPAN, WATER_FIELD_SHORE_RANGE as SHORE, WATER_FIELD_TERRAIN_ALPHA, type WaterField } from "./water-field";
@@ -127,11 +127,10 @@ const FFT = WATER_FFT_DEFINE;
 const FFT_CASCADE_UNIFORMS = Array.from({ length: WATER_FFT_CASCADES_MAX }, (_, c) => `slateWaterFftCascade${c}`);
 /**
  * Uniforms of the band: `slateWaterFft` = (g = Detail Waves · Wave Scale, 0 until the band is ready; Steepness, the
- * horizontal scale before the bank fade; view footprint per metre of view depth and its constant part, metres per pixel),
- * `slateWaterFftBand` = per cascade 4 / (longest wavelength), the vertex filter's frequency, and
- * `slateWaterFftVariance` = per cascade the band's mean square slope · g² (the roughness a faded cascade leaves).
+ * horizontal scale before the bank fade; view footprint per metre of view depth and its constant part, metres per pixel)
+ * and `slateWaterFftBand` = per cascade 4 / (longest wavelength), the vertex filter's frequency.
  */
-const FFT_UNIFORMS = ["slateWaterFft", "slateWaterFftBand", "slateWaterFftVariance", ...FFT_CASCADE_UNIFORMS];
+const FFT_UNIFORMS = ["slateWaterFft", "slateWaterFftBand", ...FFT_CASCADE_UNIFORMS];
 /** Lowest tier evaluating each realistic chop octave, capillary, and Stylized chop octave. */
 const CHOP_TIER = [0, 0, 1, 1, 2, 2] as const;
 const CAPILLARY_TIER = [1, 2, 2] as const;
@@ -330,10 +329,11 @@ vec4 swFftTap(vec2 uv, float layer) { return textureLod(${WATER_FFT_SAMPLER}, ve
  * g = Detail Waves · Wave Scale and, for the horizontal terms, λ = Steepness · bank gain. The band's Jacobian joins
  * the analytic one, scaled down where their determinant would fall below `WATER_JACOBIAN_FLOOR`, and replaces it for
  * the Jacobian foam; the band's slope reaches the shading normal through that combined Jacobian (J⁻ᵀ∇H) while the
- * swell keeps its own. Realistic water adds the slope variance faded cascades lose to its filtered roughness, so
- * distant water looks like the filtered band, not glassier. GLSL-shaped; `swFftTap` is bound per language.
+ * swell keeps its own. Faded cascades add nothing to the filtered roughness: the chop octaves and capillaries, which
+ * cover the same wavelengths, already widen the sun's lobe by the slope they lose, so distant water keeps the look it
+ * has without the band. GLSL-shaped; `swFftTap` is bound per language.
  */
-function fftFragmentSource(realistic: boolean): string {
+function fftFragmentSource(): string {
   const floor = f(WATER_JACOBIAN_FLOOR);
   const cascades = Array.from({ length: WATER_FFT_CASCADES_MAX }, (_, c) => {
     const code = `
@@ -347,16 +347,14 @@ if (swFftFd${c} > 0.0) {
   float swFftF${c} = swFftFd${c} * swFftM${c};
   swFftGrad += swFftB${c}.xy * swFftF${c};
   swFftJ += vec3(swFftB${c}.z, swFftA${c}.w, swFftB${c}.w) * swFftF${c};
-}${realistic ? `
-swFftLost += U.slateWaterFftVariance.${"xyz"[c]} * swFftM${c} * swFftM${c} * (1.0 - swFftFd${c} * swFftFd${c});` : ""}`;
+}`;
     return c === 0 ? code : ifFft(code, c + 1);
   }).join("");
   return ifFft(`
 vec4 swFft = U.slateWaterFft;
 float swFftReach = max(length(swFootX), length(swFootY));
 vec2 swFftGrad = vec2(0.0);
-vec3 swFftJ = vec3(0.0);${realistic ? `
-float swFftLost = 0.0;` : ""}${cascades}
+vec3 swFftJ = vec3(0.0);${cascades}
 swFftGrad = swFftGrad * swFft.x;
 swFftJ = swFftJ * (swFft.x * swFft.y * swGain);
 float swFftDet = (swJxx + swFftJ.x) * (swJzz + swFftJ.z) - (swJxz + swFftJ.y) * (swJzx + swFftJ.y);
@@ -367,8 +365,7 @@ float swFftJxz = swJxz + swFftJ.y;
 float swFftJzx = swJzx + swFftJ.y;
 float swFftJzz = swJzz + swFftJ.z;
 swDetJ = swFftJxx * swFftJzz - swFftJxz * swFftJzx;
-vec2 swFftSlope = vec2(swFftJzz * swFftGrad.x - swFftJzx * swFftGrad.y, swFftJxx * swFftGrad.y - swFftJxz * swFftGrad.x) / max(swDetJ, ${f(WATER_JACOBIAN_FLOOR / 2)});${realistic ? `
-swLost += swFftLost;` : ""}`);
+vec2 swFftSlope = vec2(swFftJzz * swFftGrad.x - swFftJzx * swFftGrad.y, swFftJxx * swFftGrad.y - swFftJxz * swFftGrad.x) / max(swDetJ, ${f(WATER_JACOBIAN_FLOOR / 2)});`);
 }
 
 /**
@@ -695,7 +692,7 @@ float swFine = swNoise(swFlowed * 2.9 - vec2(0.0, swTime * 0.09));
 // Gusts roughen or calm wide patches.
 float swGust = swNoise(swWorld * ${f(GUST_NOISE)} + vec2(swTime * 0.004, 0.0));`, `
 float swFine = swMedium;
-float swGust = swLarge;`)}${fftFragmentSource(realistic)}
+float swGust = swLarge;`)}${fftFragmentSource()}
 // Anti-tiling: a bounded warp bends the chop domain, so crests curve and cross differently across the sea. (A rotation
 // about the world origin would compress the chop without limit far from it.) Each component's amplitude suits its
 // noise's frequency, so the warp never stretches the chop much; Low's gust is its large noise, so that one shrinks.${fromTier(1, `
@@ -1584,10 +1581,10 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
   private boundFft: WaterFftResult | null = null;
   /** Patch sizes of the layout `fftBand` was derived from: the band's per-cascade constants change only with them. */
   private fftPatches: readonly number[] | null = null;
-  /** Per cascade: highest and lowest band wavenumber (rad/m) and mean square slope at g = 1 (`waterFftBandSlopeVariance`). */
-  private readonly fftBand = new Float64Array(WATER_FFT_CASCADES_MAX * 3);
-  /** `slateWaterFft`, `slateWaterFftBand`, `slateWaterFftVariance` and the cascades' vec4s, as last computed. */
-  private readonly fftValues = new Float32Array((3 + WATER_FFT_CASCADES_MAX) * 4);
+  /** Per cascade: highest and lowest band wavenumber (rad/m). */
+  private readonly fftBand = new Float64Array(WATER_FFT_CASCADES_MAX * 2);
+  /** `slateWaterFft`, `slateWaterFftBand` and the cascades' vec4s, as last computed. */
+  private readonly fftValues = new Float32Array((2 + WATER_FFT_CASCADES_MAX) * 4);
   constructor(material: PBRMaterial, water: WaterDefinition, body: WaterBodyProperties) {
     super(material, "SlateWater", 180, {
       SLATE_WATER: true, [WATER_STYLIZED_DEFINE]: false, [WATER_OCEAN_DEFINE]: false, [WATER_GPU_WAVES_DEFINE]: false, [Q]: DEFAULT_TIER,
@@ -1772,15 +1769,15 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
     if (!cascades) { this.boundFft = null; return; }
     this.boundFft = this.fftState(scene, cascades);
     const v = this.fftValues;
-    for (let i = 0; i < 3 + WATER_FFT_CASCADES_MAX; i++) {
-      const name = i === 0 ? "slateWaterFft" : i === 1 ? "slateWaterFftBand" : i === 2 ? "slateWaterFftVariance" : FFT_CASCADE_UNIFORMS[i - 3]!;
+    for (let i = 0; i < 2 + WATER_FFT_CASCADES_MAX; i++) {
+      const name = i === 0 ? "slateWaterFft" : i === 1 ? "slateWaterFftBand" : FFT_CASCADE_UNIFORMS[i - 2]!;
       buffer.updateFloat4(name, v[i * 4]!, v[i * 4 + 1]!, v[i * 4 + 2]!, v[i * 4 + 3]!);
     }
   }
   /**
    * The FFT detail band for `cascades` and its uniforms (`fftValues`): (g, Steepness, view footprint per metre of
-   * depth, constant footprint), per cascade 4 / longest wavelength, per cascade mean square slope · g², and per cascade
-   * (1 / patch size, uv offset, highest wavenumber). The uv offset is fract(origin / patch size) + 0.5 / N in float64,
+   * depth, constant footprint), per cascade 4 / longest wavelength, and per cascade (1 / patch size, uv offset, highest
+   * wavenumber). The uv offset is fract(origin / patch size) + 0.5 / N in float64,
    * so the floating origin never reaches the shader as a large coordinate. The footprint is metres per pixel of the
    * pass's projection and target height. Returns the band only when it is ready and matches `cascades`.
    */
@@ -1795,25 +1792,21 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
     if (!band) return null;
     const size = sceneWaterQualityDeviceClamp(scene).quality.fftSize, patches = band.patchSizes, constants = this.fftBand;
     if (patches !== this.fftPatches) {
-      // Once per change of the band's layout: its edges and per-cascade slope variance (allocates).
-      const set = waterWaveSet(this.water), edges = waterFftLayout(set, size, cascades).bandEdges;
-      for (let c = 0; c < cascades; c++) {
-        constants[c * 3] = edges[c + 1]!; constants[c * 3 + 1] = edges[c]!;
-        constants[c * 3 + 2] = waterFftBandSlopeVariance(set, edges[c]!, edges[c + 1]!);
-      }
+      // Once per change of the band's layout: its edges (allocates).
+      const edges = waterFftLayout(waterWaveSet(this.water), size, cascades).bandEdges;
+      for (let c = 0; c < cascades; c++) { constants[c * 2] = edges[c + 1]!; constants[c * 2 + 1] = edges[c]!; }
       this.fftPatches = patches;
     }
     const g = band.amplitudeGain * this.body.waveScale;
     const origin = scene.floatingOriginMode ? scene.floatingOriginOffset : Vector3.ZeroReadOnly;
     v[0] = g; v[1] = this.water.steepness;
     for (let c = 0; c < cascades; c++) {
-      const patch = patches[c]!, o = (3 + c) * 4, texel = 0.5 / size;
-      v[4 + c] = 4 * constants[c * 3 + 1]! / TAU;
-      v[8 + c] = constants[c * 3 + 2]! * g * g;
+      const patch = patches[c]!, o = (2 + c) * 4, texel = 0.5 / size;
+      v[4 + c] = 4 * constants[c * 2 + 1]! / TAU;
       v[o] = 1 / patch;
       v[o + 1] = origin.x / patch - Math.floor(origin.x / patch) + texel;
       v[o + 2] = origin.z / patch - Math.floor(origin.z / patch) + texel;
-      v[o + 3] = constants[c * 3]!;
+      v[o + 3] = constants[c * 2]!;
     }
     return band;
   }
@@ -1950,7 +1943,7 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
     effect.setFloat4("slateWaterFft", v[0]!, v[1]!, v[2]!, v[3]!);
     effect.setFloat4("slateWaterFftBand", v[4]!, v[5]!, v[6]!, v[7]!);
     for (let c = 0; c < WATER_FFT_CASCADES_MAX; c++) {
-      const o = (3 + c) * 4;
+      const o = (2 + c) * 4;
       effect.setFloat4(FFT_CASCADE_UNIFORMS[c]!, v[o]!, v[o + 1]!, v[o + 2]!, v[o + 3]!);
     }
     effect.setTexture(WATER_FFT_SAMPLER, band?.texture ?? placeholderFft(scene));

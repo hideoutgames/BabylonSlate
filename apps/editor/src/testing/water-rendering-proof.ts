@@ -799,7 +799,7 @@ export async function runWaterFftDetailProof(backend: "webgl2" | "webgpu") {
       tier: WaterShadingDetail; compiled: number; ready: boolean; change: number;
       on: ReturnType<typeof fftViewStats>; off: ReturnType<typeof fftViewStats>;
     }> = [];
-    let ultraSea: Mesh | null = null;
+    let ultraSea: Mesh | null = null, highOverhead: ReturnType<typeof fftViewStats> | null = null;
     for (const tier of WATER_SHADING_DETAILS) {
       updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality(qualityPresetPatch(tier)) });
       const cascades = sceneWaterQualityDeviceClamp(scene).quality.fft ? sceneWaterQualityDeviceClamp(scene).quality.fftCascades : 0;
@@ -811,32 +811,46 @@ export async function runWaterFftDetailProof(backend: "webgl2" | "webgpu") {
       const on = sea(1);
       const { pixels, ready } = await settle(cascades);
       evidence[`fft-${tier}-on`] = png(pixels); evidence[`fft-${tier}-off`] = png(without);
+      if (tier === "high") {
+        // High's first patch is half Ultra's (24 m at the default Wave Length): from high above, a repeat would show.
+        view(0.7, 45);
+        const overhead = await capture();
+        evidence["fft-high-overhead"] = png(overhead);
+        highOverhead = fftViewStats(overhead, width, height);
+      }
       tiers.push({
         tier, compiled: compiled(on), ready, change: fftChange(pixels, without, width, height),
         on: fftViewStats(pixels, width, height), off: fftViewStats(without, width, height),
       });
       if (tier === "ultra") ultraSea = on; else on.dispose();
     }
-    // Ultra: from high above (a repeating patch would show here), far from the world origin, and a short time sequence.
-    const extra: Record<string, ReturnType<typeof fftViewStats>> = {};
-    view(0.7, 45);
-    let pixels = await capture();
-    evidence["fft-ultra-overhead"] = png(pixels); extra.overhead = fftViewStats(pixels, width, height);
-    view(1.15, 18, [4000, 0, -2000]);
-    pixels = await capture(); pixels = await capture();
-    evidence["fft-ultra-far"] = png(pixels); extra.far = fftViewStats(pixels, width, height);
-    view(1.1, 9);
+    // Ultra: from high above (a repeating patch would show here), far from the world origin, and a short time sequence;
+    // each also without the band (Detail Waves 0) for comparison.
+    const extra: Record<string, ReturnType<typeof fftViewStats>> = highOverhead ? { "high-overhead": highOverhead } : {};
     const sequence: number[] = [];
-    let previous: number[] | null = null;
-    for (const [index, time] of [2.4, 2.45, 2.5].entries()) {
-      setSceneWaterTime(scene, time);
-      pixels = await capture();
-      evidence[`fft-ultra-close-${index}`] = png(pixels);
-      if (previous) sequence.push(fftChange(pixels, previous, width, height));
-      previous = pixels;
+    let pixels: number[];
+    for (const detailWaves of [1, 0]) {
+      const mesh = detailWaves ? ultraSea! : sea(0);
+      const suffix = detailWaves ? "" : "-off";
+      setSceneWaterTime(scene, 2.4);
+      view(0.7, 45);
+      pixels = await capture(); pixels = await capture();
+      evidence[`fft-ultra-overhead${suffix}`] = png(pixels); extra[`overhead${suffix}`] = fftViewStats(pixels, width, height);
+      view(1.15, 18, [4000, 0, -2000]);
+      pixels = await capture(); pixels = await capture();
+      evidence[`fft-ultra-far${suffix}`] = png(pixels); extra[`far${suffix}`] = fftViewStats(pixels, width, height);
+      view(1.1, 9);
+      let previous: number[] | null = null;
+      for (const [index, time] of [2.4, 2.45, 2.5].entries()) {
+        setSceneWaterTime(scene, time);
+        pixels = await capture();
+        evidence[`fft-ultra-close-${index}${suffix}`] = png(pixels);
+        if (previous && detailWaves) sequence.push(fftChange(pixels, previous, width, height));
+        previous = pixels;
+      }
+      extra[`close${suffix}`] = fftViewStats(pixels, width, height);
+      mesh.dispose();
     }
-    extra.close = fftViewStats(pixels, width, height);
-    ultraSea?.dispose();
     const profile = await measureFftProfile(scene, camera, capture, png, evidence, width, height);
     return { tiers, extra, sequence, profile, diagnostics: waterFftDiagnostics(scene), evidence };
   } finally {
