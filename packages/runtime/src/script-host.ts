@@ -60,6 +60,10 @@ import { loadCompiledModule, type CompiledModuleExports } from "./module-loader"
 import type { LogSeverity } from "./log-ring";
 import { isInfiniteLoopError } from "@babylonslate/debugger";
 import type { InputBindingControls } from "@babylonslate/input";
+import type { TweenValueType } from "@babylonslate/core";
+import type { TweenReference, TweenRequest } from "./tween-runtime";
+import { tweenOwnerAlive } from "./tween-runtime";
+import { isReadOnlyTweenProperty, propertyTweenReference, tweenStorageValue } from "./tween-targets";
 
 export type AnimGraphControl = {
   getVariable(name: string): unknown;
@@ -131,6 +135,8 @@ export interface ScriptHostServices {
   destroyActor(actor: Actor | null | undefined): void;
   executeConsoleCommand(command: string): { success: boolean; output: string };
   delay(seconds: number, owner?: BObject | null): Promise<void>;
+  tween?(request: TweenRequest): Promise<boolean>;
+  isTweenSessionActive?(): boolean;
   reportError(error: unknown): void;
   /** Debugger loop guard; omitted in release players. */
   checkInfiniteLoop?(): void;
@@ -256,6 +262,9 @@ export interface ScriptContext {
   drawDebug(payload: Record<string, unknown>): void;
   getVariable(name: string): unknown;
   setVariable(name: string, value: unknown): void;
+  variableReference(target: BObject | null | undefined, name: string, implicitSelf?: boolean): TweenReference | null;
+  tweenValue(reference: TweenReference | null, type: TweenValueType, a: unknown, b: unknown, duration: number, curve: unknown): Promise<boolean>;
+  tweenProperty(target: unknown, property: string, type: TweenValueType, a: unknown, b: unknown, duration: number, curve: unknown, space?: unknown): Promise<boolean>;
   getVariableFrom(target: BObject | null | undefined, name: string): unknown;
   setVariableOn(
     target: BObject | null | undefined,
@@ -603,6 +612,8 @@ type BtScriptExtras = Pick<
 export type ScriptExtras = Partial<BtScriptExtras> & {
   animFacts?: AnimStateFacts;
   variableStore?: VariableStore;
+  /** Static library contexts have no Self; their tweens retain the calling owner's lifetime. */
+  tweenOwner?: BObject | null;
 };
 
 export type CompiledScript = ScriptBundleEntry;
@@ -1061,7 +1072,8 @@ export class ScriptHost {
   ): ScriptContext {
     const services = this.services;
     const store = extras?.variableStore ?? self;
-    return {
+    const tweenOwner = self ?? extras?.tweenOwner ?? null;
+    const context: ScriptContext = {
       self,
       deltaSeconds,
       tickIndex,
@@ -1085,6 +1097,29 @@ export class ScriptHost {
         services.drawDebug?.(payload);
       },
       getVariable: (name) => store?.getVariable(name),
+      variableReference: (target, name, implicitSelf = false) => {
+        const object = implicitSelf ? store : target;
+        if (!object || typeof name !== "string" || !name ||
+          (object instanceof BObject && (object.destroyed || isReadOnlyTweenProperty(object, name)))) return null;
+        return {
+          identity: object, property: `variable:${name}`,
+          owner: object instanceof BObject ? object : tweenOwner ?? undefined,
+          set: (value) => {
+            if (object instanceof BObject) context.setVariableOn(object, name, tweenStorageValue(object, name, value));
+            else object.setVariable(name, value);
+          },
+        };
+      },
+      tweenValue: (reference, type, a, b, duration, curve) => {
+        if (!reference) return Promise.resolve(false);
+        if (!services.tween) return Promise.reject(new Error("Tween actions are unavailable in this script host."));
+        return services.tween({ reference, type, a, b, duration, curve, owner: tweenOwner }).then(completed =>
+          completed && tweenOwnerAlive(tweenOwner) && tweenOwnerAlive(reference.owner) && services.isTweenSessionActive?.() !== false);
+      },
+      tweenProperty: (target, property, type, a, b, duration, curve, space) => {
+        const reference = propertyTweenReference(target, property, type, space, services);
+        return context.tweenValue(reference, type, a, b, duration, curve);
+      },
       setVariable: (name, value) => {
         if (store instanceof Actor && name === "parentId") {
           writeParentId(services, store, value);
@@ -1502,7 +1537,7 @@ export class ScriptHost {
             tickIndex,
             fnArgs ?? {},
             tick,
-            extras,
+            receiver ? extras : { ...extras, tweenOwner },
             entry.script.assetGuid,
           );
           try {
@@ -1812,6 +1847,7 @@ export class ScriptHost {
       getBlackboard: extras?.getBlackboard ?? (() => undefined),
       setBlackboard: extras?.setBlackboard ?? (() => undefined),
     };
+    return context;
   }
 
   private setMaterialParameter(

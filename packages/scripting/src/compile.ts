@@ -5,13 +5,14 @@ import type {
   CodegenContext,
   HoistBodyAnchor,
 } from "./node-registry";
-import { defaultValueLiteral, type PinType } from "./types";
+import { defaultValueLiteral, pinTypeEquals, type PinType } from "./types";
 import { pinTypeKey, resolveWildcardPinTypes } from "./wildcard-resolve";
 import { pinRejectsStoredDefault, readPinDefaultForPin } from "./pin-defaults";
 import { isDevelopmentOnlyNode } from "./development-only";
 import { createPureExpressions } from "./pure-expressions";
 import { instrumentJsLoops } from "@babylonslate/debugger";
 import { entryNodes } from "./compiled-nodes";
+import { isWritableVariableOutput } from "./variable-references";
 import { enumSwitchMemberNameFromPinId } from "./enum-switch-pins";
 import { flowSwitchCaseValueFromPinId } from "./flow-switch-pins";
 import {
@@ -389,7 +390,30 @@ export function compileGraph(
     return lit;
   }
 
-  function makeCtx(node: GraphNode): CodegenContext {
+  function referenceExpr(node: GraphNode, pinName: string): string {
+    const targetPin = pinForCodegen(node, pinName, "in");
+    const edge = targetPin && edgeToInput(graph, node.id, targetPin.id);
+    const source = edge && findNode(graph, edge.sourceNodeId);
+    const sourcePin = source && edge && findPin(source, edge.sourcePinId);
+    if (!source || !sourcePin || !targetPin || shouldStrip(source) ||
+        !pinTypeEquals(sourcePin.type, targetPin.type) || !isWritableVariableOutput(source, sourcePin)) return "null";
+    const name = String(source.properties.variableName ?? "Value").trim() || "Value";
+    if (source.properties.scope === "local") {
+      const local = `__lv_${jsIdent(name)}`;
+      const reference = `__ref_${local}`;
+      outputDecls.set(reference, `  const ${reference} = { identity: {}, property: ${JSON.stringify(name)}, set: value => { ${local} = value; } };`);
+      return reference;
+    }
+    const property = typeof source.properties.propertyKey === "string" && source.properties.propertyKey
+      ? source.properties.propertyKey : name;
+    const ownerPin = pinForCodegen(source, "target", "in");
+    const connected = ownerPin && edgeToInput(graph, source.id, ownerPin.id);
+    const implicitSelf = !ownerPin || (!connected && source.properties.implicitSelf === true);
+    const owner = implicitSelf ? "null" : pinExpr(source, ownerPin!);
+    return `ctx.variableReference(${owner}, ${JSON.stringify(property)}, ${implicitSelf})`;
+  }
+
+  function makeCtx(node: GraphNode, continuation?: (expression: string) => void): CodegenContext {
     return {
       graph,
       node,
@@ -399,6 +423,8 @@ export function compileGraph(
         if (!p) return "undefined";
         return pinExpr(node, p);
       },
+      reference(pinName) { return referenceExpr(node, pinName); },
+      continueIf(expression) { continuation?.(expression); },
       inputType(pinName) {
         const p = pinForCodegen(node, pinName, "in");
         return p ? wiredSourceType(graph, node, p.id, shouldStrip) : undefined;
@@ -1041,10 +1067,11 @@ export function compileGraph(
         break;
       }
 
+      let continuation: string | undefined;
       if (def.pure) {
         ensurePure(node);
       } else {
-        const ctx = makeCtx(node);
+        const ctx = makeCtx(node, (expression) => { continuation = expression; });
         if (def.latent) isAsync = true;
         declareDataOuts(node, ctx);
         def.codegen(ctx);
@@ -1053,6 +1080,14 @@ export function compileGraph(
       const thenEdges = execSuccessorEdges(graph, node.id, "then");
       const edges =
         thenEdges.length > 0 ? thenEdges : execSuccessorEdges(graph, node.id);
+      if (continuation !== undefined) {
+        const anchor = { column: 1, assetGuid: options.assetGuid, graphId: graph.id, nodeId: node.id };
+        if (instrumentLoops) emitBody(`  ${loopCheck}`, anchor);
+        emitBody(`  if (${continuation}) {`, anchor);
+        emitAlong(edges, visited);
+        emitBody("  }");
+        break;
+      }
       if (edges.length === 0) break;
       if (edges.length === 1) {
         current = edges[0]!.targetNodeId;

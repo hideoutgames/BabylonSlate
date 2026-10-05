@@ -13,6 +13,7 @@ import {
   hasBlockingErrors,
   toSerializedGraph as logicToSerializedGraph,
   isAssignable,
+  pinTypeEquals,
   isActorClassId,
   isLogicGraphPayload,
   knownGuidsFromSchemas,
@@ -198,6 +199,7 @@ function isInputEvent(typeId: string): boolean {
 }
 
 function shouldRegeneratePins(typeId: string): boolean {
+  if (typeId.startsWith("tween.")) return true;
   if (typeId === "debug.executeJavaScript") return true;
   if (isInputEvent(typeId)) return true;
   return (
@@ -229,6 +231,15 @@ function shouldRegeneratePins(typeId: string): boolean {
     typeId === "scene.change" ||
     isDevelopmentOnlyByDefaultTypeId(typeId)
   );
+}
+
+function refreshVariableReferenceAccess(typeId: string, properties: Record<string, unknown>): void {
+  if (typeId !== "variables.get") return;
+  const api = ENGINE_CLASS_SCRIPT_APIS.find((entry) => entry.classId === properties.classId);
+  const variable = api?.variables?.find((entry) =>
+    entry.propertyKey === properties.propertyKey || entry.name === properties.variableName);
+  if (variable?.getOnly) properties.getOnly = true;
+  else if (variable) delete properties.getOnly;
 }
 
 function parentLookup(
@@ -625,6 +636,7 @@ export function hydrateSerializedGraphForEditor(
       delete properties.__nodeType;
       delete properties.title;
       refreshInputEvent(typeId, properties, options, graph, node.id);
+      refreshVariableReferenceAccess(typeId, properties);
 
       if (typeId === "logMessage") {
         typeId = "debug.log";
@@ -1491,6 +1503,7 @@ function variableAccessPaletteNodes(
         implicitSelf,
         scope: variable.scope,
         title,
+        ...(getOnly ? { getOnly: true } : {}),
       };
       if (variable.functionId) defaultData.functionId = variable.functionId;
       if (variable.typeClassId) defaultData.typeClassId = variable.typeClassId;
@@ -2071,6 +2084,7 @@ export function materializeLogicGraph(
       properties.cases = normalizeStringSwitchCases(properties.cases).cases;
     }
     refreshInputEvent(typeId, properties, options, content, logic.nodes[i]!.id);
+    refreshVariableReferenceAccess(typeId, properties);
     const regenerate = shouldRegeneratePins(typeId);
     const def = registry.get(typeId);
     if (data?.__pins && !regenerate) {
@@ -2219,6 +2233,7 @@ export function classMemberSymbolsFromGraphs(
         typeClassId: variable.typeClassId,
         propertyKey: variable.propertyKey,
         container: variable.container,
+        ...(variable.getOnly ? { getOnly: true } : {}),
       });
     }
     for (const fn of api.functions ?? []) {
@@ -2262,6 +2277,8 @@ export function scriptPinCompatibility(
   hierarchy?: ClassHierarchy,
 ): PinCompatibilityRule {
   return (outgoing, incoming) =>
+    (incoming.reference !== "required" || (outgoing.reference === "writable" &&
+      pinTypeEquals(outgoing.type as PinType, incoming.type as PinType))) &&
     isAssignable(outgoing.type as PinType, incoming.type as PinType, {
       hierarchy,
     });

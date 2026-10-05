@@ -32,6 +32,7 @@ import { variableNodes } from "./variables";
 import { functionCallNodes } from "./functions";
 import { castingNodes } from "./casting";
 import { timerNodes } from "./timers";
+import { tweenNodes } from "./tween";
 import { behaviourTreeNodes } from "./behaviour-tree";
 import { navigationNodes } from "./navigation";
 import { illuminationNodes } from "./illumination";
@@ -76,6 +77,7 @@ export * from "./functions";
 export * from "./member-pins";
 export * from "./casting";
 export * from "./timers";
+export * from "./tween";
 export * from "./behaviour-tree";
 export * from "./navigation";
 export * from "./illumination";
@@ -121,6 +123,7 @@ export function allNodeDefinitions(): NodeDefinition[] {
     ...functionCallNodes,
     ...castingNodes,
     ...timerNodes,
+    ...tweenNodes,
     ...behaviourTreeNodes,
     ...navigationNodes,
     ...illuminationNodes,

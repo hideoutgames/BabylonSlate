@@ -13,6 +13,8 @@ import type { SerializedActor, SerializedComponent, SerializedScene, SerializedT
 import { sceneShadowController } from "./shadow-controller";
 import { createJoystick2DMesh } from "./joystick2d-mesh";
 import { createPainter2DMesh } from "./painter2d-mesh";
+import { applyOverlayVisualStyle } from "./overlay-visual-style";
+import { supportsOverlayVisualStyle } from "@babylonslate/core";
 import {
   identitySerializedTransform,
   isSceneLayerAnchorActor,
@@ -545,8 +547,10 @@ function componentVisualKind(
   if (component.classId === "2DMaterialComponent") {
     return `2dmaterial:${stringProp(component.properties.materialGuid) ?? ""}:${String(component.properties.hitTest ?? "ignore")}`;
   }
-  if (component.classId === "2DJoystickComponent") return `2djoystick:${JSON.stringify(component.properties)}`;
-  if (component.classId === "2DPainterComponent") return `2dpainter:${JSON.stringify(component.properties)}`;
+  if (component.classId === "2DJoystickComponent" || component.classId === "2DPainterComponent") {
+    const structural = Object.fromEntries(Object.entries(component.properties).filter(([key]) => key !== "opacity" && key !== "tint"));
+    return `${component.classId === "2DJoystickComponent" ? "2djoystick" : "2dpainter"}:${JSON.stringify(structural)}`;
+  }
   if (component.classId === "2DPanelComponent") {
     const dest = overlayPanelDestFromScale(
       actor?.transform.scale[0] ?? 1,
@@ -740,6 +744,19 @@ export function editorMeshKindOf(
 
 /** Build a Babylon mesh for one visual component. */
 export function createMeshForComponent(
+  scene: Scene,
+  name: string,
+  actor: SerializedActor,
+  component: SerializedComponent,
+  assets?: MeshAssetContext,
+  allActors?: readonly SerializedActor[],
+): Mesh {
+  const mesh = createComponentMesh(scene, name, actor, component, assets, allActors);
+  if (supportsOverlayVisualStyle(component.classId)) applyOverlayVisualStyle(mesh, component.properties);
+  return mesh;
+}
+
+function createComponentMesh(
   scene: Scene,
   name: string,
   actor: SerializedActor,
@@ -1260,6 +1277,10 @@ function applyModelPlaceholderVisibility(mesh: Mesh, actor: SerializedActor): vo
 }
 
 export function applyActorTransform(mesh: Mesh, actor: SerializedActor): void {
+  if (!isEditorActorOrigin(mesh)) {
+    const visual = actor.components.find((entry) => supportsOverlayVisualStyle(entry.classId));
+    if (visual) applyOverlayVisualStyle(mesh, visual.properties);
+  }
   const component = actor.components.find((entry) => entry.classId === "MeshComponent");
   if (component && !isEditorActorOrigin(mesh)) sceneShadowController(mesh.getScene()).setParticipation(mesh, component.properties);
   if (mesh.isWorldMatrixFrozen) mesh.unfreezeWorldMatrix();
@@ -1316,6 +1337,7 @@ export function applyComponentChildTransforms(
     const childName = editorComponentMeshName(actor.id, component.id);
     const child = childMeshesOf(mesh).find((entry) => entry.name === childName);
     if (!child) continue;
+    if (supportsOverlayVisualStyle(component.classId)) applyOverlayVisualStyle(child, component.properties);
     if ((isEditorCameraModel(child) || component.classId === "CableComponent") && child.isWorldMatrixFrozen) child.unfreezeWorldMatrix();
     if (component.classId === "MeshComponent" || component.classId === "CableComponent") sceneShadowController(mesh.getScene()).setParticipation(child, component.properties);
     applySerializedTransform(

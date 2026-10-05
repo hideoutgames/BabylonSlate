@@ -99,12 +99,13 @@ export const variableNodes: NodeDefinition[] = [
       const name = variableNameOf(properties);
       return [
         ...targetPins(properties),
-        pin(
+        { ...pin(
           "value",
           name,
           "out",
           variablePinType(properties),
-        ),
+        ), ...(!properties.getOnly && !properties.componentId
+          ? { reference: "writable" as const } : {}) },
       ];
     },
     codegen: (ctx) => {

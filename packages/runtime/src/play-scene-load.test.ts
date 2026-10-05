@@ -1555,6 +1555,7 @@ describe("p7-play-scene-load", () => {
         type: "assignMesh",
         slotId: 0,
         actorGuid: "sky",
+        primaryComponentId: "sky-comp",
         meshAssetGuid: null,
         meshKind: "skybox",
         skybox: {
@@ -1608,6 +1609,7 @@ describe("p7-play-scene-load", () => {
         type: "assignMesh",
         slotId: 0,
         actorGuid: "label",
+        primaryComponentId: "text-comp",
         meshAssetGuid: "font-1",
         meshKind: "text3d",
         text3d: {

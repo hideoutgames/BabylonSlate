@@ -8,6 +8,7 @@ export interface BoneAttachment {
   targetSlotId: number;
   boneName: string;
   world: Matrix;
+  visualWorld: Matrix;
   local: Matrix;
   boneWorld: Matrix;
   position: Vector3;
@@ -50,7 +51,7 @@ export function applyAttachToBone(binding: BoneAttachmentBinding, command: BoneA
   restoreSnapshotPose(binding, command.slotId);
   binding.boneAttachments.set(command.slotId, {
     targetSlotId: command.targetSlotId, boneName: command.boneName,
-    world: Matrix.Identity(), local: Matrix.Identity(), boneWorld: Matrix.Identity(),
+    world: Matrix.Identity(), visualWorld: Matrix.Identity(), local: Matrix.Identity(), boneWorld: Matrix.Identity(),
     position: Vector3.Zero(), scale: Vector3.One(), rotation: Quaternion.Identity(), inverseRotation: Quaternion.Identity(), frame: -1, applied: false,
   });
 }
@@ -124,7 +125,10 @@ function updateAttachedSlot(binding: BoneAttachmentBinding, slotId: number, fram
   attachment.local.multiplyToRef(attachment.boneWorld, attachment.world);
   // Avoid Babylon parenting: disposing a character must not dispose another actor.
   // Each attachment owns its frozen matrix; snapshot TRS stays unchanged.
-  child.freezeWorldMatrix(attachment.world);
+  // A singleton's component pretransform affects only its visual, while the
+  // actor attachment pose remains the source for spatial audio and helpers.
+  child.getPivotMatrix().multiplyToRef(attachment.world, attachment.visualWorld);
+  child.freezeWorldMatrix(attachment.visualWorld);
   attachment.applied = true;
 }
 
