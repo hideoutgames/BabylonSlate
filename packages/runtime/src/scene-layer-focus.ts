@@ -4,7 +4,7 @@ import {
 } from "@babylonslate/core";
 import { Actor, ActorComponent, type World } from "@babylonslate/object-model";
 import { InputResolver, type AxisBinding, type RawInputEvent, type ResolvedInputTick } from "@babylonslate/input";
-import { actorParentGuid, actorWorldTransform, composeParentChildTransform } from "./actor-world-transform";
+import { actorParentGuid, actorWorldTransform, composeParentChildTransform, firstSpawnedActorIndex } from "./actor-world-transform";
 
 /** x/y are the rectangle center in the owning layer's design coordinates. */
 export interface FocusBounds { x: number; y: number; width: number; height: number }
@@ -77,7 +77,7 @@ export class SceneLayerFocusNavigation {
   private candidates(): Candidate[] {
     if (!this.settings.enabled) return [];
     const actors = this.world.getActors();
-    const byGuid = new Map(actors.map((actor) => [actor.guid, actor]));
+    const byGuid = firstSpawnedActorIndex(actors);
     const result: Candidate[] = [];
     for (const actor of actors) {
       if (!actor.sceneLayerId || !available(actor) || !this.host.canRun(actor)) continue;

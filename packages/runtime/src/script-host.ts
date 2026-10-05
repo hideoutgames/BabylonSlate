@@ -58,6 +58,7 @@ import type {
 } from "@babylonslate/anim-graph";
 import { loadCompiledModule, type CompiledModuleExports } from "./module-loader";
 import type { LogSeverity } from "./log-ring";
+import { actorLabel } from "./actor-world-transform";
 import { isInfiniteLoopError } from "@babylonslate/debugger";
 import type { InputBindingControls } from "@babylonslate/input";
 import type { TweenValueType } from "@babylonslate/core";
@@ -2198,11 +2199,6 @@ function writeParentId(
     : typeof value === "string" ? resolveLiveActor(services, value) : null;
   if (parent && refuseParentCycle(services, child, parent, "Set parentId")) return;
   child.setVariable("parentId", value);
-}
-
-function actorLabel(actor: Actor): string {
-  const name = actor.getVariable("name");
-  return `${typeof name === "string" && name.trim() ? name : actor.classId} (${actor.guid})`;
 }
 
 function readActorLink(
