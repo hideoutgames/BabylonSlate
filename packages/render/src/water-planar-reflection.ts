@@ -57,9 +57,9 @@ export interface WaterPlanarReflection {
    * Mirrored camera view × oblique projection, taking positions relative to the origin the water shader uses
    * (`slateWaterOrigin`: the view camera's position under floating origin, otherwise the world origin). A water
    * fragment at that relative position projects to clip position c, and the texel holding what it reflects is at
-   * u = 0.5 + 0.5·c.x/c.w with v = 0.5 + 0.5·c.y/c.w on WebGL2 (GLSL) or v = 0.5 − 0.5·c.y/c.w on WebGPU (WGSL),
-   * as e2e/water-planar-reflection.spec.ts reads back on both backends. Clip depth follows the engine's NDC depth
-   * range and reverse depth; the water plane is the near plane.
+   * uv = 0.5 + 0.5·c.xy/c.w on both backends (GLSL and WGSL alike: Babylon's WebGPU engine flips render-target rows
+   * to WebGL's layout), as e2e/water-planar-reflection.spec.ts reads back on WebGL2 and WebGPU. Clip depth follows
+   * the engine's NDC depth range and reverse depth; the water plane is the near plane.
    */
   readonly viewProjection: Matrix;
   /** World height of the reflecting rest plane. */
