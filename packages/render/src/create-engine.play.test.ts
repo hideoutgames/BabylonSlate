@@ -3932,7 +3932,7 @@ describe("Play createEngine view", () => {
         expect(replacement).toMatchObject({ color: [1, 0, 0], width: 3 });
       }
       const predecessor = replacement.targets[0]!.meshes[0]!;
-      handle.applyCommand({ ...assign, parts: ["model-a", "model-b"].map((guid, index) => ({
+      handle.applyCommand({ ...assign, parts: ["model-a", "model-b"].map((guid, index): NonNullable<snapshotApply.AssignMeshCommand["parts"]>[number] => ({
         componentId: `part-${index}`, parentId: null, meshKind: "box", meshAssetGuid: guid,
         position: [index * 2, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1],
       })) });
