@@ -33,6 +33,8 @@ describe("runtime deformers", () => {
       const owner = runtime.getWorld().findActor("owner")!;
       const initial = updates().length;
       const meshAssignments = commands.filter((command) => command.type === "assignMesh").length;
+      const physics = runtime.getPhysicsSync()!.getBackend();
+      const originalColliders = structuredClone(physics.listDebugColliders());
       runtime.tick();
       expect(updates()).toHaveLength(initial + 1);
       const changed = updates().at(-1)!;
@@ -40,6 +42,7 @@ describe("runtime deformers", () => {
       expect(changed).toMatchObject({ actorId: "owner", deformers: [{ id: "cage", targetMeshComponentId: "mesh", strength: 0.5 }] });
       expect(changed.deformers[0]!.offsets.slice(0, 3)).toEqual([1, 2, 3]);
       expect(changed.deformers[0]!.offsets.slice(21)).toEqual([0, 1, 0]);
+      expect(physics.listDebugColliders()).toEqual(originalColliders);
       runtime.tick(); runtime.tick();
       expect(updates()).toHaveLength(initial + 1);
       runtime.invokeScriptEvent("Rig", "Invalid", owner);
@@ -50,7 +53,7 @@ describe("runtime deformers", () => {
       expect(updates().at(-1)!.revision).toBeGreaterThan(changed.revision);
       expect(commands.filter((command) => command.type === "assignMesh")).toHaveLength(meshAssignments);
       expect(updates().some((command) => command.actorId === "sibling")).toBe(false);
-      expect(runtime.getPhysicsSync()!.getBackend().listDebugColliders()).toHaveLength(0);
+      expect(physics.listDebugColliders()).toEqual(originalColliders);
     } finally { runtime.stop(); }
   });
 });
