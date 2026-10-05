@@ -36,3 +36,6 @@ export {
 } from "./graph-editor-context";
 
 export { GraphInteractionSettingsContext } from "./graph-interaction-settings";
+
+export { PinDefaultEditorContext, type PinDefaultEditorRequest, type PinDefaultEditorRenderer } from "./pin-default-editor-context";
+export type { PinDefaultPreview } from "./pin-default-preview";

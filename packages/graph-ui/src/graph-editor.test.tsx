@@ -18,6 +18,8 @@ import { treeNodeTypes } from "./tree-node";
 import { animGraphEdgeTypes } from "./anim-graph-nodes";
 import { nodeRoleClass, type NodeVisualRole } from "./node-theme";
 import { basicParticleStageRole } from "@babylonslate/ui/lib/data-types";
+import { GraphInteractionSettingsContext } from "./graph-interaction-settings";
+import { useGraphEditorContext } from "./graph-editor-context";
 
 afterEach(() => {
   cleanup();
@@ -2128,7 +2130,7 @@ describe("GraphEditor", () => {
     });
   });
 
-  it("shows a read-only bool default between an empty pin and its name", () => {
+  it("shows a disabled bool control between an empty pin and its name when defaults are read-only", () => {
     const graph: GraphDocument = {
       nodes: [
         {
@@ -2168,7 +2170,7 @@ describe("GraphEditor", () => {
       edges: [],
     };
 
-    const { container } = render(<GraphEditor initialGraph={graph} />);
+    const { container } = render(<GraphEditor initialGraph={graph} readOnlyPinDefaults />);
     const handle = container.querySelector(
       '[data-id="branch"] [data-handleid="condition"]',
     );
@@ -2179,13 +2181,10 @@ describe("GraphEditor", () => {
       '[data-id="branch"] [data-pin-label="condition"]',
     );
     expect(preview).not.toBeNull();
-    expect(preview?.getAttribute("data-checked")).toBe("true");
-    expect(preview?.className).toMatch(/\bsize-5\b/);
-    expect(label?.className).toMatch(/text-base/);
-    expect(label?.className).toMatch(/whitespace-nowrap/);
-    expect(label?.className).toMatch(/shrink-0/);
-    expect(label?.className).not.toMatch(/max-w-\[18rem\]/);
-    expect(preview?.parentElement?.textContent).toBe("On");
+    const checkbox = screen.getByRole("checkbox", { name: "Condition" });
+    expect(checkbox.getAttribute("aria-checked")).toBe("true");
+    expect(checkbox.getAttribute("aria-disabled")).toBe("true");
+    expect(preview?.textContent).toBe("On");
     expect(handle?.compareDocumentPosition(preview!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(preview?.compareDocumentPosition(label!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
@@ -2271,7 +2270,7 @@ describe("GraphEditor", () => {
     };
     const onChange = vi.fn();
     const { container, rerender } = render(
-      <GraphEditor initialGraph={graph} pinTypeNames={{ mode: "Movement Mode" }} onChange={onChange} />,
+      <GraphEditor initialGraph={graph} pinTypeNames={{ mode: "Movement Mode" }} onChange={onChange} readOnlyPinDefaults />,
     );
     const preview = () => container.querySelector('[data-pin-default="enumRef"]');
     expect(preview()?.textContent).toBe("Walk");
@@ -2280,6 +2279,7 @@ describe("GraphEditor", () => {
         initialGraph={{ ...graph, nodes: [{ ...graph.nodes[0]!, data: { ...graph.nodes[0]!.data, "default:a": "runFast" } }] }}
         pinTypeNames={{ mode: "Movement Mode" }}
         onChange={onChange}
+        readOnlyPinDefaults
       />,
     );
     await waitFor(() => expect(preview()?.textContent).toBe("Run Fast"));
@@ -2343,7 +2343,7 @@ describe("GraphEditor", () => {
     ).not.toBeNull();
   });
 
-  it("shows a capped string field for an unconnected string default", () => {
+  it("keeps a read-only string default readable without adding controls to exec pins", () => {
     const graph: GraphDocument = {
       nodes: [
         {
@@ -2360,20 +2360,16 @@ describe("GraphEditor", () => {
       edges: [],
     };
 
-    const { container } = render(<GraphEditor initialGraph={graph} />);
+    const { container } = render(<GraphEditor initialGraph={graph} readOnlyPinDefaults />);
     const preview = container.querySelector(
       '[data-id="log"] [data-pin-default="string"]',
     );
     expect(preview).not.toBeNull();
-    expect(preview?.textContent).toBe(
+    const input = screen.getByTestId("pin-default-log-message");
+    expect(input).toHaveProperty("value",
       "This print message is long enough that it must truncate at twelve rem",
     );
-    expect(preview?.className).toMatch(/\btext-base\b/);
-    expect(preview?.className).toMatch(/\bh-8\b/);
-    expect(preview?.className).toMatch(/--graph-pin-default-max-width,12rem/);
-    expect(preview?.className).toMatch(/\bw-fit\b/);
-    expect(preview?.className).not.toMatch(/\bmin-w-fit\b/);
-    expect(preview?.className).toMatch(/\btruncate\b/);
+    expect(input).toHaveProperty("disabled", true);
     expect(
       container.querySelector('[data-id="log"] [data-pin-default]'),
     ).not.toBe(
@@ -4678,4 +4674,167 @@ it.each([
   expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ nodes: expect.arrayContaining([expect.objectContaining({
     id: "select", data: expect.objectContaining({ "default:option:8": expected }),
   })]) }), expect.anything());
+});
+
+describe("inline pin editing", () => {
+  function literalGraph(
+    type: PinType = { kind: "string" },
+    initial: unknown = "Before",
+    extraData: Record<string, unknown> = {},
+  ): GraphDocument {
+    return {
+      nodes: [
+        { id: "source", type: "test.source", position: { x: -300, y: 0 }, data: {
+          __pins: [{ id: "out", name: "Value", kind: "data", direction: "out", type }],
+        } },
+        { id: "sink", type: "test.literal", position: { x: 0, y: 0 }, data: {
+          title: "Literal Consumer",
+          unrelated: "Keep This",
+          "default:value": initial,
+          ...extraData,
+          __pins: [{ id: "value", name: "Value", kind: "data", direction: "in", type }],
+        } },
+      ],
+      edges: [],
+    };
+  }
+
+  function emittedDefault(onChange: ReturnType<typeof vi.fn>): unknown {
+    const graph = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
+    return graph.nodes.find((node) => node.id === "sink")?.data["default:value"];
+  }
+
+  it("commits one text edit and accepts host undo/redo snapshots without adding history entries", async () => {
+    const before = literalGraph();
+    const onChange = vi.fn();
+    const { rerender } = render(<GraphEditor initialGraph={before} onChange={onChange} />);
+    const input = screen.getByTestId("pin-default-sink-value");
+    fireEvent.change(input, { target: { value: "After" } });
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.blur(input);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(emittedDefault(onChange)).toBe("After");
+    expect(onChange.mock.calls[0]?.[1]).toMatchObject({ kind: "graph" });
+    const after = onChange.mock.calls[0]![0] as GraphDocument;
+    expect(after.nodes.find((node) => node.id === "sink")?.data.unrelated).toBe("Keep This");
+    expect(after.nodes.find((node) => node.id === "source")?.position).toEqual({ x: -300, y: 0 });
+
+    onChange.mockClear();
+    rerender(<GraphEditor initialGraph={before} onChange={onChange} />);
+    await waitFor(() => expect(screen.getByTestId("pin-default-sink-value")).toHaveProperty("value", "Before"));
+    rerender(<GraphEditor initialGraph={after} onChange={onChange} />);
+    await waitFor(() => expect(screen.getByTestId("pin-default-sink-value")).toHaveProperty("value", "After"));
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["bool", false, true],
+    ["int", 2, 7],
+    ["float", 1.25, 3.5],
+  ] as const)("serializes %s controls as typed scalar values", (kind, initial, expected) => {
+    const onChange = vi.fn();
+    render(<GraphEditor initialGraph={literalGraph({ kind }, initial)} onChange={onChange} />);
+    const field = screen.getByTestId("pin-default-sink-value");
+    if (kind === "bool") fireEvent.click(field);
+    else {
+      fireEvent.change(field, { target: { value: String(expected) } });
+      fireEvent.blur(field);
+    }
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(emittedDefault(onChange)).toBe(expected);
+  });
+
+  it.each([
+    ["Material", { __material: true }],
+    ["Particle", { __particleRole: "update" }],
+  ])("preserves %s numeric-array defaults when editing a scalar", (_host, extraData) => {
+    const onChange = vi.fn();
+    render(<GraphEditor initialGraph={literalGraph({ kind: "float" }, [2], extraData as Record<string, unknown>)} onChange={onChange} />);
+    const field = screen.getByTestId("pin-default-sink-value");
+    expect(field).toHaveProperty("value", "2");
+    fireEvent.change(field, { target: { value: "3.5" } });
+    fireEvent.blur(field);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(emittedDefault(onChange)).toEqual([3.5]);
+  });
+
+  it("commits an inline Particle vector component once while preserving the other numeric components", () => {
+    const onChange = vi.fn();
+    render(<GraphEditor initialGraph={literalGraph({ kind: "vec3" }, [1, 2, 3], { __particleRole: "update" })} onChange={onChange} />);
+    const x = screen.getByRole("textbox", { name: "Value X" });
+    expect(screen.getByRole("textbox", { name: "Value Y" })).toHaveProperty("value", "2");
+    expect(screen.getByRole("textbox", { name: "Value Z" })).toHaveProperty("value", "3");
+    fireEvent.change(x, { target: { value: "7" } });
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.blur(x);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(emittedDefault(onChange)).toEqual([7, 2, 3]);
+  });
+
+  it("commits the final inline rotator component while retaining named untouched components", () => {
+    const onChange = vi.fn();
+    render(<GraphEditor initialGraph={literalGraph({ kind: "rotator" }, { pitch: 10, yaw: 20.123456789, roll: 30 })} onChange={onChange} />);
+    const pitch = screen.getByRole("textbox", { name: "Value Pitch" });
+    fireEvent.change(pitch, { target: { value: "4" } });
+    fireEvent.change(pitch, { target: { value: "45" } });
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.blur(pitch);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(emittedDefault(onChange)).toEqual({ pitch: 45, yaw: 20.123456789, roll: 30 });
+  });
+
+  it("reacts to the read-only pin preference and never overrides an explicitly read-only graph", () => {
+    const graph = literalGraph();
+    const onChange = vi.fn();
+    const show = (readOnlyPinDefaults: boolean, readOnly = false) => (
+      <GraphInteractionSettingsContext.Provider value={{ assistantEnabled: true, assistantDistance: 48, shakeEnabled: true, readOnlyPinDefaults }}>
+        <GraphEditor initialGraph={graph} onChange={onChange} readOnly={readOnly} />
+      </GraphInteractionSettingsContext.Provider>
+    );
+    const { container, rerender } = render(show(false));
+    expect(screen.getByTestId("pin-default-sink-value")).toHaveProperty("disabled", false);
+    rerender(show(true));
+    expect(screen.getByTestId("pin-default-sink-value")).toHaveProperty("disabled", true);
+    expect(screen.getByTestId("pin-default-sink-value")).toHaveProperty("value", "Before");
+    expect(container.querySelector('[data-id="sink"] [data-pin-default="string"]')).not.toBeNull();
+    expect(screen.getByTestId("graph-add-node")).toBeTruthy();
+    rerender(show(false, true));
+    expect(screen.getByTestId("pin-default-sink-value")).toHaveProperty("disabled", true);
+    expect(screen.queryByTestId("graph-add-node")).toBeNull();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it.each(["wired", "node-disabled", "reference-required", "graph-readonly", "preference-readonly"] as const)(
+    "rejects a pending editor commit after its pin becomes %s",
+    (guard) => {
+      const graph = literalGraph();
+      const onChange = vi.fn();
+      let commit: ReturnType<typeof useGraphEditorContext>["onPinDefaultChange"];
+      function CaptureCommit() {
+        commit = useGraphEditorContext().onPinDefaultChange;
+        return null;
+      }
+      const renderBody = () => <CaptureCommit />;
+      const { rerender } = render(<GraphEditor initialGraph={graph} onChange={onChange} renderNodeBody={renderBody} />);
+      const pendingCommit = commit!;
+      expect(pendingCommit).toBeTypeOf("function");
+      const next = structuredClone(graph);
+      const sink = next.nodes[1]!;
+      if (guard === "wired") next.edges.push({ id: "wire", source: "source", sourceHandle: "out", target: "sink", targetHandle: "value" });
+      if (guard === "node-disabled") sink.data.__disabled = true;
+      if (guard === "reference-required") sink.data.__pins = [{
+        id: "value", name: "Value", kind: "data", direction: "in", type: { kind: "string" }, reference: "required",
+      }];
+      rerender(<GraphEditor
+        initialGraph={next}
+        onChange={onChange}
+        renderNodeBody={renderBody}
+        readOnly={guard === "graph-readonly"}
+        readOnlyPinDefaults={guard === "preference-readonly"}
+      />);
+      act(() => pendingCommit("sink", "value", "Late Edit"));
+      expect(onChange).not.toHaveBeenCalled();
+    },
+  );
 });

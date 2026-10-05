@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render } from "@testing-library/react";
-import { defaultEngineSettings } from "@babylonslate/vfs";
+import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { defaultEngineSettings, MemoryAppSettingsStore } from "@babylonslate/vfs";
+import { GraphEditor, type GraphDocument } from "@babylonslate/graph-ui";
+import { TagProvider } from "@babylonslate/editor-kit";
 import { EngineSettingsForm } from "./engine-settings-form";
+import { AppSettingsProvider, useAppSettings } from "../context/app-settings-context";
 
 if (typeof window !== "undefined") {
   class PointerEventPolyfill extends MouseEvent {
@@ -51,7 +54,45 @@ describe("EngineSettingsForm build identity", () => {
   });
 });
 
+function LiveGraphSettings() {
+  const { settings, updateSettings } = useAppSettings();
+  return <EngineSettingsForm settings={settings} categoryId="graph"
+    onChange={(patch) => updateSettings((next) => { Object.assign(next, patch); })} />;
+}
+
 describe("EngineSettingsForm graph", () => {
+  it("applies the local pin lock to an open graph and restores editing when disabled", async () => {
+    const store = new MemoryAppSettingsStore();
+    const onChange = vi.fn();
+    const graph: GraphDocument = { nodes: [{
+      id: "test", type: "tags.make", position: { x: 0, y: 0 },
+      data: { __nodeType: "tags.make", title: "Make Tag", __pins: [
+        { id: "value", name: "Value", kind: "data", direction: "in", type: { kind: "tag" } },
+      ] },
+    }], edges: [] };
+    const view = render(<AppSettingsProvider store={store}>
+      <LiveGraphSettings />
+      <TagProvider entries={[{ id: 8, path: "State", parentId: 0 }]}>
+        <GraphEditor initialGraph={graph} onChange={onChange} />
+      </TagProvider>
+    </AppSettingsProvider>);
+    const lock = view.getByRole("switch", { name: "Read-Only Pin Defaults" });
+    expect(view.getByTestId("pin-tag-test-value")).toHaveProperty("disabled", false);
+    fireEvent.click(lock);
+    await waitFor(() => expect(view.getByTestId("pin-tag-test-value")).toHaveProperty("disabled", true));
+    expect((await store.load()).readOnlyPinDefaults).toBe(true);
+    fireEvent.click(view.getByTestId("pin-tag-test-value"));
+    expect(view.queryByRole("dialog", { name: "Select Tag" })).toBeNull();
+    fireEvent.click(lock);
+    await waitFor(() => expect(view.getByTestId("pin-tag-test-value")).toHaveProperty("disabled", false));
+    fireEvent.click(view.getByTestId("pin-tag-test-value"));
+    fireEvent.keyDown(view.getByRole("tree", { name: "Tags" }), { key: "Enter" });
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ nodes: [expect.objectContaining({
+      data: expect.objectContaining({ "default:value": 8 }),
+    })] }), expect.anything());
+    expect((await store.load()).readOnlyPinDefaults).toBe(false);
+  });
+
   it("shows graph default zoom 0.5", () => {
     const { getByTestId } = render(
       <EngineSettingsForm

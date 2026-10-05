@@ -286,6 +286,7 @@ export {
   type ColorFieldProps,
   type ColorValue,
 } from "./color-field";
+export { ColorPicker, type ColorPickerProps } from "./color-picker";
 export {
   FlagsField,
   DEFAULT_FLAG_BIT_COUNT,

@@ -40,7 +40,7 @@ export type PinDefaultPreview =
       text: string;
     };
 
-function asLiteralPinType(
+export function literalPinType(
   pin: SerializedPin,
 ): PinType | null {
   if (pin.colorHint) return { kind: "color" };
@@ -76,36 +76,38 @@ function asNumberArray(value: unknown): number[] | undefined {
 function coerceLiteralValue(type: PinType, value: unknown): unknown {
   const numbers = asNumberArray(value);
   if (!numbers) return value;
+  const component = (index: number, fallback = 0) => numbers.length === 1 ? numbers[0]! : numbers[index] ?? fallback;
   switch (type.kind) {
     case "int":
     case "float":
       return numbers[0] ?? 0;
     case "vec2":
-      return { x: numbers[0] ?? 0, y: numbers[1] ?? 0 };
+      return { x: component(0), y: component(1) };
     case "vec3":
-      return { x: numbers[0] ?? 0, y: numbers[1] ?? 0, z: numbers[2] ?? 0 };
+      return { x: component(0), y: component(1), z: component(2) };
     case "color":
     case "vec4":
     case "quat":
       return {
-        x: numbers[0] ?? 0,
-        y: numbers[1] ?? 0,
-        z: numbers[2] ?? 0,
-        w: numbers[3] ?? (type.kind === "quat" ? 1 : 0),
+        x: component(0),
+        y: component(1),
+        z: component(2),
+        w: component(3, type.kind === "quat" || type.kind === "color" ? 1 : 0),
       };
     default:
       return value;
   }
 }
 
-function readPreviewValue(
+export function readPinDefaultValue(
   pin: SerializedPin,
   properties: Record<string, unknown>,
 ): unknown {
+  const type = literalPinType(pin);
   const stored = readPinDefaultForPin(properties, pin);
-  if (stored !== undefined) return stored;
-  if (pin.defaultValue !== undefined) return pin.defaultValue;
-  return undefined;
+  const value = stored !== undefined ? stored : pin.defaultValue !== undefined
+    ? pin.defaultValue : type ? defaultJsValue(type) : undefined;
+  return type ? coerceLiteralValue(type, value) : value;
 }
 
 function stripEnginePrefix(id: string): string {
@@ -155,36 +157,36 @@ export function pinDefaultPreview(
   if (pin.reference === "required") return null;
   if (pin.direction !== "in" || pin.kind !== "data") return null;
   if (pin.type.kind === "tag") {
-    return { kind: "tag", value: normalizeTag(readPreviewValue(pin, properties)) };
+    return { kind: "tag", value: normalizeTag(readPinDefaultValue(pin, properties)) };
   }
   if (pin.type.kind === "structRef" && pin.type.guid === "engine:TagContainer") {
-    return { kind: "tag-container", value: normalizeTagContainer(readPreviewValue(pin, properties)) };
+    return { kind: "tag-container", value: normalizeTagContainer(readPinDefaultValue(pin, properties)) };
   }
   if (pin.type.kind === "enumRef") {
     return {
       kind: "enumRef",
-      text: humanizePropertyLabel(pinDefaultAsString(readPreviewValue(pin, properties))),
+      text: humanizePropertyLabel(pinDefaultAsString(readPinDefaultValue(pin, properties))),
     };
   }
   if (pin.type.kind === "structRef" && pin.type.guid === "engine:InputType") {
-    const input = readPreviewValue(pin, properties) as { Name?: string } | undefined;
+    const input = readPinDefaultValue(pin, properties) as { Name?: string } | undefined;
     return input?.Name ? { kind: "structRef", text: input.Name } : null;
   }
   if (pin.type.kind === "structRef" && pin.type.guid === "engine:InputBinding") {
-    const binding = readPreviewValue(pin, properties) as { Input?: { Name?: string } } | undefined;
+    const binding = readPinDefaultValue(pin, properties) as { Input?: { Name?: string } } | undefined;
     return binding?.Input?.Name ? { kind: "structRef", text: binding.Input.Name } : null;
   }
   if (pin.type.kind === "classRef") {
-    const selectedClass = readPreviewValue(pin, properties);
+    const selectedClass = readPinDefaultValue(pin, properties);
     if (selectedClass !== undefined) {
       return { kind: "classRef", text: pinDefaultAsString(selectedClass) };
     }
   }
   const constraint = pinConstraintPreview(pin, pinTypeNames);
   if (constraint) return constraint;
-  const type = asLiteralPinType(pin);
+  const type = literalPinType(pin);
   if (!type) return null;
-  const stored = readPreviewValue(pin, properties);
+  const stored = readPinDefaultValue(pin, properties);
   const value = coerceLiteralValue(
     type,
     stored !== undefined ? stored : defaultJsValue(type),

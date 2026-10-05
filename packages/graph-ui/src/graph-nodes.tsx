@@ -11,7 +11,6 @@ import {
   ContextMenuOverlay,
   humanizePropertyLabel,
   PinShapeGlyph,
-  TagPicker,
   tagDisplayName,
   useTags,
   useContextMenu,
@@ -29,8 +28,8 @@ import {
   type NodeVisualRole,
   type PinTypeRef,
 } from "./node-theme";
-import { pinDefaultPreview } from "./pin-default-preview";
-import { PinDefaultPreviewWidget } from "./pin-default-widget";
+import { pinDefaultPreview, readPinDefaultValue } from "./pin-default-preview";
+import { PinDefaultEditor } from "./pin-default-editor";
 import { isPinWired } from "./pin-connections";
 
 type LogNodeData = {
@@ -201,7 +200,7 @@ function PinRow({
   incoming?: SerializedPin;
   outgoing?: SerializedPin;
 }) {
-  const { pendingPin, pinHasError, pinTypeNames, pinDisplayType, onPinDefaultChange } = useGraphEditorContext();
+  const { pendingPin, pinHasError, pinTypeNames, pinDisplayType, onPinDefaultChange, renderPinDefaultEditor } = useGraphEditorContext();
   const { entries: tags } = useTags();
   const outgoingTag = data.__nodeType === "tags.switch" && outgoing?.id.startsWith("case:")
     ? Number(outgoing.id.slice(5)) : undefined;
@@ -246,15 +245,12 @@ function PinRow({
               connected={incomingConnected}
               disabled={disabled}
             />
-            {preview?.kind === "tag" ? <TagPicker mode="single" value={preview.value}
-              onChange={(value) => onPinDefaultChange?.(nodeId, incoming.id, value)}
-              disabled={disabled || !onPinDefaultChange} className="nodrag nopan nowheel max-w-[var(--graph-pin-default-max-width,12rem)]"
-              aria-label={`${incomingLabel} Tag`} data-testid={`pin-tag-${nodeId}-${incoming.id}`} />
-              : preview?.kind === "tag-container" ? <TagPicker mode="multiple" value={preview.value}
-                onChange={(value) => onPinDefaultChange?.(nodeId, incoming.id, value)}
-                disabled={disabled || !onPinDefaultChange} className="nodrag nopan nowheel max-w-[var(--graph-pin-default-max-width,12rem)]"
-                aria-label={`${incomingLabel} Tags`} data-testid={`pin-tags-${nodeId}-${incoming.id}`} />
-              : preview ? <PinDefaultPreviewWidget preview={preview} /> : null}
+            {preview && displayedIncoming ? <PinDefaultEditor
+              nodeId={nodeId} nodeData={data} nodeType={typeof data.__nodeType === "string" ? data.__nodeType : undefined}
+              pin={{ ...displayedIncoming, name: incomingLabel }} preview={preview} value={readPinDefaultValue(displayedIncoming, data)}
+              disabled={disabled || !onPinDefaultChange} onChange={(value) => onPinDefaultChange?.(nodeId, incoming.id, value)}
+              renderer={renderPinDefaultEditor}
+            /> : null}
             <span
               data-pin-label={incoming.name}
               className="shrink-0 whitespace-nowrap text-base leading-snug text-foreground"
