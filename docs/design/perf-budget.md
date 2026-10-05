@@ -59,8 +59,8 @@ Bytes per texel (unit-tested): RGBA8 = 4, ASTC 4×4 = 1, plus ~⅓ for mipmaps.
   | --- | --- | --- | --- |
   | Low | none (no scene copy is planned) | none (sky) | 0 (4) |
   | Medium | 3 copy fetches (2 nearest-depth loads, 1 filtered colour), about 40 ALU | none (sky) | 1 (5) |
-  | High | as Medium, from a 0.75-resolution copy | up to 16 march steps + 4 bisection steps + 1 colour fetch (about 21 fetches and 300 ALU when a ray marches the full length; misses stop at the screen edge) | 1 (5) |
-  | Ultra | as Medium, from a full-resolution copy | the dominant flat body: 1 planar fetch and a mat4 transform (about 25 ALU); other bodies: up to 24 march steps + 4 bisection steps | 2 (6) |
+  | High | as Medium, from a 0.75-resolution copy | up to 16 march steps (one nearest-texel load each, plus one probe load at a step that passes the far side of a face) + 4 bisection loads + 1 hit texel load, and on a hit at a silhouette of the downsampled copy 4 depth loads + 1 texel load (about 22–27 fetches and 330 ALU when a ray marches the full length; misses stop at the screen edge) | 1 (5) |
+  | Ultra | as Medium, from a full-resolution copy | the dominant flat body: 1 planar fetch and a mat4 transform (about 25 ALU); other bodies: up to 24 march steps + 4 bisection steps (no silhouette loads at full resolution) | 2 (6) |
 
   - The depth pre-pass variant returns before this code (`DEPTHPREPASS`), so it is paid once per pixel. Lookups and uniform writes on the CPU run per draw only for variants that compile the features: two map reads, two vec4 writes and, with a planar reflection, one mat4 write; no allocation and no per-frame material dirtying.
   - The copy pass, the opaque/transparent split and the planar mirror pass are costed in [Water scene copy](../architecture/render.md#forward-framegraph-task-order) and the planar owner notes; they run only while copy-sampling or mirrored water is visible.
