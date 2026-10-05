@@ -20,7 +20,7 @@
  * - Texel (i, j) of cascade c holds the field at world (X, Z) = (i, j) · L_c / N (mod L_c, `patchSizes[c]`): sample at
  *   uv = (X, Z) / L_c + 0.5 / N with layer 2c or 2c + 1. Under a floating origin, add `fract(origin / L_c)` from the CPU
  *   in float64 instead of passing absolute positions.
- * Consumer contract (the water shader slice):
+ * Consumer contract (built-in water follows it, `SLATE_WATER_FFT` in `water-material.ts`):
  * - Multiply every channel by g = `amplitudeGain` (Detail Waves) · Wave Scale. H and ∂H/∂x, ∂H/∂z are then final.
  * - Scale the horizontal terms (Dx, Dz and the three ∂D terms) by λ = Steepness · bank gain (`waterBankGain` with the
  *   body's `waterBankFadeLength`, the analytic offset's fade), never the raw λ = 1: Steepness 0 bodies and banks get no
