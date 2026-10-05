@@ -288,6 +288,7 @@ describe("SettingsModal project authoring", () => {
     ["reflections", /Real-Time Reflections/, "Post Processing", "project-effects-reflections"],
     ["ssao", /Ambient Occlusion/, "Post Processing", "project-effects-ambient-occlusion"],
     ["lut", /Color Grading/, "Post Processing", "project-effects-color-grading"],
+    ["temporal", /Temporal Anti-Aliasing/, "Post Processing", "project-effects-temporal"],
     ["volumetric lighting", /Volumetric Fog/, "Post Processing", "project-effects-volumetric"],
     ["fog density", /Volumetric Fog/, "Post Processing", "project-effects-volumetric"],
   ])("opens the Rendering section holding %s from search", async (query, result, section, targetId) => {
@@ -311,6 +312,10 @@ describe("SettingsModal project authoring", () => {
     fireEvent.change(screen.getByLabelText("Volumetric Steps"), { target: { value: "32" } });
     fireEvent.blur(screen.getByLabelText("Volumetric Steps"));
     fireEvent.click(screen.getByTestId("project-effects-fxaa"));
+    expect(screen.queryByLabelText("Temporal Blend")).toBeNull();
+    fireEvent.click(screen.getByTestId("project-effects-temporal"));
+    fireEvent.change(screen.getByLabelText("Temporal Blend"), { target: { value: "0.25" } });
+    fireEvent.blur(screen.getByLabelText("Temporal Blend"));
     fireEvent.click(screen.getByTestId("project-effects-reflections"));
     expect(screen.queryByLabelText("Occlusion Radius")).toBeNull();
     fireEvent.click(screen.getByTestId("project-effects-ambient-occlusion"));
@@ -327,7 +332,7 @@ describe("SettingsModal project authoring", () => {
     expect(screen.getByLabelText("Volumetric Steps")).toHaveProperty("value", "32");
     expect(lastProjectRender.current).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
-    expect(lastProjectRender.current).toMatchObject({ effects: { fxaa: true, colorGrading: { enabled: true, lutTextureGuid: null }, ambientOcclusion: { enabled: true, radius: 1.5 }, reflections: { enabled: true }, volumetricLighting: { enabled: false, density: 0.0085, steps: 32 } } });
+    expect(lastProjectRender.current).toMatchObject({ effects: { fxaa: true, temporalAntiAliasing: { enabled: true, blend: 0.25, samples: 8 }, colorGrading: { enabled: true, lutTextureGuid: null }, ambientOcclusion: { enabled: true, radius: 1.5 }, reflections: { enabled: true }, volumetricLighting: { enabled: false, density: 0.0085, steps: 32 } } });
   });
   it("keeps input authoring in assets rather than Project Settings", () => {
     render(<SettingsModal open onOpenChange={() => {}} scope="project" />);

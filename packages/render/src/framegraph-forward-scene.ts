@@ -870,6 +870,8 @@ export class ForwardSceneFrameGraph {
         this.objects.targetTexture = this.clear.outputTexture;
         this.objects.depthTexture = this.clear.outputDepthTexture;
         this.objects.isMainObjectRenderer = true;
+        // Temporal anti-aliasing jitters the scene draw with its geometry pass.
+        this.effectsGraph?.spatial?.jitter?.jitterRenderer(this.objects.objectRenderer);
         this.shadows = new ManagedShadowsTask(this.graph, scene, this.objects);
         this.clustered = new FrameGraphClusteredLightsTask(
           this.graph,

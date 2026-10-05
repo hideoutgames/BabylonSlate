@@ -40,6 +40,19 @@ export interface ColorGradingSettings {
   lutTextureGuid: string | null;
 }
 
+/**
+ * Temporal anti-aliasing: the camera projection is jittered by a sub-pixel
+ * sequence each frame and the history is reprojected through motion vectors,
+ * clamped to the current neighborhood and blended with the new frame.
+ */
+export interface TemporalAntiAliasingSettings {
+  enabled: boolean;
+  /** Length of the sub-pixel jitter sequence. */
+  samples: number;
+  /** Weight of the current frame; lower values smooth more and ghost more. */
+  blend: number;
+}
+
 export interface VolumetricLightingSettings {
   enabled: boolean;
   resolutionScale: number;
@@ -72,6 +85,7 @@ export interface RenderEffectsSettings {
     scale: number;
   };
   fxaa: boolean;
+  temporalAntiAliasing: TemporalAntiAliasingSettings;
   colorGrading: ColorGradingSettings;
   ambientOcclusion: AmbientOcclusionSettings;
   reflections: ReflectionSettings;
@@ -87,6 +101,8 @@ export const RENDER_EFFECTS_LIMITS = {
   bloomKernel: [1, 512],
   bloomScale: [0.05, 1],
   spatialResolutionScale: [0.25, 1],
+  temporalSamples: [4, 32],
+  temporalBlend: [0.02, 1],
   ambientOcclusionSamples: [4, 32],
   ambientOcclusionRadius: [0.05, 10],
   ambientOcclusionStrength: [0, 4],
@@ -111,6 +127,7 @@ export const DEFAULT_RENDER_EFFECTS: Readonly<RenderEffectsSettings> = {
   vignette: { enabled: false, weight: 1.5, color: [0, 0, 0] },
   bloom: { enabled: false, threshold: 0.9, weight: 0.15, kernel: 64, scale: 0.5 },
   fxaa: false,
+  temporalAntiAliasing: { enabled: false, samples: 8, blend: 0.1 },
   colorGrading: { enabled: false, lutTextureGuid: null },
   ambientOcclusion: {
     enabled: false, resolutionScale: 0.5, samples: 16,
@@ -161,6 +178,7 @@ export function normalizeRenderEffectsSettings(
   const vignette = object(source.vignette);
   const bloom = object(source.bloom);
   const colorGrading = object(source.colorGrading);
+  const temporal = object(source.temporalAntiAliasing);
   const ambientOcclusion = object(source.ambientOcclusion);
   const reflections = object(source.reflections);
   const volumetric = object(source.volumetricLighting);
@@ -227,6 +245,13 @@ export function normalizeRenderEffectsSettings(
       ),
     },
     fxaa: source.fxaa === true,
+    temporalAntiAliasing: {
+      enabled: temporal.enabled === true,
+      samples: Math.round(finite(temporal.samples, DEFAULT_RENDER_EFFECTS.temporalAntiAliasing.samples,
+        ...RENDER_EFFECTS_LIMITS.temporalSamples)),
+      blend: finite(temporal.blend, DEFAULT_RENDER_EFFECTS.temporalAntiAliasing.blend,
+        ...RENDER_EFFECTS_LIMITS.temporalBlend),
+    },
     colorGrading: {
       enabled: colorGrading.enabled === true,
       lutTextureGuid:

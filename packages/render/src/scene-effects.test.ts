@@ -47,7 +47,7 @@ it("adds the Scene Linear and Display Color stages for PBR only", () => {
     ambientOcclusion: null, reflections: null, volumetricLighting: null,
     bloom: null,
     imageProcessing: { sceneLinear: true, vignette: null, colorGrading: null },
-    fxaa: false,
+    fxaa: false, temporalAntiAliasing: null,
   });
   // CEL is display-space by construction: the linear stage never applies.
   expect(planSceneEffects(linear, "cel")).toBeNull();
@@ -66,7 +66,7 @@ it("keeps CEL effects display-space with identity processing", () => {
     ambientOcclusion: null, reflections: null, volumetricLighting: null,
     bloom: { enabled: true, threshold: 0.5, weight: 0.4, kernel: 32, scale: 0.25 },
     imageProcessing: null,
-    fxaa: false,
+    fxaa: false, temporalAntiAliasing: null,
   });
 });
 
@@ -122,6 +122,13 @@ it("plans bloom and FXAA independently in Legacy Display", () => {
   expect(plan?.bloom?.enabled).toBe(true);
   expect(plan?.imageProcessing).toBeNull();
   expect(plan?.fxaa).toBe(true);
+});
+
+it("plans temporal anti-aliasing on both render modes", () => {
+  const temporal = effects({ temporalAntiAliasing: { enabled: true, samples: 8, blend: 0.1 } });
+  for (const mode of ["pbr", "cel"] as const)
+    expect(planSceneEffects(temporal, mode)?.temporalAntiAliasing).toEqual({ enabled: true, samples: 8, blend: 0.1 });
+  expect(sceneEffectsKey(temporal, "pbr", true)).not.toBe(sceneEffectsKey(effects({}), "pbr", true));
 });
 
 it("plans nothing while the post-processing toggle is off", () => {
