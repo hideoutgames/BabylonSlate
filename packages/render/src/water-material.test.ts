@@ -133,7 +133,7 @@ describe("Water material binding", () => {
       new FreeCamera("camera", new Vector3(0, 5, -10), scene);
       new DirectionalLight("sun", new Vector3(0, -1, 0.3), scene);
       new PointLight("lamp", new Vector3(0, 3, 0), scene);
-      // Preview, editor scenes and Play all build water through createWaterMesh; an edited asset rebuilds it.
+      // Preview, editor scenes and Play all build water through createWaterMesh; a Style edit rebuilds it everywhere.
       const compiled = async (style: "realistic" | "stylized", waveModel: "classic" | "ocean" = "classic") => {
         const mesh = createWaterMesh(scene, style, normalizeWaterBody({ resolution: 8 }), { ...createDefaultWaterDefinition(style), waveModel });
         const material = mesh.material as PBRMaterial, subMesh = mesh.subMeshes[0]!;
