@@ -6,7 +6,7 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 import { useCallback, type MouseEvent, type ReactNode } from "react";
-import { ClockIcon, FlagIcon, PlugIcon } from "lucide-react";
+import { ClockIcon, Gamepad2Icon, PlugIcon, PlugZapIcon } from "lucide-react";
 import {
   ContextMenuOverlay,
   humanizePropertyLabel,
@@ -322,6 +322,14 @@ function shellIsDevelopmentOnly(
   });
 }
 
+const INPUT_EVENT_TYPE_IDS = new Set([
+  "input.actionEvent",
+  "input.axisEvent",
+  "input.onAnyKeyPressed",
+  "input.onGamepadConnected",
+  "input.onGamepadDisconnected",
+]);
+
 function nodeCornerMarker(data: Record<string, unknown> | undefined) {
   if (data?.__material || data?.__particleRole) return null;
   const nodeType = typeof data?.__nodeType === "string" ? data.__nodeType : "";
@@ -331,8 +339,11 @@ function nodeCornerMarker(data: Record<string, unknown> | undefined) {
   if (nodeType === "interface.call" || data?.__interface === true) {
     return { Icon: PlugIcon, label: "Script Interface Function" };
   }
+  if (INPUT_EVENT_TYPE_IDS.has(nodeType)) {
+    return { Icon: Gamepad2Icon, label: "Input Event" };
+  }
   if (Object.hasOwn(EVENT_BY_TYPE_ID, nodeType) || nodeType === "flow.event.custom") {
-    return { Icon: FlagIcon, label: "Event" };
+    return { Icon: PlugZapIcon, label: "Event" };
   }
   return null;
 }
