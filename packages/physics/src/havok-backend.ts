@@ -162,6 +162,8 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       actorAId: string;
       actorBId: string;
       contacts: number;
+      /** A teleport dropped the native pair; the next step must re-report it. */
+      refreshing: boolean;
     }
   >();
 
@@ -379,8 +381,8 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       throw error;
     }
     record.desc.transform = pose;
-    // World membership refresh retires native pairs without emitting exits.
-    this.retireTriggerPairs(record.desc.actorId);
+    // World membership refresh drops native pairs without emitting exits.
+    this.refreshTriggerPairs(record.desc.actorId);
     for (const character of this.characters.values()) {
       if (character.desc.bodyId === bodyId) {
         character.controller.setPosition(toVector3(pose.position));
@@ -701,6 +703,8 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       this.stepping = false;
       this.resetTriggerActors.clear();
     }
+    // Before queued callback mutations, whose teleports await the next step.
+    this.endUnconfirmedTriggerPairs();
     this.flushMutations();
   }
 
@@ -1106,13 +1110,16 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       const pair = this.activeTriggerPairs.get(pairKey);
       if (kind === "overlapBegin") {
         if (pair) {
+          // Includes a teleported pair re-entering: its overlap never ended.
           pair.contacts += 1;
+          pair.refreshing = false;
           return;
         }
         this.activeTriggerPairs.set(pairKey, {
           actorAId: a,
           actorBId: b,
           contacts: 1,
+          refreshing: false,
         });
       } else {
         if (this.resetTriggerActors.has(a) || this.resetTriggerActors.has(b))
@@ -1297,6 +1304,40 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     while (this.pendingMutations.length && !this.disposed)
       this.pendingMutations.shift()!();
     for (const record of this.bodies.values()) this.assertHealthy(record);
+  }
+
+  /**
+   * A successful teleport refreshes native world membership, which drops the
+   * actor's native pairs without exit callbacks. Its actor-pair overlaps stay
+   * open until the next native step: a pair still overlapping re-enters there
+   * without a repeated Begin Overlap, and any other pair ends after that step.
+   */
+  private refreshTriggerPairs(actorId: string): void {
+    this.pendingContacts = this.pendingContacts.filter(
+      (event) =>
+        event.kind !== "hit" ||
+        (event.actorAId !== actorId && event.actorBId !== actorId),
+    );
+    for (const pair of this.activeTriggerPairs.values()) {
+      if (pair.actorAId !== actorId && pair.actorBId !== actorId) continue;
+      pair.contacts = 0;
+      pair.refreshing = true;
+    }
+    this.resetTriggerActors.add(actorId);
+  }
+
+  private endUnconfirmedTriggerPairs(): void {
+    for (const [key, pair] of this.activeTriggerPairs) {
+      if (!pair.refreshing) continue;
+      this.activeTriggerPairs.delete(key);
+      this.pendingContacts.push({
+        kind: "overlapEnd",
+        actorAId: pair.actorAId,
+        actorBId: pair.actorBId,
+        location: { x: 0, y: 0, z: 0 },
+        normal: { x: 0, y: 1, z: 0 },
+      });
+    }
   }
 
   private retireTriggerPairs(actorId: string): void {

@@ -589,6 +589,11 @@ export class PhysicsWorldSync {
     this.staticPoses.delete(actorId);
   }
 
+  /**
+   * Static bodies follow their actor one way: readback never writes them, so
+   * an unchanged composed pose stays bit-identical and is never re-teleported.
+   * A pose moved by the actor or any ancestor is teleported once per change.
+   */
   private syncStaticPose(actor: Actor, bodyId: string, world: Transform): void {
     // Same layout as `physicsPoseDescriptor`, which creation stores.
     const descriptor = this.poseScratch;
@@ -653,10 +658,14 @@ export class PhysicsWorldSync {
   }
 
   /**
-   * Gather every native pose, then write actor-local poses. An unparented body
-   * copies its native pose without composition; a parented body resolves only
-   * its own ancestor chain against post-step parent body poses. With
-   * `recompose`, the whole world is recomposed and revalidated instead.
+   * Gather every simulated native pose, then write actor-local poses. Static
+   * bodies are skipped: they follow their actor, so authored depth, tilt and
+   * quaternions stay as written and a static child keeps its local pose under a
+   * moving parent. An unparented body copies its native pose without
+   * composition; a parented body resolves only its own ancestor chain against
+   * post-step parent body poses, where a static ancestor composes under its
+   * own parent like a nonphysics actor. With `recompose`, the whole world is
+   * recomposed and revalidated instead.
    */
   private readBack(recompose: boolean): void {
     const poses = this.bodyPoses;
@@ -664,6 +673,7 @@ export class PhysicsWorldSync {
     this.readbackWorld.clear();
     try {
       for (const [actorId, bodyId] of this.bodyByActor) {
+        if (this.isStaticBody(actorId)) continue;
         const transform = this.backend.getBodyTransform(bodyId);
         if (transform) poses.set(actorId, transform);
       }
@@ -701,9 +711,10 @@ export class PhysicsWorldSync {
   }
 
   /**
-   * Post-step world pose of a readback ancestor: a body's native pose with its
-   * composed scale, otherwise the authored composition under its resolved
-   * parent. A chain without bodies reuses this tick's pre-step composition,
+   * Post-step world pose of a readback ancestor: a simulated body's native pose
+   * with its composed scale, otherwise (nonphysics and static actors) the
+   * authored composition under its resolved parent. A chain without simulated
+   * bodies reuses this tick's pre-step composition,
    * whose inputs are unchanged and were already validated for cycles and shear:
    * without hook scripts, only Movement motors write poses after composition,
    * and those actors are bodies whose descendants recompose here.
@@ -814,7 +825,14 @@ export class PhysicsWorldSync {
     if (!bodyId) return;
     const pose = current(actor);
     this.applyActorColliders(actor, bodyId, pose);
-    this.backend.teleportBody(bodyId, physicsPose(pose), options);
+    // A static body has no velocity to preserve or reset. Rewriting its
+    // unchanged pose would only refresh native membership and trigger pairs.
+    if (this.isStaticBody(actor.guid)) this.syncStaticPose(actor, bodyId, pose);
+    else this.backend.teleportBody(bodyId, physicsPose(pose), options);
+  }
+
+  private isStaticBody(actorId: string): boolean {
+    return this.appliedBodyProperties.get(actorId)?.value.motionType === "static";
   }
 
   /** Apply mid-Play RigidBody / Collider inspector knobs to the live backend. */
@@ -889,6 +907,8 @@ export class PhysicsWorldSync {
     }
     const moved = this.backend.moveCharacter(actor.guid, translation, dt);
     if (!moved) return;
+    // The controller also moves a static body natively: republish it next sync.
+    this.staticPoses.delete(actor.guid);
     const localTransform = actorLocalPhysicsTransform(
       moved,
       actor,
