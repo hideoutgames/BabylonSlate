@@ -128,6 +128,44 @@ export async function runRenderTargetProof(backend: "webgl2" | "webgpu") {
       cutout.alphaCutOff = cutoff;
       for (const mode of ["DepthPass", "WorldNormal"] as const) await capture(mode, false, `${label} ${mode}`);
     }
+    // A monitor inside its own capture must sample the completed image while
+    // the next one is drawn. Repeated swaps exercise frozen NodeMaterial
+    // bindings on both GPU backends, including after the image changes.
+    plane.material = material;
+    await capture("SceneColor", false, "Feedback Seed");
+    const feedback = library.acquire(scene, "feedback-sampler", graph);
+    if (feedback.ok === false) throw new Error(JSON.stringify(feedback.diagnostics));
+    const feedbackDiagnostics = await feedback.ready;
+    if (feedbackDiagnostics.length) throw new Error(JSON.stringify(feedbackDiagnostics));
+    feedback.material.allowShaderHotSwapping = false;
+    plane.material = feedback.material;
+    await feedback.material.forceCompilationAsync(plane);
+    feedback.material.freeze();
+    const feedbackOutput = captures.acquireTexture("texture")!.resource;
+    const nextFeedback = async (label: string) => {
+      const previous = feedbackOutput.getInternalTexture();
+      captures.request("capture");
+      const deadline = performance.now() + 10000;
+      do {
+        engine.beginFrame(); captures.render(); engine.endFrame();
+        if (feedbackOutput.getInternalTexture() !== previous) break;
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      } while (performance.now() < deadline);
+      if (feedbackOutput.getInternalTexture() === previous) throw new Error(`Feedback capture did not complete: ${label}`);
+      const pixels = await feedbackOutput.readPixels(0, 0, null, true, false, 16, 16, 1, 1);
+      if (!pixels) throw new Error("Feedback capture returned no pixels.");
+      results.push({ mode: label, pixel: Array.from(pixels as Uint8Array) });
+    };
+    await nextFeedback("Feedback First");
+    await nextFeedback("Feedback Second");
+    material.emissiveColor = Color3.Green();
+    material.markDirty(true);
+    plane.material = material;
+    await nextFeedback("Feedback New Image");
+    plane.material = feedback.material;
+    await nextFeedback("Feedback Updated First");
+    await nextFeedback("Feedback Updated Second");
+    await sampleMaterial("Material After Feedback");
     captures.clear();
     captures.dispose();
     return { results, retainedBytes: managedRenderReservations(engine).reservedBytes, mainCameraPreserved: scene.activeCamera === main };
