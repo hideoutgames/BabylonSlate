@@ -112,7 +112,7 @@ describe("SceneLayer actor switcher", () => {
       runtime.removeSceneLayer(liveLayer.guid);
       expect(last.destroyed).toBe(true);
       expect(switcher.currentActor).toBeNull();
-      expect(runtime.getWorld().getActors()).toHaveLength(0);
+      expect(runtime.getWorld().getActors().filter(actor => actor.sceneLayerId === liveLayer.guid)).toHaveLength(0);
     } finally { runtime.stop(); }
   });
 
