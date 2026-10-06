@@ -56,6 +56,7 @@ describe("Add Component catalog", () => {
     expect(overlay).not.toContain("OutlineComponent");
     expect(overlay).not.toContain("CableComponent");
     expect(overlay).not.toContain("SplineComponent");
+    expect(overlay).not.toContain("SaveGameComponent");
     expect(overlay).not.toContain("FogVolumeComponent");
     const world = addableComponentsForHost({ overlay: false }).map((e) => e.id);
     expect(world).toContain("SkyboxComponent");
@@ -63,6 +64,7 @@ describe("Add Component catalog", () => {
     expect(world).toContain("CableComponent");
     expect(world).toContain("FogVolumeComponent");
     expect(world).toContain("SplineComponent");
+    expect(world).toContain("SaveGameComponent");
     expect(world).not.toContain("2DButtonComponent");
     expect(world).not.toContain("2DTextComponent");
     expect(world).not.toContain("2DRichTextComponent");
@@ -88,7 +90,7 @@ describe("Add Component catalog", () => {
       "Overlay",
       "Physics",
     ]);
-    expect(byCategory.get("General")).toEqual(["MovementComponent", "SplineComponent"]);
+    expect(byCategory.get("General")).toEqual(["SaveGameComponent", "MovementComponent", "SplineComponent"]);
     expect(byCategory.get("Rendering")).toEqual([
       "MeshComponent",
       "SpriteComponent",
