@@ -4330,7 +4330,7 @@ describe("Play createEngine view", () => {
         uiControl: { classId, properties: parseUIControl2DProperties(classId, { width: 4, height: 2 }) } }] });
     runRenderLoop.mock.calls[0]?.[0]?.();
     handle.applyCommand({ type: "sceneLayerLayout", layerId: "hud", entries: [{ actorId: "scroll", componentId: "viewport", slotId: 2,
-      rect: { x: 0, y: 0, width: 9, height: 9 }, clip: null, scrollAncestors: [], scroll: { x: 0, y: 0, maxX: 0, maxY: 20, axis: "vertical", viewport: { x: 0, y: 0, width: 9, height: 9 } } }] });
+      rect: { x: 0, y: 0, width: 9, height: 9 }, clip: null, scrollAncestors: [], scroll: { x: 0, y: 0, maxX: 0, maxY: 20, axis: "vertical", viewport: { x: 0, y: 0, width: 9, height: 9 }, scaleX: 1, scaleY: 1 } }] });
     canvas.emit("pointerdown", pointerAt(128, 128));
     canvas.emit("pointermove", pointerAt(160, 96));
     canvas.emit("pointerup", pointerAt(160, 96));
