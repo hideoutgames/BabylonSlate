@@ -238,7 +238,7 @@ See [command-layer.md](command-layer.md) for undo/journal and [gestures.md](../d
 
 ### Shared Scene Details
 
-Selecting multiple actors exposes shared Position, Rotation, Scale and Visible fields. Differing axes show **Mixed**. Entering or scrubbing an axis sets that absolute value on every selected actor while preserving their other axes. In 2D, Z-Order remains separate and hidden axes are retained. Reset applies the visible property axes across the selection. Each gesture is one scene edit with group Undo/Redo.
+Selecting multiple actors exposes shared Position, Rotation, Scale and Visible fields. Differing axes show **Mixed**. Entering or scrubbing an axis sets that absolute value on every selected actor while preserving their other axes. In 2D, Z-Order remains separate and hidden axes are retained. The 2D camera looks down +Z from −Z, so Z-Order is the negated `transform.position.z`: a higher Z-Order is nearer the camera and draws in front. Reset applies the visible property axes across the selection. Each gesture is one scene edit with group Undo/Redo.
 
 **Primary Actor** identifies the actor whose name, lock flag and components are edited. Component addition, removal and property editing remain single-actor operations.
 

@@ -397,8 +397,8 @@ describe("shared actor Details", () => {
     expect(
       next.actors.slice(0, 2).map((actor) => actor.transform.position),
     ).toEqual([
-      [1, 2, 8],
-      [4, 5, 8],
+      [1, 2, -8],
+      [4, 5, -8],
     ]);
   });
 
@@ -934,7 +934,7 @@ describe("SceneDetailsPanel authoring", () => {
     expect(screen.queryByTestId("property-actor-z-order")).toBeNull();
   });
 
-  it("shows Z-Order instead of Position Z in 2D and writes position z", () => {
+  it("shows Z-Order instead of Position Z in 2D, higher in front (nearer the camera)", () => {
     scene().viewportMode = "2d";
     const actor = scene().actors[0];
     if (!actor) throw new Error("default scene actor missing");
@@ -945,11 +945,11 @@ describe("SceneDetailsPanel authoring", () => {
     expect(screen.getByTestId("property-actor-position-x")).toBeTruthy();
     expect(screen.getByTestId("property-actor-position-y")).toBeTruthy();
     const zOrder = screen.getByTestId("property-actor-z-order");
-    expect((zOrder as HTMLInputElement).value).toBe("3");
+    expect((zOrder as HTMLInputElement).value).toBe("-3");
     fireEvent.change(zOrder, { target: { value: "7" } });
     expect(harness.applySceneChange).toHaveBeenCalled();
     const next = harness.applySceneChange.mock.calls[0]![1] as SerializedScene;
-    expect(next.actors[0]?.transform.position).toEqual([1, 2, 7]);
+    expect(next.actors[0]?.transform.position).toEqual([1, 2, -7]);
   });
 
   it("titles Details with the actor count when more than one actor is selected", () => {
