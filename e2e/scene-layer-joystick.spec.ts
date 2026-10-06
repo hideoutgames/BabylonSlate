@@ -56,6 +56,9 @@ for (const mode of ["Play", "Preview Build"] as const) {
     const canvas = mode === "Play" ? page.getByTestId("play-canvas") : page.frameLocator('[data-testid="preview-build-iframe"]').getByTestId("player-canvas");
     await expect.poll(() => colorAt(canvas, 0), { timeout: 30000 }).toBe("blue");
     await expect.poll(() => colorAt(canvas, 2.5)).toBe("red");
+    // Rendering can finish before Play dismisses its loading overlay. CDP touch
+    // injection has no actionability checks, so wait until the canvas owns hits.
+    await canvas.click({ trial: true });
     const box = (await canvas.boundingBox())!;
     const center = { x: box.x + box.width / 2, y: box.y + box.height / 2, id: 1 };
     const session = await page.context().newCDPSession(page);
