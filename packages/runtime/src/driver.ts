@@ -5635,8 +5635,14 @@ class InProcessRuntime implements RuntimeDriver {
           const loaded = this.pendingGameLoaded;
           this.pendingGameLoaded = null;
           if (!this.stopped) {
-            loaded?.();
-            this.flushOwnerActions();
+            // User callbacks run after commit. They cannot turn an applied
+            // checkpoint into an apparent load failure.
+            for (const notify of [loaded, () => this.flushOwnerActions()]) {
+              try { notify?.(); }
+              catch (error) {
+                try { this.reportError(error); } catch { /* The host may be disconnected. */ }
+              }
+            }
           }
         }
       },
