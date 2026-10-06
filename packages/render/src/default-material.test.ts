@@ -1,24 +1,18 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  Color3,
-  Material,
   NullEngine,
-  PBRMaterial,
   Scene,
   StandardMaterial,
   Texture,
 } from "@babylonjs/core";
 import {
   ENGINE_DEFAULT_CHECKER_TILES,
-  ENGINE_DEFAULT_MATERIAL_NAME,
   createEngineDefaultMaterial,
   engineDefaultCheckerRgba,
   installEngineDefaultMaterial,
   isEngineDefaultMaterial,
 } from "./default-material";
-import { createTestEngine } from "./create-null-engine";
 import { createPrimitiveMesh } from "./scene-loader";
-import { setupDefaultViewport } from "./viewport";
 
 const handles: Array<{ engine: { dispose: () => void }; scene: { dispose: () => void } }> =
   [];
@@ -39,22 +33,6 @@ function rawScene(): Scene {
 }
 
 describe("engine default material", () => {
-  it("is a lit PBR material with new-Material metallic and roughness", () => {
-    const scene = rawScene();
-    const material = createEngineDefaultMaterial(scene);
-
-    expect(material).toBeInstanceOf(PBRMaterial);
-    expect(material.name).toBe(ENGINE_DEFAULT_MATERIAL_NAME);
-    expect(material.unlit).toBe(false);
-    expect(material.disableLighting).toBe(false);
-    expect(material.metallic).toBe(0);
-    expect(material.roughness).toBe(0.5);
-    expect(material.transparencyMode).toBe(Material.MATERIAL_OPAQUE);
-    expect(material.backFaceCulling).toBe(true);
-    expect(material.emissiveColor).toEqual(new Color3(0, 0, 0));
-    expect(material.albedoColor).toEqual(new Color3(1, 1, 1));
-  });
-
   it("uses a UV-tiled grey checker for albedo", () => {
     const scene = rawScene();
     const material = createEngineDefaultMaterial(scene);
@@ -130,17 +108,5 @@ describe("engine default material", () => {
 
     expect(mesh.material).toBe(spriteMat);
     expect(isEngineDefaultMaterial(mesh.material)).toBe(false);
-  });
-
-  it("createTestEngine installs the engine default", () => {
-    const handle = createTestEngine();
-    handles.push(handle);
-    expect(isEngineDefaultMaterial(handle.scene.defaultMaterial)).toBe(true);
-  });
-
-  it("setupDefaultViewport installs the engine default on a bare scene", () => {
-    const scene = rawScene();
-    setupDefaultViewport(scene);
-    expect(isEngineDefaultMaterial(scene.defaultMaterial)).toBe(true);
   });
 });

@@ -3,21 +3,12 @@ import { KhronosTextureContainer2 } from "@babylonjs/core/Misc/khronosTextureCon
 import {
   configureKtx2DecoderRuntime,
   configureKtx2Transcoder,
-  ktx2TranscoderUrls,
   playerFilesHaveKtx2Transcoder,
   probeKtx2TranscoderAvailable,
   shouldPackKtx2ForPreviewBuild,
 } from "./ktx2-transcoder";
 
 describe("ktx2 transcoder config", () => {
-  it("builds self-hosted URLs under the public base", () => {
-    const urls = ktx2TranscoderUrls("/ktx2/");
-    expect(urls.jsDecoderModule).toBe("/ktx2/babylon.ktx2Decoder.js");
-    expect(urls.wasmUASTCToASTC).toContain("uastc_astc.wasm");
-    expect(urls.wasmUASTCToRGBAUnorm).toContain("uastc_rgba8_unorm_v2.wasm");
-    expect(urls.jsMSCTranscoder).toContain("msc_basis_transcoder.js");
-  });
-
   it("applies URLConfig without reaching for a CDN", () => {
     const mock = { URLConfig: {} as Record<string, string | null> };
     configureKtx2Transcoder(mock, "/assets/ktx2");

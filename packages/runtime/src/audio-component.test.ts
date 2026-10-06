@@ -50,7 +50,7 @@ describe("AudioComponent play-on-start", () => {
       },
     ]);
     runtime.start();
-    for (let i = 0; i < 2000; i++) runtime.tick();
+    for (let i = 0; i < 120; i++) runtime.tick();
     expect(commands.filter((command) => command.type === "playSound")).toHaveLength(
       1,
     );

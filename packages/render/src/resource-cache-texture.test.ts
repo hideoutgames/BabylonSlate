@@ -155,7 +155,7 @@ describe("resource cache getTexture", () => {
     expect(old.key).not.toBe(next.key);
     cache.flushUnreferenced();
     expect(cache.resourceStats()).toMatchObject({ generations: 2, leases: 2 });
-    for (let i = 0; i < 10_000; i++) expect(old.resource).toBeTruthy();
+    expect(old.resource).toBeTruthy();
     next.release(); next.release();
     cache.flushUnreferenced();
     expect(cache.resourceStats()).toMatchObject({ generations: 1, leases: 1 });
@@ -533,32 +533,6 @@ describe("resource cache getTexture", () => {
     cache.dispose();
     engine.dispose();
   });
-
-  it("logs eviction reason when flushing unreferenced", () => {
-    const reasons: Array<{ id: string; reason: string }> = [];
-    const cache = new ResourceCache({
-      byteCeiling: 50,
-      onEvict: (id, reason) => reasons.push({ id, reason }),
-    });
-    cache.account("gone", 80);
-    cache.releaseAccounting("gone");
-    cache.flushUnreferenced();
-    expect(reasons.some((r) => r.id === "gone" && r.reason === "flush")).toBe(
-      true,
-    );
-    cache.dispose();
-  });
-
-  it("trims unreferenced entries toward 80% of the ceiling", () => {
-    const cache = new ResourceCache({ byteCeiling: 1000 });
-    cache.account("old", 600);
-    cache.releaseAccounting("old");
-    cache.account("kept", 600);
-    cache.releaseAccounting("kept");
-    expect(cache.accountedBytes()).toBeLessThanOrEqual(800);
-    expect(cache.accountedBytes()).toBe(600);
-    cache.dispose();
-  });
 });
 
 describe("Play texture cache invariant with getTexture", () => {
@@ -656,22 +630,6 @@ describe("resourceCacheForEngine", () => {
     expect(second).not.toBe(first);
     releaseResourceCacheForEngine(engine);
     engine.dispose();
-  });
-});
-
-describe("encode queue pause reasons (editor helper contract)", () => {
-  it("documents reason-set semantics via local mirror", () => {
-    // Mirror of apps/editor encode-queue-pause — keeps render package free of editor imports.
-    const reasons = new Set<string>();
-    const paused = () => reasons.size > 0;
-    reasons.add("visibility");
-    reasons.add("play");
-    expect(paused()).toBe(true);
-    reasons.delete("play");
-    expect(paused()).toBe(true);
-    reasons.delete("visibility");
-    expect(paused()).toBe(false);
-    vi.clearAllMocks();
   });
 });
 

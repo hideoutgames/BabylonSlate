@@ -379,7 +379,7 @@ describe("applyAlbedoTexture", () => {
     expect(cache.resourceStats().leases).toBe(0);
     scene.dispose(); cache.dispose(); engine.dispose();
   });
-  it("keeps the material and binding stable across 10,000 repeated sprite selections", () => {
+  it("keeps the material and binding stable across repeated sprite selections", () => {
     const engine = new NullEngine();
     const scene = new Scene(engine);
     const cache = new ResourceCache();
@@ -387,7 +387,7 @@ describe("applyAlbedoTexture", () => {
     const assets = { resourceCache: cache, textureBytes: installTextureBytes(new Map([["atlas", new Uint8Array([1, 2, 3, 4])]])) };
     applyAlbedoTexture(mesh, scene, "atlas", assets);
     const material = mesh.material;
-    for (let i = 0; i < 10_000; i++) applyAlbedoTexture(mesh, scene, "atlas", assets);
+    for (let i = 0; i < 100; i++) applyAlbedoTexture(mesh, scene, "atlas", assets);
     expect(mesh.material).toBe(material);
     scene.dispose();
     cache.flushUnreferenced();

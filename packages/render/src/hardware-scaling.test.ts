@@ -120,6 +120,26 @@ describe("frame pressure scaling", () => {
   });
 });
 
+describe("Engine Settings floor", () => {
+  it("raises the floor when Engine Settings hardware scaling changes so the valve cannot hunt back", () => {
+    const scaling = controller({ targetFrameMs: 1000 / 30 });
+    scaling.setSettingsLevel(2);
+    expect(scaling.getLevel()).toBe(2);
+    for (let i = 0; i < 20; i++) scaling.noteFramePressure(sample(null, 4));
+    expect(scaling.getLevel()).toBe(2);
+  });
+
+  it("noteRestore returns to the Engine Settings floor and clears hitch samples", () => {
+    const scaling = controller();
+    scaling.setLevel(1.25);
+    expect(scaling.getLevel()).toBe(1.25);
+    scaling.noteRestore();
+    expect(scaling.getLevel()).toBe(1);
+    for (let i = 0; i < 4; i++) scaling.noteFramePressure(sample(null, 200));
+    expect(scaling.getLevel()).toBe(1);
+  });
+});
+
 describe("quality resolution bounds", () => {
   it("uses the chosen resolution bounds and leaves fixed scaling unchanged under load", () => {
     const engine = new NullEngine();

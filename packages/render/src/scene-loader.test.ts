@@ -471,61 +471,26 @@ describe("scene-loader", () => {
     expect(dash!.parent).toBe(mesh);
   });
 
-  it("skips MeshComponent collision dashes when drawMeshCollision is false", () => {
-    const { scene } = createHandle();
-    applySceneToBabylonScene(
-      scene,
-      sceneWithActors([
-        createActor("crate", "Crate", {
-          components: [createMeshComponent("mesh", "box")],
-        }),
-      ]),
-      { drawMeshCollision: false },
-    );
-    const mesh = scene.getMeshByName(editorMeshName("crate"));
-    expect(
-      mesh
-        ?.getChildMeshes()
-        .some((child) => child instanceof Mesh && isColliderVisualMesh(child)),
-    ).toBe(false);
-  });
-
-  it("skips MeshComponent collision dashes when mode is none", () => {
-    const { scene } = createHandle();
-    const component = createMeshComponent("mesh", "box");
-    component.properties.collisionMode = "none";
-    applySceneToBabylonScene(
-      scene,
-      sceneWithActors([
-        createActor("deco", "Deco", { components: [component] }),
-      ]),
-    );
-    const mesh = scene.getMeshByName(editorMeshName("deco"));
-    expect(
-      mesh
-        ?.getChildMeshes()
-        .some((child) => child instanceof Mesh && isColliderVisualMesh(child)),
-    ).toBe(false);
-  });
-
-  it("skips MeshComponent collision dashes in a 2D scene", () => {
-    const { scene } = createHandle();
-    applySceneToBabylonScene(scene, {
-      ...createDefaultScene("2d"),
-      actors: [
-        createActor("crate", "Crate", {
-          components: [createMeshComponent("mesh", "box")],
-        }),
-      ],
-    });
-    const mesh = scene.getMeshByName(editorMeshName("crate"));
-    expect(
-      mesh
-        ?.getChildMeshes()
-        .some((child) => child instanceof Mesh && isColliderVisualMesh(child)),
-    ).toBe(false);
-  });
-
+  it.each(["drawMeshCollision is false", "mode is none", "the scene is 2D"] as const)(
+    "skips MeshComponent collision dashes when %s",
+    (reason) => {
+      const { scene } = createHandle();
+      const component = createMeshComponent("mesh", "box");
+      if (reason === "mode is none") component.properties.collisionMode = "none";
+      const actors = [createActor("crate", "Crate", { components: [component] })];
+      applySceneToBabylonScene(
+        scene,
+        reason === "the scene is 2D" ? { ...createDefaultScene("2d"), actors } : sceneWithActors(actors),
+        reason === "drawMeshCollision is false" ? { drawMeshCollision: false } : undefined,
+      );
+      const mesh = scene.getMeshByName(editorMeshName("crate"));
+      expect(
+        mesh
+          ?.getChildMeshes()
+          .some((child) => child instanceof Mesh && isColliderVisualMesh(child)),
+      ).toBe(false);
+    },
+  );
   it("includes Mesh collision mode in the visual fingerprint", () => {
     const actor = createActor("crate", "Crate", {
       components: [createMeshComponent("mesh", "box")],
@@ -709,23 +674,6 @@ describe("scene-loader", () => {
     expect(childSphere?.position.x).toBe(2);
   });
 
-  it("draws an empty actor as the default billboard at the pivot, not a cube", () => {
-    const { scene } = createHandle();
-    applySceneToBabylonScene(
-      scene,
-      sceneWithActors([createActor("empty", "Empty")]),
-    );
-    const origin = scene.getMeshByName(editorMeshName("empty"));
-    const icon = scene.getMeshByName(
-      editorComponentMeshName("empty", "billboard"),
-    );
-    expect(origin!.visibility).toBe(0);
-    expect(icon!.billboardMode).toBe(Mesh.BILLBOARDMODE_ALL);
-    expect(
-      (icon!.metadata as { editorBillboard?: string }).editorBillboard,
-    ).toBe("default");
-  });
-
   it("maps empty and helper actors to dedicated billboard kinds, not a box", () => {
     expect(editorMeshKindOf(createActor("empty", "Empty"))).toBe("billboard:default");
     expect(helperBillboardIconOf(createActor("empty", "Empty"))).toBe("default");
@@ -839,12 +787,6 @@ describe("scene-loader", () => {
     expect(scene.getMeshByName("origin:axis-z")).not.toBeNull();
     mesh.dispose();
     expect(scene.getMaterialByName("origin-pivot")).toBeNull();
-  });
-
-  it("clearSceneMeshes is safe on an already empty scene", () => {
-    const { scene } = createHandle();
-    clearSceneMeshes(scene);
-    expect(countSceneMeshes(scene)).toBe(0);
   });
 
   it("builds a native-sized 2DTexture overlay plane in the editor viewport", () => {

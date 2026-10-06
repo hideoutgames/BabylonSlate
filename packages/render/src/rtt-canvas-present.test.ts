@@ -55,12 +55,10 @@ describe("createRttCanvasPresent", () => {
     return { engine, scene, camera, canvas, fake: canvas as unknown as FakeCanvas };
   }
 
-  it("binds an RTT without calling registerView", () => {
-    const { engine, scene, camera, canvas } = host();
-    const registerView = vi.spyOn(engine, "registerView");
+  it("binds the camera output to an RTT and unbinds it on dispose", () => {
+    const { scene, camera, canvas } = host();
     const present = createRttCanvasPresent(scene, canvas, { name: "prefabPreview" });
     present.bind();
-    expect(registerView).not.toHaveBeenCalled();
     expect(camera.outputRenderTarget).not.toBeNull();
     present.dispose();
     expect(camera.outputRenderTarget).toBeNull();

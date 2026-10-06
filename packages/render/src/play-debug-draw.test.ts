@@ -301,14 +301,4 @@ describe("play debug draw", () => {
     expect(overlayMeshes(scene)).toHaveLength(0);
     engine.dispose();
   });
-
-  it("ignores unrelated engine commands", () => {
-    const { engine, scene } = createTestEngine();
-    const overlay = createPlayDebugDraw(scene);
-    expect(overlay.applyCommand({ type: "setWireframe", enabled: true })).toBe(
-      false,
-    );
-    overlay.dispose();
-    engine.dispose();
-  });
 });

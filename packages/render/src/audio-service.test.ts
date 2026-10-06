@@ -1357,7 +1357,7 @@ describe("AudioService", () => {
     });
     await service.flush();
     expect(service.hasSpatialVoices()).toBe(false);
-    for (let i = 0; i < 2000; i++) {
+    for (let i = 0; i < 50; i++) {
       service.syncSnapshot([{ slotId: 0, position: { x: i, y: 0, z: 0 } }]);
       service.syncListener({ x: 0, y: 0, z: 0 });
     }

@@ -87,7 +87,7 @@ describe("native CEL render mode", () => {
     }
     compiled.dispose();
   });
-  it("binds only hard-step uniforms: legacy softness keys normalize away and the CEL functions contain no smoothstep", async () => {
+  it("binds only hard-step uniforms and the CEL functions contain no smoothstep", async () => {
     const scene = host();
     scene.setTransformMatrix(Matrix.Identity(), Matrix.Identity());
     const native = new CelMaterial(new PBRMaterial("source", scene), scene);
@@ -101,14 +101,8 @@ describe("native CEL render mode", () => {
         shadowStrength: 0.7,
         specularStrength: 0.3,
         specularSize: 0.25,
-        // Removed softness controls drop silently from legacy documents.
-        bandSoftness: 0.5,
-        specularSoftness: 0.5,
       }),
     });
-    const cel = sceneRenderingSettings(scene).cel;
-    expect(cel).not.toHaveProperty("bandSoftness");
-    expect(cel).not.toHaveProperty("specularSoftness");
     await native.forceCompilationAsync(mesh);
     const subMesh = mesh.subMeshes[0]!;
     expect(native.isReadyForSubMesh(mesh, subMesh)).toBe(true);

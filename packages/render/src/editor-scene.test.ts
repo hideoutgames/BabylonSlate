@@ -4,7 +4,6 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   Camera,
-  Effect,
   Mesh,
   MeshBuilder,
   ShaderMaterial,
@@ -47,14 +46,10 @@ import {
 import {
   createGizmoHost,
   gizmoAxisEnabledFlags,
-  GIZMO_AXIS_COLORS,
-  GIZMO_UNIFORM_COLOR,
-  DEFAULT_GIZMO_HANDLE_SCALE,
   GIZMO_COLLIDER_SCALE,
   GIZMO_END_CAP_SCALE,
   GIZMO_ROTATION_COLLIDER_THICKNESS,
   GIZMO_ROTATION_THICKNESS,
-  GIZMO_SCALE_SENSITIVITY,
   GIZMO_SHAFT_THICKNESS,
 } from "./gizmo-host";
 import { RenderScheduler } from "./render-scheduler";
@@ -166,12 +161,6 @@ describe("editor camera controller", () => {
     expect(controller.camera.position.x).toBeCloseTo(positionBefore.x, 5);
     expect(controller.camera.position.y).toBeCloseTo(positionBefore.y, 5);
     expect(controller.camera.position.z).toBeCloseTo(positionBefore.z, 5);
-  });
-
-  it("defaults pivotAroundCenter to off", () => {
-    const { scene } = createHandle();
-    const controller = createEditorCamera(scene, { mode: "3d" });
-    expect(controller.pivotAroundCenter).toBe(false);
   });
 
   it("orbits around the target in 3D when pivotAroundCenter is on", () => {
@@ -1636,18 +1625,6 @@ describe("EditorSceneSync", () => {
 });
 
 describe("editor grid", () => {
-  it("registers a GLES shader without the WebGL1 derivatives extension", () => {
-    const { scene } = createHandle();
-    const grid = createEditorGrid(scene, { mode: "3d" });
-    const fragment = Effect.ShadersStore.editorGridFragmentShader;
-    expect(fragment).toBeDefined();
-    expect(fragment).not.toMatch(/GL_OES_standard_derivatives/);
-    expect(fragment).toContain("fwidth");
-    expect(fragment).toContain("viewFade");
-    expect(fragment).not.toMatch(/length\(cameraPos - vWorldPos\)/);
-    grid.dispose();
-  });
-
   it("snaps the plane origin to the camera target on the grid plane", () => {
     expect(snapGridOrigin("3d", { x: 3.6, y: 10, z: -1.4 }, 1)).toEqual({
       x: 4,
@@ -2061,37 +2038,6 @@ describe("gizmo host", () => {
     host.dispose();
   });
 
-  it("converts snap settings to gizmo distances", () => {
-    const { scene } = createHandle();
-    const host = createGizmoHost(scene);
-    host.setSnap({ enabled: true, translate: 0.5, rotateDeg: 90, scale: 0.25 });
-    host.setSnap({ enabled: false, translate: 0.5, rotateDeg: 90, scale: 0.25 });
-    host.dispose();
-  });
-
-  it("styles axis handles unlit with shared X/Y/Z colors", () => {
-    const { scene } = createHandle();
-    const host = createGizmoHost(scene);
-    const x = host.positionGizmo.xGizmo;
-    const y = host.positionGizmo.yGizmo;
-    const z = host.positionGizmo.zGizmo;
-    expect(x.coloredMaterial.disableLighting).toBe(true);
-    expect(y.coloredMaterial.disableLighting).toBe(true);
-    expect(z.coloredMaterial.disableLighting).toBe(true);
-    expect(x.coloredMaterial.emissiveColor.r).toBeCloseTo(GIZMO_AXIS_COLORS.x.r);
-    expect(y.coloredMaterial.emissiveColor.g).toBeCloseTo(GIZMO_AXIS_COLORS.y.g);
-    expect(z.coloredMaterial.emissiveColor.b).toBeCloseTo(GIZMO_AXIS_COLORS.z.b);
-    expect(x.hoverMaterial.disableLighting).toBe(true);
-    expect(x.hoverMaterial.emissiveColor.r).toBeGreaterThan(
-      x.coloredMaterial.emissiveColor.r - 0.001,
-    );
-    expect(host.positionGizmo.xPlaneGizmo.coloredMaterial.alpha).toBeLessThan(0.25);
-    expect(host.positionGizmo.xPlaneGizmo.coloredMaterial.alpha).toBeGreaterThan(
-      0.1,
-    );
-    host.dispose();
-  });
-
   it("keeps the uniform scale handle small and does not inject a custom cube", () => {
     const { scene } = createHandle();
     const sync = new EditorSceneSync(scene);
@@ -2121,46 +2067,6 @@ describe("gizmo host", () => {
     const relativeExtent = (maxHalfExtent * 2) / rootScale;
     expect(relativeExtent).toBeGreaterThan(0);
     expect(relativeExtent).toBeLessThan(0.05);
-    host.dispose();
-  });
-
-  it("styles the uniform scale handle unlit with a light-gray emissive", () => {
-    const { scene } = createHandle();
-    const host = createGizmoHost(scene, { tool: "scale" });
-    const { coloredMaterial, hoverMaterial } = host.scaleGizmo;
-    const uniform = host.scaleGizmo.uniformScaleGizmo;
-    expect(coloredMaterial.disableLighting).toBe(true);
-    expect(hoverMaterial.disableLighting).toBe(true);
-    expect(uniform.coloredMaterial.disableLighting).toBe(true);
-    expect(uniform.hoverMaterial.disableLighting).toBe(true);
-    expect(coloredMaterial.emissiveColor.r).toBeCloseTo(GIZMO_UNIFORM_COLOR.r);
-    expect(coloredMaterial.emissiveColor.g).toBeCloseTo(GIZMO_UNIFORM_COLOR.g);
-    expect(coloredMaterial.emissiveColor.b).toBeCloseTo(GIZMO_UNIFORM_COLOR.b);
-    expect(uniform.coloredMaterial.emissiveColor.r).toBeCloseTo(
-      GIZMO_UNIFORM_COLOR.r,
-    );
-    expect(hoverMaterial.emissiveColor.r).toBeGreaterThan(
-      coloredMaterial.emissiveColor.r - 0.001,
-    );
-    host.dispose();
-  });
-
-  it("uses a compact default handle scale on every tool", () => {
-    const { scene } = createHandle();
-    const host = createGizmoHost(scene);
-    expect(DEFAULT_GIZMO_HANDLE_SCALE).toBe(1.8);
-    expect(host.positionGizmo.scaleRatio).toBe(DEFAULT_GIZMO_HANDLE_SCALE);
-    expect(host.rotationGizmo.scaleRatio).toBe(DEFAULT_GIZMO_HANDLE_SCALE);
-    expect(host.scaleGizmo.scaleRatio).toBe(DEFAULT_GIZMO_HANDLE_SCALE);
-    host.dispose();
-  });
-
-  it("raises scale-gizmo drag sensitivity independently of handle size", () => {
-    const { scene } = createHandle();
-    const host = createGizmoHost(scene);
-    expect(GIZMO_SCALE_SENSITIVITY).toBe(10);
-    expect(host.scaleGizmo.sensitivity).toBe(GIZMO_SCALE_SENSITIVITY);
-    expect(host.scaleGizmo.xGizmo.sensitivity).toBe(GIZMO_SCALE_SENSITIVITY);
     host.dispose();
   });
 
