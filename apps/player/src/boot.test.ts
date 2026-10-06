@@ -126,12 +126,18 @@ describe("player startup and Stop ownership", () => {
       return runtime;
     });
     for (const restart of [false, true]) {
-      const { game, canvas, root } = await fixture(false, saveGame);
-      const session = startPlayer({ game, canvas, saveStorage });
+      const { game, canvas, root, fireEndFrame } = await fixture(false, saveGame);
+      const commands: Array<{ type: string; [key: string]: unknown }> = [];
+      const session = startPlayer({ game, canvas, saveStorage, onConsoleEvent: (command) => commands.push(command) });
       sessions.push(session);
       const runtime = create.mock.results.at(-1)!.value as runtimes.RuntimeDriver;
       const ready = vi.spyOn(runtime, "notifySceneModelsReady");
-      await vi.waitFor(() => { flushFrames(2); expect(ready).toHaveBeenCalled(); });
+      await vi.waitFor(() => {
+        flushFrames(2);
+        fireEndFrame();
+        if (!ready.mock.calls.length) throw new Error(JSON.stringify({ phase: root.dataset.sceneLoadPhase,
+          commands: commands.map((command) => ({ type: command.type, message: command.message })) }));
+      });
       expect(root.dataset.sceneLoading).toBe("false");
       const service = runtime.getSaveGameService()!;
       expect(service).toBeDefined();
