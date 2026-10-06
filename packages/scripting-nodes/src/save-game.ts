@@ -5,6 +5,7 @@ import {
 
 /** Stable field ids are authored in nodes; display names may change freely. */
 export function saveFieldPinType(properties: Record<string, unknown>): PinType {
+  if (typeof properties.typeId !== "string") return BOXED_WILDCARD;
   const type = String(properties.typeId ?? "string");
   const base = type === "actor" ? actorRef("Actor") : type === "asset" ? assetRef("Asset")
     : pinTypeForMember(type === "vector3" ? "vec3" : type);
@@ -46,8 +47,9 @@ function operation(method: string, title: string, valueType?: PinType): NodeDefi
 
 function fieldNode(write: boolean, migration = false): NodeDefinition {
   const method = `${write ? "set" : "get"}${migration ? "SaveMigration" : "Save"}Field`;
+  const operation = migration ? (write ? "migrationSetField" : "migrationGetField") : (write ? "setField" : "getField");
   return {
-    id: `saveGame.${migration ? "migration" : ""}${write ? migration ? "SetField" : "setField" : migration ? "GetField" : "getField"}`,
+    id: `saveGame.${operation}`,
     title: `${write ? "Set" : "Get"} ${migration ? "Migration" : "Save"} Field`, category: "save-game", pure: !write,
     description: migration ? "Read or update the staged migration field by its permanent field ID. Only valid inside Event Save Migration."
       : "Read or update a typed Save Game field by its permanent ID. Save Game writes changes to storage.",
