@@ -90,6 +90,7 @@ import { useDebugConsoleLogs } from "../lib/use-debug-console-logs";
 import { usePlay } from "../context/play-context";
 
 export interface PlayOverlayProps {
+  saveGame?: import("@babylonslate/core").SaveGameConfiguration;
   sharedEngine: AbstractEngine;
   injectFixtureThrow?: boolean;
   scripts?: readonly ScriptBundleEntry[];
@@ -182,6 +183,7 @@ function emptyPlayResult(): PlaySessionResult {
 }
 
 export function PlayOverlay({
+  saveGame,
   sharedEngine,
   injectFixtureThrow,
   scripts,
@@ -387,6 +389,7 @@ export function PlayOverlay({
     sceneAssetGuid,
     scene,
     project,
+    saveGame,
     gameInstanceClass,
     scenes,
     sceneLayers,
@@ -395,6 +398,7 @@ export function PlayOverlay({
     sceneAssetGuid,
     scene,
     project,
+    saveGame,
     gameInstanceClass,
     scenes,
     sceneLayers,
@@ -485,6 +489,7 @@ export function PlayOverlay({
       sceneAssetGuid: sceneRef.current.sceneAssetGuid,
       scene: sceneRef.current.scene,
       project: sceneRef.current.project,
+      saveGame: sceneRef.current.saveGame,
       gameInstanceClass: sceneRef.current.gameInstanceClass,
       scenes: sceneRef.current.scenes,
       sceneLayers: sceneRef.current.sceneLayers,

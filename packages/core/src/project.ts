@@ -176,6 +176,8 @@ export const NEW_PROJECT_RENDER_SETTINGS: RenderProjectSettings = {
 };
 
 export interface ProjectSettings {
+  /** Player saves live outside project assets; Play uses an isolated namespace. */
+  saveGame: SaveGameProjectSettings;
   touchMinTargetPx: number;
   /** Play/Preview render cap in fps. Editor viewports use Engine Settings. */
   playFrameCap: number;
@@ -223,6 +225,22 @@ export interface ProjectSettings {
    * platform secret store (engineplan §12).
    */
   sourceControl: SourceControlProjectSettings;
+}
+
+export interface SaveGameProjectSettings {
+  definitionGuid: string | null;
+  defaultSlot: string;
+  defaultProfile: string;
+  wipeOnPlay: boolean;
+}
+
+export function normalizeSaveGameSettings(value?: Partial<SaveGameProjectSettings>): SaveGameProjectSettings {
+  return {
+    definitionGuid: typeof value?.definitionGuid === "string" && value.definitionGuid.trim() ? value.definitionGuid.trim() : null,
+    defaultSlot: typeof value?.defaultSlot === "string" && value.defaultSlot.trim() ? value.defaultSlot.trim() : "default",
+    defaultProfile: typeof value?.defaultProfile === "string" && value.defaultProfile.trim() ? value.defaultProfile.trim() : "default",
+    wipeOnPlay: value?.wipeOnPlay === true,
+  };
 }
 
 export interface SourceControlProjectSettings {
@@ -697,6 +715,7 @@ export function normalizeProjectSettings(
 ): ProjectSettings {
   const twoD = settings?.twoD;
   return {
+    saveGame: normalizeSaveGameSettings(settings?.saveGame),
     touchMinTargetPx: settings?.touchMinTargetPx ?? 44,
     playFrameCap: normalizePlayFrameCap(settings?.playFrameCap),
     compileOnSave: settings?.compileOnSave !== false,

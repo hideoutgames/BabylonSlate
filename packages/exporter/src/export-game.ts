@@ -241,6 +241,7 @@ export async function exportGame(
   inlineCssIntoIndex(files);
 
   const manifest: GameManifest = {
+    ...(options.saveGame ? { saveGame: structuredClone(options.saveGame) } : {}),
     project: { name: options.project?.name ?? "", version: options.project?.version ?? "" },
     ...(options.inputAssets !== undefined ? { inputAssets: structuredClone(options.inputAssets) } : {}),
     ...(options.inputMappings !== undefined ? { inputMappings: structuredClone(options.inputMappings) } : {}),

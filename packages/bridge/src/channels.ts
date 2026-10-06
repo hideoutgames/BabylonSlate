@@ -93,9 +93,11 @@ export type ScriptBundleEntry = {
 };
 
 export type ControlMessage =
+  | { type: "saveStorageResponse"; response: import("@babylonslate/core").SaveStorageResponse }
   | { type: "ragdollPoseCaptured"; slotId: number; requestId: string; bones?: import("@babylonslate/core").RagdollBonePose[]; error?: string }
   | {
       type: "load";
+      saveGame?: import("@babylonslate/core").SaveGameConfiguration;
       /** Initial session render cap, shared with the renderer for console readback. */
       frameCap?: number;
       /** Serialized trace retention budget in bytes for this session. */
@@ -329,6 +331,7 @@ export type DebugBehaviourTree = {
 };
 
 export type CommandMessage =
+  | { type: "saveStorageRequest"; request: import("@babylonslate/core").SaveStorageRequest }
   | { type: "setPainter2D"; slotId: number; componentId: string; painter: import("@babylonslate/core").Painter2DProperties }
   | { type: "dynamicMeshUpdate"; meshId: number; update: import("@babylonslate/core").DynamicMeshUpdate }
   /** Cable records: ID, count, start/end actor slots, two actor-local anchors, world xyz particles. */

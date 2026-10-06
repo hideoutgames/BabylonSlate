@@ -1,3 +1,5 @@
+import { createSaveStorageServer } from "@babylonslate/core";
+import { createSaveGameStorage } from "@babylonslate/vfs";
 import type { ScalabilityAcknowledgement, RenderProjectSettings } from "@babylonslate/core";
 import { buildMaterialParameterCatalog } from "@babylonslate/shader-graph";
 import { materialParameterTextureAssetGuids } from "@babylonslate/assets";
@@ -432,6 +434,7 @@ function initializePlayer(
     traceByteBudget: options.traceByteBudget,
     renderSettings: manifest.render,
     project: manifest.project,
+    saveGame: manifest.saveGame,
     type: "load" as const,
     sceneAssetGuid: startup,
     scene,
@@ -562,7 +565,11 @@ function initializePlayer(
     },
   });
   own(() => streamReadiness.dispose());
+  const saveStorage = createSaveGameStorage();
+  const saveServer = createSaveStorageServer(saveStorage, (response) => worker?.postControl({ type: "saveStorageResponse", response }));
+  own(() => saveServer.dispose());
   const onCommand = (command: { type: string } & Record<string, unknown>) => {
+    if (command.type === "saveStorageRequest") { saveServer.receive(command.request as import("@babylonslate/core").SaveStorageRequest); return; }
     if (halted) return;
     if (command.type === "sceneStreamBlocking") handle.setSceneStreamingPaused(command.blocking === true);
     if (command.type === "sessionPaused") {
@@ -655,6 +662,7 @@ function initializePlayer(
     }
     const inProcess = createRuntimeFromLoad(loadControl, (command) =>
       onCommand(command as never),
+      saveStorage,
     );
     runtime = inProcess;
     own(() => inProcess.stop());

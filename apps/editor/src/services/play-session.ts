@@ -1,3 +1,5 @@
+import { createSaveStorageServer } from "@babylonslate/core";
+import { createSaveGameStorage } from "@babylonslate/vfs";
 import type { ScalabilityAcknowledgement, RenderProjectSettings } from "@babylonslate/core";
 import { buildMaterialParameterCatalog } from "@babylonslate/shader-graph";
 import {
@@ -445,6 +447,7 @@ export function previewFixtureThrowHint(
  * to in-process runtime. Own Scene on the shared app Engine via registerView.
  */
 export function startPlaySession(options: {
+  saveGame?: import("@babylonslate/core").SaveGameConfiguration;
   renderSettings?: import("@babylonslate/render").RenderShadingSettings;
   consoleRenderSettings?: import("@babylonslate/render").RenderShadingSettings;
   canvas: HTMLCanvasElement;
@@ -822,7 +825,10 @@ export function startPlaySession(options: {
     }
   };
 
+  const saveStorage = createSaveGameStorage();
+  const saveServer = createSaveStorageServer(saveStorage, (response) => worker?.postControl({ type: "saveStorageResponse", response }));
   const onCommand = (command: CommandMessage) => {
+    if (command.type === "saveStorageRequest") { saveServer.receive(command.request); return; }
     noteCommand();
     if (command.type === "sceneStreamBlocking") handle.setSceneStreamingPaused(command.blocking);
     if (command.type === "snapshotLayout" && runtime)
@@ -921,6 +927,7 @@ export function startPlaySession(options: {
       : entry;
   });
   const loadControl = playLoadControl({
+    saveGame: options.saveGame,
     frameCap: resolvePlayFrameCap(options.frameCap),
     traceByteBudget: options.traceByteBudget,
     renderSettings: options.consoleRenderSettings ?? options.renderSettings,
@@ -987,6 +994,7 @@ export function startPlaySession(options: {
     runtimeMode = "in-process";
     runtime = createRuntimeFromLoad(loadControl, (command) =>
       onCommand(command),
+      saveStorage,
     );
     runtime.registerAnchors(FIXTURE_ASSET, [
       {
@@ -1262,6 +1270,7 @@ export function startPlaySession(options: {
       sessionDiagnostics.push(...hostDiagnostics.entries());
       droppedDiagnostics += hostDiagnostics.droppedCount();
       worker?.postControl({ type: "stop" });
+      saveServer.dispose();
       worker?.terminate();
       const liveAfter = handle.liveObjectCounts();
       handle.dispose();

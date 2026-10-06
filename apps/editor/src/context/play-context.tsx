@@ -1,3 +1,4 @@
+import { prepareSaveGameConfiguration } from "../services/save-game-configuration";
 import {
   createContext,
   useCallback,
@@ -224,6 +225,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const pendingPlayOptionsRef = useRef<PlayOptions | undefined>(undefined);
   const pendingScriptsRef = useRef<ScriptBundleEntry[] | null>(null);
   const [playing, setPlaying] = useState(false);
+  const [playSaveGame, setPlaySaveGame] = useState<import("@babylonslate/core").SaveGameConfiguration>();
   const playingRef = useRef(false);
   const [preparing, setPreparing] = useState(false);
   const [playAwaitingMigration, setPlayAwaitingMigration] = useState(false);
@@ -788,6 +790,16 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         }
       }
       if (!isCurrentRequest()) return;
+      await prepareSaveGameConfiguration({
+        projectId: playRequestInputsRef.current.documents.projectGuid,
+        settings: projectDocument?.settings.saveGame,
+        loadDefinition: async (guid) => {
+          const current = playRequestInputsRef.current.documents;
+          const asset = current.assetRegistry?.getByGuid(guid);
+          if (!asset) throw new Error("The default Save Game definition is missing.");
+          return current.loadAssetDocument("save-game", asset.path);
+        },
+      });
       setPreviewPhase("Collecting Assets");
       const playerFiles = await loadPlayerDistFiles();
       if (!isCurrentRequest()) return;
@@ -1294,6 +1306,16 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         setPlayNavmeshBytes(sceneBakes.navmeshes.get(bakedSceneGuid) ?? null);
         setPlayAudioReverbBytes(sceneBakes.audioReverbs.get(bakedSceneGuid) ?? null);
 
+        setPlaySaveGame(await prepareSaveGameConfiguration({
+          projectId: playRequestInputsRef.current.documents.projectGuid,
+          settings: projectDocument?.settings.saveGame,
+          loadDefinition: async (guid) => {
+            const current = playRequestInputsRef.current.documents;
+            const asset = current.assetRegistry?.getByGuid(guid);
+            if (!asset) throw new Error("The default Save Game definition is missing.");
+            return current.loadAssetDocument("save-game", asset.path);
+          },
+        }));
         setPrepareState(null);
 
         if (!inject && projectHasBlockingErrors(nextDiagnostics)) {
@@ -1522,6 +1544,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             sceneAssetGuid={playSceneGuid}
             scene={playScene?.scene}
             project={projectDocument?.metadata}
+            saveGame={playSaveGame}
             gameInstanceClass={resolveGameInstanceClass(
               projectDocument?.settings,
               playScene?.scene,

@@ -1139,6 +1139,12 @@ export class ProjectService {
     ) as ProjectDocument & { guid?: string; kind?: string; version?: number };
     const document = normalizeProjectDocument(raw, folder.name);
     this.projectGuid = raw.guid ?? newGuid();
+    // Persist the existing project identity convention before the first player save.
+    // Legacy projects must not acquire a different save namespace on every reopen.
+    if (!raw.guid) {
+      raw.guid = this.projectGuid;
+      await this.storage.writeText(PROJECT_FILE, JSON.stringify(raw, null, 2));
+    }
     this.loadedTextureSettings = document.settings.textures;
     this.sourceControlEnabled = document.settings.sourceControl?.enabled === true;
     this.pluginOverrides = document.settings.pluginOverrides ?? {};
