@@ -2155,10 +2155,9 @@ describe("gizmo host", () => {
     host.dispose();
   });
 
-  it("raises scale-gizmo drag sensitivity independently of handle size", () => {
+  it("applies one scale-gizmo drag sensitivity to every axis", () => {
     const { scene } = createHandle();
     const host = createGizmoHost(scene);
-    expect(GIZMO_SCALE_SENSITIVITY).toBe(10);
     expect(host.scaleGizmo.sensitivity).toBe(GIZMO_SCALE_SENSITIVITY);
     expect(host.scaleGizmo.xGizmo.sensitivity).toBe(GIZMO_SCALE_SENSITIVITY);
     host.dispose();

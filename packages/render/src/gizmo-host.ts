@@ -6,6 +6,7 @@ import {
   RotationGizmo,
   ScaleGizmo,
   UtilityLayerRenderer,
+  Vector3,
   type AbstractMesh,
   type Camera,
   type Scene,
@@ -106,8 +107,12 @@ export const GIZMO_ROTATION_THICKNESS = 1.2;
  */
 export const GIZMO_ROTATION_COLLIDER_THICKNESS = 8;
 
-/** Compensates Babylon's dragStrength ÷ rootMesh.scaling (grows with handle size). */
-export const GIZMO_SCALE_SENSITIVITY = 10;
+/**
+ * Babylon's dragStrength already divides out the handle's screen scale, so a
+ * drag across half the view scales by roughly 3× (larger values compound per
+ * pointer event and make the handle unusable).
+ */
+export const GIZMO_SCALE_SENSITIVITY = 1.5;
 
 /** Visible translate cones and scale boxes only — not shafts. */
 export const GIZMO_END_CAP_SCALE = 1.6;
@@ -194,6 +199,24 @@ export function clampGizmoScreenScale(
     return (Math.sign(currentScale) || 1) * minAbs;
   }
   return currentScale;
+}
+
+/**
+ * Move snap is grid-absolute: each axis the drag moved lands on a multiple of
+ * `step` in world space, while untouched axes keep their start value.
+ */
+export function snapDraggedPositionToGrid(
+  free: { x: number; y: number; z: number },
+  start: { x: number; y: number; z: number },
+  step: number,
+): { x: number; y: number; z: number } {
+  const axis = (value: number, origin: number) =>
+    Math.abs(value - origin) < 1e-9 ? origin : Math.round(value / step) * step;
+  return {
+    x: axis(free.x, start.x),
+    y: axis(free.y, start.y),
+    z: axis(free.z, start.z),
+  };
 }
 
 function brighten(color: Color3, amount = 0.38): Color3 {
@@ -395,6 +418,8 @@ export function createGizmoHost(
   }
   scale.scaleRatio = handleScale;
   scale.sensitivity = GIZMO_SCALE_SENSITIVITY;
+  // Snapped scale steps linearly (1.1, 1.2, …) instead of compounding.
+  scale.incrementalSnap = true;
   position.planarGizmoEnabled = true;
   styleEditorGizmos(position, rotation, scale);
 
@@ -405,15 +430,44 @@ export function createGizmoHost(
   let overlayVisuals: AbstractMesh[] = [];
   let releaseLease: (() => void) | null = null;
   let dragging = false;
+  let translateSnap = 0;
+  // Unsnapped world position the pointer has dragged to, plus the last
+  // snapped position written back (Babylon adds each delta to the mesh).
+  let snapDrag: { start: Vector3; free: Vector3; last: Vector3 } | null = null;
+
+  const snapTranslateDrag = () => {
+    const mesh = position.attachedMesh;
+    if (!snapDrag || !mesh) return;
+    const current = mesh.computeWorldMatrix(true).getTranslation();
+    snapDrag.free.addInPlace(current.subtract(snapDrag.last));
+    const snapped = snapDraggedPositionToGrid(
+      snapDrag.free,
+      snapDrag.start,
+      translateSnap,
+    );
+    const next = new Vector3(snapped.x, snapped.y, snapped.z);
+    mesh.setAbsolutePosition(next);
+    mesh.computeWorldMatrix(true);
+    snapDrag.last = next;
+  };
 
   const startDrag = () => {
     dragging = true;
+    const mesh = position.attachedMesh;
+    snapDrag =
+      translateSnap > 0 && mesh
+        ? (() => {
+            const start = mesh.computeWorldMatrix(true).getTranslation();
+            return { start, free: start.clone(), last: start.clone() };
+          })()
+        : null;
     releaseLease ??= options.scheduler?.acquireContinuous("gizmo") ?? null;
     options.onDragStart?.();
   };
 
   const endDrag = () => {
     dragging = false;
+    snapDrag = null;
     releaseLease?.();
     releaseLease = null;
     options.scheduler?.invalidate("gizmo");
@@ -421,6 +475,7 @@ export function createGizmoHost(
   };
 
   const drag = () => {
+    snapTranslateDrag();
     options.scheduler?.invalidate("gizmo");
     options.onDrag?.();
   };
@@ -575,7 +630,10 @@ export function createGizmoHost(
       applyAttachment();
     },
     setSnap: (snap: GizmoSnapSettings) => {
-      position.snapDistance = snap.enabled ? snap.translate : 0;
+      // Babylon snaps relative to the drag start; snapTranslateDrag snaps to
+      // the world grid instead, so the gizmo itself drags freely.
+      position.snapDistance = 0;
+      translateSnap = snap.enabled && snap.translate > 0 ? snap.translate : 0;
       rotation.snapDistance = snap.enabled
         ? (snap.rotateDeg * Math.PI) / 180
         : 0;
