@@ -28,6 +28,7 @@ import {
 } from "@babylonslate/assets";
 import { exportGame, navmeshExportGuid } from "@babylonslate/exporter";
 import { resolveAudioPlayback } from "@babylonslate/assets";
+import { RuntimeDataCatalog } from "@babylonslate/runtime";
 import { loadGameAudioClipBytes, loadGameFromFiles } from "./artifact";
 import {
   packedBootControls,
@@ -49,6 +50,27 @@ function pngIhdr(width: number, height: number): Uint8Array {
 }
 
 describe("packedContentFromGame", () => {
+  it.each(["packed", "loose"] as const)("hydrates standalone data, Structures, Enums, and ordered sheets (%s)", async (mode) => {
+    const payloads = [
+      { guid: "quality", type: "Enum", payload: { members: [{ name: "Rare", value: 1 }] } },
+      { guid: "stats", type: "Structure", payload: { fields: [{ name: "Power", typeId: "int" }, { name: "Quality", typeId: "enum", typeClassId: "quality" }] } },
+      { guid: "standalone", type: "DataObject", payload: { kind: "dataObject", structureGuid: "stats", values: { Power: 42, Quality: "Rare" } } },
+      { guid: "row", type: "DataObject", payload: { kind: "dataObject", structureGuid: "stats", values: { Power: 7, Quality: "Rare" } } },
+      { guid: "sheet", type: "DataSheet", payload: { kind: "dataSheet", structureGuid: "stats", objectGuids: ["row"] } },
+    ];
+    const exported = await exportGame({
+      mode, bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [],
+      assets: payloads.map(({ guid, type, payload }) => ({ guid, type, sceneGuid: "scene", bytes: encoder.encode(JSON.stringify(payload)) })),
+    });
+    if (!exported.ok) throw new Error(exported.error);
+    const game = await loadGameFromFiles(exported.value.files);
+    const data = new RuntimeDataCatalog(packedContentFromGame(game).dataAssets);
+    expect(data.readObject("standalone", "stats")).toEqual({ Power: 42, Quality: "Rare" });
+    expect(data.getSheetObjects("sheet")).toEqual(["row"]);
+    expect(data.readObject("row", "stats")).toEqual({ Power: 7, Quality: "Rare" });
+    expect(data.readObject("row", "other-structure")).toBeNull();
+  });
+
   it("does not decode binary asset payloads as JSON during hydration", async () => {
     const binaryTypes = ["Texture", "Model", "Font", "Audio", "Navmesh", "AudioReverb"];
     const exported = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [] });

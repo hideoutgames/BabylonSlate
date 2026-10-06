@@ -1,3 +1,5 @@
+import { createUnavailableEditorDataApi, type EditorDataApi } from "@babylonslate/scripting";
+import { RuntimeDataCatalog, type RuntimeDataApi } from "./data-catalog";
 import { emptyWaterSample, parseDeformerProperties, updateDeformerProperties, DEFORMER_PROPERTY_KEYS, DEFORMER_MAX_COORDINATE, type WaterSample } from "@babylonslate/core";
 import { createDefaultRenderTargetCaptureProperties, type RenderTargetMode, type RenderTargetCaptureProperty } from "@babylonslate/core";
 import { captureActorReferences, captureComponent, captureProperties, setCaptureProperty } from "./render-targets";
@@ -69,6 +71,9 @@ import { cloneSaveGameValue, SaveGameError, type SaveGameService, type SaveGameV
   type SaveGameOptions, type SaveGameResult, type SaveGameInfo, type SaveGameMigration,
   type SaveGameMigrationData } from "@babylonslate/core";
 
+const EMPTY_DATA = new RuntimeDataCatalog();
+const UNAVAILABLE_EDITOR_DATA = createUnavailableEditorDataApi();
+
 export type AnimGraphControl = {
   getVariable(name: string): unknown;
   setVariable(name: string, value: unknown): void;
@@ -88,6 +93,10 @@ export interface ScriptHostServices {
   registerSaveActor?(actor: BObject, persistentId?: string): void;
   getSaveActorId?(actor: Actor): string;
   resolveSaveActor?(id: string): Actor | undefined;
+  /** Read-only session data, shared by runtime and editor utility graphs. */
+  data?: RuntimeDataApi;
+  /** Explicit editor-only capability; absent in every game runtime. */
+  editorData?: EditorDataApi;
   /** Session seed shared with the world and trace metadata. */
   seed?: number;
   /** Whether an object may receive authored calls during its owner's load. */
@@ -265,6 +274,8 @@ export interface ScriptContext {
   registerSaveMigration(fromVersion: number, migrate: SaveGameMigration | string): void;
   getSaveMigrationField(fieldId: string, type?: string, array?: boolean): unknown;
   setSaveMigrationField(fieldId: string, value: unknown, type?: string, array?: boolean): void;
+  data: RuntimeDataApi;
+  editorData: EditorDataApi;
   inputBindings?: InputBindingControls;
   getInputState?: (input: InputTypeValue) => InputValueState | null;
   self: BObject | null;
@@ -1165,6 +1176,8 @@ export class ScriptHost {
         const fields = cloneSaveGameValue({ [id]: value }) as Record<string, SaveGameValue>;
         Object.assign(migrationData().fields, fields);
       },
+      data: services.data ?? EMPTY_DATA,
+      editorData: services.editorData ?? UNAVAILABLE_EDITOR_DATA,
       self,
       deltaSeconds,
       tickIndex,

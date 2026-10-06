@@ -4,7 +4,8 @@ import {
   type AssetRegistry,
   type IndexedAsset,
 } from "@babylonslate/assets";
-import type { SerializedGraph, WaterStyle } from "@babylonslate/core";
+import type { DataObjectAsset, DataSheetAsset, SerializedGraph, WaterStyle } from "@babylonslate/core";
+import { createDataObjectForStructure, validateDataObject, type TypeSchemas } from "@babylonslate/scripting";
 import { engineParentOf, walkAncestry } from "@babylonslate/editor-kit";
 import {
   isLockedEngineClassId,
@@ -13,6 +14,7 @@ import {
 import type { MaterialDomain } from "@babylonslate/shader-graph";
 import {
   ASSETS_ROOT,
+  assetHeaderDependencies,
   CREATABLE_ASSET_TYPES,
   buildNewAssetResult,
   buildParentClassTreeRows,
@@ -24,13 +26,13 @@ import {
   newAssetFileSuffix,
   type CreatableAssetType,
 } from "./content-browser-helpers";
-import { collectClassGraphsForPalette } from "./logic-graph-document";
+import { collectClassGraphsForPalette, collectGraphTypeAssets, typeSchemasFromGraphAssets } from "./logic-graph-document";
 import { PROJECT_CONTENT_ROOT_ID } from "./plugin-ui";
 import { classIdForGraphPath } from "../services/script-compiler";
 
 /** The single New Asset write path (Content Browser and picker Create New rows). */
 export async function createProjectAsset(options: {
-  registry: Pick<AssetRegistry, "createAsset">;
+  registry: Pick<AssetRegistry, "createAsset"> & Partial<Pick<AssetRegistry, "list">>;
   rootId: string;
   /** Folder inside the root (`Levels`), empty for the root itself. */
   folderRelative: string;
@@ -39,10 +41,27 @@ export async function createProjectAsset(options: {
   parentClass?: string | null;
   waterStyle?: WaterStyle;
   materialDomain?: MaterialDomain;
+  /** Use the live Structure catalog so unsaved schema edits supply defaults. */
+  structureGuid?: string | null;
+  typeSchemas?: TypeSchemas;
+  dataObject?: DataObjectAsset;
+  dataSheet?: DataSheetAsset;
   classParentOf?: (id: string) => string | null | undefined;
   parentGraphs?: Record<string, SerializedGraph>;
 }): Promise<IndexedAsset> {
   const { type, name } = options;
+  const structureGuid = options.dataObject?.structureGuid ?? options.dataSheet?.structureGuid ?? options.structureGuid ?? null;
+  const structure = structureGuid ? options.typeSchemas?.structs?.[structureGuid] : undefined;
+  if ((type === "DataObject" || type === "DataSheet") && structureGuid && !structure) {
+    throw new Error("The selected Structure is unavailable. Choose an existing Structure.");
+  }
+  const dataObject = type === "DataObject" && structure && structureGuid
+    ? options.dataObject ?? createDataObjectForStructure(structureGuid, structure.fields, options.typeSchemas)
+    : options.dataObject;
+  if (dataObject && options.typeSchemas) {
+    const issue = validateDataObject(dataObject, options.typeSchemas).find(issue => issue.severity === "error");
+    if (issue) throw new Error(issue.message);
+  }
   const fileName = newAssetFileName(type, name);
   if (!fileName) throw new Error("Enter a name for the new asset.");
   const parentClass =
@@ -67,7 +86,13 @@ export async function createProjectAsset(options: {
     parentGraphs: type === "Class" ? options.parentGraphs : undefined,
     waterStyle: options.waterStyle,
     materialDomain: options.materialDomain,
+    structureGuid,
+    dataObject,
+    dataSheet: options.dataSheet,
   });
+  if (type === "DataObject" || type === "DataSheet") {
+    result.dependencies = assetHeaderDependencies(type, result.payload, options.registry.list?.() ?? []);
+  }
   return options.registry.createAsset(
     options.rootId,
     joinAssetFolderPath(options.folderRelative, fileName),
@@ -231,6 +256,7 @@ export async function createPickerAsset(options: {
   name?: string;
   parentClass?: string | null;
   materialDomain?: MaterialDomain;
+  structureGuid?: string | null;
 }): Promise<IndexedAsset> {
   const { registry, type } = options;
   const assets = registry.list();
@@ -270,6 +296,10 @@ export async function createPickerAsset(options: {
     name,
     parentClass,
     materialDomain: options.materialDomain,
+    structureGuid: options.structureGuid,
+    typeSchemas: type === "DataObject" || type === "DataSheet"
+      ? typeSchemasFromGraphAssets(collectGraphTypeAssets({ assets, openDocuments: options.openDocuments }))
+      : undefined,
     classParentOf: classParentLookup(assets),
     parentGraphs:
       type === "Class"

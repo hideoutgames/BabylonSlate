@@ -1,4 +1,5 @@
 import { InputAssetEditingProvider } from "../context/input-asset-editing-context";
+import { DataAssetEditingProvider } from "../context/data-asset-editing-context";
 import { SceneToolsProvider } from "../context/scene-tools-context";
 import { CONTENT_BROWSER_ID, isAssetDocumentKind, isSceneWorkspaceKind, type SerializedScene } from "@babylonslate/core";
 import type { DockviewApi } from "dockview-react";
@@ -239,24 +240,27 @@ export function DocumentWorkspace() {
     return () => (lookup ??= classParentLookup(assetRegistry?.list() ?? []));
   }, [assetRegistry, registryEpoch]);
 
+  const visibleDocuments = openDocuments.filter((doc) => !doc.background);
+  const visibleIds = new Set(visibleDocuments.map((doc) => doc.id));
+  const visibleTabOrder = tabOrder.filter((id) => visibleIds.has(id));
   const resolvedActiveId =
-    tabOrder.length === 0
+    visibleTabOrder.length === 0
       ? null
-      : activeDocumentId && tabOrder.includes(activeDocumentId)
+      : activeDocumentId && visibleTabOrder.includes(activeDocumentId)
         ? activeDocumentId
-        : (tabOrder.find((id) => id === CONTENT_BROWSER_ID) ?? tabOrder[0]);
+        : (visibleTabOrder.find((id) => id === CONTENT_BROWSER_ID) ?? visibleTabOrder[0]);
 
-  const workingTabIds = projectKey ? tabOrder : [];
+  const workingTabIds = projectKey ? visibleTabOrder : [];
   const mountedIds = useDocumentWorkingSet(
     workingTabIds,
     projectKey ? resolvedActiveId : null,
-    openDocuments.map((doc) => ({
+    visibleDocuments.map((doc) => ({
       id: doc.id,
       kind: doc.ref.kind,
     })),
   );
 
-  if (tabOrder.length === 0) {
+  if (visibleTabOrder.length === 0) {
     return (
       <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
         Open a project to begin
@@ -267,7 +271,7 @@ export function DocumentWorkspace() {
   return (
     <AudioReverbBakeProvider>
     <div className="flex min-h-0 flex-1 flex-col">
-      {tabOrder.map((id) => {
+      {visibleTabOrder.map((id) => {
         const doc = openDocuments.find((entry) => entry.id === id);
         if (!doc) return null;
         const active = id === resolvedActiveId;
@@ -311,6 +315,21 @@ export function DocumentWorkspace() {
           doc.ref.kind === "enum" ||
           doc.ref.kind === "structure" ||
           doc.ref.kind === "script-interface";
+
+        if (doc.ref.kind === "data-object" || doc.ref.kind === "data-sheet") {
+          if (!shouldMount) return null;
+          return (
+            <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
+              <DocumentWorkspaceProvider documentId={id}>
+                <DataAssetEditingProvider>
+                  <DocumentShell path={doc.ref.path} testId={`document-workspace-${doc.ref.kind}`} active={active}>
+                    <RegisteredDockviewShell id={id} documentKind={doc.ref.kind} initialLayout={doc.layout} />
+                  </DocumentShell>
+                </DataAssetEditingProvider>
+              </DocumentWorkspaceProvider>
+            </WorkspaceErrorBoundary>
+          );
+        }
 
         if (
           doc.ref.kind === "material" ||

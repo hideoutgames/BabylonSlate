@@ -52,3 +52,5 @@ export {
   type ScriptContext,
   type ScriptHostServices,
 } from "./script-host";
+
+export { RuntimeDataCatalog, dataTypeSchemas, type RuntimeDataApi } from "./data-catalog";

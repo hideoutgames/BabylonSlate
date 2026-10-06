@@ -27,6 +27,7 @@ export function runtimeOptionsFromLoadControl(
   | "texturePixelSizes"
   | "project"
   | "inputAssets"
+  | "dataAssets"
   | "inputMappings"
   | "physicsWorld"
   | "gravity"
@@ -75,6 +76,7 @@ export function runtimeOptionsFromLoadControl(
     ...(msg.frameCap !== undefined ? { frameCap: msg.frameCap } : {}),
     ...(msg.traceByteBudget !== undefined ? { traceByteBudget: msg.traceByteBudget } : {}),
     renderSettings: msg.renderSettings,
+    dataAssets: msg.dataAssets,
     focusNavigation: msg.focusNavigation,
     pixelsPerUnit: msg.pixelsPerUnit,
     texturePixelSizes: msg.texturePixelSizes,

@@ -247,4 +247,95 @@ describe("runtime Save Game", () => {
       expect(hero(replaced.runtime).getVariable("health")).toBe(100);
     } finally { replaced.runtime.stop(); }
   });
+
+  it("restores selected Maps with distinct numeric/string keys and nested references before On Game Loaded", async () => {
+    const storage = new MemoryStorage();
+    const mapScript: CompiledScript = {
+      ...heroScript,
+      variables: [...heroScript.variables!, { name: "target", type: "Actor", container: "map", keyTypeId: "string", defaultValue: [] }],
+      source: `export function loaded(ctx) {
+        const map = ctx.self.getVariable('target');
+        if (!(map instanceof Map) || !map.has(1)) return;
+        ctx.self.setVariable('loadedMapActor', map.get(1).get('friend'));
+        const component = ctx.self.components.find(item => item.guid === 'inventory');
+        ctx.self.setVariable('loadedMapComponent', component.getVariable('charge').get('nested').get(2).component);
+      }`,
+      entryPoints: [{ name: "loaded", event: "onGameLoaded", isAsync: false }],
+    };
+    const first = await boot(storage, { actorScript: mapScript });
+    try {
+      const companion = first.runtime.spawnScriptedActor({ classId: "Hero" })!;
+      first.runtime.registerSaveActor(companion, "map-companion");
+      const inventory = companion.components.find((component) => component.sourceId === "inventory")!;
+      hero(first.runtime).setVariable("target", new Map<string | number, unknown>([
+        ["1", "string key"], [1, new Map([["friend", companion]])], ["__proto__", "safe map key"],
+      ]));
+      hero(first.runtime).components.find((component) => component.guid === "inventory")!.setVariable("charge",
+        new Map([["nested", new Map([[2, { component: inventory, actors: [companion] }]])]]));
+      expect((await first.service.saveGame()).ok).toBe(true);
+    } finally { first.runtime.stop(); }
+    const next = await boot(storage, { actorScript: mapScript });
+    try {
+      expect((await next.service.loadGame()).ok).toBe(true);
+      const companion = next.runtime.getWorld().findActor("map-companion")!;
+      const inventory = companion.components.find((component) => component.sourceId === "inventory")!;
+      const map = hero(next.runtime).getVariable("target") as Map<string | number, unknown>;
+      expect(map).toBeInstanceOf(Map);
+      expect([...map.keys()]).toEqual(["1", 1, "__proto__"]);
+      expect(map.get("1")).toBe("string key");
+      expect(map.get("__proto__")).toBe("safe map key");
+      expect((map.get(1) as Map<string, unknown>).get("friend")).toBe(companion);
+      const componentMap = hero(next.runtime).components.find((component) => component.guid === "inventory")!
+        .getVariable("charge") as Map<string, Map<number, { component: unknown; actors: unknown[] }>>;
+      expect(componentMap.get("nested")).toBeInstanceOf(Map);
+      expect(componentMap.get("nested")!.get(2)!.component).toBe(inventory);
+      expect(componentMap.get("nested")!.get(2)!.actors[0]).toBe(companion);
+      expect(hero(next.runtime).getVariable("loadedMapActor")).toBe(companion);
+      expect(hero(next.runtime).getVariable("loadedMapComponent")).toBe(inventory);
+    } finally { next.runtime.stop(); }
+  });
+
+  it("preserves the last valid checkpoint when a selected Map contains a cycle", async () => {
+    const storage = new MemoryStorage();
+    const { runtime, service } = await boot(storage);
+    try {
+      hero(runtime).setVariable("target", new Map([["checkpoint", 4]]));
+      expect((await service.saveGame()).ok).toBe(true);
+      const original = [...storage.files];
+      const cycle = new Map<string, unknown>();
+      cycle.set("path", { back: [cycle] });
+      hero(runtime).setVariable("target", cycle);
+      expect(await service.saveGame()).toMatchObject({ ok: false, error: { code: "incompatible" } });
+      expect([...storage.files]).toEqual(original);
+      expect((await service.loadGame()).ok).toBe(true);
+      expect((hero(runtime).getVariable("target") as Map<string, number>).get("checkpoint")).toBe(4);
+    } finally { runtime.stop(); }
+  });
+
+  it.each([
+    { $saveReference: "map", entries: [["duplicate", 1], ["duplicate", 2]] },
+    { $saveReference: "map", entries: [[{}, "invalid key"]] },
+    { $saveReference: "map", entries: [["missing value"]] },
+    { $saveReference: "map", entries: [], actor: "hero" },
+  ])("rejects malformed imported Map data without replacing the checkpoint or live state: %j", async (invalidMap) => {
+    const storage = new MemoryStorage();
+    const { runtime, service } = await boot(storage);
+    try {
+      const liveMap = new Map([["checkpoint", 4]]);
+      hero(runtime).setVariable("target", liveMap);
+      expect((await service.saveGame()).ok).toBe(true);
+      const original = [...storage.files];
+      const exported = await service.exportSave();
+      if (!exported.ok) throw new Error(exported.error.message);
+      const envelope = JSON.parse(exported.value);
+      const payload = JSON.parse(envelope.payload);
+      payload.state.actors.find((actor: { id: string }) => actor.id === "hero").variables.target = invalidMap;
+      envelope.payload = JSON.stringify(payload);
+      const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(envelope.payload));
+      envelope.checksum = Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, "0")).join("");
+      expect(await service.importSave(JSON.stringify(envelope))).toMatchObject({ ok: false, error: { code: "corrupt" } });
+      expect([...storage.files]).toEqual(original);
+      expect(hero(runtime).getVariable("target")).toBe(liveMap);
+    } finally { runtime.stop(); }
+  });
 });

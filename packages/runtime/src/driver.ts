@@ -1,3 +1,4 @@
+import { RuntimeDataCatalog } from "./data-catalog";
 import { overlayAnchorBindings } from "./overlay-anchor-layout";
 import { SaveGameError, SaveGameService, type SaveGameServiceOptions } from "@babylonslate/core";
 import { SaveGameWorld } from "./save-game-world";
@@ -194,6 +195,8 @@ import {
 } from "@babylonslate/navigation";
 
 export interface RuntimeDriverOptions {
+  /** JSON data and shared Structures snapshotted at session startup. */
+  dataAssets?: import("@babylonslate/core").DataAssetCatalogEntry[];
   renderSettings?: Partial<RenderProjectSettings>;
   /** Initial render cap for console readback; does not change the simulation step. */
   frameCap?: number;
@@ -1020,6 +1023,7 @@ class InProcessRuntime implements RuntimeDriver {
     });
 
     this.scriptHost = new ScriptHost({
+      data: new RuntimeDataCatalog(options.dataAssets),
       seed: options.seed,
       canRunOwner: (owner) => this.canRunOwner(owner),
       inputBindings: this.resolver.bindings,

@@ -91,6 +91,8 @@ Actor persistence currently targets the active world scene. Load rejects a save 
 
 The save system does not serialize Babylon scenes, GPU resources, arbitrary JavaScript closures, active timers, or every engine subsystem. Data-only fields work without actor persistence.
 
+Selected actor/component variables support nested Maps with string or finite-number keys, preserving numeric and string keys separately. Map values can contain arrays, plain data, other Maps, and saved actor/component references. Cycles, unsupported keys, and malformed Map data reject the operation without replacing the checkpoint. This does not add Map fields to Save Game definitions.
+
 ## Schema migrations
 
 Migration functions receive a detached document with `schemaVersion`, `fields` keyed by stable field IDs, and optional runtime `state`. Register each migration against the version it upgrades; each step advances one schema version. Functions may mutate the document or return a replacement, synchronously or asynchronously.

@@ -350,6 +350,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const [playAudioSourceLoader, setPlayAudioSourceLoader] =
     useState<PlayAudioSourceLoader | undefined>(undefined);
   const [playInputAssets, setPlayInputAssets] = useState<import("@babylonslate/core").InputAssetDefinition[]>([]);
+  const [playDataAssets, setPlayDataAssets] = useState<import("@babylonslate/core").DataAssetCatalogEntry[]>([]);
   const [playAudioLibrary, setPlayAudioLibrary] = useState<PlayAudioLibrary>(
     () => emptyPlayAudioLibrary(),
   );
@@ -892,6 +893,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
           collectPlayParticles,
           collectPlayPreviewScripts,
           collectPlayRenderTargets,
+          collectPlayDataAssets,
           collectPlaySceneLayers,
           collectPlaySceneLibrary,
           collectPlaySpriteAnimationPayloads,
@@ -977,6 +979,8 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         }
         setScripts(nextScripts);
         setDiagnostics(nextDiagnostics);
+        // Snapshot saved and open data once for both worker and in-process Play.
+        setPlayDataAssets(await collectPlayDataAssets());
         let playLibrary: Array<{
           guid: string;
           scene: import("@babylonslate/core").SerializedScene;
@@ -1604,6 +1608,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             audioReverbBytes={playAudioReverbBytes}
             audioProjectSettings={projectDocument?.settings.audio}
             inputAssets={playInputAssets}
+            dataAssets={playDataAssets}
             inputMappings={projectDocument?.settings.input}
             focusNavigation={projectDocument?.settings.focusNavigation}
             sortingLayers={projectDocument?.settings.twoD.sortingLayers}

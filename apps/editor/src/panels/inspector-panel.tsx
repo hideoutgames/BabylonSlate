@@ -104,6 +104,7 @@ import {
   connectedEnumGuidFromSerialized,
   containerConstructorPropertyRows,
   developmentOnlyPropertyRows,
+  dataNodePropertyRows,
   enumNodePropertyRows,
   flowSwitchCaseListValues,
   inspectorLiteralPinDefaults,
@@ -134,6 +135,7 @@ import {
   typeSchemasFromGraphAssets,
 } from "../lib/logic-graph-document";
 import { hydrateSerializedGraphForEditor } from "../services/graph-validation";
+import { collectDataGraphAssets, dataGraphAssetCreateOptions, dataGraphAssetPickPatch, isDataGraphNode, patchDataGraphNode } from "../lib/data-graph";
 import { classIdForGraphPath } from "../services/script-compiler";
 import {
   MATERIAL_DOCUMENT_KINDS,
@@ -143,6 +145,7 @@ import {
 const CLASS_KINDS = ["graph"] as const;
 const INTERFACE_KINDS = ["script-interface"] as const;
 const TYPE_KINDS = ["structure", "enum"] as const;
+const DATA_KINDS = ["data-object", "data-sheet"] as const;
 
 function memberPinRows(
   pins: GraphClassMember["pins"],
@@ -1101,6 +1104,11 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
   const { interfaceAssets, pickerAssets, bobjectClassEntries, projectClasses } = registryViews;
   // Other open tabs' unsaved content these catalogs read, by kind.
   const typeDocuments = useOpenDocumentsOfKinds(TYPE_KINDS);
+  const dataDocuments = useOpenDocumentsOfKinds(DATA_KINDS);
+  const dataAssets = useMemo(() => {
+    void registryEpoch;
+    return collectDataGraphAssets(assetRegistry?.list() ?? [], dataDocuments);
+  }, [assetRegistry, dataDocuments, registryEpoch]);
   const classDocuments = useOpenDocumentsOfKinds(CLASS_KINDS);
   const interfaceDocuments = useOpenDocumentsOfKinds(INTERFACE_KINDS);
   // Open Enum tabs' unsaved members win over saved headers.
@@ -1203,6 +1211,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     selectedNodeIds,
   ]);
   const needsPinHydration = Boolean(selectedSerializedNode && (
+    isDataGraphNode(selectedSerializedNode.type) ||
     selectedSerializedNode.type === "debug.executeJavaScript" ||
     selectedSerializedNode.type === "tags.select" ||
     !Array.isArray(selectedSerializedNode.data.__pins) ||
@@ -1217,6 +1226,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
       parentOf,
       structs: typeSchemas.structs,
       enums: typeSchemas.enums,
+      dataAssets,
       classId: doc?.ref.path ? classIdForGraphPath(doc.ref.path) : undefined,
       otherClassGraphs: collectClassGraphsForPalette({
         assets: assetRegistry?.list() ?? [],
@@ -1240,6 +1250,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     parentOf,
     registryEpoch,
     typeSchemas,
+    dataAssets,
   ]);
   const selectedNode = hydratedInspectGraph
     ? hydratedInspectGraph.nodes.find(
@@ -1556,6 +1567,10 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
       : selectedNode.type;
 
   const updateNodeData = (patch: Record<string, unknown>) => {
+    if (isDataGraphNode(selectedNode.type)) {
+      persistGraph(patchDataGraphNode(graph, selectedNode, patch, activeFunctionId));
+      return;
+    }
     const next: SerializedGraph = {
       ...graph,
       nodes: graph.nodes.map((n) =>
@@ -1616,6 +1631,12 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     updateNodeData,
     typeCatalog.structures,
   );
+  const dataNodeRows = dataNodePropertyRows(
+    selectedNode.type,
+    selectedNode.data,
+    updateNodeData,
+    typeCatalog.structures,
+  );
   const inputEventRows = inputEventPropertyRows(
     selectedNode.type,
     selectedNode.data,
@@ -1669,6 +1690,9 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
             rows={structNodeRows}
             data-testid="inspector-struct-properties"
           />
+        ) : null}
+        {dataNodeRows.length > 0 ? (
+          <PropertyGrid rows={dataNodeRows} data-testid="inspector-data-properties" />
         ) : null}
         {containerConstructorRows.length > 0 ? (
           <PropertyGrid
@@ -1933,15 +1957,15 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
           selectedNode.type === "scene-layer.registerPostProcess" ||
           selectedNode.type === "scene-layer.unregisterPostProcess"
             ? { materialDomain: "postProcess" }
-            : undefined
+            : assetPinPick
+              ? dataGraphAssetCreateOptions(selectedNode.type, assetPinPick.pinId, selectedNode.data)
+              : undefined
         }
         allowNone
         title={assetPinPick ? `Pick ${assetPinPick.assetType}` : "Pick Asset"}
         onPick={(guid) => {
           if (assetPinPick) {
-            updateNodeData({
-              [pinDefaultPropertyKey(assetPinPick.pinId)]: guid ?? "",
-            });
+            updateNodeData(dataGraphAssetPickPatch(selectedNode.type, assetPinPick.pinId, guid, dataAssets, selectedNode.data));
           }
           setAssetPinPick(null);
         }}

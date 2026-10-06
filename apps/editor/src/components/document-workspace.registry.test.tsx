@@ -4,18 +4,20 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { AssetRegistry, projectContentRoot } from "@babylonslate/assets";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { DocumentWorkspace } from "./document-workspace";
+import type { OpenDocument } from "../services/document-service";
 
 const state = vi.hoisted(() => ({
   registry: null as AssetRegistry | null,
   mountedIds: new Set<string>(),
   tabs: [] as string[],
+  documents: null as OpenDocument[] | null,
   passthrough: ({ children }: { children: ReactNode }) => children,
 }));
 
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
   tabOrder: state.tabs,
   activeDocumentId: state.tabs[0],
-  openDocuments: state.tabs.map((id) => ({
+  openDocuments: state.documents ?? state.tabs.map((id) => ({
     id,
     ref: { kind: "graph", path: `assets/${id}.class.babasset` },
     content: null,
@@ -121,10 +123,30 @@ async function createRegistry() {
 afterEach(() => {
   cleanup();
   state.mountedIds = new Set();
+  state.documents = null;
   vi.restoreAllMocks();
 });
 
 describe("workspace registry traversal", () => {
+  it("does not mount standalone workspaces for background sheet objects until they are revealed", () => {
+    state.tabs = ["sheet", "object"];
+    state.mountedIds = new Set(state.tabs);
+    const object: OpenDocument = {
+      id: "object", ref: { kind: "data-object", path: "assets/Sword.dataobject.babasset", label: "Sword" },
+      content: { kind: "dataObject", structureGuid: null, values: {} }, layout: null, dirty: true, background: true,
+    };
+    state.documents = [
+      { id: "sheet", ref: { kind: "data-sheet", path: "assets/Weapons.datasheet.babasset", label: "Weapons" }, content: { kind: "dataSheet", structureGuid: null, objectGuids: [] }, layout: null, dirty: false },
+      object,
+    ];
+    const view = render(<DocumentWorkspace />);
+    expect(screen.getByTestId("document-workspace-data-sheet")).toBeTruthy();
+    expect(screen.queryByTestId("document-workspace-data-object")).toBeNull();
+    object.background = false;
+    view.rerender(<DocumentWorkspace />);
+    expect(screen.getByTestId("document-workspace-data-object")).toBeTruthy();
+  });
+
   it("does no registry reads for unmounted graph workspaces", async () => {
     const registry = await createRegistry();
     const list = vi.spyOn(registry, "list");

@@ -1288,6 +1288,36 @@ describe("graphsNeedCompile", () => {
 // not fake Play current.
 
 describe("GraphScriptCompileCache", () => {
+  it("recompiles an inferred Data Object read when its asset changes Structure", async () => {
+    const { loadCompiledModule } = await import("@babylonslate/runtime");
+    const cache = new GraphScriptCompileCache();
+    const graph: SerializedGraph = {
+      nodes: [
+        { id: "entry", type: "flow.entry", position: { x: 0, y: 0 }, data: {} },
+        { id: "read", type: "data.readObject", position: { x: 0, y: 0 }, data: { "default:object": "config" } },
+        { id: "log", type: "debug.log", position: { x: 0, y: 0 }, data: {} },
+      ],
+      edges: [
+        { id: "exec", source: "entry", sourceHandle: "execOut", target: "log", targetHandle: "execIn" },
+        { id: "value", source: "read", sourceHandle: "value", target: "log", targetHandle: "message" },
+      ],
+    };
+    const documents = [{ path: "assets/Reader.class.babasset", content: graph }];
+    const structs = { first: { name: "First", fields: [] }, second: { name: "Second", fields: [] } };
+    const readTypes: string[] = [];
+    for (const structureGuid of ["first", "second"]) {
+      const bundles = compileGraphDocuments(documents, {
+        cache, structs, dataAssets: [{ guid: "config", name: "Config", type: "DataObject", structureGuid }],
+      });
+      const module = await loadCompiledModule(bundles[0]!.source, "data-compile-cache");
+      await module.run!({
+        data: { readObject: (_reference: string, requestedType: string) => { readTypes.push(requestedType); return {}; } },
+        formatValue: JSON.stringify, log: () => {}, checkInfiniteLoop: () => {},
+      });
+    }
+    expect(readTypes).toEqual(["first", "second"]);
+  });
+
   it("Play-prepares many graphs without recompiling an unchanged graph", () => {
     const cache = new GraphScriptCompileCache();
     const documents = Array.from({ length: 24 }, (_, index) => ({

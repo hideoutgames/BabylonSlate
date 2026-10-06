@@ -1,4 +1,5 @@
 import { createDefaultInputAssets } from "@babylonslate/core";
+import { normalizeDataObjectAsset, normalizeDataSheetAsset } from "@babylonslate/core";
 import { normalizeImportedProject, readProjectArchive, PROJECT_IMPORT_LIMIT } from "./project-import";
 import { getHostPlatform, pickImportFiles } from "@babylonslate/vfs";
 import type { DockviewApi } from "dockview-react";
@@ -157,6 +158,10 @@ function headerMetaForSave(
     | SerializedGraph
     | Record<string, unknown>,
 ): Record<string, unknown> | undefined {
+  // Sheets render indexed values without loading one document per visible row.
+  // This header snapshot is always derived from the body being saved.
+  if (type === "DataObject") return { ...normalizeDataObjectAsset(content) };
+  if (type === "DataSheet") return { ...normalizeDataSheetAsset(content) };
   if (isInputAssetType(type)) {
     const input = normalizeInputAssetPayload(type, content);
     return { valueType: input.valueType };
@@ -1789,6 +1794,8 @@ export class ProjectService {
       unknown
     > & { version?: number };
     void _v;
+    if (kind === "data-object") return { ...normalizeDataObjectAsset(content) };
+    if (kind === "data-sheet") return { ...normalizeDataSheetAsset(content) };
     if (kind === "scene") {
       return normalizeScene(content);
     }
@@ -1926,6 +1933,8 @@ export class ProjectService {
       };
     }
     if (isInputAssetType(type)) content = normalizeInputAssetPayload(type, content) as unknown as Record<string, unknown>;
+    if (type === "DataObject") content = { ...normalizeDataObjectAsset(content) };
+    if (type === "DataSheet") content = { ...normalizeDataSheetAsset(content) };
     const version = this.migrations.currentVersion(type);
     const parentClass =
       options?.parentClass !== undefined
@@ -1957,7 +1966,9 @@ export class ProjectService {
               "string" &&
             (content as { displayName: string }).displayName.trim() !== ""
               ? (content as { displayName: string }).displayName.trim()
-              : isInputAssetType(type) && existing?.name ? existing.name : assetName(path),
+              : (isInputAssetType(type) || type === "DataObject" || type === "DataSheet") && existing?.name
+                ? existing.name
+                : assetName(path),
           guid,
           version,
           payload: content as unknown as Record<string, unknown>,

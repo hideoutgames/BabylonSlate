@@ -6,6 +6,7 @@ import {
   materialDomainsFromAssets,
 } from "../lib/content-browser-helpers";
 import { inputAssetCatalog } from "../lib/input-asset-catalog";
+import { collectDataGraphAssets } from "../lib/data-graph";
 import {
   collectClassGraphsForPalette,
   collectFunctionLibrariesForPalette,
@@ -29,6 +30,7 @@ const INTERFACE_KINDS = ["script-interface"] as const;
 const TYPE_KINDS = ["structure", "enum"] as const;
 const INPUT_KINDS = ["input-action", "input-axis"] as const;
 const SAVE_GAME_KINDS = ["save-game"] as const;
+const DATA_KINDS = ["data-object", "data-sheet"] as const;
 
 /**
  * The project-wide catalogs a Class or Animation Graph panel builds its
@@ -45,6 +47,7 @@ export function useGraphPanelCatalogs() {
   const interfaceDocuments = useOpenDocumentsOfKinds(INTERFACE_KINDS);
   const typeDocuments = useOpenDocumentsOfKinds(TYPE_KINDS);
   const inputDocuments = useOpenDocumentsOfKinds(INPUT_KINDS);
+  const dataDocuments = useOpenDocumentsOfKinds(DATA_KINDS);
   const saveGameDocuments = useOpenDocumentsOfKinds(SAVE_GAME_KINDS);
   const saveGameGuid = projectDocument?.settings.saveGame?.definitionGuid;
   const saveGameAssets = useMemo(() => {
@@ -138,6 +141,10 @@ export function useGraphPanelCatalogs() {
       materialDocuments,
     );
   }, [assetRegistry, materialDocuments, registryEpoch]);
+  const dataAssets = useMemo(() => {
+    void registryEpoch;
+    return collectDataGraphAssets(assetRegistry?.list() ?? [], dataDocuments);
+  }, [assetRegistry, dataDocuments, registryEpoch]);
 
   return {
     parentOf,
@@ -152,5 +159,6 @@ export function useGraphPanelCatalogs() {
     inputAssets,
     saveGameDefinition,
     materialDomains,
+    dataAssets,
   };
 }

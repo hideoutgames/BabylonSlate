@@ -60,6 +60,14 @@ describe("listDockWindows", () => {
     ]);
     expect(listDockWindows("save-game", { sourceControl: true }).map((entry) => entry.id)).toContain("locks");
   });
+  it.each(["data-object", "data-sheet"] as const)("exposes %s values and its primary panel to Windows and Focus", (kind) => {
+    expect(isDockviewDocumentKind(kind)).toBe(true);
+    const windows = listDockWindows(kind);
+    expect(windows.some((window) => window.id === primaryDockPanel(kind))).toBe(true);
+    expect(windows.some((window) => window.component === "data-object-values")).toBe(true);
+    expect(listDockWindows(kind, { sourceControl: true }).some((window) => window.id === "locks")).toBe(true);
+    if (kind === "data-sheet") expect(windows.find((window) => window.id === "data-object-values")?.defaultPosition?.referencePanelId).toBe(primaryDockPanel(kind));
+  });
   it.each(["render-target", "render-target-texture"] as const)("exposes %s Details to Windows and Focus", (kind) => {
     expect(isDockviewDocumentKind(kind)).toBe(true);
     const primary = primaryDockPanel(kind);

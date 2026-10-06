@@ -700,10 +700,10 @@ importers:
       '@babylonslate/physics':
         specifier: workspace:*
         version: link:../physics
-    devDependencies:
       '@babylonslate/scripting':
         specifier: workspace:*
         version: link:../scripting
+    devDependencies:
       '@babylonslate/scripting-nodes':
         specifier: workspace:*
         version: link:../scripting-nodes

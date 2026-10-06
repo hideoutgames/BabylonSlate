@@ -309,6 +309,8 @@ const ICON_BY_ID: Record<string, LucideIcon> = {
   Class: OBJECT_ICON,
   Enum: ListIcon,
   Structure: BracesIcon,
+  DataObject: FileBoxIcon,
+  DataSheet: FileSpreadsheetIcon,
   ScriptInterface: PlugIcon,
   PluginSettings: PuzzleIcon,
 };
@@ -354,6 +356,8 @@ const FAMILY_BY_ASSET_TYPE: Record<string, AssetVisualFamily> = {
   Class: "class",
   Enum: "scriptType",
   Structure: "struct",
+  DataObject: "struct",
+  DataSheet: "struct",
   ScriptInterface: "class",
   PluginSettings: "scriptType",
 };

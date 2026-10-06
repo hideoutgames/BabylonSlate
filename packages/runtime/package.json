@@ -13,18 +13,18 @@
   },
   "dependencies": {
     "@babylonslate/anim-graph": "workspace:*",
-    "@babylonslate/behaviour-tree": "workspace:*",
     "@babylonslate/assets": "workspace:*",
+    "@babylonslate/behaviour-tree": "workspace:*",
     "@babylonslate/bridge": "workspace:*",
     "@babylonslate/core": "workspace:*",
     "@babylonslate/debugger": "workspace:*",
     "@babylonslate/input": "workspace:*",
     "@babylonslate/navigation": "workspace:*",
     "@babylonslate/object-model": "workspace:*",
-    "@babylonslate/physics": "workspace:*"
+    "@babylonslate/physics": "workspace:*",
+    "@babylonslate/scripting": "workspace:*"
   },
   "devDependencies": {
-    "@babylonslate/scripting": "workspace:*",
     "@babylonslate/scripting-nodes": "workspace:*",
     "typescript": "~5.8.2"
   }

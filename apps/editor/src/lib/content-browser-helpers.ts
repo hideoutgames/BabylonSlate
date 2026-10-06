@@ -1,8 +1,11 @@
 import { createDefaultWaterDefinition, normalizeWaterDefinition, createDefaultRenderTargetPayload, createDefaultRenderTargetTexturePayload, normalizeRenderTargetTexturePayload, createDefaultRenderTargetCaptureProperties, renderTargetAssetGuidsFromGraph, type WaterStyle } from "@babylonslate/core";
+import { createDataObjectAsset, createDataSheetAsset, type DataObjectAsset, type DataSheetAsset } from "@babylonslate/core";
 import type { ImportResult, IndexedAsset } from "@babylonslate/assets";
 import {
   DOCUMENT_CHUNK_ID,
   findClassAssetReferences,
+  dataAssetDependencies,
+  dataGraphAssetDependencies,
   audioAssetDependencies,
   particleAssetDependencies,
   createDefaultMigrationRegistry,
@@ -240,6 +243,8 @@ export const CREATABLE_ASSET_TYPES = [
   "SaveGame",
   "Enum",
   "Structure",
+  "DataObject",
+  "DataSheet",
   "ScriptInterface",
   "AudioMixer",
   "AudioChannel",
@@ -267,6 +272,7 @@ export type CreatableAssetTypeGroup = {
 export const CREATABLE_ASSET_TYPE_GROUPS: readonly CreatableAssetTypeGroup[] = [
   { id: "world", label: "World", types: ["Scene", "SceneLayer"] },
   { id: "input", label: "Input", types: ["InputAction", "InputAxis"] },
+  { id: "data", label: "Data", types: ["DataObject", "DataSheet"] },
   {
     id: "scripting",
     label: "Scripting",
@@ -318,6 +324,8 @@ const CREATABLE_ASSET_TYPE_DESCRIPTIONS: Record<CreatableAssetType, string> = {
   Blackboard: "Shared keys that a behaviour tree reads and writes.",
   Enum: "Named integer members used by pins and variables.",
   Structure: "A user-defined struct of typed fields.",
+  DataObject: "Reusable values defined by a Structure. Use independently, in Data Sheets, or from a graph.",
+  DataSheet: "An ordered collection of Data Objects with the same Structure. Edit their shared values together.",
   ScriptInterface: "A contract of methods that classes can implement.",
   AudioMixer: "Global and per-channel default volumes for Play.",
   AudioChannel: "A routing bus with an optional parent and reverb send.",
@@ -1533,8 +1541,19 @@ export function buildNewAssetResult(options: {
   parentGraphs?: Record<string, import("@babylonslate/core").SerializedGraph>;
   /** New Material domain; pickers pass `particle` / `postProcess` / `landscape`. */
   materialDomain?: MaterialDomain;
+  structureGuid?: string | null;
+  dataObject?: DataObjectAsset;
+  dataSheet?: DataSheetAsset;
 }): ImportResult {
   const { type, name, guid, parentClass } = options;
+  if (type === "DataObject" || type === "DataSheet") {
+    const payload = type === "DataObject"
+      ? options.dataObject ?? createDataObjectAsset(options.structureGuid)
+      : options.dataSheet ?? createDataSheetAsset(options.structureGuid);
+    const result = documentAsset(type, name, guid, { ...payload });
+    result.dependencies = assetHeaderDependencies(type, result.payload);
+    return result;
+  }
   if (type === "RenderTarget") return documentAsset(type, name, guid, { ...createDefaultRenderTargetPayload() });
   if (type === "RenderTargetTexture") return documentAsset(type, name, guid, { ...createDefaultRenderTargetTexturePayload() });
   if (type === "Water") return documentAsset(type, name, guid, createDefaultWaterDefinition(options.waterStyle) as unknown as Record<string, unknown>);
@@ -1829,6 +1848,8 @@ const ASSET_FILE_SUFFIX: Partial<Record<CreatableAssetType, string>> = {
   SaveGame: ".savegame.babasset",
   AudioMixer: ".mixer.babasset",
   InputAction: ".inputaction.babasset",
+  DataObject: ".dataobject.babasset",
+  DataSheet: ".datasheet.babasset",
   InputAxis: ".inputaxis.babasset",
   AudioChannel: ".channel.babasset",
   SoundAttenuation: ".atten.babasset",
@@ -1883,16 +1904,27 @@ export function assetHeaderDependencies(
   classes: readonly ClassAssetRef[] = [],
   parentClass?: string | null,
 ): string[] {
+  if (["DataObject", "DataSheet", "Structure", "Enum"].includes(assetType)) {
+    return dataAssetDependencies(assetType, payload, classes.flatMap((asset) =>
+      asset.header.guid && ["Class", "Graph"].includes(asset.header.type)
+        ? [{ guid: asset.header.guid, classId: classIdFromClassAsset(asset) }] : []));
+  }
   const inputRefs: string[] = [];
   const visitInputRefs = (value: unknown): void => {
     if (!value || typeof value !== "object") return;
     if (Array.isArray(value)) { value.forEach(visitInputRefs); return; }
     const row = value as Record<string, unknown>;
     if (typeof row.Name === "string" && typeof row.Asset === "string" && row.Asset) inputRefs.push(row.Asset);
-    Object.values(row).forEach(visitInputRefs);
+    Object.entries(row).forEach(([key, entry]) => {
+      if (Array.isArray(row.dataSchema) && (key === "default:values" || key === "dataSchema")) return;
+      visitInputRefs(entry);
+    });
   };
   visitInputRefs(payload);
   const unique = new Set<string>([
+    ...(["Class", "Graph"].includes(assetType) ? dataGraphAssetDependencies(payload, classes.flatMap((asset) =>
+      asset.header.guid && ["Class", "Graph"].includes(asset.header.type)
+        ? [{ guid: asset.header.guid, classId: classIdFromClassAsset(asset) }] : [])) : []),
     ...inputRefs,
     ...(assetType === "SaveGame" && Array.isArray(payload.fields) ? payload.fields.flatMap((field) => {
       if (!field || typeof field !== "object" || field.type !== "asset") return [];

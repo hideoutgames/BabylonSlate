@@ -98,6 +98,7 @@ export type ControlMessage =
   | {
       type: "load";
       saveGame?: import("@babylonslate/core").SaveGameConfiguration;
+      dataAssets?: import("@babylonslate/core").DataAssetCatalogEntry[];
       /** Initial session render cap, shared with the renderer for console readback. */
       frameCap?: number;
       /** Serialized trace retention budget in bytes for this session. */

@@ -55,7 +55,9 @@ export function remapRenderTargetPayloadGuids(
     if (Array.isArray(value)) return value.map(walk);
     const row = asRecord(value);
     if (!row) return value;
-    const next = Object.fromEntries(Object.entries(row).map(([key, entry]) => [key, walk(entry)]));
+    const next = Object.fromEntries(Object.entries(row).map(([key, entry]) => [key,
+      key === "default:values" && Array.isArray(row.dataSchema) ? entry : walk(entry),
+    ]));
     if (row.classId === "RenderTargetCaptureComponent") {
       const properties = asRecord(next.properties);
       if (properties && Object.hasOwn(properties, "renderTargetGuid")) next.properties = { ...properties, renderTargetGuid: guid(properties.renderTargetGuid) };

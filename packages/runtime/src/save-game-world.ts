@@ -183,12 +183,22 @@ export class SaveGameWorld {
     if (typeof value === "string" || typeof value === "boolean") return value;
     if (typeof value === "number" && Number.isFinite(value)) return value;
     if (typeof value !== "object" || seen.has(value)) throw new SaveGameError("incompatible", "Saved variables must contain finite data without cycles.");
-    if (!Array.isArray(value) && Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null) {
-      throw new SaveGameError("incompatible", "Saved variables must be plain data, arrays, or actor references.");
+    if (!Array.isArray(value) && !(value instanceof Map) && Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null) {
+      throw new SaveGameError("incompatible", "Saved variables must be plain data, arrays, Maps, or actor references.");
     }
     seen.add(value);
     try {
       if (Array.isArray(value)) return value.map((item) => this.encode(item, seen));
+      if (value instanceof Map) {
+        const entries: SaveGameValue[] = [];
+        for (const [key, child] of value as Map<unknown, unknown>) {
+          if (typeof key !== "string" && (typeof key !== "number" || !Number.isFinite(key))) {
+            throw new SaveGameError("incompatible", "Saved Map keys must be strings or finite numbers.");
+          }
+          entries.push([key, this.encode(child, seen)]);
+        }
+        return { $saveReference: "map", entries };
+      }
       const out: Record<string, SaveGameValue> = Object.create(null);
       for (const [key, child] of Object.entries(value)) {
         if (reserved.has(key) || key === "$saveReference") throw new SaveGameError("incompatible", "Saved variable contains a reserved key.");
@@ -247,6 +257,18 @@ export class SaveGameWorld {
     if (Array.isArray(value)) return value.map((item) => this.decode(item, targets));
     if (!record(value)) return value;
     if ("$saveReference" in value) {
+      if (value.$saveReference === "map") {
+        if (Object.keys(value).length !== 2 || !Array.isArray(value.entries)) throw new SaveGameError("corrupt", "Invalid saved Map.");
+        const result = new Map<string | number, unknown>();
+        for (const pair of value.entries) {
+          if (!Array.isArray(pair) || pair.length !== 2 ||
+            (typeof pair[0] !== "string" && (typeof pair[0] !== "number" || !Number.isFinite(pair[0]))) || result.has(pair[0])) {
+            throw new SaveGameError("corrupt", "Invalid or duplicate saved Map entry.");
+          }
+          result.set(pair[0], this.decode(pair[1]!, targets));
+        }
+        return result;
+      }
       if (typeof value.actor !== "string") throw new SaveGameError("corrupt", "Invalid actor reference.");
       const actor = targets.get(value.actor);
       if (!actor || actor.destroyed) throw new SaveGameError("incompatible", `Saved actor reference is unavailable: ${value.actor}`);

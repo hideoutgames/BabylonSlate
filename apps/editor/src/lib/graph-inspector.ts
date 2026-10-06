@@ -1,4 +1,5 @@
 import { INPUT_KEYS, normalizeTag, normalizeTagContainer } from "@babylonslate/core";
+import { DATA_GRAPH_NODES, dataGraphNodeTitle, isDataGraphNode } from "./data-graph";
 import type {
   ParameterRow,
   PinListRow,
@@ -666,6 +667,38 @@ export function structNodePropertyRows(
         structGuid: guid,
         fields: selected.fields,
         title: `${typeId === "struct.make" ? "Make" : "Break"} ${selected.name}`,
+      });
+    },
+  }];
+}
+
+export function dataNodePropertyRows(
+  typeId: string,
+  data: Record<string, unknown>,
+  onPatch: (patch: Record<string, unknown>) => void,
+  structures: ReadonlyArray<{ guid: string; name: string }>,
+): PropertyRow[] {
+  if (!isDataGraphNode(typeId)) return [];
+  const required = DATA_GRAPH_NODES[typeId].required;
+  return [{
+    kind: "enum",
+    id: "structGuid",
+    label: "Structure Type",
+    description: required ? "The Structure used by this node's data values." : "An empty selection accepts every Structure.",
+    value: typeof data.structGuid === "string" ? data.structGuid : "",
+    options: [
+      { value: "", label: required ? "Select Structure" : "Any Structure", disabled: required },
+      ...structures.map((entry) => ({ value: entry.guid, label: entry.name })),
+    ],
+    onChange: (guid) => {
+      const selected = structures.find((entry) => entry.guid === guid);
+      if (!selected && (required || guid)) return;
+      onPatch({
+        structGuid: guid,
+        title: dataGraphNodeTitle(typeId, selected?.name),
+        // Keep the chosen asset and name/folder literals. Only the typed
+        // Structure value belongs to the previous schema.
+        ...(guid !== data.structGuid ? { "default:values": undefined, dataSchema: undefined } : {}),
       });
     },
   }];

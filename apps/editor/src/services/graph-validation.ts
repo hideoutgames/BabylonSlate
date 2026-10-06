@@ -3,6 +3,7 @@ import {
   isEditorGraphClass,
   isEditorGraphHost,
   isFunctionLibraryClass,
+  normalizeDataObjectAsset,
   type GraphClassMemberPin,
   type SerializedGraph,
   type SaveGameDefinition,
@@ -18,6 +19,9 @@ import {
   isActorClassId,
   isLogicGraphPayload,
   knownGuidsFromSchemas,
+  snapshotDataFields,
+  reconcileDataObject,
+  validateDataObject,
   type ClassHierarchy,
   type ClassMemberSymbol,
   type Diagnostic,
@@ -93,6 +97,12 @@ import type {
   GraphStructureEntry,
   SubsystemClassEntry,
 } from "../lib/logic-graph-document";
+import {
+  DATA_GRAPH_NODES,
+  dataGraphNodeTitle,
+  isDataGraphNode,
+  type DataGraphAssetEntry,
+} from "../lib/data-graph";
 
 const registry = createDefaultNodeRegistry();
 
@@ -176,7 +186,9 @@ function pruneIncompatibleEdges(
     const targetTypeId = catalogTypeId(target);
     if (
       !isVariableAccessTypeId(sourceTypeId) &&
-      !isVariableAccessTypeId(targetTypeId)
+      !isVariableAccessTypeId(targetTypeId) &&
+      !isDataGraphNode(sourceTypeId) &&
+      !isDataGraphNode(targetTypeId)
     ) {
       return true;
     }
@@ -200,6 +212,7 @@ function isInputEvent(typeId: string): boolean {
 }
 
 function shouldRegeneratePins(typeId: string): boolean {
+  if (isDataGraphNode(typeId)) return true;
   if (typeId.startsWith("tween.")) return true;
   if (typeId === "debug.executeJavaScript") return true;
   if (isInputEvent(typeId)) return true;
@@ -394,6 +407,39 @@ function applyStructEnumSchema(
   nodeRegistry: NodeRegistry,
   options?: HydrateGraphOptions,
 ): void {
+  if (isDataGraphNode(typeId)) {
+    const node = DATA_GRAPH_NODES[typeId];
+    let guid = typeof properties.structGuid === "string" ? properties.structGuid.trim() : "";
+    if (!guid && "assetPin" in node && !graph.edges.some((edge) => edge.target === nodeId && edge.targetHandle === node.assetPin)) {
+      const assetGuid = properties[`default:${node.assetPin}`];
+      guid = options?.dataAssets?.find((entry) => entry.guid === assetGuid && entry.type === node.assetType)?.structureGuid ?? "";
+      if (guid) properties.structGuid = guid;
+    }
+    const schema = options?.structs?.[guid];
+    properties.title = dataGraphNodeTitle(typeId, schema?.name);
+    if (schema && !Array.isArray(properties.dataSchema)) {
+      properties.dataSchema = snapshotDataFields(schema.fields, {
+        structs: options?.structs ?? {}, enums: options?.enums ?? {},
+      }, new Set([guid]));
+    }
+    if (schema && (typeId === "editorData.createObject" || typeId === "editorData.updateObject") &&
+      properties["default:values"] !== undefined && !graph.edges.some((edge) => edge.target === nodeId && edge.targetHandle === "values")) {
+      const schemas = { structs: options?.structs ?? {}, enums: options?.enums ?? {} };
+      const authored = normalizeDataObjectAsset({
+        structureGuid: guid, values: properties["default:values"], schema: properties.dataSchema,
+      });
+      // Project stable field renames before codegen and Inspector editing.
+      // Missing fields and incompatible types require explicit authoring; they
+      // must not pick up new defaults or be coerced during graph hydration.
+      if (!validateDataObject(authored, schemas).some((issue) => issue.severity === "error")) {
+        const projected = reconcileDataObject(authored, schema.fields, schemas);
+        if (!projected.issues.some((issue) => issue.severity === "error")) {
+          properties["default:values"] = projected.asset.values;
+          properties.dataSchema = projected.asset.schema;
+        }
+      }
+    }
+  }
   if (typeId === "struct.make" || typeId === "struct.break") {
     const guid =
       typeof properties.structGuid === "string"
@@ -485,6 +531,7 @@ function hydratedNodeTitle(
       isInputEvent(typeId) ||
       typeId === "struct.make" ||
       typeId === "struct.break" ||
+      isDataGraphNode(typeId) ||
       isEnumCatalogType(typeId))
   ) {
     return properties.title;
@@ -517,6 +564,7 @@ function refreshInputEvent(
 export type InputPaletteAsset = { guid: string; name: string; type: string; valueType: string };
 
 export type HydrateGraphOptions = {
+  dataAssets?: readonly DataGraphAssetEntry[];
   /** Active function slice, for Script Interface endpoint chrome. */
   functionId?: string;
   inputAssets?: readonly InputPaletteAsset[];
@@ -1733,6 +1781,35 @@ function saveGamePaletteNodes(nodeRegistry: NodeRegistry, options?: ScriptPalett
     }));
 }
 
+function dataPaletteNodes(
+  nodeRegistry: NodeRegistry,
+  options?: ScriptPaletteOptions,
+): PaletteNode[] {
+  const rows: PaletteNode[] = [];
+  for (const typeId of Object.keys(DATA_GRAPH_NODES) as Array<keyof typeof DATA_GRAPH_NODES>) {
+    const def = nodeRegistry.get(typeId);
+    if (!def || (def.editorOnly && !isEditorGraphHost(options ?? {}))) continue;
+    for (const structure of options?.structures ?? []) {
+      const title = dataGraphNodeTitle(typeId, structure.name);
+      const defaultData = { structGuid: structure.guid, title };
+      rows.push({
+        id: `${typeId}:${structure.guid}`,
+        nodeType: typeId,
+        title,
+        description: def.description,
+        category: def.category,
+        searchAliases: def.searchAliases,
+        pins: def.pins(defaultData),
+        pure: def.pure,
+        latent: def.latent,
+        editorOnly: def.editorOnly,
+        defaultData,
+      });
+    }
+  }
+  return rows;
+}
+
 function enumPaletteNodes(
   nodeRegistry: NodeRegistry,
   options?: ScriptPaletteOptions,
@@ -2039,6 +2116,7 @@ function scriptPaletteInjectorNodes(
       ...subsystemGetPaletteNodes(nodeRegistry, options),
       ...structPaletteNodes(nodeRegistry, options),
       ...saveGamePaletteNodes(nodeRegistry, options),
+      ...dataPaletteNodes(nodeRegistry, options),
       ...enumPaletteNodes(nodeRegistry, options),
     ],
     options,
@@ -2306,6 +2384,7 @@ export function scriptPinCompatibility(
 }
 
 export type ValidateSerializedGraphOptions = {
+  dataAssets?: readonly DataGraphAssetEntry[];
   inputAssets?: readonly InputPaletteAsset[];
   assetGuid: string;
   graphId: string;
@@ -2438,6 +2517,60 @@ function hostLineageDiagnostics(
   return out;
 }
 
+function dataGraphDiagnostics(
+  graphs: readonly LogicGraph[],
+  options: ValidateSerializedGraphOptions,
+): Diagnostic[] {
+  const out: Diagnostic[] = [];
+  const assets = options.dataAssets && new Map(options.dataAssets.map((entry) => [entry.guid, entry]));
+  for (const graph of graphs) {
+    for (const node of graph.nodes) {
+      if (!isDataGraphNode(node.typeId)) continue;
+      const metadata = DATA_GRAPH_NODES[node.typeId];
+      const guid = typeof node.properties.structGuid === "string" ? node.properties.structGuid.trim() : "";
+      const report = (code: string, message: string, pinId?: string) => out.push(diagnostic({
+        code, message, assetGuid: options.assetGuid, graphId: graph.id, nodeId: node.id, pinId,
+      }));
+      if (!guid && metadata.required) {
+        report("data.missing_structure", "Select a Structure Type in the node Inspector");
+      } else if (guid && options.structs && !options.structs[guid]) {
+        report("data.unknown_structure", `The selected Structure '${guid}' is missing`);
+      }
+      const wired = (pinId: string) => graph.edges.some((edge) => edge.targetNodeId === node.id && edge.targetPinId === pinId);
+      if ((node.typeId === "editorData.createObject" || node.typeId === "editorData.updateObject") &&
+        guid && options.structs?.[guid] && !wired("values") && node.properties["default:values"] !== undefined) {
+        const value = normalizeDataObjectAsset({
+          structureGuid: guid, values: node.properties["default:values"], schema: node.properties.dataSchema,
+        });
+        for (const issue of validateDataObject(value, { structs: options.structs, enums: options.enums ?? {} })) {
+          out.push(diagnostic({
+            code: `data.${issue.code}`, message: issue.path ? `${issue.path}: ${issue.message}` : issue.message,
+            severity: issue.severity, assetGuid: options.assetGuid, graphId: graph.id, nodeId: node.id, pinId: "values",
+          }));
+        }
+      }
+      if (!assets) continue;
+      const checkReference = (reference: unknown, pinId: string, expectedType: "DataObject" | "DataSheet") => {
+        if (typeof reference !== "string" || !reference.trim()) return;
+        const asset = assets.get(reference);
+        if (!asset || asset.type !== expectedType) {
+          report("data.missing_asset", `The selected ${expectedType === "DataObject" ? "Data Object" : "Data Sheet"} '${reference}' is missing`, pinId);
+        } else if (guid && asset.structureGuid !== guid) {
+          report("data.structure_mismatch", `'${asset.name}' does not use the selected Structure Type`, pinId);
+        }
+      };
+      if ("assetPin" in metadata && !wired(metadata.assetPin)) {
+        checkReference(node.properties[`default:${metadata.assetPin}`], metadata.assetPin, metadata.assetType);
+      }
+      if ((node.typeId === "editorData.createSheet" || node.typeId === "editorData.setSheetObjects") && !wired("objects")) {
+        const references = node.properties["default:objects"];
+        if (Array.isArray(references)) references.forEach((reference) => checkReference(reference, "objects", "DataObject"));
+      }
+    }
+  }
+  return out;
+}
+
 function attachedComponentsForGraph(
   content: SerializedGraph,
   options: ValidateSerializedGraphOptions,
@@ -2494,11 +2627,13 @@ export function validateSerializedGraph(
     return [
       ...validateGraphs([content], ctx, { registry }),
       ...hostLineageDiagnostics([content], options),
+      ...dataGraphDiagnostics([content], options),
       ...warnDebugTierConsoleCommands([content], { assetGuid: options.assetGuid }),
       ...warnReservedConsoleCommandNames([content], { assetGuid: options.assetGuid }),
     ];
   }
   const typeOptions: HydrateGraphOptions = {
+    dataAssets: options.dataAssets,
     inputAssets: options.inputAssets,
     enums: options.enums,
     structs: options.structs,
@@ -2523,6 +2658,7 @@ export function validateSerializedGraph(
   return [
     ...validateGraphs(graphs, ctx, { registry }),
     ...hostLineageDiagnostics(graphs, options),
+    ...dataGraphDiagnostics(graphs, options),
     ...warnDebugTierConsoleCommands(graphs, { assetGuid: options.assetGuid }),
     ...warnReservedConsoleCommandNames(graphs, { assetGuid: options.assetGuid }),
   ];
