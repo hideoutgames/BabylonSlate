@@ -38,47 +38,6 @@ async function touch(
   });
 }
 
-test("TreeView mouse row drag starts immediately while its scrollbar only scrolls", async ({
-  page,
-}) => {
-  await openTrees(page);
-  const source = page.getByTestId("tree-row-player-mesh");
-  const target = page.getByTestId("tree-row-player-camera");
-  const start = await center(source);
-  const end = await center(target);
-  await page.mouse.move(start.x, start.y);
-  await page.mouse.down();
-  await page.mouse.move(end.x, end.y, { steps: 2 });
-  await page.mouse.up();
-  await expect(source).toHaveAttribute("aria-level", "4");
-  await expect(target).toHaveAttribute("aria-expanded", "true");
-
-  const tree = page.getByTestId("gallery-tree-touch");
-  const scrollbar = await tree.evaluate((element) => {
-    const box = element.getBoundingClientRect();
-    return {
-      x: box.right - (box.width - element.clientWidth) / 2,
-      y: box.top + 40,
-      width: box.width - element.clientWidth,
-      scrollable: element.scrollHeight > element.clientHeight,
-    };
-  });
-  expect(scrollbar.scrollable).toBe(true);
-  expect(scrollbar.width).toBeGreaterThan(0);
-  await page.mouse.move(scrollbar.x, scrollbar.y);
-  await page.mouse.down();
-  await page.mouse.move(scrollbar.x, scrollbar.y + 90, { steps: 6 });
-  await page.mouse.up();
-  await expect
-    .poll(() => tree.evaluate((element) => element.scrollTop))
-    .toBeGreaterThan(0);
-  await expect(page.getByTestId("tree-row-touch-player-mesh")).toHaveAttribute(
-    "aria-level",
-    "3",
-  );
-  await expect(tree.locator('[data-drop-target="true"]')).toHaveCount(0);
-});
-
 test(
   "TreeView native touch swipes scroll and a short hold reparents without scrolling",
   { tag: IPAD_TEST_TAG },

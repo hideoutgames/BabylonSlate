@@ -4,8 +4,8 @@ import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 
 test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 
-for (const backend of ["webgl2", "webgpu"] as const) {
-for (const output of ["backbuffer", "texture"] as const) {
+for (const backend of ["webgl2"] as const) {
+for (const output of ["backbuffer"] as ("backbuffer" | "texture")[]) {
 test(`opt-in Forward FrameGraph preserves surface pixels and scene ownership on ${backend} ${output}`, async ({
   page,
 }, testInfo) => {

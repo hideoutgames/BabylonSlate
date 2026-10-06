@@ -64,8 +64,8 @@ async function toggleWindow(page: Page, id: string) {
   await page.keyboard.press("Escape");
 }
 
-test.describe("Scene modes", { tag: IPAD_TEST_TAG }, () => {
-  test("sculpts terrain and restores independent mode layouts, Focus, and saved content", async ({ page, isMobile }, testInfo) => {
+test.describe("Scene modes", () => {
+  test("sculpts terrain and restores independent mode layouts, Focus, and saved content", { tag: IPAD_TEST_TAG }, async ({ page, isMobile }, testInfo) => {
     test.setTimeout(150_000);
     await openMinimalTestProject(page, await landscapeProjectFiles()); await openMainScene(page);
     await expect(page.getByTestId("scene-mode-select")).toContainText("Design");

@@ -79,73 +79,33 @@ describe("Playwright iPad project filter", () => {
       ]),
     );
 
-    const ipadFiles = filesOf(landscape);
-    expect(ipadFiles).toEqual(
-      expect.arrayContaining([
-        "touch-shell.spec.ts",
-        "windows-menu.spec.ts",
-        "editor-density.spec.ts",
-        "component-gallery.spec.ts",
-        "global-search.spec.ts",
-        "p6-scene-editing.spec.ts",
-        "texture-encode-ipad.spec.ts",
-      ]),
-    );
+    // Performance and profiling routes run only through playwright.perf.config.ts.
     for (const file of [
-      "p2-accept.spec.ts",
-      "p5-scripting.spec.ts",
-      "editor-smoke.spec.ts",
-      "editor-theme.spec.ts",
-      "debug-menu.spec.ts",
-      "p8-trace.spec.ts",
-    ]) {
-      expect(ipadFiles, `${file} is desktop-only`).not.toContain(file);
-    }
+      "editor-edit-profile.spec.ts",
+      "play-performance-route.spec.ts",
+      "play-sustained-route.spec.ts",
+      "rendering-baseline.spec.ts",
+    ])
+      expect(filesOf(desktop), `${file} is perf-only`).not.toContain(file);
 
-    expect(landscape.filter((test) => test.file === "p9-content.spec.ts")).toEqual([
-      expect.objectContaining({ title: expect.stringMatching(/Custom GLSL node compiles a function body in the Material editor @ipad$/) }),
+    // Only touch-driven journeys are tagged for iPad; every iPad run is also a desktop run.
+    expect(filesOf(landscape)).toEqual([
+      "p10-tilemap.spec.ts",
+      "scene-layer-joystick.spec.ts",
+      "scene-modes.spec.ts",
+      "touch-shell.spec.ts",
+      "tree-view-touch.spec.ts",
     ]);
-
-    expect(landscape.filter((test) => test.file === "engine-settings.spec.ts")).toEqual([
-      expect.objectContaining({
-        title: "editor viewport applies hardware scaling and the post-processing gate",
-      }),
+    expect(landscape.map((test) => test.title).sort()).toEqual([
+      "@ipad SceneLayer joystick touch moves its custom material and resets on cancellation in Play",
+      "P10 tilemaps › 2D project paints tiles, plays an animated sprite, and reports physics",
+      "Scene modes › sculpts terrain and restores independent mode layouts, Focus, and saved content",
+      "Touch shell UX › pointer context menus",
+      "Touch shell UX › project long-press stays open after release and can edit",
+      "TreeView native touch swipes scroll and a short hold reparents without scrolling",
     ]);
-
-    expect(landscape.filter((test) => test.file === "p4-play.spec.ts")).toEqual([
-      expect.objectContaining({
-        title: expect.stringMatching(
-          /framecap changes rendered FPS while simulation keeps ticking$/,
-        ),
-      }),
-    ]);
-
-    const ipadTitles = landscape.map((test) => test.title);
-    expect(ipadTitles).toEqual(
-      expect.arrayContaining([
-        "Touch shell UX › dock and viewport geometry",
-        "Touch shell UX › tab overflow",
-        "Touch shell UX › pointer context menus",
-        "Windows menu › restores Outliner and Output Log to their default dock positions",
-        "Editor density and IA › chrome is compact, has no Add tab, and Focus is disabled on Content Browser",
-        "Editor density and IA › Content Browser folder tree pans vertically on touch before reparent hold",
-        "Editor density and IA › Focus hides the Outliner; Place Actors catalog does not focus search",
-        "Editor density and IA › gizmo tools look pressed and the joystick toggle is in viewport settings",
-        "gallery composites meet the minimum touch target size",
-        "Global project search › toolbar search opens a dialog and focuses a scene actor",
-        "Global project search › dialog stays a fixed tall height and results scroll when they overflow",
-        "P6 first-playable scene editing › scene panels expose touch-sized toolbar controls",
-        "Texture encode iPad › import encode settles to compressed or usable source fallback",
-      ]),
-    );
-    expect(ipadTitles).not.toContain(
-      "P9 content systems › touch-axis input drives the same Move.x as the gamepad path",
-    );
-    expect(ipadTitles).not.toContain(
-      "P6 first-playable scene editing › build, save, reopen, play in 3D and 2D with gamepad and gizmo undo",
-    );
-    expect(ipadTitles).not.toContain(
-      "P5 visual scripting acceptance › a scripted actor compiles and runs in Preview",
-    );
+    const desktopKeys = new Set(desktop.map((test) => `${test.file} › ${test.title}`));
+    for (const test of landscape)
+      expect(desktopKeys, `${test.title} also runs on desktop`).toContain(`${test.file} › ${test.title}`);
   }, 60_000);
 });

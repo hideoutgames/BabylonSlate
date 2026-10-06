@@ -1,6 +1,5 @@
-import { compileGraph, type GraphNode, type LogicGraph } from "../packages/scripting/src/index";
+import { type GraphNode, type LogicGraph } from "../packages/scripting/src/index";
 import { createDefaultNodeRegistry } from "../packages/scripting-nodes/src/index";
-import type { ScriptBundleEntry } from "../packages/bridge/src/channels";
 
 /** The same saved Class graphs qualify editor compilation and standalone execution. */
 export function scalabilityGraphDefinitions(): { name: string; graph: LogicGraph }[] {
@@ -47,14 +46,4 @@ export function scalabilityGraphDefinitions(): { name: string; graph: LogicGraph
     ]),
     ...["low", "medium", "high", "ultra"].map((preset) => graphCommand(`qual_${preset}`, [["scalability.setPreset", { preset }]])),
   ];
-}
-
-/** Commands only trigger the compiled graph's native entry. */
-export function scalabilityGraphScripts(): ScriptBundleEntry[] {
-  const registry = createDefaultNodeRegistry();
-  return scalabilityGraphDefinitions().map(({ name, graph }) => {
-    const compiled = compileGraph(graph, { registry, assetGuid: name });
-    return { assetGuid: name, classId: name, parentClassId: "BDebugCommand", source: compiled.source, anchors: compiled.anchors,
-      entryPoints: compiled.entryPoints, command: { name, category: "Qualification", description: "Exercise a compiled scalability graph", parameters: [] } };
-  });
 }

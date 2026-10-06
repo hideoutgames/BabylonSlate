@@ -40,43 +40,8 @@ async function previewPixels(surface: Locator) {
 }
 
 test.describe("3D Empty Kenney Mannequin", () => {
-  test("Model preview draws on opening without orbiting the canvas", async ({
-    page,
-  }, testInfo) => {
-    await openTestProject(page);
-    await openAssetFromBrowser(page, "assets/Mannequin/mannequin.babasset");
-    const canvas = page.getByTestId("model-preview-canvas");
-    await expect(canvas).toBeVisible();
-    await expect
-      .poll(async () => (await previewPixels(canvas)).model, {
-        timeout: 15_000,
-      })
-      .toBeGreaterThan(100);
-    await canvas.screenshot({
-      path: testInfo.outputPath("model-first-open.png"),
-    });
-  });
 
-  test("existing Model and Animation assets receive rendered browser thumbnails", async ({
-    page,
-  }) => {
-    await openTestProject(page);
-    await openAssetFromBrowser(page, "assets/Mannequin/mannequin.babasset");
-    await expect(page.getByTestId("model-preview-canvas")).toBeVisible();
-    await openContentBrowser(page);
-    for (const path of [
-      "assets/Mannequin/mannequin.babasset",
-      "assets/Mannequin/mannequin_idle.babasset",
-    ]) {
-      const thumbnail = page.locator(`[data-asset-path="${path}"] img`);
-      await expect(thumbnail).toBeVisible({ timeout: 30_000 });
-      await expect
-        .poll(async () => (await previewPixels(thumbnail)).model)
-        .toBeGreaterThan(100);
-    }
-  });
-
-  test("new 3D Empty shows Mannequin, hierarchy bones, and a looping idle clip", async ({
+  test("new 3D Empty shows Mannequin, hierarchy bones, a looping idle clip, and asset thumbnails", async ({
     page,
   }, testInfo) => {
     await openTestProject(page);
@@ -158,5 +123,25 @@ test.describe("3D Empty Kenney Mannequin", () => {
     await expect
       .poll(async () => (await previewPixels(animationCanvas)).model)
       .toBeGreaterThan(100);
+
+    await openAssetFromBrowser(page, "assets/Mannequin/mannequin.babasset");
+    const modelCanvas = page.getByTestId("model-preview-canvas");
+    await expect(modelCanvas).toBeVisible();
+    await expect
+      .poll(async () => (await previewPixels(modelCanvas)).model, {
+        timeout: 15_000,
+      })
+      .toBeGreaterThan(100);
+    await openContentBrowser(page);
+    for (const path of [
+      "assets/Mannequin/mannequin.babasset",
+      "assets/Mannequin/mannequin_idle.babasset",
+    ]) {
+      const thumbnail = page.locator(`[data-asset-path="${path}"] img`);
+      await expect(thumbnail).toBeVisible({ timeout: 30_000 });
+      await expect
+        .poll(async () => (await previewPixels(thumbnail)).model)
+        .toBeGreaterThan(100);
+    }
   });
 });

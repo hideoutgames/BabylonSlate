@@ -1,9 +1,8 @@
 import { expect, test } from "@playwright/test";
-import { IPAD_TEST_TAG } from "./ipad-tag";
 import declared from "../release/version.json" with { type: "json" };
 import changelog from "../release/changelog.json" with { type: "json" };
 
-test("release news survives reload and the account menu reopens it offline", { tag: IPAD_TEST_TAG }, async ({ page }) => {
+test("release news survives reload and the account menu reopens it offline", async ({ page }) => {
   // Exercise the real web launch, including Pages' QA storage configuration.
   await page.goto("/");
   const news = page.getByRole("dialog", { name: "What's New" });

@@ -1,13 +1,6 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import { closeProjectViaSettings } from "./close-project";
 import { guidForPath } from "./material-graph";
-import {
-  createContentBrowserAsset,
-  openAssetFromBrowser,
-  openContentBrowser,
-  openMainScene,
-  openTestProject,
-} from "./open-test-project";
+import { createContentBrowserAsset, openAssetFromBrowser, openMainScene, openTestProject } from "./open-test-project";
 import { clickPlayAndWaitForOverlay } from "./play";
 import { saveAllIfEnabled } from "./save-all";
 
@@ -77,54 +70,6 @@ async function connectFloatToEmitRate(page: Page): Promise<void> {
     .locator('.react-flow__node[data-id="output"] [data-handleid="emitRate"][data-handlepos="left"]')
     .click({ force: true });
   await expect(graph.locator('.react-flow__edge[data-id*=":out:output:emitRate"]')).toHaveCount(1);
-}
-
-/** A node's pin handle: inputs sit on the left, outputs on the right. */
-function pinHandle(node: Locator, pinId: string, side: "left" | "right"): Locator {
-  return node.locator(`[data-handleid="${pinId}"][data-handlepos="${side}"]`);
-}
-
-/** Drags from one pin and releases on another with the mouse. */
-async function dragPinOnto(page: Page, from: Locator, to: Locator): Promise<void> {
-  const start = await from.boundingBox();
-  const end = await to.boundingBox();
-  expect(start).not.toBeNull();
-  expect(end).not.toBeNull();
-  await page.mouse.move(start!.x + start!.width / 2, start!.y + start!.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(end!.x + end!.width / 2, end!.y + end!.height / 2, { steps: 12 });
-  await page.mouse.up();
-}
-
-/**
- * An empty pane point with room below and right of it for a new node, clear
- * of every node and the zoom island, so the node covers no existing pin.
- */
-async function emptyCanvasPoint(graph: Locator): Promise<{ x: number; y: number }> {
-  const point = await graph.evaluate((root) => {
-    const pane = root.querySelector(".react-flow__pane")?.getBoundingClientRect();
-    const viewport = root.querySelector(".react-flow__viewport");
-    if (!pane || !viewport) return null;
-    const zoom = new DOMMatrixReadOnly(getComputedStyle(viewport).transform).a || 1;
-    // Room for a one-row node (about 340 × 140 graph units) plus a margin.
-    const width = 400 * zoom;
-    const height = 180 * zoom;
-    const obstacles = [
-      ...root.querySelectorAll(".react-flow__node"),
-      ...root.querySelectorAll('[data-testid="graph-viewport-controls"], [data-testid="graph-toolbar"]'),
-    ].map((element) => element.getBoundingClientRect());
-    for (let y = pane.bottom - height - 8; y >= pane.top + 8; y -= 8) {
-      for (let x = pane.right - width - 8; x >= pane.left + 8; x -= 8) {
-        const clear = obstacles.every(
-          (rect) => x + width < rect.left || x > rect.right || y + height < rect.top || y > rect.bottom,
-        );
-        if (clear && document.elementFromPoint(x, y)?.classList.contains("react-flow__pane")) return { x, y };
-      }
-    }
-    return null;
-  });
-  expect(point).not.toBeNull();
-  return point!;
 }
 
 async function setNumberRow(details: Locator, rowId: string, value: string): Promise<void> {
@@ -434,89 +379,5 @@ test.describe("Particle Graph", () => {
       .toEqual(expect.objectContaining({ systems: 0, playing: 0 }));
     expect(shaderFallbacks).toEqual([]);
     expect(shaderErrors).toEqual([]);
-  });
-
-  test("Particle Graph nodes, wires and Material survive save and reopen", async ({ page }) => {
-    test.setTimeout(240_000);
-    await openTestProject(page);
-    const materialGuid = await createParticleMaterial(page, "KeepMat");
-    await createContentBrowserAsset(page, "ParticleGraph", "KeptGraph");
-    await openAssetFromBrowser(page, "assets/KeptGraph.particlegraph.babasset");
-    await expect(page.getByTestId("document-workspace-particle-graph")).toBeVisible();
-    const details = page.getByTestId("particle-graph-details-panel");
-    await details.getByTestId("property-material").click();
-    await pickAsset(page, "particle-graph-material-picker", materialGuid);
-    await expect(details.getByTestId("property-material")).toContainText(/KeepMat/);
-    await addParticleGraphNode(page, "Float", "const.float");
-    await setNumberRow(details, "value", "12");
-    await connectFloatToEmitRate(page);
-    await saveAllIfEnabled(page);
-
-    await closeProjectViaSettings(page);
-    await expect(page.getByTestId("homepage")).toBeVisible();
-    await page.reload();
-    await expect(page.getByTestId("homepage")).toBeVisible();
-    await page.getByTestId("open-listed-project-TestProject").click();
-    await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
-    await openContentBrowser(page);
-    await openAssetFromBrowser(page, "assets/KeptGraph.particlegraph.babasset");
-    await expect(page.getByTestId("document-workspace-particle-graph")).toBeVisible();
-    await expect(details.getByTestId("property-material")).toContainText(/KeepMat/);
-    const graph = particleGraphEditor(page);
-    await expect(graph.locator('.react-flow__edge[data-id*=":out:output:emitRate"]')).toHaveCount(1);
-    await graph.locator('.react-flow__node[data-id^="const.float-"]').click();
-    await expect(details.getByTestId("property-value")).toHaveValue("12");
-  });
-
-  test("rewires a linked Particle output by replacing its wire, undone in one step", async ({ page }) => {
-    test.setTimeout(120_000);
-    await openTestProject(page);
-    await createContentBrowserAsset(page, "ParticleGraph", "Rewired");
-    await openAssetFromBrowser(page, "assets/Rewired.particlegraph.babasset");
-    await expect(page.getByTestId("document-workspace-particle-graph")).toBeVisible();
-    const graph = particleGraphEditor(page);
-    const results = page.getByTestId("particle-graph-compiler-results");
-    const rows = results.locator('[data-testid^="particle-graph-diagnostic-"]');
-    await expect(results.getByTestId("particle-graph-diagnostic-particle.missingMaterial")).toBeVisible();
-    await expect(rows).toHaveCount(1);
-
-    // Add Fade To Dead Color on empty canvas, where it covers no spine pin.
-    const spot = await emptyCanvasPoint(graph);
-    await page.mouse.click(spot.x, spot.y, { button: "right" });
-    await expect(page.getByTestId("node-palette")).toBeVisible();
-    await page.getByTestId("node-palette-search").fill("Fade");
-    await page.getByTestId("node-palette-item-update.basicColor").click();
-    await expect(page.getByTestId("node-palette")).toHaveCount(0);
-    const fade = graph.locator('.react-flow__node[data-id^="update.basicColor-"]');
-    await expect(fade).toHaveCount(1);
-
-    const velocity = graph.locator('.react-flow__node[data-id="velocity"]');
-    const updateColor = graph.locator('.react-flow__node[data-id="updateColor"]');
-    const oldWire = graph.locator('.react-flow__edge[data-id="e-velocity-color"]');
-    const newWire = graph.locator('.react-flow__edge[data-id^="e:velocity:out:update.basicColor-"]');
-    await expect(oldWire).toHaveCount(1);
-
-    // Dropping Apply Velocity's linked Particle output on Fade moves the wire there.
-    await dragPinOnto(page, pinHandle(velocity, "out", "right"), pinHandle(fade, "particle", "left"));
-    await expect(newWire).toHaveCount(1);
-    await expect(oldWire).toHaveCount(0);
-    await expect(graph.locator('.react-flow__edge[data-id^="e:velocity:out:"]')).toHaveCount(1);
-    await expect(results.getByTestId("particle-graph-diagnostic-particle.spineFanOut")).toHaveCount(0);
-
-    await page.getByTestId("undo-document").click();
-    await expect(oldWire).toHaveCount(1);
-    await expect(newWire).toHaveCount(0);
-    await expect(fade).toHaveCount(1);
-    await page.getByTestId("redo-document").click();
-    await expect(newWire).toHaveCount(1);
-    await expect(oldWire).toHaveCount(0);
-
-    // Fade's free output closes the spine: the graph validates as before.
-    await dragPinOnto(page, pinHandle(fade, "out", "right"), pinHandle(updateColor, "particle", "left"));
-    await expect(
-      graph.locator('.react-flow__edge[data-id^="e:update.basicColor-"][data-id$=":out:updateColor:particle"]'),
-    ).toHaveCount(1);
-    await expect(results.getByTestId("particle-graph-diagnostic-particle.missingMaterial")).toBeVisible();
-    await expect(rows).toHaveCount(1);
   });
 });

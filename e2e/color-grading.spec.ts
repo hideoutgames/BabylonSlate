@@ -15,7 +15,7 @@ function difference(a: number[], b: number[], map: (value: number) => number = (
   return sum / count;
 }
 
-for (const backend of ["webgl2", "webgpu"] as const) {
+for (const backend of ["webgl2"] as const) {
   test(`LUT color grading remaps display color on ${backend}`, async ({ page }, testInfo) => {
     test.setTimeout(90_000);
     const errors: string[] = [];

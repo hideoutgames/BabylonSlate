@@ -1,11 +1,9 @@
 import { expect, test } from "@playwright/test";
 import { openMinimalTestProject } from "./minimal-project";
-import { IPAD_TEST_TAG } from "./ipad-tag";
 import { saveAllIfEnabled } from "./save-all";
 
 test(
   "Input assets provide a docked binding editor and per-asset graph events",
-  { tag: IPAD_TEST_TAG },
   async ({ page }) => {
     await openMinimalTestProject(page);
     await page.evaluate(() => document.documentElement.classList.add("dark"));

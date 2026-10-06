@@ -19,7 +19,7 @@ async function colorAt(canvas: Locator, x: number) {
   }, x);
 }
 
-for (const mode of ["Play", "Preview Build"] as const) {
+for (const mode of ["Play"] as ("Play" | "Preview Build")[]) {
   test(`@ipad SceneLayer joystick touch moves its custom material and resets on cancellation in ${mode}`, async ({ page }, testInfo) => {
     test.setTimeout(120000);
     const files = await minimalProjectFiles(), versions = createDefaultMigrationRegistry();

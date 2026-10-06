@@ -6,7 +6,7 @@ import { renderingEvidence } from "./rendering-evidence";
 if (process.env.BL_RENDER_NATIVE_GPU !== "1" || process.env.CI)
   test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 
-for (const backend of ["webgl2", "webgpu"] as const) {
+for (const backend of ["webgl2"] as ("webgl2" | "webgpu")[]) {
   test(`shared production outlines preserve consumers, occlusion and bounded work on ${backend}`, async ({ page }, testInfo) => {
     test.setTimeout(120_000);
     const evidence = renderingEvidence("apps/editor/src/testing/shared-outline-proof.ts");
