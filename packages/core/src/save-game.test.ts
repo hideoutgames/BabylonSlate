@@ -202,6 +202,24 @@ describe("SaveGameService recovery and lifecycle", () => {
     expect(await service.saveGame()).toMatchObject({ ok: false, error: { code: "incompatible" } });
   });
 
+  it("validates typed actor IDs in the captured field snapshot before writing", async () => {
+    const storage = new FaultStorage();
+    const service = make(storage, {
+      definition: { id: "actor-progress", schemaVersion: 1, fields: [{ id: "owner-id", name: "owner", type: "actor", defaultValue: null }] },
+      captureState: (data) => {
+        expect(data).not.toBe(service.getSaveData());
+        if (data.owner !== null && data.owner !== "live-actor") throw new SaveGameError("incompatible", "Unknown actor identity.");
+        return { actors: ["live-actor"] };
+      },
+    });
+    service.getSaveData().owner = "live-actor";
+    expect(await service.saveGame()).toMatchObject({ ok: true });
+    const before = [...storage.files];
+    service.getSaveData().owner = "missing-actor";
+    expect(await service.saveGame()).toMatchObject({ ok: false, error: { code: "incompatible" } });
+    expect([...storage.files]).toEqual(before);
+  });
+
   it("stages restored named fields with world state before applying or importing an unavailable reference", async () => {
     const withActor: SaveGameDefinition = {
       id: "actor-progress", schemaVersion: 1,

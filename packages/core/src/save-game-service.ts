@@ -117,7 +117,8 @@ export class SaveGameService<TData extends object = Record<string, SaveGameValue
       if (existing.latest) this.restoreFields((await this.migrate(existing.latest.body)).fields);
       const captured = await this.boundary(async () => {
         const fields = this.captureFields();
-        const state = cloneSaveGameValue(await this.options.captureState?.() ?? null);
+        const data = Object.fromEntries(this.definition.fields.map((field) => [field.name, fields[field.id]])) as TData;
+        const state = cloneSaveGameValue(await this.options.captureState?.(data) ?? null);
         return { fields, state };
       });
       return this.commit(address, captured, existing);

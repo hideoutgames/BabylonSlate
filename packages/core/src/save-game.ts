@@ -66,7 +66,7 @@ export interface SaveGameServiceOptions<TData extends object = Record<string, Sa
   defaultSlot?: string;
   /** Run capture/apply while simulation is suspended at its next boundary. */
   atBoundary?: <T>(operation: () => T | Promise<T>) => Promise<T>;
-  captureState?: () => SaveGameValue | Promise<SaveGameValue>;
+  captureState?: (data: TData) => SaveGameValue | Promise<SaveGameValue>;
   /** Validate and prepare without modifying the live world. */
   stageState?: (state: SaveGameValue, data: TData) => unknown | Promise<unknown>;
   /** Must restore its previous world if applying a staged load throws. */
