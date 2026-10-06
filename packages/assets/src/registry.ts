@@ -1748,7 +1748,7 @@ export class AssetRegistry {
         continue;
       }
       if (!path.endsWith(".babasset")) continue;
-      const { header, locator } = await readAssetCatalog(storage, path);
+      const { header, locator } = await readScannedCatalog(storage, path);
       this.indexHeader(root.id, path, header, false, entry.mtime ?? null, locator);
     }
   }
@@ -1912,4 +1912,14 @@ function isWithinFolder(path: string, folder: string): boolean {
 
 function sanitizeFileName(name: string): string {
   return name.replace(/[^a-zA-Z0-9_.-]+/g, "_");
+}
+
+/** A save can land between a scan's bounded header reads; read that file again. */
+async function readScannedCatalog(storage: ProjectStorageReader, path: string) {
+  for (let attempt = 1; ; attempt++) {
+    try { return await readAssetCatalog(storage, path); }
+    catch (error) {
+      if (!(error instanceof SourceRevisionChangedError) || attempt === 3) throw error;
+    }
+  }
 }

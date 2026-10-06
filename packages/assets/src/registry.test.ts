@@ -105,6 +105,27 @@ describe("AssetRegistry", () => {
     expect((await decodeAssetDocument(await storage.readBinary(renamed.path))).payload).toEqual(payload);
     expect(registry.showReferences("definition").inbound).toEqual([copy.header.guid]);
   });
+  it("indexes the saved header when a save lands between a scan's header reads", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("SaveDuringScan");
+    const path = "assets/Wood.babasset";
+    const document = (name: string) => encodeAssetDocument({ guid: "wood", type: "Material", name, version: 1, payload: {} });
+    await storage.writeBinary(path, await document("Before"));
+    const saved = await document("After saving");
+    const read = storage.readBinaryRange.bind(storage);
+    let saving = true;
+    vi.spyOn(storage, "readBinaryRange").mockImplementation(async (rangePath, offset, length, revision, options) => {
+      if (rangePath === path && offset > 0 && saving) {
+        saving = false;
+        await storage.writeBinary(path, saved);
+      }
+      return read(rangePath, offset, length, revision, options);
+    });
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    expect(saving).toBe(false);
+    expect(registry.getByGuid("wood")?.header.name).toBe("After saving");
+  });
   it.each(["rename", "move"])("preserves an asset after a case-only %s on a case-insensitive filesystem", async (operation) => {
     const storage = new CaseInsensitiveStorage();
     await storage.openDocumentsProject("CaseSensitiveNames");
