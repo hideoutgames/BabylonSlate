@@ -128,6 +128,7 @@ Unreal-like mapping. **oklch values** live in `:root` / `.dark` in `globals.css`
 | `--pin-actor` | actorRef (slightly cooler blue) |
 | `--pin-struct` | structRef (indigo, same oklch as Structure tiles `--asset-class`) |
 | `--pin-enum` | enumRef (teal, same oklch as Enum tiles `--asset-script-type`) |
+| `--pin-tag` | Tag (rose), shared by pins, wires, and type indicators in both themes |
 | `--pin-wildcard` | unbound resolvingWildcard / boxedWildcard / unknown (gray) |
 | `--pin-delegate` | delegate (red) |
 | `--pin-particle` | particle — the Particle Graph spine (light deep teal `oklch(0.40 0.07 175)`, dark bright mint `oklch(0.90 0.14 170)`); at least 0.12 OKLab from every other pin in both schemes |
