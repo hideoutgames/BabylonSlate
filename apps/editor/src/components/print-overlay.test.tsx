@@ -27,4 +27,14 @@ describe("PrintOverlay", () => {
     });
     expect(queryByText("flash")).toBeNull();
   });
+
+  it("lists the newest print first so clipping drops the oldest", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000);
+    let entries = applyPrintHudCommand([], { message: "first", key: "a", duration: 5 }, 1_000);
+    entries = applyPrintHudCommand(entries, { message: "second", key: "b", duration: 5 }, 1_001);
+    const { getByTestId } = render(<PrintOverlay entries={entries} />);
+    const lines = [...getByTestId("print-overlay").children].map((line) => line.textContent);
+    expect(lines).toEqual(["second", "first"]);
+  });
 });

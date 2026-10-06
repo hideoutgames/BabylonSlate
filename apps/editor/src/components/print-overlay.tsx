@@ -34,15 +34,17 @@ export function PrintOverlay({ entries }: PrintOverlayProps) {
     [entries, clock],
   );
   if (visible.length === 0) return null;
+  // Newest first and clipped to the overlay, so a burst of prints drops the
+  // oldest lines off the bottom instead of running off-screen.
   return (
     <div
-      className="pointer-events-none absolute inset-x-0 top-12 z-40 flex flex-col items-center gap-1 px-4"
+      className="pointer-events-none absolute inset-x-0 top-12 bottom-12 z-40 flex flex-col items-center gap-1 overflow-hidden px-4"
       data-testid="print-overlay"
     >
-      {visible.map((e) => (
+      {[...visible].reverse().map((e) => (
         <div
           key={e.key}
-          className="rounded-md bg-black/60 px-3 py-1 text-sm"
+          className="max-w-full shrink-0 break-words rounded-md bg-black/60 px-3 py-1 text-sm"
           style={{ color: e.color }}
         >
           {e.message}
