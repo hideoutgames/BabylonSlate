@@ -630,6 +630,8 @@ type BtScriptExtras = Pick<
 >;
 
 export type ScriptExtras = Partial<BtScriptExtras> & {
+  /** Staged migration state follows nested function/library calls. */
+  saveMigrationData?: SaveGameMigrationData;
   animFacts?: AnimStateFacts;
   variableStore?: VariableStore;
   /** Static library contexts have no Self; their tweens retain the calling owner's lifetime. */
@@ -695,7 +697,7 @@ export class ScriptHost {
         if (point.event !== event) continue;
         const handler = entry.exports[point.name];
         if (typeof handler !== "function") continue;
-        const context = this.createContext(self, 0, 0, { saveMigrationData: snapshot }, undefined, undefined, entry.script.assetGuid);
+        const context = this.createContext(self, 0, 0, { saveMigrationData: snapshot }, undefined, { saveMigrationData: snapshot }, entry.script.assetGuid);
         await this.invokeOwned(self, () => (handler as (ctx: ScriptContext) => unknown)(context));
       }
     }
@@ -1131,7 +1133,7 @@ export class ScriptHost {
       return cloneSaveGameValue(type === "actor" && value instanceof Actor ? services.getSaveActorId?.(value) ?? value.guid : value);
     };
     const migrationData = (): SaveGameMigrationData => {
-      const data = commandArgs.saveMigrationData as SaveGameMigrationData | undefined;
+      const data = extras?.saveMigrationData ?? commandArgs.saveMigrationData as SaveGameMigrationData | undefined;
       if (!data) throw new SaveGameError("invalid", "Migration fields are available only inside Event Save Migration.");
       return data;
     };
@@ -1610,6 +1612,7 @@ export class ScriptHost {
       },
       invokeFunction: (target, functionName, fnArgs) => {
         if (typeof functionName !== "string" || !functionName) {
+          if (extras?.saveMigrationData) throw new SaveGameError("incompatible", "A save migration called an invalid function.");
           return {};
         }
         let loaded: LoadedScript[] | undefined;
@@ -1618,11 +1621,17 @@ export class ScriptHost {
           loaded = this.functionScriptsFor(target, functionName);
         } else {
           const object = (target ?? self) as BObject | null;
-          if (!object || !this.canInvokeOwner(object)) return {};
+          if (!object || !this.canInvokeOwner(object)) {
+            if (extras?.saveMigrationData) throw new SaveGameError("incompatible", "A save migration function's owner is unavailable.");
+            return {};
+          }
           receiver = object;
           loaded = this.functionScriptsFor(object.classId, functionName);
         }
-        if (!loaded) return {};
+        if (!loaded) {
+          if (extras?.saveMigrationData) throw new SaveGameError("incompatible", `Save migration function “${functionName}” is missing.`);
+          return {};
+        }
         let result: unknown = {};
         for (const entry of loaded) {
           const fn = entry.exports[functionName];
@@ -1647,7 +1656,7 @@ export class ScriptHost {
                     ? (resolved as Record<string, unknown>)
                     : {},
                 (error) => {
-                  if (isInfiniteLoopError(error)) throw error;
+                  if (extras?.saveMigrationData || isInfiniteLoopError(error)) throw error;
                   this.services.reportError(error);
                   return {};
                 },
@@ -1655,7 +1664,7 @@ export class ScriptHost {
             }
             result = value ?? {};
           } catch (error) {
-            if (isInfiniteLoopError(error)) throw error;
+            if (extras?.saveMigrationData || isInfiniteLoopError(error)) throw error;
             this.services.reportError(error);
           }
         }

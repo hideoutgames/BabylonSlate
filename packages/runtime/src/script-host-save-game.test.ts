@@ -76,4 +76,29 @@ describe("ScriptHost save APIs", () => {
     expect((await old.loadGame()).ok).toBe(true);
     expect(old.getSaveData()).toEqual({ Coins: 7 });
   });
+
+  it.each([false, true])("preserves staged fields through nested async functions and aborts their errors (fail=%s)", async (fail) => {
+    const disk = storage();
+    const previous = new SaveGameService({ projectId: "project", definition, storage: disk });
+    previous.getSaveData().Coins = 8;
+    expect((await previous.saveGame()).ok).toBe(true);
+    const next = new SaveGameService({ projectId: "project", storage: disk, definition: { ...definition, schemaVersion: 2 } });
+    const host = new ScriptHost(services({ saveGame: next }));
+    await host.load({ assetGuid: "migration-functions", classId: "Migrator", anchors: [],
+      entryPoints: [{ name: "migrate", event: "onSaveMigration", isAsync: true }],
+      source: `export async function migrate(ctx) { await ctx.invokeFunction(null, 'convert', {}); }
+        export async function convert(ctx) {
+          await Promise.resolve();
+          ctx.setSaveMigrationField('coins', ctx.getSaveMigrationField('coins') * 2);
+          ${fail ? "throw new Error('Conversion failed');" : ""}
+          return {};
+        }`,
+    });
+    const ctx = host.createContext(new Actor({ classId: "Migrator" }), 0, 0);
+    ctx.registerSaveMigration(1, "onSaveMigration");
+    expect((await ctx.loadGame()).ok).toBe(!fail);
+    expect(ctx.getSaveData()).toEqual({ Coins: fail ? 0 : 16 });
+    expect((await previous.loadGame()).ok).toBe(true);
+    expect(previous.getSaveData()).toEqual({ Coins: 8 });
+  });
 });
