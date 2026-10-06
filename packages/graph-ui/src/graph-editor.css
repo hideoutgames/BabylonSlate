@@ -371,7 +371,8 @@
     font-size: 1rem;
   }
   .graph-pin-default-number {
-    width: 8rem;
+    /* Match the text field's 6rem input, plus the separate touch scrub target. */
+    width: calc(6rem + var(--touch-target, 44px) + 0.25rem);
   }
   .graph-pin-default-component {
     width: 6rem;

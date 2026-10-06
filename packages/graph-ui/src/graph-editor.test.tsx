@@ -2024,7 +2024,7 @@ describe("GraphEditor", () => {
     const pinRow = eventNode?.querySelector("[data-pin-row]");
     expect(pinRow?.className).toMatch(/\bw-full\b/);
     expect(pinRow?.className).toMatch(/\bmin-w-max\b/);
-    expect(pinRow?.className).toMatch(/gap-6/);
+    expect(pinRow?.className).toMatch(/gap-12/);
     expect(pinRow?.firstElementChild?.className).not.toMatch(/min-w-0/);
     expect(pinRow?.firstElementChild?.className).toMatch(/shrink-0/);
 
