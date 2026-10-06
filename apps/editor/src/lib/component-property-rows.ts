@@ -83,6 +83,10 @@ const MOTION_TYPES = ["static", "kinematic", "dynamic"] as const;
 const SHAPE_KINDS_3D = ["box", "sphere", "capsule"] as const;
 const SHAPE_KINDS_2D = ["box2d", "circle", "capsule2d"] as const;
 const POINT_CLOUD_KINDS = new Set(["convex", "mesh", "polygon", "chain"]);
+/** Physics rejects zero-sized primitives; sizes are unsigned. */
+const MIN_COLLIDER_EXTENT = 0.001;
+const colliderExtent = (value: number) =>
+  Math.max(MIN_COLLIDER_EXTENT, Math.abs(value));
 
 export type AssetPickRequest = {
   componentId: string;
@@ -338,7 +342,11 @@ function colliderShapeRows(
       onChange: (value) =>
         update("shape", {
           kind: "box",
-          halfExtents: { x: value[0], y: value[1], z: value[2] },
+          halfExtents: {
+            x: colliderExtent(value[0]),
+            y: colliderExtent(value[1]),
+            z: colliderExtent(value[2]),
+          },
         }),
     });
   } else if (shape.kind === "box2d") {
@@ -351,7 +359,7 @@ function colliderShapeRows(
       onChange: (value) =>
         update("shape", {
           kind: "box2d",
-          halfExtents: { x: value[0], y: value[1] },
+          halfExtents: { x: colliderExtent(value[0]), y: colliderExtent(value[1]) },
         }),
     });
   } else if (shape.kind === "sphere" || shape.kind === "circle") {
@@ -360,7 +368,7 @@ function colliderShapeRows(
       id: rowId(actorId, component.id, "shape-radius"),
       label: "Radius",
       value: shape.radius,
-      min: 0,
+      min: MIN_COLLIDER_EXTENT,
       onChange: (radius) => update("shape", { ...shape, radius }),
     });
   } else if (shape.kind === "capsule" || shape.kind === "capsule2d") {
@@ -370,7 +378,7 @@ function colliderShapeRows(
         id: rowId(actorId, component.id, "shape-radius"),
         label: "Radius",
         value: shape.radius,
-        min: 0,
+        min: MIN_COLLIDER_EXTENT,
         onChange: (radius) => update("shape", { ...shape, radius }),
       },
       {
