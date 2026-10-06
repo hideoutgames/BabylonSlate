@@ -150,6 +150,7 @@ describe("player startup and Stop ownership", () => {
         expect(service.getSaveData().Coins).toBe(27);
       }
       session.stop();
+      root.remove();
     }
     expect([...files.keys()].every((key) => key.startsWith("save-games/exported-progress/game/player-two/checkpoint/"))).toBe(true);
   });
