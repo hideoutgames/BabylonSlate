@@ -458,6 +458,7 @@ describe("AnimGraphEditor", () => {
     const pane = screen.getByTestId("anim-rule-graph").querySelector(".react-flow__pane");
     fireEvent.click(pane!);
     fireEvent.click(pane!);
+    fireEvent.change(await screen.findByPlaceholderText("Search nodes"), { target: { value: "Stats" } });
     await waitFor(() => {
       expect(screen.getByTestId("node-palette-item-data.readRow:stats")).toBeTruthy();
       expect(screen.getByTestId("node-palette-item-struct.break:stats")).toBeTruthy();

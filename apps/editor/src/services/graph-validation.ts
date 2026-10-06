@@ -2093,7 +2093,12 @@ function scriptPaletteInjectorNodes(
 ): PaletteNode[] {
   if (options?.animationGraphHost === "rule") {
     return markOutOfContext(
-      variableAccessPaletteNodes(nodeRegistry, options),
+      [
+        ...variableAccessPaletteNodes(nodeRegistry, options),
+        ...structPaletteNodes(nodeRegistry, options),
+        ...dataPaletteNodes(nodeRegistry, options),
+        ...enumPaletteNodes(nodeRegistry, options),
+      ].filter((node) => node.pure === true),
       options,
     );
   }

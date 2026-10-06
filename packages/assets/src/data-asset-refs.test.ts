@@ -171,7 +171,7 @@ describe("Data Definition and owned row reference lifecycle", () => {
     expect(body(mapped[0]!).nodes).toMatchObject([{ data: { properties: { "default:rowId": "texture", "default:name": "texture", "default:values": { Icon: mapped[1]!.guid, Metadata: { Name: "Label", Asset: "texture" } } } } }, {}, { data: { properties: { "default:rowIds": ["texture", "unused"] } } }]);
     const cleared = clearDeletedAssetRefs(graph, new Set(["texture"])).value;
     expect(cleared.nodes[0]!.data.properties).toMatchObject({ "default:rowId": "texture", "default:name": "texture", "default:values": { Icon: "", Metadata: { Name: "Label", Asset: "texture" } } });
-    expect(cleared.nodes[2]!.data.properties["default:rowIds"]).toEqual(["texture", "unused"]);
+    expect(cleared.nodes[2]!.data.properties).toMatchObject({ "default:rowIds": ["texture", "unused"] });
     expect(replaceClassAssetReferences(graph, [{ guid: "texture", classId: "Legacy", replacement: null }]).value.nodes[0]!.data.properties)
       .toMatchObject({ "default:rowId": "texture", "default:name": "texture", "default:values": { Icon: "" } });
   });

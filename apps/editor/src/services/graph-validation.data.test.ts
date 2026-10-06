@@ -32,6 +32,20 @@ describe("Data graph integration", () => {
       .toEqual({ kind: "structRef", guid: "weapon" });
   });
 
+  it("offers pure typed Definition nodes in transition rules without editor actions", () => {
+    const rules = scriptPaletteNodes(createDefaultNodeRegistry(), {
+      parentClass: "BObject", animationGraphHost: "rule",
+      dataDefinitions: [{ guid: "weapon", ...structures.weapon! }],
+      enums: [{ guid: "quality", name: "Quality", members: [{ name: "Common", value: 0 }] }],
+    });
+    expect(rules.map((entry) => entry.id)).toEqual(expect.arrayContaining([
+      "data.readRow:weapon", "data.getSheetRows:weapon", "struct.make:weapon", "struct.break:weapon", "enum.equals:quality",
+    ]));
+    expect(rules.every((entry) => entry.pure === true)).toBe(true);
+    expect(rules.some((entry) => entry.id.startsWith("editorData."))).toBe(false);
+    expect(rules.some((entry) => entry.id === "enum.switch:quality")).toBe(false);
+  });
+
   it("infers an unwired literal's Data Definition and refreshes stale pins without losing compatible wires", () => {
     const graph: SerializedGraph = {
       nodes: [
