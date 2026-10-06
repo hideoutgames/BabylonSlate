@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { createDefaultScene, PROJECT_FILE, type SaveGameDefinition, type SerializedGraph } from "../packages/core/src/index";
+import { createDefaultMigrationRegistry } from "../packages/assets/src/migration";
 import { encodeAssetDocument } from "../packages/assets/src/asset-document";
 import { minimalProjectFiles } from "../packages/assets/src/test-support/minimal-project";
 import { compileGraphDocuments } from "../apps/editor/src/services/script-compiler";
@@ -41,7 +42,7 @@ test("editor Play and Preview Build share persistent preview progress", async ({
   project.settings.saveGame = { definitionGuid: "save-parity-definition", defaultSlot: "default", defaultProfile: "default", wipeOnPlay: false };
   files.set(PROJECT_FILE, new TextEncoder().encode(JSON.stringify(project)));
   files.set("assets/Progress.savegame.babasset", await encodeAssetDocument({ guid: definition.id, name: "Progress", type: "SaveGame", version: 1, payload: { ...definition } }));
-  files.set("assets/SaveFlow.class.babasset", await encodeAssetDocument({ guid: "save-flow-class", name: "SaveFlow", type: "Class", version: 1, payload: { ...graph } }, { parentClass: "GameInstance" }));
+  files.set("assets/SaveFlow.class.babasset", await encodeAssetDocument({ guid: "save-flow-class", name: "SaveFlow", type: "Class", version: createDefaultMigrationRegistry().currentVersion("Class"), payload: { ...graph } }, { parentClass: "GameInstance" }));
   await openMinimalTestProject(page, files);
   await openMainScene(page);
   await clickPlayAndWaitForOverlay(page);
