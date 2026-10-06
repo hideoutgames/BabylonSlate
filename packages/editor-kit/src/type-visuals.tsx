@@ -12,6 +12,7 @@ import {
   CloudIcon,
   Columns3Icon,
   CylinderIcon,
+  DatabaseIcon,
   FileBoxIcon,
   FileBracesCornerIcon,
   FileAxis3dIcon,
@@ -341,7 +342,7 @@ const ICON_BY_ID: Record<string, LucideIcon> = {
   Enum: ListIcon,
   Structure: BracesIcon,
   DataDefinition: FileBoxIcon,
-  DataTree: ListTreeIcon,
+  DataTree: DatabaseIcon,
   ScriptInterface: PlugIcon,
   PluginSettings: PuzzleIcon,
 };
