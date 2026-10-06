@@ -20,8 +20,10 @@ export type SaveGameErrorCode = "missing" | "corrupt" | "incompatible" | "storag
 export interface SaveGameFailure { code: SaveGameErrorCode; message: string }
 export type SaveGameResult<T> = Result<T, SaveGameFailure>;
 export class SaveGameError extends Error {
-  constructor(readonly code: SaveGameErrorCode, message: string) {
+  readonly code: SaveGameErrorCode;
+  constructor(code: SaveGameErrorCode, message: string) {
     super(message);
+    this.code = code;
     this.name = "SaveGameError";
   }
 }
