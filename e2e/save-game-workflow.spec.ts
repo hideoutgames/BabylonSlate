@@ -50,6 +50,8 @@ test("Save Game authoring preserves field identity and project defaults through 
   await expect(settings.locator("#settings-save-definition")).toContainText("PlayerProgress");
   await settings.getByLabel("Default Slot", { exact: true }).fill("checkpoint");
   await settings.getByLabel("Default Profile", { exact: true }).fill("player-one");
+  await expect(settings.getByLabel("Profile", { exact: true })).toHaveValue("player-one");
+  await expect(settings.getByLabel("Import Slot", { exact: true })).toHaveValue("checkpoint");
   await settings.getByRole("switch", { name: "Wipe Preview Saves On Play" }).click();
   await expect(settings.getByRole("switch", { name: "Wipe Preview Saves On Play" })).toBeChecked();
   const reset = settings.getByRole("button", { name: "Reset Preview Saves", exact: true });

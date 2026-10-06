@@ -51,6 +51,9 @@ export function ProjectSaveGamesSettings() {
   const [inspection, setInspection] = useState<{ slot: string; values: Record<string, SaveGameValue> } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<SaveGameInfo | "all" | null>(null);
 
+  useEffect(() => { setProfile(settings?.defaultProfile ?? "default"); }, [projectGuid, settings?.defaultProfile]);
+  useEffect(() => { setSlot(settings?.defaultSlot ?? "default"); }, [projectGuid, settings?.defaultSlot]);
+
   useEffect(() => {
     let cancelled = false;
     setService(null);
