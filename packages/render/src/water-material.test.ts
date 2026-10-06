@@ -70,6 +70,38 @@ describe("Water material binding", () => {
     } finally { scene.dispose(); engine.dispose(); }
   });
 
+  it("reflects a sky built from the scene's background, fog and sky light, and absorbs the colours Shallow Color lacks first", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    try {
+      const { plugin } = water(scene), output = uniforms();
+      const bound = (name: string) => { plugin.hardBindForSubMesh(output.buffer, scene); return output.vectors.get(name)!.slice(0, 3); };
+      const linear = (value: number) => value ** 2.2;
+      let sky: number[] = [], horizon: number[] = [];
+      scene.clearColor.set(0.5, 0.6, 0.8, 1);
+      scene.customRenderFunction = () => { sky = bound("slateWaterSky"); horizon = bound("slateWaterHorizon"); };
+      scene.render();
+      // Without fog the horizon is the background the scene shows as its sky; overhead it is deeper.
+      horizon.forEach((value, i) => expect(value).toBeCloseTo(linear([0.5, 0.6, 0.8][i]!), 5));
+      expect(sky[2]! / sky[0]!).toBeGreaterThan(horizon[2]! / horizon[0]!);
+      const clearSky = sky;
+      // A hemispheric light is the scene's sky light: it tints the zenith, and the next frame follows it.
+      const hemi = new HemisphericLight("sky", Vector3.Up(), scene);
+      hemi.diffuse.set(1, 0.4, 0.2); hemi.intensity = 1;
+      scene.render();
+      expect(sky[0]! / sky[2]!).toBeGreaterThan(clearSky[0]! / clearSky[2]!);
+      // With fog the horizon blends into the fog colour (Babylon mixes fog in linear space).
+      scene.fogMode = Scene.FOGMODE_LINEAR; scene.fogColor.set(0.3, 0.35, 0.4);
+      scene.render();
+      expect(horizon).toEqual([expect.closeTo(0.3, 5), expect.closeTo(0.35, 5), expect.closeTo(0.4, 5)]);
+      // Absorption: water whose shallows look blue loses red first and blue last; grey shallows absorb every channel alike.
+      const absorb = (shallowColor: [number, number, number]) => { (plugin.water as { shallowColor: number[] }).shallowColor = shallowColor; return bound("slateWaterAbsorb"); };
+      const [r, g, b] = absorb([0.1, 0.4, 0.8]);
+      expect(r).toBeGreaterThan(g!); expect(g).toBeGreaterThan(b!);
+      const grey = absorb([0.2, 0.2, 0.2]);
+      expect(grey[0]).toBeCloseTo(grey[1]!, 6); expect(grey[1]).toBeCloseTo(grey[2]!, 6);
+    } finally { scene.dispose(); engine.dispose(); }
+  });
+
   it("selects nearby cutters per surface, reuses repeated binds, and refreshes movement and membership on later passes", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     try {
