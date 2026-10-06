@@ -81,9 +81,9 @@ describe("ProjectService lifecycle", () => {
     const registry = service.registry!;
     await registry.reindexPath(path);
     const replacement = await bytes(after);
-    const estimate = registry.getChunkByteLength.bind(registry);
+    const estimate = registry.chunkByteLength.bind(registry);
     let saved = false;
-    vi.spyOn(registry, "getChunkByteLength").mockImplementation(async (...args) => {
+    vi.spyOn(registry, "chunkByteLength").mockImplementation(async (...args) => {
       const length = await estimate(...args);
       if (args[0] === "growing" && !saved) {
         saved = true;
