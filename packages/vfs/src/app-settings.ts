@@ -5,6 +5,12 @@ import {
   normalizeProjectAppearance,
 } from "@babylonslate/core";
 
+/** Each undo step retains a document snapshot; keep the history bounded. */
+export const MAX_UNDO_HISTORY_LENGTH = 1000;
+/** Below this a visible viewport is unusably choppy. */
+export const MIN_VIEWPORT_FRAME_CAP = 10;
+export const MAX_VIEWPORT_FRAME_CAP = 240;
+
 export const DEFAULT_FOCUS_KEEP_PANELS = {
   scene: ["viewport"],
   sceneLandscape: ["viewport"],
@@ -79,13 +85,19 @@ export const engineSettingsSchema = z.object({
       coarsePointerTargetScale: z.number().default(1),
     })
     .default({ theme: "system", coarsePointerTargetScale: 1 }),
-  undoHistoryLength: z.number().int().positive().default(50),
+  undoHistoryLength: z.preprocess((value) => {
+    if (typeof value !== "number" || !Number.isFinite(value)) return value;
+    return Math.min(MAX_UNDO_HISTORY_LENGTH, Math.max(1, Math.round(value)));
+  }, z.number().int().min(1).max(MAX_UNDO_HISTORY_LENGTH).default(50)),
   traceByteBudget: z.preprocess((value) => {
     if (typeof value !== "number" || !Number.isFinite(value)) return value;
     // Leave headroom for whole-file JSON and native storage's base64 strings.
     return Math.min(256 * 1024 * 1024, Math.max(1024 * 1024, Math.round(value)));
   }, z.number().int().min(1024 * 1024).max(256 * 1024 * 1024).default(DEFAULT_TRACE_BYTE_BUDGET)),
-  viewportFrameCap: z.number().positive().default(30),
+  viewportFrameCap: z.preprocess((value) => {
+    if (typeof value !== "number" || !Number.isFinite(value)) return value;
+    return Math.min(MAX_VIEWPORT_FRAME_CAP, Math.max(MIN_VIEWPORT_FRAME_CAP, value));
+  }, z.number().min(MIN_VIEWPORT_FRAME_CAP).max(MAX_VIEWPORT_FRAME_CAP).default(30)),
   viewportDropDistance: z.number().finite().positive().default(DEFAULT_EDITOR_DROP_DISTANCE),
   renderingOverridesEnabled: z.boolean().default(false),
   hardwareScalingLevel: z.number().positive().default(1),

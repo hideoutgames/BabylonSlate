@@ -30,7 +30,7 @@ import {
 } from "./prefab-preview";
 import { classIdFromClassAsset, classParentLookup } from "./content-browser-helpers";
 import { mergedPrefabComponentsForClass } from "./prefab-instance-sync";
-import { uniqueSceneActorName } from "./scene-actor-names";
+import { duplicateBaseName, uniqueSceneActorName } from "./scene-actor-names";
 
 export type PlaceActorKind =
   | { type: "shape"; meshKind: string }
@@ -758,7 +758,7 @@ export function duplicateSceneActor(
 ): SerializedActor {
   const copy = structuredClone(source);
   copy.id = nextActorId(scene);
-  copy.name = uniqueSceneActorName(scene, `${source.name} Copy`);
+  copy.name = uniqueSceneActorName(scene, duplicateBaseName(source.name));
   const componentIds = new Map(copy.components.map((component, index) => [
     component.id, `${copy.id}-${component.classId}-${index + 1}`,
   ]));

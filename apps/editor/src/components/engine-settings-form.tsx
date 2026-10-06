@@ -4,7 +4,13 @@ import { EngineExtensionsSettings } from "./engine-extensions-settings";
 import { KeybindSettings } from "./keybind-settings";
 import { NumberField, SelectableText } from "@babylonslate/editor-kit";
 import { getBuildIdentity } from "../lib/build-identity";
-import { getHostPlatform, type EngineSettings } from "@babylonslate/vfs";
+import {
+  getHostPlatform,
+  MAX_UNDO_HISTORY_LENGTH,
+  MAX_VIEWPORT_FRAME_CAP,
+  MIN_VIEWPORT_FRAME_CAP,
+  type EngineSettings,
+} from "@babylonslate/vfs";
 import { Button } from "@babylonslate/ui/components/button";
 import { Slider } from "@babylonslate/ui/components/slider";
 import { Switch } from "@babylonslate/ui/components/switch";
@@ -280,12 +286,13 @@ export function EngineSettingsForm({
             <NumberField
               id="setting-undo-length"
               min={1}
+              max={MAX_UNDO_HISTORY_LENGTH}
               step={1}
               className="min-h-[var(--chrome-row,28px)]"
               data-testid="setting-undo-length"
               value={settings.undoHistoryLength}
               onChange={(undoHistoryLength) =>
-                void onChange({ undoHistoryLength })
+                void onChange({ undoHistoryLength: Math.round(undoHistoryLength) })
               }
             />
             <FieldDescription>
@@ -340,7 +347,8 @@ export function EngineSettingsForm({
             </FieldLabel>
             <NumberField
               id="setting-frame-cap"
-              min={1}
+              min={MIN_VIEWPORT_FRAME_CAP}
+              max={MAX_VIEWPORT_FRAME_CAP}
               className="min-h-[var(--chrome-row,28px)]"
               data-testid="setting-frame-cap"
               value={settings.viewportFrameCap}
