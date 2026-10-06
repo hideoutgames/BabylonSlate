@@ -1325,7 +1325,6 @@ function GraphEditorCanvas({
       isValidConnection,
       replaceIncomingOnConnect,
       uniqueDirectedPairOnConnect,
-      singleExecOutputOnConnect,
     ],
   );
 
@@ -1675,6 +1674,7 @@ function GraphEditorCanvas({
       pinCompatibility,
       replaceIncomingOnConnect,
       uniqueDirectedPairOnConnect,
+      singleExecOutputOnConnect,
       screenToFlowPosition,
     ],
   );
