@@ -223,7 +223,7 @@ export class SaveGameWorld {
     if ("$saveReference" in value) {
       if (typeof value.actor !== "string") throw new SaveGameError("corrupt", "Invalid actor reference.");
       const actor = targets.get(value.actor);
-      if (!actor) throw new SaveGameError("incompatible", `Saved actor reference is unavailable: ${value.actor}`);
+      if (!actor || actor.destroyed) throw new SaveGameError("incompatible", `Saved actor reference is unavailable: ${value.actor}`);
       if (value.$saveReference === "actor") return actor;
       if (value.$saveReference !== "component" || typeof value.component !== "string") throw new SaveGameError("corrupt", "Invalid component reference.");
       const component = findComponent(actor, value.component);
