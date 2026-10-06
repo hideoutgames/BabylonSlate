@@ -5,6 +5,7 @@ import { createStorage } from "./create-storage";
 import { TEST_PROJECT_NAME } from "./test-mode";
 import { OpfsStorageAdapter } from "./web-adapter";
 import { SourceRevisionChangedError } from "@babylonslate/core";
+import { createMountedProjectStorage } from "./mounted-storage";
 
 vi.mock("./test-mode", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./test-mode")>();
@@ -114,6 +115,34 @@ describe("OPFS / web storage adapter", () => {
     vi.spyOn(handle, "getFile").mockResolvedValueOnce(snapshot);
     await expect(storage.readBinaryRange("asset.babasset", 0, 2)).rejects.toBe(failure);
     expect(storage.getReadMetrics()).toMatchObject({ rangeReads: 1, actualBytesRead: 0, fullReads: 0 });
+  });
+
+  it.each(["replaced", "unreadable"])("counts bytes in mounted views when the post-read source is %s", async state => {
+    const storage = await openedAdapter();
+    await storage.writeBinary("asset.babasset", new Uint8Array([1, 2, 3, 4]));
+    const mounted = createMountedProjectStorage([{ path: "plugin", storage, sourcePath: "" }]);
+    const root = await navigator.storage.getDirectory();
+    const project = (JSON.parse(localStorage.getItem("babylonslate:opfs-meta")!) as { projects: Array<{ directory: string }> }).projects[0]!;
+    const handle = await (await root.getDirectoryHandle(project.directory)).getFileHandle("asset.babasset");
+    const snapshot = await handle.getFile();
+    const slice = snapshot.slice.bind(snapshot);
+    snapshot.slice = (...args) => {
+      const selected = slice(...args);
+      const read = selected.arrayBuffer.bind(selected);
+      return Object.assign(selected, { arrayBuffer: async () => {
+        const bytes = await read();
+        if (state === "replaced") await storage.writeBinary("asset.babasset", new Uint8Array([4, 3, 2, 1]));
+        return bytes;
+      } });
+    };
+    const getFile = vi.spyOn(handle, "getFile").mockResolvedValueOnce(snapshot);
+    const original = new Error("Provider is unavailable", { cause: new Error("Disconnected") });
+    if (state === "unreadable") getFile.mockRejectedValueOnce(original);
+    const failure = mounted.readBinaryRange("plugin/asset.babasset", 0, 2);
+    if (state === "replaced") await expect(failure).rejects.toBeInstanceOf(SourceRevisionChangedError);
+    else await expect(failure).rejects.toBe(original);
+    expect(storage.getReadMetrics()).toMatchObject({ rangeReads: 1, actualBytesRead: 2, fullReads: 0 });
+    expect(mounted.getReadMetrics!()).toMatchObject({ rangeReads: 1, actualBytesRead: 2, fullReads: 0 });
   });
 
   it("createStorage returns OPFS adapter on web platform", () => {

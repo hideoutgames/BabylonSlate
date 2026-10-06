@@ -3,6 +3,7 @@ import type { BabylonSlateScopedStoragePlugin } from "./capacitor-scoped-storage
 import type { ProjectStorageReader } from "@babylonslate/core";
 import { SourceRevisionChangedError } from "@babylonslate/core";
 import { ScopedStorageAdapter } from "./scoped-storage-adapter";
+import { createMountedProjectStorage } from "./mounted-storage";
 
 const prefs = new Map<string, string>();
 
@@ -55,12 +56,14 @@ describe("ScopedStorageAdapter", () => {
     const selected = await adapter.withReadScope(reader => reader.readBinaryRange("large.babasset", 10, 2));
     expect(selected.bytes).toEqual(new Uint8Array([97, 98]));
     expect(adapter.getReadMetrics()).toMatchObject({ actualBytesRead: 2, rangeReads: 1, fullReads: 0 });
-    await expect(adapter.readBinaryRange("large.babasset", 10, 2, "old")).rejects.toThrow(/revision/i);
+    const mounted = createMountedProjectStorage([{ path: "plugin", storage: adapter, sourcePath: "" }]);
+    await expect(mounted.readBinaryRange("plugin/large.babasset", 10, 2, "old")).rejects.toBeInstanceOf(SourceRevisionChangedError);
     vi.mocked(plugin.readFileRange).mockResolvedValue({ data: btoa("a"), totalSize: 1024, revision: "one", actualBytesRead: 1 });
-    await expect(adapter.readBinaryRange("large.babasset", 10, 2)).rejects.toThrow(/range response/i);
+    await expect(mounted.readBinaryRange("plugin/large.babasset", 10, 2)).rejects.toThrow(/range response/i);
     vi.mocked(plugin.readFileRange).mockRejectedValue({ code: "NOT_FOUND", data: { actualBytesRead: 1 } });
-    await expect(adapter.readBinaryRange("large.babasset", 10, 2)).rejects.toThrow(/not found/i);
+    await expect(mounted.readBinaryRange("plugin/large.babasset", 10, 2)).rejects.toThrow(/not found/i);
     expect(adapter.getReadMetrics().actualBytesRead).toBe(6);
+    expect(mounted.getReadMetrics!()).toMatchObject({ actualBytesRead: 4, rangeReads: 3 });
     expect(plugin.readFile).not.toHaveBeenCalled();
   });
 

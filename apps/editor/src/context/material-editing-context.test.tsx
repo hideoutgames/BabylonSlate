@@ -117,7 +117,7 @@ const harness = vi.hoisted(() => ({
   ),
   textureAsset: {
     path: "assets/albedo.babasset",
-    header: { guid: "tex-1", type: "Texture", name: "albedo" },
+    header: { guid: "tex-1", type: "Texture", name: "albedo", payload: {}, chunks: [{ id: "pixels", sha256: "original-pixels" }] },
   },
   cachedTextures: [] as Array<{ guid: string; bytes: Blob }>,
 }));
@@ -239,6 +239,11 @@ function RenderProbe() {
   );
 }
 
+function PreviewStateProbe() {
+  const { previewState } = useMaterialEditing();
+  return <output data-testid="preview-state">{previewState.status}</output>;
+}
+
 function materialTree(active = true, children?: ReactNode) {
   return (
     <MaterialRenderControlProvider>
@@ -285,7 +290,7 @@ describe("MaterialEditingProvider preview isolation", () => {
     harness.content = createDefaultMaterialDocument("Rock");
     harness.textureAsset = {
       path: "assets/albedo.babasset",
-      header: { guid: "tex-1", type: "Texture", name: "albedo" },
+      header: { guid: "tex-1", type: "Texture", name: "albedo", payload: {}, chunks: [{ id: "pixels", sha256: "original-pixels" }] },
     };
     harness.readAssetChunk.mockClear();
     harness.readAssetChunk.mockImplementation(
@@ -494,6 +499,26 @@ describe("MaterialEditingProvider preview isolation", () => {
     expect(await readBlobBytes(harness.cachedTextures[0]!.bytes)).toEqual(new Uint8Array([9, 9, 9]));
   });
 
+  it("finishes one manual Render after a cold Texture arrives for an expensive preview", async () => {
+    const material = createDefaultMaterialDocument("Rock", "postProcess");
+    material.nodes.push({ id: "sample", type: "texture.sample", position: { x: 0, y: 0 }, properties: { textureGuid: "tex-1" } });
+    material.edges = [{ id: "sample-output", sourceNodeId: "sample", sourcePinId: "rgba", targetNodeId: "output", targetPinId: "color" }];
+    harness.content = material;
+    let finishRead!: (bytes: Uint8Array) => void;
+    harness.readAssetChunk.mockImplementation(() => new Promise<Uint8Array>((resolve) => { finishRead = resolve; }));
+    mount(true, <><AttachCanvas /><RenderProbe /><PreviewStateProbe /></>);
+    await waitFor(() => expect(harness.readAssetChunk).toHaveBeenCalled());
+    const renderButton = screen.getByRole("button", { name: "Render" });
+    await waitFor(() => expect(renderButton.hasAttribute("disabled")).toBe(false));
+    fireEvent.click(renderButton);
+    expect(screen.getByTestId("preview-state").textContent).toBe("queued");
+    expect(harness.acquireCalls).toBe(0);
+    await act(async () => finishRead(new Uint8Array([9, 9, 9])));
+    await waitFor(() => expect(screen.getByTestId("preview-state").textContent).toBe("ready"));
+    expect(harness.acquireCalls).toBe(1);
+    expect(harness.host.applyPostProcess).toHaveBeenCalledWith(harness.acquireResult.ok ? harness.acquireResult.material : null);
+  });
+
   it("resolves RenderTargetTexture samples to opaque black without reading image chunks", async () => {
     harness.content = sampledRock();
     harness.textureAsset.header.type = "RenderTargetTexture";
@@ -536,6 +561,15 @@ describe("MaterialEditingProvider preview isolation", () => {
     await waitFor(() => expect(harness.acquireCalls).toBeGreaterThan(0));
     expect(pixelReads()).toBe(1);
 
+    // A different document saving or encode progress advancing the catalog
+    // must not discard this preview's prepared bytes or render request.
+    harness.registryEpoch += 1;
+    const beforeUnrelatedChange = harness.acquireCalls;
+    view.rerender(materialTree());
+    await act(async () => { await Promise.resolve(); });
+    expect(pixelReads()).toBe(1);
+    expect(harness.acquireCalls).toBe(beforeUnrelatedChange);
+
     // Edits replace the content and the open-document list, as the provider
     // does on every edit, but leave the registry epoch alone.
     for (const alphaCutoff of [0.25, 0.75]) {
@@ -550,7 +584,7 @@ describe("MaterialEditingProvider preview isolation", () => {
     // A re-encode or reimport replaces the Texture's index entry.
     harness.textureAsset = {
       ...harness.textureAsset,
-      header: { ...harness.textureAsset.header, name: "albedo (reimported)" },
+      header: { ...harness.textureAsset.header, chunks: [{ id: "pixels", sha256: "reimported-pixels" }] },
     };
     harness.registryEpoch += 1;
     const compiled = harness.acquireCalls;

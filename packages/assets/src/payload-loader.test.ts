@@ -6,6 +6,7 @@ import { createVfsBlobStore } from "./blob-store";
 import { projectContentRoot } from "./content-root";
 import { AccountedPayloadLoader, readAssetCatalog } from "./payload-loader";
 import { AssetRegistry } from "./registry";
+import type { StorageReadOptions } from "@babylonslate/core";
 
 async function fixture() {
   const storage = new MemoryStorageAdapter("documents");
@@ -24,15 +25,112 @@ const chunk = (id: string, data: Uint8Array) => ({ id, kind: id, mime: "applicat
 class WeakRevisionStorage extends MemoryStorageAdapter {
   override readonly hasStrongSourceRevisions = false;
 
-  override async readBinaryRange(path: string, offset: number, length: number, expectedRevision?: string) {
+  override async readBinaryRange(path: string, offset: number, length: number, expectedRevision?: string, options?: StorageReadOptions) {
     if (expectedRevision !== undefined && expectedRevision !== "same-timestamp-and-size") {
       throw new Error("Source revision changed");
     }
-    return { ...await super.readBinaryRange(path, offset, length), revision: "same-timestamp-and-size" };
+    return { ...await super.readBinaryRange(path, offset, length, undefined, options), revision: "same-timestamp-and-size" };
   }
 }
 
 describe("bounded catalog and payload loading", () => {
+  it.each(["inline", "blob"])("forwards cancellation to a pending %s transport read and permits retry", async (kind) => {
+    const storage = await fixture();
+    const blobs = createVfsBlobStore(storage);
+    const data = new Uint8Array([1, 2, 3]);
+    await storage.writeBinary("assets/source.babasset", await encodeBabasset({
+      header, chunks: [chunk("source", data)],
+      ...(kind === "blob" ? { blobThreshold: 1, writeBlob: blobs.writeBlob } : {}),
+    }));
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const locator = registry.getByGuid("asset")!.locator!;
+    const controller = new AbortController();
+    let started!: () => void;
+    const pending = new Promise<void>((resolve) => { started = resolve; });
+    let transportSignal: AbortSignal | undefined;
+    const stalled = <T>(signal: AbortSignal) => new Promise<T>((_resolve, reject) => {
+      transportSignal = signal;
+      signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      started();
+    });
+    const readBinary = storage.readBinary.bind(storage);
+    const fullRead = vi.spyOn(storage, "readBinary").mockImplementation((path, options) =>
+      kind === "blob" && options?.signal ? stalled<Uint8Array>(options.signal) : readBinary(path, options));
+    const readRange = storage.readBinaryRange.bind(storage);
+    const rangeRead = vi.spyOn(storage, "readBinaryRange").mockImplementation((path, offset, length, revision, options) =>
+      kind === "inline" && offset === locator.payloadOffset && options?.signal
+        ? stalled<Awaited<ReturnType<typeof readRange>>>(options.signal)
+        : readRange(path, offset, length, revision, options));
+    const load = registry.readChunk("asset", "source", locator.revision, { signal: controller.signal });
+    const rejected = expect(load).rejects.toMatchObject({ name: "AbortError" });
+    await pending;
+    expect(transportSignal).toBe(controller.signal);
+    controller.abort();
+    await rejected;
+    expect(registry.payloadLoader.snapshot()).toMatchObject({ failed: 1, pending: 0, accountedPayloadBytes: 0 });
+    fullRead.mockRestore();
+    rangeRead.mockRestore();
+    expect(await registry.readChunk("asset", "source")).toEqual(data);
+  });
+
+  it("isolates a canceled scoped catalog refresh from an unsignaled shared refresh", async () => {
+    const storage = new WeakRevisionStorage("documents");
+    await storage.openDocumentsProject("catalog-cancellation");
+    await storage.writeBinary("assets/source.babasset", await encodeBabasset({ header, chunks: [chunk("source", new Uint8Array([1]))] }));
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const original = registry.getByGuid("asset")!.locator;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const read = storage.readBinaryRange.bind(storage);
+    const controller = new AbortController();
+    const reads = vi.spyOn(storage, "readBinaryRange").mockImplementation(async (...args) => {
+      if (args[1] === 0 && args[2] === 12) {
+        const signal = args[4]?.signal;
+        if (signal) await new Promise<never>((_resolve, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true }));
+        else await gate;
+      }
+      return read(...args);
+    });
+    const unscoped = registry.getAssetLocator("asset");
+    const scoped = registry.getAssetLocator("asset", { signal: controller.signal });
+    const rejected = expect(scoped).rejects.toMatchObject({ name: "AbortError" });
+    controller.abort();
+    // The uncancelled request must remain usable, even when both refreshes
+    // initially resolve the same indexed asset object.
+    release();
+    await rejected;
+    expect(await unscoped).toBe(original);
+    reads.mockRestore();
+    expect(await registry.getAssetLocator("asset", { signal: new AbortController().signal })).toBe(original);
+  });
+
+  it("keeps canceled noninterruptible I/O pending until the storage operation settles", async () => {
+    const storage = await fixture();
+    await storage.writeBinary("assets/source.babasset", await encodeBabasset({ header, chunks: [chunk("source", new Uint8Array([1, 2, 3]))] }));
+    const { locator, header: catalog } = await readAssetCatalog(storage, "assets/source.babasset");
+    const loader = new AccountedPayloadLoader(storage);
+    const read = storage.readBinaryRange.bind(storage);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const reads = vi.spyOn(storage, "readBinaryRange").mockImplementation(async (path, offset, length, revision) => {
+      const result = await read(path, offset, length, revision);
+      if (offset === locator.payloadOffset) await gate;
+      return result;
+    });
+    const controller = new AbortController();
+    const loaded = loader.loadChunk(locator, catalog.chunks[0]!, undefined, undefined, { signal: controller.signal });
+    const rejected = expect(loaded).rejects.toMatchObject({ name: "AbortError" });
+    controller.abort();
+    await Promise.resolve();
+    expect(loader.snapshot()).toMatchObject({ pending: 1, failed: 0, accountedPayloadBytes: 0 });
+    release();
+    await rejected;
+    expect(loader.snapshot()).toMatchObject({ pending: 0, failed: 1, accountedPayloadBytes: 0 });
+    reads.mockRestore();
+  });
+
   it("opens a mixed inline/blob catalog without reading its payloads or legacy atlas documents", async () => {
     const storage = await fixture();
     const blobs = createVfsBlobStore(storage);

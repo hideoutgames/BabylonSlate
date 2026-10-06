@@ -1129,13 +1129,10 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       } catch (error) {
         releasePlaySources();
         appendLog(
-          `Script compile failed: ${error instanceof Error ? error.message : String(error)}`,
+          `Play preparation failed: ${error instanceof Error ? error.message : String(error)}`,
         );
         setPrepareState(null);
         setScripts([]);
-        if (inject) {
-          launchPlay({ injectFixtureThrow: true, scripts: [] });
-        }
       } finally {
         preparingRef.current = false;
         setPreparing(false);

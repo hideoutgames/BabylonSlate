@@ -39,7 +39,7 @@ Missing or stale startup scene: `MISSING_STARTUP_SCENE_MESSAGE` (`Set Startup Sc
 
 Not `header.dependencies` alone — scene saves often leave those empty.
 
-The editor serializes RenderTarget and RenderTargetTexture documents into export bytes, retaining their payloads for dependency traversal. Asset-typed variable defaults and Set Variable literals participate for every asset kind (including Audio, Material, Model and Font), with scalar, array and typed Map key/value handling in class and function graphs. Cleared canonical pin defaults mask legacy values; ordinary string variables do not create dependencies. Saved Class/Graph headers use the same asset-default collector for reference browsing and deletion guards.
+The editor serializes RenderTarget and RenderTargetTexture documents into export bytes, retaining their payloads for dependency traversal. Header-only Skeleton documents also ship as JSON, preserving the Model/Skeleton required-dependency cycle in the player catalog. Asset-typed variable defaults and Set Variable literals participate for every asset kind (including Audio, Material, Model and Font), with scalar, array and typed Map key/value handling in class and function graphs. Cleared canonical pin defaults mask legacy values; ordinary string variables do not create dependencies. Saved Class/Graph headers use the same asset-default collector for reference browsing and deletion guards.
 
 1. Apply export-preset `pluginOverrides` (layer 3) **before** the walk so disabled plugin roots are absent.
 2. Seed with `startupSceneGuid` (must be a Scene asset) **and** Project Settings `audioMixerGuid` the same way `gameInstanceClass` is seeded. Pack `occlusionEnabled` and reverb wet/decay/damping scales from Project Settings Audio.

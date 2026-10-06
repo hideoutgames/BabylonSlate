@@ -53,6 +53,7 @@ const JSON_TYPES = new Set<string>([
   // Basic emitters, Particle Graphs and Particle Systems.
   ...PARTICLE_ASSET_TYPES,
   "Animation",
+  "Skeleton",
   "SceneLayer", "AudioMixer", "AudioChannel", "SoundAttenuation", "Water",
   "DataDefinition", "DataTree", "Structure", "Enum", "SaveGame",
 ]);

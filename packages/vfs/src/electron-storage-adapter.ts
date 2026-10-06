@@ -1,4 +1,4 @@
-import { StorageReadCounter, validateStorageRange, validateStorageRangeResult } from "./storage-range";
+import { rethrowStorageReadFailure, StorageReadCounter, validateStorageRange, validateStorageRangeResult } from "./storage-range";
 import { SourceRevisionChangedError } from "@babylonslate/core";
 import type {
   DirEntry,
@@ -79,12 +79,14 @@ export class ElectronStorageAdapter implements ProjectStorage {
   async readBinaryRange(path: string, offset: number, length: number, expectedRevision?: string) {
     validateStorageRange(offset, length);
     const result = await this.reads.range(length, () => this.requireBridge().readBinaryRange(path, offset, length, expectedRevision));
-    if (result.error !== undefined) {
-      throw result.errorCode === "source-revision-changed"
-        ? new SourceRevisionChangedError(result.error)
-        : new Error(result.error);
-    }
-    return validateStorageRangeResult(path, offset, length, { ...result, bytes: new Uint8Array(result.bytes) }, expectedRevision);
+    try {
+      if (result.error !== undefined) {
+        throw result.errorCode === "source-revision-changed"
+          ? new SourceRevisionChangedError(result.error)
+          : new Error(result.error);
+      }
+      return validateStorageRangeResult(path, offset, length, { ...result, bytes: new Uint8Array(result.bytes) }, expectedRevision);
+    } catch (error) { rethrowStorageReadFailure(error, result.actualBytesRead); }
   }
 
   async writeBinary(path: string, data: Uint8Array): Promise<void> {

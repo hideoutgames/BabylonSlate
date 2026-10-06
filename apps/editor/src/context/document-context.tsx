@@ -49,6 +49,7 @@ import {
   type ClassAssetReplacement,
   type AssetRegistry,
   type AssetLoadScope,
+  type AssetLoadPriority,
   type AssetLoadState,
   type MigrationPending,
   type PluginDescriptor,
@@ -501,7 +502,7 @@ interface DocumentContextValue {
   createAssetLoadScope: (owner: string) => AssetLoadScope;
   getAssetLoadState: (guid: string) => AssetLoadState;
   /** Font source / other binary chunks. */
-  readAssetChunk: (path: string, chunkId: string, options?: { ownerDocumentId?: string; scope?: AssetLoadScope; signal?: AbortSignal }) => Promise<Uint8Array | null>;
+  readAssetChunk: (path: string, chunkId: string, options?: { ownerDocumentId?: string; scope?: AssetLoadScope; signal?: AbortSignal; priority?: AssetLoadPriority }) => Promise<Uint8Array | null>;
   writeAudioClipChunk: (
     path: string,
     chunkId: string,
@@ -1535,7 +1536,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     for (const { docId } of resolveJournalLines(lines)) {
       const ref = parseDocumentId(docId);
       if (!ref || !isAssetDocumentKind(ref.kind)) continue;
-      if (documentService.getState().openDocuments.has(docId)) continue;
+      if (documentService.getState().openDocuments.get(docId)?.content != null) continue;
       const { kind, path } = ref;
       try {
         await documentService.openDocument(
@@ -2946,10 +2947,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   );
 
   const readAssetChunk = useCallback(
-    (path: string, chunkId: string, options?: { ownerDocumentId?: string; scope?: AssetLoadScope; signal?: AbortSignal }) =>
+    (path: string, chunkId: string, options?: { ownerDocumentId?: string; scope?: AssetLoadScope; signal?: AbortSignal; priority?: AssetLoadPriority }) =>
       projectService.readAssetChunk(path, chunkId, {
         scope: options?.scope ?? documentService.getAssetLoadScope(options?.ownerDocumentId ?? documentService.getState().activeDocumentId ?? ""),
         signal: options?.signal,
+        priority: options?.priority,
       }),
     [documentService, projectService],
   );
@@ -4133,14 +4135,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         const existing = [...documentService.getState().openDocuments.values()].find(
           (entry) => entry.ref.kind === "graph",
         );
-        if (existing) return true;
+        if (existing?.content != null) return true;
         const registry = projectService.registry;
         const path =
-          candidates.find((candidate) =>
+          existing?.ref.path ?? candidates.find((candidate) =>
             registry?.list().some((asset) => asset.path === candidate),
           ) ?? candidates[0]!;
         const id = `graph:${path}`;
-        if (!documentService.getState().openDocuments.has(id)) {
+        if (documentService.getState().openDocuments.get(id)?.content == null) {
           await documentService.openDocument(
             projectService,
             { kind: "graph", path, label: path.split("/").pop() ?? path },
@@ -4149,7 +4151,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           );
           bump();
         }
-        return documentService.getState().openDocuments.has(id);
+        return documentService.getState().openDocuments.get(id)?.content != null;
       },
       nudgeActiveGraphNode: async () => {
         const openDocuments = documentService.getState().openDocuments;

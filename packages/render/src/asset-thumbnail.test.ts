@@ -9,6 +9,7 @@ import { encodeTriangleGlb } from "./glb-test-fixtures";
 import { MATERIAL_PREVIEW_MESH_NAME } from "./material-preview";
 import { encodeRgbaPng, PNG_SIGNATURE } from "./png-encode";
 import { acquireMaterialTexture, releaseResourceCacheForEngine, resourceCacheForEngine } from "./resource-cache";
+import { nativePreparationForEngine } from "./native-preparation";
 
 const handles: ReturnType<typeof createTestEngine>[] = [];
 afterEach(() => {
@@ -62,6 +63,10 @@ describe("asset thumbnail capture", () => {
 
   it("captures parented prefab models with slot materials and frames only visible authored geometry", async () => {
     const { engine, scene } = fixture();
+    const scheduler = nativePreparationForEngine(engine, { maxConcurrent: 1 });
+    let unblock!: () => void;
+    const blocker = scheduler.schedule({ label: "Active Gameplay", temporaryBytes: 1 }, () => new Promise<void>((resolve) => { unblock = resolve; }));
+    const order: string[] = [];
     // NullEngine retains raw bytes but never marks uploads ready. Model the
     // missing GPU completion for the default checker, retaining real material
     // readiness and compilation (as in create-engine.play.test.ts).
@@ -93,6 +98,7 @@ describe("asset thumbnail capture", () => {
     };
     let captured: { positions: number[][]; modelMaterial: string | undefined; target: number[]; radius: number; names: string[] } | undefined;
     vi.spyOn(RenderTargetTexture.prototype, "readPixels").mockImplementation(function (this: RenderTargetTexture) {
+      order.push("thumbnail");
       const preview = this.getScene()!;
       const meshes = preview.meshes.filter((mesh) => mesh.isVisible && mesh.visibility > 0 && mesh.getTotalVertices() > 0 && !mesh.isBlocked);
       const imported = meshes.find((mesh) => mesh.getTotalVertices() === 3)!;
@@ -106,7 +112,7 @@ describe("asset thumbnail capture", () => {
       };
       return Promise.resolve(new Uint8Array(128 * 128 * 4));
     });
-    const png = await captureAssetThumbnailPng(engine, {
+    const capture = captureAssetThumbnailPng(engine, {
       kind: "ActorPrefab", prefab, materials: new Map([["paint", material]]),
       assets: {
         modelBytes: new Map([["triangle", encodeTriangleGlb()]]),
@@ -116,6 +122,13 @@ describe("asset thumbnail capture", () => {
         })]]),
       },
     });
+    await vi.waitFor(() => expect(scheduler.snapshot().queued).toBe(1));
+    const gameplay = scheduler.schedule({ label: "Next Actor", temporaryBytes: 1 }, async () => { order.push("gameplay"); });
+    unblock();
+    await Promise.all([blocker, gameplay]);
+    const png = await capture;
+    expect(order).toEqual(["gameplay", "thumbnail"]);
+    expect(scheduler.snapshot()).toMatchObject({ active: 0, queued: 0, temporaryBytes: 0 });
     expect(png?.subarray(0, 8)).toEqual(PNG_SIGNATURE);
     expect(captured?.positions).toContainEqual([13, 1, 0]);
     expect(captured?.modelMaterial).toBe("material:paint");

@@ -11,7 +11,9 @@ import {
   type SerializedGraph,
   type SerializedScene,
 } from "@babylonslate/core";
-import { OpfsStorageAdapter } from "@babylonslate/vfs";
+import { createDerivedStorage, OpfsStorageAdapter } from "@babylonslate/vfs";
+import { appendJournalLines } from "@babylonslate/assets";
+import { commandToJournalPayload, SetActorTransformCommand } from "@babylonslate/edit";
 import { createProjectAsset } from "../lib/create-project-asset";
 import { subscribeModelThumbnailJobs } from "../lib/model-thumbnail-queue";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
@@ -152,6 +154,33 @@ afterEach(async () => {
 });
 
 describe("DocumentProvider actions and route", () => {
+  it("loads a restored cold document before replaying its recovery journal", async () => {
+    const actions = await openProject();
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    const original = openScene(MAIN_SCENE_ID);
+    const recovered = movedScene(original, 7);
+    await act(() => actions.saveAll());
+    const guid = documents().projectGuid!;
+    const listed = documents().listedProjects.find(project => project.label === "Stable")!;
+    await act(() => actions.forceCloseProject());
+
+    // Simulate an edit persisted by crash recovery, after the last saved layout.
+    const derived = await createDerivedStorage();
+    await appendJournalLines(derived, guid, [JSON.stringify({
+      v: 1, docId: MAIN_SCENE_ID, at: new Date().toISOString(),
+      command: commandToJournalPayload(new SetActorTransformCommand(
+        original.actors[0]!.id, original.actors[0]!.transform, recovered.actors[0]!.transform,
+      )),
+    })]);
+    await act(() => actions.openListedProject(listed));
+    expect(documents().openDocuments.find(doc => doc.id === MAIN_SCENE_ID)?.content).toBeNull();
+    expect(documents().recoveryAvailable).toBe(true);
+    await act(async () => { await actions.keepRecovery(); });
+    expect(openScene(MAIN_SCENE_ID).actors[0]!.transform.position).toEqual(recovered.actors[0]!.transform.position);
+    expect(documents().dirtyDocuments.map(doc => doc.id)).toContain(MAIN_SCENE_ID);
+    expect(documents().recoveryAvailable).toBe(false);
+  });
+
   it("keeps unrequested scene, script, and resource payloads unread during selected Play collection", async () => {
     const actions = await openProject();
     const registry = documents().assetRegistry!;

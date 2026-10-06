@@ -1,5 +1,5 @@
 import { BabylonSlateScopedStorage, type NativeRangeOptions, type NativeRangeRead } from "./capacitor-scoped-storage";
-import { rethrowNativeStorageRangeError, StorageReadCounter, validateStorageRange, validateStorageRangeResult } from "./storage-range";
+import { rethrowNativeStorageRangeError, rethrowStorageReadFailure, StorageReadCounter, validateStorageRange, validateStorageRangeResult } from "./storage-range";
 import type {
   DirEntry,
   FileStat,
@@ -224,7 +224,8 @@ export class DocumentsStorageAdapter implements ProjectStorage {
         throw new Error("Documents filesystem does not support bounded reads");
       } catch (error) { rethrowNativeStorageRangeError(error, path); }
     });
-    return validateStorageRangeResult(path, offset, length, { ...result, bytes: decodeBinary(result.data) }, expectedRevision);
+    try { return validateStorageRangeResult(path, offset, length, { ...result, bytes: decodeBinary(result.data) }, expectedRevision); }
+    catch (error) { rethrowStorageReadFailure(error, result.actualBytesRead); }
   }
 
   async writeBinary(path: string, data: Uint8Array): Promise<void> {

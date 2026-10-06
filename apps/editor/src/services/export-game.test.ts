@@ -14,12 +14,13 @@ import {
   type SerializedGraph,
 } from "@babylonslate/core";
 import { migrateLegacyShaderPayload } from "@babylonslate/shader-graph";
-import { createDefaultPluginSettings } from "@babylonslate/assets";
+import { collectAssetDependencyMetadata, createDefaultPluginSettings, type IndexedAsset } from "@babylonslate/assets";
 import {
   MISSING_STARTUP_SCENE_MESSAGE,
   parseScriptRegistry,
 } from "@babylonslate/exporter";
-import { collectAndExportGame, resolveExportPluginGraph } from "./export-game";
+import { assetsFromIndexed, collectAndExportGame, resolveExportPluginGraph } from "./export-game";
+import { loadExportDocuments } from "./export-game-inputs";
 import type { ExportIndexedAsset, ExportArtifact } from "@babylonslate/exporter";
 // Collect the real compiler with the suite so cold transforms are not timed as export work.
 import "./script-compiler";
@@ -47,6 +48,57 @@ const playerFiles = new Map([
 ]);
 
 describe("collectAndExportGame", () => {
+  it("exports header-only Skeleton documents required by imported Models", async () => {
+    const mesh = createMeshComponent("hero-mesh", "box");
+    mesh.properties.assetGuid = "hero-model";
+    const scene = {
+      ...createDefaultScene(),
+      actors: [createActor("hero", "Hero", { components: [mesh] })],
+    };
+    const model = { skeletonGuid: "hero-skeleton", materialSlots: [], clipNames: [] };
+    const skeleton = { modelGuid: "hero-model", kind: "hierarchy", boneNames: ["Root"] };
+    const documents: Array<{ guid: string; type: string; payload: Record<string, unknown> }> = [
+      { guid: "scene", type: "Scene", payload: scene },
+      { guid: "hero-model", type: "Model", payload: model },
+      { guid: "hero-skeleton", type: "Skeleton", payload: skeleton },
+    ];
+    const indexed: IndexedAsset[] = documents.map(({ guid, type, payload }) => ({
+      rootId: "project",
+      path: `assets/${guid}.babasset`,
+      header: {
+        guid, type, name: guid, engineVersion: "0.0.0", version: 1, mode: "thin",
+        payload, ...collectAssetDependencyMetadata(type, payload),
+        chunks: type === "Model" ? [{
+          id: "source", kind: "geometry", mime: "model/gltf-binary", sha256: "aa",
+          locator: { inline: { offset: 0, length: 4 } },
+        }] : [],
+      },
+    }));
+    const loaded = await loadExportDocuments({
+      assets: indexed,
+      loadDocument: async (_kind, path) => indexed.find(entry => entry.path === path)?.header.payload ?? null,
+      readAssetChunk: async (path, chunk) => path === "assets/hero-model.babasset" && chunk === "source"
+        ? new Uint8Array([0x67, 0x6c, 0x54, 0x46]) : null,
+    });
+    const result = await collectAndExportGame({
+      startupSceneGuid: "scene", assets: assetsFromIndexed(indexed),
+      plugins: [], projectPluginOverrides: {}, parentOf: () => null,
+      ...loaded,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, playFrameCap: 60,
+      physicsWorld: "3d", playerFiles,
+    });
+    if (!isOk(result)) throw new Error(result.error);
+    const catalog = result.value.manifest.assets;
+    expect(catalog.map(entry => entry.guid).sort()).toEqual(["hero-model", "hero-skeleton", "scene"]);
+    expect(catalog.find(entry => entry.guid === "scene")?.requiredDependencies).toEqual(["hero-model"]);
+    expect(catalog.find(entry => entry.guid === "hero-model")?.requiredDependencies).toEqual(["hero-skeleton"]);
+    const exportedSkeleton = catalog.find(entry => entry.guid === "hero-skeleton")!;
+    expect(exportedSkeleton.requiredDependencies).toEqual(["hero-model"]);
+    expect(exportedSkeleton.encoding).toBe("json");
+    expect(JSON.parse(new TextDecoder().decode(result.value.files.get(exportedSkeleton.path!))))
+      .toEqual({ modelGuid: "hero-model", kind: "hierarchy", boneNames: ["Root"] });
+  });
+
   it.each([true, false])("retains project focus navigation in editor exports with preview=%s", async (previewBuild) => {
     const scene = createDefaultScene();
     const result = await collectAndExportGame({

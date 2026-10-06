@@ -4,6 +4,7 @@ import type {
   FileStat,
   ProjectFolderHandle,
   ProjectStorage,
+  StorageReadOptions,
   StorageTier,
 } from "@babylonslate/core";
 
@@ -144,7 +145,8 @@ export class MemoryStorageAdapter implements ProjectStorage {
     return { parent: dir, name: parts[parts.length - 1]! };
   }
 
-  async readBinary(path: string): Promise<Uint8Array> {
+  async readBinary(path: string, options?: StorageReadOptions): Promise<Uint8Array> {
+    options?.signal?.throwIfAborted();
     const parts = this.split(path);
     const { parent, name } = this.walk(parts, false);
     if (!name) {
@@ -158,7 +160,8 @@ export class MemoryStorageAdapter implements ProjectStorage {
     return new Uint8Array(node.data);
   }
 
-  async readBinaryRange(path: string, offset: number, length: number, expectedRevision?: string) {
+  async readBinaryRange(path: string, offset: number, length: number, expectedRevision?: string, options?: StorageReadOptions) {
+    options?.signal?.throwIfAborted();
     validateStorageRange(offset, length);
     const { parent, name } = this.walk(this.split(path), false);
     const node = name ? parent.children.get(name) : undefined;
@@ -185,8 +188,8 @@ export class MemoryStorageAdapter implements ProjectStorage {
     parent.mtime = now();
   }
 
-  async readText(path: string): Promise<string> {
-    return textDecoder().decode(await this.readBinary(path));
+  async readText(path: string, options?: StorageReadOptions): Promise<string> {
+    return textDecoder().decode(await this.readBinary(path, options));
   }
 
   async writeText(path: string, data: string): Promise<void> {

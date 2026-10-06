@@ -45,6 +45,11 @@ export interface StorageReadMetrics {
   actualBytesRead: number;
 }
 
+export interface StorageReadOptions {
+  /** Abort network transport and body consumption. Non-interruptible local I/O settles before its caller releases reservations. */
+  signal?: AbortSignal;
+}
+
 /** Read-only view whose path lookup cache may live for one caller operation. */
 export type ProjectStorageReader = Pick<ProjectStorage, "readText" | "readBinary" | "readBinaryRange" | "hasStrongSourceRevisions" | "getReadMetrics" | "exists" | "readdir" | "stat">;
 
@@ -80,11 +85,11 @@ export interface ProjectStorage {
   /** Optional directory-lookup reuse for scans; not a transactional file snapshot. */
   withReadScope?<T>(operation: (storage: ProjectStorageReader) => Promise<T>): Promise<T>;
 
-  readText(path: string): Promise<string>;
+  readText(path: string, options?: StorageReadOptions): Promise<string>;
   writeText(path: string, data: string): Promise<void>;
-  readBinary(path: string): Promise<Uint8Array>;
+  readBinary(path: string, options?: StorageReadOptions): Promise<Uint8Array>;
   /** Read exactly length bytes; reject invalid bounds or a changed expected revision. Never fall back to a full read. */
-  readBinaryRange(path: string, offset: number, length: number, expectedRevision?: string): Promise<StorageRangeRead>;
+  readBinaryRange(path: string, offset: number, length: number, expectedRevision?: string, options?: StorageReadOptions): Promise<StorageRangeRead>;
   /**
    * True only when range revisions cannot alias different file contents (for
    * example immutable catalog hashes or owned in-memory write generations).

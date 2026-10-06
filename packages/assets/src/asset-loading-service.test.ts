@@ -255,6 +255,24 @@ describe("project asset loading", () => {
     expect(service.snapshot()).toMatchObject({ sourceBytes: 4, decodedBytes: 8, temporaryBytes: 0 });
     expect(service.snapshot().entries.find((entry) => entry.revision === "1")).toMatchObject({ state: "ready", owners: ["actor"] });
     service.dispose();
+
+    const pending = deferred<LoadedAsset<string>>();
+    const started = deferred<void>();
+    const saturated = setup([catalog("model")], async () => { started.resolve(); return pending.promise; }, {
+      budgets: { sourceBytes: 4, decodedBytes: 8, temporaryBytes: 8, concurrency: 1 },
+    }).service;
+    const waiting = saturated.createScope("waiting actor");
+    const inFlight = waiting.acquire("model");
+    await started.promise;
+    for (const estimate of [
+      { sourceBytes: 5, decodedBytes: 0, temporaryBytes: 0 },
+      { sourceBytes: 0, decodedBytes: 9, temporaryBytes: 0 },
+      { sourceBytes: 0, decodedBytes: 0, temporaryBytes: 9 },
+    ]) await expect(waiting.acquire("model", { ...huge, key: JSON.stringify(estimate), estimate })).rejects.toMatchObject({ code: "budget" });
+    expect(saturated.snapshot()).toMatchObject({ active: 1, queued: 0, temporaryBytes: 8, reservedSourceBytes: 4, reservedDecodedBytes: 8 });
+    pending.resolve({ value: "surviving load" });
+    expect(await inFlight).toBe("surviving load");
+    saturated.dispose();
   });
 
   it("bounds in-flight reservations and admits gameplay before queued background work", async () => {

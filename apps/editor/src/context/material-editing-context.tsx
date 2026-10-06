@@ -51,6 +51,7 @@ import { usePlay } from "./play-context";
 import { useMaterialRenderControl } from "./material-render-control-context";
 import { useMaterialInstanceSources } from "./material-instance-sources";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
+import { textureUploadSignature } from "../lib/texture-upload-signature";
 
 const FUNCTION_KINDS = ["material-function"] as const;
 
@@ -396,6 +397,18 @@ export function MaterialEditingProvider({
     return materialCompileKey(document, { functions });
   }, [document, functions]);
 
+  const costClassRef = useRef(costClass);
+  costClassRef.current = costClass;
+  const invalidatePreview = useCallback(() => {
+    generationRef.current += 1;
+    const host = hostRef.current;
+    if (host) libraryRef.current?.cancelPending(host.scene, documentId);
+    dispatch({ type: "edit", cost: costClassRef.current });
+    // A cold dependency completing is part of the requested Render. Keep that
+    // request queued even when this graph is too expensive for auto-preview.
+    if (manualRenderPendingRef.current) dispatch({ type: "render" });
+  }, [documentId]);
+
   const textureGuidsKey = useMemo(() => {
     if (!document) return "";
     const lowered = lowerMaterialDocument(document, { functions });
@@ -404,19 +417,26 @@ export function MaterialEditingProvider({
       value.kind === "texture" && value.textureAssetGuid ? [value.textureAssetGuid] : []);
     return [...new Set([...lowered.plan.dependencies.textures, ...overrideTextures])].sort().join(",");
   }, [document, functions, instanceOverrides]);
-  const [loadedTextureGuidsKey, setLoadedTextureGuidsKey] = useState("");
+  const textureSourcesKey = useMemo(() => {
+    void registryEpoch;
+    return JSON.stringify((textureGuidsKey ? textureGuidsKey.split(",") : []).map((guid) => {
+      const asset = assetRegistry?.getByGuid(guid);
+      return asset ? [guid, asset.path, asset.header.type, textureUploadSignature(asset.header)] : [guid, "missing"];
+    }));
+  }, [assetRegistry, registryEpoch, textureGuidsKey]);
+  const [loadedTextureSourcesKey, setLoadedTextureSourcesKey] = useState("");
   const texturesReady =
-    textureGuidsKey === "" || textureGuidsKey === loadedTextureGuidsKey;
+    textureGuidsKey === "" || textureSourcesKey === loadedTextureSourcesKey;
 
   useEffect(() => {
     const guids = textureGuidsKey === "" ? [] : textureGuidsKey.split(",");
     if (guids.length === 0) {
       textureBytesRef.current = new Map();
-      setLoadedTextureGuidsKey("");
+      setLoadedTextureSourcesKey("");
       return;
     }
     let cancelled = false;
-    setLoadedTextureGuidsKey("");
+    setLoadedTextureSourcesKey("");
     void (async () => {
       const next = new Map<string, Uint8Array>();
       for (const guid of guids) {
@@ -439,16 +459,13 @@ export function MaterialEditingProvider({
       if (cancelled) return;
       textureBytesRef.current = installTextureBytes(next) ?? new Map();
       libraryRef.current?.markDirty();
-      setLoadedTextureGuidsKey(textureGuidsKey);
-      dispatch({ type: "edit", cost: costClassRef.current });
+      setLoadedTextureSourcesKey(textureSourcesKey);
+      invalidatePreview();
     })();
     return () => {
       cancelled = true;
     };
-  }, [assetRegistry, documentId, registryEpoch, readAssetChunk, textureGuidsKey]);
-
-  const costClassRef = useRef(costClass);
-  costClassRef.current = costClass;
+  }, [assetRegistry, documentId, invalidatePreview, readAssetChunk, textureGuidsKey, textureSourcesKey]);
 
   const rootParameters = useMemo(() => {
     if (!isInstanceDocument || !document) return null;
@@ -479,21 +496,18 @@ export function MaterialEditingProvider({
     const observer = restored.add(() => {
       libraryRef.current?.invalidate();
       if (!compileKey) return;
-      dispatch({ type: "edit", cost: costClassRef.current });
+      invalidatePreview();
       presenterRef.current?.present({ force: true });
     });
     return () => {
       restored.remove(observer);
     };
-  }, [compileKey, sharedEngine]);
+  }, [compileKey, invalidatePreview, sharedEngine]);
 
   useEffect(() => {
     if (!compileKey) return;
-    generationRef.current += 1;
-    const host = hostRef.current;
-    if (host) libraryRef.current?.cancelPending(host.scene, documentId);
-    dispatch({ type: "edit", cost: costClassRef.current });
-  }, [compileKey, documentId, previewSceneEpoch]);
+    invalidatePreview();
+  }, [compileKey, invalidatePreview, previewSceneEpoch]);
 
   useEffect(() => {
     hostRef.current?.applyParticleMaterial?.(null);

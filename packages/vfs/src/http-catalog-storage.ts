@@ -1,6 +1,6 @@
-import type { DirEntry, FileStat, ProjectFolderHandle, ProjectStorage, StorageRangeRead } from "@babylonslate/core";
+import type { DirEntry, FileStat, ProjectFolderHandle, ProjectStorage, StorageRangeRead, StorageReadOptions } from "@babylonslate/core";
 import { projectRelativePath } from "./project-path";
-import { checkStorageRevision, StorageReadCounter, validateStorageRange } from "./storage-range";
+import { checkStorageRevision, rethrowStorageReadFailure, StorageReadCounter, validateStorageRange } from "./storage-range";
 
 export interface HttpStoragePart {
   offset: number;
@@ -97,25 +97,27 @@ export class HttpCatalogStorageAdapter implements ProjectStorage {
     }
     return entries.sort((a, b) => a.name.localeCompare(b.name));
   }
-  async readText(path: string) { return new TextDecoder().decode(await this.readBinary(path)); }
-  async readBinary(path: string) {
+  async readText(path: string, options?: StorageReadOptions) { return new TextDecoder().decode(await this.readBinary(path, options)); }
+  async readBinary(path: string, options?: StorageReadOptions) {
     const file = this.file(path);
-    const result = await this.read(file, 0, file.size, "full");
+    const result = await this.read(file, 0, file.size, "full", options?.signal);
     return result.bytes;
   }
-  async readBinaryRange(path: string, offset: number, length: number, revision?: string) {
+  async readBinaryRange(path: string, offset: number, length: number, revision?: string, options?: StorageReadOptions) {
     validateStorageRange(offset, length);
     const file = this.file(path);
     checkStorageRevision(path, file.revision, revision);
-    return this.read(file, offset, length, "range");
+    return this.read(file, offset, length, "range", options?.signal);
   }
 
-  private async read(file: HttpStorageFile, offset: number, length: number, kind: "full" | "range"): Promise<StorageRangeRead> {
+  private async read(file: HttpStorageFile, offset: number, length: number, kind: "full" | "range", signal?: AbortSignal): Promise<StorageRangeRead> {
     validateStorageRange(offset, length, file.size);
     let actualBytesRead = 0;
     try {
+      signal?.throwIfAborted();
       const bytes = new Uint8Array(length);
       for (const part of file.parts) {
+        signal?.throwIfAborted();
         const start = Math.max(offset, part.offset), end = Math.min(offset + length, part.offset + part.length);
         if (end <= start) continue;
         const partStart = start - part.offset, expected = end - start;
@@ -124,12 +126,13 @@ export class HttpCatalogStorageAdapter implements ProjectStorage {
         const url = `${base}${part.file.split("/").map(encodeURIComponent).join("/")}`;
         // Native Window.fetch rejects an arbitrary options object as its receiver.
         const fetchContent = this.options.fetch;
-        const response = await fetchContent(url, partial ? { headers: { Range: `bytes=${partStart}-${partStart + expected - 1}` } } : undefined);
+        const init = partial ? { headers: { Range: `bytes=${partStart}-${partStart + expected - 1}` } } : undefined;
+        const response = await fetchContent(url, signal ? { ...init, signal } : init);
         const contentRange = response.headers.get("content-range");
         const encoding = response.headers.get("content-encoding");
         if ((partial && (response.status !== 206 || contentRange !== `bytes ${partStart}-${partStart + expected - 1}/${part.length}` || (encoding && encoding !== "identity"))) ||
             (!partial && response.status !== 200)) {
-          await response.body?.cancel();
+          void response.body?.cancel().catch(() => undefined);
           throw new Error(`Invalid bounded HTTP response for ${file.path}: ${response.status}`);
         }
         const declared = response.headers.get("content-length");
@@ -137,11 +140,11 @@ export class HttpCatalogStorageAdapter implements ProjectStorage {
         // describes transfer bytes. Bounded streaming and hashes validate the
         // decoded object. Ranges above require identity encoding.
         if (declared !== null && (!encoding || encoding === "identity") && (!/^\d+$/.test(declared) || Number(declared) !== expected)) {
-          await response.body?.cancel();
+          void response.body?.cancel().catch(() => undefined);
           throw new Error(`HTTP byte length mismatch: ${file.path}`);
         }
         const partBytes = bytes.subarray(start - offset, end - offset);
-        try { await readBoundedBody(response, partBytes); }
+        try { await readBoundedBody(response, partBytes, signal); }
         catch (error) {
           actualBytesRead += (error as { actualBytesRead?: number }).actualBytesRead ?? 0;
           throw error;
@@ -153,29 +156,46 @@ export class HttpCatalogStorageAdapter implements ProjectStorage {
           if (hash !== part.sha256) throw new Error(`HTTP content hash mismatch: ${file.path}`);
         }
       }
+      signal?.throwIfAborted();
       return { bytes, totalSize: file.size, revision: file.revision, actualBytesRead };
     } catch (error) {
-      throw Object.assign(error instanceof Error ? error : new Error(String(error)), { actualBytesRead });
+      // An abort reason is shared by concurrent reads. Give this operation its
+      // own byte count instead of mutating another request's cancellation error.
+      const failure = signal?.aborted && error === signal.reason
+        ? Object.assign(new Error("Storage read cancelled", { cause: error }), { name: "AbortError" }) : error;
+      rethrowStorageReadFailure(failure, actualBytesRead);
     } finally { this.reads.record(kind, length, actualBytesRead); }
   }
 }
 
-async function readBoundedBody(response: Response, bytes: Uint8Array): Promise<void> {
+async function readBoundedBody(response: Response, bytes: Uint8Array, signal?: AbortSignal): Promise<void> {
   const reader = response.body?.getReader();
   if (!reader) throw new Error("Missing HTTP response body");
   let actualBytesRead = 0;
+  // Cancel closes the readable stream immediately, including a pending read.
+  // Its underlying cancel hook may itself be asynchronous; do not retain our
+  // destination buffer while waiting for that unrelated cleanup promise.
+  const cancel = () => { void reader.cancel(signal?.reason).catch(() => undefined); };
+  signal?.addEventListener("abort", cancel, { once: true });
   try {
+    signal?.throwIfAborted();
     for (;;) {
       const { done, value } = await reader.read();
-      if (done) break;
+      if (done) { signal?.throwIfAborted(); break; }
       const position = actualBytesRead;
       actualBytesRead += value.byteLength;
       if (actualBytesRead > bytes.byteLength) throw new Error("HTTP response exceeded its requested byte length");
+      signal?.throwIfAborted();
       bytes.set(value, position);
     }
     if (actualBytesRead !== bytes.byteLength) throw new Error("Truncated HTTP response");
   } catch (error) {
-    await reader.cancel().catch(() => undefined);
-    throw Object.assign(error instanceof Error ? error : new Error(String(error)), { actualBytesRead });
-  } finally { reader.releaseLock(); }
+    cancel();
+    const failure = signal?.aborted && error === signal.reason
+      ? Object.assign(new Error("Storage read cancelled", { cause: error }), { name: "AbortError" }) : error;
+    rethrowStorageReadFailure(failure, actualBytesRead);
+  } finally {
+    signal?.removeEventListener("abort", cancel);
+    reader.releaseLock();
+  }
 }

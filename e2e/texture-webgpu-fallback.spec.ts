@@ -59,7 +59,7 @@ const TEXTURE_PATH = "assets/albedo.babasset";
 const EMITTER_PATH = "assets/OddSparks.emitter.babasset";
 /** A Tileset saved before atlas meta existed: it keeps `TEXTURE_GUID` an atlas, off the grid. */
 const ODD_TILESET_GUID = "00000000-0000-4000-8000-000000000077";
-/** The same 1×1 encode with no atlas: stale, so opening the project re-encodes it 4×4. */
+/** The same 1×1 encode with no atlas: stale until explicitly re-encoded. */
 const LEGACY_TEXTURE_GUID = "00000000-0000-4000-8000-000000000078";
 const LEGACY_TEXTURE_PATH = "assets/legacy-odd.babasset";
 /** Another such Texture, for a project with source control on. */
@@ -163,7 +163,7 @@ async function fixture(backend: Backend, sourceControl = false): Promise<Map<str
   sun.transform.position = [...SUN_POSITION];
   sun.components[0]!.properties.castShadows = false;
   scene.actors = [
-    createActor(TEXTURED_BOX, "Actor", { classId: "Main", components: [textured] }),
+    createActor(TEXTURED_BOX, "Actor", { classId: "main", components: [textured] }),
     createActor(PLAIN_BOX, "Plain Box", {
       transform: { position: [2, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
       components: [createMeshComponent("plain-mesh", "box")],
@@ -262,10 +262,10 @@ test("WebGPU decodes a Basis KTX2 off the 4×4 block grid to RGBA: the viewport 
   const { gpuFailures, consoleProblems } = watchGpuFailures(page);
   await page.addInitScript(recordCompressedGpuTextures);
   await openMinimalTestProject(page, await fixture("webgpu"));
-  // Opening the project re-encodes only the stale non-atlas Texture, 4×4.
-  expect(await settledAlignmentPass(page)).toEqual([LEGACY_TEXTURE_GUID]);
-  await expect.poll(() => committedKtx2(page, LEGACY_TEXTURE_PATH), { timeout: 60_000 })
-    .toEqual({ compressionState: "compressed", ktx2: { width: 4, height: 4 } });
+  // Opening the project leaves even an unused stale non-atlas Texture untouched.
+  expect(await textureAlignment(page)).toEqual({ runs: 0, pending: 0, requeued: [] });
+  expect(await committedKtx2(page, LEGACY_TEXTURE_PATH))
+    .toEqual({ compressionState: "compressed", ktx2: { width: 1, height: 1 } });
   // The Tileset's atlas keeps its seeded 1×1 encode.
   expect(await committedKtx2(page, TEXTURE_PATH)).toEqual({ compressionState: "compressed", ktx2: { width: 1, height: 1 } });
   await openMainScene(page);
@@ -320,11 +320,11 @@ async function disableSourceControl(page: Page): Promise<void> {
   await expect(modal).toHaveCount(0);
 }
 
-test("with source control on, an old Texture off the grid re-encodes only on Retry Encoding, or once Enable is turned off", async ({ page }) => {
+test("an old Texture off the grid requires Retry Encoding before and after source control is disabled", async ({ page }) => {
   test.setTimeout(180_000);
   await openMinimalTestProject(page, await fixture("webgl2", true));
   // Opening the project re-encodes nothing: teammates share these files.
-  expect(await settledAlignmentPass(page)).toEqual([]);
+  expect(await textureAlignment(page)).toEqual({ runs: 0, pending: 0, requeued: [] });
   const odd = { compressionState: "compressed", ktx2: { width: 1, height: 1 } };
   const aligned = { compressionState: "compressed", ktx2: { width: 4, height: 4 } };
   for (const assetPath of [TEXTURE_PATH, LEGACY_TEXTURE_PATH, WAITING_TEXTURE_PATH]) {
@@ -341,11 +341,17 @@ test("with source control on, an old Texture off the grid re-encodes only on Ret
   expect(await settledAlignmentPass(page)).toEqual([]);
   expect(await committedKtx2(page, WAITING_TEXTURE_PATH)).toEqual(odd);
 
-  // Turning Enable off in Project Settings runs the pass at once.
-  const before = (await textureAlignment(page))!.runs;
+  // Changing source control permissions does not request broad texture processing.
+  const before = await textureAlignment(page);
   await disableSourceControl(page);
-  expect(await settledAlignmentPass(page, before)).toEqual([WAITING_TEXTURE_GUID]);
+  expect(await textureAlignment(page)).toEqual(before);
+  expect(await committedKtx2(page, WAITING_TEXTURE_PATH)).toEqual(odd);
+
+  // With source control off, the other Texture still prepares through its own Retry.
+  await openAssetFromBrowser(page, WAITING_TEXTURE_PATH);
+  await page.getByTestId("texture-details").getByTestId("texture-retry-encode").click();
   await expect.poll(() => committedKtx2(page, WAITING_TEXTURE_PATH), { timeout: 60_000 }).toEqual(aligned);
+  await expect(page.getByTestId("texture-details").getByTestId("texture-retry-encode")).toHaveCount(0);
   // The Tileset's atlas keeps its 1×1 encode.
   expect(await committedKtx2(page, TEXTURE_PATH)).toEqual(odd);
 });

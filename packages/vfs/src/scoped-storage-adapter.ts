@@ -1,4 +1,4 @@
-import { rethrowNativeStorageRangeError, StorageReadCounter, validateStorageRange, validateStorageRangeResult } from "./storage-range";
+import { rethrowNativeStorageRangeError, rethrowStorageReadFailure, StorageReadCounter, validateStorageRange, validateStorageRangeResult } from "./storage-range";
 import type {
   DirEntry,
   FileStat,
@@ -294,7 +294,8 @@ export class ScopedStorageAdapter implements ProjectStorage {
       folder: folder.id, path, offset, length, expectedRevision,
       ...(this.readScopeId ? { readScope: this.readScopeId } : {}),
     }), { path }));
-    return validateStorageRangeResult(path, offset, length, { ...result, bytes: decodeBinary(result.data) }, expectedRevision);
+    try { return validateStorageRangeResult(path, offset, length, { ...result, bytes: decodeBinary(result.data) }, expectedRevision); }
+    catch (error) { rethrowStorageReadFailure(error, result.actualBytesRead); }
   }
 
   async writeBinary(path: string, data: Uint8Array): Promise<void> {

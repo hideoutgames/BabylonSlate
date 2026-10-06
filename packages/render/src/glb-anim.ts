@@ -663,6 +663,7 @@ export function beginSlotModelAnimLoad(
   onAdopted?: (placeholder: AbstractMesh) => void,
   ownsLoad?: () => boolean,
   prepareInstance?: (root: Mesh) => void | Promise<void>,
+  priority?: NativePreparationPriority,
 ): Promise<void> {
   const importScale = normalizeModelImportScale(
     binding.modelPayloads?.get(clipAssetGuid)?.importScale,
@@ -718,7 +719,7 @@ export function beginSlotModelAnimLoad(
   pendingModelLoads.set(placeholder, request);
   const load = (async () => {
     let prepared: PreparedModelInstance | undefined;
-    const lease = acquireGlbContainer(scene, clipAssetGuid, bytes, binding.modelPayloads?.get(clipAssetGuid), packed);
+    const lease = acquireGlbContainer(scene, clipAssetGuid, bytes, binding.modelPayloads?.get(clipAssetGuid), packed, priority);
     // Generation overlaps preparation; the instance publishes at full detail
     // and its levels attach once they are ready.
     const lods = autoLod ? lease.lods() : null;
@@ -752,6 +753,7 @@ export function beginSlotModelAnimLoad(
           sourceBytes,
           binding.modelPayloads?.get(row.sourceModelGuid),
           packedSlimProof(binding),
+          priority,
         );
         prepared.bundle.releaseWith(() => sourceLease.release());
         const sourceContainer = await wait(sourceLease.load);

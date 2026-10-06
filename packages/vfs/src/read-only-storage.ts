@@ -29,16 +29,16 @@ export function createReadOnlyProjectStorage(
           },
         }
       : {}),
-    readText: (path) => inner.readText(path),
-    readBinary: (path) => inner.readBinary(path),
-    readBinaryRange: (path, offset, length, revision) => inner.readBinaryRange(path, offset, length, revision),
+    readText: (path, options) => inner.readText(path, options),
+    readBinary: (path, options) => inner.readBinary(path, options),
+    readBinaryRange: (path, offset, length, revision, options) => inner.readBinaryRange(path, offset, length, revision, options),
     ...(inner.getReadMetrics ? { getReadMetrics: () => inner.getReadMetrics!() } : {}),
     ...(inner.withReadScope ? {
       withReadScope: <T>(operation: (storage: ProjectStorageReader) => Promise<T>) => inner.withReadScope!(reader => operation({
         get hasStrongSourceRevisions() { return reader.hasStrongSourceRevisions === true; },
-        readText: path => reader.readText(path),
-        readBinary: path => reader.readBinary(path),
-        readBinaryRange: (path, offset, length, revision) => reader.readBinaryRange(path, offset, length, revision),
+        readText: (path, options) => reader.readText(path, options),
+        readBinary: (path, options) => reader.readBinary(path, options),
+        readBinaryRange: (path, offset, length, revision, options) => reader.readBinaryRange(path, offset, length, revision, options),
         exists: path => reader.exists(path),
         readdir: path => reader.readdir(path),
         stat: path => reader.stat(path),

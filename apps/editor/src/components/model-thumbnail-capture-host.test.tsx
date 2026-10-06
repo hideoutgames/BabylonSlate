@@ -14,6 +14,7 @@ const captureModelThumbnailPng = vi.fn<
       importScale?: number;
       clipName?: string;
       sourceClipBytes?: Uint8Array | null;
+      signal?: AbortSignal;
     },
   ) => Promise<Uint8Array | null>
 >(async () => new Uint8Array([137, 80, 78, 71]));
@@ -30,8 +31,14 @@ const collectPlayMaterialLibrary = vi.fn(async () => ({
 }));
 const collectPlayTextureBytes = vi.fn(async () => new Map());
 const writeAssetThumbnail = vi.fn(async () => undefined);
+const scopes: Array<{ dispose: ReturnType<typeof vi.fn> }> = [];
+const createAssetLoadScope = vi.fn(() => {
+  const scope = { dispose: vi.fn() };
+  scopes.push(scope);
+  return scope;
+});
 const readAssetChunk = vi.fn<
-  (path: string, kind: string) => Promise<Uint8Array | null>
+  (path: string, kind: string, options?: { scope?: unknown; signal?: AbortSignal; priority?: string }) => Promise<Uint8Array | null>
 >(async () => new Uint8Array([1, 2, 3, 4]));
 const assets = new Map<
   string,
@@ -50,6 +57,7 @@ vi.mock("@babylonslate/render", () => ({
       importScale?: number;
       clipName?: string;
       sourceClipBytes?: Uint8Array | null;
+      signal?: AbortSignal;
     },
   ) =>
     captureModelThumbnailPng(
@@ -89,6 +97,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
   projectGuid,
   assetRegistry: { getByGuid: (guid: string) => assets.get(guid) },
   readAssetChunk,
+  createAssetLoadScope,
   collectPlayMaterialLibrary,
   collectPlayTextureBytes,
   writeAssetThumbnail,
@@ -104,6 +113,8 @@ afterEach(() => {
   collectPlayMaterialLibrary.mockClear();
   collectPlayTextureBytes.mockClear();
   writeAssetThumbnail.mockClear();
+  createAssetLoadScope.mockClear();
+  scopes.length = 0;
   readAssetChunk.mockReset().mockResolvedValue(new Uint8Array([1, 2, 3, 4]));
   assets.clear();
   projectGuid = "project-a";
@@ -121,6 +132,7 @@ describe("ModelThumbnailCaptureHost", () => {
     await waitFor(() => expect(writeAssetThumbnail).toHaveBeenCalledWith("asset", expect.any(Uint8Array), { cacheKey: "asset.revision-1", projectGuid: "project-a" }));
     expect(captureAssetThumbnailPng).toHaveBeenCalledTimes(1);
     expect(captureModelThumbnailPng).not.toHaveBeenCalled();
+    expect(scopes[0]!.dispose).toHaveBeenCalledOnce();
   });
 
   it.each(["project switch", "disabled thumbnails", "unmount"])("discards an in-flight capture after %s", async (change) => {
@@ -137,9 +149,11 @@ describe("ModelThumbnailCaptureHost", () => {
     if (change === "unmount") view.unmount();
     else view.rerender(<ModelThumbnailCaptureHost />);
     expect(shouldContinue()).toBe(false);
+    expect(scopes[0]!.dispose).toHaveBeenCalledOnce();
     finish(new Uint8Array([1]));
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(writeAssetThumbnail).not.toHaveBeenCalled();
+    expect(scopes[0]!.dispose).toHaveBeenCalledOnce();
   });
 
   it("replaces queued saves with the newest revision without overlapping captures", async () => {
@@ -156,6 +170,24 @@ describe("ModelThumbnailCaptureHost", () => {
     await waitFor(() => expect(writeAssetThumbnail).toHaveBeenCalledWith("asset", expect.any(Uint8Array), { projectGuid, cacheKey: "new" }));
     expect(writeAssetThumbnail).toHaveBeenCalledOnce();
     expect(captureAssetThumbnailPng).toHaveBeenCalledTimes(2);
+  });
+
+  it("cancels a pending source read and releases its scope when the capture host closes", async () => {
+    let finish!: (bytes: Uint8Array) => void;
+    readAssetChunk.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    const view = render(<ModelThumbnailCaptureHost />);
+    enqueueModelThumbnailJobs([{ guid: "model", path: "assets/model.babasset", type: "Model", payload: {} }]);
+    await waitFor(() => expect(readAssetChunk).toHaveBeenCalledOnce());
+    const options = readAssetChunk.mock.calls[0]![2]!;
+    expect(options.priority).toBe("background");
+    expect(options.signal!.aborted).toBe(false);
+    view.unmount();
+    expect(options.signal!.aborted).toBe(true);
+    expect(scopes[0]!.dispose).toHaveBeenCalledOnce();
+    finish(new Uint8Array([1]));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(captureModelThumbnailPng).not.toHaveBeenCalled();
+    expect(writeAssetThumbnail).not.toHaveBeenCalled();
   });
 
   it("captures an Animation from its owning Model and retarget source", async () => {
@@ -196,14 +228,16 @@ describe("ModelThumbnailCaptureHost", () => {
       ),
     );
     expect(readAssetChunk.mock.calls).toEqual([
-      ["assets/hero.babasset", "source"],
-      ["assets/source.babasset", "source"],
+      ["assets/hero.babasset", "source", { scope: scopes[0], signal: expect.any(AbortSignal), priority: "background" }],
+      ["assets/source.babasset", "source", { scope: scopes[0], signal: expect.any(AbortSignal), priority: "background" }],
     ]);
+    expect(scopes[0]!.dispose).toHaveBeenCalledOnce();
     expect(captureModelThumbnailPng.mock.calls[0]![1]).toBe(targetBytes);
     expect(captureModelThumbnailPng.mock.calls[0]![5]).toEqual({
       importScale: 0.5,
       clipName: "Idle",
       sourceClipBytes: sourceBytes,
+      signal: expect.any(AbortSignal),
     });
   });
 
@@ -239,6 +273,20 @@ describe("ModelThumbnailCaptureHost", () => {
     expect(
       readAssetChunk.mock.calls.filter(([path]) => path === missing.path),
     ).toHaveLength(1);
+  });
+
+  it("preserves every explicitly selected job in a large batch while reading only one at a time", async () => {
+    let release!: (value: Uint8Array | null) => void;
+    readAssetChunk.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+    const jobs = Array.from({ length: 130 }, (_, index) => ({ guid: `model-${index}`, path: `assets/model-${index}.babasset`, payload: {} }));
+    render(<ModelThumbnailCaptureHost />);
+    enqueueModelThumbnailJobs(jobs);
+    await waitFor(() => expect(readAssetChunk).toHaveBeenCalledOnce());
+    expect(readAssetChunk.mock.calls[0]![0]).toBe(jobs[0]!.path);
+    release(new Uint8Array([1]));
+    await waitFor(() => expect(writeAssetThumbnail).toHaveBeenCalledTimes(jobs.length));
+    expect(readAssetChunk.mock.calls.map(([path]) => path)).toEqual(jobs.map(({ path }) => path));
+    expect(scopes.every((scope) => scope.dispose.mock.calls.length === 1)).toBe(true);
   });
 
   it("captures the packed GLB without a slot MaterialLibrary or extra ResourceCache", async () => {

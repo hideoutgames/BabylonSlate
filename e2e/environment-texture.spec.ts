@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { importByExtension } from "../packages/assets/src/importers";
+import { collectAssetDependencyMetadata } from "../packages/assets/src/asset-dependencies";
 import {
   encodeAssetDocument,
   decodeAssetDocument,
@@ -91,7 +92,12 @@ test("imports HDR environment cubes and consumes linear faces and roughness mips
     files.set(
       "assets/Studio.babasset",
       await encodeBabasset({
-        header: { ...imported!, engineVersion: "0.0.0", mode: "thin" },
+        header: {
+          ...imported!,
+          ...collectAssetDependencyMetadata(imported!.type, imported!.payload),
+          engineVersion: "0.0.0",
+          mode: "thin",
+        },
         chunks: imported!.chunks,
       }),
     );

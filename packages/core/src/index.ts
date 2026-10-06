@@ -37,6 +37,7 @@ export * from "./print-hud";
 export * from "./trace";
 export * from "./map-default";
 export * from "./class-variable-references";
+export * from "./behaviour-tree-ids";
 export * from "./asset-variable-references";
 export * from "./asset-loading";
 export * from "./material-parameter-assets";

@@ -1,5 +1,5 @@
 import { DOCUMENT_CHUNK_ID, type AssetDocument } from "./asset-document";
-import { SourceRevisionChangedError } from "@babylonslate/core";
+import { SourceRevisionChangedError, type StorageReadOptions } from "@babylonslate/core";
 import {
   AssetLoadingService,
   type AssetCatalogRecord,
@@ -48,7 +48,7 @@ export function createRegistryAssetLoadingService(
   return new AssetLoadingService({
     projectId: options.projectId,
     budgets: options.budgets,
-    resolve: (id) => registryRecord(currentRegistry(), id, options),
+    resolve: (id, signal) => registryRecord(currentRegistry(), id, options, { signal }),
     representation: (asset) => representationForRecord(currentRegistry(), asset as RegistryRecord, options),
   });
 }
@@ -58,16 +58,18 @@ export async function registryAssetRepresentation(
   registry: AssetRegistry,
   id: string,
   options: Omit<RegistryAssetLoadingOptions, "projectId" | "budgets"> = {},
+  readOptions?: StorageReadOptions,
 ): Promise<AssetRepresentation<RegistryLoadedAsset>> {
-  return representationForRecord(registry, await registryRecord(registry, id, options), options);
+  return representationForRecord(registry, await registryRecord(registry, id, options, readOptions), options);
 }
 
 async function registryRecord(
   registry: AssetRegistry,
   id: string,
   options: Pick<RegistryAssetLoadingOptions, "selectChunks" | "includeDocument">,
+  readOptions?: StorageReadOptions,
 ): Promise<RegistryRecord> {
-  const locator = await registry.getAssetLocator(id);
+  const locator = await registry.getAssetLocator(id, readOptions);
   const indexed = registry.getByGuid(id);
   if (!indexed || indexed.placeholder) throw new Error(`Missing asset ${id}`);
   const documentEntry = indexed.header.chunks.find((entry) => entry.id === DOCUMENT_CHUNK_ID);
@@ -75,7 +77,8 @@ async function registryRecord(
     ...(documentEntry && options.includeDocument !== false ? [DOCUMENT_CHUNK_ID] : []),
     ...(options.selectChunks?.(indexed) ?? []),
   ])];
-  const lengths = await Promise.all(chunkIds.map((chunkId) => registry.getChunkByteLength(id, chunkId)));
+  const lengths = await Promise.all(chunkIds.map((chunkId) => registry.getChunkByteLength(id, chunkId, locator.revision, readOptions)));
+  readOptions?.signal?.throwIfAborted();
   const documentIndex = chunkIds.indexOf(DOCUMENT_CHUNK_ID);
   return {
     id, rootId: indexed.rootId, revision: locator.revision,
@@ -103,14 +106,17 @@ function representationForRecord(
   return {
     key: JSON.stringify([settingsKey, record.chunkIds]),
     estimate: { sourceBytes: record.sourceBytes, decodedBytes, temporaryBytes: record.sourceBytes + record.documentBytes * 2 },
-    load: async (_asset, signal) => {
+    load: async (asset, signal) => {
+      if (asset.revision !== record.revision || asset.rootId !== record.rootId) {
+        throw new SourceRevisionChangedError(`Asset ${record.id} changed after estimating its source bytes`);
+      }
       const chunks = new Map<string, Uint8Array>();
       for (const chunkId of record.chunkIds) {
         signal.throwIfAborted();
-        chunks.set(chunkId, await registry.readChunk(record.id, chunkId));
+        chunks.set(chunkId, await registry.readChunk(record.id, chunkId, record.revision, { signal }));
       }
       signal.throwIfAborted();
-      if ((await registry.getAssetLocator(record.id)).revision !== record.revision) {
+      if ((await registry.getAssetLocator(record.id, { signal })).revision !== record.revision) {
         throw new SourceRevisionChangedError(`Asset ${record.id} changed during reading; retry the current revision`);
       }
       const header = record.indexed.header;

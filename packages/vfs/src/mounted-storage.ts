@@ -1,4 +1,4 @@
-import type { DirEntry, FileStat, ProjectFolderHandle, ProjectStorage } from "@babylonslate/core";
+import type { DirEntry, FileStat, ProjectFolderHandle, ProjectStorage, StorageReadOptions } from "@babylonslate/core";
 import { projectRelativePath } from "./project-path";
 import { StorageReadCounter, validateStorageRange } from "./storage-range";
 
@@ -63,17 +63,18 @@ class MountedProjectStorage implements ProjectStorage {
   async mkdir(): Promise<void> { throw new Error("Storage is read-only"); }
   async remove(): Promise<void> { throw new Error("Storage is read-only"); }
 
-  async readBinary(path: string): Promise<Uint8Array> {
+  async readBinary(path: string, options?: StorageReadOptions): Promise<Uint8Array> {
+    options?.signal?.throwIfAborted();
     const target = this.file(path);
-    const bytes = await target.storage.readBinary(target.path);
-    this.reads.record("full", bytes.byteLength);
-    return bytes;
+    const stat = await target.storage.stat(target.path);
+    options?.signal?.throwIfAborted();
+    return this.reads.full(stat.size ?? 0, () => target.storage.readBinary(target.path, options));
   }
-  async readText(path: string) { return new TextDecoder().decode(await this.readBinary(path)); }
-  async readBinaryRange(path: string, offset: number, length: number, revision?: string) {
+  async readText(path: string, options?: StorageReadOptions) { return new TextDecoder().decode(await this.readBinary(path, options)); }
+  async readBinaryRange(path: string, offset: number, length: number, revision?: string, options?: StorageReadOptions) {
     validateStorageRange(offset, length);
     const target = this.file(path);
-    return this.reads.range(length, () => target.storage.readBinaryRange(target.path, offset, length, revision));
+    return this.reads.range(length, () => target.storage.readBinaryRange(target.path, offset, length, revision, options));
   }
   async stat(path: string): Promise<FileStat> {
     const cleaned = this.path(path);

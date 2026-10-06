@@ -1,3 +1,4 @@
+import { isBuiltinBehaviourTreeClassId } from "@babylonslate/core";
 import { isLockedEngineClassId } from "@babylonslate/object-model";
 import { getRequiredDependencies } from "./asset-dependencies";
 import type { BabassetHeader } from "./babasset";
@@ -30,7 +31,8 @@ export function resolveAssetCatalogDependencies(
     }
   }
   for (const classId of references) {
-    if (isLockedEngineClassId(classId) || classId.startsWith("engine:")) continue;
+    if (isLockedEngineClassId(classId) || classId.startsWith("engine:")
+      || (header.type === "BehaviourTree" && isBuiltinBehaviourTreeClassId(classId))) continue;
     if (/^scene:/i.test(classId)) { dependencies.add(classId.slice(6)); continue; }
     const matches = classes.get(classId);
     if (!matches?.size) {

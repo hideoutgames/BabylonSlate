@@ -23,6 +23,21 @@ export function rethrowNativeStorageRangeError(error: unknown, path: string): ne
   throw error;
 }
 
+/** Keep discarded bytes visible through read-only/mounted adapter boundaries. */
+export function rethrowStorageReadFailure(error: unknown, actualBytesRead: number): never {
+  if (typeof error === "object" && error !== null) {
+    try { Object.assign(error, { actualBytesRead }); }
+    catch {
+      const wrapped = error instanceof SourceRevisionChangedError
+        ? new SourceRevisionChangedError(error.message)
+        : new Error(error instanceof Error ? error.message : String(error));
+      throw Object.assign(wrapped, { actualBytesRead, cause: error });
+    }
+    throw error;
+  }
+  throw Object.assign(new Error(String(error), { cause: error }), { actualBytesRead });
+}
+
 export function validateStorageRangeResult(path: string, offset: number, length: number,
   result: StorageRangeRead, expectedRevision?: string): StorageRangeRead {
   validateStorageRange(offset, length, result.totalSize);
@@ -31,6 +46,17 @@ export function validateStorageRangeResult(path: string, offset: number, length:
     throw new Error(`Invalid storage range response: ${path}`);
   }
   return result;
+}
+
+function failedReadBytes(error: unknown): number {
+  let cause: unknown = error;
+  for (let depth = 0; depth < 5 && cause && typeof cause === "object"; depth++) {
+    const failure = cause as { actualBytesRead?: unknown; data?: { actualBytesRead?: unknown }; cause?: unknown };
+    const actual = failure.actualBytesRead ?? failure.data?.actualBytesRead;
+    if (typeof actual === "number" && Number.isSafeInteger(actual) && actual >= 0) return actual;
+    cause = failure.cause;
+  }
+  return 0;
 }
 
 export class StorageReadCounter {
@@ -50,19 +76,21 @@ export class StorageReadCounter {
     catch (error) {
       // Capacitor preserves rejection data; Node can report the same value
       // directly. Bytes read before a failed revision check still count.
-      let actualBytesRead = 0;
-      let cause: unknown = error;
-      for (let depth = 0; depth < 5 && cause && typeof cause === "object"; depth++) {
-        const failure = cause as { actualBytesRead?: unknown; data?: { actualBytesRead?: unknown }; cause?: unknown };
-        const actual = failure.actualBytesRead ?? failure.data?.actualBytesRead;
-        if (typeof actual === "number" && Number.isSafeInteger(actual) && actual >= 0) { actualBytesRead = actual; break; }
-        cause = failure.cause;
-      }
-      this.record("range", requestedBytes, actualBytesRead);
+      this.record("range", requestedBytes, failedReadBytes(error));
       throw error;
     }
     this.record("range", requestedBytes, result.actualBytesRead);
     return result;
+  }
+  async full(requestedBytes: number, operation: () => Promise<Uint8Array>): Promise<Uint8Array> {
+    let bytes: Uint8Array;
+    try { bytes = await operation(); }
+    catch (error) {
+      this.record("full", requestedBytes, failedReadBytes(error));
+      throw error;
+    }
+    this.record("full", requestedBytes, bytes.byteLength);
+    return bytes;
   }
   snapshot(): StorageReadMetrics { return { ...this.metrics }; }
 }

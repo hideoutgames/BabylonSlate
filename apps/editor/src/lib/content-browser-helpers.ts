@@ -945,6 +945,7 @@ export function isValidSelectionMoveDestination(options: {
 
 export type ContentBrowserContextAction =
   | "open"
+  | "generate-thumbnail"
   | "import-msdf-atlas"
   | "create-material-instance"
   | "duplicate"
@@ -970,11 +971,15 @@ export function contentBrowserContextActions(options: {
   assetCount: number;
   folderCount: number;
   canRetarget?: boolean;
+  canGenerateThumbnails?: boolean;
   singleAssetType?: string;
 }): ContentBrowserContextAction[] {
   const total = options.assetCount + options.folderCount;
   if (total === 0) return [];
   const actions: ContentBrowserContextAction[] = [];
+  if (options.canGenerateThumbnails && options.assetCount > 0 && options.folderCount === 0) {
+    actions.push("generate-thumbnail");
+  }
   if (options.assetCount === 1 && options.folderCount === 0) {
     actions.push("open");
     if (options.singleAssetType === "Font") {

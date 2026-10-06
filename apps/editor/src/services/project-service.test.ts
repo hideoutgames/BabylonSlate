@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMemoryOpfsRoot } from "../../../../packages/vfs/src/test-support/memory-opfs";
-import { createEmptyProject, PROJECT_FILE } from "@babylonslate/core";
+import { createEmptyProject, PROJECT_FILE, SourceRevisionChangedError, type ProjectStorage } from "@babylonslate/core";
 import { MemoryStorageAdapter, OpfsStorageAdapter } from "@babylonslate/vfs";
 import { encodeAssetDocument, encodeBabasset } from "@babylonslate/assets";
 import { loadKenneyMannequinGlb } from "../lib/kenney-mannequin";
@@ -39,6 +39,139 @@ function workerFactory() {
 }
 
 describe("ProjectService lifecycle", () => {
+  it.each(["chunk", "document"] as const)("retries a complete %s read after a concurrent save without retaining the failed snapshot", async (kind) => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("ConcurrentRead");
+    const service = new ProjectService(storage);
+    await service.loadCurrentProject();
+    const path = "assets/Racing.scene.babasset";
+    const bytes = (name: string) => encodeAssetDocument({ type: "Scene", name, guid: "racing", version: 4, payload: { name, actors: [] } });
+    await storage.writeBinary(path, await bytes("Before"));
+    await service.registry!.reindexPath(path);
+    const after = await bytes("After saving");
+    const read = storage.readBinaryRange.bind(storage);
+    let saved = false;
+    vi.spyOn(storage, "readBinaryRange").mockImplementation(async (assetPath, offset, length, revision) => {
+      if (assetPath === path && revision !== undefined && !saved) {
+        saved = true;
+        await storage.writeBinary(path, after);
+      }
+      return read(assetPath, offset, length, revision);
+    });
+    const value = kind === "chunk"
+      ? JSON.parse(new TextDecoder().decode((await service.readAssetChunk(path, "document"))!))
+      : await service.loadDocument("scene", path);
+    expect(saved).toBe(true);
+    expect(value).toMatchObject({ name: "After saving", actors: [] });
+    service.assetLoadingService.trim({ force: true });
+    expect(service.assetLoadingService.snapshot()).toMatchObject({ sourceBytes: 0, decodedBytes: 0, temporaryBytes: 0, entries: [] });
+    service.dispose();
+  });
+
+  it.each(["chunk", "document"] as const)("reserves the current revision before a growing %s payload is read", async (kind) => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("GrowingRead");
+    const service = new ProjectService(storage);
+    await service.loadCurrentProject();
+    const path = "assets/Growing.scene.babasset";
+    const before = { name: "Before", actors: [] };
+    const after = { name: "After saving", actors: [], notes: "x".repeat(8192) };
+    const bytes = (payload: Record<string, unknown>) => encodeAssetDocument({ type: "Scene", name: "Growing", guid: "growing", version: 4, payload });
+    await storage.writeBinary(path, await bytes(before));
+    const registry = service.registry!;
+    await registry.reindexPath(path);
+    const replacement = await bytes(after);
+    const estimate = registry.getChunkByteLength.bind(registry);
+    let saved = false;
+    vi.spyOn(registry, "getChunkByteLength").mockImplementation(async (...args) => {
+      const length = await estimate(...args);
+      if (args[0] === "growing" && !saved) {
+        saved = true;
+        await storage.writeBinary(path, replacement);
+      }
+      return length;
+    });
+    const reservations: Array<{ bytes: number; reserved: number }> = [];
+    const read = storage.readBinaryRange.bind(storage);
+    vi.spyOn(storage, "readBinaryRange").mockImplementation(async (assetPath, offset, length, revision) => {
+      if (assetPath === path && offset > 12 && length > 0) {
+        reservations.push({ bytes: length, reserved: service.assetLoadingService.snapshot().reservedSourceBytes });
+      }
+      return read(assetPath, offset, length, revision);
+    });
+    const value = kind === "chunk"
+      ? JSON.parse(new TextDecoder().decode((await service.readAssetChunk(path, "document"))!))
+      : await service.loadDocument("scene", path);
+    expect(value).toMatchObject({ name: after.name, actors: [] });
+    expect(saved).toBe(true);
+    expect(reservations).toHaveLength(1);
+    expect(reservations[0].reserved).toBeGreaterThanOrEqual(reservations[0].bytes);
+    service.assetLoadingService.trim({ force: true });
+    expect(service.assetLoadingService.snapshot()).toMatchObject({ sourceBytes: 0, decodedBytes: 0, temporaryBytes: 0, entries: [] });
+    service.dispose();
+  });
+
+  it.each(["changing", "cancelled", "corrupt", "project changed"] as const)("bounds ordinary source-read retries for %s failures", async (mode) => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("FailedRead");
+    const service = new ProjectService(storage);
+    await service.loadCurrentProject();
+    const path = "assets/Racing.scene.babasset";
+    await storage.writeBinary(path, await encodeAssetDocument({ type: "Scene", name: "Racing", guid: "racing", version: 4, payload: { actors: [] } }));
+    await service.registry!.reindexPath(path);
+    const read = storage.readBinaryRange.bind(storage);
+    const controller = new AbortController();
+    let attempted = 0;
+    vi.spyOn(storage, "readBinaryRange").mockImplementation(async (assetPath, offset, length, revision) => {
+      if (assetPath === path && revision !== undefined) {
+        attempted++;
+        if (mode === "cancelled") controller.abort();
+        if (mode === "project changed") service.dispose();
+        if (mode === "corrupt") throw new Error("Corrupt chunk data");
+        throw new SourceRevisionChangedError("Concurrent save");
+      }
+      return read(assetPath, offset, length, revision);
+    });
+    await expect(service.readAssetChunk(path, "document", { signal: controller.signal })).rejects.toThrow(
+      mode === "changing" ? "3 read attempts" : mode === "corrupt" ? "Corrupt chunk data" : /abort|project changed/i,
+    );
+    expect(attempted).toBe(mode === "changing" ? 3 : 1);
+    service.dispose();
+  });
+
+  it.each(["catalog", "payload"] as const)("aborts a chunk read's pending %s transport when its consumer cancels", async (phase) => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("CancelledTransport");
+    const service = new ProjectService(storage);
+    await service.loadCurrentProject();
+    const path = "assets/Pending.scene.babasset";
+    await storage.writeBinary(path, await encodeAssetDocument({ type: "Scene", name: "Pending", guid: "pending", version: 4, payload: { actors: [] } }));
+    await service.registry!.reindexPath(path);
+    const port: ProjectStorage = storage;
+    const read = port.readBinaryRange.bind(port);
+    let transportSignal: AbortSignal | undefined;
+    vi.spyOn(port, "readBinaryRange").mockImplementation(async (...args) => {
+      const [assetPath, offset, , , options] = args;
+      if (assetPath === path && (phase === "catalog" ? offset === 0 : offset > 12)) {
+        transportSignal = options?.signal;
+        if (!transportSignal) throw new Error("Pending transport has no cancellation signal");
+        const signal = transportSignal;
+        signal.throwIfAborted();
+        return new Promise<never>((_, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true }));
+      }
+      return read(...args);
+    });
+    const controller = new AbortController();
+    const reading = service.readAssetChunk(path, "document", { signal: controller.signal });
+    const rejected = expect(reading).rejects.toThrow(/abort|cancel/i);
+    await vi.waitFor(() => expect(transportSignal).toBeDefined());
+    controller.abort();
+    await rejected;
+    expect(transportSignal!.aborted).toBe(true);
+    await vi.waitFor(() => expect(service.assetLoadingService.snapshot()).toMatchObject({ sourceBytes: 0, decodedBytes: 0, temporaryBytes: 0 }));
+    service.dispose();
+  });
+
   it("opens an idle project without reading inline Scene bodies or unrelated source chunks", async () => {
     const storage = new MemoryStorageAdapter("documents");
     await storage.openDocumentsProject("IdleCatalog");

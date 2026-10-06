@@ -70,6 +70,7 @@ import type {
   TilemapPayload,
   TilesetPayload,
 } from "@babylonslate/assets";
+import { environmentTextureContainer } from "@babylonslate/assets";
 import {
   isPublishedSnapshot,
   readSnapshotHeader,
@@ -3460,11 +3461,14 @@ function initializeEngine(
             check();
             const size = prepared.assets?.texturePixelSizes?.get(guid);
             const sourceSize = bytes instanceof Blob ? bytes.size : bytes.byteLength;
+            const isCube = bytes instanceof Blob
+              ? bytes.type === "application/vnd.babylon.env" || bytes.type === "image/vnd-ms.dds"
+              : environmentTextureContainer(bytes) !== null;
             await nativePreparation.schedule({ label: `Texture ${guid}`, signal: preparation.signal, priority: preparation.priority,
-              temporaryBytes: sourceSize + (size ? size.width * size.height * 8 : Math.max(1024 * 1024, sourceSize * 16)),
+              temporaryBytes: sourceSize + (size ? size.width * size.height * 8 * (isCube ? 6 : 1) : Math.max(1024 * 1024, sourceSize * 16)),
             }, async () => {
               check();
-              const lease = resourceCache.acquireTexture(guid, engine, bytes);
+              const lease = resourceCache.acquireTexture(guid, engine, bytes, { isCube });
               nativeReleases.push(() => lease.release());
               await lease.ready;
             });

@@ -57,7 +57,12 @@ test("inline numeric defaults keep their scrub area inside the shared input", { 
 
 test("Add Component actions match the viewport island and Class tabs use their asset icon", { tag: IPAD_TEST_TAG }, async ({ page }, testInfo) => {
   await openMinimalTestProject(page);
-  const tileThumbnail = page.locator('[data-asset-path="assets/main.class.babasset"] img');
+  const tile = page.locator('[data-asset-path="assets/main.class.babasset"]');
+  await expect(tile.locator('[data-type-icon="Actor"]')).toBeVisible();
+  await tile.click();
+  await tile.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Generate Thumbnail", exact: true }).click();
+  const tileThumbnail = tile.locator("img");
   await expect(tileThumbnail).toBeVisible({ timeout: 30_000 });
   await openMainScene(page);
   await page.getByTestId("tree-row-actor:actor-1").click();

@@ -253,7 +253,25 @@ describe("Play source ownership", () => {
     expect(second.game.fontFacetypeBytes.size).toBe(0);
     expect(second.content).not.toBe(first.content);
     expect(storage.getReadMetrics().actualBytesRead - before).toBe(1002);
-    first.release(); second.release(); loading.dispose();
+    const third = await acquirePlayAssetSources(host, ["font"], {
+      consumer: "Second bitmap label", signal: new AbortController().signal, fontModes: new Map([["font", new Set(["bitmap" as const])]]),
+    });
+    const bitmap = second.sources.fonts?.[0]?.bytes;
+    expect(ArrayBuffer.isView(bitmap)).toBe(true);
+    if (!bitmap || !ArrayBuffer.isView(bitmap)) throw new Error("Expected a scoped font source view");
+    expect(bitmap.buffer).toBe(second.game.fontBytes.get("font")?.buffer);
+    expect(third.game.fontBytes.get("font")?.buffer).toBe(bitmap.buffer);
+    first.release(); second.release();
+    loading.trim({ force: true });
+    expect(second.sources.fonts).toEqual([]);
+    expect(second.game.fontBytes.size).toBe(0);
+    expect(third.sources.fonts?.[0]?.bytes.byteLength).toBe(1000);
+    expect(third.game.fontBytes.get("font")?.byteLength).toBe(1000);
+    third.release();
+    loading.trim({ force: true });
+    expect(third.sources.fonts).toEqual([]);
+    expect(loading.snapshot()).toMatchObject({ sourceBytes: 0, decodedBytes: 0, entries: [] });
+    loading.dispose();
   });
 
   it("refreshes bounded catalog dependencies before preparing a scene changed outside the registry", async () => {
@@ -307,6 +325,8 @@ describe("Play source ownership", () => {
     }] }));
     for (const id of ["scene-a", "scene-b"]) await write(id, "Scene", {}, [
       { id: "document", kind: "document", mime: "application/json", data: document },
+      { id: "navmesh", kind: "navmesh", mime: "application/octet-stream", data: new Uint8Array([1, 2, 3]) },
+      { id: "audioReverb", kind: "audio-reverb", mime: "application/octet-stream", data: new Uint8Array([4, 5]) },
     ], ["model", "audio", "font"]);
     const model = buildBoxGlbFixture();
     await write("model", "Model", {}, [{ id: "source", kind: "model", mime: "model/gltf-binary", data: model }]);
@@ -330,23 +350,35 @@ describe("Play source ownership", () => {
     };
     const before = storage.getReadMetrics().actualBytesRead;
     const first = await acquirePlayAssetSources(host, ["scene-a"], { consumer: "Scene A", signal: new AbortController().signal });
-    expect(storage.getReadMetrics().actualBytesRead - before).toBe(document.byteLength + model.byteLength + 7);
+    expect(storage.getReadMetrics().actualBytesRead - before).toBe(document.byteLength + model.byteLength + 12);
     expect(first.audioChunks.get("audio")?.get("second")).toEqual(new Uint8Array([3, 4, 5]));
     expect(first.game.fontBytes.size).toBe(0);
     expect(first.game.fontFacetypeBytes.has("font")).toBe(true);
     expect(first.content.complexMeshes.get("model")?.vertices.length).toBeGreaterThan(0);
     const second = await acquirePlayAssetSources(host, ["scene-b"], { consumer: "Scene B", signal: new AbortController().signal });
     expect(second.content.complexMeshes.get("model")).toBe(first.content.complexMeshes.get("model"));
-    expect(storage.getReadMetrics().actualBytesRead - before).toBe(document.byteLength * 2 + model.byteLength + 7);
+    expect(storage.getReadMetrics().actualBytesRead - before).toBe(document.byteLength * 2 + model.byteLength + 17);
     const merged = mergePreparedPlaySources([first, second])!;
     expect(merged.game.scenes.size).toBe(2);
     expect(merged.content.complexMeshes.get("model")).toBe(second.content.complexMeshes.get("model"));
     expect(merged.controls.some((control) => control.type === "loadModels")).toBe(true);
     first.release();
     loading.trim({ force: true });
+    expect(first.content.complexMeshes.size).toBe(0);
+    expect(first.content.navmeshByScene.size).toBe(0);
+    expect(first.content.audioReverbByScene.size).toBe(0);
+    expect(first.content.navmeshBytes).toBeNull();
+    expect(first.content.audioReverbBytes).toBeNull();
+    expect(first.sources.audioLibrary?.audio.size).toBe(0);
     expect(second.content.complexMeshes.get("model")?.vertices.length).toBeGreaterThan(0);
+    expect(second.content.navmeshBytes).toEqual(new Uint8Array([1, 2, 3]));
+    expect(second.content.audioReverbBytes).toEqual(new Uint8Array([4, 5]));
+    expect(second.sources.audioLibrary?.audio.has("audio")).toBe(true);
     second.release();
     loading.trim({ force: true });
+    expect(second.content.complexMeshes.size).toBe(0);
+    expect(second.content.navmeshByScene.size).toBe(0);
+    expect(second.content.audioReverbByScene.size).toBe(0);
     expect(loading.snapshot()).toMatchObject({ sourceBytes: 0, decodedBytes: 0, temporaryBytes: 0, entries: [] });
     expect(emptyPlaySourceControls()).toContainEqual({ type: "loadModels", models: [], complexMeshes: [] });
     loading.dispose();

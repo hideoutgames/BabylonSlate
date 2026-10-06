@@ -1,4 +1,4 @@
-import type { ProjectStorage, ProjectStorageReader } from "@babylonslate/core";
+import type { ProjectStorage, ProjectStorageReader, StorageReadOptions } from "@babylonslate/core";
 import { SourceRevisionChangedError } from "@babylonslate/core";
 import {
   BABASSET_PREFIX_BYTES,
@@ -27,12 +27,15 @@ export interface AssetCatalogRead {
 }
 
 /** Read only the bounded prefix and JSON header; never allocate an inline payload. */
-export async function readAssetCatalog(storage: ProjectStorageReader, path: string): Promise<AssetCatalogRead> {
-  const prefix = await storage.readBinaryRange(path, 0, BABASSET_PREFIX_BYTES);
+export async function readAssetCatalog(storage: ProjectStorageReader, path: string, options: StorageReadOptions = {}): Promise<AssetCatalogRead> {
+  options.signal?.throwIfAborted();
+  const prefix = await storage.readBinaryRange(path, 0, BABASSET_PREFIX_BYTES, undefined, options);
+  options.signal?.throwIfAborted();
   const headerLength = readBabassetHeaderLength(prefix.bytes);
   const payloadOffset = BABASSET_PREFIX_BYTES + headerLength;
   if (payloadOffset > prefix.totalSize) throw new Error(`Truncated .babasset header: ${path}`);
-  const body = await storage.readBinaryRange(path, BABASSET_PREFIX_BYTES, headerLength, prefix.revision);
+  const body = await storage.readBinaryRange(path, BABASSET_PREFIX_BYTES, headerLength, prefix.revision, options);
+  options.signal?.throwIfAborted();
   if (body.totalSize !== prefix.totalSize || body.revision !== prefix.revision) throw new SourceRevisionChangedError(`Asset changed while reading its header: ${path}`);
   if (body.bytes.byteLength !== headerLength) throw new Error(`Truncated .babasset header: ${path}`);
   const headerBytes = concatBytes([prefix.bytes, body.bytes]);
@@ -44,17 +47,20 @@ export async function readAssetCatalog(storage: ProjectStorageReader, path: stri
     totalSize: prefix.totalSize,
     payloadOffset,
   };
+  options.signal?.throwIfAborted();
   for (const entry of header.chunks) validateChunkBounds(locator, entry);
   return { header, locator };
 }
 
 /** Weak timestamp/size tokens require a bounded header check before publication. */
-export async function validateAssetSourceLocator(storage: ProjectStorageReader, asset: AssetSourceLocator): Promise<void> {
+export async function validateAssetSourceLocator(storage: ProjectStorageReader, asset: AssetSourceLocator, options: StorageReadOptions = {}): Promise<void> {
+  options.signal?.throwIfAborted();
   if (storage.hasStrongSourceRevisions) {
-    const current = await storage.readBinaryRange(asset.path, 0, 0, asset.storageRevision);
+    const current = await storage.readBinaryRange(asset.path, 0, 0, asset.storageRevision, options);
+    options.signal?.throwIfAborted();
     if (current.revision === asset.storageRevision && current.totalSize === asset.totalSize) return;
   } else {
-    const { locator } = await readAssetCatalog(storage, asset.path);
+    const { locator } = await readAssetCatalog(storage, asset.path, options);
     if (locator.revision === asset.revision && locator.totalSize === asset.totalSize) return;
   }
   throw new SourceRevisionChangedError(`Asset changed during loading: ${asset.path}`);
@@ -122,6 +128,7 @@ export class AccountedPayloadLoader {
     entry: ChunkEntry,
     blobs: BlobStore = this.blobs,
     storage: ProjectStorageReader = this.storage,
+    options: StorageReadOptions = {},
   ): Promise<Uint8Array> {
     const request: PayloadChunkRequest = {
       id: ++this.requests,
@@ -135,7 +142,7 @@ export class AccountedPayloadLoader {
     this.recentRequests.push(request);
     if (this.recentRequests.length > 128) this.recentRequests.shift();
     try {
-      const data = await this.loadValidatedChunk(asset, entry, blobs, storage, request);
+      const data = await this.loadValidatedChunk(asset, entry, blobs, storage, request, options);
       request.status = "succeeded";
       this.succeeded += 1;
       return data;
@@ -153,32 +160,39 @@ export class AccountedPayloadLoader {
     blobs: BlobStore,
     storage: ProjectStorageReader,
     request: PayloadChunkRequest,
+    options: StorageReadOptions,
   ): Promise<Uint8Array> {
+    options.signal?.throwIfAborted();
     validateChunkBounds(asset, entry);
     let data: Uint8Array;
     if ("inline" in entry.locator) {
       const { offset, length } = entry.locator.inline;
-      const result = await storage.readBinaryRange(asset.path, asset.payloadOffset + offset, length, asset.storageRevision);
+      const result = await storage.readBinaryRange(asset.path, asset.payloadOffset + offset, length, asset.storageRevision, options);
       request.payloadBytes = result.bytes.byteLength;
+      options.signal?.throwIfAborted();
       if (result.totalSize !== asset.totalSize || result.revision !== asset.storageRevision) throw new SourceRevisionChangedError(`Asset changed while reading chunk ${entry.id}: ${asset.path}`);
       if (result.bytes.byteLength !== length) throw new Error(`Length mismatch for chunk ${entry.id} in ${asset.path}`);
       data = result.bytes;
     } else {
-      await validateAssetSourceLocator(storage, asset);
+      await validateAssetSourceLocator(storage, asset, options);
       if (entry.byteLength !== undefined && blobs.blobByteLength &&
-        await blobs.blobByteLength(entry.locator.blob) !== entry.byteLength) {
+        await blobs.blobByteLength(entry.locator.blob, options) !== entry.byteLength) {
         throw new Error(`Length mismatch for chunk ${entry.id} in ${asset.path}`);
       }
-      data = await blobs.readBlob(entry.locator.blob);
+      options.signal?.throwIfAborted();
+      data = await blobs.readBlob(entry.locator.blob, options);
     }
     request.payloadBytes = data.byteLength;
+    options.signal?.throwIfAborted();
     if (entry.byteLength !== undefined && data.byteLength !== entry.byteLength) {
       throw new Error(`Length mismatch for chunk ${entry.id} in ${asset.path}`);
     }
-    if (await sha256Hex(data) !== entry.sha256) {
+    const hash = await sha256Hex(data);
+    options.signal?.throwIfAborted();
+    if (hash !== entry.sha256) {
       throw new Error(`Hash mismatch for chunk ${entry.id} in ${asset.path}`);
     }
-    await validateAssetSourceLocator(storage, asset);
+    await validateAssetSourceLocator(storage, asset, options);
     this.accounted += data.byteLength;
     return data;
   }

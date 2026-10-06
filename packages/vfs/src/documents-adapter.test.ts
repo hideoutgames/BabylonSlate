@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SourceRevisionChangedError } from "@babylonslate/core";
 import { DocumentsStorageAdapter } from "./documents-adapter";
+import { createMountedProjectStorage } from "./mounted-storage";
 import {
   createFakeDocumentsFs,
   type FakeDocumentsFs,
@@ -95,6 +96,17 @@ describe("DocumentsStorageAdapter", () => {
     vi.mocked(fs.readFileRange).mockRejectedValue(unrelated);
     await expect(storage.readBinaryRange("asset.babasset", 0, 4)).rejects.toBe(unrelated);
     expect(storage.getReadMetrics()).toMatchObject({ rangeReads: 2, actualBytesRead: 2, fullReads: 0 });
+  });
+
+  it("preserves discarded bytes through mounted views when native decoding or validation fails", async () => {
+    await storage.openDocumentsProject("Game");
+    const mounted = createMountedProjectStorage([{ path: "plugin", storage, sourcePath: "" }]);
+    fs.readFileRange = vi.fn().mockResolvedValue({ data: "!", totalSize: 10, revision: "new", actualBytesRead: 2 });
+    await expect(mounted.readBinaryRange("plugin/asset", 0, 2)).rejects.toThrow();
+    vi.mocked(fs.readFileRange).mockResolvedValue({ data: btoa("ab"), totalSize: 10, revision: "new", actualBytesRead: 2 });
+    await expect(mounted.readBinaryRange("plugin/asset", 0, 2, "old")).rejects.toBeInstanceOf(SourceRevisionChangedError);
+    expect(storage.getReadMetrics()).toMatchObject({ actualBytesRead: 4, rangeReads: 2 });
+    expect(mounted.getReadMetrics!()).toMatchObject({ actualBytesRead: 4, rangeReads: 2 });
   });
 
   it.each(["../Other", "", ".", "..", "/Other", "Game/Other", "Game\\Other"])("rejects unsafe project folder names: %s", async (name) => {

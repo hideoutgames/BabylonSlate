@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SourceRevisionChangedError } from "@babylonslate/core";
 import { ElectronStorageAdapter } from "./electron-storage-adapter";
 import type { ElectronProjectBridge } from "./platform";
+import { createMountedProjectStorage } from "./mounted-storage";
 
 function fakeProjectBridge(): ElectronProjectBridge {
   const files = new Map<string, Uint8Array>();
@@ -71,8 +72,10 @@ describe("ElectronStorageAdapter", () => {
     vi.mocked(bridge.readBinaryRange).mockResolvedValue({ bytes: new ArrayBuffer(0), totalSize: 0, revision: "",
       actualBytesRead: 12, error: "Source revision changed", errorCode: "source-revision-changed" });
     const storage = new ElectronStorageAdapter(bridge);
-    await expect(storage.readBinaryRange("asset.babasset", 0, 12)).rejects.toBeInstanceOf(SourceRevisionChangedError);
+    const mounted = createMountedProjectStorage([{ path: "plugin", storage, sourcePath: "" }]);
+    await expect(mounted.readBinaryRange("plugin/asset.babasset", 0, 12)).rejects.toBeInstanceOf(SourceRevisionChangedError);
     expect(storage.getReadMetrics()).toMatchObject({ actualBytesRead: 12, rangeReads: 1, fullReads: 0 });
+    expect(mounted.getReadMetrics!()).toMatchObject({ actualBytesRead: 12, rangeReads: 1, fullReads: 0 });
   });
 
   it.each(["File not found", "Source revision changed"])("does not classify an untyped native failure as retryable: %s", async (message) => {

@@ -1,12 +1,12 @@
-import type { ProjectStorage } from "@babylonslate/core";
+import type { ProjectStorage, StorageReadOptions } from "@babylonslate/core";
 import { BLOBS_DIR } from "./babproject";
 
 export interface BlobStore {
   writeBlob(sha256: string, data: Uint8Array): Promise<void>;
-  readBlob(sha256: string): Promise<Uint8Array>;
+  readBlob(sha256: string, options?: StorageReadOptions): Promise<Uint8Array>;
   hasBlob(sha256: string): Promise<boolean>;
   /** Metadata-only size lookup for budgeting a legacy chunk without byteLength. */
-  blobByteLength?(sha256: string): Promise<number>;
+  blobByteLength?(sha256: string, options?: StorageReadOptions): Promise<number>;
 }
 
 /**
@@ -26,14 +26,19 @@ export function createVfsBlobStore(
       await storage.mkdir(blobDir, true);
       await storage.writeBinary(pathFor(sha256), data);
     },
-    async readBlob(sha256) {
-      return storage.readBinary(pathFor(sha256));
+    async readBlob(sha256, options) {
+      options?.signal?.throwIfAborted();
+      const data = await storage.readBinary(pathFor(sha256), options);
+      options?.signal?.throwIfAborted();
+      return data;
     },
     async hasBlob(sha256) {
       return storage.exists(pathFor(sha256));
     },
-    async blobByteLength(sha256) {
+    async blobByteLength(sha256, options) {
+      options?.signal?.throwIfAborted();
       const stat = await storage.stat(pathFor(sha256));
+      options?.signal?.throwIfAborted();
       if (stat.isDir || stat.size === null) throw new Error(`Blob size is unavailable: ${sha256}`);
       return stat.size;
     },
@@ -47,7 +52,8 @@ export function createMemoryBlobStore(): BlobStore {
     async writeBlob(sha256, data) {
       if (!blobs.has(sha256)) blobs.set(sha256, data);
     },
-    async readBlob(sha256) {
+    async readBlob(sha256, options) {
+      options?.signal?.throwIfAborted();
       const data = blobs.get(sha256);
       if (!data) throw new Error(`Blob not found: ${sha256}`);
       return data;
@@ -55,7 +61,8 @@ export function createMemoryBlobStore(): BlobStore {
     async hasBlob(sha256) {
       return blobs.has(sha256);
     },
-    async blobByteLength(sha256) {
+    async blobByteLength(sha256, options) {
+      options?.signal?.throwIfAborted();
       const data = blobs.get(sha256);
       if (!data) throw new Error(`Blob not found: ${sha256}`);
       return data.byteLength;

@@ -14,6 +14,17 @@ beforeEach(() => vi.stubGlobal("crypto", webcrypto));
 afterEach(() => vi.unstubAllGlobals());
 
 describe("HTTP catalog storage", () => {
+  it("rejects an already cancelled read before allocating its content or fetching", async () => {
+    const fetcher = vi.fn<typeof fetch>();
+    const storage = new HttpCatalogStorageAdapter(await catalog(), { baseUrl: "/", fetch: fetcher });
+    const controller = new AbortController();
+    controller.abort();
+    await expect(storage.readBinaryRange("pack/large.babasset", 2, 4, undefined, { signal: controller.signal }))
+      .rejects.toMatchObject({ name: "AbortError", cause: controller.signal.reason, actualBytesRead: 0 });
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(storage.getReadMetrics()).toMatchObject({ rangeReads: 1, requestedBytes: 4, actualBytesRead: 0 });
+  });
+
   it("browses without fetching files and reads independent header/chunk objects on ordinary static hosts", async () => {
     const fetcher = vi.fn<typeof fetch>(async function (this: unknown, input) {
       expect(this).toBeUndefined();

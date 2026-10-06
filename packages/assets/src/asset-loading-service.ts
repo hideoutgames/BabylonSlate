@@ -1,3 +1,5 @@
+import { SourceRevisionChangedError } from "@babylonslate/core";
+
 /** Project-scoped source/CPU loading. Engine resources remain in ResourceCache. */
 export type AssetLoadState = "unloaded" | "loading" | "ready" | "failed";
 export type AssetLoadPriority = "gameplay" | "preload" | "background";
@@ -41,7 +43,7 @@ export interface AssetLoadingBudgets {
 
 export interface AssetLoadingServiceOptions {
   projectId: string;
-  resolve: (id: string) => AssetCatalogRecord | Promise<AssetCatalogRecord>;
+  resolve: (id: string, signal?: AbortSignal) => AssetCatalogRecord | Promise<AssetCatalogRecord>;
   representation: (asset: AssetCatalogRecord) => AssetRepresentation;
   budgets?: Partial<AssetLoadingBudgets>;
   now?: () => number;
@@ -77,6 +79,18 @@ export class AssetLoadError extends Error {
     this.consumer = consumer;
     this.name = "AssetLoadError";
   }
+}
+
+/** Superseded owners and ordinary load failures are not retryable source changes. */
+export function isAssetSourceRevisionChanged(error: unknown): boolean {
+  let changed = false;
+  const seen = new Set<unknown>();
+  for (let cause = error; cause instanceof Error && !seen.has(cause); cause = cause.cause) {
+    seen.add(cause);
+    if (cause instanceof AssetLoadError && (cause.code === "cancelled" || cause.code === "budget")) return false;
+    if (cause instanceof SourceRevisionChangedError) changed = true;
+  }
+  return changed;
 }
 
 export interface AssetLoadingSnapshot {
@@ -280,7 +294,7 @@ export class AssetLoadingService {
         visited.add(id);
         check();
         let record: AssetCatalogRecord;
-        try { record = await this.options.resolve(id); }
+        try { record = await this.options.resolve(id, signal); }
         catch (cause) { throw this.error("missing", id, ticket.owner, errorMessage(cause), cause); }
         check();
         records.set(id, record);
@@ -301,9 +315,10 @@ export class AssetLoadingService {
       this.pump();
       await abortable(Promise.all(promises), signal, () => this.error("cancelled", assetId, ticket.owner, "request cancelled"));
       await abortable(Promise.all([...records.values()].map(async (asset) => {
-        const current = await this.options.resolve(asset.id);
+        const current = await this.options.resolve(asset.id, signal);
         if (current.revision !== asset.revision || current.rootId !== asset.rootId) {
-          throw this.error("stale", asset.id, ticket.owner, "asset changed while dependencies loaded; retry the current revision");
+          throw this.error("stale", asset.id, ticket.owner, "asset changed while dependencies loaded; retry the current revision",
+            new SourceRevisionChangedError(`Asset ${asset.id} changed while dependencies loaded`));
         }
       })), signal, () => this.error("cancelled", assetId, ticket.owner, "request cancelled"));
       check();
@@ -371,6 +386,11 @@ export class AssetLoadingService {
       entry.priority = Math.min(entry.priority, PRIORITY[priority]);
     } else {
       for (const value of Object.values(representation.estimate)) byteCount(value);
+      const memory = representation.estimate;
+      if (memory.sourceBytes > this.budgets.sourceBytes || memory.decodedBytes > this.budgets.decodedBytes
+        || memory.temporaryBytes > this.budgets.temporaryBytes) {
+        throw this.error("budget", asset.id, ticket.owner, "request exceeds the configured budget");
+      }
       entry = {
         key, asset, representation: { key: representation.key, estimate: representation.estimate }, load: representation.load,
         state: "loading", owners: new Set(), controller: new AbortController(),
@@ -394,12 +414,6 @@ export class AssetLoadingService {
     while (this.active < this.budgets.concurrency && this.queue.length) {
       const entry = this.queue[0];
       const memory = entry.representation.estimate;
-      if (memory.sourceBytes > this.budgets.sourceBytes || memory.decodedBytes > this.budgets.decodedBytes
-        || memory.temporaryBytes > this.budgets.temporaryBytes) {
-        this.queue.shift();
-        this.fail(entry, this.budgetError(entry, "request exceeds the configured budget"));
-        continue;
-      }
       if (!this.fits(memory)) {
         for (const candidate of [...this.entries.values()].sort((a, b) => a.lastUsed - b.lastUsed)) {
           if (candidate.owners.size === 0 && candidate.state !== "loading") this.evict(candidate);
@@ -441,12 +455,13 @@ export class AssetLoadingService {
       if (entry.controller.signal.aborted || this.disposed) throw cancelled();
       // Metadata validation owns no decoded resource. Stop waiting for a slow
       // provider as soon as the final consumer leaves, and dispose the result.
-      const current = await abortable(Promise.resolve(this.options.resolve(entry.asset.id)), entry.controller.signal, cancelled);
+      const current = await abortable(Promise.resolve(this.options.resolve(entry.asset.id, entry.controller.signal)), entry.controller.signal, cancelled);
       if (entry.controller.signal.aborted || this.disposed || this.entries.get(entry.key) !== entry) {
         throw cancelled();
       }
       if (current.revision !== entry.asset.revision || current.rootId !== entry.asset.rootId) {
-        throw this.error("stale", entry.asset.id, this.owner(entry), "asset changed during loading; retry the current revision");
+        throw this.error("stale", entry.asset.id, this.owner(entry), "asset changed during loading; retry the current revision",
+          new SourceRevisionChangedError(`Asset ${entry.asset.id} changed during loading`));
       }
       const sourceBytes = byteCount(result.sourceBytes ?? memory.sourceBytes);
       const decodedBytes = byteCount(result.decodedBytes ?? memory.decodedBytes);

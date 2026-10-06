@@ -1,4 +1,4 @@
-import { checkStorageRevision, StorageReadCounter, validateStorageRange } from "./storage-range";
+import { checkStorageRevision, rethrowStorageReadFailure, StorageReadCounter, validateStorageRange } from "./storage-range";
 import { SourceRevisionChangedError } from "@babylonslate/core";
 import type {
   DirEntry,
@@ -306,9 +306,11 @@ export class OpfsStorageAdapter implements ProjectStorage {
       throw error;
     }
     this.reads.record("range", length, bytes.byteLength);
-    if (bytes.byteLength !== length) throw new Error(`Unexpected end of file: ${path}`);
-    checkStorageRevision(path, revisionOf(await handle.getFile()), revision);
-    return { bytes, totalSize: file.size, revision, actualBytesRead: bytes.byteLength };
+    try {
+      if (bytes.byteLength !== length) throw new Error(`Unexpected end of file: ${path}`);
+      checkStorageRevision(path, revisionOf(await handle.getFile()), revision);
+      return { bytes, totalSize: file.size, revision, actualBytesRead: bytes.byteLength };
+    } catch (error) { rethrowStorageReadFailure(error, bytes.byteLength); }
   }
 
   async writeBinary(path: string, data: Uint8Array): Promise<void> {

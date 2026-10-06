@@ -1,4 +1,4 @@
-import type { ProjectStorage, ProjectStorageReader } from "@babylonslate/core";
+import type { ProjectStorage, ProjectStorageReader, StorageReadOptions } from "@babylonslate/core";
 import { ENGINE_VERSION, SourceRevisionChangedError } from "@babylonslate/core";
 import {
   decodeBabasset,
@@ -260,19 +260,24 @@ export class AssetRegistry {
   }
 
   /** Resolve a catalog snapshot without touching any payload. */
-  async getAssetLocator(guid: string): Promise<AssetSourceLocator> {
+  async getAssetLocator(guid: string, options: StorageReadOptions = {}): Promise<AssetSourceLocator> {
+    options.signal?.throwIfAborted();
     const asset = this.byGuid.get(guid);
     if (!asset || asset.placeholder) throw new Error(`Asset is unavailable: ${guid}`);
     const storage = this.storageForAsset(asset);
     if (asset.locator && storage.hasStrongSourceRevisions) {
-      const current = await storage.readBinaryRange(asset.path, 0, 0);
+      const current = await storage.readBinaryRange(asset.path, 0, 0, undefined, options);
+      options.signal?.throwIfAborted();
       if (this.byGuid.get(guid) !== asset) throw new SourceRevisionChangedError(`Asset changed while resolving its catalog entry: ${guid}`);
       if (current.revision === asset.locator.storageRevision && current.totalSize === asset.locator.totalSize) return asset.locator;
     }
-    const pending = this.locatorRequests.get(guid);
+    // Only unsignaled metadata refreshes share this promise. A scoped request
+    // owns its transport signal; canceling it must not abort another consumer.
+    const pending = options.signal ? undefined : this.locatorRequests.get(guid);
     if (pending?.asset === asset) return pending.promise;
     const promise = (async () => {
-      const { header, locator } = await readAssetCatalog(this.storageForAsset(asset), asset.path);
+      const { header, locator } = await readAssetCatalog(this.storageForAsset(asset), asset.path, options);
+      options.signal?.throwIfAborted();
       if (this.byGuid.get(guid) !== asset || header.guid !== guid) {
         throw new SourceRevisionChangedError(`Asset changed while resolving its catalog entry: ${guid}`);
       }
@@ -280,47 +285,56 @@ export class AssetRegistry {
       this.indexHeader(asset.rootId, asset.path, header, false, asset.mtime, locator);
       return locator;
     })();
+    if (options.signal) return promise;
     this.locatorRequests.set(guid, { asset, promise });
     try { return await promise; }
     finally { if (this.locatorRequests.get(guid)?.promise === promise) this.locatorRequests.delete(guid); }
   }
 
   /** Load only the selected representation, with the catalog revision checked. */
-  async readChunk(guid: string, chunkId: string): Promise<Uint8Array> {
-    const locator = await this.getAssetLocator(guid);
+  async readChunk(guid: string, chunkId: string, expectedRevision?: string, options: StorageReadOptions = {}): Promise<Uint8Array> {
+    const locator = await this.getAssetLocator(guid, options);
+    options.signal?.throwIfAborted();
+    if (expectedRevision !== undefined && locator.revision !== expectedRevision) throw new SourceRevisionChangedError(`Asset changed before reading chunk ${chunkId}: ${guid}`);
     const asset = this.byGuid.get(guid);
     if (!asset || asset.locator !== locator) throw new SourceRevisionChangedError(`Asset changed while preparing chunk ${chunkId}: ${guid}`);
     const entry = asset.header.chunks.find((chunk) => chunk.id === chunkId);
     if (!entry) throw new Error(`Missing chunk ${chunkId} in asset ${guid} (${asset.path})`);
-    return this.loader.loadChunk(locator, entry, this.blobsForAsset(asset), this.storageForAsset(asset));
+    return this.loader.loadChunk(locator, entry, this.blobsForAsset(asset), this.storageForAsset(asset), options);
   }
 
   /** Reserve memory before reading, including blobs written before length metadata. */
-  async getChunkByteLength(guid: string, chunkId: string): Promise<number> {
-    await this.getAssetLocator(guid);
+  async getChunkByteLength(guid: string, chunkId: string, expectedRevision?: string, options: StorageReadOptions = {}): Promise<number> {
+    const locator = await this.getAssetLocator(guid, options);
+    options.signal?.throwIfAborted();
+    if (expectedRevision !== undefined && locator.revision !== expectedRevision) throw new SourceRevisionChangedError(`Asset changed before estimating chunk ${chunkId}: ${guid}`);
     const asset = this.byGuid.get(guid);
+    if (!asset || asset.locator !== locator) throw new SourceRevisionChangedError(`Asset changed while estimating chunk ${chunkId}: ${guid}`);
     const entry = asset?.header.chunks.find((chunk) => chunk.id === chunkId);
     if (!asset || !entry) throw new Error(`Missing chunk ${chunkId} in asset ${guid}`);
     if (entry.byteLength !== undefined) return entry.byteLength;
     if ("inline" in entry.locator) return entry.locator.inline.length;
     const blobs = this.blobsForAsset(asset);
     if (!blobs.blobByteLength) throw new Error(`Blob storage cannot report the size of legacy chunk ${chunkId}; upgrade asset ${guid}`);
-    const size = await blobs.blobByteLength(entry.locator.blob);
+    const size = await blobs.blobByteLength(entry.locator.blob, options);
+    options.signal?.throwIfAborted();
     if (!Number.isSafeInteger(size) || size < 0) throw new Error(`Invalid blob size for ${chunkId} in asset ${guid}`);
     return size;
   }
 
   /** Document opening does not pull in retained originals or derived representations. */
-  async readAssetDocument(guid: string): Promise<AssetDocument> {
-    const locator = await this.getAssetLocator(guid);
+  async readAssetDocument(guid: string, options: StorageReadOptions = {}): Promise<AssetDocument> {
+    const locator = await this.getAssetLocator(guid, options);
+    options.signal?.throwIfAborted();
     const asset = this.byGuid.get(guid);
     if (!asset || asset.placeholder) throw new Error(`Asset is unavailable: ${guid}`);
     const { header } = asset;
     const body = header.chunks.find((chunk) => chunk.id === DOCUMENT_CHUNK_ID);
     const payload = body
-      ? JSON.parse(new TextDecoder().decode(await this.readChunk(guid, body.id))) as Record<string, unknown>
+      ? JSON.parse(new TextDecoder().decode(await this.readChunk(guid, body.id, locator.revision, options))) as Record<string, unknown>
       : header.payload;
-    if (!body) await validateAssetSourceLocator(this.storageForAsset(asset), locator);
+    if (!body) await validateAssetSourceLocator(this.storageForAsset(asset), locator, options);
+    options.signal?.throwIfAborted();
     if (this.byGuid.get(guid) !== asset) throw new Error(`Asset changed while reading document: ${guid}`);
     if (!body && Object.keys(payload).length === 0 && header.type !== "Audio") {
       throw new Error(`Asset ${guid} is missing its "${DOCUMENT_CHUNK_ID}" chunk or header payload`);
@@ -1108,14 +1122,14 @@ export class AssetRegistry {
     return this.encodeQueue.enqueueDerived(async (signal) => {
       const asset = this.byGuid.get(guid);
       if (!asset || asset.header.type !== "Texture" || isEnvironmentTexturePayload(asset.header.payload)) throw new Error("Area emission requires a raster Texture asset.");
-      const locator = await this.getAssetLocator(guid);
+      const locator = await this.getAssetLocator(guid, { signal });
       const header = this.byGuid.get(guid)!.header;
       const sourceEntry = header.chunks.find((chunk) => chunk.id === "pixels" || chunk.kind === "pixels");
       if (!sourceEntry) throw new Error("The Texture has no retained source pixels.");
       const cached = currentAreaEmissionChunk(header);
       if (cached) {
         try {
-          const bytes = await this.loader.loadChunk(locator, cached, this.blobsForAsset(asset), this.storageForAsset(asset));
+          const bytes = await this.loader.loadChunk(locator, cached, this.blobsForAsset(asset), this.storageForAsset(asset), { signal });
           if (bytes) {
             await decodeAreaEmission(bytes, sourceEntry.sha256);
             signal.throwIfAborted();
@@ -1128,7 +1142,7 @@ export class AssetRegistry {
         }
       }
       this.assertWritable(this.getRootOrThrow(asset.rootId));
-      const source = await this.loader.loadChunk(locator, sourceEntry, this.blobsForAsset(asset), this.storageForAsset(asset));
+      const source = await this.loader.loadChunk(locator, sourceEntry, this.blobsForAsset(asset), this.storageForAsset(asset), { signal });
       if (!source || await sha256Hex(source) !== sourceEntry.sha256) throw new Error("The emission source is missing or corrupt.");
       const bytes = await process({ source, sourceHash: sourceEntry.sha256, mime: sourceEntry.mime }, signal, options.onProgress);
       signal.throwIfAborted();

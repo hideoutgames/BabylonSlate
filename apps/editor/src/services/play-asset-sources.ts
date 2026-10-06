@@ -1,6 +1,6 @@
 import { SourceRevisionChangedError, areaEmissionTextureGuids, normalizeScene, normalizeSceneLayer, parseText2DProperties, renderEffectsAssetGuids, type ProjectDocument } from "@babylonslate/core";
 import {
-  AssetLoadError, AUDIO_DEFAULT_SOURCE_CHUNK, FONT_FACETYPE_CHUNK_ID, FONT_MSDF_CHUNK_ID, FONT_MSDF_PNG_CHUNK_ID,
+  isAssetSourceRevisionChanged, AUDIO_DEFAULT_SOURCE_CHUNK, FONT_FACETYPE_CHUNK_ID, FONT_MSDF_CHUNK_ID, FONT_MSDF_PNG_CHUNK_ID,
   cookComplexCollisionMeshes, currentAreaEmissionChunk, decodeAreaEmission, modelAnimationDurations, normalizeAudioPayload, normalizeFontPayload, normalizeModelPayload,
   registryAssetRepresentation, selectTextureChunk, type AssetLoadScope, type AssetRegistry,
   type IndexedAsset, type RegistryLoadedAsset,
@@ -41,7 +41,7 @@ async function currentRequiredPlayAssets(registry: AssetRegistry, roots: readonl
     signal.throwIfAborted();
     const guid = pending.pop()!;
     if (revisions.has(guid)) continue;
-    const locator = await cancellableCatalogRead(registry.getAssetLocator(guid), signal);
+    const locator = await cancellableCatalogRead(registry.getAssetLocator(guid, { signal }), signal);
     signal.throwIfAborted();
     const asset = registry.getByGuid(guid);
     if (!asset || asset.placeholder || asset.locator !== locator) throw new SourceRevisionChangedError(`Required asset changed while resolving: ${guid}`);
@@ -125,24 +125,10 @@ export async function acquirePlayAssetSources(
     try { return await acquirePlayAssetSourcesAttempt(host, roots, options); }
     catch (error) {
       options.signal.throwIfAborted();
-      if (!isRevisionChange(error)) throw error;
+      if (!isAssetSourceRevisionChanged(error)) throw error;
       if (attempt === 3) throw new Error(`Asset preparation for ${options.consumer} could not stabilize after 3 attempts; wait for saving or baking to finish, then retry. ${error instanceof Error ? error.message : String(error)}`, { cause: error });
     }
   }
-}
-
-function isRevisionChange(error: unknown): boolean {
-  let stale = false;
-  const seen = new Set<unknown>();
-  for (let cause = error; cause instanceof Error && !seen.has(cause); cause = cause.cause) {
-    seen.add(cause);
-    if (cause instanceof AssetLoadError) {
-      if (cause.code === "cancelled" || cause.code === "budget") return false;
-      if (cause.code === "stale") stale = true;
-    }
-    if (cause instanceof SourceRevisionChangedError) stale = true;
-  }
-  return stale;
 }
 
 /** A shared preparation contract for initial Play, streamed Scenes and explicit preloads. */
@@ -160,6 +146,8 @@ async function acquirePlayAssetSourcesAttempt(
   const complexMeshes: PackedGameContent["complexMeshes"] = new Map();
   const durations = new Map<string, ReadonlyMap<string, number | undefined>>();
   const controls: ControlMessage[] = [];
+  const fonts: Array<NonNullable<SceneSourceAssets["fonts"]>[number]> = [];
+  let ownedContent: PackedGameContent | undefined;
   const game: GameSourceContent = {
     manifest: {
       assetCatalogVersion: 1, startupSceneGuid: roots.find((id) => host.registry.getByGuid(id)?.header.type === "Scene") ?? "",
@@ -179,12 +167,16 @@ async function acquirePlayAssetSourcesAttempt(
   const release = () => {
     if (released) return;
     released = true;
-    scope.dispose();
+    // These containers belong only to this acquisition. Cached metadata and
+    // another consumer's containers stay intact while their scopes survive.
+    if (ownedContent) releasePackedContent(ownedContent);
+    fonts.length = 0;
     audioChunks.clear();
     audioRevisions.clear();
     game.scripts = [];
     controls.length = 0;
     for (const value of Object.values(game)) if (value instanceof Map) value.clear();
+    scope.dispose();
   };
   try {
     // First read authored documents to select the exact binary representations.
@@ -256,7 +248,7 @@ async function acquirePlayAssetSourcesAttempt(
       const asset = host.registry.getByGuid(guid)!;
       const preparedDocument = documents.get(guid)!;
       const document = preparedDocument.document;
-      if ((await host.registry.getAssetLocator(guid)).revision !== preparedDocument.revision) throw new SourceRevisionChangedError(`Asset ${guid} changed after its document loaded; retry`);
+      if ((await host.registry.getAssetLocator(guid, { signal: options.signal })).revision !== preparedDocument.revision) throw new SourceRevisionChangedError(`Asset ${guid} changed after its document loaded; retry`);
       const chunkIds = selectedChunks(asset, document.payload, fontModes, emissions);
       const chunks = new Map<string, Uint8Array>();
       // A chunk stays compatible when another consumer asks for additional
@@ -264,7 +256,7 @@ async function acquirePlayAssetSourcesAttempt(
       for (const chunkId of chunkIds) {
         const representation = await registryAssetRepresentation(host.registry, guid, {
           selectChunks: () => [chunkId], includeDocument: false, representationKey: "runtime-source-chunk",
-        });
+        }, { signal: options.signal });
         const loaded = await scope.acquire<RegistryLoadedAsset>(guid, representation, { signal: options.signal, dependencies: "none" });
         if (loaded.revision !== preparedDocument.revision) throw new SourceRevisionChangedError(`Asset ${guid} changed while selecting source data; retry`);
         chunks.set(chunkId, loaded.chunks.get(chunkId)!);
@@ -349,7 +341,7 @@ async function acquirePlayAssetSourcesAttempt(
         const result = await host.compile(required);
         signal.throwIfAborted();
         for (const [guid, revision] of compileInputs) {
-          if ((await host.registry.getAssetLocator(guid)).revision !== revision) throw new SourceRevisionChangedError(`Class compilation input ${guid} changed; retry`);
+          if ((await host.registry.getAssetLocator(guid, { signal })).revision !== revision) throw new SourceRevisionChangedError(`Class compilation input ${guid} changed; retry`);
         }
         const byPath = new Map(host.registry.list().map(asset => [asset.path, asset]));
         const bundles = result.bundles.map(script => {
@@ -372,20 +364,36 @@ async function acquirePlayAssetSourcesAttempt(
     game.scripts = compiled.bundles;
     options.signal.throwIfAborted();
     const cpuBytes = documentBytes * 8;
-    const content = root ? await scope.acquire(root, {
-      key: `play-content:${JSON.stringify([revisions.sort(([a], [b]) => a.localeCompare(b)), [...fontModes].sort(([a], [b]) => a.localeCompare(b)).map(([guid, modes]) => [guid, [...modes].sort()]), project.settings.fonts, project.settings.twoD, project.settings.audio.audioMixerGuid])}`,
+    const cachedContent = root ? await scope.acquire(root, {
+      key: `play-content:metadata-v2:${JSON.stringify([revisions.sort(([a], [b]) => a.localeCompare(b)), [...fontModes].sort(([a], [b]) => a.localeCompare(b)).map(([guid, modes]) => [guid, [...modes].sort()]), project.settings.fonts, project.settings.twoD, project.settings.audio.audioMixerGuid])}`,
       estimate: { sourceBytes: 0, decodedBytes: cpuBytes, temporaryBytes: sourceBytes },
       load: async (_asset, signal) => {
         signal.throwIfAborted();
-        const value = packedContentFromGame(game);
+        // Baked bytes and collision arrays already belong to separate cache
+        // entries. A metadata cache entry must never prolong their residency.
+        const value = packedContentFromGame({ ...game, navmeshBytes: new Map(), audioReverbBytes: new Map(), complexMeshes: new Map() });
         value.audioLibrary.sourceRevisions = new Map(audioRevisions);
         for (const [guid, revision] of revisions) {
-          const current = await host.registry.getAssetLocator(guid);
+          const current = await host.registry.getAssetLocator(guid, { signal });
           if (current.revision !== revision) throw new SourceRevisionChangedError(`Asset ${guid} (${current.path}) changed during runtime preparation; retry. Expected source revision ${revision}; found ${current.revision}`);
         }
         return { value, sourceBytes: 0, decodedBytes: cpuBytes, dispose: () => releasePackedContent(value) };
       },
     }, { signal: options.signal, dependencies: "none" }) : packedContentFromGame(game);
+    const content = copyContainers(cachedContent);
+    content.audioLibrary = copyContainers(cachedContent.audioLibrary);
+    content.particleLibrary = copyContainers(cachedContent.particleLibrary);
+    content.navmeshByScene = game.navmeshBytes;
+    content.navmeshBytes = game.navmeshBytes.get(game.manifest.startupSceneGuid) ?? null;
+    content.audioReverbByScene = game.audioReverbBytes;
+    content.audioReverbBytes = game.audioReverbBytes.get(game.manifest.startupSceneGuid) ?? null;
+    content.complexMeshes = complexMeshes;
+    ownedContent = content;
+    for (const [guid, bytes] of game.fontBytes) {
+      if (!(bytes.buffer instanceof ArrayBuffer)) throw new Error(`Font ${guid}: storage returned an unsupported shared source buffer`);
+      fonts.push({ guid, family: game.fontFamilies.get(guid) ?? guid,
+        bytes: new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength) });
+    }
     const sources: SceneSourceAssets = {
       assets: {
         modelBytes: game.modelBytes, modelPayloads: content.modelPayloads,
@@ -401,7 +409,7 @@ async function acquirePlayAssetSourcesAttempt(
       },
       materialDocuments: content.materialDocuments, materialFunctions: content.materialFunctions,
       particleLibrary: content.particleLibrary, audioLibrary: content.audioLibrary,
-      fonts: [...game.fontBytes].map(([guid, bytes]) => ({ guid, family: game.fontFamilies.get(guid) ?? guid, bytes: bytes.slice().buffer })),
+      fonts,
     };
     controls.push(...packedPlayControls(content).filter((control) => control.type !== "loadNavMesh"));
     if (game.scripts.length) controls.unshift({ type: "loadScripts", scripts: game.scripts });
