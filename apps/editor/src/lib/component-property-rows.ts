@@ -70,6 +70,7 @@ import {
 import { parseNavMeshActorSettings } from "@babylonslate/navigation";
 import { classParentLookup, classIdFromClassAsset } from "./content-browser-helpers";
 import { physicsConstraintPropertyRows } from "./physics-constraint-property-rows";
+import { fittedColliderShape } from "./fitted-collider";
 import { cablePropertyRows } from "./cable-property-rows";
 import { deformerPropertyRows } from "./deformer-property-rows";
 import { movementPropertyRows } from "./movement-property-rows";
@@ -80,7 +81,7 @@ import { richTextAppearPropertyRows } from "./rich-text-appear-property-rows";
 
 const MESH_KINDS = ["box", "sphere", "cylinder", "plane", "ground"];
 const MOTION_TYPES = ["static", "kinematic", "dynamic"] as const;
-const SHAPE_KINDS_3D = ["box", "sphere", "capsule"] as const;
+const SHAPE_KINDS_3D = ["box", "sphere", "capsule", "cylinder"] as const;
 const SHAPE_KINDS_2D = ["box2d", "circle", "capsule2d"] as const;
 const POINT_CLOUD_KINDS = new Set(["convex", "mesh", "polygon", "chain"]);
 const MIN_RIGID_BODY_MASS = 0.001;
@@ -190,6 +191,8 @@ function defaultShape(kind: string): ColliderShape {
       return { kind: "sphere", radius: 0.5 };
     case "capsule":
       return { kind: "capsule", radius: 0.25, halfHeight: 0.5 };
+    case "cylinder":
+      return { kind: "cylinder", radius: 0.5, height: 1 };
     case "box2d":
       return { kind: "box2d", halfExtents: { x: 0.5, y: 0.5 } };
     case "circle":
@@ -315,6 +318,7 @@ function colliderShapeRows(
   component: SerializedComponent,
   update: (property: string, value: unknown) => void,
   physicsWorld: "3d" | "2d",
+  siblings: readonly SerializedComponent[],
 ): PropertyRow[] {
   const parsed = parseColliderProperties(component.properties, physicsWorld, { validation: "authoring" });
   const shape = parsed.shape;
@@ -330,7 +334,8 @@ function colliderShapeRows(
       label: "Shape Kind",
       value: shape.kind,
       options: kinds.map((kind) => ({ value: kind, label: kind })),
-      onChange: (next) => update("shape", defaultShape(next)),
+      onChange: (next) =>
+        update("shape", fittedColliderShape(next, siblings) ?? defaultShape(next)),
     },
   ];
 
@@ -389,6 +394,25 @@ function colliderShapeRows(
         value: shape.halfHeight,
         min: 0,
         onChange: (halfHeight) => update("shape", { ...shape, halfHeight }),
+      },
+    );
+  } else if (shape.kind === "cylinder") {
+    rows.push(
+      {
+        kind: "number",
+        id: rowId(actorId, component.id, "shape-radius"),
+        label: "Radius",
+        value: shape.radius,
+        min: MIN_COLLIDER_EXTENT,
+        onChange: (radius) => update("shape", { ...shape, radius }),
+      },
+      {
+        kind: "number",
+        id: rowId(actorId, component.id, "shape-height"),
+        label: "Height",
+        value: shape.height,
+        min: MIN_COLLIDER_EXTENT,
+        onChange: (height) => update("shape", { ...shape, height }),
       },
     );
   } else if (!POINT_CLOUD_KINDS.has(shape.kind)) {
@@ -1228,6 +1252,7 @@ export function componentPropertyRows(
           component,
           update,
           context.physicsWorld,
+          context.actorComponents?.(actorId) ?? [],
         ),
         sliderRow(
           actorId,

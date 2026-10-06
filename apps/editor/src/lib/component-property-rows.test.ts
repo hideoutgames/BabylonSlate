@@ -1048,6 +1048,7 @@ describe("componentPropertyRows", () => {
         "box",
         "sphere",
         "capsule",
+        "cylinder",
       ]);
       kind.onChange("sphere");
     }
