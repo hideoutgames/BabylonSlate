@@ -1,6 +1,8 @@
-/** Data values are authored text unless their saved Structure schema says otherwise. */
+/** Data values are authored text unless their saved field schema says otherwise. */
 type ReferenceKind = "asset" | "class";
 type ReferenceMapper = (reference: string, kind: ReferenceKind) => string | null;
+/** Resolves a Definition or an explicitly nested Structure when no snapshot exists. */
+export type DataDefinitionFieldsResolver = (guid: string) => readonly unknown[] | undefined;
 
 function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -9,11 +11,18 @@ function record(value: unknown): Record<string, unknown> | null {
 
 export function isDataAssetPayload(value: unknown): boolean {
   const kind = record(value)?.kind;
-  return kind === "dataObject" || kind === "dataSheet";
+  // Unsupported historical payloads are protected from generic string walkers.
+  return kind === "dataDefinition" || kind === "dataSheet" || kind === "dataObject";
+}
+
+export function isDataGraphNodePayload(value: unknown): boolean {
+  const row = record(value);
+  const type = row?.type ?? row?.typeId;
+  return typeof type === "string" && (type.startsWith("data.") || type.startsWith("editorData."));
 }
 
 /** Copy-on-write traversal shared by deletion, import, Class replacement, and export. */
-export function mapDataAssetReferences<T>(value: T, map: ReferenceMapper): T {
+export function mapDataAssetReferences<T>(value: T, map: ReferenceMapper, definitionFields?: DataDefinitionFieldsResolver): T {
   const payload = record(value);
   if (!payload || !isDataAssetPayload(payload)) return value;
   let next = payload;
@@ -22,27 +31,28 @@ export function mapDataAssetReferences<T>(value: T, map: ReferenceMapper): T {
     if (next === payload) next = { ...payload };
     next[key] = result;
   };
-  if (typeof payload.structureGuid === "string") assign("structureGuid", map(payload.structureGuid, "asset"));
-  if (payload.kind === "dataSheet") {
-    if (Array.isArray(payload.objectGuids)) {
-      const previous = payload.objectGuids;
-      const guids = previous.flatMap((guid: unknown) => {
-        if (typeof guid !== "string") return [guid];
-        const mapped = map(guid, "asset");
-        return mapped === null ? [] : [mapped];
-      });
-      if (guids.length !== previous.length || guids.some((guid, i) => guid !== previous[i])) assign("objectGuids", guids);
-    }
-  } else if (Array.isArray(payload.schema)) {
-    assign("values", mapValues(payload.values, payload.schema, map));
-    assign("schema", mapFields(payload.schema, map));
+  if (payload.kind === "dataDefinition" && Array.isArray(payload.fields)) {
+    assign("fields", mapFields(payload.fields, map, definitionFields));
+  } else if (payload.kind === "dataSheet" && Array.isArray(payload.rows) && Object.hasOwn(payload, "definitionGuid")) {
+    if (typeof payload.definitionGuid === "string") assign("definitionGuid", map(payload.definitionGuid, "asset"));
+    const fallback = typeof payload.definitionGuid === "string" ? definitionFields?.(payload.definitionGuid) : undefined;
+    assign("rows", mapArray(payload.rows, (entry) => {
+      const row = record(entry);
+      if (!row) return entry;
+      const fields = Array.isArray(row.schema) ? row.schema : fallback;
+      if (!fields) return entry;
+      const values = mapValues(row.values, fields, map, definitionFields);
+      const schema = Array.isArray(row.schema) ? mapFields(row.schema, map, definitionFields) : row.schema;
+      if (values === row.values && schema === row.schema) return entry;
+      return { ...row, values, ...(Array.isArray(row.schema) ? { schema } : {}) };
+    }));
   }
   return next as T;
 }
 
 function mapReference(value: unknown, kind: ReferenceKind, map: ReferenceMapper): unknown {
   // Typed values use the graph's empty-reference sentinel. Null is reserved for
-  // the asset's missing Structure selection, not an optional field value.
+  // the sheet's missing Definition selection, not an optional field value.
   return typeof value === "string" ? map(value, kind) ?? "" : value;
 }
 
@@ -56,7 +66,7 @@ function mapArray(entries: unknown[], transform: (entry: unknown) => unknown): u
   return changed ? mapped : entries;
 }
 
-function mapScalarValue(value: unknown, field: Record<string, unknown>, map: ReferenceMapper): unknown {
+function mapScalarValue(value: unknown, field: Record<string, unknown>, map: ReferenceMapper, definitionFields?: DataDefinitionFieldsResolver): unknown {
   if (field.typeId === "asset") return mapReference(value, "asset", map);
   if (field.typeId === "class") return mapReference(value, "class", map);
   // InputType has a typed asset component and a display name; preserve display text.
@@ -67,13 +77,17 @@ function mapScalarValue(value: unknown, field: Record<string, unknown>, map: Ref
       if (asset !== input.Asset) return { ...input, Asset: asset ?? "", ...(asset === null ? { Name: "" } : {}) };
     }
   }
-  if (field.typeId === "struct" && Array.isArray(field.fields)) return mapValues(value, field.fields, map);
+  if (field.typeId === "struct") {
+    const fields = Array.isArray(field.fields) ? field.fields
+      : typeof field.typeClassId === "string" ? definitionFields?.(field.typeClassId) : undefined;
+    if (fields) return mapValues(value, fields, map, definitionFields);
+  }
   return value;
 }
 
-function mapFieldValue(value: unknown, field: Record<string, unknown>, map: ReferenceMapper): unknown {
+function mapFieldValue(value: unknown, field: Record<string, unknown>, map: ReferenceMapper, definitionFields?: DataDefinitionFieldsResolver): unknown {
   if (field.container === "array") {
-    return Array.isArray(value) ? mapArray(value, (entry) => mapScalarValue(entry, field, map)) : value;
+    return Array.isArray(value) ? mapArray(value, (entry) => mapScalarValue(entry, field, map, definitionFields)) : value;
   }
   if (field.container === "map") {
     if (!Array.isArray(value)) return value;
@@ -87,9 +101,9 @@ function mapFieldValue(value: unknown, field: Record<string, unknown>, map: Refe
       // creating duplicate empty keys; values and array slots retain their place.
       const key = typeof pair.key === "string" && (keyField.typeId === "asset" || keyField.typeId === "class")
         ? map(pair.key, keyField.typeId === "asset" ? "asset" : "class")
-        : mapScalarValue(pair.key, keyField, map);
+        : mapScalarValue(pair.key, keyField, map, definitionFields);
       if (key === null && pair.key !== null) { changed = true; continue; }
-      const mapped = mapScalarValue(pair.value, field, map);
+      const mapped = mapScalarValue(pair.value, field, map, definitionFields);
       if (key !== pair.key || mapped !== pair.value) {
         changed = true;
         next.push({ ...pair, key, value: mapped });
@@ -97,17 +111,17 @@ function mapFieldValue(value: unknown, field: Record<string, unknown>, map: Refe
     }
     return changed ? next : value;
   }
-  return mapScalarValue(value, field, map);
+  return mapScalarValue(value, field, map, definitionFields);
 }
 
-function mapValues(value: unknown, fields: unknown[], map: ReferenceMapper): unknown {
+function mapValues(value: unknown, fields: readonly unknown[], map: ReferenceMapper, definitionFields?: DataDefinitionFieldsResolver): unknown {
   const values = record(value);
   if (!values) return value;
   let next = values;
   for (const entry of fields) {
     const field = record(entry);
     if (!field || typeof field.name !== "string" || !Object.hasOwn(values, field.name)) continue;
-    const mapped = mapFieldValue(values[field.name], field, map);
+    const mapped = mapFieldValue(values[field.name], field, map, definitionFields);
     if (mapped === values[field.name]) continue;
     if (next === values) next = { ...values };
     next[field.name] = mapped;
@@ -115,7 +129,7 @@ function mapValues(value: unknown, fields: unknown[], map: ReferenceMapper): unk
   return next;
 }
 
-function mapFields(fields: unknown[], map: ReferenceMapper): unknown[] {
+function mapFields(fields: unknown[], map: ReferenceMapper, definitionFields?: DataDefinitionFieldsResolver): unknown[] {
   let changed = false;
   const next = fields.map((entry) => {
     const field = record(entry);
@@ -133,9 +147,9 @@ function mapFields(fields: unknown[], map: ReferenceMapper): unknown[] {
     if (field.container === "map" && ["struct", "enum", "class", "object"].includes(String(field.keyTypeId)) && typeof field.keyTypeClassId === "string") {
       assign("keyTypeClassId", map(field.keyTypeClassId, field.keyTypeId === "struct" || field.keyTypeId === "enum" ? "asset" : "class"));
     }
-    if (Object.hasOwn(field, "defaultValue")) assign("defaultValue", mapFieldValue(field.defaultValue, field, map));
-    if (Array.isArray(field.fields)) assign("fields", mapFields(field.fields, map));
-    if (field.container === "map" && Array.isArray(field.keyFields)) assign("keyFields", mapFields(field.keyFields, map));
+    if (Object.hasOwn(field, "defaultValue")) assign("defaultValue", mapFieldValue(field.defaultValue, field, map, definitionFields));
+    if (Array.isArray(field.fields)) assign("fields", mapFields(field.fields, map, definitionFields));
+    if (field.container === "map" && Array.isArray(field.keyFields)) assign("keyFields", mapFields(field.keyFields, map, definitionFields));
     changed ||= result !== field;
     return result;
   });
@@ -143,22 +157,22 @@ function mapFields(fields: unknown[], map: ReferenceMapper): unknown[] {
 }
 
 /** Properties on typed data nodes carry the schema for their authored value literal. */
-export function mapDataGraphLiteralReferences<T>(value: T, map: ReferenceMapper): T {
+export function mapDataGraphLiteralReferences<T>(value: T, map: ReferenceMapper, definitionFields?: DataDefinitionFieldsResolver): T {
   const props = record(value);
   if (!props || !Array.isArray(props.dataSchema)) return value;
-  const schema = mapFields(props.dataSchema, map);
-  const values = mapValues(props["default:values"], props.dataSchema, map);
+  const schema = mapFields(props.dataSchema, map, definitionFields);
+  const values = mapValues(props["default:values"], props.dataSchema, map, definitionFields);
   if (schema === props.dataSchema && values === props["default:values"]) return value;
   return { ...props, dataSchema: schema, ...(Object.hasOwn(props, "default:values") ? { "default:values": values } : {}) } as T;
 }
 
 /** Structure and Enum identity/type references also participate in a bundled import. */
-export function mapDataTypeReferences<T>(assetType: string, value: T, map: ReferenceMapper): T {
-  if (assetType === "DataObject" || assetType === "DataSheet") return mapDataAssetReferences(value, map);
+export function mapDataTypeReferences<T>(assetType: string, value: T, map: ReferenceMapper, definitionFields?: DataDefinitionFieldsResolver): T {
+  if (assetType === "DataDefinition" || assetType === "DataSheet") return mapDataAssetReferences(value, map, definitionFields);
   const payload = record(value);
   if (!payload || (assetType !== "Structure" && assetType !== "Enum")) return value;
   const guid = typeof payload.guid === "string" ? map(payload.guid, "asset") : payload.guid;
-  const fields = assetType === "Structure" && Array.isArray(payload.fields) ? mapFields(payload.fields, map) : payload.fields;
+  const fields = assetType === "Structure" && Array.isArray(payload.fields) ? mapFields(payload.fields, map, definitionFields) : payload.fields;
   if (guid === payload.guid && fields === payload.fields) return value;
   return { ...payload, ...(guid !== payload.guid ? { guid } : {}), ...(fields !== payload.fields ? { fields } : {}) } as T;
 }
@@ -168,6 +182,7 @@ export function dataAssetDependencies(
   assetType: string,
   value: unknown,
   classes: readonly { guid: string; classId: string }[] = [],
+  definitionFields?: DataDefinitionFieldsResolver,
 ): string[] {
   const refs = new Set<string>();
   const classGuids = new Map<string, string>();
@@ -184,23 +199,23 @@ export function dataAssetDependencies(
       if (guid) refs.add(guid);
     }
     return reference;
-  });
+  }, definitionFields);
   return [...refs].sort();
 }
 
-export function remapDataPayloadGuids<T>(assetType: string, value: T, remap: ReadonlyMap<string, string>): T {
+export function remapDataPayloadGuids<T>(assetType: string, value: T, remap: ReadonlyMap<string, string>, definitionFields?: DataDefinitionFieldsResolver): T {
   const map = (reference: string) => remap.get(reference) ?? reference;
   return assetType === "Class" || assetType === "Graph"
-    ? mapDataGraphReferences(value, map) : mapDataTypeReferences(assetType, value, map);
+    ? mapDataGraphReferences(value, map, definitionFields) : mapDataTypeReferences(assetType, value, map, definitionFields);
 }
 
 /** Data graph literals and variables retain asset identity through imports. */
-function mapDataGraphReferences<T>(value: T, map: ReferenceMapper): T {
-  const guid = (entry: unknown) => typeof entry === "string" ? map(entry, "asset") : entry;
+export function mapDataGraphReferences<T>(value: T, map: ReferenceMapper, definitionFields?: DataDefinitionFieldsResolver): T {
+  const guid = (entry: unknown) => typeof entry === "string" ? map(entry, "asset") ?? "" : entry;
   const withValue = (row: Record<string, unknown>, key: string, next: unknown): Record<string, unknown> =>
     row[key] === next ? row : { ...row, [key]: next };
   const variable = (spec: Record<string, unknown>, entry: unknown): unknown => {
-    const isData = (type: unknown) => type === "DataObject" || type === "DataSheet";
+    const isData = (type: unknown) => type === "DataDefinition" || type === "DataSheet";
     const valueRef = spec.typeId === "asset" && isData(spec.typeClassId);
     if (spec.container === "map" && Array.isArray(entry)) {
       const keyRef = spec.keyTypeId === "asset" && isData(spec.keyTypeClassId);
@@ -233,13 +248,12 @@ function mapDataGraphReferences<T>(value: T, map: ReferenceMapper): T {
       const name = typeof props.variableName === "string" ? props.variableName : "Value";
       for (const key of ["default:value", "value", `default:${name}`]) if (Object.hasOwn(props, key)) mapped = withValue(mapped, key, variable(props, props[key]));
     } else {
-      for (const key of ["structGuid", "structureGuid", "default:object", "default:sheet", "default:structure", "default:Object", "default:Sheet", "default:Structure"]) {
+      for (const key of ["definitionGuid", "default:sheet", "default:definition", "default:Sheet", "default:Definition"]) {
         if (Object.hasOwn(props, key)) mapped = withValue(mapped, key, guid(props[key]));
       }
-      if (Array.isArray(props["default:objects"])) mapped = withValue(mapped, "default:objects", mapArray(props["default:objects"], guid));
       if (Array.isArray(props.dataSchema)) {
-        mapped = withValue(mapped, "dataSchema", mapFields(props.dataSchema, map));
-        if (Object.hasOwn(props, "default:values")) mapped = withValue(mapped, "default:values", mapValues(props["default:values"], props.dataSchema, map));
+        mapped = withValue(mapped, "dataSchema", mapFields(props.dataSchema, map, definitionFields));
+        if (Object.hasOwn(props, "default:values")) mapped = withValue(mapped, "default:values", mapValues(props["default:values"], props.dataSchema, map, definitionFields));
       }
     }
     if (nested) next = withValue(next, "data", withValue(data!, "properties", mapped));
@@ -250,7 +264,7 @@ function mapDataGraphReferences<T>(value: T, map: ReferenceMapper): T {
   return walk(value) as T;
 }
 
-export function dataGraphAssetDependencies(value: unknown, classes: readonly { guid: string; classId: string }[] = []): string[] {
+export function dataGraphAssetDependencies(value: unknown, classes: readonly { guid: string; classId: string }[] = [], definitionFields?: DataDefinitionFieldsResolver): string[] {
   const refs = new Set<string>();
   const classGuids = new Map<string, string>();
   for (const entry of classes) {
@@ -261,6 +275,6 @@ export function dataGraphAssetDependencies(value: unknown, classes: readonly { g
     const guid = kind === "class" ? classGuids.get(reference) : reference;
     if (guid && !guid.startsWith("engine:")) refs.add(guid);
     return reference;
-  });
+  }, definitionFields);
   return [...refs].sort();
 }

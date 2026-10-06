@@ -2,17 +2,20 @@ import {
   arrayOf, assetRef, BOOL, EXEC, pin, STRING, structRef,
   type CodegenContext, type NodeDefinition,
 } from "@babylonslate/scripting";
-import { structGuidOf } from "./struct";
 
-const OBJECT = assetRef("DataObject");
 const SHEET = assetRef("DataSheet");
-const OBJECTS = arrayOf(OBJECT);
+const ROWS = arrayOf(STRING);
 const resultPins = () => [
   pin("execIn", "Exec", "in", EXEC),
   pin("execOut", "Then", "out", EXEC),
   pin("success", "Success", "out", BOOL),
   pin("error", "Error", "out", STRING),
 ];
+const sheetPin = () => pin("sheet", "Data Sheet", "in", SHEET);
+const rowPin = () => pin("rowId", "Row ID", "in", STRING);
+const definitionGuid = (properties: Record<string, unknown>): string =>
+  typeof properties.definitionGuid === "string" ? properties.definitionGuid.trim() : "";
+const definitionLiteral = (ctx: CodegenContext) => JSON.stringify(definitionGuid(ctx.node.properties));
 
 function emitResult(ctx: CodegenContext, call: string, fallback: string): void {
   const result = `${ctx.output("value")}_result`;
@@ -27,60 +30,68 @@ function emitResult(ctx: CodegenContext, call: string, fallback: string): void {
 const common = { category: "editor", editorOnly: true, latent: true } as const;
 
 export const editorDataNodes: NodeDefinition[] = [
-  ...(["Objects", "Sheets"] as const).map((kind): NodeDefinition => ({
-    ...common,
-    id: `editorData.list${kind}`,
-    title: `List Data ${kind}`,
-    description: "Lists asset references from mounted content. Select a Structure to filter the result; an empty selection includes every Structure.",
-    pins: () => [...resultPins(), pin("value", kind, "out", arrayOf(kind === "Objects" ? OBJECT : SHEET))],
-    codegen: (ctx) => emitResult(ctx, `list${kind}(${JSON.stringify(structGuidOf(ctx.node.properties))})`, "[]"),
-  })),
   {
     ...common,
-    id: "editorData.readObject",
-    title: "Read Editable Data Object",
-    description: "Reads current values including unsaved editor changes. Check Success before using the Structure output.",
-    pins: (properties) => [...resultPins(), pin("object", "Data Object", "in", OBJECT), pin("value", "Value", "out", structRef(structGuidOf(properties)))],
-    codegen: (ctx) => emitResult(ctx, `readObject(${ctx.input("object")}, ${JSON.stringify(structGuidOf(ctx.node.properties))})`, "{}"),
+    id: "editorData.listSheets",
+    title: "List Data Sheets",
+    description: "Lists Data Sheet references from mounted content. Select a Data Definition to filter the result; an empty selection includes every definition.",
+    pins: () => [...resultPins(), pin("value", "Data Sheets", "out", arrayOf(SHEET))],
+    codegen: (ctx) => emitResult(ctx, `listSheets(${definitionLiteral(ctx)})`, "[]"),
   },
   {
     ...common,
     id: "editorData.readSheet",
     title: "Read Editable Data Sheet",
-    description: "Reads ordered membership including unsaved editor changes. Objects remain shared standalone assets.",
-    pins: () => [...resultPins(), pin("sheet", "Data Sheet", "in", SHEET), pin("value", "Objects", "out", OBJECTS)],
-    codegen: (ctx) => emitResult(ctx, `readSheet(${ctx.input("sheet")}, ${JSON.stringify(structGuidOf(ctx.node.properties))})`, "[]"),
+    description: "Reads ordered row IDs including unsaved sheet edits. Row IDs belong to this sheet and stay stable when rows are renamed or reordered.",
+    pins: () => [...resultPins(), sheetPin(), pin("value", "Rows", "out", ROWS)],
+    codegen: (ctx) => emitResult(ctx, `readSheet(${ctx.input("sheet")}, ${definitionLiteral(ctx)})`, "[]"),
   },
   {
     ...common,
-    id: "editorData.createObject",
-    title: "Create Data Object",
-    description: "Creates a standalone Data Object in project content using the selected Structure. Folder is relative to project content; existing assets are never overwritten.",
-    pins: (properties) => [...resultPins(), pin("name", "Name", "in", STRING), pin("folder", "Folder", "in", STRING, "data", true, ""), pin("values", "Values", "in", structRef(structGuidOf(properties))), pin("value", "Data Object", "out", OBJECT)],
-    codegen: (ctx) => emitResult(ctx, `createObject(${ctx.input("name")}, ${JSON.stringify(structGuidOf(ctx.node.properties))}, ${ctx.input("values")}, ${ctx.input("folder")})`, '""'),
-  },
-  {
-    ...common,
-    id: "editorData.updateObject",
-    title: "Update Data Object",
-    description: "Updates the shared object's current values as one undoable edit. Use Save All to persist edits; every sheet sees the same object.",
-    pins: (properties) => [...resultPins(), pin("object", "Data Object", "in", OBJECT), pin("values", "Values", "in", structRef(structGuidOf(properties))), pin("value", "Data Object", "out", OBJECT)],
-    codegen: (ctx) => emitResult(ctx, `updateObject(${ctx.input("object")}, ${JSON.stringify(structGuidOf(ctx.node.properties))}, ${ctx.input("values")})`, '""'),
+    id: "editorData.readRow",
+    title: "Read Editable Data Row",
+    description: "Reads one row's current values including unsaved sheet changes. Check Success before using the typed output.",
+    pins: (properties) => [...resultPins(), sheetPin(), rowPin(), pin("value", "Value", "out", structRef(definitionGuid(properties)))],
+    codegen: (ctx) => emitResult(ctx, `readRow(${ctx.input("sheet")}, ${ctx.input("rowId")}, ${definitionLiteral(ctx)})`, "{}"),
   },
   {
     ...common,
     id: "editorData.createSheet",
     title: "Create Data Sheet",
-    description: "Creates a sheet of references to existing Data Objects of the selected Structure. Empty membership is allowed.",
-    pins: () => [...resultPins(), pin("name", "Name", "in", STRING), pin("folder", "Folder", "in", STRING, "data", true, ""), pin("objects", "Objects", "in", OBJECTS, "data", true, []), pin("value", "Data Sheet", "out", SHEET)],
-    codegen: (ctx) => emitResult(ctx, `createSheet(${ctx.input("name")}, ${JSON.stringify(structGuidOf(ctx.node.properties))}, ${ctx.input("objects")}, ${ctx.input("folder")})`, '""'),
+    description: "Creates an empty sheet using the selected Data Definition. Folder is relative to project content; existing assets are never overwritten.",
+    pins: () => [...resultPins(), pin("name", "Name", "in", STRING), pin("folder", "Folder", "in", STRING, "data", true, ""), pin("value", "Data Sheet", "out", SHEET)],
+    codegen: (ctx) => emitResult(ctx, `createSheet(${ctx.input("name")}, ${definitionLiteral(ctx)}, ${ctx.input("folder")})`, '""'),
   },
   {
     ...common,
-    id: "editorData.setSheetObjects",
-    title: "Set Data Sheet Objects",
-    description: "Replaces ordered membership as one undoable edit. Deduplicates references and rejects missing objects or mismatched Structures before changing the sheet.",
-    pins: () => [...resultPins(), pin("sheet", "Data Sheet", "in", SHEET), pin("objects", "Objects", "in", OBJECTS, "data", true, []), pin("value", "Data Sheet", "out", SHEET)],
-    codegen: (ctx) => emitResult(ctx, `setSheetObjects(${ctx.input("sheet")}, ${JSON.stringify(structGuidOf(ctx.node.properties))}, ${ctx.input("objects")})`, '""'),
+    id: "editorData.addRow",
+    title: "Add Data Row",
+    description: "Appends a row owned by this sheet using the selected Data Definition. The name must be unique within the sheet. Save All persists the undoable edit.",
+    pins: (properties) => [...resultPins(), sheetPin(), pin("name", "Name", "in", STRING), pin("values", "Values", "in", structRef(definitionGuid(properties))), pin("value", "Row ID", "out", STRING)],
+    codegen: (ctx) => emitResult(ctx, `addRow(${ctx.input("sheet")}, ${definitionLiteral(ctx)}, ${ctx.input("name")}, ${ctx.input("values")})`, '""'),
+  },
+  {
+    ...common,
+    id: "editorData.updateRow",
+    title: "Update Data Row",
+    description: "Updates a row as one undoable sheet edit. Scalar nested fields merge; supplied arrays and maps replace their contents.",
+    pins: (properties) => [...resultPins(), sheetPin(), rowPin(), pin("values", "Values", "in", structRef(definitionGuid(properties))), pin("value", "Row ID", "out", STRING)],
+    codegen: (ctx) => emitResult(ctx, `updateRow(${ctx.input("sheet")}, ${ctx.input("rowId")}, ${definitionLiteral(ctx)}, ${ctx.input("values")})`, '""'),
+  },
+  {
+    ...common,
+    id: "editorData.removeRow",
+    title: "Remove Data Row",
+    description: "Removes one row from its owning sheet. Undo on the sheet restores it.",
+    pins: () => [...resultPins(), sheetPin(), rowPin(), pin("value", "Row ID", "out", STRING)],
+    codegen: (ctx) => emitResult(ctx, `removeRow(${ctx.input("sheet")}, ${ctx.input("rowId")}, ${definitionLiteral(ctx)})`, '""'),
+  },
+  {
+    ...common,
+    id: "editorData.reorderRows",
+    title: "Reorder Data Rows",
+    description: "Sets row order as one undoable sheet edit. Include every existing row ID exactly once; this operation never inserts or drops rows.",
+    pins: () => [...resultPins(), sheetPin(), pin("rowIds", "Rows", "in", ROWS, "data", true, []), pin("value", "Data Sheet", "out", SHEET)],
+    codegen: (ctx) => emitResult(ctx, `reorderRows(${ctx.input("sheet")}, ${definitionLiteral(ctx)}, ${ctx.input("rowIds")})`, '""'),
   },
 ];

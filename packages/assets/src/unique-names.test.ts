@@ -38,6 +38,7 @@ describe("nextCopyName", () => {
 describe("asset file suffix helpers", () => {
   it("strips .scene.babasset, .graph.babasset, .class.babasset, and .babasset", () => {
     expect(stripAssetFileSuffix("main.scene.babasset")).toBe("main");
+    expect(stripAssetFileSuffix("Item.datadefinition.babasset")).toBe("Item");
     expect(stripAssetFileSuffix("Sword.dataobject.babasset")).toBe("Sword");
     expect(stripAssetFileSuffix("Items.datasheet.babasset")).toBe("Items");
     expect(stripAssetFileSuffix("logic.graph.babasset")).toBe("logic");
@@ -59,6 +60,7 @@ describe("asset file suffix helpers", () => {
   });
 
   it("preserves the original container suffix", () => {
+    expect(assetFileSuffix("Item.datadefinition.babasset")).toBe(".datadefinition.babasset");
     expect(assetFileSuffix("Sword.dataobject.babasset")).toBe(".dataobject.babasset");
     expect(assetFileSuffix("Items.datasheet.babasset")).toBe(".datasheet.babasset");
     expect(assetFileSuffix("main.scene.babasset")).toBe(".scene.babasset");

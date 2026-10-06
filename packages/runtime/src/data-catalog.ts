@@ -1,63 +1,86 @@
-import { isDataObjectAsset, isDataSheetAsset, type DataAssetCatalogEntry } from "@babylonslate/core";
-import { dataTypeSchemas, resolveDataObjectValues } from "@babylonslate/scripting";
+import { isDataDefinitionAsset, isDataSheetRow, type DataAssetCatalogEntry } from "@babylonslate/core";
+import { dataTypeSchemas, resolveDataRowValues, validateDataDefinition } from "@babylonslate/scripting";
 
 export { dataTypeSchemas } from "@babylonslate/scripting";
 
-/** Read-only game data. Values and ordered membership are detached on every read. */
+/** Read-only sheet data. Row values and ordered IDs are detached on every read. */
 export interface RuntimeDataApi {
-  readObject(reference: unknown, structureGuid?: string): Record<string, unknown> | null;
-  getSheetObjects(reference: unknown, structureGuid?: string): string[];
-  hasObject(reference: unknown, structureGuid?: string): boolean;
-  hasSheet(reference: unknown, structureGuid?: string): boolean;
+  readRow(sheet: unknown, rowId: unknown, definitionGuid?: string): Record<string, unknown> | null;
+  getSheetRows(sheet: unknown, definitionGuid?: string): string[];
+  hasRow(sheet: unknown, rowId: unknown, definitionGuid?: string): boolean;
+  hasSheet(sheet: unknown, definitionGuid?: string): boolean;
+}
+
+type RuntimeSheet = {
+  definitionGuid: string;
+  rowIds: string[];
+  rows: Map<string, Record<string, unknown>>;
+};
+
+function record(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 /**
- * Constructed per Play/player session. Validates and projects each object once;
- * graph evaluation performs only GUID map lookups and copies the requested value.
- * Shared configuration never becomes a writable runtime object.
+ * Constructed once per Play/player session. Each sheet owns its row identities;
+ * validation and projection happen at load, so graph reads need only indexed
+ * lookups and a copy of the requested value. No asset I/O occurs during reads.
  */
 export class RuntimeDataCatalog implements RuntimeDataApi {
-  private readonly objects = new Map<string, { structureGuid: string; values: Record<string, unknown> }>();
-  private readonly sheets = new Map<string, { structureGuid: string; objectGuids: string[] }>();
+  private readonly sheets = new Map<string, RuntimeSheet>();
 
   constructor(entries: readonly DataAssetCatalogEntry[] = []) {
     const schemas = dataTypeSchemas(entries);
+    const definitions = new Set<string>();
     for (const entry of entries) {
-      if (entry.type !== "DataObject" || !isDataObjectAsset(entry.payload) || !entry.payload.structureGuid) continue;
+      if (entry.type !== "DataDefinition" || !isDataDefinitionAsset(entry.payload)) continue;
       try {
-        const values = resolveDataObjectValues(entry.payload, schemas);
-        if (values !== null) this.objects.set(entry.guid, { structureGuid: entry.payload.structureGuid, values });
+        if (!validateDataDefinition(entry.payload, schemas, entry.guid).some((issue) => issue.severity === "error")) {
+          definitions.add(entry.guid);
+        }
       } catch {
-        // Malformed external payloads fail Found without aborting unrelated data.
+        // Malformed external schemas must not abort unrelated Definitions.
       }
     }
     for (const entry of entries) {
-      if (entry.type !== "DataSheet" || !isDataSheetAsset(entry.payload)) continue;
-      const { structureGuid, objectGuids } = entry.payload;
-      if (!structureGuid || !schemas.structs[structureGuid]) continue;
-      // Never shift row positions or silently conceal corrupt membership.
-      if (new Set(objectGuids).size !== objectGuids.length || objectGuids.some((guid) => this.objects.get(guid)?.structureGuid !== structureGuid)) continue;
-      this.sheets.set(entry.guid, { structureGuid, objectGuids: [...objectGuids] });
+      const payload = entry.payload;
+      if (entry.type !== "DataSheet" || !record(payload) || payload.kind !== "dataSheet" || !Array.isArray(payload.rows)) continue;
+      const { definitionGuid, rows } = payload;
+      if (typeof definitionGuid !== "string" || !definitions.has(definitionGuid) || !schemas.structs[definitionGuid]) continue;
+      const rowIds = rows.map((row) => record(row) && typeof row.id === "string" ? row.id : "");
+      // Ambiguous identities cannot be resolved safely; never silently reindex.
+      if (rowIds.some((id) => !id || id.trim() !== id) || new Set(rowIds).size !== rowIds.length) continue;
+      const valuesById = new Map<string, Record<string, unknown>>();
+      for (const row of rows) {
+        if (!isDataSheetRow(row)) continue;
+        try {
+          const values = resolveDataRowValues(row, definitionGuid, schemas);
+          if (values !== null) valuesById.set(row.id, values);
+        } catch {
+          // One malformed external row must not hide unrelated rows.
+        }
+      }
+      this.sheets.set(entry.guid, { definitionGuid, rowIds, rows: valuesById });
     }
   }
 
-  hasObject(reference: unknown, structureGuid?: string): boolean {
-    const object = typeof reference === "string" ? this.objects.get(reference) : undefined;
-    return !!object && (!structureGuid || object.structureGuid === structureGuid);
+  hasRow(sheet: unknown, rowId: unknown, definitionGuid?: string): boolean {
+    return typeof rowId === "string" && this.hasSheet(sheet, definitionGuid) &&
+      this.sheets.get(sheet as string)!.rows.has(rowId);
   }
 
-  readObject(reference: unknown, structureGuid?: string): Record<string, unknown> | null {
-    if (!this.hasObject(reference, structureGuid)) return null;
-    return structuredClone(this.objects.get(reference as string)!.values);
+  readRow(sheet: unknown, rowId: unknown, definitionGuid?: string): Record<string, unknown> | null {
+    if (!this.hasRow(sheet, rowId, definitionGuid)) return null;
+    return structuredClone(this.sheets.get(sheet as string)!.rows.get(rowId as string)!);
   }
 
-  hasSheet(reference: unknown, structureGuid?: string): boolean {
-    const sheet = typeof reference === "string" ? this.sheets.get(reference) : undefined;
-    return !!sheet && (!structureGuid || sheet.structureGuid === structureGuid);
+  hasSheet(sheet: unknown, definitionGuid?: string): boolean {
+    const entry = typeof sheet === "string" ? this.sheets.get(sheet) : undefined;
+    return !!entry && (!definitionGuid || entry.definitionGuid === definitionGuid);
   }
 
-  getSheetObjects(reference: unknown, structureGuid?: string): string[] {
-    if (!this.hasSheet(reference, structureGuid)) return [];
-    return [...this.sheets.get(reference as string)!.objectGuids];
+  getSheetRows(sheet: unknown, definitionGuid?: string): string[] {
+    if (!this.hasSheet(sheet, definitionGuid)) return [];
+    return [...this.sheets.get(sheet as string)!.rowIds];
   }
 }

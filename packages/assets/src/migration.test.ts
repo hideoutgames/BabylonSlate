@@ -4,16 +4,18 @@ import { createDefaultMigrationRegistry } from "./migration";
 import { loadPayloadWithMigration } from "./migrate-on-load";
 
 describe("Data asset schema versions", () => {
-  it("migrates unversioned data without dropping values and refuses future schemas", () => {
+  it("versions definitions and owned rows without converting legacy reference-based sheets", () => {
     const registry = createDefaultMigrationRegistry();
-    const object = registry.migrate("DataObject", 0, { structureGuid: "weapon", values: { Legacy: "keep", Damage: 10 } });
-    expect(object).toMatchObject({ migrated: true, version: 1, payload: {
-      kind: "dataObject", structureGuid: "weapon", values: { Legacy: "keep", Damage: 10 },
-    } });
-    expect(registry.migrate("DataSheet", 0, { structureGuid: "weapon", objectGuids: ["sword", "sword", "shield"] }).payload)
-      .toEqual({ kind: "dataSheet", structureGuid: "weapon", objectGuids: ["sword", "shield"] });
-    expect(registry.migrate("DataObject", 1, object.payload).migrated).toBe(false);
-    expect(() => registry.migrate("DataSheet", 2, {})).toThrow(/newer engine version/);
+    const definition = registry.migrate("DataDefinition", 0, { kind: "dataDefinition", fields: [{ id: "damage", name: "Damage", typeId: "float", defaultValue: 10 }] });
+    expect(definition).toMatchObject({ migrated: true, version: 1, payload: { kind: "dataDefinition", fields: [{ id: "damage", defaultValue: 10 }] } });
+    const sheet = { kind: "dataSheet", definitionGuid: "weapon", rows: [{ id: "sword", name: "Sword", values: { Damage: 10, Retired: "keep" } }] };
+    expect(registry.migrate("DataSheet", 0, sheet)).toEqual({ payload: sheet, version: 2, migrated: true });
+    expect(registry.migrate("DataSheet", 2, sheet).migrated).toBe(false);
+    const legacy = { kind: "dataSheet", structureGuid: "weapon", objectGuids: ["sword"] };
+    expect(() => registry.migrate("DataSheet", 1, legacy)).toThrow(/Legacy/);
+    expect(legacy.objectGuids).toEqual(["sword"]);
+    expect(() => registry.migrate("DataDefinition", 0, { kind: "dataObject", values: { Damage: 10 } })).toThrow();
+    expect(() => registry.migrate("DataSheet", 3, {})).toThrow(/newer engine version/);
   });
 });
 

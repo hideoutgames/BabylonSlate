@@ -50,13 +50,16 @@ function pngIhdr(width: number, height: number): Uint8Array {
 }
 
 describe("packedContentFromGame", () => {
-  it.each(["packed", "loose"] as const)("hydrates standalone data, Structures, Enums, and ordered sheets (%s)", async (mode) => {
+  it.each(["packed", "loose"] as const)("hydrates independent Data Definitions, Enums, and ordered sheet rows (%s)", async (mode) => {
     const payloads = [
       { guid: "quality", type: "Enum", payload: { members: [{ name: "Rare", value: 1 }] } },
-      { guid: "stats", type: "Structure", payload: { fields: [{ name: "Power", typeId: "int" }, { name: "Quality", typeId: "enum", typeClassId: "quality" }] } },
-      { guid: "standalone", type: "DataObject", payload: { kind: "dataObject", structureGuid: "stats", values: { Power: 42, Quality: "Rare" } } },
-      { guid: "row", type: "DataObject", payload: { kind: "dataObject", structureGuid: "stats", values: { Power: 7, Quality: "Rare" } } },
-      { guid: "sheet", type: "DataSheet", payload: { kind: "dataSheet", structureGuid: "stats", objectGuids: ["row"] } },
+      { guid: "stats", type: "DataDefinition", payload: { kind: "dataDefinition", fields: [
+        { id: "power", name: "Power", typeId: "int" }, { id: "quality", name: "Quality", typeId: "enum", typeClassId: "quality" },
+      ] } },
+      { guid: "sheet", type: "DataSheet", payload: { kind: "dataSheet", definitionGuid: "stats", rows: [
+        { id: "high", name: "High", values: { Power: 42, Quality: "Rare" } },
+        { id: "low", name: "Low", values: { Power: 7, Quality: "Rare" } },
+      ] } },
     ];
     const exported = await exportGame({
       mode, bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [],
@@ -64,11 +67,13 @@ describe("packedContentFromGame", () => {
     });
     if (!exported.ok) throw new Error(exported.error);
     const game = await loadGameFromFiles(exported.value.files);
-    const data = new RuntimeDataCatalog(packedContentFromGame(game).dataAssets);
-    expect(data.readObject("standalone", "stats")).toEqual({ Power: 42, Quality: "Rare" });
-    expect(data.getSheetObjects("sheet")).toEqual(["row"]);
-    expect(data.readObject("row", "stats")).toEqual({ Power: 7, Quality: "Rare" });
-    expect(data.readObject("row", "other-structure")).toBeNull();
+    const content = packedContentFromGame(game);
+    const data = new RuntimeDataCatalog(content.dataAssets);
+    expect(content.dataAssets?.map((entry) => entry.type)).toEqual(expect.arrayContaining(["DataDefinition", "DataSheet", "Enum"]));
+    expect(data.getSheetRows("sheet")).toEqual(["high", "low"]);
+    expect(data.readRow("sheet", "high", "stats")).toEqual({ Power: 42, Quality: "Rare" });
+    expect(data.readRow("sheet", "low", "stats")).toEqual({ Power: 7, Quality: "Rare" });
+    expect(data.readRow("sheet", "low", "other-definition")).toBeNull();
   });
 
   it("does not decode binary asset payloads as JSON during hydration", async () => {

@@ -50,9 +50,9 @@ describe("P9 document kinds", () => {
     expect(labelFromPath("assets/Depth Image.rendertargettexture.babasset")).toBe("Depth Image");
   });
 
-  it("restores Data Object and Data Sheet document identities with readable labels", () => {
+  it("restores Data Definition and Data Sheet document identities with readable labels", () => {
     for (const [type, kind, path, label] of [
-      ["DataObject", "data-object", "assets/Iron Sword.dataobject.babasset", "Iron Sword Data Object"],
+      ["DataDefinition", "data-definition", "assets/Iron Sword.datadefinition.babasset", "Iron Sword Data Definition"],
       ["DataSheet", "data-sheet", "assets/Weapons.datasheet.babasset", "Weapons Data Sheet"],
     ] as const) {
       const mapped = documentKindForAssetType(type)!;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createDataObjectAsset, createDataSheetAsset, type DataAssetCatalogEntry } from "@babylonslate/core";
+import { createDataSheetAsset, type DataAssetCatalogEntry, type DataDefinitionAsset } from "@babylonslate/core";
 import { clearDeletedAssetRefs } from "@babylonslate/assets";
 import { compileGraph, type GraphNode, type LogicGraph } from "@babylonslate/scripting";
 import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
@@ -9,15 +9,20 @@ import { loadCompiledModule } from "./module-loader";
 import { runtimeOptionsFromLoadControl } from "./play-load";
 import { createInProcessRuntime } from "./driver";
 
+function definition(guid: string, fields: DataDefinitionAsset["fields"]): DataAssetCatalogEntry {
+  return { guid, name: guid, type: "DataDefinition", payload: { kind: "dataDefinition", fields } };
+}
+
 function assets(): DataAssetCatalogEntry[] {
   return [
-    { guid: "stats", name: "Stats", type: "Structure", payload: { fields: [
+    definition("stats", [
       { id: "health", name: "Health", typeId: "int" },
-      { name: "Offset", typeId: "vec3" },
-    ] } },
-    { guid: "sword", name: "Sword", type: "DataObject", payload: createDataObjectAsset("stats", { Health: 20, Offset: { x: 1, y: 2, z: 3 } }) },
-    { guid: "shield", name: "Shield", type: "DataObject", payload: createDataObjectAsset("stats", { Health: 50, Offset: { x: 4, y: 5, z: 6 } }) },
-    { guid: "equipment", name: "Equipment", type: "DataSheet", payload: createDataSheetAsset("stats", ["shield", "sword"]) },
+      { id: "offset", name: "Offset", typeId: "vec3" },
+    ]),
+    { guid: "equipment", name: "Equipment", type: "DataSheet", payload: createDataSheetAsset("stats", [
+      { id: "shield", name: "Shield", values: { Health: 50, Offset: { x: 4, y: 5, z: 6 } } },
+      { id: "sword", name: "Sword", values: { Health: 20, Offset: { x: 1, y: 2, z: 3 } } },
+    ]) },
     { guid: "empty", name: "Empty", type: "DataSheet", payload: createDataSheetAsset("stats") },
   ];
 }
@@ -36,94 +41,164 @@ function host(data?: RuntimeDataCatalog, logs: string[] = []): ScriptHost {
 describe("runtime data catalog", () => {
   it("reads Tags, Tag Containers, nested arrays, and native Maps without sharing mutable data", () => {
     const data = new RuntimeDataCatalog([
-      { guid: "bonus", name: "Bonus", type: "Structure", payload: { fields: [{ name: "Power", typeId: "int" }] } },
-      { guid: "config", name: "Config", type: "Structure", payload: { fields: [
-        { name: "State", typeId: "tag" },
-        { name: "Tags", typeId: "struct", typeClassId: "engine:TagContainer" },
-        { name: "Weights", typeId: "float", container: "map", keyTypeId: "tag" },
-        { name: "Bonuses", typeId: "struct", typeClassId: "bonus", container: "array" },
-      ] } },
-      { guid: "item", name: "Item", type: "DataObject", payload: createDataObjectAsset("config", {
-        State: 2, Tags: { Tags: [1, 2] },
-        Weights: [{ key: 1, value: 0.5 }, { key: 2, value: 1.5 }],
-        Bonuses: [{ Power: 3 }],
-      }) },
+      definition("bonus", [{ id: "power", name: "Power", typeId: "int" }]),
+      definition("config", [
+        { id: "state", name: "State", typeId: "tag" },
+        { id: "tags", name: "Tags", typeId: "struct", typeClassId: "engine:TagContainer" },
+        { id: "weights", name: "Weights", typeId: "float", container: "map", keyTypeId: "tag" },
+        { id: "bonuses", name: "Bonuses", typeId: "struct", typeClassId: "bonus", container: "array" },
+      ]),
+      { guid: "items", name: "Items", type: "DataSheet", payload: createDataSheetAsset("config", [{
+        id: "item", name: "Item", values: {
+          State: 2, Tags: { Tags: [1, 2] },
+          Weights: [{ key: 1, value: 0.5 }, { key: 2, value: 1.5 }],
+          Bonuses: [{ Power: 3 }],
+        },
+      }]) },
     ]);
-    const first = data.readObject("item", "config")!;
+    const first = data.readRow("items", "item", "config")!;
     expect(first).toEqual({ State: 2, Tags: { Tags: [1, 2] }, Weights: new Map([[1, 0.5], [2, 1.5]]), Bonuses: [{ Power: 3 }] });
     (first.Weights as Map<number, number>).set(1, 99);
     (first.Tags as { Tags: number[] }).Tags.push(3);
     (first.Bonuses as Array<{ Power: number }>)[0]!.Power = 99;
-    const next = data.readObject("item", "config")!;
+    const next = data.readRow("items", "item", "config")!;
     expect((next.Weights as Map<number, number>).get(1)).toBe(0.5);
     expect(next.Tags).toEqual({ Tags: [1, 2] });
     expect(next.Bonuses).toEqual([{ Power: 3 }]);
   });
 
-  it("keeps objects and their sheets readable after optional asset and Class references are deleted", () => {
+  it("keeps rows readable after optional asset and Class references are deleted", () => {
     const fields = [
-      { name: "Icon", typeId: "asset", typeClassId: "Texture" },
-      { name: "Spawn", typeId: "class" },
-      { name: "Label", typeId: "string" },
+      { id: "icon", name: "Icon", typeId: "asset", typeClassId: "Texture" },
+      { id: "spawn", name: "Spawn", typeId: "class" },
+      { id: "label", name: "Label", typeId: "string" },
     ];
-    const authored = createDataObjectAsset("item", { Icon: "texture", Spawn: "Hero", Label: "texture" }, fields);
+    const authored = createDataSheetAsset("item", [{
+      id: "sword", name: "Sword", values: { Icon: "texture", Spawn: "Hero", Label: "texture" }, schema: fields,
+    }]);
     const cleared = clearDeletedAssetRefs(authored, new Set(["texture", "hero-guid"]), new Set(["Hero"]));
     const data = new RuntimeDataCatalog([
-      { guid: "item", type: "Structure", name: "Item", payload: { fields } },
-      { guid: "sword", type: "DataObject", name: "Sword", payload: cleared.value },
-      { guid: "items", type: "DataSheet", name: "Items", payload: createDataSheetAsset("item", ["sword"]) },
+      definition("item", fields),
+      { guid: "items", type: "DataSheet", name: "Items", payload: cleared.value },
     ]);
-    expect(data.readObject("sword")).toEqual({ Icon: "", Spawn: "", Label: "texture" });
+    expect(data.readRow("items", "sword")).toEqual({ Icon: "", Spawn: "", Label: "texture" });
     expect(data.hasSheet("items")).toBe(true);
-    expect(data.getSheetObjects("items")).toEqual(["sword"]);
-    expect(authored.values).toEqual({ Icon: "texture", Spawn: "Hero", Label: "texture" });
+    expect(data.getSheetRows("items")).toEqual(["sword"]);
+    expect(authored.rows[0]!.values).toEqual({ Icon: "texture", Spawn: "Hero", Label: "texture" });
   });
-  it("reads standalone objects and isolates nested values from other readers and the source asset", () => {
-    const source = assets().filter((entry) => entry.type !== "DataSheet");
+
+  it("scopes IDs to their sheet and isolates nested values from readers and source assets", () => {
+    const source = assets();
+    source.push({ guid: "second", type: "DataSheet", name: "Second", payload: createDataSheetAsset("stats", [
+      { id: "sword", name: "Another sword", values: { Health: 80, Offset: { x: 0, y: 0, z: 0 } } },
+    ]) });
     const data = new RuntimeDataCatalog(source);
-    const first = data.readObject("sword", "stats")!;
+    const first = data.readRow("equipment", "sword", "stats")!;
     (first.Offset as { x: number }).x = -1;
     first.Health = -1;
-    const original = source.find((entry) => entry.guid === "sword")!.payload as ReturnType<typeof createDataObjectAsset>;
-    original.values.Health = 999;
-    expect(data.readObject("sword", "stats")).toEqual({ Health: 20, Offset: { x: 1, y: 2, z: 3 } });
-    expect(data.hasObject("sword", "other-structure")).toBe(false);
-    expect(data.readObject("sword", "other-structure")).toBeNull();
-    expect(data.readObject("missing")).toBeNull();
-    expect(data.readObject({ guid: "sword" })).toBeNull();
+    const original = source.find((entry) => entry.guid === "equipment")!.payload as ReturnType<typeof createDataSheetAsset>;
+    original.rows[1]!.values.Health = 999;
+    original.rows[1]!.name = "Renamed";
+    expect(data.readRow("equipment", "sword", "stats")).toEqual({ Health: 20, Offset: { x: 1, y: 2, z: 3 } });
+    expect(data.readRow("second", "sword")!.Health).toBe(80);
+    expect(data.hasRow("equipment", "sword", "other-definition")).toBe(false);
+    expect(data.readRow("equipment", "sword", "other-definition")).toBeNull();
+    expect(data.readRow("equipment", "missing")).toBeNull();
+    expect(data.readRow("equipment", "Sword")).toBeNull();
+    expect(data.readRow("missing", "sword")).toBeNull();
+    expect(data.readRow({ guid: "equipment" }, "sword")).toBeNull();
   });
 
-  it("preserves sheet order, distinguishes an empty sheet from a miss, and rejects invalid membership", () => {
+  it("preserves row order, distinguishes empty sheets from misses, and rejects ambiguous identities", () => {
     const data = new RuntimeDataCatalog([
       ...assets(),
-      { guid: "broken", name: "Broken", type: "DataSheet", payload: createDataSheetAsset("stats", ["missing", "sword"]) },
-      { guid: "duplicate", name: "Duplicate", type: "DataSheet", payload: { kind: "dataSheet", structureGuid: "stats", objectGuids: ["sword", "sword"] } },
+      { guid: "duplicate", name: "Duplicate", type: "DataSheet", payload: { kind: "dataSheet", definitionGuid: "stats", rows: [
+        { id: "same", name: "One", values: {} }, { id: "same", name: "Two", values: {} },
+      ] } },
+      { guid: "blank-id", name: "Blank", type: "DataSheet", payload: { kind: "dataSheet", definitionGuid: "stats", rows: [
+        { id: " ", name: "One", values: {} },
+      ] } },
+      { guid: "padded-id", name: "Padded", type: "DataSheet", payload: createDataSheetAsset("stats", [
+        { id: " sword ", name: "Sword", values: { Health: 20, Offset: { x: 1, y: 2, z: 3 } } },
+      ]) },
+      { guid: "unknown-definition", name: "Unknown", type: "DataSheet", payload: createDataSheetAsset("missing") },
+      { guid: "structure", name: "Structure", type: "Structure", payload: { fields: [] } },
+      { guid: "wrong-kind", name: "Wrong kind", type: "DataSheet", payload: createDataSheetAsset("structure") },
     ]);
-    const references = data.getSheetObjects("equipment", "stats");
-    references.reverse();
-    expect(data.getSheetObjects("equipment")).toEqual(["shield", "sword"]);
-    expect(data.getSheetObjects("equipment", "other-structure")).toEqual([]);
-    expect(data.hasSheet("equipment", "other-structure")).toBe(false);
-    expect(data.getSheetObjects("empty")).toEqual([]);
+    const rowIds = data.getSheetRows("equipment", "stats");
+    rowIds.reverse();
+    expect(data.getSheetRows("equipment")).toEqual(["shield", "sword"]);
+    expect(data.getSheetRows("equipment", "other-definition")).toEqual([]);
+    expect(data.hasSheet("equipment", "other-definition")).toBe(false);
+    expect(data.getSheetRows("empty")).toEqual([]);
     expect(data.hasSheet("empty")).toBe(true);
-    expect(data.hasSheet("missing")).toBe(false);
-    expect(data.hasSheet("broken")).toBe(false);
-    expect(data.hasSheet("duplicate")).toBe(false);
+    for (const guid of ["missing", "duplicate", "blank-id", "padded-id", "unknown-definition", "wrong-kind"]) {
+      expect(data.hasSheet(guid)).toBe(false);
+    }
   });
 
-  it("projects stable field renames and fails new missing fields without inheriting defaults", () => {
+  it("rejects invalid and cyclic Definitions even for empty sheets without hiding valid data", () => {
+    const invalidDefinitions = ["invalid", "cycle-a", "cycle-b"];
     const data = new RuntimeDataCatalog([
-      { guid: "stats", name: "Stats", type: "Structure", payload: { fields: [{ id: "health", name: "MaxHealth", typeId: "int", defaultValue: 100 }] } },
-      { guid: "renamed", name: "Renamed", type: "DataObject", payload: createDataObjectAsset("stats", { Health: 12 }, [{ id: "health", name: "Health", typeId: "int" }]) },
-      { guid: "missing", name: "Missing", type: "DataObject", payload: createDataObjectAsset("stats", {}) },
-      { guid: "invalid", name: "Invalid", type: "DataObject", payload: createDataObjectAsset("stats", { MaxHealth: "many" }) },
+      ...assets(),
+      definition("invalid", [
+        { id: "duplicate", name: "Health", typeId: "int" },
+        { id: "duplicate", name: "Power", typeId: "int" },
+      ]),
+      definition("cycle-a", [{ id: "child", name: "Child", typeId: "struct", typeClassId: "cycle-b" }]),
+      definition("cycle-b", [{ id: "children", name: "Children", typeId: "struct", typeClassId: "cycle-a", container: "array" }]),
+      ...invalidDefinitions.flatMap((definitionGuid): DataAssetCatalogEntry[] => [
+        { guid: `${definitionGuid}-empty`, type: "DataSheet", name: "Empty", payload: createDataSheetAsset(definitionGuid) },
+        { guid: `${definitionGuid}-rows`, type: "DataSheet", name: "Rows", payload: createDataSheetAsset(definitionGuid, [
+          { id: "row", name: "Row", values: { Health: 20, Power: 10, Child: { Children: [] }, Children: [] } },
+        ]) },
+      ]),
     ]);
-    expect(data.readObject("renamed")).toEqual({ MaxHealth: 12 });
-    expect(data.hasObject("missing")).toBe(false);
-    expect(data.hasObject("invalid")).toBe(false);
+    for (const definitionGuid of invalidDefinitions) {
+      for (const suffix of ["empty", "rows"]) {
+        const sheetGuid = `${definitionGuid}-${suffix}`;
+        expect(data.hasSheet(sheetGuid)).toBe(false);
+        expect(data.getSheetRows(sheetGuid)).toEqual([]);
+        expect(data.hasRow(sheetGuid, "row")).toBe(false);
+        expect(data.readRow(sheetGuid, "row")).toBeNull();
+      }
+    }
+    expect(data.hasSheet("empty")).toBe(true);
+    expect(data.readRow("equipment", "sword")!.Health).toBe(20);
   });
 
-  it("executes compiled data nodes through the ScriptHost using worker-load snapshots", async () => {
+  it("projects stable field renames and isolates invalid rows without inheriting new defaults", () => {
+    const data = new RuntimeDataCatalog([
+      definition("stats", [{ id: "health", name: "MaxHealth", typeId: "int", defaultValue: 100 }]),
+      { guid: "items", name: "Items", type: "DataSheet", payload: createDataSheetAsset("stats", [
+        { id: "renamed", name: "Renamed", values: { Health: 12 }, schema: [{ id: "health", name: "Health", typeId: "int" }] },
+        { id: "missing", name: "Missing", values: {} },
+        { id: "invalid", name: "Invalid", values: { MaxHealth: "many" } },
+      ]) },
+    ]);
+    expect(data.readRow("items", "renamed")).toEqual({ MaxHealth: 12 });
+    expect(data.hasRow("items", "missing")).toBe(false);
+    expect(data.hasRow("items", "invalid")).toBe(false);
+    expect(data.readRow("items", "invalid")).toBeNull();
+    expect(data.hasSheet("items")).toBe(true);
+    expect(data.getSheetRows("items")).toEqual(["renamed", "missing", "invalid"]);
+  });
+
+  it("keeps valid siblings readable when an external row has malformed values", () => {
+    const data = new RuntimeDataCatalog([
+      definition("stats", [{ id: "health", name: "Health", typeId: "int" }]),
+      { guid: "items", type: "DataSheet", name: "Items", payload: { kind: "dataSheet", definitionGuid: "stats", rows: [
+        { id: "broken", name: "Broken", values: null },
+        { id: "valid", name: "Valid", values: { Health: 12 } },
+      ] } },
+    ]);
+    expect(data.hasSheet("items")).toBe(true);
+    expect(data.getSheetRows("items")).toEqual(["broken", "valid"]);
+    expect(data.readRow("items", "broken")).toBeNull();
+    expect(data.readRow("items", "valid")).toEqual({ Health: 12 });
+  });
+
+  it("executes compiled row nodes through the ScriptHost using worker-load snapshots", async () => {
     const registry = createDefaultNodeRegistry();
     const node = (id: string, typeId: string, properties: Record<string, unknown> = {}): GraphNode => ({
       id, typeId, position: { x: 0, y: 0 }, properties, pins: registry.get(typeId)!.pins(properties),
@@ -132,7 +207,7 @@ describe("runtime data catalog", () => {
       id: "data-read", kind: "event",
       nodes: [
         node("start", "flow.entry"),
-        node("read", "data.readObject", { structGuid: "stats", "default:object": "sword" }),
+        node("read", "data.readRow", { definitionGuid: "stats", "default:sheet": "equipment", "default:rowId": "sword" }),
         node("break", "struct.break", { structGuid: "stats", fields: [{ name: "Health", typeId: "int" }] }),
         node("log", "debug.log"),
       ],
@@ -151,15 +226,15 @@ describe("runtime data catalog", () => {
     await module.run!(context);
     expect(logs).toEqual(["20"]);
 
-    // Found is safe when the reference is missing; no Structure access runs.
+    // Found is safe when the row is missing; no typed field access runs.
     graph.edges = [graph.edges[0]!, { id: "found", sourceNodeId: "read", sourcePinId: "found", targetNodeId: "log", targetPinId: "message" }];
-    graph.nodes.find((entry) => entry.id === "read")!.properties["default:object"] = "missing";
+    graph.nodes.find((entry) => entry.id === "read")!.properties["default:rowId"] = "missing";
     const found = await loadCompiledModule(compileGraph(graph, { registry, assetGuid: "actor" }).source, "data-miss");
     await found.run!(context);
     expect(logs).toEqual(["20", "false"]);
 
-    graph.nodes.push(node("sheet", "data.getSheetObjects", { structGuid: "stats", "default:sheet": "equipment" }));
-    graph.edges = [graph.edges[0]!, { id: "objects", sourceNodeId: "sheet", sourcePinId: "objects", targetNodeId: "log", targetPinId: "message" }];
+    graph.nodes.push(node("sheet", "data.getSheetRows", { definitionGuid: "stats", "default:sheet": "equipment" }));
+    graph.edges = [graph.edges[0]!, { id: "rows", sourceNodeId: "sheet", sourcePinId: "rows", targetNodeId: "log", targetPinId: "message" }];
     const sheet = await loadCompiledModule(compileGraph(graph, { registry, assetGuid: "actor" }).source, "data-sheet");
     await sheet.run!(context);
     expect(logs.at(-1)).toContain("shield");
@@ -168,9 +243,9 @@ describe("runtime data catalog", () => {
 
   it("denies editor data authoring in gameplay and safely misses data in hosts without a catalog", async () => {
     const context = host().createContext(null, 0, 0);
-    expect(context.data.readObject("sword")).toBeNull();
+    expect(context.data.readRow("equipment", "sword")).toBeNull();
     expect(context.data.hasSheet("empty")).toBe(false);
-    expect(await context.editorData.updateObject("sword", "stats", { Health: 1 })).toMatchObject({ success: false, value: null });
+    expect(await context.editorData.updateRow("equipment", "sword", "stats", { Health: 1 })).toMatchObject({ success: false, value: null });
   });
 
   it("installs loaded data into the actual runtime driver's authored graph context", async () => {
@@ -183,7 +258,7 @@ describe("runtime data catalog", () => {
     try {
       await runtime.loadScripts([{
         assetGuid: "reader", classId: "DataReader", anchors: [],
-        source: 'export function onTick(ctx) { ctx.log("log", "Data", String(ctx.data.readObject("sword", "stats").Health)); }',
+        source: 'export function onTick(ctx) { ctx.log("log", "Data", String(ctx.data.readRow("equipment", "sword", "stats").Health)); }',
         entryPoints: [{ name: "onTick", event: "onTick", isAsync: false }],
       }]);
       runtime.spawnScriptedActor({ classId: "DataReader" });

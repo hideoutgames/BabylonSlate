@@ -28,40 +28,65 @@ function asset(
 }
 
 describe("collectExportReachability", () => {
-  it("packs standalone data, shared sheet rows, nested schemas and typed assets while preserving text as text", () => {
-    const payloads: Record<string, unknown> = {
-      sheet: { kind: "dataSheet", structureGuid: "weapon", objectGuids: ["sword"] },
-      sword: { kind: "dataObject", structureGuid: "weapon", values: {
-        assetGuid: "unused", Stats: { Icon: "texture", classId: "unused", Grade: "Common" }, Spawn: "Hero",
-      }, schema: [
-        { name: "assetGuid", typeId: "string" },
-        { name: "Spawn", typeId: "class", typeClassId: "Hero" },
-        { name: "Stats", typeId: "struct", typeClassId: "stats", fields: [
-          { name: "Icon", typeId: "asset", typeClassId: "Texture" },
-          { name: "classId", typeId: "string" },
-          { name: "Grade", typeId: "enum", typeClassId: "grade" },
-        ] },
+  it("packs owned rows, their definition and typed nested dependencies without packing row IDs or text", () => {
+    const schema = [
+      { name: "assetGuid", typeId: "string" },
+      { name: "Spawn", typeId: "class", typeClassId: "Hero" },
+      { name: "Stats", typeId: "struct", typeClassId: "stats", fields: [
+        { name: "Icon", typeId: "asset", typeClassId: "Texture" },
+        { name: "classId", typeId: "string" },
+        { name: "Grade", typeId: "enum", typeClassId: "grade" },
       ] },
-      independent: { kind: "dataObject", structureGuid: "weapon", values: { Damage: 5 }, schema: [{ name: "Damage", typeId: "float" }] },
+    ];
+    const payloads: Record<string, unknown> = {
+      sheet: { kind: "dataSheet", definitionGuid: "weapon", rows: [{ id: "unused", name: "unused", values: {
+        assetGuid: "unused", Stats: { Icon: "texture", classId: "unused", Grade: "Common" }, Spawn: "Hero",
+      }, schema }, { id: "second", name: "Second", values: { Icon: "fallback-texture", Label: "unused" } }] },
+      weapon: { kind: "dataDefinition", fields: [
+        { id: "icon", name: "Icon", typeId: "asset", typeClassId: "Texture" },
+        { id: "label", name: "Label", typeId: "string" },
+      ] },
     };
     const result = collectExportReachability({ startupSceneGuid: "scene", pluginEnabledGuids: new Set(), parentOf: () => "Actor",
       assets: [
         asset({ guid: "scene", name: "Scene", type: "Scene", dependencies: ["host"] }),
         asset({ guid: "host", name: "Host", type: "Class" }),
         asset({ guid: "sheet", name: "Weapons", type: "DataSheet" }),
-        asset({ guid: "sword", name: "Sword", type: "DataObject" }),
-        asset({ guid: "independent", name: "Standalone", type: "DataObject" }),
-        asset({ guid: "weapon", name: "Weapon", type: "Structure" }),
+        asset({ guid: "weapon", name: "Weapon", type: "DataDefinition" }),
         asset({ guid: "stats", name: "Stats", type: "Structure" }),
         asset({ guid: "grade", name: "Grade", type: "Enum" }),
         asset({ guid: "hero", name: "Hero", type: "Class" }),
         asset({ guid: "texture", name: "Icon", type: "Texture" }),
+        asset({ guid: "fallback-texture", name: "Fallback", type: "Texture" }),
         asset({ guid: "unused", name: "Unreferenced", type: "Texture" }),
       ], sceneByGuid: () => createDefaultScene(), graphByGuid: (guid) => guid === "host" ? { edges: [], nodes: [
-        { id: "read", type: "data.readObject", position: { x: 0, y: 0 }, data: { properties: { "default:object": "independent" } } },
-        { id: "list", type: "data.getSheetObjects", position: { x: 0, y: 0 }, data: { properties: { "default:sheet": "sheet" } } },
+        { id: "read", type: "data.readRow", position: { x: 0, y: 0 }, data: { properties: { "default:sheet": "sheet", "default:rowId": "unused" } } },
+        { id: "list", type: "data.getSheetRows", position: { x: 0, y: 0 }, data: { properties: { "default:sheet": "sheet" } } },
       ] } : null, payloadByGuid: (guid) => payloads[guid] ?? null });
-    expect(result).toMatchObject({ ok: true, value: { guids: ["grade", "hero", "host", "independent", "scene", "sheet", "stats", "sword", "texture", "weapon"] } });
+    expect(result).toMatchObject({ ok: true, value: { guids: ["fallback-texture", "grade", "hero", "host", "scene", "sheet", "stats", "texture", "weapon"] } });
+  });
+  it("refuses reachable legacy data instead of shipping an unsupported payload", () => {
+    const result = collectExportReachability({ startupSceneGuid: "scene", pluginEnabledGuids: new Set(), parentOf: () => null,
+      assets: [asset({ guid: "scene", name: "Scene", type: "Scene", dependencies: ["legacy"] }), asset({ guid: "legacy", name: "Old Weapon", type: "DataObject" })],
+      sceneByGuid: () => createDefaultScene(), graphByGuid: () => null });
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining("Legacy Data Object") });
+  });
+  it("exports nested definition default assets when rows and nested snapshots are absent", () => {
+    const payloads: Record<string, unknown> = {
+      sheet: { kind: "dataSheet", definitionGuid: "parent", rows: [] },
+      parent: { kind: "dataDefinition", fields: [{ id: "child-field", name: "Child", typeId: "struct", typeClassId: "child", defaultValue: { Icon: "texture", Label: "unused" } }] },
+      child: { kind: "dataDefinition", fields: [
+        { id: "icon", name: "Icon", typeId: "asset", typeClassId: "Texture", defaultValue: "" },
+        { id: "label", name: "Label", typeId: "string", defaultValue: "" },
+      ] },
+    };
+    const result = collectExportReachability({ startupSceneGuid: "scene", pluginEnabledGuids: new Set(), parentOf: () => null,
+      assets: [asset({ guid: "scene", name: "Scene", type: "Scene", dependencies: ["sheet"] }),
+        asset({ guid: "sheet", name: "Sheet", type: "DataSheet" }), asset({ guid: "parent", name: "Parent", type: "DataDefinition" }),
+        asset({ guid: "child", name: "Child", type: "DataDefinition" }), asset({ guid: "texture", name: "Icon", type: "Texture" }),
+        asset({ guid: "unused", name: "Unused", type: "Texture" })],
+      sceneByGuid: () => createDefaultScene(), graphByGuid: () => null, payloadByGuid: (guid) => payloads[guid] ?? null });
+    expect(result).toMatchObject({ ok: true, value: { guids: ["child", "parent", "scene", "sheet", "texture"] } });
   });
   it("packs non-texture variable assets and their transitive dependencies", () => {
     const graph: SerializedGraph = { nodes: [], edges: [], members: [

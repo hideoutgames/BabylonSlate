@@ -17,20 +17,22 @@ export type StructSchema = {
 export type TypeSchemas = {
   enums: Readonly<Record<string, EnumSchema>>;
   structs: Readonly<Record<string, StructSchema>>;
+  /** Authoritative Data Definition identities, also projected into structs for pins. */
+  dataDefinitions?: Readonly<Record<string, StructSchema>>;
 };
 
 export function mergeEngineTypeSchemas(
   project?: Partial<TypeSchemas>,
 ): TypeSchemas {
   const enums: Record<string, EnumSchema> = { ...(project?.enums ?? {}) };
-  const structs: Record<string, StructSchema> = { ...(project?.structs ?? {}) };
+  const structs: Record<string, StructSchema> = { ...(project?.structs ?? {}), ...(project?.dataDefinitions ?? {}) };
   for (const entry of ENGINE_ENUMS) {
     enums[entry.id] = { name: entry.name, members: entry.members };
   }
   for (const entry of ENGINE_STRUCTS) {
     structs[entry.id] = { name: entry.name, fields: entry.fields };
   }
-  return { enums, structs };
+  return { enums, structs, ...(project?.dataDefinitions ? { dataDefinitions: project.dataDefinitions } : {}) };
 }
 
 export function knownGuidsFromSchemas(schemas: TypeSchemas): Set<string> {

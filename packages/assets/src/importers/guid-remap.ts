@@ -5,25 +5,25 @@ import { remapModelPayloadGuids } from "../model-payload";
 import { remapParticlePayloadGuids } from "../particle-payload";
 import { remapSkeletonPayloadGuids } from "../skeleton-payload";
 import { remapRenderTargetPayloadGuids } from "../render-target-payload";
-import { remapDataPayloadGuids } from "../data-asset-refs";
+import { remapDataPayloadGuids, type DataDefinitionFieldsResolver } from "../data-asset-refs";
 import type { ImportResult } from "./types";
 
-const DATA_TYPES = new Set(["DataObject", "DataSheet", "Structure", "Enum"]);
+const DATA_TYPES = new Set(["DataDefinition", "DataSheet", "Structure", "Enum"]);
 
-function remapDocumentPayload(type: string, payload: Record<string, unknown>, remap: ReadonlyMap<string, string>): Record<string, unknown> {
-  if (DATA_TYPES.has(type)) return remapDataPayloadGuids(type, payload, remap);
+function remapDocumentPayload(type: string, payload: Record<string, unknown>, remap: ReadonlyMap<string, string>, definitionFields: DataDefinitionFieldsResolver): Record<string, unknown> {
+  if (DATA_TYPES.has(type)) return remapDataPayloadGuids(type, payload, remap, definitionFields);
   const targets = remapRenderTargetPayloadGuids(type, payload, remap);
-  return remapDataPayloadGuids(type, remapInputReferences(targets, remap), remap) as Record<string, unknown>;
+  return remapDataPayloadGuids(type, remapInputReferences(targets, remap), remap, definitionFields) as Record<string, unknown>;
 }
 
-function remapHeaderPayload(type: string, payload: Record<string, unknown>, remap: ReadonlyMap<string, string>): Record<string, unknown> {
-  if (DATA_TYPES.has(type)) return remapDataPayloadGuids(type, payload, remap);
+function remapHeaderPayload(type: string, payload: Record<string, unknown>, remap: ReadonlyMap<string, string>, definitionFields: DataDefinitionFieldsResolver): Record<string, unknown> {
+  if (DATA_TYPES.has(type)) return remapDataPayloadGuids(type, payload, remap, definitionFields);
   let next = remapAudioPayloadGuids(type, payload, remap);
   next = remapParticlePayloadGuids(type, next, remap);
   next = remapModelPayloadGuids(type, next, remap);
   next = remapSkeletonPayloadGuids(type, next, remap);
   next = remapAnimationPayloadGuids(type, next, remap);
-  return remapDocumentPayload(type, next, remap);
+  return remapDocumentPayload(type, next, remap, definitionFields);
 }
 
 /**
@@ -47,6 +47,23 @@ export function remapImportResultGuids(
   if (remap.size === 0) {
     return results;
   }
+  const definitions = new Map<string, readonly unknown[]>();
+  for (const result of results) {
+    let payload = result.payload;
+    const chunk = result.chunks.find((entry) => entry.id === "document");
+    if (chunk && (result.type === "DataDefinition" || result.type === "DataSheet" || result.type === "Structure")) {
+      try {
+        const document: unknown = JSON.parse(new TextDecoder().decode(chunk.data));
+        if (document && typeof document === "object" && !Array.isArray(document)) payload = document as Record<string, unknown>;
+      }
+      catch { /* An unreadable document is handled by its normal import validation. */ }
+    }
+    if (result.type === "DataObject" || (result.type === "DataSheet" && ("objectGuids" in payload || "structureGuid" in payload))) {
+      throw new Error("Legacy Data Object or reference-based Data Sheet assets cannot be imported with GUID collisions. Their original files have not been changed.");
+    }
+    if ((result.type === "DataDefinition" || result.type === "Structure") && Array.isArray(payload.fields)) definitions.set(result.guid, payload.fields);
+  }
+  const definitionFields: DataDefinitionFieldsResolver = (guid) => definitions.get(guid);
   return results.map((result) => ({
     ...result,
     guid: remap.get(result.guid) ?? result.guid,
@@ -54,11 +71,11 @@ export function remapImportResultGuids(
     chunks: result.chunks.map((chunk) => {
       if (chunk.id !== "document") return chunk;
       try {
-        const mapped = remapDocumentPayload(result.type, JSON.parse(new TextDecoder().decode(chunk.data)), remap);
+        const mapped = remapDocumentPayload(result.type, JSON.parse(new TextDecoder().decode(chunk.data)), remap, definitionFields);
         return { ...chunk, data: new TextEncoder().encode(JSON.stringify(mapped)) };
       } catch { return chunk; }
     }),
-    payload: remapHeaderPayload(result.type, result.payload, remap),
+    payload: remapHeaderPayload(result.type, result.payload, remap, definitionFields),
     attachToGuid: result.attachToGuid
       ? remap.get(result.attachToGuid) ?? result.attachToGuid
       : result.attachToGuid,

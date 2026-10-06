@@ -1,39 +1,34 @@
 import { describe, expect, it } from "vitest";
-import { createDataObjectAsset, normalizeDataObjectAsset, normalizeDataSheetAsset } from "./data-assets";
+import { createDataDefinitionAsset, createDataSheetAsset, createDataSheetRow, normalizeDataDefinitionAsset, normalizeDataSheetAsset } from "./data-assets";
 
-describe("data asset payloads", () => {
-  it("preserves detached authored values and unknown fields while opening an object", () => {
-    const source = {
-      kind: "dataObject", structureGuid: " stats ",
-      values: { Health: 12, RemovedField: { label: "keep me" } },
-      schema: [{ id: "health", name: "Health", typeId: "int" }],
-    };
-    const opened = normalizeDataObjectAsset(source);
-    expect(opened.values).toEqual({ Health: 12, RemovedField: { label: "keep me" } });
-    expect(opened.structureGuid).toBe("stats");
-    (opened.values.RemovedField as { label: string }).label = "edited";
-    opened.schema![0]!.name = "Other";
-    expect(source.values.RemovedField.label).toBe("keep me");
-    expect(source.schema[0]!.name).toBe("Health");
+describe("Definition and sheet payloads", () => {
+  it("owns detached ordered row values and schema snapshots inside the sheet", () => {
+    const row = createDataSheetRow("Sword", { Health: 12, RemovedField: { label: "keep me" } }, [{ id: "health", name: "Health", typeId: "int" }], "sword");
+    const source = createDataSheetAsset("stats", [row]);
+    const opened = normalizeDataSheetAsset(source);
+    expect(opened.rows[0]).toEqual(row);
+    (opened.rows[0]!.values.RemovedField as { label: string }).label = "edited";
+    opened.rows[0]!.schema![0]!.name = "Other";
+    expect(source.rows[0]!.values.RemovedField).toEqual({ label: "keep me" });
+    expect(row.schema![0]!.name).toBe("Health");
   });
 
-  it("keeps ordered unique sheet membership without manufacturing embedded rows", () => {
-    expect(normalizeDataSheetAsset({
-      structureGuid: "stats", objectGuids: ["sword", " shield ", "sword", "", 3, null],
-    })).toEqual({ kind: "dataSheet", structureGuid: "stats", objectGuids: ["sword", "shield"] });
-    expect(createDataObjectAsset("stats", { Health: 10 })).toEqual({
-      kind: "dataObject", structureGuid: "stats", values: { Health: 10 },
-    });
-  });
-
-  it("retains collection and nested key snapshots across opening and resaving", () => {
-    const opened = normalizeDataObjectAsset({ kind: "dataObject", structureGuid: "stats", values: { Values: [] }, schema: [{
-      name: "Values", typeId: "struct", typeClassId: "stats", container: "map",
+  it("preserves definition defaults, constraints, stable fields and nested collection metadata", () => {
+    const definition = createDataDefinitionAsset([{ id: "values", name: "Values", typeId: "struct", typeClassId: "stats", container: "map",
       keyTypeId: "struct", keyTypeClassId: "key", keyFields: [{ name: "Icon", typeId: "asset", typeClassId: "Texture" }],
-      fields: [{ name: "Tags", typeId: "tag", container: "array" }],
-    }] });
-    expect(opened.schema![0]).toMatchObject({ container: "map", keyTypeId: "struct", keyTypeClassId: "key",
-      keyFields: [{ name: "Icon", typeId: "asset", typeClassId: "Texture" }], fields: [{ name: "Tags", typeId: "tag", container: "array" }],
-    });
+      fields: [{ name: "Tags", typeId: "tag", container: "array" }], defaultValue: [], category: "Combat", description: "Per Item", required: true,
+    }]);
+    const opened = normalizeDataDefinitionAsset(definition);
+    expect(opened).toEqual(definition);
+    opened.fields[0]!.defaultValue = [{ key: "changed", value: 7 }];
+    expect(definition.fields[0]!.defaultValue).toEqual([]);
+  });
+
+  it("refuses legacy reference sheets and former object payloads without silently discarding their data", () => {
+    const oldSheet = { kind: "dataSheet", structureGuid: "stats", objectGuids: ["sword", "shield"] };
+    expect(() => normalizeDataSheetAsset(oldSheet)).toThrow(/Legacy/);
+    expect(oldSheet.objectGuids).toEqual(["sword", "shield"]);
+    expect(() => normalizeDataDefinitionAsset({ kind: "dataObject", structureGuid: "stats", values: { Health: 10 } })).toThrow();
+    expect(() => normalizeDataSheetAsset({ kind: "dataSheet", definitionGuid: "stats", rows: [{ id: "broken", name: "Broken", values: null }] })).toThrow();
   });
 });

@@ -127,6 +127,12 @@ export function collectExportReachability(
     a.guid.localeCompare(b.guid),
   );
   const byGuid = new Map(sortedAssets.map((asset) => [asset.guid, asset]));
+  const definitionFields = (guid: string): readonly unknown[] | undefined => {
+    const type = byGuid.get(guid)?.type;
+    if (type !== "DataDefinition" && type !== "Structure") return undefined;
+    const payload = input.payloadByGuid?.(guid);
+    return payload && typeof payload === "object" && "fields" in payload && Array.isArray(payload.fields) ? payload.fields : undefined;
+  };
   const startupAsset = startup ? byGuid.get(startup) : undefined;
   if (!startup || !startupAsset || startupAsset.type !== "Scene") {
     return err(MISSING_STARTUP_SCENE_MESSAGE);
@@ -197,6 +203,7 @@ export function collectExportReachability(
       const ref = pending.pop()!;
       const asset = byGuid.get(ref) ?? byClassName.get(ref)?.[0];
       if (!asset || !isIncluded(asset, input)) continue;
+      if (asset.type === "DataObject") return err(`Legacy Data Object "${asset.name}" is referenced by this game. Replace that reference with a Data Sheet row before exporting.`);
       reached.add(asset.guid);
       const refs = new Set<string>(asset.dependencies);
       const collectOverrides = (value: unknown) => {
@@ -226,20 +233,22 @@ export function collectExportReachability(
           for (const guid of materialParameterTextureGuidsFromGraph(graph)) refs.add(guid);
           for (const guid of renderTargetAssetGuidsFromGraph(graph)) refs.add(guid);
           for (const guid of areaEmissionTextureGuids(graph)) refs.add(guid);
-          for (const guid of dataGraphAssetDependencies(graph, dataClassReferences)) refs.add(guid);
+          for (const guid of dataGraphAssetDependencies(graph, dataClassReferences, definitionFields)) refs.add(guid);
         }
       }
       const payload = input.payloadByGuid?.(asset.guid);
+      if (asset.type === "DataSheet" && payload && typeof payload === "object" && ("objectGuids" in payload || "structureGuid" in payload)) {
+        return err(`Legacy Data Sheet "${asset.name}" uses external object references. Create a sheet with owned rows before exporting.`);
+      }
       if (payload) {
-        if (["DataObject", "DataSheet", "Structure", "Enum"].includes(asset.type)) {
-          for (const guid of dataAssetDependencies(asset.type, payload, dataClassReferences)) refs.add(guid);
-        } else collectTypedRefs(payload, refs);
-        collectOverrides(payload);
-        if (typeof payload === "object" && "actors" in payload) {
-          for (const guid of text2dImageGuidsFromScene(
-            payload as SerializedScene,
-          ))
-            refs.add(guid);
+        if (["DataDefinition", "DataSheet", "Structure", "Enum"].includes(asset.type)) {
+          for (const guid of dataAssetDependencies(asset.type, payload, dataClassReferences, definitionFields)) refs.add(guid);
+        } else {
+          collectTypedRefs(payload, refs);
+          collectOverrides(payload);
+          if (typeof payload === "object" && "actors" in payload) {
+            for (const guid of text2dImageGuidsFromScene(payload as SerializedScene)) refs.add(guid);
+          }
         }
       }
       for (const next of [...refs].sort()) enqueue(next);

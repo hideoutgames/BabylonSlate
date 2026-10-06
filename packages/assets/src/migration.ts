@@ -5,7 +5,7 @@ import {
   identitySerializedTransform,
   normalizeSceneLayer,
   normalizeShadowOverrides,
-  normalizeDataObjectAsset,
+  normalizeDataDefinitionAsset,
   normalizeDataSheetAsset,
 } from "@babylonslate/core";
 import { normalizeParticleGraphDocument } from "@babylonslate/particle-graph";
@@ -215,12 +215,14 @@ export function createDefaultMigrationRegistry(): MigrationRegistry {
   const asRecord = <T extends object>(value: T): Record<string, unknown> =>
     value as unknown as Record<string, unknown>;
   registry.register({
-    type: "DataObject",
-    migrations: [(payload) => asRecord(normalizeDataObjectAsset(payload))],
+    type: "DataDefinition",
+    migrations: [(payload) => asRecord(normalizeDataDefinitionAsset(payload))],
   });
   registry.register({
     type: "DataSheet",
-    migrations: [(payload) => asRecord(normalizeDataSheetAsset(payload))],
+    // v1 stored external object references. Normalization refuses that format;
+    // there is no lossless implicit migration into owned rows.
+    migrations: [(payload) => ({ ...payload }), (payload) => asRecord(normalizeDataSheetAsset(payload))],
   });
   for (const type of ["InputAction", "InputAxis"] as const) {
     registry.register({
