@@ -37,6 +37,7 @@ export function asStructureAsset(
     fields: fields.map((raw) => {
       const row = asRecord(raw);
       return {
+        ...(typeof row.id === "string" && row.id.trim() ? { id: row.id.trim() } : {}),
         name: typeof row.name === "string" ? row.name : "Field",
         typeId: typeof row.typeId === "string" ? row.typeId : "float",
         ...(typeof row.typeClassId === "string" && row.typeClassId.trim()

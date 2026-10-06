@@ -71,6 +71,12 @@ export function defaultJsValue(type: PinType): unknown {
       return { x: 0, y: 0, z: 0, w: 1 };
     case "color":
       return { x: 0, y: 0, z: 0, w: 0 };
+    case "transform":
+      return {
+        position: { x: 0, y: 0, z: 0 },
+        rotation: { x: 0, y: 0, z: 0, w: 1 },
+        scale: { x: 1, y: 1, z: 1 },
+      };
     case "vec4":
       return { x: 0, y: 0, z: 0, w: 0 };
     case "array":

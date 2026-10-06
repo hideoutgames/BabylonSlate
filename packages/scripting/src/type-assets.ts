@@ -10,6 +10,8 @@ export type EnumAsset = {
 };
 
 export type StructField = {
+  /** Optional for legacy assets; persisted identities make field renames safe. */
+  id?: string;
   name: string;
   typeId: string;
   /** Object/class constraint, or nested Structure/Enum asset guid. */

@@ -3,6 +3,20 @@ import { SCENE_SCHEMA_VERSION, normalizeScene } from "@babylonslate/core";
 import { createDefaultMigrationRegistry } from "./migration";
 import { loadPayloadWithMigration } from "./migrate-on-load";
 
+describe("Data asset schema versions", () => {
+  it("migrates unversioned data without dropping values and refuses future schemas", () => {
+    const registry = createDefaultMigrationRegistry();
+    const object = registry.migrate("DataObject", 0, { structureGuid: "weapon", values: { Legacy: "keep", Damage: 10 } });
+    expect(object).toMatchObject({ migrated: true, version: 1, payload: {
+      kind: "dataObject", structureGuid: "weapon", values: { Legacy: "keep", Damage: 10 },
+    } });
+    expect(registry.migrate("DataSheet", 0, { structureGuid: "weapon", objectGuids: ["sword", "sword", "shield"] }).payload)
+      .toEqual({ kind: "dataSheet", structureGuid: "weapon", objectGuids: ["sword", "shield"] });
+    expect(registry.migrate("DataObject", 1, object.payload).migrated).toBe(false);
+    expect(() => registry.migrate("DataSheet", 2, {})).toThrow(/newer engine version/);
+  });
+});
+
 describe("Scene schema version", () => {
   it("matches SCENE_SCHEMA_VERSION so newly created scenes can load", () => {
     const registry = createDefaultMigrationRegistry();

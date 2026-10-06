@@ -170,6 +170,7 @@ export function playLoadControl(options: {
   renderSettings?: Partial<import("@babylonslate/core").RenderProjectSettings>;
   project?: { name: string; version: string };
   inputAssets?: import("@babylonslate/core").InputAssetDefinition[];
+  dataAssets?: import("@babylonslate/core").DataAssetCatalogEntry[];
   inputMappings?: ProjectInputSettings;
   focusNavigation?: import("@babylonslate/core").FocusNavigationSettings;
   pixelsPerUnit?: number;
@@ -211,6 +212,7 @@ export function playLoadControl(options: {
     renderSettings: options.renderSettings,
     ...(options.project ? { project: options.project } : {}),
     inputAssets: options.inputAssets,
+    dataAssets: options.dataAssets,
     inputMappings: options.inputMappings,
     focusNavigation: options.focusNavigation,
     pixelsPerUnit: options.pixelsPerUnit,

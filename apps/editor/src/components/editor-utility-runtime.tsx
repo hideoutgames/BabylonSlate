@@ -10,6 +10,8 @@ import {
   fireEditorUtilityEvent,
   shutdownEditorUtilityHost,
 } from "../lib/editor-utility-scripts";
+import { createEditorDataReader } from "../services/editor-data-reader";
+import { createEditorDataAuthoringApi } from "../services/editor-data-authoring";
 import { mergePluginEditorUtilityObjects } from "../lib/plugin-ui";
 
 function editorHostServices(
@@ -41,14 +43,16 @@ function editorHostServices(
 
 /** In-process ScriptHost for registered EditorUtilityObject classes. */
 export function EditorUtilityRuntime() {
+  const documents = useDocuments();
   const {
     projectDocument,
     collectEditorUtilityScripts,
     projectName,
+    projectGuid,
     getOpenDocuments,
     pluginDescriptors,
     assetRegistry,
-  } = useDocuments();
+  } = documents;
   const { appendLog } = usePlayDiagnosticsActions();
   // The host outlives renders: its callbacks read these at call time. Updated
   // after commit, never during render; open tabs come from the live getter.
@@ -57,6 +61,7 @@ export function EditorUtilityRuntime() {
     metadata: projectDocument?.metadata,
     collectScripts: collectEditorUtilityScripts,
     getOpenDocuments,
+    documents,
   };
   const latestRef = useRef(latest);
   useLayoutEffect(() => {
@@ -78,6 +83,11 @@ export function EditorUtilityRuntime() {
     let cancelled = false;
     const host = new ScriptHost({
       ...editorHostServices((line) => latestRef.current.appendLog(line)),
+      data: createEditorDataReader(() => latestRef.current.documents, () => !cancelled),
+      editorData: createEditorDataAuthoringApi(
+        () => latestRef.current.documents,
+        () => !cancelled,
+      ),
       getProjectName: () => latestRef.current.metadata?.name ?? "",
       getProjectVersion: () => latestRef.current.metadata?.version ?? "",
     });
@@ -102,7 +112,7 @@ export function EditorUtilityRuntime() {
       hostRef.current = null;
       startedRef.current = false;
     };
-  }, [projectName, registeredKey]);
+  }, [projectName, projectGuid, registeredKey]);
 
   useEffect(() => {
     const onLifecycle = (event: Event) => {

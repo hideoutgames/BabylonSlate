@@ -50,6 +50,19 @@ describe("P9 document kinds", () => {
     expect(labelFromPath("assets/Depth Image.rendertargettexture.babasset")).toBe("Depth Image");
   });
 
+  it("restores Data Object and Data Sheet document identities with readable labels", () => {
+    for (const [type, kind, path, label] of [
+      ["DataObject", "data-object", "assets/Iron Sword.dataobject.babasset", "Iron Sword Data Object"],
+      ["DataSheet", "data-sheet", "assets/Weapons.datasheet.babasset", "Weapons Data Sheet"],
+    ] as const) {
+      const mapped = documentKindForAssetType(type)!;
+      const ref = createDocumentRef(mapped, path);
+      expect(parseDocumentId(documentId(ref))).toEqual({ kind, path });
+      expect(ref.label).toBe(label);
+      expect(assetTypeForDocumentSave(mapped)).toBe(type);
+    }
+  });
+
   it("does not treat UserInterface as a document kind", () => {
     expect(documentKindForAssetType("UserInterface")).toBeNull();
     expect(documentKindForAssetType("EditorUtilityInterface")).toBeNull();

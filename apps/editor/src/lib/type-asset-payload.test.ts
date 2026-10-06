@@ -46,7 +46,7 @@ describe("asStructureAsset", () => {
         guid: "s1",
         name: "Stats",
         fields: [
-          { name: "Health", typeId: "int", defaultValue: 100 },
+          { id: "health-field", name: "Health", typeId: "int", defaultValue: 100 },
           { name: "Mana" },
           null,
           { name: "Team", typeId: "enum", typeClassId: " enum-team " },
@@ -57,7 +57,7 @@ describe("asStructureAsset", () => {
       guid: "s1",
       name: "Stats",
       fields: [
-        { name: "Health", typeId: "int", defaultValue: 100 },
+        { id: "health-field", name: "Health", typeId: "int", defaultValue: 100 },
         { name: "Mana", typeId: "float" },
         { name: "Field", typeId: "float" },
         { name: "Team", typeId: "enum", typeClassId: "enum-team" },

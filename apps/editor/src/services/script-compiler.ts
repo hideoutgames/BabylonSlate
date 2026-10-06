@@ -169,6 +169,7 @@ export function compileGraphDocument(
     stripDevelopmentOnly?: boolean;
     instrumentInfiniteLoops?: boolean;
     inputAssets?: HydrateGraphOptions["inputAssets"];
+    dataAssets?: HydrateGraphOptions["dataAssets"];
   enums?: HydrateGraphOptions["enums"];
     structs?: HydrateGraphOptions["structs"];
     latentFunctions?: ReadonlySet<string>;
@@ -180,6 +181,7 @@ export function compileGraphDocument(
   const serialized = isLogicGraphPayload(content) ? null : content;
   const typeOptions: HydrateGraphOptions = {
     inputAssets: options.inputAssets,
+    dataAssets: options.dataAssets,
     enums: options.enums,
     structs: options.structs,
   };
@@ -431,6 +433,8 @@ function documentCompileFingerprint(content: SerializedGraph): string {
 export function graphCompileSignature(
   documents: ReadonlyArray<GraphCompileDocument>,
   inputAssets?: HydrateGraphOptions["inputAssets"],
+  dataAssets?: HydrateGraphOptions["dataAssets"],
+  typeSchemas?: Pick<HydrateGraphOptions, "enums" | "structs">,
 ): string {
   const payload = [...documents]
     .map((doc) => ({
@@ -438,7 +442,8 @@ export function graphCompileSignature(
       fingerprint: documentCompileFingerprint(doc.content),
     }))
     .sort((a, b) => a.path.localeCompare(b.path));
-  return JSON.stringify(inputAssets === undefined ? payload : { graphs: payload, inputAssets });
+  return JSON.stringify(inputAssets === undefined && dataAssets === undefined && typeSchemas === undefined
+    ? payload : { graphs: payload, inputAssets, dataAssets, typeSchemas });
 }
 
 export function graphsNeedCompile(
@@ -451,6 +456,7 @@ export function graphsNeedCompile(
 export type GraphCompileCacheOptions = {
   stripDevelopmentOnly?: boolean;
   inputAssets?: HydrateGraphOptions["inputAssets"];
+  dataAssets?: HydrateGraphOptions["dataAssets"];
   enums?: HydrateGraphOptions["enums"];
   structs?: HydrateGraphOptions["structs"];
 };
@@ -484,6 +490,7 @@ function graphDocumentCompileCacheKey(
   options: GraphCompileCacheOptions &
     ClassPrefabContext & {
       typesFingerprint?: string;
+      dataFingerprint?: string;
       latentFingerprint?: string;
     },
 ): string {
@@ -514,6 +521,7 @@ function graphDocumentCompileCacheKey(
       typeSchemasFingerprint(options.enums, options.structs),
     latent: options.latentFingerprint ?? "",
     inputAssets: options.inputAssets ?? [],
+    dataAssets: options.dataFingerprint ?? fnv1aHex(JSON.stringify(options.dataAssets ?? [])),
   });
 }
 
@@ -540,6 +548,7 @@ function compileGraphDocumentCached(
   options: GraphCompileCacheOptions & {
     cache?: GraphScriptCompileCache;
     typesFingerprint?: string;
+    dataFingerprint?: string;
     latentFunctions?: ReadonlySet<string>;
     latentFingerprint?: string;
     parentOf?: (classId: string) => string | null | undefined;
@@ -559,7 +568,8 @@ function compileGraphDocumentCached(
       parentClassId: doc.parentClassId,
       stripDevelopmentOnly: options.stripDevelopmentOnly,
       inputAssets: options.inputAssets,
-    enums: options.enums,
+      dataAssets: options.dataAssets,
+      enums: options.enums,
       structs: options.structs,
       latentFunctions: options.latentFunctions,
       parentOf: options.parentOf,
@@ -645,6 +655,7 @@ export function compileGraphDocuments(
     options.enums,
     options.structs,
   );
+  const dataFingerprint = fnv1aHex(JSON.stringify(options.dataAssets ?? []));
   const project = projectLatentFunctions(documents);
   const otherClassGraphs = serializedGraphsByClassId(documents);
   const scripts: ScriptBundleEntry[] = [];
@@ -652,6 +663,7 @@ export function compileGraphDocuments(
     const script = compileGraphDocumentCached(doc, {
       ...options,
       typesFingerprint,
+      dataFingerprint,
       latentFunctions: project.latentFunctions,
       latentFingerprint: project.fingerprint,
       parentOf: project.parentOf,

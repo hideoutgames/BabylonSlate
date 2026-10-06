@@ -1,3 +1,5 @@
+import { collectPlayDataCatalog } from "../services/play-data-assets";
+import { collectDataGraphAssets } from "../lib/data-graph";
 import { normalizeWaterDefinition, normalizeRenderTargetPayload, normalizeRenderTargetTexturePayload, type WaterDefinition, type RenderTargetPayload, type RenderTargetTexturePayload } from "@babylonslate/core";
 import { inputAssetCatalog } from "../lib/input-asset-catalog";
 import { parseSceneDocumentLayout, SCENE_MODES, type SceneMode } from "../shell/scene-document-layout";
@@ -375,7 +377,9 @@ interface DocumentContextValue {
   textureUsageBlockedReason: (guid: string) => string | null;
   onSessionDiagnostic: (listener: (line: string) => void) => () => void;
   /**
-   * Open documents in tab order. The array keeps its identity until a
+   * Canonical open documents in tab order, including background working
+   * documents used by sheets and utilities. Navigation omits `background`.
+   * The array keeps its identity until a
    * document revision advances or the tab order changes, so registry-only
    * updates, tab switches and other context updates leave it alone. Its
    * entries are mutated in place (content, dirty, layout), so entry identity
@@ -447,6 +451,8 @@ interface DocumentContextValue {
   dismissRecovery: () => Promise<void>;
   keepRecovery: () => void;
   openDocument: (ref: DocumentRef) => Promise<void>;
+  /** Loads a canonical working document without creating or activating a tab. */
+  ensureAssetDocument: (ref: DocumentRef) => Promise<string>;
   /** Spill a finished Play recorder payload and open the read-only Trace tab. */
   openRecordedTrace: (payload: TracePayload) => Promise<void>;
   pendingExclusiveScene: DocumentRef | null;
@@ -524,6 +530,10 @@ interface DocumentContextValue {
   confirmExternalChangeReloadProject: () => Promise<void>;
   confirmExternalChangeReloadDocs: (paths: string[]) => Promise<void>;
   dismissExternalChange: () => void;
+  undoDocument: (id: string) => void;
+  redoDocument: (id: string) => void;
+  canUndoDocument: (id: string) => boolean;
+  canRedoDocument: (id: string) => boolean;
   undoActiveDocument: () => void;
   redoActiveDocument: () => void;
   canUndoActiveDocument: boolean;
@@ -585,6 +595,7 @@ interface DocumentContextValue {
     trees?: readonly PlayBehaviourTreeEntry[],
   ) => Promise<Map<string, SpriteAnimationPayload>>;
   collectPlayWaterContent: () => Promise<Map<string, WaterDefinition>>;
+  collectPlayDataAssets: () => Promise<import("@babylonslate/core").DataAssetCatalogEntry[]>;
   collectPlayRenderTargets: () => Promise<{ renderTargets: Map<string, RenderTargetPayload>; renderTargetTextures: Map<string, RenderTargetTexturePayload> }>;
   collectPlayTilemapContent: (
     scene?: SerializedScene | null,
@@ -731,8 +742,8 @@ function useRefState<T>(
   return [state, set];
 }
 
-/** Kinds `currentGraphSignature` reads: Class graphs and their Input assets. */
-const GRAPH_SIGNATURE_KINDS = ["graph", "input-action", "input-axis"] as const;
+/** Class graphs and the typed asset catalogs their compilation reads. */
+const GRAPH_SIGNATURE_KINDS = ["graph", "input-action", "input-axis", "data-object", "data-sheet", "structure", "enum"] as const;
 
 function openGraphCompileDocuments(
   documentService: DocumentService,
@@ -946,18 +957,29 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     Diagnostic[]
   >([]);
   const graphCompileCacheRef = useRef(new GraphScriptCompileCache());
+  const documentService = documentServiceRef.current;
+  const collectGraphTypeSchemas = useCallback(() => {
+    return typeSchemasFromGraphAssets(
+      collectGraphTypeAssets({
+        assets: projectService.registry?.list() ?? [],
+        openDocuments: [...documentService.getState().openDocuments.values()],
+      }),
+    );
+  }, [documentService, projectService]);
   const recordPlayPreviewScripts = useCallback(
     (bundles: ScriptBundleEntry[], nextDiagnostics: Diagnostic[]) => {
       const signature = graphCompileSignature(
         openGraphCompileDocuments(documentServiceRef.current),
         inputAssetCatalog(projectService.registry?.list() ?? [], [...documentServiceRef.current.getState().openDocuments.values()]),
+        collectDataGraphAssets(projectService.registry?.list() ?? [], [...documentServiceRef.current.getState().openDocuments.values()]),
+        collectGraphTypeSchemas(),
       );
       setLastCompiledSignature(signature);
       setPlayLoadedSignature(signature);
       setPlayPreviewBundles(bundles);
       setPlayPreviewDiagnostics(nextDiagnostics);
     },
-    [projectService],
+    [projectService, collectGraphTypeSchemas],
   );
   const clearPlayPreviewScripts = useCallback(() => {
     setPlayLoadedSignature(null);
@@ -971,7 +993,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const bumpDockWindows = useCallback(() => {
     setDockWindowTick((v) => v + 1);
   }, []);
-  const documentService = documentServiceRef.current;
   useEffect(() => attachEditGestureBoundaries(() => {
     const id = documentService.getState().activeDocumentId;
     if (id) editSessionRef.current.getStack(id).endGesture();
@@ -990,14 +1011,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       documentContentIdentity(content),
     );
   }), [documentService]);
-  const collectGraphTypeSchemas = useCallback(() => {
-    return typeSchemasFromGraphAssets(
-      collectGraphTypeAssets({
-        assets: projectService.registry?.list() ?? [],
-        openDocuments: [...documentService.getState().openDocuments.values()],
-      }),
-    );
-  }, [documentService, projectService]);
   const runForegroundRescanRef = useRef<() => Promise<void>>(async () => {});
 
   const captureMtimeSnapshot = useCallback(async () => {
@@ -1846,11 +1859,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         // bundles — Play still runs collectPlayPreviewScripts for the full set.
         compileGraphDocuments(graphs, {
           inputAssets: inputAssetCatalog(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
+          dataAssets: collectDataGraphAssets(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
           cache: graphCompileCacheRef.current,
           enums: typeSchemas.enums,
           structs: typeSchemas.structs,
         });
-        setLastCompiledSignature(graphCompileSignature(graphs, inputAssetCatalog(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()])));
+        setLastCompiledSignature(graphCompileSignature(graphs, inputAssetCatalog(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]), collectDataGraphAssets(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]), typeSchemas));
       }
       const layouts = documentService.buildLayouts();
       progress.phase("project");
@@ -2408,6 +2422,19 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     },
     [bump, captureLayoutForId, closeDocument, documentService, projectService, cancelSceneDocumentLoad],
   );
+
+  const ensureAssetDocument = useCallback(async (ref: DocumentRef): Promise<string> => {
+    if (!isAssetDocumentKind(ref.kind) || isSceneWorkspaceKind(ref.kind)) {
+      throw new Error("Only non-scene asset documents can be opened in the background.");
+    }
+    const layouts = documentService.buildLayouts();
+    const id = await documentService.openDocument(
+      projectService, ref, layouts.documents[documentId(ref)] ?? null, false, { background: true },
+    );
+    sourceControlRef.current.onOpenDocument(ref.path);
+    bump();
+    return id;
+  }, [bump, documentService, projectService]);
 
   const openDocument = useCallback(
     async (ref: DocumentRef) => {
@@ -3027,6 +3054,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     const typeSchemas = collectGraphTypeSchemas();
     return compileGraphDocuments(selected, {
       inputAssets: inputAssetCatalog(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
+      dataAssets: collectDataGraphAssets(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
       cache: graphCompileCacheRef.current,
       enums: typeSchemas.enums,
       structs: typeSchemas.structs,
@@ -3092,6 +3120,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           ...sceneClassIds,
         ]),
         inputAssets: inputAssetCatalog(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
+        dataAssets: collectDataGraphAssets(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
         enums: typeSchemas.enums,
         structs: typeSchemas.structs,
         materialDomains: materialDomainsFromAssets(
@@ -3106,6 +3135,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     const bundles = [
       ...compileGraphDocuments(documents, {
       inputAssets: inputAssetCatalog(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
+      dataAssets: collectDataGraphAssets(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
         enums: typeSchemas.enums,
         structs: typeSchemas.structs,
         cache: graphCompileCacheRef.current,
@@ -3152,6 +3182,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         | "animation"
         | "input-action"
         | "input-axis"
+        | "data-object"
+        | "data-sheet"
+        | "structure"
+        | "enum"
         | "audio"
         | "scene-layer"
         | "texture"
@@ -3360,6 +3394,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     }
     return waters;
   }, [loadPlayAssetContent, projectService]);
+
+  const collectPlayDataAssets = useCallback(() => collectPlayDataCatalog(
+    projectService.registry?.list() ?? [],
+    documentService.getOpenDocumentsOrdered(),
+    loadPlayAssetContent,
+  ), [documentService, loadPlayAssetContent, projectService]);
 
   const collectPlayRenderTargets = useCallback(async () => {
     const renderTargets = new Map<string, RenderTargetPayload>();
@@ -4281,12 +4321,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     updateProjectSettings,
   ]);
 
-  const stepActiveDocumentHistory = useCallback(
-    (direction: "undo" | "redo") => {
-      const { activeDocumentId, openDocuments } = documentService.getState();
+  const stepDocumentHistory = useCallback(
+    (direction: "undo" | "redo", targetId?: string) => {
+      const { activeDocumentId: currentId, openDocuments } = documentService.getState();
+      const activeDocumentId = targetId ?? currentId;
       if (!activeDocumentId) return;
       const doc = openDocuments.get(activeDocumentId);
       if (!doc?.content) return;
+      if (isMutatingApplyBlocked(sourceControlRef.current, doc.ref.path, isPluginDocumentReadOnly(projectService.plugins, doc.ref.path))) return;
       if (doc.ref.kind === "graph") {
         const stack =
           editSessionRef.current.getStack<SerializedGraph>(activeDocumentId);
@@ -4327,16 +4369,21 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         void notifyAppliedCommand(activeDocumentId, result.command);
       }
     },
-    [documentService, enqueuePrefabSyncForClassPath, notifyAppliedCommand],
+    [documentService, enqueuePrefabSyncForClassPath, notifyAppliedCommand, projectService],
   );
 
+  const undoDocument = useCallback((id: string) => stepDocumentHistory("undo", id), [stepDocumentHistory]);
+  const redoDocument = useCallback((id: string) => stepDocumentHistory("redo", id), [stepDocumentHistory]);
+  const canUndoDocument = useCallback((id: string) => editSessionRef.current.getStack(id).canUndo, []);
+  const canRedoDocument = useCallback((id: string) => editSessionRef.current.getStack(id).canRedo, []);
+
   const undoActiveDocument = useCallback(() => {
-    stepActiveDocumentHistory("undo");
-  }, [stepActiveDocumentHistory]);
+    stepDocumentHistory("undo");
+  }, [stepDocumentHistory]);
 
   const redoActiveDocument = useCallback(() => {
-    stepActiveDocumentHistory("redo");
-  }, [stepActiveDocumentHistory]);
+    stepDocumentHistory("redo");
+  }, [stepDocumentHistory]);
 
   const registerDockviewApi = useCallback((
     id: string,
@@ -4645,6 +4692,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       dismissRecovery,
       keepRecovery,
       openDocument,
+      ensureAssetDocument,
       openRecordedTrace,
       confirmExclusiveSceneOpen,
       cancelExclusiveSceneOpen,
@@ -4672,6 +4720,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       confirmExternalChangeReloadProject,
       confirmExternalChangeReloadDocs,
       dismissExternalChange,
+      undoDocument,
+      redoDocument,
+      canUndoDocument,
+      canRedoDocument,
       undoActiveDocument,
       redoActiveDocument,
       registerDockviewApi,
@@ -4696,6 +4748,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlaySpriteAnimationPayloads,
       collectPlayWaterContent,
       collectPlayRenderTargets,
+      collectPlayDataAssets,
       collectPlayTilemapContent,
       collectPlayTextureBytes,
       collectPlayTexturePixelSizes,
@@ -4751,6 +4804,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       dismissRecovery,
       keepRecovery,
       openDocument,
+      ensureAssetDocument,
       openRecordedTrace,
       confirmExclusiveSceneOpen,
       cancelExclusiveSceneOpen,
@@ -4778,6 +4832,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       confirmExternalChangeReloadProject,
       confirmExternalChangeReloadDocs,
       dismissExternalChange,
+      undoDocument,
+      redoDocument,
+      canUndoDocument,
+      canRedoDocument,
       undoActiveDocument,
       redoActiveDocument,
       registerDockviewApi,
@@ -4802,6 +4860,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlaySpriteAnimationPayloads,
       collectPlayWaterContent,
       collectPlayRenderTargets,
+      collectPlayDataAssets,
       collectPlayTilemapContent,
       collectPlayTextureBytes,
       collectPlayTexturePixelSizes,
@@ -4862,8 +4921,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     return graphCompileSignature(
       openGraphCompileDocuments(documentService),
       inputAssetCatalog(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
+      collectDataGraphAssets(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
+      collectGraphTypeSchemas(),
     );
-  }, [documentService, graphSignatureRevision, projectService, registryEpoch]);
+  }, [documentService, graphSignatureRevision, projectService, registryEpoch, collectGraphTypeSchemas]);
 
   /** The `useDocuments()` facade: the stable actions plus per-edit state. */
   const value = useMemo<DocumentContextValue>(

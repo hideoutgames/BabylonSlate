@@ -18,6 +18,8 @@ export const ASSET_DOCUMENT_KINDS = [
   "tilemap",
   "enum",
   "structure",
+  "data-object",
+  "data-sheet",
   "script-interface",
   "plugin-settings",
   "audio",
@@ -108,6 +110,10 @@ export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
       return "Enum";
     case "structure":
       return "Structure";
+    case "data-object":
+      return "DataObject";
+    case "data-sheet":
+      return "DataSheet";
     case "script-interface":
       return "ScriptInterface";
     case "plugin-settings":
@@ -210,6 +216,10 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
       return "enum";
     case "Structure":
       return "structure";
+    case "DataObject":
+      return "data-object";
+    case "DataSheet":
+      return "data-sheet";
     case "ScriptInterface":
       return "script-interface";
     case "PluginSettings":
@@ -289,6 +299,10 @@ export function documentKindLabel(kind: AssetDocumentKind): string {
       return "Enum";
     case "structure":
       return "Structure";
+    case "data-object":
+      return "Data Object";
+    case "data-sheet":
+      return "Data Sheet";
     case "script-interface":
       return "Script Interface";
     case "plugin-settings":
@@ -420,7 +434,7 @@ export function labelFromPath(path: string): string {
       .split("/")
       .pop()
       ?.replace(
-        /\.(inputaction|inputaxis|scene|scenelayer|graph|eui|ui|spriteanim|sprite|anim|shader|material|matfunc|class|tileset|tilemap|plugin|mixer|channel|atten|emitter|particlegraph|particles|skyboxcreator|rendertargettexture|rendertarget)\.(babasset|json)$/i,
+        /\.(inputaction|inputaxis|scene|scenelayer|graph|eui|ui|spriteanim|sprite|anim|shader|material|matfunc|class|tileset|tilemap|dataobject|datasheet|plugin|mixer|channel|atten|emitter|particlegraph|particles|skyboxcreator|rendertargettexture|rendertarget)\.(babasset|json)$/i,
         "",
       )
       .replace(/\.babasset$/i, "")

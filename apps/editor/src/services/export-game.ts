@@ -1,3 +1,5 @@
+import { dataTypeSchemas } from "@babylonslate/runtime";
+import type { DataAssetCatalogEntry } from "@babylonslate/core";
 import { areaEmissionTextureGuids, isInputAssetType, normalizeInputAssetPayload, renderEffectsAssetGuids } from "@babylonslate/core";
 import {
   collectExportReachability,
@@ -432,11 +434,22 @@ export async function collectAndExportGame(
     if (!isInputAssetType(asset.type) || !closure.value.guids.includes(asset.guid)) return [];
     return [{ ...normalizeInputAssetPayload(asset.type, params.payloadByGuid?.(asset.guid)), guid: asset.guid, name: asset.name, type: asset.type }];
   });
+  const dataCatalog: DataAssetCatalogEntry[] = params.assets.flatMap((asset) => {
+    const type = asset.type;
+    if (type !== "DataObject" && type !== "DataSheet" && type !== "Structure" && type !== "Enum") return [];
+    return [{ guid: asset.guid, name: asset.name, type, payload: params.payloadByGuid?.(asset.guid) }];
+  });
+  const typeSchemas = dataTypeSchemas(dataCatalog);
+  const dataAssets = dataCatalog.flatMap((asset) => {
+    if (asset.type !== "DataObject" && asset.type !== "DataSheet") return [];
+    const payload = asset.payload as { structureGuid?: unknown } | null;
+    return [{ guid: asset.guid, name: asset.name, type: asset.type, structureGuid: typeof payload?.structureGuid === "string" ? payload.structureGuid : "" }];
+  });
   params.onPhase?.("Compiling");
   const scripts: ScriptBundleEntry[] = [];
   if (graphDocs.length || animDocs.length) {
     const { compileAnimGraphScripts, compileGraphDocuments } = await import("./script-compiler");
-    scripts.push(...compileGraphDocuments(graphDocs, { stripDevelopmentOnly: !bundleDebugger, inputAssets }), ...compileAnimGraphScripts(animDocs, { stripDevelopmentOnly: !bundleDebugger }));
+    scripts.push(...compileGraphDocuments(graphDocs, { stripDevelopmentOnly: !bundleDebugger, inputAssets, dataAssets, ...typeSchemas }), ...compileAnimGraphScripts(animDocs, { stripDevelopmentOnly: !bundleDebugger }));
   }
 
   params.onPhase?.("Writing Pack");

@@ -96,6 +96,7 @@ export type ControlMessage =
   | { type: "ragdollPoseCaptured"; slotId: number; requestId: string; bones?: import("@babylonslate/core").RagdollBonePose[]; error?: string }
   | {
       type: "load";
+      dataAssets?: import("@babylonslate/core").DataAssetCatalogEntry[];
       /** Initial session render cap, shared with the renderer for console readback. */
       frameCap?: number;
       /** Serialized trace retention budget in bytes for this session. */

@@ -105,6 +105,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     hierarchy,
     inputAssets,
     materialDomains,
+    dataAssets,
   } = useGraphPanelCatalogs();
   const classId = doc?.ref.path ? classIdForGraphPath(doc.ref.path) : undefined;
   const graphContent = useMemo(
@@ -162,6 +163,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
       {
         parentOf,
         inputAssets,
+        dataAssets,
         structs: typeSchemas.structs,
         enums: typeSchemas.enums,
         classId,
@@ -182,6 +184,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     scriptInterfaces,
     typeSchemas,
     inputAssets,
+    dataAssets,
   ]);
 
   const assetGuid = doc?.ref.path ?? documentId;
@@ -231,7 +234,8 @@ export function GraphPanel(_props: IDockviewPanelProps) {
           }),
           enums: typeSchemas.enums,
           inputAssets,
-        structs: typeSchemas.structs,
+          dataAssets,
+          structs: typeSchemas.structs,
           materialDomains,
           parentOf,
           otherClassGraphs,
@@ -266,6 +270,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     scriptInterfaces,
     setDiagnostics,
     inputAssets,
+    dataAssets,
     typeSchemas,
     animEditorMode,
     materialDomains,

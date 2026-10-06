@@ -38,6 +38,8 @@ import { navigationNodes } from "./navigation";
 import { illuminationNodes } from "./illumination";
 import { animationNodes } from "./animation";
 import { structNodes } from "./struct";
+import { dataNodes } from "./data";
+import { editorDataNodes } from "./editor-data";
 import { enumNodes } from "./enum";
 import { literalNodes } from "./literal";
 import { rotatorNodes } from "./rotator";
@@ -83,6 +85,8 @@ export * from "./navigation";
 export * from "./illumination";
 export * from "./animation";
 export * from "./struct";
+export * from "./data";
+export * from "./editor-data";
 export * from "./enum";
 export * from "./literal";
 export * from "./rotator";
@@ -129,6 +133,8 @@ export function allNodeDefinitions(): NodeDefinition[] {
     ...illuminationNodes,
     ...animationNodes,
     ...structNodes,
+    ...dataNodes,
+    ...editorDataNodes,
     ...enumNodes,
     ...literalNodes,
     ...rotatorNodes,
