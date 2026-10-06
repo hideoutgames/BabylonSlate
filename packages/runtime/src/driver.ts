@@ -5595,7 +5595,9 @@ class InProcessRuntime implements RuntimeDriver {
         if (!spawned) {
           const scene = this.sceneLibrary.get(this.world.currentScene?.assetGuid ?? this.playSceneGuid);
           const row = scene?.actors.find((actor) => actor.id === id && actor.classId === classId);
-          return row ? createActorFromSerialized(this.world, row, this.sceneActorHooks) : null;
+          const actor = row ? createActorFromSerialized(this.world, row, this.sceneActorHooks) : null;
+          if (actor) this.scriptHost.bindInterfaceHandlers(actor);
+          return actor;
         }
         if (!this.canSpawnActorClass(classId) || !this.scriptHost.hooksFor(classId)) return null;
         const actor = this.world.createActor({ guid: id, classId, hooks: this.sceneActorHooks(classId) });

@@ -152,7 +152,7 @@ describe("runtime Save Game", () => {
     const storage = new MemoryStorage();
     let reject = false;
     const { runtime, service } = await boot(storage, { onCommand: (command) => {
-      if (reject && command.type === "assignMesh") { reject = false; throw new Error("renderer unavailable"); }
+      if (reject && command.type === "spawn") { reject = false; throw new Error("renderer unavailable"); }
     } });
     try {
       const companion = runtime.spawnScriptedActor({ classId: "Hero" })!;

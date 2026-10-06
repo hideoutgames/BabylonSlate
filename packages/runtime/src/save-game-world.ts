@@ -7,6 +7,7 @@ interface SavedActor {
   spawned: boolean;
   destroyed: boolean;
   transform?: Transform;
+  parent?: string | null;
   variables: Record<string, SaveGameValue>;
   components: Record<string, Record<string, SaveGameValue>>;
 }
@@ -176,7 +177,16 @@ export class SaveGameWorld {
     const { actor, id, spawned, selection: selected } = entry;
     const saved: SavedActor = { id, classId: actor.classId, spawned, destroyed: actor.destroyed, variables: {}, components: {} };
     if (actor.destroyed) return saved;
-    if (selected.transform) saved.transform = structuredClone(actor.transform);
+    if (selected.transform) {
+      saved.transform = structuredClone(actor.transform);
+      const parentGuid = actor.getVariable("parentId");
+      const parent = typeof parentGuid === "string" ? this.host.world.findActor(parentGuid) : undefined;
+      if (parent && !this.identity.has(parent) && this.host.isSpawned(parent)) {
+        throw new SaveGameError("incompatible", "Register spawned parents before saving their children.");
+      }
+      // Initial placed actors are registered before all parents have spawned.
+      saved.parent = parent ? this.persistentId(parent) : typeof parentGuid === "string" ? parentGuid : null;
+    }
     for (const name of selected.variables) saved.variables[name] = this.encode(actor.getVariable(name));
     for (const [id, names] of Object.entries(selected.components)) {
       const component = findComponent(actor, id);
@@ -234,6 +244,23 @@ export class SaveGameWorld {
     for (const saved of snapshot.actors) {
       this.decode(saved.variables, targets);
       this.decode(saved.components, targets);
+      if (saved.parent && !targets.has(saved.parent)) throw new SaveGameError("incompatible", `Saved parent is unavailable: ${saved.parent}`);
+    }
+    const byId = new Map(snapshot.actors.map((saved) => [saved.id, saved]));
+    for (const saved of snapshot.actors) {
+      const visited = new Set<string>();
+      let id: string | null | undefined = saved.id;
+      while (id) {
+        if (visited.has(id)) throw new SaveGameError("corrupt", "Saved actor parenting contains a cycle.");
+        visited.add(id);
+        const row = byId.get(id);
+        if (row?.parent !== undefined) id = row.parent;
+        else {
+          const parentGuid = targets.get(id)?.getVariable("parentId");
+          const parent = typeof parentGuid === "string" ? this.host.world.findActor(parentGuid) : undefined;
+          id = parent ? this.persistentId(parent) : null;
+        }
+      }
     }
   }
 
@@ -250,7 +277,8 @@ export class SaveGameWorld {
     for (const saved of snapshot.actors) {
       if (!record(saved) || typeof saved.id !== "string" || !saved.id || reserved.has(saved.id) || ids.has(saved.id) ||
         typeof saved.classId !== "string" || typeof saved.spawned !== "boolean" || typeof saved.destroyed !== "boolean" ||
-        !record(saved.variables) || !record(saved.components) || (saved.transform !== undefined && !validTransform(saved.transform))) {
+        !record(saved.variables) || !record(saved.components) || (saved.transform !== undefined && !validTransform(saved.transform)) ||
+        (saved.parent !== undefined && saved.parent !== null && typeof saved.parent !== "string")) {
         throw new SaveGameError("corrupt", "Invalid or duplicate saved actor.");
       }
       ids.add(saved.id);
@@ -260,7 +288,7 @@ export class SaveGameWorld {
         if (!candidate || candidate.classId !== saved.classId || !selected?.destruction || !this.host.eligible(candidate)) {
           throw new SaveGameError("incompatible", `Saved destruction cannot be restored: ${saved.id}`);
         }
-        if (saved.transform || Object.keys(saved.variables).length || Object.keys(saved.components).length) {
+        if (saved.transform || saved.parent !== undefined || Object.keys(saved.variables).length || Object.keys(saved.components).length) {
           throw new SaveGameError("corrupt", "Destroyed actor records cannot contain live state.");
         }
         continue;
@@ -306,6 +334,7 @@ export class SaveGameWorld {
         }
         rollback.push({ actor, transform: structuredClone(actor.transform), variables: new Map(actor.variables), components: actor.components.map((component) => [component, new Map(component.variables)]) });
         if (saved.transform) actor.transform = structuredClone(saved.transform);
+        if (saved.parent !== undefined) actor.setVariable("parentId", saved.parent ? targets.get(saved.parent)!.guid : null);
         for (const [name, value] of Object.entries(saved.variables)) actor.setVariable(name, this.decode(value, targets));
         for (const [id, variables] of Object.entries(saved.components)) {
           const component = findComponent(actor, id)!;
