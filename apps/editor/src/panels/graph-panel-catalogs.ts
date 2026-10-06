@@ -1,4 +1,5 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { SaveGameDefinition } from "@babylonslate/core";
 import { useDocuments } from "../context/document-context";
 import {
   classParentLookup,
@@ -20,7 +21,7 @@ import {
 } from "../lib/use-open-documents-of-kinds";
 import { classHierarchyFromParentOf } from "../services/graph-validation";
 import { classIdForGraphPath } from "../services/script-compiler";
-import { defaultSaveGameDefinition } from "../lib/save-game-catalog";
+import { defaultSaveGameDefinition, loadDefaultSaveGameDefinition } from "../lib/save-game-catalog";
 
 const CLASS_KINDS = ["graph"] as const;
 const SCENE_KINDS = ["scene"] as const;
@@ -38,7 +39,7 @@ const SAVE_GAME_KINDS = ["save-game"] as const;
  * while Scene, Material or other edits leave the class catalogs alone.
  */
 export function useGraphPanelCatalogs() {
-  const { assetRegistry, registryEpoch, projectDocument } = useDocuments();
+  const { assetRegistry, registryEpoch, projectDocument, loadAssetDocument } = useDocuments();
   const classDocuments = useOpenDocumentsOfKinds(CLASS_KINDS);
   const sceneDocumentsOpen = useOpenDocumentsOfKinds(SCENE_KINDS);
   const interfaceDocuments = useOpenDocumentsOfKinds(INTERFACE_KINDS);
@@ -46,10 +47,25 @@ export function useGraphPanelCatalogs() {
   const inputDocuments = useOpenDocumentsOfKinds(INPUT_KINDS);
   const saveGameDocuments = useOpenDocumentsOfKinds(SAVE_GAME_KINDS);
   const saveGameGuid = projectDocument?.settings.saveGame.definitionGuid;
-  const saveGameDefinition = useMemo(() => {
+  const saveGameAssets = useMemo(() => {
     void registryEpoch;
-    return defaultSaveGameDefinition(saveGameGuid, assetRegistry?.list() ?? [], saveGameDocuments);
-  }, [saveGameGuid, assetRegistry, registryEpoch, saveGameDocuments]);
+    return (assetRegistry?.list() ?? []).filter((asset) => asset.header.guid === saveGameGuid && asset.header.type === "SaveGame");
+  }, [saveGameGuid, assetRegistry, registryEpoch]);
+  const openSaveDefinition = saveGameDocuments.find((doc) => doc.ref.path === saveGameAssets[0]?.path);
+  const [loadedSaveDefinition, setLoadedSaveDefinition] = useState<{
+    assets: typeof saveGameAssets; documents: typeof saveGameDocuments; definition?: SaveGameDefinition;
+  }>();
+  useEffect(() => {
+    if (openSaveDefinition || !saveGameAssets.length) return;
+    let canceled = false;
+    void loadDefaultSaveGameDefinition(saveGameGuid, saveGameAssets, saveGameDocuments, loadAssetDocument).then((definition) => {
+      if (!canceled) setLoadedSaveDefinition({ assets: saveGameAssets, documents: saveGameDocuments, definition });
+    });
+    return () => { canceled = true; };
+  }, [saveGameGuid, saveGameAssets, saveGameDocuments, openSaveDefinition, loadAssetDocument]);
+  const saveGameDefinition = openSaveDefinition
+    ? defaultSaveGameDefinition(saveGameGuid, saveGameAssets, saveGameDocuments)
+    : loadedSaveDefinition?.assets === saveGameAssets && loadedSaveDefinition.documents === saveGameDocuments ? loadedSaveDefinition.definition : undefined;
   const materialDocuments = useOpenDocumentsOfKinds(MATERIAL_DOCUMENT_KINDS);
 
   const parentOf = useMemo(() => {
