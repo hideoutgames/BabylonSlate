@@ -118,6 +118,8 @@ export type PlayerTestHandle = Pick<PlayerBootHandle,
 export type PlayerBootOptions = {
   canvas: HTMLCanvasElement;
   game: LoadedGame;
+  /** Preview iframes borrow the editor host's application-private storage. */
+  saveStorage?: import("@babylonslate/core").SaveGameStorage;
   /** Preview host's trace budget; omitted by standalone games. */
   traceByteBudget?: number;
   sharedEngine?: AbstractEngine;
@@ -565,7 +567,7 @@ function initializePlayer(
     },
   });
   own(() => streamReadiness.dispose());
-  const saveStorage = createSaveGameStorage();
+  const saveStorage = options.saveStorage ?? createSaveGameStorage();
   const saveServer = createSaveStorageServer(saveStorage, (response) => worker?.postControl({ type: "saveStorageResponse", response }));
   own(() => saveServer.dispose());
   const onCommand = (command: { type: string } & Record<string, unknown>) => {

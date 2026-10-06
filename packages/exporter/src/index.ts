@@ -87,3 +87,4 @@ export {
   isPreviewConsoleRequest,
 } from "./preview-protocol";
 export type { PreviewConsoleRequest } from "./preview-protocol";
+export { createPreviewSaveStorageClient, createPreviewSaveStorageHost } from "./preview-save-storage";

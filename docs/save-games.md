@@ -4,7 +4,7 @@ Save Games persist selected gameplay data independently of project files. A proj
 
 ## Author a definition
 
-1. In Content Browser, choose **New Asset → General → Save Game**.
+1. In Content Browser, choose **New Asset → Scripting → Save Game**.
 2. In its **Fields** panel, add the values the game needs to retain. For a minimal example, create `coins` as Integer with default `0`, and `checkpoint` as String with default `start`.
 3. Select the asset under **Project Settings → Save Games → Default Definition**.
 4. Keep the default profile and slot for a one-save game, or supply names for multiple characters and manual saves.
@@ -55,7 +55,7 @@ Stop and restart Play with **Wipe Preview Saves On Play** off. The startup load 
 | `await ctx.listSaves({ profile: "player-2" })` | Return save metadata for a profile. |
 | `await ctx.deleteSave({ slot: "manual-1", profile: "player-2" })` | Explicitly remove a slot and its retained originals. |
 
-Generated **Get/Set Save Field** nodes keep stable field IDs and typed pins. The definition's **Generated Type** panel provides a `SaveData` TypeScript interface for code tooling; the core `generateSaveGameTypes()` helper produces the same declaration. JavaScript remains JavaScript: use `data["Field Name"]` for names containing spaces, and update name-based code when renaming a field.
+The default definition adds **Get/Set Save _Field Name_** nodes with stable field IDs and typed pins. The definition's **Generated Type** view provides a `SaveData` TypeScript interface for code tooling; the core `generateSaveGameTypes()` helper produces the same declaration. JavaScript remains JavaScript: use `data["Field Name"]` for names containing spaces, and update name-based code when renaming a field.
 
 ## Operations and errors
 
@@ -82,7 +82,7 @@ Every asynchronous operation returns one of:
 
 ## Gameplay state
 
-Save only state that affects gameplay. The optional **Save Game Component** selects actor transforms, actor/script variables, and component variables; assets keep their stable GUIDs. Persisted spawned actors must be registered with stable identities. A saved actor reference must resolve after actors have been restored, before **On Game Loaded** runs.
+Save only state that affects gameplay. **Add Component → General → Save Game** selects actor transforms, actor/script variables, and component variables with individual checkboxes, including inherited variables. Assets keep their stable GUIDs. Persisted spawned actors must be registered with stable identities; use `ctx.registerSaveActor(actor, persistentId)` to assign a custom identity before that actor's first capture. Transform saves include stable parent references. Missing or cyclic parents reject the load. Actor references resolve after actors have been restored, before **On Game Loaded** runs.
 
 Actor persistence currently targets the active world scene. Load rejects a save belonging to a different active scene; switch to the correct scene before loading. Additively streamed scenes and overlay SceneLayers are excluded because their instance identities do not yet provide a stable save contract. Store cross-scene progress in definition fields.
 
@@ -94,7 +94,7 @@ Migration functions receive a detached document with `schemaVersion`, `fields` k
 
 Migrations run on a validated copy before applying data. A failed migration leaves the original stored generations intact. Loading a migrated save does not rewrite its source; save explicitly after accepting the migrated game state. The first save after a schema upgrade archives the previous original, retained until explicit delete/reset. A field rename and an added field with a default do not require hand-written JSON conversion.
 
-For a version 1 → 2 migration, register **Register Save Migration** with From Version `1` during initialization, before Load Game. **Event Save Migration** exposes From Version; its **Get/Set Migration Field** nodes update the staged data by stable field ID. Register every intermediate version when more than one step is needed.
+For a version 1 → 2 migration, register **Register Save Migration** with From Version `1` during initialization, before Load Game. **Event Save Migration** exposes From Version; its typed **Get/Set Migration _Field Name_** nodes update the staged data by stable field ID. Generic **Get/Set Migration Field** nodes also access historical fields removed from the current definition. If any custom migration applies, register every intermediate version; use a no-op callback for a step that needs no conversion. An incomplete chain rejects the load and subsequent save without replacing the older data. When no custom migration applies, added defaults and stable-ID renames upgrade automatically.
 
 The JavaScript equivalent, for a field whose units changed from whole coins to hundredths, is:
 
@@ -106,13 +106,17 @@ ctx.registerSaveMigration(1, (snapshot) => {
 });
 ```
 
-Keep migrations focused on their supplied document. Mutating unrelated gameplay objects from a custom migration callback is outside the service's staged-data rollback contract.
+Keep migrations focused on their supplied document; graph Functions can share conversion logic. Mutating unrelated gameplay objects or dispatching gameplay events from a custom migration callback is outside the service's staged-data rollback contract.
 
 New Game and Load Game preserve the identity of the record returned by Get Save Data while replacing its contents. Failed loads do not replace those contents. A newer incompatible save is not silently downgraded to an older compatible generation.
 
 ## Editor save tools
 
 **Project Settings → Save Games** manages preview save data. Select a profile/slot to inspect, export, or delete it; import a save to test recovery. **Reset Preview Saves** removes local test saves in the editor namespace. **Wipe Preview Saves On Play** supports repeatable playtesting. These controls must not erase the exported player's namespace.
+
+Preview Build forwards save storage requests to the editor host, so it shares Overlay Play's preview slots and reset controls on web, Electron, and Capacitor. Its iframe uses a scoped session bridge instead of independently selecting a storage backend.
+
+Inspection does not run game scripts or custom migrations. Inspect a save requiring those migrations in Play; the manager can still export a structurally valid older save for backup.
 
 **Request Persistent Storage** asks the browser to reduce automatic eviction. The browser can deny it, private browsing may restrict storage, and users can still clear site data. Export saves that need an independent backup. Import validates the file before committing it as a new generation.
 
