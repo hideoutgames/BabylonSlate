@@ -10,6 +10,7 @@ import { loadGameFromFiles } from "./artifact";
 import { startPlayer, type PlayerBootHandle } from "./boot";
 import { startPlayerWithBackend } from "./player-backend";
 import * as inputs from "./input";
+const attachInputCapture = inputs.attachInputCapture;
 
 class TestWorker {
   static instances: TestWorker[] = [];
@@ -89,9 +90,8 @@ async function fixture(withWater = false, saveGame?: SaveGameConfiguration) {
     scheduler: { invalidate: vi.fn(), acquireObstruction: vi.fn(() => () => {}), stats: () => ({ renderedFps: 0 }) },
   };
   vi.spyOn(rendering, "createEngine").mockReturnValue(handle as unknown as rendering.EngineHandle);
-  const attach = inputs.attachInputCapture;
   let input: inputs.InputCaptureHandle | undefined;
-  vi.spyOn(inputs, "attachInputCapture").mockImplementation((...args) => (input = attach(...args)));
+  vi.spyOn(inputs, "attachInputCapture").mockImplementation((...args) => (input = attachInputCapture(...args)));
   const fireEndFrame = () => { for (const callback of [...endFrame]) callback(); };
   return { game, canvas, root, handle, input: () => input!, fireEndFrame };
 }
