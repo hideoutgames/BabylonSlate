@@ -507,6 +507,7 @@ class InProcessRuntime implements RuntimeDriver {
   private saveGameService?: SaveGameService;
   private saveGameWorld?: SaveGameWorld;
   private saveBoundaryActive = false;
+  private saveOverlayLayoutPending = false;
   private readonly savedActors = new WeakSet<Actor>();
   private pendingGameLoaded: (() => void) | null = null;
   private readonly world: World;
@@ -2125,6 +2126,9 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private applyOverlayLayouts(): void {
+    // Virtual layout creates and retires ordinary UI actors. Their lifecycle
+    // must run after restoration, outside the restored-world hook suppression.
+    if (this.saveBoundaryActive) { this.saveOverlayLayoutPending = true; return; }
     if (this.applyingOverlayLayouts) return;
     this.applyingOverlayLayouts = true;
     try {
@@ -5811,10 +5815,12 @@ class InProcessRuntime implements RuntimeDriver {
           this.saveBoundaryActive = false;
           const loaded = this.pendingGameLoaded;
           this.pendingGameLoaded = null;
+          const publishOverlays = this.saveOverlayLayoutPending;
+          this.saveOverlayLayoutPending = false;
           if (!this.stopped) {
             // User callbacks run after commit. They cannot turn an applied
             // checkpoint into an apparent load failure.
-            for (const notify of [loaded, () => this.flushOwnerActions()]) {
+            for (const notify of [publishOverlays ? () => this.publishSnapshot() : null, loaded, () => this.flushOwnerActions()]) {
               try { notify?.(); }
               catch (error) {
                 try { this.reportError(error); } catch { /* The host may be disconnected. */ }

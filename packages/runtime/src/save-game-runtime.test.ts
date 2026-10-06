@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createActor, createDefaultScene, type SaveGameDefinition, type SaveGameStorage, type SerializedComponent } from "@babylonslate/core";
+import { createActor, createDefaultScene, createDefaultSceneLayer, type SaveGameDefinition, type SaveGameStorage, type SerializedComponent } from "@babylonslate/core";
 import type { CommandMessage } from "@babylonslate/bridge";
 import { createInProcessRuntime, type RuntimeDriver } from "./driver";
 import type { CompiledScript } from "./script-host";
@@ -48,6 +48,54 @@ async function boot(storage: MemoryStorage, options: { sceneId?: string; onComma
 function hero(runtime: RuntimeDriver) { return runtime.getWorld().findActor("hero")!; }
 
 describe("runtime Save Game", () => {
+  it("runs virtualized overlay actor and component creation after restore and before On Game Loaded", async () => {
+    const layer = createDefaultSceneLayer();
+    layer.actors = [createActor("menu", "Menu", { classId: "SceneLayerActor", components: [
+      { id: "list", classId: "2DVirtualizedListComponent", properties: { width: 4, height: 1, itemClassId: "Row", itemCount: 0, overscan: 0 } },
+    ] })];
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      playScene: createDefaultScene(), sceneLayerLibrary: { menu: layer } });
+    const service = runtime.configureSaveGame({ projectId: "project", definition, storage: new MemoryStorage() });
+    const entryPoints = ["onBeginPlay", "onGameLoaded", "onDestroyed"].map((name) => ({ name, event: name, isAsync: false }));
+    try {
+      await runtime.loadScripts([
+        { assetGuid: "row", classId: "Row", parentClassId: "SceneLayerActor", anchors: [], entryPoints,
+          components: [{ id: "row-state", classId: "RowState", properties: {} }],
+          source: `export function onBeginPlay(ctx) { ctx.self.setVariable('beganCoins', ctx.getSaveData().coins); }
+            export function onGameLoaded(ctx) { ctx.self.setVariable('beganWhenLoaded', ctx.self.getVariable('beganCoins')); }
+            export function onDestroyed(ctx) { ctx.self.setVariable('ended', true); }`,
+        },
+        { assetGuid: "row-state", classId: "RowState", parentClassId: "ActorComponent", anchors: [], entryPoints,
+          source: `export function onBeginPlay(ctx) { ctx.self.setVariable('beganCoins', ctx.getSaveData().coins); }
+            export function onGameLoaded(ctx) { ctx.self.setVariable('beganWhenLoaded', ctx.self.getVariable('beganCoins')); }
+            export function onDestroyed(ctx) { ctx.self.setVariable('ended', true); }`,
+        },
+      ]);
+      await runtime.realizePlayWorld();
+      runtime.createSceneLayer("menu");
+      runtime.start();
+      service.getSaveData().coins = 7;
+      expect((await service.saveGame()).ok).toBe(true);
+      const list = runtime.getWorld().findActor("menu")!.components.find((component) => component.guid === "list")!;
+      list.setVariable("itemCount", 1);
+      service.getSaveData().coins = 99;
+      expect((await service.loadGame()).ok).toBe(true);
+      const row = runtime.getWorld().getActors().find((actor) => actor.classId === "Row")!;
+      expect(row).toBeDefined();
+      const component = row.components.find((item) => item.classId === "RowState")!;
+      expect(row.getVariable("beganCoins")).toBe(7);
+      expect(component.getVariable("beganCoins")).toBe(7);
+      expect(row.getVariable("beganWhenLoaded")).toBe(7);
+      expect(component.getVariable("beganWhenLoaded")).toBe(7);
+      list.setVariable("itemCount", 0);
+      expect((await service.loadGame()).ok).toBe(true);
+      runtime.tick();
+      expect(row.destroyed).toBe(true);
+      expect(row.getVariable("ended")).toBe(true);
+      expect(component.getVariable("ended")).toBe(true);
+    } finally { runtime.stop(); }
+  });
+
   it("restores selected state, references and persisted destruction before On Game Loaded", async () => {
     const storage = new MemoryStorage();
     const first = await boot(storage);
