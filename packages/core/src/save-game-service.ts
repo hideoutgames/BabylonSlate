@@ -272,8 +272,11 @@ export class SaveGameService<TData extends object = Record<string, SaveGameValue
   private async migrate(body: SaveBody): Promise<SaveGameMigrationData> {
     this.assertCompatible(body);
     let data = cloneSaveGameValue({ schemaVersion: body.schemaVersion, fields: body.fields, state: body.state }) as unknown as SaveGameMigrationData;
-    for (const [from, migrate] of [...this.migrations].sort(([a], [b]) => a - b)) {
-      if (from < body.schemaVersion || from >= this.definition.schemaVersion) continue;
+    const steps = [...this.migrations].filter(([from]) => from >= body.schemaVersion && from < this.definition.schemaVersion).sort(([a], [b]) => a - b);
+    if (steps.length > 0 && (steps.length !== this.definition.schemaVersion - body.schemaVersion || steps.some(([from], index) => from !== body.schemaVersion + index))) {
+      throw new SaveGameError("incompatible", "The save schema needs a complete migration chain. Register every intermediate step, including explicit no-op steps.");
+    }
+    for (const [from, migrate] of steps) {
       data.schemaVersion = from;
       try {
         data = await migrate(data) ?? data;
@@ -306,7 +309,7 @@ export class SaveGameService<TData extends object = Record<string, SaveGameValue
         damaged = true;
       }
     }
-    if (!candidates.length && damaged) throw new SaveGameError("corrupt", "Both save generations are damaged. Delete or import a known good save explicitly.");
+    if (!candidates.length && damaged) throw new SaveGameError("corrupt", "No valid save generation remains. Delete the damaged slot explicitly, or import a known good save into another slot.");
     candidates.sort((a, b) => b.body.sequence - a.body.sequence);
     return { latest: candidates[0] ?? null, recovered: damaged && candidates.length > 0 };
   }
@@ -333,7 +336,12 @@ export class SaveGameService<TData extends object = Record<string, SaveGameValue
     const originalHash = (JSON.parse(text) as { checksum: string }).checksum;
     const key = `${address.prefix}/original-v${body.schemaVersion}-${body.sequence}-${originalHash}.save`;
     const archived = await this.options.storage.read(key);
-    if (archived === null) await this.options.storage.write(key, text);
+    if (archived === null) {
+      await this.options.storage.write(key, text);
+      if (await this.options.storage.read(key) !== text) throw new SaveGameError("corrupt", "The migration original could not be preserved. The previous save is unchanged.");
+    } else if (archived !== text) {
+      throw new SaveGameError("corrupt", "The archived migration original is damaged. The previous save is unchanged.");
+    }
   }
 
   private async commit(address: Address, captured: Pick<SaveGameMigrationData, "fields" | "state">, existing: SlotRead): Promise<SaveGameInfo> {

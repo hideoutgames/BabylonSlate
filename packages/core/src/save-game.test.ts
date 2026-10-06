@@ -244,6 +244,7 @@ describe("SaveGameService schema upgrades and portability", () => {
     };
     const service = make(storage, { definition: upgraded });
     service.registerMigration(1, async (snapshot) => { snapshot.fields["coins-id"] = Number(snapshot.fields["coins-id"]) * 10; });
+    service.registerMigration(2, () => undefined);
     expect(await service.loadGame()).toMatchObject({ ok: true });
     expect(service.getSaveData()).toEqual({ gold: 70, lives: 3 });
     expect(service.getField("coins-id")).toBe(70);
@@ -256,6 +257,23 @@ describe("SaveGameService schema upgrades and portability", () => {
     expect(archives).toHaveLength(1);
     expect(archives[0][1]).toBe(original);
     expect(await service.listSaves()).toMatchObject({ ok: true, value: [{ slot: "default", schemaVersion: 3, sequence: 3 }] });
+  });
+
+  it("rejects a missing custom migration predecessor while allowing default-only upgrades", async () => {
+    const storage = new FaultStorage();
+    const old = make(storage);
+    old.getSaveData().coins = 12;
+    await old.saveGame();
+    const upgraded = { ...definition, schemaVersion: 3 };
+    const service = make(storage, { definition: upgraded });
+    let reachedLaterMigration = false;
+    service.registerMigration(2, () => { reachedLaterMigration = true; });
+    expect(await service.loadGame()).toMatchObject({ ok: false, error: { code: "incompatible" } });
+    expect(reachedLaterMigration).toBe(false);
+    expect(service.getSaveData().coins).toBe(0);
+    const additive = make(storage, { definition: upgraded });
+    expect(await additive.loadGame()).toMatchObject({ ok: true });
+    expect(additive.getSaveData().coins).toBe(12);
   });
 
   it("reports failed migrations without changing the original file or live data", async () => {
