@@ -2600,9 +2600,12 @@ function initializeEngine(
     const y = event.clientY - rect.top;
     playCursor?.notePointer(event.pointerType ?? "mouse", x, y);
     const blocked = dispatchOverlayPointer("down", x, y, event.pointerId);
-    if (joysticks.owns(event.pointerId) || uiControls.owns(event.pointerId)) return;
+    if (joysticks.owns(event.pointerId)) return;
+    const controlOwns = uiControls.owns(event.pointerId);
+    if (controlOwns && !uiControls.allowsScroll(event.pointerId)) return;
     const scrollTarget = event.pointerType === "touch" || event.pointerType === "pen" ? scrollTargetAt(x, y) : undefined;
     if (scrollTarget) scrollDrag = { pointerId: event.pointerId, startX: x, startY: y, x, y, active: false, target: scrollTarget };
+    if (controlOwns) return;
     if (blocked) { scheduler.invalidate("selection"); return; }
     const hit = pickAtCanvas(scene, x, y);
     if (hit) {
@@ -2611,9 +2614,10 @@ function initializeEngine(
   };
   const onPointerMove = (event: PointerEvent) => {
     const { x, y } = overlayPointerCanvasCoords(event);
-    if (uiControls.move(event.pointerId, x, y) || joysticks.move(event.pointerId, x, y)) return;
+    if (joysticks.move(event.pointerId, x, y)) return;
     if (scrollDrag?.pointerId === event.pointerId) {
       if (!scrollDrag.active && Math.hypot(x - scrollDrag.startX, y - scrollDrag.startY) >= 8) {
+        uiControls.cancelForScroll(event.pointerId);
         scrollDrag.active = true;
         for (const hit of overlayPointerState.pressed.values()) options.onSceneLayerPointer?.({ layerId: hit.layerId, actorGuid: hit.actorGuid, componentId: hit.componentId, event: "onPressEnd" });
         overlayPointerState.pressed.clear();
@@ -2625,31 +2629,32 @@ function initializeEngine(
         return;
       }
     }
+    if (uiControls.move(event.pointerId, x, y)) return;
     playCursor?.notePointer(event.pointerType ?? "mouse", x, y);
     dispatchOverlayPointer("move", x, y);
   };
   const onPointerUp = (event: PointerEvent) => {
     const point = overlayPointerCanvasCoords(event);
-    if (uiControls.release(event.pointerId, false, point.x, point.y) || joysticks.release(event.pointerId)) return;
     const wasScrolling = scrollDrag?.pointerId === event.pointerId && scrollDrag.active;
     if (scrollDrag?.pointerId === event.pointerId) scrollDrag = null;
     if (wasScrolling) return;
+    if (uiControls.release(event.pointerId, false, point.x, point.y) || joysticks.release(event.pointerId)) return;
     const { x, y } = overlayPointerCanvasCoords(event);
     playCursor?.notePointer(event.pointerType ?? "mouse", x, y);
     dispatchOverlayPointer("up", x, y);
   };
   const onPointerCancel = (event: PointerEvent) => {
-    if (uiControls.release(event.pointerId, true) || joysticks.release(event.pointerId)) return;
     if (scrollDrag?.pointerId === event.pointerId) scrollDrag = null;
+    if (uiControls.release(event.pointerId, true) || joysticks.release(event.pointerId)) return;
     const { x, y } = overlayPointerCanvasCoords(event);
     playCursor?.notePointer(event.pointerType ?? "mouse", x, y);
     dispatchOverlayPointer("cancel", x, y);
   };
-  const resetJoysticks = () => { joysticks.reset(); uiControls.reset(); };
+  const resetJoysticks = () => { scrollDrag = null; joysticks.reset(); uiControls.reset(); };
   const onCanvasBlur = () => { joysticks.reset(); };
   const onControlKeyDown = (event: KeyboardEvent) => { if (!binding.paused) uiControls.keyDown(event); };
   const onJoystickVisibility = () => { if (typeof document !== "undefined" && document.hidden) resetJoysticks(); };
-  const onJoystickLostCapture = (event: PointerEvent) => { joysticks.release(event.pointerId); uiControls.release(event.pointerId, true); };
+  const onJoystickLostCapture = (event: PointerEvent) => { if (scrollDrag?.pointerId === event.pointerId) scrollDrag = null; joysticks.release(event.pointerId); uiControls.release(event.pointerId, true); };
   const onOverlayTouch = (event: TouchEvent) => {
     event.preventDefault();
   };
@@ -2704,7 +2709,7 @@ function initializeEngine(
   const applyPause = () => {
     const paused = callerPaused || sceneStreamingPaused;
     binding.paused = paused;
-    if (paused) { joysticks.reset(); uiControls.reset(); }
+    if (paused) { scrollDrag = null; joysticks.reset(); uiControls.reset(); }
     scheduler.setPaused(paused);
     audioService?.setPaused(paused);
     particleService?.setPaused(paused);

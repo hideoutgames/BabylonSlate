@@ -9,7 +9,7 @@ export type SceneLayerControlEvent = {
   value?: number | boolean | string; secondaryValue?: number;
 };
 type Target = { visual: UIControl2DMesh; layer: SceneLayerView; actorGuid: string; componentId: string };
-type Capture = Target & { rangeThumb: "lower" | "upper" | null; x: number; y: number; startX: number; startY: number; selectionAnchor?: number };
+type Capture = Target & { rangeThumb: "lower" | "upper" | null; interaction: "press" | "drag" | "edit"; x: number; y: number; startX: number; startY: number; selectionAnchor?: number };
 
 /** SceneLayer control capture plus an invisible native editor for IME/mobile keyboards. */
 export class UIControls2DInput {
@@ -36,6 +36,16 @@ export class UIControls2DInput {
   ) { this.layers = layers; this.size = size; this.emit = emit; this.canvas = canvas; this.navigate = navigate; }
 
   owns(pointerId: number): boolean { return this.captures.has(pointerId) || this.ignoredPointers.has(pointerId); }
+
+  /** Press controls yield touch drags to a containing scroll view; value drags and text selection keep ownership. */
+  allowsScroll(pointerId: number): boolean { return this.captures.get(pointerId)?.interaction === "press"; }
+
+  cancelForScroll(pointerId: number): boolean {
+    const capture = this.captures.get(pointerId);
+    if (!capture || capture.interaction !== "press") return false;
+    if (!capture.visual.mesh.isDisposed()) capture.visual.setExpanded(false);
+    return this.release(pointerId, true);
+  }
 
   private usable(target: Target): boolean {
     const { mesh, properties } = target.visual;
@@ -110,10 +120,12 @@ export class UIControls2DInput {
       const rangeThumb = p.lowerValue === p.upperValue
         ? sampled > p.upperValue ? "upper" : sampled < p.lowerValue ? "lower" : null
         : Math.abs(sampled - p.lowerValue) <= Math.abs(sampled - p.upperValue) ? "lower" : "upper";
-      const capture: Capture = { ...target, rangeThumb, x, y, startX: x, startY: y };
+      const drag = visual.classId === "2DSliderComponent" || visual.classId === "2DRangeSliderComponent";
+      const edit = visual.classId === "2DTextInputComponent" || (visual.classId === "2DNumericInputComponent" && local.x < p.width * 0.3);
+      const capture: Capture = { ...target, rangeThumb, interaction: p.readOnly ? "press" : drag ? "drag" : edit ? "edit" : "press", x, y, startX: x, startY: y };
       this.captures.set(pointerId, capture);
-      if (visual.classId === "2DSliderComponent" || visual.classId === "2DRangeSliderComponent") this.move(pointerId, x, y);
-      if (visual.classId === "2DTextInputComponent" || (visual.classId === "2DNumericInputComponent" && local.x < p.width * 0.3)) {
+      if (drag) this.move(pointerId, x, y);
+      if (edit) {
         this.openEditor(target);
         if (this.editor) {
           capture.selectionAnchor = visual.textOffsetAt(local.x, local.y);

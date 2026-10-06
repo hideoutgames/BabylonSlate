@@ -254,6 +254,10 @@ editor, Play and exported player. Width, Height and Font Size use layer units.
   pointer dragging selects text. Enter commits and Escape restores the draft's
   original value. Keyboard Tab, arrows, Space, Home and End operate controls;
   Shift selects the upper range-slider handle for keyboard adjustment.
+- Touch and pen presses on checkboxes, radio buttons, toggles, dropdowns and
+  numeric spinner buttons transfer to a containing scroll view after 8 pixels
+  of movement, cancelling the press. Slider drags and text selection retain
+  their pointer; short taps still activate the control.
 
 ## Virtualized collections, masks and safe areas
 

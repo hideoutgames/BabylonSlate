@@ -85,3 +85,15 @@ it("reopens a text editor only after authoritative Tab focus acknowledges an eli
   expect(document.querySelector<HTMLInputElement>("[data-testid=scene-layer-native-input]")?.value).toBe("ABCD");
   expect(visual.focused).toBe(true);
 });
+
+it.each(["2DTextInputComponent", "2DNumericInputComponent"])("retains pointer selection in %s instead of transferring it to scrolling", classId => {
+  const { input, visual, native } = editing(classId);
+  input.down(2, [{ layerId: "controls", actorGuid: "actor", componentId: "field", controlMeshName: "control", hitTest: "block" }], 375, 225);
+  expect(input.allowsScroll(2)).toBe(false);
+  expect(input.cancelForScroll(2)).toBe(false);
+  input.move(2, 425, 225);
+  expect(input.owns(2)).toBe(true);
+  expect((native.selectionEnd ?? 0) - (native.selectionStart ?? 0)).toBeGreaterThan(0);
+  expect(visual.focused).toBe(true);
+  input.release(2);
+});
