@@ -117,13 +117,22 @@ describe("player startup and Stop ownership", () => {
     const saveGame: SaveGameConfiguration = { projectId: "exported-progress", defaultProfile: "player-two", defaultSlot: "checkpoint",
       definition: { id: "progress", schemaVersion: 1, fields: [{ id: "coins-id", name: "Coins", type: "int", defaultValue: 3 }] } };
     TestWorker.failPost = true;
-    const create = vi.spyOn(runtimes, "createRuntimeFromLoad");
+    const createRuntime = runtimes.createRuntimeFromLoad;
+    const create = vi.spyOn(runtimes, "createRuntimeFromLoad").mockImplementation((...args) => {
+      const runtime = createRuntime(...args);
+      // This persistence test uses the driver's existing software backend;
+      // loading a browser WASM physics engine is an independent boundary.
+      vi.spyOn(runtime, "loadPhysics").mockResolvedValue(undefined);
+      return runtime;
+    });
     for (const restart of [false, true]) {
       const { game, canvas, root } = await fixture(false, saveGame);
       const session = startPlayer({ game, canvas, saveStorage });
       sessions.push(session);
       const runtime = create.mock.results.at(-1)!.value as runtimes.RuntimeDriver;
-      await vi.waitFor(() => { flushFrames(2); expect(root.dataset.sceneLoading).toBe("false"); });
+      const ready = vi.spyOn(runtime, "notifySceneModelsReady");
+      await vi.waitFor(() => { flushFrames(2); expect(ready).toHaveBeenCalled(); });
+      expect(root.dataset.sceneLoading).toBe("false");
       const service = runtime.getSaveGameService()!;
       expect(service).toBeDefined();
       if (!restart) {
