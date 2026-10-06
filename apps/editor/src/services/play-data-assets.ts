@@ -1,6 +1,6 @@
-import { isDataObjectAsset, isDataSheetAsset, type DataAssetCatalogEntry } from "@babylonslate/core";
+import { isDataDefinitionAsset, isDataTreeAsset, type DataAssetCatalogEntry } from "@babylonslate/core";
 
-type DataDocumentKind = "data-object" | "data-sheet" | "structure" | "enum";
+type DataDocumentKind = "data-definition" | "data-tree" | "structure" | "enum";
 type IndexedDataAsset = {
   path: string;
   placeholder?: boolean;
@@ -17,10 +17,10 @@ export async function collectPlayDataCatalog(
   const entries: DataAssetCatalogEntry[] = [];
   for (const asset of assets) {
     const type = asset.header.type;
-    if (asset.placeholder || (type !== "DataObject" && type !== "DataSheet" && type !== "Structure" && type !== "Enum")) continue;
-    const kind = type === "DataObject" ? "data-object" : type === "DataSheet" ? "data-sheet" : type === "Structure" ? "structure" : "enum";
+    if (asset.placeholder || (type !== "DataDefinition" && type !== "DataTree" && type !== "Structure" && type !== "Enum")) continue;
+    const kind = type === "DataDefinition" ? "data-definition" : type === "DataTree" ? "data-tree" : type === "Structure" ? "structure" : "enum";
     const indexed = asset.header.payload;
-    const hasIndexedData = type === "DataObject" ? isDataObjectAsset(indexed) : type === "DataSheet" && isDataSheetAsset(indexed);
+    const hasIndexedData = type === "DataDefinition" ? isDataDefinitionAsset(indexed) : type === "DataTree" && isDataTreeAsset(indexed);
     const payload = open.get(`${kind}:${asset.path}`) ?? (hasIndexedData ? indexed : await loadContent(kind, asset.path));
     if (payload) entries.push({ guid: asset.header.guid, type, name: asset.header.name, payload });
   }

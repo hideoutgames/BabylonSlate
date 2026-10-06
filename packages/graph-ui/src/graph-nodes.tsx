@@ -200,7 +200,7 @@ function PinRow({
   incoming?: SerializedPin;
   outgoing?: SerializedPin;
 }) {
-  const { pendingPin, pinHasError, pinTypeNames, pinDisplayType, onPinDefaultChange, renderPinDefaultEditor } = useGraphEditorContext();
+  const { pendingPin, pinHasError, pinTypeNames, pinDisplayType, onPinDefaultChange, renderPinDefaultEditor, connectedInputs } = useGraphEditorContext();
   const { entries: tags } = useTags();
   const outgoingTag = data.__nodeType === "tags.switch" && outgoing?.id.startsWith("case:")
     ? Number(outgoing.id.slice(5)) : undefined;
@@ -247,6 +247,7 @@ function PinRow({
             />
             {preview && displayedIncoming ? <PinDefaultEditor
               nodeId={nodeId} nodeData={data} nodeType={typeof data.__nodeType === "string" ? data.__nodeType : undefined}
+              connectedInputIds={connectedInputs?.get(nodeId)}
               pin={{ ...displayedIncoming, name: incomingLabel }} preview={preview} value={readPinDefaultValue(displayedIncoming, data)}
               disabled={disabled || !onPinDefaultChange} onChange={(value) => onPinDefaultChange?.(nodeId, incoming.id, value)}
               renderer={renderPinDefaultEditor}

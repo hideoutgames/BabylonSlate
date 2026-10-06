@@ -1,9 +1,10 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { AssetCreateProvider } from "@babylonslate/editor-kit";
 import type { PinType } from "@babylonslate/scripting";
-import type { PinDefaultEditorRequest } from "@babylonslate/graph-ui";
-import { GraphPinDefaultEditor, type GraphPinDefaultCatalogs } from "./graph-pin-defaults-provider";
+import { GraphEditor, type PinDefaultEditorRequest } from "@babylonslate/graph-ui";
+import type { SerializedGraph } from "@babylonslate/core";
+import { GraphPinDefaultEditor, GraphPinDefaultsProvider, type GraphPinDefaultCatalogs } from "./graph-pin-defaults-provider";
 import { classParentLookup } from "../lib/content-browser-helpers";
 import { subclassClassEntries } from "../lib/component-property-rows";
 
@@ -15,7 +16,18 @@ const assets = [
   { path: "assets/Brick.texture.babasset", header: { guid: "brick", type: "Texture", name: "Brick" } },
   { path: "assets/BrickSound.audio.babasset", header: { guid: "sound", type: "Audio", name: "Brick Sound" } },
   { path: "assets/Tool.class.babasset", header: { guid: "tool", type: "Class", name: "Tool", parentClass: "EditorUtilityObject" } },
+  { path: "assets/Items.babasset", header: { guid: "items", type: "DataTree", name: "Items", payload: {
+    defaultDefinitionGuid: "weapon", entries: [{ id: "stable-sword", parentId: null, name: "Sword", values: {} }],
+  } } },
 ];
+const documents = {
+  assetRegistry: { list: () => assets },
+  openDocuments: [] as { ref: { kind: "data-tree"; path: string }; content: unknown }[],
+};
+vi.mock("./document-context", async () =>
+  (await import("../testing/document-context-mock")).documentContextMock(() => documents),
+);
+beforeEach(() => { documents.openDocuments = []; });
 const catalogs: GraphPinDefaultCatalogs = {
   assets,
   pickerAssets: assets.map((asset) => ({ guid: asset.header.guid, name: asset.header.name, type: asset.header.type, path: asset.path })),
@@ -24,6 +36,7 @@ const catalogs: GraphPinDefaultCatalogs = {
   parentOf: classParentLookup(assets),
   enumMembers: { mood: ["Ready", "inMotion"] },
   materialDocuments: [],
+  dataTrees: [],
 };
 
 function request(type: PinType, value: unknown, extra: Partial<PinDefaultEditorRequest> = {}): PinDefaultEditorRequest {
@@ -36,6 +49,62 @@ function request(type: PinType, value: unknown, extra: Partial<PinDefaultEditorR
 }
 
 describe("project-backed inline pin defaults", () => {
+  it("switches entry-path defaults between live tree paths and free text without following entry IDs", async () => {
+    const onChange = vi.fn();
+    const graph: SerializedGraph = {
+      nodes: [
+        { id: "source", type: "variables.get", position: { x: 0, y: 200 }, data: {
+          __pins: [{ id: "value", name: "Value", direction: "out", kind: "data", type: { kind: "assetRef", assetType: "DataTree" } }],
+        } },
+        { id: "read", type: "data.readEntry", position: { x: 0, y: 0 }, data: {
+          __nodeType: "data.readEntry", "default:tree": "items", "default:entryPath": "Sword",
+          __pins: [
+            { id: "tree", name: "Tree", direction: "in", kind: "data", type: { kind: "assetRef", assetType: "DataTree" } },
+            { id: "entryPath", name: "Entry Path", direction: "in", kind: "data", type: { kind: "string" } },
+          ],
+        } },
+      ], edges: [],
+    };
+    const show = (value: SerializedGraph) => <GraphPinDefaultsProvider><GraphEditor initialGraph={value} onChange={onChange} /></GraphPinDefaultsProvider>;
+    const view = render(show(graph));
+    const picker = () => screen.getByTestId("property-read:entryPath");
+    expect(picker().getAttribute("role")).toBe("combobox");
+    expect(picker().textContent).toContain("Sword");
+
+    documents.openDocuments = [{ ref: { kind: "data-tree", path: "assets/Items.babasset" }, content: {
+      defaultDefinitionGuid: "weapon", entries: [{ id: "stable-sword", parentId: null, name: "Longsword", values: {} }],
+    } }];
+    view.rerender(show(graph));
+    expect(picker().textContent).toContain("Missing Entry (Sword)");
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.click(picker());
+    const option = await screen.findByTestId("search-item-Longsword");
+    fireEvent.pointerDown(option, { pointerType: "mouse" });
+    fireEvent.click(option);
+    await waitFor(() => expect(onChange).toHaveBeenCalled());
+    const edited = onChange.mock.lastCall![0] as SerializedGraph;
+    expect(edited.nodes.find((node) => node.id === "read")?.data["default:entryPath"]).toBe("Longsword");
+    expect(edited.nodes.find((node) => node.id === "read")?.data["default:entryId"]).toBeUndefined();
+
+    const cleared = { ...edited, nodes: edited.nodes.map((node) => node.id === "read"
+      ? { ...node, data: { ...node.data, "default:tree": "" } } : node) };
+    view.rerender(show(cleared));
+    const textbox = await screen.findByTestId("pin-default-read-entryPath");
+    expect(textbox.tagName).toBe("INPUT");
+    expect((textbox as HTMLInputElement).value).toBe("Longsword");
+    fireEvent.change(textbox, { target: { value: "Dynamic Name" } });
+    fireEvent.blur(textbox);
+    await waitFor(() => expect((onChange.mock.lastCall![0] as SerializedGraph).nodes.find((node) => node.id === "read")?.data["default:entryPath"]).toBe("Dynamic Name"));
+
+    view.rerender(show({ ...edited, edges: [{ id: "sheet-input", source: "source", sourceHandle: "value", target: "read", targetHandle: "tree" }] }));
+    await waitFor(() => {
+      expect(screen.queryByTestId("property-read:entryPath")).toBeNull();
+      expect((screen.getByTestId("pin-default-read-entryPath") as HTMLInputElement).value).toBe("Longsword");
+    });
+    view.rerender(show(edited));
+    await waitFor(() => expect(picker().textContent).toContain("Longsword"));
+  });
+
   it("selects an enum member using the schema while preserving its stored spelling", async () => {
     const input = request({ kind: "enumRef", guid: "mood" }, "Ready");
     render(<GraphPinDefaultEditor request={input} catalogs={catalogs} />);
@@ -65,12 +134,12 @@ describe("project-backed inline pin defaults", () => {
   });
 
   it.each([
-    ["data.readObject", "object", "DataObject"],
-    ["data.getSheetObjects", "sheet", "DataSheet"],
+    ["data.readEntry", "tree", "DataTree"],
+    ["editorData.updateEntry", "tree", "DataTree"],
   ])("creates a typed %s reference from its inline %s picker", async (nodeType, pinId, assetType) => {
     const createAsset = vi.fn(async () => "created-data");
     const input = request({ kind: "assetRef", assetType }, "", {
-      nodeType, nodeData: { structGuid: "weapon" },
+      nodeType, nodeData: { definitionGuid: "weapon" },
       pin: { id: pinId, name: "Value", direction: "in", kind: "data", type: { kind: "assetRef", assetType } },
     });
     render(<AssetCreateProvider value={{ canCreate: (type) => type === assetType, typeLabel: (type) => type, createAsset }}>
@@ -80,7 +149,7 @@ describe("project-backed inline pin defaults", () => {
     fireEvent.change(screen.getByTestId("graph-pin-asset-picker-query"), { target: { value: "New Weapon" } });
     fireEvent.click(screen.getByTestId(`search-item-__create__${assetType}`));
     await waitFor(() => expect(input.onChange).toHaveBeenCalledWith("created-data"));
-    expect(createAsset).toHaveBeenCalledWith({ type: assetType, name: "New Weapon", structureGuid: "weapon" });
+    expect(createAsset).toHaveBeenCalledWith({ type: assetType, name: "New Weapon", defaultDefinitionGuid: "weapon" });
   });
 
   it("uses the owning editor graph's class access for a general Class pin", () => {
@@ -115,4 +184,5 @@ describe("project-backed inline pin defaults", () => {
     expect(screen.queryByTestId("search-item-brick")).toBeNull();
     expect(input.onChange).not.toHaveBeenCalled();
   });
+
 });

@@ -1,123 +1,39 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
-import {
-  documentId as documentIdForRef,
-  isDataObjectAsset,
-  isDataSheetAsset,
-  parseMapDefaultEntries,
-  type DataObjectAsset,
-  type DataSheetAsset,
-} from "@babylonslate/core";
-import {
-  createDataObjectForStructure,
-  defaultValueForMember,
-  structInstanceDefault,
-  reconcileDataObject,
-  validateDataObject,
-  type StructField,
-  type TypeSchemas,
-} from "@babylonslate/scripting";
-import {
-  AssetPicker,
-  ClassPicker,
-  EntryListEditor,
-  NamePromptDialog,
-  NumberField,
-  PanelFrame,
-  PropertyGrid,
-  SearchInput,
-  SearchDropdown,
-  WindowedList,
-  humanizePropertyLabel,
-  isCoarsePointerEnvironment,
-  type PropertyRow,
-} from "@babylonslate/editor-kit";
+import { buildDataTreeIndex, type DataTreeEntry } from "@babylonslate/core";
+import { createDataEntryForDefinition, reconcileDataEntry, type StructField } from "@babylonslate/scripting";
+import { AssetPicker, ContextMenuOverlay, NamePromptDialog, NestedMenu, NumberField, PanelFrame, SearchInput, SearchDropdown, TreeView, WindowedList, humanizePropertyLabel, isCoarsePointerEnvironment, useContextMenu, type NestedMenuItem, type TreeViewNode } from "@babylonslate/editor-kit";
+import { FileTextIcon, ListTreeIcon, MoreHorizontalIcon } from "lucide-react";
 import { Button } from "@babylonslate/ui/components/button";
 import { Input } from "@babylonslate/ui/components/input";
 import { Checkbox } from "@babylonslate/ui/components/checkbox";
-import { FieldLegend, FieldSet } from "@babylonslate/ui/components/field";
 import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@babylonslate/ui/components/empty";
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from "@babylonslate/ui/components/alert-dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@babylonslate/ui/components/alert-dialog";
 import { cn } from "@babylonslate/ui/lib/utils";
-import { useDocuments } from "../context/document-context";
-import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useDataAssetEditing } from "../context/data-asset-editing-context";
-import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
-import { collectGraphTypeAssets, typeSchemasFromGraphAssets } from "../lib/logic-graph-document";
-import { assetPickerAllowedTypes, variableDefaultPropertyRows } from "../lib/graph-inspector";
-import { createPickerAsset } from "../lib/create-project-asset";
-import { subclassClassEntries } from "../lib/component-property-rows";
+import { DataValueEditor } from "../components/data-value-editor";
+import { DataTreeEntryField, DataTreeEntryPicker } from "../components/data-tree-entry-picker";
+import { DiagnosticResultRow } from "../components/diagnostic-result-row";
 
-const DATA_KINDS = ["data-object", "data-sheet"] as const;
-const TYPE_KINDS = ["structure", "enum"] as const;
 const TOUCH_ACTION = "pointer-coarse:min-h-11";
-
-function recursiveStructure(guid: string, schemas: TypeSchemas, visiting = new Set<string>()): boolean {
-  if (visiting.has(guid) || visiting.size > 64) return true;
-  const next = new Set([...visiting, guid]);
-  return Boolean(schemas.structs[guid]?.fields.some((field) => field.typeId === "struct" && field.typeClassId && recursiveStructure(field.typeClassId, schemas, next)));
+type TreeState = ReturnType<typeof useDataAssetEditing>;
+type Migration = ReturnType<typeof reconcileDataEntry> | null | undefined;
+function migrationBlocked(migration: Migration): boolean {
+  return Boolean(migration?.issues.some((issue) => ["rename-conflict", "ambiguous-schema", "invalid-schema", "recursive-schema"].includes(issue.code)));
 }
-
-/** Graph property controls hydrate known fields; data editing also keeps retired values. */
-function preserveAuthoredFields(previous: unknown, next: unknown, depth = 0): unknown {
-  if (depth > 64 || !previous || !next || typeof previous !== "object" || typeof next !== "object" || Array.isArray(previous) || Array.isArray(next)) return next;
-  const before = previous as Record<string, unknown>;
-  return Object.fromEntries(Object.entries({ ...before, ...next }).map(([key, value]) => [key,
-    Object.prototype.hasOwnProperty.call(next, key) ? preserveAuthoredFields(before[key], value, depth + 1) : value,
-  ]));
+function requiresApply(migration: Migration): boolean {
+  return Boolean(migration?.changes.some((change) => change.kind === "added" || change.kind === "renamed"));
 }
-
-/** Indexed headers supply closed rows; open document values always take priority. */
-function useDataCatalog() {
-  const { assetRegistry, registryEpoch } = useDocuments();
-  const dataDocuments = useOpenDocumentsOfKinds(DATA_KINDS);
-  const typeDocuments = useOpenDocumentsOfKinds(TYPE_KINDS);
-  const assets = useMemo(() => {
-    void registryEpoch;
-    return assetRegistry?.list() ?? [];
-  }, [assetRegistry, registryEpoch]);
-  const byGuid = useMemo(() => new Map(assets.map((asset) => [asset.header.guid, asset])), [assets]);
-  const byPath = useMemo(() => new Map(assets.map((asset) => [asset.path, asset])), [assets]);
-  const openByPath = useMemo(() => new Map(dataDocuments.map((doc) => [doc.ref.path, doc])), [dataDocuments]);
-  const types = useMemo(() => collectGraphTypeAssets({ assets, openDocuments: typeDocuments }), [assets, typeDocuments]);
-  const schemas = useMemo(() => typeSchemasFromGraphAssets(types), [types]);
-  const enumMembers = useMemo(() => Object.fromEntries(types.enums.map((entry) => [entry.guid, entry.members.map((member) => member.name)])), [types]);
-  const objects = useMemo(() => ({ get(guid: string): DataObjectAsset | undefined {
-    const indexed = byGuid.get(guid);
-    if (indexed?.header.type !== "DataObject") return undefined;
-    const value = openByPath.get(indexed.path)?.content ?? indexed.header.payload;
-    return isDataObjectAsset(value) ? value : undefined;
-  } }), [byGuid, openByPath]);
-  const reconciliationFor = useMemo(() => {
-    const cache = new WeakMap<DataObjectAsset, ReturnType<typeof reconcileDataObject>>();
-    return (asset: DataObjectAsset) => {
-      const fields = asset.structureGuid ? schemas.structs[asset.structureGuid]?.fields : undefined;
-      if (!fields) return null;
-      let result = cache.get(asset);
-      if (!result) { result = reconcileDataObject(asset, fields, schemas); cache.set(asset, result); }
-      return result;
-    };
-  }, [schemas]);
-  const pickerAssets = useMemo(() => assets.map((asset) => ({
-    guid: asset.header.guid, name: asset.header.name, type: asset.header.type, path: asset.path,
-  })), [assets]);
-  const classEntries = useMemo(() => subclassClassEntries("BObject", assets), [assets]);
-  const propertyAssets = useMemo(() => pickerAssets.map((entry) => ({ id: entry.guid, name: entry.name, type: entry.type })), [pickerAssets]);
-  return { assets, byGuid, byPath, openByPath, objects, reconciliationFor, types, schemas, enumMembers, pickerAssets, propertyAssets, classEntries };
+function pickerEntries(index: TreeState["index"]) {
+  return index?.orderedEntries.map((entry) => ({ id: entry.id, path: index.pathById.get(entry.id)!, effectiveDefinitionGuid: index.effectiveDefinitionById.get(entry.id) ?? null })) ?? [];
 }
-
 function OperationError({ message }: { message: string | null }) {
   return message ? <Alert variant="destructive"><AlertTitle>Data Edit Failed</AlertTitle><AlertDescription>{message}</AlertDescription></Alert> : null;
 }
-
 function DataEmpty({ title, children }: { title: string; children: string }) {
   return <Empty className="p-4"><EmptyHeader><EmptyTitle>{title}</EmptyTitle><EmptyDescription>{children}</EmptyDescription></EmptyHeader></Empty>;
 }
-
 function previewValue(value: unknown, assetName: (guid: string) => string | undefined): string {
   if (value === undefined || value === null) return "—";
   if (typeof value === "boolean") return value ? "True" : "False";
@@ -125,21 +41,63 @@ function previewValue(value: unknown, assetName: (guid: string) => string | unde
   if (typeof value === "object") return JSON.stringify(value);
   return String(value);
 }
-
-function DataSheetCell({ field, value, label, editable, enums, onChange, preview }: {
-  field: StructField;
-  value: unknown;
-  label: string;
-  editable: boolean;
-  enums: Record<string, string[]>;
-  onChange: (value: unknown) => void;
-  preview: string;
+function parseTsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let value = "";
+  let quoted = false;
+  for (let index = 0; index < text.length; index++) {
+    const character = text[index]!;
+    if (character === '"') {
+      if (quoted && text[index + 1] === '"') { value += '"'; index++; }
+      else if (quoted || value === "") quoted = !quoted;
+      else value += character;
+    } else if (!quoted && (character === "\t" || character === "\n" || character === "\r")) {
+      row.push(value); value = "";
+      if (character !== "\t") {
+        rows.push(row); row = [];
+        if (character === "\r" && text[index + 1] === "\n") index++;
+      }
+    } else value += character;
+  }
+  if (quoted) throw new Error("The pasted table has an unclosed quoted value.");
+  if (value || row.length || !rows.length) { row.push(value); rows.push(row); }
+  if (rows.some((entry) => entry.length !== rows[0]!.length)) throw new Error("Paste a rectangular table with the same number of columns in every row.");
+  return rows;
+}
+function parseCell(text: string, field: StructField, enums: Record<string, string[]>): unknown {
+  const label = humanizePropertyLabel(field.name);
+  if (field.container === "array" || field.container === "map") throw new Error(`${label}: Edit collection values in Values.`);
+  if (field.typeId === "string") return text;
+  if (field.typeId === "float" || field.typeId === "int") {
+    const value = Number(text.trim());
+    if (!text.trim() || !Number.isFinite(value) || (field.typeId === "int" && !Number.isSafeInteger(value))) throw new Error(`${label}: Enter a valid ${field.typeId === "int" ? "integer" : "number"}.`);
+    return value;
+  }
+  if (field.typeId === "bool") {
+    const value = text.trim().toLocaleLowerCase();
+    if (value === "true" || value === "1") return true;
+    if (value === "false" || value === "0") return false;
+    throw new Error(`${label}: Enter True or False.`);
+  }
+  if (field.typeId === "enum") {
+    const value = (enums[field.typeClassId ?? ""] ?? []).find((entry) => entry === text.trim() || humanizePropertyLabel(entry) === text.trim());
+    if (value !== undefined) return value;
+    throw new Error(`${label}: Choose an existing Enum value.`);
+  }
+  throw new Error(`${label}: Edit this field in Values.`);
+}
+function tsvCell(value: unknown): string {
+  const text = value === undefined || value === null ? "" : typeof value === "object" ? JSON.stringify(value) : String(value);
+  return /[\t\r\n"]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+}
+function DataEntryCell({ field, value, label, editable, enums, onChange, preview }: {
+  field: StructField; value: unknown; label: string; editable: boolean;
+  enums: Record<string, string[]>; onChange: (value: unknown) => void; preview: string;
 }) {
   const control = "h-6 min-h-6 w-full rounded-sm px-1 text-xs pointer-coarse:h-11";
   if (!editable || field.container === "array" || field.container === "map") return <span title={preview} className="block truncate">{preview}</span>;
-  if (field.typeId === "float" || field.typeId === "int") {
-    return <NumberField aria-label={label} className={control} value={typeof value === "number" ? value : 0} onChange={(next) => onChange(field.typeId === "int" ? Math.trunc(next) : next)} />;
-  }
+  if (field.typeId === "float" || field.typeId === "int") return <NumberField aria-label={label} className={control} value={typeof value === "number" ? value : 0} onChange={(next) => onChange(field.typeId === "int" ? Math.trunc(next) : next)} />;
   if (field.typeId === "bool") return <Checkbox aria-label={label} checked={value === true} onCheckedChange={(checked) => onChange(checked === true)} />;
   if (field.typeId === "string") return <Input key={String(value)} aria-label={label} className={control} defaultValue={typeof value === "string" ? value : ""} onBlur={(event) => {
     if (event.target.value !== value) onChange(event.target.value);
@@ -154,371 +112,328 @@ function DataSheetCell({ field, value, label, editable, enums, onChange, preview
   return <span title={preview} className="block truncate">{preview}</span>;
 }
 
-export function DataSheetRowsPanel(_props: IDockviewPanelProps) {
-  void _props;
-  const { documentId } = useDocumentWorkspace();
-  const gridId = useId();
-  const documents = useDocuments();
-  const catalog = useDataCatalog();
-  const { selectedGuid, select } = useDataAssetEditing();
-  const doc = documents.openDocuments.find((entry) => entry.id === documentId);
-  const sheet = isDataSheetAsset(doc?.content) ? doc.content : null;
-  const [query, setQuery] = useState("");
-  const [structurePicker, setStructurePicker] = useState(false);
-  const [objectPicker, setObjectPicker] = useState(false);
-  const [creating, setCreating] = useState(false);
+function useTreeActions(state: TreeState) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const mutation = useRef(false);
-  const cellWrites = useRef(new Map<string, Promise<void>>());
-  const schema = sheet?.structureGuid ? catalog.schemas.structs[sheet.structureGuid] : undefined;
-  const structureName = sheet?.structureGuid ? catalog.types.structures.find((entry) => entry.guid === sheet.structureGuid)?.name ?? "Missing Structure" : "Choose Structure";
-  const ownerAsset = doc ? catalog.byPath.get(doc.ref.path) : undefined;
-  const readOnly = Boolean(ownerAsset && documents.assetRegistry?.getRoot(ownerAsset.rootId)?.readOnly) || Boolean(doc && documents.sourceControl.isDocumentReadOnly(doc.ref.path));
-  const memberSet = useMemo(() => new Set(sheet?.objectGuids ?? []), [sheet?.objectGuids]);
+  const [renameId, setRenameId] = useState<string | null>(null);
+  const [moveId, setMoveId] = useState<string | null>(null);
+  const [removeId, setRemoveId] = useState<string | null>(null);
+  const pending = useRef(0);
+  const siblingPositions = useMemo(() => {
+    const positions = new Map<string, number>();
+    for (const siblings of state.index?.childrenByParentId.values() ?? []) siblings.forEach((entry, position) => positions.set(entry.id, position));
+    return positions;
+  }, [state.index]);
+  const run = async (action: () => Promise<unknown>) => {
+    pending.current++; setBusy(true); setError(null);
+    try { await action(); } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
+    finally { pending.current--; setBusy(pending.current > 0); }
+  };
+  const menuItems = (id: string): NestedMenuItem[] => {
+    const entry = state.index?.byId.get(id);
+    const siblings = state.index?.childrenByParentId.get(entry?.parentId ?? null) ?? [];
+    const position = siblingPositions.get(id) ?? -1;
+    const disabled = state.readOnly || busy || !entry;
+    return [
+      { id: "add-child", label: "Add Child", disabled, onSelect: () => void run(() => state.addEntry(id)) },
+      { id: "rename-entry", label: "Rename", disabled, onSelect: () => setRenameId(id) },
+      { id: "move-entry", label: "Move To", disabled, onSelect: () => setMoveId(id) },
+      { id: "move-up", label: "Move Up", disabled: disabled || position <= 0, onSelect: () => void run(() => state.moveEntry(id, siblings[position - 1]!.id, "before")) },
+      { id: "move-down", label: "Move Down", disabled: disabled || position >= siblings.length - 1, onSelect: () => void run(() => state.moveEntry(id, siblings[position + 1]!.id, "after")) },
+      { type: "separator", id: "entry-separator" },
+      { id: "duplicate-entry", label: "Duplicate Subtree", disabled, onSelect: () => void run(() => state.duplicateEntry(id)) },
+      { id: "remove-entry", label: "Remove Subtree", disabled, variant: "destructive", onSelect: () => setRemoveId(id) },
+    ];
+  };
+  const movePath = moveId ? state.index?.pathById.get(moveId) : undefined;
+  const destinations = useMemo(() => moveId ? pickerEntries(state.index).filter((entry) => entry.id !== moveId && (!movePath || !entry.path.startsWith(`${movePath}/`))) : [], [state.index, moveId, movePath]);
+  const removedPath = removeId ? state.index?.pathById.get(removeId) : undefined;
+  const removeCount = removedPath ? state.index!.orderedEntries.filter((entry) => entry.id === removeId || state.index!.pathById.get(entry.id)!.startsWith(`${removedPath}/`)).length : 0;
+  const dialogs = <>
+    <NamePromptDialog open={renameId !== null} onOpenChange={(open) => { if (!open) setRenameId(null); }} title="Rename Entry" label="Name" confirmLabel="Rename" initialValue={state.index?.byId.get(renameId ?? "")?.name ?? ""} validate={(name) => {
+      if (!state.tree || !renameId) return "This entry is no longer available.";
+      return buildDataTreeIndex({ ...state.tree, entries: state.tree.entries.map((entry) => entry.id === renameId ? { ...entry, name: name.trim() } : entry) }).issues[0]?.message ?? null;
+    }} onSubmit={(name) => { if (renameId) void run(() => state.renameEntry(renameId, name)); }} />
+    <DataTreeEntryPicker open={moveId !== null} onOpenChange={(open) => { if (!open) setMoveId(null); }} title="Move Entry To" entries={destinations} includeRoot testId="data-tree-move-picker" onPick={(path) => {
+      if (moveId) void run(() => state.moveEntry(moveId, path ? state.index?.idByPath.get(path) ?? null : null));
+      setMoveId(null);
+    }} />
+    <AlertDialog open={removeId !== null} onOpenChange={(open) => { if (!open) setRemoveId(null); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Remove Subtree</AlertDialogTitle><AlertDialogDescription>Remove {removedPath ?? "this entry"}{removeCount > 1 ? ` and ${removeCount - 1} descendant${removeCount === 2 ? "" : "s"}` : ""}? Undo restores these entries and their values.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={() => { if (removeId) void run(() => state.removeEntry(removeId)); setRemoveId(null); }}>Remove</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+  </>;
+  return { error, busy, run, menuItems, dialogs };
+}
+
+export function DataTreeHierarchyPanel(_props: IDockviewPanelProps) {
+  void _props;
+  const state = useDataAssetEditing();
+  const { tree, index, catalog, readOnly, selectedEntryId, collapsedIds } = state;
+  const actions = useTreeActions(state);
+  const [query, setQuery] = useState("");
+  const [definitionPicker, setDefinitionPicker] = useState(false);
+  const context = useContextMenu({ items: [] });
+  useEffect(() => { if (state.focusRequest) setQuery(""); }, [state.focusRequest]);
+  const visible = useMemo(() => {
+    if (!index) return [];
+    const search = query.trim().toLocaleLowerCase();
+    const included = new Set<string>();
+    if (search) for (const entry of index.orderedEntries) {
+      if (!index.pathById.get(entry.id)!.toLocaleLowerCase().includes(search)) continue;
+      let current: DataTreeEntry | undefined = entry;
+      while (current && !included.has(current.id)) { included.add(current.id); current = current.parentId ? index.byId.get(current.parentId) : undefined; }
+    }
+    let collapsedPath: string | null = null;
+    return index.orderedEntries.filter((entry) => {
+      const path = index.pathById.get(entry.id)!;
+      if (search) return included.has(entry.id);
+      if (collapsedPath && path.startsWith(`${collapsedPath}/`)) return false;
+      collapsedPath = collapsedIds.has(entry.id) ? path : null;
+      return true;
+    });
+  }, [index, query, collapsedIds]);
+  const nodes: TreeViewNode[] = visible.map((entry) => {
+    const children = index!.childrenByParentId.get(entry.id)?.length ?? 0;
+    return { id: entry.id, label: entry.name, depth: index!.pathById.get(entry.id)!.split("/").length - 1, hasChildren: children > 0, expanded: Boolean(query.trim()) || !collapsedIds.has(entry.id),
+      icon: children ? <ListTreeIcon className="size-3.5" /> : <FileTextIcon className="size-3.5" />,
+      preview: children ? <span className="text-xs tabular-nums text-muted-foreground">{children}</span> : undefined,
+      trailing: <NestedMenu size="chrome" items={actions.menuItems(entry.id)} trigger={<Button variant="ghost" size="icon-xs" className="pointer-coarse:min-h-11 pointer-coarse:min-w-11" aria-label={`Entry Menu For ${entry.name}`}><MoreHorizontalIcon className="size-3.5" /></Button>} />,
+    };
+  });
+  if (!tree) return <PanelFrame><DataEmpty title="Data Tree Unavailable">Reopen the asset to reload its data.</DataEmpty></PanelFrame>;
+  const definition = tree.defaultDefinitionGuid ? state.definitions.get(tree.defaultDefinitionGuid) : null;
+  return <PanelFrame data-testid="data-tree-hierarchy-panel">
+    <div className="sticky top-0 z-10 flex flex-col gap-1 border-b border-border bg-panel-header p-2">
+      <div className="flex items-center gap-1"><span className="shrink-0 text-xs text-muted-foreground">Default</span><Button variant="outline" size="sm" className={cn("min-w-0 flex-1 justify-start truncate", TOUCH_ACTION)} aria-label="Tree Default Definition" data-testid="data-tree-default-definition" disabled={readOnly || actions.busy} onClick={() => setDefinitionPicker(true)}>{definition?.name ?? (tree.defaultDefinitionGuid ? "Missing Definition" : "No Definition")}</Button></div>
+      <div className="flex items-center gap-1"><Button variant="outline" size="sm" className={TOUCH_ACTION} disabled={readOnly || actions.busy} onClick={() => void actions.run(() => state.addEntry(null))}>Add Root</Button><Button variant="ghost" size="sm" className={TOUCH_ACTION} disabled={readOnly || actions.busy || !selectedEntryId} onClick={() => { if (selectedEntryId) void actions.run(() => state.addEntry(selectedEntryId)); }}>Add Child</Button></div>
+      <SearchInput value={query} onChange={setQuery} placeholder="Search Tree" aria-label="Search Tree" className="h-7 min-h-7 pointer-coarse:min-h-11" />
+    </div>
+    <OperationError message={actions.error} />
+    <Button variant="ghost" size="sm" className={cn("w-full justify-start rounded-none px-2 text-xs", TOUCH_ACTION, !state.browseBranchId && !selectedEntryId && "bg-accent")} onClick={() => state.browse(null)}><ListTreeIcon className="size-3.5" />Tree Root<span className="ml-auto tabular-nums text-muted-foreground">{tree.entries.length}</span></Button>
+    {!index ? <DataEmpty title="Invalid Hierarchy">Resolve the issues in Validation before editing this tree. Stored entries are preserved.</DataEmpty> : <TreeView nodes={nodes} selectedId={selectedEntryId} data-testid="data-tree-hierarchy" aria-label="Data Tree" rowHeight={isCoarsePointerEnvironment() ? 44 : 28} emptyLabel={tree.entries.length ? "No Matching Entries" : "No Entries"} onSelect={(id) => state.selectEntry(id)} onToggleExpanded={(id) => state.setCollapsedIds((previous) => { const next = new Set(previous); if (next.has(id)) next.delete(id); else next.add(id); return next; })} onActivate={(id) => state.browse(id)} onReparent={readOnly ? undefined : (id, targetId, placement) => void actions.run(() => state.moveEntry(id, targetId, placement))} onContextMenu={(id, x, y) => { state.selectEntry(id, false); context.openMenuAt(x, y, actions.menuItems(id)); }} />}
+    <AssetPicker open={definitionPicker} onOpenChange={setDefinitionPicker} title="Choose Tree Default Definition" allowedTypes={["DataDefinition"]} assets={catalog.types.dataDefinitions.map((entry) => ({ ...entry, type: "DataDefinition" }))} allowNone onPick={(guid) => { setDefinitionPicker(false); void actions.run(() => state.setDefaultDefinition(guid)); }} />
+    <ContextMenuOverlay menu={context.menu} onClose={context.closeMenu} />
+    {actions.dialogs}
+  </PanelFrame>;
+}
+
+export function DataTreeEntriesPanel(_props: IDockviewPanelProps) {
+  void _props;
+  const state = useDataAssetEditing();
+  const { tree, index, catalog, readOnly, selectedEntryId, browseBranchId, focusRequest } = state;
+  const actions = useTreeActions(state);
+  const gridId = useId();
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState("all");
+  const [definitionFilter, setDefinitionFilter] = useState("auto");
+  const [descendants, setDescendants] = useState(false);
+  const [sort, setSort] = useState<{ field: string; direction: 1 | -1 } | null>(null);
+  const [hiddenColumns, setHiddenColumns] = useState<Set<string>>(() => new Set());
+  const handledFocus = useRef<number | null>(null);
+  const searchCache = useMemo(() => new WeakMap<DataTreeEntry, string>(), []);
+  const headerRef = useRef<HTMLDivElement>(null);
+  const [headerHeight, setHeaderHeight] = useState(69);
+  const hasTree = Boolean(tree);
+  useLayoutEffect(() => {
+    const header = headerRef.current;
+    if (!header) return;
+    const measure = () => { const height = header.getBoundingClientRect().height; if (height > 0) setHeaderHeight(height); };
+    measure();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    observer?.observe(header);
+    return () => observer?.disconnect();
+  }, [hasTree]);
+  const entries = useMemo(() => {
+    if (!index) return [];
+    if (!descendants) return index.childrenByParentId.get(browseBranchId) ?? [];
+    const path = browseBranchId ? index.pathById.get(browseBranchId) : "";
+    return index.orderedEntries.filter((entry) => !path || index.pathById.get(entry.id)!.startsWith(`${path}/`));
+  }, [index, browseBranchId, descendants]);
+  const definitionGuids = useMemo(() => [...new Set(entries.map((entry) => index!.effectiveDefinitionById.get(entry.id) ?? null))], [entries, index]);
+  const guid = definitionFilter === "auto" ? definitionGuids.length === 1 ? definitionGuids[0] : undefined : definitionFilter === "none" ? null : definitionFilter;
+  const definition = guid ? state.definitions.get(guid) : undefined;
+  const visibleFields = useMemo(() => definition?.fields.filter((field) => !hiddenColumns.has(field.id ?? field.name)) ?? [], [definition, hiddenColumns]);
   const filtered = useMemo(() => {
     const search = query.trim().toLocaleLowerCase();
-    return (sheet?.objectGuids ?? []).filter((guid) => {
-      const asset = catalog.byGuid.get(guid);
-      return !search || `${asset?.header.name ?? "Missing Object"} ${asset?.path ?? guid}`.toLocaleLowerCase().includes(search);
+    const result = entries.filter((entry) => {
+      if (definitionFilter !== "auto" && index?.effectiveDefinitionById.get(entry.id) !== guid) return false;
+      if (filter !== "all" && !state.entryInfo.get(entry.id)?.issues.some((issue) => issue.severity === filter)) return false;
+      if (!search || index?.pathById.get(entry.id)?.toLocaleLowerCase().includes(search)) return true;
+      let text = searchCache.get(entry);
+      if (text === undefined) { text = JSON.stringify(entry.values).toLocaleLowerCase(); searchCache.set(entry, text); }
+      return text.includes(search);
     });
-  }, [sheet?.objectGuids, query, catalog.byGuid]);
-  const selectedIndex = filtered.indexOf(selectedGuid ?? "");
-  const selectedAsset = selectedGuid ? catalog.byGuid.get(selectedGuid) : undefined;
+    if (sort) result.sort((a, b) => {
+      const left = sort.field === "$name" ? descendants ? index?.pathById.get(a.id) : a.name : a.values[sort.field];
+      const right = sort.field === "$name" ? descendants ? index?.pathById.get(b.id) : b.name : b.values[sort.field];
+      return sort.direction * (typeof left === "number" && typeof right === "number" ? left - right : String(left ?? "").localeCompare(String(right ?? ""), undefined, { numeric: true }));
+    });
+    return result;
+  }, [entries, definitionFilter, index, guid, filter, state.entryInfo, query, sort, descendants, searchCache]);
+  const selected = selectedEntryId ? index?.byId.get(selectedEntryId) : undefined;
+  const selectedIndex = filtered.findIndex((entry) => entry.id === selectedEntryId);
   const rowHeight = isCoarsePointerEnvironment() ? 44 : 28;
-  const gridColumns = `minmax(180px, 1.5fr) ${schema?.fields.map(() => "minmax(120px, 1fr)").join(" ") ?? ""} minmax(110px, 1fr)`;
-
-  const run = async (action: () => Promise<void>) => {
-    if (mutation.current) return;
-    mutation.current = true;
-    setBusy(true);
-    setError(null);
-    try { await action(); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
-    finally { mutation.current = false; setBusy(false); }
-  };
-  const commit = async (next: DataSheetAsset) => {
-    const changed = await documents.applyAssetDocumentChange(documentId, { ...next });
-    if (!changed) throw new Error("The sheet could not be edited. Check whether the asset is read-only or locked.");
-  };
-  const openSelected = () => {
-    if (selectedAsset?.header.type !== "DataObject") return;
-    void run(() => documents.openDocument({ kind: "data-object", path: selectedAsset.path, label: selectedAsset.header.name }));
-  };
-  const editCell = (guid: string, field: StructField, value: unknown) => {
-    select(guid);
-    const previous = cellWrites.current.get(guid) ?? Promise.resolve();
-    const write = previous.catch(() => undefined).then(async () => {
-      const indexed = documents.assetRegistry?.getByGuid(guid);
-      if (!indexed || indexed.header.type !== "DataObject") throw new Error("This Data Object is no longer available.");
-      const id = await documents.ensureAssetDocument({ kind: "data-object", path: indexed.path, label: indexed.header.name });
-      const current = documents.getOpenDocuments().find((entry) => entry.id === id)?.content;
-      if (!isDataObjectAsset(current) || current.structureGuid !== sheet?.structureGuid) throw new Error("The object's Structure changed. Open the object to review its fields.");
-      const fields = catalog.schemas.structs[current.structureGuid ?? ""]?.fields;
-      const migration = fields ? reconcileDataObject(current, fields, catalog.schemas) : null;
-      if (!migration || migration.changes.some((change) => change.kind === "added" || change.kind === "renamed") || migration.issues.some((issue) => ["rename-conflict", "ambiguous-schema", "invalid-schema", "recursive-schema"].includes(issue.code))) throw new Error("Apply the Structure changes in Values before editing this object.");
-      if (Object.is(current.values[field.name], value)) return;
-      const next = reconcileDataObject({ ...current, values: { ...current.values, [field.name]: value } }, fields!, catalog.schemas).asset;
-      if (!await documents.applyAssetDocumentChange(id, { ...next }, `data:${field.id ?? field.name}`)) throw new Error("The object could not be edited. Check whether it is read-only or locked.");
-    });
-    cellWrites.current.set(guid, write);
-    void write.catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason))).finally(() => {
-      if (cellWrites.current.get(guid) === write) cellWrites.current.delete(guid);
-    });
-  };
-  const moveSelected = (direction: -1 | 1) => {
-    if (!sheet || !selectedGuid) return;
-    const index = sheet.objectGuids.indexOf(selectedGuid);
-    const next = index + direction;
-    if (index < 0 || next < 0 || next >= sheet.objectGuids.length) return;
-    const objectGuids = [...sheet.objectGuids];
-    [objectGuids[index], objectGuids[next]] = [objectGuids[next]!, objectGuids[index]!];
-    void run(() => commit({ ...sheet, objectGuids }));
-  };
-  if (!sheet || !doc) return <PanelFrame><DataEmpty title="Data Sheet Unavailable">Reopen the asset to reload its data.</DataEmpty></PanelFrame>;
-  return (
-    <PanelFrame data-testid="data-sheet-rows-panel">
-      <div className="sticky top-0 z-10 flex flex-wrap items-center gap-1 border-b border-border bg-panel-header px-2 py-1">
-        <Button variant="outline" size="sm" className={TOUCH_ACTION} disabled={busy || readOnly || sheet.objectGuids.length > 0} onClick={() => setStructurePicker(true)} title={sheet.objectGuids.length ? "Remove sheet membership before changing the Structure." : undefined} data-testid="data-sheet-structure">{structureName}</Button>
-        <Button variant="outline" size="sm" className={TOUCH_ACTION} disabled={busy || readOnly || !schema} onClick={() => setCreating(true)}>New Object</Button>
-        <Button variant="outline" size="sm" className={TOUCH_ACTION} disabled={busy || readOnly || !schema} onClick={() => setObjectPicker(true)}>Add Existing</Button>
-        <Button variant="ghost" size="sm" className={TOUCH_ACTION} disabled={busy || readOnly || !selectedGuid || !memberSet.has(selectedGuid)} onClick={() => void run(async () => {
-          await commit({ ...sheet, objectGuids: sheet.objectGuids.filter((guid) => guid !== selectedGuid) });
-          select(null);
-        })}>Remove</Button>
-        <Button variant="ghost" size="sm" className={TOUCH_ACTION} disabled={!selectedAsset || busy} onClick={openSelected}>Open Object</Button>
-        <Button variant="ghost" size="sm" className={TOUCH_ACTION} disabled={busy || readOnly || !selectedGuid || sheet.objectGuids.indexOf(selectedGuid) <= 0} onClick={() => moveSelected(-1)}>Move Up</Button>
-        <Button variant="ghost" size="sm" className={TOUCH_ACTION} disabled={busy || readOnly || !selectedGuid || !memberSet.has(selectedGuid) || sheet.objectGuids.indexOf(selectedGuid) >= sheet.objectGuids.length - 1} onClick={() => moveSelected(1)}>Move Down</Button>
-        <div className="min-w-36 flex-1"><SearchInput value={query} onChange={setQuery} placeholder="Filter Objects…" aria-label="Filter Objects" className="h-7 pointer-coarse:min-h-11" /></div>
-        <span className="px-1 text-xs text-muted-foreground" role="status">{filtered.length} / {sheet.objectGuids.length}</span>
-      </div>
-      <OperationError message={error} />
-      {!sheet.structureGuid ? <DataEmpty title="Choose A Structure">A Structure defines the fields shared by objects in this sheet.</DataEmpty> : !schema ? <DataEmpty title="Structure Missing">Restore the referenced Structure to edit this sheet.</DataEmpty> : filtered.length === 0 ? <DataEmpty title={sheet.objectGuids.length ? "No Matching Objects" : "No Objects"}>{sheet.objectGuids.length ? "Change the filter to see more objects." : "Create an object or add an existing one. Removing a row only removes its membership in this sheet."}</DataEmpty> : (
-        <div className="min-w-full" style={{ minWidth: 320 + schema.fields.length * 120 }} role="grid" aria-label="Data Sheet Objects" aria-rowcount={filtered.length + 1} aria-colcount={schema.fields.length + 2} tabIndex={0} aria-activedescendant={selectedGuid && selectedIndex >= 0 ? `${gridId}-${selectedGuid}` : undefined}
-          onKeyDown={(event) => {
-            if (event.target !== event.currentTarget) return;
-            if (event.nativeEvent.isComposing) return;
-            let next = selectedIndex;
-            if (event.key === "ArrowDown") next = Math.min(filtered.length - 1, selectedIndex + 1);
-            else if (event.key === "ArrowUp") next = Math.max(0, selectedIndex - 1);
-            else if (event.key === "Home") next = 0;
-            else if (event.key === "End") next = filtered.length - 1;
-            else if (event.key === "Enter") { event.preventDefault(); openSelected(); return; }
-            else return;
-            event.preventDefault();
-            select(filtered[next] ?? null);
-          }}>
-          <div role="row" className="grid h-7 items-center border-b border-border bg-muted/30 text-xs text-muted-foreground" style={{ gridTemplateColumns: gridColumns }}>
-            <span role="columnheader" className="truncate px-2">Object</span>
-            {schema.fields.map((field) => <span key={field.id ?? field.name} role="columnheader" className="truncate px-2">{humanizePropertyLabel(field.name)}</span>)}
-            <span role="columnheader" className="px-2">Status</span>
-          </div>
-          <WindowedList itemCount={filtered.length} rowHeight={rowHeight} activeIndex={selectedIndex}>
-            {(index) => {
-              const guid = filtered[index]!;
-              const asset = catalog.byGuid.get(guid);
-              const object = catalog.objects.get(guid);
-              const valid = object?.structureGuid === sheet.structureGuid;
-              const migration = object && valid ? catalog.reconciliationFor(object) : null;
-              const needsMigration = migration?.changes.some((change) => change.kind === "added" || change.kind === "renamed") || migration?.issues.some((issue) => ["rename-conflict", "ambiguous-schema", "invalid-schema", "recursive-schema"].includes(issue.code));
-              const changedType = migration?.changes.some((change) => change.kind === "typeChanged");
-              const invalidValues = migration?.issues.some((issue) => issue.severity === "error");
-              const open = asset ? catalog.openByPath.get(asset.path) : undefined;
-              const status = !object ? "Missing Object" : !valid ? "Structure Mismatch" : needsMigration ? "Structure Changed" : changedType ? "Review Value Type" : invalidValues ? "Invalid Values" : open?.dirty ? "Modified" : "";
-              return <div id={`${gridId}-${guid}`} role="row" aria-rowindex={index + 2} aria-selected={selectedGuid === guid} data-testid={`data-sheet-row-${guid}`} className={cn("grid h-full cursor-default items-center border-b border-border/50 text-xs hover:bg-accent/50", selectedGuid === guid && "bg-accent")} style={{ gridTemplateColumns: gridColumns }} onClick={() => select(guid)} onDoubleClick={() => {
-                if (asset?.header.type === "DataObject") void run(() => documents.openDocument({ kind: "data-object", path: asset.path, label: asset.header.name }));
-              }}>
-                <span role="gridcell" className="truncate px-2" title={asset?.path ?? guid}>{asset?.header.name ?? guid}</span>
-                {schema.fields.map((field) => <div key={field.id ?? field.name} role="gridcell" className="min-w-0 px-1" onDoubleClick={(event) => event.stopPropagation()}>
-                  <DataSheetCell field={field} value={object?.values[field.name]} label={`${asset?.header.name ?? guid} ${humanizePropertyLabel(field.name)}`} editable={Boolean(valid && !needsMigration && !readOnly && asset && !documents.assetRegistry?.getRoot(asset.rootId)?.readOnly && !documents.sourceControl.isDocumentReadOnly(asset.path))} enums={catalog.enumMembers} onChange={(value) => editCell(guid, field, value)} preview={previewValue(object?.values[field.name], (value) => catalog.byGuid.get(value)?.header.name)} />
-                </div>)}
-                <span role="gridcell" className={cn("truncate px-2", !valid || invalidValues ? "text-destructive" : "text-muted-foreground")}>{status}</span>
-              </div>;
-            }}
-          </WindowedList>
-        </div>
-      )}
-      <AssetPicker open={structurePicker} onOpenChange={setStructurePicker} title="Choose Structure" allowedTypes={["Structure"]} assets={catalog.types.structures.map((entry) => ({ ...entry, type: "Structure" }))} allowNone={false} onPick={(guid) => {
-        setStructurePicker(false);
-        if (guid && guid !== sheet.structureGuid) void run(() => commit({ ...sheet, structureGuid: guid }));
-      }} />
-      <AssetPicker open={objectPicker} onOpenChange={setObjectPicker} title="Add Existing Object" allowedTypes={["DataObject"]} createTypes={[]} allowNone={false} assets={objectPicker ? catalog.pickerAssets.filter((entry) => !memberSet.has(entry.guid) && catalog.objects.get(entry.guid)?.structureGuid === sheet.structureGuid) : []} onPick={(guid) => {
-        setObjectPicker(false);
-        if (!guid || memberSet.has(guid) || catalog.objects.get(guid)?.structureGuid !== sheet.structureGuid) return;
-        void run(async () => { await commit({ ...sheet, objectGuids: [...sheet.objectGuids, guid] }); select(guid); });
-      }} />
-      <NamePromptDialog open={creating} onOpenChange={setCreating} title="New Data Object" label="Name" confirmLabel="Create" validate={(name) => /[\\/]/.test(name) ? "Use a name without path separators." : null} onSubmit={(name) => void run(async () => {
-        if (!documents.assetRegistry || !sheet.structureGuid) return;
-        const created = await createPickerAsset({ registry: documents.assetRegistry, ownerPath: doc.ref.path, openDocuments: documents.getOpenDocuments(), type: "DataObject", name, structureGuid: sheet.structureGuid });
-        documents.noteAssetsCreated();
-        const current = documents.getOpenDocuments().find((entry) => entry.id === documentId)?.content;
-        if (!isDataSheetAsset(current) || current.structureGuid !== sheet.structureGuid) throw new Error("The object was created, but the sheet changed. Add the object from the Content Browser when ready.");
-        await commit({ ...current, objectGuids: [...current.objectGuids, created.header.guid] });
-        select(created.header.guid);
-      })} />
-    </PanelFrame>
-  );
-}
-
-/** Compose the same typed controls as Class defaults without hydrating away retired fields. */
-function DataValueEditor({ field, value, defaultValue, onChange, label, path, disabled, catalog, issues, depth = 0 }: {
-  field: StructField;
-  value: unknown;
-  defaultValue: unknown;
-  onChange: (value: unknown) => void;
-  label: string;
-  path: string;
-  disabled: boolean;
-  catalog: ReturnType<typeof useDataCatalog>;
-  issues: readonly { code: string; path: string }[];
-  depth?: number;
-}) {
-  const id = useId();
-  const [assetPicker, setAssetPicker] = useState<{ rowId: string; allowedTypes: string[] } | null>(null);
-  const [classPicker, setClassPicker] = useState<{ rowId: string; base: string } | null>(null);
-  const invalid = issues.some((issue) => issue.code === "type-mismatch" && (issue.path === path || issue.path.startsWith(`${path}.`) || issue.path.startsWith(`${path}[`)));
-  const change = (next: unknown) => { if (!disabled) onChange(next); };
-  const shared = { disabled, catalog, issues, depth: depth + 1 };
-  const seed = (typeId: string, typeClassId?: string) => ["object", "actor", "wildcard"].includes(typeId) ? null : defaultValueForMember(typeId, typeClassId, catalog.schemas);
-  if (depth > 64) return <p className="text-xs text-destructive">{label}: Structure nesting limit exceeded.</p>;
-  if (field.container === "array" || field.container === "map") {
-    const single = { ...field, container: "single" as const };
-    const malformed = !Array.isArray(value) || (field.container === "map" && value.some((entry) => !entry || typeof entry !== "object" || Array.isArray(entry) || !("key" in entry) || !("value" in entry)));
-    const canReset = invalid || JSON.stringify(value) !== JSON.stringify(defaultValue);
-    return <FieldSet disabled={disabled} aria-label={label} className="gap-1">
-      <FieldLegend variant="label" className="mb-0 flex items-center gap-1">{label}{canReset ? <Button size="xs" variant="ghost" className={TOUCH_ACTION} disabled={disabled} aria-label={`Reset ${label}`} onClick={() => change(structuredClone(defaultValue))}>Reset</Button> : null}</FieldLegend>
-      {malformed ? <p className="text-xs text-destructive">Reset this invalid collection to edit its entries. The stored value is preserved until reset.</p> : field.container === "array" ? <EntryListEditor
-        items={Array.isArray(value) ? value : []} touchAdaptive addLabel="Add Item"
-        onCreate={() => seed(field.typeId, field.typeClassId)} onChange={change}
-        renderItem={({ item, index, onChange: changeItem }) => <DataValueEditor {...shared} field={single} value={item} defaultValue={seed(field.typeId, field.typeClassId)} onChange={changeItem} label={`${label} Item ${index + 1}`} path={`${path}.${index}`} />}
-      /> : <EntryListEditor
-        items={parseMapDefaultEntries(value)} touchAdaptive addLabel="Add Entry" countNoun={{ one: "entry", other: "entries" }}
-        onCreate={() => ({ key: seed(field.keyTypeId ?? "string", field.keyTypeClassId), value: seed(field.typeId, field.typeClassId) })} onChange={change}
-        renderItem={({ item, index, onChange: changeItem }) => <>
-          <DataValueEditor {...shared} field={{ name: "Key", typeId: field.keyTypeId ?? "string", typeClassId: field.keyTypeClassId }} value={item.key} defaultValue={seed(field.keyTypeId ?? "string", field.keyTypeClassId)} onChange={(key) => changeItem({ ...item, key })} label={`${label} Key ${index + 1}`} path={`${path}.${index}.key`} />
-          <DataValueEditor {...shared} field={single} value={item.value} defaultValue={seed(field.typeId, field.typeClassId)} onChange={(next) => changeItem({ ...item, value: next })} label={`${label} Value ${index + 1}`} path={`${path}.${index}.value`} />
-        </>}
-      />}
-    </FieldSet>;
-  }
-  const nested = field.typeId === "struct" && field.typeClassId && !["engine:TagContainer", "engine:InputType"].includes(field.typeClassId) ? catalog.schemas.structs[field.typeClassId] : undefined;
-  if (nested) {
-    const authored = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
-    const defaults = defaultValue && typeof defaultValue === "object" && !Array.isArray(defaultValue) ? defaultValue as Record<string, unknown> : structInstanceDefault(nested.fields, catalog.schemas);
-    return <div className="flex flex-col gap-2">{nested.fields.map((child) => <DataValueEditor {...shared} key={child.id ?? child.name} field={child} value={authored[child.name]} defaultValue={defaults[child.name]} onChange={(next) => change({ ...authored, [child.name]: next })} label={`${label} ${humanizePropertyLabel(child.name)}`} path={`${path}.${child.name}`} />)}</div>;
-  }
-  const options = {
-    typeClassId: field.typeClassId, schemas: catalog.schemas, enumMembers: catalog.enumMembers,
-    label, pinId: path, assetEntries: catalog.propertyAssets, classEntries: catalog.classEntries,
-    onPickAsset: (rowId: string, type: string) => setAssetPicker({ rowId, allowedTypes: assetPickerAllowedTypes(type, undefined) }),
-    onPickClass: (rowId: string, base: string) => setClassPicker({ rowId, base }),
-  };
-  const generated = variableDefaultPropertyRows(field.typeId, value, change, options);
-  const defaultRows = variableDefaultPropertyRows(field.typeId, defaultValue, () => undefined, options);
-  const rows = generated.map((row, index) => ({ ...row, id: `${id}:${row.id}`, disabled,
-    defaultValue: invalid ? undefined : defaultRows.find((entry) => entry.id === row.id)?.value,
-    labelAccessory: invalid && index === 0 ? <Button size="xs" variant="ghost" className={TOUCH_ACTION} disabled={disabled} aria-label={`Reset ${label}`} onClick={() => change(structuredClone(defaultValue))}>Reset</Button> : undefined,
-  } as PropertyRow));
-  return <>
-    <PropertyGrid rows={rows} />
-    {assetPicker ? <AssetPicker open onOpenChange={(open) => { if (!open) setAssetPicker(null); }} assets={catalog.pickerAssets} allowedTypes={assetPicker.allowedTypes} title="Choose Asset" allowNone onPick={(guid) => {
-      const row = generated.find((entry) => entry.id === assetPicker?.rowId);
-      if (row?.kind === "asset") row.onChange(guid ?? "");
-      setAssetPicker(null);
-    }} /> : null}
-    {classPicker ? <ClassPicker open onOpenChange={(open) => { if (!open) setClassPicker(null); }} classes={subclassClassEntries(classPicker.base, catalog.assets)} title="Choose Class" allowNone onPick={(classId) => {
-      const row = generated.find((entry) => entry.id === classPicker?.rowId);
-      if (row?.kind === "asset") row.onChange(classId ?? "");
-      setClassPicker(null);
-    }} /> : null}
-  </>;
-}
-
-export function DataObjectValuesPanel(_props: IDockviewPanelProps) {
-  void _props;
-  const formId = useId();
-  const { documentId } = useDocumentWorkspace();
-  const documents = useDocuments();
-  const catalog = useDataCatalog();
-  const { selectedGuid } = useDataAssetEditing();
-  const workspace = documents.openDocuments.find((entry) => entry.id === documentId);
-  const sheet = isDataSheetAsset(workspace?.content) ? workspace.content : null;
-  const selectedAsset = sheet && selectedGuid && sheet.objectGuids.includes(selectedGuid) ? catalog.byGuid.get(selectedGuid) : undefined;
-  const targetRef = sheet ? selectedAsset?.header.type === "DataObject" ? { kind: "data-object" as const, path: selectedAsset.path, label: selectedAsset.header.name } : null : workspace?.ref;
-  const targetId = targetRef ? documentIdForRef(targetRef) : null;
-  const target = targetId ? documents.openDocuments.find((entry) => entry.id === targetId) : undefined;
-  const targetLoaded = Boolean(target);
-  const asset = isDataObjectAsset(target?.content) ? target.content : null;
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [structurePicker, setStructurePicker] = useState(false);
-  const [pendingStructure, setPendingStructure] = useState<string | null>(null);
-  const [review, setReview] = useState(false);
-  const [renaming, setRenaming] = useState(false);
-  const latestTarget = useRef(targetId);
-  latestTarget.current = targetId;
-  const indexed = targetRef ? catalog.byPath.get(targetRef.path) : undefined;
-  const readOnly = Boolean(indexed && documents.assetRegistry?.getRoot(indexed.rootId)?.readOnly) || Boolean(targetRef && documents.sourceControl.isDocumentReadOnly(targetRef.path));
-  const schema = asset?.structureGuid ? catalog.schemas.structs[asset.structureGuid] : undefined;
-  const recursive = useMemo(() => Boolean(asset?.structureGuid && recursiveStructure(asset.structureGuid, catalog.schemas)), [asset?.structureGuid, catalog.schemas]);
-  const defaults = useMemo(() => asset?.structureGuid && schema && !recursive ? createDataObjectForStructure(asset.structureGuid, schema.fields, catalog.schemas).values : {}, [asset?.structureGuid, schema, catalog.schemas, recursive]);
-  const migration = useMemo(() => asset ? catalog.reconciliationFor(asset) : null, [asset, catalog.reconciliationFor]);
-  const issues = useMemo(() => asset ? validateDataObject(asset, catalog.schemas, { assetTypeForGuid: (guid) => catalog.byGuid.get(guid)?.header.type }) : [], [asset, catalog.schemas, catalog.byGuid]);
-  const visibleIssues = asset?.structureGuid ? issues : issues.filter((issue) => issue.code !== "missing-structure" || issue.path);
-  const schemaChanged = Boolean(migration?.changes.some((change) => change.kind !== "removed"));
-  const needsStructuralApply = Boolean(migration?.changes.some((change) => change.kind === "added" || change.kind === "renamed"));
-  const migrationBlocked = Boolean(migration?.issues.some((issue) => ["rename-conflict", "ambiguous-schema", "invalid-schema", "recursive-schema"].includes(issue.code)));
-  const editable = !readOnly && !needsStructuralApply && !migrationBlocked;
-
+  const gridColumns = `minmax(160px, 1.5fr) ${definition ? visibleFields.map(() => "minmax(120px, 1fr)").join(" ") : "minmax(130px, 1fr) minmax(60px, .4fr)"} minmax(105px, 1fr)`;
+  useEffect(() => { setDefinitionFilter("auto"); setQuery(""); setFilter("all"); }, [browseBranchId]);
   useEffect(() => {
-    let cancelled = false;
-    setError(null);
-    setReview(false);
-    setPendingStructure(null);
-    if (!sheet || !targetRef || target) { setLoading(false); return; }
-    setLoading(true);
-    void documents.ensureAssetDocument(targetRef).catch((reason: unknown) => {
-      if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason));
-    }).finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-    // Selection is keyed by identity; opening a document should not restart its request.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetId, targetLoaded, documents.ensureAssetDocument]);
-
-  const commit = (next: DataObjectAsset, mergeKey?: string) => {
-    if (!targetId) return;
-    setError(null);
-    const identity = targetId;
-    void documents.applyAssetDocumentChange(identity, { ...next }, mergeKey).then((changed) => {
-      if (!changed && latestTarget.current === identity && JSON.stringify(next) !== JSON.stringify(asset)) setError("The object could not be edited. Check whether the asset is read-only or locked.");
-    }).catch((reason: unknown) => { if (latestTarget.current === identity) setError(reason instanceof Error ? reason.message : String(reason)); });
+    if (!focusRequest || handledFocus.current === focusRequest.sequence) return;
+    handledFocus.current = focusRequest.sequence;
+    setQuery(""); setFilter("all"); setDefinitionFilter("auto");
+    const effective = index?.effectiveDefinitionById.get(focusRequest.entryId);
+    if (effective && definitionGuids.length > 1) setDefinitionFilter(effective);
+    const field = effective ? state.definitions.get(effective)?.fields.find((entry) => focusRequest.path === entry.name || focusRequest.path.startsWith(`${entry.name}.`)) : undefined;
+    if (field) setHiddenColumns((previous) => { const next = new Set(previous); next.delete(field.id ?? field.name); return next; });
+  }, [focusRequest, index, definitionGuids, state.definitions]);
+  const editCell = (entryId: string, field: StructField, value: unknown) => {
+    state.selectEntry(entryId, false);
+    void actions.run(() => state.updateValues([{ entryId, values: { [field.name]: value }, expectedDefinitionGuid: definition?.guid }], { mergeKey: `data:${entryId}:${field.id ?? field.name}` }));
   };
-  const changeValue = (field: StructField, value: unknown) => {
-      if (!asset || !targetId) return;
-      const current = documents.getOpenDocuments().find((entry) => entry.id === targetId)?.content;
-      if (!isDataObjectAsset(current)) return;
-      const next = { ...current, values: { ...current.values, [field.name]: preserveAuthoredFields(current.values[field.name], value) } };
-      commit(schema ? reconcileDataObject(next, schema.fields, catalog.schemas).asset : next, `data:${field.id ?? field.name}`);
-  };
-  const structureName = asset?.structureGuid ? catalog.types.structures.find((entry) => entry.guid === asset.structureGuid)?.name ?? "Missing Structure" : "Choose Structure";
-
-  return (
-    <PanelFrame data-testid="data-object-values-panel" toolbar={asset && targetId ? <>
-      {sheet ? <>
-        <Button size="sm" variant="ghost" className={TOUCH_ACTION} disabled={readOnly || !documents.canUndoDocument(targetId)} onClick={() => documents.undoDocument(targetId)}>Undo Object</Button>
-        <Button size="sm" variant="ghost" className={TOUCH_ACTION} disabled={readOnly || !documents.canRedoDocument(targetId)} onClick={() => documents.redoDocument(targetId)}>Redo Object</Button>
-      </> : null}
-      <Button size="sm" variant="ghost" className={TOUCH_ACTION} disabled={readOnly || !indexed} onClick={() => setRenaming(true)}>Rename</Button>
-    </> : undefined}>
-      <div className="flex flex-col gap-2 p-2">
-        <OperationError message={error} />
-        {loading ? <p role="status" className="text-xs text-muted-foreground">Loading Object…</p> : !asset ? <DataEmpty title={sheet ? "Select An Object" : "Data Object Unavailable"}>{sheet ? "Select a row to edit the shared object values." : "Reopen the asset to reload its data."}</DataEmpty> : <>
-          {sheet ? <p className="truncate text-xs font-medium">{indexed?.header.name ?? target?.ref.label}{target?.dirty ? " *" : ""}</p> : null}
-          <PropertyGrid rows={[{
-            id: `${formId}-structure`, kind: "asset", label: "Structure", value: asset.structureGuid,
-            displayLabel: structureName, displayType: "Structure", placeholder: "Choose Structure",
-            disabled: readOnly || Boolean(sheet), onPick: () => setStructurePicker(true), onChange: () => undefined,
-          }]} />
-          {sheet && asset.structureGuid !== sheet.structureGuid ? <Alert variant="destructive"><AlertTitle>Structure Mismatch</AlertTitle><AlertDescription>This object uses a different Structure. Open it to change its Structure, or remove its membership from this sheet.</AlertDescription></Alert> : null}
-          {schemaChanged ? <Alert><AlertTitle>Structure Changed</AlertTitle><AlertDescription>{needsStructuralApply ? "Review the field changes before editing this object." : "Review the changed types, or edit or reset their values to repair them."}<Button size="sm" variant="outline" className={TOUCH_ACTION} disabled={readOnly} onClick={() => setReview(true)}>Review Changes</Button></AlertDescription></Alert> : null}
-          {recursive ? <Alert variant="destructive"><AlertTitle>Recursive Structure</AlertTitle><AlertDescription>Remove the circular Structure reference before editing these values.</AlertDescription></Alert> : null}
-          {visibleIssues.length > 0 ? <Alert variant={visibleIssues.some((issue) => issue.severity === "error") ? "destructive" : "default"}><AlertTitle>Validation</AlertTitle><AlertDescription><ul className="list-disc pl-4">{visibleIssues.map((issue, index) => <li key={index}>{issue.path ? `${humanizePropertyLabel(issue.path)}: ` : ""}{issue.message}</li>)}</ul></AlertDescription></Alert> : null}
-          {schema ? (recursive ? [] : schema.fields).map((field) => <DataValueEditor key={`${targetId}:${field.id ?? field.name}`} field={field} value={(migrationBlocked ? asset.values : migration?.asset.values ?? asset.values)[field.name]} defaultValue={defaults[field.name]} onChange={(value) => changeValue(field, value)} label={humanizePropertyLabel(field.name)} path={field.name} disabled={!editable} catalog={catalog} issues={issues} />) : asset.structureGuid ? <DataEmpty title="Structure Missing">Restore the referenced Structure or choose another one. Existing values are preserved.</DataEmpty> : <DataEmpty title="Choose A Structure">Data Objects are standalone assets. Choose a Structure to define this object's fields.</DataEmpty>}
-          {sheet && target?.dirty ? <Button size="sm" variant="outline" className={cn("self-start", TOUCH_ACTION)} onClick={() => void documents.saveAll().then((saved) => { if (!saved) setError("The changes could not be saved. Resolve the editor's save diagnostics and retry."); }).catch((reason: unknown) => setError(String(reason)))}>Save All</Button> : null}
-        </>}
+  const pasteCells = (entryIndex: number, columnIndex: number, text: string) => void actions.run(async () => {
+    if (!definition) throw new Error("Filter to one available Definition before pasting values.");
+    const cells = parseTsv(text);
+    if (entryIndex + cells.length > filtered.length || columnIndex + cells[0]!.length > visibleFields.length) throw new Error("The pasted table exceeds the visible entries or columns. Add entries or show more columns, then retry.");
+    const targets = cells.map((values, offset) => ({ entryId: filtered[entryIndex + offset]!.id, expectedDefinitionGuid: definition.guid, values: Object.fromEntries(values.map((value, fieldIndex) => {
+      const field = visibleFields[columnIndex + fieldIndex]!;
+      return [field.name, parseCell(value, field, catalog.enumMembers)];
+    })) }));
+    await state.updateValues(targets, { validate: true });
+    state.selectEntry(targets[0]!.entryId, false);
+  });
+  const sortColumn = (field: string) => setSort((previous) => ({ field, direction: previous?.field === field && previous.direction === 1 ? -1 : 1 }));
+  if (!tree) return <PanelFrame><DataEmpty title="Data Tree Unavailable">Reopen the asset to reload its data.</DataEmpty></PanelFrame>;
+  const entryOptions = pickerEntries(state.index);
+  const branchPath = browseBranchId ? index?.pathById.get(browseBranchId) ?? "" : "";
+  return <PanelFrame data-testid="data-tree-entries-panel">
+    <div ref={headerRef} className="sticky top-0 z-20 flex flex-col gap-1 border-b border-border bg-panel-header px-2 py-1">
+      <div className="flex items-center gap-1"><Button variant="ghost" size="sm" className={TOUCH_ACTION} disabled={!browseBranchId} onClick={() => state.browse(index?.byId.get(browseBranchId ?? "")?.parentId ?? null)}>Parent</Button><div className="min-w-0 flex-1"><DataTreeEntryField value={branchPath} onChange={(path) => state.browse(path ? index?.idByPath.get(path) ?? null : null)} entries={entryOptions} includeRoot hideLabel label="Browse Branch" testId="data-tree-browse-branch" /></div><span className="shrink-0 text-xs tabular-nums text-muted-foreground">{filtered.length === entries.length ? filtered.length : `${filtered.length} / ${entries.length}`} Entries</span></div>
+      <div className="flex flex-wrap items-center gap-1">
+        <Button variant="outline" size="sm" className={TOUCH_ACTION} disabled={readOnly || actions.busy} onClick={() => void actions.run(async () => { await state.addEntry(browseBranchId); setQuery(""); setFilter("all"); setDefinitionFilter("auto"); })}>New Entry</Button>
+        <NestedMenu size="chrome" trigger={<Button variant="ghost" size="sm" className={TOUCH_ACTION} disabled={!selected}>Entry</Button>} items={selected ? actions.menuItems(selected.id) : []} />
+        <NestedMenu size="chrome" trigger={<Button variant="ghost" size="sm" className={TOUCH_ACTION}>View</Button>} items={[
+          { type: "checkbox", id: "descendants", label: "Include Descendants", checked: descendants, onCheckedChange: setDescendants },
+          { type: "submenu", id: "filter", label: "Filter", items: [{ type: "radio-group", id: "filter-choice", value: filter, onValueChange: setFilter, items: [{ id: "all", value: "all", label: "All Entries" }, { id: "error", value: "error", label: "Errors" }, { id: "warning", value: "warning", label: "Warnings" }] }] },
+          { type: "submenu", id: "columns", label: "Columns", disabled: !definition, items: (definition?.fields ?? []).map((field) => ({ type: "checkbox", id: field.id ?? field.name, label: humanizePropertyLabel(field.name), checked: !hiddenColumns.has(field.id ?? field.name), closeOnClick: false, onCheckedChange: (checked) => setHiddenColumns((previous) => { const next = new Set(previous); if (checked) next.delete(field.id ?? field.name); else next.add(field.id ?? field.name); return next; }) })) },
+          { id: "clear-sort", label: "Clear Sort", disabled: !sort, onSelect: () => setSort(null) },
+          { id: "copy-entry", label: "Copy Entry Values", disabled: !selected || !visibleFields.length || index?.effectiveDefinitionById.get(selected.id) !== definition?.guid, onSelect: () => void actions.run(async () => {
+            if (!selected) return;
+            if (!navigator.clipboard?.writeText) throw new Error("Clipboard access is not available in this browser.");
+            const migration = state.entryInfo.get(selected.id)?.migration;
+            const values = migrationBlocked(migration) ? selected.values : migration?.entry.values ?? selected.values;
+            await navigator.clipboard.writeText(visibleFields.map((field) => tsvCell(values[field.name])).join("\t"));
+          }) },
+        ]} />
+        <SearchDropdown title="Filter Definition" items={[{ id: "auto", label: "All Definitions" }, ...definitionGuids.map((entry) => ({ id: entry ?? "none", label: entry ? state.definitions.get(entry)?.name ?? "Missing Definition" : "No Definition" }))]} onSelect={setDefinitionFilter}><Button size="sm" variant="ghost" className={cn("max-w-40 truncate", TOUCH_ACTION)} aria-label="Filter Definition">{definitionFilter === "auto" ? definition?.name ?? "All Definitions" : definition?.name ?? "No Definition"}</Button></SearchDropdown>
+        <SearchInput value={query} onChange={setQuery} placeholder="Search Entries" aria-label="Search Entries" className="ml-auto h-7 min-h-7 min-w-32 flex-1 pointer-coarse:min-h-11" />
       </div>
-      <AssetPicker open={structurePicker} onOpenChange={setStructurePicker} assets={catalog.types.structures.map((entry) => ({ ...entry, type: "Structure" }))} allowedTypes={["Structure"]} title="Choose Structure" allowNone={false} onPick={(guid) => {
-        setStructurePicker(false);
-        if (!guid || !asset || guid === asset.structureGuid) return;
-        const chosen = catalog.schemas.structs[guid];
-        if (!chosen) return;
-        if (Object.keys(asset.values).length > 0) setPendingStructure(guid);
-        else commit(createDataObjectForStructure(guid, chosen.fields, catalog.schemas));
-      }} />
-      <AlertDialog open={pendingStructure !== null} onOpenChange={(open) => { if (!open) setPendingStructure(null); }}>
-        <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Change Structure</AlertDialogTitle><AlertDialogDescription>Replace this object's values with the new Structure defaults. Undo restores the current values.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={() => {
-          const chosen = pendingStructure ? catalog.schemas.structs[pendingStructure] : undefined;
-          if (pendingStructure && chosen) commit(createDataObjectForStructure(pendingStructure, chosen.fields, catalog.schemas));
-          setPendingStructure(null);
-        }}>Change Structure</AlertDialogAction></AlertDialogFooter></AlertDialogContent>
-      </AlertDialog>
-      <AlertDialog open={review} onOpenChange={setReview}>
-        <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Update Object Fields</AlertDialogTitle><AlertDialogDescription>Apply the current Structure to this object. Removed fields remain stored for recovery. Undo restores the previous snapshot.</AlertDialogDescription></AlertDialogHeader>
-          <ul className="max-h-64 overflow-y-auto rounded-md border border-border bg-muted/30 p-2 text-sm">{migration?.changes.map((change, index) => <li key={index} className="py-1">{humanizePropertyLabel(change.kind)}: {change.previousPath ? `${change.previousPath} → ` : ""}{change.path}</li>)}</ul>
-          {migrationBlocked ? <Alert variant="destructive"><AlertTitle>Resolve Schema Conflicts</AlertTitle><AlertDescription>{migration?.issues.filter((issue) => issue.severity === "error").map((issue) => issue.message).join(" ")}</AlertDescription></Alert> : null}
-          <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction disabled={migrationBlocked} onClick={() => { if (migration && !migrationBlocked) commit(migration.asset); setReview(false); }}>Apply Changes</AlertDialogAction></AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-      <NamePromptDialog open={renaming} onOpenChange={setRenaming} title="Rename Data Object" label="Name" confirmLabel="Rename" initialValue={indexed?.header.name ?? ""} validate={(name) => /[\\/]/.test(name) ? "Use a name without path separators." : null} onSubmit={(name) => {
-        if (!indexed || !documents.assetRegistry || name === indexed.header.name) return;
-        if (documents.sourceControl.refuseIfTheirs(indexed.path)) { setError("This object is locked by another user."); return; }
-        const registry = documents.assetRegistry;
-        void registry.renameAsset(indexed.header.guid, name).then(async (renamed) => {
-          documents.repathDocument("data-object", indexed.path, renamed.path);
-          documents.noteAssetsCreated();
-          await documents.sourceControl.transferLock(indexed.path, renamed.path);
-        }).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)));
-      }} />
-    </PanelFrame>
-  );
+    </div>
+    <OperationError message={actions.error} />
+    {!index ? <DataEmpty title="Invalid Hierarchy">Resolve the issues in Validation before editing entries.</DataEmpty> : entries.length === 0 ? <DataEmpty title="No Entries">Add an entry to this branch.</DataEmpty> : filtered.length === 0 ? <DataEmpty title="No Matching Entries">Change the search or filter to show entries.</DataEmpty> : <div role="grid" aria-label="Branch Entries" aria-rowcount={filtered.length + 1} aria-colcount={definition ? visibleFields.length + 2 : 4} aria-activedescendant={selectedIndex >= 0 ? `${gridId}-${selectedEntryId}` : undefined} tabIndex={0} className="min-w-full outline-none" style={{ width: Math.max(420, 265 + (definition ? visibleFields.length * 120 : 190)) }} onKeyDown={(event) => {
+      if (event.target !== event.currentTarget || event.nativeEvent.isComposing) return;
+      let next = selectedIndex;
+      if (event.key === "ArrowDown") next = Math.min(filtered.length - 1, selectedIndex + 1);
+      else if (event.key === "ArrowUp") next = Math.max(0, selectedIndex - 1);
+      else if (event.key === "Home") next = 0;
+      else if (event.key === "End") next = filtered.length - 1;
+      else if (event.key === "Enter" && selected) { event.preventDefault(); state.focusField(selected.id, ""); return; }
+      else return;
+      event.preventDefault(); state.selectEntry(filtered[next]?.id ?? null, false);
+    }}>
+      <div role="row" className="sticky z-10 grid h-7 items-center border-b border-border bg-panel-header text-xs text-muted-foreground pointer-coarse:h-11" style={{ gridTemplateColumns: gridColumns, top: headerHeight }}>
+        <span role="columnheader" aria-sort={sort?.field === "$name" ? sort.direction === 1 ? "ascending" : "descending" : "none"}><Button variant="ghost" size="xs" aria-label="Sort By Entry Name" className="w-full justify-start px-2 pointer-coarse:min-h-11" onClick={() => sortColumn("$name")}>{descendants ? "Path" : "Name"}{sort?.field === "$name" ? sort.direction === 1 ? " ↑" : " ↓" : ""}</Button></span>
+        {definition ? visibleFields.map((field) => <span role="columnheader" key={field.id ?? field.name} aria-sort={sort?.field === field.name ? sort.direction === 1 ? "ascending" : "descending" : "none"}><Button variant="ghost" size="xs" className="w-full justify-start truncate px-2 pointer-coarse:min-h-11" aria-label={`Sort By ${humanizePropertyLabel(field.name)}`} onClick={() => sortColumn(field.name)}>{humanizePropertyLabel(field.name)}{sort?.field === field.name ? sort.direction === 1 ? " ↑" : " ↓" : ""}</Button></span>) : <><span role="columnheader" className="px-2">Definition</span><span role="columnheader" className="px-2">Children</span></>}
+        <span role="columnheader" className="px-2">Status</span>
+      </div>
+      <WindowedList itemCount={filtered.length} rowHeight={rowHeight} activeIndex={selectedIndex}>{(entryIndex) => {
+        const entry = filtered[entryIndex]!;
+        const info = state.entryInfo.get(entry.id);
+        const migration = info?.migration;
+        const issues = info?.issues ?? [];
+        const errors = issues.filter((issue) => issue.severity === "error").length;
+        const warnings = issues.length - errors;
+        const needsApply = requiresApply(migration);
+        const status = needsApply ? "Definition Changed" : errors ? `${errors} Error${errors === 1 ? "" : "s"}` : warnings ? `${warnings} Warning${warnings === 1 ? "" : "s"}` : "";
+        const values = migrationBlocked(migration) ? entry.values : migration?.entry.values ?? entry.values;
+        const effective = index.effectiveDefinitionById.get(entry.id);
+        return <div id={`${gridId}-${entry.id}`} role="row" aria-rowindex={entryIndex + 2} aria-selected={selectedEntryId === entry.id} data-testid={`data-tree-entry-${entry.id}`} className={cn("grid h-full cursor-default items-center border-b border-border/50 text-xs hover:bg-accent/50", selectedEntryId === entry.id && "bg-accent")} style={{ gridTemplateColumns: gridColumns }} onClick={() => state.selectEntry(entry.id, false)} onDoubleClick={() => state.browse(entry.id)}>
+          <span role="gridcell" className="truncate px-2" title={index.pathById.get(entry.id)}>{descendants ? index.pathById.get(entry.id) : entry.name}</span>
+          {definition ? visibleFields.map((field, columnIndex) => <div key={field.id ?? field.name} role="gridcell" className="min-w-0 px-1" onDoubleClick={(event) => event.stopPropagation()} onPaste={(event) => {
+            const text = event.clipboardData.getData("text/plain");
+            if (!/[\t\r\n]/.test(text)) return;
+            event.preventDefault(); pasteCells(entryIndex, columnIndex, text);
+          }}><DataEntryCell field={field} value={values[field.name]} label={`${entry.name} ${humanizePropertyLabel(field.name)}`} editable={!readOnly && !needsApply && !migrationBlocked(migration)} enums={catalog.enumMembers} onChange={(value) => editCell(entry.id, field, value)} preview={previewValue(values[field.name], (assetGuid) => catalog.byGuid.get(assetGuid)?.header.name)} /></div>) : <><span role="gridcell" className="truncate px-2 text-muted-foreground">{effective ? state.definitions.get(effective)?.name ?? "Missing Definition" : "None"}</span><span role="gridcell" className="px-2 tabular-nums text-muted-foreground">{index.childrenByParentId.get(entry.id)?.length ?? 0}</span></>}
+          <span role="gridcell" className={cn("truncate px-2", errors ? "text-destructive" : "text-muted-foreground")}>{status}</span>
+        </div>;
+      }}</WindowedList>
+    </div>}
+    {actions.dialogs}
+  </PanelFrame>;
+}
+
+function definitionSource(state: TreeState, entry: DataTreeEntry): string {
+  if (entry.definitionGuid !== undefined) return entry.definitionGuid === null ? "No Definition · Branch Override" : "Entry Override";
+  let ancestor = entry.parentId ? state.index?.byId.get(entry.parentId) : undefined;
+  while (ancestor) {
+    if (ancestor.definitionGuid !== undefined) return `Inherited From ${state.index?.pathById.get(ancestor.id)}`;
+    ancestor = ancestor.parentId ? state.index?.byId.get(ancestor.parentId) : undefined;
+  }
+  return "Inherited From Tree Default";
+}
+
+export function DataTreeValuesPanel(_props: IDockviewPanelProps) {
+  void _props;
+  const state = useDataAssetEditing();
+  const { index, catalog, selectedEntryId, readOnly, focusRequest } = state;
+  const actions = useTreeActions(state);
+  const entry = selectedEntryId ? index?.byId.get(selectedEntryId) : undefined;
+  const effective = entry ? index?.effectiveDefinitionById.get(entry.id) : null;
+  const definition = effective ? state.definitions.get(effective) : undefined;
+  const migration = entry ? state.entryInfo.get(entry.id)?.migration : null;
+  const issues = entry ? state.entryInfo.get(entry.id)?.issues ?? [] : [];
+  const [review, setReview] = useState(false);
+  const [definitionPicker, setDefinitionPicker] = useState(false);
+  const fieldsRef = useRef<HTMLDivElement>(null);
+  const recursive = issues.some((issue) => issue.code === "recursive-schema");
+  const defaults = useMemo(() => definition && !recursive ? createDataEntryForDefinition(definition.guid, definition.fields, catalog.schemas).values : {}, [definition, catalog.schemas, recursive]);
+  const editable = !readOnly && !requiresApply(migration) && !migrationBlocked(migration);
+  const changed = Boolean(migration?.changes.some((change) => change.kind !== "removed"));
+  useEffect(() => { setReview(false); }, [selectedEntryId]);
+  useEffect(() => {
+    if (!focusRequest || focusRequest.entryId !== selectedEntryId) return;
+    const fields = Array.from(fieldsRef.current?.querySelectorAll<HTMLElement>("[data-data-field]") ?? []);
+    const field = fields.find((item) => item.dataset.dataField === focusRequest.path) ?? fields.find((item) => focusRequest.path.startsWith(`${item.dataset.dataField}.`)) ?? fields[0];
+    const control = field?.querySelector<HTMLElement>("input:not([disabled]), textarea:not([disabled]), select:not([disabled])") ?? field?.querySelector<HTMLElement>('[id^="property-"]:not([disabled]), button:not([disabled]), [tabindex]');
+    field?.scrollIntoView?.({ block: "nearest" }); control?.focus();
+  }, [focusRequest, selectedEntryId]);
+  if (!entry) return <PanelFrame data-testid="data-tree-values-panel"><DataEmpty title={index ? "Select An Entry" : "Invalid Hierarchy"}>{index ? "Select an entry to edit its owned values and Definition." : "Resolve the issues in Validation before editing this tree."}</DataEmpty></PanelFrame>;
+  return <PanelFrame data-testid="data-tree-values-panel">
+    <div className="flex flex-col gap-2 p-2" ref={fieldsRef}>
+      <div className="flex items-center gap-1"><p className="min-w-0 flex-1 truncate text-xs font-medium" title={index?.pathById.get(entry.id)}>{index?.pathById.get(entry.id)}</p><NestedMenu size="chrome" items={actions.menuItems(entry.id)} trigger={<Button variant="ghost" size="icon-xs" className={TOUCH_ACTION} aria-label="Selected Entry Menu"><MoreHorizontalIcon className="size-3.5" /></Button>} /></div>
+      <div className="flex flex-wrap items-center gap-1"><span className="text-xs text-muted-foreground">Definition</span><Button variant="outline" size="sm" className={cn("min-w-0 flex-1 justify-start truncate", TOUCH_ACTION)} aria-label="Entry Definition" disabled={readOnly || actions.busy} onClick={() => setDefinitionPicker(true)}>{definition?.name ?? (effective ? "Missing Definition" : "None")}</Button>{entry.definitionGuid !== undefined ? <Button variant="ghost" size="sm" className={TOUCH_ACTION} disabled={readOnly || actions.busy} onClick={() => void actions.run(() => state.setEntryDefinition(entry.id, undefined))}>Use Parent Definition</Button> : null}</div>
+      <p className="text-xs text-muted-foreground">{definitionSource(state, entry)}</p>
+      <OperationError message={actions.error} />
+      {changed ? <Alert><AlertTitle>Definition Changed</AlertTitle><AlertDescription>{requiresApply(migration) ? "Review the field changes before editing this entry." : "Edit or reset changed values to match the Definition."}<Button size="sm" variant="outline" className={TOUCH_ACTION} disabled={readOnly} onClick={() => setReview(true)}>Review Changes</Button></AlertDescription></Alert> : null}
+      {recursive ? <Alert variant="destructive"><AlertTitle>Recursive Definition</AlertTitle><AlertDescription>Remove the circular record reference before editing these values.</AlertDescription></Alert> : null}
+      {!definition ? <DataEmpty title={effective ? "Definition Missing" : "Untyped Entry"}>{effective ? "Restore or choose a Data Definition to edit these values. Stored values are preserved." : "Choose a Definition to edit typed values. This entry can still contain children; stored values are preserved."}</DataEmpty> : (recursive ? [] : definition.fields).map((field) => <DataValueEditor key={`${entry.id}:${field.id ?? field.name}`} field={field} value={(migrationBlocked(migration) ? entry.values : migration?.entry.values ?? entry.values)[field.name]} defaultValue={defaults[field.name]} onChange={(value) => void actions.run(() => state.updateValues([{ entryId: entry.id, values: { [field.name]: value }, expectedDefinitionGuid: definition.guid }], { mergeKey: `data:${entry.id}:${field.id ?? field.name}` }))} label={humanizePropertyLabel(field.name)} path={field.name} disabled={!editable} catalog={catalog} issues={issues} />)}
+      {issues.length ? <p className="text-xs text-muted-foreground">{issues.length} {issues.length === 1 ? "issue" : "issues"} in Validation.</p> : null}
+    </div>
+    <AssetPicker open={definitionPicker} onOpenChange={setDefinitionPicker} title="Override Entry Definition" allowedTypes={["DataDefinition"]} assets={catalog.types.dataDefinitions.map((item) => ({ ...item, type: "DataDefinition" }))} allowNone onPick={(guid) => { setDefinitionPicker(false); void actions.run(() => state.setEntryDefinition(entry.id, guid)); }} />
+    <AlertDialog open={review} onOpenChange={setReview}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Update Entry Fields</AlertDialogTitle><AlertDialogDescription>Apply the current Data Definition to this entry. Removed fields remain stored for recovery. Values belong to this entry; changing them does not change its children. Undo restores the previous values.</AlertDialogDescription></AlertDialogHeader>
+      <ul className="max-h-64 overflow-y-auto rounded-md border border-border bg-muted/30 p-2 text-sm">{migration?.changes.map((change, position) => <li key={position} className="py-1">{humanizePropertyLabel(change.kind)}: {change.previousPath ? `${change.previousPath} → ` : ""}{change.path}</li>)}</ul>
+      {migrationBlocked(migration) ? <Alert variant="destructive"><AlertTitle>Resolve Definition Conflicts</AlertTitle><AlertDescription>{migration?.issues.filter((issue) => issue.severity === "error").map((issue) => issue.message).join(" ")}</AlertDescription></Alert> : null}
+      <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction disabled={readOnly || migrationBlocked(migration)} onClick={() => { void actions.run(() => state.applyDefinition(entry.id)); setReview(false); }}>Apply Changes</AlertDialogAction></AlertDialogFooter>
+    </AlertDialogContent></AlertDialog>
+    {actions.dialogs}
+  </PanelFrame>;
+}
+
+export function DataTreeValidationPanel(_props: IDockviewPanelProps) {
+  void _props;
+  const state = useDataAssetEditing();
+  const { validation, index, focusRequest } = state;
+  const errors = validation.filter((issue) => issue.severity === "error").length;
+  return <PanelFrame data-testid="data-tree-validation-panel">
+    <div className="sticky top-0 z-10 flex h-7 items-center border-b border-border bg-panel-header px-2 text-xs text-muted-foreground">{errors} Errors · {validation.length - errors} Warnings</div>
+    {validation.length === 0 ? <DataEmpty title="No Issues">The hierarchy and typed entries are valid.</DataEmpty> : <WindowedList itemCount={validation.length} rowHeight={44}>{(position) => {
+      const issue = validation[position]!;
+      return <DiagnosticResultRow severity={issue.severity} message={issue.message} location={`${issue.entryId ? index?.pathById.get(issue.entryId) ?? issue.entryId : "Tree"}${issue.path ? ` · ${humanizePropertyLabel(issue.path)}` : ""}`} selected={focusRequest?.entryId === issue.entryId && focusRequest?.path === issue.path} onSelect={() => { if (issue.entryId) state.focusField(issue.entryId, issue.path); else state.documents.activateDockPanel("data-tree-hierarchy"); }} testId="data-validation-issue" />;
+    }}</WindowedList>}
+  </PanelFrame>;
 }

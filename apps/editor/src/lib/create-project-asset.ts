@@ -4,8 +4,8 @@ import {
   type AssetRegistry,
   type IndexedAsset,
 } from "@babylonslate/assets";
-import type { DataObjectAsset, DataSheetAsset, SerializedGraph, WaterStyle } from "@babylonslate/core";
-import { createDataObjectForStructure, validateDataObject, type TypeSchemas } from "@babylonslate/scripting";
+import type { DataDefinitionAsset, DataTreeAsset, SerializedGraph, WaterStyle } from "@babylonslate/core";
+import { validateDataDefinition, validateDataTree, type TypeSchemas } from "@babylonslate/scripting";
 import { engineParentOf, walkAncestry } from "@babylonslate/editor-kit";
 import {
   isLockedEngineClassId,
@@ -41,25 +41,27 @@ export async function createProjectAsset(options: {
   parentClass?: string | null;
   waterStyle?: WaterStyle;
   materialDomain?: MaterialDomain;
-  /** Use the live Structure catalog so unsaved schema edits supply defaults. */
-  structureGuid?: string | null;
+  /** Use the live Definition catalog so unsaved field edits supply defaults. */
+  defaultDefinitionGuid?: string | null;
   typeSchemas?: TypeSchemas;
-  dataObject?: DataObjectAsset;
-  dataSheet?: DataSheetAsset;
+  dataDefinition?: DataDefinitionAsset;
+  dataTree?: DataTreeAsset;
   classParentOf?: (id: string) => string | null | undefined;
   parentGraphs?: Record<string, SerializedGraph>;
 }): Promise<IndexedAsset> {
   const { type, name } = options;
-  const structureGuid = options.dataObject?.structureGuid ?? options.dataSheet?.structureGuid ?? options.structureGuid ?? null;
-  const structure = structureGuid ? options.typeSchemas?.structs?.[structureGuid] : undefined;
-  if ((type === "DataObject" || type === "DataSheet") && structureGuid && !structure) {
-    throw new Error("The selected Structure is unavailable. Choose an existing Structure.");
+  const defaultDefinitionGuid = options.dataTree ? options.dataTree.defaultDefinitionGuid : options.defaultDefinitionGuid ?? null;
+  const definition = defaultDefinitionGuid ? options.typeSchemas?.dataDefinitions?.[defaultDefinitionGuid] : undefined;
+  if (type === "DataTree" && defaultDefinitionGuid && !definition) {
+    throw new Error("The selected Data Definition is unavailable. Choose an existing Data Definition.");
   }
-  const dataObject = type === "DataObject" && structure && structureGuid
-    ? options.dataObject ?? createDataObjectForStructure(structureGuid, structure.fields, options.typeSchemas)
-    : options.dataObject;
-  if (dataObject && options.typeSchemas) {
-    const issue = validateDataObject(dataObject, options.typeSchemas).find(issue => issue.severity === "error");
+  const dataDefinition = options.dataDefinition;
+  if (dataDefinition) {
+    const issue = validateDataDefinition(dataDefinition, options.typeSchemas).find(issue => issue.severity === "error");
+    if (issue) throw new Error(issue.message);
+  }
+  if (options.dataTree) {
+    const issue = validateDataTree(options.dataTree, options.typeSchemas ?? { structs: {}, enums: {} }).find(issue => issue.severity === "error");
     if (issue) throw new Error(issue.message);
   }
   const fileName = newAssetFileName(type, name);
@@ -86,11 +88,11 @@ export async function createProjectAsset(options: {
     parentGraphs: type === "Class" ? options.parentGraphs : undefined,
     waterStyle: options.waterStyle,
     materialDomain: options.materialDomain,
-    structureGuid,
-    dataObject,
-    dataSheet: options.dataSheet,
+    defaultDefinitionGuid,
+    dataDefinition,
+    dataTree: options.dataTree,
   });
-  if (type === "DataObject" || type === "DataSheet") {
+  if (type === "DataDefinition" || type === "DataTree") {
     result.dependencies = assetHeaderDependencies(type, result.payload, options.registry.list?.() ?? []);
   }
   return options.registry.createAsset(
@@ -256,7 +258,7 @@ export async function createPickerAsset(options: {
   name?: string;
   parentClass?: string | null;
   materialDomain?: MaterialDomain;
-  structureGuid?: string | null;
+  defaultDefinitionGuid?: string | null;
 }): Promise<IndexedAsset> {
   const { registry, type } = options;
   const assets = registry.list();
@@ -296,8 +298,8 @@ export async function createPickerAsset(options: {
     name,
     parentClass,
     materialDomain: options.materialDomain,
-    structureGuid: options.structureGuid,
-    typeSchemas: type === "DataObject" || type === "DataSheet"
+    defaultDefinitionGuid: options.defaultDefinitionGuid,
+    typeSchemas: type === "DataDefinition" || type === "DataTree"
       ? typeSchemasFromGraphAssets(collectGraphTypeAssets({ assets, openDocuments: options.openDocuments }))
       : undefined,
     classParentOf: classParentLookup(assets),

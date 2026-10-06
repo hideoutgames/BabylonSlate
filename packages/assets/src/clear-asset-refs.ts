@@ -1,5 +1,5 @@
 import type { ProjectSettings } from "@babylonslate/core";
-import { isDataAssetPayload, mapDataAssetReferences, mapDataGraphLiteralReferences } from "./data-asset-refs";
+import { isDataAssetPayload, isDataGraphNodePayload, mapDataAssetReferences, mapDataGraphReferences, mapDataGraphLiteralReferences, type DataDefinitionFieldsResolver } from "./data-asset-refs";
 
 export type ClearDeletedAssetRefsResult<T> = {
   value: T;
@@ -24,11 +24,12 @@ export function clearDeletedAssetRefs<T>(
   value: T,
   deletedGuids: ReadonlySet<string>,
   deletedClassNames: ReadonlySet<string> = new Set(),
+  definitionFields?: DataDefinitionFieldsResolver,
 ): ClearDeletedAssetRefsResult<T> {
   if (deletedGuids.size === 0 && deletedClassNames.size === 0) {
     return { value, changed: false };
   }
-  const walked = walk(value, deletedGuids, deletedClassNames);
+  const walked = walk(value, deletedGuids, deletedClassNames, undefined, definitionFields);
   if (walked === value) {
     return { value, changed: false };
   }
@@ -74,10 +75,15 @@ function walk(
   deletedGuids: ReadonlySet<string>,
   deletedClassNames: ReadonlySet<string>,
   key?: string,
+  definitionFields?: DataDefinitionFieldsResolver,
 ): unknown {
+  if (isDataGraphNodePayload(value)) {
+    return mapDataGraphReferences(value, (reference, kind) =>
+      deletedGuids.has(reference) || (kind === "class" && deletedClassNames.has(reference)) ? null : reference, definitionFields);
+  }
   if (isDataAssetPayload(value)) {
     return mapDataAssetReferences(value, (reference, kind) =>
-      deletedGuids.has(reference) || (kind === "class" && deletedClassNames.has(reference)) ? null : reference);
+      deletedGuids.has(reference) || (kind === "class" && deletedClassNames.has(reference)) ? null : reference, definitionFields);
   }
   if (typeof value === "string") {
     if (isDeletedAssetRef(value, deletedGuids)) return null;
@@ -92,7 +98,7 @@ function walk(
         changed = true;
         continue;
       }
-      const walked = walk(entry, deletedGuids, deletedClassNames, key);
+      const walked = walk(entry, deletedGuids, deletedClassNames, key, definitionFields);
       if (walked !== entry) changed = true;
       next.push(walked);
     }
@@ -102,7 +108,7 @@ function walk(
     const record = value as Record<string, unknown>;
     if (typeof record.Name === "string" && typeof record.Asset === "string" && deletedGuids.has(record.Asset)) return { ...record, Name: "", Asset: "" };
     const mapped = mapDataGraphLiteralReferences(record, (reference, kind) =>
-      deletedGuids.has(reference) || (kind === "class" && deletedClassNames.has(reference)) ? null : reference);
+      deletedGuids.has(reference) || (kind === "class" && deletedClassNames.has(reference)) ? null : reference, definitionFields);
     let changed = mapped !== record;
     const next: Record<string, unknown> = {};
     for (const [childKey, entry] of Object.entries(record)) {
@@ -111,6 +117,7 @@ function walk(
         deletedGuids,
         deletedClassNames,
         childKey,
+        definitionFields,
       );
       if (walked !== entry) changed = true;
       next[childKey] = walked;

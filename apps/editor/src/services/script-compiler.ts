@@ -173,6 +173,7 @@ export function compileGraphDocument(
     dataAssets?: HydrateGraphOptions["dataAssets"];
     enums?: HydrateGraphOptions["enums"];
     structs?: HydrateGraphOptions["structs"];
+    dataDefinitions?: HydrateGraphOptions["dataDefinitions"];
     tagRegistry?: TagRegistry;
     latentFunctions?: ReadonlySet<string>;
     parentOf?: (classId: string) => string | null | undefined;
@@ -186,6 +187,7 @@ export function compileGraphDocument(
     dataAssets: options.dataAssets,
     enums: options.enums,
     structs: options.structs,
+    dataDefinitions: options.dataDefinitions,
   };
   const classId = options.classId?.trim() || classIdForGraphPath(options.path);
   const parentOf =
@@ -442,7 +444,7 @@ export function graphCompileSignature(
   inputAssets?: HydrateGraphOptions["inputAssets"],
   tagRegistry?: TagRegistry,
   dataAssets?: HydrateGraphOptions["dataAssets"],
-  typeSchemas?: Pick<HydrateGraphOptions, "enums" | "structs">,
+  typeSchemas?: Pick<HydrateGraphOptions, "enums" | "structs" | "dataDefinitions">,
 ): string {
   const payload = [...documents]
     .map((doc) => ({
@@ -477,6 +479,7 @@ export type GraphCompileCacheOptions = {
   dataAssets?: HydrateGraphOptions["dataAssets"];
   enums?: HydrateGraphOptions["enums"];
   structs?: HydrateGraphOptions["structs"];
+  dataDefinitions?: HydrateGraphOptions["dataDefinitions"];
   tagRegistry?: TagRegistry;
 };
 
@@ -492,10 +495,11 @@ function fnv1aHex(input: string): string {
 function typeSchemasFingerprint(
   enums: GraphCompileCacheOptions["enums"],
   structs: GraphCompileCacheOptions["structs"],
+  dataDefinitions: GraphCompileCacheOptions["dataDefinitions"],
 ): string {
-  if (!enums && !structs) return "0";
+  if (!enums && !structs && !dataDefinitions) return "0";
   return fnv1aHex(
-    JSON.stringify({ enums: enums ?? null, structs: structs ?? null }),
+    JSON.stringify({ enums: enums ?? null, structs: structs ?? null, dataDefinitions: dataDefinitions ?? null }),
   );
 }
 
@@ -537,7 +541,7 @@ function graphDocumentCompileCacheKey(
     stripDevelopmentOnly: options.stripDevelopmentOnly === true,
     types:
       options.typesFingerprint ??
-      typeSchemasFingerprint(options.enums, options.structs),
+      typeSchemasFingerprint(options.enums, options.structs, options.dataDefinitions),
     latent: options.latentFingerprint ?? "",
     inputAssets: options.inputAssets ?? [],
     dataAssets: options.dataFingerprint ?? fnv1aHex(JSON.stringify(options.dataAssets ?? [])),
@@ -591,6 +595,7 @@ function compileGraphDocumentCached(
       dataAssets: options.dataAssets,
       enums: options.enums,
       structs: options.structs,
+      dataDefinitions: options.dataDefinitions,
       tagRegistry: options.tagRegistry,
       latentFunctions: options.latentFunctions,
       parentOf: options.parentOf,
@@ -675,6 +680,7 @@ export function compileGraphDocuments(
   const typesFingerprint = typeSchemasFingerprint(
     options.enums,
     options.structs,
+    options.dataDefinitions,
   );
   const dataFingerprint = fnv1aHex(JSON.stringify(options.dataAssets ?? []));
   const project = projectLatentFunctions(documents);
@@ -717,7 +723,7 @@ function serializedGraphCompileSlice(
 
 function animGraphCompileCacheKey(
   entry: AnimGraphCompileDocument,
-  options: { stripDevelopmentOnly?: boolean; tagRegistry?: TagRegistry },
+  options: GraphCompileCacheOptions & { typesFingerprint: string; dataFingerprint: string },
 ): string {
   const parsed = parseAnimGraphDocument(entry.document);
   const document = parsed
@@ -742,18 +748,22 @@ function animGraphCompileCacheKey(
     path: entry.path,
     stripDevelopmentOnly: options.stripDevelopmentOnly === true,
     tags: tagRegistryCompileFingerprint(options.tagRegistry),
+    types: options.typesFingerprint,
+    dataAssets: options.dataFingerprint,
+    inputAssets: options.inputAssets,
     document,
   });
 }
 
 function compileAnimGraphDocument(
   entry: AnimGraphCompileDocument,
-  options: { stripDevelopmentOnly?: boolean; tagRegistry?: TagRegistry },
+  options: GraphCompileCacheOptions,
 ): ScriptBundleEntry[] {
   const scripts: ScriptBundleEntry[] = [];
   const doc = parseAnimGraphDocument(entry.document);
   if (!doc) return scripts;
   const objectScript = compileGraphDocument(doc.animationObject, {
+    ...options,
     path: entry.path,
     graphId: "animation-object",
     parentClassId: "BObject",
@@ -780,7 +790,7 @@ function compileAnimGraphDocument(
       },
       oneWay,
     );
-    const logic = materializeLogicGraph(ruleGraph, `rule-${transition.id}`);
+    const logic = materializeLogicGraph(ruleGraph, `rule-${transition.id}`, "event", options);
     const compiled = compileTransitionRuleGraph(logic, {
       assetGuid: entry.path,
       registry: defaultNodeRegistry,
@@ -810,16 +820,17 @@ function compileAnimGraphDocument(
  */
 export function compileAnimGraphScripts(
   documents: ReadonlyArray<AnimGraphCompileDocument>,
-  options: {
-    stripDevelopmentOnly?: boolean;
-    tagRegistry?: TagRegistry;
-    cache?: GraphScriptCompileCache;
-  } = {},
+  options: GraphCompileCacheOptions & { cache?: GraphScriptCompileCache } = {},
 ): ScriptBundleEntry[] {
   const scripts: ScriptBundleEntry[] = [];
+  const cacheOptions = {
+    ...options,
+    typesFingerprint: typeSchemasFingerprint(options.enums, options.structs, options.dataDefinitions),
+    dataFingerprint: fnv1aHex(JSON.stringify(options.dataAssets ?? [])),
+  };
   for (const entry of documents) {
     const cache = options.cache;
-    const key = cache ? animGraphCompileCacheKey(entry, options) : null;
+    const key = cache ? animGraphCompileCacheKey(entry, cacheOptions) : null;
     if (cache && key && cache.animGraphs.has(key)) {
       scripts.push(...(cache.animGraphs.get(key) ?? []));
       continue;

@@ -1,17 +1,21 @@
 import {
-  createDataSheetAsset,
-  isDataObjectAsset,
-  isDataSheetAsset,
-  type DataObjectAsset,
-  type DataSheetAsset,
+  buildDataTreeIndex,
+  createDataTreeAsset,
+  createDataTreeEntry,
+  type DataTreeIndex,
+  isDataTreeAsset,
+  type DataDefinitionField,
+  type DataTreeAsset,
+  type DataTreeEntry,
 } from "@babylonslate/core";
 import type { AssetRegistry, IndexedAsset } from "@babylonslate/assets";
 import {
-  createDataObjectForStructure,
-  reconcileDataObject,
-  resolveDataObjectValues,
-  serializeDataObjectValues,
-  validateDataObject,
+  createDataEntryForDefinition,
+  reconcileDataEntry,
+  resolveDataEntryValues,
+  serializeDataEntryValues,
+  validateDataDefinition,
+  validateDataEntry,
   type EditorDataApi,
   type EditorDataResult,
   type StructField,
@@ -33,10 +37,15 @@ function schemasFor(host: Host): TypeSchemas {
   }));
 }
 
-function requireStructure(guid: string, schemas: TypeSchemas): string {
-  if (typeof guid !== "string" || !guid.trim() || !schemas.structs[guid]) {
-    throw new Error("Select an existing Structure before authoring data.");
+function requireDefinition(guid: unknown, schemas: TypeSchemas, registry: AssetRegistry): string {
+  const asset = typeof guid === "string" ? registry.getByGuid(guid) : undefined;
+  if (typeof guid !== "string" || !guid.trim() || !schemas.dataDefinitions?.[guid] ||
+    !asset || asset.placeholder || asset.header.type !== "DataDefinition") {
+    throw new Error("Select an existing Data Definition before authoring data.");
   }
+  const errors = validateDataDefinition({ kind: "dataDefinition", fields: schemas.dataDefinitions[guid]!.fields as DataDefinitionField[] }, schemas, guid)
+    .filter((issue) => issue.severity === "error");
+  if (errors.length) throw new Error(errors.map((issue) => `${issue.path ? `${issue.path}: ` : ""}${issue.message}`).join("\n"));
   return guid;
 }
 
@@ -46,7 +55,7 @@ function record(value: unknown): value is Record<string, unknown> {
 }
 
 function validatedValues(values: unknown): Record<string, unknown> {
-  if (!record(values)) throw new Error("Values must be a Structure value.");
+  if (!record(values)) throw new Error("Values must be a Data Definition value.");
   return values;
 }
 
@@ -82,14 +91,41 @@ function folderPath(folder: string): string {
   return folder.replace(/\/+$/, "");
 }
 
-function matchingStructure(asset: DataObjectAsset | DataSheetAsset, expected?: string): void {
-  if (expected && asset.structureGuid !== expected) throw new Error("The asset uses a different Structure.");
+function indexTree(tree: DataTreeAsset): DataTreeIndex {
+  const result = buildDataTreeIndex(tree);
+  if (!result.index) throw new Error(result.issues.map((issue) => issue.message).join("\n"));
+  return result.index;
 }
 
-/**
- * Serializes utility operations, using live canonical documents for every edit.
- * Only new assets write immediately; updates participate in normal Undo/Save All.
- */
+function requireEntry(index: DataTreeIndex, path: string): DataTreeEntry {
+  const id = typeof path === "string" ? index.idByPath.get(path) : undefined;
+  if (id === undefined) throw new Error("No entry with this exact path exists in the Data Tree.");
+  return index.byId.get(id)!;
+}
+
+function parentId(index: DataTreeIndex, path: string): string | null {
+  return path === "" ? null : requireEntry(index, path).id;
+}
+
+function descendants(index: DataTreeIndex, parent: string | null): DataTreeEntry[] {
+  const result: DataTreeEntry[] = [];
+  const stack = [...(index.childrenByParentId.get(parent) ?? [])].reverse();
+  while (stack.length) {
+    const entry = stack.pop()!;
+    result.push(entry);
+    const children = index.childrenByParentId.get(entry.id) ?? [];
+    for (let offset = children.length - 1; offset >= 0; offset--) stack.push(children[offset]!);
+  }
+  return result;
+}
+
+/** Changes only sibling ordering, retaining every other entry and its metadata. */
+function orderChildren(tree: DataTreeAsset, parent: string | null, children: readonly DataTreeEntry[]): DataTreeAsset {
+  let offset = 0;
+  return { ...tree, entries: tree.entries.map((entry) => entry.parentId === parent ? children[offset++]! : entry) };
+}
+
+/** Serialized, cancellable operations on live canonical tree documents. */
 export function createEditorDataAuthoringApi(
   getHost: () => Host,
   isActive: () => boolean = () => true,
@@ -124,23 +160,21 @@ export function createEditorDataAuthoringApi(
     return operation;
   }
 
-  function indexed(registry: AssetRegistry, reference: string, type: "DataObject" | "DataSheet"): IndexedAsset {
+  function indexed(registry: AssetRegistry, reference: string): IndexedAsset {
     const asset = typeof reference === "string" ? registry.getByGuid(reference) : undefined;
-    if (!asset || asset.placeholder || asset.header.type !== type) throw new Error(`The ${type === "DataObject" ? "Data Object" : "Data Sheet"} reference is missing or has the wrong type.`);
+    if (!asset || asset.placeholder || asset.header.type !== "DataTree") throw new Error("The Data Tree reference is missing or has the wrong type. Legacy Data Sheets and Data Objects are unsupported.");
     return asset;
   }
 
-  async function read(host: Host, asset: IndexedAsset, check: () => void): Promise<DataObjectAsset | DataSheetAsset> {
-    const payload = await host.loadAssetDocument(asset.header.type === "DataObject" ? "data-object" : "data-sheet", asset.path);
+  async function read(host: Host, asset: IndexedAsset, check: () => void): Promise<DataTreeAsset> {
+    const payload = await host.loadAssetDocument("data-tree", asset.path);
     check();
-    if (asset.header.type === "DataObject" ? !isDataObjectAsset(payload) : !isDataSheetAsset(payload)) {
-      throw new Error("The data asset could not be read.");
-    }
-    return payload as DataObjectAsset | DataSheetAsset;
+    if (!isDataTreeAsset(payload)) throw new Error("The Data Tree could not be read.");
+    return payload;
   }
 
-  function validateObject(asset: DataObjectAsset, schemas: TypeSchemas, registry: AssetRegistry): void {
-    const errors = validateDataObject(asset, schemas, {
+  function validateEntry(entry: DataTreeEntry, definition: string | null, schemas: TypeSchemas, registry: AssetRegistry): void {
+    const errors = validateDataEntry(entry, definition, schemas, {
       assetTypeForGuid: (guid) => {
         const referenced = registry.getByGuid(guid);
         return referenced?.placeholder ? null : referenced?.header.type;
@@ -149,118 +183,146 @@ export function createEditorDataAuthoringApi(
     if (errors.length) throw new Error(errors.map((issue) => `${issue.path ? `${issue.path}: ` : ""}${issue.message}`).join("\n"));
   }
 
-  async function members(host: Host, registry: AssetRegistry, references: string[], structure: string, check: () => void): Promise<string[]> {
-    if (!Array.isArray(references) || references.some((reference) => typeof reference !== "string" || !reference)) {
-      throw new Error("Objects must be an array of Data Object references.");
-    }
-    const unique = [...new Set(references)];
-    for (const reference of unique) matchingStructure(await read(host, indexed(registry, reference, "DataObject"), check), structure);
-    return unique;
-  }
-
-  async function edit(host: Host, registry: AssetRegistry, asset: IndexedAsset, check: () => void,
-    change: (current: DataObjectAsset | DataSheetAsset) => DataObjectAsset | DataSheetAsset): Promise<string> {
-    if (registry.getRoot(asset.rootId)?.readOnly) throw new Error("The data asset is read-only.");
-    const id = await host.ensureAssetDocument({
-      kind: asset.header.type === "DataObject" ? "data-object" : "data-sheet", path: asset.path, label: asset.header.name,
-    });
+  async function edit<T>(host: Host, registry: AssetRegistry, asset: IndexedAsset, check: () => void,
+    change: (current: DataTreeAsset, index: DataTreeIndex) => { tree: DataTreeAsset; value: T }): Promise<T> {
+    if (registry.getRoot(asset.rootId)?.readOnly) throw new Error("The Data Tree is read-only.");
+    const id = await host.ensureAssetDocument({ kind: "data-tree", path: asset.path, label: asset.header.name });
     check();
     const current = host.getOpenDocuments().find((doc) => doc.id === id)?.content;
-    if (!isDataObjectAsset(current) && !isDataSheetAsset(current)) throw new Error("The data asset is no longer open.");
-    const next = change(current);
-    if (JSON.stringify(current) === JSON.stringify(next)) return asset.header.guid;
-    // applyAssetDocumentChange performs source-control and project-plugin checks.
-    if (!await host.applyAssetDocumentChange(id, { ...next })) throw new Error("The data asset could not be edited. Check its read-only or source-control lock state.");
+    if (!isDataTreeAsset(current)) throw new Error("The Data Tree is no longer open.");
+    const { tree, value } = change(current, indexTree(current));
+    indexTree(tree);
+    if (JSON.stringify(current) === JSON.stringify(tree)) return value;
+    if (!await host.applyAssetDocumentChange(id, { ...tree })) throw new Error("The Data Tree could not be edited. Check its read-only or source-control lock state.");
     check();
-    return asset.header.guid;
+    return value;
   }
 
-  function list(type: "DataObject" | "DataSheet", structure?: string) {
-    return run(structure, async (filter, host, registry, check) => {
-      const result: string[] = [];
-      const open = new Map(host.getOpenDocuments().map((doc) => [doc.ref.path, doc.content]));
-      for (const asset of registry.list()) {
-        if (asset.placeholder || asset.header.type !== type) continue;
-        if (!filter) { result.push(asset.header.guid); continue; }
-        const live = open.get(asset.path);
-        const header = asset.header.payload;
-        const structure = isDataObjectAsset(live) || isDataSheetAsset(live) ? live.structureGuid :
-          typeof header?.structureGuid === "string" || header?.structureGuid === null ? header.structureGuid :
-          (await read(host, asset, check)).structureGuid;
-        if (structure === filter) result.push(asset.header.guid);
-      }
-      return result;
+  function navigate(reference: string, path: string, recursive: boolean): Promise<EditorDataResult<string[]>> {
+    return run({ reference, path }, async (args, host, registry, check) => {
+      const index = indexTree(await read(host, indexed(registry, args.reference), check));
+      const parent = parentId(index, args.path);
+      const entries = recursive ? descendants(index, parent) : index.childrenByParentId.get(parent) ?? [];
+      return entries.map((entry) => index.pathById.get(entry.id)!);
     });
   }
 
   return {
-    listObjects: (structure) => list("DataObject", structure),
-    listSheets: (structure) => list("DataSheet", structure),
-    readObject: (reference, structure) => run({ reference, structure }, async (args, host, registry, check) => {
-      const asset = await read(host, indexed(registry, args.reference, "DataObject"), check) as DataObjectAsset;
-      matchingStructure(asset, args.structure);
+    listTrees: (definition) => run(definition, async (filter, host, registry, check) => {
+      if (filter) requireDefinition(filter, schemasFor(host), registry);
+      const result: string[] = [];
+      const open = new Map(host.getOpenDocuments().map((doc) => [doc.ref.path, doc.content]));
+      for (const asset of registry.list()) {
+        if (asset.placeholder || asset.header.type !== "DataTree") continue;
+        if (!filter) { result.push(asset.header.guid); continue; }
+        const live = open.get(asset.path) ?? asset.header.payload;
+        const tree = isDataTreeAsset(live) ? live : await read(host, asset, check);
+        const index = indexTree(tree);
+        if (tree.defaultDefinitionGuid === filter || [...index.effectiveDefinitionById.values()].includes(filter)) result.push(asset.header.guid);
+      }
+      return result;
+    }),
+    readTree: (reference) => run(reference, async (ref, host, registry, check) => {
+      const index = indexTree(await read(host, indexed(registry, ref), check));
+      return index.orderedEntries.map((entry) => index.pathById.get(entry.id)!);
+    }),
+    readEntry: (reference, entryPath, definition) => run({ reference, entryPath, definition }, async (args, host, registry, check) => {
+      const index = indexTree(await read(host, indexed(registry, args.reference), check));
+      const entry = requireEntry(index, args.entryPath);
       const schemas = schemasFor(host);
-      validateObject(asset, schemas, registry);
-      const values = resolveDataObjectValues(asset, schemas);
-      if (!values) throw new Error("The Data Object needs its Structure changes applied before it can be read.");
+      const guid = requireDefinition(index.effectiveDefinitionById.get(entry.id), schemas, registry);
+      if (args.definition && guid !== args.definition) throw new Error("The entry uses a different Data Definition.");
+      validateEntry(entry, guid, schemas, registry);
+      const values = resolveDataEntryValues(entry, guid, schemas);
+      if (!values) throw new Error("Apply Data Definition changes to this entry before it can be read.");
       return values;
     }),
-    readSheet: (reference, structure) => run({ reference, structure }, async (args, host, registry, check) => {
-      const sheet = await read(host, indexed(registry, args.reference, "DataSheet"), check) as DataSheetAsset;
-      matchingStructure(sheet, args.structure);
-      return [...sheet.objectGuids];
+    getChildren: (reference, path = "") => navigate(reference, path, false),
+    getDescendants: (reference, path = "") => navigate(reference, path, true),
+    getParent: (reference, path) => run({ reference, path }, async (args, host, registry, check) => {
+      const index = indexTree(await read(host, indexed(registry, args.reference), check));
+      const entry = requireEntry(index, args.path);
+      return entry.parentId === null ? "" : index.pathById.get(entry.parentId)!;
     }),
-    createObject: (name, structure, values = {}, folder = "") => run({ name, structure, values, folder }, async (args, host, registry, check) => {
+    createTree: (name, definition = null, folder = "") => run({ name, definition, folder }, async (args, host, registry, check) => {
       const schemas = schemasFor(host);
-      const guid = requireStructure(args.structure, schemas);
-      const asset = createDataObjectForStructure(guid, schemas.structs[guid]!.fields, schemas);
-      const supplied = serializeDataObjectValues(validatedValues(args.values), schemas.structs[guid]!.fields, schemas);
-      asset.values = mergeValues(asset.values, supplied, schemas.structs[guid]!.fields, schemas);
-      validateObject(asset, schemas, registry);
+      const guid = args.definition === null ? null : requireDefinition(args.definition, schemas, registry);
       check();
-      const created = await createProjectAsset({ registry, rootId: "project", folderRelative: folderPath(args.folder), type: "DataObject", name: args.name, structureGuid: guid, typeSchemas: schemas, dataObject: asset });
+      const created = await createProjectAsset({ registry, rootId: "project", folderRelative: folderPath(args.folder), type: "DataTree", name: args.name, defaultDefinitionGuid: guid, typeSchemas: schemas, dataTree: createDataTreeAsset(guid) });
       check();
       host.noteAssetsCreated();
       return created.header.guid;
     }),
-    updateObject: (reference, structure, values) => run({ reference, structure, values }, async (args, host, registry, check) => {
+    addEntry: (reference, parentPath, name, definition, values = {}) => run({ reference, parentPath, name, definition, values }, async (args, host, registry, check) => {
       validatedValues(args.values);
-      return edit(host, registry, indexed(registry, args.reference, "DataObject"), check, (current) => {
-        if (!isDataObjectAsset(current)) throw new Error("Expected a Data Object.");
+      return edit(host, registry, indexed(registry, args.reference), check, (current, index) => {
+        const parent = parentId(index, args.parentPath);
+        const effective = args.definition === undefined ? parent === null ? current.defaultDefinitionGuid : index.effectiveDefinitionById.get(parent)! : args.definition;
         const schemas = schemasFor(host);
-        const guid = requireStructure(args.structure, schemas);
-        matchingStructure(current, guid);
-        const migration = reconcileDataObject(current, schemas.structs[guid]!.fields, schemas);
+        let entry: DataTreeEntry;
+        if (effective === null) {
+          entry = createDataTreeEntry({ name: args.name, parentId: parent, values: args.values });
+        } else {
+          const guid = requireDefinition(effective, schemas, registry);
+          const fields = schemas.dataDefinitions![guid]!.fields;
+          entry = createDataEntryForDefinition(guid, fields, schemas, args.name, undefined, parent);
+          entry.values = mergeValues(entry.values, serializeDataEntryValues(args.values, fields, schemas), fields, schemas);
+        }
+        if (args.definition === undefined) delete entry.definitionGuid;
+        else entry.definitionGuid = args.definition;
+        validateEntry(entry, effective, schemas, registry);
+        const tree = { ...current, entries: [...current.entries, entry] };
+        return { tree, value: indexTree(tree).pathById.get(entry.id)! };
+      });
+    }),
+    updateEntry: (reference, entryPath, definition, values) => run({ reference, entryPath, definition, values }, async (args, host, registry, check) => {
+      validatedValues(args.values);
+      return edit(host, registry, indexed(registry, args.reference), check, (current, index) => {
+        const schemas = schemasFor(host);
+        const guid = requireDefinition(args.definition, schemas, registry);
+        const entry = requireEntry(index, args.entryPath);
+        if (index.effectiveDefinitionById.get(entry.id) !== guid) throw new Error("The entry uses a different Data Definition.");
+        const fields = schemas.dataDefinitions![guid]!.fields;
+        const migration = reconcileDataEntry(entry, guid, fields, schemas);
         if (migration.changes.some((change) => change.kind === "added" || change.kind === "renamed") ||
           migration.issues.some((issue) => issue.severity === "error" && structuralIssues.has(issue.code))) {
-          throw new Error("Apply Structure changes to the Data Object before updating its values.");
+          throw new Error("Apply Data Definition changes to this entry before updating its values.");
         }
-        const supplied = serializeDataObjectValues(args.values, schemas.structs[guid]!.fields, schemas);
-        const next = { ...current, values: mergeValues(current.values, supplied, schemas.structs[guid]!.fields, schemas) };
-        validateObject(next, schemas, registry);
-        // Once a script repairs an incompatible value, record its current type.
-        // Until then validation above keeps the old value and reference metadata.
-        return reconcileDataObject(next, schemas.structs[guid]!.fields, schemas).asset;
+        const supplied = serializeDataEntryValues(args.values, fields, schemas);
+        const next = { ...entry, values: mergeValues(entry.values, supplied, fields, schemas) };
+        validateEntry(next, guid, schemas, registry);
+        const reconciled = reconcileDataEntry(next, guid, fields, schemas).entry;
+        return { tree: { ...current, entries: current.entries.map((other) => other.id === entry.id ? reconciled : other) }, value: args.entryPath };
       });
     }),
-    createSheet: (name, structure, objectGuids = [], folder = "") => run({ name, structure, objectGuids, folder }, async (args, host, registry, check) => {
-      const schemas = schemasFor(host);
-      const guid = requireStructure(args.structure, schemas);
-      const objects = await members(host, registry, args.objectGuids, guid, check);
-      const created = await createProjectAsset({ registry, rootId: "project", folderRelative: folderPath(args.folder), type: "DataSheet", name: args.name, structureGuid: guid, typeSchemas: schemas, dataSheet: createDataSheetAsset(guid, objects) });
-      check();
-      host.noteAssetsCreated();
-      return created.header.guid;
-    }),
-    setSheetObjects: (reference, structure, objectGuids) => run({ reference, structure, objectGuids }, async (args, host, registry, check) => {
-      const guid = requireStructure(args.structure, schemasFor(host));
-      const asset = indexed(registry, args.reference, "DataSheet");
-      const objects = await members(host, registry, args.objectGuids, guid, check);
-      return edit(host, registry, asset, check, (current) => {
-        if (!isDataSheetAsset(current)) throw new Error("Expected a Data Sheet.");
-        matchingStructure(current, guid);
-        return { ...current, objectGuids: objects };
-      });
-    }),
+    removeEntry: (reference, entryPath) => run({ reference, entryPath }, async (args, host, registry, check) =>
+      edit(host, registry, indexed(registry, args.reference), check, (current, index) => {
+        const entry = requireEntry(index, args.entryPath);
+        const removed = new Set([entry.id, ...descendants(index, entry.id).map((child) => child.id)]);
+        return { tree: { ...current, entries: current.entries.filter((other) => !removed.has(other.id)) }, value: args.entryPath };
+      })),
+    moveEntry: (reference, entryPath, newParentPath, position) => run({ reference, entryPath, newParentPath, position }, async (args, host, registry, check) =>
+      edit(host, registry, indexed(registry, args.reference), check, (current, index) => {
+        const entry = requireEntry(index, args.entryPath);
+        const parent = parentId(index, args.newParentPath);
+        const siblings = (index.childrenByParentId.get(parent) ?? []).filter((child) => child.id !== entry.id);
+        const offset = args.position ?? siblings.length;
+        if (!Number.isInteger(offset) || offset < 0 || offset > siblings.length) throw new Error("The destination index must be within the parent's child list.");
+        const moved = { ...entry, parentId: parent };
+        siblings.splice(offset, 0, moved);
+        const tree = orderChildren({ ...current, entries: current.entries.map((other) => other.id === entry.id ? moved : other) }, parent, siblings);
+        return { tree, value: indexTree(tree).pathById.get(entry.id)! };
+      })),
+    reorderChildren: (reference, parentPath, entryPaths) => run({ reference, parentPath, entryPaths }, async (args, host, registry, check) =>
+      edit(host, registry, indexed(registry, args.reference), check, (current, index) => {
+        const parent = parentId(index, args.parentPath);
+        const children = index.childrenByParentId.get(parent) ?? [];
+        const expected = new Map(children.map((entry) => [index.pathById.get(entry.id)!, entry]));
+        if (!Array.isArray(args.entryPaths) || args.entryPaths.length !== expected.size || new Set(args.entryPaths).size !== expected.size ||
+          args.entryPaths.some((path) => typeof path !== "string" || !expected.has(path))) {
+          throw new Error("Child order must contain every immediate child path exactly once.");
+        }
+        return { tree: orderChildren(current, parent, args.entryPaths.map((path) => expected.get(path)!)), value: args.reference };
+      })),
   };
 }

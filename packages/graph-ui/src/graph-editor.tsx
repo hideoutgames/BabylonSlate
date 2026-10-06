@@ -42,6 +42,7 @@ import { inlinePinDefaultStorageValue } from "./pin-default-value";
 import { PlusIcon } from "lucide-react";
 import { Button } from "@babylonslate/ui/components/button";
 import {
+  AssetOpenProvider,
   ContextMenuOverlay,
   useContextMenu,
   type NestedMenuItem,
@@ -566,6 +567,16 @@ function GraphEditorCanvas({
   const [edges, setEdges] = useState<Edge[]>(() =>
     toFlowEdges(initialGraph.edges),
   );
+  const connectedInputs = useMemo(() => {
+    const inputs = new Map<string, string[]>();
+    for (const edge of edges) {
+      if (!edge.targetHandle) continue;
+      const ids = inputs.get(edge.target) ?? [];
+      ids.push(edge.targetHandle);
+      inputs.set(edge.target, ids);
+    }
+    return inputs;
+  }, [edges]);
   const [pendingPin, setPendingPin] = useState<{
     nodeId: string;
     pinId: string;
@@ -2199,6 +2210,7 @@ function GraphEditorCanvas({
       onPinTap,
       onPinDefaultChange: pinDefaultsDisabled ? undefined : onPinDefaultChange,
       renderPinDefaultEditor,
+      connectedInputs,
       nodeErrorCount,
       pinHasError,
       pinDisplayType,
@@ -2226,6 +2238,7 @@ function GraphEditorCanvas({
       onPinDefaultChange,
       pinDefaultsDisabled,
       renderPinDefaultEditor,
+      connectedInputs,
       pendingPin,
       pinDisplayType,
       pinTypeNames,
@@ -2476,8 +2489,10 @@ function GraphEditorCanvas({
 
 export function GraphEditor(props: GraphEditorProps) {
   return (
-    <ReactFlowProvider>
-      <GraphEditorCanvas {...props} />
-    </ReactFlowProvider>
+    <AssetOpenProvider value={null}>
+      <ReactFlowProvider>
+        <GraphEditorCanvas {...props} />
+      </ReactFlowProvider>
+    </AssetOpenProvider>
   );
 }

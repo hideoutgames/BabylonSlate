@@ -1288,13 +1288,13 @@ describe("graphsNeedCompile", () => {
 // not fake Play current.
 
 describe("GraphScriptCompileCache", () => {
-  it("recompiles an inferred Data Object read when its asset changes Structure", async () => {
+  it("recompiles an inferred Data Entry read when its inherited Data Definition changes", async () => {
     const { loadCompiledModule } = await import("@babylonslate/runtime");
     const cache = new GraphScriptCompileCache();
     const graph: SerializedGraph = {
       nodes: [
         { id: "entry", type: "flow.entry", position: { x: 0, y: 0 }, data: {} },
-        { id: "read", type: "data.readObject", position: { x: 0, y: 0 }, data: { "default:object": "config" } },
+        { id: "read", type: "data.readEntry", position: { x: 0, y: 0 }, data: { "default:tree": "config", "default:entryPath": "primary" } },
         { id: "log", type: "debug.log", position: { x: 0, y: 0 }, data: {} },
       ],
       edges: [
@@ -1305,13 +1305,13 @@ describe("GraphScriptCompileCache", () => {
     const documents = [{ path: "assets/Reader.class.babasset", content: graph }];
     const structs = { first: { name: "First", fields: [] }, second: { name: "Second", fields: [] } };
     const readTypes: string[] = [];
-    for (const structureGuid of ["first", "second"]) {
+    for (const definitionGuid of ["first", "second"]) {
       const bundles = compileGraphDocuments(documents, {
-        cache, structs, dataAssets: [{ guid: "config", name: "Config", type: "DataObject", structureGuid }],
+        cache, structs, dataDefinitions: structs, dataAssets: [{ guid: "config", name: "Config", type: "DataTree", entries: [{ id: "primary-id", path: "primary", parentPath: "", effectiveDefinitionGuid: definitionGuid }] }],
       });
       const module = await loadCompiledModule(bundles[0]!.source, "data-compile-cache");
       await module.run!({
-        data: { readObject: (_reference: string, requestedType: string) => { readTypes.push(requestedType); return {}; } },
+        data: { readEntry: (_reference: string, _entryPath: string, requestedType: string) => { readTypes.push(requestedType); return {}; } },
         formatValue: JSON.stringify, log: () => {}, checkInfiniteLoop: () => {},
       });
     }

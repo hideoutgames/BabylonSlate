@@ -116,6 +116,20 @@ vi.mock("../context/document-context", async () => {
             header: { guid: "tex-1", name: "Atlas", type: "Texture" },
             path: "assets/Atlas.texture.babasset",
           },
+          {
+            header: {
+              guid: "stats", name: "Stats", type: "DataDefinition",
+              payload: { fields: [{ id: "allowed", name: "Allowed", typeId: "bool", defaultValue: true }] },
+            },
+            path: "assets/Stats.babasset",
+          },
+          {
+            header: {
+              guid: "settings", name: "Settings", type: "DataTree",
+              payload: { defaultDefinitionGuid: "stats", entries: [{ id: "primary", parentId: null, name: "Primary", values: { Allowed: true } }] },
+            },
+            path: "assets/Settings.babasset",
+          },
         ],
         getByGuid: (guid: string) =>
           guid === "spr-1"
@@ -427,6 +441,28 @@ describe("AnimGraphEditor", () => {
     expect(screen.queryByTestId("property-name")).toBeNull();
     fireEvent.click(screen.getByTestId("anim-rule-breadcrumb-state-machine"));
     expect(screen.getByTestId("property-idle-to-run-direction")).toBeTruthy();
+  });
+
+  it("hydrates typed row reads and offers Definition nodes in transition rules", async () => {
+    const doc = locoGraph();
+    doc.transitions[0]!.ruleGraph.nodes.push({
+      id: "read-data", type: "data.readEntry", position: { x: 300, y: 200 },
+      data: { "default:tree": "settings", "default:entryPath": "Primary" },
+    });
+    const { container } = renderAnimGraph(doc);
+    fireEvent.click(screen.getByTestId("anim-graph-state-idle"));
+    fireEvent.click(screen.getByTestId("anim-graph-open-rule-idle-to-run"));
+    await waitFor(() => {
+      expect(container.querySelector('[data-id="read-data"]')?.textContent).toContain("Read Stats Data");
+    });
+    const pane = screen.getByTestId("anim-rule-graph").querySelector(".react-flow__pane");
+    fireEvent.click(pane!);
+    fireEvent.click(pane!);
+    fireEvent.change(await screen.findByPlaceholderText("Search nodes"), { target: { value: "Stats" } });
+    await waitFor(() => {
+      expect(screen.getByTestId("node-palette-item-data.readEntry:stats")).toBeTruthy();
+      expect(screen.getByTestId("node-palette-item-struct.break:stats")).toBeTruthy();
+    });
   });
 
   it("disables Exit State in a one-way To State rule", async () => {

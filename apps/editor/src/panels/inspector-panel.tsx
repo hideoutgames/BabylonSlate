@@ -1,3 +1,4 @@
+import { GraphDataLiteralDefaults } from "../components/graph-data-literal-editor";
 import { saveGameVariableNames } from "../lib/save-game-property-rows";
 import { SceneLayerSwitcherFields } from "../components/scene-layer-switcher-fields";
 import { parseUIControl2DProperties } from "@babylonslate/core";
@@ -98,6 +99,7 @@ import {
 import { JsBodyEditor } from "../components/js-body-editor";
 import { GlslCodePreview } from "../components/glsl-code-preview";
 import { NineSlicePreview } from "../components/nine-slice-preview";
+import { DataTreeEntryField } from "../components/data-tree-entry-picker";
 import { isValidJsIdentifier } from "@babylonslate/scripting-nodes";
 import { isReservedConsoleCommandName } from "@babylonslate/debugger";
 import {
@@ -109,6 +111,8 @@ import {
   containerConstructorPropertyRows,
   developmentOnlyPropertyRows,
   dataNodePropertyRows,
+  dataNodePathOptions,
+  graphDataLiteralField,
   enumNodePropertyRows,
   flowSwitchCaseListValues,
   inspectorLiteralPinDefaults,
@@ -148,8 +152,8 @@ import {
 
 const CLASS_KINDS = ["graph"] as const;
 const INTERFACE_KINDS = ["script-interface"] as const;
-const TYPE_KINDS = ["structure", "enum"] as const;
-const DATA_KINDS = ["data-object", "data-sheet"] as const;
+const TYPE_KINDS = ["structure", "enum", "data-definition"] as const;
+const DATA_KINDS = ["data-tree"] as const;
 
 function memberPinRows(
   pins: GraphClassMember["pins"],
@@ -294,7 +298,7 @@ function ClassMemberDetails({
       typeAsset
         ? { name: typeAsset.name, type: typeAsset.type }
         : typeClassId
-          ? { name: typeClassId, type: isEnum ? "Enum" : "Structure" }
+          ? { name: typeClassId, type: isEnum ? "Enum" : "Record" }
           : undefined,
     );
     const assetEntries = pickerAssets.map((asset) => ({
@@ -405,7 +409,7 @@ function ClassMemberDetails({
           </Field>
         ) : isStruct || isEnum ? (
           <Field>
-            <FieldLabel>{isEnum ? "Enum Type" : "Structure Type"}</FieldLabel>
+            <FieldLabel>{isEnum ? "Enum Type" : "Record Type"}</FieldLabel>
             <AssetPickerControl value={typeClassId}>
               <Button
                 type="button"
@@ -581,9 +585,9 @@ function ClassMemberDetails({
           open={typeAssetPickerOpen}
           onOpenChange={setTypeAssetPickerOpen}
           assets={typeAssets}
-          allowedTypes={isEnum ? ["Enum"] : ["Structure"]}
+          allowedTypes={isEnum ? ["Enum"] : ["Structure", "DataDefinition"]}
           allowNone
-          title={isEnum ? "Pick Enum Type" : "Pick Structure Type"}
+          title={isEnum ? "Pick Enum Type" : "Pick Record Type"}
           onPick={(guid) => {
             commit({
               typeClassId: guid ?? undefined,
@@ -1220,6 +1224,8 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
   ]);
   const needsPinHydration = Boolean(selectedSerializedNode && (
     isDataGraphNode(selectedSerializedNode.type) ||
+    selectedSerializedNode.type === "struct.make" ||
+    selectedSerializedNode.type === "struct.break" ||
     selectedSerializedNode.type === "debug.executeJavaScript" ||
     selectedSerializedNode.type === "tags.select" ||
     !Array.isArray(selectedSerializedNode.data.__pins) ||
@@ -1233,6 +1239,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     return hydrateSerializedGraphForEditor(inspectGraph, undefined, {
       parentOf,
       structs: typeSchemas.structs,
+      dataDefinitions: typeSchemas.dataDefinitions,
       enums: typeSchemas.enums,
       dataAssets,
       classId: doc?.ref.path ? classIdForGraphPath(doc.ref.path) : undefined,
@@ -1592,8 +1599,18 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     persistGraph(next);
   };
 
+  const dataPinWired = (pinId: string) => (inspectGraph?.edges ?? graph.edges)
+    .some((edge) => edge.target === selectedNode.id && edge.targetHandle === pinId);
+  const literalDefaults = inspectorLiteralPinDefaults(selectedNode, inspectGraph?.edges ?? graph.edges, (hydratedInspectGraph ?? inspectGraph)?.nodes);
+  const pathDefaults = literalDefaults.flatMap((entry) => {
+    const options = dataNodePathOptions(selectedNode.type, entry.pinId, selectedNode.data, dataAssets, dataPinWired);
+    return options ? [{ ...options, pin: entry }] : [];
+  });
+  const dataLiteralDefaults = literalDefaults.filter((entry) => graphDataLiteralField(entry, typeSchemas));
   const pinDefaultRows = pinDefaultPropertyRows(
-    inspectorLiteralPinDefaults(selectedNode, inspectGraph?.edges ?? graph.edges, (hydratedInspectGraph ?? inspectGraph)?.nodes).filter((entry) =>
+    literalDefaults.filter((entry) =>
+      !graphDataLiteralField(entry, typeSchemas) &&
+      !pathDefaults.some((path) => path.pin.pinId === entry.pinId) &&
       !((selectedNode.type === "input.actionEvent" || selectedNode.type === "input.axisEvent") && entry.pinId === "binding")),
     updateNodeData,
     {
@@ -1642,12 +1659,13 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     selectedNode.data,
     updateNodeData,
     typeCatalog.structures,
+    typeCatalog.dataDefinitions,
   );
   const dataNodeRows = dataNodePropertyRows(
     selectedNode.type,
     selectedNode.data,
     updateNodeData,
-    typeCatalog.structures,
+    typeCatalog.dataDefinitions,
   );
   const inputEventRows = inputEventPropertyRows(
     selectedNode.type,
@@ -1731,13 +1749,17 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
             data-testid="inspector-flow-switch-cases"
           />
         ) : null}
-        {pinDefaultRows.length > 0 ? (
-          <PropertyGrid
-            title="Defaults"
-            rows={pinDefaultRows}
-            data-testid="inspector-pin-defaults"
-          />
+        {pinDefaultRows.length > 0 || pathDefaults.length > 0 ? (
+          <div data-testid="inspector-pin-defaults" className="flex flex-col gap-2">
+            <PropertyGrid title="Defaults" rows={pinDefaultRows} />
+            {pathDefaults.map(({ pin, ...options }) => <DataTreeEntryField key={pin.pinId} {...options}
+              value={typeof pin.value === "string" ? pin.value : ""} label={pin.name}
+              testId={`property-default:${pin.pinId}`}
+              onChange={(path) => updateNodeData(dataGraphAssetPickPatch(selectedNode.type, pin.pinId, path, dataAssets, selectedNode.data))} />)}
+          </div>
         ) : null}
+        {dataLiteralDefaults.length > 0 ? <GraphDataLiteralDefaults entries={dataLiteralDefaults}
+          nodeData={selectedNode.data} onPatch={updateNodeData} /> : null}
         {isExecJs ? (
           <>
             <PinListEditor
@@ -1977,7 +1999,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
         title={assetPinPick ? `Pick ${assetPinPick.assetType}` : "Pick Asset"}
         onPick={(guid) => {
           if (assetPinPick) {
-            updateNodeData(dataGraphAssetPickPatch(selectedNode.type, assetPinPick.pinId, guid, dataAssets, selectedNode.data));
+            updateNodeData(dataGraphAssetPickPatch(selectedNode.type, assetPinPick.pinId, guid, dataAssets, selectedNode.data, dataPinWired));
           }
           setAssetPinPick(null);
         }}

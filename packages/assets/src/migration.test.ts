@@ -4,16 +4,19 @@ import { createDefaultMigrationRegistry } from "./migration";
 import { loadPayloadWithMigration } from "./migrate-on-load";
 
 describe("Data asset schema versions", () => {
-  it("migrates unversioned data without dropping values and refuses future schemas", () => {
+  it("versions definitions and trees without converting historical sheets", () => {
     const registry = createDefaultMigrationRegistry();
-    const object = registry.migrate("DataObject", 0, { structureGuid: "weapon", values: { Legacy: "keep", Damage: 10 } });
-    expect(object).toMatchObject({ migrated: true, version: 1, payload: {
-      kind: "dataObject", structureGuid: "weapon", values: { Legacy: "keep", Damage: 10 },
-    } });
-    expect(registry.migrate("DataSheet", 0, { structureGuid: "weapon", objectGuids: ["sword", "sword", "shield"] }).payload)
-      .toEqual({ kind: "dataSheet", structureGuid: "weapon", objectGuids: ["sword", "shield"] });
-    expect(registry.migrate("DataObject", 1, object.payload).migrated).toBe(false);
-    expect(() => registry.migrate("DataSheet", 2, {})).toThrow(/newer engine version/);
+    const definition = registry.migrate("DataDefinition", 0, { kind: "dataDefinition", fields: [{ id: "damage", name: "Damage", typeId: "float", defaultValue: 10 }] });
+    expect(definition).toMatchObject({ migrated: true, version: 1, payload: { kind: "dataDefinition", fields: [{ id: "damage", defaultValue: 10 }] } });
+    const tree = { kind: "dataTree", defaultDefinitionGuid: "weapon", entries: [{ id: "swords", parentId: null, name: "Swords", values: {} }, { id: "sword", parentId: "swords", name: "Sword", definitionGuid: null, values: { Damage: 10, Retired: "keep" } }] };
+    expect(registry.migrate("DataTree", 0, tree)).toEqual({ payload: tree, version: 1, migrated: true });
+    expect(registry.migrate("DataTree", 1, tree).migrated).toBe(false);
+    const legacy = { kind: "dataSheet", structureGuid: "weapon", objectGuids: ["sword"] };
+    expect(() => registry.migrate("DataTree", 0, legacy)).toThrow(/Historical/);
+    expect(() => registry.migrate("DataTree", 0, { kind: "dataSheet", definitionGuid: "weapon", rows: [] })).toThrow(/Historical/);
+    expect(legacy.objectGuids).toEqual(["sword"]);
+    expect(() => registry.migrate("DataDefinition", 0, { kind: "dataObject", values: { Damage: 10 } })).toThrow();
+    expect(() => registry.migrate("DataTree", 2, {})).toThrow(/newer engine version/);
   });
 });
 

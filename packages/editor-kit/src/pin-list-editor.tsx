@@ -56,6 +56,8 @@ export type PinListEditorProps = {
   types?: readonly string[];
   classEntries?: readonly ClassPickerEntry[];
   typeAssets?: readonly AssetPickerEntry[];
+  structAssetType?: "Structure" | "DataDefinition";
+  itemLabel?: string;
   testIdPrefix?: string;
   readOnly?: boolean;
   "data-testid"?: string;
@@ -73,8 +75,8 @@ function isTypeAssetPinType(type: string): boolean {
   return type === "struct" || type === "enum";
 }
 
-function typeAssetAllowedTypes(type: string): string[] {
-  return type === "enum" ? ["Enum"] : ["Structure"];
+function typeAssetAllowedTypes(type: string, structAssetType?: string): string[] {
+  return type === "enum" ? ["Enum"] : structAssetType ? [structAssetType] : ["Structure", "DataDefinition"];
 }
 
 function patchRow(
@@ -137,11 +139,16 @@ export function PinListEditor({
   types,
   classEntries = [],
   typeAssets,
+  structAssetType,
+  itemLabel = "Pin",
   testIdPrefix = "pin",
   readOnly = false,
   "data-testid": testId = "pin-list-editor",
 }: PinListEditorProps) {
   const [draftName, setDraftName] = useState("");
+  const [localSelectedId, setLocalSelectedId] = useState<string | null>(null);
+  const effectiveSelectedId = selectedId === undefined ? localSelectedId : selectedId;
+  const structLabel = structAssetType === "DataDefinition" ? "Data Definition" : structAssetType ?? "Structure / Data Definition";
   const [classPickRowId, setClassPickRowId] = useState<string | null>(null);
   const [typeAssetPickRowId, setTypeAssetPickRowId] = useState<string | null>(
     null,
@@ -167,7 +174,7 @@ export function PinListEditor({
     <div className="flex flex-col gap-1.5" data-testid={testId}>
       {title ? <div className="text-sm font-medium">{title}</div> : null}
       {rows.map((row, index) => {
-        const selected = selectedId === row.id;
+        const selected = effectiveSelectedId === row.id;
         const classId = row.typeClassId?.trim() || "BObject";
         const classIdentity = classRowIdentity(
           classEntries.find((entry) => entry.id === classId),
@@ -182,7 +189,7 @@ export function PinListEditor({
             : row.typeClassId
               ? {
                   name: row.typeClassId,
-                  type: row.type === "enum" ? "Enum" : "Structure",
+                  type: row.type === "enum" ? "Enum" : structAssetType ?? "Record",
                 }
               : undefined,
         );
@@ -212,13 +219,20 @@ export function PinListEditor({
                 selected ? "bg-accent" : "hover:bg-accent/50"
               }`}
               data-testid={`${testIdPrefix}-row-${row.id}`}
-              onClick={() => onSelect?.(row.id)}
+              onClick={() => {
+                if (selectedId === undefined) setLocalSelectedId(row.id);
+                onSelect?.(row.id);
+              }}
+              onFocus={() => {
+                if (selectedId === undefined) setLocalSelectedId(row.id);
+                onSelect?.(row.id);
+              }}
             >
               <TypeColorMark colorVar={pinPickerColorVar(row.type)} />
               <Input
                 className="h-7 min-h-7 min-w-0 flex-1"
                 value={row.name}
-                aria-label={`Pin ${index + 1} name`}
+                aria-label={`${itemLabel} ${index + 1} name`}
                 data-testid={`${testIdPrefix}-${row.id}-name`}
                 disabled={readOnly}
                 onChange={(event) =>
@@ -226,6 +240,7 @@ export function PinListEditor({
                 }
               />
               <PinTypePicker
+                labels={{ struct: structLabel }}
                 value={row.type === "struct" && row.typeClassId === "engine:TagContainer" ? "tagContainer" : row.type}
                 types={types}
                 onChange={(type) => {
@@ -243,6 +258,8 @@ export function PinListEditor({
                     value={{ ...row, typeId: row.type, container: row.container ?? "single" }}
                     classEntries={classEntries}
                     typeAssets={typeAssets}
+                    structAssetType={structAssetType}
+                    types={types}
                     onChange={({ typeId, ...next }) => onChange(patchRow(rows, row.id, { ...next, type: typeId }))}
                   />
                 ) : null}
@@ -315,7 +332,7 @@ export function PinListEditor({
                 ) : showTypeAsset ? (
                   <Field className="min-w-32 flex-1">
                     <FieldLabel htmlFor={`${testIdPrefix}-${row.id}-type-asset`}>
-                      {row.type === "enum" ? "Enum Type" : "Structure Type"}
+                      {row.type === "enum" ? "Enum Type" : `${structLabel} Type`}
                     </FieldLabel>
                     <AssetPickerControl value={row.typeClassId}>
                       <Button
@@ -398,7 +415,7 @@ export function PinListEditor({
       })}
       {readOnly ? null : (
       <Field>
-        <FieldLabel htmlFor={`${testIdPrefix}-add-name`}>Add Pin</FieldLabel>
+        <FieldLabel htmlFor={`${testIdPrefix}-add-name`}>Add {itemLabel}</FieldLabel>
         <div className="flex flex-wrap gap-2">
           <Input
             id={`${testIdPrefix}-add-name`}
@@ -467,14 +484,14 @@ export function PinListEditor({
         assets={[...typeAssetList]}
         allowedTypes={
           typeAssetPickRow
-            ? typeAssetAllowedTypes(String(typeAssetPickRow.type))
+            ? typeAssetAllowedTypes(String(typeAssetPickRow.type), structAssetType)
             : undefined
         }
         allowNone
         title={
           typeAssetPickRow?.type === "enum"
             ? "Pick Enum Type"
-            : "Pick Structure Type"
+            : `Pick ${structLabel} Type`
         }
         onPick={(guid) => {
           if (typeAssetPickRow) {

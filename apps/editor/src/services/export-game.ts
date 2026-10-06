@@ -1,7 +1,7 @@
 import { validateSaveGameDefinition, type SaveGameConfiguration } from "@babylonslate/core";
 import { dataTypeSchemas } from "@babylonslate/scripting";
 import type { DataAssetCatalogEntry } from "@babylonslate/core";
-import { areaEmissionTextureGuids, isInputAssetType, normalizeInputAssetPayload, renderEffectsAssetGuids } from "@babylonslate/core";
+import { areaEmissionTextureGuids, buildDataTreeIndex, isDataTreeAsset, isInputAssetType, normalizeInputAssetPayload, renderEffectsAssetGuids } from "@babylonslate/core";
 import {
   collectExportReachability,
   exportGame,
@@ -442,14 +442,21 @@ export async function collectAndExportGame(
   });
   const dataCatalog: DataAssetCatalogEntry[] = params.assets.flatMap((asset) => {
     const type = asset.type;
-    if (type !== "DataObject" && type !== "DataSheet" && type !== "Structure" && type !== "Enum") return [];
+    if (type !== "DataDefinition" && type !== "DataTree" && type !== "Structure" && type !== "Enum") return [];
     return [{ guid: asset.guid, name: asset.name, type, payload: params.payloadByGuid?.(asset.guid) }];
   });
   const typeSchemas = dataTypeSchemas(dataCatalog);
   const dataAssets = dataCatalog.flatMap((asset) => {
-    if (asset.type !== "DataObject" && asset.type !== "DataSheet") return [];
-    const payload = asset.payload as { structureGuid?: unknown } | null;
-    return [{ guid: asset.guid, name: asset.name, type: asset.type, structureGuid: typeof payload?.structureGuid === "string" ? payload.structureGuid : "" }];
+    if (asset.type !== "DataTree") return [];
+    const index = isDataTreeAsset(asset.payload) ? buildDataTreeIndex(asset.payload).index : null;
+    const entries = index ? index.orderedEntries.map(entry => ({
+      id: entry.id, path: index.pathById.get(entry.id)!,
+      parentPath: entry.parentId === null ? "" : index.pathById.get(entry.parentId)!,
+      effectiveDefinitionGuid: index.effectiveDefinitionById.get(entry.id) ?? null,
+    })) : [];
+    return [{ guid: asset.guid, name: asset.name, type: asset.type,
+      defaultDefinitionGuid: isDataTreeAsset(asset.payload) ? asset.payload.defaultDefinitionGuid : null,
+      entries, ...(!index ? { invalid: true } : {}) }];
   });
   params.onPhase?.("Compiling");
   const scripts: ScriptBundleEntry[] = [];
@@ -465,6 +472,9 @@ export async function collectAndExportGame(
       }),
       ...compileAnimGraphScripts(animDocs, {
         stripDevelopmentOnly: !bundleDebugger,
+        inputAssets,
+        dataAssets,
+        ...typeSchemas,
         tagRegistry: params.tagRegistry,
       }),
     );

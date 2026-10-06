@@ -6,8 +6,8 @@ import {
   identitySerializedTransform,
   normalizeSceneLayer,
   normalizeShadowOverrides,
-  normalizeDataObjectAsset,
-  normalizeDataSheetAsset,
+  normalizeDataDefinitionAsset,
+  normalizeDataTreeAsset,
 } from "@babylonslate/core";
 import { normalizeParticleGraphDocument } from "@babylonslate/particle-graph";
 import {
@@ -216,12 +216,12 @@ export function createDefaultMigrationRegistry(): MigrationRegistry {
   const asRecord = <T extends object>(value: T): Record<string, unknown> =>
     value as unknown as Record<string, unknown>;
   registry.register({
-    type: "DataObject",
-    migrations: [(payload) => asRecord(normalizeDataObjectAsset(payload))],
+    type: "DataDefinition",
+    migrations: [(payload) => asRecord(normalizeDataDefinitionAsset(payload))],
   });
   registry.register({
-    type: "DataSheet",
-    migrations: [(payload) => asRecord(normalizeDataSheetAsset(payload))],
+    type: "DataTree",
+    migrations: [(payload) => asRecord(normalizeDataTreeAsset(payload))],
   });
   for (const type of ["InputAction", "InputAxis"] as const) {
     registry.register({

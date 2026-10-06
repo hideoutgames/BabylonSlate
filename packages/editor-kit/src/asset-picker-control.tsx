@@ -24,7 +24,7 @@ export function AssetOpenProvider({
   value,
   children,
 }: {
-  value: AssetOpenApi;
+  value: AssetOpenApi | null;
   children: ReactNode;
 }) {
   return (

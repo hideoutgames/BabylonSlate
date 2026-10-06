@@ -3,7 +3,7 @@ import type { DataAssetCatalogEntry } from "@babylonslate/core";
 import type { useDocuments } from "../context/document-context";
 
 type Host = Pick<ReturnType<typeof useDocuments>, "assetRegistry" | "getOpenDocuments">;
-const kinds = new Set(["data-object", "data-sheet", "structure", "enum"]);
+const kinds = new Set(["data-definition", "data-tree", "structure", "enum"]);
 
 /** Shared game read nodes also work in utilities and include live unsaved edits. */
 export function createEditorDataReader(getHost: () => Host, isActive: () => boolean): RuntimeDataApi {
@@ -23,7 +23,7 @@ export function createEditorDataReader(getHost: () => Host, isActive: () => bool
     const entries: DataAssetCatalogEntry[] = [];
     for (const asset of registry.list()) {
       const type = asset.header.type;
-      if (asset.placeholder || (type !== "DataObject" && type !== "DataSheet" && type !== "Structure" && type !== "Enum")) continue;
+      if (asset.placeholder || (type !== "DataDefinition" && type !== "DataTree" && type !== "Structure" && type !== "Enum")) continue;
       entries.push({ guid: asset.header.guid, name: asset.header.name, type, payload: byPath.get(asset.path) ?? asset.header.payload });
     }
     owner = registry;
@@ -34,9 +34,12 @@ export function createEditorDataReader(getHost: () => Host, isActive: () => bool
     return cached;
   };
   return {
-    readObject: (reference, structure) => catalog()?.readObject(reference, structure) ?? null,
-    getSheetObjects: (reference, structure) => catalog()?.getSheetObjects(reference, structure) ?? [],
-    hasObject: (reference, structure) => catalog()?.hasObject(reference, structure) ?? false,
-    hasSheet: (reference, structure) => catalog()?.hasSheet(reference, structure) ?? false,
+    readEntry: (tree, path, definition) => catalog()?.readEntry(tree, path, definition) ?? null,
+    canReadEntry: (tree, path, definition) => catalog()?.canReadEntry(tree, path, definition) ?? false,
+    hasEntry: (tree, path) => catalog()?.hasEntry(tree, path) ?? false,
+    hasTree: (tree) => catalog()?.hasTree(tree) ?? false,
+    getChildren: (tree, path = "") => catalog()?.getChildren(tree, path) ?? [],
+    getDescendants: (tree, path = "") => catalog()?.getDescendants(tree, path) ?? [],
+    getParent: (tree, path) => catalog()?.getParent(tree, path) ?? null,
   };
 }

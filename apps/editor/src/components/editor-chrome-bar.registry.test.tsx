@@ -94,11 +94,11 @@ afterEach(() => {
 });
 
 describe("chrome document icons", () => {
-  it("allows Close All when Content Browser is the only visible tab and a background object is dirty", () => {
+  it("allows Close All when Content Browser is the only visible tab and a background sheet is dirty", () => {
     state.activeId = CONTENT_BROWSER_ID;
     state.documents = [
       openDocument(CONTENT_BROWSER_ID, CONTENT_BROWSER_REF),
-      { ...openDocument("object", createDocumentRef("data-object", "assets/Sword.dataobject.babasset")), background: true, dirty: true },
+      { ...openDocument("object", createDocumentRef("data-tree", "assets/Sword.datatree.babasset")), background: true, dirty: true },
     ];
     const closeAll = vi.fn();
     render(<Chrome onCloseAllDocuments={closeAll} />);
@@ -109,16 +109,16 @@ describe("chrome document icons", () => {
     expect(closeAll).toHaveBeenCalledOnce();
   });
 
-  it.each([false, true])("keeps background object edits out of navigation until revealed, while Save includes them (phone=%s)", (phone) => {
+  it.each([false, true])("keeps background sheet edits out of navigation until revealed, while Save includes them (phone=%s)", (phone) => {
     state.phone = phone;
     const object = {
-      ...openDocument("object", createDocumentRef("data-object", "assets/Sword.dataobject.babasset")),
+      ...openDocument("object", createDocumentRef("data-tree", "assets/Sword.datatree.babasset")),
       background: true,
       dirty: true,
     };
     state.documents = [
       openDocument(CONTENT_BROWSER_ID, CONTENT_BROWSER_REF),
-      openDocument("first", createDocumentRef("data-sheet", "assets/Weapons.datasheet.babasset")),
+      openDocument("first", createDocumentRef("data-tree", "assets/Weapons.datatree.babasset")),
       object,
     ];
     const view = render(<Chrome />);

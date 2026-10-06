@@ -8,8 +8,8 @@ export type DockviewDocumentKind =
   | "graph"
   | "enum"
   | "structure"
-  | "data-object"
-  | "data-sheet"
+  | "data-definition"
+  | "data-tree"
   | "script-interface"
   | "sprite"
   | "sprite-animation"
@@ -48,8 +48,8 @@ const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
   "graph",
   "enum",
   "structure",
-  "data-object",
-  "data-sheet",
+  "data-definition",
+  "data-tree",
   "script-interface",
   "sprite",
   "sprite-animation",
@@ -112,8 +112,8 @@ const DOCK_PRIMARY_PANEL: Record<DockviewDocumentKind, string> = {
   graph: "graph",
   enum: "enum-members",
   structure: "structure-members",
-  "data-object": "data-object-values",
-  "data-sheet": "data-sheet-rows",
+  "data-definition": "data-definition-fields",
+  "data-tree": "data-tree-entries",
   "script-interface": "script-interface-preview",
   sprite: "sprite-preview",
   "sprite-animation": "sprite-animation-preview",
@@ -970,12 +970,14 @@ export function listDockWindows(
   if (kind === "save-game") return withOptionalLocks(kind, SAVE_GAME_WINDOWS, options);
   if (kind === "input-action" || kind === "input-axis") return withOptionalLocks(kind, INPUT_WINDOWS, options);
   if (kind === "enum") return withOptionalLocks(kind, ENUM_WINDOWS, options);
-  if (kind === "data-object") return withOptionalLocks(kind, [
-    { id: "data-object-values", component: "data-object-values", title: "Values" },
+  if (kind === "data-definition") return withOptionalLocks(kind, [
+    { id: "data-definition-fields", component: "data-definition-fields", title: "Fields" },
   ], options);
-  if (kind === "data-sheet") return withOptionalLocks(kind, [
-    { id: "data-sheet-rows", component: "data-sheet-rows", title: "Objects" },
-    { id: "data-object-values", component: "data-object-values", title: "Values", defaultPosition: { referencePanelId: "data-sheet-rows", direction: "right", initialWidth: 300 } },
+  if (kind === "data-tree") return withOptionalLocks(kind, [
+    { id: "data-tree-entries", component: "data-tree-entries", title: "Entries" },
+    { id: "data-tree-hierarchy", component: "data-tree-hierarchy", title: "Tree", defaultPosition: { referencePanelId: "data-tree-entries", direction: "left", initialWidth: 260 } },
+    { id: "data-tree-values", component: "data-tree-values", title: "Values", defaultPosition: { referencePanelId: "data-tree-entries", direction: "right", initialWidth: 320 } },
+    { id: "data-tree-validation", component: "data-tree-validation", title: "Validation", defaultPosition: { referencePanelId: "data-tree-entries", direction: "below", initialHeight: 150 } },
   ], options);
   if (kind === "structure") {
     return withOptionalLocks(kind, STRUCTURE_WINDOWS, options);

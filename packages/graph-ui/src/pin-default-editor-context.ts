@@ -6,6 +6,8 @@ export interface PinDefaultEditorRequest {
   nodeId: string;
   nodeType?: string;
   nodeData: Record<string, unknown>;
+  /** Connected inputs on this node; hosts must ignore their stale literal defaults. */
+  connectedInputIds?: readonly string[];
   /** Includes any type resolved from connected wildcard pins. */
   pin: SerializedPin;
   /** Exact literal value, independent of the rounded display preview. */
@@ -15,8 +17,8 @@ export interface PinDefaultEditorRequest {
   onChange: (value: unknown) => void;
 }
 
-/** Return null/undefined to keep the graph's preview for a catalog-backed value. */
+/** Return null/undefined to keep the graph's built-in editor or value preview. */
 export type PinDefaultEditorRenderer = (request: PinDefaultEditorRequest) => ReactNode;
 
-/** Host catalogs supply enum, class, and asset editors without graph/UI coupling. */
+/** Host catalogs supply reference and contextual string editors without graph/UI coupling. */
 export const PinDefaultEditorContext = createContext<PinDefaultEditorRenderer | undefined>(undefined);

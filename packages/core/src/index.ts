@@ -44,6 +44,7 @@ export * from "./play-preview-aspect";
 export * from "./nine-slice";
 export * from "./input-assets";
 export * from "./data-assets";
+export * from "./data-tree-index";
 export * from "./input-keys";
 
 export * from "./default-input-assets";

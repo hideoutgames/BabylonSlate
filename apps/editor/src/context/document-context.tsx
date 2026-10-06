@@ -378,7 +378,7 @@ interface DocumentContextValue {
   onSessionDiagnostic: (listener: (line: string) => void) => () => void;
   /**
    * Canonical open documents in tab order, including background working
-   * documents used by sheets and utilities. Navigation omits `background`.
+   * documents used by utilities. Navigation omits `background`.
    * The array keeps its identity until a
    * document revision advances or the tab order changes, so registry-only
    * updates, tab switches and other context updates leave it alone. Its
@@ -530,10 +530,6 @@ interface DocumentContextValue {
   confirmExternalChangeReloadProject: () => Promise<void>;
   confirmExternalChangeReloadDocs: (paths: string[]) => Promise<void>;
   dismissExternalChange: () => void;
-  undoDocument: (id: string) => void;
-  redoDocument: (id: string) => void;
-  canUndoDocument: (id: string) => boolean;
-  canRedoDocument: (id: string) => boolean;
   undoActiveDocument: () => void;
   redoActiveDocument: () => void;
   canUndoActiveDocument: boolean;
@@ -743,7 +739,7 @@ function useRefState<T>(
 }
 
 /** Class graphs and the typed asset catalogs their compilation reads. */
-const GRAPH_SIGNATURE_KINDS = ["graph", "input-action", "input-axis", "data-object", "data-sheet", "structure", "enum"] as const;
+const GRAPH_SIGNATURE_KINDS = ["graph", "input-action", "input-axis", "data-definition", "data-tree", "structure", "enum"] as const;
 
 function openGraphCompileDocuments(
   documentService: DocumentService,
@@ -1864,6 +1860,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           cache: graphCompileCacheRef.current,
           enums: typeSchemas.enums,
           structs: typeSchemas.structs,
+          dataDefinitions: typeSchemas.dataDefinitions,
           tagRegistry: document.settings.tags,
         });
         setLastCompiledSignature(graphCompileSignature(
@@ -2288,11 +2285,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     onProgress?: (currentName: string) => Promise<void>,
   ) => {
     const registry = projectService.registry;
+    const schemas = collectGraphTypeSchemas();
+    const definitionFields = (guid: string) => schemas.structs?.[guid]?.fields;
     const openChanges = documentService.getOpenDocumentsOrdered().flatMap((doc) => {
       if (doc.ref.kind === "content-browser" || doc.ref.kind === "trace" || !doc.content) return [];
       const asset = registry?.list().find((entry) => entry.path === doc.ref.path);
       if (asset && deletingGuids.has(asset.header.guid)) return [];
-      const walked = replaceClassAssetReferences(doc.content, replacements);
+      const walked = replaceClassAssetReferences(doc.content, replacements, definitionFields);
       if (!walked.changed) return [];
       if ((asset && registry?.getRoot(asset.rootId)?.readOnly) || isPluginDocumentReadOnly(projectService.plugins, doc.ref.path)) {
         throw new Error(`${doc.ref.path} is read-only and still references a selected Class.`);
@@ -2317,7 +2316,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       else documentService.replaceLoadedContent(doc.id, content);
     }
     bump();
-  }, [bump, documentService, projectService, setProjectDocument]);
+  }, [bump, collectGraphTypeSchemas, documentService, projectService, setProjectDocument]);
 
   const repairAfterAssetDelete = useCallback(
     async (
@@ -2325,6 +2324,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       deletedClassNames: ReadonlySet<string> = new Set(),
       onProgress?: (currentName: string) => Promise<void>,
     ) => {
+      const schemas = collectGraphTypeSchemas();
+      const definitionFields = (guid: string) => schemas.structs?.[guid]?.fields;
       await projectService.clearDeletedAssetReferences(deletedGuids, {
         deletedClassNames,
         onProgress,
@@ -2336,6 +2337,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           doc.content,
           deletedGuids,
           deletedClassNames,
+          definitionFields,
         );
         if (!walked.changed) continue;
         if (doc.dirty) {
@@ -2375,6 +2377,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       bump,
       captureAllLayouts,
       captureMtimeSnapshot,
+      collectGraphTypeSchemas,
       documentService,
       projectService,
       setProjectDocument,
@@ -3069,6 +3072,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       cache: graphCompileCacheRef.current,
       enums: typeSchemas.enums,
       structs: typeSchemas.structs,
+          dataDefinitions: typeSchemas.dataDefinitions,
       tagRegistry: projectDocumentRef.current?.settings.tags,
     });
   }, [collectGraphTypeSchemas, loadClassGraphDocuments, projectService, documentService]);
@@ -3135,6 +3139,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         dataAssets: collectDataGraphAssets(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
         enums: typeSchemas.enums,
         structs: typeSchemas.structs,
+          dataDefinitions: typeSchemas.dataDefinitions,
         materialDomains: materialDomainsFromAssets(
           projectService.registry?.list() ?? [],
           [...documentService.getState().openDocuments.values()],
@@ -3150,11 +3155,15 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       dataAssets: collectDataGraphAssets(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
         enums: typeSchemas.enums,
         structs: typeSchemas.structs,
+          dataDefinitions: typeSchemas.dataDefinitions,
         tagRegistry: projectDocumentRef.current?.settings.tags,
         cache: graphCompileCacheRef.current,
       }),
       ...compileAnimGraphScripts(animDocuments, {
         cache: graphCompileCacheRef.current,
+        inputAssets: inputAssetCatalog(assets, openDocuments),
+        dataAssets: collectDataGraphAssets(assets, openDocuments),
+        ...typeSchemas,
         tagRegistry: projectDocumentRef.current?.settings.tags,
       }),
     ];
@@ -3196,8 +3205,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         | "animation"
         | "input-action"
         | "input-axis"
-        | "data-object"
-        | "data-sheet"
+        | "data-definition"
+        | "data-tree"
         | "structure"
         | "enum"
         | "audio"
@@ -4386,10 +4395,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [documentService, enqueuePrefabSyncForClassPath, notifyAppliedCommand, projectService],
   );
 
-  const undoDocument = useCallback((id: string) => stepDocumentHistory("undo", id), [stepDocumentHistory]);
-  const redoDocument = useCallback((id: string) => stepDocumentHistory("redo", id), [stepDocumentHistory]);
-  const canUndoDocument = useCallback((id: string) => editSessionRef.current.getStack(id).canUndo, []);
-  const canRedoDocument = useCallback((id: string) => editSessionRef.current.getStack(id).canRedo, []);
 
   const undoActiveDocument = useCallback(() => {
     stepDocumentHistory("undo");
@@ -4734,10 +4739,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       confirmExternalChangeReloadProject,
       confirmExternalChangeReloadDocs,
       dismissExternalChange,
-      undoDocument,
-      redoDocument,
-      canUndoDocument,
-      canRedoDocument,
       undoActiveDocument,
       redoActiveDocument,
       registerDockviewApi,
@@ -4846,10 +4847,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       confirmExternalChangeReloadProject,
       confirmExternalChangeReloadDocs,
       dismissExternalChange,
-      undoDocument,
-      redoDocument,
-      canUndoDocument,
-      canRedoDocument,
       undoActiveDocument,
       redoActiveDocument,
       registerDockviewApi,

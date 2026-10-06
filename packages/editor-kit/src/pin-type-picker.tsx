@@ -14,6 +14,8 @@ export type PinTypePickerProps = {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   types?: readonly string[];
+  /** Contextual names for generic value shapes (for example Data Definition). */
+  labels?: Readonly<Record<string, string>>;
   "data-testid"?: string;
 };
 
@@ -24,6 +26,7 @@ export function PinTypePicker({
   open,
   onOpenChange,
   types = PIN_PICKER_TYPES,
+  labels,
   "data-testid": testId = "pin-type-picker",
 }: PinTypePickerProps) {
   const selected = types.includes(value) ? value : "float";
@@ -34,7 +37,7 @@ export function PinTypePicker({
       title="Pin Type"
       items={types.map((type) => ({
         id: type,
-        label: pinPickerLabel(type),
+        label: labels?.[type] ?? pinPickerLabel(type),
         leading: (
           <TypeColorMark colorVar={pinPickerColorVar(type)} />
         ),
@@ -53,7 +56,7 @@ export function PinTypePicker({
       >
         <TypeColorMark
           colorVar={pinPickerColorVar(selected)}
-          label={pinPickerLabel(selected)}
+          label={labels?.[selected] ?? pinPickerLabel(selected)}
         />
       </Button>
     </SearchDropdown>

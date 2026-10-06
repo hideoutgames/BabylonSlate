@@ -2,7 +2,8 @@ import { SaveGameFieldsPanel, SaveGameDefinitionPanel } from "../panels/save-gam
 import { WaterDetailsPanel, WaterPreviewPanel } from "../panels/water-panels";
 import { RenderTargetDetailsPanel, RenderTargetTextureDetailsPanel } from "../panels/render-target-panels";
 import { InputBindingsPanel, InputBindingDetailsPanel } from "../panels/input-asset-panels";
-import { DataObjectValuesPanel, DataSheetRowsPanel } from "../panels/data-asset-panels";
+import { DataTreeHierarchyPanel, DataTreeEntriesPanel, DataTreeValuesPanel, DataTreeValidationPanel } from "../panels/data-asset-panels";
+import { DataDefinitionFieldsPanel } from "../panels/data-definition-panel";
 import type { IDockviewPanelProps } from "dockview-react";
 import { ViewportPanel } from "../panels/viewport-panel";
 import { GraphPanel } from "../panels/graph-panel";
@@ -218,8 +219,11 @@ export const panelComponents = {
   ),
   "input-bindings": (props: IDockviewPanelProps) => <InputBindingsPanel {...props} />,
   "input-details": (props: IDockviewPanelProps) => <InputBindingDetailsPanel {...props} />,
-  "data-object-values": (props: IDockviewPanelProps) => <DataObjectValuesPanel {...props} />,
-  "data-sheet-rows": (props: IDockviewPanelProps) => <DataSheetRowsPanel {...props} />,
+  "data-definition-fields": (props: IDockviewPanelProps) => <DataDefinitionFieldsPanel {...props} />,
+  "data-tree-hierarchy": (props: IDockviewPanelProps) => <DataTreeHierarchyPanel {...props} />,
+  "data-tree-values": (props: IDockviewPanelProps) => <DataTreeValuesPanel {...props} />,
+  "data-tree-validation": (props: IDockviewPanelProps) => <DataTreeValidationPanel {...props} />,
+  "data-tree-entries": (props: IDockviewPanelProps) => <DataTreeEntriesPanel {...props} />,
   "audio-mixer-details": (props: IDockviewPanelProps) => (
     <AudioMixerDetailsPanel {...props} />
   ),

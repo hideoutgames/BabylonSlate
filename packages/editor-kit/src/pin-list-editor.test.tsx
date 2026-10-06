@@ -118,6 +118,33 @@ describe("PinListEditor", () => {
     expect(screen.getByTestId("pin-a-type-asset")).toBeTruthy();
   });
 
+  it("selects nested Data Definitions without offering Structure assets in field editors", async () => {
+    const onChange = vi.fn();
+    render(<PinListEditor rows={[{ id: "field", name: "Stats", type: "struct" }]}
+      selectedId="field" itemLabel="Field" structAssetType="DataDefinition"
+      typeAssets={[{ guid: "stats", name: "Stats", type: "DataDefinition" }, { guid: "structure", name: "LegacyShape", type: "Structure" }]}
+      onChange={onChange} />);
+    fireEvent.click(screen.getByTestId("pin-field-type-asset"));
+    await waitFor(() => expect(screen.getByTestId("search-item-stats")).toBeTruthy());
+    expect(screen.queryByTestId("search-item-structure")).toBeNull();
+    fireEvent.click(screen.getByTestId("search-item-stats"));
+    expect(onChange).toHaveBeenCalledWith([expect.objectContaining({ id: "field", type: "struct", typeClassId: "stats" })]);
+  });
+
+  it("selects function pin Definitions alongside Structures when row selection is uncontrolled", async () => {
+    const onChange = vi.fn();
+    render(<PinListEditor rows={[{ id: "input", name: "Item", type: "struct", direction: "in" }]}
+      typeAssets={[{ guid: "item", name: "Item", type: "DataDefinition" }, { guid: "shape", name: "Shape", type: "Structure" }]}
+      onChange={onChange} />);
+    expect(screen.queryByTestId("pin-input-type-asset")).toBeNull();
+    fireEvent.focus(screen.getByTestId("pin-input-name"));
+    fireEvent.click(screen.getByTestId("pin-input-type-asset"));
+    expect(await screen.findByTestId("search-item-item")).toBeTruthy();
+    expect(screen.getByTestId("search-item-shape")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("search-item-item"));
+    expect(onChange).toHaveBeenCalledWith([{ id: "input", name: "Item", type: "struct", direction: "in", typeClassId: "item" }]);
+  });
+
   it("keeps typeClassId when switching to struct or enum and shows an asset picker", async () => {
     const onChange = vi.fn();
     render(

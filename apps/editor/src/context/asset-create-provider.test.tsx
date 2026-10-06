@@ -8,6 +8,7 @@ import {
 import { useAssetCreate, type AssetCreateApi } from "@babylonslate/editor-kit";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { AssetCreateDocumentsProvider } from "./asset-create-provider";
+import { dataGraphAssetCreateOptions } from "../lib/data-graph";
 
 const docs = vi.hoisted(() => ({
   value: {} as Record<string, unknown>,
@@ -124,5 +125,17 @@ describe("AssetCreateDocumentsProvider", () => {
       openDocuments: [],
     };
     expect(renderApi()!.canCreate("Material")).toBe(false);
+  });
+
+  it("carries a typed graph picker Definition into the newly created tree", async () => {
+    const registry = await projectRegistry();
+    docs.value = { assetRegistry: registry, noteAssetsCreated: vi.fn(), activeDocumentId: null, openDocuments: [] };
+    const api = renderApi()!;
+    const definitionGuid = await api.createAsset({ type: "DataDefinition", name: "Weapon" });
+    const guid = await api.createAsset({ type: "DataTree", name: "Weapons",
+      ...dataGraphAssetCreateOptions("data.readEntry", "tree", { definitionGuid }),
+    });
+    expect(registry.getByGuid(guid)?.header.payload).toEqual({ kind: "dataTree", defaultDefinitionGuid: definitionGuid, entries: [] });
+    expect(registry.getByGuid(guid)?.header.dependencies).toContain(definitionGuid);
   });
 });

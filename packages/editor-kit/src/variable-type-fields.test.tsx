@@ -119,4 +119,16 @@ describe("VariableTypeFields", () => {
     screen.getByTestId("inspector-member-key-type-asset-open").click();
     expect(openAsset).toHaveBeenCalledWith("struct-stats");
   });
+
+  it.each([undefined, "DataDefinition"] as const)("selects Definition Map keys with scope %s", async (structAssetType) => {
+    const onChange = vi.fn();
+    render(<VariableTypeFields value={{ typeId: "float", container: "map", keyTypeId: "struct" }}
+      onChange={onChange} structAssetType={structAssetType}
+      typeAssets={[{ guid: "item", name: "Item", type: "DataDefinition" }, { guid: "shape", name: "Shape", type: "Structure" }]} />);
+    fireEvent.click(screen.getByTestId("inspector-member-key-type-asset"));
+    expect(await screen.findByTestId("search-item-item")).toBeTruthy();
+    expect(screen.queryByTestId("search-item-shape") !== null).toBe(structAssetType === undefined);
+    fireEvent.click(screen.getByTestId("search-item-item"));
+    expect(onChange).toHaveBeenCalledWith({ typeId: "float", container: "map", keyTypeId: "struct", keyTypeClassId: "item" });
+  });
 });

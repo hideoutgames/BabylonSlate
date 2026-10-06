@@ -1,5 +1,5 @@
 import { createDefaultInputAssets } from "@babylonslate/core";
-import { normalizeDataObjectAsset, normalizeDataSheetAsset } from "@babylonslate/core";
+import { normalizeDataDefinitionAsset, normalizeDataTreeAsset } from "@babylonslate/core";
 import { normalizeImportedProject, readProjectArchive, PROJECT_IMPORT_LIMIT } from "./project-import";
 import { getHostPlatform, pickImportFiles } from "@babylonslate/vfs";
 import type { DockviewApi } from "dockview-react";
@@ -160,8 +160,8 @@ function headerMetaForSave(
 ): Record<string, unknown> | undefined {
   // Sheets render indexed values without loading one document per visible row.
   // This header snapshot is always derived from the body being saved.
-  if (type === "DataObject") return { ...normalizeDataObjectAsset(content) };
-  if (type === "DataSheet") return { ...normalizeDataSheetAsset(content) };
+  if (type === "DataDefinition") return { ...normalizeDataDefinitionAsset(content) };
+  if (type === "DataTree") return { ...normalizeDataTreeAsset(content) };
   if (isInputAssetType(type)) {
     const input = normalizeInputAssetPayload(type, content);
     return { valueType: input.valueType };
@@ -1535,7 +1535,10 @@ export class ProjectService {
       if (!kind || kind === "trace") continue;
       await onProgress?.(asset.path);
       const content = await this.loadDocument(kind, asset.path);
-      const walked = replaceClassAssetReferences(content, replacements);
+      const walked = replaceClassAssetReferences(content, replacements, (guid) => {
+        const payload = registry.getByGuid(guid)?.header;
+        return payload && ["DataDefinition", "Structure"].includes(payload.type) && Array.isArray(payload.payload.fields) ? payload.payload.fields : undefined;
+      });
       const header = replaceClassAssetReferences({
         parentClass: asset.header.parentClass ?? null,
         dependencies: asset.header.dependencies,
@@ -1592,6 +1595,10 @@ export class ProjectService {
         content,
         deletedGuids,
         deletedClassNames,
+        (guid) => {
+          const header = registry.getByGuid(guid)?.header;
+          return header && ["DataDefinition", "Structure"].includes(header.type) && Array.isArray(header.payload.fields) ? header.payload.fields : undefined;
+        },
       );
       const isClass =
         asset.header.type === "Class" || asset.header.type === "Graph";
@@ -1794,8 +1801,8 @@ export class ProjectService {
       unknown
     > & { version?: number };
     void _v;
-    if (kind === "data-object") return { ...normalizeDataObjectAsset(content) };
-    if (kind === "data-sheet") return { ...normalizeDataSheetAsset(content) };
+    if (kind === "data-definition") return { ...normalizeDataDefinitionAsset(content) };
+    if (kind === "data-tree") return { ...normalizeDataTreeAsset(content) };
     if (kind === "scene") {
       return normalizeScene(content);
     }
@@ -1933,8 +1940,8 @@ export class ProjectService {
       };
     }
     if (isInputAssetType(type)) content = normalizeInputAssetPayload(type, content) as unknown as Record<string, unknown>;
-    if (type === "DataObject") content = { ...normalizeDataObjectAsset(content) };
-    if (type === "DataSheet") content = { ...normalizeDataSheetAsset(content) };
+    if (type === "DataDefinition") content = { ...normalizeDataDefinitionAsset(content) };
+    if (type === "DataTree") content = { ...normalizeDataTreeAsset(content) };
     const version = this.migrations.currentVersion(type);
     const parentClass =
       options?.parentClass !== undefined
@@ -1966,7 +1973,7 @@ export class ProjectService {
               "string" &&
             (content as { displayName: string }).displayName.trim() !== ""
               ? (content as { displayName: string }).displayName.trim()
-              : (isInputAssetType(type) || type === "DataObject" || type === "DataSheet") && existing?.name
+              : (isInputAssetType(type) || type === "DataDefinition" || type === "DataTree") && existing?.name
                 ? existing.name
                 : assetName(path),
           guid,
