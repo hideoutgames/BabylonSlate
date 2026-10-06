@@ -28,6 +28,8 @@ export interface ParticleGraphPin {
   direction: "in" | "out";
   type: { kind: string; accepts?: readonly ParticleNumericType[] };
   defaultValue?: number[];
+  min?: number;
+  max?: number;
   typeLabel?: string;
   description?: string;
   /** Particle outputs feed one input: a new wire from one replaces its old wire. */
@@ -45,6 +47,8 @@ function toPin(pin: ParticlePinDefinition, direction: "in" | "out"): ParticleGra
         ? { kind: "generic", ...(pin.type.accepts ? { accepts: pin.type.accepts } : {}) }
         : { kind: pin.type.kind },
     ...(pin.defaultValue ? { defaultValue: [...pin.defaultValue] } : {}),
+    ...(pin.min !== undefined ? { min: pin.min } : {}),
+    ...(pin.max !== undefined ? { max: pin.max } : {}),
     ...(pin.description ? { description: pin.description } : {}),
     ...(direction === "out" && pin.type.kind === "particle" ? { singleLink: true as const } : {}),
   };

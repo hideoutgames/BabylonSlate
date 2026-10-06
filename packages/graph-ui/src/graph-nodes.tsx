@@ -11,6 +11,8 @@ import {
   ContextMenuOverlay,
   humanizePropertyLabel,
   PinShapeGlyph,
+  tagDisplayName,
+  useTags,
   useContextMenu,
 } from "@babylonslate/editor-kit";
 import { EVENT_BY_TYPE_ID, isDevelopmentOnlyNode } from "@babylonslate/scripting";
@@ -26,8 +28,8 @@ import {
   type NodeVisualRole,
   type PinTypeRef,
 } from "./node-theme";
-import { pinDefaultPreview } from "./pin-default-preview";
-import { PinDefaultPreviewWidget } from "./pin-default-widget";
+import { pinDefaultPreview, readPinDefaultValue } from "./pin-default-preview";
+import { PinDefaultEditor } from "./pin-default-editor";
 import { isPinWired } from "./pin-connections";
 
 type LogNodeData = {
@@ -136,9 +138,11 @@ function PinHandle({
   hasError,
   connected,
   disabled,
+  label,
 }: {
   nodeId: string;
   pin: SerializedPin;
+  label?: string;
   pending: boolean;
   hasError: boolean;
   connected: boolean;
@@ -153,7 +157,7 @@ function PinHandle({
       id={pin.id}
       type={isSource ? "source" : "target"}
       position={isSource ? Position.Right : Position.Left}
-      aria-label={humanizePropertyLabel(pin.name)}
+      aria-label={label ?? humanizePropertyLabel(pin.name)}
       data-pin-type={pin.type.kind}
       data-error={hasError ? "true" : undefined}
       className={cn(
@@ -196,15 +200,25 @@ function PinRow({
   incoming?: SerializedPin;
   outgoing?: SerializedPin;
 }) {
-  const { pendingPin, pinHasError, pinTypeNames } = useGraphEditorContext();
+  const { pendingPin, pinHasError, pinTypeNames, pinDisplayType, onPinDefaultChange, renderPinDefaultEditor } = useGraphEditorContext();
+  const { entries: tags } = useTags();
+  const outgoingTag = data.__nodeType === "tags.switch" && outgoing?.id.startsWith("case:")
+    ? Number(outgoing.id.slice(5)) : undefined;
+  const incomingTag = data.__nodeType === "tags.select" && incoming?.id.startsWith("option:")
+    ? Number(incoming.id.slice(7)) : undefined;
+  const incomingLabel = incomingTag !== undefined ? tagDisplayName(tags, incomingTag)
+    : incoming ? humanizePropertyLabel(incoming.name) : "";
+  const outgoingLabel = outgoingTag !== undefined ? tagDisplayName(tags, outgoingTag)
+    : outgoing ? humanizePropertyLabel(outgoing.name) : "";
   const incomingConnected = useStore((state) =>
     incoming ? isPinWired(state.edges, nodeId, incoming) : false,
   );
   const outgoingConnected = useStore((state) =>
     outgoing ? isPinWired(state.edges, nodeId, outgoing) : false,
   );
-  const preview = incoming
-    ? pinDefaultPreview(incoming, data, incomingConnected, pinTypeNames)
+  const displayedIncoming = incoming ? { ...incoming, type: pinDisplayType(nodeId, incoming.id) ?? incoming.type } : undefined;
+  const preview = displayedIncoming
+    ? pinDefaultPreview(displayedIncoming, data, incomingConnected, pinTypeNames)
     : null;
 
   const isPending = (pin: SerializedPin | undefined) =>
@@ -225,17 +239,23 @@ function PinRow({
             <PinHandle
               nodeId={nodeId}
               pin={incoming}
+              label={incomingLabel}
               pending={isPending(incoming)}
               hasError={pinHasError(nodeId, incoming.id)}
               connected={incomingConnected}
               disabled={disabled}
             />
-            {preview ? <PinDefaultPreviewWidget preview={preview} /> : null}
+            {preview && displayedIncoming ? <PinDefaultEditor
+              nodeId={nodeId} nodeData={data} nodeType={typeof data.__nodeType === "string" ? data.__nodeType : undefined}
+              pin={{ ...displayedIncoming, name: incomingLabel }} preview={preview} value={readPinDefaultValue(displayedIncoming, data)}
+              disabled={disabled || !onPinDefaultChange} onChange={(value) => onPinDefaultChange?.(nodeId, incoming.id, value)}
+              renderer={renderPinDefaultEditor}
+            /> : null}
             <span
               data-pin-label={incoming.name}
               className="shrink-0 whitespace-nowrap text-base leading-snug text-foreground"
             >
-              {humanizePropertyLabel(incoming.name)}
+              {incomingLabel}
               {incoming.typeLabel ? <span className="ml-1 text-xs text-muted-foreground">{incoming.typeLabel}</span> : null}
             </span>
           </>
@@ -250,12 +270,13 @@ function PinRow({
               data-pin-label={outgoing.name}
               className="shrink-0 whitespace-nowrap text-right text-base leading-snug text-foreground"
             >
-              {humanizePropertyLabel(outgoing.name)}
+              {outgoingLabel}
               {outgoing.typeLabel ? <span className="ml-1 text-xs text-muted-foreground">{outgoing.typeLabel}</span> : null}
             </span>
             <PinHandle
               nodeId={nodeId}
               pin={outgoing}
+              label={outgoingLabel}
               pending={isPending(outgoing)}
               hasError={pinHasError(nodeId, outgoing.id)}
               connected={outgoingConnected}

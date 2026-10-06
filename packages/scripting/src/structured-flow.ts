@@ -23,9 +23,11 @@ export type StructuredFlowKind =
   | "flipFlop"
   | "gate"
   | "switchOnInt"
+  | "switchOnTag"
   | "switchOnString";
 
 export type StructuredFlowMeta =
+  | { kind: "switchOnTag" }
   | {
       kind: "forLoop" | "forLoopWithBreak";
       firstIndexPin: string;

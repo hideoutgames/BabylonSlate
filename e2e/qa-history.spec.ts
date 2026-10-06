@@ -60,8 +60,10 @@ test("H10: one Undo restores a deleted graph node and its edge", async ({
   const edge = panel.locator('.react-flow__edge[data-id="tick-print"]');
   await expect(node).toBeVisible();
   await expect(edge).toHaveCount(1);
-  await node.click();
-  await panel.getByTestId("graph-delete").click();
+  await node.getByText("Print", { exact: true }).click();
+  const deleteNode = panel.getByTestId("graph-delete");
+  await expect(deleteNode).toBeEnabled();
+  await deleteNode.click();
   await expect(node).toHaveCount(0);
   await expect(edge).toHaveCount(0);
 

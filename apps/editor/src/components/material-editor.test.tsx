@@ -573,7 +573,7 @@ describe("Material graph panel", () => {
     ]);
   });
 
-  it("shows read-only default widgets on unconnected material pins", async () => {
+  it("edits an unconnected material scalar and commits its numeric array on blur", async () => {
     const { container } = render(<MaterialGraphPanel {...panelProps} />);
     await waitFor(() => {
       expect(
@@ -582,15 +582,20 @@ describe("Material graph panel", () => {
         ),
       ).not.toBeNull();
     });
-    expect(
-      container.querySelector(
-        '[data-id="output"] [data-handleid="metallic"]',
-      )?.parentElement?.querySelector('[data-pin-default="float"]')?.textContent,
-    ).toBe("0");
+    const metallic = screen.getByTestId("pin-default-output-metallic");
+    expect(metallic).toHaveProperty("value", "0");
+    expect(metallic).toHaveProperty("disabled", false);
     expect(
       container.querySelector(
         '[data-id="output"] [data-handleid="baseColor"]',
       )?.parentElement?.querySelector("[data-pin-default]"),
     ).toBeNull();
+    harness.applyAssetDocumentChange.mockClear();
+    fireEvent.focus(metallic);
+    fireEvent.change(metallic, { target: { value: "0.25" } });
+    expect(harness.applyAssetDocumentChange).not.toHaveBeenCalled();
+    fireEvent.blur(metallic);
+    expect(harness.applyAssetDocumentChange).toHaveBeenCalledTimes(1);
+    expect(lastCommit().nodes.find((node) => node.id === "output")?.properties["default:metallic"]).toEqual([0.25]);
   });
 });

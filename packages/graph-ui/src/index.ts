@@ -14,6 +14,7 @@ export * from "./graph-format";
 export * from "./graph-marquee";
 export * from "./graph-drop-hint";
 export * from "./node-theme";
+export { displayPinTypesForGraph, type PinDisplayLookup } from "./wildcard-display";
 export {
   BlueprintNodeShell,
   graphNodeTypes,
@@ -35,3 +36,6 @@ export {
 } from "./graph-editor-context";
 
 export { GraphInteractionSettingsContext } from "./graph-interaction-settings";
+
+export { PinDefaultEditorContext, type PinDefaultEditorRequest, type PinDefaultEditorRenderer } from "./pin-default-editor-context";
+export type { PinDefaultPreview } from "./pin-default-preview";

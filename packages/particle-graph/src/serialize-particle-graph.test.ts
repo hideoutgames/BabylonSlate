@@ -14,6 +14,27 @@ import {
 const pin = (kind: string, accepts?: readonly string[]) => ({ type: { kind, ...(accepts ? { accepts } : {}) } });
 
 describe("particle graph canvas adapter", () => {
+  it("keeps numeric editing bounds on loaded and newly added particle pins", () => {
+    const bounds = [
+      { type: "particle.create", pinId: "lifetime", min: 0.01, max: undefined },
+      { type: "shape.sphere", pinId: "radius", min: 0, max: undefined },
+      { type: "math.lerp", pinId: "alpha", min: 0, max: 1 },
+    ];
+    const loaded = hydrateParticleGraphForEditor({ nodes: bounds.map(({ type }) => ({
+      id: type, type, position: { x: 0, y: 0 }, data: {},
+    })), edges: [] });
+    const palette = particlePaletteNodes();
+    for (const { type, pinId, min, max } of bounds) {
+      const loadedPins = loaded.nodes.find((node) => node.id === type)!.data.__pins as ParticleGraphPin[];
+      const newPins = palette.find((node) => node.id === type)!.pins;
+      for (const pins of [loadedPins, newPins]) {
+        const input = pins.find((pin) => pin.id === pinId)!;
+        expect(input.min, `${type}.${pinId} minimum`).toBe(min);
+        expect(input.max, `${type}.${pinId} maximum`).toBe(max);
+      }
+    }
+  });
+
   it("round-trips through the canvas without saving editor keys, protecting only the Emitter Output", () => {
     const doc = createDefaultParticleGraphDocument();
     doc.materialGuid = "mat-1";

@@ -12,6 +12,9 @@ export type SerializedPin = {
   type: { kind: string; [key: string]: unknown };
   optional?: boolean;
   defaultValue?: unknown;
+  /** Host-supplied numeric literal limits, shared by Inspector and inline edits. */
+  min?: number;
+  max?: number;
   reference?: "required" | "writable";
   colorHint?: boolean;
   /**

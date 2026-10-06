@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { VariableTypeFields } from "./variable-type-fields";
 import { AssetOpenProvider } from "./asset-picker-control";
 
@@ -17,6 +17,16 @@ if (typeof window.PointerEvent === "undefined") {
 describe("VariableTypeFields", () => {
   afterEach(() => {
     cleanup();
+  });
+
+  it("persists TagContainer as the native structure while displaying its direct type choice", () => {
+    const onChange = vi.fn();
+    const { rerender } = render(<VariableTypeFields value={{ typeId: "tag", container: "single" }} onChange={onChange} />);
+    fireEvent.click(screen.getByTestId("inspector-member-type"));
+    fireEvent.click(screen.getByTestId("search-item-tagContainer"));
+    expect(onChange).toHaveBeenCalledWith({ typeId: "struct", typeClassId: "engine:TagContainer", container: "single" });
+    rerender(<VariableTypeFields value={{ typeId: "struct", typeClassId: "engine:TagContainer", container: "single" }} onChange={onChange} />);
+    expect(screen.getByTestId("inspector-member-type").textContent).toContain("TagContainer");
   });
 
   it("shows Type, Container Single/Array/Map, and Key Type only for Map", () => {

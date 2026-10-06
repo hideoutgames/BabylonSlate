@@ -1,6 +1,6 @@
 import {
   pin,
-  pinTypeForMember,
+  pinTypeForVariable,
   structRef,
   type NodeDefinition,
   type StructField,
@@ -38,6 +38,9 @@ export function structFieldsOf(
         ...(field.defaultValue !== undefined
           ? { defaultValue: field.defaultValue }
           : {}),
+        ...(field.container ? { container: field.container } : {}),
+        ...(field.keyTypeId ? { keyTypeId: field.keyTypeId } : {}),
+        ...(field.keyTypeClassId ? { keyTypeClassId: field.keyTypeClassId } : {}),
       },
     ];
   });
@@ -49,7 +52,7 @@ function fieldPins(fields: readonly StructField[], direction: "in" | "out") {
       field.name,
       titleCaseEnumMember(field.name),
       direction,
-      pinTypeForMember(field.typeId, field.typeClassId),
+      pinTypeForVariable(field),
       "data",
       direction === "in" && field.defaultValue !== undefined,
       direction === "in" ? field.defaultValue : undefined,

@@ -27,6 +27,7 @@ import {
   formatEventMemberName,
   resolveTypeVisual,
   selectedPickerIdentity,
+  useTags,
   walkAncestry,
   ASSET_REF_PICKER_TYPES,
   type ClassPickerEntry,
@@ -113,6 +114,7 @@ import {
   pinDefaultPropertyRows,
   javaScriptPinsFromRows,
   structNodePropertyRows,
+  tagNodePropertyRows,
   variableAssetPickerAllowedTypes,
   variableDefaultPropertyRows,
 } from "../lib/graph-inspector";
@@ -319,6 +321,7 @@ function ClassMemberDetails({
       if (
         typeChanged ||
         containerChanged ||
+        (classChanged && (next.typeId === "struct" || next.typeId === "enum")) ||
         (nextContainer !== "single" && (keyChanged || classChanged))
       ) {
         patch.defaultValue = defaultValueForVariableType(
@@ -1013,6 +1016,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     animEditorMode,
   } = useDocuments();
   const { focusDiagnostic } = useValidation();
+  const { entries: tags } = useTags();
   const { focusedNodeId } = usePlay();
   const { selectedNodeIds, selectedMemberId, activeFunctionId } =
     useGraphEditing();
@@ -1194,6 +1198,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
   ]);
   const needsPinHydration = Boolean(selectedSerializedNode && (
     selectedSerializedNode.type === "debug.executeJavaScript" ||
+    selectedSerializedNode.type === "tags.select" ||
     !Array.isArray(selectedSerializedNode.data.__pins) ||
     selectedSerializedNode.data.__pins.length === 0
   ));
@@ -1554,7 +1559,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
   };
 
   const pinDefaultRows = pinDefaultPropertyRows(
-    inspectorLiteralPinDefaults(selectedNode, graph.edges).filter((entry) =>
+    inspectorLiteralPinDefaults(selectedNode, inspectGraph?.edges ?? graph.edges, (hydratedInspectGraph ?? inspectGraph)?.nodes).filter((entry) =>
       !((selectedNode.type === "input.actionEvent" || selectedNode.type === "input.axisEvent") && entry.pinId === "binding")),
     updateNodeData,
     {
@@ -1616,6 +1621,12 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     selectedNode.data,
     updateNodeData,
   );
+  const tagNodeRows = tagNodePropertyRows(
+    selectedNode.type,
+    selectedNode.data,
+    updateNodeData,
+    tags,
+  );
   const isFlowSwitch = isFlowSwitchTypeId(selectedNode.type);
   const flowSwitchCases = isFlowSwitch
     ? flowSwitchCaseListValues(selectedNode.type, selectedNode.data)
@@ -1656,6 +1667,12 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
           <PropertyGrid
             rows={containerConstructorRows}
             data-testid="inspector-container-constructor"
+          />
+        ) : null}
+        {tagNodeRows.length > 0 ? (
+          <PropertyGrid
+            rows={tagNodeRows}
+            data-testid="inspector-tag-cases"
           />
         ) : null}
         {isFlowSwitch ? (

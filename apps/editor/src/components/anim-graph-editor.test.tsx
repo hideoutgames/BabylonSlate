@@ -6,6 +6,7 @@ import { DocumentWorkspaceProvider } from "../context/document-workspace-context
 import { AnimGraphEditingProvider } from "../context/anim-graph-editing-context";
 import { GraphEditingProvider } from "../context/graph-editing-context";
 import { PrefabEditingProvider } from "../context/prefab-editing-context";
+import { TagProvider } from "@babylonslate/editor-kit";
 import { ValidationProvider } from "../context/validation-context";
 import {
   AnimGraphDetailsPanel,
@@ -286,6 +287,24 @@ describe("AnimGraphEditor", () => {
     expect(lastCommit().variables).toEqual([
       expect.objectContaining({ name: "Variable", typeId: "bool" }),
     ]);
+  });
+
+  it("stores TagContainer selection on an Animation Graph variable", () => {
+    const doc = createDefaultAnimGraph();
+    doc.variables = [{ id: "allowed", name: "Allowed", typeId: "struct", typeClassId: "engine:TagContainer", defaultValue: { Tags: [] } }];
+    store.reset(doc as unknown as Record<string, unknown>);
+    render(
+      <TagProvider entries={[{ id: 1, path: "Actor", parentId: 0 }, { id: 2, path: "Actor.Alive", parentId: 1 }]}>
+        <DocumentWorkspaceProvider documentId={DOC_ID}>
+          <AnimGraphEditingProvider><AnimGraphParametersPanel {...panelProps} /></AnimGraphEditingProvider>
+        </DocumentWorkspaceProvider>
+      </TagProvider>,
+    );
+    fireEvent.click(screen.getByTestId("property-allowed"));
+    const tree = screen.getByTestId("property-allowed-tree");
+    fireEvent.keyDown(tree, { key: "End" });
+    fireEvent.keyDown(tree, { key: "Enter" });
+    expect(lastCommit().variables).toEqual([{ id: "allowed", name: "Allowed", typeId: "struct", typeClassId: "engine:TagContainer", defaultValue: { Tags: [2] } }]);
   });
 
   it("renders Unreal-style state nodes", async () => {
