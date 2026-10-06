@@ -1,7 +1,8 @@
 import type { SaveGameStorage } from "@babylonslate/core";
 import { Directory, Filesystem } from "@capacitor/filesystem";
 import { getHostPlatform } from "./platform";
-import { decodeSaveGameSegment, encodeSaveGameSegment, isSaveGameMissing, normalizeSaveGameStorageError, saveGameSegments, withSaveGameWebLock } from "./save-game-path";
+import { decodeSaveGameSegment, encodeSaveGameSegment, isSaveGameMissing, normalizeSaveGameStorageError, saveGameSegments } from "./save-game-path";
+import { withSaveGameWebLock } from "./save-game-web-lock";
 
 export interface SaveGameFilesystem {
   readFile(options: { path: string; directory: Directory; encoding: "utf8" }): Promise<{ data: string }>;

@@ -1,5 +1,6 @@
 import type { SaveGameStorage } from "@babylonslate/core";
-import { decodeSaveGameSegment, encodeSaveGameSegment, isSaveGameMissing, saveGameSegments, withSaveGameWebLock } from "./save-game-path";
+import { decodeSaveGameSegment, encodeSaveGameSegment, isSaveGameMissing, saveGameSegments } from "./save-game-path";
+import { withSaveGameWebLock } from "./save-game-web-lock";
 
 type DirectoryEntries = FileSystemDirectoryHandle & {
   entries(): AsyncIterableIterator<[string, FileSystemHandle]>;
