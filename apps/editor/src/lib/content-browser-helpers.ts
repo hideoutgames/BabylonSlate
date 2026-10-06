@@ -4,6 +4,7 @@ import type { ImportResult, IndexedAsset } from "@babylonslate/assets";
 import {
   DOCUMENT_CHUNK_ID,
   collectAssetDependencyMetadata,
+  resolveAssetCatalogDependencies,
   type AssetDependencyMetadata,
   findClassAssetReferences,
   dataAssetDependencies,
@@ -2057,7 +2058,7 @@ export function assetDependenciesIncludingOpenDocuments(
   const result = new Map<string, string[]>();
   const documentsByPath = new Map(openDocuments.map((doc) => [doc.ref.path, doc]));
   for (const asset of assets) {
-    const dependencies = new Set(asset.header.dependencies);
+    const dependencies = new Set(resolveAssetCatalogDependencies(asset.header, assets));
     const open = documentsByPath.get(asset.path);
     if (open?.content && typeof open.content === "object") {
       for (const dependency of assetHeaderDependencies(

@@ -25,6 +25,35 @@ function useScriptsFilename(files: Map<string, Uint8Array>, scriptsFile: string)
 }
 
 describe("loadGameFromFiles", () => {
+  it("keeps deferred compiled Class code unread and releases it after its final source owner", async () => {
+    const script = { assetGuid: "prefab", classId: "Prefab", source: "export function onBeginPlay() {}", anchors: [], entryPoints: [{ name: "onBeginPlay", event: "onBeginPlay", isAsync: false }] };
+    const exported = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [script], assets: [
+      { guid: "scene", type: "Scene", sceneGuid: "scene", dependencies: ["prefab"], requiredDependencies: [], bytes: encoder.encode(JSON.stringify(createDefaultScene())) },
+      { guid: "prefab", type: "Class", sceneGuid: "scene", requiredDependencies: [], bytes: encoder.encode("{}") },
+    ] });
+    if (!exported.ok) throw new Error(exported.error);
+    const paths: string[] = [];
+    const metadata = new Map([...exported.value.files].filter(([path]) => path === GAME_MANIFEST_FILE || path === SCRIPTS_FILE));
+    const game = await loadGameFromFiles(metadata, { readFile: async path => { paths.push(path); return exported.value.files.get(path)!; } });
+    const scriptEntry = exported.value.manifest.assets.find(asset => asset.type === "CompiledScript" && asset.ownerGuid === "prefab")!;
+    const scriptPath = scriptEntry.path!;
+    expect(game.scripts).toEqual([]);
+    expect(paths).not.toContain(scriptPath);
+    expect(game.manifest.assets.find(asset => asset.guid === "prefab")?.classId).toBe("Prefab");
+    const request = (consumer: string) => game.acquireAssets!(["prefab"], { consumer, signal: new AbortController().signal });
+    const [first, second] = await Promise.all([request("left"), request("right")]);
+    expect(paths.filter(path => path === scriptPath)).toHaveLength(1);
+    expect(game.scripts).toEqual([script]);
+    first.release();
+    game.assets!.trim({ force: true });
+    expect(game.scripts).toEqual([script]);
+    second.release();
+    game.assets!.trim({ force: true });
+    expect(game.scripts).toEqual([]);
+    expect(game.payloads.has(scriptEntry.guid)).toBe(false);
+    expect(game.decodedPayloads!.has(scriptEntry.guid)).toBe(false);
+    game.dispose!();
+  });
   it("reads only selected Font representations and resolves a later default-font consumer offline", async () => {
     const scene = { ...createDefaultScene(), actors: [{ classId: "Actor", components: [{ classId: "2DTextComponent", properties: { fontAssetGuid: "font", renderer: "msdf" } }] }] };
     const exported = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene", defaultFontGuid: "font", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [
@@ -79,6 +108,29 @@ describe("loadGameFromFiles", () => {
     expect(game.textureBytes.get("texture-14")).toEqual(new Uint8Array([14]));
     expect(peak).toBeGreaterThan(1);
     expect(peak).toBeLessThanOrEqual(6);
+  });
+  it("stops oversized HTTP asset bodies at the catalog boundary and counts received bytes on failure", async () => {
+    const exported = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [
+      { guid: "scene", type: "Scene", sceneGuid: "scene", requiredDependencies: [], bytes: encoder.encode(JSON.stringify(createDefaultScene())) },
+      { guid: "texture", type: "Texture", sceneGuid: "scene", bytes: new Uint8Array([1]) },
+    ] });
+    if (!exported.ok) throw new Error(exported.error);
+    let cancelled = false;
+    const assetPath = exported.value.manifest.assets.find(asset => asset.guid === "texture")!.path!;
+    const game = await loadGameFromHttp("https://game.example/", async input => {
+      const path = new URL(String(input)).pathname.slice(1);
+      if (path === assetPath) return new Response(new ReadableStream<Uint8Array>({
+        pull(controller) { controller.enqueue(new Uint8Array([1, 2])); },
+        cancel() { cancelled = true; },
+      }));
+      return new Response(exported.value.files.get(path));
+    });
+    const before = game.getReadMetrics!().actualBytesRead;
+    await expect(game.acquireAssets!(["texture"], { consumer: "test", signal: new AbortController().signal })).rejects.toThrow(/texture.*byte length/i);
+    expect(cancelled).toBe(true);
+    expect(game.getReadMetrics!().actualBytesRead - before).toBe(2);
+    expect(game.textureBytes.has("texture")).toBe(false);
+    game.dispose!();
   });
   it.each([true, false])("loads prepared emission independently of visual texture bytes (packed=%s)", async (pack) => {
     const emission = await encodeAreaEmission(new Uint8Array(AREA_EMISSION_EDGE ** 2 * 4).fill(200), "a".repeat(64));

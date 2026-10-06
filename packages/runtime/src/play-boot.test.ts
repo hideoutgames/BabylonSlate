@@ -47,6 +47,21 @@ function fakeRuntime(overrides: Partial<PlayBootRuntime> = {}): PlayBootRuntime 
 }
 
 describe("createPlayBootCoordinator", () => {
+  it("acknowledges replacement scripts only after registration and propagates load failure", async () => {
+    const registration = deferred<void>();
+    const runtime = fakeRuntime({ replaceScriptSources: () => registration.promise });
+    const boot = createPlayBootCoordinator();
+    let acknowledged = false;
+    const ready = boot.queueScripts(runtime, [], [], true).then(() => { acknowledged = true; });
+    await Promise.resolve();
+    expect(acknowledged).toBe(false);
+    registration.resolve();
+    await ready;
+    expect(acknowledged).toBe(true);
+    runtime.replaceScriptSources = async () => { throw new Error("corrupt class sidecar"); };
+    await expect(boot.queueScripts(runtime, [], [], true)).rejects.toThrow("corrupt class sidecar");
+  });
+
   it("waits for loadScripts before realizePlayWorld so Begin Play binds on spawn", async () => {
     const scripts = deferred<void>();
     let scriptsLoaded = false;

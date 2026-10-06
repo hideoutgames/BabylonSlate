@@ -39,6 +39,13 @@ export const babassetHeaderSchema = z.object({
   requiredDependencies: z.array(z.string()).optional(),
   /** Class properties consumed by synchronous graph readers; applies to instance overrides. */
   requiredVariableNames: z.array(z.string()).optional(),
+  classReferences: z.array(z.string()).optional(),
+  requiredClassReferences: z.array(z.string()).optional(),
+  consoleCommand: z.object({
+    name: z.string(), description: z.string(), category: z.string(),
+    parameters: z.array(z.object({ name: z.string(), type: z.enum(["string", "float", "int", "bool", "enum"]),
+      optional: z.boolean().optional(), defaultValue: z.unknown().optional(), enumValues: z.array(z.string()).optional() })),
+  }).optional(),
   /** Missing metadata requires an explicit upgrade, never a scan during open. */
   dependencyMetadataVersion: z.number().int().nonnegative().optional(),
   engineVersion: z.string(),

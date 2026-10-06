@@ -14,9 +14,8 @@ describe("on-demand Preview files", () => {
     const handoff = previewPackFromFiles(files, { onDemand: true });
     expect(Object.keys(handoff.files)).toEqual(["game.json", "scripts.js"]);
     const transferred: number[] = [];
-    let client!: ReturnType<typeof createPreviewAssetClient>;
     const server = createPreviewAssetServer({ files, send: (message, transfer) => { transferred.push(...transfer.map(value => (value as ArrayBuffer).byteLength)); client.receive(message); } });
-    client = createPreviewAssetClient({ send: message => server.receive(message) });
+    const client = createPreviewAssetClient({ send: message => server.receive(message) });
     try {
       expect(await client.readFile("assets/b.bin", new AbortController().signal)).toEqual(new Uint8Array([3, 4]));
       expect(transferred).toEqual([2]);

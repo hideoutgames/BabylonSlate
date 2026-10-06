@@ -695,7 +695,7 @@ interface DocumentContextValue {
    * epoch advances.
    */
   currentGraphSignature: string;
-  /** Last full-project bundles written by `collectPlayPreviewScripts` (toolbar Compile or Play). */
+  /** Last full-project bundles written by an explicit toolbar Compile. */
   playPreviewBundles: ScriptBundleEntry[];
   playPreviewDiagnostics: Diagnostic[];
   playLoadedSignature: string | null;
@@ -3191,10 +3191,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         structs: typeSchemas.structs,
           dataDefinitions: typeSchemas.dataDefinitions,
         tagRegistry: projectDocumentRef.current?.settings.tags,
-        cache: graphCompileCacheRef.current,
+        cache: requiredGuids ? undefined : graphCompileCacheRef.current,
       }),
       ...compileAnimGraphScripts(animDocuments, {
-        cache: graphCompileCacheRef.current,
+        cache: requiredGuids ? undefined : graphCompileCacheRef.current,
         inputAssets: inputAssetCatalog(assets, openDocuments),
         dataAssets: collectDataGraphAssets(assets, openDocuments),
         ...typeSchemas,
@@ -4026,7 +4026,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         ensureMainGraphOpen: () => Promise<boolean>;
         nudgeActiveGraphNode: () => Promise<boolean>;
         cancelDebouncedSave: () => void;
-        assetLoading: () => { sources: ReturnType<import("@babylonslate/assets").AssetLoadingService["snapshot"]>; storage: import("@babylonslate/core").StorageReadMetrics | null; requestedPayloadBytes: number };
+        assetLoading: () => { sources: ReturnType<import("@babylonslate/assets").AssetLoadingService["snapshot"]>; storage: import("@babylonslate/core").StorageReadMetrics | null; chunks: ReturnType<import("@babylonslate/assets").AccountedPayloadLoader["snapshot"]> | null; requestedPayloadBytes: number };
         trimAssetSources: () => void;
         activeGraphNodePosition: () => { x: number; y: number } | null;
         hasRecoveryJournal: () => Promise<boolean>;
@@ -4098,7 +4098,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     };
     host.__babylonslateSourceControl = sourceControlRef.current;
     host.__babylonslateTest = {
-      assetLoading: () => ({ sources: projectService.assetLoadingService.snapshot(), storage: projectService.storagePort.getReadMetrics?.() ?? null, requestedPayloadBytes: projectService.registry?.accountedPayloadBytes ?? 0 }),
+      assetLoading: () => ({ sources: projectService.assetLoadingService.snapshot(), storage: projectService.storagePort.getReadMetrics?.() ?? null, chunks: projectService.registry?.payloadLoader.snapshot() ?? null, requestedPayloadBytes: projectService.registry?.accountedPayloadBytes ?? 0 }),
       trimAssetSources: () => projectService.assetLoadingService.trim({ force: true }),
       cancelDebouncedSave: () => {
         if (saveDebounceRef.current) {

@@ -30,7 +30,7 @@ No React, Babylon, or Capacitor. Callers compile graphs and load payloads; the p
 | `zipExport`                                              | `fflate` zip with `index.html` at the root (itch). Fixed **local noon 1980-01-01** `mtime` (DOS dates use local getters; UTC midnight fails west of UTC with `date not in range 1980-2099`)                            |
 | `encodeBabpack` / `decodeBabpack` / `decodeBabpackIndex` | Concatenated asset bytes + JSON index `{ guid, offset, length, hash }` (`BPK1`)                                                                                                                                        |
 | `createHttpPackSource` / `createMemoryPackSource`        | Legacy pack reader; validates ranges and hashes and accounts whole-body fallbacks                                                                                                                                       |
-| `concatenateScripts` / `serializeScriptRegistry`         | One `scripts.js` (unminified). Concatenation adds `//# sourceURL` prefixes; ScriptHost evals **per-class** `script.source`, so the registry keeps original `CompileAnchor.line`.                                       |
+| `concatenateScripts` / `serializeScriptRegistry`         | Legacy script helpers. New exports keep a tiny empty `scripts.js` bootstrap and put compiled modules in independently addressed Class/AnimationGraph sidecars; original anchor lines are preserved.                                       |
 | Preview protocol                                         | Metadata-only handoff plus `createPreviewAssetClient` / `createPreviewAssetServer` per-file requests; never write a pack into the project tree                                                                                  |
 
 Missing or stale startup scene: `MISSING_STARTUP_SCENE_MESSAGE` (`Set Startup Scene in Project Settings.`).
@@ -71,7 +71,7 @@ implemented wiring from independently served player acceptance.
 ```
 index.html          # CSS inlined; itch requires this at zip root
 player.js           # Vite `codeSplitting: false`; workers stay separate files
-scripts.js          # class registry (`globalThis.__babylonslateScripts`)
+scripts.js          # tiny bootstrap (`globalThis.__babylonslateScripts = []`)
 game.json           # small catalog: required dependencies, paths, sizes and hashes
 assets/data-0.bin   # independently addressable asset or sidecar
 assets/data-1.bin
@@ -89,11 +89,15 @@ New packed and loose delivery presets both use tree-shaken `assets/data-<index>.
 
 `exportGame` retains Rapier whenever the exported asset closure contains a `SceneLayer`, including a 3D project whose layers use a separate 2D physics world. A 3D export without layers still omits Rapier; a 2D export omits Havok.
 
-New players fetch `game.json`, its script registry, the entry Scene and required dependencies. Deferred Scene documents, textures, models, fonts and audio remain unread until acquired. Length and SHA-256 checks reject mismatched deployed files. Static hosting does not need HTTP Range support. Legacy manifests retain their compatibility loader; its pack responses validate `Content-Range`, total length, available ETags and payload hashes. `getReadMetrics()` reports actual response bytes, including a range-blind server's entire pack response.
+New players fetch `game.json`, its tiny script bootstrap, the entry Scene and required dependencies. Deferred Scene documents, compiled Class code, textures, models, fonts and audio remain unread until acquired. Each compiled module is a required sidecar of its owning Class or AnimationGraph; multiple animation-rule modules retain distinct identities. Class identity and console-command metadata live in the catalog without code. Runtime source replacement waits for module registration before publishing the requesting Scene or completing its preload, and eviction removes unowned source modules. Length and SHA-256 checks reject mismatched deployed files. Static hosting does not need HTTP Range support. Legacy manifests retain their script-registry and pack compatibility loader; pack responses validate `Content-Range`, total length, available ETags and payload hashes. `getReadMetrics()` reports actual response bytes, including a range-blind server's entire pack response.
+
+Font catalog names, fallback edges and the project's `defaultFontGuid` select the same representation as Play: Bitmap reads the original font, MSDF reads its JSON/atlas pair, and geometry Text3D reads Facetype. Selected Scene/Class documents and later text commands supply those modes before binary reads. Different consumers can retain different representations of the same Font. BDebugCommand metadata remains available in the catalog; command Classes and their deferred resources ship in the closure without becoming startup sources.
+
+HTTP asset bodies are bounded by catalog lengths while reading, and bytes received before a rejected body remain in storage metrics. Explicit preloads report ready only after native preparation succeeds; native failures report failed and can be retried while prior valid resources remain owned.
 
 `AssetLoadingService` owns compatible source reads and decoding across Scene instances and explicit preloads. Sources publish only after the complete required closure succeeds. Streaming acquires and installs the prepared source scope before the existing runtime/render readiness transaction. Unload releases runtime objects first, then scoped renderer sources and otherwise-unowned source maps. Shared consumers remain valid. Failed requests remain retryable. `packedContentFromGame`, `packedSourceControls`, and `GameSourceContent` are shared with editor Play; complete content replacement controls also remove released data, clip, SceneLayer and navigation catalogs. Source and CPU budgets are independent of the existing renderer resource cache.
 
-Preview Build still performs an explicitly reported build step, then hands the iframe only the manifest and script registry. `createPreviewAssetClient` requests each selected file from the host using the same source-loading contract as HTTP. Stop cancels pending requests and late responses cannot restart the session. Included deferred files remain in build storage until requested.
+Preview Build still performs an explicitly reported build step, then hands the iframe only the manifest and tiny script bootstrap. `createPreviewAssetClient` requests each selected file from the host using the same source-loading contract as HTTP. Stop cancels pending requests and late responses cannot restart the session. Included deferred files remain in build storage until requested.
 
 File-count report: warn 800 / fail 1000 (preset-overridable). Export smoke asserts count.
 

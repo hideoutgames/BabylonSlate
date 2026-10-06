@@ -75,6 +75,29 @@ export interface AccountedPayloadLoaderOptions {
   blobs?: BlobStore;
 }
 
+export interface PayloadChunkRequest {
+  id: number;
+  path: string;
+  chunkId: string;
+  revision: string;
+  status: "loading" | "succeeded" | "failed";
+  requestedBytes: number | null;
+  /** Bytes returned to this request, including bytes rejected by validation. */
+  payloadBytes: number;
+  error?: string;
+}
+
+export interface PayloadLoaderSnapshot {
+  requests: number;
+  succeeded: number;
+  failed: number;
+  pending: number;
+  /** Successful bytes since resetAccounting; actual storage I/O is separate. */
+  accountedPayloadBytes: number;
+  /** At most 128 recent requests; contains no payload or decoded object references. */
+  recentRequests: PayloadChunkRequest[];
+}
+
 /**
  * Reads one selected chunk from a catalog snapshot. This counter describes
  * successfully validated payload requests; actual I/O belongs to storage
@@ -84,6 +107,10 @@ export class AccountedPayloadLoader {
   private readonly blobs: BlobStore;
   private readonly storage: ProjectStorage;
   private accounted = 0;
+  private requests = 0;
+  private succeeded = 0;
+  private failed = 0;
+  private readonly recentRequests: PayloadChunkRequest[] = [];
 
   constructor(storage: ProjectStorage, options: AccountedPayloadLoaderOptions = {}) {
     this.storage = storage;
@@ -96,11 +123,43 @@ export class AccountedPayloadLoader {
     blobs: BlobStore = this.blobs,
     storage: ProjectStorageReader = this.storage,
   ): Promise<Uint8Array> {
+    const request: PayloadChunkRequest = {
+      id: ++this.requests,
+      path: asset.path,
+      chunkId: entry.id,
+      revision: asset.revision,
+      status: "loading",
+      requestedBytes: entry.byteLength ?? ("inline" in entry.locator ? entry.locator.inline.length : null),
+      payloadBytes: 0,
+    };
+    this.recentRequests.push(request);
+    if (this.recentRequests.length > 128) this.recentRequests.shift();
+    try {
+      const data = await this.loadValidatedChunk(asset, entry, blobs, storage, request);
+      request.status = "succeeded";
+      this.succeeded += 1;
+      return data;
+    } catch (cause) {
+      request.status = "failed";
+      request.error = (cause instanceof Error ? cause.message : String(cause)).slice(0, 512);
+      this.failed += 1;
+      throw cause;
+    }
+  }
+
+  private async loadValidatedChunk(
+    asset: AssetSourceLocator,
+    entry: ChunkEntry,
+    blobs: BlobStore,
+    storage: ProjectStorageReader,
+    request: PayloadChunkRequest,
+  ): Promise<Uint8Array> {
     validateChunkBounds(asset, entry);
     let data: Uint8Array;
     if ("inline" in entry.locator) {
       const { offset, length } = entry.locator.inline;
       const result = await storage.readBinaryRange(asset.path, asset.payloadOffset + offset, length, asset.storageRevision);
+      request.payloadBytes = result.bytes.byteLength;
       if (result.totalSize !== asset.totalSize || result.revision !== asset.storageRevision || result.bytes.byteLength !== length) {
         throw new Error(`Asset changed while reading chunk ${entry.id}: ${asset.path}`);
       }
@@ -113,6 +172,7 @@ export class AccountedPayloadLoader {
       }
       data = await blobs.readBlob(entry.locator.blob);
     }
+    request.payloadBytes = data.byteLength;
     if (entry.byteLength !== undefined && data.byteLength !== entry.byteLength) {
       throw new Error(`Length mismatch for chunk ${entry.id} in ${asset.path}`);
     }
@@ -126,6 +186,17 @@ export class AccountedPayloadLoader {
 
   get accountedPayloadBytes(): number {
     return this.accounted;
+  }
+
+  snapshot(): PayloadLoaderSnapshot {
+    return {
+      requests: this.requests,
+      succeeded: this.succeeded,
+      failed: this.failed,
+      pending: this.requests - this.succeeded - this.failed,
+      accountedPayloadBytes: this.accounted,
+      recentRequests: this.recentRequests.map((request) => ({ ...request })),
+    };
   }
 
   resetAccounting(): void {

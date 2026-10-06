@@ -38,6 +38,7 @@ import {
 } from "@babylonslate/core";
 import {
   normalizeFontPayload,
+  resolveAssetCatalogDependencies,
   resolvePluginEnabled,
   resolvePluginGraph,
   type IndexedAsset,
@@ -63,9 +64,12 @@ export function assetsFromIndexed(
     name: asset.header.name,
     path: asset.path,
     parentClass: asset.header.parentClass ?? null,
-    dependencies: asset.header.dependencies ?? [],
-    requiredDependencies: asset.header.requiredDependencies,
+    dependencies: resolveAssetCatalogDependencies(asset.header, list),
+    requiredDependencies: asset.header.requiredDependencies ? resolveAssetCatalogDependencies(asset.header, list, true) : undefined,
     requiredVariableNames: asset.header.requiredVariableNames,
+    classReferences: asset.header.classReferences,
+    requiredClassReferences: asset.header.requiredClassReferences,
+    consoleCommand: asset.header.consoleCommand,
     dependencyMetadataVersion: asset.header.dependencyMetadataVersion,
     rootId: asset.rootId,
   }));
@@ -297,6 +301,7 @@ export async function collectAndExportGame(
 
   const startup = params.startupSceneGuid!;
   const graphDocs: Array<{
+    guid: string;
     path: string;
     content: SerializedGraph;
     parentClassId?: string | null;
@@ -322,6 +327,7 @@ export async function collectAndExportGame(
       const graph = params.graphByGuid(guid);
       if (graph) {
         graphDocs.push({
+          guid,
           path: asset.name,
           content: graph,
           parentClassId: asset.parentClass,
@@ -354,6 +360,9 @@ export async function collectAndExportGame(
         dependencies: asset.dependencies,
         requiredDependencies: asset.requiredDependencies,
         requiredVariableNames: asset.requiredVariableNames,
+        classReferences: asset.classReferences,
+        requiredClassReferences: asset.requiredClassReferences,
+        consoleCommand: asset.consoleCommand,
         dependencyMetadataVersion: asset.dependencyMetadataVersion,
         startupRequired: asset.type === "InputAction" || asset.type === "InputAxis" || asset.guid === params.audioMixerGuid || asset.guid === params.gameInstanceClass || asset.name === params.gameInstanceClass || (asset.type === "Class" && !!asset.parentClass && subsystemBaseClassIdOf(subsystemHierarchy, asset.parentClass) !== null),
         type: asset.type,
@@ -473,16 +482,16 @@ export async function collectAndExportGame(
   params.onPhase?.("Compiling");
   const scripts: ScriptBundleEntry[] = [];
   if (graphDocs.length || animDocs.length) {
-    const { compileAnimGraphScripts, compileGraphDocuments } = await import("./script-compiler");
+    const { compileAnimGraphScripts, compileGraphDocuments, classIdForGraphPath } = await import("./script-compiler");
     scripts.push(
-      ...compileGraphDocuments(graphDocs, {
+      ...compileGraphDocuments(graphDocs.map(document => ({ ...document, classId: classIdForGraphPath(document.path), path: document.guid })), {
         stripDevelopmentOnly: !bundleDebugger,
         inputAssets,
         dataAssets,
         ...typeSchemas,
         tagRegistry: params.tagRegistry,
       }),
-      ...compileAnimGraphScripts(animDocs, {
+      ...compileAnimGraphScripts(animDocs.map(document => ({ ...document, path: document.guid })), {
         stripDevelopmentOnly: !bundleDebugger,
         inputAssets,
         dataAssets,

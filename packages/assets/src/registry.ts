@@ -46,6 +46,7 @@ import { AREA_EMISSION_CHUNK_KIND, areaEmissionChunkId, currentAreaEmissionChunk
 import { sha256Hex } from "./bytes";
 import { moveStorageFile, moveStorageTree, STORAGE_MOVE_BACKUP_PREFIX } from "./storage-move";
 import { collectAssetDependencyMetadata, type AssetDependencyClass } from "./asset-dependencies";
+import { resolveAssetCatalogDependencies } from "./catalog-class-dependencies";
 
 export type AreaEmissionProcessor = (request: { source: Uint8Array; sourceHash: string; mime?: string }, signal: AbortSignal, onProgress?: (progress: AreaEmissionProgress) => void) => Promise<Uint8Array>;
 
@@ -384,6 +385,17 @@ export class AssetRegistry {
     return this.byGuid.get(guid);
   }
 
+  /** Full authored graph, including symbolic class references from old authoring contexts. */
+  dependenciesFor(guid: string, header = this.byGuid.get(guid)?.header): string[] {
+    return header ? resolveAssetCatalogDependencies(header, this.list()) : [];
+  }
+
+  /** Required class identities resolve entirely from the mounted metadata catalog. */
+  requiredDependenciesFor(guid: string, header = this.byGuid.get(guid)?.header): string[] {
+    if (!header) throw new Error(`Required asset is missing: ${guid}`);
+    return resolveAssetCatalogDependencies(header, this.list(), true);
+  }
+
   getByPath(path: string): IndexedAsset | undefined {
     return this.byPath.get(path);
   }
@@ -448,12 +460,20 @@ export class AssetRegistry {
     return rootNode;
   }
 
-  /** Outbound deps from the header; inbound from the reverse index. */
+  /** Resolve symbolic classes alongside GUID edges without reading any payloads. */
   showReferences(guid: string): { outbound: string[]; inbound: string[] } {
-    const asset = this.byGuid.get(guid);
+    const assets = this.list();
+    const symbolicInbound = this.byGuid.has(guid) ? assets.filter(asset =>
+      asset.header.classReferences?.length && resolveAssetCatalogDependencies(
+        { ...asset.header, dependencies: [] }, assets,
+      ).includes(guid),
+    ).map(asset => asset.header.guid) : [];
     return {
-      outbound: asset ? [...asset.header.dependencies] : [],
-      inbound: [...(this.inbound.get(guid) ?? [])],
+      outbound: this.dependenciesFor(guid),
+      inbound: [...new Set([
+        ...(this.inbound.get(guid) ?? []),
+        ...symbolicInbound,
+      ])].sort(),
     };
   }
 

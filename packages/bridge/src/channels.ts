@@ -144,6 +144,7 @@ export type ControlMessage =
       /** Metadata-only scene catalog. Documents and dependencies are acquired from the host on demand. */
       sceneCatalog?: Array<{ guid: string; name: string }>;
       classAssetGuids?: Record<string, string>;
+      consoleCommands?: Array<import("@babylonslate/core").ConsoleCommandMetadata & { classId: string; assetGuid: string }>;
       /** Baked navigation by canonical scene guid, selected before Begin Play. */
       sceneNavmeshBytes?: Record<string, Uint8Array>;
       /** Overlay documents the session compositor can instantiate by guid or name. */
@@ -181,6 +182,10 @@ export type ControlMessage =
   | {
       type: "loadScripts";
       scripts: ScriptBundleEntry[];
+      /** Complete source union, including every surviving owner. */
+      replace?: boolean;
+      /** Request readiness only after evaluation and class registration finish. */
+      requestId?: number;
       /** Explicit boot spawn requests. Omitted or empty only loads the classes. */
       spawn?: Array<{ classId: string; variables?: Record<string, unknown> }>;
     }
@@ -583,6 +588,7 @@ export type CommandMessage =
   | { type: "sceneStreamBlocking"; blocking: boolean }
   | { type: "assetPreload"; preloadId: string; ownerId: string; assetGuids: string[] }
   | { type: "assetPreloadRelease"; preloadId: string }
+  | { type: "assetSourcesReady"; requestId: number; success: boolean; error?: string }
   | { type: "sceneStreamRealized"; actorGuid: string; streamLoadId: number; slotIds: number[] }
   | { type: "sceneStreamRemoved"; actorGuid: string; streamLoadId: number }
   | { type: "sceneSourceRequested"; requestId: number; assetGuid: string; consumer: string; streamActorGuid?: string; streamLoadId?: number }

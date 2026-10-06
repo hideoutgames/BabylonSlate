@@ -485,6 +485,7 @@ export function startPlaySession(options: {
   scenes?: Array<{ guid: string; scene: SerializedScene }>;
   sceneCatalog?: Array<{ guid: string; name: string }>;
   classAssetGuids?: Record<string, string>;
+  consoleCommands?: Array<import("@babylonslate/core").ConsoleCommandMetadata & { classId: string; assetGuid: string }>;
   audioAssetGuids?: string[];
   acquireSceneSources?: PlaySceneSourceLoader;
   acquireAssetSources?: PlayAssetSourceLoader;
@@ -794,8 +795,16 @@ export function startPlaySession(options: {
   void sessionSourcesReady.catch((error: unknown) => options.onLog?.(`Session sources: ${String(error)}`, "error"));
   const preparedScenes = new Map((options.scenes ?? []).map((entry) => [entry.guid, entry.scene]));
   const sceneSourceOwners = new Map<string, number>();
+  let nextSourceRequestId = 0;
+  const sourceRequests = new Map<number, { resolve(): void; reject(error: Error): void }>();
   const publishSourceControl = async (control: ControlMessage) => {
-    if (worker) worker.postControl(control);
+    if (worker && control.type === "loadScripts") {
+      const requestId = ++nextSourceRequestId;
+      await new Promise<void>((resolve, reject) => {
+        sourceRequests.set(requestId, { resolve, reject });
+        worker!.postControl({ ...control, requestId });
+      });
+    } else if (worker) worker.postControl(control);
     else if (runtime && !await applyRuntimeSourceControl(runtime, control))
       throw new Error(`Unsupported source preparation control: ${control.type}.`);
   };
@@ -913,7 +922,7 @@ export function startPlaySession(options: {
     } };
   } : undefined;
   handle.setCommandSourceLoader?.(options.acquireAssetSources ? async (guids, request) =>
-    prepareSources(await options.acquireAssetSources!(guids, request), request.signal, true) : null);
+    prepareSources(await options.acquireAssetSources!([...guids], request), request.signal, true) : null);
   const sceneSources = acquireScene ? createSceneSourceHost({ acquireScene,
     send: (control) => worker?.postControl(control),
   }) : undefined;
@@ -1092,6 +1101,13 @@ export function startPlaySession(options: {
   const saveStorage = createSaveGameStorage();
   const saveServer = createSaveStorageServer(saveStorage, (response) => worker?.postControl({ type: "saveStorageResponse", response }));
   const onCommand = (command: CommandMessage) => {
+    if (command.type === "assetSourcesReady") {
+      const request = sourceRequests.get(command.requestId);
+      sourceRequests.delete(command.requestId);
+      if (command.success) request?.resolve();
+      else request?.reject(new Error(command.error ?? "Script sources failed to prepare."));
+      return;
+    }
     if (receivePreload(command)) return;
     if (sceneSources?.receive(command)) return;
     if (command.type === "saveStorageRequest") { saveServer.receive(command.request); return; }
@@ -1223,6 +1239,7 @@ export function startPlaySession(options: {
   });
   if (acquireScene) loadControl.sceneCatalog = options.sceneCatalog ?? [];
   if (options.classAssetGuids) loadControl.classAssetGuids = options.classAssetGuids;
+  if (options.consoleCommands) loadControl.consoleCommands = options.consoleCommands;
 
   try {
     worker = createGameWorkerHost();
@@ -1467,7 +1484,7 @@ export function startPlaySession(options: {
           output: "Play session stopped",
         });
       if (runtime) {
-        return Promise.resolve(runtime.executeConsoleCommand(line));
+        return runtime.executeConsoleCommandAsync(line);
       }
       if (worker) {
         return new Promise((resolve) => {
@@ -1542,6 +1559,8 @@ export function startPlaySession(options: {
       worker?.postControl({ type: "stop" });
       saveServer.dispose();
       worker?.terminate();
+      for (const request of sourceRequests.values()) request.reject(new Error("Play stopped during script preparation."));
+      sourceRequests.clear();
       sceneSources?.dispose();
       for (const preloadId of preloads.keys()) releasePreload(preloadId);
       preparedScenes.clear();

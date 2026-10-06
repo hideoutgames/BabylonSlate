@@ -124,6 +124,10 @@ import {
 import {
   createCommandRegistry,
   createUserCommand,
+  tokenize,
+  matchCommandName,
+  parseCommandArgs,
+  isReservedConsoleCommandName,
   TraceRecorder,
   createInfiniteLoopGuard,
   isInfiniteLoopError,
@@ -173,7 +177,7 @@ import {
   type BtEvalState,
   type BtResult,
 } from "@babylonslate/behaviour-tree";
-import { ScriptHost, type CompiledScript } from "./script-host";
+import { ScriptHost, compiledScriptKey, compiledScriptSourceLabel, type CompiledScript } from "./script-host";
 import { shouldSpawnScriptedActor } from "./play-load";
 import { actorLocalPhysicsTransform, PhysicsWorldSync } from "./physics-sync";
 import { RagdollWorldSync } from "./ragdoll-sync";
@@ -205,6 +209,7 @@ import {
 export interface RuntimeDriverOptions {
   /** Catalog identity only; registering an available class never reads its source. */
   classAssetGuids?: Readonly<Record<string, string>>;
+  consoleCommands?: ReadonlyArray<import("@babylonslate/core").ConsoleCommandMetadata & { classId: string; assetGuid: string }>;
   /** JSON data and shared Structures snapshotted at session startup. */
   dataAssets?: import("@babylonslate/core").DataAssetCatalogEntry[];
   renderSettings?: Partial<RenderProjectSettings>;
@@ -323,6 +328,7 @@ export interface RuntimeDriver {
   ): RuntimeDiagnostic | null;
   /** Load compiled graph modules and register their source anchors. */
   loadScripts(scripts: readonly CompiledScript[]): Promise<void>;
+  replaceScriptSources(scripts: readonly CompiledScript[]): Promise<void>;
   /** Spawn an actor whose lifecycle hooks run its class's compiled graphs. */
   spawnScriptedActor(options: {
     classId: string;
@@ -393,6 +399,7 @@ export interface RuntimeDriver {
   requestScalability(request: ScalabilityRequest): ScalabilityResult;
   getScalability(): ScalabilitySnapshot;
   executeConsoleCommand(command: string): { success: boolean; output: string };
+  executeConsoleCommandAsync(command: string): Promise<{ success: boolean; output: string }>;
   inspectWorld(): DebugInspectSnapshot;
   invokeScriptEvent(
     classId: string,
@@ -627,6 +634,8 @@ class InProcessRuntime implements RuntimeDriver {
   private phaseScriptMs = 0;
   private phasePhysicsMs = 0;
   private readonly scriptHost: ScriptHost;
+  private readonly scriptSources = new Map<string, CompiledScript>();
+  private scriptSourceWork: Promise<void> = Promise.resolve();
   private readonly dataCatalog: RuntimeDataCatalog;
   private readonly sourceRenderTargets = new Map<string, RenderTargetPayload>();
   private readonly sourceRenderTargetTextures = new Map<string, RenderTargetTexturePayload>();
@@ -699,6 +708,8 @@ class InProcessRuntime implements RuntimeDriver {
   private cameraPossessedByScript = false;
   private possessedCameraSlotId: number | null = null;
   private readonly commands: CommandRegistry;
+  private readonly commandClasses = new Map<string, { classId: string; assetGuid: string }>();
+  private readonly consoleLifetime = new AbortController();
   private readonly loopGuard: InfiniteLoopGuard;
   private readonly trace: TraceRecorder;
   private lastTrace: TracePayload | null = null;
@@ -838,6 +849,10 @@ class InProcessRuntime implements RuntimeDriver {
     this.commands = createCommandRegistry({
       includeDebug: options.includeDebugCommands ?? true,
     });
+    for (const command of options.consoleCommands ?? []) {
+      this.classAssetGuids.set(command.classId, command.assetGuid);
+      this.bindUserCommand({ ...command, name: command.name || command.classId.toLowerCase() });
+    }
     this.loopGuard = createInfiniteLoopGuard({
       enabled:
         (options.includeDebugCommands ?? true) &&
@@ -1331,6 +1346,7 @@ class InProcessRuntime implements RuntimeDriver {
         this.setWorldGravity(gravity);
       },
       executeConsoleCommand: (command) => this.executeConsoleCommand(command),
+      executeConsoleCommandAsync: (command) => this.executeConsoleCommandAsync(command),
       tween: (request) => this.tweens.start(request),
       isTweenSessionActive: () => !this.stopped,
       delay: (seconds, owner) =>
@@ -2588,16 +2604,46 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   async loadScripts(scripts: readonly CompiledScript[]): Promise<void> {
-    for (const script of scripts) this.classAssetGuids.set(script.classId, script.assetGuid);
-    const ordered = parentFirstScriptOrder(scripts, (classId) =>
-      this.world.classRegistry.has(classId),
-    );
-    try {
+    return this.updateScriptSources(scripts, false);
+  }
+
+  replaceScriptSources(scripts: readonly CompiledScript[]): Promise<void> {
+    return this.updateScriptSources(scripts, true);
+  }
+
+  private updateScriptSources(scripts: readonly CompiledScript[], replace: boolean): Promise<void> {
+    const work = this.scriptSourceWork.catch(() => {}).then(async () => {
+      if (this.stopped) throw new Error("The runtime stopped during script preparation.");
+      const requested = new Map(scripts.map((script) => [compiledScriptKey(script), script]));
+      const actors = this.world.getActors();
+      const owners = [this.world.gameInstance, this.world.currentScene, ...actors, ...actors.flatMap((actor) => actor.components),
+        ...this.world.getSceneLayers(), ...this.world.getGameSubsystems(), ...this.world.getSceneSubsystems(),
+        ...[...this.sceneStreams.values()].map((stream) => stream.scene)];
+      const liveClasses = new Set(owners.filter((owner) => owner && !owner.destroyed)
+        .flatMap((owner) => this.world.classRegistry.ancestry(owner!.classId)));
+      for (const script of this.scriptSources.values())
+        if ((!replace || liveClasses.has(script.classId)) && !requested.has(compiledScriptKey(script))) requested.set(compiledScriptKey(script), script);
+      const ordered = parentFirstScriptOrder([...requested.values()], (classId) => this.world.classRegistry.has(classId));
+      await this.scriptHost.replaceScripts(ordered);
+      if (this.stopped) throw new Error("The runtime stopped during script preparation.");
+      const classes = this.world.classRegistry;
+      for (const classId of [...new Set([...this.scriptSources.values()].map((script) => script.classId))]
+        .sort((a, b) => classes.ancestry(b).length - classes.ancestry(a).length)) classes.unregister(classId);
+      for (const previous of this.scriptSources.values()) {
+        this.anchors.delete(compiledScriptSourceLabel(previous));
+        this.anchors.delete(previous.assetGuid);
+      }
+      this.scriptSources.clear();
+      const ownerAnchors = new Map<string, AnchorEntry[]>();
       for (const script of ordered) {
+        this.classAssetGuids.set(script.classId, script.assetGuid);
         this.registerScriptClass(script);
-        await this.scriptHost.load(script);
+        this.scriptSources.set(compiledScriptKey(script), script);
         if (script.anchors.length > 0) {
-          this.registerAnchors(script.assetGuid, script.anchors);
+          this.registerAnchors(compiledScriptSourceLabel(script), script.anchors);
+          const anchors = ownerAnchors.get(script.assetGuid) ?? [];
+          anchors.push(...script.anchors);
+          ownerAnchors.set(script.assetGuid, anchors);
         }
         if (script.command) {
           this.bindUserCommand({
@@ -2606,10 +2652,14 @@ class InProcessRuntime implements RuntimeDriver {
           });
         }
       }
-    } finally {
+      for (const [guid, anchors] of ownerAnchors)
+        this.registerAnchors(guid, anchors.sort((a, b) => a.line - b.line || a.column - b.column));
       this.applyGameInstanceClassDefaults();
       this.installSubsystems();
-    }
+      for (const owner of owners) if (owner && !owner.destroyed) this.scriptHost.bindInterfaceHandlers(owner);
+    });
+    this.scriptSourceWork = work;
+    return work;
   }
 
   /**
@@ -3468,7 +3518,37 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   executeConsoleCommand(command: string): { success: boolean; output: string } {
+    const { name } = matchCommandName(tokenize(command.trim()), new Set(this.commands.list().map(entry => entry.name.toLowerCase())));
+    const user = this.commandClasses.get(name);
+    if (this.demandAssetCatalog && user && this.assetPreloads.getState(user.assetGuid) !== "ready") {
+      return { success: false, output: `Command ${name} is not prepared; use executeConsoleCommandAsync` };
+    }
     return this.commands.execute(command, this.consoleHost());
+  }
+
+  async executeConsoleCommandAsync(command: string): Promise<CommandResult> {
+    if (this.stopped) return { success: false, output: "The runtime session has ended" };
+    const { name, rest } = matchCommandName(tokenize(command.trim()), new Set(this.commands.list().map(entry => entry.name.toLowerCase())));
+    const user = this.commandClasses.get(name);
+    if (!user) return this.executeConsoleCommand(command);
+    const definition = this.commands.get(name);
+    if (!definition) return { success: false, output: `Unknown command: ${name}` };
+    const parsed = parseCommandArgs(rest, definition.parameters);
+    if (!parsed.ok) return { success: false, output: parsed.output };
+    let preloadId = "";
+    try {
+      if (this.demandAssetCatalog) {
+        const result = await this.assetPreloads.acquire([user.assetGuid], `Console Command ${name}`);
+        if (!result.success) return { success: false, output: `Command ${name} (${user.assetGuid}): ${result.errorMessage}` };
+        preloadId = result.preloadId;
+      }
+      this.consoleLifetime.signal.throwIfAborted();
+      return await this.scriptHost.invokeCommandAsync(user.classId, parsed.args, this.consoleLifetime.signal);
+    } catch (error) {
+      return { success: false, output: `Command ${name}: ${error instanceof Error ? error.message : String(error)}` };
+    } finally {
+      if (preloadId) this.assetPreloads.release(preloadId);
+    }
   }
 
   inspectWorld(): DebugInspectSnapshot {
@@ -3491,6 +3571,9 @@ class InProcessRuntime implements RuntimeDriver {
   bindUserCommand(
     def: Omit<UserCommandDef, "run"> & { classId: string },
   ): void {
+    if (isReservedConsoleCommandName(def.name.toLowerCase())) return;
+    const guid = this.classAssetGuids.get(def.classId);
+    if (guid) this.commandClasses.set(def.name.toLowerCase(), { classId: def.classId, assetGuid: guid });
     this.registerUserCommand({
       ...def,
       run: (args) => this.scriptHost.invokeCommand(def.classId, args),
@@ -6087,6 +6170,7 @@ class InProcessRuntime implements RuntimeDriver {
   stop(): void {
     if (this.stopped) return;
     this.assetPreloads.dispose();
+    this.consoleLifetime.abort(new Error("The runtime session has ended"));
     for (const waiter of this.layerReadinessWaiters.values()) waiter.reject(sceneRealizationCancelled());
     this.layerReadinessWaiters.clear();
     this.stopped = true;
@@ -6123,6 +6207,12 @@ class InProcessRuntime implements RuntimeDriver {
       }
     }
     this.world.end();
+    this.scriptHost.dispose();
+    for (const classId of [...new Set([...this.scriptSources.values()].map((script) => script.classId))]
+      .sort((a, b) => this.world.classRegistry.ancestry(b).length - this.world.classRegistry.ancestry(a).length))
+      this.world.classRegistry.unregister(classId);
+    this.scriptSources.clear();
+    this.anchors.clear();
     for (const source of retiring?.departure?.sources ?? []) source.release();
     this.activeSceneSource?.release();
     this.activeSceneSource = undefined;

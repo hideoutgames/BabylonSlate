@@ -1,5 +1,4 @@
 import { DOCUMENT_CHUNK_ID, type AssetDocument } from "./asset-document";
-import { getRequiredDependencies } from "./asset-dependencies";
 import {
   AssetLoadingService,
   type AssetCatalogRecord,
@@ -81,7 +80,7 @@ async function registryRecord(
     id, rootId: indexed.rootId, revision: locator.revision,
     // Editing a document can precede an explicit legacy metadata upgrade.
     // Preparing a runtime consumer always evaluates this versioned contract.
-    get requiredDependencies() { return getRequiredDependencies(indexed.header); },
+    get requiredDependencies() { return registry.requiredDependenciesFor(id, indexed.header); },
     indexed, chunkIds,
     sourceBytes: lengths.reduce((sum, length) => sum + length, 0),
     documentBytes: documentIndex === -1

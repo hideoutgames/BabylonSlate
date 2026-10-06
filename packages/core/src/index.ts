@@ -89,3 +89,5 @@ export * from "./save-game-rpc";
 export * from "./save-game";
 export * from "./save-game-service";
 export * from "./actor-property-references";
+
+export * from "./console-command";

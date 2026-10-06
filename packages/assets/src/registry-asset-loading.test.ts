@@ -1,11 +1,69 @@
 import { describe, expect, it } from "vitest";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { encodeBabasset } from "./babasset";
+import { collectAssetDependencyMetadata } from "./asset-dependencies";
 import { projectContentRoot } from "./content-root";
 import { AssetRegistry } from "./registry";
 import { createRegistryAssetLoadingService, registryAssetRepresentation, type RegistryLoadedAsset } from "./registry-asset-loading";
 
 describe("registry source loading", () => {
+  it("resolves authored custom class names through catalog metadata while leaving deferred classes unread", async () => {
+    const storage = new MemoryStorageAdapter();
+    await storage.pickProjectFolder();
+    await storage.mkdir("assets");
+    const header = (guid: string, type: string, payload: Record<string, unknown>) => ({
+      guid, name: guid, type, version: 1, engineVersion: "0.0.0", mode: "thin" as const, payload,
+      ...collectAssetDependencyMetadata(type, payload),
+    });
+    await storage.writeBinary("assets/scene.babasset", await encodeBabasset({
+      header: header("scene", "Scene", { actors: [{ id: "enemy", classId: "Goblin", components: [{ classId: "CameraComponent" }] }] }), chunks: [],
+    }));
+    const classDocument = new TextEncoder().encode(JSON.stringify({ nodes: [], edges: [], members: [] }));
+    await storage.writeBinary("assets/Goblin.class.babasset", await encodeBabasset({
+      header: { ...header("custom-class", "Class", {}), parentClass: "Actor", dependencies: ["model"], requiredDependencies: ["model"], dependencyMetadataVersion: 1 },
+      chunks: [{ id: "document", kind: "document", mime: "application/json", data: classDocument }],
+    }));
+    await storage.writeBinary("assets/model.babasset", await encodeBabasset({
+      header: header("model", "Model", {}), chunks: [{ id: "source", kind: "model", mime: "application/octet-stream", data: new Uint8Array([1, 2, 3]) }],
+    }));
+    await storage.writeBinary("assets/Later.class.babasset", await encodeBabasset({
+      header: header("later-class", "Class", {}),
+      chunks: [{ id: "document", kind: "document", mime: "application/json", data: new TextEncoder().encode(JSON.stringify({ note: "x".repeat(100_000) })) }],
+    }));
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    expect(registry.requiredDependenciesFor("scene")).toEqual(["custom-class"]);
+    expect(registry.showReferences("custom-class").inbound).toEqual(["scene"]);
+    const loader = createRegistryAssetLoadingService(registry, {
+      projectId: "classes", selectChunks: asset => asset.header.type === "Model" ? ["source"] : [],
+    });
+    const scope = loader.createScope("Scene");
+    await scope.acquire("scene");
+    expect(registry.accountedPayloadBytes).toBe(classDocument.byteLength + 3);
+    expect(loader.getLoadState("custom-class")).toBe("ready");
+    expect(loader.getLoadState("later-class")).toBe("unloaded");
+    expect(storage.getReadMetrics().fullReads).toBe(0);
+    loader.dispose();
+  });
+
+  it("reports a missing required custom class instead of publishing an incomplete scene", async () => {
+    const storage = new MemoryStorageAdapter();
+    await storage.pickProjectFolder();
+    await storage.mkdir("assets");
+    const payload = { actors: [{ id: "enemy", classId: "MissingEnemy", components: [] }] };
+    await storage.writeBinary("assets/scene.babasset", await encodeBabasset({
+      header: { guid: "scene", name: "scene", type: "Scene", version: 1, engineVersion: "0.0.0", mode: "thin",
+        payload, ...collectAssetDependencyMetadata("Scene", payload) }, chunks: [],
+    }));
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const loader = createRegistryAssetLoadingService(registry, { projectId: "classes" });
+    const scope = loader.createScope("Scene");
+    await expect(scope.acquire("scene")).rejects.toThrow("missing Class MissingEnemy");
+    expect(registry.accountedPayloadBytes).toBe(0);
+    loader.dispose();
+  });
+
   it("validates a warm catalog against saves before returning cached source data", async () => {
     const storage = new MemoryStorageAdapter();
     await storage.pickProjectFolder();

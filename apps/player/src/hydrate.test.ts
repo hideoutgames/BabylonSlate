@@ -846,6 +846,8 @@ describe("packedContentFromGame", () => {
         },
       ],
       assets: [
+        { guid: "host", type: "Class", sceneGuid: "scene-1", startupRequired: true, bytes: encoder.encode("{}") },
+        { guid: "gi", type: "Class", sceneGuid: "scene-1", startupRequired: true, bytes: encoder.encode("{}") },
         {
           guid: "scene-1",
           type: "Scene",

@@ -104,6 +104,7 @@ export interface PlayOverlayProps {
   scenes?: Array<{ guid: string; scene: SerializedScene }>;
   sceneCatalog?: Array<{ guid: string; name: string }>;
   classAssetGuids?: Record<string, string>;
+  consoleCommands?: Array<import("@babylonslate/core").ConsoleCommandMetadata & { classId: string; assetGuid: string }>;
   audioAssetGuids?: string[];
   acquireSceneSources?: PlaySceneSourceLoader;
   acquireAssetSources?: PlayAssetSourceLoader;
@@ -207,6 +208,7 @@ export function PlayOverlay({
   scenes,
   sceneCatalog,
   classAssetGuids,
+  consoleCommands,
   audioAssetGuids,
   acquireSceneSources,
   acquireAssetSources,
@@ -416,6 +418,7 @@ export function PlayOverlay({
     scenes,
     sceneCatalog,
     classAssetGuids,
+  consoleCommands,
     audioAssetGuids,
     acquireSceneSources,
     acquireAssetSources,
@@ -434,6 +437,7 @@ export function PlayOverlay({
     scenes,
     sceneCatalog,
     classAssetGuids,
+  consoleCommands,
     audioAssetGuids,
     acquireSceneSources,
     acquireAssetSources,
@@ -535,6 +539,7 @@ export function PlayOverlay({
       scenes: sceneRef.current.scenes,
       sceneCatalog: sceneRef.current.sceneCatalog,
       classAssetGuids: sceneRef.current.classAssetGuids,
+      consoleCommands: sceneRef.current.consoleCommands,
       audioAssetGuids: sceneRef.current.audioAssetGuids,
       acquireSceneSources: sceneRef.current.acquireSceneSources,
       acquireAssetSources: sceneRef.current.acquireAssetSources,

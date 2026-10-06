@@ -36,6 +36,7 @@ export function runtimeOptionsFromLoadControl(
   | "playScene"
   | "playSceneGuid"
   | "classAssetGuids"
+  | "consoleCommands"
   | "seedDemoActors"
   | "gameInstanceClass"
   | "sceneLibrary"
@@ -99,6 +100,7 @@ export function runtimeOptionsFromLoadControl(
     playScene: msg.scene,
     playSceneGuid: msg.sceneAssetGuid,
     classAssetGuids: msg.classAssetGuids,
+    consoleCommands: msg.consoleCommands,
     seedDemoActors: msg.scene ? false : true,
     gameInstanceClass: msg.gameInstanceClass,
     sceneLibrary: Object.keys(sceneLibrary).length > 0 ? sceneLibrary : undefined,

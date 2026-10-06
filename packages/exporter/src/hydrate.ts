@@ -465,7 +465,7 @@ export function packedBootControls(
 
 /** Replace the runtime's source union after acquisition or release, including empty collections. */
 export function packedSourceControls(game: GameSourceContent, content = packedContentFromGame(game)): ControlMessage[] {
-  const controls: ControlMessage[] = [{
+  const controls: ControlMessage[] = [{ type: "loadScripts", scripts: [...game.scripts], spawn: [], replace: true }, {
     type: "loadSceneContent", assetGuids: [...game.payloads.keys(), ...(game.decodedPayloads?.keys() ?? [])],
     sceneLayers: [...game.sceneLayers].map(([guid, layer]) => ({ guid, layer })),
     sceneNavmeshBytes: Object.fromEntries(game.navmeshBytes),

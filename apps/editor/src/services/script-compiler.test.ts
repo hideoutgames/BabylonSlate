@@ -1288,6 +1288,54 @@ describe("graphsNeedCompile", () => {
 // not fake Play current.
 
 describe("GraphScriptCompileCache", () => {
+  it("evicts the least recently used editor compile without invalidating borrowed bundles", () => {
+    const cache = new GraphScriptCompileCache({ maxEntries: 2 });
+    const document = (name: string) => ({ path: `assets/${name}.class.babasset`, content: tickToLog });
+    const first = compileGraphDocuments([document("First")], { cache })[0]!;
+    const oldSecond = compileGraphDocuments([document("Second")], { cache })[0]!;
+    expect(compileGraphDocuments([document("First")], { cache })[0]).toBe(first);
+    compileGraphDocuments([document("Third")], { cache });
+    expect(cache.graphs.size).toBe(2);
+    expect(cache.compiles).toBe(3);
+    expect(compileGraphDocuments([document("First")], { cache })[0]).toBe(first);
+    const second = compileGraphDocuments([document("Second")], { cache })[0]!;
+    expect(second).not.toBe(oldSecond);
+    expect(second.source).toBe(oldSecond.source);
+    expect(cache.compiles).toBe(4);
+    cache.clear();
+    expect(cache.retainedBytes).toBe(0);
+    expect(first.source).toContain("export function");
+  });
+
+  it("bounds combined graph and animation retention by bytes and skips oversized results", async () => {
+    const { createDefaultAnimGraph } = await import("@babylonslate/anim-graph");
+    const { compileAnimGraphScripts } = await import("./script-compiler");
+    const graph = [{ path: "assets/First.class.babasset", content: tickToLog }];
+    const animation = [{ guid: "animation", path: "assets/Animation.anim.babasset", document: createDefaultAnimGraph() }];
+    const measure = new GraphScriptCompileCache();
+    compileGraphDocuments(graph, { cache: measure });
+    const graphBytes = measure.retainedBytes;
+    measure.clear();
+    compileAnimGraphScripts(animation, { cache: measure });
+    const maxBytes = Math.max(graphBytes, measure.retainedBytes);
+    const cache = new GraphScriptCompileCache({ maxBytes });
+    const borrowed = compileGraphDocuments(graph, { cache })[0]!;
+    compileAnimGraphScripts(animation, { cache });
+    expect(cache.retainedBytes).toBeLessThanOrEqual(maxBytes);
+    expect(cache.graphs.size).toBe(0);
+    expect(cache.animGraphs.size).toBe(1);
+    expect(borrowed.source).toContain("export function");
+    compileGraphDocuments(graph, { cache });
+    expect(cache.compiles).toBe(3);
+    expect(cache.animGraphs.size).toBe(0);
+    const disabled = new GraphScriptCompileCache({ maxBytes: 1 });
+    expect(compileGraphDocuments(graph, { cache: disabled })).toHaveLength(1);
+    expect(compileGraphDocuments(graph, { cache: disabled })).toHaveLength(1);
+    expect(disabled.compiles).toBe(2);
+    expect(disabled.retainedBytes).toBe(0);
+    expect(disabled.graphs.size).toBe(0);
+  });
+
   it("recompiles an inferred Data Entry read when its inherited Data Definition changes", async () => {
     const { loadCompiledModule } = await import("@babylonslate/runtime");
     const cache = new GraphScriptCompileCache();

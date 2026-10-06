@@ -1364,6 +1364,10 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             scenes={playSceneLibrary}
             sceneCatalog={(assetRegistry?.list() ?? []).filter((asset) => asset.header.type === "Scene").map((asset) => ({ guid: asset.header.guid, name: asset.header.name }))}
             classAssetGuids={Object.fromEntries((assetRegistry?.list() ?? []).filter((asset) => asset.header.type === "Class").map((asset) => [classIdFromClassAsset(asset), asset.header.guid]))}
+            consoleCommands={(assetRegistry?.list() ?? []).flatMap(asset => asset.header.consoleCommand ? [{
+              ...asset.header.consoleCommand, classId: classIdFromClassAsset(asset), assetGuid: asset.header.guid,
+              name: asset.header.consoleCommand.name || classIdFromClassAsset(asset).toLowerCase(),
+            }] : [])}
             audioAssetGuids={(assetRegistry?.list() ?? []).filter((asset) => asset.header.type === "Audio").map((asset) => asset.header.guid)}
             getAssetLoadState={documents.getAssetLoadState}
             getSourceControls={() => mergePreparedPlaySources(playSourceSetsRef.current)?.controls ?? emptyPlaySourceControls()}

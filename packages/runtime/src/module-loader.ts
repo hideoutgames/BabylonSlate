@@ -5,33 +5,18 @@ export interface CompiledModuleExports {
 }
 
 /**
- * Load a compiled game script. Prefers blob-URL dynamic import; falls back to
- * `new Function` + module-shim when blob import fails (WKWebView spike path).
+ * Generated graphs export functions. The module shim keeps their functions
+ * collectable when source ownership ends; dynamic-import module records remain
+ * rooted in the browser realm even after their Blob URL is revoked.
  */
 export async function loadCompiledModule(
   source: string,
   label: string,
 ): Promise<CompiledModuleExports> {
-  const withUrl = source.includes("sourceURL=")
-    ? source
-    : `${source}\n//# sourceURL=babylonslate:///${label}.js\n`;
-
-  if (typeof URL !== "undefined" && typeof Blob !== "undefined") {
-    try {
-      const blob = new Blob([withUrl], { type: "text/javascript" });
-      const url = URL.createObjectURL(blob);
-      try {
-        const mod = (await import(
-          /* @vite-ignore */ url
-        )) as CompiledModuleExports;
-        return mod;
-      } finally {
-        URL.revokeObjectURL(url);
-      }
-    } catch {
-      // fall through to Function shim
-    }
-  }
+  const directive = `//# sourceURL=babylonslate:///${label}.js`;
+  const withUrl = /^\s*\/\/# sourceURL=.*$/m.test(source)
+    ? source.replace(/^[ \t]*\/\/# sourceURL=.*$/gm, directive)
+    : `${source}\n${directive}\n`;
 
   return loadViaFunctionShim(withUrl);
 }

@@ -200,7 +200,7 @@ function initializePlayer(
   const clearResourceFailures = (ids: Iterable<string>) => { for (const id of ids) resourceFailures.delete(id); };
   const consoleHost = createPlayerConsoleHost({
     execute: () =>
-      runtime ? (line) => runtime!.executeConsoleCommand(line) : undefined,
+      runtime ? (line) => runtime!.executeConsoleCommandAsync(line) : undefined,
     inspect: () => (runtime ? () => runtime!.inspectWorld() : undefined),
     post: (command) => worker?.postControl(command),
   });
@@ -244,7 +244,8 @@ function initializePlayer(
         releaseRender = await handle.acquireSceneSources(renderSources(gameSourceSubset(game, source.assetGuids ?? requiredGameAssets(manifest, [guid]))), { signal: request.signal });
         request.signal.throwIfAborted();
         clearResourceFailures(requiredGameAssets(manifest, [guid]));
-        refreshSourceContent();
+        await refreshSourceContent();
+        request.signal.throwIfAborted();
         return () => { releaseRender?.(); source.release(); if (!halted) { refreshSourceContent(); publishAssetStates(); } };
       } catch (error) { releaseRender?.(); source.release(); throw error; }
     } : undefined,
@@ -488,7 +489,12 @@ function initializePlayer(
       scene.settings.gameInstanceClass ??
       undefined,
     scenes,
-    classAssetGuids: Object.fromEntries(manifest.assets.filter(entry => entry.type === "Class").map(entry => [entry.name ?? entry.guid, entry.guid])),
+    classAssetGuids: Object.fromEntries(manifest.assets.filter(entry => entry.type === "Class" || entry.type === "Graph").flatMap(entry => [...new Set([entry.classId, entry.name, entry.guid, `scene:${entry.guid}`].filter((id): id is string => !!id))].map(id => [id, entry.guid]))),
+    consoleCommands: manifest.assets.flatMap(entry => {
+      if (!entry.consoleCommand) return [];
+      const classId = entry.classId ?? game.scripts.find(script => script.assetGuid === entry.guid)?.classId ?? entry.name ?? entry.guid;
+      return [{ ...entry.consoleCommand, name: entry.consoleCommand.name || classId.toLowerCase(), classId, assetGuid: entry.guid }];
+    }),
     ...(game.acquireScene ? { sceneCatalog: manifest.assets.filter(entry => entry.type === "Scene").map(entry => ({ guid: entry.guid, name: entry.name ?? entry.guid })) } : {}),
     sceneLayers,
     sceneNavmeshBytes: Object.fromEntries(content.navmeshByScene),
@@ -609,6 +615,11 @@ function initializePlayer(
     target.clear();
     for (const [key, value] of source) target.set(key, value);
   };
+  let nextSourceRequest = 0;
+  let publishedScripts: readonly import("@babylonslate/bridge").ScriptBundleEntry[] | null = [...game.scripts];
+  let sourcePublication: Promise<void> = Promise.resolve();
+  const pendingSourceRequests = new Map<number, { resolve: () => void; reject: (error: unknown) => void }>();
+  own(() => { for (const request of pendingSourceRequests.values()) request.reject(new DOMException("Player stopped", "AbortError")); pendingSourceRequests.clear(); });
   const refreshSourceContent = () => {
     const next = packedContentFromGame(game);
     // Services retain these library objects. Mutate their maps and install the
@@ -626,9 +637,33 @@ function initializePlayer(
     syncMap(content.particleLibrary.emitters as Map<unknown, unknown>, next.particleLibrary.emitters);
     syncMap(content.particleLibrary.systems as Map<unknown, unknown>, next.particleLibrary.systems);
     for (const control of packedSourceControls(game, content)) {
+      if (control.type === "loadScripts") {
+        if (publishedScripts && control.scripts.length === publishedScripts.length && control.scripts.every((script, index) => script === publishedScripts![index])) continue;
+        const scheduledScripts = [...control.scripts];
+        publishedScripts = scheduledScripts;
+        sourcePublication = sourcePublication.catch(() => {}).then(async () => {
+          if (halted) throw new DOMException("Player stopped", "AbortError");
+          if (worker) {
+            const requestId = ++nextSourceRequest;
+            await new Promise<void>((resolve, reject) => {
+              pendingSourceRequests.set(requestId, { resolve, reject });
+              try { worker!.postControl({ ...control, requestId }); }
+              catch (error) { pendingSourceRequests.delete(requestId); reject(error); }
+            });
+          } else if (runtime) await applyRuntimeSourceControl(runtime, control);
+        });
+        // Acquisition paths await this same promise; eviction-only refreshes
+        // still report an actionable failure without an unhandled rejection.
+        void sourcePublication.catch(error => {
+          if (publishedScripts === scheduledScripts) publishedScripts = null;
+          if (!halted) options.onConsoleEvent?.({ type: "log", severity: "error", message: error instanceof Error ? error.message : String(error) });
+        });
+        continue;
+      }
       if (worker) worker.postControl(control);
       else if (runtime) void applyRuntimeSourceControl(runtime, control).catch(error => runtime?.reportError(error));
     }
+    return sourcePublication;
   };
   const renderSources = (sources: GameSourceContent) => {
     const prepared = packedContentFromGame(sources);
@@ -658,7 +693,8 @@ function initializePlayer(
       releaseRender = await handle.acquireSceneSources(renderSources(gameSourceSubset(game, source.assetGuids ?? requiredGameAssets(manifest, ids))), { prepare: true, signal: request.signal });
       request.signal.throwIfAborted();
       clearResourceFailures(requiredGameAssets(manifest, ids));
-      refreshSourceContent();
+      await refreshSourceContent();
+      request.signal.throwIfAborted();
       return () => { releaseRender?.(); source.release(); if (!halted) { refreshSourceContent(); publishAssetStates(); } };
     } catch (error) { releaseRender?.(); source.release(); throw error; }
   });
@@ -673,7 +709,8 @@ function initializePlayer(
       releaseRender = await handle.acquireSceneSources(renderSources(gameSourceSubset(game, source.assetGuids ?? requiredGameAssets(manifest, [guid]))), { prepare: true, signal: request.signal });
       request.signal.throwIfAborted();
       clearResourceFailures(requiredGameAssets(manifest, [guid]));
-      refreshSourceContent();
+      await refreshSourceContent();
+      request.signal.throwIfAborted();
       publishAssetStates();
       return { scene: source.scene, release: () => { releaseRender?.(); source.release(); if (!halted) { refreshSourceContent(); publishAssetStates(); } } };
     } catch (error) { releaseRender?.(); source.release(); if (!halted) refreshSourceContent(); throw error; }
@@ -725,7 +762,8 @@ function initializePlayer(
         request.controller.signal.throwIfAborted();
         request.release = () => { releaseRender?.(); source.release(); };
         clearResourceFailures(requiredGameAssets(manifest, ids));
-        refreshSourceContent();
+        await refreshSourceContent();
+        request.controller.signal.throwIfAborted();
         preparingPreloads.delete(preloadId);
         publishAssetStates();
         preloadResult({ preloadId, success: true, progress: 1 });
@@ -739,6 +777,12 @@ function initializePlayer(
     return true;
   };
   const onCommand = (command: { type: string } & Record<string, unknown>) => {
+    if (command.type === "assetSourcesReady") {
+      const requestId = Number(command.requestId);
+      const request = pendingSourceRequests.get(requestId);
+      if (request) { pendingSourceRequests.delete(requestId); if (command.success === true) request.resolve(); else request.reject(new Error(String(command.error ?? "Compiled Class source preparation failed."))); }
+      return;
+    }
     if (receivePreload(command)) return;
     if (sceneSources?.receive(command as never)) return;
     if (command.type === "saveStorageRequest") { saveServer.receive(command.request as import("@babylonslate/core").SaveStorageRequest); return; }

@@ -5,6 +5,42 @@ import type { CommandMessage } from "@babylonslate/bridge";
 import { createInProcessRuntime } from "./driver";
 
 describe("RuntimeDriver.executeConsoleCommand", () => {
+  it("registers command metadata without loading source and prepares only the invoked Class", async () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      classAssetGuids: { Heal: "heal-class", Unused: "unused-class" },
+      consoleCommands: [{ classId: "Heal", assetGuid: "heal-class", name: "heal", description: "Heal", category: "game", parameters: [{ name: "amount", type: "int" }] }],
+      onCommand: command => commands.push(command),
+    });
+    try {
+      expect(runtime.listConsoleCommands().some(command => command.name === "heal")).toBe(true);
+      expect(runtime.executeConsoleCommand("help").success).toBe(true);
+      expect(commands.some(command => command.type === "assetPreload")).toBe(false);
+      expect(runtime.executeConsoleCommand("heal 4").output).toContain("executeConsoleCommandAsync");
+      const operation = runtime.executeConsoleCommandAsync("heal 4");
+      const request = commands.find(command => command.type === "assetPreload");
+      if (request?.type !== "assetPreload") throw new Error("Expected on-demand command acquisition");
+      expect(request.assetGuids).toEqual(["heal-class"]);
+      await runtime.loadScripts([{ assetGuid: "heal-class", classId: "Heal", parentClassId: "BDebugCommand", anchors: [],
+        entryPoints: [{ name: "onCommandRun", event: "onCommandRun", isAsync: true }],
+        source: 'export async function onCommandRun(ctx) { await Promise.resolve(); ctx.reportCommand(true, "healed " + ctx.args.amount); }',
+      }]);
+      runtime.setAssetLoadStates([{ guid: "heal-class", state: "ready" }]);
+      runtime.notifyAssetPreloadResult({ preloadId: request.preloadId, success: true });
+      expect(await operation).toEqual({ success: true, output: "healed 4" });
+      expect(commands.at(-1)).toEqual({ type: "assetPreloadRelease", preloadId: request.preloadId });
+    } finally { runtime.stop(); }
+  });
+
+  it("settles a cold console invocation when its session stops", async () => {
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      classAssetGuids: { Cold: "cold" }, consoleCommands: [{ classId: "Cold", assetGuid: "cold", name: "cold", description: "", category: "game", parameters: [] }],
+    });
+    const operation = runtime.executeConsoleCommandAsync("cold");
+    runtime.stop();
+    expect(await operation).toMatchObject({ success: false });
+  });
+
   it("does not send renderer work for repeated quality presets, values or resets", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false,

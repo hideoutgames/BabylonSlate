@@ -45,10 +45,16 @@ export function requiredGameAssets(manifest: GameManifest, roots: readonly strin
 /** Snapshot one owner's source maps, including sidecars keyed by their owner. */
 export function gameSourceSubset(game: GameSourceContent, ids: ReadonlySet<string>): GameSourceContent {
   const keys = new Set(ids);
-  for (const id of ids) { const colon = id.indexOf(":"); if (colon >= 0) keys.add(id.slice(colon + 1)); }
+  for (const id of ids) {
+    const owner = game.manifest.assets.find(entry => entry.guid === id)?.ownerGuid;
+    const colon = id.indexOf(":");
+    if (owner) keys.add(owner);
+    else if (colon >= 0) keys.add(id.slice(colon + 1));
+  }
   const select = <T>(map: ReadonlyMap<string, T>): Map<string, T> => new Map([...map].filter(([guid]) => keys.has(guid)));
   return {
     ...game,
+    scripts: game.scripts.filter(script => keys.has(script.assetGuid)),
     ...(game.audioSourceRevisions ? { audioSourceRevisions: select(game.audioSourceRevisions) } : {}),
     ...(game.decodedPayloads ? { decodedPayloads: select(game.decodedPayloads) } : {}),
     ...(game.complexMeshes ? { complexMeshes: select(game.complexMeshes) } : {}),

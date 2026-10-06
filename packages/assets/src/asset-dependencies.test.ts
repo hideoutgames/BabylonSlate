@@ -105,4 +105,17 @@ describe("typed asset dependencies", () => {
     expect(getRequiredDependencies(readBabassetHeader(bytes))).toEqual(["fallback"]);
     expect(() => getRequiredDependencies({ guid: "old" })).toThrow(DependencyMetadataUpgradeRequiredError);
   });
+
+  it("keeps command registration and unresolved typed Class identities in catalog metadata", async () => {
+    const command = await encodeAssetDocument({ type: "Class", guid: "command", name: "Heal", version: 1, payload: {
+      nodes: [{ id: "run", type: "flow.event.commandRun", data: {
+        commandName: "heal", description: "Restore health", parameters: [{ name: "amount", type: "int" }],
+      } }], edges: [],
+    } }, { parentClass: "BDebugCommand" });
+    const header = readBabassetHeader(command);
+    expect(header.consoleCommand).toEqual({ name: "heal", description: "Restore health", category: "game", parameters: [{ name: "amount", type: "int" }] });
+    const scene = collectAssetDependencyMetadata("Scene", { actors: [{ classId: "CustomActor", components: [] }] });
+    expect(scene.requiredClassReferences).toEqual(["CustomActor"]);
+    expect(scene.requiredDependencies).toEqual([]); // Registry resolves the symbolic identity using header metadata.
+  });
 });

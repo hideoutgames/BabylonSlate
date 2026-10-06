@@ -383,6 +383,9 @@ importers:
       '@babylonslate/core':
         specifier: workspace:*
         version: link:../core
+      '@babylonslate/object-model':
+        specifier: workspace:*
+        version: link:../object-model
       '@babylonslate/particle-graph':
         specifier: workspace:*
         version: link:../particle-graph

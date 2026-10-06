@@ -137,6 +137,33 @@ describe("bounded catalog and payload loading", () => {
     loader.resetAccounting();
     await expect(loader.loadChunk(locator, selected)).rejects.toThrow("Hash mismatch");
     expect(loader.accountedPayloadBytes).toBe(0);
+    await storage.writeBinary(`assets/.blobs/${selected.sha256}`, new Uint8Array([1, 2]));
+    expect(await loader.loadChunk(locator, selected)).toEqual(new Uint8Array([1, 2]));
+    const snapshot = loader.snapshot();
+    expect(snapshot).toMatchObject({ requests: 3, succeeded: 2, failed: 1, pending: 0, accountedPayloadBytes: 2 });
+    expect(snapshot.recentRequests).toEqual([
+      { id: 1, path: locator.path, chunkId: "selected", revision: locator.revision, requestedBytes: 2, payloadBytes: 2, status: "succeeded" },
+      { id: 2, path: locator.path, chunkId: "selected", revision: locator.revision, requestedBytes: 2, payloadBytes: 2, status: "failed", error: expect.stringContaining("Hash mismatch") },
+      { id: 3, path: locator.path, chunkId: "selected", revision: locator.revision, requestedBytes: 2, payloadBytes: 2, status: "succeeded" },
+    ]);
+    snapshot.recentRequests[0]!.path = "changed-copy";
+    expect(loader.snapshot().recentRequests[0]!.path).toBe(locator.path);
+  });
+
+  it("bounds request history while preserving aggregate failure counts", async () => {
+    const storage = await fixture();
+    await storage.writeBinary("assets/inline.babasset", await encodeBabasset({ header, chunks: [chunk("source", new Uint8Array([1]))] }));
+    const { locator, header: catalog } = await readAssetCatalog(storage, "assets/inline.babasset");
+    const loader = new AccountedPayloadLoader(storage);
+    const invalid = { ...catalog.chunks[0]!, locator: { inline: { offset: locator.totalSize, length: 1 } } };
+    for (let index = 0; index < 130; index += 1) {
+      await expect(loader.loadChunk(locator, invalid)).rejects.toThrow("Invalid bounds");
+    }
+    const snapshot = loader.snapshot();
+    expect(snapshot).toMatchObject({ requests: 130, failed: 130, succeeded: 0, pending: 0, accountedPayloadBytes: 0 });
+    expect(snapshot.recentRequests).toHaveLength(128);
+    expect(snapshot.recentRequests[0]!.id).toBe(3);
+    expect(snapshot.recentRequests.at(-1)!.id).toBe(130);
   });
 
   it("rejects a revision change between reading a prefix and its header", async () => {

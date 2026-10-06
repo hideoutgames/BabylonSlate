@@ -159,12 +159,23 @@ for (const mode of ["Play", "Preview Build"] as const) {
       testHost.trimAssetSources();
       return testHost.assetLoading().sources.entries.filter((entry) => entry.assetId === guid);
     }, CHILD_GUID);
+    const sceneDocumentReads = async () => page.evaluate(() => {
+      const testHost = (globalThis as unknown as { __babylonslateTest: {
+        assetLoading: () => { chunks: { recentRequests: Array<{ path: string; chunkId: string }> } };
+      } }).__babylonslateTest;
+      return testHost.assetLoading().chunks.recentRequests.filter((entry) =>
+        entry.path === "assets/StreamedRoom.scene.babasset" && entry.chunkId === "document").length;
+    });
     await positions([PARENT_POSITION]);
-    if (mode === "Play") expect(await sceneSources()).toEqual([]);
+    if (mode === "Play") {
+      expect(await sceneSources()).toEqual([]);
+      expect(await sceneDocumentReads()).toBe(0);
+    }
     await run("stream_left_load");
     await positions([...LEFT_POSITIONS, PARENT_POSITION]);
     await run("stream_right_load");
     await positions([...LEFT_POSITIONS, PARENT_POSITION, ...RIGHT_POSITIONS]);
+    if (mode === "Play") expect(await sceneDocumentReads()).toBe(1);
     await run("stream_left_unload");
     await positions([PARENT_POSITION, ...RIGHT_POSITIONS]);
     if (mode === "Play") expect((await sceneSources()).some((entry) => entry.owners.length > 0)).toBe(true);

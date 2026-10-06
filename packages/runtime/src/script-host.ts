@@ -158,6 +158,7 @@ export interface ScriptHostServices {
   setCursorVisible?(visible: boolean): void;
   destroyActor(actor: Actor | null | undefined): void;
   executeConsoleCommand(command: string): { success: boolean; output: string };
+  executeConsoleCommandAsync?(command: string): Promise<{ success: boolean; output: string }>;
   delay(seconds: number, owner?: BObject | null): Promise<void>;
   tween?(request: TweenRequest): Promise<boolean>;
   isTweenSessionActive?(): boolean;
@@ -425,6 +426,7 @@ export interface ScriptContext {
   ): void;
   getOwner(actor: BObject | null | undefined): Actor | null;
   executeConsoleCommand(command: string): { success: boolean; output: string };
+  executeConsoleCommandAsync(command: string): Promise<{ success: boolean; output: string }>;
   delay(seconds: number): Promise<void>;
   commandArgs: Record<string, unknown>;
   /** Alias of `commandArgs` so function Input nodes can read `ctx.args`. */
@@ -662,6 +664,7 @@ type BtScriptExtras = Pick<
 >;
 
 export type ScriptExtras = Partial<BtScriptExtras> & {
+  commandResult?: { success: boolean; output: string };
   /** Staged migration state follows nested function/library calls. */
   saveMigrationData?: SaveGameMigrationData;
   animFacts?: AnimStateFacts;
@@ -671,6 +674,15 @@ export type ScriptExtras = Partial<BtScriptExtras> & {
 };
 
 export type CompiledScript = ScriptBundleEntry;
+
+/** An AnimationGraph asset may own several independently compiled Class modules. */
+export function compiledScriptKey(script: Pick<CompiledScript, "assetGuid" | "classId">): string {
+  return JSON.stringify([script.assetGuid, script.classId]);
+}
+
+export function compiledScriptSourceLabel(script: Pick<CompiledScript, "assetGuid" | "classId">): string {
+  return `${script.assetGuid}~${encodeURIComponent(script.classId)}`;
+}
 
 type LoadedScript = {
   script: CompiledScript;
@@ -684,7 +696,9 @@ type LoadedScript = {
 export class ScriptHost {
   private readonly materialReplacements = new WeakMap<BObject, Map<string, number>>();
   private readonly materialPreloads = new WeakMap<BObject, Map<string, string>>();
+  private readonly boundInterfaceKeys = new WeakMap<BObject, Set<string>>();
   private readonly byClassId = new Map<string, LoadedScript[]>();
+  private sourceGeneration = 0;
   /**
    * `scriptLineage` per class id. `hooksFor` resolves it on every tick for
    * every component and actor, so it is cached; `load` clears it, and the
@@ -738,14 +752,37 @@ export class ScriptHost {
   }
 
   async load(script: CompiledScript): Promise<void> {
-    // The class was just registered (or its parent repaired): drop lineages
-    // resolved against the previous hierarchy before the module import yields.
+    const scripts = [...this.byClassId.values()].flatMap((entries) => entries.map((entry) => entry.script));
+    await this.replaceScripts([...scripts.filter((entry) => compiledScriptKey(entry) !== compiledScriptKey(script)), script]);
+  }
+
+  /** Prepare a complete owned union, retaining the previous valid modules on failure. */
+  async replaceScripts(scripts: readonly CompiledScript[]): Promise<void> {
+    const generation = ++this.sourceGeneration;
+    const existing = new Map([...this.byClassId.values()].flat().map((entry) => [compiledScriptKey(entry.script), entry]));
+    const prepared = new Map<string, LoadedScript[]>();
+    for (const script of scripts) {
+      const previous = existing.get(compiledScriptKey(script));
+      const exports = previous?.script.source === script.source
+        ? previous.exports : await loadCompiledModule(script.source, compiledScriptSourceLabel(script));
+      if (generation !== this.sourceGeneration) throw new Error("Script preparation was superseded or disposed.");
+      const entries = prepared.get(script.classId) ?? [];
+      entries.push({ script, exports });
+      prepared.set(script.classId, entries);
+    }
+    if (generation !== this.sourceGeneration) throw new Error("Script preparation was superseded or disposed.");
+    this.byClassId.clear();
+    for (const [classId, entries] of prepared) this.byClassId.set(classId, entries);
     this.lineageByClassId.clear();
-    const exports = await loadCompiledModule(script.source, script.assetGuid);
-    const list = this.byClassId.get(script.classId) ?? [];
-    list.push({ script, exports });
-    this.byClassId.set(script.classId, list);
+    const retained = new Set(scripts.map((script) => script.assetGuid));
+    for (const key of this.orphanFlowStates.keys()) if (!retained.has(key.split("\0", 1)[0]!)) this.orphanFlowStates.delete(key);
+  }
+
+  dispose(): void {
+    ++this.sourceGeneration;
+    this.byClassId.clear();
     this.lineageByClassId.clear();
+    this.orphanFlowStates.clear();
   }
 
   classIds(): string[] {
@@ -861,6 +898,28 @@ export class ScriptHost {
     }
     this.dispatchEvent(loaded, "onCommandRun", null, 0, 0, args);
     return this.commandResult;
+  }
+
+  async invokeCommandAsync(classId: string, args: Record<string, unknown>, signal: AbortSignal): Promise<{ success: boolean; output: string }> {
+    const loaded = this.byClassId.get(classId);
+    if (!loaded?.length) return { success: false, output: `Unknown command class ${classId}` };
+    const result = { success: true, output: "" };
+    for (const entry of loaded) for (const point of entry.script.entryPoints) {
+      if (point.event !== "onCommandRun") continue;
+      const fn = entry.exports[point.name];
+      if (typeof fn !== "function") continue;
+      signal.throwIfAborted();
+      const ctx = this.createContext(null, 0, 0, args, undefined, { commandResult: result }, entry.script.assetGuid);
+      await new Promise<void>((resolve, reject) => {
+        const abort = () => reject(signal.reason ?? new Error("Console command cancelled"));
+        signal.addEventListener("abort", abort, { once: true });
+        Promise.resolve().then(() => {
+          signal.throwIfAborted();
+          return this.invokeOwned(null, () => (fn as (ctx: ScriptContext) => unknown)(ctx));
+        }).then(() => resolve(), reject).finally(() => signal.removeEventListener("abort", abort));
+      });
+    }
+    return result;
   }
 
   /**
@@ -980,6 +1039,9 @@ export class ScriptHost {
    * user ancestors are inherited; the nearest declaring class wins.
    */
   bindInterfaceHandlers(object: BObject): void {
+    for (const key of this.boundInterfaceKeys.get(object) ?? []) object.interfaceHandlers.delete(key);
+    const owned = new Set<string>();
+    this.boundInterfaceKeys.set(object, owned);
     const lineage = this.scriptLineage(object.classId);
     if (lineage.length === 0) return;
     for (const iface of object.implementedInterfaces) {
@@ -990,13 +1052,24 @@ export class ScriptHost {
             if (impl.interfaceGuid !== iface) continue;
             const exportName = impl.exportName;
             const key = interfaceHandlerKey(iface, impl.method);
-            object.interfaceHandlers.set(key, (args) =>
-              this.invokeInterfaceHandler(object, loaded, entry, exportName, args),
-            );
+            owned.add(key);
+            object.interfaceHandlers.set(key, this.boundInterfaceHandler(object, entry.script.assetGuid, entry.script.classId, exportName));
           }
         }
       }
     }
+  }
+
+  private boundInterfaceHandler(object: BObject, assetGuid: string, classId: string, exportName: string): (args: Record<string, unknown>) => Record<string, unknown> {
+    // Keep only identities in the live object's callback; a revised module
+    // must not stay rooted through an older interface binding.
+    return (args) => {
+      for (const loaded of this.scriptLineage(object.classId)) {
+        const entry = loaded.find((candidate) => candidate.script.assetGuid === assetGuid && candidate.script.classId === classId);
+        if (entry) return this.invokeInterfaceHandler(object, loaded, entry, exportName, args);
+      }
+      return {};
+    };
   }
 
   /**
@@ -1216,7 +1289,8 @@ export class ScriptHost {
       flowState: (nodeId: string) =>
         this.flowStateFor(self, String(nodeId), flowNamespace),
       reportCommand: (success, output) => {
-        this.commandResult = { success: Boolean(success), output: String(output) };
+        if (extras?.commandResult) Object.assign(extras.commandResult, { success: Boolean(success), output: String(output) });
+        else this.commandResult = { success: Boolean(success), output: String(output) };
       },
       formatValue: (value) => formatValue(value),
       checkInfiniteLoop: () => {
@@ -1565,6 +1639,11 @@ export class ScriptHost {
       getOwner: (actor) => readActorLink(services, actor, "ownerId"),
       executeConsoleCommand: (command) =>
         services.executeConsoleCommand(command),
+      executeConsoleCommandAsync: async (command) => {
+        const result = await (services.executeConsoleCommandAsync?.(String(command ?? "")) ?? services.executeConsoleCommand(String(command ?? "")));
+        if (self?.destroyed) throw Object.assign(new Error("The console command caller was destroyed"), { name: "AbortError" });
+        return result;
+      },
       delay: (seconds) => services.delay(seconds, self),
       callInterface: (target, interfaceGuid, method, args) => {
         const receiver = (target ?? self) as InterfaceDispatchTarget | null;

@@ -1,4 +1,4 @@
-import { err, ok, DEFAULT_LOOP_COUNT, DEFAULT_SORTING_LAYERS, normalizePlayFrameCap, normalizeRenderProjectSettings, normalizeFocusNavigationSettings, renderEffectsAssetGuids, type Result } from "@babylonslate/core";
+import { err, ok, DEFAULT_LOOP_COUNT, DEFAULT_SORTING_LAYERS, normalizePlayFrameCap, normalizeRenderProjectSettings, normalizeFocusNavigationSettings, renderEffectsAssetGuids, consoleCommandMetadataFromGraph, type Result } from "@babylonslate/core";
 import { collectAssetDependencyMetadata, extractPackedModelAsset, peekPackedAudioPayload, sha256Hex, PARTICLE_ASSET_TYPES, type AssetDependencyClass } from "@babylonslate/assets";
 import { zipSync, unzipSync } from "fflate";
 import {
@@ -7,7 +7,7 @@ import {
   GAME_MANIFEST_FILE,
   SCRIPTS_FILE,
 } from "./constants";
-import { concatenateScripts, serializeScriptRegistry } from "./scripts";
+import { serializeScriptRegistry } from "./scripts";
 import { selectPlayerRuntimeFiles } from "./player-files";
 import type {
   ExportArtifact,
@@ -77,7 +77,11 @@ function indexEntry(
     guid: asset.guid,
     type: asset.type,
     encoding: encodingFor(asset),
+    ...(asset.classId ? { classId: asset.classId } : {}),
+    ...(asset.ownerGuid ? { ownerGuid: asset.ownerGuid } : {}),
+    ...(asset.parentClass ? { parentClass: asset.parentClass } : {}),
     ...(asset.name ? { name: asset.name } : {}),
+    ...(asset.consoleCommand ? { consoleCommand: asset.consoleCommand } : {}),
     ...(typeof asset.width === "number" &&
     asset.width > 0 &&
     typeof asset.height === "number" &&
@@ -170,7 +174,7 @@ function dependencyCatalog(assets: readonly ExportAssetBytes[]): ExportAssetByte
   };
   const classes: AssetDependencyClass[] = assets.filter(asset => asset.type === "Class" || asset.type === "Graph").map(asset => {
     const payload = document(asset);
-    return { guid: asset.guid, classId: asset.name ?? asset.guid, parentClassId: asset.parentClass,
+    return { guid: asset.guid, classId: asset.classId ?? asset.name ?? asset.guid, parentClassId: asset.parentClass,
       members: Array.isArray(payload?.members) ? payload.members as AssetDependencyClass["members"] : undefined,
       requiredVariableNames: asset.requiredVariableNames };
   });
@@ -189,7 +193,7 @@ function dependencyCatalog(assets: readonly ExportAssetBytes[]): ExportAssetByte
   for (const asset of assets) {
     const separator = asset.guid.indexOf(":");
     if (separator < 0) continue;
-    const owner = asset.guid.slice(separator + 1);
+    const owner = asset.ownerGuid ?? asset.guid.slice(separator + 1);
     if (!byId.has(owner)) continue;
     const list = sidecars.get(owner) ?? [];
     list.push(asset.guid);
@@ -198,6 +202,8 @@ function dependencyCatalog(assets: readonly ExportAssetBytes[]): ExportAssetByte
   return assets.map(asset => {
     let required = asset.requiredDependencies;
     let dependencies = asset.dependencies;
+    let classReferences = asset.classReferences;
+    let requiredClassReferences = asset.requiredClassReferences;
     if (!required) {
       let payload: unknown;
       if (asset.type === "Model") payload = extractPackedModelAsset(asset.bytes).payload;
@@ -209,11 +215,18 @@ function dependencyCatalog(assets: readonly ExportAssetBytes[]): ExportAssetByte
         });
         required = metadata.requiredDependencies;
         dependencies = metadata.dependencies;
+        classReferences = metadata.classReferences;
+        requiredClassReferences = metadata.requiredClassReferences;
       }
     }
     const resolve = (refs: readonly string[]) => [...new Set(refs.map(ref => byId.has(ref) ? ref : byName.get(ref) ?? ref))];
-    return { ...asset, dependencies: resolve([...(dependencies ?? []), ...(sidecars.get(asset.guid) ?? [])]),
-      requiredDependencies: resolve([...(required ?? []), ...(asset.type === "Font" ? [] : sidecars.get(asset.guid) ?? [])]) };
+    const resolveClasses = (refs: readonly string[] = []) => refs.flatMap(ref => {
+      const match = classes.find(entry => entry.guid === ref || entry.classId === ref || `scene:${entry.guid}` === ref);
+      return match ? [match.guid] : [];
+    });
+    const consoleCommand = asset.consoleCommand ?? (["Class", "Graph"].includes(asset.type) ? consoleCommandMetadataFromGraph(document(asset)) : undefined);
+    return { ...asset, consoleCommand, dependencies: resolve([...(dependencies ?? []), ...resolveClasses(classReferences), ...(sidecars.get(asset.guid) ?? [])]),
+      requiredDependencies: resolve([...(required ?? []), ...resolveClasses(requiredClassReferences), ...(asset.type === "Font" ? [] : sidecars.get(asset.guid) ?? [])]) };
   });
 }
 
@@ -243,14 +256,30 @@ export async function exportGame(
     }
   }
 
-  const bundled = concatenateScripts(options.scripts);
-  const registry = serializeScriptRegistry(options.scripts);
-  const scriptsFile =
-    bundled.source.length > 0 ? `${bundled.source}\n${registry}` : registry;
-  files.set(SCRIPTS_FILE, encoder.encode(scriptsFile));
+  // Keep the historical bootstrap filename without eagerly shipping every
+  // compiled Class source inside it. Class code has the same scoped ownership
+  // and independently addressed source contract as other required sidecars.
+  files.set(SCRIPTS_FILE, encoder.encode(serializeScriptRegistry([])));
+  const scriptByAsset = new Map(options.scripts.map(script => [script.assetGuid, script]));
+  const sourceAssets: ExportAssetBytes[] = options.assets.map(asset => {
+    const script = scriptByAsset.get(asset.guid);
+    return script && ["Class", "Graph"].includes(asset.type) ? { ...asset, classId: script.classId, parentClass: script.parentClassId ?? asset.parentClass,
+      consoleCommand: script.command ?? asset.consoleCommand } : asset;
+  });
+  for (const script of options.scripts) {
+    let owner = sourceAssets.find(asset => asset.guid === script.assetGuid);
+    if (!owner) {
+      owner = { guid: script.assetGuid, type: "Class", classId: script.classId, name: script.classId,
+        parentClass: script.parentClassId, consoleCommand: script.command, sceneGuid: options.startupSceneGuid,
+        bytes: encoder.encode(JSON.stringify({ components: script.components ?? [] })), encoding: "json" };
+      sourceAssets.push(owner);
+    }
+    sourceAssets.push({ guid: `script:${script.assetGuid}:${encodeURIComponent(script.classId)}`, ownerGuid: script.assetGuid, type: "CompiledScript", classId: script.classId,
+      sceneGuid: owner.sceneGuid, encoding: "json", bytes: encoder.encode(JSON.stringify(script)), requiredDependencies: [] });
+  }
 
   const projectAssetGuids = new Set(renderEffectsAssetGuids(options.renderSettings?.effects));
-  const prepared = dependencyCatalog(options.assets).map(asset => ({ ...asset,
+  const prepared = dependencyCatalog(sourceAssets).map(asset => ({ ...asset,
     startupRequired: asset.startupRequired || projectAssetGuids.has(asset.guid) || asset.guid === options.audioMixerGuid ||
       asset.guid === options.gameInstanceClass || (!!options.gameInstanceClass && asset.name === options.gameInstanceClass) || asset.type === "InputAction" || asset.type === "InputAxis",
   }));

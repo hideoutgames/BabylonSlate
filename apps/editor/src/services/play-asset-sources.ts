@@ -1,7 +1,7 @@
 import { areaEmissionTextureGuids, normalizeScene, normalizeSceneLayer, parseText2DProperties, renderEffectsAssetGuids, type ProjectDocument } from "@babylonslate/core";
 import {
   AUDIO_DEFAULT_SOURCE_CHUNK, FONT_FACETYPE_CHUNK_ID, FONT_MSDF_CHUNK_ID, FONT_MSDF_PNG_CHUNK_ID,
-  cookComplexCollisionMeshes, currentAreaEmissionChunk, decodeAreaEmission, getRequiredDependencies, modelAnimationDurations, normalizeAudioPayload, normalizeFontPayload, normalizeModelPayload,
+  cookComplexCollisionMeshes, currentAreaEmissionChunk, decodeAreaEmission, modelAnimationDurations, normalizeAudioPayload, normalizeFontPayload, normalizeModelPayload,
   registryAssetRepresentation, selectTextureChunk, type AssetLoadScope, type AssetRegistry,
   type IndexedAsset, type RegistryLoadedAsset,
 } from "@babylonslate/assets";
@@ -9,6 +9,7 @@ import { packedContentFromGame, packedPlayControls, packedSourceControls, type G
 import type { SceneSourceAssets } from "@babylonslate/render";
 import type { ControlMessage, ScriptBundleEntry } from "@babylonslate/bridge";
 import type { Diagnostic } from "@babylonslate/scripting";
+import { classIdFromClassAsset } from "../lib/content-browser-helpers";
 
 export interface PlayAssetSourceHost {
   registry: AssetRegistry;
@@ -27,7 +28,7 @@ export function requiredPlayAssets(registry: AssetRegistry, roots: readonly stri
     const asset = registry.getByGuid(guid);
     if (!asset || asset.placeholder) throw new Error(`Required asset is missing: ${guid}`);
     result.add(guid);
-    pending.push(...getRequiredDependencies(asset.header));
+    pending.push(...registry.requiredDependenciesFor(guid, asset.header));
   }
   return result;
 }
@@ -45,7 +46,7 @@ async function currentRequiredPlayAssets(registry: AssetRegistry, roots: readonl
     const asset = registry.getByGuid(guid);
     if (!asset || asset.placeholder || asset.locator !== locator) throw new Error(`Required asset changed while resolving: ${guid}`);
     revisions.set(guid, locator.revision);
-    pending.push(...getRequiredDependencies(asset.header));
+    pending.push(...registry.requiredDependenciesFor(guid, asset.header));
   }
   return revisions;
 }
@@ -62,10 +63,27 @@ function cancellableCatalogRead<T>(read: Promise<T>, signal: AbortSignal): Promi
 export function requiredProjectAssets(registry: AssetRegistry, project: ProjectDocument): string[] {
   const settings = project.settings;
   const roots = [settings.audio.audioMixerGuid, ...renderEffectsAssetGuids(settings.render.effects)];
+  const classes = registry.list().filter(asset => asset.header.type === "Class" || asset.header.type === "Graph");
+  const byId = new Map(classes.flatMap(asset => [[classIdFromClassAsset(asset), asset], [asset.header.guid, asset]] as const));
   const classId = settings.gameInstanceClass;
-  const asset = classId ? registry.list().find(({ header }) => header.guid === classId || `scene:${header.guid}` === classId) : undefined;
+  const asset = classId ? byId.get(classId) : undefined;
   if (asset) roots.push(asset.header.guid);
-  return roots.filter((guid): guid is string => Boolean(guid));
+  const subsystemClasses = classes.filter(asset => {
+    const seen = new Set<string>();
+    let parent = asset.header.parentClass;
+    while (parent && !seen.has(parent)) {
+      if (parent === "GameSubsystem" || parent === "SceneSubsystem") return true;
+      seen.add(parent);
+      parent = byId.get(parent)?.header.parentClass;
+    }
+    return false;
+  });
+  const parents = new Set(subsystemClasses.flatMap(asset => {
+    const parent = asset.header.parentClass && byId.get(asset.header.parentClass);
+    return parent ? [parent.header.guid] : [];
+  }));
+  for (const subsystem of subsystemClasses) if (!parents.has(subsystem.header.guid)) roots.push(subsystem.header.guid);
+  return [...new Set(roots.filter((guid): guid is string => Boolean(guid)))];
 }
 
 function selectedChunks(asset: IndexedAsset, payload: Record<string, unknown>, fonts: ReadonlyMap<string, ReadonlySet<string>>, emissions: ReadonlySet<string>): string[] {
@@ -102,6 +120,7 @@ export async function acquirePlayAssetSources(
   const audioRevisions = new Map<string, string>();
   const complexMeshes: PackedGameContent["complexMeshes"] = new Map();
   const durations = new Map<string, ReadonlyMap<string, number | undefined>>();
+  const controls: ControlMessage[] = [];
   const game: GameSourceContent = {
     manifest: {
       assetCatalogVersion: 1, startupSceneGuid: roots.find((id) => host.registry.getByGuid(id)?.header.type === "Scene") ?? "",
@@ -124,6 +143,8 @@ export async function acquirePlayAssetSources(
     scope.dispose();
     audioChunks.clear();
     audioRevisions.clear();
+    game.scripts = [];
+    controls.length = 0;
     for (const value of Object.values(game)) if (value instanceof Map) value.clear();
   };
   try {
@@ -275,12 +296,33 @@ export async function acquirePlayAssetSources(
       if (reverb) game.audioReverbBytes.set(guid, reverb);
       options.onProgress?.({ completed: ++completed, total: required.size });
     }
-    const compiled = await host.compile(required);
+    const root = roots[0] ?? required.values().next().value;
+    const compileInputs = revisions.filter(([guid]) => COMPILE_INPUT_TYPES.has(host.registry.getByGuid(guid)!.header.type))
+      .sort(([a], [b]) => a.localeCompare(b));
+    const compileRoot = compileInputs.find(([guid]) => SCRIPT_ASSET_TYPES.has(host.registry.getByGuid(guid)!.header.type))?.[0] ?? root;
+    const compileInputBytes = compileInputs.reduce((total, [guid]) => total + JSON.stringify(documents.get(guid)!.document.payload).length * 2, 0);
+    const compiled = compileRoot ? await scope.acquire(compileRoot, {
+      key: `play-scripts:v1:${JSON.stringify([compileInputs, host.registry.generation,
+        project.settings.tags, project.settings.infiniteLoopDetection, project.settings.loopCount])}`,
+      estimate: { sourceBytes: 0, decodedBytes: Math.max(4096, compileInputBytes * 8), temporaryBytes: Math.max(4096, compileInputBytes * 4) },
+      load: async (_asset, signal) => {
+        signal.throwIfAborted();
+        const result = await host.compile(required);
+        signal.throwIfAborted();
+        for (const [guid, revision] of compileInputs) {
+          if ((await host.registry.getAssetLocator(guid)).revision !== revision) throw new Error(`Class compilation input ${guid} changed; retry`);
+        }
+        const value = { bundles: [...result.bundles], diagnostics: [...result.diagnostics] };
+        return {
+          value, sourceBytes: 0, decodedBytes: JSON.stringify(value).length * 2,
+          dispose: () => { value.bundles.length = 0; value.diagnostics.length = 0; },
+        };
+      },
+    }, { signal: options.signal, dependencies: "none" }) : { bundles: [], diagnostics: [] };
     const failure = compiled.diagnostics.find((entry) => entry.severity === "error");
     if (failure && !options.allowCompileErrors) throw new Error(failure.message);
     game.scripts = compiled.bundles;
     options.signal.throwIfAborted();
-    const root = roots[0] ?? required.values().next().value;
     const cpuBytes = documentBytes * 8;
     const content = root ? await scope.acquire(root, {
       key: `play-content:${JSON.stringify([revisions.sort(([a], [b]) => a.localeCompare(b)), [...fontModes].sort(([a], [b]) => a.localeCompare(b)).map(([guid, modes]) => [guid, [...modes].sort()]), project.settings.fonts, project.settings.twoD, project.settings.audio.audioMixerGuid])}`,
@@ -312,7 +354,7 @@ export async function acquirePlayAssetSources(
       particleLibrary: content.particleLibrary, audioLibrary: content.audioLibrary,
       fonts: [...game.fontBytes].map(([guid, bytes]) => ({ guid, family: game.fontFamilies.get(guid) ?? guid, bytes: bytes.slice().buffer })),
     };
-    const controls = packedPlayControls(content).filter((control) => control.type !== "loadNavMesh");
+    controls.push(...packedPlayControls(content).filter((control) => control.type !== "loadNavMesh"));
     if (game.scripts.length) controls.unshift({ type: "loadScripts", scripts: game.scripts });
     return { game, content, sources, controls, required, audioChunks, diagnostics: compiled.diagnostics, release };
   } catch (error) {
@@ -320,6 +362,9 @@ export async function acquirePlayAssetSources(
     throw new Error(`Asset preparation for ${options.consumer} failed: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }
 }
+
+const SCRIPT_ASSET_TYPES = new Set(["Class", "Graph", "AnimationGraph"]);
+const COMPILE_INPUT_TYPES = new Set([...SCRIPT_ASSET_TYPES, "InputAction", "InputAxis", "DataDefinition", "DataTree", "Enum", "Structure", "ScriptInterface"]);
 
 /** Drop cache-owned containers without mutating authored payload objects. */
 function releasePackedContent(content: PackedGameContent): void {
@@ -352,13 +397,12 @@ export function mergePreparedPlaySources(entries: Iterable<PreparedPlaySources>)
     mergeContainers(content.particleLibrary, next.content.particleLibrary);
   }
   const controls = packedSourceControls(game, content);
-  if (game.scripts.length) controls.unshift({ type: "loadScripts", scripts: game.scripts });
   return { game, content, controls };
 }
 
 export function emptyPlaySourceControls(): ControlMessage[] {
   return [
-    { type: "loadScripts", scripts: [] },
+    { type: "loadScripts", scripts: [], spawn: [], replace: true },
     { type: "loadSceneContent", assetGuids: [] },
     { type: "loadModels", models: [], complexMeshes: [] },
     { type: "loadSprites", sprites: [], spriteAnimations: [] },

@@ -288,6 +288,21 @@ describe("player startup and Stop ownership", () => {
     await vi.waitFor(() => expect(worker.messages).toContainEqual({ channel: "control", payload: { type: "assetPreloadResult", preloadId: "retry", success: true, progress: 1 } }));
     expect(state()).toBe("ready");
   });
+  it("waits for worker Class registration before completing a cold preload", async () => {
+    const { game, canvas } = await fixture();
+    const script = { assetGuid: "prefab", classId: "Prefab", source: "export function onBeginPlay() {}", anchors: [], entryPoints: [] };
+    game.acquireAssets = async () => { game.scripts.push(script); return { release() {} }; };
+    sessions.push(startPlayer({ game, canvas }));
+    const worker = TestWorker.instances[0]!;
+    worker.command({ channel: "command", payload: { type: "assetPreload", preloadId: "cold", ownerId: "actor", assetGuids: ["world"] } });
+    await vi.waitFor(() => expect(worker.messages.some(message => message.channel === "control" && message.payload.type === "loadScripts" && message.payload.replace === true)).toBe(true));
+    const message = worker.messages.find(message => message.channel === "control" && message.payload.type === "loadScripts" && message.payload.replace === true);
+    if (message?.channel !== "control" || message.payload.type !== "loadScripts") throw new Error("Class source request was not sent");
+    expect(message.payload.scripts).toEqual([script]);
+    expect(worker.messages).not.toContainEqual({ channel: "control", payload: { type: "assetPreloadResult", preloadId: "cold", success: true, progress: 1 } });
+    worker.command({ channel: "command", payload: { type: "assetSourcesReady", requestId: message.payload.requestId!, success: true } });
+    await vi.waitFor(() => expect(worker.messages).toContainEqual({ channel: "control", payload: { type: "assetPreloadResult", preloadId: "cold", success: true, progress: 1 } }));
+  });
   it.each([false, true])("loads the same Water definition into rendering and simulation (fallback=%s)", async (fallbackMode) => {
     const { game, canvas } = await fixture(true);
     TestWorker.failPost = fallbackMode;

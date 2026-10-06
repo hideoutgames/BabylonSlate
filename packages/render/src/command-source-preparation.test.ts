@@ -132,8 +132,8 @@ describe("cold command source preparation", () => {
       outline: 0, outlineColor: [0, 0, 0], alignment: "left", verticalAlignment: "top",
       bold: false, italic: false, underline: false, wrapWidth: 0, wrapHeight: 0,
     };
-    preparation.receive({ type: "assignMesh", slotId: 7, text2d }, () => undefined);
-    preparation.receive({ type: "assignMesh", slotId: 7, text2d: { ...text2d, renderer: "msdf" } }, () => undefined);
+    preparation.receive({ type: "assignMesh", slotId: 7, meshAssetGuid: null, text2d }, () => undefined);
+    preparation.receive({ type: "assignMesh", slotId: 7, meshAssetGuid: null, text2d: { ...text2d, renderer: "msdf" } }, () => undefined);
     first.resolve(() => undefined);
     await preparation.whenReady([7]);
     expect(received.map(value => value.modes)).toEqual([["bitmap"], ["msdf"]]);

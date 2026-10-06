@@ -1,5 +1,7 @@
 import {
   areaEmissionTextureGuids,
+  consoleCommandMetadataFromGraph,
+  type ConsoleCommandMetadata,
   assetVariableGuidsFromGraph,
   isLegacyMaterialAssetType,
   materialParameterTextureGuidsFromGraph,
@@ -34,6 +36,10 @@ export interface AssetDependencyMetadata {
   dependencies: string[];
   /** Only resources needed to prepare this consumer now. */
   requiredDependencies: string[];
+  /** Typed Class identities can be resolved from a catalog when no GUID context was supplied. */
+  classReferences?: string[];
+  requiredClassReferences?: string[];
+  consoleCommand?: ConsoleCommandMetadata;
   /** Class property keys required by synchronous graph consumers. */
   requiredVariableNames?: string[];
 }
@@ -142,6 +148,8 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
   const all = new Set<string>();
   const required = new Set<string>();
   const requiredVariableNames = new Set<string>();
+  const classReferences = new Set<string>();
+  const requiredClassReferences = new Set<string>();
   const add = (value: unknown, needed = true): void => {
     if (typeof value !== "string" || !value.trim() || value.startsWith("engine:")) return;
     const guid = value.trim();
@@ -153,10 +161,13 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
   const classes = context.classes ?? [];
   const classMap = new Map(classes.flatMap(entry => [[entry.guid, entry], [entry.classId, entry]] as const));
   const addClass = (id: unknown, needed = true): void => {
-    if (typeof id !== "string") return;
-    const entry = classMap.get(id);
+    if (typeof id !== "string" || !id.trim()) return;
+    id = id.trim();
+    classReferences.add(id as string);
+    if (needed) requiredClassReferences.add(id as string);
+    const entry = classMap.get(id as string);
     if (entry) add(entry.guid, needed);
-    else if (id.startsWith("scene:")) add(id.slice(6), needed);
+    else if ((id as string).startsWith("scene:")) add((id as string).slice(6), needed);
   };
 
   const typeValue = (type: unknown, value: unknown, needed = false, seen = new Set<string>(), schemaNeeded = true): void => {
@@ -409,5 +420,7 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
   else if (assetType === "ScriptInterface") for (const method of rows(payload.methods)) for (const pin of rows(method.pins)) typeValue(memberType(pin), undefined, false);
   else if (assetType === "PluginSettings") for (const dependency of rows(payload.pluginDependencies)) add(dependency.guid);
   return { dependencyMetadataVersion: ASSET_DEPENDENCY_METADATA_VERSION, dependencies: [...all].sort(), requiredDependencies: [...required].sort(),
+    classReferences: [...classReferences].sort(), requiredClassReferences: [...requiredClassReferences].sort(),
+    ...(["Class", "Graph"].includes(assetType) ? { consoleCommand: consoleCommandMetadataFromGraph(payload) } : {}),
     ...(["Class", "Graph"].includes(assetType) ? { requiredVariableNames: [...requiredVariableNames].sort() } : {}) };
 }

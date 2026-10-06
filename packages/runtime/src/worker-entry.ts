@@ -38,6 +38,7 @@ let sceneSources = createSceneSourceClient(onCommand);
 let saveStorage = createSaveStorageClient((request) => onCommand({ type: "saveStorageRequest", request }));
 const boot = createPlayBootCoordinator();
 let bootGeneration = 0;
+let consoleQueue = Promise.resolve();
 const sceneSnapshots = createSceneSnapshotDelivery({
   publishSnapshot: () => publishSnapshot(),
   send: (command) => postMessage({ channel: "command", payload: command }),
@@ -121,7 +122,13 @@ function handleControl(msg: ControlMessage): void {
     }
     case "loadScripts": {
       const rt = ensureRuntime();
-      boot.queueScripts(rt, msg.scripts, msg.spawn ?? []);
+      void boot.queueScripts(rt, msg.scripts, msg.spawn ?? [], msg.replace).then(() => {
+        if (msg.requestId !== undefined) onCommand({ type: "assetSourcesReady", requestId: msg.requestId,
+          success: runtime === rt, ...(runtime !== rt ? { error: "Runtime changed during script preparation." } : {}) });
+      }, (error: unknown) => {
+        if (msg.requestId !== undefined) onCommand({ type: "assetSourcesReady", requestId: msg.requestId,
+          success: false, error: error instanceof Error ? error.message : String(error) });
+      });
       return;
     }
     case "loadAnimGraphs": {
@@ -256,11 +263,14 @@ function handleControl(msg: ControlMessage): void {
       pauseGate.setPaused(msg.paused);
       return;
     case "console": {
-      const result = ensureRuntime().executeConsoleCommand(msg.line);
-      onCommand({
-        type: "consoleResult",
-        success: result.success,
-        output: result.output,
+      const rt = ensureRuntime();
+      const generation = bootGeneration;
+      // Hosts correlate replies in control-channel order while reads stay async.
+      consoleQueue = consoleQueue.then(async () => {
+        const result = await rt.executeConsoleCommandAsync(msg.line);
+        if (runtime === rt && generation === bootGeneration) onCommand({ type: "consoleResult", ...result });
+      }).catch(error => {
+        if (runtime === rt && generation === bootGeneration) onCommand({ type: "consoleResult", success: false, output: String(error) });
       });
       return;
     }

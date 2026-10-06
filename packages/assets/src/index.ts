@@ -56,6 +56,7 @@ export * from "./extension-host";
 export * from "./extension-package";
 export * from "./starter-content";
 export * from "./registry";
+export * from "./catalog-class-dependencies";
 export * from "./mtime-diff";
 export * from "./search-index";
 export * from "./templates";

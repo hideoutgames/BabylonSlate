@@ -134,16 +134,51 @@ export async function loadGameFromFiles(
   const entries = new Map(manifest.assets.map(entry => [entry.guid, entry]));
   for (const entry of manifest.assets) if (entry.type === "Font") fontFamilies.set(entry.guid, entry.name?.trim() || entry.guid);
   const projectId = options.baseUrl ?? `memory-export:${manifest.project?.name ?? "game"}`;
+  async function readResponse(entry: GameAssetIndexEntry, response: Response): Promise<Uint8Array> {
+    readMetrics.operations++;
+    readMetrics.fullReads++;
+    readMetrics.requestedBytes += entry.byteLength ?? 0;
+    const expected = entry.byteLength;
+    const length = response.headers.get("Content-Length");
+    if (expected !== undefined && length !== null && !response.headers.has("Content-Encoding") && Number(length) !== expected) {
+      await response.body?.cancel();
+      throw new Error(`Asset ${entry.guid} has a corrupt response length (expected ${expected}, received ${length}).`);
+    }
+    if (expected === undefined || !response.body) {
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      readMetrics.actualBytesRead += bytes.byteLength;
+      if (expected === undefined) readMetrics.requestedBytes += bytes.byteLength;
+      return bytes;
+    }
+    const reader = response.body.getReader();
+    const bytes = new Uint8Array(expected);
+    let offset = 0;
+    try {
+      while (true) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        readMetrics.actualBytesRead += chunk.value.byteLength;
+        if (offset + chunk.value.byteLength > expected) throw new Error(`Asset ${entry.guid} exceeds its catalog byte length (${expected}).`);
+        bytes.set(chunk.value, offset);
+        offset += chunk.value.byteLength;
+      }
+      if (offset !== expected) throw new Error(`Asset ${entry.guid} has a corrupt response length (expected ${expected}, received ${offset}).`);
+      return bytes;
+    } catch (error) { await reader.cancel().catch(() => {}); throw error; }
+    finally { reader.releaseLock(); }
+  }
   async function read(entry: GameAssetIndexEntry, signal: AbortSignal): Promise<Uint8Array> {
     signal.throwIfAborted();
     let bytes: Uint8Array;
+    let accounted = false;
     const inMemory = entry.path ? files.get(entry.path) : undefined;
     if (inMemory) bytes = inMemory;
     else if (entry.path && options.readFile) bytes = await options.readFile(entry.path, signal);
     else if (entry.path && options.fetchImpl && options.baseUrl) {
       const response = await options.fetchImpl(new URL(entry.path, options.baseUrl).href, { signal });
       if (!response.ok) throw new Error(`Asset ${entry.guid} is missing (${entry.path}, HTTP ${response.status}).`);
-      bytes = new Uint8Array(await response.arrayBuffer());
+      accounted = true;
+      bytes = await readResponse(entry, response);
     } else if (entry.pack) {
       let source = packSources.get(entry.pack);
       if (!source) {
@@ -152,7 +187,7 @@ export async function loadGameFromFiles(
       }
       bytes = await source.read(entry.guid);
     } else throw new Error(`Missing bytes for asset ${entry.guid}.`);
-    if (!entry.pack) { readMetrics.operations++; readMetrics.fullReads++; readMetrics.requestedBytes += entry.byteLength ?? bytes.byteLength; readMetrics.actualBytesRead += bytes.byteLength; }
+    if (!entry.pack && !accounted) { readMetrics.operations++; readMetrics.fullReads++; readMetrics.requestedBytes += entry.byteLength ?? bytes.byteLength; readMetrics.actualBytesRead += bytes.byteLength; }
     signal.throwIfAborted();
     if (entry.byteLength !== undefined && bytes.byteLength !== entry.byteLength) throw new Error(`Asset ${entry.guid} has a corrupt length.`);
     if (entry.revision && await sha256Hex(bytes) !== entry.revision) throw new Error(`Asset ${entry.guid} has a corrupt revision.`);
@@ -189,6 +224,11 @@ export async function loadGameFromFiles(
     else if (entry.type === "Audio") {
       const value = peekPackedAudioPayload(bytes) ?? normalizeAudioPayload({});
       install = () => { audioPayloads.set(entry.guid, value); };
+    } else if (entry.type === "CompiledScript") {
+      const value = document as Partial<ScriptBundleEntry> | undefined;
+      if (!value || typeof value.assetGuid !== "string" || typeof value.classId !== "string" || typeof value.source !== "string" || !Array.isArray(value.anchors) || !Array.isArray(value.entryPoints))
+        throw new Error(`Compiled Class ${entry.guid} has invalid script metadata.`);
+      install = () => { const index = scripts.findIndex(script => script.assetGuid === value.assetGuid && script.classId === value.classId); if (index >= 0) scripts[index] = value as ScriptBundleEntry; else scripts.push(value as ScriptBundleEntry); };
     } else if (entry.type === NAVMESH_EXPORT_TYPE) install = () => { navmeshBytes.set(sceneGuidFromNavmeshExport(entry.guid) ?? entry.guid, bytes); };
     else if (entry.type === AUDIO_REVERB_EXPORT_TYPE) install = () => { audioReverbBytes.set(sceneGuidFromAudioReverbExport(entry.guid) ?? entry.guid, bytes); };
     return { bytes, decodedBytes, document, publish: () => { payloads.set(entry.guid, bytes); if (document !== undefined) decodedPayloads.set(entry.guid, document); install(); } };
@@ -224,6 +264,10 @@ export async function loadGameFromFiles(
     if (payloads.get(entry.guid) !== bytes) return;
     if (!notificationPending) { notificationPending = true; queueMicrotask(() => { notificationPending = false; for (const listener of sourceListeners) listener(); }); }
     payloads.delete(entry.guid);
+    if (entry.type === "CompiledScript") {
+      const index = scripts.findIndex(script => script.assetGuid === entry.ownerGuid && script.classId === entry.classId);
+      if (index >= 0) scripts.splice(index, 1);
+    }
     decodedPayloads.delete(entry.guid);
     complexMeshes.delete(entry.guid);
     durations.delete(entry.guid);

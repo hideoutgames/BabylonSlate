@@ -316,6 +316,8 @@
   display: flex;
   height: 22px;
   flex-shrink: 0;
+  /* The status bar itself provides clearance at the bottom of the frame. */
+  margin-bottom: calc(-1 * var(--safe-bottom));
   align-items: center;
   justify-content: space-between;
   gap: 12px;

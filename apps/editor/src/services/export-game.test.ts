@@ -20,9 +20,14 @@ import {
   parseScriptRegistry,
 } from "@babylonslate/exporter";
 import { collectAndExportGame, resolveExportPluginGraph } from "./export-game";
-import type { ExportIndexedAsset } from "@babylonslate/exporter";
+import type { ExportIndexedAsset, ExportArtifact } from "@babylonslate/exporter";
 // Collect the real compiler with the suite so cold transforms are not timed as export work.
 import "./script-compiler";
+
+function compiledScripts(artifact: ExportArtifact): ReturnType<typeof parseScriptRegistry> {
+  return artifact.manifest.assets.filter(asset => asset.type === "CompiledScript").map(asset =>
+    JSON.parse(new TextDecoder().decode(artifact.files.get(asset.path!))));
+}
 
 function asset(
   partial: Partial<ExportIndexedAsset> &
@@ -122,8 +127,11 @@ describe("collectAndExportGame", () => {
     });
     expect(result.ok).toBe(true);
     if (!isOk(result)) return;
-    const scripts = parseScriptRegistry(new TextDecoder().decode(result.value.files.get("scripts.js")));
+    const scripts = compiledScripts(result.value);
     expect(scripts.map((script) => script.classId).sort()).toEqual(["SpawnBase", "SpawnChild", "main"]);
+    expect(scripts.find(script => script.classId === "SpawnChild")?.assetGuid).toBe("class-child");
+    const childSource = result.value.manifest.assets.find(asset => asset.type === "CompiledScript" && asset.ownerGuid === "class-child")!;
+    expect(result.value.manifest.assets.find(asset => asset.guid === "class-child")?.requiredDependencies).toContain(childSource.guid);
     expect(scripts.find((script) => script.classId === "SpawnChild")?.components).toEqual([
       { ...mesh, inheritedFrom: "SpawnBase" },
       childCollider,
@@ -160,7 +168,7 @@ describe("collectAndExportGame", () => {
     });
     expect(result.ok).toBe(true);
     if (!isOk(result)) return;
-    const scripts = parseScriptRegistry(new TextDecoder().decode(result.value.files.get("scripts.js")));
+    const scripts = compiledScripts(result.value);
     expect(
       scripts.map((script) => [script.classId, script.parentClassId]).sort(),
     ).toEqual([
@@ -170,7 +178,7 @@ describe("collectAndExportGame", () => {
     ]);
   });
 
-  it("uses startup reachability for boot and a stable shared-asset policy", async () => {
+  it("exports startup reachability through stable independent paths without duplicating shared assets", async () => {
     const start = {
       ...createDefaultScene(),
       settings: {
@@ -220,16 +228,22 @@ describe("collectAndExportGame", () => {
     expect(first.ok).toBe(true);
     expect(reversed.ok).toBe(true);
     if (!isOk(first) || !isOk(reversed)) return;
-    const packs = (result: typeof first.value) =>
+    const paths = (result: typeof first.value) =>
       Object.fromEntries(
-        result.manifest.assets.map((entry) => [entry.guid, entry.pack]),
+        result.manifest.assets.map((entry) => [entry.guid, entry.path]),
       );
-    expect(packs(first.value)).toEqual(packs(reversed.value));
-    expect(packs(first.value)).toMatchObject({
-      "scene-start": "boot.babpack",
-      "boot-only": "boot.babpack",
-      shared: "scene-scene-a.babpack",
-    });
+    expect(paths(first.value)).toEqual(paths(reversed.value));
+    expect(Object.keys(paths(first.value)).sort()).toEqual(["boot-only", "scene-a", "scene-start", "scene-z", "shared"]);
+    expect(new Set(Object.values(paths(first.value))).size).toBe(5);
+    expect(first.value.manifest.packs).toEqual([]);
+    for (const entry of first.value.manifest.assets) {
+      expect(entry.pack).toBeUndefined();
+      expect(entry.path).toMatch(/^assets\/data-\d+\.bin$/);
+      expect(new TextDecoder().decode(first.value.files.get(entry.path!))).toBe(entry.guid);
+    }
+    for (const sceneGuid of ["scene-a", "scene-z"]) {
+      expect(first.value.manifest.assets.find(entry => entry.guid === sceneGuid)?.dependencies).toContain("shared");
+    }
   });
 
   it("fails with the startup scene copy when the guid is missing", async () => {
@@ -303,7 +317,10 @@ describe("collectAndExportGame", () => {
     expect(result.value.manifest.startupSceneGuid).toBe("scene-1");
     expect(result.value.manifest.mode).toBe("packed");
     expect(result.value.manifest.bundleDebugger).toBe(false);
-    expect(result.value.files.has("boot.babpack")).toBe(true);
+    const startupAsset = result.value.manifest.assets.find(entry => entry.guid === "scene-1")!;
+    expect(startupAsset.path).toMatch(/^assets\/data-\d+\.bin$/);
+    expect(new TextDecoder().decode(result.value.files.get(startupAsset.path!))).toBe(JSON.stringify(scene));
+    expect(result.value.manifest.packs).toEqual([]);
     expect(
       result.value.manifest.assets.some((entry) => entry.guid === "euo-1"),
     ).toBe(false);
@@ -674,10 +691,8 @@ describe("collectAndExportGame", () => {
     });
     expect(result.ok).toBe(true);
     if (!isOk(result)) return;
-    const scripts = new TextDecoder().decode(
-      result.value.files.get("scripts.js"),
-    );
-    const registry = parseScriptRegistry(scripts);
+    const registry = compiledScripts(result.value);
+    const scripts = registry.map(script => script.source).join("\n");
     expect(registry.map((entry) => entry.classId)).toEqual(
       expect.arrayContaining([
         "AnimGraph:graph-1",
@@ -688,6 +703,11 @@ describe("collectAndExportGame", () => {
     expect(scripts).toContain("export function evaluate(ctx)");
     const actor = registry.find((entry) => entry.classId === "TagActor");
     const rule = registry.find((entry) => entry.classId === "AnimRule:graph-1:idle-to-idle");
+    const graphSources = result.value.manifest.assets.filter(asset => asset.type === "CompiledScript" && asset.ownerGuid === "graph-1");
+    expect(graphSources).toHaveLength(2);
+    expect(new Set(graphSources.map(asset => asset.guid)).size).toBe(2);
+    expect(result.value.manifest.assets.find(asset => asset.guid === "graph-1")?.requiredDependencies).toEqual(expect.arrayContaining(graphSources.map(asset => asset.guid)));
+    expect(rule?.assetGuid).toBe("graph-1");
     expect(actor).toBeDefined();
     expect(rule).toBeDefined();
     const begin = new Function(

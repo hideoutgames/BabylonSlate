@@ -5,9 +5,76 @@ import {
   AssetRegistry, buildBoxGlbFixture, createRegistryAssetLoadingService, encodeBabasset,
   FONT_FACETYPE_CHUNK_ID, projectContentRoot, type ChunkInput,
 } from "@babylonslate/assets";
-import { acquirePlayAssetSources, emptyPlaySourceControls, mergePreparedPlaySources } from "./play-asset-sources";
+import { acquirePlayAssetSources, emptyPlaySourceControls, mergePreparedPlaySources, requiredProjectAssets } from "./play-asset-sources";
 
 describe("Play source ownership", () => {
+  it("shares compatible scoped compilation across scenes and evicts its code after the final owner", async () => {
+    const storage = new MemoryStorageAdapter();
+    await storage.pickProjectFolder();
+    await storage.mkdir("assets");
+    for (const id of ["scene-a", "scene-b", "script"]) await storage.writeBinary(`assets/${id}.babasset`, await encodeBabasset({
+      header: {
+        guid: id, name: id, type: id === "script" ? "Class" : "Scene", version: 1, engineVersion: "0.0.0", mode: "thin",
+        dependencies: id === "script" ? [] : ["script"], requiredDependencies: id === "script" ? [] : ["script"], dependencyMetadataVersion: 1,
+        payload: id === "script" ? { nodes: [], edges: [], members: [] } : { actors: [] },
+      }, chunks: [],
+    }));
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const loading = createRegistryAssetLoadingService(registry, { projectId: "scripts" });
+    const source = "export function start() {}";
+    const compile = vi.fn(async () => {
+      await Promise.resolve();
+      return { bundles: [{ assetGuid: "script", classId: "Shared", source, anchors: [], entryPoints: [] }], diagnostics: [] };
+    });
+    const host = { registry, project: createEmptyProject("Scripts"), createScope: (owner: string) => loading.createScope(owner), compile };
+    const [first, second] = await Promise.all(["scene-a", "scene-b"].map(guid => acquirePlayAssetSources(host, [guid], {
+      consumer: guid, signal: new AbortController().signal,
+    })));
+    expect(compile).toHaveBeenCalledTimes(1);
+    expect(second.game.scripts).toBe(first.game.scripts);
+    expect(loading.snapshot().entries.find(entry => entry.representation.startsWith("play-scripts:"))?.decodedBytes).toBeGreaterThan(source.length * 2);
+    const bundles = second.game.scripts;
+    expect(mergePreparedPlaySources([first, second])?.controls.filter(control => control.type === "loadScripts")).toHaveLength(1);
+    first.release();
+    loading.trim({ force: true });
+    expect(first.game.scripts).toEqual([]);
+    expect(first.controls).toEqual([]);
+    expect(second.game.scripts).toHaveLength(1);
+    second.release();
+    const warmed = await acquirePlayAssetSources(host, ["scene-a"], { consumer: "Warmed", signal: new AbortController().signal });
+    expect(compile).toHaveBeenCalledTimes(1);
+    warmed.release();
+    loading.trim({ force: true });
+    expect(bundles).toEqual([]);
+    expect(loading.snapshot().decodedBytes).toBe(0);
+    const cold = await acquirePlayAssetSources(host, ["scene-a"], { consumer: "Cold again", signal: new AbortController().signal });
+    expect(compile).toHaveBeenCalledTimes(2);
+    cold.release(); loading.dispose();
+  });
+
+  it("starts genuine subsystem leaves and the selected Game Instance using only class headers", async () => {
+    const storage = new MemoryStorageAdapter();
+    await storage.pickProjectFolder();
+    await storage.mkdir("assets");
+    for (const [name, guid, parent] of [
+      ["Session", "session", "GameInstance"], ["SystemBase", "base", "GameSubsystem"],
+      ["System", "system", "SystemBase"], ["Weather", "weather", "SceneSubsystem"],
+      ["Debug", "debug", "BDebugCommand"], ["UnusedPrefab", "unused", "Actor"],
+    ]) await storage.writeBinary(`assets/${name}.class.babasset`, await encodeBabasset({
+      header: { guid: guid!, name: name!, type: "Class", parentClass: parent, engineVersion: "0.0.0", version: 1, mode: "thin",
+        dependencies: [], requiredDependencies: [], dependencyMetadataVersion: 1, payload: {} },
+      chunks: [{ id: "document", kind: "document", mime: "application/json", data: new Uint8Array(4000) }],
+    }));
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const before = storage.getReadMetrics();
+    const project = createEmptyProject("Systems");
+    project.settings.gameInstanceClass = "Session";
+    expect(requiredProjectAssets(registry, project).sort()).toEqual(["session", "system", "weather"]);
+    expect(storage.getReadMetrics()).toEqual(before);
+  });
+
   it("cancels stalled catalog preparation before acquiring an ownership scope", async () => {
     const registry = new AssetRegistry(new MemoryStorageAdapter());
     vi.spyOn(registry, "getAssetLocator").mockImplementation(() => new Promise(() => undefined));

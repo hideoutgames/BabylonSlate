@@ -3,6 +3,7 @@ import type {
   ProjectInputSettings,
   SerializedGraph,
   SerializedScene,
+  ConsoleCommandMetadata,
 } from "@babylonslate/core";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
 
@@ -18,6 +19,9 @@ export type ExportIndexedAsset = {
   dependencies: string[];
   requiredDependencies?: string[];
   requiredVariableNames?: string[];
+  classReferences?: string[];
+  requiredClassReferences?: string[];
+  consoleCommand?: ConsoleCommandMetadata;
   dependencyMetadataVersion?: number;
   rootId: string;
 };
@@ -48,12 +52,17 @@ export type ExportReachability = {
 export type ExportAssetBytes = {
   guid: string;
   type: string;
+  classId?: string;
+  ownerGuid?: string;
   parentClass?: string | null;
   /** Complete references retained for export and explicit dynamic lookup. */
   dependencies?: readonly string[];
   /** Dependencies needed whenever this asset is acquired. */
   requiredDependencies?: readonly string[];
   requiredVariableNames?: readonly string[];
+  classReferences?: readonly string[];
+  requiredClassReferences?: readonly string[];
+  consoleCommand?: ConsoleCommandMetadata;
   dependencyMetadataVersion?: number;
   /** A required project system independent of the initial scene. */
   startupRequired?: boolean;
@@ -71,12 +80,16 @@ export type ExportAssetBytes = {
 export type GameAssetIndexEntry = {
   guid: string;
   type: string;
+  classId?: string;
+  ownerGuid?: string;
+  parentClass?: string | null;
   encoding: "json" | "bytes";
   byteLength?: number;
   revision?: string;
   dependencies?: string[];
   requiredDependencies?: string[];
   startupRequired?: boolean;
+  consoleCommand?: ConsoleCommandMetadata;
   pack?: string;
   path?: string;
   name?: string;

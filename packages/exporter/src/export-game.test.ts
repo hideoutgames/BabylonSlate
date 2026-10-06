@@ -470,7 +470,7 @@ describe("exportGame", () => {
     );
   });
 
-  it("writes a parseable script registry and generates index.html when omitted", async () => {
+  it("writes a tiny bootstrap and independently addressed compiled script sources", async () => {
     const result = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
@@ -507,10 +507,12 @@ describe("exportGame", () => {
     expect(html).toContain("player.js");
     expect(html.toLowerCase()).toContain("<!doctype html>");
     const scripts = new TextDecoder().decode(result.value.files.get("scripts.js"));
-    expect(scripts).toContain("Hero");
     expect(scripts).toContain("globalThis.__babylonslateScripts");
-    expect(scripts).toContain("sourceURL=babylonslate:///hero.js");
-    expect(parseScriptRegistry(scripts)[0]?.anchors[0]?.line).toBe(1);
+    expect(parseScriptRegistry(scripts)).toEqual([]);
+    const code = result.value.manifest.assets.find(asset => asset.type === "CompiledScript" && asset.ownerGuid === "hero")!;
+    const compiled = JSON.parse(new TextDecoder().decode(result.value.files.get(code.path!)));
+    expect(compiled).toMatchObject({ assetGuid: "hero", classId: "Hero", anchors: [{ line: 1 }] });
+    expect(result.value.manifest.assets.find(asset => asset.guid === "hero")).toMatchObject({ classId: "Hero", requiredDependencies: [code.guid] });
   });
 
   it("packs only the world physics engine when no SceneLayers are exported", async () => {
