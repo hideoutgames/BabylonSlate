@@ -90,10 +90,11 @@ describe("OPFS / web storage adapter", () => {
     const handle = await (await root.getDirectoryHandle(project.directory)).getFileHandle("asset.babasset");
     const snapshot = await handle.getFile();
     const failure = new DOMException("Snapshot cannot be read", errorName);
-    snapshot.slice = () => ({ arrayBuffer: async () => {
+    const slice = snapshot.slice.bind(snapshot);
+    snapshot.slice = (...args) => Object.assign(slice(...args), { arrayBuffer: async () => {
       await storage.writeBinary("asset.babasset", new Uint8Array([4, 3, 2, 1]));
       throw failure;
-    } }) as Blob;
+    } });
     vi.spyOn(handle, "getFile").mockResolvedValueOnce(snapshot);
     await expect(storage.readBinaryRange("asset.babasset", 0, 2)).rejects.toBeInstanceOf(SourceRevisionChangedError);
     expect(storage.getReadMetrics()).toMatchObject({ rangeReads: 1, actualBytesRead: 0, fullReads: 0 });
@@ -108,7 +109,8 @@ describe("OPFS / web storage adapter", () => {
     const handle = await (await root.getDirectoryHandle(project.directory)).getFileHandle("asset.babasset");
     const snapshot = await handle.getFile();
     const failure = new DOMException("Source revision changed", errorName);
-    snapshot.slice = () => ({ arrayBuffer: async () => { throw failure; } }) as Blob;
+    const slice = snapshot.slice.bind(snapshot);
+    snapshot.slice = (...args) => Object.assign(slice(...args), { arrayBuffer: async () => { throw failure; } });
     vi.spyOn(handle, "getFile").mockResolvedValueOnce(snapshot);
     await expect(storage.readBinaryRange("asset.babasset", 0, 2)).rejects.toBe(failure);
     expect(storage.getReadMetrics()).toMatchObject({ rangeReads: 1, actualBytesRead: 0, fullReads: 0 });
