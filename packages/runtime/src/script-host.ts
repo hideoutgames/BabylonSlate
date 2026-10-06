@@ -65,6 +65,9 @@ import type { TweenValueType } from "@babylonslate/core";
 import type { TweenReference, TweenRequest } from "./tween-runtime";
 import { tweenOwnerAlive } from "./tween-runtime";
 import { isReadOnlyTweenProperty, propertyTweenReference, tweenStorageValue } from "./tween-targets";
+import { cloneSaveGameValue, SaveGameError, type SaveGameService, type SaveGameValue,
+  type SaveGameOptions, type SaveGameResult, type SaveGameInfo, type SaveGameMigration,
+  type SaveGameMigrationData } from "@babylonslate/core";
 
 export type AnimGraphControl = {
   getVariable(name: string): unknown;
@@ -81,6 +84,10 @@ export type ScriptColor = { x: number; y: number; z: number; w: number };
  * node from a later phase runs instead of throwing.
  */
 export interface ScriptHostServices {
+  saveGame?: SaveGameService;
+  registerSaveActor?(actor: BObject, persistentId?: string): void;
+  getSaveActorId?(actor: Actor): string;
+  resolveSaveActor?(id: string): Actor | undefined;
   /** Session seed shared with the world and trace metadata. */
   seed?: number;
   /** Whether an object may receive authored calls during its owner's load. */
@@ -246,6 +253,18 @@ export interface ScriptHostServices {
 }
 
 export interface ScriptContext {
+  getSaveData<TData extends object = Record<string, SaveGameValue>>(): TData;
+  getSaveField(fieldId: string, type?: string, array?: boolean): unknown;
+  setSaveField(fieldId: string, value: unknown, type?: string, array?: boolean): void;
+  newGame(): Promise<SaveGameResult<Record<string, SaveGameValue>>>;
+  saveGame(options?: SaveGameOptions): Promise<SaveGameResult<SaveGameInfo>>;
+  loadGame(options?: SaveGameOptions): Promise<SaveGameResult<SaveGameInfo>>;
+  listSaves(options?: { profile?: string }): Promise<SaveGameResult<SaveGameInfo[]>>;
+  deleteSave(options?: SaveGameOptions): Promise<SaveGameResult<void>>;
+  registerSaveActor(actor: BObject | null, persistentId?: string): void;
+  registerSaveMigration(fromVersion: number, migrate: SaveGameMigration | string): void;
+  getSaveMigrationField(fieldId: string, type?: string, array?: boolean): unknown;
+  setSaveMigrationField(fieldId: string, value: unknown, type?: string, array?: boolean): void;
   inputBindings?: InputBindingControls;
   getInputState?: (input: InputTypeValue) => InputValueState | null;
   self: BObject | null;
@@ -654,6 +673,32 @@ export class ScriptHost {
   constructor(services: ScriptHostServices) {
     this.services = services;
     this.rng = createSeededRng(services.seed ?? 1);
+  }
+
+  /** The driver installs persistence before authored Init/Begin Play hooks run. */
+  setSaveGameService(service: SaveGameService | undefined): void {
+    this.services.saveGame = service;
+  }
+
+  private saveGameService(): SaveGameService {
+    if (!this.services.saveGame) throw new SaveGameError("unavailable", "Select a default Save Game in Project Settings before using save data.");
+    return this.services.saveGame;
+  }
+
+  /** Migration exceptions must propagate to the transaction, unlike ordinary events. */
+  private async invokeSaveMigration(self: BObject, event: string, snapshot: SaveGameMigrationData): Promise<void> {
+    if (self.destroyed) throw new SaveGameError("incompatible", "The registered save migration owner no longer exists.");
+    const loaded = this.eventScriptsFor(self.classId, event, self);
+    if (!loaded) throw new SaveGameError("incompatible", `Save migration event “${event}” is missing.`);
+    for (const entry of loaded) {
+      for (const point of entry.script.entryPoints) {
+        if (point.event !== event) continue;
+        const handler = entry.exports[point.name];
+        if (typeof handler !== "function") continue;
+        const context = this.createContext(self, 0, 0, { saveMigrationData: snapshot }, undefined, undefined, entry.script.assetGuid);
+        await this.invokeOwned(self, () => (handler as (ctx: ScriptContext) => unknown)(context));
+      }
+    }
   }
 
   async load(script: CompiledScript): Promise<void> {
@@ -1074,7 +1119,49 @@ export class ScriptHost {
     const services = this.services;
     const store = extras?.variableStore ?? self;
     const tweenOwner = self ?? extras?.tweenOwner ?? null;
+    const unavailable = async <T>(): Promise<SaveGameResult<T>> => ({ ok: false, error: {
+      code: "unavailable", message: "Select a default Save Game in Project Settings before using saves.",
+    } });
+    const readField = (value: SaveGameValue, type?: string, array?: boolean): unknown => {
+      if (array && Array.isArray(value)) return value.map((entry) => readField(entry, type));
+      return type === "actor" && typeof value === "string" ? (services.resolveSaveActor?.(value) ?? services.findActor?.(value) ?? null) : value;
+    };
+    const writeField = (value: unknown, type?: string, array?: boolean): SaveGameValue => {
+      if (array && Array.isArray(value)) return value.map((entry) => writeField(entry, type));
+      return cloneSaveGameValue(type === "actor" && value instanceof Actor ? services.getSaveActorId?.(value) ?? value.guid : value);
+    };
+    const migrationData = (): SaveGameMigrationData => {
+      const data = commandArgs.saveMigrationData as SaveGameMigrationData | undefined;
+      if (!data) throw new SaveGameError("invalid", "Migration fields are available only inside Event Save Migration.");
+      return data;
+    };
     const context: ScriptContext = {
+      getSaveData: <TData extends object>() => this.saveGameService().getSaveData() as TData,
+      getSaveField: (id, type, array) => readField(this.saveGameService().getField(id), type, array),
+      setSaveField: (id, value, type, array) => this.saveGameService().setField(id, writeField(value, type, array)),
+      newGame: () => services.saveGame?.newGame() ?? unavailable(),
+      saveGame: (options) => services.saveGame?.saveGame(options) ?? unavailable(),
+      loadGame: (options) => services.saveGame?.loadGame(options) ?? unavailable(),
+      listSaves: (options) => services.saveGame?.listSaves(options) ?? unavailable(),
+      deleteSave: (options) => services.saveGame?.deleteSave(options) ?? unavailable(),
+      registerSaveActor: (actor, persistentId) => {
+        if (!(actor instanceof Actor) || actor.destroyed) throw new SaveGameError("invalid", "Register Save Actor requires a live actor.");
+        if (!services.registerSaveActor) throw new SaveGameError("unavailable", "Actor persistence is not available in this host.");
+        services.registerSaveActor(actor, persistentId);
+      },
+      registerSaveMigration: (fromVersion, migrate) => {
+        const service = this.saveGameService();
+        if (typeof migrate === "function") service.registerMigration(fromVersion, migrate);
+        else {
+          if (!self) throw new SaveGameError("invalid", "Visual save migrations require an owning object.");
+          service.registerMigration(fromVersion, (snapshot) => this.invokeSaveMigration(self, migrate, snapshot));
+        }
+      },
+      getSaveMigrationField: (id, type, array) => readField(migrationData().fields[id] ?? null, type, array),
+      setSaveMigrationField: (id, value, type, array) => {
+        const fields = cloneSaveGameValue({ [id]: writeField(value, type, array) }) as Record<string, SaveGameValue>;
+        Object.assign(migrationData().fields, fields);
+      },
       self,
       deltaSeconds,
       tickIndex,

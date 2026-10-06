@@ -90,6 +90,16 @@ export const ENGINE_ENUMS: readonly EngineEnum[] = [
 export const ENGINE_STRUCTS: readonly EngineStruct[] = [
   ...SCALABILITY_STRUCTS,
   {
+    id: "engine:SaveGameInfo", name: "Save Game Info",
+    fields: [
+      { name: "projectId", typeId: "string" }, { name: "profile", typeId: "string" },
+      { name: "slot", typeId: "string" }, { name: "definitionId", typeId: "string" },
+      { name: "schemaVersion", typeId: "int" }, { name: "sequence", typeId: "int" },
+      { name: "createdAt", typeId: "string" }, { name: "recovered", typeId: "bool" },
+      { name: "status", typeId: "string" },
+    ],
+  },
+  {
     id: ENGINE_HIT_RESULT_STRUCT_ID,
     name: "Hit Result",
     fields: [

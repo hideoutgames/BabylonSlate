@@ -18,6 +18,8 @@ export type CodegenContext = {
   reference?(pinName: string): string;
   /** Run this node's outgoing execution chain only when this expression is true. */
   continueIf?(expression: string): void;
+  /** Choose exactly one outgoing execution pin after this node completes. */
+  branch?(expression: string, truePin: string, falsePin: string): void;
   /**
    * Static type of the source pin wired into an input data pin (resolved in
    * compileGraph; declared in transition-rule graphs). Undefined when the

@@ -20,12 +20,14 @@ import {
 } from "../lib/use-open-documents-of-kinds";
 import { classHierarchyFromParentOf } from "../services/graph-validation";
 import { classIdForGraphPath } from "../services/script-compiler";
+import { defaultSaveGameDefinition } from "../lib/save-game-catalog";
 
 const CLASS_KINDS = ["graph"] as const;
 const SCENE_KINDS = ["scene"] as const;
 const INTERFACE_KINDS = ["script-interface"] as const;
 const TYPE_KINDS = ["structure", "enum"] as const;
 const INPUT_KINDS = ["input-action", "input-axis"] as const;
+const SAVE_GAME_KINDS = ["save-game"] as const;
 
 /**
  * The project-wide catalogs a Class or Animation Graph panel builds its
@@ -36,12 +38,18 @@ const INPUT_KINDS = ["input-action", "input-axis"] as const;
  * while Scene, Material or other edits leave the class catalogs alone.
  */
 export function useGraphPanelCatalogs() {
-  const { assetRegistry, registryEpoch } = useDocuments();
+  const { assetRegistry, registryEpoch, projectDocument } = useDocuments();
   const classDocuments = useOpenDocumentsOfKinds(CLASS_KINDS);
   const sceneDocumentsOpen = useOpenDocumentsOfKinds(SCENE_KINDS);
   const interfaceDocuments = useOpenDocumentsOfKinds(INTERFACE_KINDS);
   const typeDocuments = useOpenDocumentsOfKinds(TYPE_KINDS);
   const inputDocuments = useOpenDocumentsOfKinds(INPUT_KINDS);
+  const saveGameDocuments = useOpenDocumentsOfKinds(SAVE_GAME_KINDS);
+  const saveGameGuid = projectDocument?.settings.saveGame.definitionGuid;
+  const saveGameDefinition = useMemo(() => {
+    void registryEpoch;
+    return defaultSaveGameDefinition(saveGameGuid, assetRegistry?.list() ?? [], saveGameDocuments);
+  }, [saveGameGuid, assetRegistry, registryEpoch, saveGameDocuments]);
   const materialDocuments = useOpenDocumentsOfKinds(MATERIAL_DOCUMENT_KINDS);
 
   const parentOf = useMemo(() => {
@@ -126,6 +134,7 @@ export function useGraphPanelCatalogs() {
     typeSchemas,
     hierarchy,
     inputAssets,
+    saveGameDefinition,
     materialDomains,
   };
 }
