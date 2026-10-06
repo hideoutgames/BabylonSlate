@@ -184,6 +184,25 @@ const sparkled = (code: string) => ifDefined(WATER_FEATURE_DEFINES.sparkles, fro
 float swSpark = 0.0;`), `
 float swSpark = 0.0;`);
 
+/**
+ * Realistic foam's bubble web (`swWeb`): a Worley pattern over a 3 × 3 cell neighbourhood with feature points anywhere
+ * in their cell (jitter 0.9), unrolled because loops do not pass `toWgsl`. Squared distances are compared, so only the
+ * two nearest take a square root. Unlike `swCells` (2 × 2, small jitter, cheaper, used by Stylized), its cells are
+ * irregular polygons, so the borders read as bubbles rather than a square lattice.
+ */
+const FOAM_WEB_CELLS = [-1, 0, 1].flatMap((j) => [-1, 0, 1].map((i) => [i, j] as const)).map(([i, j], n) => `
+  vec2 r${n} = vec2(${(i + 0.05).toFixed(2)}, ${(j + 0.05).toFixed(2)}) + swHash2(b + vec2(${i.toFixed(1)}, ${j.toFixed(1)})) * 0.9 - f;
+  float d${n} = dot(r${n}, r${n});
+  n2 = min(n2, max(n1, d${n}));
+  n1 = min(n1, d${n});`).join("");
+
+/**
+ * The far sun path's facet field (`swGlitterCell`): the share of cells lit at a time, and the mean of one cell's lit
+ * core (on × (1 − 2.8 r)², π / (6 · 2.8²) per lit cell), so the field divided by it averages 1.
+ */
+const GLITTER_CELL_ON = 0.3;
+const GLITTER_CELL_MEAN = GLITTER_CELL_ON * Math.PI / (6 * 2.8 * 2.8);
+
 /** GLSL-shaped source that also compiles as WGSL after `toWgsl`; see `waterShaderSource`. */
 const HELPERS = `
 float swHash(vec2 p) {
@@ -209,6 +228,26 @@ vec2 swCells(vec2 p) {
   float swNear = min(min(d0, d1), min(d2, d3));
   float swSecond = min(min(max(d0, d1), max(d2, d3)), max(min(d0, d1), min(d2, d3)));
   return vec2(swNear, swSecond - swNear);
+}
+vec2 swHash2(vec2 p) {
+  vec3 q = fract(vec3(p.x, p.y, p.x) * vec3(0.1031, 0.103, 0.0973));
+  q += vec3(dot(q, q.yzx + vec3(33.33)));
+  return fract(vec2(q.x + q.y, q.x + q.z) * vec2(q.z, q.y));
+}
+float swGlitterCell(vec2 uv, float t) {
+  vec2 id = floor(uv);
+  vec2 h = swHash2(id + vec2(41.0, 13.0));
+  vec2 d = fract(uv) - vec2(0.5) - (h - vec2(0.5)) * 0.6;
+  float core = max(0.0, 1.0 - length(d) * 2.8);
+  return step(fract(h.x * 37.13 + t * (0.6 + h.y)), ${GLITTER_CELL_ON.toFixed(2)}) * core * core;
+}
+vec2 swWeb(vec2 p) {
+  vec2 b = floor(p);
+  vec2 f = p - b;
+  float n1 = 8.0;
+  float n2 = 8.0;${FOAM_WEB_CELLS}
+  float s1 = sqrt(n1);
+  return vec2(s1, sqrt(n2) - s1);
 }
 `;
 
@@ -821,7 +860,7 @@ float swSparkBase = 0.0;`) : ""}
  *
  * - Colour: water absorbs red first (per channel from Shallow Color, Medium up), so what shows through and the light
  *   scattered back take the water's hue with depth; the in-scattered body lightens toward Shallow Color over shallows,
- *   on crests and at grazing views, and thin crests seen toward a low sun glow (Subsurface).
+ *   on crests and at grazing views, and thin crests seen toward a sun some way up glow (Subsurface).
  * - Sky: without an environment or skybox the reflection is an analytic sky from the scene (`slateWaterSky`): its
  *   background colour overhead, its fog colour (or background) at the horizon, warmed around a low sun's azimuth, with
  *   a sun aureole, blurred by the filtered roughness.
@@ -852,6 +891,7 @@ swSlopeVariance = min((swLost + swLostDetail * swChopGain * swChopGain) * swSlic
 // shading normal becomes the half vector toward the lifted reflection.
 vec3 swRefl = reflect(-swV, normalW);
 float swReflFloor = 0.025 + sqrt(swSlopeVariance) * 1.2;
+float swReflRawY = swRefl.y;
 float swReflLift = swRefl.y + log(1.0 + exp(30.0 * (swReflFloor - swRefl.y))) / 30.0;
 swRefl.y = mix(swRefl.y, swReflLift, step(0.0, swV.y));
 normalW = normalize(swV + normalize(swRefl));
@@ -867,14 +907,20 @@ float swFres = 0.02 + 0.98 * swFresX2 * swFresX2 * swFresX;
 float swCosT = sqrt(1.0 - (1.0 - swNdotV * swNdotV) * 0.5625);
 float swPath = swDepth * (1.0 + 1.0 / swCosT) / swAbsorb;${fromTier(1, `
 // Per channel (from Shallow Color, CPU): red goes first, so sand under shallows turns turquoise and what shows through
-// takes the water's hue with depth.
-vec3 swTransmitRgb = max(exp(-swPath * U.slateWaterAbsorb.rgb), vec3(1.0 - U.slateWaterShallow.a));
+// takes the water's hue with depth. Opacity caps the path (CPU, slateWaterThrough.w), not each channel: the slowest
+// channel keeps at least 1 − Opacity and the others that floor raised to their own coefficient, so a deep bed fades
+// into the water's hue instead of keeping its own red.
+vec3 swTransmitRgb = exp(-min(swPath, U.slateWaterThrough.w) * U.slateWaterAbsorb.rgb);
 float swTransmit = dot(swTransmitRgb, vec3(0.3, 0.59, 0.11));`, `
-float swTransmit = max(exp(-swPath), 1.0 - U.slateWaterShallow.a);
+// Low blends one transmittance; its coefficient leans toward the fastest channel (CPU, slateWaterAbsorb.w), so the
+// in-scattered water colour covers shallows about as much as Medium's per-channel absorption tints them.
+float swTransmit = max(exp(-swPath * U.slateWaterAbsorb.w), 1.0 - U.slateWaterShallow.a);
 vec3 swTransmitRgb = vec3(swTransmit);`)}${ifDefined(REFRACTION, `
 // Where the copy holds no geometry behind the water (its sky depth), there is no floor in view: open water transmits
 // no background (the sky colour behind it never tints the sea), and its in-scattered light fills in.
-float swVoid = step(${f(WATER_SCENE_COPY_SKY_DEPTH * 0.9)}, swSceneZ);
+// A floor far below (beyond about 1.75 absorption lengths) fades to the same: where a finite seabed ends, its edge
+// never shows against the void beyond.
+float swVoid = max(step(${f(WATER_SCENE_COPY_SKY_DEPTH * 0.9)}, swSceneZ), smoothstep(0.75, 1.75, swDepth / swAbsorb));
 swTransmitRgb *= 1.0 - swVoid;
 swTransmit *= 1.0 - swVoid;`)}
 vec3 swCol = mix(U.slateWaterShallow.rgb, U.slateWaterDeep.rgb, swTone);
@@ -889,25 +935,28 @@ float swFaceV = clamp(dot(swWaveN, swV), 0.0, 1.0);
 // steep views and drifts with the wide noises.
 float swLiftGain = (0.3 + 0.7 * swGraze) * (0.4 + 0.75 * swLarge + 0.45 * swGust);
 float swCrestLift = clamp(swCrest * 0.5 * swLiftGain + 0.5, 0.0, 1.0);
-vec3 swScatterCol = mix(U.slateWaterDeep.rgb, U.slateWaterShallow.rgb, clamp(0.1 + 0.22 * swCrestLift + 0.2 * swGraze * swGraze + 0.2 * (1.0 - swTone), 0.0, 0.7));
+vec3 swScatterCol = mix(U.slateWaterDeep.rgb, U.slateWaterShallow.rgb, clamp(0.1 + 0.22 * swCrestLift + 0.2 * swGraze * swGraze + 0.2 * (1.0 - swTone), 0.0, 0.7));${fromTier(1, "", `
+// Low cannot tint what shows through per channel: over shallows its in-scattered light is brighter, standing in for
+// the bed light Medium passes in the channels the water keeps.
+swScatterCol *= 1.0 + 0.6 * (1.0 - swTone);`)}
 float swPatch = smoothstep(0.3, 0.75, swDrift) * U.slateWaterSwellInfo.z;
 swScatterCol = mix(swScatterCol, U.slateWaterShallow.rgb * vec3(0.85, 1.05, 0.9), swPatch * 0.35);
 float swFaceLit = swFaceV * swFaceV * (0.6 + 0.4 * swCrestLift);
 float swSlopeLit = max(dot(swSwellNormal, swL), 0.0);
 // Sunlight entering the water weakens for a low sun (most of it reflects off at grazing incidence), so a sunset sea
-// is mostly reflection.
-float swSunIn = 0.25 + 0.75 * smoothstep(0.0, 0.5, swL.y);
-vec3 swScatter = swScatterCol * (swAmb * (0.55 + 0.45 * swCrestLift) + swSun * ((0.35 * swFaceLit + 0.3 * swSlopeLit) * swSunIn));${ifDefined(WATER_FEATURE_DEFINES.subsurface, `
-// Sunlight through thin crests and wave faces seen toward the sun, strongest for a sun some way above the horizon (a
-// high sun lights crests from above rather than through them; a setting sun's light is dim and red, which water absorbs).
+// is mostly reflection (CPU, slateWaterSunShape.w).
+vec4 swSunShape = U.slateWaterSunShape;
+vec3 swScatter = swScatterCol * (swAmb * (0.55 + 0.45 * swCrestLift) + swSun * ((0.35 * swFaceLit + 0.3 * swSlopeLit) * swSunShape.w));${ifDefined(WATER_FEATURE_DEFINES.subsurface, `
+// Sunlight through thin crests and wave faces seen toward the sun: the sun's colour times what a crest transmits (CPU,
+// slateWaterThrough), strongest for a sun some way above the horizon and gone at sunset (a high sun lights crests from
+// above rather than through them; a setting sun's light is dim and red, which the water absorbs).
 vec2 swLookH = -swV.xz / max(length(swV.xz), 0.0001);
-vec2 swSunH = swL.xz / max(length(swL.xz), 0.0001);
-float swToSun = clamp(dot(swLookH, swSunH), 0.0, 1.0);
-float swBehind = swToSun * swToSun * swToSun * swToSun * (1.0 - 0.6 * smoothstep(0.3, 0.8, swL.y)) * smoothstep(-0.02, 0.2, swL.y);
+float swToSun = clamp(dot(swLookH, swSunShape.xy), 0.0, 1.0);
+float swBehind = swToSun * swToSun * swToSun * swToSun;
 float swPeak = clamp(swCrest * 0.5 + 0.5 + swChopH * 0.6, 0.0, 1.2);
 float swAway = clamp(0.5 - 0.5 * dot(swL, swWaveN), 0.0, 1.0);
 float swThrough = swBehind * swPeak * swPeak * swAway * swAway * (0.5 + swFaceV) * 4.0;
-swScatter += U.slateWaterShallow.rgb * vec3(0.9, 1.15, 0.85) * swSun * (U.slateWaterLook.w * (swThrough + smoothstep(0.2, 0.9, swFoldN) * swRough * 0.15));`)}
+swScatter += U.slateWaterThrough.rgb * (U.slateWaterLook.w * (swThrough + smoothstep(0.2, 0.9, swFoldN) * swRough * 0.15));`)}
 
 // Foam: a bubble web (Voronoi cell borders, Medium up) and clumpy noise, thresholded by a foam density (Crest-style),
 // so dense foam is solid, then opens round holes, thins into lace and breaks into scattered fragments as it decays.
@@ -922,15 +971,20 @@ float swChurnT = swTime * 0.12;
 float swChurnA = fract(swChurnT);
 float swChurnB = fract(swChurnT + 0.5);
 vec2 swChurnDrift = vec2(0.22, -0.13);
-vec2 swWebA = swCells(swFoamUv + vec2(0.37, 0.71) * (floor(swChurnT) * 7.0) + swChurnDrift * swChurnA);
-vec2 swWebB = swCells(swFoamUv + vec2(0.37, 0.71) * (floor(swChurnT + 0.5) * 7.0 + 3.0) + swChurnDrift * swChurnB);
-float swBorder = mix(swWebB.y, swWebA.y, 1.0 - abs(1.0 - 2.0 * swChurnA));
+vec2 swWebA = swWeb(swFoamUv + vec2(0.37, 0.71) * (floor(swChurnT) * 7.0) + swChurnDrift * swChurnA);
+vec2 swWebB = swWeb(swFoamUv + vec2(0.37, 0.71) * (floor(swChurnT + 0.5) * 7.0 + 3.0) + swChurnDrift * swChurnB);
+float swLaceRaw = 1.0 - smoothstep(0.0, 0.22, mix(swWebB.y, swWebA.y, 1.0 - abs(1.0 - 2.0 * swChurnA)));
+float swWebScale = 1.0;
 // Small bubbles: a web about a third the size, averaged out before it would alias.
-float swBubbles = mix(1.0 - smoothstep(0.0, 0.3, swCells(swFoamUv * 2.7 + vec2(3.1, swTime * 0.07)).y), 0.45, smoothstep(0.15, 0.5, swFoot * 4.0));`, `
-float swBorder = swCells(swFoamUv).y;
+float swBubbles = mix(1.0 - smoothstep(0.0, 0.25, swWeb(swFoamUv * 2.7 + vec2(3.1, swTime * 0.07)).y), 0.45, smoothstep(0.1, 0.3, swFoot * 3.0));`, `
+// Medium's single web, at about twice the large web's scale and a little thicker: decaying foam opens holes in the
+// cells and thins into lace along their irregular borders, rather than one smooth patch close up.
+float swLaceRaw = 1.0 - smoothstep(0.0, 0.3, swWeb(swFoamUv * 1.8 + vec2(3.1, swTime * 0.07)).y);
+float swWebScale = 1.8;
 float swBubbles = 0.45;`)}
-// The web: 1 along the cells' borders and 0 at their centres, faded to its mean before it would alias.
-float swLace = mix(1.0 - smoothstep(0.02, 0.45, swBorder), 0.55, smoothstep(0.25, 0.65, swFoot * 2.2));
+// The web: 1 along the cells' borders, 0 at their centres. Before a cell shrinks to a few pixels it gives way to a mottle
+// of the blob noise, so mid-distance foam keeps texture instead of thresholding into flat polygons.
+float swLace = mix(swLaceRaw, 0.3 + 0.5 * swBlob, smoothstep(0.12, 0.35, swFoot * 1.1 * swWebScale));
 float swFoamTex = clamp(swLace * 0.6 + swClump * 0.22 + swBlob * 0.08 + swBubbles * 0.15 - 0.02, 0.0, 1.0);`, `
 // Low evaluates one foam noise and no cell pattern. Folding it into two crossing families of narrow curved bands (triangle
 // waves: no fetch, no transcendental), one bent by the medium noise and one by the chop, gives it lace: thinning foam
@@ -948,7 +1002,10 @@ float swFoamTex = smoothstep(0.05, 0.85, swClump * 0.5 + swLace * 0.4 + 0.06);`)
 float swCrestPhase = clamp(swCrest * 0.5 + 0.5, 0.0, 1.0);
 float swWash = exp(-swBank / (swFoamWidth * (0.8 + 1.6 * swCrestPhase))) * (0.55 + 0.45 * swCrestPhase);
 float swRestDepth = max(swDepth - IN.vSlateWater.x, 0.02);
-float swSurf = smoothstep(0.35, 0.9, U.slateWaterWaves.x / swRestDepth) * (1.0 - smoothstep(8.0, 12.0, swBank / swFoamWidth)) * smoothstep(0.0, 0.3, swBank);
+// Only near a real shore: where nothing is known the bank distance is clamped to the shore range and the depth is the
+// shelving estimate, which would otherwise break surf across open water.
+float swSurf = smoothstep(0.35, 0.9, U.slateWaterWaves.x / swRestDepth) * (1.0 - smoothstep(8.0, 12.0, swBank / swFoamWidth)) * smoothstep(0.0, 0.3, swBank)
+  * (1.0 - smoothstep(${f(SHORE[1] * 0.5)}, ${f(SHORE[1] * 0.95)}, swBank));
 float swSurfFoam = swSurf * max(smoothstep(0.0, 0.6, swCrest + swChopH * 0.6), 0.5 * smoothstep(-0.8, 0.2, swCrest));
 // Whitecaps form where crests steepen (Crest Foam sets coverage) and leave foam trailing on their windward backs,
 // drawn out along the wind.
@@ -969,8 +1026,8 @@ float swCapDrive = (swFoldN * 1.8 + swBack * 0.5 + swChopH * 0.5 + (swBreakZone 
 swCap = max(smoothstep(1.0 - U.slateWaterShape.z, 1.5 - U.slateWaterShape.z, swCapDrive) * (0.6 + 0.4 * smoothstep(0.25, 0.65, swClump)),
   smoothstep(0.7 - U.slateWaterShape.z, 1.3 - U.slateWaterShape.z, swCapDrive) * 0.4) * U.slateWaterTerms.y;
 swCapCore = smoothstep(1.45 - U.slateWaterShape.z, 2.05 - U.slateWaterShape.z, swCapDrive) * U.slateWaterTerms.y;
-// Cores ease in and the lace thins them, so dense caps never read as flat paint with a hard rim.
-swCapCore *= swCapCore * (0.4 + 0.6 * swLace);${fromTier(1, `
+// Cores ease in and keep the pattern's holes (more faintly), so dense caps never read as flat paint with a hard rim.
+swCapCore *= swCapCore * (0.25 + 0.75 * smoothstep(0.2, 0.55, swFoamTex));${fromTier(1, `
 // Trails: soft streaks stretched along the wind, not thin scratches.
 float swTrailTex = swNoise(swWindUv * vec2(0.35, 1.1) + swWarp + vec2(swTime * 0.05, 0.0));
 swTrail = smoothstep(0.75 - U.slateWaterShape.z, 1.2 - U.slateWaterShape.z, swCapDrive + swBack * swRough * 0.8) * smoothstep(0.2, 0.9, swTrailTex) * 0.6 * U.slateWaterTerms.y;`)}`)}
@@ -989,7 +1046,7 @@ swStreak = smoothstep(swStreakCut - swStreakAA, swStreakCut + swStreakAA, swStre
 swStreakTint = (1.0 - swStreakCut) * swStreakBreak * (0.2 + 0.5 * U.slateWaterSunColor.w) * (0.6 + 0.6 * swGust) * swCalm * 0.6;`)}`)}
 float swDensity = clamp(max(max(swWash, swCap), max(max(swTrail, swStreak), swSurfFoam)), 0.0, 1.0);
 // Thinning foam softens: its holes open gradually.
-float swFoamSoft = 0.06 + 0.22 * (1.0 - swDensity) + fwidth(swFoamTex);
+float swFoamSoft = 0.04 + 0.12 * (1.0 - swDensity) + fwidth(swFoamTex);
 // Even the densest foam keeps a few bubble holes.
 float swFoamCut = 1.0 - 0.88 * swDensity;
 // Where the pattern is too fine to resolve, foam keeps the coverage its density would give rather than turning into
@@ -1023,7 +1080,7 @@ if (swContactOn > 0.5) {
   swWake = max((1.0 - smoothstep(swWakeW * 0.2, swWakeW, swWakeD1)) * 0.6, (1.0 - smoothstep(swWakeW * 0.4, swWakeW * 1.7, swWakeD2)) * 0.35);
   swWake = swWake * smoothstep(0.0, 0.3, swContactSigned) * (0.2 + 0.8 * swClump);
 }`)}${fromTier(1, `
-float swHug = clamp(exp(-swObjectW / swContactW * 6.0) * (0.45 + 1.1 * swClump) + max(0.0, cos(swRipplePhase)) * swRippleFade * 0.1 * swClump + swWake * 0.6, 0.0, 1.0);
+float swHug = clamp(exp(-swObjectW / swContactW * 6.0) * (0.45 + 1.1 * swClump) + max(0.0, cos(swRipplePhase)) * swRippleFade * 0.1 * swClump + swWake * 0.8, 0.0, 1.0);
 // Bubbly patches: the low-frequency clumps carry the bubbles, so thinning foam breaks into islands, not a net.
 float swPatchTex = mix(smoothstep(0.12, 0.85, (swClump * 0.5 + swBlob * 0.5) * (0.75 + 0.25 * swBubbles) + swLace * 0.18), 0.45, swFoamFade);
 float swHugSoft = 0.06 + 0.1 * (1.0 - swHug) + fwidth(swPatchTex);
@@ -1040,15 +1097,28 @@ swTransmit *= 1.0 - swAerated * 0.35;
 swTransmitRgb *= 1.0 - swAerated * 0.35;
 swScatter += mix(swCol, U.slateWaterFoam.rgb, 0.5) * (swAmb + swSun * max(swL.y, 0.0)) * swAerated * 0.2;
 // Wet bed: the thinnest water at a terrain waterline darkens what lies under it, as a film filling sand's pores does,
-// so the waterline reads as a wet band rather than the shore simply ending.
-float swWet = (1.0 - smoothstep(0.02, 0.2 + 0.15 * swCrestPhase, swDepth)) * swKnown * (1.0 - swFoam);
+// so the waterline reads as a wet band rather than the shore simply ending. Seen from afar the band keeps a few pixels'
+// width (by the depth's screen derivative) and a soft edge, so it never thins into a dark outline.
+float swWetDepth = max(0.3 + 0.2 * swCrestPhase, min(fwidth(swDepth) * 8.0, 1.2));
+float swWet = (1.0 - smoothstep(0.0, swWetDepth, swDepth)) * swKnown * (1.0 - smoothstep(0.4, 0.9, swFoam));
 
 // The sun. Medium and up: Babylon's GGX lobe (widened by the filtered slope variance) carries the sun path, and a
 // sparse glitter of sub-pixel facets adds sharp points where unresolved ripples would mirror the sun. Each glitter
 // cell on a world grid holds one facet; it flashes with the probability that a facet tilted by the unresolved
-// roughness mirrors the sun, so calm water shows none and the flashes thin out away from the sun path. From High a
-// coarser grid of facets takes over where the fine one fades, so the distant sun path keeps sparkling. Low draws water
-// unlit and carries one analytic sun lobe instead.
+// roughness mirrors the sun, so calm water shows none and the flashes thin out away from the sun path. Where a pixel
+// covers many facets the filtered lobe would merge into one clipped white slab: the lobe is compressed (swSpecSquash,
+// every tier, more with distance) and, where it is bright, broken into sparkles (swSpecMod, weighted by swSpecModW in
+// the composition): a facet field that keeps about the lobe's mean but concentrates it into flashing facets over a
+// dimmer path. Medium's field has one cell size and fades before its cells shrink below a few pixels; High's cells stay
+// a few pixels wide at any distance (two grid levels crossfaded by the footprint's log2), so the path sparkles out to
+// the horizon. Low draws water unlit and carries one analytic sun lobe instead, compressed alike.
+${fromTier(1, `
+float swPxM = sqrt(length(swFootX) * length(swFootY));`, `
+float swPxM = swFoot * 0.5;`)}
+float swFarSun = smoothstep(0.01, 0.08, swPxM);
+float swSpecSquash = 0.3 + 1.5 * swFarSun;
+float swSpecMod = 1.0;
+float swSpecModW = 0.0;
 vec3 swHalf = normalize(swV + swL);
 float swSunX = 1.0 - clamp(dot(swV, swHalf), 0.0, 1.0);
 float swSunX2 = swSunX * swSunX;
@@ -1066,25 +1136,27 @@ vec2 swGlitId = floor(swGlitUv);
 float swGlitRnd = swHash(swGlitId + vec2(41.0, 13.0));
 vec2 swGlitDelta = fract(swGlitUv) - vec2(0.5) - (vec2(swHash(swGlitId + vec2(3.0, 59.0)), swGlitRnd) - vec2(0.5)) * 0.6;
 // The threshold drifts per cell, so facets flash on and off as the waves move.
-float swGlitOn = step(fract(swGlitRnd * 37.13 + swTime * (0.6 + swGlitRnd)), swFacetP * 0.6);
+float swGlitOn = step(fract(swGlitRnd * 37.13 + swTime * (0.6 + swGlitRnd)), swFacetP * 0.6 * U.slateWaterSky.w * (1.0 - 0.7 * smoothstep(0.015, 0.06, swFacetVar)));
 float swGlitCore = max(0.0, 1.0 - length(swGlitDelta) * 2.8);
-float swGlitPx = sqrt(length(swFootX) * length(swFootY)) * U.slateWaterMotion.y;
+float swGlitPx = swPxM * U.slateWaterMotion.y;
 float swGlitFade = 1.0 - smoothstep(0.25, 0.9, swGlitPx * 5.0);
 // A facet mirroring the sun shows the sun's own radiance: far brighter than the sky, so it saturates.
-vec3 swGlint = min(swSun * (swSunFres * step(0.0, swL.y) * 40.0 * swGlitOn * swGlitCore * swGlitCore * swGlitFade), vec3(6.0));${fromTier(2, `
-vec2 swGlitUv2 = swFlowed * (1.2 * U.slateWaterMotion.y) + vec2(17.3, 5.1);
-vec2 swGlitId2 = floor(swGlitUv2);
-float swGlitRnd2 = swHash(swGlitId2 + vec2(7.0, 91.0));
-vec2 swGlitDelta2 = fract(swGlitUv2) - vec2(0.5) - (vec2(swHash(swGlitId2 + vec2(23.0, 5.0)), swGlitRnd2) - vec2(0.5)) * 0.6;
-float swGlitOn2 = step(fract(swGlitRnd2 * 53.7 + swTime * (0.5 + swGlitRnd2)), swFacetP * 0.3 * (1.0 - smoothstep(0.015, 0.05, swFacetVar)));
-float swGlitCore2 = max(0.0, 1.0 - length(swGlitDelta2) * 2.8);
-float swGlitFade2 = (1.0 - swGlitFade) * (1.0 - smoothstep(0.25, 0.9, swGlitPx * 1.2));
-swGlint += min(swSun * (swSunFres * step(0.0, swL.y) * 20.0 * swGlitOn2 * swGlitCore2 * swGlitCore2 * swGlitFade2), vec3(6.0));`)}`, `
+vec3 swGlint = min(swSun * (swSunFres * step(0.0, swL.y) * 40.0 * swGlitOn * swGlitCore * swGlitCore * swGlitFade), vec3(6.0));
+// Sun path sparkles: base cells of 0.1 m (at least about three pixels where the field shows), lit cells' cores carrying
+// the lobe (capped, so a dim lobe never turns into specks).${fromTier(2, `
+float swSpkLevel = max(log2(swPxM * 30.0), 0.0);
+vec2 swSpkUv = swFlowed * (10.0 * exp2(-floor(swSpkLevel)));
+float swSpkField = mix(swGlitterCell(swSpkUv, swTime), swGlitterCell(swSpkUv * 0.5 + vec2(17.3, 5.1), swTime * 0.8), fract(swSpkLevel));
+swSpecModW = smoothstep(0.004, 0.012, swPxM) * U.slateWaterSky.w;`, `
+float swSpkField = swGlitterCell(swFlowed * 10.0, swTime);
+swSpecModW = smoothstep(0.004, 0.012, swPxM) * (1.0 - smoothstep(0.02, 0.05, swPxM)) * U.slateWaterSky.w;`)}
+swSpecMod = min(0.3 + 0.7 * swSpkField * ${f(1 / GLITTER_CELL_MEAN)}, 8.0);`, `
 float swLowNH = max(dot(normalW, swHalf), 0.05);
 float swLowA2 = max(U.slateWaterOrigin.w * U.slateWaterOrigin.w * U.slateWaterOrigin.w * U.slateWaterOrigin.w + 2.0 * swSlopeVariance, 0.0004);
 float swLowD = exp((swLowNH * swLowNH - 1.0) / (swLowNH * swLowNH * swLowA2)) / (3.14159 * swLowA2 * swLowNH * swLowNH * swLowNH * swLowNH);
 // Without Smith shadowing the lobe would smear across grazing water; a cheap fade stands in for it.
-vec3 swGlint = min(swSun * (swSunFres * step(0.0, swL.y) * step(0.0, dot(normalW, swL)) * swLowD / (4.0 * max(swNdotV, 0.1)) * (0.3 + 0.7 * smoothstep(0.05, 0.4, swNdotV))), vec3(6.0));`)}
+vec3 swGlint = min(swSun * (swSunFres * step(0.0, swL.y) * step(0.0, dot(normalW, swL)) * swLowD / (4.0 * max(swNdotV, 0.1)) * (0.3 + 0.7 * smoothstep(0.05, 0.4, swNdotV))), vec3(6.0));
+swGlint = swGlint / (1.0 + dot(swGlint, vec3(0.3, 0.59, 0.11)) * swSpecSquash);`)}
 ${sparkled(`
 float swRL = max(dot(reflect(-swV, normalW), swL), 0.0);
 float swSpark = swSparkBase * 3.0 * pow(swRL, 40.0) * (1.0 - swFoam);`)}
@@ -1096,12 +1168,11 @@ vec3 swSkyDir = normalize(swRefl);
 float swSkyH = 1.0 - clamp(swSkyDir.y, 0.0, 1.0);
 swSkyH = swSkyH * swSkyH * swSkyH;
 vec3 swSkyRefl = mix(U.slateWaterSky.rgb, U.slateWaterHorizon.rgb, swSkyH);
-vec2 swSkySun = swL.xz / max(length(swL.xz), 0.0001);
-float swSkyAz = clamp(dot(swSkyDir.xz / max(length(swSkyDir.xz), 0.0001), swSkySun), 0.0, 1.0);
+float swSkyAz = clamp(dot(swSkyDir.xz / max(length(swSkyDir.xz), 0.0001), swSunShape.xy), 0.0, 1.0);
 swSkyAz *= swSkyAz;
 swSkyAz *= swSkyAz;
 swSkyAz *= swSkyAz;
-float swSkyLowSun = (1.0 - smoothstep(0.0, 0.5, swL.y)) * smoothstep(-0.1, 0.02, swL.y);
+float swSkyLowSun = swSunShape.z;
 float swAura = max(dot(swSkyDir, swL), 0.0);
 swAura *= swAura;
 swAura *= swAura;
@@ -1131,9 +1202,19 @@ alpha = max(alpha, swWet * 0.35 * swEdgeFade);${ifDefined(REFRACTION, `
 // fade. It stays apart from the water's own light (\`swRefracted\`, see CUSTOM_FRAGMENT_BEFORE_FOG), so it never
 // raises the coverage of an HDR target or takes the water's fog twice.
 float swRefractedWeight = (1.0 - swFres) * swTransmit * (1.0 - swFoam) * swEdgeFade * swRefracts;
-vec3 swRefracted = swBackground * swTransmitRgb * ((1.0 - swFres) * (1.0 - swFoam) * swEdgeFade * swRefracts * (1.0 - 0.45 * swWet));
+vec3 swRefracted = swBackground * swTransmitRgb * ((1.0 - swFres) * (1.0 - swFoam) * swEdgeFade * swRefracts * (1.0 - 0.5 * swWet));
 alpha = mix(alpha, swEdgeFade, swRefracts);`)}
 ${objectReflectionSource("normalize(swRefl)", "sqrt(sqrt(U.slateWaterOrigin.w * U.slateWaterOrigin.w * U.slateWaterOrigin.w * U.slateWaterOrigin.w + 2.0 * swSlopeVariance))")}
+#if ${REFLECTS_OBJECTS}
+// A found object is one sharp sample of what a rough, wavy pixel mirrors: its coverage softens so the sky or
+// environment shows through. Facets whose mirror ray pointed below the horizon reflect only the lifted, near-horizontal
+// ray (see the lift above): there a hit would paste whatever stands on the horizon (an island) across the wave backs
+// as flat patches, so those keep the sky. Facets tilted far from the swell's own mirror direction hit stray parts of
+// the scene, filtered roughness blurs the reflection toward the sky, and the hit mask's one-pixel edges are feathered.
+float swObjDeviation = length(swReflRay - reflect(-swV, swSwellNormal));
+swObjRefl.a *= smoothstep(-0.01, 0.03, swReflRawY) * (1.0 - smoothstep(0.1, 0.4, swObjDeviation)) * (1.0 - 0.6 * smoothstep(0.02, 0.15, sqrt(swSlopeVariance)));
+swObjRefl.a *= 1.0 - 0.8 * min(fwidth(swObjRefl.a), 1.0);
+#endif
 `;
 }
 
@@ -1754,13 +1835,27 @@ type WaterLighting = {
   /**
    * Linear zenith and horizon of the analytic sky. Such a scene shows its background colour as the sky: overhead it is
    * that colour deepened and saturated a little (half the hemispheric sky light's colour where the scene has one), at
-   * the horizon the background itself, or the fog colour with fog on (Babylon mixes fog in linear space).
+   * the horizon the background itself, or the fog colour with fog on. Both are converted to linear space as Babylon's
+   * PBR fog converts its fog colour (`BindFogParameters` with `linearSpace`), so the far sea meets its own fog.
    */
   sky: Float64Array;
   horizon: Float64Array;
+  /**
+   * Uniform-only sun terms Realistic water would otherwise evaluate per fragment (`slateWaterSunShape`): the horizontal
+   * direction toward the sun (x, z), how much a low sun warms the analytic horizon, and the share of sunlight that
+   * enters the water (most of a low sun's light reflects off at grazing incidence).
+   */
+  sunShape: Float64Array;
+  /** Sunlight through thin crests, before the water's own colour: strongest for a sun some way up, none at sunset. */
+  subsurfaceLift: number;
+  /** Glitter strength: how clearly the sun stands out against the sky light (slateWaterSky.w). */
+  sunGlitter: number;
 };
 
 const toLinear = (value: number) => Math.max(0, value) ** 2.2;
+const linearScratch = new Color3(), gammaScratch = new Color3();
+/** A Shallow Color channel's relative absorption (see `WaterMaterialPlugin.absorption`): channels near the brightest absorb alike. */
+const absorbCoefficient = (channel: number, top: number) => top > 0 ? 0.2 + Math.max(0, 1 - channel / top - 0.15) / 0.85 : 1;
 
 function sceneWaterLighting(scene: Scene, out: WaterLighting): void {
   let ar = 0, ag = 0, ab = 0, hr = 0, hg = 0, hb = 0, hemispheres = 0;
@@ -1786,7 +1881,11 @@ function sceneWaterLighting(scene: Scene, out: WaterLighting): void {
     sunColor[0] = sunColor[1] = sunColor[2] = 1;
   }
   ambient[0] = ar; ambient[1] = ag; ambient[2] = ab;
-  const clear = scene.clearColor, cr = toLinear(clear.r), cg = toLinear(clear.g), cb = toLinear(clear.b);
+  // Linear space as Babylon converts colours (exact sRGB where the engine uses it), so the reflected horizon matches
+  // the fog the water itself fades into.
+  const exact = scene.getEngine().useExactSrgbConversions, clear = scene.clearColor;
+  gammaScratch.set(Math.max(0, clear.r), Math.max(0, clear.g), Math.max(0, clear.b)).toLinearSpaceToRef(linearScratch, exact);
+  const cr = linearScratch.r, cg = linearScratch.g, cb = linearScratch.b;
   const luminance = Math.max(0.3 * cr + 0.59 * cg + 0.11 * cb, 1e-4);
   // A hemispheric light is the scene's sky light: overhead the sky takes half its colour.
   const lit = hemispheres > 0 ? 0.5 : 0;
@@ -1794,7 +1893,19 @@ function sceneWaterLighting(scene: Scene, out: WaterLighting): void {
   sky[1] = (0.65 * cg + 0.35 * cg * cg / luminance) * 0.85 * (1 - lit) + hg * lit;
   sky[2] = (0.65 * cb + 0.35 * cb * cb / luminance) * 0.85 * (1 - lit) + hb * lit;
   const fog = scene.fogEnabled && scene.fogMode !== Scene.FOGMODE_NONE;
-  horizon[0] = fog ? scene.fogColor.r : cr; horizon[1] = fog ? scene.fogColor.g : cg; horizon[2] = fog ? scene.fogColor.b : cb;
+  if (fog) scene.fogColor.toLinearSpaceToRef(linearScratch, exact);
+  horizon[0] = fog ? linearScratch.r : cr; horizon[1] = fog ? linearScratch.g : cg; horizon[2] = fog ? linearScratch.b : cb;
+  const shape = out.sunShape, horizontal = Math.hypot(toSun[0]!, toSun[2]!), up = toSun[1]!;
+  shape[0] = horizontal > 1e-4 ? toSun[0]! / horizontal : 0;
+  shape[1] = horizontal > 1e-4 ? toSun[2]! / horizontal : 0;
+  shape[2] = (1 - smoothstep(0, 0.5, up)) * smoothstep(-0.1, 0.02, up);
+  shape[3] = 0.25 + 0.75 * smoothstep(0, 0.5, up);
+  // A high sun lights crests from above rather than through them; a setting sun's light is dim and red, which the water
+  // absorbs, so the glow is gone by the time the sun nears the horizon.
+  out.subsurfaceLift = smoothstep(0.06, 0.2, up) * (1 - 0.6 * smoothstep(0.3, 0.8, up));
+  // How clearly the sun stands out against the sky light: under an overcast or stormy sky its glitter fades.
+  const skyLight = 0.3 * ambient[0]! + 0.59 * ambient[1]! + 0.11 * ambient[2]!;
+  out.sunGlitter = smoothstep(0.8, 1.6, toSun[3]! / Math.max(skyLight, 0.05));
 }
 
 /** Each material's ambient: the scene's, plus its environment's share and a low-light floor. Writes `waterAmbient`. */
@@ -1826,6 +1937,7 @@ function sceneWaterBindingData(scene: Scene): WaterBindingData {
   if (previous?.frame === frame && previous.render === render) return previous;
   const lighting = previous?.lighting ?? {
     ambient: new Float64Array(3), sun: new Float64Array(4), sunColor: new Float64Array(3), sky: new Float64Array(3), horizon: new Float64Array(3),
+    sunShape: new Float64Array(4), subsurfaceLift: 0, sunGlitter: 0,
   };
   sceneWaterLighting(scene, lighting);
   const data = {
@@ -2080,9 +2192,10 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
       "slateWaterShallow", "slateWaterDeep", "slateWaterFoam", "slateWaterMotion", "slateWaterLook", "slateWaterWaves", "slateWaterSun", "slateWaterSunColor",
       "slateWaterLight", "slateWaterShape", "slateWaterFieldBounds", "slateWaterFieldInfo", "slateWaterFieldStep", "slateWaterContactBounds", "slateWaterContactInfo",
       "slateWaterOrigin", "slateWaterSwellInfo", "slateWaterSea", "slateWaterRipple", "slateWaterTerms",
-      // Realistic: the analytic sky's zenith and horizon (scene background and fog colours) and the per-channel
-      // absorption from Shallow Color.
-      "slateWaterSky", "slateWaterHorizon", "slateWaterAbsorb",
+      // Realistic: the analytic sky's zenith and horizon (scene background and fog colours), the per-channel
+      // absorption from Shallow Color (w: Low's single coefficient), the uniform-only sun terms and the light through
+      // thin crests (Subsurface).
+      "slateWaterSky", "slateWaterHorizon", "slateWaterAbsorb", "slateWaterSunShape", "slateWaterThrough",
       // (1 / output width, 1 / output height, Refraction, march distance) and (planar on, display-encoded,
       // distortion, 0): per draw, from the pass's scene copy and the view's planar reflection.
       "slateWaterScreen", "slateWaterPlanar",
@@ -2206,9 +2319,11 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
     buffer.updateFloat4("slateWaterSun", sun[0]!, sun[1]!, sun[2]!, sun[3]!);
     buffer.updateFloat4("slateWaterSunColor", sunColor[0]!, sunColor[1]!, sunColor[2]!, w.surfaceFoam);
     buffer.updateFloat4("slateWaterLight", ambient[0]!, ambient[1]!, ambient[2]!, 0);
-    buffer.updateFloat4("slateWaterSky", sky[0]!, sky[1]!, sky[2]!, 0);
+    buffer.updateFloat4("slateWaterSky", sky[0]!, sky[1]!, sky[2]!, lighting.sunGlitter);
     buffer.updateFloat4("slateWaterHorizon", horizon[0]!, horizon[1]!, horizon[2]!, 0);
-    this.absorption(buffer);
+    const shape = lighting.sunShape;
+    buffer.updateFloat4("slateWaterSunShape", shape[0]!, shape[1]!, shape[2]!, shape[3]!);
+    this.absorption(buffer, lighting);
     // With floating origin, shaders see positions relative to this offset (the eye); patterns must stay world-anchored.
     const origin = scene.floatingOriginMode ? scene.floatingOriginOffset : Vector3.ZeroReadOnly;
     buffer.updateFloat4("slateWaterOrigin", origin.x, origin.y, origin.z, w.roughness);
@@ -2302,14 +2417,23 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
   }
   /**
    * Per-channel absorption for Realistic transmittance (`slateWaterAbsorb`) from Shallow Color, the colour shallows
-   * take: channels it lacks absorb fastest (0.3 + 0.9 · (1 - channel / brightest channel), in linear space), scaled so the slowest channel
-   * absorbs over Depth Color Distance as the scalar transmittance does. A grey Shallow Color absorbs evenly. Allocation-free.
+   * take, in linear space: channels it lacks absorb fastest (0.2 + their shortfall from the brightest channel;
+   * channels within 15% of it absorb alike, so a turquoise Shallow Color passes blue as well as green, as water does),
+   * normalized so the slowest channel absorbs over Depth Color Distance as the scalar transmittance does: the colour
+   * the water keeps travels that far. A grey Shallow Color absorbs evenly. `w` is Low's single coefficient, halfway
+   * between the luminance-weighted average and the fastest channel, so Low's shallows take the water's colour much as
+   * Medium's do. The light through thin crests (`slateWaterThrough`, Subsurface) is the sun's colour times what a crest
+   * transmits. Allocation-free.
    */
-  private absorption(buffer: UniformBuffer): void {
+  private absorption(buffer: UniformBuffer, lighting: WaterLighting): void {
     const tint = this.water.shallowColor, r = toLinear(tint[0]), g = toLinear(tint[1]), b = toLinear(tint[2]), top = Math.max(r, g, b);
-    const kr = top > 0 ? 0.3 + 0.9 * (1 - r / top) : 1, kg = top > 0 ? 0.3 + 0.9 * (1 - g / top) : 1, kb = top > 0 ? 0.3 + 0.9 * (1 - b / top) : 1;
-    const weight = Math.min(kr, kg, kb);
-    buffer.updateFloat4("slateWaterAbsorb", kr / weight, kg / weight, kb / weight, 0);
+    const kr = absorbCoefficient(r, top), kg = absorbCoefficient(g, top), kb = absorbCoefficient(b, top), weight = Math.min(kr, kg, kb);
+    const ar = kr / weight, ag = kg / weight, ab = kb / weight;
+    buffer.updateFloat4("slateWaterAbsorb", ar, ag, ab, 0.5 * (0.3 * ar + 0.59 * ag + 0.11 * ab + Math.max(ar, ag, ab)));
+    const sun = lighting.sun[3]! * lighting.subsurfaceLift * 0.45, color = lighting.sunColor;
+    // w: Opacity's cap on the absorption path, where the slowest channel reaches 1 − Opacity.
+    const pathCap = -Math.log(Math.max(1 - this.water.opacity, 1e-6)) / Math.min(ar, ag, ab);
+    buffer.updateFloat4("slateWaterThrough", color[0]! * Math.exp(-ar * 1.2) * sun, color[1]! * Math.exp(-ag * 1.2) * sun, color[2]! * Math.exp(-ab * 1.2) * sun, pathCap);
   }
   private bankFade(): number { return this.body.kind === "global" ? 0 : waterBankFadeLength(this.water, this.body.waveScale); }
   /**
@@ -2386,7 +2510,10 @@ export class WaterMaterialPlugin extends MaterialPluginBase {
         "#endif",
         "#endif",
         "#ifdef SPECULARTERM",
+        // Far away the sun's lobe is compressed and broken into glitter (see the sun in `realisticSource`).
         "finalSpecularScaled *= swGloss;",
+        `finalSpecularScaled *= 1.0 / (1.0 + dot(finalSpecularScaled, ${v3}(0.3, 0.59, 0.11)) * swSpecSquash);`,
+        `finalSpecularScaled *= mix(1.0, swSpecMod, swSpecModW * smoothstep(0.15, 0.6, dot(finalSpecularScaled, ${v3}(0.3, 0.59, 0.11))));`,
         "#endif",
         "#endif",
       ].join("\n"),

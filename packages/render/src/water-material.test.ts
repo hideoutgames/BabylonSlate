@@ -89,16 +89,37 @@ describe("Water material binding", () => {
       hemi.diffuse.set(1, 0.4, 0.2); hemi.intensity = 1;
       scene.render();
       expect(sky[0]! / sky[2]!).toBeGreaterThan(clearSky[0]! / clearSky[2]!);
-      // With fog the horizon blends into the fog colour (Babylon mixes fog in linear space).
+      // With fog the horizon is the fog the water itself fades into: Babylon's PBR fog colour, converted to linear space.
       scene.fogMode = Scene.FOGMODE_LINEAR; scene.fogColor.set(0.3, 0.35, 0.4);
       scene.render();
-      expect(horizon).toEqual([expect.closeTo(0.3, 5), expect.closeTo(0.35, 5), expect.closeTo(0.4, 5)]);
+      const fog = scene.fogColor.toLinearSpace(engine.useExactSrgbConversions);
+      expect(horizon).toEqual([expect.closeTo(fog.r, 5), expect.closeTo(fog.g, 5), expect.closeTo(fog.b, 5)]);
       // Absorption: water whose shallows look blue loses red first and blue last; grey shallows absorb every channel alike.
       const absorb = (shallowColor: [number, number, number]) => { (plugin.water as { shallowColor: number[] }).shallowColor = shallowColor; return bound("slateWaterAbsorb"); };
       const [r, g, b] = absorb([0.1, 0.4, 0.8]);
       expect(r).toBeGreaterThan(g!); expect(g).toBeGreaterThan(b!);
       const grey = absorb([0.2, 0.2, 0.2]);
       expect(grey[0]).toBeCloseTo(grey[1]!, 6); expect(grey[1]).toBeCloseTo(grey[2]!, 6);
+      // Turquoise shallows (the Realistic default) pass blue at least as well as green, as water does (blue absorbing
+      // faster turned them mint), and the colour they keep travels Depth Color Distance (its coefficient is 1).
+      const turquoise = absorb(createDefaultWaterDefinition("realistic").shallowColor);
+      expect(turquoise[2]).toBeLessThanOrEqual(turquoise[1]!);
+      expect(turquoise[0]).toBeGreaterThan(turquoise[1]!);
+      expect(Math.min(...turquoise)).toBeCloseTo(1, 6);
+    } finally { scene.dispose(); engine.dispose(); }
+  });
+
+  it("lets sunlight through thin crests for a sun some way up, but not for a setting sun", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    try {
+      const { plugin } = water(scene), output = uniforms();
+      const sun = new DirectionalLight("sun", Vector3.Down(), scene);
+      let through: number[] = [];
+      scene.customRenderFunction = () => { plugin.hardBindForSubMesh(output.buffer, scene); through = output.vectors.get("slateWaterThrough")!.slice(0, 3); };
+      const elevation = (degrees: number) => { const a = degrees * Math.PI / 180; sun.direction.set(0, -Math.sin(a), -Math.cos(a)); scene.render(); return Math.max(...through); };
+      expect(elevation(25)).toBeGreaterThan(0.05);
+      // At sunset the light reaching the crests is dim, red and absorbed: no glow (it turned wave faces green).
+      expect(elevation(3)).toBe(0);
     } finally { scene.dispose(); engine.dispose(); }
   });
 
