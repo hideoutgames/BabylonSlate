@@ -14,7 +14,8 @@ interface Lease {
 export class DesktopSaveGames {
   private readonly leases = new Map<string, Lease>();
   private readonly epochs = new Map<number, number>();
-  constructor(private readonly storage: NodeSaveGameStorage) {}
+  private readonly storage: NodeSaveGameStorage;
+  constructor(storage: NodeSaveGameStorage) { this.storage = storage; }
 
   async result<T>(operation: () => Promise<T>): Promise<Result<T>> {
     try { return { ok: true, value: await operation() }; }

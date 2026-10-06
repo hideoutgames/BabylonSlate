@@ -1,9 +1,10 @@
-import { SaveGameError, newGuid, type SaveGameValue, type Transform } from "@babylonslate/core";
+import { SaveGameError, newGuid, type SaveGameDefinition, type SaveGameValue, type Transform } from "@babylonslate/core";
 import { Actor, ActorComponent, BObject, type World } from "@babylonslate/object-model";
 
 interface SavedActor {
   id: string;
   classId: string;
+  classAssetGuid?: string;
   spawned: boolean;
   destroyed: boolean;
   transform?: Transform;
@@ -34,12 +35,15 @@ interface StagedWorldSave {
   snapshot: WorldSave;
   prepared: Map<string, Actor>;
   targets: Map<string, Actor>;
+  dataReferences?: string[];
 }
 export interface SaveGameWorldHost {
   world: World;
   sceneId(): string;
   eligible(actor: Actor): boolean;
   isSpawned(actor: Actor): boolean;
+  classAssetGuid(classId: string): string | undefined;
+  resolveClass(classId: string, assetGuid: string | undefined): string | null;
   prepare(id: string, classId: string, spawned: boolean): Actor | null;
   realize(actor: Actor): void;
   remove(actor: Actor): void;
@@ -91,14 +95,34 @@ function validTransform(value: unknown): value is Transform {
 
 /** Selected gameplay state only. Runtime identities and renderer internals never enter a save. */
 export class SaveGameWorld {
+  private readonly host: SaveGameWorldHost;
   private readonly tracked = new Map<string, TrackedActor>();
   private readonly identity = new WeakMap<Actor, string>();
   private scene = "";
 
-  constructor(private readonly host: SaveGameWorldHost) {}
+  constructor(host: SaveGameWorldHost) { this.host = host; }
 
   persistentId(actor: Actor): string {
+    if (!this.identity.has(actor) && this.host.isSpawned(actor)) throw new SaveGameError("incompatible", "Register spawned reference targets before saving.");
     return this.identity.get(actor) ?? actor.guid;
+  }
+
+  validateDataReferences(data: object, definition: SaveGameDefinition, staged?: unknown): void {
+    const targets = staged ? (staged as StagedWorldSave).targets : this.liveTargets();
+    const references: string[] = [];
+    for (const field of definition.fields) {
+      if (field.type !== "actor") continue;
+      const value = (data as Record<string, unknown>)[field.name];
+      const ids = field.array && Array.isArray(value) ? value : [value];
+      for (const id of ids) {
+        if (id === null) continue;
+        if (typeof id !== "string" || !targets.has(id) || targets.get(id)!.destroyed) {
+          throw new SaveGameError("incompatible", `Save Game actor field is unavailable: ${field.name}`);
+        }
+        references.push(id);
+      }
+    }
+    if (staged) (staged as StagedWorldSave).dataReferences = references;
   }
 
   findActor(id: string): Actor | undefined {
@@ -177,6 +201,8 @@ export class SaveGameWorld {
   private captureActor(entry: TrackedActor): SavedActor {
     const { actor, id, spawned, selection: selected } = entry;
     const saved: SavedActor = { id, classId: actor.classId, spawned, destroyed: actor.destroyed, variables: {}, components: {} };
+    const assetGuid = this.host.classAssetGuid(actor.classId);
+    if (assetGuid) saved.classAssetGuid = assetGuid;
     if (actor.destroyed) return saved;
     if (selected.transform) {
       saved.transform = structuredClone(actor.transform);
@@ -245,7 +271,7 @@ export class SaveGameWorld {
     for (const saved of snapshot.actors) {
       this.decode(saved.variables, targets);
       this.decode(saved.components, targets);
-      if (saved.parent && !targets.has(saved.parent)) throw new SaveGameError("incompatible", `Saved parent is unavailable: ${saved.parent}`);
+      if (saved.parent && (!targets.has(saved.parent) || targets.get(saved.parent)!.destroyed)) throw new SaveGameError("incompatible", `Saved parent is unavailable: ${saved.parent}`);
     }
     const byId = new Map(snapshot.actors.map((saved) => [saved.id, saved]));
     for (const saved of snapshot.actors) {
@@ -277,16 +303,18 @@ export class SaveGameWorld {
     const ids = new Set<string>();
     for (const saved of snapshot.actors) {
       if (!record(saved) || typeof saved.id !== "string" || !saved.id || reserved.has(saved.id) || ids.has(saved.id) ||
-        typeof saved.classId !== "string" || typeof saved.spawned !== "boolean" || typeof saved.destroyed !== "boolean" ||
+        typeof saved.classId !== "string" || (saved.classAssetGuid !== undefined && typeof saved.classAssetGuid !== "string") || typeof saved.spawned !== "boolean" || typeof saved.destroyed !== "boolean" ||
         !record(saved.variables) || !record(saved.components) || (saved.transform !== undefined && !validTransform(saved.transform)) ||
         (saved.parent !== undefined && saved.parent !== null && typeof saved.parent !== "string")) {
         throw new SaveGameError("corrupt", "Invalid or duplicate saved actor.");
       }
       ids.add(saved.id);
+      const classId = this.host.resolveClass(saved.classId, saved.classAssetGuid);
+      if (!classId) throw new SaveGameError("incompatible", `Saved actor class asset is unavailable: ${saved.classAssetGuid ?? saved.classId}`);
       if (saved.destroyed) {
-        const candidate = targets.get(saved.id) ?? this.host.prepare(saved.id, saved.classId, saved.spawned);
+        const candidate = targets.get(saved.id) ?? this.host.prepare(saved.id, classId, saved.spawned);
         const selected = candidate && selection(candidate);
-        if (!candidate || candidate.classId !== saved.classId || !selected?.destruction || !this.host.eligible(candidate)) {
+        if (!candidate || candidate.classId !== classId || !selected?.destruction || !this.host.eligible(candidate)) {
           throw new SaveGameError("incompatible", `Saved destruction cannot be restored: ${saved.id}`);
         }
         if (saved.transform || saved.parent !== undefined || Object.keys(saved.variables).length || Object.keys(saved.components).length) {
@@ -295,9 +323,9 @@ export class SaveGameWorld {
         continue;
       }
       let actor = targets.get(saved.id);
-      if (actor && (actor.classId !== saved.classId || !this.host.eligible(actor))) throw new SaveGameError("incompatible", `Actor definition changed: ${saved.id}`);
+      if (actor && (actor.classId !== classId || !this.host.eligible(actor))) throw new SaveGameError("incompatible", `Actor definition changed: ${saved.id}`);
       if (!actor) {
-        actor = this.host.prepare(saved.id, saved.classId, saved.spawned) ?? undefined;
+        actor = this.host.prepare(saved.id, classId, saved.spawned) ?? undefined;
         if (!actor) throw new SaveGameError("incompatible", `Actor definition is unavailable: ${saved.classId}`);
         prepared.set(saved.id, actor);
         targets.set(saved.id, actor);
@@ -321,8 +349,15 @@ export class SaveGameWorld {
   }
 
   apply(staged: unknown): void {
-    const { snapshot, prepared, targets } = staged as StagedWorldSave;
+    const { snapshot, prepared, targets, dataReferences = [] } = staged as StagedWorldSave;
     if (snapshot.sceneId !== this.host.sceneId()) throw new SaveGameError("incompatible", "The scene changed while the save was loading.");
+    this.validateReferences(snapshot, new Map(targets));
+    for (const id of dataReferences) {
+      const target = targets.get(id);
+      if (!target || target.destroyed || (!prepared.has(id) && target.world !== this.host.world)) {
+        throw new SaveGameError("incompatible", "An actor field target became unavailable while loading.");
+      }
+    }
     const rollback: Array<{ actor: Actor; transform: Transform; variables: Map<string, unknown>; components: Array<[ActorComponent, Map<string, unknown>]> }> = [];
     const added: Actor[] = [];
     try {

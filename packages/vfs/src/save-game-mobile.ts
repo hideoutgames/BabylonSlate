@@ -15,10 +15,14 @@ export interface SaveGameFilesystem {
 /** Private saved games, independent of the Files-visible mobile project tier. */
 export class MobileSaveGameStorage implements SaveGameStorage {
   private readonly root: string;
+  private readonly fs: SaveGameFilesystem;
+  private readonly directory: Directory;
   constructor(
-    private readonly fs: SaveGameFilesystem = Filesystem as unknown as SaveGameFilesystem,
-    private readonly directory: Directory = getHostPlatform() === "ios" ? Directory.Library : Directory.Data,
+    fs: SaveGameFilesystem = Filesystem as unknown as SaveGameFilesystem,
+    directory: Directory = getHostPlatform() === "ios" ? Directory.Library : Directory.Data,
   ) {
+    this.fs = fs;
+    this.directory = directory;
     this.root = directory === Directory.Library ? "Application Support/BabylonSlate/game-saves" : "BabylonSlate/game-saves";
   }
 

@@ -5591,6 +5591,12 @@ class InProcessRuntime implements RuntimeDriver {
       sceneId: () => this.world.currentScene?.assetGuid ?? this.playSceneGuid,
       eligible: (actor) => !actor.sceneLayerId && !this.actorStream.has(actor),
       isSpawned: (actor) => this.savedActors.has(actor),
+      classAssetGuid: (classId) => this.scriptHost.scriptsFor(classId)[0]?.assetGuid,
+      resolveClass: (classId, assetGuid) => {
+        if (!assetGuid) return this.scriptHost.scriptsFor(classId).length === 0 && this.world.classRegistry.get(classId) ? classId : null;
+        const candidates = this.scriptHost.classIds().filter((id) => this.scriptHost.scriptsFor(id).some((script) => script.assetGuid === assetGuid));
+        return candidates.length === 1 ? candidates[0]! : null;
+      },
       prepare: (id, classId, spawned) => {
         if (!spawned) {
           const scene = this.sceneLibrary.get(this.world.currentScene?.assetGuid ?? this.playSceneGuid);
@@ -5646,8 +5652,15 @@ class InProcessRuntime implements RuntimeDriver {
           }
         }
       },
-      captureState: () => state.capture(),
-      stageState: (saved) => state.stage(saved),
+      captureState: (data) => {
+        state.validateDataReferences(data, options.definition);
+        return state.capture();
+      },
+      stageState: (saved, data) => {
+        const staged = state.stage(saved);
+        state.validateDataReferences(data, options.definition, staged);
+        return staged;
+      },
       applyState: (staged) => state.apply(staged),
       resetState: () => state.reset(),
       onGameLoaded: (info) => {

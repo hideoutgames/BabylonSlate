@@ -10,7 +10,8 @@ async function unwrap<T>(response: Promise<SaveGameBridgeResult<T>>): Promise<T>
 }
 
 export class ElectronSaveGameStorage implements SaveGameStorage {
-  constructor(private readonly bridge: ElectronSaveGameBridge) {}
+  private readonly bridge: ElectronSaveGameBridge;
+  constructor(bridge: ElectronSaveGameBridge) { this.bridge = bridge; }
   read(key: string): Promise<string | null> { return unwrap(this.bridge.read(key)); }
   write(key: string, text: string): Promise<void> { return unwrap(this.bridge.write(key, text)); }
   remove(key: string): Promise<void> { return unwrap(this.bridge.remove(key)); }

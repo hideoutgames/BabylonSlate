@@ -8,10 +8,11 @@ type DirectoryEntries = FileSystemDirectoryHandle & {
 
 /** OPFS is independent of project folders and never falls back to volatile storage. */
 export class WebSaveGameStorage implements SaveGameStorage {
-  constructor(private readonly getRoot: () => Promise<FileSystemDirectoryHandle> = async () => {
+  private readonly getRoot: () => Promise<FileSystemDirectoryHandle>;
+  constructor(getRoot: () => Promise<FileSystemDirectoryHandle> = async () => {
     if (!globalThis.navigator?.storage?.getDirectory) throw new Error("Save storage requires OPFS");
     return navigator.storage.getDirectory();
-  }) {}
+  }) { this.getRoot = getRoot; }
 
   private async directory(parts: string[], create: boolean): Promise<FileSystemDirectoryHandle> {
     let directory = await (await this.getRoot()).getDirectoryHandle("babylonslate-game-saves", { create });

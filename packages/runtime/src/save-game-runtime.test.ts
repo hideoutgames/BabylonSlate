@@ -31,14 +31,16 @@ const heroScript: CompiledScript = {
       ctx.self.setVariable('loadedTarget', ctx.self.getVariable('target'));
     }`,
 };
-async function boot(storage: MemoryStorage, options: { sceneId?: string; onCommand?: (command: CommandMessage) => void; scripts?: CompiledScript[] } = {}) {
+async function boot(storage: MemoryStorage, options: { sceneId?: string; onCommand?: (command: CommandMessage) => void; scripts?: CompiledScript[]; actorScript?: CompiledScript; definition?: SaveGameDefinition; referenceTarget?: boolean } = {}) {
   const scene = createDefaultScene();
-  scene.actors = [createActor("hero", "Hero", { classId: "Hero", components: structuredClone(components) }),
+  const actorScript = options.actorScript ?? heroScript;
+  scene.actors = [createActor("hero", "Hero", { classId: actorScript.classId, components: structuredClone(components) }),
     createActor("door", "Door", { components: [{ id: "door-save", classId: "SaveGameComponent", properties: {} }] })];
+  if (options.referenceTarget) scene.actors.push(createActor("reference-only", "Reference Target"));
   const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
     playScene: scene, playSceneGuid: options.sceneId ?? "level", onCommand: options.onCommand });
-  const service = runtime.configureSaveGame({ projectId: "project", definition, storage });
-  await runtime.loadScripts([heroScript, ...(options.scripts ?? [])]);
+  const service = runtime.configureSaveGame({ projectId: "project", definition: options.definition ?? definition, storage });
+  await runtime.loadScripts([actorScript, ...(options.scripts ?? [])]);
   await runtime.realizePlayWorld();
   runtime.start();
   return { runtime, service };
@@ -196,5 +198,53 @@ describe("runtime Save Game", () => {
       expect(next.service.getSaveData().coins).toBe(8);
       expect(next.runtime.getDiagnostics().entries().some((entry) => entry.message.includes("renderer disconnected"))).toBe(true);
     } finally { next.runtime.stop(); }
+  });
+
+  it("validates global scalar and array actor fields before capture and staged application", async () => {
+    const storage = new MemoryStorage();
+    const refs: SaveGameDefinition = { ...definition, fields: [...definition.fields,
+      { id: "target", name: "target", type: "actor", defaultValue: null },
+      { id: "party", name: "party", type: "actor", array: true, defaultValue: [] }] };
+    const first = await boot(storage, { definition: refs, referenceTarget: true });
+    try {
+      first.service.getSaveData().target = "reference-only";
+      first.service.getSaveData().party = ["hero", "reference-only"];
+      expect((await first.service.saveGame()).ok).toBe(true);
+      const original = [...storage.files];
+      first.service.getSaveData().party = ["missing-actor"];
+      expect(await first.service.saveGame()).toMatchObject({ ok: false, error: { code: "incompatible" } });
+      expect([...storage.files]).toEqual(original);
+    } finally { first.runtime.stop(); }
+    const next = await boot(storage, { definition: refs });
+    try {
+      hero(next.runtime).setVariable("health", 23);
+      expect(await next.service.loadGame()).toMatchObject({ ok: false, error: { code: "incompatible" } });
+      expect(next.service.getSaveData().target).toBeNull();
+      expect(hero(next.runtime).getVariable("health")).toBe(23);
+    } finally { next.runtime.stop(); }
+  });
+
+  it("restores renamed class assets and refuses a different asset reusing the old class name", async () => {
+    const storage = new MemoryStorage();
+    const first = await boot(storage);
+    try {
+      const companion = first.runtime.spawnScriptedActor({ classId: "Hero" })!;
+      first.runtime.registerSaveActor(companion, "companion");
+      companion.setVariable("health", 12);
+      hero(first.runtime).setVariable("health", 21);
+      expect((await first.service.saveGame()).ok).toBe(true);
+    } finally { first.runtime.stop(); }
+    const renamed = await boot(storage, { actorScript: { ...heroScript, classId: "RenamedHero" } });
+    try {
+      expect((await renamed.service.loadGame()).ok).toBe(true);
+      expect(hero(renamed.runtime).getVariable("health")).toBe(21);
+      expect(renamed.runtime.getWorld().findActor("companion")?.classId).toBe("RenamedHero");
+      expect(renamed.runtime.getWorld().findActor("companion")?.getVariable("health")).toBe(12);
+    } finally { renamed.runtime.stop(); }
+    const replaced = await boot(storage, { actorScript: { ...heroScript, assetGuid: "different-asset" } });
+    try {
+      expect(await replaced.service.loadGame()).toMatchObject({ ok: false, error: { code: "incompatible" } });
+      expect(hero(replaced.runtime).getVariable("health")).toBe(100);
+    } finally { replaced.runtime.stop(); }
   });
 });
