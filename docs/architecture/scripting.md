@@ -711,3 +711,5 @@ Updates merge supplied scalar/nested fields; supplied arrays/maps replace those 
 Definitions use `.datadefinition.babasset`; sheets use `.datasheet.babasset`. Indexed headers contain canonical payloads, so browsing and runtime catalog construction do not read a file per row. Typed field/default/row references participate in dependency discovery, deletion replacement, import GUID remapping and export closure. Traversal follows field schemas; ordinary text and row IDs that happen to equal an asset GUID stay unchanged.
 
 The previous experimental standalone Data Object and reference-only sheet formats are unsupported and are never silently converted into empty definitions/sheets. Existing files are preserved; unsupported reachable data prevents export with an actionable error.
+
+Editor screenshots: [Data Definition fields](../design/evidence/data-workspace/01-data-definition.png), [Data Sheet workspace](../design/evidence/data-workspace/02-data-sheet.png), and [typed row node with Inspector defaults](../design/evidence/data-workspace/03-data-sheet-node.png).
