@@ -1,4 +1,3 @@
-import { webcrypto } from "node:crypto";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { SaveGameService, type SaveGameStorage } from "@babylonslate/core";
@@ -25,6 +24,8 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
 let preview: SaveGameService;
 let exported: SaveGameService;
 beforeEach(async () => {
+  // Load the real host implementation through Vitest; editor sources use DOM-only types.
+  const { webcrypto } = await vi.importActual<{ webcrypto: Crypto }>("node:crypto");
   vi.stubGlobal("crypto", webcrypto);
   const files = new Map<string, string>();
   harness.storage = {
