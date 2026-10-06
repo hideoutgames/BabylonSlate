@@ -356,6 +356,14 @@ describe("spawnPlacedActor", () => {
     expect(actor.components[0]?.properties.meshKind).toBe("sphere");
   });
 
+  it("seats a 3D Ground on the floor at the view-center X/Z", () => {
+    const item = ENGINE_PLACE_ACTORS.find((entry) => entry.id === "shape-ground")!;
+    const actor = spawnPlacedActor(scene, item, "actor-1", [3, 0.93, -2]);
+    expect(actor.transform.position).toEqual([3, 0, -2]);
+    const box = ENGINE_PLACE_ACTORS.find((entry) => entry.id === "shape-box")!;
+    expect(spawnPlacedActor(scene, box, "actor-2", [3, 0.93, -2]).transform.position).toEqual([3, 0.93, -2]);
+  });
+
   it("spawns a light actor", () => {
     const item = ENGINE_PLACE_ACTORS.find((entry) => entry.id === "light-point")!;
     const actor = spawnPlacedActor(scene, item, "actor-2", ORIGIN);

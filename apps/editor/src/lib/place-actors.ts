@@ -484,8 +484,13 @@ export function spawnPlacedActor(
     applyOverlayPlace({ ...actor, name: uniqueSceneActorName(scene, actor.name) }, options?.overlay === true);
   if (kind.type === "scene-layer-switcher") return finish(createActor(id, "Scene Layer Actor Switcher", { classId: "SceneLayerActorSwitcher", transform, properties: { sceneLayerActors: [], initialIndex: 0 } }));
   if (kind.type === "shape") {
+    // A 3D Ground is a floor: keep the view-center X/Z but sit it at y = 0
+    // rather than wherever the view ray happened to land.
+    const floor = kind.meshKind === "ground" && options?.overlay !== true && scene.viewportMode !== "2d";
     return finish(createActor(id, kind.meshKind, {
-      transform,
+      transform: floor
+        ? { ...transform, position: [transform.position[0], 0, transform.position[2]] }
+        : transform,
       components: [createMeshComponent(`${id}-mesh`, kind.meshKind)],
     }));
   }

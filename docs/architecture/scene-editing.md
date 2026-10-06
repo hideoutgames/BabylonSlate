@@ -72,7 +72,7 @@ Folders organize the Outliner. They are **not** actors and never reach the objec
 
 ## Actor Prefab instance sync
 
-Place Actors copies the **ancestor-merged** Class prefab onto the spawned actor (same merge as the Prefab tab) and stamps each row’s `sourceId` to the prefab component id. Actor placement fields (`name`, actor `transform`, `visible`, `locked`, `parentId`, `folderId`) stay instance-owned.
+Place Actors spawns at the viewport's view-center point; a 3D **Ground** keeps that X/Z but sits at y = 0. Place Actors copies the **ancestor-merged** Class prefab onto the spawned actor (same merge as the Prefab tab) and stamps each row’s `sourceId` to the prefab component id. Actor placement fields (`name`, actor `transform`, `visible`, `locked`, `parentId`, `folderId`) stay instance-owned.
 
 Opening a Scene quietly syncs its instances to the current Class prefabs (`DocumentService.patchLoadedContent`, no command); when that changes the Scene, its Undo / Redo history is dropped so older inverses cannot replay onto the synced instances. Prefab edits while the Scene is open sync through scene commands instead.
 
