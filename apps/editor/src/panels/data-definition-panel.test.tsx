@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import type { IndexedAsset } from "@babylonslate/assets";
 import type { OpenDocument } from "../services/document-service";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
-import { DataDefinitionFieldsPanel } from "./data-definition-panel";
+import { DataDefinitionEditingProvider } from "../context/data-definition-editing-context";
+import { DataDefinitionFieldsPanel, DataDefinitionDetailsPanel } from "./data-definition-panel";
 
 const state = vi.hoisted(() => ({ documents: [] as OpenDocument[], assets: [] as IndexedAsset[], apply: vi.fn(), readOnly: false }));
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
@@ -15,7 +16,12 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
 const path = "assets/Weapon.datadefinition.babasset";
 const id = `data-definition:${path}`;
 const props = {} as IDockviewPanelProps;
-function View() { return <DocumentWorkspaceProvider documentId={id}><DataDefinitionFieldsPanel {...props} /></DocumentWorkspaceProvider>; }
+function View({ showFields = true }: { showFields?: boolean }) {
+  return <DocumentWorkspaceProvider documentId={id}><DataDefinitionEditingProvider>
+    {showFields ? <DataDefinitionFieldsPanel {...props} /> : null}
+    <DataDefinitionDetailsPanel {...props} />
+  </DataDefinitionEditingProvider></DocumentWorkspaceProvider>;
+}
 beforeEach(() => {
   vi.stubGlobal("PointerEvent", MouseEvent);
   state.readOnly = false;
@@ -29,8 +35,12 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals(); });
 
-it("retains field identity while editing names, typed defaults and field rules", async () => {
+it("retains field identity while editing names, typed defaults and field rules across docks", async () => {
   const view = render(<View />);
+  const fields = within(screen.getByTestId("data-definition-fields-panel"));
+  const details = within(screen.getByTestId("data-definition-details-panel"));
+  expect(fields.queryByRole("textbox", { name: "Default Value" })).toBeNull();
+  expect(details.getByRole("textbox", { name: "Default Value" })).toBeTruthy();
   fireEvent.change(screen.getByRole("textbox", { name: "Field 1 name" }), { target: { value: "Power" } });
   await waitFor(() => expect(state.documents[0]!.content).toMatchObject({ fields: [{ id: "damage", name: "Power", defaultValue: 12 }] }));
   view.rerender(<View />);
@@ -53,6 +63,9 @@ it("adds fields without a Structure asset and initializes changed collection def
   fireEvent.click(screen.getByTestId("definition-field-add"));
   await waitFor(() => expect(state.documents[0]!.content).toMatchObject({ fields: [{ name: "Damage" }, { name: "Prices", typeId: "float", defaultValue: 0 }] }));
   view.rerender(<View />);
+  expect((within(screen.getByTestId("data-definition-details-panel")).getByRole("textbox", { name: "Name", exact: true }) as HTMLInputElement).value).toBe("Prices");
+  // Closing Fields must not lose the document's selected field.
+  view.rerender(<View showFields={false} />);
   fireEvent.click(screen.getByTestId("inspector-member-container-array"));
   await waitFor(() => expect(state.documents[0]!.content).toMatchObject({ fields: [{ name: "Damage" }, { name: "Prices", container: "array", defaultValue: [] }] }));
 });
@@ -108,4 +121,37 @@ it("keeps recursive definitions editable without expanding their recursive defau
   expect(screen.getByRole("alert").textContent).toMatch(/cannot reference themselves/i);
   expect(screen.getByRole("textbox", { name: "Field 1 name" })).toBeTruthy();
   expect(screen.queryByRole("textbox", { name: /^Default Value/ })).toBeNull();
+});
+
+it("changes the selected field from Fields and falls back after removing that field", async () => {
+  state.documents[0]!.content = { kind: "dataDefinition", fields: [
+    { id: "damage", name: "Damage", typeId: "float", defaultValue: 12 },
+    { id: "health", name: "Health", typeId: "int", defaultValue: 100 },
+  ] };
+  const view = render(<View />);
+  fireEvent.focus(screen.getByRole("textbox", { name: "Field 2 name" }));
+  expect((screen.getByRole("textbox", { name: "Default Value" }) as HTMLInputElement).value).toBe("100");
+  fireEvent.change(screen.getByRole("textbox", { name: "Default Value" }), { target: { value: "200" } });
+  await waitFor(() => expect(state.documents[0]!.content).toMatchObject({ fields: [
+    { id: "damage", defaultValue: 12 }, { id: "health", defaultValue: 200 },
+  ] }));
+  view.rerender(<View />);
+  fireEvent.click(screen.getByRole("button", { name: "Remove Health" }));
+  await waitFor(() => expect(state.documents[0]!.content.fields).toHaveLength(1));
+  view.rerender(<View />);
+  expect((screen.getByRole("textbox", { name: "Default Value" }) as HTMLInputElement).value).toBe("12");
+});
+
+it("chooses a nested Definition in Details and initializes that field's default", async () => {
+  const root = { kind: "dataDefinition", fields: [{ id: "child", name: "Child", typeId: "struct" }] };
+  state.documents[0]!.content = root;
+  state.assets[0]!.header.payload = root;
+  state.assets.push({ ...state.assets[0]!, path: "assets/Stats.datadefinition.babasset", header: { ...state.assets[0]!.header, guid: "stats", name: "Stats", payload: { kind: "dataDefinition", fields: [{ id: "count", name: "Count", typeId: "int", defaultValue: 5 }] } } });
+  const view = render(<View />);
+  const details = within(screen.getByTestId("data-definition-details-panel"));
+  fireEvent.click(details.getByRole("button", { name: "Data Definition Type", exact: true }));
+  fireEvent.click(await screen.findByTestId("search-item-stats"));
+  await waitFor(() => expect(state.documents[0]!.content).toMatchObject({ fields: [{ id: "child", typeClassId: "stats", defaultValue: { Count: 5 } }] }));
+  view.rerender(<View />);
+  expect((details.getByRole("textbox", { name: "Default Value Count" }) as HTMLInputElement).value).toBe("5");
 });

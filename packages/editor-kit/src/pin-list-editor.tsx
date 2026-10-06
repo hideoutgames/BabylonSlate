@@ -53,6 +53,9 @@ export type PinListEditorProps = {
   showOptional?: boolean;
   showDefault?: boolean;
   showContainer?: boolean;
+  /** Keep the list compact when another panel owns the selected row details. */
+  showDetails?: boolean;
+  addPosition?: "top" | "bottom";
   types?: readonly string[];
   classEntries?: readonly ClassPickerEntry[];
   typeAssets?: readonly AssetPickerEntry[];
@@ -136,6 +139,8 @@ export function PinListEditor({
   showOptional = true,
   showDefault = true,
   showContainer = false,
+  showDetails = true,
+  addPosition = "bottom",
   types,
   classEntries = [],
   typeAssets,
@@ -170,9 +175,58 @@ export function PinListEditor({
     ? rows.find((row) => row.id === typeAssetPickRowId)
     : undefined;
 
+  const addField = readOnly ? null : (
+    <Field>
+      <FieldLabel htmlFor={`${testIdPrefix}-add-name`}>Add {itemLabel}</FieldLabel>
+      <div className="flex flex-wrap gap-2">
+        <Input
+          id={`${testIdPrefix}-add-name`}
+          data-testid={`${testIdPrefix}-add-name`}
+          className="h-8 min-h-8 min-w-0 flex-1"
+          value={draftName}
+          onChange={(event) => setDraftName(event.target.value)}
+          placeholder="name"
+        />
+        {showDirection ? (
+          <>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              data-testid={`${testIdPrefix}-add-input`}
+              onClick={() => commitAdd("in")}
+            >
+              Add Input
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              data-testid={`${testIdPrefix}-add-output`}
+              onClick={() => commitAdd("out")}
+            >
+              Add Output
+            </Button>
+          </>
+        ) : (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            data-testid={`${testIdPrefix}-add`}
+            onClick={() => commitAdd()}
+          >
+            Add
+          </Button>
+        )}
+      </div>
+    </Field>
+  );
+
   return (
     <div className="flex flex-col gap-1.5" data-testid={testId}>
       {title ? <div className="text-sm font-medium">{title}</div> : null}
+      {addPosition === "top" ? addField : null}
       {rows.map((row, index) => {
         const selected = effectiveSelectedId === row.id;
         const classId = row.typeClassId?.trim() || "BObject";
@@ -201,6 +255,7 @@ export function PinListEditor({
         const showEnumValues = row.type === "enum" && !hasTypeAssets;
         const showExtras =
           selected &&
+          showDetails &&
           !readOnly &&
           (showContainer || showOptional ||
             showDefaultField ||
@@ -413,53 +468,7 @@ export function PinListEditor({
           </div>
         );
       })}
-      {readOnly ? null : (
-      <Field>
-        <FieldLabel htmlFor={`${testIdPrefix}-add-name`}>Add {itemLabel}</FieldLabel>
-        <div className="flex flex-wrap gap-2">
-          <Input
-            id={`${testIdPrefix}-add-name`}
-            data-testid={`${testIdPrefix}-add-name`}
-            className="h-8 min-h-8 min-w-0 flex-1"
-            value={draftName}
-            onChange={(event) => setDraftName(event.target.value)}
-            placeholder="name"
-          />
-          {showDirection ? (
-            <>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                data-testid={`${testIdPrefix}-add-input`}
-                onClick={() => commitAdd("in")}
-              >
-                Add Input
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                data-testid={`${testIdPrefix}-add-output`}
-                onClick={() => commitAdd("out")}
-              >
-                Add Output
-              </Button>
-            </>
-          ) : (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              data-testid={`${testIdPrefix}-add`}
-              onClick={() => commitAdd()}
-            >
-              Add
-            </Button>
-          )}
-        </div>
-      </Field>
-      )}
+      {addPosition === "bottom" ? addField : null}
       <ClassPicker
         open={classPickRowId !== null}
         onOpenChange={(open) => {

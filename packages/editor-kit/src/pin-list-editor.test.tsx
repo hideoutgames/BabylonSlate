@@ -299,6 +299,26 @@ describe("PinListEditor", () => {
     ]);
   });
 
+  it("keeps compact host-managed field details separate while adding above the list", () => {
+    const onChange = vi.fn();
+    const onSelect = vi.fn();
+    render(<PinListEditor rows={[{ id: "stats", name: "Stats", type: "struct" }]}
+      selectedId="stats" itemLabel="Field" addPosition="top" showDetails={false}
+      showContainer typeAssets={[]} onSelect={onSelect} onChange={onChange} />);
+    expect(screen.queryByTestId("pin-stats-type-asset")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Array" })).toBeNull();
+    fireEvent.focus(screen.getByRole("textbox", { name: "Field 1 name" }));
+    expect(onSelect).toHaveBeenCalledWith("stats");
+    const add = screen.getByLabelText("Add Field");
+    expect(add.compareDocumentPosition(screen.getByTestId("pin-row-stats")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.change(add, { target: { value: "Count" } });
+    fireEvent.click(screen.getByTestId("pin-add"));
+    expect(onChange).toHaveBeenCalledWith([
+      { id: "stats", name: "Stats", type: "struct" },
+      expect.objectContaining({ name: "Count", type: "float" }),
+    ]);
+  });
+
   it("adds an input or output pin", () => {
     const onChange = vi.fn();
     render(

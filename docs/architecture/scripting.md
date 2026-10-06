@@ -653,7 +653,7 @@ A **Data Definition** owns typed fields, defaults and validation rules. A **Data
 
 | Asset | Stored data | Editor |
 | --- | --- | --- |
-| Data Definition | Stable field IDs, names, types, defaults, categories, descriptions and validation rules | DockView Fields |
+| Data Definition | Stable field IDs, names, types, defaults, categories, descriptions and validation rules | DockView Fields and Details |
 | Data Tree | `defaultDefinitionGuid` and owned `entries` (`id`, `parentId`, `name`, optional `definitionGuid`, `values`, schema snapshot) | DockView Tree, Entries, Values and Validation |
 
 Every entry can hold values and children. Omitting its Definition inherits the nearest ancestor's explicit Definition, then the tree default. An explicit Definition replaces the schema; explicit None makes an untyped grouping branch. Children inherit the **schema choice**, not their parent's values. Creation copies the effective Definition's defaults once. Existing entries keep their own values when parents or defaults change.
@@ -662,7 +662,7 @@ Internal entry IDs remain stable through rename, move and undo. Graphs and scrip
 
 ### Authoring and schema changes
 
-- Definitions support scalar fields, vectors/colors, Enums, Tags/Tag Containers, typed asset/Class references, nested Data Definitions, arrays and maps. Defaults, Category, Description, Required and numeric Minimum/Maximum rules live in the Definition.
+- Definitions support scalar fields, vectors/colors, Enums, Tags/Tag Containers, typed asset/Class references, nested Data Definitions, arrays and maps. **Fields** places **Add Field** above the compact field list. Selecting a field opens its Container, type constraints, Default Value, Category, Description, Required and numeric Minimum/Maximum rules in the separate **Details** window on the right. Both windows can be shown from **Windows**, including Details for an older saved single-window layout.
 - The Tree pane follows the Tags editor's compact hierarchy and search patterns. Data Tree assets and Tree Root use Lucide's Database glyph; all entries share the same entry glyph, with disclosure arrows indicating children. Search retains matching ancestors. Entry selection and branch browsing are separate: the Entries grid shows the current branch's children, with optional descendants. Homogeneous Definition selections expose typed columns; mixed branches show entry metadata and a Definition filter.
 - Add roots or children, rename, move, duplicate or remove subtrees. Moves reject cycles and sibling name collisions. Duplicate assigns fresh internal IDs and copies owned values. Remove includes the selected entry's descendants. These operations each use one global undo transaction.
 - Names must be nonempty, trimmed, unique among siblings ignoring case, and cannot contain `/`, control characters, or be `.` or `..`. Hierarchy validation rejects missing parents, repeated IDs, cycles and depth greater than 128.

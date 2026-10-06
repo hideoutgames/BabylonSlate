@@ -1,4 +1,6 @@
+import { DataDefinitionEditingProvider } from "../context/data-definition-editing-context";
 import { InputAssetEditingProvider } from "../context/input-asset-editing-context";
+import { SaveGameEditingProvider } from "../context/save-game-editing-context";
 import { DataAssetEditingProvider } from "../context/data-asset-editing-context";
 import { SceneToolsProvider } from "../context/scene-tools-context";
 import { CONTENT_BROWSER_ID, isAssetDocumentKind, isSceneWorkspaceKind, type SerializedScene } from "@babylonslate/core";
@@ -321,9 +323,11 @@ export function DocumentWorkspace() {
           return (
             <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
               <DocumentWorkspaceProvider documentId={id}>
-                <DocumentShell path={doc.ref.path} testId="document-workspace-data-definition" active={active}>
-                  <RegisteredDockviewShell id={id} documentKind={doc.ref.kind} initialLayout={doc.layout} />
-                </DocumentShell>
+                <DataDefinitionEditingProvider>
+                  <DocumentShell path={doc.ref.path} testId="document-workspace-data-definition" active={active}>
+                    <RegisteredDockviewShell id={id} documentKind={doc.ref.kind} initialLayout={doc.layout} />
+                  </DocumentShell>
+                </DataDefinitionEditingProvider>
               </DocumentWorkspaceProvider>
             </WorkspaceErrorBoundary>
           );
@@ -570,6 +574,21 @@ export function DocumentWorkspace() {
           );
         }
 
+        if (doc.ref.kind === "save-game") {
+          if (!shouldMount) return null;
+          return (
+            <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
+              <DocumentWorkspaceProvider documentId={id}>
+                <SaveGameEditingProvider>
+                  <DocumentShell path={doc.ref.path} testId="document-workspace-save-game" active={active}>
+                    <RegisteredDockviewShell id={id} documentKind="save-game" initialLayout={doc.layout} />
+                  </DocumentShell>
+                </SaveGameEditingProvider>
+              </DocumentWorkspaceProvider>
+            </WorkspaceErrorBoundary>
+          );
+        }
+
         if (
           doc.ref.kind === "sprite" ||
           doc.ref.kind === "plugin-settings" ||
@@ -579,7 +598,6 @@ export function DocumentWorkspace() {
           doc.ref.kind === "sound-attenuation" ||
           doc.ref.kind === "particle-emitter" ||
           doc.ref.kind === "particle-system" ||
-          doc.ref.kind === "save-game" ||
           doc.ref.kind === "water" ||
           doc.ref.kind === "render-target" ||
           doc.ref.kind === "render-target-texture" ||
