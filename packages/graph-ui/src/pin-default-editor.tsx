@@ -7,7 +7,7 @@ import {
 } from "@babylonslate/editor-kit";
 import { Checkbox } from "@babylonslate/ui/components/checkbox";
 import { Input } from "@babylonslate/ui/components/input";
-import { FieldLabel } from "@babylonslate/ui/components/field";
+import { Label } from "@babylonslate/ui/components/label";
 import {
   pinDefaultAsBoolean,
   pinDefaultAsNumber,
@@ -117,11 +117,11 @@ export function PinDefaultEditor(request: EditorProps) {
         className="max-w-[var(--graph-pin-default-max-width,12rem)]" aria-label={`${label} Tags`} data-testid={`pin-tags-${nodeId}-${pin.id}`} />;
       break;
     case "bool":
-      control = <FieldLabel htmlFor={checkboxId} className="graph-pin-default-boolean flex min-h-8 items-center gap-1.5">
-        <Checkbox id={checkboxId} checked={pinDefaultAsBoolean(value)} disabled={disabled} aria-label={label} data-testid={testId}
+      control = <Label htmlFor={checkboxId} className="graph-pin-default-boolean flex min-h-8 items-center gap-1.5">
+        <Checkbox id={checkboxId} className="size-5" checked={pinDefaultAsBoolean(value)} disabled={disabled} aria-label={label} data-testid={testId}
           onCheckedChange={(checked) => { if (!disabled) onChange(checked === true); }} />
         <span className="text-sm">{pinDefaultAsBoolean(value) ? "On" : "Off"}</span>
-      </FieldLabel>;
+      </Label>;
       break;
     case "string":
       control = <StringDefault key={draftKey()} value={value} disabled={disabled} onChange={onChange} label={label} testId={testId} />;
