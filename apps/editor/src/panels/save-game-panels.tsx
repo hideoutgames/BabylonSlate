@@ -196,14 +196,14 @@ export function SaveGameDefinitionPanel(_props: IDockviewPanelProps) {
         <FieldDescription>{isDefault ? "This is the project's active Save Game. Get Save and Set Save field nodes use these fields." : "Choose this as the project default to make its fields available in NodeGraphs."}</FieldDescription>
         <div><Button size="sm" variant="outline" className="pointer-coarse:min-h-11" disabled={!guid || !projectDocument || isDefault} onClick={() => { if (guid && settings) updateProjectSettings({ saveGame: { ...settings, definitionGuid: guid } }); }}>{isDefault ? "Project Default" : "Use As Project Default"}</Button></div>
         {isDefault && settings ? <PropertyGrid rows={[
-          { id: "save-default-slot", kind: "text", label: "Default Slot", value: settings.defaultSlot, description: "Save Game and Load Game use this slot when none is specified.", onChange: (defaultSlot) => updateProjectSettings({ saveGame: { ...settings, defaultSlot } }) },
-          { id: "save-default-profile", kind: "text", label: "Default Profile", value: settings.defaultProfile, description: "Keeps each player's saves together.", onChange: (defaultProfile) => updateProjectSettings({ saveGame: { ...settings, defaultProfile } }) },
+          { id: `${documentId}-save-default-slot`, kind: "text", label: "Default Slot", value: settings.defaultSlot, description: "Save Game and Load Game use this slot when none is specified.", onChange: (defaultSlot) => updateProjectSettings({ saveGame: { ...settings, defaultSlot } }) },
+          { id: `${documentId}-save-default-profile`, kind: "text", label: "Default Profile", value: settings.defaultProfile, description: "Keeps each player's saves together.", onChange: (defaultProfile) => updateProjectSettings({ saveGame: { ...settings, defaultProfile } }) },
         ]} /> : null}
         <FieldDescription>Use Set Save field nodes to update progress, Save Game at checkpoints, and Load Game before reading progress. Manage local Play saves in Project Settings → Save Games.</FieldDescription>
       </FieldSet>
       <DisclosureSection title="Advanced" open={advancedOpen} onOpenChange={setAdvancedOpen}>
         <FieldGroup className="gap-3">
-          <PropertyGrid rows={[{ id: "save-schema-version", label: "Schema Version", kind: "number", min: 1, precision: 0, value: definition.schemaVersion, description: "Increase for incompatible changes, then register a gameplay migration before Load Game.", onChange: (schemaVersion) => void commit({ ...definition, schemaVersion: Math.max(1, Math.round(schemaVersion)) }) }]} />
+          <PropertyGrid rows={[{ id: `${documentId}-save-schema-version`, label: "Schema Version", kind: "number", min: 1, precision: 0, value: definition.schemaVersion, description: "Increase for incompatible changes, then register a gameplay migration before Load Game.", onChange: (schemaVersion) => void commit({ ...definition, schemaVersion: Math.max(1, Math.round(schemaVersion)) }) }]} />
           <FieldSet className="gap-2"><FieldLegend variant="label">Generated Type</FieldLegend><pre className="select-text overflow-auto rounded-md border border-border p-2 text-xs" tabIndex={0}>{generateSaveGameTypes(definition)}</pre></FieldSet>
         </FieldGroup>
       </DisclosureSection>

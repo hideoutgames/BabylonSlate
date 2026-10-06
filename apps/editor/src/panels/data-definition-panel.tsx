@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { reconcileDataDefinitionDefault } from "@babylonslate/scripting";
 import {
@@ -35,6 +35,7 @@ export function DataDefinitionFieldsPanel(_props: IDockviewPanelProps) {
 }
 
 function SelectedFieldDetails() {
+  const controlId = useId();
   const { catalog, definition, selected, readOnly, typeAssets, patchSelected, changeSelectedType, recursive, projectedSelected, selectedDefault, commit, issues } = useDataDefinitionEditing();
   const [classPickerOpen, setClassPickerOpen] = useState(false);
   const [typePickerOpen, setTypePickerOpen] = useState(false);
@@ -42,36 +43,36 @@ function SelectedFieldDetails() {
   const constraints: PropertyRow[] = [];
   if (selected.typeId === "class") {
     const classId = selected.typeClassId?.trim() || "BObject";
-    constraints.push({ id: "class-type", kind: "asset", label: "Class Type", value: classId,
+    constraints.push({ id: `${controlId}:class-type`, kind: "asset", label: "Class Type", value: classId,
       ...classRowIdentity(catalog.classEntries.find(entry => entry.id === classId), classId),
       onPick: () => setClassPickerOpen(true), onChange: value => changeSelectedType({ typeClassId: value ?? "BObject" }),
     });
   } else if ((selected.typeId === "struct" && selected.typeClassId !== "engine:TagContainer") || selected.typeId === "enum") {
     const asset = typeAssets.find(entry => entry.guid === selected.typeClassId);
-    constraints.push({ id: "type-asset", kind: "asset", label: selected.typeId === "enum" ? "Enum Type" : "Data Definition Type", value: selected.typeClassId ?? null,
+    constraints.push({ id: `${controlId}:type-asset`, kind: "asset", label: selected.typeId === "enum" ? "Enum Type" : "Data Definition Type", value: selected.typeClassId ?? null,
       ...assetRowIdentity(asset), placeholder: "Choose Type",
       onPick: () => setTypePickerOpen(true), onChange: value => changeSelectedType({ typeClassId: value ?? undefined }),
     });
   } else if (selected.typeId === "asset") {
-    constraints.push({ id: "asset-type", kind: "enum", label: "Asset Type", value: selected.typeClassId ?? "",
+    constraints.push({ id: `${controlId}:asset-type`, kind: "enum", label: "Asset Type", value: selected.typeClassId ?? "",
       options: [{ value: "", label: "Any Asset" }, ...ASSET_REF_PICKER_TYPES.map(type => ({ value: type, label: humanizePropertyLabel(type) }))],
       onChange: value => changeSelectedType({ typeClassId: value || undefined }),
     });
   }
   const rules: PropertyRow[] = [
-    { id: "category", kind: "text", label: "Category", value: selected.category ?? "", onChange: value => patchSelected({ category: value }) },
-    { id: "description", kind: "text", label: "Description", value: selected.description ?? "", onChange: value => patchSelected({ description: value }) },
-    { id: "required", kind: "boolean", label: "Required", value: selected.required === true, onChange: value => patchSelected({ required: value }) },
+    { id: `${controlId}:category`, kind: "text", label: "Category", value: selected.category ?? "", onChange: value => patchSelected({ category: value }) },
+    { id: `${controlId}:description`, kind: "text", label: "Description", value: selected.description ?? "", onChange: value => patchSelected({ description: value }) },
+    { id: `${controlId}:required`, kind: "boolean", label: "Required", value: selected.required === true, onChange: value => patchSelected({ required: value }) },
   ];
   if ((selected.typeId === "float" || selected.typeId === "int") && (selected.container ?? "single") === "single") {
     for (const bound of ["min", "max"] as const) {
       const label = bound === "min" ? "Minimum" : "Maximum";
-      rules.push({ id: `use-${bound}`, kind: "boolean", label: `Limit ${label}`, value: selected[bound] !== undefined, onChange: value => patchSelected({ [bound]: value ? 0 : undefined }) });
-      if (selected[bound] !== undefined) rules.push({ id: bound, kind: "number", label, value: selected[bound]!, onChange: value => patchSelected({ [bound]: value }, `definition:${selected.id}:${bound}`) });
+      rules.push({ id: `${controlId}:use-${bound}`, kind: "boolean", label: `Limit ${label}`, value: selected[bound] !== undefined, onChange: value => patchSelected({ [bound]: value ? 0 : undefined }) });
+      if (selected[bound] !== undefined) rules.push({ id: `${controlId}:${bound}`, kind: "number", label, value: selected[bound]!, onChange: value => patchSelected({ [bound]: value }, `definition:${selected.id}:${bound}`) });
     }
   }
   return <>
-    <PropertyGrid rows={[{ id: "name", kind: "text", label: "Name", value: selected.name, onChange: value => patchSelected({ name: value }) }]} readOnly={readOnly} />
+    <PropertyGrid rows={[{ id: `${controlId}:name`, kind: "text", label: "Name", value: selected.name, onChange: value => patchSelected({ name: value }) }]} readOnly={readOnly} />
     <fieldset disabled={readOnly} className="min-w-0">
       <VariableTypeFields
         value={{ ...selected, container: selected.container ?? "single" }}

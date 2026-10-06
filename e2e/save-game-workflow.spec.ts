@@ -100,8 +100,8 @@ test("Save Game authoring preserves field identity and project defaults through 
   const restored = page.getByTestId(`save-field-${identity}`);
   await expect(restored.getByRole("textbox", { name: "Name", exact: true })).toHaveValue("Coins");
   await expect(restored.getByTestId(`property-default-${identity}-Default Value`)).toHaveValue("25");
-  await openSaveSettings(page);
-  await expect(page.getByLabel("Default Slot", { exact: true })).toHaveValue("checkpoint");
-  await expect(page.getByLabel("Default Profile", { exact: true })).toHaveValue("player-one");
-  await expect(page.getByRole("switch", { name: "Wipe Preview Saves On Play" })).toBeChecked();
+  const restoredSettings = await openSaveSettings(page);
+  await expect(restoredSettings.getByLabel("Default Slot", { exact: true })).toHaveValue("checkpoint");
+  await expect(restoredSettings.getByLabel("Default Profile", { exact: true })).toHaveValue("player-one");
+  await expect(restoredSettings.getByRole("switch", { name: "Wipe Preview Saves On Play" })).toBeChecked();
 });
