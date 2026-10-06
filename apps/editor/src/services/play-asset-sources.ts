@@ -200,7 +200,8 @@ async function acquirePlayAssetSourcesAttempt(
       await requireFont(guid || project.settings.fonts.defaultFontGuid, chunks);
     }
     for (const guid of required) {
-      const value = await scope.acquire<RegistryLoadedAsset>(guid, undefined, { signal: options.signal, dependencies: "none" });
+      // The catalog closure above has just been refreshed; the prepared result is validated before publication.
+      const value = await scope.acquire<RegistryLoadedAsset>(guid, undefined, { signal: options.signal, dependencies: "none", refresh: false });
       if (value.revision !== catalogRevisions.get(guid)) throw new SourceRevisionChangedError(`Asset ${guid} changed after resolving its dependencies; retry`);
       documents.set(guid, value);
       const payload = value.document.payload;
@@ -248,7 +249,8 @@ async function acquirePlayAssetSourcesAttempt(
       const asset = host.registry.getByGuid(guid)!;
       const preparedDocument = documents.get(guid)!;
       const document = preparedDocument.document;
-      if ((await host.registry.getAssetLocator(guid, { signal: options.signal })).revision !== preparedDocument.revision) throw new SourceRevisionChangedError(`Asset ${guid} changed after its document loaded; retry`);
+      // Storage is validated again before the prepared content is published.
+      if (asset.locator?.revision !== preparedDocument.revision) throw new SourceRevisionChangedError(`Asset ${guid} changed after its document loaded; retry`);
       const chunkIds = selectedChunks(asset, document.payload, fontModes, emissions);
       const chunks = new Map<string, Uint8Array>();
       // A chunk stays compatible when another consumer asks for additional
@@ -256,8 +258,8 @@ async function acquirePlayAssetSourcesAttempt(
       for (const chunkId of chunkIds) {
         const representation = await registryAssetRepresentation(host.registry, guid, {
           selectChunks: () => [chunkId], includeDocument: false, representationKey: "runtime-source-chunk",
-        }, { signal: options.signal });
-        const loaded = await scope.acquire<RegistryLoadedAsset>(guid, representation, { signal: options.signal, dependencies: "none" });
+        }, { signal: options.signal }, false);
+        const loaded = await scope.acquire<RegistryLoadedAsset>(guid, representation, { signal: options.signal, dependencies: "none", refresh: false });
         if (loaded.revision !== preparedDocument.revision) throw new SourceRevisionChangedError(`Asset ${guid} changed while selecting source data; retry`);
         chunks.set(chunkId, loaded.chunks.get(chunkId)!);
       }
@@ -290,7 +292,7 @@ async function acquirePlayAssetSourcesAttempt(
                 dispose: () => { meshes.clear(); clips.clear(); },
               };
             },
-          }, { signal: options.signal, dependencies: "none" });
+          }, { signal: options.signal, dependencies: "none", refresh: false });
           for (const [id, mesh] of prepared.meshes) complexMeshes.set(id, mesh);
           durations.set(guid, prepared.clips);
         }
@@ -318,7 +320,7 @@ async function acquirePlayAssetSourcesAttempt(
           key: `area-emission:${entry.sha256}`,
           estimate: { sourceBytes: 0, decodedBytes: bytes.byteLength, temporaryBytes: bytes.byteLength },
           load: async () => ({ value: await decodeAreaEmission(bytes), sourceBytes: 0, decodedBytes: bytes.byteLength }),
-        }, { signal: options.signal, dependencies: "none" });
+        }, { signal: options.signal, dependencies: "none", refresh: false });
         game.areaEmissions.set(guid, decoded);
       }
       const navmesh = value.chunks.get("navmesh");
@@ -340,8 +342,9 @@ async function acquirePlayAssetSourcesAttempt(
         signal.throwIfAborted();
         const result = await host.compile(required);
         signal.throwIfAborted();
+        // Prepared content validates every input against storage before publication.
         for (const [guid, revision] of compileInputs) {
-          if ((await host.registry.getAssetLocator(guid, { signal })).revision !== revision) throw new SourceRevisionChangedError(`Class compilation input ${guid} changed; retry`);
+          if (host.registry.getByGuid(guid)?.locator?.revision !== revision) throw new SourceRevisionChangedError(`Class compilation input ${guid} changed; retry`);
         }
         const byPath = new Map(host.registry.list().map(asset => [asset.path, asset]));
         const bundles = result.bundles.map(script => {
@@ -358,7 +361,7 @@ async function acquirePlayAssetSourcesAttempt(
           dispose: () => { value.bundles.length = 0; value.diagnostics.length = 0; },
         };
       },
-    }, { signal: options.signal, dependencies: "none" }) : { bundles: [], diagnostics: [] };
+    }, { signal: options.signal, dependencies: "none", refresh: false }) : { bundles: [], diagnostics: [] };
     const failure = compiled.diagnostics.find((entry) => entry.severity === "error");
     if (failure && !options.allowCompileErrors) throw new Error(failure.message);
     game.scripts = compiled.bundles;
@@ -379,7 +382,7 @@ async function acquirePlayAssetSourcesAttempt(
         }
         return { value, sourceBytes: 0, decodedBytes: cpuBytes, dispose: () => releasePackedContent(value) };
       },
-    }, { signal: options.signal, dependencies: "none" }) : packedContentFromGame(game);
+    }, { signal: options.signal, dependencies: "none", refresh: false }) : packedContentFromGame(game);
     const content = copyContainers(cachedContent);
     content.audioLibrary = copyContainers(cachedContent.audioLibrary);
     content.particleLibrary = copyContainers(cachedContent.particleLibrary);

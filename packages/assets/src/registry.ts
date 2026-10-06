@@ -307,6 +307,11 @@ export class AssetRegistry {
   async getChunkByteLength(guid: string, chunkId: string, expectedRevision?: string, options: StorageReadOptions = {}): Promise<number> {
     const locator = await this.getAssetLocator(guid, options);
     options.signal?.throwIfAborted();
+    return this.chunkByteLength(guid, chunkId, locator, expectedRevision, options);
+  }
+
+  /** Size a chunk of a catalog snapshot the caller has just resolved, without refreshing it again. */
+  async chunkByteLength(guid: string, chunkId: string, locator: AssetSourceLocator, expectedRevision?: string, options: StorageReadOptions = {}): Promise<number> {
     if (expectedRevision !== undefined && locator.revision !== expectedRevision) throw new SourceRevisionChangedError(`Asset changed before estimating chunk ${chunkId}: ${guid}`);
     const asset = this.byGuid.get(guid);
     if (!asset || asset.locator !== locator) throw new SourceRevisionChangedError(`Asset changed while estimating chunk ${chunkId}: ${guid}`);

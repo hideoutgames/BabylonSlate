@@ -43,7 +43,15 @@ export interface AssetLoadingBudgets {
 
 export interface AssetLoadingServiceOptions {
   projectId: string;
-  resolve: (id: string, signal?: AbortSignal) => AssetCatalogRecord | Promise<AssetCatalogRecord>;
+  /** `refresh: false` may answer from the host's current catalog snapshot without reading storage. */
+  resolve: (id: string, signal?: AbortSignal, options?: { refresh?: boolean }) => AssetCatalogRecord | Promise<AssetCatalogRecord>;
+  /**
+   * The catalog identity the host currently holds, without refreshing storage.
+   * When provided, consistency checks after a request's initial resolution use
+   * it; the initial resolution and each representation's own load still read
+   * storage, so a warm entry is never returned for a changed source.
+   */
+  current?: (id: string) => Pick<AssetCatalogRecord, "revision" | "rootId"> | undefined;
   representation: (asset: AssetCatalogRecord) => AssetRepresentation;
   budgets?: Partial<AssetLoadingBudgets>;
   now?: () => number;
@@ -54,6 +62,12 @@ export interface AssetAcquireOptions {
   signal?: AbortSignal;
   /** Document editors and individual representation reads do not prepare runtime consumers. */
   dependencies?: "required" | "none";
+  /**
+   * `false` resolves from the host's current catalog snapshot. Only a caller
+   * that has just refreshed these catalogs, and validates storage again before
+   * publishing what it prepared, may skip the refresh.
+   */
+  refresh?: boolean;
 }
 
 export interface AssetPreloadOptions extends AssetAcquireOptions {
@@ -294,7 +308,7 @@ export class AssetLoadingService {
         visited.add(id);
         check();
         let record: AssetCatalogRecord;
-        try { record = await this.options.resolve(id, signal); }
+        try { record = await this.options.resolve(id, signal, { refresh: options.refresh }); }
         catch (cause) { throw this.error("missing", id, ticket.owner, errorMessage(cause), cause); }
         check();
         records.set(id, record);
@@ -315,7 +329,7 @@ export class AssetLoadingService {
       this.pump();
       await abortable(Promise.all(promises), signal, () => this.error("cancelled", assetId, ticket.owner, "request cancelled"));
       await abortable(Promise.all([...records.values()].map(async (asset) => {
-        const current = await this.options.resolve(asset.id, signal);
+        const current = this.options.current?.(asset.id) ?? await this.options.resolve(asset.id, signal);
         if (current.revision !== asset.revision || current.rootId !== asset.rootId) {
           throw this.error("stale", asset.id, ticket.owner, "asset changed while dependencies loaded; retry the current revision",
             new SourceRevisionChangedError(`Asset ${asset.id} changed while dependencies loaded`));
@@ -455,7 +469,8 @@ export class AssetLoadingService {
       if (entry.controller.signal.aborted || this.disposed) throw cancelled();
       // Metadata validation owns no decoded resource. Stop waiting for a slow
       // provider as soon as the final consumer leaves, and dispose the result.
-      const current = await abortable(Promise.resolve(this.options.resolve(entry.asset.id, entry.controller.signal)), entry.controller.signal, cancelled);
+      const current = this.options.current?.(entry.asset.id)
+        ?? await abortable(Promise.resolve(this.options.resolve(entry.asset.id, entry.controller.signal)), entry.controller.signal, cancelled);
       if (entry.controller.signal.aborted || this.disposed || this.entries.get(entry.key) !== entry) {
         throw cancelled();
       }

@@ -48,7 +48,11 @@ export function createRegistryAssetLoadingService(
   return new AssetLoadingService({
     projectId: options.projectId,
     budgets: options.budgets,
-    resolve: (id, signal) => registryRecord(currentRegistry(), id, options, { signal }),
+    resolve: (id, signal, resolveOptions) => registryRecord(currentRegistry(), id, options, { signal }, resolveOptions?.refresh),
+    current: (id) => {
+      const asset = currentRegistry().getByGuid(id);
+      return asset?.locator && !asset.placeholder ? { revision: asset.locator.revision, rootId: asset.rootId } : undefined;
+    },
     representation: (asset) => representationForRecord(currentRegistry(), asset as RegistryRecord, options),
   });
 }
@@ -59,8 +63,9 @@ export async function registryAssetRepresentation(
   id: string,
   options: Omit<RegistryAssetLoadingOptions, "projectId" | "budgets"> = {},
   readOptions?: StorageReadOptions,
+  refresh?: boolean,
 ): Promise<AssetRepresentation<RegistryLoadedAsset>> {
-  return representationForRecord(registry, await registryRecord(registry, id, options, readOptions), options);
+  return representationForRecord(registry, await registryRecord(registry, id, options, readOptions, refresh), options);
 }
 
 async function registryRecord(
@@ -68,8 +73,10 @@ async function registryRecord(
   id: string,
   options: Pick<RegistryAssetLoadingOptions, "selectChunks" | "includeDocument">,
   readOptions?: StorageReadOptions,
+  refresh = true,
 ): Promise<RegistryRecord> {
-  const locator = await registry.getAssetLocator(id, readOptions);
+  const known = registry.getByGuid(id)?.locator;
+  const locator = !refresh && known ? known : await registry.getAssetLocator(id, readOptions);
   const indexed = registry.getByGuid(id);
   if (!indexed || indexed.placeholder) throw new Error(`Missing asset ${id}`);
   const documentEntry = indexed.header.chunks.find((entry) => entry.id === DOCUMENT_CHUNK_ID);
@@ -77,7 +84,7 @@ async function registryRecord(
     ...(documentEntry && options.includeDocument !== false ? [DOCUMENT_CHUNK_ID] : []),
     ...(options.selectChunks?.(indexed) ?? []),
   ])];
-  const lengths = await Promise.all(chunkIds.map((chunkId) => registry.getChunkByteLength(id, chunkId, locator.revision, readOptions)));
+  const lengths = await Promise.all(chunkIds.map((chunkId) => registry.chunkByteLength(id, chunkId, locator, locator.revision, readOptions)));
   readOptions?.signal?.throwIfAborted();
   const documentIndex = chunkIds.indexOf(DOCUMENT_CHUNK_ID);
   return {

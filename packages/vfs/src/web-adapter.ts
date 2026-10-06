@@ -63,6 +63,7 @@ function updateMeta(mutate: (meta: OpfsMeta) => void): Promise<void> {
 /** Durable browser storage. Hosts without OPFS must report the failure to the caller. */
 export class OpfsStorageAdapter implements ProjectStorage {
   private readonly reads = new StorageReadCounter();
+  private readonly rangeHandles = new Map<string, FileSystemFileHandle>();
   getReadMetrics() { return this.reads.snapshot(); }
 
   private folder: ProjectFolderHandle | null = null;
@@ -192,6 +193,9 @@ export class OpfsStorageAdapter implements ProjectStorage {
     const dirName = known.directory ?? legacyDirectoryName(known.id);
     const shared = meta.projects.some((project) => project.id !== handle.id &&
       (project.directory ?? legacyDirectoryName(project.id)) === dirName);
+    for (const cached of [...this.rangeHandles.keys()]) {
+      if (cached.startsWith(`${handle.id}/`)) this.rangeHandles.delete(cached);
+    }
     const opfs = await this.getOpfsRoot();
     if (!shared) {
       try { await opfs.removeEntry(dirName, { recursive: true }); }
@@ -279,12 +283,28 @@ export class OpfsStorageAdapter implements ProjectStorage {
     }
   }
 
-  async readBinaryRange(path: string, offset: number, length: number, expectedRevision?: string) {
-    validateStorageRange(offset, length);
+  /**
+   * Bounded catalog reads repeat for every revision check. Each OPFS call is a
+   * separate task, which a busy render loop can delay by a frame, so reuse the
+   * file handle and fall back to a fresh lookup when it no longer resolves.
+   */
+  private async rangeFile(key: string, path: string): Promise<{ handle: FileSystemFileHandle; file: File }> {
+    const cached = this.rangeHandles.get(key);
+    if (cached) {
+      try { return { handle: cached, file: await cached.getFile() }; }
+      catch { this.rangeHandles.delete(key); }
+    }
     const { parent, name } = await this.resolveHandle(path, false);
     const handle = await parent.getFileHandle(name);
     const file = await handle.getFile();
+    this.rangeHandles.set(key, handle);
+    return { handle, file };
+  }
+
+  async readBinaryRange(path: string, offset: number, length: number, expectedRevision?: string) {
+    validateStorageRange(offset, length);
     const key = `${this.assertFolder().id}/${this.split(path).join("/")}`;
+    const { handle, file } = await this.rangeFile(key, path);
     const revisionOf = (value: File) => `${value.lastModified}:${value.size}:${writeRevisions.get(key) ?? 0}`;
     const revision = revisionOf(file);
     checkStorageRevision(path, revision, expectedRevision);
@@ -297,7 +317,7 @@ export class OpfsStorageAdapter implements ProjectStorage {
       this.reads.record("range", length, 0);
       if (STALE_SNAPSHOT_ERRORS.has(String((error as { name?: unknown } | null)?.name ?? ""))) {
         let current: File | undefined;
-        try { current = await (await parent.getFileHandle(name)).getFile(); }
+        try { current = await handle.getFile(); }
         catch { /* A missing/unreadable file alone does not prove a changed revision. */ }
         if (current && revisionOf(current) !== revision) {
           throw Object.assign(new SourceRevisionChangedError(`Source revision changed: ${path}`), { cause: error });
@@ -407,6 +427,10 @@ export class OpfsStorageAdapter implements ProjectStorage {
   }
 
   async remove(path: string): Promise<void> {
+    const key = `${this.assertFolder().id}/${this.split(path).join("/")}`;
+    for (const cached of [...this.rangeHandles.keys()]) {
+      if (cached === key || cached.startsWith(`${key}/`)) this.rangeHandles.delete(cached);
+    }
     try {
       const { parent, name } = await this.resolveHandle(path, false);
       await parent.removeEntry(name, { recursive: true });
