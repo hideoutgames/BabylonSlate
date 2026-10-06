@@ -42,7 +42,7 @@ Parser: whitespace tokens, quoted strings, longest-name match (`stat unit`, `sna
 | `pause` | yes | **yes** | Idempotent. Emits `{ type: "sessionPaused"; paused: true }`. Overlay button reads Resume. |
 | `resume` / `unpause` | yes | **yes** | Idempotent. Emits `sessionPaused: false`. Does not stop free cam. |
 | `step` | yes | **yes** | Overlay Step: `resume()` → `tick()` → `pause()` if it was paused. |
-| `slomo` | yes | **yes** | Rejects rates `<= 0` or above `8` (a zero rate would stop simulated time with no way back); `RuntimeDriver.timeDilation` still clamps `0..8`. `tick` uses `dt * rate` for script, physics, nav, BT. Trace header and frame snapshots store undilated `dt`. No arg → print current. |
+| `slomo` | yes | **yes** | Rejects negative rates and rates above `8`; `0` stays a deliberate freeze (`slomo 1` resumes). `RuntimeDriver.timeDilation` still clamps `0..8`. `tick` uses `dt * rate` for script, physics, nav, BT. Trace header and frame snapshots store undilated `dt`. No arg → print current. |
 | `freecam` | yes | **yes** | `{ type: "setFreeCam" }`. Detached fly/pan camera; simulation keeps ticking. Pointer/WASD stolen; 2D pinch zooms ortho; gamepad still forwards (`help freecam` documents that split). Overlay Play shows a touch fly stick while on. Off / `changescene` / `possessCamera` restore. FPS look (drag right looks right). |
 | `lightsdebug on/off` | yes | **yes** | Independent default-off light diagnostics; detailed rows are collected only while enabled. |
 | `showfps` | yes | **yes** | Opens/collapses Stats HUD (`setShowFps`). Flag default is **on**. |

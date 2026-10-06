@@ -335,9 +335,10 @@ export function builtinCommands(): RegisteredCommand[] {
           return ok(`slomo ${host.getTimeDilation?.() ?? 1}`);
         }
         const rate = Number(args.rate);
-        // Zero or negative dilation stops simulated time with no way back.
-        if (!(rate > 0 && rate <= MAX_TIME_DILATION)) {
-          return fail(`slomo rate must be greater than 0 and at most ${MAX_TIME_DILATION}`);
+        // 0 freezes simulated time on purpose (frame-exact captures); a
+        // negative rate is not a direction time can run.
+        if (!(rate >= 0 && rate <= MAX_TIME_DILATION)) {
+          return fail(`slomo rate must be between 0 and ${MAX_TIME_DILATION}`);
         }
         host.setTimeDilation?.(rate);
         return ok(`slomo ${host.getTimeDilation?.() ?? rate}`);

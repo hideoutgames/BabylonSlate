@@ -342,8 +342,10 @@ describe("createCommandRegistry", () => {
     expect(registry.execute("volume -1", host).success).toBe(false);
     expect(registry.execute("volume 2", host).success).toBe(false);
     expect(registry.execute("slomo -2", host).success).toBe(false);
-    expect(registry.execute("slomo 0", host).success).toBe(false);
+    expect(registry.execute("slomo 9", host).success).toBe(false);
     expect(host.calls).toEqual([]);
+    // 0 is an intentional freeze, not an error.
+    expect(registry.execute("slomo 0", host).success).toBe(true);
     expect(registry.execute("dumplog", host).output).toBe("(log is empty)");
   });
 
