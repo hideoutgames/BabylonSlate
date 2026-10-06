@@ -68,7 +68,7 @@ export interface SaveGameServiceOptions<TData extends object = Record<string, Sa
   atBoundary?: <T>(operation: () => T | Promise<T>) => Promise<T>;
   captureState?: () => SaveGameValue | Promise<SaveGameValue>;
   /** Validate and prepare without modifying the live world. */
-  stageState?: (state: SaveGameValue) => unknown | Promise<unknown>;
+  stageState?: (state: SaveGameValue, data: TData) => unknown | Promise<unknown>;
   /** Must restore its previous world if applying a staged load throws. */
   applyState?: (staged: unknown) => void | Promise<void>;
   resetState?: () => void | Promise<void>;

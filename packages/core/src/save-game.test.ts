@@ -202,6 +202,35 @@ describe("SaveGameService recovery and lifecycle", () => {
     expect(await service.saveGame()).toMatchObject({ ok: false, error: { code: "incompatible" } });
   });
 
+  it("stages restored named fields with world state before applying or importing an unavailable reference", async () => {
+    const withActor: SaveGameDefinition = {
+      id: "actor-progress", schemaVersion: 1,
+      fields: [{ id: "owner-id", name: "owner", type: "actor", defaultValue: null }],
+    };
+    const storage = new FaultStorage();
+    const writer = make(storage, { definition: withActor, captureState: () => ({ actors: [] }) });
+    writer.getSaveData().owner = "missing-actor";
+    await writer.saveGame();
+    const exported = await writer.exportSave();
+    if (!exported.ok) throw new Error("Export failed");
+    let applied = false;
+    const guarded = make(storage, {
+      definition: withActor,
+      stageState: (state, data) => {
+        expect(state).toEqual({ actors: [] });
+        expect(data.owner).toBe("missing-actor");
+        expect(guarded.getSaveData().owner).toBeNull();
+        throw new SaveGameError("incompatible", "The saved owner actor is unavailable.");
+      },
+      applyState: () => { applied = true; },
+    });
+    expect(await guarded.loadGame()).toMatchObject({ ok: false, error: { code: "incompatible" } });
+    expect(await guarded.importSave(exported.value, { slot: "imported" })).toMatchObject({ ok: false, error: { code: "incompatible" } });
+    expect(await guarded.listSaves()).toMatchObject({ ok: true, value: [{ slot: "default" }] });
+    expect(guarded.getSaveData().owner).toBeNull();
+    expect(applied).toBe(false);
+  });
+
   it("does not change live data or notify gameplay when staging or application fails", async () => {
     const storage = new FaultStorage();
     const original = make(storage);

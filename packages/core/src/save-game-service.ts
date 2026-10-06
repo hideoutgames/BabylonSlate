@@ -132,7 +132,7 @@ export class SaveGameService<TData extends object = Record<string, SaveGameValue
       const migrated = await this.migrate(existing.latest.body);
       const data = this.restoreFields(migrated.fields);
       let staged: unknown;
-      try { staged = this.options.stageState ? await this.options.stageState(migrated.state) : migrated.state; }
+      try { staged = this.options.stageState ? await this.options.stageState(migrated.state, data as TData) : migrated.state; }
       catch (error) { throw error instanceof SaveGameError ? error : new SaveGameError("corrupt", "Saved gameplay state could not be staged."); }
       const info = this.info(existing.latest.body, existing.recovered);
       await this.boundary(async () => {
@@ -207,9 +207,9 @@ export class SaveGameService<TData extends object = Record<string, SaveGameValue
     return this.run(async () => {
       const imported = await this.decode(text);
       const migrated = await this.migrate(imported);
-      this.restoreFields(migrated.fields);
+      const data = this.restoreFields(migrated.fields);
       if (this.options.stageState) {
-        try { await this.options.stageState(migrated.state); }
+        try { await this.options.stageState(migrated.state, data as TData); }
         catch (error) { throw error instanceof SaveGameError ? error : new SaveGameError("corrupt", "Imported gameplay state could not be staged."); }
       }
       const address = this.address(options);
