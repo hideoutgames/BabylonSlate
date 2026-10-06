@@ -7,6 +7,7 @@ import {
   validateSaveGameDefinition,
   type SaveGameDefinition,
   type SaveGameStorage,
+  type SaveGameServiceOptions,
 } from "./save-game";
 import { SaveGameService } from "./save-game-service";
 
@@ -49,7 +50,7 @@ class FaultStorage implements SaveGameStorage {
   }
 }
 
-function make(storage = new FaultStorage(), extra: Partial<ConstructorParameters<typeof SaveGameService>[0]> = {}) {
+function make(storage = new FaultStorage(), extra: Partial<SaveGameServiceOptions> = {}) {
   return new SaveGameService({ projectId: "sample-project", definition, storage, ...extra });
 }
 function generationKey(storage: FaultStorage, name: "a" | "b") {
