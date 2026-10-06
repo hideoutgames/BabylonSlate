@@ -168,7 +168,7 @@ describe("Add Component catalog", () => {
     expect(defaultPropertiesFor("MeshComponent")).toEqual({
       meshKind: "box",
       assetGuid: null,
-      collisionMode: "simple",
+      collisionMode: "none",
       layer: 1,
       mask: 0xffffffff,
     });

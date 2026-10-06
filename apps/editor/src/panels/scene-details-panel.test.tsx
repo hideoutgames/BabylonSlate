@@ -258,7 +258,7 @@ describe("constraint target authoring", () => {
       { id: "body", classId: "RigidBodyComponent", properties: {} },
       { id: "joint", classId: "PhysicsConstraintComponent", properties: { kind: "hinge", targetActorId: "" } },
     ] });
-    const anchor = createActor("anchor", "Ceiling", { components: [createMeshComponent("anchor-mesh", "box")] });
+    const anchor = createActor("anchor", "Ceiling", { components: [createMeshComponent("anchor-mesh", "box", "simple")] });
     const decoration = createActor("decoration", "Decoration", { components: [{ ...createMeshComponent("decor-mesh", "box"), properties: { collisionMode: "none" } }] });
     const terrain = createActor("terrain", "Terrain", { components: [{ id: "landscape", classId: "LandscapeComponent", properties: { collisionsEnabled: true } }] });
     const floating = createActor("float", "Float", { components: [{ id: "buoyancy", classId: "WaterBuoyancyComponent", properties: {} }] });

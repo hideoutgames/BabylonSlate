@@ -263,7 +263,7 @@ export function defaultPropertiesFor(
       return {
         meshKind: "box",
         assetGuid: null,
-        collisionMode: "simple",
+        collisionMode: "none",
         layer: 1,
         mask: 0xffffffff,
       };
