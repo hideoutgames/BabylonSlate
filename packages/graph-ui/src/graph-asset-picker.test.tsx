@@ -25,8 +25,9 @@ it("keeps asset selection on built-in and custom nodes without Open Asset, and r
   </AssetOpenProvider>);
   for (const id of ["body-picker", "custom-picker"]) {
     const control = within(screen.getByTestId(id));
-    expect(control.queryByRole("button", { name: "Open Asset" })).toBeNull();
-    fireEvent.click(control.getByRole("button", { name: "Select Texture" }));
+    // React Flow awaits browser measurements before revealing its node container.
+    expect(control.queryByRole("button", { name: "Open Asset", hidden: true })).toBeNull();
+    fireEvent.click(control.getByRole("button", { name: "Select Texture", hidden: true }));
   }
   expect(selectAsset).toHaveBeenCalledTimes(2);
   fireEvent.click(within(screen.getByTestId("inspector-picker")).getByRole("button", { name: "Open Asset" }));

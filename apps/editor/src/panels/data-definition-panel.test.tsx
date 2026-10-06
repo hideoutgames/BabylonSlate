@@ -17,6 +17,7 @@ const id = `data-definition:${path}`;
 const props = {} as IDockviewPanelProps;
 function View() { return <DocumentWorkspaceProvider documentId={id}><DataDefinitionFieldsPanel {...props} /></DocumentWorkspaceProvider>; }
 beforeEach(() => {
+  vi.stubGlobal("PointerEvent", MouseEvent);
   state.readOnly = false;
   const payload = { kind: "dataDefinition", fields: [{ id: "damage", name: "Damage", typeId: "float", defaultValue: 12 }] };
   state.documents = [{ id, ref: { kind: "data-definition", path, label: "Weapon" }, content: payload, layout: null, dirty: false }];
@@ -26,7 +27,7 @@ beforeEach(() => {
     return true;
   });
 });
-afterEach(() => { cleanup(); vi.clearAllMocks(); });
+afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals(); });
 
 it("retains field identity while editing names, typed defaults and field rules", async () => {
   const view = render(<View />);
@@ -72,7 +73,7 @@ it("keeps recursive definitions editable without expanding their recursive defau
   state.assets[0]!.header.payload = root;
   state.assets.push({ ...state.assets[0]!, path: "assets/Child.datadefinition.babasset", header: { ...state.assets[0]!.header, guid: "child", name: "Child", payload: child } });
   render(<View />);
-  expect(screen.getByRole("alert").textContent).toMatch(/recurs|cycl/i);
+  expect(screen.getByRole("alert").textContent).toMatch(/cannot reference themselves/i);
   expect(screen.getByRole("textbox", { name: "Field 1 name" })).toBeTruthy();
   expect(screen.queryByRole("textbox", { name: /^Default Value/ })).toBeNull();
 });
