@@ -57,7 +57,7 @@ describe("Save Game authoring", () => {
 
   it("validates names before adding and selects a new field for typed defaults", async () => {
     const view = render(editor());
-    fireEvent.click(screen.getByRole("button", { name: "Add Field", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Add Field" }));
     fireEvent.change(screen.getByLabelText("Field Name"), { target: { value: "Score" } });
     fireEvent.click(screen.getByTestId("name-prompt-confirm"));
     expect(screen.getByRole("alertdialog")).toBeTruthy();
@@ -79,7 +79,7 @@ describe("Save Game authoring", () => {
     fireEvent.click(await screen.findByTestId("search-item-string"));
     await waitFor(() => expect(harness.definition.fields[1]).toMatchObject({ type: "string", defaultValue: "" }));
     view.rerender(editor());
-    fireEvent.click(screen.getByRole("button", { name: "Array", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Array" }));
     await waitFor(() => expect(harness.definition.fields[1]).toMatchObject({ array: true, type: "string", defaultValue: [] }));
     view.rerender(editor());
     fireEvent.click(screen.getByRole("button", { name: "Add Item" }));
@@ -127,9 +127,9 @@ describe("Save Game authoring", () => {
     expect(harness.settings).toHaveBeenCalledWith({ saveGame: { definitionGuid: "definition", defaultProfile: "player", defaultSlot: "checkpoint", wipeOnPlay: false } });
     harness.defaultGuid = "definition";
     view.rerender(editor());
-    fireEvent.change(screen.getByRole("textbox", { name: "Default Slot", exact: true }), { target: { value: "autosave" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Default Slot" }), { target: { value: "autosave" } });
     expect(harness.settings).toHaveBeenLastCalledWith({ saveGame: { definitionGuid: "definition", defaultProfile: "player", defaultSlot: "autosave", wipeOnPlay: false } });
-    fireEvent.click(screen.getByRole("button", { name: "Advanced", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Advanced" }));
     expect(screen.getByText(/"Score": number/)).toBeTruthy();
   });
 });

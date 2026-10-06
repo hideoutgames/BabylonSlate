@@ -63,7 +63,7 @@ it("adds fields without a Structure asset and initializes changed collection def
   fireEvent.click(screen.getByTestId("definition-field-add"));
   await waitFor(() => expect(state.documents[0]!.content).toMatchObject({ fields: [{ name: "Damage" }, { name: "Prices", typeId: "float", defaultValue: 0 }] }));
   view.rerender(<View />);
-  expect((within(screen.getByTestId("data-definition-details-panel")).getByRole("textbox", { name: "Name", exact: true }) as HTMLInputElement).value).toBe("Prices");
+  expect((within(screen.getByTestId("data-definition-details-panel")).getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("Prices");
   // Closing Fields must not lose the document's selected field.
   view.rerender(<View showFields={false} />);
   fireEvent.click(screen.getByTestId("inspector-member-container-array"));
@@ -137,7 +137,7 @@ it("changes the selected field from Fields and falls back after removing that fi
   ] }));
   view.rerender(<View />);
   fireEvent.click(screen.getByRole("button", { name: "Remove Health" }));
-  await waitFor(() => expect(state.documents[0]!.content.fields).toHaveLength(1));
+  await waitFor(() => expect(state.documents[0]!.content).toMatchObject({ fields: [{ id: "damage", name: "Damage", defaultValue: 12 }] }));
   view.rerender(<View />);
   expect((screen.getByRole("textbox", { name: "Default Value" }) as HTMLInputElement).value).toBe("12");
 });
@@ -149,12 +149,12 @@ it("switches a Tag Container to a nested Definition in Details and initializes i
   state.assets.push({ ...state.assets[0]!, path: "assets/Stats.datadefinition.babasset", header: { ...state.assets[0]!.header, guid: "stats", name: "Stats", payload: { kind: "dataDefinition", fields: [{ id: "count", name: "Count", typeId: "int", defaultValue: 5 }] } } });
   const view = render(<View />);
   const details = within(screen.getByTestId("data-definition-details-panel"));
-  expect(details.queryByRole("button", { name: "Data Definition Type", exact: true })).toBeNull();
+  expect(details.queryByRole("button", { name: "Data Definition Type" })).toBeNull();
   fireEvent.click(details.getByTestId("inspector-member-type"));
   fireEvent.click(await screen.findByTestId("search-item-struct"));
   await waitFor(() => expect(state.documents[0]!.content).toMatchObject({ fields: [{ id: "child", typeId: "struct", typeClassId: undefined }] }));
   view.rerender(<View />);
-  fireEvent.click(details.getByRole("button", { name: "Data Definition Type", exact: true }));
+  fireEvent.click(details.getByRole("button", { name: "Data Definition Type" }));
   fireEvent.click(await screen.findByTestId("search-item-stats"));
   await waitFor(() => expect(state.documents[0]!.content).toMatchObject({ fields: [{ id: "child", typeClassId: "stats", defaultValue: { Count: 5 } }] }));
   view.rerender(<View />);
