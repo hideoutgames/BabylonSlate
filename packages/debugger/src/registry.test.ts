@@ -328,6 +328,36 @@ describe("createCommandRegistry", () => {
     expect(registry.execute("changescene", recordingHost()).success).toBe(false);
   });
 
+  it("rejects settings the engine cannot honor instead of reporting success", () => {
+    const host = {
+      ...recordingHost(),
+      changeScene: (scene: string) => scene === "level-2",
+      dumpLog: () => "",
+    };
+    const registry = createCommandRegistry({ includeDebug: true });
+    expect(registry.execute("changescene bogus", host)).toEqual({
+      success: false,
+      output: "unknown scene: bogus",
+    });
+    expect(registry.execute("volume -1", host).success).toBe(false);
+    expect(registry.execute("volume 2", host).success).toBe(false);
+    expect(registry.execute("slomo -2", host).success).toBe(false);
+    expect(registry.execute("slomo 0", host).success).toBe(false);
+    expect(host.calls).toEqual([]);
+    expect(registry.execute("dumplog", host).output).toBe("(log is empty)");
+  });
+
+  it("lists the subcommands of a bare group word", () => {
+    const registry = createCommandRegistry({ includeDebug: true });
+    expect(registry.execute("stat", recordingHost())).toEqual({
+      success: false,
+      output: "usage: stat <unit|memory|draws|threads>",
+    });
+    expect(registry.execute("snapshot", recordingHost()).output).toBe(
+      "usage: snapshot <start|stop>",
+    );
+  });
+
   it("prints current setter values when args are omitted", () => {
     const host = recordingHost();
     const registry = createCommandRegistry({ includeDebug: false });

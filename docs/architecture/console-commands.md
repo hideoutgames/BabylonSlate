@@ -24,7 +24,7 @@ Parser: whitespace tokens, quoted strings, longest-name match (`stat unit`, `sna
 
 | Command | Registered | Applies | Notes |
 | --- | --- | --- | --- |
-| `changescene` | yes | **yes** | Loads from the Play scene library (guid or display name). Same path as `ctx.changeScene`. |
+| `changescene` | yes | **yes** | Loads from the Play scene library (guid or display name). Same path as `ctx.changeScene`. An unknown scene fails with `unknown scene: <name>`. |
 | `quality [low\|medium\|high\|ultra\|reset]` | yes | **yes** | Applies all scalability groups, or queries effective values when omitted. |
 | `quit` | yes | **yes** | `runtime.stop()`. Overlay Stop is a separate chrome path. |
 | `quality shadows/resolution/textures/geometry/water/postprocessing/lighting [tier\|reset]` | yes | **yes** | Applies or resets one group. Shadow budget, distance and enabled state are independent settings. |
@@ -32,7 +32,7 @@ Parser: whitespace tokens, quoted strings, longest-name match (`stat unit`, `sna
 | `quality water <field> <value>` | yes | **yes** | One Water setting for the session: `shadingDetail low..ultra`, `meshDensity 0.5..1.5`, `contactResolution 256..1024`, `refraction on\|off`, `refractionScale 0.25..1`, `reflections sky\|screenSpace\|planar`, `reflectionSteps 4..32`, `planarScale 0.25..1`, `fft on\|off`, `fftSize 64\|128\|256`, `fftCascades 1..3`. Out-of-range or non-integer values are rejected. |
 | `quality resolution scale <0.25..1>` | yes | **yes** | Sets a fixed fraction of target width/height without resetting simulation. |
 | `framecap` | yes | **yes** | `setScalability` frame-cap patch → Play/player `scheduler.setFrameCap`. No arg → print current. |
-| `volume` | yes | **yes** | `{ type: "setGlobalVolume" }` (P16 mixer). No arg → print current. |
+| `volume` | yes | **yes** | `{ type: "setGlobalVolume" }` (P16 mixer). Rejects values outside `0..1`. No arg → print current. |
 | `help` | yes | **yes** | Core. Lists registered names or one command’s parameters. Stripped debug names print “not available in this build”. |
 
 ### Debug (editor Play and bundled-debugger exports)
@@ -42,11 +42,11 @@ Parser: whitespace tokens, quoted strings, longest-name match (`stat unit`, `sna
 | `pause` | yes | **yes** | Idempotent. Emits `{ type: "sessionPaused"; paused: true }`. Overlay button reads Resume. |
 | `resume` / `unpause` | yes | **yes** | Idempotent. Emits `sessionPaused: false`. Does not stop free cam. |
 | `step` | yes | **yes** | Overlay Step: `resume()` → `tick()` → `pause()` if it was paused. |
-| `slomo` | yes | **yes** | `RuntimeDriver.timeDilation` clamp `0..8`. `tick` uses `dt * rate` for script, physics, nav, BT. Trace header and frame snapshots store undilated `dt`. No arg → print current. |
+| `slomo` | yes | **yes** | Rejects rates `<= 0` or above `8` (a zero rate would stop simulated time with no way back); `RuntimeDriver.timeDilation` still clamps `0..8`. `tick` uses `dt * rate` for script, physics, nav, BT. Trace header and frame snapshots store undilated `dt`. No arg → print current. |
 | `freecam` | yes | **yes** | `{ type: "setFreeCam" }`. Detached fly/pan camera; simulation keeps ticking. Pointer/WASD stolen; 2D pinch zooms ortho; gamepad still forwards (`help freecam` documents that split). Overlay Play shows a touch fly stick while on. Off / `changescene` / `possessCamera` restore. FPS look (drag right looks right). |
 | `lightsdebug on/off` | yes | **yes** | Independent default-off light diagnostics; detailed rows are collected only while enabled. |
 | `showfps` | yes | **yes** | Opens/collapses Stats HUD (`setShowFps`). Flag default is **on**. |
-| `stat unit` / `memory` / `draws` / `threads` | yes | **yes** | Opens Stats HUD and highlights that row. `threads` is main vs worker timings (fps vs script/physics), not OS threads. |
+| `stat unit` / `memory` / `draws` / `threads` | yes | **yes** | Opens Stats HUD and highlights that row. A bare group word (`stat`, `snapshot`) fails with its subcommand usage instead of `unknown command`. `threads` is main vs worker timings (fps vs script/physics), not OS threads. |
 | `showcollision` / `showbounds` / `actorboundingbox` / `wireframe` | yes | **yes** | Play-scene overlays. Collision uses `listDebugColliders()` (boxes/spheres/circles/capsules/polylines/convex hulls, including body rotation of local offsets and polyline points). Overlay meshes sit in `RENDERING_GROUP.world` (depth-tested, not a group-0 underlay). Reuse by id when pose changes. Skip helper/debug meshes. `actorboundingbox` is an alias of `showbounds`. |
 | `shownav` / `shownavdebug` | yes | **yes** | Baked navmesh and NavMesh Blocker volumes in the world rendering group. A bake with no walkable triangles draws no navmesh fill. Blocking Volumes belong to physics. |
 | `debugphysics [on\|off]` | yes | **yes** | Alias of `showcollision`: actual simulation collider shapes, including cylinders, triangle meshes, planar capsules, and closed chains. Reuses meshes as bodies move. |
@@ -58,7 +58,7 @@ Parser: whitespace tokens, quoted strings, longest-name match (`stat unit`, `sna
 | `inspect` | yes | **yes** | Prints inspect-snapshot variables. No arg uses overlay Inspector selection when known, else usage. |
 | `possess <name\|guid>` | yes | **yes** | Switches to a live actor's CameraComponent and exits free cam, including while paused. Ambiguous names or actors without cameras are rejected. |
 | `destroyactor <name\|guid>` | yes | **yes** | Destroys a live actor through its runtime lifecycle, including while paused. Ambiguous names are rejected; authored scene data is unchanged. |
-| `dumplog` | yes | **yes** | Returns the log-ring messages. |
+| `dumplog` | yes | **yes** | Returns the log-ring messages, or `(log is empty)`. Every emitted `log` command and Print String enters the ring. |
 | `snapshot start` / `stop` | yes | **yes** | `TraceRecorder`; stop emits `{ type: "trace" }`. Both Play modes retain the trace and open its editor document when the session closes. |
 
 ### Overlay vs console (session control)

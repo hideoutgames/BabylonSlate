@@ -1084,13 +1084,6 @@ class InProcessRuntime implements RuntimeDriver {
       classRegistry: registry,
       checkInfiniteLoop: () => this.loopGuard.check(),
       log: (severity, category, message) => {
-        this.logs.push({
-          severity,
-          category,
-          message,
-          frameId: this.frameId,
-          tickIndex: this.world.clock.tickIndex,
-        });
         this.emit({
           type: "log",
           severity,
@@ -3232,7 +3225,8 @@ class InProcessRuntime implements RuntimeDriver {
     }
   }
 
-  private applyChangeScene(sceneKey: string): void {
+  /** False when no loaded scene matches, so the console can report it. */
+  private applyChangeScene(sceneKey: string): boolean {
     const key = String(sceneKey ?? "").trim();
     const next = this.sceneLibrary.get(key);
     if (!next) {
@@ -3243,9 +3237,9 @@ class InProcessRuntime implements RuntimeDriver {
         message: `changeScene: no scene asset loaded for ${key}`,
         frameId: this.frameId,
       });
-      return;
+      return false;
     }
-    if (this.stopped) return;
+    if (this.stopped) return true;
     // The departing Scene's teardown starts here; its SceneSubsystems End at the exit.
     this.duringSceneTeardown(() => {
       for (const stream of [...this.sceneStreams.values()]) this.retireSceneStream(stream);
@@ -3269,11 +3263,12 @@ class InProcessRuntime implements RuntimeDriver {
     this.possessedCameraSlotId = null;
     // The realization owns its rejection and diagnostics; script commands remain synchronous.
     this.beginSceneRealization(departure);
-    if (!current()) return;
+    if (!current()) return true;
     if (this.canTickScene()) {
       this.emitNavigationDebug(true);
       this.emitBehaviourTreeSnapshot(true);
     }
+    return true;
   }
 
   executeConsoleCommand(command: string): { success: boolean; output: string } {
@@ -4561,9 +4556,7 @@ class InProcessRuntime implements RuntimeDriver {
 
   private consoleHost(): ConsoleCommandHost {
     return {
-      changeScene: (scene) => {
-        this.applyChangeScene(scene);
-      },
+      changeScene: (scene) => this.applyChangeScene(scene),
       quality: (group, choice, value) => this.scalability.executeQuality(group, choice, value),
       setRenderPath: (path) => {
         this.requestScalability({ kind: "patch", render: { renderPath: path ?? this.scalabilityProjectRenderPath } });
@@ -6156,7 +6149,6 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   reportLog(message: string, severity: LogSeverity = "log", category = "console"): void {
-    this.logs.push({ message, severity, category, frameId: this.frameId, tickIndex: this.world.clock.tickIndex });
     this.emit({ type: "log", message, severity, category, frameId: this.frameId });
   }
 
@@ -6365,6 +6357,25 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private emit(command: CommandMessage): void {
+    // Every log line and Print String reaches the ring that `dumplog` and the
+    // session report read, not only the ones routed through reportLog.
+    if (command.type === "log") {
+      this.logs.push({
+        message: command.message,
+        severity: command.severity,
+        category: command.category,
+        frameId: command.frameId,
+        tickIndex: this.world.clock.tickIndex,
+      });
+    } else if (command.type === "print") {
+      this.logs.push({
+        message: command.message,
+        severity: "log",
+        category: "print",
+        frameId: command.frameId ?? this.frameId,
+        tickIndex: this.world.clock.tickIndex,
+      });
+    }
     this.onCommand?.(command);
   }
 

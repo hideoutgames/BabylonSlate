@@ -26,7 +26,8 @@ export type CommandResult = {
 };
 
 export type ConsoleCommandHost = {
-  changeScene(sceneAssetGuid: string): void;
+  /** Returns false when no loaded scene matches the guid. */
+  changeScene(sceneAssetGuid: string): boolean | void;
   quality(group?: QualityGroup, choice?: string, value?: string): CommandResult;
   /** Request a non-persistent game-wide session render path; null resets. */
   setRenderPath(path: RenderPath | null): void;

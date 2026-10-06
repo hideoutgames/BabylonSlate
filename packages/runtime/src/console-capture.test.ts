@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { compileGraph, type LogicGraph } from "@babylonslate/scripting";
+import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
 import * as runtime from "./index";
 
 describe("captureConsoleLogs", () => {
@@ -16,6 +18,33 @@ describe("captureConsoleLogs", () => {
     expect(session.executeConsoleCommand("dumplog").output).toContain('native warning {"count":2}');
     expect(messages).toEqual([expect.objectContaining({ severity: "warning", message: 'native warning {"count":2}' })]);
     stop();
+    session.stop();
+  });
+
+  it("includes Print String output in dumplog and reports an unknown changescene", async () => {
+    const registry = createDefaultNodeRegistry();
+    const printPins = registry.get("debug.printString")!.pins({});
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        { id: "entry", typeId: "flow.event.beginPlay", position: { x: 0, y: 0 }, pins: registry.get("flow.event.beginPlay")!.pins({}), properties: {} },
+        {
+          id: "print",
+          typeId: "debug.printString",
+          position: { x: 0, y: 0 },
+          pins: printPins.map((pin) => (pin.id === "inString" ? { ...pin, defaultValue: "hello from print" } : pin)),
+          properties: {},
+        },
+      ],
+      edges: [{ id: "e", sourceNodeId: "entry", sourcePinId: "execOut", targetNodeId: "print", targetPinId: "execIn" }],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "printer", registry });
+    const session = runtime.createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true });
+    await session.loadScripts([{ assetGuid: "printer", classId: "Printer", source: compiled.source, anchors: compiled.anchors, entryPoints: compiled.entryPoints }]);
+    session.spawnScriptedActor({ classId: "Printer" });
+    expect(session.executeConsoleCommand("dumplog").output).toContain("hello from print");
+    expect(session.executeConsoleCommand("changescene bogus")).toEqual({ success: false, output: "unknown scene: bogus" });
     session.stop();
   });
 
