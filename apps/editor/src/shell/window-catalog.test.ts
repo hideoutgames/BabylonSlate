@@ -56,7 +56,7 @@ describe("listDockWindows", () => {
     expect(primaryDockPanel("save-game")).toBe("save-game-fields");
     expect(listDockWindows("save-game").map(({ id, component, title }) => ({ id, component, title }))).toEqual([
       { id: "save-game-fields", component: "save-game-fields", title: "Fields" },
-      { id: "save-game-definition", component: "save-game-definition", title: "Definition" },
+      { id: "save-game-definition", component: "save-game-definition", title: "Details" },
     ]);
     expect(listDockWindows("save-game", { sourceControl: true }).map((entry) => entry.id)).toContain("locks");
   });
@@ -66,6 +66,9 @@ describe("listDockWindows", () => {
     expect(windows.some((window) => window.id === primaryDockPanel(kind))).toBe(true);
     expect(windows.some((window) => window.component === (kind === "data-definition" ? "data-definition-fields" : "data-tree-values"))).toBe(true);
     expect(listDockWindows(kind, { sourceControl: true }).some((window) => window.id === "locks")).toBe(true);
+    if (kind === "data-definition") {
+      expect(windows.find((window) => window.id === "data-definition-details")).toMatchObject({ component: "data-definition-details", title: "Details", defaultPosition: { referencePanelId: primaryDockPanel(kind), direction: "right" } });
+    }
     if (kind === "data-tree") {
       expect(windows.find((window) => window.id === "data-tree-hierarchy")?.defaultPosition).toMatchObject({ referencePanelId: primaryDockPanel(kind), direction: "left" });
       expect(windows.find((window) => window.id === "data-tree-values")?.defaultPosition?.referencePanelId).toBe(primaryDockPanel(kind));

@@ -40,6 +40,9 @@ vi.mock("../context/audio-reverb-bake-context", () => ({
 vi.mock("../context/document-workspace-context", () => ({
   DocumentWorkspaceProvider: state.passthrough,
 }));
+vi.mock("../context/data-definition-editing-context", () => ({
+  DataDefinitionEditingProvider: state.passthrough,
+}));
 vi.mock("../context/data-asset-editing-context", () => ({
   DataAssetEditingProvider: state.passthrough,
 }));

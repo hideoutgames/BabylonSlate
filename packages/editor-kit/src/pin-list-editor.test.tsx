@@ -51,15 +51,18 @@ describe("PinListEditor", () => {
     expect(screen.queryAllByText("Remove")).toEqual([]);
   });
 
-  it("edits a pin's container without losing its object constraint", () => {
+  it.each([
+    ["object", "Hero"],
+    ["struct", "engine:TagContainer"],
+  ] as const)("edits a %s pin's container without losing its type constraint", (type, typeClassId) => {
     const onChange = vi.fn();
-    const object = { id: "object", name: "items", type: "object", typeClassId: "Hero" };
-    const view = render(<PinListEditor rows={[object]} selectedId="object" showContainer showOptional={false} showDefault={false} onChange={onChange} />);
+    const row = { id: "items", name: "Items", type, typeClassId };
+    const view = render(<PinListEditor rows={[row]} selectedId="items" showContainer showOptional={false} showDefault={false} onChange={onChange} />);
     fireEvent.click(screen.getByRole("button", { name: "Array" }));
-    expect(onChange).toHaveBeenLastCalledWith([expect.objectContaining({ type: "object", typeClassId: "Hero", container: "array" })]);
-    view.rerender(<PinListEditor rows={[{ ...object, container: "array" }]} selectedId="object" showContainer showOptional={false} showDefault={false} onChange={onChange} />);
+    expect(onChange).toHaveBeenLastCalledWith([expect.objectContaining({ type, typeClassId, container: "array" })]);
+    view.rerender(<PinListEditor rows={[{ ...row, container: "array" }]} selectedId="items" showContainer showOptional={false} showDefault={false} onChange={onChange} />);
     fireEvent.click(screen.getByRole("button", { name: "Map" }));
-    expect(onChange).toHaveBeenLastCalledWith([expect.objectContaining({ type: "object", typeClassId: "Hero", container: "map", keyTypeId: "string" })]);
+    expect(onChange).toHaveBeenLastCalledWith([expect.objectContaining({ type, typeClassId, container: "map", keyTypeId: "string" })]);
   });
 
   it("keeps typeClassId on object pins and exposes a Class Type picker", async () => {
@@ -296,6 +299,26 @@ describe("PinListEditor", () => {
     screen.getByTestId(`search-item-${assetType}`).click();
     expect(onChange).toHaveBeenCalledWith([
       expect.objectContaining({ id: "a", typeClassId: assetType }),
+    ]);
+  });
+
+  it("keeps compact host-managed field details separate while adding above the list", () => {
+    const onChange = vi.fn();
+    const onSelect = vi.fn();
+    render(<PinListEditor rows={[{ id: "stats", name: "Stats", type: "struct" }]}
+      selectedId="stats" itemLabel="Field" addPosition="top" showDetails={false}
+      showContainer typeAssets={[]} onSelect={onSelect} onChange={onChange} />);
+    expect(screen.queryByTestId("pin-stats-type-asset")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Array" })).toBeNull();
+    fireEvent.focus(screen.getByRole("textbox", { name: "Field 1 name" }));
+    expect(onSelect).toHaveBeenCalledWith("stats");
+    const add = screen.getByLabelText("Add Field");
+    expect(add.compareDocumentPosition(screen.getByTestId("pin-row-stats")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.change(add, { target: { value: "Count" } });
+    fireEvent.click(screen.getByTestId("pin-add"));
+    expect(onChange).toHaveBeenCalledWith([
+      { id: "stats", name: "Stats", type: "struct" },
+      expect.objectContaining({ name: "Count", type: "float" }),
     ]);
   });
 

@@ -950,7 +950,7 @@ const BEHAVIOUR_TREE_WINDOWS: DockWindowDefinition[] = [
 
 const SAVE_GAME_WINDOWS: DockWindowDefinition[] = [
   { id: "save-game-fields", component: "save-game-fields", title: "Fields" },
-  { id: "save-game-definition", component: "save-game-definition", title: "Definition", defaultPosition: { referencePanelId: "save-game-fields", direction: "right", initialWidth: 300 } },
+  { id: "save-game-definition", component: "save-game-definition", title: "Details", defaultPosition: { referencePanelId: "save-game-fields", direction: "right", initialWidth: 300 } },
 ];
 
 const INPUT_WINDOWS: DockWindowDefinition[] = [
@@ -972,6 +972,7 @@ export function listDockWindows(
   if (kind === "enum") return withOptionalLocks(kind, ENUM_WINDOWS, options);
   if (kind === "data-definition") return withOptionalLocks(kind, [
     { id: "data-definition-fields", component: "data-definition-fields", title: "Fields" },
+    { id: "data-definition-details", component: "data-definition-details", title: "Details", defaultPosition: { referencePanelId: "data-definition-fields", direction: "right", initialWidth: 320 } },
   ], options);
   if (kind === "data-tree") return withOptionalLocks(kind, [
     { id: "data-tree-entries", component: "data-tree-entries", title: "Entries" },

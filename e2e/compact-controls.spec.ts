@@ -1,7 +1,59 @@
 import { expect, test } from "@playwright/test";
+import type { SerializedGraph } from "../packages/core/src/index";
+import { literalNodes } from "../packages/scripting-nodes/src/literal";
 import { IPAD_TEST_TAG } from "./ipad-tag";
 import { openMinimalTestProject } from "./minimal-project";
 import { openAssetFromBrowser, openMainScene } from "./open-test-project";
+
+test("inline numeric defaults keep their scrub area inside the shared input", { tag: IPAD_TEST_TAG }, async ({ page }) => {
+  await openMinimalTestProject(page);
+  const literal = literalNodes.find((node) => node.id === "literal.makeFloat")!;
+  const graph: SerializedGraph = {
+    nodes: [{
+      id: "literal", type: literal.id, position: { x: 80, y: 80 },
+      data: { title: literal.title, __nodeType: literal.id, __pins: literal.pins({}), "default:in": 1 },
+    }],
+    edges: [],
+  };
+  expect(await page.evaluate(async (next) => {
+    const host = globalThis as unknown as {
+      __babylonslateTest: { setMainGraphContent: (graph: SerializedGraph) => Promise<boolean> };
+    };
+    return host.__babylonslateTest.setMainGraphContent(next);
+  }, graph)).toBe(true);
+  await openAssetFromBrowser(page, "assets/main.class.babasset");
+  const node = page.locator('.react-flow__node[data-id="literal"]');
+  await node.getByText("Make Float", { exact: true }).click();
+  const input = page.getByTestId("pin-default-literal-in");
+  const inspector = page.getByTestId("inspector-pin-defaults").getByTestId("property-in");
+  const scrub = page.getByTestId("pin-default-literal-in-scrub");
+  await expect(input).toBeVisible();
+  await expect(inspector).toBeVisible();
+  const inputBox = (await input.boundingBox())!;
+  const scrubBox = (await scrub.boundingBox())!;
+  expect(scrubBox.x).toBeGreaterThanOrEqual(inputBox.x);
+  expect(scrubBox.x + scrubBox.width).toBeLessThanOrEqual(inputBox.x + inputBox.width + 1);
+  expect(scrubBox.y).toBeGreaterThanOrEqual(inputBox.y - 1);
+  expect(scrubBox.y + scrubBox.height).toBeLessThanOrEqual(inputBox.y + inputBox.height + 1);
+  expect(await input.evaluate((element) => getComputedStyle(element).height))
+    .toBe(await inspector.evaluate((element) => getComputedStyle(element).height));
+
+  await input.fill("3*2");
+  await input.press("Enter");
+  await expect(input).toHaveValue("6");
+  await expect(inspector).toHaveValue("6");
+  const nodeTransform = await node.evaluate((element) => (element as HTMLElement).style.transform);
+  const handle = (await scrub.boundingBox())!;
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(handle.x + handle.width / 2 + 30, handle.y + handle.height / 2, { steps: 3 });
+  await page.mouse.up();
+  await expect.poll(async () => Number(await input.inputValue())).toBeGreaterThan(6);
+  expect(await node.evaluate((element) => (element as HTMLElement).style.transform)).toBe(nodeTransform);
+  await page.getByTestId("undo-document").click();
+  await expect(input).toHaveValue("6");
+  await expect(inspector).toHaveValue("6");
+});
 
 test("Add Component actions match the viewport island and Class tabs use their asset icon", { tag: IPAD_TEST_TAG }, async ({ page }, testInfo) => {
   await openMinimalTestProject(page);

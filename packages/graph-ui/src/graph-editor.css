@@ -365,34 +365,19 @@
   stroke-width: 1.25px !important;
 }
 
-/* Inline defaults retain compact desktop controls and separate touch targets. */
+/* Numeric defaults inherit the shared field's integrated scalar scrub area. */
 @media (max-width: 767px), (pointer: coarse) {
   .graph-editor-canvas {
     --graph-asset-picker-height: var(--touch-target, 44px);
   }
-  .graph-pin-default-editor :is([data-slot="button"], [data-slot="input"], .graph-pin-default-boolean) {
+  .graph-pin-default-editor :is([data-slot="button"], .graph-pin-default-input, .graph-pin-default-boolean) {
     min-height: var(--touch-target, 44px);
     min-width: var(--touch-target, 44px);
   }
-  .graph-pin-default-editor .numeric-drag-field {
-    gap: 0.25rem;
-  }
-  .graph-pin-default-editor .numeric-drag-field [data-numeric-scrub] {
-    position: static;
-    display: flex;
-    width: var(--touch-target, 44px);
-    min-height: var(--touch-target, 44px);
-    align-items: center;
-    justify-content: center;
-  }
-  .graph-pin-default-editor .numeric-drag-field [data-slot="input"] {
-    padding-right: 0.375rem;
-    font-size: 1rem;
-  }
-  .graph-pin-default-number {
-    /* Match the text field's 6rem input, plus the separate touch scrub target. */
-    width: calc(6rem + var(--touch-target, 44px) + 0.25rem);
-  }
+}
+
+/* Match shared numeric fields' phone breakpoint for separate vector-axis targets. */
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
   .graph-pin-default-component {
     width: 6rem;
   }
