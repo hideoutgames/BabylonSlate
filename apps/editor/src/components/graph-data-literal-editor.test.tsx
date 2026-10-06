@@ -57,10 +57,10 @@ describe("Definition collection literals in the graph Inspector", () => {
       }} />;
     }
     render(<Inspector />);
-    fireEvent.change(screen.getByRole("textbox", { name: "Values Prices Item 1", exact: true }), { target: { value: "2.5" } });
-    fireEvent.change(screen.getByRole("textbox", { name: "Values Lookup Key 1 Code", exact: true }), { target: { value: "rare" } });
-    fireEvent.change(screen.getByRole("textbox", { name: "Values Lookup Value 1 Weight", exact: true }), { target: { value: "9" } });
-    fireEvent.change(screen.getByRole("textbox", { name: "Values Lookup Value 1 Samples Item 2", exact: true }), { target: { value: "12" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Values Prices Item 1" }), { target: { value: "2.5" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Values Lookup Key 1 Code" }), { target: { value: "rare" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Values Lookup Value 1 Weight" }), { target: { value: "9" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Values Lookup Value 1 Samples Item 2" }), { target: { value: "12" } });
 
     const expected = { Prices: [2.5, 4], Lookup: [{ key: { Code: "rare" }, value: { Weight: 9, Samples: [6, 12] } }], Note: "Authored" };
     expect(authored.nodes[1]!.data["default:values"]).toEqual(expected);
@@ -119,8 +119,8 @@ describe("Definition collection literals in the graph Inspector", () => {
       }} />;
     }
     render(<Inspector />);
-    expect((screen.getByRole("textbox", { name: "Values Cost", exact: true }) as HTMLInputElement).value).toBe("5");
-    const edit = (name: string) => fireEvent.change(screen.getByRole("textbox", { name: `Values ${name}`, exact: true }), {
+    expect((screen.getByRole("textbox", { name: "Values Cost" }) as HTMLInputElement).value).toBe("5");
+    const edit = (name: string) => fireEvent.change(screen.getByRole("textbox", { name: `Values ${name}` }), {
       target: { value: name === "Cost" ? "10" : "2" },
     });
     edit(first);

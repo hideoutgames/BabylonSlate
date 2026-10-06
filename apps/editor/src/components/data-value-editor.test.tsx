@@ -25,6 +25,6 @@ it("stops mutually recursive Definition branches without suppressing editable si
     value={{ First: { Amount: 1 }, Second: { Amount: 2 } }} defaultValue={{}}
     onChange={() => undefined} label="Root" path="root" disabled={false} catalog={catalog} issues={[]} />);
   expect(screen.getAllByRole("alert")).toHaveLength(2);
-  expect((screen.getByRole("textbox", { name: "Root First Amount", exact: true }) as HTMLInputElement).value).toBe("1");
-  expect((screen.getByRole("textbox", { name: "Root Second Amount", exact: true }) as HTMLInputElement).value).toBe("2");
+  expect((screen.getByRole("textbox", { name: "Root First Amount" }) as HTMLInputElement).value).toBe("1");
+  expect((screen.getByRole("textbox", { name: "Root Second Amount" }) as HTMLInputElement).value).toBe("2");
 });

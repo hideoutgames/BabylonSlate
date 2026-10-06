@@ -34,16 +34,16 @@ it("retains field identity while editing names, typed defaults and field rules",
   fireEvent.change(screen.getByRole("textbox", { name: "Field 1 name" }), { target: { value: "Power" } });
   await waitFor(() => expect(state.documents[0]!.content).toMatchObject({ fields: [{ id: "damage", name: "Power", defaultValue: 12 }] }));
   view.rerender(<View />);
-  fireEvent.change(screen.getByRole("textbox", { name: "Default Value", exact: true }), { target: { value: "25" } });
+  fireEvent.change(screen.getByRole("textbox", { name: "Default Value" }), { target: { value: "25" } });
   await waitFor(() => expect(state.documents[0]!.content).toMatchObject({ fields: [{ id: "damage", defaultValue: 25 }] }));
   view.rerender(<View />);
-  fireEvent.change(screen.getByRole("textbox", { name: "Category", exact: true }), { target: { value: "Combat" } });
+  fireEvent.change(screen.getByRole("textbox", { name: "Category" }), { target: { value: "Combat" } });
   await waitFor(() => expect(state.documents[0]!.content).toMatchObject({ fields: [{ category: "Combat", defaultValue: 25 }] }));
   view.rerender(<View />);
   fireEvent.click(screen.getByRole("checkbox", { name: "Limit Minimum" }));
   await waitFor(() => expect(state.documents[0]!.content).toMatchObject({ fields: [{ min: 0 }] }));
   view.rerender(<View />);
-  fireEvent.change(screen.getByRole("textbox", { name: "Minimum", exact: true }), { target: { value: "3" } });
+  fireEvent.change(screen.getByRole("textbox", { name: "Minimum" }), { target: { value: "3" } });
   await waitFor(() => expect(state.documents[0]!.content).toMatchObject({ fields: [{ id: "damage", name: "Power", category: "Combat", min: 3, defaultValue: 25 }] }));
 });
 
@@ -62,7 +62,7 @@ it("keeps locked definition fields and rules read-only", () => {
   render(<View />);
   expect(screen.queryByTestId("definition-field-add")).toBeNull();
   expect((screen.getByRole("textbox", { name: "Field 1 name" }) as HTMLInputElement).disabled).toBe(true);
-  expect((screen.getByRole("textbox", { name: "Default Value", exact: true }) as HTMLInputElement).disabled).toBe(true);
+  expect((screen.getByRole("textbox", { name: "Default Value" }) as HTMLInputElement).disabled).toBe(true);
   expect(state.apply).not.toHaveBeenCalled();
 });
 

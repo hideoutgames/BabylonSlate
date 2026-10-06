@@ -378,7 +378,7 @@ export function DataSheetValuesPanel(_props: IDockviewPanelProps) {
   useEffect(() => { setError(null); setReview(false); }, [selectedRowId]);
   useEffect(() => {
     if (!focusRequest || focusRequest.rowId !== selectedRowId) return;
-    const fields = [...(fieldsRef.current?.querySelectorAll<HTMLElement>("[data-data-field]") ?? [])];
+    const fields = Array.from(fieldsRef.current?.querySelectorAll<HTMLElement>("[data-data-field]") ?? []);
     const field = fields.find((entry) => entry.dataset.dataField === focusRequest.path) ?? fields.find((entry) => focusRequest.path.startsWith(`${entry.dataset.dataField}.`)) ?? fields[0];
     const control = field?.querySelector<HTMLElement>("input:not([disabled]), textarea:not([disabled]), select:not([disabled])") ?? field?.querySelector<HTMLElement>('[id^="property-"]:not([disabled]), button:not([disabled]), [tabindex]');
     field?.scrollIntoView?.({ block: "nearest" }); control?.focus();
