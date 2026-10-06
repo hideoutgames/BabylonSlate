@@ -173,6 +173,19 @@ export class SceneLayerFocusNavigation {
     return this.focused?.component === candidate.component;
   }
 
+  /** Tab order shares the same live, top-layer candidate set as gamepad focus. */
+  advance(reverse = false): ActorComponent | null {
+    this.refresh();
+    const candidates = this.candidates();
+    if (!candidates.length) return null;
+    this.initialLayer = candidates[0]!.actor.sceneLayerId;
+    const index = candidates.findIndex((entry) => entry.component === this.focused?.component);
+    let next = index < 0 ? reverse ? candidates.length - 1 : 0 : index + (reverse ? -1 : 1);
+    if (next < 0 || next >= candidates.length) next = this.settings.wrap ? (next + candidates.length) % candidates.length : index;
+    this.transition(candidates[next] ?? null);
+    return this.getFocused();
+  }
+
   clearFocus(target?: unknown): void {
     if (target !== undefined && target !== this.focused?.component && target !== this.focused?.actor) return;
     this.transition(null);

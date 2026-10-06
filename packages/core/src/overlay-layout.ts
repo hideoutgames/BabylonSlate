@@ -3,8 +3,10 @@ import { parseJoystick2DProperties } from "./joystick2d";
 import { parsePainter2DProperties } from "./painter2d";
 import { parseText2DProperties } from "./text2d";
 import { parseRichText } from "./rich-text";
+import { isUIControl2DClass, parseUIControl2DProperties, UI_CONTROL_2D_CLASS_IDS } from "./ui-controls2d";
+import { OVERLAY_CONTAINER_CLASSES, isVirtualizedOverlayClass, isOverlayScrollClass, parseOverlayContainerProperties, virtualizedOverlayWindow, type OverlaySafeAreaInsets, type VirtualizedItem, type VirtualizedOverlayWindow } from "./overlay-containers";
 
-export const OVERLAY_LAYOUT_CLASSES = ["2DScrollBoxComponent", "2DVerticalBoxComponent", "2DHorizontalBoxComponent", "2DOverlayBoxComponent", "2DPaddingComponent", "2DSpacerComponent"] as const;
+export const OVERLAY_LAYOUT_CLASSES = ["2DScrollBoxComponent", "2DVerticalBoxComponent", "2DHorizontalBoxComponent", "2DOverlayBoxComponent", "2DPaddingComponent", "2DSpacerComponent", ...OVERLAY_CONTAINER_CLASSES] as const;
 export function isOverlayLayoutClass(classId: string): boolean { return (OVERLAY_LAYOUT_CLASSES as readonly string[]).includes(classId); }
 export type OverlayLayoutRect = { x: number; y: number; width: number; height: number };
 export type OverlayLayoutMode = "fixed" | "content" | "fill";
@@ -34,10 +36,13 @@ export type OverlayLayoutEntry = {
   actorId: string; componentId?: string; rect: OverlayLayoutRect; clip: OverlayLayoutRect | null;
   /** False when this element or an actor/component ancestor is hidden or disabled. */
   interactive?: boolean;
+  /** Virtual items outside the viewport and overscan are neither drawn nor picked. */
+  realized?: boolean;
+  virtual?: VirtualizedOverlayWindow;
   scrollAncestors: string[]; scroll?: { x: number; y: number; maxX: number; maxY: number; axis: OverlayLayoutProperties["scrollAxis"]; viewport: OverlayLayoutRect; scaleX: number; scaleY: number };
 };
 export type OverlayLayoutResult = { actors: SerializedActor[]; entries: Map<string, OverlayLayoutEntry> };
-export type OverlayLayoutOptions = { pixelsPerUnit?: number; textureSize?: (guid: string) => { width: number; height: number } | undefined; /** Measure authored bounds even without layout components. */ includeUnmanagedBounds?: boolean };
+export type OverlayLayoutOptions = { safeAreaInsets?: Partial<OverlaySafeAreaInsets>; virtualItems?: Readonly<Record<string, VirtualizedItem>>; pixelsPerUnit?: number; textureSize?: (guid: string) => { width: number; height: number } | undefined; /** Measure authored bounds even without layout components. */ includeUnmanagedBounds?: boolean };
 export const overlayLayoutKey = (actorId: string, componentId?: string): string => componentId ? `${actorId}/${componentId}` : actorId;
 export function intersectOverlayRects(a: OverlayLayoutRect | null, b: OverlayLayoutRect): OverlayLayoutRect {
   if (!a) return { ...b };
@@ -92,6 +97,7 @@ function nativeSize(component: SerializedComponent, options: OverlayLayoutOption
     const size = options.textureSize?.(String(p.textureGuid ?? ""));
     if (size) return [size.width / ppu, size.height / ppu];
   }
+  if (isUIControl2DClass(component.classId)) { const control = parseUIControl2DProperties(component.classId, p); return [control.width, control.height]; }
   if (component.classId === "2DJoystickComponent") { const joystick = parseJoystick2DProperties(p); return [joystick.radius * 2, joystick.radius * 2]; }
   if (component.classId === "2DPainterComponent") { const painter = parsePainter2DProperties(p); return [painter.width, painter.height]; }
   return [1, 1];
@@ -134,12 +140,17 @@ export function resolveOverlayLayout(source: readonly SerializedActor[], options
       node.parent = node.actualParent = parent ?? actorNodes.get(node.actor.id)!;
     } else {
       node.parent = node.actualParent = spatialParent(node.actor);
-      node.proxy = node.actor.components.map(c => nodes.get(overlayLayoutKey(node.actor.id, c.id))!).find(c => !c.component?.parentId && isOverlayLayoutClass(c.classId) && c.classId !== "2DPaddingComponent");
+      node.proxy = node.actor.components.map(c => nodes.get(overlayLayoutKey(node.actor.id, c.id))!).find(c => !c.component?.parentId && isOverlayLayoutClass(c.classId) && c.classId !== "2DPaddingComponent" && c.classId !== "2DMaskComponent");
       if (node.proxy) node.props = node.proxy.props;
     }
   }
   // Outliner children belong to their parent's root box, just like explicit component children.
-  for (const node of actorNodes.values()) if (!anchorActors.has(node.actor.id) && node.parent?.proxy) node.parent = node.parent.proxy;
+  for (const node of actorNodes.values()) {
+    const virtual = options.virtualItems?.[node.actor.id];
+    const virtualParent = virtual && node.parent ? nodes.get(overlayLayoutKey(node.parent.actor.id, virtual.containerId)) : undefined;
+    if (virtualParent) node.parent = virtualParent;
+    else if (!anchorActors.has(node.actor.id) && node.parent?.proxy) node.parent = node.parent.proxy;
+  }
   // Padding helper actors decorate their immediate parent's content and occupy no slot.
   for (const node of nodes.values()) {
     const seen = new Set([node.key]); let parent = node.parent;
@@ -147,8 +158,8 @@ export function resolveOverlayLayout(source: readonly SerializedActor[], options
     if (parent) node.parent = null; // Malformed cyclic documents remain finite.
     node.parent?.children.push(node);
   }
-  const surfaceClasses = new Set(["2DJoystickComponent", "2DTextureComponent", "2DMaterialComponent", "2DPanelComponent", "2DTextComponent", "2DRichTextComponent", "2DPainterComponent", "SpriteComponent", "MeshComponent"]);
-  const interactionOnly = (n: Node) => n.classId === "2DAnchorComponent" || n.classId === "2DFocusTargetComponent" || n.classId === "2DButtonComponent" && (
+  const surfaceClasses = new Set<string>([...UI_CONTROL_2D_CLASS_IDS, "2DJoystickComponent", "2DTextureComponent", "2DMaterialComponent", "2DPanelComponent", "2DTextComponent", "2DRichTextComponent", "2DPainterComponent", "SpriteComponent", "MeshComponent"]);
+  const interactionOnly = (n: Node) => n.classId === "2DMaskComponent" || n.classId === "2DAnchorComponent" || n.classId === "2DFocusTargetComponent" || n.classId === "2DButtonComponent" && (
     n.actor.components.some(c => surfaceClasses.has(c.classId)) || (n.actor.parentId ? actors.find(a => a.id === n.actor.parentId)?.components.some(c => surfaceClasses.has(c.classId)) : false)
   );
   const paddingOnly = (n: Node) => n.classId === "2DPaddingComponent" || n.classId === "actor" && n.children.length > 0 && n.children.every(c => c.classId === "2DPaddingComponent" || interactionOnly(c));
@@ -163,6 +174,16 @@ export function resolveOverlayLayout(source: readonly SerializedActor[], options
     // A root component box lends its dimensions to its actor, but owns padding once.
     if (n.proxy) return { left: 0, right: 0, top: 0, bottom: 0 };
     const p = { left: n.props.paddingLeft, right: n.props.paddingRight, top: n.props.paddingTop, bottom: n.props.paddingBottom };
+    if (n.classId === "2DSafeAreaComponent") {
+      const safe = parseOverlayContainerProperties(n.component?.properties);
+      for (const side of ["left", "right", "top", "bottom"] as const) {
+        const enabled = { left: safe.safeLeft, right: safe.safeRight, top: safe.safeTop, bottom: safe.safeBottom }[side];
+        const manual = { left: safe.insetLeft, right: safe.insetRight, top: safe.insetTop, bottom: safe.insetBottom }[side];
+        // Device insets arrive in world units; account for scaled safe-area actors.
+        const scale = n.world ? Math.abs(side === "left" || side === "right" ? n.world.sx : n.world.sy) : 1;
+        p[side] += manual + (safe.useSafeArea && enabled ? positive(options.safeAreaInsets?.[side]) / (scale || 1) : 0);
+      }
+    }
     const helpers = [...n.children, ...(n.parent?.proxy === n ? n.parent.children.filter(child => child !== n) : [])].filter(child => visible(child) && paddingOnly(child));
     for (const child of helpers) {
       for (const padding of child.classId === "actor" ? child.children.filter(c => c.classId === "2DPaddingComponent" && visible(c)) : [child]) {
@@ -194,7 +215,7 @@ export function resolveOverlayLayout(source: readonly SerializedActor[], options
   for (const node of nodes.values()) measure(node);
   const entries = new Map<string, OverlayLayoutEntry>();
   const arranged = new Set<string>();
-  function arrange(n: Node, parentPose: Pose, allocation?: [number, number], center?: [number, number], clip: OverlayLayoutRect | null = null, scrollAncestors: string[] = []) {
+  function arrange(n: Node, parentPose: Pose, allocation?: [number, number], center?: [number, number], clip: OverlayLayoutRect | null = null, scrollAncestors: string[] = [], realized = true) {
     if (arranged.has(n.key)) return;
     arranged.add(n.key);
     const local = pose(n.local);
@@ -208,23 +229,29 @@ export function resolveOverlayLayout(source: readonly SerializedActor[], options
     }
     n.world = compose(parentPose, local);
     const rect = rectAt(n.world, container ? width : n.native[0], container ? height : n.native[1]);
-    const entry: OverlayLayoutEntry = { actorId: n.actor.id, ...(n.component ? { componentId: n.component.id } : {}), rect, clip, scrollAncestors,
-      interactive: visible(n) && (!n.parent || entries.get(n.parent.key)?.interactive !== false) };
+    const entry: OverlayLayoutEntry = { actorId: n.actor.id, ...(n.component ? { componentId: n.component.id } : {}), rect, clip, scrollAncestors, realized,
+      interactive: realized && visible(n) && (!n.parent || entries.get(n.parent.key)?.interactive !== false) };
     entries.set(n.key, entry);
     if (n.component && isOverlayLayoutClass(n.classId)) { n.component.properties.layoutResolvedWidth = width; n.component.properties.layoutResolvedHeight = height; }
     const padding = inset(n), innerW = Math.max(0, width - padding.left - padding.right), innerH = Math.max(0, height - padding.top - padding.bottom);
-    const children = items(n), vertical = n.classId === "2DVerticalBoxComponent", horizontal = n.classId === "2DHorizontalBoxComponent", scroll = n.classId === "2DScrollBoxComponent";
+    const children = items(n), vertical = n.classId === "2DVerticalBoxComponent", horizontal = n.classId === "2DHorizontalBoxComponent", scroll = isOverlayScrollClass(n.classId), virtual = isVirtualizedOverlayClass(n.classId);
     const innerX = (padding.left - padding.right) / 2, innerY = (padding.bottom - padding.top) / 2;
     let childClip = clip, ancestors = scrollAncestors;
     let scrollX = 0, scrollY = 0;
+    const virtualWindow = virtual ? virtualizedOverlayWindow(n.classId, n.component?.properties ?? {}, innerW, innerH, children.length) : undefined;
+    if (virtualWindow) entry.virtual = virtualWindow;
     if (scroll) {
-      const contentW = Math.max(innerW, ...children.map(c => c.desired[0])), contentH = Math.max(innerH, ...children.map(c => c.desired[1]));
-      const maxX = n.props.scrollAxis === "vertical" ? 0 : Math.max(0, contentW - innerW), maxY = n.props.scrollAxis === "horizontal" ? 0 : Math.max(0, contentH - innerH);
+      const contentW = virtualWindow ? virtualWindow.contentWidth : Math.max(innerW, ...children.map(c => c.desired[0])), contentH = virtualWindow ? virtualWindow.contentHeight : Math.max(innerH, ...children.map(c => c.desired[1]));
+      const axis = n.classId === "2DVirtualizedGridComponent" ? "vertical" : n.props.scrollAxis;
+      const maxX = axis === "vertical" ? 0 : Math.max(0, contentW - innerW), maxY = axis === "horizontal" ? 0 : Math.max(0, contentH - innerH);
       scrollX = Math.min(n.props.scrollX, maxX); scrollY = Math.min(n.props.scrollY, maxY);
       const viewport = rectAt(compose(n.world, { ...origin, x: innerX, y: innerY }), innerW, innerH);
-      entry.scroll = { x: scrollX, y: scrollY, maxX, maxY, axis: n.props.scrollAxis, viewport, scaleX: Math.abs(n.world.sx), scaleY: Math.abs(n.world.sy) };
+      entry.scroll = { x: scrollX, y: scrollY, maxX, maxY, axis, viewport, scaleX: Math.abs(n.world.sx), scaleY: Math.abs(n.world.sy) };
       childClip = intersectOverlayRects(clip, viewport);
       ancestors = [...ancestors, n.key];
+    }
+    if (n.classId === "2DMaskPanelComponent") {
+      childClip = intersectOverlayRects(clip, rectAt(compose(n.world, { ...origin, x: innerX, y: innerY }), innerW, innerH));
     }
     const main = horizontal ? 0 : 1, mainSize = horizontal ? innerW : innerH;
     const fixed = children.reduce((sum, c) => sum + ((main === 0 ? c.props.widthMode : c.props.heightMode) === "fill" ? 0 : c.desired[main]), 0);
@@ -234,11 +261,21 @@ export function resolveOverlayLayout(source: readonly SerializedActor[], options
     const mainAlign = horizontal ? n.props.horizontalAlignment : n.props.verticalAlignment;
     let cursor = Math.max(0, mainSize - total) * (mainAlign === "end" ? 1 : mainAlign === "center" ? 0.5 : 0);
     for (const child of n.children) {
-      if (!hasLayout) { arrange(child, n.world, undefined, undefined, childClip, ancestors); continue; }
-      if (!children.includes(child) || paddingOnly(child)) { arrange(child, n.world, undefined, undefined, childClip, ancestors); continue; }
+      if (!hasLayout) { arrange(child, n.world, undefined, undefined, childClip, ancestors, realized); continue; }
+      if (!children.includes(child) || paddingOnly(child)) { arrange(child, n.world, undefined, undefined, childClip, ancestors, realized); continue; }
       const hasPadding = padding.left + padding.right + padding.top + padding.bottom > 0;
-      if (n.classId === "actor" && !n.proxy && !hasPadding) { arrange(child, n.world, undefined, undefined, childClip, ancestors); continue; }
-      if (!container && !hasPadding || n.classId === "2DSpacerComponent" || n.classId === "2DPaddingComponent") { arrange(child, n.world, undefined, undefined, childClip, ancestors); continue; }
+      if (n.classId === "actor" && !n.proxy && !hasPadding) { arrange(child, n.world, undefined, undefined, childClip, ancestors, realized); continue; }
+      if (!container && !hasPadding || n.classId === "2DSpacerComponent" || n.classId === "2DPaddingComponent") { arrange(child, n.world, undefined, undefined, childClip, ancestors, realized); continue; }
+      if (virtualWindow) {
+        const index = options.virtualItems?.[child.actor.id]?.index ?? children.indexOf(child);
+        const p = parseOverlayContainerProperties(n.component?.properties);
+        const column = index % virtualWindow.columns, row = Math.floor(index / virtualWindow.columns), gap = Math.min(1_000_000, n.props.gap);
+        const x = -innerW / 2 + column * (p.itemWidth + gap) + p.itemWidth / 2;
+        const y = innerH / 2 - row * (p.itemHeight + gap) - p.itemHeight / 2;
+        arrange(child, n.world, [p.itemWidth, p.itemHeight], [x + innerX - scrollX, y + innerY + scrollY], childClip, ancestors,
+          realized && index >= virtualWindow.first && index < virtualWindow.end);
+        continue;
+      }
       let w = child.desired[0], h = child.desired[1];
       const proxy = child === n.proxy;
       if (proxy || child.props.widthMode === "fill" || n.props.horizontalAlignment === "stretch") w = innerW;
@@ -251,10 +288,28 @@ export function resolveOverlayLayout(source: readonly SerializedActor[], options
       if (horizontal) { x = -innerW / 2 + cursor + w / 2; cursor += w + n.props.gap; }
       if (vertical) { y = innerH / 2 - cursor - h / 2; cursor += h + n.props.gap; }
       if (n.classId === "actor" && n.proxy) { x = child.local.position[0]; y = child.local.position[1]; }
-      arrange(child, n.world, [Math.max(0, w), Math.max(0, h)], [x + innerX - scrollX, y + innerY + scrollY], childClip, ancestors);
+      arrange(child, n.world, [Math.max(0, w), Math.max(0, h)], [x + innerX - scrollX, y + innerY + scrollY], childClip, ancestors, realized);
     }
   }
   for (const node of nodes.values()) if (!node.parent) arrange(node, origin);
+  // A Mask is an actor decorator: its authored rect clips the owning actor,
+  // sibling components and actor descendants without changing their layout.
+  for (const mask of nodes.values()) {
+    if (mask.classId !== "2DMaskComponent" || !visible(mask)) continue;
+    const bounds = entries.get(mask.key)?.rect;
+    let owner = actorNodes.get(mask.actor.id);
+    // A mask-only helper actor decorates its spatial parent, matching Padding.
+    if (owner && paddingOnly(owner) && owner.actualParent) owner = owner.actualParent;
+    if (!bounds || !owner) continue;
+    for (const node of nodes.values()) {
+      let ancestor: Node | null = node;
+      const seen = new Set<string>();
+      while (ancestor && ancestor !== owner && !seen.has(ancestor.key)) { seen.add(ancestor.key); ancestor = ancestor.actualParent; }
+      if (ancestor !== owner) continue;
+      const entry = entries.get(node.key);
+      if (entry) entry.clip = intersectOverlayRects(entry.clip, bounds);
+    }
+  }
   for (const node of nodes.values()) {
     if (!node.world || !node.managed) continue;
     const local = relative(node.actualParent?.world ?? origin, node.world);

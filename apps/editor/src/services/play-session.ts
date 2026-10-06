@@ -668,6 +668,16 @@ export function startPlaySession(options: {
       if (worker) worker.postControl(control);
       else runtime?.applySceneLayerScroll(event.layerId, event.actorId, event.componentId, event.deltaX, event.deltaY);
     },
+    onSceneLayerControl: (event) => {
+      const control = { type: "sceneLayerControl" as const, ...event };
+      if (worker) worker.postControl(control);
+      else runtime?.applySceneLayerControl(control);
+    },
+    onSceneLayerFocusNavigate: (reverse) => {
+      const control = { type: "sceneLayerFocusNavigate" as const, reverse };
+      if (worker) worker.postControl(control);
+      else runtime?.applySceneLayerFocusNavigate(reverse);
+    },
     onSceneLayerPointer: (event) => {
       const control = { type: "sceneLayerPointer" as const, ...event };
       if (worker) worker.postControl(control);
@@ -682,6 +692,7 @@ export function startPlaySession(options: {
           size.frustumHeight,
           size.canvasWidth,
           size.canvasHeight,
+          size.safeAreaInsets,
         );
     },
     onAudioVoiceEnded: (voiceId) => {

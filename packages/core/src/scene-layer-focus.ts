@@ -1,3 +1,5 @@
+import { isInteractiveUIControl2DClass } from "./ui-controls2d";
+
 export const FOCUS_DIRECTIONS = ["up", "down", "left", "right"] as const;
 export type FocusDirection = (typeof FOCUS_DIRECTIONS)[number];
 
@@ -53,5 +55,5 @@ export function parseFocusTargetProperties(value?: unknown): FocusTargetProperti
   };
 }
 export function isFocusTargetClass(classId: string): boolean {
-  return classId === "2DButtonComponent" || classId === "2DFocusTargetComponent";
+  return classId === "2DButtonComponent" || classId === "2DFocusTargetComponent" || isInteractiveUIControl2DClass(classId);
 }

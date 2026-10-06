@@ -279,8 +279,11 @@ describe("ParticleSystemPreview", () => {
     view.rerender(
       <ParticleSystemPreview payload={payload as unknown as Record<string, unknown>} />,
     );
-    await waitFor(() => expect(screen.queryByTestId("particle-preview-notice")).toBeNull());
-    const latest = appliedLibraries().at(-1)!.emitters.get("pg-1");
-    expect(latest?.kind === "graph" && latest.document.settings.capacity).toBe(512);
+    // Validation clears the notice before the preview effect applies the build.
+    await waitFor(() => {
+      expect(screen.queryByTestId("particle-preview-notice")).toBeNull();
+      const latest = appliedLibraries().at(-1)!.emitters.get("pg-1");
+      expect(latest?.kind === "graph" && latest.document.settings.capacity).toBe(512);
+    });
   });
 });

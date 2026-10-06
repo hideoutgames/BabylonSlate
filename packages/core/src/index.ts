@@ -79,4 +79,8 @@ export * from "./render-target";
 export * from "./overlay-layout";
 export * from "./dynamic-runtime-mesh";
 export * from "./joystick2d";
+export * from "./ui-controls2d";
+export * from "./overlay-containers";
 export * from "./overlay-visual-style";
+
+export * from "./actor-property-references";

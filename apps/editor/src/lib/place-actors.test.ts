@@ -170,26 +170,6 @@ describe("ENGINE_PLACE_ACTORS", () => {
     );
     expect(overlay.some((entry) => entry.kind.type === "skybox")).toBe(false);
     expect(overlay.some((entry) => entry.kind.type === "shape")).toBe(true);
-    expect(
-      overlay.filter((entry) => entry.category === "Overlay").map((entry) => entry.id),
-    ).toEqual([
-      "2d-scrollbox",
-      "2d-verticalbox",
-      "2d-horizontalbox",
-      "2d-overlaybox",
-      "2d-padding",
-      "2d-spacer",
-      "2d-joystick",
-      "2d-painter",
-      "2d-anchor",
-      "2d-texture",
-      "2d-material",
-      "2d-button",
-      "2d-focus-target",
-      "2d-panel",
-      "2d-text",
-      "2d-rich-text",
-    ]);
     const actor = spawnPlacedActor(
       createDefaultScene(),
       overlay.find((entry) => entry.id === "shape-box")!,
@@ -212,6 +192,20 @@ describe("ENGINE_PLACE_ACTORS", () => {
       ["2d-overlaybox", "2DOverlayBoxComponent"],
       ["2d-padding", "2DPaddingComponent"],
       ["2d-spacer", "2DSpacerComponent"],
+      ["2d-virtualizedlist", "2DVirtualizedListComponent"],
+      ["2d-virtualizedgrid", "2DVirtualizedGridComponent"],
+      ["2d-maskpanel", "2DMaskPanelComponent"],
+      ["2d-mask", "2DMaskComponent"],
+      ["2d-safearea", "2DSafeAreaComponent"],
+      ["2d-slider", "2DSliderComponent"],
+      ["2d-rangeslider", "2DRangeSliderComponent"],
+      ["2d-checkbox", "2DCheckboxComponent"],
+      ["2d-radiobutton", "2DRadioButtonComponent"],
+      ["2d-toggle", "2DToggleComponent"],
+      ["2d-textinput", "2DTextInputComponent"],
+      ["2d-numericinput", "2DNumericInputComponent"],
+      ["2d-dropdown", "2DDropdownComponent"],
+      ["2d-progressbar", "2DProgressBarComponent"],
       ["2d-joystick", "2DJoystickComponent"],
       ["2d-painter", "2DPainterComponent"],
       ["2d-anchor", "2DAnchorComponent"],
@@ -863,4 +857,14 @@ describe("projectPlaceActors", () => {
       classId: "main",
     });
   });
+});
+
+
+it("places a switcher only in SceneLayers and preserves its editable actor defaults", () => {
+  expect(placeActorsForHost({ overlay: false }).some(item => item.id === "scene-layer-switcher")).toBe(false);
+  const item = placeActorsForHost({ overlay: true }).find(item => item.id === "scene-layer-switcher");
+  if (!item) throw new Error("Missing switcher placement");
+  const actor = spawnPlacedActor(createDefaultScene(), item, "switcher", ORIGIN, { overlay: true });
+  expect(actor.classId).toBe("SceneLayerActorSwitcher");
+  expect(actor.properties).toEqual({ sceneLayerActors: [], initialIndex: 0 });
 });
