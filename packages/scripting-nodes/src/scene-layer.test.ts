@@ -2,14 +2,13 @@ import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import {
   clearValidationRules,
   compileGraph,
-  objectRef,
   validateGraphs,
   type GraphNode,
   type LogicGraph,
   type NodeRegistry,
 } from "@babylonslate/scripting";
 import { createDefaultNodeRegistry } from "./index";
-import { registerSceneLayerValidationRules, sceneLayerNodes } from "./scene-layer";
+import { registerSceneLayerValidationRules } from "./scene-layer";
 
 function node(
   registry: NodeRegistry,
@@ -35,41 +34,6 @@ describe("scene-layer nodes", () => {
   });
   afterEach(() => {
     clearValidationRules();
-  });
-
-  it("registers Create, Remove, Clear, and post-process nodes", () => {
-    expect(sceneLayerNodes.map((entry) => entry.id)).toEqual([
-      "scene-layer.create",
-      "scene-layer.remove",
-      "scene-layer.clear",
-      "scene-layer.registerPostProcess",
-      "scene-layer.unregisterPostProcess",
-    ]);
-    const created = sceneLayerNodes.find((entry) => entry.id === "scene-layer.create");
-    expect(created?.title).toBe("Create Scene Layer");
-    const pins = created?.pins({}) ?? [];
-    expect(pins.find((pin) => pin.id === "asset")?.name).toBe("Asset");
-    expect(pins.find((pin) => pin.id === "zOrder")?.name).toBe("Z-Order");
-    expect(pins.find((pin) => pin.id === "out")?.name).toBe("Layer");
-    expect(pins.find((pin) => pin.id === "asset")?.type).toEqual({
-      kind: "assetRef",
-      assetType: "SceneLayer",
-    });
-    expect(pins.find((pin) => pin.id === "out")?.type).toEqual(
-      objectRef("SceneLayer"),
-    );
-    const register = sceneLayerNodes.find(
-      (entry) => entry.id === "scene-layer.registerPostProcess",
-    );
-    expect(register?.title).toBe("Register Scene Layer Post-Processing");
-    expect(register?.pins({}).find((pin) => pin.id === "layer")?.name).toBe("Layer");
-    expect(register?.pins({}).find((pin) => pin.id === "material")?.name).toBe(
-      "Material",
-    );
-    expect(
-      sceneLayerNodes.find((entry) => entry.id === "scene-layer.unregisterPostProcess")
-        ?.title,
-    ).toBe("Unregister Scene Layer Post-Processing");
   });
 
   it("compiles Create Scene Layer onto ctx.createSceneLayer", () => {

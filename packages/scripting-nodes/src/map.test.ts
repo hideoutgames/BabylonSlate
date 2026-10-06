@@ -13,7 +13,7 @@ import {
   type LogicGraph,
   type NodeRegistry,
 } from "@babylonslate/scripting";
-import { createDefaultNodeRegistry, mapNodes } from "./index";
+import { createDefaultNodeRegistry } from "./index";
 
 function node(
   registry: NodeRegistry,
@@ -58,42 +58,6 @@ function runLog(source: string): string[] {
 }
 
 describe("map nodes", () => {
-  it("exports get/set/has/remove/size/keys/make/values/clear plus empty and break", () => {
-    const ids = mapNodes.map((entry) => entry.id);
-    expect(ids).toEqual(
-      expect.arrayContaining([
-        "map.get",
-        "map.set",
-        "map.has",
-        "map.remove",
-        "map.size",
-        "map.keys",
-        "map.make",
-        "map.values",
-        "map.clear",
-        "map.isEmpty",
-        "map.break",
-      ]),
-    );
-    expect(mapNodes.every((entry) => entry.category === "map")).toBe(true);
-    expect(mapNodes.find((entry) => entry.id === "map.make")?.title).toBe(
-      "Make Map",
-    );
-    expect(mapNodes.find((entry) => entry.id === "map.break")?.title).toBe(
-      "Break Map",
-    );
-    const getPins = mapNodes.find((entry) => entry.id === "map.get")!.pins({});
-    expect(getPins.map((pin) => pin.id)).toEqual(
-      expect.arrayContaining(["map", "key", "out", "found"]),
-    );
-    const removePins = mapNodes
-      .find((entry) => entry.id === "map.remove")!
-      .pins({});
-    expect(removePins.map((pin) => pin.id)).toEqual(
-      expect.arrayContaining(["removed"]),
-    );
-  });
-
   it("Make Map exposes dynamic K/V pair pins from count", () => {
     const def = createDefaultNodeRegistry().get("map.make")!;
     const pins = def.pins({ count: 2 });

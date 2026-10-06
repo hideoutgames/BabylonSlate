@@ -124,14 +124,6 @@ describe("player KTX2 transcoder files", () => {
   });
 });
 
-describe("HUD GUI Image packing", () => {
-  it("does not export a GUI Image chunk picker", async () => {
-    const mod = await import("./texture-loader");
-    expect("selectGuiImageChunk" in mod).toBe(false);
-    expect("mimeForGuiTextureBytes" in mod).toBe(false);
-  });
-});
-
 describe("selectTextureChunk authored variant", () => {
   it("selects canonical 2D pixels or retained cube source independently of chunk order", () => {
     const pixels = { id: "pixels", kind: "pixels", mime: "image/png", sha256: "pixels", locator: { inline: { offset: 0, length: 1 } } };

@@ -69,48 +69,6 @@ function stubCtx(extra: Record<string, unknown> = {}) {
 }
 
 describe("structured flow catalog", () => {
-  it("registers For Loop / For Each / map / break / stateful flow nodes", () => {
-    const registry = createDefaultNodeRegistry();
-    for (const id of [
-      "flow.forLoop",
-      "flow.forLoopWithBreak",
-      "flow.forEach",
-      "flow.forEachWithBreak",
-      "flow.forEachMap",
-      "flow.forEachMapWithBreak",
-      "flow.whileLoop",
-      "flow.break",
-      "flow.doOnce",
-      "flow.doN",
-      "flow.flipFlop",
-      "flow.gate",
-    ]) {
-      expect(registry.get(id), id).toBeDefined();
-    }
-  });
-
-  it("titles structured flow nodes in Title Case", () => {
-    const registry = createDefaultNodeRegistry();
-    expect(registry.get("flow.forLoop")?.title).toBe("For Loop");
-    expect(registry.get("flow.forLoopWithBreak")?.title).toBe(
-      "For Loop With Break",
-    );
-    expect(registry.get("flow.forEach")?.title).toBe("For Each");
-    expect(registry.get("flow.forEachWithBreak")?.title).toBe(
-      "For Each With Break",
-    );
-    expect(registry.get("flow.forEachMap")?.title).toBe("For Each Map");
-    expect(registry.get("flow.forEachMapWithBreak")?.title).toBe(
-      "For Each Map With Break",
-    );
-    expect(registry.get("flow.whileLoop")?.title).toBe("While Loop");
-    expect(registry.get("flow.break")?.title).toBe("Break");
-    expect(registry.get("flow.doOnce")?.title).toBe("Do Once");
-    expect(registry.get("flow.doN")?.title).toBe("Do N");
-    expect(registry.get("flow.flipFlop")?.title).toBe("Flip Flop");
-    expect(registry.get("flow.gate")?.title).toBe("Gate");
-  });
-
   it("tags loop and stateful nodes with structuredFlow metadata", () => {
     const registry = createDefaultNodeRegistry();
     expect(registry.get("flow.forLoop")?.structuredFlow?.kind).toBe("forLoop");

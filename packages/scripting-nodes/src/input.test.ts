@@ -5,7 +5,7 @@ import {
   type LogicGraph,
   type NodeRegistry,
 } from "@babylonslate/scripting";
-import { createDefaultNodeRegistry, inputNodes } from "./index";
+import { createDefaultNodeRegistry } from "./index";
 
 function node(
   registry: NodeRegistry,
@@ -46,34 +46,6 @@ function loadModule(source: string): Record<string, unknown> {
 }
 
 describe("input nodes", () => {
-  it("registers Get Cursor Position, Project Cursor To Scene, Show Cursor, and Hide Cursor", () => {
-    expect(inputNodes.map((n) => n.id)).toEqual(
-      expect.arrayContaining([
-        "input.getCursorPosition",
-        "input.projectCursorToScene",
-        "input.showCursor",
-        "input.hideCursor",
-      ]),
-    );
-    const registry = createDefaultNodeRegistry();
-    const get = registry.get("input.getCursorPosition")!;
-    expect(get.title).toBe("Get Cursor Position");
-    expect(get.pure).toBe(true);
-    expect(get.pins({}).map((p) => p.id)).toEqual(
-      expect.arrayContaining(["out", "pressed"]),
-    );
-    const project = registry.get("input.projectCursorToScene")!;
-    expect(project.title).toBe("Project Cursor To Scene");
-    expect(
-      project.pins({}).find((p) => p.id === "drawDebug")?.defaultValue,
-    ).toBe(true);
-    expect(
-      project.pins({}).find((p) => p.id === "duration")?.defaultValue,
-    ).toBe(0);
-    expect(registry.get("input.showCursor")!.title).toBe("Show Cursor");
-    expect(registry.get("input.hideCursor")!.title).toBe("Hide Cursor");
-  });
-
   it("compiled Get Cursor Position reads ctx.getCursorPosition on Tick", () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {

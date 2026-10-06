@@ -96,7 +96,7 @@ export default defineConfig({
         "**/babylon-audio-backend.ts",
         // Game worker entry needs a Worker host; covered by Play e2e.
         "**/worker-entry.ts",
-        // Navmesh bake worker; covered by bake-job unit tests + editor host.
+        // Navmesh bake worker; needs a Worker host, covered through the editor host.
         "**/bake-worker.ts",
         // Audio reverb bake worker; occupancy/probe bake is covered in audio-reverb.test.ts.
         "**/audio-reverb-worker.ts",

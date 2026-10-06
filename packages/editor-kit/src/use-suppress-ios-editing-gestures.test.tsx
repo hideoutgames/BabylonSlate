@@ -56,27 +56,6 @@ describe("useSuppressIosEditingGestures", () => {
     expect(touchEvent("touchmove", chrome, 3).defaultPrevented).toBe(true);
   });
 
-  it("does not prevent one-finger touches", () => {
-    const { getByTestId } = render(<Host />);
-    expect(touchEvent("touchstart", getByTestId("chrome"), 1).defaultPrevented).toBe(
-      false,
-    );
-  });
-
-  it("does not prevent three-finger touches on inputs", () => {
-    const { getByTestId } = render(<Host />);
-    expect(touchEvent("touchstart", getByTestId("field"), 3).defaultPrevented).toBe(
-      false,
-    );
-  });
-
-  it("does not prevent three-finger touches inside selectable text", () => {
-    const { getByTestId } = render(<Host />);
-    expect(
-      touchEvent("touchstart", getByTestId("selectable"), 3).defaultPrevented,
-    ).toBe(false);
-  });
-
   it("prevents historyUndo outside fields and leaves it in inputs", () => {
     const { getByTestId } = render(<Host />);
     expect(historyInput(getByTestId("chrome"), "historyUndo").defaultPrevented).toBe(

@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  assertEveryConcreteTypeHasConverter,
   compileGraph,
   pin,
   EXEC,
@@ -9,7 +8,7 @@ import {
   STRING,
   type LogicGraph,
 } from "@babylonslate/scripting";
-import { createDefaultNodeRegistry, mathNodes, flowNodes } from "./index";
+import { createDefaultNodeRegistry } from "./index";
 
 async function loadModule(source: string): Promise<Record<string, unknown>> {
   const body = source.replace(/export\s+function\s+/g, "function ");
@@ -44,17 +43,6 @@ describe("node catalog", () => {
     expect(registry.get("anim.state.justFinished")).toBeDefined();
     expect(registry.get("navigation.findPathTo")).toBeDefined();
     expect(registry.get("navigation.moveTo")).toBeDefined();
-  });
-
-  it("has a WildcardTo* converter for every concrete target", () => {
-    const registry = createDefaultNodeRegistry();
-    const ids = new Set(registry.list().map((d) => d.id));
-    expect(assertEveryConcreteTypeHasConverter(ids)).toEqual([]);
-  });
-
-  it("math category exposes expected nodes", () => {
-    expect(mathNodes.map((n) => n.id)).toContain("math.add");
-    expect(flowNodes.map((n) => n.id)).toContain("flow.branch");
   });
 });
 

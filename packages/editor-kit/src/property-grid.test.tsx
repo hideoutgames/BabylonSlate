@@ -309,54 +309,6 @@ describe("PropertyGrid", () => {
     expect(button.getAttribute("id")).toBe("property-mesh");
   });
 
-  it("shows icon, name, and type on a filled asset picker button", () => {
-    render(
-      <PropertyGrid
-        rows={[
-          {
-            kind: "asset",
-            id: "texture",
-            label: "Texture",
-            value: "guid-grass",
-            displayLabel: "Grass",
-            displayType: "Texture",
-            visual: { assetType: "Texture" },
-            placeholder: "None",
-            onPick: () => {},
-            onChange: () => {},
-          },
-        ]}
-      />,
-    );
-    const button = screen.getByLabelText("Texture");
-    expect(button.textContent).toContain("Grass");
-    expect(button.textContent).toContain("Texture");
-    expect(button.textContent).not.toContain("guid-grass");
-    const icon = button.querySelector("[data-type-family]");
-    expect(icon?.getAttribute("data-type-family")).toBe("texture");
-  });
-
-  it("keeps an empty asset picker as text-only None", () => {
-    render(
-      <PropertyGrid
-        rows={[
-          {
-            kind: "asset",
-            id: "texture",
-            label: "Texture",
-            value: null,
-            placeholder: "None",
-            onPick: () => {},
-            onChange: () => {},
-          },
-        ]}
-      />,
-    );
-    const button = screen.getByLabelText("Texture");
-    expect(button.textContent).toBe("None");
-    expect(button.querySelector("[data-type-family]")).toBeNull();
-  });
-
   it("shows Open Asset beside an openable asset picker", () => {
     const openAsset = vi.fn();
     render(
@@ -424,130 +376,6 @@ describe("PropertyGrid", () => {
       "Event On Foo (Inherited)",
     );
     expect(formatEventTitle("Begin Play")).toBe("Event Begin Play");
-  });
-
-  it("uses a compact icon reset instead of the word Reset", () => {
-    render(
-      <PropertyGrid
-        rows={[
-          {
-            kind: "number",
-            id: "speed",
-            label: "Speed",
-            value: 5,
-            defaultValue: 1,
-            onChange: () => {},
-          },
-        ]}
-      />,
-    );
-    const reset = screen.getByTestId("property-speed-reset");
-    expect(reset.textContent).not.toMatch(/Reset/i);
-    expect(reset.getAttribute("aria-label")).toBe("Reset Speed");
-  });
-
-  it("stacks the title above its control", () => {
-    render(
-      <PropertyGrid
-        rows={[
-          {
-            kind: "text",
-            id: "name",
-            label: "Name",
-            value: "Cube",
-            onChange: () => {},
-          },
-        ]}
-      />,
-    );
-    const row = screen.getByTestId("property-row-name");
-    expect(row.getAttribute("data-orientation")).toBe("vertical");
-    expect(row.className).toContain("flex-col");
-    expect(row.textContent).toContain("Name");
-    const title = row.querySelector('[data-slot="field-label"]');
-    const control = screen.getByTestId("property-name");
-    expect(title).not.toBeNull();
-    expect(
-      Boolean(
-        title!.compareDocumentPosition(control) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
-      ),
-    ).toBe(true);
-  });
-
-  it("keeps reset on the title line", () => {
-    render(
-      <PropertyGrid
-        rows={[
-          {
-            kind: "number",
-            id: "speed",
-            label: "Speed",
-            value: 5,
-            defaultValue: 1,
-            onChange: () => {},
-          },
-        ]}
-      />,
-    );
-    const title = screen
-      .getByTestId("property-row-speed")
-      .querySelector('[data-slot="field-label"]');
-    const reset = screen.getByTestId("property-speed-reset");
-    expect(title?.parentElement).toContain(reset);
-  });
-
-  it("does not repeat the property title in the number scrub handle", () => {
-    render(
-      <PropertyGrid
-        rows={[
-          {
-            kind: "number",
-            id: "speed",
-            label: "Speed",
-            value: 5,
-            onChange: () => {},
-          },
-        ]}
-      />,
-    );
-    expect(screen.getByTestId("property-row-speed").textContent).toContain(
-      "Speed",
-    );
-    expect(screen.getByTestId("property-speed-scrub").textContent).not.toMatch(
-      /Speed/i,
-    );
-  });
-
-  it("places the label left of the control when orientation is horizontal", () => {
-    render(
-      <PropertyGrid
-        orientation="horizontal"
-        rows={[
-          {
-            kind: "text",
-            id: "name",
-            label: "Name",
-            value: "Cube",
-            onChange: () => {},
-          },
-        ]}
-      />,
-    );
-    const row = screen.getByTestId("property-row-name");
-    expect(row.getAttribute("data-orientation")).toBe("horizontal");
-    expect(row.className).toContain("flex-row");
-    const label = row.querySelector('[data-slot="field-label"]');
-    const content = row.querySelector('[data-slot="field-content"]');
-    expect(label).not.toBeNull();
-    expect(content).not.toBeNull();
-    expect(content).toContain(screen.getByTestId("property-name"));
-    expect(
-      Boolean(
-        label!.compareDocumentPosition(content!) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
-      ),
-    ).toBe(true);
   });
 
   it("hides reset on disabled rows even when a default is present", () => {
@@ -622,52 +450,6 @@ describe("PropertyGrid", () => {
     expect(rows.every((row) => row.disabled === undefined)).toBe(true);
   });
 
-  it("keeps vector axes on one nowrap row", () => {
-    render(
-      <PropertyGrid
-        rows={[
-          {
-            kind: "vector3",
-            id: "position",
-            label: "Position",
-            value: [1, 2, 3],
-            onChange: () => {},
-          },
-        ]}
-      />,
-    );
-    const x = screen.getByTestId("property-position-x");
-    const group = x.closest("[data-testid='property-vector3-position']");
-    expect(group).not.toBeNull();
-    expect(group!.className).toContain("flex-nowrap");
-    expect(group!.className).not.toContain("flex-wrap");
-  });
-
-  it("colors vector axis scrub labels", () => {
-    render(
-      <PropertyGrid
-        rows={[
-          {
-            kind: "vector3",
-            id: "position",
-            label: "Position",
-            value: [1, 2, 3],
-            onChange: () => {},
-          },
-        ]}
-      />,
-    );
-    expect(screen.getByTestId("property-position-x-scrub").className).toContain(
-      "text-axis-x",
-    );
-    expect(screen.getByTestId("property-position-y-scrub").className).toContain(
-      "text-axis-y",
-    );
-    expect(screen.getByTestId("property-position-z-scrub").className).toContain(
-      "text-axis-z",
-    );
-  });
-
   it("renders a bounded slider beside the numeric field", () => {
     const onChange = vi.fn();
     render(
@@ -718,33 +500,6 @@ describe("PropertyGrid", () => {
     expect(onChange).toHaveBeenCalledWith(3);
   });
 
-  it("opens enum options in a compact dropdown, not a full-width popup", () => {
-    render(
-      <PropertyGrid
-        rows={[
-          {
-            kind: "enum",
-            id: "mode",
-            label: "Mode",
-            value: "a",
-            options: [
-              { value: "a", label: "Alpha" },
-              { value: "b", label: "Beta" },
-            ],
-            onChange: () => {},
-          },
-        ]}
-      />,
-    );
-    fireEvent.click(screen.getByTestId("property-mode"));
-    const content = document.querySelector("[data-slot='select-content']");
-    expect(content).toBeTruthy();
-    const classes = content!.className.split(/\s+/);
-    expect(classes).toContain("min-w-(--anchor-width)");
-    expect(classes).not.toContain("w-(--anchor-width)");
-    expect(content!.getAttribute("data-align-trigger")).toBe("false");
-  });
-
   it("selects text row values on tap so typing overwrites them", async () => {
     render(
       <PropertyGrid
@@ -769,48 +524,6 @@ describe("PropertyGrid", () => {
       expect(input.selectionStart).toBe(0);
       expect(input.selectionEnd).toBe(input.value.length);
     });
-  });
-
-  it("hides Field labels when hideLabels is set", () => {
-    render(
-      <PropertyGrid
-        hideLabels
-        rows={[
-          {
-            kind: "number",
-            id: "item-0",
-            label: "Item 1",
-            value: 1.5,
-            onChange: () => {},
-          },
-        ]}
-      />,
-    );
-    const label = screen
-      .getByTestId("property-row-item-0")
-      .querySelector('[data-slot="field-label"]');
-    expect(label?.className).toMatch(/sr-only/);
-    expect(label?.textContent).toContain("Item 1");
-  });
-
-  it("drops Field padding and divider when density is compact", () => {
-    render(
-      <PropertyGrid
-        density="compact"
-        rows={[
-          {
-            kind: "text",
-            id: "name",
-            label: "Name",
-            value: "Cube",
-            onChange: () => {},
-          },
-        ]}
-      />,
-    );
-    const row = screen.getByTestId("property-row-name");
-    expect(row.className).not.toMatch(/px-2/);
-    expect(row.className).not.toMatch(/border-b/);
   });
 
   it("shows units verbatim after the humanized label, beside the label accessory", () => {

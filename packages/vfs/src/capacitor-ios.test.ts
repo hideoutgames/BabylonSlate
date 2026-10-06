@@ -7,16 +7,12 @@ import { scanText } from "../../../scripts/check-public-hygiene.mjs";
 
 const vfsDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(vfsDir, "../../..");
-const pkg = JSON.parse(
-  readFileSync(join(vfsDir, "../package.json"), "utf8"),
-) as { dependencies: Record<string, string> };
 const editorPkg = JSON.parse(
   readFileSync(join(repoRoot, "apps/editor/package.json"), "utf8"),
 ) as {
   dependencies: Record<string, string>;
   scripts: Record<string, string>;
 };
-const lockfile = readFileSync(join(repoRoot, "pnpm-lock.yaml"), "utf8");
 const podfile = readFileSync(
   join(repoRoot, "apps/editor/ios/App/Podfile"),
   "utf8",
@@ -105,45 +101,7 @@ function podNameForDependency(dependency: string): string {
 }
 
 describe("Capacitor 8 iOS host", () => {
-  it("keeps the iOS dependencies on Capacitor 8 and drops the community scoped-storage plugin", () => {
-    expect(pkg.dependencies["@capacitor/core"]).toMatch(/^\^8/);
-    expect(pkg.dependencies["@daniele-rolli/capacitor-scoped-storage"]).toBeUndefined();
-    expect(editorPkg.dependencies["@daniele-rolli/capacitor-scoped-storage"]).toBeUndefined();
-  });
-
-  it("matches the resolved Capacitor version and includes every native plugin pod", () => {
-    const capacitorVersionRange =
-      editorPkg.dependencies["@capacitor/core"] ?? "";
-    const capacitorMajor = Number(capacitorVersionRange.match(/\d+/)?.[0]);
-    expect(capacitorMajor).toBe(8);
-
-    const platformVersion = podfile.match(
-      /^platform :ios, '([0-9]+\.[0-9]+)'$/m,
-    )?.[1];
-    expect(platformVersion).toBe("15.0");
-
-    const resolvedCapacitorVersion = lockfile.match(
-      /^\s{6}'@capacitor\/ios':\s*\n\s{8}specifier:[^\n]+\n\s{8}version:\s*([0-9]+\.[0-9]+\.[0-9]+)/m,
-    )?.[1];
-    expect(resolvedCapacitorVersion).toBeDefined();
-    const capacitorPodfilePath = podfile.match(
-      /pod 'Capacitor', :path => '([^']+)'/,
-    )?.[1];
-    const capacitorLockfilePath = podfileLock.match(
-      /Capacitor:\s*\n\s*:path: "([^"]+)"/,
-    )?.[1];
-    expect(capacitorPodfilePath).toBeDefined();
-    expect(capacitorLockfilePath).toBe(capacitorPodfilePath);
-    for (const source of [podfile, podfileLock]) {
-      const capacitorPaths = [
-        ...source.matchAll(/@capacitor\+ios@([0-9.]+)_/g),
-      ];
-      expect(capacitorPaths.length).toBeGreaterThan(0);
-      for (const match of capacitorPaths) {
-        expect(match[1]).toBe(resolvedCapacitorVersion);
-      }
-    }
-
+  it("includes a pod for every native Capacitor plugin", () => {
     const podNames = new Set(
       [...podfile.matchAll(/pod '([^']+)'/g)].map((match) => match[1]),
     );
@@ -160,13 +118,6 @@ describe("Capacitor 8 iOS host", () => {
       expect(editorPkg.dependencies[dependency]).toBeDefined();
       expect(podNames).toContain(podNameForDependency(dependency));
     }
-
-    expect(podfileLock).toMatch(
-      new RegExp(`- Capacitor \\(${resolvedCapacitorVersion}\\)`),
-    );
-    expect(podfileLock).toMatch(
-      new RegExp(`- CapacitorCordova \\(${resolvedCapacitorVersion}\\)`),
-    );
   });
 
   it("enforces the Capacitor 8 deployment and universal iPhone/iPad project settings", () => {

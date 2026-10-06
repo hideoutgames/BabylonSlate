@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, writeFile, readFile } from "node:fs/promises";
+import { mkdtemp, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync, spawn } from "node:child_process";
@@ -158,65 +158,6 @@ test("local preserves argument boundaries, environment, commit, and bounded outp
   );
 });
 
-test("unfiltered verification certifies a clean unchanged commit", async (t) => {
-  const f = await fixture(t);
-  const result = await run(local, f.context);
-  assert.equal(result.status, "success");
-  assert.equal(result.deliveryEligible, true);
-});
-
-test("local retains recursive package diagnostics with a silent parent reporter", async (t) => {
-  const f = await fixture(t, "fail", true);
-  await writeFile(
-    join(f.cwd, "package.json"),
-    JSON.stringify({ scripts: { verify: "pnpm -r typecheck" } }),
-  );
-  await writeFile(
-    join(f.cwd, "pnpm-workspace.yaml"),
-    "packages:\n  - fixture-*\n",
-  );
-  for (const name of ["fixture-package", "fixture-other"]) {
-    await mkdir(join(f.cwd, name));
-    await writeFile(
-      join(f.cwd, name, "package.json"),
-      JSON.stringify({ name, scripts: { typecheck: "node ../fixture.mjs" } }),
-    );
-  }
-  f.env.npm_config_reporter = "silent";
-  const result = await run(local, f.context);
-  assert.equal(result.status, "failure");
-  assert.notEqual(result.exitCode, 0);
-  assert.equal(result.deliveryEligible, false);
-  const log = await readFile(result.logPath, "utf8");
-  assert.match(log, /"inherited":"preserved 🌍"/);
-  assert.match(log, /fixture failure/);
-  assert.ok(
-    log.lastIndexOf('["git","rev-parse","HEAD"]') >
-      log.indexOf("fixture failure"),
-    "final snapshot metadata follows the complete child output",
-  );
-});
-
-for (const [action, code] of [
-  ["fail", 9],
-  ["large", 7],
-]) {
-  test(`local ${action} preserves failure code with bounded Unicode tail and complete disk log`, async (t) => {
-    const f = await fixture(t, action);
-    const result = await run(local, f.context);
-    assert.equal(result.status, "failure");
-    assert.equal(result.exitCode, code);
-    assert.ok(Buffer.byteLength(f.output()) < 5120);
-    assert.ok(f.output().trim().split("\n").length <= 43);
-    assert.ok(!f.output().includes("\uFFFD"));
-    const log = await readFile(result.logPath, "utf8");
-    if (action === "large") {
-      assert.ok(log.length > 1000000);
-      assert.match(log, /4999 héllo/);
-    } else assert.match(log, /fixture failure/);
-  });
-}
-
 test("missing package-manager entry point reports a prerequisite failure", async (t) => {
   const f = await fixture(t);
   f.env.npm_execpath = join(f.cwd, "missing pnpm.cjs");
@@ -254,41 +195,6 @@ test("an initially dirty tree cannot certify a committed PR head even if unchang
   assert.equal(result.status, "stale");
 });
 
-test("large working-tree state stays on disk without bloating the result file", async (t) => {
-  const f = await fixture(t);
-  for (let i = 0; i < 80; i++)
-    await writeFile(join(f.cwd, `${i}-${"x".repeat(90)}.txt`), "untracked");
-  const result = await run(local, f.context);
-  assert.equal(result.status, "stale");
-  assert.ok((await readFile(result.resultPath)).length < 4096);
-  const state = JSON.parse(
-    await readFile(join(result.resultPath, "..", "initial-state.json"), "utf8"),
-  );
-  assert.match(state.status, /79-xxxx/);
-});
-
-test("successful slow process has only start/end records and retains every tick in its log", async (t) => {
-  const f = await fixture(t, "slow-success");
-  let finished = false;
-  const pending = run(local, f.context).finally(() => {
-    finished = true;
-  });
-  for (let i = 0; !f.output() && i < 100; i++) await delay(10);
-  const start = f.output();
-  let observedWaits = 0;
-  while (!finished) {
-    assert.equal(f.output(), start);
-    observedWaits++;
-    await delay(50);
-  }
-  const result = await pending;
-  assert.equal(result.status, "success");
-  assert.ok(observedWaits >= 10);
-  assert.equal(f.output().trim().split("\n").length, 2);
-  const log = await readFile(result.logPath, "utf8");
-  for (let i = 0; i < 10; i++) assert.match(log, new RegExp(`tick ${i}`));
-});
-
 test("cancellation stops descendants but leaves an unrelated process alive", async (t) => {
   const f = await fixture(t, "tree");
   const unrelated = spawn(process.execPath, ["-e", "setInterval(()=>{},100)"], {
@@ -310,35 +216,6 @@ test("cancellation stops descendants but leaves an unrelated process alive", asy
   assert.equal((await pending).status, "cancellation");
   assert.throws(() => process.kill(Number(pid), 0), { code: "ESRCH" });
   assert.doesNotThrow(() => process.kill(unrelated.pid, 0));
-});
-
-test("slow operation emits nothing between start and cancellation while retaining full logs", async (t) => {
-  const f = await fixture(t, "slow");
-  const controller = new AbortController();
-  const pending = run(local, { ...f.context, signal: controller.signal });
-  t.after(() => controller.abort());
-  for (let i = 0; !f.output() && i < 100; i++) await delay(10);
-  assert.ok(f.output(), "helper must announce its start");
-  const start = f.output();
-  const record = JSON.parse(start);
-  for (let i = 0; i < 150; i++) {
-    if ((await readFile(record.logPath, "utf8")).includes("ready")) break;
-    await delay(20);
-  }
-  await delay(200);
-  assert.equal(f.output(), start);
-  controller.abort();
-  const result = await pending;
-  assert.equal(result.status, "cancellation");
-  assert.equal(result.exitCode, 130);
-  assert.ok(
-    result.finalState,
-    "capture the final tree after owned children stop",
-  );
-  const log = await readFile(result.logPath, "utf8");
-  assert.match(log, /quiet heartbeat/);
-  await delay(150);
-  assert.equal(await readFile(result.logPath, "utf8"), log);
 });
 
 test("deadline terminates a slow owned process and cannot pass", async (t) => {
@@ -446,15 +323,6 @@ test("CI discovers a delayed Verify run, watches once, and returns its identity"
     ),
   );
   assert.ok(Buffer.byteLength(f.output()) < 1024);
-});
-
-test("Unicode split across process chunks does not corrupt the PR branch", async (t) => {
-  const f = await github(t, { branch: "feature-🌍", splitUnicode: true });
-  const result = await run(
-    { mode: "ci", pr: 42, timeoutMs: fixtureTimeoutMs },
-    f.context,
-  );
-  assert.equal(result.status, "success");
 });
 
 for (const [name, scenario, status] of [

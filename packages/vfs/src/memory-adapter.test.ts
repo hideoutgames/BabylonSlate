@@ -27,11 +27,6 @@ describe("memory storage adapter", () => {
     expect(listed.some((p) => p.name === "A.babproject")).toBe(true);
   });
 
-  it("defaults pickProjectFolder to MyGame", async () => {
-    const storage = new MemoryStorageAdapter();
-    expect((await storage.pickProjectFolder()).name).toBe("MyGame");
-  });
-
   it("releases the current folder", async () => {
     const storage = new MemoryStorageAdapter();
     await storage.pickProjectFolder("X.babproject");

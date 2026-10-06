@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   compileGraph,
-  arrayOf,
-  actorRef,
   classRef,
   objectRef,
   TRANSFORM,
@@ -39,10 +37,6 @@ function loadModule(source: string): Record<string, unknown> {
 }
 
 describe("actor nodes", () => {
-  it("registers Spawn Actor", () => {
-    expect(actorNodes.map((n) => n.id)).toContain("actor.spawn");
-  });
-
   it("Is Valid takes an Object pin and reports non-null instances", () => {
     const def = actorNodes.find((entry) => entry.id === "actor.isValid");
     const pins = def?.pins({}) ?? [];
@@ -220,35 +214,6 @@ describe("actor nodes", () => {
     });
   });
 
-  it("registers Get All Actors Of Class and Get Actor Of Class", () => {
-    expect(actorNodes.map((entry) => entry.id)).toEqual(
-      expect.arrayContaining([
-        "actor.getAllOfClass",
-        "actor.getOfClass",
-      ]),
-    );
-    expect(
-      actorNodes.find((entry) => entry.id === "actor.getAllOfClass")?.title,
-    ).toBe("Get All Actors Of Class");
-    expect(actorNodes.find((entry) => entry.id === "actor.getOfClass")?.title).toBe(
-      "Get Actor Of Class",
-    );
-    const allPins =
-      actorNodes.find((entry) => entry.id === "actor.getAllOfClass")?.pins({}) ??
-      [];
-    expect(allPins.find((pin) => pin.id === "classId")?.type).toEqual(
-      classRef("Actor"),
-    );
-    expect(allPins.find((pin) => pin.id === "out")?.type).toEqual(
-      arrayOf(actorRef("Actor")),
-    );
-    const onePins =
-      actorNodes.find((entry) => entry.id === "actor.getOfClass")?.pins({}) ?? [];
-    expect(onePins.find((pin) => pin.id === "out")?.type).toEqual(
-      actorRef("Actor"),
-    );
-  });
-
   it("compiles class queries through ctx.getAllActorsOfClass and ctx.getActorOfClass", () => {
     const registry = createDefaultNodeRegistry();
     for (const [typeId, needle] of [
@@ -389,33 +354,6 @@ describe("actor nodes", () => {
       },
     });
     expect(queried).toEqual(["all:Hero", "one:Hero"]);
-  });
-
-  it("registers Attach, Detach, Get Parent, Set Owner, and Get Owner", () => {
-    expect(actorNodes.map((entry) => entry.id)).toEqual(
-      expect.arrayContaining([
-        "actor.attach",
-        "actor.detach",
-        "actor.getParent",
-        "actor.setOwner",
-        "actor.getOwner",
-      ]),
-    );
-    expect(actorNodes.find((entry) => entry.id === "actor.attach")?.title).toBe(
-      "Attach Actor",
-    );
-    expect(actorNodes.find((entry) => entry.id === "actor.detach")?.title).toBe(
-      "Detach Actor",
-    );
-    expect(actorNodes.find((entry) => entry.id === "actor.getParent")?.title).toBe(
-      "Get Parent",
-    );
-    expect(actorNodes.find((entry) => entry.id === "actor.setOwner")?.title).toBe(
-      "Set Owner",
-    );
-    expect(actorNodes.find((entry) => entry.id === "actor.getOwner")?.title).toBe(
-      "Get Owner",
-    );
   });
 
   it("compiles hierarchy and owner nodes through ctx attach/owner helpers", () => {

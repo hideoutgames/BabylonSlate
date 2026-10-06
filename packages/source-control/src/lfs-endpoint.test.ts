@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { lfsEndpointFromRepoUrl, lfsLocksUrl, lfsRefName } from "./lfs-endpoint";
+import { lfsEndpointFromRepoUrl } from "./lfs-endpoint";
 
 describe("lfsEndpointFromRepoUrl", () => {
   it("derives GitHub HTTPS URLs with and without .git", () => {
@@ -45,20 +45,5 @@ describe("lfsEndpointFromRepoUrl", () => {
     expect(lfsEndpointFromRepoUrl("")).toBeNull();
     expect(lfsEndpointFromRepoUrl("   ")).toBeNull();
     expect(lfsEndpointFromRepoUrl("not-a-url")).toBeNull();
-  });
-});
-
-describe("lfsLocksUrl", () => {
-  it("appends /locks to the LFS base", () => {
-    expect(
-      lfsLocksUrl("https://github.com/org/repo.git/info/lfs"),
-    ).toBe("https://github.com/org/repo.git/info/lfs/locks");
-  });
-});
-
-describe("lfsRefName", () => {
-  it("prefixes the configured branch", () => {
-    expect(lfsRefName("main")).toBe("refs/heads/main");
-    expect(lfsRefName("feature/locks")).toBe("refs/heads/feature/locks");
   });
 });

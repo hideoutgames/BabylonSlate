@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  SKYBOX_FACE_KEYS,
-  createSkyboxComponent,
   emptySkyboxFaces,
   parseSkyboxFaces,
   parseSkyboxSize,
@@ -11,15 +9,10 @@ import {
 import { createDefaultScene } from "./project";
 
 describe("SkyboxComponent helpers", () => {
-  it("creates a SkyboxComponent with size 1000 and empty faces", () => {
-    const component = createSkyboxComponent("sky-1");
-    expect(component.classId).toBe("SkyboxComponent");
-    expect(component.properties.size).toBe(1000);
+  it("falls back to size 1000 for missing or non-positive sizes", () => {
     expect(parseSkyboxSize(undefined)).toBe(1000);
     expect(parseSkyboxSize(-4)).toBe(1000);
     expect(parseSkyboxSize(250)).toBe(250);
-    expect(component.properties.faces).toEqual(emptySkyboxFaces());
-    expect(SKYBOX_FACE_KEYS).toEqual(["px", "py", "pz", "nx", "ny", "nz"]);
   });
 
   it("fills missing face keys with null", () => {

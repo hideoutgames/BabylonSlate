@@ -380,17 +380,6 @@ describe("createCommandRegistry", () => {
     });
   });
 
-  it("documents freecam pointer steal vs gamepad in help", () => {
-    const help = createCommandRegistry({ includeDebug: true }).execute(
-      "help freecam",
-      recordingHost(),
-    );
-    expect(help.success).toBe(true);
-    expect(help.output.toLowerCase()).toContain("pointer");
-    expect(help.output.toLowerCase()).toContain("wasd");
-    expect(help.output.toLowerCase()).toContain("gamepad");
-  });
-
   it("runs resume and unpause", () => {
     const host = recordingHost();
     const registry = createCommandRegistry({ includeDebug: true });

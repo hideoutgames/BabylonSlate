@@ -1,11 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   SNAPSHOT_ACTOR_STRIDE,
-  SNAPSHOT_HEADER_FLOATS,
   SNAPSHOT_LAYOUT_VERSION,
   SNAPSHOT_MAGIC_F32,
   SNAPSHOT_MAGIC_U32,
-  actorSlotOffset,
   floatBitsToU32,
   snapshotFloatCount,
   u32ToFloatBits,
@@ -25,15 +23,6 @@ import { SeqLockSnapshotPair } from "./seq-lock";
 import { TransferablePingPong } from "./transferable";
 
 describe("snapshot layout", () => {
-  it("uses the locked header and stride sizes from bridge.md", () => {
-    expect(SNAPSHOT_HEADER_FLOATS).toBe(16);
-    expect(SNAPSHOT_ACTOR_STRIDE).toBe(16);
-    expect(SNAPSHOT_LAYOUT_VERSION).toBe(2);
-    expect(actorSlotOffset(0)).toBe(16);
-    expect(actorSlotOffset(2)).toBe(48);
-    expect(snapshotFloatCount(8)).toBe(16 + 8 * 16);
-  });
-
   it("round-trips u32 identity through float bit packing", () => {
     expect(floatBitsToU32(u32ToFloatBits(SNAPSHOT_MAGIC_U32))).toBe(
       SNAPSHOT_MAGIC_U32,

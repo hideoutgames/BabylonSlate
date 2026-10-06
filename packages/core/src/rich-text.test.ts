@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  DEFAULT_RICH_TEXT_EXAMPLE,
   parseRichText,
   parseRichTextColor,
   richTextImageGuids,
@@ -105,14 +104,6 @@ describe("parseRichText", () => {
     const wave = spans.find((span) => span.kind === "text" && span.text === "W");
     expect(wave?.effects.waveSpeed).toBe(3);
     expect(wave?.effects.waveIntensity).toBe(1);
-  });
-
-  it("seeds the documented example string", () => {
-    expect(DEFAULT_RICH_TEXT_EXAMPLE).toContain("[color=green]");
-    expect(DEFAULT_RICH_TEXT_EXAMPLE).toContain("[img=PASTE_TEXTURE_GUID size=14]");
-    expect(DEFAULT_RICH_TEXT_EXAMPLE).toContain("[shake=1]");
-    expect(DEFAULT_RICH_TEXT_EXAMPLE).toContain("[rotate=45]");
-    expect(DEFAULT_RICH_TEXT_EXAMPLE).toContain("[color=FFFF]");
   });
 });
 

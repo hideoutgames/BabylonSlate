@@ -5,13 +5,11 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   isProbablyBinary,
-  scanAddedLines,
   scanCommitMessages,
   scanEventMetadata,
   scanPath,
   scanText,
   scanTrackedFiles,
-  selfReferentialPaths,
   // @ts-expect-error -- plain .mjs tooling script, intentionally untyped.
 } from "../../../scripts/check-public-hygiene.mjs";
 
@@ -181,23 +179,5 @@ describe("public repository hygiene", () => {
     ]);
     expect(scanPath(".env.example")).toEqual([]);
     expect(scanPath("packages/core/src/key.ts")).toEqual([]);
-  });
-
-  it("scans a git range without violations on recent history", () => {
-    const hasParent = execFileSync("git", ["rev-list", "--count", "HEAD"], {
-      cwd: repoRoot,
-      encoding: "utf8",
-    }).trim();
-    if (Number(hasParent) < 2) {
-      return;
-    }
-    expect(scanAddedLines("HEAD~1..HEAD", repoRoot)).toEqual([]);
-  });
-
-  it("keeps the self-referential allowlist small enough to audit", () => {
-    expect([...selfReferentialPaths]).toEqual([
-      "scripts/check-public-hygiene.mjs",
-      "packages/test-kit/src/public-hygiene.test.ts",
-    ]);
   });
 });

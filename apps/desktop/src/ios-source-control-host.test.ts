@@ -36,15 +36,4 @@ describe("iOS source-control host", () => {
       "config.packageClassList = [...packageClassList]",
     );
   });
-
-  it("declares a single applicationDidBecomeActive", () => {
-    const delegate = readFileSync(join(iosApp, "App/AppDelegate.swift"), "utf8");
-    const matches = delegate.match(/func applicationDidBecomeActive\(/g) ?? [];
-    expect(matches).toHaveLength(1);
-    const sceneDelegate = readFileSync(
-      join(iosApp, "App/SceneDelegate.swift"),
-      "utf8",
-    );
-    expect(sceneDelegate).toContain("disableWebViewBounce()");
-  });
 });

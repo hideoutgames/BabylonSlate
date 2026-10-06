@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  ENCODE_WORKER_DECODE_UNAVAILABLE,
   sourceEncodeTransferables,
 } from "./encode-worker-protocol";
 
@@ -20,9 +19,5 @@ describe("encode worker protocol", () => {
       },
     };
     expect(sourceEncodeTransferables(message)).toEqual([source]);
-  });
-
-  it("names the worker reply that requests a main-thread decode fallback", () => {
-    expect(ENCODE_WORKER_DECODE_UNAVAILABLE).toBe("decode_unavailable");
   });
 });

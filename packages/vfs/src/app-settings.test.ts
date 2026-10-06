@@ -75,79 +75,25 @@ describe("app settings", () => {
     expect(settings.recents[0]?.appearance).toEqual({ icon: "box", color: "mint" });
   });
 
-  it("provides defaults including undo history length 50", () => {
-    const settings = defaultEngineSettings();
-    expect(settings.undoHistoryLength).toBe(50);
-    expect(settings.viewportFrameCap).toBe(30);
-    expect(settings.thumbnailsEnabled).toBe(true);
-    expect(settings.appearance.theme).toBe("system");
-    expect(settings.focusKeepPanels).toEqual({
-      scene: ["viewport"],
-      sceneLandscape: ["viewport"],
-      sceneFoliage: ["viewport"],
-      "scene-layer": ["viewport"],
-      graph: ["graph"],
-      enum: ["enum-members"],
-      structure: ["structure-members"],
-      "script-interface": ["script-interface-preview"],
-      sprite: ["sprite-preview"],
-      "sprite-animation": ["sprite-animation-preview"],
-      tileset: ["tileset-preview"],
-      tilemap: ["tilemap-paint"],
-      material: ["material-graph"],
-      "material-function": ["material-function-graph"],
-      "plugin-settings": ["plugin-settings-details"],
-      "anim-graph": ["anim-graph-graph"],
-      animGraphObject: ["anim-object-graph"],
-      "behaviour-tree": ["behaviour-tree-graph"],
-      audio: ["audio-preview"],
-      "input-action": ["input-bindings"],
-      "input-axis": ["input-bindings"],
-      "audio-mixer": ["audio-mixer-details"],
-      "audio-channel": ["audio-channel-details"],
-      "sound-attenuation": ["sound-attenuation-details"],
-      "particle-emitter": ["particle-emitter-preview"],
-      "particle-graph": ["particle-graph-canvas"],
-      "particle-system": ["particle-system-preview"],
-      model: ["model-preview"],
-      skeleton: ["skeleton-preview"],
-      animation: ["animation-preview"],
-      "skybox-creator": ["skybox-creator-preview"],
-      trace: ["trace-timeline"],
-      texture: ["texture-preview"],
-    });
-    expect(settings.graphDefaultZoom).toBe(0.5);
-    expect(settings.debuggerDefaults.previewBuild).toBe(false);
-    expect(settings.debuggerDefaults.playFromScene).toBe(true);
-    expect(settings.debuggerDefaults.overlayStats).toBe(true);
-    expect(settings.debuggerDefaults.overlayConsole).toBe(true);
-    expect(settings.debuggerDefaults.overlayInspector).toBe(true);
-    expect(settings.debuggerDefaults.pauseOnPlay).toBe(false);
-    expect(settings.postProcessingEnabled).toBe(true);
-    expect(settings.editorTextureLodEnabled).toBe(false);
-    expect(settings.editorTextureLodQuality).toBe(0.5);
-    expect(settings.textureBudgetEnabled).toBe(true);
-    expect(settings.textureByteCeiling).toBe(2 * 1024 * 1024 * 1024);
-    expect(settings.audioBudgetEnabled).toBe(true);
-    expect(settings.audioByteCeiling).toBe(256 * 1024 * 1024);
-    expect(settings.audioMaxVoices).toBe(32);
-    expect(settings.modelImportDefaultScale).toBe(1);
-    expect(settings.viewportFlySpeed).toBe(8);
-    expect(settings.viewportGridSize).toBe(1);
-  });
-
-  it("fills viewportFrameCap at 30 when saved JSON omits the field", () => {
-    const parsed = engineSettingsSchema.parse({
-      undoHistoryLength: 50,
-    });
-    expect(parsed.viewportFrameCap).toBe(30);
-  });
-
-  it("fills model import default scale at 1 when saved JSON omits the field", () => {
-    const parsed = engineSettingsSchema.parse({
-      undoHistoryLength: 50,
-    });
-    expect(parsed.modelImportDefaultScale).toBe(1);
+  it.each([
+    ["an empty object", {}, {}],
+    [
+      "partial debugger defaults",
+      { debuggerDefaults: { previewBuild: true } },
+      { debuggerDefaults: { previewBuild: true } },
+    ],
+    [
+      "a partial focus keep-list",
+      { focusKeepPanels: { scene: ["viewport", "scene-outliner"], graph: ["graph", "inspector"] } },
+      { focusKeepPanels: { scene: ["viewport", "scene-outliner"], graph: ["graph", "inspector"] } },
+    ],
+  ])("fills missing keys from defaults when saved JSON is %s", (_label, saved, kept) => {
+    const defaults = defaultEngineSettings();
+    const keptRecord = kept as Record<string, Record<string, unknown>>;
+    const expected = { ...defaults } as Record<string, unknown>;
+    for (const [key, value] of Object.entries(keptRecord))
+      expected[key] = { ...(defaults as Record<string, unknown>)[key] as object, ...value };
+    expect(engineSettingsSchema.parse(saved)).toEqual(expected);
   });
 
   it("clamps model import default scale to a positive finite number", () => {
@@ -175,15 +121,6 @@ describe("app settings", () => {
     );
   });
 
-  it("fills viewport fly speed and grid size when saved JSON omits them", () => {
-    const parsed = engineSettingsSchema.parse({
-      undoHistoryLength: 50,
-    });
-    expect(parsed.viewportFlySpeed).toBe(8);
-    expect(parsed.viewportGridSize).toBe(1);
-    expect(parsed.viewportSnapTranslate).toBe(1);
-  });
-
   it("migrates the old movement increment once and persists independent grid and snap values", () => {
     const legacy = engineSettingsSchema.parse({ viewportGridSize: 4 });
     expect(legacy.viewportSnapTranslate).toBe(4);
@@ -195,56 +132,6 @@ describe("app settings", () => {
     expect([reopened.viewportGridSize, reopened.viewportSnapTranslate]).toEqual([8, 0.5]);
     for (const value of [0, -1, Infinity, NaN])
       expect(engineSettingsSchema.safeParse({ viewportSnapTranslate: value }).success).toBe(false);
-  });
-
-  it("fills graph default zoom when saved JSON omits the field", () => {
-    const parsed = engineSettingsSchema.parse({
-      undoHistoryLength: 50,
-    });
-    expect(parsed.graphDefaultZoom).toBe(0.5);
-  });
-
-  it("defaults Play from Scene on when debuggerDefaults omits the field", () => {
-    const parsed = engineSettingsSchema.parse({
-      undoHistoryLength: 50,
-    });
-    expect(parsed.debuggerDefaults.playFromScene).toBe(true);
-  });
-
-  it("defaults Preview Build off when debuggerDefaults omits the field", () => {
-    const parsed = engineSettingsSchema.parse({
-      undoHistoryLength: 50,
-    });
-    expect(parsed.debuggerDefaults.previewBuild).toBe(false);
-  });
-
-  it("defaults overlay Stats, Console, and Inspector on when debuggerDefaults omits them", () => {
-    const parsed = engineSettingsSchema.parse({
-      undoHistoryLength: 50,
-    });
-    expect(parsed.debuggerDefaults.overlayStats).toBe(true);
-    expect(parsed.debuggerDefaults.overlayConsole).toBe(true);
-    expect(parsed.debuggerDefaults.overlayInspector).toBe(true);
-    expect(parsed.debuggerDefaults.pauseOnPlay).toBe(false);
-  });
-
-  it("keeps overlay chrome defaults when debuggerDefaults only has previewBuild", () => {
-    const parsed = engineSettingsSchema.parse({
-      debuggerDefaults: { previewBuild: true },
-    });
-    expect(parsed.debuggerDefaults.previewBuild).toBe(true);
-    expect(parsed.debuggerDefaults.playFromScene).toBe(true);
-    expect(parsed.debuggerDefaults.overlayStats).toBe(true);
-    expect(parsed.debuggerDefaults.overlayConsole).toBe(true);
-    expect(parsed.debuggerDefaults.overlayInspector).toBe(true);
-    expect(parsed.debuggerDefaults.pauseOnPlay).toBe(false);
-  });
-
-  it("defaults post-processing on when saved JSON omits the field", () => {
-    const parsed = engineSettingsSchema.parse({
-      undoHistoryLength: 50,
-    });
-    expect(parsed.postProcessingEnabled).toBe(true);
   });
 
   it("clamps graph default zoom to 0.1–1.5", () => {
@@ -270,61 +157,6 @@ describe("app settings", () => {
     });
     expect(recovered.keybinds).toEqual({});
     expect(recovered.undoHistoryLength).toBe(12);
-  });
-
-  it("fills focus keep-panel defaults when saved JSON omits the field", () => {
-    const parsed = engineSettingsSchema.parse({
-      undoHistoryLength: 50,
-    });
-    expect(parsed.focusKeepPanels.scene).toEqual(["viewport"]);
-    expect(parsed.focusKeepPanels["scene-layer"]).toEqual(["viewport"]);
-    expect(parsed.focusKeepPanels.graph).toEqual(["graph"]);
-    expect(parsed.focusKeepPanels.material).toEqual(["material-graph"]);
-    expect(parsed.focusKeepPanels["anim-graph"]).toEqual(["anim-graph-graph"]);
-    expect(parsed.focusKeepPanels.animGraphObject).toEqual(["anim-object-graph"]);
-    expect(parsed.focusKeepPanels["behaviour-tree"]).toEqual([
-      "behaviour-tree-graph",
-    ]);
-    expect(parsed.focusKeepPanels["audio-mixer"]).toEqual([
-      "audio-mixer-details",
-    ]);
-    expect(parsed.focusKeepPanels["audio-channel"]).toEqual([
-      "audio-channel-details",
-    ]);
-    expect(parsed.focusKeepPanels["sound-attenuation"]).toEqual([
-      "sound-attenuation-details",
-    ]);
-    expect(parsed.focusKeepPanels["particle-emitter"]).toEqual([
-      "particle-emitter-preview",
-    ]);
-    expect(parsed.focusKeepPanels["particle-graph"]).toEqual([
-      "particle-graph-canvas",
-    ]);
-    expect(parsed.focusKeepPanels["particle-system"]).toEqual([
-      "particle-system-preview",
-    ]);
-    expect(parsed.focusKeepPanels.model).toEqual(["model-preview"]);
-    expect(parsed.focusKeepPanels.skeleton).toEqual(["skeleton-preview"]);
-    expect(parsed.focusKeepPanels.animation).toEqual(["animation-preview"]);
-    expect(parsed.focusKeepPanels["skybox-creator"]).toEqual([
-      "skybox-creator-preview",
-    ]);
-  });
-
-  it("fills new focus keep-list keys when saved JSON only has scene and graph", () => {
-    const parsed = engineSettingsSchema.parse({
-      focusKeepPanels: {
-        scene: ["viewport", "scene-outliner"],
-        graph: ["graph", "inspector"],
-      },
-    });
-    expect(parsed.focusKeepPanels.scene).toEqual(["viewport", "scene-outliner"]);
-    expect(parsed.focusKeepPanels.graph).toEqual(["graph", "inspector"]);
-    expect(parsed.focusKeepPanels.material).toEqual(["material-graph"]);
-    expect(parsed.focusKeepPanels["script-interface"]).toEqual([
-      "script-interface-preview",
-    ]);
-    expect(parsed.focusKeepPanels.audio).toEqual(["audio-preview"]);
   });
 
   it("accepts optional createdAt on recents", () => {

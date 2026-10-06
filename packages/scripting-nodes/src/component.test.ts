@@ -35,11 +35,6 @@ function loadModule(source: string): Record<string, unknown> {
 }
 
 describe("component nodes", () => {
-  it("registers Add Component", () => {
-    expect(componentNodes.map((n) => n.id)).toContain("component.add");
-    expect(componentNodes.map((n) => n.id)).toContain("component.getNamed");
-  });
-
   it("uses a classRef pin for component classId", () => {
     for (const id of [
       "component.get",

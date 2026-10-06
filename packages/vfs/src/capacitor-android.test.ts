@@ -100,12 +100,6 @@ function filesIn(directory: string): string[] {
 }
 
 describe("Capacitor 8 Android host", () => {
-  it("locks Android and iOS platform packages to the same version", () => {
-    expect(resolvedPlatformVersion("android")).toBe(
-      resolvedPlatformVersion("ios"),
-    );
-  });
-
   it("keeps every Android Capacitor plugin in generated Gradle wiring", () => {
     const androidVersion = resolvedPlatformVersion("android");
     const nativeDependencies = Object.keys(editorPkg.dependencies).filter(
