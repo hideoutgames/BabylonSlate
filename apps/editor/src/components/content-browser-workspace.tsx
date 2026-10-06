@@ -350,7 +350,7 @@ function ContentBrowserWorkspaceBody({
     useState<CreatableAssetType>("Scene");
   const [newAssetName, setNewAssetName] = useState("");
   const [newAssetParent, setNewAssetParent] = useState("BObject");
-  const [newDataStructure, setNewDataStructure] = useState<string | null>(null);
+  const [newDataDefinition, setNewDataDefinition] = useState<string | null>(null);
   const [newWaterStyle, setNewWaterStyle] = useState<import("@babylonslate/core").WaterStyle>("realistic");
   const [busy, setBusy] = useState(false);
   const [deleteProgress, setDeleteProgress] = useState<{
@@ -815,9 +815,9 @@ function ContentBrowserWorkspaceBody({
       flattenFolderForest(folderTrees).map((row) => row.path),
     [folderTrees],
   );
-  const newDataTypes = useMemo(() => newAssetOpen && (newAssetType === "DataObject" || newAssetType === "DataSheet")
+  const newDataTypes = useMemo(() => newAssetOpen && (newAssetType === "DataDefinition" || newAssetType === "DataSheet")
     ? collectGraphTypeAssets({ assets: allAssets, openDocuments })
-    : { structures: [], enums: [] }, [newAssetOpen, newAssetType, allAssets, openDocuments]);
+    : { structures: [], enums: [], dataDefinitions: [] }, [newAssetOpen, newAssetType, allAssets, openDocuments]);
   const newAssetNameTaken = isNewAssetNameTaken(
     existingAssetPaths,
     selectedFolderPath,
@@ -2231,8 +2231,8 @@ function ContentBrowserWorkspaceBody({
     setOperationError(null);
     try {
       const type = newAssetType;
-      if ((type === "DataObject" || type === "DataSheet") && !newDataStructure) {
-        throw new Error("Choose a Structure for the data asset.");
+      if (type === "DataSheet" && !newDataDefinition) {
+        throw new Error("Choose a Data Definition for the sheet.");
       }
       const created = await createProjectAsset({
         registry: assetRegistry,
@@ -2242,8 +2242,8 @@ function ContentBrowserWorkspaceBody({
         name,
         parentClass: type === "Class" ? newAssetParent : null,
         waterStyle: newWaterStyle,
-        structureGuid: newDataStructure,
-        typeSchemas: type === "DataObject" || type === "DataSheet" ? typeSchemasFromGraphAssets(newDataTypes) : undefined,
+        definitionGuid: newDataDefinition,
+        typeSchemas: type === "DataDefinition" || type === "DataSheet" ? typeSchemasFromGraphAssets(newDataTypes) : undefined,
         classParentOf,
         parentGraphs:
           type === "Class"
@@ -2256,7 +2256,7 @@ function ContentBrowserWorkspaceBody({
       });
       setNewAssetOpen(false);
       await refreshAssetRegistry();
-      if (type === "Scene" || type === "DataObject" || type === "DataSheet") {
+      if (type === "Scene" || type === "DataDefinition" || type === "DataSheet") {
         await openOrFocusDocument(created);
       }
     } catch (error) {
@@ -2271,7 +2271,7 @@ function ContentBrowserWorkspaceBody({
     newAssetName,
     newAssetNameTaken,
     newAssetParent,
-    newDataStructure,
+    newDataDefinition,
     newDataTypes,
     newWaterStyle,
     newAssetType,
@@ -2794,9 +2794,9 @@ function ContentBrowserWorkspaceBody({
         parentClass={newAssetParent}
         waterStyle={newWaterStyle}
         onWaterStyleChange={setNewWaterStyle}
-        structureGuid={newDataStructure}
-        onStructureGuidChange={setNewDataStructure}
-        structureAssets={newDataTypes.structures.map(structure => ({ guid: structure.guid, name: structure.name, type: "Structure" }))}
+        definitionGuid={newDataDefinition}
+        onDefinitionGuidChange={setNewDataDefinition}
+        definitionAssets={newDataTypes.dataDefinitions.map(definition => ({ guid: definition.guid, name: definition.name, type: "DataDefinition" }))}
         onParentClassChange={setNewAssetParent}
         classAssets={allAssets.filter((asset) => asset.header.type === "Class")}
         nameTaken={newAssetNameTaken}

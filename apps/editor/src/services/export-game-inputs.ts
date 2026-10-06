@@ -43,7 +43,7 @@ const JSON_TYPES = new Set<string>([
   "Tileset",
   "Enum",
   "Structure",
-  "DataObject",
+  "DataDefinition",
   "DataSheet",
   "ScriptInterface",
   "AudioMixer",

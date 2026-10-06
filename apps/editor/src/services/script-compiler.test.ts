@@ -1288,13 +1288,13 @@ describe("graphsNeedCompile", () => {
 // not fake Play current.
 
 describe("GraphScriptCompileCache", () => {
-  it("recompiles an inferred Data Object read when its asset changes Structure", async () => {
+  it("recompiles an inferred Data Row read when its sheet changes Data Definition", async () => {
     const { loadCompiledModule } = await import("@babylonslate/runtime");
     const cache = new GraphScriptCompileCache();
     const graph: SerializedGraph = {
       nodes: [
         { id: "entry", type: "flow.entry", position: { x: 0, y: 0 }, data: {} },
-        { id: "read", type: "data.readObject", position: { x: 0, y: 0 }, data: { "default:object": "config" } },
+        { id: "read", type: "data.readRow", position: { x: 0, y: 0 }, data: { "default:sheet": "config", "default:rowId": "primary" } },
         { id: "log", type: "debug.log", position: { x: 0, y: 0 }, data: {} },
       ],
       edges: [
@@ -1305,13 +1305,13 @@ describe("GraphScriptCompileCache", () => {
     const documents = [{ path: "assets/Reader.class.babasset", content: graph }];
     const structs = { first: { name: "First", fields: [] }, second: { name: "Second", fields: [] } };
     const readTypes: string[] = [];
-    for (const structureGuid of ["first", "second"]) {
+    for (const definitionGuid of ["first", "second"]) {
       const bundles = compileGraphDocuments(documents, {
-        cache, structs, dataAssets: [{ guid: "config", name: "Config", type: "DataObject", structureGuid }],
+        cache, structs, dataDefinitions: structs, dataAssets: [{ guid: "config", name: "Config", type: "DataSheet", definitionGuid }],
       });
       const module = await loadCompiledModule(bundles[0]!.source, "data-compile-cache");
       await module.run!({
-        data: { readObject: (_reference: string, requestedType: string) => { readTypes.push(requestedType); return {}; } },
+        data: { readRow: (_reference: string, _rowId: string, requestedType: string) => { readTypes.push(requestedType); return {}; } },
         formatValue: JSON.stringify, log: () => {}, checkInfiniteLoop: () => {},
       });
     }

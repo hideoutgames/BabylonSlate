@@ -3,7 +3,7 @@ import {
   isEditorGraphClass,
   isEditorGraphHost,
   isFunctionLibraryClass,
-  normalizeDataObjectAsset,
+  normalizeDataSheetRow,
   type GraphClassMemberPin,
   type SerializedGraph,
 } from "@babylonslate/core";
@@ -19,8 +19,8 @@ import {
   isLogicGraphPayload,
   knownGuidsFromSchemas,
   snapshotDataFields,
-  reconcileDataObject,
-  validateDataObject,
+  reconcileDataRow,
+  validateDataRow,
   type ClassHierarchy,
   type ClassMemberSymbol,
   type Diagnostic,
@@ -398,6 +398,14 @@ function enumNodeTitle(typeId: string, enumName: string): string {
   }
 }
 
+function dataLiteralRow(nodeId: string, properties: Record<string, unknown>) {
+  try {
+    return normalizeDataSheetRow({ id: nodeId, name: "Values", values: properties["default:values"], schema: properties.dataSchema });
+  } catch {
+    return null;
+  }
+}
+
 function applyStructEnumSchema(
   typeId: string,
   properties: Record<string, unknown>,
@@ -408,33 +416,31 @@ function applyStructEnumSchema(
 ): void {
   if (isDataGraphNode(typeId)) {
     const node = DATA_GRAPH_NODES[typeId];
-    let guid = typeof properties.structGuid === "string" ? properties.structGuid.trim() : "";
+    let guid = typeof properties.definitionGuid === "string" ? properties.definitionGuid.trim() : "";
     if (!guid && "assetPin" in node && !graph.edges.some((edge) => edge.target === nodeId && edge.targetHandle === node.assetPin)) {
       const assetGuid = properties[`default:${node.assetPin}`];
-      guid = options?.dataAssets?.find((entry) => entry.guid === assetGuid && entry.type === node.assetType)?.structureGuid ?? "";
-      if (guid) properties.structGuid = guid;
+      guid = options?.dataAssets?.find((entry) => entry.guid === assetGuid && entry.type === node.assetType)?.definitionGuid ?? "";
+      if (guid) properties.definitionGuid = guid;
     }
-    const schema = options?.structs?.[guid];
+    const schema = options?.dataDefinitions?.[guid];
     properties.title = dataGraphNodeTitle(typeId, schema?.name);
     if (schema && !Array.isArray(properties.dataSchema)) {
       properties.dataSchema = snapshotDataFields(schema.fields, {
-        structs: options?.structs ?? {}, enums: options?.enums ?? {},
+        structs: options?.structs ?? {}, enums: options?.enums ?? {}, dataDefinitions: options?.dataDefinitions,
       }, new Set([guid]));
     }
-    if (schema && (typeId === "editorData.createObject" || typeId === "editorData.updateObject") &&
+    if (schema && (typeId === "editorData.addRow" || typeId === "editorData.updateRow") &&
       properties["default:values"] !== undefined && !graph.edges.some((edge) => edge.target === nodeId && edge.targetHandle === "values")) {
-      const schemas = { structs: options?.structs ?? {}, enums: options?.enums ?? {} };
-      const authored = normalizeDataObjectAsset({
-        structureGuid: guid, values: properties["default:values"], schema: properties.dataSchema,
-      });
+      const schemas = { structs: options?.structs ?? {}, enums: options?.enums ?? {}, dataDefinitions: options?.dataDefinitions };
+      const authored = dataLiteralRow(nodeId, properties);
       // Project stable field renames before codegen and Inspector editing.
       // Missing fields and incompatible types require explicit authoring; they
       // must not pick up new defaults or be coerced during graph hydration.
-      if (!validateDataObject(authored, schemas).some((issue) => issue.severity === "error")) {
-        const projected = reconcileDataObject(authored, schema.fields, schemas);
+      if (authored && !validateDataRow(authored, guid, schemas).some((issue) => issue.severity === "error")) {
+        const projected = reconcileDataRow(authored, guid, schema.fields, schemas);
         if (!projected.issues.some((issue) => issue.severity === "error")) {
-          properties["default:values"] = projected.asset.values;
-          properties.dataSchema = projected.asset.schema;
+          properties["default:values"] = projected.row.values;
+          properties.dataSchema = projected.row.schema;
         }
       }
     }
@@ -447,7 +453,7 @@ function applyStructEnumSchema(
     const schema = guid ? options?.structs?.[guid] : undefined;
     if (schema) {
       properties.fields = schema.fields;
-      properties.title = `${typeId === "struct.make" ? "Make" : "Break"} ${schema.name}`;
+      properties.title = `${typeId === "struct.make" ? "Make" : "Break"} ${schema.name}${options?.dataDefinitions?.[guid] ? " Data" : ""}`;
     }
   }
   if (isEnumCatalogType(typeId)) {
@@ -569,6 +575,7 @@ export type HydrateGraphOptions = {
   inputAssets?: readonly InputPaletteAsset[];
   parentOf?: (id: string) => string | null | undefined;
   structs?: TypeSchemas["structs"];
+  dataDefinitions?: TypeSchemas["dataDefinitions"];
   enums?: TypeSchemas["enums"];
   classId?: string;
   otherClassGraphs?: Record<string, SerializedGraph>;
@@ -1026,6 +1033,7 @@ export type ScriptPaletteOptions = ClassEventOptions & {
     methods: Array<{ name: string; pins?: GraphClassMemberPin[] }>;
   }>;
   structures?: readonly GraphStructureEntry[];
+  dataDefinitions?: readonly GraphStructureEntry[];
   enums?: readonly GraphEnumEntry[];
   sceneDocuments?: readonly PaletteSceneDocument[];
   /** Project subsystem classes; each gets a Get <ClassId> row. */
@@ -1735,30 +1743,33 @@ function structPaletteNodes(
   const breakDef = nodeRegistry.get("struct.break");
   if (!makeDef || !breakDef) return [];
   const rows: PaletteNode[] = [];
-  for (const structure of options?.structures ?? []) {
+  for (const structure of [...(options?.structures ?? []), ...(options?.dataDefinitions ?? [])]) {
+    const isDefinition = options?.dataDefinitions?.some((entry) => entry.guid === structure.guid);
+    const name = `${structure.name}${isDefinition ? " Data" : ""}`;
     const defaultData: Record<string, unknown> = {
       structGuid: structure.guid,
       fields: structure.fields,
+      ...(isDefinition ? { dataDefinition: true } : {}),
     };
     rows.push({
       id: `struct.make:${structure.guid}`,
       nodeType: "struct.make",
-      title: `Make ${structure.name}`,
-      category: makeDef.category,
+      title: `Make ${name}`,
+      category: isDefinition ? "data" : makeDef.category,
       pins: makeDef.pins(defaultData),
       pure: makeDef.pure,
       latent: makeDef.latent,
-      defaultData: { ...defaultData, title: `Make ${structure.name}` },
+      defaultData: { ...defaultData, title: `Make ${name}` },
     });
     rows.push({
       id: `struct.break:${structure.guid}`,
       nodeType: "struct.break",
-      title: `Break ${structure.name}`,
-      category: breakDef.category,
+      title: `Break ${name}`,
+      category: isDefinition ? "data" : breakDef.category,
       pins: breakDef.pins(defaultData),
       pure: breakDef.pure,
       latent: breakDef.latent,
-      defaultData: { ...defaultData, title: `Break ${structure.name}` },
+      defaultData: { ...defaultData, title: `Break ${name}` },
     });
   }
   return rows;
@@ -1772,9 +1783,9 @@ function dataPaletteNodes(
   for (const typeId of Object.keys(DATA_GRAPH_NODES) as Array<keyof typeof DATA_GRAPH_NODES>) {
     const def = nodeRegistry.get(typeId);
     if (!def || (def.editorOnly && !isEditorGraphHost(options ?? {}))) continue;
-    for (const structure of options?.structures ?? []) {
+    for (const structure of options?.dataDefinitions ?? []) {
       const title = dataGraphNodeTitle(typeId, structure.name);
-      const defaultData = { structGuid: structure.guid, title };
+      const defaultData = { definitionGuid: structure.guid, title };
       rows.push({
         id: `${typeId}:${structure.guid}`,
         nodeType: typeId,
@@ -1973,6 +1984,7 @@ export function scriptPaletteInjectorKey(
     scriptInterfaces: options?.scriptInterfaces ?? [],
     subsystemClasses: options?.subsystemClasses ?? [],
     structures: options?.structures ?? [],
+    dataDefinitions: options?.dataDefinitions ?? [],
     enums: options?.enums ?? [],
     inputAssets: options?.inputAssets ?? [],
     scenes: (options?.sceneDocuments ?? []).map((scene) => [
@@ -2377,6 +2389,7 @@ export type ValidateSerializedGraphOptions = {
   knownGuids?: ReadonlySet<string>;
   enums?: TypeSchemas["enums"];
   structs?: TypeSchemas["structs"];
+  dataDefinitions?: TypeSchemas["dataDefinitions"];
   materialDomains?: Readonly<Record<string, string>>;
   parentOf?: (id: string) => string | null | undefined;
   otherClassGraphs?: Record<string, SerializedGraph>;
@@ -2506,22 +2519,21 @@ function dataGraphDiagnostics(
     for (const node of graph.nodes) {
       if (!isDataGraphNode(node.typeId)) continue;
       const metadata = DATA_GRAPH_NODES[node.typeId];
-      const guid = typeof node.properties.structGuid === "string" ? node.properties.structGuid.trim() : "";
+      const guid = typeof node.properties.definitionGuid === "string" ? node.properties.definitionGuid.trim() : "";
       const report = (code: string, message: string, pinId?: string) => out.push(diagnostic({
         code, message, assetGuid: options.assetGuid, graphId: graph.id, nodeId: node.id, pinId,
       }));
       if (!guid && metadata.required) {
-        report("data.missing_structure", "Select a Structure Type in the node Inspector");
-      } else if (guid && options.structs && !options.structs[guid]) {
-        report("data.unknown_structure", `The selected Structure '${guid}' is missing`);
+        report("data.missing_definition", "Select a Data Definition in the node Inspector");
+      } else if (guid && options.dataDefinitions && !options.dataDefinitions[guid]) {
+        report("data.unknown_definition", `The selected Data Definition '${guid}' is missing`);
       }
       const wired = (pinId: string) => graph.edges.some((edge) => edge.targetNodeId === node.id && edge.targetPinId === pinId);
-      if ((node.typeId === "editorData.createObject" || node.typeId === "editorData.updateObject") &&
-        guid && options.structs?.[guid] && !wired("values") && node.properties["default:values"] !== undefined) {
-        const value = normalizeDataObjectAsset({
-          structureGuid: guid, values: node.properties["default:values"], schema: node.properties.dataSchema,
-        });
-        for (const issue of validateDataObject(value, { structs: options.structs, enums: options.enums ?? {} })) {
+      if ((node.typeId === "editorData.addRow" || node.typeId === "editorData.updateRow") &&
+        guid && options.dataDefinitions?.[guid] && !wired("values") && node.properties["default:values"] !== undefined) {
+        const value = dataLiteralRow(node.id, node.properties);
+        if (!value) report("data.invalid-values", "Data row values must be an object", "values");
+        for (const issue of value ? validateDataRow(value, guid, { structs: options.structs ?? {}, enums: options.enums ?? {}, dataDefinitions: options.dataDefinitions }) : []) {
           out.push(diagnostic({
             code: `data.${issue.code}`, message: issue.path ? `${issue.path}: ${issue.message}` : issue.message,
             severity: issue.severity, assetGuid: options.assetGuid, graphId: graph.id, nodeId: node.id, pinId: "values",
@@ -2529,21 +2541,17 @@ function dataGraphDiagnostics(
         }
       }
       if (!assets) continue;
-      const checkReference = (reference: unknown, pinId: string, expectedType: "DataObject" | "DataSheet") => {
+      const checkReference = (reference: unknown, pinId: string, expectedType: "DataSheet") => {
         if (typeof reference !== "string" || !reference.trim()) return;
         const asset = assets.get(reference);
         if (!asset || asset.type !== expectedType) {
-          report("data.missing_asset", `The selected ${expectedType === "DataObject" ? "Data Object" : "Data Sheet"} '${reference}' is missing`, pinId);
-        } else if (guid && asset.structureGuid !== guid) {
-          report("data.structure_mismatch", `'${asset.name}' does not use the selected Structure Type`, pinId);
+          report("data.missing_asset", `The selected Data Sheet '${reference}' is missing`, pinId);
+        } else if (guid && asset.definitionGuid !== guid) {
+          report("data.definition_mismatch", `'${asset.name}' does not use the selected Data Definition`, pinId);
         }
       };
       if ("assetPin" in metadata && !wired(metadata.assetPin)) {
         checkReference(node.properties[`default:${metadata.assetPin}`], metadata.assetPin, metadata.assetType);
-      }
-      if ((node.typeId === "editorData.createSheet" || node.typeId === "editorData.setSheetObjects") && !wired("objects")) {
-        const references = node.properties["default:objects"];
-        if (Array.isArray(references)) references.forEach((reference) => checkReference(reference, "objects", "DataObject"));
       }
     }
   }
@@ -2583,10 +2591,12 @@ export function validateSerializedGraph(
         ? knownGuidsFromSchemas({
             enums: options.enums ?? {},
             structs: options.structs ?? {},
+            dataDefinitions: options.dataDefinitions,
           })
         : undefined),
     enums: options.enums,
     structs: options.structs,
+    dataDefinitions: options.dataDefinitions,
     materialDomains: options.materialDomains,
     attachedComponents: serialized
       ? attachedComponentsForGraph(serialized, options)
@@ -2616,6 +2626,7 @@ export function validateSerializedGraph(
     inputAssets: options.inputAssets,
     enums: options.enums,
     structs: options.structs,
+    dataDefinitions: options.dataDefinitions,
   };
   const eventGraph = materializeLogicGraph(
     content,

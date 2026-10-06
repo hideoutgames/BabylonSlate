@@ -1,3 +1,4 @@
+import { GraphDataLiteralDefaults } from "../components/graph-data-literal-editor";
 import { SceneLayerSwitcherFields } from "../components/scene-layer-switcher-fields";
 import { parseUIControl2DProperties } from "@babylonslate/core";
 import { useMemo, useState } from "react";
@@ -108,6 +109,8 @@ import {
   containerConstructorPropertyRows,
   developmentOnlyPropertyRows,
   dataNodePropertyRows,
+  dataNodeRowOptions,
+  graphDataLiteralField,
   enumNodePropertyRows,
   flowSwitchCaseListValues,
   inspectorLiteralPinDefaults,
@@ -147,8 +150,8 @@ import {
 
 const CLASS_KINDS = ["graph"] as const;
 const INTERFACE_KINDS = ["script-interface"] as const;
-const TYPE_KINDS = ["structure", "enum"] as const;
-const DATA_KINDS = ["data-object", "data-sheet"] as const;
+const TYPE_KINDS = ["structure", "enum", "data-definition"] as const;
+const DATA_KINDS = ["data-sheet"] as const;
 
 function memberPinRows(
   pins: GraphClassMember["pins"],
@@ -1214,6 +1217,8 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
   ]);
   const needsPinHydration = Boolean(selectedSerializedNode && (
     isDataGraphNode(selectedSerializedNode.type) ||
+    selectedSerializedNode.type === "struct.make" ||
+    selectedSerializedNode.type === "struct.break" ||
     selectedSerializedNode.type === "debug.executeJavaScript" ||
     selectedSerializedNode.type === "tags.select" ||
     !Array.isArray(selectedSerializedNode.data.__pins) ||
@@ -1227,6 +1232,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     return hydrateSerializedGraphForEditor(inspectGraph, undefined, {
       parentOf,
       structs: typeSchemas.structs,
+      dataDefinitions: typeSchemas.dataDefinitions,
       enums: typeSchemas.enums,
       dataAssets,
       classId: doc?.ref.path ? classIdForGraphPath(doc.ref.path) : undefined,
@@ -1585,8 +1591,15 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     persistGraph(next);
   };
 
+  const dataPinWired = (pinId: string) => (inspectGraph?.edges ?? graph.edges)
+    .some((edge) => edge.target === selectedNode.id && edge.targetHandle === pinId);
+  const hasDataRowPicker = dataNodeRowOptions(selectedNode.type, selectedNode.data, dataAssets, dataPinWired) !== undefined;
+  const literalDefaults = inspectorLiteralPinDefaults(selectedNode, inspectGraph?.edges ?? graph.edges, (hydratedInspectGraph ?? inspectGraph)?.nodes);
+  const dataLiteralDefaults = literalDefaults.filter((entry) => graphDataLiteralField(entry, typeSchemas));
   const pinDefaultRows = pinDefaultPropertyRows(
-    inspectorLiteralPinDefaults(selectedNode, inspectGraph?.edges ?? graph.edges, (hydratedInspectGraph ?? inspectGraph)?.nodes).filter((entry) =>
+    literalDefaults.filter((entry) =>
+      !graphDataLiteralField(entry, typeSchemas) &&
+      !(hasDataRowPicker && entry.pinId === "rowId") &&
       !((selectedNode.type === "input.actionEvent" || selectedNode.type === "input.axisEvent") && entry.pinId === "binding")),
     updateNodeData,
     {
@@ -1635,12 +1648,15 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     selectedNode.data,
     updateNodeData,
     typeCatalog.structures,
+    typeCatalog.dataDefinitions,
   );
   const dataNodeRows = dataNodePropertyRows(
     selectedNode.type,
     selectedNode.data,
     updateNodeData,
-    typeCatalog.structures,
+    typeCatalog.dataDefinitions,
+    dataAssets,
+    dataPinWired,
   );
   const inputEventRows = inputEventPropertyRows(
     selectedNode.type,
@@ -1731,6 +1747,8 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
             data-testid="inspector-pin-defaults"
           />
         ) : null}
+        {dataLiteralDefaults.length > 0 ? <GraphDataLiteralDefaults entries={dataLiteralDefaults}
+          nodeData={selectedNode.data} onPatch={updateNodeData} /> : null}
         {isExecJs ? (
           <>
             <PinListEditor

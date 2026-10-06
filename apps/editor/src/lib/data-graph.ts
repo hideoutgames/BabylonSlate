@@ -2,16 +2,16 @@ import type { SerializedGraph } from "@babylonslate/core";
 
 /** Metadata shared by graph hydration, validation and the node Inspector. */
 export const DATA_GRAPH_NODES = {
-  "data.readObject": { title: "Read Data Object", operation: "Read", required: true, assetPin: "object", assetType: "DataObject" },
-  "data.getSheetObjects": { title: "Get Data Sheet Objects", operation: "Get", required: false, assetPin: "sheet", assetType: "DataSheet" },
-  "editorData.listObjects": { title: "List Data Objects", operation: "List", required: false },
+  "data.readRow": { title: "Read Data Row", operation: "Read", required: true, assetPin: "sheet", assetType: "DataSheet", row: true },
+  "data.getSheetRows": { title: "Get Data Sheet Rows", operation: "Get", required: false, assetPin: "sheet", assetType: "DataSheet" },
   "editorData.listSheets": { title: "List Data Sheets", operation: "List", required: false },
-  "editorData.readObject": { title: "Read Editable Data Object", operation: "Read Editable", required: true, assetPin: "object", assetType: "DataObject" },
   "editorData.readSheet": { title: "Read Editable Data Sheet", operation: "Read Editable", required: false, assetPin: "sheet", assetType: "DataSheet" },
-  "editorData.createObject": { title: "Create Data Object", operation: "Create", required: true },
-  "editorData.updateObject": { title: "Update Data Object", operation: "Update", required: true, assetPin: "object", assetType: "DataObject" },
+  "editorData.readRow": { title: "Read Editable Data Row", operation: "Read Editable", required: true, assetPin: "sheet", assetType: "DataSheet", row: true },
   "editorData.createSheet": { title: "Create Data Sheet", operation: "Create", required: true },
-  "editorData.setSheetObjects": { title: "Set Data Sheet Objects", operation: "Set", required: true, assetPin: "sheet", assetType: "DataSheet" },
+  "editorData.addRow": { title: "Add Data Row", operation: "Add", required: true, assetPin: "sheet", assetType: "DataSheet" },
+  "editorData.updateRow": { title: "Update Data Row", operation: "Update", required: true, assetPin: "sheet", assetType: "DataSheet", row: true },
+  "editorData.removeRow": { title: "Remove Data Row", operation: "Remove", required: true, assetPin: "sheet", assetType: "DataSheet", row: true },
+  "editorData.reorderRows": { title: "Reorder Data Rows", operation: "Reorder", required: true, assetPin: "sheet", assetType: "DataSheet" },
 } as const;
 
 export type DataGraphNodeType = keyof typeof DATA_GRAPH_NODES;
@@ -20,23 +20,24 @@ export function isDataGraphNode(typeId: string): typeId is DataGraphNodeType {
   return Object.prototype.hasOwnProperty.call(DATA_GRAPH_NODES, typeId);
 }
 
-export function dataGraphNodeTitle(typeId: DataGraphNodeType, structureName?: string): string {
+export function dataGraphNodeTitle(typeId: DataGraphNodeType, definitionName?: string): string {
   const node = DATA_GRAPH_NODES[typeId];
-  if (!structureName) return node.title;
+  if (!definitionName) return node.title;
   const collection = typeId.endsWith("Sheets") ? " Sheets"
     : typeId.endsWith("Sheet") ? " Sheet"
-      : typeId.endsWith("Objects") ? " Objects" : "";
-  return `${node.operation} ${structureName} Data${collection}`;
+      : typeId.endsWith("Rows") ? " Rows" : "";
+  return `${node.operation} ${definitionName} Data${collection}`;
 }
 
 export type DataGraphAssetEntry = {
   guid: string;
   name: string;
-  type: "DataObject" | "DataSheet";
-  structureGuid: string;
+  type: "DataSheet";
+  definitionGuid: string;
+  rows?: readonly { id: string; name: string }[];
 };
 
-/** Unsaved data schemas win over header metadata, as they do for Structures. */
+/** Unsaved sheet definitions and row labels win over header metadata. */
 export function collectDataGraphAssets(
   assets: readonly { path: string; header: { guid: string; name: string; type: string; payload?: unknown } }[],
   documents: readonly { ref: { path: string }; content?: unknown }[] = [],
@@ -44,29 +45,32 @@ export function collectDataGraphAssets(
   const open = new Map(documents.map((doc) => [doc.ref.path, doc.content]));
   return assets.flatMap((asset) => {
     const { type, guid, name } = asset.header;
-    if (type !== "DataObject" && type !== "DataSheet") return [];
+    if (type !== "DataSheet") return [];
     const payload = open.get(asset.path) ?? asset.header.payload;
-    const structureGuid = payload && typeof payload === "object" &&
-      "structureGuid" in payload && typeof payload.structureGuid === "string"
-      ? payload.structureGuid.trim() : "";
-    return [{ guid, name, type, structureGuid }];
+    const definitionGuid = payload && typeof payload === "object" &&
+      "definitionGuid" in payload && typeof payload.definitionGuid === "string"
+      ? payload.definitionGuid.trim() : "";
+    const rows = payload && typeof payload === "object" && "rows" in payload && Array.isArray(payload.rows)
+      ? payload.rows.flatMap((row) => row && typeof row === "object" && typeof row.id === "string" && typeof row.name === "string"
+        ? [{ id: row.id, name: row.name }] : []) : [];
+    return [{ guid, name, type, definitionGuid, rows }];
   });
 }
 
-/** Only a node's primary data reference inherits its Structure when created. */
+/** Only a node's primary sheet reference inherits its Data Definition when created. */
 export function dataGraphAssetCreateOptions(
   typeId: string,
   pinId: string,
   properties: Record<string, unknown>,
-): { structureGuid: string } | undefined {
+): { definitionGuid: string } | undefined {
   if (!isDataGraphNode(typeId)) return undefined;
   const node = DATA_GRAPH_NODES[typeId];
   if (!("assetPin" in node) || node.assetPin !== pinId) return undefined;
-  const structureGuid = typeof properties.structGuid === "string" ? properties.structGuid.trim() : "";
-  return structureGuid ? { structureGuid } : undefined;
+  const definitionGuid = typeof properties.definitionGuid === "string" ? properties.definitionGuid.trim() : "";
+  return definitionGuid ? { definitionGuid } : undefined;
 }
 
-/** A picker choice is an explicit request to read that object's Structure. */
+/** A picker choice is an explicit request to read that sheet's Data Definition. */
 export function dataGraphAssetPickPatch(
   typeId: string,
   pinId: string,
@@ -79,9 +83,9 @@ export function dataGraphAssetPickPatch(
   const node = DATA_GRAPH_NODES[typeId];
   if (!("assetPin" in node) || node.assetPin !== pinId) return patch;
   const asset = assets.find((entry) => entry.guid === guid && entry.type === node.assetType);
-  if (asset?.structureGuid) {
-    patch.structGuid = asset.structureGuid;
-    if (current.structGuid !== asset.structureGuid) {
+  if (asset?.definitionGuid) {
+    patch.definitionGuid = asset.definitionGuid;
+    if (current.definitionGuid !== asset.definitionGuid) {
       patch["default:values"] = undefined;
       patch.dataSchema = undefined;
     }
@@ -109,7 +113,7 @@ export function applyDataGraphAssetPicks(
     if (before.data[key] === value || typeof value !== "string" ||
       next.edges.some((edge) => edge.target === node.id && edge.targetHandle === metadata.assetPin)) return node;
     const patch = dataGraphAssetPickPatch(typeId, metadata.assetPin, value, assets, node.data);
-    if (!Object.hasOwn(patch, "structGuid")) return node;
+    if (!Object.hasOwn(patch, "definitionGuid")) return node;
     changed = true;
     return { ...node, data: { ...node.data, ...patch } };
   });
@@ -134,7 +138,7 @@ export function patchDataGraphNode(
   }
   const patchNodes = (nodes: SerializedGraph["nodes"]) => nodes.map((node) => node.id === selected.id ? {
     ...node,
-    data: { ...node.data, structGuid: selected.data.structGuid, dataSchema: selected.data.dataSchema, ...nextPatch },
+    data: { ...node.data, definitionGuid: selected.data.definitionGuid, dataSchema: selected.data.dataSchema, ...nextPatch },
   } : node);
   const slice = functionId ? graph.functionGraphs?.[functionId] : undefined;
   if (slice && functionId) {

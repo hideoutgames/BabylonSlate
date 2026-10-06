@@ -1,7 +1,8 @@
 import { WaterDetailsPanel, WaterPreviewPanel } from "../panels/water-panels";
 import { RenderTargetDetailsPanel, RenderTargetTextureDetailsPanel } from "../panels/render-target-panels";
 import { InputBindingsPanel, InputBindingDetailsPanel } from "../panels/input-asset-panels";
-import { DataObjectValuesPanel, DataSheetRowsPanel } from "../panels/data-asset-panels";
+import { DataSheetRowsPanel, DataSheetValuesPanel, DataSheetValidationPanel } from "../panels/data-asset-panels";
+import { DataDefinitionFieldsPanel } from "../panels/data-definition-panel";
 import type { IDockviewPanelProps } from "dockview-react";
 import { ViewportPanel } from "../panels/viewport-panel";
 import { GraphPanel } from "../panels/graph-panel";
@@ -215,7 +216,9 @@ export const panelComponents = {
   ),
   "input-bindings": (props: IDockviewPanelProps) => <InputBindingsPanel {...props} />,
   "input-details": (props: IDockviewPanelProps) => <InputBindingDetailsPanel {...props} />,
-  "data-object-values": (props: IDockviewPanelProps) => <DataObjectValuesPanel {...props} />,
+  "data-definition-fields": (props: IDockviewPanelProps) => <DataDefinitionFieldsPanel {...props} />,
+  "data-sheet-values": (props: IDockviewPanelProps) => <DataSheetValuesPanel {...props} />,
+  "data-sheet-validation": (props: IDockviewPanelProps) => <DataSheetValidationPanel {...props} />,
   "data-sheet-rows": (props: IDockviewPanelProps) => <DataSheetRowsPanel {...props} />,
   "audio-mixer-details": (props: IDockviewPanelProps) => (
     <AudioMixerDetailsPanel {...props} />

@@ -118,6 +118,19 @@ describe("PinListEditor", () => {
     expect(screen.getByTestId("pin-a-type-asset")).toBeTruthy();
   });
 
+  it("selects nested Data Definitions without offering Structure assets in field editors", async () => {
+    const onChange = vi.fn();
+    render(<PinListEditor rows={[{ id: "field", name: "Stats", type: "struct" }]}
+      selectedId="field" itemLabel="Field" structAssetType="DataDefinition"
+      typeAssets={[{ guid: "stats", name: "Stats", type: "DataDefinition" }, { guid: "structure", name: "LegacyShape", type: "Structure" }]}
+      onChange={onChange} />);
+    fireEvent.click(screen.getByTestId("pin-field-type-asset"));
+    await waitFor(() => expect(screen.getByTestId("search-item-stats")).toBeTruthy());
+    expect(screen.queryByTestId("search-item-structure")).toBeNull();
+    fireEvent.click(screen.getByTestId("search-item-stats"));
+    expect(onChange).toHaveBeenCalledWith([expect.objectContaining({ id: "field", type: "struct", typeClassId: "stats" })]);
+  });
+
   it("keeps typeClassId when switching to struct or enum and shows an asset picker", async () => {
     const onChange = vi.fn();
     render(

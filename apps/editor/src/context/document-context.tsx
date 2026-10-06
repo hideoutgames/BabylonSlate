@@ -378,7 +378,7 @@ interface DocumentContextValue {
   onSessionDiagnostic: (listener: (line: string) => void) => () => void;
   /**
    * Canonical open documents in tab order, including background working
-   * documents used by sheets and utilities. Navigation omits `background`.
+   * documents used by utilities. Navigation omits `background`.
    * The array keeps its identity until a
    * document revision advances or the tab order changes, so registry-only
    * updates, tab switches and other context updates leave it alone. Its
@@ -530,10 +530,6 @@ interface DocumentContextValue {
   confirmExternalChangeReloadProject: () => Promise<void>;
   confirmExternalChangeReloadDocs: (paths: string[]) => Promise<void>;
   dismissExternalChange: () => void;
-  undoDocument: (id: string) => void;
-  redoDocument: (id: string) => void;
-  canUndoDocument: (id: string) => boolean;
-  canRedoDocument: (id: string) => boolean;
   undoActiveDocument: () => void;
   redoActiveDocument: () => void;
   canUndoActiveDocument: boolean;
@@ -743,7 +739,7 @@ function useRefState<T>(
 }
 
 /** Class graphs and the typed asset catalogs their compilation reads. */
-const GRAPH_SIGNATURE_KINDS = ["graph", "input-action", "input-axis", "data-object", "data-sheet", "structure", "enum"] as const;
+const GRAPH_SIGNATURE_KINDS = ["graph", "input-action", "input-axis", "data-definition", "data-sheet", "structure", "enum"] as const;
 
 function openGraphCompileDocuments(
   documentService: DocumentService,
@@ -1864,6 +1860,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           cache: graphCompileCacheRef.current,
           enums: typeSchemas.enums,
           structs: typeSchemas.structs,
+          dataDefinitions: typeSchemas.dataDefinitions,
           tagRegistry: document.settings.tags,
         });
         setLastCompiledSignature(graphCompileSignature(
@@ -3067,6 +3064,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       cache: graphCompileCacheRef.current,
       enums: typeSchemas.enums,
       structs: typeSchemas.structs,
+          dataDefinitions: typeSchemas.dataDefinitions,
       tagRegistry: projectDocumentRef.current?.settings.tags,
     });
   }, [collectGraphTypeSchemas, loadClassGraphDocuments, projectService, documentService]);
@@ -3133,6 +3131,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         dataAssets: collectDataGraphAssets(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
         enums: typeSchemas.enums,
         structs: typeSchemas.structs,
+          dataDefinitions: typeSchemas.dataDefinitions,
         materialDomains: materialDomainsFromAssets(
           projectService.registry?.list() ?? [],
           [...documentService.getState().openDocuments.values()],
@@ -3148,6 +3147,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       dataAssets: collectDataGraphAssets(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
         enums: typeSchemas.enums,
         structs: typeSchemas.structs,
+          dataDefinitions: typeSchemas.dataDefinitions,
         tagRegistry: projectDocumentRef.current?.settings.tags,
         cache: graphCompileCacheRef.current,
       }),
@@ -3194,7 +3194,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         | "animation"
         | "input-action"
         | "input-axis"
-        | "data-object"
+        | "data-definition"
         | "data-sheet"
         | "structure"
         | "enum"
@@ -4384,10 +4384,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [documentService, enqueuePrefabSyncForClassPath, notifyAppliedCommand, projectService],
   );
 
-  const undoDocument = useCallback((id: string) => stepDocumentHistory("undo", id), [stepDocumentHistory]);
-  const redoDocument = useCallback((id: string) => stepDocumentHistory("redo", id), [stepDocumentHistory]);
-  const canUndoDocument = useCallback((id: string) => editSessionRef.current.getStack(id).canUndo, []);
-  const canRedoDocument = useCallback((id: string) => editSessionRef.current.getStack(id).canRedo, []);
 
   const undoActiveDocument = useCallback(() => {
     stepDocumentHistory("undo");
@@ -4732,10 +4728,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       confirmExternalChangeReloadProject,
       confirmExternalChangeReloadDocs,
       dismissExternalChange,
-      undoDocument,
-      redoDocument,
-      canUndoDocument,
-      canRedoDocument,
       undoActiveDocument,
       redoActiveDocument,
       registerDockviewApi,
@@ -4844,10 +4836,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       confirmExternalChangeReloadProject,
       confirmExternalChangeReloadDocs,
       dismissExternalChange,
-      undoDocument,
-      redoDocument,
-      canUndoDocument,
-      canRedoDocument,
       undoActiveDocument,
       redoActiveDocument,
       registerDockviewApi,

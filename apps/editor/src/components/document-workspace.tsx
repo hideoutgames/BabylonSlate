@@ -316,7 +316,20 @@ export function DocumentWorkspace() {
           doc.ref.kind === "structure" ||
           doc.ref.kind === "script-interface";
 
-        if (doc.ref.kind === "data-object" || doc.ref.kind === "data-sheet") {
+        if (doc.ref.kind === "data-definition") {
+          if (!shouldMount) return null;
+          return (
+            <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
+              <DocumentWorkspaceProvider documentId={id}>
+                <DocumentShell path={doc.ref.path} testId="document-workspace-data-definition" active={active}>
+                  <RegisteredDockviewShell id={id} documentKind={doc.ref.kind} initialLayout={doc.layout} />
+                </DocumentShell>
+              </DocumentWorkspaceProvider>
+            </WorkspaceErrorBoundary>
+          );
+        }
+
+        if (doc.ref.kind === "data-sheet") {
           if (!shouldMount) return null;
           return (
             <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>

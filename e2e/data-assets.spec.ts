@@ -1,6 +1,5 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import {
-  createContentBrowserAsset,
   openAssetFromBrowser,
   openContentBrowser,
   openTestProject,
@@ -10,19 +9,25 @@ import { saveAllIfEnabled } from "./save-all";
 
 test.use({ actionTimeout: 15_000 });
 
-async function createDataAsset(page: Page, type: "DataObject" | "DataSheet", name: string, structureGuid: string): Promise<void> {
+function activeSheet(page: Page): Locator {
+  return page.locator('[data-testid="document-workspace-data-sheet"]:visible');
+}
+
+async function createDataAsset(page: Page, type: "DataDefinition" | "DataSheet", name: string, definitionGuid?: string): Promise<void> {
   await openContentBrowser(page);
   await selectContentBrowserAssetsFolder(page);
   await page.getByTestId("content-browser-new-asset").click();
-  await page.getByTestId("new-asset-type-search").fill(type === "DataObject" ? "Data Object" : "Data Sheet");
+  await page.getByTestId("new-asset-type-search").fill(type === "DataDefinition" ? "Data Definition" : "Data Sheet");
   await page.getByTestId(`new-asset-type-${type}`).click();
   await page.getByTestId("new-asset-name").fill(name);
-  await page.getByTestId("new-asset-structure").click();
-  await page.getByTestId("asset-picker-query").fill("ItemStats");
-  await page.getByTestId("asset-picker").getByTestId(`search-item-${structureGuid}`).click();
+  if (definitionGuid) {
+    await page.getByTestId("new-asset-definition").click();
+    await page.getByTestId("asset-picker-query").fill("ItemStats");
+    await page.getByTestId("asset-picker").getByTestId(`search-item-${definitionGuid}`).click();
+  }
   await page.getByTestId("content-browser-new-asset-create").click();
   await expect(page.getByTestId("content-browser-new-asset-dialog")).toHaveCount(0);
-  await expect(page.getByTestId(`document-workspace-${type === "DataObject" ? "data-object" : "data-sheet"}`)).toBeVisible();
+  await expect(page.locator(`[data-testid="document-workspace-${type === "DataDefinition" ? "data-definition" : "data-sheet"}"]:visible`)).toBeVisible();
 }
 
 async function assetGuidFromBrowser(page: Page, path: string, name: string): Promise<string> {
@@ -36,101 +41,122 @@ async function assetGuidFromBrowser(page: Page, path: string, name: string): Pro
   return guid!;
 }
 
-test("standalone Data Objects share sheet edits, preserve targeted undo and reopen as typed graph inputs", async ({ page }, testInfo) => {
-  test.setTimeout(120_000);
+async function addDefinitionField(page: Page, name: string, type: "int" | "string", defaultValue: string): Promise<void> {
+  const panel = page.getByTestId("data-definition-fields-panel");
+  await panel.getByTestId("definition-field-add-name").fill(name);
+  await panel.getByTestId("definition-field-add").click();
+  const row = panel.locator('[data-testid^="definition-field-row-"]').last();
+  await row.getByRole("button", { name: "Pin type", exact: true }).click();
+  await page.getByTestId(`search-item-${type}`).click();
+  const value = panel.getByRole("textbox", { name: "Default Value", exact: true });
+  await value.fill(defaultValue);
+  await value.press("Enter");
+  await expect(value).toHaveValue(defaultValue);
+}
+
+async function addNamedRow(page: Page, name: string): Promise<string> {
+  const panel = activeSheet(page).getByTestId("data-sheet-rows-panel");
+  await panel.getByRole("button", { name: "New Row", exact: true }).click();
+  const row = panel.locator('[data-testid^="data-sheet-row-"]').last();
+  await expect(row).toContainText("New Entry");
+  const testId = await row.getAttribute("data-testid");
+  expect(testId).toBeTruthy();
+  await panel.getByRole("button", { name: "Rename", exact: true }).click();
+  await page.getByTestId("name-prompt-input").fill(name);
+  await page.getByTestId("name-prompt-confirm").click();
+  await expect(page.getByTestId("name-prompt-dialog")).toHaveCount(0);
+  await expect(row).toContainText(name);
+  return testId!.slice("data-sheet-row-".length);
+}
+
+test("independent Data Definitions drive owned sheet rows, Undo, persistence, and typed graph inputs", async ({ page }, testInfo) => {
+  test.setTimeout(150_000);
   await openTestProject(page);
 
-  // Author the actual Structure instead of seeding its data through a test hook.
-  await createContentBrowserAsset(page, "Structure", "ItemStats");
-  const structurePath = "assets/ItemStats.babasset";
-  const structureGuid = await assetGuidFromBrowser(page, structurePath, "ItemStats");
-  await openAssetFromBrowser(page, structurePath);
-  await page.getByTestId("structure-add-field").click();
-  await page.getByRole("textbox", { name: "Field 1 name", exact: true }).fill("Damage");
-  const details = page.getByTestId("structure-details-panel");
-  await details.getByRole("textbox", { name: "Default", exact: true }).fill("12");
-  await details.getByRole("textbox", { name: "Default", exact: true }).press("Enter");
-  await page.getByTestId("structure-add-field").click();
-  await page.getByRole("textbox", { name: "Field 2 name", exact: true }).fill("DisplayName");
-  await page.getByTestId("structure-field-type").click();
-  await page.getByTestId("search-item-string").click();
-  await details.getByRole("textbox", { name: "Default", exact: true }).fill("Training Sword");
+  // Author the independent schema through its field editor.
+  await createDataAsset(page, "DataDefinition", "ItemStats");
+  const definitionPath = "assets/ItemStats.datadefinition.babasset";
+  await addDefinitionField(page, "Damage", "int", "12");
+  await addDefinitionField(page, "DisplayName", "string", "Training Sword");
   await saveAllIfEnabled(page);
+  await page.getByTestId("document-workspace-data-definition").screenshot({ path: testInfo.outputPath("data-definition-fields.png") });
+  const definitionGuid = await assetGuidFromBrowser(page, definitionPath, "ItemStats");
 
-  // No sheet is needed to create, open, or use this object.
-  await createDataAsset(page, "DataObject", "IronSword", structureGuid);
-  const objectPath = "assets/IronSword.dataobject.babasset";
-  const standalone = page.getByTestId("document-workspace-data-object");
-  await expect(standalone.getByRole("textbox", { name: "Damage", exact: true })).toHaveValue("12");
-  await expect(standalone.getByRole("textbox", { name: "DisplayName", exact: true })).toHaveValue("Training Sword");
-  await expect(page.getByTestId("document-workspace-data-sheet")).toHaveCount(0);
-  await standalone.screenshot({ path: testInfo.outputPath("standalone-data-object.png") });
-  const objectGuid = await assetGuidFromBrowser(page, objectPath, "IronSword");
-  const objectTab = page.locator('[data-testid="document-tab"][data-document-kind="data-object"]');
-  await objectTab.getByTestId("document-tab-close").click();
-  await expect(objectTab).toHaveCount(0);
-
-  await createDataAsset(page, "DataSheet", "Equipment", structureGuid);
+  await createDataAsset(page, "DataSheet", "Equipment", definitionGuid);
   const sheetPath = "assets/Equipment.datasheet.babasset";
-  const sheet = page.getByTestId("document-workspace-data-sheet");
-  await sheet.getByRole("button", { name: "Add Existing", exact: true }).click();
-  await page.getByTestId("asset-picker").getByTestId(`search-item-${objectGuid}`).click();
-  const row = sheet.getByTestId(`data-sheet-row-${objectGuid}`);
-  const damage = row.getByRole("textbox", { name: "IronSword Damage", exact: true });
+  const sheet = activeSheet(page);
+  const rowId = await addNamedRow(page, "Iron Sword");
+  const row = sheet.getByTestId(`data-sheet-row-${rowId}`);
+  const damage = row.getByRole("textbox", { name: "Iron Sword Damage", exact: true });
   await expect(damage).toHaveValue("12");
-  await expect(sheet.getByRole("grid", { name: "Data Sheet Objects" })).toHaveAttribute("aria-rowcount", "2");
+  await expect(row.getByRole("textbox", { name: "Iron Sword Display Name", exact: true })).toHaveValue("Training Sword");
+  await expect(sheet.getByRole("grid", { name: "Data Rows", exact: true })).toHaveAttribute("aria-rowcount", "2");
   await damage.fill("37");
   await damage.press("Enter");
-  await expect(sheet.getByRole("textbox", { name: "Damage", exact: true })).toHaveValue("37");
-  await expect(objectTab).toHaveCount(0);
+  await expect(sheet.getByTestId("data-sheet-values-panel").getByRole("textbox", { name: "Damage", exact: true })).toHaveValue("37");
 
-  // Object undo is distinct from the sheet's membership undo history.
-  await sheet.getByRole("button", { name: "Undo Object", exact: true }).click();
+  // Sheet values participate in the document's normal Undo history.
+  await page.getByTestId("undo-document").click();
   await expect(damage).toHaveValue("12");
-  await expect(row).toBeVisible();
-  await sheet.getByRole("button", { name: "Redo Object", exact: true }).click();
+  await expect(row).toContainText("Iron Sword");
+  await page.getByTestId("redo-document").click();
   await expect(damage).toHaveValue("37");
-  await sheet.screenshot({ path: testInfo.outputPath("data-sheet-shared-values.png") });
-
-  await sheet.getByRole("button", { name: "Open Object", exact: true }).click();
-  await expect(standalone).toBeVisible();
-  await expect(standalone.getByRole("textbox", { name: "Damage", exact: true })).toHaveValue("37");
   await saveAllIfEnabled(page);
+  const sheetGuid = await assetGuidFromBrowser(page, sheetPath, "Equipment");
+
+  // A second sheet owns separate values even when its entry has the same name.
+  await createDataAsset(page, "DataSheet", "SpareEquipment", definitionGuid);
+  const sparePath = "assets/SpareEquipment.datasheet.babasset";
+  const spareRowId = await addNamedRow(page, "Iron Sword");
+  expect(spareRowId).not.toBe(rowId);
+  await expect(sheet.getByTestId(`data-sheet-row-${spareRowId}`).getByRole("textbox", { name: "Iron Sword Damage", exact: true })).toHaveValue("12");
+  await saveAllIfEnabled(page);
+  await openAssetFromBrowser(page, sheetPath);
+  await expect(damage).toHaveValue("37");
+  await sheet.screenshot({ path: testInfo.outputPath("data-sheet-owned-rows.png") });
+
   await page.reload();
   await openTestProject(page);
-  await openAssetFromBrowser(page, objectPath);
-  await expect(standalone.getByRole("textbox", { name: "Damage", exact: true })).toHaveValue("37");
-  await expect(standalone.getByRole("textbox", { name: "DisplayName", exact: true })).toHaveValue("Training Sword");
   await openAssetFromBrowser(page, sheetPath);
   await expect(row).toBeVisible();
   await expect(damage).toHaveValue("37");
+  await expect(row.getByRole("textbox", { name: "Iron Sword Display Name", exact: true })).toHaveValue("Training Sword");
+  await openAssetFromBrowser(page, sparePath);
+  await expect(sheet.getByTestId(`data-sheet-row-${spareRowId}`).getByRole("textbox", { name: "Iron Sword Damage", exact: true })).toHaveValue("12");
 
-  // Picking the object infers its Structure and exposes a typed Value output.
+  // Picking the sheet infers its Definition; the Row picker stores stable identity.
   await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
   await page.getByTestId("graph-add-node").click();
-  await page.getByTestId("node-palette-search").fill("Read Data Object");
-  await page.getByTestId("node-palette-item-data.readObject").click();
+  await page.getByTestId("node-palette-search").fill("Read Data Row");
+  await page.getByTestId("node-palette-item-data.readRow").click();
   const graph = page.getByTestId("graph-panel");
   await graph.getByRole("button", { name: "Size Graph To Fit" }).click();
-  const readNode = graph.locator('.react-flow__node[data-id^="data.readObject-"]');
-  await readNode.getByText("Read Data Object", { exact: true }).click();
-  await readNode.getByRole("button", { name: "Object", exact: true }).click();
-  await page.getByTestId("graph-pin-asset-picker").getByTestId(`search-item-${objectGuid}`).click();
-  await expect(page.getByTestId("inspector-data-properties").getByTestId("property-structGuid")).toContainText("ItemStats");
+  const readNode = graph.locator('.react-flow__node[data-id^="data.readRow-"]');
+  await readNode.getByText("Read Data Row", { exact: true }).click();
+  await readNode.getByRole("button", { name: "Sheet", exact: true }).click();
+  await page.getByTestId("graph-pin-asset-picker").getByTestId(`search-item-${sheetGuid}`).click();
+  const properties = page.getByTestId("inspector-data-properties");
+  await expect(properties.getByTestId("property-definitionGuid")).toContainText("ItemStats");
+  await properties.getByTestId("property-default:rowId").click();
+  await page.getByRole("option", { name: "Iron Sword", exact: true }).click();
+  await expect(properties.getByTestId("property-default:rowId")).toContainText("Iron Sword");
   await expect(readNode.locator('[data-handleid="value"]')).toHaveAttribute("data-pin-type", "structRef");
   await expect(readNode).toContainText("Read ItemStats Data");
   await expect(readNode.getByRole("button", { name: /^\d+ errors?$/ })).toHaveCount(0);
-  await graph.screenshot({ path: testInfo.outputPath("typed-data-object-node.png") });
+  await expect(readNode.getByRole("button", { name: "Open Asset", exact: true })).toHaveCount(0);
+  await saveAllIfEnabled(page);
+  await page.getByTestId("document-workspace-class").screenshot({ path: testInfo.outputPath("typed-data-row-node.png") });
 
-  // Creating directly from the typed input carries its Structure and defaults.
-  await page.getByTestId("inspector-pin-defaults").getByTestId("property-object").click();
-  await page.getByTestId("inspector-asset-picker-query").fill("GeneratedSword");
-  await page.getByTestId("inspector-asset-picker").getByTestId("search-item-__create__DataObject").click();
-  await expect(page.getByTestId("inspector-asset-picker")).toHaveCount(0);
-  await expect(page.getByTestId("inspector-data-properties").getByTestId("property-structGuid")).toContainText("ItemStats");
-  await page.getByTestId("inspector-pin-defaults").getByTestId("property-object-open").click();
-  await expect(standalone).toBeVisible();
-  await expect(standalone.getByRole("textbox", { name: "Damage", exact: true })).toHaveValue("12");
-  await expect(standalone.getByRole("textbox", { name: "DisplayName", exact: true })).toHaveValue("Training Sword");
+  // Renaming an entry updates its picker label without changing the graph reference.
+  await openAssetFromBrowser(page, sheetPath);
+  await row.click();
+  await sheet.getByRole("button", { name: "Rename", exact: true }).click();
+  await page.getByTestId("name-prompt-input").fill("Iron Sword Renamed");
+  await page.getByTestId("name-prompt-confirm").click();
+  await expect(row).toContainText("Iron Sword Renamed");
+  await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
+  await readNode.getByText("Read ItemStats Data", { exact: true }).click();
+  await expect(properties.getByTestId("property-default:rowId")).toContainText("Iron Sword Renamed");
+  await expect(readNode.getByRole("button", { name: /^\d+ errors?$/ })).toHaveCount(0);
   await saveAllIfEnabled(page);
 });

@@ -42,6 +42,7 @@ import { inlinePinDefaultStorageValue } from "./pin-default-value";
 import { PlusIcon } from "lucide-react";
 import { Button } from "@babylonslate/ui/components/button";
 import {
+  AssetOpenProvider,
   ContextMenuOverlay,
   useContextMenu,
   type NestedMenuItem,
@@ -2476,8 +2477,10 @@ function GraphEditorCanvas({
 
 export function GraphEditor(props: GraphEditorProps) {
   return (
-    <ReactFlowProvider>
-      <GraphEditorCanvas {...props} />
-    </ReactFlowProvider>
+    <AssetOpenProvider value={null}>
+      <ReactFlowProvider>
+        <GraphEditorCanvas {...props} />
+      </ReactFlowProvider>
+    </AssetOpenProvider>
   );
 }

@@ -1,5 +1,5 @@
 import { INPUT_KEYS, normalizeTag, normalizeTagContainer } from "@babylonslate/core";
-import { DATA_GRAPH_NODES, dataGraphNodeTitle, isDataGraphNode } from "./data-graph";
+import { DATA_GRAPH_NODES, dataGraphNodeTitle, isDataGraphNode, type DataGraphAssetEntry } from "./data-graph";
 import type {
   ParameterRow,
   PinListRow,
@@ -145,12 +145,7 @@ function inputTypeRow(value: unknown, onChange: (value: Record<string, unknown>)
 }
 
 function flattenStructFieldRows(
-  fields: ReadonlyArray<{
-    name: string;
-    typeId: string;
-    typeClassId?: string;
-    defaultValue?: unknown;
-  }>,
+  fields: readonly StructField[],
   value: unknown,
   onChange: (next: Record<string, unknown>) => void,
   mapping: PinDefaultMapping | undefined,
@@ -161,7 +156,7 @@ function flattenStructFieldRows(
   const rows: PropertyRow[] = [];
   for (const field of fields) {
     if (!field.name) continue;
-    const type = pinTypeForMember(field.typeId, field.typeClassId);
+    const type = pinTypeForVariable(field);
     const label = labelPrefix
       ? `${labelPrefix} ${humanizePropertyLabel(field.name)}`
       : humanizePropertyLabel(field.name);
@@ -232,6 +227,12 @@ export function variableAssetPickerAllowedTypes(typeClassId?: string): string[] 
   const trimmed = typeClassId?.trim();
   if (trimmed) return assetPickerAllowedTypes(trimmed, undefined);
   return [...ASSET_REF_PICKER_TYPES];
+}
+
+/** Definition literals use recursive value controls so collection fields retain their shape. */
+export function graphDataLiteralField(entry: LiteralPinDefault, schemas: TypeSchemas): StructField | undefined {
+  if (entry.type.kind !== "structRef" || !schemas.dataDefinitions?.[entry.type.guid]) return undefined;
+  return { name: entry.name, typeId: "struct", typeClassId: entry.type.guid };
 }
 
 export function pinDefaultPropertyRows(
@@ -648,16 +649,19 @@ export function structNodePropertyRows(
   data: Record<string, unknown>,
   onPatch: (patch: Record<string, unknown>) => void,
   structures: ReadonlyArray<{ guid: string; name: string; fields: StructField[] }>,
+  dataDefinitions: ReadonlyArray<{ guid: string; name: string; fields: StructField[] }> = [],
 ): PropertyRow[] {
   if (typeId !== "struct.make" && typeId !== "struct.break") return [];
+  const definition = data.dataDefinition === true || dataDefinitions.some((entry) => entry.guid === data.structGuid);
+  const entries = definition ? dataDefinitions : structures;
   return [{
     kind: "enum",
     id: "structGuid",
-    label: "Structure Type",
+    label: definition ? "Data Definition" : "Structure Type",
     value: typeof data.structGuid === "string" ? data.structGuid : "",
-    options: structures.map((entry) => ({ value: entry.guid, label: entry.name })),
+    options: entries.map((entry) => ({ value: entry.guid, label: entry.name })),
     onChange: (guid) => {
-      const selected = structures.find((entry) => entry.guid === guid);
+      const selected = entries.find((entry) => entry.guid === guid);
       if (!selected) return;
       const clearedDefaults = Object.fromEntries(
         Object.keys(data).filter((key) => key.startsWith("default:")).map((key) => [key, undefined]),
@@ -665,43 +669,69 @@ export function structNodePropertyRows(
       onPatch({
         ...clearedDefaults,
         structGuid: guid,
+        ...(definition ? { dataDefinition: true } : {}),
         fields: selected.fields,
-        title: `${typeId === "struct.make" ? "Make" : "Break"} ${selected.name}`,
+        title: `${typeId === "struct.make" ? "Make" : "Break"} ${selected.name}${definition ? " Data" : ""}`,
       });
     },
   }];
+}
+
+/** A literal sheet offers friendly row names while retaining immutable row IDs. */
+export function dataNodeRowOptions(
+  typeId: string,
+  data: Record<string, unknown>,
+  sheets: readonly DataGraphAssetEntry[],
+  wired: (pinId: string) => boolean = () => false,
+): readonly { id: string; name: string }[] | undefined {
+  if (!isDataGraphNode(typeId) || !("row" in DATA_GRAPH_NODES[typeId]) || wired("sheet") || wired("rowId")) return undefined;
+  return sheets.find((sheet) => sheet.guid === data["default:sheet"])?.rows;
 }
 
 export function dataNodePropertyRows(
   typeId: string,
   data: Record<string, unknown>,
   onPatch: (patch: Record<string, unknown>) => void,
-  structures: ReadonlyArray<{ guid: string; name: string }>,
+  definitions: ReadonlyArray<{ guid: string; name: string }>,
+  sheets: readonly DataGraphAssetEntry[] = [],
+  wired: (pinId: string) => boolean = () => false,
 ): PropertyRow[] {
   if (!isDataGraphNode(typeId)) return [];
   const required = DATA_GRAPH_NODES[typeId].required;
-  return [{
+  const rows: PropertyRow[] = [{
     kind: "enum",
-    id: "structGuid",
-    label: "Structure Type",
-    description: required ? "The Structure used by this node's data values." : "An empty selection accepts every Structure.",
-    value: typeof data.structGuid === "string" ? data.structGuid : "",
+    id: "definitionGuid",
+    label: "Data Definition",
+    description: required ? "The Data Definition used by this node's row values." : "An empty selection accepts every Data Definition.",
+    value: typeof data.definitionGuid === "string" ? data.definitionGuid : "",
     options: [
-      { value: "", label: required ? "Select Structure" : "Any Structure", disabled: required },
-      ...structures.map((entry) => ({ value: entry.guid, label: entry.name })),
+      { value: "", label: required ? "Select Data Definition" : "Any Data Definition", disabled: required },
+      ...definitions.map((entry) => ({ value: entry.guid, label: entry.name })),
     ],
     onChange: (guid) => {
-      const selected = structures.find((entry) => entry.guid === guid);
+      const selected = definitions.find((entry) => entry.guid === guid);
       if (!selected && (required || guid)) return;
       onPatch({
-        structGuid: guid,
+        definitionGuid: guid,
         title: dataGraphNodeTitle(typeId, selected?.name),
-        // Keep the chosen asset and name/folder literals. Only the typed
-        // Structure value belongs to the previous schema.
-        ...(guid !== data.structGuid ? { "default:values": undefined, dataSchema: undefined } : {}),
+        ...(guid !== data.definitionGuid ? { "default:values": undefined, dataSchema: undefined } : {}),
       });
     },
   }];
+  const rowOptions = dataNodeRowOptions(typeId, data, sheets, wired);
+  if (rowOptions) {
+    const value = typeof data["default:rowId"] === "string" ? data["default:rowId"] : "";
+    rows.push({
+      kind: "enum", id: "default:rowId", label: "Row", value,
+      options: [
+        { value: "", label: "Select Row" },
+        ...rowOptions.map((row) => ({ value: row.id, label: row.name })),
+        ...(value && !rowOptions.some((row) => row.id === value) ? [{ value, label: `Missing Row (${value})` }] : []),
+      ],
+      onChange: (rowId) => onPatch({ "default:rowId": rowId }),
+    });
+  }
+  return rows;
 }
 
 export function inputEventPropertyRows(

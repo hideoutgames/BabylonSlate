@@ -173,6 +173,7 @@ export function compileGraphDocument(
     dataAssets?: HydrateGraphOptions["dataAssets"];
     enums?: HydrateGraphOptions["enums"];
     structs?: HydrateGraphOptions["structs"];
+    dataDefinitions?: HydrateGraphOptions["dataDefinitions"];
     tagRegistry?: TagRegistry;
     latentFunctions?: ReadonlySet<string>;
     parentOf?: (classId: string) => string | null | undefined;
@@ -186,6 +187,7 @@ export function compileGraphDocument(
     dataAssets: options.dataAssets,
     enums: options.enums,
     structs: options.structs,
+    dataDefinitions: options.dataDefinitions,
   };
   const classId = options.classId?.trim() || classIdForGraphPath(options.path);
   const parentOf =
@@ -442,7 +444,7 @@ export function graphCompileSignature(
   inputAssets?: HydrateGraphOptions["inputAssets"],
   tagRegistry?: TagRegistry,
   dataAssets?: HydrateGraphOptions["dataAssets"],
-  typeSchemas?: Pick<HydrateGraphOptions, "enums" | "structs">,
+  typeSchemas?: Pick<HydrateGraphOptions, "enums" | "structs" | "dataDefinitions">,
 ): string {
   const payload = [...documents]
     .map((doc) => ({
@@ -477,6 +479,7 @@ export type GraphCompileCacheOptions = {
   dataAssets?: HydrateGraphOptions["dataAssets"];
   enums?: HydrateGraphOptions["enums"];
   structs?: HydrateGraphOptions["structs"];
+  dataDefinitions?: HydrateGraphOptions["dataDefinitions"];
   tagRegistry?: TagRegistry;
 };
 
@@ -492,10 +495,11 @@ function fnv1aHex(input: string): string {
 function typeSchemasFingerprint(
   enums: GraphCompileCacheOptions["enums"],
   structs: GraphCompileCacheOptions["structs"],
+  dataDefinitions: GraphCompileCacheOptions["dataDefinitions"],
 ): string {
-  if (!enums && !structs) return "0";
+  if (!enums && !structs && !dataDefinitions) return "0";
   return fnv1aHex(
-    JSON.stringify({ enums: enums ?? null, structs: structs ?? null }),
+    JSON.stringify({ enums: enums ?? null, structs: structs ?? null, dataDefinitions: dataDefinitions ?? null }),
   );
 }
 
@@ -537,7 +541,7 @@ function graphDocumentCompileCacheKey(
     stripDevelopmentOnly: options.stripDevelopmentOnly === true,
     types:
       options.typesFingerprint ??
-      typeSchemasFingerprint(options.enums, options.structs),
+      typeSchemasFingerprint(options.enums, options.structs, options.dataDefinitions),
     latent: options.latentFingerprint ?? "",
     inputAssets: options.inputAssets ?? [],
     dataAssets: options.dataFingerprint ?? fnv1aHex(JSON.stringify(options.dataAssets ?? [])),
@@ -591,6 +595,7 @@ function compileGraphDocumentCached(
       dataAssets: options.dataAssets,
       enums: options.enums,
       structs: options.structs,
+      dataDefinitions: options.dataDefinitions,
       tagRegistry: options.tagRegistry,
       latentFunctions: options.latentFunctions,
       parentOf: options.parentOf,
@@ -675,6 +680,7 @@ export function compileGraphDocuments(
   const typesFingerprint = typeSchemasFingerprint(
     options.enums,
     options.structs,
+    options.dataDefinitions,
   );
   const dataFingerprint = fnv1aHex(JSON.stringify(options.dataAssets ?? []));
   const project = projectLatentFunctions(documents);

@@ -25,9 +25,9 @@ import { classIdForGraphPath } from "../services/script-compiler";
 const CLASS_KINDS = ["graph"] as const;
 const SCENE_KINDS = ["scene"] as const;
 const INTERFACE_KINDS = ["script-interface"] as const;
-const TYPE_KINDS = ["structure", "enum"] as const;
+const TYPE_KINDS = ["structure", "enum", "data-definition"] as const;
 const INPUT_KINDS = ["input-action", "input-axis"] as const;
-const DATA_KINDS = ["data-object", "data-sheet"] as const;
+const DATA_KINDS = ["data-sheet"] as const;
 
 /**
  * The project-wide catalogs a Class or Animation Graph panel builds its

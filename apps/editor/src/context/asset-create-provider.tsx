@@ -39,7 +39,7 @@ export function AssetCreateDocumentsProvider({
       name?: string;
       parentClass?: string;
       materialDomain?: MaterialDomain;
-      structureGuid?: string | null;
+      definitionGuid?: string | null;
       ownerPath?: string | null;
     }) => {
       if (!assetRegistry) throw new Error("Open a project to create assets.");
@@ -58,7 +58,7 @@ export function AssetCreateDocumentsProvider({
         name: request.name,
         parentClass: request.parentClass,
         materialDomain: request.materialDomain,
-        structureGuid: request.structureGuid,
+        definitionGuid: request.definitionGuid,
       });
       // The mounted registry indexed the new asset on write; a full remount
       // would rescan every root while the picker waits.

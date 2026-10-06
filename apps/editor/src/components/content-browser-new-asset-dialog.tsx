@@ -64,9 +64,9 @@ export interface ContentBrowserNewAssetDialogProps {
   onParentClassChange: (parentClass: string) => void;
   waterStyle?: WaterStyle;
   onWaterStyleChange?: (style: WaterStyle) => void;
-  structureGuid?: string | null;
-  onStructureGuidChange?: (guid: string | null) => void;
-  structureAssets?: readonly { guid: string; name: string; type: string }[];
+  definitionGuid?: string | null;
+  onDefinitionGuidChange?: (guid: string | null) => void;
+  definitionAssets?: readonly { guid: string; name: string; type: string }[];
   /** Project + enabled-plugin Class assets for the Parent Class tree. */
   classAssets?: readonly NewAssetClassAssetRef[];
   nameTaken: boolean;
@@ -111,7 +111,7 @@ function NewAssetSummary({
         )}
       </dd>
       <dt className="text-muted-foreground">Then</dt>
-      <dd>{type === "Scene" || type === "DataObject" || type === "DataSheet" ? "Opens in a new tab" : "Appears in this folder"}</dd>
+      <dd>{type === "Scene" || type === "DataDefinition" || type === "DataSheet" ? "Opens in a new tab" : "Appears in this folder"}</dd>
     </dl>
   );
 }
@@ -141,9 +141,9 @@ export function ContentBrowserNewAssetDialog({
   onParentClassChange,
   waterStyle = "realistic",
   onWaterStyleChange,
-  structureGuid = null,
-  onStructureGuidChange,
-  structureAssets = [],
+  definitionGuid = null,
+  onDefinitionGuidChange,
+  definitionAssets = [],
   classAssets = [],
   nameTaken,
   destinationFolder,
@@ -155,13 +155,13 @@ export function ContentBrowserNewAssetDialog({
   const [phoneStep, setPhoneStep] = useState<"type" | "details">("type");
   const [search, setSearch] = useState("");
   const [parentSearch, setParentSearch] = useState("");
-  const [structurePickerOpen, setStructurePickerOpen] = useState(false);
+  const [definitionPickerOpen, setDefinitionPickerOpen] = useState(false);
   const [collapsedParents, setCollapsedParents] = useState<Set<string>>(new Set());
   const bodyRef = useRef<HTMLDivElement>(null);
   const detailsRef = useRef<HTMLElement>(null);
   const selectedVisual = resolveTypeVisual({ assetType: type });
-  const isData = type === "DataObject" || type === "DataSheet";
-  const canCreate = !busy && !nameTaken && Boolean(name.trim()) && (!isData || Boolean(structureGuid));
+  const isData = type === "DataSheet";
+  const canCreate = !busy && !nameTaken && Boolean(name.trim()) && (!isData || Boolean(definitionGuid));
 
   useEffect(() => {
     if (open) {
@@ -360,13 +360,13 @@ export function ContentBrowserNewAssetDialog({
                   </Field></FieldGroup>
                 ) : null}
                 {isData ? (
-                  <FieldGroup><Field><FieldLabel>Structure</FieldLabel>
-                    <AssetPickerControl value={structureGuid}>
-                      <Button variant="outline" size="sm" className="w-full justify-start" onClick={() => setStructurePickerOpen(true)} data-testid="new-asset-structure" disabled={busy}>
-                        {structureAssets.find(asset => asset.guid === structureGuid)?.name ?? "Choose Structure"}
+                  <FieldGroup><Field><FieldLabel>Data Definition</FieldLabel>
+                    <AssetPickerControl value={definitionGuid}>
+                      <Button variant="outline" size="sm" className="w-full justify-start" onClick={() => setDefinitionPickerOpen(true)} data-testid="new-asset-definition" disabled={busy}>
+                        {definitionAssets.find(asset => asset.guid === definitionGuid)?.name ?? "Choose Data Definition"}
                       </Button>
                     </AssetPickerControl>
-                    <AssetPicker open={structurePickerOpen} onOpenChange={setStructurePickerOpen} assets={[...structureAssets]} allowedTypes={["Structure"]} allowNone={false} title="Choose Structure" onPick={guid => { onStructureGuidChange?.(guid); setStructurePickerOpen(false); }} />
+                    <AssetPicker open={definitionPickerOpen} onOpenChange={setDefinitionPickerOpen} assets={[...definitionAssets]} allowedTypes={["DataDefinition"]} allowNone={false} title="Choose Data Definition" onPick={guid => { onDefinitionGuidChange?.(guid); setDefinitionPickerOpen(false); }} />
                   </Field></FieldGroup>
                 ) : null}
                 <NewAssetSummary

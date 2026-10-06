@@ -40,6 +40,9 @@ vi.mock("../context/audio-reverb-bake-context", () => ({
 vi.mock("../context/document-workspace-context", () => ({
   DocumentWorkspaceProvider: state.passthrough,
 }));
+vi.mock("../context/data-asset-editing-context", () => ({
+  DataAssetEditingProvider: state.passthrough,
+}));
 vi.mock("../context/scene-tools-context", () => ({
   SceneToolsProvider: state.passthrough,
 }));
@@ -128,23 +131,23 @@ afterEach(() => {
 });
 
 describe("workspace registry traversal", () => {
-  it("does not mount standalone workspaces for background sheet objects until they are revealed", () => {
-    state.tabs = ["sheet", "object"];
+  it("does not mount standalone workspaces for background utility sheets until they are revealed", () => {
+    state.tabs = ["definition", "sheet"];
     state.mountedIds = new Set(state.tabs);
-    const object: OpenDocument = {
-      id: "object", ref: { kind: "data-object", path: "assets/Sword.dataobject.babasset", label: "Sword" },
-      content: { kind: "dataObject", structureGuid: null, values: {} }, layout: null, dirty: true, background: true,
+    const sheet: OpenDocument = {
+      id: "sheet", ref: { kind: "data-sheet", path: "assets/Weapons.datasheet.babasset", label: "Weapons" },
+      content: { kind: "dataSheet", definitionGuid: null, rows: [] }, layout: null, dirty: true, background: true,
     };
     state.documents = [
-      { id: "sheet", ref: { kind: "data-sheet", path: "assets/Weapons.datasheet.babasset", label: "Weapons" }, content: { kind: "dataSheet", structureGuid: null, objectGuids: [] }, layout: null, dirty: false },
-      object,
+      { id: "definition", ref: { kind: "data-definition", path: "assets/Stats.datadefinition.babasset", label: "Stats" }, content: { kind: "dataDefinition", fields: [] }, layout: null, dirty: false },
+      sheet,
     ];
     const view = render(<DocumentWorkspace />);
-    expect(screen.getByTestId("document-workspace-data-sheet")).toBeTruthy();
-    expect(screen.queryByTestId("document-workspace-data-object")).toBeNull();
-    object.background = false;
+    expect(screen.getByTestId("document-workspace-data-definition")).toBeTruthy();
+    expect(screen.queryByTestId("document-workspace-data-sheet")).toBeNull();
+    sheet.background = false;
     view.rerender(<DocumentWorkspace />);
-    expect(screen.getByTestId("document-workspace-data-object")).toBeTruthy();
+    expect(screen.getByTestId("document-workspace-data-sheet")).toBeTruthy();
   });
 
   it("does no registry reads for unmounted graph workspaces", async () => {

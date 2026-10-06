@@ -105,7 +105,7 @@ export function pinPickerKeepsTypeClassId(type: string): boolean {
 
 /** Content Browser types stored on `typeClassId` when the picker type is Asset. */
 export const ASSET_REF_PICKER_TYPES = [
-  "DataObject",
+  "DataDefinition",
   "DataSheet",
   "InputAction",
   "InputAxis",

@@ -1,5 +1,5 @@
 import { createDefaultWaterDefinition, normalizeWaterDefinition, createDefaultRenderTargetPayload, createDefaultRenderTargetTexturePayload, normalizeRenderTargetTexturePayload, createDefaultRenderTargetCaptureProperties, renderTargetAssetGuidsFromGraph, type WaterStyle } from "@babylonslate/core";
-import { createDataObjectAsset, createDataSheetAsset, type DataObjectAsset, type DataSheetAsset } from "@babylonslate/core";
+import { createDataDefinitionAsset, createDataSheetAsset, type DataDefinitionAsset, type DataSheetAsset } from "@babylonslate/core";
 import type { ImportResult, IndexedAsset } from "@babylonslate/assets";
 import {
   DOCUMENT_CHUNK_ID,
@@ -242,7 +242,7 @@ export const CREATABLE_ASSET_TYPES = [
   "Blackboard",
   "Enum",
   "Structure",
-  "DataObject",
+  "DataDefinition",
   "DataSheet",
   "ScriptInterface",
   "AudioMixer",
@@ -271,7 +271,7 @@ export type CreatableAssetTypeGroup = {
 export const CREATABLE_ASSET_TYPE_GROUPS: readonly CreatableAssetTypeGroup[] = [
   { id: "world", label: "World", types: ["Scene", "SceneLayer"] },
   { id: "input", label: "Input", types: ["InputAction", "InputAxis"] },
-  { id: "data", label: "Data", types: ["DataObject", "DataSheet"] },
+  { id: "data", label: "Data", types: ["DataDefinition", "DataSheet"] },
   {
     id: "scripting",
     label: "Scripting",
@@ -322,8 +322,8 @@ const CREATABLE_ASSET_TYPE_DESCRIPTIONS: Record<CreatableAssetType, string> = {
   Blackboard: "Shared keys that a behaviour tree reads and writes.",
   Enum: "Named integer members used by pins and variables.",
   Structure: "A user-defined struct of typed fields.",
-  DataObject: "Reusable values defined by a Structure. Use independently, in Data Sheets, or from a graph.",
-  DataSheet: "An ordered collection of Data Objects with the same Structure. Edit their shared values together.",
+  DataDefinition: "Define fields, defaults, and validation for Data Sheet entries.",
+  DataSheet: "Author and balance entries using a Data Definition. Each sheet owns its values.",
   ScriptInterface: "A contract of methods that classes can implement.",
   AudioMixer: "Global and per-channel default volumes for Play.",
   AudioChannel: "A routing bus with an optional parent and reverb send.",
@@ -404,6 +404,7 @@ export type ClassAssetRef = {
     name: string;
     parentClass?: string | null;
     guid?: string;
+    payload?: Record<string, unknown>;
   };
 };
 
@@ -1539,15 +1540,15 @@ export function buildNewAssetResult(options: {
   parentGraphs?: Record<string, import("@babylonslate/core").SerializedGraph>;
   /** New Material domain; pickers pass `particle` / `postProcess` / `landscape`. */
   materialDomain?: MaterialDomain;
-  structureGuid?: string | null;
-  dataObject?: DataObjectAsset;
+  definitionGuid?: string | null;
+  dataDefinition?: DataDefinitionAsset;
   dataSheet?: DataSheetAsset;
 }): ImportResult {
   const { type, name, guid, parentClass } = options;
-  if (type === "DataObject" || type === "DataSheet") {
-    const payload = type === "DataObject"
-      ? options.dataObject ?? createDataObjectAsset(options.structureGuid)
-      : options.dataSheet ?? createDataSheetAsset(options.structureGuid);
+  if (type === "DataDefinition" || type === "DataSheet") {
+    const payload = type === "DataDefinition"
+      ? options.dataDefinition ?? createDataDefinitionAsset()
+      : options.dataSheet ?? createDataSheetAsset(options.definitionGuid);
     const result = documentAsset(type, name, guid, { ...payload });
     result.dependencies = assetHeaderDependencies(type, result.payload);
     return result;
@@ -1841,7 +1842,7 @@ const ASSET_FILE_SUFFIX: Partial<Record<CreatableAssetType, string>> = {
   Blackboard: ".blackboard.babasset",
   AudioMixer: ".mixer.babasset",
   InputAction: ".inputaction.babasset",
-  DataObject: ".dataobject.babasset",
+  DataDefinition: ".datadefinition.babasset",
   DataSheet: ".datasheet.babasset",
   InputAxis: ".inputaxis.babasset",
   AudioChannel: ".channel.babasset",
@@ -1897,10 +1898,16 @@ export function assetHeaderDependencies(
   classes: readonly ClassAssetRef[] = [],
   parentClass?: string | null,
 ): string[] {
-  if (["DataObject", "DataSheet", "Structure", "Enum"].includes(assetType)) {
+  const schemasByGuid = new Map(classes.flatMap(asset => {
+    const fields = asset.header.payload?.fields;
+    return asset.header.guid && ["DataDefinition", "Structure"].includes(asset.header.type) && Array.isArray(fields)
+      ? [[asset.header.guid, fields] as const] : [];
+  }));
+  const definitionFields = (guid: string) => schemasByGuid.get(guid);
+  if (["DataDefinition", "DataSheet", "Structure", "Enum"].includes(assetType)) {
     return dataAssetDependencies(assetType, payload, classes.flatMap((asset) =>
       asset.header.guid && ["Class", "Graph"].includes(asset.header.type)
-        ? [{ guid: asset.header.guid, classId: classIdFromClassAsset(asset) }] : []));
+        ? [{ guid: asset.header.guid, classId: classIdFromClassAsset(asset) }] : []), definitionFields);
   }
   const inputRefs: string[] = [];
   const visitInputRefs = (value: unknown): void => {
@@ -1917,14 +1924,14 @@ export function assetHeaderDependencies(
   const unique = new Set<string>([
     ...(["Class", "Graph"].includes(assetType) ? dataGraphAssetDependencies(payload, classes.flatMap((asset) =>
       asset.header.guid && ["Class", "Graph"].includes(asset.header.type)
-        ? [{ guid: asset.header.guid, classId: classIdFromClassAsset(asset) }] : [])) : []),
+        ? [{ guid: asset.header.guid, classId: classIdFromClassAsset(asset) }] : []), definitionFields) : []),
     ...inputRefs,
     ...(["Class", "Graph"].includes(assetType) ? assetVariableGuidsFromGraph(payload as unknown as import("@babylonslate/core").SerializedGraph) : []),
     ...(["Class", "Graph"].includes(assetType) ? renderTargetAssetGuidsFromGraph(payload as unknown as import("@babylonslate/core").SerializedGraph) : []),
     ...areaEmissionTextureGuids(payload),
     ...findClassAssetReferences({ ...payload, parentClass }, classes.flatMap((asset) =>
       asset.header.guid && ["Class", "Graph"].includes(asset.header.type)
-        ? [{ guid: asset.header.guid, classId: classIdFromClassAsset(asset) }] : [])),
+        ? [{ guid: asset.header.guid, classId: classIdFromClassAsset(asset) }] : []), definitionFields),
     ...materialAssetDependencies(assetType, payload),
     ...audioAssetDependencies(assetType, payload),
     ...particleAssetDependencies(assetType, payload),

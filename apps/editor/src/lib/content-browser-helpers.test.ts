@@ -1437,7 +1437,7 @@ describe("content-browser-helpers", () => {
       "Blackboard",
       "Enum",
       "Structure",
-      "DataObject",
+      "DataDefinition",
       "DataSheet",
       "ScriptInterface",
       "AudioMixer",

@@ -609,6 +609,24 @@ describe("variableDefaultPropertyRows structs and enums", () => {
     );
   });
 
+  it("never scalar-edits array or map fields while editing a sibling Structure field", () => {
+    const onChange = vi.fn();
+    const value = { health: 8, prices: [10, 20], labels: [{ key: 7, value: "Rare" }] };
+    const rows = variableDefaultPropertyRows("struct", value, onChange, {
+      typeClassId: "stats",
+      schemas: { enums: {}, structs: { stats: { name: "Stats", fields: [
+        { name: "health", typeId: "float" },
+        { name: "prices", typeId: "float", container: "array" },
+        { name: "labels", typeId: "string", container: "map", keyTypeId: "int" },
+      ] } } },
+    });
+    expect(rows.map((row) => row.label)).toEqual(["Health"]);
+    const health = rows[0];
+    if (health?.kind !== "number") throw new Error("Expected health editor");
+    health.onChange(12);
+    expect(onChange).toHaveBeenCalledWith({ health: 12, prices: [10, 20], labels: [{ key: 7, value: "Rare" }] });
+  });
+
   it("shows an Enum Select for a bound enum variable", () => {
     const onChange = vi.fn();
     const rows = variableDefaultPropertyRows("enum", "Blue", onChange, {

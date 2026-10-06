@@ -65,12 +65,12 @@ describe("project-backed inline pin defaults", () => {
   });
 
   it.each([
-    ["data.readObject", "object", "DataObject"],
-    ["data.getSheetObjects", "sheet", "DataSheet"],
+    ["data.readRow", "sheet", "DataSheet"],
+    ["data.getSheetRows", "sheet", "DataSheet"],
   ])("creates a typed %s reference from its inline %s picker", async (nodeType, pinId, assetType) => {
     const createAsset = vi.fn(async () => "created-data");
     const input = request({ kind: "assetRef", assetType }, "", {
-      nodeType, nodeData: { structGuid: "weapon" },
+      nodeType, nodeData: { definitionGuid: "weapon" },
       pin: { id: pinId, name: "Value", direction: "in", kind: "data", type: { kind: "assetRef", assetType } },
     });
     render(<AssetCreateProvider value={{ canCreate: (type) => type === assetType, typeLabel: (type) => type, createAsset }}>
@@ -80,7 +80,7 @@ describe("project-backed inline pin defaults", () => {
     fireEvent.change(screen.getByTestId("graph-pin-asset-picker-query"), { target: { value: "New Weapon" } });
     fireEvent.click(screen.getByTestId(`search-item-__create__${assetType}`));
     await waitFor(() => expect(input.onChange).toHaveBeenCalledWith("created-data"));
-    expect(createAsset).toHaveBeenCalledWith({ type: assetType, name: "New Weapon", structureGuid: "weapon" });
+    expect(createAsset).toHaveBeenCalledWith({ type: assetType, name: "New Weapon", definitionGuid: "weapon" });
   });
 
   it("uses the owning editor graph's class access for a general Class pin", () => {
@@ -115,4 +115,5 @@ describe("project-backed inline pin defaults", () => {
     expect(screen.queryByTestId("search-item-brick")).toBeNull();
     expect(input.onChange).not.toHaveBeenCalled();
   });
+
 });

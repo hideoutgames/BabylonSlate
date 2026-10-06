@@ -8,7 +8,7 @@ export type DockviewDocumentKind =
   | "graph"
   | "enum"
   | "structure"
-  | "data-object"
+  | "data-definition"
   | "data-sheet"
   | "script-interface"
   | "sprite"
@@ -47,7 +47,7 @@ const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
   "graph",
   "enum",
   "structure",
-  "data-object",
+  "data-definition",
   "data-sheet",
   "script-interface",
   "sprite",
@@ -110,7 +110,7 @@ const DOCK_PRIMARY_PANEL: Record<DockviewDocumentKind, string> = {
   graph: "graph",
   enum: "enum-members",
   structure: "structure-members",
-  "data-object": "data-object-values",
+  "data-definition": "data-definition-fields",
   "data-sheet": "data-sheet-rows",
   "script-interface": "script-interface-preview",
   sprite: "sprite-preview",
@@ -961,12 +961,13 @@ export function listDockWindows(
   }
   if (kind === "input-action" || kind === "input-axis") return withOptionalLocks(kind, INPUT_WINDOWS, options);
   if (kind === "enum") return withOptionalLocks(kind, ENUM_WINDOWS, options);
-  if (kind === "data-object") return withOptionalLocks(kind, [
-    { id: "data-object-values", component: "data-object-values", title: "Values" },
+  if (kind === "data-definition") return withOptionalLocks(kind, [
+    { id: "data-definition-fields", component: "data-definition-fields", title: "Fields" },
   ], options);
   if (kind === "data-sheet") return withOptionalLocks(kind, [
-    { id: "data-sheet-rows", component: "data-sheet-rows", title: "Objects" },
-    { id: "data-object-values", component: "data-object-values", title: "Values", defaultPosition: { referencePanelId: "data-sheet-rows", direction: "right", initialWidth: 300 } },
+    { id: "data-sheet-rows", component: "data-sheet-rows", title: "Rows" },
+    { id: "data-sheet-values", component: "data-sheet-values", title: "Values", defaultPosition: { referencePanelId: "data-sheet-rows", direction: "right", initialWidth: 320 } },
+    { id: "data-sheet-validation", component: "data-sheet-validation", title: "Validation", defaultPosition: { referencePanelId: "data-sheet-rows", direction: "below", initialHeight: 150 } },
   ], options);
   if (kind === "structure") {
     return withOptionalLocks(kind, STRUCTURE_WINDOWS, options);

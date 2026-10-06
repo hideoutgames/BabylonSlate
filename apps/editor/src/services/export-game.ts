@@ -438,14 +438,14 @@ export async function collectAndExportGame(
   });
   const dataCatalog: DataAssetCatalogEntry[] = params.assets.flatMap((asset) => {
     const type = asset.type;
-    if (type !== "DataObject" && type !== "DataSheet" && type !== "Structure" && type !== "Enum") return [];
+    if (type !== "DataDefinition" && type !== "DataSheet" && type !== "Structure" && type !== "Enum") return [];
     return [{ guid: asset.guid, name: asset.name, type, payload: params.payloadByGuid?.(asset.guid) }];
   });
   const typeSchemas = dataTypeSchemas(dataCatalog);
   const dataAssets = dataCatalog.flatMap((asset) => {
-    if (asset.type !== "DataObject" && asset.type !== "DataSheet") return [];
-    const payload = asset.payload as { structureGuid?: unknown } | null;
-    return [{ guid: asset.guid, name: asset.name, type: asset.type, structureGuid: typeof payload?.structureGuid === "string" ? payload.structureGuid : "" }];
+    if (asset.type !== "DataSheet") return [];
+    const payload = asset.payload as { definitionGuid?: unknown } | null;
+    return [{ guid: asset.guid, name: asset.name, type: asset.type, definitionGuid: typeof payload?.definitionGuid === "string" ? payload.definitionGuid : "" }];
   });
   params.onPhase?.("Compiling");
   const scripts: ScriptBundleEntry[] = [];

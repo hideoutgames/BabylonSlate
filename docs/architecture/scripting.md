@@ -647,49 +647,65 @@ Preview runs compiled graphs: `ScriptHost` binds Begin Play / Tick entry points 
 - ExecuteJavaScript unsandboxed — disclose on import when assets contain JS bodies.
 - Anchor tables invalidated by code moves — rewrite offsets on concat; never minify.
 
-## Data Objects and Data Sheets
+## Data Definitions and Data Sheets
 
-Data Objects are standalone typed assets, similar to Unreal Data Assets. They can be referenced directly without a sheet, Actor, or scene instance. Data Sheets provide an ordered table of references to those same objects. Use **Content Browser → New Asset → Data**, select an existing **Structure**, and name the asset.
+A **Data Definition** owns field types, defaults and validation rules. A **Data Sheet** owns its ordered entries. Neither needs a Structure asset or a standalone Data Object. Create a Definition through **Content Browser → New Asset → Data**, add fields, then create a Sheet using that Definition.
 
 | Asset | Stored data | Editor |
 | --- | --- | --- |
-| Structure | Field types, defaults and stable field identities | Existing Structure editor |
-| Data Object | `structureGuid`, authored `values`, and a field `schema` snapshot | DockView Values with typed properties |
-| Data Sheet | `structureGuid` and ordered unique `objectGuids` | DockView Rows and selected-object Values |
+| Data Definition | Stable field IDs, names, types, defaults, categories, descriptions and validation rules | DockView Fields |
+| Data Sheet | `definitionGuid` and owned `rows` (`id`, `name`, `values`, schema snapshot) | DockView Rows, Values and Validation |
 
-The asset header GUID is identity; names and row positions are not keys. An object may appear in multiple sheets. **Add Existing** adds a reference; **New Object** creates a standalone asset and adds it. **Remove** only changes membership. Reorder with Move Up/Down. Ordinary asset deletion remains a separate Content Browser action.
+Sheet row IDs are stable within their sheet. Renaming, reordering or sorting does not change identity. Different sheets may contain the same row ID without sharing values. Duplicating a row copies its values and assigns a new ID. Removing it affects only its owning sheet. The standalone Data Object feature is removed.
 
 ### Authoring and schema changes
 
-- Sheet scalar cells edit the canonical object document. Nested Structures, typed arrays/maps, Tags, Tag Containers, vectors, colors, asset/Class references and other compound values use the same typed Values controls as standalone editing. Open documents override the indexed header; scrolling does not load each object file. Rows are windowed. Row selection and edits keep object documents in the background; only **Open Object** reveals a standalone tab. Background edits participate in Save All, undo, close guards and recovery.
-- Object edits are dirty, undoable document commands. In a sheet, **Undo Object / Redo Object** target the selected record; the editor's global Undo targets sheet membership. **Save All** persists dirty objects and sheets. Opening a standalone tab shows the same edits.
-- Structure defaults are deep-copied on creation or an explicit reset. Later default edits do not overwrite authored values. Stable field IDs allow a rename to retain its value; legacy fields acquire deterministic original-name identities on edit.
-- **Review Changes → Apply Changes** handles added, renamed and changed-type fields. Reconciliation adds missing defaults and moves renamed values without coercing incompatible types. Removed/unknown values and their original reference metadata stay saved. Changed-type fields remain editable and resettable so incompatible values can be repaired; compatible repairs advance the snapshot. Fix invalid values before using the object at runtime. Ambiguous identities and rename collisions fail without applying a partial migration.
-- Read-only roots and source-control locks disable writes. Utility and sheet operations recheck the live document before committing.
+- Definitions support scalar fields, vectors/colors, Enums, Tags/Tag Containers, typed asset/Class references, nested Data Definitions, arrays and maps. The Definition editor provides typed defaults, Category, Description, Required and numeric Minimum/Maximum rules. Project Structure assets are not Data Definitions.
+- Sheets provide a windowed editable grid, search across names/values, column sorting/visibility, and error/warning filters. Sorting/filtering changes the view; Move Row Up/Down changes stored order. Values uses the same typed controls as Definition defaults. Validation rows navigate to the affected entry and field.
+- Copy Row Values exports visible cells as TSV. Paste a rectangular TSV selection into scalar cells to update the displayed rows and columns in one undoable edit; invalid or out-of-bounds input leaves the sheet unchanged.
+- Cell edits, row additions/removals, duplication, order changes and schema reconciliation belong to the sheet document. Use the existing global **Undo**, **Redo** and **Save All** controls. Editing a sheet never writes another data asset.
+- Defaults are copied when an entry is created or explicitly reset. Later default changes do not overwrite authored values. Stable field identities preserve values across renames.
+- **Review Changes → Apply Changes** reconciles renamed/added fields explicitly. Removed/unknown values and their reference metadata stay saved. Incompatible values remain visible for repair/reset. Ambiguous identities, rename collisions and recursive schemas fail without a partial migration.
+- Read-only roots and source-control locks prevent writes. Mutations recheck the live sheet, so a removed row or changed Definition cannot receive a stale edit.
 
 ### NodeGraph and runtime
 
-**Read Data Object** takes a Data Object asset reference and returns **Value** as the selected Structure plus **Found**. Selecting a literal object in the Inspector or directly on the node infers its Structure; typed palette entries also offer **Read ItemStats Data**. **Create New Data Object** from a typed input carries that Structure and its defaults into the new asset. Connect Value to the existing **Break Structure** node. Branch on Found before reading fields: missing, mismatched or invalid records return `null`, not invented defaults.
+**Read Data Row** takes a Data Sheet and Row ID, and returns a typed **Value** plus **Found**. Picking a literal sheet infers its Data Definition; the Inspector Row picker shows entry names while storing stable IDs. Typed palette entries include **Read Weapon Data Row**, **Make Weapon Data** and **Break Weapon Data**. Generic Structure assets remain available for other scripting tasks; Definitions reuse the internal record-shape machinery without depending on those assets.
 
-**Get Data Sheet Objects** returns ordered Data Object references and Found. Iterate those references through Read Data Object. An empty valid sheet returns `[]` and Found=true; a missing, invalid or mixed-Structure sheet returns `[]` and Found=false. Compile diagnostics flag unavailable Structures and mismatched literal references; dynamic references are checked at runtime.
+**Get Data Sheet Rows** returns ordered row IDs and Found. Iterate them through Read Data Row. An empty valid sheet returns `[]` and Found=true. Missing sheets, invalid identity/order or Definition mismatches return Found=false. Invalid row values fail that row's read without disabling valid sibling rows. Branch on Found before consuming Value; a failed read returns `null`.
 
-Runtime `ctx.data` exposes synchronous `readObject(reference, structureGuid?)`, `hasObject`, `getSheetObjects`, and `hasSheet`. The session catalog validates and indexes data once, and each value read returns a detached copy. Shared schema parsing lives in scripting so export preparation can run without loading runtime or Physics modules. Changes to returned gameplay values never rewrite authored assets. Restart Play to load authored changes. The same catalog travels through worker/in-process Play and loose/packed players.
+Runtime `ctx.data` exposes synchronous `readRow(sheet, rowId, definitionGuid?)`, `hasRow`, `getSheetRows(sheet, definitionGuid?)`, and `hasSheet`. A session catalog validates and indexes sheets once; reads return detached values. Gameplay mutations never rewrite authored sheets. Restart Play to load authored changes. The catalog is shared across worker/in-process Play and loose/packed players.
+
+Asset pickers rendered on NodeGraph nodes omit the Open Asset button to keep nodes compact. Inspector and other editor asset pickers retain their normal opening controls.
 
 ### Editor Utility Objects
 
-Editor-only **Data** authoring nodes work in EditorUtilityObjects and EditorFunctionLibraries: **List Data Objects / Sheets**, **Read Editable Data Object / Sheet**, **Create Data Object / Sheet**, **Update Data Object**, and **Set Data Sheet Objects**. Select the Structure in the Inspector and use Make/Break Structure. These latent operations expose **Success** and **Error**; their execution output runs after the operation completes. Normal runtime read nodes also see current utility edits.
+Editor-only Data nodes support **List Data Sheets**, **Read Editable Data Sheet**, **Read Editable Data Row**, **Create Data Sheet**, **Add Data Row**, **Update Data Row**, **Remove Data Row** and **Reorder Data Rows**. Select a Data Definition and use its typed Make/Break nodes. These asynchronous operations expose Success and Error, and continue execution after completion.
 
-JavaScript utilities use `await ctx.editorData.listObjects(structureGuid?)`, `listSheets`, `readObject(reference, structureGuid?)`, `readSheet`, `createObject(name, structureGuid, values?, folder?)`, `updateObject(reference, structureGuid, values)`, `createSheet(name, structureGuid, objectGuids?, folder?)`, and `setSheetObjects(reference, structureGuid, objectGuids)`. Results are `{ success, value, error }`. Example:
+JavaScript utilities use `await ctx.editorData`:
+
+| Method | Successful value |
+| --- | --- |
+| `listSheets(definitionGuid?)` | Sheet GUIDs |
+| `readSheet(sheet, definitionGuid?)` | Ordered row IDs |
+| `readRow(sheet, rowId, definitionGuid?)` | Typed row values |
+| `createSheet(name, definitionGuid, folder?)` | New sheet GUID |
+| `addRow(sheet, definitionGuid, name, values?)` | New row ID |
+| `updateRow(sheet, rowId, definitionGuid, values)` | Updated row ID |
+| `removeRow(sheet, rowId, definitionGuid)` | Removed row ID |
+| `reorderRows(sheet, definitionGuid, rowIds)` | Sheet GUID |
+
+Results are `{ success, value, error }`. For example:
 
 ```js
-const result = await ctx.editorData.updateObject(itemGuid, itemStructureGuid, { Price: 24 });
+const result = await ctx.editorData.updateRow(weaponsGuid, swordRowId, weaponDefinitionGuid, { Price: 24 });
 if (!result.success) ctx.log("error", "data", result.error);
 ```
 
-JavaScript updates merge supplied fields and scalar nested Structures; explicitly supplied arrays and maps replace those collections, including removed entries. A typed graph normally supplies a complete Structure. Map values use native `Map` objects in scripts and portable key/value entries in assets. All writes serialize, validate before mutation and stop when the utility/project closes. Existing-object updates and membership changes remain dirty and undoable. Creation writes a new asset immediately, with Folder relative to the project's `assets` directory; existing paths and traversal are rejected. Operations never implicitly save unrelated open edits. Runtime/game hosts cannot author data.
+Updates merge supplied scalar/nested fields; supplied arrays/maps replace those collections. Maps use native `Map` values in scripts and portable key/value entries in assets. Writes serialize and validate before mutation, honor locks, and stop when the utility/project closes. Row edits remain dirty and undoable on their sheet; creating a sheet persists a new file immediately. Folder is relative to the project's assets directory; existing paths and traversal are rejected. Operations never implicitly save unrelated edits. Runtime/game hosts cannot author data.
 
 ### Persistence and asset lifecycle
 
-Data assets use versioned `.dataobject.babasset` / `.datasheet.babasset` files. The saved header indexes the canonical payload so sheet reads and catalog construction need no per-row disk reads. Structure, Enum, nested asset/Class values, and sheet member dependencies participate in reference discovery, deletion replacement, import GUID remapping and export closure. Traversal follows typed snapshots: a text value that happens to equal a GUID stays text. Standalone objects are included in export along with their required schemas and referenced assets.
+Definitions use `.datadefinition.babasset`; sheets use `.datasheet.babasset`. Indexed headers contain canonical payloads, so browsing and runtime catalog construction do not read a file per row. Typed field/default/row references participate in dependency discovery, deletion replacement, import GUID remapping and export closure. Traversal follows field schemas; ordinary text and row IDs that happen to equal an asset GUID stay unchanged.
 
-Production editor captures: [standalone Data Object](../design/evidence/data-workspace/05-standalone-data-object.png), [Data Sheet with shared values](../design/evidence/data-workspace/06-data-sheet-shared-values.png), and [typed NodeGraph read](../design/evidence/data-workspace/07-typed-data-object-node.png). The earlier fixture-only concept is superseded by these editors.
+The previous experimental standalone Data Object and reference-only sheet formats are unsupported and are never silently converted into empty definitions/sheets. Existing files are preserved; unsupported reachable data prevents export with an actionable error.
