@@ -89,7 +89,7 @@ test("independent Data Definitions drive owned sheet rows, Undo, persistence, an
   const row = sheet.getByTestId(`data-sheet-row-${rowId}`);
   const damage = row.getByRole("textbox", { name: "Iron Sword Damage", exact: true });
   await expect(damage).toHaveValue("12");
-  await expect(row.getByRole("textbox", { name: "Iron Sword Display Name", exact: true })).toHaveValue("Training Sword");
+  await expect(row.getByRole("textbox", { name: "Iron Sword DisplayName", exact: true })).toHaveValue("Training Sword");
   await expect(sheet.getByRole("grid", { name: "Data Rows", exact: true })).toHaveAttribute("aria-rowcount", "2");
   await damage.fill("37");
   await damage.press("Enter");
@@ -120,7 +120,7 @@ test("independent Data Definitions drive owned sheet rows, Undo, persistence, an
   await openAssetFromBrowser(page, sheetPath);
   await expect(row).toBeVisible();
   await expect(damage).toHaveValue("37");
-  await expect(row.getByRole("textbox", { name: "Iron Sword Display Name", exact: true })).toHaveValue("Training Sword");
+  await expect(row.getByRole("textbox", { name: "Iron Sword DisplayName", exact: true })).toHaveValue("Training Sword");
   await openAssetFromBrowser(page, sparePath);
   await expect(sheet.getByTestId(`data-sheet-row-${spareRowId}`).getByRole("textbox", { name: "Iron Sword Damage", exact: true })).toHaveValue("12");
 
@@ -144,11 +144,15 @@ test("independent Data Definitions drive owned sheet rows, Undo, persistence, an
   await expect(readNode).toContainText("Read ItemStats Data");
   await expect(readNode.getByRole("button", { name: /^\d+ errors?$/ })).toHaveCount(0);
   await expect(readNode.getByRole("button", { name: "Open Asset", exact: true })).toHaveCount(0);
+  const openSheetDefault = page.getByTestId("inspector-pin-defaults").getByRole("button", { name: "Open Asset", exact: true });
+  await expect(openSheetDefault).toBeVisible();
   await saveAllIfEnabled(page);
   await page.getByTestId("document-workspace-class").screenshot({ path: testInfo.outputPath("typed-data-row-node.png") });
 
+  // Inspector defaults retain Open Asset; only the inline node control omits it.
+  await openSheetDefault.click();
+  await expect(row).toBeVisible();
   // Renaming an entry updates its picker label without changing the graph reference.
-  await openAssetFromBrowser(page, sheetPath);
   await row.click();
   await sheet.getByRole("button", { name: "Rename", exact: true }).click();
   await page.getByTestId("name-prompt-input").fill("Iron Sword Renamed");
