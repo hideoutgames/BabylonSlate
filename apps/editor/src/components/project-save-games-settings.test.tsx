@@ -4,6 +4,11 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { SaveGameService, type SaveGameStorage } from "@babylonslate/core";
 import { ProjectSaveGamesSettings } from "./project-save-games-settings";
 
+// Base UI forwards native checkbox/switch activation through PointerEvent.
+if (typeof window.PointerEvent === "undefined") {
+  window.PointerEvent = MouseEvent as unknown as typeof PointerEvent;
+}
+
 const harness = vi.hoisted(() => ({
   storage: null as SaveGameStorage | null,
   settings: vi.fn(),

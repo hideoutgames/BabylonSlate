@@ -4,6 +4,11 @@ import type { IDockviewPanelProps } from "dockview-react";
 import type { SaveGameDefinition } from "@babylonslate/core";
 import { SaveGameFieldsPanel, SaveGameDefinitionPanel } from "./save-game-panels";
 
+// Base UI forwards native checkbox/switch activation through PointerEvent.
+if (typeof window.PointerEvent === "undefined") {
+  window.PointerEvent = MouseEvent as unknown as typeof PointerEvent;
+}
+
 const harness = vi.hoisted(() => ({
   definition: {} as SaveGameDefinition,
   apply: vi.fn(async () => true),

@@ -2,6 +2,7 @@ import { normalizeWaterDefinition } from "@babylonslate/core";
 import {
   createDefaultSceneSettings,
   normalizeInputAssetPayload,
+  validateSaveGameDefinition,
   identitySerializedTransform,
   normalizeSceneLayer,
   normalizeShadowOverrides,
@@ -220,6 +221,10 @@ export function createDefaultMigrationRegistry(): MigrationRegistry {
       ],
     });
   }
+  registry.register({
+    type: "SaveGame",
+    migrations: [(payload) => ({ ...validateSaveGameDefinition(payload) })],
+  });
   registry.register({
     type: "Audio",
     migrations: [(payload) => ({ ...payload })],

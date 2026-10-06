@@ -127,3 +127,15 @@ describe("ParticleGraph schema version", () => {
     ]);
   });
 });
+
+
+describe("Save Game definition asset format", () => {
+  it("keeps gameplay schema versions separate from the asset format and refuses future formats", () => {
+    const registry = createDefaultMigrationRegistry();
+    const payload = { id: "player-progress", schemaVersion: 7, fields: [{ id: "stable-score", name: "Coins", type: "int", defaultValue: 0 }] };
+    const loaded = loadPayloadWithMigration(registry, { type: "SaveGame", version: 1, payload, path: "assets/Progress.savegame.babasset" });
+    expect(loaded.pending).toBeNull();
+    expect(loaded.payload).toEqual(payload);
+    expect(() => loadPayloadWithMigration(registry, { type: "SaveGame", version: 2, payload, path: "assets/Progress.savegame.babasset" })).toThrow(/newer engine/);
+  });
+});
