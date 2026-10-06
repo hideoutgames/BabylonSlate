@@ -88,6 +88,7 @@ describe("runtime Save Game", () => {
       companion.setVariable("health", 18);
       hero(first.runtime).setVariable("target", companion);
       hero(first.runtime).setVariable("targetComponent", companion.components.find((component) => component.sourceId === "inventory"));
+      hero(first.runtime).setVariable("parentId", companion.guid);
       expect((await first.service.saveGame()).ok).toBe(true);
     } finally { first.runtime.stop(); }
     const next = await boot(storage);
@@ -99,6 +100,7 @@ describe("runtime Save Game", () => {
       expect(restored.getVariable("health")).toBe(18);
       expect(hero(next.runtime).getVariable("target")).toBe(restored);
       expect(hero(next.runtime).getVariable("loadedTarget")).toBe(restored);
+      expect(hero(next.runtime).getVariable("parentId")).toBe("companion");
       expect(hero(next.runtime).getVariable("targetComponent")).toBe(restored.components.find((component) => component.sourceId === "inventory"));
       expect(restored.getVariable("begins")).toBeUndefined();
       expect(restored.getVariable("loadedHealth")).toBe(18);
