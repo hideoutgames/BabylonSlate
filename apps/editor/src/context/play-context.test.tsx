@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { createDefaultScene, engineCommandBus } from "@babylonslate/core";
 import {
@@ -240,13 +240,14 @@ it("cancels or plays without saving from the Unsaved Changes prompt", async () =
   await act(async () => {
     fireEvent.click(screen.getByTestId("play-unsaved-cancel"));
   });
-  expect(screen.queryByTestId("play-unsaved-dialog")).toBeNull();
+  // The dialog unmounts after its closing animation.
+  await waitFor(() => expect(screen.queryByTestId("play-unsaved-dialog")).toBeNull());
   await act(async () => {
     void controls.requestPlay();
   });
   await act(async () => {
     fireEvent.click(screen.getByTestId("play-unsaved-skip"));
   });
-  expect(screen.queryByTestId("play-unsaved-dialog")).toBeNull();
+  await waitFor(() => expect(screen.queryByTestId("play-unsaved-dialog")).toBeNull());
   expect(saveAll).not.toHaveBeenCalled();
 });
