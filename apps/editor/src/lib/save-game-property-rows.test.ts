@@ -19,9 +19,9 @@ describe("Save Game component selection", () => {
     expect(update).toHaveBeenLastCalledWith("componentVariables", { inventory: ["Coins", "Items"] });
   });
 
-  it("offers inherited variables once while excluding functions", () => {
+  it("offers inherited persistent variables once while excluding functions and their locals", () => {
     expect(saveGameVariableNames("Hero", {
-      Hero: { nodes: [], edges: [], members: [{ id: "h", kind: "variable", name: "Health", typeId: "int" }, { id: "f", kind: "function", name: "Jump" }] },
+      Hero: { nodes: [], edges: [], members: [{ id: "h", kind: "variable", name: "Health", typeId: "int" }, { id: "f", kind: "function", name: "Jump" }, { id: "local", kind: "variable", name: "Temporary", typeId: "int", functionId: "f" }] },
       Base: { nodes: [], edges: [], members: [{ id: "h", kind: "variable", name: "Health", typeId: "int" }, { id: "s", kind: "variable", name: "Score", typeId: "int" }] },
     }, (id) => id === "Hero" ? "Base" : null)).toEqual(["Health", "Score"]);
   });

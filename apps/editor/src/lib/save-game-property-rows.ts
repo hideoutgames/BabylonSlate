@@ -4,7 +4,7 @@ import type { ComponentPropertyContext } from "./component-property-rows";
 
 /** Includes inherited script fields and preserves authored choices for missing classes. */
 export function saveGameVariableNames(classId: string, graphs: Record<string, SerializedGraph>, parentOf: (id: string) => string | null | undefined): string[] {
-  return [...new Set(walkAncestry(classId, parentOf).flatMap((id) => (graphs[id]?.members ?? []).filter((member) => member.kind === "variable").map((member) => member.name)))];
+  return [...new Set(walkAncestry(classId, parentOf).flatMap((id) => (graphs[id]?.members ?? []).filter((member) => member.kind === "variable" && !member.functionId).map((member) => member.name)))];
 }
 
 export function saveGamePropertyRows(actorId: string, component: SerializedComponent, update: (property: string, value: unknown) => void, context: ComponentPropertyContext): PropertyRow[] {
