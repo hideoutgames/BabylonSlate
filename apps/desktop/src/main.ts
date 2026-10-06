@@ -13,6 +13,8 @@ import {
   type IpcMainInvokeEvent,
 } from "electron";
 import { NodeStorageAdapter } from "@babylonslate/vfs/node";
+import { NodeSaveGameStorage } from "@babylonslate/vfs/save-game-node";
+import { DesktopSaveGames } from "./desktop-save-games";
 import type { ProjectFolderHandle } from "@babylonslate/core";
 import { DesktopSecretStore } from "./desktop-secret-store";
 import { DesktopAccountSecretStore } from "./desktop-account-secrets";
@@ -24,6 +26,14 @@ const rootDir = join(app.getAppPath(), "host");
 const rendererRoot = join(app.getAppPath(), "renderer");
 const editorWindows = new Set<number>();
 let updates: ReturnType<typeof createDesktopUpdates> | undefined;
+let saveGames: DesktopSaveGames | undefined;
+const primaryInstance = app.requestSingleInstanceLock();
+if (!primaryInstance) app.quit();
+app.on("second-instance", () => {
+  const window = BrowserWindow.getAllWindows()[0];
+  if (window?.isMinimized()) window.restore();
+  window?.focus();
+});
 protocol.registerSchemesAsPrivileged([{ scheme: "app", privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true, codeCache: true } }]);
 
 function handle(channel: string, listener: (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown): void {
@@ -51,7 +61,11 @@ async function createWindow(): Promise<void> {
   });
   const contentsId = window.webContents.id;
   editorWindows.add(contentsId);
-  window.on("closed", () => editorWindows.delete(contentsId));
+  window.on("closed", () => { editorWindows.delete(contentsId); void saveGames?.releaseOwner(contentsId); });
+  window.webContents.on("render-process-gone", () => { void saveGames?.releaseOwner(contentsId); });
+  window.webContents.on("did-start-navigation", (_event, _url, _inPlace, isMainFrame) => {
+    if (isMainFrame) void saveGames?.releaseOwner(contentsId);
+  });
   // Windows can terminate an installer during shutdown/logoff. Keep it cached
   // for a subsequent normal exit instead.
   window.on("session-end", () => updates?.setEnabled(false));
@@ -66,6 +80,14 @@ async function createWindow(): Promise<void> {
 function registerIpc(): void {
   const projectsRoot = join(app.getPath("userData"), "projects");
   const storage = new NodeStorageAdapter(projectsRoot);
+  saveGames = new DesktopSaveGames(new NodeSaveGameStorage(userDataFile("game-saves")));
+  const saves = saveGames;
+  handle("save-games:read", (event, key) => saves.result(() => saves.read(event.sender.id, String(key))));
+  handle("save-games:write", (event, key, text) => saves.result(() => saves.write(event.sender.id, String(key), String(text))));
+  handle("save-games:remove", (event, key) => saves.result(() => saves.remove(event.sender.id, String(key))));
+  handle("save-games:list", (event, key) => saves.result(() => saves.list(event.sender.id, String(key))));
+  handle("save-games:acquire-lock", (event, key) => saves.result(() => saves.acquire(event.sender.id, String(key))));
+  handle("save-games:release-lock", (event, token) => saves.result(() => saves.release(event.sender.id, String(token))));
   const settingsPath = userDataFile("engine-settings.json");
   const grantsPath = userDataFile("project-folder-grants.json");
   async function grantedFolders(): Promise<string[]> {
@@ -190,6 +212,7 @@ function registerIpc(): void {
 }
 
 void app.whenReady().then(async () => {
+  if (!primaryInstance) return;
   session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   session.defaultSession.setPermissionCheckHandler(() => false);
   protocol.handle("app", async request => {

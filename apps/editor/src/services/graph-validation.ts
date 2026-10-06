@@ -6,6 +6,7 @@ import {
   normalizeDataObjectAsset,
   type GraphClassMemberPin,
   type SerializedGraph,
+  type SaveGameDefinition,
 } from "@babylonslate/core";
 import { engineParentOf, formatEventMemberName, formatEventTitle, walkAncestry } from "@babylonslate/editor-kit";
 import {
@@ -1010,6 +1011,7 @@ export function createDefaultLogicGraphSerialized(
 }
 
 export type ScriptPaletteOptions = ClassEventOptions & {
+  saveGameDefinition?: SaveGameDefinition;
   inputAssets?: readonly InputPaletteAsset[];
   classId?: string;
   graph?: SerializedGraph;
@@ -1764,6 +1766,21 @@ function structPaletteNodes(
   return rows;
 }
 
+function saveGamePaletteNodes(nodeRegistry: NodeRegistry, options?: ScriptPaletteOptions): PaletteNode[] {
+  if (isEditorGraphHost(options ?? {}) || options?.animationGraphHost === "rule") return [];
+  return (options?.saveGameDefinition?.fields ?? []).flatMap((field) =>
+    ["getField", "setField", "migrationGetField", "migrationSetField"].map((operation): PaletteNode => {
+      const def = nodeRegistry.get(`saveGame.${operation}`)!;
+      const migration = operation.startsWith("migration");
+      const write = operation === "setField" || operation === "migrationSetField";
+      const title = `${write ? "Set" : "Get"} ${migration ? "Migration" : "Save"} ${field.name}`;
+      const defaultData = { fieldId: field.id, fieldName: field.name, typeId: field.type, array: field.array === true, title,
+        ...(write ? { "default:value": field.defaultValue } : {}) };
+      return { id: `${def.id}:${field.id}`, nodeType: def.id, title, category: "save-game", description: def.description,
+        pins: def.pins(defaultData), pure: def.pure, latent: def.latent, defaultData };
+    }));
+}
+
 function dataPaletteNodes(
   nodeRegistry: NodeRegistry,
   options?: ScriptPaletteOptions,
@@ -1973,6 +1990,7 @@ export function scriptPaletteInjectorKey(
     scriptInterfaces: options?.scriptInterfaces ?? [],
     subsystemClasses: options?.subsystemClasses ?? [],
     structures: options?.structures ?? [],
+    saveGameDefinition: options?.saveGameDefinition,
     enums: options?.enums ?? [],
     inputAssets: options?.inputAssets ?? [],
     scenes: (options?.sceneDocuments ?? []).map((scene) => [
@@ -1993,6 +2011,8 @@ function scriptPaletteCatalogNodes(
   return nodeRegistry
     .list()
     .filter((def) => {
+      if ((def.id.startsWith("saveGame.") || def.id === "flow.event.gameLoaded" || def.id === "flow.event.saveMigration") && isEditorGraphHost(options ?? {})) return false;
+      if ((def.id === "flow.event.gameLoaded" || def.id === "flow.event.saveMigration") && options?.activeFunctionId) return false;
       if (def.id === "flow.event.scalabilityChanged" && options?.activeFunctionId) return false;
       if ((isInputEvent(def.id) || def.id === "input.onAnyKeyPressed") &&
         (options?.activeFunctionId || options?.animationGraphHost || !nativeEventStubs(options).some((node) => node.eventType === "flow.event.tick"))) return false;
@@ -2095,6 +2115,7 @@ function scriptPaletteInjectorNodes(
       ...castPaletteNodes(nodeRegistry, options),
       ...subsystemGetPaletteNodes(nodeRegistry, options),
       ...structPaletteNodes(nodeRegistry, options),
+      ...saveGamePaletteNodes(nodeRegistry, options),
       ...dataPaletteNodes(nodeRegistry, options),
       ...enumPaletteNodes(nodeRegistry, options),
     ],

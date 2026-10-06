@@ -35,6 +35,7 @@ import {
   createDefaultScene,
   createSceneStreamingActor,
   createInputAssetPayload,
+  createDefaultSaveGameDefinition,
   isInputAssetType,
   createDefaultSceneLayer,
   isLegacyMaterialAssetType,
@@ -240,6 +241,7 @@ export const CREATABLE_ASSET_TYPES = [
   "Tilemap",
   "BehaviourTree",
   "Blackboard",
+  "SaveGame",
   "Enum",
   "Structure",
   "DataObject",
@@ -275,7 +277,7 @@ export const CREATABLE_ASSET_TYPE_GROUPS: readonly CreatableAssetTypeGroup[] = [
   {
     id: "scripting",
     label: "Scripting",
-    types: ["Class", "Enum", "Structure", "ScriptInterface"],
+    types: ["Class", "Enum", "Structure", "ScriptInterface", "SaveGame"],
   },
   {
     id: "2d",
@@ -319,6 +321,7 @@ const CREATABLE_ASSET_TYPE_DESCRIPTIONS: Record<CreatableAssetType, string> = {
   Tileset: "Tile definitions and collision for painting tilemaps.",
   Tilemap: "A painted 2D tile layer that references a Tileset.",
   BehaviourTree: "An AI tree of composites, tasks, and decorators.",
+  SaveGame: "Typed player progress with defaults, stable fields, and reliable local save slots.",
   Blackboard: "Shared keys that a behaviour tree reads and writes.",
   Enum: "Named integer members used by pins and variables.",
   Structure: "A user-defined struct of typed fields.",
@@ -1719,6 +1722,10 @@ export function buildNewAssetResult(options: {
     );
   }
 
+  if (type === "SaveGame") {
+    return documentAsset(type, name, guid, { ...createDefaultSaveGameDefinition(guid) });
+  }
+
   if (type === "Blackboard") {
     return documentAsset(
       type,
@@ -1839,6 +1846,7 @@ const ASSET_FILE_SUFFIX: Partial<Record<CreatableAssetType, string>> = {
   Tilemap: ".tilemap.babasset",
   BehaviourTree: ".bt.babasset",
   Blackboard: ".blackboard.babasset",
+  SaveGame: ".savegame.babasset",
   AudioMixer: ".mixer.babasset",
   InputAction: ".inputaction.babasset",
   DataObject: ".dataobject.babasset",
@@ -1919,6 +1927,10 @@ export function assetHeaderDependencies(
       asset.header.guid && ["Class", "Graph"].includes(asset.header.type)
         ? [{ guid: asset.header.guid, classId: classIdFromClassAsset(asset) }] : [])) : []),
     ...inputRefs,
+    ...(assetType === "SaveGame" && Array.isArray(payload.fields) ? payload.fields.flatMap((field) => {
+      if (!field || typeof field !== "object" || field.type !== "asset") return [];
+      return (Array.isArray(field.defaultValue) ? field.defaultValue : [field.defaultValue]).filter((value: unknown): value is string => typeof value === "string" && !!value);
+    }) : []),
     ...(["Class", "Graph"].includes(assetType) ? assetVariableGuidsFromGraph(payload as unknown as import("@babylonslate/core").SerializedGraph) : []),
     ...(["Class", "Graph"].includes(assetType) ? renderTargetAssetGuidsFromGraph(payload as unknown as import("@babylonslate/core").SerializedGraph) : []),
     ...areaEmissionTextureGuids(payload),

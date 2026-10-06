@@ -99,4 +99,13 @@ describe("asset file suffix helpers", () => {
     );
     expect(assetFileSuffix("logic.graph.babasset")).toBe(".graph.babasset");
   });
+
+  it("keeps a Save Game's display name and container suffix when duplicating", () => {
+    const fileName = "PlayerProgress.savegame.babasset";
+    const stem = stripAssetFileSuffix(fileName);
+    expect(stem).toBe("PlayerProgress");
+    expect(`${nextCopyName(stem, ["PlayerProgress"])}${assetFileSuffix(fileName)}`).toBe(
+      "PlayerProgress_1.savegame.babasset",
+    );
+  });
 });

@@ -1,3 +1,4 @@
+import { saveGameVariableNames } from "../lib/save-game-property-rows";
 import { SceneLayerSwitcherFields } from "../components/scene-layer-switcher-fields";
 import { parseUIControl2DProperties } from "@babylonslate/core";
 
@@ -366,6 +367,10 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
   const actor = scene && actorId ? (findActor(scene, actorId) ?? null) : null;
   const actorDisplayNames = scene ? sceneActorDisplayNames(scene) : new Map<string, string>();
   const pickingCableTarget = actor?.components.find((component) => component.id === constraintTargetPick?.componentId)?.classId === "CableComponent";
+  const classSaveGraphs = useMemo(() => {
+    void registryEpoch;
+    return collectClassGraphsForPalette({ assets: assetRegistry?.list() ?? [], openDocuments: classDocuments, classIdForPath: classIdForGraphPath });
+  }, [assetRegistry, classDocuments, registryEpoch]);
   const prefabTemplates = useMemo(() => {
     void registryEpoch; // Registry headers mutate without replacing the registry.
     const assets = assetRegistry?.list() ?? [];
@@ -1195,6 +1200,8 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
             onPickAsset: setAssetPick,
             actorLabel: (targetId) => actorDisplayNames.get(targetId),
             actorComponents: (targetId) => scene.actors.find((candidate) => candidate.id === targetId)?.components ?? [],
+            actorVariableNames: () => saveGameVariableNames(actor.classId, classSaveGraphs, parentOf),
+            componentVariableNames: (classId) => saveGameVariableNames(classId, classSaveGraphs, parentOf),
             sceneLayerClasses,
             focusTargets: scene.actors.flatMap((candidate) => candidate.components.filter((entry) => isFocusTargetClass(entry.classId)).map((entry, index) => ({ value: entry.id, label: `${actorDisplayNames.get(candidate.id) ?? candidate.name} / ${humanizePropertyLabel(entry.classId.replace(/Component$/, ""))} ${index + 1}` }))),
             onPickActor: (componentId) => setConstraintTargetPick({ actorId: actor.id, componentId }),

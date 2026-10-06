@@ -16,6 +16,7 @@ import {
   PREVIEW_CONSOLE_CATALOG_MESSAGE,
   PREVIEW_CONSOLE_CONTEXT_MESSAGE,
   isPreviewConsoleRequest,
+  createPreviewSaveStorageClient,
 } from "@babylonslate/exporter";
 import {
   filesFromPreviewPack,
@@ -117,6 +118,13 @@ async function launchLoaded(
   // Session-scoped HUD feed; cleared with the page, same as the render loop.
   const memoryInterval = window.setInterval(refreshHostMemory, 1000);
   let stopped = false;
+  const previewSaves = previewMode() && window.parent !== window ? createPreviewSaveStorageClient({
+    source: () => window.parent,
+    origin: () => previewHostOrigin,
+    send: (message) => window.parent.postMessage(message, previewHostOrigin),
+  }) : null;
+  const receiveSaveMessage = (event: MessageEvent) => previewSaves?.receive(event);
+  if (previewSaves) window.addEventListener("message", receiveSaveMessage);
   let layoutObserver: ResizeObserver | null = null;
   const cleanupPage = () => {
     if (stopped) return;
@@ -125,6 +133,8 @@ async function launchLoaded(
     rootEl().dataset.booted = "false";
     const errors: unknown[] = [];
     for (const release of [
+      () => window.removeEventListener("message", receiveSaveMessage),
+      () => previewSaves?.dispose(),
       () => window.removeEventListener("message", onSessionMessage),
       () => window.clearInterval(memoryInterval),
       () => layoutObserver?.disconnect(),
@@ -139,6 +149,7 @@ async function launchLoaded(
     signal: startupAbort.signal,
     canvas,
     game,
+    saveStorage: previewSaves?.storage,
     traceByteBudget,
     onStopped: cleanupPage,
     onConsoleEvent: (command) => {

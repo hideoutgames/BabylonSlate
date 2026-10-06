@@ -1,3 +1,4 @@
+import { validateSaveGameDefinition, type SaveGameConfiguration } from "@babylonslate/core";
 import { dataTypeSchemas } from "@babylonslate/scripting";
 import type { DataAssetCatalogEntry } from "@babylonslate/core";
 import { areaEmissionTextureGuids, isInputAssetType, normalizeInputAssetPayload, renderEffectsAssetGuids } from "@babylonslate/core";
@@ -69,6 +70,8 @@ export function assetsFromIndexed(
 export type ExportPluginDescriptor = PluginGraphInput;
 
 export type CollectExportGameParams = {
+  projectId?: string;
+  saveGameSettings?: import("@babylonslate/core").SaveGameProjectSettings;
   project?: { name: string; version: string };
   startupSceneGuid: string | null;
   gameInstanceClass?: string | null;
@@ -272,6 +275,7 @@ export async function collectAndExportGame(
   const pluginEnabledGuids = new Set(pluginGraph.order.map((plugin) => plugin.pluginGuid));
   const closure = collectExportReachability({
     startupSceneGuid: params.startupSceneGuid,
+    saveGameDefinitionGuid: params.saveGameSettings?.definitionGuid,
     gameInstanceClass: params.gameInstanceClass,
     audioMixerGuid: params.audioMixerGuid,
     renderAssetGuids: renderEffectsAssetGuids(params.renderSettings.effects),
@@ -467,7 +471,21 @@ export async function collectAndExportGame(
   }
 
   params.onPhase?.("Writing Pack");
+  let saveGame: SaveGameConfiguration | undefined;
+  if (params.saveGameSettings?.definitionGuid) {
+    if (!params.projectId) return { ok: false, error: "Save Game requires a stable project ID." };
+    try {
+      saveGame = {
+        projectId: params.projectId,
+        definition: validateSaveGameDefinition(params.payloadByGuid?.(params.saveGameSettings.definitionGuid)),
+        defaultSlot: params.saveGameSettings.defaultSlot,
+        defaultProfile: params.saveGameSettings.defaultProfile,
+        preview: params.previewBuild === true,
+      };
+    } catch (error) { return { ok: false, error: `Save Game definition: ${error instanceof Error ? error.message : String(error)}` }; }
+  }
   const packed = await exportGame({
+    saveGame,
     project: params.project,
     mode,
     bundleDebugger,

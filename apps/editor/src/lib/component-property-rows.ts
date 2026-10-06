@@ -1,3 +1,4 @@
+import { saveGamePropertyRows } from "./save-game-property-rows";
 import { isUIControl2DClass } from "@babylonslate/core";
 import { uiControlPropertyRows } from "./ui-control-property-rows";
 import { normalizeWaterBody, normalizeWaterBuoyancy, normalizeWaterRemoval, WATER_REMOVAL_SHAPES, waterKindForClass } from "@babylonslate/core";
@@ -104,6 +105,8 @@ export type ComponentPropertyContext = {
   onPickAsset: (request: AssetPickRequest) => void;
   actorLabel?: (actorId: string) => string | undefined;
   actorComponents?: (actorId: string) => readonly SerializedComponent[];
+  actorVariableNames?: (actorId: string) => readonly string[];
+  componentVariableNames?: (classId: string) => readonly string[];
   onPickActor?: (componentId: string) => void;
   sceneLayerClasses?: readonly ClassPickerEntry[];
   focusTargets?: readonly { value: string; label: string }[];
@@ -497,6 +500,7 @@ export function componentPropertyRows(
   update: (property: string, value: unknown) => void,
   context: ComponentPropertyContext,
 ): PropertyRow[] {
+  if (component.classId === "SaveGameComponent") return saveGamePropertyRows(actorId, component, update, context);
   if (isUIControl2DClass(component.classId)) return uiControlPropertyRows(actorId, component, update, context, (key, label, types) => assetRow(actorId, component, key, label, types, update, context, `Pick ${label}`));
   if (isOverlayLayoutClass(component.classId)) return overlayLayoutPropertyRows(actorId, component, update, context.sceneLayerClasses);
   if (component.classId === "SplineComponent") {

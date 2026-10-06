@@ -30,6 +30,7 @@ export function stripAssetFileSuffix(fileName: string): string {
     .replace(/\.rendertarget\.babasset$/i, "")
     .replace(/\.inputaction\.babasset$/i, "")
     .replace(/\.inputaxis\.babasset$/i, "")
+    .replace(/\.savegame\.babasset$/i, "")
     .replace(/\.scene\.babasset$/i, "")
     .replace(/\.graph\.babasset$/i, "")
     .replace(/\.class\.babasset$/i, "")
@@ -61,6 +62,7 @@ export function assetFileSuffix(fileName: string): string {
   if (/\.rendertarget\.babasset$/i.test(fileName)) return ".rendertarget.babasset";
   if (/\.inputaction\.babasset$/i.test(fileName)) return ".inputaction.babasset";
   if (/\.inputaxis\.babasset$/i.test(fileName)) return ".inputaxis.babasset";
+  if (/\.savegame\.babasset$/i.test(fileName)) return ".savegame.babasset";
   if (/\.scene\.babasset$/i.test(fileName)) return ".scene.babasset";
   if (/\.graph\.babasset$/i.test(fileName)) return ".graph.babasset";
   if (/\.class\.babasset$/i.test(fileName)) return ".class.babasset";

@@ -566,6 +566,7 @@ export function DocumentWorkspace() {
           doc.ref.kind === "sound-attenuation" ||
           doc.ref.kind === "particle-emitter" ||
           doc.ref.kind === "particle-system" ||
+          doc.ref.kind === "save-game" ||
           doc.ref.kind === "water" ||
           doc.ref.kind === "render-target" ||
           doc.ref.kind === "render-target-texture" ||

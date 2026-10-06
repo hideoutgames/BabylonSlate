@@ -11,6 +11,7 @@ export const ASSET_DOCUMENT_KINDS = [
   "anim-graph",
   "behaviour-tree",
   "blackboard",
+  "save-game",
   "material",
   "material-function",
   "material-instance",
@@ -96,6 +97,8 @@ export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
       return "BehaviourTree";
     case "blackboard":
       return "Blackboard";
+    case "save-game":
+      return "SaveGame";
     case "material":
       return "Material";
     case "material-function":
@@ -200,6 +203,8 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
       return "behaviour-tree";
     case "Blackboard":
       return "blackboard";
+    case "SaveGame":
+      return "save-game";
     case "Material":
     case "Shader":
     case "ShaderGraph":
@@ -311,6 +316,8 @@ export function documentKindLabel(kind: AssetDocumentKind): string {
       return "Audio";
     case "input-action":
       return "Input Action";
+    case "save-game":
+      return "Save Game";
     case "input-axis":
       return "Input Axis";
     case "audio-mixer":
@@ -434,7 +441,7 @@ export function labelFromPath(path: string): string {
       .split("/")
       .pop()
       ?.replace(
-        /\.(inputaction|inputaxis|scene|scenelayer|graph|eui|ui|spriteanim|sprite|anim|shader|material|matfunc|class|tileset|tilemap|dataobject|datasheet|plugin|mixer|channel|atten|emitter|particlegraph|particles|skyboxcreator|rendertargettexture|rendertarget)\.(babasset|json)$/i,
+        /\.(inputaction|inputaxis|scene|scenelayer|graph|eui|ui|spriteanim|sprite|anim|shader|material|matfunc|class|tileset|tilemap|dataobject|datasheet|plugin|mixer|channel|atten|emitter|particlegraph|particles|skyboxcreator|rendertargettexture|rendertarget|savegame)\.(babasset|json)$/i,
         "",
       )
       .replace(/\.babasset$/i, "")

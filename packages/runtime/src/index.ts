@@ -2,6 +2,7 @@ export {
   createInProcessRuntime,
   type RuntimeDriver,
   type RuntimeDriverOptions,
+  type RuntimeSaveGameOptions,
 } from "./driver";
 export { replayTracePayload, rawInputFromTraceEvents } from "./trace-replay";
 export {

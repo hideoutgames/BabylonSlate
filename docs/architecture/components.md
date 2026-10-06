@@ -20,6 +20,8 @@ Scene documents pass `sceneMode` to the shared DockView catalog: Design uses the
 
 **Add Component → General → Movement** uses the shared catalog and compact `PropertyGrid` in scene and Class Details. Movement rows reuse numeric, boolean, and enum controls for speed, jumping, capsule dimensions and graph input conversion. Enabled includes graph setup help; Radius and Height explain world-unit capsule sizing. The Class/Prefab Inspector omits ineffective local Transform controls. Physics diagnostics identify conflicting components, and graph call descriptions explain input lifetime and release behavior.
 
+**Add Component → General → Save Game** reuses `PropertyGrid` boolean rows for transform/destruction selection and individual actor/component variable checkboxes, including inherited variables. `TypeVisualIcon` supplies the Save Game asset glyph across shared asset pickers, catalogs, and document tabs. See [Save Games](../save-games.md) for definition and preview-data tools.
+
 Numeric fields default to two displayed decimal places. `NumericDragField.precision` and numeric `PropertyRow.precision` opt into finer display without rounding stored values; Water Buoyancy Volume uses six places and a `0.0001 m³` scrub sensitivity so small displacements remain readable.
 
 ## Primitives (`@babylonslate/ui`)

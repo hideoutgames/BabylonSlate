@@ -21,6 +21,7 @@ export type ExportIndexedAsset = {
 
 export type ExportClosureInput = {
   startupSceneGuid: string | null;
+  saveGameDefinitionGuid?: string | null;
   /** Project Game Instance class id; packed even when scene settings omit it. */
   gameInstanceClass?: string | null;
   /** Project AudioMixer guid; packed even when no scene actor references it. */
@@ -68,6 +69,7 @@ export type GameAssetIndexEntry = {
 };
 
 export type GameManifest = {
+  saveGame?: import("@babylonslate/core").SaveGameConfiguration;
   /** Authored build identity; absent in legacy builds. */
   project?: { name: string; version: string };
   inputAssets?: import("@babylonslate/core").InputAssetDefinition[];
@@ -101,6 +103,7 @@ export type GameManifest = {
 };
 
 export type ExportGameOptions = {
+  saveGame?: import("@babylonslate/core").SaveGameConfiguration;
   project?: { name: string; version: string };
   inputAssets?: import("@babylonslate/core").InputAssetDefinition[];
   inputMappings?: ProjectInputSettings;

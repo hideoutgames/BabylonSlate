@@ -1,5 +1,7 @@
 # BabylonSlate Engine Plan
 
+**Save Games** adds typed definitions, project defaults, async script operations, optional selected actor persistence, and separate preview/player storage through the existing runtime and VFS boundaries. Two checked generations retain recovery data; schema migrations and preview inspection/reset/import/export support ongoing development. Verification and native/device limits are recorded in [Save Games](save-games.md); native game export remains outside the current web-only exporter.
+
 **Movement** gives an actor configurable ground movement, velocity control, jumping and airborne state through one `MovementComponent`. Graph functions convert and apply input and expose movement transition events. The same worker simulation serves Play and exported games in 3D and 2D world scenes. See [Movement](architecture/physics.md#movement-component).
 
 **Scene streaming** adds independent Scene instances through `SceneStreamingActor` and target-required NodeGraph nodes. The streaming component defines the instance origin; editor viewports show only its billboard and scene-name `Text3DComponent`. Play, Preview Build and exported games support async operations and simulation-blocking operations with per-instance state, progress, readiness and teardown. See [scene streaming](architecture/scene-editing.md#scene-streaming).

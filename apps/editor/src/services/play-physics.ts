@@ -165,6 +165,7 @@ export function resolvePreviewStartupGuid(options: {
 }
 
 export function playLoadControl(options: {
+  saveGame?: import("@babylonslate/core").SaveGameConfiguration;
   frameCap?: number;
   traceByteBudget?: number;
   renderSettings?: Partial<import("@babylonslate/core").RenderProjectSettings>;
@@ -207,6 +208,7 @@ export function playLoadControl(options: {
   });
   return {
     type: "load",
+    saveGame: options.saveGame,
     frameCap: options.frameCap,
     traceByteBudget: options.traceByteBudget,
     renderSettings: options.renderSettings,

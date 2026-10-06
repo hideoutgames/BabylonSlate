@@ -168,7 +168,7 @@ export function collectExportReachability(
     if (sceneRoot === startup) {
       for (const asset of sortedAssets) if (asset.type === "InputAction" || asset.type === "InputAxis") pending.push(asset.guid);
       for (const asset of sortedAssets) if (isSubsystemClassAsset(asset, hierarchy)) pending.push(asset.guid);
-      for (const ref of [input.gameInstanceClass, input.audioMixerGuid, ...(input.renderAssetGuids ?? [])]) {
+      for (const ref of [input.gameInstanceClass, input.audioMixerGuid, input.saveGameDefinitionGuid, ...(input.renderAssetGuids ?? [])]) {
         if (ref?.trim()) pending.push(ref.trim());
       }
     }
@@ -231,6 +231,13 @@ export function collectExportReachability(
       }
       const payload = input.payloadByGuid?.(asset.guid);
       if (payload) {
+        if (asset.type === "SaveGame" && typeof payload === "object" && "fields" in payload && Array.isArray(payload.fields)) {
+          for (const field of payload.fields as Array<{ type?: string; defaultValue?: unknown }>) {
+            if (field.type !== "asset") continue;
+            const values = Array.isArray(field.defaultValue) ? field.defaultValue : [field.defaultValue];
+            for (const value of values) if (typeof value === "string" && value) refs.add(value);
+          }
+        }
         if (["DataObject", "DataSheet", "Structure", "Enum"].includes(asset.type)) {
           for (const guid of dataAssetDependencies(asset.type, payload, dataClassReferences)) refs.add(guid);
         } else collectTypedRefs(payload, refs);

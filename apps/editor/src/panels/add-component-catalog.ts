@@ -68,6 +68,7 @@ function engineComponent(
 }
 
 export const ADDABLE_COMPONENT_CLASSES: readonly AddComponentItem[] = [
+  engineComponent("SaveGameComponent", "Save Game", "Save selected actor transforms and script variables at checkpoints", "General"),
   engineComponent(
     "MovementComponent",
     "Movement",
@@ -248,6 +249,8 @@ export function defaultPropertiesFor(
   if (classId === "WaterBuoyancyComponent") return { ...normalizeWaterBuoyancy({}), mass: 1 };
   if (classId === "WaterRemovalVolumeComponent") return { ...normalizeWaterRemoval({}) };
   switch (classId) {
+    case "SaveGameComponent":
+      return { saveTransform: true, persistDestruction: true, actorVariables: [], componentVariables: {} };
     case "MovementComponent":
       return { ...parseMovementProperties({}) };
     case "DynamicRuntimeMeshComponent":

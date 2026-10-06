@@ -2143,6 +2143,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       return collectAndExportGame({
         startupSceneGuid,
         project: exportDocument?.metadata,
+        projectId: projectService.guid ?? undefined,
+        saveGameSettings: exportDocument?.settings.saveGame,
         gameInstanceClass: exportDocument?.settings.gameInstanceClass ?? null,
         audioMixerGuid: exportDocument?.settings.audio.audioMixerGuid ?? null,
         occlusionEnabled:

@@ -205,6 +205,7 @@ const END_EVENT: EngineScriptEvent = {
 
 /** Game Instance lifecycle; GameSubsystem shares it for parity. */
 const GAME_INSTANCE_EVENTS: readonly EngineScriptEvent[] = [
+  { name: "On Game Loaded", eventType: "flow.event.gameLoaded", exportName: "onGameLoaded" },
   {
     name: "Scalability Changed",
     eventType: "flow.event.scalabilityChanged",
@@ -236,6 +237,7 @@ const GAME_INSTANCE_EVENTS: readonly EngineScriptEvent[] = [
 ];
 
 const SCENE_SUBSYSTEM_EVENTS: readonly EngineScriptEvent[] = [
+  { name: "On Game Loaded", eventType: "flow.event.gameLoaded", exportName: "onGameLoaded" },
   INIT_EVENT,
   TICK_EVENT,
   END_EVENT,
