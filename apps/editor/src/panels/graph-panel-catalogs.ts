@@ -46,7 +46,7 @@ export function useGraphPanelCatalogs() {
   const typeDocuments = useOpenDocumentsOfKinds(TYPE_KINDS);
   const inputDocuments = useOpenDocumentsOfKinds(INPUT_KINDS);
   const saveGameDocuments = useOpenDocumentsOfKinds(SAVE_GAME_KINDS);
-  const saveGameGuid = projectDocument?.settings.saveGame.definitionGuid;
+  const saveGameGuid = projectDocument?.settings.saveGame?.definitionGuid;
   const saveGameAssets = useMemo(() => {
     void registryEpoch;
     return (assetRegistry?.list() ?? []).filter((asset) => asset.header.guid === saveGameGuid && asset.header.type === "SaveGame");
