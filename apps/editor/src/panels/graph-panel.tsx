@@ -22,6 +22,7 @@ import { useValidation } from "../context/validation-context";
 import { useGraphEditing } from "../context/graph-editing-context";
 import { useAppSettings } from "../context/app-settings-context";
 import { useGraphSessionViewport } from "../lib/graph-session-viewport";
+import { applyDataGraphAssetPicks } from "../lib/data-graph";
 import { canRenameCustomEvent, customEventRenameError, functionLibraryShowsEventGraphEmpty, renameCustomEvent } from "../lib/class-members";
 import {
   classMemberSymbolsFromGraphs,
@@ -106,6 +107,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     hierarchy,
     inputAssets,
     materialDomains,
+    dataAssets,
   } = useGraphPanelCatalogs();
   const classId = doc?.ref.path ? classIdForGraphPath(doc.ref.path) : undefined;
   const graphContent = useMemo(
@@ -163,6 +165,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
       {
         parentOf,
         inputAssets,
+        dataAssets,
         structs: typeSchemas.structs,
         enums: typeSchemas.enums,
         classId,
@@ -183,6 +186,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     scriptInterfaces,
     typeSchemas,
     inputAssets,
+    dataAssets,
   ]);
 
   const assetGuid = doc?.ref.path ?? documentId;
@@ -232,7 +236,8 @@ export function GraphPanel(_props: IDockviewPanelProps) {
           }),
           enums: typeSchemas.enums,
           inputAssets,
-        structs: typeSchemas.structs,
+          dataAssets,
+          structs: typeSchemas.structs,
           materialDomains,
           parentOf,
           otherClassGraphs,
@@ -267,6 +272,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     scriptInterfaces,
     setDiagnostics,
     inputAssets,
+    dataAssets,
     typeSchemas,
     animEditorMode,
     materialDomains,
@@ -391,6 +397,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
             contextMenuItemsForNode={contextMenuItemsForNode}
             onChange={(next) => {
               if (!doc) return;
+              const edited = applyDataGraphAssetPicks(graph, next, dataAssets);
               const current = graphContent ?? { nodes: [], edges: [] };
               const merged: SerializedGraph = activeFunctionId
                 ? {
@@ -398,15 +405,15 @@ export function GraphPanel(_props: IDockviewPanelProps) {
                     functionGraphs: {
                       ...current.functionGraphs,
                       [activeFunctionId]: {
-                        nodes: next.nodes,
-                        edges: next.edges,
+                        nodes: edited.nodes,
+                        edges: edited.edges,
                       },
                     },
                   }
                 : {
-                    ...next,
-                    members: next.members ?? current.members,
-                    components: next.components ?? current.components,
+                    ...edited,
+                    members: edited.members ?? current.members,
+                    components: edited.components ?? current.components,
                     functionGraphs: current.functionGraphs,
                   };
               const commit = commitLogicGraph(doc.ref.kind, doc.content, merged);

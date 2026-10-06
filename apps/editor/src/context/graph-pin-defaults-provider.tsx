@@ -13,6 +13,7 @@ import { subclassClassEntries } from "../lib/component-property-rows";
 import { classParentLookup, filterInspectorPinPickerAssets } from "../lib/content-browser-helpers";
 import { assetPickerAllowedTypes, collectEnumMemberNames, pinDefaultPropertyRows } from "../lib/graph-inspector";
 import { MATERIAL_DOCUMENT_KINDS, useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
+import { dataGraphAssetCreateOptions } from "../lib/data-graph";
 
 const ENUM_KINDS = ["enum"] as const;
 
@@ -95,7 +96,8 @@ export function GraphPinDefaultEditor({ request, catalogs, editorGraph: hostEdit
       <AssetPicker open={activePick?.kind === "asset"} onOpenChange={(open) => { if (!open) setPick(null); }}
         assets={assets} allowedTypes={activePick?.kind === "asset"
           ? assetPickerAllowedTypes(activePick.assetType, request.nodeData.typeClassIds) : undefined}
-        createOptions={postProcess ? { materialDomain: "postProcess" } : undefined}
+        createOptions={postProcess ? { materialDomain: "postProcess" }
+          : dataGraphAssetCreateOptions(request.nodeType ?? "", request.pin.id, request.nodeData)}
         allowNone onPick={commitPick} data-testid="graph-pin-asset-picker" />
     </div>
   );

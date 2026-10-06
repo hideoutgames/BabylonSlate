@@ -73,10 +73,16 @@ export function structInstanceDefault(
   schemas?: TypeSchemas,
   visiting: ReadonlySet<string> = new Set(),
 ): Record<string, unknown> {
+  if (visiting.size > 64) return {};
   const result: Record<string, unknown> = {};
   for (const field of fields) {
     if (!field.name) continue;
-    result[field.name] = defaultValueForStructField(field, schemas, visiting);
+    Object.defineProperty(result, field.name, {
+      value: defaultValueForStructField(field, schemas, visiting),
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
   }
   return result;
 }
@@ -86,11 +92,10 @@ function defaultValueForStructField(
   schemas: TypeSchemas | undefined,
   visiting: ReadonlySet<string>,
 ): unknown {
-  if (field.defaultValue !== undefined) {
-    return field.container === "array" && Array.isArray(field.defaultValue)
-      ? [...field.defaultValue] : field.defaultValue;
-  }
+  if (field.defaultValue !== undefined) return structuredClone(field.defaultValue);
   const type = pinTypeForVariable(field);
+  // Structure defaults are persisted JSON, matching Class Map default entries.
+  if (type.kind === "map") return [];
   if (type.kind === "structRef" && type.guid) {
     if (type.guid === "engine:TagContainer") return { Tags: [] };
     if (visiting.has(type.guid)) return {};
