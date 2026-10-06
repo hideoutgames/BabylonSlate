@@ -1,4 +1,6 @@
 import { overlayAnchorBindings } from "./overlay-anchor-layout";
+import { SaveGameError, SaveGameService, type SaveGameServiceOptions } from "@babylonslate/core";
+import { SaveGameWorld } from "./save-game-world";
 import { RuntimeMaterialParameters } from "./runtime-material-parameters";
 import { SceneLayerFocusNavigation } from "./scene-layer-focus";
 import { focusLayoutEntry, revealFocusedElement } from "./scene-layer-focus-layout";
@@ -273,6 +275,9 @@ export interface RuntimeDriverOptions {
 }
 
 export interface RuntimeDriver {
+  configureSaveGame(options: RuntimeSaveGameOptions): SaveGameService;
+  getSaveGameService(): SaveGameService | undefined;
+  registerSaveActor(actor: BObject, persistentId?: string): void;
   readonly inputBindings: InputBindingControls;
   start(): void;
   stop(): void;
@@ -421,6 +426,9 @@ export interface RuntimeDriver {
   readonly lastPhysicsMs: number;
 }
 
+export type RuntimeSaveGameOptions = Omit<SaveGameServiceOptions,
+  "atBoundary" | "captureState" | "stageState" | "applyState" | "resetState" | "onGameLoaded">;
+
 export function createInProcessRuntime(
   options: RuntimeDriverOptions,
 ): RuntimeDriver {
@@ -486,6 +494,11 @@ type GameLifecycleHooks = {
 };
 
 class InProcessRuntime implements RuntimeDriver {
+  private saveGameService?: SaveGameService;
+  private saveGameWorld?: SaveGameWorld;
+  private saveBoundaryActive = false;
+  private readonly savedActors = new WeakSet<Actor>();
+  private pendingGameLoaded: (() => void) | null = null;
   private readonly world: World;
   private snapshots: SeqLockSnapshotPair;
   private readonly input = new InputRingBuffer(512);
@@ -1154,6 +1167,9 @@ class InProcessRuntime implements RuntimeDriver {
         });
       },
       getActors: () => this.world.getActors(),
+      registerSaveActor: (actor, persistentId) => this.registerSaveActor(actor, persistentId),
+      getSaveActorId: (actor) => this.saveGameWorld?.persistentId(actor) ?? actor.guid,
+      resolveSaveActor: (id) => this.saveGameWorld?.findActor(id) ?? this.world.findActor(id),
       attachToBone: (actor, target, boneName) => {
         const slotId = this.slotByGuid.get(actor.guid);
         const targetSlotId = target ? this.slotByGuid.get(target.guid) : null;
@@ -2478,6 +2494,7 @@ class InProcessRuntime implements RuntimeDriver {
     const components = this.scriptHost.scriptsFor(options.classId)
       .find((script) => script.components !== undefined)?.components;
     if (components) attachSerializedComponents(this.world, actor, components, { freshIds: true });
+    this.savedActors.add(actor);
     try {
       this.realizeActor(actor);
     } catch (error) {
@@ -2497,7 +2514,7 @@ class InProcessRuntime implements RuntimeDriver {
   };
 
   private canTickScene(): boolean {
-    return !this.sceneWorkBlocked && !this.bootLoading && !this.stopped && this.streamBlockingCount === 0;
+    return !this.saveBoundaryActive && !this.sceneWorkBlocked && !this.bootLoading && !this.stopped && this.streamBlockingCount === 0;
   }
 
   private hasReadyLayers(): boolean {
@@ -2541,6 +2558,7 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private canRunOwner(owner: BObject): boolean {
+    if (this.saveBoundaryActive) return false;
     if (owner instanceof GameSubsystem) return this.canRunGameSubsystem(owner);
     // Callable from creation until its On End returns, even while its Scene
     // prepares or Play stops (a sibling's On End may still call it); its own
@@ -2603,6 +2621,9 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private runOwnerCreation(owner: BObject, create: () => void): void {
+    // Restored actors already contain checkpoint values. Begin Play must not
+    // overwrite them; On Game Loaded is their post-restoration lifecycle hook.
+    if (this.saveBoundaryActive) { this.createdScriptObjects.add(owner); return; }
     this.runOwnerAction(owner, () => {
       // Spawned before a SceneSubsystem existed: it hears about it now.
       if (owner instanceof Actor) this.world.notifyActorEnteringPlay(owner);
@@ -2613,6 +2634,7 @@ class InProcessRuntime implements RuntimeDriver {
 
   private runOwnerDestroyed(owner: BObject, destroy: () => void): void {
     this.pendingOwnerActions.delete(owner);
+    if (this.saveBoundaryActive) return;
     if (this.createdScriptObjects.has(owner)) this.guardScript(destroy);
   }
 
@@ -4930,6 +4952,7 @@ class InProcessRuntime implements RuntimeDriver {
 
   private realizeActor(actor: Actor, checkpoint: () => void = () => {}): void {
     checkpoint();
+    if (!this.saveBoundaryActive) this.saveGameWorld?.register(actor, this.savedActors.has(actor));
     if (this.world.classRegistry.isA(actor.classId, "RenderTargetCapture") && !captureComponent(actor) && !actor.sceneLayerId) {
       attachSerializedComponents(this.world, actor, [{
         id: `${actor.guid}:capture`, classId: "RenderTargetCaptureComponent", properties: createDefaultRenderTargetCaptureProperties(),
@@ -5561,6 +5584,90 @@ class InProcessRuntime implements RuntimeDriver {
     this.tryCompleteSceneLoad();
   }
 
+  configureSaveGame(options: RuntimeSaveGameOptions): SaveGameService {
+    if (this.saveGameService) throw new SaveGameError("invalid", "Save Game is already configured for this session.");
+    const state = new SaveGameWorld({
+      world: this.world,
+      sceneId: () => this.world.currentScene?.assetGuid ?? this.playSceneGuid,
+      eligible: (actor) => !actor.sceneLayerId && !this.actorStream.has(actor),
+      isSpawned: (actor) => this.savedActors.has(actor),
+      prepare: (id, classId, spawned) => {
+        if (!spawned) {
+          const scene = this.sceneLibrary.get(this.world.currentScene?.assetGuid ?? this.playSceneGuid);
+          const row = scene?.actors.find((actor) => actor.id === id && actor.classId === classId);
+          return row ? createActorFromSerialized(this.world, row, this.sceneActorHooks) : null;
+        }
+        if (!this.canSpawnActorClass(classId) || !this.scriptHost.hooksFor(classId)) return null;
+        const actor = this.world.createActor({ guid: id, classId, hooks: this.sceneActorHooks(classId) });
+        this.scriptHost.bindInterfaceHandlers(actor);
+        const components = this.scriptHost.scriptsFor(classId).find((script) => script.components !== undefined)?.components;
+        if (components) attachSerializedComponents(this.world, actor, components, { freshIds: true });
+        this.savedActors.add(actor);
+        return actor;
+      },
+      realize: (actor) => this.realizeActor(actor),
+      remove: (actor) => this.removeOwnedActor(actor),
+      synchronize: (actors) => {
+        this.physicsSync.syncFromWorld(this.world);
+        for (const actor of actors) this.physicsSync.teleportActor(actor, this.world);
+        this.publishSnapshot();
+      },
+    });
+    this.saveGameWorld = state;
+    for (const actor of this.world.getActors()) state.register(actor, this.savedActors.has(actor));
+    const service = new SaveGameService({
+      ...options,
+      atBoundary: async (operation) => {
+        // Promise scheduling enters after the entire synchronous tick, including
+        // World's deferred spawn/destroy flush, even when called by a Tick graph.
+        await Promise.resolve();
+        if (this.stopped) throw new SaveGameError("unavailable", "The game session has stopped.");
+        if (this.sceneWorkBlocked || this.streamBlockingCount > 0 || (this.realization && !this.realization.finished)) {
+          throw new SaveGameError("unavailable", "Wait for scene loading to finish before saving or loading.");
+        }
+        this.saveBoundaryActive = true;
+        try { return await operation(); }
+        finally {
+          this.saveBoundaryActive = false;
+          const loaded = this.pendingGameLoaded;
+          this.pendingGameLoaded = null;
+          if (!this.stopped) {
+            loaded?.();
+            this.flushOwnerActions();
+          }
+        }
+      },
+      captureState: () => state.capture(),
+      stageState: (saved) => state.stage(saved),
+      applyState: (staged) => state.apply(staged),
+      resetState: () => state.reset(),
+      onGameLoaded: (info) => {
+        this.pendingGameLoaded = () => {
+          const owners: Array<BObject | null> = [this.world.gameInstance, this.world.currentScene,
+            ...this.world.getGameSubsystems(), ...this.world.getSceneSubsystems(),
+            ...this.world.getActors().flatMap((actor) => [actor, ...actor.components])];
+          for (const owner of owners) {
+            if (owner && !owner.destroyed) this.guardScript(() =>
+              this.scriptHost.invokeEvent(owner.classId, "onGameLoaded", owner, { ...info }));
+          }
+        };
+      },
+    });
+    this.saveGameService = service;
+    this.scriptHost.setSaveGameService(service);
+    return service;
+  }
+
+  getSaveGameService(): SaveGameService | undefined { return this.saveGameService; }
+
+  registerSaveActor(actor: BObject, persistentId?: string): void {
+    if (!this.saveGameWorld) throw new SaveGameError("unavailable", "Select a default Save Game definition in Project Settings.");
+    if (!(actor instanceof Actor) || actor.world !== this.world || actor.destroyed) {
+      throw new SaveGameError("invalid", "Register a live actor from this game session.");
+    }
+    this.saveGameWorld.register(actor, this.savedActors.has(actor), persistentId);
+  }
+
   start(): void {
     if (this.stopped) return;
     this.running = true;
@@ -5651,7 +5758,7 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   tick(): void {
-    if (!this.running || this.paused || this.streamBlockingCount > 0 || this.processingTick) return;
+    if (!this.running || this.paused || this.saveBoundaryActive || this.streamBlockingCount > 0 || this.processingTick) return;
     this.processingTick = true;
     try {
       this.runTick();
