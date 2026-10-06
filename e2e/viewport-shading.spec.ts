@@ -80,7 +80,8 @@ test("Emissive surface stays self-lit on a curved mesh without scene lights", as
   const graph = page.getByTestId("material-graph-editor");
   await graph.locator('.react-flow__node[data-id="baseColor"]').click();
   await page.getByTestId("property-color").fill("#000000");
-  await graph.locator('.react-flow__node[data-id="output"]').click();
+  await graph.locator('.react-flow__node[data-id="output"]').getByText("Material Output", { exact: true }).click();
+  await expect(page.getByTestId("property-emissive")).toBeVisible();
   await page.getByTestId("property-emissive").fill("#008000");
   await saveAllIfEnabled(page);
   const mesh = createMeshComponent("emissive-mesh", "sphere");
@@ -131,7 +132,8 @@ test("Emissive surface stays self-lit on a curved mesh without scene lights", as
     .toBeGreaterThan(500);
   await page.getByTestId("play-overlay-close").click();
   await openAssetFromBrowser(page, materialPath);
-  await graph.locator('.react-flow__node[data-id="output"]').click();
+  await graph.locator('.react-flow__node[data-id="output"]').getByText("Material Output", { exact: true }).click();
+  await expect(page.getByTestId("property-emissive")).toBeVisible();
   await page.getByTestId("property-emissive").fill("#000000");
   await saveAllIfEnabled(page);
   await openMainScene(page);

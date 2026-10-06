@@ -27,6 +27,7 @@ export const DEFAULT_FUNCTION_PINS: GraphClassMemberPin[] = [
 ];
 
 export const NATIVE_CLASS_EVENT_TYPES = [
+  "flow.event.gameLoaded",
   "flow.event.scalabilityChanged",
   "flow.event.beginPlay",
   "flow.event.tick",
@@ -54,7 +55,7 @@ export const LINEAGE_NATIVE_EVENT_TYPES: ReadonlySet<string> = new Set(
   ).filter(
     (eventType) =>
       eventType !== "flow.event.tick" &&
-      eventType !== "flow.event.scalabilityChanged",
+      eventType !== "flow.event.scalabilityChanged" && eventType !== "flow.event.gameLoaded",
   ),
 );
 
@@ -82,6 +83,7 @@ export const COLLISION_EVENT_TYPE_IDS = [
 
 const NATIVE_EVENT_TITLES: Record<string, string> = {
   "flow.event.scalabilityChanged": "Event Scalability Changed",
+  "flow.event.gameLoaded": "Event On Game Loaded",
   "flow.event.beginPlay": "Event Begin Play",
   "flow.event.tick": "Event Tick",
   "flow.event.destroyed": "Event On Actor Destroyed",
@@ -96,6 +98,10 @@ const NATIVE_EVENT_TITLES: Record<string, string> = {
   "flow.event.streamedSceneUnloaded": "Event On Streamed Scene Unloaded",
   "flow.event.sceneLayerAdded": "Event On Scene Layer Added",
   "flow.event.sceneLayerRemoved": "Event On Scene Layer Removed",
+  "flow.event.sceneLayerActorSwitching": "Event On Scene Layer Actor Switching",
+  "flow.event.sceneLayerActorSwitched": "Event On Scene Layer Actor Switched",
+  "flow.event.sceneLayerActorSwitchedTo": "Event On Scene Layer Actor Switched To",
+  "flow.event.sceneLayerActorSwitchedFrom": "Event On Scene Layer Actor Switched From",
   "flow.event.sceneActorSpawned": "Event On Scene Actor Spawned",
   "flow.event.sceneActorDestroyed": "Event On Scene Actor Destroyed",
   "flow.event.hit": "Event On Hit",
@@ -108,6 +114,15 @@ const NATIVE_EVENT_TITLES: Record<string, string> = {
   "flow.event.onPressEnd": "Event On Press End",
   "flow.event.textChanged": "Event On Text Changed",
   "flow.event.audioFinished": "Event On Audio Finished",
+  "flow.event.uiValueChanged": "Event On Value Changed",
+  "flow.event.uiRangeChanged": "Event On Range Changed",
+  "flow.event.uiCheckedChanged": "Event On Checked Changed",
+  "flow.event.uiTextChanged": "Event On Text Changed",
+  "flow.event.uiTextSubmitted": "Event On Text Submitted",
+  "flow.event.uiSelectionChanged": "Event On Selection Changed",
+  "flow.event.focusEnter": "Event On Focus Enter",
+  "flow.event.focusLeave": "Event On Focus Leave",
+  "flow.event.focusActivate": "Event On Focus Activate",
   "flow.event.movementStarted": "Event On Movement Started",
   "flow.event.movementStopped": "Event On Movement Stopped",
   "flow.event.movementJumped": "Event On Movement Jumped",
@@ -456,6 +471,8 @@ export function isScriptCatalogNodeAllowed(
   const lineageEvents = lineageNativeEventTypes(chain);
   if (nodeId === GET_GAME_INSTANCE_NODE_ID) return !isEditorUtilityChain(chain);
   if (nodeId === "flow.event.scalabilityChanged") return !options?.animationGraphHost && (chain.includes("Actor") || chain.includes("ActorComponent") || lineageEvents.has(nodeId));
+  if (nodeId === "flow.event.gameLoaded") return !options?.animationGraphHost && !isEditorUtilityChain(chain) &&
+    (chain.includes("Actor") || chain.includes("ActorComponent") || chain.includes("Scene") || chain.includes("SceneSubsystem") || lineageEvents.has(nodeId));
   const isActorEvent = (ACTOR_EVENT_TYPE_IDS as readonly string[]).includes(nodeId);
   if (LINEAGE_NATIVE_EVENT_TYPES.has(nodeId)) {
     return lineageEvents.has(nodeId);

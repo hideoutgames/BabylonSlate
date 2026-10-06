@@ -10,6 +10,7 @@ describe("nativeEventStubs", () => {
   it("lists Actor lifecycle and Scalability events", () => {
     const stubs = nativeEventStubs({ parentClass: "Actor" });
     expect(stubs.map((stub) => stub.eventType)).toEqual([
+      "flow.event.gameLoaded",
       "flow.event.scalabilityChanged",
       "flow.event.beginPlay",
       "flow.event.tick",
@@ -19,6 +20,7 @@ describe("nativeEventStubs", () => {
 
   it("defaults to Actor events when no parent class is given", () => {
     expect(nativeEventStubs().map((stub) => stub.eventType)).toEqual([
+      "flow.event.gameLoaded",
       "flow.event.scalabilityChanged",
       "flow.event.beginPlay",
       "flow.event.tick",
@@ -28,7 +30,7 @@ describe("nativeEventStubs", () => {
 
   it("exposes lifecycle events on ActorComponent descendants without Actor collision events", () => {
     const options = { parentClass: "Counter", parentOf: (id: string) => id === "Counter" ? "ActorComponent" : id === "ActorComponent" ? "BObject" : null };
-    expect(nativeEventStubs(options).map((stub) => stub.eventType)).toEqual(["flow.event.scalabilityChanged", "flow.event.beginPlay", "flow.event.tick", "flow.event.destroyed"]);
+    expect(nativeEventStubs(options).map((stub) => stub.eventType)).toEqual(["flow.event.gameLoaded", "flow.event.scalabilityChanged", "flow.event.beginPlay", "flow.event.tick", "flow.event.destroyed"]);
     for (const event of nativeEventStubs(options)) expect(isScriptCatalogNodeAllowed(event.eventType, options)).toBe(true);
     expect(isScriptCatalogNodeAllowed("flow.event.hit", options)).toBe(false);
   });
@@ -41,6 +43,7 @@ describe("nativeEventStubs", () => {
     expect(
       nativeEventStubs({ parentClass: "GameInstance" }).map((stub) => stub.eventType),
     ).toEqual([
+      "flow.event.gameLoaded",
       "flow.event.scalabilityChanged",
       "flow.event.init",
       "flow.event.tick",
@@ -111,6 +114,7 @@ describe("nativeEventStubs", () => {
 
     it("gives a GameSubsystem class exactly the Game Instance events", () => {
       expect(nativeEventStubs(game).map((stub) => stub.eventType)).toEqual([
+        "flow.event.gameLoaded",
         "flow.event.scalabilityChanged",
         "flow.event.init",
         "flow.event.tick",
@@ -124,6 +128,7 @@ describe("nativeEventStubs", () => {
 
     it("gives a SceneSubsystem subclass Init, Tick, End and the scene events", () => {
       expect(nativeEventStubs(scene).map((stub) => stub.name)).toEqual([
+        "Event On Game Loaded",
         "Event On Init",
         "Event Tick",
         "Event On End",
@@ -260,16 +265,19 @@ describe("nativeEventStubs", () => {
     ).toBe(false);
   });
 
-  it("does not list overlay mouse events as SceneLayerActor natives", () => {
+  it("lists actor selection events but no component mouse events as SceneLayerActor natives", () => {
     expect(
       nativeEventStubs({ parentClass: "SceneLayerActor" }).map(
         (stub) => stub.eventType,
       ),
     ).toEqual([
+      "flow.event.gameLoaded",
       "flow.event.scalabilityChanged",
       "flow.event.beginPlay",
       "flow.event.tick",
       "flow.event.destroyed",
+      "flow.event.sceneLayerActorSwitchedTo",
+      "flow.event.sceneLayerActorSwitchedFrom",
     ]);
     expect(
       isScriptCatalogNodeAllowed("flow.event.onClick", {
@@ -279,6 +287,18 @@ describe("nativeEventStubs", () => {
     expect(
       isScriptCatalogNodeAllowed("flow.event.onClick", { parentClass: "Actor" }),
     ).toBe(false);
+  });
+
+  it("offers switcher events only on the switcher lineage with readable titles", () => {
+    const parents: Record<string, string> = { CustomMenu: "SceneLayerActorSwitcher", SceneLayerActorSwitcher: "SceneLayerActor", SceneLayerActor: "Actor", Actor: "BObject" };
+    const options = { parentClass: "CustomMenu", parentOf: (id: string) => parents[id] };
+    const events = nativeEventStubs(options);
+    expect(events).toContainEqual({ eventType: "flow.event.sceneLayerActorSwitching", name: "Event On Scene Layer Actor Switching" });
+    expect(events).toContainEqual({ eventType: "flow.event.sceneLayerActorSwitched", name: "Event On Scene Layer Actor Switched" });
+    expect(events).toContainEqual({ eventType: "flow.event.sceneLayerActorSwitchedTo", name: "Event On Scene Layer Actor Switched To" });
+    expect(isScriptCatalogNodeAllowed("flow.event.sceneLayerActorSwitching", options)).toBe(true);
+    expect(isScriptCatalogNodeAllowed("flow.event.sceneLayerActorSwitching", { parentClass: "SceneLayerActor" })).toBe(false);
+    expect(isScriptCatalogNodeAllowed("flow.event.sceneLayerActorSwitchedTo", { parentClass: "Actor" })).toBe(false);
   });
 
   it("lists no native events for FunctionLibrary and EditorFunctionLibrary", () => {

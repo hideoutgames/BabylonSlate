@@ -87,6 +87,8 @@ export interface TreeViewProps {
   /** When set, every listed id is highlighted; otherwise `selectedId`. */
   selectedIds?: readonly string[];
   onSelect?: (id: string, options?: TreeSelectOptions) => void;
+  /** Pickers move focus with arrows and commit selection only with Enter/Space. */
+  selectionFollowsFocus?: boolean;
   onToggleExpanded?: (id: string) => void;
   /**
    * Drop `dragId` relative to `targetId`. `into` (default) nests under the row;
@@ -154,6 +156,7 @@ export function TreeView({
   selectedId = null,
   selectedIds,
   onSelect,
+  selectionFollowsFocus = true,
   onToggleExpanded,
   onReparent,
   onExternalDrop,
@@ -180,6 +183,23 @@ export function TreeView({
     () => new Map(nodes.map((node, index) => [node.id, index])),
     [nodes],
   );
+  const previousSelectedId = useRef(selectedId);
+  useEffect(() => {
+    if (previousSelectedId.current === selectedId) return;
+    previousSelectedId.current = selectedId;
+    setActiveId(selectedId ?? null);
+    const index = selectedId == null ? undefined : indexById.get(selectedId);
+    const element = containerRef.current;
+    if (index === undefined || !element || element.clientHeight <= 0) return;
+    // External Inspector/validation selection reveals its row without stealing
+    // focus. Picker arrows retain their own destination until selection changes.
+    const top = index * rowHeight;
+    if (top < element.scrollTop) element.scrollTop = top;
+    else if (top + rowHeight > element.scrollTop + element.clientHeight) {
+      element.scrollTop = top + rowHeight - element.clientHeight;
+    }
+    setScrollTop(element.scrollTop);
+  }, [selectedId, indexById, rowHeight]);
   const activeKey = activeId ?? selectedId;
   const activeIndex = Math.max(
     0,
@@ -277,8 +297,10 @@ export function TreeView({
           container.scrollTop = top + rowHeight - container.clientHeight;
         setScrollTop(container.scrollTop);
       }
-      if (event.shiftKey) onSelect?.(node.id, { range: true });
-      else if (!event.ctrlKey && !event.metaKey) onSelect?.(node.id);
+      if (selectionFollowsFocus) {
+        if (event.shiftKey) onSelect?.(node.id, { range: true });
+        else if (!event.ctrlKey && !event.metaKey) onSelect?.(node.id);
+      }
     };
     if (event.key === "ArrowDown")
       select(Math.min(nodes.length - 1, activeIndex + 1));

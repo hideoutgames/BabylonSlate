@@ -1,3 +1,5 @@
+import { createUnavailableEditorDataApi, type EditorDataApi } from "@babylonslate/scripting";
+import { RuntimeDataCatalog, type RuntimeDataApi } from "./data-catalog";
 import { emptyWaterSample, parseDeformerProperties, updateDeformerProperties, DEFORMER_PROPERTY_KEYS, DEFORMER_MAX_COORDINATE, type WaterSample } from "@babylonslate/core";
 import { createDefaultRenderTargetCaptureProperties, type RenderTargetMode, type RenderTargetCaptureProperty } from "@babylonslate/core";
 import { captureActorReferences, captureComponent, captureProperties, setCaptureProperty } from "./render-targets";
@@ -65,6 +67,13 @@ import type { TweenValueType } from "@babylonslate/core";
 import type { TweenReference, TweenRequest } from "./tween-runtime";
 import { tweenOwnerAlive } from "./tween-runtime";
 import { isReadOnlyTweenProperty, propertyTweenReference, tweenStorageValue } from "./tween-targets";
+import { cloneSaveGameValue, SaveGameError, type SaveGameService, type SaveGameValue,
+  type SaveGameOptions, type SaveGameResult, type SaveGameInfo, type SaveGameMigration,
+  type SaveGameMigrationData } from "@babylonslate/core";
+import { isUIControl2DClass } from "@babylonslate/core";
+
+const EMPTY_DATA = new RuntimeDataCatalog();
+const UNAVAILABLE_EDITOR_DATA = createUnavailableEditorDataApi();
 
 export type AnimGraphControl = {
   getVariable(name: string): unknown;
@@ -81,6 +90,14 @@ export type ScriptColor = { x: number; y: number; z: number; w: number };
  * node from a later phase runs instead of throwing.
  */
 export interface ScriptHostServices {
+  saveGame?: SaveGameService;
+  registerSaveActor?(actor: BObject, persistentId?: string): void;
+  getSaveActorId?(actor: Actor): string;
+  resolveSaveActor?(id: string): Actor | undefined;
+  /** Read-only session data, shared by runtime and editor utility graphs. */
+  data?: RuntimeDataApi;
+  /** Explicit editor-only capability; absent in every game runtime. */
+  editorData?: EditorDataApi;
   /** Session seed shared with the world and trace metadata. */
   seed?: number;
   /** Whether an object may receive authored calls during its owner's load. */
@@ -182,6 +199,8 @@ export interface ScriptHostServices {
   ): SceneLayer | null;
   removeSceneLayer?(layerGuid: string): void;
   clearSceneLayers?(): void;
+  switchSceneLayerActor?(target: unknown, index: unknown): Actor | null;
+  getCurrentSceneLayerActor?(target: unknown): Actor | null;
   setFocusTarget?(target: unknown): boolean;
   clearFocusTarget?(target: unknown): void;
   registerSceneLayerPostProcess?(
@@ -225,6 +244,7 @@ export interface ScriptHostServices {
   captureRenderTarget?(target: Actor): void;
   updateIllumination?(target: unknown): void;
   paint2D?(component: ActorComponent, operation: string, args: Record<string, unknown>): boolean;
+  uiControlFunction?(component: ActorComponent, name: string, args: Record<string, unknown>): boolean;
   text2DAppear?(component: ActorComponent, operation: "triggerAppear" | "play" | "playReverse"): void;
   text2DAppearProgress?(component: ActorComponent): number;
   refreshComponent?(component: ActorComponent, propertyName?: string): void;
@@ -246,6 +266,20 @@ export interface ScriptHostServices {
 }
 
 export interface ScriptContext {
+  getSaveData<TData extends object = Record<string, SaveGameValue>>(): TData;
+  getSaveField(fieldId: string, type?: string, array?: boolean): unknown;
+  setSaveField(fieldId: string, value: unknown, type?: string, array?: boolean): void;
+  newGame(): Promise<SaveGameResult<Record<string, SaveGameValue>>>;
+  saveGame(options?: SaveGameOptions): Promise<SaveGameResult<SaveGameInfo>>;
+  loadGame(options?: SaveGameOptions): Promise<SaveGameResult<SaveGameInfo>>;
+  listSaves(options?: { profile?: string }): Promise<SaveGameResult<SaveGameInfo[]>>;
+  deleteSave(options?: SaveGameOptions): Promise<SaveGameResult<void>>;
+  registerSaveActor(actor: BObject | null, persistentId?: string): void;
+  registerSaveMigration(fromVersion: number, migrate: SaveGameMigration | string): void;
+  getSaveMigrationField(fieldId: string, type?: string, array?: boolean): unknown;
+  setSaveMigrationField(fieldId: string, value: unknown, type?: string, array?: boolean): void;
+  data: RuntimeDataApi;
+  editorData: EditorDataApi;
   inputBindings?: InputBindingControls;
   getInputState?: (input: InputTypeValue) => InputValueState | null;
   self: BObject | null;
@@ -611,6 +645,8 @@ type BtScriptExtras = Pick<
 >;
 
 export type ScriptExtras = Partial<BtScriptExtras> & {
+  /** Staged migration state follows nested function/library calls. */
+  saveMigrationData?: SaveGameMigrationData;
   animFacts?: AnimStateFacts;
   variableStore?: VariableStore;
   /** Static library contexts have no Self; their tweens retain the calling owner's lifetime. */
@@ -654,6 +690,32 @@ export class ScriptHost {
   constructor(services: ScriptHostServices) {
     this.services = services;
     this.rng = createSeededRng(services.seed ?? 1);
+  }
+
+  /** The driver installs persistence before authored Init/Begin Play hooks run. */
+  setSaveGameService(service: SaveGameService | undefined): void {
+    this.services.saveGame = service;
+  }
+
+  private saveGameService(): SaveGameService {
+    if (!this.services.saveGame) throw new SaveGameError("unavailable", "Select a default Save Game in Project Settings before using save data.");
+    return this.services.saveGame;
+  }
+
+  /** Migration exceptions must propagate to the transaction, unlike ordinary events. */
+  private async invokeSaveMigration(self: BObject, event: string, snapshot: SaveGameMigrationData): Promise<void> {
+    if (self.destroyed) throw new SaveGameError("incompatible", "The registered save migration owner no longer exists.");
+    const loaded = this.eventScriptsFor(self.classId, event, self);
+    if (!loaded) throw new SaveGameError("incompatible", `Save migration event “${event}” is missing.`);
+    for (const entry of loaded) {
+      for (const point of entry.script.entryPoints) {
+        if (point.event !== event) continue;
+        const handler = entry.exports[point.name];
+        if (typeof handler !== "function") continue;
+        const context = this.createContext(self, 0, 0, { saveMigrationData: snapshot }, undefined, { saveMigrationData: snapshot }, entry.script.assetGuid);
+        await this.invokeOwned(self, () => (handler as (ctx: ScriptContext) => unknown)(context));
+      }
+    }
   }
 
   async load(script: CompiledScript): Promise<void> {
@@ -1074,7 +1136,52 @@ export class ScriptHost {
     const services = this.services;
     const store = extras?.variableStore ?? self;
     const tweenOwner = self ?? extras?.tweenOwner ?? null;
+    const unavailable = async <T>(): Promise<SaveGameResult<T>> => ({ ok: false, error: {
+      code: "unavailable", message: "Select a default Save Game in Project Settings before using saves.",
+    } });
+    const readField = (value: SaveGameValue, type?: string, array?: boolean): unknown => {
+      if (array && Array.isArray(value)) return value.map((entry) => readField(entry, type));
+      return type === "actor" && typeof value === "string" ? (services.resolveSaveActor?.(value) ?? services.findActor?.(value) ?? null) : value;
+    };
+    const writeField = (value: unknown, type?: string, array?: boolean): SaveGameValue => {
+      if (array && Array.isArray(value)) return value.map((entry) => writeField(entry, type));
+      return cloneSaveGameValue(type === "actor" && value instanceof Actor ? services.getSaveActorId?.(value) ?? value.guid : value);
+    };
+    const migrationData = (): SaveGameMigrationData => {
+      const data = extras?.saveMigrationData ?? commandArgs.saveMigrationData as SaveGameMigrationData | undefined;
+      if (!data) throw new SaveGameError("invalid", "Migration fields are available only inside Event Save Migration.");
+      return data;
+    };
     const context: ScriptContext = {
+      getSaveData: <TData extends object>() => this.saveGameService().getSaveData() as TData,
+      getSaveField: (id, type, array) => readField(this.saveGameService().getField(id), type, array),
+      setSaveField: (id, value, type, array) => this.saveGameService().setField(id, writeField(value, type, array)),
+      newGame: () => services.saveGame?.newGame() ?? unavailable(),
+      saveGame: (options) => services.saveGame?.saveGame(options) ?? unavailable(),
+      loadGame: (options) => services.saveGame?.loadGame(options) ?? unavailable(),
+      listSaves: (options) => services.saveGame?.listSaves(options) ?? unavailable(),
+      deleteSave: (options) => services.saveGame?.deleteSave(options) ?? unavailable(),
+      registerSaveActor: (actor, persistentId) => {
+        if (!(actor instanceof Actor) || actor.destroyed) throw new SaveGameError("invalid", "Register Save Actor requires a live actor.");
+        if (!services.registerSaveActor) throw new SaveGameError("unavailable", "Actor persistence is not available in this host.");
+        services.registerSaveActor(actor, persistentId);
+      },
+      registerSaveMigration: (fromVersion, migrate) => {
+        const service = this.saveGameService();
+        if (typeof migrate === "function") service.registerMigration(fromVersion, migrate);
+        else {
+          if (!self) throw new SaveGameError("invalid", "Visual save migrations require an owning object.");
+          service.registerMigration(fromVersion, (snapshot) => this.invokeSaveMigration(self, migrate, snapshot));
+        }
+      },
+      // Actor identities remain IDs here: staged actors do not exist yet.
+      getSaveMigrationField: (id) => migrationData().fields[id] ?? null,
+      setSaveMigrationField: (id, value) => {
+        const fields = cloneSaveGameValue({ [id]: value }) as Record<string, SaveGameValue>;
+        Object.assign(migrationData().fields, fields);
+      },
+      data: services.data ?? EMPTY_DATA,
+      editorData: services.editorData ?? UNAVAILABLE_EDITOR_DATA,
       self,
       deltaSeconds,
       tickIndex,
@@ -1523,6 +1630,7 @@ export class ScriptHost {
       },
       invokeFunction: (target, functionName, fnArgs) => {
         if (typeof functionName !== "string" || !functionName) {
+          if (extras?.saveMigrationData) throw new SaveGameError("incompatible", "A save migration called an invalid function.");
           return {};
         }
         let loaded: LoadedScript[] | undefined;
@@ -1531,11 +1639,17 @@ export class ScriptHost {
           loaded = this.functionScriptsFor(target, functionName);
         } else {
           const object = (target ?? self) as BObject | null;
-          if (!object || !this.canInvokeOwner(object)) return {};
+          if (!object || !this.canInvokeOwner(object)) {
+            if (extras?.saveMigrationData) throw new SaveGameError("incompatible", "A save migration function's owner is unavailable.");
+            return {};
+          }
           receiver = object;
           loaded = this.functionScriptsFor(object.classId, functionName);
         }
-        if (!loaded) return {};
+        if (!loaded) {
+          if (extras?.saveMigrationData) throw new SaveGameError("incompatible", `Save migration function “${functionName}” is missing.`);
+          return {};
+        }
         let result: unknown = {};
         for (const entry of loaded) {
           const fn = entry.exports[functionName];
@@ -1560,7 +1674,7 @@ export class ScriptHost {
                     ? (resolved as Record<string, unknown>)
                     : {},
                 (error) => {
-                  if (isInfiniteLoopError(error)) throw error;
+                  if (extras?.saveMigrationData || isInfiniteLoopError(error)) throw error;
                   this.services.reportError(error);
                   return {};
                 },
@@ -1568,7 +1682,7 @@ export class ScriptHost {
             }
             result = value ?? {};
           } catch (error) {
-            if (isInfiniteLoopError(error)) throw error;
+            if (extras?.saveMigrationData || isInfiniteLoopError(error)) throw error;
             this.services.reportError(error);
           }
         }
@@ -1901,6 +2015,12 @@ export class ScriptHost {
     name: string,
     args: Record<string, unknown>,
   ): Record<string, unknown> {
+    if (target instanceof Actor && name === "switchSceneLayerActor") {
+      return { actor: this.canInvokeOwner(target) ? this.services.switchSceneLayerActor?.(target, args.index) ?? null : null };
+    }
+    if (target instanceof Actor && name === "getCurrentSceneLayerActor") {
+      return { actor: this.services.getCurrentSceneLayerActor?.(target) ?? null };
+    }
     const component = asActorComponent(target);
     if (!component || !name) return {};
     if (component.classId === "2DRichTextComponent" &&
@@ -1914,6 +2034,7 @@ export class ScriptHost {
       return {};
     }
     if (name.startsWith("painter")) return { success: this.canInvokeOwner(component) && this.services.paint2D?.(component, name, args) === true };
+    if (isUIControl2DClass(component.classId)) return { success: this.canInvokeOwner(component) && this.services.uiControlFunction?.(component, name, args) === true };
     if (component.classId === "DynamicRuntimeMeshComponent") {
       if (!this.canInvokeOwner(component)) return { success: false };
       return this.services.dynamicMeshFunction?.(component, name, args) ?? { success: false };

@@ -37,6 +37,9 @@ export type VariableTypeFieldsProps = {
   onChange: (next: VariableTypeFieldsValue) => void;
   classEntries?: readonly ClassPickerEntry[];
   typeAssets?: readonly AssetPickerEntry[];
+  /** Omitted accepts both record assets; schema editors can restrict their source. */
+  structAssetType?: "Structure" | "DataDefinition";
+  types?: readonly string[];
   "data-testid"?: string;
 };
 
@@ -55,9 +58,12 @@ export function VariableTypeFields({
   onChange,
   classEntries = [],
   typeAssets = [],
+  structAssetType,
+  types,
   "data-testid": testId = "variable-type-fields",
 }: VariableTypeFieldsProps) {
   const [keyClassOpen, setKeyClassOpen] = useState(false);
+  const structLabel = structAssetType === "DataDefinition" ? "Data Definition" : structAssetType ?? "Structure / Data Definition";
   const [keyAssetOpen, setKeyAssetOpen] = useState(false);
   const container = value.container === "array" || value.container === "map"
     ? value.container
@@ -79,8 +85,14 @@ export function VariableTypeFields({
       {showType ? <Field>
         <FieldLabel>Type</FieldLabel>
         <PinTypePicker
-          value={value.typeId}
+          types={types}
+          labels={{ struct: structLabel }}
+          value={value.typeId === "struct" && value.typeClassId === "engine:TagContainer" ? "tagContainer" : value.typeId}
           onChange={(typeId) => {
+            if (typeId === "tagContainer") {
+              commit({ typeId: "struct", typeClassId: "engine:TagContainer" });
+              return;
+            }
             const keep = pinPickerKeepsTypeClassId(typeId);
             commit({
               typeId,
@@ -94,8 +106,14 @@ export function VariableTypeFields({
         <Field>
           <FieldLabel>Key Type</FieldLabel>
           <PinTypePicker
-            value={keyTypeId}
+            types={types}
+            labels={{ struct: structLabel }}
+            value={keyTypeId === "struct" && keyClassId === "engine:TagContainer" ? "tagContainer" : keyTypeId}
             onChange={(nextKey) => {
+              if (nextKey === "tagContainer") {
+                commit({ keyTypeId: "struct", keyTypeClassId: "engine:TagContainer" });
+                return;
+              }
               const keep = pinPickerKeepsTypeClassId(nextKey);
               commit({
                 keyTypeId: nextKey,
@@ -128,7 +146,7 @@ export function VariableTypeFields({
       {container === "map" && needsTypeAsset(keyTypeId) ? (
         <Field>
           <FieldLabel>
-            {keyTypeId === "enum" ? "Key Enum Type" : "Key Structure Type"}
+            {keyTypeId === "enum" ? "Key Enum Type" : `Key ${structLabel} Type`}
           </FieldLabel>
           <AssetPickerControl value={keyClassId}>
             <Button
@@ -145,7 +163,7 @@ export function VariableTypeFields({
                     : keyClassId
                       ? {
                           name: keyClassId,
-                          type: keyTypeId === "enum" ? "Enum" : "Structure",
+                          type: keyTypeId === "enum" ? "Enum" : structAssetType ?? "Record",
                         }
                       : undefined,
                 ),
@@ -218,9 +236,9 @@ export function VariableTypeFields({
             open={keyAssetOpen}
             onOpenChange={setKeyAssetOpen}
             assets={[...typeAssets]}
-            allowedTypes={keyTypeId === "enum" ? ["Enum"] : ["Structure"]}
+            allowedTypes={keyTypeId === "enum" ? ["Enum"] : structAssetType ? [structAssetType] : ["Structure", "DataDefinition"]}
             allowNone
-            title={keyTypeId === "enum" ? "Pick Key Enum Type" : "Pick Key Structure Type"}
+            title={keyTypeId === "enum" ? "Pick Key Enum Type" : `Pick Key ${structLabel} Type`}
             onPick={(guid) => {
               commit({ keyTypeClassId: guid ?? undefined });
               setKeyAssetOpen(false);

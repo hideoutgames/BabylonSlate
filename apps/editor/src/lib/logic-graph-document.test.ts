@@ -7,6 +7,7 @@ import {
   collectClassGraphsForPalette,
   collectFunctionLibrariesForPalette,
   collectGraphTypeAssets,
+  typeSchemasFromGraphAssets,
   collectSceneDocumentsForPalette,
   collectSubsystemClassesForPalette,
   commitLogicGraph,
@@ -440,6 +441,40 @@ describe("commitLogicGraph", () => {
 });
 
 describe("collectGraphTypeAssets", () => {
+  it("keeps Data Definitions independent and projects unsaved fields into graph value schemas", () => {
+    const catalog = collectGraphTypeAssets({
+      assets: [
+        { path: "assets/Stats.babasset", header: { type: "DataDefinition", guid: "stats", name: "Stats", payload: {
+          fields: [{ id: "health", name: "Health", typeId: "float", defaultValue: 10 }],
+        } } },
+        { path: "assets/Vector.babasset", header: { type: "Structure", guid: "vector", name: "Vector", payload: { fields: [] } } },
+      ],
+      openDocuments: [{ ref: { kind: "data-definition", path: "assets/Stats.babasset" }, content: {
+        fields: [{ id: "health", name: "HitPoints", typeId: "float", defaultValue: 25 }],
+      } }],
+    });
+    expect(catalog.dataDefinitions).toEqual([{ guid: "stats", name: "Stats", fields: [
+      { id: "health", name: "HitPoints", typeId: "float", defaultValue: 25 },
+    ] }]);
+    expect(catalog.structures.some((entry) => entry.guid === "stats")).toBe(false);
+    const schemas = typeSchemasFromGraphAssets(catalog);
+    expect(schemas.dataDefinitions?.stats).toEqual({ name: "Stats", fields: catalog.dataDefinitions[0]!.fields });
+    expect(schemas.structs.stats).toEqual(schemas.dataDefinitions?.stats);
+    expect(schemas.dataDefinitions?.vector).toBeUndefined();
+  });
+
+  it("omits malformed definitions without breaking unrelated type catalogs", () => {
+    const catalog = collectGraphTypeAssets({
+      assets: [
+        { path: "assets/Broken.babasset", header: { type: "DataDefinition", guid: "broken", name: "Broken", payload: { fields: [{ name: "Bad" }] } } },
+        { path: "assets/Good.babasset", header: { type: "DataDefinition", guid: "good", name: "Good", payload: { fields: [] } } },
+      ],
+      openDocuments: [],
+    });
+    expect(catalog.dataDefinitions.map((entry) => entry.guid)).toEqual(["good"]);
+    expect(catalog.structures.some((entry) => entry.guid === "engine:HitResult")).toBe(true);
+  });
+
   it("merges Structure and Enum assets with open documents", () => {
     const catalog = collectGraphTypeAssets({
       assets: [

@@ -39,7 +39,8 @@ export function commitAnimGraphVariables(
     const previous = doc.variables.find((row) => row.id === variable.id);
     if (
       !previous ||
-      (previous.name === variable.name && previous.typeId === variable.typeId)
+      (previous.name === variable.name && previous.typeId === variable.typeId &&
+        previous.typeClassId === variable.typeClassId)
     ) {
       continue;
     }

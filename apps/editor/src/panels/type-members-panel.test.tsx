@@ -45,6 +45,11 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
     },
   ],
   applyAssetDocumentChange,
+  assetRegistry: { list: () => [{ path: "assets/Item.datadefinition.babasset", header: {
+    type: "DataDefinition", guid: "item", name: "Item", payload: { kind: "dataDefinition", fields: [
+      { id: "price", name: "Price", typeId: "int", defaultValue: 12 },
+    ] },
+  } }] },
 })));
 
 afterEach(() => {
@@ -105,5 +110,20 @@ describe("type asset member table", () => {
         screen.getByTestId("structure-field-type"),
       ) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeGreaterThan(0);
+  });
+
+  it("uses a Data Definition for a nested Structure field", async () => {
+    harness.kind = "structure";
+    harness.content = { kind: "structure", guid: "s1", name: "Container", fields: [{ id: "item-field", name: "Item", typeId: "struct" }] };
+    render(<TypeAssetEditingProvider>
+      <TypeMembersPanel {...({} as IDockviewPanelProps)} />
+      <TypeDetailsPanel {...({} as IDockviewPanelProps)} />
+    </TypeAssetEditingProvider>);
+    fireEvent.click(screen.getByTestId("structure-row-0"));
+    fireEvent.click(screen.getByTestId("structure-field-type-asset"));
+    fireEvent.click(await screen.findByTestId("search-item-item"));
+    expect(applyAssetDocumentChange).toHaveBeenCalledWith("enum:assets/Colors.babasset", expect.objectContaining({ fields: [{
+      id: "item-field", name: "Item", typeId: "struct", typeClassId: "item", defaultValue: { Price: 12 },
+    }] }));
   });
 });

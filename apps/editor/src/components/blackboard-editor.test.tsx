@@ -5,7 +5,11 @@ import { BlackboardEditor } from "./blackboard-editor";
 
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
   openDocuments: [],
-  assetRegistry: { list: () => [] },
+  assetRegistry: { list: () => [{ path: "assets/Item.datadefinition.babasset", header: {
+    type: "DataDefinition", guid: "item", name: "Item", payload: { kind: "dataDefinition", fields: [
+      { id: "price", name: "Price", typeId: "int", defaultValue: 12 },
+    ] },
+  } }] },
 })));
 
 if (typeof window !== "undefined") {
@@ -116,5 +120,13 @@ describe("BlackboardEditor", () => {
       keys: Array<{ type: { kind: string } }>;
     };
     expect(next.keys[0]?.type).toEqual({ kind: "enumRef", guid: "" });
+  });
+
+  it("selects a Data Definition as a record key and initializes its defaults", async () => {
+    const onChange = vi.fn();
+    render(<BlackboardEditor payload={{ name: "AI", keys: [{ name: "Item", type: { kind: "structRef", guid: "" } }] }} onChange={onChange} />);
+    fireEvent.click(screen.getByTestId("blackboard-key-type-asset"));
+    fireEvent.click(await screen.findByTestId("search-item-item"));
+    expect(onChange.mock.calls.at(-1)?.[0]).toMatchObject({ keys: [{ name: "Item", type: { kind: "structRef", guid: "item" }, defaultValue: { Price: 12 } }] });
   });
 });

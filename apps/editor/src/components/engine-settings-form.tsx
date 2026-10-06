@@ -625,6 +625,19 @@ export function EngineSettingsForm({
             <FieldLabel htmlFor="setting-graph-shake">Shake Nodes To Disconnect</FieldLabel>
             <Switch id="setting-graph-shake" checked={settings.graphShakeEnabled} onCheckedChange={(checked) => void onChange({ graphShakeEnabled: checked === true })} />
           </Field>
+          <Field orientation="horizontal" className="settings-field">
+            <FieldContent>
+              <FieldLabel htmlFor="setting-read-only-pin-defaults">Read-Only Pin Defaults</FieldLabel>
+              <FieldDescription>
+                Locks inline node values on this device. Defaults remain editable in the Inspector.
+              </FieldDescription>
+            </FieldContent>
+            <Switch
+              id="setting-read-only-pin-defaults"
+              checked={settings.readOnlyPinDefaults}
+              onCheckedChange={(checked) => void onChange({ readOnlyPinDefaults: checked === true })}
+            />
+          </Field>
           <Field className="settings-field">
             <FieldLabel htmlFor="setting-graph-default-zoom">
               Graph Default Zoom

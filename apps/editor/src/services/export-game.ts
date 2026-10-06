@@ -1,4 +1,7 @@
-import { areaEmissionTextureGuids, isInputAssetType, normalizeInputAssetPayload, renderEffectsAssetGuids } from "@babylonslate/core";
+import { validateSaveGameDefinition, type SaveGameConfiguration } from "@babylonslate/core";
+import { dataTypeSchemas } from "@babylonslate/scripting";
+import type { DataAssetCatalogEntry } from "@babylonslate/core";
+import { areaEmissionTextureGuids, buildDataTreeIndex, isDataTreeAsset, isInputAssetType, normalizeInputAssetPayload, renderEffectsAssetGuids } from "@babylonslate/core";
 import {
   collectExportReachability,
   exportGame,
@@ -30,6 +33,7 @@ import {
   type Result,
   type SerializedGraph,
   type SerializedScene,
+  type TagRegistry,
 } from "@babylonslate/core";
 import {
   normalizeFontPayload,
@@ -66,6 +70,8 @@ export function assetsFromIndexed(
 export type ExportPluginDescriptor = PluginGraphInput;
 
 export type CollectExportGameParams = {
+  projectId?: string;
+  saveGameSettings?: import("@babylonslate/core").SaveGameProjectSettings;
   project?: { name: string; version: string };
   startupSceneGuid: string | null;
   gameInstanceClass?: string | null;
@@ -100,6 +106,7 @@ export type CollectExportGameParams = {
   loopCount?: number;
   inputMappings?: import("@babylonslate/core").ProjectInputSettings;
   focusNavigation?: import("@babylonslate/core").FocusNavigationSettings;
+  tagRegistry?: TagRegistry;
   playerFiles: Map<string, Uint8Array>;
   extraFiles?: Map<string, Uint8Array>;
   /** Preview Build keeps Development Only nodes. */
@@ -268,6 +275,7 @@ export async function collectAndExportGame(
   const pluginEnabledGuids = new Set(pluginGraph.order.map((plugin) => plugin.pluginGuid));
   const closure = collectExportReachability({
     startupSceneGuid: params.startupSceneGuid,
+    saveGameDefinitionGuid: params.saveGameSettings?.definitionGuid,
     gameInstanceClass: params.gameInstanceClass,
     audioMixerGuid: params.audioMixerGuid,
     renderAssetGuids: renderEffectsAssetGuids(params.renderSettings.effects),
@@ -432,15 +440,62 @@ export async function collectAndExportGame(
     if (!isInputAssetType(asset.type) || !closure.value.guids.includes(asset.guid)) return [];
     return [{ ...normalizeInputAssetPayload(asset.type, params.payloadByGuid?.(asset.guid)), guid: asset.guid, name: asset.name, type: asset.type }];
   });
+  const dataCatalog: DataAssetCatalogEntry[] = params.assets.flatMap((asset) => {
+    const type = asset.type;
+    if (type !== "DataDefinition" && type !== "DataTree" && type !== "Structure" && type !== "Enum") return [];
+    return [{ guid: asset.guid, name: asset.name, type, payload: params.payloadByGuid?.(asset.guid) }];
+  });
+  const typeSchemas = dataTypeSchemas(dataCatalog);
+  const dataAssets = dataCatalog.flatMap((asset) => {
+    if (asset.type !== "DataTree") return [];
+    const index = isDataTreeAsset(asset.payload) ? buildDataTreeIndex(asset.payload).index : null;
+    const entries = index ? index.orderedEntries.map(entry => ({
+      id: entry.id, path: index.pathById.get(entry.id)!,
+      parentPath: entry.parentId === null ? "" : index.pathById.get(entry.parentId)!,
+      effectiveDefinitionGuid: index.effectiveDefinitionById.get(entry.id) ?? null,
+    })) : [];
+    return [{ guid: asset.guid, name: asset.name, type: asset.type,
+      defaultDefinitionGuid: isDataTreeAsset(asset.payload) ? asset.payload.defaultDefinitionGuid : null,
+      entries, ...(!index ? { invalid: true } : {}) }];
+  });
   params.onPhase?.("Compiling");
   const scripts: ScriptBundleEntry[] = [];
   if (graphDocs.length || animDocs.length) {
     const { compileAnimGraphScripts, compileGraphDocuments } = await import("./script-compiler");
-    scripts.push(...compileGraphDocuments(graphDocs, { stripDevelopmentOnly: !bundleDebugger, inputAssets }), ...compileAnimGraphScripts(animDocs, { stripDevelopmentOnly: !bundleDebugger }));
+    scripts.push(
+      ...compileGraphDocuments(graphDocs, {
+        stripDevelopmentOnly: !bundleDebugger,
+        inputAssets,
+        dataAssets,
+        ...typeSchemas,
+        tagRegistry: params.tagRegistry,
+      }),
+      ...compileAnimGraphScripts(animDocs, {
+        stripDevelopmentOnly: !bundleDebugger,
+        inputAssets,
+        dataAssets,
+        ...typeSchemas,
+        tagRegistry: params.tagRegistry,
+      }),
+    );
   }
 
   params.onPhase?.("Writing Pack");
+  let saveGame: SaveGameConfiguration | undefined;
+  if (params.saveGameSettings?.definitionGuid) {
+    if (!params.projectId) return { ok: false, error: "Save Game requires a stable project ID." };
+    try {
+      saveGame = {
+        projectId: params.projectId,
+        definition: validateSaveGameDefinition(params.payloadByGuid?.(params.saveGameSettings.definitionGuid)),
+        defaultSlot: params.saveGameSettings.defaultSlot,
+        defaultProfile: params.saveGameSettings.defaultProfile,
+        preview: params.previewBuild === true,
+      };
+    } catch (error) { return { ok: false, error: `Save Game definition: ${error instanceof Error ? error.message : String(error)}` }; }
+  }
   const packed = await exportGame({
+    saveGame,
     project: params.project,
     mode,
     bundleDebugger,

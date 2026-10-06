@@ -5,6 +5,14 @@ contextBridge.exposeInMainWorld("babylonslate", {
     readSettings: () => ipcRenderer.invoke("settings:read"),
     writeSettings: (json: string) => ipcRenderer.invoke("settings:write", json),
   },
+  saveGames: {
+    read: (key: string) => ipcRenderer.invoke("save-games:read", key),
+    write: (key: string, text: string) => ipcRenderer.invoke("save-games:write", key, text),
+    remove: (key: string) => ipcRenderer.invoke("save-games:remove", key),
+    list: (prefix: string) => ipcRenderer.invoke("save-games:list", prefix),
+    acquireLock: (key: string) => ipcRenderer.invoke("save-games:acquire-lock", key),
+    releaseLock: (token: string) => ipcRenderer.invoke("save-games:release-lock", token),
+  },
   secrets: {
     get: (key: string) => ipcRenderer.invoke("secrets:get", key),
     set: (key: string, value: string) =>

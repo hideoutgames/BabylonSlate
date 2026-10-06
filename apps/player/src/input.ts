@@ -44,9 +44,11 @@ export function attachInputCapture(
 
   const onPointer = (phase: "down" | "move" | "up" | "cancel") =>
     (event: PointerEvent) => {
+      const handled = event.defaultPrevented;
       event.preventDefault();
       if (phase === "down") {
-        canvas.focus({ preventScroll: true });
+        // Preserve a SceneLayer control's native text editor focus.
+        if (!handled) canvas.focus({ preventScroll: true });
         canvas.setPointerCapture(event.pointerId);
       }
       const raw: RawInputEvent = {

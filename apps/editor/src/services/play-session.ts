@@ -1,3 +1,5 @@
+import { createSaveStorageServer } from "@babylonslate/core";
+import { createSaveGameStorage } from "@babylonslate/vfs";
 import type { ScalabilityAcknowledgement, RenderProjectSettings } from "@babylonslate/core";
 import { buildMaterialParameterCatalog } from "@babylonslate/shader-graph";
 import {
@@ -445,6 +447,7 @@ export function previewFixtureThrowHint(
  * to in-process runtime. Own Scene on the shared app Engine via registerView.
  */
 export function startPlaySession(options: {
+  saveGame?: import("@babylonslate/core").SaveGameConfiguration;
   renderSettings?: import("@babylonslate/render").RenderShadingSettings;
   consoleRenderSettings?: import("@babylonslate/render").RenderShadingSettings;
   canvas: HTMLCanvasElement;
@@ -543,6 +546,7 @@ export function startPlaySession(options: {
   infiniteLoopDetection?: boolean;
   loopCount?: number;
   inputAssets?: import("@babylonslate/core").InputAssetDefinition[];
+  dataAssets?: import("@babylonslate/core").DataAssetCatalogEntry[];
   inputMappings?: import("@babylonslate/core").ProjectInputSettings;
   focusNavigation?: import("@babylonslate/core").FocusNavigationSettings;
   /** Called when a session-fatal diagnostic (infinite loop) arrives. */
@@ -667,6 +671,16 @@ export function startPlaySession(options: {
       if (worker) worker.postControl(control);
       else runtime?.applySceneLayerScroll(event.layerId, event.actorId, event.componentId, event.deltaX, event.deltaY);
     },
+    onSceneLayerControl: (event) => {
+      const control = { type: "sceneLayerControl" as const, ...event };
+      if (worker) worker.postControl(control);
+      else runtime?.applySceneLayerControl(control);
+    },
+    onSceneLayerFocusNavigate: (reverse) => {
+      const control = { type: "sceneLayerFocusNavigate" as const, reverse };
+      if (worker) worker.postControl(control);
+      else runtime?.applySceneLayerFocusNavigate(reverse);
+    },
     onSceneLayerPointer: (event) => {
       const control = { type: "sceneLayerPointer" as const, ...event };
       if (worker) worker.postControl(control);
@@ -681,6 +695,7 @@ export function startPlaySession(options: {
           size.frustumHeight,
           size.canvasWidth,
           size.canvasHeight,
+          size.safeAreaInsets,
         );
     },
     onAudioVoiceEnded: (voiceId) => {
@@ -822,7 +837,10 @@ export function startPlaySession(options: {
     }
   };
 
+  const saveStorage = createSaveGameStorage();
+  const saveServer = createSaveStorageServer(saveStorage, (response) => worker?.postControl({ type: "saveStorageResponse", response }));
   const onCommand = (command: CommandMessage) => {
+    if (command.type === "saveStorageRequest") { saveServer.receive(command.request); return; }
     noteCommand();
     if (command.type === "sceneStreamBlocking") handle.setSceneStreamingPaused(command.blocking);
     if (command.type === "snapshotLayout" && runtime)
@@ -921,6 +939,7 @@ export function startPlaySession(options: {
       : entry;
   });
   const loadControl = playLoadControl({
+    saveGame: options.saveGame,
     frameCap: resolvePlayFrameCap(options.frameCap),
     traceByteBudget: options.traceByteBudget,
     renderSettings: options.consoleRenderSettings ?? options.renderSettings,
@@ -936,6 +955,7 @@ export function startPlaySession(options: {
     infiniteLoopDetection: options.infiniteLoopDetection,
     loopCount: options.loopCount,
     inputAssets: options.inputAssets,
+    dataAssets: options.dataAssets,
     inputMappings: options.inputMappings,
     focusNavigation: options.focusNavigation,
     pixelsPerUnit: options.pixelsPerUnit,
@@ -987,6 +1007,7 @@ export function startPlaySession(options: {
     runtimeMode = "in-process";
     runtime = createRuntimeFromLoad(loadControl, (command) =>
       onCommand(command),
+      saveStorage,
     );
     runtime.registerAnchors(FIXTURE_ASSET, [
       {
@@ -1262,6 +1283,7 @@ export function startPlaySession(options: {
       sessionDiagnostics.push(...hostDiagnostics.entries());
       droppedDiagnostics += hostDiagnostics.droppedCount();
       worker?.postControl({ type: "stop" });
+      saveServer.dispose();
       worker?.terminate();
       const liveAfter = handle.liveObjectCounts();
       handle.dispose();

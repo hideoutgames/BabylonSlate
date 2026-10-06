@@ -310,14 +310,18 @@ export function EditorChromeBar({
     return createDocumentTypeVisualResolver(assetRegistry);
   }, [assetRegistry, registryEpoch]);
 
-  const contentBrowserDoc = openDocuments.find(
+  // Sheet row editors retain canonical documents for save/history without
+  // opening a visible standalone tab until the user explicitly opens it.
+  const visibleDocuments = openDocuments.filter((doc) => !doc.background);
+  const hasClosableDocuments = openDocuments.some((doc) => doc.id !== CONTENT_BROWSER_ID);
+  const contentBrowserDoc = visibleDocuments.find(
     (doc) => doc.id === CONTENT_BROWSER_ID,
   );
-  const pinnedSceneDoc = openDocuments.find((doc) => doc.ref.kind === "scene");
-  const scrollableDocs = openDocuments.filter(
+  const pinnedSceneDoc = visibleDocuments.find((doc) => doc.ref.kind === "scene");
+  const scrollableDocs = visibleDocuments.filter(
     (doc) => doc.ref.kind !== "content-browser" && doc.ref.kind !== "scene",
   );
-  const activeKind = openDocuments.find((doc) => doc.id === activeDocumentId)
+  const activeKind = visibleDocuments.find((doc) => doc.id === activeDocumentId)
     ?.ref.kind;
   const canFocus = canFocusLayout(activeKind);
 
@@ -547,12 +551,13 @@ export function EditorChromeBar({
               <LayoutGridIcon />
             </Button>
             <DocumentSwitcher
-              documents={openDocuments}
+              documents={visibleDocuments}
               resolveVisual={resolveDocumentVisual}
               activeDocumentId={activeDocumentId}
               onSelect={setActiveDocument}
               onClose={onCloseDocument ?? closeDocument}
               onCloseAll={onCloseAllDocuments}
+              hasClosableDocuments={hasClosableDocuments}
               compact
             />
           </div>
@@ -616,12 +621,13 @@ export function EditorChromeBar({
               </DndContext>
             </div>
             <DocumentSwitcher
-              documents={openDocuments}
+              documents={visibleDocuments}
               resolveVisual={resolveDocumentVisual}
               activeDocumentId={activeDocumentId}
               onSelect={setActiveDocument}
               onClose={onCloseDocument ?? closeDocument}
               onCloseAll={onCloseAllDocuments}
+              hasClosableDocuments={hasClosableDocuments}
             />
           </div>
         )}

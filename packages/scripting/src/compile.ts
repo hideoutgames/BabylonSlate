@@ -15,6 +15,8 @@ import { entryNodes } from "./compiled-nodes";
 import { isWritableVariableOutput } from "./variable-references";
 import { enumSwitchMemberNameFromPinId } from "./enum-switch-pins";
 import { flowSwitchCaseValueFromPinId } from "./flow-switch-pins";
+import { normalizeTag, normalizeTagContainer, type TagRegistry } from "@babylonslate/core";
+import { tagCasesOf, tagCasePinId, tagRuntimeSource } from "./tags";
 import {
   isFlowSwitchMeta,
   isLoopMeta,
@@ -37,6 +39,8 @@ export type ScriptEventName =
 export const EVENT_BY_TYPE_ID: Record<string, ScriptEventName> = {
   "flow.event.beginPlay": "onBeginPlay",
   "flow.event.scalabilityChanged": "onScalabilityChanged",
+  "flow.event.gameLoaded": "onGameLoaded",
+  "flow.event.saveMigration": "onSaveMigration",
   "flow.event.tick": "onTick",
   "flow.event.destroyed": "onDestroyed",
   "flow.event.init": "onInit",
@@ -67,6 +71,19 @@ export const EVENT_BY_TYPE_ID: Record<string, ScriptEventName> = {
   "flow.event.onPressStart": "onPressStart",
   "flow.event.onPressEnd": "onPressEnd",
   "flow.event.textChanged": "onTextChanged",
+  "flow.event.focusEnter": "onFocusEnter",
+  "flow.event.focusLeave": "onFocusLeave",
+  "flow.event.focusActivate": "onFocusActivate",
+  "flow.event.uiValueChanged": "onUIValueChanged",
+  "flow.event.uiRangeChanged": "onUIRangeChanged",
+  "flow.event.uiCheckedChanged": "onUICheckedChanged",
+  "flow.event.uiTextChanged": "onUITextChanged",
+  "flow.event.uiTextSubmitted": "onUITextSubmitted",
+  "flow.event.uiSelectionChanged": "onUISelectionChanged",
+  "flow.event.sceneLayerActorSwitching": "onSceneLayerActorSwitching",
+  "flow.event.sceneLayerActorSwitched": "onSceneLayerActorSwitched",
+  "flow.event.sceneLayerActorSwitchedTo": "onSceneLayerActorSwitchedTo",
+  "flow.event.sceneLayerActorSwitchedFrom": "onSceneLayerActorSwitchedFrom",
   "flow.event.audioFinished": "onAudioFinished",
   "flow.event.movementStarted": "onMovementStarted",
   "flow.event.movementStopped": "onMovementStopped",
@@ -125,6 +142,8 @@ export type CompileResult = {
 export type CompileOptions = {
   assetGuid: string;
   registry: NodeRegistry;
+  /** Project definitions are embedded so numeric Tag matching survives export. */
+  tagRegistry?: TagRegistry;
   exportName?: string;
   /**
    * Export compiles omit Development Only nodes (Print defaults on) and
@@ -294,6 +313,10 @@ function disconnectedPinLiteral(
 ): string {
   const prop = readPinDefaultForPin(node.properties, dataPin);
   if (prop !== undefined && !pinRejectsStoredDefault(dataPin.type)) {
+    if (dataPin.type.kind === "tag") return JSON.stringify(normalizeTag(prop));
+    if (dataPin.type.kind === "structRef" && dataPin.type.guid === "engine:TagContainer") {
+      return JSON.stringify(normalizeTagContainer(prop));
+    }
     return JSON.stringify(prop);
   }
   const catalog = catalogPinDefault(node, dataPin, registry);
@@ -321,6 +344,9 @@ export function compileGraph(
   };
   const exportName = options.exportName ?? "run";
   const preamble = [`//# sourceURL=babylonslate:///${options.assetGuid}.js`];
+  if (graph.nodes.some((node) => node.typeId.startsWith("tags."))) {
+    preamble.push(...tagRuntimeSource(options.tagRegistry).split("\n"));
+  }
   type HoistChunk = {
     source: string;
     nodeId: string;
@@ -413,7 +439,8 @@ export function compileGraph(
     return `ctx.variableReference(${owner}, ${JSON.stringify(property)}, ${implicitSelf})`;
   }
 
-  function makeCtx(node: GraphNode, continuation?: (expression: string) => void): CodegenContext {
+  function makeCtx(node: GraphNode, continuation?: (expression: string) => void,
+    branch?: (expression: string, truePin: string, falsePin: string) => void): CodegenContext {
     return {
       graph,
       node,
@@ -425,6 +452,7 @@ export function compileGraph(
       },
       reference(pinName) { return referenceExpr(node, pinName); },
       continueIf(expression) { continuation?.(expression); },
+      branch(expression, truePin, falsePin) { branch?.(expression, truePin, falsePin); },
       inputType(pinName) {
         const p = pinForCodegen(node, pinName, "in");
         return p ? wiredSourceType(graph, node, p.id, shouldStrip) : undefined;
@@ -926,6 +954,26 @@ export function compileGraph(
         break;
       }
 
+      if (def.structuredFlow?.kind === "switchOnTag") {
+        const ctx = makeCtx(node);
+        const anchor = { column: 1, assetGuid: options.assetGuid, graphId: graph.id, nodeId: node.id };
+        const cases = tagCasesOf(node.properties);
+        emitBody(`  {`, anchor);
+        emitBody(`  const __tagCase = __tags.select(${ctx.input("value")}, ${JSON.stringify(cases)}, ${ctx.input("exact")});`, anchor);
+        for (let i = 0; i < cases.length; i++) {
+          const tag = cases[i]!;
+          emitBody(`  ${i === 0 ? "if" : "} else if"} (__tagCase === ${tag}) {`, anchor);
+          emitAlong(graph.edges.filter((edge) =>
+            edge.sourceNodeId === node.id && edge.sourcePinId === tagCasePinId(tag)), visited);
+        }
+        if (cases.length) emitBody(`  } else {`, anchor);
+        emitAlong(graph.edges.filter((edge) =>
+          edge.sourceNodeId === node.id && edge.sourcePinId === "default"), visited);
+        if (cases.length) emitBody(`  }`, anchor);
+        emitBody(`  }`, anchor);
+        break;
+      }
+
       if (
         def.structuredFlow &&
         emitFlowSwitch(node, def.structuredFlow, visited)
@@ -1068,13 +1116,27 @@ export function compileGraph(
       }
 
       let continuation: string | undefined;
+      const flow: { branch?: { expression: string; truePin: string; falsePin: string } } = {};
       if (def.pure) {
         ensurePure(node);
       } else {
-        const ctx = makeCtx(node, (expression) => { continuation = expression; });
+        const ctx = makeCtx(node, (expression) => { continuation = expression; },
+          (expression, truePin, falsePin) => { flow.branch = { expression, truePin, falsePin }; });
         if (def.latent) isAsync = true;
         declareDataOuts(node, ctx);
         def.codegen(ctx);
+      }
+
+      if (flow.branch) {
+        const branch = flow.branch;
+        const anchor = { column: 1, assetGuid: options.assetGuid, graphId: graph.id, nodeId: node.id };
+        if (instrumentLoops) emitBody(`  ${loopCheck}`, anchor);
+        emitBody(`  if (${branch.expression}) {`, anchor);
+        emitAlong(execSuccessorEdges(graph, node.id, branch.truePin), visited);
+        emitBody("  } else {", anchor);
+        emitAlong(execSuccessorEdges(graph, node.id, branch.falsePin), visited);
+        emitBody("  }", anchor);
+        break;
       }
 
       const thenEdges = execSuccessorEdges(graph, node.id, "then");
@@ -1350,8 +1412,11 @@ export function compileTransitionRuleGraph(
     results[sink.key] = pin ? pinExpr(node, pin, "true") : "true";
   }
 
+  const tagPreamble = graph.nodes.some((node) => node.typeId.startsWith("tags."))
+    ? tagRuntimeSource(options.tagRegistry).split("\n") : [];
   const source = [
     `//# sourceURL=babylonslate:///${options.assetGuid}.js`,
+    ...tagPreamble,
     `export function evaluate(ctx) {`,
     ...pureExpressions.declarations,
     `  return { enter: (${results.enter}), exit: (${results.exit}) };`,
@@ -1363,7 +1428,7 @@ export function compileTransitionRuleGraph(
     source,
     anchors: [
       {
-        line: 2,
+        line: 2 + tagPreamble.length,
         column: 1,
         assetGuid: options.assetGuid,
         graphId: graph.id,

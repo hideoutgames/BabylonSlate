@@ -39,6 +39,7 @@ export function DocumentSwitcher({
   onSelect,
   onClose,
   onCloseAll,
+  hasClosableDocuments = documents.some((doc) => doc.id !== CONTENT_BROWSER_ID),
   compact = false,
 }: {
   documents: OpenDocument[];
@@ -47,13 +48,14 @@ export function DocumentSwitcher({
   onSelect: (id: string) => void;
   onClose: (id: string) => void;
   onCloseAll?: () => void;
+  /** Includes canonical background documents that are omitted from navigation. */
+  hasClosableDocuments?: boolean;
   compact?: boolean;
 }) {
   const active = documents.find((doc) => doc.id === activeDocumentId);
   const closeChord = useKeybindChord("document.close");
   const closeAllChord = useKeybindChord("document.closeAll");
   const browserChord = useKeybindChord("editor.contentBrowser");
-  const hasClosableDocuments = documents.some((doc) => doc.id !== CONTENT_BROWSER_ID);
   const stepDocument = (step: number) => {
     const current = documents.findIndex((doc) => doc.id === activeDocumentId);
     const nextIndex = current < 0

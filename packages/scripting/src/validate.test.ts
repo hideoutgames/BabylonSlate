@@ -143,7 +143,13 @@ describe("validateGraphs", () => {
     expect(diags.some((d) => d.code === "test.rule")).toBe(true);
   });
 
-  it("reports ExecuteJavaScript parse errors", () => {
+  it.each([
+    { async: false, body: "const result = ctx.getSaveData();", parseError: false },
+    { async: false, body: "const result = await ctx.saveGame();", parseError: true },
+    { async: true, body: "const result = await ctx.saveGame();", parseError: false },
+    { async: true, body: "await ctx.saveGame(!!! invalid js {", parseError: true },
+    { async: false, body: "this is !!! invalid js {", parseError: true },
+  ])("validates ExecuteJavaScript with its authored async flag ($async, $body)", ({ async, body, parseError }) => {
     const graph: LogicGraph = {
       id: "g",
       kind: "function",
@@ -163,13 +169,13 @@ describe("validateGraphs", () => {
             pin("execIn", "exec", "in", EXEC),
             pin("execOut", "then", "out", EXEC),
           ],
-          properties: { body: "this is !!! invalid js {" },
+          properties: { async, body },
         },
       ],
       edges: [execThen("in", "js")],
     };
     const diags = validateGraphs([graph], { assetGuid: "a" });
-    expect(diags.some((d) => d.code === "js.parse")).toBe(true);
+    expect(diags.some((d) => d.code === "js.parse")).toBe(parseError);
   });
 
   it("does not warn pin.missing_input when a default: property is authored", () => {

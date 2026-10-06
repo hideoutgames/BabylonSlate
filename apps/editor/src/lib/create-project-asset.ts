@@ -4,7 +4,8 @@ import {
   type AssetRegistry,
   type IndexedAsset,
 } from "@babylonslate/assets";
-import type { SerializedGraph, WaterStyle } from "@babylonslate/core";
+import type { DataDefinitionAsset, DataTreeAsset, SerializedGraph, WaterStyle } from "@babylonslate/core";
+import { validateDataDefinition, validateDataTree, type TypeSchemas } from "@babylonslate/scripting";
 import { engineParentOf, walkAncestry } from "@babylonslate/editor-kit";
 import {
   isLockedEngineClassId,
@@ -13,6 +14,7 @@ import {
 import type { MaterialDomain } from "@babylonslate/shader-graph";
 import {
   ASSETS_ROOT,
+  assetHeaderDependencies,
   CREATABLE_ASSET_TYPES,
   buildNewAssetResult,
   buildParentClassTreeRows,
@@ -24,13 +26,13 @@ import {
   newAssetFileSuffix,
   type CreatableAssetType,
 } from "./content-browser-helpers";
-import { collectClassGraphsForPalette } from "./logic-graph-document";
+import { collectClassGraphsForPalette, collectGraphTypeAssets, typeSchemasFromGraphAssets } from "./logic-graph-document";
 import { PROJECT_CONTENT_ROOT_ID } from "./plugin-ui";
 import { classIdForGraphPath } from "../services/script-compiler";
 
 /** The single New Asset write path (Content Browser and picker Create New rows). */
 export async function createProjectAsset(options: {
-  registry: Pick<AssetRegistry, "createAsset">;
+  registry: Pick<AssetRegistry, "createAsset"> & Partial<Pick<AssetRegistry, "list">>;
   rootId: string;
   /** Folder inside the root (`Levels`), empty for the root itself. */
   folderRelative: string;
@@ -39,10 +41,29 @@ export async function createProjectAsset(options: {
   parentClass?: string | null;
   waterStyle?: WaterStyle;
   materialDomain?: MaterialDomain;
+  /** Use the live Definition catalog so unsaved field edits supply defaults. */
+  defaultDefinitionGuid?: string | null;
+  typeSchemas?: TypeSchemas;
+  dataDefinition?: DataDefinitionAsset;
+  dataTree?: DataTreeAsset;
   classParentOf?: (id: string) => string | null | undefined;
   parentGraphs?: Record<string, SerializedGraph>;
 }): Promise<IndexedAsset> {
   const { type, name } = options;
+  const defaultDefinitionGuid = options.dataTree ? options.dataTree.defaultDefinitionGuid : options.defaultDefinitionGuid ?? null;
+  const definition = defaultDefinitionGuid ? options.typeSchemas?.dataDefinitions?.[defaultDefinitionGuid] : undefined;
+  if (type === "DataTree" && defaultDefinitionGuid && !definition) {
+    throw new Error("The selected Data Definition is unavailable. Choose an existing Data Definition.");
+  }
+  const dataDefinition = options.dataDefinition;
+  if (dataDefinition) {
+    const issue = validateDataDefinition(dataDefinition, options.typeSchemas).find(issue => issue.severity === "error");
+    if (issue) throw new Error(issue.message);
+  }
+  if (options.dataTree) {
+    const issue = validateDataTree(options.dataTree, options.typeSchemas ?? { structs: {}, enums: {} }).find(issue => issue.severity === "error");
+    if (issue) throw new Error(issue.message);
+  }
   const fileName = newAssetFileName(type, name);
   if (!fileName) throw new Error("Enter a name for the new asset.");
   const parentClass =
@@ -67,7 +88,13 @@ export async function createProjectAsset(options: {
     parentGraphs: type === "Class" ? options.parentGraphs : undefined,
     waterStyle: options.waterStyle,
     materialDomain: options.materialDomain,
+    defaultDefinitionGuid,
+    dataDefinition,
+    dataTree: options.dataTree,
   });
+  if (type === "DataDefinition" || type === "DataTree") {
+    result.dependencies = assetHeaderDependencies(type, result.payload, options.registry.list?.() ?? []);
+  }
   return options.registry.createAsset(
     options.rootId,
     joinAssetFolderPath(options.folderRelative, fileName),
@@ -231,6 +258,7 @@ export async function createPickerAsset(options: {
   name?: string;
   parentClass?: string | null;
   materialDomain?: MaterialDomain;
+  defaultDefinitionGuid?: string | null;
 }): Promise<IndexedAsset> {
   const { registry, type } = options;
   const assets = registry.list();
@@ -270,6 +298,10 @@ export async function createPickerAsset(options: {
     name,
     parentClass,
     materialDomain: options.materialDomain,
+    defaultDefinitionGuid: options.defaultDefinitionGuid,
+    typeSchemas: type === "DataDefinition" || type === "DataTree"
+      ? typeSchemasFromGraphAssets(collectGraphTypeAssets({ assets, openDocuments: options.openDocuments }))
+      : undefined,
     classParentOf: classParentLookup(assets),
     parentGraphs:
       type === "Class"

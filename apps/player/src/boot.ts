@@ -1,3 +1,5 @@
+import { createSaveStorageServer } from "@babylonslate/core";
+import { createSaveGameStorage } from "@babylonslate/vfs";
 import type { ScalabilityAcknowledgement, RenderProjectSettings } from "@babylonslate/core";
 import { buildMaterialParameterCatalog } from "@babylonslate/shader-graph";
 import { materialParameterTextureAssetGuids } from "@babylonslate/assets";
@@ -116,6 +118,8 @@ export type PlayerTestHandle = Pick<PlayerBootHandle,
 export type PlayerBootOptions = {
   canvas: HTMLCanvasElement;
   game: LoadedGame;
+  /** Preview iframes borrow the editor host's application-private storage. */
+  saveStorage?: import("@babylonslate/core").SaveGameStorage;
   /** Preview host's trace budget; omitted by standalone games. */
   traceByteBudget?: number;
   sharedEngine?: AbstractEngine;
@@ -327,6 +331,16 @@ function initializePlayer(
       if (worker) worker.postControl(control);
       else runtime?.applySceneLayerScroll(event.layerId, event.actorId, event.componentId, event.deltaX, event.deltaY);
     },
+    onSceneLayerControl: (event) => {
+      const control = { type: "sceneLayerControl" as const, ...event };
+      if (worker) worker.postControl(control);
+      else runtime?.applySceneLayerControl(control);
+    },
+    onSceneLayerFocusNavigate: (reverse) => {
+      const control = { type: "sceneLayerFocusNavigate" as const, reverse };
+      if (worker) worker.postControl(control);
+      else runtime?.applySceneLayerFocusNavigate(reverse);
+    },
     onSceneLayerPointer: (event) => {
       const control = { type: "sceneLayerPointer" as const, ...event };
       if (worker) worker.postControl(control);
@@ -341,6 +355,7 @@ function initializePlayer(
           size.frustumHeight,
           size.canvasWidth,
           size.canvasHeight,
+          size.safeAreaInsets,
         );
     },
     onAudioVoiceEnded: (voiceId) => {
@@ -432,11 +447,13 @@ function initializePlayer(
     traceByteBudget: options.traceByteBudget,
     renderSettings: manifest.render,
     project: manifest.project,
+    saveGame: manifest.saveGame,
     type: "load" as const,
     sceneAssetGuid: startup,
     scene,
     physicsWorld: manifest.physicsWorld,
     inputAssets: manifest.inputAssets,
+    dataAssets: content.dataAssets,
     inputMappings: manifest.inputMappings,
     focusNavigation: manifest.focusNavigation,
     pixelsPerUnit: content.pixelsPerUnit,
@@ -562,7 +579,11 @@ function initializePlayer(
     },
   });
   own(() => streamReadiness.dispose());
+  const saveStorage = options.saveStorage ?? createSaveGameStorage();
+  const saveServer = createSaveStorageServer(saveStorage, (response) => worker?.postControl({ type: "saveStorageResponse", response }));
+  own(() => saveServer.dispose());
   const onCommand = (command: { type: string } & Record<string, unknown>) => {
+    if (command.type === "saveStorageRequest") { saveServer.receive(command.request as import("@babylonslate/core").SaveStorageRequest); return; }
     if (halted) return;
     if (command.type === "sceneStreamBlocking") handle.setSceneStreamingPaused(command.blocking === true);
     if (command.type === "sessionPaused") {
@@ -655,6 +676,7 @@ function initializePlayer(
     }
     const inProcess = createRuntimeFromLoad(loadControl, (command) =>
       onCommand(command as never),
+      saveStorage,
     );
     runtime = inProcess;
     own(() => inProcess.stop());

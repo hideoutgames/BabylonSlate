@@ -42,6 +42,17 @@ describe("type defaults", () => {
     expect(defaultValueForPinType(enumRef(""), schemas)).toBe("");
   });
 
+  it("creates detached TagContainer defaults and typed Tag collection fields", () => {
+    const first = defaultValueForMember("struct", "engine:TagContainer", schemas) as { Tags: number[] };
+    first.Tags.push(42);
+    expect(defaultValueForMember("struct", "engine:TagContainer", schemas)).toEqual({ Tags: [] });
+    expect(defaultValueForMember("tag", undefined, schemas)).toBe(0);
+    expect(structInstanceDefault([
+      { name: "Selected", typeId: "tag", container: "array" },
+      { name: "Nested", typeId: "struct", typeClassId: "engine:TagContainer" },
+    ])).toEqual({ Selected: [], Nested: { Tags: [] } });
+  });
+
   it("builds a structure instance from field defaults and nested schemas", () => {
     expect(structInstanceDefault(schemas.structs["struct-stats"]!.fields, schemas)).toEqual({
       Health: 100,

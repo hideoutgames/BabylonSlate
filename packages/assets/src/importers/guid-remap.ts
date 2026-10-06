@@ -5,7 +5,26 @@ import { remapModelPayloadGuids } from "../model-payload";
 import { remapParticlePayloadGuids } from "../particle-payload";
 import { remapSkeletonPayloadGuids } from "../skeleton-payload";
 import { remapRenderTargetPayloadGuids } from "../render-target-payload";
+import { remapDataPayloadGuids, type DataDefinitionFieldsResolver } from "../data-asset-refs";
 import type { ImportResult } from "./types";
+
+const DATA_TYPES = new Set(["DataDefinition", "DataTree", "Structure", "Enum"]);
+
+function remapDocumentPayload(type: string, payload: Record<string, unknown>, remap: ReadonlyMap<string, string>, definitionFields: DataDefinitionFieldsResolver): Record<string, unknown> {
+  if (DATA_TYPES.has(type)) return remapDataPayloadGuids(type, payload, remap, definitionFields);
+  const targets = remapRenderTargetPayloadGuids(type, payload, remap);
+  return remapDataPayloadGuids(type, remapInputReferences(targets, remap), remap, definitionFields) as Record<string, unknown>;
+}
+
+function remapHeaderPayload(type: string, payload: Record<string, unknown>, remap: ReadonlyMap<string, string>, definitionFields: DataDefinitionFieldsResolver): Record<string, unknown> {
+  if (DATA_TYPES.has(type)) return remapDataPayloadGuids(type, payload, remap, definitionFields);
+  let next = remapAudioPayloadGuids(type, payload, remap);
+  next = remapParticlePayloadGuids(type, next, remap);
+  next = remapModelPayloadGuids(type, next, remap);
+  next = remapSkeletonPayloadGuids(type, next, remap);
+  next = remapAnimationPayloadGuids(type, next, remap);
+  return remapDocumentPayload(type, next, remap, definitionFields);
+}
 
 /**
  * Rewrite any guid in `results` that collides with `existingGuids`,
@@ -28,6 +47,23 @@ export function remapImportResultGuids(
   if (remap.size === 0) {
     return results;
   }
+  const definitions = new Map<string, readonly unknown[]>();
+  for (const result of results) {
+    let payload = result.payload;
+    const chunk = result.chunks.find((entry) => entry.id === "document");
+    if (chunk && (result.type === "DataDefinition" || result.type === "Structure")) {
+      try {
+        const document: unknown = JSON.parse(new TextDecoder().decode(chunk.data));
+        if (document && typeof document === "object" && !Array.isArray(document)) payload = document as Record<string, unknown>;
+      }
+      catch { /* An unreadable document is handled by its normal import validation. */ }
+    }
+    if (result.type === "DataObject" || result.type === "DataSheet") {
+      throw new Error("Historical Data Object and Data Sheet assets cannot be imported with GUID collisions. Their original files have not been changed.");
+    }
+    if ((result.type === "DataDefinition" || result.type === "Structure") && Array.isArray(payload.fields)) definitions.set(result.guid, payload.fields);
+  }
+  const definitionFields: DataDefinitionFieldsResolver = (guid) => definitions.get(guid);
   return results.map((result) => ({
     ...result,
     guid: remap.get(result.guid) ?? result.guid,
@@ -35,27 +71,11 @@ export function remapImportResultGuids(
     chunks: result.chunks.map((chunk) => {
       if (chunk.id !== "document") return chunk;
       try {
-        const body = remapRenderTargetPayloadGuids(result.type, JSON.parse(new TextDecoder().decode(chunk.data)), remap);
-        return { ...chunk, data: new TextEncoder().encode(JSON.stringify(remapInputReferences(body, remap))) };
+        const mapped = remapDocumentPayload(result.type, JSON.parse(new TextDecoder().decode(chunk.data)), remap, definitionFields);
+        return { ...chunk, data: new TextEncoder().encode(JSON.stringify(mapped)) };
       } catch { return chunk; }
     }),
-    payload: remapInputReferences(remapRenderTargetPayloadGuids(result.type, remapAnimationPayloadGuids(
-      result.type,
-      remapSkeletonPayloadGuids(
-        result.type,
-        remapModelPayloadGuids(
-          result.type,
-          remapParticlePayloadGuids(
-            result.type,
-            remapAudioPayloadGuids(result.type, result.payload, remap),
-            remap,
-          ),
-          remap,
-        ),
-        remap,
-      ),
-      remap,
-    ), remap), remap) as Record<string, unknown>,
+    payload: remapHeaderPayload(result.type, result.payload, remap, definitionFields),
     attachToGuid: result.attachToGuid
       ? remap.get(result.attachToGuid) ?? result.attachToGuid
       : result.attachToGuid,
@@ -68,6 +88,7 @@ function remapInputReferences(value: unknown, remap: ReadonlyMap<string, string>
   if (!value || typeof value !== "object") return value;
   const row = value as Record<string, unknown>;
   return Object.fromEntries(Object.entries(row).map(([key, entry]) => [key,
-    key === "Asset" && typeof row.Name === "string" && typeof entry === "string" ? remap.get(entry) ?? entry : remapInputReferences(entry, remap),
+    key === "default:values" && Array.isArray(row.dataSchema) ? entry
+      : key === "Asset" && typeof row.Name === "string" && typeof entry === "string" ? remap.get(entry) ?? entry : remapInputReferences(entry, remap),
   ]));
 }

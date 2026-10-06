@@ -143,12 +143,19 @@ const regions = RENDER_PROFILING_ENABLED
   ? createRenderProfileRegions(recorder.onRender)
   : null;
 
-/** Returns `node` itself unless editor-edit profiling is enabled. */
+/**
+ * Returns `node` itself unless editor-edit profiling is enabled. Call during
+ * render, never at module scope: a bundle chunk cycle can run the caller
+ * before this module initializes, which silently skips the Profiler.
+ */
 export function profileRegion(id: string, node: ReactNode): ReactNode {
   return regions ? regions.region(id, node) : node;
 }
 
-/** Returns `components` itself unless editor-edit profiling is enabled. */
+/**
+ * Returns `components` itself unless editor-edit profiling is enabled. Call
+ * during render, never at module scope (see `profileRegion`).
+ */
 export function profileComponents<P extends object>(
   prefix: string,
   components: Record<string, FunctionComponent<P>>,

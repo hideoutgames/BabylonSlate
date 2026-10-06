@@ -53,7 +53,7 @@ describe("engine script API catalog", () => {
   });
 
   it("exposes 2DButton mouse events and Hit Test, not SceneLayerActor natives", () => {
-    expect(engineScriptApiFor("SceneLayerActor")).toBeUndefined();
+    expect(engineScriptEventsFor("SceneLayerActor")).toEqual([]);
     const button = engineScriptApiFor("2DButtonComponent");
     expect(names(button?.variables)).toEqual(expect.arrayContaining(["Hit Test", "Focus Enabled", "Focused"]));
     expect(button?.variables?.[0]?.propertyKey).toBe("hitTest");

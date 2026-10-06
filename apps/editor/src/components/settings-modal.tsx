@@ -1,3 +1,4 @@
+import { ProjectSaveGamesSettings } from "./project-save-games-settings";
 import { RenderQualityFields } from "./render-quality-fields";
 import { FocusNavigationFields } from "./focus-navigation-fields";
 import { RenderPipelineFields } from "./render-pipeline-fields";
@@ -123,6 +124,7 @@ const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> = [
     keywords:
       "startup scene game instance class 2d pixels per unit pixel perfect sorting layers",
   },
+  { id: "saveGames", label: "Save Games", keywords: "save game data definition default slot profile wipe reset import export persistence" },
   {
     id: "physics",
     label: "Physics",
@@ -179,6 +181,7 @@ const PROJECT_GROUPS: CatalogCategoryGroup[] = [
     ids: [
       "general",
       "game",
+      "saveGames",
       "physics",
       "focusNavigation",
       "fonts",
@@ -230,7 +233,7 @@ const ENGINE_CATEGORIES: Array<
   {
     id: "graph",
     label: "Graph",
-    keywords: "graph default zoom node canvas fit view assistant connection distance shake disconnect",
+    keywords: "graph default zoom node canvas fit view assistant connection distance shake disconnect read-only read only lock pin defaults inline input values",
   },
   {
     id: "thumbnails",
@@ -934,6 +937,7 @@ export function SettingsModal({
         </FieldGroup>
       ) : null}
 
+      {showProjectBody && projectDocument && activeCategoryId === "saveGames" ? <ProjectSaveGamesSettings /> : null}
       {showProjectBody && projectDocument && activeCategoryId === "fonts" ? (
         <FieldGroup>
           <FieldSet>

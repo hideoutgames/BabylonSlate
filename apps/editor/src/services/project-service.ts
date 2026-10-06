@@ -1,4 +1,5 @@
 import { createDefaultInputAssets } from "@babylonslate/core";
+import { normalizeDataDefinitionAsset, normalizeDataTreeAsset } from "@babylonslate/core";
 import { normalizeImportedProject, readProjectArchive, PROJECT_IMPORT_LIMIT } from "./project-import";
 import { getHostPlatform, pickImportFiles } from "@babylonslate/vfs";
 import type { DockviewApi } from "dockview-react";
@@ -157,6 +158,10 @@ function headerMetaForSave(
     | SerializedGraph
     | Record<string, unknown>,
 ): Record<string, unknown> | undefined {
+  // Sheets render indexed values without loading one document per visible row.
+  // This header snapshot is always derived from the body being saved.
+  if (type === "DataDefinition") return { ...normalizeDataDefinitionAsset(content) };
+  if (type === "DataTree") return { ...normalizeDataTreeAsset(content) };
   if (isInputAssetType(type)) {
     const input = normalizeInputAssetPayload(type, content);
     return { valueType: input.valueType };
@@ -1139,6 +1144,12 @@ export class ProjectService {
     ) as ProjectDocument & { guid?: string; kind?: string; version?: number };
     const document = normalizeProjectDocument(raw, folder.name);
     this.projectGuid = raw.guid ?? newGuid();
+    // Persist the existing project identity convention before the first player save.
+    // Legacy projects must not acquire a different save namespace on every reopen.
+    if (!raw.guid) {
+      raw.guid = this.projectGuid;
+      await this.storage.writeText(PROJECT_FILE, JSON.stringify(raw, null, 2));
+    }
     this.loadedTextureSettings = document.settings.textures;
     this.sourceControlEnabled = document.settings.sourceControl?.enabled === true;
     this.pluginOverrides = document.settings.pluginOverrides ?? {};
@@ -1524,7 +1535,10 @@ export class ProjectService {
       if (!kind || kind === "trace") continue;
       await onProgress?.(asset.path);
       const content = await this.loadDocument(kind, asset.path);
-      const walked = replaceClassAssetReferences(content, replacements);
+      const walked = replaceClassAssetReferences(content, replacements, (guid) => {
+        const payload = registry.getByGuid(guid)?.header;
+        return payload && ["DataDefinition", "Structure"].includes(payload.type) && Array.isArray(payload.payload.fields) ? payload.payload.fields : undefined;
+      });
       const header = replaceClassAssetReferences({
         parentClass: asset.header.parentClass ?? null,
         dependencies: asset.header.dependencies,
@@ -1581,6 +1595,10 @@ export class ProjectService {
         content,
         deletedGuids,
         deletedClassNames,
+        (guid) => {
+          const header = registry.getByGuid(guid)?.header;
+          return header && ["DataDefinition", "Structure"].includes(header.type) && Array.isArray(header.payload.fields) ? header.payload.fields : undefined;
+        },
       );
       const isClass =
         asset.header.type === "Class" || asset.header.type === "Graph";
@@ -1783,6 +1801,8 @@ export class ProjectService {
       unknown
     > & { version?: number };
     void _v;
+    if (kind === "data-definition") return { ...normalizeDataDefinitionAsset(content) };
+    if (kind === "data-tree") return { ...normalizeDataTreeAsset(content) };
     if (kind === "scene") {
       return normalizeScene(content);
     }
@@ -1920,6 +1940,8 @@ export class ProjectService {
       };
     }
     if (isInputAssetType(type)) content = normalizeInputAssetPayload(type, content) as unknown as Record<string, unknown>;
+    if (type === "DataDefinition") content = { ...normalizeDataDefinitionAsset(content) };
+    if (type === "DataTree") content = { ...normalizeDataTreeAsset(content) };
     const version = this.migrations.currentVersion(type);
     const parentClass =
       options?.parentClass !== undefined
@@ -1951,7 +1973,9 @@ export class ProjectService {
               "string" &&
             (content as { displayName: string }).displayName.trim() !== ""
               ? (content as { displayName: string }).displayName.trim()
-              : isInputAssetType(type) && existing?.name ? existing.name : assetName(path),
+              : (isInputAssetType(type) || type === "DataDefinition" || type === "DataTree") && existing?.name
+                ? existing.name
+                : assetName(path),
           guid,
           version,
           payload: content as unknown as Record<string, unknown>,

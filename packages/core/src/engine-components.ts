@@ -2,6 +2,7 @@ export type EngineComponentPlacement = "world" | "overlay" | "any";
 
 /** One row per engine ActorComponent class. Derived lists below replace hand-maintained copies. */
 export const ENGINE_COMPONENT_DESCRIPTORS = [
+  { classId: "SaveGameComponent", placement: "world" },
   { classId: "SceneStreamingComponent", placement: "world" },
   { classId: "LandscapeComponent", placement: "world" },
   { classId: "FoliageComponent", placement: "world" },
@@ -51,6 +52,20 @@ export const ENGINE_COMPONENT_DESCRIPTORS = [
   { classId: "2DSpacerComponent", placement: "overlay" },
   { classId: "2DPainterComponent", placement: "overlay" },
   { classId: "2DJoystickComponent", placement: "overlay" },
+  { classId: "2DSliderComponent", placement: "overlay" },
+  { classId: "2DRangeSliderComponent", placement: "overlay" },
+  { classId: "2DCheckboxComponent", placement: "overlay" },
+  { classId: "2DRadioButtonComponent", placement: "overlay" },
+  { classId: "2DToggleComponent", placement: "overlay" },
+  { classId: "2DTextInputComponent", placement: "overlay" },
+  { classId: "2DNumericInputComponent", placement: "overlay" },
+  { classId: "2DDropdownComponent", placement: "overlay" },
+  { classId: "2DProgressBarComponent", placement: "overlay" },
+  { classId: "2DVirtualizedListComponent", placement: "overlay" },
+  { classId: "2DVirtualizedGridComponent", placement: "overlay" },
+  { classId: "2DMaskPanelComponent", placement: "overlay" },
+  { classId: "2DMaskComponent", placement: "overlay" },
+  { classId: "2DSafeAreaComponent", placement: "overlay" },
   { classId: "2DButtonComponent", placement: "overlay" },
   { classId: "2DFocusTargetComponent", placement: "overlay" },
   { classId: "2DMaterialComponent", placement: "overlay" },

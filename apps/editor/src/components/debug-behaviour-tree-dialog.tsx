@@ -3,6 +3,7 @@ import { sanitizeInspectValue } from "@babylonslate/object-model";
 import { useState } from "react";
 import {
   humanizePropertyLabel,
+  PropertyGrid,
   SelectableText,
 } from "@babylonslate/editor-kit";
 import {
@@ -28,6 +29,7 @@ import {
 } from "@babylonslate/ui/components/empty";
 import { Badge } from "@babylonslate/ui/components/badge";
 import { cn } from "@babylonslate/ui/lib/utils";
+import { playInspectPropertyRows } from "../lib/play-inspect-rows";
 
 export function DebugBehaviourTreeDialog({
   open,
@@ -183,9 +185,18 @@ export function DebugBehaviourTreeDialog({
                           </SelectableText>
                         </dt>
                         <dd className="whitespace-pre-wrap break-all font-mono text-muted-foreground">
-                          <SelectableText>
-                            {JSON.stringify(sanitizeInspectValue(value), null, 2)}
-                          </SelectableText>
+                          {tree.blackboardTypes?.[name] ? (
+                            <PropertyGrid hideLabels density="compact" rows={playInspectPropertyRows([{
+                              id: `blackboard-${name}`,
+                              label: name,
+                              value,
+                              type: tree.blackboardTypes[name],
+                            }])} />
+                          ) : (
+                            <SelectableText>
+                              {JSON.stringify(sanitizeInspectValue(value), null, 2)}
+                            </SelectableText>
+                          )}
                         </dd>
                       </div>
                     ))}

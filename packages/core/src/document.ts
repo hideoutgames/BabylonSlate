@@ -11,6 +11,7 @@ export const ASSET_DOCUMENT_KINDS = [
   "anim-graph",
   "behaviour-tree",
   "blackboard",
+  "save-game",
   "material",
   "material-function",
   "material-instance",
@@ -18,6 +19,8 @@ export const ASSET_DOCUMENT_KINDS = [
   "tilemap",
   "enum",
   "structure",
+  "data-definition",
+  "data-tree",
   "script-interface",
   "plugin-settings",
   "audio",
@@ -94,6 +97,8 @@ export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
       return "BehaviourTree";
     case "blackboard":
       return "Blackboard";
+    case "save-game":
+      return "SaveGame";
     case "material":
       return "Material";
     case "material-function":
@@ -108,6 +113,10 @@ export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
       return "Enum";
     case "structure":
       return "Structure";
+    case "data-definition":
+      return "DataDefinition";
+    case "data-tree":
+      return "DataTree";
     case "script-interface":
       return "ScriptInterface";
     case "plugin-settings":
@@ -194,6 +203,8 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
       return "behaviour-tree";
     case "Blackboard":
       return "blackboard";
+    case "SaveGame":
+      return "save-game";
     case "Material":
     case "Shader":
     case "ShaderGraph":
@@ -210,6 +221,10 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
       return "enum";
     case "Structure":
       return "structure";
+    case "DataDefinition":
+      return "data-definition";
+    case "DataTree":
+      return "data-tree";
     case "ScriptInterface":
       return "script-interface";
     case "PluginSettings":
@@ -289,6 +304,10 @@ export function documentKindLabel(kind: AssetDocumentKind): string {
       return "Enum";
     case "structure":
       return "Structure";
+    case "data-definition":
+      return "Data Definition";
+    case "data-tree":
+      return "Data Tree";
     case "script-interface":
       return "Script Interface";
     case "plugin-settings":
@@ -297,6 +316,8 @@ export function documentKindLabel(kind: AssetDocumentKind): string {
       return "Audio";
     case "input-action":
       return "Input Action";
+    case "save-game":
+      return "Save Game";
     case "input-axis":
       return "Input Axis";
     case "audio-mixer":
@@ -420,7 +441,7 @@ export function labelFromPath(path: string): string {
       .split("/")
       .pop()
       ?.replace(
-        /\.(inputaction|inputaxis|scene|scenelayer|graph|eui|ui|spriteanim|sprite|anim|shader|material|matfunc|class|tileset|tilemap|plugin|mixer|channel|atten|emitter|particlegraph|particles|skyboxcreator|rendertargettexture|rendertarget)\.(babasset|json)$/i,
+        /\.(inputaction|inputaxis|scene|scenelayer|graph|eui|ui|spriteanim|sprite|anim|shader|material|matfunc|class|tileset|tilemap|datadefinition|datatree|plugin|mixer|channel|atten|emitter|particlegraph|particles|skyboxcreator|rendertargettexture|rendertarget|savegame)\.(babasset|json)$/i,
         "",
       )
       .replace(/\.babasset$/i, "")

@@ -185,4 +185,26 @@ describe("DocumentSwitcher", () => {
         .getAttribute("aria-disabled"),
     ).toBe("true");
   });
+
+  it("keeps the bulk-close menu and shortcut available for background records without adding navigation entries", async () => {
+    const closeAll = vi.fn();
+    const view = (hasClosableDocuments: boolean) => <KeybindProvider>
+      <DocumentSwitcher documents={[documents[0]!]} activeDocumentId={CONTENT_BROWSER_ID}
+        onSelect={() => {}} onClose={() => {}} onCloseAll={closeAll} hasClosableDocuments={hasClosableDocuments} />
+    </KeybindProvider>;
+    const screen = render(view(true));
+    fireEvent.keyDown(document.body, { key: "W", code: "KeyW", altKey: true, shiftKey: true });
+    expect(closeAll).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: "Open Documents" }));
+    expect(screen.getAllByRole("menuitemradio")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Close Open Tab(s)" }));
+    expect(closeAll).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+
+    screen.rerender(view(false));
+    fireEvent.keyDown(document.body, { key: "W", code: "KeyW", altKey: true, shiftKey: true });
+    expect(closeAll).toHaveBeenCalledTimes(2);
+    fireEvent.click(screen.getByRole("button", { name: "Open Documents" }));
+    expect(screen.getByRole("menuitem", { name: "Close Open Tab(s)" }).getAttribute("aria-disabled")).toBe("true");
+  });
 });

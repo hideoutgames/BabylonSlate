@@ -1,4 +1,5 @@
-import { INPUT_KEYS } from "@babylonslate/core";
+import { INPUT_KEYS, normalizeTag, normalizeTagContainer } from "@babylonslate/core";
+import { dataGraphMetadata, dataGraphNodeTitle, isDataGraphNode, type DataGraphAssetEntry } from "./data-graph";
 import type {
   ParameterRow,
   PinListRow,
@@ -12,6 +13,7 @@ import {
   humanizePropertyLabel,
 } from "@babylonslate/editor-kit";
 import type { GraphPin, LiteralPinDefault, PinType } from "@babylonslate/scripting";
+import { displayPinTypesForGraph } from "@babylonslate/graph-ui";
 import {
   BOOL,
   ENGINE_ENUMS,
@@ -35,6 +37,7 @@ import {
   pinDefaultPropertyKey,
   pinTypeForMember,
   pinTypeForVariable,
+  pinTypeKey,
   variableTypeFromPinType,
   vec3TupleToObject,
   vec4TupleToObject,
@@ -61,10 +64,18 @@ export function pinsFromNodeData(data: Record<string, unknown>): GraphPin[] {
 
 export function inspectorLiteralPinDefaults(
   node: { id: string; data: Record<string, unknown> },
-  edges: ReadonlyArray<{ target: string; targetHandle?: string }>,
+  edges: ReadonlyArray<{ source?: string; sourceHandle?: string; target: string; targetHandle?: string }>,
+  nodes?: ReadonlyArray<{ id: string; data: Record<string, unknown> }>,
 ) {
+  const display = nodes ? displayPinTypesForGraph(nodes, edges.map((edge) => ({
+    ...edge,
+    source: edge.source ?? "",
+  }))) : undefined;
   return listUnconnectedLiteralPinDefaults(
-    pinsFromNodeData(node.data),
+    pinsFromNodeData(node.data).map((pin) => ({
+      ...pin,
+      type: display?.get(pinTypeKey(node.id, pin.id)) ?? pin.type,
+    })),
     node.data,
     connectedInputPinIds(edges, node.id),
   );
@@ -134,12 +145,7 @@ function inputTypeRow(value: unknown, onChange: (value: Record<string, unknown>)
 }
 
 function flattenStructFieldRows(
-  fields: ReadonlyArray<{
-    name: string;
-    typeId: string;
-    typeClassId?: string;
-    defaultValue?: unknown;
-  }>,
+  fields: readonly StructField[],
   value: unknown,
   onChange: (next: Record<string, unknown>) => void,
   mapping: PinDefaultMapping | undefined,
@@ -150,7 +156,7 @@ function flattenStructFieldRows(
   const rows: PropertyRow[] = [];
   for (const field of fields) {
     if (!field.name) continue;
-    const type = pinTypeForMember(field.typeId, field.typeClassId);
+    const type = pinTypeForVariable(field);
     const label = labelPrefix
       ? `${labelPrefix} ${humanizePropertyLabel(field.name)}`
       : humanizePropertyLabel(field.name);
@@ -159,7 +165,7 @@ function flattenStructFieldRows(
       rows.push(inputTypeRow(fieldValue, (next) => onChange({ ...instance, [field.name]: next }), mapping?.assetEntries, label));
       continue;
     }
-    if (type.kind === "structRef") {
+    if (type.kind === "structRef" && type.guid !== "engine:TagContainer") {
       const nested = type.guid ? schemas?.structs[type.guid] : undefined;
       if (nested) {
         rows.push(
@@ -223,6 +229,12 @@ export function variableAssetPickerAllowedTypes(typeClassId?: string): string[] 
   return [...ASSET_REF_PICKER_TYPES];
 }
 
+/** Definition literals use recursive value controls so collection fields retain their shape. */
+export function graphDataLiteralField(entry: LiteralPinDefault, schemas: TypeSchemas): StructField | undefined {
+  if (entry.type.kind !== "structRef" || !schemas.dataDefinitions?.[entry.type.guid]) return undefined;
+  return { name: entry.name, typeId: "struct", typeClassId: entry.type.guid };
+}
+
 export function pinDefaultPropertyRows(
   entries: readonly LiteralPinDefault[],
   onPatch: (patch: Record<string, unknown>) => void,
@@ -240,6 +252,16 @@ export function pinDefaultPropertyRows(
     const key = pinDefaultPropertyKey(entry.pinId);
     const typeDefault = defaultJsValue(entry.type);
     switch (entry.type.kind) {
+      case "tag":
+        rows.push({
+          kind: "tag",
+          id: entry.pinId,
+          label: entry.name,
+          value: normalizeTag(entry.value),
+          defaultValue: 0,
+          onChange: (value) => onPatch({ [key]: value }),
+        });
+        break;
       case "bool":
         rows.push({
           kind: "boolean",
@@ -420,6 +442,17 @@ export function pinDefaultPropertyRows(
         break;
       }
       case "structRef": {
+        if (entry.type.guid === "engine:TagContainer") {
+          rows.push({
+            kind: "tag-container",
+            id: entry.pinId,
+            label: entry.name,
+            value: normalizeTagContainer(entry.value),
+            defaultValue: { Tags: [] },
+            onChange: (value) => onPatch({ [key]: value }),
+          });
+          break;
+        }
         if (entry.type.guid === "engine:InputType") {
           rows.push(inputTypeRow(entry.value, (next) => onPatch({ [pinDefaultPropertyKey(entry.pinId)]: next }), mappingNames?.assetEntries, entry.name));
           break;
@@ -428,7 +461,6 @@ export function pinDefaultPropertyRows(
           ? mappingNames?.schemas?.structs[entry.type.guid]
           : undefined;
         if (!schema) break;
-        const key = pinDefaultPropertyKey(entry.pinId);
         rows.push(
           ...flattenStructFieldRows(
             schema.fields,
@@ -485,7 +517,7 @@ export function variableDefaultPropertyRows(
     onPickClass: options?.onPickClass,
   };
   if (type.kind === "structRef" && type.guid === "engine:InputType") return [inputTypeRow(value, onChange, options?.assetEntries, label)];
-  if (type.kind === "structRef") {
+  if (type.kind === "structRef" && type.guid !== "engine:TagContainer") {
     const schema = type.guid ? options?.schemas?.structs[type.guid] : undefined;
     if (!schema) return [];
     return flattenStructFieldRows(
@@ -505,6 +537,36 @@ export function variableDefaultPropertyRows(
     },
     mapping,
   );
+}
+
+/** Dynamic Tag cases keep numeric IDs for execution and readable pin names. */
+export function tagNodePropertyRows(
+  typeId: string,
+  data: Record<string, unknown>,
+  onPatch: (patch: Record<string, unknown>) => void,
+  tags: ReadonlyArray<{ id: number; path: string }>,
+): PropertyRow[] {
+  if (typeId !== "tags.switch" && typeId !== "tags.select") return [];
+  return [{
+    kind: "tag-container",
+    id: "cases",
+    label: "Cases",
+    value: normalizeTagContainer({ Tags: data.cases }),
+    defaultValue: { Tags: [] },
+    onChange: (value) => {
+      const cases = normalizeTagContainer(value).Tags;
+      const priorNames = data.caseNames && typeof data.caseNames === "object"
+        ? data.caseNames as Record<string, unknown> : {};
+      const names = new Map(tags.map((tag) => [tag.id, tag.path]));
+      onPatch({
+        cases,
+        caseNames: Object.fromEntries(cases.map((id) => [
+          id,
+          names.get(id) ?? (typeof priorNames[id] === "string" ? priorNames[id] : "Unresolved Tag"),
+        ])),
+      });
+    },
+  }];
 }
 
 export function enumNodePropertyRows(
@@ -587,16 +649,19 @@ export function structNodePropertyRows(
   data: Record<string, unknown>,
   onPatch: (patch: Record<string, unknown>) => void,
   structures: ReadonlyArray<{ guid: string; name: string; fields: StructField[] }>,
+  dataDefinitions: ReadonlyArray<{ guid: string; name: string; fields: StructField[] }> = [],
 ): PropertyRow[] {
   if (typeId !== "struct.make" && typeId !== "struct.break") return [];
+  const definition = data.dataDefinition === true || dataDefinitions.some((entry) => entry.guid === data.structGuid);
+  const entries = definition ? dataDefinitions : structures;
   return [{
     kind: "enum",
     id: "structGuid",
-    label: "Structure Type",
+    label: definition ? "Data Definition" : "Structure Type",
     value: typeof data.structGuid === "string" ? data.structGuid : "",
-    options: structures.map((entry) => ({ value: entry.guid, label: entry.name })),
+    options: entries.map((entry) => ({ value: entry.guid, label: entry.name })),
     onChange: (guid) => {
-      const selected = structures.find((entry) => entry.guid === guid);
+      const selected = entries.find((entry) => entry.guid === guid);
       if (!selected) return;
       const clearedDefaults = Object.fromEntries(
         Object.keys(data).filter((key) => key.startsWith("default:")).map((key) => [key, undefined]),
@@ -604,11 +669,68 @@ export function structNodePropertyRows(
       onPatch({
         ...clearedDefaults,
         structGuid: guid,
+        ...(definition ? { dataDefinition: true } : {}),
         fields: selected.fields,
-        title: `${typeId === "struct.make" ? "Make" : "Break"} ${selected.name}`,
+        title: `${typeId === "struct.make" ? "Make" : "Break"} ${selected.name}${definition ? " Data" : ""}`,
       });
     },
   }];
+}
+
+/** Literal trees expose canonical paths; wired tree inputs ignore stale defaults. */
+export function dataNodePathOptions(typeId: string, pinId: string, data: Record<string, unknown>,
+  trees: readonly DataGraphAssetEntry[], wired: (pinId: string) => boolean = () => false) {
+  const path = dataGraphMetadata(typeId)?.pathPins?.find((entry) => entry.pinId === pinId);
+  if (!path || wired("tree") || wired(pinId)) return undefined;
+  const tree = trees.find((entry) => entry.guid === data["default:tree"]);
+  return tree ? { entries: tree.entries, includeRoot: path.root } : undefined;
+}
+
+export function dataNodePropertyRows(
+  typeId: string,
+  data: Record<string, unknown>,
+  onPatch: (patch: Record<string, unknown>) => void,
+  definitions: ReadonlyArray<{ guid: string; name: string }>,
+): PropertyRow[] {
+  if (!isDataGraphNode(typeId)) return [];
+  const metadata = dataGraphMetadata(typeId)!;
+  if (metadata.schema === false) return [];
+  const adding = typeId === "editorData.addEntry";
+  const inherited = adding && (data.definitionMode === "inherit" || (!data.definitionMode && !data.definitionGuid));
+  const required = metadata.required || (adding && data.definitionMode === "override");
+  const emptyLabel = required ? "Select Data Definition"
+    : adding ? "Use Effective Defaults" : typeId === "editorData.createTree" ? "No Default Definition" : "Any Data Definition";
+  const rows: PropertyRow[] = [{
+    kind: "enum",
+    id: "definitionGuid",
+    label: inherited ? "Expected Data Definition" : "Data Definition",
+    disabled: adding && data.definitionMode === "none",
+    description: inherited ? "Select the parent's effective Definition to author typed values, or leave empty to copy its defaults."
+      : typeId === "editorData.createTree" ? "The default Definition inherited by new entries."
+        : required ? "The Data Definition used by this node's entry values." : "An empty selection accepts every Data Definition.",
+    value: typeof data.definitionGuid === "string" ? data.definitionGuid : "",
+    options: [
+      { value: "", label: emptyLabel, disabled: required },
+      ...definitions.map((entry) => ({ value: entry.guid, label: entry.name })),
+    ],
+    onChange: (guid) => {
+      const selected = definitions.find((entry) => entry.guid === guid);
+      if (!selected && (required || guid)) return;
+      onPatch({
+        definitionGuid: guid,
+        title: dataGraphNodeTitle(typeId, selected?.name),
+        ...(guid !== data.definitionGuid ? { "default:values": undefined, dataSchema: undefined } : {}),
+      });
+    },
+  }];
+  if (typeId === "editorData.addEntry") {
+    rows.unshift({ kind: "enum", id: "definitionMode", label: "Definition Mode",
+      value: typeof data.definitionMode === "string" ? data.definitionMode : data.definitionGuid ? "override" : "inherit",
+      options: [{ value: "inherit", label: "Use Parent / Tree" }, { value: "override", label: "Override" }, { value: "none", label: "None (Grouping Entry)" }],
+      onChange: (definitionMode) => onPatch({ definitionMode }),
+    });
+  }
+  return rows;
 }
 
 export function inputEventPropertyRows(

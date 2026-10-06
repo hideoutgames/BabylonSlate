@@ -2,9 +2,12 @@ import { normalizeWaterDefinition } from "@babylonslate/core";
 import {
   createDefaultSceneSettings,
   normalizeInputAssetPayload,
+  validateSaveGameDefinition,
   identitySerializedTransform,
   normalizeSceneLayer,
   normalizeShadowOverrides,
+  normalizeDataDefinitionAsset,
+  normalizeDataTreeAsset,
 } from "@babylonslate/core";
 import { normalizeParticleGraphDocument } from "@babylonslate/particle-graph";
 import {
@@ -212,6 +215,14 @@ export function createDefaultMigrationRegistry(): MigrationRegistry {
   });
   const asRecord = <T extends object>(value: T): Record<string, unknown> =>
     value as unknown as Record<string, unknown>;
+  registry.register({
+    type: "DataDefinition",
+    migrations: [(payload) => asRecord(normalizeDataDefinitionAsset(payload))],
+  });
+  registry.register({
+    type: "DataTree",
+    migrations: [(payload) => asRecord(normalizeDataTreeAsset(payload))],
+  });
   for (const type of ["InputAction", "InputAxis"] as const) {
     registry.register({
       type,
@@ -220,6 +231,10 @@ export function createDefaultMigrationRegistry(): MigrationRegistry {
       ],
     });
   }
+  registry.register({
+    type: "SaveGame",
+    migrations: [(payload) => ({ ...validateSaveGameDefinition(payload) })],
+  });
   registry.register({
     type: "Audio",
     migrations: [(payload) => ({ ...payload })],

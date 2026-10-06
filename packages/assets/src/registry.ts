@@ -569,7 +569,8 @@ export class AssetRegistry {
     const dir = asset.path.includes("/")
       ? asset.path.slice(0, asset.path.lastIndexOf("/"))
       : "";
-    const newPath = dir ? `${dir}/${safe}.babasset` : `${safe}.babasset`;
+    const suffix = asset.header.type === "DataDefinition" || asset.header.type === "DataTree" ? assetFileSuffix(asset.path) : ".babasset";
+    const newPath = dir ? `${dir}/${safe}${suffix}` : `${safe}${suffix}`;
     if (newPath !== asset.path && this.byPath.has(newPath)) {
       throw new Error(`Target path already exists: ${newPath}`);
     }

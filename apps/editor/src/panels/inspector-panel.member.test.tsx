@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import type { SerializedGraph } from "@babylonslate/core";
 import { AssetOpenProvider } from "@babylonslate/editor-kit";
@@ -139,6 +139,10 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
             defaultValue: [{ key: "a", value: 1 }],
           },
           { id: "fn-1", kind: "function", name: "Jump", pins: [] },
+          { id: "fn-record", kind: "function", name: "Use Item", pins: [
+            { name: "Item", typeId: "struct", direction: "in" },
+            { name: "Result", typeId: "struct", direction: "out" },
+          ] },
           {
             id: "loc-1",
             kind: "variable",
@@ -172,6 +176,12 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
   projectDocument: { settings: { input: { actions: [], axes: [] } } },
   assetRegistry: {
     list: () => [
+      {
+        header: { guid: "item-definition", name: "Item", type: "DataDefinition", payload: { kind: "dataDefinition", fields: [
+          { id: "price", name: "Price", typeId: "int", defaultValue: 12 },
+        ] } },
+        path: "assets/Item.datadefinition.babasset",
+      },
       {
         header: {
           guid: "audio-1",
@@ -238,6 +248,17 @@ function expectDocumentOrder(earlier: HTMLElement, later: HTMLElement) {
 }
 
 describe("Inspector class member details", () => {
+  it("changes a structure variable to TagContainer with an empty selection", async () => {
+    renderMemberInspector("var-struct");
+    fireEvent.click(screen.getByTestId("inspector-member-type"));
+    fireEvent.click(await screen.findByTestId("search-item-tagContainer"));
+    await waitFor(() => expect(applyGraphChange).toHaveBeenCalled());
+    const member = applyGraphChange.mock.calls.at(-1)![1].members?.find((entry) => entry.id === "var-struct");
+    expect(member).toMatchObject({
+      typeId: "struct", typeClassId: "engine:TagContainer", defaultValue: { Tags: [] },
+    });
+  });
+
   it("shows PinTypePicker for a selected variable", () => {
     renderMemberInspector("var-1", true);
     expect(screen.getByTestId("class-var-type-var-1")).toBeTruthy();
@@ -294,13 +315,34 @@ describe("Inspector class member details", () => {
     expect(screen.queryByTestId("property-default")).toBeNull();
   });
 
-  it("shows a Structure Type AssetPicker for struct variables", () => {
+  it("shows a Record Type AssetPicker for struct variables", () => {
     renderMemberInspector("var-struct");
     const typeAsset = screen.getByTestId("inspector-member-type-asset");
     expect(typeAsset).toHaveProperty("disabled", false);
     expect(typeAsset.textContent).toContain("struct-stats");
-    expect(screen.getByText("Structure Type")).toBeTruthy();
+    expect(screen.getByText("Record Type")).toBeTruthy();
     expect(screen.getByTestId("inspector-member-type-asset-open")).toBeTruthy();
+  });
+
+  it("uses a Data Definition as a variable record type and copies its field defaults", async () => {
+    renderMemberInspector("var-struct");
+    fireEvent.click(screen.getByTestId("inspector-member-type-asset"));
+    fireEvent.click(await screen.findByTestId("search-item-item-definition"));
+    await waitFor(() => expect(applyGraphChange).toHaveBeenCalled());
+    expect(applyGraphChange.mock.calls.at(-1)![1].members!.find((member) => member.id === "var-struct")).toMatchObject({
+      typeId: "struct", typeClassId: "item-definition", defaultValue: { Price: 12 },
+    });
+  });
+
+  it.each(["in", "out"] as const)("uses a Data Definition on a function %s signature pin", async (direction) => {
+    renderMemberInspector("fn-record");
+    fireEvent.click(screen.getByTestId(`class-fn-${direction}-row-fn-record-${direction}-0`));
+    fireEvent.click(screen.getByTestId(`class-fn-${direction}-fn-record-${direction}-0-type-asset`));
+    fireEvent.click(await screen.findByTestId("search-item-item-definition"));
+    await waitFor(() => expect(applyGraphChange).toHaveBeenCalled());
+    expect(applyGraphChange.mock.calls.at(-1)![1].members!.find((member) => member.id === "fn-record")!.pins).toContainEqual({
+      name: direction === "in" ? "Item" : "Result", typeId: "struct", typeClassId: "item-definition", direction,
+    });
   });
 
   it("shows an Enum Type AssetPicker for enum variables", () => {

@@ -131,7 +131,7 @@ export function TypeDetailsPanel(_props: IDockviewPanelProps) {
       typeAsset
         ? { name: typeAsset.name, type: typeAsset.type }
         : typeClassId
-          ? { name: typeClassId, type: isEnum ? "Enum" : "Structure" }
+          ? { name: typeClassId, type: isEnum ? "Enum" : "Record" }
           : undefined,
     );
     const defaultRows = variableDefaultPropertyRows(
@@ -175,16 +175,20 @@ export function TypeDetailsPanel(_props: IDockviewPanelProps) {
           <div className="flex flex-col gap-1">
             <div className="text-sm font-medium">Type</div>
             <PinTypePicker
-              value={field.typeId}
-              onChange={(typeId) => {
+              labels={{ struct: "Structure / Data Definition" }}
+              value={isStruct && typeClassId === "engine:TagContainer" ? "tagContainer" : field.typeId}
+              onChange={(selectedType) => {
+                const typeId = selectedType === "tagContainer" ? "struct" : selectedType;
                 const keep = keepsTypeClassId(typeId);
+                const nextTypeClassId = selectedType === "tagContainer"
+                  ? "engine:TagContainer" : keep ? field.typeClassId : undefined;
                 commit(
                   patchStructureField(asset, selectedIndex, {
                     typeId,
-                    typeClassId: keep ? field.typeClassId : undefined,
+                    typeClassId: nextTypeClassId,
                     defaultValue: defaultValueForMember(
                       typeId,
-                      keep ? field.typeClassId : undefined,
+                      nextTypeClassId,
                       typeSchemas,
                     ),
                   }),
@@ -196,7 +200,7 @@ export function TypeDetailsPanel(_props: IDockviewPanelProps) {
           {isStruct || isEnum ? (
             <div className="flex flex-col gap-1">
               <div className="text-sm font-medium">
-                {isEnum ? "Enum Type" : "Structure Type"}
+                {isEnum ? "Enum Type" : "Record Type"}
               </div>
               <AssetPickerControl value={typeClassId}>
                 <Button
@@ -219,9 +223,9 @@ export function TypeDetailsPanel(_props: IDockviewPanelProps) {
             open={typeAssetPickerOpen}
             onOpenChange={setTypeAssetPickerOpen}
             assets={typeAssets}
-            allowedTypes={isEnum ? ["Enum"] : ["Structure"]}
+            allowedTypes={isEnum ? ["Enum"] : ["Structure", "DataDefinition"]}
             allowNone
-            title={isEnum ? "Pick Enum Type" : "Pick Structure Type"}
+            title={isEnum ? "Pick Enum Type" : "Pick Record Type"}
             onPick={(guid) => {
               commit(
                 patchStructureField(asset, selectedIndex, {

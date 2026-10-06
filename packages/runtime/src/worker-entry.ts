@@ -1,4 +1,4 @@
-import { normalizeWaterDefinition } from "@babylonslate/core";
+import { createSaveStorageClient, normalizeWaterDefinition } from "@babylonslate/core";
 /**
  * Game worker entry. Hosts create a Worker from this module URL and post
  * control / input messages. In-process Play uses `createInProcessRuntime`.
@@ -33,6 +33,7 @@ import { captureConsoleLogs } from "./console-capture";
 import { createSceneSnapshotDelivery } from "./scene-snapshot-delivery";
 
 let runtime: RuntimeDriver | null = null;
+let saveStorage = createSaveStorageClient((request) => onCommand({ type: "saveStorageRequest", request }));
 const boot = createPlayBootCoordinator();
 let bootGeneration = 0;
 const sceneSnapshots = createSceneSnapshotDelivery({
@@ -86,6 +87,9 @@ const pauseGate = createPlayPauseGate({
 
 function handleControl(msg: ControlMessage): void {
   switch (msg.type) {
+    case "saveStorageResponse":
+      saveStorage.receive(msg.response);
+      return;
     case "load": {
       bootGeneration++;
       boot.reset();
@@ -101,7 +105,9 @@ function handleControl(msg: ControlMessage): void {
         runtime.stop();
         runtime = null;
       }
-      runtime = createRuntimeFromLoad(msg, onCommand);
+      saveStorage.dispose();
+      saveStorage = createSaveStorageClient((request) => onCommand({ type: "saveStorageRequest", request }));
+      runtime = createRuntimeFromLoad(msg, onCommand, saveStorage.storage);
       return;
     }
     case "loadScripts": {
@@ -257,12 +263,19 @@ function handleControl(msg: ControlMessage): void {
     case "sceneLayerPointer":
       ensureRuntime().applySceneLayerPointer(msg);
       return;
+    case "sceneLayerControl":
+      ensureRuntime().applySceneLayerControl(msg);
+      return;
+    case "sceneLayerFocusNavigate":
+      ensureRuntime().applySceneLayerFocusNavigate(msg.reverse);
+      return;
     case "sceneLayerResize":
       ensureRuntime().applySceneLayerResize(
         msg.frustumWidth,
         msg.frustumHeight,
         msg.canvasWidth,
         msg.canvasHeight,
+        msg.safeAreaInsets,
       );
       return;
     case "audioVoiceEnded":

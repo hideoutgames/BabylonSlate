@@ -119,6 +119,24 @@ describe.each([
     expect(handle.ring.drain()).toEqual([{ kind: "key", tick: 7, code: "Space", phase: "down" }]);
   });
 
+  it("preserves native text focus claimed by a SceneLayer pointer handler", () => {
+    const canvas = document.createElement("canvas");
+    canvas.setPointerCapture = () => {};
+    const input = document.createElement("input");
+    document.body.append(canvas, input);
+    canvas.addEventListener("pointerdown", event => {
+      event.preventDefault();
+      input.focus();
+    });
+    const handle = attach(canvas);
+    handles.push(handle);
+    canvas.dispatchEvent(Object.assign(new Event("pointerdown", { cancelable: true }), { pointerId: 1, offsetX: 0, offsetY: 0, button: 0 }));
+    expect(document.activeElement).toBe(input);
+    expect(handle.ring.drain()).toEqual([{ kind: "pointer", tick: 0, pointerId: 1, phase: "down", x: 0, y: 0, button: 0 }]);
+    input.dispatchEvent(key("keydown", "KeyA"));
+    expect(handle.ring.drain()).toEqual([]);
+  });
+
   it("releases a held game key once when focus moves or the window blurs", () => {
     const { canvas, input, handle } = fixture();
     canvas.tabIndex = 0;

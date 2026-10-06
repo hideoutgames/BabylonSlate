@@ -8,6 +8,8 @@ export type DockviewDocumentKind =
   | "graph"
   | "enum"
   | "structure"
+  | "data-definition"
+  | "data-tree"
   | "script-interface"
   | "sprite"
   | "sprite-animation"
@@ -20,6 +22,7 @@ export type DockviewDocumentKind =
   | "anim-graph"
   | "behaviour-tree"
   | "audio"
+  | "save-game"
   | "input-action"
   | "input-axis"
   | "audio-mixer"
@@ -45,6 +48,8 @@ const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
   "graph",
   "enum",
   "structure",
+  "data-definition",
+  "data-tree",
   "script-interface",
   "sprite",
   "sprite-animation",
@@ -57,6 +62,7 @@ const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
   "anim-graph",
   "behaviour-tree",
   "audio",
+  "save-game",
   "input-action",
   "input-axis",
   "audio-mixer",
@@ -106,6 +112,8 @@ const DOCK_PRIMARY_PANEL: Record<DockviewDocumentKind, string> = {
   graph: "graph",
   enum: "enum-members",
   structure: "structure-members",
+  "data-definition": "data-definition-fields",
+  "data-tree": "data-tree-entries",
   "script-interface": "script-interface-preview",
   sprite: "sprite-preview",
   "sprite-animation": "sprite-animation-preview",
@@ -118,6 +126,7 @@ const DOCK_PRIMARY_PANEL: Record<DockviewDocumentKind, string> = {
   "anim-graph": "anim-graph-graph",
   "behaviour-tree": "behaviour-tree-graph",
   audio: "audio-preview",
+  "save-game": "save-game-fields",
   "input-action": "input-bindings",
   "input-axis": "input-bindings",
   "audio-mixer": "audio-mixer-details",
@@ -939,6 +948,11 @@ const BEHAVIOUR_TREE_WINDOWS: DockWindowDefinition[] = [
   },
 ];
 
+const SAVE_GAME_WINDOWS: DockWindowDefinition[] = [
+  { id: "save-game-fields", component: "save-game-fields", title: "Fields" },
+  { id: "save-game-definition", component: "save-game-definition", title: "Definition", defaultPosition: { referencePanelId: "save-game-fields", direction: "right", initialWidth: 300 } },
+];
+
 const INPUT_WINDOWS: DockWindowDefinition[] = [
   { id: "input-bindings", component: "input-bindings", title: "Bindings" },
   { id: "input-details", component: "input-details", title: "Details", defaultPosition: { referencePanelId: "input-bindings", direction: "right", initialWidth: 300 } },
@@ -953,8 +967,18 @@ export function listDockWindows(
     if (kind === "scene" && options?.sceneMode === "foliage") return withOptionalLocks(kind, FOLIAGE_WINDOWS, options);
     return withOptionalLocks(kind, SCENE_WINDOWS, options);
   }
+  if (kind === "save-game") return withOptionalLocks(kind, SAVE_GAME_WINDOWS, options);
   if (kind === "input-action" || kind === "input-axis") return withOptionalLocks(kind, INPUT_WINDOWS, options);
   if (kind === "enum") return withOptionalLocks(kind, ENUM_WINDOWS, options);
+  if (kind === "data-definition") return withOptionalLocks(kind, [
+    { id: "data-definition-fields", component: "data-definition-fields", title: "Fields" },
+  ], options);
+  if (kind === "data-tree") return withOptionalLocks(kind, [
+    { id: "data-tree-entries", component: "data-tree-entries", title: "Entries" },
+    { id: "data-tree-hierarchy", component: "data-tree-hierarchy", title: "Tree", defaultPosition: { referencePanelId: "data-tree-entries", direction: "left", initialWidth: 260 } },
+    { id: "data-tree-values", component: "data-tree-values", title: "Values", defaultPosition: { referencePanelId: "data-tree-entries", direction: "right", initialWidth: 320 } },
+    { id: "data-tree-validation", component: "data-tree-validation", title: "Validation", defaultPosition: { referencePanelId: "data-tree-entries", direction: "below", initialHeight: 150 } },
+  ], options);
   if (kind === "structure") {
     return withOptionalLocks(kind, STRUCTURE_WINDOWS, options);
   }

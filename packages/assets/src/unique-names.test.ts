@@ -38,6 +38,10 @@ describe("nextCopyName", () => {
 describe("asset file suffix helpers", () => {
   it("strips .scene.babasset, .graph.babasset, .class.babasset, and .babasset", () => {
     expect(stripAssetFileSuffix("main.scene.babasset")).toBe("main");
+    expect(stripAssetFileSuffix("Item.datadefinition.babasset")).toBe("Item");
+    expect(stripAssetFileSuffix("Items.datatree.babasset")).toBe("Items");
+    expect(stripAssetFileSuffix("Sword.dataobject.babasset")).toBe("Sword");
+    expect(stripAssetFileSuffix("Items.datasheet.babasset")).toBe("Items");
     expect(stripAssetFileSuffix("logic.graph.babasset")).toBe("logic");
     expect(stripAssetFileSuffix("hero.class.babasset")).toBe("hero");
     expect(stripAssetFileSuffix("hud.ui.babasset")).toBe("hud.ui");
@@ -57,6 +61,10 @@ describe("asset file suffix helpers", () => {
   });
 
   it("preserves the original container suffix", () => {
+    expect(assetFileSuffix("Item.datadefinition.babasset")).toBe(".datadefinition.babasset");
+    expect(assetFileSuffix("Items.datatree.babasset")).toBe(".datatree.babasset");
+    expect(assetFileSuffix("Sword.dataobject.babasset")).toBe(".dataobject.babasset");
+    expect(assetFileSuffix("Items.datasheet.babasset")).toBe(".datasheet.babasset");
     expect(assetFileSuffix("main.scene.babasset")).toBe(".scene.babasset");
     expect(assetFileSuffix("logic.graph.babasset")).toBe(".graph.babasset");
     expect(assetFileSuffix("hero.class.babasset")).toBe(".class.babasset");
@@ -94,5 +102,14 @@ describe("asset file suffix helpers", () => {
       "Embers_1.particlegraph.babasset",
     );
     expect(assetFileSuffix("logic.graph.babasset")).toBe(".graph.babasset");
+  });
+
+  it("keeps a Save Game's display name and container suffix when duplicating", () => {
+    const fileName = "PlayerProgress.savegame.babasset";
+    const stem = stripAssetFileSuffix(fileName);
+    expect(stem).toBe("PlayerProgress");
+    expect(`${nextCopyName(stem, ["PlayerProgress"])}${assetFileSuffix(fileName)}`).toBe(
+      "PlayerProgress_1.savegame.babasset",
+    );
   });
 });

@@ -1,3 +1,4 @@
+import { UI_CONTROL_2D_CLASS_IDS, OVERLAY_CONTAINER_CLASSES, parseOverlayContainerProperties, isUIControl2DClass, parseUIControl2DProperties } from "@babylonslate/core";
 import { normalizeWaterBody, normalizeWaterBuoyancy, normalizeWaterRemoval, waterKindForClass } from "@babylonslate/core";
 import { OVERLAY_LAYOUT_CLASSES, isOverlayLayoutClass, parseOverlayLayoutProperties } from "@babylonslate/core";
 import type {
@@ -67,6 +68,7 @@ function engineComponent(
 }
 
 export const ADDABLE_COMPONENT_CLASSES: readonly AddComponentItem[] = [
+  engineComponent("SaveGameComponent", "Save Game", "Save selected actor transforms and script variables at checkpoints", "General"),
   engineComponent(
     "MovementComponent",
     "Movement",
@@ -161,6 +163,7 @@ export const ADDABLE_COMPONENT_CLASSES: readonly AddComponentItem[] = [
   engineComponent("WaterPuddleComponent", "Water Puddle", "Shallow water with small ripples", "Water"),
   engineComponent("WaterRemovalVolumeComponent", "Water Removal Volume", "Removes water inside a box, sphere, cylinder or capsule", "Water"),
   engineComponent("WaterBuoyancyComponent", "Water Buoyancy", "Float with waves and respond to physics impacts", "Water"),
+  ...UI_CONTROL_2D_CLASS_IDS.map(classId => engineComponent(classId, humanizePropertyLabel(classId.replace(/Component$/, "")), "Interactive SceneLayer control with configurable materials and textures", "Overlay")),
   ...OVERLAY_LAYOUT_CLASSES.map(classId => engineComponent(classId, humanizePropertyLabel(classId.replace(/Component$/, "")), classId === "2DPaddingComponent" ? "Insets the parent content without drawing a surface" : "Nested SceneLayer layout", "Overlay")),
   engineComponent("2DJoystickComponent", "2D Joystick", "Touch joystick with configurable background and joystick materials", "Overlay"),
   engineComponent("2DPainterComponent", "2D Painter", "Draw shapes, paths, curves and masks with graph nodes", "Overlay"),
@@ -239,12 +242,15 @@ export function defaultPropertiesFor(
   physicsWorld: PhysicsWorldKind = "3d",
   viewportMode: ViewportMode = "3d",
 ): Record<string, unknown> {
-  if (isOverlayLayoutClass(classId)) return { ...parseOverlayLayoutProperties({}, classId) };
+  if (isUIControl2DClass(classId)) return { ...parseUIControl2DProperties(classId, {}) };
+  if (isOverlayLayoutClass(classId)) return { ...parseOverlayLayoutProperties({}, classId), ...((OVERLAY_CONTAINER_CLASSES as readonly string[]).includes(classId) ? parseOverlayContainerProperties({}) : {}) };
   const waterKind = waterKindForClass(classId);
   if (waterKind) return { ...normalizeWaterBody({}, waterKind) };
   if (classId === "WaterBuoyancyComponent") return { ...normalizeWaterBuoyancy({}), mass: 1 };
   if (classId === "WaterRemovalVolumeComponent") return { ...normalizeWaterRemoval({}) };
   switch (classId) {
+    case "SaveGameComponent":
+      return { saveTransform: true, persistDestruction: true, actorVariables: [], componentVariables: {} };
     case "MovementComponent":
       return { ...parseMovementProperties({}) };
     case "DynamicRuntimeMeshComponent":

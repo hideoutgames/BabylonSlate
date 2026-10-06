@@ -2,12 +2,16 @@ import { createContext, useContext } from "react";
 import type { NavigateRequest } from "./graph-types";
 import type { PinTypeRef } from "./node-theme";
 import type { NestedMenuItem } from "@babylonslate/editor-kit";
+import type { PinDefaultEditorRenderer } from "./pin-default-editor-context";
 import type { PinTypeNames } from "./pin-default-preview";
 import type { ConnectEndMode, PinCompatibilityRule } from "./graph-connect";
 
 export type GraphEditorContextValue = {
+  renderPinDefaultEditor?: PinDefaultEditorRenderer;
+  connectedInputs?: ReadonlyMap<string, readonly string[]>;
   renderNodeBody?: (nodeId: string, data: Record<string, unknown>) => React.ReactNode;
   pendingPin: { nodeId: string; pinId: string } | null;
+  onPinDefaultChange?: (nodeId: string, pinId: string, value: unknown) => void;
   onPinTap: (nodeId: string, pinId: string, direction: "in" | "out") => void;
   nodeErrorCount: (nodeId: string) => number;
   pinHasError: (nodeId: string, pinId: string) => boolean;

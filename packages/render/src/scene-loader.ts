@@ -12,6 +12,8 @@ import { createFogVolumeGuide, syncFogVolumeGuideAttachments } from "./fog-volum
 import type { SerializedActor, SerializedComponent, SerializedScene, SerializedTransform } from "@babylonslate/core";
 import { sceneShadowController } from "./shadow-controller";
 import { createJoystick2DMesh } from "./joystick2d-mesh";
+import { createUIControl2DMesh } from "./ui-controls2d-mesh";
+import { isUIControl2DClass, UI_CONTROL_2D_CLASS_IDS } from "@babylonslate/core";
 import { createPainter2DMesh } from "./painter2d-mesh";
 import { applyOverlayVisualStyle } from "./overlay-visual-style";
 import { supportsOverlayVisualStyle } from "@babylonslate/core";
@@ -257,6 +259,7 @@ const VISUAL_COMPONENT_CLASS_IDS = new Set([
   "2DTextComponent",
   "2DRichTextComponent",
   "2DJoystickComponent",
+  ...UI_CONTROL_2D_CLASS_IDS,
   "2DTextureComponent",
   "2DMaterialComponent",
   "2DPanelComponent",
@@ -286,6 +289,7 @@ const SURFACE_COMPONENT_CLASS_IDS = new Set([
   "2DTextComponent",
   "2DRichTextComponent",
   "2DJoystickComponent",
+  ...UI_CONTROL_2D_CLASS_IDS,
   "2DTextureComponent",
   "2DMaterialComponent",
   "2DPanelComponent",
@@ -297,6 +301,7 @@ export const EDITOR_HELPER_BILLBOARD_ID = "billboard";
 function overlayActorHasSurfaceVisual(actor: SerializedActor): boolean {
   return actor.components.some(
     (component) =>
+      isUIControl2DClass(component.classId) ||
       component.classId === "2DJoystickComponent" ||
       component.classId === "2DPainterComponent" ||
       component.classId === "2DTextureComponent" ||
@@ -547,6 +552,7 @@ function componentVisualKind(
   if (component.classId === "2DMaterialComponent") {
     return `2dmaterial:${stringProp(component.properties.materialGuid) ?? ""}:${String(component.properties.hitTest ?? "ignore")}`;
   }
+  if (isUIControl2DClass(component.classId)) return `2dcontrol:${component.classId}:${JSON.stringify(component.properties)}`;
   if (component.classId === "2DJoystickComponent" || component.classId === "2DPainterComponent") {
     const structural = Object.fromEntries(Object.entries(component.properties).filter(([key]) => key !== "opacity" && key !== "tint"));
     return `${component.classId === "2DJoystickComponent" ? "2djoystick" : "2dpainter"}:${JSON.stringify(structural)}`;
@@ -720,6 +726,8 @@ export function editorMeshKindOf(
     (component) => component.classId === "2DPanelComponent",
   );
   if (panel2dComponent) return componentVisualKind(panel2dComponent, assets, actor);
+  const control2dComponent = actor.components.find(component => isUIControl2DClass(component.classId));
+  if (control2dComponent) return componentVisualKind(control2dComponent, assets, actor);
   const joystick2dComponent = actor.components.find(component => component.classId === "2DJoystickComponent");
   if (joystick2dComponent) return componentVisualKind(joystick2dComponent, assets, actor);
   const painter2dComponent = actor.components.find((component) => component.classId === "2DPainterComponent");
@@ -892,6 +900,7 @@ function createComponentMesh(
     mesh.material = createOverlayUnlitMaterial(scene, name, bundle);
     return mesh;
   }
+  if (isUIControl2DClass(component.classId)) return createUIControl2DMesh(scene, name, component, assets, component.id);
   if (component.classId === "2DJoystickComponent") return createJoystick2DMesh(scene, name, component.properties, assets);
   if (component.classId === "2DPainterComponent") return createPainter2DMesh(scene, name, component.properties);
   if (component.classId === "ParticleComponent") {
@@ -1182,6 +1191,7 @@ export function createActorMesh(
   );
   const overlayPlane = visualComponentsOf(actor, allActors).find(
     (component) =>
+      isUIControl2DClass(component.classId) ||
       component.classId === "2DJoystickComponent" ||
       component.classId === "2DPainterComponent" ||
       component.classId === "2DTextureComponent" ||

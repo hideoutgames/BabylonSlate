@@ -165,11 +165,13 @@ export function resolvePreviewStartupGuid(options: {
 }
 
 export function playLoadControl(options: {
+  saveGame?: import("@babylonslate/core").SaveGameConfiguration;
   frameCap?: number;
   traceByteBudget?: number;
   renderSettings?: Partial<import("@babylonslate/core").RenderProjectSettings>;
   project?: { name: string; version: string };
   inputAssets?: import("@babylonslate/core").InputAssetDefinition[];
+  dataAssets?: import("@babylonslate/core").DataAssetCatalogEntry[];
   inputMappings?: ProjectInputSettings;
   focusNavigation?: import("@babylonslate/core").FocusNavigationSettings;
   pixelsPerUnit?: number;
@@ -206,11 +208,13 @@ export function playLoadControl(options: {
   });
   return {
     type: "load",
+    saveGame: options.saveGame,
     frameCap: options.frameCap,
     traceByteBudget: options.traceByteBudget,
     renderSettings: options.renderSettings,
     ...(options.project ? { project: options.project } : {}),
     inputAssets: options.inputAssets,
+    dataAssets: options.dataAssets,
     inputMappings: options.inputMappings,
     focusNavigation: options.focusNavigation,
     pixelsPerUnit: options.pixelsPerUnit,

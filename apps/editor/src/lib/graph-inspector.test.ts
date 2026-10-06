@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { COLOR, FLOAT, STRING, VEC2, VEC4, assetRef, classRef, enumRef, objectRef, pin } from "@babylonslate/scripting";
+import { COLOR, FLOAT, STRING, VEC2, VEC4, assetRef, classRef, enumRef, objectRef, pin, type PinType } from "@babylonslate/scripting";
 import {
   collectEnumMemberNames,
   connectedEnumGuidFromSerialized,
@@ -19,10 +19,87 @@ import {
   pinTypeFromParameterType,
   pinsFromNodeData,
   structNodePropertyRows,
+  tagNodePropertyRows,
   assetPickerAllowedTypes,
   variableAssetPickerAllowedTypes,
   variableDefaultPropertyRows,
 } from "./graph-inspector";
+
+describe("Tag property rows", () => {
+  it.each<{ type: PinType; kind: "tag" | "tag-container"; value: unknown }>([
+    { type: { kind: "tag" }, kind: "tag", value: 7 },
+    { type: { kind: "structRef", guid: "engine:TagContainer" }, kind: "tag-container", value: { Tags: [7] } },
+  ])("resolves unconnected Select By Tag options as $kind from its connected result", ({ type, kind, value }) => {
+    const wildcard: PinType = { kind: "resolvingWildcard", group: "result" };
+    const node = { id: "select", data: { __pins: [
+      pin("option:7", "State.Alive", "in", wildcard),
+      pin("default", "Default", "in", wildcard),
+      pin("out", "Result", "out", wildcard),
+    ], "default:option:7": value } };
+    const consumer = { id: "consumer", data: { __pins: [pin("value", "Value", "in", type)] } };
+    const edges = [{ source: "select", sourceHandle: "out", target: "consumer", targetHandle: "value" }];
+    const rows = pinDefaultPropertyRows(inspectorLiteralPinDefaults(node, edges, [node, consumer]), vi.fn());
+    expect(rows).toMatchObject([
+      { id: "option:7", kind, value },
+      { id: "default", kind, value: kind === "tag" ? 0 : { Tags: [] } },
+    ]);
+  });
+
+  it("keeps Tag defaults typed and patches numeric selections", () => {
+    const patch = vi.fn();
+    const [row] = pinDefaultPropertyRows([
+      { pinId: "value", name: "Value", type: { kind: "tag" }, value: 12 },
+    ], patch);
+    if (row?.kind !== "tag") throw new Error("Expected Tag picker");
+    expect(row.value).toBe(12);
+    row.onChange(9);
+    expect(patch).toHaveBeenCalledWith({ "default:value": 9 });
+  });
+
+  it("edits TagContainer as one selection and preserves unrelated nested fields", () => {
+    const change = vi.fn();
+    const rows = variableDefaultPropertyRows("struct", {
+      State: 3, Allowed: { Tags: [2, 7, 2, 0] }, Score: 4,
+    }, change, {
+      typeClassId: "rules",
+      schemas: {
+        enums: {},
+        structs: { rules: { name: "Rules", fields: [
+          { name: "State", typeId: "tag" },
+          { name: "Allowed", typeId: "struct", typeClassId: "engine:TagContainer" },
+          { name: "Score", typeId: "float" },
+        ] } },
+      },
+    });
+    const row = rows.find((entry) => entry.kind === "tag-container");
+    if (row?.kind !== "tag-container") throw new Error("Expected TagContainer picker");
+    expect(row.value).toEqual({ Tags: [2, 7] });
+    row.onChange({ Tags: [9] });
+    expect(change).toHaveBeenCalledWith({ State: 3, Allowed: { Tags: [9] }, Score: 4 });
+    expect(rows.find((entry) => entry.kind === "tag")?.label).toBe("State");
+  });
+
+  it("provides empty Tag and TagContainer defaults without a schema lookup", () => {
+    expect(variableDefaultPropertyRows("tag", undefined, vi.fn())[0]).toMatchObject({
+      kind: "tag", value: 0,
+    });
+    expect(variableDefaultPropertyRows("struct", undefined, vi.fn(), {
+      typeClassId: "engine:TagContainer",
+    })[0]).toMatchObject({ kind: "tag-container", value: { Tags: [] } });
+  });
+
+  it.each(["tags.switch", "tags.select"])("stores readable cases for %s and removes deselected names", (typeId) => {
+    const patch = vi.fn();
+    const [row] = tagNodePropertyRows(typeId, {
+      cases: [2, 3], caseNames: { 2: "Old", 3: "Missing.Path" },
+    }, patch, [{ id: 2, path: "Actor.Alive" }, { id: 4, path: "Actor.Sleeping" }]);
+    if (row?.kind !== "tag-container") throw new Error("Expected Tag cases picker");
+    row.onChange({ Tags: [2, 4] });
+    expect(patch).toHaveBeenCalledWith({ cases: [2, 4], caseNames: { 2: "Actor.Alive", 4: "Actor.Sleeping" } });
+    row.onChange({ Tags: [] });
+    expect(patch).toHaveBeenLastCalledWith({ cases: [], caseNames: {} });
+  });
+});
 
 describe("JavaScript pin types", () => {
   it("preserves reference constraints and typed arrays and maps when editing pin names", () => {
@@ -530,6 +607,24 @@ describe("variableDefaultPropertyRows structs and enums", () => {
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({ health: 10, team: "Blue" }),
     );
+  });
+
+  it("never scalar-edits array or map fields while editing a sibling Structure field", () => {
+    const onChange = vi.fn();
+    const value = { health: 8, prices: [10, 20], labels: [{ key: 7, value: "Rare" }] };
+    const rows = variableDefaultPropertyRows("struct", value, onChange, {
+      typeClassId: "stats",
+      schemas: { enums: {}, structs: { stats: { name: "Stats", fields: [
+        { name: "health", typeId: "float" },
+        { name: "prices", typeId: "float", container: "array" },
+        { name: "labels", typeId: "string", container: "map", keyTypeId: "int" },
+      ] } } },
+    });
+    expect(rows.map((row) => row.label)).toEqual(["Health"]);
+    const health = rows[0];
+    if (health?.kind !== "number") throw new Error("Expected health editor");
+    health.onChange(12);
+    expect(onChange).toHaveBeenCalledWith({ health: 12, prices: [10, 20], labels: [{ key: 7, value: "Rare" }] });
   });
 
   it("shows an Enum Select for a bound enum variable", () => {

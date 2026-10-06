@@ -27,6 +27,7 @@ export function runtimeOptionsFromLoadControl(
   | "texturePixelSizes"
   | "project"
   | "inputAssets"
+  | "dataAssets"
   | "inputMappings"
   | "physicsWorld"
   | "gravity"
@@ -75,6 +76,7 @@ export function runtimeOptionsFromLoadControl(
     ...(msg.frameCap !== undefined ? { frameCap: msg.frameCap } : {}),
     ...(msg.traceByteBudget !== undefined ? { traceByteBudget: msg.traceByteBudget } : {}),
     renderSettings: msg.renderSettings,
+    dataAssets: msg.dataAssets,
     focusNavigation: msg.focusNavigation,
     pixelsPerUnit: msg.pixelsPerUnit,
     texturePixelSizes: msg.texturePixelSizes,
@@ -116,11 +118,14 @@ export function runtimeOptionsFromLoadControl(
 export function createRuntimeFromLoad(
   msg: PlayLoadControl,
   onCommand: (command: CommandMessage) => void,
+  saveGameStorage?: import("@babylonslate/core").SaveGameStorage,
 ): RuntimeDriver {
-  return createInProcessRuntime({
+  const runtime = createInProcessRuntime({
     ...runtimeOptionsFromLoadControl(msg),
     onCommand,
   });
+  if (msg.saveGame && saveGameStorage) runtime.configureSaveGame({ ...msg.saveGame, storage: saveGameStorage });
+  return runtime;
 }
 
 const NON_ACTOR_SCRIPT_CLASS_IDS = new Set([

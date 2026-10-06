@@ -1,4 +1,5 @@
 /** Enum / Structure / ScriptInterface type asset payloads (P5). */
+import type { DataFieldSnapshot } from "@babylonslate/core";
 
 export type EnumMember = { name: string; value: number };
 
@@ -10,11 +11,20 @@ export type EnumAsset = {
 };
 
 export type StructField = {
+  /** Optional for legacy assets; persisted identities make field renames safe. */
+  id?: string;
   name: string;
   typeId: string;
   /** Object/class constraint, or nested Structure/Enum asset guid. */
   typeClassId?: string;
+  /** Fields may hold the same typed collections as Class variables. */
+  container?: "single" | "array" | "map";
+  keyTypeId?: string;
+  keyTypeClassId?: string;
   defaultValue?: unknown;
+  /** Authored nested identities for a Data Definition field's stored default. */
+  fields?: DataFieldSnapshot[];
+  keyFields?: DataFieldSnapshot[];
 };
 
 export type StructureAsset = {

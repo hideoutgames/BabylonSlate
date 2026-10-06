@@ -1,4 +1,5 @@
 import {
+  memo,
   useCallback,
   useDeferredValue,
   useEffect,
@@ -201,7 +202,7 @@ import {
 } from "../lib/plugin-ui";
 import { revealAssetFromTarget } from "../lib/search-navigation";
 import { writeRetargetedAnimations } from "../lib/animation-retarget";
-import { collectClassGraphsForPalette } from "../lib/logic-graph-document";
+import { collectClassGraphsForPalette, collectGraphTypeAssets, typeSchemasFromGraphAssets } from "../lib/logic-graph-document";
 import { classIdForGraphPath } from "../services/script-compiler";
 import { useLongPressMenu } from "../lib/use-long-press-menu";
 import { useContentBrowserPaintSelect } from "../lib/use-content-browser-paint-select";
@@ -218,8 +219,6 @@ import { ContentBrowserNewAssetDialog } from "./content-browser-new-asset-dialog
 import { createProjectAsset } from "../lib/create-project-asset";
 import { ContentBrowserSelectionActions } from "./content-browser-selection-actions";
 import { usePhoneLayout } from "../shell/use-platform-layout";
-
-const PROJECT_ROOT_ID = PROJECT_CONTENT_ROOT_ID;
 
 type DeleteTarget =
   | { kind: "assets"; guids: string[] }
@@ -269,11 +268,17 @@ function mountedTileLocksKey(
   return JSON.stringify(locks);
 }
 
-export function ContentBrowserWorkspace({
-  hidden = false,
-}: {
-  hidden?: boolean;
-} = {}) {
+type ContentBrowserWorkspaceBodyProps = {
+  hidden: boolean;
+  documents: ReturnType<typeof useDocuments>;
+  diagnostics: ReturnType<typeof useValidation>["diagnostics"];
+};
+
+function ContentBrowserWorkspaceBody({
+  hidden,
+  documents,
+  diagnostics,
+}: ContentBrowserWorkspaceBodyProps) {
   const phone = usePhoneLayout();
   const [foldersOpen, setFoldersOpen] = useState(false);
   useEffect(() => {
@@ -301,10 +306,9 @@ export function ContentBrowserWorkspace({
     sourceControl,
     activeDocumentId,
     readAssetChunk,
-  } = useDocuments();
+  } = documents;
   const play = useOptionalPlay();
   const { pendingTarget, clearPendingTarget } = useProjectSearch();
-  const { diagnostics } = useValidation();
   const compileErrorGuids = useMemo(() => {
     const set = new Set<string>();
     for (const d of diagnostics) {
@@ -346,6 +350,7 @@ export function ContentBrowserWorkspace({
     useState<CreatableAssetType>("Scene");
   const [newAssetName, setNewAssetName] = useState("");
   const [newAssetParent, setNewAssetParent] = useState("BObject");
+  const [newDataDefinition, setNewDataDefinition] = useState<string | null>(null);
   const [newWaterStyle, setNewWaterStyle] = useState<import("@babylonslate/core").WaterStyle>("realistic");
   const [busy, setBusy] = useState(false);
   const [deleteProgress, setDeleteProgress] = useState<{
@@ -449,7 +454,9 @@ export function ContentBrowserWorkspace({
   );
   const folderRoot = browserRoots.find((root) => root.id === selectedRoot.rootId) ?? browserRoots[0]!;
 
-  useEffect(() => {
+  // Layout effects, so a reveal that is not a discrete event (closing a
+  // dirty tab after Save) never paints a folder the browser is about to leave.
+  useLayoutEffect(() => {
     if (
       !showPluginContent &&
       isPluginContentFolderPath(selectedFolderPath, pluginContentPrefixes)
@@ -467,7 +474,7 @@ export function ContentBrowserWorkspace({
         {
           ...tree,
           name:
-            root.id === PROJECT_ROOT_ID
+            root.id === PROJECT_CONTENT_ROOT_ID
               ? tree.name
               : root.readOnly
                 ? `${root.label} (Read Only)`
@@ -477,7 +484,7 @@ export function ContentBrowserWorkspace({
     });
   }, [assetRegistry, browserRoots, registryEpoch]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     setCollapsedFolders((current) => {
       const next = withAutoCollapsedNestedFolders(
         current,
@@ -808,6 +815,9 @@ export function ContentBrowserWorkspace({
       flattenFolderForest(folderTrees).map((row) => row.path),
     [folderTrees],
   );
+  const newDataTypes = useMemo(() => newAssetOpen && (newAssetType === "DataDefinition" || newAssetType === "DataTree")
+    ? collectGraphTypeAssets({ assets: allAssets, openDocuments })
+    : { structures: [], enums: [], dataDefinitions: [] }, [newAssetOpen, newAssetType, allAssets, openDocuments]);
   const newAssetNameTaken = isNewAssetNameTaken(
     existingAssetPaths,
     selectedFolderPath,
@@ -2229,6 +2239,8 @@ export function ContentBrowserWorkspace({
         name,
         parentClass: type === "Class" ? newAssetParent : null,
         waterStyle: newWaterStyle,
+        defaultDefinitionGuid: newDataDefinition,
+        typeSchemas: type === "DataDefinition" || type === "DataTree" ? typeSchemasFromGraphAssets(newDataTypes) : undefined,
         classParentOf,
         parentGraphs:
           type === "Class"
@@ -2241,7 +2253,7 @@ export function ContentBrowserWorkspace({
       });
       setNewAssetOpen(false);
       await refreshAssetRegistry();
-      if (type === "Scene") {
+      if (type === "Scene" || type === "DataDefinition" || type === "DataTree") {
         await openOrFocusDocument(created);
       }
     } catch (error) {
@@ -2256,6 +2268,8 @@ export function ContentBrowserWorkspace({
     newAssetName,
     newAssetNameTaken,
     newAssetParent,
+    newDataDefinition,
+    newDataTypes,
     newWaterStyle,
     newAssetType,
     openDocuments,
@@ -2624,7 +2638,7 @@ export function ContentBrowserWorkspace({
         >
           <div className="shrink-0 border-b border-border/60 bg-sidebar px-1 py-0.5">
             <FolderBreadcrumbs
-              root={{ path: folderRoot.pathPrefix, label: folderRoot.id === PROJECT_ROOT_ID ? "Content" : folderRoot.label }}
+              root={{ path: folderRoot.pathPrefix, label: folderRoot.id === PROJECT_CONTENT_ROOT_ID ? "Content" : folderRoot.label }}
               path={selectedFolderPath}
               touch={phone}
               onNavigate={(path) => {
@@ -2777,6 +2791,9 @@ export function ContentBrowserWorkspace({
         parentClass={newAssetParent}
         waterStyle={newWaterStyle}
         onWaterStyleChange={setNewWaterStyle}
+        definitionGuid={newDataDefinition}
+        onDefinitionGuidChange={setNewDataDefinition}
+        definitionAssets={newDataTypes.dataDefinitions.map(definition => ({ guid: definition.guid, name: definition.name, type: "DataDefinition" }))}
         onParentClassChange={setNewAssetParent}
         classAssets={allAssets.filter((asset) => asset.header.type === "Class")}
         nameTaken={newAssetNameTaken}
@@ -3276,5 +3293,33 @@ export function ContentBrowserWorkspace({
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  );
+}
+
+/**
+ * Skips every render while the browser stays hidden behind another tab: it
+ * shows nothing per-edit state can change there. The hide itself still
+ * renders (tiles unmount, decode pauses), and showing it renders the current
+ * documents, registry, thumbnails, locks and diagnostics. Context updates the
+ * body reads itself (search reveals, Play, phone layout) still reach it.
+ */
+const MemoContentBrowserWorkspaceBody = memo(
+  ContentBrowserWorkspaceBody,
+  (previous, next) => previous.hidden && next.hidden,
+);
+
+export function ContentBrowserWorkspace({
+  hidden = false,
+}: {
+  hidden?: boolean;
+} = {}) {
+  const documents = useDocuments();
+  const { diagnostics } = useValidation();
+  return (
+    <MemoContentBrowserWorkspaceBody
+      hidden={hidden}
+      documents={documents}
+      diagnostics={diagnostics}
+    />
   );
 }

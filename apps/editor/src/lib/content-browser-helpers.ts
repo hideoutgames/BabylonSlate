@@ -1,8 +1,11 @@
 import { createDefaultWaterDefinition, normalizeWaterDefinition, createDefaultRenderTargetPayload, createDefaultRenderTargetTexturePayload, normalizeRenderTargetTexturePayload, createDefaultRenderTargetCaptureProperties, renderTargetAssetGuidsFromGraph, type WaterStyle } from "@babylonslate/core";
+import { createDataDefinitionAsset, createDataTreeAsset, type DataDefinitionAsset, type DataTreeAsset } from "@babylonslate/core";
 import type { ImportResult, IndexedAsset } from "@babylonslate/assets";
 import {
   DOCUMENT_CHUNK_ID,
   findClassAssetReferences,
+  dataAssetDependencies,
+  dataGraphAssetDependencies,
   audioAssetDependencies,
   particleAssetDependencies,
   createDefaultMigrationRegistry,
@@ -32,6 +35,7 @@ import {
   createDefaultScene,
   createSceneStreamingActor,
   createInputAssetPayload,
+  createDefaultSaveGameDefinition,
   isInputAssetType,
   createDefaultSceneLayer,
   isLegacyMaterialAssetType,
@@ -104,6 +108,7 @@ export const ENGINE_BASE_CLASSES = [
   "Actor",
   "RenderTargetCapture",
   "SceneLayerActor",
+  "SceneLayerActorSwitcher",
   "SceneStreamingActor",
   "ActorComponent",
   "GameInstance",
@@ -236,8 +241,11 @@ export const CREATABLE_ASSET_TYPES = [
   "Tilemap",
   "BehaviourTree",
   "Blackboard",
+  "SaveGame",
   "Enum",
   "Structure",
+  "DataDefinition",
+  "DataTree",
   "ScriptInterface",
   "AudioMixer",
   "AudioChannel",
@@ -265,10 +273,11 @@ export type CreatableAssetTypeGroup = {
 export const CREATABLE_ASSET_TYPE_GROUPS: readonly CreatableAssetTypeGroup[] = [
   { id: "world", label: "World", types: ["Scene", "SceneLayer"] },
   { id: "input", label: "Input", types: ["InputAction", "InputAxis"] },
+  { id: "data", label: "Data", types: ["DataDefinition", "DataTree"] },
   {
     id: "scripting",
     label: "Scripting",
-    types: ["Class", "Enum", "Structure", "ScriptInterface"],
+    types: ["Class", "Enum", "Structure", "ScriptInterface", "SaveGame"],
   },
   {
     id: "2d",
@@ -312,9 +321,12 @@ const CREATABLE_ASSET_TYPE_DESCRIPTIONS: Record<CreatableAssetType, string> = {
   Tileset: "Tile definitions and collision for painting tilemaps.",
   Tilemap: "A painted 2D tile layer that references a Tileset.",
   BehaviourTree: "An AI tree of composites, tasks, and decorators.",
+  SaveGame: "Typed player progress with defaults, stable fields, and reliable local save slots.",
   Blackboard: "Shared keys that a behaviour tree reads and writes.",
   Enum: "Named integer members used by pins and variables.",
   Structure: "A user-defined struct of typed fields.",
+  DataDefinition: "Define fields, defaults, and validation for Data Tree entries.",
+  DataTree: "Organize typed entries in a hierarchy. Branches can use different Data Definitions.",
   ScriptInterface: "A contract of methods that classes can implement.",
   AudioMixer: "Global and per-channel default volumes for Play.",
   AudioChannel: "A routing bus with an optional parent and reverb send.",
@@ -395,6 +407,7 @@ export type ClassAssetRef = {
     name: string;
     parentClass?: string | null;
     guid?: string;
+    payload?: Record<string, unknown>;
   };
 };
 
@@ -1530,8 +1543,19 @@ export function buildNewAssetResult(options: {
   parentGraphs?: Record<string, import("@babylonslate/core").SerializedGraph>;
   /** New Material domain; pickers pass `particle` / `postProcess` / `landscape`. */
   materialDomain?: MaterialDomain;
+  defaultDefinitionGuid?: string | null;
+  dataDefinition?: DataDefinitionAsset;
+  dataTree?: DataTreeAsset;
 }): ImportResult {
   const { type, name, guid, parentClass } = options;
+  if (type === "DataDefinition" || type === "DataTree") {
+    const payload = type === "DataDefinition"
+      ? options.dataDefinition ?? createDataDefinitionAsset()
+      : options.dataTree ?? createDataTreeAsset(options.defaultDefinitionGuid);
+    const result = documentAsset(type, name, guid, { ...payload });
+    result.dependencies = assetHeaderDependencies(type, result.payload);
+    return result;
+  }
   if (type === "RenderTarget") return documentAsset(type, name, guid, { ...createDefaultRenderTargetPayload() });
   if (type === "RenderTargetTexture") return documentAsset(type, name, guid, { ...createDefaultRenderTargetTexturePayload() });
   if (type === "Water") return documentAsset(type, name, guid, createDefaultWaterDefinition(options.waterStyle) as unknown as Record<string, unknown>);
@@ -1699,6 +1723,10 @@ export function buildNewAssetResult(options: {
     );
   }
 
+  if (type === "SaveGame") {
+    return documentAsset(type, name, guid, { ...createDefaultSaveGameDefinition(guid) });
+  }
+
   if (type === "Blackboard") {
     return documentAsset(
       type,
@@ -1819,8 +1847,11 @@ const ASSET_FILE_SUFFIX: Partial<Record<CreatableAssetType, string>> = {
   Tilemap: ".tilemap.babasset",
   BehaviourTree: ".bt.babasset",
   Blackboard: ".blackboard.babasset",
+  SaveGame: ".savegame.babasset",
   AudioMixer: ".mixer.babasset",
   InputAction: ".inputaction.babasset",
+  DataDefinition: ".datadefinition.babasset",
+  DataTree: ".datatree.babasset",
   InputAxis: ".inputaxis.babasset",
   AudioChannel: ".channel.babasset",
   SoundAttenuation: ".atten.babasset",
@@ -1875,23 +1906,44 @@ export function assetHeaderDependencies(
   classes: readonly ClassAssetRef[] = [],
   parentClass?: string | null,
 ): string[] {
+  const schemasByGuid = new Map(classes.flatMap(asset => {
+    const fields = asset.header.payload?.fields;
+    return asset.header.guid && ["DataDefinition", "Structure"].includes(asset.header.type) && Array.isArray(fields)
+      ? [[asset.header.guid, fields] as const] : [];
+  }));
+  const definitionFields = (guid: string) => schemasByGuid.get(guid);
+  if (["DataDefinition", "DataTree", "Structure", "Enum"].includes(assetType)) {
+    return dataAssetDependencies(assetType, payload, classes.flatMap((asset) =>
+      asset.header.guid && ["Class", "Graph"].includes(asset.header.type)
+        ? [{ guid: asset.header.guid, classId: classIdFromClassAsset(asset) }] : []), definitionFields);
+  }
   const inputRefs: string[] = [];
   const visitInputRefs = (value: unknown): void => {
     if (!value || typeof value !== "object") return;
     if (Array.isArray(value)) { value.forEach(visitInputRefs); return; }
     const row = value as Record<string, unknown>;
     if (typeof row.Name === "string" && typeof row.Asset === "string" && row.Asset) inputRefs.push(row.Asset);
-    Object.values(row).forEach(visitInputRefs);
+    Object.entries(row).forEach(([key, entry]) => {
+      if (Array.isArray(row.dataSchema) && (key === "default:values" || key === "dataSchema")) return;
+      visitInputRefs(entry);
+    });
   };
   visitInputRefs(payload);
   const unique = new Set<string>([
+    ...(["Class", "Graph"].includes(assetType) ? dataGraphAssetDependencies(payload, classes.flatMap((asset) =>
+      asset.header.guid && ["Class", "Graph"].includes(asset.header.type)
+        ? [{ guid: asset.header.guid, classId: classIdFromClassAsset(asset) }] : []), definitionFields) : []),
     ...inputRefs,
+    ...(assetType === "SaveGame" && Array.isArray(payload.fields) ? payload.fields.flatMap((field) => {
+      if (!field || typeof field !== "object" || field.type !== "asset") return [];
+      return (Array.isArray(field.defaultValue) ? field.defaultValue : [field.defaultValue]).filter((value: unknown): value is string => typeof value === "string" && !!value);
+    }) : []),
     ...(["Class", "Graph"].includes(assetType) ? assetVariableGuidsFromGraph(payload as unknown as import("@babylonslate/core").SerializedGraph) : []),
     ...(["Class", "Graph"].includes(assetType) ? renderTargetAssetGuidsFromGraph(payload as unknown as import("@babylonslate/core").SerializedGraph) : []),
     ...areaEmissionTextureGuids(payload),
     ...findClassAssetReferences({ ...payload, parentClass }, classes.flatMap((asset) =>
       asset.header.guid && ["Class", "Graph"].includes(asset.header.type)
-        ? [{ guid: asset.header.guid, classId: classIdFromClassAsset(asset) }] : [])),
+        ? [{ guid: asset.header.guid, classId: classIdFromClassAsset(asset) }] : []), definitionFields),
     ...materialAssetDependencies(assetType, payload),
     ...audioAssetDependencies(assetType, payload),
     ...particleAssetDependencies(assetType, payload),

@@ -28,6 +28,7 @@ import {
 } from "@babylonslate/assets";
 import { exportGame, navmeshExportGuid } from "@babylonslate/exporter";
 import { resolveAudioPlayback } from "@babylonslate/assets";
+import { RuntimeDataCatalog } from "@babylonslate/runtime";
 import { loadGameAudioClipBytes, loadGameFromFiles } from "./artifact";
 import {
   packedBootControls,
@@ -49,6 +50,39 @@ function pngIhdr(width: number, height: number): Uint8Array {
 }
 
 describe("packedContentFromGame", () => {
+  it.each(["packed", "loose"] as const)("hydrates independent Data Definitions and owned hierarchical entries (%s)", async (mode) => {
+    const payloads = [
+      { guid: "quality", type: "Enum", payload: { members: [{ name: "Rare", value: 1 }] } },
+      { guid: "stats", type: "DataDefinition", payload: { kind: "dataDefinition", fields: [
+        { id: "power", name: "Power", typeId: "int" }, { id: "quality", name: "Quality", typeId: "enum", typeClassId: "quality" },
+      ] } },
+      { guid: "tree", type: "DataTree", payload: { kind: "dataTree", defaultDefinitionGuid: "stats", entries: [
+        { id: "items", parentId: null, name: "Items", definitionGuid: null, values: {} },
+        { id: "high", parentId: "items", name: "High", definitionGuid: "stats", values: { Power: 42, Quality: "Rare" } },
+        { id: "low", parentId: "high", name: "Low", values: { Power: 7, Quality: "Rare" } },
+      ] } },
+    ];
+    const exported = await exportGame({
+      mode, bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [],
+      assets: payloads.map(({ guid, type, payload }) => ({ guid, type, sceneGuid: "scene", bytes: encoder.encode(JSON.stringify(payload)) })),
+    });
+    if (!exported.ok) throw new Error(exported.error);
+    const game = await loadGameFromFiles(exported.value.files);
+    const content = packedContentFromGame(game);
+    const data = new RuntimeDataCatalog(content.dataAssets);
+    expect(content.dataAssets?.map((entry) => entry.type)).toEqual(expect.arrayContaining(["DataDefinition", "DataTree", "Enum"]));
+    expect(data.getChildren("tree")).toEqual(["Items"]);
+    expect(data.getDescendants("tree")).toEqual(["Items", "Items/High", "Items/High/Low"]);
+    expect(data.readEntry("tree", "Items/High", "stats")).toEqual({ Power: 42, Quality: "Rare" });
+    expect(data.readEntry("tree", "Items/High/Low", "stats")).toEqual({ Power: 7, Quality: "Rare" });
+    expect(data.getParent("tree", "Items/High/Low")).toBe("Items/High");
+    expect(data.hasEntry("tree", "Items")).toBe(true);
+    expect(data.canReadEntry("tree", "Items")).toBe(false);
+    expect(data.readEntry("tree", "Items/High/Low", "other-definition")).toBeNull();
+    expect(data.readEntry("tree", "low")).toBeNull();
+    expect(data.readEntry("tree", "Low")).toBeNull();
+  });
+
   it("does not decode binary asset payloads as JSON during hydration", async () => {
     const binaryTypes = ["Texture", "Model", "Font", "Audio", "Navmesh", "AudioReverb"];
     const exported = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [] });

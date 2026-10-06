@@ -1,4 +1,5 @@
 import {
+  actorPropertyReferences,
   classIdsFromVariableMembers,
   assetVariableGuidsFromGraph,
   areaEmissionTextureGuids,
@@ -16,6 +17,7 @@ import {
   subsystemBaseClassIdOf,
   type SubsystemClassHierarchy,
 } from "@babylonslate/object-model";
+import { dataAssetDependencies, dataGraphAssetDependencies } from "@babylonslate/assets";
 import { MISSING_STARTUP_SCENE_MESSAGE } from "./constants";
 import type {
   ExportClosureInput,
@@ -33,6 +35,8 @@ function isReferenceField(key: string): boolean {
     /Guids?$/.test(key) ||
     key === "Asset" ||
     key === "classId" ||
+    key === "itemClassId" ||
+    key === "sceneLayerActors" ||
     key === "default:classId" ||
     key === "parentClass" ||
     key === "gameInstanceClass" ||
@@ -49,7 +53,9 @@ function collectTypedRefs(value: unknown, into: Set<string>): void {
     return;
   }
   if (!value || typeof value !== "object") return;
-  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+  const row = value as Record<string, unknown>;
+  for (const [key, entry] of Object.entries(row)) {
+    if (Array.isArray(row.dataSchema) && (key === "default:values" || key === "dataSchema")) continue;
     if (isReferenceField(key)) {
       if (typeof entry === "string" && entry.trim()) into.add(entry.trim());
       if (Array.isArray(entry)) {
@@ -121,6 +127,12 @@ export function collectExportReachability(
     a.guid.localeCompare(b.guid),
   );
   const byGuid = new Map(sortedAssets.map((asset) => [asset.guid, asset]));
+  const definitionFields = (guid: string): readonly unknown[] | undefined => {
+    const type = byGuid.get(guid)?.type;
+    if (type !== "DataDefinition" && type !== "Structure") return undefined;
+    const payload = input.payloadByGuid?.(guid);
+    return payload && typeof payload === "object" && "fields" in payload && Array.isArray(payload.fields) ? payload.fields : undefined;
+  };
   const startupAsset = startup ? byGuid.get(startup) : undefined;
   if (!startup || !startupAsset || startupAsset.type !== "Scene") {
     return err(MISSING_STARTUP_SCENE_MESSAGE);
@@ -144,6 +156,8 @@ export function collectExportReachability(
   }
 
   const hierarchy = classHierarchy(input.parentOf);
+  const dataClassReferences = sortedAssets.filter((entry) => entry.type === "Class" || entry.type === "Graph")
+    .map((entry) => ({ guid: entry.guid, classId: entry.name }));
   const bySceneGuid = new Map<string, Set<string>>();
   const pendingScenes = [startup];
   const traversedScenes = new Set<string>();
@@ -160,7 +174,7 @@ export function collectExportReachability(
     if (sceneRoot === startup) {
       for (const asset of sortedAssets) if (asset.type === "InputAction" || asset.type === "InputAxis") pending.push(asset.guid);
       for (const asset of sortedAssets) if (isSubsystemClassAsset(asset, hierarchy)) pending.push(asset.guid);
-      for (const ref of [input.gameInstanceClass, input.audioMixerGuid, ...(input.renderAssetGuids ?? [])]) {
+      for (const ref of [input.gameInstanceClass, input.audioMixerGuid, input.saveGameDefinitionGuid, ...(input.renderAssetGuids ?? [])]) {
         if (ref?.trim()) pending.push(ref.trim());
       }
     }
@@ -189,12 +203,22 @@ export function collectExportReachability(
       const ref = pending.pop()!;
       const asset = byGuid.get(ref) ?? byClassName.get(ref)?.[0];
       if (!asset || !isIncluded(asset, input)) continue;
+      if (asset.type === "DataObject" || asset.type === "DataSheet") return err(`Historical ${asset.type === "DataObject" ? "Data Object" : "Data Sheet"} "${asset.name}" is referenced by this game. Replace that reference with a Data Tree entry before exporting.`);
       reached.add(asset.guid);
       const refs = new Set<string>(asset.dependencies);
+      const collectOverrides = (value: unknown) => {
+        const references = actorPropertyReferences(value, classId => {
+          const entry = byGuid.get(classId) ?? byClassName.get(classId)?.find(candidate => candidate.type === "Class");
+          if (!entry) return null;
+          return { parentClassId: entry.parentClass, members: input.graphByGuid(entry.guid)?.members };
+        });
+        for (const reference of [...references.assetGuids, ...references.classIds]) refs.add(reference);
+      };
       if (asset.type === "Scene") {
         const scene: SerializedScene | null = input.sceneByGuid(asset.guid);
         if (scene) {
           collectTypedRefs(scene, refs);
+          collectOverrides(scene);
           for (const guid of text2dImageGuidsFromScene(scene)) refs.add(guid);
         }
       } else if (asset.type === "Class" || asset.type === "Graph") {
@@ -203,21 +227,32 @@ export function collectExportReachability(
         const graph: SerializedGraph | null = input.graphByGuid(asset.guid);
         if (graph) {
           collectTypedRefs(graph, refs);
+          collectOverrides({ classId: asset.name, properties: graph.actorDefaults?.properties, graph });
           for (const classId of classIdsFromVariableMembers(graph.members ?? [])) refs.add(classId);
           for (const guid of assetVariableGuidsFromGraph(graph)) refs.add(guid);
           for (const guid of materialParameterTextureGuidsFromGraph(graph)) refs.add(guid);
           for (const guid of renderTargetAssetGuidsFromGraph(graph)) refs.add(guid);
           for (const guid of areaEmissionTextureGuids(graph)) refs.add(guid);
+          for (const guid of dataGraphAssetDependencies(graph, dataClassReferences, definitionFields)) refs.add(guid);
         }
       }
       const payload = input.payloadByGuid?.(asset.guid);
       if (payload) {
-        collectTypedRefs(payload, refs);
-        if (typeof payload === "object" && "actors" in payload) {
-          for (const guid of text2dImageGuidsFromScene(
-            payload as SerializedScene,
-          ))
-            refs.add(guid);
+        if (asset.type === "SaveGame" && typeof payload === "object" && "fields" in payload && Array.isArray(payload.fields)) {
+          for (const field of payload.fields as Array<{ type?: string; defaultValue?: unknown }>) {
+            if (field.type !== "asset") continue;
+            const values = Array.isArray(field.defaultValue) ? field.defaultValue : [field.defaultValue];
+            for (const value of values) if (typeof value === "string" && value) refs.add(value);
+          }
+        }
+        if (["DataDefinition", "DataTree", "Structure", "Enum"].includes(asset.type)) {
+          for (const guid of dataAssetDependencies(asset.type, payload, dataClassReferences, definitionFields)) refs.add(guid);
+        } else {
+          collectTypedRefs(payload, refs);
+          collectOverrides(payload);
+          if (typeof payload === "object" && "actors" in payload) {
+            for (const guid of text2dImageGuidsFromScene(payload as SerializedScene)) refs.add(guid);
+          }
         }
       }
       for (const next of [...refs].sort()) enqueue(next);

@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
 import { ArrowLeftIcon, ArrowRightIcon, FileIcon, FolderIcon } from "lucide-react";
 import {
   SearchInput,
+  AssetPicker,
+  AssetPickerControl,
   TreeView,
   TypeVisualIcon,
   resolveTypeVisual,
@@ -62,6 +64,9 @@ export interface ContentBrowserNewAssetDialogProps {
   onParentClassChange: (parentClass: string) => void;
   waterStyle?: WaterStyle;
   onWaterStyleChange?: (style: WaterStyle) => void;
+  definitionGuid?: string | null;
+  onDefinitionGuidChange?: (guid: string | null) => void;
+  definitionAssets?: readonly { guid: string; name: string; type: string }[];
   /** Project + enabled-plugin Class assets for the Parent Class tree. */
   classAssets?: readonly NewAssetClassAssetRef[];
   nameTaken: boolean;
@@ -106,7 +111,7 @@ function NewAssetSummary({
         )}
       </dd>
       <dt className="text-muted-foreground">Then</dt>
-      <dd>{type === "Scene" ? "Opens in a new tab" : "Appears in this folder"}</dd>
+      <dd>{type === "Scene" || type === "DataDefinition" || type === "DataTree" ? "Opens in a new tab" : "Appears in this folder"}</dd>
     </dl>
   );
 }
@@ -136,6 +141,9 @@ export function ContentBrowserNewAssetDialog({
   onParentClassChange,
   waterStyle = "realistic",
   onWaterStyleChange,
+  definitionGuid = null,
+  onDefinitionGuidChange,
+  definitionAssets = [],
   classAssets = [],
   nameTaken,
   destinationFolder,
@@ -147,10 +155,12 @@ export function ContentBrowserNewAssetDialog({
   const [phoneStep, setPhoneStep] = useState<"type" | "details">("type");
   const [search, setSearch] = useState("");
   const [parentSearch, setParentSearch] = useState("");
+  const [definitionPickerOpen, setDefinitionPickerOpen] = useState(false);
   const [collapsedParents, setCollapsedParents] = useState<Set<string>>(new Set());
   const bodyRef = useRef<HTMLDivElement>(null);
   const detailsRef = useRef<HTMLElement>(null);
   const selectedVisual = resolveTypeVisual({ assetType: type });
+  const isData = type === "DataTree";
   const canCreate = !busy && !nameTaken && Boolean(name.trim());
 
   useEffect(() => {
@@ -347,6 +357,16 @@ export function ContentBrowserNewAssetDialog({
                       <ToggleGroupItem value="realistic">Realistic</ToggleGroupItem>
                       <ToggleGroupItem value="stylized">Stylized</ToggleGroupItem>
                     </ToggleGroup>
+                  </Field></FieldGroup>
+                ) : null}
+                {isData ? (
+                  <FieldGroup><Field><FieldLabel>Default Definition</FieldLabel>
+                    <AssetPickerControl value={definitionGuid}>
+                      <Button variant="outline" size="sm" className="w-full justify-start" onClick={() => setDefinitionPickerOpen(true)} data-testid="new-asset-definition" disabled={busy}>
+                        {definitionAssets.find(asset => asset.guid === definitionGuid)?.name ?? "None"}
+                      </Button>
+                    </AssetPickerControl>
+                    <AssetPicker open={definitionPickerOpen} onOpenChange={setDefinitionPickerOpen} assets={[...definitionAssets]} allowedTypes={["DataDefinition"]} allowNone title="Choose Default Definition" onPick={guid => { onDefinitionGuidChange?.(guid); setDefinitionPickerOpen(false); }} />
                   </Field></FieldGroup>
                 ) : null}
                 <NewAssetSummary

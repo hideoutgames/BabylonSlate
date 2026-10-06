@@ -33,6 +33,84 @@ function createMockProjectService(
 }
 
 describe("DocumentService", () => {
+  it.each(["open", "activate"] as const)("keeps background utility trees dirty and promotes their existing working copy on %s", async (action) => {
+    const service = new DocumentService();
+    service.ensureContentBrowserTab();
+    const ref = { kind: "data-tree" as const, path: "assets/Sword.datatree.babasset", label: "Sword" };
+    const original = { kind: "dataTree", defaultDefinitionGuid: "item", entries: [{ id: "row", parentId: null, name: "Sword", values: { Price: 5 } }] };
+    const project = createMockProjectService({ loadDocument: vi.fn(async () => original) });
+    const id = await service.openDocument(project, ref, { panel: "object" }, false, { background: true });
+    service.setPanelPlacement(id, "data-tree-details", { referencePanelId: "data-tree", direction: "right", width: 240 });
+    const working = service.getDocument(id)!;
+    const edited = { ...original, entries: [{ ...original.entries[0]!, values: { Price: 12 } }] };
+    service.updateAssetDocument(id, edited);
+    expect(service.getOpenDocumentsOrdered()).toContain(working);
+    expect(service.getClosableDocumentsOrdered()).toContain(working);
+    expect(service.getDirtyDocuments()).toEqual([working]);
+    expect(service.getScrollableDocumentsOrdered()).toEqual([]);
+    expect(service.getState().activeDocumentId).toBe(CONTENT_BROWSER_ID);
+    expect(service.buildLayouts()).toMatchObject({ documents: {}, tabOrder: [CONTENT_BROWSER_ID] });
+    expect(service.buildLayouts().panelPlacements?.[id]).toBeUndefined();
+    const tabsRevision = service.getTabsRevision();
+    if (action === "open") await service.openDocument(project, ref);
+    else service.setActiveDocument(id);
+    expect(service.getDocument(id)).toBe(working);
+    expect(working).toMatchObject({ content: edited, dirty: true });
+    expect(working.background).not.toBe(true);
+    expect(service.getTabsRevision()).toBeGreaterThan(tabsRevision);
+    expect(service.getState().activeDocumentId).toBe(id);
+    expect(service.buildLayouts().tabOrder).toEqual([CONTENT_BROWSER_ID, id]);
+    service.markAllClean(service.getDirtyDocuments().map((doc) => ({ ...doc })));
+    expect(service.getDirtyDocuments()).toEqual([]);
+    // Ensuring a tree already open in its own tab never hides it again.
+    await service.openDocument(project, ref, null, false, { background: true });
+    expect(working.background).not.toBe(true);
+  });
+
+  it.each([true, false])("preserves a foreground opening and shared edits when a background read races it (slow background: %s)", async (slowBackground) => {
+    const service = new DocumentService();
+    service.ensureContentBrowserTab();
+    const ref = { kind: "data-tree" as const, path: "assets/Sword.datatree.babasset", label: "Sword" };
+    const original = { kind: "dataTree", defaultDefinitionGuid: "item", entries: [{ id: "row", parentId: null, name: "Sword", values: { Price: 5 } }] };
+    let finish!: (value: Record<string, unknown>) => void;
+    const project = createMockProjectService({ loadDocument: vi.fn()
+      .mockImplementationOnce(() => new Promise<Record<string, unknown>>((resolve) => { finish = resolve; }))
+      .mockResolvedValue(original) });
+    const slow = service.openDocument(project, ref, null, !slowBackground, { background: slowBackground });
+    const id = await service.openDocument(project, ref, null, slowBackground, { background: !slowBackground });
+    const working = service.getDocument(id)!;
+    service.updateAssetDocument(id, { ...original, entries: [{ ...original.entries[0]!, values: { Price: 20 } }] });
+    finish(original);
+    await slow;
+    expect(service.getDocument(id)).toBe(working);
+    expect(working).toMatchObject({ dirty: true, content: { entries: [{ values: { Price: 20 } }] } });
+    expect(working.background).not.toBe(true);
+    expect(service.getState().activeDocumentId).toBe(id);
+    expect(service.buildLayouts().tabOrder).toEqual([CONTENT_BROWSER_ID, id]);
+  });
+
+  it("reorders only visible tabs while keeping background edits available for save and cleanup", async () => {
+    const service = new DocumentService();
+    service.ensureContentBrowserTab();
+    const project = createMockProjectService();
+    const open = (name: string, background = false) => service.openDocument(project, {
+      kind: "data-tree", path: `assets/${name}.datatree.babasset`, label: name,
+    }, null, !background, { background });
+    const first = await open("First");
+    const background = await open("Shared", true);
+    const second = await open("Second");
+    service.updateAssetDocument(background, { kind: "dataTree", defaultDefinitionGuid: "item", entries: [{ id: "row", parentId: null, name: "Sword", values: { Price: 15 } }] });
+    service.reorderClosableTabs(0, 1);
+    expect(service.getScrollableDocumentsOrdered().map((doc) => doc.id)).toEqual([second, first]);
+    expect(service.buildLayouts().tabOrder).toEqual([CONTENT_BROWSER_ID, second, first]);
+    expect(service.getDirtyDocuments().map((doc) => doc.id)).toEqual([background]);
+    service.closeDocument(second);
+    expect(service.getState().activeDocumentId).toBe(CONTENT_BROWSER_ID);
+    service.closeDocument(background);
+    expect(service.getOpenDocumentsOrdered().map((doc) => doc.id)).toEqual([CONTENT_BROWSER_ID, first]);
+    expect(service.getDirtyDocuments()).toEqual([]);
+  });
+
   it("keeps edits and one tab when concurrent reads of the same document finish out of order", async () => {
     const service = new DocumentService();
     const ref = { kind: "graph" as const, path: MAIN_CLASS_FILE, label: "Main" };

@@ -23,12 +23,13 @@ const state = vi.hoisted(() => ({
   documents: [] as OpenDocument[],
   phone: false,
   errorCount: 0,
+  activeId: "first",
 }));
 
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
   projectName: "Test",
   openDocuments: state.documents,
-  activeDocumentId: "first",
+  activeDocumentId: state.activeId,
   dirtyDocuments: state.documents.filter((doc) => doc.dirty),
   projectDirty: false,
   assetRegistry: state.registry,
@@ -48,11 +49,11 @@ vi.mock("./settings-modal", () => ({ SettingsModal: () => null }));
 vi.mock("./global-search-dialog", () => ({ GlobalSearchDialog: () => null }));
 vi.mock("./windows-menu", () => ({ WindowsMenu: () => null }));
 
-function Chrome() {
+function Chrome({ onCloseAllDocuments }: { onCloseAllDocuments?: () => void }) {
   return (
     <MaterialRenderControlProvider>
       <TooltipProvider>
-        <EditorChromeBar />
+        <EditorChromeBar onCloseAllDocuments={onCloseAllDocuments} />
       </TooltipProvider>
     </MaterialRenderControlProvider>
   );
@@ -89,9 +90,52 @@ afterEach(() => {
   state.documents = [];
   state.phone = false;
   state.errorCount = 0;
+  state.activeId = "first";
 });
 
 describe("chrome document icons", () => {
+  it("allows Close All when Content Browser is the only visible tab and a background sheet is dirty", () => {
+    state.activeId = CONTENT_BROWSER_ID;
+    state.documents = [
+      openDocument(CONTENT_BROWSER_ID, CONTENT_BROWSER_REF),
+      { ...openDocument("object", createDocumentRef("data-tree", "assets/Sword.datatree.babasset")), background: true, dirty: true },
+    ];
+    const closeAll = vi.fn();
+    render(<Chrome onCloseAllDocuments={closeAll} />);
+    expect(screen.getAllByTestId("document-tab")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Open Documents" }));
+    expect(screen.queryByRole("menuitemradio", { name: /Sword/ })).toBeNull();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Close Open Tab(s)" }));
+    expect(closeAll).toHaveBeenCalledOnce();
+  });
+
+  it.each([false, true])("keeps background sheet edits out of navigation until revealed, while Save includes them (phone=%s)", (phone) => {
+    state.phone = phone;
+    const object = {
+      ...openDocument("object", createDocumentRef("data-tree", "assets/Sword.datatree.babasset")),
+      background: true,
+      dirty: true,
+    };
+    state.documents = [
+      openDocument(CONTENT_BROWSER_ID, CONTENT_BROWSER_REF),
+      openDocument("first", createDocumentRef("data-tree", "assets/Weapons.datatree.babasset")),
+      object,
+    ];
+    const view = render(<Chrome />);
+    expect((screen.getByTestId("save-all-project") as HTMLButtonElement).disabled).toBe(false);
+    if (!phone) expect(screen.getAllByTestId("document-tab")).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: "Open Documents" }));
+    expect(screen.queryByRole("menuitemradio", { name: /Sword/ })).toBeNull();
+    expect(screen.getByRole("menuitemradio", { name: /Weapons/ })).toBeTruthy();
+
+    // Explicit Open Object promotes the same canonical record; it keeps dirty state.
+    object.background = false;
+    view.rerender(<Chrome />);
+    expect(screen.getByRole("menuitemradio", { name: /Sword/ })).toBeTruthy();
+    expect(within(screen.getByRole("menuitemradio", { name: /Sword/ })).getByLabelText("Unsaved Changes")).toBeTruthy();
+    if (!phone) expect(screen.getAllByTestId("document-tab")).toHaveLength(3);
+  });
+
   it.each([false, true])(
     "shares class lookups and refreshes inherited icons on registry updates (phone=%s)",
     async (phone) => {

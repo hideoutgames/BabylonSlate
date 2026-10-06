@@ -1,3 +1,5 @@
+import { prepareSaveGameConfiguration } from "../services/save-game-configuration";
+import { createSaveGameStorage } from "@babylonslate/vfs";
 import {
   createContext,
   useCallback,
@@ -50,6 +52,7 @@ import {
   previewPackFromFiles,
   PREVIEW_STOP_MESSAGE,
   PREVIEW_READY_MESSAGE,
+  createPreviewSaveStorageHost,
 } from "@babylonslate/exporter";
 import type {
   MaterialDocument,
@@ -224,6 +227,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const pendingPlayOptionsRef = useRef<PlayOptions | undefined>(undefined);
   const pendingScriptsRef = useRef<ScriptBundleEntry[] | null>(null);
   const [playing, setPlaying] = useState(false);
+  const [playSaveGame, setPlaySaveGame] = useState<import("@babylonslate/core").SaveGameConfiguration>();
   const playingRef = useRef(false);
   const [preparing, setPreparing] = useState(false);
   const [playAwaitingMigration, setPlayAwaitingMigration] = useState(false);
@@ -277,6 +281,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const [previewPreparationError, setPreviewPreparationError] = useState<string | null>(null);
   const [previewCanCancel, setPreviewCanCancel] = useState(true);
   const previewIframeRef = useRef<HTMLIFrameElement | null>(null);
+  const previewSaveHostRef = useRef<ReturnType<typeof createPreviewSaveStorageHost> | null>(null);
   const previewFilesRef = useRef<Map<string, Uint8Array> | null>(null);
   const previewTraceByteBudgetRef = useRef<number | undefined>(undefined);
   const previewRequestRef = useRef(0);
@@ -345,6 +350,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const [playAudioSourceLoader, setPlayAudioSourceLoader] =
     useState<PlayAudioSourceLoader | undefined>(undefined);
   const [playInputAssets, setPlayInputAssets] = useState<import("@babylonslate/core").InputAssetDefinition[]>([]);
+  const [playDataAssets, setPlayDataAssets] = useState<import("@babylonslate/core").DataAssetCatalogEntry[]>([]);
   const [playAudioLibrary, setPlayAudioLibrary] = useState<PlayAudioLibrary>(
     () => emptyPlayAudioLibrary(),
   );
@@ -640,6 +646,8 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
 
   const closePreview = useCallback(() => {
     previewClosingRef.current = true;
+    previewSaveHostRef.current?.dispose();
+    previewSaveHostRef.current = null;
     const frame = previewIframeRef.current;
     if (frame?.contentWindow) {
       frame.contentWindow.postMessage({ type: PREVIEW_STOP_MESSAGE }, previewOriginRef.current);
@@ -692,6 +700,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         previewIframeRef.current?.contentWindow,
         previewOriginRef.current,
       )) return;
+      previewSaveHostRef.current?.receive(event);
       if (event.data?.type === PREVIEW_READY_MESSAGE) {
         lifecycle.sync();
         return;
@@ -727,6 +736,8 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     });
     window.addEventListener("message", onMessage);
     return () => {
+      previewSaveHostRef.current?.dispose();
+      previewSaveHostRef.current = null;
       lifecycle.dispose();
       window.removeEventListener("message", onMessage);
     };
@@ -788,6 +799,16 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         }
       }
       if (!isCurrentRequest()) return;
+      await prepareSaveGameConfiguration({
+        projectId: playRequestInputsRef.current.documents.projectGuid,
+        settings: projectDocument?.settings.saveGame,
+        loadDefinition: async (guid) => {
+          const current = playRequestInputsRef.current.documents;
+          const asset = current.assetRegistry?.getByGuid(guid);
+          if (!asset) throw new Error("The default Save Game definition is missing.");
+          return current.loadAssetDocument("save-game", asset.path);
+        },
+      });
       setPreviewPhase("Collecting Assets");
       const playerFiles = await loadPlayerDistFiles();
       if (!isCurrentRequest()) return;
@@ -821,6 +842,13 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       setPlaying(true);
       setPreviewError(null);
       previewOriginRef.current = previewTarget.origin;
+      previewSaveHostRef.current?.dispose();
+      const previewProjectId = playRequestInputsRef.current.documents.projectGuid;
+      previewSaveHostRef.current = previewProjectId ? createPreviewSaveStorageHost(createSaveGameStorage(), previewProjectId, {
+        source: () => previewIframeRef.current?.contentWindow,
+        origin: () => previewOriginRef.current,
+        send: (message) => previewIframeRef.current?.contentWindow?.postMessage(message, previewOriginRef.current),
+      }) : null;
       setPreviewSrc(previewTarget.src);
       setPreviewOpen(true);
     } catch (error) {
@@ -865,6 +893,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
           collectPlayParticles,
           collectPlayPreviewScripts,
           collectPlayRenderTargets,
+          collectPlayDataAssets,
           collectPlaySceneLayers,
           collectPlaySceneLibrary,
           collectPlaySpriteAnimationPayloads,
@@ -950,6 +979,8 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         }
         setScripts(nextScripts);
         setDiagnostics(nextDiagnostics);
+        // Snapshot saved and open data once for both worker and in-process Play.
+        setPlayDataAssets(await collectPlayDataAssets());
         let playLibrary: Array<{
           guid: string;
           scene: import("@babylonslate/core").SerializedScene;
@@ -988,7 +1019,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
           setStartupAlertOpen(true);
           return;
         }
-        const prefabScene = playPrefabDependencyScene(nextScripts);
+        const prefabScene = playPrefabDependencyScene(nextScripts, [resolvedScene.scene, ...playLibrary.map(entry => entry.scene)], guid => assetRegistry?.getByGuid(guid)?.header.type);
         const prefabScenes = prefabScene ? [prefabScene] : [];
         let overlayScenes: import("@babylonslate/core").SerializedScene[] = [];
         let overlayGraphMaterials: string[] = [];
@@ -1007,7 +1038,8 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
           );
           setPlaySceneLayers([]);
         }
-        const resourceScenes = [...overlayScenes, ...prefabScenes];
+        const overlayDependencies = playPrefabDependencyScene(nextScripts, overlayScenes, guid => assetRegistry?.getByGuid(guid)?.header.type);
+        const resourceScenes = [...overlayScenes, ...prefabScenes, ...(overlayDependencies ? [overlayDependencies] : [])];
         const skyboxTextureGuids = [resolvedScene.scene, ...resourceScenes]
           .flatMap(skyboxFaceGuidsFromScene);
         // Project effect textures (the grading LUT) load with scene environment cubes.
@@ -1294,6 +1326,16 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         setPlayNavmeshBytes(sceneBakes.navmeshes.get(bakedSceneGuid) ?? null);
         setPlayAudioReverbBytes(sceneBakes.audioReverbs.get(bakedSceneGuid) ?? null);
 
+        setPlaySaveGame(await prepareSaveGameConfiguration({
+          projectId: playRequestInputsRef.current.documents.projectGuid,
+          settings: projectDocument?.settings.saveGame,
+          loadDefinition: async (guid) => {
+            const current = playRequestInputsRef.current.documents;
+            const asset = current.assetRegistry?.getByGuid(guid);
+            if (!asset) throw new Error("The default Save Game definition is missing.");
+            return current.loadAssetDocument("save-game", asset.path);
+          },
+        }));
         setPrepareState(null);
 
         if (!inject && projectHasBlockingErrors(nextDiagnostics)) {
@@ -1522,6 +1564,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             sceneAssetGuid={playSceneGuid}
             scene={playScene?.scene}
             project={projectDocument?.metadata}
+            saveGame={playSaveGame}
             gameInstanceClass={resolveGameInstanceClass(
               projectDocument?.settings,
               playScene?.scene,
@@ -1566,6 +1609,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             audioReverbBytes={playAudioReverbBytes}
             audioProjectSettings={projectDocument?.settings.audio}
             inputAssets={playInputAssets}
+            dataAssets={playDataAssets}
             inputMappings={projectDocument?.settings.input}
             focusNavigation={projectDocument?.settings.focusNavigation}
             sortingLayers={projectDocument?.settings.twoD.sortingLayers}

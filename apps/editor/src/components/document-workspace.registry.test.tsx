@@ -4,18 +4,20 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { AssetRegistry, projectContentRoot } from "@babylonslate/assets";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { DocumentWorkspace } from "./document-workspace";
+import type { OpenDocument } from "../services/document-service";
 
 const state = vi.hoisted(() => ({
   registry: null as AssetRegistry | null,
   mountedIds: new Set<string>(),
   tabs: [] as string[],
+  documents: null as OpenDocument[] | null,
   passthrough: ({ children }: { children: ReactNode }) => children,
 }));
 
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
   tabOrder: state.tabs,
   activeDocumentId: state.tabs[0],
-  openDocuments: state.tabs.map((id) => ({
+  openDocuments: state.documents ?? state.tabs.map((id) => ({
     id,
     ref: { kind: "graph", path: `assets/${id}.class.babasset` },
     content: null,
@@ -37,6 +39,9 @@ vi.mock("../context/audio-reverb-bake-context", () => ({
 }));
 vi.mock("../context/document-workspace-context", () => ({
   DocumentWorkspaceProvider: state.passthrough,
+}));
+vi.mock("../context/data-asset-editing-context", () => ({
+  DataAssetEditingProvider: state.passthrough,
 }));
 vi.mock("../context/scene-tools-context", () => ({
   SceneToolsProvider: state.passthrough,
@@ -121,10 +126,30 @@ async function createRegistry() {
 afterEach(() => {
   cleanup();
   state.mountedIds = new Set();
+  state.documents = null;
   vi.restoreAllMocks();
 });
 
 describe("workspace registry traversal", () => {
+  it("does not mount standalone workspaces for background utility trees until they are revealed", () => {
+    state.tabs = ["definition", "sheet"];
+    state.mountedIds = new Set(state.tabs);
+    const sheet: OpenDocument = {
+      id: "sheet", ref: { kind: "data-tree", path: "assets/Weapons.datatree.babasset", label: "Weapons" },
+      content: { kind: "dataTree", defaultDefinitionGuid: null, entries: [] }, layout: null, dirty: true, background: true,
+    };
+    state.documents = [
+      { id: "definition", ref: { kind: "data-definition", path: "assets/Stats.datadefinition.babasset", label: "Stats" }, content: { kind: "dataDefinition", fields: [] }, layout: null, dirty: false },
+      sheet,
+    ];
+    const view = render(<DocumentWorkspace />);
+    expect(screen.getByTestId("document-workspace-data-definition")).toBeTruthy();
+    expect(screen.queryByTestId("document-workspace-data-tree")).toBeNull();
+    sheet.background = false;
+    view.rerender(<DocumentWorkspace />);
+    expect(screen.getByTestId("document-workspace-data-tree")).toBeTruthy();
+  });
+
   it("does no registry reads for unmounted graph workspaces", async () => {
     const registry = await createRegistry();
     const list = vi.spyOn(registry, "list");

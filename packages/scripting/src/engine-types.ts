@@ -8,6 +8,10 @@ export { ENGINE_RENDER_TARGET_MODE_ENUM_ID } from "@babylonslate/core";
 /** Engine enum/struct registry (stable ids, not Content Browser assets). */
 
 import type { EnumMember, StructField } from "./type-assets";
+import { structRef } from "./types";
+
+export const ENGINE_TAG_CONTAINER_STRUCT_ID = "engine:TagContainer";
+export const TAG_CONTAINER = structRef(ENGINE_TAG_CONTAINER_STRUCT_ID);
 
 export const ENGINE_INPUT_TYPE_STRUCT_ID = "engine:InputType";
 export const ENGINE_INPUT_BINDING_STRUCT_ID = "engine:InputBinding";
@@ -88,7 +92,22 @@ export const ENGINE_ENUMS: readonly EngineEnum[] = [
 
 /** Engine user-style structs. Pin-kind math types stay first-class. */
 export const ENGINE_STRUCTS: readonly EngineStruct[] = [
+  {
+    id: ENGINE_TAG_CONTAINER_STRUCT_ID,
+    name: "TagContainer",
+    fields: [{ name: "Tags", typeId: "tag", container: "array", defaultValue: [] }],
+  },
   ...SCALABILITY_STRUCTS,
+  {
+    id: "engine:SaveGameInfo", name: "Save Game Info",
+    fields: [
+      { name: "projectId", typeId: "string" }, { name: "profile", typeId: "string" },
+      { name: "slot", typeId: "string" }, { name: "definitionId", typeId: "string" },
+      { name: "schemaVersion", typeId: "int" }, { name: "sequence", typeId: "int" },
+      { name: "createdAt", typeId: "string" }, { name: "recovered", typeId: "bool" },
+      { name: "status", typeId: "string" },
+    ],
+  },
   {
     id: ENGINE_HIT_RESULT_STRUCT_ID,
     name: "Hit Result",

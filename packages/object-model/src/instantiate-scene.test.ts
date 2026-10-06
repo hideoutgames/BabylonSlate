@@ -32,6 +32,30 @@ function testWorld() {
   });
 }
 
+it("hydrates inherited typed map overrides for placed actors without sharing the authored values", () => {
+  const world = testWorld();
+  world.classRegistry.register({ id: "LocalizedActor", parentClassId: "Actor", kind: "actor", implementedInterfaces: [], variables: [
+    { name: "labels", type: "string", container: "map", keyTypeId: "string", defaultValue: [{ key: "locale", value: "default" }] },
+    { name: "choices", type: "string", container: "array", defaultValue: ["default"] },
+    { name: "untouched", type: "string", defaultValue: "inherited" },
+  ] });
+  world.classRegistry.register({ id: "MenuActor", parentClassId: "LocalizedActor", kind: "actor", implementedInterfaces: [], variables: [] });
+  const source = createActor("menu", "Menu", { classId: "MenuActor", properties: {
+    labels: [{ key: "locale", value: "en" }], choices: ["one"],
+  } });
+  const first = createActorFromSerialized(world, source)!;
+  const second = createActorFromSerialized(world, { ...source, id: "other" })!;
+  const labels = first.getVariable("labels") as Map<string, string>;
+  expect(labels).toBeInstanceOf(Map);
+  expect(labels.get("locale")).toBe("en");
+  labels.set("locale", "fr");
+  (first.getVariable("choices") as string[]).push("two");
+  expect(second.getVariable("labels")).toEqual(new Map([["locale", "en"]]));
+  expect(second.getVariable("choices")).toEqual(["one"]);
+  expect(first.getVariable("untouched")).toBe("inherited");
+  expect(source.properties).toEqual({ labels: [{ key: "locale", value: "en" }], choices: ["one"] });
+});
+
 it("keeps deformer targets local when spawning fresh instances of inherited scene components", () => {
   const world = testWorld();
   const first = world.createActor({ classId: "Actor" });

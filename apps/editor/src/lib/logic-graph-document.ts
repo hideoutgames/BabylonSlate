@@ -1,5 +1,6 @@
 import {
   isFunctionLibraryClass,
+  normalizeDataDefinitionAsset,
   normalizeScene,
   type GraphClassMember,
   type GraphClassMemberPin,
@@ -639,6 +640,7 @@ export type GraphEnumEntry = {
 
 export type GraphTypeAssetCatalog = {
   structures: GraphStructureEntry[];
+  dataDefinitions: GraphStructureEntry[];
   enums: GraphEnumEntry[];
 };
 
@@ -682,9 +684,10 @@ function enumEntryFromPayload(
   return { guid: parsed.guid, name: parsed.name, members: parsed.members };
 }
 
-/** Closed Structure/Enum headers, open documents, and the engine registry. */
+/** Closed Data Definition/Structure/Enum headers, open documents, and the engine registry. */
 export function collectGraphTypeAssets(options: {
   assets: ReadonlyArray<{
+    path?: string;
     header: {
       type: string;
       guid?: string;
@@ -693,10 +696,11 @@ export function collectGraphTypeAssets(options: {
     };
   }>;
   openDocuments: ReadonlyArray<{
-    ref: { kind: string };
+    ref: { kind: string; path?: string };
     content: unknown;
   }>;
 }): GraphTypeAssetCatalog {
+  const dataDefinitions = new Map<string, GraphStructureEntry>();
   const structures = new Map<string, GraphStructureEntry>();
   const enums = new Map<string, GraphEnumEntry>();
   for (const entry of ENGINE_STRUCTS) {
@@ -713,7 +717,19 @@ export function collectGraphTypeAssets(options: {
       members: [...entry.members],
     });
   }
+  const open = new Map(options.openDocuments.filter((doc) => doc.ref.kind === "data-definition" && doc.ref.path)
+    .map((doc) => [doc.ref.path, doc.content]));
   for (const asset of options.assets) {
+    if (asset.header.type === "DataDefinition" && asset.header.guid) {
+      const authored = asset.path && open.has(asset.path) ? open.get(asset.path) : asset.header.payload ?? {};
+      try {
+        const payload = normalizeDataDefinitionAsset(authored);
+        dataDefinitions.set(asset.header.guid, { guid: asset.header.guid, name: asset.header.name, fields: payload.fields });
+      } catch {
+        // A malformed schema cannot provide typed graph values. Leave it out
+        // so affected nodes report a missing Definition instead of crashing.
+      }
+    }
     if (asset.header.type === "Structure") {
       const payload = asset.header.payload ?? {};
       const entry = structureEntryFromPayload(
@@ -754,6 +770,7 @@ export function collectGraphTypeAssets(options: {
   }
   return {
     structures: [...structures.values()],
+    dataDefinitions: [...dataDefinitions.values()],
     enums: [...enums.values()],
   };
 }
@@ -767,6 +784,9 @@ export function typeSchemasFromGraphAssets(
         entry.guid,
         { name: entry.name, fields: entry.fields },
       ]),
+    ),
+    dataDefinitions: Object.fromEntries(
+      catalog.dataDefinitions.map((entry) => [entry.guid, { name: entry.name, fields: entry.fields }]),
     ),
     enums: Object.fromEntries(
       catalog.enums.map((entry) => [
@@ -786,6 +806,7 @@ export function typeAssetPickerEntries(
       name: entry.name,
       type: "Structure",
     })),
+    ...catalog.dataDefinitions.map((entry) => ({ guid: entry.guid, name: entry.name, type: "DataDefinition" })),
     ...catalog.enums.map((entry) => ({
       guid: entry.guid,
       name: entry.name,

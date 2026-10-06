@@ -2,6 +2,7 @@ export {
   createInProcessRuntime,
   type RuntimeDriver,
   type RuntimeDriverOptions,
+  type RuntimeSaveGameOptions,
 } from "./driver";
 export { replayTracePayload, rawInputFromTraceEvents } from "./trace-replay";
 export {
@@ -51,3 +52,5 @@ export {
   type ScriptContext,
   type ScriptHostServices,
 } from "./script-host";
+
+export { RuntimeDataCatalog, dataTypeSchemas, type RuntimeDataApi } from "./data-catalog";

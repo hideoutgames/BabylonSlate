@@ -1,3 +1,7 @@
+import { GraphDataLiteralDefaults } from "../components/graph-data-literal-editor";
+import { saveGameVariableNames } from "../lib/save-game-property-rows";
+import { SceneLayerSwitcherFields } from "../components/scene-layer-switcher-fields";
+import { parseUIControl2DProperties } from "@babylonslate/core";
 import { useMemo, useState } from "react";
 import { normalizeModelPayload } from "@babylonslate/assets";
 import { MODEL_MATERIALS_PICKER_ENTRY } from "../lib/mesh-material-properties";
@@ -25,8 +29,10 @@ import {
   assetRowIdentity,
   classRowIdentity,
   formatEventMemberName,
+  humanizePropertyLabel,
   resolveTypeVisual,
   selectedPickerIdentity,
+  useTags,
   walkAncestry,
   ASSET_REF_PICKER_TYPES,
   type ClassPickerEntry,
@@ -51,6 +57,7 @@ import {
   parseText2DProperties,
   parseText2DAppearProperties,
   parseText3DProperties,
+  isFocusTargetClass,
   type GraphClassMember,
   type SerializedComponent,
   type SerializedGraph,
@@ -92,6 +99,7 @@ import {
 import { JsBodyEditor } from "../components/js-body-editor";
 import { GlslCodePreview } from "../components/glsl-code-preview";
 import { NineSlicePreview } from "../components/nine-slice-preview";
+import { DataTreeEntryField } from "../components/data-tree-entry-picker";
 import { isValidJsIdentifier } from "@babylonslate/scripting-nodes";
 import { isReservedConsoleCommandName } from "@babylonslate/debugger";
 import {
@@ -102,6 +110,9 @@ import {
   connectedEnumGuidFromSerialized,
   containerConstructorPropertyRows,
   developmentOnlyPropertyRows,
+  dataNodePropertyRows,
+  dataNodePathOptions,
+  graphDataLiteralField,
   enumNodePropertyRows,
   flowSwitchCaseListValues,
   inspectorLiteralPinDefaults,
@@ -113,6 +124,7 @@ import {
   pinDefaultPropertyRows,
   javaScriptPinsFromRows,
   structNodePropertyRows,
+  tagNodePropertyRows,
   variableAssetPickerAllowedTypes,
   variableDefaultPropertyRows,
 } from "../lib/graph-inspector";
@@ -131,6 +143,7 @@ import {
   typeSchemasFromGraphAssets,
 } from "../lib/logic-graph-document";
 import { hydrateSerializedGraphForEditor } from "../services/graph-validation";
+import { collectDataGraphAssets, dataGraphAssetCreateOptions, dataGraphAssetPickPatch, isDataGraphNode, patchDataGraphNode } from "../lib/data-graph";
 import { classIdForGraphPath } from "../services/script-compiler";
 import {
   MATERIAL_DOCUMENT_KINDS,
@@ -139,7 +152,8 @@ import {
 
 const CLASS_KINDS = ["graph"] as const;
 const INTERFACE_KINDS = ["script-interface"] as const;
-const TYPE_KINDS = ["structure", "enum"] as const;
+const TYPE_KINDS = ["structure", "enum", "data-definition"] as const;
+const DATA_KINDS = ["data-tree"] as const;
 
 function memberPinRows(
   pins: GraphClassMember["pins"],
@@ -284,7 +298,7 @@ function ClassMemberDetails({
       typeAsset
         ? { name: typeAsset.name, type: typeAsset.type }
         : typeClassId
-          ? { name: typeClassId, type: isEnum ? "Enum" : "Structure" }
+          ? { name: typeClassId, type: isEnum ? "Enum" : "Record" }
           : undefined,
     );
     const assetEntries = pickerAssets.map((asset) => ({
@@ -319,6 +333,7 @@ function ClassMemberDetails({
       if (
         typeChanged ||
         containerChanged ||
+        (classChanged && (next.typeId === "struct" || next.typeId === "enum")) ||
         (nextContainer !== "single" && (keyChanged || classChanged))
       ) {
         patch.defaultValue = defaultValueForVariableType(
@@ -394,7 +409,7 @@ function ClassMemberDetails({
           </Field>
         ) : isStruct || isEnum ? (
           <Field>
-            <FieldLabel>{isEnum ? "Enum Type" : "Structure Type"}</FieldLabel>
+            <FieldLabel>{isEnum ? "Enum Type" : "Record Type"}</FieldLabel>
             <AssetPickerControl value={typeClassId}>
               <Button
                 type="button"
@@ -570,9 +585,9 @@ function ClassMemberDetails({
           open={typeAssetPickerOpen}
           onOpenChange={setTypeAssetPickerOpen}
           assets={typeAssets}
-          allowedTypes={isEnum ? ["Enum"] : ["Structure"]}
+          allowedTypes={isEnum ? ["Enum"] : ["Structure", "DataDefinition"]}
           allowNone
-          title={isEnum ? "Pick Enum Type" : "Pick Structure Type"}
+          title={isEnum ? "Pick Enum Type" : "Pick Record Type"}
           onPick={(guid) => {
             commit({
               typeClassId: guid ?? undefined,
@@ -816,8 +831,10 @@ function ClassMemberDetails({
 }
 
 function PrefabComponentDetails({
+  actorClassId,
   component,
   components,
+  sceneLayerClasses,
   sortingLayers,
   collisionLayers,
   physicsWorld,
@@ -832,8 +849,10 @@ function PrefabComponentDetails({
   onUpdate,
   onUpdateTransform,
 }: {
+  actorClassId: string;
   component: SerializedComponent;
   components: readonly SerializedComponent[];
+  sceneLayerClasses: ClassPickerEntry[];
   sortingLayers: readonly string[];
   collisionLayers: readonly string[];
   physicsWorld: "3d" | "2d";
@@ -855,6 +874,7 @@ function PrefabComponentDetails({
   onUpdateTransform: (transform: SerializedTransform) => void;
 }) {
   const { assetRegistry, openDocuments, registryEpoch } = useDocuments();
+  const classGraphs = collectClassGraphsForPalette({ assets: assetRegistry?.list() ?? [], openDocuments, classIdForPath: classIdForGraphPath });
   const [assetPick, setAssetPick] = useState<AssetPickRequest | null>(null);
   // An open Material tab's unsaved domain wins over its saved header.
   const materialDocuments = useOpenDocumentsOfKinds(MATERIAL_DOCUMENT_KINDS);
@@ -867,7 +887,7 @@ function PrefabComponentDetails({
       className="flex flex-col gap-3 p-3"
       data-testid="inspector-prefab-component"
     >
-      {component.classId !== "2DAnchorComponent" && component.classId !== "MovementComponent" && component.classId !== "DeformerComponent" && <PropertyGrid
+      {component.classId !== "2DAnchorComponent" && component.classId !== "MovementComponent" && component.classId !== "DeformerComponent" && component.classId !== "SaveGameComponent" && <PropertyGrid
         title="Transform"
         rows={spatialTransformPropertyRows(
           component.id,
@@ -913,9 +933,13 @@ function PrefabComponentDetails({
             physicsWorld,
             onPickAsset: setAssetPick,
             actorComponents: (targetId) => targetId === PREFAB_ROOT_ID ? components : [],
-            focusTargets: components.filter((entry) => entry.classId === "2DButtonComponent" || entry.classId === "2DFocusTargetComponent").map((entry, index) => ({ value: entry.id, label: `${entry.classId === "2DButtonComponent" ? "2D Button" : "2D Focus Target"} ${index + 1}` })),
+            actorVariableNames: () => saveGameVariableNames(actorClassId, classGraphs, parentOf),
+            componentVariableNames: (classId) => saveGameVariableNames(classId, classGraphs, parentOf),
+            sceneLayerClasses: sceneLayerClasses,
+            focusTargets: components.filter((entry) => isFocusTargetClass(entry.classId)).map((entry, index) => ({ value: entry.id, label: `${humanizePropertyLabel(entry.classId.replace(/Component$/, ""))} ${index + 1}` })),
           })}
         />
+        {component.classId === "2DDropdownComponent" ? <NamedListEditor title="Options" values={parseUIControl2DProperties(component.classId, component.properties).options} addLabel="Add Option" onChange={(options) => onUpdate("options", options)} /> : null}
         {component.classId === "2DPanelComponent" ? (
           <NineSlicePreview
             {...parseOverlayPanelProperties(component.properties)}
@@ -1013,6 +1037,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     animEditorMode,
   } = useDocuments();
   const { focusDiagnostic } = useValidation();
+  const { entries: tags } = useTags();
   const { focusedNodeId } = usePlay();
   const { selectedNodeIds, selectedMemberId, activeFunctionId } =
     useGraphEditing();
@@ -1091,6 +1116,11 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
   const { interfaceAssets, pickerAssets, bobjectClassEntries, projectClasses } = registryViews;
   // Other open tabs' unsaved content these catalogs read, by kind.
   const typeDocuments = useOpenDocumentsOfKinds(TYPE_KINDS);
+  const dataDocuments = useOpenDocumentsOfKinds(DATA_KINDS);
+  const dataAssets = useMemo(() => {
+    void registryEpoch;
+    return collectDataGraphAssets(assetRegistry?.list() ?? [], dataDocuments);
+  }, [assetRegistry, dataDocuments, registryEpoch]);
   const classDocuments = useOpenDocumentsOfKinds(CLASS_KINDS);
   const interfaceDocuments = useOpenDocumentsOfKinds(INTERFACE_KINDS);
   // Open Enum tabs' unsaved members win over saved headers.
@@ -1193,7 +1223,11 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     selectedNodeIds,
   ]);
   const needsPinHydration = Boolean(selectedSerializedNode && (
+    isDataGraphNode(selectedSerializedNode.type) ||
+    selectedSerializedNode.type === "struct.make" ||
+    selectedSerializedNode.type === "struct.break" ||
     selectedSerializedNode.type === "debug.executeJavaScript" ||
+    selectedSerializedNode.type === "tags.select" ||
     !Array.isArray(selectedSerializedNode.data.__pins) ||
     selectedSerializedNode.data.__pins.length === 0
   ));
@@ -1205,7 +1239,9 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     return hydrateSerializedGraphForEditor(inspectGraph, undefined, {
       parentOf,
       structs: typeSchemas.structs,
+      dataDefinitions: typeSchemas.dataDefinitions,
       enums: typeSchemas.enums,
+      dataAssets,
       classId: doc?.ref.path ? classIdForGraphPath(doc.ref.path) : undefined,
       otherClassGraphs: collectClassGraphsForPalette({
         assets: assetRegistry?.list() ?? [],
@@ -1229,6 +1265,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     parentOf,
     registryEpoch,
     typeSchemas,
+    dataAssets,
   ]);
   const selectedNode = hydratedInspectGraph
     ? hydratedInspectGraph.nodes.find(
@@ -1318,8 +1355,10 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     return (
       <PanelFrame data-testid="inspector-panel">
         <PrefabComponentDetails
+          actorClassId={doc?.ref.path ? classIdForGraphPath(doc.ref.path) : "Actor"}
           component={selectedPrefabComponent}
           components={prefabComponents}
+          sceneLayerClasses={bobjectClassEntries.filter(entry => walkAncestry(entry.id, parentOf).includes("SceneLayerActor"))}
           sortingLayers={sortingLayers}
           collisionLayers={collisionLayers}
           physicsWorld={physicsWorld}
@@ -1384,6 +1423,8 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     });
     const parentOptions: ClassPickerEntry[] = [
       { id: "Actor", name: "Actor", group: "Engine" },
+      { id: "SceneLayerActor", name: "Scene Layer Actor", group: "Engine" },
+      { id: "SceneLayerActorSwitcher", name: "Scene Layer Actor Switcher", group: "Engine" },
       ...projectClasses
         .filter(
           (entry) =>
@@ -1432,6 +1473,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
             });
           }}
         />
+        {walkAncestry(parentClass ?? "Actor", parentOf).includes("SceneLayerActorSwitcher") ? <SceneLayerSwitcherFields classId={selfClassId} properties={defaults.properties ?? {}} onChange={properties => persistGraph({ ...graph, actorDefaults: { ...defaults, properties } })} /> : null}
         {showActorDefaults ? <>
         <PropertyGrid
           title="Actor Defaults"
@@ -1544,6 +1586,10 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
       : selectedNode.type;
 
   const updateNodeData = (patch: Record<string, unknown>) => {
+    if (isDataGraphNode(selectedNode.type)) {
+      persistGraph(patchDataGraphNode(graph, selectedNode, patch, activeFunctionId));
+      return;
+    }
     const next: SerializedGraph = {
       ...graph,
       nodes: graph.nodes.map((n) =>
@@ -1553,8 +1599,18 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     persistGraph(next);
   };
 
+  const dataPinWired = (pinId: string) => (inspectGraph?.edges ?? graph.edges)
+    .some((edge) => edge.target === selectedNode.id && edge.targetHandle === pinId);
+  const literalDefaults = inspectorLiteralPinDefaults(selectedNode, inspectGraph?.edges ?? graph.edges, (hydratedInspectGraph ?? inspectGraph)?.nodes);
+  const pathDefaults = literalDefaults.flatMap((entry) => {
+    const options = dataNodePathOptions(selectedNode.type, entry.pinId, selectedNode.data, dataAssets, dataPinWired);
+    return options ? [{ ...options, pin: entry }] : [];
+  });
+  const dataLiteralDefaults = literalDefaults.filter((entry) => graphDataLiteralField(entry, typeSchemas));
   const pinDefaultRows = pinDefaultPropertyRows(
-    inspectorLiteralPinDefaults(selectedNode, graph.edges).filter((entry) =>
+    literalDefaults.filter((entry) =>
+      !graphDataLiteralField(entry, typeSchemas) &&
+      !pathDefaults.some((path) => path.pin.pinId === entry.pinId) &&
       !((selectedNode.type === "input.actionEvent" || selectedNode.type === "input.axisEvent") && entry.pinId === "binding")),
     updateNodeData,
     {
@@ -1603,6 +1659,13 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     selectedNode.data,
     updateNodeData,
     typeCatalog.structures,
+    typeCatalog.dataDefinitions,
+  );
+  const dataNodeRows = dataNodePropertyRows(
+    selectedNode.type,
+    selectedNode.data,
+    updateNodeData,
+    typeCatalog.dataDefinitions,
   );
   const inputEventRows = inputEventPropertyRows(
     selectedNode.type,
@@ -1615,6 +1678,12 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     selectedNode.type,
     selectedNode.data,
     updateNodeData,
+  );
+  const tagNodeRows = tagNodePropertyRows(
+    selectedNode.type,
+    selectedNode.data,
+    updateNodeData,
+    tags,
   );
   const isFlowSwitch = isFlowSwitchTypeId(selectedNode.type);
   const flowSwitchCases = isFlowSwitch
@@ -1652,10 +1721,19 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
             data-testid="inspector-struct-properties"
           />
         ) : null}
+        {dataNodeRows.length > 0 ? (
+          <PropertyGrid rows={dataNodeRows} data-testid="inspector-data-properties" />
+        ) : null}
         {containerConstructorRows.length > 0 ? (
           <PropertyGrid
             rows={containerConstructorRows}
             data-testid="inspector-container-constructor"
+          />
+        ) : null}
+        {tagNodeRows.length > 0 ? (
+          <PropertyGrid
+            rows={tagNodeRows}
+            data-testid="inspector-tag-cases"
           />
         ) : null}
         {isFlowSwitch ? (
@@ -1671,13 +1749,17 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
             data-testid="inspector-flow-switch-cases"
           />
         ) : null}
-        {pinDefaultRows.length > 0 ? (
-          <PropertyGrid
-            title="Defaults"
-            rows={pinDefaultRows}
-            data-testid="inspector-pin-defaults"
-          />
+        {pinDefaultRows.length > 0 || pathDefaults.length > 0 ? (
+          <div data-testid="inspector-pin-defaults" className="flex flex-col gap-2">
+            <PropertyGrid title="Defaults" rows={pinDefaultRows} />
+            {pathDefaults.map(({ pin, ...options }) => <DataTreeEntryField key={pin.pinId} {...options}
+              value={typeof pin.value === "string" ? pin.value : ""} label={pin.name}
+              testId={`property-default:${pin.pinId}`}
+              onChange={(path) => updateNodeData(dataGraphAssetPickPatch(selectedNode.type, pin.pinId, path, dataAssets, selectedNode.data))} />)}
+          </div>
         ) : null}
+        {dataLiteralDefaults.length > 0 ? <GraphDataLiteralDefaults entries={dataLiteralDefaults}
+          nodeData={selectedNode.data} onPatch={updateNodeData} /> : null}
         {isExecJs ? (
           <>
             <PinListEditor
@@ -1909,15 +1991,15 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
           selectedNode.type === "scene-layer.registerPostProcess" ||
           selectedNode.type === "scene-layer.unregisterPostProcess"
             ? { materialDomain: "postProcess" }
-            : undefined
+            : assetPinPick
+              ? dataGraphAssetCreateOptions(selectedNode.type, assetPinPick.pinId, selectedNode.data)
+              : undefined
         }
         allowNone
         title={assetPinPick ? `Pick ${assetPinPick.assetType}` : "Pick Asset"}
         onPick={(guid) => {
           if (assetPinPick) {
-            updateNodeData({
-              [pinDefaultPropertyKey(assetPinPick.pinId)]: guid ?? "",
-            });
+            updateNodeData(dataGraphAssetPickPatch(selectedNode.type, assetPinPick.pinId, guid, dataAssets, selectedNode.data, dataPinWired));
           }
           setAssetPinPick(null);
         }}

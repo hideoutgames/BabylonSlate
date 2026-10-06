@@ -158,6 +158,36 @@ describe("SceneLayer focus navigation", () => {
     expect(f.navigation.getFocused()).toBe(a.component);
   });
 
+  it("advances Tab through the top ready layer only, skipping disabled focus and respecting wrapping", () => {
+    const f = fixture();
+    const background = f.add("background", 0, 0);
+    const modal = f.world.createSceneLayer({ assetGuid: "modal", zOrder: 3 });
+    const first = f.add("first", 0, 0, {}, modal.guid);
+    f.add("excluded", 1, 0, { focusEnabled: false }, modal.guid);
+    f.add("disabled", 2, 0, { enabled: false }, modal.guid);
+    const last = f.add("last", 3, 0, {}, modal.guid);
+    f.notReady.add(modal.guid);
+    expect(f.navigation.advance()).toBe(background.component);
+    f.notReady.delete(modal.guid);
+    expect(f.navigation.advance()).toBe(first.component);
+    expect(f.navigation.advance()).toBe(last.component);
+    expect(f.navigation.advance()).toBe(last.component);
+    expect(f.navigation.advance(true)).toBe(first.component);
+    f.navigation.clearFocus();
+    expect(f.navigation.advance(true)).toBe(last.component);
+    const wrapped = fixture({ wrap: true });
+    const a = wrapped.add("a", 0, 0), b = wrapped.add("b", 1, 0);
+    expect(wrapped.navigation.advance(true)).toBe(b.component);
+    expect(wrapped.navigation.advance()).toBe(a.component);
+  });
+
+  it("does not admit Tab focus when project navigation is disabled", () => {
+    const f = fixture({ enabled: false });
+    f.add("control", 0, 0, { focusInitial: true });
+    expect(f.navigation.advance()).toBeNull();
+    expect(f.events).toEqual([]);
+  });
+
   it("repeats held gamepad directions on the configured delay, wraps, and activates generic focus targets", () => {
     const f = fixture({ repeatDelay: 0.3, repeatInterval: 0.1, wrap: true });
     const a = f.add("a", 0, 0, { focusInitial: true });

@@ -74,6 +74,8 @@ export interface SerializedActor {
   visible: boolean;
   locked: boolean;
   components: SerializedComponent[];
+  /** Per-instance actor variable overrides, including SceneLayer switcher entries. */
+  properties?: Record<string, unknown>;
   /**
    * Outliner folder that lists this actor, or null for the scene root. Purely
    * organizational: `parentId` still owns transform attachment, and the runtime
@@ -291,6 +293,7 @@ export function createActor(
     visible: overrides.visible ?? true,
     locked: overrides.locked ?? false,
     components: overrides.components ?? [],
+    ...(overrides.properties ? { properties: structuredClone(overrides.properties) } : {}),
     folderId: overrides.folderId ?? null,
   };
 }
@@ -381,6 +384,8 @@ function normalizeActor(value: unknown, index: number): SerializedActor {
     visible: source.visible !== false,
     locked: source.locked === true,
     components,
+    ...(source.properties && typeof source.properties === "object" && !Array.isArray(source.properties)
+      ? { properties: structuredClone(source.properties as Record<string, unknown>) } : {}),
     folderId: asNullableString(source.folderId),
   };
 }

@@ -50,6 +50,19 @@ describe("P9 document kinds", () => {
     expect(labelFromPath("assets/Depth Image.rendertargettexture.babasset")).toBe("Depth Image");
   });
 
+  it("restores Data Definition and Data Tree document identities with readable labels", () => {
+    for (const [type, kind, path, label] of [
+      ["DataDefinition", "data-definition", "assets/Iron Sword.datadefinition.babasset", "Iron Sword Data Definition"],
+      ["DataTree", "data-tree", "assets/Weapons.datatree.babasset", "Weapons Data Tree"],
+    ] as const) {
+      const mapped = documentKindForAssetType(type)!;
+      const ref = createDocumentRef(mapped, path);
+      expect(parseDocumentId(documentId(ref))).toEqual({ kind, path });
+      expect(ref.label).toBe(label);
+      expect(assetTypeForDocumentSave(mapped)).toBe(type);
+    }
+  });
+
   it("does not treat UserInterface as a document kind", () => {
     expect(documentKindForAssetType("UserInterface")).toBeNull();
     expect(documentKindForAssetType("EditorUtilityInterface")).toBeNull();
@@ -78,6 +91,10 @@ describe("P9 document kinds", () => {
     expect(documentKindForAssetType("AnimationGraph")).toBe("anim-graph");
     expect(documentKindForAssetType("BehaviourTree")).toBe("behaviour-tree");
     expect(documentKindForAssetType("Blackboard")).toBe("blackboard");
+    expect(documentKindForAssetType("SaveGame")).toBe("save-game");
+    expect(assetTypeForDocumentKind("save-game")).toBe("SaveGame");
+    expect(documentKindLabel("save-game")).toBe("Save Game");
+    expect(labelFromPath("assets/PlayerProgress.savegame.babasset")).toBe("PlayerProgress");
     expect(assetTypeForDocumentKind("behaviour-tree")).toBe("BehaviourTree");
     expect(assetTypeForDocumentKind("blackboard")).toBe("Blackboard");
     expect(isAssetDocumentKind("font")).toBe(true);

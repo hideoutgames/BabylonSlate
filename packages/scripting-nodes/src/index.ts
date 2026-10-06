@@ -18,6 +18,7 @@ import { particleNodes } from "./particles";
 import { sceneNodes } from "./scene";
 import { sceneStreamingNodes } from "./scene-streaming";
 import { projectNodes } from "./project";
+import { saveGameNodes } from "./save-game";
 import { gameInstanceNodes } from "./game-instance";
 import { subsystemNodes } from "./subsystem";
 import { sceneLayerNodes, registerSceneLayerValidationRules } from "./scene-layer";
@@ -38,11 +39,14 @@ import { navigationNodes } from "./navigation";
 import { illuminationNodes } from "./illumination";
 import { animationNodes } from "./animation";
 import { structNodes } from "./struct";
+import { dataNodes } from "./data";
+import { editorDataNodes } from "./editor-data";
 import { enumNodes } from "./enum";
 import { literalNodes } from "./literal";
 import { rotatorNodes } from "./rotator";
 import { colorNodes } from "./color";
 import { quatNodes } from "./quat";
+import { tagNodes } from "./tags";
 
 export * from "./flow";
 export * from "./math";
@@ -62,6 +66,7 @@ export * from "./particles";
 export * from "./scene";
 export * from "./scene-streaming";
 export * from "./project";
+export * from "./save-game";
 export * from "./game-instance";
 export * from "./subsystem";
 export * from "./scene-layer";
@@ -83,11 +88,14 @@ export * from "./navigation";
 export * from "./illumination";
 export * from "./animation";
 export * from "./struct";
+export * from "./data";
+export * from "./editor-data";
 export * from "./enum";
 export * from "./literal";
 export * from "./rotator";
 export * from "./color";
 export * from "./quat";
+export * from "./tags";
 
 export function allNodeDefinitions(): NodeDefinition[] {
   return [
@@ -109,6 +117,7 @@ export function allNodeDefinitions(): NodeDefinition[] {
     ...sceneNodes,
     ...sceneStreamingNodes,
     ...projectNodes,
+    ...saveGameNodes,
     ...gameInstanceNodes,
     ...subsystemNodes,
     ...sceneLayerNodes,
@@ -129,11 +138,14 @@ export function allNodeDefinitions(): NodeDefinition[] {
     ...illuminationNodes,
     ...animationNodes,
     ...structNodes,
+    ...dataNodes,
+    ...editorDataNodes,
     ...enumNodes,
     ...literalNodes,
     ...rotatorNodes,
     ...colorNodes,
     ...quatNodes,
+    ...tagNodes,
   ];
 }
 

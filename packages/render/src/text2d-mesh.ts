@@ -46,6 +46,7 @@ import {
   type GlyphMetricsProvider,
   type Text2DEffectContext,
   type Text2DLayoutItem,
+  type Text2DLayout,
 } from "./text2d-layout";
 
 export type Text2DMeshOptions = {
@@ -63,6 +64,10 @@ export type Text2DAssetContext = MeshAssetContext & {
 
 const textMaterialVisuals = new WeakMap<Mesh, { guid: string | null; glyphs: Array<{ mesh: Mesh; fallback: Material | null }> }>();
 const appearVisuals = new WeakMap<Mesh, (progress: number) => void>();
+const textLayouts = new WeakMap<Mesh, Text2DLayout>();
+
+/** Measured glyph layout retained for native SceneLayer text editing feedback. */
+export function text2DMeshLayout(mesh: Mesh): Text2DLayout | undefined { return textLayouts.get(mesh); }
 
 /** Apply a simulation-owned reveal sample without rebuilding glyphs or atlases. */
 export function updateText2DAppear(mesh: Mesh, progress: number): void {
@@ -720,6 +725,8 @@ export function createText2DMesh(
       attachEffects(scene, parent, glyphMeshes, bundle, parsed, count, ppu, options.isPaused ?? (() => assets?.paused === true));
     }
     applyOverlayVisualStyle(parent, properties);
+    textLayouts.set(parent, layout);
+    parent.onDisposeObservable.addOnce(() => textLayouts.delete(parent));
     return parent;
   } catch (error) {
     bundle.dispose();

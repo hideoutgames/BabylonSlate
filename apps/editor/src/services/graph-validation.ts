@@ -3,8 +3,10 @@ import {
   isEditorGraphClass,
   isEditorGraphHost,
   isFunctionLibraryClass,
+  normalizeDataTreeEntry,
   type GraphClassMemberPin,
   type SerializedGraph,
+  type SaveGameDefinition,
 } from "@babylonslate/core";
 import { engineParentOf, formatEventMemberName, formatEventTitle, walkAncestry } from "@babylonslate/editor-kit";
 import {
@@ -17,6 +19,9 @@ import {
   isActorClassId,
   isLogicGraphPayload,
   knownGuidsFromSchemas,
+  snapshotDataFields,
+  reconcileDataEntry,
+  validateDataEntry,
   type ClassHierarchy,
   type ClassMemberSymbol,
   type Diagnostic,
@@ -92,6 +97,14 @@ import type {
   GraphStructureEntry,
   SubsystemClassEntry,
 } from "../lib/logic-graph-document";
+import {
+  DATA_GRAPH_NODES,
+  dataGraphMetadata,
+  selectedDataGraphEntry,
+  dataGraphNodeTitle,
+  isDataGraphNode,
+  type DataGraphAssetEntry,
+} from "../lib/data-graph";
 
 const registry = createDefaultNodeRegistry();
 
@@ -175,7 +188,9 @@ function pruneIncompatibleEdges(
     const targetTypeId = catalogTypeId(target);
     if (
       !isVariableAccessTypeId(sourceTypeId) &&
-      !isVariableAccessTypeId(targetTypeId)
+      !isVariableAccessTypeId(targetTypeId) &&
+      !isDataGraphNode(sourceTypeId) &&
+      !isDataGraphNode(targetTypeId)
     ) {
       return true;
     }
@@ -199,6 +214,7 @@ function isInputEvent(typeId: string): boolean {
 }
 
 function shouldRegeneratePins(typeId: string): boolean {
+  if (isDataGraphNode(typeId)) return true;
   if (typeId.startsWith("tween.")) return true;
   if (typeId === "debug.executeJavaScript") return true;
   if (isInputEvent(typeId)) return true;
@@ -385,6 +401,14 @@ function enumNodeTitle(typeId: string, enumName: string): string {
   }
 }
 
+function dataLiteralEntry(nodeId: string, properties: Record<string, unknown>) {
+  try {
+    return normalizeDataTreeEntry({ id: nodeId, parentId: null, name: "Values", values: properties["default:values"], schema: properties.dataSchema });
+  } catch {
+    return null;
+  }
+}
+
 function applyStructEnumSchema(
   typeId: string,
   properties: Record<string, unknown>,
@@ -393,6 +417,40 @@ function applyStructEnumSchema(
   nodeRegistry: NodeRegistry,
   options?: HydrateGraphOptions,
 ): void {
+  if (isDataGraphNode(typeId)) {
+    const node = dataGraphMetadata(typeId)!;
+    if (node.schema === false) return;
+    if (typeId === "editorData.addEntry" && properties.definitionMode === "none") return;
+    let guid = typeof properties.definitionGuid === "string" ? properties.definitionGuid.trim() : "";
+    if (!guid && node.definitionPath && !graph.edges.some((edge) => edge.target === nodeId && ["tree", node.definitionPath].includes(edge.targetHandle ?? ""))) {
+      guid = selectedDataGraphEntry(typeId, properties, options?.dataAssets ?? [])?.effectiveDefinitionGuid ?? "";
+      if (guid) properties.definitionGuid = guid;
+    }
+    const schema = options?.dataDefinitions?.[guid];
+    properties.title = dataGraphNodeTitle(typeId, schema?.name);
+    if (schema && !Array.isArray(properties.dataSchema)) {
+      const literal = properties["default:values"];
+      const values = literal && typeof literal === "object" && !Array.isArray(literal) ? literal as Record<string, unknown> : {};
+      properties.dataSchema = snapshotDataFields(schema.fields, values, {
+        structs: options?.structs ?? {}, enums: options?.enums ?? {}, dataDefinitions: options?.dataDefinitions,
+      }, new Set([guid]));
+    }
+    if (schema && (typeId === "editorData.addEntry" || typeId === "editorData.updateEntry") &&
+      properties["default:values"] !== undefined && !graph.edges.some((edge) => edge.target === nodeId && edge.targetHandle === "values")) {
+      const schemas = { structs: options?.structs ?? {}, enums: options?.enums ?? {}, dataDefinitions: options?.dataDefinitions };
+      const authored = dataLiteralEntry(nodeId, properties);
+      // Safe renames must remain editable while unrelated values need repair.
+      // Missing fields stay missing and incompatible values retain their old
+      // type snapshots; structural conflicts return the original entry atomically.
+      if (authored) {
+        const projected = reconcileDataEntry(authored, guid, schema.fields, schemas, { initializeMissingFields: false });
+        if (projected.entry !== authored) {
+          properties["default:values"] = projected.entry.values;
+          properties.dataSchema = projected.entry.schema;
+        }
+      }
+    }
+  }
   if (typeId === "struct.make" || typeId === "struct.break") {
     const guid =
       typeof properties.structGuid === "string"
@@ -401,7 +459,7 @@ function applyStructEnumSchema(
     const schema = guid ? options?.structs?.[guid] : undefined;
     if (schema) {
       properties.fields = schema.fields;
-      properties.title = `${typeId === "struct.make" ? "Make" : "Break"} ${schema.name}`;
+      properties.title = `${typeId === "struct.make" ? "Make" : "Break"} ${schema.name}${options?.dataDefinitions?.[guid] ? " Data" : ""}`;
     }
   }
   if (isEnumCatalogType(typeId)) {
@@ -484,6 +542,7 @@ function hydratedNodeTitle(
       isInputEvent(typeId) ||
       typeId === "struct.make" ||
       typeId === "struct.break" ||
+      isDataGraphNode(typeId) ||
       isEnumCatalogType(typeId))
   ) {
     return properties.title;
@@ -516,11 +575,13 @@ function refreshInputEvent(
 export type InputPaletteAsset = { guid: string; name: string; type: string; valueType: string };
 
 export type HydrateGraphOptions = {
+  dataAssets?: readonly DataGraphAssetEntry[];
   /** Active function slice, for Script Interface endpoint chrome. */
   functionId?: string;
   inputAssets?: readonly InputPaletteAsset[];
   parentOf?: (id: string) => string | null | undefined;
   structs?: TypeSchemas["structs"];
+  dataDefinitions?: TypeSchemas["dataDefinitions"];
   enums?: TypeSchemas["enums"];
   classId?: string;
   otherClassGraphs?: Record<string, SerializedGraph>;
@@ -962,6 +1023,7 @@ export function createDefaultLogicGraphSerialized(
 }
 
 export type ScriptPaletteOptions = ClassEventOptions & {
+  saveGameDefinition?: SaveGameDefinition;
   inputAssets?: readonly InputPaletteAsset[];
   classId?: string;
   graph?: SerializedGraph;
@@ -978,6 +1040,7 @@ export type ScriptPaletteOptions = ClassEventOptions & {
     methods: Array<{ name: string; pins?: GraphClassMemberPin[] }>;
   }>;
   structures?: readonly GraphStructureEntry[];
+  dataDefinitions?: readonly GraphStructureEntry[];
   enums?: readonly GraphEnumEntry[];
   sceneDocuments?: readonly PaletteSceneDocument[];
   /** Project subsystem classes; each gets a Get <ClassId> row. */
@@ -1687,31 +1750,78 @@ function structPaletteNodes(
   const breakDef = nodeRegistry.get("struct.break");
   if (!makeDef || !breakDef) return [];
   const rows: PaletteNode[] = [];
-  for (const structure of options?.structures ?? []) {
+  for (const structure of [...(options?.structures ?? []), ...(options?.dataDefinitions ?? [])]) {
+    const isDefinition = options?.dataDefinitions?.some((entry) => entry.guid === structure.guid);
+    const name = `${structure.name}${isDefinition ? " Data" : ""}`;
     const defaultData: Record<string, unknown> = {
       structGuid: structure.guid,
       fields: structure.fields,
+      ...(isDefinition ? { dataDefinition: true } : {}),
     };
     rows.push({
       id: `struct.make:${structure.guid}`,
       nodeType: "struct.make",
-      title: `Make ${structure.name}`,
-      category: makeDef.category,
+      title: `Make ${name}`,
+      category: isDefinition ? "data" : makeDef.category,
       pins: makeDef.pins(defaultData),
       pure: makeDef.pure,
       latent: makeDef.latent,
-      defaultData: { ...defaultData, title: `Make ${structure.name}` },
+      defaultData: { ...defaultData, title: `Make ${name}` },
     });
     rows.push({
       id: `struct.break:${structure.guid}`,
       nodeType: "struct.break",
-      title: `Break ${structure.name}`,
-      category: breakDef.category,
+      title: `Break ${name}`,
+      category: isDefinition ? "data" : breakDef.category,
       pins: breakDef.pins(defaultData),
       pure: breakDef.pure,
       latent: breakDef.latent,
-      defaultData: { ...defaultData, title: `Break ${structure.name}` },
+      defaultData: { ...defaultData, title: `Break ${name}` },
     });
+  }
+  return rows;
+}
+
+function saveGamePaletteNodes(nodeRegistry: NodeRegistry, options?: ScriptPaletteOptions): PaletteNode[] {
+  if (isEditorGraphHost(options ?? {}) || options?.animationGraphHost === "rule") return [];
+  return (options?.saveGameDefinition?.fields ?? []).flatMap((field) =>
+    ["getField", "setField", "migrationGetField", "migrationSetField"].map((operation): PaletteNode => {
+      const def = nodeRegistry.get(`saveGame.${operation}`)!;
+      const migration = operation.startsWith("migration");
+      const write = operation === "setField" || operation === "migrationSetField";
+      const title = `${write ? "Set" : "Get"} ${migration ? "Migration" : "Save"} ${field.name}`;
+      const defaultData = { fieldId: field.id, fieldName: field.name, typeId: field.type, array: field.array === true, title,
+        ...(write ? { "default:value": field.defaultValue } : {}) };
+      return { id: `${def.id}:${field.id}`, nodeType: def.id, title, category: "save-game", description: def.description,
+        pins: def.pins(defaultData), pure: def.pure, latent: def.latent, defaultData };
+    }));
+}
+
+function dataPaletteNodes(
+  nodeRegistry: NodeRegistry,
+  options?: ScriptPaletteOptions,
+): PaletteNode[] {
+  const rows: PaletteNode[] = [];
+  for (const typeId of Object.keys(DATA_GRAPH_NODES) as Array<keyof typeof DATA_GRAPH_NODES>) {
+    const def = nodeRegistry.get(typeId);
+    if (!def || dataGraphMetadata(typeId)?.schema === false || (def.editorOnly && !isEditorGraphHost(options ?? {}))) continue;
+    for (const structure of options?.dataDefinitions ?? []) {
+      const title = dataGraphNodeTitle(typeId, structure.name);
+      const defaultData = { definitionGuid: structure.guid, title };
+      rows.push({
+        id: `${typeId}:${structure.guid}`,
+        nodeType: typeId,
+        title,
+        description: def.description,
+        category: def.category,
+        searchAliases: def.searchAliases,
+        pins: def.pins(defaultData),
+        pure: def.pure,
+        latent: def.latent,
+        editorOnly: def.editorOnly,
+        defaultData,
+      });
+    }
   }
   return rows;
 }
@@ -1896,6 +2006,8 @@ export function scriptPaletteInjectorKey(
     scriptInterfaces: options?.scriptInterfaces ?? [],
     subsystemClasses: options?.subsystemClasses ?? [],
     structures: options?.structures ?? [],
+    dataDefinitions: options?.dataDefinitions ?? [],
+    saveGameDefinition: options?.saveGameDefinition,
     enums: options?.enums ?? [],
     inputAssets: options?.inputAssets ?? [],
     scenes: (options?.sceneDocuments ?? []).map((scene) => [
@@ -1916,6 +2028,8 @@ function scriptPaletteCatalogNodes(
   return nodeRegistry
     .list()
     .filter((def) => {
+      if ((def.id.startsWith("saveGame.") || def.id === "flow.event.gameLoaded" || def.id === "flow.event.saveMigration") && isEditorGraphHost(options ?? {})) return false;
+      if ((def.id === "flow.event.gameLoaded" || def.id === "flow.event.saveMigration") && options?.activeFunctionId) return false;
       if (def.id === "flow.event.scalabilityChanged" && options?.activeFunctionId) return false;
       if ((isInputEvent(def.id) || def.id === "input.onAnyKeyPressed") &&
         (options?.activeFunctionId || options?.animationGraphHost || !nativeEventStubs(options).some((node) => node.eventType === "flow.event.tick"))) return false;
@@ -2004,7 +2118,12 @@ function scriptPaletteInjectorNodes(
 ): PaletteNode[] {
   if (options?.animationGraphHost === "rule") {
     return markOutOfContext(
-      variableAccessPaletteNodes(nodeRegistry, options),
+      [
+        ...variableAccessPaletteNodes(nodeRegistry, options),
+        ...structPaletteNodes(nodeRegistry, options),
+        ...dataPaletteNodes(nodeRegistry, options),
+        ...enumPaletteNodes(nodeRegistry, options),
+      ].filter((node) => node.pure === true),
       options,
     );
   }
@@ -2018,6 +2137,8 @@ function scriptPaletteInjectorNodes(
       ...castPaletteNodes(nodeRegistry, options),
       ...subsystemGetPaletteNodes(nodeRegistry, options),
       ...structPaletteNodes(nodeRegistry, options),
+      ...saveGamePaletteNodes(nodeRegistry, options),
+      ...dataPaletteNodes(nodeRegistry, options),
       ...enumPaletteNodes(nodeRegistry, options),
     ],
     options,
@@ -2285,6 +2406,7 @@ export function scriptPinCompatibility(
 }
 
 export type ValidateSerializedGraphOptions = {
+  dataAssets?: readonly DataGraphAssetEntry[];
   inputAssets?: readonly InputPaletteAsset[];
   assetGuid: string;
   graphId: string;
@@ -2298,6 +2420,7 @@ export type ValidateSerializedGraphOptions = {
   knownGuids?: ReadonlySet<string>;
   enums?: TypeSchemas["enums"];
   structs?: TypeSchemas["structs"];
+  dataDefinitions?: TypeSchemas["dataDefinitions"];
   materialDomains?: Readonly<Record<string, string>>;
   parentOf?: (id: string) => string | null | undefined;
   otherClassGraphs?: Record<string, SerializedGraph>;
@@ -2417,6 +2540,77 @@ function hostLineageDiagnostics(
   return out;
 }
 
+function dataGraphDiagnostics(
+  graphs: readonly LogicGraph[],
+  options: ValidateSerializedGraphOptions,
+): Diagnostic[] {
+  const out: Diagnostic[] = [];
+  const assets = options.dataAssets && new Map(options.dataAssets.map((entry) => [entry.guid, entry]));
+  for (const graph of graphs) {
+    for (const node of graph.nodes) {
+      if (!isDataGraphNode(node.typeId)) continue;
+      const metadata = dataGraphMetadata(node.typeId)!;
+      const guid = typeof node.properties.definitionGuid === "string" ? node.properties.definitionGuid.trim() : "";
+      const report = (code: string, message: string, pinId?: string) => out.push(diagnostic({
+        code, message, assetGuid: options.assetGuid, graphId: graph.id, nodeId: node.id, pinId,
+      }));
+      const grouping = node.typeId === "editorData.addEntry" && node.properties.definitionMode === "none";
+      const needsDefinition = metadata.required || (node.typeId === "editorData.addEntry" && node.properties.definitionMode === "override");
+      if (!guid && needsDefinition) {
+        report("data.missing_definition", "Select a Data Definition in the node Inspector");
+      } else if (!grouping && metadata.schema !== false && guid && options.dataDefinitions && !options.dataDefinitions[guid]) {
+        report("data.unknown_definition", `The selected Data Definition '${guid}' is missing`);
+      }
+      const wired = (pinId: string) => graph.edges.some((edge) => edge.targetNodeId === node.id && edge.targetPinId === pinId);
+      if ((node.typeId === "editorData.addEntry" || node.typeId === "editorData.updateEntry") &&
+        !grouping && guid && options.dataDefinitions?.[guid] && !wired("values") && node.properties["default:values"] !== undefined) {
+        const value = dataLiteralEntry(node.id, node.properties);
+        if (!value) report("data.invalid-values", "Data entry values must be an object", "values");
+        for (const issue of value ? validateDataEntry(value, guid, { structs: options.structs ?? {}, enums: options.enums ?? {}, dataDefinitions: options.dataDefinitions }) : []) {
+          out.push(diagnostic({
+            code: `data.${issue.code}`, message: issue.path ? `${issue.path}: ${issue.message}` : issue.message,
+            severity: issue.severity, assetGuid: options.assetGuid, graphId: graph.id, nodeId: node.id, pinId: "values",
+          }));
+        }
+      }
+      const treeRef = node.properties["default:tree"];
+      const tree = typeof treeRef === "string" ? assets?.get(treeRef) : undefined;
+      if (node.typeId === "editorData.addEntry" && node.properties.definitionMode === "inherit" && guid) {
+        const parentPath = node.properties["default:parentPath"] ?? "";
+        const effective = !tree?.invalid && typeof parentPath === "string"
+          ? parentPath === "" ? tree?.defaultDefinitionGuid : tree?.entries.find((entry) => entry.path === parentPath)?.effectiveDefinitionGuid
+          : undefined;
+        if (wired("tree") || wired("parentPath") || effective === undefined) {
+          report("data.dynamic_inherited_values", "Typed inherited values need a known Tree and parent. Use Override for a dynamic Tree or Parent Path", "values");
+        } else if (effective !== guid) {
+          report("data.definition_mismatch", "The parent does not use the selected Data Definition. Select its Definition or use Override", "parentPath");
+        }
+      }
+      if (!assets) continue;
+      if (metadata.assetPin && !wired(metadata.assetPin) && typeof treeRef === "string" && treeRef) {
+        if (!tree) report("data.missing_asset", `The selected Data Tree '${treeRef}' is missing`, "tree");
+        else if (tree.invalid) report("data.invalid_tree", `The selected Data Tree '${tree.name}' has invalid hierarchy`, "tree");
+      }
+      if (!tree || tree.invalid || wired("tree")) continue;
+      for (const pathPin of metadata.pathPins ?? []) {
+        if (wired(pathPin.pinId)) continue;
+        const path = node.properties[`default:${pathPin.pinId}`];
+        if (typeof path !== "string" || (!path && pathPin.root)) continue;
+        const entry = tree.entries.find((item) => item.path === path);
+        if (!entry && path) {
+          out.push(diagnostic({
+            code: "data.missing_entry", message: `'${tree.name}' has no entry at '${path}'`, severity: "warning",
+            assetGuid: options.assetGuid, graphId: graph.id, nodeId: node.id, pinId: pathPin.pinId,
+          }));
+        } else if (entry && metadata.definitionPath === pathPin.pinId && guid && entry.effectiveDefinitionGuid !== guid) {
+          report("data.definition_mismatch", `'${path}' does not use the selected Data Definition`, pathPin.pinId);
+        }
+      }
+    }
+  }
+  return out;
+}
+
 function attachedComponentsForGraph(
   content: SerializedGraph,
   options: ValidateSerializedGraphOptions,
@@ -2450,10 +2644,12 @@ export function validateSerializedGraph(
         ? knownGuidsFromSchemas({
             enums: options.enums ?? {},
             structs: options.structs ?? {},
+            dataDefinitions: options.dataDefinitions,
           })
         : undefined),
     enums: options.enums,
     structs: options.structs,
+    dataDefinitions: options.dataDefinitions,
     materialDomains: options.materialDomains,
     attachedComponents: serialized
       ? attachedComponentsForGraph(serialized, options)
@@ -2473,14 +2669,17 @@ export function validateSerializedGraph(
     return [
       ...validateGraphs([content], ctx, { registry }),
       ...hostLineageDiagnostics([content], options),
+      ...dataGraphDiagnostics([content], options),
       ...warnDebugTierConsoleCommands([content], { assetGuid: options.assetGuid }),
       ...warnReservedConsoleCommandNames([content], { assetGuid: options.assetGuid }),
     ];
   }
   const typeOptions: HydrateGraphOptions = {
+    dataAssets: options.dataAssets,
     inputAssets: options.inputAssets,
     enums: options.enums,
     structs: options.structs,
+    dataDefinitions: options.dataDefinitions,
   };
   const eventGraph = materializeLogicGraph(
     content,
@@ -2502,6 +2701,7 @@ export function validateSerializedGraph(
   return [
     ...validateGraphs(graphs, ctx, { registry }),
     ...hostLineageDiagnostics(graphs, options),
+    ...dataGraphDiagnostics(graphs, options),
     ...warnDebugTierConsoleCommands(graphs, { assetGuid: options.assetGuid }),
     ...warnReservedConsoleCommandNames(graphs, { assetGuid: options.assetGuid }),
   ];

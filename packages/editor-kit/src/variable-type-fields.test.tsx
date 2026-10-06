@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { VariableTypeFields } from "./variable-type-fields";
 import { AssetOpenProvider } from "./asset-picker-control";
 
@@ -17,6 +17,16 @@ if (typeof window.PointerEvent === "undefined") {
 describe("VariableTypeFields", () => {
   afterEach(() => {
     cleanup();
+  });
+
+  it("persists TagContainer as the native structure while displaying its direct type choice", () => {
+    const onChange = vi.fn();
+    const { rerender } = render(<VariableTypeFields value={{ typeId: "tag", container: "single" }} onChange={onChange} />);
+    fireEvent.click(screen.getByTestId("inspector-member-type"));
+    fireEvent.click(screen.getByTestId("search-item-tagContainer"));
+    expect(onChange).toHaveBeenCalledWith({ typeId: "struct", typeClassId: "engine:TagContainer", container: "single" });
+    rerender(<VariableTypeFields value={{ typeId: "struct", typeClassId: "engine:TagContainer", container: "single" }} onChange={onChange} />);
+    expect(screen.getByTestId("inspector-member-type").textContent).toContain("TagContainer");
   });
 
   it("shows Type, Container Single/Array/Map, and Key Type only for Map", () => {
@@ -108,5 +118,17 @@ describe("VariableTypeFields", () => {
     );
     screen.getByTestId("inspector-member-key-type-asset-open").click();
     expect(openAsset).toHaveBeenCalledWith("struct-stats");
+  });
+
+  it.each([undefined, "DataDefinition"] as const)("selects Definition Map keys with scope %s", async (structAssetType) => {
+    const onChange = vi.fn();
+    render(<VariableTypeFields value={{ typeId: "float", container: "map", keyTypeId: "struct" }}
+      onChange={onChange} structAssetType={structAssetType}
+      typeAssets={[{ guid: "item", name: "Item", type: "DataDefinition" }, { guid: "shape", name: "Shape", type: "Structure" }]} />);
+    fireEvent.click(screen.getByTestId("inspector-member-key-type-asset"));
+    expect(await screen.findByTestId("search-item-item")).toBeTruthy();
+    expect(screen.queryByTestId("search-item-shape") !== null).toBe(structAssetType === undefined);
+    fireEvent.click(screen.getByTestId("search-item-item"));
+    expect(onChange).toHaveBeenCalledWith({ typeId: "float", container: "map", keyTypeId: "struct", keyTypeClassId: "item" });
   });
 });
