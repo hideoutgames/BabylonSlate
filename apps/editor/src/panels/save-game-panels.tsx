@@ -21,12 +21,18 @@ import { ToggleGroup, ToggleGroupItem } from "@babylonslate/ui/components/toggle
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useSaveGameEditing } from "../context/save-game-editing-context";
+import { shouldApplyAssetDocumentChange } from "../lib/asset-document-change";
 
-const FIELD_TYPES: SaveGameField["type"][] = ["bool", "int", "float", "string", "vector3", "actor", "asset"];
+const FIELD_TYPES = ["bool", "int", "float", "string", "vec3", "actor", "asset"] as const;
 const FIELD_TYPE_LABELS: Record<SaveGameField["type"], string> = {
   bool: "Boolean", int: "Integer", float: "Float", string: "String",
   vector3: "Vector 3", actor: "Actor Reference", asset: "Asset Reference",
 };
+const FIELD_PICKER_LABELS = { ...FIELD_TYPE_LABELS, vec3: FIELD_TYPE_LABELS.vector3 };
+
+function fieldPickerType(type: SaveGameField["type"]) {
+  return type === "vector3" ? "vec3" : type;
+}
 
 function initialValue(type: SaveGameField["type"]): SaveGameValue {
   if (type === "bool") return false;
@@ -49,6 +55,10 @@ function useSaveGameDocument() {
   const commit = async (next: SaveGameDefinition) => {
     try {
       validateSaveGameDefinition(next);
+      if (definition && !shouldApplyAssetDocumentChange({ ...definition }, { ...next })) {
+        setError(null);
+        return true;
+      }
       const applied = await applyAssetDocumentChange(documentId, { ...next });
       if (!applied) throw new Error("The Save Game could not be updated. Try again.");
       setError(null);
@@ -116,7 +126,7 @@ export function SaveGameFieldsPanel(_props: IDockviewPanelProps) {
       {definition?.fields.length === 0 ? <Empty><EmptyHeader><EmptyTitle>No Save Fields</EmptyTitle><EmptyDescription>Add progress such as Score, Level, or Unlocked Items, then edit its type and starting value in Details.</EmptyDescription></EmptyHeader></Empty> : <TreeView
         nodes={fields.map((field) => ({
           id: field.id, label: field.name, depth: 0, hasChildren: false, expanded: false,
-          icon: <PinShapeGlyph shape={field.array ? "list" : "circle"} connected color={pinPickerColorVar(field.type)} size={14} />,
+          icon: <PinShapeGlyph shape={field.array ? "list" : "circle"} connected color={pinPickerColorVar(fieldPickerType(field.type))} size={14} />,
           preview: <span className="text-xs text-muted-foreground">{FIELD_TYPE_LABELS[field.type]}{field.array ? " Array" : ""}</span>,
         }))}
         selectedId={selectedField?.id}
@@ -156,8 +166,8 @@ export function SaveGameDefinitionPanel(_props: IDockviewPanelProps) {
       {selectedField ? <FieldSet key={selectedField.id} className="gap-3" data-testid={`save-field-${selectedField.id}`}>
         <FieldLegend>{selectedField.name}</FieldLegend>
         <PropertyGrid rows={[{ id: `name-${selectedField.id}`, kind: "text", label: "Name", value: selectedField.name, onChange: (name) => patch({ name }) }]} />
-        <Field><FieldLabel>Type</FieldLabel><PinTypePicker types={FIELD_TYPES} labels={FIELD_TYPE_LABELS} value={selectedField.type} onChange={(value) => {
-          const type = value as SaveGameField["type"];
+        <Field><FieldLabel>Type</FieldLabel><PinTypePicker types={FIELD_TYPES} labels={FIELD_PICKER_LABELS} value={fieldPickerType(selectedField.type)} onChange={(value) => {
+          const type = (value === "vec3" ? "vector3" : value) as SaveGameField["type"];
           if (type !== selectedField.type) patch({ type, defaultValue: selectedField.array ? [] : initialValue(type) });
         }} data-testid="save-game-field-type" /></Field>
         <Field><FieldLabel>Container</FieldLabel><ToggleGroup variant="outline" size="sm" spacing={1} value={[selectedField.array ? "array" : "single"]} aria-label="Container" onValueChange={(values) => {

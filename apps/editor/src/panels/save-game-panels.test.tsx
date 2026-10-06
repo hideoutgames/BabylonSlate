@@ -12,7 +12,7 @@ if (typeof window.PointerEvent === "undefined") {
 
 const harness = vi.hoisted(() => ({
   definition: {} as SaveGameDefinition,
-  apply: vi.fn(async (_id: string, _definition: SaveGameDefinition) => true),
+  apply: vi.fn<(id: string, definition: SaveGameDefinition) => Promise<boolean>>(),
   settings: vi.fn(),
   defaultGuid: null as string | null,
 }));
@@ -39,6 +39,13 @@ afterEach(cleanup);
 describe("Save Game authoring", () => {
   it("renames a field without replacing its persisted identity and rejects unsafe names", async () => {
     render(editor());
+    const handle = screen.getByTestId("property-default-score-id-Default Value-scrub");
+    fireEvent.pointerDown(handle, { clientX: 0 });
+    fireEvent.pointerMove(handle, { clientX: 1 });
+    fireEvent.pointerUp(handle, { clientX: 1 });
+    // Integer rounding keeps 5; an unchanged edit must not become a failed write.
+    expect(harness.apply).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alert")).toBeNull();
     fireEvent.change(screen.getByTestId("property-name-score-id"), { target: { value: "Coins" } });
     expect(harness.apply).toHaveBeenCalledWith("progress", { id: "definition", schemaVersion: 1, fields: [{ id: "score-id", name: "Coins", type: "int", defaultValue: 5 }] });
     harness.apply.mockClear();
@@ -64,6 +71,10 @@ describe("Save Game authoring", () => {
     expect(added.fields[1]!.id).not.toBe("score-id");
     view.rerender(editor());
     expect(screen.getByTestId(`property-name-${added.fields[1]!.id}`)).toHaveProperty("value", "Coins");
+    fireEvent.click(screen.getByTestId("save-game-field-type"));
+    fireEvent.click(await screen.findByTestId("search-item-vec3"));
+    await waitFor(() => expect(harness.definition.fields[1]).toMatchObject({ type: "vector3", defaultValue: { x: 0, y: 0, z: 0 } }));
+    view.rerender(editor());
     fireEvent.click(screen.getByTestId("save-game-field-type"));
     fireEvent.click(await screen.findByTestId("search-item-string"));
     await waitFor(() => expect(harness.definition.fields[1]).toMatchObject({ type: "string", defaultValue: "" }));

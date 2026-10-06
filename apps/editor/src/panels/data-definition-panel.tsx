@@ -3,7 +3,7 @@ import type { IDockviewPanelProps } from "dockview-react";
 import { reconcileDataDefinitionDefault } from "@babylonslate/scripting";
 import {
   ASSET_REF_PICKER_TYPES, AssetPicker, ClassPicker, PanelFrame, PinListEditor,
-  PropertyGrid, VariableTypeFields, assetRowIdentity, classRowIdentity,
+  PropertyGrid, VariableTypeFields, assetRowIdentity, classRowIdentity, humanizePropertyLabel,
   type PropertyRow,
 } from "@babylonslate/editor-kit";
 import { Alert, AlertDescription } from "@babylonslate/ui/components/alert";
@@ -54,7 +54,7 @@ function SelectedFieldDetails() {
     });
   } else if (selected.typeId === "asset") {
     constraints.push({ id: "asset-type", kind: "enum", label: "Asset Type", value: selected.typeClassId ?? "",
-      options: [{ value: "", label: "Any Asset" }, ...ASSET_REF_PICKER_TYPES.map(type => ({ value: type, label: type }))],
+      options: [{ value: "", label: "Any Asset" }, ...ASSET_REF_PICKER_TYPES.map(type => ({ value: type, label: humanizePropertyLabel(type) }))],
       onChange: value => changeSelectedType({ typeClassId: value || undefined }),
     });
   }

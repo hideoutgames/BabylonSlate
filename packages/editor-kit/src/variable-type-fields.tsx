@@ -93,7 +93,7 @@ export function VariableTypeFields({
               commit({ typeId: "struct", typeClassId: "engine:TagContainer" });
               return;
             }
-            const keep = pinPickerKeepsTypeClassId(typeId);
+            const keep = pinPickerKeepsTypeClassId(typeId) && value.typeClassId !== "engine:TagContainer";
             commit({
               typeId,
               typeClassId: keep ? value.typeClassId : undefined,
@@ -114,7 +114,7 @@ export function VariableTypeFields({
                 commit({ keyTypeId: "struct", keyTypeClassId: "engine:TagContainer" });
                 return;
               }
-              const keep = pinPickerKeepsTypeClassId(nextKey);
+              const keep = pinPickerKeepsTypeClassId(nextKey) && value.keyTypeClassId !== "engine:TagContainer";
               commit({
                 keyTypeId: nextKey,
                 keyTypeClassId: keep ? value.keyTypeClassId : undefined,
