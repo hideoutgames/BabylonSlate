@@ -184,6 +184,7 @@ import {
   applySetMaterialParameter,
   applyAssignMesh,
   applyPainter2DCommand,
+  applyUIControl2DCommand,
   applyText2DAppearCommand,
   applyOverlayVisualStyleCommand,
   applyComponentTransformsCommand,
@@ -208,6 +209,8 @@ import { pickAtCanvas } from "./picking";
 import { mapCanvasPointer } from "./pick-coords";
 import { refreshJoystick2DMaterials } from "./joystick2d-mesh";
 import { Joystick2DInput } from "./joystick2d-input";
+import { refreshUIControl2DMaterials } from "./ui-controls2d-mesh";
+import { UIControls2DInput, type SceneLayerControlEvent } from "./ui-controls2d-input";
 import { SceneLayerCompositor } from "./scene-layer-compositor";
 import { attachPlayCursor } from "./play-cursor";
 import {
@@ -577,6 +580,8 @@ export interface CreateEngineOptions {
       | "onPressEnd";
     componentId?: string;
   }) => void;
+  onSceneLayerControl?: (event: SceneLayerControlEvent) => void;
+  onSceneLayerFocusNavigate?: (reverse: boolean) => void;
   onSceneLayerScroll?: (event: { layerId: string; actorId: string; componentId: string; deltaX: number; deltaY: number }) => void;
   /** Overlay 2DAnchor frustum in world units (height 9, width 9 * aspect). */
   onSceneLayerResize?: (size: {
@@ -584,6 +589,7 @@ export interface CreateEngineOptions {
     frustumHeight: number;
     canvasWidth: number;
     canvasHeight: number;
+    safeAreaInsets?: { left: number; right: number; top: number; bottom: number };
   }) => void;
   /** Finished non-looping AudioComponent voice (Play graph On Audio Finished). */
   onAudioVoiceEnded?: (voiceId: string) => void;
@@ -1199,7 +1205,7 @@ function initializeEngine(
       // Rebuilding here releases the ready material and starts compilation again.
       if (materialScene === scene) editorSync?.refreshMaterials();
       for (const root of binding.meshes.values()) {
-        if (root.getScene() === materialScene) { refreshText2DMaterials(root, binding); refreshJoystick2DMaterials(root, binding); }
+        if (root.getScene() === materialScene) { refreshText2DMaterials(root, binding); refreshJoystick2DMaterials(root, binding); refreshUIControl2DMaterials(root, binding); }
       }
       scheduler.invalidate("asset");
     },
@@ -1417,6 +1423,14 @@ function initializeEngine(
     (controlId, value) => options.onTouchAxis?.(controlId, value),
   );
   onRollback(() => joysticks.reset());
+  const uiControls = new UIControls2DInput(
+    () => (sceneLayerCompositor?.layers() ?? []).filter(layer => layerLoads.get(layer.layerId)?.ready !== false),
+    pointerCanvas,
+    event => { options.onSceneLayerControl?.(event); scheduler.invalidate("selection"); },
+    canvas,
+    options.onSceneLayerFocusNavigate,
+  );
+  onRollback(() => uiControls.reset());
   const overlayLayouts = new OverlayLayoutRenderer(id => sceneLayerCompositor?.layers().find(layer => layer.layerId === id)?.scene);
   onRollback(() => overlayLayouts.dispose());
   const playCursor = options.playMode ? attachPlayCursor(canvas) : null;
@@ -1433,6 +1447,7 @@ function initializeEngine(
       frustumHeight: frustum.height,
       canvasWidth: canvasSize.width,
       canvasHeight: canvasSize.height,
+      safeAreaInsets: sceneLayerSafeAreaInsets(canvas),
     });
   };
   notifyOverlayResize();
@@ -1452,7 +1467,10 @@ function initializeEngine(
         canvasCssHeight: canvasSize.height,
       }),
     );
-    if (phase === "down" && !binding.paused && pointerId !== undefined && joysticks.down(pointerId, walked.targets, canvasX, canvasY)) return true;
+    if (phase === "down" && !binding.paused && pointerId !== undefined) {
+      if (uiControls.down(pointerId, walked.targets, canvasX, canvasY)) return true;
+      if (joysticks.down(pointerId, walked.targets, canvasX, canvasY)) return true;
+    }
     const events = applyOverlayPointer(
       overlayPointerState,
       phase,
@@ -2423,6 +2441,7 @@ function initializeEngine(
       });
       else engine.clear(scene.clearColor, true, true, true);
       joysticks.refresh();
+      uiControls.refresh();
       sceneLayerCompositor?.render(presentingLayers, (layerId, draw, fallback) => drawOwner(`layer:${layerId}`, draw, fallback));
       if (!coherentFrame) {
         for (const pending of frameOwners.values()) {
@@ -2574,6 +2593,7 @@ function initializeEngine(
   };
   const onPointerDown = (event: PointerEvent) => {
     event.preventDefault();
+    canvas.focus({ preventScroll: true });
     canvas.setPointerCapture?.(event.pointerId);
     const rect = canvas.getBoundingClientRect();
     const x = event.clientX - rect.left;
@@ -2581,8 +2601,11 @@ function initializeEngine(
     playCursor?.notePointer(event.pointerType ?? "mouse", x, y);
     const blocked = dispatchOverlayPointer("down", x, y, event.pointerId);
     if (joysticks.owns(event.pointerId)) return;
+    const controlOwns = uiControls.owns(event.pointerId);
+    if (controlOwns && !uiControls.allowsScroll(event.pointerId)) return;
     const scrollTarget = event.pointerType === "touch" || event.pointerType === "pen" ? scrollTargetAt(x, y) : undefined;
     if (scrollTarget) scrollDrag = { pointerId: event.pointerId, startX: x, startY: y, x, y, active: false, target: scrollTarget };
+    if (controlOwns) return;
     if (blocked) { scheduler.invalidate("selection"); return; }
     const hit = pickAtCanvas(scene, x, y);
     if (hit) {
@@ -2594,6 +2617,7 @@ function initializeEngine(
     if (joysticks.move(event.pointerId, x, y)) return;
     if (scrollDrag?.pointerId === event.pointerId) {
       if (!scrollDrag.active && Math.hypot(x - scrollDrag.startX, y - scrollDrag.startY) >= 8) {
+        uiControls.cancelForScroll(event.pointerId);
         scrollDrag.active = true;
         for (const hit of overlayPointerState.pressed.values()) options.onSceneLayerPointer?.({ layerId: hit.layerId, actorGuid: hit.actorGuid, componentId: hit.componentId, event: "onPressEnd" });
         overlayPointerState.pressed.clear();
@@ -2605,28 +2629,32 @@ function initializeEngine(
         return;
       }
     }
+    if (uiControls.move(event.pointerId, x, y)) return;
     playCursor?.notePointer(event.pointerType ?? "mouse", x, y);
     dispatchOverlayPointer("move", x, y);
   };
   const onPointerUp = (event: PointerEvent) => {
-    if (joysticks.release(event.pointerId)) return;
+    const point = overlayPointerCanvasCoords(event);
     const wasScrolling = scrollDrag?.pointerId === event.pointerId && scrollDrag.active;
     if (scrollDrag?.pointerId === event.pointerId) scrollDrag = null;
     if (wasScrolling) return;
+    if (uiControls.release(event.pointerId, false, point.x, point.y) || joysticks.release(event.pointerId)) return;
     const { x, y } = overlayPointerCanvasCoords(event);
     playCursor?.notePointer(event.pointerType ?? "mouse", x, y);
     dispatchOverlayPointer("up", x, y);
   };
   const onPointerCancel = (event: PointerEvent) => {
-    if (joysticks.release(event.pointerId)) return;
     if (scrollDrag?.pointerId === event.pointerId) scrollDrag = null;
+    if (uiControls.release(event.pointerId, true) || joysticks.release(event.pointerId)) return;
     const { x, y } = overlayPointerCanvasCoords(event);
     playCursor?.notePointer(event.pointerType ?? "mouse", x, y);
     dispatchOverlayPointer("cancel", x, y);
   };
-  const resetJoysticks = () => joysticks.reset();
+  const resetJoysticks = () => { scrollDrag = null; joysticks.reset(); uiControls.reset(); };
+  const onCanvasBlur = () => { joysticks.reset(); };
+  const onControlKeyDown = (event: KeyboardEvent) => { if (!binding.paused) uiControls.keyDown(event); };
   const onJoystickVisibility = () => { if (typeof document !== "undefined" && document.hidden) resetJoysticks(); };
-  const onJoystickLostCapture = (event: PointerEvent) => { joysticks.release(event.pointerId); };
+  const onJoystickLostCapture = (event: PointerEvent) => { if (scrollDrag?.pointerId === event.pointerId) scrollDrag = null; joysticks.release(event.pointerId); uiControls.release(event.pointerId, true); };
   const onOverlayTouch = (event: TouchEvent) => {
     event.preventDefault();
   };
@@ -2640,7 +2668,8 @@ function initializeEngine(
       canvas.removeEventListener("touchmove", onOverlayTouch);
       canvas.removeEventListener("wheel", onOverlayWheel);
       canvas.removeEventListener("lostpointercapture", onJoystickLostCapture);
-      canvas.removeEventListener("blur", resetJoysticks);
+      canvas.removeEventListener("blur", onCanvasBlur);
+      canvas.removeEventListener("keydown", onControlKeyDown);
       if (typeof window !== "undefined") window.removeEventListener("blur", resetJoysticks);
       if (typeof document !== "undefined") document.removeEventListener("visibilitychange", onJoystickVisibility);
     });
@@ -2653,7 +2682,9 @@ function initializeEngine(
       canvas.addEventListener("touchmove", onOverlayTouch, { passive: false });
       canvas.addEventListener("wheel", onOverlayWheel, { passive: false });
       canvas.addEventListener("lostpointercapture", onJoystickLostCapture);
-      canvas.addEventListener("blur", resetJoysticks);
+      canvas.addEventListener("blur", onCanvasBlur);
+      canvas.addEventListener("keydown", onControlKeyDown);
+      if (canvas.tabIndex < 0) canvas.tabIndex = 0;
       if (typeof window !== "undefined") window.addEventListener("blur", resetJoysticks);
       if (typeof document !== "undefined") document.addEventListener("visibilitychange", onJoystickVisibility);
     }
@@ -2678,7 +2709,7 @@ function initializeEngine(
   const applyPause = () => {
     const paused = callerPaused || sceneStreamingPaused;
     binding.paused = paused;
-    if (paused) joysticks.reset();
+    if (paused) { scrollDrag = null; joysticks.reset(); uiControls.reset(); }
     scheduler.setPaused(paused);
     audioService?.setPaused(paused);
     particleService?.setPaused(paused);
@@ -2837,6 +2868,17 @@ function initializeEngine(
       playDebugDraw?.applyCommand(command);
       if (command.type === "setPainter2D") {
         applyPainter2DCommand(binding, command);
+        scheduler.invalidate("asset");
+      }
+      if (command.type === "setUIControl2D") {
+        const pending = pendingOverlayAssign.get(command.slotId);
+        const part = pending?.parts?.find(entry => entry.componentId === command.componentId);
+        if (part) part.uiControl = command.uiControl;
+        applyUIControl2DCommand(binding, command);
+        if (command.focused !== undefined) {
+          const mesh = meshForPlayComponent(binding, command.slotId, command.componentId);
+          if (mesh) uiControls.syncFocus(mesh, command.focused, command.beginEditing);
+        }
         scheduler.invalidate("asset");
       }
       if (command.type === "setText2DAppear") {
@@ -3365,7 +3407,7 @@ function initializeEngine(
       functions?: ReadonlyMap<string, MaterialFunctionDocument>,
     ) => {
       if (!installMaterialDocuments(documents, functions)) return;
-      for (const root of binding.meshes.values()) { refreshText2DMaterials(root, binding); refreshJoystick2DMaterials(root, binding); }
+      for (const root of binding.meshes.values()) { refreshText2DMaterials(root, binding); refreshJoystick2DMaterials(root, binding); refreshUIControl2DMaterials(root, binding); }
       rebuildPostProcessStack();
       const serialized = editorSync?.serializedScene();
       if (editorSync && serialized) editorSync.apply(serialized);
@@ -3541,6 +3583,7 @@ function pendingSceneTextureWork(scene: Scene): string[] {
 
 function isOverlayOnlyMeshKind(meshKind: string | null | undefined): boolean {
   switch (meshKind) {
+    case "2dcontrol":
     case "2djoystick":
     case "2dtexture":
     case "2dmaterial":
@@ -3614,4 +3657,21 @@ export function createAppEngine(
     ).getGlInfo?.().renderer,
   });
   return engine;
+}
+
+/** CSS safe-area insets are measured in viewport pixels, then intersected with the canvas. */
+function sceneLayerSafeAreaInsets(canvas: HTMLCanvasElement): { left: number; right: number; top: number; bottom: number } {
+  const doc = canvas.ownerDocument;
+  const view = doc?.defaultView;
+  if (!doc?.body || !view) return { left: 0, right: 0, top: 0, bottom: 0 };
+  const probe = doc.createElement("div");
+  probe.style.cssText = "position:fixed;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px);";
+  doc.body.append(probe);
+  const style = view.getComputedStyle(probe);
+  const rect = canvas.getBoundingClientRect();
+  const inset = (value: string, offset: number) => Math.max(0, (Number.parseFloat(value) || 0) - offset);
+  const result = { left: inset(style.paddingLeft, rect.left), right: inset(style.paddingRight, view.innerWidth - rect.right),
+    top: inset(style.paddingTop, rect.top), bottom: inset(style.paddingBottom, view.innerHeight - rect.bottom) };
+  probe.remove();
+  return result;
 }

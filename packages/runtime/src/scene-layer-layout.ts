@@ -1,8 +1,8 @@
-import { resolveOverlayLayout, type OverlayLayoutEntry, type OverlayLayoutResult, type SerializedActor, type SerializedTransform, type Transform } from "@babylonslate/core";
+import { resolveOverlayLayout, type OverlaySafeAreaInsets, type VirtualizedItem, type OverlayLayoutEntry, type OverlayLayoutResult, type SerializedActor, type SerializedTransform, type Transform } from "@babylonslate/core";
 import type { Actor, ActorComponent } from "@babylonslate/object-model";
 
 type CachedPose = { authored: SerializedTransform; applied: string };
-const LAYOUT_PROPERTY_KEYS = ["width", "height", "widthMode", "heightMode", "fillWeight", "gap", "horizontalAlignment", "verticalAlignment", "paddingLeft", "paddingRight", "paddingTop", "paddingBottom", "scrollX", "scrollY", "scrollAxis", "visible", "enabled", "size", "text", "wrapWidth", "wrapHeight", "textureGuid"] as const;
+const LAYOUT_PROPERTY_KEYS = ["width", "height", "widthMode", "heightMode", "fillWeight", "gap", "horizontalAlignment", "verticalAlignment", "paddingLeft", "paddingRight", "paddingTop", "paddingBottom", "scrollX", "scrollY", "scrollAxis", "visible", "enabled", "size", "text", "wrapWidth", "wrapHeight", "textureGuid", "itemClassId", "itemCount", "itemWidth", "itemHeight", "columns", "overscan", "useSafeArea", "safeLeft", "safeRight", "safeTop", "safeBottom", "insetLeft", "insetRight", "insetTop", "insetBottom"] as const;
 function layoutProperties(component: ActorComponent): Record<string, unknown> {
   const properties: Record<string, unknown> = {};
   for (const key of LAYOUT_PROPERTY_KEYS) {
@@ -27,18 +27,23 @@ export class SceneLayerLayout {
     this.poses.set(target, { authored: current, applied: signature });
     return structuredClone(current);
   }
-  update(layerId: string, actors: readonly Actor[], pixelsPerUnit: number, texturePixelSizes: Readonly<Record<string, { width: number; height: number }>> = {}): OverlayLayoutResult | null {
+  update(layerId: string, actors: readonly Actor[], pixelsPerUnit: number, texturePixelSizes: Readonly<Record<string, { width: number; height: number }>> = {}, safeAreaInsets: Partial<OverlaySafeAreaInsets> = {}): OverlayLayoutResult | null {
     const owners = actors.filter(actor => actor.sceneLayerId === layerId && !actor.destroyed).flatMap(actor => [actor, ...actor.components.filter(component => !component.destroyed)]);
     const source: SerializedActor[] = actors.filter(a => a.sceneLayerId === layerId && !a.destroyed).map(a => ({
       id: a.guid, classId: a.classId, name: String(a.getVariable("name") ?? ""), parentId: typeof a.getVariable("parentId") === "string" ? String(a.getVariable("parentId")) : null,
       transform: this.authored(a), visible: a.getVariable("visible") !== false && a.getVariable("enabled") !== false, locked: false, folderId: null,
       components: a.components.filter(c => !c.destroyed).map(c => ({ id: c.guid, classId: c.classId, parentId: c.parentId, transform: this.authored(c), properties: layoutProperties(c) })),
     }));
+    const virtualItems: Record<string, VirtualizedItem> = {};
+    for (const actor of actors) {
+      const index = actor.getVariable("itemIndex"), containerId = actor.getVariable("virtualizedContainerId");
+      if (actor.sceneLayerId === layerId && typeof index === "number" && Number.isSafeInteger(index) && index >= 0 && typeof containerId === "string") virtualItems[actor.guid] = { containerId, index };
+    }
     const sizes = source.flatMap(actor => actor.components.flatMap(component => typeof component.properties.textureGuid === "string" ? [[component.properties.textureGuid, texturePixelSizes[component.properties.textureGuid]]] : []));
-    const signature = JSON.stringify([source, pixelsPerUnit, sizes]);
+    const signature = JSON.stringify([source, pixelsPerUnit, sizes, safeAreaInsets, virtualItems]);
     const previousOwners = this.owners.get(layerId);
     if (this.signatures.get(layerId) === signature && previousOwners?.length === owners.length && owners.every((owner, index) => previousOwners[index] === owner)) return null;
-    const result = resolveOverlayLayout(source, { pixelsPerUnit, textureSize: (guid) => texturePixelSizes[guid], includeUnmanagedBounds: true });
+    const result = resolveOverlayLayout(source, { pixelsPerUnit, safeAreaInsets, virtualItems, textureSize: (guid) => texturePixelSizes[guid], includeUnmanagedBounds: true });
     const byId = new Map(actors.map(a => [a.guid, a]));
     const apply = (target: Actor | ActorComponent, transform: SerializedTransform) => {
       target.transform = live(transform);

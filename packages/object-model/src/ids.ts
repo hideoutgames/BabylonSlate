@@ -24,6 +24,7 @@ export const ENGINE_BASE_CLASS_IDS = [
   "Scene",
   "SceneLayer",
   "SceneLayerActor",
+  "SceneLayerActorSwitcher",
   "SceneStreamingActor",
   "ActorComponent",
   "GameInstance",

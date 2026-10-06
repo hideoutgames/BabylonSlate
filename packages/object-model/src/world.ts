@@ -15,6 +15,7 @@ import {
   Scene,
   SceneLayer,
   SceneStreamingActor,
+  SceneLayerActorSwitcher,
   SceneSubsystem,
   type GameInstanceHooks,
   type GameSubsystemHooks,
@@ -634,7 +635,9 @@ export class World {
     const defaults = this.classDefaults(options.classId, options);
     const ActorClass = this.classRegistry.isA(options.classId, "SceneStreamingActor")
       ? SceneStreamingActor
-      : Actor;
+      : this.classRegistry.isA(options.classId, "SceneLayerActorSwitcher")
+        ? SceneLayerActorSwitcher
+        : Actor;
     return new ActorClass({
       ...options,
       variables: defaults.variables,

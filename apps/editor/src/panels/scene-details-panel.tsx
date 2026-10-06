@@ -1,4 +1,6 @@
 import { saveGameVariableNames } from "../lib/save-game-property-rows";
+import { SceneLayerSwitcherFields } from "../components/scene-layer-switcher-fields";
+import { parseUIControl2DProperties } from "@babylonslate/core";
 
 import { ShadowSettingsFields, SHADOW_SETTINGS_SEARCH_TEXT } from "../components/shadow-settings-fields";
 import { EnvironmentLightingFields, ENVIRONMENT_LIGHTING_SEARCH_TEXT } from "../components/environment-lighting-fields";
@@ -16,6 +18,7 @@ import {
   AssetPickerControl,
   MultilineTextField,
   EntryListEditor,
+  NamedListEditor,
   DisclosureSection,
   NumberField,
   PanelFrame,
@@ -38,6 +41,7 @@ import {
   createDefaultSceneSettings,
   findActor,
   identitySerializedTransform,
+  isFocusTargetClass,
   isSceneLayerAnchorActor,
   parseOverlayPanelProperties,
   parseText2DProperties,
@@ -103,6 +107,7 @@ import {
   applyPrefabPropertyDefaults,
   componentPropertyRows,
   gameInstanceClassEntries,
+  subclassClassEntries,
   type AssetPickRequest,
 } from "../lib/component-property-rows";
 import {
@@ -257,10 +262,11 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       pickerAssets,
       environmentPickerAssets: pickerAssets.filter((entry) => environmentGuids.has(entry.guid)),
       classEntries: gameInstanceClassEntries(assets),
+      sceneLayerClasses: subclassClassEntries("SceneLayerActor", assets),
       projectComponentItems: projectAddComponentItems(assets),
     };
   }, [assetRegistry, registryEpoch]);
-  const { parentOf, pickerAssets, environmentPickerAssets, classEntries, projectComponentItems } = registryViews;
+  const { parentOf, pickerAssets, environmentPickerAssets, classEntries, sceneLayerClasses, projectComponentItems } = registryViews;
   // An open Material tab's unsaved domain wins over its saved header.
   const materialDocuments = useOpenDocumentsOfKinds(MATERIAL_DOCUMENT_KINDS);
   const materialDomains = useMemo(() => {
@@ -1196,7 +1202,8 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
             actorComponents: (targetId) => scene.actors.find((candidate) => candidate.id === targetId)?.components ?? [],
             actorVariableNames: () => saveGameVariableNames(actor.classId, classSaveGraphs, parentOf),
             componentVariableNames: (classId) => saveGameVariableNames(classId, classSaveGraphs, parentOf),
-            focusTargets: scene.actors.flatMap((candidate) => candidate.components.filter((entry) => entry.classId === "2DButtonComponent" || entry.classId === "2DFocusTargetComponent").map((entry, index) => ({ value: entry.id, label: `${actorDisplayNames.get(candidate.id) ?? candidate.name} / ${entry.classId === "2DButtonComponent" ? "2D Button" : "2D Focus Target"} ${index + 1}` }))),
+            sceneLayerClasses,
+            focusTargets: scene.actors.flatMap((candidate) => candidate.components.filter((entry) => isFocusTargetClass(entry.classId)).map((entry, index) => ({ value: entry.id, label: `${actorDisplayNames.get(candidate.id) ?? candidate.name} / ${humanizePropertyLabel(entry.classId.replace(/Component$/, ""))} ${index + 1}` }))),
             onPickActor: (componentId) => setConstraintTargetPick({ actorId: actor.id, componentId }),
           },
         ),
@@ -1220,7 +1227,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
               template?.transform,
             )
           : [];
-      const extraLabels =
+      const extraLabels = component.classId === "2DDropdownComponent" ? "Options Items Select Dropdown" :
         component.classId === "NavMeshComponent"
           ? "Bake NavMesh"
           : component.classId === "2DRichTextComponent"
@@ -1291,6 +1298,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
             data-testid="primary-actor-grid"
           />
         ) : null}
+        {!multiSelection && walkAncestry(actor.classId, parentOf).includes("SceneLayerActorSwitcher") && matches("Scene Layer Actors Switcher Initial Index Defaults") ? <SceneLayerSwitcherFields classId={actor.classId} properties={actor.properties ?? {}} onChange={properties => updateActor(entry => ({ ...entry, properties }))} /> : null}
         {!visibleTransformRows.length && !componentDetails.length
           ? noMatchingProperties
           : null}
@@ -1407,6 +1415,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
               ) : null}
               {expanded ? (
                 <div id={`component-details-${actor.id}-${component.id}`}>
+                  {showExtras && component.classId === "2DDropdownComponent" ? <NamedListEditor title="Options" values={parseUIControl2DProperties(component.classId, component.properties).options} addLabel="Add Option" onChange={(options) => updateActor(entry => ({ ...entry, components: entry.components.map(candidate => candidate.id === component.id ? { ...candidate, properties: { ...candidate.properties, options } } : candidate) }))} /> : null}
                   {showExtras && component.classId === "2DRichTextComponent" ? (
                     <RichTextAppearModesField
                       value={parseText2DAppearProperties(component.properties).appearModes}

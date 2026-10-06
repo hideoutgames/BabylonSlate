@@ -108,6 +108,7 @@ export const ENGINE_BASE_CLASSES = [
   "Actor",
   "RenderTargetCapture",
   "SceneLayerActor",
+  "SceneLayerActorSwitcher",
   "SceneStreamingActor",
   "ActorComponent",
   "GameInstance",

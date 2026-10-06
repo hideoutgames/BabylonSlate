@@ -1019,7 +1019,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
           setStartupAlertOpen(true);
           return;
         }
-        const prefabScene = playPrefabDependencyScene(nextScripts);
+        const prefabScene = playPrefabDependencyScene(nextScripts, [resolvedScene.scene, ...playLibrary.map(entry => entry.scene)], guid => assetRegistry?.getByGuid(guid)?.header.type);
         const prefabScenes = prefabScene ? [prefabScene] : [];
         let overlayScenes: import("@babylonslate/core").SerializedScene[] = [];
         let overlayGraphMaterials: string[] = [];
@@ -1038,7 +1038,8 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
           );
           setPlaySceneLayers([]);
         }
-        const resourceScenes = [...overlayScenes, ...prefabScenes];
+        const overlayDependencies = playPrefabDependencyScene(nextScripts, overlayScenes, guid => assetRegistry?.getByGuid(guid)?.header.type);
+        const resourceScenes = [...overlayScenes, ...prefabScenes, ...(overlayDependencies ? [overlayDependencies] : [])];
         const skyboxTextureGuids = [resolvedScene.scene, ...resourceScenes]
           .flatMap(skyboxFaceGuidsFromScene);
         // Project effect textures (the grading LUT) load with scene environment cubes.

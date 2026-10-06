@@ -1296,3 +1296,20 @@ describe("collectExportReachability subsystem roots", () => {
     expect(result).toMatchObject({ ok: true, value: { guids: ["on", "scene"] } });
   });
 });
+
+it("exports virtual item classes, switcher default references and control visuals transitively", () => {
+  const scene = { ...createDefaultScene(), actors: [createActor("switch", "Switcher", {
+    classId: "SceneLayerActorSwitcher", properties: { sceneLayerActors: [{ classId: "Screen", defaults: { Artwork: "override", Caption: "unused" } }, "Popup"] },
+    components: [{ id: "grid", classId: "2DVirtualizedGridComponent", properties: { itemClassId: "Tile" } }],
+  })] };
+  const graphs: Record<string, SerializedGraph> = {
+    base: { nodes: [], edges: [], members: [{ id: "art", kind: "variable", name: "Artwork", typeId: "asset" }, { id: "caption", kind: "variable", name: "Caption", typeId: "string" }] },
+    screen: { nodes: [], edges: [] },
+    tile: { nodes: [], edges: [], components: [{ id: "slider", classId: "2DSliderComponent", properties: { thumbMaterialGuid: "thumb" } }] },
+  };
+  const result = collectExportReachability({ startupSceneGuid: "scene", pluginEnabledGuids: new Set(), parentOf: id => id === "Screen" ? "Base" : null,
+    assets: [asset({ guid: "scene", name: "Scene", type: "Scene" }), asset({ guid: "screen", name: "Screen", type: "Class", parentClass: "Base" }), asset({ guid: "popup", name: "Popup", type: "Class", parentClass: "SceneLayerActor" }), asset({ guid: "base", name: "Base", type: "Class", parentClass: "SceneLayerActor" }), asset({ guid: "tile", name: "Tile", type: "Class", parentClass: "SceneLayerActor" }), asset({ guid: "override", name: "Override", type: "Texture" }), asset({ guid: "unused", name: "Unused", type: "Texture" }), asset({ guid: "thumb", name: "Thumb", type: "Material", dependencies: ["fill"] }), asset({ guid: "fill", name: "Fill", type: "Texture" })],
+    sceneByGuid: () => scene, graphByGuid: guid => graphs[guid] ?? null,
+  });
+  expect(result).toMatchObject({ ok: true, value: { guids: ["base", "fill", "override", "popup", "scene", "screen", "thumb", "tile"] } });
+});

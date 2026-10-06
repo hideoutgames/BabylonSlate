@@ -263,12 +263,19 @@ function handleControl(msg: ControlMessage): void {
     case "sceneLayerPointer":
       ensureRuntime().applySceneLayerPointer(msg);
       return;
+    case "sceneLayerControl":
+      ensureRuntime().applySceneLayerControl(msg);
+      return;
+    case "sceneLayerFocusNavigate":
+      ensureRuntime().applySceneLayerFocusNavigate(msg.reverse);
+      return;
     case "sceneLayerResize":
       ensureRuntime().applySceneLayerResize(
         msg.frustumWidth,
         msg.frustumHeight,
         msg.canvasWidth,
         msg.canvasHeight,
+        msg.safeAreaInsets,
       );
       return;
     case "audioVoiceEnded":

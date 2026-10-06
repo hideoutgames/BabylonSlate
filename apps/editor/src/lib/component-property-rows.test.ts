@@ -1465,3 +1465,16 @@ describe("applyPrefabPropertyDefaults", () => {
     expect(text.update).toHaveBeenCalledWith("renderer", "bitmap");
   });
 });
+
+it("edits slider visual asset slots independently and exposes ordered range values", () => {
+  const { rows, update, onPickAsset } = rowsFor({ id: "range", classId: "2DRangeSliderComponent", properties: { min: 10, max: 50, lowerValue: 20, upperValue: 40, trackMaterialGuid: "track", thumbTextureGuid: "thumb" } });
+  const track = rows.find(row => row.label === "Track Material");
+  const thumb = rows.find(row => row.label === "Thumb Texture");
+  if (track?.kind !== "asset" || thumb?.kind !== "asset") throw new Error("Missing slider visuals");
+  track.onPick();
+  expect(onPickAsset).toHaveBeenLastCalledWith(expect.objectContaining({ property: "trackMaterialGuid", allowedTypes: ["Material", "MaterialInstance"] }));
+  thumb.onChange("replacement");
+  expect(update).toHaveBeenLastCalledWith("thumbTextureGuid", "replacement");
+  const lower = rows.find(row => row.label === "Lower Value");
+  expect(lower).toMatchObject({ kind: "number", value: 20, min: 10, max: 40 });
+});

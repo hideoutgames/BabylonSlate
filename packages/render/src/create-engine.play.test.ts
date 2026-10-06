@@ -25,6 +25,7 @@ import {
   requestEditorDrop,
   parseCableProperties,
   parseText2DProperties,
+  parseUIControl2DProperties,
   type RenderSettingsPatch,
 } from "@babylonslate/core";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
@@ -48,6 +49,7 @@ import * as presentation from "./presented-frame";
 import { SnapshotInterpolator } from "./snapshot-sync";
 import { hasFogVolumes, selectFogVolumes } from "./fog-volumes";
 import { sceneRenderingSettings, setSceneEffectsEnabled } from "./render-settings";
+import { uiControl2DMesh } from "./ui-controls2d-mesh";
 
 /**
  * The babylon Vitest project runs under Node. createEngine only needs a
@@ -68,6 +70,8 @@ class FakeCanvas {
   readonly listeners = new Map<string, Set<EventListener>>();
   capturedPointers: number[] = [];
   prevented = 0;
+
+  focus(): void {}
 
   addEventListener(type: string, listener: EventListener): void {
     const set = this.listeners.get(type) ?? new Set<EventListener>();
@@ -4263,6 +4267,76 @@ describe("Play createEngine view", () => {
     expect(canvas.listeners.get("wheel")?.size ?? 0).toBe(0);
     canvas.emit("wheel", { clientX: 128, clientY: 128, deltaX: 0, deltaY: 32, deltaMode: 0 });
     expect(scrolls).toHaveLength(count + 1);
+  });
+
+  it.each([
+    { classId: "2DCheckboxComponent", pointerType: "touch" },
+    { classId: "2DToggleComponent", pointerType: "pen" },
+    { classId: "2DRadioButtonComponent", pointerType: "touch" },
+    { classId: "2DDropdownComponent", pointerType: "pen" },
+    { classId: "2DNumericInputComponent", pointerType: "touch" },
+  ])("transfers a $pointerType drag on $classId to its scroll container while preserving taps", ({ classId, pointerType }) => {
+    const engine = sharedEngine();
+    vi.spyOn(engine, "getRenderWidth").mockReturnValue(256);
+    vi.spyOn(engine, "getRenderHeight").mockReturnValue(256);
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
+    const canvas = new FakeCanvas();
+    const controls: Array<{ action: string }> = [], scrolls: Array<{ deltaY: number }> = [];
+    const handle = createEngine(canvas as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true,
+      onSceneLayerControl: event => controls.push(event), onSceneLayerScroll: event => scrolls.push(event) });
+    handles.push(handle);
+    spawnOverlayButton(handle, () => runRenderLoop.mock.calls[0]?.[0]?.(), "hud", { width: 9, height: 9 });
+    handle.applyCommand({ type: "assignMesh", slotId: 1, actorGuid: "btn", sceneLayerId: "hud", meshKind: "2dcontrol", meshAssetGuid: null, hitTest: "block",
+      parts: [{ componentId: "control", meshKind: "2dcontrol", meshAssetGuid: null, parentId: null, position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1],
+        uiControl: { classId, properties: parseUIControl2DProperties(classId, { width: 4, height: 2, options: ["First", "Second"] }) } }] });
+    runRenderLoop.mock.calls[0]?.[0]?.();
+    handle.applyCommand({ type: "sceneLayerLayout", layerId: "hud", entries: [{ actorId: "scroll", componentId: "viewport", slotId: 2,
+      rect: { x: 0, y: 0, width: 9, height: 9 }, clip: null, scrollAncestors: [], scroll: { x: 0, y: 0, maxX: 0, maxY: 20, axis: "vertical",
+        viewport: { x: 0, y: 0, width: 9, height: 9 }, scaleX: 2, scaleY: 2 } }] });
+    const x = classId === "2DNumericInputComponent" ? 175 : 128;
+    const y = 120;
+    canvas.emit("pointerdown", pointerAt(x, y, { pointerType }));
+    canvas.emit("pointermove", pointerAt(x, y - 4, { pointerType }));
+    expect(scrolls).toEqual([]);
+    canvas.emit("pointermove", pointerAt(x, y - 28, { pointerType }));
+    canvas.emit("pointerup", pointerAt(x, y, { pointerType }));
+    expect(scrolls).toHaveLength(1);
+    expect(scrolls[0]?.deltaY).toBeCloseTo(0.4921875);
+    expect(controls.filter(event => event.action === "change" || event.action === "commit")).toEqual([]);
+    const controlScene = handle.sceneLayerScenes().find(layer => layer.layerId === "hud")!.scene;
+    const visual = uiControl2DMesh(controlScene.getMeshByName("actor-1|control")!)!;
+    expect(visual.expanded).toBe(false);
+    canvas.emit("pointerdown", pointerAt(x, y, { pointerType, pointerId: 2 }));
+    canvas.emit("pointermove", pointerAt(x, y - 4, { pointerType, pointerId: 2 }));
+    canvas.emit("pointerup", pointerAt(x, y - 4, { pointerType, pointerId: 2 }));
+    expect(scrolls).toHaveLength(1);
+    if (classId === "2DDropdownComponent") expect(visual.expanded).toBe(true);
+    else expect(controls.filter(event => event.action === "change")).toHaveLength(1);
+  });
+
+  it.each(["2DSliderComponent", "2DRangeSliderComponent"])("keeps a touch drag on %s instead of scrolling its container", classId => {
+    const engine = sharedEngine();
+    vi.spyOn(engine, "getRenderWidth").mockReturnValue(256);
+    vi.spyOn(engine, "getRenderHeight").mockReturnValue(256);
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
+    const canvas = new FakeCanvas();
+    const controls: Array<{ action: string }> = [], scrolls: unknown[] = [];
+    const handle = createEngine(canvas as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true,
+      onSceneLayerControl: event => controls.push(event), onSceneLayerScroll: event => scrolls.push(event) });
+    handles.push(handle);
+    spawnOverlayButton(handle, () => runRenderLoop.mock.calls[0]?.[0]?.(), "hud", { width: 9, height: 9 });
+    handle.applyCommand({ type: "assignMesh", slotId: 1, actorGuid: "btn", sceneLayerId: "hud", meshKind: "2dcontrol", meshAssetGuid: null, hitTest: "block",
+      parts: [{ componentId: "control", meshKind: "2dcontrol", meshAssetGuid: null, parentId: null, position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1],
+        uiControl: { classId, properties: parseUIControl2DProperties(classId, { width: 4, height: 2 }) } }] });
+    runRenderLoop.mock.calls[0]?.[0]?.();
+    handle.applyCommand({ type: "sceneLayerLayout", layerId: "hud", entries: [{ actorId: "scroll", componentId: "viewport", slotId: 2,
+      rect: { x: 0, y: 0, width: 9, height: 9 }, clip: null, scrollAncestors: [], scroll: { x: 0, y: 0, maxX: 0, maxY: 20, axis: "vertical", viewport: { x: 0, y: 0, width: 9, height: 9 }, scaleX: 1, scaleY: 1 } }] });
+    canvas.emit("pointerdown", pointerAt(128, 128));
+    canvas.emit("pointermove", pointerAt(160, 96));
+    canvas.emit("pointerup", pointerAt(160, 96));
+    expect(scrolls).toEqual([]);
+    expect(controls.filter(event => event.action === "change").length).toBeGreaterThan(0);
+    expect(controls.filter(event => event.action === "commit")).toHaveLength(1);
   });
 
   it("clicks a 2DButton through the touchMinTargetPx floor without growing the mesh", () => {

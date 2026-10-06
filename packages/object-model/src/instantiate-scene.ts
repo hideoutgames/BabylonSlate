@@ -11,6 +11,7 @@ import {
 import type { LifecycleHooks } from "./objects";
 import type { Actor } from "./objects";
 import type { World } from "./world";
+import { hydrateClassVariableValue } from "./class-registry";
 
 export type SceneActorHooks = (
   classId: string,
@@ -80,10 +81,16 @@ export function createActorFromSerialized(
   ) {
     return null;
   }
+  const variables = structuredClone(serialized.properties ?? {});
+  for (const variable of world.classRegistry.inheritedVariables(serialized.classId)) {
+    if (!Object.hasOwn(variables, variable.name) || !variable.container) continue;
+    variables[variable.name] = hydrateClassVariableValue({ ...variable, defaultValue: variables[variable.name] });
+  }
   const actor = world.createActor({
     guid: serialized.id,
     classId: serialized.classId,
     variables: {
+      ...variables,
       name: serialized.name,
       visible: serialized.visible,
       locked: serialized.locked,

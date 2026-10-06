@@ -1,4 +1,5 @@
 import {
+  actorPropertyReferences,
   classIdsFromVariableMembers,
   assetVariableGuidsFromGraph,
   areaEmissionTextureGuids,
@@ -34,6 +35,8 @@ function isReferenceField(key: string): boolean {
     /Guids?$/.test(key) ||
     key === "Asset" ||
     key === "classId" ||
+    key === "itemClassId" ||
+    key === "sceneLayerActors" ||
     key === "default:classId" ||
     key === "parentClass" ||
     key === "gameInstanceClass" ||
@@ -196,10 +199,19 @@ export function collectExportReachability(
       if (!asset || !isIncluded(asset, input)) continue;
       reached.add(asset.guid);
       const refs = new Set<string>(asset.dependencies);
+      const collectOverrides = (value: unknown) => {
+        const references = actorPropertyReferences(value, classId => {
+          const entry = byGuid.get(classId) ?? byClassName.get(classId)?.find(candidate => candidate.type === "Class");
+          if (!entry) return null;
+          return { parentClassId: entry.parentClass, members: input.graphByGuid(entry.guid)?.members };
+        });
+        for (const reference of [...references.assetGuids, ...references.classIds]) refs.add(reference);
+      };
       if (asset.type === "Scene") {
         const scene: SerializedScene | null = input.sceneByGuid(asset.guid);
         if (scene) {
           collectTypedRefs(scene, refs);
+          collectOverrides(scene);
           for (const guid of text2dImageGuidsFromScene(scene)) refs.add(guid);
         }
       } else if (asset.type === "Class" || asset.type === "Graph") {
@@ -208,6 +220,7 @@ export function collectExportReachability(
         const graph: SerializedGraph | null = input.graphByGuid(asset.guid);
         if (graph) {
           collectTypedRefs(graph, refs);
+          collectOverrides({ classId: asset.name, properties: graph.actorDefaults?.properties, graph });
           for (const classId of classIdsFromVariableMembers(graph.members ?? [])) refs.add(classId);
           for (const guid of assetVariableGuidsFromGraph(graph)) refs.add(guid);
           for (const guid of materialParameterTextureGuidsFromGraph(graph)) refs.add(guid);
@@ -228,6 +241,7 @@ export function collectExportReachability(
         if (["DataObject", "DataSheet", "Structure", "Enum"].includes(asset.type)) {
           for (const guid of dataAssetDependencies(asset.type, payload, dataClassReferences)) refs.add(guid);
         } else collectTypedRefs(payload, refs);
+        collectOverrides(payload);
         if (typeof payload === "object" && "actors" in payload) {
           for (const guid of text2dImageGuidsFromScene(
             payload as SerializedScene,

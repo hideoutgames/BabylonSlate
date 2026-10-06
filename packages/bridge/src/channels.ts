@@ -85,6 +85,8 @@ export type ScriptBundleEntry = {
   }>;
   /** Omitted flags default to true at spawn. */
   actorDefaults?: {
+    /** Authored built-in actor properties applied before per-instance overrides. */
+    properties?: Record<string, unknown>;
     generateHitEvents?: boolean;
     generateOverlapEvents?: boolean;
   };
@@ -205,6 +207,17 @@ export type ControlMessage =
   | { type: "setPaused"; paused: boolean }
   | { type: "console"; line: string }
   | { type: "inspect" }
+  | { type: "sceneLayerFocusNavigate"; reverse: boolean }
+  | {
+      type: "sceneLayerControl";
+      layerId: string;
+      actorGuid: string;
+      componentId: string;
+      action: "change" | "commit" | "focus" | "blur" | "activate";
+      value?: number | boolean | string;
+      /** Range slider's upper value; value carries its lower value. */
+      secondaryValue?: number;
+    }
   | { type: "sceneLayerScroll"; layerId: string; actorId: string; componentId: string; deltaX: number; deltaY: number }
   | {
       type: "sceneLayerPointer";
@@ -224,6 +237,8 @@ export type ControlMessage =
       frustumHeight: number;
       canvasWidth?: number;
       canvasHeight?: number;
+      /** Browser safe-area insets in CSS pixels. */
+      safeAreaInsets?: Partial<import("@babylonslate/core").OverlaySafeAreaInsets>;
     }
   | { type: "audioVoiceEnded"; voiceId: string }
   | { type: "sceneLoadingPainted"; sceneAssetGuid: string; sceneLoadId: number }
@@ -335,6 +350,7 @@ export type DebugBehaviourTree = {
 
 export type CommandMessage =
   | { type: "saveStorageRequest"; request: import("@babylonslate/core").SaveStorageRequest }
+  | { type: "setUIControl2D"; slotId: number; componentId: string; uiControl: { classId: string; properties: import("@babylonslate/core").UIControl2DProperties }; focused?: boolean; beginEditing?: boolean }
   | { type: "setPainter2D"; slotId: number; componentId: string; painter: import("@babylonslate/core").Painter2DProperties }
   | { type: "dynamicMeshUpdate"; meshId: number; update: import("@babylonslate/core").DynamicMeshUpdate }
   /** Cable records: ID, count, start/end actor slots, two actor-local anchors, world xyz particles. */
@@ -417,6 +433,7 @@ export type CommandMessage =
         light?: PlayLightProperties;
         camera?: PlayCameraProperties;
         joystick?: import("@babylonslate/core").Joystick2DProperties;
+        uiControl?: { classId: string; properties: import("@babylonslate/core").UIControl2DProperties };
         painter?: import("@babylonslate/core").Painter2DProperties;
         dynamicMesh?: { meshId: number; update: import("@babylonslate/core").DynamicMeshUpdate };
         /** Nonvisual ancestors between this component and its nearest visual parent, nearest first. */

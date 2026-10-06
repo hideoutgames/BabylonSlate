@@ -215,3 +215,97 @@ Add **2D Joystick** from Place Actors in a SceneLayer, or Add Component on a Sce
 - **Horizontal Axis** / **Vertical Axis** select existing Touch binding codes (default **Joystick X** / **Joystick Y**). Add matching Touch bindings to an Input Axis asset and consume its normal input events/readback. Positive X is right and positive Y is up in component space. A second joystick can select **D-Pad X** / **D-Pad Y** for independent bindings.
 - Mouse, touch and pen use the same pointer path in Play and the exported player. A gesture owns its joystick until release, even outside its bounds; another finger cannot steal it. Blocking layers and clipping participate in picking. Release, cancellation, capture loss, focus loss, hiding the page, pause, disabled/hidden visuals, and visual/layer removal return its axes to zero. Multiple held joysticks sharing a code contribute the greatest absolute value; releasing one preserves the others.
 - The component exposes its settings as graph Get/Set variables. Material dependencies and their textures/functions are collected for editor preview, Play and export. Borrowed material resources survive joystick disposal.
+
+## Form controls
+
+SceneLayerActor supports these overlay-only components through Add Component and
+Place Actors. Their visuals use native unlit SceneLayer meshes and 2D Text in the
+editor, Play and exported player. Width, Height and Font Size use layer units.
+
+| Component | State and interaction |
+| --- | --- |
+| 2D Slider | Value between Minimum and Maximum; Step snapping; horizontal or vertical dragging. |
+| 2D Range Slider | Lower Value and Upper Value; two handles constrained to an ordered range. |
+| 2D Checkbox | Checked state toggles on activation. |
+| 2D Radio Button | Checking one clears the other checked buttons in the same Group and layer instance. |
+| 2D Toggle / Switch | Checked state with a moving thumb. |
+| 2D Text Input | Single-line Text, Placeholder, Maximum Length and Read Only; native text editing supplies composition and mobile keyboard input. |
+| 2D Numeric Input / Spinner | Value, bounds and Step; editable number with increment/decrement controls. |
+| 2D Dropdown / Select | Options string array and Selected Index; `-1` means no selection. |
+| 2D Progress Bar / Meter | Bounded Value and orientation; display-only, without a pointer target. |
+
+- Background, Track, Fill, Thumb and Indicator have independent Material and
+  Texture properties. Each control uses the parts appropriate to its shape.
+  Material takes precedence when both are assigned. Materials resolve unlit in
+  the owning layer; disposing a control does not dispose borrowed assets.
+- Enabled gates input. Interactive controls participate in the existing focus
+  navigation system. Pointer capture keeps slider dragging stable outside its
+  bounds; hidden, removed and disabled controls cannot accept stale input.
+- NodeGraph exposes typed state Get/Set variables and functions such as Set
+  Value, Set Range, Set Checked, Set Text, Increment and Set Selected Index.
+  Component-bound On Value Changed, On Range Changed, On Checked Changed,
+  On Text Changed, On Text Submitted and On Selection Changed events carry the
+  updated values. Runtime normalization keeps graph readback and visuals aligned.
+- Maximum Length counts Unicode code points (`0` means unrestricted). Numeric
+  values clamp to their bounds and snap from Minimum. Radio selection updates
+  the group before change handlers run.
+- Text and numeric inputs draw caret and selection feedback using measured 2D
+  Text glyphs. Native editing supplies clipboard actions and composition;
+  pointer dragging selects text. Enter commits and Escape restores the draft's
+  original value. Keyboard Tab, arrows, Space, Home and End operate controls;
+  Shift selects the upper range-slider handle for keyboard adjustment.
+- Touch and pen presses on checkboxes, radio buttons, toggles, dropdowns and
+  numeric spinner buttons transfer to a containing scroll view after 8 pixels
+  of movement, cancelling the press. Slider drags and text selection retain
+  their pointer; short taps still activate the control.
+
+## Virtualized collections, masks and safe areas
+
+| Component | Behavior |
+| --- | --- |
+| 2D Virtualized List | Scrollable uniform items, vertically or horizontally. |
+| 2D Virtualized Grid | Scrollable uniform rows with explicit Columns or automatic columns from available width. |
+| 2D Mask Panel | Clips its nested contents to Width and Height. |
+| 2D Mask | Clips its owning actor's visuals, or its parent actor when used as a helper, including descendants. |
+| 2D Safe Area | Insets content using host safe-area measurements plus authored per-edge insets; individual edges can be disabled. |
+
+Virtualized collections accept Item Class (a SceneLayerActor class), Item Count,
+Item Width/Height and Overscan. Only the visible range plus overscan owns spawned
+actors and render resources. Each spawned item receives `itemIndex` and
+`virtualizedContainerId`, so its graph can bind application data. Items leaving
+the range are destroyed; store persistent item state outside those instances.
+Authored children can also be arranged and culled by the same layout. Wheel,
+touch scrolling and Scroll X/Y use the existing Scroll Box path.
+Resource bounds allow up to 2,048 live items per container and 8,192 per layer;
+recursive item classes are rejected, with at most 16 nested virtual containers.
+
+Masks share layout clipping with Scroll Box: nested clips intersect and apply to
+rendering and picking. Safe-area host insets arrive in CSS pixels and are mapped
+to layer units; manual insets use layer units. The document preview uses the
+authored insets, while Play and the player also use their canvas's host insets.
+
+## SceneLayerActor Switcher
+
+**Scene Layer Actor Switcher** is an overlay-only actor derived from
+SceneLayerActor. Its **Scene Layer Actors** array accepts SceneLayerActor classes
+and entries with per-instance default overrides. **Initial Index** selects the
+first spawned entry (`-1` leaves the switcher empty).
+
+- **Switch Scene Layer Actor** selects an index and returns its spawned actor.
+  **Get Current Scene Layer Actor**, **Current Actor** and **Current Index** expose
+  the live selection. An invalid entry leaves the previous selection intact.
+- The selected actor inherits its class defaults and prefab components, belongs
+  to the same layer, and is parented beneath the switcher. Switching destroys the
+  previous selected actor and its descendants. Removing the switcher or its
+  layer also cleans up the selected actor.
+- Switcher graphs expose **On Scene Layer Actor Switching** and **On Scene Layer
+  Actor Switched**, including previous/current references and indices. Selected
+  actor graphs expose **On Scene Layer Actor Switched To** and **On Scene Layer
+  Actor Switched From**. Reentrant switching is guarded.
+- Serialized actor `properties` and class `actorDefaults.properties` retain
+  native actor settings. Switcher entries serialize as a class ID string or
+  `{ classId, defaults }`. Class references and their dependencies participate in
+  Play/export content collection.
+- The graph **Scene Layer Actors** getter returns a typed class array. Setting
+  that array replaces the configured entries and their per-entry overrides;
+  editor-authored defaults remain intact when reading or switching entries.

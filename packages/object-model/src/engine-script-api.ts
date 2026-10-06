@@ -1,4 +1,7 @@
+import { overlayContainerScriptVariables } from "./overlay-container-api";
 import { OVERLAY_LAYOUT_CLASSES, ENGINE_TEXT2D_APPEAR_MODE_ENUM_ID, ENGINE_TEXT2D_APPEAR_TRANSITION_ENUM_ID, ENGINE_TEXT2D_APPEAR_START_ENUM_ID } from "@babylonslate/core";
+import { UI_CONTROL_2D_SCRIPT_APIS } from "./ui-controls2d-api";
+import { SCENE_LAYER_ACTOR_SCRIPT_API, SCENE_LAYER_SWITCHER_SCRIPT_API } from "./scene-layer-switcher-api";
 
 export type EngineScriptPin = {
   name: string;
@@ -295,7 +298,11 @@ const GET_SCENE_REFERENCE: EngineScriptFunction = {
 };
 
 export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
+  ...UI_CONTROL_2D_SCRIPT_APIS,
+  SCENE_LAYER_ACTOR_SCRIPT_API,
+  SCENE_LAYER_SWITCHER_SCRIPT_API,
   ...OVERLAY_LAYOUT_CLASSES.map((classId): EngineClassScriptApi => ({ classId, variables: [
+    ...overlayContainerScriptVariables(classId),
     ...["width", "height", "fillWeight", "gap", "paddingLeft", "paddingRight", "paddingTop", "paddingBottom", "scrollX", "scrollY"].map(propertyKey => ({ name: propertyKey.replace(/([A-Z])/g, " $1").replace(/^./, c => c.toUpperCase()), typeId: "float", propertyKey })),
     ...["widthMode", "heightMode", "horizontalAlignment", "verticalAlignment", "scrollAxis"].map(propertyKey => ({ name: propertyKey.replace(/([A-Z])/g, " $1").replace(/^./, c => c.toUpperCase()), typeId: "string", propertyKey })),
   ] })),

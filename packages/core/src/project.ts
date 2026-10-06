@@ -386,6 +386,8 @@ export interface SerializedGraph {
   >;
   /** Prefab Root collision flags copied onto spawned / scene-realized actors. */
   actorDefaults?: {
+    /** Authored built-in actor properties applied before per-instance overrides. */
+    properties?: Record<string, unknown>;
     generateHitEvents?: boolean;
     generateOverlapEvents?: boolean;
   };

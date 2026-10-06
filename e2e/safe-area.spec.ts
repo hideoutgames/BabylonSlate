@@ -7,6 +7,14 @@ test.describe("safe-area layout", { tag: IPAD_TEST_TAG }, () => {
     page,
   }) => {
     await page.goto("/?test=1");
+    // COI may reload, and Home mounts beneath the splash before boot settles.
+    // Measure geometry only after startup work releases the launcher.
+    await page.waitForFunction(() => window.crossOriginIsolated, undefined, {
+      timeout: 15_000,
+    });
+    await expect(page.locator(".slate-loading")).toHaveCount(0, {
+      timeout: 30_000,
+    });
     await page.addStyleTag({ content: ":root { --safe-top: 44px; }" });
     await expect(page.getByTestId("homepage")).toBeVisible();
     await expect
