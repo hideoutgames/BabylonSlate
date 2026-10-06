@@ -5,13 +5,13 @@ Save Games persist selected gameplay data independently of project files. A proj
 ## Author a definition
 
 1. In Content Browser, choose **New Asset → Scripting → Save Game**.
-2. In its **Fields** panel, add the values the game needs to retain. For a minimal example, create `coins` as Integer with default `0`, and `checkpoint` as String with default `start`.
-3. Select the asset under **Project Settings → Save Games → Default Definition**.
-4. Keep the default profile and slot for a one-save game, or supply names for multiple characters and manual saves.
+2. In **Fields**, choose **Add Field** and enter a name, then select it in the searchable list. **Details** edits its Name, Type, Single/Array Container and Default Value, using the same controls as Class Variables. For a minimal example, create `coins` as Integer with default `0`, and `checkpoint` as String with default `start`. Array defaults use **Add Item** with reorder/remove controls.
+3. In **Details → Save Setup**, choose **Use As Project Default**. The same choice is available under **Project Settings → Save Games → Default Definition**.
+4. Keep the default profile and slot for a one-save game, or edit them in **Save Setup** for multiple characters and manual saves. Use **Set Save** field nodes to update progress, **Save Game** at checkpoints and **Load Game** before reading progress.
 
-Fields support Boolean, Integer, Float, String, Vector 3, Actor, Asset, and arrays of those types. Actor and Asset values persist stable IDs or `null`. Each field has an immutable ID separate from its editable name. Renaming a field preserves existing saves; deleting it and adding another creates a different field. New fields receive their declared defaults when an older save is loaded.
+Fields support Boolean, Integer, Float, String, Vector 3, Actor, Asset, and arrays of those types. Actor and Asset values persist stable IDs or `null`. Each field has an internal immutable ID separate from its editable name; raw IDs are omitted from the authoring controls. Renaming a field preserves existing saves; deleting it and adding another creates a different field. New fields receive their declared defaults when an older save is loaded.
 
-The definition's **Schema Version** describes gameplay data. It is separate from the save file format version and the project's release version. Increase it when old values need a migration, such as changing units or a field's type.
+The definition's **Advanced → Schema Version** describes gameplay data. It is separate from the save file format version and the project's release version. Increase it when old values need a migration, such as changing units or a field's type.
 
 ## Minimal save/load example
 
@@ -58,7 +58,7 @@ Stop and restart Play with **Wipe Preview Saves On Play** off. The startup load 
 | `await ctx.listSaves({ profile: "player-2" })` | Return save metadata for a profile. |
 | `await ctx.deleteSave({ slot: "manual-1", profile: "player-2" })` | Explicitly remove a slot and its retained originals. |
 
-The default definition adds **Get/Set Save _Field Name_** nodes with stable field IDs and typed pins. The definition's **Generated Type** view provides a `SaveData` TypeScript interface for code tooling; the core `generateSaveGameTypes()` helper produces the same declaration. JavaScript remains JavaScript: use `data["Field Name"]` for names containing spaces, and update name-based code when renaming a field.
+The default definition adds **Get/Set Save _Field Name_** nodes with stable field IDs and typed pins. The definition's **Advanced → Generated Type** view provides a `SaveData` TypeScript interface for code tooling; the core `generateSaveGameTypes()` helper produces the same declaration. JavaScript remains JavaScript: use `data["Field Name"]` for names containing spaces, and update name-based code when renaming a field.
 
 ## Operations and errors
 
@@ -106,7 +106,8 @@ Actor migration fields contain persistent ID strings, including array elements, 
 The JavaScript equivalent, for a field whose units changed from whole coins to hundredths, is:
 
 ```js
-// Copy the actual ID from the definition's Field ID row.
+// Use the stable ID from the authored definition’s fields metadata.
+// NodeGraph users can use the typed Get/Set Migration Coins nodes directly.
 const coinsId = "replace-with-coins-field-id";
 ctx.registerSaveMigration(1, (snapshot) => {
   snapshot.fields[coinsId] = Number(snapshot.fields[coinsId] ?? 0) * 100;

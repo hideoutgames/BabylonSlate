@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import type { IDockviewPanelProps } from "dockview-react";
 import type { SaveGameDefinition } from "@babylonslate/core";
 import { SaveGameFieldsPanel, SaveGameDefinitionPanel } from "./save-game-panels";
+import { SaveGameEditingProvider } from "../context/save-game-editing-context";
 
 // Base UI forwards native checkbox/switch activation through PointerEvent.
 if (typeof window.PointerEvent === "undefined") {
@@ -11,58 +12,113 @@ if (typeof window.PointerEvent === "undefined") {
 
 const harness = vi.hoisted(() => ({
   definition: {} as SaveGameDefinition,
-  apply: vi.fn(async () => true),
+  apply: vi.fn(async (_id: string, _definition: SaveGameDefinition) => true),
   settings: vi.fn(),
+  defaultGuid: null as string | null,
 }));
 vi.mock("../context/document-workspace-context", () => ({ useDocumentWorkspace: () => ({ documentId: "progress" }) }));
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
   openDocuments: [{ id: "progress", ref: { kind: "save-game", path: "Progress.savegame.babasset" }, content: harness.definition }],
   assetRegistry: { getByPath: () => ({ header: { guid: "definition" } }), list: () => [] },
-  projectDocument: { settings: { saveGame: { definitionGuid: null, defaultProfile: "player", defaultSlot: "checkpoint", wipeOnPlay: false } } },
+  projectDocument: { settings: { saveGame: { definitionGuid: harness.defaultGuid, defaultProfile: "player", defaultSlot: "checkpoint", wipeOnPlay: false } } },
   applyAssetDocumentChange: harness.apply,
   updateProjectSettings: harness.settings,
 })));
 const props = {} as IDockviewPanelProps;
+function editor() {
+  return <SaveGameEditingProvider><SaveGameFieldsPanel {...props} /><SaveGameDefinitionPanel {...props} /></SaveGameEditingProvider>;
+}
 beforeEach(() => {
   harness.definition = { id: "definition", schemaVersion: 1, fields: [{ id: "score-id", name: "Score", type: "int", defaultValue: 5 }] };
-  harness.apply.mockClear(); harness.settings.mockClear();
+  harness.defaultGuid = null;
+  harness.apply.mockReset(); harness.settings.mockClear();
+  harness.apply.mockImplementation(async (_id, definition) => { harness.definition = definition; return true; });
 });
 afterEach(cleanup);
 
 describe("Save Game authoring", () => {
   it("renames a field without replacing its persisted identity and rejects unsafe names", async () => {
-    render(<SaveGameFieldsPanel {...props} />);
+    render(editor());
     fireEvent.change(screen.getByTestId("property-name-score-id"), { target: { value: "Coins" } });
     expect(harness.apply).toHaveBeenCalledWith("progress", { id: "definition", schemaVersion: 1, fields: [{ id: "score-id", name: "Coins", type: "int", defaultValue: 5 }] });
     harness.apply.mockClear();
     fireEvent.change(screen.getByTestId("property-name-score-id"), { target: { value: "constructor" } });
     await waitFor(() => expect(screen.getByText("Invalid Save Definition")).toBeTruthy());
     expect(harness.apply).not.toHaveBeenCalled();
+    expect(screen.queryByRole("textbox", { name: "Field ID" })).toBeNull();
   });
 
-  it("adds distinct fields with typed defaults and converts an array through form controls", () => {
-    render(<SaveGameFieldsPanel {...props} />);
-    fireEvent.click(screen.getByRole("button", { name: "Add Field" }));
-    const added = harness.apply.mock.calls.at(-1) as unknown as [string, SaveGameDefinition];
-    expect(added[1].fields[0]).toEqual(harness.definition.fields[0]);
-    expect(added[1].fields[1]).toMatchObject({ name: "Field1", type: "int", defaultValue: 0 });
-    expect(added[1].fields[1].id).not.toBe("score-id");
-    fireEvent.click(screen.getByRole("checkbox", { name: "Array" }));
-    expect(harness.apply).toHaveBeenLastCalledWith("progress", expect.objectContaining({ fields: [{ id: "score-id", name: "Score", type: "int", defaultValue: [], array: true }] }));
+  it("validates names before adding and selects a new field for typed defaults", async () => {
+    const view = render(editor());
+    fireEvent.click(screen.getByRole("button", { name: "Add Field", exact: true }));
+    fireEvent.change(screen.getByLabelText("Field Name"), { target: { value: "Score" } });
+    fireEvent.click(screen.getByTestId("name-prompt-confirm"));
+    expect(screen.getByRole("alertdialog")).toBeTruthy();
+    expect(harness.apply).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText("Field Name"), { target: { value: "Coins" } });
+    fireEvent.click(screen.getByTestId("name-prompt-confirm"));
+    await waitFor(() => expect(harness.apply).toHaveBeenCalled());
+    const added = harness.apply.mock.calls.at(-1)![1];
+    expect(added.fields[0]).toEqual({ id: "score-id", name: "Score", type: "int", defaultValue: 5 });
+    expect(added.fields[1]).toMatchObject({ name: "Coins", type: "int", defaultValue: 0 });
+    expect(added.fields[1]!.id).not.toBe("score-id");
+    view.rerender(editor());
+    expect(screen.getByTestId(`property-name-${added.fields[1]!.id}`)).toHaveProperty("value", "Coins");
+    fireEvent.click(screen.getByTestId("save-game-field-type"));
+    fireEvent.click(await screen.findByTestId("search-item-string"));
+    await waitFor(() => expect(harness.definition.fields[1]).toMatchObject({ type: "string", defaultValue: "" }));
+    view.rerender(editor());
+    fireEvent.click(screen.getByRole("button", { name: "Array", exact: true }));
+    await waitFor(() => expect(harness.definition.fields[1]).toMatchObject({ array: true, type: "string", defaultValue: [] }));
+    view.rerender(editor());
+    fireEvent.click(screen.getByRole("button", { name: "Add Item" }));
+    expect(harness.definition.fields[1]).toMatchObject({ defaultValue: [""] });
+    expect(harness.definition.fields[0]).toEqual({ id: "score-id", name: "Score", type: "int", defaultValue: 5 });
+  });
+
+  it("selects search results and removes only that field, restoring remaining details", async () => {
+    harness.definition.fields.push({ id: "level-id", name: "Level", type: "int", defaultValue: 1 });
+    const view = render(editor());
+    fireEvent.change(screen.getByRole("textbox", { name: "Search Fields" }), { target: { value: "Level" } });
+    const tree = screen.getByRole("tree", { name: "Save Fields" });
+    fireEvent.keyDown(tree, { key: "Home" });
+    expect(screen.getByTestId("property-name-level-id")).toHaveProperty("value", "Level");
+    fireEvent.change(screen.getByTestId("property-default-level-id-Default Value"), { target: { value: "4" } });
+    expect(harness.definition.fields).toEqual([
+      { id: "score-id", name: "Score", type: "int", defaultValue: 5 },
+      { id: "level-id", name: "Level", type: "int", defaultValue: 4 },
+    ]);
+    view.rerender(editor());
+    fireEvent.click(screen.getByRole("button", { name: "Remove Level" }));
+    await waitFor(() => expect(harness.definition.fields).toHaveLength(1));
+    view.rerender(editor());
+    expect(screen.getByTestId("property-name-score-id")).toHaveProperty("value", "Score");
+  });
+
+  it("reorders array defaults without changing values or the field identity", () => {
+    harness.definition.fields[0] = { id: "score-id", name: "Milestones", type: "int", array: true, defaultValue: [10, 20] };
+    render(editor());
+    fireEvent.click(screen.getByTestId("save-game-field-defaults-1-move-up"));
+    expect(harness.definition.fields[0]).toEqual({ id: "score-id", name: "Milestones", type: "int", array: true, defaultValue: [20, 10] });
   });
 
   it("reports damaged definitions without substituting empty defaults", () => {
     harness.definition = { id: "definition", schemaVersion: 1, fields: [{ id: "x", name: "Score", type: "int", defaultValue: "invalid" }] };
-    render(<SaveGameFieldsPanel {...props} />);
+    render(<SaveGameEditingProvider><SaveGameFieldsPanel {...props} /></SaveGameEditingProvider>);
     expect(screen.getByRole("button", { name: "Add Field" }).hasAttribute("disabled")).toBe(true);
     expect(screen.getByText("Invalid Save Definition")).toBeTruthy();
     expect(harness.apply).not.toHaveBeenCalled();
   });
 
-  it("selects the project default without replacing profile and slot preferences", () => {
-    render(<SaveGameDefinitionPanel {...props} />);
+  it("sets up the project without replacing profile and slot preferences", () => {
+    const view = render(editor());
     fireEvent.click(screen.getByRole("button", { name: "Use As Project Default" }));
     expect(harness.settings).toHaveBeenCalledWith({ saveGame: { definitionGuid: "definition", defaultProfile: "player", defaultSlot: "checkpoint", wipeOnPlay: false } });
+    harness.defaultGuid = "definition";
+    view.rerender(editor());
+    fireEvent.change(screen.getByRole("textbox", { name: "Default Slot", exact: true }), { target: { value: "autosave" } });
+    expect(harness.settings).toHaveBeenLastCalledWith({ saveGame: { definitionGuid: "definition", defaultProfile: "player", defaultSlot: "autosave", wipeOnPlay: false } });
+    fireEvent.click(screen.getByRole("button", { name: "Advanced", exact: true }));
     expect(screen.getByText(/"Score": number/)).toBeTruthy();
   });
 });
