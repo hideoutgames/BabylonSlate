@@ -147,7 +147,7 @@ test("independent Data Definitions drive owned sheet rows, Undo, persistence, an
   const openSheetDefault = page.getByTestId("inspector-pin-defaults").getByRole("button", { name: "Open Asset", exact: true });
   await expect(openSheetDefault).toBeVisible();
   await saveAllIfEnabled(page);
-  await page.getByTestId("document-workspace-class").screenshot({ path: testInfo.outputPath("typed-data-row-node.png") });
+  await page.getByTestId("document-workspace-graph").screenshot({ path: testInfo.outputPath("typed-data-row-node.png") });
 
   // Inspector defaults retain Open Asset; only the inline node control omits it.
   await openSheetDefault.click();
