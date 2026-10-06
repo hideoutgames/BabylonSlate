@@ -52,7 +52,8 @@ export function isWaterContactMesh(mesh: AbstractMesh): boolean {
   if (mesh.isBlocked || !(mesh instanceof Mesh || mesh instanceof InstancedMesh) || mesh instanceof LinesMesh) return false;
   // Foreground and UI groups are overlays, not world geometry.
   if (!mesh.isEnabled() || !mesh.isVisible || mesh.visibility <= 0 || mesh.renderingGroupId > RENDERING_GROUP.world) return false;
-  if (isEditorHelperMesh(mesh)) return false;
+  // Infinite-distance meshes (sky domes) follow the camera: their geometry crossing the surface is no waterline.
+  if (isEditorHelperMesh(mesh) || mesh.infiniteDistance) return false;
   const meta = mesh.metadata as Record<string, unknown> | null;
   if (meta && (meta.slateWater || meta.slateWaterRemoval || meta.landscapeRoot || meta.slateLandscape || meta.skybox)) return false;
   return mesh.getTotalIndices() > 0;

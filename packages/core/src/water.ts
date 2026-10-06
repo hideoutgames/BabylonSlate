@@ -35,9 +35,9 @@ export interface WaterDefinition {
   crestFoam: number;
   /** Metres of foam around objects and terrain that intersect the surface. */
   contactFoamWidth: number;
-  /** Open-water foam: wind streaks and trailing foam (Realistic) or drifting foam patches (Stylized). */
+  /** Open-water foam: wind streaks and trailing foam (Realistic) or chunky drifting foam patches (Stylized). */
   surfaceFoam: number;
-  /** Sunlight scattered through wave crests (Realistic) or the lighter tint on wave tops (Stylized). */
+  /** Sunlight scattered through wave crests seen toward the sun; Stylized also lightens wave tops. */
   subsurface: number;
   colorBands: number;
   /** Twinkling sun glints, mostly for Stylized water. */
@@ -112,21 +112,21 @@ export function createDefaultWaterDefinition(style: WaterStyle = "realistic"): W
   const stylized = style === "stylized";
   return {
     style,
-    shallowColor: stylized ? [0.36, 0.86, 0.95] : [0.1, 0.5, 0.48],
-    deepColor: stylized ? [0.06, 0.38, 0.78] : [0.02, 0.13, 0.24],
+    shallowColor: stylized ? [0.1, 0.78, 0.72] : [0.1, 0.5, 0.48],
+    deepColor: stylized ? [0.02, 0.17, 0.3] : [0.02, 0.13, 0.24],
     foamColor: stylized ? [1, 1, 1] : [0.9, 0.93, 0.94],
-    opacity: stylized ? 0.9 : 0.97, roughness: stylized ? 0.3 : 0.06,
-    reflectionStrength: stylized ? 0.6 : 1, depthColorDistance: stylized ? 1.6 : 4,
+    opacity: stylized ? 1 : 0.97, roughness: stylized ? 0.3 : 0.06,
+    reflectionStrength: stylized ? 0.8 : 1, depthColorDistance: stylized ? 3 : 4,
     waveHeight: 0.35, waveLength: 12, waveSpeed: 1.3, waveDirection: 25,
     choppiness: stylized ? 0.2 : 0.45, waveSpread: 0.5,
     rippleStrength: stylized ? 0.35 : 0.6, rippleScale: stylized ? 1 : 1.4,
-    foamAmount: stylized ? 1 : 0.6, foamWidth: stylized ? 0.7 : 0.8,
+    foamAmount: stylized ? 1 : 0.6, foamWidth: stylized ? 1.2 : 0.8,
     crestFoam: 0.35, contactFoamWidth: stylized ? 0.6 : 1.2,
-    surfaceFoam: stylized ? 0.4 : 0.15, subsurface: stylized ? 0.5 : 1,
+    surfaceFoam: stylized ? 0.4 : 0.15, subsurface: 1,
     colorBands: stylized ? 3 : 0, sparkles: stylized ? 0.4 : 0, density: 1000, materialGuid: null,
     steepness: stylized ? 0.3 : 0.5, waveModel: "classic", peakSharpness: 3.3, waveSeed: 0,
     detailWaves: stylized ? 0 : 1, refraction: stylized ? 0.15 : 0.35, objectReflections: !stylized,
-    colorVariation: stylized ? 0.6 : 0.5,
+    colorVariation: 0.5,
   };
 }
 

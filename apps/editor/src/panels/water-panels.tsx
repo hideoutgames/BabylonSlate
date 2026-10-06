@@ -37,8 +37,8 @@ const surfaceControls = [
 const oceanOnly = new Set<NumberKey>(["peakSharpness", "waveSeed"]);
 const descriptions: Partial<Record<NumberKey, string>> = {
   opacity: "Maximum opacity of deep water. Shallow water near banks stays clearer.",
-  roughness: "Realistic: how far the sun glint and sky reflection spread. Stylized: size of the sun highlight.",
-  reflectionStrength: "Realistic: strength of the sky reflection. Stylized: strength of the lighter rim toward the horizon.",
+  roughness: "Realistic: how far the sun glint and sky reflection spread. Stylized: width of the sun's streak and sparkle path.",
+  reflectionStrength: "Realistic: strength of the sky reflection. Stylized: strength of the soft painted sky reflection, strongest at grazing views.",
   depthColorDistance: "Metres of water that absorb most light. Smaller values look deeper and darker sooner.",
   rippleScale: "Higher values make smaller wind ripples.",
   choppiness: "0 gives rounded swell; 1 gives sharp crests and flat troughs. Floating objects follow the same shape.",
@@ -52,10 +52,10 @@ const descriptions: Partial<Record<NumberKey, string>> = {
   foamWidth: "Metres of shoreline foam measured from the bank or terrain shoreline.",
   crestFoam: "Whitecap coverage on the steepest, sharpest crests. Gentle swell and small lake waves stay clear.",
   surfaceFoam: "Open-water foam: wind streaks on Realistic water, drifting foam patches on Stylized water.",
-  subsurface: "Realistic: sunlight glowing green through wave crests. Stylized: the lighter tint on wave tops.",
+  subsurface: "Sunlight glowing green through wave crests seen toward the sun; Stylized also lightens wave tops. Stylized's glow needs Medium Water Shading Detail or higher.",
   contactFoamWidth: "Metres of foam around objects and terrain that cross the surface.",
   colorBands: "Stylized depth bands. Zero or one keeps a smooth gradient.",
-  sparkles: "Twinkling sun glints on the surface.",
+  sparkles: "Twinkling sun glints on the surface. Stylized: soft sparkles around the sun's path.",
   density: "Kilograms per cubic metre. Fresh water is approximately 1000.",
 };
 

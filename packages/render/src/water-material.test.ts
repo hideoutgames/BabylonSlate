@@ -70,6 +70,59 @@ describe("Water material binding", () => {
     } finally { scene.dispose(); engine.dispose(); }
   });
 
+  it("reflects a sky built from the scene's background, fog and sky light, and absorbs the colours Shallow Color lacks first", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    try {
+      const { plugin } = water(scene), output = uniforms();
+      const bound = (name: string) => { plugin.hardBindForSubMesh(output.buffer, scene); return output.vectors.get(name)!.slice(0, 3); };
+      const linear = (value: number) => value ** 2.2;
+      let sky: number[] = [], horizon: number[] = [];
+      scene.clearColor.set(0.5, 0.6, 0.8, 1);
+      scene.customRenderFunction = () => { sky = bound("slateWaterSky"); horizon = bound("slateWaterHorizon"); };
+      scene.render();
+      // Without fog the horizon is the background the scene shows as its sky; overhead it is deeper.
+      horizon.forEach((value, i) => expect(value).toBeCloseTo(linear([0.5, 0.6, 0.8][i]!), 5));
+      expect(sky[2]! / sky[0]!).toBeGreaterThan(horizon[2]! / horizon[0]!);
+      const clearSky = sky;
+      // A hemispheric light is the scene's sky light: it tints the zenith, and the next frame follows it.
+      const hemi = new HemisphericLight("sky", Vector3.Up(), scene);
+      hemi.diffuse.set(1, 0.4, 0.2); hemi.intensity = 1;
+      scene.render();
+      expect(sky[0]! / sky[2]!).toBeGreaterThan(clearSky[0]! / clearSky[2]!);
+      // With fog the horizon is the fog the water itself fades into: Babylon's PBR fog colour, converted to linear space.
+      scene.fogMode = Scene.FOGMODE_LINEAR; scene.fogColor.set(0.3, 0.35, 0.4);
+      scene.render();
+      const fog = scene.fogColor.toLinearSpace(engine.useExactSrgbConversions);
+      expect(horizon).toEqual([expect.closeTo(fog.r, 5), expect.closeTo(fog.g, 5), expect.closeTo(fog.b, 5)]);
+      // Absorption: water whose shallows look blue loses red first and blue last; grey shallows absorb every channel alike.
+      const absorb = (shallowColor: [number, number, number]) => { (plugin.water as { shallowColor: number[] }).shallowColor = shallowColor; return bound("slateWaterAbsorb"); };
+      const [r, g, b] = absorb([0.1, 0.4, 0.8]);
+      expect(r).toBeGreaterThan(g!); expect(g).toBeGreaterThan(b!);
+      const grey = absorb([0.2, 0.2, 0.2]);
+      expect(grey[0]).toBeCloseTo(grey[1]!, 6); expect(grey[1]).toBeCloseTo(grey[2]!, 6);
+      // Turquoise shallows (the Realistic default) pass blue at least as well as green, as water does (blue absorbing
+      // faster turned them mint), and the colour they keep travels Depth Color Distance (its coefficient is 1).
+      const turquoise = absorb(createDefaultWaterDefinition("realistic").shallowColor);
+      expect(turquoise[2]).toBeLessThanOrEqual(turquoise[1]!);
+      expect(turquoise[0]).toBeGreaterThan(turquoise[1]!);
+      expect(Math.min(...turquoise)).toBeCloseTo(1, 6);
+    } finally { scene.dispose(); engine.dispose(); }
+  });
+
+  it("lets sunlight through thin crests for a sun some way up, but not for a setting sun", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    try {
+      const { plugin } = water(scene), output = uniforms();
+      const sun = new DirectionalLight("sun", Vector3.Down(), scene);
+      let through: number[] = [];
+      scene.customRenderFunction = () => { plugin.hardBindForSubMesh(output.buffer, scene); through = output.vectors.get("slateWaterThrough")!.slice(0, 3); };
+      const elevation = (degrees: number) => { const a = degrees * Math.PI / 180; sun.direction.set(0, -Math.sin(a), -Math.cos(a)); scene.render(); return Math.max(...through); };
+      expect(elevation(25)).toBeGreaterThan(0.05);
+      // At sunset the light reaching the crests is dim, red and absorbed: no glow (it turned wave faces green).
+      expect(elevation(3)).toBe(0);
+    } finally { scene.dispose(); engine.dispose(); }
+  });
+
   it("selects nearby cutters per surface, reuses repeated binds, and refreshes movement and membership on later passes", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     try {
