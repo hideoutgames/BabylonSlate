@@ -19,6 +19,7 @@ Chrome uses **Soft Graphite**: warm stone light surfaces and soft charcoal dark 
 `globals.css` owns the four safe-area tokens: `--safe-top`, `--safe-right`, `--safe-bottom`, and `--safe-left`. They resolve the corresponding `env(safe-area-inset-*, 0px)` values, keeping web, Electron, and jsdom at zero. Surfaces consume these tokens and never call `env()` directly.
 
 - The editor and Homepage roots use `.safe-frame` for left, right, and bottom insets.
+- Visible bottom status bars extend through the frame's bottom inset at their existing height, removing the extra gap on iPad. Layouts without a visible status bar retain bottom safe-area padding; overlay insets remain independent.
 - Installed phone apps reserve at least 2rem at the bottom when the platform reports a zero home-indicator inset; larger reported insets still win. Browser tabs and tablet/desktop layouts use their reported insets without this minimum.
 - `--safe-bottom` is a registered CSS length, so JavaScript-positioned menus read the same resolved pixels as CSS layout, including the installed-phone minimum.
 - The body owns the dynamic viewport height; Homepage and editor fill it without inherited viewport minimums. Body/root clipping prevents extra shell scroll containers, while orientation recovery resets retained document offsets during the following second of viewport resize events. Panel scrolling and input focus are preserved.
