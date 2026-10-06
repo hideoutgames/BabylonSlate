@@ -35,7 +35,7 @@ export interface WaterDefinition {
   crestFoam: number;
   /** Metres of foam around objects and terrain that intersect the surface. */
   contactFoamWidth: number;
-  /** Open-water foam: wind streaks and trailing foam (Realistic) or drifting lacy foam patches (Stylized). */
+  /** Open-water foam: wind streaks and trailing foam (Realistic) or chunky drifting foam patches (Stylized). */
   surfaceFoam: number;
   /** Sunlight scattered through wave crests seen toward the sun; Stylized also lightens wave tops. */
   subsurface: number;

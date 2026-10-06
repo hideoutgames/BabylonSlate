@@ -42,7 +42,7 @@ describe("Water contact field", () => {
   const frame = () => scene.incrementRenderId();
   afterEach(() => { vi.restoreAllMocks(); scene?.dispose(); engine?.dispose(); });
 
-  it("keeps the editor grid and other helpers out of wave-aware contacts", () => {
+  it("keeps the editor grid, other helpers and infinite-distance sky domes out of wave-aware contacts", () => {
     setup();
     const camera = new ArcRotateCamera("editor", 0, 1, 30, Vector3.Zero(), scene);
     // The default grid sits a few millimetres above y = 0, exactly where waves cross a lake at the origin.
@@ -50,6 +50,10 @@ describe("Water contact field", () => {
     grid.sync(); grid.mesh.computeWorldMatrix(true);
     const proxy = MeshBuilder.CreateBox("pick proxy", { width: 3, height: 3, depth: 3 }, scene);
     proxy.position.set(-6, 0, 4); proxy.metadata = { editorPickProxy: true };
+    // A sky dome drawn at infinite distance follows the camera (about 16 m up at x = 25); its geometry crossing y = 0
+    // (about 12 m around the camera, through x = 13 on the lake) is no waterline.
+    const dome = MeshBuilder.CreateSphere("sky dome", { diameter: 40, sideOrientation: Mesh.BACKSIDE }, scene);
+    dome.infiniteDistance = true;
     const post = MeshBuilder.CreateBox("post", { width: 1, height: 6, depth: 1 }, scene);
     post.position.set(6, 0, 0);
     frame();
@@ -57,7 +61,7 @@ describe("Water contact field", () => {
     const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 30, length: 30, waveScale: 1 }), createDefaultWaterDefinition());
     const contacts = contactsOf(lake);
     // Only the post meets the water: open water and the proxy's footprint stay clear at every height.
-    for (const [x, z] of [[0, 0], [-6, 4], [-3, -8], [10, 9]] as const) {
+    for (const [x, z] of [[0, 0], [-6, 4], [-3, -8], [10, 9], [13.2, 0], [14, 4]] as const) {
       expect(layers(contacts, x, z).every((value) => value > view(contacts).range * 0.95)).toBe(true);
     }
     expect(Math.abs(contactAt(contacts, 6.55, 0, 0))).toBeLessThan(0.15);
