@@ -47,8 +47,9 @@ it("keeps texture parameters unchanged until ready and rejects completion after 
   const loading = preparation();
   const actor = new Actor({ classId: "Hero", guid: "hero" });
   const mesh = new ActorComponent({ classId: "MeshComponent", guid: "mesh" });
-  const material = new MaterialObject(mesh, "material", 1);
-  mesh.setVariable("materialObject", material);
+  actor.attachComponent(mesh);
+  mesh.setVariable("materialGuid", "material");
+  const material = mesh.getVariable("materialObject") as MaterialObject;
   const published: unknown[] = [];
   const ctx = new ScriptHost(services({ ...loading.services, setMaterialParameter: (_material, _name, value) => published.push(value) })).createContext(actor, 0, 0);
   const operation = ctx.setMaterialTextureParameterAsync(material, "Diffuse", "texture");
@@ -58,4 +59,25 @@ it("keeps texture parameters unchanged until ready and rejects completion after 
   loading.pending.get("texture")!.resolve();
   await cancelled;
   expect(published).toEqual([]);
+});
+
+it("hands material ownership to the replacement and releases superseded source preloads", async () => {
+  const actor = new Actor({ classId: "Hero", guid: "hero" });
+  const mesh = new ActorComponent({ classId: "MeshComponent", guid: "mesh" });
+  const released: string[] = [];
+  const ctx = new ScriptHost(services({
+    prepareAssets: async () => {},
+    preloadAssets: async (guids, owner) => {
+      expect(owner).toBe(mesh);
+      return { success: true, progress: 1, preloadId: `preload:${guids[0]}`, errorMessage: "" };
+    },
+    releasePreload: id => { released.push(id); },
+    getAssetLoadState: () => "ready",
+  })).createContext(actor, 0, 0);
+  await ctx.setMeshMaterialAsync(mesh, "first");
+  expect(released).toEqual([]);
+  await ctx.setMeshMaterialAsync(mesh, "second");
+  expect(released).toEqual(["preload:first"]);
+  ctx.setMeshMaterial(mesh, null);
+  expect(released).toEqual(["preload:first", "preload:second"]);
 });

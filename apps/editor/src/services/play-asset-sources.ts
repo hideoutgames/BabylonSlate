@@ -32,6 +32,33 @@ export function requiredPlayAssets(registry: AssetRegistry, roots: readonly stri
   return result;
 }
 
+/** Resolve mutable catalogs before using their dependency edges for a cold load. */
+async function currentRequiredPlayAssets(registry: AssetRegistry, roots: readonly string[], signal: AbortSignal): Promise<Map<string, string>> {
+  const revisions = new Map<string, string>();
+  const pending = [...roots];
+  while (pending.length) {
+    signal.throwIfAborted();
+    const guid = pending.pop()!;
+    if (revisions.has(guid)) continue;
+    const locator = await cancellableCatalogRead(registry.getAssetLocator(guid), signal);
+    signal.throwIfAborted();
+    const asset = registry.getByGuid(guid);
+    if (!asset || asset.placeholder || asset.locator !== locator) throw new Error(`Required asset changed while resolving: ${guid}`);
+    revisions.set(guid, locator.revision);
+    pending.push(...getRequiredDependencies(asset.header));
+  }
+  return revisions;
+}
+
+function cancellableCatalogRead<T>(read: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => reject(signal.reason ?? new DOMException("Asset preparation cancelled", "AbortError"));
+    if (signal.aborted) abort();
+    else signal.addEventListener("abort", abort, { once: true });
+    read.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+  });
+}
+
 export function requiredProjectAssets(registry: AssetRegistry, project: ProjectDocument): string[] {
   const settings = project.settings;
   const roots = [settings.audio.audioMixerGuid, ...renderEffectsAssetGuids(settings.render.effects)];
@@ -65,9 +92,10 @@ function selectedChunks(asset: IndexedAsset, payload: Record<string, unknown>, f
 export async function acquirePlayAssetSources(
   host: PlayAssetSourceHost,
   roots: readonly string[],
-  options: { consumer: string; signal: AbortSignal; onProgress?: (progress: { completed: number; total: number }) => void; allowCompileErrors?: boolean },
+  options: { consumer: string; signal: AbortSignal; onProgress?: (progress: { completed: number; total: number }) => void; allowCompileErrors?: boolean; fontModes?: import("@babylonslate/render").CommandFontModes },
 ) {
-  const required = requiredPlayAssets(host.registry, roots);
+  const catalogRevisions = await currentRequiredPlayAssets(host.registry, roots, options.signal);
+  const required = new Set(catalogRevisions.keys());
   const scope = host.createScope(options.consumer);
   const project = host.project;
   const audioChunks = new Map<string, Map<string, Uint8Array>>();
@@ -81,10 +109,7 @@ export async function acquirePlayAssetSources(
       pixelsPerUnit: project.settings.twoD.pixelsPerUnit, sortingLayers: project.settings.twoD.sortingLayers,
       pixelPerfect: project.settings.twoD.pixelPerfect, packs: [], scriptsFile: "", physicsWorld: "3d",
       audioMixerGuid: project.settings.audio.audioMixerGuid ?? undefined,
-      assets: [...required].map((guid) => { const { header } = host.registry.getByGuid(guid)!; return {
-        guid, type: header.type, name: header.name, encoding: "json" as const,
-        width: Number(header.payload.width), height: Number(header.payload.height),
-      }; }),
+      assets: [],
     },
     scripts: [], scenes: new Map(), sceneLayers: new Map(), textureBytes: new Map(), areaEmissions: new Map(),
     modelBytes: new Map(), modelPayloads: new Map(), fontBytes: new Map(), fontFacetypeBytes: new Map(),
@@ -105,15 +130,26 @@ export async function acquirePlayAssetSources(
     // First read authored documents to select the exact binary representations.
     const documents = new Map<string, RegistryLoadedAsset>();
     const fontModes = new Map<string, Set<string>>();
-    const requireFont = (guid: string | null | undefined, chunks: readonly string[]) => {
+    const requireFont = async (guid: string | null | undefined, chunks: readonly string[]) => {
       if (!guid) return;
       const modes = fontModes.get(guid) ?? new Set<string>();
       for (const chunk of chunks) modes.add(chunk);
       fontModes.set(guid, modes);
-      for (const dependency of requiredPlayAssets(host.registry, [guid])) required.add(dependency);
+      for (const [dependency, revision] of await currentRequiredPlayAssets(host.registry, [guid], options.signal)) {
+        const previous = catalogRevisions.get(dependency);
+        if (previous && previous !== revision) throw new Error(`Asset ${dependency} changed while resolving font dependencies; retry`);
+        catalogRevisions.set(dependency, revision);
+        required.add(dependency);
+      }
     };
+    for (const [guid, modes] of options.fontModes ?? []) {
+      const chunks = [...modes].flatMap(mode => mode === "facetype" ? [FONT_FACETYPE_CHUNK_ID]
+        : mode === "msdf" ? [FONT_MSDF_CHUNK_ID, FONT_MSDF_PNG_CHUNK_ID] : ["source"]);
+      await requireFont(guid || project.settings.fonts.defaultFontGuid, chunks);
+    }
     for (const guid of required) {
       const value = await scope.acquire<RegistryLoadedAsset>(guid, undefined, { signal: options.signal, dependencies: "none" });
+      if (value.revision !== catalogRevisions.get(guid)) throw new Error(`Asset ${guid} changed after resolving its dependencies; retry`);
       documents.set(guid, value);
       const payload = value.document.payload;
       const actors = Array.isArray(payload.actors) ? payload.actors as Array<{ components?: unknown[] }> : [];
@@ -124,14 +160,18 @@ export async function acquirePlayAssetSources(
       for (const component of components) {
         if (component.classId === "Text3DComponent") {
           const guid = component.properties?.fontAssetGuid;
-          if (typeof guid === "string") requireFont(guid, [FONT_FACETYPE_CHUNK_ID]);
+          if (typeof guid === "string") await requireFont(guid, [FONT_FACETYPE_CHUNK_ID]);
         } else if (component.classId === "2DTextComponent" || component.classId === "2DRichTextComponent") {
           const text = parseText2DProperties(component.properties);
-          requireFont(text.fontAssetGuid ?? project.settings.fonts.defaultFontGuid,
+          await requireFont(text.fontAssetGuid ?? project.settings.fonts.defaultFontGuid,
             text.renderer === "msdf" ? [FONT_MSDF_CHUNK_ID, FONT_MSDF_PNG_CHUNK_ID] : ["source"]);
         }
       }
     }
+    game.manifest.assets = [...required].map((guid) => { const { header } = host.registry.getByGuid(guid)!; return {
+      guid, type: header.type, name: header.name, encoding: "json" as const,
+      width: Number(header.payload.width), height: Number(header.payload.height),
+    }; });
     // Font fallback assets inherit the representation used by their consumer.
     const visitFallbacks = (guid: string, chunks: ReadonlySet<string>, seen = new Set<string>()) => {
       if (seen.has(guid)) return;
@@ -240,11 +280,10 @@ export async function acquirePlayAssetSources(
     if (failure && !options.allowCompileErrors) throw new Error(failure.message);
     game.scripts = compiled.bundles;
     options.signal.throwIfAborted();
-    const root = roots[0];
-    if (!root) throw new Error("Asset preparation requires at least one root asset");
+    const root = roots[0] ?? required.values().next().value;
     const cpuBytes = documentBytes * 8;
-    const content = await scope.acquire(root, {
-      key: `play-content:${JSON.stringify([revisions.sort(([a], [b]) => a.localeCompare(b)), project.settings.fonts, project.settings.twoD, project.settings.audio.audioMixerGuid])}`,
+    const content = root ? await scope.acquire(root, {
+      key: `play-content:${JSON.stringify([revisions.sort(([a], [b]) => a.localeCompare(b)), [...fontModes].sort(([a], [b]) => a.localeCompare(b)).map(([guid, modes]) => [guid, [...modes].sort()]), project.settings.fonts, project.settings.twoD, project.settings.audio.audioMixerGuid])}`,
       estimate: { sourceBytes: 0, decodedBytes: cpuBytes, temporaryBytes: sourceBytes },
       load: async (_asset, signal) => {
         signal.throwIfAborted();
@@ -255,7 +294,7 @@ export async function acquirePlayAssetSources(
         }
         return { value, sourceBytes: 0, decodedBytes: cpuBytes, dispose: () => releasePackedContent(value) };
       },
-    }, { signal: options.signal, dependencies: "none" });
+    }, { signal: options.signal, dependencies: "none" }) : packedContentFromGame(game);
     const sources: SceneSourceAssets = {
       assets: {
         modelBytes: game.modelBytes, modelPayloads: content.modelPayloads,

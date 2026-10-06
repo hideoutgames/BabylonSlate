@@ -762,6 +762,8 @@ class InProcessRuntime implements RuntimeDriver {
   get snapshotGeneration(): number { return this._snapshotGeneration; }
 
   constructor(options: RuntimeDriverOptions) {
+    const projectName = options.project?.name ?? "";
+    const projectVersion = options.project?.version ?? "";
     this.demandAssetCatalog = options.classAssetGuids !== undefined;
     for (const [classId, guid] of Object.entries(options.classAssetGuids ?? {})) this.classAssetGuids.set(classId, guid);
     this.trace = new TraceRecorder({ byteBudget: options.traceByteBudget });
@@ -790,7 +792,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.cooperativeSceneLoading = options.cooperativeSceneLoading
       ? (options.cooperativeSceneLoading === true ? {} : options.cooperativeSceneLoading)
       : null;
-    if (options.sceneLibrary) {
+    if (options.sceneLibrary && !this.acquireScene) {
       for (const [key, scene] of Object.entries(options.sceneLibrary)) {
         this.sceneLibrary.set(key, scene);
         const displayName =
@@ -826,10 +828,10 @@ class InProcessRuntime implements RuntimeDriver {
       }
     }
     if (options.playScene) {
-      this.sceneLibrary.set(this.playSceneGuid, options.playScene);
+      if (!this.acquireScene) this.sceneLibrary.set(this.playSceneGuid, options.playScene);
       this.sceneGuidByKey.set(this.playSceneGuid, this.playSceneGuid);
       if (options.playScene.name) {
-        this.sceneLibrary.set(options.playScene.name, options.playScene);
+        if (!this.acquireScene) this.sceneLibrary.set(options.playScene.name, options.playScene);
         this.sceneGuidByKey.set(options.playScene.name, this.playSceneGuid);
       }
     }
@@ -1323,8 +1325,8 @@ class InProcessRuntime implements RuntimeDriver {
       getSceneState: (target) => this.getSceneState(target),
       resolveInstanceId: (owner, id) => this.streamForOwner(owner)?.idMap.get(id) ?? id,
       waitForSimulation: (owner) => this.waitForSimulation(owner),
-      getProjectName: () => options.project?.name ?? "",
-      getProjectVersion: () => options.project?.version ?? "",
+      getProjectName: () => projectName,
+      getProjectVersion: () => projectVersion,
       setWorldGravity: (gravity) => {
         this.setWorldGravity(gravity);
       },
@@ -5982,7 +5984,7 @@ class InProcessRuntime implements RuntimeDriver {
       },
       prepare: (id, classId, spawned) => {
         if (!spawned) {
-          const scene = this.sceneLibrary.get(this.world.currentScene?.assetGuid ?? this.playSceneGuid);
+          const scene = this.playScene ?? this.sceneLibrary.get(this.world.currentScene?.assetGuid ?? this.playSceneGuid);
           const row = scene?.actors.find((actor) => actor.id === id && actor.classId === classId);
           const actor = row ? createActorFromSerialized(this.world, row, this.sceneActorHooks) : null;
           if (actor) this.scriptHost.bindInterfaceHandlers(actor);

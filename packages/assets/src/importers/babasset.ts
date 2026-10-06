@@ -37,6 +37,7 @@ async function collect(bytes: Uint8Array, out: ImportResult[]): Promise<void> {
     dependencies: [...decoded.header.dependencies],
     requiredDependencies: decoded.header.requiredDependencies ? [...decoded.header.requiredDependencies] : undefined,
     dependencyMetadataVersion: decoded.header.dependencyMetadataVersion,
+    requiredVariableNames: decoded.header.requiredVariableNames ? [...decoded.header.requiredVariableNames] : undefined,
     parentClass: decoded.header.parentClass ?? null,
     payload: decoded.header.payload,
     chunks,

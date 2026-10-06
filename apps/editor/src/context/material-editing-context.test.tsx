@@ -299,6 +299,7 @@ describe("MaterialEditingProvider preview isolation", () => {
   });
 
   it("loads a closed Material Function from its saved document chunk", async () => {
+    harness.content!.nodes.push({ id: "call", type: "function.call", position: { x: 0, y: 0 }, properties: { functionGuid: "wave" } });
     harness.functionAssets = [{ path: "assets/Wave.material-function.babasset", header: { guid: "wave", type: "MaterialFunction", payload: {} } }];
     harness.readAssetChunk.mockImplementation(async (_path, chunkId) => chunkId === "document" ? new TextEncoder().encode(JSON.stringify({ name: "Saved Wave", nodes: [], edges: [], inputs: [], outputs: [] })) : null);
     mount();
@@ -306,6 +307,7 @@ describe("MaterialEditingProvider preview isolation", () => {
   });
 
   it("does not reload saved Material Functions when the registry epoch advances without function changes", async () => {
+    harness.content!.nodes.push({ id: "call", type: "function.call", position: { x: 0, y: 0 }, properties: { functionGuid: "wave" } });
     const asset = {
       path: "assets/Wave.material-function.babasset",
       header: { guid: "wave", type: "MaterialFunction", payload: {} },
@@ -332,6 +334,31 @@ describe("MaterialEditingProvider preview isolation", () => {
     harness.registryEpoch += 1;
     view.rerender(materialTree());
     await waitFor(() => expect(harness.readAssetChunk).toHaveBeenCalledTimes(2));
+  });
+
+  it("keeps unused functions unread and deduplicates a cyclic required function closure", async () => {
+    harness.content!.nodes.push({ id: "call", type: "function.call", position: { x: 0, y: 0 }, properties: { functionGuid: "outer" } });
+    harness.functionAssets = ["outer", "inner", "unused"].map((guid) => ({
+      path: `assets/${guid}.material-function.babasset`, header: { guid, type: "MaterialFunction", payload: {} },
+    }));
+    harness.readAssetChunk.mockImplementation(async (path) => new TextEncoder().encode(JSON.stringify({
+      name: path, nodes: [{ id: "call", type: "function.call", position: { x: 0, y: 0 }, properties: { functionGuid: path.includes("outer") ? "inner" : "outer" } }],
+      edges: [], inputs: [], outputs: [],
+    })));
+    mount();
+    await waitFor(() => expect(Object.keys(harness.libraryOptions?.functions?.() ?? {})).toEqual(["outer", "inner"]));
+    expect(harness.readAssetChunk.mock.calls.map(([path]) => path)).toEqual([
+      "assets/outer.material-function.babasset", "assets/inner.material-function.babasset",
+    ]);
+  });
+
+  it("leaves a cold restored material tab and its function library unrealized", async () => {
+    harness.content = null;
+    harness.functionAssets = [{ path: "assets/Unused.material-function.babasset", header: { guid: "unused", type: "MaterialFunction", payload: {} } }];
+    mount(false);
+    await act(async () => { await Promise.resolve(); });
+    expect(harness.readAssetChunk).not.toHaveBeenCalled();
+    expect(harness.createScene).not.toHaveBeenCalled();
   });
 
   it("does not registerView, attachControl, resize, or runRenderLoop on the shared Engine", async () => {
@@ -447,12 +474,14 @@ describe("MaterialEditingProvider preview isolation", () => {
       expect(harness.readAssetChunk).toHaveBeenCalledWith(
         "assets/albedo.babasset",
         "pixels",
+        { ownerDocumentId: "material:assets/Rock.material.babasset" },
       );
     });
     await waitFor(() => {
       expect(harness.readAssetChunk).toHaveBeenCalledWith(
         "assets/albedo.babasset",
         "source",
+        { ownerDocumentId: "material:assets/Rock.material.babasset" },
       );
     });
     await waitFor(() => {

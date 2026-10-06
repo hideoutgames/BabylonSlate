@@ -71,6 +71,7 @@ Header dependency metadata has an independent version:
 | `dependencyMetadataVersion: 1` | Complete typed collection contract |
 | `dependencies` | All declared references for export reachability, Show References and deletion |
 | `requiredDependencies` | Only edges needed to prepare this consumer now |
+| `requiredVariableNames` (Classes) | Property keys consumed by synchronous readers, so actor/component overrides inherit the required role |
 
 Active actor/component resources, materials, textures, animation clips, particle emitters, audio routing, font fallbacks and enabled default SceneLayers are required. Input bindings, called function modules, literal Tree inputs of synchronous data readers, and data schemas are also required by their active Class; typed upstream graph inputs are followed with a cycle guard. Streamed scenes, gameplay Class/asset literals, data values, disabled default layers and material preview meshes remain references for later use. The same GUID may occur in both roles; a required occurrence wins for that consumer. Class IDs resolve using catalog identities, and data/graph values follow their declared schemas, including arrays, maps and nested structures. Ordinary names, IDs and source text are not references.
 
@@ -79,6 +80,8 @@ Imports and saves stamp both graphs. Show References and Delete also overlay alr
 ### Scoped source loading
 
 `ProjectService.assetLoadingService` is shared by editor documents, previews and Play. Cache identities include project/root, asset, revision and representation. Required closures tolerate cycles, compatible in-flight reads/decodes are deduplicated, and cancellation stops shared work only after its last owner leaves. Failed requests can be retried. Scope release makes unowned data eligible for expiry/LRU trimming and removes decoded/source references when evicted; a project switch disposes the session.
+
+Root load state stays `loading` until its required closure is usable and becomes `failed` when a required dependency fails. Cancelling one waiter preserves another waiter's readiness. Completed cache entries retain representation metadata without decoder closures that could capture otherwise-evicted source buffers. Play refreshes bounded catalog headers before following dependency edges and rejects a save that changes them during preparation.
 
 Admission reserves retained source, decoded CPU and temporary bytes before expensive work. Work uses bounded concurrency with gameplay before explicit preload before background work. Requests larger than a budget fail with the asset and consumer, instead of waiting forever or disposing owned resources. Initial configurable defaults are 128 MiB source, 128 MiB decoded, 64 MiB temporary, four concurrent operations and one second of unowned retention. These are provisional implementation defaults, not measured A16 limits. GPU accounting and native disposal stay in `ResourceCache`; Babylon objects do not enter the platform-independent assets package.
 

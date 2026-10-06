@@ -1,4 +1,4 @@
-import { normalizeScene, normalizeSceneLayer, type SerializedScene, type SerializedSceneLayer, type StorageReadMetrics } from "@babylonslate/core";
+import { normalizeScene, normalizeSceneLayer, parseText2DProperties, type SerializedScene, type SerializedSceneLayer, type StorageReadMetrics } from "@babylonslate/core";
 import {
   createHttpPackSource,
   createMemoryPackSource,
@@ -17,6 +17,9 @@ import {
   fontGuidFromFontFacetypeExport,
   fontGuidFromFontMsdfAtlasExport,
   fontGuidFromFontMsdfExport,
+  fontFacetypeExportGuid,
+  fontMsdfExportGuid,
+  fontMsdfAtlasExportGuid,
   type GameAssetIndexEntry,
   type GameManifest,
   type PackSource,
@@ -48,10 +51,11 @@ export type LoadedGame = {
   assets?: AssetLoadingService;
   getReadMetrics?: () => StorageReadMetrics;
   onSourcesChanged?: (listener: () => void) => () => void;
-  acquireAssets?: (ids: string[], request: { consumer: string; signal: AbortSignal; priority?: AssetLoadPriority; onProgress?: (progress: { completed: number; total: number }) => void }) => Promise<{ release: () => void }>;
-  acquireScene?: (guid: string, request: { consumer: string; signal: AbortSignal }) => Promise<{ scene: SerializedScene; release: () => void }>;
+  acquireAssets?: (ids: string[], request: { consumer: string; signal: AbortSignal; priority?: AssetLoadPriority; fontModes?: ReadonlyMap<string, ReadonlySet<"facetype" | "msdf" | "bitmap">>; onProgress?: (progress: { completed: number; total: number }) => void }) => Promise<{ release: () => void; assetGuids?: ReadonlySet<string> }>;
+  acquireScene?: (guid: string, request: { consumer: string; signal: AbortSignal }) => Promise<{ scene: SerializedScene; release: () => void; assetGuids?: ReadonlySet<string> }>;
   dispose?: () => void;
   releaseStartup?: () => void;
+  systemAssetGuids?: ReadonlySet<string>;
   manifest: GameManifest;
   scripts: ScriptBundleEntry[];
   scenes: Map<string, SerializedScene>;
@@ -128,6 +132,7 @@ export async function loadGameFromFiles(
   const packSources = new Map<string, PackSource>();
   const readMetrics: StorageReadMetrics = { operations: 2, fullReads: 2, rangeReads: 0, requestedBytes: (files.get(GAME_MANIFEST_FILE)?.byteLength ?? 0) + (files.get(manifest.scriptsFile)?.byteLength ?? 0), actualBytesRead: (files.get(GAME_MANIFEST_FILE)?.byteLength ?? 0) + (files.get(manifest.scriptsFile)?.byteLength ?? 0) };
   const entries = new Map(manifest.assets.map(entry => [entry.guid, entry]));
+  for (const entry of manifest.assets) if (entry.type === "Font") fontFamilies.set(entry.guid, entry.name?.trim() || entry.guid);
   const projectId = options.baseUrl ?? `memory-export:${manifest.project?.name ?? "game"}`;
   async function read(entry: GameAssetIndexEntry, signal: AbortSignal): Promise<Uint8Array> {
     signal.throwIfAborted();
@@ -154,7 +159,7 @@ export async function loadGameFromFiles(
     signal.throwIfAborted();
     return bytes;
   }
-  type PreparedAsset = { bytes: Uint8Array; decodedBytes: number; publish: () => void };
+  type PreparedAsset = { bytes: Uint8Array; decodedBytes: number; document?: unknown; publish: () => void };
   async function decode(entry: GameAssetIndexEntry, bytes: Uint8Array): Promise<PreparedAsset> {
     const document = entry.encoding === "json" ? parseJsonAsset(bytes) : undefined;
     let decodedBytes = document === undefined ? 0 : bytes.byteLength * 2;
@@ -186,7 +191,7 @@ export async function loadGameFromFiles(
       install = () => { audioPayloads.set(entry.guid, value); };
     } else if (entry.type === NAVMESH_EXPORT_TYPE) install = () => { navmeshBytes.set(sceneGuidFromNavmeshExport(entry.guid) ?? entry.guid, bytes); };
     else if (entry.type === AUDIO_REVERB_EXPORT_TYPE) install = () => { audioReverbBytes.set(sceneGuidFromAudioReverbExport(entry.guid) ?? entry.guid, bytes); };
-    return { bytes, decodedBytes, publish: () => { payloads.set(entry.guid, bytes); if (document !== undefined) decodedPayloads.set(entry.guid, document); install(); } };
+    return { bytes, decodedBytes, document, publish: () => { payloads.set(entry.guid, bytes); if (document !== undefined) decodedPayloads.set(entry.guid, document); install(); } };
   }
 
   const game: LoadedGame = {
@@ -222,7 +227,7 @@ export async function loadGameFromFiles(
     decodedPayloads.delete(entry.guid);
     complexMeshes.delete(entry.guid);
     durations.delete(entry.guid);
-    for (const map of [scenes, sceneLayers, textureBytes, modelBytes, modelPayloads, fontBytes, fontFamilies, audioPayloads]) map.delete(entry.guid);
+    for (const map of [scenes, sceneLayers, textureBytes, modelBytes, modelPayloads, fontBytes, audioPayloads]) map.delete(entry.guid);
     const owner = entry.guid.slice(entry.guid.indexOf(":") + 1);
     if (entry.type === AREA_EMISSION_EXPORT_TYPE) areaEmissions.delete(owner);
     if (entry.type === NAVMESH_EXPORT_TYPE) navmeshBytes.delete(owner);
@@ -261,39 +266,94 @@ export async function loadGameFromFiles(
     for (const source of packSources.values()) { const stats = source.getReadMetrics?.(); if (stats) for (const key of Object.keys(result) as Array<keyof StorageReadMetrics>) result[key] += stats[key]; }
     return result;
   };
-  async function prepare(scope: AssetLoadScope, roots: string[], signal?: AbortSignal, onProgress?: (progress: { completed: number; total: number }) => void, priority: AssetLoadPriority = "gameplay") {
-    await scope.preload(roots, { signal, priority, onProgress });
+  async function prepare(scope: AssetLoadScope, roots: string[], signal?: AbortSignal, onProgress?: (progress: { completed: number; total: number }) => void, priority: AssetLoadPriority = "gameplay", requestedFonts?: ReadonlyMap<string, ReadonlySet<"facetype" | "msdf" | "bitmap">>) {
     const closure = new Set<string>();
     const visit = (id: string) => { if (closure.has(id)) return; closure.add(id); for (const dependency of entries.get(id)?.requiredDependencies ?? []) visit(dependency); };
     for (const root of roots) visit(root);
-    const prepared = await Promise.all([...closure].map(id => scope.acquire<PreparedAsset>(id, undefined, { signal })));
+    const modes = new Map<string, Set<"facetype" | "msdf" | "bitmap">>();
+    const requireFont = (id: string | null | undefined, mode: "facetype" | "msdf" | "bitmap") => {
+      const guid = id || manifest.defaultFontGuid;
+      if (!guid) return;
+      visit(guid);
+      const selected = modes.get(guid) ?? new Set();
+      selected.add(mode);
+      modes.set(guid, selected);
+    };
+    for (const [guid, selected] of requestedFonts ?? []) for (const mode of selected) requireFont(guid, mode);
+    for (const root of roots) if (entries.get(root)?.type === "Font" && !modes.has(root)) requireFont(root, "bitmap");
+    // Font metadata already lives in the catalog. Original font bytes are only
+    // requested for Bitmap text; MSDF and geometry consumers select sidecars.
+    const acquire = (id: string, metadataOnly = false) => scope.acquire<PreparedAsset>(id, metadataOnly ? {
+      key: "export-font-catalog", estimate: { sourceBytes: 0, decodedBytes: 0, temporaryBytes: 0 },
+      load: async () => ({ value: { bytes: new Uint8Array(), decodedBytes: 0, publish() {} } }),
+    } : undefined, { signal, priority, dependencies: "none" });
+    const documentIds = [...closure];
+    const prepared = await Promise.all(documentIds.map(id => acquire(id, entries.get(id)?.type === "Font" && manifest.assetCatalogVersion === 1)));
+    const inspect = (value: unknown): void => {
+      if (!value || typeof value !== "object") return;
+      if (Array.isArray(value)) { for (const child of value) inspect(child); return; }
+      const row = value as Record<string, unknown>;
+      const properties = row.properties as Record<string, unknown> | undefined;
+      if (row.classId === "Text3DComponent") requireFont(typeof properties?.fontAssetGuid === "string" ? properties.fontAssetGuid : undefined, "facetype");
+      else if (row.classId === "2DTextComponent" || row.classId === "2DRichTextComponent") {
+        const text = parseText2DProperties(properties);
+        requireFont(text.fontAssetGuid, text.renderer === "msdf" ? "msdf" : "bitmap");
+      }
+      for (const child of Object.values(row)) if (child && typeof child === "object") inspect(child);
+    };
+    for (const asset of prepared) inspect(asset.document);
+    const inheritModes = (guid: string, selected: ReadonlySet<"facetype" | "msdf" | "bitmap">, seen = new Set<string>()) => {
+      if (seen.has(guid)) return;
+      seen.add(guid);
+      for (const dependency of entries.get(guid)?.requiredDependencies ?? []) if (entries.get(dependency)?.type === "Font") {
+        for (const mode of selected) requireFont(dependency, mode);
+        inheritModes(dependency, selected, seen);
+      }
+    };
+    for (const [guid, selected] of modes) inheritModes(guid, selected);
+    const variants = new Set<string>();
+    for (const [guid, selected] of modes) {
+      if (selected.has("bitmap")) variants.add(guid);
+      if (selected.has("facetype")) variants.add(fontFacetypeExportGuid(guid));
+      if (selected.has("msdf")) { variants.add(fontMsdfExportGuid(guid)); variants.add(fontMsdfAtlasExportGuid(guid)); }
+    }
+    const extraMetadata = [...closure].filter(id => !documentIds.includes(id));
+    const total = prepared.length + extraMetadata.length + variants.size;
+    let completed = prepared.length;
+    onProgress?.({ completed, total });
+    const extra = await Promise.all([
+      ...extraMetadata.map(id => acquire(id, entries.get(id)?.type === "Font")),
+      ...[...variants].map(id => { closure.add(id); return acquire(id); }),
+    ].map(async work => { const result = await work; onProgress?.({ completed: ++completed, total }); return result; }));
     signal?.throwIfAborted();
-    for (const asset of prepared) asset.publish();
+    for (const asset of [...prepared, ...extra]) asset.publish();
+    return closure;
   }
   const startupScope = service.createScope("player:startup");
   const systemScope = service.createScope("player:systems");
   const liveScopes = new Set<AssetLoadScope>([startupScope, systemScope]);
   game.releaseStartup = () => { startupScope.dispose(); liveScopes.delete(startupScope); };
-  game.acquireAssets = async (ids, { consumer, signal, onProgress, priority }) => {
+  game.acquireAssets = async (ids, { consumer, signal, onProgress, priority, fontModes }) => {
     const scope = service.createScope(consumer);
     liveScopes.add(scope);
     const release = () => { liveScopes.delete(scope); scope.dispose(); };
-    try { await prepare(scope, ids, signal, onProgress, priority); return { release }; }
+    try { const assetGuids = await prepare(scope, ids, signal, onProgress, priority, fontModes); return { release, assetGuids }; }
     catch (error) { release(); throw error; }
   };
   game.acquireScene = async (guid, request) => {
     const source = await game.acquireAssets!([guid], request);
     const scene = scenes.get(guid);
     if (!scene) { source.release(); throw new Error(`Asset ${guid} is not a Scene.`); }
-    return { scene, release: source.release };
+    return { scene, release: source.release, assetGuids: source.assetGuids };
   };
   game.dispose = () => { sourceListeners.clear(); for (const scope of liveScopes) scope.dispose(); liveScopes.clear(); service.dispose(); packSources.clear(); };
   const roots = manifest.assetCatalogVersion === 1
     ? manifest.assets.filter(entry => entry.guid === manifest.startupSceneGuid).map(entry => entry.guid)
     : manifest.assets.map(entry => entry.guid);
   try {
-    await Promise.all([prepare(startupScope, roots, options.signal),
+    const [, systemAssets] = await Promise.all([prepare(startupScope, roots, options.signal),
       prepare(systemScope, manifest.assets.filter(entry => entry.startupRequired).map(entry => entry.guid), options.signal)]);
+    game.systemAssetGuids = systemAssets;
   }
   catch (error) { game.dispose(); throw error; }
   return game;

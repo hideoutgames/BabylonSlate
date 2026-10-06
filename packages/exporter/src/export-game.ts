@@ -1,5 +1,5 @@
-import { err, ok, DEFAULT_LOOP_COUNT, DEFAULT_SORTING_LAYERS, normalizePlayFrameCap, normalizeRenderProjectSettings, normalizeFocusNavigationSettings, type Result } from "@babylonslate/core";
-import { collectAssetDependencyMetadata, extractPackedModelAsset, peekPackedAudioPayload, sha256Hex, PARTICLE_ASSET_TYPES } from "@babylonslate/assets";
+import { err, ok, DEFAULT_LOOP_COUNT, DEFAULT_SORTING_LAYERS, normalizePlayFrameCap, normalizeRenderProjectSettings, normalizeFocusNavigationSettings, renderEffectsAssetGuids, type Result } from "@babylonslate/core";
+import { collectAssetDependencyMetadata, extractPackedModelAsset, peekPackedAudioPayload, sha256Hex, PARTICLE_ASSET_TYPES, type AssetDependencyClass } from "@babylonslate/assets";
 import { zipSync, unzipSync } from "fflate";
 import {
   DEFAULT_FILE_COUNT_FAIL,
@@ -155,6 +155,36 @@ async function writeLooseAssets(
 function dependencyCatalog(assets: readonly ExportAssetBytes[]): ExportAssetBytes[] {
   const byId = new Map(assets.map(asset => [asset.guid, asset]));
   const byName = new Map(assets.filter(asset => asset.name).map(asset => [asset.name!, asset.guid]));
+  const documents = new Map<string, Record<string, unknown>>();
+  const document = (asset: ExportAssetBytes) => {
+    if (documents.has(asset.guid)) return documents.get(asset.guid);
+    if (encodingFor(asset) !== "json") return undefined;
+    try {
+      const value: unknown = JSON.parse(decoder.decode(asset.bytes));
+      if (value && typeof value === "object" && !Array.isArray(value)) {
+        documents.set(asset.guid, value as Record<string, unknown>);
+        return value as Record<string, unknown>;
+      }
+    } catch { /* The player reports corrupt requested payloads. */ }
+    return undefined;
+  };
+  const classes: AssetDependencyClass[] = assets.filter(asset => asset.type === "Class" || asset.type === "Graph").map(asset => {
+    const payload = document(asset);
+    return { guid: asset.guid, classId: asset.name ?? asset.guid, parentClassId: asset.parentClass,
+      members: Array.isArray(payload?.members) ? payload.members as AssetDependencyClass["members"] : undefined,
+      requiredVariableNames: asset.requiredVariableNames };
+  });
+  const definitionFields = (guid: string): readonly unknown[] | undefined => {
+    const asset = byId.get(guid);
+    const fields = asset && ["DataDefinition", "Structure"].includes(asset.type) ? document(asset)?.fields : undefined;
+    return Array.isArray(fields) ? fields : undefined;
+  };
+  for (const definition of classes) {
+    const payload = document(byId.get(definition.guid)!);
+    if (!definition.requiredVariableNames && payload) definition.requiredVariableNames = collectAssetDependencyMetadata("Class", payload, {
+      classes, parentClass: definition.parentClassId, definitionFields,
+    }).requiredVariableNames;
+  }
   const sidecars = new Map<string, string[]>();
   for (const asset of assets) {
     const separator = asset.guid.indexOf(":");
@@ -172,12 +202,10 @@ function dependencyCatalog(assets: readonly ExportAssetBytes[]): ExportAssetByte
       let payload: unknown;
       if (asset.type === "Model") payload = extractPackedModelAsset(asset.bytes).payload;
       else if (asset.type === "Audio") payload = peekPackedAudioPayload(asset.bytes);
-      else if (encodingFor(asset) === "json") {
-        try { payload = JSON.parse(decoder.decode(asset.bytes)); } catch { /* The player reports corrupt requested payloads. */ }
-      }
+      else payload = document(asset);
       if (payload && typeof payload === "object" && !Array.isArray(payload)) {
         const metadata = collectAssetDependencyMetadata(asset.type, payload as Record<string, unknown>, {
-          dependencies, classes: assets.filter(entry => entry.type === "Class").map(entry => ({ guid: entry.guid, classId: entry.name ?? entry.guid })),
+          dependencies, classes, definitionFields, parentClass: asset.parentClass,
         });
         required = metadata.requiredDependencies;
         dependencies = metadata.dependencies;
@@ -185,7 +213,7 @@ function dependencyCatalog(assets: readonly ExportAssetBytes[]): ExportAssetByte
     }
     const resolve = (refs: readonly string[]) => [...new Set(refs.map(ref => byId.has(ref) ? ref : byName.get(ref) ?? ref))];
     return { ...asset, dependencies: resolve([...(dependencies ?? []), ...(sidecars.get(asset.guid) ?? [])]),
-      requiredDependencies: resolve([...(required ?? []), ...(sidecars.get(asset.guid) ?? [])]) };
+      requiredDependencies: resolve([...(required ?? []), ...(asset.type === "Font" ? [] : sidecars.get(asset.guid) ?? [])]) };
   });
 }
 
@@ -221,7 +249,11 @@ export async function exportGame(
     bundled.source.length > 0 ? `${bundled.source}\n${registry}` : registry;
   files.set(SCRIPTS_FILE, encoder.encode(scriptsFile));
 
-  const prepared = dependencyCatalog(options.assets);
+  const projectAssetGuids = new Set(renderEffectsAssetGuids(options.renderSettings?.effects));
+  const prepared = dependencyCatalog(options.assets).map(asset => ({ ...asset,
+    startupRequired: asset.startupRequired || projectAssetGuids.has(asset.guid) || asset.guid === options.audioMixerGuid ||
+      asset.guid === options.gameInstanceClass || (!!options.gameInstanceClass && asset.name === options.gameInstanceClass) || asset.type === "InputAction" || asset.type === "InputAxis",
+  }));
   // Packaging choice never changes runtime addressability. A ZIP is only the
   // delivery container; static hosts serve independent immutable asset files.
   const packed = await writeLooseAssets(files, prepared);
@@ -236,6 +268,7 @@ export async function exportGame(
     ...(options.inputMappings !== undefined ? { inputMappings: structuredClone(options.inputMappings) } : {}),
     focusNavigation: normalizeFocusNavigationSettings(options.focusNavigation),
     startupSceneGuid: options.startupSceneGuid,
+    ...(options.defaultFontGuid ? { defaultFontGuid: options.defaultFontGuid } : {}),
     ...(options.gameInstanceClass?.trim()
       ? { gameInstanceClass: options.gameInstanceClass.trim() }
       : {}),

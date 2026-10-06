@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createEmptyProject } from "@babylonslate/core";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import {
@@ -8,6 +8,91 @@ import {
 import { acquirePlayAssetSources, emptyPlaySourceControls, mergePreparedPlaySources } from "./play-asset-sources";
 
 describe("Play source ownership", () => {
+  it("cancels stalled catalog preparation before acquiring an ownership scope", async () => {
+    const registry = new AssetRegistry(new MemoryStorageAdapter());
+    vi.spyOn(registry, "getAssetLocator").mockImplementation(() => new Promise(() => undefined));
+    const createScope = vi.fn(() => { throw new Error("Catalog preparation should precede ownership"); });
+    const controller = new AbortController();
+    const loading = acquirePlayAssetSources({
+      registry, project: createEmptyProject("Play"), createScope,
+      compile: async () => ({ bundles: [], diagnostics: [] }),
+    }, ["scene"], { consumer: "Scene", signal: controller.signal });
+    controller.abort();
+    await expect(loading).rejects.toMatchObject({ name: "AbortError" });
+    expect(createScope).not.toHaveBeenCalled();
+  });
+
+  it("prepares only a cold command's requested font representation, including the project default", async () => {
+    const storage = new MemoryStorageAdapter();
+    await storage.pickProjectFolder();
+    await storage.mkdir("assets");
+    await storage.writeBinary("assets/font.babasset", await encodeBabasset({
+      header: {
+        guid: "font", name: "Font", type: "Font", version: 1, engineVersion: "0.0.0", mode: "thin",
+        payload: { family: "Test", representations: { facetype: true, source: true } },
+        dependencies: [], requiredDependencies: [], dependencyMetadataVersion: 1,
+      }, chunks: [
+        { id: FONT_FACETYPE_CHUNK_ID, kind: "font", mime: "application/json", data: new Uint8Array([123, 125]) },
+        { id: "source", kind: "font", mime: "font/ttf", data: new Uint8Array(1000) },
+      ],
+    }));
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const loading = createRegistryAssetLoadingService(registry, { projectId: "play" });
+    const project = createEmptyProject("Play");
+    project.settings.fonts.defaultFontGuid = "font";
+    const host = { registry, project, createScope: (owner: string) => loading.createScope(owner), compile: async () => ({ bundles: [], diagnostics: [] }) };
+    const before = storage.getReadMetrics().actualBytesRead;
+    const first = await acquirePlayAssetSources(host, ["font"], {
+      consumer: "3D label", signal: new AbortController().signal, fontModes: new Map([["font", new Set(["facetype" as const])]]),
+    });
+    expect(first.game.fontFacetypeBytes.has("font")).toBe(true);
+    expect(first.game.fontBytes.size).toBe(0);
+    expect(storage.getReadMetrics().actualBytesRead - before).toBe(2);
+    const second = await acquirePlayAssetSources(host, [], {
+      consumer: "Default bitmap label", signal: new AbortController().signal, fontModes: new Map([["", new Set(["bitmap" as const])]]),
+    });
+    expect(second.game.fontBytes.has("font")).toBe(true);
+    expect(second.game.fontFacetypeBytes.size).toBe(0);
+    expect(second.content).not.toBe(first.content);
+    expect(storage.getReadMetrics().actualBytesRead - before).toBe(1002);
+    first.release(); second.release(); loading.dispose();
+  });
+
+  it("refreshes bounded catalog dependencies before preparing a scene changed outside the registry", async () => {
+    const storage = new MemoryStorageAdapter();
+    await storage.pickProjectFolder();
+    await storage.mkdir("assets");
+    const writeScene = async (required: string[]) => storage.writeBinary("assets/scene.babasset", await encodeBabasset({
+      header: {
+        guid: "scene", name: "Scene", type: "Scene", version: 1, engineVersion: "0.0.0", mode: "thin", payload: { actors: [] },
+        dependencies: required, requiredDependencies: required, dependencyMetadataVersion: 1,
+      }, chunks: [],
+    }));
+    const model = buildBoxGlbFixture();
+    await writeScene(["retired-dependency"]);
+    await storage.writeBinary("assets/model.babasset", await encodeBabasset({
+      header: {
+        guid: "model", name: "Model", type: "Model", version: 1, engineVersion: "0.0.0", mode: "thin", payload: {},
+        dependencies: [], requiredDependencies: [], dependencyMetadataVersion: 1,
+      }, chunks: [{ id: "source", kind: "model", mime: "model/gltf-binary", data: model }],
+    }));
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    await writeScene(["model"]); // Watcher notification has not arrived yet.
+    const loading = createRegistryAssetLoadingService(registry, { projectId: "play" });
+    const prepared = await acquirePlayAssetSources({
+      registry, project: createEmptyProject("Play"), createScope: owner => loading.createScope(owner),
+      compile: async () => ({ bundles: [], diagnostics: [] }),
+    }, ["scene"], { consumer: "Scene", signal: new AbortController().signal });
+    expect(prepared.required).toEqual(new Set(["scene", "model"]));
+    expect(prepared.game.modelBytes.get("model")).toEqual(model);
+    expect(registry.accountedPayloadBytes).toBe(model.byteLength);
+    expect(storage.getReadMetrics().fullReads).toBe(0);
+    prepared.release();
+    loading.dispose();
+  });
+
   it("selects active font/audio representations and shares model decoding across different scene instances", async () => {
     const storage = new MemoryStorageAdapter();
     await storage.pickProjectFolder();

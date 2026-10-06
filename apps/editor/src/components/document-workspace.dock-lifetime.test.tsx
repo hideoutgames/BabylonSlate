@@ -10,6 +10,8 @@ import {
   within,
 } from "@testing-library/react";
 import type { DockviewApi, IDockviewPanelProps } from "dockview-react";
+import { createDefaultSpritePayload } from "@babylonslate/assets";
+import { createDefaultAnimGraph } from "@babylonslate/anim-graph";
 import { DocumentWorkspace } from "./document-workspace";
 import {
   parseAnimDocumentLayout,
@@ -23,8 +25,8 @@ import type { DocumentsOverrides } from "../testing/document-context-mock";
 const SPRITE = "sprite:assets/Hero.sprite.babasset";
 const ANIM = "anim-graph:assets/Loco.anim.babasset";
 const DOCUMENTS = [
-  { id: SPRITE, ref: { kind: "sprite", path: "assets/Hero.sprite.babasset" } },
-  { id: ANIM, ref: { kind: "anim-graph", path: "assets/Loco.anim.babasset" } },
+  { id: SPRITE, ref: { kind: "sprite", path: "assets/Hero.sprite.babasset" }, content: createDefaultSpritePayload() },
+  { id: ANIM, ref: { kind: "anim-graph", path: "assets/Loco.anim.babasset" }, content: createDefaultAnimGraph("Loco") },
 ];
 
 const harness = vi.hoisted(() => ({
@@ -79,7 +81,7 @@ vi.mock("../shell/panel-registry", () => {
  * reads the Animation Graph modes when it runs because an Animation Graph
  * capture records its current mode.
  */
-function Editor({ initialTabs }: { initialTabs: string[] }) {
+function Editor({ initialTabs, coldTabs = [] }: { initialTabs: string[]; coldTabs?: string[] }) {
   const [tabOrder, setTabs] = useState(initialTabs);
   const [activeDocumentId, setActive] = useState(initialTabs[0]!);
   const animEditorModesRef = useRef<Record<string, AnimEditorMode>>({});
@@ -134,7 +136,7 @@ function Editor({ initialTabs }: { initialTabs: string[] }) {
     activeDocumentId,
     openDocuments: DOCUMENTS.map((doc) => ({
       ...doc,
-      content: null,
+      content: coldTabs.includes(doc.id) ? null : doc.content,
       layout: harness.layouts.get(doc.id) ?? null,
     })),
     projectDocument: { metadata: { name: "Test" } },
@@ -176,6 +178,18 @@ afterEach(() => {
 });
 
 describe("document dock lifetime", () => {
+  it("does not mount a restored cold tab until its content finishes loading", () => {
+    const view = render(<Editor initialTabs={[SPRITE]} coldTabs={[SPRITE]} />);
+    expect(screen.queryByTestId("document-workspace-sprite")).toBeNull();
+    expect(screen.queryByTestId("panel-sprite-preview")).toBeNull();
+    expect(harness.apis.size).toBe(0);
+
+    view.rerender(<Editor initialTabs={[SPRITE]} />);
+    expect(screen.getByTestId("document-workspace-sprite")).toBeTruthy();
+    expect(screen.getByTestId("panel-sprite-preview")).toBeTruthy();
+    expect(harness.apis.has(dockviewApiKey(SPRITE))).toBe(true);
+  });
+
   it("keeps saving a background document's windows after an Animation Graph switches mode", () => {
     render(<Editor initialTabs={[SPRITE, ANIM]} />);
     expect(screen.getByTestId("panel-sprite-details")).toBeTruthy();

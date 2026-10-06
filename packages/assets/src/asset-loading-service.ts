@@ -111,7 +111,8 @@ interface Acquisition {
 interface CacheEntry {
   key: string;
   asset: AssetCatalogRecord;
-  representation: AssetRepresentation;
+  representation: Pick<AssetRepresentation, "key" | "estimate">;
+  load?: AssetRepresentation["load"];
   owners: Set<Acquisition>;
   controller: AbortController;
   state: AssetLoadState;
@@ -125,6 +126,16 @@ interface CacheEntry {
   promise?: Promise<LoadedAsset<unknown>>;
   resolve?: (result: LoadedAsset<unknown>) => void;
   reject?: (error: unknown) => void;
+  /** Cache keys only: this readiness record must not retain dependency values. */
+  preparedDependencies?: string[];
+}
+
+interface RootRequestState {
+  assetId: string;
+  representation?: string;
+  order: number;
+  state: "loading" | "ready" | "failed";
+  lastUsed: number;
 }
 
 const PRIORITY: Record<AssetLoadPriority, number> = { gameplay: 0, preload: 1, background: 2 };
@@ -153,6 +164,8 @@ export class AssetLoadingService {
   private readonly options: AssetLoadingServiceOptions;
   private readonly entries = new Map<string, CacheEntry>();
   private readonly scopes = new Set<AssetLoadScope>();
+  private readonly rootRequests = new Map<Acquisition, RootRequestState>();
+  private readonly rootFailures = new Map<string, RootRequestState>();
   private readonly queue: CacheEntry[] = [];
   private readonly budgets: AssetLoadingBudgets;
   private readonly now: () => number;
@@ -184,10 +197,24 @@ export class AssetLoadingService {
   }
 
   getLoadState(assetId: string, representation?: string): AssetLoadState {
+    const matches = (request: RootRequestState) => request.assetId === assetId
+      && (!representation || request.representation === representation);
+    const requests = [...this.rootRequests.values()].filter(matches);
+    if (requests.some(request => request.state === "loading")) return "loading";
     let latest: CacheEntry | undefined;
     for (const entry of this.entries.values()) {
       if (entry.asset.id === assetId && (!representation || entry.representation.key === representation)
         && (!latest || entry.order > latest.order)) latest = entry;
+    }
+    const failure = [...this.rootFailures.values()].filter(matches).sort((a, b) => b.order - a.order)[0];
+    const newestReady = Math.max(latest?.order ?? -1, ...requests.map(request => request.order));
+    if (failure && failure.order > newestReady) return "failed";
+    if (latest?.state === "ready") {
+      for (const key of latest.preparedDependencies ?? []) {
+        const dependency = this.entries.get(key);
+        if (!dependency) return "unloaded";
+        if (dependency.state !== "ready") return dependency.state;
+      }
     }
     return latest?.state ?? "unloaded";
   }
@@ -215,6 +242,9 @@ export class AssetLoadingService {
         this.evict(entry);
       }
     }
+    for (const [key, failure] of this.rootFailures) {
+      if (options.force || failure.lastUsed <= before) this.rootFailures.delete(key);
+    }
   }
 
   dispose(): void {
@@ -238,45 +268,62 @@ export class AssetLoadingService {
       if (signal.aborted || this.disposed) throw this.error("cancelled", assetId, ticket.owner, "request cancelled");
     };
     check();
-    const records = new Map<string, AssetCatalogRecord>();
-    const visited = new Set<string>();
-    const visit = async (id: string): Promise<void> => {
-      if (visited.has(id)) return;
-      visited.add(id);
-      check();
-      let record: AssetCatalogRecord;
-      try { record = await this.options.resolve(id); }
-      catch (cause) { throw this.error("missing", id, ticket.owner, errorMessage(cause), cause); }
-      check();
-      records.set(id, record);
-      if (options.dependencies !== "none") {
-        for (const dependency of record.requiredDependencies) await visit(dependency);
-      }
+    const request: RootRequestState = {
+      assetId, representation: representation?.key, order: this.order++, state: "loading", lastUsed: this.now(),
     };
-    await abortable(visit(assetId), signal, () => this.error("cancelled", assetId, ticket.owner, "request cancelled"));
-    check();
-    const promises: Array<Promise<LoadedAsset<unknown>>> = [];
-    let root: CacheEntry | undefined;
-    for (const [id, asset] of records) {
-      const selected = id === assetId && representation ? representation : this.options.representation(asset);
-      const entry = this.retain(ticket, asset, selected, options.priority ?? "gameplay");
-      promises.push(entry.promise ?? Promise.resolve(entry.result!));
-      if (id === assetId) root = entry;
-    }
-    this.pump();
-    await abortable(Promise.all(promises), signal, () => this.error("cancelled", assetId, ticket.owner, "request cancelled"));
-    await abortable(Promise.all([...records.values()].map(async (asset) => {
-      const current = await this.options.resolve(asset.id);
-      if (current.revision !== asset.revision || current.rootId !== asset.rootId) {
-        throw this.error("stale", asset.id, ticket.owner, "asset changed while dependencies loaded; retry the current revision");
+    this.rootRequests.set(ticket, request);
+    try {
+      const records = new Map<string, AssetCatalogRecord>();
+      const visited = new Set<string>();
+      const visit = async (id: string): Promise<void> => {
+        if (visited.has(id)) return;
+        visited.add(id);
+        check();
+        let record: AssetCatalogRecord;
+        try { record = await this.options.resolve(id); }
+        catch (cause) { throw this.error("missing", id, ticket.owner, errorMessage(cause), cause); }
+        check();
+        records.set(id, record);
+        if (options.dependencies !== "none") {
+          for (const dependency of record.requiredDependencies) await visit(dependency);
+        }
+      };
+      await abortable(visit(assetId), signal, () => this.error("cancelled", assetId, ticket.owner, "request cancelled"));
+      check();
+      const promises: Array<Promise<LoadedAsset<unknown>>> = [];
+      let root: CacheEntry | undefined;
+      for (const [id, asset] of records) {
+        const selected = id === assetId && representation ? representation : this.options.representation(asset);
+        const entry = this.retain(ticket, asset, selected, options.priority ?? "gameplay");
+        promises.push(entry.promise ?? Promise.resolve(entry.result!));
+        if (id === assetId) { root = entry; request.representation = selected.key; }
       }
-    })), signal, () => this.error("cancelled", assetId, ticket.owner, "request cancelled"));
-    check();
-    return root!.result!.value as T;
+      this.pump();
+      await abortable(Promise.all(promises), signal, () => this.error("cancelled", assetId, ticket.owner, "request cancelled"));
+      await abortable(Promise.all([...records.values()].map(async (asset) => {
+        const current = await this.options.resolve(asset.id);
+        if (current.revision !== asset.revision || current.rootId !== asset.rootId) {
+          throw this.error("stale", asset.id, ticket.owner, "asset changed while dependencies loaded; retry the current revision");
+        }
+      })), signal, () => this.error("cancelled", assetId, ticket.owner, "request cancelled"));
+      check();
+      request.state = "ready";
+      root!.preparedDependencies = [...ticket.entries].filter(entry => entry !== root).map(entry => entry.key);
+      this.rootFailures.delete(JSON.stringify([assetId, request.representation]));
+      return root!.result!.value as T;
+    } catch (error) {
+      if (!signal.aborted && !this.disposed) {
+        this.rootFailures.set(JSON.stringify([assetId, request.representation]), {
+          ...request, state: "failed", order: this.order++, lastUsed: this.now(),
+        });
+      }
+      throw error;
+    }
   }
 
   /** @internal */
   release(ticket: Acquisition): void {
+    this.rootRequests.delete(ticket);
     ticket.controller.abort();
     for (const entry of ticket.entries) {
       entry.owners.delete(ticket);
@@ -294,7 +341,7 @@ export class AssetLoadingService {
       this.trimTimer = setTimeout(() => {
         this.trimTimer = undefined;
         this.trim();
-        if ([...this.entries.values()].some((entry) => !entry.owners.size)) this.scheduleTrim();
+        if (this.rootFailures.size || [...this.entries.values()].some((entry) => !entry.owners.size)) this.scheduleTrim();
       }, this.budgets.retentionMs);
       // A cache grace period should not keep command-line consumers alive.
       (this.trimTimer as unknown as { unref?: () => void }).unref?.();
@@ -310,7 +357,7 @@ export class AssetLoadingService {
     this.trimTimer = setTimeout(() => {
       this.trimTimer = undefined;
       this.trim();
-      if ([...this.entries.values()].some((entry) => !entry.owners.size)) this.scheduleTrim();
+      if (this.rootFailures.size || [...this.entries.values()].some((entry) => !entry.owners.size)) this.scheduleTrim();
     }, Math.max(1, this.budgets.retentionMs));
     (this.trimTimer as unknown as { unref?: () => void }).unref?.();
   }
@@ -325,7 +372,8 @@ export class AssetLoadingService {
     } else {
       for (const value of Object.values(representation.estimate)) byteCount(value);
       entry = {
-        key, asset, representation, state: "loading", owners: new Set(), controller: new AbortController(),
+        key, asset, representation: { key: representation.key, estimate: representation.estimate }, load: representation.load,
+        state: "loading", owners: new Set(), controller: new AbortController(),
         priority: PRIORITY[priority], order: this.order++, lastUsed: this.now(), sourceBytes: 0, decodedBytes: 0,
       };
       const created = entry;
@@ -384,10 +432,18 @@ export class AssetLoadingService {
     const memory = entry.representation.estimate;
     let result: LoadedAsset<unknown> | undefined;
     try {
-      result = await entry.representation.load(entry.asset, entry.controller.signal);
-      const current = await this.options.resolve(entry.asset.id);
+      // A decoder may close over its source buffer. Keep that callback only for
+      // the operation, so a CPU cache entry cannot retain evicted source bytes.
+      const load = entry.load!;
+      entry.load = undefined;
+      result = await load(entry.asset, entry.controller.signal);
+      const cancelled = () => this.error("cancelled", entry.asset.id, this.owner(entry), "request cancelled before publication");
+      if (entry.controller.signal.aborted || this.disposed) throw cancelled();
+      // Metadata validation owns no decoded resource. Stop waiting for a slow
+      // provider as soon as the final consumer leaves, and dispose the result.
+      const current = await abortable(Promise.resolve(this.options.resolve(entry.asset.id)), entry.controller.signal, cancelled);
       if (entry.controller.signal.aborted || this.disposed || this.entries.get(entry.key) !== entry) {
-        throw this.error("cancelled", entry.asset.id, this.owner(entry), "request cancelled before publication");
+        throw cancelled();
       }
       if (current.revision !== entry.asset.revision || current.rootId !== entry.asset.rootId) {
         throw this.error("stale", entry.asset.id, this.owner(entry), "asset changed during loading; retry the current revision");
@@ -446,6 +502,7 @@ export class AssetLoadingService {
     entry.decodedBytes = 0;
     const result = entry.result;
     entry.result = undefined;
+    entry.load = undefined;
     this.clearPromise(entry);
     try { result?.dispose?.(); }
     catch (cause) { entry.error = this.error("load", entry.asset.id, this.owner(entry), `cleanup failed: ${errorMessage(cause)}`, cause); }

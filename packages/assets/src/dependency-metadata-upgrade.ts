@@ -16,6 +16,7 @@ export interface DependencyMetadataUpgradeOptions {
 export function assetsNeedingDependencyMetadataUpgrade(assets: readonly IndexedAsset[]): IndexedAsset[] {
   return assets.filter(asset => !asset.placeholder && (
     asset.header.dependencyMetadataVersion !== ASSET_DEPENDENCY_METADATA_VERSION || !asset.header.requiredDependencies
+    || (["Class", "Graph"].includes(asset.header.type) && !asset.header.requiredVariableNames)
   ));
 }
 
@@ -50,10 +51,18 @@ export async function upgradeAssetDependencyMetadata(registry: AssetRegistry, op
     options.signal?.throwIfAborted();
     if (!["Class", "Graph", "DataDefinition", "Structure"].includes(asset.header.type)) continue;
     const document = await registry.readAssetDocument(asset.header.guid);
-    if (asset.header.type === "Class" || asset.header.type === "Graph") classes.push({
-      guid: asset.header.guid, classId: classId(asset), parentClassId: asset.header.parentClass,
-      members: Array.isArray(document.payload.members) ? document.payload.members as GraphClassMember[] : [],
-    });
+    if (asset.header.type === "Class" || asset.header.type === "Graph") {
+      // Role keys are declared on variable getter nodes. Resolve them while this
+      // one graph is in memory; retain only its schema for later instance overrides.
+      const roles = collectAssetDependencyMetadata("Class", document.payload, {
+        ...options.context, parentClass: asset.header.parentClass,
+      }).requiredVariableNames;
+      classes.push({
+        guid: asset.header.guid, classId: classId(asset), parentClassId: asset.header.parentClass,
+        members: Array.isArray(document.payload.members) ? document.payload.members as GraphClassMember[] : [],
+        requiredVariableNames: roles,
+      });
+    }
     else if (Array.isArray(document.payload.fields)) definitions.set(asset.header.guid, document.payload.fields);
   }
   const upgraded: string[] = [];

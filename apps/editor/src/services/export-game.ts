@@ -65,6 +65,7 @@ export function assetsFromIndexed(
     parentClass: asset.header.parentClass ?? null,
     dependencies: asset.header.dependencies ?? [],
     requiredDependencies: asset.header.requiredDependencies,
+    requiredVariableNames: asset.header.requiredVariableNames,
     dependencyMetadataVersion: asset.header.dependencyMetadataVersion,
     rootId: asset.rootId,
   }));
@@ -99,6 +100,7 @@ export type CollectExportGameParams = {
   fontMsdfPngByGuid?: (guid: string) => Uint8Array | null;
   audioReverbByGuid?: (guid: string) => Uint8Array | null;
   renderSettings: RenderProjectSettings;
+  defaultFontGuid?: string | null;
   playFrameCap: number;
   touchMinTargetPx?: number;
   pixelsPerUnit?: number;
@@ -281,7 +283,7 @@ export async function collectAndExportGame(
     saveGameDefinitionGuid: params.saveGameSettings?.definitionGuid,
     gameInstanceClass: params.gameInstanceClass,
     audioMixerGuid: params.audioMixerGuid,
-    renderAssetGuids: renderEffectsAssetGuids(params.renderSettings.effects),
+    renderAssetGuids: [...renderEffectsAssetGuids(params.renderSettings.effects), ...(params.defaultFontGuid ? [params.defaultFontGuid] : [])],
     assets: params.assets,
     pluginEnabledGuids,
     parentOf: params.parentOf,
@@ -348,8 +350,10 @@ export async function collectAndExportGame(
       const textureSize = texturePixelSizeFromPayload(payload);
       exportAssets.push({
         guid,
+        parentClass: asset.parentClass,
         dependencies: asset.dependencies,
         requiredDependencies: asset.requiredDependencies,
+        requiredVariableNames: asset.requiredVariableNames,
         dependencyMetadataVersion: asset.dependencyMetadataVersion,
         startupRequired: asset.type === "InputAction" || asset.type === "InputAxis" || asset.guid === params.audioMixerGuid || asset.guid === params.gameInstanceClass || asset.name === params.gameInstanceClass || (asset.type === "Class" && !!asset.parentClass && subsystemBaseClassIdOf(subsystemHierarchy, asset.parentClass) !== null),
         type: asset.type,
@@ -515,6 +519,7 @@ export async function collectAndExportGame(
     reverbDecayScale: params.reverbDecayScale,
     reverbDampingScale: params.reverbDampingScale,
     renderSettings: params.renderSettings,
+    defaultFontGuid: params.defaultFontGuid,
     playFrameCap: params.playFrameCap,
     touchMinTargetPx: params.touchMinTargetPx,
     pixelsPerUnit: params.pixelsPerUnit,

@@ -17,6 +17,7 @@ export type ExportIndexedAsset = {
   parentClass?: string | null;
   dependencies: string[];
   requiredDependencies?: string[];
+  requiredVariableNames?: string[];
   dependencyMetadataVersion?: number;
   rootId: string;
 };
@@ -47,10 +48,12 @@ export type ExportReachability = {
 export type ExportAssetBytes = {
   guid: string;
   type: string;
+  parentClass?: string | null;
   /** Complete references retained for export and explicit dynamic lookup. */
   dependencies?: readonly string[];
   /** Dependencies needed whenever this asset is acquired. */
   requiredDependencies?: readonly string[];
+  requiredVariableNames?: readonly string[];
   dependencyMetadataVersion?: number;
   /** A required project system independent of the initial scene. */
   startupRequired?: boolean;
@@ -94,6 +97,7 @@ export type GameManifest = {
   startupSceneGuid: string;
   gameInstanceClass?: string;
   audioMixerGuid?: string;
+  defaultFontGuid?: string;
   occlusionEnabled?: boolean;
   reverbWetScale?: number;
   reverbDecayScale?: number;
@@ -119,6 +123,7 @@ export type GameManifest = {
 };
 
 export type ExportGameOptions = {
+  defaultFontGuid?: string | null;
   saveGame?: import("@babylonslate/core").SaveGameConfiguration;
   project?: { name: string; version: string };
   inputAssets?: import("@babylonslate/core").InputAssetDefinition[];

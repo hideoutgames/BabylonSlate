@@ -1,10 +1,15 @@
 import type { CommandMessage } from "@babylonslate/bridge";
 
+export type CommandFontMode = "bitmap" | "msdf" | "facetype";
+/** An empty GUID selects the project's default font. */
+export type CommandFontModes = ReadonlyMap<string, ReadonlySet<CommandFontMode>>;
+
 /** The host owns storage/CPU preparation; the renderer keeps native resources. */
 export type CommandSourceLoader = (guids: readonly string[], options: {
   slotId: number;
   consumer: string;
   signal: AbortSignal;
+  fontModes?: CommandFontModes;
 }) => Promise<() => void>;
 
 type Assignment = Extract<CommandMessage, { type: "assignMesh" | "assignMaterial" | "assignParticle" }>;
@@ -13,11 +18,15 @@ interface Request {
   slotId: number;
   command: Assignment;
   guids: string[];
+  fontModes: CommandFontModes;
+  representationKey: string;
   controller: AbortController;
   promise: Promise<void>;
   resolve: () => void;
   reject: (error: unknown) => void;
   apply: (command: CommandMessage) => void;
+  order: number;
+  preparedRelease?: () => void;
 }
 
 /** Hold the previous visual and its sources until a cold replacement is usable. */
@@ -29,6 +38,7 @@ export class CommandSourcePreparation {
   private readonly followers = new Map<number, Array<{ command: CommandMessage; apply: (command: CommandMessage) => void }>>();
   private readonly queue: Request[] = [];
   private active = 0;
+  private nextOrder = 0;
   private disposed = false;
   private readonly onError: (error: Error) => void;
   private readonly concurrency: number;
@@ -64,28 +74,23 @@ export class CommandSourcePreparation {
     }
     const key = commandKey(command);
     const guids = commandSourceGuids(command);
+    const fontModes = commandFontModes(command);
+    const representationKey = JSON.stringify([guids, [...fontModes].map(([guid, modes]) => [guid, [...modes].sort()])]);
     const existing = this.pending.get(key);
-    if (existing && JSON.stringify(existing.guids) === JSON.stringify(guids)) {
+    if (existing && existing.representationKey === representationKey) {
       existing.command = command;
       return true;
     }
     if (existing) this.cancel(existing);
     this.failures.delete(key);
-    if (!guids.length) {
-      apply(command);
-      this.retained.get(key)?.release();
-      this.retained.delete(key);
-      this.flushFollowers(command.slotId);
-      return true;
-    }
     let resolve!: () => void;
     let reject!: (error: unknown) => void;
     const promise = new Promise<void>((done, fail) => { resolve = done; reject = fail; });
     void promise.catch(() => undefined);
-    const request: Request = { key, slotId: command.slotId, command, guids, controller: new AbortController(), promise, resolve, reject, apply };
+    const request: Request = { key, slotId: command.slotId, command, guids, fontModes, representationKey, controller: new AbortController(), promise, resolve, reject, apply, order: this.nextOrder++ };
     this.pending.set(key, request);
-    this.queue.push(request);
-    this.pump();
+    if (guids.length || fontModes.size) { this.queue.push(request); this.pump(); }
+    else { request.preparedRelease = () => undefined; this.publishSlot(command.slotId); }
     return true;
   }
 
@@ -115,7 +120,7 @@ export class CommandSourcePreparation {
     for (const request of [...this.pending.values()]) if (slots.has(request.slotId)) this.cancel(request);
     for (const [key, owner] of this.retained) if (slots.has(owner.slotId)) {
       this.retained.delete(key);
-      owner.release();
+      this.release(owner.release, owner.slotId);
     }
     for (const [key, failed] of this.failures) if (slots.has(failed.slotId)) this.failures.delete(key);
     for (const slotId of slots) this.followers.delete(slotId);
@@ -137,6 +142,8 @@ export class CommandSourcePreparation {
     if (this.pending.get(request.key) === request) this.pending.delete(request.key);
     const index = this.queue.indexOf(request);
     if (index !== -1) this.queue.splice(index, 1);
+    if (request.preparedRelease) this.release(request.preparedRelease, request.slotId);
+    request.preparedRelease = undefined;
     request.reject(new Error(`Source preparation for slot ${request.slotId} was cancelled`));
   }
 
@@ -155,29 +162,52 @@ export class CommandSourcePreparation {
       release = await loader(request.guids, {
         slotId: request.slotId, consumer: `Actor Slot ${request.slotId}: ${request.command.type}`,
         signal: request.controller.signal,
+        fontModes: request.fontModes,
       });
       if (request.controller.signal.aborted || this.pending.get(request.key) !== request || this.disposed) return;
-      request.apply(request.command);
-      const previous = this.retained.get(request.key);
-      this.retained.set(request.key, { slotId: request.slotId, release });
+      request.preparedRelease = release;
       release = undefined;
-      previous?.release();
-      this.pending.delete(request.key);
-      this.flushFollowers(request.slotId);
-      request.resolve();
+      this.publishSlot(request.slotId);
     } catch (cause) {
       if (this.pending.get(request.key) === request) {
         this.pending.delete(request.key);
         const error = new Error(`Assets ${request.guids.join(", ")} for actor slot ${request.slotId} failed: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
         this.failures.set(request.key, { slotId: request.slotId, error });
+        for (const pending of [...this.pending.values()]) if (pending.slotId === request.slotId) this.cancel(pending);
         this.followers.delete(request.slotId);
         request.reject(error);
         this.onError(error);
       }
     } finally {
-      try { release?.(); }
+      try { if (release) this.release(release, request.slotId); }
       finally { this.active--; this.pump(); }
     }
+  }
+
+  private publishSlot(slotId: number): void {
+    if ([...this.failures.values()].some((failure) => failure.slotId === slotId)) return;
+    const requests = [...this.pending.values()].filter((request) => request.slotId === slotId).sort((a, b) => a.order - b.order);
+    for (const request of requests) {
+      const release = request.preparedRelease;
+      if (!release) return;
+      try { request.apply(request.command); }
+      catch (cause) {
+        const error = new Error(`Prepared assignment for actor slot ${slotId} failed: ${String(cause)}`, { cause });
+        this.failures.set(request.key, { slotId, error });
+        for (const pending of [...this.pending.values()]) if (pending.slotId === slotId) this.cancel(pending);
+        this.followers.delete(slotId);
+        this.onError(error);
+        return;
+      }
+      const previous = this.retained.get(request.key);
+      this.retained.set(request.key, { slotId, release });
+      request.preparedRelease = undefined;
+      this.pending.delete(request.key);
+      try { previous?.release(); }
+      catch (error) { this.onError(new Error(`Source cleanup for actor slot ${slotId} failed: ${String(error)}`, { cause: error })); }
+      request.resolve();
+    }
+    this.flushFollowers(slotId);
   }
 
   private flushFollowers(slotId: number): void {
@@ -186,6 +216,27 @@ export class CommandSourcePreparation {
     this.followers.delete(slotId);
     for (const { command, apply } of followers) apply(command);
   }
+
+  private release(release: () => void, slotId: number): void {
+    try { release(); }
+    catch (cause) { this.onError(new Error(`Source cleanup for actor slot ${slotId} failed: ${String(cause)}`, { cause })); }
+  }
+}
+
+function commandFontModes(command: Assignment): CommandFontModes {
+  const fonts = new Map<string, Set<CommandFontMode>>();
+  const add = (guid: string | null, mode: CommandFontMode) => {
+    const key = guid ?? "";
+    const modes = fonts.get(key) ?? new Set<CommandFontMode>();
+    modes.add(mode);
+    fonts.set(key, modes);
+  };
+  if (command.type === "assignMesh") for (const part of [command, ...(command.parts ?? [])]) {
+    if (part.text2d) add(part.text2d.fontAssetGuid, part.text2d.renderer);
+    // A null 3D font uses the renderer's bundled font, not a project asset.
+    if (part.text3d?.fontAssetGuid) add(part.text3d.fontAssetGuid, "facetype");
+  }
+  return new Map([...fonts].sort(([a], [b]) => a.localeCompare(b)));
 }
 
 function commandKey(command: Assignment): string {

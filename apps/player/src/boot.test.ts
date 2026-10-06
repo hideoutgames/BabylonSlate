@@ -267,6 +267,27 @@ describe("player startup and Stop ownership", () => {
     worker.command({ channel: "command", payload: { type: "sceneStreamRemoved", actorGuid: "left", streamLoadId: 5 } });
     expect(handle.applyCommand).toHaveBeenCalledWith({ type: "sceneStreamRemoved", actorGuid: "left", streamLoadId: 5 });
   });
+  it("keeps preload state loading through native preparation and makes failed native preparation retryable", async () => {
+    const { game, canvas, handle } = await fixture();
+    let fail!: (error: Error) => void;
+    handle.acquireSceneSources.mockImplementationOnce(() => new Promise<() => void>((_resolve, reject) => { fail = reject; }));
+    sessions.push(startPlayer({ game, canvas }));
+    const worker = TestWorker.instances[0]!;
+    const state = () => {
+      const message = [...worker.messages].reverse().find(entry => entry.channel === "control" && entry.payload.type === "assetLoadStates");
+      return message?.channel === "control" && message.payload.type === "assetLoadStates" ? message.payload.states.find(entry => entry.guid === "world")?.state : undefined;
+    };
+    worker.command({ channel: "command", payload: { type: "assetPreload", preloadId: "first", ownerId: "actor", assetGuids: ["world"] } });
+    await vi.waitFor(() => expect(fail).toBeTypeOf("function"));
+    expect(game.assets?.getLoadState("world")).toBe("ready");
+    expect(state()).toBe("loading");
+    fail(new Error("Required native resource could not decode."));
+    await vi.waitFor(() => expect(state()).toBe("failed"));
+    expect(worker.messages).toContainEqual({ channel: "control", payload: { type: "assetPreloadResult", preloadId: "first", success: false, error: "Required native resource could not decode." } });
+    worker.command({ channel: "command", payload: { type: "assetPreload", preloadId: "retry", ownerId: "actor", assetGuids: ["world"] } });
+    await vi.waitFor(() => expect(worker.messages).toContainEqual({ channel: "control", payload: { type: "assetPreloadResult", preloadId: "retry", success: true, progress: 1 } }));
+    expect(state()).toBe("ready");
+  });
   it.each([false, true])("loads the same Water definition into rendering and simulation (fallback=%s)", async (fallbackMode) => {
     const { game, canvas } = await fixture(true);
     TestWorker.failPost = fallbackMode;

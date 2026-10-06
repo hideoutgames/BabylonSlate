@@ -683,6 +683,7 @@ type LoadedScript = {
  */
 export class ScriptHost {
   private readonly materialReplacements = new WeakMap<BObject, Map<string, number>>();
+  private readonly materialPreloads = new WeakMap<BObject, Map<string, string>>();
   private readonly byClassId = new Map<string, LoadedScript[]>();
   /**
    * `scriptLineage` per class id. `hooksFor` resolves it on every tick for
@@ -1332,8 +1333,11 @@ export class ScriptHost {
           throw new Error(`Material ${guid} is not prepared; await ctx.setMeshMaterialAsync or Preload Assets first`);
         }
         this.beginMaterialReplacement(target, "material");
+        this.retainMaterialPreload(target, "material", "");
         // Re-applying the current asset keeps the runtime parameter values.
         if (target.getVariable("materialGuid") !== guid) {
+          const previous = target.getVariable("materialObject");
+          if (previous instanceof MaterialObject) this.releaseMaterialPreloads(previous);
           target.setVariable("materialGuid", guid);
           this.applyComponentVariable(target, "materialGuid", guid);
         }
@@ -1341,14 +1345,22 @@ export class ScriptHost {
       },
       setMeshMaterialAsync: async (component, materialGuid) => {
         const target = asActorComponent(component);
-        if (!target || !this.canInvokeOwner(target)) return null;
+        if (!target || (target.classId !== "MeshComponent" && target.classId !== "DynamicRuntimeMeshComponent") || !this.canInvokeOwner(target)) return null;
         const version = this.beginMaterialReplacement(target, "material");
         const guid = typeof materialGuid === "string" ? materialGuid.trim() : "";
-        if (guid && services.prepareAssets) await services.prepareAssets([guid], target);
-        if (self?.destroyed || !this.canInvokeOwner(target) || !this.isMaterialReplacementCurrent(target, "material", version)) {
-          throw Object.assign(new Error("The material replacement was cancelled or superseded"), { name: "AbortError" });
+        let preload = "";
+        try {
+          if (guid && services.prepareAssets) preload = await this.prepareMaterialAsset(guid, target);
+          if (self?.destroyed || !this.canInvokeOwner(target) || !this.isMaterialReplacementCurrent(target, "material", version)) {
+            throw Object.assign(new Error("The material replacement was cancelled or superseded"), { name: "AbortError" });
+          }
+          const material = context.setMeshMaterial(target, guid);
+          this.retainMaterialPreload(target, "material", preload);
+          preload = "";
+          return material;
+        } finally {
+          if (preload) services.releasePreload?.(preload);
         }
-        return context.setMeshMaterial(target, guid);
       },
       getMaterialAsset: (material) =>
         (material instanceof MaterialObject || material instanceof PostProcessMaterialObject) && !material.destroyed
@@ -1383,22 +1395,32 @@ export class ScriptHost {
         if (value && services.prepareAssets && services.getAssetLoadState?.(value.trim()) !== "ready") {
           throw new Error(`Texture ${value} is not prepared; await ctx.setMaterialTextureParameterAsync or Preload Assets first`);
         }
-        if (material instanceof MaterialObject || material instanceof PostProcessMaterialObject) this.beginMaterialReplacement(material, `texture:${name.trim()}`);
+        if (material instanceof MaterialObject || material instanceof PostProcessMaterialObject) {
+          this.beginMaterialReplacement(material, `texture:${name.trim()}`);
+          this.retainMaterialPreload(material, `texture:${name.trim()}`, "");
+        }
         this.setMaterialParameter(material, name, {
           kind: "texture",
           textureAssetGuid: value?.trim() || null,
         });
       },
       setMaterialTextureParameterAsync: async (material, name, value) => {
-        if (!(material instanceof MaterialObject || material instanceof PostProcessMaterialObject) || material.destroyed) return;
+        if (!this.materialAvailable(material) || typeof name !== "string" || !name.trim()) return;
         const key = `texture:${name.trim()}`;
         const version = this.beginMaterialReplacement(material, key);
         const guid = typeof value === "string" ? value.trim() : "";
-        if (guid && services.prepareAssets) await services.prepareAssets([guid], self);
-        if (self?.destroyed || material.destroyed || !this.isMaterialReplacementCurrent(material, key, version)) {
-          throw Object.assign(new Error("The texture replacement was cancelled or superseded"), { name: "AbortError" });
+        let preload = "";
+        try {
+          if (guid && services.prepareAssets) preload = await this.prepareMaterialAsset(guid, material instanceof MaterialObject ? material.component : self);
+          if (self?.destroyed || !this.materialAvailable(material) || !this.isMaterialReplacementCurrent(material, key, version)) {
+            throw Object.assign(new Error("The texture replacement was cancelled or superseded"), { name: "AbortError" });
+          }
+          context.setMaterialTextureParameter(material, name, guid || null);
+          this.retainMaterialPreload(material, key, preload);
+          preload = "";
+        } finally {
+          if (preload) services.releasePreload?.(preload);
         }
-        context.setMaterialTextureParameter(material, name, guid || null);
       },
       destroyActor: (actor) => {
         const target = asActor(actor ?? self);
@@ -2060,6 +2082,29 @@ export class ScriptHost {
     const version = (versions.get(key) ?? 0) + 1;
     versions.set(key, version);
     return version;
+  }
+
+  private async prepareMaterialAsset(guid: string, owner: BObject | null): Promise<string> {
+    if (!this.services.preloadAssets) { await this.services.prepareAssets?.([guid], owner); return ""; }
+    const result = await this.services.preloadAssets([guid], owner);
+    if (!result.success) throw new Error(`Asset ${guid}, requested by ${owner?.guid ?? "scene"}: ${result.errorMessage}`);
+    return result.preloadId;
+  }
+
+  private retainMaterialPreload(owner: BObject, key: string, preloadId: string): void {
+    let scopes = this.materialPreloads.get(owner);
+    const previous = scopes?.get(key);
+    if (preloadId) {
+      if (!scopes) { scopes = new Map(); this.materialPreloads.set(owner, scopes); }
+      scopes.set(key, preloadId);
+    } else scopes?.delete(key);
+    if (previous && previous !== preloadId) this.services.releasePreload?.(previous);
+  }
+
+  private releaseMaterialPreloads(owner: BObject): void {
+    const scopes = this.materialPreloads.get(owner);
+    this.materialPreloads.delete(owner);
+    for (const id of scopes?.values() ?? []) this.services.releasePreload?.(id);
   }
 
   private isMaterialReplacementCurrent(owner: BObject, key: string, version: number): boolean {

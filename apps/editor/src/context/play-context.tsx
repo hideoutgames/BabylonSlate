@@ -281,7 +281,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const [sessionSources, setSessionSources] = useState<SceneSourceAssets>();
   const acquireAssetSources = useCallback(async (
     guids: readonly string[],
-    options: { consumer: string; signal: AbortSignal; onProgress?: (progress: number) => void },
+    options: { consumer: string; signal: AbortSignal; onProgress?: (progress: number) => void; fontModes?: import("@babylonslate/render").CommandFontModes },
   ) => {
     const host = playSourceHostRef.current;
     const lifetime = playSourceLifetimeRef.current;

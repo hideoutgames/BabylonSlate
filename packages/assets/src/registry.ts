@@ -489,12 +489,16 @@ export class AssetRegistry {
         classId: typeof asset.header.payload.classId === "string" ? asset.header.payload.classId
           : (asset.path.split("/").pop() ?? "").replace(/\.(graph|class)\.(babasset|json)$/, "").replace(/\.babasset$/, "").replace(/[^A-Za-z0-9_]+/g, "_") || "Graph",
         parentClassId: asset.header.parentClass,
+        requiredVariableNames: asset.header.requiredVariableNames,
         members: Array.isArray(asset.header.payload.members) ? asset.header.payload.members as AssetDependencyClass["members"]
           : Array.isArray(asset.header.payload.variables) ? asset.header.payload.variables.map((variable) => ({ ...(variable as Record<string, unknown>), kind: "variable" })) as unknown as AssetDependencyClass["members"] : undefined,
       }));
     const dependencies = collectAssetDependencyMetadata(result.type, dependencyPayload, {
       dependencies: result.dependencies, parentClass: result.parentClass, classes,
     });
+    if (result.dependencyMetadataVersion === dependencies.dependencyMetadataVersion && result.requiredVariableNames) {
+      dependencies.requiredVariableNames = [...new Set([...(dependencies.requiredVariableNames ?? []), ...result.requiredVariableNames])].sort();
+    }
     if (result.dependencyMetadataVersion === dependencies.dependencyMetadataVersion && result.requiredDependencies) {
       dependencies.requiredDependencies = [...new Set([...dependencies.requiredDependencies, ...result.requiredDependencies])].sort();
       dependencies.dependencies = [...new Set([...dependencies.dependencies, ...result.requiredDependencies])].sort();

@@ -410,6 +410,7 @@ export type ClassAssetRef = {
     parentClass?: string | null;
     guid?: string;
     payload?: Record<string, unknown>;
+    requiredVariableNames?: readonly string[];
   };
 };
 
@@ -2029,6 +2030,7 @@ export function assetHeaderDependencyMetadata(
       guid: asset.header.guid,
       classId: classIdFromClassAsset(asset),
       parentClassId: asset.header.parentClass,
+      requiredVariableNames: asset.header.requiredVariableNames,
       members: (asset.header.payload?.members ?? (Array.isArray(asset.header.payload?.variables)
         ? asset.header.payload.variables.map(variable => ({ ...variable, kind: "variable" })) : [])) as import("@babylonslate/core").GraphClassMember[],
     }] : []),

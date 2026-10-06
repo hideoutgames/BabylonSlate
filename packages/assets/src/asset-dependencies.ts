@@ -34,6 +34,8 @@ export interface AssetDependencyMetadata {
   dependencies: string[];
   /** Only resources needed to prepare this consumer now. */
   requiredDependencies: string[];
+  /** Class property keys required by synchronous graph consumers. */
+  requiredVariableNames?: string[];
 }
 
 export class DependencyMetadataUpgradeRequiredError extends Error {
@@ -60,6 +62,7 @@ export interface AssetDependencyClass {
   classId: string;
   parentClassId?: string | null;
   members?: readonly GraphClassMember[];
+  requiredVariableNames?: readonly string[];
 }
 
 export interface AssetDependencyPin {
@@ -138,6 +141,7 @@ const COMPONENT_ASSET_FIELDS: Readonly<Record<string, readonly string[]>> = {
 export function collectAssetDependencyMetadata(assetType: string, payload: Row, context: AssetDependencyContext = {}): AssetDependencyMetadata {
   const all = new Set<string>();
   const required = new Set<string>();
+  const requiredVariableNames = new Set<string>();
   const add = (value: unknown, needed = true): void => {
     if (typeof value !== "string" || !value.trim() || value.startsWith("engine:")) return;
     const guid = value.trim();
@@ -206,16 +210,21 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
   const instanceProperties = (classId: unknown, properties: Row): void => {
     if (typeof classId !== "string") return;
     const visited = new Set<string>();
+    const lineage: AssetDependencyClass[] = [];
+    const requiredKeys = new Set<string>();
     let current: string | null | undefined = classId;
     while (current && !visited.has(current)) {
       visited.add(current);
       const definition = classMap.get(current);
       if (!definition) break;
-      for (const member of definition.members ?? []) if (member.kind === "variable" && !member.functionId) {
-        const key = member.propertyKey ?? member.name;
-        memberValue(member as unknown as Row, Object.hasOwn(properties, key) ? properties[key] : member.defaultValue);
-      }
+      lineage.push(definition);
+      for (const key of definition.requiredVariableNames ?? []) requiredKeys.add(key);
       current = definition.parentClassId;
+    }
+    for (const definition of lineage) for (const member of definition.members ?? []) if (member.kind === "variable" && !member.functionId) {
+      const key = member.propertyKey ?? member.name;
+      memberValue(member as unknown as Row, Object.hasOwn(properties, key) ? properties[key] : member.defaultValue,
+        requiredKeys.has(key) || requiredKeys.has(member.name));
     }
   };
   const materialParameters = (parameters: unknown, needed = true): void => {
@@ -306,7 +315,21 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
           for (const field of rows(properties.dataSchema)) memberValue(field, undefined, false, undefined, schemaNeeded);
         }
         if (nodeType === "variables.get" && needed) {
-          const member = rows(source.members).find(member => (properties.memberId !== undefined && member.id === properties.memberId) || (properties.variableName !== undefined && member.name === properties.variableName));
+          const inherited: Row[] = [];
+          const visited = new Set<string>();
+          let parent = context.parentClass;
+          while (parent && !visited.has(parent)) {
+            visited.add(parent);
+            const definition = classMap.get(parent);
+            inherited.push(...(definition?.members ?? []).map(member => member as unknown as Row));
+            parent = definition?.parentClassId;
+          }
+          const member = [...rows(source.members), ...inherited].find(member =>
+            (properties.memberId !== undefined && member.id === properties.memberId) ||
+            (properties.propertyKey !== undefined && (member.propertyKey ?? member.name) === properties.propertyKey) ||
+            (properties.variableName !== undefined && member.name === properties.variableName));
+          const key = properties.propertyKey ?? member?.propertyKey ?? properties.variableName ?? member?.name;
+          if (typeof key === "string" && key) requiredVariableNames.add(key);
           if (member) memberValue(member, member.defaultValue, true);
         }
         // Native input structures remain typed even when old graphs lack pin snapshots.
@@ -385,5 +408,6 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
   }
   else if (assetType === "ScriptInterface") for (const method of rows(payload.methods)) for (const pin of rows(method.pins)) typeValue(memberType(pin), undefined, false);
   else if (assetType === "PluginSettings") for (const dependency of rows(payload.pluginDependencies)) add(dependency.guid);
-  return { dependencyMetadataVersion: ASSET_DEPENDENCY_METADATA_VERSION, dependencies: [...all].sort(), requiredDependencies: [...required].sort() };
+  return { dependencyMetadataVersion: ASSET_DEPENDENCY_METADATA_VERSION, dependencies: [...all].sort(), requiredDependencies: [...required].sort(),
+    ...(["Class", "Graph"].includes(assetType) ? { requiredVariableNames: [...requiredVariableNames].sort() } : {}) };
 }

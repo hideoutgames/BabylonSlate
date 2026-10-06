@@ -138,6 +138,39 @@ describe("project asset loading", () => {
     expect(service.snapshot()).toMatchObject({ sourceBytes: 0, decodedBytes: 0, temporaryBytes: 0, active: 0, entries: [] });
   });
 
+  it("releases a completed resource and reservations when cancellation interrupts a stalled freshness check", async () => {
+    const validating = deferred<void>();
+    const freshness = deferred<AssetCatalogRecord>();
+    const disposed = deferred<void>();
+    let lookups = 0;
+    const service = new AssetLoadingService({
+      projectId: "project",
+      resolve: () => {
+        if (++lookups === 1) return catalog("model");
+        validating.resolve();
+        return freshness.promise;
+      },
+      representation: () => ({
+        key: "source", estimate: { sourceBytes: 4, decodedBytes: 8, temporaryBytes: 8 },
+        load: async () => ({ value: "loaded", dispose: () => disposed.resolve() }),
+      }),
+    });
+    const scope = service.createScope("scene instance");
+    const request = scope.acquire("model");
+    const failure = expect(request).rejects.toMatchObject({ code: "cancelled" });
+    await validating.promise;
+    scope.dispose();
+    await failure;
+    await disposed.promise;
+    expect(service.snapshot()).toMatchObject({
+      sourceBytes: 0, decodedBytes: 0, temporaryBytes: 0,
+      reservedSourceBytes: 0, reservedDecodedBytes: 0, active: 0, entries: [],
+    });
+    // Late metadata cannot resurrect the discarded result.
+    freshness.resolve(catalog("model"));
+    service.dispose();
+  });
+
   it("rejects stale results and permits a retry at the new revision", async () => {
     const result = deferred<LoadedAsset<string>>();
     const started = deferred<void>();
@@ -168,9 +201,41 @@ describe("project asset loading", () => {
     const scope = service.createScope("scene instance");
     await expect(scope.acquire("scene")).rejects.toMatchObject({ code: "load", assetId: "texture" });
     expect(service.getLoadState("texture")).toBe("failed");
+    expect(service.getLoadState("scene")).toBe("failed");
     expect(service.snapshot().entries.every((entry) => entry.owners.length === 0)).toBe(true);
     fail = false;
     expect(await scope.acquire("scene")).toBe("scene");
+    expect(service.getLoadState("scene")).toBe("ready");
+    service.dispose();
+  });
+
+  it("reports root readiness only after required dependencies finish and preserves a surviving waiter on cancellation", async () => {
+    const dependencyStarted = deferred<void>();
+    const dependency = deferred<LoadedAsset<string>>();
+    const { service } = setup([catalog("scene", ["model"]), catalog("model")], async asset => {
+      if (asset.id === "model") { dependencyStarted.resolve(); return dependency.promise; }
+      return { value: asset.id };
+    });
+    const first = service.createScope("first scene");
+    const second = service.createScope("second scene");
+    const cancelled = expect(first.acquire("scene")).rejects.toMatchObject({ code: "cancelled" });
+    const surviving = second.acquire("scene");
+    await dependencyStarted.promise;
+    expect(service.getLoadState("scene")).toBe("loading");
+    first.dispose();
+    await cancelled;
+    expect(service.getLoadState("scene")).toBe("loading");
+    dependency.resolve({ value: "model" });
+    expect(await surviving).toBe("scene");
+    expect(service.getLoadState("scene")).toBe("ready");
+    service.dispose();
+  });
+
+  it("reports missing dependency preparation as a failed root before any payload work begins", async () => {
+    const { service } = setup([catalog("scene", ["missing"])], async () => ({ value: "unused" }));
+    await expect(service.createScope("scene").acquire("scene")).rejects.toMatchObject({ code: "missing" });
+    expect(service.getLoadState("scene")).toBe("failed");
+    expect(service.snapshot().loads).toBe(0);
     service.dispose();
   });
 

@@ -151,19 +151,30 @@ for (const mode of ["Play", "Preview Build"] as const) {
       await page.getByTestId("debug-console-submit").click();
     };
     const positions = async (expected: number[][]) => expect.poll(() => visiblePositions(host), { timeout: 30_000 }).toEqual(expected);
+    const sceneSources = async () => page.evaluate((guid) => {
+      const testHost = (globalThis as unknown as { __babylonslateTest: {
+        assetLoading: () => { sources: { entries: Array<{ assetId: string; owners: string[] }> } };
+        trimAssetSources: () => void;
+      } }).__babylonslateTest;
+      testHost.trimAssetSources();
+      return testHost.assetLoading().sources.entries.filter((entry) => entry.assetId === guid);
+    }, CHILD_GUID);
     await positions([PARENT_POSITION]);
+    if (mode === "Play") expect(await sceneSources()).toEqual([]);
     await run("stream_left_load");
     await positions([...LEFT_POSITIONS, PARENT_POSITION]);
     await run("stream_right_load");
     await positions([...LEFT_POSITIONS, PARENT_POSITION, ...RIGHT_POSITIONS]);
     await run("stream_left_unload");
     await positions([PARENT_POSITION, ...RIGHT_POSITIONS]);
+    if (mode === "Play") expect((await sceneSources()).some((entry) => entry.owners.length > 0)).toBe(true);
     await run("stream_left_load");
     await positions([...LEFT_POSITIONS, PARENT_POSITION, ...RIGHT_POSITIONS]);
     await run("stream_right_unload");
     await positions([...LEFT_POSITIONS, PARENT_POSITION]);
     await run("stream_left_unload");
     await positions([PARENT_POSITION]);
+    if (mode === "Play") await expect.poll(sceneSources).toEqual([]);
     expect(errors).toEqual([]);
     await page.getByTestId(mode === "Play" ? "play-overlay-close" : "preview-build-close").click();
   });

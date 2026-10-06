@@ -37,6 +37,8 @@ export const babassetHeaderSchema = z.object({
   dependencies: z.array(z.string()).default([]),
   /** Complete references above; only these edges prepare an immediate consumer. */
   requiredDependencies: z.array(z.string()).optional(),
+  /** Class properties consumed by synchronous graph readers; applies to instance overrides. */
+  requiredVariableNames: z.array(z.string()).optional(),
   /** Missing metadata requires an explicit upgrade, never a scan during open. */
   dependencyMetadataVersion: z.number().int().nonnegative().optional(),
   engineVersion: z.string(),

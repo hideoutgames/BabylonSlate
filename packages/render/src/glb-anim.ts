@@ -29,6 +29,7 @@ import { ownedMaterialPreparation } from "./material-library";
 import { prewarmMaterial } from "./material-compiler";
 import { createStallDeadline, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
 import { attachModelLods, generateModelLods, type ModelLodSet } from "./model-lod";
+import { nativePreparationForEngine, type NativePreparationPriority } from "./native-preparation";
 
 /**
  * Fields `beginSlotModelAnimLoad` mutates. Play passes the full snapshot
@@ -74,6 +75,8 @@ type CachedGlb = {
   accounted: number;
   container?: AssetContainer;
   load: Promise<AssetContainer>;
+  controller: AbortController;
+  priority?: NativePreparationPriority;
   /** Automatic LOD levels, generated once when an Auto LOD actor first needs them. */
   lods?: Promise<ModelLodSet | null>;
   lodSet?: ModelLodSet;
@@ -260,6 +263,7 @@ function packedSlimProof(
 function retireSource(cache: SceneGlbCache, entry: CachedGlb): void {
   if (entry.retired) return;
   entry.retired = true;
+  entry.controller.abort(new Error(`Model ${entry.guid}: preparation was retired.`));
   if (cache.entries.get(entry.key) === entry) cache.entries.delete(entry.key);
   if (cache.current.get(entry.guid) === entry) cache.current.delete(entry.guid);
   if (cache.requested.get(entry.guid) === entry.key) cache.requested.delete(entry.guid);
@@ -292,7 +296,10 @@ function modelLods(cache: SceneGlbCache, entry: CachedGlb): Promise<ModelLodSet 
     const current = () => {
       if (cache.disposed || entry.retired) throw new Error("Model preparation cancelled");
     };
-    const lods = await generateModelLods(container, current, entry.geometryKey);
+    const lods = await nativePreparationForEngine(container.scene.getEngine()).schedule({
+      label: `Model ${entry.guid} LOD`, temporaryBytes: Math.max(1024, entry.accounted * 2), signal: entry.controller.signal,
+      priority: entry.priority,
+    }, () => generateModelLods(container, current, entry.geometryKey));
     if (cache.disposed || entry.retired) {
       lods.dispose();
       throw new Error("Model preparation cancelled");
@@ -319,6 +326,7 @@ export function acquireGlbContainer(
   source: Blob,
   payload?: unknown,
   packed?: PackedTextureSlimProof | null,
+  priority?: NativePreparationPriority,
 ): { key: string; load: Promise<AssetContainer>; lods(): Promise<ModelLodSet | null>; release(): void } {
   const cache = cacheFor(scene);
   if (cache.disposed || scene.isDisposed) throw new Error("Model scene is disposed");
@@ -329,12 +337,17 @@ export function acquireGlbContainer(
     entry = {
       key, guid, references: 0, retired: false, accounted: 0,
       geometryKey: `${guid}:${installedAssetIdentity(source)}`,
+      controller: new AbortController(),
+      priority,
       load: Promise.resolve(null as unknown as AssetContainer),
     };
     cache.entries.set(key, entry);
     const created = entry;
     cache.loadCount += 1;
-    created.load = (async () => {
+    created.load = nativePreparationForEngine(scene.getEngine()).schedule({
+      label: `Model ${guid}`, temporaryBytes: Math.max(1024, source.size * 4), signal: created.controller.signal,
+      priority,
+    }, async () => {
       const bytes = new Uint8Array(await source.arrayBuffer());
       if (!isGltfModelBytes(bytes)) throw new Error("Unsupported model content");
       if (cache.disposed || created.retired) throw new Error("Model preparation cancelled");
@@ -353,7 +366,7 @@ export function acquireGlbContainer(
         if (previous && previous !== created) releaseUnusedSource(cache, previous);
       }
       return container;
-    })().catch((error) => {
+    }).catch((error) => {
       retireSource(cache, created);
       throw error;
     });

@@ -13,6 +13,7 @@ export interface ImportResult {
   version: number;
   dependencies: string[];
   requiredDependencies?: string[];
+  requiredVariableNames?: string[];
   dependencyMetadataVersion?: number;
   parentClass?: string | null;
   payload: Record<string, unknown>;

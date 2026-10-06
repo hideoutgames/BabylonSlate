@@ -151,7 +151,7 @@ import {
   zipGameArtifact,
 } from "../services/export-game";
 import { loadExportDocuments } from "../services/export-game-inputs";
-import { collectFontAssetEntries, collectFontCssStacks, collectFontFacetypeBytes, collectFontMsdfPair } from "../lib/play-fonts";
+import { collectFontAssetEntries, collectFontCssStacks, collectFontFacetypeBytes, collectFontMsdfPair, fontGuidsForSceneRepresentation } from "../lib/play-fonts";
 import { loadPlayerDistFiles } from "../services/load-player-files";
 import { collectAudioReverbFlushScenes, flushAudioReverbForSave } from "../lib/audio-reverb-bake";
 import {
@@ -270,7 +270,6 @@ import {
   sceneLayerGuidsFromGraphs,
   materialGuidsFromGraphs,
   overlayEditorScenesFromLayers,
-  playFontGuidsFromScenes,
   type PlayAnimGraphEntry,
   type PlayBehaviourTreeEntry,
   type PlayBlackboardEntry,
@@ -2150,6 +2149,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         project: exportDocument?.metadata,
         projectId: projectService.guid ?? undefined,
         saveGameSettings: exportDocument?.settings.saveGame,
+        defaultFontGuid: exportDocument?.settings.fonts.defaultFontGuid ?? null,
         gameInstanceClass: exportDocument?.settings.gameInstanceClass ?? null,
         audioMixerGuid: exportDocument?.settings.audio.audioMixerGuid ?? null,
         occlusionEnabled:
@@ -3600,7 +3600,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       }));
       return collectFontFacetypeBytes(
         sources,
-        playFontGuidsFromScenes([scene, ...extraScenes]),
+        fontGuidsForSceneRepresentation([scene, ...extraScenes], sources, "facetype"),
         (path, chunkId) => readAssetChunk(path, chunkId),
       );
     },
@@ -3613,13 +3613,15 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       extraScenes: readonly SerializedScene[] = [],
     ) => {
       const assets = projectService.registry?.list() ?? [];
+      const sources = assets.map((asset) => ({
+        guid: asset.header.guid,
+        path: asset.path,
+        type: asset.header.type,
+        payload: asset.header.payload,
+      }));
       return collectFontMsdfPair(
-        assets.map((asset) => ({
-          guid: asset.header.guid,
-          path: asset.path,
-          type: asset.header.type,
-        })),
-        playFontGuidsFromScenes([scene, ...extraScenes]),
+        sources,
+        fontGuidsForSceneRepresentation([scene, ...extraScenes], sources, "msdf", projectDocumentRef.current?.settings.fonts.defaultFontGuid),
         (path, chunkId) => readAssetChunk(path, chunkId),
       );
     },
@@ -4024,6 +4026,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         ensureMainGraphOpen: () => Promise<boolean>;
         nudgeActiveGraphNode: () => Promise<boolean>;
         cancelDebouncedSave: () => void;
+        assetLoading: () => { sources: ReturnType<import("@babylonslate/assets").AssetLoadingService["snapshot"]>; storage: import("@babylonslate/core").StorageReadMetrics | null; requestedPayloadBytes: number };
+        trimAssetSources: () => void;
         activeGraphNodePosition: () => { x: number; y: number } | null;
         hasRecoveryJournal: () => Promise<boolean>;
         /** Move the first scene actor by a fixed delta through the command layer. */
@@ -4094,6 +4098,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     };
     host.__babylonslateSourceControl = sourceControlRef.current;
     host.__babylonslateTest = {
+      assetLoading: () => ({ sources: projectService.assetLoadingService.snapshot(), storage: projectService.storagePort.getReadMetrics?.() ?? null, requestedPayloadBytes: projectService.registry?.accountedPayloadBytes ?? 0 }),
+      trimAssetSources: () => projectService.assetLoadingService.trim({ force: true }),
       cancelDebouncedSave: () => {
         if (saveDebounceRef.current) {
           clearTimeout(saveDebounceRef.current);

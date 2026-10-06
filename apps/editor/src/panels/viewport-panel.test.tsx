@@ -296,6 +296,25 @@ describe("ViewportPanel engine", () => {
     expect(loadSourceBytes).not.toHaveBeenCalled();
   });
 
+  it("prepares only the active scene's required water and resource catalog", async () => {
+    const assets = await Promise.all(["used", "unused"].map(async (guid) => ({
+      rootId: "project", path: `assets/${guid}.water.babasset`,
+      header: readAssetDocumentHeader(await encodeAssetDocument({ type: "Water", guid, name: guid, version: 1, payload: {} })),
+    })));
+    documents.assetRegistry = { list: () => assets, getByGuid: (guid) => assets.find((asset) => asset.header.guid === guid) };
+    documents.openDocuments = [{
+      id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },
+      content: { ...createDefaultScene(), actors: [createActor("water", "Water", { components: [{
+        id: "water", classId: "WaterOceanComponent", properties: { waterGuid: "used" },
+      }] })] },
+    }];
+    renderViewport();
+    await waitFor(() => expect(handle.loadSceneAsync).toHaveBeenCalled());
+    expect(documents.collectPlayWaterContent).toHaveBeenLastCalledWith(new Set(["used"]));
+    expect(documents.collectPlayRenderTargets).toHaveBeenLastCalledWith(new Set(["used"]));
+    expect(documents.collectPlayFontFaceEntries).toHaveBeenLastCalledWith(new Set());
+  });
+
   it("defers a hidden dock canvas without blocking its sibling, then waits for a real presentation", async () => {
     documents.openDocuments = [{
       id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.babasset", label: "S" },

@@ -367,6 +367,7 @@ export type PlaySceneSourceLoader = (guid: string, options: {
 }) => Promise<PlaySourcePreparation & { scene: SerializedScene }>;
 export type PlayAssetSourceLoader = (guids: string[], options: {
   consumer: string; signal: AbortSignal; onProgress?: (progress: number) => void;
+  fontModes?: import("@babylonslate/render").CommandFontModes;
 }) => Promise<PlaySourcePreparation>;
 
 /** Resolve a Play session cap; omitted or non-positive values become 60. */
@@ -686,6 +687,12 @@ export function startPlaySession(options: {
     },
     onAudioDiagnostic: (diagnostic) => {
       options.onLog?.(diagnostic.message, "warning");
+      if (diagnostic.assetGuid && ["audio.missing_source", "audio.decode_failed", "audio.budget_exceeded", "audio.play_failed", "audio.load_failed"].includes(diagnostic.code))
+        publishAssetStates([diagnostic.assetGuid], "failed");
+    },
+    onAudioAssetReady: (guid) => {
+      for (const [prepared, scope] of preparedSourceScopes) if (scope.guids.includes(guid)) markSourceReady(prepared);
+      publishAssetStates([guid], "ready");
     },
     onParticleDiagnostic: (diagnostic) => {
       options.onLog?.(diagnostic.message, "warning");
@@ -794,6 +801,8 @@ export function startPlaySession(options: {
   };
   const knownAssetGuids = new Set<string>();
   const preparedAssetGuids = new Set<string>();
+  const initialSourceGuids = new Set(options.getSourceControls?.().flatMap((control) => control.type === "loadSceneContent" ? control.assetGuids : []) ?? []);
+  let initialSourcesReady = false;
   const publishedAssetStates = new Map<string, import("@babylonslate/core").RuntimeAssetLoadState>();
   const preparedSourceScopes = new Map<PlaySourcePreparation, { guids: string[]; ready: boolean }>();
   const sceneSourceScopes = new Map<string, Set<PlaySourcePreparation>>();
@@ -835,7 +844,7 @@ export function startPlaySession(options: {
     });
     if (options.getAssetLoadState) publishAssetStates([...knownAssetGuids], "unloaded", true);
   };
-  const prepareSources = async (prepared: PlaySourcePreparation, signal: AbortSignal, prepare = false) => {
+  const prepareSources = async (prepared: PlaySourcePreparation, signal: AbortSignal, prepare = false, priority: "gameplay" | "preload" = "gameplay") => {
     let releaseRender: (() => void) | undefined;
     const scope = { guids: [...(prepared.required ?? [])], ready: false };
     preparedSourceScopes.set(prepared, scope);
@@ -843,12 +852,13 @@ export function startPlaySession(options: {
     const releaseState = () => {
       preparedSourceScopes.delete(prepared);
       const remaining = new Set([...preparedSourceScopes.values()].filter((owner) => owner.ready).flatMap((owner) => owner.guids));
+      if (initialSourcesReady) for (const guid of initialSourceGuids) remaining.add(guid);
       for (const guid of scope.guids) if (!remaining.has(guid)) preparedAssetGuids.delete(guid);
       publishAssetStates(scope.guids.filter((guid) => !remaining.has(guid)), "unloaded");
     };
     try {
       signal.throwIfAborted();
-      releaseRender = await handle.acquireSceneSources(prepared.sources, { prepare, signal });
+      releaseRender = await handle.acquireSceneSources(prepared.sources, { prepare, signal, priority });
       signal.throwIfAborted();
       await publishSourceBatch(() => prepared.getControls?.() ?? prepared.controls);
       signal.throwIfAborted();
@@ -879,7 +889,7 @@ export function startPlaySession(options: {
     let release: () => void;
     try {
       prepared = await options.acquireSceneSources!(guid, request);
-      release = await prepareSources(prepared, request.signal);
+      release = await prepareSources(prepared, request.signal, true);
     } catch (error) {
       publishAssetStates([guid], request.signal.aborted ? "unloaded" : "failed");
       throw error;
@@ -938,7 +948,7 @@ export function startPlaySession(options: {
       onProgress: (progress) => {
         if (preloads.get(preloadId) === request) publishPreloadResult({ preloadId, success: true, progress: Math.min(0.9, progress * 0.9) });
       },
-    }).then((prepared) => prepareSources(prepared, request.controller.signal, true)).then((release) => {
+    }).then((prepared) => prepareSources(prepared, request.controller.signal, true, "preload")).then((release) => {
       if (preloads.get(preloadId) !== request) { release(); return; }
       request.release = release;
       publishAssetStates(assetGuids, "ready");
@@ -957,6 +967,12 @@ export function startPlaySession(options: {
     initialSourcesReleased = true;
     handle.releaseInitialSources();
     publishReleasedSources(options.releaseInitialSources?.());
+    const scoped = new Set([...preparedSourceScopes.values()].flatMap((scope) => scope.guids));
+    const persistent = options.getSourceControls?.().flatMap((control) => control.type === "loadSceneContent" ? control.assetGuids : []) ?? [];
+    for (const guid of initialSourceGuids) if (!scoped.has(guid)) preparedAssetGuids.delete(guid);
+    initialSourceGuids.clear();
+    for (const guid of persistent) if (!scoped.has(guid)) initialSourceGuids.add(guid);
+    if (initialSourcesReady) publishAssetStates([...initialSourceGuids], "ready");
     for (const guid of preparedScenes.keys()) if (!sceneSourceOwners.has(guid)) preparedScenes.delete(guid);
     for (const key of ["textureBytes", "modelBytes", "modelPayloads", "spritePayloads", "spriteAnimationPayloads",
       "tilemapPayloads", "tilesetPayloads", "waterPayloads", "fontFacetypeBytes", "fontMsdfJson", "fontMsdfPng",
@@ -1002,6 +1018,7 @@ export function startPlaySession(options: {
       receivedActiveScene = true;
     },
     onReady: ({ sceneAssetGuid, sceneLoadId }) => {
+      if (!initialSourcesReleased) { initialSourcesReady = true; publishAssetStates([...initialSourceGuids], "ready"); }
       for (const prepared of sceneSourceScopes.get(sceneAssetGuid) ?? []) markSourceReady(prepared);
       publishAssetStates([sceneAssetGuid], "ready");
       worker?.postControl({ type: "sceneModelsReady", sceneAssetGuid, sceneLoadId });

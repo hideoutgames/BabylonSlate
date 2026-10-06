@@ -40,6 +40,7 @@ import type { SceneStreamIdentity } from "./scene-streaming-readiness";
 import { prepareSceneStream } from "./scene-stream-preparation";
 import { captureMeshSourceAssets, mergeSceneSourceAssets, type SceneSourceAssets } from "./scene-source-assets";
 import { acquireGlbContainer, releaseUnownedGlbSources } from "./glb-anim";
+import { nativePreparationForEngine, type NativePreparationLimits, type NativePreparationPriority } from "./native-preparation";
 import { createSceneStreamAdmission, isSceneStreamSlotPending } from "./scene-stream-admission";
 import type { AbstractEngine, BaseTexture, Camera } from "@babylonjs/core";
 import { resolveRenderingQuality } from "@babylonslate/core";
@@ -329,7 +330,8 @@ export interface EngineHandle {
   /** Sprite/tilemap textures and GLB bytes for editor + Play mesh builders. */
   setMeshAssets: (assets: MeshAssetContext) => void;
   /** Retain prepared source maps until the consuming runtime instance is retired. */
-  acquireSceneSources: (sources: SceneSourceAssets, options?: { prepare?: boolean; signal?: AbortSignal }) => Promise<() => void>;
+  acquireSceneSources: (sources: SceneSourceAssets, options?: { prepare?: boolean; signal?: AbortSignal; priority?: NativePreparationPriority }) => Promise<() => void>;
+  nativePreparationStats: () => ReturnType<ReturnType<typeof nativePreparationForEngine>["snapshot"]>;
   /** Release startup source ownership after its actors have retired. */
   releaseInitialSources: () => void;
   /** Refresh owned library unions without resetting live mixer session settings. */
@@ -528,6 +530,8 @@ export interface CreateEngineOptions {
   audioByteCeiling?: number;
   audioBudgetEnabled?: boolean;
   audioMaxVoices?: number;
+  /** Shared Engine admission limits, configured when its first handle is created. */
+  nativePreparation?: NativePreparationLimits;
   /** Engine Settings `hardwareScalingLevel`. 1 is native. */
   hardwareScalingLevel?: number;
   /** Stack skip / compile messages (exported player and Play overlay). */
@@ -560,6 +564,7 @@ export interface CreateEngineOptions {
     message: string;
     assetGuid?: string;
   }) => void;
+  onAudioAssetReady?: (guid: string) => void;
   /** Particle Graph problems also name the graph node (and pin) to focus. */
   onParticleDiagnostic?: (diagnostic: {
     code: string;
@@ -1059,6 +1064,7 @@ function initializeEngine(
   const sharedCache = resourceCacheForEngine(engine);
   const cacheBinding = bindResourceCacheToHandle(sharedCache);
   const resourceCache = cacheBinding.cache;
+  const nativePreparation = nativePreparationForEngine(engine, options.nativePreparation);
   onRollback(() => cacheBinding.dispose());
   onRollback(() => { if (!scene.isDisposed) scene.dispose(); });
   if (typeof options.textureByteCeiling === "number") {
@@ -1072,8 +1078,10 @@ function initializeEngine(
         backend: createPlayAudioBackend(options.audioBackend),
         onDiagnostic: options.onAudioDiagnostic,
         onVoiceEnded: options.onAudioVoiceEnded,
+        onAssetReady: options.onAudioAssetReady,
         loadSourceBytes: options.loadAudioSourceBytes,
         prepareAsset: options.prepareAudioAsset,
+        preparation: nativePreparation,
         maxVoices: options.audioMaxVoices,
       })
     : null;
@@ -1718,7 +1726,7 @@ function initializeEngine(
       "tilemapPayloads", "tilesetPayloads", "waterPayloads", "fontFacetypeBytes", "fontMsdfJson", "fontMsdfPng",
       "fontCssStackByGuid", "fontFaceEntries", "materialDocuments", "materialFunctions", "audioLibrary", "particleLibrary",
       "renderTargets", "renderTargetTextures", "areaEmissions", "texturePixelSizes", "modelClipAnimationGuids",
-      "retargetAnimationLoads"] as const) delete options[key];
+      "retargetAnimationLoads", "navmeshBytes", "audioReverbBytes", "audioBytes"] as const) delete options[key];
   };
 
   const loadSceneAsync = async (sceneData: SerializedScene, load: EditorSceneLoadOptions) => {
@@ -2863,6 +2871,13 @@ function initializeEngine(
         disposeSnapshotBinding(binding);
         particleService?.dispose();
         materialLibrary.dispose();
+        for (const key of Object.keys(captureMeshSourceAssets(binding)))
+          delete (binding as unknown as Record<string, unknown>)[key];
+        materialDocuments.clear();
+        materialFunctions.clear();
+        materialFunctionRecord = {};
+        materialDocumentsKey = "";
+        releaseInitialSources();
         scene.dispose();
         rttPresent?.dispose();
         cacheBinding.dispose();
@@ -3422,43 +3437,64 @@ function initializeEngine(
         modelBytes: undefined, modelSources: installModelSources(sources.assets),
         fontMsdfPng: installTextureBytes(sources.assets.fontMsdfPng),
       } : undefined }]));
+      const cancel = () => {
+        for (const release of nativeReleases.splice(0)) release();
+        releaseSceneSources(owner);
+      };
+      preparation?.signal?.addEventListener("abort", cancel, { once: true });
       try {
         installOwnedSources();
-        if (sources.fonts?.length && !await fontRegistry.registerAll(sources.fonts))
-          throw new Error("A required Font failed to load. Inspect the Font asset source and family.");
+        for (const font of sources.fonts ?? []) {
+          const registered = await nativePreparation.schedule({ label: `Font ${font.guid}`,
+            temporaryBytes: Math.max(1024, font.bytes.byteLength * 4), signal: preparation?.signal,
+            priority: preparation?.priority }, () => fontRegistry.registerAll([font]));
+          if (!registered) throw new Error(`Font ${font.guid} failed to load. Inspect its source and family.`);
+        }
         if (preparation?.prepare) {
+          preparation.signal?.throwIfAborted();
           const prepared = sourceOwners.get(owner)!;
           const check = () => { preparation.signal?.throwIfAborted(); if (disposed) throw new Error("The render Scene is disposed."); };
-          // Sequential admission bounds temporary native decoding; cache leases
-          // share compatible work with ordinary actor preparation.
+          // The queue belongs to the Engine, so simultaneous source scopes and
+          // scene-specific model containers share the same admission budget.
           for (const [guid, bytes] of prepared.assets?.textureBytes ?? []) {
             check();
-            const lease = resourceCache.acquireTexture(guid, engine, bytes);
-            nativeReleases.push(() => lease.release());
-            await lease.ready;
+            const size = prepared.assets?.texturePixelSizes?.get(guid);
+            const sourceSize = bytes instanceof Blob ? bytes.size : bytes.byteLength;
+            await nativePreparation.schedule({ label: `Texture ${guid}`, signal: preparation.signal, priority: preparation.priority,
+              temporaryBytes: sourceSize + (size ? size.width * size.height * 8 : Math.max(1024 * 1024, sourceSize * 16)),
+            }, async () => {
+              check();
+              const lease = resourceCache.acquireTexture(guid, engine, bytes);
+              nativeReleases.push(() => lease.release());
+              await lease.ready;
+            });
           }
           for (const [guid, document] of prepared.materialDocuments ?? []) {
             check();
-            const material = materialLibrary.acquire(scene, guid, document);
-            if (!material.ok) throw new Error(`Material ${guid}: ${material.diagnostics.map((entry) => entry.message).join("; ")}`);
-            nativeReleases.push(() => materialLibrary.release(scene, guid));
-            const diagnostics = await material.ready;
-            if (diagnostics.some((entry) => entry.severity === "error"))
-              throw new Error(`Material ${guid}: ${diagnostics.map((entry) => entry.message).join("; ")}`);
-            compiledMaterialGuids.add(guid);
+            await nativePreparation.schedule({ label: `Material ${guid}`, signal: preparation.signal,
+              priority: preparation.priority, temporaryBytes: 1024 * 1024 }, async () => {
+              check();
+              const material = materialLibrary.acquire(scene, guid, document);
+              if (!material.ok) throw new Error(`Material ${guid}: ${material.diagnostics.map((entry) => entry.message).join("; ")}`);
+              nativeReleases.push(() => materialLibrary.release(scene, guid));
+              const diagnostics = await material.ready;
+              if (diagnostics.some((entry) => entry.severity === "error"))
+                throw new Error(`Material ${guid}: ${diagnostics.map((entry) => entry.message).join("; ")}`);
+              compiledMaterialGuids.add(guid);
+            });
           }
           for (const [guid, source] of prepared.assets?.modelSources ?? []) {
             check();
             const lease = acquireGlbContainer(scene, guid, source, binding.modelPayloads?.get(guid), {
               packedTextureGuids: new Set(binding.textureBytes?.keys()),
               texturesByMaterialGuid: binding.materialTextureGuids ?? new Map(), compiledMaterialGuids,
-            });
+            }, preparation.priority);
             nativeReleases.push(() => lease.release());
             await lease.load;
             await lease.lods();
           }
           if (prepared.audioLibrary?.audio.size && audioService)
-            nativeReleases.push(await audioService.preload([...prepared.audioLibrary.audio.keys()]));
+            nativeReleases.push(await audioService.preload([...prepared.audioLibrary.audio.keys()], preparation.priority));
           check();
         }
         if (disposed) throw new Error("The render Scene was disposed during source preparation.");
@@ -3466,11 +3502,13 @@ function initializeEngine(
         const releaseSources = sourceRelease(owner);
         return () => { for (const release of nativeReleases.splice(0)) release(); releaseSources(); };
       } catch (error) {
-        for (const release of nativeReleases.splice(0)) release();
-        releaseSceneSources(owner);
+        cancel();
         throw error;
+      } finally {
+        preparation?.signal?.removeEventListener("abort", cancel);
       }
     },
+    nativePreparationStats: () => nativePreparation.snapshot(),
     releaseInitialSources,
     setSourceLibraries: (libraries) => {
       if (libraries.audioLibrary) audioService?.setLibrary(libraries.audioLibrary, true);

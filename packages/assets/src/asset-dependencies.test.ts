@@ -80,6 +80,26 @@ describe("typed asset dependencies", () => {
     expect(metadata.requiredDependencies).toEqual(["appearance", "items", "quality", "weapon"]);
   });
 
+  it("preserves required variable roles through inherited actor overrides without loading unrelated data variables", () => {
+    const members = [
+      { kind: "variable" as const, id: "inventory", name: "Inventory", propertyKey: "inventory", typeId: "asset", typeClassId: "DataTree", defaultValue: "default-tree" },
+      { kind: "variable" as const, id: "catalog", name: "Catalog", typeId: "asset", typeClassId: "DataTree", defaultValue: "unused-default" },
+    ];
+    const base = { guid: "base", classId: "Base", members };
+    const consumer = collectAssetDependencyMetadata("Class", {
+      nodes: [
+        { id: "value", type: "variables.get", data: { variableName: "Inventory", propertyKey: "inventory" } },
+        { id: "read", type: "data.readEntry", data: {} },
+      ], edges: [{ source: "value", target: "read", targetHandle: "tree" }],
+    }, { parentClass: "Base", classes: [base] });
+    expect(consumer.requiredVariableNames).toEqual(["inventory"]);
+    const scene = collectAssetDependencyMetadata("Scene", {
+      actors: [{ classId: "Hero", properties: { inventory: "override-tree", Catalog: "unused-override" } }],
+    }, { classes: [base, { guid: "hero", classId: "Hero", parentClassId: "Base", requiredVariableNames: consumer.requiredVariableNames }] });
+    expect(scene.dependencies).toEqual(["hero", "override-tree", "unused-override"]);
+    expect(scene.requiredDependencies).toEqual(["hero", "override-tree"]);
+  });
+
   it("stamps saved documents and requires an explicit upgrade for legacy metadata", async () => {
     const bytes = await encodeAssetDocument({ type: "Font", guid: "font", name: "Font", version: 1, payload: { fallbackGuids: ["fallback"] } });
     expect(getRequiredDependencies(readBabassetHeader(bytes))).toEqual(["fallback"]);

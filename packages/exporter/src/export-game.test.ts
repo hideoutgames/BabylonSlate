@@ -24,6 +24,20 @@ function stubPlayer(): Map<string, Uint8Array> {
 }
 
 describe("exportGame", () => {
+  it("marks enabled project render dependencies as startup systems while deferred assets remain catalog-only", async () => {
+    const result = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene", scripts: [],
+      renderSettings: { ...DEFAULT_RENDER_PROJECT_SETTINGS, effects: { ...DEFAULT_RENDER_EFFECTS, colorGrading: { enabled: true, lutTextureGuid: "lut" } } },
+      assets: [
+        { guid: "scene", type: "Scene", sceneGuid: "scene", bytes: new TextEncoder().encode("{}"), requiredDependencies: [], dependencies: ["later"] },
+        { guid: "lut", type: "Texture", sceneGuid: "scene", bytes: new Uint8Array([1]) },
+        { guid: "later", type: "Texture", sceneGuid: "scene", bytes: new Uint8Array([2]) },
+      ],
+    });
+    if (!result.ok) throw new Error(result.error);
+    expect(result.value.manifest.assets.find(asset => asset.guid === "lut")?.startupRequired).toBe(true);
+    expect(result.value.manifest.assets.find(asset => asset.guid === "later")?.startupRequired).toBeUndefined();
+    expect(result.value.manifest.assets.find(asset => asset.guid === "scene")).toMatchObject({ dependencies: ["later"], requiredDependencies: [] });
+  });
   it("preserves focus input selections and normalizes unsafe repeat values through player manifests", async () => {
     const result = await exportGame({ mode: "packed", bundleDebugger: false, startupSceneGuid: "scene-1", scripts: [], assets: [], playerFiles: stubPlayer(),
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,

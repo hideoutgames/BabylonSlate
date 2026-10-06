@@ -189,11 +189,15 @@ function initializePlayer(
   }
   const content = options.content ?? packedContentFromGame(game);
   const diagnostics: PlayerDiagnostic[] = [];
-  const fontCss = packedFontCssStacks(game.fontFamilies);
+  const fontIds = new Set(manifest.assets.filter(entry => entry.type === "Font").map(entry => entry.guid));
+  const fontFallbacks = new Map(manifest.assets.filter(entry => entry.type === "Font").map(entry => [entry.guid, entry.requiredDependencies?.filter(id => fontIds.has(id)) ?? []]));
+  const fontCss = packedFontCssStacks(game.fontFamilies, "sans-serif", manifest.defaultFontGuid, fontFallbacks);
 
   let worker: PlayerWorkerHost | null = null;
   let runtime: RuntimeDriver | null = null;
   let input: ReturnType<typeof attachInputCapture> | null = null;
+  const resourceFailures = new Set<string>();
+  const clearResourceFailures = (ids: Iterable<string>) => { for (const id of ids) resourceFailures.delete(id); };
   const consoleHost = createPlayerConsoleHost({
     execute: () =>
       runtime ? (line) => runtime!.executeConsoleCommand(line) : undefined,
@@ -237,8 +241,9 @@ function initializePlayer(
       let releaseRender: (() => void) | undefined;
       try {
         request.signal.throwIfAborted();
-        releaseRender = await handle.acquireSceneSources(renderSources(gameSourceSubset(game, requiredGameAssets(manifest, [guid]))), { signal: request.signal });
+        releaseRender = await handle.acquireSceneSources(renderSources(gameSourceSubset(game, source.assetGuids ?? requiredGameAssets(manifest, [guid]))), { signal: request.signal });
         request.signal.throwIfAborted();
+        clearResourceFailures(requiredGameAssets(manifest, [guid]));
         refreshSourceContent();
         return () => { releaseRender?.(); source.release(); if (!halted) { refreshSourceContent(); publishAssetStates(); } };
       } catch (error) { releaseRender?.(); source.release(); throw error; }
@@ -615,6 +620,9 @@ function initializePlayer(
       else if (Array.isArray(current) && Array.isArray(replacement)) current.splice(0, current.length, ...replacement as never[]);
     }
     for (const key of ["audio", "mixers", "channels", "attenuations"] as const) syncMap(content.audioLibrary[key] as Map<unknown, unknown>, next.audioLibrary[key]);
+    content.audioLibrary.sourceRevisions = next.audioLibrary.sourceRevisions;
+    content.navmeshBytes = next.navmeshBytes;
+    content.audioReverbBytes = next.audioReverbBytes;
     syncMap(content.particleLibrary.emitters as Map<unknown, unknown>, next.particleLibrary.emitters);
     syncMap(content.particleLibrary.systems as Map<unknown, unknown>, next.particleLibrary.systems);
     for (const control of packedSourceControls(game, content)) {
@@ -624,7 +632,7 @@ function initializePlayer(
   };
   const renderSources = (sources: GameSourceContent) => {
     const prepared = packedContentFromGame(sources);
-    const fonts = packedFontCssStacks(sources.fontFamilies);
+    const fonts = packedFontCssStacks(sources.fontFamilies, "sans-serif", manifest.defaultFontGuid, fontFallbacks);
     return {
       assets: {
         textureBytes: sources.textureBytes, areaEmissions: sources.areaEmissions,
@@ -647,13 +655,14 @@ function initializePlayer(
     let releaseRender: (() => void) | undefined;
     try {
       request.signal.throwIfAborted();
-      releaseRender = await handle.acquireSceneSources(renderSources(gameSourceSubset(game, requiredGameAssets(manifest, ids))), { prepare: true, signal: request.signal });
+      releaseRender = await handle.acquireSceneSources(renderSources(gameSourceSubset(game, source.assetGuids ?? requiredGameAssets(manifest, ids))), { prepare: true, signal: request.signal });
       request.signal.throwIfAborted();
+      clearResourceFailures(requiredGameAssets(manifest, ids));
       refreshSourceContent();
       return () => { releaseRender?.(); source.release(); if (!halted) { refreshSourceContent(); publishAssetStates(); } };
     } catch (error) { releaseRender?.(); source.release(); throw error; }
   });
-  const systemAssets = requiredGameAssets(manifest, manifest.assets.filter(entry => entry.startupRequired).map(entry => entry.guid));
+  const systemAssets = game.systemAssetGuids ?? requiredGameAssets(manifest, manifest.assets.filter(entry => entry.startupRequired).map(entry => entry.guid));
   const systemSources = game.acquireScene && systemAssets.size ? handle.acquireSceneSources(renderSources(gameSourceSubset(game, systemAssets))).then(release => { if (halted) release(); else own(release); }) : Promise.resolve();
   const acquireScene = game.acquireScene ? async (guid: string, request: { consumer: string; signal: AbortSignal }) => {
     const source = await game.acquireScene!(guid, request);
@@ -661,8 +670,9 @@ function initializePlayer(
     try {
       await systemSources;
       request.signal.throwIfAborted();
-      releaseRender = await handle.acquireSceneSources(renderSources(gameSourceSubset(game, requiredGameAssets(manifest, [guid]))));
+      releaseRender = await handle.acquireSceneSources(renderSources(gameSourceSubset(game, source.assetGuids ?? requiredGameAssets(manifest, [guid]))), { prepare: true, signal: request.signal });
       request.signal.throwIfAborted();
+      clearResourceFailures(requiredGameAssets(manifest, [guid]));
       refreshSourceContent();
       publishAssetStates();
       return { scene: source.scene, release: () => { releaseRender?.(); source.release(); if (!halted) { refreshSourceContent(); publishAssetStates(); } } };
@@ -677,7 +687,7 @@ function initializePlayer(
     else runtime?.notifyAssetPreloadResult(result);
   };
   const publishAssetStates = () => {
-    const states = manifest.assets.map(entry => ({ guid: entry.guid, state: [...preparingPreloads.values()].some(ids => ids.has(entry.guid)) ? "loading" as const : game.assets?.getLoadState(entry.guid) ?? "ready" as const }));
+    const states = manifest.assets.map(entry => ({ guid: entry.guid, state: [...preparingPreloads.values()].some(ids => ids.has(entry.guid)) ? "loading" as const : resourceFailures.has(entry.guid) ? "failed" as const : game.assets?.getLoadState(entry.guid) ?? "ready" as const }));
     if (worker) worker.postControl({ type: "assetLoadStates", states });
     else runtime?.setAssetLoadStates(states);
   };
@@ -701,6 +711,7 @@ function initializePlayer(
     const request: { controller: AbortController; release?: () => void } = { controller: new AbortController() };
     preloads.set(preloadId, request);
     preparingPreloads.set(preloadId, requiredGameAssets(manifest, ids));
+    clearResourceFailures(ids);
     publishAssetStates();
     void (async () => {
       if (!game.acquireAssets) throw new Error("This player does not provide demand-driven asset loading.");
@@ -710,9 +721,10 @@ function initializePlayer(
       let releaseRender: (() => void) | undefined;
       try {
         request.controller.signal.throwIfAborted();
-        releaseRender = await handle.acquireSceneSources(renderSources(gameSourceSubset(game, requiredGameAssets(manifest, ids))), { prepare: true, signal: request.controller.signal });
+        releaseRender = await handle.acquireSceneSources(renderSources(gameSourceSubset(game, source.assetGuids ?? requiredGameAssets(manifest, ids))), { prepare: true, signal: request.controller.signal, priority: "preload" });
         request.controller.signal.throwIfAborted();
         request.release = () => { releaseRender?.(); source.release(); };
+        clearResourceFailures(requiredGameAssets(manifest, ids));
         refreshSourceContent();
         preparingPreloads.delete(preloadId);
         publishAssetStates();
@@ -720,6 +732,7 @@ function initializePlayer(
       } catch (error) { releaseRender?.(); source.release(); throw error; }
     })().catch((error: unknown) => {
       if (preloads.get(preloadId) !== request) return;
+      for (const id of ids) resourceFailures.add(id);
       releasePreload(preloadId);
       preloadResult({ preloadId, success: false, error: error instanceof Error ? error.message : String(error) });
     });

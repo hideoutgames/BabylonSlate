@@ -4,7 +4,7 @@ import {
   createDefaultSceneLayer,
   DEFAULT_RENDER_PROJECT_SETTINGS,
 } from "@babylonslate/core";
-import { exportGame, GAME_MANIFEST_FILE, SCRIPTS_FILE, AREA_EMISSION_EXPORT_TYPE, areaEmissionExportGuid } from "@babylonslate/exporter";
+import { exportGame, GAME_MANIFEST_FILE, SCRIPTS_FILE, AREA_EMISSION_EXPORT_TYPE, areaEmissionExportGuid, FONT_FACETYPE_EXPORT_TYPE, FONT_MSDF_EXPORT_TYPE, FONT_MSDF_ATLAS_EXPORT_TYPE, fontFacetypeExportGuid, fontMsdfExportGuid, fontMsdfAtlasExportGuid } from "@babylonslate/exporter";
 import { AREA_EMISSION_EDGE, encodeAreaEmission } from "@babylonslate/assets";
 import { loadGameFromFiles, loadGameFromHttp } from "./artifact";
 
@@ -25,6 +25,38 @@ function useScriptsFilename(files: Map<string, Uint8Array>, scriptsFile: string)
 }
 
 describe("loadGameFromFiles", () => {
+  it("reads only selected Font representations and resolves a later default-font consumer offline", async () => {
+    const scene = { ...createDefaultScene(), actors: [{ classId: "Actor", components: [{ classId: "2DTextComponent", properties: { fontAssetGuid: "font", renderer: "msdf" } }] }] };
+    const exported = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene", defaultFontGuid: "font", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [
+      { guid: "scene", type: "Scene", sceneGuid: "scene", bytes: encoder.encode(JSON.stringify(scene)) },
+      { guid: "font", type: "Font", name: "Body", sceneGuid: "scene", bytes: new Uint8Array([1]) },
+      { guid: fontFacetypeExportGuid("font"), type: FONT_FACETYPE_EXPORT_TYPE, sceneGuid: "scene", bytes: encoder.encode("{}") },
+      { guid: fontMsdfExportGuid("font"), type: FONT_MSDF_EXPORT_TYPE, sceneGuid: "scene", bytes: encoder.encode("{}") },
+      { guid: fontMsdfAtlasExportGuid("font"), type: FONT_MSDF_ATLAS_EXPORT_TYPE, sceneGuid: "scene", bytes: new Uint8Array([2]) },
+    ] });
+    if (!exported.ok) throw new Error(exported.error);
+    const paths: string[] = [];
+    const metadata = new Map([...exported.value.files].filter(([path]) => path === GAME_MANIFEST_FILE || path === SCRIPTS_FILE));
+    const game = await loadGameFromFiles(metadata, { readFile: async path => { paths.push(path); return exported.value.files.get(path)!; } });
+    const path = (guid: string) => exported.value.manifest.assets.find(asset => asset.guid === guid)!.path!;
+    expect(paths).toEqual(expect.arrayContaining([path("scene"), path(fontMsdfExportGuid("font")), path(fontMsdfAtlasExportGuid("font"))]));
+    expect(paths).not.toContain(path("font"));
+    expect(paths).not.toContain(path(fontFacetypeExportGuid("font")));
+    expect(game.fontBytes.size).toBe(0);
+    expect(game.fontMsdfPng.has("font")).toBe(true);
+    const later = await game.acquireAssets!([], { consumer: "dynamic-text", signal: new AbortController().signal, fontModes: new Map([["", new Set(["bitmap" as const])]]) });
+    expect(paths.filter(entry => entry === path("font"))).toHaveLength(1);
+    expect(later.assetGuids?.has("font")).toBe(true);
+    expect(game.fontBytes.has("font")).toBe(true);
+    later.release();
+    game.assets!.trim({ force: true });
+    expect(game.fontBytes.has("font")).toBe(false);
+    expect(game.fontMsdfPng.has("font")).toBe(true);
+    game.releaseStartup!();
+    game.assets!.trim({ force: true });
+    expect(game.fontMsdfPng.size).toBe(0);
+    game.dispose!();
+  });
   it.each(["packed", "loose"] as const)("overlaps asset HTTP requests with a bounded pool (%s)", async (mode) => {
     const result = await exportGame({ mode, bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [],
       assets: Array.from({ length: 15 }, (_, index) => ({ guid: `texture-${index}`, type: "Texture", startupRequired: true, sceneGuid: "scene", bytes: new Uint8Array([index]) })) });
