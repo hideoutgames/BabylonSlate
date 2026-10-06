@@ -159,7 +159,7 @@
     --pin-class: oklch(0.54 0.16 275);
     --pin-struct: oklch(0.54 0.16 275);
     --pin-enum: oklch(0.54 0.16 170);
-    --pin-tag: oklch(0.59 0.19 355);
+    --pin-tag: oklch(0.45 0.19 265);
     --pin-wildcard: oklch(0.62 0.02 250);
     --pin-delegate: oklch(0.52 0.22 20);
     --pin-particle: oklch(0.40 0.07 175);
@@ -265,7 +265,7 @@
     --pin-class: oklch(0.68 0.16 275);
     --pin-struct: oklch(0.68 0.16 275);
     --pin-enum: oklch(0.68 0.16 170);
-    --pin-tag: oklch(0.74 0.17 355);
+    --pin-tag: oklch(0.60 0.20 265);
     --pin-wildcard: oklch(0.72 0.02 250);
     --pin-delegate: oklch(0.65 0.20 20);
     --pin-particle: oklch(0.90 0.14 170);
