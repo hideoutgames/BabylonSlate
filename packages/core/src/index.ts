@@ -19,6 +19,7 @@ export * from "./text2d-appear";
 export * from "./painter2d";
 export * from "./rich-text";
 export * from "./project";
+export * from "./tags";
 export * from "./cel-shading";
 export * from "./shadows";
 export * from "./project-appearance";
@@ -42,6 +43,7 @@ export * from "./material-parameter-value";
 export * from "./play-preview-aspect";
 export * from "./nine-slice";
 export * from "./input-assets";
+export * from "./data-assets";
 export * from "./input-keys";
 
 export * from "./default-input-assets";

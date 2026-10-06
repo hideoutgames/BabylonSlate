@@ -13,6 +13,8 @@ export type AssetCreateRequest = {
   /** Preferred name (the picker's search text); the host makes it unique. */
   name?: string;
   materialDomain?: AssetCreateMaterialDomain;
+  /** Structure constraint when creating a Data Object or Data Sheet. */
+  structureGuid?: string | null;
   /**
    * Path of the document that will hold the reference; the host creates the
    * asset in that document's content. `null` means the project itself (the

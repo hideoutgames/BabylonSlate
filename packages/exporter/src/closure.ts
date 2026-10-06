@@ -17,6 +17,7 @@ import {
   subsystemBaseClassIdOf,
   type SubsystemClassHierarchy,
 } from "@babylonslate/object-model";
+import { dataAssetDependencies, dataGraphAssetDependencies } from "@babylonslate/assets";
 import { MISSING_STARTUP_SCENE_MESSAGE } from "./constants";
 import type {
   ExportClosureInput,
@@ -52,7 +53,9 @@ function collectTypedRefs(value: unknown, into: Set<string>): void {
     return;
   }
   if (!value || typeof value !== "object") return;
-  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+  const row = value as Record<string, unknown>;
+  for (const [key, entry] of Object.entries(row)) {
+    if (Array.isArray(row.dataSchema) && (key === "default:values" || key === "dataSchema")) continue;
     if (isReferenceField(key)) {
       if (typeof entry === "string" && entry.trim()) into.add(entry.trim());
       if (Array.isArray(entry)) {
@@ -147,6 +150,8 @@ export function collectExportReachability(
   }
 
   const hierarchy = classHierarchy(input.parentOf);
+  const dataClassReferences = sortedAssets.filter((entry) => entry.type === "Class" || entry.type === "Graph")
+    .map((entry) => ({ guid: entry.guid, classId: entry.name }));
   const bySceneGuid = new Map<string, Set<string>>();
   const pendingScenes = [startup];
   const traversedScenes = new Set<string>();
@@ -221,11 +226,14 @@ export function collectExportReachability(
           for (const guid of materialParameterTextureGuidsFromGraph(graph)) refs.add(guid);
           for (const guid of renderTargetAssetGuidsFromGraph(graph)) refs.add(guid);
           for (const guid of areaEmissionTextureGuids(graph)) refs.add(guid);
+          for (const guid of dataGraphAssetDependencies(graph, dataClassReferences)) refs.add(guid);
         }
       }
       const payload = input.payloadByGuid?.(asset.guid);
       if (payload) {
-        collectTypedRefs(payload, refs);
+        if (["DataObject", "DataSheet", "Structure", "Enum"].includes(asset.type)) {
+          for (const guid of dataAssetDependencies(asset.type, payload, dataClassReferences)) refs.add(guid);
+        } else collectTypedRefs(payload, refs);
         collectOverrides(payload);
         if (typeof payload === "object" && "actors" in payload) {
           for (const guid of text2dImageGuidsFromScene(

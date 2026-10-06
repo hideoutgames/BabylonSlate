@@ -543,6 +543,7 @@ export function startPlaySession(options: {
   infiniteLoopDetection?: boolean;
   loopCount?: number;
   inputAssets?: import("@babylonslate/core").InputAssetDefinition[];
+  dataAssets?: import("@babylonslate/core").DataAssetCatalogEntry[];
   inputMappings?: import("@babylonslate/core").ProjectInputSettings;
   focusNavigation?: import("@babylonslate/core").FocusNavigationSettings;
   /** Called when a session-fatal diagnostic (infinite loop) arrives. */
@@ -947,6 +948,7 @@ export function startPlaySession(options: {
     infiniteLoopDetection: options.infiniteLoopDetection,
     loopCount: options.loopCount,
     inputAssets: options.inputAssets,
+    dataAssets: options.dataAssets,
     inputMappings: options.inputMappings,
     focusNavigation: options.focusNavigation,
     pixelsPerUnit: options.pixelsPerUnit,

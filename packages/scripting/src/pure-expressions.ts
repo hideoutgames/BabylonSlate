@@ -27,7 +27,7 @@ export function createPureExpressions(graph: LogicGraph, registry: NodeRegistry)
       if (expression.length <= 512) return `(${expression})`;
       const name = `_pure_${declarations.length}`;
       // Mutable values preserve the identity/allocation semantics of each read.
-      const immutable = ["bool", "int", "float", "string", "enumRef", "classRef", "assetRef"].includes(pin.type.kind);
+      const immutable = ["bool", "int", "tag", "float", "string", "enumRef", "classRef", "assetRef"].includes(pin.type.kind);
       if (immutable && isTransparent(node)) {
         declarations.push(`  let ${name}_ready = false, ${name}_value;\n  const ${name} = () => { if (!${name}_ready) { ${name}_value = (${expression}); ${name}_ready = true; } return ${name}_value; };`);
       } else {

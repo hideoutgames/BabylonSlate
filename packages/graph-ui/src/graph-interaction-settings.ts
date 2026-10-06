@@ -1,6 +1,15 @@
 import { createContext } from "react";
 
-export const GraphInteractionSettingsContext = createContext({ assistantEnabled: true, assistantDistance: 48, shakeEnabled: true });
+export interface GraphInteractionSettings {
+  assistantEnabled: boolean;
+  assistantDistance: number;
+  shakeEnabled: boolean;
+  readOnlyPinDefaults?: boolean;
+}
+
+export const GraphInteractionSettingsContext = createContext<GraphInteractionSettings>({
+  assistantEnabled: true, assistantDistance: 48, shakeEnabled: true, readOnlyPinDefaults: false,
+});
 
 /** Detect deliberate repeated motion in screen pixels; monotonic drags never shake. */
 export class NodeShakeTracker {

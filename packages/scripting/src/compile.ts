@@ -15,6 +15,8 @@ import { entryNodes } from "./compiled-nodes";
 import { isWritableVariableOutput } from "./variable-references";
 import { enumSwitchMemberNameFromPinId } from "./enum-switch-pins";
 import { flowSwitchCaseValueFromPinId } from "./flow-switch-pins";
+import { normalizeTag, normalizeTagContainer, type TagRegistry } from "@babylonslate/core";
+import { tagCasesOf, tagCasePinId, tagRuntimeSource } from "./tags";
 import {
   isFlowSwitchMeta,
   isLoopMeta,
@@ -138,6 +140,8 @@ export type CompileResult = {
 export type CompileOptions = {
   assetGuid: string;
   registry: NodeRegistry;
+  /** Project definitions are embedded so numeric Tag matching survives export. */
+  tagRegistry?: TagRegistry;
   exportName?: string;
   /**
    * Export compiles omit Development Only nodes (Print defaults on) and
@@ -307,6 +311,10 @@ function disconnectedPinLiteral(
 ): string {
   const prop = readPinDefaultForPin(node.properties, dataPin);
   if (prop !== undefined && !pinRejectsStoredDefault(dataPin.type)) {
+    if (dataPin.type.kind === "tag") return JSON.stringify(normalizeTag(prop));
+    if (dataPin.type.kind === "structRef" && dataPin.type.guid === "engine:TagContainer") {
+      return JSON.stringify(normalizeTagContainer(prop));
+    }
     return JSON.stringify(prop);
   }
   const catalog = catalogPinDefault(node, dataPin, registry);
@@ -334,6 +342,9 @@ export function compileGraph(
   };
   const exportName = options.exportName ?? "run";
   const preamble = [`//# sourceURL=babylonslate:///${options.assetGuid}.js`];
+  if (graph.nodes.some((node) => node.typeId.startsWith("tags."))) {
+    preamble.push(...tagRuntimeSource(options.tagRegistry).split("\n"));
+  }
   type HoistChunk = {
     source: string;
     nodeId: string;
@@ -939,6 +950,26 @@ export function compileGraph(
         break;
       }
 
+      if (def.structuredFlow?.kind === "switchOnTag") {
+        const ctx = makeCtx(node);
+        const anchor = { column: 1, assetGuid: options.assetGuid, graphId: graph.id, nodeId: node.id };
+        const cases = tagCasesOf(node.properties);
+        emitBody(`  {`, anchor);
+        emitBody(`  const __tagCase = __tags.select(${ctx.input("value")}, ${JSON.stringify(cases)}, ${ctx.input("exact")});`, anchor);
+        for (let i = 0; i < cases.length; i++) {
+          const tag = cases[i]!;
+          emitBody(`  ${i === 0 ? "if" : "} else if"} (__tagCase === ${tag}) {`, anchor);
+          emitAlong(graph.edges.filter((edge) =>
+            edge.sourceNodeId === node.id && edge.sourcePinId === tagCasePinId(tag)), visited);
+        }
+        if (cases.length) emitBody(`  } else {`, anchor);
+        emitAlong(graph.edges.filter((edge) =>
+          edge.sourceNodeId === node.id && edge.sourcePinId === "default"), visited);
+        if (cases.length) emitBody(`  }`, anchor);
+        emitBody(`  }`, anchor);
+        break;
+      }
+
       if (
         def.structuredFlow &&
         emitFlowSwitch(node, def.structuredFlow, visited)
@@ -1363,8 +1394,11 @@ export function compileTransitionRuleGraph(
     results[sink.key] = pin ? pinExpr(node, pin, "true") : "true";
   }
 
+  const tagPreamble = graph.nodes.some((node) => node.typeId.startsWith("tags."))
+    ? tagRuntimeSource(options.tagRegistry).split("\n") : [];
   const source = [
     `//# sourceURL=babylonslate:///${options.assetGuid}.js`,
+    ...tagPreamble,
     `export function evaluate(ctx) {`,
     ...pureExpressions.declarations,
     `  return { enter: (${results.enter}), exit: (${results.exit}) };`,
@@ -1376,7 +1410,7 @@ export function compileTransitionRuleGraph(
     source,
     anchors: [
       {
-        line: 2,
+        line: 2 + tagPreamble.length,
         column: 1,
         assetGuid: options.assetGuid,
         graphId: graph.id,

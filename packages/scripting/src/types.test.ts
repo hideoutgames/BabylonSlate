@@ -3,6 +3,7 @@ import {
   BOOL,
   FLOAT,
   INT,
+  TAG,
   STRING,
   VEC3,
   BOXED_WILDCARD,
@@ -17,6 +18,14 @@ import {
 } from "./types";
 
 describe("pin assignability", () => {
+  it("keeps Tag pins distinct from numeric pins despite numeric runtime storage", () => {
+    expect(isAssignable(TAG, TAG)).toBe(true);
+    for (const numeric of [INT, FLOAT]) {
+      expect(isAssignable(TAG, numeric)).toBe(false);
+      expect(isAssignable(numeric, TAG)).toBe(false);
+    }
+    expect(isAssignable(TAG, BOXED_WILDCARD)).toBe(true);
+  });
   it("allows int → float widening only", () => {
     expect(isAssignable(INT, FLOAT)).toBe(true);
     expect(isAssignable(FLOAT, INT)).toBe(false);

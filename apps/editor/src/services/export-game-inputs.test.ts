@@ -41,6 +41,25 @@ function textureAsset(): IndexedAsset {
 }
 
 describe("loadExportDocuments", () => {
+  it("packs standalone object values and reference-only sheets as player-readable JSON", async () => {
+    const documents = new Map<string, unknown>([
+      ["object", { kind: "dataObject", structureGuid: "weapon", values: { Damage: 10, Label: "Sword" }, schema: [{ name: "Damage", typeId: "float" }] }],
+      ["sheet", { kind: "dataSheet", structureGuid: "weapon", objectGuids: ["object"] }],
+    ]);
+    const assets = ["DataObject", "DataSheet"].map((type, index): IndexedAsset => ({
+      ...textureAsset(), path: index === 0 ? "object" : "sheet",
+      header: { ...textureAsset().header, guid: index === 0 ? "object" : "sheet", type, payload: {}, chunks: [] },
+    }));
+    const loaded = await loadExportDocuments({ assets, loadDocument: async (kind, path) => {
+      expect(kind).toBe(path === "object" ? "data-object" : "data-sheet");
+      return documents.get(path);
+    }, readAssetChunk: async () => null });
+    expect(JSON.parse(new TextDecoder().decode(loaded.bytesByGuid("object")!)))
+      .toMatchObject({ kind: "dataObject", values: { Damage: 10, Label: "Sword" } });
+    expect(JSON.parse(new TextDecoder().decode(loaded.bytesByGuid("sheet")!)))
+      .toEqual({ kind: "dataSheet", structureGuid: "weapon", objectGuids: ["object"] });
+    expect(loaded.payloadByGuid("object")).toBe(documents.get("object"));
+  });
   it.each(["RenderTarget", "RenderTargetTexture"])("retains %s document bytes and dependency payloads for export", async (type) => {
     const document = type === "RenderTarget" ? { size: 512, mode: "depth" } : { renderTargetGuid: "target", attachment: "depth" };
     const asset: IndexedAsset = { ...textureAsset(), path: `assets/capture.${type}.babasset`, header: {

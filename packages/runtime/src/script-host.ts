@@ -1,3 +1,5 @@
+import { createUnavailableEditorDataApi, type EditorDataApi } from "@babylonslate/scripting";
+import { RuntimeDataCatalog, type RuntimeDataApi } from "./data-catalog";
 import { emptyWaterSample, parseDeformerProperties, updateDeformerProperties, DEFORMER_PROPERTY_KEYS, DEFORMER_MAX_COORDINATE, type WaterSample } from "@babylonslate/core";
 import { createDefaultRenderTargetCaptureProperties, type RenderTargetMode, type RenderTargetCaptureProperty } from "@babylonslate/core";
 import { captureActorReferences, captureComponent, captureProperties, setCaptureProperty } from "./render-targets";
@@ -67,6 +69,9 @@ import { tweenOwnerAlive } from "./tween-runtime";
 import { isReadOnlyTweenProperty, propertyTweenReference, tweenStorageValue } from "./tween-targets";
 import { isUIControl2DClass } from "@babylonslate/core";
 
+const EMPTY_DATA = new RuntimeDataCatalog();
+const UNAVAILABLE_EDITOR_DATA = createUnavailableEditorDataApi();
+
 export type AnimGraphControl = {
   getVariable(name: string): unknown;
   setVariable(name: string, value: unknown): void;
@@ -82,6 +87,10 @@ export type ScriptColor = { x: number; y: number; z: number; w: number };
  * node from a later phase runs instead of throwing.
  */
 export interface ScriptHostServices {
+  /** Read-only session data, shared by runtime and editor utility graphs. */
+  data?: RuntimeDataApi;
+  /** Explicit editor-only capability; absent in every game runtime. */
+  editorData?: EditorDataApi;
   /** Session seed shared with the world and trace metadata. */
   seed?: number;
   /** Whether an object may receive authored calls during its owner's load. */
@@ -250,6 +259,8 @@ export interface ScriptHostServices {
 }
 
 export interface ScriptContext {
+  data: RuntimeDataApi;
+  editorData: EditorDataApi;
   inputBindings?: InputBindingControls;
   getInputState?: (input: InputTypeValue) => InputValueState | null;
   self: BObject | null;
@@ -1079,6 +1090,8 @@ export class ScriptHost {
     const store = extras?.variableStore ?? self;
     const tweenOwner = self ?? extras?.tweenOwner ?? null;
     const context: ScriptContext = {
+      data: services.data ?? EMPTY_DATA,
+      editorData: services.editorData ?? UNAVAILABLE_EDITOR_DATA,
       self,
       deltaSeconds,
       tickIndex,

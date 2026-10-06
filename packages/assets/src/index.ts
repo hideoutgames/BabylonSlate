@@ -7,6 +7,7 @@ export * from "./bytes";
 export * from "./installed-asset";
 export * from "./clear-asset-refs";
 export * from "./class-asset-refs";
+export * from "./data-asset-refs";
 export * from "./content-root";
 export * from "./decode-source-rgba";
 export * from "./derived-data";

@@ -37,6 +37,8 @@ export interface OpenDocument {
   content: DocumentContent | null;
   layout: Record<string, unknown> | null;
   dirty: boolean;
+  /** Canonical working document used by another editor, without its own tab. */
+  background?: boolean;
 }
 
 export interface DocumentRegistryState {
@@ -49,6 +51,8 @@ export interface DocumentRegistryState {
 
 export interface DocumentLoadOptions {
   signal?: AbortSignal;
+  /** Retain a shared working document without adding visible navigation. */
+  background?: boolean;
   /** Host paints blocking progress before storage access starts. */
   beforeLoad?: (ref: DocumentRef) => Promise<void>;
   /** Runs after a successful read, before replacing any open document. */
@@ -109,7 +113,7 @@ function sameLayout(
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
-type TabsSnapshot = { order: readonly string[]; active: string | null };
+type TabsSnapshot = { order: readonly string[]; foreground: readonly string[]; active: string | null };
 
 export class DocumentService {
   private readonly identityListeners = new Set<DocumentIdentityListener>();
@@ -158,6 +162,7 @@ export class DocumentService {
   private tabsSnapshot(): TabsSnapshot {
     return {
       order: [...this.state.tabOrder],
+      foreground: this.state.tabOrder.filter((id) => !this.state.openDocuments.get(id)?.background),
       active: this.state.activeDocumentId,
     };
   }
@@ -165,7 +170,8 @@ export class DocumentService {
   private advanceTabsIfChanged(before: TabsSnapshot): void {
     if (
       before.active === this.state.activeDocumentId &&
-      sameIds(before.order, this.state.tabOrder)
+      sameIds(before.order, this.state.tabOrder) &&
+      sameIds(before.foreground, this.state.tabOrder.filter((id) => !this.state.openDocuments.get(id)?.background))
     ) {
       return;
     }
@@ -199,7 +205,7 @@ export class DocumentService {
   getScrollableDocumentsOrdered(): OpenDocument[] {
     return this.getOpenDocumentsOrdered().filter(
       (doc) =>
-        doc.ref.kind !== "content-browser" && doc.ref.kind !== "scene",
+        !doc.background && doc.ref.kind !== "content-browser" && doc.ref.kind !== "scene",
     );
   }
 
@@ -327,6 +333,9 @@ export class DocumentService {
     options?: DocumentLoadOptions,
   ): Promise<string> {
     options?.signal?.throwIfAborted();
+    if (options?.background && (ref.kind === "content-browser" || isSceneWorkspaceKind(ref.kind))) {
+      throw new Error("Scene workspaces and Content Browser cannot be background documents.");
+    }
     if (ref.kind === "content-browser") {
       const tabs = this.tabsSnapshot();
       this.ensureContentBrowserTab();
@@ -344,7 +353,8 @@ export class DocumentService {
       options?.beforeCommit?.(ref);
       options?.signal?.throwIfAborted();
       const tabs = this.tabsSnapshot();
-      if (setActive) {
+      if (!options?.background) this.promoteDocument(existing);
+      if (setActive && !options?.background) {
         this.state.activeDocumentId = id;
       }
       if (ref.kind === "scene") {
@@ -374,6 +384,7 @@ export class DocumentService {
       content,
       layout,
       dirty: false,
+      ...(options?.background ? { background: true } : {}),
     };
 
     options?.beforeCommit?.(ref);
@@ -389,12 +400,16 @@ export class DocumentService {
       this.state.openDocuments.set(id, entry);
       this.state.tabOrder.push(id);
       this.advanceKinds([fullRef.kind]);
+    } else if (!options?.background) {
+      // A foreground read can race with a sheet loading this same record.
+      // Promote the canonical object, retaining any edits made during I/O.
+      this.promoteDocument(this.state.openDocuments.get(id)!);
     }
     if (ref.kind === "scene") {
       this.closeOtherSceneDocuments(id);
     }
     this.pinStickyTabs();
-    if (setActive) {
+    if (setActive && !options?.background) {
       this.state.activeDocumentId = id;
     }
     this.advanceTabsIfChanged(tabs);
@@ -425,7 +440,7 @@ export class DocumentService {
     this.state.tabOrder = this.state.tabOrder.filter((tabId) => tabId !== id);
     delete this.state.panelPlacements[id];
     if (this.state.activeDocumentId === id) {
-      this.state.activeDocumentId = this.state.tabOrder[0] ?? CONTENT_BROWSER_ID;
+      this.state.activeDocumentId = this.state.tabOrder.find((tabId) => !this.state.openDocuments.get(tabId)?.background) ?? CONTENT_BROWSER_ID;
     }
     this.pinStickyTabs();
     if (closed) this.advanceKinds([closed.ref.kind]);
@@ -499,11 +514,19 @@ export class DocumentService {
   }
 
   setActiveDocument(id: string): void {
-    if (this.state.openDocuments.has(id)) {
+    const doc = this.state.openDocuments.get(id);
+    if (doc) {
       const tabs = this.tabsSnapshot();
+      this.promoteDocument(doc);
       this.state.activeDocumentId = id;
       this.advanceTabsIfChanged(tabs);
     }
+  }
+
+  private promoteDocument(doc: OpenDocument): void {
+    if (!doc.background) return;
+    delete doc.background;
+    this.advanceKinds([doc.ref.kind]);
   }
 
   reorderClosableTabs(fromClosableIndex: number, toClosableIndex: number): void {
@@ -525,7 +548,9 @@ export class DocumentService {
       toId === undefined ||
       fromIndex === toIndex ||
       this.isPinnedChromeTabId(fromId) ||
-      this.isPinnedChromeTabId(toId)
+      this.isPinnedChromeTabId(toId) ||
+      this.state.openDocuments.get(fromId)?.background ||
+      this.state.openDocuments.get(toId)?.background
     ) {
       return;
     }
@@ -653,18 +678,18 @@ export class DocumentService {
   buildLayouts(): ProjectLayouts {
     const documents: Record<string, Record<string, unknown>> = {};
     for (const [id, doc] of this.state.openDocuments) {
-      if (doc.layout) {
+      if (doc.layout && !doc.background) {
         documents[id] = doc.layout;
       }
     }
     const panelPlacements = Object.fromEntries(
       Object.entries(this.state.panelPlacements).filter(
-        ([, placements]) => Object.keys(placements).length > 0,
+        ([id, placements]) => !this.state.openDocuments.get(id)?.background && Object.keys(placements).length > 0,
       ),
     );
     return {
       documents,
-      tabOrder: [...this.state.tabOrder],
+      tabOrder: this.state.tabOrder.filter((id) => !this.state.openDocuments.get(id)?.background),
       activeDocumentId: this.state.activeDocumentId,
       showPluginContent: this.state.showPluginContent,
       ...(Object.keys(panelPlacements).length > 0 ? { panelPlacements } : {}),

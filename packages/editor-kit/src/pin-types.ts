@@ -5,6 +5,8 @@ export const PIN_PICKER_TYPES = [
   "int",
   "float",
   "string",
+  "tag",
+  "tagContainer",
   "enum",
   "vec2",
   "vec3",
@@ -32,6 +34,8 @@ export const PIN_PICKER_LABEL: Record<string, string> = {
   int: "Int",
   float: "Float",
   string: "String",
+  tag: "Tag",
+  tagContainer: "TagContainer",
   enum: "Enum",
   vec2: "Vector 2",
   vec3: "Vector 3",
@@ -54,6 +58,8 @@ const PIN_PICKER_KIND: Record<PinPickerType, string> = {
   int: "int",
   float: "float",
   string: "string",
+  tag: "tag",
+  tagContainer: "structRef",
   enum: "enumRef",
   vec2: "vec2",
   vec3: "vec3",
@@ -99,6 +105,8 @@ export function pinPickerKeepsTypeClassId(type: string): boolean {
 
 /** Content Browser types stored on `typeClassId` when the picker type is Asset. */
 export const ASSET_REF_PICKER_TYPES = [
+  "DataObject",
+  "DataSheet",
   "InputAction",
   "InputAxis",
   "Audio",

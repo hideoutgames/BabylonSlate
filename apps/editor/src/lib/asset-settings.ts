@@ -1,4 +1,6 @@
 import { shouldCompressTexture, TEXTURE_DOWNSAMPLE_OPTIONS } from "@babylonslate/assets";
+import { newGuid } from "@babylonslate/core";
+import { dataFieldIdentity } from "@babylonslate/scripting";
 import type {
   EnumAsset,
   EnumMember,
@@ -74,9 +76,12 @@ export function patchEnumMember(
 }
 
 export function addStructureField(asset: StructureAsset): StructureAsset {
+  const names = new Set(asset.fields.map((field) => field.name));
+  let name = "NewField";
+  for (let suffix = 2; names.has(name); suffix++) name = `NewField${suffix}`;
   return {
     ...asset,
-    fields: [...asset.fields, { name: "NewField", typeId: "float" }],
+    fields: [...asset.fields, { id: newGuid(), name, typeId: "float" }],
   };
 }
 
@@ -106,7 +111,7 @@ export function patchStructureField(
   return {
     ...asset,
     fields: asset.fields.map((field, i) =>
-      i === index ? { ...field, ...patch } : field,
+      i === index ? { ...field, ...patch, id: dataFieldIdentity(field) } : field,
     ),
   };
 }

@@ -1,3 +1,5 @@
+import { isDataAssetPayload, mapDataAssetReferences, mapDataGraphLiteralReferences } from "./data-asset-refs";
+
 export interface ClassAssetReference {
   guid: string;
   classId: string;
@@ -39,6 +41,16 @@ function transform<T>(
   const names = new Map(classes.map((entry) => [entry.classId, entry]));
   const references = new Set<string>();
   const walk = (current: unknown, key?: string, owner?: Record<string, unknown>, pinDefaults: ReadonlySet<string> = new Set()): unknown => {
+    if (isDataAssetPayload(current)) {
+      return mapDataAssetReferences(current, (reference, kind) => {
+        const byGuid = guids.get(reference);
+        const match = byGuid ?? (kind === "class" ? names.get(reference) : undefined);
+        if (!match) return reference;
+        references.add(match.guid);
+        if (!replace) return reference;
+        return match.replacement ? (byGuid ? match.replacement.guid : match.replacement.classId) : null;
+      });
+    }
     if (typeof current === "string") {
       const byGuid = guids.get(current);
       const field = key?.replace(/^default:/, "");
@@ -70,6 +82,13 @@ function transform<T>(
     }
     if (current && typeof current === "object") {
       const record = current as Record<string, unknown>;
+      const mapped = mapDataGraphLiteralReferences(record, (reference, kind) => {
+        const byGuid = guids.get(reference);
+        const match = byGuid ?? (kind === "class" ? names.get(reference) : undefined);
+        if (!match) return reference;
+        references.add(match.guid);
+        return !replace ? reference : match.replacement ? (byGuid ? match.replacement.guid : match.replacement.classId) : null;
+      });
       const localDefaults = new Set(pinDefaults);
       if (Array.isArray(record.pins)) for (const pin of record.pins) {
         if (pin && typeof pin === "object" && (pin.type?.kind === "classRef" || pin.typeId === "class")) {
@@ -77,11 +96,13 @@ function transform<T>(
           if (typeof pin.name === "string") localDefaults.add(`default:${pin.name}`);
         }
       }
-      let changed = false;
+      let changed = mapped !== record;
       const next: Record<string, unknown> = {};
       for (const [childKey, entry] of Object.entries(record)) {
         let result: unknown;
-        if (childKey === "defaultValue" && record.container === "map" && Array.isArray(entry)) {
+        if (Array.isArray(record.dataSchema) && (childKey === "dataSchema" || childKey === "default:values")) {
+          result = mapped[childKey];
+        } else if (childKey === "defaultValue" && record.container === "map" && Array.isArray(entry)) {
           const entries = entry.map((row: unknown) => {
             if (!row || typeof row !== "object") return row;
             const pair = row as Record<string, unknown>;

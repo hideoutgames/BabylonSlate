@@ -1,4 +1,5 @@
 import { SceneLayerActorSwitchers } from "./scene-layer-actor-switcher";
+import { RuntimeDataCatalog } from "./data-catalog";
 import { overlayAnchorBindings } from "./overlay-anchor-layout";
 import { RuntimeMaterialParameters } from "./runtime-material-parameters";
 import { SceneLayerFocusNavigation } from "./scene-layer-focus";
@@ -179,7 +180,7 @@ import { SceneLayerLayout } from "./scene-layer-layout";
 import { SceneLayerVirtualization } from "./scene-layer-virtualization";
 import { isOverlayLayoutClass, isOverlayScrollClass, overlayLayoutKey, type OverlaySafeAreaInsets } from "@babylonslate/core";
 import { composeParentChildTransform } from "./actor-world-transform";
-import { blackboardTargetPosition, snapshotBlackboard } from "./bt-blackboard";
+import { blackboardInspectTypes, blackboardTargetPosition, snapshotBlackboard } from "./bt-blackboard";
 import type { ModelPayload, SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
 import {
   createNavigationBackend,
@@ -196,6 +197,8 @@ import {
 } from "@babylonslate/navigation";
 
 export interface RuntimeDriverOptions {
+  /** JSON data and shared Structures snapshotted at session startup. */
+  dataAssets?: import("@babylonslate/core").DataAssetCatalogEntry[];
   renderSettings?: Partial<RenderProjectSettings>;
   /** Initial render cap for console readback; does not change the simulation step. */
   frameCap?: number;
@@ -1058,6 +1061,7 @@ class InProcessRuntime implements RuntimeDriver {
     });
 
     this.scriptHost = new ScriptHost({
+      data: new RuntimeDataCatalog(options.dataAssets),
       seed: options.seed,
       canRunOwner: (owner) => this.canRunOwner(owner),
       inputBindings: this.resolver.bindings,
@@ -4496,6 +4500,8 @@ class InProcessRuntime implements RuntimeDriver {
       const document = treeGuid ? this.behaviourTrees.get(treeGuid) : null;
       if (!treeGuid || !document) continue;
       const state = this.btEvalBySlot.get(slotId);
+      const blackboardGuid = this.stringGuid(component.getVariable("blackboardGuid")) ?? document.blackboardGuid;
+      const blackboardTypes = blackboardInspectTypes(blackboardGuid ? this.blackboards.get(blackboardGuid) : undefined);
       trees.push({
         actorGuid: actor.guid,
         actorName: this.debugActorName(actor),
@@ -4505,7 +4511,8 @@ class InProcessRuntime implements RuntimeDriver {
         status: state?.status ?? "idle",
         btNodeId: state?.btNodeId ?? null,
         lastResults: { ...state?.lastResults },
-        blackboard: snapshotBlackboard(state?.blackboard ?? this.blackboardDefaults(this.stringGuid(component.getVariable("blackboardGuid")))),
+        blackboard: snapshotBlackboard(state?.blackboard ?? this.blackboardDefaults(blackboardGuid)),
+        ...(blackboardTypes ? { blackboardTypes } : {}),
         stack: state?.stack.map((frame) => ({ ...frame })) ?? [],
         nodes: document.nodes.map((node) => ({
           id: node.id, kind: node.kind, classId: node.classId,

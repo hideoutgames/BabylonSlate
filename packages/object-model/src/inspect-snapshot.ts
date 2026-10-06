@@ -19,7 +19,7 @@ export type DebugInspectNode = {
   parentId: string | null;
   transform?: ReturnType<typeof serializeTransform>;
   variables: Record<string, unknown>;
-  /** Class-def types for keys that exist in `variables`. Untyped keys are omitted. */
+  /** Class-def types; collections use array:<type> or map:<keyType>=><type>. */
   variableTypes?: Record<string, string>;
 };
 
@@ -60,7 +60,10 @@ function classVariableTypes(
   const types: Record<string, string> = {};
   for (const def of world.classRegistry.inheritedVariables(classId)) {
     if (Object.hasOwn(variables, def.name)) {
-      types[def.name] = def.type;
+      const keyType = def.keyTypeId === "struct" && def.keyTypeClassId === "engine:TagContainer"
+        ? "struct:engine:TagContainer" : def.keyTypeId ?? "string";
+      types[def.name] = def.container === "array" ? `array:${def.type}`
+        : def.container === "map" ? `map:${keyType}=>${def.type}` : def.type;
     }
   }
   return Object.keys(types).length > 0 ? types : undefined;
@@ -86,7 +89,10 @@ export function sanitizeInspectValue(value: unknown): unknown {
           return formatValue(current);
         }
         if (current instanceof Map) {
-          return Object.fromEntries(current.entries());
+          const entries = [...current];
+          return entries.every(([key]) => typeof key === "string")
+            ? Object.fromEntries(entries)
+            : entries.map(([key, entryValue]) => ({ key, value: entryValue }));
         }
         return current;
       }),

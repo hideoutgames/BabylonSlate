@@ -448,6 +448,7 @@ function initializePlayer(
     scene,
     physicsWorld: manifest.physicsWorld,
     inputAssets: manifest.inputAssets,
+    dataAssets: content.dataAssets,
     inputMappings: manifest.inputMappings,
     focusNavigation: manifest.focusNavigation,
     pixelsPerUnit: content.pixelsPerUnit,

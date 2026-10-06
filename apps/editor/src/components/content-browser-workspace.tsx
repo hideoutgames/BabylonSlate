@@ -202,7 +202,7 @@ import {
 } from "../lib/plugin-ui";
 import { revealAssetFromTarget } from "../lib/search-navigation";
 import { writeRetargetedAnimations } from "../lib/animation-retarget";
-import { collectClassGraphsForPalette } from "../lib/logic-graph-document";
+import { collectClassGraphsForPalette, collectGraphTypeAssets, typeSchemasFromGraphAssets } from "../lib/logic-graph-document";
 import { classIdForGraphPath } from "../services/script-compiler";
 import { useLongPressMenu } from "../lib/use-long-press-menu";
 import { useContentBrowserPaintSelect } from "../lib/use-content-browser-paint-select";
@@ -350,6 +350,7 @@ function ContentBrowserWorkspaceBody({
     useState<CreatableAssetType>("Scene");
   const [newAssetName, setNewAssetName] = useState("");
   const [newAssetParent, setNewAssetParent] = useState("BObject");
+  const [newDataStructure, setNewDataStructure] = useState<string | null>(null);
   const [newWaterStyle, setNewWaterStyle] = useState<import("@babylonslate/core").WaterStyle>("realistic");
   const [busy, setBusy] = useState(false);
   const [deleteProgress, setDeleteProgress] = useState<{
@@ -814,6 +815,9 @@ function ContentBrowserWorkspaceBody({
       flattenFolderForest(folderTrees).map((row) => row.path),
     [folderTrees],
   );
+  const newDataTypes = useMemo(() => newAssetOpen && (newAssetType === "DataObject" || newAssetType === "DataSheet")
+    ? collectGraphTypeAssets({ assets: allAssets, openDocuments })
+    : { structures: [], enums: [] }, [newAssetOpen, newAssetType, allAssets, openDocuments]);
   const newAssetNameTaken = isNewAssetNameTaken(
     existingAssetPaths,
     selectedFolderPath,
@@ -2227,6 +2231,9 @@ function ContentBrowserWorkspaceBody({
     setOperationError(null);
     try {
       const type = newAssetType;
+      if ((type === "DataObject" || type === "DataSheet") && !newDataStructure) {
+        throw new Error("Choose a Structure for the data asset.");
+      }
       const created = await createProjectAsset({
         registry: assetRegistry,
         rootId: selectedRoot.rootId,
@@ -2235,6 +2242,8 @@ function ContentBrowserWorkspaceBody({
         name,
         parentClass: type === "Class" ? newAssetParent : null,
         waterStyle: newWaterStyle,
+        structureGuid: newDataStructure,
+        typeSchemas: type === "DataObject" || type === "DataSheet" ? typeSchemasFromGraphAssets(newDataTypes) : undefined,
         classParentOf,
         parentGraphs:
           type === "Class"
@@ -2247,7 +2256,7 @@ function ContentBrowserWorkspaceBody({
       });
       setNewAssetOpen(false);
       await refreshAssetRegistry();
-      if (type === "Scene") {
+      if (type === "Scene" || type === "DataObject" || type === "DataSheet") {
         await openOrFocusDocument(created);
       }
     } catch (error) {
@@ -2262,6 +2271,8 @@ function ContentBrowserWorkspaceBody({
     newAssetName,
     newAssetNameTaken,
     newAssetParent,
+    newDataStructure,
+    newDataTypes,
     newWaterStyle,
     newAssetType,
     openDocuments,
@@ -2783,6 +2794,9 @@ function ContentBrowserWorkspaceBody({
         parentClass={newAssetParent}
         waterStyle={newWaterStyle}
         onWaterStyleChange={setNewWaterStyle}
+        structureGuid={newDataStructure}
+        onStructureGuidChange={setNewDataStructure}
+        structureAssets={newDataTypes.structures.map(structure => ({ guid: structure.guid, name: structure.name, type: "Structure" }))}
         onParentClassChange={setNewAssetParent}
         classAssets={allAssets.filter((asset) => asset.header.type === "Class")}
         nameTaken={newAssetNameTaken}

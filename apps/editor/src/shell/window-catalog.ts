@@ -8,6 +8,8 @@ export type DockviewDocumentKind =
   | "graph"
   | "enum"
   | "structure"
+  | "data-object"
+  | "data-sheet"
   | "script-interface"
   | "sprite"
   | "sprite-animation"
@@ -45,6 +47,8 @@ const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
   "graph",
   "enum",
   "structure",
+  "data-object",
+  "data-sheet",
   "script-interface",
   "sprite",
   "sprite-animation",
@@ -106,6 +110,8 @@ const DOCK_PRIMARY_PANEL: Record<DockviewDocumentKind, string> = {
   graph: "graph",
   enum: "enum-members",
   structure: "structure-members",
+  "data-object": "data-object-values",
+  "data-sheet": "data-sheet-rows",
   "script-interface": "script-interface-preview",
   sprite: "sprite-preview",
   "sprite-animation": "sprite-animation-preview",
@@ -955,6 +961,13 @@ export function listDockWindows(
   }
   if (kind === "input-action" || kind === "input-axis") return withOptionalLocks(kind, INPUT_WINDOWS, options);
   if (kind === "enum") return withOptionalLocks(kind, ENUM_WINDOWS, options);
+  if (kind === "data-object") return withOptionalLocks(kind, [
+    { id: "data-object-values", component: "data-object-values", title: "Values" },
+  ], options);
+  if (kind === "data-sheet") return withOptionalLocks(kind, [
+    { id: "data-sheet-rows", component: "data-sheet-rows", title: "Objects" },
+    { id: "data-object-values", component: "data-object-values", title: "Values", defaultPosition: { referencePanelId: "data-sheet-rows", direction: "right", initialWidth: 300 } },
+  ], options);
   if (kind === "structure") {
     return withOptionalLocks(kind, STRUCTURE_WINDOWS, options);
   }

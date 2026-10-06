@@ -8,6 +8,7 @@ import {
   UnlockIcon,
 } from "lucide-react";
 import { useState } from "react";
+import { TagGallery } from "./tag-gallery";
 import {
   AssetCreateProvider,
   type AssetCreateApi,
@@ -21,6 +22,7 @@ import {
   CatalogCardGrid,
   CatalogResultRow,
   ClassPicker,
+  ColorPicker,
   CurveField,
   GradientField,
   ModuleCard,
@@ -394,6 +396,26 @@ function GalleryParticleFields() {
         />
       </div>
     </div>
+  );
+}
+
+function GalleryColorPickers() {
+  const [rgba, setRgba] = useState<[number, number, number, number]>([0.9, 0.3, 0.1, 0.8]);
+  const [rgb, setRgb] = useState<[number, number, number, number]>([0.2, 0.55, 0.85, 1]);
+  return (
+    <section className="flex flex-col gap-4" data-testid="gallery-color-picker">
+      <h2 className="text-lg font-medium">Color Picker</h2>
+      <FieldGroup className="grid gap-3 md:grid-cols-2">
+        <Field>
+          <FieldLabel>RGBA Color</FieldLabel>
+          <ColorPicker value={rgba} onChange={setRgba} aria-label="RGBA Color" data-testid="gallery-color-picker-rgba" />
+        </Field>
+        <Field>
+          <FieldLabel>RGB Color</FieldLabel>
+          <ColorPicker value={rgb} withAlpha={false} onChange={setRgb} aria-label="RGB Color" data-testid="gallery-color-picker-rgb" />
+        </Field>
+      </FieldGroup>
+    </section>
   );
 }
 
@@ -1589,6 +1611,10 @@ export function ComponentGallery() {
           </section>
 
           <GalleryForms />
+
+          <GalleryColorPickers />
+
+          <TagGallery />
 
           <GalleryResizable />
 

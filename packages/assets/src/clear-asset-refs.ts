@@ -1,4 +1,5 @@
 import type { ProjectSettings } from "@babylonslate/core";
+import { isDataAssetPayload, mapDataAssetReferences, mapDataGraphLiteralReferences } from "./data-asset-refs";
 
 export type ClearDeletedAssetRefsResult<T> = {
   value: T;
@@ -74,6 +75,10 @@ function walk(
   deletedClassNames: ReadonlySet<string>,
   key?: string,
 ): unknown {
+  if (isDataAssetPayload(value)) {
+    return mapDataAssetReferences(value, (reference, kind) =>
+      deletedGuids.has(reference) || (kind === "class" && deletedClassNames.has(reference)) ? null : reference);
+  }
   if (typeof value === "string") {
     if (isDeletedAssetRef(value, deletedGuids)) return null;
     if (key === "gameInstanceClass" && deletedClassNames.has(value)) return null;
@@ -96,10 +101,12 @@ function walk(
   if (value && typeof value === "object") {
     const record = value as Record<string, unknown>;
     if (typeof record.Name === "string" && typeof record.Asset === "string" && deletedGuids.has(record.Asset)) return { ...record, Name: "", Asset: "" };
-    let changed = false;
+    const mapped = mapDataGraphLiteralReferences(record, (reference, kind) =>
+      deletedGuids.has(reference) || (kind === "class" && deletedClassNames.has(reference)) ? null : reference);
+    let changed = mapped !== record;
     const next: Record<string, unknown> = {};
     for (const [childKey, entry] of Object.entries(record)) {
-      const walked = walk(
+      const walked = Array.isArray(record.dataSchema) && (childKey === "dataSchema" || childKey === "default:values") ? mapped[childKey] : walk(
         entry,
         deletedGuids,
         deletedClassNames,

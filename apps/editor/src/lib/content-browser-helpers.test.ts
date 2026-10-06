@@ -1437,6 +1437,8 @@ describe("content-browser-helpers", () => {
       "Blackboard",
       "Enum",
       "Structure",
+      "DataObject",
+      "DataSheet",
       "ScriptInterface",
       "AudioMixer",
       "AudioChannel",
@@ -1478,6 +1480,7 @@ describe("content-browser-helpers", () => {
     expect(CREATABLE_ASSET_TYPE_GROUPS.map((group) => group.label)).toEqual([
       "World",
       "Input",
+      "Data",
       "Scripting",
       "2D",
       "Animation",

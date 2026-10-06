@@ -1,6 +1,7 @@
 import type { LogicGraph } from "./ir";
 import type { Diagnostic } from "./diagnostics";
 import type { ClassHierarchy } from "./types";
+import type { StructField } from "./type-assets";
 
 export type ClassMemberSymbol = {
   id: string;
@@ -82,12 +83,7 @@ export type TypeContext = {
       string,
       {
         name: string;
-        fields: Array<{
-          name: string;
-          typeId: string;
-          typeClassId?: string;
-          defaultValue?: unknown;
-        }>;
+        fields: StructField[];
       }
     >
   >;

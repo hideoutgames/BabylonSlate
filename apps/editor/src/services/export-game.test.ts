@@ -579,11 +579,23 @@ describe("collectAndExportGame", () => {
     });
   });
 
-  it("compiles AnimationGraph lifecycle and transition rules into packed scripts", async () => {
+  it.each([false, true])("compiles class and AnimationGraph scripts with project Tags for preview=%s", async (previewBuild) => {
+    const tagGraph: SerializedGraph = {
+      nodes: [
+        { id: "begin", type: "flow.event.beginPlay", position: { x: 0, y: 0 }, data: {} },
+        { id: "name", type: "tags.toString", position: { x: 0, y: 100 }, data: { "default:value": 2 } },
+        { id: "log", type: "debug.log", position: { x: 200, y: 0 }, data: {} },
+      ],
+      edges: [
+        { id: "start", source: "begin", sourceHandle: "execOut", target: "log", targetHandle: "execIn" },
+        { id: "name", source: "name", sourceHandle: "out", target: "log", targetHandle: "message" },
+      ],
+    };
     const scene = {
       ...createDefaultScene(),
       actors: [
         createActor("hero", "Hero", {
+          classId: "TagActor",
           components: [
             {
               id: "anim",
@@ -615,14 +627,21 @@ describe("collectAndExportGame", () => {
             position: { x: 0, y: 80 },
             data: { __protected: true },
           },
+          {
+            id: "tag-match",
+            type: "tags.matches",
+            position: { x: -200, y: 0 },
+            data: { "default:value": 2, "default:query": 1 },
+          },
         ],
-        edges: [],
+        edges: [{ id: "tag-enter", source: "tag-match", sourceHandle: "out", target: "enter-state", targetHandle: "value" }],
       },
     });
     const result = await collectAndExportGame({
       startupSceneGuid: "scene-1",
       assets: [
         asset({ guid: "scene-1", type: "Scene", name: "Main" }),
+        asset({ guid: "class-1", type: "Class", name: "TagActor", parentClass: "Actor" }),
         asset({
           guid: "graph-1",
           type: "AnimationGraph",
@@ -634,16 +653,24 @@ describe("collectAndExportGame", () => {
       projectPluginOverrides: {},
       parentOf: () => null,
       sceneByGuid: () => scene,
-      graphByGuid: () => null,
+      graphByGuid: (guid) => guid === "class-1" ? tagGraph : null,
       payloadByGuid: (guid) => (guid === "graph-1" ? doc : null),
       bytesByGuid: (guid) =>
         guid === "scene-1"
           ? new TextEncoder().encode(JSON.stringify(scene))
-          : new TextEncoder().encode(JSON.stringify(doc)),
+          : new TextEncoder().encode(JSON.stringify(guid === "class-1" ? tagGraph : doc)),
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
       playFrameCap: 60,
       physicsWorld: "3d",
       playerFiles,
+      previewBuild,
+      tagRegistry: {
+        tags: [
+          { id: 1, path: "State", parentId: 0 },
+          { id: 2, path: "State.Ready", parentId: 1 },
+        ],
+        nextId: 3,
+      },
     });
     expect(result.ok).toBe(true);
     if (!isOk(result)) return;
@@ -659,6 +686,24 @@ describe("collectAndExportGame", () => {
     );
     expect(scripts).toContain("onInitializeAnimation");
     expect(scripts).toContain("export function evaluate(ctx)");
+    const actor = registry.find((entry) => entry.classId === "TagActor");
+    const rule = registry.find((entry) => entry.classId === "AnimRule:graph-1:idle-to-idle");
+    expect(actor).toBeDefined();
+    expect(rule).toBeDefined();
+    const begin = new Function(
+      `${actor!.source.replace(/export function /g, "function ")}\nreturn onBeginPlay;`,
+    )() as (ctx: unknown) => void;
+    const logs: string[] = [];
+    begin({
+      checkInfiniteLoop: () => {},
+      formatValue: String,
+      log: (_severity: string, _category: string, value: string) => logs.push(value),
+    });
+    expect(logs).toEqual(["State.Ready"]);
+    const evaluate = new Function(
+      `${rule!.source.replace(/export function /g, "function ")}\nreturn evaluate;`,
+    )() as (ctx: unknown) => { enter: boolean };
+    expect(evaluate({}).enter).toBe(true);
   });
 
   it("packs a scene navmesh chunk under a sidecar guid", async () => {

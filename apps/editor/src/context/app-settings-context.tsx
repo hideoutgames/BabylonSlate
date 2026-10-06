@@ -188,7 +188,7 @@ export function AppSettingsProvider({
   );
   return (
     <AppSettingsContext.Provider value={value}>
-      <GraphInteractionSettingsContext.Provider value={{ assistantEnabled: snapshot.settings.graphAssistantEnabled, assistantDistance: snapshot.settings.graphAssistantDistance, shakeEnabled: snapshot.settings.graphShakeEnabled }}>
+      <GraphInteractionSettingsContext.Provider value={{ assistantEnabled: snapshot.settings.graphAssistantEnabled, assistantDistance: snapshot.settings.graphAssistantDistance, shakeEnabled: snapshot.settings.graphShakeEnabled, readOnlyPinDefaults: snapshot.settings.readOnlyPinDefaults }}>
         {children}
       </GraphInteractionSettingsContext.Provider>
     </AppSettingsContext.Provider>

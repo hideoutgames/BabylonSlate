@@ -1,3 +1,4 @@
+import type { DataAssetCatalogEntry } from "@babylonslate/core";
 import { normalizeWaterDefinition, type WaterDefinition } from "@babylonslate/core";
 import { DEFAULT_SORTING_LAYERS } from "@babylonslate/core";
 import { normalizeRenderTargetPayload, normalizeRenderTargetTexturePayload, type RenderTargetPayload, type RenderTargetTexturePayload } from "@babylonslate/core";
@@ -59,6 +60,7 @@ const JSON_CONTENT_TYPES = new Set([
   "Tilemap", "Tileset", "AnimationGraph", "BehaviourTree", "Blackboard",
   "Material", "MaterialInstance", "MaterialFunction", "AudioMixer", "AudioChannel",
   "SoundAttenuation", "Animation", "Audio",
+  "DataObject", "DataSheet", "Structure", "Enum",
 ]);
 
 export type PackedAudioLibrary = {
@@ -70,6 +72,7 @@ export type PackedAudioLibrary = {
 };
 
 export type PackedGameContent = {
+  dataAssets: DataAssetCatalogEntry[];
   spritePayloads: Map<string, SpritePayload>;
   spriteAnimationPayloads: Map<string, SpriteAnimationPayload>;
   waterPayloads: Map<string, WaterDefinition>;
@@ -151,6 +154,7 @@ function navmeshArrayBuffer(bytes: Uint8Array): ArrayBuffer {
 }
 
 export function packedContentFromGame(game: LoadedGame): PackedGameContent {
+  const dataAssets: DataAssetCatalogEntry[] = [];
   const spritePayloads = new Map<string, SpritePayload>();
   const spriteAnimationPayloads = new Map<string, SpriteAnimationPayload>();
   const waterPayloads = new Map<string, WaterDefinition>();
@@ -179,6 +183,10 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
     const bytes = game.payloads.get(entry.guid);
     if (!bytes) continue;
     const parsed = jsonFromBytes(bytes);
+    if (entry.type === "DataObject" || entry.type === "DataSheet" || entry.type === "Structure" || entry.type === "Enum") {
+      if (parsed) dataAssets.push({ guid: entry.guid, type: entry.type, name: entry.guid, payload: parsed });
+      continue;
+    }
     if (entry.type === "RenderTarget" && parsed) {
       renderTargets.set(entry.guid, normalizeRenderTargetPayload(parsed));
       continue;
@@ -322,6 +330,7 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
   }
 
   return {
+    dataAssets,
     spritePayloads,
     spriteAnimationPayloads: sizedSpriteAnimations,
     waterPayloads,
