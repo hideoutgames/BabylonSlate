@@ -204,7 +204,7 @@ The actor fixtures count unrelated transform reads (409,600 → 0 across 100 tic
 
 | Component | Properties (core) |
 | --- | --- |
-| `RigidBodyComponent` | `motionType` (`static` \| `kinematic` \| `dynamic`), `mass`, `linearDamping`, `angularDamping`, `gravityScale` |
+| `RigidBodyComponent` | `motionType` (`static` \| `kinematic` \| `dynamic`), `mass`, `linearDamping`, `angularDamping`, `gravityScale`. Details clamps Mass to at least 0.001 and hides Mass / Gravity Scale / Damping on a static body; Havok and Rapier both floor a non-positive runtime mass at 1e-6. |
 | `ColliderComponent` | `shape` (3D or 2D variant), `friction`, `restitution`, `isTrigger`, `layer`, `mask`, `renderInGame` (default **false**). Local `component.transform` is baked into `ColliderDesc` (translation, rotation, scaled sizes). |
 | `MeshComponent` | `collisionMode` (`simple` \| `complex` \| `none`, default **simple**), `layer` (default `1`), `mask` (default `0xffffffff`). 3D only. Simple uses Model `simpleColliders` or primitive built-ins; complex uses the visual triangle mesh (rest-pose; skinned meshes do not animate the collider). Friction/restitution use ColliderComponent defaults (0.5 / 0). Backend collider IDs include actor, component, and shape identity; saved copies with repeated component IDs remain independent. |
 | `BlockingVolumeComponent` | No authored properties. Place Actors **Physics → Blocking Volume** only (hidden from Add Component / Search). Editor: blue dotted unit box + `default.png` at the center. Play: helper hidden; static physics box from actor TRS. Not a navmesh input. |

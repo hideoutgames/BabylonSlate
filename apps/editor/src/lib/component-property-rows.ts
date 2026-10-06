@@ -83,6 +83,7 @@ const MOTION_TYPES = ["static", "kinematic", "dynamic"] as const;
 const SHAPE_KINDS_3D = ["box", "sphere", "capsule"] as const;
 const SHAPE_KINDS_2D = ["box2d", "circle", "capsule2d"] as const;
 const POINT_CLOUD_KINDS = new Set(["convex", "mesh", "polygon", "chain"]);
+const MIN_RIGID_BODY_MASS = 0.001;
 /** Physics rejects zero-sized primitives; sizes are unsigned. */
 const MIN_COLLIDER_EXTENT = 0.001;
 const colliderExtent = (value: number) =>
@@ -1150,20 +1151,42 @@ export function componentPropertyRows(
             ]
           : []),
       ];
-    case "RigidBodyComponent":
+    case "RigidBodyComponent": {
+      const motionType =
+        component.properties.motionType === "static" ||
+        component.properties.motionType === "kinematic" ||
+        component.properties.motionType === "dynamic"
+          ? component.properties.motionType
+          : "dynamic";
+      const motionRow: PropertyRow = {
+        kind: "enum",
+        id: rowId(actorId, component.id, "motionType"),
+        label: "Motion Type",
+        value: motionType,
+        options: MOTION_TYPES.map((type) => ({ value: type, label: type })),
+        onChange: (next) => update("motionType", next),
+      };
+      const skip = new Set([
+        "motionType",
+        "mass",
+        "gravityScale",
+        "linearDamping",
+        "angularDamping",
+      ]);
+      // A static body never moves, so mass, gravity and damping do nothing.
+      if (motionType === "static") {
+        return [motionRow, ...genericRows(actorId, component, update, skip)];
+      }
       return [
+        motionRow,
         {
-          kind: "enum",
-          id: rowId(actorId, component.id, "motionType"),
-          label: "Motion Type",
-          value:
-            component.properties.motionType === "static" ||
-            component.properties.motionType === "kinematic" ||
-            component.properties.motionType === "dynamic"
-              ? component.properties.motionType
-              : "dynamic",
-          options: MOTION_TYPES.map((type) => ({ value: type, label: type })),
-          onChange: (next) => update("motionType", next),
+          kind: "number",
+          id: rowId(actorId, component.id, "mass"),
+          label: "Mass",
+          value: asNumber(component.properties.mass, 1),
+          // Physics needs a positive mass; zero or negative would vanish (NaN).
+          min: MIN_RIGID_BODY_MASS,
+          onChange: (next) => update("mass", Math.max(MIN_RIGID_BODY_MASS, next)),
         },
         sliderRow(
           actorId,
@@ -1195,18 +1218,9 @@ export function componentPropertyRows(
           10,
           update,
         ),
-        ...genericRows(
-          actorId,
-          component,
-          update,
-          new Set([
-            "motionType",
-            "gravityScale",
-            "linearDamping",
-            "angularDamping",
-          ]),
-        ),
+        ...genericRows(actorId, component, update, skip),
       ];
+    }
     case "ColliderComponent":
       return [
         ...colliderShapeRows(

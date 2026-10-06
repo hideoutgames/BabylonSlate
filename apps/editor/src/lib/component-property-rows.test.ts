@@ -748,6 +748,49 @@ describe("componentPropertyRows", () => {
     );
   });
 
+  it("keeps RigidBody mass positive and hides motion tuning on a static body", () => {
+    const properties = {
+      mass: 1,
+      linearDamping: 0,
+      angularDamping: 0,
+      gravityScale: 1,
+    };
+    const dynamic = rowsFor({
+      id: "rb",
+      classId: "RigidBodyComponent",
+      properties: { motionType: "dynamic", ...properties },
+    });
+    const mass = dynamic.rows.find((row) => row.id.endsWith("-mass"));
+    if (mass?.kind !== "number") throw new Error("Missing mass row");
+    mass.onChange(-5);
+    expect(dynamic.update).toHaveBeenLastCalledWith("mass", 0.001);
+
+    const staticBody = rowsFor({
+      id: "rb",
+      classId: "RigidBodyComponent",
+      properties: { motionType: "static", ...properties },
+    });
+    expect(staticBody.rows.map((row) => row.label)).toEqual(["Motion Type"]);
+  });
+
+  it("stores collider half extents unsigned and above zero", () => {
+    const { rows, update } = rowsFor(
+      {
+        id: "col",
+        classId: "ColliderComponent",
+        properties: { shape: { kind: "box2d", halfExtents: { x: 0.5, y: 0.5 } } },
+      },
+      { physicsWorld: "2d" },
+    );
+    const extents = rows.find((row) => row.id.endsWith("-shape-half-extents"));
+    if (extents?.kind !== "vector3") throw new Error("Missing half extents row");
+    extents.onChange([-2, 0, 0]);
+    expect(update).toHaveBeenLastCalledWith("shape", {
+      kind: "box2d",
+      halfExtents: { x: 2, y: 0.001 },
+    });
+  });
+
   it("exposes RigidBody motionType as an enum and Light color as a color row", () => {
     const body = rowsFor({
       id: "rb",
