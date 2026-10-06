@@ -170,7 +170,7 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
     expect(runtime.executeConsoleCommand("destroyactor cam").success).toBe(false);
     runtime.stop();
   });
-  it("runs changescene through the command registry", () => {
+  it("reports changescene to a scene outside the library as a failure", () => {
     let loaded: string | undefined;
     const runtime = createInProcessRuntime({
       seed: 1,
@@ -189,8 +189,8 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
       }),
     );
     expect(runtime.executeConsoleCommand("changescene other-level")).toEqual({
-      success: true,
-      output: "changed scene to other-level",
+      success: false,
+      output: "unknown scene: other-level",
     });
     expect(loaded).toBeUndefined();
     runtime.stop();
@@ -405,7 +405,7 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
     runtime.stop();
   });
 
-  it("scales script and physics tick dt by slomo and clamps the rate", () => {
+  it("scales script and physics tick dt by slomo and rejects out-of-range rates", () => {
     const dts: number[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
@@ -434,10 +434,14 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
     expect(dts.at(-1)).toBeCloseTo(2 / 60);
     expect(runtime.getWorld().clock.dt).toBeCloseTo(2 / 60);
     expect(runtime.executeConsoleCommand("slomo").output).toBe("slomo 2");
-    expect(runtime.executeConsoleCommand("slomo 99").output).toBe("slomo 8");
+    // Out-of-range rates are rejected and leave the current dilation alone.
+    expect(runtime.executeConsoleCommand("slomo 99").success).toBe(false);
+    expect(runtime.executeConsoleCommand("slomo -1").success).toBe(false);
+    runtime.tick();
+    expect(dts.at(-1)).toBeCloseTo(2 / 60);
+    expect(runtime.executeConsoleCommand("slomo 8").output).toBe("slomo 8");
     runtime.tick();
     expect(dts.at(-1)).toBeCloseTo(8 / 60);
-    expect(runtime.executeConsoleCommand("slomo -1").output).toBe("slomo 0");
     runtime.stop();
   });
 
