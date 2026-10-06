@@ -61,7 +61,7 @@ function NumberDefault({ value, integer, disabled, onChange, label, testId, min,
     // Unmount the active field so its blur callback cannot commit the cancelled draft.
     setRevision((current) => current + 1);
   };
-  return <div className={axis ? "graph-pin-default-component w-16 min-w-0" : "graph-pin-default-number w-24"} onKeyDownCapture={cancel}>
+  return <div className={axis ? "graph-pin-default-component w-16 min-w-0" : "graph-pin-default-number w-36"} onKeyDownCapture={cancel}>
     <NumericDragField key={revision} value={draft ?? number} precision={integer ? 0 : undefined} label={axis} accent={accent}
       sensitivity={integer ? 1 : 0.01} min={min} max={max} disabled={disabled} aria-label={label} data-testid={testId}
       onChange={(next) => setDraft(integer ? Math.trunc(next) : next)}
