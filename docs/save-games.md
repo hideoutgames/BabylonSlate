@@ -15,16 +15,19 @@ The definition's **Schema Version** describes gameplay data. It is separate from
 
 ## Minimal save/load example
 
-Use the `coins` and `checkpoint` fields above. In the game's startup graph, connect Begin Play to **Load Game**. On its Failed branch, use **Error Code** to distinguish `missing` (start a new game) from a damaged or incompatible save (show an error). At a checkpoint, set the fields and call **Save Game**. Continue the success UI from **Completed**, and show **Error Message** from **Failed**. Empty Slot/Profile pins select the project defaults.
+Use the `coins` and `checkpoint` fields above. In the project's selected **Game Instance** class, connect **On First Scene Loaded** to **Load Game**. This event runs once per session after the first scene is ready. Register any migrations in **On Init**, before loading. On Load Game's Failed branch, use **Error Code** to distinguish `missing` (start a new game) from a damaged or incompatible save (show an error). At a checkpoint, set the fields and call **Save Game**. Continue the success UI from **Completed**, and show **Error Message** from **Failed**. Empty Slot/Profile pins select the project defaults.
 
-The same operations are available inside **Execute JavaScript** nodes. Turn on the node's **Async** option when using `await`. A startup load body:
+The same operations are available inside **Execute JavaScript** nodes. Turn on the node's **Async** option when using `await`. Connect this startup load body to **On First Scene Loaded**:
 
 ```js
 const result = await ctx.loadGame();
 if (!result.ok) {
   if (result.error.code === "missing") {
     const fresh = await ctx.newGame();
-    if (!fresh.ok) ctx.log("error", "Save", fresh.error.message);
+    if (!fresh.ok) {
+      ctx.log("error", "Save", fresh.error.message);
+      return;
+    }
   } else {
     ctx.log("error", "Save", result.error.message);
     return;
@@ -140,15 +143,19 @@ The current exporter produces a web player. Electron and Capacitor package the e
 
 ## Verification coverage
 
-No row below claims a completed run until its evidence has been recorded.
+Automated checks below passed in the implementation workspace. Runtime, save-node catalog, save manager, and scoped core/runtime/editor TypeScript checks were last confirmed at revision `31610d712`. Browser validation remains a separate pending check.
 
 | Coverage | Status | Evidence / limits |
 | --- | --- | --- |
-| Core saves, corruption, interrupted writes, storage failure, concurrency, migrations | Pending | Focused automated tests required. |
-| Runtime selected state, spawned actors, references, staged load | Pending | Runtime tests required. |
-| Editor definition/default selection and save tools | Pending | Browser Computer Use workflow required. |
-| Overlay Play, Preview Build, exported web player parity | Pending | Actual exported-player round trip required. |
-| Native desktop filesystem adapter | Pending | Unit filesystem evidence is separate from installed Windows/macOS/Linux validation. |
+| Core saves, corruption, interrupted writes, storage failure, concurrency, migrations | Passed automated checks | [Service tests](../packages/core/src/save-game.test.ts), [storage RPC tests](../packages/core/src/save-game-rpc.test.ts), and [script API/migration tests](../packages/runtime/src/script-host-save-game.test.ts); storage faults injected at the adapter boundary. |
+| Runtime selected state, spawned actors, references, staged load | Passed automated checks | [Runtime tests](../packages/runtime/src/save-game-runtime.test.ts), including rollback, class asset identity and actor fields; `31610d712`. |
+| Editor definition/default selection and save tools | Passed automated checks | [Definition panels](../apps/editor/src/panels/save-game-panels.test.tsx), [save manager](../apps/editor/src/components/project-save-games-settings.test.tsx), and [typed-node catalog](../apps/editor/src/lib/save-game-catalog.test.ts); manager/catalog rerun at `31610d712`. |
+| Preview iframe storage routing and isolation | Passed automated checks | [Preview bridge tests](../packages/exporter/src/preview-save-storage.test.ts): shared host storage, preview reset, namespace restrictions, trusted messages and reload cleanup. |
+| Packed-player save/load and worker storage routing | Passed automated checks | [Player boot tests](../apps/player/src/boot.test.ts): in-process restart and worker RPC with injected storage; browser OPFS round trip remains separate. |
+| Browser authoring, Overlay Play, Preview Build, and exported web player | Pending | Computer Use workflow and actual exported-player OPFS round trip not yet recorded. |
+| Web and mobile storage adapter contracts | Passed automated checks | [Adapter tests](../packages/vfs/src/save-game-storage.test.ts) use browser/native filesystem boundary doubles; these do not qualify installed browsers or devices. |
+| Linux Node filesystem and desktop IPC | Passed automated checks | [Node filesystem tests](../packages/vfs/src/save-game-node.test.ts), [desktop lease tests](../apps/desktop/src/desktop-save-games.test.ts), and [IPC security tests](../apps/desktop/src/packaged-security.test.ts). |
+| Installed Windows/macOS/Linux native applications | Unverified | Linux Node filesystem evidence does not qualify packaged native apps or other operating systems. |
 | Physical iOS/Android app-private storage | Unverified | No physical device run recorded. |
 | A16 iPad save/load latency and frame-time impact | Unverified | Desktop browser tests do not qualify mobile performance. |
 | Native exported games | Unsupported by current exporter | Existing native packages host the editor. |
