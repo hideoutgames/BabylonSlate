@@ -38,6 +38,8 @@ function projectPath(value: unknown, allowRoot = true): void {
 
 export function validateIpcArguments(channel: string, args: unknown[]): void {
   const counts: Record<string, number> = {
+    "save-games:read": 1, "save-games:write": 2, "save-games:remove": 1,
+    "save-games:list": 1, "save-games:acquire-lock": 1, "save-games:release-lock": 1,
     "settings:read": 0, "settings:write": 1, "secrets:get": 1, "secrets:set": 2, "secrets:delete": 1,
     "account-secrets:get": 1, "account-secrets:set": 2, "account-secrets:delete": 1,
     "lfs:fetch": 1, "project:pickFolder": 0, "project:openDocuments": 1, "project:openKnown": 1,
@@ -46,7 +48,15 @@ export function validateIpcArguments(channel: string, args: unknown[]): void {
     "project:remove": 1, "project:stat": 1,
   };
   requireValue(Object.hasOwn(counts, channel) && args.length === counts[channel]);
-  if (channel === "settings:write") {
+  if (channel.startsWith("save-games:")) {
+    text(args[0], 4096);
+    if (channel === "save-games:release-lock") requireValue(/^[a-zA-Z0-9-]{1,100}$/.test(args[0]));
+    else {
+      requireValue(!/[\\:]/.test(args[0]) && !args[0].startsWith("/") &&
+        args[0].split("/").every(part => part.length > 0 && part !== "." && part !== ".."));
+    }
+    if (channel === "save-games:write") text(args[1], 32 * 1024 * 1024);
+  } else if (channel === "settings:write") {
     text(args[0]);
     const parsed: unknown = JSON.parse(args[0]);
     requireValue(parsed && typeof parsed === "object" && !Array.isArray(parsed));
