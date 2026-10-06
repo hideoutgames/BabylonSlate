@@ -16,7 +16,7 @@ function fixture(patch = {}) {
       if (path === "/branches/main") return { protected: true, protection: { required_status_checks: { contexts: [] } } };
       if (path === "/rules/branches/main") return [];
       if (path.startsWith("/actions/workflows/verify.yml/runs")) return { workflow_runs: [{ id: 42, head_sha: sha, status: "completed", conclusion: "success", event: "push" }] };
-      if (path === "/actions/runs/42/jobs?per_page=100&filter=latest") return { jobs: ["static", "unit", ...Array.from({ length: 7 }, (_, i) => `e2e (${i + 1})`)].map(name => ({ name, head_sha: sha, status: "completed", conclusion: "success" })) };
+      if (path === "/actions/runs/42/jobs?per_page=100&filter=latest") return { jobs: ["static", "unit", ...Array.from({ length: 4 }, (_, i) => `e2e (${i + 1})`)].map(name => ({ name, head_sha: sha, status: "completed", conclusion: "success" })) };
       if (path.startsWith("/git/ref/tags/") || path.startsWith("/releases/tags/")) return null;
       throw new Error(`Unexpected read ${path}`);
     },

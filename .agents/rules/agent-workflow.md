@@ -117,7 +117,7 @@ Distribution is a separate operation governed by [distribution.md](distribution.
 
 - Assigned task is complete (not exploratory or blocked on user input).
 - Targeted local checks cover the current PR changes, with passing results and justified reuse of unaffected checks; prose-only changes have diff/link review.
-- The latest PR Verify run (`.github/workflows/verify.yml`) for that head succeeds: `static`, `unit`, and all seven `e2e` shards. All other required checks pass; draft skips, missing checks, pending, cancelled, or superseded runs are not a pass.
+- The latest PR Verify run (`.github/workflows/verify.yml`) for that head succeeds: `static`, `unit`, and all four `e2e` shards. All other required checks pass; draft skips, missing checks, pending, cancelled, or superseded runs are not a pass.
 - No unresolved merge conflicts.
 - User has **not** explicitly asked to hold the PR open, keep it draft, or skip merge.
 - Session is not read-only (e.g. Plan mode).

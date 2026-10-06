@@ -1,6 +1,6 @@
 # GitHub Actions — PR cadence
 
-Verify uses standard runners: `static` + `unit` + seven `e2e` shards = 9 jobs per ready PR. At most two counted ready PRs use 18 jobs; after one merges, the remaining PR + `main` Verify + Preview use 19. Keep this below GitHub Free's 20-job cap. Draft PRs record skipped checks but do not run these jobs.
+Verify uses standard runners: `static` + `unit` + four `e2e` shards = 6 jobs per ready PR. At most two counted ready PRs use 12 jobs; after one merges, the remaining PR + `main` Verify + Preview use 13. Keep this below GitHub Free's 20-job cap. Draft PRs record skipped checks but do not run these jobs.
 
 ## Local verification before opening
 
@@ -17,6 +17,6 @@ Verify uses standard runners: `static` + `unit` + seven `e2e` shards = 9 jobs pe
 
 ## Monitor, repair, and merge
 
-Follow [the delivery workflow](agent-workflow.md#workflow) through CI completion and confirmed merge. Batch repairs, pass checks targeted to those repairs, then push; each ready-PR push restarts nine Verify jobs. Pending CI is a reason to wait, not to hand the task back. Missing or skipped checks are not proof of a passing Verify run.
+Follow [the delivery workflow](agent-workflow.md#workflow) through CI completion and confirmed merge. Batch repairs, pass checks targeted to those repairs, then push; each ready-PR push restarts six Verify jobs. Pending CI is a reason to wait, not to hand the task back. Missing or skipped checks are not proof of a passing Verify run.
 
 Do not use larger runners to raise the cap. See [standard runners](github-actions-standard-runners.md).
