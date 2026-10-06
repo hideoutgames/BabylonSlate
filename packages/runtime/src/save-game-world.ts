@@ -257,8 +257,8 @@ export class SaveGameWorld {
         const row = byId.get(id);
         if (row?.parent !== undefined) id = row.parent;
         else {
-          const parentGuid = targets.get(id)?.getVariable("parentId");
-          const parent = typeof parentGuid === "string" ? this.host.world.findActor(parentGuid) : undefined;
+          const parentGuid: unknown = targets.get(id)?.getVariable("parentId");
+          const parent: Actor | undefined = typeof parentGuid === "string" ? this.host.world.findActor(parentGuid) : undefined;
           id = parent ? this.persistentId(parent) : null;
         }
       }
