@@ -5614,6 +5614,7 @@ class InProcessRuntime implements RuntimeDriver {
         for (const actor of actors) this.physicsSync.teleportActor(actor, this.world);
         this.publishSnapshot();
       },
+      reportError: (error) => { this.reportError(error); },
     });
     this.saveGameWorld = state;
     for (const actor of this.world.getActors()) state.register(actor, this.savedActors.has(actor));

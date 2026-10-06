@@ -175,4 +175,26 @@ describe("runtime Save Game", () => {
       expect(runtime.getWorld().findActor("companion")?.getVariable("health")).toBe(100);
     } finally { runtime.stop(); }
   });
+
+  it("completes committed destruction and reports a rejected renderer notification separately", async () => {
+    const storage = new MemoryStorage();
+    const first = await boot(storage);
+    try {
+      first.runtime.getWorld().destroyActor("door");
+      first.runtime.getWorld().flushPending();
+      first.service.getSaveData().coins = 8;
+      expect((await first.service.saveGame()).ok).toBe(true);
+    } finally { first.runtime.stop(); }
+    let reject = false;
+    const next = await boot(storage, { onCommand: (command) => {
+      if (reject && command.type === "despawn") { reject = false; throw new Error("renderer disconnected"); }
+    } });
+    try {
+      reject = true;
+      expect((await next.service.loadGame()).ok).toBe(true);
+      expect(next.runtime.getWorld().findActor("door")).toBeUndefined();
+      expect(next.service.getSaveData().coins).toBe(8);
+      expect(next.runtime.getDiagnostics().entries().some((entry) => entry.message.includes("renderer disconnected"))).toBe(true);
+    } finally { next.runtime.stop(); }
+  });
 });

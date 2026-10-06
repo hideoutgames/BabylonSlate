@@ -28,6 +28,7 @@ interface TrackedActor {
   spawned: boolean;
   selection: Selection;
   initial: SavedActor;
+  captured: boolean;
 }
 interface StagedWorldSave {
   snapshot: WorldSave;
@@ -43,6 +44,7 @@ export interface SaveGameWorldHost {
   realize(actor: Actor): void;
   remove(actor: Actor): void;
   synchronize(actors: readonly Actor[]): void;
+  reportError(error: unknown): void;
 }
 
 const reserved = new Set(["__proto__", "prototype", "constructor"]);
@@ -92,7 +94,6 @@ export class SaveGameWorld {
   private readonly tracked = new Map<string, TrackedActor>();
   private readonly identity = new WeakMap<Actor, string>();
   private scene = "";
-  private captured = false;
 
   constructor(private readonly host: SaveGameWorldHost) {}
 
@@ -107,7 +108,7 @@ export class SaveGameWorld {
 
   private updateScene(): void {
     const scene = this.host.sceneId();
-    if (scene !== this.scene) { this.tracked.clear(); this.scene = scene; this.captured = false; }
+    if (scene !== this.scene) { this.tracked.clear(); this.scene = scene; }
   }
 
   register(actor: Actor, spawned = false, persistentId?: string): void {
@@ -122,7 +123,7 @@ export class SaveGameWorld {
     if (previousId && this.tracked.get(previousId)?.actor === actor) {
       if (persistentId && persistentId !== previousId) {
         const entry = this.tracked.get(previousId)!;
-        if (!entry.spawned || this.captured || this.tracked.has(persistentId) || reserved.has(persistentId)) {
+        if (!entry.spawned || entry.captured || this.tracked.has(persistentId) || reserved.has(persistentId)) {
           throw new SaveGameError("incompatible", "Set a unique spawned actor identity before its first save.");
         }
         this.tracked.delete(previousId);
@@ -138,7 +139,7 @@ export class SaveGameWorld {
     const previous = this.tracked.get(id);
     if (previous && previous.actor !== actor && !previous.actor.destroyed) throw new SaveGameError("incompatible", `Duplicate persistent actor identity: ${id}`);
     this.identity.set(actor, id);
-    const entry: TrackedActor = { actor, id, spawned, selection: selected, initial: null! };
+    const entry: TrackedActor = { actor, id, spawned, selection: selected, initial: null!, captured: false };
     this.tracked.set(id, entry);
     entry.initial = this.captureActor(entry);
   }
@@ -206,7 +207,7 @@ export class SaveGameWorld {
     // Validate references before persisting, including references to a destroyed target.
     const snapshot = { version: 1, sceneId: this.scene, actors } satisfies WorldSave;
     this.validateReferences(snapshot, this.liveTargets());
-    this.captured = true;
+    for (const entry of this.tracked.values()) entry.captured = true;
     return snapshot as unknown as SaveGameValue;
   }
 
@@ -370,21 +371,30 @@ export class SaveGameWorld {
       const previous = this.tracked.get(saved.id);
       if (saved.destroyed) {
         const actor = previous?.actor ?? this.host.world.findActor(saved.id);
-        if (actor && !actor.destroyed) this.host.remove(actor);
+        if (actor && !actor.destroyed) this.finishCommit(() => this.host.remove(actor));
       } else {
         const actor = targets.get(saved.id)!;
         this.identity.set(actor, saved.id);
-        this.tracked.set(saved.id, { actor, id: saved.id, spawned: saved.spawned, selection: selection(actor)!, initial: previous?.initial ?? saved });
+        this.tracked.set(saved.id, { actor, id: saved.id, spawned: saved.spawned, selection: selection(actor)!, initial: previous?.initial ?? saved, captured: true });
       }
     }
     for (const [id, entry] of this.tracked) {
       if (entry.spawned && !savedIds.has(id)) {
-        if (!entry.actor.destroyed) this.host.remove(entry.actor);
+        if (!entry.actor.destroyed) this.finishCommit(() => this.host.remove(entry.actor));
         this.tracked.delete(id);
       }
     }
-    this.host.world.flushPending();
-    this.host.synchronize([...targets.values()].filter((actor) => !actor.destroyed));
+    this.finishCommit(() => this.host.world.flushPending());
+    this.finishCommit(() => this.host.synchronize([...targets.values()].filter((actor) => !actor.destroyed)));
+  }
+
+  /** After committing destruction, host notification faults are diagnostics,
+   * never a false load failure that implies the old game still exists. */
+  private finishCommit(operation: () => void): void {
+    try { operation(); }
+    catch (error) {
+      try { this.host.reportError(error); } catch { /* A disconnected renderer may also reject its diagnostic. */ }
+    }
   }
 
   reset(): void {
