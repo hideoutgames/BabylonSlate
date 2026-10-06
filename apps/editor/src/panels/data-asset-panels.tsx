@@ -281,7 +281,7 @@ export function DataSheetRowsPanel(_props: IDockviewPanelProps) {
           const asset = catalog.byGuid.get(definition.guid);
           if (asset) await state.documents.openDocument({ kind: "data-definition", path: asset.path, label: asset.header.name });
         })}>Open Definition</Button> : null}
-        <span className="ml-auto text-xs tabular-nums text-muted-foreground">{filtered.length === sheet.rows.length ? `${sheet.rows.length} Rows` : `${filtered.length} / ${sheet.rows.length} Rows`}</span>
+        <span className="ml-auto text-xs tabular-nums text-muted-foreground">{filtered.length === sheet.rows.length ? `${sheet.rows.length} ${sheet.rows.length === 1 ? "Row" : "Rows"}` : `${filtered.length} / ${sheet.rows.length} Rows`}</span>
       </div>
       <div className="flex flex-wrap items-center gap-1">
         <Button variant="outline" size="sm" className={TOUCH_ACTION} disabled={busy || readOnly || !definition} onClick={() => createRow()}>New Row</Button>
