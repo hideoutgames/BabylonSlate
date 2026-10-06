@@ -1159,9 +1159,10 @@ export class ScriptHost {
           service.registerMigration(fromVersion, (snapshot) => this.invokeSaveMigration(self, migrate, snapshot));
         }
       },
-      getSaveMigrationField: (id, type, array) => readField(migrationData().fields[id] ?? null, type, array),
-      setSaveMigrationField: (id, value, type, array) => {
-        const fields = cloneSaveGameValue({ [id]: writeField(value, type, array) }) as Record<string, SaveGameValue>;
+      // Actor identities remain IDs here: staged actors do not exist yet.
+      getSaveMigrationField: (id) => migrationData().fields[id] ?? null,
+      setSaveMigrationField: (id, value) => {
+        const fields = cloneSaveGameValue({ [id]: value }) as Record<string, SaveGameValue>;
         Object.assign(migrationData().fields, fields);
       },
       self,

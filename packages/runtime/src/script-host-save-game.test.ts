@@ -101,4 +101,27 @@ describe("ScriptHost save APIs", () => {
     expect((await previous.loadGame()).ok).toBe(true);
     expect(previous.getSaveData()).toEqual({ Coins: 8 });
   });
+
+  it("keeps actor identities intact in visual migrations before spawned actors exist", async () => {
+    const disk = storage();
+    const schema: SaveGameDefinition = { id: "party", schemaVersion: 1,
+      fields: [{ id: "party-id", name: "Party", type: "actor", array: true, defaultValue: ["companion", null] }] };
+    const previous = new SaveGameService({ projectId: "project", definition: schema, storage: disk });
+    expect((await previous.saveGame()).ok).toBe(true);
+    const saveGame = new SaveGameService({ projectId: "project", storage: disk, definition: { ...schema, schemaVersion: 2 } });
+    const host = new ScriptHost(services({ saveGame }));
+    await host.load({ assetGuid: "migration-refs", classId: "Migrator", anchors: [],
+      entryPoints: [{ name: "migrate", event: "onSaveMigration", isAsync: false }],
+      source: `export function migrate(ctx) {
+        const identities = ctx.getSaveMigrationField('party-id', 'actor', true);
+        ctx.setSaveMigrationField('party-id', identities, 'actor', true);
+      }`,
+    });
+    const ctx = host.createContext(new Actor({ classId: "Migrator" }), 0, 0);
+    ctx.registerSaveMigration(1, "onSaveMigration");
+    expect((await ctx.loadGame()).ok).toBe(true);
+    expect(ctx.getSaveData()).toEqual({ Party: ["companion", null] });
+    const pin = createDefaultNodeRegistry().get("saveGame.migrationGetField")!.pins({ fieldId: "party-id", typeId: "actor", array: true }).find((entry) => entry.id === "value");
+    expect(pin?.type).toEqual({ kind: "array", element: { kind: "string" } });
+  });
 });

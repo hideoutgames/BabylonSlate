@@ -51,12 +51,12 @@ function fieldNode(write: boolean, migration = false): NodeDefinition {
   return {
     id: `saveGame.${operation}`,
     title: `${write ? "Set" : "Get"} ${migration ? "Migration" : "Save"} Field`, category: "save-game", pure: !write,
-    description: migration ? "Read or update the staged migration field by its permanent field ID. Only valid inside Event Save Migration."
+    description: migration ? "Read or update the staged migration field by its permanent field ID. Actor references are persistent ID strings until world restoration. Only valid inside Event Save Migration."
       : "Read or update a typed Save Game field by its permanent ID. Save Game writes changes to storage.",
     pins: (properties) => [
       ...(write ? [pin("execIn", "Exec", "in", EXEC), pin("execOut", "Then", "out", EXEC)] : []),
       ...(properties.fieldId ? [] : [pin("fieldId", "Field ID", "in", STRING)]),
-      pin("value", String(properties.fieldName ?? "Value"), write ? "in" : "out", saveFieldPinType(properties)),
+      pin("value", String(properties.fieldName ?? "Value"), write ? "in" : "out", saveFieldPinType(migration && properties.typeId === "actor" ? { ...properties, typeId: "string" } : properties)),
     ],
     codegen: (ctx) => {
       const id = ctx.node.properties.fieldId ? JSON.stringify(ctx.node.properties.fieldId) : ctx.input("fieldId");
