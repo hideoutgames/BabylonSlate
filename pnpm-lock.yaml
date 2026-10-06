@@ -715,6 +715,9 @@ importers:
       '@babylonslate/scripting':
         specifier: workspace:*
         version: link:../scripting
+      acorn:
+        specifier: 8.18.0
+        version: 8.18.0
     devDependencies:
       '@babylonslate/scripting-nodes':
         specifier: workspace:*

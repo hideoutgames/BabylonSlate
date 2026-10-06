@@ -107,6 +107,9 @@ export async function loadGameFromFiles(
   files: Map<string, Uint8Array>,
   options: { fetchImpl?: typeof fetch; baseUrl?: string; signal?: AbortSignal; readFile?: (path: string, signal: AbortSignal) => Promise<Uint8Array> } = {},
 ): Promise<LoadedGame> {
+  // Invoke native fetch as a function, never as an options-object method: a
+  // browser rejects the latter's receiver with an Illegal invocation error.
+  const fetchAsset = options.fetchImpl;
   const manifest = parseGameManifest(textFromFiles(files, GAME_MANIFEST_FILE));
   const scripts = parseScriptRegistry(textFromFiles(files, manifest.scriptsFile));
   const scenes = new Map<string, SerializedScene>();
@@ -174,15 +177,15 @@ export async function loadGameFromFiles(
     const inMemory = entry.path ? files.get(entry.path) : undefined;
     if (inMemory) bytes = inMemory;
     else if (entry.path && options.readFile) bytes = await options.readFile(entry.path, signal);
-    else if (entry.path && options.fetchImpl && options.baseUrl) {
-      const response = await options.fetchImpl(new URL(entry.path, options.baseUrl).href, { signal });
+    else if (entry.path && fetchAsset && options.baseUrl) {
+      const response = await fetchAsset(new URL(entry.path, options.baseUrl).href, { signal });
       if (!response.ok) throw new Error(`Asset ${entry.guid} is missing (${entry.path}, HTTP ${response.status}).`);
       accounted = true;
       bytes = await readResponse(entry, response);
     } else if (entry.pack) {
       let source = packSources.get(entry.pack);
       if (!source) {
-        source = packSourceFor(files, entry.pack, options.fetchImpl, options.baseUrl);
+        source = packSourceFor(files, entry.pack, fetchAsset, options.baseUrl);
         packSources.set(entry.pack, source);
       }
       bytes = await source.read(entry.guid);

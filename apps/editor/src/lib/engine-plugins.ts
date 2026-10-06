@@ -31,7 +31,8 @@ export async function loadEnginePluginStorage(options: {
   await storage.openDocumentsProject("engine-plugins");
   const baseUrl = options.baseUrl ?? "/";
   try {
-    const response = await options.fetch(enginePluginPublicUrl(baseUrl, ENGINE_PLUGIN_INDEX_FILE));
+    const fetchCatalog = options.fetch;
+    const response = await fetchCatalog(enginePluginPublicUrl(baseUrl, ENGINE_PLUGIN_INDEX_FILE));
     if (!response.ok) {
       lastEnginePluginLoad.errors.push(`index ${response.status}`);
       return createReadOnlyProjectStorage(storage);

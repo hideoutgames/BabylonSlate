@@ -312,7 +312,16 @@ export async function acquirePlayAssetSources(
         for (const [guid, revision] of compileInputs) {
           if ((await host.registry.getAssetLocator(guid)).revision !== revision) throw new Error(`Class compilation input ${guid} changed; retry`);
         }
-        const value = { bundles: [...result.bundles], diagnostics: [...result.diagnostics] };
+        const byPath = new Map(host.registry.list().map(asset => [asset.path, asset]));
+        const bundles = result.bundles.map(script => {
+          const owner = host.registry.getByGuid(script.assetGuid) ?? byPath.get(script.assetGuid);
+          if (!owner) throw new Error(`Compiled Class ${script.classId} has no catalog asset for ${script.assetGuid}`);
+          return {
+            ...script,
+            assetGuid: owner.header.guid,
+          };
+        });
+        const value = { bundles, diagnostics: [...result.diagnostics] };
         return {
           value, sourceBytes: 0, decodedBytes: JSON.stringify(value).length * 2,
           dispose: () => { value.bundles.length = 0; value.diagnostics.length = 0; },

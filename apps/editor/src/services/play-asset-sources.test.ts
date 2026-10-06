@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { createEmptyProject } from "@babylonslate/core";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
+import { createInProcessRuntime } from "@babylonslate/runtime";
+import type { CommandMessage, ScriptBundleEntry } from "@babylonslate/bridge";
 import {
   AssetRegistry, buildBoxGlbFixture, createRegistryAssetLoadingService, encodeBabasset,
   FONT_FACETYPE_CHUNK_ID, projectContentRoot, type ChunkInput,
@@ -8,6 +10,58 @@ import {
 import { acquirePlayAssetSources, emptyPlaySourceControls, mergePreparedPlaySources, requiredProjectAssets } from "./play-asset-sources";
 
 describe("Play source ownership", () => {
+  it("reloads console Classes by catalog GUID after path-labelled compiled sources are released", async () => {
+    const storage = new MemoryStorageAdapter();
+    await storage.pickProjectFolder();
+    await storage.mkdir("assets");
+    const path = "assets/LoadLeft.class.babasset";
+    const guid = "command-owner-guid";
+    const command = { name: "stream_left_load", description: "Load left", category: "game", parameters: [] };
+    await storage.writeBinary(path, await encodeBabasset({
+      header: { guid, name: "LoadLeft.class", type: "Class", parentClass: "BDebugCommand", version: 1, engineVersion: "0.0.0", mode: "thin",
+        payload: { nodes: [], edges: [] }, dependencies: [], requiredDependencies: [], dependencyMetadataVersion: 1, consoleCommand: command },
+      chunks: [],
+    }));
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const loading = createRegistryAssetLoadingService(registry, { projectId: "console-reload" });
+    const compilerOutput: ScriptBundleEntry = {
+      assetGuid: path, classId: "LoadLeft", parentClassId: "BDebugCommand", command,
+      source: 'export async function onCommandRun(ctx) { await Promise.resolve(); ctx.reportCommand(true, "loaded"); }',
+      entryPoints: [{ name: "onCommandRun", event: "onCommandRun", isAsync: true }],
+      anchors: [{ assetGuid: path, line: 1, column: 1, graphId: "graph", nodeId: "run" }],
+    };
+    const compile = vi.fn(async () => ({ bundles: [compilerOutput], diagnostics: [] }));
+    const host = { registry, project: createEmptyProject("Commands"), createScope: (owner: string) => loading.createScope(owner), compile };
+    const messages: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
+      classAssetGuids: { LoadLeft: guid }, consoleCommands: [{ ...command, classId: "LoadLeft", assetGuid: guid }],
+      onCommand: message => messages.push(message),
+    });
+    try {
+      for (let invocation = 0; invocation < 2; invocation++) {
+        const completed = runtime.executeConsoleCommandAsync("stream_left_load");
+        const request = messages.filter(message => message.type === "assetPreload").at(-1);
+        if (!request || request.type !== "assetPreload") throw new Error("Expected a cold console acquisition");
+        expect(request.assetGuids).toEqual([guid]);
+        const prepared = await acquirePlayAssetSources(host, request.assetGuids, { consumer: request.ownerId, signal: new AbortController().signal });
+        try {
+          expect(prepared.game.scripts[0]).toMatchObject({ assetGuid: guid, source: compilerOutput.source, anchors: compilerOutput.anchors });
+          expect(compilerOutput.assetGuid).toBe(path);
+          await runtime.replaceScriptSources(prepared.game.scripts);
+          runtime.setAssetLoadStates([{ guid, state: "ready" }]);
+          runtime.notifyAssetPreloadResult({ preloadId: request.preloadId, success: true });
+          expect(await completed).toEqual({ success: true, output: "loaded" });
+          expect(messages.at(-1)).toEqual({ type: "assetPreloadRelease", preloadId: request.preloadId });
+        } finally { prepared.release(); }
+        await runtime.replaceScriptSources([]);
+        runtime.setAssetLoadStates([{ guid, state: "unloaded" }]);
+        loading.trim({ force: true });
+      }
+      expect(compile).toHaveBeenCalledTimes(2);
+    } finally { runtime.stop(); loading.dispose(); }
+  });
+
   it("shares compatible scoped compilation across scenes and evicts its code after the final owner", async () => {
     const storage = new MemoryStorageAdapter();
     await storage.pickProjectFolder();

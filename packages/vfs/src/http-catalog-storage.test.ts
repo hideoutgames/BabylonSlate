@@ -15,7 +15,10 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe("HTTP catalog storage", () => {
   it("browses without fetching files and reads independent header/chunk objects on ordinary static hosts", async () => {
-    const fetcher = vi.fn<typeof fetch>(async input => new Response(new Uint8Array(String(input).endsWith("header") ? [1, 2] : [3, 4, 5, 6])));
+    const fetcher = vi.fn<typeof fetch>(async function (this: unknown, input) {
+      expect(this).toBeUndefined();
+      return new Response(new Uint8Array(String(input).endsWith("header") ? [1, 2] : [3, 4, 5, 6]));
+    });
     const storage = new HttpCatalogStorageAdapter(await catalog(), { baseUrl: "/content/", fetch: fetcher });
     expect(await storage.readdir(".")).toEqual([{ name: "pack", isDir: true }]);
     expect(await storage.stat("pack/large.babasset")).toMatchObject({ size: 6 });

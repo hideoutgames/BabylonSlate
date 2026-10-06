@@ -122,7 +122,9 @@ export class HttpCatalogStorageAdapter implements ProjectStorage {
         const partial = partStart !== 0 || expected !== part.length;
         const base = this.options.baseUrl.endsWith("/") ? this.options.baseUrl : `${this.options.baseUrl}/`;
         const url = `${base}${part.file.split("/").map(encodeURIComponent).join("/")}`;
-        const response = await this.options.fetch(url, partial ? { headers: { Range: `bytes=${partStart}-${partStart + expected - 1}` } } : undefined);
+        // Native Window.fetch rejects an arbitrary options object as its receiver.
+        const fetchContent = this.options.fetch;
+        const response = await fetchContent(url, partial ? { headers: { Range: `bytes=${partStart}-${partStart + expected - 1}` } } : undefined);
         const contentRange = response.headers.get("content-range");
         const encoding = response.headers.get("content-encoding");
         if ((partial && (response.status !== 206 || contentRange !== `bytes ${partStart}-${partStart + expected - 1}/${part.length}` || (encoding && encoding !== "identity"))) ||

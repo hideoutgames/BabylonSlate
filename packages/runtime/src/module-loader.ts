@@ -1,3 +1,8 @@
+import { parse } from "acorn";
+
+/** Function constructor wrapper (two lines), then the strict directive. */
+export const COMPILED_MODULE_LINE_OFFSET = 3;
+
 export interface CompiledModuleExports {
   run?: (...args: unknown[]) => unknown;
   onTick?: (...args: unknown[]) => unknown;
@@ -13,36 +18,29 @@ export async function loadCompiledModule(
   source: string,
   label: string,
 ): Promise<CompiledModuleExports> {
-  const directive = `//# sourceURL=babylonslate:///${label}.js`;
-  const withUrl = /^\s*\/\/# sourceURL=.*$/m.test(source)
-    ? source.replace(/^[ \t]*\/\/# sourceURL=.*$/gm, directive)
-    : `${source}\n${directive}\n`;
-
-  return loadViaFunctionShim(withUrl);
+  return loadViaFunctionShim(source, label);
 }
 
-function loadViaFunctionShim(source: string): CompiledModuleExports {
-  const names = collectExportedFunctionNames(source);
-  const body = source.replace(/export\s+(async\s+)?function\s+/g, "$1function ");
-  const exports: CompiledModuleExports = {};
-  const module = { exports };
-  const assign = names
-    .map((name) => `exports[${JSON.stringify(name)}] = ${name};`)
-    .join("\n");
-  const fn = new Function(
-    "exports",
-    "module",
-    `${body}\n${assign}\nreturn module.exports;`,
-  );
-  return fn(exports, module) as CompiledModuleExports;
-}
-
-function collectExportedFunctionNames(source: string): string[] {
+function loadViaFunctionShim(source: string, label: string): CompiledModuleExports {
+  const program = parse(source, { ecmaVersion: "latest", sourceType: "module" });
   const names: string[] = [];
-  const re = /export\s+(?:async\s+)?function\s+(\w+)/g;
-  let match: RegExpExecArray | null;
-  while ((match = re.exec(source))) {
-    names.push(match[1]!);
+  const exportOffsets: number[] = [];
+  for (const statement of program.body) {
+    if (statement.type === "ExportNamedDeclaration" && statement.declaration?.type === "FunctionDeclaration") {
+      names.push(statement.declaration.id.name);
+      exportOffsets.push(statement.start);
+    } else if (statement.type === "ExportNamedDeclaration" || statement.type === "ExportDefaultDeclaration" ||
+      statement.type === "ExportAllDeclaration" || statement.type === "ImportDeclaration") {
+      throw new Error(`Script ${label}: generated modules must export function declarations.`);
+    }
   }
-  return names;
+  // Blank just the parsed export tokens: strings, comments, templates, regexp
+  // bodies, line numbers and all declaration columns remain untouched.
+  let body = source;
+  for (const start of exportOffsets.reverse()) body = `${body.slice(0, start)}      ${body.slice(start + 6)}`;
+  const members = names.map((name) => `[${JSON.stringify(name)}]: ${name}`).join(",");
+  // A final real directive supersedes previous source labels without rewriting
+  // authored text that happens to contain a sourceURL-looking template line.
+  const fn = new Function(`"use strict";\n${body}\nreturn {${members}};\n//# sourceURL=babylonslate:///${label}.js\n`);
+  return fn() as CompiledModuleExports;
 }

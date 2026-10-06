@@ -21,7 +21,8 @@ describe("loadEnginePluginStorage", () => {
       await (plugin.configResolved as () => Promise<void>)();
       const index = JSON.parse(readFileSync(join(publicDir, "index.json"), "utf8")) as HttpStorageCatalog;
       const requests: string[] = [];
-      const fetchFn: typeof fetch = async input => {
+      const fetchFn: typeof fetch = async function (this: unknown, input) {
+        expect(this).toBeUndefined();
         const file = String(input).split("engine-plugins/")[1]!;
         requests.push(file);
         return new Response(new Uint8Array(readFileSync(join(publicDir, file))));

@@ -52,6 +52,7 @@ export type ScriptConsoleCommand = {
 
 /** One compiled graph asset shipped to the runtime for a class. */
 export type ScriptBundleEntry = {
+  /** Owning catalog asset identity, independent of the source's authoring path. */
   assetGuid: string;
   classId: string;
   source: string;

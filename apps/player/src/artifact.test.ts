@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   createDefaultScene,
   createDefaultSceneLayer,
@@ -25,6 +25,25 @@ function useScriptsFilename(files: Map<string, Uint8Array>, scriptsFile: string)
 }
 
 describe("loadGameFromFiles", () => {
+  it("uses a valid native fetch receiver for default HTTP source loading", async () => {
+    const exported = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [
+      { guid: "scene", type: "Scene", sceneGuid: "scene", bytes: encoder.encode(JSON.stringify(createDefaultScene())) },
+    ] });
+    if (!exported.ok) throw new Error(exported.error);
+    const requested: string[] = [];
+    vi.stubGlobal("fetch", async function (this: unknown, input: RequestInfo | URL) {
+      if (this !== undefined && this !== globalThis) throw new TypeError("Failed to execute 'fetch' on 'Window': Illegal invocation");
+      const path = new URL(String(input)).pathname.slice(1);
+      requested.push(path);
+      return new Response(exported.value.files.get(path));
+    });
+    try {
+      const game = await loadGameFromHttp("https://game.example/");
+      expect(game.scenes.has("scene")).toBe(true);
+      expect(requested).toEqual([GAME_MANIFEST_FILE, SCRIPTS_FILE, exported.value.manifest.assets.find(asset => asset.guid === "scene")!.path]);
+      game.dispose!();
+    } finally { vi.unstubAllGlobals(); }
+  });
   it("keeps deferred compiled Class code unread and releases it after its final source owner", async () => {
     const script = { assetGuid: "prefab", classId: "Prefab", source: "export function onBeginPlay() {}", anchors: [], entryPoints: [{ name: "onBeginPlay", event: "onBeginPlay", isAsync: false }] };
     const exported = await exportGame({ bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [script], assets: [

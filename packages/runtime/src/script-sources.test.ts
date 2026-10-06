@@ -9,6 +9,31 @@ function script(label: string): CompiledScript {
 }
 
 describe("owned compiled script sources", () => {
+  it("maps a genuine compiled error to the correct adjacent authored node", async () => {
+    const failures: Array<{ nodeId?: string; bodyLine?: number }> = [];
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false,
+      onCommand: (command) => { if (command.type === "diagnostic" && command.message === "actual-body") failures.push(command); } });
+    const source: CompiledScript = { ...script("throwing"), source: [
+      "//# sourceURL=babylonslate:///class-a.js",
+      "export function tick(ctx) {",
+      "  const marker = 1;",
+      '  throw new Error("actual-body");',
+      '  ctx.log("log", "source-test", marker);',
+      "}",
+    ].join("\n"), anchors: [
+      { assetGuid: "class-a", graphId: "authored-js", nodeId: "previous", line: 3, column: 1, bodyLine: 1 },
+      { assetGuid: "class-a", graphId: "authored-js", nodeId: "throwing", line: 4, column: 1, bodyLine: 2 },
+      { assetGuid: "class-a", graphId: "authored-js", nodeId: "next", line: 5, column: 1, bodyLine: 3 },
+    ] };
+    try {
+      await runtime.replaceScriptSources([source]);
+      runtime.spawnScriptedActor({ classId: source.classId });
+      runtime.start();
+      runtime.tick();
+      expect(failures).toEqual([expect.objectContaining({ nodeId: "throwing", bodyLine: 2 })]);
+    } finally { runtime.stop(); }
+  });
+
   it("owns every Class module from one AnimationGraph asset and removes only retired modules", async () => {
     const messages: string[] = [];
     const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true,
@@ -19,7 +44,7 @@ describe("owned compiled script sources", () => {
       anchors: [{ assetGuid: "animation-owner", graphId: "rule-graph", nodeId: "rule-node", line: 3, column: 1 }] };
     const diagnostic = (classId: string) => {
       const error = new Error("module failure");
-      error.stack = `Error: module failure\n    at tick (babylonslate:///animation-owner~${classId}.js:3:1)`;
+      error.stack = `Error: module failure\n    at tick (babylonslate:///animation-owner~${classId}.js:6:1)`;
       return runtime.reportError(error);
     };
     try {

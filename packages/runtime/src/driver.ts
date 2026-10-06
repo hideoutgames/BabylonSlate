@@ -178,6 +178,7 @@ import {
   type BtResult,
 } from "@babylonslate/behaviour-tree";
 import { ScriptHost, compiledScriptKey, compiledScriptSourceLabel, type CompiledScript } from "./script-host";
+import { COMPILED_MODULE_LINE_OFFSET } from "./module-loader";
 import { shouldSpawnScriptedActor } from "./play-load";
 import { actorLocalPhysicsTransform, PhysicsWorldSync } from "./physics-sync";
 import { RagdollWorldSync } from "./ragdoll-sync";
@@ -2640,7 +2641,9 @@ class InProcessRuntime implements RuntimeDriver {
         this.registerScriptClass(script);
         this.scriptSources.set(compiledScriptKey(script), script);
         if (script.anchors.length > 0) {
-          this.registerAnchors(compiledScriptSourceLabel(script), script.anchors);
+          this.registerAnchors(compiledScriptSourceLabel(script), script.anchors.map((anchor) => ({
+            ...anchor, line: anchor.line + COMPILED_MODULE_LINE_OFFSET,
+          })));
           const anchors = ownerAnchors.get(script.assetGuid) ?? [];
           anchors.push(...script.anchors);
           ownerAnchors.set(script.assetGuid, anchors);
