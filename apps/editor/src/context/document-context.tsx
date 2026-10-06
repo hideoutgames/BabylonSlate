@@ -951,6 +951,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       const signature = graphCompileSignature(
         openGraphCompileDocuments(documentServiceRef.current),
         inputAssetCatalog(projectService.registry?.list() ?? [], [...documentServiceRef.current.getState().openDocuments.values()]),
+        projectDocumentRef.current?.settings.tags,
       );
       setLastCompiledSignature(signature);
       setPlayLoadedSignature(signature);
@@ -1849,8 +1850,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           cache: graphCompileCacheRef.current,
           enums: typeSchemas.enums,
           structs: typeSchemas.structs,
+          tagRegistry: document.settings.tags,
         });
-        setLastCompiledSignature(graphCompileSignature(graphs, inputAssetCatalog(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()])));
+        setLastCompiledSignature(graphCompileSignature(
+          graphs,
+          inputAssetCatalog(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
+          document.settings.tags,
+        ));
       }
       const layouts = documentService.buildLayouts();
       progress.phase("project");
@@ -2164,6 +2170,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         loopCount: exportDocument?.settings.loopCount,
         inputMappings: exportDocument?.settings.input,
         focusNavigation: exportDocument?.settings.focusNavigation,
+        tagRegistry: exportDocument?.settings.tags,
         playerFiles,
         previewBuild: options?.previewBuild,
         onPhase: options?.onPhase,
@@ -3032,6 +3039,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       cache: graphCompileCacheRef.current,
       enums: typeSchemas.enums,
       structs: typeSchemas.structs,
+      tagRegistry: projectDocumentRef.current?.settings.tags,
     });
   }, [collectGraphTypeSchemas, loadClassGraphDocuments, projectService, documentService]);
 
@@ -3110,10 +3118,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       inputAssets: inputAssetCatalog(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
         enums: typeSchemas.enums,
         structs: typeSchemas.structs,
+        tagRegistry: projectDocumentRef.current?.settings.tags,
         cache: graphCompileCacheRef.current,
       }),
       ...compileAnimGraphScripts(animDocuments, {
         cache: graphCompileCacheRef.current,
+        tagRegistry: projectDocumentRef.current?.settings.tags,
       }),
     ];
     recordPlayPreviewScripts(bundles, diagnostics);
@@ -4864,8 +4874,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     return graphCompileSignature(
       openGraphCompileDocuments(documentService),
       inputAssetCatalog(projectService.registry?.list() ?? [], [...documentService.getState().openDocuments.values()]),
+      projectDocument?.settings.tags,
     );
-  }, [documentService, graphSignatureRevision, projectService, registryEpoch]);
+  }, [documentService, graphSignatureRevision, projectDocument?.settings.tags, projectService, registryEpoch]);
 
   /** The `useDocuments()` facade: the stable actions plus per-edit state. */
   const value = useMemo<DocumentContextValue>(

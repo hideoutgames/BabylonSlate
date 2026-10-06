@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { SaveGameService, validateSaveGameDefinition, type SaveGameInfo, type SaveGameResult, type SaveGameValue } from "@babylonslate/core";
+import { SaveGameService, createDefaultSaveGameDefinition, validateSaveGameDefinition, type SaveGameInfo, type SaveGameResult, type SaveGameValue } from "@babylonslate/core";
 import { createSaveGameStorage, pickImportFiles } from "@babylonslate/vfs";
 import { AssetPicker, AssetPickerControl } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
@@ -98,8 +98,8 @@ export function ProjectSaveGamesSettings() {
   };
   if (!settings) return null;
   const disabled = pending || !service;
-  return <FieldGroup data-testid="settings-save-games-panel">
-    <FieldSet>
+  return <FieldGroup className="min-w-0" data-testid="settings-save-games-panel">
+    <FieldSet className="min-w-0">
       <FieldLegend>Save Games</FieldLegend>
       <Field><FieldLabel htmlFor="settings-save-definition">Default Definition</FieldLabel>
         <AssetPickerControl value={settings.definitionGuid}><Button id="settings-save-definition" variant="outline" className="w-full justify-start pointer-coarse:min-h-11" onClick={() => setPickerOpen(true)}>{definitionAsset?.header.name ?? "Choose Save Game"}</Button></AssetPickerControl>
@@ -107,9 +107,10 @@ export function ProjectSaveGamesSettings() {
       </Field>
       <Field><FieldLabel htmlFor="settings-save-slot">Default Slot</FieldLabel><Input id="settings-save-slot" value={settings.defaultSlot} onChange={(event) => updateProjectSettings({ saveGame: { ...settings, defaultSlot: event.target.value } })} /></Field>
       <Field><FieldLabel htmlFor="settings-save-profile">Default Profile</FieldLabel><Input id="settings-save-profile" value={settings.defaultProfile} onChange={(event) => updateProjectSettings({ saveGame: { ...settings, defaultProfile: event.target.value } })} /></Field>
-      <Field orientation="horizontal"><FieldContent><FieldLabel htmlFor="settings-save-wipe-on-play">Wipe Preview Saves On Play</FieldLabel><FieldDescription>Clear this project's local preview profiles before each Play session. Exported game saves use a separate namespace.</FieldDescription></FieldContent><Switch id="settings-save-wipe-on-play" checked={settings.wipeOnPlay} onCheckedChange={(wipeOnPlay) => updateProjectSettings({ saveGame: { ...settings, wipeOnPlay } })} /></Field>
+      {/* Reserve the Switch's expanded hit area without clipping it at the panel edge. */}
+      <Field orientation="horizontal" className="pr-3"><FieldContent className="min-w-0"><FieldLabel htmlFor="settings-save-wipe-on-play">Wipe Preview Saves On Play</FieldLabel><FieldDescription>Clear this project's local preview profiles before each Play session. Exported game saves use a separate namespace.</FieldDescription></FieldContent><Switch id="settings-save-wipe-on-play" checked={settings.wipeOnPlay} onCheckedChange={(wipeOnPlay) => updateProjectSettings({ saveGame: { ...settings, wipeOnPlay } })} /></Field>
     </FieldSet>
-    <FieldSet>
+    <FieldSet className="min-w-0">
       <FieldLegend>Preview Saves</FieldLegend>
       <FieldDescription>Inspect and manage this project's editor Play data on this device. Browser data can be cleared by the browser or user; export saves you need to keep.</FieldDescription>
       <div className="flex flex-wrap gap-3"><Field className="min-w-36 flex-1"><FieldLabel htmlFor="save-manager-profile">Profile</FieldLabel><Input id="save-manager-profile" value={profile} disabled={pending} onChange={(event) => setProfile(event.target.value)} /></Field><Field className="min-w-36 flex-1"><FieldLabel htmlFor="save-manager-slot">Import Slot</FieldLabel><Input id="save-manager-slot" value={slot} disabled={pending} onChange={(event) => setSlot(event.target.value)} /></Field></div>
@@ -125,12 +126,12 @@ export function ProjectSaveGamesSettings() {
           setNotice(`Imported ${info.slot}.`);
           await refresh();
         })}>Import Save</Button>
-        <Button size="sm" variant="outline" className="pointer-coarse:min-h-11" disabled={disabled} onClick={() => setDeleteTarget("all")}>Reset Preview Saves</Button>
+        <Button size="sm" variant="outline" className="pointer-coarse:min-h-11" disabled={pending || !projectGuid} onClick={() => setDeleteTarget("all")}>Reset Preview Saves</Button>
         <Button size="sm" variant="outline" className="pointer-coarse:min-h-11" disabled={disabled} onClick={() => void run(async () => {
           if (service) setNotice(resultValue(await service.requestPersistence()) ? "Persistent storage granted for this origin." : "Persistent storage was not granted. Keep exported backups.");
         })}>Request Persistent Storage</Button>
       </div>
-      {!saves.length ? <Empty><EmptyHeader><EmptyTitle>{service ? "No Preview Saves" : "Choose A Save Definition"}</EmptyTitle><EmptyDescription>{service ? "Save from Play or import a save to inspect it here." : "Select the project's default Save Game asset to manage its preview saves."}</EmptyDescription></EmptyHeader></Empty> : saves.map((save) => <Field key={`${save.profile}:${save.slot}`} className="rounded-md border border-border p-3">
+      {!saves.length ? <Empty><EmptyHeader><EmptyTitle>{service ? "No Preview Saves" : "Choose A Save Definition"}</EmptyTitle><EmptyDescription>{service ? "Save from Play or import a save to inspect it here." : "Select the project's default Save Game asset to inspect or import saves. Reset remains available without a definition."}</EmptyDescription></EmptyHeader></Empty> : saves.map((save) => <Field key={`${save.profile}:${save.slot}`} className="rounded-md border border-border p-3">
         <div className="flex flex-wrap items-center gap-2"><span className="font-medium">{save.slot}</span><Badge variant="outline">{save.status === "ok" ? save.recovered ? "Recovered" : "Valid" : save.status === "corrupt" ? "Corrupt" : "Incompatible"}</Badge></div>
         <FieldDescription>{save.createdAt ? `${new Date(save.createdAt).toLocaleString()} · Schema ${save.schemaVersion} · Generation ${save.sequence}` : save.error?.message}</FieldDescription>
         <div className="flex flex-wrap gap-2">
@@ -144,7 +145,21 @@ export function ProjectSaveGamesSettings() {
     <AssetPicker open={pickerOpen} onOpenChange={setPickerOpen} title="Pick Save Game" assets={(assetRegistry?.list() ?? []).map((entry) => ({ guid: entry.header.guid, name: entry.header.name, type: entry.header.type, path: entry.path }))} allowedTypes={["SaveGame"]} allowNone createOptions={{ ownerPath: null }} onPick={(definitionGuid) => { updateProjectSettings({ saveGame: { ...settings, definitionGuid } }); setPickerOpen(false); }} />
     <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}><AlertDialogContent variant="destructive"><AlertDialogHeader><AlertDialogTitle>{deleteTarget === "all" ? "Reset Preview Saves" : "Delete Save"}</AlertDialogTitle><AlertDialogDescription>{deleteTarget === "all" ? "Permanently delete every editor preview save profile for this project on this device. Exported game saves are separate. This cannot be undone." : `Permanently delete ${deleteTarget?.slot ?? "this save"} and both recovery generations. This cannot be undone.`}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => {
       const target = deleteTarget; setDeleteTarget(null);
-      void run(async () => { if (!service || !target) return; resultValue(await (target === "all" ? service.resetLocalSaves() : service.deleteSave(target))); setInspection(null); await refresh(); setNotice(target === "all" ? "Preview saves reset." : "Save deleted."); });
+      void run(async () => {
+        if (!target || !projectGuid) return;
+        // Reset needs only the project's namespace. This service never inspects,
+        // imports, loads, or saves data using a substituted definition.
+        const manager = service ?? (target === "all" ? new SaveGameService({
+          projectId: projectGuid, preview: true, storage: createSaveGameStorage(),
+          definition: createDefaultSaveGameDefinition("editor-preview-reset"),
+        }) : null);
+        if (!manager) return;
+        resultValue(await (target === "all" ? manager.resetLocalSaves() : manager.deleteSave(target)));
+        setInspection(null);
+        if (target === "all") setSaves([]);
+        await refresh();
+        setNotice(target === "all" ? "Preview saves reset." : "Save deleted.");
+      });
     }}>{deleteTarget === "all" ? "Reset Saves" : "Delete"}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
   </FieldGroup>;
 }

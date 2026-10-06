@@ -10,13 +10,14 @@ if (typeof window.PointerEvent === "undefined") {
 
 const harness = vi.hoisted(() => ({
   storage: null as SaveGameStorage | null,
+  definitionGuid: "progress" as string | null,
   settings: vi.fn(),
   definition: { id: "progress", schemaVersion: 1, fields: [{ id: "score", name: "Score", type: "int" as const, defaultValue: 0 }] },
 }));
 vi.mock("@babylonslate/vfs", async (importOriginal) => ({ ...await importOriginal<typeof import("@babylonslate/vfs")>(), createSaveGameStorage: () => harness.storage }));
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
   projectGuid: "project",
-  projectDocument: { settings: { saveGame: { definitionGuid: "progress", defaultProfile: "default", defaultSlot: "default", wipeOnPlay: false } } },
+  projectDocument: { settings: { saveGame: { definitionGuid: harness.definitionGuid, defaultProfile: "default", defaultSlot: "default", wipeOnPlay: false } } },
   assetRegistry: { getByGuid: () => ({ path: "Progress.savegame.babasset", header: { guid: "progress", name: "Progress", type: "SaveGame" } }), list: () => [] },
   openDocuments: [{ id: "progress", ref: { kind: "save-game", path: "Progress.savegame.babasset" }, content: harness.definition }],
   updateProjectSettings: harness.settings,
@@ -36,6 +37,7 @@ beforeEach(async () => {
     withLock: async (_key, operation) => operation(),
   };
   harness.settings.mockClear();
+  harness.definitionGuid = "progress";
   preview = new SaveGameService({ projectId: "project", definition: harness.definition, storage: harness.storage, preview: true });
   exported = new SaveGameService({ projectId: "project", definition: harness.definition, storage: harness.storage });
   preview.getSaveData().Score = 42;
@@ -68,6 +70,20 @@ describe("Preview Saves manager", () => {
     expect(await preview.listSaves()).toEqual({ ok: true, value: [] });
     expect(await preview.listSaves({ profile: "guest" })).toEqual({ ok: true, value: [] });
     expect((await exported.loadGame()).ok).toBe(true);
+  });
+
+  it("can reset orphaned preview saves without substituting a definition for inspection or import", async () => {
+    harness.definitionGuid = null;
+    render(<ProjectSaveGamesSettings />);
+    expect(screen.getByRole("button", { name: "Import Save" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.queryByRole("button", { name: "Inspect default" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Reset Preview Saves" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reset Saves" }));
+    await screen.findByText("Preview saves reset.");
+    expect(await preview.listSaves()).toEqual({ ok: true, value: [] });
+    expect(await preview.listSaves({ profile: "guest" })).toEqual({ ok: true, value: [] });
+    expect((await exported.loadGame()).ok).toBe(true);
+    expect(harness.settings).not.toHaveBeenCalled();
   });
 
   it("enables Play reset without losing the selected definition or slot", async () => {

@@ -26,6 +26,23 @@ function createInspectWorld() {
 }
 
 describe("createDebugInspectSnapshot", () => {
+  it("preserves collection types and Tag map keys in inspect snapshots", () => {
+    const world = createInspectWorld();
+    world.classRegistry.register({
+      id: "TaggedActor", parentClassId: "Actor", kind: "actor", implementedInterfaces: [],
+      variables: [
+        { name: "states", type: "tag", container: "array", defaultValue: [2, 7] },
+        { name: "rules", type: "struct:engine:TagContainer", container: "map", keyTypeId: "tag", defaultValue: [{ key: 2, value: { Tags: [7] } }] },
+      ],
+    });
+    world.spawnActorNow(world.createActor({ guid: "tagged", classId: "TaggedActor" }));
+    const node = createDebugInspectSnapshot(world).nodes.find((entry) => entry.id === "tagged");
+    expect(node).toMatchObject({
+      variableTypes: { states: "array:tag", rules: "map:tag=>struct:engine:TagContainer" },
+      variables: { states: [2, 7], rules: [{ key: 2, value: { Tags: [7] } }] },
+    });
+  });
+
   it("lists Game Instance, parented actors, and components as a parentId tree", () => {
     const world = createInspectWorld();
     const parent = world.createActor({
@@ -187,6 +204,21 @@ describe("createDebugInspectSnapshot", () => {
 });
 
 describe("sanitizeInspectValue", () => {
+  it.each([
+    { name: "numeric", entries: [[2, 7], [3, { Tags: [9] }]], expected: [{ key: 2, value: 7 }, { key: 3, value: { Tags: [9] } }] },
+    { name: "mixed numeric and text", entries: [[2, 7], ["2", { Tags: [9] }]], expected: [{ key: 2, value: 7 }, { key: "2", value: { Tags: [9] } }] },
+  ])("retains $name map keys as typed entries", ({ entries, expected }) => {
+    expect(sanitizeInspectValue(new Map(entries as Array<[unknown, unknown]>))).toEqual(expected);
+  });
+
+  it("preserves string-key map objects and sanitizes their nested references", () => {
+    const actor = new Actor({ classId: "Actor", guid: "a1" });
+    expect(sanitizeInspectValue(new Map([["Collection", new Map([["Target", actor]])]]))).toEqual({
+      Collection: { Target: { guid: "a1", classId: "Actor" } },
+    });
+    expect(sanitizeInspectValue(new Map())).toEqual({});
+  });
+
   it("keeps primitives and converts BObject refs", () => {
     expect(sanitizeInspectValue(7)).toBe(7);
     expect(sanitizeInspectValue("ok")).toBe("ok");

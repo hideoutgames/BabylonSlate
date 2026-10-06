@@ -1,4 +1,6 @@
 import type { ReactNode } from "react";
+import type { Tag, TagContainer } from "@babylonslate/core";
+import { TagPicker } from "./tag-picker";
 import { Button } from "@babylonslate/ui/components/button";
 import { Checkbox } from "@babylonslate/ui/components/checkbox";
 import {
@@ -55,6 +57,18 @@ interface PropertyRowBase {
 }
 
 export type PropertyRow =
+  | (PropertyRowBase & {
+      kind: "tag";
+      value: Tag;
+      defaultValue?: Tag;
+      onChange: (value: Tag) => void;
+    })
+  | (PropertyRowBase & {
+      kind: "tag-container";
+      value: TagContainer;
+      defaultValue?: TagContainer;
+      onChange: (value: TagContainer) => void;
+    })
   | (PropertyRowBase & {
       kind: "number";
       value: number;
@@ -218,6 +232,12 @@ function resetRow(row: PropertyRow): void {
       row.onChange(row.defaultValue!);
       row.onCommit?.(row.defaultValue!);
       break;
+    case "tag":
+      row.onChange(row.defaultValue!);
+      break;
+    case "tag-container":
+      row.onChange(row.defaultValue!);
+      break;
     case "boolean":
       row.onChange(row.defaultValue!);
       break;
@@ -273,6 +293,12 @@ function rowHasLabelTarget(row: PropertyRow): boolean {
 
 function RowControl({ row }: { row: PropertyRow }) {
   switch (row.kind) {
+    case "tag":
+      return <TagPicker mode="single" id={`property-${row.id}`} value={row.value} onChange={row.onChange}
+        disabled={row.disabled} mixed={row.mixed} aria-label={humanizePropertyLabel(row.label)} data-testid={`property-${row.id}`} />;
+    case "tag-container":
+      return <TagPicker mode="multiple" id={`property-${row.id}`} value={row.value} onChange={row.onChange}
+        disabled={row.disabled} mixed={row.mixed} aria-label={humanizePropertyLabel(row.label)} data-testid={`property-${row.id}`} />;
     case "number":
       return (
         <NumericDragField

@@ -319,6 +319,8 @@ export type DebugBehaviourTree = {
   btNodeId: string | null;
   lastResults: Record<string, string>;
   blackboard: Record<string, unknown>;
+  /** Declared types preserve Tag identities and collection shapes in inspection. */
+  blackboardTypes?: Record<string, string>;
   stack: Array<{ nodeId: string; childIndex: number; opened: boolean }>;
   nodes: Array<{
     id: string;

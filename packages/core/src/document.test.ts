@@ -81,6 +81,7 @@ describe("P9 document kinds", () => {
     expect(documentKindForAssetType("SaveGame")).toBe("save-game");
     expect(assetTypeForDocumentKind("save-game")).toBe("SaveGame");
     expect(documentKindLabel("save-game")).toBe("Save Game");
+    expect(labelFromPath("assets/PlayerProgress.savegame.babasset")).toBe("PlayerProgress");
     expect(assetTypeForDocumentKind("behaviour-tree")).toBe("BehaviourTree");
     expect(assetTypeForDocumentKind("blackboard")).toBe("Blackboard");
     expect(isAssetDocumentKind("font")).toBe(true);

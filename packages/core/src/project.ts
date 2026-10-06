@@ -6,6 +6,7 @@ import { normalizeShadowSettings, type ShadowSettings } from "./shadows";
 import { normalizeEnvironmentLightingSettings, type EnvironmentLightingSettings } from "./environment-lighting";
 import { normalizeRenderEffectsSettings, type RenderEffectsSettings } from "./render-effects";
 import type { ProjectAppearance } from "./project-appearance";
+import { normalizeTagRegistry, type TagRegistry } from "./tags";
 import { normalizeFocusNavigationSettings, type FocusNavigationSettings } from "./scene-layer-focus";
 import {
   createActor,
@@ -178,6 +179,8 @@ export const NEW_PROJECT_RENDER_SETTINGS: RenderProjectSettings = {
 export interface ProjectSettings {
   /** Player saves live outside project assets; Play uses an isolated namespace. */
   saveGame: SaveGameProjectSettings;
+  /** Project-wide Tag paths and stable numeric identifiers. */
+  tags: TagRegistry;
   touchMinTargetPx: number;
   /** Play/Preview render cap in fps. Editor viewports use Engine Settings. */
   playFrameCap: number;
@@ -716,6 +719,7 @@ export function normalizeProjectSettings(
   const twoD = settings?.twoD;
   return {
     saveGame: normalizeSaveGameSettings(settings?.saveGame),
+    tags: normalizeTagRegistry(settings?.tags),
     touchMinTargetPx: settings?.touchMinTargetPx ?? 44,
     playFrameCap: normalizePlayFrameCap(settings?.playFrameCap),
     compileOnSave: settings?.compileOnSave !== false,

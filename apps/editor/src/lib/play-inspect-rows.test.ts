@@ -7,6 +7,45 @@ import {
 } from "./play-inspect-rows";
 
 describe("playInspectPropertyRows", () => {
+  it("renders array elements and map keys and values with their declared Tag types", () => {
+    const rows = playInspectPropertyRows([
+      { id: "states", label: "States", type: "array:tag", value: [2, 7] },
+      { id: "rules", label: "Rules", type: "map:tag=>struct:engine:TagContainer", value: [{ key: 2, value: { Tags: [7, 9] } }] },
+      { id: "named", label: "Named", type: "map:string=>tag", value: { Alive: 7 } },
+    ]);
+    expect(rows).toMatchObject([
+      { id: "states:0", kind: "tag", value: 2, disabled: true },
+      { id: "states:1", kind: "tag", value: 7, disabled: true },
+      { id: "rules:0:key", kind: "tag", value: 2, disabled: true },
+      { id: "rules:0:value", kind: "tag-container", value: { Tags: [7, 9] }, disabled: true },
+      { id: "named:0:key", kind: "text", value: "Alive", disabled: true },
+      { id: "named:0:value", kind: "tag", value: 7, disabled: true },
+    ]);
+  });
+
+  it("reads legacy sanitized Tag map keys and labels empty collections", () => {
+    const rows = playInspectPropertyRows([
+      { id: "legacy", label: "Legacy", type: "map:tag=>tag", value: { "2": 7 } },
+      { id: "array", label: "Array", type: "array:tag", value: [] },
+      { id: "map", label: "Map", type: "map:tag=>tag", value: [] },
+    ]);
+    expect(rows).toMatchObject([
+      { kind: "tag", value: 2 }, { kind: "tag", value: 7 },
+      { kind: "text", value: "Empty Array" }, { kind: "text", value: "Empty Map" },
+    ]);
+  });
+
+  it("uses read-only Tag pickers for declared Tags and TagContainers", () => {
+    const [tag, container, ordinaryStruct] = playInspectPropertyRows([
+      { id: "state", label: "State", value: 7, type: "tag" },
+      { id: "allowed", label: "Allowed", value: { Tags: [2, 7] }, type: "struct:engine:TagContainer" },
+      { id: "stats", label: "Stats", value: { Tags: [2, 7] }, type: "struct" },
+    ]);
+    expect(tag).toMatchObject({ kind: "tag", value: 7, disabled: true });
+    expect(container).toMatchObject({ kind: "tag-container", value: { Tags: [2, 7] }, disabled: true });
+    expect(ordinaryStruct?.kind).toBe("text");
+  });
+
   it("maps bool values to disabled checkboxes", () => {
     const [row] = playInspectPropertyRows([
       { id: "alive", label: "alive", value: true, type: "bool" },

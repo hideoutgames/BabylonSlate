@@ -1,4 +1,4 @@
-import type { BlackboardValues } from "@babylonslate/behaviour-tree";
+import type { BlackboardDocument, BlackboardValues } from "@babylonslate/behaviour-tree";
 import type { Transform } from "@babylonslate/core";
 import {
   Actor,
@@ -15,6 +15,30 @@ export function snapshotBlackboard(values: BlackboardValues): BlackboardValues {
   return Object.fromEntries(
     Object.entries(values).map(([key, value]) => [key, sanitizeInspectValue(value)]),
   );
+}
+
+function inspectType(type: BlackboardDocument["keys"][number]["type"]): string {
+  switch (type.kind) {
+    case "array":
+      return `array:${inspectType(type.element)}`;
+    case "map":
+      return `map:${inspectType(type.key)}=>${inspectType(type.value)}`;
+    case "structRef":
+      return `struct:${type.guid}`;
+    case "objectRef":
+    case "actorRef":
+      return "object";
+    case "classRef":
+      return "class";
+    default:
+      return type.kind;
+  }
+}
+
+/** Transport the schema alongside values so numeric Tags are never guessed. */
+export function blackboardInspectTypes(document?: BlackboardDocument): Record<string, string> | undefined {
+  if (!document?.keys.length) return undefined;
+  return Object.fromEntries(document.keys.map((key) => [key.name, inspectType(key.type)]));
 }
 
 /**

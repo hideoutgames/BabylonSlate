@@ -14,6 +14,10 @@ export type StructField = {
   typeId: string;
   /** Object/class constraint, or nested Structure/Enum asset guid. */
   typeClassId?: string;
+  /** Fields may hold the same typed collections as Class variables. */
+  container?: "single" | "array" | "map";
+  keyTypeId?: string;
+  keyTypeClassId?: string;
   defaultValue?: unknown;
 };
 

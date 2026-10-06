@@ -19,6 +19,7 @@ export * from "./text2d-appear";
 export * from "./painter2d";
 export * from "./rich-text";
 export * from "./project";
+export * from "./tags";
 export * from "./cel-shading";
 export * from "./shadows";
 export * from "./project-appearance";

@@ -9,6 +9,8 @@ import {
   RESOLVING_WILDCARD,
   ROTATOR,
   STRING,
+  TAG,
+  TAG_CONTAINER,
   TRANSFORM,
   VEC2,
   VEC3,
@@ -95,6 +97,8 @@ export const selectNodes: NodeDefinition[] = [
   typedSelect("select.rotator", "Select Rotator", ROTATOR),
   typedSelect("select.transform", "Select Transform", TRANSFORM),
   typedSelect("select.color", "Select Color", COLOR),
+  typedSelect("select.tag", "Select Tag", TAG),
+  typedSelect("select.tagContainer", "Select TagContainer", TAG_CONTAINER),
   {
     id: "enum.select",
     title: "Select",

@@ -3,6 +3,7 @@ import type { CommandMessage } from "@babylonslate/bridge";
 import {
   type GraphClassMemberPin,
   type SerializedGraph,
+  type TagRegistry,
 } from "@babylonslate/core";
 import {
   classIdForGraphPath,
@@ -39,7 +40,86 @@ const tickToLog: SerializedGraph = {
   ],
 };
 
+const stateTags: TagRegistry = {
+  tags: [
+    { id: 1, path: "State", parentId: 0 },
+    { id: 2, path: "State.Ready", parentId: 1 },
+    { id: 3, path: "Movement", parentId: 0 },
+  ],
+  nextId: 4,
+};
+
+const movedStateTags: TagRegistry = {
+  ...stateTags,
+  tags: stateTags.tags.map((tag) => tag.id === 2
+    ? { id: 2, path: "Movement.Ready", parentId: 3 }
+    : tag),
+};
+
+function tagMatchGraph(entryType = "flow.event.tick"): SerializedGraph {
+  return {
+    nodes: [
+      { id: "entry", type: entryType, position: { x: 0, y: 0 }, data: {} },
+      { id: "match", type: "tags.matches", position: { x: 0, y: 100 }, data: { "default:value": 2, "default:query": 1 } },
+      { id: "branch", type: "flow.branch", position: { x: 200, y: 0 }, data: {} },
+      { id: "yes", type: "debug.log", position: { x: 400, y: 0 }, data: { "default:message": "matched" } },
+      { id: "no", type: "debug.log", position: { x: 400, y: 100 }, data: { "default:message": "unrelated" } },
+    ],
+    edges: [
+      { id: "start", source: "entry", sourceHandle: entryType === "flow.function.input" ? "exec" : "execOut", target: "branch", targetHandle: "execIn" },
+      { id: "condition", source: "match", sourceHandle: "out", target: "branch", targetHandle: "condition" },
+      { id: "yes", source: "branch", sourceHandle: "true", target: "yes", targetHandle: "execIn" },
+      { id: "no", source: "branch", sourceHandle: "false", target: "no", targetHandle: "execIn" },
+    ],
+  };
+}
+
+function runTagScript(source: string, entryName: string): string[] {
+  const logs: string[] = [];
+  const body = source.replace(/export\s+(async\s+)?function\s+/g, "$1function ");
+  const entry = new Function(`${body}\nreturn ${entryName};`)() as (ctx: unknown) => void;
+  entry({
+    checkInfiniteLoop: () => {},
+    formatValue: String,
+    log: (_severity: string, _category: string, message: string) => logs.push(message),
+  });
+  return logs;
+}
+
 describe("script compiler service", () => {
+  it("refreshes cached event and function tag matching after the project hierarchy changes", () => {
+    const content: SerializedGraph = {
+      ...tagMatchGraph(),
+      members: [{ id: "match-function", name: "CheckTags", kind: "function" }],
+      functionGraphs: { "match-function": tagMatchGraph("flow.function.input") },
+    };
+    const documents = [{ path: "assets/Tags.class.babasset", content }];
+    const cache = new GraphScriptCompileCache();
+    const first = compileGraphDocuments(documents, { cache, tagRegistry: stateTags });
+    expect(first).toHaveLength(1);
+    expect(runTagScript(first[0]!.source, "onTick")).toEqual(["matched"]);
+    expect(runTagScript(first[0]!.source, "CheckTags")).toEqual(["matched"]);
+
+    const updated = compileGraphDocuments(documents, { cache, tagRegistry: movedStateTags });
+    expect(updated).toHaveLength(1);
+    expect(runTagScript(updated[0]!.source, "onTick")).toEqual(["unrelated"]);
+    expect(runTagScript(updated[0]!.source, "CheckTags")).toEqual(["unrelated"]);
+  });
+
+  it("preserves Tag and TagContainer types and values for runtime inspection", () => {
+    const script = compileGraphDocument({
+      ...tickToLog,
+      members: [
+        { id: "state", kind: "variable", name: "State", typeId: "tag", defaultValue: 2 },
+        { id: "states", kind: "variable", name: "States", typeId: "struct", typeClassId: "engine:TagContainer", defaultValue: { Tags: [1, 2] } },
+      ],
+    }, { path: "assets/Tags.class.babasset", tagRegistry: stateTags });
+    expect(script?.variables).toEqual([
+      { name: "State", type: "tag", defaultValue: 2 },
+      { name: "States", type: "struct:engine:TagContainer", defaultValue: { Tags: [1, 2] } },
+    ]);
+  });
+
   it("ships component-only classes and their empty child classes for runtime spawning", async () => {
     const { createInProcessRuntime } = await import("@babylonslate/runtime");
     const scripts = compileGraphDocuments([
@@ -1025,6 +1105,19 @@ describe("script compiler service", () => {
 });
 
 describe("graphCompileSignature", () => {
+  it("requires recompilation after tag changes but ignores registry order and allocation state", () => {
+    const documents = [{ path: "assets/Tags.class.babasset", content: tagMatchGraph() }];
+    const compiled = graphCompileSignature(documents, undefined, stateTags);
+    expect(graphsNeedCompile(
+      graphCompileSignature(documents, undefined, movedStateTags), compiled,
+    )).toBe(true);
+    expect(graphsNeedCompile(
+      graphCompileSignature(documents, undefined, {
+        tags: [...stateTags.tags].reverse(), nextId: 100,
+      }), compiled,
+    )).toBe(false);
+  });
+
   it("ignores node positions so layout does not count as a compile change", () => {
     const moved: SerializedGraph = {
       ...tickToLog,
@@ -1705,6 +1798,40 @@ describe("GraphScriptCompileCache", () => {
 });
 
 describe("compileAnimGraphScripts", () => {
+  it("refreshes cached animation objects and transition rules after tag hierarchy changes", async () => {
+    const { createDefaultAnimGraph } = await import("@babylonslate/anim-graph");
+    const { compileAnimGraphScripts } = await import("./script-compiler");
+    const doc = createDefaultAnimGraph();
+    doc.animationObject = tagMatchGraph("anim.event.update");
+    doc.transitions.push({
+      id: "tag-rule", fromStateId: "idle", toStateId: "idle", blendSeconds: 0, priority: 0,
+      ruleGraph: {
+        nodes: [
+          { id: "enter", type: "anim.rule.enterState", position: { x: 200, y: 0 }, data: { __protected: true } },
+          { id: "match", type: "tags.matches", position: { x: 0, y: 0 }, data: { "default:value": 2, "default:query": 1 } },
+        ],
+        edges: [{ id: "condition", source: "match", sourceHandle: "out", target: "enter", targetHandle: "value" }],
+      },
+    });
+    const documents = [{ guid: "tags", path: "assets/Tags.anim.babasset", document: doc }];
+    const cache = new GraphScriptCompileCache();
+    for (const [tagRegistry, expected, message] of [
+      [stateTags, true, "matched"],
+      [movedStateTags, false, "unrelated"],
+    ] as const) {
+      const scripts = compileAnimGraphScripts(documents, { cache, tagRegistry });
+      const object = scripts.find((script) => script.classId === "AnimGraph:tags");
+      const rule = scripts.find((script) => script.classId === "AnimRule:tags:tag-rule");
+      expect(object).toBeDefined();
+      expect(rule).toBeDefined();
+      expect(runTagScript(object!.source, "onUpdateAnimation")).toEqual([message]);
+      const evaluate = new Function(
+        `${rule!.source.replace(/export function /g, "function ")}\nreturn evaluate;`,
+      )() as (ctx: unknown) => { enter: boolean };
+      expect(evaluate({}).enter).toBe(expected);
+    }
+  });
+
   it("compiles Animation Object lifecycle and each transition rule", async () => {
     const { createDefaultAnimGraph } = await import("@babylonslate/anim-graph");
     const { compileAnimGraphScripts } = await import("./script-compiler");

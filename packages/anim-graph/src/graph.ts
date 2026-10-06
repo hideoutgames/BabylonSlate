@@ -1,4 +1,5 @@
 import type { GraphClassMember, SerializedGraph } from "@babylonslate/core";
+import { normalizeTag, normalizeTagContainer } from "@babylonslate/core";
 
 export const ANIM_GRAPH_SCHEMA_VERSION = 2 as const;
 
@@ -10,7 +11,7 @@ export const ANIM_RULE_ENTER_NODE_ID = "enter-state";
 export const ANIM_RULE_EXIT_NODE_ID = "exit-state";
 
 export type AnimClipKind = "animation" | "sprite";
-export type AnimVariableTypeId = "bool" | "int" | "float" | "string";
+export type AnimVariableTypeId = "bool" | "int" | "float" | "string" | "tag" | "struct";
 
 export interface AnimClipRef {
   id: string;
@@ -37,6 +38,7 @@ export interface AnimGraphVariable {
   id: string;
   name: string;
   typeId: AnimVariableTypeId;
+  typeClassId?: string;
   defaultValue?: unknown;
 }
 
@@ -152,16 +154,22 @@ export function defaultAnimStatePosition(index: number): { x: number; y: number 
   };
 }
 
-export function defaultAnimVariableValue(typeId: AnimVariableTypeId): unknown {
+export function defaultAnimVariableValue(
+  typeId: AnimVariableTypeId,
+  typeClassId = "engine:TagContainer",
+): unknown {
   switch (typeId) {
     case "bool":
       return false;
     case "int":
+    case "tag":
       return 0;
     case "float":
       return 0;
     case "string":
       return "";
+    case "struct":
+      return typeClassId === "engine:TagContainer" ? { Tags: [] } : {};
   }
 }
 
@@ -173,6 +181,7 @@ export function animGraphMembersFromVariables(
     kind: "variable",
     name: variable.name,
     typeId: variable.typeId,
+    ...(variable.typeClassId ? { typeClassId: variable.typeClassId } : {}),
     defaultValue: variable.defaultValue,
   }));
 }
@@ -794,8 +803,9 @@ function isSerializedGraph(value: unknown): value is SerializedGraph {
   return Array.isArray(row.nodes) && Array.isArray(row.edges);
 }
 
-function parseVariableType(value: unknown): AnimVariableTypeId {
-  if (value === "int" || value === "float" || value === "string" || value === "bool") {
+function parseVariableType(value: unknown, typeClassId?: unknown): AnimVariableTypeId {
+  if (value === "struct" && typeClassId === "engine:TagContainer") return "struct";
+  if (value === "int" || value === "float" || value === "string" || value === "bool" || value === "tag") {
     return value;
   }
   return "bool";
@@ -819,12 +829,15 @@ function parseVariables(
         typeof variable.id === "string" && variable.id !== ""
           ? variable.id
           : `var-${name}`;
-      const typeId = parseVariableType(variable.typeId);
+      const typeId = parseVariableType(variable.typeId, variable.typeClassId);
       variables.push({
         id,
         name,
         typeId,
+        ...(typeId === "struct" ? { typeClassId: "engine:TagContainer" } : {}),
         defaultValue:
+          typeId === "tag" ? normalizeTag(variable.defaultValue) :
+          typeId === "struct" ? normalizeTagContainer(variable.defaultValue) :
           variable.defaultValue !== undefined
             ? variable.defaultValue
             : defaultAnimVariableValue(typeId),

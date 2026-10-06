@@ -7,7 +7,7 @@ import {
   type PaletteNode,
 } from "@babylonslate/graph-ui";
 import { formatEventMemberName, NamePromptDialog, PanelFrame } from "@babylonslate/editor-kit";
-import { type SerializedGraph } from "@babylonslate/core";
+import { isEditorGraphHost, type SerializedGraph } from "@babylonslate/core";
 import {
   Empty,
   EmptyDescription,
@@ -15,6 +15,7 @@ import {
   EmptyTitle,
 } from "@babylonslate/ui/components/empty";
 import { useDocuments } from "../context/document-context";
+import { GraphPinDefaultHostContext } from "../context/graph-pin-defaults-provider";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { usePlay } from "../context/play-context";
 import { useValidation } from "../context/validation-context";
@@ -370,53 +371,55 @@ export function GraphPanel(_props: IDockviewPanelProps) {
           </EmptyHeader>
         </Empty>
       ) : (
-        <GraphEditor
-          renderNodeBody={renderNodeBody}
-          key={`${documentId}:${activeFunctionId ?? "event"}`}
-          initialGraph={graph}
-          commitPositionsOnDragEnd
-          colorMode="dark"
-          defaultZoom={defaultZoom}
-          sessionViewport={sessionViewport}
-          onSessionViewportChange={onSessionViewportChange}
-          focusedNodeId={focusId}
-          diagnostics={graphDiagnostics}
-          paletteNodes={paletteNodes}
-          onPaletteOpenChange={setPaletteOpen}
-          pinCompatibility={pinCompatibility}
-          pinTypeNames={pinTypeNames}
-          onCanvasApi={setCanvasDropApi}
-          onNavigateRequest={onNavigateRequest}
-          onSelectionChange={setSelectedNodeIds}
-          contextMenuItemsForNode={contextMenuItemsForNode}
-          onChange={(next) => {
-            if (!doc) return;
-            const current = graphContent ?? { nodes: [], edges: [] };
-            const merged: SerializedGraph = activeFunctionId
-              ? {
-                  ...current,
-                  functionGraphs: {
-                    ...current.functionGraphs,
-                    [activeFunctionId]: {
-                      nodes: next.nodes,
-                      edges: next.edges,
+        <GraphPinDefaultHostContext.Provider value={isEditorGraphHost({ parentClass, parentOf, assetType: indexed?.header.type })}>
+          <GraphEditor
+            renderNodeBody={renderNodeBody}
+            key={`${documentId}:${activeFunctionId ?? "event"}`}
+            initialGraph={graph}
+            commitPositionsOnDragEnd
+            colorMode="dark"
+            defaultZoom={defaultZoom}
+            sessionViewport={sessionViewport}
+            onSessionViewportChange={onSessionViewportChange}
+            focusedNodeId={focusId}
+            diagnostics={graphDiagnostics}
+            paletteNodes={paletteNodes}
+            onPaletteOpenChange={setPaletteOpen}
+            pinCompatibility={pinCompatibility}
+            pinTypeNames={pinTypeNames}
+            onCanvasApi={setCanvasDropApi}
+            onNavigateRequest={onNavigateRequest}
+            onSelectionChange={setSelectedNodeIds}
+            contextMenuItemsForNode={contextMenuItemsForNode}
+            onChange={(next) => {
+              if (!doc) return;
+              const current = graphContent ?? { nodes: [], edges: [] };
+              const merged: SerializedGraph = activeFunctionId
+                ? {
+                    ...current,
+                    functionGraphs: {
+                      ...current.functionGraphs,
+                      [activeFunctionId]: {
+                        nodes: next.nodes,
+                        edges: next.edges,
+                      },
                     },
-                  },
-                }
-              : {
-                  ...next,
-                  members: next.members ?? current.members,
-                  components: next.components ?? current.components,
-                  functionGraphs: current.functionGraphs,
-                };
-            const commit = commitLogicGraph(doc.ref.kind, doc.content, merged);
-            if (commit.kind !== "graph") {
-              void applyAssetDocumentChange(documentId, commit.payload, commit.mergeKey);
-              return;
-            }
-            void applyGraphChange(documentId, commit.graph);
-          }}
-        />
+                  }
+                : {
+                    ...next,
+                    members: next.members ?? current.members,
+                    components: next.components ?? current.components,
+                    functionGraphs: current.functionGraphs,
+                  };
+              const commit = commitLogicGraph(doc.ref.kind, doc.content, merged);
+              if (commit.kind !== "graph") {
+                void applyAssetDocumentChange(documentId, commit.payload, commit.mergeKey);
+                return;
+              }
+              void applyGraphChange(documentId, commit.graph);
+            }}
+          />
+        </GraphPinDefaultHostContext.Provider>
       )}
       <NamePromptDialog
         open={renameEventId !== null}

@@ -72,13 +72,16 @@ import {
 } from "../services/graph-validation";
 import { animClipCatalogFromAssets } from "../lib/anim-clip-catalog";
 import { IconActionButton } from "./icon-action-button";
+import { variableDefaultPropertyRows } from "../lib/graph-inspector";
 
-const VARIABLE_TYPES: readonly AnimVariableTypeId[] = [
+const VARIABLE_TYPES = [
   "bool",
   "int",
   "float",
   "string",
-];
+  "tag",
+  "tagContainer",
+] as const;
 
 function asAnimGraph(
   payload: Record<string, unknown>,
@@ -286,64 +289,77 @@ function AnimGraphVariablesList({
           {doc.variables.map((variable) => (
             <div
               key={variable.id}
-              className="flex min-h-[var(--chrome-row,28px)] items-center gap-1 px-1"
+              className="flex flex-col gap-1 px-1"
               data-testid={`anim-graph-variable-${variable.id}`}
             >
-              <Input
-                className="h-7 min-h-7 min-w-0 flex-1"
-                value={variable.name}
-                aria-label="Variable Name"
-                data-testid={`anim-graph-variable-name-${variable.id}`}
-                onChange={(event) =>
-                  commit(
-                    commitAnimGraphVariables(
-                      doc,
-                      doc.variables.map((row) =>
-                        row.id === variable.id
-                          ? { ...row, name: event.target.value }
-                          : row,
+              <div className="flex min-h-[var(--chrome-row,28px)] items-center gap-1">
+                <Input
+                  className="h-7 min-h-7 min-w-0 flex-1"
+                  value={variable.name}
+                  aria-label="Variable Name"
+                  data-testid={`anim-graph-variable-name-${variable.id}`}
+                  onChange={(event) =>
+                    commit(
+                      commitAnimGraphVariables(
+                        doc,
+                        doc.variables.map((row) =>
+                          row.id === variable.id
+                            ? { ...row, name: event.target.value }
+                            : row,
+                        ),
                       ),
-                    ),
-                  )
-                }
-              />
-              <PinTypePicker
-                value={variable.typeId}
-                types={VARIABLE_TYPES}
-                data-testid={`anim-graph-variable-type-${variable.id}`}
-                onChange={(value) => {
-                  const typeId = value as AnimVariableTypeId;
-                  commit(
-                    commitAnimGraphVariables(
-                      doc,
-                      doc.variables.map((row) =>
-                        row.id === variable.id
-                          ? {
-                              ...row,
-                              typeId,
-                              defaultValue: defaultAnimVariableValue(typeId),
-                            }
-                          : row,
+                    )
+                  }
+                />
+                <PinTypePicker
+                  value={variable.typeId === "struct" && variable.typeClassId === "engine:TagContainer" ? "tagContainer" : variable.typeId}
+                  types={VARIABLE_TYPES}
+                  data-testid={`anim-graph-variable-type-${variable.id}`}
+                  onChange={(value) => {
+                    const typeId: AnimVariableTypeId = value === "tagContainer" ? "struct" : value as AnimVariableTypeId;
+                    const typeClassId = value === "tagContainer" ? "engine:TagContainer" : undefined;
+                    commit(
+                      commitAnimGraphVariables(
+                        doc,
+                        doc.variables.map((row) =>
+                          row.id === variable.id
+                            ? {
+                                ...row,
+                                typeId,
+                                typeClassId,
+                                defaultValue: defaultAnimVariableValue(typeId, typeClassId),
+                              }
+                            : row,
+                        ),
                       ),
-                    ),
-                  );
-                }}
-              />
-              <IconActionButton
-                label="Remove Variable"
-                variant="ghost"
-                data-testid={`anim-graph-variable-remove-${variable.id}`}
-                onClick={() =>
-                  commit(
-                    commitAnimGraphVariables(
-                      doc,
-                      doc.variables.filter((row) => row.id !== variable.id),
-                    ),
-                  )
-                }
-              >
-                <Trash2Icon />
-              </IconActionButton>
+                    );
+                  }}
+                />
+                <IconActionButton
+                  label="Remove Variable"
+                  variant="ghost"
+                  data-testid={`anim-graph-variable-remove-${variable.id}`}
+                  onClick={() =>
+                    commit(
+                      commitAnimGraphVariables(
+                        doc,
+                        doc.variables.filter((row) => row.id !== variable.id),
+                      ),
+                    )
+                  }
+                >
+                  <Trash2Icon />
+                </IconActionButton>
+              </div>
+              {variable.typeId === "tag" || (variable.typeId === "struct" && variable.typeClassId === "engine:TagContainer") ? (
+                <PropertyGrid
+                  rows={variableDefaultPropertyRows(variable.typeId, variable.defaultValue, (defaultValue) => {
+                    commit(commitAnimGraphVariables(doc, doc.variables.map((row) =>
+                      row.id === variable.id ? { ...row, defaultValue } : row)));
+                  }, { typeClassId: variable.typeClassId, pinId: variable.id })}
+                  data-testid={`anim-graph-variable-default-${variable.id}`}
+                />
+              ) : null}
             </div>
           ))}
         </div>
@@ -512,6 +528,7 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
               kind: "variable" as const,
               classId: "AnimGraph",
               typeId: member.typeId ?? "bool",
+              typeClassId: member.typeClassId,
             })),
           })
         : [];

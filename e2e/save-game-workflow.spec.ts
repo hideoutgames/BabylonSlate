@@ -75,9 +75,10 @@ test("Save Game authoring preserves field identity and project defaults through 
   await reset.click();
   await expect(page.getByRole("alertdialog")).toContainText("Exported game saves are separate");
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(page.getByRole("alertdialog")).toBeHidden();
   if (coarse) expect((await reset.boundingBox())!.height).toBeGreaterThanOrEqual(44);
-  expect(await settings.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
   await page.screenshot({ path: testInfo.outputPath("save-game-settings.png") });
+  expect(await settings.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
   await page.getByTestId("settings-modal").locator('[data-slot="dialog-close"]').first().click();
   await saveAllIfEnabled(page);
 

@@ -177,7 +177,7 @@ import { actorChainWorldTransform, actorLabel, actorParentGuid, breakParentCycle
 import { SceneLayerLayout } from "./scene-layer-layout";
 import { isOverlayLayoutClass, overlayLayoutKey } from "@babylonslate/core";
 import { composeParentChildTransform } from "./actor-world-transform";
-import { blackboardTargetPosition, snapshotBlackboard } from "./bt-blackboard";
+import { blackboardInspectTypes, blackboardTargetPosition, snapshotBlackboard } from "./bt-blackboard";
 import type { ModelPayload, SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
 import {
   createNavigationBackend,
@@ -4355,6 +4355,8 @@ class InProcessRuntime implements RuntimeDriver {
       const document = treeGuid ? this.behaviourTrees.get(treeGuid) : null;
       if (!treeGuid || !document) continue;
       const state = this.btEvalBySlot.get(slotId);
+      const blackboardGuid = this.stringGuid(component.getVariable("blackboardGuid")) ?? document.blackboardGuid;
+      const blackboardTypes = blackboardInspectTypes(blackboardGuid ? this.blackboards.get(blackboardGuid) : undefined);
       trees.push({
         actorGuid: actor.guid,
         actorName: this.debugActorName(actor),
@@ -4364,7 +4366,8 @@ class InProcessRuntime implements RuntimeDriver {
         status: state?.status ?? "idle",
         btNodeId: state?.btNodeId ?? null,
         lastResults: { ...state?.lastResults },
-        blackboard: snapshotBlackboard(state?.blackboard ?? this.blackboardDefaults(this.stringGuid(component.getVariable("blackboardGuid")))),
+        blackboard: snapshotBlackboard(state?.blackboard ?? this.blackboardDefaults(blackboardGuid)),
+        ...(blackboardTypes ? { blackboardTypes } : {}),
         stack: state?.stack.map((frame) => ({ ...frame })) ?? [],
         nodes: document.nodes.map((node) => ({
           id: node.id, kind: node.kind, classId: node.classId,
