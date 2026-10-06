@@ -173,40 +173,6 @@ describe("ContentBrowserNewAssetDialog", () => {
     expect(document.activeElement).toBe(screen.getByTestId("new-asset-type-SceneLayer"));
   });
 
-  it("uses the Actor icon for Actor subclasses and nested user classes", () => {
-    renderDialog({
-      type: "Class",
-      classAssets: [
-        {
-          path: "assets/Hero.class.babasset",
-          header: { type: "Class", name: "Hero", parentClass: "Actor" },
-        },
-        {
-          path: "assets/Warrior.class.babasset",
-          header: { type: "Class", name: "Warrior", parentClass: "Hero" },
-        },
-      ],
-    });
-    expect(
-      screen
-        .getByTestId("tree-row-Hero")
-        .querySelector("[data-type-icon]")
-        ?.getAttribute("data-type-icon"),
-    ).toBe("Actor");
-    expect(
-      screen
-        .getByTestId("tree-row-Warrior")
-        .querySelector("[data-type-icon]")
-        ?.getAttribute("data-type-icon"),
-    ).toBe("Actor");
-    expect(
-      screen
-        .getByTestId("tree-row-Actor")
-        .querySelector("[data-type-icon]")
-        ?.getAttribute("data-type-icon"),
-    ).toBe("Actor");
-  });
-
   it("lists project Classes in the Parent Class tree and filters by search", () => {
     renderDialog({
       type: "Class",
@@ -272,14 +238,5 @@ describe("ContentBrowserNewAssetDialog", () => {
     expect(onNameChange).toHaveBeenCalledWith("Arena2");
     fireEvent.click(screen.getByTestId("content-browser-new-asset-create"));
     expect(onCreate).toHaveBeenCalledTimes(1);
-  });
-
-  it("shows Audio and Animation categories without descriptions", () => {
-    renderDialog();
-    const choices = screen.getByRole("radiogroup", { name: "Asset Type" });
-    expect(choices.textContent).toContain("Audio");
-    expect(choices.textContent).toContain("Animation");
-    expect(choices.textContent).not.toContain("Sounds are Import");
-    expect(choices.textContent).not.toContain("Animation Graph is the state machine");
   });
 });

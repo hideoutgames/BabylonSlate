@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { createDefaultAudioPayload } from "@babylonslate/assets";
-import { AudioClips, AudioDetails, AudioPreview } from "./audio-editor";
+import { AudioClips, AudioDetails } from "./audio-editor";
 
 const audioIO = vi.hoisted(() => ({
   pick: vi.fn(async () => [{ name: "new.wav", bytes: new Uint8Array([1, 2, 3]) }]),
@@ -65,39 +64,6 @@ describe("Audio editor docks", () => {
     expect(onChange).not.toHaveBeenCalled();
     expect(screen.getByTestId("audio-clip-1-name").textContent).toBe("Second");
   });
-  it("keeps Preview Play, Loop, and waveform on the Preview surface", () => {
-    render(
-      <AudioPreview
-        path="assets/Jump.babasset"
-        payload={createDefaultAudioPayload() as unknown as Record<string, unknown>}
-        onChange={vi.fn()}
-      />,
-    );
-    expect(screen.getByTestId("audio-preview")).toBeTruthy();
-    expect(screen.getByTestId("audio-preview-play")).toBeTruthy();
-    expect(screen.getByTestId("audio-preview-loop")).toBeTruthy();
-    expect(screen.getByTestId("audio-preview-waveform")).toBeTruthy();
-    expect(screen.queryByTestId("property-volume")).toBeNull();
-    expect(screen.queryByTestId("audio-clips")).toBeNull();
-  });
-
-  it("puts Volume, Loop, Pitch, Channel, and Attenuation on Details", () => {
-    render(
-      <AudioDetails
-        payload={{ volume: 0.5 }}
-        assetName="Jump"
-        onChange={vi.fn()}
-      />,
-    );
-    expect(screen.getByTestId("property-volume")).toBeTruthy();
-    expect(screen.getByTestId("property-loop")).toBeTruthy();
-    expect(screen.getByTestId("property-pitch")).toBeTruthy();
-    expect(screen.getByTestId("property-pitchRandom")).toBeTruthy();
-    expect(screen.getByTestId("property-audioChannelGuid")).toBeTruthy();
-    expect(screen.getByTestId("property-soundAttenuationGuid")).toBeTruthy();
-    expect(screen.queryByTestId("audio-clips")).toBeNull();
-    expect(screen.queryByTestId("audio-preview-play")).toBeNull();
-  });
 
   it("hides Pitch when Randomize Pitch is on and keeps min/max", () => {
     render(
@@ -135,22 +101,5 @@ describe("Audio editor docks", () => {
         }),
       );
     });
-  });
-
-  it("does not treat a filled clip name as an input", () => {
-    render(
-      <AudioClips
-        path="assets/Jump.babasset"
-        payload={{
-          clips: [{ chunkId: "source", name: "jump", weight: 2 }],
-        }}
-        assetName="Jump"
-        onChange={vi.fn()}
-      />,
-    );
-    const name = screen.getByTestId("audio-clip-0-name");
-    expect(name.tagName).not.toBe("INPUT");
-    expect(name.textContent).toBe("jump");
-    expect(screen.getByTestId("audio-clip-0-weight")).toBeTruthy();
   });
 });

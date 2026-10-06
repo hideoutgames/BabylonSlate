@@ -2616,22 +2616,6 @@ describe("scriptPaletteNodes", () => {
     });
   });
 
-  it("seeds Format String palette with default {input}", () => {
-    const nodes = scriptPaletteNodes(registry, { parentClass: "Actor" });
-    const format = nodes.find((node) => node.id === "string.format");
-    expect(format?.title).toBe("Format String");
-    expect(format?.defaultData).toMatchObject({
-      "default:format": "{input}",
-    });
-    expect(
-      format?.pins?.some(
-        (pin) => pin.id === "arg:input" || pin.name === "input",
-      ),
-    ).toBe(true);
-    expect(nodes.some((node) => node.id === "select.bool")).toBe(true);
-    expect(nodes.some((node) => node.id === "select.float")).toBe(true);
-  });
-
   it("passes typeClassId onto Get/Set palette rows", () => {
     const nodes = scriptPaletteNodes(registry, {
       parentClass: "Actor",

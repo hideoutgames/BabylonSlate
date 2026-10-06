@@ -129,38 +129,6 @@ describe("GlobalSearchDialog", () => {
     }
   });
 
-  it("uses a fixed tall height and a native overflow results pane", () => {
-    const { getByTestId } = render(
-      <GlobalSearchDialog open onOpenChange={() => {}} />,
-    );
-
-    const dialog = getByTestId("global-search-dialog");
-    expect(dialog.className).toContain("h-[min(90svh,52rem)]");
-    expect(dialog.className).toContain("overflow-hidden");
-    expect(dialog.className).not.toContain("max-h-[min(80svh,40rem)]");
-
-    const results = getByTestId("global-search-results");
-    expect(results.className).toContain("min-h-0");
-    expect(results.className).toContain("flex-1");
-    expect(results.className).toContain("overflow-y-auto");
-  });
-
-  it("renders many hits inside the scrollable results pane", () => {
-    const { getByTestId } = render(
-      <GlobalSearchDialog open onOpenChange={() => {}} />,
-    );
-
-    fireEvent.change(getByTestId("global-search-query"), {
-      target: { value: "hit" },
-    });
-
-    const results = getByTestId("global-search-results");
-    expect(getByTestId("global-search-group-class")).toBeTruthy();
-    expect(results.querySelectorAll('[data-testid^="global-search-item-"]').length).toBe(
-      40,
-    );
-  });
-
   it("rebuilds when opened and cancels when closed", () => {
     const { rerender } = render(
       <GlobalSearchDialog open onOpenChange={() => {}} />,

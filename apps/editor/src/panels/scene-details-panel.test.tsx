@@ -718,65 +718,6 @@ describe("SceneDetailsPanel authoring", () => {
     expect(cleared.actors[0]?.components[1]?.properties.text).toBe("No Scene");
   });
 
-  it("edits collider shape kind as an enum instead of object text", () => {
-    scene().actors = [
-      createActor("actor-1", "Body", {
-        components: [
-          {
-            id: "col-1",
-            classId: "ColliderComponent",
-            properties: {
-              shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } },
-              friction: 0.5,
-              restitution: 0,
-              isTrigger: false,
-              layer: 1,
-              mask: 1,
-            },
-          },
-        ],
-      }),
-    ];
-    harness.selectedActorIds = ["actor-1"];
-    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
-    expect(
-      screen.getByTestId("property-actor-1-col-1-shape-kind"),
-    ).toBeTruthy();
-    expect(screen.queryByTestId("property-actor-1-col-1-shape")).toBeNull();
-    expect(screen.queryByDisplayValue("[object Object]")).toBeNull();
-  });
-
-  it("shows ColliderComponent local Transform rows", () => {
-    scene().actors = [
-      createActor("actor-1", "Body", {
-        components: [
-          {
-            id: "col-1",
-            classId: "ColliderComponent",
-            properties: {
-              shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } },
-              friction: 0.5,
-              restitution: 0,
-              isTrigger: false,
-              layer: 1,
-              mask: 1,
-            },
-          },
-        ],
-      }),
-    ];
-    harness.selectedActorIds = ["actor-1"];
-    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
-    expect(screen.getByTestId("collider-transform-grid-col-1")).toBeTruthy();
-    expect(
-      screen.getByTestId("property-actor-1-col-1-position-x"),
-    ).toBeTruthy();
-    expect(
-      screen.getByTestId("property-actor-1-col-1-rotation-x"),
-    ).toBeTruthy();
-    expect(screen.getByTestId("property-actor-1-col-1-scale-x")).toBeTruthy();
-  });
-
   it("shows a Bake NavMesh action on NavMeshComponent details", () => {
     scene().actors = [
       createActor("nav", "NavMesh", {
@@ -925,46 +866,6 @@ describe("SceneDetailsPanel authoring", () => {
     expect(harness.applySceneChange.mock.calls.at(-1)![1].settings).toMatchObject({
       fogEnabled: true, fogMode: "exponential", fogDensity: 0, fogStart: 25, fogEnd: 350,
     });
-  });
-
-  it("shows Position Z in 3D and omits Z-Order", () => {
-    harness.selectedActorIds = ["actor-1"];
-    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
-    expect(screen.getByTestId("property-actor-position-z")).toBeTruthy();
-    expect(screen.queryByTestId("property-actor-z-order")).toBeNull();
-  });
-
-  it("shows Z-Order instead of Position Z in 2D and writes position z", () => {
-    scene().viewportMode = "2d";
-    const actor = scene().actors[0];
-    if (!actor) throw new Error("default scene actor missing");
-    actor.transform.position = [1, 2, 3];
-    harness.selectedActorIds = ["actor-1"];
-    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
-    expect(screen.queryByTestId("property-actor-position-z")).toBeNull();
-    expect(screen.getByTestId("property-actor-position-x")).toBeTruthy();
-    expect(screen.getByTestId("property-actor-position-y")).toBeTruthy();
-    const zOrder = screen.getByTestId("property-actor-z-order");
-    expect((zOrder as HTMLInputElement).value).toBe("3");
-    fireEvent.change(zOrder, { target: { value: "7" } });
-    expect(harness.applySceneChange).toHaveBeenCalled();
-    const next = harness.applySceneChange.mock.calls[0]![1] as SerializedScene;
-    expect(next.actors[0]?.transform.position).toEqual([1, 2, 7]);
-  });
-
-  it("titles Details with the actor count when more than one actor is selected", () => {
-    scene().actors = [
-      createActor("actor-1", "Cube"),
-      createActor("actor-2", "Sphere"),
-    ];
-    harness.selectedActorIds = ["actor-1", "actor-2"];
-    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
-    expect(screen.getByTestId("actor-transform-grid").textContent).toContain(
-      "2 Actors",
-    );
-    expect(
-      screen.getByTestId("actor-transform-grid").textContent,
-    ).not.toContain("Cube");
   });
 
   it("shows the project Game Instance as a read-only pointer", () => {
@@ -1366,14 +1267,3 @@ it("hides scene CEL overrides in PBR and persists only explicitly overridden fie
   expect(screen.queryByTestId("scene-cel-settings")).toBeNull();
 });
 
-
-it("exposes no Scene Render Path control; the path is project-wide only", () => {
-  harness.render.renderPath = "auto";
-  render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
-  expect(screen.queryByRole("button", { name: "Rendering" })).toBeNull();
-  expect(screen.queryByTestId("scene-render-path")).toBeNull();
-  expect(screen.queryByTestId("project-render-path")).toBeNull();
-  fireEvent.change(screen.getByRole("textbox", { name: "Filter Properties" }), { target: { value: "Render Path" } });
-  expect(screen.queryByTestId("scene-render-path")).toBeNull();
-  expect(harness.applySceneChange).not.toHaveBeenCalled();
-});

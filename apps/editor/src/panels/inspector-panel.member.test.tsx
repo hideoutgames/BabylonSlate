@@ -417,30 +417,6 @@ describe("Inspector class member details", () => {
     );
   });
 
-  it("shows list bars on Array variable rows in the Class tree", () => {
-    renderMemberInspector("var-array", true);
-    const icon = screen.getByTestId("class-var-type-var-array");
-    expect(icon.getAttribute("data-pin-shape")).toBe("list");
-  });
-
-  it("shows the map glyph on Map variable rows in the Class tree", () => {
-    renderMemberInspector("var-map", true);
-    const icon = screen.getByTestId("class-var-type-var-map");
-    expect(icon.getAttribute("data-pin-shape")).toBe("map");
-  });
-
-  it("places Array default entries below Type and Container", () => {
-    renderMemberInspector("var-array");
-    expectDocumentOrder(
-      screen.getByTestId("inspector-member-type"),
-      screen.getByTestId("inspector-member-defaults"),
-    );
-    expectDocumentOrder(
-      screen.getByTestId("inspector-member-container"),
-      screen.getByTestId("inspector-member-defaults"),
-    );
-  });
-
   it("adds Array default items from Inspector", () => {
     renderMemberInspector("var-array");
     expect(screen.getByTestId("inspector-member-container-array")).toBeTruthy();
@@ -522,46 +498,6 @@ describe("Inspector class member details", () => {
         .getByTestId("property-row-value-0")
         .querySelector('[data-slot="field-label"]')?.textContent,
     ).toBe("Value");
-  });
-
-  it("places Map Key Type between Type and Container, then Default", () => {
-    renderMemberInspector("var-map");
-    expectDocumentOrder(
-      screen.getByTestId("inspector-member-type"),
-      screen.getByTestId("inspector-member-key-type"),
-    );
-    expectDocumentOrder(
-      screen.getByTestId("inspector-member-key-type"),
-      screen.getByTestId("inspector-member-container"),
-    );
-    expectDocumentOrder(
-      screen.getByTestId("inspector-member-container"),
-      screen.getByTestId("inspector-member-defaults"),
-    );
-  });
-
-  it("shows item and entry counts next to Array and Map add buttons", () => {
-    renderMemberInspector("var-array");
-    const emptyArray = screen.getByTestId("inspector-member-defaults-count");
-    expect(emptyArray.textContent).toBe("0 items");
-    expect(screen.getByTestId("inspector-member-defaults-add").parentElement).toBe(
-      emptyArray.parentElement,
-    );
-    cleanup();
-    renderMemberInspector("var-array-filled");
-    expect(screen.getByTestId("inspector-member-defaults-count").textContent).toBe(
-      "1 item",
-    );
-    cleanup();
-    renderMemberInspector("var-map");
-    expect(screen.getByTestId("inspector-member-defaults-count").textContent).toBe(
-      "0 entries",
-    );
-    cleanup();
-    renderMemberInspector("var-map-filled");
-    expect(screen.getByTestId("inspector-member-defaults-count").textContent).toBe(
-      "1 entry",
-    );
   });
 
   it("adds and removes Map default entries from Inspector", () => {

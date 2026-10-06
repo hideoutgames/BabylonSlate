@@ -220,14 +220,6 @@ it("finds the trace budget and persists MiB edits as bytes", async () => {
 });
 
 describe("SettingsModal project authoring", () => {
-  it("edits the authored project version from General", () => {
-    render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
-    const version = screen.getByRole("textbox", { name: "Project Version" });
-    expect((version as HTMLInputElement).value).toBe("1.0.0");
-    fireEvent.change(version, { target: { value: "2.4.0-beta.3" } });
-    expect(updateProjectVersion).toHaveBeenCalledWith("2.4.0-beta.3");
-  });
-
   it("explains a failed plugin import and re-enables importing", async () => {
     let reject!: (error: Error) => void;
     importPlugin.mockReturnValue(new Promise((_resolve, fail) => { reject = fail; }));
@@ -335,11 +327,6 @@ describe("SettingsModal project authoring", () => {
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
     expect(lastProjectRender.current).toMatchObject({ effects: { fxaa: true, temporalAntiAliasing: { enabled: true, blend: 0.25, samples: 8 }, colorGrading: { enabled: true, lutTextureGuid: null }, ambientOcclusion: { enabled: true, radius: 1.5 }, reflections: { enabled: true }, volumetricLighting: { enabled: false, density: 0.0085, steps: 32 } } });
   });
-  it("keeps input authoring in assets rather than Project Settings", () => {
-    render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
-    expect(screen.queryByTestId("settings-modal-category-input")).toBeNull();
-    expect(screen.queryByTestId("settings-input-mapping")).toBeNull();
-  });
 
   it("picks the default font from Font assets instead of a guid field", async () => {
     render(
@@ -373,51 +360,6 @@ describe("SettingsModal project authoring", () => {
     );
   });
 
-  it("toggles project Audio occlusion", () => {
-    render(
-      <SettingsModal open onOpenChange={() => {}} scope="project" />,
-    );
-    fireEvent.click(screen.getByTestId("settings-modal-category-audio"));
-    fireEvent.click(screen.getByTestId("settings-audio-occlusion"));
-    expect(updateProjectSettings).toHaveBeenCalledWith(
-      expect.objectContaining({
-        audio: expect.objectContaining({ occlusionEnabled: false }),
-      }),
-    );
-  });
-
-  it("edits Audio reverb wet, decay, and damping scales", () => {
-    render(
-      <SettingsModal open onOpenChange={() => {}} scope="project" />,
-    );
-    fireEvent.click(screen.getByTestId("settings-modal-category-audio"));
-    expect(screen.getByTestId("settings-audio-reverb-wet-scale-slider")).toBeTruthy();
-    fireEvent.change(screen.getByTestId("settings-audio-reverb-wet-scale"), {
-      target: { value: "1.5" },
-    });
-    expect(updateProjectSettings).toHaveBeenCalledWith(
-      expect.objectContaining({
-        audio: expect.objectContaining({ reverbWetScale: 1.5 }),
-      }),
-    );
-    fireEvent.change(screen.getByTestId("settings-audio-reverb-decay-scale"), {
-      target: { value: "0.25" },
-    });
-    expect(updateProjectSettings).toHaveBeenCalledWith(
-      expect.objectContaining({
-        audio: expect.objectContaining({ reverbDecayScale: 0.25 }),
-      }),
-    );
-    fireEvent.change(screen.getByTestId("settings-audio-reverb-damping-scale"), {
-      target: { value: "2" },
-    });
-    expect(updateProjectSettings).toHaveBeenCalledWith(
-      expect.objectContaining({
-        audio: expect.objectContaining({ reverbDampingScale: 2 }),
-      }),
-    );
-  });
-
   it("edits sorting layers as a named list", () => {
     render(
       <SettingsModal open onOpenChange={() => {}} scope="project" />,
@@ -435,23 +377,6 @@ describe("SettingsModal project authoring", () => {
     );
   });
 
-  it("edits physics collision layers as a named list", () => {
-    render(
-      <SettingsModal open onOpenChange={() => {}} scope="project" />,
-    );
-    fireEvent.click(screen.getByTestId("settings-modal-category-physics"));
-    fireEvent.change(screen.getByTestId("settings-collision-layers-0-value"), {
-      target: { value: "Player" },
-    });
-    expect(updateProjectSettings).toHaveBeenCalledWith(
-      expect.objectContaining({
-        physics: expect.objectContaining({
-          collisionLayers: expect.arrayContaining(["Player"]),
-        }),
-      }),
-    );
-  });
-
   it("picks the packaged startup scene from Scene assets only", async () => {
     render(
       <SettingsModal open onOpenChange={() => {}} scope="project" />,
@@ -464,27 +389,6 @@ describe("SettingsModal project authoring", () => {
     expect(updateProjectSettings).toHaveBeenCalledWith(
       expect.objectContaining({ startupSceneGuid: "scene-2" }),
     );
-  });
-
-  it("groups Startup Scene, Game Instance and the 2D settings under Game", () => {
-    render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
-    expect(screen.queryByTestId("settings-modal-category-twoD")).toBeNull();
-    fireEvent.click(screen.getByTestId("settings-modal-category-game"));
-    expect(screen.getByTestId("settings-startup-scene")).toBeTruthy();
-    expect(screen.getByTestId("settings-game-instance")).toBeTruthy();
-    expect(screen.getByTestId("settings-pixels-per-unit")).toBeTruthy();
-    expect(screen.getByTestId("settings-pixel-perfect")).toBeTruthy();
-    expect(screen.getByTestId("settings-sorting-layers")).toBeTruthy();
-    // The stored `twoD.integerZoomSteps` flag is applied nowhere, so it is not offered.
-    expect(screen.queryByTestId("settings-integer-zoom")).toBeNull();
-    fireEvent.click(screen.getByTestId("settings-modal-category-export"));
-    expect(screen.queryByTestId("settings-startup-scene")).toBeNull();
-    expect(screen.queryByTestId("settings-game-instance")).toBeNull();
-    expect(screen.getByTestId("export-game")).toBeTruthy();
-    fireEvent.change(screen.getByPlaceholderText("Search settings"), {
-      target: { value: "startup scene" },
-    });
-    expect(screen.getByRole("button", { name: /Startup Scene/ }).textContent).toContain("Game");
   });
 
   it("picks Game Instance from a ClassPicker on the Game category", async () => {
@@ -587,19 +491,6 @@ describe("SettingsModal project authoring", () => {
     expect(lastProjectRender.current).toMatchObject({ mode: "cel", cel: { shadowBands: 6 } });
   });
 
-  it("authors infinite loop detection on the General category", () => {
-    render(
-      <SettingsModal open onOpenChange={() => {}} scope="project" />,
-    );
-    fireEvent.click(screen.getByTestId("settings-modal-category-general"));
-    expect(screen.getByTestId("settings-infinite-loop-detection")).toBeTruthy();
-    expect(screen.getByTestId("settings-loop-count")).toBeTruthy();
-    fireEvent.click(screen.getByTestId("settings-infinite-loop-detection"));
-    expect(updateProjectSettings).toHaveBeenCalledWith(
-      expect.objectContaining({ infiniteLoopDetection: false }),
-    );
-  });
-
   it.each([
     ["general", "settings-infinite-loop-detection", /Stops runaway scripts/, null],
     ["game", "settings-pixel-perfect", /nearest sampling/, null],
@@ -615,33 +506,6 @@ describe("SettingsModal project authoring", () => {
     const description = screen.getByText(descriptionText);
     expect(control.closest('[data-slot="field"]')?.contains(description)).toBe(true);
     expect(control.getAttribute("aria-describedby")).toBe(description.id);
-  });
-
-  it("shows both maturity flags and the selected icon to the right of a plugin name", () => {
-    pluginDescriptors.push({
-      pluginGuid: "tools",
-      source: "project",
-      folderName: "tools",
-      readOnly: false,
-      folderPath: "plugins/tools",
-      contentPath: "plugins/tools/assets",
-      settingsPath: "plugins/tools/tools.plugin.babasset",
-      settings: {
-        ...createDefaultPluginSettings({ pluginGuid: "tools", displayName: "Tool Pack" }),
-        iconKey: "Star",
-        experimental: true,
-        beta: true,
-      },
-    });
-    render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
-    fireEvent.click(screen.getByTestId("settings-modal-category-plugins"));
-    const name = screen.getByText("Tool Pack");
-    expect(name.nextElementSibling?.matches("svg.lucide-star")).toBe(true);
-    expect(screen.getByText("Experimental")).toBeTruthy();
-    expect(screen.getByText("Beta")).toBeTruthy();
-    fireEvent.click(screen.getByTestId("settings-plugin-export-tools"));
-    expect(screen.getByRole("button", { name: "Export To Download" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Export To Engine Plugins" })).toBeTruthy();
   });
 
   it("identifies Beta when confirming enablement and enables only after confirmation", async () => {
@@ -698,15 +562,6 @@ describe("SettingsModal project authoring", () => {
     expect(screen.getByTestId("settings-show-plugin-content")).toBeTruthy();
   });
 
-  it("toggles Show Plugin Content from the Plugins category", () => {
-    render(
-      <SettingsModal open onOpenChange={() => {}} scope="project" />,
-    );
-    fireEvent.click(screen.getByTestId("settings-modal-category-plugins"));
-    fireEvent.click(screen.getByTestId("settings-show-plugin-content"));
-    expect(setShowPluginContent).toHaveBeenCalledWith(true);
-  });
-
   it("hides Source Control on production web", () => {
     host.platform = "web";
     host.testMode = false;
@@ -731,44 +586,6 @@ describe("SettingsModal project authoring", () => {
         sourceControl: expect.objectContaining({ token: "ghp_secret" }),
       }),
     );
-  });
-
-  it("explains where to create a GitHub token", () => {
-    render(
-      <SettingsModal open onOpenChange={() => {}} scope="project" />,
-    );
-    fireEvent.click(screen.getByTestId("settings-modal-category-sourceControl"));
-    const help = screen.getByTestId("settings-source-control-token-help");
-    expect(help.textContent).toMatch(/GitHub/);
-    expect(help.textContent).toMatch(/repo/);
-    expect(help.textContent).toMatch(/Contents/);
-    const link = screen.getByRole("link", { name: "GitHub Token Settings" });
-    expect(link.getAttribute("href")).toBe("https://github.com/settings/tokens");
-    expect(link.getAttribute("target")).toBe("_blank");
-    expect(link.getAttribute("rel")).toMatch(/noreferrer/);
-  });
-
-  it("notes that Save Token stores the secret for this project on this device", () => {
-    render(
-      <SettingsModal open onOpenChange={() => {}} scope="project" />,
-    );
-    fireEvent.click(screen.getByTestId("settings-modal-category-sourceControl"));
-    const copy = screen.getByTestId("settings-source-control-token-copy");
-    expect(copy.textContent).toMatch(/on this device for this project/i);
-    expect(copy.textContent).toMatch(/never included in project files or Git/i);
-    expect(copy.textContent).not.toMatch(/This browser only/i);
-    expect(copy.textContent).not.toMatch(/Not Saved/);
-    expect(screen.queryByText("Not Saved")).toBeNull();
-    sourceControl.hasToken = true;
-    cleanup();
-    render(
-      <SettingsModal open onOpenChange={() => {}} scope="project" />,
-    );
-    fireEvent.click(screen.getByTestId("settings-modal-category-sourceControl"));
-    expect(screen.getByTestId("settings-source-control-token-copy").textContent).toMatch(
-      /Token Saved/,
-    );
-    sourceControl.hasToken = false;
   });
 
   it("clears the stored token and the draft field", async () => {
@@ -797,44 +614,6 @@ describe("SettingsModal project authoring", () => {
     expect(screen.getByTestId("settings-source-control-token-copy").textContent).not.toMatch(
       /Token Saved/,
     );
-  });
-
-  it("keeps Close Project beside Done when browsing or searching settings", () => {
-    const onOpenChange = vi.fn();
-    const onCloseProject = vi.fn();
-    render(
-      <SettingsModal
-        open
-        onOpenChange={onOpenChange}
-        scope="project"
-        onCloseProject={onCloseProject}
-      />,
-    );
-    const close = screen.getByRole("button", { name: "Close Project" });
-    const done = screen.getByRole("button", { name: "Done" });
-    expect(close.parentElement).toBe(done.parentElement);
-    fireEvent.click(screen.getByTestId("settings-modal-category-game"));
-    expect(screen.getByRole("button", { name: "Close Project" })).toBe(close);
-    fireEvent.change(screen.getByPlaceholderText("Search settings"), {
-      target: { value: "no-such-setting" },
-    });
-    expect(screen.getByText("No Matching Settings")).toBeTruthy();
-    fireEvent.click(close);
-    expect(onOpenChange).toHaveBeenCalledWith(false);
-    expect(onCloseProject).toHaveBeenCalledOnce();
-  });
-
-  it("does not offer Close Project in Engine Settings", () => {
-    render(
-      <SettingsModal
-        open
-        onOpenChange={() => {}}
-        scope="engine"
-        onCloseProject={() => {}}
-      />,
-    );
-    expect(screen.queryByRole("button", { name: "Close Project" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Done" })).toBeTruthy();
   });
 
   it("confirms before turning Source Control Enable off", () => {

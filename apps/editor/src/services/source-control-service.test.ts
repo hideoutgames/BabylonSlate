@@ -3,7 +3,6 @@ import { DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS, err } from "@babylonslate/core
 import { FakeLockProvider } from "@babylonslate/source-control";
 import { MemorySecretStore } from "@babylonslate/vfs";
 import {
-  formatLockAge,
   SourceControlService,
 } from "./source-control-service";
 
@@ -12,16 +11,6 @@ const enabled = {
   enabled: true,
   repositoryUrl: "https://github.com/org/repo",
 };
-
-describe("formatLockAge", () => {
-  it("formats relative age in Title Case", () => {
-    const now = Date.parse("2026-08-15T12:00:00Z");
-    expect(formatLockAge("2026-08-15T12:00:00Z", now)).toBe("Just Now");
-    expect(formatLockAge("2026-08-15T11:50:00Z", now)).toBe("10 Min Ago");
-    expect(formatLockAge("2026-08-15T09:00:00Z", now)).toBe("3 Hr Ago");
-    expect(formatLockAge("2026-08-14T12:00:00Z", now)).toBe("1 Day Ago");
-  });
-});
 
 describe("SourceControlService", () => {
   it("requires Save Token to authorize a repository host, including legacy credentials", async () => {

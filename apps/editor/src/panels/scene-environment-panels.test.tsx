@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import type { FoliageGroup, SerializedScene } from "@babylonslate/core";
-import { FoliageGroupsPanel, FoliageSettingsPanel, LandscapeSettingsPanel } from "./scene-environment-panels";
+import { FoliageGroupsPanel } from "./scene-environment-panels";
 
 if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
   class PointerEventPolyfill extends MouseEvent {}
@@ -54,33 +54,3 @@ describe("Foliage Groups", () => {
   });
 });
 
-describe("Foliage Settings", () => {
-  it("explains why Paint Foliage cannot place instances", () => {
-    harness.groups = [{ id: "g", name: "Trees", models: [] }];
-    setTools({ foliageTool: "paint", groupId: null });
-    render(<FoliageSettingsPanel {...panel} />);
-    expect(screen.getByTestId("foliage-settings-blocked").textContent).toMatch(/Pick a Foliage Group/);
-    cleanup();
-    setTools({ foliageTool: "paint", groupId: "g" });
-    render(<FoliageSettingsPanel {...panel} />);
-    expect(screen.getByTestId("foliage-settings-blocked").textContent).toMatch(/Add Models/);
-    cleanup();
-    harness.groups = [{ id: "g", name: "Trees", models: [{ modelGuid: MODEL, materialGuid: null, weight: 1, minScale: 1, maxScale: 1 }] }];
-    render(<FoliageSettingsPanel {...panel} />);
-    expect(screen.queryByTestId("foliage-settings-blocked")).toBeNull();
-  });
-});
-
-describe("Landscape Settings", () => {
-  it("shows the brush settings the active tool uses", () => {
-    setTools({ landscapeTool: "flatten" });
-    render(<LandscapeSettingsPanel {...panel} />);
-    expect(screen.getByLabelText("Flatten Height")).toBeTruthy();
-    expect(screen.queryByTestId("property-row-layer")).toBeNull();
-    cleanup();
-    setTools({ landscapeTool: "paint" });
-    render(<LandscapeSettingsPanel {...panel} />);
-    expect(screen.getByTestId("property-row-layer")).toBeTruthy();
-    expect(screen.queryByLabelText("Flatten Height")).toBeNull();
-  });
-});

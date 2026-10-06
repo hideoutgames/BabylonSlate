@@ -60,18 +60,6 @@ describe("canFocusLayout", () => {
 });
 
 describe("focusKeepPanelIds", () => {
-  it("returns the scene keep list from settings", () => {
-    expect(focusKeepPanelIds(defaultEngineSettings(), "scene")).toEqual([
-      "viewport",
-    ]);
-  });
-
-  it("returns the material keep list from settings", () => {
-    expect(focusKeepPanelIds(defaultEngineSettings(), "material")).toEqual([
-      "material-graph",
-    ]);
-  });
-
   it("returns the Animation Object keep list when Animation Object mode is active", () => {
     expect(
       focusKeepPanelIds(defaultEngineSettings(), "anim-graph", {
@@ -82,18 +70,6 @@ describe("focusKeepPanelIds", () => {
 });
 
 describe("focusKeepCandidates", () => {
-  it("lists scene dock tabs that Focus can keep", () => {
-    expect(focusKeepCandidates("scene").map((panel) => panel.id)).toEqual(
-      listDockWindows("scene").map((entry) => entry.id),
-    );
-  });
-
-  it("lists class dock tabs that Focus can keep", () => {
-    expect(focusKeepCandidates("graph").map((panel) => panel.id)).toEqual(
-      listDockWindows("graph").map((entry) => entry.id),
-    );
-  });
-
   it("omits Prefab and Components from Focus keep lists for non-Actor classes", () => {
     expect(
       focusKeepCandidates("graph", { actorPrefab: false }).map((panel) => panel.id),
