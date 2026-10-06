@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { SourceRevisionChangedError } from "@babylonslate/core";
 import { ElectronStorageAdapter } from "./electron-storage-adapter";
 import type { ElectronProjectBridge } from "./platform";
 
@@ -68,9 +69,22 @@ describe("ElectronStorageAdapter", () => {
   it("accounts bytes discarded after native revision validation without publishing them", async () => {
     const bridge = fakeProjectBridge();
     vi.mocked(bridge.readBinaryRange).mockResolvedValue({ bytes: new ArrayBuffer(0), totalSize: 0, revision: "",
-      actualBytesRead: 12, error: "Source revision changed" });
+      actualBytesRead: 12, error: "Source revision changed", errorCode: "source-revision-changed" });
     const storage = new ElectronStorageAdapter(bridge);
-    await expect(storage.readBinaryRange("asset.babasset", 0, 12)).rejects.toThrow(/revision/i);
+    await expect(storage.readBinaryRange("asset.babasset", 0, 12)).rejects.toBeInstanceOf(SourceRevisionChangedError);
     expect(storage.getReadMetrics()).toMatchObject({ actualBytesRead: 12, rangeReads: 1, fullReads: 0 });
+  });
+
+  it.each(["File not found", "Source revision changed"])("does not classify an untyped native failure as retryable: %s", async (message) => {
+    const bridge = fakeProjectBridge();
+    vi.mocked(bridge.readBinaryRange).mockResolvedValue({
+      bytes: new ArrayBuffer(0), totalSize: 0, revision: "", actualBytesRead: 0, error: message,
+    });
+    const storage = new ElectronStorageAdapter(bridge);
+    const failure = await storage.readBinaryRange("asset.babasset", 0, 12).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure).not.toBeInstanceOf(SourceRevisionChangedError);
+    expect(failure).toMatchObject({ message });
+    expect(storage.getReadMetrics()).toMatchObject({ actualBytesRead: 0, rangeReads: 1 });
   });
 });

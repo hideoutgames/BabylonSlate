@@ -1,4 +1,5 @@
 import type { StorageRangeRead, StorageReadMetrics } from "@babylonslate/core";
+import { SourceRevisionChangedError } from "@babylonslate/core";
 
 /** Shared validation only; adapters must perform their own bounded I/O. */
 export function validateStorageRange(offset: number, length: number, totalSize?: number): void {
@@ -10,9 +11,16 @@ export function validateStorageRange(offset: number, length: number, totalSize?:
 }
 
 export function checkStorageRevision(path: string, revision: string, expectedRevision?: string): void {
-  if (!revision || (expectedRevision !== undefined && expectedRevision !== revision)) {
-    throw new Error(`Source revision changed: ${path}`);
+  if (!revision) throw new Error(`Storage did not provide a source revision: ${path}`);
+  if (expectedRevision !== undefined && expectedRevision !== revision) throw new SourceRevisionChangedError(`Source revision changed: ${path}`);
+}
+
+/** Native plugins use an explicit revision code; other I/O failures stay intact. */
+export function rethrowNativeStorageRangeError(error: unknown, path: string): never {
+  if (typeof error === "object" && error !== null && "code" in error && error.code === "REVISION_CHANGED") {
+    throw Object.assign(new SourceRevisionChangedError(`Source revision changed: ${path}`), { cause: error });
   }
+  throw error;
 }
 
 export function validateStorageRangeResult(path: string, offset: number, length: number,

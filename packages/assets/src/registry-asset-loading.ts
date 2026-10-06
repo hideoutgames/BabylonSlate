@@ -1,4 +1,5 @@
 import { DOCUMENT_CHUNK_ID, type AssetDocument } from "./asset-document";
+import { SourceRevisionChangedError } from "@babylonslate/core";
 import {
   AssetLoadingService,
   type AssetCatalogRecord,
@@ -110,7 +111,7 @@ function representationForRecord(
       }
       signal.throwIfAborted();
       if ((await registry.getAssetLocator(record.id)).revision !== record.revision) {
-        throw new Error(`Asset ${record.id} changed during reading; retry the current revision`);
+        throw new SourceRevisionChangedError(`Asset ${record.id} changed during reading; retry the current revision`);
       }
       const header = record.indexed.header;
       const documentBytes = chunks.get(DOCUMENT_CHUNK_ID);

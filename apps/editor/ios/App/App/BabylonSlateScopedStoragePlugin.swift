@@ -142,8 +142,8 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    private func rangeFailure(_ message: String) -> NSError {
-        NSError(domain: "BabylonSlate.StorageRange", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
+    private func rangeFailure(_ message: String, revisionChanged: Bool = false) -> NSError {
+        NSError(domain: "BabylonSlate.StorageRange", code: revisionChanged ? 2 : 1, userInfo: [NSLocalizedDescriptionKey: message])
     }
 
     private func descriptorRevision(_ descriptor: Int32) throws -> (String, Int64) {
@@ -165,7 +165,7 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
         defer { try? handle.close() }
         let (revision, size) = try descriptorRevision(handle.fileDescriptor)
         if let expected = call.getString("expectedRevision"), expected != revision {
-            throw rangeFailure("Source revision changed: \(target.lastPathComponent)")
+            throw rangeFailure("Source revision changed: \(target.lastPathComponent)", revisionChanged: true)
         }
         guard offset + length <= Double(size) else { throw rangeFailure("Storage byte range exceeds file size") }
         try handle.seek(toOffset: UInt64(offset))
@@ -178,10 +178,10 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
                 }
                 bytes.append(part)
             }
-            guard try descriptorRevision(handle.fileDescriptor).0 == revision else { throw rangeFailure("Source revision changed during read") }
+            guard try descriptorRevision(handle.fileDescriptor).0 == revision else { throw rangeFailure("Source revision changed during read", revisionChanged: true) }
             let current = try FileHandle(forReadingFrom: target)
             defer { try? current.close() }
-            guard try descriptorRevision(current.fileDescriptor).0 == revision else { throw rangeFailure("Source revision changed during read") }
+            guard try descriptorRevision(current.fileDescriptor).0 == revision else { throw rangeFailure("Source revision changed during read", revisionChanged: true) }
             return ["data": bytes.base64EncodedString(), "totalSize": size, "revision": revision, "actualBytesRead": bytes.count]
         } catch {
             let failure = error as NSError
@@ -658,7 +658,9 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         let nsError = error as NSError
-        if isNotFound(error) {
+        if nsError.domain == "BabylonSlate.StorageRange" && nsError.code == 2 {
+            call.reject(error.localizedDescription, "REVISION_CHANGED", error, readData)
+        } else if isNotFound(error) {
             call.reject("File not found", "NOT_FOUND", error, readData)
         } else if (nsError.domain == NSCocoaErrorDomain && [NSFileReadNoPermissionError, NSFileWriteNoPermissionError].contains(nsError.code)) ||
                     (nsError.domain == NSPOSIXErrorDomain && [1, 13].contains(nsError.code)) {

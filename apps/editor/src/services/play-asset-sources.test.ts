@@ -9,7 +9,83 @@ import {
 } from "@babylonslate/assets";
 import { acquirePlayAssetSources, emptyPlaySourceControls, mergePreparedPlaySources, requiredProjectAssets } from "./play-asset-sources";
 
+async function sceneSaveDuringCompilationFixture() {
+  const storage = new MemoryStorageAdapter();
+  await storage.pickProjectFolder();
+  await storage.mkdir("assets");
+  const writeScene = async (name: string, reverb: number) => storage.writeBinary("assets/scene.babasset", await encodeBabasset({
+    header: {
+      guid: "scene", name, type: "Scene", version: 1, engineVersion: "0.0.0", mode: "thin", payload: { name, actors: [] },
+      dependencies: ["script"], requiredDependencies: ["script"], dependencyMetadataVersion: 1,
+    }, chunks: [{ id: "audioReverb", kind: "audio-reverb", mime: "application/octet-stream", data: new Uint8Array([reverb]) }],
+  }));
+  await writeScene("Original", 1);
+  await storage.writeBinary("assets/script.babasset", await encodeBabasset({
+    header: {
+      guid: "script", name: "Script", type: "Class", version: 1, engineVersion: "0.0.0", mode: "thin", payload: { nodes: [], edges: [] },
+      dependencies: [], requiredDependencies: [], dependencyMetadataVersion: 1,
+    }, chunks: [],
+  }));
+  const registry = new AssetRegistry(storage);
+  await registry.mountRoot(projectContentRoot());
+  const loading = createRegistryAssetLoadingService(registry, { projectId: "background-save" });
+  const scopes: Array<ReturnType<typeof loading.createScope>> = [];
+  const host = {
+    registry, project: createEmptyProject("Background Save"),
+    createScope: (owner: string) => {
+      const scope = loading.createScope(owner);
+      vi.spyOn(scope, "dispose");
+      scopes.push(scope);
+      return scope;
+    },
+    compile: vi.fn(async () => ({ bundles: [], diagnostics: [] })),
+  };
+  return { storage, registry, loading, scopes, host, writeScene };
+}
+
 describe("Play source ownership", () => {
+  it("retries a scene snapshot when a background reverb save completes during compilation", async () => {
+    const fixture = await sceneSaveDuringCompilationFixture();
+    fixture.host.compile.mockImplementationOnce(async () => {
+      await fixture.writeScene("Fresh scene", 2);
+      return { bundles: [], diagnostics: [] };
+    });
+    const prepared = await acquirePlayAssetSources(fixture.host, ["scene"], { consumer: "Play Scene", signal: new AbortController().signal });
+    expect(fixture.host.compile).toHaveBeenCalledTimes(2);
+    expect(fixture.scopes).toHaveLength(2);
+    expect(fixture.scopes[0]!.dispose).toHaveBeenCalledTimes(1);
+    expect(prepared.game.scenes.get("scene")?.name).toBe("Fresh scene");
+    expect(prepared.game.audioReverbBytes.get("scene")).toEqual(new Uint8Array([2]));
+    fixture.loading.trim({ force: true });
+    const current = await fixture.registry.getAssetLocator("scene");
+    expect(fixture.loading.snapshot().entries.filter(entry => entry.assetId === "scene").every(entry => entry.revision === current.revision)).toBe(true);
+    prepared.release();
+    fixture.loading.trim({ force: true });
+    expect(fixture.loading.snapshot()).toMatchObject({ sourceBytes: 0, decodedBytes: 0, temporaryBytes: 0, entries: [] });
+    fixture.loading.dispose();
+  });
+
+  it.each(["continuous save", "cancelled save", "decode failure"] as const)("bounds retries for %s and releases every failed scope", async (mode) => {
+    const fixture = await sceneSaveDuringCompilationFixture();
+    const controller = new AbortController();
+    let writes = 0;
+    fixture.host.compile.mockImplementation(async () => {
+      if (mode === "decode failure") throw new SyntaxError("Invalid graph encoding");
+      await fixture.writeScene(`Saved ${++writes}`, writes + 1);
+      if (mode === "cancelled save") controller.abort();
+      return { bundles: [], diagnostics: [] };
+    });
+    const request = acquirePlayAssetSources(fixture.host, ["scene"], { consumer: "Play Scene", signal: controller.signal });
+    await expect(request).rejects.toThrow(mode === "continuous save" ? "could not stabilize after 3 attempts"
+      : mode === "decode failure" ? "Invalid graph encoding" : /abort/i);
+    expect(fixture.host.compile).toHaveBeenCalledTimes(mode === "continuous save" ? 3 : 1);
+    expect(fixture.scopes.every(scope => vi.mocked(scope.dispose).mock.calls.length === 1)).toBe(true);
+    await vi.waitFor(() => expect(fixture.loading.snapshot().temporaryBytes).toBe(0));
+    fixture.loading.trim({ force: true });
+    expect(fixture.loading.snapshot()).toMatchObject({ sourceBytes: 0, decodedBytes: 0, temporaryBytes: 0, entries: [] });
+    fixture.loading.dispose();
+  });
+
   it("reloads console Classes by catalog GUID after path-labelled compiled sources are released", async () => {
     const storage = new MemoryStorageAdapter();
     await storage.pickProjectFolder();

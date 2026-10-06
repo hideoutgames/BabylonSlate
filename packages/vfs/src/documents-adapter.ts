@@ -1,5 +1,5 @@
 import { BabylonSlateScopedStorage, type NativeRangeOptions, type NativeRangeRead } from "./capacitor-scoped-storage";
-import { StorageReadCounter, validateStorageRange, validateStorageRangeResult } from "./storage-range";
+import { rethrowNativeStorageRangeError, StorageReadCounter, validateStorageRange, validateStorageRangeResult } from "./storage-range";
 import type {
   DirEntry,
   FileStat,
@@ -217,11 +217,13 @@ export class DocumentsStorageAdapter implements ProjectStorage {
     const options = { path: this.abs(path), directory: this.directory, offset, length, expectedRevision };
     // Capacitor Filesystem.readFile loads the whole file. Native positioned I/O
     // is provided by our existing storage plugin instead of disguising that read.
-    const result = await this.reads.range(length, async () => this.fs.readFileRange
-      ? await this.fs.readFileRange(options)
-      : this.fs === (Filesystem as unknown as DocumentsFilesystemApi)
-        ? await BabylonSlateScopedStorage.readDocumentsRange(options)
-        : (() => { throw new Error("Documents filesystem does not support bounded reads"); })());
+    const result = await this.reads.range(length, async () => {
+      try {
+        if (this.fs.readFileRange) return await this.fs.readFileRange(options);
+        if (this.fs === (Filesystem as unknown as DocumentsFilesystemApi)) return await BabylonSlateScopedStorage.readDocumentsRange(options);
+        throw new Error("Documents filesystem does not support bounded reads");
+      } catch (error) { rethrowNativeStorageRangeError(error, path); }
+    });
     return validateStorageRangeResult(path, offset, length, { ...result, bytes: decodeBinary(result.data) }, expectedRevision);
   }
 

@@ -86,6 +86,7 @@ export const ScopedStorageErrorCode = {
   Stale: "STALE",
   AccessRevoked: "ACCESS_REVOKED",
   NotFound: "NOT_FOUND",
+  RevisionChanged: "REVISION_CHANGED",
   Cancelled: "CANCELLED",
   Unreachable: "UNREACHABLE",
 } as const;

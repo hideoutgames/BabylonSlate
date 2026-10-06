@@ -122,7 +122,7 @@ async function visiblePositions(host: Locator) {
 }
 
 for (const mode of ["Play", "Preview Build"] as const) {
-  test(`${mode} streams two scene instances at their component origins and unloads them independently`, async ({ page }) => {
+  test(`${mode} streams two scene instances at their component origins and unloads them independently`, async ({ page }, testInfo) => {
     test.setTimeout(180_000);
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
@@ -142,7 +142,16 @@ for (const mode of ["Play", "Preview Build"] as const) {
       await waitForPreviewBuildBoot(page);
       await page.getByRole("button", { name: "Console", exact: true }).click();
     } else {
-      await clickPlayAndWaitForOverlay(page);
+      try {
+        await clickPlayAndWaitForOverlay(page);
+      } catch (error) {
+        await page.getByRole("tab", { name: "Output Log", exact: true }).click();
+        await testInfo.attach("play-preparation-output", {
+          body: JSON.stringify({ errors, output: await page.getByTestId("output-log-line").allTextContents() }),
+          contentType: "application/json",
+        });
+        throw error;
+      }
       await page.getByTestId("play-console-open").click();
     }
     const host = mode === "Play" ? page.getByTestId("play-overlay") : page.frameLocator('[data-testid="preview-build-iframe"]').getByTestId("player-root");

@@ -28,6 +28,15 @@ export interface StorageRangeRead {
   actualBytesRead: number;
 }
 
+/** Retryable snapshot invalidation; malformed files and invalid ranges use other errors. */
+export class SourceRevisionChangedError extends Error {
+  readonly code = "source-revision-changed";
+  constructor(message: string) {
+    super(message);
+    this.name = "SourceRevisionChangedError";
+  }
+}
+
 export interface StorageReadMetrics {
   operations: number;
   fullReads: number;

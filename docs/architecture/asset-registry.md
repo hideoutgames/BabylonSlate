@@ -90,6 +90,8 @@ Admission reserves retained source, decoded CPU and temporary bytes before expen
 
 Scoped Play compilation lives in the source service's owned decoded cache. Explicit editor and toolbar compilation uses a separate `GraphScriptCompileCache` LRU with configurable `maxBytes` and `maxEntries`, provisionally 16 MiB and 256 combined graph/animation entries. Its estimate includes retained key strings, serialized compiled results and entry overhead. Oversized results are returned without caching; eviction drops only cache references, preserving any caller's active result. These editor defaults also await physical-device measurement.
 
+A save or background bake can replace a Scene while Play prepares it. Typed source-revision invalidation retries the complete acquisition at most three times, releasing each failed scope before resolving the current catalog and selected chunks again. Publication still validates the full revision set. Cancellation, project changes, corruption and budget failures do not trigger retries; repeatedly changing sources produce an actionable failure asking the developer to let saving or baking finish.
+
 `snapshot()` exposes retained/reserved bytes, active/queued work, cache hits, revisions, representations and retaining owners. Storage metrics separately report actual read bytes, including failed range transports. Physical A16 iPad, Android and desktop peak-memory/frame-time qualification remains required; unit tests establish contracts, not device performance results.
 
 ## Importers

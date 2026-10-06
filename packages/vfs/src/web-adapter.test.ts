@@ -4,6 +4,7 @@ import { webcrypto } from "node:crypto";
 import { createStorage } from "./create-storage";
 import { TEST_PROJECT_NAME } from "./test-mode";
 import { OpfsStorageAdapter } from "./web-adapter";
+import { SourceRevisionChangedError } from "@babylonslate/core";
 
 vi.mock("./test-mode", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./test-mode")>();
@@ -79,6 +80,38 @@ describe("OPFS / web storage adapter", () => {
     await storage.writeBinary("large.babasset", bytes);
     await expect(storage.readBinaryRange("large.babasset", 64, 3, selected.revision)).rejects.toThrow(/revision/i);
     await expect(storage.readBinaryRange("large.babasset", bytes.length, 1)).rejects.toThrow(/range/i);
+  });
+
+  it.each(["NotReadableError", "NotFoundError"])("classifies %s from an invalidated Blob slice only after confirming a replacement", async errorName => {
+    const storage = await openedAdapter();
+    await storage.writeBinary("asset.babasset", new Uint8Array([1, 2, 3, 4]));
+    const root = await navigator.storage.getDirectory();
+    const project = (JSON.parse(localStorage.getItem("babylonslate:opfs-meta")!) as { projects: Array<{ directory: string }> }).projects[0]!;
+    const handle = await (await root.getDirectoryHandle(project.directory)).getFileHandle("asset.babasset");
+    const snapshot = await handle.getFile();
+    const failure = new DOMException("Snapshot cannot be read", errorName);
+    snapshot.slice = () => ({ arrayBuffer: async () => {
+      await storage.writeBinary("asset.babasset", new Uint8Array([4, 3, 2, 1]));
+      throw failure;
+    } }) as Blob;
+    vi.spyOn(handle, "getFile").mockResolvedValueOnce(snapshot);
+    await expect(storage.readBinaryRange("asset.babasset", 0, 2)).rejects.toBeInstanceOf(SourceRevisionChangedError);
+    expect(storage.getReadMetrics()).toMatchObject({ rangeReads: 1, actualBytesRead: 0, fullReads: 0 });
+    expect((await storage.readBinaryRange("asset.babasset", 0, 2)).bytes).toEqual(new Uint8Array([4, 3]));
+  });
+
+  it.each(["NotReadableError", "NotFoundError", "SecurityError"])("preserves genuine %s failures when the source revision is unchanged", async errorName => {
+    const storage = await openedAdapter();
+    await storage.writeBinary("asset.babasset", new Uint8Array([1, 2, 3, 4]));
+    const root = await navigator.storage.getDirectory();
+    const project = (JSON.parse(localStorage.getItem("babylonslate:opfs-meta")!) as { projects: Array<{ directory: string }> }).projects[0]!;
+    const handle = await (await root.getDirectoryHandle(project.directory)).getFileHandle("asset.babasset");
+    const snapshot = await handle.getFile();
+    const failure = new DOMException("Source revision changed", errorName);
+    snapshot.slice = () => ({ arrayBuffer: async () => { throw failure; } }) as Blob;
+    vi.spyOn(handle, "getFile").mockResolvedValueOnce(snapshot);
+    await expect(storage.readBinaryRange("asset.babasset", 0, 2)).rejects.toBe(failure);
+    expect(storage.getReadMetrics()).toMatchObject({ rangeReads: 1, actualBytesRead: 0, fullReads: 0 });
   });
 
   it("createStorage returns OPFS adapter on web platform", () => {

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { SourceRevisionChangedError } from "@babylonslate/core";
 import { DocumentsStorageAdapter } from "./documents-adapter";
 import {
   createFakeDocumentsFs,
@@ -84,6 +85,16 @@ describe("DocumentsStorageAdapter", () => {
     delete fs.readFileRange;
     await expect(storage.readBinaryRange("large.babasset", 1, 2)).rejects.toThrow(/bounded reads/i);
     expect(fullRead).not.toHaveBeenCalled();
+  });
+
+  it("translates only native revision codes and preserves failed-read accounting", async () => {
+    await storage.openDocumentsProject("Game");
+    fs.readFileRange = vi.fn().mockRejectedValue({ code: "REVISION_CHANGED", data: { actualBytesRead: 2 } });
+    await expect(storage.readBinaryRange("asset.babasset", 0, 4)).rejects.toBeInstanceOf(SourceRevisionChangedError);
+    const unrelated = Object.assign(new Error("Source revision changed"), { code: "UNREACHABLE" });
+    vi.mocked(fs.readFileRange).mockRejectedValue(unrelated);
+    await expect(storage.readBinaryRange("asset.babasset", 0, 4)).rejects.toBe(unrelated);
+    expect(storage.getReadMetrics()).toMatchObject({ rangeReads: 2, actualBytesRead: 2, fullReads: 0 });
   });
 
   it.each(["../Other", "", ".", "..", "/Other", "Game/Other", "Game\\Other"])("rejects unsafe project folder names: %s", async (name) => {

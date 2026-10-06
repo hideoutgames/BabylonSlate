@@ -1,6 +1,6 @@
-import { areaEmissionTextureGuids, normalizeScene, normalizeSceneLayer, parseText2DProperties, renderEffectsAssetGuids, type ProjectDocument } from "@babylonslate/core";
+import { SourceRevisionChangedError, areaEmissionTextureGuids, normalizeScene, normalizeSceneLayer, parseText2DProperties, renderEffectsAssetGuids, type ProjectDocument } from "@babylonslate/core";
 import {
-  AUDIO_DEFAULT_SOURCE_CHUNK, FONT_FACETYPE_CHUNK_ID, FONT_MSDF_CHUNK_ID, FONT_MSDF_PNG_CHUNK_ID,
+  AssetLoadError, AUDIO_DEFAULT_SOURCE_CHUNK, FONT_FACETYPE_CHUNK_ID, FONT_MSDF_CHUNK_ID, FONT_MSDF_PNG_CHUNK_ID,
   cookComplexCollisionMeshes, currentAreaEmissionChunk, decodeAreaEmission, modelAnimationDurations, normalizeAudioPayload, normalizeFontPayload, normalizeModelPayload,
   registryAssetRepresentation, selectTextureChunk, type AssetLoadScope, type AssetRegistry,
   type IndexedAsset, type RegistryLoadedAsset,
@@ -44,7 +44,7 @@ async function currentRequiredPlayAssets(registry: AssetRegistry, roots: readonl
     const locator = await cancellableCatalogRead(registry.getAssetLocator(guid), signal);
     signal.throwIfAborted();
     const asset = registry.getByGuid(guid);
-    if (!asset || asset.placeholder || asset.locator !== locator) throw new Error(`Required asset changed while resolving: ${guid}`);
+    if (!asset || asset.placeholder || asset.locator !== locator) throw new SourceRevisionChangedError(`Required asset changed while resolving: ${guid}`);
     revisions.set(guid, locator.revision);
     pending.push(...registry.requiredDependenciesFor(guid, asset.header));
   }
@@ -106,11 +106,50 @@ function selectedChunks(asset: IndexedAsset, payload: Record<string, unknown>, f
   return [];
 }
 
-/** A shared preparation contract for initial Play, streamed Scenes and explicit preloads. */
+type PlayAssetSourceOptions = {
+  consumer: string;
+  signal: AbortSignal;
+  onProgress?: (progress: { completed: number; total: number }) => void;
+  allowCompileErrors?: boolean;
+  fontModes?: import("@babylonslate/render").CommandFontModes;
+};
+
+/** A background bake/save may invalidate a snapshot; retry the complete owned acquisition. */
 export async function acquirePlayAssetSources(
   host: PlayAssetSourceHost,
   roots: readonly string[],
-  options: { consumer: string; signal: AbortSignal; onProgress?: (progress: { completed: number; total: number }) => void; allowCompileErrors?: boolean; fontModes?: import("@babylonslate/render").CommandFontModes },
+  options: PlayAssetSourceOptions,
+) {
+  for (let attempt = 1; ; attempt++) {
+    options.signal.throwIfAborted();
+    try { return await acquirePlayAssetSourcesAttempt(host, roots, options); }
+    catch (error) {
+      options.signal.throwIfAborted();
+      if (!isRevisionChange(error)) throw error;
+      if (attempt === 3) throw new Error(`Asset preparation for ${options.consumer} could not stabilize after 3 attempts; wait for saving or baking to finish, then retry. ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+    }
+  }
+}
+
+function isRevisionChange(error: unknown): boolean {
+  let stale = false;
+  const seen = new Set<unknown>();
+  for (let cause = error; cause instanceof Error && !seen.has(cause); cause = cause.cause) {
+    seen.add(cause);
+    if (cause instanceof AssetLoadError) {
+      if (cause.code === "cancelled" || cause.code === "budget") return false;
+      if (cause.code === "stale") stale = true;
+    }
+    if (cause instanceof SourceRevisionChangedError) stale = true;
+  }
+  return stale;
+}
+
+/** A shared preparation contract for initial Play, streamed Scenes and explicit preloads. */
+async function acquirePlayAssetSourcesAttempt(
+  host: PlayAssetSourceHost,
+  roots: readonly string[],
+  options: PlayAssetSourceOptions,
 ) {
   const catalogRevisions = await currentRequiredPlayAssets(host.registry, roots, options.signal);
   const required = new Set(catalogRevisions.keys());
@@ -158,7 +197,7 @@ export async function acquirePlayAssetSources(
       fontModes.set(guid, modes);
       for (const [dependency, revision] of await currentRequiredPlayAssets(host.registry, [guid], options.signal)) {
         const previous = catalogRevisions.get(dependency);
-        if (previous && previous !== revision) throw new Error(`Asset ${dependency} changed while resolving font dependencies; retry`);
+        if (previous && previous !== revision) throw new SourceRevisionChangedError(`Asset ${dependency} changed while resolving font dependencies; retry`);
         catalogRevisions.set(dependency, revision);
         required.add(dependency);
       }
@@ -170,7 +209,7 @@ export async function acquirePlayAssetSources(
     }
     for (const guid of required) {
       const value = await scope.acquire<RegistryLoadedAsset>(guid, undefined, { signal: options.signal, dependencies: "none" });
-      if (value.revision !== catalogRevisions.get(guid)) throw new Error(`Asset ${guid} changed after resolving its dependencies; retry`);
+      if (value.revision !== catalogRevisions.get(guid)) throw new SourceRevisionChangedError(`Asset ${guid} changed after resolving its dependencies; retry`);
       documents.set(guid, value);
       const payload = value.document.payload;
       const actors = Array.isArray(payload.actors) ? payload.actors as Array<{ components?: unknown[] }> : [];
@@ -217,7 +256,7 @@ export async function acquirePlayAssetSources(
       const asset = host.registry.getByGuid(guid)!;
       const preparedDocument = documents.get(guid)!;
       const document = preparedDocument.document;
-      if ((await host.registry.getAssetLocator(guid)).revision !== preparedDocument.revision) throw new Error(`Asset ${guid} changed after its document loaded; retry`);
+      if ((await host.registry.getAssetLocator(guid)).revision !== preparedDocument.revision) throw new SourceRevisionChangedError(`Asset ${guid} changed after its document loaded; retry`);
       const chunkIds = selectedChunks(asset, document.payload, fontModes, emissions);
       const chunks = new Map<string, Uint8Array>();
       // A chunk stays compatible when another consumer asks for additional
@@ -227,7 +266,7 @@ export async function acquirePlayAssetSources(
           selectChunks: () => [chunkId], includeDocument: false, representationKey: "runtime-source-chunk",
         });
         const loaded = await scope.acquire<RegistryLoadedAsset>(guid, representation, { signal: options.signal, dependencies: "none" });
-        if (loaded.revision !== preparedDocument.revision) throw new Error(`Asset ${guid} changed while selecting source data; retry`);
+        if (loaded.revision !== preparedDocument.revision) throw new SourceRevisionChangedError(`Asset ${guid} changed while selecting source data; retry`);
         chunks.set(chunkId, loaded.chunks.get(chunkId)!);
       }
       const value = { ...preparedDocument, chunks };
@@ -310,7 +349,7 @@ export async function acquirePlayAssetSources(
         const result = await host.compile(required);
         signal.throwIfAborted();
         for (const [guid, revision] of compileInputs) {
-          if ((await host.registry.getAssetLocator(guid)).revision !== revision) throw new Error(`Class compilation input ${guid} changed; retry`);
+          if ((await host.registry.getAssetLocator(guid)).revision !== revision) throw new SourceRevisionChangedError(`Class compilation input ${guid} changed; retry`);
         }
         const byPath = new Map(host.registry.list().map(asset => [asset.path, asset]));
         const bundles = result.bundles.map(script => {
@@ -341,7 +380,8 @@ export async function acquirePlayAssetSources(
         const value = packedContentFromGame(game);
         value.audioLibrary.sourceRevisions = new Map(audioRevisions);
         for (const [guid, revision] of revisions) {
-          if ((await host.registry.getAssetLocator(guid)).revision !== revision) throw new Error(`Asset ${guid} changed during runtime preparation; retry`);
+          const current = await host.registry.getAssetLocator(guid);
+          if (current.revision !== revision) throw new SourceRevisionChangedError(`Asset ${guid} (${current.path}) changed during runtime preparation; retry. Expected source revision ${revision}; found ${current.revision}`);
         }
         return { value, sourceBytes: 0, decodedBytes: cpuBytes, dispose: () => releasePackedContent(value) };
       },

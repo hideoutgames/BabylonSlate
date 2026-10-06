@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { BabylonSlateScopedStoragePlugin } from "./capacitor-scoped-storage";
 import type { ProjectStorageReader } from "@babylonslate/core";
+import { SourceRevisionChangedError } from "@babylonslate/core";
 import { ScopedStorageAdapter } from "./scoped-storage-adapter";
 
 const prefs = new Map<string, string>();
@@ -61,6 +62,20 @@ describe("ScopedStorageAdapter", () => {
     await expect(adapter.readBinaryRange("large.babasset", 10, 2)).rejects.toThrow(/not found/i);
     expect(adapter.getReadMetrics().actualBytesRead).toBe(6);
     expect(plugin.readFile).not.toHaveBeenCalled();
+  });
+
+  it("classifies native revision invalidation without treating unrelated failures as retryable", async () => {
+    const plugin = createMockPlugin();
+    vi.mocked(plugin.pickFolder).mockResolvedValue({ folder: { id: "folder", name: "Game" } });
+    vi.mocked(plugin.readFileRange).mockRejectedValue({ code: "REVISION_CHANGED", data: { actualBytesRead: 3 } });
+    const adapter = new ScopedStorageAdapter(plugin);
+    await adapter.pickProjectFolder();
+    await expect(adapter.readBinaryRange("asset.babasset", 0, 4)).rejects.toBeInstanceOf(SourceRevisionChangedError);
+    const unrelated = Object.assign(new Error("Source revision changed"), { code: "UNREACHABLE" });
+    vi.mocked(plugin.readFileRange).mockRejectedValue(unrelated);
+    await expect(adapter.readBinaryRange("asset.babasset", 0, 4)).rejects.toBe(unrelated);
+    expect(adapter.getReadMetrics()).toMatchObject({ rangeReads: 2, actualBytesRead: 3, fullReads: 0 });
+    expect(await adapter.needsReconnect()).toBe(false);
   });
 
   it("isolates concurrent read scopes, closes failed scans and keeps ordinary reads uncached", async () => {

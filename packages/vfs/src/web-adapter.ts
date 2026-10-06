@@ -1,4 +1,5 @@
 import { checkStorageRevision, StorageReadCounter, validateStorageRange } from "./storage-range";
+import { SourceRevisionChangedError } from "@babylonslate/core";
 import type {
   DirEntry,
   FileStat,
@@ -290,7 +291,20 @@ export class OpfsStorageAdapter implements ProjectStorage {
     validateStorageRange(offset, length, file.size);
     // Reading the Blob slice is essential: slicing an ArrayBuffer already read
     // from the complete File would eagerly retain every inline asset payload.
-    const bytes = new Uint8Array(await file.slice(offset, offset + length).arrayBuffer());
+    let bytes: Uint8Array;
+    try { bytes = new Uint8Array(await file.slice(offset, offset + length).arrayBuffer()); }
+    catch (error) {
+      this.reads.record("range", length, 0);
+      if (STALE_SNAPSHOT_ERRORS.has(String((error as { name?: unknown } | null)?.name ?? ""))) {
+        let current: File | undefined;
+        try { current = await (await parent.getFileHandle(name)).getFile(); }
+        catch { /* A missing/unreadable file alone does not prove a changed revision. */ }
+        if (current && revisionOf(current) !== revision) {
+          throw Object.assign(new SourceRevisionChangedError(`Source revision changed: ${path}`), { cause: error });
+        }
+      }
+      throw error;
+    }
     this.reads.record("range", length, bytes.byteLength);
     if (bytes.byteLength !== length) throw new Error(`Unexpected end of file: ${path}`);
     checkStorageRevision(path, revisionOf(await handle.getFile()), revision);

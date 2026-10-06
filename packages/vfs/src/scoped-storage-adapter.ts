@@ -1,4 +1,4 @@
-import { StorageReadCounter, validateStorageRange, validateStorageRangeResult } from "./storage-range";
+import { rethrowNativeStorageRangeError, StorageReadCounter, validateStorageRange, validateStorageRangeResult } from "./storage-range";
 import type {
   DirEntry,
   FileStat,
@@ -115,6 +115,9 @@ export class ScopedStorageAdapter implements ProjectStorage {
           ? `File not found: ${opts.path}`
           : "File not found";
         throw new Error(message, { cause: err });
+      }
+      if (isScopedStorageError(err, ScopedStorageErrorCode.RevisionChanged)) {
+        rethrowNativeStorageRangeError(err, opts?.path ?? "asset");
       }
       throw err;
     }

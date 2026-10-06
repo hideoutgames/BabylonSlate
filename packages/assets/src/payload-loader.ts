@@ -1,4 +1,5 @@
 import type { ProjectStorage, ProjectStorageReader } from "@babylonslate/core";
+import { SourceRevisionChangedError } from "@babylonslate/core";
 import {
   BABASSET_PREFIX_BYTES,
   readBabassetHeader,
@@ -32,9 +33,8 @@ export async function readAssetCatalog(storage: ProjectStorageReader, path: stri
   const payloadOffset = BABASSET_PREFIX_BYTES + headerLength;
   if (payloadOffset > prefix.totalSize) throw new Error(`Truncated .babasset header: ${path}`);
   const body = await storage.readBinaryRange(path, BABASSET_PREFIX_BYTES, headerLength, prefix.revision);
-  if (body.totalSize !== prefix.totalSize || body.revision !== prefix.revision || body.bytes.byteLength !== headerLength) {
-    throw new Error(`Asset changed while reading its header: ${path}`);
-  }
+  if (body.totalSize !== prefix.totalSize || body.revision !== prefix.revision) throw new SourceRevisionChangedError(`Asset changed while reading its header: ${path}`);
+  if (body.bytes.byteLength !== headerLength) throw new Error(`Truncated .babasset header: ${path}`);
   const headerBytes = concatBytes([prefix.bytes, body.bytes]);
   const header = readBabassetHeader(headerBytes);
   const locator = {
@@ -57,7 +57,7 @@ export async function validateAssetSourceLocator(storage: ProjectStorageReader, 
     const { locator } = await readAssetCatalog(storage, asset.path);
     if (locator.revision === asset.revision && locator.totalSize === asset.totalSize) return;
   }
-  throw new Error(`Asset changed during loading: ${asset.path}`);
+  throw new SourceRevisionChangedError(`Asset changed during loading: ${asset.path}`);
 }
 
 function validateChunkBounds(asset: AssetSourceLocator, entry: ChunkEntry): void {
@@ -160,9 +160,8 @@ export class AccountedPayloadLoader {
       const { offset, length } = entry.locator.inline;
       const result = await storage.readBinaryRange(asset.path, asset.payloadOffset + offset, length, asset.storageRevision);
       request.payloadBytes = result.bytes.byteLength;
-      if (result.totalSize !== asset.totalSize || result.revision !== asset.storageRevision || result.bytes.byteLength !== length) {
-        throw new Error(`Asset changed while reading chunk ${entry.id}: ${asset.path}`);
-      }
+      if (result.totalSize !== asset.totalSize || result.revision !== asset.storageRevision) throw new SourceRevisionChangedError(`Asset changed while reading chunk ${entry.id}: ${asset.path}`);
+      if (result.bytes.byteLength !== length) throw new Error(`Length mismatch for chunk ${entry.id} in ${asset.path}`);
       data = result.bytes;
     } else {
       await validateAssetSourceLocator(storage, asset);

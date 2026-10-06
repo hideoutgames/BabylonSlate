@@ -1,5 +1,5 @@
 import type { ProjectStorage, ProjectStorageReader } from "@babylonslate/core";
-import { ENGINE_VERSION } from "@babylonslate/core";
+import { ENGINE_VERSION, SourceRevisionChangedError } from "@babylonslate/core";
 import {
   decodeBabasset,
   encodeBabasset,
@@ -266,7 +266,7 @@ export class AssetRegistry {
     const storage = this.storageForAsset(asset);
     if (asset.locator && storage.hasStrongSourceRevisions) {
       const current = await storage.readBinaryRange(asset.path, 0, 0);
-      if (this.byGuid.get(guid) !== asset) throw new Error(`Asset changed while resolving its catalog entry: ${guid}`);
+      if (this.byGuid.get(guid) !== asset) throw new SourceRevisionChangedError(`Asset changed while resolving its catalog entry: ${guid}`);
       if (current.revision === asset.locator.storageRevision && current.totalSize === asset.locator.totalSize) return asset.locator;
     }
     const pending = this.locatorRequests.get(guid);
@@ -274,7 +274,7 @@ export class AssetRegistry {
     const promise = (async () => {
       const { header, locator } = await readAssetCatalog(this.storageForAsset(asset), asset.path);
       if (this.byGuid.get(guid) !== asset || header.guid !== guid) {
-        throw new Error(`Asset changed while resolving its catalog entry: ${guid}`);
+        throw new SourceRevisionChangedError(`Asset changed while resolving its catalog entry: ${guid}`);
       }
       if (asset.locator?.revision === locator.revision && asset.locator.totalSize === locator.totalSize) return asset.locator;
       this.indexHeader(asset.rootId, asset.path, header, false, asset.mtime, locator);
@@ -289,7 +289,7 @@ export class AssetRegistry {
   async readChunk(guid: string, chunkId: string): Promise<Uint8Array> {
     const locator = await this.getAssetLocator(guid);
     const asset = this.byGuid.get(guid);
-    if (!asset || asset.locator !== locator) throw new Error(`Asset changed while preparing chunk ${chunkId}: ${guid}`);
+    if (!asset || asset.locator !== locator) throw new SourceRevisionChangedError(`Asset changed while preparing chunk ${chunkId}: ${guid}`);
     const entry = asset.header.chunks.find((chunk) => chunk.id === chunkId);
     if (!entry) throw new Error(`Missing chunk ${chunkId} in asset ${guid} (${asset.path})`);
     return this.loader.loadChunk(locator, entry, this.blobsForAsset(asset), this.storageForAsset(asset));
