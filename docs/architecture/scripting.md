@@ -669,11 +669,11 @@ The asset header GUID is identity; names and row positions are not keys. An obje
 
 ### NodeGraph and runtime
 
-**Read Data Object** takes a Data Object asset reference and returns **Value** as the selected Structure plus **Found**. Selecting a literal object in the Inspector or directly on the node infers its Structure; typed palette entries also offer **Read <Structure> Data**. **Create New Data Object** from a typed input carries that Structure and its defaults into the new asset. Connect Value to the existing **Break Structure** node. Branch on Found before reading fields: missing, mismatched or invalid records return `null`, not invented defaults.
+**Read Data Object** takes a Data Object asset reference and returns **Value** as the selected Structure plus **Found**. Selecting a literal object in the Inspector or directly on the node infers its Structure; typed palette entries also offer **Read ItemStats Data**. **Create New Data Object** from a typed input carries that Structure and its defaults into the new asset. Connect Value to the existing **Break Structure** node. Branch on Found before reading fields: missing, mismatched or invalid records return `null`, not invented defaults.
 
 **Get Data Sheet Objects** returns ordered Data Object references and Found. Iterate those references through Read Data Object. An empty valid sheet returns `[]` and Found=true; a missing, invalid or mixed-Structure sheet returns `[]` and Found=false. Compile diagnostics flag unavailable Structures and mismatched literal references; dynamic references are checked at runtime.
 
-Runtime `ctx.data` exposes synchronous `readObject(reference, structureGuid?)`, `hasObject`, `getSheetObjects`, and `hasSheet`. The session catalog validates and indexes data once, and each value read returns a detached copy. Changes to returned gameplay values never rewrite authored assets. Restart Play to load authored changes. The same catalog travels through worker/in-process Play and loose/packed players.
+Runtime `ctx.data` exposes synchronous `readObject(reference, structureGuid?)`, `hasObject`, `getSheetObjects`, and `hasSheet`. The session catalog validates and indexes data once, and each value read returns a detached copy. Shared schema parsing lives in scripting so export preparation can run without loading runtime or Physics modules. Changes to returned gameplay values never rewrite authored assets. Restart Play to load authored changes. The same catalog travels through worker/in-process Play and loose/packed players.
 
 ### Editor Utility Objects
 
