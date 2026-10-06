@@ -39,14 +39,14 @@ describe("tween values", () => {
     expect(interpolateTweenValue(type, a, b, 0.25)).toEqual(expected);
   });
 
-  it("takes the short rotation path across 180 degrees without losing exact authored endpoints", () => {
-    const a = { pitch: 0, yaw: 170, roll: 0 };
-    const b = { pitch: 0, yaw: -170, roll: 0 };
-    const midpoint = interpolateTweenValue("rotator", a, b, 0.5);
-    expect(Math.abs(midpoint.yaw)).toBeCloseTo(180);
-    expect(midpoint.pitch).toBeCloseTo(0);
-    expect(midpoint.roll).toBeCloseTo(0);
+  it("sweeps the authored rotator degrees, including a full turn", () => {
+    const a = { pitch: 0, yaw: 0, roll: 0 };
+    const b = { pitch: 0, yaw: 360, roll: 0 };
+    expect(interpolateTweenValue("rotator", a, b, 0.25)).toEqual({ pitch: 0, yaw: 90, roll: 0 });
+    expect(interpolateTweenValue("rotator", a, b, 0.5).yaw).toBeCloseTo(180);
     expect(interpolateTweenValue("rotator", a, b, 1)).toEqual(b);
+    const across = interpolateTweenValue("rotator", { pitch: 0, yaw: 170, roll: 0 }, { pitch: 0, yaw: -170, roll: 0 }, 0.5);
+    expect(across.yaw).toBeCloseTo(0);
   });
 
   it("keeps rotational easing overshoot and unit length, including equivalent antipodal quaternions", () => {
