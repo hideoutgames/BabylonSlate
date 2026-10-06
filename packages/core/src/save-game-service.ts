@@ -5,6 +5,7 @@ import {
   isSaveGameRecord,
   validateSaveGameDefinition,
   validateSaveGameFieldValue,
+  validateSaveGameValue,
   type SaveGameDefinition,
   type SaveGameFailure,
   type SaveGameInfo,
@@ -113,7 +114,7 @@ export class SaveGameService<TData extends object = Record<string, SaveGameValue
     return this.run(async () => {
       const address = this.address(options);
       const existing = await this.readSlot(address);
-      if (existing.latest) this.assertCompatible(existing.latest.body);
+      if (existing.latest) this.restoreFields((await this.migrate(existing.latest.body)).fields);
       const captured = await this.boundary(async () => {
         const fields = this.captureFields();
         const state = cloneSaveGameValue(await this.options.captureState?.() ?? null);
@@ -350,6 +351,7 @@ export class SaveGameService<TData extends object = Record<string, SaveGameValue
     const sequence = (last?.body.sequence ?? 0) + 1;
     if (!Number.isSafeInteger(sequence)) throw new SaveGameError("incompatible", "The save sequence is exhausted.");
     const body: SaveBody = { formatVersion: FORMAT_VERSION, projectId: this.projectId, definitionId: this.definition.id, schemaVersion: this.definition.schemaVersion, profile: address.profile, slot: address.slot, sequence, createdAt: new Date().toISOString(), fields: captured.fields, state: captured.state };
+    validateSaveGameValue(body);
     // Release the simulation boundary before encoding. Worker hosts already encode
     // off the rendering thread; other hosts may inject an asynchronous codec.
     await new Promise<void>((resolve) => setTimeout(resolve, 0));

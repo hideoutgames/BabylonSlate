@@ -88,7 +88,7 @@ export function isSaveGameRecord(value: unknown): value is Record<string, unknow
 }
 
 /** Reject cycles, non-finite values, class instances and prototype pollution. */
-export function cloneSaveGameValue(value: unknown): SaveGameValue {
+function walkSaveGameValue(value: unknown, clone: boolean): SaveGameValue {
   const seen = new Set<object>();
   let nodes = 0;
   function copy(current: unknown, depth: number): SaveGameValue {
@@ -100,20 +100,33 @@ export function cloneSaveGameValue(value: unknown): SaveGameValue {
     try {
       if (Array.isArray(current)) {
         if (current.length > MAX_JSON_NODES) throw new SaveGameError("invalid", "Save data contains an oversized array.");
-        return Array.from(current, (entry) => copy(entry, depth + 1));
+        if (clone) return Array.from(current, (entry) => copy(entry, depth + 1));
+        for (let index = 0; index < current.length; index++) copy(current[index], depth + 1);
+        return current as SaveGameValue[];
       }
       if (!isSaveGameRecord(current)) throw new SaveGameError("invalid", "Save data cannot contain class instances.");
       const result: Record<string, SaveGameValue> = {};
       for (const [key, entry] of Object.entries(current)) {
         if (forbiddenKeys.has(key)) throw new SaveGameError("invalid", "Save data contains a reserved property name.");
-        result[key] = copy(entry, depth + 1);
+        const checked = copy(entry, depth + 1);
+        if (clone) result[key] = checked;
       }
-      return result;
+      return clone ? result : current as Record<string, SaveGameValue>;
     } finally {
       seen.delete(current);
     }
   }
   return copy(value, 0);
+}
+
+/** Detach a bounded, JSON-compatible value without invoking toJSON methods. */
+export function cloneSaveGameValue(value: unknown): SaveGameValue {
+  return walkSaveGameValue(value, true);
+}
+
+/** Validate the combined snapshot budget without allocating another full copy. */
+export function validateSaveGameValue(value: unknown): asserts value is SaveGameValue {
+  walkSaveGameValue(value, false);
 }
 
 export function validateSaveGameFieldValue(field: SaveGameField, value: unknown): SaveGameValue {

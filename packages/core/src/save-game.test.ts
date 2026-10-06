@@ -277,6 +277,23 @@ describe("SaveGameService schema upgrades and portability", () => {
     expect(additive.getSaveData().coins).toBe(12);
   });
 
+  it("rejects a combined snapshot exceeding read limits before replacing a valid generation", async () => {
+    const storage = new FaultStorage();
+    const manyFields: SaveGameDefinition = {
+      id: "large-game", schemaVersion: 1,
+      fields: ["left", "right"].map((name) => ({ id: name, name, type: "int", array: true, defaultValue: [] })),
+    };
+    const service = make(storage, { definition: manyFields });
+    await service.saveGame();
+    const before = [...storage.files];
+    service.getSaveData().left = new Array(130_000).fill(1);
+    service.getSaveData().right = new Array(130_000).fill(2);
+    expect(await service.saveGame()).toMatchObject({ ok: false, error: { code: "invalid" } });
+    expect([...storage.files]).toEqual(before);
+    expect(await service.loadGame()).toMatchObject({ ok: true });
+    expect(service.getSaveData()).toEqual({ left: [], right: [] });
+  });
+
   it("reports failed migrations without changing the original file or live data", async () => {
     const storage = new FaultStorage();
     await make(storage).saveGame();
@@ -286,6 +303,7 @@ describe("SaveGameService schema upgrades and portability", () => {
     service.registerMigration(1, (data) => { data.fields["coins-id"] = 999; throw new Error("Bad migration"); });
     expect(await service.loadGame()).toMatchObject({ ok: false, error: { code: "incompatible" } });
     expect(service.getSaveData().coins).toBe(25);
+    expect(await service.saveGame()).toMatchObject({ ok: false, error: { code: "incompatible" } });
     expect([...storage.files]).toEqual(before);
   });
 
