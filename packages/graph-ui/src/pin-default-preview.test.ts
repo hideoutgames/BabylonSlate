@@ -57,6 +57,15 @@ const resultOut = pin({
 });
 
 describe("pinDefaultPreview", () => {
+  it("retains typed Tag identities and hides them when connected", () => {
+    const tag = { ...amount, type: { kind: "tag" } };
+    const tags = { ...amount, type: { kind: "structRef", guid: "engine:TagContainer" } };
+    expect(pinDefaultPreview(tag, { "default:a": 42 }, false)).toEqual({ kind: "tag", value: 42 });
+    expect(pinDefaultPreview(tags, { "default:a": { Tags: [7, 42] } }, false))
+      .toEqual({ kind: "tag-container", value: { Tags: [7, 42] } });
+    expect(pinDefaultPreview(tag, { "default:a": 42 }, true)).toBeNull();
+    expect(pinDefaultPreview(tags, {}, false)).toEqual({ kind: "tag-container", value: { Tags: [] } });
+  });
   it("never presents a literal value for a writable-reference target", () => {
     expect(pinDefaultPreview({ ...amount, reference: "required" }, { a: 12 }, false)).toBeNull();
   });

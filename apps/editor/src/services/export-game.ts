@@ -32,6 +32,7 @@ import {
   type Result,
   type SerializedGraph,
   type SerializedScene,
+  type TagRegistry,
 } from "@babylonslate/core";
 import {
   normalizeFontPayload,
@@ -102,6 +103,7 @@ export type CollectExportGameParams = {
   loopCount?: number;
   inputMappings?: import("@babylonslate/core").ProjectInputSettings;
   focusNavigation?: import("@babylonslate/core").FocusNavigationSettings;
+  tagRegistry?: TagRegistry;
   playerFiles: Map<string, Uint8Array>;
   extraFiles?: Map<string, Uint8Array>;
   /** Preview Build keeps Development Only nodes. */
@@ -449,7 +451,19 @@ export async function collectAndExportGame(
   const scripts: ScriptBundleEntry[] = [];
   if (graphDocs.length || animDocs.length) {
     const { compileAnimGraphScripts, compileGraphDocuments } = await import("./script-compiler");
-    scripts.push(...compileGraphDocuments(graphDocs, { stripDevelopmentOnly: !bundleDebugger, inputAssets, dataAssets, ...typeSchemas }), ...compileAnimGraphScripts(animDocs, { stripDevelopmentOnly: !bundleDebugger }));
+    scripts.push(
+      ...compileGraphDocuments(graphDocs, {
+        stripDevelopmentOnly: !bundleDebugger,
+        inputAssets,
+        dataAssets,
+        ...typeSchemas,
+        tagRegistry: params.tagRegistry,
+      }),
+      ...compileAnimGraphScripts(animDocs, {
+        stripDevelopmentOnly: !bundleDebugger,
+        tagRegistry: params.tagRegistry,
+      }),
+    );
   }
 
   params.onPhase?.("Writing Pack");

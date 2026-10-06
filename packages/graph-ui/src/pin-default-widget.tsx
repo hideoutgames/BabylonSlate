@@ -1,3 +1,4 @@
+import { tagDisplayName, useTags } from "@babylonslate/editor-kit";
 import { cn } from "@babylonslate/ui/lib/utils";
 import type { PinDefaultPreview } from "./pin-default-preview";
 
@@ -24,6 +25,12 @@ export function PinDefaultPreviewWidget({
 }: {
   preview: PinDefaultPreview;
 }) {
+  const { entries } = useTags();
+  if (preview.kind === "tag" || preview.kind === "tag-container") {
+    const text = preview.kind === "tag" ? tagDisplayName(entries, preview.value)
+      : preview.value.Tags.map((tag) => tagDisplayName(entries, tag)).join(", ") || "No Tags";
+    return <span data-pin-default={preview.kind} data-pin-default-field className={FIELD_CLASS} title={text}>{text}</span>;
+  }
   if (preview.kind === "bool") {
     return (
       <span className="pointer-events-none inline-flex shrink-0 items-center gap-1.5 select-none">

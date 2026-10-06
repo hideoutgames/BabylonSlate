@@ -1,4 +1,4 @@
-import { formatValue } from "@babylonslate/core";
+import { formatValue, normalizeTag, normalizeTagContainer, parseMapDefaultEntries } from "@babylonslate/core";
 import type {
   ColorValue,
   PropertyRow,
@@ -109,6 +109,21 @@ function toRow(source: PlayInspectRowSource): PropertyRow {
     testId: source.testId,
   };
   switch (type) {
+    case "tag":
+      return {
+        ...base,
+        kind: "tag",
+        value: normalizeTag(source.value),
+        onChange: noop,
+      };
+    case "tag-container":
+    case "struct:engine:TagContainer":
+      return {
+        ...base,
+        kind: "tag-container",
+        value: normalizeTagContainer(source.value),
+        onChange: noop,
+      };
     case "bool":
     case "boolean":
       return {
@@ -194,7 +209,38 @@ function toRow(source: PlayInspectRowSource): PropertyRow {
 export function playInspectPropertyRows(
   sources: readonly PlayInspectRowSource[],
 ): PropertyRow[] {
-  return sources.map(toRow);
+  return sources.flatMap((source) => {
+    if (source.type?.startsWith("array:")) {
+      const value = Array.isArray(source.value) ? source.value : [];
+      if (value.length === 0) return [toRow({ ...source, type: "string", value: "Empty Array" })];
+      const type = source.type.slice("array:".length);
+      return playInspectPropertyRows(value.map((entry, index) => ({
+        ...source,
+        id: `${source.id}:${index}`,
+        label: `${source.label} [${index}]`,
+        type,
+        value: entry,
+        testId: source.testId ? `${source.testId}-${index}` : undefined,
+      })));
+    }
+    if (source.type?.startsWith("map:")) {
+      const separator = source.type.indexOf("=>", "map:".length);
+      if (separator < 0) return [toRow({ ...source, type: "unknown" })];
+      const keyType = source.type.slice("map:".length, separator);
+      const valueType = source.type.slice(separator + 2);
+      const entries = isRecord(source.value) && !(source.value instanceof Map)
+        ? Object.entries(source.value).map(([key, value]) => ({ key: keyType === "tag" ? Number(key) : key, value }))
+        : parseMapDefaultEntries(source.value);
+      if (entries.length === 0) return [toRow({ ...source, type: "string", value: "Empty Map" })];
+      return playInspectPropertyRows(entries.flatMap((entry, index) => [
+        { ...source, id: `${source.id}:${index}:key`, label: `${source.label} [${index}] Key`, type: keyType, value: entry.key,
+          testId: source.testId ? `${source.testId}-${index}-key` : undefined },
+        { ...source, id: `${source.id}:${index}:value`, label: `${source.label} [${index}] Value`, type: valueType, value: entry.value,
+          testId: source.testId ? `${source.testId}-${index}-value` : undefined },
+      ]));
+    }
+    return [toRow(source)];
+  });
 }
 
 export function playInspectIdentityRows(node: {

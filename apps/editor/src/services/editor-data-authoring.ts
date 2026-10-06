@@ -10,6 +10,7 @@ import {
   createDataObjectForStructure,
   reconcileDataObject,
   resolveDataObjectValues,
+  serializeDataObjectValues,
   validateDataObject,
   type EditorDataApi,
   type EditorDataResult,
@@ -58,6 +59,7 @@ function mergeValues(
   if (depth >= 64) return next; // Full validation below rejects excessive nesting.
   for (const field of fields) {
     if (field.typeId !== "struct" || !field.typeClassId ||
+      field.container === "array" || field.container === "map" ||
       !Object.prototype.hasOwnProperty.call(patch, field.name)) continue;
     const nested = schemas.structs[field.typeClassId];
     const previous = current[field.name];
@@ -212,7 +214,8 @@ export function createEditorDataAuthoringApi(
       const schemas = schemasFor(host);
       const guid = requireStructure(args.structure, schemas);
       const asset = createDataObjectForStructure(guid, schemas.structs[guid]!.fields, schemas);
-      asset.values = mergeValues(asset.values, validatedValues(args.values), schemas.structs[guid]!.fields, schemas);
+      const supplied = serializeDataObjectValues(validatedValues(args.values), schemas.structs[guid]!.fields, schemas);
+      asset.values = mergeValues(asset.values, supplied, schemas.structs[guid]!.fields, schemas);
       validateObject(asset, schemas, registry);
       check();
       const created = await createProjectAsset({ registry, rootId: "project", folderRelative: folderPath(args.folder), type: "DataObject", name: args.name, structureGuid: guid, typeSchemas: schemas, dataObject: asset });
@@ -232,7 +235,8 @@ export function createEditorDataAuthoringApi(
           migration.issues.some((issue) => issue.severity === "error" && structuralIssues.has(issue.code))) {
           throw new Error("Apply Structure changes to the Data Object before updating its values.");
         }
-        const next = { ...current, values: mergeValues(current.values, args.values, schemas.structs[guid]!.fields, schemas) };
+        const supplied = serializeDataObjectValues(args.values, schemas.structs[guid]!.fields, schemas);
+        const next = { ...current, values: mergeValues(current.values, supplied, schemas.structs[guid]!.fields, schemas) };
         validateObject(next, schemas, registry);
         // Once a script repairs an incompatible value, record its current type.
         // Until then validation above keeps the old value and reference metadata.

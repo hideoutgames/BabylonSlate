@@ -8,6 +8,7 @@ import {
   QUAT,
   ROTATOR,
   STRING,
+  TAG,
   TRANSFORM,
   VEC2,
   VEC3,
@@ -62,6 +63,8 @@ export function pinTypeForMember(
       return BOOL;
     case "int":
       return INT;
+    case "tag":
+      return TAG;
     case "string":
       return STRING;
     case "vec2":
@@ -149,6 +152,7 @@ export function typeIdFromPinType(type: PinType): string {
       return "exec";
     case "bool":
     case "int":
+    case "tag":
     case "float":
     case "string":
     case "vec2":

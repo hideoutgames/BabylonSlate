@@ -36,6 +36,9 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { pinDefaultPropertyKey } from "@babylonslate/scripting";
+import { PinDefaultEditorContext, type PinDefaultEditorRenderer } from "./pin-default-editor-context";
+import { inlinePinDefaultStorageValue } from "./pin-default-value";
 import { PlusIcon } from "lucide-react";
 import { Button } from "@babylonslate/ui/components/button";
 import {
@@ -146,6 +149,8 @@ export { selectVisibleGraphElements } from "./graph-virtualize";
 
 export interface GraphEditorProps {
   renderNodeBody?: (nodeId: string, data: Record<string, unknown>) => React.ReactNode;
+  /** Catalog-backed literal editors. Defaults to PinDefaultEditorContext. */
+  renderPinDefaultEditor?: PinDefaultEditorRenderer;
   initialGraph: GraphDocument;
   onChange?: (graph: GraphDocument, meta?: GraphChangeMeta) => void;
   /**
@@ -182,6 +187,8 @@ export interface GraphEditorProps {
   }) => void;
   /** Pan/zoom only: no connect, node drag, palette, or Cut/Paste/Delete/Format. */
   readOnly?: boolean;
+  /** Locks inline values without disabling node movement or graph connections. */
+  readOnlyPinDefaults?: boolean;
   /** Override or extend the default pin/log node components. */
   nodeTypes?: NodeTypes;
   edgeTypes?: EdgeTypes;
@@ -496,6 +503,7 @@ function GraphEditorCanvas({
   onNodeDoubleClick,
   onEdgeDoubleClick,
   renderNodeBody,
+  renderPinDefaultEditor: renderPinDefaultEditorProp,
   onEdgeSelectionChange,
   paletteNodes,
   onPaletteOpenChange,
@@ -504,6 +512,7 @@ function GraphEditorCanvas({
   sessionViewport = null,
   onSessionViewportChange,
   readOnly = false,
+  readOnlyPinDefaults: readOnlyPinDefaultsProp,
   onPinSelect,
   nodeTypes: nodeTypesProp,
   edgeTypes,
@@ -536,6 +545,11 @@ function GraphEditorCanvas({
   );
   const nodesDraggable = nodesDraggableProp ?? !readOnly;
   const interactions = useContext(GraphInteractionSettingsContext);
+  const inheritedPinEditor = useContext(PinDefaultEditorContext);
+  const renderPinDefaultEditor = renderPinDefaultEditorProp ?? inheritedPinEditor;
+  const pinDefaultsDisabled = readOnly || (readOnlyPinDefaultsProp ?? interactions.readOnlyPinDefaults ?? false);
+  const pinDefaultsDisabledRef = useRef(pinDefaultsDisabled);
+  pinDefaultsDisabledRef.current = pinDefaultsDisabled;
   const shakeTracker = useRef(new NodeShakeTracker());
   const shakenRef = useRef(false);
   const graphViewport = useMemo(
@@ -2161,10 +2175,30 @@ function GraphEditorCanvas({
     return edgeStyleForPin({ kind: "exec" });
   }, [nodes, pendingConnect, pendingPin, pinDisplayTypes]);
 
+  const onPinDefaultChange = useCallback((nodeId: string, pinId: string, value: unknown) => {
+    if (pinDefaultsDisabledRef.current) return;
+    const current = graphStateRef.current;
+    const node = current.nodes.find((entry) => entry.id === nodeId);
+    if (!node || isDisabledNode(node) || !hasSerializedPins(node.data)) return;
+    const pin = node.data.__pins.find((entry) => entry.id === pinId);
+    if (!pin || pin.direction !== "in" || pin.kind !== "data" || pin.reference === "required") return;
+    if (current.edges.some((edge) => edge.target === nodeId && edge.targetHandle === pinId)) return;
+    const type = pinDisplayTypesRef.current.get(pinTypeKey(nodeId, pinId)) ?? pin.type;
+    const normalized = inlinePinDefaultStorageValue({ ...pin, type }, node.data, value);
+    if (normalized === undefined) return;
+    const next = current.nodes.map((entry) => entry.id === nodeId
+      ? { ...entry, data: { ...entry.data, [pinDefaultPropertyKey(pinId)]: normalized } } : entry);
+    graphStateRef.current = { ...current, nodes: next };
+    setNodes(next);
+    emitChange(next, current.edges);
+  }, [emitChange]);
+
   const contextValue = useMemo(
     () => ({
       pendingPin,
       onPinTap,
+      onPinDefaultChange: pinDefaultsDisabled ? undefined : onPinDefaultChange,
+      renderPinDefaultEditor,
       nodeErrorCount,
       pinHasError,
       pinDisplayType,
@@ -2189,6 +2223,9 @@ function GraphEditorCanvas({
       nodeErrorCount,
       onNavigateRequest,
       onPinTap,
+      onPinDefaultChange,
+      pinDefaultsDisabled,
+      renderPinDefaultEditor,
       pendingPin,
       pinDisplayType,
       pinTypeNames,

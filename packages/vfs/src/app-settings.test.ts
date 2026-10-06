@@ -7,6 +7,18 @@ import { MemoryAppSettingsStore } from "./memory-app-settings";
 import { WebAppSettingsStore } from "./web-app-settings";
 
 describe("app settings", () => {
+  it("keeps inline pin editing enabled for existing devices and persists the local lock", async () => {
+    localStorage.setItem("babylonslate:engine-settings", JSON.stringify({ graphDefaultZoom: 0.75 }));
+    const store = new WebAppSettingsStore();
+    expect((await store.load()).readOnlyPinDefaults).toBe(false);
+    await store.update((settings) => { settings.readOnlyPinDefaults = true; });
+    expect(await new WebAppSettingsStore().load()).toMatchObject({
+      readOnlyPinDefaults: true, graphDefaultZoom: 0.75,
+    });
+    await new WebAppSettingsStore().update((settings) => { settings.readOnlyPinDefaults = false; });
+    expect((await store.load()).readOnlyPinDefaults).toBe(false);
+  });
+
   it("adds the trace budget when loading legacy preferences without losing existing settings", async () => {
     localStorage.setItem("babylonslate:engine-settings", JSON.stringify({
       undoHistoryLength: 75,

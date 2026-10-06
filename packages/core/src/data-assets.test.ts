@@ -25,4 +25,15 @@ describe("data asset payloads", () => {
       kind: "dataObject", structureGuid: "stats", values: { Health: 10 },
     });
   });
+
+  it("retains collection and nested key snapshots across opening and resaving", () => {
+    const opened = normalizeDataObjectAsset({ kind: "dataObject", structureGuid: "stats", values: { Values: [] }, schema: [{
+      name: "Values", typeId: "struct", typeClassId: "stats", container: "map",
+      keyTypeId: "struct", keyTypeClassId: "key", keyFields: [{ name: "Icon", typeId: "asset", typeClassId: "Texture" }],
+      fields: [{ name: "Tags", typeId: "tag", container: "array" }],
+    }] });
+    expect(opened.schema![0]).toMatchObject({ container: "map", keyTypeId: "struct", keyTypeClassId: "key",
+      keyFields: [{ name: "Icon", typeId: "asset", typeClassId: "Texture" }], fields: [{ name: "Tags", typeId: "tag", container: "array" }],
+    });
+  });
 });

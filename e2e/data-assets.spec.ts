@@ -114,8 +114,8 @@ test("standalone Data Objects share sheet edits, preserve targeted undo and reop
   await graph.getByRole("button", { name: "Size Graph To Fit" }).click();
   const readNode = graph.locator('.react-flow__node[data-id^="data.readObject-"]');
   await readNode.getByText("Read Data Object", { exact: true }).click();
-  await page.getByTestId("inspector-pin-defaults").getByTestId("property-object").click();
-  await page.getByTestId("inspector-asset-picker").getByTestId(`search-item-${objectGuid}`).click();
+  await readNode.getByRole("button", { name: "Object", exact: true }).click();
+  await page.getByTestId("graph-pin-asset-picker").getByTestId(`search-item-${objectGuid}`).click();
   await expect(page.getByTestId("inspector-data-properties").getByTestId("property-structGuid")).toContainText("ItemStats");
   await expect(readNode.locator('[data-handleid="value"]')).toHaveAttribute("data-pin-type", "structRef");
   await expect(readNode).toContainText("Read ItemStats Data");

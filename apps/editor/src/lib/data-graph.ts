@@ -89,6 +89,33 @@ export function dataGraphAssetPickPatch(
   return patch;
 }
 
+/** Inline graph pickers edit one literal; carry its schema through the same commit. */
+export function applyDataGraphAssetPicks(
+  previous: SerializedGraph,
+  next: SerializedGraph,
+  assets: readonly DataGraphAssetEntry[],
+): SerializedGraph {
+  const previousById = new Map(previous.nodes.map((node) => [node.id, node]));
+  let changed = false;
+  const nodes = next.nodes.map((node) => {
+    const before = previousById.get(node.id);
+    if (!before || before.data === node.data) return node;
+    const typeId = typeof node.data.__nodeType === "string" ? node.data.__nodeType : node.type;
+    if (!isDataGraphNode(typeId)) return node;
+    const metadata = DATA_GRAPH_NODES[typeId];
+    if (!("assetPin" in metadata)) return node;
+    const key = `default:${metadata.assetPin}`;
+    const value = node.data[key];
+    if (before.data[key] === value || typeof value !== "string" ||
+      next.edges.some((edge) => edge.target === node.id && edge.targetHandle === metadata.assetPin)) return node;
+    const patch = dataGraphAssetPickPatch(typeId, metadata.assetPin, value, assets, node.data);
+    if (!Object.hasOwn(patch, "structGuid")) return node;
+    changed = true;
+    return { ...node, data: { ...node.data, ...patch } };
+  });
+  return changed ? { ...next, nodes } : next;
+}
+
 /** Persist hydrated schema metadata with authored defaults, including functions. */
 export function patchDataGraphNode(
   graph: SerializedGraph,

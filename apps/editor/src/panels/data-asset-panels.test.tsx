@@ -1,12 +1,15 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import type { IndexedAsset } from "@babylonslate/assets";
 import { documentId, type DocumentRef } from "@babylonslate/core";
+import { createDataObjectForStructure, type StructField } from "@babylonslate/scripting";
+import { TagProvider } from "@babylonslate/editor-kit";
 import type { OpenDocument } from "../services/document-service";
 import { DataAssetEditingProvider } from "../context/data-asset-editing-context";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
 import { DataObjectValuesPanel, DataSheetRowsPanel } from "./data-asset-panels";
+import { collectGraphTypeAssets, typeSchemasFromGraphAssets } from "../lib/logic-graph-document";
 
 const state = vi.hoisted(() => ({
   documents: [] as OpenDocument[],
@@ -47,6 +50,13 @@ function ObjectView({ id = objectId }: { id?: string }) {
 }
 function SheetView() {
   return <DocumentWorkspaceProvider documentId={sheetId}><DataAssetEditingProvider><DataSheetRowsPanel {...props} /><DataObjectValuesPanel {...props} /></DataAssetEditingProvider></DocumentWorkspaceProvider>;
+}
+function configureObject(nextFields: StructField[], values: Record<string, unknown>) {
+  state.assets[0]!.header.payload = { kind: "structure", guid: "stats", name: "Stats", fields: nextFields };
+  const schemas = typeSchemasFromGraphAssets(collectGraphTypeAssets({ assets: state.assets, openDocuments: [] }));
+  const object = { ...createDataObjectForStructure("stats", nextFields, schemas), values };
+  state.documents[0]!.content = object;
+  state.assets[1]!.header.payload = object;
 }
 beforeEach(() => {
   const object = { kind: "dataObject", structureGuid: "stats", values: { Damage: 25 }, schema: fields };
@@ -177,4 +187,62 @@ it("reports recursive Structures without recursing through property controls", (
   render(<ObjectView />);
   expect(screen.getByText("Recursive Structure")).toBeTruthy();
   expect(screen.queryByLabelText("Self Self")).toBeNull();
+});
+
+it("edits, reorders, adds and removes array entries through Values while sheet cells preserve the collection", async () => {
+  configureObject([{ id: "amounts", name: "Amounts", typeId: "float", container: "array", defaultValue: [5] }], { Amounts: [10, 20], Retired: "keep" });
+  const view = render(<SheetView />);
+  expect(screen.queryByRole("textbox", { name: "Sword Amounts" })).toBeNull();
+  fireEvent.click(screen.getByTestId("data-sheet-row-sword"));
+  fireEvent.change(await screen.findByLabelText("Amounts Item 1"), { target: { value: "12" } });
+  await waitFor(() => expect(state.documents[0]?.content).toMatchObject({ values: { Amounts: [12, 20], Retired: "keep" } }));
+  view.rerender(<SheetView />);
+  fireEvent.click(within(screen.getByRole("group", { name: "Amounts" })).getByRole("button", { name: "Move row 1 down" }));
+  await waitFor(() => expect(state.documents[0]?.content).toMatchObject({ values: { Amounts: [20, 12] } }));
+  view.rerender(<SheetView />);
+  fireEvent.click(screen.getByRole("button", { name: "Add Item" }));
+  await waitFor(() => expect(state.documents[0]?.content).toMatchObject({ values: { Amounts: [20, 12, 0] } }));
+  view.rerender(<SheetView />);
+  fireEvent.click(screen.getByRole("button", { name: "Remove row 2" }));
+  await waitFor(() => expect(state.documents[0]?.content).toMatchObject({ values: { Amounts: [20, 0] } }));
+  view.rerender(<SheetView />);
+  fireEvent.click(screen.getByRole("button", { name: "Reset Amounts" }));
+  await waitFor(() => expect(state.documents[0]?.content).toMatchObject({ values: { Amounts: [5], Retired: "keep" } }));
+});
+
+it("edits tag-keyed maps with nested typed collection values and keeps retired nested fields", async () => {
+  state.assets.push(indexed("settings", "Settings", "Structure", { kind: "structure", guid: "settings", name: "Settings", fields: [
+    { name: "Weights", typeId: "float", container: "array" },
+    { name: "Material", typeId: "asset", typeClassId: "Material" },
+  ] }), indexed("material", "Stone", "Material", {}));
+  configureObject([{ id: "rewards", name: "Rewards", typeId: "struct", typeClassId: "settings", container: "map", keyTypeId: "tag" }], {
+    Rewards: [{ key: 0, value: { Weights: [1], Material: "", Retired: "keep" } }],
+  });
+  const content = <TagProvider entries={[{ id: 7, path: "Reward", parentId: 0 }]}><ObjectView /></TagProvider>;
+  const view = render(content);
+  fireEvent.change(screen.getByLabelText("Rewards Value 1 Weights Item 1"), { target: { value: "3" } });
+  await waitFor(() => expect(state.documents[0]?.content).toMatchObject({ values: { Rewards: [{ key: 0, value: { Weights: [3], Material: "", Retired: "keep" } }] } }));
+  view.rerender(<TagProvider entries={[{ id: 7, path: "Reward", parentId: 0 }]}><ObjectView /></TagProvider>);
+  fireEvent.click(screen.getByLabelText("Rewards Key 1"));
+  fireEvent.keyDown(screen.getByRole("tree", { name: "Tags" }), { key: "ArrowDown" });
+  fireEvent.keyDown(screen.getByRole("tree", { name: "Tags" }), { key: "Enter" });
+  await waitFor(() => expect(state.documents[0]?.content).toMatchObject({ values: { Rewards: [{ key: 7, value: { Weights: [3], Retired: "keep" } }] } }));
+  view.rerender(<TagProvider entries={[{ id: 7, path: "Reward", parentId: 0 }]}><ObjectView /></TagProvider>);
+  fireEvent.click(screen.getByLabelText("Rewards Value 1 Material"));
+  fireEvent.click(await screen.findByRole("option", { name: /Stone/ }));
+  await waitFor(() => expect(state.documents[0]?.content).toMatchObject({ values: { Rewards: [{ key: 7, value: { Weights: [3], Material: "material", Retired: "keep" } }] } }));
+});
+
+it("uses the project tag controls for Tag and TagContainer values without dropping unavailable IDs on another edit", async () => {
+  configureObject([{ id: "tag", name: "Category", typeId: "tag" }, { id: "tags", name: "Categories", typeId: "struct", typeClassId: "engine:TagContainer" }], { Category: 7, Categories: { Tags: [7, 99] } });
+  const view = render(<TagProvider entries={[{ id: 7, path: "Reward", parentId: 0 }]}><ObjectView /></TagProvider>);
+  expect(screen.getByRole("button", { name: "Category" }).textContent).toContain("Reward");
+  fireEvent.click(screen.getByRole("button", { name: "Category" }));
+  fireEvent.click(screen.getByRole("button", { name: "Clear Selection" }));
+  await waitFor(() => expect(state.documents[0]?.content).toMatchObject({ values: { Category: 0, Categories: { Tags: [7, 99] } } }));
+  fireEvent.click(screen.getByRole("button", { name: "Done" }));
+  view.rerender(<TagProvider entries={[{ id: 7, path: "Reward", parentId: 0 }]}><ObjectView /></TagProvider>);
+  fireEvent.click(screen.getByRole("button", { name: "Categories" }));
+  fireEvent.click(screen.getByRole("button", { name: "Deselect All" }));
+  await waitFor(() => expect(state.documents[0]?.content).toMatchObject({ values: { Category: 0, Categories: { Tags: [] } } }));
 });

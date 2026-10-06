@@ -79,8 +79,12 @@ export function VariableTypeFields({
       {showType ? <Field>
         <FieldLabel>Type</FieldLabel>
         <PinTypePicker
-          value={value.typeId}
+          value={value.typeId === "struct" && value.typeClassId === "engine:TagContainer" ? "tagContainer" : value.typeId}
           onChange={(typeId) => {
+            if (typeId === "tagContainer") {
+              commit({ typeId: "struct", typeClassId: "engine:TagContainer" });
+              return;
+            }
             const keep = pinPickerKeepsTypeClassId(typeId);
             commit({
               typeId,
@@ -94,8 +98,12 @@ export function VariableTypeFields({
         <Field>
           <FieldLabel>Key Type</FieldLabel>
           <PinTypePicker
-            value={keyTypeId}
+            value={keyTypeId === "struct" && keyClassId === "engine:TagContainer" ? "tagContainer" : keyTypeId}
             onChange={(nextKey) => {
+              if (nextKey === "tagContainer") {
+                commit({ keyTypeId: "struct", keyTypeClassId: "engine:TagContainer" });
+                return;
+              }
               const keep = pinPickerKeepsTypeClassId(nextKey);
               commit({
                 keyTypeId: nextKey,

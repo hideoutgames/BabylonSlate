@@ -40,6 +40,18 @@ describe("asEnumAsset", () => {
 });
 
 describe("asStructureAsset", () => {
+  it("keeps typed collection metadata for Structure defaults and data editors", () => {
+    expect(asStructureAsset({ fields: [
+      { name: "Materials", typeId: "asset", typeClassId: "Material", container: "map", keyTypeId: " enum ", keyTypeClassId: " tiers " },
+      { name: "Tags", typeId: "tag", container: "array" },
+      { name: "Invalid", container: "set", keyTypeId: 2, keyTypeClassId: " " },
+    ] }).fields).toEqual([
+      { name: "Materials", typeId: "asset", typeClassId: "Material", container: "map", keyTypeId: "enum", keyTypeClassId: "tiers" },
+      { name: "Tags", typeId: "tag", container: "array" },
+      { name: "Invalid", typeId: "float" },
+    ]);
+  });
+
   it("defaults field types and preserves defaultValue when present", () => {
     expect(
       asStructureAsset({

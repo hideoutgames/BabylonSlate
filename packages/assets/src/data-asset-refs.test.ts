@@ -38,6 +38,77 @@ function body(asset: ImportResult): Record<string, unknown> {
 }
 
 describe("Data asset reference lifecycle", () => {
+  it("tracks and remaps array elements, map values, and typed nested map keys while preserving strings and tags", () => {
+    const payload = {
+      kind: "dataObject", structureGuid: "inventory", values: {
+        Icons: ["texture", "keep"],
+        ByObject: [{ key: "sword", value: "texture" }],
+        ByLabel: [{ key: "texture", value: { Icon: "texture", Caption: "texture" } }],
+        ByStats: [{ key: { Icon: "texture", Caption: "texture" }, value: "texture" }],
+        Tags: ["texture", "sword"],
+        TagValues: [{ key: "texture", value: "texture" }],
+      }, schema: [
+        { name: "Icons", typeId: "asset", typeClassId: "Texture", container: "array" },
+        { name: "ByObject", typeId: "asset", typeClassId: "Texture", container: "map", keyTypeId: "asset", keyTypeClassId: "DataObject" },
+        { name: "ByLabel", typeId: "struct", typeClassId: "stats", container: "map", keyTypeId: "string", fields: [
+          { name: "Icon", typeId: "asset", typeClassId: "Texture" }, { name: "Caption", typeId: "string" },
+        ] },
+        { name: "ByStats", typeId: "string", container: "map", keyTypeId: "struct", keyTypeClassId: "stats", keyFields: [
+          { name: "Icon", typeId: "asset", typeClassId: "Texture" }, { name: "Caption", typeId: "string" },
+        ] },
+        { name: "Tags", typeId: "tag", container: "array" },
+        { name: "TagValues", typeId: "string", container: "map", keyTypeId: "tag" },
+      ],
+    };
+    expect(dataAssetDependencies("DataObject", payload)).toEqual(["inventory", "keep", "stats", "sword", "texture"]);
+    const mapped = remapImportResultGuids([
+      imported("DataObject", "inventory-row", payload), imported("Texture", "texture", {}),
+      imported("DataObject", "sword", object()), imported("Structure", "stats", { kind: "structure", guid: "stats", fields: [] }),
+    ], new Set(["texture", "sword", "stats"]));
+    expect(body(mapped[0]!).values).toEqual({
+      Icons: [mapped[1]!.guid, "keep"],
+      ByObject: [{ key: mapped[2]!.guid, value: mapped[1]!.guid }],
+      ByLabel: [{ key: "texture", value: { Icon: mapped[1]!.guid, Caption: "texture" } }],
+      ByStats: [{ key: { Icon: mapped[1]!.guid, Caption: "texture" }, value: "texture" }],
+      Tags: ["texture", "sword"], TagValues: [{ key: "texture", value: "texture" }],
+    });
+    expect(body(mapped[0]!).schema).toMatchObject([
+      {}, {}, { typeClassId: mapped[3]!.guid }, { keyTypeClassId: mapped[3]!.guid }, {}, {},
+    ]);
+    const graph = { nodes: [{ type: "editorData.createObject", data: { properties: { structGuid: "inventory", dataSchema: payload.schema, "default:values": payload.values } } }] };
+    expect(dataGraphAssetDependencies(graph)).toEqual(["inventory", "keep", "stats", "sword", "texture"]);
+  });
+
+  it("clears optional collection values in place and removes map pairs whose typed reference key is deleted", () => {
+    const payload = { kind: "dataObject", structureGuid: "inventory", values: {
+      Icons: ["texture", "keep", "texture"],
+      ByAsset: [{ key: "texture", value: "Delete Pair" }, { key: "keep", value: "texture" }],
+      ByLabel: [{ key: "texture", value: "texture" }],
+      Actors: ["Hero", "Keep"],
+      ByClass: [{ key: "Hero", value: "Hero" }, { key: "Keep", value: "Hero" }],
+    }, schema: [
+      { name: "Icons", typeId: "asset", container: "array" },
+      { name: "ByAsset", typeId: "string", container: "map", keyTypeId: "asset" },
+      { name: "ByLabel", typeId: "asset", container: "map", keyTypeId: "string" },
+      { name: "Actors", typeId: "class", container: "array" },
+      { name: "ByClass", typeId: "class", container: "map", keyTypeId: "class", keyTypeClassId: "Hero" },
+    ] };
+    const cleared = clearDeletedAssetRefs(payload, new Set(["texture"]), new Set(["Hero"]));
+    expect(cleared.value.values).toEqual({
+      Icons: ["", "keep", ""],
+      ByAsset: [{ key: "keep", value: "texture" }],
+      ByLabel: [{ key: "texture", value: "" }],
+      Actors: ["", "Keep"],
+      ByClass: [{ key: "Keep", value: "" }],
+    });
+    expect(cleared.value.schema[4]).not.toHaveProperty("keyTypeClassId");
+    const replaced = replaceClassAssetReferences(payload, [{ guid: "hero", classId: "Hero", replacement: { guid: "npc", classId: "NPC" } }]);
+    expect(replaced.value.values.ByClass).toEqual([{ key: "NPC", value: "NPC" }, { key: "Keep", value: "NPC" }]);
+    expect(replaced.value.schema[4]!.keyTypeClassId).toBe("NPC");
+    expect(payload.values.Icons).toEqual(["texture", "keep", "texture"]);
+    expect(clearDeletedAssetRefs(payload, new Set(["unrelated"])).value).toBe(payload);
+  });
+
   it("collects nested and retained typed dependencies without guessing references from text", () => {
     expect(dataAssetDependencies("DataObject", object(), [{ guid: "hero", classId: "Hero" }]))
       .toEqual(["grade", "hero", "old-texture", "stats", "texture", "weapon"]);

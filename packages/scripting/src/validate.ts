@@ -342,7 +342,7 @@ function validatePinTyping(
       if (requiresReference && (!isWritableVariableOutput(source, sp, ctx.members) || !pinTypeEquals(from, to))) {
         out.push(diagnostic({
           code: "pin.invalid_reference",
-          message: `Input "${tp.name}" requires a writable ${to.kind} variable; values and read-only properties cannot be tween targets`,
+          message: `Input "${tp.name}" requires a writable ${to.kind} variable; values and read-only properties cannot be reference targets`,
           assetGuid: ctx.assetGuid, graphId: graph.id, nodeId: target.id,
           pinId: tp.id, relatedNodeId: source.id,
         }));

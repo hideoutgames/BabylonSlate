@@ -175,16 +175,19 @@ export function TypeDetailsPanel(_props: IDockviewPanelProps) {
           <div className="flex flex-col gap-1">
             <div className="text-sm font-medium">Type</div>
             <PinTypePicker
-              value={field.typeId}
-              onChange={(typeId) => {
+              value={isStruct && typeClassId === "engine:TagContainer" ? "tagContainer" : field.typeId}
+              onChange={(selectedType) => {
+                const typeId = selectedType === "tagContainer" ? "struct" : selectedType;
                 const keep = keepsTypeClassId(typeId);
+                const nextTypeClassId = selectedType === "tagContainer"
+                  ? "engine:TagContainer" : keep ? field.typeClassId : undefined;
                 commit(
                   patchStructureField(asset, selectedIndex, {
                     typeId,
-                    typeClassId: keep ? field.typeClassId : undefined,
+                    typeClassId: nextTypeClassId,
                     defaultValue: defaultValueForMember(
                       typeId,
-                      keep ? field.typeClassId : undefined,
+                      nextTypeClassId,
                       typeSchemas,
                     ),
                   }),

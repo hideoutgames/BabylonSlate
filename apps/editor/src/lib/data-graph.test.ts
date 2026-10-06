@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SerializedGraph } from "@babylonslate/core";
-import { collectDataGraphAssets, dataGraphAssetCreateOptions, dataGraphAssetPickPatch, patchDataGraphNode } from "./data-graph";
+import { applyDataGraphAssetPicks, collectDataGraphAssets, dataGraphAssetCreateOptions, dataGraphAssetPickPatch, patchDataGraphNode } from "./data-graph";
 import { dataNodePropertyRows, variableAssetPickerAllowedTypes } from "./graph-inspector";
 
 describe("Data graph catalog and Inspector", () => {
@@ -41,6 +41,30 @@ describe("Data graph catalog and Inspector", () => {
     expect(dataGraphAssetCreateOptions("scene-layer.registerPostProcess", "material", properties)).toBeUndefined();
     expect(dataGraphAssetCreateOptions("data.readObject", "object", { structGuid: "  " })).toBeUndefined();
     expect(dataGraphAssetCreateOptions("data.readObject", "object", { structGuid: 12 })).toBeUndefined();
+  });
+
+  it("infers a changed inline reference's Structure and clears only the previous typed literal", () => {
+    const before: SerializedGraph = { nodes: [{ id: "update", type: "editorData.updateObject", position: { x: 0, y: 0 }, data: {
+      structGuid: "armor", "default:object": "helmet", "default:values": { Defense: 20 }, "default:name": "Preserved",
+      dataSchema: [{ id: "defense", name: "Defense", typeId: "float" }],
+    } }], edges: [] };
+    const next: SerializedGraph = { ...before, nodes: [{ ...before.nodes[0]!, data: { ...before.nodes[0]!.data, "default:object": "sword" } }] };
+    const edited = applyDataGraphAssetPicks(before, next, collectDataGraphAssets(assets));
+    expect(edited.nodes[0]?.data).toEqual({
+      structGuid: "weapon", "default:object": "sword", "default:values": undefined, "default:name": "Preserved", dataSchema: undefined,
+    });
+    expect(next.nodes[0]?.data.structGuid).toBe("armor");
+    const manual = { ...before, nodes: [{ ...before.nodes[0]!, data: { ...before.nodes[0]!.data, structGuid: "weapon" } }] };
+    expect(applyDataGraphAssetPicks(before, manual, collectDataGraphAssets(assets))).toBe(manual);
+  });
+
+  it("does not infer from stale wired defaults or clear a type when an inline reference is removed", () => {
+    const before: SerializedGraph = { nodes: [{ id: "read", type: "data.readObject", position: { x: 0, y: 0 }, data: { structGuid: "armor", "default:object": "helmet" } }], edges: [] };
+    const next = { ...before, nodes: [{ ...before.nodes[0]!, data: { ...before.nodes[0]!.data, "default:object": "sword" } }],
+      edges: [{ id: "wire", source: "source", sourceHandle: "value", target: "read", targetHandle: "object" }] };
+    expect(applyDataGraphAssetPicks(before, next, collectDataGraphAssets(assets))).toBe(next);
+    const cleared = { ...before, nodes: [{ ...before.nodes[0]!, data: { ...before.nodes[0]!.data, "default:object": "" } }] };
+    expect(applyDataGraphAssetPicks(before, cleared, collectDataGraphAssets(assets))).toBe(cleared);
   });
 
   it("changes the Structure without discarding independent asset, name and folder inputs", () => {

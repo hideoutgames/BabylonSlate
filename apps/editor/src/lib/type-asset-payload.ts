@@ -43,6 +43,15 @@ export function asStructureAsset(
         ...(typeof row.typeClassId === "string" && row.typeClassId.trim()
           ? { typeClassId: row.typeClassId.trim() }
           : {}),
+        ...(row.container === "single" || row.container === "array" || row.container === "map"
+          ? { container: row.container }
+          : {}),
+        ...(typeof row.keyTypeId === "string" && row.keyTypeId.trim()
+          ? { keyTypeId: row.keyTypeId.trim() }
+          : {}),
+        ...(typeof row.keyTypeClassId === "string" && row.keyTypeClassId.trim()
+          ? { keyTypeClassId: row.keyTypeClassId.trim() }
+          : {}),
         ...(row.defaultValue !== undefined
           ? { defaultValue: row.defaultValue }
           : {}),

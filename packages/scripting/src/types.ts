@@ -4,6 +4,7 @@ export type PrimitivePinType =
   | { kind: "exec" }
   | { kind: "bool" }
   | { kind: "int" }
+  | { kind: "tag" }
   | { kind: "float" }
   | { kind: "string" }
   | { kind: "vec2" }
@@ -35,6 +36,8 @@ export type PinType =
 export const EXEC: PinType = { kind: "exec" };
 export const BOOL: PinType = { kind: "bool" };
 export const INT: PinType = { kind: "int" };
+/** Stable project Tag ID. Numeric storage does not permit number pin wiring. */
+export const TAG: PinType = { kind: "tag" };
 export const FLOAT: PinType = { kind: "float" };
 export const STRING: PinType = { kind: "string" };
 export const VEC2: PinType = { kind: "vec2" };
@@ -207,6 +210,7 @@ export function defaultValueLiteral(type: PinType): string {
     case "bool":
       return "false";
     case "int":
+    case "tag":
     case "float":
       return "0";
     case "string":
@@ -237,7 +241,7 @@ export function defaultValueLiteral(type: PinType): string {
     case "resolvingWildcard":
       return "null";
     case "structRef":
-      return "{}";
+      return type.guid === "engine:TagContainer" ? "{ Tags: [] }" : "{}";
     case "enumRef":
       return '""';
     case "classRef":

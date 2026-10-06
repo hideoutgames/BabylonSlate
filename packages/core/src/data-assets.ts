@@ -5,8 +5,13 @@ export interface DataFieldSnapshot {
   name: string;
   typeId: string;
   typeClassId?: string;
+  container?: "single" | "array" | "map";
+  keyTypeId?: string;
+  keyTypeClassId?: string;
   /** Nested Structure schema at the time this value was authored. */
   fields?: DataFieldSnapshot[];
+  /** Structure schema for typed Map keys. Values use `fields` above. */
+  keyFields?: DataFieldSnapshot[];
 }
 
 /** A standalone, reusable record. Sheet membership is never required. */
@@ -90,7 +95,11 @@ function normalizeSnapshot(fields: unknown[], depth = 0): DataFieldSnapshot[] {
     name: field.name as string,
     typeId: field.typeId as string,
     ...(typeof field.typeClassId === "string" ? { typeClassId: field.typeClassId } : {}),
+    ...(field.container === "single" || field.container === "array" || field.container === "map" ? { container: field.container } : {}),
+    ...(typeof field.keyTypeId === "string" ? { keyTypeId: field.keyTypeId } : {}),
+    ...(typeof field.keyTypeClassId === "string" ? { keyTypeClassId: field.keyTypeClassId } : {}),
     ...(Array.isArray(field.fields) ? { fields: normalizeSnapshot(field.fields, depth + 1) } : {}),
+    ...(Array.isArray(field.keyFields) ? { keyFields: normalizeSnapshot(field.keyFields, depth + 1) } : {}),
   }));
 }
 

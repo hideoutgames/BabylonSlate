@@ -230,4 +230,45 @@ describe("Editor Utility data authoring", () => {
     expect(updated.schema?.find((field) => field.id === "label")?.typeId).toBe("float");
     expect((await api.readObject(guid)).value).toEqual({ Price: 5, Label: 12 });
   });
+
+  it("authors Tags and typed collections, persists portable maps, and replaces supplied collection membership", async () => {
+    const { api, registry, host, documents, disk } = await fixture();
+    const structureId = await host.ensureAssetDocument({ kind: "structure", path: "assets/item.structure.babasset", label: "Item" });
+    await host.applyAssetDocumentChange(structureId, { kind: "structure", guid: "item", name: "Item", fields: [
+      { id: "tag", name: "Tag", typeId: "tag", defaultValue: 0 },
+      { id: "tags", name: "Tags", typeId: "struct", typeClassId: "engine:TagContainer" },
+      { id: "entries", name: "Entries", typeId: "struct", typeClassId: "other", container: "array" },
+      { id: "named", name: "Named", typeId: "struct", typeClassId: "other", container: "map", keyTypeId: "tag" },
+    ] });
+    const created = await api.createObject("Collection", "item", {
+      Tag: 42, Tags: { Tags: [42, 900] },
+      Entries: [{ Price: 2, Label: "First" }, { Price: 4, Label: "Second" }],
+      Named: new Map([[42, { Price: 6, Label: "Mapped" }], [900, { Price: 8, Label: "Removed" }]]),
+    });
+    expect(created.success).toBe(true);
+    const guid = created.value!;
+    const path = registry.getByGuid(guid)!.path;
+    expect(await disk(path)).toMatchObject({ values: {
+      Tag: 42, Tags: { Tags: [42, 900] },
+      Named: [{ key: 42, value: { Price: 6, Label: "Mapped" } }, { key: 900, value: { Price: 8, Label: "Removed" } }],
+    }, schema: expect.arrayContaining([
+      expect.objectContaining({ name: "Entries", typeId: "struct", typeClassId: "other", container: "array" }),
+      expect.objectContaining({ name: "Named", container: "map", keyTypeId: "tag" }),
+    ]) });
+    const value = (await api.readObject(guid)).value!;
+    expect(value.Named).toBeInstanceOf(Map);
+    const named = value.Named as Map<number, { Price: number; Label: string }>;
+    named.get(42)!.Price = 11;
+    named.delete(900);
+    value.Entries = [{ Price: 4, Label: "Second" }];
+    expect((await api.updateObject(guid, "item", value)).success).toBe(true);
+    const updated = documents.getDocument(documentId({ kind: "data-object", path }))!.content as unknown as DataObjectAsset;
+    expect(updated.values.Named).toEqual([{ key: 42, value: { Price: 11, Label: "Mapped" } }]);
+    expect(updated.values.Entries).toEqual([{ Price: 4, Label: "Second" }]);
+    expect((await api.readObject(guid)).value).toMatchObject({ Tag: 42, Tags: { Tags: [42, 900] } });
+    expect((await api.updateObject(guid, "item", { Tag: -1 })).success).toBe(false);
+    expect((await api.updateObject(guid, "item", { Tags: { Tags: [1.5] } })).success).toBe(false);
+    expect((await api.updateObject(guid, "item", { Named: new Map([[42, { Price: "Invalid", Label: "Mapped" }]]) })).success).toBe(false);
+    expect((await api.readObject(guid)).value?.Named).toEqual(new Map([[42, { Price: 11, Label: "Mapped" }]]));
+  });
 });

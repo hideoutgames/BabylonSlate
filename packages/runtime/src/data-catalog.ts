@@ -25,10 +25,14 @@ export function dataTypeSchemas(entries: readonly DataAssetCatalogEntry[]): Type
       const fields = payload.fields.flatMap((raw) => {
         const field = record(raw);
         if (!field || typeof field.name !== "string" || !field.name || typeof field.typeId !== "string") return [];
+        if (field.container !== undefined && field.container !== "single" && field.container !== "array" && field.container !== "map") return [];
         return [{
           name: field.name, typeId: field.typeId,
           ...(typeof field.id === "string" ? { id: field.id } : {}),
           ...(typeof field.typeClassId === "string" ? { typeClassId: field.typeClassId } : {}),
+          ...(field.container ? { container: field.container as "single" | "array" | "map" } : {}),
+          ...(typeof field.keyTypeId === "string" ? { keyTypeId: field.keyTypeId } : {}),
+          ...(typeof field.keyTypeClassId === "string" ? { keyTypeClassId: field.keyTypeClassId } : {}),
           ...(field.defaultValue !== undefined ? { defaultValue: field.defaultValue } : {}),
         }];
       });

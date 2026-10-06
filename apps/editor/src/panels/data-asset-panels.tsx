@@ -4,11 +4,14 @@ import {
   documentId as documentIdForRef,
   isDataObjectAsset,
   isDataSheetAsset,
+  parseMapDefaultEntries,
   type DataObjectAsset,
   type DataSheetAsset,
 } from "@babylonslate/core";
 import {
   createDataObjectForStructure,
+  defaultValueForMember,
+  structInstanceDefault,
   reconcileDataObject,
   validateDataObject,
   type StructField,
@@ -17,6 +20,7 @@ import {
 import {
   AssetPicker,
   ClassPicker,
+  EntryListEditor,
   NamePromptDialog,
   NumberField,
   PanelFrame,
@@ -31,6 +35,7 @@ import {
 import { Button } from "@babylonslate/ui/components/button";
 import { Input } from "@babylonslate/ui/components/input";
 import { Checkbox } from "@babylonslate/ui/components/checkbox";
+import { FieldLegend, FieldSet } from "@babylonslate/ui/components/field";
 import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@babylonslate/ui/components/empty";
 import {
@@ -131,7 +136,7 @@ function DataSheetCell({ field, value, label, editable, enums, onChange, preview
   preview: string;
 }) {
   const control = "h-6 min-h-6 w-full rounded-sm px-1 text-xs pointer-coarse:h-11";
-  if (!editable) return <span title={preview} className="block truncate">{preview}</span>;
+  if (!editable || field.container === "array" || field.container === "map") return <span title={preview} className="block truncate">{preview}</span>;
   if (field.typeId === "float" || field.typeId === "int") {
     return <NumberField aria-label={label} className={control} value={typeof value === "number" ? value : 0} onChange={(next) => onChange(field.typeId === "int" ? Math.trunc(next) : next)} />;
   }
@@ -315,6 +320,80 @@ export function DataSheetRowsPanel(_props: IDockviewPanelProps) {
   );
 }
 
+/** Compose the same typed controls as Class defaults without hydrating away retired fields. */
+function DataValueEditor({ field, value, defaultValue, onChange, label, path, disabled, catalog, issues, depth = 0 }: {
+  field: StructField;
+  value: unknown;
+  defaultValue: unknown;
+  onChange: (value: unknown) => void;
+  label: string;
+  path: string;
+  disabled: boolean;
+  catalog: ReturnType<typeof useDataCatalog>;
+  issues: readonly { code: string; path: string }[];
+  depth?: number;
+}) {
+  const id = useId();
+  const [assetPicker, setAssetPicker] = useState<{ rowId: string; allowedTypes: string[] } | null>(null);
+  const [classPicker, setClassPicker] = useState<{ rowId: string; base: string } | null>(null);
+  const invalid = issues.some((issue) => issue.code === "type-mismatch" && (issue.path === path || issue.path.startsWith(`${path}.`) || issue.path.startsWith(`${path}[`)));
+  const change = (next: unknown) => { if (!disabled) onChange(next); };
+  const shared = { disabled, catalog, issues, depth: depth + 1 };
+  const seed = (typeId: string, typeClassId?: string) => ["object", "actor", "wildcard"].includes(typeId) ? null : defaultValueForMember(typeId, typeClassId, catalog.schemas);
+  if (depth > 64) return <p className="text-xs text-destructive">{label}: Structure nesting limit exceeded.</p>;
+  if (field.container === "array" || field.container === "map") {
+    const single = { ...field, container: "single" as const };
+    const malformed = !Array.isArray(value) || (field.container === "map" && value.some((entry) => !entry || typeof entry !== "object" || Array.isArray(entry) || !("key" in entry) || !("value" in entry)));
+    const canReset = invalid || JSON.stringify(value) !== JSON.stringify(defaultValue);
+    return <FieldSet disabled={disabled} aria-label={label} className="gap-1">
+      <FieldLegend variant="label" className="mb-0 flex items-center gap-1">{label}{canReset ? <Button size="xs" variant="ghost" className={TOUCH_ACTION} disabled={disabled} aria-label={`Reset ${label}`} onClick={() => change(structuredClone(defaultValue))}>Reset</Button> : null}</FieldLegend>
+      {malformed ? <p className="text-xs text-destructive">Reset this invalid collection to edit its entries. The stored value is preserved until reset.</p> : field.container === "array" ? <EntryListEditor
+        items={Array.isArray(value) ? value : []} touchAdaptive addLabel="Add Item"
+        onCreate={() => seed(field.typeId, field.typeClassId)} onChange={change}
+        renderItem={({ item, index, onChange: changeItem }) => <DataValueEditor {...shared} field={single} value={item} defaultValue={seed(field.typeId, field.typeClassId)} onChange={changeItem} label={`${label} Item ${index + 1}`} path={`${path}.${index}`} />}
+      /> : <EntryListEditor
+        items={parseMapDefaultEntries(value)} touchAdaptive addLabel="Add Entry" countNoun={{ one: "entry", other: "entries" }}
+        onCreate={() => ({ key: seed(field.keyTypeId ?? "string", field.keyTypeClassId), value: seed(field.typeId, field.typeClassId) })} onChange={change}
+        renderItem={({ item, index, onChange: changeItem }) => <>
+          <DataValueEditor {...shared} field={{ name: "Key", typeId: field.keyTypeId ?? "string", typeClassId: field.keyTypeClassId }} value={item.key} defaultValue={seed(field.keyTypeId ?? "string", field.keyTypeClassId)} onChange={(key) => changeItem({ ...item, key })} label={`${label} Key ${index + 1}`} path={`${path}.${index}.key`} />
+          <DataValueEditor {...shared} field={single} value={item.value} defaultValue={seed(field.typeId, field.typeClassId)} onChange={(next) => changeItem({ ...item, value: next })} label={`${label} Value ${index + 1}`} path={`${path}.${index}.value`} />
+        </>}
+      />}
+    </FieldSet>;
+  }
+  const nested = field.typeId === "struct" && field.typeClassId && !["engine:TagContainer", "engine:InputType"].includes(field.typeClassId) ? catalog.schemas.structs[field.typeClassId] : undefined;
+  if (nested) {
+    const authored = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+    const defaults = defaultValue && typeof defaultValue === "object" && !Array.isArray(defaultValue) ? defaultValue as Record<string, unknown> : structInstanceDefault(nested.fields, catalog.schemas);
+    return <div className="flex flex-col gap-2">{nested.fields.map((child) => <DataValueEditor {...shared} key={child.id ?? child.name} field={child} value={authored[child.name]} defaultValue={defaults[child.name]} onChange={(next) => change({ ...authored, [child.name]: next })} label={`${label} ${humanizePropertyLabel(child.name)}`} path={`${path}.${child.name}`} />)}</div>;
+  }
+  const options = {
+    typeClassId: field.typeClassId, schemas: catalog.schemas, enumMembers: catalog.enumMembers,
+    label, pinId: path, assetEntries: catalog.propertyAssets, classEntries: catalog.classEntries,
+    onPickAsset: (rowId: string, type: string) => setAssetPicker({ rowId, allowedTypes: assetPickerAllowedTypes(type, undefined) }),
+    onPickClass: (rowId: string, base: string) => setClassPicker({ rowId, base }),
+  };
+  const generated = variableDefaultPropertyRows(field.typeId, value, change, options);
+  const defaultRows = variableDefaultPropertyRows(field.typeId, defaultValue, () => undefined, options);
+  const rows = generated.map((row, index) => ({ ...row, id: `${id}:${row.id}`, disabled,
+    defaultValue: invalid ? undefined : defaultRows.find((entry) => entry.id === row.id)?.value,
+    labelAccessory: invalid && index === 0 ? <Button size="xs" variant="ghost" className={TOUCH_ACTION} disabled={disabled} aria-label={`Reset ${label}`} onClick={() => change(structuredClone(defaultValue))}>Reset</Button> : undefined,
+  } as PropertyRow));
+  return <>
+    <PropertyGrid rows={rows} />
+    {assetPicker ? <AssetPicker open onOpenChange={(open) => { if (!open) setAssetPicker(null); }} assets={catalog.pickerAssets} allowedTypes={assetPicker.allowedTypes} title="Choose Asset" allowNone onPick={(guid) => {
+      const row = generated.find((entry) => entry.id === assetPicker?.rowId);
+      if (row?.kind === "asset") row.onChange(guid ?? "");
+      setAssetPicker(null);
+    }} /> : null}
+    {classPicker ? <ClassPicker open onOpenChange={(open) => { if (!open) setClassPicker(null); }} classes={subclassClassEntries(classPicker.base, catalog.assets)} title="Choose Class" allowNone onPick={(classId) => {
+      const row = generated.find((entry) => entry.id === classPicker?.rowId);
+      if (row?.kind === "asset") row.onChange(classId ?? "");
+      setClassPicker(null);
+    }} /> : null}
+  </>;
+}
+
 export function DataObjectValuesPanel(_props: IDockviewPanelProps) {
   void _props;
   const formId = useId();
@@ -333,8 +412,6 @@ export function DataObjectValuesPanel(_props: IDockviewPanelProps) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [structurePicker, setStructurePicker] = useState(false);
-  const [assetPicker, setAssetPicker] = useState<{ rowId: string; allowedTypes: string[] } | null>(null);
-  const [classPicker, setClassPicker] = useState<{ rowId: string; base: string } | null>(null);
   const [pendingStructure, setPendingStructure] = useState<string | null>(null);
   const [review, setReview] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -356,8 +433,6 @@ export function DataObjectValuesPanel(_props: IDockviewPanelProps) {
   useEffect(() => {
     let cancelled = false;
     setError(null);
-    setAssetPicker(null);
-    setClassPicker(null);
     setReview(false);
     setPendingStructure(null);
     if (!sheet || !targetRef || target) { setLoading(false); return; }
@@ -378,37 +453,14 @@ export function DataObjectValuesPanel(_props: IDockviewPanelProps) {
       if (!changed && latestTarget.current === identity && JSON.stringify(next) !== JSON.stringify(asset)) setError("The object could not be edited. Check whether the asset is read-only or locked.");
     }).catch((reason: unknown) => { if (latestTarget.current === identity) setError(reason instanceof Error ? reason.message : String(reason)); });
   };
-  const rows: PropertyRow[] = [];
-  for (const field of recursive ? [] : schema?.fields ?? []) {
-    const changeValue = (value: unknown) => {
+  const changeValue = (field: StructField, value: unknown) => {
       if (!asset || !targetId) return;
       const current = documents.getOpenDocuments().find((entry) => entry.id === targetId)?.content;
       if (!isDataObjectAsset(current)) return;
       const next = { ...current, values: { ...current.values, [field.name]: preserveAuthoredFields(current.values[field.name], value) } };
       commit(schema ? reconcileDataObject(next, schema.fields, catalog.schemas).asset : next, `data:${field.id ?? field.name}`);
-    };
-    const generated = variableDefaultPropertyRows(field.typeId, (migrationBlocked ? asset?.values : migration?.asset.values ?? asset?.values)?.[field.name], changeValue, {
-      typeClassId: field.typeClassId, schemas: catalog.schemas, enumMembers: catalog.enumMembers,
-      label: humanizePropertyLabel(field.name), pinId: field.name,
-      assetEntries: catalog.propertyAssets,
-      classEntries: catalog.classEntries,
-      onPickAsset: (pinId, type) => setAssetPicker({ rowId: `${formId}:${field.name}:${pinId}`, allowedTypes: assetPickerAllowedTypes(type, undefined) }),
-      onPickClass: (pinId, base) => setClassPicker({ rowId: `${formId}:${field.name}:${pinId}`, base }),
-    });
-    const defaultRows = variableDefaultPropertyRows(field.typeId, defaults[field.name], () => undefined, {
-      typeClassId: field.typeClassId, schemas: catalog.schemas, enumMembers: catalog.enumMembers,
-      label: humanizePropertyLabel(field.name), pinId: field.name, onPickClass: () => undefined,
-    });
-    const invalidValue = issues.some((issue) => issue.code === "type-mismatch" && (issue.path === field.name || issue.path.startsWith(`${field.name}.`)));
-    rows.push(...generated.map((row, index) => ({ ...row, id: `${formId}:${field.name}:${row.id}`, disabled: !editable,
-      // An invalid authored value may display the same fallback as its default.
-      // Keep an explicit repair action available even in that case.
-      defaultValue: invalidValue ? undefined : defaultRows.find((entry) => entry.id === row.id)?.value,
-      labelAccessory: invalidValue && index === 0 ? <Button size="xs" variant="ghost" className={TOUCH_ACTION} disabled={!editable} aria-label={`Reset ${humanizePropertyLabel(field.name)}`} onClick={() => changeValue(defaults[field.name])}>Reset</Button> : undefined,
-    } as PropertyRow)));
-  }
+  };
   const structureName = asset?.structureGuid ? catalog.types.structures.find((entry) => entry.guid === asset.structureGuid)?.name ?? "Missing Structure" : "Choose Structure";
-  const pickerRows = rows;
 
   return (
     <PanelFrame data-testid="data-object-values-panel" toolbar={asset && targetId ? <>
@@ -431,7 +483,7 @@ export function DataObjectValuesPanel(_props: IDockviewPanelProps) {
           {schemaChanged ? <Alert><AlertTitle>Structure Changed</AlertTitle><AlertDescription>{needsStructuralApply ? "Review the field changes before editing this object." : "Review the changed types, or edit or reset their values to repair them."}<Button size="sm" variant="outline" className={TOUCH_ACTION} disabled={readOnly} onClick={() => setReview(true)}>Review Changes</Button></AlertDescription></Alert> : null}
           {recursive ? <Alert variant="destructive"><AlertTitle>Recursive Structure</AlertTitle><AlertDescription>Remove the circular Structure reference before editing these values.</AlertDescription></Alert> : null}
           {visibleIssues.length > 0 ? <Alert variant={visibleIssues.some((issue) => issue.severity === "error") ? "destructive" : "default"}><AlertTitle>Validation</AlertTitle><AlertDescription><ul className="list-disc pl-4">{visibleIssues.map((issue, index) => <li key={index}>{issue.path ? `${humanizePropertyLabel(issue.path)}: ` : ""}{issue.message}</li>)}</ul></AlertDescription></Alert> : null}
-          {schema ? <PropertyGrid rows={rows} /> : asset.structureGuid ? <DataEmpty title="Structure Missing">Restore the referenced Structure or choose another one. Existing values are preserved.</DataEmpty> : <DataEmpty title="Choose A Structure">Data Objects are standalone assets. Choose a Structure to define this object's fields.</DataEmpty>}
+          {schema ? (recursive ? [] : schema.fields).map((field) => <DataValueEditor key={`${targetId}:${field.id ?? field.name}`} field={field} value={(migrationBlocked ? asset.values : migration?.asset.values ?? asset.values)[field.name]} defaultValue={defaults[field.name]} onChange={(value) => changeValue(field, value)} label={humanizePropertyLabel(field.name)} path={field.name} disabled={!editable} catalog={catalog} issues={issues} />) : asset.structureGuid ? <DataEmpty title="Structure Missing">Restore the referenced Structure or choose another one. Existing values are preserved.</DataEmpty> : <DataEmpty title="Choose A Structure">Data Objects are standalone assets. Choose a Structure to define this object's fields.</DataEmpty>}
           {sheet && target?.dirty ? <Button size="sm" variant="outline" className={cn("self-start", TOUCH_ACTION)} onClick={() => void documents.saveAll().then((saved) => { if (!saved) setError("The changes could not be saved. Resolve the editor's save diagnostics and retry."); }).catch((reason: unknown) => setError(String(reason)))}>Save All</Button> : null}
         </>}
       </div>
@@ -442,16 +494,6 @@ export function DataObjectValuesPanel(_props: IDockviewPanelProps) {
         if (!chosen) return;
         if (Object.keys(asset.values).length > 0) setPendingStructure(guid);
         else commit(createDataObjectForStructure(guid, chosen.fields, catalog.schemas));
-      }} />
-      <AssetPicker open={Boolean(assetPicker)} onOpenChange={(open) => { if (!open) setAssetPicker(null); }} assets={catalog.pickerAssets} allowedTypes={assetPicker?.allowedTypes} title="Choose Asset" allowNone onPick={(guid) => {
-        const row = pickerRows.find((entry) => entry.id === assetPicker?.rowId);
-        if (row?.kind === "asset") row.onChange(guid ?? "");
-        setAssetPicker(null);
-      }} />
-      <ClassPicker open={Boolean(classPicker)} onOpenChange={(open) => { if (!open) setClassPicker(null); }} classes={classPicker ? subclassClassEntries(classPicker.base, catalog.assets) : []} title="Choose Class" allowNone onPick={(classId) => {
-        const row = pickerRows.find((entry) => entry.id === classPicker?.rowId);
-        if (row?.kind === "asset") row.onChange(classId ?? "");
-        setClassPicker(null);
       }} />
       <AlertDialog open={pendingStructure !== null} onOpenChange={(open) => { if (!open) setPendingStructure(null); }}>
         <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Change Structure</AlertDialogTitle><AlertDialogDescription>Replace this object's values with the new Structure defaults. Undo restores the current values.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={() => {

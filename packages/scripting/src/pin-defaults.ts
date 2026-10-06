@@ -4,6 +4,7 @@ import type { PinType } from "./types";
 const LITERAL_DEFAULT_KINDS = new Set<PinType["kind"]>([
   "bool",
   "int",
+  "tag",
   "float",
   "string",
   "vec2",
@@ -57,6 +58,7 @@ export function defaultJsValue(type: PinType): unknown {
     case "bool":
       return false;
     case "int":
+    case "tag":
     case "float":
       return 0;
     case "string":
@@ -84,7 +86,7 @@ export function defaultJsValue(type: PinType): unknown {
     case "enumRef":
       return "";
     case "structRef":
-      return {};
+      return type.guid === "engine:TagContainer" ? { Tags: [] } : {};
     case "classRef":
       return type.classId;
     case "assetRef":

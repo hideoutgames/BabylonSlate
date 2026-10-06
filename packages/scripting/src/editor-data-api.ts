@@ -10,7 +10,11 @@ export interface EditorDataApi {
   readSheet(reference: string, structureGuid?: string): Promise<EditorDataResult<string[]>>;
   /** Creates a persisted standalone asset under the project content root. */
   createObject(name: string, structureGuid: string, values?: Record<string, unknown>, folder?: string): Promise<EditorDataResult<string>>;
-  /** Replaces supplied fields, preserving other live values; edits are undoable. */
+  /**
+   * Merges supplied scalar Structure fields; supplied arrays/maps replace the
+   * collection. Accepts runtime Maps; persistence uses portable entry arrays.
+   * Other live values are preserved and edits are undoable.
+   */
   updateObject(reference: string, structureGuid: string, values: Record<string, unknown>): Promise<EditorDataResult<string>>;
   createSheet(name: string, structureGuid: string, objectGuids?: string[], folder?: string): Promise<EditorDataResult<string>>;
   /** Replaces ordered membership without copying or deleting any Data Object. */

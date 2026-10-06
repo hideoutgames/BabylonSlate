@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render } from "@testing-library/react";
+import { TagProvider } from "@babylonslate/editor-kit";
 import { DebugBehaviourTreeDialog } from "./debug-behaviour-tree-dialog";
 
 afterEach(cleanup);
@@ -36,6 +37,44 @@ const patrol = {
 };
 
 describe("behaviour tree debugger", () => {
+  it("shows readonly Tag names for typed blackboard values and collection entries", () => {
+    const view = render(
+      <TagProvider entries={[
+        { id: 1, path: "State", parentId: 0 },
+        { id: 2, path: "State.Ready", parentId: 1 },
+        { id: 3, path: "State.Moving", parentId: 1 },
+      ]}>
+        <DebugBehaviourTreeDialog open onOpenChange={vi.fn()} trees={[{
+          ...patrol,
+          blackboard: {
+            Current: 2,
+            Allowed: { Tags: [2, 3] },
+            History: [2, 3],
+            Groups: [{ Tags: [3] }],
+            Lookup: [{ key: 2, value: { Tags: [3] } }],
+          },
+          blackboardTypes: {
+            Current: "tag",
+            Allowed: "struct:engine:TagContainer",
+            History: "array:tag",
+            Groups: "array:struct:engine:TagContainer",
+            Lookup: "map:tag=>struct:engine:TagContainer",
+          },
+        }]} />
+      </TagProvider>,
+    );
+    const current = view.getByRole("button", { name: "Current" });
+    expect(current.textContent).toContain("State.Ready");
+    expect(current.hasAttribute("disabled")).toBe(true);
+    const allowed = view.getByRole("button", { name: "Allowed" });
+    expect(allowed.textContent).toContain("State.Ready, State.Moving");
+    expect(view.getAllByRole("button", { name: /^History / }).map((button) => button.textContent))
+      .toEqual([expect.stringContaining("State.Ready"), expect.stringContaining("State.Moving")]);
+    expect(view.getByRole("button", { name: /^Groups / }).textContent).toContain("State.Moving");
+    expect(view.getByRole("button", { name: /^Lookup .* Key$/ }).textContent).toContain("State.Ready");
+    expect(view.getByRole("button", { name: /^Lookup .* Value$/ }).textContent).toContain("State.Moving");
+  });
+
   it("keeps the inspector usable for cyclic and bigint blackboard values", () => {
     const cyclic: Record<string, unknown> = { name: "Gate" };
     cyclic.self = cyclic;

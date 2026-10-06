@@ -133,6 +133,7 @@ export const engineSettingsSchema = z.object({
   thumbnailsEnabled: z.boolean().default(true),
   graphAssistantEnabled: z.boolean().default(true),
   graphShakeEnabled: z.boolean().default(true),
+  readOnlyPinDefaults: z.boolean().default(false),
   graphAssistantDistance: z.number().min(8).max(200).default(48),
   graphDefaultZoom: z.preprocess((value) => {
     if (typeof value !== "number" || !Number.isFinite(value)) return value;

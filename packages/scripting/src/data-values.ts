@@ -4,7 +4,8 @@ import {
   type DataObjectAsset,
 } from "@babylonslate/core";
 import type { StructField } from "./type-assets";
-import { structInstanceDefault, type TypeSchemas } from "./type-defaults";
+import { structInstanceDefault, type StructSchema, type TypeSchemas } from "./type-defaults";
+import { ENGINE_STRUCTS } from "./engine-types";
 
 export interface DataValidationIssue {
   code: string;
@@ -32,6 +33,18 @@ const fieldPath = (parent: string, name: string): string => parent ? `${parent}.
 function schemaEntry<T>(entries: Readonly<Record<string, T>> | undefined, guid: string | undefined | null): T | undefined {
   return entries && guid && own(entries, guid) ? entries[guid] : undefined;
 }
+const engineStructures = new Map(ENGINE_STRUCTS.map((entry) => [entry.id, entry]));
+function structureSchema(schemas: TypeSchemas | undefined, guid: string | null | undefined): StructSchema | undefined {
+  return guid ? engineStructures.get(guid) ?? schemaEntry(schemas?.structs, guid) : undefined;
+}
+
+function mapKeyField(field: StructField): StructField {
+  return { name: "key", typeId: field.keyTypeId || "string", typeClassId: field.keyTypeClassId };
+}
+
+function scalarField(field: StructField): StructField {
+  return { ...field, container: "single" };
+}
 
 /** Legacy IDs derive from the original name; editors persist them before renaming. */
 export function dataFieldIdentity(field: Pick<StructField, "id" | "name">): string {
@@ -46,14 +59,22 @@ export function snapshotDataFields(
   if (visiting.size > 64) return [];
   return fields.map((field) => {
     const nested = field.typeId === "struct" && field.typeClassId &&
-      !visiting.has(field.typeClassId) ? schemaEntry(schemas?.structs, field.typeClassId) : undefined;
+      !visiting.has(field.typeClassId) ? structureSchema(schemas, field.typeClassId) : undefined;
+    const keyNested = field.container === "map" && field.keyTypeId === "struct" && field.keyTypeClassId &&
+      !visiting.has(field.keyTypeClassId) ? structureSchema(schemas, field.keyTypeClassId) : undefined;
     return {
       id: dataFieldIdentity(field),
       name: field.name,
       typeId: field.typeId,
       ...(field.typeClassId ? { typeClassId: field.typeClassId } : {}),
+      ...(field.container ? { container: field.container } : {}),
+      ...(field.keyTypeId ? { keyTypeId: field.keyTypeId } : {}),
+      ...(field.keyTypeClassId ? { keyTypeClassId: field.keyTypeClassId } : {}),
       ...(nested ? {
         fields: snapshotDataFields(nested.fields, schemas, new Set([...visiting, field.typeClassId!])),
+      } : {}),
+      ...(keyNested ? {
+        keyFields: snapshotDataFields(keyNested.fields, schemas, new Set([...visiting, field.keyTypeClassId!])),
       } : {}),
     };
   });
@@ -67,7 +88,7 @@ export function createDataObjectForStructure(
 ): DataObjectAsset {
   return createDataObjectAsset(
     structureGuid,
-    structInstanceDefault(fields, schemas, new Set([structureGuid])),
+    serializeDataObjectValues(structInstanceDefault(fields, schemas, new Set([structureGuid])), fields, schemas),
     snapshotDataFields(fields, schemas, new Set([structureGuid])),
   );
 }
@@ -146,7 +167,10 @@ function fieldSources(
 }
 
 function sameFieldType(a: StructField, b: DataFieldSnapshot): boolean {
-  return a.typeId === b.typeId && (a.typeClassId || "") === (b.typeClassId || "");
+  return a.typeId === b.typeId && (a.typeClassId || "") === (b.typeClassId || "") &&
+    (a.container || "single") === (b.container || "single") &&
+    (a.container !== "map" || ((a.keyTypeId || "string") === (b.keyTypeId || "string") &&
+      (a.keyTypeClassId || "") === (b.keyTypeClassId || "")));
 }
 
 function validateFieldValue(
@@ -159,6 +183,7 @@ function validateFieldValue(
   switch (field.typeId) {
     case "float": valid = numeric(value); break;
     case "int": valid = typeof value === "number" && Number.isSafeInteger(value); break;
+    case "tag": valid = typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 0xffff_ffff; break;
     case "bool": valid = typeof value === "boolean"; break;
     case "string": valid = typeof value === "string"; break;
     case "vec2": valid = components(value, ["x", "y"]); break;
@@ -200,6 +225,87 @@ function validateFieldValue(
   if (!valid) issue(issues, "type-mismatch", path, `Value does not match ${field.typeId}${field.typeClassId ? ` (${field.typeClassId})` : ""}.`);
 }
 
+/** Convert typed runtime Maps to portable entries before authoring/validation. */
+export function serializeDataObjectValues(
+  values: Record<string, unknown>, fields: readonly StructField[], schemas?: TypeSchemas,
+): Record<string, unknown> {
+  const plain = (value: unknown): value is Record<string, unknown> => record(value) &&
+    (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
+  const visit = (field: StructField, value: unknown, depth: number): unknown => {
+    if (depth > 64) throw new Error("Nested Structure data exceeds 64 levels.");
+    if (field.container === "array") return Array.isArray(value) ? value.map((item) => visit(scalarField(field), item, depth + 1)) : value;
+    if (field.container === "map") {
+      const entries: unknown = value instanceof Map ? [...value].map(([key, item]) => ({ key, value: item })) : value;
+      return Array.isArray(entries) ? entries.map((entry) => plain(entry) && own(entry, "key") && own(entry, "value") ? {
+        ...entry, key: visit(mapKeyField(field), entry.key, depth + 1), value: visit(scalarField(field), entry.value, depth + 1),
+      } : entry) : value;
+    }
+    const nested = field.typeId === "struct" ? structureSchema(schemas, field.typeClassId) : undefined;
+    return nested && plain(value) ? visitFields(value, nested.fields, depth + 1) : value;
+  };
+  const visitFields = (source: Record<string, unknown>, schema: readonly StructField[], depth: number): Record<string, unknown> => {
+    const result = { ...source };
+    for (const field of schema) if (own(source, field.name)) {
+      Object.defineProperty(result, field.name, { value: visit(field, source[field.name], depth), enumerable: true, configurable: true, writable: true });
+    }
+    return result;
+  };
+  return structuredClone(visitFields(values, fields, 0));
+}
+
+function projectFieldValue(
+  field: StructField, previous: DataFieldSnapshot | undefined, value: unknown,
+  schemas: TypeSchemas, issues: DataValidationIssue[], options: DataValidationOptions,
+  path: string, depth: number,
+): unknown {
+  if (depth > 64) {
+    issue(issues, "recursive-schema", path, "Nested Structure data exceeds 64 levels.");
+    return value;
+  }
+  if (field.container === "array" || field.container === "map") {
+    if (!Array.isArray(value)) {
+      issue(issues, "type-mismatch", path, `Expected ${field.container === "map" ? "Map entries" : "an array"}.`);
+      return value;
+    }
+    const checkType = (element: StructField, at: string) => {
+      if (element.typeId === "struct" && !structureSchema(schemas, element.typeClassId)) {
+        issue(issues, "missing-structure", at, "Choose an existing Structure for this collection.");
+      }
+      if (element.typeId === "enum" && !schemaEntry(schemas.enums, element.typeClassId)) {
+        issue(issues, "missing-enum", at, "Choose an existing Enum for this collection.");
+      }
+    };
+    checkType(field, path);
+    if (field.container === "map") checkType(mapKeyField(field), fieldPath(path, "key"));
+    if (field.container === "array") return value.map((item, index) =>
+      projectFieldValue(scalarField(field), previous, item, schemas, issues, options, fieldPath(path, String(index)), depth + 1));
+    const entries: [unknown, unknown][] = [];
+    const keys = new Set<unknown>();
+    for (const [index, entry] of value.entries()) {
+      const at = fieldPath(path, String(index));
+      if (!record(entry) || !own(entry, "key") || !own(entry, "value")) {
+        issue(issues, "type-mismatch", at, "Map entries need a key and value.");
+        continue;
+      }
+      const keyField = mapKeyField(field);
+      const key = projectFieldValue(keyField, previous ? { ...keyField, fields: previous.keyFields } : undefined,
+        entry.key, schemas, issues, options, fieldPath(at, "key"), depth + 1);
+      if (keys.has(key)) issue(issues, "duplicate-key", fieldPath(at, "key"), "Map keys must be unique.");
+      keys.add(key);
+      const item = projectFieldValue(scalarField(field), previous, entry.value, schemas, issues, options, fieldPath(at, "value"), depth + 1);
+      entries.push([key, item]);
+    }
+    return new Map(entries);
+  }
+  validateFieldValue(field, value, schemas, issues, path, options);
+  if (field.typeId === "struct") {
+    const nested = structureSchema(schemas, field.typeClassId);
+    if (!nested) issue(issues, "missing-structure", path, "Choose an existing Structure for this field.");
+    if (nested && record(value)) return projectFields(nested.fields, previous?.fields ?? [], value, schemas, issues, options, path, depth + 1);
+  }
+  return value;
+}
+
 function projectFields(
   fields: readonly StructField[], snapshot: readonly DataFieldSnapshot[], values: Record<string, unknown>,
   schemas: TypeSchemas, issues: DataValidationIssue[], options: DataValidationOptions,
@@ -225,17 +331,7 @@ function projectFields(
       issue(issues, "rename-conflict", at, "A retained value already uses the renamed field's name.");
     }
     if (source !== field.name) issue(issues, "renamed-field", at, `Field was renamed from ${source}; apply Structure changes to save the new name.`, "warning");
-    const value = values[source];
-    validateFieldValue(field, value, schemas, issues, at, options);
-    if (field.typeId === "struct") {
-      const nested = schemaEntry(schemas.structs, field.typeClassId);
-      if (!nested) issue(issues, "missing-structure", at, "Choose an existing Structure for this field.");
-      if (nested && record(value)) {
-        entries.push([field.name, projectFields(nested.fields, previous?.fields ?? [], value, schemas, issues, options, at, depth + 1)]);
-        continue;
-      }
-    }
-    entries.push([field.name, value]);
+    entries.push([field.name, projectFieldValue(field, previous, values[source], schemas, issues, options, at, depth)]);
   }
   for (const key of Object.keys(values)) {
     if (!consumed.has(key)) issue(issues, "unknown-field", fieldPath(path, key), "Field is no longer in the Structure. Its stored value is preserved.", "warning");
@@ -252,7 +348,7 @@ function inspectDataObject(asset: DataObjectAsset, schemas: TypeSchemas, options
     return { values: {}, issues };
   }
   validateSerializable(asset.values, issues, "");
-  const structure = schemaEntry(schemas.structs, asset.structureGuid);
+  const structure = structureSchema(schemas, asset.structureGuid);
   if (!structure) {
     issue(issues, "missing-structure", "", "Choose an existing Structure for this Data Object.");
     return { values: {}, issues };
@@ -270,6 +366,75 @@ export function validateDataObject(
 export function resolveDataObjectValues(asset: DataObjectAsset, schemas: TypeSchemas): Record<string, unknown> | null {
   const result = inspectDataObject(asset, schemas, {});
   return result.issues.some((entry) => entry.severity === "error") ? null : structuredClone(result.values);
+}
+
+/** A collection shares field metadata; retain orphan metadata found in any item. */
+function mergeSnapshots(
+  left: readonly DataFieldSnapshot[], right: readonly DataFieldSnapshot[], previous: readonly DataFieldSnapshot[],
+): DataFieldSnapshot[] {
+  const result = new Map(left.map((field) => [dataFieldIdentity(field), field]));
+  const old = new Map(previous.map((field) => [dataFieldIdentity(field), field]));
+  for (const field of right) {
+    const id = dataFieldIdentity(field);
+    const existing = result.get(id);
+    if (!existing) { result.set(id, field); continue; }
+    const retained = !sameFieldType(existing, field) ? old.get(id) ?? existing : existing;
+    result.set(id, {
+      ...retained,
+      name: existing.name,
+      ...(existing.id ? { id: existing.id } : {}),
+      ...(existing.fields || field.fields ? { fields: mergeSnapshots(existing.fields ?? [], field.fields ?? [], old.get(id)?.fields ?? []) } : {}),
+      ...(existing.keyFields || field.keyFields ? { keyFields: mergeSnapshots(existing.keyFields ?? [], field.keyFields ?? [], old.get(id)?.keyFields ?? []) } : {}),
+    });
+  }
+  return [...result.values()];
+}
+
+function reconcileFieldValue(
+  field: StructField, previous: DataFieldSnapshot | undefined, value: unknown,
+  schemas: TypeSchemas | undefined, changes: DataSchemaChange[], issues: DataValidationIssue[],
+  path: string, visiting: ReadonlySet<string>, depth: number,
+): { value: unknown; fields?: DataFieldSnapshot[]; keyFields?: DataFieldSnapshot[] } {
+  if (depth > 64) {
+    issue(issues, "recursive-schema", path, "Nested Structure data exceeds 64 levels.");
+    return { value };
+  }
+  if ((field.container === "array" || field.container === "map") && !Array.isArray(value)) {
+    return { value, ...(previous?.fields ? { fields: previous.fields } : {}), ...(previous?.keyFields ? { keyFields: previous.keyFields } : {}) };
+  }
+  if (field.container === "array" && Array.isArray(value)) {
+    let fields: DataFieldSnapshot[] | undefined;
+    const result = value.map((entry, index) => {
+      const item = reconcileFieldValue(scalarField(field), previous, entry, schemas, changes, issues,
+        fieldPath(path, String(index)), visiting, depth + 1);
+      if (item.fields) fields = fields ? mergeSnapshots(fields, item.fields, previous?.fields ?? []) : item.fields;
+      return item.value;
+    });
+    return { value: result, ...(fields ? { fields } : {}) };
+  }
+  if (field.container === "map" && Array.isArray(value)) {
+    let fields: DataFieldSnapshot[] | undefined;
+    let keyFields: DataFieldSnapshot[] | undefined;
+    const keyField = mapKeyField(field);
+    const keyPrevious = previous ? { ...keyField, fields: previous.keyFields } : undefined;
+    const result = value.map((entry, index) => {
+      if (!record(entry) || !own(entry, "key") || !own(entry, "value")) return entry;
+      const at = fieldPath(path, String(index));
+      const key = reconcileFieldValue(keyField, keyPrevious, entry.key, schemas, changes, issues, fieldPath(at, "key"), visiting, depth + 1);
+      const item = reconcileFieldValue(scalarField(field), previous, entry.value, schemas, changes, issues, fieldPath(at, "value"), visiting, depth + 1);
+      if (key.fields) keyFields = keyFields ? mergeSnapshots(keyFields, key.fields, previous?.keyFields ?? []) : key.fields;
+      if (item.fields) fields = fields ? mergeSnapshots(fields, item.fields, previous?.fields ?? []) : item.fields;
+      return { ...entry, key: key.value, value: item.value };
+    });
+    return { value: result, ...(fields ? { fields } : {}), ...(keyFields ? { keyFields } : {}) };
+  }
+  const nested = field.typeId === "struct" ? structureSchema(schemas, field.typeClassId) : undefined;
+  if (nested && record(value)) {
+    const result = reconcileFields(nested.fields, previous?.fields ?? [], value, schemas, changes, issues, path,
+      new Set([...visiting, field.typeClassId!]), depth + 1);
+    return { value: result.values, fields: result.schema };
+  }
+  return { value };
 }
 
 function reconcileFields(
@@ -299,20 +464,20 @@ function reconcileFields(
     }
     if (source === undefined) changes.push({ kind: "added", path: at });
     else if (source !== field.name) changes.push({ kind: "renamed", path: at, previousPath: fieldPath(path, source) });
-    let value = source === undefined ? structInstanceDefault([field], schemas, visiting)[field.name] : values[source];
-    const nested = field.typeId === "struct" ? schemaEntry(schemas?.structs, field.typeClassId) : undefined;
+    let value = source === undefined
+      ? serializeDataObjectValues(structInstanceDefault([field], schemas, visiting), [field], schemas)[field.name]
+      : values[source];
     // Only descend into compatible authored objects; never coerce an old field value.
-    if (nested && record(value) && (!previous || sameFieldType(field, previous))) {
-      const reconciled = reconcileFields(nested.fields, previous?.fields ?? [], value, schemas, changes, issues, at,
-        new Set([...visiting, field.typeClassId!]), depth + 1);
-      value = reconciled.values;
-      schema[index]!.fields = reconciled.schema;
+    if (!previous || sameFieldType(field, previous)) {
+      const reconciled = reconcileFieldValue(field, previous, value, schemas, changes, issues, at, visiting, depth);
+      value = reconciled.value;
+      if (reconciled.fields) schema[index]!.fields = reconciled.fields;
+      if (reconciled.keyFields) schema[index]!.keyFields = reconciled.keyFields;
     }
     if (previous && !sameFieldType(field, previous)) {
       const validation: DataValidationIssue[] = [];
       const availableSchemas = schemas ?? { structs: {}, enums: {} };
-      validateFieldValue(field, value, availableSchemas, validation, at, {});
-      if (nested && record(value)) projectFields(nested.fields, [], value, availableSchemas, validation, {}, at);
+      projectFieldValue(field, undefined, value, availableSchemas, validation, {}, at, depth);
       if (validation.some((entry) => entry.severity === "error")) {
         // Until repaired, retain the authored type so reference tracking still sees
         // assets inside an incompatible value. Renames still update its storage key.

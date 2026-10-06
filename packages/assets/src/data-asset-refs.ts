@@ -46,7 +46,17 @@ function mapReference(value: unknown, kind: ReferenceKind, map: ReferenceMapper)
   return typeof value === "string" ? map(value, kind) ?? "" : value;
 }
 
-function mapFieldValue(value: unknown, field: Record<string, unknown>, map: ReferenceMapper): unknown {
+function mapArray(entries: unknown[], transform: (entry: unknown) => unknown): unknown[] {
+  let changed = false;
+  const mapped = entries.map((entry) => {
+    const next = transform(entry);
+    changed ||= next !== entry;
+    return next;
+  });
+  return changed ? mapped : entries;
+}
+
+function mapScalarValue(value: unknown, field: Record<string, unknown>, map: ReferenceMapper): unknown {
   if (field.typeId === "asset") return mapReference(value, "asset", map);
   if (field.typeId === "class") return mapReference(value, "class", map);
   // InputType has a typed asset component and a display name; preserve display text.
@@ -59,6 +69,35 @@ function mapFieldValue(value: unknown, field: Record<string, unknown>, map: Refe
   }
   if (field.typeId === "struct" && Array.isArray(field.fields)) return mapValues(value, field.fields, map);
   return value;
+}
+
+function mapFieldValue(value: unknown, field: Record<string, unknown>, map: ReferenceMapper): unknown {
+  if (field.container === "array") {
+    return Array.isArray(value) ? mapArray(value, (entry) => mapScalarValue(entry, field, map)) : value;
+  }
+  if (field.container === "map") {
+    if (!Array.isArray(value)) return value;
+    const keyField = { typeId: field.keyTypeId, typeClassId: field.keyTypeClassId, fields: field.keyFields };
+    let changed = false;
+    const next: unknown[] = [];
+    for (const entry of value) {
+      const pair = record(entry);
+      if (!pair) { next.push(entry); continue; }
+      // A deleted asset/Class key has no identity. Remove that pair instead of
+      // creating duplicate empty keys; values and array slots retain their place.
+      const key = typeof pair.key === "string" && (keyField.typeId === "asset" || keyField.typeId === "class")
+        ? map(pair.key, keyField.typeId === "asset" ? "asset" : "class")
+        : mapScalarValue(pair.key, keyField, map);
+      if (key === null && pair.key !== null) { changed = true; continue; }
+      const mapped = mapScalarValue(pair.value, field, map);
+      if (key !== pair.key || mapped !== pair.value) {
+        changed = true;
+        next.push({ ...pair, key, value: mapped });
+      } else next.push(entry);
+    }
+    return changed ? next : value;
+  }
+  return mapScalarValue(value, field, map);
 }
 
 function mapValues(value: unknown, fields: unknown[], map: ReferenceMapper): unknown {
@@ -85,14 +124,18 @@ function mapFields(fields: unknown[], map: ReferenceMapper): unknown[] {
     const assign = (key: string, mapped: unknown) => {
       if (mapped === field[key]) return;
       if (result === field) result = { ...field };
-      if (mapped === null && key === "typeClassId") delete result[key];
+      if (mapped === null && (key === "typeClassId" || key === "keyTypeClassId")) delete result[key];
       else result[key] = mapped;
     };
     if (["struct", "enum", "class", "object"].includes(String(field.typeId)) && typeof field.typeClassId === "string") {
       assign("typeClassId", map(field.typeClassId, field.typeId === "struct" || field.typeId === "enum" ? "asset" : "class"));
     }
+    if (field.container === "map" && ["struct", "enum", "class", "object"].includes(String(field.keyTypeId)) && typeof field.keyTypeClassId === "string") {
+      assign("keyTypeClassId", map(field.keyTypeClassId, field.keyTypeId === "struct" || field.keyTypeId === "enum" ? "asset" : "class"));
+    }
     if (Object.hasOwn(field, "defaultValue")) assign("defaultValue", mapFieldValue(field.defaultValue, field, map));
     if (Array.isArray(field.fields)) assign("fields", mapFields(field.fields, map));
+    if (field.container === "map" && Array.isArray(field.keyFields)) assign("keyFields", mapFields(field.keyFields, map));
     changed ||= result !== field;
     return result;
   });
@@ -156,15 +199,6 @@ function mapDataGraphReferences<T>(value: T, map: ReferenceMapper): T {
   const guid = (entry: unknown) => typeof entry === "string" ? map(entry, "asset") : entry;
   const withValue = (row: Record<string, unknown>, key: string, next: unknown): Record<string, unknown> =>
     row[key] === next ? row : { ...row, [key]: next };
-  const mapArray = (entries: unknown[], transform: (entry: unknown) => unknown): unknown[] => {
-    let changed = false;
-    const mapped = entries.map((entry) => {
-      const next = transform(entry);
-      changed ||= next !== entry;
-      return next;
-    });
-    return changed ? mapped : entries;
-  };
   const variable = (spec: Record<string, unknown>, entry: unknown): unknown => {
     const isData = (type: unknown) => type === "DataObject" || type === "DataSheet";
     const valueRef = spec.typeId === "asset" && isData(spec.typeClassId);

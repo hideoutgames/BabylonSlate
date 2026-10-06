@@ -34,6 +34,32 @@ function host(data?: RuntimeDataCatalog, logs: string[] = []): ScriptHost {
 }
 
 describe("runtime data catalog", () => {
+  it("reads Tags, Tag Containers, nested arrays, and native Maps without sharing mutable data", () => {
+    const data = new RuntimeDataCatalog([
+      { guid: "bonus", name: "Bonus", type: "Structure", payload: { fields: [{ name: "Power", typeId: "int" }] } },
+      { guid: "config", name: "Config", type: "Structure", payload: { fields: [
+        { name: "State", typeId: "tag" },
+        { name: "Tags", typeId: "struct", typeClassId: "engine:TagContainer" },
+        { name: "Weights", typeId: "float", container: "map", keyTypeId: "tag" },
+        { name: "Bonuses", typeId: "struct", typeClassId: "bonus", container: "array" },
+      ] } },
+      { guid: "item", name: "Item", type: "DataObject", payload: createDataObjectAsset("config", {
+        State: 2, Tags: { Tags: [1, 2] },
+        Weights: [{ key: 1, value: 0.5 }, { key: 2, value: 1.5 }],
+        Bonuses: [{ Power: 3 }],
+      }) },
+    ]);
+    const first = data.readObject("item", "config")!;
+    expect(first).toEqual({ State: 2, Tags: { Tags: [1, 2] }, Weights: new Map([[1, 0.5], [2, 1.5]]), Bonuses: [{ Power: 3 }] });
+    (first.Weights as Map<number, number>).set(1, 99);
+    (first.Tags as { Tags: number[] }).Tags.push(3);
+    (first.Bonuses as Array<{ Power: number }>)[0]!.Power = 99;
+    const next = data.readObject("item", "config")!;
+    expect((next.Weights as Map<number, number>).get(1)).toBe(0.5);
+    expect(next.Tags).toEqual({ Tags: [1, 2] });
+    expect(next.Bonuses).toEqual([{ Power: 3 }]);
+  });
+
   it("keeps objects and their sheets readable after optional asset and Class references are deleted", () => {
     const fields = [
       { name: "Icon", typeId: "asset", typeClassId: "Texture" },
