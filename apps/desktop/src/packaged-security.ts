@@ -52,8 +52,9 @@ export function validateIpcArguments(channel: string, args: unknown[]): void {
     text(args[0], 4096);
     if (channel === "save-games:release-lock") requireValue(/^[a-zA-Z0-9-]{1,100}$/.test(args[0]));
     else {
-      requireValue(!/[\\:]/.test(args[0]) && !args[0].startsWith("/") &&
-        args[0].split("/").every(part => part.length > 0 && part !== "." && part !== ".."));
+      const path = channel === "save-games:list" ? args[0].replace(/\/$/, "") : args[0];
+      requireValue(!/[\\:]/.test(path) && !path.startsWith("/") &&
+        path.split("/").every(part => part.length > 0 && part !== "." && part !== ".."));
     }
     if (channel === "save-games:write") text(args[1], 32 * 1024 * 1024);
   } else if (channel === "settings:write") {

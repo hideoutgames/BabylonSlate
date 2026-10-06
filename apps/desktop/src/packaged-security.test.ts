@@ -22,6 +22,7 @@ describe("packaged renderer boundary", () => {
     expect(isEditorSender("app://babylonslate/index.html", false)).toBe(false);
   });
   it("rejects malformed privileged arguments and filesystem escapes", () => {
+    expect(() => validateIpcArguments("save-games:list", ["save-games/project/game/profile/"])).not.toThrow();
     expect(() => validateIpcArguments("save-games:write", ["save-games/project/game/profile/slot/generation-a.save", "{}"]))
       .not.toThrow();
     expect(() => validateIpcArguments("settings:write", ["{}"])).not.toThrow();
