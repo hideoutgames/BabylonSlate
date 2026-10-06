@@ -46,6 +46,22 @@ test("Save Game authoring preserves field identity and project defaults through 
   await page.screenshot({ path: testInfo.outputPath("save-game-fields.png") });
   await saveAllIfEnabled(page);
 
+  // A closed definition must still supply typed nodes from its saved document chunk.
+  await page.locator('[data-testid="document-tab"][data-document-kind="save-game"]').getByTestId("document-tab-close").click();
+  await openAssetFromBrowser(page, "assets/main.class.babasset");
+  await page.getByTestId("graph-add-node").click();
+  await page.getByTestId("node-palette-search").fill("Get Save Coins");
+  const getter = page.getByTestId(`node-palette-item-saveGame.getField:${identity}`);
+  await expect(getter).toBeVisible();
+  await getter.click();
+  await expect(page.getByTestId("graph-panel").locator(".react-flow__node").filter({ hasText: "Get Save Coins" })).toHaveCount(1);
+  await page.getByTestId("graph-add-node").click();
+  await page.getByTestId("node-palette-search").fill("Set Save Coins");
+  await expect(page.getByTestId(`node-palette-item-saveGame.setField:${identity}`)).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.screenshot({ path: testInfo.outputPath("save-game-nodes.png") });
+  await saveAllIfEnabled(page);
+
   const settings = await openSaveSettings(page);
   await expect(settings.locator("#settings-save-definition")).toContainText("PlayerProgress");
   await settings.getByLabel("Default Slot", { exact: true }).fill("checkpoint");
