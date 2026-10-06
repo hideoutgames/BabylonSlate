@@ -4,6 +4,43 @@ import type { CommandMessage } from "@babylonslate/bridge";
 import { createInProcessRuntime } from "./driver";
 
 describe("SceneLayer layout runtime", () => {
+  it("retires a virtual row's nested virtual items and attached actor descendants when it leaves the window", async () => {
+    const layer = createDefaultSceneLayer();
+    layer.actors = [createActor("menu", "Menu", { classId: "SceneLayerActor", components: [
+      { id: "list", classId: "2DVirtualizedListComponent", properties: { width: 4, height: 1, itemClassId: "Row", itemCount: 10, overscan: 0 } },
+    ] })];
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({ seed: 1, seedDemoActors: false, preferSoftwarePhysics: true, playScene: createDefaultScene(), sceneLayerLibrary: { menu: layer }, onCommand: command => commands.push(command) });
+    try {
+      await runtime.loadScripts([
+        { assetGuid: "row-class", classId: "Row", parentClassId: "SceneLayerActor", source: "", anchors: [], entryPoints: [], components: [
+          { id: "nested", classId: "2DVirtualizedListComponent", properties: { width: 1, height: 1, itemClassId: "Cell", itemCount: 3, overscan: 0 } },
+        ] },
+        { assetGuid: "cell-class", classId: "Cell", parentClassId: "SceneLayerActor", source: "", anchors: [], entryPoints: [], components: [
+          { id: "surface", classId: "2DMaterialComponent", properties: {} },
+        ] },
+      ]);
+      runtime.realizePlayWorld();
+      const liveLayer = runtime.createSceneLayer("menu")!;
+      runtime.start(); runtime.tick(); runtime.tick();
+      const world = runtime.getWorld();
+      const row = world.getActors().find(actor => actor.classId === "Row")!;
+      const cell = world.getActors().find(actor => actor.classId === "Cell" && actor.getVariable("parentId") === row.guid)!;
+      expect(cell).toBeDefined();
+      const attached = world.createActor({ classId: "SceneLayerActor", sceneLayerId: liveLayer.guid, variables: { parentId: cell.guid } });
+      const component = world.createComponent({ classId: "2DMaterialComponent" });
+      attached.attachComponent(component); world.spawnActorNow(attached);
+      runtime.applySceneLayerScroll(liveLayer.guid, "menu", "list", 0, 1);
+      world.flushPending();
+      expect(row.destroyed).toBe(true);
+      expect(cell.destroyed).toBe(true);
+      expect(attached.destroyed).toBe(true);
+      expect(component.destroyed).toBe(true);
+      expect(commands.some(command => command.type === "despawn" && command.actorGuid === cell.guid)).toBe(true);
+      expect(world.getActors().some(actor => actor.classId === "Row" && actor.getVariable("itemIndex") === 1)).toBe(true);
+    } finally { runtime.stop(); }
+  });
+
   it("realizes a bounded prefab actor window for a large virtual list and disposes it with the layer", async () => {
     const layer = createDefaultSceneLayer();
     layer.actors = [createActor("menu", "Menu", { classId: "SceneLayerActor", components: [

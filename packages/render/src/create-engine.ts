@@ -581,6 +581,7 @@ export interface CreateEngineOptions {
     componentId?: string;
   }) => void;
   onSceneLayerControl?: (event: SceneLayerControlEvent) => void;
+  onSceneLayerFocusNavigate?: (reverse: boolean) => void;
   onSceneLayerScroll?: (event: { layerId: string; actorId: string; componentId: string; deltaX: number; deltaY: number }) => void;
   /** Overlay 2DAnchor frustum in world units (height 9, width 9 * aspect). */
   onSceneLayerResize?: (size: {
@@ -1427,6 +1428,7 @@ function initializeEngine(
     pointerCanvas,
     event => { options.onSceneLayerControl?.(event); scheduler.invalidate("selection"); },
     canvas,
+    options.onSceneLayerFocusNavigate,
   );
   onRollback(() => uiControls.reset());
   const overlayLayouts = new OverlayLayoutRenderer(id => sceneLayerCompositor?.layers().find(layer => layer.layerId === id)?.scene);
@@ -2591,6 +2593,7 @@ function initializeEngine(
   };
   const onPointerDown = (event: PointerEvent) => {
     event.preventDefault();
+    canvas.focus({ preventScroll: true });
     canvas.setPointerCapture?.(event.pointerId);
     const rect = canvas.getBoundingClientRect();
     const x = event.clientX - rect.left;
@@ -2869,7 +2872,7 @@ function initializeEngine(
         applyUIControl2DCommand(binding, command);
         if (command.focused !== undefined) {
           const mesh = meshForPlayComponent(binding, command.slotId, command.componentId);
-          if (mesh) uiControls.syncFocus(mesh, command.focused);
+          if (mesh) uiControls.syncFocus(mesh, command.focused, command.beginEditing);
         }
         scheduler.invalidate("asset");
       }

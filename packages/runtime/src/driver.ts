@@ -360,6 +360,7 @@ export interface RuntimeDriver {
     message: Extract<ControlMessage, { type: "sceneLayerPointer" }>,
   ): void;
   applySceneLayerControl(message: Extract<ControlMessage, { type: "sceneLayerControl" }>): void;
+  applySceneLayerFocusNavigate(reverse: boolean): void;
   applySceneLayerScroll(layerId: string, actorId: string, componentId: string, deltaX: number, deltaY: number): void;
   applyAudioVoiceEnded(
     message: Extract<ControlMessage, { type: "audioVoiceEnded" }>,
@@ -2117,7 +2118,7 @@ class InProcessRuntime implements RuntimeDriver {
         let result = this.overlayLayout.update(layer.guid, this.world.getActors(), this.pixelsPerUnit, this.texturePixelSizes, safeAreaInsets);
         if (this.overlayVirtualization.sync(layer.guid, this.world.getActors(), result?.entries ?? this.overlayLayout.entries(layer.guid),
           (owner, classId, defaults) => this.spawnSceneLayerActor(owner, classId, defaults),
-          (actor) => this.removeOwnedActor(actor))) {
+          (actor) => this.removeSceneLayerActorSubtree(actor))) {
           result = this.overlayLayout.update(layer.guid, this.world.getActors(), this.pixelsPerUnit, this.texturePixelSizes, safeAreaInsets) ?? result;
         }
         if (!result || layer.destroyed) continue;
@@ -2232,6 +2233,18 @@ class InProcessRuntime implements RuntimeDriver {
     for (const _ of this.applyOverlayAnchors(this.world.getActors())) void _;
     this.applyOverlayLayouts();
     this.overlayPhysicsSync.syncFromWorld(this.world);
+  }
+
+  applySceneLayerFocusNavigate(reverse: boolean): void {
+    const focused = this.focusNavigation.advance(reverse);
+    const actor = focused?.owner;
+    const slotId = actor ? this.slotByGuid.get(actor.guid) : undefined;
+    // A single remaining target may not transition. Acknowledge it so the host
+    // can reopen a text editor after Tab without inventing another focus order.
+    if (focused && isUIControl2DClass(focused.classId) && slotId !== undefined) {
+      this.emit({ type: "setUIControl2D", slotId, componentId: focused.guid,
+        uiControl: { classId: focused.classId, properties: this.uiControls.payload(focused) }, focused: true });
+    }
   }
 
   applySceneLayerControl(message: Extract<ControlMessage, { type: "sceneLayerControl" }>): void {
