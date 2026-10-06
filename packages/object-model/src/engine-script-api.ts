@@ -234,6 +234,7 @@ const GAME_INSTANCE_EVENTS: readonly EngineScriptEvent[] = [
 ];
 
 const SCENE_SUBSYSTEM_EVENTS: readonly EngineScriptEvent[] = [
+  { name: "On Game Loaded", eventType: "flow.event.gameLoaded", exportName: "onGameLoaded" },
   INIT_EVENT,
   TICK_EVENT,
   END_EVENT,

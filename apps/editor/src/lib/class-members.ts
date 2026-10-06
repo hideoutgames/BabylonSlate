@@ -27,6 +27,7 @@ export const DEFAULT_FUNCTION_PINS: GraphClassMemberPin[] = [
 ];
 
 export const NATIVE_CLASS_EVENT_TYPES = [
+  "flow.event.gameLoaded",
   "flow.event.scalabilityChanged",
   "flow.event.beginPlay",
   "flow.event.tick",
