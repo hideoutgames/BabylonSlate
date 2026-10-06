@@ -1,3 +1,4 @@
+import { SaveGameFieldsPanel, SaveGameDefinitionPanel } from "../panels/save-game-panels";
 import { WaterDetailsPanel, WaterPreviewPanel } from "../panels/water-panels";
 import { RenderTargetDetailsPanel, RenderTargetTextureDetailsPanel } from "../panels/render-target-panels";
 import { InputBindingsPanel, InputBindingDetailsPanel } from "../panels/input-asset-panels";
@@ -115,6 +116,8 @@ import {
 } from "../components/trace-editor";
 
 export const panelComponents = {
+  "save-game-fields": (props: IDockviewPanelProps) => <SaveGameFieldsPanel {...props} />,
+  "save-game-definition": (props: IDockviewPanelProps) => <SaveGameDefinitionPanel {...props} />,
   viewport: (props: IDockviewPanelProps) => <ViewportPanel {...props} />,
   graph: (props: IDockviewPanelProps) => <GraphPanel {...props} />,
   inspector: (props: IDockviewPanelProps) => <InspectorPanel {...props} />,

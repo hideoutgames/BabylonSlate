@@ -1435,6 +1435,7 @@ describe("content-browser-helpers", () => {
       "Tilemap",
       "BehaviourTree",
       "Blackboard",
+      "SaveGame",
       "Enum",
       "Structure",
       "ScriptInterface",

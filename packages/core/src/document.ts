@@ -11,6 +11,7 @@ export const ASSET_DOCUMENT_KINDS = [
   "anim-graph",
   "behaviour-tree",
   "blackboard",
+  "save-game",
   "material",
   "material-function",
   "material-instance",
@@ -94,6 +95,8 @@ export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
       return "BehaviourTree";
     case "blackboard":
       return "Blackboard";
+    case "save-game":
+      return "SaveGame";
     case "material":
       return "Material";
     case "material-function":
@@ -194,6 +197,8 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
       return "behaviour-tree";
     case "Blackboard":
       return "blackboard";
+    case "SaveGame":
+      return "save-game";
     case "Material":
     case "Shader":
     case "ShaderGraph":
@@ -297,6 +302,8 @@ export function documentKindLabel(kind: AssetDocumentKind): string {
       return "Audio";
     case "input-action":
       return "Input Action";
+    case "save-game":
+      return "Save Game";
     case "input-axis":
       return "Input Axis";
     case "audio-mixer":

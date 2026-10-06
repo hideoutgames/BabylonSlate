@@ -1,3 +1,4 @@
+import { saveGameVariableNames } from "../lib/save-game-property-rows";
 
 import { ShadowSettingsFields, SHADOW_SETTINGS_SEARCH_TEXT } from "../components/shadow-settings-fields";
 import { EnvironmentLightingFields, ENVIRONMENT_LIGHTING_SEARCH_TEXT } from "../components/environment-lighting-fields";
@@ -360,6 +361,10 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
   const actor = scene && actorId ? (findActor(scene, actorId) ?? null) : null;
   const actorDisplayNames = scene ? sceneActorDisplayNames(scene) : new Map<string, string>();
   const pickingCableTarget = actor?.components.find((component) => component.id === constraintTargetPick?.componentId)?.classId === "CableComponent";
+  const classSaveGraphs = useMemo(() => {
+    void registryEpoch;
+    return collectClassGraphsForPalette({ assets: assetRegistry?.list() ?? [], openDocuments: classDocuments, classIdForPath: classIdForGraphPath });
+  }, [assetRegistry, classDocuments, registryEpoch]);
   const prefabTemplates = useMemo(() => {
     void registryEpoch; // Registry headers mutate without replacing the registry.
     const assets = assetRegistry?.list() ?? [];
@@ -1189,6 +1194,8 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
             onPickAsset: setAssetPick,
             actorLabel: (targetId) => actorDisplayNames.get(targetId),
             actorComponents: (targetId) => scene.actors.find((candidate) => candidate.id === targetId)?.components ?? [],
+            actorVariableNames: () => saveGameVariableNames(actor.classId, classSaveGraphs, parentOf),
+            componentVariableNames: (classId) => saveGameVariableNames(classId, classSaveGraphs, parentOf),
             focusTargets: scene.actors.flatMap((candidate) => candidate.components.filter((entry) => entry.classId === "2DButtonComponent" || entry.classId === "2DFocusTargetComponent").map((entry, index) => ({ value: entry.id, label: `${actorDisplayNames.get(candidate.id) ?? candidate.name} / ${entry.classId === "2DButtonComponent" ? "2D Button" : "2D Focus Target"} ${index + 1}` }))),
             onPickActor: (componentId) => setConstraintTargetPick({ actorId: actor.id, componentId }),
           },

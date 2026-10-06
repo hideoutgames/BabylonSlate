@@ -1,3 +1,4 @@
+import { saveGameVariableNames } from "../lib/save-game-property-rows";
 import { useMemo, useState } from "react";
 import { normalizeModelPayload } from "@babylonslate/assets";
 import { MODEL_MATERIALS_PICKER_ENTRY } from "../lib/mesh-material-properties";
@@ -816,6 +817,7 @@ function ClassMemberDetails({
 }
 
 function PrefabComponentDetails({
+  actorClassId,
   component,
   components,
   sortingLayers,
@@ -832,6 +834,7 @@ function PrefabComponentDetails({
   onUpdate,
   onUpdateTransform,
 }: {
+  actorClassId: string;
   component: SerializedComponent;
   components: readonly SerializedComponent[];
   sortingLayers: readonly string[];
@@ -855,6 +858,7 @@ function PrefabComponentDetails({
   onUpdateTransform: (transform: SerializedTransform) => void;
 }) {
   const { assetRegistry, openDocuments, registryEpoch } = useDocuments();
+  const classGraphs = collectClassGraphsForPalette({ assets: assetRegistry?.list() ?? [], openDocuments, classIdForPath: classIdForGraphPath });
   const [assetPick, setAssetPick] = useState<AssetPickRequest | null>(null);
   // An open Material tab's unsaved domain wins over its saved header.
   const materialDocuments = useOpenDocumentsOfKinds(MATERIAL_DOCUMENT_KINDS);
@@ -867,7 +871,7 @@ function PrefabComponentDetails({
       className="flex flex-col gap-3 p-3"
       data-testid="inspector-prefab-component"
     >
-      {component.classId !== "2DAnchorComponent" && component.classId !== "MovementComponent" && component.classId !== "DeformerComponent" && <PropertyGrid
+      {component.classId !== "2DAnchorComponent" && component.classId !== "MovementComponent" && component.classId !== "DeformerComponent" && component.classId !== "SaveGameComponent" && <PropertyGrid
         title="Transform"
         rows={spatialTransformPropertyRows(
           component.id,
@@ -913,6 +917,8 @@ function PrefabComponentDetails({
             physicsWorld,
             onPickAsset: setAssetPick,
             actorComponents: (targetId) => targetId === PREFAB_ROOT_ID ? components : [],
+            actorVariableNames: () => saveGameVariableNames(actorClassId, classGraphs, parentOf),
+            componentVariableNames: (classId) => saveGameVariableNames(classId, classGraphs, parentOf),
             focusTargets: components.filter((entry) => entry.classId === "2DButtonComponent" || entry.classId === "2DFocusTargetComponent").map((entry, index) => ({ value: entry.id, label: `${entry.classId === "2DButtonComponent" ? "2D Button" : "2D Focus Target"} ${index + 1}` })),
           })}
         />
@@ -1318,6 +1324,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     return (
       <PanelFrame data-testid="inspector-panel">
         <PrefabComponentDetails
+          actorClassId={doc?.ref.path ? classIdForGraphPath(doc.ref.path) : "Actor"}
           component={selectedPrefabComponent}
           components={prefabComponents}
           sortingLayers={sortingLayers}

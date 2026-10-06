@@ -51,6 +51,15 @@ describe("resolveDockInitialWidth", () => {
 });
 
 describe("listDockWindows", () => {
+  it("keeps Save Game field authoring and definition docks available to Windows and Focus", () => {
+    expect(isDockviewDocumentKind("save-game")).toBe(true);
+    expect(primaryDockPanel("save-game")).toBe("save-game-fields");
+    expect(listDockWindows("save-game").map(({ id, component, title }) => ({ id, component, title }))).toEqual([
+      { id: "save-game-fields", component: "save-game-fields", title: "Fields" },
+      { id: "save-game-definition", component: "save-game-definition", title: "Definition" },
+    ]);
+    expect(listDockWindows("save-game", { sourceControl: true }).map((entry) => entry.id)).toContain("locks");
+  });
   it.each(["render-target", "render-target-texture"] as const)("exposes %s Details to Windows and Focus", (kind) => {
     expect(isDockviewDocumentKind(kind)).toBe(true);
     const primary = primaryDockPanel(kind);

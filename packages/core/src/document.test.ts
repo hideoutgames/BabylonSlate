@@ -78,6 +78,9 @@ describe("P9 document kinds", () => {
     expect(documentKindForAssetType("AnimationGraph")).toBe("anim-graph");
     expect(documentKindForAssetType("BehaviourTree")).toBe("behaviour-tree");
     expect(documentKindForAssetType("Blackboard")).toBe("blackboard");
+    expect(documentKindForAssetType("SaveGame")).toBe("save-game");
+    expect(assetTypeForDocumentKind("save-game")).toBe("SaveGame");
+    expect(documentKindLabel("save-game")).toBe("Save Game");
     expect(assetTypeForDocumentKind("behaviour-tree")).toBe("BehaviourTree");
     expect(assetTypeForDocumentKind("blackboard")).toBe("Blackboard");
     expect(isAssetDocumentKind("font")).toBe(true);

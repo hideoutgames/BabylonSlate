@@ -1,3 +1,4 @@
+import { saveGamePropertyRows } from "./save-game-property-rows";
 import { normalizeWaterBody, normalizeWaterBuoyancy, normalizeWaterRemoval, WATER_REMOVAL_SHAPES, waterKindForClass } from "@babylonslate/core";
 import { humanizePropertyLabel } from "@babylonslate/editor-kit";
 import { isOverlayLayoutClass } from "@babylonslate/core";
@@ -102,6 +103,8 @@ export type ComponentPropertyContext = {
   onPickAsset: (request: AssetPickRequest) => void;
   actorLabel?: (actorId: string) => string | undefined;
   actorComponents?: (actorId: string) => readonly SerializedComponent[];
+  actorVariableNames?: (actorId: string) => readonly string[];
+  componentVariableNames?: (classId: string) => readonly string[];
   onPickActor?: (componentId: string) => void;
   focusTargets?: readonly { value: string; label: string }[];
 };
@@ -494,6 +497,7 @@ export function componentPropertyRows(
   update: (property: string, value: unknown) => void,
   context: ComponentPropertyContext,
 ): PropertyRow[] {
+  if (component.classId === "SaveGameComponent") return saveGamePropertyRows(actorId, component, update, context);
   if (isOverlayLayoutClass(component.classId)) return overlayLayoutPropertyRows(actorId, component, update);
   if (component.classId === "SplineComponent") {
     const spline = parseSplineProperties(component.properties);
