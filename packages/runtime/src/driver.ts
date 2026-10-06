@@ -2243,7 +2243,7 @@ class InProcessRuntime implements RuntimeDriver {
     // can reopen a text editor after Tab without inventing another focus order.
     if (focused && isUIControl2DClass(focused.classId) && slotId !== undefined) {
       this.emit({ type: "setUIControl2D", slotId, componentId: focused.guid,
-        uiControl: { classId: focused.classId, properties: this.uiControls.payload(focused) }, focused: true });
+        uiControl: { classId: focused.classId, properties: this.uiControls.payload(focused) }, focused: true, beginEditing: true });
     }
   }
 

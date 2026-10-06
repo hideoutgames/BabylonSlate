@@ -9,7 +9,7 @@ export type SceneLayerControlEvent = {
   value?: number | boolean | string; secondaryValue?: number;
 };
 type Target = { visual: UIControl2DMesh; layer: SceneLayerView; actorGuid: string; componentId: string };
-type Capture = Target & { rangeThumb: "lower" | "upper"; x: number; y: number; startX: number; startY: number; selectionAnchor?: number };
+type Capture = Target & { rangeThumb: "lower" | "upper" | null; x: number; y: number; startX: number; startY: number; selectionAnchor?: number };
 
 /** SceneLayer control capture plus an invisible native editor for IME/mobile keyboards. */
 export class UIControls2DInput {
@@ -25,13 +25,15 @@ export class UIControls2DInput {
   private readonly size: () => { width: number; height: number };
   private readonly emit: (event: SceneLayerControlEvent) => void;
   private readonly canvas?: HTMLCanvasElement;
+  private readonly navigate?: (reverse: boolean) => void;
 
   constructor(
     layers: () => readonly SceneLayerView[],
     size: () => { width: number; height: number },
     emit: (event: SceneLayerControlEvent) => void,
     canvas?: HTMLCanvasElement,
-  ) { this.layers = layers; this.size = size; this.emit = emit; this.canvas = canvas; }
+    navigate?: (reverse: boolean) => void,
+  ) { this.layers = layers; this.size = size; this.emit = emit; this.canvas = canvas; this.navigate = navigate; }
 
   owns(pointerId: number): boolean { return this.captures.has(pointerId) || this.ignoredPointers.has(pointerId); }
 
@@ -103,7 +105,11 @@ export class UIControls2DInput {
       if (!local) return true;
       const p = visual.properties;
       const sampled = uiControl2DValueAt(local.x, local.y, p);
-      const rangeThumb = Math.abs(sampled - p.lowerValue) <= Math.abs(sampled - p.upperValue) ? "lower" : "upper";
+      // Coincident handles have no nearest thumb. Leave an exact hit undecided
+      // until movement establishes which side of the interval should expand.
+      const rangeThumb = p.lowerValue === p.upperValue
+        ? sampled > p.upperValue ? "upper" : sampled < p.lowerValue ? "lower" : null
+        : Math.abs(sampled - p.lowerValue) <= Math.abs(sampled - p.upperValue) ? "lower" : "upper";
       const capture: Capture = { ...target, rangeThumb, x, y, startX: x, startY: y };
       this.captures.set(pointerId, capture);
       if (visual.classId === "2DSliderComponent" || visual.classId === "2DRangeSliderComponent") this.move(pointerId, x, y);
@@ -139,6 +145,10 @@ export class UIControls2DInput {
     const value = uiControl2DValueAt(local.x, local.y, p);
     if (capture.visual.classId === "2DSliderComponent") this.change(capture, value);
     else if (capture.visual.classId === "2DRangeSliderComponent") {
+      if (capture.rangeThumb === null) {
+        if (value === p.lowerValue) return true;
+        capture.rangeThumb = value > p.upperValue ? "upper" : "lower";
+      }
       this.change(capture, capture.rangeThumb === "lower" ? Math.min(value, p.upperValue) : p.lowerValue,
         capture.rangeThumb === "upper" ? Math.max(value, p.lowerValue) : p.upperValue);
     }
@@ -186,12 +196,15 @@ export class UIControls2DInput {
   }
 
   /** Graph/gamepad focus is authoritative and must not echo another focus event. */
-  syncFocus(mesh: Mesh, focused: boolean): void {
+  syncFocus(mesh: Mesh, focused: boolean, beginEditing = false): void {
     if (this.synchronizingFocus) return;
     const visual = uiControl2DMesh(mesh);
     const layer = this.layers().find(entry => entry.scene === mesh.getScene());
     if (!visual || !layer) return;
-    if (focused === (this.focused?.visual === visual)) return;
+    if (focused === (this.focused?.visual === visual)) {
+      if (focused && beginEditing && this.focused && ["2DTextInputComponent", "2DNumericInputComponent"].includes(visual.classId)) this.openEditor(this.focused);
+      return;
+    }
     if (!focused && this.focused?.visual !== visual) return;
     this.synchronizingFocus = true;
     try {
@@ -201,24 +214,22 @@ export class UIControls2DInput {
       }
       this.focused = focused ? { visual, layer, actorGuid: String(mesh.metadata?.overlayActorGuid ?? ""), componentId: String(mesh.metadata?.overlayControlComponentId ?? "") } : null;
       visual.setFocused(focused);
+      if (focused && beginEditing && this.focused && ["2DTextInputComponent", "2DNumericInputComponent"].includes(visual.classId)) this.openEditor(this.focused);
     } finally { this.synchronizingFocus = false; }
   }
 
   keyDown(event: Pick<KeyboardEvent, "key" | "shiftKey" | "preventDefault" | "stopPropagation">): boolean {
     if (event.key === "Tab") {
-      const targets: Target[] = [];
-      for (const layer of this.layers()) for (const mesh of layer.scene.meshes) {
-        const visual = uiControl2DMesh(mesh);
-        const actorGuid = mesh.metadata?.overlayActorGuid;
-        const componentId = mesh.metadata?.overlayControlComponentId;
-        if (!visual || !actorGuid || !componentId || visual.classId === "2DProgressBarComponent") continue;
-        const target = { visual, layer, actorGuid: String(actorGuid), componentId: String(componentId) };
-        if (this.usable(target)) targets.push(target);
+      if (!this.navigate) return false;
+      this.closeEditor(true);
+      if (this.focused && !this.focused.visual.mesh.isDisposed()) {
+        this.focused.visual.setExpanded(false); this.focused.visual.setFocused(false);
       }
-      if (!targets.length) return false;
-      const index = targets.findIndex(target => target.visual === this.focused?.visual);
-      this.focus(targets[(index + (event.shiftKey ? -1 : 1) + targets.length) % targets.length]!);
-      if (this.focused && ["2DTextInputComponent", "2DNumericInputComponent"].includes(this.focused.visual.classId)) this.openEditor(this.focused);
+      // Keep the simulation's current candidate for ordered navigation, while
+      // withholding local edits until its authoritative focus response arrives.
+      this.focused = null;
+      this.canvas?.focus({ preventScroll: true });
+      this.navigate(event.shiftKey);
     } else {
       const target = this.focused;
       if (!target || !this.usable(target)) return false;

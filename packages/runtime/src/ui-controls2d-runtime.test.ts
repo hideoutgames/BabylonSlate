@@ -108,6 +108,37 @@ describe("SceneLayer control state", () => {
 });
 
 describe("SceneLayer control runtime integration", () => {
+  it("routes Tab through authoritative mixed control/button candidates and acknowledges unchanged text focus", () => {
+    const background = createDefaultSceneLayer();
+    background.actors = [createActor("background", "Background", { classId: "SceneLayerActor", components: [
+      { id: "background-input", classId: "2DTextInputComponent", properties: {} },
+    ] })];
+    const modal = createDefaultSceneLayer();
+    modal.actors = [createActor("modal", "Modal", { classId: "SceneLayerActor", components: [
+      { id: "button", classId: "2DButtonComponent", properties: {} },
+      { id: "excluded", classId: "2DTextInputComponent", properties: { focusEnabled: false } },
+      { id: "input", classId: "2DTextInputComponent", properties: {} },
+    ] })];
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, seedDemoActors: false,
+      playScene: createDefaultScene(), sceneLayerLibrary: { background, modal }, onCommand: (command) => commands.push(command) });
+    try {
+      runtime.realizePlayWorld(); runtime.createSceneLayer("background"); runtime.createSceneLayer("modal", 1);
+      const focused = () => runtime.getWorld().getActors().flatMap((actor) => actor.components).filter((component) => component.getVariable("focused") === true).map((component) => component.sourceId ?? component.guid);
+      runtime.applySceneLayerFocusNavigate(false);
+      expect(focused()).toEqual(["button"]);
+      runtime.applySceneLayerFocusNavigate(false);
+      expect(focused()).toEqual(["input"]);
+      runtime.applySceneLayerFocusNavigate(false);
+      expect(focused()).toEqual(["input"]);
+      const acknowledgements = commands.filter((command) => command.type === "setUIControl2D" && command.beginEditing);
+      expect(acknowledgements).toHaveLength(2);
+      expect(acknowledgements.at(-1)).toMatchObject({ componentId: "input", focused: true });
+      runtime.applySceneLayerFocusNavigate(true);
+      expect(focused()).toEqual(["button"]);
+    } finally { runtime.stop(); }
+  });
+
   it("reconciles authored radio conflicts before visual assignment, including disabled selections and isolated groups", () => {
     const layer = createDefaultSceneLayer();
     layer.actors = [createActor("radios", "Radios", { classId: "SceneLayerActor", components: [

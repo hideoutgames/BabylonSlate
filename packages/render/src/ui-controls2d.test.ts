@@ -73,6 +73,35 @@ describe("SceneLayer controls", () => {
     expect([visual.properties.lowerValue, visual.properties.upperValue]).toEqual([7, 8]);
   });
 
+  it.each([
+    { value: 0, start: 350, move: 425, expected: [0, 8] },
+    { value: 10, start: 450, move: 375, expected: [3, 10] },
+    { value: 5, start: 400, move: 375, expected: [3, 5] },
+  ])("expands coincident range handles at $value in the first drag direction", ({ value, start, move, expected }) => {
+    const { input, visual, hits } = setup("2DRangeSliderComponent", { lowerValue: value, upperValue: value });
+    input.down(1, hits(), start, 225);
+    expect([visual.properties.lowerValue, visual.properties.upperValue]).toEqual([value, value]);
+    input.move(1, move, 225); input.release(1);
+    expect([visual.properties.lowerValue, visual.properties.upperValue]).toEqual(expected);
+  });
+
+  it("withholds keyboard edits while Tab awaits an authoritative eligible focus target", () => {
+    const { compositor, visual } = setup("2DSliderComponent", { value: 3 });
+    const requests: boolean[] = [];
+    const changes: SceneLayerControlEvent[] = [];
+    const input = new UIControls2DInput(() => compositor.layers(), () => ({ width: 800, height: 450 }), event => changes.push(event), undefined, reverse => requests.push(reverse));
+    const key = (key: string, shiftKey = false) => input.keyDown({ key, shiftKey, preventDefault() {}, stopPropagation() {} });
+    input.syncFocus(visual.mesh, true);
+    expect(key("Tab", true)).toBe(true);
+    expect(requests).toEqual([true]);
+    expect(key("ArrowRight")).toBe(false);
+    expect(visual.properties.value).toBe(3);
+    expect(changes).toEqual([]);
+    input.syncFocus(visual.mesh, true);
+    key("ArrowRight");
+    expect(visual.properties.value).toBe(4);
+  });
+
   it.each(["2DCheckboxComponent", "2DToggleComponent", "2DRadioButtonComponent"])("changes %s once without a second activation request", classId => {
     const { input, visual, hits, events, key } = setup(classId);
     input.down(1, hits(), 400, 225); input.release(1);

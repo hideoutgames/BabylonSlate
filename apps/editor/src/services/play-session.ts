@@ -672,6 +672,11 @@ export function startPlaySession(options: {
       if (worker) worker.postControl(control);
       else runtime?.applySceneLayerControl(control);
     },
+    onSceneLayerFocusNavigate: (reverse) => {
+      const control = { type: "sceneLayerFocusNavigate" as const, reverse };
+      if (worker) worker.postControl(control);
+      else runtime?.applySceneLayerFocusNavigate(reverse);
+    },
     onSceneLayerPointer: (event) => {
       const control = { type: "sceneLayerPointer" as const, ...event };
       if (worker) worker.postControl(control);

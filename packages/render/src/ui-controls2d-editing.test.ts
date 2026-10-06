@@ -10,7 +10,7 @@ const dispose: Array<() => void> = [];
 beforeEach(() => { vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null); });
 afterEach(() => { for (const cleanup of dispose.splice(0).reverse()) cleanup(); document.body.replaceChildren(); vi.restoreAllMocks(); });
 
-function editing(classId = "2DTextInputComponent") {
+function editing(classId = "2DTextInputComponent", navigate?: (reverse: boolean) => void) {
   const engine = new NullEngine({ renderWidth: 800, renderHeight: 450, textureSize: 512, deterministicLockstep: false, lockstepMaxSteps: 4 });
   dispose.push(() => engine.dispose());
   const compositor = new SceneLayerCompositor({ engine });
@@ -19,7 +19,7 @@ function editing(classId = "2DTextInputComponent") {
   mesh.metadata = { ...mesh.metadata, overlayActorGuid: "actor" };
   const canvas = document.createElement("canvas"); canvas.tabIndex = 0; document.body.append(canvas);
   const events: SceneLayerControlEvent[] = [];
-  const input = new UIControls2DInput(() => compositor.layers(), () => ({ width: 800, height: 450 }), event => events.push(event), canvas);
+  const input = new UIControls2DInput(() => compositor.layers(), () => ({ width: 800, height: 450 }), event => events.push(event), canvas, navigate);
   dispose.push(() => input.reset());
   input.down(1, [{ layerId: "controls", actorGuid: "actor", componentId: "field", controlMeshName: "control", hitTest: "block" }], 400, 225);
   input.release(1);
@@ -72,4 +72,16 @@ it("shows a numeric editing draft and cancels it without publishing a value", ()
   expect(renderedText()).toBe("12");
   expect(events.some(event => event.action === "change")).toBe(false);
   expect(document.querySelector("[data-testid=scene-layer-native-input]")).toBeNull();
+});
+
+it("reopens a text editor only after authoritative Tab focus acknowledges an eligible input", () => {
+  const requests: boolean[] = [];
+  const { native, visual, input } = editing("2DTextInputComponent", reverse => requests.push(reverse));
+  native.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab" }));
+  expect(requests).toEqual([false]);
+  expect(document.querySelector("[data-testid=scene-layer-native-input]")).toBeNull();
+  expect(visual.focused).toBe(false);
+  input.syncFocus(visual.mesh, true, true);
+  expect(document.querySelector<HTMLInputElement>("[data-testid=scene-layer-native-input]")?.value).toBe("ABCD");
+  expect(visual.focused).toBe(true);
 });

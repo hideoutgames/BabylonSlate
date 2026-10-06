@@ -204,6 +204,7 @@ export type ControlMessage =
   | { type: "setPaused"; paused: boolean }
   | { type: "console"; line: string }
   | { type: "inspect" }
+  | { type: "sceneLayerFocusNavigate"; reverse: boolean }
   | {
       type: "sceneLayerControl";
       layerId: string;
@@ -343,7 +344,7 @@ export type DebugBehaviourTree = {
 };
 
 export type CommandMessage =
-  | { type: "setUIControl2D"; slotId: number; componentId: string; uiControl: { classId: string; properties: import("@babylonslate/core").UIControl2DProperties }; focused?: boolean }
+  | { type: "setUIControl2D"; slotId: number; componentId: string; uiControl: { classId: string; properties: import("@babylonslate/core").UIControl2DProperties }; focused?: boolean; beginEditing?: boolean }
   | { type: "setPainter2D"; slotId: number; componentId: string; painter: import("@babylonslate/core").Painter2DProperties }
   | { type: "dynamicMeshUpdate"; meshId: number; update: import("@babylonslate/core").DynamicMeshUpdate }
   /** Cable records: ID, count, start/end actor slots, two actor-local anchors, world xyz particles. */
