@@ -119,6 +119,8 @@ New Game and Load Game preserve the identity of the record returned by Get Save 
 
 **Project Settings → Save Games** manages preview save data. Select a profile/slot to inspect, export, or delete it; import a save to test recovery. **Reset Preview Saves** removes local test saves in the editor namespace. **Wipe Preview Saves On Play** supports repeatable playtesting. These controls must not erase the exported player's namespace.
 
+Reset remains available when the default definition is missing or invalid. Inspection and import require a valid definition.
+
 Preview Build forwards save storage requests to the editor host, so it shares Overlay Play's preview slots and reset controls on web, Electron, and Capacitor. Its iframe uses a scoped session bridge instead of independently selecting a storage backend.
 
 Inspection does not run game scripts or custom migrations. Inspect a save requiring those migrations in Play; the manager can still export a structurally valid older save for backup.
@@ -143,7 +145,7 @@ The current exporter produces a web player. Electron and Capacitor package the e
 
 ## Verification coverage
 
-Automated checks below passed in the implementation workspace. Runtime, save-node catalog, save manager, and scoped core/runtime/editor TypeScript checks were last confirmed at revision `31610d712`. Browser validation remains a separate pending check.
+Automated checks below passed in the implementation workspace. Runtime, save-node catalog, save manager, and scoped core/runtime/editor TypeScript checks were confirmed at revision `31610d712`. Browser checks used Chromium 151 on Linux, Playwright browser controls, and screenshot review; a dedicated Computer Use tool was unavailable. Browser revisions are recorded below; the final editor-tested tree is published as `142e0d7d3`.
 
 | Coverage | Status | Evidence / limits |
 | --- | --- | --- |
@@ -152,7 +154,9 @@ Automated checks below passed in the implementation workspace. Runtime, save-nod
 | Editor definition/default selection and save tools | Passed automated checks | [Definition panels](../apps/editor/src/panels/save-game-panels.test.tsx), [save manager](../apps/editor/src/components/project-save-games-settings.test.tsx), and [typed-node catalog](../apps/editor/src/lib/save-game-catalog.test.ts); manager/catalog rerun at `31610d712`. |
 | Preview iframe storage routing and isolation | Passed automated checks | [Preview bridge tests](../packages/exporter/src/preview-save-storage.test.ts): shared host storage, preview reset, namespace restrictions, trusted messages and reload cleanup. |
 | Packed-player save/load and worker storage routing | Passed automated checks | [Player boot tests](../apps/player/src/boot.test.ts): in-process restart and worker RPC with injected storage; browser OPFS round trip remains separate. |
-| Browser authoring, Overlay Play, Preview Build, and exported web player | Pending | Computer Use workflow and actual exported-player OPFS round trip not yet recorded. |
+| Browser definition authoring and touch layout | Passed browser checks | [Workflow tests](../e2e/save-game-workflow.spec.ts): desktop and iPad-landscape Chromium coarse-input emulation; screenshots reviewed. Revision `30fe2278f`, identical tree published as `142e0d7d3`. |
+| Overlay Play and Preview Build storage parity | Passed browser checks | [Parity tests](../e2e/save-game-parity.spec.ts): two Play sessions restored counts 1 then 2; Preview Build continued at 3. Revision `30fe2278f`. |
+| Packed and loose exported web players | Passed browser checks | [Parity tests](../e2e/save-game-parity.spec.ts): OPFS cold reload in both formats; packed player also verified two same-origin tabs committing sequences 3/4 and checksum-corruption fallback preserving previous bytes. Revision `e5e6fe057`. |
 | Web and mobile storage adapter contracts | Passed automated checks | [Adapter tests](../packages/vfs/src/save-game-storage.test.ts) use browser/native filesystem boundary doubles; these do not qualify installed browsers or devices. |
 | Linux Node filesystem and desktop IPC | Passed automated checks | [Node filesystem tests](../packages/vfs/src/save-game-node.test.ts), [desktop lease tests](../apps/desktop/src/desktop-save-games.test.ts), and [IPC security tests](../apps/desktop/src/packaged-security.test.ts). |
 | Installed Windows/macOS/Linux native applications | Unverified | Linux Node filesystem evidence does not qualify packaged native apps or other operating systems. |
