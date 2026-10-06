@@ -8,7 +8,7 @@ import { remapRenderTargetPayloadGuids } from "../render-target-payload";
 import { remapDataPayloadGuids, type DataDefinitionFieldsResolver } from "../data-asset-refs";
 import type { ImportResult } from "./types";
 
-const DATA_TYPES = new Set(["DataDefinition", "DataSheet", "Structure", "Enum"]);
+const DATA_TYPES = new Set(["DataDefinition", "DataTree", "Structure", "Enum"]);
 
 function remapDocumentPayload(type: string, payload: Record<string, unknown>, remap: ReadonlyMap<string, string>, definitionFields: DataDefinitionFieldsResolver): Record<string, unknown> {
   if (DATA_TYPES.has(type)) return remapDataPayloadGuids(type, payload, remap, definitionFields);
@@ -51,15 +51,15 @@ export function remapImportResultGuids(
   for (const result of results) {
     let payload = result.payload;
     const chunk = result.chunks.find((entry) => entry.id === "document");
-    if (chunk && (result.type === "DataDefinition" || result.type === "DataSheet" || result.type === "Structure")) {
+    if (chunk && (result.type === "DataDefinition" || result.type === "Structure")) {
       try {
         const document: unknown = JSON.parse(new TextDecoder().decode(chunk.data));
         if (document && typeof document === "object" && !Array.isArray(document)) payload = document as Record<string, unknown>;
       }
       catch { /* An unreadable document is handled by its normal import validation. */ }
     }
-    if (result.type === "DataObject" || (result.type === "DataSheet" && ("objectGuids" in payload || "structureGuid" in payload))) {
-      throw new Error("Legacy Data Object or reference-based Data Sheet assets cannot be imported with GUID collisions. Their original files have not been changed.");
+    if (result.type === "DataObject" || result.type === "DataSheet") {
+      throw new Error("Historical Data Object and Data Sheet assets cannot be imported with GUID collisions. Their original files have not been changed.");
     }
     if ((result.type === "DataDefinition" || result.type === "Structure") && Array.isArray(payload.fields)) definitions.set(result.guid, payload.fields);
   }

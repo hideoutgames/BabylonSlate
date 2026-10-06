@@ -6,7 +6,7 @@ import { subclassClassEntries } from "./component-property-rows";
 
 const TYPE_KINDS = ["data-definition", "structure", "enum"] as const;
 
-/** Live schema and picker indexes shared by data definitions and sheet editors. */
+/** Live schema and picker indexes shared by Data Definition and Data Tree editors. */
 export function useDataCatalog() {
   const { assetRegistry, registryEpoch } = useDocuments();
   const typeDocuments = useOpenDocumentsOfKinds(TYPE_KINDS);

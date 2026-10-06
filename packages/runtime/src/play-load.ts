@@ -118,11 +118,14 @@ export function runtimeOptionsFromLoadControl(
 export function createRuntimeFromLoad(
   msg: PlayLoadControl,
   onCommand: (command: CommandMessage) => void,
+  saveGameStorage?: import("@babylonslate/core").SaveGameStorage,
 ): RuntimeDriver {
-  return createInProcessRuntime({
+  const runtime = createInProcessRuntime({
     ...runtimeOptionsFromLoadControl(msg),
     onCommand,
   });
+  if (msg.saveGame && saveGameStorage) runtime.configureSaveGame({ ...msg.saveGame, storage: saveGameStorage });
+  return runtime;
 }
 
 const NON_ACTOR_SCRIPT_CLASS_IDS = new Set([

@@ -106,6 +106,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     typeSchemas,
     hierarchy,
     inputAssets,
+    saveGameDefinition,
     materialDomains,
     dataAssets,
   } = useGraphPanelCatalogs();
@@ -282,6 +283,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
   ]);
 
   const paletteInput = {
+    saveGameDefinition,
     inputAssets,
     parentClass,
     parentOf,

@@ -1,7 +1,8 @@
+import { SaveGameFieldsPanel, SaveGameDefinitionPanel } from "../panels/save-game-panels";
 import { WaterDetailsPanel, WaterPreviewPanel } from "../panels/water-panels";
 import { RenderTargetDetailsPanel, RenderTargetTextureDetailsPanel } from "../panels/render-target-panels";
 import { InputBindingsPanel, InputBindingDetailsPanel } from "../panels/input-asset-panels";
-import { DataSheetRowsPanel, DataSheetValuesPanel, DataSheetValidationPanel } from "../panels/data-asset-panels";
+import { DataTreeHierarchyPanel, DataTreeEntriesPanel, DataTreeValuesPanel, DataTreeValidationPanel } from "../panels/data-asset-panels";
 import { DataDefinitionFieldsPanel } from "../panels/data-definition-panel";
 import type { IDockviewPanelProps } from "dockview-react";
 import { ViewportPanel } from "../panels/viewport-panel";
@@ -117,6 +118,8 @@ import {
 } from "../components/trace-editor";
 
 export const panelComponents = {
+  "save-game-fields": (props: IDockviewPanelProps) => <SaveGameFieldsPanel {...props} />,
+  "save-game-definition": (props: IDockviewPanelProps) => <SaveGameDefinitionPanel {...props} />,
   viewport: (props: IDockviewPanelProps) => <ViewportPanel {...props} />,
   graph: (props: IDockviewPanelProps) => <GraphPanel {...props} />,
   inspector: (props: IDockviewPanelProps) => <InspectorPanel {...props} />,
@@ -217,9 +220,10 @@ export const panelComponents = {
   "input-bindings": (props: IDockviewPanelProps) => <InputBindingsPanel {...props} />,
   "input-details": (props: IDockviewPanelProps) => <InputBindingDetailsPanel {...props} />,
   "data-definition-fields": (props: IDockviewPanelProps) => <DataDefinitionFieldsPanel {...props} />,
-  "data-sheet-values": (props: IDockviewPanelProps) => <DataSheetValuesPanel {...props} />,
-  "data-sheet-validation": (props: IDockviewPanelProps) => <DataSheetValidationPanel {...props} />,
-  "data-sheet-rows": (props: IDockviewPanelProps) => <DataSheetRowsPanel {...props} />,
+  "data-tree-hierarchy": (props: IDockviewPanelProps) => <DataTreeHierarchyPanel {...props} />,
+  "data-tree-values": (props: IDockviewPanelProps) => <DataTreeValuesPanel {...props} />,
+  "data-tree-validation": (props: IDockviewPanelProps) => <DataTreeValidationPanel {...props} />,
+  "data-tree-entries": (props: IDockviewPanelProps) => <DataTreeEntriesPanel {...props} />,
   "audio-mixer-details": (props: IDockviewPanelProps) => (
     <AudioMixerDetailsPanel {...props} />
   ),

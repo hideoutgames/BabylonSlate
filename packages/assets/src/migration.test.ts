@@ -4,18 +4,19 @@ import { createDefaultMigrationRegistry } from "./migration";
 import { loadPayloadWithMigration } from "./migrate-on-load";
 
 describe("Data asset schema versions", () => {
-  it("versions definitions and owned rows without converting legacy reference-based sheets", () => {
+  it("versions definitions and trees without converting historical sheets", () => {
     const registry = createDefaultMigrationRegistry();
     const definition = registry.migrate("DataDefinition", 0, { kind: "dataDefinition", fields: [{ id: "damage", name: "Damage", typeId: "float", defaultValue: 10 }] });
     expect(definition).toMatchObject({ migrated: true, version: 1, payload: { kind: "dataDefinition", fields: [{ id: "damage", defaultValue: 10 }] } });
-    const sheet = { kind: "dataSheet", definitionGuid: "weapon", rows: [{ id: "sword", name: "Sword", values: { Damage: 10, Retired: "keep" } }] };
-    expect(registry.migrate("DataSheet", 0, sheet)).toEqual({ payload: sheet, version: 2, migrated: true });
-    expect(registry.migrate("DataSheet", 2, sheet).migrated).toBe(false);
+    const tree = { kind: "dataTree", defaultDefinitionGuid: "weapon", entries: [{ id: "swords", parentId: null, name: "Swords", values: {} }, { id: "sword", parentId: "swords", name: "Sword", definitionGuid: null, values: { Damage: 10, Retired: "keep" } }] };
+    expect(registry.migrate("DataTree", 0, tree)).toEqual({ payload: tree, version: 1, migrated: true });
+    expect(registry.migrate("DataTree", 1, tree).migrated).toBe(false);
     const legacy = { kind: "dataSheet", structureGuid: "weapon", objectGuids: ["sword"] };
-    expect(() => registry.migrate("DataSheet", 1, legacy)).toThrow(/Legacy/);
+    expect(() => registry.migrate("DataTree", 0, legacy)).toThrow(/Historical/);
+    expect(() => registry.migrate("DataTree", 0, { kind: "dataSheet", definitionGuid: "weapon", rows: [] })).toThrow(/Historical/);
     expect(legacy.objectGuids).toEqual(["sword"]);
     expect(() => registry.migrate("DataDefinition", 0, { kind: "dataObject", values: { Damage: 10 } })).toThrow();
-    expect(() => registry.migrate("DataSheet", 3, {})).toThrow(/newer engine version/);
+    expect(() => registry.migrate("DataTree", 2, {})).toThrow(/newer engine version/);
   });
 });
 
@@ -141,5 +142,17 @@ describe("ParticleGraph schema version", () => {
     expect(loaded.payload.nodes).toEqual([
       expect.objectContaining({ type: "particle.output" }),
     ]);
+  });
+});
+
+
+describe("Save Game definition asset format", () => {
+  it("keeps gameplay schema versions separate from the asset format and refuses future formats", () => {
+    const registry = createDefaultMigrationRegistry();
+    const payload = { id: "player-progress", schemaVersion: 7, fields: [{ id: "stable-score", name: "Coins", type: "int", defaultValue: 0 }] };
+    const loaded = loadPayloadWithMigration(registry, { type: "SaveGame", version: 1, payload, path: "assets/Progress.savegame.babasset" });
+    expect(loaded.pending).toBeNull();
+    expect(loaded.payload).toEqual(payload);
+    expect(() => loadPayloadWithMigration(registry, { type: "SaveGame", version: 2, payload, path: "assets/Progress.savegame.babasset" })).toThrow(/newer engine/);
   });
 });

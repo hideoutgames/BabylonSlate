@@ -16,6 +16,25 @@ export interface ElectronUserDataBridge {
   writeSettings(json: string): Promise<void>;
 }
 
+/** Structured IPC failures preserve quota and I/O categories across Electron serialization. */
+export type SaveGameBridgeResult<T> = { ok: true; value: T } | {
+  ok: false; error: { name: string; message: string; code?: string };
+};
+
+export interface ElectronSaveGameBridge {
+  read(key: string): Promise<SaveGameBridgeResult<string | null>>;
+  write(key: string, text: string): Promise<SaveGameBridgeResult<void>>;
+  remove(key: string): Promise<SaveGameBridgeResult<void>>;
+  list(prefix: string): Promise<SaveGameBridgeResult<string[]>>;
+  acquireLock(key: string): Promise<SaveGameBridgeResult<string>>;
+  releaseLock(token: string): Promise<SaveGameBridgeResult<void>>;
+}
+
+export function getElectronSaveGameBridge(): ElectronSaveGameBridge | null {
+  const host = globalThis as { babylonslate?: { saveGames?: ElectronSaveGameBridge } };
+  return host.babylonslate?.saveGames ?? null;
+}
+
 export interface ElectronSecretsBridge {
   get(key: string): Promise<string | null>;
   set(key: string, value: string): Promise<void>;

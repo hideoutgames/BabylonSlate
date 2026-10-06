@@ -1,18 +1,20 @@
 import {
-  createDataSheetRow,
+  createDataTreeEntry,
+  buildDataTreeIndex,
   type DataFieldSnapshot,
-  type DataSheetRow,
-  type DataSheetAsset,
+  type DataTreeEntry,
+  type DataTreeAsset,
   type DataDefinitionAsset,
   type DataDefinitionField,
 } from "@babylonslate/core";
 import type { StructField } from "./type-assets";
-import { defaultValueForMember, mergeEngineTypeSchemas, structInstanceDefault, type StructSchema, type TypeSchemas } from "./type-defaults";
+import { defaultValueForMember, mergeEngineTypeSchemas, structInstanceDefaultWithSchema, type StructSchema, type TypeSchemas } from "./type-defaults";
 import { ENGINE_STRUCTS } from "./engine-types";
+import { projectStoredDataDefault } from "./data-default-projection";
 
 export interface DataValidationIssue {
   code: string;
-  rowId?: string;
+  entryId?: string;
   severity: "error" | "warning";
   /** Dot-separated field names, or an empty string for the whole asset. */
   path: string;
@@ -75,16 +77,43 @@ export function dataFieldIdentity(field: Pick<StructField, "id" | "name">): stri
   return field.id || `legacy:${field.name}`;
 }
 
+/** Snapshot only nested records which own values, never all paths through a schema DAG. */
 export function snapshotDataFields(
   fields: readonly StructField[],
+  values: Record<string, unknown>,
   schemas?: TypeSchemas,
   visiting: ReadonlySet<string> = new Set(),
 ): DataFieldSnapshot[] {
+  return snapshotFieldRecords(fields, [values], schemas, visiting);
+}
+
+function snapshotFieldRecords(
+  fields: readonly StructField[],
+  records: readonly Record<string, unknown>[],
+  schemas: TypeSchemas | undefined,
+  visiting: ReadonlySet<string>,
+): DataFieldSnapshot[] {
   if (visiting.size > 64) return [];
   return fields.map((field) => {
-    const nested = field.typeId === "struct" && field.typeClassId &&
+    const values: Record<string, unknown>[] = [];
+    const keys: Record<string, unknown>[] = [];
+    if (field.typeId === "struct" || (field.container === "map" && field.keyTypeId === "struct")) {
+      for (const owner of records) {
+        const value = own(owner, field.name) ? owner[field.name] : undefined;
+        if (field.container === "array") {
+          if (Array.isArray(value)) for (const item of value) if (record(item)) values.push(item);
+        } else if (field.container === "map") {
+          if (Array.isArray(value)) for (const item of value) {
+            if (!record(item)) continue;
+            if (record(item.value)) values.push(item.value);
+            if (record(item.key)) keys.push(item.key);
+          }
+        } else if (record(value)) values.push(value);
+      }
+    }
+    const nested = values.length > 0 && field.typeId === "struct" && field.typeClassId &&
       !visiting.has(field.typeClassId) ? structureSchema(schemas, field.typeClassId) : undefined;
-    const keyNested = field.container === "map" && field.keyTypeId === "struct" && field.keyTypeClassId &&
+    const keyNested = keys.length > 0 && field.container === "map" && field.keyTypeId === "struct" && field.keyTypeClassId &&
       !visiting.has(field.keyTypeClassId) ? structureSchema(schemas, field.keyTypeClassId) : undefined;
     return {
       id: dataFieldIdentity(field),
@@ -95,29 +124,45 @@ export function snapshotDataFields(
       ...(field.keyTypeId ? { keyTypeId: field.keyTypeId } : {}),
       ...(field.keyTypeClassId ? { keyTypeClassId: field.keyTypeClassId } : {}),
       ...(nested ? {
-        fields: snapshotDataFields(nested.fields, schemas, new Set([...visiting, field.typeClassId!])),
+        fields: snapshotFieldRecords(nested.fields, values, schemas, new Set([...visiting, field.typeClassId!])),
       } : {}),
       ...(keyNested ? {
-        keyFields: snapshotDataFields(keyNested.fields, schemas, new Set([...visiting, field.keyTypeClassId!])),
+        keyFields: snapshotFieldRecords(keyNested.fields, keys, schemas, new Set([...visiting, field.keyTypeClassId!])),
       } : {}),
     };
   });
 }
 
 /** Defaults are copied once; later schema default edits never change this record. */
-export function createDataRowForDefinition(
+export function createDataEntryForDefinition(
   definitionGuid: string,
   fields: readonly StructField[],
   schemas?: TypeSchemas,
   name = "New Entry",
   id?: string,
-): DataSheetRow {
-  return createDataSheetRow(
-    name,
-    serializeDataRowValues(structInstanceDefault(fields, schemas, new Set([definitionGuid])), fields, schemas),
-    snapshotDataFields(fields, schemas, new Set([definitionGuid])),
-    id,
-  );
+  parentId: string | null = null,
+): DataTreeEntry {
+  const defaults = structInstanceDefaultWithSchema(fields, schemas, new Set([definitionGuid]));
+  return createDataTreeEntry({
+    name, id, parentId, definitionGuid,
+    values: serializeDataEntryValues(defaults.values, fields, schemas),
+    schema: defaults.schema,
+  });
+}
+
+/** Project a stored default without adopting new defaults or dropping retained data. */
+export function reconcileDataDefinitionDefault(field: DataDefinitionField, schemas?: TypeSchemas): DataDefinitionField {
+  if (field.defaultValue === undefined) return field;
+  const result = projectStoredDataDefault(field, field.defaultValue, schemas);
+  if (result.conflict) return field;
+  const base = { ...field };
+  delete base.fields;
+  delete base.keyFields;
+  return {
+    ...base, defaultValue: structuredClone(result.value),
+    ...(result.snapshot.fields ? { fields: structuredClone(result.snapshot.fields) } : {}),
+    ...(result.snapshot.keyFields ? { keyFields: structuredClone(result.snapshot.keyFields) } : {}),
+  };
 }
 
 function issue(
@@ -261,7 +306,7 @@ function validateFieldValue(
 }
 
 /** Convert typed runtime Maps to portable entries before authoring/validation. */
-export function serializeDataRowValues(
+export function serializeDataEntryValues(
   values: Record<string, unknown>, fields: readonly StructField[], schemas?: TypeSchemas,
 ): Record<string, unknown> {
   const plain = (value: unknown): value is Record<string, unknown> => record(value) &&
@@ -376,7 +421,7 @@ function projectFields(
   return Object.fromEntries(entries);
 }
 
-function inspectDataRow(row: DataSheetRow, definitionGuid: string | null, schemas: TypeSchemas, options: DataValidationOptions): {
+function inspectDataEntry(row: DataTreeEntry, definitionGuid: string | null, schemas: TypeSchemas, options: DataValidationOptions): {
   values: Record<string, unknown>; issues: DataValidationIssue[];
 } {
   const issues: DataValidationIssue[] = [];
@@ -387,19 +432,25 @@ function inspectDataRow(row: DataSheetRow, definitionGuid: string | null, schema
   validateSerializable(row.values, issues, "");
   const definition = schemaEntry(schemas.dataDefinitions, definitionGuid);
   if (!definition) {
-    issue(issues, "missing-definition", "", "Choose an existing Data Definition for this sheet.");
+    issue(issues, "missing-definition", "", "Choose an existing Data Definition for this entry.");
     return { values: {}, issues };
   }
   return { values: projectFields(definition.fields, row.schema ?? [], row.values, schemas, issues, options), issues };
 }
 
-export function validateDataRow(
-  row: DataSheetRow, definitionGuid: string | null, schemas: TypeSchemas, options: DataValidationOptions = {},
+export function validateDataEntry(
+  row: DataTreeEntry, definitionGuid: string | null, schemas: TypeSchemas, options: DataValidationOptions = {},
 ): DataValidationIssue[] {
-  return inspectDataRow(row, definitionGuid, schemas, options).issues.map((entry) => ({ ...entry, rowId: row.id }));
+  if (definitionGuid === null) {
+    const issues: DataValidationIssue[] = [];
+    if (!record(row.values)) issue(issues, "invalid-values", "", "Data entry values must be an object.");
+    else validateSerializable(row.values, issues, "");
+    return issues.map((entry) => ({ ...entry, entryId: row.id }));
+  }
+  return inspectDataEntry(row, definitionGuid, schemas, options).issues.map((entry) => ({ ...entry, entryId: row.id }));
 }
 
-/** Check the independent schema even before it has any sheet entries. */
+/** Check the independent schema even before it has any tree entries. */
 export function validateDataDefinition(
   definition: DataDefinitionAsset, schemas?: TypeSchemas, definitionGuid = "__data_definition__",
 ): DataValidationIssue[] {
@@ -408,6 +459,9 @@ export function validateDataDefinition(
     dataDefinitions: { ...schemas?.dataDefinitions, [definitionGuid]: { name: "Data Definition", fields: definition.fields } },
   });
   const issues: DataValidationIssue[] = [];
+  // Reused record schemas form a DAG: validate each clean subtree once at a
+  // given depth budget, while deeper uses must still check the nesting limit.
+  const validatedAtDepth = new Map<string, number>();
   const visit = (fields: readonly StructField[], path: string, visiting: ReadonlySet<string>, requiresIds: boolean): void => {
     fieldSources(fields, [], {}, issues, path);
     for (const field of fields) {
@@ -430,13 +484,17 @@ export function validateDataDefinition(
           issue(issues, "recursive-schema", typePath, "Nested Data Definitions cannot exceed 64 levels.");
           return;
         }
+        const depth = visiting.size + 1;
+        if ((validatedAtDepth.get(spec.typeClassId) ?? 0) >= depth) return;
+        const issueCount = issues.length;
         visit(nested.fields, typePath, new Set([...visiting, spec.typeClassId]), !!schemaEntry(available.dataDefinitions, spec.typeClassId));
+        if (!issues.slice(issueCount).some(entry => entry.severity === "error")) validatedAtDepth.set(spec.typeClassId, depth);
       };
       checkType(field, at);
       if (field.container === "map") checkType(mapKeyField(field), fieldPath(at, "key"));
       if (field.defaultValue !== undefined) {
         validateSerializable(field.defaultValue, issues, at);
-        projectFieldValue(field, undefined, field.defaultValue, available, issues, { allowEmptyRequired: true }, at, 0);
+        projectFieldValue(field, field as StructField & DataFieldSnapshot, field.defaultValue, available, issues, { allowEmptyRequired: true }, at, 0);
       }
     }
   };
@@ -444,30 +502,36 @@ export function validateDataDefinition(
   return issues;
 }
 
-export function validateDataSheet(
-  sheet: DataSheetAsset, schemas: TypeSchemas, options: DataValidationOptions = {},
+export function validateDataTree(
+  tree: DataTreeAsset, schemas: TypeSchemas, options: DataValidationOptions = {},
 ): DataValidationIssue[] {
+  const hierarchy = buildDataTreeIndex(tree);
+  if (!hierarchy.index) return hierarchy.issues;
   const issues: DataValidationIssue[] = [];
-  const ids = new Set<string>();
-  const names = new Set<string>();
-  for (const row of sheet.rows) {
-    if (!row.id.trim() || row.id.trim() !== row.id || ids.has(row.id)) issues.push({ code: "duplicate-row", severity: "error", path: "", rowId: row.id, message: "Entries need unique, non-empty identities without surrounding whitespace." });
-    ids.add(row.id);
-    if (!row.name.trim()) issues.push({ code: "missing-row-name", severity: "error", path: "", rowId: row.id, message: "Entry name cannot be empty." });
-    const name = row.name.trim().toLowerCase();
-    if (names.has(name)) issues.push({ code: "duplicate-row-name", severity: "error", path: "", rowId: row.id, message: "Entry names must be unique." });
-    names.add(name);
-    issues.push(...validateDataRow(row, sheet.definitionGuid, schemas, options));
-  }
-  if (!schemaEntry(schemas.dataDefinitions, sheet.definitionGuid) && sheet.rows.length === 0) {
-    issue(issues, "missing-definition", "", "Choose an existing Data Definition for this sheet.");
+  const definitions = new Map<string, DataValidationIssue[]>();
+  const checkDefinition = (guid: string): DataValidationIssue[] => {
+    const cached = definitions.get(guid);
+    if (cached) return cached;
+    const schema = schemaEntry(schemas.dataDefinitions, guid);
+    const result: DataValidationIssue[] = schema
+      ? validateDataDefinition({ kind: "dataDefinition", fields: schema.fields as DataDefinitionField[] }, schemas, guid)
+      : [{ code: "missing-definition", severity: "error", path: "", message: "Choose an existing Data Definition." }];
+    definitions.set(guid, result);
+    return result;
+  };
+  if (tree.defaultDefinitionGuid) issues.push(...checkDefinition(tree.defaultDefinitionGuid));
+  for (const entry of hierarchy.index.orderedEntries) {
+    const definitionGuid = hierarchy.index.effectiveDefinitionById.get(entry.id) ?? null;
+    if (definitionGuid !== null) issues.push(...checkDefinition(definitionGuid).map((issue) => ({ ...issue, entryId: entry.id })));
+    issues.push(...validateDataEntry(entry, definitionGuid, schemas, options));
   }
   return issues;
 }
 
 /** Detached, typed runtime value; invalid/missing authored fields fail explicitly. */
-export function resolveDataRowValues(row: DataSheetRow, definitionGuid: string | null, schemas: TypeSchemas): Record<string, unknown> | null {
-  const result = inspectDataRow(row, definitionGuid, schemas, {});
+export function resolveDataEntryValues(row: DataTreeEntry, definitionGuid: string | null, schemas: TypeSchemas): Record<string, unknown> | null {
+  if (definitionGuid === null) return null;
+  const result = inspectDataEntry(row, definitionGuid, schemas, {});
   return result.issues.some((entry) => entry.severity === "error") ? null : structuredClone(result.values);
 }
 
@@ -552,7 +616,16 @@ function reconcileFields(
   const sources = fieldSources(fields, snapshot, values, issues, path);
   const consumed = new Set(sources.flatMap((entry) => entry.source === undefined ? [] : [entry.source]));
   const result = { ...values };
-  const schema = snapshotDataFields(fields, schemas, visiting);
+  // Nested reconciliation follows each authored value after resolving stable
+  // field renames. Keep previous metadata until that value can be reconciled.
+  const schema = snapshotDataFields(fields, {}, schemas, visiting).map((field, index) => {
+    const previous = sources[index]?.previous;
+    return previous && sameFieldType(field, previous) ? {
+      ...field,
+      ...(previous.fields ? { fields: previous.fields } : {}),
+      ...(previous.keyFields ? { keyFields: previous.keyFields } : {}),
+    } : field;
+  });
   const currentNames = new Set(fields.map((field) => field.name));
   // Read from the original values throughout: simultaneous renames cannot clobber one another.
   for (const { source, field } of sources) {
@@ -568,12 +641,14 @@ function reconcileFields(
     if (source === undefined) changes.push({ kind: "added", path: at });
     else if (source !== field.name) changes.push({ kind: "renamed", path: at, previousPath: fieldPath(path, source) });
     if (source === undefined && !initializeMissingFields) continue;
-    let value = source === undefined
-      ? serializeDataRowValues(structInstanceDefault([field], schemas, visiting), [field], schemas)[field.name]
-      : values[source];
+    const initialized = source === undefined ? structInstanceDefaultWithSchema([field], schemas, visiting) : undefined;
+    let value = initialized
+      ? serializeDataEntryValues(initialized.values, [field], schemas)[field.name]
+      : values[source!];
+    if (initialized?.schema[0]) schema[index] = initialized.schema[0];
     // Only descend into compatible authored objects; never coerce an old field value.
     if (!previous || sameFieldType(field, previous)) {
-      const reconciled = reconcileFieldValue(field, previous, value, schemas, changes, issues, at, visiting, depth, initializeMissingFields);
+      const reconciled = reconcileFieldValue(field, previous ?? initialized?.schema[0], value, schemas, changes, issues, at, visiting, depth, initializeMissingFields);
       value = reconciled.value;
       if (reconciled.fields) schema[index]!.fields = reconciled.fields;
       if (reconciled.keyFields) schema[index]!.keyFields = reconciled.keyFields;
@@ -611,19 +686,19 @@ function reconcileFields(
  * Unknown/removed fields survive; type changes are reported without coercion.
  * Conflicts fail atomically, returning the original authored payload.
  */
-export function reconcileDataRow(
-  row: DataSheetRow, definitionGuid: string | null, fields: readonly StructField[], schemas?: TypeSchemas,
+export function reconcileDataEntry(
+  row: DataTreeEntry, definitionGuid: string | null, fields: readonly StructField[], schemas?: TypeSchemas,
   options: DataReconcileOptions = {},
-): { row: DataSheetRow; changes: DataSchemaChange[]; issues: DataValidationIssue[] } {
+): { entry: DataTreeEntry; changes: DataSchemaChange[]; issues: DataValidationIssue[] } {
   const changes: DataSchemaChange[] = [];
   const issues: DataValidationIssue[] = [];
   const result = reconcileFields(fields, row.schema ?? [], row.values, schemas, changes, issues, "",
     new Set(definitionGuid ? [definitionGuid] : []), 0, options.initializeMissingFields !== false);
-  if (issues.some((entry) => entry.severity === "error")) return { row, changes, issues: issues.map((entry) => ({ ...entry, rowId: row.id })) };
-  const next = createDataSheetRow(row.name, result.values, result.schema, row.id);
-  if (schemas) issues.push(...validateDataRow(next, definitionGuid, schemas));
+  if (issues.some((entry) => entry.severity === "error")) return { entry: row, changes, issues: issues.map((entry) => ({ ...entry, entryId: row.id })) };
+  const next = createDataTreeEntry({ ...row, values: result.values, schema: result.schema });
+  if (schemas) issues.push(...validateDataEntry(next, definitionGuid, schemas));
   for (const change of changes) {
     if (change.kind === "typeChanged") issue(issues, "type-changed", change.path, "Definition field type changed; the authored value was preserved.", "warning");
   }
-  return { row: next, changes, issues: issues.map((entry) => ({ ...entry, rowId: row.id })) };
+  return { entry: next, changes, issues: issues.map((entry) => ({ ...entry, entryId: row.id })) };
 }

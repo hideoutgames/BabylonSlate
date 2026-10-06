@@ -138,3 +138,22 @@ Native account builds require Clerk's Native API and email-code sign-in/sign-up 
 `StatusBarStylePort` accepts `"light"` or `"dark"` glyph styles. iOS/Android use the Capacitor Status Bar plugin's `setStyle` only; Web and Electron use a no-op adapter. The editor maps resolved dark chrome to light glyphs and resolved light chrome to dark glyphs. It never hides or overlays the native status bar.
 
 Android audio lifecycle reports route additions/removals from device callbacks and becoming-noisy broadcasts. API 31+ audio mode changes model call/ringtone interruptions. It never requests audio focus, so other apps keep playing. Android memory stats report host-process PSS and system `availMem`; there is no jetsam-style per-process allowance, and the separate WebView renderer is not included.
+
+## Player saved games
+
+`createSaveGameStorage()` implements the core `SaveGameStorage` port beside project storage. It never writes gameplay saves into project folders. `SaveGameService` owns versioned payloads, checksums, alternating generations, recovery and the stable project / game-or-preview / profile / slot namespace.
+
+| Host | Private location and commit behavior |
+| --- | --- |
+| Web | OPFS `babylonslate-game-saves`; writable streams stage changes until `close()`. An exclusive Web Lock spans the service transaction across tabs. Browser persistence requests return the browser decision; storage remains clearable. |
+| iOS | Capacitor `Directory.Library/Application Support/BabylonSlate/game-saves`, independent of Files-visible Documents. Temporary write then rename; Web Locks serialize WebView contexts. |
+| Android | Capacitor `Directory.Data/BabylonSlate/game-saves`; temporary write then rename; Web Locks serialize WebView contexts. |
+| Electron | `userData/game-saves`; main-process temporary file, file sync, rename, then directory sync on POSIX. The application single-instance lock prevents competing host processes; owned IPC leases serialize windows and release on reload, crash or close. |
+
+- Filesystem names encode the logical key bytes so case-insensitive hosts cannot merge differently named profiles or slots. Paths reject traversal, empty segments and oversized encoded names.
+- Missing results are reserved for explicit not-found errors. Permission and storage errors propagate; quota errors and explicit native `ENOSPC`/`EDQUOT` map to storage-full. Capacitor generic I/O errors are not guessed to mean full.
+- Browser/mobile contexts without Web Locks reject save operations instead of falling back to unsafe local-only locking. Electron preserves error categories through structured IPC responses and rejects storage access without the window's matching lock.
+- The service only replaces the inactive generation. Capacitor offers no filesystem sync API or documented power-loss guarantees; real iOS/Android interruption, mobile Web Locks and Windows power-loss behavior remain unverified. Local filesystem tests do not establish A16 iPad performance.
+- Native adapters support the existing editor hosts. Current exported-game packaging is web-only; native shipped-game packaging/parity is not implied by these adapters.
+
+Official references: [OPFS writable commit](https://developer.mozilla.org/en-US/docs/Web/API/FileSystemFileHandle/createWritable), [Web Locks](https://developer.mozilla.org/en-US/docs/Web/API/Web_Locks_API), [Capacitor private directories](https://capacitorjs.com/docs/apis/filesystem#directory), [Electron userData](https://www.electronjs.org/docs/latest/api/app#appgetpathname).

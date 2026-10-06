@@ -329,7 +329,7 @@ export function DocumentWorkspace() {
           );
         }
 
-        if (doc.ref.kind === "data-sheet") {
+        if (doc.ref.kind === "data-tree") {
           if (!shouldMount) return null;
           return (
             <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
@@ -579,6 +579,7 @@ export function DocumentWorkspace() {
           doc.ref.kind === "sound-attenuation" ||
           doc.ref.kind === "particle-emitter" ||
           doc.ref.kind === "particle-system" ||
+          doc.ref.kind === "save-game" ||
           doc.ref.kind === "water" ||
           doc.ref.kind === "render-target" ||
           doc.ref.kind === "render-target-texture" ||

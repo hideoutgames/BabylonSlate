@@ -1,4 +1,4 @@
-import type { DataAssetCatalogEntry } from "@babylonslate/core";
+import type { DataAssetCatalogEntry, DataFieldSnapshot } from "@babylonslate/core";
 import { mergeEngineTypeSchemas, type EnumSchema, type StructSchema, type TypeSchemas } from "./type-defaults";
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -30,6 +30,8 @@ export function dataTypeSchemas(entries: readonly DataAssetCatalogEntry[]): Type
           ...(typeof field.keyTypeId === "string" ? { keyTypeId: field.keyTypeId } : {}),
           ...(typeof field.keyTypeClassId === "string" ? { keyTypeClassId: field.keyTypeClassId } : {}),
           ...(field.defaultValue !== undefined ? { defaultValue: field.defaultValue } : {}),
+          ...(Array.isArray(field.fields) ? { fields: structuredClone(field.fields) as DataFieldSnapshot[] } : {}),
+          ...(Array.isArray(field.keyFields) ? { keyFields: structuredClone(field.keyFields) as DataFieldSnapshot[] } : {}),
           ...(typeof field.category === "string" ? { category: field.category } : {}),
           ...(typeof field.description === "string" ? { description: field.description } : {}),
           ...(typeof field.required === "boolean" ? { required: field.required } : {}),

@@ -131,12 +131,12 @@ afterEach(() => {
 });
 
 describe("workspace registry traversal", () => {
-  it("does not mount standalone workspaces for background utility sheets until they are revealed", () => {
+  it("does not mount standalone workspaces for background utility trees until they are revealed", () => {
     state.tabs = ["definition", "sheet"];
     state.mountedIds = new Set(state.tabs);
     const sheet: OpenDocument = {
-      id: "sheet", ref: { kind: "data-sheet", path: "assets/Weapons.datasheet.babasset", label: "Weapons" },
-      content: { kind: "dataSheet", definitionGuid: null, rows: [] }, layout: null, dirty: true, background: true,
+      id: "sheet", ref: { kind: "data-tree", path: "assets/Weapons.datatree.babasset", label: "Weapons" },
+      content: { kind: "dataTree", defaultDefinitionGuid: null, entries: [] }, layout: null, dirty: true, background: true,
     };
     state.documents = [
       { id: "definition", ref: { kind: "data-definition", path: "assets/Stats.datadefinition.babasset", label: "Stats" }, content: { kind: "dataDefinition", fields: [] }, layout: null, dirty: false },
@@ -144,10 +144,10 @@ describe("workspace registry traversal", () => {
     ];
     const view = render(<DocumentWorkspace />);
     expect(screen.getByTestId("document-workspace-data-definition")).toBeTruthy();
-    expect(screen.queryByTestId("document-workspace-data-sheet")).toBeNull();
+    expect(screen.queryByTestId("document-workspace-data-tree")).toBeNull();
     sheet.background = false;
     view.rerender(<DocumentWorkspace />);
-    expect(screen.getByTestId("document-workspace-data-sheet")).toBeTruthy();
+    expect(screen.getByTestId("document-workspace-data-tree")).toBeTruthy();
   });
 
   it("does no registry reads for unmounted graph workspaces", async () => {

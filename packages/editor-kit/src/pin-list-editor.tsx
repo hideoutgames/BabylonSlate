@@ -75,8 +75,8 @@ function isTypeAssetPinType(type: string): boolean {
   return type === "struct" || type === "enum";
 }
 
-function typeAssetAllowedTypes(type: string, structAssetType: string): string[] {
-  return type === "enum" ? ["Enum"] : [structAssetType];
+function typeAssetAllowedTypes(type: string, structAssetType?: string): string[] {
+  return type === "enum" ? ["Enum"] : structAssetType ? [structAssetType] : ["Structure", "DataDefinition"];
 }
 
 function patchRow(
@@ -139,14 +139,16 @@ export function PinListEditor({
   types,
   classEntries = [],
   typeAssets,
-  structAssetType = "Structure",
+  structAssetType,
   itemLabel = "Pin",
   testIdPrefix = "pin",
   readOnly = false,
   "data-testid": testId = "pin-list-editor",
 }: PinListEditorProps) {
   const [draftName, setDraftName] = useState("");
-  const structLabel = structAssetType === "DataDefinition" ? "Data Definition" : "Structure";
+  const [localSelectedId, setLocalSelectedId] = useState<string | null>(null);
+  const effectiveSelectedId = selectedId === undefined ? localSelectedId : selectedId;
+  const structLabel = structAssetType === "DataDefinition" ? "Data Definition" : structAssetType ?? "Structure / Data Definition";
   const [classPickRowId, setClassPickRowId] = useState<string | null>(null);
   const [typeAssetPickRowId, setTypeAssetPickRowId] = useState<string | null>(
     null,
@@ -172,7 +174,7 @@ export function PinListEditor({
     <div className="flex flex-col gap-1.5" data-testid={testId}>
       {title ? <div className="text-sm font-medium">{title}</div> : null}
       {rows.map((row, index) => {
-        const selected = selectedId === row.id;
+        const selected = effectiveSelectedId === row.id;
         const classId = row.typeClassId?.trim() || "BObject";
         const classIdentity = classRowIdentity(
           classEntries.find((entry) => entry.id === classId),
@@ -187,7 +189,7 @@ export function PinListEditor({
             : row.typeClassId
               ? {
                   name: row.typeClassId,
-                  type: row.type === "enum" ? "Enum" : structAssetType,
+                  type: row.type === "enum" ? "Enum" : structAssetType ?? "Record",
                 }
               : undefined,
         );
@@ -217,7 +219,14 @@ export function PinListEditor({
                 selected ? "bg-accent" : "hover:bg-accent/50"
               }`}
               data-testid={`${testIdPrefix}-row-${row.id}`}
-              onClick={() => onSelect?.(row.id)}
+              onClick={() => {
+                if (selectedId === undefined) setLocalSelectedId(row.id);
+                onSelect?.(row.id);
+              }}
+              onFocus={() => {
+                if (selectedId === undefined) setLocalSelectedId(row.id);
+                onSelect?.(row.id);
+              }}
             >
               <TypeColorMark colorVar={pinPickerColorVar(row.type)} />
               <Input

@@ -59,6 +59,14 @@ async function registryWith(
 }
 
 describe("createPickerAsset", () => {
+  it("creates a persisted Save Game definition through the standard asset registry", async () => {
+    const registry = await registryWith([]);
+    const asset = await createPickerAsset({ registry, ownerPath: null, openDocuments: [], type: "SaveGame", name: "Player Progress" });
+    expect(asset.path).toBe("assets/Player_Progress.savegame.babasset");
+    expect(asset.header.type).toBe("SaveGame");
+    expect(asset.header.payload).toEqual({ id: asset.header.guid, schemaVersion: 1, fields: [] });
+    expect(registry.getByGuid(asset.header.guid)).toBeDefined();
+  });
   it("creates a uniquely named asset beside the owning document", async () => {
     const registry = await registryWith([
       { path: "assets/Levels/Main.scene.babasset", type: "Scene", name: "Main" },

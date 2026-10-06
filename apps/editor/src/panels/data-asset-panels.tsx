@@ -1,8 +1,9 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
-import { createDataSheetRow, type DataSheetRow } from "@babylonslate/core";
-import { createDataRowForDefinition, reconcileDataRow, validateDataRow, type StructField, type TypeSchemas } from "@babylonslate/scripting";
-import { AssetPicker, NamePromptDialog, NestedMenu, NumberField, PanelFrame, SearchInput, SearchDropdown, WindowedList, humanizePropertyLabel, isCoarsePointerEnvironment } from "@babylonslate/editor-kit";
+import { buildDataTreeIndex, type DataTreeEntry } from "@babylonslate/core";
+import { createDataEntryForDefinition, reconcileDataEntry, type StructField } from "@babylonslate/scripting";
+import { AssetPicker, ContextMenuOverlay, NamePromptDialog, NestedMenu, NumberField, PanelFrame, SearchInput, SearchDropdown, TreeView, WindowedList, humanizePropertyLabel, isCoarsePointerEnvironment, useContextMenu, type NestedMenuItem, type TreeViewNode } from "@babylonslate/editor-kit";
+import { FileTextIcon, ListTreeIcon, MoreHorizontalIcon } from "lucide-react";
 import { Button } from "@babylonslate/ui/components/button";
 import { Input } from "@babylonslate/ui/components/input";
 import { Checkbox } from "@babylonslate/ui/components/checkbox";
@@ -12,54 +13,20 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { cn } from "@babylonslate/ui/lib/utils";
 import { useDataAssetEditing } from "../context/data-asset-editing-context";
 import { DataValueEditor } from "../components/data-value-editor";
+import { DataTreeEntryField, DataTreeEntryPicker } from "../components/data-tree-entry-picker";
 import { DiagnosticResultRow } from "../components/diagnostic-result-row";
 
 const TOUCH_ACTION = "pointer-coarse:min-h-11";
-type SheetState = ReturnType<typeof useDataAssetEditing>;
-type Migration = ReturnType<typeof reconcileDataRow> | null | undefined;
-
+type TreeState = ReturnType<typeof useDataAssetEditing>;
+type Migration = ReturnType<typeof reconcileDataEntry> | null | undefined;
 function migrationBlocked(migration: Migration): boolean {
   return Boolean(migration?.issues.some((issue) => ["rename-conflict", "ambiguous-schema", "invalid-schema", "recursive-schema"].includes(issue.code)));
 }
 function requiresApply(migration: Migration): boolean {
   return Boolean(migration?.changes.some((change) => change.kind === "added" || change.kind === "renamed"));
 }
-function recursiveDefinition(guid: string, schemas: TypeSchemas, visiting = new Set<string>()): boolean {
-  if (visiting.has(guid) || visiting.size > 64) return true;
-  const next = new Set([...visiting, guid]);
-  return Boolean(schemas.structs[guid]?.fields.some((field) =>
-    (field.typeId === "struct" && field.typeClassId && recursiveDefinition(field.typeClassId, schemas, next)) ||
-    (field.container === "map" && field.keyTypeId === "struct" && field.keyTypeClassId && recursiveDefinition(field.keyTypeClassId, schemas, next))));
-}
-function preserveAuthoredFields(previous: unknown, next: unknown, depth = 0): unknown {
-  if (depth > 64 || !previous || !next || typeof previous !== "object" || typeof next !== "object" || Array.isArray(previous) || Array.isArray(next)) return next;
-  const before = previous as Record<string, unknown>;
-  return Object.fromEntries(Object.entries({ ...before, ...next }).map(([key, value]) => [key,
-    Object.prototype.hasOwnProperty.call(next, key) ? preserveAuthoredFields(before[key], value, depth + 1) : value,
-  ]));
-}
-function changeRowValue(state: SheetState, rowId: string, field: StructField, value: unknown): Promise<void> {
-  const definition = state.definition;
-  if (!definition) return Promise.reject(new Error("Choose an available Data Definition before editing rows."));
-  return state.changeSheet((sheet) => {
-    if (sheet.definitionGuid !== definition.guid) throw new Error("The sheet's Data Definition changed. Review its fields before editing.");
-    const row = sheet.rows.find((entry) => entry.id === rowId);
-    if (!row) throw new Error("This row is no longer available.");
-    const migration = reconcileDataRow(row, definition.guid, definition.fields, state.catalog.schemas);
-    if (requiresApply(migration) || migrationBlocked(migration)) throw new Error("Apply the Definition changes in Values before editing this row.");
-    const next = reconcileDataRow({ ...row, values: { ...row.values, [field.name]: preserveAuthoredFields(row.values[field.name], value) } }, definition.guid, definition.fields, state.catalog.schemas).row;
-    return { ...sheet, rows: sheet.rows.map((entry) => entry.id === rowId ? next : entry) };
-  }, `data:${rowId}:${field.id ?? field.name}`);
-}
-function nameError(rows: readonly DataSheetRow[], name: string, exceptId?: string): string | null {
-  if (!name.trim()) return "Enter a row name.";
-  return rows.some((row) => row.id !== exceptId && row.name.trim().toLocaleLowerCase() === name.trim().toLocaleLowerCase()) ? "A row with this name already exists." : null;
-}
-function uniqueName(rows: readonly DataSheetRow[], base: string): string {
-  let name = base;
-  let suffix = 2;
-  while (nameError(rows, name)) name = `${base} ${suffix++}`;
-  return name;
+function pickerEntries(index: TreeState["index"]) {
+  return index?.orderedEntries.map((entry) => ({ id: entry.id, path: index.pathById.get(entry.id)!, effectiveDefinitionGuid: index.effectiveDefinitionById.get(entry.id) ?? null })) ?? [];
 }
 function OperationError({ message }: { message: string | null }) {
   return message ? <Alert variant="destructive"><AlertTitle>Data Edit Failed</AlertTitle><AlertDescription>{message}</AlertDescription></Alert> : null;
@@ -124,7 +91,7 @@ function tsvCell(value: unknown): string {
   const text = value === undefined || value === null ? "" : typeof value === "object" ? JSON.stringify(value) : String(value);
   return /[\t\r\n"]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
-function DataSheetCell({ field, value, label, editable, enums, onChange, preview }: {
+function DataEntryCell({ field, value, label, editable, enums, onChange, preview }: {
   field: StructField; value: unknown; label: string; editable: boolean;
   enums: Record<string, string[]>; onChange: (value: unknown) => void; preview: string;
 }) {
@@ -145,24 +112,126 @@ function DataSheetCell({ field, value, label, editable, enums, onChange, preview
   return <span title={preview} className="block truncate">{preview}</span>;
 }
 
-export function DataSheetRowsPanel(_props: IDockviewPanelProps) {
+function useTreeActions(state: TreeState) {
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [renameId, setRenameId] = useState<string | null>(null);
+  const [moveId, setMoveId] = useState<string | null>(null);
+  const [removeId, setRemoveId] = useState<string | null>(null);
+  const pending = useRef(0);
+  const siblingPositions = useMemo(() => {
+    const positions = new Map<string, number>();
+    for (const siblings of state.index?.childrenByParentId.values() ?? []) siblings.forEach((entry, position) => positions.set(entry.id, position));
+    return positions;
+  }, [state.index]);
+  const run = async (action: () => Promise<unknown>) => {
+    pending.current++; setBusy(true); setError(null);
+    try { await action(); } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
+    finally { pending.current--; setBusy(pending.current > 0); }
+  };
+  const menuItems = (id: string): NestedMenuItem[] => {
+    const entry = state.index?.byId.get(id);
+    const siblings = state.index?.childrenByParentId.get(entry?.parentId ?? null) ?? [];
+    const position = siblingPositions.get(id) ?? -1;
+    const disabled = state.readOnly || busy || !entry;
+    return [
+      { id: "add-child", label: "Add Child", disabled, onSelect: () => void run(() => state.addEntry(id)) },
+      { id: "rename-entry", label: "Rename", disabled, onSelect: () => setRenameId(id) },
+      { id: "move-entry", label: "Move To", disabled, onSelect: () => setMoveId(id) },
+      { id: "move-up", label: "Move Up", disabled: disabled || position <= 0, onSelect: () => void run(() => state.moveEntry(id, siblings[position - 1]!.id, "before")) },
+      { id: "move-down", label: "Move Down", disabled: disabled || position >= siblings.length - 1, onSelect: () => void run(() => state.moveEntry(id, siblings[position + 1]!.id, "after")) },
+      { type: "separator", id: "entry-separator" },
+      { id: "duplicate-entry", label: "Duplicate Subtree", disabled, onSelect: () => void run(() => state.duplicateEntry(id)) },
+      { id: "remove-entry", label: "Remove Subtree", disabled, variant: "destructive", onSelect: () => setRemoveId(id) },
+    ];
+  };
+  const movePath = moveId ? state.index?.pathById.get(moveId) : undefined;
+  const destinations = useMemo(() => moveId ? pickerEntries(state.index).filter((entry) => entry.id !== moveId && (!movePath || !entry.path.startsWith(`${movePath}/`))) : [], [state.index, moveId, movePath]);
+  const removedPath = removeId ? state.index?.pathById.get(removeId) : undefined;
+  const removeCount = removedPath ? state.index!.orderedEntries.filter((entry) => entry.id === removeId || state.index!.pathById.get(entry.id)!.startsWith(`${removedPath}/`)).length : 0;
+  const dialogs = <>
+    <NamePromptDialog open={renameId !== null} onOpenChange={(open) => { if (!open) setRenameId(null); }} title="Rename Entry" label="Name" confirmLabel="Rename" initialValue={state.index?.byId.get(renameId ?? "")?.name ?? ""} validate={(name) => {
+      if (!state.tree || !renameId) return "This entry is no longer available.";
+      return buildDataTreeIndex({ ...state.tree, entries: state.tree.entries.map((entry) => entry.id === renameId ? { ...entry, name: name.trim() } : entry) }).issues[0]?.message ?? null;
+    }} onSubmit={(name) => { if (renameId) void run(() => state.renameEntry(renameId, name)); }} />
+    <DataTreeEntryPicker open={moveId !== null} onOpenChange={(open) => { if (!open) setMoveId(null); }} title="Move Entry To" entries={destinations} includeRoot testId="data-tree-move-picker" onPick={(path) => {
+      if (moveId) void run(() => state.moveEntry(moveId, path ? state.index?.idByPath.get(path) ?? null : null));
+      setMoveId(null);
+    }} />
+    <AlertDialog open={removeId !== null} onOpenChange={(open) => { if (!open) setRemoveId(null); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Remove Subtree</AlertDialogTitle><AlertDialogDescription>Remove {removedPath ?? "this entry"}{removeCount > 1 ? ` and ${removeCount - 1} descendant${removeCount === 2 ? "" : "s"}` : ""}? Undo restores these entries and their values.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={() => { if (removeId) void run(() => state.removeEntry(removeId)); setRemoveId(null); }}>Remove</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+  </>;
+  return { error, busy, run, menuItems, dialogs };
+}
+
+export function DataTreeHierarchyPanel(_props: IDockviewPanelProps) {
   void _props;
   const state = useDataAssetEditing();
-  const { sheet, definition, catalog, readOnly, rowInfo, selectedRowId, select, focusRequest } = state;
+  const { tree, index, catalog, readOnly, selectedEntryId, collapsedIds } = state;
+  const actions = useTreeActions(state);
+  const [query, setQuery] = useState("");
+  const [definitionPicker, setDefinitionPicker] = useState(false);
+  const context = useContextMenu({ items: [] });
+  useEffect(() => { if (state.focusRequest) setQuery(""); }, [state.focusRequest]);
+  const visible = useMemo(() => {
+    if (!index) return [];
+    const search = query.trim().toLocaleLowerCase();
+    const included = new Set<string>();
+    if (search) for (const entry of index.orderedEntries) {
+      if (!index.pathById.get(entry.id)!.toLocaleLowerCase().includes(search)) continue;
+      let current: DataTreeEntry | undefined = entry;
+      while (current && !included.has(current.id)) { included.add(current.id); current = current.parentId ? index.byId.get(current.parentId) : undefined; }
+    }
+    let collapsedPath: string | null = null;
+    return index.orderedEntries.filter((entry) => {
+      const path = index.pathById.get(entry.id)!;
+      if (search) return included.has(entry.id);
+      if (collapsedPath && path.startsWith(`${collapsedPath}/`)) return false;
+      collapsedPath = collapsedIds.has(entry.id) ? path : null;
+      return true;
+    });
+  }, [index, query, collapsedIds]);
+  const nodes: TreeViewNode[] = visible.map((entry) => {
+    const children = index!.childrenByParentId.get(entry.id)?.length ?? 0;
+    return { id: entry.id, label: entry.name, depth: index!.pathById.get(entry.id)!.split("/").length - 1, hasChildren: children > 0, expanded: Boolean(query.trim()) || !collapsedIds.has(entry.id),
+      icon: children ? <ListTreeIcon className="size-3.5" /> : <FileTextIcon className="size-3.5" />,
+      preview: children ? <span className="text-xs tabular-nums text-muted-foreground">{children}</span> : undefined,
+      trailing: <NestedMenu size="chrome" items={actions.menuItems(entry.id)} trigger={<Button variant="ghost" size="icon-xs" className="pointer-coarse:min-h-11 pointer-coarse:min-w-11" aria-label={`Entry Menu For ${entry.name}`}><MoreHorizontalIcon className="size-3.5" /></Button>} />,
+    };
+  });
+  if (!tree) return <PanelFrame><DataEmpty title="Data Tree Unavailable">Reopen the asset to reload its data.</DataEmpty></PanelFrame>;
+  const definition = tree.defaultDefinitionGuid ? state.definitions.get(tree.defaultDefinitionGuid) : null;
+  return <PanelFrame data-testid="data-tree-hierarchy-panel">
+    <div className="sticky top-0 z-10 flex flex-col gap-1 border-b border-border bg-panel-header p-2">
+      <div className="flex items-center gap-1"><span className="shrink-0 text-xs text-muted-foreground">Default</span><Button variant="outline" size="sm" className={cn("min-w-0 flex-1 justify-start truncate", TOUCH_ACTION)} aria-label="Tree Default Definition" data-testid="data-tree-default-definition" disabled={readOnly || actions.busy} onClick={() => setDefinitionPicker(true)}>{definition?.name ?? (tree.defaultDefinitionGuid ? "Missing Definition" : "No Definition")}</Button></div>
+      <div className="flex items-center gap-1"><Button variant="outline" size="sm" className={TOUCH_ACTION} disabled={readOnly || actions.busy} onClick={() => void actions.run(() => state.addEntry(null))}>Add Root</Button><Button variant="ghost" size="sm" className={TOUCH_ACTION} disabled={readOnly || actions.busy || !selectedEntryId} onClick={() => { if (selectedEntryId) void actions.run(() => state.addEntry(selectedEntryId)); }}>Add Child</Button></div>
+      <SearchInput value={query} onChange={setQuery} placeholder="Search Tree" aria-label="Search Tree" className="h-7 min-h-7 pointer-coarse:min-h-11" />
+    </div>
+    <OperationError message={actions.error} />
+    <Button variant="ghost" size="sm" className={cn("w-full justify-start rounded-none px-2 text-xs", TOUCH_ACTION, !state.browseBranchId && !selectedEntryId && "bg-accent")} onClick={() => state.browse(null)}><ListTreeIcon className="size-3.5" />Tree Root<span className="ml-auto tabular-nums text-muted-foreground">{tree.entries.length}</span></Button>
+    {!index ? <DataEmpty title="Invalid Hierarchy">Resolve the issues in Validation before editing this tree. Stored entries are preserved.</DataEmpty> : <TreeView nodes={nodes} selectedId={selectedEntryId} data-testid="data-tree-hierarchy" aria-label="Data Tree" rowHeight={isCoarsePointerEnvironment() ? 44 : 28} emptyLabel={tree.entries.length ? "No Matching Entries" : "No Entries"} onSelect={(id) => state.selectEntry(id)} onToggleExpanded={(id) => state.setCollapsedIds((previous) => { const next = new Set(previous); if (next.has(id)) next.delete(id); else next.add(id); return next; })} onActivate={(id) => state.browse(id)} onReparent={readOnly ? undefined : (id, targetId, placement) => void actions.run(() => state.moveEntry(id, targetId, placement))} onContextMenu={(id, x, y) => { state.selectEntry(id, false); context.openMenuAt(x, y, actions.menuItems(id)); }} />}
+    <AssetPicker open={definitionPicker} onOpenChange={setDefinitionPicker} title="Choose Tree Default Definition" allowedTypes={["DataDefinition"]} assets={catalog.types.dataDefinitions.map((entry) => ({ ...entry, type: "DataDefinition" }))} allowNone onPick={(guid) => { setDefinitionPicker(false); void actions.run(() => state.setDefaultDefinition(guid)); }} />
+    <ContextMenuOverlay menu={context.menu} onClose={context.closeMenu} />
+    {actions.dialogs}
+  </PanelFrame>;
+}
+
+export function DataTreeEntriesPanel(_props: IDockviewPanelProps) {
+  void _props;
+  const state = useDataAssetEditing();
+  const { tree, index, catalog, readOnly, selectedEntryId, browseBranchId, focusRequest } = state;
+  const actions = useTreeActions(state);
   const gridId = useId();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
+  const [definitionFilter, setDefinitionFilter] = useState("auto");
+  const [descendants, setDescendants] = useState(false);
   const [sort, setSort] = useState<{ field: string; direction: 1 | -1 } | null>(null);
   const [hiddenColumns, setHiddenColumns] = useState<Set<string>>(() => new Set());
-  const [definitionPicker, setDefinitionPicker] = useState(false);
-  const [pendingDefinition, setPendingDefinition] = useState<string | null>(null);
-  const [renaming, setRenaming] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const mutation = useRef(false);
-  const hasSheet = Boolean(sheet);
+  const handledFocus = useRef<number | null>(null);
+  const searchCache = useMemo(() => new WeakMap<DataTreeEntry, string>(), []);
   const headerRef = useRef<HTMLDivElement>(null);
   const [headerHeight, setHeaderHeight] = useState(69);
+  const hasTree = Boolean(tree);
   useLayoutEffect(() => {
     const header = headerRef.current;
     if (!header) return;
@@ -171,145 +240,92 @@ export function DataSheetRowsPanel(_props: IDockviewPanelProps) {
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
     observer?.observe(header);
     return () => observer?.disconnect();
-  }, [hasSheet]);
-  const searchCache = useMemo(() => new WeakMap<DataSheetRow, string>(), []);
-  const issuesByRow = useMemo(() => {
-    const result = new Map<string, typeof state.validation>();
-    for (const issue of state.validation) {
-      if (!issue.rowId) continue;
-      const list = result.get(issue.rowId) ?? [];
-      list.push(issue); result.set(issue.rowId, list);
-    }
-    return result;
-  }, [state.validation]);
+  }, [hasTree]);
+  const entries = useMemo(() => {
+    if (!index) return [];
+    if (!descendants) return index.childrenByParentId.get(browseBranchId) ?? [];
+    const path = browseBranchId ? index.pathById.get(browseBranchId) : "";
+    return index.orderedEntries.filter((entry) => !path || index.pathById.get(entry.id)!.startsWith(`${path}/`));
+  }, [index, browseBranchId, descendants]);
+  const definitionGuids = useMemo(() => [...new Set(entries.map((entry) => index!.effectiveDefinitionById.get(entry.id) ?? null))], [entries, index]);
+  const guid = definitionFilter === "auto" ? definitionGuids.length === 1 ? definitionGuids[0] : undefined : definitionFilter === "none" ? null : definitionFilter;
+  const definition = guid ? state.definitions.get(guid) : undefined;
   const visibleFields = useMemo(() => definition?.fields.filter((field) => !hiddenColumns.has(field.id ?? field.name)) ?? [], [definition, hiddenColumns]);
   const filtered = useMemo(() => {
     const search = query.trim().toLocaleLowerCase();
-    const rows = (sheet?.rows ?? []).filter((row) => {
-      if (filter !== "all" && !(issuesByRow.get(row.id) ?? []).some((issue) => issue.severity === filter)) return false;
-      if (!search) return true;
-      let text = searchCache.get(row);
-      if (text === undefined) { text = `${row.name} ${JSON.stringify(row.values)}`.toLocaleLowerCase(); searchCache.set(row, text); }
+    const result = entries.filter((entry) => {
+      if (definitionFilter !== "auto" && index?.effectiveDefinitionById.get(entry.id) !== guid) return false;
+      if (filter !== "all" && !state.entryInfo.get(entry.id)?.issues.some((issue) => issue.severity === filter)) return false;
+      if (!search || index?.pathById.get(entry.id)?.toLocaleLowerCase().includes(search)) return true;
+      let text = searchCache.get(entry);
+      if (text === undefined) { text = JSON.stringify(entry.values).toLocaleLowerCase(); searchCache.set(entry, text); }
       return text.includes(search);
     });
-    if (sort) rows.sort((a, b) => {
-      const left = sort.field === "$name" ? a.name : a.values[sort.field];
-      const right = sort.field === "$name" ? b.name : b.values[sort.field];
+    if (sort) result.sort((a, b) => {
+      const left = sort.field === "$name" ? descendants ? index?.pathById.get(a.id) : a.name : a.values[sort.field];
+      const right = sort.field === "$name" ? descendants ? index?.pathById.get(b.id) : b.name : b.values[sort.field];
       return sort.direction * (typeof left === "number" && typeof right === "number" ? left - right : String(left ?? "").localeCompare(String(right ?? ""), undefined, { numeric: true }));
     });
-    return rows;
-  }, [sheet?.rows, query, filter, sort, issuesByRow, searchCache]);
-  const selected = sheet?.rows.find((row) => row.id === selectedRowId);
-  const selectedIndex = filtered.findIndex((row) => row.id === selectedRowId);
+    return result;
+  }, [entries, definitionFilter, index, guid, filter, state.entryInfo, query, sort, descendants, searchCache]);
+  const selected = selectedEntryId ? index?.byId.get(selectedEntryId) : undefined;
+  const selectedIndex = filtered.findIndex((entry) => entry.id === selectedEntryId);
   const rowHeight = isCoarsePointerEnvironment() ? 44 : 28;
-  const gridColumns = `minmax(160px, 1.5fr) ${visibleFields.map(() => "minmax(120px, 1fr)").join(" ")} minmax(105px, 1fr)`;
+  const gridColumns = `minmax(160px, 1.5fr) ${definition ? visibleFields.map(() => "minmax(120px, 1fr)").join(" ") : "minmax(130px, 1fr) minmax(60px, .4fr)"} minmax(105px, 1fr)`;
+  useEffect(() => { setDefinitionFilter("auto"); setQuery(""); setFilter("all"); }, [browseBranchId]);
   useEffect(() => {
-    if (!focusRequest) return;
-    setQuery(""); setFilter("all");
-    const field = definition?.fields.find((entry) => focusRequest.path === entry.name || focusRequest.path.startsWith(`${entry.name}.`));
+    if (!focusRequest || handledFocus.current === focusRequest.sequence) return;
+    handledFocus.current = focusRequest.sequence;
+    setQuery(""); setFilter("all"); setDefinitionFilter("auto");
+    const effective = index?.effectiveDefinitionById.get(focusRequest.entryId);
+    if (effective && definitionGuids.length > 1) setDefinitionFilter(effective);
+    const field = effective ? state.definitions.get(effective)?.fields.find((entry) => focusRequest.path === entry.name || focusRequest.path.startsWith(`${entry.name}.`)) : undefined;
     if (field) setHiddenColumns((previous) => { const next = new Set(previous); next.delete(field.id ?? field.name); return next; });
-  }, [focusRequest, definition]);
-  const run = async (action: () => Promise<void>) => {
-    if (mutation.current) return;
-    mutation.current = true; setBusy(true); setError(null);
-    try { await action(); } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
-    finally { mutation.current = false; setBusy(false); }
+  }, [focusRequest, index, definitionGuids, state.definitions]);
+  const editCell = (entryId: string, field: StructField, value: unknown) => {
+    state.selectEntry(entryId, false);
+    void actions.run(() => state.updateValues([{ entryId, values: { [field.name]: value }, expectedDefinitionGuid: definition?.guid }], { mergeKey: `data:${entryId}:${field.id ?? field.name}` }));
   };
-  const editCell = (rowId: string, field: StructField, value: unknown) => {
-    select(rowId); setError(null);
-    void changeRowValue(state, rowId, field, value).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)));
-  };
-  const pasteCells = (rowIndex: number, columnIndex: number, text: string) => void run(async () => {
-    if (!definition) throw new Error("Choose a Data Definition before pasting values.");
+  const pasteCells = (entryIndex: number, columnIndex: number, text: string) => void actions.run(async () => {
+    if (!definition) throw new Error("Filter to one available Definition before pasting values.");
     const cells = parseTsv(text);
-    if (rowIndex + cells.length > filtered.length || columnIndex + cells[0]!.length > visibleFields.length) throw new Error("The pasted table exceeds the visible rows or columns. Add rows or show more columns, then retry.");
-    const targets = cells.map((values, index) => ({ id: filtered[rowIndex + index]!.id, values }));
-    await state.changeSheet((current) => {
-      if (current.definitionGuid !== definition.guid) throw new Error("The Data Definition changed. Retry the paste after reviewing its fields.");
-      const changed = new Map<string, DataSheetRow>();
-      const currentRows = new Map(current.rows.map((row) => [row.id, row]));
-      for (const target of targets) {
-        const row = currentRows.get(target.id);
-        if (!row) throw new Error("A pasted row is no longer available.");
-        const migration = reconcileDataRow(row, definition.guid, definition.fields, catalog.schemas);
-        if (requiresApply(migration) || migrationBlocked(migration)) throw new Error(`${row.name}: Apply Definition changes before pasting.`);
-        const values = { ...row.values };
-        for (const [index, value] of target.values.entries()) {
-          const field = visibleFields[columnIndex + index]!;
-          values[field.name] = parseCell(value, field, catalog.enumMembers);
-        }
-        const next = reconcileDataRow({ ...row, values }, definition.guid, definition.fields, catalog.schemas).row;
-        const issue = validateDataRow(next, definition.guid, catalog.schemas, { assetTypeForGuid: (guid) => catalog.byGuid.get(guid)?.header.type }).find((entry) => entry.severity === "error");
-        if (issue) throw new Error(`${row.name}${issue.path ? ` · ${humanizePropertyLabel(issue.path)}` : ""}: ${issue.message}`);
-        changed.set(row.id, next);
-      }
-      return { ...current, rows: current.rows.map((row) => changed.get(row.id) ?? row) };
-    });
-    select(targets[0]!.id);
+    if (entryIndex + cells.length > filtered.length || columnIndex + cells[0]!.length > visibleFields.length) throw new Error("The pasted table exceeds the visible entries or columns. Add entries or show more columns, then retry.");
+    const targets = cells.map((values, offset) => ({ entryId: filtered[entryIndex + offset]!.id, expectedDefinitionGuid: definition.guid, values: Object.fromEntries(values.map((value, fieldIndex) => {
+      const field = visibleFields[columnIndex + fieldIndex]!;
+      return [field.name, parseCell(value, field, catalog.enumMembers)];
+    })) }));
+    await state.updateValues(targets, { validate: true });
+    state.selectEntry(targets[0]!.entryId, false);
   });
-  const createRow = (duplicate = false) => void run(async () => {
-    if (!definition) return;
-    let createdId: string | null = null;
-    await state.changeSheet((current) => {
-      if (current.definitionGuid !== definition.guid) throw new Error("The sheet's Data Definition changed. Retry after reviewing it.");
-      const source = duplicate ? current.rows.find((row) => row.id === selectedRowId) : undefined;
-      if (duplicate && !source) throw new Error("Select a row to duplicate.");
-      const name = uniqueName(current.rows, source ? `${source.name} Copy` : "New Entry");
-      const row = source ? createDataSheetRow(name, source.values, source.schema) : createDataRowForDefinition(definition.guid, definition.fields, catalog.schemas, name);
-      createdId = row.id;
-      return { ...current, rows: [...current.rows, row] };
-    });
-    select(createdId); setQuery(""); setFilter("all");
-  });
-  const move = (direction: -1 | 1) => void run(() => state.changeSheet((current) => {
-    const index = current.rows.findIndex((row) => row.id === selectedRowId);
-    const next = index + direction;
-    if (index < 0 || next < 0 || next >= current.rows.length) return current;
-    const rows = [...current.rows]; [rows[index], rows[next]] = [rows[next]!, rows[index]!];
-    setSort(null);
-    return { ...current, rows };
-  }));
-  const setDefinition = (guid: string) => void run(() => state.changeSheet((current) => ({ ...current, definitionGuid: guid })));
   const sortColumn = (field: string) => setSort((previous) => ({ field, direction: previous?.field === field && previous.direction === 1 ? -1 : 1 }));
-  if (!sheet) return <PanelFrame><DataEmpty title="Data Sheet Unavailable">Reopen the asset to reload its data.</DataEmpty></PanelFrame>;
-  return <PanelFrame data-testid="data-sheet-rows-panel">
+  if (!tree) return <PanelFrame><DataEmpty title="Data Tree Unavailable">Reopen the asset to reload its data.</DataEmpty></PanelFrame>;
+  const entryOptions = pickerEntries(state.index);
+  const branchPath = browseBranchId ? index?.pathById.get(browseBranchId) ?? "" : "";
+  return <PanelFrame data-testid="data-tree-entries-panel">
     <div ref={headerRef} className="sticky top-0 z-20 flex flex-col gap-1 border-b border-border bg-panel-header px-2 py-1">
+      <div className="flex items-center gap-1"><Button variant="ghost" size="sm" className={TOUCH_ACTION} disabled={!browseBranchId} onClick={() => state.browse(index?.byId.get(browseBranchId ?? "")?.parentId ?? null)}>Parent</Button><div className="min-w-0 flex-1"><DataTreeEntryField value={branchPath} onChange={(path) => state.browse(path ? index?.idByPath.get(path) ?? null : null)} entries={entryOptions} includeRoot hideLabel label="Browse Branch" testId="data-tree-browse-branch" /></div><span className="shrink-0 text-xs tabular-nums text-muted-foreground">{filtered.length === entries.length ? filtered.length : `${filtered.length} / ${entries.length}`} Entries</span></div>
       <div className="flex flex-wrap items-center gap-1">
-        <span className="text-xs text-muted-foreground">Definition</span>
-        <Button variant="outline" size="sm" className={cn("max-w-56 truncate", TOUCH_ACTION)} disabled={busy || readOnly} onClick={() => setDefinitionPicker(true)} data-testid="data-sheet-definition">{definition?.name ?? (sheet.definitionGuid ? "Missing Definition" : "Choose Definition")}</Button>
-        {definition ? <Button variant="ghost" size="sm" className={TOUCH_ACTION} onClick={() => void run(async () => {
-          const asset = catalog.byGuid.get(definition.guid);
-          if (asset) await state.documents.openDocument({ kind: "data-definition", path: asset.path, label: asset.header.name });
-        })}>Open Definition</Button> : null}
-        <span className="ml-auto text-xs tabular-nums text-muted-foreground">{filtered.length === sheet.rows.length ? `${sheet.rows.length} ${sheet.rows.length === 1 ? "Row" : "Rows"}` : `${filtered.length} / ${sheet.rows.length} Rows`}</span>
-      </div>
-      <div className="flex flex-wrap items-center gap-1">
-        <Button variant="outline" size="sm" className={TOUCH_ACTION} disabled={busy || readOnly || !definition} onClick={() => createRow()}>New Row</Button>
-        <Button variant="ghost" size="sm" className={TOUCH_ACTION} disabled={busy || readOnly || !selected || !definition} onClick={() => createRow(true)}>Duplicate</Button>
-        <Button variant="ghost" size="sm" className={TOUCH_ACTION} disabled={busy || readOnly || !selected} onClick={() => setRenaming(true)}>Rename</Button>
-        <Button variant="ghost" size="sm" className={TOUCH_ACTION} disabled={busy || readOnly || !selected} onClick={() => void run(async () => {
-          await state.changeSheet((current) => ({ ...current, rows: current.rows.filter((row) => row.id !== selectedRowId) })); select(null);
-        })}>Remove</Button>
+        <Button variant="outline" size="sm" className={TOUCH_ACTION} disabled={readOnly || actions.busy} onClick={() => void actions.run(async () => { await state.addEntry(browseBranchId); setQuery(""); setFilter("all"); setDefinitionFilter("auto"); })}>New Entry</Button>
+        <NestedMenu size="chrome" trigger={<Button variant="ghost" size="sm" className={TOUCH_ACTION} disabled={!selected}>Entry</Button>} items={selected ? actions.menuItems(selected.id) : []} />
         <NestedMenu size="chrome" trigger={<Button variant="ghost" size="sm" className={TOUCH_ACTION}>View</Button>} items={[
-          { type: "submenu", id: "filter", label: "Filter", items: [{ type: "radio-group", id: "filter-choice", value: filter, onValueChange: setFilter, items: [{ id: "all", value: "all", label: "All Rows" }, { id: "error", value: "error", label: "Errors" }, { id: "warning", value: "warning", label: "Warnings" }] }] },
-          { type: "submenu", id: "columns", label: "Columns", items: (definition?.fields ?? []).map((field) => ({ type: "checkbox", id: field.id ?? field.name, label: humanizePropertyLabel(field.name), checked: !hiddenColumns.has(field.id ?? field.name), closeOnClick: false, onCheckedChange: (checked) => setHiddenColumns((previous) => { const next = new Set(previous); if (checked) next.delete(field.id ?? field.name); else next.add(field.id ?? field.name); return next; }) })) },
+          { type: "checkbox", id: "descendants", label: "Include Descendants", checked: descendants, onCheckedChange: setDescendants },
+          { type: "submenu", id: "filter", label: "Filter", items: [{ type: "radio-group", id: "filter-choice", value: filter, onValueChange: setFilter, items: [{ id: "all", value: "all", label: "All Entries" }, { id: "error", value: "error", label: "Errors" }, { id: "warning", value: "warning", label: "Warnings" }] }] },
+          { type: "submenu", id: "columns", label: "Columns", disabled: !definition, items: (definition?.fields ?? []).map((field) => ({ type: "checkbox", id: field.id ?? field.name, label: humanizePropertyLabel(field.name), checked: !hiddenColumns.has(field.id ?? field.name), closeOnClick: false, onCheckedChange: (checked) => setHiddenColumns((previous) => { const next = new Set(previous); if (checked) next.delete(field.id ?? field.name); else next.add(field.id ?? field.name); return next; }) })) },
           { id: "clear-sort", label: "Clear Sort", disabled: !sort, onSelect: () => setSort(null) },
-          { id: "copy-row", label: "Copy Row Values", disabled: !selected || !visibleFields.length, onSelect: () => void run(async () => {
+          { id: "copy-entry", label: "Copy Entry Values", disabled: !selected || !visibleFields.length || index?.effectiveDefinitionById.get(selected.id) !== definition?.guid, onSelect: () => void actions.run(async () => {
             if (!selected) return;
             if (!navigator.clipboard?.writeText) throw new Error("Clipboard access is not available in this browser.");
-            const migration = rowInfo.get(selected.id)?.migration;
-            const values = migrationBlocked(migration) ? selected.values : migration?.row.values ?? selected.values;
+            const migration = state.entryInfo.get(selected.id)?.migration;
+            const values = migrationBlocked(migration) ? selected.values : migration?.entry.values ?? selected.values;
             await navigator.clipboard.writeText(visibleFields.map((field) => tsvCell(values[field.name])).join("\t"));
           }) },
-          { type: "separator", id: "order-separator" },
-          { id: "move-up", label: "Move Row Up", disabled: busy || readOnly || !selected || sheet.rows[0]?.id === selectedRowId, onSelect: () => move(-1) },
-          { id: "move-down", label: "Move Row Down", disabled: busy || readOnly || !selected || sheet.rows.at(-1)?.id === selectedRowId, onSelect: () => move(1) },
         ]} />
-        <SearchInput value={query} onChange={setQuery} placeholder="Search Rows" aria-label="Search Rows" className="ml-auto h-7 min-h-7 min-w-32 flex-1 pointer-coarse:min-h-11" />
+        <SearchDropdown title="Filter Definition" items={[{ id: "auto", label: "All Definitions" }, ...definitionGuids.map((entry) => ({ id: entry ?? "none", label: entry ? state.definitions.get(entry)?.name ?? "Missing Definition" : "No Definition" }))]} onSelect={setDefinitionFilter}><Button size="sm" variant="ghost" className={cn("max-w-40 truncate", TOUCH_ACTION)} aria-label="Filter Definition">{definitionFilter === "auto" ? definition?.name ?? "All Definitions" : definition?.name ?? "No Definition"}</Button></SearchDropdown>
+        <SearchInput value={query} onChange={setQuery} placeholder="Search Entries" aria-label="Search Entries" className="ml-auto h-7 min-h-7 min-w-32 flex-1 pointer-coarse:min-h-11" />
       </div>
     </div>
-    <OperationError message={error} />
-    {!definition ? <DataEmpty title={sheet.definitionGuid ? "Definition Missing" : "Choose A Definition"}>{sheet.definitionGuid ? "Restore the Data Definition or choose another one. Stored rows are preserved." : "Choose a Data Definition to create and edit rows in this sheet."}</DataEmpty> : sheet.rows.length === 0 ? <DataEmpty title="No Rows">Add a row to start authoring data.</DataEmpty> : filtered.length === 0 ? <DataEmpty title="No Matching Rows">Change the search or filter to show rows.</DataEmpty> : <div role="grid" aria-label="Data Rows" aria-rowcount={filtered.length + 1} aria-colcount={visibleFields.length + 2} aria-activedescendant={selectedIndex >= 0 ? `${gridId}-${selectedIndex}-${selectedRowId}` : undefined} tabIndex={0} className="min-w-full outline-none" style={{ width: Math.max(420, 265 + visibleFields.length * 120) }} onKeyDown={(event) => {
+    <OperationError message={actions.error} />
+    {!index ? <DataEmpty title="Invalid Hierarchy">Resolve the issues in Validation before editing entries.</DataEmpty> : entries.length === 0 ? <DataEmpty title="No Entries">Add an entry to this branch.</DataEmpty> : filtered.length === 0 ? <DataEmpty title="No Matching Entries">Change the search or filter to show entries.</DataEmpty> : <div role="grid" aria-label="Branch Entries" aria-rowcount={filtered.length + 1} aria-colcount={definition ? visibleFields.length + 2 : 4} aria-activedescendant={selectedIndex >= 0 ? `${gridId}-${selectedEntryId}` : undefined} tabIndex={0} className="min-w-full outline-none" style={{ width: Math.max(420, 265 + (definition ? visibleFields.length * 120 : 190)) }} onKeyDown={(event) => {
       if (event.target !== event.currentTarget || event.nativeEvent.isComposing) return;
       let next = selectedIndex;
       if (event.key === "ArrowDown") next = Math.min(filtered.length - 1, selectedIndex + 1);
@@ -318,105 +334,106 @@ export function DataSheetRowsPanel(_props: IDockviewPanelProps) {
       else if (event.key === "End") next = filtered.length - 1;
       else if (event.key === "Enter" && selected) { event.preventDefault(); state.focusField(selected.id, ""); return; }
       else return;
-      event.preventDefault(); select(filtered[next]?.id ?? null);
+      event.preventDefault(); state.selectEntry(filtered[next]?.id ?? null, false);
     }}>
       <div role="row" className="sticky z-10 grid h-7 items-center border-b border-border bg-panel-header text-xs text-muted-foreground pointer-coarse:h-11" style={{ gridTemplateColumns: gridColumns, top: headerHeight }}>
-        <span role="columnheader" aria-sort={sort?.field === "$name" ? sort.direction === 1 ? "ascending" : "descending" : "none"}><Button variant="ghost" size="xs" aria-label="Sort By Row Name" className="w-full justify-start px-2 pointer-coarse:min-h-11" onClick={() => sortColumn("$name")}>Row Name{sort?.field === "$name" ? sort.direction === 1 ? " ↑" : " ↓" : ""}</Button></span>
-        {visibleFields.map((field) => <span role="columnheader" key={field.id ?? field.name} aria-sort={sort?.field === field.name ? sort.direction === 1 ? "ascending" : "descending" : "none"}><Button variant="ghost" size="xs" className="w-full justify-start truncate px-2 pointer-coarse:min-h-11" aria-label={`Sort By ${humanizePropertyLabel(field.name)}`} onClick={() => sortColumn(field.name)}>{humanizePropertyLabel(field.name)}{sort?.field === field.name ? sort.direction === 1 ? " ↑" : " ↓" : ""}</Button></span>)}
+        <span role="columnheader" aria-sort={sort?.field === "$name" ? sort.direction === 1 ? "ascending" : "descending" : "none"}><Button variant="ghost" size="xs" aria-label="Sort By Entry Name" className="w-full justify-start px-2 pointer-coarse:min-h-11" onClick={() => sortColumn("$name")}>{descendants ? "Path" : "Name"}{sort?.field === "$name" ? sort.direction === 1 ? " ↑" : " ↓" : ""}</Button></span>
+        {definition ? visibleFields.map((field) => <span role="columnheader" key={field.id ?? field.name} aria-sort={sort?.field === field.name ? sort.direction === 1 ? "ascending" : "descending" : "none"}><Button variant="ghost" size="xs" className="w-full justify-start truncate px-2 pointer-coarse:min-h-11" aria-label={`Sort By ${humanizePropertyLabel(field.name)}`} onClick={() => sortColumn(field.name)}>{humanizePropertyLabel(field.name)}{sort?.field === field.name ? sort.direction === 1 ? " ↑" : " ↓" : ""}</Button></span>) : <><span role="columnheader" className="px-2">Definition</span><span role="columnheader" className="px-2">Children</span></>}
         <span role="columnheader" className="px-2">Status</span>
       </div>
-      <WindowedList itemCount={filtered.length} rowHeight={rowHeight} activeIndex={selectedIndex}>{(index) => {
-        const row = filtered[index]!;
-        const migration = rowInfo.get(row.id)?.migration;
-        const issues = issuesByRow.get(row.id) ?? [];
+      <WindowedList itemCount={filtered.length} rowHeight={rowHeight} activeIndex={selectedIndex}>{(entryIndex) => {
+        const entry = filtered[entryIndex]!;
+        const info = state.entryInfo.get(entry.id);
+        const migration = info?.migration;
+        const issues = info?.issues ?? [];
         const errors = issues.filter((issue) => issue.severity === "error").length;
         const warnings = issues.length - errors;
         const needsApply = requiresApply(migration);
         const status = needsApply ? "Definition Changed" : errors ? `${errors} Error${errors === 1 ? "" : "s"}` : warnings ? `${warnings} Warning${warnings === 1 ? "" : "s"}` : "";
-        const values = migrationBlocked(migration) ? row.values : migration?.row.values ?? row.values;
-        return <div id={`${gridId}-${index}-${row.id}`} role="row" aria-rowindex={index + 2} aria-selected={selectedRowId === row.id} data-testid={`data-sheet-row-${row.id}`} className={cn("grid h-full cursor-default items-center border-b border-border/50 text-xs hover:bg-accent/50", selectedRowId === row.id && "bg-accent")} style={{ gridTemplateColumns: gridColumns }} onClick={() => select(row.id)} onDoubleClick={() => state.focusField(row.id, "")}>
-          <span role="gridcell" className="truncate px-2" title={row.name}>{row.name}</span>
-          {visibleFields.map((field, columnIndex) => <div key={field.id ?? field.name} role="gridcell" className="min-w-0 px-1" onDoubleClick={(event) => event.stopPropagation()} onPaste={(event) => {
+        const values = migrationBlocked(migration) ? entry.values : migration?.entry.values ?? entry.values;
+        const effective = index.effectiveDefinitionById.get(entry.id);
+        return <div id={`${gridId}-${entry.id}`} role="row" aria-rowindex={entryIndex + 2} aria-selected={selectedEntryId === entry.id} data-testid={`data-tree-entry-${entry.id}`} className={cn("grid h-full cursor-default items-center border-b border-border/50 text-xs hover:bg-accent/50", selectedEntryId === entry.id && "bg-accent")} style={{ gridTemplateColumns: gridColumns }} onClick={() => state.selectEntry(entry.id, false)} onDoubleClick={() => state.browse(entry.id)}>
+          <span role="gridcell" className="truncate px-2" title={index.pathById.get(entry.id)}>{descendants ? index.pathById.get(entry.id) : entry.name}</span>
+          {definition ? visibleFields.map((field, columnIndex) => <div key={field.id ?? field.name} role="gridcell" className="min-w-0 px-1" onDoubleClick={(event) => event.stopPropagation()} onPaste={(event) => {
             const text = event.clipboardData.getData("text/plain");
             if (!/[\t\r\n]/.test(text)) return;
-            event.preventDefault();
-            pasteCells(index, columnIndex, text);
-          }}>
-            <DataSheetCell field={field} value={values[field.name]} label={`${row.name} ${humanizePropertyLabel(field.name)}`} editable={!readOnly && !needsApply && !migrationBlocked(migration)} enums={catalog.enumMembers} onChange={(value) => editCell(row.id, field, value)} preview={previewValue(values[field.name], (guid) => catalog.byGuid.get(guid)?.header.name)} />
-          </div>)}
+            event.preventDefault(); pasteCells(entryIndex, columnIndex, text);
+          }}><DataEntryCell field={field} value={values[field.name]} label={`${entry.name} ${humanizePropertyLabel(field.name)}`} editable={!readOnly && !needsApply && !migrationBlocked(migration)} enums={catalog.enumMembers} onChange={(value) => editCell(entry.id, field, value)} preview={previewValue(values[field.name], (assetGuid) => catalog.byGuid.get(assetGuid)?.header.name)} /></div>) : <><span role="gridcell" className="truncate px-2 text-muted-foreground">{effective ? state.definitions.get(effective)?.name ?? "Missing Definition" : "None"}</span><span role="gridcell" className="px-2 tabular-nums text-muted-foreground">{index.childrenByParentId.get(entry.id)?.length ?? 0}</span></>}
           <span role="gridcell" className={cn("truncate px-2", errors ? "text-destructive" : "text-muted-foreground")}>{status}</span>
         </div>;
       }}</WindowedList>
     </div>}
-    <AssetPicker open={definitionPicker} onOpenChange={setDefinitionPicker} title="Choose Data Definition" allowedTypes={["DataDefinition"]} assets={catalog.types.dataDefinitions.map((entry) => ({ ...entry, type: "DataDefinition" }))} allowNone={false} onPick={(guid) => {
-      setDefinitionPicker(false);
-      if (!guid || guid === sheet.definitionGuid) return;
-      if (sheet.rows.length) setPendingDefinition(guid); else setDefinition(guid);
-    }} />
-    <AlertDialog open={pendingDefinition !== null} onOpenChange={(open) => { if (!open) setPendingDefinition(null); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Change Data Definition</AlertDialogTitle><AlertDialogDescription>Existing row values stay stored. Review the new fields in Values before editing each row. Undo restores the previous Definition.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={() => { if (pendingDefinition) setDefinition(pendingDefinition); setPendingDefinition(null); }}>Change Definition</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
-    <NamePromptDialog open={renaming} onOpenChange={setRenaming} title="Rename Row" label="Name" confirmLabel="Rename" initialValue={selected?.name ?? ""} validate={(name) => nameError(sheet.rows, name, selectedRowId ?? undefined)} onSubmit={(name) => void run(() => state.changeSheet((current) => {
-      const error = nameError(current.rows, name, selectedRowId ?? undefined); if (error) throw new Error(error);
-      return { ...current, rows: current.rows.map((row) => row.id === selectedRowId ? { ...row, name: name.trim() } : row) };
-    }))} />
+    {actions.dialogs}
   </PanelFrame>;
 }
 
-export function DataSheetValuesPanel(_props: IDockviewPanelProps) {
+function definitionSource(state: TreeState, entry: DataTreeEntry): string {
+  if (entry.definitionGuid !== undefined) return entry.definitionGuid === null ? "No Definition · Branch Override" : "Entry Override";
+  let ancestor = entry.parentId ? state.index?.byId.get(entry.parentId) : undefined;
+  while (ancestor) {
+    if (ancestor.definitionGuid !== undefined) return `Inherited From ${state.index?.pathById.get(ancestor.id)}`;
+    ancestor = ancestor.parentId ? state.index?.byId.get(ancestor.parentId) : undefined;
+  }
+  return "Inherited From Tree Default";
+}
+
+export function DataTreeValuesPanel(_props: IDockviewPanelProps) {
   void _props;
   const state = useDataAssetEditing();
-  const { sheet, definition, catalog, rowInfo, selectedRowId, readOnly, focusRequest } = state;
-  const row = sheet?.rows.find((entry) => entry.id === selectedRowId);
-  const migration = row ? rowInfo.get(row.id)?.migration : null;
-  const issues = row ? state.validation.filter((issue) => issue.rowId === row.id) : [];
+  const { index, catalog, selectedEntryId, readOnly, focusRequest } = state;
+  const actions = useTreeActions(state);
+  const entry = selectedEntryId ? index?.byId.get(selectedEntryId) : undefined;
+  const effective = entry ? index?.effectiveDefinitionById.get(entry.id) : null;
+  const definition = effective ? state.definitions.get(effective) : undefined;
+  const migration = entry ? state.entryInfo.get(entry.id)?.migration : null;
+  const issues = entry ? state.entryInfo.get(entry.id)?.issues ?? [] : [];
   const [review, setReview] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [definitionPicker, setDefinitionPicker] = useState(false);
   const fieldsRef = useRef<HTMLDivElement>(null);
-  const recursive = useMemo(() => Boolean(definition && recursiveDefinition(definition.guid, catalog.schemas)), [definition, catalog.schemas]);
-  const defaults = useMemo(() => definition && !recursive ? createDataRowForDefinition(definition.guid, definition.fields, catalog.schemas).values : {}, [definition, catalog.schemas, recursive]);
+  const recursive = issues.some((issue) => issue.code === "recursive-schema");
+  const defaults = useMemo(() => definition && !recursive ? createDataEntryForDefinition(definition.guid, definition.fields, catalog.schemas).values : {}, [definition, catalog.schemas, recursive]);
   const editable = !readOnly && !requiresApply(migration) && !migrationBlocked(migration);
   const changed = Boolean(migration?.changes.some((change) => change.kind !== "removed"));
-  useEffect(() => { setError(null); setReview(false); }, [selectedRowId]);
+  useEffect(() => { setReview(false); }, [selectedEntryId]);
   useEffect(() => {
-    if (!focusRequest || focusRequest.rowId !== selectedRowId) return;
+    if (!focusRequest || focusRequest.entryId !== selectedEntryId) return;
     const fields = Array.from(fieldsRef.current?.querySelectorAll<HTMLElement>("[data-data-field]") ?? []);
-    const field = fields.find((entry) => entry.dataset.dataField === focusRequest.path) ?? fields.find((entry) => focusRequest.path.startsWith(`${entry.dataset.dataField}.`)) ?? fields[0];
+    const field = fields.find((item) => item.dataset.dataField === focusRequest.path) ?? fields.find((item) => focusRequest.path.startsWith(`${item.dataset.dataField}.`)) ?? fields[0];
     const control = field?.querySelector<HTMLElement>("input:not([disabled]), textarea:not([disabled]), select:not([disabled])") ?? field?.querySelector<HTMLElement>('[id^="property-"]:not([disabled]), button:not([disabled]), [tabindex]');
     field?.scrollIntoView?.({ block: "nearest" }); control?.focus();
-  }, [focusRequest, selectedRowId]);
-  const run = (action: () => Promise<void>) => { setError(null); void action().catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason))); };
-  if (!row) return <PanelFrame data-testid="data-sheet-values-panel"><DataEmpty title="Select A Row">Select a row to edit its values.</DataEmpty></PanelFrame>;
-  if (state.identityInvalid) return <PanelFrame data-testid="data-sheet-values-panel"><DataEmpty title="Invalid Row Identities">Rows need unique, non-empty IDs before this sheet can be edited. Restore the valid row identities; existing values are preserved.</DataEmpty></PanelFrame>;
-  return <PanelFrame data-testid="data-sheet-values-panel">
+  }, [focusRequest, selectedEntryId]);
+  if (!entry) return <PanelFrame data-testid="data-tree-values-panel"><DataEmpty title={index ? "Select An Entry" : "Invalid Hierarchy"}>{index ? "Select an entry to edit its owned values and Definition." : "Resolve the issues in Validation before editing this tree."}</DataEmpty></PanelFrame>;
+  return <PanelFrame data-testid="data-tree-values-panel">
     <div className="flex flex-col gap-2 p-2" ref={fieldsRef}>
-      <p className="truncate text-xs font-medium" title={row.name}>{row.name}</p>
-      <OperationError message={error} />
-      {changed ? <Alert><AlertTitle>Definition Changed</AlertTitle><AlertDescription>{requiresApply(migration) ? "Review the field changes before editing this row." : "Edit or reset changed values to match the Definition."}<Button size="sm" variant="outline" className={TOUCH_ACTION} disabled={readOnly} onClick={() => setReview(true)}>Review Changes</Button></AlertDescription></Alert> : null}
+      <div className="flex items-center gap-1"><p className="min-w-0 flex-1 truncate text-xs font-medium" title={index?.pathById.get(entry.id)}>{index?.pathById.get(entry.id)}</p><NestedMenu size="chrome" items={actions.menuItems(entry.id)} trigger={<Button variant="ghost" size="icon-xs" className={TOUCH_ACTION} aria-label="Selected Entry Menu"><MoreHorizontalIcon className="size-3.5" /></Button>} /></div>
+      <div className="flex flex-wrap items-center gap-1"><span className="text-xs text-muted-foreground">Definition</span><Button variant="outline" size="sm" className={cn("min-w-0 flex-1 justify-start truncate", TOUCH_ACTION)} aria-label="Entry Definition" disabled={readOnly || actions.busy} onClick={() => setDefinitionPicker(true)}>{definition?.name ?? (effective ? "Missing Definition" : "None")}</Button>{entry.definitionGuid !== undefined ? <Button variant="ghost" size="sm" className={TOUCH_ACTION} disabled={readOnly || actions.busy} onClick={() => void actions.run(() => state.setEntryDefinition(entry.id, undefined))}>Use Parent Definition</Button> : null}</div>
+      <p className="text-xs text-muted-foreground">{definitionSource(state, entry)}</p>
+      <OperationError message={actions.error} />
+      {changed ? <Alert><AlertTitle>Definition Changed</AlertTitle><AlertDescription>{requiresApply(migration) ? "Review the field changes before editing this entry." : "Edit or reset changed values to match the Definition."}<Button size="sm" variant="outline" className={TOUCH_ACTION} disabled={readOnly} onClick={() => setReview(true)}>Review Changes</Button></AlertDescription></Alert> : null}
       {recursive ? <Alert variant="destructive"><AlertTitle>Recursive Definition</AlertTitle><AlertDescription>Remove the circular record reference before editing these values.</AlertDescription></Alert> : null}
-      {!definition ? <DataEmpty title="Definition Missing">Restore the Data Definition to edit this row. Stored values are preserved.</DataEmpty> : (recursive ? [] : definition.fields).map((field) => <DataValueEditor key={`${row.id}:${field.id ?? field.name}`} field={field} value={(migrationBlocked(migration) ? row.values : migration?.row.values ?? row.values)[field.name]} defaultValue={defaults[field.name]} onChange={(value) => run(() => changeRowValue(state, row.id, field, value))} label={humanizePropertyLabel(field.name)} path={field.name} disabled={!editable} catalog={catalog} issues={issues} />)}
+      {!definition ? <DataEmpty title={effective ? "Definition Missing" : "Untyped Entry"}>{effective ? "Restore or choose a Data Definition to edit these values. Stored values are preserved." : "Choose a Definition to edit typed values. This entry can still contain children; stored values are preserved."}</DataEmpty> : (recursive ? [] : definition.fields).map((field) => <DataValueEditor key={`${entry.id}:${field.id ?? field.name}`} field={field} value={(migrationBlocked(migration) ? entry.values : migration?.entry.values ?? entry.values)[field.name]} defaultValue={defaults[field.name]} onChange={(value) => void actions.run(() => state.updateValues([{ entryId: entry.id, values: { [field.name]: value }, expectedDefinitionGuid: definition.guid }], { mergeKey: `data:${entry.id}:${field.id ?? field.name}` }))} label={humanizePropertyLabel(field.name)} path={field.name} disabled={!editable} catalog={catalog} issues={issues} />)}
       {issues.length ? <p className="text-xs text-muted-foreground">{issues.length} {issues.length === 1 ? "issue" : "issues"} in Validation.</p> : null}
     </div>
-    <AlertDialog open={review} onOpenChange={setReview}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Update Row Fields</AlertDialogTitle><AlertDialogDescription>Apply the current Data Definition to this row. Removed fields remain stored for recovery. Undo restores the previous values.</AlertDialogDescription></AlertDialogHeader>
-      <ul className="max-h-64 overflow-y-auto rounded-md border border-border bg-muted/30 p-2 text-sm">{migration?.changes.map((change, index) => <li key={index} className="py-1">{humanizePropertyLabel(change.kind)}: {change.previousPath ? `${change.previousPath} → ` : ""}{change.path}</li>)}</ul>
+    <AssetPicker open={definitionPicker} onOpenChange={setDefinitionPicker} title="Override Entry Definition" allowedTypes={["DataDefinition"]} assets={catalog.types.dataDefinitions.map((item) => ({ ...item, type: "DataDefinition" }))} allowNone onPick={(guid) => { setDefinitionPicker(false); void actions.run(() => state.setEntryDefinition(entry.id, guid)); }} />
+    <AlertDialog open={review} onOpenChange={setReview}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Update Entry Fields</AlertDialogTitle><AlertDialogDescription>Apply the current Data Definition to this entry. Removed fields remain stored for recovery. Values belong to this entry; changing them does not change its children. Undo restores the previous values.</AlertDialogDescription></AlertDialogHeader>
+      <ul className="max-h-64 overflow-y-auto rounded-md border border-border bg-muted/30 p-2 text-sm">{migration?.changes.map((change, position) => <li key={position} className="py-1">{humanizePropertyLabel(change.kind)}: {change.previousPath ? `${change.previousPath} → ` : ""}{change.path}</li>)}</ul>
       {migrationBlocked(migration) ? <Alert variant="destructive"><AlertTitle>Resolve Definition Conflicts</AlertTitle><AlertDescription>{migration?.issues.filter((issue) => issue.severity === "error").map((issue) => issue.message).join(" ")}</AlertDescription></Alert> : null}
-      <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction disabled={migrationBlocked(migration)} onClick={() => {
-        if (definition && !migrationBlocked(migration)) run(() => state.changeSheet((current) => ({ ...current, rows: current.rows.map((entry) => entry.id === row.id ? reconcileDataRow(entry, definition.guid, definition.fields, catalog.schemas).row : entry) })));
-        setReview(false);
-      }}>Apply Changes</AlertDialogAction></AlertDialogFooter>
+      <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction disabled={readOnly || migrationBlocked(migration)} onClick={() => { void actions.run(() => state.applyDefinition(entry.id)); setReview(false); }}>Apply Changes</AlertDialogAction></AlertDialogFooter>
     </AlertDialogContent></AlertDialog>
+    {actions.dialogs}
   </PanelFrame>;
 }
 
-export function DataSheetValidationPanel(_props: IDockviewPanelProps) {
+export function DataTreeValidationPanel(_props: IDockviewPanelProps) {
   void _props;
   const state = useDataAssetEditing();
-  const { validation, sheet, definition, focusRequest } = state;
-  const rows = useMemo(() => new Map(sheet?.rows.map((row) => [row.id, row]) ?? []), [sheet?.rows]);
+  const { validation, index, focusRequest } = state;
   const errors = validation.filter((issue) => issue.severity === "error").length;
-  return <PanelFrame data-testid="data-sheet-validation-panel">
+  return <PanelFrame data-testid="data-tree-validation-panel">
     <div className="sticky top-0 z-10 flex h-7 items-center border-b border-border bg-panel-header px-2 text-xs text-muted-foreground">{errors} Errors · {validation.length - errors} Warnings</div>
-    {!definition ? <DataEmpty title="Definition Unavailable">Choose an available Data Definition to validate rows.</DataEmpty> : validation.length === 0 ? <DataEmpty title="No Issues">All rows match the current Definition.</DataEmpty> : <WindowedList itemCount={validation.length} rowHeight={44}>{(index) => {
-      const issue = validation[index]!;
-      return <DiagnosticResultRow severity={issue.severity} message={issue.message} location={`${issue.rowId ? rows.get(issue.rowId)?.name ?? issue.rowId : "Sheet"}${issue.path ? ` · ${humanizePropertyLabel(issue.path)}` : ""}`} selected={focusRequest?.rowId === issue.rowId && focusRequest?.path === issue.path} onSelect={() => { if (issue.rowId) state.focusField(issue.rowId, issue.path); }} testId="data-validation-issue" />;
+    {validation.length === 0 ? <DataEmpty title="No Issues">The hierarchy and typed entries are valid.</DataEmpty> : <WindowedList itemCount={validation.length} rowHeight={44}>{(position) => {
+      const issue = validation[position]!;
+      return <DiagnosticResultRow severity={issue.severity} message={issue.message} location={`${issue.entryId ? index?.pathById.get(issue.entryId) ?? issue.entryId : "Tree"}${issue.path ? ` · ${humanizePropertyLabel(issue.path)}` : ""}`} selected={focusRequest?.entryId === issue.entryId && focusRequest?.path === issue.path} onSelect={() => { if (issue.entryId) state.focusField(issue.entryId, issue.path); else state.documents.activateDockPanel("data-tree-hierarchy"); }} testId="data-validation-issue" />;
     }}</WindowedList>}
   </PanelFrame>;
 }

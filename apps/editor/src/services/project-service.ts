@@ -1,5 +1,5 @@
 import { createDefaultInputAssets } from "@babylonslate/core";
-import { normalizeDataDefinitionAsset, normalizeDataSheetAsset } from "@babylonslate/core";
+import { normalizeDataDefinitionAsset, normalizeDataTreeAsset } from "@babylonslate/core";
 import { normalizeImportedProject, readProjectArchive, PROJECT_IMPORT_LIMIT } from "./project-import";
 import { getHostPlatform, pickImportFiles } from "@babylonslate/vfs";
 import type { DockviewApi } from "dockview-react";
@@ -161,7 +161,7 @@ function headerMetaForSave(
   // Sheets render indexed values without loading one document per visible row.
   // This header snapshot is always derived from the body being saved.
   if (type === "DataDefinition") return { ...normalizeDataDefinitionAsset(content) };
-  if (type === "DataSheet") return { ...normalizeDataSheetAsset(content) };
+  if (type === "DataTree") return { ...normalizeDataTreeAsset(content) };
   if (isInputAssetType(type)) {
     const input = normalizeInputAssetPayload(type, content);
     return { valueType: input.valueType };
@@ -1144,6 +1144,12 @@ export class ProjectService {
     ) as ProjectDocument & { guid?: string; kind?: string; version?: number };
     const document = normalizeProjectDocument(raw, folder.name);
     this.projectGuid = raw.guid ?? newGuid();
+    // Persist the existing project identity convention before the first player save.
+    // Legacy projects must not acquire a different save namespace on every reopen.
+    if (!raw.guid) {
+      raw.guid = this.projectGuid;
+      await this.storage.writeText(PROJECT_FILE, JSON.stringify(raw, null, 2));
+    }
     this.loadedTextureSettings = document.settings.textures;
     this.sourceControlEnabled = document.settings.sourceControl?.enabled === true;
     this.pluginOverrides = document.settings.pluginOverrides ?? {};
@@ -1796,7 +1802,7 @@ export class ProjectService {
     > & { version?: number };
     void _v;
     if (kind === "data-definition") return { ...normalizeDataDefinitionAsset(content) };
-    if (kind === "data-sheet") return { ...normalizeDataSheetAsset(content) };
+    if (kind === "data-tree") return { ...normalizeDataTreeAsset(content) };
     if (kind === "scene") {
       return normalizeScene(content);
     }
@@ -1935,7 +1941,7 @@ export class ProjectService {
     }
     if (isInputAssetType(type)) content = normalizeInputAssetPayload(type, content) as unknown as Record<string, unknown>;
     if (type === "DataDefinition") content = { ...normalizeDataDefinitionAsset(content) };
-    if (type === "DataSheet") content = { ...normalizeDataSheetAsset(content) };
+    if (type === "DataTree") content = { ...normalizeDataTreeAsset(content) };
     const version = this.migrations.currentVersion(type);
     const parentClass =
       options?.parentClass !== undefined
@@ -1967,7 +1973,7 @@ export class ProjectService {
               "string" &&
             (content as { displayName: string }).displayName.trim() !== ""
               ? (content as { displayName: string }).displayName.trim()
-              : (isInputAssetType(type) || type === "DataDefinition" || type === "DataSheet") && existing?.name
+              : (isInputAssetType(type) || type === "DataDefinition" || type === "DataTree") && existing?.name
                 ? existing.name
                 : assetName(path),
           guid,

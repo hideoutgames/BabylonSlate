@@ -77,26 +77,29 @@ async function writeAsset(
 }
 
 describe("AssetRegistry", () => {
-  it("duplicates and renames data assets without changing owned row identities or sharing row storage", async () => {
+  it("duplicates and renames data assets without changing entry identities, hierarchy, or sharing stored values", async () => {
     const storage = await createStorage();
     await storage.mkdir("assets", true);
     await storage.writeBinary("assets/Item.datadefinition.babasset", await encodeAssetDocument({
       guid: "definition", type: "DataDefinition", name: "Item", version: 1,
       payload: { kind: "dataDefinition", fields: [{ id: "damage", name: "Damage", typeId: "float" }] },
     }));
-    const payload = { kind: "dataSheet", definitionGuid: "definition", rows: [{ id: "sword", name: "Sword", values: { Damage: 12 } }] };
-    await storage.writeBinary("assets/Items.datasheet.babasset", await encodeAssetDocument({
-      guid: "items", type: "DataSheet", name: "Items", version: 2, payload,
+    const payload = { kind: "dataTree", defaultDefinitionGuid: "definition", entries: [
+      { id: "weapons", parentId: null, name: "Weapons", values: {} },
+      { id: "sword", parentId: "weapons", name: "Sword", values: { Damage: 12 } },
+    ] };
+    await storage.writeBinary("assets/Items.datatree.babasset", await encodeAssetDocument({
+      guid: "items", type: "DataTree", name: "Items", version: 1, payload,
     }, { dependencies: ["definition"] }));
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
     const definition = await registry.duplicateAsset("definition", "project", "");
     expect(definition.path).toBe("assets/Item_1.datadefinition.babasset");
     const copy = await registry.duplicateAsset("items", "project", "");
-    expect(copy.path).toBe("assets/Items_1.datasheet.babasset");
+    expect(copy.path).toBe("assets/Items_1.datatree.babasset");
     expect(copy.header.guid).not.toBe("items");
     const renamed = await registry.renameAsset(copy.header.guid, "Equipment");
-    expect(renamed.path).toBe("assets/Equipment.datasheet.babasset");
+    expect(renamed.path).toBe("assets/Equipment.datatree.babasset");
     await registry.deleteAsset("items");
     expect((await decodeAssetDocument(await storage.readBinary(renamed.path))).payload).toEqual(payload);
     expect(registry.showReferences("definition").inbound).toEqual([copy.header.guid]);

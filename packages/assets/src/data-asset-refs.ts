@@ -1,3 +1,5 @@
+import { buildDataTreeIndex, isDataTreeAsset } from "@babylonslate/core";
+
 /** Data values are authored text unless their saved field schema says otherwise. */
 type ReferenceKind = "asset" | "class";
 type ReferenceMapper = (reference: string, kind: ReferenceKind) => string | null;
@@ -12,7 +14,7 @@ function record(value: unknown): Record<string, unknown> | null {
 export function isDataAssetPayload(value: unknown): boolean {
   const kind = record(value)?.kind;
   // Unsupported historical payloads are protected from generic string walkers.
-  return kind === "dataDefinition" || kind === "dataSheet" || kind === "dataObject";
+  return kind === "dataDefinition" || kind === "dataTree" || kind === "dataSheet" || kind === "dataObject";
 }
 
 export function isDataGraphNodePayload(value: unknown): boolean {
@@ -33,18 +35,22 @@ export function mapDataAssetReferences<T>(value: T, map: ReferenceMapper, defini
   };
   if (payload.kind === "dataDefinition" && Array.isArray(payload.fields)) {
     assign("fields", mapFields(payload.fields, map, definitionFields));
-  } else if (payload.kind === "dataSheet" && Array.isArray(payload.rows) && Object.hasOwn(payload, "definitionGuid")) {
-    if (typeof payload.definitionGuid === "string") assign("definitionGuid", map(payload.definitionGuid, "asset"));
-    const fallback = typeof payload.definitionGuid === "string" ? definitionFields?.(payload.definitionGuid) : undefined;
-    assign("rows", mapArray(payload.rows, (entry) => {
-      const row = record(entry);
-      if (!row) return entry;
-      const fields = Array.isArray(row.schema) ? row.schema : fallback;
-      if (!fields) return entry;
-      const values = mapValues(row.values, fields, map, definitionFields);
-      const schema = Array.isArray(row.schema) ? mapFields(row.schema, map, definitionFields) : row.schema;
-      if (values === row.values && schema === row.schema) return entry;
-      return { ...row, values, ...(Array.isArray(row.schema) ? { schema } : {}) };
+  } else if (payload.kind === "dataTree" && Array.isArray(payload.entries)) {
+    // Resolve inheritance before changing asset GUIDs. Corrupt hierarchies still
+    // retain explicit references and snapshots, without guessing inherited types.
+    const index = isDataTreeAsset(payload) ? buildDataTreeIndex(payload).index : null;
+    if (typeof payload.defaultDefinitionGuid === "string") assign("defaultDefinitionGuid", map(payload.defaultDefinitionGuid, "asset"));
+    assign("entries", mapArray(payload.entries, (entry) => {
+      const node = record(entry);
+      if (!node) return entry;
+      const definitionGuid = typeof node.definitionGuid === "string" ? map(node.definitionGuid, "asset") : node.definitionGuid;
+      const effective = typeof node.definitionGuid === "string" ? node.definitionGuid
+        : typeof node.id === "string" ? index?.effectiveDefinitionById.get(node.id) : undefined;
+      const fields = Array.isArray(node.schema) ? node.schema : effective ? definitionFields?.(effective) : undefined;
+      const values = fields ? mapValues(node.values, fields, map, definitionFields) : node.values;
+      const schema = Array.isArray(node.schema) ? mapFields(node.schema, map, definitionFields) : node.schema;
+      if (values === node.values && schema === node.schema && definitionGuid === node.definitionGuid) return entry;
+      return { ...node, values, ...(Array.isArray(node.schema) ? { schema } : {}), ...(typeof node.definitionGuid === "string" ? { definitionGuid } : {}) };
     }));
   }
   return next as T;
@@ -52,7 +58,7 @@ export function mapDataAssetReferences<T>(value: T, map: ReferenceMapper, defini
 
 function mapReference(value: unknown, kind: ReferenceKind, map: ReferenceMapper): unknown {
   // Typed values use the graph's empty-reference sentinel. Null is reserved for
-  // the sheet's missing Definition selection, not an optional field value.
+  // a tree's missing Definition selection, not an optional field value.
   return typeof value === "string" ? map(value, kind) ?? "" : value;
 }
 
@@ -168,7 +174,7 @@ export function mapDataGraphLiteralReferences<T>(value: T, map: ReferenceMapper,
 
 /** Structure and Enum identity/type references also participate in a bundled import. */
 export function mapDataTypeReferences<T>(assetType: string, value: T, map: ReferenceMapper, definitionFields?: DataDefinitionFieldsResolver): T {
-  if (assetType === "DataDefinition" || assetType === "DataSheet") return mapDataAssetReferences(value, map, definitionFields);
+  if (assetType === "DataDefinition" || assetType === "DataTree") return mapDataAssetReferences(value, map, definitionFields);
   const payload = record(value);
   if (!payload || (assetType !== "Structure" && assetType !== "Enum")) return value;
   const guid = typeof payload.guid === "string" ? map(payload.guid, "asset") : payload.guid;
@@ -215,7 +221,7 @@ export function mapDataGraphReferences<T>(value: T, map: ReferenceMapper, defini
   const withValue = (row: Record<string, unknown>, key: string, next: unknown): Record<string, unknown> =>
     row[key] === next ? row : { ...row, [key]: next };
   const variable = (spec: Record<string, unknown>, entry: unknown): unknown => {
-    const isData = (type: unknown) => type === "DataDefinition" || type === "DataSheet";
+    const isData = (type: unknown) => type === "DataDefinition" || type === "DataTree";
     const valueRef = spec.typeId === "asset" && isData(spec.typeClassId);
     if (spec.container === "map" && Array.isArray(entry)) {
       const keyRef = spec.keyTypeId === "asset" && isData(spec.keyTypeClassId);
@@ -248,7 +254,7 @@ export function mapDataGraphReferences<T>(value: T, map: ReferenceMapper, defini
       const name = typeof props.variableName === "string" ? props.variableName : "Value";
       for (const key of ["default:value", "value", `default:${name}`]) if (Object.hasOwn(props, key)) mapped = withValue(mapped, key, variable(props, props[key]));
     } else {
-      for (const key of ["definitionGuid", "default:sheet", "default:definition", "default:Sheet", "default:Definition"]) {
+      for (const key of ["definitionGuid", "default:tree", "default:Tree"]) {
         if (Object.hasOwn(props, key)) mapped = withValue(mapped, key, guid(props[key]));
       }
       if (Array.isArray(props.dataSchema)) {

@@ -93,6 +93,36 @@ describe("TreeView", () => {
     vi.useRealTimers();
   });
 
+  it("reveals an externally selected row after keyboard navigation without moving focus", () => {
+    const height = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(56);
+    try {
+      const items = Array.from({ length: 100 }, (_, index) => ({ id: `item-${index}`, label: `Item ${index}`, depth: 0, hasChildren: false, expanded: false }));
+      const view = render(<><input aria-label="Values" /><TreeView nodes={items} selectedId="item-0" aria-label="Entries" /></>);
+      const tree = screen.getByRole("tree", { name: "Entries" });
+      fireEvent.keyDown(tree, { key: "End" });
+      const input = screen.getByRole("textbox", { name: "Values" });
+      input.focus();
+      view.rerender(<><input aria-label="Values" /><TreeView nodes={items} selectedId="item-10" aria-label="Entries" /></>);
+      const row = screen.getByTestId("tree-row-item-10");
+      expect(tree.getAttribute("aria-activedescendant")).toBe(row.id);
+      expect(tree.scrollTop).toBe(10 * TREE_ROW_HEIGHT);
+      expect(document.activeElement).toBe(input);
+    } finally { height.mockRestore(); }
+  });
+
+  it("preserves picker arrow focus while selectedId is unchanged and follows a new external selection", () => {
+    const onSelect = vi.fn();
+    const view = render(<TreeView nodes={nodes} selectedId="root" selectionFollowsFocus={false} onSelect={onSelect} aria-label="Picker" />);
+    const tree = screen.getByRole("tree", { name: "Picker" });
+    fireEvent.keyDown(tree, { key: "ArrowDown" });
+    view.rerender(<TreeView nodes={[...nodes]} selectedId="root" selectionFollowsFocus={false} onSelect={onSelect} aria-label="Picker" />);
+    expect(tree.getAttribute("aria-activedescendant")).toBe(screen.getByTestId("tree-row-child").id);
+    expect(onSelect).not.toHaveBeenCalled();
+    view.rerender(<TreeView nodes={nodes} selectedId="other" selectionFollowsFocus={false} onSelect={onSelect} aria-label="Picker" />);
+    fireEvent.keyDown(tree, { key: "Enter" });
+    expect(onSelect).toHaveBeenCalledWith("other");
+  });
+
   it("keeps the last keyboard destination mounted and visible in a windowed tree", () => {
     const height = vi
       .spyOn(HTMLElement.prototype, "clientHeight", "get")

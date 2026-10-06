@@ -73,11 +73,11 @@ describe("Animation data graph compilation", () => {
     expect(documents[0]!.document.animationObject.nodes[1]!.data.fields).toEqual(original.stats!.fields);
   });
 
-  it("refreshes inferred row Definition in object and transition code when sheet metadata changes", () => {
+  it("refreshes inferred entry Definition in object and transition code when tree metadata changes", () => {
     const definitions: TypeSchemas["structs"] = {
       first: { name: "First", fields: [] }, second: { name: "Second", fields: [] },
     };
-    const read = node("read", "data.readRow", { "default:sheet": "settings", "default:rowId": "primary" });
+    const read = node("read", "data.readEntry", { "default:tree": "settings", "default:entryPath": "primary" });
     const documents = animationWithData(read, {
       nodes: [read, node("enter", "anim.rule.enterState", { __protected: true })],
       edges: [{ id: "condition", source: "read", sourceHandle: "found", target: "enter", targetHandle: "value" }],
@@ -86,13 +86,13 @@ describe("Animation data graph compilation", () => {
     for (const definitionGuid of ["first", "second"]) {
       const scripts = compileAnimGraphScripts(documents, {
         cache, structs: definitions, dataDefinitions: definitions,
-        dataAssets: [{ guid: "settings", name: "Settings", type: "DataSheet", definitionGuid }],
+        dataAssets: [{ guid: "settings", name: "Settings", type: "DataTree", entries: [{ id: "primary-id", path: "primary", parentPath: "", effectiveDefinitionGuid: definitionGuid }] }],
       });
       const calls: unknown[][] = [];
       const context = {
         data: {
-          readRow: (...args: unknown[]) => { calls.push(args); return {}; },
-          hasRow: (...args: unknown[]) => { calls.push(args); return true; },
+          readEntry: (...args: unknown[]) => { calls.push(args); return {}; },
+          canReadEntry: (...args: unknown[]) => { calls.push(args); return true; },
         },
         formatValue: JSON.stringify, log: () => {},
       };

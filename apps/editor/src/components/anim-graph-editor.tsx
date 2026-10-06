@@ -77,7 +77,7 @@ import { useDataCatalog } from "../lib/use-data-catalog";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 import { applyDataGraphAssetPicks, collectDataGraphAssets } from "../lib/data-graph";
 
-const DATA_SHEET_KINDS = ["data-sheet"] as const;
+const DATA_TREE_KINDS = ["data-tree"] as const;
 
 const VARIABLE_TYPES = [
   "bool",
@@ -437,7 +437,7 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
   const { setSelectedNodeIds } = useGraphEditing();
   const { activeDocumentId, animEditorMode } = useDocuments();
   const typeCatalog = useDataCatalog();
-  const sheetDocuments = useOpenDocumentsOfKinds(DATA_SHEET_KINDS);
+  const sheetDocuments = useOpenDocumentsOfKinds(DATA_TREE_KINDS);
   const dataAssets = useMemo(() => collectDataGraphAssets(typeCatalog.assets, sheetDocuments), [typeCatalog.assets, sheetDocuments]);
   const pinTypeNames = useMemo(() => Object.fromEntries([
     ...Object.entries(typeCatalog.schemas.structs),

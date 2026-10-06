@@ -51,15 +51,25 @@ describe("resolveDockInitialWidth", () => {
 });
 
 describe("listDockWindows", () => {
-  it.each(["data-definition", "data-sheet"] as const)("exposes %s docks and its primary panel to Windows and Focus", (kind) => {
+  it("keeps Save Game field authoring and definition docks available to Windows and Focus", () => {
+    expect(isDockviewDocumentKind("save-game")).toBe(true);
+    expect(primaryDockPanel("save-game")).toBe("save-game-fields");
+    expect(listDockWindows("save-game").map(({ id, component, title }) => ({ id, component, title }))).toEqual([
+      { id: "save-game-fields", component: "save-game-fields", title: "Fields" },
+      { id: "save-game-definition", component: "save-game-definition", title: "Definition" },
+    ]);
+    expect(listDockWindows("save-game", { sourceControl: true }).map((entry) => entry.id)).toContain("locks");
+  });
+  it.each(["data-definition", "data-tree"] as const)("exposes %s docks and its primary panel to Windows and Focus", (kind) => {
     expect(isDockviewDocumentKind(kind)).toBe(true);
     const windows = listDockWindows(kind);
     expect(windows.some((window) => window.id === primaryDockPanel(kind))).toBe(true);
-    expect(windows.some((window) => window.component === (kind === "data-definition" ? "data-definition-fields" : "data-sheet-values"))).toBe(true);
+    expect(windows.some((window) => window.component === (kind === "data-definition" ? "data-definition-fields" : "data-tree-values"))).toBe(true);
     expect(listDockWindows(kind, { sourceControl: true }).some((window) => window.id === "locks")).toBe(true);
-    if (kind === "data-sheet") {
-      expect(windows.find((window) => window.id === "data-sheet-values")?.defaultPosition?.referencePanelId).toBe(primaryDockPanel(kind));
-      expect(windows.find((window) => window.id === "data-sheet-validation")?.defaultPosition).toMatchObject({ referencePanelId: primaryDockPanel(kind), direction: "below" });
+    if (kind === "data-tree") {
+      expect(windows.find((window) => window.id === "data-tree-hierarchy")?.defaultPosition).toMatchObject({ referencePanelId: primaryDockPanel(kind), direction: "left" });
+      expect(windows.find((window) => window.id === "data-tree-values")?.defaultPosition?.referencePanelId).toBe(primaryDockPanel(kind));
+      expect(windows.find((window) => window.id === "data-tree-validation")?.defaultPosition).toMatchObject({ referencePanelId: primaryDockPanel(kind), direction: "below" });
     }
   });
   it.each(["render-target", "render-target-texture"] as const)("exposes %s Details to Windows and Focus", (kind) => {

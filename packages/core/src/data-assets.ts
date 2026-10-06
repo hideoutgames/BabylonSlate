@@ -32,25 +32,28 @@ export interface DataDefinitionAsset {
   fields: DataDefinitionField[];
 }
 
-/** A sheet owns its records and their stable local identities. */
-export interface DataSheetRow {
+/** A tree owns entries, their hierarchy, and stable internal identities. */
+export interface DataTreeEntry {
   id: string;
+  parentId: string | null;
   name: string;
+  /** Omitted inherits; null explicitly makes this branch untyped. */
+  definitionGuid?: string | null;
   values: Record<string, unknown>;
   /** Authoring snapshot for non-destructive schema reconciliation. */
   schema?: DataFieldSnapshot[];
 }
 
-export interface DataSheetAsset {
-  kind: "dataSheet";
-  definitionGuid: string | null;
-  rows: DataSheetRow[];
+export interface DataTreeAsset {
+  kind: "dataTree";
+  defaultDefinitionGuid: string | null;
+  entries: DataTreeEntry[];
 }
 
 /** Serializable catalog shared by editor Play, workers, and exported players. */
 export interface DataAssetCatalogEntry {
   guid: string;
-  type: "DataDefinition" | "DataSheet" | "Structure" | "Enum";
+  type: "DataDefinition" | "DataTree" | "Structure" | "Enum";
   name: string;
   payload: unknown;
 }
@@ -64,34 +67,45 @@ export function isDataDefinitionAsset(value: unknown): value is DataDefinitionAs
     value.fields.every((field) => record(field) && typeof field.id === "string" && typeof field.name === "string" && typeof field.typeId === "string");
 }
 
-export function isDataSheetRow(value: unknown): value is DataSheetRow {
-  return record(value) && typeof value.id === "string" && typeof value.name === "string" && record(value.values);
+export function isDataTreeEntry(value: unknown): value is DataTreeEntry {
+  return record(value) && typeof value.id === "string" && typeof value.name === "string" &&
+    (value.parentId === null || typeof value.parentId === "string") &&
+    (value.definitionGuid === undefined || value.definitionGuid === null || typeof value.definitionGuid === "string") && record(value.values);
 }
 
-export function isDataSheetAsset(value: unknown): value is DataSheetAsset {
-  return record(value) && value.kind === "dataSheet" &&
-    (value.definitionGuid === null || typeof value.definitionGuid === "string") &&
-    Array.isArray(value.rows) && value.rows.every(isDataSheetRow);
+export function isDataTreeAsset(value: unknown): value is DataTreeAsset {
+  return record(value) && value.kind === "dataTree" &&
+    (value.defaultDefinitionGuid === null || typeof value.defaultDefinitionGuid === "string") &&
+    Array.isArray(value.entries) && value.entries.every(isDataTreeEntry);
 }
 
 export function createDataDefinitionAsset(fields: readonly DataDefinitionField[] = []): DataDefinitionAsset {
   return { kind: "dataDefinition", fields: structuredClone([...fields]) };
 }
 
-export function createDataSheetRow(
-  name: string,
-  values: Record<string, unknown> = {},
-  schema?: readonly DataFieldSnapshot[],
-  id: string = newGuid(),
-): DataSheetRow {
-  return { id, name, values: structuredClone(values), ...(schema ? { schema: structuredClone([...schema]) } : {}) };
+export interface CreateDataTreeEntryOptions {
+  name: string;
+  parentId?: string | null;
+  definitionGuid?: string | null;
+  values?: Record<string, unknown>;
+  schema?: readonly DataFieldSnapshot[];
+  id?: string;
 }
 
-export function createDataSheetAsset(
-  definitionGuid: string | null = null,
-  rows: readonly DataSheetRow[] = [],
-): DataSheetAsset {
-  return { kind: "dataSheet", definitionGuid: definitionGuid?.trim() || null, rows: structuredClone([...rows]) };
+export function createDataTreeEntry(options: CreateDataTreeEntryOptions): DataTreeEntry {
+  return {
+    id: options.id ?? newGuid(), parentId: options.parentId ?? null, name: options.name,
+    ...(options.definitionGuid !== undefined ? { definitionGuid: options.definitionGuid } : {}),
+    values: structuredClone(options.values ?? {}),
+    ...(options.schema ? { schema: structuredClone([...options.schema]) } : {}),
+  };
+}
+
+export function createDataTreeAsset(
+  defaultDefinitionGuid: string | null = null,
+  entries: readonly DataTreeEntry[] = [],
+): DataTreeAsset {
+  return { kind: "dataTree", defaultDefinitionGuid: defaultDefinitionGuid?.trim() || null, entries: structuredClone([...entries]) };
 }
 
 export function normalizeDataDefinitionAsset(value: unknown): DataDefinitionAsset {
@@ -120,10 +134,10 @@ export function normalizeDataDefinitionAsset(value: unknown): DataDefinitionAsse
   return createDataDefinitionAsset(fields);
 }
 
-/** Opening a row never adopts defaults or drops unrecognized authored values. */
-export function normalizeDataSheetRow(value: unknown): DataSheetRow {
-  if (!isDataSheetRow(value)) throw new Error("Data Sheet rows need an id, name, and values object.");
-  return createDataSheetRow(value.name, value.values, Array.isArray(value.schema) ? normalizeSnapshot(value.schema) : undefined, value.id);
+/** Opening an entry never adopts defaults or drops unrecognized authored values. */
+export function normalizeDataTreeEntry(value: unknown): DataTreeEntry {
+  if (!isDataTreeEntry(value)) throw new Error("Data Tree entries need an id, parentId, name, and values object.");
+  return createDataTreeEntry({ ...value, schema: Array.isArray(value.schema) ? normalizeSnapshot(value.schema) : undefined });
 }
 
 function normalizeSnapshot(fields: unknown[], depth = 0): DataFieldSnapshot[] {
@@ -141,14 +155,15 @@ function normalizeSnapshot(fields: unknown[], depth = 0): DataFieldSnapshot[] {
   }));
 }
 
-export function normalizeDataSheetAsset(value: unknown): DataSheetAsset {
-  if (!record(value) || (value.kind !== undefined && value.kind !== "dataSheet")) throw new Error("Invalid Data Sheet payload.");
-  if ("objectGuids" in value || "structureGuid" in value) {
-    throw new Error("Legacy reference Data Sheets must be converted before opening; their stored data has not been changed.");
+export function normalizeDataTreeAsset(value: unknown): DataTreeAsset {
+  if (!record(value) || (value.kind !== undefined && value.kind !== "dataTree")) throw new Error("Invalid Data Tree payload. Historical Data Sheets and Data Objects are unsupported.");
+  if ("rows" in value || "objectGuids" in value || "structureGuid" in value || "definitionGuid" in value) {
+    throw new Error("Historical Data Sheets and Data Objects cannot be opened as Data Trees; their stored data has not been changed.");
   }
-  if (value.rows !== undefined && !Array.isArray(value.rows)) throw new Error("Data Sheet rows must be an array.");
-  return createDataSheetAsset(
-    typeof value.definitionGuid === "string" ? value.definitionGuid : null,
-    ((value.rows ?? []) as unknown[]).map(normalizeDataSheetRow),
+  if (value.entries !== undefined && !Array.isArray(value.entries)) throw new Error("Data Tree entries must be an array.");
+  if (value.defaultDefinitionGuid !== undefined && value.defaultDefinitionGuid !== null && typeof value.defaultDefinitionGuid !== "string") throw new Error("Invalid Data Tree default Definition.");
+  return createDataTreeAsset(
+    typeof value.defaultDefinitionGuid === "string" ? value.defaultDefinitionGuid : null,
+    ((value.entries ?? []) as unknown[]).map(normalizeDataTreeEntry),
   );
 }

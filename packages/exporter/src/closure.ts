@@ -174,7 +174,7 @@ export function collectExportReachability(
     if (sceneRoot === startup) {
       for (const asset of sortedAssets) if (asset.type === "InputAction" || asset.type === "InputAxis") pending.push(asset.guid);
       for (const asset of sortedAssets) if (isSubsystemClassAsset(asset, hierarchy)) pending.push(asset.guid);
-      for (const ref of [input.gameInstanceClass, input.audioMixerGuid, ...(input.renderAssetGuids ?? [])]) {
+      for (const ref of [input.gameInstanceClass, input.audioMixerGuid, input.saveGameDefinitionGuid, ...(input.renderAssetGuids ?? [])]) {
         if (ref?.trim()) pending.push(ref.trim());
       }
     }
@@ -203,7 +203,7 @@ export function collectExportReachability(
       const ref = pending.pop()!;
       const asset = byGuid.get(ref) ?? byClassName.get(ref)?.[0];
       if (!asset || !isIncluded(asset, input)) continue;
-      if (asset.type === "DataObject") return err(`Legacy Data Object "${asset.name}" is referenced by this game. Replace that reference with a Data Sheet row before exporting.`);
+      if (asset.type === "DataObject" || asset.type === "DataSheet") return err(`Historical ${asset.type === "DataObject" ? "Data Object" : "Data Sheet"} "${asset.name}" is referenced by this game. Replace that reference with a Data Tree entry before exporting.`);
       reached.add(asset.guid);
       const refs = new Set<string>(asset.dependencies);
       const collectOverrides = (value: unknown) => {
@@ -237,11 +237,15 @@ export function collectExportReachability(
         }
       }
       const payload = input.payloadByGuid?.(asset.guid);
-      if (asset.type === "DataSheet" && payload && typeof payload === "object" && ("objectGuids" in payload || "structureGuid" in payload)) {
-        return err(`Legacy Data Sheet "${asset.name}" uses external object references. Create a sheet with owned rows before exporting.`);
-      }
       if (payload) {
-        if (["DataDefinition", "DataSheet", "Structure", "Enum"].includes(asset.type)) {
+        if (asset.type === "SaveGame" && typeof payload === "object" && "fields" in payload && Array.isArray(payload.fields)) {
+          for (const field of payload.fields as Array<{ type?: string; defaultValue?: unknown }>) {
+            if (field.type !== "asset") continue;
+            const values = Array.isArray(field.defaultValue) ? field.defaultValue : [field.defaultValue];
+            for (const value of values) if (typeof value === "string" && value) refs.add(value);
+          }
+        }
+        if (["DataDefinition", "DataTree", "Structure", "Enum"].includes(asset.type)) {
           for (const guid of dataAssetDependencies(asset.type, payload, dataClassReferences, definitionFields)) refs.add(guid);
         } else {
           collectTypedRefs(payload, refs);

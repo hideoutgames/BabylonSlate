@@ -28,6 +28,8 @@ import {
 } from "./flow-switch-pins";
 import { isBreakableLoopKind } from "./structured-flow";
 
+const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as FunctionConstructor;
+
 function pinById(node: GraphNode, pinId: string) {
   return findPin(node, pinId);
 }
@@ -463,8 +465,9 @@ function validateExecuteJavaScript(
     if (node.typeId !== "debug.executeJavaScript") continue;
     const body = String(node.properties.body ?? "");
     try {
-      // Parse as a function body.
-      new Function(body);
+      // Match the compiler's function kind without evaluating authored code.
+      const ParseFunction = node.properties.async ? AsyncFunction : Function;
+      new ParseFunction(body);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       const match = /:(\d+):(\d+)/.exec(message);

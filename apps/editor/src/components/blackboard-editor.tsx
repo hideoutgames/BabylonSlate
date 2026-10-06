@@ -91,7 +91,7 @@ export function BlackboardEditor({
     typeAsset
       ? { name: typeAsset.name, type: typeAsset.type }
       : typeClassId
-        ? { name: typeClassId, type: isEnum ? "Enum" : "Structure" }
+        ? { name: typeClassId, type: isEnum ? "Enum" : "Record" }
         : undefined,
   );
   const nameRows: PropertyRow[] = key
@@ -180,6 +180,7 @@ export function BlackboardEditor({
             <div className="flex flex-col gap-1">
               <div className="text-sm font-medium">Type</div>
               <PinTypePicker
+                labels={{ struct: "Structure / Data Definition" }}
                 value={isStruct && typeClassId === "engine:TagContainer" ? "tagContainer" : pickerTypeId}
                 onChange={(selectedType) => {
                   const typeId = selectedType === "tagContainer" ? "struct" : selectedType;
@@ -211,7 +212,7 @@ export function BlackboardEditor({
             {isStruct || isEnum ? (
               <div className="flex flex-col gap-1">
                 <div className="text-sm font-medium">
-                  {isEnum ? "Enum Type" : "Structure Type"}
+                  {isEnum ? "Enum Type" : "Record Type"}
                 </div>
                 <AssetPickerControl value={typeClassId}>
                   <Button
@@ -247,9 +248,9 @@ export function BlackboardEditor({
               open={typeAssetPickerOpen}
               onOpenChange={setTypeAssetPickerOpen}
               assets={typeAssets}
-              allowedTypes={isEnum ? ["Enum"] : ["Structure"]}
+              allowedTypes={isEnum ? ["Enum"] : ["Structure", "DataDefinition"]}
               allowNone
-              title={isEnum ? "Pick Enum Type" : "Pick Structure Type"}
+              title={isEnum ? "Pick Enum Type" : "Pick Record Type"}
               onPick={(guid) => {
                 commit({
                   ...doc,

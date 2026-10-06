@@ -2,11 +2,12 @@ import { normalizeWaterDefinition } from "@babylonslate/core";
 import {
   createDefaultSceneSettings,
   normalizeInputAssetPayload,
+  validateSaveGameDefinition,
   identitySerializedTransform,
   normalizeSceneLayer,
   normalizeShadowOverrides,
   normalizeDataDefinitionAsset,
-  normalizeDataSheetAsset,
+  normalizeDataTreeAsset,
 } from "@babylonslate/core";
 import { normalizeParticleGraphDocument } from "@babylonslate/particle-graph";
 import {
@@ -219,10 +220,8 @@ export function createDefaultMigrationRegistry(): MigrationRegistry {
     migrations: [(payload) => asRecord(normalizeDataDefinitionAsset(payload))],
   });
   registry.register({
-    type: "DataSheet",
-    // v1 stored external object references. Normalization refuses that format;
-    // there is no lossless implicit migration into owned rows.
-    migrations: [(payload) => ({ ...payload }), (payload) => asRecord(normalizeDataSheetAsset(payload))],
+    type: "DataTree",
+    migrations: [(payload) => asRecord(normalizeDataTreeAsset(payload))],
   });
   for (const type of ["InputAction", "InputAxis"] as const) {
     registry.register({
@@ -232,6 +231,10 @@ export function createDefaultMigrationRegistry(): MigrationRegistry {
       ],
     });
   }
+  registry.register({
+    type: "SaveGame",
+    migrations: [(payload) => ({ ...validateSaveGameDefinition(payload) })],
+  });
   registry.register({
     type: "Audio",
     migrations: [(payload) => ({ ...payload })],

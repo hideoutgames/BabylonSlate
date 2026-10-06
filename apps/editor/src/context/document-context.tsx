@@ -739,7 +739,7 @@ function useRefState<T>(
 }
 
 /** Class graphs and the typed asset catalogs their compilation reads. */
-const GRAPH_SIGNATURE_KINDS = ["graph", "input-action", "input-axis", "data-definition", "data-sheet", "structure", "enum"] as const;
+const GRAPH_SIGNATURE_KINDS = ["graph", "input-action", "input-axis", "data-definition", "data-tree", "structure", "enum"] as const;
 
 function openGraphCompileDocuments(
   documentService: DocumentService,
@@ -2140,6 +2140,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       return collectAndExportGame({
         startupSceneGuid,
         project: exportDocument?.metadata,
+        projectId: projectService.guid ?? undefined,
+        saveGameSettings: exportDocument?.settings.saveGame,
         gameInstanceClass: exportDocument?.settings.gameInstanceClass ?? null,
         audioMixerGuid: exportDocument?.settings.audio.audioMixerGuid ?? null,
         occlusionEnabled:
@@ -3204,7 +3206,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         | "input-action"
         | "input-axis"
         | "data-definition"
-        | "data-sheet"
+        | "data-tree"
         | "structure"
         | "enum"
         | "audio"

@@ -647,69 +647,87 @@ Preview runs compiled graphs: `ScriptHost` binds Begin Play / Tick entry points 
 - ExecuteJavaScript unsandboxed — disclose on import when assets contain JS bodies.
 - Anchor tables invalidated by code moves — rewrite offsets on concat; never minify.
 
-## Data Definitions and Data Sheets
+## Data Definitions and Data Trees
 
-A **Data Definition** owns field types, defaults and validation rules. A **Data Sheet** owns its ordered entries. Neither needs a Structure asset or a standalone Data Object. Create a Definition through **Content Browser → New Asset → Data**, add fields, then create a Sheet using that Definition.
+A **Data Definition** owns typed fields, defaults and validation rules. A **Data Tree** owns a hierarchy of named entries and their values. Create both through **Content Browser → New Asset → Data**. Trees may start without a Definition, so branches can be organized before their data is defined. Standalone Data Objects are not part of this system.
 
 | Asset | Stored data | Editor |
 | --- | --- | --- |
 | Data Definition | Stable field IDs, names, types, defaults, categories, descriptions and validation rules | DockView Fields |
-| Data Sheet | `definitionGuid` and owned `rows` (`id`, `name`, `values`, schema snapshot) | DockView Rows, Values and Validation |
+| Data Tree | `defaultDefinitionGuid` and owned `entries` (`id`, `parentId`, `name`, optional `definitionGuid`, `values`, schema snapshot) | DockView Tree, Entries, Values and Validation |
 
-Sheet row IDs are stable within their sheet. Renaming, reordering or sorting does not change identity. Different sheets may contain the same row ID without sharing values. Duplicating a row copies its values and assigns a new ID. Removing it affects only its owning sheet. The standalone Data Object feature is removed.
+Every entry can hold values and children. Omitting its Definition inherits the nearest ancestor's explicit Definition, then the tree default. An explicit Definition replaces the schema; explicit None makes an untyped grouping branch. Children inherit the **schema choice**, not their parent's values. Creation copies the effective Definition's defaults once. Existing entries keep their own values when parents or defaults change.
+
+Internal entry IDs remain stable through rename, move and undo. Graphs and scripts address entries by exact, case-sensitive **name paths**, such as `Weapons/Swords/Iron Sword`. Paths exclude the asset name and have no leading or trailing slash. Empty string denotes the virtual tree root for navigation. Renaming or moving a branch changes its descendants' paths; old graph references remain visible as missing until explicitly repaired. IDs and leaf names are never lookup fallbacks.
 
 ### Authoring and schema changes
 
-- Definitions support scalar fields, vectors/colors, Enums, Tags/Tag Containers, typed asset/Class references, nested Data Definitions, arrays and maps. The Definition editor provides typed defaults, Category, Description, Required and numeric Minimum/Maximum rules. Project Structure assets are not Data Definitions.
-- Sheets provide a windowed editable grid, search across names/values, column sorting/visibility, and error/warning filters. Sorting/filtering changes the view; Move Row Up/Down changes stored order. Values uses the same typed controls as Definition defaults. Validation rows navigate to the affected entry and field.
-- Copy Row Values exports visible cells as TSV. Paste a rectangular TSV selection into scalar cells to update the displayed rows and columns in one undoable edit; invalid or out-of-bounds input leaves the sheet unchanged.
-- Cell edits, row additions/removals, duplication, order changes and schema reconciliation belong to the sheet document. Use the existing global **Undo**, **Redo** and **Save All** controls. Editing a sheet never writes another data asset.
-- Defaults are copied when an entry is created or explicitly reset. Later default changes do not overwrite authored values. Stable field identities preserve values across renames.
-- **Review Changes → Apply Changes** reconciles renamed/added fields explicitly. Removed/unknown values and their reference metadata stay saved. Incompatible values remain visible for repair/reset. Ambiguous identities, rename collisions and recursive schemas fail without a partial migration.
-- Read-only roots and source-control locks prevent writes. Mutations recheck the live sheet, so a removed row or changed Definition cannot receive a stale edit.
+- Definitions support scalar fields, vectors/colors, Enums, Tags/Tag Containers, typed asset/Class references, nested Data Definitions, arrays and maps. Defaults, Category, Description, Required and numeric Minimum/Maximum rules live in the Definition.
+- The Tree pane follows the Tags editor's compact hierarchy and search patterns. Search retains matching ancestors. Entry selection and branch browsing are separate: the Entries grid shows the current branch's children, with optional descendants. Homogeneous Definition selections expose typed columns; mixed branches show entry metadata and a Definition filter.
+- Add roots or children, rename, move, duplicate or remove subtrees. Moves reject cycles and sibling name collisions. Duplicate assigns fresh internal IDs and copies owned values. Remove includes the selected entry's descendants. These operations each use one global undo transaction.
+- Names must be nonempty, trimmed, unique among siblings ignoring case, and cannot contain `/`, control characters, or be `.` or `..`. Hierarchy validation rejects missing parents, repeated IDs, cycles and depth greater than 128.
+- Values exposes the selected entry's effective Definition and typed controls. Changing a schema assignment or moving to a differently typed branch preserves stored values and snapshots for explicit reconciliation.
+- Copy and paste typed cells as TSV. Rectangular paste validates all affected cells before committing; invalid input leaves the tree unchanged.
+- Cell edits, hierarchy operations and reconciliation use the document's global **Undo**, **Redo** and **Save All** controls. No entry edit writes another data asset.
+- Defaults apply when creating or explicitly resetting values. Stable field identities preserve values across renames. **Review Changes → Apply Changes** reconciles renamed/added fields explicitly. Retired values and their reference metadata remain saved. Incompatible values stay visible for repair; ambiguous identities, rename collisions and recursive schemas fail without partial migration.
+- Read-only roots and source-control locks prevent writes. Mutations recheck current entries and schema assignments before applying an edit.
 
 ### NodeGraph and runtime
 
-**Read Data Row** takes a Data Sheet and Row ID, and returns a typed **Value** plus **Found**. Picking a literal sheet infers its Data Definition; the Inspector Row picker shows entry names while storing stable IDs. Typed palette entries include **Read Weapon Data Row**, **Make Weapon Data** and **Break Weapon Data**. Generic Structure assets remain available for other scripting tasks; Definitions reuse the internal record-shape machinery without depending on those assets.
+**Read Data Entry** (Get Data) takes a Data Tree and **Entry Path**, and returns typed **Value** plus **Found**. Selecting a known entry infers its effective Data Definition, including branch overrides. Both inline and Inspector defaults offer the tree's paths; no selected tree or a dynamically wired tree uses a normal string input. Missing paths stay visible for repair. A dynamically computed path requires an expected Definition: the read checks it internally and returns Found=false on mismatch, without a separate cast node.
 
-Definition types also refresh in Animation Object and transition-rule graphs. Graph literal editors preserve stable field renames while reporting newly missing or incompatible values for explicit repair; hydration does not silently adopt new defaults.
+Definitions behave as typed records in graph variables, member values and function signatures. **Make [Definition] Data** builds one; **Break [Definition] Data** exposes its fields. Generic Structures remain available for other scripting tasks; Data Definitions need no Structure asset. Definition typing also refreshes in Animation Object and transition-rule graphs. Graph literal reconciliation preserves stable field renames and diagnoses missing/incompatible values without adopting new defaults during hydration.
 
-**Get Data Sheet Rows** returns ordered row IDs and Found. Iterate them through Read Data Row. An empty valid sheet returns `[]` and Found=true. Missing sheets, invalid identity/order or Definition mismatches return Found=false. Invalid row values fail that row's read without disabling valid sibling rows. Branch on Found before consuming Value; a failed read returns `null`.
+**Get Data Children**, **Get Data Descendants** and **Get Data Parent** navigate the hierarchy using paths and return Found. Children/Descendants accept the empty root path; a valid empty branch returns `[]` with Found=true. A top-level entry's parent is the empty root path. Grouping entries remain navigable even though they have no typed value.
 
-Runtime `ctx.data` exposes synchronous `readRow(sheet, rowId, definitionGuid?)`, `hasRow`, `getSheetRows(sheet, definitionGuid?)`, and `hasSheet`. A session catalog validates and indexes sheets once; reads return detached values. Gameplay mutations never rewrite authored sheets. Restart Play to load authored changes. The catalog is shared across worker/in-process Play and loose/packed players.
+Runtime `ctx.data` provides:
 
-Asset pickers rendered on NodeGraph nodes omit the Open Asset button to keep nodes compact. Inspector and other editor asset pickers retain their normal opening controls.
+| Method | Result |
+| --- | --- |
+| `readEntry(tree, path, definitionGuid?)` | Detached typed values or `null` |
+| `canReadEntry(tree, path, definitionGuid?)` | Whether a typed read will succeed |
+| `hasTree(tree)` / `hasEntry(tree, path)` | Structural existence |
+| `getChildren(tree, parentPath = "")` | Direct child paths in stored sibling order |
+| `getDescendants(tree, parentPath = "")` | Descendant paths in preorder, excluding the parent |
+| `getParent(tree, path)` | Parent path, or `null` for an unknown entry/root |
+
+The session catalog validates topology and builds hierarchy/path indexes once. Bad topology rejects the tree; invalid values or schemas fail the affected entry's read while valid siblings and hierarchy navigation remain available. Branch on Found before consuming Value; failed reads return `null`. Gameplay edits to returned values never rewrite authored data. Restart Play to load authoring changes. Worker/in-process Play and loose/packed players use the same catalog.
+
+Asset pickers inside NodeGraph nodes omit Open Asset. Inspector/default value pickers retain it.
 
 ### Editor Utility Objects
 
-Editor-only Data nodes support **List Data Sheets**, **Read Editable Data Sheet**, **Read Editable Data Row**, **Create Data Sheet**, **Add Data Row**, **Update Data Row**, **Remove Data Row** and **Reorder Data Rows**. Select a Data Definition and use its typed Make/Break nodes. These asynchronous operations expose Success and Error, and continue execution after completion.
-
-JavaScript utilities use `await ctx.editorData`:
+Editor-only Data nodes expose tree creation, typed reads/updates and hierarchy navigation/authoring. Operations are asynchronous and return Success and Error before continuing execution. Add Entry offers Inherit, Override and None Definition modes. Typed Values in Inherit mode require a known parent with the matching Definition; dynamic parents use Override when supplying typed values. JavaScript utilities use `await ctx.editorData`:
 
 | Method | Successful value |
 | --- | --- |
-| `listSheets(definitionGuid?)` | Sheet GUIDs |
-| `readSheet(sheet, definitionGuid?)` | Ordered row IDs |
-| `readRow(sheet, rowId, definitionGuid?)` | Typed row values |
-| `createSheet(name, definitionGuid, folder?)` | New sheet GUID |
-| `addRow(sheet, definitionGuid, name, values?)` | New row ID |
-| `updateRow(sheet, rowId, definitionGuid, values)` | Updated row ID |
-| `removeRow(sheet, rowId, definitionGuid)` | Removed row ID |
-| `reorderRows(sheet, definitionGuid, rowIds)` | Sheet GUID |
+| `listTrees(definitionGuid?)` | Matching tree GUIDs |
+| `readTree(tree)` | All entry paths in preorder |
+| `readEntry(tree, path, definitionGuid?)` | Typed entry values |
+| `getChildren(tree, parentPath?)` / `getDescendants(tree, parentPath?)` | Child/descendant paths |
+| `getParent(tree, path)` | Parent path |
+| `createTree(name, defaultDefinitionGuid?, folder?)` | New tree GUID |
+| `addEntry(tree, parentPath, name, definitionGuid?, values?)` | New entry path |
+| `updateEntry(tree, path, definitionGuid, values)` | Updated entry path |
+| `removeEntry(tree, path)` | Removed subtree root path |
+| `moveEntry(tree, path, newParentPath, index?)` | New entry path |
+| `reorderChildren(tree, parentPath, entryPaths)` | Tree GUID |
 
 Results are `{ success, value, error }`. For example:
 
 ```js
-const result = await ctx.editorData.updateRow(weaponsGuid, swordRowId, weaponDefinitionGuid, { Price: 24 });
+const result = await ctx.editorData.updateEntry(weaponsGuid, "Swords/Iron Sword", weaponDefinitionGuid, { Price: 24 });
 if (!result.success) ctx.log("error", "data", result.error);
 ```
 
-Updates merge supplied scalar/nested fields; supplied arrays/maps replace those collections. Maps use native `Map` values in scripts and portable key/value entries in assets. Writes serialize and validate before mutation, honor locks, and stop when the utility/project closes. Row edits remain dirty and undoable on their sheet; creating a sheet persists a new file immediately. Folder is relative to the project's assets directory; existing paths and traversal are rejected. Operations never implicitly save unrelated edits. Runtime/game hosts cannot author data.
+For Add Entry, omitted Definition inherits, `null` creates an untyped grouping entry, and a GUID explicitly overrides the schema. Updates merge scalar/nested fields; supplied arrays/maps replace their collections. Scripts use native `Map`; assets use portable key/value entries. Hierarchy mutations validate the complete proposed change before committing, preserve stable IDs, and never partially alter a subtree. The virtual root cannot be moved or removed.
+
+Writes honor locks and cancellation when the utility/project closes. Entry edits remain dirty and undoable on their tree; creating a tree persists a new file immediately. Folder is relative to the project's assets directory; existing paths and traversal are rejected. Operations never implicitly save unrelated edits. Runtime/game hosts cannot author data.
 
 ### Persistence and asset lifecycle
 
-Definitions use `.datadefinition.babasset`; sheets use `.datasheet.babasset`. Indexed headers contain canonical payloads, so browsing and runtime catalog construction do not read a file per row. Typed field/default/row references participate in dependency discovery, deletion replacement, import GUID remapping and export closure. Traversal follows field schemas; ordinary text and row IDs that happen to equal an asset GUID stay unchanged.
+Definitions use `.datadefinition.babasset`; trees use `.datatree.babasset` (version 1). Indexed headers contain canonical payloads, avoiding per-entry file reads. Dependencies include the tree's default Definition, explicit branch Definitions, typed values/defaults and retained schema snapshots. Nested snapshots follow populated values; empty collections do not expand unused element schemas. Schema-aware traversal supports deletion replacement, import GUID remapping and export closure; ordinary text, names, paths and internal parent/entry IDs remain unchanged.
 
-The previous experimental standalone Data Object and reference-only sheet formats are unsupported and are never silently converted into empty definitions/sheets. Existing files are preserved; unsupported reachable data prevents export with an actionable error.
+Experimental Data Object and Data Sheet formats are unsupported. Their files are preserved and never silently reinterpreted as empty trees. Unsupported reachable data blocks export with an actionable error.
 
-Editor screenshots: [Data Definition fields](../design/evidence/data-workspace/01-data-definition.png), [Data Sheet workspace](../design/evidence/data-workspace/02-data-sheet.png), and [typed row node with Inspector defaults](../design/evidence/data-workspace/03-data-sheet-node.png).
+Editor screenshots: [Data Definition fields](../design/evidence/data-workspace/01-data-definition.png), [Data Tree workspace](../design/evidence/data-workspace/02-data-tree.png), and [typed entry node with Inspector defaults](../design/evidence/data-workspace/03-data-tree-node.png).

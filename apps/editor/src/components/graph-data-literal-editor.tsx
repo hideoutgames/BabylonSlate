@@ -4,7 +4,7 @@ import { graphDataLiteralField } from "../lib/graph-inspector";
 import { useDataCatalog } from "../lib/use-data-catalog";
 import { DataValueEditor } from "./data-value-editor";
 
-/** The sheet editor's recursive controls also author typed graph row literals. */
+/** The tree editor's recursive controls also author typed graph entry literals. */
 export function GraphDataLiteralEditor({ entry, catalog, onChange, hasAuthoredValue = true }: {
   entry: LiteralPinDefault;
   catalog: ReturnType<typeof useDataCatalog>;

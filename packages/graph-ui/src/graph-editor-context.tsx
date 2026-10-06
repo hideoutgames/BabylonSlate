@@ -8,6 +8,7 @@ import type { ConnectEndMode, PinCompatibilityRule } from "./graph-connect";
 
 export type GraphEditorContextValue = {
   renderPinDefaultEditor?: PinDefaultEditorRenderer;
+  connectedInputs?: ReadonlyMap<string, readonly string[]>;
   renderNodeBody?: (nodeId: string, data: Record<string, unknown>) => React.ReactNode;
   pendingPin: { nodeId: string; pinId: string } | null;
   onPinDefaultChange?: (nodeId: string, pinId: string, value: unknown) => void;

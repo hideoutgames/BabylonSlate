@@ -66,6 +66,38 @@ it("keeps locked definition fields and rules read-only", () => {
   expect(state.apply).not.toHaveBeenCalled();
 });
 
+it("saves nested default identities and projects later renames without losing retired asset values", async () => {
+  const child = { kind: "dataDefinition", fields: [
+    { id: "count", name: "Count", typeId: "int" },
+    { id: "icon", name: "Icon", typeId: "asset", typeClassId: "Texture" },
+  ] };
+  const root = { kind: "dataDefinition", fields: [{ id: "child", name: "Child", typeId: "struct", typeClassId: "child", defaultValue: { Count: 2, Icon: "texture-guid" } }] };
+  state.documents[0]!.content = root;
+  state.assets[0]!.header.payload = root;
+  state.assets.push({ ...state.assets[0]!, path: "assets/Child.datadefinition.babasset", header: { ...state.assets[0]!.header, guid: "child", name: "Child", payload: child } });
+  const view = render(<View />);
+  fireEvent.change(screen.getByRole("textbox", { name: "Default Value Count" }), { target: { value: "7" } });
+  await waitFor(() => expect(state.documents[0]!.content).toMatchObject({ fields: [{
+    defaultValue: { Count: 7, Icon: "texture-guid" }, fields: [
+      { id: "count", name: "Count", typeId: "int" },
+      { id: "icon", name: "Icon", typeId: "asset", typeClassId: "Texture" },
+    ],
+  }] }));
+  state.assets = state.assets.map(asset => asset.header.guid === "child" ? {
+    ...asset, header: { ...asset.header, payload: { kind: "dataDefinition", fields: [{ id: "count", name: "Total", typeId: "int" }] } },
+  } : asset);
+  view.rerender(<View />);
+  expect((screen.getByRole("textbox", { name: "Default Value Total" }) as HTMLInputElement).value).toBe("7");
+  fireEvent.change(screen.getByRole("textbox", { name: "Default Value Total" }), { target: { value: "9" } });
+  await waitFor(() => expect(state.documents[0]!.content).toMatchObject({ fields: [{
+    defaultValue: { Total: 9, Icon: "texture-guid" }, fields: [
+      { id: "count", name: "Total", typeId: "int" },
+      { id: "icon", name: "Icon", typeId: "asset", typeClassId: "Texture" },
+    ],
+  }] }));
+  expect((state.documents[0]!.content.fields as { defaultValue: Record<string, unknown> }[])[0]!.defaultValue).not.toHaveProperty("Count");
+});
+
 it("keeps recursive definitions editable without expanding their recursive defaults", () => {
   const root = { kind: "dataDefinition", fields: [{ id: "child", name: "Child", typeId: "struct", typeClassId: "child" }] };
   const child = { kind: "dataDefinition", fields: [{ id: "parent", name: "Parent", typeId: "struct", typeClassId: "weapon" }] };

@@ -1,5 +1,5 @@
 import { INPUT_KEYS, normalizeTag, normalizeTagContainer } from "@babylonslate/core";
-import { DATA_GRAPH_NODES, dataGraphNodeTitle, isDataGraphNode, type DataGraphAssetEntry } from "./data-graph";
+import { dataGraphMetadata, dataGraphNodeTitle, isDataGraphNode, type DataGraphAssetEntry } from "./data-graph";
 import type {
   ParameterRow,
   PinListRow,
@@ -677,15 +677,13 @@ export function structNodePropertyRows(
   }];
 }
 
-/** A literal sheet offers friendly row names while retaining immutable row IDs. */
-export function dataNodeRowOptions(
-  typeId: string,
-  data: Record<string, unknown>,
-  sheets: readonly DataGraphAssetEntry[],
-  wired: (pinId: string) => boolean = () => false,
-): readonly { id: string; name: string }[] | undefined {
-  if (!isDataGraphNode(typeId) || !("row" in DATA_GRAPH_NODES[typeId]) || wired("sheet") || wired("rowId")) return undefined;
-  return sheets.find((sheet) => sheet.guid === data["default:sheet"])?.rows;
+/** Literal trees expose canonical paths; wired tree inputs ignore stale defaults. */
+export function dataNodePathOptions(typeId: string, pinId: string, data: Record<string, unknown>,
+  trees: readonly DataGraphAssetEntry[], wired: (pinId: string) => boolean = () => false) {
+  const path = dataGraphMetadata(typeId)?.pathPins?.find((entry) => entry.pinId === pinId);
+  if (!path || wired("tree") || wired(pinId)) return undefined;
+  const tree = trees.find((entry) => entry.guid === data["default:tree"]);
+  return tree ? { entries: tree.entries, includeRoot: path.root } : undefined;
 }
 
 export function dataNodePropertyRows(
@@ -693,19 +691,26 @@ export function dataNodePropertyRows(
   data: Record<string, unknown>,
   onPatch: (patch: Record<string, unknown>) => void,
   definitions: ReadonlyArray<{ guid: string; name: string }>,
-  sheets: readonly DataGraphAssetEntry[] = [],
-  wired: (pinId: string) => boolean = () => false,
 ): PropertyRow[] {
   if (!isDataGraphNode(typeId)) return [];
-  const required = DATA_GRAPH_NODES[typeId].required;
+  const metadata = dataGraphMetadata(typeId)!;
+  if (metadata.schema === false) return [];
+  const adding = typeId === "editorData.addEntry";
+  const inherited = adding && (data.definitionMode === "inherit" || (!data.definitionMode && !data.definitionGuid));
+  const required = metadata.required || (adding && data.definitionMode === "override");
+  const emptyLabel = required ? "Select Data Definition"
+    : adding ? "Use Effective Defaults" : typeId === "editorData.createTree" ? "No Default Definition" : "Any Data Definition";
   const rows: PropertyRow[] = [{
     kind: "enum",
     id: "definitionGuid",
-    label: "Data Definition",
-    description: required ? "The Data Definition used by this node's row values." : "An empty selection accepts every Data Definition.",
+    label: inherited ? "Expected Data Definition" : "Data Definition",
+    disabled: adding && data.definitionMode === "none",
+    description: inherited ? "Select the parent's effective Definition to author typed values, or leave empty to copy its defaults."
+      : typeId === "editorData.createTree" ? "The default Definition inherited by new entries."
+        : required ? "The Data Definition used by this node's entry values." : "An empty selection accepts every Data Definition.",
     value: typeof data.definitionGuid === "string" ? data.definitionGuid : "",
     options: [
-      { value: "", label: required ? "Select Data Definition" : "Any Data Definition", disabled: required },
+      { value: "", label: emptyLabel, disabled: required },
       ...definitions.map((entry) => ({ value: entry.guid, label: entry.name })),
     ],
     onChange: (guid) => {
@@ -718,17 +723,11 @@ export function dataNodePropertyRows(
       });
     },
   }];
-  const rowOptions = dataNodeRowOptions(typeId, data, sheets, wired);
-  if (rowOptions) {
-    const value = typeof data["default:rowId"] === "string" ? data["default:rowId"] : "";
-    rows.push({
-      kind: "enum", id: "default:rowId", label: "Row", value,
-      options: [
-        { value: "", label: "Select Row" },
-        ...rowOptions.map((row) => ({ value: row.id, label: row.name })),
-        ...(value && !rowOptions.some((row) => row.id === value) ? [{ value, label: `Missing Row (${value})` }] : []),
-      ],
-      onChange: (rowId) => onPatch({ "default:rowId": rowId }),
+  if (typeId === "editorData.addEntry") {
+    rows.unshift({ kind: "enum", id: "definitionMode", label: "Definition Mode",
+      value: typeof data.definitionMode === "string" ? data.definitionMode : data.definitionGuid ? "override" : "inherit",
+      options: [{ value: "inherit", label: "Use Parent / Tree" }, { value: "override", label: "Override" }, { value: "none", label: "None (Grouping Entry)" }],
+      onChange: (definitionMode) => onPatch({ definitionMode }),
     });
   }
   return rows;

@@ -3,6 +3,8 @@ import type { PinType } from "./types";
 import { pinTypeForMember, pinTypeForVariable } from "./member-pin-type";
 import { ENGINE_ENUMS, ENGINE_STRUCTS } from "./engine-types";
 import type { EnumMember, StructField } from "./type-assets";
+import type { DataFieldSnapshot } from "@babylonslate/core";
+import { defaultFieldSnapshot, projectStoredDataDefault } from "./data-default-projection";
 
 export type EnumSchema = {
   name: string;
@@ -75,39 +77,54 @@ export function structInstanceDefault(
   schemas?: TypeSchemas,
   visiting: ReadonlySet<string> = new Set(),
 ): Record<string, unknown> {
-  if (visiting.size > 64) return {};
+  return structInstanceDefaultWithSchema(fields, schemas, visiting).values;
+}
+
+/** Copy defaults together with the identities needed to preserve retained values. */
+export function structInstanceDefaultWithSchema(
+  fields: readonly StructField[], schemas?: TypeSchemas, visiting: ReadonlySet<string> = new Set(),
+): { values: Record<string, unknown>; schema: DataFieldSnapshot[] } {
+  if (visiting.size > 64) return { values: {}, schema: [] };
   const result: Record<string, unknown> = {};
+  const schema: DataFieldSnapshot[] = [];
   for (const field of fields) {
     if (!field.name) continue;
+    const entry = defaultValueForStructField(field, schemas, visiting);
+    schema.push(entry.snapshot);
     Object.defineProperty(result, field.name, {
-      value: defaultValueForStructField(field, schemas, visiting),
+      value: entry.value,
       enumerable: true,
       writable: true,
       configurable: true,
     });
   }
-  return result;
+  return { values: result, schema };
 }
 
 function defaultValueForStructField(
   field: StructField,
   schemas: TypeSchemas | undefined,
   visiting: ReadonlySet<string>,
-): unknown {
-  if (field.defaultValue !== undefined) return structuredClone(field.defaultValue);
+): { value: unknown; snapshot: DataFieldSnapshot } {
+  const snapshot = defaultFieldSnapshot(field);
+  if (field.defaultValue !== undefined) {
+    const result = projectStoredDataDefault(field, field.defaultValue, schemas);
+    return { value: structuredClone(result.value), snapshot: structuredClone(result.snapshot) };
+  }
   const type = pinTypeForVariable(field);
   // Structure defaults are persisted JSON, matching Class Map default entries.
-  if (type.kind === "map") return [];
+  if (type.kind === "map") return { value: [], snapshot };
   if (type.kind === "structRef" && type.guid) {
-    if (type.guid === "engine:TagContainer") return { Tags: [] };
-    if (visiting.has(type.guid)) return {};
+    if (type.guid === "engine:TagContainer") return { value: { Tags: [] }, snapshot: { ...snapshot, fields: [{ id: "legacy:Tags", name: "Tags", typeId: "tag", container: "array" }] } };
+    if (visiting.has(type.guid)) return { value: {}, snapshot };
     const nested = schemas?.structs[type.guid];
-    if (!nested) return {};
+    if (!nested) return { value: {}, snapshot };
     const next = new Set(visiting);
     next.add(type.guid);
-    return structInstanceDefault(nested.fields, schemas, next);
+    const result = structInstanceDefaultWithSchema(nested.fields, schemas, next);
+    return { value: result.values, snapshot: { ...snapshot, fields: result.schema } };
   }
-  return defaultValueForPinType(type, schemas);
+  return { value: defaultValueForPinType(type, schemas), snapshot };
 }
 
 export function hydrateStructInstance(

@@ -22,12 +22,18 @@ describe("packaged renderer boundary", () => {
     expect(isEditorSender("app://babylonslate/index.html", false)).toBe(false);
   });
   it("rejects malformed privileged arguments and filesystem escapes", () => {
+    expect(() => validateIpcArguments("save-games:list", ["save-games/project/game/profile/"])).not.toThrow();
+    expect(() => validateIpcArguments("save-games:write", ["save-games/project/game/profile/slot/generation-a.save", "{}"]))
+      .not.toThrow();
     expect(() => validateIpcArguments("settings:write", ["{}"])).not.toThrow();
     expect(() => validateIpcArguments("account-secrets:get", ["slate-clerk-client:pk_test_example"])).not.toThrow();
     expect(() => validateIpcArguments("account-secrets:set", ["slate-clerk-client:pk_test_example", "token"])).not.toThrow();
     expect(() => validateIpcArguments("account-secrets:delete", ["slate-clerk-client:pk_test_example"])).not.toThrow();
     expect(() => validateIpcArguments("project:writeBinary", ["assets/a.bin", new ArrayBuffer(4)])).not.toThrow();
     for (const [channel, args] of [
+      ["save-games:read", ["../outside"]], ["save-games:write", ["/absolute", "{}"]],
+      ["save-games:remove", ["project//file"]], ["save-games:release-lock", ["../token"]],
+      ["save-games:write", ["project/file", {}]],
       ["settings:write", [{}]], ["settings:write", ["not json"]],
       ["project:openDocuments", ["../outside"]], ["project:readBinary", ["../projects-other/key"]],
       ["project:remove", ["."]], ["project:readBinary", ["C:\\secret"]],

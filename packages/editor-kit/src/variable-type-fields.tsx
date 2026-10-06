@@ -37,6 +37,7 @@ export type VariableTypeFieldsProps = {
   onChange: (next: VariableTypeFieldsValue) => void;
   classEntries?: readonly ClassPickerEntry[];
   typeAssets?: readonly AssetPickerEntry[];
+  /** Omitted accepts both record assets; schema editors can restrict their source. */
   structAssetType?: "Structure" | "DataDefinition";
   types?: readonly string[];
   "data-testid"?: string;
@@ -57,12 +58,12 @@ export function VariableTypeFields({
   onChange,
   classEntries = [],
   typeAssets = [],
-  structAssetType = "Structure",
+  structAssetType,
   types,
   "data-testid": testId = "variable-type-fields",
 }: VariableTypeFieldsProps) {
   const [keyClassOpen, setKeyClassOpen] = useState(false);
-  const structLabel = structAssetType === "DataDefinition" ? "Data Definition" : "Structure";
+  const structLabel = structAssetType === "DataDefinition" ? "Data Definition" : structAssetType ?? "Structure / Data Definition";
   const [keyAssetOpen, setKeyAssetOpen] = useState(false);
   const container = value.container === "array" || value.container === "map"
     ? value.container
@@ -162,7 +163,7 @@ export function VariableTypeFields({
                     : keyClassId
                       ? {
                           name: keyClassId,
-                          type: keyTypeId === "enum" ? "Enum" : structAssetType,
+                          type: keyTypeId === "enum" ? "Enum" : structAssetType ?? "Record",
                         }
                       : undefined,
                 ),
@@ -235,7 +236,7 @@ export function VariableTypeFields({
             open={keyAssetOpen}
             onOpenChange={setKeyAssetOpen}
             assets={[...typeAssets]}
-            allowedTypes={keyTypeId === "enum" ? ["Enum"] : [structAssetType]}
+            allowedTypes={keyTypeId === "enum" ? ["Enum"] : structAssetType ? [structAssetType] : ["Structure", "DataDefinition"]}
             allowNone
             title={keyTypeId === "enum" ? "Pick Key Enum Type" : `Pick Key ${structLabel} Type`}
             onPick={(guid) => {

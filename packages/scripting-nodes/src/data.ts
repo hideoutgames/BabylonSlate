@@ -4,41 +4,66 @@ export function dataDefinitionGuidOf(properties: Record<string, unknown>): strin
   return typeof properties.definitionGuid === "string" ? properties.definitionGuid.trim() : "";
 }
 
-/** Data Definitions supply typed values; sheet-local row IDs survive renames. */
+/** Data Definitions supply typed values; trees are navigated by exact name paths. */
 export const dataNodes: NodeDefinition[] = [
   {
-    id: "data.readRow",
-    title: "Read Data Row",
+    id: "data.readEntry",
+    title: "Read Data Entry",
     category: "data",
-    description: "Read an independent copy of a sheet row using its stable Row ID. Found is false for missing, invalid, or incompatible rows.",
-    searchAliases: ["data table", "record", "configuration"],
+    description: "Read an independent copy of an entry by its exact path, such as Weapons/Swords/Iron Sword. Found requires valid values matching the selected Data Definition.",
+    searchAliases: ["data tree", "record", "configuration"],
     pure: true,
     pins: (properties) => [
-      pin("sheet", "Sheet", "in", assetRef("DataSheet")),
-      pin("rowId", "Row ID", "in", STRING),
+      pin("tree", "Tree", "in", assetRef("DataTree")),
+      pin("entryPath", "Entry Path", "in", STRING),
       pin("value", "Value", "out", structRef(dataDefinitionGuidOf(properties))),
       pin("found", "Found", "out", BOOL),
     ],
     codegen: (ctx) => {
-      const args = `${ctx.input("sheet")}, ${ctx.input("rowId")}, ${JSON.stringify(dataDefinitionGuidOf(ctx.node.properties))}`;
-      return { value: `ctx.data.readRow(${args})`, found: `ctx.data.hasRow(${args})` };
+      const args = `${ctx.input("tree")}, ${ctx.input("entryPath")}, ${JSON.stringify(dataDefinitionGuidOf(ctx.node.properties))}`;
+      return { value: `ctx.data.readEntry(${args})`, found: `ctx.data.canReadEntry(${args})` };
     },
   },
-  {
-    id: "data.getSheetRows",
-    title: "Get Data Sheet Rows",
+  ...(["getChildren", "getDescendants"] as const).map((operation): NodeDefinition => ({
+    id: `data.${operation}`,
+    title: operation === "getChildren" ? "Get Data Children" : "Get Data Descendants",
     category: "data",
-    description: "Get a sheet's ordered stable row IDs. Use For Each and Read Data Row to read the values. An empty valid sheet is still Found.",
-    searchAliases: ["data table", "rows", "records"],
+    description: operation === "getChildren"
+      ? "Get immediate child entry paths in sibling order. An empty Entry Path selects the tree root. Found includes untyped grouping entries."
+      : "Get all descendant entry paths in preorder, excluding the selected entry. An empty Entry Path selects the tree root. Found includes untyped grouping entries.",
+    searchAliases: ["data tree", "entries", "hierarchy"],
     pure: true,
     pins: () => [
-      pin("sheet", "Sheet", "in", assetRef("DataSheet")),
-      pin("rows", "Rows", "out", arrayOf(STRING)),
+      pin("tree", "Tree", "in", assetRef("DataTree")),
+      pin("entryPath", "Entry Path", "in", STRING),
+      pin("paths", "Entry Paths", "out", arrayOf(STRING)),
       pin("found", "Found", "out", BOOL),
     ],
     codegen: (ctx) => {
-      const args = `${ctx.input("sheet")}, ${JSON.stringify(dataDefinitionGuidOf(ctx.node.properties))}`;
-      return { rows: `ctx.data.getSheetRows(${args})`, found: `ctx.data.hasSheet(${args})` };
+      const tree = ctx.input("tree");
+      const path = ctx.input("entryPath");
+      return {
+        paths: `ctx.data.${operation}(${tree}, ${path})`,
+        found: `(${path} === "" ? ctx.data.hasTree(${tree}) : ctx.data.hasEntry(${tree}, ${path}))`,
+      };
+    },
+  })),
+  {
+    id: "data.getParent",
+    title: "Get Data Parent",
+    category: "data",
+    description: "Get an entry's parent path. Top-level entries return an empty path for the tree root. Found is false for the virtual root or a missing entry.",
+    searchAliases: ["data tree", "entries", "hierarchy"],
+    pure: true,
+    pins: () => [
+      pin("tree", "Tree", "in", assetRef("DataTree")),
+      pin("entryPath", "Entry Path", "in", STRING),
+      pin("parentPath", "Parent Path", "out", STRING),
+      pin("found", "Found", "out", BOOL),
+    ],
+    codegen: (ctx) => {
+      const args = `${ctx.input("tree")}, ${ctx.input("entryPath")}`;
+      return { parentPath: `(ctx.data.getParent(${args}) ?? "")`, found: `ctx.data.hasEntry(${args})` };
     },
   },
 ];

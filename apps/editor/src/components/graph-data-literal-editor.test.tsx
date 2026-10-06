@@ -32,7 +32,7 @@ const node = (id: string, type: string, data: Record<string, unknown> = {}): Ser
 function createGraph(type: string): SerializedGraph {
   return {
     nodes: [node("entry", "flow.event.editorStartup"), node("write", type, {
-      definitionGuid: "inventory", "default:sheet": "shop", "default:rowId": "sword", "default:name": "Sword",
+      definitionGuid: "inventory", "default:tree": "shop", "default:entryPath": "Sword", "default:name": "Sword",
       "default:values": { Prices: [2, 4], Lookup: [{ key: { Code: "common" }, value: { Weight: 3, Samples: [6, 8] } }], Note: "Authored" },
     })],
     edges: [{ id: "exec", source: "entry", sourceHandle: "execOut", target: "write", targetHandle: "execIn" }],
@@ -42,7 +42,7 @@ function createGraph(type: string): SerializedGraph {
 afterEach(cleanup);
 
 describe("Definition collection literals in the graph Inspector", () => {
-  it.each(["editorData.addRow", "editorData.updateRow"])("edits typed collections and preserves their shape through %s execution", async (type) => {
+  it.each(["editorData.addEntry", "editorData.updateEntry"])("edits typed collections and preserves their shape through %s execution", async (type) => {
     let authored = createGraph(type);
     function Inspector() {
       const [graph, setGraph] = useState(authored);
@@ -76,13 +76,13 @@ describe("Definition collection literals in the graph Inspector", () => {
     const execute = new Function(`${js}\nreturn onEditorStartup;`)() as (ctx: Record<string, unknown>) => Promise<void>;
     const calls: unknown[][] = [];
     await execute({ editorData: {
-      addRow: async (...args: unknown[]) => { calls.push(args); return { success: true, value: "sword", error: "" }; },
-      updateRow: async (...args: unknown[]) => { calls.push(args); return { success: true, value: "sword", error: "" }; },
+      addEntry: async (...args: unknown[]) => { calls.push(args); return { success: true, value: "Sword", error: "" }; },
+      updateEntry: async (...args: unknown[]) => { calls.push(args); return { success: true, value: "Sword", error: "" }; },
     } });
     // Utility authoring accepts portable map entries as well as native Maps.
-    expect(calls).toEqual(type === "editorData.addRow"
-      ? [["shop", "inventory", "Sword", expected]]
-      : [["shop", "sword", "inventory", expected]]);
+    expect(calls).toEqual(type === "editorData.addEntry"
+      ? [["shop", "", "Sword", "inventory", expected]]
+      : [["shop", "Sword", "inventory", expected]]);
   });
 
   it.each(["Cost", "Quantity"])("repairs a rename and an added field when %s is edited first", async (first) => {
@@ -94,7 +94,7 @@ describe("Definition collection literals in the graph Inspector", () => {
     const changedCatalog = { ...catalog, schemas: changedSchemas,
       types: { ...catalog.types, dataDefinitions: Object.entries(changedDefinitions).map(([guid, schema]) => ({ guid, ...schema })) },
     };
-    let authored = createGraph("editorData.addRow");
+    let authored = createGraph("editorData.addEntry");
     authored.nodes[1]!.data["default:values"] = { Price: 5, RemovedIcon: "icon" };
     authored.nodes[1]!.data.dataSchema = [
       { id: "price", name: "Price", typeId: "float" },
@@ -139,9 +139,9 @@ describe("Definition collection literals in the graph Inspector", () => {
     const js = compiled!.source.replace(/export\s+(async\s+)?function\s+/g, "$1function ");
     const execute = new Function(`${js}\nreturn onEditorStartup;`)() as (ctx: Record<string, unknown>) => Promise<void>;
     const calls: unknown[][] = [];
-    await execute({ editorData: { addRow: async (...args: unknown[]) => {
-      calls.push(args); return { success: true, value: "sword", error: "" };
+    await execute({ editorData: { addEntry: async (...args: unknown[]) => {
+      calls.push(args); return { success: true, value: "Sword", error: "" };
     } } });
-    expect(calls).toEqual([["shop", "inventory", "Sword", { Cost: 10, Quantity: 2, RemovedIcon: "icon" }]]);
+    expect(calls).toEqual([["shop", "", "Sword", "inventory", { Cost: 10, Quantity: 2, RemovedIcon: "icon" }]]);
   });
 });

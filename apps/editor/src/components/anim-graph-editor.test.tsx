@@ -125,8 +125,8 @@ vi.mock("../context/document-context", async () => {
           },
           {
             header: {
-              guid: "settings", name: "Settings", type: "DataSheet",
-              payload: { definitionGuid: "stats", rows: [{ id: "primary", name: "Primary", values: { Allowed: true } }] },
+              guid: "settings", name: "Settings", type: "DataTree",
+              payload: { defaultDefinitionGuid: "stats", entries: [{ id: "primary", parentId: null, name: "Primary", values: { Allowed: true } }] },
             },
             path: "assets/Settings.babasset",
           },
@@ -446,8 +446,8 @@ describe("AnimGraphEditor", () => {
   it("hydrates typed row reads and offers Definition nodes in transition rules", async () => {
     const doc = locoGraph();
     doc.transitions[0]!.ruleGraph.nodes.push({
-      id: "read-data", type: "data.readRow", position: { x: 300, y: 200 },
-      data: { "default:sheet": "settings", "default:rowId": "primary" },
+      id: "read-data", type: "data.readEntry", position: { x: 300, y: 200 },
+      data: { "default:tree": "settings", "default:entryPath": "Primary" },
     });
     const { container } = renderAnimGraph(doc);
     fireEvent.click(screen.getByTestId("anim-graph-state-idle"));
@@ -460,7 +460,7 @@ describe("AnimGraphEditor", () => {
     fireEvent.click(pane!);
     fireEvent.change(await screen.findByPlaceholderText("Search nodes"), { target: { value: "Stats" } });
     await waitFor(() => {
-      expect(screen.getByTestId("node-palette-item-data.readRow:stats")).toBeTruthy();
+      expect(screen.getByTestId("node-palette-item-data.readEntry:stats")).toBeTruthy();
       expect(screen.getByTestId("node-palette-item-struct.break:stats")).toBeTruthy();
     });
   });

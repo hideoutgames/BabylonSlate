@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createDefaultWaterDefinition, createDefaultScene, createDefaultRenderTargetCaptureProperties, DEFAULT_RENDER_PROJECT_SETTINGS, resolveRenderingPipeline } from "@babylonslate/core";
+import { createDefaultWaterDefinition, createDefaultScene, createDefaultRenderTargetCaptureProperties, DEFAULT_RENDER_PROJECT_SETTINGS, resolveRenderingPipeline,
+  SaveGameService, createSaveStorageClient, type SaveGameConfiguration, type SaveGameStorage } from "@babylonslate/core";
 import { exportGame } from "@babylonslate/exporter";
 import * as rendering from "@babylonslate/render";
 import * as runtimes from "@babylonslate/runtime";
@@ -9,6 +10,7 @@ import { loadGameFromFiles } from "./artifact";
 import { startPlayer, type PlayerBootHandle } from "./boot";
 import { startPlayerWithBackend } from "./player-backend";
 import * as inputs from "./input";
+const attachInputCapture = inputs.attachInputCapture;
 
 class TestWorker {
   static instances: TestWorker[] = [];
@@ -59,9 +61,10 @@ function flushFrames(count: number) {
   }
 }
 
-async function fixture(withWater = false) {
+async function fixture(withWater = false, saveGame?: SaveGameConfiguration) {
   const scene = { ...createDefaultScene(), actors: [] };
   const packed = await exportGame({ bundleDebugger: false, startupSceneGuid: "world", scripts: [], renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
+    ...(saveGame ? { saveGame, physicsWorld: "2d" as const } : {}),
     assets: [{ guid: "world", type: "Scene", sceneGuid: "world", bytes: new TextEncoder().encode(JSON.stringify(scene)) }, ...(withWater ? [{ guid: "water", type: "Water", sceneGuid: "world", bytes: new TextEncoder().encode(JSON.stringify(createDefaultWaterDefinition("stylized"))) }] : [])] });
   if (!packed.ok) throw new Error("Fixture export failed");
   const game = await loadGameFromFiles(packed.value.files);
@@ -87,9 +90,8 @@ async function fixture(withWater = false) {
     scheduler: { invalidate: vi.fn(), acquireObstruction: vi.fn(() => () => {}), stats: () => ({ renderedFps: 0 }) },
   };
   vi.spyOn(rendering, "createEngine").mockReturnValue(handle as unknown as rendering.EngineHandle);
-  const attach = inputs.attachInputCapture;
   let input: inputs.InputCaptureHandle | undefined;
-  vi.spyOn(inputs, "attachInputCapture").mockImplementation((...args) => (input = attach(...args)));
+  vi.spyOn(inputs, "attachInputCapture").mockImplementation((...args) => (input = attachInputCapture(...args)));
   const fireEndFrame = () => { for (const callback of [...endFrame]) callback(); };
   return { game, canvas, root, handle, input: () => input!, fireEndFrame };
 }
@@ -107,6 +109,82 @@ async function backendFixture() {
 }
 
 describe("player startup and Stop ownership", () => {
+  it("reopens a packed player's checkpoint through the real in-process fallback", async () => {
+    const files = new Map<string, string>();
+    const saveStorage: SaveGameStorage = { read: async (key) => files.get(key) ?? null,
+      write: async (key, text) => { files.set(key, text); }, remove: async (key) => { files.delete(key); },
+      list: async (prefix) => [...files.keys()].filter((key) => key.startsWith(prefix)), withLock: async (_key, work) => work() };
+    const saveGame: SaveGameConfiguration = { projectId: "exported-progress", defaultProfile: "player-two", defaultSlot: "checkpoint",
+      definition: { id: "progress", schemaVersion: 1, fields: [{ id: "coins-id", name: "Coins", type: "int", defaultValue: 3 }] } };
+    TestWorker.failPost = true;
+    const createRuntime = runtimes.createRuntimeFromLoad;
+    const create = vi.spyOn(runtimes, "createRuntimeFromLoad").mockImplementation((...args) => {
+      const runtime = createRuntime(...args);
+      // This persistence test uses the driver's existing software backend;
+      // loading a browser WASM physics engine is an independent boundary.
+      vi.spyOn(runtime, "loadPhysics").mockResolvedValue(undefined);
+      return runtime;
+    });
+    for (const restart of [false, true]) {
+      const { game, canvas, root, fireEndFrame } = await fixture(false, saveGame);
+      const commands: Array<{ type: string; [key: string]: unknown }> = [];
+      const session = startPlayer({ game, canvas, saveStorage, onConsoleEvent: (command) => commands.push(command) });
+      sessions.push(session);
+      const runtime = create.mock.results.at(-1)!.value as runtimes.RuntimeDriver;
+      const ready = vi.spyOn(runtime, "notifySceneModelsReady");
+      await vi.waitFor(() => {
+        flushFrames(2);
+        fireEndFrame();
+        if (!ready.mock.calls.length) throw new Error(JSON.stringify({ phase: root.dataset.sceneLoadPhase,
+          commands: commands.map((command) => ({ type: command.type, message: command.message })) }));
+      });
+      expect(root.dataset.sceneLoading).toBe("false");
+      const service = runtime.getSaveGameService()!;
+      expect(service).toBeDefined();
+      if (!restart) {
+        service.getSaveData().Coins = 27;
+        expect(await service.saveGame()).toMatchObject({ ok: true, value: { profile: "player-two", slot: "checkpoint" } });
+      } else {
+        expect(service.getSaveData().Coins).toBe(3);
+        expect((await service.loadGame()).ok).toBe(true);
+        expect(service.getSaveData().Coins).toBe(27);
+      }
+      session.stop();
+      root.remove();
+    }
+    expect([...files.keys()].every((key) => key.startsWith("save-games/exported-progress/game/player-two/checkpoint/"))).toBe(true);
+  });
+
+  it("routes exported worker saves through the player's storage host with the same namespace", async () => {
+    const files = new Map<string, string>();
+    const saveStorage: SaveGameStorage = { read: async (key) => files.get(key) ?? null,
+      write: async (key, text) => { files.set(key, text); }, remove: async (key) => { files.delete(key); },
+      list: async (prefix) => [...files.keys()].filter((key) => key.startsWith(prefix)), withLock: async (_key, work) => work() };
+    const config: SaveGameConfiguration = { projectId: "worker-progress", definition: { id: "progress", schemaVersion: 1,
+      fields: [{ id: "coins-id", name: "Coins", type: "int", defaultValue: 0 }] } };
+    const { game, canvas } = await fixture(false, config);
+    sessions.push(startPlayer({ game, canvas, saveStorage }));
+    const worker = TestWorker.instances[0]!;
+    const load = worker.messages.find((message) => message.channel === "control" && message.payload.type === "load");
+    if (load?.channel !== "control" || load.payload.type !== "load" || !load.payload.saveGame) throw new Error("Save configuration did not reach the worker");
+    const client = createSaveStorageClient((request) => worker.command({ channel: "command", payload: { type: "saveStorageRequest", request } }));
+    const post = worker.postMessage.bind(worker);
+    vi.spyOn(worker, "postMessage").mockImplementation((message) => {
+      post(message);
+      if (message.channel === "control" && message.payload.type === "saveStorageResponse") client.receive(message.payload.response);
+    });
+    try {
+      const saved = new SaveGameService({ ...load.payload.saveGame, storage: client.storage });
+      saved.getSaveData().Coins = 41;
+      expect((await saved.saveGame()).ok).toBe(true);
+      const reopened = new SaveGameService({ ...config, storage: saveStorage });
+      expect((await reopened.loadGame()).ok).toBe(true);
+      expect(reopened.getSaveData().Coins).toBe(41);
+      const preview = new SaveGameService({ ...config, storage: saveStorage, preview: true });
+      expect(await preview.loadGame()).toMatchObject({ ok: false, error: { code: "missing" } });
+    } finally { client.dispose(); }
+  });
+
   it.each(["error", "messageerror"] as const)("reports an asynchronous worker %s and releases the player", async (kind) => {
     const { game, canvas, handle, owner } = await backendFixture();
     const onDiagnostic = vi.fn();

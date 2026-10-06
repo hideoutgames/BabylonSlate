@@ -98,7 +98,7 @@ describe("chrome document icons", () => {
     state.activeId = CONTENT_BROWSER_ID;
     state.documents = [
       openDocument(CONTENT_BROWSER_ID, CONTENT_BROWSER_REF),
-      { ...openDocument("object", createDocumentRef("data-sheet", "assets/Sword.datasheet.babasset")), background: true, dirty: true },
+      { ...openDocument("object", createDocumentRef("data-tree", "assets/Sword.datatree.babasset")), background: true, dirty: true },
     ];
     const closeAll = vi.fn();
     render(<Chrome onCloseAllDocuments={closeAll} />);
@@ -112,13 +112,13 @@ describe("chrome document icons", () => {
   it.each([false, true])("keeps background sheet edits out of navigation until revealed, while Save includes them (phone=%s)", (phone) => {
     state.phone = phone;
     const object = {
-      ...openDocument("object", createDocumentRef("data-sheet", "assets/Sword.datasheet.babasset")),
+      ...openDocument("object", createDocumentRef("data-tree", "assets/Sword.datatree.babasset")),
       background: true,
       dirty: true,
     };
     state.documents = [
       openDocument(CONTENT_BROWSER_ID, CONTENT_BROWSER_REF),
-      openDocument("first", createDocumentRef("data-sheet", "assets/Weapons.datasheet.babasset")),
+      openDocument("first", createDocumentRef("data-tree", "assets/Weapons.datatree.babasset")),
       object,
     ];
     const view = render(<Chrome />);

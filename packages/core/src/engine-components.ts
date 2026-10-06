@@ -2,6 +2,7 @@ export type EngineComponentPlacement = "world" | "overlay" | "any";
 
 /** One row per engine ActorComponent class. Derived lists below replace hand-maintained copies. */
 export const ENGINE_COMPONENT_DESCRIPTORS = [
+  { classId: "SaveGameComponent", placement: "world" },
   { classId: "SceneStreamingComponent", placement: "world" },
   { classId: "LandscapeComponent", placement: "world" },
   { classId: "FoliageComponent", placement: "world" },

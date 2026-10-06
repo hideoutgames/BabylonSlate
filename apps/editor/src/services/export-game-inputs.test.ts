@@ -41,23 +41,26 @@ function textureAsset(): IndexedAsset {
 }
 
 describe("loadExportDocuments", () => {
-  it("packs definition fields and owned sheet rows as player-readable JSON", async () => {
+  it("packs definition fields and owned tree entries as player-readable JSON", async () => {
     const documents = new Map<string, unknown>([
       ["definition", { kind: "dataDefinition", fields: [{ id: "damage", name: "Damage", typeId: "float", defaultValue: 10 }] }],
-      ["sheet", { kind: "dataSheet", definitionGuid: "definition", rows: [{ id: "sword", name: "Sword", values: { Damage: 10 }, schema: [{ id: "damage", name: "Damage", typeId: "float" }] }] }],
+      ["tree", { kind: "dataTree", defaultDefinitionGuid: "definition", entries: [
+        { id: "weapons", parentId: null, name: "Weapons", values: {} },
+        { id: "sword", parentId: "weapons", name: "Sword", values: { Damage: 10 }, schema: [{ id: "damage", name: "Damage", typeId: "float" }] },
+      ] }],
     ]);
-    const assets = ["DataDefinition", "DataSheet"].map((type, index): IndexedAsset => ({
-      ...textureAsset(), path: index === 0 ? "definition" : "sheet",
-      header: { ...textureAsset().header, guid: index === 0 ? "definition" : "sheet", type, payload: {}, chunks: [] },
+    const assets = ["DataDefinition", "DataTree"].map((type, index): IndexedAsset => ({
+      ...textureAsset(), path: index === 0 ? "definition" : "tree",
+      header: { ...textureAsset().header, guid: index === 0 ? "definition" : "tree", type, payload: {}, chunks: [] },
     }));
     const loaded = await loadExportDocuments({ assets, loadDocument: async (kind, path) => {
-      expect(kind).toBe(path === "definition" ? "data-definition" : "data-sheet");
+      expect(kind).toBe(path === "definition" ? "data-definition" : "data-tree");
       return documents.get(path);
     }, readAssetChunk: async () => null });
     expect(JSON.parse(new TextDecoder().decode(loaded.bytesByGuid("definition")!)))
       .toMatchObject({ kind: "dataDefinition", fields: [{ id: "damage", name: "Damage", defaultValue: 10 }] });
-    expect(JSON.parse(new TextDecoder().decode(loaded.bytesByGuid("sheet")!)))
-      .toMatchObject({ kind: "dataSheet", definitionGuid: "definition", rows: [{ id: "sword", name: "Sword", values: { Damage: 10 } }] });
+    expect(JSON.parse(new TextDecoder().decode(loaded.bytesByGuid("tree")!)))
+      .toMatchObject({ kind: "dataTree", defaultDefinitionGuid: "definition", entries: [{ id: "weapons", parentId: null }, { id: "sword", parentId: "weapons", name: "Sword", values: { Damage: 10 } }] });
     expect(loaded.payloadByGuid("definition")).toBe(documents.get("definition"));
   });
   it.each(["RenderTarget", "RenderTargetTexture"])("retains %s document bytes and dependency payloads for export", async (type) => {

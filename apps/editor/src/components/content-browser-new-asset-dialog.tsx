@@ -111,7 +111,7 @@ function NewAssetSummary({
         )}
       </dd>
       <dt className="text-muted-foreground">Then</dt>
-      <dd>{type === "Scene" || type === "DataDefinition" || type === "DataSheet" ? "Opens in a new tab" : "Appears in this folder"}</dd>
+      <dd>{type === "Scene" || type === "DataDefinition" || type === "DataTree" ? "Opens in a new tab" : "Appears in this folder"}</dd>
     </dl>
   );
 }
@@ -160,8 +160,8 @@ export function ContentBrowserNewAssetDialog({
   const bodyRef = useRef<HTMLDivElement>(null);
   const detailsRef = useRef<HTMLElement>(null);
   const selectedVisual = resolveTypeVisual({ assetType: type });
-  const isData = type === "DataSheet";
-  const canCreate = !busy && !nameTaken && Boolean(name.trim()) && (!isData || Boolean(definitionGuid));
+  const isData = type === "DataTree";
+  const canCreate = !busy && !nameTaken && Boolean(name.trim());
 
   useEffect(() => {
     if (open) {
@@ -360,13 +360,13 @@ export function ContentBrowserNewAssetDialog({
                   </Field></FieldGroup>
                 ) : null}
                 {isData ? (
-                  <FieldGroup><Field><FieldLabel>Data Definition</FieldLabel>
+                  <FieldGroup><Field><FieldLabel>Default Definition</FieldLabel>
                     <AssetPickerControl value={definitionGuid}>
                       <Button variant="outline" size="sm" className="w-full justify-start" onClick={() => setDefinitionPickerOpen(true)} data-testid="new-asset-definition" disabled={busy}>
-                        {definitionAssets.find(asset => asset.guid === definitionGuid)?.name ?? "Choose Data Definition"}
+                        {definitionAssets.find(asset => asset.guid === definitionGuid)?.name ?? "None"}
                       </Button>
                     </AssetPickerControl>
-                    <AssetPicker open={definitionPickerOpen} onOpenChange={setDefinitionPickerOpen} assets={[...definitionAssets]} allowedTypes={["DataDefinition"]} allowNone={false} title="Choose Data Definition" onPick={guid => { onDefinitionGuidChange?.(guid); setDefinitionPickerOpen(false); }} />
+                    <AssetPicker open={definitionPickerOpen} onOpenChange={setDefinitionPickerOpen} assets={[...definitionAssets]} allowedTypes={["DataDefinition"]} allowNone title="Choose Default Definition" onPick={guid => { onDefinitionGuidChange?.(guid); setDefinitionPickerOpen(false); }} />
                   </Field></FieldGroup>
                 ) : null}
                 <NewAssetSummary

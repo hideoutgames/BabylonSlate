@@ -124,7 +124,7 @@ export function PinDefaultEditor(request: EditorProps) {
       </Label>;
       break;
     case "string":
-      control = <StringDefault key={draftKey()} value={value} disabled={disabled} onChange={onChange} label={label} testId={testId} />;
+      control = renderer?.(request) ?? <StringDefault key={draftKey()} value={value} disabled={disabled} onChange={onChange} label={label} testId={testId} />;
       break;
     case "int":
     case "float":

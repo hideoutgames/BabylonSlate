@@ -39,6 +39,8 @@ export type ScriptEventName =
 export const EVENT_BY_TYPE_ID: Record<string, ScriptEventName> = {
   "flow.event.beginPlay": "onBeginPlay",
   "flow.event.scalabilityChanged": "onScalabilityChanged",
+  "flow.event.gameLoaded": "onGameLoaded",
+  "flow.event.saveMigration": "onSaveMigration",
   "flow.event.tick": "onTick",
   "flow.event.destroyed": "onDestroyed",
   "flow.event.init": "onInit",
@@ -437,7 +439,8 @@ export function compileGraph(
     return `ctx.variableReference(${owner}, ${JSON.stringify(property)}, ${implicitSelf})`;
   }
 
-  function makeCtx(node: GraphNode, continuation?: (expression: string) => void): CodegenContext {
+  function makeCtx(node: GraphNode, continuation?: (expression: string) => void,
+    branch?: (expression: string, truePin: string, falsePin: string) => void): CodegenContext {
     return {
       graph,
       node,
@@ -449,6 +452,7 @@ export function compileGraph(
       },
       reference(pinName) { return referenceExpr(node, pinName); },
       continueIf(expression) { continuation?.(expression); },
+      branch(expression, truePin, falsePin) { branch?.(expression, truePin, falsePin); },
       inputType(pinName) {
         const p = pinForCodegen(node, pinName, "in");
         return p ? wiredSourceType(graph, node, p.id, shouldStrip) : undefined;
@@ -1112,13 +1116,27 @@ export function compileGraph(
       }
 
       let continuation: string | undefined;
+      const flow: { branch?: { expression: string; truePin: string; falsePin: string } } = {};
       if (def.pure) {
         ensurePure(node);
       } else {
-        const ctx = makeCtx(node, (expression) => { continuation = expression; });
+        const ctx = makeCtx(node, (expression) => { continuation = expression; },
+          (expression, truePin, falsePin) => { flow.branch = { expression, truePin, falsePin }; });
         if (def.latent) isAsync = true;
         declareDataOuts(node, ctx);
         def.codegen(ctx);
+      }
+
+      if (flow.branch) {
+        const branch = flow.branch;
+        const anchor = { column: 1, assetGuid: options.assetGuid, graphId: graph.id, nodeId: node.id };
+        if (instrumentLoops) emitBody(`  ${loopCheck}`, anchor);
+        emitBody(`  if (${branch.expression}) {`, anchor);
+        emitAlong(execSuccessorEdges(graph, node.id, branch.truePin), visited);
+        emitBody("  } else {", anchor);
+        emitAlong(execSuccessorEdges(graph, node.id, branch.falsePin), visited);
+        emitBody("  }", anchor);
+        break;
       }
 
       const thenEdges = execSuccessorEdges(graph, node.id, "then");

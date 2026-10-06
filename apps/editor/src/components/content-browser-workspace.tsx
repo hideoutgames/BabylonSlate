@@ -815,7 +815,7 @@ function ContentBrowserWorkspaceBody({
       flattenFolderForest(folderTrees).map((row) => row.path),
     [folderTrees],
   );
-  const newDataTypes = useMemo(() => newAssetOpen && (newAssetType === "DataDefinition" || newAssetType === "DataSheet")
+  const newDataTypes = useMemo(() => newAssetOpen && (newAssetType === "DataDefinition" || newAssetType === "DataTree")
     ? collectGraphTypeAssets({ assets: allAssets, openDocuments })
     : { structures: [], enums: [], dataDefinitions: [] }, [newAssetOpen, newAssetType, allAssets, openDocuments]);
   const newAssetNameTaken = isNewAssetNameTaken(
@@ -2231,9 +2231,6 @@ function ContentBrowserWorkspaceBody({
     setOperationError(null);
     try {
       const type = newAssetType;
-      if (type === "DataSheet" && !newDataDefinition) {
-        throw new Error("Choose a Data Definition for the sheet.");
-      }
       const created = await createProjectAsset({
         registry: assetRegistry,
         rootId: selectedRoot.rootId,
@@ -2242,8 +2239,8 @@ function ContentBrowserWorkspaceBody({
         name,
         parentClass: type === "Class" ? newAssetParent : null,
         waterStyle: newWaterStyle,
-        definitionGuid: newDataDefinition,
-        typeSchemas: type === "DataDefinition" || type === "DataSheet" ? typeSchemasFromGraphAssets(newDataTypes) : undefined,
+        defaultDefinitionGuid: newDataDefinition,
+        typeSchemas: type === "DataDefinition" || type === "DataTree" ? typeSchemasFromGraphAssets(newDataTypes) : undefined,
         classParentOf,
         parentGraphs:
           type === "Class"
@@ -2256,7 +2253,7 @@ function ContentBrowserWorkspaceBody({
       });
       setNewAssetOpen(false);
       await refreshAssetRegistry();
-      if (type === "Scene" || type === "DataDefinition" || type === "DataSheet") {
+      if (type === "Scene" || type === "DataDefinition" || type === "DataTree") {
         await openOrFocusDocument(created);
       }
     } catch (error) {

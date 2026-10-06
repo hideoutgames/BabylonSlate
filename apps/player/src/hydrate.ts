@@ -60,7 +60,7 @@ const JSON_CONTENT_TYPES = new Set([
   "Tilemap", "Tileset", "AnimationGraph", "BehaviourTree", "Blackboard",
   "Material", "MaterialInstance", "MaterialFunction", "AudioMixer", "AudioChannel",
   "SoundAttenuation", "Animation", "Audio",
-  "DataDefinition", "DataSheet", "Structure", "Enum",
+  "DataDefinition", "DataTree", "Structure", "Enum",
 ]);
 
 export type PackedAudioLibrary = {
@@ -183,7 +183,7 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
     const bytes = game.payloads.get(entry.guid);
     if (!bytes) continue;
     const parsed = jsonFromBytes(bytes);
-    if (entry.type === "DataDefinition" || entry.type === "DataSheet" || entry.type === "Structure" || entry.type === "Enum") {
+    if (entry.type === "DataDefinition" || entry.type === "DataTree" || entry.type === "Structure" || entry.type === "Enum") {
       if (parsed) dataAssets.push({ guid: entry.guid, type: entry.type, name: entry.guid, payload: parsed });
       continue;
     }

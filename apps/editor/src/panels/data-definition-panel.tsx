@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { normalizeDataDefinitionAsset, type DataDefinitionField } from "@babylonslate/core";
-import { structInstanceDefault, validateDataDefinition } from "@babylonslate/scripting";
+import { reconcileDataDefinitionDefault, structInstanceDefaultWithSchema, validateDataDefinition } from "@babylonslate/scripting";
 import { PanelFrame, PinListEditor, PropertyGrid, type PinListRow, type PropertyRow } from "@babylonslate/editor-kit";
 import { Alert, AlertDescription } from "@babylonslate/ui/components/alert";
 import { Separator } from "@babylonslate/ui/components/separator";
@@ -27,6 +27,8 @@ export function DataDefinitionFieldsPanel(_props: IDockviewPanelProps) {
   const selected = definition.fields.find(field => field.id === selectedId) ?? definition.fields[0];
   const issues = useMemo(() => validateDataDefinition(definition, catalog.schemas, asset?.header.guid), [definition, catalog.schemas, asset?.header.guid]);
   const recursive = issues.some(issue => issue.code === "recursive-schema");
+  const projectedSelected = useMemo(() => selected && !recursive ? reconcileDataDefinitionDefault(selected, catalog.schemas) : selected, [selected, recursive, catalog.schemas]);
+  const selectedDefault = useMemo(() => selected && !recursive ? structInstanceDefaultWithSchema([{ ...selected, defaultValue: undefined }], catalog.schemas) : undefined, [selected, recursive, catalog.schemas]);
   const typeAssets = useMemo(() => [
     ...catalog.types.dataDefinitions.filter(entry => entry.guid !== asset?.header.guid).map(entry => ({ guid: entry.guid, name: entry.name, type: "DataDefinition" })),
     ...catalog.types.enums.map(entry => ({ guid: entry.guid, name: entry.name, type: "Enum" })),
@@ -52,7 +54,10 @@ export function DataDefinitionFieldsPanel(_props: IDockviewPanelProps) {
       };
       if (!previous || previous.typeId !== field.typeId || previous.typeClassId !== field.typeClassId ||
         (previous.container ?? "single") !== field.container || previous.keyTypeId !== field.keyTypeId || previous.keyTypeClassId !== field.keyTypeClassId) {
-        field.defaultValue = structInstanceDefault([{ ...field, defaultValue: undefined }], catalog.schemas)[field.name];
+        delete field.fields;
+        delete field.keyFields;
+        const defaults = structInstanceDefaultWithSchema([{ ...field, defaultValue: undefined }], catalog.schemas);
+        Object.assign(field, defaults.schema[0], { defaultValue: defaults.values[field.name] });
         delete field.min;
         delete field.max;
       }
@@ -90,9 +95,13 @@ export function DataDefinitionFieldsPanel(_props: IDockviewPanelProps) {
       {selected ? <>
         <Separator />
         {recursive ? null : <DataValueEditor field={selected}
-          value={selected.defaultValue !== undefined ? selected.defaultValue : structInstanceDefault([{ ...selected, defaultValue: undefined }], catalog.schemas)[selected.name]}
-          defaultValue={structInstanceDefault([{ ...selected, defaultValue: undefined }], catalog.schemas)[selected.name]}
-          onChange={value => patchSelected({ defaultValue: value }, `definition:${selected.id}:default`)}
+          value={projectedSelected?.defaultValue !== undefined ? projectedSelected.defaultValue : selectedDefault?.values[selected.name]}
+          defaultValue={selectedDefault?.values[selected.name]}
+          onChange={value => {
+            const base = projectedSelected?.defaultValue !== undefined ? projectedSelected : { ...selected, ...selectedDefault?.schema[0] };
+            const next = reconcileDataDefinitionDefault({ ...base, defaultValue: value }, catalog.schemas);
+            commit(definition.fields.map(field => field.id === selected.id ? next : field), `definition:${selected.id}:default`);
+          }}
           label="Default Value" path={selected.name} disabled={readOnly} catalog={catalog} issues={issues}
         />}
         <PropertyGrid title="Field Rules" rows={rules} readOnly={readOnly} />

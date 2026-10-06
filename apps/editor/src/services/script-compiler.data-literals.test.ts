@@ -9,10 +9,10 @@ const structs: TypeSchemas["structs"] = {
   stats: { name: "Stats", fields: [{ id: "health", name: "HitPoints", typeId: "float", defaultValue: 0 }] },
 };
 
-function createGraph(type = "editorData.addRow"): SerializedGraph {
+function createGraph(type = "editorData.addEntry"): SerializedGraph {
   return {
     nodes: [node("entry", "flow.event.editorStartup"), node("write", type, {
-      definitionGuid: "stats", "default:name": "Warrior", "default:sheet": "warriors", "default:rowId": "warrior",
+      definitionGuid: "stats", "default:name": "Warrior", "default:tree": "warriors", "default:entryPath": "warrior",
       "default:values": { Health: 10, RemovedIcon: "icon" },
       dataSchema: [
         { id: "health", name: "Health", typeId: "float" },
@@ -24,7 +24,7 @@ function createGraph(type = "editorData.addRow"): SerializedGraph {
 }
 
 describe("Compiled data literal schema changes", () => {
-  it.each(["editorData.addRow", "editorData.updateRow"])("%s retains authored values after a stable field rename", async (type) => {
+  it.each(["editorData.addEntry", "editorData.updateEntry"])("%s retains authored values after a stable field rename", async (type) => {
     const graph = createGraph(type);
     const compiled = compileGraphDocument(graph, { path: "assets/Build.class.babasset", parentClassId: "EditorUtilityObject", instrumentInfiniteLoops: false, structs, dataDefinitions: structs });
     expect(compiled).not.toBeNull();
@@ -36,8 +36,8 @@ describe("Compiled data literal schema changes", () => {
       return { success: true, value: "warrior", error: "" };
     };
     await execute({ editorData: {
-      addRow: async (_sheet: string, definition: string, _name: string, value: unknown) => write(definition, value),
-      updateRow: async (_sheet: string, _rowId: string, definition: string, value: unknown) => write(definition, value),
+      addEntry: async (_tree: string, _parentPath: string, _name: string, definition: string, value: unknown) => write(definition, value),
+      updateEntry: async (_tree: string, _entryPath: string, definition: string, value: unknown) => write(definition, value),
     } });
     expect(values).toEqual([["stats", { HitPoints: 10, RemovedIcon: "icon" }]]);
     expect(graph.nodes[1]?.data["default:values"]).toEqual({ Health: 10, RemovedIcon: "icon" });

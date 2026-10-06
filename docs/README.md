@@ -28,6 +28,7 @@ When adding a new `docs/**/*.md` file, add a sidebar entry in [`apps/docs/src/si
 | [architecture/bridge.md](architecture/bridge.md) | Bridge transports, snapshot layout, channels |
 | [architecture/render.md](architecture/render.md) | Snapshot sync, visibility-gated editor loop, resource cache |
 | [architecture/scripting.md](architecture/scripting.md) | Visual scripting compile and runtime |
+| [save-games.md](save-games.md) | Typed gameplay saves, recovery, preview tools, and platform coverage |
 | [architecture/scene-editing.md](architecture/scene-editing.md) | Viewport, outliner, gizmos |
 | [architecture/scene-layers.md](architecture/scene-layers.md) | SceneLayer 2D overlay compositor |
 | [architecture/input.md](architecture/input.md) | Action/axis mappings |
