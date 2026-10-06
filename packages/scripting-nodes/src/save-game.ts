@@ -101,6 +101,9 @@ export const saveGameNodes: NodeDefinition[] = [
   {
     id: "flow.event.gameLoaded", title: "Event On Game Loaded", category: "save-game", pure: true,
     description: "Runs after selected world state and references are restored, before gameplay continues.",
-    pins: () => [pin("execOut", "Then", "out", EXEC)], codegen: () => ({}),
+    pins: () => [pin("execOut", "Then", "out", EXEC)],
+    codegen: () => {
+      /* Entry point emitted by the compiler; this event has no data outputs. */
+    },
   },
 ];

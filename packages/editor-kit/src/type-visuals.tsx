@@ -249,6 +249,7 @@ const ICON_BY_ID: Record<string, LucideIcon> = {
   SpringArmComponent: SplineIcon,
   CableComponent: CableIcon,
   SplineComponent: WaypointsIcon,
+  SaveGameComponent: SaveIcon,
   LightComponent: LightbulbIcon,
   AreaRectLightComponent: LightbulbIcon,
   FogVolumeComponent: CloudIcon,
