@@ -24,7 +24,7 @@ export function PickerIdentity({
       <span className="flex min-w-0 flex-col text-left">
         <span className="truncate">{label}</span>
         {description ? (
-          <span className="truncate text-xs text-muted-foreground">
+          <span data-slot="picker-description" className="truncate text-xs text-muted-foreground">
             {description}
           </span>
         ) : null}
@@ -79,7 +79,7 @@ export function selectedPickerIdentity(
   },
   emptyLabel = "None",
 ) {
-  if (!identity.displayLabel) return emptyLabel;
+  if (!identity.displayLabel) return <span className="truncate">{emptyLabel}</span>;
   return (
     <PickerIdentity
       label={identity.displayLabel}

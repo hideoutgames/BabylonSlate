@@ -494,7 +494,7 @@ function RowControl({ row }: { row: PropertyRow }) {
                 visual={row.visual}
               />
             ) : (
-              (row.displayLabel ?? row.value ?? row.placeholder ?? "None")
+              <span className="truncate">{row.displayLabel ?? row.value ?? row.placeholder ?? "None"}</span>
             )}
           </Button>
         </AssetPickerControl>

@@ -27,6 +27,22 @@
   max-width: var(--graph-pin-default-max-width, 12rem);
 }
 
+/* Closed node pickers match the 96 × 32px string input; dialogs keep full identities. */
+.graph-editor-canvas .react-flow__node [data-slot="asset-picker-control"] {
+  width: 6rem;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.graph-editor-canvas .react-flow__node [data-slot="asset-picker-control"] [data-slot="button"] {
+  height: var(--graph-asset-picker-height, 2rem);
+  min-height: var(--graph-asset-picker-height, 2rem);
+  overflow: hidden;
+}
+
+.graph-editor-canvas .react-flow__node [data-slot="asset-picker-control"] [data-slot="picker-description"] {
+  display: none;
+}
+
 .graph-editor-canvas .react-flow__handle {
   pointer-events: all;
 }
@@ -351,6 +367,9 @@
 
 /* Inline defaults retain compact desktop controls and separate touch targets. */
 @media (max-width: 767px), (pointer: coarse) {
+  .graph-editor-canvas {
+    --graph-asset-picker-height: var(--touch-target, 44px);
+  }
   .graph-pin-default-editor :is([data-slot="button"], [data-slot="input"], .graph-pin-default-boolean) {
     min-height: var(--touch-target, 44px);
     min-width: var(--touch-target, 44px);

@@ -3,7 +3,7 @@ import type { IDockviewPanelProps } from "dockview-react";
 import { buildDataTreeIndex, type DataTreeEntry } from "@babylonslate/core";
 import { createDataEntryForDefinition, reconcileDataEntry, type StructField } from "@babylonslate/scripting";
 import { AssetPicker, ContextMenuOverlay, NamePromptDialog, NestedMenu, NumberField, PanelFrame, SearchInput, SearchDropdown, TreeView, WindowedList, humanizePropertyLabel, isCoarsePointerEnvironment, useContextMenu, type NestedMenuItem, type TreeViewNode } from "@babylonslate/editor-kit";
-import { FileTextIcon, ListTreeIcon, MoreHorizontalIcon } from "lucide-react";
+import { BetweenHorizontalStartIcon, DatabaseIcon, MoreHorizontalIcon } from "lucide-react";
 import { Button } from "@babylonslate/ui/components/button";
 import { Input } from "@babylonslate/ui/components/input";
 import { Checkbox } from "@babylonslate/ui/components/checkbox";
@@ -193,7 +193,7 @@ export function DataTreeHierarchyPanel(_props: IDockviewPanelProps) {
   const nodes: TreeViewNode[] = visible.map((entry) => {
     const children = index!.childrenByParentId.get(entry.id)?.length ?? 0;
     return { id: entry.id, label: entry.name, depth: index!.pathById.get(entry.id)!.split("/").length - 1, hasChildren: children > 0, expanded: Boolean(query.trim()) || !collapsedIds.has(entry.id),
-      icon: children ? <ListTreeIcon className="size-3.5" /> : <FileTextIcon className="size-3.5" />,
+      icon: <BetweenHorizontalStartIcon className="size-3.5" />,
       preview: children ? <span className="text-xs tabular-nums text-muted-foreground">{children}</span> : undefined,
       trailing: <NestedMenu size="chrome" items={actions.menuItems(entry.id)} trigger={<Button variant="ghost" size="icon-xs" className="pointer-coarse:min-h-11 pointer-coarse:min-w-11" aria-label={`Entry Menu For ${entry.name}`}><MoreHorizontalIcon className="size-3.5" /></Button>} />,
     };
@@ -207,7 +207,7 @@ export function DataTreeHierarchyPanel(_props: IDockviewPanelProps) {
       <SearchInput value={query} onChange={setQuery} placeholder="Search Tree" aria-label="Search Tree" className="h-7 min-h-7 pointer-coarse:min-h-11" />
     </div>
     <OperationError message={actions.error} />
-    <Button variant="ghost" size="sm" className={cn("w-full justify-start rounded-none px-2 text-xs", TOUCH_ACTION, !state.browseBranchId && !selectedEntryId && "bg-accent")} onClick={() => state.browse(null)}><ListTreeIcon className="size-3.5" />Tree Root<span className="ml-auto tabular-nums text-muted-foreground">{tree.entries.length}</span></Button>
+    <Button variant="ghost" size="sm" className={cn("w-full justify-start rounded-none px-2 text-xs", TOUCH_ACTION, !state.browseBranchId && !selectedEntryId && "bg-accent")} onClick={() => state.browse(null)}><DatabaseIcon className="size-3.5" />Tree Root<span className="ml-auto tabular-nums text-muted-foreground">{tree.entries.length}</span></Button>
     {!index ? <DataEmpty title="Invalid Hierarchy">Resolve the issues in Validation before editing this tree. Stored entries are preserved.</DataEmpty> : <TreeView nodes={nodes} selectedId={selectedEntryId} data-testid="data-tree-hierarchy" aria-label="Data Tree" rowHeight={isCoarsePointerEnvironment() ? 44 : 28} emptyLabel={tree.entries.length ? "No Matching Entries" : "No Entries"} onSelect={(id) => state.selectEntry(id)} onToggleExpanded={(id) => state.setCollapsedIds((previous) => { const next = new Set(previous); if (next.has(id)) next.delete(id); else next.add(id); return next; })} onActivate={(id) => state.browse(id)} onReparent={readOnly ? undefined : (id, targetId, placement) => void actions.run(() => state.moveEntry(id, targetId, placement))} onContextMenu={(id, x, y) => { state.selectEntry(id, false); context.openMenuAt(x, y, actions.menuItems(id)); }} />}
     <AssetPicker open={definitionPicker} onOpenChange={setDefinitionPicker} title="Choose Tree Default Definition" allowedTypes={["DataDefinition"]} assets={catalog.types.dataDefinitions.map((entry) => ({ ...entry, type: "DataDefinition" }))} allowNone onPick={(guid) => { setDefinitionPicker(false); void actions.run(() => state.setDefaultDefinition(guid)); }} />
     <ContextMenuOverlay menu={context.menu} onClose={context.closeMenu} />

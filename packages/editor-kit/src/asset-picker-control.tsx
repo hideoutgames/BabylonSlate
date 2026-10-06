@@ -59,7 +59,7 @@ export function AssetPickerControl({
   const testId = triggerTestId(children);
 
   return (
-    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-stretch gap-1">
+    <div data-slot="asset-picker-control" className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-stretch gap-1">
       <div className="min-w-0">{children}</div>
       {showOpen && api ? (
         <div className="relative aspect-square h-full w-auto shrink-0">
