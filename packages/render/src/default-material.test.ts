@@ -19,6 +19,8 @@ import {
 import { createTestEngine } from "./create-null-engine";
 import { createPrimitiveMesh } from "./scene-loader";
 import { setupDefaultViewport } from "./viewport";
+import { applySceneEnvironment } from "./scene-illumination";
+import { createDefaultScene } from "@babylonslate/core";
 
 const handles: Array<{ engine: { dispose: () => void }; scene: { dispose: () => void } }> =
   [];
@@ -76,6 +78,20 @@ describe("engine default material", () => {
       204, 204, 204, 255, 166, 166, 166, 255, 166, 166, 166, 255, 204, 204, 204,
       255,
     ]);
+  });
+
+  it("emits its checker in a 2D scene, which has no lights, and not in 3D", () => {
+    const scene = rawScene();
+    const material = installEngineDefaultMaterial(scene);
+    material.freeze();
+    applySceneEnvironment(scene, createDefaultScene("2d"));
+    expect(material.emissiveTexture).toBe(material.albedoTexture);
+    expect(material.emissiveColor).toEqual(new Color3(1, 1, 1));
+    expect(material.isFrozen).toBe(true);
+    expect(material.unlit).toBe(false);
+    applySceneEnvironment(scene, createDefaultScene("3d"));
+    expect(material.emissiveTexture).toBeNull();
+    expect(material.emissiveColor).toEqual(new Color3(0, 0, 0));
   });
 
   it("installs as scene.defaultMaterial and reuses the same instance", () => {
