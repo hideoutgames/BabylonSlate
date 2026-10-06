@@ -96,6 +96,8 @@ Migrations run on a validated copy before applying data. A failed migration leav
 
 For a version 1 → 2 migration, register **Register Save Migration** with From Version `1` during initialization, before Load Game. **Event Save Migration** exposes From Version; its typed **Get/Set Migration _Field Name_** nodes update the staged data by stable field ID. Generic **Get/Set Migration Field** nodes also access historical fields removed from the current definition. If any custom migration applies, register every intermediate version; use a no-op callback for a step that needs no conversion. An incomplete chain rejects the load and subsequent save without replacing the older data. When no custom migration applies, added defaults and stable-ID renames upgrade automatically.
 
+Actor migration fields contain persistent ID strings, including array elements, because restored actors do not exist yet. Normal typed Save field nodes resolve those IDs to live Actor references.
+
 The JavaScript equivalent, for a field whose units changed from whole coins to hundredths, is:
 
 ```js
