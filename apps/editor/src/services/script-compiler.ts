@@ -723,7 +723,7 @@ function serializedGraphCompileSlice(
 
 function animGraphCompileCacheKey(
   entry: AnimGraphCompileDocument,
-  options: { stripDevelopmentOnly?: boolean; tagRegistry?: TagRegistry },
+  options: GraphCompileCacheOptions & { typesFingerprint: string; dataFingerprint: string },
 ): string {
   const parsed = parseAnimGraphDocument(entry.document);
   const document = parsed
@@ -748,18 +748,22 @@ function animGraphCompileCacheKey(
     path: entry.path,
     stripDevelopmentOnly: options.stripDevelopmentOnly === true,
     tags: tagRegistryCompileFingerprint(options.tagRegistry),
+    types: options.typesFingerprint,
+    dataAssets: options.dataFingerprint,
+    inputAssets: options.inputAssets,
     document,
   });
 }
 
 function compileAnimGraphDocument(
   entry: AnimGraphCompileDocument,
-  options: { stripDevelopmentOnly?: boolean; tagRegistry?: TagRegistry },
+  options: GraphCompileCacheOptions,
 ): ScriptBundleEntry[] {
   const scripts: ScriptBundleEntry[] = [];
   const doc = parseAnimGraphDocument(entry.document);
   if (!doc) return scripts;
   const objectScript = compileGraphDocument(doc.animationObject, {
+    ...options,
     path: entry.path,
     graphId: "animation-object",
     parentClassId: "BObject",
@@ -786,7 +790,7 @@ function compileAnimGraphDocument(
       },
       oneWay,
     );
-    const logic = materializeLogicGraph(ruleGraph, `rule-${transition.id}`);
+    const logic = materializeLogicGraph(ruleGraph, `rule-${transition.id}`, "event", options);
     const compiled = compileTransitionRuleGraph(logic, {
       assetGuid: entry.path,
       registry: defaultNodeRegistry,
@@ -816,16 +820,17 @@ function compileAnimGraphDocument(
  */
 export function compileAnimGraphScripts(
   documents: ReadonlyArray<AnimGraphCompileDocument>,
-  options: {
-    stripDevelopmentOnly?: boolean;
-    tagRegistry?: TagRegistry;
-    cache?: GraphScriptCompileCache;
-  } = {},
+  options: GraphCompileCacheOptions & { cache?: GraphScriptCompileCache } = {},
 ): ScriptBundleEntry[] {
   const scripts: ScriptBundleEntry[] = [];
+  const cacheOptions = {
+    ...options,
+    typesFingerprint: typeSchemasFingerprint(options.enums, options.structs, options.dataDefinitions),
+    dataFingerprint: fnv1aHex(JSON.stringify(options.dataAssets ?? [])),
+  };
   for (const entry of documents) {
     const cache = options.cache;
-    const key = cache ? animGraphCompileCacheKey(entry, options) : null;
+    const key = cache ? animGraphCompileCacheKey(entry, cacheOptions) : null;
     if (cache && key && cache.animGraphs.has(key)) {
       scripts.push(...(cache.animGraphs.get(key) ?? []));
       continue;

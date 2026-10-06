@@ -84,4 +84,64 @@ describe("Definition collection literals in the graph Inspector", () => {
       ? [["shop", "inventory", "Sword", expected]]
       : [["shop", "sword", "inventory", expected]]);
   });
+
+  it.each(["Cost", "Quantity"])("repairs a rename and an added field when %s is edited first", async (first) => {
+    const changedDefinitions = { ...definitions, inventory: { name: "Inventory", fields: [
+      { id: "price", name: "Cost", typeId: "float", defaultValue: 99 },
+      { id: "quantity", name: "Quantity", typeId: "float", defaultValue: 7 },
+    ] } };
+    const changedSchemas = mergeEngineTypeSchemas({ dataDefinitions: changedDefinitions });
+    const changedCatalog = { ...catalog, schemas: changedSchemas,
+      types: { ...catalog.types, dataDefinitions: Object.entries(changedDefinitions).map(([guid, schema]) => ({ guid, ...schema })) },
+    };
+    let authored = createGraph("editorData.addRow");
+    authored.nodes[1]!.data["default:values"] = { Price: 5, RemovedIcon: "icon" };
+    authored.nodes[1]!.data.dataSchema = [
+      { id: "price", name: "Price", typeId: "float" },
+      { id: "removed", name: "RemovedIcon", typeId: "asset", typeClassId: "Texture" },
+    ];
+    const projected = hydrateSerializedGraphForEditor(authored, undefined, changedSchemas);
+    expect(projected.nodes[1]!.data["default:values"]).toEqual({ Cost: 5, RemovedIcon: "icon" });
+    expect(authored.nodes[1]!.data["default:values"]).toEqual({ Price: 5, RemovedIcon: "icon" });
+    expect(validateSerializedGraph(authored, { assetGuid: "tools", graphId: "graph", classId: "EditorUtilityObject", ...changedSchemas })
+      .filter((issue) => issue.severity === "error")).toEqual([
+      expect.objectContaining({ code: "data.missing-field", message: expect.stringContaining("Quantity") }),
+    ]);
+
+    function Inspector() {
+      const [graph, setGraph] = useState(authored);
+      const displayed = hydrateSerializedGraphForEditor(graph, undefined, changedSchemas);
+      const selected = displayed.nodes.find((entry) => entry.id === "write")!;
+      const literal = inspectorLiteralPinDefaults(selected, graph.edges, displayed.nodes).find((entry) => entry.pinId === "values")!;
+      return <GraphDataLiteralEditor entry={literal} catalog={changedCatalog} onChange={(value) => {
+        authored = patchDataGraphNode(graph, selected, { "default:values": value });
+        setGraph(authored);
+      }} />;
+    }
+    render(<Inspector />);
+    expect((screen.getByRole("textbox", { name: "Values Cost", exact: true }) as HTMLInputElement).value).toBe("5");
+    const edit = (name: string) => fireEvent.change(screen.getByRole("textbox", { name: `Values ${name}`, exact: true }), {
+      target: { value: name === "Cost" ? "10" : "2" },
+    });
+    edit(first);
+    expect(authored.nodes[1]!.data["default:values"]).toEqual(first === "Cost"
+      ? { Cost: 10, RemovedIcon: "icon" }
+      : { Cost: 5, Quantity: 2, RemovedIcon: "icon" });
+    edit(first === "Cost" ? "Quantity" : "Cost");
+    expect(validateSerializedGraph(authored, { assetGuid: "tools", graphId: "graph", classId: "EditorUtilityObject", ...changedSchemas })
+      .filter((issue) => issue.severity === "error")).toEqual([]);
+    expect(authored.nodes[1]!.data.dataSchema).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "price", name: "Cost" }),
+      expect.objectContaining({ id: "removed", name: "RemovedIcon", typeId: "asset" }),
+    ]));
+    const compiled = compileGraphDocument(authored, { path: "assets/Tools.class.babasset", parentClassId: "EditorUtilityObject", instrumentInfiniteLoops: false, ...changedSchemas });
+    expect(compiled).not.toBeNull();
+    const js = compiled!.source.replace(/export\s+(async\s+)?function\s+/g, "$1function ");
+    const execute = new Function(`${js}\nreturn onEditorStartup;`)() as (ctx: Record<string, unknown>) => Promise<void>;
+    const calls: unknown[][] = [];
+    await execute({ editorData: { addRow: async (...args: unknown[]) => {
+      calls.push(args); return { success: true, value: "sword", error: "" };
+    } } });
+    expect(calls).toEqual([["shop", "inventory", "Sword", { Cost: 10, Quantity: 2, RemovedIcon: "icon" }]]);
+  });
 });

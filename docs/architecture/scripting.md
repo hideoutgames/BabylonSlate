@@ -672,6 +672,8 @@ Sheet row IDs are stable within their sheet. Renaming, reordering or sorting doe
 
 **Read Data Row** takes a Data Sheet and Row ID, and returns a typed **Value** plus **Found**. Picking a literal sheet infers its Data Definition; the Inspector Row picker shows entry names while storing stable IDs. Typed palette entries include **Read Weapon Data Row**, **Make Weapon Data** and **Break Weapon Data**. Generic Structure assets remain available for other scripting tasks; Definitions reuse the internal record-shape machinery without depending on those assets.
 
+Definition types also refresh in Animation Object and transition-rule graphs. Graph literal editors preserve stable field renames while reporting newly missing or incompatible values for explicit repair; hydration does not silently adopt new defaults.
+
 **Get Data Sheet Rows** returns ordered row IDs and Found. Iterate them through Read Data Row. An empty valid sheet returns `[]` and Found=true. Missing sheets, invalid identity/order or Definition mismatches return Found=false. Invalid row values fail that row's read without disabling valid sibling rows. Branch on Found before consuming Value; a failed read returns `null`.
 
 Runtime `ctx.data` exposes synchronous `readRow(sheet, rowId, definitionGuid?)`, `hasRow`, `getSheetRows(sheet, definitionGuid?)`, and `hasSheet`. A session catalog validates and indexes sheets once; reads return detached values. Gameplay mutations never rewrite authored sheets. Restart Play to load authored changes. The catalog is shared across worker/in-process Play and loose/packed players.

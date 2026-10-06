@@ -2283,11 +2283,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     onProgress?: (currentName: string) => Promise<void>,
   ) => {
     const registry = projectService.registry;
+    const schemas = collectGraphTypeSchemas();
+    const definitionFields = (guid: string) => schemas.structs?.[guid]?.fields;
     const openChanges = documentService.getOpenDocumentsOrdered().flatMap((doc) => {
       if (doc.ref.kind === "content-browser" || doc.ref.kind === "trace" || !doc.content) return [];
       const asset = registry?.list().find((entry) => entry.path === doc.ref.path);
       if (asset && deletingGuids.has(asset.header.guid)) return [];
-      const walked = replaceClassAssetReferences(doc.content, replacements);
+      const walked = replaceClassAssetReferences(doc.content, replacements, definitionFields);
       if (!walked.changed) return [];
       if ((asset && registry?.getRoot(asset.rootId)?.readOnly) || isPluginDocumentReadOnly(projectService.plugins, doc.ref.path)) {
         throw new Error(`${doc.ref.path} is read-only and still references a selected Class.`);
@@ -2312,7 +2314,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       else documentService.replaceLoadedContent(doc.id, content);
     }
     bump();
-  }, [bump, documentService, projectService, setProjectDocument]);
+  }, [bump, collectGraphTypeSchemas, documentService, projectService, setProjectDocument]);
 
   const repairAfterAssetDelete = useCallback(
     async (
@@ -2320,6 +2322,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       deletedClassNames: ReadonlySet<string> = new Set(),
       onProgress?: (currentName: string) => Promise<void>,
     ) => {
+      const schemas = collectGraphTypeSchemas();
+      const definitionFields = (guid: string) => schemas.structs?.[guid]?.fields;
       await projectService.clearDeletedAssetReferences(deletedGuids, {
         deletedClassNames,
         onProgress,
@@ -2331,6 +2335,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           doc.content,
           deletedGuids,
           deletedClassNames,
+          definitionFields,
         );
         if (!walked.changed) continue;
         if (doc.dirty) {
@@ -2370,6 +2375,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       bump,
       captureAllLayouts,
       captureMtimeSnapshot,
+      collectGraphTypeSchemas,
       documentService,
       projectService,
       setProjectDocument,
@@ -3153,6 +3159,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       }),
       ...compileAnimGraphScripts(animDocuments, {
         cache: graphCompileCacheRef.current,
+        inputAssets: inputAssetCatalog(assets, openDocuments),
+        dataAssets: collectDataGraphAssets(assets, openDocuments),
+        ...typeSchemas,
         tagRegistry: projectDocumentRef.current?.settings.tags,
       }),
     ];

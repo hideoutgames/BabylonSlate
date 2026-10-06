@@ -5,6 +5,7 @@ import {
   MAIN_SCENE_FILE,
   createActor,
   documentId,
+  type DataDefinitionAsset,
   type DocumentRef,
   type SerializedComponent,
   type SerializedGraph,
@@ -150,6 +151,56 @@ afterEach(async () => {
 });
 
 describe("DocumentProvider actions and route", () => {
+  it.each(["delete", "replace"] as const)("repairs nested data defaults in open documents during Class %s using live and saved schemas", async (operation) => {
+    const actions = await openProject();
+    const registry = documents().assetRegistry!;
+    const create = (type: "Class" | "DataDefinition", name: string, dataDefinition?: DataDefinitionAsset, typeSchemas?: Parameters<typeof createProjectAsset>[0]["typeSchemas"]) =>
+      act(() => createProjectAsset({ registry, rootId: "project", folderRelative: "", type, name, dataDefinition, typeSchemas }));
+    const target = await create("Class", "Disposable");
+    const replacement = operation === "replace" ? await create("Class", "Replacement") : null;
+    const typedFields = [
+      { id: "target", name: "Target", typeId: "asset", typeClassId: "Class", defaultValue: "" },
+      { id: "note", name: "Note", typeId: "string", defaultValue: "" },
+    ];
+    const storedFields = typedFields.map(field => ({ ...field, typeId: "string", typeClassId: undefined }));
+    const saved = await create("DataDefinition", "Saved", { kind: "dataDefinition", fields: typedFields });
+    const live = await create("DataDefinition", "Live", { kind: "dataDefinition", fields: storedFields });
+    const payload: DataDefinitionAsset = { kind: "dataDefinition", fields: [
+      { id: "saved", name: "Saved", typeId: "struct", typeClassId: saved.header.guid, defaultValue: { Target: target.header.guid, Note: target.header.guid } },
+      { id: "live", name: "Live", typeId: "struct", typeClassId: live.header.guid, defaultValue: { Target: target.header.guid, Note: target.header.guid } },
+    ] };
+    const parent = await create("DataDefinition", "Parent", payload, {
+      structs: {}, enums: {}, dataDefinitions: {
+        [saved.header.guid]: { name: "Saved", fields: typedFields },
+        [live.header.guid]: { name: "Live", fields: storedFields },
+      },
+    });
+    act(() => actions.noteAssetsCreated());
+    await act(() => actions.openDocument({ kind: "data-definition", path: live.path, label: "Live" }));
+    await act(() => actions.applyAssetDocumentChange(documentId({ kind: "data-definition", path: live.path }), { kind: "dataDefinition", fields: typedFields }));
+    await act(() => actions.openDocument({ kind: "data-definition", path: parent.path, label: "Parent" }));
+    const parentId = documentId({ kind: "data-definition", path: parent.path });
+    await act(() => actions.applyAssetDocumentChange(parentId, { ...payload, fields: payload.fields.map(field => ({ ...field, category: "Unsaved Edit" })) }));
+    // The open schema's type change has not reached the registry header.
+    expect(registry.getByGuid(live.header.guid)!.header.payload.fields).toMatchObject([{ typeId: "string" }, {}]);
+    await act(async () => {
+      const deleting = new Set([target.header.guid]);
+      if (replacement) await actions.replaceClassReferencesBeforeDelete([{
+        guid: target.header.guid, classId: "Disposable", replacement: { guid: replacement.header.guid, classId: "Replacement" },
+      }], deleting);
+      await registry.deleteAsset(target.header.guid);
+      await actions.repairAfterAssetDelete(deleting, new Set(["Disposable"]));
+    });
+    const expected = payload.fields.map(field => ({
+      ...field, category: "Unsaved Edit", defaultValue: { Target: replacement?.header.guid ?? "", Note: target.header.guid },
+    }));
+    expect(documents().openDocuments.find(doc => doc.id === parentId)?.content).toEqual({ kind: "dataDefinition", fields: expected });
+    expect(documents().dirtyDocuments.some(doc => doc.id === parentId)).toBe(true);
+    await act(() => actions.saveAll());
+    act(() => actions.closeDocument(parentId));
+    expect(await actions.loadAssetDocument("data-definition", parent.path)).toEqual({ kind: "dataDefinition", fields: expected });
+  });
+
   it("keeps one actions object across edits, Anim modes and settings while acting on the latest state", async () => {
     const actions = await openProject();
     const callbacks = { ...actions };

@@ -59,7 +59,12 @@ describe("Compiled data literal schema changes", () => {
       { id: "health", name: "HitPoints", typeId: "string", defaultValue: "Default" },
     ] } };
     const hydrated = hydrateSerializedGraphForEditor(graph, undefined, { structs: changed, dataDefinitions: changed });
-    expect(hydrated.nodes[1]?.data["default:values"]).toEqual({ Health: 10, RemovedIcon: "icon" });
+    expect(hydrated.nodes[1]?.data["default:values"]).toEqual({ HitPoints: 10, RemovedIcon: "icon" });
+    expect(graph.nodes[1]?.data["default:values"]).toEqual({ Health: 10, RemovedIcon: "icon" });
+    expect(hydrated.nodes[1]?.data.dataSchema).toEqual([
+      { id: "health", name: "HitPoints", typeId: "float" },
+      { id: "old-icon", name: "RemovedIcon", typeId: "asset", typeClassId: "Texture" },
+    ]);
     expect(validateSerializedGraph(graph, { assetGuid: "build", graphId: "graph", structs: changed, dataDefinitions: changed }))
       .toEqual(expect.arrayContaining([expect.objectContaining({ nodeId: "write", pinId: "values", severity: "error", code: "data.type-mismatch" })]));
   });

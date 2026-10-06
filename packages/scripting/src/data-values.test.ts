@@ -102,6 +102,7 @@ describe("authored Data Sheet entries", () => {
     expect(migrated.row.values).toEqual({ Health: 5, HitPoints: 25 });
     expect(migrated.issues).toContainEqual(expect.objectContaining({ code: "rename-conflict", severity: "error" }));
     expect(resolveDataRowValues(asset, "stats", schemasFor(fields))).toBeNull();
+    expect(reconcileDataRow(asset, "stats", fields, schemasFor(fields), { initializeMissingFields: false }).row).toBe(asset);
   });
 
   it("preserves incompatible values on type changes and blocks typed runtime reads", () => {
@@ -176,6 +177,38 @@ describe("authored Data Sheet entries", () => {
 });
 
 describe("Data Sheet Row tags and typed collections", () => {
+  it("projects safe nested renames without adopting missing defaults across scalar, array and map records", () => {
+    const fields: StructField[] = [
+      { id: "item", name: "Item", typeId: "struct", typeClassId: "inner" },
+      { id: "items", name: "Items", typeId: "struct", typeClassId: "inner", container: "array" },
+      { id: "lookup", name: "Lookup", typeId: "struct", typeClassId: "inner", container: "map", keyTypeId: "struct", keyTypeClassId: "inner" },
+    ];
+    const initial = schemasFor(fields);
+    initial.structs = { ...initial.structs, inner: { name: "Item", fields: [
+      { id: "price", name: "Price", typeId: "int" },
+      { id: "icon", name: "RemovedIcon", typeId: "asset", typeClassId: "Texture" },
+    ] } };
+    initial.dataDefinitions = initial.structs;
+    const authored = createDataRowForDefinition("stats", fields, initial);
+    const item = { Price: 7, RemovedIcon: "icon-guid" };
+    authored.values = { Item: { ...item }, Items: [{ ...item }], Lookup: [{ key: { ...item }, value: { ...item } }] };
+    const current = schemasFor([...fields, { id: "status", name: "Status", typeId: "string", defaultValue: "Ready" }]);
+    current.structs = { ...current.structs, inner: { name: "Item", fields: [
+      { id: "price", name: "Cost", typeId: "int" },
+      { id: "quantity", name: "Quantity", typeId: "int", defaultValue: 9 },
+    ] } };
+    current.dataDefinitions = current.structs;
+    const projected = reconcileDataRow(authored, "stats", current.structs.stats!.fields, current, { initializeMissingFields: false });
+    const renamed = { Cost: 7, RemovedIcon: "icon-guid" };
+    expect(projected.row.values).toEqual({ Item: renamed, Items: [renamed], Lookup: [{ key: renamed, value: renamed }] });
+    expect(projected.row.schema![2]!.keyFields).toContainEqual({ id: "icon", name: "RemovedIcon", typeId: "asset", typeClassId: "Texture" });
+    expect(projected.issues.filter((issue) => issue.code === "missing-field").map((issue) => issue.path)).toEqual([
+      "Item.Quantity", "Items.0.Quantity", "Lookup.0.key.Quantity", "Lookup.0.value.Quantity", "Status",
+    ]);
+    expect(authored.values.Item).toEqual(item);
+    expect(reconcileDataRow(projected.row, "stats", current.structs.stats!.fields, current).row.values.Status).toBe("Ready");
+  });
+
   it("creates portable detached defaults and round-trips native Maps through authoring", () => {
     const fields: StructField[] = [
       { name: "Category", typeId: "tag" },

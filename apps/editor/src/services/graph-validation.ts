@@ -433,12 +433,12 @@ function applyStructEnumSchema(
       properties["default:values"] !== undefined && !graph.edges.some((edge) => edge.target === nodeId && edge.targetHandle === "values")) {
       const schemas = { structs: options?.structs ?? {}, enums: options?.enums ?? {}, dataDefinitions: options?.dataDefinitions };
       const authored = dataLiteralRow(nodeId, properties);
-      // Project stable field renames before codegen and Inspector editing.
-      // Missing fields and incompatible types require explicit authoring; they
-      // must not pick up new defaults or be coerced during graph hydration.
-      if (authored && !validateDataRow(authored, guid, schemas).some((issue) => issue.severity === "error")) {
-        const projected = reconcileDataRow(authored, guid, schema.fields, schemas);
-        if (!projected.issues.some((issue) => issue.severity === "error")) {
+      // Safe renames must remain editable while unrelated values need repair.
+      // Missing fields stay missing and incompatible values retain their old
+      // type snapshots; structural conflicts return the original row atomically.
+      if (authored) {
+        const projected = reconcileDataRow(authored, guid, schema.fields, schemas, { initializeMissingFields: false });
+        if (projected.row !== authored) {
           properties["default:values"] = projected.row.values;
           properties.dataSchema = projected.row.schema;
         }

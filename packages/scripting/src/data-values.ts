@@ -45,6 +45,11 @@ export interface DataSchemaChange {
   previousPath?: string;
 }
 
+export interface DataReconcileOptions {
+  /** False applies safe renames without adopting defaults for missing fields. */
+  initializeMissingFields?: boolean;
+}
+
 const own = (value: object, key: string): boolean => Object.prototype.hasOwnProperty.call(value, key);
 const record = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value);
@@ -491,7 +496,7 @@ function mergeSnapshots(
 function reconcileFieldValue(
   field: StructField, previous: DataFieldSnapshot | undefined, value: unknown,
   schemas: TypeSchemas | undefined, changes: DataSchemaChange[], issues: DataValidationIssue[],
-  path: string, visiting: ReadonlySet<string>, depth: number,
+  path: string, visiting: ReadonlySet<string>, depth: number, initializeMissingFields: boolean,
 ): { value: unknown; fields?: DataFieldSnapshot[]; keyFields?: DataFieldSnapshot[] } {
   if (depth > 64) {
     issue(issues, "recursive-schema", path, "Nested data exceeds 64 levels.");
@@ -504,7 +509,7 @@ function reconcileFieldValue(
     let fields: DataFieldSnapshot[] | undefined;
     const result = value.map((entry, index) => {
       const item = reconcileFieldValue(scalarField(field), previous, entry, schemas, changes, issues,
-        fieldPath(path, String(index)), visiting, depth + 1);
+        fieldPath(path, String(index)), visiting, depth + 1, initializeMissingFields);
       if (item.fields) fields = fields ? mergeSnapshots(fields, item.fields, previous?.fields ?? []) : item.fields;
       return item.value;
     });
@@ -518,8 +523,8 @@ function reconcileFieldValue(
     const result = value.map((entry, index) => {
       if (!record(entry) || !own(entry, "key") || !own(entry, "value")) return entry;
       const at = fieldPath(path, String(index));
-      const key = reconcileFieldValue(keyField, keyPrevious, entry.key, schemas, changes, issues, fieldPath(at, "key"), visiting, depth + 1);
-      const item = reconcileFieldValue(scalarField(field), previous, entry.value, schemas, changes, issues, fieldPath(at, "value"), visiting, depth + 1);
+      const key = reconcileFieldValue(keyField, keyPrevious, entry.key, schemas, changes, issues, fieldPath(at, "key"), visiting, depth + 1, initializeMissingFields);
+      const item = reconcileFieldValue(scalarField(field), previous, entry.value, schemas, changes, issues, fieldPath(at, "value"), visiting, depth + 1, initializeMissingFields);
       if (key.fields) keyFields = keyFields ? mergeSnapshots(keyFields, key.fields, previous?.keyFields ?? []) : key.fields;
       if (item.fields) fields = fields ? mergeSnapshots(fields, item.fields, previous?.fields ?? []) : item.fields;
       return { ...entry, key: key.value, value: item.value };
@@ -529,7 +534,7 @@ function reconcileFieldValue(
   const nested = field.typeId === "struct" ? structureSchema(schemas, field.typeClassId) : undefined;
   if (nested && record(value)) {
     const result = reconcileFields(nested.fields, previous?.fields ?? [], value, schemas, changes, issues, path,
-      new Set([...visiting, field.typeClassId!]), depth + 1);
+      new Set([...visiting, field.typeClassId!]), depth + 1, initializeMissingFields);
     return { value: result.values, fields: result.schema };
   }
   return { value };
@@ -538,7 +543,7 @@ function reconcileFieldValue(
 function reconcileFields(
   fields: readonly StructField[], snapshot: readonly DataFieldSnapshot[], values: Record<string, unknown>,
   schemas: TypeSchemas | undefined, changes: DataSchemaChange[], issues: DataValidationIssue[],
-  path: string, visiting: ReadonlySet<string>, depth: number,
+  path: string, visiting: ReadonlySet<string>, depth: number, initializeMissingFields: boolean,
 ): { values: Record<string, unknown>; schema: DataFieldSnapshot[] } {
   if (depth > 64) {
     issue(issues, "recursive-schema", path, "Nested data exceeds 64 levels.");
@@ -562,12 +567,13 @@ function reconcileFields(
     }
     if (source === undefined) changes.push({ kind: "added", path: at });
     else if (source !== field.name) changes.push({ kind: "renamed", path: at, previousPath: fieldPath(path, source) });
+    if (source === undefined && !initializeMissingFields) continue;
     let value = source === undefined
       ? serializeDataRowValues(structInstanceDefault([field], schemas, visiting), [field], schemas)[field.name]
       : values[source];
     // Only descend into compatible authored objects; never coerce an old field value.
     if (!previous || sameFieldType(field, previous)) {
-      const reconciled = reconcileFieldValue(field, previous, value, schemas, changes, issues, at, visiting, depth);
+      const reconciled = reconcileFieldValue(field, previous, value, schemas, changes, issues, at, visiting, depth, initializeMissingFields);
       value = reconciled.value;
       if (reconciled.fields) schema[index]!.fields = reconciled.fields;
       if (reconciled.keyFields) schema[index]!.keyFields = reconciled.keyFields;
@@ -607,11 +613,12 @@ function reconcileFields(
  */
 export function reconcileDataRow(
   row: DataSheetRow, definitionGuid: string | null, fields: readonly StructField[], schemas?: TypeSchemas,
+  options: DataReconcileOptions = {},
 ): { row: DataSheetRow; changes: DataSchemaChange[]; issues: DataValidationIssue[] } {
   const changes: DataSchemaChange[] = [];
   const issues: DataValidationIssue[] = [];
   const result = reconcileFields(fields, row.schema ?? [], row.values, schemas, changes, issues, "",
-    new Set(definitionGuid ? [definitionGuid] : []), 0);
+    new Set(definitionGuid ? [definitionGuid] : []), 0, options.initializeMissingFields !== false);
   if (issues.some((entry) => entry.severity === "error")) return { row, changes, issues: issues.map((entry) => ({ ...entry, rowId: row.id })) };
   const next = createDataSheetRow(row.name, result.values, result.schema, row.id);
   if (schemas) issues.push(...validateDataRow(next, definitionGuid, schemas));

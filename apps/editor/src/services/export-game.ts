@@ -461,6 +461,9 @@ export async function collectAndExportGame(
       }),
       ...compileAnimGraphScripts(animDocs, {
         stripDevelopmentOnly: !bundleDebugger,
+        inputAssets,
+        dataAssets,
+        ...typeSchemas,
         tagRegistry: params.tagRegistry,
       }),
     );

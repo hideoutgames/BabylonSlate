@@ -73,6 +73,11 @@ import {
 import { animClipCatalogFromAssets } from "../lib/anim-clip-catalog";
 import { IconActionButton } from "./icon-action-button";
 import { variableDefaultPropertyRows } from "../lib/graph-inspector";
+import { useDataCatalog } from "../lib/use-data-catalog";
+import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
+import { applyDataGraphAssetPicks, collectDataGraphAssets } from "../lib/data-graph";
+
+const DATA_SHEET_KINDS = ["data-sheet"] as const;
 
 const VARIABLE_TYPES = [
   "bool",
@@ -431,6 +436,13 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
   } = useAnimGraphEditing();
   const { setSelectedNodeIds } = useGraphEditing();
   const { activeDocumentId, animEditorMode } = useDocuments();
+  const typeCatalog = useDataCatalog();
+  const sheetDocuments = useOpenDocumentsOfKinds(DATA_SHEET_KINDS);
+  const dataAssets = useMemo(() => collectDataGraphAssets(typeCatalog.assets, sheetDocuments), [typeCatalog.assets, sheetDocuments]);
+  const pinTypeNames = useMemo(() => Object.fromEntries([
+    ...Object.entries(typeCatalog.schemas.structs),
+    ...Object.entries(typeCatalog.schemas.enums),
+  ].map(([guid, schema]) => [guid, schema.name])), [typeCatalog.schemas]);
   const ruleSurface = openTransitionId
     ? `rule:${openTransitionId}`
     : animEditorMode;
@@ -487,12 +499,16 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
         members: ruleMembers,
       },
       defaultNodeRegistry,
+      { ...typeCatalog.schemas, dataAssets },
     );
-  }, [doc.transitions, openTransition, ruleMembers]);
+  }, [doc.transitions, openTransition, ruleMembers, typeCatalog.schemas, dataAssets]);
   const rulePaletteInput = {
     parentClass: "BObject",
     animationGraphHost: "rule" as const,
     graph: { nodes: [], edges: [], members: ruleMembers },
+    structures: typeCatalog.types.structures,
+    dataDefinitions: typeCatalog.types.dataDefinitions,
+    enums: typeCatalog.types.enums,
   };
   const rulePaletteInputRef = useRef(rulePaletteInput);
   rulePaletteInputRef.current = rulePaletteInput;
@@ -520,6 +536,8 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
     const ruleRows =
       openTransition && ruleGraph
         ? validateSerializedGraph(ruleGraph, {
+            ...typeCatalog.schemas,
+            dataAssets,
             assetGuid: documentId,
             graphId: `${documentId}:${openTransition.id}`,
             members: ruleMembers.map((member) => ({
@@ -542,6 +560,8 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
     openTransition,
     ruleGraph,
     ruleMembers,
+    typeCatalog.schemas,
+    dataAssets,
     setDiagnostics,
   ]);
 
@@ -582,6 +602,7 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
             initialGraph={ruleGraph}
             commitPositionsOnDragEnd
             paletteNodes={rulePalette}
+            pinTypeNames={pinTypeNames}
             onPaletteOpenChange={setRulePaletteOpen}
             diagnostics={graphDiagnostics}
             defaultZoom={defaultZoom}
@@ -589,7 +610,7 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
             onSessionViewportChange={onSessionViewportChange}
             onSelectionChange={setSelectedNodeIds}
             onChange={(next) => {
-              const nextRule = { nodes: next.nodes, edges: next.edges };
+              const nextRule = applyDataGraphAssetPicks(ruleGraph, { nodes: next.nodes, edges: next.edges }, dataAssets);
               const transitionId = openTransition.id;
               queueMicrotask(() => {
                 commit(
