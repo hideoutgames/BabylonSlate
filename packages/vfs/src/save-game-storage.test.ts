@@ -167,9 +167,15 @@ describe("private native saved games", () => {
   });
 
   it("preserves structured native failures across the Electron bridge", async () => {
-    const bridge = { read: async () => ({ ok: false, error: { name: "Error", message: "not readable", code: "EACCES" } }),
+    const unexpected = async (): Promise<never> => { throw new Error("Unexpected save bridge operation"); };
+    const bridge: ElectronSaveGameBridge = {
+      read: async () => ({ ok: false, error: { name: "Error", message: "not readable", code: "EACCES" } }),
       write: async () => ({ ok: false, error: { name: "Error", message: "full", code: "ENOSPC" } }),
-    } as ElectronSaveGameBridge;
+      remove: unexpected,
+      list: unexpected,
+      acquireLock: unexpected,
+      releaseLock: unexpected,
+    };
     const storage = new ElectronSaveGameStorage(bridge);
     await expect(storage.read(key)).rejects.toHaveProperty("code", "EACCES");
     await expect(storage.write(key, "data")).rejects.toHaveProperty("name", "StorageFullError");
