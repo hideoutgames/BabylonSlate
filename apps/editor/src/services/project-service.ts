@@ -336,6 +336,8 @@ export class ProjectService {
   private derivedStorage: ProjectStorage | null = null;
   private enginePluginStorage: ProjectStorage | null = null;
   private pluginDescriptors: PluginDescriptor[] = [];
+  /** Plugin folders change only through a full sync; overrides reuse the last discovery. */
+  private pluginDescriptorsCurrent = false;
   private pluginDiagnostics: PluginDiagnostic[] = [];
   private pluginOverrides: Record<string, PluginEnableOverride> = {};
   /** Asset guids stay stable across saves so references survive a rewrite. */
@@ -871,6 +873,7 @@ export class ProjectService {
 
   setEnginePluginStorage(storage: ProjectStorage | null): void {
     this.enginePluginStorage = storage;
+    this.pluginDescriptorsCurrent = false;
   }
 
   setEngineExtensionStorage(storage: ProjectStorage): void {
@@ -1127,6 +1130,7 @@ export class ProjectService {
     this.projectSearchIndex?.clear();
     this.projectSearchIndex = null;
     this.pluginDescriptors = [];
+    this.pluginDescriptorsCurrent = false;
     this.pluginDiagnostics = [];
     this.pluginOverrides = {};
   }
@@ -1393,17 +1397,20 @@ export class ProjectService {
     return registry;
   }
 
-  async syncPlugins(): Promise<void> {
+  async syncPlugins(options: { rediscover?: boolean } = {}): Promise<void> {
     const registry = this.assetRegistry;
     if (!registry) return;
-    const projectPlugins = await discoverProjectPlugins(this.storage);
-    const enginePlugins = this.enginePluginStorage
-      ? await discoverEnginePlugins(this.enginePluginStorage)
-      : [];
-    this.pluginDescriptors = shadowEnginePlugins(
-      projectPlugins,
-      enginePlugins,
-    );
+    if (options.rediscover !== false || !this.pluginDescriptorsCurrent) {
+      const projectPlugins = await discoverProjectPlugins(this.storage);
+      const enginePlugins = this.enginePluginStorage
+        ? await discoverEnginePlugins(this.enginePluginStorage)
+        : [];
+      this.pluginDescriptors = shadowEnginePlugins(
+        projectPlugins,
+        enginePlugins,
+      );
+      this.pluginDescriptorsCurrent = true;
+    }
     const enabledGuids = new Set(
       this.pluginDescriptors
         .filter((plugin) =>
@@ -1448,7 +1455,10 @@ export class ProjectService {
     overrides: Record<string, PluginEnableOverride>,
   ): Promise<void> {
     this.pluginOverrides = overrides;
-    await this.syncPlugins();
+    // Toggling a discovered plugin changes mounts, not plugin folders; an
+    // unknown guid may name a folder written since the last discovery.
+    const known = new Set(this.pluginDescriptors.map((plugin) => plugin.pluginGuid));
+    await this.syncPlugins({ rediscover: Object.keys(overrides).some((guid) => !known.has(guid)) });
     this.emitRegistryChange();
   }
 
