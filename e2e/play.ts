@@ -1,4 +1,5 @@
 import { expect, type Page } from "@playwright/test";
+import { acceptUnsavedPlayPrompts } from "./unsaved-play";
 
 /**
  * Dirty Play shows the Preparing Play dialog before `play-overlay`
@@ -17,6 +18,7 @@ export async function waitForPlayOverlay(page: Page): Promise<void> {
 
 /** Click Play and wait until the overlay is up, including a prepare dialog. */
 export async function clickPlayAndWaitForOverlay(page: Page): Promise<void> {
+  await acceptUnsavedPlayPrompts(page);
   await page.getByTestId("play-preview").click();
   await waitForPlayOverlay(page);
 }

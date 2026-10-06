@@ -1,9 +1,11 @@
 import { expect, type Page } from "@playwright/test";
+import { acceptUnsavedPlayPrompts } from "./unsaved-play";
 
 const PROJECT_BOOT_TIMEOUT_MS = 30_000;
 
 /** The editor mounts beneath the splash before it accepts input. */
 export async function waitForEditorInteractive(page: Page): Promise<void> {
+  await acceptUnsavedPlayPrompts(page);
   await expect(page.getByTestId("editor-chrome-bar")).toBeVisible({
     timeout: PROJECT_BOOT_TIMEOUT_MS,
   });
@@ -14,6 +16,7 @@ export async function waitForEditorInteractive(page: Page): Promise<void> {
 
 /** Click the Homepage TestProject row (name with or without `.babproject`). */
 export async function clickListedTestProject(page: Page): Promise<void> {
+  await acceptUnsavedPlayPrompts(page);
   const listed = page.getByTestId("open-listed-project-TestProject");
   const listedLegacy = page.getByTestId(
     "open-listed-project-TestProject.babproject",
@@ -71,6 +74,7 @@ export async function submitCreateOrOpenListed(
   page: Page,
   listedName = "TestProject",
 ): Promise<void> {
+  await acceptUnsavedPlayPrompts(page);
   await page.getByTestId("create-project-name").fill(listedName);
   const submit = page.getByTestId("create-project-submit");
   if (await submit.isEnabled()) {
