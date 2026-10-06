@@ -17,9 +17,8 @@ env:
   BL_EXECUTION_POLICY: hosted-ci
 
 jobs:
-  # static + unit + 7 e2e shards = 9 jobs/PR. Two ready PRs = 18. After one
-  # merges, remaining PR + main Verify + Preview = 19. A 10th Verify job
-  # (or nine e2e shards) fills that overlap at 20.
+  # static + unit + 4 e2e shards = 6 jobs/PR. Two ready PRs = 12. After one
+  # merges, remaining PR + main Verify + Preview = 13, below the 20-job cap.
   static:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
@@ -60,7 +59,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7]
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -78,11 +77,11 @@ jobs:
         run: pnpm exec playwright install chromium
       # GitHub ubuntu-latest already ships Chromium's shared libraries.
       # Playwright's extra CJK/cyrillic font apt packages (~21MB) time out
-      # when seven shards hit the Ubuntu archive together. The suite has no
+      # when several shards hit the Ubuntu archive together. The suite has no
       # screenshot baselines that need those fonts.
       # Bundle on this runner; static remains independently required for merge.
       # The immutable build is verified before this shard executes its tests.
-      - run: pnpm test:e2e --partition=${{ matrix.shard }}/7
+      - run: pnpm test:e2e --partition=${{ matrix.shard }}/4
         env:
           BL_TEST_BUILD_MODE: ci-bundle
       - uses: actions/upload-artifact@v4

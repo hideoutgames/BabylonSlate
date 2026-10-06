@@ -256,7 +256,7 @@ const goodRun = {
 const jobs = [
   "static",
   "unit",
-  ...Array.from({ length: 7 }, (_, i) => `e2e (${i + 1})`),
+  ...Array.from({ length: 4 }, (_, i) => `e2e (${i + 1})`),
 ].map((name) => ({ name, status: "completed", conclusion: "success" }));
 async function github(t, scenario = {}) {
   const f = await fixture(t);
