@@ -1,3 +1,4 @@
+import { checkStorageRevision, StorageReadCounter, validateStorageRange } from "./storage-range";
 import type {
   DirEntry,
   FileStat,
@@ -10,6 +11,7 @@ const META_KEY = "babylonslate:opfs-meta";
 /** Reads of a file whose snapshot a concurrent write replaced, before giving up. */
 const OPFS_READ_ATTEMPTS = 4;
 const STALE_SNAPSHOT_ERRORS = new Set(["NotReadableError", "NotFoundError"]);
+const writeRevisions = new Map<string, number>();
 const lifecycleQueues = new Map<string, Promise<void>>();
 
 /** Serialize migration/binding across adapters and, with Web Locks, browser tabs. */
@@ -59,6 +61,9 @@ function updateMeta(mutate: (meta: OpfsMeta) => void): Promise<void> {
 
 /** Durable browser storage. Hosts without OPFS must report the failure to the caller. */
 export class OpfsStorageAdapter implements ProjectStorage {
+  private readonly reads = new StorageReadCounter();
+  getReadMetrics() { return this.reads.snapshot(); }
+
   private folder: ProjectFolderHandle | null = null;
   private root: FileSystemDirectoryHandle | null = null;
 
@@ -259,7 +264,9 @@ export class OpfsStorageAdapter implements ProjectStorage {
         throw new Error(`File not found: ${path}`);
       }
       try {
-        return new Uint8Array(await file.arrayBuffer());
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        this.reads.record("full", bytes.byteLength);
+        return bytes;
       } catch (error) {
         // `getFile()` is a snapshot: a write that closes before it is read
         // (Chromium swaps the new contents in) fails the read with
@@ -271,17 +278,40 @@ export class OpfsStorageAdapter implements ProjectStorage {
     }
   }
 
+  async readBinaryRange(path: string, offset: number, length: number, expectedRevision?: string) {
+    validateStorageRange(offset, length);
+    const { parent, name } = await this.resolveHandle(path, false);
+    const handle = await parent.getFileHandle(name);
+    const file = await handle.getFile();
+    const key = `${this.assertFolder().id}/${this.split(path).join("/")}`;
+    const revisionOf = (value: File) => `${value.lastModified}:${value.size}:${writeRevisions.get(key) ?? 0}`;
+    const revision = revisionOf(file);
+    checkStorageRevision(path, revision, expectedRevision);
+    validateStorageRange(offset, length, file.size);
+    // Reading the Blob slice is essential: slicing an ArrayBuffer already read
+    // from the complete File would eagerly retain every inline asset payload.
+    const bytes = new Uint8Array(await file.slice(offset, offset + length).arrayBuffer());
+    this.reads.record("range", length, bytes.byteLength);
+    if (bytes.byteLength !== length) throw new Error(`Unexpected end of file: ${path}`);
+    checkStorageRevision(path, revisionOf(await handle.getFile()), revision);
+    return { bytes, totalSize: file.size, revision, actualBytesRead: bytes.byteLength };
+  }
+
   async writeBinary(path: string, data: Uint8Array): Promise<void> {
+    const key = `${this.assertFolder().id}/${this.split(path).join("/")}`;
     const { parent, name } = await this.resolveHandle(path, true);
     const writable = await (
       await parent.getFileHandle(name, { create: true })
     ).createWritable();
+    writeRevisions.set(key, (writeRevisions.get(key) ?? 0) + 1);
     try {
       await writable.write(data);
       await writable.close();
     } catch (error) {
       await writable.abort().catch(() => {});
       throw error;
+    } finally {
+      writeRevisions.set(key, (writeRevisions.get(key) ?? 0) + 1);
     }
   }
 

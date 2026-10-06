@@ -503,6 +503,15 @@ importers:
 
   packages/exporter:
     dependencies:
+      '@babylonslate/anim-graph':
+        specifier: workspace:*
+        version: link:../anim-graph
+      '@babylonslate/behaviour-tree':
+        specifier: workspace:*
+        version: link:../behaviour-tree
+      '@babylonslate/shader-graph':
+        specifier: workspace:*
+        version: link:../shader-graph
       '@babylonslate/assets':
         specifier: workspace:*
         version: link:../assets

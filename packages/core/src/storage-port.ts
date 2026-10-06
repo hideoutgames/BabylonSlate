@@ -19,8 +19,25 @@ export interface FileStat {
   mtime: number | null;
 }
 
+/** Exact bounded read. A revision is opaque and scoped to a project and path. */
+export interface StorageRangeRead {
+  bytes: Uint8Array;
+  totalSize: number;
+  revision: string;
+  /** Bytes actually returned by the underlying filesystem/transport, before slicing. */
+  actualBytesRead: number;
+}
+
+export interface StorageReadMetrics {
+  operations: number;
+  fullReads: number;
+  rangeReads: number;
+  requestedBytes: number;
+  actualBytesRead: number;
+}
+
 /** Read-only view whose path lookup cache may live for one caller operation. */
-export type ProjectStorageReader = Pick<ProjectStorage, "readText" | "readBinary" | "exists" | "readdir" | "stat">;
+export type ProjectStorageReader = Pick<ProjectStorage, "readText" | "readBinary" | "readBinaryRange" | "hasStrongSourceRevisions" | "getReadMetrics" | "exists" | "readdir" | "stat">;
 
 /**
  * Binary-capable project filesystem. UI never calls Capacitor directly.
@@ -57,6 +74,17 @@ export interface ProjectStorage {
   readText(path: string): Promise<string>;
   writeText(path: string, data: string): Promise<void>;
   readBinary(path: string): Promise<Uint8Array>;
+  /** Read exactly length bytes; reject invalid bounds or a changed expected revision. Never fall back to a full read. */
+  readBinaryRange(path: string, offset: number, length: number, expectedRevision?: string): Promise<StorageRangeRead>;
+  /**
+   * True only when range revisions cannot alias different file contents (for
+   * example immutable catalog hashes or owned in-memory write generations).
+   * Filesystem timestamps alone do not establish this, regardless of precision.
+   * Readers of mutable catalogs must refresh bounded metadata when omitted/false.
+   */
+  readonly hasStrongSourceRevisions?: boolean;
+  /** Cumulative I/O at this adapter's boundary; counters do not measure retained memory. */
+  getReadMetrics?(): StorageReadMetrics;
   writeBinary(path: string, data: Uint8Array): Promise<void>;
   exists(path: string): Promise<boolean>;
   readdir(path: string): Promise<DirEntry[]>;

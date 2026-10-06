@@ -69,6 +69,23 @@ describe("DocumentsStorageAdapter", () => {
     expect(write).toHaveBeenCalledTimes(3);
   });
 
+  it("uses native bounded reads and rejects unsupported hosts without reading the file", async () => {
+    await storage.openDocumentsProject("Game");
+    await storage.writeBinary("large.babasset", new Uint8Array([1, 2, 3, 4]));
+    const fullRead = vi.spyOn(fs, "readFile");
+    const selected = await storage.readBinaryRange("large.babasset", 1, 2);
+    expect(selected.bytes).toEqual(new Uint8Array([2, 3]));
+    expect(storage.getReadMetrics()).toMatchObject({ actualBytesRead: 2, fullReads: 0 });
+    await storage.writeBinary("large.babasset", new Uint8Array([9, 8, 7, 6]));
+    await expect(storage.readBinaryRange("large.babasset", 1, 2, selected.revision)).rejects.toThrow(/revision/i);
+    fs.readFileRange = vi.fn().mockRejectedValue(Object.assign(new Error("Source changed during read"), { data: { actualBytesRead: 1 } }));
+    await expect(storage.readBinaryRange("large.babasset", 1, 2)).rejects.toThrow(/changed/i);
+    expect(storage.getReadMetrics().actualBytesRead).toBe(3);
+    delete fs.readFileRange;
+    await expect(storage.readBinaryRange("large.babasset", 1, 2)).rejects.toThrow(/bounded reads/i);
+    expect(fullRead).not.toHaveBeenCalled();
+  });
+
   it.each(["../Other", "", ".", "..", "/Other", "Game/Other", "Game\\Other"])("rejects unsafe project folder names: %s", async (name) => {
     await expect(storage.openDocumentsProject(name)).rejects.toThrow(/project/i);
     expect(fs.tree.size).toBe(1);

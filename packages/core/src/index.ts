@@ -38,6 +38,7 @@ export * from "./trace";
 export * from "./map-default";
 export * from "./class-variable-references";
 export * from "./asset-variable-references";
+export * from "./asset-loading";
 export * from "./material-parameter-assets";
 export * from "./material-parameter-value";
 export * from "./play-preview-aspect";

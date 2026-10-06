@@ -31,8 +31,10 @@ import { applyInspectControl } from "./inspect-control";
 import { createWorkerScheduler } from "./worker-scheduler";
 import { captureConsoleLogs } from "./console-capture";
 import { createSceneSnapshotDelivery } from "./scene-snapshot-delivery";
+import { createSceneSourceClient } from "./scene-source";
 
 let runtime: RuntimeDriver | null = null;
+let sceneSources = createSceneSourceClient(onCommand);
 let saveStorage = createSaveStorageClient((request) => onCommand({ type: "saveStorageRequest", request }));
 const boot = createPlayBootCoordinator();
 let bootGeneration = 0;
@@ -87,8 +89,12 @@ const pauseGate = createPlayPauseGate({
 
 function handleControl(msg: ControlMessage): void {
   switch (msg.type) {
+    case "loadSceneContent": ensureRuntime().registerSceneContent(msg); return;
     case "saveStorageResponse":
       saveStorage.receive(msg.response);
+      return;
+    case "sceneSourceResponse":
+      sceneSources.receive(msg);
       return;
     case "load": {
       bootGeneration++;
@@ -106,8 +112,11 @@ function handleControl(msg: ControlMessage): void {
         runtime = null;
       }
       saveStorage.dispose();
+      sceneSources.dispose();
+      sceneSources = createSceneSourceClient(onCommand);
       saveStorage = createSaveStorageClient((request) => onCommand({ type: "saveStorageRequest", request }));
-      runtime = createRuntimeFromLoad(msg, onCommand, saveStorage.storage);
+      runtime = createRuntimeFromLoad(msg, onCommand, saveStorage.storage,
+        msg.sceneCatalog ? { acquireScene: sceneSources.acquireScene } : undefined);
       return;
     }
     case "loadScripts": {
@@ -239,6 +248,7 @@ function handleControl(msg: ControlMessage): void {
       sceneSnapshots.reset();
       scheduler.stop();
       ensureRuntime().stop();
+      sceneSources.dispose();
       stopConsoleCapture?.();
       stopConsoleCapture = null;
       return;
@@ -298,6 +308,12 @@ function handleControl(msg: ControlMessage): void {
       return;
     case "sceneStreamReady":
       runtime?.notifySceneStreamReady(msg.actorGuid, msg.streamLoadId);
+      return;
+    case "assetPreloadResult":
+      runtime?.notifyAssetPreloadResult(msg);
+      return;
+    case "assetLoadStates":
+      runtime?.setAssetLoadStates(msg.states);
       return;
     case "sceneStreamProgress":
       runtime?.notifySceneStreamProgress(msg.actorGuid, msg.streamLoadId, msg.progress);

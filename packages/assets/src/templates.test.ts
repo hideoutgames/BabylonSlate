@@ -1,11 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import {
   createEmptyProjectFiles,
   encodeProjectZip,
   writeProjectTree,
 } from "./babproject";
-import { listTemplates } from "./templates";
+import { listTemplateCatalog, listTemplates, loadTemplateFiles } from "./templates";
 
 async function templatesFolder() {
   const storage = new MemoryStorageAdapter("documents");
@@ -14,6 +14,23 @@ async function templatesFolder() {
 }
 
 describe("template discovery", () => {
+  it("lists template cards without opening archives and reads only the selected template", async () => {
+    const storage = await templatesFolder();
+    for (const name of ["Selected", "Unused"]) {
+      await storage.writeBinary(`${name}.zip`, encodeProjectZip([
+        ...createEmptyProjectFiles({ guid: name, name }),
+        { path: "assets/source.bin", data: new Uint8Array(128 * 1024) },
+      ]));
+    }
+    const reads = vi.spyOn(storage, "readBinary");
+    expect(await listTemplateCatalog(storage)).toEqual([
+      { id: "Selected.zip", name: "Selected" }, { id: "Unused.zip", name: "Unused" },
+    ]);
+    expect(reads).not.toHaveBeenCalled();
+    expect((await loadTemplateFiles(storage, "Selected.zip")).some((file) => file.path === "project.json")).toBe(true);
+    expect(reads.mock.calls.map(([path]) => path)).toEqual(["Selected.zip"]);
+  });
+
   it("finds directory-backed templates", async () => {
     const storage = await templatesFolder();
     const files = createEmptyProjectFiles({ guid: "g1", name: "Platformer" });

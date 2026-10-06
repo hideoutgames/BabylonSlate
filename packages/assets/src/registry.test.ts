@@ -30,6 +30,7 @@ class CaseInsensitiveStorage extends MemoryStorageAdapter {
     return resolved;
   }
   override async readBinary(path: string) { return super.readBinary(await this.diskPath(path)); }
+  override async readBinaryRange(path: string, offset: number, length: number, revision?: string) { return super.readBinaryRange(await this.diskPath(path), offset, length, revision); }
   override async writeBinary(path: string, data: Uint8Array) { return super.writeBinary(await this.diskPath(path), data); }
   override async exists(path: string) { return super.exists(await this.diskPath(path)); }
   override async readdir(path: string) { return super.readdir(await this.diskPath(path)); }
@@ -285,6 +286,7 @@ describe("AssetRegistry", () => {
           readText: (path) => storage.readText(path), exists: (path) => storage.exists(path), stat: (path) => storage.stat(path),
           readdir: async (path) => { paths.push(`dir:${path}`); return storage.readdir(path); },
           readBinary: async (path) => { paths.push(`file:${path}`); return storage.readBinary(path); },
+          readBinaryRange: async (path, offset, length, revision) => { paths.push(`range:${path}`); return storage.readBinaryRange(path, offset, length, revision); },
         };
         try { return await operation(reader); } finally { closed = true; }
       },
@@ -292,7 +294,7 @@ describe("AssetRegistry", () => {
     const registry = new AssetRegistry(scoped);
     await registry.mountRoot(projectContentRoot());
     expect(registry.list().map((entry) => entry.header.guid).sort()).toEqual(["a", "b"]);
-    expect(paths.sort()).toEqual(["dir:assets", "dir:assets/nested", "file:assets/a.babasset", "file:assets/nested/b.babasset"]);
+    expect(paths.sort()).toEqual(["dir:assets", "dir:assets/nested", "range:assets/a.babasset", "range:assets/a.babasset", "range:assets/nested/b.babasset", "range:assets/nested/b.babasset"]);
     expect(closed).toBe(true);
   });
   it("mounts the project root and indexes headers only", async () => {
@@ -398,8 +400,7 @@ describe("AssetRegistry", () => {
 
     const first = registry.getByGuid("guid-0");
     expect(first).toBeDefined();
-    const bytes = await storage.readBinary(first!.path);
-    await registry.payloadLoader.loadChunk(bytes, first!.header.chunks[0]!);
+    await registry.readChunk(first!.header.guid, first!.header.chunks[0]!.id);
     expect(registry.accountedPayloadBytes).toBe(256);
   });
 

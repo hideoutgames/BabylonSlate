@@ -188,6 +188,17 @@ function registerIpc(): void {
       bytes.byteOffset + bytes.byteLength,
     );
   });
+  handle("project:readBinaryRange", async (_event, path, offset, length, revision) => {
+    try {
+      const result = await storage.readBinaryRange(String(path), Number(offset), Number(length), revision as string | undefined);
+      return { ...result, bytes: result.bytes.buffer.slice(result.bytes.byteOffset, result.bytes.byteOffset + result.bytes.byteLength) };
+    } catch (error) {
+      // Electron only transports Error.message for rejected invokes. Return a
+      // structured failure so reads discarded by revision checks remain visible.
+      return { bytes: new ArrayBuffer(0), totalSize: 0, revision: "", error: error instanceof Error ? error.message : String(error),
+        actualBytesRead: (error as { actualBytesRead?: number } | null)?.actualBytesRead ?? 0 };
+    }
+  });
   handle("project:writeBinary", async (_event, path, data) => {
     await storage.writeBinary(
       String(path),

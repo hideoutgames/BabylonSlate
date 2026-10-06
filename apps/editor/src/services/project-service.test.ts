@@ -2,10 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMemoryOpfsRoot } from "../../../../packages/vfs/src/test-support/memory-opfs";
 import { createEmptyProject, PROJECT_FILE } from "@babylonslate/core";
 import { MemoryStorageAdapter, OpfsStorageAdapter } from "@babylonslate/vfs";
-import { encodeBabasset } from "@babylonslate/assets";
+import { encodeAssetDocument, encodeBabasset } from "@babylonslate/assets";
 import { loadKenneyMannequinGlb } from "../lib/kenney-mannequin";
 import { ProjectService } from "./project-service";
 import { setEncodeQueuePauseReason } from "./encode-queue-pause";
+import { DocumentService } from "./document-service";
 
 beforeEach(() => {
   const root = createMemoryOpfsRoot();
@@ -38,6 +39,50 @@ function workerFactory() {
 }
 
 describe("ProjectService lifecycle", () => {
+  it("opens an idle project without reading inline Scene bodies or unrelated source chunks", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("IdleCatalog");
+    const service = new ProjectService(storage);
+    await service.loadCurrentProject();
+    await storage.writeBinary("assets/unused.scene.babasset", await encodeAssetDocument({
+      type: "Scene", name: "Unused", guid: "unused-scene", version: 4,
+      payload: { name: "Unused", actors: [], notes: "x".repeat(256 * 1024) },
+    }, { extraChunks: [{ id: "unused-source", kind: "source", mime: "application/octet-stream", data: new Uint8Array(1024 * 1024) }] }));
+    const before = storage.getReadMetrics().actualBytesRead;
+    const fullReads = vi.spyOn(storage, "readBinary");
+    await service.loadCurrentProject();
+    expect(service.registry!.getByGuid("unused-scene")?.header.name).toBe("Unused");
+    expect(fullReads.mock.calls.filter(([path]) => path.endsWith(".babasset") || path.includes(".blobs/"))).toEqual([]);
+    expect(storage.getReadMetrics().actualBytesRead - before).toBeLessThan(64 * 1024);
+    expect(service.assetLoadingService.snapshot()).toMatchObject({ sourceBytes: 0, decodedBytes: 0, entries: [] });
+    service.dispose();
+  });
+
+  it("shares source ownership with open asset editors and frees cached sources when their final tab closes", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("ScopedEditors");
+    const project = new ProjectService(storage);
+    await project.loadCurrentProject();
+    const action = project.registry!.list().find((asset) => asset.header.type === "InputAction")!;
+    const documents = new DocumentService();
+    const id = await documents.openDocument(project, { kind: "input-action", path: action.path, label: action.header.name });
+    const working = documents.getDocument(id)!;
+    const changed = { ...(working.content as Record<string, unknown>), name: "Unsaved Name" };
+    documents.updateAssetDocument(id, changed);
+    expect(project.assetLoadingService.snapshot().entries.some((entry) => entry.owners.includes(`Asset Editor: ${id}`))).toBe(true);
+    const other = project.createAssetLoadScope("Preview");
+    const persisted = await project.loadDocument("input-action", action.path, { scope: other });
+    expect(persisted).not.toMatchObject({ name: "Unsaved Name" });
+    documents.closeDocument(id);
+    project.assetLoadingService.trim({ force: true });
+    expect(project.assetLoadingService.snapshot().entries.some((entry) => entry.owners.includes("Preview"))).toBe(true);
+    other.dispose();
+    project.assetLoadingService.trim({ force: true });
+    expect(project.assetLoadingService.snapshot()).toMatchObject({ sourceBytes: 0, decodedBytes: 0, entries: [] });
+    expect(working.content).toMatchObject({ name: "Unsaved Name" });
+    project.dispose();
+  });
+
   it("initializes and disposes provider resources idempotently", () => {
     const factory = workerFactory();
     const service = new ProjectService(new MemoryStorageAdapter("documents"), {

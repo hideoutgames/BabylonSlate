@@ -59,6 +59,28 @@ describe("OPFS / web storage adapter", () => {
     expect(await storage.readBinary("blob.bin")).toEqual(bytes);
   });
 
+  it("reads Blob slices without opening full inline payloads and rejects replaced revisions", async () => {
+    const storage = await openedAdapter();
+    const bytes = new Uint8Array(1024 * 1024);
+    bytes.set([7, 8, 9], 64);
+    await storage.writeBinary("large.babasset", bytes);
+    const root = await navigator.storage.getDirectory();
+    const project = (JSON.parse(localStorage.getItem("babylonslate:opfs-meta")!) as { projects: Array<{ directory: string }> }).projects[0]!;
+    const file = await (await root.getDirectoryHandle(project.directory)).getFileHandle("large.babasset");
+    const getFile = file.getFile.bind(file);
+    vi.spyOn(file, "getFile").mockImplementation(async () => {
+      const snapshot = await getFile();
+      snapshot.arrayBuffer = async () => { throw new Error("Whole file read forbidden"); };
+      return snapshot;
+    });
+    const selected = await storage.readBinaryRange("large.babasset", 64, 3);
+    expect(selected.bytes).toEqual(new Uint8Array([7, 8, 9]));
+    expect(storage.getReadMetrics()).toMatchObject({ actualBytesRead: 3, fullReads: 0 });
+    await storage.writeBinary("large.babasset", bytes);
+    await expect(storage.readBinaryRange("large.babasset", 64, 3, selected.revision)).rejects.toThrow(/revision/i);
+    await expect(storage.readBinaryRange("large.babasset", bytes.length, 1)).rejects.toThrow(/range/i);
+  });
+
   it("createStorage returns OPFS adapter on web platform", () => {
     expect(createStorage()).toBeInstanceOf(OpfsStorageAdapter);
   });

@@ -15,6 +15,9 @@ import {
   createPlayBootCoordinator,
   createPlayPauseGate,
   createRuntimeFromLoad,
+  createSceneSourceHost,
+  applyRuntimeSourceControl,
+  type AcquireRuntimeScene,
   captureConsoleLogs,
   SessionDiagnosticAggregator,
   type RuntimeDiagnostic,
@@ -61,6 +64,7 @@ import {
   type EngineHandle,
   type ParticleLibrary,
   type PlayActorPosition,
+  type SceneSourceAssets,
 } from "@babylonslate/render";
 import { encodeInputEvents } from "@babylonslate/input";
 import {
@@ -350,6 +354,21 @@ export interface PlaySession {
   stop: () => PlaySessionResult;
 }
 
+export type PlaySourcePreparation = {
+  sources: SceneSourceAssets;
+  controls?: ControlMessage[];
+  getControls?: () => ControlMessage[];
+  release(): void;
+  controlsAfterRelease?: () => ControlMessage[];
+  required?: ReadonlySet<string>;
+};
+export type PlaySceneSourceLoader = (guid: string, options: {
+  consumer: string; signal: AbortSignal;
+}) => Promise<PlaySourcePreparation & { scene: SerializedScene }>;
+export type PlayAssetSourceLoader = (guids: string[], options: {
+  consumer: string; signal: AbortSignal; onProgress?: (progress: number) => void;
+}) => Promise<PlaySourcePreparation>;
+
 /** Resolve a Play session cap; omitted or non-positive values become 60. */
 export function resolvePlayFrameCap(fps?: number): number {
   return typeof fps === "number" && fps > 0 ? fps : DEFAULT_PLAY_FRAME_CAP;
@@ -463,6 +482,15 @@ export function startPlaySession(options: {
   project?: { name: string; version: string };
   gameInstanceClass?: string;
   scenes?: Array<{ guid: string; scene: SerializedScene }>;
+  sceneCatalog?: Array<{ guid: string; name: string }>;
+  classAssetGuids?: Record<string, string>;
+  audioAssetGuids?: string[];
+  acquireSceneSources?: PlaySceneSourceLoader;
+  acquireAssetSources?: PlayAssetSourceLoader;
+  releaseInitialSources?: () => void | ControlMessage[];
+  sessionSources?: SceneSourceAssets;
+  getAssetLoadState?: (guid: string) => import("@babylonslate/core").RuntimeAssetLoadState;
+  getSourceControls?: () => ControlMessage[];
   sceneLayers?: Array<{ guid: string; layer: SerializedSceneLayer }>;
   onStats?: (stats: {
     fps: number;
@@ -573,6 +601,7 @@ export function startPlaySession(options: {
     stack: Array<{ nodeId: string; childIndex: number; opened: boolean }>;
   }) => void;
 }): PlaySession {
+  options = { ...options };
   const { canvas, sharedEngine } = options;
   const textureCountBefore = sharedEngine.getLoadedTexturesCache().length;
   const liveBefore = {
@@ -626,6 +655,10 @@ export function startPlaySession(options: {
     modelClipAnimationGuids: options.modelClipAnimationGuids,
     retargetAnimationLoads: options.retargetAnimationLoads,
     loadAudioSourceBytes: options.loadAudioSourceBytes,
+    prepareAudioAsset: options.acquireAssetSources ? async (guid, request) => {
+      const prepared = await options.acquireAssetSources!([guid], request);
+      return prepareSources(prepared, request.signal);
+    } : undefined,
     audioLibrary: options.audioLibrary,
     particleLibrary: options.particleLibrary,
     audioReverbBytes: options.audioReverbBytes,
@@ -747,10 +780,201 @@ export function startPlaySession(options: {
   const hostDiagnostics = new SessionDiagnosticAggregator();
 
   const spawnedActorGuids: string[] = [];
+  let releaseSessionSources: (() => void) | undefined;
+  const sessionSourcesReady = options.sessionSources ? handle.acquireSceneSources(options.sessionSources).then((release) => {
+    if (stopped) release(); else releaseSessionSources = release;
+  }) : Promise.resolve();
+  void sessionSourcesReady.catch((error: unknown) => options.onLog?.(`Session sources: ${String(error)}`, "error"));
+  const preparedScenes = new Map((options.scenes ?? []).map((entry) => [entry.guid, entry.scene]));
+  const sceneSourceOwners = new Map<string, number>();
+  const publishSourceControl = async (control: ControlMessage) => {
+    if (worker) worker.postControl(control);
+    else if (runtime && !await applyRuntimeSourceControl(runtime, control))
+      throw new Error(`Unsupported source preparation control: ${control.type}.`);
+  };
+  const knownAssetGuids = new Set<string>();
+  const preparedAssetGuids = new Set<string>();
+  const publishedAssetStates = new Map<string, import("@babylonslate/core").RuntimeAssetLoadState>();
+  const preparedSourceScopes = new Map<PlaySourcePreparation, { guids: string[]; ready: boolean }>();
+  const sceneSourceScopes = new Map<string, Set<PlaySourcePreparation>>();
+  const streamSceneAssets = new Map<string, { guid: string; loadId: number; prepared?: PlaySourcePreparation }>();
+  const publishAssetStates = (guids: readonly string[], fallback: import("@babylonslate/core").RuntimeAssetLoadState, queryCache = false) => {
+    const states = guids.map((guid) => {
+      knownAssetGuids.add(guid);
+      if (!queryCache && fallback === "ready") preparedAssetGuids.add(guid);
+      const cached = queryCache ? options.getAssetLoadState?.(guid) : undefined;
+      let state = cached === "ready" && !preparedAssetGuids.has(guid) ? "unloaded" as const : cached ?? fallback;
+      if (state === "unloaded" && publishedAssetStates.get(guid) === "failed") state = "failed";
+      publishedAssetStates.set(guid, state);
+      return { guid, state };
+    });
+    if (worker) worker.postControl({ type: "assetLoadStates", states });
+    else runtime?.setAssetLoadStates(states);
+  };
+  const markSourceReady = (prepared: PlaySourcePreparation) => {
+    const scope = preparedSourceScopes.get(prepared);
+    if (!scope) return;
+    scope.ready = true;
+    publishAssetStates(scope.guids, "ready");
+  };
+  let sourceControlWork: Promise<void> = Promise.resolve();
+  const publishSourceBatch = (getControls: () => readonly ControlMessage[] | void): Promise<void> => {
+    const work = sourceControlWork.catch(() => {}).then(async () => {
+      if (stopped) return;
+      for (const control of options.getSourceControls?.() ?? getControls() ?? []) {
+        await publishSourceControl(control);
+      }
+    });
+    sourceControlWork = work;
+    return work;
+  };
+  const publishReleasedSources = (controls: readonly ControlMessage[] | void | (() => readonly ControlMessage[] | void)) => {
+    if (stopped) return;
+    void publishSourceBatch(typeof controls === "function" ? controls : () => controls).catch((error: unknown) => {
+      options.onLog?.(`Source release: ${error instanceof Error ? error.message : String(error)}`, "error");
+    });
+    if (options.getAssetLoadState) publishAssetStates([...knownAssetGuids], "unloaded", true);
+  };
+  const prepareSources = async (prepared: PlaySourcePreparation, signal: AbortSignal, prepare = false) => {
+    let releaseRender: (() => void) | undefined;
+    const scope = { guids: [...(prepared.required ?? [])], ready: false };
+    preparedSourceScopes.set(prepared, scope);
+    publishAssetStates(scope.guids, "loading");
+    const releaseState = () => {
+      preparedSourceScopes.delete(prepared);
+      const remaining = new Set([...preparedSourceScopes.values()].filter((owner) => owner.ready).flatMap((owner) => owner.guids));
+      for (const guid of scope.guids) if (!remaining.has(guid)) preparedAssetGuids.delete(guid);
+      publishAssetStates(scope.guids.filter((guid) => !remaining.has(guid)), "unloaded");
+    };
+    try {
+      signal.throwIfAborted();
+      releaseRender = await handle.acquireSceneSources(prepared.sources, { prepare, signal });
+      signal.throwIfAborted();
+      await publishSourceBatch(() => prepared.getControls?.() ?? prepared.controls);
+      signal.throwIfAborted();
+      if (prepare) markSourceReady(prepared);
+      let released = false;
+      return () => {
+        if (released) return;
+        released = true;
+        releaseRender?.();
+        releaseRender = undefined;
+        prepared.release();
+        releaseState();
+        publishReleasedSources(prepared.controlsAfterRelease);
+      };
+    } catch (error) {
+      releaseRender?.();
+      prepared.release();
+      publishAssetStates(scope.guids, signal.aborted ? "unloaded" : "failed");
+      releaseState();
+      publishReleasedSources(prepared.controlsAfterRelease);
+      throw error;
+    }
+  };
+  const acquireScene: AcquireRuntimeScene | undefined = options.acquireSceneSources ? async (guid, request) => {
+    publishAssetStates([guid], "loading");
+    if (request.stream) streamSceneAssets.set(request.stream.actorGuid, { guid, loadId: request.stream.streamLoadId });
+    let prepared: PlaySourcePreparation & { scene: SerializedScene };
+    let release: () => void;
+    try {
+      prepared = await options.acquireSceneSources!(guid, request);
+      release = await prepareSources(prepared, request.signal);
+    } catch (error) {
+      publishAssetStates([guid], request.signal.aborted ? "unloaded" : "failed");
+      throw error;
+    }
+    preparedScenes.set(guid, prepared.scene);
+    let sceneScopes = sceneSourceScopes.get(guid);
+    if (!sceneScopes) sceneSourceScopes.set(guid, sceneScopes = new Set());
+    sceneScopes.add(prepared);
+    if (request.stream) streamSceneAssets.set(request.stream.actorGuid, { guid, loadId: request.stream.streamLoadId, prepared });
+    sceneSourceOwners.set(guid, (sceneSourceOwners.get(guid) ?? 0) + 1);
+    let released = false;
+    return { scene: prepared.scene, release: () => {
+      if (released) return;
+      released = true;
+      sceneSourceScopes.get(guid)?.delete(prepared);
+      if (!sceneSourceScopes.get(guid)?.size) sceneSourceScopes.delete(guid);
+      const remaining = (sceneSourceOwners.get(guid) ?? 1) - 1;
+      if (remaining) sceneSourceOwners.set(guid, remaining);
+      else { sceneSourceOwners.delete(guid); preparedScenes.delete(guid); preparedAssetGuids.delete(guid); publishAssetStates([guid], "unloaded"); }
+      release();
+    } };
+  } : undefined;
+  handle.setCommandSourceLoader?.(options.acquireAssetSources ? async (guids, request) =>
+    prepareSources(await options.acquireAssetSources!(guids, request), request.signal, true) : null);
+  const sceneSources = acquireScene ? createSceneSourceHost({ acquireScene,
+    send: (control) => worker?.postControl(control),
+  }) : undefined;
+  const preloads = new Map<string, { controller: AbortController; release?: () => void; guids: string[] }>();
+  const publishPreloadResult = (result: { preloadId: string; success: boolean; error?: string; progress?: number }) => {
+    if (worker) worker.postControl({ type: "assetPreloadResult", ...result });
+    else runtime?.notifyAssetPreloadResult(result);
+  };
+  const releasePreload = (preloadId: string) => {
+    const request = preloads.get(preloadId);
+    if (!request) return;
+    preloads.delete(preloadId);
+    request.controller.abort(new Error("Asset preload was released."));
+    request.release?.();
+    if (options.getAssetLoadState) publishAssetStates(request.guids, "unloaded", true);
+  };
+  const receivePreload = (command: CommandMessage) => {
+    if (command.type === "assetPreloadRelease") { releasePreload(command.preloadId); return true; }
+    if (command.type !== "assetPreload") return false;
+    const { preloadId, assetGuids, ownerId } = command;
+    if (preloads.has(preloadId)) return true;
+    if (!options.acquireAssetSources) {
+      publishPreloadResult({ preloadId, success: false, error: "This Play session has no asset source loader." });
+      return true;
+    }
+    const request: { controller: AbortController; release?: () => void; guids: string[] } = {
+      controller: new AbortController(), guids: assetGuids,
+    };
+    preloads.set(preloadId, request);
+    publishAssetStates(assetGuids, "loading");
+    void options.acquireAssetSources(assetGuids, { consumer: ownerId, signal: request.controller.signal,
+      onProgress: (progress) => {
+        if (preloads.get(preloadId) === request) publishPreloadResult({ preloadId, success: true, progress: Math.min(0.9, progress * 0.9) });
+      },
+    }).then((prepared) => prepareSources(prepared, request.controller.signal, true)).then((release) => {
+      if (preloads.get(preloadId) !== request) { release(); return; }
+      request.release = release;
+      publishAssetStates(assetGuids, "ready");
+      publishPreloadResult({ preloadId, success: true, progress: 1 });
+    }).catch((error: unknown) => {
+      if (preloads.get(preloadId) !== request) return;
+      releasePreload(preloadId);
+      publishAssetStates(assetGuids, "failed");
+      publishPreloadResult({ preloadId, success: false, error: `Assets requested by ${ownerId}: ${error instanceof Error ? error.message : String(error)}` });
+    });
+    return true;
+  };
+  let initialSourcesReleased = false;
+  const releaseInitialSources = () => {
+    if (initialSourcesReleased) return;
+    initialSourcesReleased = true;
+    handle.releaseInitialSources();
+    publishReleasedSources(options.releaseInitialSources?.());
+    for (const guid of preparedScenes.keys()) if (!sceneSourceOwners.has(guid)) preparedScenes.delete(guid);
+    for (const key of ["textureBytes", "modelBytes", "modelPayloads", "spritePayloads", "spriteAnimationPayloads",
+      "tilemapPayloads", "tilesetPayloads", "waterPayloads", "fontFacetypeBytes", "fontMsdfJson", "fontMsdfPng",
+      "fontCssStackByGuid", "fontFaceEntries", "materialDocuments", "materialFunctions", "audioLibrary", "particleLibrary",
+      "renderTargets", "renderTargetTextures", "areaEmissions", "texturePixelSizes", "modelClipAnimationGuids",
+      "retargetAnimationLoads", "animGraphs", "behaviourTrees", "blackboards", "dataAssets", "sceneNavmeshBytes",
+      "audioReverbByScene", "navmeshBytes", "audioReverbBytes", "scenes", "scene", "sceneLayers"] as const) delete options[key];
+    loadControl.scene = undefined;
+    loadControl.scenes = undefined;
+    loadControl.sceneLayers = undefined;
+  };
   let hostSceneGuid: string | null = options.sceneAssetGuid ?? null;
   let receivedActiveScene = false;
   const sceneReadiness = createSceneLoadReadiness({
-    handle,
+    handle: { ...handle, whenEditorModelsReady: async (owner) => {
+      await sessionSourcesReady;
+      await handle.whenEditorModelsReady(owner);
+    } },
     loading: {
       acquire: () => handle.scheduler.acquireObstruction(),
       progress: (state) => options.onSceneLoading?.(state),
@@ -768,15 +992,18 @@ export function startPlaySession(options: {
       hostSceneGuid = applyPlayActiveScene({
         handle,
         command: { type: "activeScene", sceneAssetGuid },
-        scenes: options.scenes ?? [],
+        scenes: [...preparedScenes].map(([guid, scene]) => ({ guid, scene })),
         boot: { guid: options.sceneAssetGuid, scene: options.scene },
         currentSceneGuid: hostSceneGuid,
         forceReload: receivedActiveScene,
         audioReverbByScene: options.audioReverbByScene,
       });
+      if (receivedActiveScene && options.acquireSceneSources) releaseInitialSources();
       receivedActiveScene = true;
     },
     onReady: ({ sceneAssetGuid, sceneLoadId }) => {
+      for (const prepared of sceneSourceScopes.get(sceneAssetGuid) ?? []) markSourceReady(prepared);
+      publishAssetStates([sceneAssetGuid], "ready");
       worker?.postControl({ type: "sceneModelsReady", sceneAssetGuid, sceneLoadId });
       runtime?.notifySceneModelsReady(sceneAssetGuid, sceneLoadId);
     },
@@ -785,6 +1012,7 @@ export function startPlaySession(options: {
       runtime?.notifySceneLayerReady(layerId, layerLoadId);
     },
     onFailed: (scene, error) => {
+      if (scene.sceneAssetGuid) publishAssetStates([scene.sceneAssetGuid], "failed");
       const message = `Scene loading failed: ${error instanceof Error ? error.message : String(error)}`;
       hostDiagnostics.push({ code: "scene.loading.failed", severity: "error", message,
         assetGuid: scene.sceneAssetGuid, frameId: 0,
@@ -800,10 +1028,17 @@ export function startPlaySession(options: {
       runtime?.notifySceneStreamProgress(actorGuid, streamLoadId, progress);
     },
     onReady: ({ actorGuid, streamLoadId }) => {
+      const source = streamSceneAssets.get(actorGuid);
+      if (source?.loadId === streamLoadId) {
+        if (source.prepared) markSourceReady(source.prepared);
+        publishAssetStates([source.guid], "ready");
+      }
       worker?.postControl({ type: "sceneStreamReady", actorGuid, streamLoadId });
       runtime?.notifySceneStreamReady(actorGuid, streamLoadId);
     },
     onFailed: ({ actorGuid, streamLoadId }, error) => {
+      const source = streamSceneAssets.get(actorGuid);
+      if (source?.loadId === streamLoadId) publishAssetStates([source.guid], "failed");
       const message = error instanceof Error ? error.message : String(error);
       worker?.postControl({ type: "sceneStreamFailed", actorGuid, streamLoadId, message });
       runtime?.notifySceneStreamFailed(actorGuid, streamLoadId, message);
@@ -840,6 +1075,8 @@ export function startPlaySession(options: {
   const saveStorage = createSaveGameStorage();
   const saveServer = createSaveStorageServer(saveStorage, (response) => worker?.postControl({ type: "saveStorageResponse", response }));
   const onCommand = (command: CommandMessage) => {
+    if (receivePreload(command)) return;
+    if (sceneSources?.receive(command)) return;
     if (command.type === "saveStorageRequest") { saveServer.receive(command.request); return; }
     noteCommand();
     if (command.type === "sceneStreamBlocking") handle.setSceneStreamingPaused(command.blocking);
@@ -960,13 +1197,15 @@ export function startPlaySession(options: {
     focusNavigation: options.focusNavigation,
     pixelsPerUnit: options.pixelsPerUnit,
     texturePixelSizes: Object.fromEntries(options.texturePixelSizes ?? []),
-    audioAssetGuids: [...(options.audioLibrary?.audio.keys() ?? [])],
+    audioAssetGuids: options.audioAssetGuids ?? [...(options.audioLibrary?.audio.keys() ?? [])],
     materialParameterCatalog: buildMaterialParameterCatalog(options.materialDocuments ?? new Map(), options.materialFunctions),
     materialTextureAssetGuids: materialParameterTextureAssetGuids(options.textureBytes, options.renderTargetTextures),
     animClipCatalog,
     renderTargets: Object.fromEntries(options.renderTargets ?? []),
     renderTargetTextures: Object.fromEntries(options.renderTargetTextures ?? []),
   });
+  if (acquireScene) loadControl.sceneCatalog = options.sceneCatalog ?? [];
+  if (options.classAssetGuids) loadControl.classAssetGuids = options.classAssetGuids;
 
   try {
     worker = createGameWorkerHost();
@@ -1008,6 +1247,7 @@ export function startPlaySession(options: {
     runtime = createRuntimeFromLoad(loadControl, (command) =>
       onCommand(command),
       saveStorage,
+      acquireScene ? { acquireScene } : undefined,
     );
     runtime.registerAnchors(FIXTURE_ASSET, [
       {
@@ -1241,7 +1481,7 @@ export function startPlaySession(options: {
     lastTrace: () => recordedTrace ?? runtime?.stopTrace() ?? null,
     accountedBytes: () => handle.resourceCache.accountedBytes(),
     liveObjectCounts: () => handle.liveObjectCounts(),
-    whenModelsReady: () => handle.whenEditorModelsReady(),
+    whenModelsReady: async () => { await sessionSourcesReady; await handle.whenEditorModelsReady(); },
     modelLoadCount: () => handle.modelLoadCount(),
     drawCalls: () => handle.drawCalls(),
     bridgeMessagesPerSec: () => {
@@ -1285,8 +1525,18 @@ export function startPlaySession(options: {
       worker?.postControl({ type: "stop" });
       saveServer.dispose();
       worker?.terminate();
+      sceneSources?.dispose();
+      for (const preloadId of preloads.keys()) releasePreload(preloadId);
+      preparedScenes.clear();
+      sceneSourceOwners.clear();
+      streamSceneAssets.clear();
+      sceneSourceScopes.clear();
+      preparedSourceScopes.clear();
       const liveAfter = handle.liveObjectCounts();
       handle.dispose();
+      releaseSessionSources?.();
+      releaseSessionSources = undefined;
+      releaseInitialSources();
       // Shared-Engine teardown defers Scene/library release until actual
       // native release confirms; measure the texture cache only then. A
       // rejected release quarantines the owners — retained textures are not a

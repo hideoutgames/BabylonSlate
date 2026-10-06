@@ -5,6 +5,8 @@ export interface BlobStore {
   writeBlob(sha256: string, data: Uint8Array): Promise<void>;
   readBlob(sha256: string): Promise<Uint8Array>;
   hasBlob(sha256: string): Promise<boolean>;
+  /** Metadata-only size lookup for budgeting a legacy chunk without byteLength. */
+  blobByteLength?(sha256: string): Promise<number>;
 }
 
 /**
@@ -30,6 +32,11 @@ export function createVfsBlobStore(
     async hasBlob(sha256) {
       return storage.exists(pathFor(sha256));
     },
+    async blobByteLength(sha256) {
+      const stat = await storage.stat(pathFor(sha256));
+      if (stat.isDir || stat.size === null) throw new Error(`Blob size is unavailable: ${sha256}`);
+      return stat.size;
+    },
   };
 }
 
@@ -47,6 +54,11 @@ export function createMemoryBlobStore(): BlobStore {
     },
     async hasBlob(sha256) {
       return blobs.has(sha256);
+    },
+    async blobByteLength(sha256) {
+      const data = blobs.get(sha256);
+      if (!data) throw new Error(`Blob not found: ${sha256}`);
+      return data.byteLength;
     },
   };
 }

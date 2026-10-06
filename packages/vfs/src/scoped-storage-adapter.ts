@@ -1,3 +1,4 @@
+import { StorageReadCounter, validateStorageRange, validateStorageRangeResult } from "./storage-range";
 import type {
   DirEntry,
   FileStat,
@@ -80,6 +81,8 @@ function toFileStat(stat: NativeFileStat): FileStat {
  * @see docs/architecture/vfs.md
  */
 export class ScopedStorageAdapter implements ProjectStorage {
+  private reads = new StorageReadCounter();
+  getReadMetrics() { return this.reads.snapshot(); }
   private folder: FolderRef | null = null;
   private stale = false;
   private readonly plugin: BabylonSlateScopedStoragePlugin;
@@ -245,6 +248,7 @@ export class ScopedStorageAdapter implements ProjectStorage {
         }),
       { path },
     );
+    this.reads.record("full", new TextEncoder().encode(data).byteLength);
     return data;
   }
 
@@ -274,7 +278,20 @@ export class ScopedStorageAdapter implements ProjectStorage {
         }),
       { path },
     );
-    return decodeBinary(data);
+    const bytes = decodeBinary(data);
+    this.reads.record("full", bytes.byteLength);
+    return bytes;
+  }
+
+  async readBinaryRange(path: string, offset: number, length: number, expectedRevision?: string) {
+    path = scopedStoragePath(path, false);
+    validateStorageRange(offset, length);
+    const folder = this.getFolder();
+    const result = await this.reads.range(length, () => this.withScope(() => this.plugin.readFileRange({
+      folder: folder.id, path, offset, length, expectedRevision,
+      ...(this.readScopeId ? { readScope: this.readScopeId } : {}),
+    }), { path }));
+    return validateStorageRangeResult(path, offset, length, { ...result, bytes: decodeBinary(result.data) }, expectedRevision);
   }
 
   async writeBinary(path: string, data: Uint8Array): Promise<void> {
@@ -369,6 +386,7 @@ export class ScopedStorageAdapter implements ProjectStorage {
     // A distinct reader keeps simultaneous scans and ordinary I/O independent.
     const reader = new ScopedStorageAdapter(this.plugin);
     reader.folder = folder;
+    reader.reads = this.reads;
     reader.readScopeId = readScope;
     try { return await operation(reader); }
     finally {

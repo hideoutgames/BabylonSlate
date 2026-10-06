@@ -1,4 +1,5 @@
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { zipSync } from "fflate";
 import type { Plugin } from "vite";
@@ -33,6 +34,7 @@ function readBabassetHeader(bytes: Uint8Array): {
   guid?: string;
   name?: string;
   engineVersion?: string;
+  chunks?: Array<{ locator: { inline?: { offset: number; length: number } } }>;
 } {
   if (bytes.byteLength < 12) return {};
   const magic = String.fromCharCode(bytes[0]!, bytes[1]!, bytes[2]!, bytes[3]!);
@@ -49,10 +51,45 @@ function readBabassetHeader(bytes: Uint8Array): {
       guid?: string;
       name?: string;
       engineVersion?: string;
+      chunks?: Array<{ locator: { inline?: { offset: number; length: number } } }>;
     };
   } catch {
     return {};
   }
+}
+
+/** Preserve the file address space while making every ordinary catalog/chunk read a whole HTTP object. */
+function emitAddressableFile(file: TreeFile, publicDir: string) {
+  const hash = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
+  const boundaries = new Set([0, file.data.byteLength]);
+  if (file.path.endsWith(".babasset")) {
+    const header = readBabassetHeader(file.data);
+    if (!header.guid || file.data.byteLength < 12) throw new Error(`Invalid engine asset: ${file.path}`);
+    const headerEnd = 12 + new DataView(file.data.buffer, file.data.byteOffset, file.data.byteLength).getUint32(8, true);
+    if (headerEnd > file.data.byteLength) throw new Error(`Truncated engine asset header: ${file.path}`);
+    boundaries.add(12);
+    boundaries.add(headerEnd);
+    for (const chunk of header.chunks ?? []) {
+      if (!chunk.locator.inline) continue;
+      const start = headerEnd + chunk.locator.inline.offset;
+      const end = start + chunk.locator.inline.length;
+      if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < headerEnd || end < start || end > file.data.byteLength) {
+        throw new Error(`Invalid engine asset chunk: ${file.path}`);
+      }
+      boundaries.add(start);
+      boundaries.add(end);
+    }
+  }
+  const points = [...boundaries].sort((a, b) => a - b);
+  const parts = points.slice(1).map((end, index) => {
+    const offset = points[index]!;
+    const bytes = file.data.subarray(offset, end);
+    const sha256 = hash(bytes);
+    const output = `content/${sha256}`;
+    writeFileSync(path.join(publicDir, output), bytes);
+    return { offset, length: bytes.byteLength, file: output, sha256 };
+  });
+  return { path: file.path, size: file.data.byteLength, revision: hash(file.data), parts };
 }
 
 function packPluginZip(files: TreeFile[]): Uint8Array {
@@ -83,13 +120,14 @@ function packPluginZip(files: TreeFile[]): Uint8Array {
   return zipSync(record, { level: 6, mtime: new Date(1980, 0, 1, 12, 0, 0) });
 }
 
-/** Pack repo engine-plugins/ folders to public/engine-plugins for static hosts. */
+/** Emit lightweight catalogs and immutable payload objects; ZIPs remain explicit export downloads. */
 export function enginePluginsVitePlugin(options: {
   sourceDir: string;
   publicDir: string;
 }): Plugin {
   async function packAll(): Promise<void> {
     mkdirSync(options.publicDir, { recursive: true });
+    mkdirSync(path.join(options.publicDir, "content"), { recursive: true });
     let ids: string[] = [];
     try {
       ids = readdirSync(options.sourceDir, { withFileTypes: true })
@@ -100,6 +138,7 @@ export function enginePluginsVitePlugin(options: {
       ids = [];
     }
     const index: Array<{ id: string; file: string }> = [];
+    const catalogFiles: Array<ReturnType<typeof emitAddressableFile>> = [];
     for (const id of ids) {
       const files = readTree(path.join(options.sourceDir, id));
       if (files.length === 0) continue;
@@ -107,10 +146,11 @@ export function enginePluginsVitePlugin(options: {
       const file = `${id}.babplugin`;
       writeFileSync(path.join(options.publicDir, file), zip);
       index.push({ id, file });
+      for (const entry of files) catalogFiles.push(emitAddressableFile({ ...entry, path: `${id}/${entry.path}` }, options.publicDir));
     }
     writeFileSync(
       path.join(options.publicDir, "index.json"),
-      `${JSON.stringify(index)}\n`,
+      `${JSON.stringify({ version: 1, plugins: index, files: catalogFiles })}\n`,
     );
   }
 

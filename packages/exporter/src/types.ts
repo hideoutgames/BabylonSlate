@@ -16,6 +16,8 @@ export type ExportIndexedAsset = {
   path?: string;
   parentClass?: string | null;
   dependencies: string[];
+  requiredDependencies?: string[];
+  dependencyMetadataVersion?: number;
   rootId: string;
 };
 
@@ -45,6 +47,13 @@ export type ExportReachability = {
 export type ExportAssetBytes = {
   guid: string;
   type: string;
+  /** Complete references retained for export and explicit dynamic lookup. */
+  dependencies?: readonly string[];
+  /** Dependencies needed whenever this asset is acquired. */
+  requiredDependencies?: readonly string[];
+  dependencyMetadataVersion?: number;
+  /** A required project system independent of the initial scene. */
+  startupRequired?: boolean;
   /** Scene guid this asset was reached through; boot assets use the startup scene. */
   sceneGuid: string;
   bytes: Uint8Array;
@@ -60,6 +69,11 @@ export type GameAssetIndexEntry = {
   guid: string;
   type: string;
   encoding: "json" | "bytes";
+  byteLength?: number;
+  revision?: string;
+  dependencies?: string[];
+  requiredDependencies?: string[];
+  startupRequired?: boolean;
   pack?: string;
   path?: string;
   name?: string;
@@ -69,6 +83,8 @@ export type GameAssetIndexEntry = {
 };
 
 export type GameManifest = {
+  /** Version 1 uses independent files and required-edge loading. */
+  assetCatalogVersion?: 1;
   saveGame?: import("@babylonslate/core").SaveGameConfiguration;
   /** Authored build identity; absent in legacy builds. */
   project?: { name: string; version: string };

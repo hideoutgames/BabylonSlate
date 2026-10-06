@@ -7,6 +7,7 @@ import {
   type RuntimeDriver,
   type RuntimeDriverOptions,
 } from "./driver";
+import type { AcquireRuntimeScene } from "./scene-source";
 
 export type PlayLoadControl = Extract<ControlMessage, { type: "load" }>;
 
@@ -34,6 +35,7 @@ export function runtimeOptionsFromLoadControl(
   | "havokWasmUrl"
   | "playScene"
   | "playSceneGuid"
+  | "classAssetGuids"
   | "seedDemoActors"
   | "gameInstanceClass"
   | "sceneLibrary"
@@ -56,6 +58,10 @@ export function runtimeOptionsFromLoadControl(
   const sceneLibrary: Record<string, SerializedScene> = {};
   const sceneGuidByKey: Record<string, string> = {};
   const sceneLayerLibrary: Record<string, SerializedSceneLayer> = {};
+  for (const entry of msg.sceneCatalog ?? []) {
+    sceneGuidByKey[entry.guid] = entry.guid;
+    if (entry.name) sceneGuidByKey[entry.name] = entry.guid;
+  }
   for (const entry of msg.scenes ?? []) {
     sceneLibrary[entry.guid] = entry.scene;
     sceneGuidByKey[entry.guid] = entry.guid;
@@ -92,6 +98,7 @@ export function runtimeOptionsFromLoadControl(
     havokWasmUrl: msg.havokWasmUrl,
     playScene: msg.scene,
     playSceneGuid: msg.sceneAssetGuid,
+    classAssetGuids: msg.classAssetGuids,
     seedDemoActors: msg.scene ? false : true,
     gameInstanceClass: msg.gameInstanceClass,
     sceneLibrary: Object.keys(sceneLibrary).length > 0 ? sceneLibrary : undefined,
@@ -119,9 +126,11 @@ export function createRuntimeFromLoad(
   msg: PlayLoadControl,
   onCommand: (command: CommandMessage) => void,
   saveGameStorage?: import("@babylonslate/core").SaveGameStorage,
+  sourceHost?: { acquireScene?: AcquireRuntimeScene; sceneGuidByKey?: Readonly<Record<string, string>> },
 ): RuntimeDriver {
   const runtime = createInProcessRuntime({
     ...runtimeOptionsFromLoadControl(msg),
+    ...sourceHost,
     onCommand,
   });
   if (msg.saveGame && saveGameStorage) runtime.configureSaveGame({ ...msg.saveGame, storage: saveGameStorage });

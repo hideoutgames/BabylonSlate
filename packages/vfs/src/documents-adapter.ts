@@ -1,3 +1,5 @@
+import { BabylonSlateScopedStorage, type NativeRangeOptions, type NativeRangeRead } from "./capacitor-scoped-storage";
+import { StorageReadCounter, validateStorageRange, validateStorageRangeResult } from "./storage-range";
 import type {
   DirEntry,
   FileStat,
@@ -21,6 +23,7 @@ function rethrowFilesystemError(error: unknown, path: string): never {
 }
 
 export interface DocumentsFilesystemApi {
+  readFileRange?(options: NativeRangeOptions & { directory?: Directory }): Promise<NativeRangeRead>;
   mkdir(options: {
     path: string;
     directory?: Directory;
@@ -79,6 +82,8 @@ function decodeBinary(b64: string): Uint8Array {
  * Android app-private Data. No picker — projects live under BabylonSlate/projects/.
  */
 export class DocumentsStorageAdapter implements ProjectStorage {
+  private readonly reads = new StorageReadCounter();
+  getReadMetrics() { return this.reads.snapshot(); }
   private folder: ProjectFolderHandle | null = null;
   private readonly fs: DocumentsFilesystemApi;
   private readonly directory: Directory;
@@ -174,6 +179,7 @@ export class DocumentsStorageAdapter implements ProjectStorage {
         directory: this.directory,
         encoding: "utf8",
       });
+      this.reads.record("full", new TextEncoder().encode(data).byteLength);
       return data;
     } catch (error) {
       rethrowFilesystemError(error, path);
@@ -198,10 +204,25 @@ export class DocumentsStorageAdapter implements ProjectStorage {
         directory: this.directory,
         encoding: "base64",
       });
-      return decodeBinary(data);
+      const bytes = decodeBinary(data);
+      this.reads.record("full", bytes.byteLength);
+      return bytes;
     } catch (error) {
       rethrowFilesystemError(error, path);
     }
+  }
+
+  async readBinaryRange(path: string, offset: number, length: number, expectedRevision?: string) {
+    validateStorageRange(offset, length);
+    const options = { path: this.abs(path), directory: this.directory, offset, length, expectedRevision };
+    // Capacitor Filesystem.readFile loads the whole file. Native positioned I/O
+    // is provided by our existing storage plugin instead of disguising that read.
+    const result = await this.reads.range(length, async () => this.fs.readFileRange
+      ? await this.fs.readFileRange(options)
+      : this.fs === (Filesystem as unknown as DocumentsFilesystemApi)
+        ? await BabylonSlateScopedStorage.readDocumentsRange(options)
+        : (() => { throw new Error("Documents filesystem does not support bounded reads"); })());
+    return validateStorageRangeResult(path, offset, length, { ...result, bytes: decodeBinary(result.data) }, expectedRevision);
   }
 
   async writeBinary(path: string, data: Uint8Array): Promise<void> {

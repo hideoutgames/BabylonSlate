@@ -261,12 +261,29 @@ function retireSource(cache: SceneGlbCache, entry: CachedGlb): void {
   if (entry.retired) return;
   entry.retired = true;
   if (cache.entries.get(entry.key) === entry) cache.entries.delete(entry.key);
+  if (cache.current.get(entry.guid) === entry) cache.current.delete(entry.guid);
+  if (cache.requested.get(entry.guid) === entry.key) cache.requested.delete(entry.guid);
   cache.accountedBytes = Math.max(0, cache.accountedBytes - entry.accounted);
   entry.accounted = 0;
   entry.lodSet?.dispose();
   entry.lodSet = undefined;
   entry.container?.dispose();
   entry.container = undefined;
+}
+
+/** Drop unowned source generations while preserving containers used by live visuals. */
+export function releaseUnownedGlbSources(scene: Scene, ownedGuids: ReadonlySet<string>): void {
+  const cache = glbCaches.get(scene);
+  if (!cache) return;
+  for (const [guid, entry] of cache.current) {
+    if (ownedGuids.has(guid)) continue;
+    cache.current.delete(guid);
+    cache.requested.delete(guid);
+    releaseUnusedSource(cache, entry);
+  }
+  for (const entry of cache.entries.values()) {
+    if (!ownedGuids.has(entry.guid) && !entry.references) retireSource(cache, entry);
+  }
 }
 
 /** Shared generation; a failure leaves this model at full detail. */

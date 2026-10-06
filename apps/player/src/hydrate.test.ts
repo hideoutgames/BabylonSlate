@@ -26,16 +26,20 @@ import {
   encodeGlbJsonBin,
   normalizeAudioPayload,
 } from "@babylonslate/assets";
-import { exportGame, navmeshExportGuid } from "@babylonslate/exporter";
+import { exportGame as buildExport, type ExportGameOptions, navmeshExportGuid } from "@babylonslate/exporter";
 import { resolveAudioPlayback } from "@babylonslate/assets";
 import { RuntimeDataCatalog } from "@babylonslate/runtime";
 import { loadGameAudioClipBytes, loadGameFromFiles } from "./artifact";
+
 import {
   packedBootControls,
   packedContentFromGame,
   packedPlayControls,
 } from "./hydrate";
 
+// Hydration fixtures explicitly prepare their offered content. Required-edge
+// loading, missing dependencies, and deferred reads are covered by artifact tests.
+const exportGame = (options: ExportGameOptions) => buildExport({ ...options, assets: options.assets.map(asset => ({ ...asset, startupRequired: true, requiredDependencies: [] })) });
 const encoder = new TextEncoder();
 
 function pngIhdr(width: number, height: number): Uint8Array {

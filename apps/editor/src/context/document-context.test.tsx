@@ -13,6 +13,7 @@ import {
 } from "@babylonslate/core";
 import { OpfsStorageAdapter } from "@babylonslate/vfs";
 import { createProjectAsset } from "../lib/create-project-asset";
+import { subscribeModelThumbnailJobs } from "../lib/model-thumbnail-queue";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 import type { OpenDocument } from "../services/document-service";
 import { ProjectService } from "../services/project-service";
@@ -151,6 +152,42 @@ afterEach(async () => {
 });
 
 describe("DocumentProvider actions and route", () => {
+  it("keeps unrequested scene, script, and resource payloads unread during selected Play collection", async () => {
+    const actions = await openProject();
+    const registry = documents().assetRegistry!;
+    await createScene(actions, "Deferred");
+    await act(() => createProjectAsset({ registry, rootId: "project", folderRelative: "", type: "Class", name: "DeferredClass" }));
+    for (const type of ["Water", "RenderTarget", "InputAction", "Audio", "ParticleEmitter", "Font", "DataDefinition", "Model"]) {
+      await registry.createAsset("project", `Deferred-${type}.babasset`, {
+        guid: `deferred-${type}`, type, name: `Deferred ${type}`, version: 1,
+        dependencies: [], payload: {},
+        chunks: [{ id: "source", kind: "source", mime: "application/octet-stream", data: new Uint8Array(128 * 1024) }],
+      });
+    }
+    const storage = registry.storageFor("project");
+    const before = storage.getReadMetrics!().actualBytesRead;
+    const required = new Set<string>();
+    expect(await actions.collectPlaySceneLibrary(required)).toEqual([]);
+    expect(await actions.collectPlayPreviewScripts(required)).toEqual({ bundles: [], diagnostics: [] });
+    expect(await actions.collectEditorUtilityScripts()).toEqual([]);
+    expect(await actions.collectPlayDataAssets(required)).toEqual([]);
+    expect(await actions.collectPlayInputAssets(required)).toEqual([]);
+    expect(await actions.collectPlayFontFaceEntries(required)).toEqual([]);
+    expect((await actions.collectPlayWaterContent(required)).size).toBe(0);
+    const targets = await actions.collectPlayRenderTargets(required);
+    expect(targets.renderTargets.size).toBe(0);
+    expect(targets.renderTargetTextures.size).toBe(0);
+    await actions.collectPlayAudio(required);
+    await actions.collectPlayParticles(required);
+    const thumbnails = vi.fn();
+    const unsubscribe = subscribeModelThumbnailJobs(thumbnails);
+    try {
+      expect(await actions.loadAssetThumbnail("deferred-Model")).toBeNull();
+      expect(thumbnails).not.toHaveBeenCalled();
+    } finally { unsubscribe(); }
+    expect(storage.getReadMetrics!().actualBytesRead).toBe(before);
+  });
+
   it.each(["delete", "replace"] as const)("repairs nested data defaults in open documents during Class %s using live and saved schemas", async (operation) => {
     const actions = await openProject();
     const registry = documents().assetRegistry!;

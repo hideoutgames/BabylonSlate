@@ -1,4 +1,5 @@
 import { createUnavailableEditorDataApi, type EditorDataApi } from "@babylonslate/scripting";
+import type { RuntimeAssetLoadState, RuntimeAssetPreloadOptions, RuntimeAssetPreloadResult } from "@babylonslate/core";
 import { RuntimeDataCatalog, type RuntimeDataApi } from "./data-catalog";
 import { emptyWaterSample, parseDeformerProperties, updateDeformerProperties, DEFORMER_PROPERTY_KEYS, DEFORMER_MAX_COORDINATE, type WaterSample } from "@babylonslate/core";
 import { createDefaultRenderTargetCaptureProperties, type RenderTargetMode, type RenderTargetCaptureProperty } from "@babylonslate/core";
@@ -126,6 +127,10 @@ export interface ScriptHostServices {
   getTargetSceneName?(target: unknown): string;
   loadScene?(target: unknown, blocking: boolean): Promise<void>;
   unloadScene?(target: unknown, blocking: boolean): Promise<void>;
+  preloadAssets?(assets: readonly string[], owner: BObject | null, options?: RuntimeAssetPreloadOptions): Promise<RuntimeAssetPreloadResult>;
+  prepareAssets?(assets: readonly string[], owner: BObject | null): Promise<void>;
+  releasePreload?(preloadId: string): void;
+  getAssetLoadState?(assetGuid: string): RuntimeAssetLoadState;
   isSceneLoaded?(target: unknown): boolean;
   getSceneLoadProgress?(target: unknown): number;
   getSceneState?(target: unknown): SceneStreamingState;
@@ -141,6 +146,7 @@ export interface ScriptHostServices {
   ): unknown;
   animGraphControl?(target: unknown): AnimGraphControl | null;
   spawnActor?(classId: string, transform?: unknown, owner?: BObject | null): Actor | null;
+  spawnActorAsync?(classId: string, transform?: unknown, owner?: BObject | null): Promise<Actor | null>;
   attachToBone?(actor: Actor, target: Actor | null, boneName: string): void;
   print(
     message: string,
@@ -197,6 +203,7 @@ export interface ScriptHostServices {
     assetGuid: string,
     zOrder?: number,
   ): SceneLayer | null;
+  createSceneLayerAsync?(assetGuid: string, zOrder: number, owner: BObject | null): Promise<SceneLayer | null>;
   removeSceneLayer?(layerGuid: string): void;
   clearSceneLayers?(): void;
   switchSceneLayerActor?(target: unknown, index: unknown): Actor | null;
@@ -279,6 +286,8 @@ export interface ScriptContext {
   getSaveMigrationField(fieldId: string, type?: string, array?: boolean): unknown;
   setSaveMigrationField(fieldId: string, value: unknown, type?: string, array?: boolean): void;
   data: RuntimeDataApi;
+  /** Cold data reads prepare their owner-scoped source before returning copied values. */
+  readDataEntryAsync(tree: string, path: string, definitionGuid?: string): Promise<Record<string, unknown> | null>;
   editorData: EditorDataApi;
   inputBindings?: InputBindingControls;
   getInputState?: (input: InputTypeValue) => InputValueState | null;
@@ -443,6 +452,7 @@ export interface ScriptContext {
     transform?: unknown,
   ): unknown;
   spawnActor(classId: string, transform?: unknown): Actor | null;
+  spawnActorAsync(classId: string, transform?: unknown): Promise<Actor | null>;
   isA(instance: unknown, classId: string): boolean;
   getSceneLoadingProgress(): number;
   getTargetSceneName(target: unknown): string;
@@ -450,6 +460,10 @@ export interface ScriptContext {
   unloadSceneAsync(target: unknown): void;
   loadSceneBlocking(target: unknown): Promise<void>;
   unloadSceneBlocking(target: unknown): Promise<void>;
+  preloadAssets(assets: readonly string[], options?: RuntimeAssetPreloadOptions): Promise<RuntimeAssetPreloadResult>;
+  prepareAssets(assets: readonly string[]): Promise<void>;
+  releasePreload(preloadId: string): void;
+  getAssetLoadState(assetGuid: string): RuntimeAssetLoadState;
   isSceneLoaded(target: unknown): boolean;
   getSceneLoadProgress(target: unknown): number;
   getSceneState(target: unknown): SceneStreamingState;
@@ -559,6 +573,7 @@ export interface ScriptContext {
   setGlobalVolume(volume: number): void;
   changeScene(scene: string): void;
   createSceneLayer(assetGuid: string, zOrder?: number): SceneLayer | null;
+  createSceneLayerAsync(assetGuid: string, zOrder?: number): Promise<SceneLayer | null>;
   removeSceneLayer(layer: BObject | string | null | undefined): void;
   clearSceneLayers(): void;
   setFocusTarget(target: unknown): boolean;
@@ -589,6 +604,7 @@ export interface ScriptContext {
     name: string,
     value: string | null,
   ): void;
+  setMaterialTextureParameterAsync(material: unknown, name: string, value: string | null): Promise<void>;
   getPostProcessEntry(owner: unknown, entryId: string): PostProcessMaterialObject | null;
   getMaterialFloatParameter(material: unknown, name: string): { found: boolean; value: number };
   getMaterialColorParameter(material: unknown, name: string): { found: boolean; value: ScriptColor };
@@ -597,6 +613,7 @@ export interface ScriptContext {
   resetMaterialColorParameter(material: unknown, name: string): boolean;
   resetMaterialTextureParameter(material: unknown, name: string): boolean;
   setMeshMaterial(component: unknown, materialGuid: string | null): MaterialObject | null;
+  setMeshMaterialAsync(component: unknown, materialGuid: string | null): Promise<MaterialObject | null>;
   getMaterialAsset(material: unknown): string | null;
   possessCamera(target: unknown): void;
   getRenderTargetMode(guid: string | null): RenderTargetMode;
@@ -665,6 +682,7 @@ type LoadedScript = {
  * lifecycle hooks. One host per runtime session.
  */
 export class ScriptHost {
+  private readonly materialReplacements = new WeakMap<BObject, Map<string, number>>();
   private readonly byClassId = new Map<string, LoadedScript[]>();
   /**
    * `scriptLineage` per class id. `hooksFor` resolves it on every tick for
@@ -1181,6 +1199,12 @@ export class ScriptHost {
         Object.assign(migrationData().fields, fields);
       },
       data: services.data ?? EMPTY_DATA,
+      readDataEntryAsync: async (tree, path, definitionGuid) => {
+        if (services.prepareAssets) await services.prepareAssets([tree, ...(definitionGuid ? [definitionGuid] : [])], self);
+        else if (!services.data?.hasTree(tree)) throw new Error(`Data Tree ${tree} is not prepared; this host cannot load cold data.`);
+        if (self?.destroyed) throw Object.assign(new Error("The data reader was destroyed"), { name: "AbortError" });
+        return services.data?.readEntry(tree, path, definitionGuid) ?? null;
+      },
       editorData: services.editorData ?? UNAVAILABLE_EDITOR_DATA,
       self,
       deltaSeconds,
@@ -1304,12 +1328,27 @@ export class ScriptHost {
         if (!target || (target.classId !== "MeshComponent" && target.classId !== "DynamicRuntimeMeshComponent") ||
           !this.canInvokeOwner(target)) return null;
         const guid = typeof materialGuid === "string" ? materialGuid.trim() : "";
+        if (guid && services.prepareAssets && services.getAssetLoadState?.(guid) !== "ready") {
+          throw new Error(`Material ${guid} is not prepared; await ctx.setMeshMaterialAsync or Preload Assets first`);
+        }
+        this.beginMaterialReplacement(target, "material");
         // Re-applying the current asset keeps the runtime parameter values.
         if (target.getVariable("materialGuid") !== guid) {
           target.setVariable("materialGuid", guid);
           this.applyComponentVariable(target, "materialGuid", guid);
         }
         return (target.getVariable("materialObject") as MaterialObject | null) ?? null;
+      },
+      setMeshMaterialAsync: async (component, materialGuid) => {
+        const target = asActorComponent(component);
+        if (!target || !this.canInvokeOwner(target)) return null;
+        const version = this.beginMaterialReplacement(target, "material");
+        const guid = typeof materialGuid === "string" ? materialGuid.trim() : "";
+        if (guid && services.prepareAssets) await services.prepareAssets([guid], target);
+        if (self?.destroyed || !this.canInvokeOwner(target) || !this.isMaterialReplacementCurrent(target, "material", version)) {
+          throw Object.assign(new Error("The material replacement was cancelled or superseded"), { name: "AbortError" });
+        }
+        return context.setMeshMaterial(target, guid);
       },
       getMaterialAsset: (material) =>
         (material instanceof MaterialObject || material instanceof PostProcessMaterialObject) && !material.destroyed
@@ -1341,10 +1380,25 @@ export class ScriptHost {
       },
       setMaterialTextureParameter: (material, name, value) => {
         if (value !== null && typeof value !== "string") return;
+        if (value && services.prepareAssets && services.getAssetLoadState?.(value.trim()) !== "ready") {
+          throw new Error(`Texture ${value} is not prepared; await ctx.setMaterialTextureParameterAsync or Preload Assets first`);
+        }
+        if (material instanceof MaterialObject || material instanceof PostProcessMaterialObject) this.beginMaterialReplacement(material, `texture:${name.trim()}`);
         this.setMaterialParameter(material, name, {
           kind: "texture",
           textureAssetGuid: value?.trim() || null,
         });
+      },
+      setMaterialTextureParameterAsync: async (material, name, value) => {
+        if (!(material instanceof MaterialObject || material instanceof PostProcessMaterialObject) || material.destroyed) return;
+        const key = `texture:${name.trim()}`;
+        const version = this.beginMaterialReplacement(material, key);
+        const guid = typeof value === "string" ? value.trim() : "";
+        if (guid && services.prepareAssets) await services.prepareAssets([guid], self);
+        if (self?.destroyed || material.destroyed || !this.isMaterialReplacementCurrent(material, key, version)) {
+          throw Object.assign(new Error("The texture replacement was cancelled or superseded"), { name: "AbortError" });
+        }
+        context.setMaterialTextureParameter(material, name, guid || null);
       },
       destroyActor: (actor) => {
         const target = asActor(actor ?? self);
@@ -1536,9 +1590,30 @@ export class ScriptHost {
       },
       spawnActor: (classId, transform) =>
         services.spawnActor?.(String(classId), transform, self) ?? null,
+      spawnActorAsync: async (classId, transform) => {
+        if (!services.spawnActorAsync) throw new Error("This host cannot prepare a cold actor; use a runtime with asset loading");
+        const actor = await services.spawnActorAsync(String(classId), transform, self);
+        if (self?.destroyed) throw Object.assign(new Error("The spawn caller was destroyed"), { name: "AbortError" });
+        return actor;
+      },
       getSceneLoadingProgress: () =>
         clamp01(services.getSceneLoadingProgress?.() ?? 1),
       getTargetSceneName: (target) => services.getTargetSceneName?.(target) ?? "",
+      preloadAssets: async (assets, options) => {
+        const result = await services.preloadAssets?.(assets, self, options) ?? {
+          preloadId: "", success: false, progress: 0, errorMessage: "Asset preloading is unavailable in this host",
+        };
+        if (self?.destroyed) throw Object.assign(new Error("The asset preload caller was destroyed"), { name: "AbortError" });
+        return result;
+      },
+      releasePreload: (preloadId) => services.releasePreload?.(preloadId),
+      prepareAssets: async (assets) => {
+        if (self?.destroyed) throw Object.assign(new Error("The asset consumer was destroyed"), { name: "AbortError" });
+        if (!services.prepareAssets) throw new Error("This host cannot prepare cold assets");
+        await services.prepareAssets(assets, self);
+        if (self?.destroyed) throw Object.assign(new Error("The asset consumer was destroyed"), { name: "AbortError" });
+      },
+      getAssetLoadState: (assetGuid) => services.getAssetLoadState?.(assetGuid) ?? "unloaded",
       loadSceneAsync: (target) => { void services.loadScene?.(target, false).catch((error) => services.reportError(error)); },
       unloadSceneAsync: (target) => { void services.unloadScene?.(target, false).catch((error) => services.reportError(error)); },
       loadSceneBlocking: async (target) => {
@@ -1860,6 +1935,12 @@ export class ScriptHost {
       createSceneLayer: (assetGuid, zOrder) =>
         services.createSceneLayer?.(String(assetGuid ?? ""), Number(zOrder) || 0) ??
         null,
+      createSceneLayerAsync: async (assetGuid, zOrder) => {
+        if (!services.createSceneLayerAsync) throw new Error("This host cannot prepare a cold SceneLayer");
+        const layer = await services.createSceneLayerAsync(String(assetGuid ?? ""), Number(zOrder) || 0, self);
+        if (self?.destroyed) throw Object.assign(new Error("The SceneLayer caller was destroyed"), { name: "AbortError" });
+        return layer;
+      },
       removeSceneLayer: (layer) => {
         const guid = sceneLayerGuidOf(layer);
         if (guid) services.removeSceneLayer?.(guid);
@@ -1971,6 +2052,18 @@ export class ScriptHost {
       setBlackboard: extras?.setBlackboard ?? (() => undefined),
     };
     return context;
+  }
+
+  private beginMaterialReplacement(owner: BObject, key: string): number {
+    let versions = this.materialReplacements.get(owner);
+    if (!versions) { versions = new Map(); this.materialReplacements.set(owner, versions); }
+    const version = (versions.get(key) ?? 0) + 1;
+    versions.set(key, version);
+    return version;
+  }
+
+  private isMaterialReplacementCurrent(owner: BObject, key: string, version: number): boolean {
+    return this.materialReplacements.get(owner)?.get(key) === version;
   }
 
   private setMaterialParameter(

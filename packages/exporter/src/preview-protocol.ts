@@ -1,3 +1,5 @@
+import { GAME_MANIFEST_FILE } from "./constants";
+
 export const PREVIEW_PACK_MESSAGE = "babylonslate-preview-pack";
 /** Player → editor: the pack listener is installed, send (or resend) the pack. */
 export const PREVIEW_REQUEST_PACK_MESSAGE = "babylonslate-preview-request-pack";
@@ -39,6 +41,8 @@ export function isPreviewConsoleRequest(
 export type PreviewPackMessage = {
   type: typeof PREVIEW_PACK_MESSAGE;
   files: Record<string, ArrayBuffer>;
+  /** Asset payloads are requested individually from the host after the catalog. */
+  onDemand?: boolean;
   /** Editor session preference; never written to the game manifest. */
   traceByteBudget?: number;
 };
@@ -117,10 +121,12 @@ export function filesFromPreviewPack(
 
 export function previewPackFromFiles(
   files: Map<string, Uint8Array>,
-  options: Pick<PreviewPackMessage, "traceByteBudget"> = {},
+  options: Pick<PreviewPackMessage, "traceByteBudget" | "onDemand"> = {},
 ): PreviewPackMessage {
   const record: Record<string, ArrayBuffer> = {};
+  const scripts = options.onDemand ? JSON.parse(new TextDecoder().decode(files.get(GAME_MANIFEST_FILE))).scriptsFile ?? "scripts.js" : "";
   for (const [path, bytes] of files) {
+    if (options.onDemand && path !== GAME_MANIFEST_FILE && path !== scripts) continue;
     record[path] = bytes.buffer.slice(
       bytes.byteOffset,
       bytes.byteOffset + bytes.byteLength,
@@ -129,6 +135,7 @@ export function previewPackFromFiles(
   return {
     type: PREVIEW_PACK_MESSAGE,
     files: record,
+    ...(options.onDemand ? { onDemand: true } : {}),
     ...(options.traceByteBudget !== undefined ? { traceByteBudget: options.traceByteBudget } : {}),
   };
 }

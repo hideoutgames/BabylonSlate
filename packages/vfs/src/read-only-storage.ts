@@ -1,4 +1,4 @@
-import type { ProjectStorage } from "@babylonslate/core";
+import type { ProjectStorage, ProjectStorageReader } from "@babylonslate/core";
 
 const READ_ONLY_ERROR = "Storage is read-only";
 
@@ -7,6 +7,7 @@ export function createReadOnlyProjectStorage(
   inner: ProjectStorage,
 ): ProjectStorage {
   return {
+    get hasStrongSourceRevisions() { return inner.hasStrongSourceRevisions === true; },
     pickProjectFolder: () => inner.pickProjectFolder(),
     openDocumentsProject: (name) => inner.openDocumentsProject(name),
     openKnownFolder: (handle) => inner.openKnownFolder(handle),
@@ -30,6 +31,20 @@ export function createReadOnlyProjectStorage(
       : {}),
     readText: (path) => inner.readText(path),
     readBinary: (path) => inner.readBinary(path),
+    readBinaryRange: (path, offset, length, revision) => inner.readBinaryRange(path, offset, length, revision),
+    ...(inner.getReadMetrics ? { getReadMetrics: () => inner.getReadMetrics!() } : {}),
+    ...(inner.withReadScope ? {
+      withReadScope: <T>(operation: (storage: ProjectStorageReader) => Promise<T>) => inner.withReadScope!(reader => operation({
+        get hasStrongSourceRevisions() { return reader.hasStrongSourceRevisions === true; },
+        readText: path => reader.readText(path),
+        readBinary: path => reader.readBinary(path),
+        readBinaryRange: (path, offset, length, revision) => reader.readBinaryRange(path, offset, length, revision),
+        exists: path => reader.exists(path),
+        readdir: path => reader.readdir(path),
+        stat: path => reader.stat(path),
+        ...(reader.getReadMetrics ? { getReadMetrics: () => reader.getReadMetrics!() } : {}),
+      })),
+    } : {}),
     exists: (path) => inner.exists(path),
     readdir: (path) => inner.readdir(path),
     stat: (path) => inner.stat(path),

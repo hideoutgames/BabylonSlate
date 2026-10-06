@@ -1,4 +1,5 @@
-import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { checkStorageRevision, StorageReadCounter, validateStorageRange } from "./storage-range";
+import { open, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { projectFolderName, projectRelativePath } from "./project-path";
 import type {
@@ -12,6 +13,9 @@ import type {
  * Node filesystem adapter for CI and tooling.
  */
 export class NodeStorageAdapter implements ProjectStorage {
+  private readonly reads = new StorageReadCounter();
+  getReadMetrics() { return this.reads.snapshot(); }
+
   private folder: ProjectFolderHandle | null = null;
   private rootPath: string | null = null;
   private readonly baseDir: string;
@@ -89,9 +93,41 @@ export class NodeStorageAdapter implements ProjectStorage {
   async readBinary(path: string): Promise<Uint8Array> {
     try {
       const buf = await readFile(this.resolvePath(path));
+      this.reads.record("full", buf.byteLength);
       return new Uint8Array(buf);
     } catch {
       throw new Error(`File not found: ${path}`);
+    }
+  }
+
+  async readBinaryRange(path: string, offset: number, length: number, expectedRevision?: string) {
+    validateStorageRange(offset, length);
+    const full = this.resolvePath(path);
+    const handle = await open(full, "r");
+    let actualBytesRead = 0;
+    try {
+      const before = await handle.stat({ bigint: true });
+      if (!before.isFile()) throw new Error(`Not a file: ${path}`);
+      const revisionOf = (value: typeof before) => `${value.dev}:${value.ino}:${value.size}:${value.mtimeNs}:${value.ctimeNs}`;
+      const revision = revisionOf(before);
+      checkStorageRevision(path, revision, expectedRevision);
+      const totalSize = Number(before.size);
+      validateStorageRange(offset, length, totalSize);
+      const bytes = new Uint8Array(length);
+      while (actualBytesRead < length) {
+        const read = await handle.read(bytes, actualBytesRead, length - actualBytesRead, offset + actualBytesRead);
+        if (read.bytesRead === 0) throw new Error(`Unexpected end of file: ${path}`);
+        actualBytesRead += read.bytesRead;
+      }
+      checkStorageRevision(path, revisionOf(await handle.stat({ bigint: true })), revision);
+      // An atomic replacement leaves the old descriptor valid; reject it too.
+      checkStorageRevision(path, revisionOf(await stat(full, { bigint: true })), revision);
+      return { bytes, totalSize, revision, actualBytesRead };
+    } catch (error) {
+      throw Object.assign(error instanceof Error ? error : new Error(String(error)), { actualBytesRead });
+    } finally {
+      this.reads.record("range", length, actualBytesRead);
+      await handle.close();
     }
   }
 

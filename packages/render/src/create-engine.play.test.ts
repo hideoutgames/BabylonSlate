@@ -201,6 +201,22 @@ describe("Play createEngine view", () => {
     }
   });
 
+  it("shares prepared model decoding and releases unowned source containers after the final scope", async () => {
+    const engine = sharedEngine();
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true });
+    handles.push(handle);
+    const models = new Map([["shared-model", encodeTriangleGlb()]]);
+    const first = await handle.acquireSceneSources({ assets: { modelBytes: models } }, { prepare: true });
+    const geometry = handle.accountedGeometryBytes();
+    expect(geometry).toBeGreaterThan(0);
+    const second = await handle.acquireSceneSources({ assets: { modelBytes: models } }, { prepare: true });
+    expect(handle.accountedGeometryBytes()).toBe(geometry);
+    first();
+    expect(handle.accountedGeometryBytes()).toBe(geometry);
+    second();
+    expect(handle.accountedGeometryBytes()).toBe(0);
+  });
+
   it("installs collected editor assets and materials without replaying the previous document", async () => {
     const engine = new NullEngine();
     engines.push(engine);

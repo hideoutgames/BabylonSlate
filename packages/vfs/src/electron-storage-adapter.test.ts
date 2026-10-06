@@ -30,6 +30,11 @@ function fakeProjectBridge(): ElectronProjectBridge {
         bytes.byteOffset + bytes.byteLength,
       ) as ArrayBuffer;
     }),
+    readBinaryRange: vi.fn(async (path, offset, length) => {
+      const bytes = files.get(path);
+      if (!bytes) throw new Error(`missing ${path}`);
+      return { bytes: bytes.slice(offset, offset + length).buffer, totalSize: bytes.length, revision: "1", actualBytesRead: length };
+    }),
     writeBinary: vi.fn(async (path: string, data: ArrayBuffer) => {
       files.set(path, new Uint8Array(data));
     }),
@@ -58,5 +63,14 @@ describe("ElectronStorageAdapter", () => {
     expect(await storage.exists("assets/a.bin")).toBe(true);
     await storage.releaseFolder();
     expect(storage.getCurrentFolder()).toBeNull();
+  });
+
+  it("accounts bytes discarded after native revision validation without publishing them", async () => {
+    const bridge = fakeProjectBridge();
+    vi.mocked(bridge.readBinaryRange).mockResolvedValue({ bytes: new ArrayBuffer(0), totalSize: 0, revision: "",
+      actualBytesRead: 12, error: "Source revision changed" });
+    const storage = new ElectronStorageAdapter(bridge);
+    await expect(storage.readBinaryRange("asset.babasset", 0, 12)).rejects.toThrow(/revision/i);
+    expect(storage.getReadMetrics()).toMatchObject({ actualBytesRead: 12, rangeReads: 1, fullReads: 0 });
   });
 });

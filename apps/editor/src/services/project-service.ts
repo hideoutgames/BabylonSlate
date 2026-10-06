@@ -27,7 +27,6 @@ import {
   createEmptyProject,
   normalizeProjectSettings,
   normalizeProjectAppearance,
-  migrateGameInstanceClassFromScenes,
   normalizeScene,
   normalizeSceneLayer,
   classHeaderMeta,
@@ -48,6 +47,13 @@ import {
 import type { ProjectFolderHandle, ProjectStorage } from "@babylonslate/core";
 import {
   AssetRegistry,
+  createRegistryAssetLoadingService,
+  type AssetLoadingService,
+  type AssetLoadScope,
+  type RegistryLoadedAsset,
+  AccountedPayloadLoader,
+  readAssetCatalog,
+  validateAssetSourceLocator,
   RegistryGenerationClock,
   type AreaEmissionProgress,
   type AreaEmissionProcessor,
@@ -66,6 +72,9 @@ import {
   DOCUMENT_CHUNK_ID,
   EncodeQueue,
   encodeAssetDocument,
+  assetsNeedingDependencyMetadataUpgrade,
+  upgradeAssetDependencyMetadata,
+  type DependencyMetadataUpgradeOptions,
   encodeJobMayWrite,
   extraChunksFromDecoded,
   extraChunksWithAudioReverb,
@@ -128,7 +137,7 @@ import { createAppSettingsStore, isTestModeEnabled, TEST_PROJECT_NAME } from "@b
 import { extraChunksWithNavmesh } from "@babylonslate/navigation";
 import {
   newAssetFileName,
-  assetHeaderDependencies,
+  assetHeaderDependencyMetadata,
   materialHeaderMeta,
 } from "../lib/content-browser-helpers";
 import {
@@ -148,7 +157,7 @@ import {
   applyKenneyMannequinEmptyScaffold,
   MANNEQUIN_CLASS_FILE,
 } from "../lib/scaffold-empty-3d";
-import { createDefaultLogicGraphSerialized, hydrateClassDocumentPayload } from "./graph-validation";
+import { createDefaultLogicGraphSerialized, defaultNodeRegistry, hydrateClassDocumentPayload } from "./graph-validation";
 
 function headerMetaForSave(
   type: string,
@@ -307,6 +316,8 @@ export class ProjectService {
   private readonly migrations = defaultRegistry();
   private readonly blobs: BlobStore;
   private assetRegistry: AssetRegistry | null = null;
+  private sourceLoading: AssetLoadingService | null = null;
+  private sourceSession = 0;
   private projectSearchIndex: ProjectSearchIndex | null = null;
   private readonly encodeQueue: EncodeQueue;
   private readonly emissionJobs = new Set<AbortController>();
@@ -506,6 +517,7 @@ export class ProjectService {
 
   /** Release provider-lifetime resources; project close deliberately does not. */
   dispose(): void {
+    this.resetAssetLoading();
     void this.extensions.close();
     this.cancelEmissionJobs();
     this.encodeQueuePauseUnsubscribe?.();
@@ -844,7 +856,27 @@ export class ProjectService {
   }
 
   get pendingMigrations(): MigrationPending[] {
-    return [...this.migrationPending];
+    return [...this.migrationPending, ...this.pendingDependencyMetadataUpgrades.map(asset => ({
+      type: "Asset Dependency Metadata", fromVersion: asset.header.dependencyMetadataVersion ?? 0,
+      toVersion: 1, path: asset.path,
+    }))];
+  }
+
+  /** Catalog-only detection; the explicit upgrade reads legacy documents. */
+  get pendingDependencyMetadataUpgrades(): IndexedAsset[] {
+    return assetsNeedingDependencyMetadataUpgrade(this.assetRegistry?.list() ?? [])
+      .filter(asset => !this.assetRegistry?.getRoot(asset.rootId)?.readOnly);
+  }
+
+  async upgradeDependencyMetadata(options: DependencyMetadataUpgradeOptions = {}) {
+    if (!this.assetRegistry) throw new Error("Open a project before upgrading dependency metadata");
+    return upgradeAssetDependencyMetadata(this.assetRegistry, {
+      ...options,
+      context: {
+        graphPins: (type, properties) => defaultNodeRegistry.get(type)?.pins(properties),
+        ...options.context,
+      },
+    });
   }
 
   approveMigrateOnSave(): void {
@@ -1037,6 +1069,7 @@ export class ProjectService {
   }
 
   async closeProject(): Promise<void> {
+    this.resetAssetLoading();
     this.sessionEncodes.clear();
     await this.extensions.close();
     this.cancelEmissionJobs();
@@ -1128,6 +1161,8 @@ export class ProjectService {
       throw new Error("No project folder selected");
     }
 
+    this.resetAssetLoading();
+
     this.migrationPending = [];
     this.migrateOnSaveApproved = false;
     this.assetGuids.clear();
@@ -1170,27 +1205,9 @@ export class ProjectService {
     }
 
     const withDocuments = await this.ensureDocuments(document);
-    const scenePayloads: SerializedScene[] = [];
-    if (!withDocuments.settings.gameInstanceClass) {
-      for (const path of withDocuments.scenes) {
-        try {
-          const loaded = await this.loadDocument("scene", path);
-          if (loaded && typeof loaded === "object" && "settings" in loaded) {
-            scenePayloads.push(loaded as SerializedScene);
-          }
-        } catch {
-          /* unreadable scene */
-        }
-      }
-    }
-    const settings = migrateGameInstanceClassFromScenes(
-      withDocuments.settings,
-      scenePayloads,
-    );
-    const migratedDocument =
-      settings === withDocuments.settings
-        ? withDocuments
-        : { ...withDocuments, settings };
+    // Legacy Scene-local GameInstance defaults resolve when that Scene is
+    // requested. Project opening must not scan every Scene to guess a default.
+    const migratedDocument = withDocuments;
     const layouts = await this.loadLayouts(
       documentId({
         kind: "scene",
@@ -1260,6 +1277,28 @@ export class ProjectService {
     maxTextureDimension: number;
   } | null = null;
 
+  /** Editor tabs, previews, Play, and explicit preloads share one source cache. */
+  get assetLoadingService(): AssetLoadingService {
+    if (!this.assetRegistry) throw new Error("Open a project before loading assets");
+    if (!this.sourceLoading) {
+      this.sourceLoading = createRegistryAssetLoadingService(() => {
+        if (!this.assetRegistry) throw new Error("The asset's project was closed");
+        return this.assetRegistry;
+      }, { projectId: `${this.projectGuid ?? "project"}:${this.sourceSession}` });
+    }
+    return this.sourceLoading;
+  }
+
+  createAssetLoadScope(owner: string): AssetLoadScope {
+    return this.assetLoadingService.createScope(owner);
+  }
+
+  private resetAssetLoading(): void {
+    this.sourceLoading?.dispose();
+    this.sourceLoading = null;
+    this.sourceSession++;
+  }
+
   private async mountAssetRegistry(): Promise<AssetRegistry> {
     const maxDimension =
       this.loadedTextureSettings?.maxTextureDimension ??
@@ -1291,19 +1330,11 @@ export class ProjectService {
       nodeTitles: SEARCH_NODE_TITLES,
     });
     this.bindThumbnailWriter();
-    // Every encode pads by atlas status, so legacy Tilesets, Sprites and
-    // Sprite Animations must be decoded before anything is queued.
-    await registry.resolveLegacyAtlasReferrers();
-    const auto = this.loadedTextureSettings?.autoRequeueUncompressed ?? true;
-    if (auto) {
-      await registry.requeueUncompressedTextures();
-    }
+    // Opening a project only builds its catalog. Legacy metadata upgrades and
+    // bulk texture processing are explicit maintenance operations.
     registry.setAtlasStatusListener((guids) => {
       void this.reconcileTextureAlignment(guids);
     });
-    // Open and every remount recheck what is on disk now (nothing while
-    // source control is on).
-    void this.reconcileTextureAlignment();
     return registry;
   }
 
@@ -1665,6 +1696,7 @@ export class ProjectService {
       appearance?: ProjectAppearance;
     },
   ): Promise<ProjectLoadResult> {
+    this.resetAssetLoading();
     const render: Partial<RenderProjectSettings> | undefined = renderOptions
       ? {
           customResolution: true,
@@ -1759,6 +1791,7 @@ export class ProjectService {
   async loadDocument(
     kind: Exclude<DocumentKind, "content-browser">,
     path: string,
+    options: { scope?: AssetLoadScope; signal?: AbortSignal } = {},
   ): Promise<
     | SerializedScene
     | SerializedSceneLayer
@@ -1779,7 +1812,7 @@ export class ProjectService {
       ? assetTypeForDocumentKind(kind)
       : "Class";
     const raw = isAssetDocumentPath(path)
-      ? await this.readAssetDocument(path, fallbackType)
+      ? await this.readAssetDocument(path, fallbackType, options)
       : await this.readLegacyJsonDocument(path, fallbackType);
 
     const migrated = loadPayloadWithMigration(this.migrations, {
@@ -1820,17 +1853,40 @@ export class ProjectService {
   private async readAssetDocument(
     path: string,
     fallbackType: string,
+    options: { scope?: AssetLoadScope; signal?: AbortSignal } = {},
   ): Promise<{ type: string; version: number; payload: Record<string, unknown> }> {
-    const decoded = await decodeAssetDocument(
-      await this.storageForPath(path).readBinary(path),
-      { blobs: this.blobsForPath(path) },
-    );
+    const indexed = this.assetRegistry?.getByPath(path);
+    let decoded: AssetDocument;
+    if (indexed && this.assetRegistry) {
+      const scope = options.scope ?? this.createAssetLoadScope(`Document Read: ${path}`);
+      try {
+        const loaded = await scope.acquireLatest<RegistryLoadedAsset>(`document:${indexed.header.guid}`, indexed.header.guid, undefined, {
+          dependencies: "none", signal: options.signal,
+        });
+        // Working copies preserve unsaved edits independently of cache eviction.
+        decoded = structuredClone(loaded.document);
+      } finally {
+        if (!options.scope) scope.dispose();
+      }
+    } else decoded = await this.readUnindexedAssetDocument(path);
     this.assetGuids.set(path, decoded.guid);
     return {
       type: decoded.type || fallbackType,
       version: decoded.version,
       payload: decoded.payload,
     };
+  }
+
+  private async readUnindexedAssetDocument(path: string): Promise<AssetDocument> {
+    const storage = this.storageForPath(path);
+    const blobs = this.blobsForPath(path);
+    const { header, locator } = await readAssetCatalog(storage, path);
+    const body = header.chunks.find((chunk) => chunk.id === DOCUMENT_CHUNK_ID);
+    const payload = body
+      ? JSON.parse(new TextDecoder().decode(await new AccountedPayloadLoader(storage, { blobs }).loadChunk(locator, body))) as Record<string, unknown>
+      : header.payload;
+    if (!body) await validateAssetSourceLocator(storage, locator);
+    return { guid: header.guid, type: header.type, name: header.name, version: header.version, payload };
   }
 
   /** Projects authored before assets moved to .babasset still load from JSON. */
@@ -1988,7 +2044,7 @@ export class ProjectService {
             ? (content as unknown as Record<string, unknown>)
             : undefined,
           headerMeta: headerMetaForSave(type, content),
-          dependencies: assetHeaderDependencies(
+          dependencyMetadata: assetHeaderDependencyMetadata(
             type,
             content as unknown as Record<string, unknown>,
             this.assetRegistry?.list(),
@@ -2027,15 +2083,35 @@ export class ProjectService {
   async readAssetChunk(
     path: string,
     chunkId: string,
+    options: { scope?: AssetLoadScope; signal?: AbortSignal } = {},
   ): Promise<Uint8Array | null> {
     const storage = this.storageForPath(path);
-    const blobs = this.blobsForPath(path);
     if (!(await storage.exists(path))) return null;
-    const decoded = await decodeBabasset(
-      await storage.readBinary(path),
-      (hash) => blobs.readBlob(hash),
-    );
-    return decoded.chunks.get(chunkId) ?? null;
+    const indexed = this.assetRegistry?.getByPath(path);
+    if (indexed && this.assetRegistry) {
+      if (!indexed.header.chunks.some((chunk) => chunk.id === chunkId)) return null;
+      const registry = this.assetRegistry;
+      const sourceBytes = await registry.getChunkByteLength(indexed.header.guid, chunkId);
+      const scope = options.scope ?? this.createAssetLoadScope(`Chunk Read: ${path}#${chunkId}`);
+      try {
+        return await scope.acquireLatest(`chunk:${indexed.header.guid}:${chunkId}`, indexed.header.guid, {
+          key: `chunk:${chunkId}`,
+          estimate: { sourceBytes, decodedBytes: 0, temporaryBytes: sourceBytes },
+          load: async (_asset, signal) => {
+            signal.throwIfAborted();
+            const value = await registry.readChunk(indexed.header.guid, chunkId);
+            signal.throwIfAborted();
+            return { value, sourceBytes: value.byteLength, decodedBytes: 0 };
+          },
+        }, { dependencies: "none", signal: options.signal });
+      } finally {
+        if (!options.scope) scope.dispose();
+      }
+    }
+    const { header, locator } = await readAssetCatalog(storage, path);
+    const entry = header.chunks.find((chunk) => chunk.id === chunkId);
+    if (!entry) return null;
+    return new AccountedPayloadLoader(storage, { blobs: this.blobsForPath(path) }).loadChunk(locator, entry);
   }
 
   /** Every Scene payload write must keep only probes matching that geometry. */
@@ -2091,7 +2167,7 @@ export class ProjectService {
         blobs: this.blobsForPath(path),
         extraChunks: extra,
         parentClass: existing?.parentClass ?? null,
-        dependencies: assetHeaderDependencies(type, payload, this.assetRegistry?.list()),
+        dependencyMetadata: assetHeaderDependencyMetadata(type, payload, this.assetRegistry?.list()),
       },
     );
     await storage.writeBinary(path, encoded);
@@ -2195,7 +2271,7 @@ export class ProjectService {
         parentClass: existing?.parentClass ?? null,
         headerPayload: storeInHeader ? payload : undefined,
         headerMeta: headerMetaForSave(type, payload),
-        dependencies: assetHeaderDependencies(type, payload, this.assetRegistry?.list(), existing?.parentClass),
+        dependencyMetadata: assetHeaderDependencyMetadata(type, payload, this.assetRegistry?.list(), existing?.parentClass),
       },
     );
     await storage.writeBinary(path, encoded);

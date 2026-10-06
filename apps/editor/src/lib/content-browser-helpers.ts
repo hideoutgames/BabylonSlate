@@ -3,6 +3,8 @@ import { createDataDefinitionAsset, createDataTreeAsset, type DataDefinitionAsse
 import type { ImportResult, IndexedAsset } from "@babylonslate/assets";
 import {
   DOCUMENT_CHUNK_ID,
+  collectAssetDependencyMetadata,
+  type AssetDependencyMetadata,
   findClassAssetReferences,
   dataAssetDependencies,
   dataGraphAssetDependencies,
@@ -1900,7 +1902,7 @@ export function materialAssetDependencies(
 }
 
 /** Header `dependencies[]` written on save for Show References, remap, and export. */
-export function assetHeaderDependencies(
+function legacyAssetHeaderDependencies(
   assetType: string,
   payload: Record<string, unknown>,
   classes: readonly ClassAssetRef[] = [],
@@ -2007,6 +2009,42 @@ export function assetHeaderDependencies(
     }
   }
   return [...unique].sort();
+}
+
+/** Shared typed reference collection, using only catalog schemas and this document. */
+export function assetHeaderDependencyMetadata(
+  assetType: string,
+  payload: Record<string, unknown>,
+  classes: readonly ClassAssetRef[] = [],
+  parentClass?: string | null,
+): AssetDependencyMetadata {
+  const definitions = new Map(classes.flatMap(asset => {
+    const fields = asset.header.payload?.fields;
+    return asset.header.guid && Array.isArray(fields) ? [[asset.header.guid, fields] as const] : [];
+  }));
+  return collectAssetDependencyMetadata(assetType, payload, {
+    dependencies: legacyAssetHeaderDependencies(assetType, payload, classes, parentClass),
+    parentClass,
+    classes: classes.flatMap(asset => asset.header.guid && ["Class", "Graph"].includes(asset.header.type) ? [{
+      guid: asset.header.guid,
+      classId: classIdFromClassAsset(asset),
+      parentClassId: asset.header.parentClass,
+      members: (asset.header.payload?.members ?? (Array.isArray(asset.header.payload?.variables)
+        ? asset.header.payload.variables.map(variable => ({ ...variable, kind: "variable" })) : [])) as import("@babylonslate/core").GraphClassMember[],
+    }] : []),
+    definitionFields: guid => definitions.get(guid),
+    graphPins: (type, properties) => defaultNodeRegistry.get(typeof properties.__nodeType === "string" ? properties.__nodeType : type)?.pins(properties),
+  });
+}
+
+/** Complete graph for references/export, including deferred gameplay selections. */
+export function assetHeaderDependencies(
+  assetType: string,
+  payload: Record<string, unknown>,
+  classes: readonly ClassAssetRef[] = [],
+  parentClass?: string | null,
+): string[] {
+  return assetHeaderDependencyMetadata(assetType, payload, classes, parentClass).dependencies;
 }
 
 /** Saved dependencies plus already-loaded edits, without reading closed payloads. */

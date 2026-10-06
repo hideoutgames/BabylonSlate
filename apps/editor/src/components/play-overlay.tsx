@@ -26,6 +26,8 @@ import {
   startPlaySession,
   type PlaySession,
   type PlaySessionResult,
+  type PlaySceneSourceLoader,
+  type PlayAssetSourceLoader,
 } from "../services/play-session";
 import { finishPlaySessionWithTrace } from "../lib/play-trace-spill";
 import type { StatsHudHighlight } from "./stats-hud";
@@ -100,6 +102,15 @@ export interface PlayOverlayProps {
   project?: { name: string; version: string };
   gameInstanceClass?: string;
   scenes?: Array<{ guid: string; scene: SerializedScene }>;
+  sceneCatalog?: Array<{ guid: string; name: string }>;
+  classAssetGuids?: Record<string, string>;
+  audioAssetGuids?: string[];
+  acquireSceneSources?: PlaySceneSourceLoader;
+  acquireAssetSources?: PlayAssetSourceLoader;
+  sessionSources?: import("@babylonslate/render").SceneSourceAssets;
+  getAssetLoadState?: (guid: string) => import("@babylonslate/core").RuntimeAssetLoadState;
+  getSourceControls?: () => import("@babylonslate/bridge").ControlMessage[];
+  releaseInitialSources?: () => void | import("@babylonslate/bridge").ControlMessage[];
   sceneLayers?: Array<{ guid: string; layer: SerializedSceneLayer }>;
   /** Project `playFrameCap` applied once when the session starts. */
   frameCap?: number;
@@ -194,6 +205,15 @@ export function PlayOverlay({
   project,
   gameInstanceClass,
   scenes,
+  sceneCatalog,
+  classAssetGuids,
+  audioAssetGuids,
+  acquireSceneSources,
+  acquireAssetSources,
+  sessionSources,
+  getAssetLoadState,
+  getSourceControls,
+  releaseInitialSources,
   sceneLayers,
   frameCap = DEFAULT_PLAY_FRAME_CAP,
   infiniteLoopDetection,
@@ -394,6 +414,15 @@ export function PlayOverlay({
     saveGame,
     gameInstanceClass,
     scenes,
+    sceneCatalog,
+    classAssetGuids,
+    audioAssetGuids,
+    acquireSceneSources,
+    acquireAssetSources,
+    sessionSources,
+    getAssetLoadState,
+    getSourceControls,
+    releaseInitialSources,
     sceneLayers,
   });
   sceneRef.current = {
@@ -403,6 +432,15 @@ export function PlayOverlay({
     saveGame,
     gameInstanceClass,
     scenes,
+    sceneCatalog,
+    classAssetGuids,
+    audioAssetGuids,
+    acquireSceneSources,
+    acquireAssetSources,
+    sessionSources,
+    getAssetLoadState,
+    getSourceControls,
+    releaseInitialSources,
     sceneLayers,
   };
   const initialFrameCapRef = useRef(frameCap);
@@ -495,6 +533,15 @@ export function PlayOverlay({
       saveGame: sceneRef.current.saveGame,
       gameInstanceClass: sceneRef.current.gameInstanceClass,
       scenes: sceneRef.current.scenes,
+      sceneCatalog: sceneRef.current.sceneCatalog,
+      classAssetGuids: sceneRef.current.classAssetGuids,
+      audioAssetGuids: sceneRef.current.audioAssetGuids,
+      acquireSceneSources: sceneRef.current.acquireSceneSources,
+      acquireAssetSources: sceneRef.current.acquireAssetSources,
+      sessionSources: sceneRef.current.sessionSources,
+      getAssetLoadState: sceneRef.current.getAssetLoadState,
+      getSourceControls: sceneRef.current.getSourceControls,
+      releaseInitialSources: sceneRef.current.releaseInitialSources,
       sceneLayers: sceneRef.current.sceneLayers,
       frameCap: initialFrameCapRef.current,
       traceByteBudget: initialTraceByteBudgetRef.current,

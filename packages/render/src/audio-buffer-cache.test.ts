@@ -3,6 +3,22 @@ import { AUDIO_DECODED_PCM_LRU_BYTES } from "@babylonslate/assets";
 import { AudioBufferCache } from "./audio-buffer-cache";
 
 describe("AudioBufferCache", () => {
+  it("rejects oversized decode reservations and preserves live buffers under admission pressure", () => {
+    const cache = new AudioBufferCache({ byteCeiling: 64 });
+    cache.put("live", new Uint8Array(40));
+    cache.pin("live");
+    expect(() => cache.reserveDecode(65)).toThrow(/exceeding/);
+    expect(() => cache.reserveDecode(30)).toThrow(/active voices/);
+    expect(cache.get("live")?.byteLength).toBe(40);
+    expect(cache.reservedBytes()).toBe(0);
+    const reservation = cache.reserveDecode(24);
+    expect(cache.reservedBytes()).toBe(24);
+    expect(() => cache.reserveDecode(1)).toThrow();
+    reservation.release();
+    expect(cache.reservedBytes()).toBe(0);
+    cache.dispose();
+  });
+
   it("accounts decoded PCM separately from the texture cache ceiling", () => {
     const cache = new AudioBufferCache({ byteCeiling: 64 });
     cache.put("a", new Uint8Array(40), 40);

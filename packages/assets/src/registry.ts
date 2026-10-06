@@ -19,13 +19,13 @@ import {
   type ImportResult,
 } from "./importers";
 import { mergeFontAttachPayload } from "./font-payload";
-import { AccountedPayloadLoader } from "./payload-loader";
+import { AccountedPayloadLoader, readAssetCatalog, validateAssetSourceLocator, type AssetSourceLocator } from "./payload-loader";
 import {
   assetFileSuffix,
   nextCopyName,
   stripAssetFileSuffix,
 } from "./unique-names";
-import { DOCUMENT_CHUNK_ID, decodeAssetDocument, stampDocumentChunkName } from "./asset-document";
+import { DOCUMENT_CHUNK_ID, stampDocumentChunkName, type AssetDocument } from "./asset-document";
 import { ATLAS_REFERRER_TYPES, atlasTextureGuids, headerAtlasTextureGuids } from "./atlas-textures";
 import { sniffSourceImageSize, type ImageSize } from "./image-size";
 import { sniffKtx2Size } from "./ktx2-info";
@@ -45,6 +45,7 @@ import { DEFAULT_THUMBNAIL_MAX_EDGE, generateThumbnailBytes } from "./thumbnails
 import { AREA_EMISSION_CHUNK_KIND, areaEmissionChunkId, currentAreaEmissionChunk, decodeAreaEmission, type AreaEmissionProgress } from "./area-emission";
 import { sha256Hex } from "./bytes";
 import { moveStorageFile, moveStorageTree, STORAGE_MOVE_BACKUP_PREFIX } from "./storage-move";
+import { collectAssetDependencyMetadata, type AssetDependencyClass } from "./asset-dependencies";
 
 export type AreaEmissionProcessor = (request: { source: Uint8Array; sourceHash: string; mime?: string }, signal: AbortSignal, onProgress?: (progress: AreaEmissionProgress) => void) => Promise<Uint8Array>;
 
@@ -53,6 +54,8 @@ export interface IndexedAsset {
   rootId: string;
   path: string;
   header: BabassetHeader;
+  /** Storage snapshot for bounded payload reads; populated on scan or first request. */
+  locator?: AssetSourceLocator;
   /** Missing plugin/dependency guid kept so references do not drop. */
   placeholder?: boolean;
   /** Filesystem mtime in ms, from `DirEntry` / `stat` when known. */
@@ -138,6 +141,7 @@ export class AssetRegistry {
   private readonly roots = new Map<string, ContentRoot>();
   private readonly byGuid = new Map<string, IndexedAsset>();
   private readonly byPath = new Map<string, IndexedAsset>();
+  private readonly locatorRequests = new Map<string, { asset: IndexedAsset; promise: Promise<AssetSourceLocator> }>();
   /** Empty (or marker-backed) folders discovered during scan, keyed by storage path. */
   private readonly knownFolders = new Set<string>();
   /** guid -> guids of assets whose header `dependencies[]` names it. */
@@ -252,6 +256,75 @@ export class AssetRegistry {
 
   get accountedPayloadBytes(): number {
     return this.loader.accountedPayloadBytes;
+  }
+
+  /** Resolve a catalog snapshot without touching any payload. */
+  async getAssetLocator(guid: string): Promise<AssetSourceLocator> {
+    const asset = this.byGuid.get(guid);
+    if (!asset || asset.placeholder) throw new Error(`Asset is unavailable: ${guid}`);
+    const storage = this.storageForAsset(asset);
+    if (asset.locator && storage.hasStrongSourceRevisions) {
+      const current = await storage.readBinaryRange(asset.path, 0, 0);
+      if (this.byGuid.get(guid) !== asset) throw new Error(`Asset changed while resolving its catalog entry: ${guid}`);
+      if (current.revision === asset.locator.storageRevision && current.totalSize === asset.locator.totalSize) return asset.locator;
+    }
+    const pending = this.locatorRequests.get(guid);
+    if (pending?.asset === asset) return pending.promise;
+    const promise = (async () => {
+      const { header, locator } = await readAssetCatalog(this.storageForAsset(asset), asset.path);
+      if (this.byGuid.get(guid) !== asset || header.guid !== guid) {
+        throw new Error(`Asset changed while resolving its catalog entry: ${guid}`);
+      }
+      if (asset.locator?.revision === locator.revision && asset.locator.totalSize === locator.totalSize) return asset.locator;
+      this.indexHeader(asset.rootId, asset.path, header, false, asset.mtime, locator);
+      return locator;
+    })();
+    this.locatorRequests.set(guid, { asset, promise });
+    try { return await promise; }
+    finally { if (this.locatorRequests.get(guid)?.promise === promise) this.locatorRequests.delete(guid); }
+  }
+
+  /** Load only the selected representation, with the catalog revision checked. */
+  async readChunk(guid: string, chunkId: string): Promise<Uint8Array> {
+    const locator = await this.getAssetLocator(guid);
+    const asset = this.byGuid.get(guid);
+    if (!asset || asset.locator !== locator) throw new Error(`Asset changed while preparing chunk ${chunkId}: ${guid}`);
+    const entry = asset.header.chunks.find((chunk) => chunk.id === chunkId);
+    if (!entry) throw new Error(`Missing chunk ${chunkId} in asset ${guid} (${asset.path})`);
+    return this.loader.loadChunk(locator, entry, this.blobsForAsset(asset), this.storageForAsset(asset));
+  }
+
+  /** Reserve memory before reading, including blobs written before length metadata. */
+  async getChunkByteLength(guid: string, chunkId: string): Promise<number> {
+    await this.getAssetLocator(guid);
+    const asset = this.byGuid.get(guid);
+    const entry = asset?.header.chunks.find((chunk) => chunk.id === chunkId);
+    if (!asset || !entry) throw new Error(`Missing chunk ${chunkId} in asset ${guid}`);
+    if (entry.byteLength !== undefined) return entry.byteLength;
+    if ("inline" in entry.locator) return entry.locator.inline.length;
+    const blobs = this.blobsForAsset(asset);
+    if (!blobs.blobByteLength) throw new Error(`Blob storage cannot report the size of legacy chunk ${chunkId}; upgrade asset ${guid}`);
+    const size = await blobs.blobByteLength(entry.locator.blob);
+    if (!Number.isSafeInteger(size) || size < 0) throw new Error(`Invalid blob size for ${chunkId} in asset ${guid}`);
+    return size;
+  }
+
+  /** Document opening does not pull in retained originals or derived representations. */
+  async readAssetDocument(guid: string): Promise<AssetDocument> {
+    const locator = await this.getAssetLocator(guid);
+    const asset = this.byGuid.get(guid);
+    if (!asset || asset.placeholder) throw new Error(`Asset is unavailable: ${guid}`);
+    const { header } = asset;
+    const body = header.chunks.find((chunk) => chunk.id === DOCUMENT_CHUNK_ID);
+    const payload = body
+      ? JSON.parse(new TextDecoder().decode(await this.readChunk(guid, body.id))) as Record<string, unknown>
+      : header.payload;
+    if (!body) await validateAssetSourceLocator(this.storageForAsset(asset), locator);
+    if (this.byGuid.get(guid) !== asset) throw new Error(`Asset changed while reading document: ${guid}`);
+    if (!body && Object.keys(payload).length === 0 && header.type !== "Audio") {
+      throw new Error(`Asset ${guid} is missing its "${DOCUMENT_CHUNK_ID}" chunk or header payload`);
+    }
+    return { guid, type: header.type, name: header.name, version: header.version, payload };
   }
 
   async mountRoot(root: ContentRoot): Promise<void> {
@@ -405,6 +478,28 @@ export class AssetRegistry {
       await storage.mkdir(dir, true);
     }
 
+    const body = result.chunks.find((chunk) => chunk.id === DOCUMENT_CHUNK_ID);
+    const dependencyPayload = body
+      ? JSON.parse(new TextDecoder().decode(body.data)) as Record<string, unknown>
+      : result.payload;
+    const classes: AssetDependencyClass[] = this.list()
+      .filter((asset) => asset.header.type === "Class")
+      .map((asset) => ({
+        guid: asset.header.guid,
+        classId: typeof asset.header.payload.classId === "string" ? asset.header.payload.classId
+          : (asset.path.split("/").pop() ?? "").replace(/\.(graph|class)\.(babasset|json)$/, "").replace(/\.babasset$/, "").replace(/[^A-Za-z0-9_]+/g, "_") || "Graph",
+        parentClassId: asset.header.parentClass,
+        members: Array.isArray(asset.header.payload.members) ? asset.header.payload.members as AssetDependencyClass["members"]
+          : Array.isArray(asset.header.payload.variables) ? asset.header.payload.variables.map((variable) => ({ ...(variable as Record<string, unknown>), kind: "variable" })) as unknown as AssetDependencyClass["members"] : undefined,
+      }));
+    const dependencies = collectAssetDependencyMetadata(result.type, dependencyPayload, {
+      dependencies: result.dependencies, parentClass: result.parentClass, classes,
+    });
+    if (result.dependencyMetadataVersion === dependencies.dependencyMetadataVersion && result.requiredDependencies) {
+      dependencies.requiredDependencies = [...new Set([...dependencies.requiredDependencies, ...result.requiredDependencies])].sort();
+      dependencies.dependencies = [...new Set([...dependencies.dependencies, ...result.requiredDependencies])].sort();
+    }
+
     const bytes = await encodeBabasset({
       header: {
         guid: result.guid,
@@ -413,7 +508,7 @@ export class AssetRegistry {
         engineVersion: "0.0.0",
         version: result.version,
         mode: "thin",
-        dependencies: result.dependencies,
+        ...dependencies,
         parentClass: result.parentClass ?? null,
         payload: result.payload,
       },
@@ -437,9 +532,9 @@ export class AssetRegistry {
     if (!rootId) return null;
     const storage = this.storageFor(rootId);
     if (!(await storage.exists(path))) return null;
-    const header = readBabassetHeader(await storage.readBinary(path));
+    const { header, locator } = await readAssetCatalog(storage, path);
     const mtime = await this.statMtime(storage, path);
-    return this.indexHeader(rootId, path, header, false, mtime);
+    return this.indexHeader(rootId, path, header, false, mtime, locator);
   }
 
   async deleteAsset(guid: string): Promise<void> {
@@ -989,14 +1084,14 @@ export class AssetRegistry {
     return this.encodeQueue.enqueueDerived(async (signal) => {
       const asset = this.byGuid.get(guid);
       if (!asset || asset.header.type !== "Texture" || isEnvironmentTexturePayload(asset.header.payload)) throw new Error("Area emission requires a raster Texture asset.");
-      const file = await this.storageForAsset(asset).readBinary(asset.path);
-      const header = readBabassetHeader(file);
+      const locator = await this.getAssetLocator(guid);
+      const header = this.byGuid.get(guid)!.header;
       const sourceEntry = header.chunks.find((chunk) => chunk.id === "pixels" || chunk.kind === "pixels");
       if (!sourceEntry) throw new Error("The Texture has no retained source pixels.");
       const cached = currentAreaEmissionChunk(header);
       if (cached) {
         try {
-          const bytes = await this.loader.loadChunk(file, cached, this.blobsForAsset(asset));
+          const bytes = await this.loader.loadChunk(locator, cached, this.blobsForAsset(asset), this.storageForAsset(asset));
           if (bytes) {
             await decodeAreaEmission(bytes, sourceEntry.sha256);
             signal.throwIfAborted();
@@ -1009,7 +1104,7 @@ export class AssetRegistry {
         }
       }
       this.assertWritable(this.getRootOrThrow(asset.rootId));
-      const source = await this.loader.loadChunk(file, sourceEntry, this.blobsForAsset(asset));
+      const source = await this.loader.loadChunk(locator, sourceEntry, this.blobsForAsset(asset), this.storageForAsset(asset));
       if (!source || await sha256Hex(source) !== sourceEntry.sha256) throw new Error("The emission source is missing or corrupt.");
       const bytes = await process({ source, sourceHash: sourceEntry.sha256, mime: sourceEntry.mime }, signal, options.onProgress);
       signal.throwIfAborted();
@@ -1204,10 +1299,9 @@ export class AssetRegistry {
         if (!asset || !ATLAS_REFERRER_TYPES.has(asset.header.type)) continue;
         let textures: string[] = [];
         try {
-          const bytes = await this.storageForAsset(asset).readBinary(asset.path);
-          const document = await decodeAssetDocument(bytes, { blobs: this.blobsForAsset(asset) });
+          const document = await this.readAssetDocument(guid);
           textures = atlasTextureGuids(asset.header.type, document.payload);
-          const key = legacyAtlasCacheKey(readBabassetHeader(bytes));
+          const key = legacyAtlasCacheKey(asset.header);
           if (key) this.legacyAtlasCache.set(key, textures);
         } catch {
           // Unreadable: it samples nothing we can see.
@@ -1387,8 +1481,7 @@ export class AssetRegistry {
     if (!entry) return null;
     const cached = cache?.get(entry.sha256);
     if (cached !== undefined) return cached;
-    const file = await this.storageForAsset(asset).readBinary(asset.path);
-    const bytes = await this.loader.loadChunk(file, entry, this.blobsForAsset(asset));
+    const bytes = await this.readChunk(asset.header.guid, entry.id);
     const size = bytes ? sniffKtx2Size(bytes) : null;
     cache?.set(entry.sha256, size);
     return size;
@@ -1397,16 +1490,16 @@ export class AssetRegistry {
   private async loadSourcePixels(
     asset: IndexedAsset,
   ): Promise<{ bytes: Uint8Array; mime?: string } | null> {
-    const pixels = asset.header.chunks.find((chunk) => chunk.kind === "pixels");
-    if (!pixels) return null;
-    const fileBytes = await this.storageForAsset(asset).readBinary(asset.path);
-    const bytes = await this.loader.loadChunk(
-      fileBytes,
-      pixels,
-      this.blobsForAsset(asset),
-    );
-    if (!bytes) return null;
-    return { bytes, mime: pixels.mime };
+    // Encode callbacks can queue a state rewrite while a retry is obtaining its
+    // source. Share their write fence so the snapshot remains valid through the
+    // asynchronous hash/revision checks, without relaxing stale-read rejection.
+    return this.withAssetWrite(asset.header.guid, async () => {
+      const current = this.byGuid.get(asset.header.guid);
+      const pixels = current?.header.chunks.find((chunk) => chunk.kind === "pixels");
+      if (!pixels) return null;
+      const bytes = await this.readChunk(asset.header.guid, pixels.id);
+      return { bytes, mime: pixels.mime };
+    });
   }
 
   private enqueueTextureWrite(
@@ -1612,9 +1705,8 @@ export class AssetRegistry {
         continue;
       }
       if (!path.endsWith(".babasset")) continue;
-      const bytes = await storage.readBinary(path);
-      const header = readBabassetHeader(bytes);
-      this.indexHeader(root.id, path, header, false, entry.mtime ?? null);
+      const { header, locator } = await readAssetCatalog(storage, path);
+      this.indexHeader(root.id, path, header, false, entry.mtime ?? null, locator);
     }
   }
 
@@ -1624,13 +1716,14 @@ export class AssetRegistry {
     header: BabassetHeader,
     placeholder = false,
     mtime: number | null = null,
+    locator?: AssetSourceLocator,
   ): IndexedAsset {
     const existingAtPath = this.byPath.get(path);
     if (existingAtPath) this.removeFromIndex(existingAtPath, existingAtPath.header.guid === header.guid);
     const existingByGuid = this.byGuid.get(header.guid);
     if (existingByGuid) this.removeFromIndex(existingByGuid, true);
 
-    const indexed: IndexedAsset = { rootId, path, header, placeholder, mtime };
+    const indexed: IndexedAsset = { rootId, path, header, placeholder, mtime, locator };
     this.byGuid.set(header.guid, indexed);
     this.byPath.set(path, indexed);
     this.changed();
@@ -1649,7 +1742,6 @@ export class AssetRegistry {
         this.setAtlasReferrer(header.guid, listed);
       } else {
         this.legacyAtlasReferrers.add(header.guid);
-        this.scheduleAtlasStatusFlush();
       }
     }
     return indexed;
@@ -1695,16 +1787,13 @@ export class AssetRegistry {
     queueMicrotask(() => void this.flushAtlasStatus());
   }
 
-  private async flushAtlasStatus(): Promise<void> {
-    await this.resolveLegacyAtlasReferrers();
+  private flushAtlasStatus(): void {
     this.atlasFlushScheduled = false;
     const changed = [...this.atlasStatusBefore]
       .filter(([guid, before]) => this.isAtlasTexture(guid) !== before)
       .map(([guid]) => guid);
     this.atlasStatusBefore.clear();
     if (changed.length > 0) this.atlasStatusListener?.(changed);
-    // A legacy referrer indexed after the resolution finished.
-    if (this.legacyAtlasReferrers.size > 0) this.scheduleAtlasStatusFlush();
   }
 
   private removeFromIndex(asset: IndexedAsset, preserveInbound = false): void {

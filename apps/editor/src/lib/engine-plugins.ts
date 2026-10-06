@@ -1,9 +1,8 @@
-import {
-  discoverEnginePlugins,
-  unpackEnginePluginZip,
-} from "@babylonslate/assets";
+import { discoverEnginePlugins } from "@babylonslate/assets";
 import {
   MemoryStorageAdapter,
+  HttpCatalogStorageAdapter,
+  type HttpStorageCatalog,
   createReadOnlyProjectStorage,
 } from "@babylonslate/vfs";
 import type { ProjectStorage } from "@babylonslate/core";
@@ -13,25 +12,6 @@ export const ENGINE_PLUGIN_INDEX_FILE = "index.json";
 export function enginePluginPublicUrl(baseUrl: string, file: string): string {
   const base = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
   return `${base}engine-plugins/${file}`;
-}
-
-interface EnginePluginIndexEntry {
-  id: string;
-  file: string;
-}
-
-function parseIndex(value: unknown): EnginePluginIndexEntry[] {
-  if (!Array.isArray(value)) return [];
-  const entries: EnginePluginIndexEntry[] = [];
-  for (const row of value) {
-    if (!row || typeof row !== "object") continue;
-    const record = row as Record<string, unknown>;
-    const id = typeof record.id === "string" ? record.id.trim() : "";
-    const file = typeof record.file === "string" ? record.file.trim() : "";
-    if (!id || !file) continue;
-    entries.push({ id, file });
-  }
-  return entries;
 }
 
 export const lastEnginePluginLoad: {
@@ -50,41 +30,24 @@ export async function loadEnginePluginStorage(options: {
   const storage = new MemoryStorageAdapter("opfs");
   await storage.openDocumentsProject("engine-plugins");
   const baseUrl = options.baseUrl ?? "/";
-  let entries: EnginePluginIndexEntry[] = [];
   try {
-    const response = await options.fetch(
-      enginePluginPublicUrl(baseUrl, ENGINE_PLUGIN_INDEX_FILE),
-    );
+    const response = await options.fetch(enginePluginPublicUrl(baseUrl, ENGINE_PLUGIN_INDEX_FILE));
     if (!response.ok) {
       lastEnginePluginLoad.errors.push(`index ${response.status}`);
       return createReadOnlyProjectStorage(storage);
     }
-    entries = parseIndex(await response.json());
-    lastEnginePluginLoad.entries = entries.length;
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    const catalog = JSON.parse(new TextDecoder().decode(bytes)) as HttpStorageCatalog & { plugins?: Array<{ id: string }> };
+    if (catalog.version !== 1 || !Array.isArray(catalog.plugins)) throw new Error("Engine plugin catalog requires a rebuilt editor bundle");
+    const result = new HttpCatalogStorageAdapter(catalog, {
+      fetch: options.fetch, baseUrl: enginePluginPublicUrl(baseUrl, ""), name: "engine-plugins", catalogBytesRead: bytes.byteLength,
+    });
+    lastEnginePluginLoad.entries = catalog.plugins.length;
+    // Retained diagnostic field: counts mounted plugins; no archives are unpacked.
+    lastEnginePluginLoad.unpacked = catalog.plugins.length;
+    return result;
   } catch (error) {
-    lastEnginePluginLoad.errors.push(
-      `index ${error instanceof Error ? error.message : String(error)}`,
-    );
-    return createReadOnlyProjectStorage(storage);
-  }
-  for (const entry of entries) {
-    try {
-      const zipResponse = await options.fetch(
-        enginePluginPublicUrl(baseUrl, entry.file),
-      );
-      if (!zipResponse.ok) {
-        lastEnginePluginLoad.errors.push(`${entry.id} ${zipResponse.status}`);
-        continue;
-      }
-      const bytes = new Uint8Array(await zipResponse.arrayBuffer());
-      await unpackEnginePluginZip(storage, bytes, entry.id);
-      lastEnginePluginLoad.unpacked += 1;
-    } catch (error) {
-      lastEnginePluginLoad.errors.push(
-        `${entry.id} ${error instanceof Error ? error.message : String(error)}`,
-      );
-      continue;
-    }
+    lastEnginePluginLoad.errors.push(`index ${error instanceof Error ? error.message : String(error)}`);
   }
   return createReadOnlyProjectStorage(storage);
 }

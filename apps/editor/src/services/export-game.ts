@@ -1,4 +1,5 @@
 import { validateSaveGameDefinition, type SaveGameConfiguration } from "@babylonslate/core";
+import { subsystemBaseClassIdOf } from "@babylonslate/object-model";
 import { dataTypeSchemas } from "@babylonslate/scripting";
 import type { DataAssetCatalogEntry } from "@babylonslate/core";
 import { areaEmissionTextureGuids, buildDataTreeIndex, isDataTreeAsset, isInputAssetType, normalizeInputAssetPayload, renderEffectsAssetGuids } from "@babylonslate/core";
@@ -63,6 +64,8 @@ export function assetsFromIndexed(
     path: asset.path,
     parentClass: asset.header.parentClass ?? null,
     dependencies: asset.header.dependencies ?? [],
+    requiredDependencies: asset.header.requiredDependencies,
+    dependencyMetadataVersion: asset.header.dependencyMetadataVersion,
     rootId: asset.rootId,
   }));
 }
@@ -298,6 +301,7 @@ export async function collectAndExportGame(
   }> = [];
   const animDocs: Array<{ guid: string; path: string; document: unknown }> = [];
   const exportAssets: ExportAssetBytes[] = [];
+  const subsystemHierarchy = { ancestry(classId: string) { const result: string[] = []; const seen = new Set<string>(); let current: string | null | undefined = classId; while (current && !seen.has(current)) { seen.add(current); result.push(current); current = params.parentOf(current); } return result; } };
   const requiredEmissions = new Set<string>();
   for (const guid of closure.value.guids) {
     const asset = params.assets.find((entry) => entry.guid === guid);
@@ -344,6 +348,10 @@ export async function collectAndExportGame(
       const textureSize = texturePixelSizeFromPayload(payload);
       exportAssets.push({
         guid,
+        dependencies: asset.dependencies,
+        requiredDependencies: asset.requiredDependencies,
+        dependencyMetadataVersion: asset.dependencyMetadataVersion,
+        startupRequired: asset.type === "InputAction" || asset.type === "InputAxis" || asset.guid === params.audioMixerGuid || asset.guid === params.gameInstanceClass || asset.name === params.gameInstanceClass || (asset.type === "Class" && !!asset.parentClass && subsystemBaseClassIdOf(subsystemHierarchy, asset.parentClass) !== null),
         type: asset.type,
         sceneGuid: packSceneGuidForAsset(
           guid,

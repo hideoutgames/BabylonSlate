@@ -38,6 +38,8 @@ import { visualMeshes } from "./visual-meshes";
 import type { SceneLayerLoadIdentity } from "./scene-load-readiness";
 import type { SceneStreamIdentity } from "./scene-streaming-readiness";
 import { prepareSceneStream } from "./scene-stream-preparation";
+import { captureMeshSourceAssets, mergeSceneSourceAssets, type SceneSourceAssets } from "./scene-source-assets";
+import { acquireGlbContainer, releaseUnownedGlbSources } from "./glb-anim";
 import { createSceneStreamAdmission, isSceneStreamSlotPending } from "./scene-stream-admission";
 import type { AbstractEngine, BaseTexture, Camera } from "@babylonjs/core";
 import { resolveRenderingQuality } from "@babylonslate/core";
@@ -147,6 +149,7 @@ import {
 } from "./scene-illumination";
 import { setupDefaultViewport } from "./viewport";
 import { RenderScheduler } from "./render-scheduler";
+import { CommandSourcePreparation, type CommandSourceLoader } from "./command-source-preparation";
 import {
   bindResourceCacheToHandle,
   acquireMaterialTexture,
@@ -279,6 +282,8 @@ export interface EngineHandle {
   pushSnapshot: (buffer: Float32Array) => void;
   /** Apply a structural command (spawn/assignMesh) from the game worker. */
   applyCommand: (command: CommandMessage) => void;
+  /** Cold authored assignment sources prepare before replacing a live visual. */
+  setCommandSourceLoader?: (loader: CommandSourceLoader | null) => void;
   setPaused: (paused: boolean) => void;
   /** Streaming owns a separate pause, so releasing it cannot resume manual Pause. */
   setSceneStreamingPaused: (paused: boolean) => void;
@@ -323,6 +328,12 @@ export interface EngineHandle {
   }>;
   /** Sprite/tilemap textures and GLB bytes for editor + Play mesh builders. */
   setMeshAssets: (assets: MeshAssetContext) => void;
+  /** Retain prepared source maps until the consuming runtime instance is retired. */
+  acquireSceneSources: (sources: SceneSourceAssets, options?: { prepare?: boolean; signal?: AbortSignal }) => Promise<() => void>;
+  /** Release startup source ownership after its actors have retired. */
+  releaseInitialSources: () => void;
+  /** Refresh owned library unions without resetting live mixer session settings. */
+  setSourceLibraries: (libraries: Pick<SceneSourceAssets, "audioLibrary" | "particleLibrary">) => void;
   /** Project render mode and defaults; scene overrides remain independent. */
   setRenderSettings: (settings: RenderShadingSettings) => void;
   /** Register FontFace source bytes before Bitmap 2D Text paints. */
@@ -527,6 +538,7 @@ export interface CreateEngineOptions {
   audioBytes?: ReadonlyMap<string, Uint8Array>;
   /** Load clip bytes on first `playSound` (overlay Play / player lazy path). */
   loadAudioSourceBytes?: import("./audio-service").AudioSourceBytesLoader;
+  prepareAudioAsset?: import("./audio-service").AudioAssetPreparer;
   /** Mixer / channel / attenuation / Audio payloads for gain routing. */
   audioLibrary?: AudioLibrary;
   /** Particle Emitter / Particle System payloads for Play. */
@@ -754,6 +766,8 @@ function initializeEngine(
   options: CreateEngineOptions,
   onRollback: (cleanup: () => void) => void,
 ): EngineHandle {
+  // This view owns its retained source references independently of the caller.
+  options = { ...options };
   // Decoder statics are page-global. Overlay Play borrows the editor Engine,
   // so the page's last Play view returns later editor decodes to workers.
   // Retain before the Play configuration so any construction failure restores it.
@@ -1059,6 +1073,7 @@ function initializeEngine(
         onDiagnostic: options.onAudioDiagnostic,
         onVoiceEnded: options.onAudioVoiceEnded,
         loadSourceBytes: options.loadAudioSourceBytes,
+        prepareAsset: options.prepareAudioAsset,
         maxVoices: options.audioMaxVoices,
       })
     : null;
@@ -1395,6 +1410,8 @@ function initializeEngine(
     number,
     Extract<CommandMessage, { type: "assignMesh" }>
   >();
+  const commandSources = new CommandSourcePreparation({ onError: (error) => console.warn(`[render] ${error.message}`) });
+  let applyingPreparedCommand = false;
   const worldPlaySlots = new Set<number>();
   const syncOverlaySlot = (slotId: number) => {
     if (!sceneLayerCompositor) return;
@@ -1667,6 +1684,43 @@ function initializeEngine(
       return true;
   };
 
+  const sourceOwners = new Map<number, SceneSourceAssets>([[0, mergeSceneSourceAssets([{
+    assets: captureMeshSourceAssets(binding), materialDocuments: new Map(materialDocuments),
+    materialFunctions: new Map(materialFunctions), audioLibrary: options.audioLibrary,
+    particleLibrary: options.particleLibrary, fonts: options.fontFaceEntries,
+  }])]]);
+  let nextSourceOwner = 0;
+  let sourceFontGuids = new Set(options.fontFaceEntries?.map((font) => font.guid));
+  const installOwnedSources = () => {
+    const union = mergeSceneSourceAssets(sourceOwners.values());
+    installMeshAssets(union.assets!);
+    installMaterialDocuments(union.materialDocuments!, union.materialFunctions);
+    for (const guid of compiledMaterialGuids) if (!union.materialDocuments?.has(guid)) compiledMaterialGuids.delete(guid);
+    const models = new Set(binding.modelSources?.keys());
+    releaseUnownedGlbSources(scene, models);
+    for (const layer of sceneLayerCompositor?.layers() ?? []) releaseUnownedGlbSources(layer.scene, models);
+    if (union.audioLibrary) audioService?.setLibrary(union.audioLibrary, true);
+    if (union.particleLibrary) particleService?.setLibrary(union.particleLibrary);
+    const fonts = new Set(union.fonts?.map((font) => font.guid));
+    for (const guid of sourceFontGuids) if (!fonts.has(guid)) fontRegistry.unregister(guid);
+    sourceFontGuids = fonts;
+    scheduler.invalidate("asset");
+  };
+  const releaseSceneSources = (owner: number) => {
+    if (!sourceOwners.delete(owner) || disposed) return;
+    installOwnedSources();
+  };
+  const sourceRelease = (owner: number) => () => releaseSceneSources(owner);
+  const releaseInitialSources = () => {
+    releaseSceneSources(0);
+    // The engine options closure must not keep source data alive after its lease.
+    for (const key of ["textureBytes", "modelBytes", "modelPayloads", "spritePayloads", "spriteAnimations",
+      "tilemapPayloads", "tilesetPayloads", "waterPayloads", "fontFacetypeBytes", "fontMsdfJson", "fontMsdfPng",
+      "fontCssStackByGuid", "fontFaceEntries", "materialDocuments", "materialFunctions", "audioLibrary", "particleLibrary",
+      "renderTargets", "renderTargetTextures", "areaEmissions", "texturePixelSizes", "modelClipAnimationGuids",
+      "retargetAnimationLoads"] as const) delete options[key];
+  };
+
   const loadSceneAsync = async (sceneData: SerializedScene, load: EditorSceneLoadOptions) => {
     load.signal.throwIfAborted();
     assertCurrent(loadGeneration);
@@ -1731,6 +1785,7 @@ function initializeEngine(
       appliedSnapshotIdentity = null;
       lastRenderedSnapshotFrame = null;
       retirePlayWorldSlots(binding);
+      commandSources.releaseSlots(worldPlaySlots);
       worldPlaySlots.clear();
       refreshPlayActiveCamera(scene, binding);
       playViz?.applyCommand({ type: "setShowNav", enabled: false });
@@ -2715,7 +2770,7 @@ function initializeEngine(
     particleService?.setPaused(paused);
   };
 
-  return {
+  const engineHandle: EngineHandle = {
     engine,
     scene,
     scheduler,
@@ -2725,6 +2780,8 @@ function initializeEngine(
     dispose: () => {
       if (disposed) return;
       disposed = true;
+      commandSources.dispose();
+      sourceOwners.clear();
       streamAdmission?.clear();
       runtimeScalability?.dispose();
       unsubscribeRenderPath();
@@ -2856,6 +2913,11 @@ function initializeEngine(
       scheduler.invalidate("snapshot");
     },
     applyCommand: (command: CommandMessage) => {
+      if (!applyingPreparedCommand && commandSources.receive(command, (prepared) => {
+        applyingPreparedCommand = true;
+        try { engineHandle.applyCommand(prepared); }
+        finally { applyingPreparedCommand = false; }
+      })) return;
       streamAdmission?.receive(command);
       if (command.type === "snapshotLayout") {
         interpolator.installLayout(command.capacity, command.generation);
@@ -3350,6 +3412,70 @@ function initializeEngine(
       // After any mesh rebuild, so a resized target re-parents to live meshes.
       debugOverlay?.refreshRenderTargets();
     },
+    acquireSceneSources: async (sources, preparation) => {
+      if (disposed) throw new Error("The render Scene is disposed.");
+      preparation?.signal?.throwIfAborted();
+      const owner = ++nextSourceOwner;
+      const nativeReleases: Array<() => void> = [];
+      sourceOwners.set(owner, mergeSceneSourceAssets([{ ...sources, assets: sources.assets ? {
+        ...sources.assets, textureBytes: installTextureBytes(sources.assets.textureBytes),
+        modelBytes: undefined, modelSources: installModelSources(sources.assets),
+        fontMsdfPng: installTextureBytes(sources.assets.fontMsdfPng),
+      } : undefined }]));
+      try {
+        installOwnedSources();
+        if (sources.fonts?.length && !await fontRegistry.registerAll(sources.fonts))
+          throw new Error("A required Font failed to load. Inspect the Font asset source and family.");
+        if (preparation?.prepare) {
+          const prepared = sourceOwners.get(owner)!;
+          const check = () => { preparation.signal?.throwIfAborted(); if (disposed) throw new Error("The render Scene is disposed."); };
+          // Sequential admission bounds temporary native decoding; cache leases
+          // share compatible work with ordinary actor preparation.
+          for (const [guid, bytes] of prepared.assets?.textureBytes ?? []) {
+            check();
+            const lease = resourceCache.acquireTexture(guid, engine, bytes);
+            nativeReleases.push(() => lease.release());
+            await lease.ready;
+          }
+          for (const [guid, document] of prepared.materialDocuments ?? []) {
+            check();
+            const material = materialLibrary.acquire(scene, guid, document);
+            if (!material.ok) throw new Error(`Material ${guid}: ${material.diagnostics.map((entry) => entry.message).join("; ")}`);
+            nativeReleases.push(() => materialLibrary.release(scene, guid));
+            const diagnostics = await material.ready;
+            if (diagnostics.some((entry) => entry.severity === "error"))
+              throw new Error(`Material ${guid}: ${diagnostics.map((entry) => entry.message).join("; ")}`);
+            compiledMaterialGuids.add(guid);
+          }
+          for (const [guid, source] of prepared.assets?.modelSources ?? []) {
+            check();
+            const lease = acquireGlbContainer(scene, guid, source, binding.modelPayloads?.get(guid), {
+              packedTextureGuids: new Set(binding.textureBytes?.keys()),
+              texturesByMaterialGuid: binding.materialTextureGuids ?? new Map(), compiledMaterialGuids,
+            });
+            nativeReleases.push(() => lease.release());
+            await lease.load;
+            await lease.lods();
+          }
+          if (prepared.audioLibrary?.audio.size && audioService)
+            nativeReleases.push(await audioService.preload([...prepared.audioLibrary.audio.keys()]));
+          check();
+        }
+        if (disposed) throw new Error("The render Scene was disposed during source preparation.");
+        preparation?.signal?.throwIfAborted();
+        const releaseSources = sourceRelease(owner);
+        return () => { for (const release of nativeReleases.splice(0)) release(); releaseSources(); };
+      } catch (error) {
+        for (const release of nativeReleases.splice(0)) release();
+        releaseSceneSources(owner);
+        throw error;
+      }
+    },
+    releaseInitialSources,
+    setSourceLibraries: (libraries) => {
+      if (libraries.audioLibrary) audioService?.setLibrary(libraries.audioLibrary, true);
+      if (libraries.particleLibrary) particleService?.setLibrary(libraries.particleLibrary);
+    },
     applySceneEnvironment: (sceneData: SerializedScene) => {
       setSceneRenderSettings(scene, undefined, sceneData.settings.celShading ?? {}, sceneData.settings.shadowOverrides ?? {});
       outlineHost.refreshSettings();
@@ -3486,6 +3612,9 @@ function initializeEngine(
     },
     whenEditorModelsReady: async (owner) => {
       const scope = loadingScope(owner);
+      await commandSources.whenReady(commandSources.pendingSlotIds().filter((slotId) =>
+        (sceneLayerCompositor?.layerIdForSlot(slotId) ?? undefined) === owner?.layerId));
+      scope.assert();
       if (!owner) await (editorSync?.whenEditorModelsReady() ?? Promise.resolve());
       const playLoads = [...(binding.slotAnimLoads?.entries() ?? [])]
         .filter(([slotId]) => (sceneLayerCompositor?.layerIdForSlot(slotId) ?? undefined) === owner?.layerId)
@@ -3496,6 +3625,8 @@ function initializeEngine(
     prepareSceneStream: async (slotIds, signal, onProgress, owner) => {
       if (!options.playMode) return Promise.reject(new Error("Scene streaming is available only during Play."));
       const generation = loadGeneration;
+      await commandSources.whenReady(slotIds, signal);
+      assertCurrent(generation);
       await prepareSceneStream(scene, binding, slotIds, {
         signal, onProgress,
         assertCurrent: () => assertCurrent(generation),
@@ -3533,7 +3664,9 @@ function initializeEngine(
     modelLoadCount: () =>
       (editorSync?.pendingModelLoadCount() ?? 0) +
       (binding.slotAnimLoads?.size ?? 0),
+    setCommandSourceLoader: (loader) => commandSources.setLoader(loader),
   };
+  return engineHandle;
 }
 
 /**

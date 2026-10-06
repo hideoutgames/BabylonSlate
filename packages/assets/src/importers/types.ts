@@ -12,6 +12,8 @@ export interface ImportResult {
   guid: string;
   version: number;
   dependencies: string[];
+  requiredDependencies?: string[];
+  dependencyMetadataVersion?: number;
   parentClass?: string | null;
   payload: Record<string, unknown>;
   chunks: ImportResultChunk[];

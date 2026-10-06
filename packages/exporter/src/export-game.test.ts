@@ -197,7 +197,7 @@ describe("exportGame", () => {
     expect(zipExport(artifact as never).byteLength).toBeGreaterThan(0);
   });
 
-  it("defaults to packed mode with a boot pack", async () => {
+  it("defaults to packed delivery with independently addressable runtime assets", async () => {
     const result = await exportGame({
       bundleDebugger: true,
       startupSceneGuid: "scene-1",
@@ -216,7 +216,8 @@ describe("exportGame", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.manifest.mode).toBe("packed");
-    expect(result.value.files.has("boot.babpack")).toBe(true);
+    expect(result.value.manifest.assets[0]?.path).toBe("assets/data-0.bin");
+    expect(result.value.files.get("assets/data-0.bin")).toEqual(new Uint8Array([1, 2, 3]));
     expect(result.value.manifest.bundleDebugger).toBe(true);
   });
 
@@ -273,7 +274,7 @@ describe("exportGame", () => {
     expect(result.value.manifest.loopCount).toBe(50);
   });
 
-  it("groups reached scenes into separate packs", async () => {
+  it("keeps reached scenes independently addressable in packed delivery", async () => {
     const result = await exportGame({
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
@@ -309,10 +310,8 @@ describe("exportGame", () => {
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.manifest.packs).toEqual(
-      expect.arrayContaining(["boot.babpack", "scene-scene-2.babpack"]),
-    );
-    expect(result.value.files.has("scene-scene-2.babpack")).toBe(true);
+    expect(result.value.manifest.packs).toEqual([]);
+    expect(result.value.files.get(result.value.manifest.assets.find(asset => asset.guid === "scene-2")!.path!)).toEqual(new Uint8Array([3]));
   });
 
   it("keeps loose mode as one file per asset", async () => {

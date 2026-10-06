@@ -110,6 +110,14 @@ export class MobileStorageAdapter implements ProjectStorage {
     return this.port().writeText(path, data);
   }
 
+  getReadMetrics() { return this.port().getReadMetrics?.() ?? { operations: 0, fullReads: 0, rangeReads: 0, requestedBytes: 0, actualBytesRead: 0 }; }
+  get hasStrongSourceRevisions() { return this.port().hasStrongSourceRevisions === true; }
+
+  async readBinaryRange(path: string, offset: number, length: number, expectedRevision?: string) {
+    await this.init();
+    return this.port().readBinaryRange(path, offset, length, expectedRevision);
+  }
+
   async readBinary(path: string): Promise<Uint8Array> {
     await this.init();
     return this.port().readBinary(path);

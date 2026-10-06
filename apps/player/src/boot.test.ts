@@ -65,7 +65,7 @@ async function fixture(withWater = false, saveGame?: SaveGameConfiguration) {
   const scene = { ...createDefaultScene(), actors: [] };
   const packed = await exportGame({ bundleDebugger: false, startupSceneGuid: "world", scripts: [], renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
     ...(saveGame ? { saveGame, physicsWorld: "2d" as const } : {}),
-    assets: [{ guid: "world", type: "Scene", sceneGuid: "world", bytes: new TextEncoder().encode(JSON.stringify(scene)) }, ...(withWater ? [{ guid: "water", type: "Water", sceneGuid: "world", bytes: new TextEncoder().encode(JSON.stringify(createDefaultWaterDefinition("stylized"))) }] : [])] });
+    assets: [{ guid: "world", type: "Scene", sceneGuid: "world", requiredDependencies: withWater ? ["water"] : [], bytes: new TextEncoder().encode(JSON.stringify(scene)) }, ...(withWater ? [{ guid: "water", type: "Water", sceneGuid: "world", bytes: new TextEncoder().encode(JSON.stringify(createDefaultWaterDefinition("stylized"))) }] : [])] });
   if (!packed.ok) throw new Error("Fixture export failed");
   const game = await loadGameFromFiles(packed.value.files);
   const root = document.createElement("div");
@@ -77,6 +77,7 @@ async function fixture(withWater = false, saveGame?: SaveGameConfiguration) {
   const handle = {
     engine: { onEndFrameObservable: { add: (callback: () => void) => (endFrame.add(callback), callback), remove: (callback: () => void) => { endFrame.delete(callback); } } },
     loadScene: vi.fn(),
+    acquireSceneSources: vi.fn(async () => () => {}), releaseInitialSources: vi.fn(),
     applySceneEnvironment: vi.fn(),
     resize: vi.fn(), setSize: vi.fn(), dispose: vi.fn(),
     applyCommand: vi.fn(), pushSnapshot: vi.fn(), setPaused: vi.fn(),

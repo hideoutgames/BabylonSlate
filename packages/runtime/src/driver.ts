@@ -4,6 +4,8 @@ import { overlayAnchorBindings } from "./overlay-anchor-layout";
 import { SaveGameError, SaveGameService, type SaveGameServiceOptions } from "@babylonslate/core";
 import { SaveGameWorld } from "./save-game-world";
 import { RuntimeMaterialParameters } from "./runtime-material-parameters";
+import { RuntimeAssetPreloads } from "./asset-preloads";
+import type { RuntimeAssetLoadState } from "@babylonslate/core";
 import { SceneLayerFocusNavigation } from "./scene-layer-focus";
 import { focusLayoutEntry, revealFocusedElement } from "./scene-layer-focus-layout";
 import type { FocusNavigationSettings } from "@babylonslate/core";
@@ -25,6 +27,7 @@ import {
   writeSnapshotHeader,
   type CommandMessage,
   type ControlMessage,
+  type RuntimeSceneContent,
   type DebugBehaviourTree,
   type DebugNavAgent,
 } from "@babylonslate/bridge";
@@ -109,6 +112,7 @@ import {
   type ResolvedInputTick,
 } from "@babylonslate/input";
 import { runSceneRealizationWork, sceneRealizationCancelled, waitForSceneWork, type CooperativeSceneLoadingOptions } from "./scene-realization-work";
+import type { AcquireRuntimeScene, RuntimeSceneSource } from "./scene-source";
 import {
   createPhysicsBackend,
   createSoftwarePhysicsBackend,
@@ -199,6 +203,8 @@ import {
 } from "@babylonslate/navigation";
 
 export interface RuntimeDriverOptions {
+  /** Catalog identity only; registering an available class never reads its source. */
+  classAssetGuids?: Readonly<Record<string, string>>;
   /** JSON data and shared Structures snapshotted at session startup. */
   dataAssets?: import("@babylonslate/core").DataAssetCatalogEntry[];
   renderSettings?: Partial<RenderProjectSettings>;
@@ -231,6 +237,8 @@ export interface RuntimeDriverOptions {
   gameInstanceClass?: string;
   /** Extra authored scenes `changescene` can instantiate by guid or name. */
   sceneLibrary?: Readonly<Record<string, SerializedScene>>;
+  /** Cold source preparation; ownership lasts until the consuming instance retires. */
+  acquireScene?: AcquireRuntimeScene;
   /** Baked navigation keyed by canonical scene guid, selected before Begin Play. */
   sceneNavmeshBytes?: Readonly<Record<string, Uint8Array>>;
   /** Display name or library key → canonical scene asset guid. */
@@ -282,6 +290,8 @@ export interface RuntimeDriverOptions {
 }
 
 export interface RuntimeDriver {
+  notifyAssetPreloadResult(result: { preloadId: string; success: boolean; error?: string; progress?: number }): void;
+  setAssetLoadStates(states: readonly { guid: string; state: RuntimeAssetLoadState }[]): void;
   configureSaveGame(options: RuntimeSaveGameOptions): SaveGameService;
   getSaveGameService(): SaveGameService | undefined;
   registerSaveActor(actor: BObject, persistentId?: string): void;
@@ -331,6 +341,8 @@ export interface RuntimeDriver {
   /** Complete the matching deferred load after the host presents its ready frame. */
   notifySceneModelsReady(sceneAssetGuid: string, sceneLoadId: number): void;
   loadSceneStream(target: unknown, blocking?: boolean): Promise<void>;
+  /** Resolve a cold Scene before replacing the current, still-valid Scene. */
+  changeSceneAsync(sceneKey: string): Promise<void>;
   unloadSceneStream(target: unknown, blocking?: boolean): Promise<void>;
   getTargetSceneName(target: unknown): string;
   getSceneState(target: unknown): SceneStreamingState;
@@ -398,6 +410,7 @@ export interface RuntimeDriver {
   registerAnimGraph(guid: string, document: AnimGraphDocument): void;
   registerBehaviourTree(guid: string, document: BehaviourTreeDocument): void;
   registerBlackboard(guid: string, document: BlackboardDocument): void;
+  registerSceneContent(content: RuntimeSceneContent): void;
   registerWaterContent(content: ReadonlyMap<string, WaterDefinition> | Readonly<Record<string, WaterDefinition>>): void;
   registerTileContent(options: {
     tilemaps: Readonly<Record<string, TilemapPayload>> | ReadonlyMap<string, TilemapPayload>;
@@ -455,6 +468,7 @@ interface SceneDeparture {
   sceneInstance: Scene | null;
   actors: Actor[];
   layers: SceneLayer[];
+  sources?: RuntimeSceneSource[];
 }
 
 interface SceneRealization {
@@ -490,6 +504,7 @@ interface SceneStream {
   unloadPromise?: Promise<void>;
   navObstacles: string[];
   origin?: Transform;
+  source?: RuntimeSceneSource;
 }
 
 /** Hooks both `GameInstanceHooks` and `GameSubsystemHooks` accept. */
@@ -504,6 +519,18 @@ type GameLifecycleHooks = {
 };
 
 class InProcessRuntime implements RuntimeDriver {
+  private readonly assetPreloads = new RuntimeAssetPreloads(command => this.emit(command));
+  private readonly classAssetGuids = new Map<string, string>();
+  private readonly demandAssetCatalog: boolean;
+  private readonly layerReadinessWaiters = new Map<string, { resolve: () => void; reject: (error: unknown) => void }>();
+
+  notifyAssetPreloadResult(result: { preloadId: string; success: boolean; error?: string; progress?: number }): void {
+    this.assetPreloads.receive(result);
+  }
+
+  setAssetLoadStates(states: readonly { guid: string; state: RuntimeAssetLoadState }[]): void {
+    this.assetPreloads.setStates(states);
+  }
   private saveGameService?: SaveGameService;
   private saveGameWorld?: SaveGameWorld;
   private saveBoundaryActive = false;
@@ -600,6 +627,9 @@ class InProcessRuntime implements RuntimeDriver {
   private phaseScriptMs = 0;
   private phasePhysicsMs = 0;
   private readonly scriptHost: ScriptHost;
+  private readonly dataCatalog: RuntimeDataCatalog;
+  private readonly sourceRenderTargets = new Map<string, RenderTargetPayload>();
+  private readonly sourceRenderTargetTextures = new Map<string, RenderTargetTexturePayload>();
   private physicsSync: PhysicsWorldSync;
   private overlayPhysicsSync: PhysicsWorldSync;
   private readonly ragdolls: RagdollWorldSync;
@@ -614,6 +644,9 @@ class InProcessRuntime implements RuntimeDriver {
   private playSceneGuid: string;
   private readonly gameInstanceClass: string;
   private readonly sceneLibrary = new Map<string, SerializedScene>();
+  private readonly acquireScene?: AcquireRuntimeScene;
+  private activeSceneSource?: RuntimeSceneSource;
+  private pendingSceneSource?: AbortController;
   private readonly sceneGuidByKey = new Map<string, string>();
   private readonly sceneLayerSwitchers: SceneLayerActorSwitchers;
   private sceneLayerSpawnDepth = 0;
@@ -729,6 +762,8 @@ class InProcessRuntime implements RuntimeDriver {
   get snapshotGeneration(): number { return this._snapshotGeneration; }
 
   constructor(options: RuntimeDriverOptions) {
+    this.demandAssetCatalog = options.classAssetGuids !== undefined;
+    for (const [classId, guid] of Object.entries(options.classAssetGuids ?? {})) this.classAssetGuids.set(classId, guid);
     this.trace = new TraceRecorder({ byteBudget: options.traceByteBudget });
     this.materialParameters = new RuntimeMaterialParameters(options.materialParameterCatalog, options.materialTextureAssetGuids);
     this.validateLegacyMeshParameters = options.materialParameterCatalog !== undefined;
@@ -746,6 +781,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.havokWasmUrl = options.havokWasmUrl;
     this.preferSoftwarePhysics = options.preferSoftwarePhysics ?? false;
     this.playScene = options.playScene;
+    this.acquireScene = options.acquireScene;
     this.playSceneGuid = options.playSceneGuid ?? "play-scene";
     for (const [guid, bytes] of Object.entries(options.sceneNavmeshBytes ?? {})) this.sceneNavmeshBytes.set(guid, bytes);
     this.gameInstanceClass = options.gameInstanceClass ?? "GameInstance";
@@ -1074,8 +1110,11 @@ class InProcessRuntime implements RuntimeDriver {
       },
     });
 
+    this.dataCatalog = new RuntimeDataCatalog(options.dataAssets);
+    for (const [guid, value] of Object.entries(options.renderTargets ?? {})) this.sourceRenderTargets.set(guid, value);
+    for (const [guid, value] of Object.entries(options.renderTargetTextures ?? {})) this.sourceRenderTargetTextures.set(guid, value);
     this.scriptHost = new ScriptHost({
-      data: new RuntimeDataCatalog(options.dataAssets),
+      data: this.dataCatalog,
       seed: options.seed,
       canRunOwner: (owner) => this.canRunOwner(owner),
       inputBindings: this.resolver.bindings,
@@ -1216,11 +1255,39 @@ class InProcessRuntime implements RuntimeDriver {
       spawnActor: (classId, transform, owner) => {
         const id = String(classId ?? "").trim();
         if (!id) return null;
+        const guid = this.classAssetGuids.get(id);
+        if (this.demandAssetCatalog && guid && this.assetPreloads.getState(guid) !== "ready") {
+          throw new Error(`Class ${id} (${guid}) is not prepared; await ctx.spawnActorAsync or Preload Assets first`);
+        }
         return this.spawnScriptedActor({
           classId: id,
           transform: coerceTransform(transform),
           streamOwner: owner,
         });
+      },
+      spawnActorAsync: async (classId, transform, owner) => {
+        const id = String(classId ?? "").trim();
+        if (!id || this.stopped || owner?.destroyed) return null;
+        const guid = this.classAssetGuids.get(id);
+        if (this.demandAssetCatalog && !guid && !isLockedEngineClassId(id)) throw new Error(`Class ${id} is missing from the asset catalog`);
+        const preload = this.demandAssetCatalog && guid
+          ? await this.assetPreloads.acquire([guid], owner?.guid ?? this.world.currentScene?.guid ?? "session") : null;
+        if (preload && !preload.success) throw new Error(`Cannot spawn ${id} requested by ${owner?.guid ?? "session"}: ${preload.errorMessage}`);
+        if (this.stopped || owner?.destroyed) {
+          if (preload) this.assetPreloads.release(preload.preloadId);
+          throw sceneRealizationCancelled();
+        }
+        try {
+          const actor = this.spawnScriptedActor({ classId: id, transform: coerceTransform(transform), streamOwner: owner });
+          if (preload) {
+            if (actor && !actor.destroyed) this.assetPreloads.transferOwner(preload.preloadId, actor.guid);
+            else this.assetPreloads.release(preload.preloadId);
+          }
+          return actor;
+        } catch (error) {
+          if (preload) this.assetPreloads.release(preload.preloadId);
+          throw error;
+        }
       },
       getActors: () => this.world.getActors(),
       registerSaveActor: (actor, persistentId) => this.registerSaveActor(actor, persistentId),
@@ -1247,6 +1314,10 @@ class InProcessRuntime implements RuntimeDriver {
       getTargetSceneName: (target) => this.getTargetSceneName(target),
       loadScene: (target, blocking) => this.loadSceneStream(target, blocking),
       unloadScene: (target, blocking) => this.unloadSceneStream(target, blocking),
+      preloadAssets: (assets, owner, options) => this.assetPreloads.acquire(assets, owner?.guid ?? this.world.currentScene?.guid ?? "session", options),
+      prepareAssets: this.demandAssetCatalog ? (assets, owner) => this.assetPreloads.prepare(assets, owner?.guid ?? this.world.currentScene?.guid ?? "session") : undefined,
+      releasePreload: (preloadId) => this.assetPreloads.release(preloadId),
+      getAssetLoadState: (assetGuid) => this.assetPreloads.getState(assetGuid),
       isSceneLoaded: (target) => this.getSceneState(target) === "Loaded",
       getSceneLoadProgress: (target) => this.getSceneLoadProgress(target),
       getSceneState: (target) => this.getSceneState(target),
@@ -1314,6 +1385,7 @@ class InProcessRuntime implements RuntimeDriver {
       },
       createSceneLayer: (assetGuid, zOrder) =>
         this.createSceneLayer(assetGuid, zOrder),
+      createSceneLayerAsync: (assetGuid, zOrder, owner) => this.createSceneLayerAsync(assetGuid, zOrder, owner),
       removeSceneLayer: (layerGuid) => {
         this.removeSceneLayer(layerGuid);
       },
@@ -1352,10 +1424,10 @@ class InProcessRuntime implements RuntimeDriver {
         this.possessCamera(target);
       },
       getRenderTargetMode: (guid) => normalizeRenderTargetPayload(
-        options.renderTargets && Object.hasOwn(options.renderTargets, guid) ? options.renderTargets[guid] : null,
+        this.sourceRenderTargets.get(guid) ?? null,
       ).mode,
       getRenderTargetTextureTarget: (guid) => normalizeRenderTargetTexturePayload(
-        options.renderTargetTextures && Object.hasOwn(options.renderTargetTextures, guid) ? options.renderTargetTextures[guid] : null,
+        this.sourceRenderTargetTextures.get(guid) ?? null,
       ).renderTargetGuid,
       captureRenderTarget: (target) => {
         if (!(target instanceof Actor) || !this.canRunOwner(target) || !captureComponent(target)) return;
@@ -1598,8 +1670,8 @@ class InProcessRuntime implements RuntimeDriver {
     const component = this.streamingComponent(actor);
     const key = String(component?.getVariable("sceneGuid") ?? "");
     const document = this.sceneLibrary.get(key);
-    if (!document) return Promise.reject(new Error(`The target scene is not available: ${key || "No Scene Selected"}.`));
-    if (document.settings.physicsWorld !== this.physicsWorldKind)
+    if (!document && (!key || !this.acquireScene)) return Promise.reject(new Error(`The target scene is not available: ${key || "No Scene Selected"}.`));
+    if (document && document.settings.physicsWorld !== this.physicsWorldKind)
       return Promise.reject(new Error("Streamed scenes must use the parent scene's Physics World."));
     const guid = this.sceneGuidByKey.get(key) ?? key;
     for (let ancestor = this.actorStream.get(actor); ancestor; ancestor = this.actorStream.get(ancestor.actor)) {
@@ -1614,7 +1686,7 @@ class InProcessRuntime implements RuntimeDriver {
     // Cancellation may happen before a graph attaches its awaited continuation.
     void promise.catch(() => {});
     const hooks = this.scriptHost.hooksFor(sceneAssetClassId(guid));
-    const scene = new Scene({ guid: `stream:${actor.guid}:${loadId}`, assetGuid: guid, sceneName: document.name,
+    const scene = new Scene({ guid: `stream:${actor.guid}:${loadId}`, assetGuid: guid, sceneName: document?.name ?? String(component?.getVariable("sceneName") ?? guid),
       hooks: hooks ? {
         onCreation: (self) => this.runOwnerCreation(self, () => hooks.onCreation?.(self)),
         onTick: (self, context) => this.guardScript(() => hooks.onTick?.(self, context)),
@@ -1628,7 +1700,25 @@ class InProcessRuntime implements RuntimeDriver {
     const operation = this.withStreamBlock(promise, blocking);
     this.emit({ type: "sceneStreamLoading", actorGuid: actor.guid, streamLoadId: loadId });
     void Promise.resolve().then(async () => {
-      await runSceneRealizationWork(this.realizeSceneStream(stream, document, component!), stream.controller.signal,
+      let prepared = document;
+      if (this.acquireScene) {
+        const acquisition = this.acquireScene(guid, { consumer: `SceneStreamingActor ${actor.guid} (${loadId})`, signal: stream.controller.signal,
+          stream: { actorGuid: actor.guid, streamLoadId: loadId } }).then((source) => {
+          if (stream.controller.signal.aborted || this.sceneStreams.get(actor.guid) !== stream) {
+            source.release();
+            throw sceneRealizationCancelled();
+          }
+          stream.source = source;
+          return source.scene;
+        });
+        prepared = await waitForSceneWork(acquisition, stream.controller.signal);
+      }
+      stream.controller.signal.throwIfAborted();
+      if (!prepared) throw new Error(`The target scene is not available: ${guid}.`);
+      if (prepared.settings.physicsWorld !== this.physicsWorldKind)
+        throw new Error("Streamed scenes must use the parent scene's Physics World.");
+      stream.scene.setVariable("sceneName", prepared.name);
+      await runSceneRealizationWork(this.realizeSceneStream(stream, prepared, component!), stream.controller.signal,
         this.cooperativeSceneLoading ?? {});
     }).catch((error: unknown) => {
       if (this.sceneStreams.get(actor.guid) !== stream || stream.state === "Unloading") return;
@@ -1788,6 +1878,7 @@ class InProcessRuntime implements RuntimeDriver {
 
   private retireSceneStream(stream: SceneStream, failure?: unknown): void {
     if (this.sceneStreams.get(stream.actor.guid) !== stream) return;
+    this.assetPreloads.releaseOwner(stream.scene.guid);
     const wasLoaded = stream.state === "Loaded";
     stream.state = "Unloading";
     stream.progress = 0;
@@ -1811,6 +1902,8 @@ class InProcessRuntime implements RuntimeDriver {
     stream.idMap = new Map();
     stream.navObstacles.length = 0;
     this.physicsSync.syncFromWorld(this.world);
+    stream.source?.release();
+    stream.source = undefined;
     if (failure || !wasLoaded) stream.reject(failure ?? sceneRealizationCancelled());
     else stream.resolve();
   }
@@ -1916,6 +2009,38 @@ class InProcessRuntime implements RuntimeDriver {
     const scene = this.world.currentScene;
     if (scene && !scene.destroyed) {
       scene.setVariable("gravity", { x: next[0], y: next[1], z: next[2] });
+    }
+  }
+
+  private async createSceneLayerAsync(assetGuid: string, zOrder: number, owner: BObject | null): Promise<SceneLayer | null> {
+    if (this.stopped || owner?.destroyed) throw sceneRealizationCancelled();
+    const preload = this.demandAssetCatalog
+      ? await this.assetPreloads.acquire([assetGuid], owner?.guid ?? this.world.currentScene?.guid ?? "session") : null;
+    if (preload && !preload.success) throw new Error(`Cannot create SceneLayer ${assetGuid}: ${preload.errorMessage}`);
+    let layer: SceneLayer | null = null;
+    try {
+      if (this.stopped || owner?.destroyed) throw sceneRealizationCancelled();
+      layer = this.createSceneLayer(assetGuid, zOrder);
+      if (!layer || layer.destroyed) throw new Error(`SceneLayer ${assetGuid} could not be prepared`);
+      if (preload) this.assetPreloads.transferOwner(preload.preloadId, layer.guid);
+      if (!this.layerLoads.get(layer.guid)?.ready) {
+        const layerId = layer.guid;
+        await new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(() => {
+            this.layerReadinessWaiters.delete(layerId);
+            reject(new Error(`SceneLayer ${assetGuid} did not become ready before the loading deadline`));
+          }, 30_000);
+          this.layerReadinessWaiters.set(layerId, {
+            resolve: () => { clearTimeout(timer); resolve(); },
+            reject: error => { clearTimeout(timer); reject(error); },
+          });
+        });
+      }
+      return layer;
+    } catch (error) {
+      if (layer) this.removeSceneLayer(layer.guid);
+      if (preload) this.assetPreloads.release(preload.preloadId);
+      throw error;
     }
   }
 
@@ -2168,6 +2293,9 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   removeSceneLayer(layerGuid: string): void {
+    this.layerReadinessWaiters.get(layerGuid)?.reject(sceneRealizationCancelled());
+    this.layerReadinessWaiters.delete(layerGuid);
+    this.assetPreloads.releaseOwner(layerGuid);
     const layer = this.world.findSceneLayer(layerGuid);
     if (!layer) return;
     this.layerLoads.delete(layerGuid);
@@ -2458,6 +2586,7 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   async loadScripts(scripts: readonly CompiledScript[]): Promise<void> {
+    for (const script of scripts) this.classAssetGuids.set(script.classId, script.assetGuid);
     const ordered = parentFirstScriptOrder(scripts, (classId) =>
       this.world.classRegistry.has(classId),
     );
@@ -2803,6 +2932,7 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private runOwnerDestroyed(owner: BObject, destroy: () => void): void {
+    this.assetPreloads.releaseOwner(owner.guid);
     this.pendingOwnerActions.delete(owner);
     if (this.saveBoundaryActive) return;
     if (this.createdScriptObjects.has(owner)) this.guardScript(destroy);
@@ -2836,6 +2966,8 @@ class InProcessRuntime implements RuntimeDriver {
     load.presented = true;
     if (this.bootLoading) return;
     load.ready = true;
+    this.layerReadinessWaiters.get(layerId)?.resolve();
+    this.layerReadinessWaiters.delete(layerId);
     this.overlayPhysicsSync.syncFromWorld(this.world);
     this.flushOwnerActions();
     this.tryCompleteSceneLoad();
@@ -2958,6 +3090,7 @@ class InProcessRuntime implements RuntimeDriver {
       departure ??= { guid: previous.guid, sceneInstance: previous.sceneInstance, actors: [], layers: [] };
       departure.actors = [...new Set([...departure.actors, ...previous.actors, ...(previous.departure?.actors ?? [])])];
       departure.layers = [...new Set([...departure.layers, ...previous.layers, ...(previous.departure?.layers ?? [])])];
+      departure.sources = [...new Set([...(departure.sources ?? []), ...(previous.departure?.sources ?? [])])];
     }
     this.playWorldRealized = true;
     this.sceneWorkBlocked = true;
@@ -3093,6 +3226,7 @@ class InProcessRuntime implements RuntimeDriver {
   private *retireSceneSteps(work: SceneRealization): Generator<void, void, unknown> {
     const departure = work.departure;
     if (!departure) return;
+    if (departure.sceneInstance) this.assetPreloads.releaseOwner(departure.sceneInstance.guid);
     const checkpoint = () => this.checkRealization(work);
     checkpoint();
     if (this.world.currentScene === departure.sceneInstance) this.world.exitActiveScene();
@@ -3124,6 +3258,8 @@ class InProcessRuntime implements RuntimeDriver {
     // Actor removal releases only departing animation/BT state. Retained layers
     // continue from their existing graph state while the world is replaced.
     this.clearNavAgents();
+    for (const source of departure.sources ?? []) source.release();
+    departure.sources = undefined;
     work.departure = null;
   }
 
@@ -3145,6 +3281,10 @@ class InProcessRuntime implements RuntimeDriver {
       this.world.flushPending();
     });
     if (this.world.currentScene === work.sceneInstance) this.world.exitActiveScene();
+    for (const source of work.departure?.sources ?? []) source.release();
+    if (work.departure) work.departure.sources = undefined;
+    this.activeSceneSource?.release();
+    this.activeSceneSource = undefined;
   }
 
   private *realizeSceneSteps(work: SceneRealization): Generator<void, void, unknown> {
@@ -3233,8 +3373,55 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private applyChangeScene(sceneKey: string): void {
+    if (this.acquireScene) {
+      void this.changeSceneAsync(sceneKey).catch((error: unknown) => {
+        if (!this.stopped && (error as { name?: string })?.name !== "AbortError") this.reportError(error);
+      });
+      return;
+    }
+    this.commitSceneChange(sceneKey);
+  }
+
+  async changeSceneAsync(sceneKey: string): Promise<void> {
     const key = String(sceneKey ?? "").trim();
-    const next = this.sceneLibrary.get(key);
+    if (this.stopped) throw sceneRealizationCancelled();
+    if (!key) throw new Error("Select a Scene before changing scenes.");
+    if (!this.acquireScene) {
+      if (!this.sceneLibrary.has(key)) throw new Error(`The target scene is not available: ${key}.`);
+      this.commitSceneChange(key);
+      await this.waitForSceneRealization();
+      return;
+    }
+    this.pendingSceneSource?.abort(sceneRealizationCancelled());
+    const controller = new AbortController();
+    this.pendingSceneSource = controller;
+    let acquired: RuntimeSceneSource | undefined;
+    const acquisition = Promise.resolve().then(() => this.acquireScene!(this.sceneGuidByKey.get(key) ?? key, {
+      consumer: `Scene transition from ${this.playSceneGuid}`, signal: controller.signal,
+    })).then((source) => {
+      if (this.stopped || controller.signal.aborted || this.pendingSceneSource !== controller) {
+        source.release();
+        throw sceneRealizationCancelled();
+      }
+      acquired = source;
+      return source;
+    });
+    try {
+      const source = await waitForSceneWork(acquisition, controller.signal);
+      controller.signal.throwIfAborted();
+      this.pendingSceneSource = undefined;
+      this.commitSceneChange(key, source.scene, source);
+      acquired = undefined;
+      await this.waitForSceneRealization();
+    } finally {
+      acquired?.release();
+      if (this.pendingSceneSource === controller) this.pendingSceneSource = undefined;
+    }
+  }
+
+  private commitSceneChange(sceneKey: string, prepared?: SerializedScene, source?: RuntimeSceneSource): void {
+    const key = String(sceneKey ?? "").trim();
+    const next = prepared ?? this.sceneLibrary.get(key);
     if (!next) {
       this.emit({
         type: "log",
@@ -3245,7 +3432,7 @@ class InProcessRuntime implements RuntimeDriver {
       });
       return;
     }
-    if (this.stopped) return;
+    if (this.stopped) { source?.release(); return; }
     // The departing Scene's teardown starts here; its SceneSubsystems End at the exit.
     this.duringSceneTeardown(() => {
       for (const stream of [...this.sceneStreams.values()]) this.retireSceneStream(stream);
@@ -3259,7 +3446,9 @@ class InProcessRuntime implements RuntimeDriver {
       guid: departingSceneGuid, sceneInstance: this.world.currentScene,
       actors: this.world.getActors().filter((actor) => !actor.sceneLayerId),
       layers: this.world.getSceneLayers().filter((layer) => layer.ownerSceneGuid === departingSceneGuid),
+      sources: this.activeSceneSource ? [this.activeSceneSource] : undefined,
     };
+    this.activeSceneSource = source;
     this.playScene = next;
     this.scalability.setScene(next.settings);
     this.playSceneGuid = this.sceneGuidByKey.get(key) ?? key;
@@ -3355,6 +3544,25 @@ class InProcessRuntime implements RuntimeDriver {
 
   registerBlackboard(guid: string, document: BlackboardDocument): void {
     this.blackboards.set(guid, document);
+  }
+
+  registerSceneContent(content: RuntimeSceneContent): void {
+    const retained = new Set(content.assetGuids);
+    for (const map of [this.animGraphs, this.behaviourTrees, this.blackboards]) for (const guid of map.keys()) if (!retained.has(guid)) map.delete(guid);
+    this.sceneLayerLibrary.clear();
+    for (const entry of content.sceneLayers ?? []) this.sceneLayerLibrary.set(entry.guid, entry.layer);
+    this.sceneNavmeshBytes.clear();
+    for (const [guid, bytes] of Object.entries(content.sceneNavmeshBytes ?? {})) this.sceneNavmeshBytes.set(guid, bytes);
+    this.animClipCatalog.clear();
+    for (const entry of content.animClipCatalog ?? []) this.animClipCatalog.set(entry.guid, entry);
+    this.audioAssetGuids.clear();
+    for (const guid of content.audioAssetGuids ?? []) this.audioAssetGuids.add(guid);
+    this.sourceRenderTargets.clear();
+    for (const [guid, value] of Object.entries(content.renderTargets ?? {})) this.sourceRenderTargets.set(guid, value);
+    this.sourceRenderTargetTextures.clear();
+    for (const [guid, value] of Object.entries(content.renderTargetTextures ?? {})) this.sourceRenderTargetTextures.set(guid, value);
+    this.materialParameters.replaceCatalog(content.materialParameterCatalog, content.materialTextureAssetGuids);
+    this.dataCatalog.replace(content.dataAssets ?? []);
   }
 
   registerWaterContent(content: ReadonlyMap<string, WaterDefinition> | Readonly<Record<string, WaterDefinition>>): void {
@@ -5876,6 +6084,9 @@ class InProcessRuntime implements RuntimeDriver {
 
   stop(): void {
     if (this.stopped) return;
+    this.assetPreloads.dispose();
+    for (const waiter of this.layerReadinessWaiters.values()) waiter.reject(sceneRealizationCancelled());
+    this.layerReadinessWaiters.clear();
     this.stopped = true;
     this.tweens.stop();
     this.focusNavigation.clearFocus();
@@ -5883,6 +6094,8 @@ class InProcessRuntime implements RuntimeDriver {
     this.overlayVirtualization.clear();
     this.lifecycleId++;
     this.sceneChangeId++;
+    this.pendingSceneSource?.abort(sceneRealizationCancelled());
+    this.pendingSceneSource = undefined;
     this.running = false;
     for (const resume of this.simulationWaiters) resume();
     this.simulationWaiters.clear();
@@ -5894,7 +6107,7 @@ class InProcessRuntime implements RuntimeDriver {
       if (this.world.findSceneLayer(work.layer.guid) === work.layer) this.removeSceneLayer(work.layer.guid);
     }
     this.independentLayerWork.clear();
-    this.cancelRealization();
+    const retiring = this.cancelRealization();
     this.sceneLoadId++;
     this.pendingSceneFinish = null;
     this.finalizeTrace();
@@ -5908,6 +6121,11 @@ class InProcessRuntime implements RuntimeDriver {
       }
     }
     this.world.end();
+    for (const source of retiring?.departure?.sources ?? []) source.release();
+    this.activeSceneSource?.release();
+    this.activeSceneSource = undefined;
+    this.playScene = undefined;
+    this.sceneLibrary.clear();
     this.pendingOwnerActions.clear();
     this.layerLoads.clear();
     this.ragdolls.dispose();

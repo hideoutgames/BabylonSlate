@@ -61,6 +61,7 @@ export interface ElectronProjectBridge {
   listProjects(): Promise<ProjectFolderHandle[]>;
   releaseFolder(): Promise<void>;
   readBinary(path: string): Promise<ArrayBuffer>;
+  readBinaryRange(path: string, offset: number, length: number, expectedRevision?: string): Promise<Omit<import("@babylonslate/core").StorageRangeRead, "bytes"> & { bytes: ArrayBuffer; error?: string }>;
   writeBinary(path: string, data: ArrayBuffer): Promise<void>;
   exists(path: string): Promise<boolean>;
   readdir(path: string): Promise<DirEntry[]>;
