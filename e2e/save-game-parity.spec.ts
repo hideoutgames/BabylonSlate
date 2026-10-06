@@ -3,7 +3,8 @@ import { createDefaultScene, PROJECT_FILE, type SaveGameDefinition, type Seriali
 import { createDefaultMigrationRegistry } from "../packages/assets/src/migration";
 import { encodeAssetDocument } from "../packages/assets/src/asset-document";
 import { minimalProjectFiles } from "../packages/assets/src/test-support/minimal-project";
-import { compileGraphDocuments } from "../apps/editor/src/services/script-compiler";
+import { compileGraph } from "../packages/scripting/src/compile";
+import { createDefaultNodeRegistry } from "../packages/scripting-nodes/src/index";
 import { loadPlayerDistFiles } from "../apps/editor/src/services/load-player-files";
 import { exportGame } from "../packages/exporter/src/index";
 import { openMinimalTestProject } from "./minimal-project";
@@ -32,6 +33,14 @@ ctx.print(result.ok ? "Saved Visits: " + data.visits : "Save Failed: " + result.
   ],
   edges: [{ id: "load-save", source: "loaded", sourceHandle: "execOut", target: "save", targetHandle: "execIn" }],
 };
+const registry = createDefaultNodeRegistry();
+const compiled = compileGraph({
+  id: "save-flow", kind: "event",
+  nodes: graph.nodes.map((node) => ({ id: node.id, typeId: node.type, position: node.position,
+    properties: node.data ?? {}, pins: registry.get(node.type)!.pins(node.data ?? {}) })),
+  edges: graph.edges.map((edge) => ({ id: edge.id, sourceNodeId: edge.source, sourcePinId: edge.sourceHandle!,
+    targetNodeId: edge.target, targetPinId: edge.targetHandle! })),
+}, { registry, assetGuid: "save-flow-class" });
 
 test("editor Play and Preview Build share persistent preview progress", async ({ page }, info) => {
   test.setTimeout(180_000);
@@ -70,7 +79,7 @@ for (const mode of ["packed", "loose"] as const) {
       renderSettings: { customResolution: false, width: 640, height: 360, blackBars: false },
       physicsWorld: "2d",
       saveGame: { projectId: `export-${mode}`, definition, preview: false },
-      scripts: compileGraphDocuments([{ path: "assets/SaveFlow.class.babasset", classId: "SaveFlow", parentClassId: "GameInstance", content: graph }]),
+      scripts: [{ ...compiled, assetGuid: "save-flow-class", classId: "SaveFlow", parentClassId: "GameInstance" }],
       assets: [{ guid: "start", type: "Scene", sceneGuid: "start", encoding: "json", bytes: new TextEncoder().encode(JSON.stringify(scene)) }],
       playerFiles: await loadPlayerDistFiles(new URL("/player/", baseURL).href),
     });
