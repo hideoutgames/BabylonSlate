@@ -300,10 +300,17 @@ describe("pinDefaultPreview", () => {
     expect(pinDefaultPreview(objectPin, {}, false)).toEqual({
       kind: "objectRef",
       text: "CameraComponent",
+      placeholder: true,
     });
     expect(pinDefaultPreview(actorPin, {}, false)).toEqual({
       kind: "actorRef",
       text: "Actor",
+      placeholder: true,
+    });
+    // Only an implicit-self target is satisfied without a wire.
+    expect(pinDefaultPreview(objectPin, { implicitSelf: true }, false)).toEqual({
+      kind: "objectRef",
+      text: "Self",
     });
     expect(
       pinDefaultPreview(structPin, {}, false, { "struct-stats": "Stats" }),
