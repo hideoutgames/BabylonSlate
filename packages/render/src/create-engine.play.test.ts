@@ -30,6 +30,7 @@ import {
 } from "@babylonslate/core";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { createEngine, syncEditorPlayState } from "./create-engine";
+import type { RenderPerformanceSample } from "./render-performance";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission, createDefaultParticleSystemPayload, encodeGlbJsonBin, normalizeParticleEmitterPayload } from "@babylonslate/assets";
 import { encodeTriangleGlb } from "./glb-test-fixtures";
@@ -730,6 +731,8 @@ describe("Play createEngine view", () => {
     vi.spyOn(canvas, "getContext").mockImplementation(() => ({ putImageData: () => { copied = true; } }));
     const handle = createEngine(canvas as unknown as HTMLCanvasElement, { sharedEngine: engine, present: "rtt", playMode: true });
     handles.push(handle);
+    const performanceSamples: RenderPerformanceSample[] = [];
+    handle.observePerformance((sample) => performanceSamples.push(sample));
     handle.setPaused(true);
     await handle.prewarmSceneMaterials();
     let resolve!: (pixels: Uint8Array) => void;
@@ -751,12 +754,16 @@ describe("Play createEngine view", () => {
       await Promise.resolve();
       expect(ready).toBe(false);
       expect(copied).toBe(false);
+      expect(performanceSamples).toHaveLength(0);
       expect(read).toHaveBeenCalledOnce();
       expect(drawn).toHaveBeenCalledOnce();
       resolve(new Uint8Array(256 * 256 * 4));
       await presented;
       expect(ready).toBe(true);
       expect(copied).toBe(true);
+      expect(performanceSamples).toHaveLength(1);
+      expect(performanceSamples[0]).toMatchObject({ width: 256, height: 256, loading: true });
+      expect(performanceSamples[0]!.copyMs).toBeGreaterThanOrEqual(0);
     } finally {
       handle.dispose();
       await presented.catch(() => {});
@@ -1413,6 +1420,8 @@ describe("Play createEngine view", () => {
     vi.spyOn(canvas, "getContext").mockReturnValue({ clearRect() {}, drawImage: copy });
     const handle = createEngine(canvas as unknown as HTMLCanvasElement, { sharedEngine: engine, editor: true });
     handles.push(handle);
+    const performanceSamples: RenderPerformanceSample[] = [];
+    const releasePerformance = handle.observePerformance((sample) => performanceSamples.push(sample));
     await handle.prewarmSceneMaterials();
     const frame = () => { engine.beginFrame(); renderViews(engine); engine.endFrame(); };
     frame();
@@ -1425,10 +1434,16 @@ describe("Play createEngine view", () => {
     expect(copy).toHaveBeenCalledTimes(1);
     expect(handle.scheduler.stats().renderedFrames).toBe(1);
     expect(handle.renderDiagnostics().presentation).toMatchObject({ drawn: 1, copied: 1, held: 2 });
+    expect(performanceSamples).toHaveLength(1);
     ready = true;
     frame();
     expect(copy).toHaveBeenCalledTimes(2);
     expect(handle.scheduler.stats().renderedFrames).toBe(2);
+    expect(performanceSamples).toHaveLength(2);
+    expect(performanceSamples[1]!.completedAtMs).toBeGreaterThanOrEqual(performanceSamples[0]!.completedAtMs);
+    releasePerformance();
+    frame();
+    expect(performanceSamples).toHaveLength(2);
   });
 
   it("retains prepared rendering and material ownership through transform commits and equivalent asset refreshes", async () => {

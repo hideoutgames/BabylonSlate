@@ -1,7 +1,7 @@
 /** Explicit timing captures, independent of Stats and full-world traces. */
 export const PERFORMANCE_FRAME_COLUMNS = [
   "frameId", "tickId", "sceneGeneration", "completedAtMs", "intervalMs",
-  "preparationMs", "submissionMs", "copyMs", "drawCalls", "width", "height", "resolutionScale",
+  "preparationMs", "submissionMs", "copyMs", "drawCalls", "width", "height", "resolutionScale", "loading",
 ] as const;
 export const PERFORMANCE_TICK_COLUMNS = [
   "tickId", "elapsedMs", "scriptMs", "physicsMs", "publishMs", "otherMs",
@@ -34,6 +34,7 @@ export type PerformanceFrameSample = {
   completedAtMs: number;
   preparationMs: number; submissionMs: number; copyMs: number; drawCalls: number;
   width: number; height: number; resolutionScale: number;
+  loading?: boolean;
 };
 export type PerformanceTickSample = {
   tickId: number;
@@ -115,7 +116,7 @@ export class PerformanceRecorder {
       sample.completedAtMs - state.startedAtMs,
       state.previousCompletedAt === null ? NaN : sample.completedAtMs - state.previousCompletedAt,
       sample.preparationMs, sample.submissionMs, sample.copyMs, sample.drawCalls,
-      sample.width, sample.height, sample.resolutionScale]);
+      sample.width, sample.height, sample.resolutionScale, sample.loading ? 1 : 0]);
     if (accepted) state.previousCompletedAt = sample.completedAtMs;
     return accepted;
   }

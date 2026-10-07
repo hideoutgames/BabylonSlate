@@ -44,6 +44,7 @@ import type { AbstractEngine, BaseTexture, Camera } from "@babylonjs/core";
 import { resolveRenderingQuality } from "@babylonslate/core";
 import { isEnvironmentLightingReady } from "./environment-lighting";
 import { createRenderDiagnostics, type GpuAttribution, type RenderDiagnostics } from "./render-diagnostics";
+import { RenderPerformanceFeed, type RenderPerformanceReceipt, type RenderPerformanceSample } from "./render-performance";
 import {
   Engine,
   KhronosTextureContainer2,
@@ -299,6 +300,8 @@ export interface EngineHandle {
   /** Last rendered frame's Babylon draw-call count (`_drawCalls.current`). */
   drawCalls: () => number;
   renderDiagnostics: () => RenderDiagnostics;
+  /** Explicit CPU timing only; host controls finite capture, session mode and result retention. */
+  observePerformance: (onFrame: (sample: RenderPerformanceSample) => void) => () => void;
   renderPathStatus: () => ResolvedRenderingPipeline;
   scalabilityStatus: () => ScalabilityAcknowledgement | undefined;
   /** Non-persistent game-wide session render path request; null resumes the project path. */
@@ -985,6 +988,10 @@ function initializeEngine(
     contextLosses: 0, contextRestorations: 0,
   };
   let captureFramePhases = false;
+  const performanceFeed = new RenderPerformanceFeed();
+  let pendingPerformanceReceipt: RenderPerformanceReceipt | null = null;
+  let admissionPreparationMs = 0;
+  onRollback(() => performanceFeed.dispose());
   const outlineHost = new SceneOutlineHost(scene, worldRenderer, () => scheduler.invalidate("selection"));
   onRollback(() => outlineHost.dispose());
   const deformerHost = new SceneDeformerHost(scene);
@@ -1018,6 +1025,7 @@ function initializeEngine(
   const releaseViewAdmission = registeredView ? admitRegisteredViewFrames(engine, registeredView, () =>
     {
       if (disposed || contextLost) return false;
+      const preparationStart = performanceFeed.active ? performance.now() : 0;
       streamAdmission?.sync();
       if (!worldLoading) runtimeScalability?.advance();
       // Prepare against this view's private-buffer dimensions before Babylon
@@ -1032,13 +1040,15 @@ function initializeEngine(
         engine.setSize(size.width, size.height);
       admittedSnapshot = prepareSnapshot();
       snapshotAdmitted = true;
-      return shouldRenderFrame(performance.now());
+      const admitted = shouldRenderFrame(performance.now());
+      if (performanceFeed.active) admissionPreparationMs = performance.now() - preparationStart;
+      return admitted;
     }, {
       begin: () => { frameCopyReady = false; },
       canCopy: () => frameCopyReady && !disposed && !contextLost,
       copied: (milliseconds) => {
         presentationStats.copyMs = milliseconds;
-        acknowledgeFrameCopy();
+        acknowledgeFrameCopy(undefined, pendingPerformanceReceipt, milliseconds);
       },
     }) : null;
   onRollback(() => releaseViewAdmission?.());
@@ -2250,8 +2260,9 @@ function initializeEngine(
     } else worldLoading = false;
     pending.resolve();
   };
-  function acknowledgeFrameCopy(owners = [...frameOwners]) {
+  function acknowledgeFrameCopy(owners = [...frameOwners], receipt = pendingPerformanceReceipt, copyMs = 0) {
     presentationStats.copied += 1;
+    if (receipt) performanceFeed.complete(receipt, copyMs, performance.now(), loadGeneration);
     if (!frameWasLoading) framePresented = true;
     for (const [key, pending] of owners) {
       if (pendingPresentations.get(key) !== pending) continue;
@@ -2373,8 +2384,10 @@ function initializeEngine(
     // permit belongs to this canvas and must not draw into a sibling's blit.
     if (registeredView && engine.activeView && engine.activeView !== registeredView) return;
     frameCopyReady = false;
+    pendingPerformanceReceipt = null;
     frameOwners.clear();
-    const preparationStart = captureFramePhases ? performance.now() : 0;
+    const measurePhases = captureFramePhases || performanceFeed.active;
+    const preparationStart = measurePhases ? performance.now() : 0;
     applyRenderingQuality();
     outlineHost.refreshSettings();
     if (!worldLoading) runtimeScalability?.advance();
@@ -2393,7 +2406,16 @@ function initializeEngine(
     // as a catastrophic frame time and drop quality for no reason.
     const renderStart = performance.now();
     presentationStats.attempted += 1;
-    if (captureFramePhases) presentationStats.preparationMs = renderStart - preparationStart;
+    if (measurePhases) presentationStats.preparationMs = renderStart - preparationStart;
+    const profileReceipt = performanceFeed.active ? performanceFeed.begin({
+      frameId: engine.frameId, tickId: sampled?.tickIndex ?? 0, sceneGeneration: loadGeneration,
+      preparationMs: presentationStats.preparationMs + (registeredView ? admissionPreparationMs : 0),
+      submissionMs: 0, drawCalls: 0,
+      width: scene.activeCamera?.outputRenderTarget?.getSize().width ?? engine.getRenderWidth(true),
+      height: scene.activeCamera?.outputRenderTarget?.getSize().height ?? engine.getRenderHeight(true),
+      resolutionScale: 1 / engine.getHardwareScalingLevel(), loading: loadingFrame,
+    }) : null;
+    admissionPreparationMs = 0;
     let coherentFrame = true;
     beginEngineDrawCallFrame(engine);
     if (rttPresent) rttPresent.bind();
@@ -2478,8 +2500,9 @@ function initializeEngine(
       }
       if (rttPresent) {
         const owners = [...frameOwners];
+        const copyStart = profileReceipt ? performance.now() : 0;
         void rttPresent.blit().then(() => {
-          acknowledgeFrameCopy(owners);
+          acknowledgeFrameCopy(owners, profileReceipt, profileReceipt ? performance.now() - copyStart : 0);
         }, (error: unknown) => {
           if (!owners.length && !disposed) console.warn(`[render] RTT presentation failed: ${String(error)}`);
           for (const [key, pending] of owners) {
@@ -2498,6 +2521,11 @@ function initializeEngine(
     lastDrawCalls = readEngineDrawCalls(engine);
     scheduler.noteRendered(frameStart);
     lastRenderCpuMs = performance.now() - renderStart;
+    if (profileReceipt) {
+      profileReceipt.sample.submissionMs = lastRenderCpuMs;
+      profileReceipt.sample.drawCalls = lastDrawCalls;
+      pendingPerformanceReceipt = profileReceipt;
+    }
     if (!registeredView && !rttPresent && !loadingFrame) framePresented = true;
   };
   const presentationObserver = engine.onEndFrameObservable.add(() => {
@@ -2540,6 +2568,7 @@ function initializeEngine(
     previousFramePresented = framePresented;
     framePresented = false;
     frameCopyReady = false;
+    pendingPerformanceReceipt = null;
   });
   onRollback(() => engine.onEndFrameObservable.remove(presentationObserver));
   onRollback(() => engine.stopRenderLoop(renderLoop));
@@ -2784,6 +2813,8 @@ function initializeEngine(
       if (disposed) return;
       resetJoysticks();
       disposed = true;
+      performanceFeed.dispose();
+      pendingPerformanceReceipt = null;
       streamAdmission?.clear();
       runtimeScalability?.dispose();
       unsubscribeRenderPath();
@@ -3344,6 +3375,7 @@ function initializeEngine(
     }),
     drawCalls: () => lastDrawCalls,
     renderDiagnostics,
+    observePerformance: (onFrame) => performanceFeed.subscribe(onFrame),
     renderPathStatus: () => sceneRenderPathStatus(scene),
     scalabilityStatus: () => lastScalabilityStatus,
     setRenderPath: (renderPath: RenderPath | null) => {

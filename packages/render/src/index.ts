@@ -96,6 +96,7 @@ export * from "./particle-preview";
 export * from "./convert-obj-to-glb";
 export * from "./node-rig";
 export type { RenderDiagnostics } from "./render-diagnostics";
+export type { RenderPerformanceSample } from "./render-performance";
 
 export { lightsDebugText } from "./render-diagnostics";
 export { captureShadowDiagnostics, type ShadowDiagnosticOptions, type ShadowDiagnostics } from "./shadow-diagnostics";
