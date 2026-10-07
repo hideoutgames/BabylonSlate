@@ -62,6 +62,15 @@ describe("InputResolver event transitions", () => {
     expect(resolver.resolve([pointer(3, "down", 30)]).pressedKeys).toEqual(["MouseLeft"]);
     expect(resolver.resolve([pointer(3, "cancel", 30)]).actions.Click.released).toBe(true);
   });
+
+  it("releases a whole mouse contact when pointerup names a button whose chord edge was missed", () => {
+    const resolver = new InputResolver({ actions: [{ name: "Fire", bindings: [{ device: "mouseButton", code: "0" }] }], axes: [] });
+    const mouse = (phase: "down" | "up", button: number): RawInputEvent => ({ kind: "pointer", tick: 0, pointerId: 1, phase, x: 5, y: 6, button });
+    expect(resolver.resolve([mouse("down", 0)]).actions.Fire.held).toBe(true);
+    const up = resolver.resolve([mouse("up", 2)]);
+    expect(up.actions.Fire).toMatchObject({ held: false, released: true });
+    expect(up.cursor.pressed).toBe(false);
+  });
   it("keeps a complete key tap received between two simulation ticks", () => {
     const resolver = new InputResolver(createDefaultInputMappings());
     const tapped = resolver.resolve([

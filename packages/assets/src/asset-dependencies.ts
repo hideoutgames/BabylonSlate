@@ -398,6 +398,8 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
     for (const group of rows(settings.foliageGroups)) for (const model of rows(group.models)) { add(model.modelGuid, false); add(model.materialGuid, false); }
     for (const actor of rows(payload.actors)) {
       addClass(actor.classId);
+      // Prefab components are baked into the actor, so the Prefab is editor-only.
+      add(actor.prefabGuid, false);
       instanceProperties(actor.classId, row(actor.properties));
       for (const entry of values(row(actor.properties).sceneLayerActors)) {
         addClass(typeof entry === "string" ? entry : row(entry).classId, false);
@@ -409,6 +411,9 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
     addClass(context.parentClass);
     components(payload.components);
     graph(payload);
+    addMany(areaEmissionTextureGuids(payload), false);
+  } else if (assetType === "Prefab") {
+    components(payload.components);
     addMany(areaEmissionTextureGuids(payload), false);
   } else if (assetType === "AnimationGraph") {
     for (const clip of rows(payload.clips)) add(clip.assetGuid);

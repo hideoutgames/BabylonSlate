@@ -1,4 +1,4 @@
-import { ENGINE_VERSION, type PluginEnableOverride, type ProjectStorage } from "@babylonslate/core";
+import { ENGINE_VERSION, isStorageNotFound, type PluginEnableOverride, type ProjectStorage } from "@babylonslate/core";
 import { DOCUMENT_CHUNK_ID } from "./asset-document";
 import { AccountedPayloadLoader, readAssetCatalog, validateAssetSourceLocator, type AssetCatalogRead } from "./payload-loader";
 import { createVfsBlobStore } from "./blob-store";
@@ -186,8 +186,10 @@ export async function discoverProjectPlugins(
   let entries;
   try {
     entries = await storage.readdir(PLUGINS_DIR);
-  } catch {
-    return [];
+  } catch (error) {
+    // Folder names chosen from this list must not collide with unseen plugins.
+    if (isStorageNotFound(error)) return [];
+    throw error;
   }
   const plugins: PluginDescriptor[] = [];
   for (const entry of entries) {

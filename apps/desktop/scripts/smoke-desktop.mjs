@@ -1,3 +1,4 @@
+/* global window -- page.evaluate callbacks run in the packaged renderer */
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { access, chmod, cp, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";

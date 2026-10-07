@@ -63,6 +63,16 @@ describe("listDockWindows", () => {
     });
   });
 
+  it("opens Prefab assets with only Prefab, Components and Inspector", () => {
+    const windows = listDockWindows("prefab");
+    expect(windows.map((entry) => [entry.id, entry.title])).toEqual([
+      ["prefab-viewport", "Prefab"],
+      ["actor-prefab", "Components"],
+      ["inspector", "Inspector"],
+    ]);
+    expect(primaryDockPanel("prefab")).toBe("prefab-viewport");
+  });
+
   it("omits the Locks window when source control is off", () => {
     for (const kind of [
       "scene",

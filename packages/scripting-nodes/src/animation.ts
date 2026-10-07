@@ -103,6 +103,21 @@ export const animationNodes: NodeDefinition[] = [
   boolFact("anim.state.justLooped", "Just Looped", "justLooped"),
   boolFact("anim.state.justFinished", "Just Finished", "justFinished"),
   {
+    // Crossing test lives in @babylonslate/anim-graph (`animExitTimeReached`);
+    // the host binds it to this tick's facts.
+    id: "anim.state.exitTimeReached",
+    title: "Exit Time Reached",
+    category: "animation",
+    pure: true,
+    pins: () => [
+      pin("exitTime", "exitTime", "in", FLOAT, "data", false, 1),
+      pin("value", "value", "out", BOOL),
+    ],
+    codegen: (ctx) => ({
+      value: `(ctx.animExitTimeReached?.(${ctx.input("exitTime")}) ?? false)`,
+    }),
+  },
+  {
     id: "anim.actor.getVariable",
     title: "Get Anim Graph Variable",
     category: "animation",

@@ -14,7 +14,8 @@ import {
 import { replayJournalLines, resolveJournalLines } from "./journal-replay";
 import { EditSession } from "./session";
 import { diffGraphCommands } from "./commands/graph-diff";
-import type { SerializedGraph } from "@babylonslate/core";
+import { planSceneChange } from "./commands/scene-diff";
+import { createActor, createDefaultScene, type SerializedGraph, type SerializedScene } from "@babylonslate/core";
 
 function journalRecord(docId: string, command: EditCommand<unknown>): JournalLine {
   return { v: 1, docId, at: "2026-09-28T10:00:00Z", command: commandToJournalPayload(command) };
@@ -87,6 +88,41 @@ describe("journal coalescing", () => {
 });
 
 describe("journal replay", () => {
+  it("recovers SceneLayer switcher entries, their coalesced edits and their Undo", () => {
+    const docId = "scene:assets/Main.scene.babasset";
+    const initial = createDefaultScene();
+    initial.actors.push(createActor("switcher", "Switcher", { classId: "SceneLayerActorSwitcher" }));
+    const withEntries = (scene: SerializedScene, defaults: Record<string, unknown>): SerializedScene => ({
+      ...scene,
+      actors: scene.actors.map((actor) => actor.id === "switcher"
+        ? { ...actor, properties: { sceneLayerActors: [{ classId: "HudLayer", defaults }] } }
+        : actor),
+    });
+    const session = new EditSession();
+    const records: JournalLine[] = [];
+    let doc = initial;
+    for (const defaults of [{}, { title: "P" }, { title: "Paused" }]) {
+      const commands = planSceneChange(doc, withEntries(doc, defaults));
+      expect(commands.map((command) => command.type)).toEqual(["scene.setActorProperties"]);
+      const result = session.applyBatch(docId, doc, commands)!;
+      doc = result.doc;
+      records.push(journalRecord(docId, result.command));
+    }
+    const edited = withEntries(initial, { title: "Paused" });
+    expect(doc).toEqual(edited);
+    const undone = session.undo(docId, doc)!;
+    expect(undone.doc).toEqual(initial);
+    records.push(journalRecord(docId, undone.command));
+
+    const replay = (lines: JournalLine[]) =>
+      replayJournalLines(lines.map(serializeJournalLine), new Map([[docId, initial]])).documents.get(docId);
+    const gesture = fold(records.slice(0, 3));
+    expect(gesture).toHaveLength(1);
+    expect(replay(gesture)).toEqual(edited);
+    expect(replay(records.slice(0, 3))).toEqual(edited);
+    expect(replay(fold(records))).toEqual(initial);
+  });
+
   it("offers no recovery for a stream containing only discarded edits and close markers", () => {
     const at = "2026-10-02T00:00:00Z";
     const id = "graph:closed";
