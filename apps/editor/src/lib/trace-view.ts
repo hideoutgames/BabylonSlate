@@ -20,6 +20,7 @@ export function asTracePayload(content: unknown): TracePayload | null {
   if (
     !Number.isFinite(record.seed) ||
     !Number.isFinite(record.dt) ||
+    (record.retention !== undefined && !validTraceRetention(record.retention)) ||
     !Array.isArray(record.frames) ||
     !record.frames.every((frame: unknown) => {
       if (!frame || typeof frame !== "object") return false;
@@ -49,6 +50,35 @@ export function asTracePayload(content: unknown): TracePayload | null {
     return null;
   }
   return content as TracePayload;
+}
+
+function validTraceRetention(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.byteBudget === "number" &&
+    Number.isSafeInteger(record.byteBudget) && record.byteBudget > 0 &&
+    typeof record.droppedFrames === "number" &&
+    Number.isSafeInteger(record.droppedFrames) && record.droppedFrames >= 0 &&
+    typeof record.complete === "boolean" &&
+    (!record.complete || record.droppedFrames === 0) &&
+    (record.stopReason === "requested" || record.stopReason === "session-ended" ||
+      record.stopReason === "oversized-frame")
+  );
+}
+
+export function traceRetentionSummary(payload: TracePayload): string {
+  const retention = payload.retention;
+  if (!retention) return "Retention Details Unavailable";
+  const budget = retention.byteBudget >= 1024 * 1024
+    ? `${Number((retention.byteBudget / (1024 * 1024)).toFixed(2))} MiB`
+    : `${retention.byteBudget} B`;
+  const reason = {
+    requested: "Stopped By Request",
+    "session-ended": "Session Ended",
+    "oversized-frame": "Frame Exceeded Budget",
+  }[retention.stopReason];
+  return `${retention.complete ? "Complete" : "Incomplete"} · ${budget} Serialized Data Budget · ${retention.droppedFrames} Dropped Frame${retention.droppedFrames === 1 ? "" : "s"} · ${reason}`;
 }
 
 export function collectTraceLogWindow(

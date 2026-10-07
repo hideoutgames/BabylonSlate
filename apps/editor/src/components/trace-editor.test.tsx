@@ -112,6 +112,26 @@ const payload: TracePayload = {
 describe("Trace document panels", () => {
   afterEach(cleanup);
 
+  it("explains incomplete retention and preserves unknown status for legacy traces", () => {
+    const { rerenderTrace } = renderTrace({
+      ...payload,
+      frames: [],
+      retention: {
+        byteBudget: 1024 * 1024,
+        droppedFrames: 1,
+        complete: false,
+        stopReason: "oversized-frame",
+      },
+    });
+    const summary = screen.getByTestId("trace-retention-summary");
+    expect(summary.textContent).toContain("Incomplete");
+    expect(summary.textContent).toContain("1 MiB Serialized Data Budget");
+    expect(summary.textContent).toContain("1 Dropped Frame");
+    expect(summary.textContent).toContain("Frame Exceeded Budget");
+    rerenderTrace(payload);
+    expect(summary.textContent).toBe("Retention Details Unavailable");
+  });
+
   it("expands and collapses the selected actor with the keyboard", () => {
     renderTrace(payload);
     const tree = screen.getByRole("tree", { name: "Snapshot" });
