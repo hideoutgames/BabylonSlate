@@ -63,8 +63,8 @@ describe("DocumentService", () => {
     expect(service.getAuthoringLock()).toMatchObject({ readOnly: false, reason: null });
     expect(changes).toEqual(["Session owns the baseline.", "Session owns the baseline.", "Reload pending.", null]);
     unsubscribe();
-    service.updateGraph(graphId, { nodes: [], edges: [], properties: { accepted: true } });
-    expect(service.getDocument(graphId)).toMatchObject({ dirty: true, content: { properties: { accepted: true } } });
+    service.updateGraph(graphId, { nodes: [], edges: [], actorDefaults: { properties: { accepted: true } } });
+    expect(service.getDocument(graphId)).toMatchObject({ dirty: true, content: { actorDefaults: { properties: { accepted: true } } } });
   });
 
   it("lets a previously captured safe save acknowledge its content while authoring is locked", async () => {
