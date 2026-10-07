@@ -315,8 +315,8 @@ export function GradientField({
                   <NumericDragField
                     aria-label={`${ariaLabel} Stop ${selectedIndex + 1} Location`}
                     value={selectedStop.t}
-                    min={0}
-                    max={1}
+                    min={clampKeyTime(times, selectedIndex, 0)}
+                    max={clampKeyTime(times, selectedIndex, 1)}
                     sensitivity={0.005}
                     disabled={disabled || endpoint}
                     onChange={(t) => moveStop(selectedIndex, t)}
