@@ -1,3 +1,4 @@
+import { RuntimeDiagnosticRecorder } from "./runtime-diagnostic-recorder";
 import { RuntimeInspector } from "./runtime-inspector";
 import { SceneLayerActorSwitchers } from "./scene-layer-actor-switcher";
 import { RuntimeDataCatalog } from "./data-catalog";
@@ -34,6 +35,8 @@ import {
   type SessionBoundaryResult,
   type RuntimeInspectorRequest,
   type RuntimeInspectorResult,
+  type DiagnosticOperationRequest,
+  type DiagnosticOperationResult,
 } from "@babylonslate/bridge";
 import {
   ClassRegistry,
@@ -301,6 +304,7 @@ export interface RuntimeDriver {
   resume(reason?: SessionPauseReason): void;
   requestSessionBoundary(request: SessionBoundaryRequest): Promise<SessionBoundaryResult>;
   requestRuntimeInspector(request: RuntimeInspectorRequest): Promise<RuntimeInspectorResult>;
+  requestDiagnosticOperation(request: DiagnosticOperationRequest): Promise<DiagnosticOperationResult>;
   tick(): void;
   /** Fixed-step catch-up from wall/accumulated time; capped. */
   advance(elapsedSeconds: number): void;
@@ -523,6 +527,9 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly sessionMode: GameSessionMode;
   private commandRevision = 0;
   private lastBoundaryRequestId = 0;
+  private readonly diagnosticsEnabled: boolean;
+  private diagnosticRecorder: RuntimeDiagnosticRecorder | null = null;
+  private profileTickPublishMs = 0;
   private runtimeInspector: RuntimeInspector | null = null;
   private inspectorScheduled = false;
   private lastInspectorRequestId = 0;
@@ -760,6 +767,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.sessionGeneration = options.sessionGeneration ?? 0;
     this.sessionMode = options.sessionMode ?? "play";
     this.trace = new TraceRecorder({ byteBudget: options.traceByteBudget });
+    this.diagnosticsEnabled = options.includeDebugCommands ?? true;
     this.materialParameters = new RuntimeMaterialParameters(options.materialParameterCatalog, options.materialTextureAssetGuids);
     this.validateLegacyMeshParameters = options.materialParameterCatalog !== undefined;
     this.scalabilityProjectRenderPath = options.renderSettings?.renderPath ?? "forward";
@@ -4733,6 +4741,7 @@ class InProcessRuntime implements RuntimeDriver {
           .join("\n"),
       startSnapshot: () => {
         if (this.sessionMode === "simulate") return { success: false, output: "Use Play or Preview Build to record diagnostics." };
+        if (this.diagnosticRecorder?.busy) return { success: false, output: "Stop the current profile or frame capture first." };
         this.trace.start({ seed: this.seed, dt: this.dt });
         this.lastTrace = null;
       },
@@ -5925,6 +5934,7 @@ class InProcessRuntime implements RuntimeDriver {
   stop(): void {
     if (this.stopped) return;
     this.stopped = true;
+    this.diagnosticRecorder?.stop();
     if (this.inspectorRequests.length) this.flushInspectorRequests();
     this.flushBoundaryRequests();
     this.pendingPauseChanges.clear();
@@ -6023,6 +6033,13 @@ class InProcessRuntime implements RuntimeDriver {
       queueMicrotask(() => this.flushBoundaryRequests());
     }
     return result;
+  }
+
+  requestDiagnosticOperation(request: DiagnosticOperationRequest): Promise<DiagnosticOperationResult> {
+    this.diagnosticRecorder ??= new RuntimeDiagnosticRecorder({ generation: this.sessionGeneration, mode: this.sessionMode,
+      enabled: this.diagnosticsEnabled, traceActive: () => this.trace.isRecording, now: nowMs, emit: command => this.emit(command) });
+    if (this.stopped) this.diagnosticRecorder.stop();
+    return this.diagnosticRecorder.request(request);
   }
 
   private inspectorActorReady(actor: Actor): boolean {
@@ -6172,10 +6189,16 @@ class InProcessRuntime implements RuntimeDriver {
   tick(): void {
     if (!this.running || this.paused || this.saveBoundaryActive || this.streamBlockingCount > 0 || this.processingTick) return;
     this.processingTick = true;
+    const profiling = this.diagnosticRecorder?.recording === true;
+    const profileStarted = profiling ? nowMs() : 0;
+    const previousTick = profiling ? this.world.clock.tickIndex : 0;
+    if (profiling) this.profileTickPublishMs = 0;
     try {
       this.runTick();
     } finally {
       this.processingTick = false;
+      if (profiling && this.world.clock.tickIndex > previousTick) this.diagnosticRecorder?.record(this.world.clock.tickIndex,
+        nowMs() - profileStarted, this._lastScriptMs, this._lastPhysicsMs, this.profileTickPublishMs);
       if (this.pendingPauseChanges.size) {
         for (const [reason, paused] of this.pendingPauseChanges) this.setPauseReason(reason, paused);
         this.pendingPauseChanges.clear();
@@ -6460,6 +6483,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.runPublishPrelude();
     this.writeSnapshot(this.frameId, this.world.clock.tickIndex, this._lastScriptMs, this._lastPhysicsMs);
     this._lastPublishMs = nowMs() - start;
+    if (this.diagnosticRecorder?.recording) this.profileTickPublishMs += this._lastPublishMs;
   }
 
   /** Per-tick part of a deferred publish: overlay layout, removals and their commands happen in this tick. */
@@ -6472,7 +6496,9 @@ class InProcessRuntime implements RuntimeDriver {
     header.scriptMs = this._lastScriptMs;
     header.physicsMs = this._lastPhysicsMs;
     this.snapshotWritePending = true;
-    this.pendingPublishMs += nowMs() - start;
+    const publishMs = nowMs() - start;
+    this.pendingPublishMs += publishMs;
+    if (this.diagnosticRecorder?.recording) this.profileTickPublishMs += publishMs;
   }
 
   /**
@@ -6495,7 +6521,9 @@ class InProcessRuntime implements RuntimeDriver {
     else this.applyOverlayLayouts();
     const header = this.pendingSnapshotHeader;
     this.writeSnapshot(header.frameId, header.tickIndex, header.scriptMs, header.physicsMs);
-    this._lastPublishMs = spent + (nowMs() - start);
+    const publishMs = nowMs() - start;
+    this._lastPublishMs = spent + publishMs;
+    this.diagnosticRecorder?.addPublishCost(header.tickIndex, publishMs);
   }
 
   /**

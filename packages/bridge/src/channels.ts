@@ -117,6 +117,7 @@ export type ScriptBundleEntry = {
 };
 
 export type ControlMessage =
+  | ({ type: "diagnosticOperation" } & import("./diagnostic-operation").DiagnosticOperationRequest)
   | ({ type: "runtimeInspector" } & import("./runtime-inspector").RuntimeInspectorRequest)
   | ({ type: "sessionBoundary" } & SessionBoundaryRequest)
   | { type: "saveStorageResponse"; response: import("@babylonslate/core").SaveStorageResponse }
@@ -375,6 +376,9 @@ export type DebugBehaviourTree = {
 };
 
 export type CommandMessage =
+  | ({ type: "diagnosticOperationResult" } & import("./diagnostic-operation").DiagnosticOperationResult)
+  | ({ type: "performanceTicks" } & import("./diagnostic-operation").PerformanceTickChunk)
+  | { type: "diagnosticOperationStopped"; sessionGeneration: number; recordingId: string; kind: "profile" | "frame"; reason: "requested" | "duration" | "budget" | "session-ended" }
   | ({ type: "runtimeInspectorResult" } & import("./runtime-inspector").RuntimeInspectorResult)
   | { type: "resetActorInterpolation"; actorGuid: string; slotId: number; frameId: number }
   | ({ type: "sessionBoundaryResult" } & SessionBoundaryResult)

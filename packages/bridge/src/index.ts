@@ -53,3 +53,5 @@ export {
 export { dynamicMeshTransferables } from "./dynamic-mesh-transfers";
 
 export type { RuntimeObjectIdentity, RuntimeInspectorValue, RuntimePropertyCapability, RuntimePropertyDescriptor, RuntimeIdentityRow, RuntimeIdentityCursor, RuntimeInspectorAction, RuntimeInspectorRequest, RuntimeInspectorPayload, RuntimeInspectorResult } from "./runtime-inspector";
+
+export type { DiagnosticOperation, DiagnosticOperationRequest, DiagnosticOperationResult, PerformanceTickChunk } from "./diagnostic-operation";

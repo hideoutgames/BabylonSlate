@@ -784,3 +784,17 @@ updates affected descendants, and publishes a new presentation frame identity wi
 an interpolation reset while keeping the simulation tick unchanged. Runtime edits
 remain outside authoring history; final scene persistence has its own full-state
 capture contract, independent of the Inspector's writable subset.
+
+Runtime timing collection uses an explicit `diagnosticOperation` lease, correlated
+by session generation, request ID and recording ID. Profile, frame capture and trace
+recording exclude one another at runtime dispatch. Simulation and release builds
+reject these operations. A profile allocates one 256-row numeric buffer, sends at
+most one transferable chunk per 200 ms plus its final flush, and stops on duration,
+numeric-byte budget or session end, including while gameplay is paused. Overflowed
+rows are counted. Disabled sessions create no recorder buffers or timers.
+
+Tick records contain the actual tick ID, runtime-local recording elapsed time, and
+separate script, physics, snapshot-publication and remaining tick wall durations.
+Deferred publication work is attributed to the tick whose final snapshot is written;
+per-tick preparation remains on its own tick. These streams are never summed with
+concurrent host rendering time or aligned by subtracting Worker and host clocks.

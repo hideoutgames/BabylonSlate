@@ -48,6 +48,10 @@ let pendingGeneration: number | null = null;
 let stopConsoleCapture: (() => void) | null = null;
 
 function onCommand(command: CommandMessage): void {
+  if (command.type === "performanceTicks") {
+    postMessage({ channel: "command", payload: command }, [command.rows.buffer as ArrayBuffer]);
+    return;
+  }
   if (sceneSnapshots.receive(command)) return;
   const geometryTransfers = dynamicMeshTransferables(command);
   if (geometryTransfers) {
@@ -87,6 +91,16 @@ const pauseGate = createPlayPauseGate({
 
 function handleControl(msg: ControlMessage): void {
   switch (msg.type) {
+    case "diagnosticOperation": {
+      const rt = runtime;
+      if (!rt) {
+        onCommand({ type: "diagnosticOperationResult", sessionGeneration: msg.sessionGeneration, requestId: msg.requestId,
+          recordingId: msg.operation.recordingId, success: false, reason: "Runtime is unavailable." });
+        return;
+      }
+      void rt.requestDiagnosticOperation(msg).then(result => onCommand({ type: "diagnosticOperationResult", ...result }));
+      return;
+    }
     case "runtimeInspector": {
       const rt = runtime;
       if (!rt) {
