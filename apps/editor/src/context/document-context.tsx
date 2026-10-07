@@ -41,11 +41,13 @@ import {
   readJournalLines,
   readThumbnail,
   writeThumbnail,
+  upgradeTextureThumbnail,
   ThumbnailDecodeLru,
   truncateJournal,
   clearDeletedAssetRefs,
   clearDeletedRefsFromProjectSettings,
   replaceClassAssetReferences,
+  renamedAssetPath,
   type ClassAssetReplacement,
   type AssetRegistry,
   type MigrationPending,
@@ -193,6 +195,7 @@ import {
 import { editorKtx2PublicBase } from "../lib/public-engine-assets";
 import {
   classDocumentShowsPrefab,
+  classIdFromClassAsset,
   classParentLookup,
   materialDomainsFromAssets,
 } from "../lib/content-browser-helpers";
@@ -354,6 +357,7 @@ interface DocumentContextValue {
     oldPath: string,
     newPath: string,
   ) => void;
+  renameAsset: ProjectService["renameAsset"];
   /** Document opens and renames, for session state keyed by document id. */
   subscribeDocumentIdentity: (listener: DocumentIdentityListener) => () => void;
   retryFailedTextureEncoding: () => Promise<number>;
@@ -412,6 +416,7 @@ interface DocumentContextValue {
   /** Recomputed only when a document revision advances. */
   dirtyDocuments: OpenDocument[];
   projectDirty: boolean;
+  autoSaveStatus: { state: "saving" | "saved" | "error"; message?: string } | null;
   migrationPending: MigrationPending[];
   templates: ProjectTemplate[];
   homepageReady: boolean;
@@ -873,6 +878,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     () => new Set(),
   );
   const saveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [autoSaveStatus, setAutoSaveStatus] = useState<DocumentContextValue["autoSaveStatus"]>(null);
   // Keyed by saved revision, and projects made from one template share guids:
   // enterEditor replaces it so one project never shows another's thumbnails.
   const thumbnailLruRef = useRef(new ThumbnailDecodeLru(THUMBNAIL_DECODE_LRU_ENTRIES));
@@ -887,6 +893,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const [listedProjects, setListedProjects] = useState<ListedProject[]>([]);
   const [needsReconnect, setNeedsReconnect] = useState(false);
   const [recoveryAvailable, setRecoveryAvailable] = useState(false);
+  const [recoveryRequested, setRecoveryRequested] = useState(false);
   const [migrationPending, setMigrationPending] = useState<MigrationPending[]>(
     [],
   );
@@ -1908,6 +1915,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         }),
       );
       projectSaveState.current.complete(projectSave);
+      setAutoSaveStatus(null);
       flushSync(() => {
         bump();
       });
@@ -1947,9 +1955,25 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       projectDocumentRef.current?.settings.autoSaveIntervalMs ?? 120_000;
     saveDebounceRef.current = setTimeout(() => {
       saveDebounceRef.current = null;
-      void saveProject();
+      const guid = projectService.guid;
+      setAutoSaveStatus({ state: "saving" });
+      void saveProject().then(
+        (saved) => {
+          if (projectService.guid !== guid) return;
+          setAutoSaveStatus(saved
+            ? { state: "saved" }
+            : { state: "error", message: "Auto-Save Paused. Use Save All to review the pending changes." });
+        },
+        (error: unknown) => {
+          if (projectService.guid !== guid) return;
+          setAutoSaveStatus({
+            state: "error",
+            message: `Auto-Save Failed: ${error instanceof Error ? error.message : String(error)}`,
+          });
+        },
+      );
     }, interval);
-  }, [saveProject]);
+  }, [projectService, saveProject]);
 
   const setShowPluginContent = useCallback(
     (show: boolean) => {
@@ -2012,6 +2036,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const saveAll = saveProject;
 
   const forceCloseProject = useCallback(async () => {
+    setAutoSaveStatus(null);
     cancelSceneDocumentLoad();
     if (saveDebounceRef.current) {
       clearTimeout(saveDebounceRef.current);
@@ -2205,9 +2230,17 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setRecoveryAvailable(false);
   }, [ensureDerived, journalBuffer, projectService]);
 
-  const keepRecovery = useCallback(async () => {
-    await replayRecoveryJournal();
-  }, [replayRecoveryJournal]);
+  const keepRecovery = useCallback(() => {
+    setRecoveryRequested(true);
+  }, []);
+
+  // A scene read replaces the current scene at commit. Replay only after that
+  // read settles, so it cannot close the scene we have just recovered.
+  useEffect(() => {
+    if (!recoveryRequested || sceneDocumentLoad) return;
+    setRecoveryRequested(false);
+    void replayRecoveryJournal();
+  }, [recoveryRequested, replayRecoveryJournal, sceneDocumentLoad]);
 
   const closeDocument = useCallback(
     (id: string) => {
@@ -2316,6 +2349,42 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       else documentService.replaceLoadedContent(doc.id, content);
     }
     bump();
+  }, [bump, collectGraphTypeSchemas, documentService, projectService, setProjectDocument]);
+
+  const renameAsset = useCallback(async (guid: string, newName: string) => {
+    const registry = projectService.registry;
+    const before = registry?.getByGuid(guid);
+    if (!registry || !before) throw new Error("The asset is unavailable.");
+    const nextPath = renamedAssetPath(before.path, newName);
+    const replacements: ClassAssetReplacement[] = before.header.type === "Class" || before.header.type === "Graph"
+      ? [{ guid, classId: classIdFromClassAsset(before), replacement: { guid, classId: classIdFromClassAsset({ ...before, path: nextPath }) } }]
+      : [];
+    const schemas = collectGraphTypeSchemas();
+    const openChanges = documentService.getOpenDocumentsOrdered().flatMap((doc) => {
+      if (!doc.content || doc.ref.kind === "content-browser" || doc.ref.kind === "trace") return [];
+      const walked = replaceClassAssetReferences(doc.content, replacements, (definitionGuid) => schemas.structs?.[definitionGuid]?.fields);
+      if (!walked.changed) return [];
+      const asset = registry.list().find((entry) => entry.path === doc.ref.path);
+      if ((asset && registry.getRoot(asset.rootId)?.readOnly) || isPluginDocumentReadOnly(projectService.plugins, doc.ref.path)) {
+        throw new Error(`${doc.ref.path} is read-only and still references this Class.`);
+      }
+      return [{ doc, content: walked.value }];
+    });
+    const renamed = await projectService.renameAsset(guid, newName);
+    for (const { doc, content } of openChanges) {
+      if (doc.dirty) documentService.patchLoadedContent(doc.id, content);
+      else documentService.replaceLoadedContent(doc.id, content);
+      // Content Browser file operations are not undoable. Old edit commands
+      // must not reintroduce the Class id that no longer exists.
+      editSessionRef.current.dropDocument(doc.id);
+    }
+    const current = projectDocumentRef.current;
+    if (current && replacements.length) {
+      const settings = replaceClassAssetReferences(current.settings, replacements);
+      if (settings.changed) setProjectDocument({ ...current, settings: settings.value });
+    }
+    bump();
+    return renamed;
   }, [bump, collectGraphTypeSchemas, documentService, projectService, setProjectDocument]);
 
   const repairAfterAssetDelete = useCallback(
@@ -3947,7 +4016,18 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       const cached = lru.get(key);
       if (cached) return cached;
       const derived = await ensureDerived();
-      const bytes = await readThumbnail(derived, guid, key);
+      let bytes = await readThumbnail(derived, guid, key);
+      if (projectService.guid !== guid || thumbnailLruRef.current !== lru) return null;
+      if (asset?.header.type === "Texture") {
+        const pixels = asset.header.chunks.find((chunk) => chunk.id === "pixels" || chunk.kind === "pixels");
+        if (pixels) {
+          const upgraded = await upgradeTextureThumbnail(bytes, pixels.mime, () =>
+            projectService.readAssetChunk(asset.path, pixels.id));
+          if (projectService.guid !== guid || thumbnailLruRef.current !== lru) return null;
+          if (upgraded && upgraded !== bytes) await writeThumbnail(derived, guid, key, upgraded);
+          bytes = upgraded;
+        }
+      }
       if (projectService.guid !== guid || thumbnailLruRef.current !== lru ||
         thumbnailRevisionIndexRef.current.revision(assetGuid) !== revision) return null;
       if (bytes) lru.set(key, bytes);
@@ -4683,6 +4763,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       exportPlugin,
       importPlugin,
       repathDocument,
+      renameAsset,
       subscribeDocumentIdentity,
       retryFailedTextureEncoding,
       prepareAreaEmission,
@@ -4791,6 +4872,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       exportPlugin,
       importPlugin,
       repathDocument,
+      renameAsset,
       subscribeDocumentIdentity,
       retryFailedTextureEncoding,
       prepareAreaEmission,
@@ -4967,6 +5049,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         recoveryAvailable,
         dirtyDocuments,
         projectDirty: projectSaveState.current.isDirty(projectDocument),
+        autoSaveStatus,
         migrationPending,
         templates,
         homepageReady,
@@ -5016,6 +5099,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       tabsRevision,
       tabOrder,
       dirtyDocuments,
+      autoSaveStatus,
       currentGraphSignature,
       route,
       projectDocument,

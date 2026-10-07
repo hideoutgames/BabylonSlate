@@ -11,7 +11,9 @@ import {
   type SerializedGraph,
   type SerializedScene,
 } from "@babylonslate/core";
-import { OpfsStorageAdapter } from "@babylonslate/vfs";
+import { OpfsStorageAdapter, createDerivedStorage } from "@babylonslate/vfs";
+import { appendJournalLines } from "@babylonslate/assets";
+import { SetSceneNameCommand, commandToJournalPayload, serializeJournalLine } from "@babylonslate/edit";
 import { createProjectAsset } from "../lib/create-project-asset";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 import type { OpenDocument } from "../services/document-service";
@@ -151,6 +153,59 @@ afterEach(async () => {
 });
 
 describe("DocumentProvider actions and route", () => {
+  it("replays a recovery request after an in-flight scene read settles", async () => {
+    const actions = await openProject();
+    const target = await createScene(actions, "RecoverTarget");
+    const targetId = documentId({ kind: "scene", path: target.path });
+    await act(() => actions.saveAll());
+    await appendJournalLines(await createDerivedStorage(), documents().projectGuid!, [serializeJournalLine({
+      v: 1, docId: targetId, at: new Date().toISOString(),
+      command: commandToJournalPayload(new SetSceneNameCommand("RecoverTarget", "Recovered Scene")),
+    })]);
+    let finishRead!: () => void;
+    const heldRead = new Promise<void>((resolve) => { finishRead = resolve; });
+    const realLoad = ProjectService.prototype.loadDocument;
+    let started = false;
+    const read = vi.spyOn(ProjectService.prototype, "loadDocument").mockImplementation(async function(kind, path) {
+      if (path === target.path) {
+        started = true;
+        await heldRead;
+      }
+      return realLoad.call(this, kind, path);
+    });
+    let opening!: Promise<unknown>;
+    try {
+      act(() => { opening = actions.openDocument(sceneRef(target.path)); });
+      await waitFor(() => expect(started).toBe(true));
+      act(() => actions.keepRecovery());
+      expect(documents().openDocuments.some((doc) => doc.id === targetId)).toBe(false);
+      await act(async () => { finishRead(); await opening; });
+      await waitFor(() => expect(openScene(targetId).name).toBe("Recovered Scene"));
+      expect(documents().dirtyDocuments.some((doc) => doc.id === targetId)).toBe(true);
+    } finally {
+      finishRead();
+      read.mockRestore();
+    }
+  });
+
+  it("keeps an open scene's unsaved edits and Class binding after renaming its Class", async () => {
+    const actions = await openProject();
+    const registry = documents().assetRegistry!;
+    const asset = await act(() => createProjectAsset({ registry, rootId: "project", folderRelative: "", type: "Class", name: "Hero" }));
+    act(() => actions.noteAssetsCreated());
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    const original = openScene(MAIN_SCENE_ID);
+    const edited = { ...original, actors: [...original.actors, createActor("hero", "Unsaved Hero", { classId: "Hero" })] };
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, edited));
+    await act(() => actions.renameAsset(asset.header.guid, "Champion"));
+    expect(openScene(MAIN_SCENE_ID).actors.find(actor => actor.id === "hero")).toMatchObject({ name: "Unsaved Hero", classId: "Champion" });
+    expect(documents().dirtyDocuments.some(doc => doc.id === MAIN_SCENE_ID)).toBe(true);
+    await act(() => actions.saveAll());
+    const saved = await actions.loadAssetDocument("scene", MAIN_SCENE_FILE) as SerializedScene;
+    expect(saved.actors.find(actor => actor.id === "hero")?.classId).toBe("Champion");
+    expect(documents().assetRegistry?.getByGuid(asset.header.guid)?.path).toBe("assets/Champion.class.babasset");
+  });
+
   it.each(["delete", "replace"] as const)("repairs nested data defaults in open documents during Class %s using live and saved schemas", async (operation) => {
     const actions = await openProject();
     const registry = documents().assetRegistry!;
@@ -489,4 +544,26 @@ describe("DocumentProvider closed document history", () => {
     expect(documents().canUndoActiveDocument).toBe(false);
     expect(documents().canRedoActiveDocument).toBe(false);
   });
+
+  it("reports failed automatic saves and saves retained edits on the next attempt", async () => {
+    const actions = await openProject();
+    await act(() => actions.saveAll());
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const save = vi.spyOn(ProjectService.prototype, "saveProject").mockRejectedValueOnce(new Error("Storage unavailable"));
+    try {
+      await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 2)));
+      await act(() => vi.advanceTimersByTimeAsync(120_000));
+      expect(documents().autoSaveStatus).toMatchObject({ state: "error", message: expect.stringContaining("Storage unavailable") });
+      expect(documents().dirtyDocuments.length > 0 || documents().projectDirty).toBe(true);
+      await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 2)));
+      await act(() => vi.advanceTimersByTimeAsync(120_000));
+      expect(documents().autoSaveStatus).toEqual({ state: "saved" });
+      expect(documents().dirtyDocuments).toHaveLength(0);
+      expect(documents().projectDirty).toBe(false);
+    } finally {
+      save.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
 });
