@@ -56,7 +56,7 @@ export async function convertFbxToGlb(
     try {
       container = await loader.loadAssetContainerAsync(scene, file.bytes.slice().buffer, SIDECAR_ROOT);
     } catch (error) {
-      throw new Error(`FBX conversion failed: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(`FBX conversion failed: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
     }
     container.addAllToScene();
     for (const texture of container.textures) {
