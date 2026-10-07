@@ -759,9 +759,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     [appendLog, ensureEngine, sessionOwner],
   );
 
-  const closePreview = useCallback(() => {
-    if (sessionTicketRef.current?.mode !== "preview") return;
-    void sessionOwner.stop(sessionTicketRef.current);
+  const finishPreviewPresentation = useCallback(() => {
     previewClosingRef.current = true;
     previewSaveHostRef.current?.dispose();
     previewSaveHostRef.current = null;
@@ -787,6 +785,17 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         setReportOpen(true);
       }
     }, 100);
+  }, []);
+
+  const closePreview = useCallback(() => {
+    if (sessionTicketRef.current?.mode === "preview") void sessionOwner.stop(sessionTicketRef.current);
+  }, [sessionOwner]);
+
+  const registerPreviewBeforeStop = useCallback((beforeStop: () => Promise<void>) => {
+    const ticket = sessionTicketRef.current;
+    if (!ticket || ticket.mode !== "preview") return () => {};
+    const attached = sessionOwner.setBeforeStop(ticket, async () => { await beforeStop(); return true; });
+    return () => { if (attached) sessionOwner.setBeforeStop(ticket, async () => true); };
   }, [sessionOwner]);
 
   const sendPreviewPack = useCallback(() => {
@@ -984,15 +993,12 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         // The iframe owns a separate Engine. Its passive unmount callback
         // confirms browsing-context destruction; a timer does not.
         const frame = previewIframeRef.current;
-        frame?.contentWindow?.postMessage({ type: PREVIEW_STOP_MESSAGE }, previewOriginRef.current);
-        previewSaveHostRef.current?.dispose();
-        previewSaveHostRef.current = null;
         const released = new Promise<{ textureCountAfter: number; textureLeak: boolean; quarantined: boolean }>((resolve) => {
           const detached = () => resolve({ textureCountAfter: 0, textureLeak: false, quarantined: false });
           if (!frame?.isConnected) detached();
           else previewReleaseRef.current = detached;
         });
-        setPreviewOpen(false);
+        finishPreviewPresentation();
         return {
           diagnostics: [], droppedDiagnostics: 0, textureCountBefore: 0,
           released,
@@ -1013,7 +1019,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         if (sessionOwner.getSnapshot().lifecycle === "preparing") void sessionOwner.stop(ticket);
       }
     }
-  }, [appendLog, appSettings.traceByteBudget, playFromScene, sessionOwner]);
+  }, [appendLog, appSettings.traceByteBudget, playFromScene, sessionOwner, finishPreviewPresentation]);
 
   const requestPlay = useCallback(
     async (options?: PlayOptions) => {
@@ -1945,6 +1951,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             onDetached={() => { previewReleaseRef.current?.(); previewReleaseRef.current = null; }}
             error={previewError}
             onClose={closePreview}
+            registerBeforeStop={registerPreviewBeforeStop}
             onLoad={sendPreviewPack}
             onTrace={(trace) => void openRecordedTrace(trace)}
           />
