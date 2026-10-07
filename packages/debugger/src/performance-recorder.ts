@@ -216,7 +216,7 @@ export function parsePerformanceProfile(value: unknown): PerformanceProfile | nu
     }
     if (count !== input.count) return null;
     return { columns, count, chunks: input.chunks.map((chunk) => chunk instanceof Float64Array
-      ? chunk : Float64Array.from(chunk, (number) => number === null ? NaN : number)) };
+      ? chunk : Float64Array.from(chunk, (number) => number === null ? NaN : Number(number))) };
   };
   const frames = parseStream(data.frames, PERFORMANCE_FRAME_COLUMNS);
   const ticks = frames && parseStream(data.ticks, PERFORMANCE_TICK_COLUMNS);

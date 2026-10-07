@@ -13,7 +13,7 @@ import { TraceEmptyState } from "./trace-inspection-controls";
 
 const format = (value: number | null | undefined) => value == null || !Number.isFinite(value) ? "Unavailable" : value.toFixed(3);
 const textRows = (data: Record<string, unknown>): PropertyRow[] => Object.entries(data).map(([id, value]) => ({
-  kind: "text", id, label: id, value: value == null ? "Unavailable" : typeof value === "string" ? value : JSON.stringify(value), selectableText: true,
+  kind: "text", id, label: id, value: value == null ? "Unavailable" : typeof value === "string" ? value : JSON.stringify(value), readOnly: true, onChange: () => {},
 }));
 function rowAt(stream: PerformanceStream, index: number): number[] {
   let offset = index * stream.columns.length;
@@ -93,7 +93,7 @@ export function FrameReportView({ report }: { report: RenderFrameReport }) {
   const handles = new Set(task?.passes.flatMap(pass => [...(pass.colorTargets ?? []), ...(pass.depthTarget == null ? [] : [pass.depthTarget])]) ?? []);
   return <div className="flex flex-col gap-3 p-2">
     <p><SelectableText>Frame {report.frame.renderFrameId} · Tick {report.frame.tickId} · {report.frame.backend} · {report.frame.width} × {report.frame.height} · {report.complete ? "Complete" : "Incomplete"} · {report.droppedRecords} dropped records</SelectableText></p>
-    <SearchInput value={query} onChange={event => setQuery(event.target.value)} placeholder="Search executed stages" aria-label="Search executed stages" />
+    <SearchInput value={query} onChange={setQuery} placeholder="Search executed stages" aria-label="Search executed stages" />
     <div className="grid min-h-0 gap-3 sm:grid-cols-2"><div className="max-h-80 overflow-auto" role="list" aria-label="Executed frame stages">
       {stages.map(entry => <Button key={entry.id} variant="ghost" size="sm" className="w-full justify-start pointer-coarse:min-h-11" aria-pressed={selected === entry.id} onClick={() => setSelected(entry.id)}>
         {entry.id + 1}. {entry.name} · {entry.kind} · {format(entry.submissionMs)} ms</Button>)}
