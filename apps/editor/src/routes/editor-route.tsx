@@ -159,7 +159,7 @@ function RecoveryBanner() {
     >
       <AlertTitle>Recovery journal found</AlertTitle>
       <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
-        <span>Replay unsaved graph edits, or discard the journal.</span>
+        <span>Replay unsaved document edits, or discard the journal.</span>
         <div className="flex gap-2">
           <Button
             data-testid="recover-journal"
@@ -429,6 +429,11 @@ function PlayAwareKeybinds({ children }: { children: ReactNode }) {
   return <KeybindProvider suspended={playing}>{children}</KeybindProvider>;
 }
 
+function DocumentValidationProvider({ children }: { children: ReactNode }) {
+  const { activeDocumentId } = useDocuments();
+  return <ValidationProvider scopeKey={activeDocumentId ?? undefined}>{children}</ValidationProvider>;
+}
+
 export default function EditorRoute({
   gallery = false,
 }: {
@@ -447,7 +452,7 @@ export default function EditorRoute({
         <AssetCreateDocumentsProvider>
           <TagDocumentsProvider>
             <GraphPinDefaultsProvider>
-              <ValidationProvider>
+              <DocumentValidationProvider>
                 <PlayProvider>
                   <MaterialRenderControlProvider>
                     <EditorUtilityRuntime />
@@ -464,7 +469,7 @@ export default function EditorRoute({
                     </ProjectSearchProvider>
                   </MaterialRenderControlProvider>
                 </PlayProvider>
-              </ValidationProvider>
+              </DocumentValidationProvider>
             </GraphPinDefaultsProvider>
           </TagDocumentsProvider>
         </AssetCreateDocumentsProvider>

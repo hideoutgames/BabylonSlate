@@ -1478,6 +1478,20 @@ describe("validateGraphs", () => {
       graph.nodes.unshift({ id: "begin", typeId: "flow.event.beginPlay", position: { x: 0, y: 0 }, properties: {}, pins: [pin("execOut", "then", "out", EXEC)] });
       graph.edges.push({ id: "start", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "a", targetPinId: "execIn" });
     }
+    const diagnostics = validateGraphs([graph], { assetGuid: "a" });
+    expect(diagnostics.filter((row) => row.severity === "error")).toEqual([]);
+    expect(diagnostics.some((row) => row.code === "exec.cycle")).toBe(connected);
+  });
+
+  it("warns on a reachable While Loop with a constant True condition", () => {
+    const graph: LogicGraph = {
+      id: "g", kind: "event", nodes: [flowEntry(), {
+        id: "while", typeId: "flow.whileLoop", position: { x: 0, y: 0 },
+        properties: { condition: true }, pins: [pin("execIn", "exec", "in", EXEC), pin("condition", "Condition", "in", BOOL), pin("loopBody", "Loop Body", "out", EXEC)],
+      }], edges: [execThen("entry", "while")],
+    };
+    expect(validateGraphs([graph], { assetGuid: "a" })).toContainEqual(expect.objectContaining({ code: "flow.constant_loop", nodeId: "while", severity: "warning" }));
+    graph.nodes[1]!.properties.condition = false;
     expect(validateGraphs([graph], { assetGuid: "a" })).toEqual([]);
   });
 

@@ -54,5 +54,6 @@ When adding a new `docs/**/*.md` file, add a sidebar entry in [`apps/docs/src/si
 | [agents/issue-tracker.md](agents/issue-tracker.md) | Issue and spec workflow for agents |
 | [development/distribution.md](development/distribution.md) | Explicit native distribution, versioning, setup, and recovery |
 | [agents/qa-2026-09-register.md](agents/qa-2026-09-register.md) | September exploratory QA dispositions, evidence and implementation results |
+| [agents/qa-2026-10-retest.md](agents/qa-2026-10-retest.md) | October QA retest dispositions and remaining verification boundaries |
 
 When implementing a feature, start with **engineplan.md** for the spec, then the narrower docs above as they land.

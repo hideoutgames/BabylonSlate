@@ -106,9 +106,15 @@ describe("ColorField", () => {
     const alpha = screen.getByRole("textbox", { name: "Tint Alpha" }) as HTMLInputElement;
     expect(alpha.value).toBe("0.5");
     fireEvent.change(alpha, { target: { value: "2" } });
+    expect(onAlphaChange).not.toHaveBeenCalled();
+    expect(alpha.value).toBe("2");
+    fireEvent.blur(alpha);
     expect(onAlphaChange).toHaveBeenLastCalledWith(1);
+    expect(screen.getByRole("status").textContent).toContain("1");
+    expect(alpha.getAttribute("aria-describedby")).toBe(screen.getByRole("status").id);
     fireEvent.change(alpha, { target: { value: "0.2" } });
     expect(onAlphaChange).toHaveBeenLastCalledWith(0.2);
+    expect(screen.queryByRole("status")).toBeNull();
   });
 
   it("commits from the native color picker", () => {

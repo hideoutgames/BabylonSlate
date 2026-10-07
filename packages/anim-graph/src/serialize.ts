@@ -319,14 +319,28 @@ export function serializedToAnimGraph(
   graph: SerializedGraph,
   previous: AnimGraphDocument = createDefaultAnimGraph(),
 ): AnimGraphDocument {
-  const states = graph.nodes.map((node, index) => ({
-    id: node.id,
-    name: typeof node.data.title === "string" ? node.data.title : node.id,
-    clipId: typeof node.data.clipId === "string" ? node.data.clipId : null,
-    speed: typeof node.data.speed === "number" ? node.data.speed : 1,
-    loop: node.data.loop !== false,
-    position: node.position ?? defaultAnimStatePosition(index),
-  }));
+  const existingIds = new Set(previous.states.map((state) => state.id));
+  const names = new Set(graph.nodes.filter((node) => existingIds.has(node.id))
+    .map((node) => String(node.data.title ?? node.id).trim().toLowerCase()));
+  const states = graph.nodes.map((node, index) => {
+    let name = typeof node.data.title === "string" ? node.data.title : node.id;
+    // Palette additions and pasted states share a title. Allocate a fresh label
+    // while leaving explicitly renamed existing states for validation to explain.
+    if (!existingIds.has(node.id)) {
+      const base = name.trim() || "State";
+      name = base;
+      let suffix = 2;
+      while (names.has(name.toLowerCase())) name = `${base} ${suffix++}`;
+      names.add(name.toLowerCase());
+    }
+    return {
+      id: node.id, name,
+      clipId: typeof node.data.clipId === "string" ? node.data.clipId : null,
+      speed: typeof node.data.speed === "number" ? node.data.speed : 1,
+      loop: node.data.loop !== false,
+      position: node.position ?? defaultAnimStatePosition(index),
+    };
+  });
   const entry =
     graph.nodes.find((node) => node.data.entry === true)?.id ??
     states[0]?.id ??

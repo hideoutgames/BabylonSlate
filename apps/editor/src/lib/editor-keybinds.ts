@@ -40,6 +40,8 @@ const COMMAND_LIST = [
   { id: "viewport.toggleDragSelect", label: "Toggle Drag Select", category: "Viewport", defaultChords: ["Q"] },
   { id: "viewport.toggleMode", label: "Switch 2D / 3D", category: "Viewport", defaultChords: ["Alt+V"] },
   { id: "viewport.drop", label: "Drop Selection", category: "Viewport", defaultChords: ["End"] },
+  { id: "edit.copy", label: "Copy Actors", category: "Editing", defaultChords: ["Mod+C"] },
+  { id: "edit.paste", label: "Paste Actors", category: "Editing", defaultChords: ["Mod+V"] },
   { id: "edit.duplicate", label: "Duplicate", category: "Editing", defaultChords: ["Mod+D"] },
   { id: "edit.rename", label: "Rename", category: "Editing", defaultChords: ["F2"] },
   { id: "edit.delete", label: "Delete", category: "Editing", defaultChords: ["Delete", "Backspace"] },

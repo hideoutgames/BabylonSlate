@@ -72,11 +72,22 @@ describe("GradientField", () => {
     const lastStops = () => onChange.mock.lastCall?.[0] as GradientStop[];
 
     selectStop(1);
-    const location = screen.getByRole("textbox", { name: "Color Stop 2 Location" });
+    const location = screen.getByRole("textbox", { name: "Color Stop 2 Location" }) as HTMLInputElement;
     fireEvent.change(location, { target: { value: "2" } });
+    expect(onChange).not.toHaveBeenCalled();
+    expect(location.value).toBe("2");
+    fireEvent.blur(location);
     expect(lastStops()[1]!.t).toBe(0.99);
+    expect(location.value).toBe("0.99");
+    expect(screen.getByRole("status").textContent).toContain("0.99");
+    expect(location.getAttribute("aria-describedby")).toBe(screen.getByRole("status").id);
+    onChange.mockClear();
     fireEvent.change(location, { target: { value: "-1" } });
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.blur(location);
     expect(lastStops()[1]!.t).toBe(0.01);
+    expect(location.value).toBe("0.01");
+    expect(screen.getByRole("status").textContent).toContain("0.01");
 
     fireEvent.keyDown(screen.getByTestId("color-stop-0"), { key: "ArrowRight", shiftKey: true });
     expect(lastStops()[0]!.t).toBe(0);

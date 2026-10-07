@@ -105,6 +105,10 @@ export function ContentBrowserAssetTile({
                 alt=""
                 data-testid={`content-item-thumb-${asset.header.guid}`}
                 className="size-full object-cover"
+                style={asset.header.type === "Texture" ? {
+                  backgroundImage: "conic-gradient(var(--muted) 0.25turn, var(--background) 0.25turn 0.5turn, var(--muted) 0.5turn 0.75turn, var(--background) 0.75turn)",
+                  backgroundSize: "12px 12px",
+                } : undefined}
               />
             ) : (
               <TypeVisualIcon

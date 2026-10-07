@@ -1,5 +1,5 @@
 import { useCallback, useId, useRef, useState, type PointerEvent } from "react";
-import { FieldError } from "@babylonslate/ui/components/field";
+import { FieldDescription, FieldError } from "@babylonslate/ui/components/field";
 import { GripVerticalIcon } from "lucide-react";
 import { cn } from "@babylonslate/ui/lib/utils";
 import {
@@ -23,6 +23,8 @@ export interface NumericDragFieldProps {
   step?: number;
   min?: number;
   max?: number;
+  /** Additional constraints; invalid typed values are retained as drafts only. */
+  validate?: (value: number) => string | undefined;
   disabled?: boolean;
   onChange: (value: number) => void;
   /** Fired once when a scrub ends, so callers can commit one undo entry. */
@@ -53,6 +55,7 @@ export function NumericDragField({
   precision = 2,
   min,
   max,
+  validate,
   disabled = false,
   onChange,
   onDragEnd,
@@ -68,14 +71,17 @@ export function NumericDragField({
   const [dragging, setDragging] = useState(false);
   const [draft, setDraft] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const errorId = useId();
   const baselineRef = useRef(value);
+  const cancelledRef = useRef(false);
   const selectAll = useSelectAllOnActivate();
 
   const onPointerDown = useCallback(
     (event: PointerEvent<HTMLSpanElement>) => {
       if (disabled) return;
       setError(null);
+      setNotice(null);
       dragRef.current = {
         pointerId: event.pointerId,
         startX: event.clientX,
@@ -94,10 +100,11 @@ export function NumericDragField({
       if (!drag || drag.pointerId !== event.pointerId) return;
       const delta = (event.clientX - drag.startX) * sensitivity;
       const next = clamp(drag.startValue + delta, min, max);
+      if (validate?.(next)) return;
       drag.latest = next;
       onChange(next);
     },
-    [max, min, onChange, sensitivity],
+    [max, min, onChange, sensitivity, validate],
   );
 
   const endDrag = useCallback(
@@ -158,7 +165,7 @@ export function NumericDragField({
           )}
           aria-label={ariaLabel ?? (label || undefined)}
           aria-invalid={Boolean(error) || undefined}
-          aria-describedby={error ? errorId : undefined}
+          aria-describedby={error || notice ? errorId : undefined}
           data-testid={testId}
           disabled={disabled}
           value={draft ?? (mixed ? "" : formatNumericDisplay(value, precision))}
@@ -168,9 +175,11 @@ export function NumericDragField({
             if (draft === null) baselineRef.current = value;
             setDraft(raw);
             setError(null);
+            setNotice(null);
             const parsed = evaluateNumericExpression(raw, baselineRef.current);
             if (parsed === undefined) return;
-            onChange(clamp(parsed, min, max));
+            if (parsed !== clamp(parsed, min, max) || validate?.(parsed)) return;
+            onChange(parsed);
           }}
           onFocus={selectAll.onFocus}
           onPointerDown={selectAll.onPointerDown}
@@ -178,29 +187,49 @@ export function NumericDragField({
           onMouseUp={selectAll.onMouseUp}
           onKeyDown={(event) => {
             if (
-              event.key !== "Enter" ||
               event.nativeEvent.isComposing ||
               event.keyCode === 229
             )
               return;
-            event.preventDefault();
-            event.currentTarget.blur();
+            if (event.key === "Escape") {
+              event.preventDefault();
+              event.stopPropagation();
+              cancelledRef.current = true;
+              if (draft !== null) onChange(baselineRef.current);
+              setDraft(null);
+              setError(null);
+              setNotice(null);
+              event.currentTarget.blur();
+            } else if (event.key === "Enter") {
+              event.preventDefault();
+              event.currentTarget.blur();
+            }
           }}
           onBlur={() => {
             selectAll.onBlur();
-            if (
-              draft?.trim() &&
-              evaluateNumericExpression(draft, baselineRef.current) ===
-                undefined
-            ) {
+            if (cancelledRef.current) {
+              cancelledRef.current = false;
+              return;
+            }
+            if (draft === null) return;
+            const parsed = evaluateNumericExpression(draft, baselineRef.current);
+            const next = parsed === undefined ? undefined : clamp(parsed, min, max);
+            const validationError = next === undefined ? undefined : validate?.(next);
+            if (next === undefined) {
               setError("Invalid expression. Restored the last valid value.");
+            } else if (validationError) {
+              setError(`${validationError} Restored the last valid value.`);
+            } else {
+              if (parsed !== next) setNotice(`Adjusted to ${next} to stay within the allowed range.`);
+              if (next !== value) onChange(next);
+              onDragEnd?.(next);
             }
             setDraft(null);
-            onDragEnd?.(value);
           }}
         />
       </div>
       {error && <FieldError id={errorId}>{error}</FieldError>}
+      {notice && <FieldDescription id={errorId} role="status">{notice}</FieldDescription>}
     </div>
   );
 }

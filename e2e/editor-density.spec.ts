@@ -282,6 +282,7 @@ test.describe("Editor density and IA", () => {
       );
       await expect(folderTile).toBeVisible({ timeout: 15_000 });
       await folderTile.click();
+      await sceneTile.click({ modifiers: ["Control"] });
       await sceneTile.click({ button: "right" });
       await expect(page.getByTestId("context-menu-panel")).toBeVisible();
       await page.getByTestId("context-menu-backdrop").dispatchEvent("click");

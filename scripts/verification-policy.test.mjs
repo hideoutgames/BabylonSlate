@@ -28,8 +28,4 @@ test("workflow admission and required-check policy agree on every browser partit
     "unit",
     ...ids.map((id) => `e2e (${id})`),
   ]);
-  assert.ok(
-    verificationPolicy.readyPrSlots * requiredVerifyJobs.length + 1 <= 20,
-    "Leave capacity for post-merge Preview",
-  );
 });

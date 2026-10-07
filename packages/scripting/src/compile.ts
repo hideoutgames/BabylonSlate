@@ -362,7 +362,9 @@ export function compileGraph(
   const shouldStrip = (node: GraphNode) =>
     options.stripDevelopmentOnly === true && isDevelopmentOnlyNode(node);
   const instrumentLoops = options.instrumentInfiniteLoops === true;
-  const loopCheck = "ctx.checkInfiniteLoop();";
+  const loopCheck = (nodeId: string) => `ctx.checkInfiniteLoop(${JSON.stringify({
+    assetGuid: options.assetGuid, graphId: graph.id, nodeId,
+  })});`;
   const exprCache = new Map<string, string>();
   let pureExpressions = createPureExpressions(graph, options.registry);
   /**
@@ -471,12 +473,12 @@ export function compileGraph(
           graphId: graph.id,
           nodeId: anchorNodeId ?? node.id,
         };
-        if (instrumentLoops) emitBody(`  ${loopCheck}`, anchor);
+        if (instrumentLoops) emitBody(`  ${loopCheck(anchor.nodeId)}`, anchor);
         emitBody(`  ${statement}`, anchor);
       },
       hoist(source, bodyAnchors) {
         const next = instrumentLoops
-          ? instrumentJsLoops(source, "ctx.checkInfiniteLoop()")
+          ? instrumentJsLoops(source, loopCheck(node.id))
           : source;
         if (hoisted.some((chunk) => chunk.source === next)) return;
         hoisted.push({ source: next, nodeId: node.id, bodyAnchors });
@@ -610,7 +612,7 @@ export function compileGraph(
     if (meta.kind === "whileLoop") {
       const conditionExpr = ctx.input(meta.conditionPin);
       const opening = emitBody(`  while (${conditionExpr}) {`, anchor);
-      if (instrumentLoops) emitBody(`    ${loopCheck}`, anchor);
+      if (instrumentLoops) emitBody(`    ${loopCheck(anchor.nodeId)}`, anchor);
       loopStack.push({ label: `__loop_${nextLabel++}`, opening });
       emitAlong(execSuccessorEdges(graph, node.id, meta.loopBodyPin), visited);
       loopStack.pop();
@@ -631,7 +633,7 @@ export function compileGraph(
           `    for (let ${iter} = (${firstExpr}) | 0; ${iter} <= ((${lastExpr}) | 0); ${iter}++) {`,
           anchor,
         );
-        if (instrumentLoops) emitBody(`      ${loopCheck}`, anchor);
+        if (instrumentLoops) emitBody(`      ${loopCheck(anchor.nodeId)}`, anchor);
         emitBody(`      ${indexSlot} = ${iter};`, anchor);
         loopStack.push({ label: `__loop_${nextLabel++}`, opening });
         emitAlong(
@@ -655,7 +657,7 @@ export function compileGraph(
           `    for (let ${iter} = 0; ${iter} < ${snap}.length; ${iter}++) {`,
           anchor,
         );
-        if (instrumentLoops) emitBody(`      ${loopCheck}`, anchor);
+        if (instrumentLoops) emitBody(`      ${loopCheck(anchor.nodeId)}`, anchor);
         emitBody(`      ${indexSlot} = ${iter};`, anchor);
         emitBody(`      ${elementSlot} = ${snap}[${iter}];`, anchor);
         loopStack.push({ label: `__loop_${nextLabel++}`, opening });
@@ -684,7 +686,7 @@ export function compileGraph(
           `    for (let ${iter} = 0; ${iter} < ${snap}.length; ${iter}++) {`,
           anchor,
         );
-        if (instrumentLoops) emitBody(`      ${loopCheck}`, anchor);
+        if (instrumentLoops) emitBody(`      ${loopCheck(anchor.nodeId)}`, anchor);
         emitBody(`      ${indexSlot} = ${iter};`, anchor);
         emitBody(`      ${keySlot} = ${snap}[${iter}][0];`, anchor);
         emitBody(`      ${valueSlot} = ${snap}[${iter}][1];`, anchor);
@@ -837,7 +839,7 @@ export function compileGraph(
       if (previous) {
         previous.repeats = true;
         previous.opening.text = `  ${previous.label}: while (true) {`;
-        if (instrumentLoops) emitBody(`  ${loopCheck}`, anchor);
+        if (instrumentLoops) emitBody(`  ${loopCheck(anchor.nodeId)}`, anchor);
         emitBody(`  continue ${previous.label};`, anchor);
         break;
       }
@@ -1057,7 +1059,7 @@ export function compileGraph(
           `  for (const ${pressedKey} of (ctx.getPressedKeys?.() ?? [])) {`,
           anchor,
         );
-        if (instrumentLoops) emitBody(`    ${loopCheck}`, anchor);
+        if (instrumentLoops) emitBody(`    ${loopCheck(anchor.nodeId)}`, anchor);
         emitBody(`    ${ctx.output("key")} = ${pressedKey};`, anchor);
         emitAlong(execSuccessorEdges(graph, node.id, "Then"), visited);
         emitBody("  }", anchor);
@@ -1088,7 +1090,7 @@ export function compileGraph(
           `  for (const __pad of (ctx.gamepadConnections ?? []).filter((c) => c.connected === ${connected})) {`,
           anchor,
         );
-        if (instrumentLoops) emitBody(`    ${loopCheck}`, anchor);
+        if (instrumentLoops) emitBody(`    ${loopCheck(anchor.nodeId)}`, anchor);
         emitBody(`    ${index} = __pad.gamepadIndex;`, anchor);
         emitAlong(execSuccessorEdges(graph, node.id, "then"), visited);
         emitBody(`  }`, anchor);
@@ -1130,7 +1132,7 @@ export function compileGraph(
       if (flow.branch) {
         const branch = flow.branch;
         const anchor = { column: 1, assetGuid: options.assetGuid, graphId: graph.id, nodeId: node.id };
-        if (instrumentLoops) emitBody(`  ${loopCheck}`, anchor);
+        if (instrumentLoops) emitBody(`  ${loopCheck(anchor.nodeId)}`, anchor);
         emitBody(`  if (${branch.expression}) {`, anchor);
         emitAlong(execSuccessorEdges(graph, node.id, branch.truePin), visited);
         emitBody("  } else {", anchor);
@@ -1144,7 +1146,7 @@ export function compileGraph(
         thenEdges.length > 0 ? thenEdges : execSuccessorEdges(graph, node.id);
       if (continuation !== undefined) {
         const anchor = { column: 1, assetGuid: options.assetGuid, graphId: graph.id, nodeId: node.id };
-        if (instrumentLoops) emitBody(`  ${loopCheck}`, anchor);
+        if (instrumentLoops) emitBody(`  ${loopCheck(anchor.nodeId)}`, anchor);
         emitBody(`  if (${continuation}) {`, anchor);
         emitAlong(edges, visited);
         emitBody("  }");

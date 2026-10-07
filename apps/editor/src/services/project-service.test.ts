@@ -499,6 +499,24 @@ describe("project round-trip", () => {
     expect(storage.getCurrentFolder()?.name).toBe("Broken");
   });
 
+  it.each([true, false])("allows retrying an interrupted app-owned project (deleteProject supported: %s)", async (supportsDeleteProject) => {
+    const storage = new MemoryStorageAdapter("documents");
+    if (!supportsDeleteProject) Object.defineProperty(storage, "deleteProject", { value: undefined });
+    await storage.openDocumentsProject("Interrupted");
+    await storage.writeText(".babylonslate-creating", "Project creation in progress\n");
+    await storage.writeText(PROJECT_FILE, JSON.stringify(createEmptyProject("Interrupted")));
+    await storage.mkdir("assets", true);
+    await storage.writeText("assets/PreviousTemplate.txt", "interrupted template content");
+    await storage.releaseFolder();
+    const service = new ProjectService(storage);
+    const result = await service.createEmptyProject("Interrupted", { kind: "blank" });
+    expect(result.document.metadata.name).toBe("Interrupted");
+    expect(await storage.exists(".babylonslate-creating")).toBe(false);
+    expect(await storage.exists("assets/PreviousTemplate.txt")).toBe(false);
+    expect((await service.listProjects()).map((project) => project.name)).toEqual(["Interrupted"]);
+    await expect(service.createEmptyProject("Interrupted")).rejects.toThrow(/already exists/);
+  });
+
   it("keeps a pre-existing folder that lacks project.json when scaffolding fails", async () => {
     localStorage.clear();
     const storage = new OpfsStorageAdapter();

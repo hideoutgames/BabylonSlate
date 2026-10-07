@@ -54,8 +54,8 @@ export class JournalBuffer {
     }, this.delayMs);
   }
 
-  /** Write buffered records (all projects, or one) and wait for earlier writes. Never rejects. */
-  flush(projectGuid?: string): Promise<void> {
+  /** Write buffered records (all projects, or one) and wait for earlier writes. Reports failures; rejects only when requested by a transactional caller. */
+  flush(projectGuid?: string, options?: { rejectOnError?: boolean }): Promise<void> {
     const guids =
       projectGuid === undefined
         ? [...new Set([...this.pending.keys(), ...this.writes.keys()])]
@@ -66,14 +66,13 @@ export class JournalBuffer {
       const previous = this.writes.get(guid) ?? Promise.resolve();
       if (!lines?.length) return previous;
       const serialized = lines.map(serializeJournalLine);
-      const next = previous
-        .then(() => this.write(guid, serialized))
-        .catch(this.onError);
-      this.writes.set(guid, next);
-      void next.then(() => {
-        if (this.writes.get(guid) === next) this.writes.delete(guid);
+      const write = previous.then(() => this.write(guid, serialized));
+      const settled = write.catch(this.onError);
+      this.writes.set(guid, settled);
+      void settled.then(() => {
+        if (this.writes.get(guid) === settled) this.writes.delete(guid);
       });
-      return next;
+      return options?.rejectOnError ? write : settled;
     });
     if (this.pending.size === 0 && this.timer) {
       clearTimeout(this.timer);

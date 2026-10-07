@@ -14,6 +14,7 @@ import {
 import { guidForPath } from "./material-graph";
 import { saveAllIfEnabled } from "./save-all";
 import { setPreviewScene } from "./preview-parity";
+import { clickPlayAndWaitForOverlay } from "./play";
 
 async function greenPixels(canvas: Locator): Promise<number> {
   return canvas.evaluate((node: HTMLCanvasElement) => {
@@ -67,6 +68,99 @@ async function expectSkyboxPixels(canvas: Locator) {
     return sky;
   }), { timeout: 20_000 }).toBeGreaterThan(100);
 }
+
+test("Scene fog changes authored PBR surface pixels in the editor and Play", async ({ page }) => {
+  test.setTimeout(180_000);
+  await openTestProject(page);
+  await createContentBrowserAsset(page, "Material", "FogSurface");
+  const materialPath = "assets/FogSurface.material.babasset";
+  await openAssetFromBrowser(page, materialPath);
+  await page.getByTestId("material-graph-editor").locator('.react-flow__node[data-id="baseColor"]').click();
+  await page.getByTestId("property-color").fill("#00ff00");
+  await saveAllIfEnabled(page);
+
+  const mesh = createMeshComponent("fog-sphere-mesh", "sphere");
+  mesh.properties.materialGuid = await guidForPath(page, materialPath);
+  const scene = createDefaultScene();
+  scene.settings.environmentColor = [0, 0, 0];
+  scene.settings.environmentTextureGuid = null;
+  scene.settings.grid.showGrid = false;
+  scene.settings.mainCameraActorId = null;
+  scene.settings.mainCameraComponentId = null;
+  scene.settings.fogColor = [1, 0, 0];
+  scene.settings.fogMode = "exponentialSquared";
+  scene.settings.fogDensity = 2;
+  scene.actors = [
+    createActor("fog-sphere", "Fog Sphere", {
+      transform: { position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [4, 4, 4] },
+      components: [mesh],
+    }),
+    createActor("fill", "Fill", {
+      components: [{ id: "fill-light", classId: "HemisphericFillLightComponent",
+        properties: { color: [1, 1, 1], groundColor: [1, 1, 1], intensity: 1 } }],
+    }),
+  ];
+  const redPixels = (canvas: Locator) => canvas.evaluate((node: HTMLCanvasElement) => {
+    const copy = document.createElement("canvas");
+    copy.width = node.width;
+    copy.height = node.height;
+    const context = copy.getContext("2d")!;
+    context.drawImage(node, 0, 0);
+    const pixels = context.getImageData(0, 0, copy.width, copy.height).data;
+    let red = 0;
+    for (let i = 0; i < pixels.length; i += 4) {
+      if (pixels[i]! > 100 && pixels[i]! > pixels[i + 1]! * 2 && pixels[i]! > pixels[i + 2]! * 2) red++;
+    }
+    return red;
+  });
+  await openMainScene(page);
+  await setPreviewScene(page, scene);
+  const viewport = page.getByTestId("viewport-canvas");
+  await expect.poll(() => greenPixels(viewport), { timeout: 30_000 }).toBeGreaterThan(500);
+  await clickPlayAndWaitForOverlay(page);
+  const play = page.getByTestId("play-canvas");
+  await expect.poll(() => greenPixels(play), { timeout: 30_000 }).toBeGreaterThan(500);
+  await page.getByTestId("play-overlay-close").click();
+
+  // The background stays black, so only the authored surface can become red.
+  scene.settings.fogEnabled = true;
+  await setPreviewScene(page, scene);
+  await expect.poll(() => redPixels(viewport), { timeout: 30_000 }).toBeGreaterThan(500);
+  await expect.poll(() => greenPixels(viewport)).toBeLessThan(50);
+  await clickPlayAndWaitForOverlay(page);
+  await expect.poll(() => redPixels(play), { timeout: 30_000 }).toBeGreaterThan(500);
+  await expect.poll(() => greenPixels(play)).toBeLessThan(50);
+  await page.getByTestId("play-overlay-close").click();
+  scene.settings.fogEnabled = false;
+  await setPreviewScene(page, scene);
+  await expect.poll(() => greenPixels(viewport), { timeout: 30_000 }).toBeGreaterThan(500);
+});
+
+test("Emissive color popup stays reachable outside the graph and within a short viewport", async ({ page }) => {
+  await openTestProject(page);
+  await createContentBrowserAsset(page, "Material", "EmissivePicker");
+  await openAssetFromBrowser(page, "assets/EmissivePicker.material.babasset");
+  const graph = page.getByTestId("material-graph-editor");
+  await page.setViewportSize({ width: 1100, height: 420 });
+  await graph.getByRole("button", { name: "Size Graph To Fit" }).click();
+  const trigger = graph.getByTestId("pin-default-output-emissive");
+  await trigger.click();
+  const dialog = page.getByTestId("pin-default-output-emissive-dialog");
+  await expect(dialog).toBeVisible();
+  const bounds = await dialog.boundingBox();
+  expect(bounds).not.toBeNull();
+  expect(bounds!.x).toBeGreaterThanOrEqual(0);
+  expect(bounds!.y).toBeGreaterThanOrEqual(0);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(1100);
+  expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(420);
+  // Filling and clicking use Playwright actionability checks, catching content
+  // clipped by the graph's transform/scrollport as well as viewport overflow.
+  await dialog.getByRole("textbox", { name: "Hex", exact: true }).fill("#00ff00");
+  await dialog.getByRole("button", { name: "Done", exact: true }).click();
+  await trigger.click();
+  await expect(dialog.getByRole("textbox", { name: "Hex", exact: true })).toHaveValue("#00ff00");
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+});
 
 test("Unlit preserves skyboxes and PBR model color in Scene, Prefab, and Model Preview", async ({
   page,

@@ -1654,7 +1654,7 @@ export function componentPropertyRows(
           ],
           onChange: (next) => update("projectionMode", next),
         },
-        sliderRow(
+        ...(projectionMode === "perspective" ? [sliderRow(
           actorId,
           component.id,
           "fieldOfView",
@@ -1665,8 +1665,7 @@ export function componentPropertyRows(
           update,
           1,
           DEFAULT_CAMERA_FIELD_OF_VIEW,
-        ),
-        sliderRow(
+        )] : [sliderRow(
           actorId,
           component.id,
           "orthographicSize",
@@ -1678,16 +1677,17 @@ export function componentPropertyRows(
           0.1,
           50,
           update,
-          undefined,
+          0.1,
           DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
-        ),
+        )]),
         {
           kind: "number",
           id: rowId(actorId, component.id, "nearClip"),
           label: "Near Clip",
           value: asNumber(component.properties.nearClip, 0.1),
           min: 0.001,
-          description: "Near Clip must be less than Far Clip.",
+          validate: (next) => next >= asNumber(component.properties.farClip, 1000)
+            ? "Near Clip must be less than Far Clip." : undefined,
           onChange: (next) => {
             if (next < asNumber(component.properties.farClip, 1000)) update("nearClip", next);
           },
@@ -1698,7 +1698,8 @@ export function componentPropertyRows(
           label: "Far Clip",
           value: asNumber(component.properties.farClip, 1000),
           min: 0.01,
-          description: "Far Clip must be greater than Near Clip.",
+          validate: (next) => next <= asNumber(component.properties.nearClip, 0.1)
+            ? "Far Clip must be greater than Near Clip." : undefined,
           onChange: (next) => {
             if (next > asNumber(component.properties.nearClip, 0.1)) update("farClip", next);
           },
