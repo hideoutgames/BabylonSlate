@@ -1,3 +1,4 @@
+export { authoredActorWorldTransform } from "./authored-transform-matrices";
 export * from "./editor-clear-color";
 export * from "./create-engine";
 export { sceneRenderTargetCaptures, RenderTargetCaptures } from "./render-target-capture";

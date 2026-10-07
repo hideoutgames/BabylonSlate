@@ -1,9 +1,34 @@
 import { describe, expect, it } from "vitest";
-import { createActor, createDefaultScene } from "@babylonslate/core";
+import { createActor, createDefaultScene, eulerDegreesToQuaternion, identitySerializedTransform } from "@babylonslate/core";
 import { copySceneActors, pasteSceneActors } from "./scene-actor-clipboard";
 import { EditorSessionState } from "./editor-session-state";
 
 describe("actor clipboard", () => {
+  it("keeps a detached subtree at its original world position, rotation and scale", () => {
+    const source = createDefaultScene();
+    const rotation = eulerDegreesToQuaternion([0, 0, 90]);
+    source.actors = [
+      createActor("parent", "Outside Parent", { transform: {
+        position: [100, 0, 0], rotation, scale: [2, 2, 2],
+      } }),
+      createActor("root", "Copied Root", { parentId: "parent", transform: {
+        ...identitySerializedTransform(), position: [2, 0, 0],
+      } }),
+      createActor("child", "Copied Child", { parentId: "root", transform: {
+        ...identitySerializedTransform(), position: [0, 3, 0],
+      } }),
+    ];
+    const [root, child] = copySceneActors(source, ["root"]);
+    expect(root!.parentId).toBeNull();
+    expect(root!.transform.position[0]).toBeCloseTo(100);
+    expect(root!.transform.position[1]).toBeCloseTo(4);
+    expect(root!.transform.scale).toEqual([2, 2, 2]);
+    rotation.forEach((value, index) => expect(root!.transform.rotation[index]).toBeCloseTo(value));
+    expect(child!.parentId).toBe("root");
+    expect(child!.transform.position).toEqual([0, 3, 0]);
+    expect(source.actors[1]!.transform.position).toEqual([2, 0, 0]);
+  });
+
   it("copies subtrees between scenes with new identities and internal references", () => {
     const source = createDefaultScene();
     source.actors = [

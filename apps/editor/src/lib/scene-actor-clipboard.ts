@@ -1,5 +1,6 @@
 import { actorSubtree, isFocusTargetClass, type SerializedActor, type SerializedScene } from "@babylonslate/core";
 import { duplicateSceneActors } from "./place-actors";
+import { authoredActorWorldTransform } from "@babylonslate/render";
 
 /** Snapshot actor subtrees without references to objects outside the copy. */
 export function copySceneActors(scene: SerializedScene, selectedIds: readonly string[]): SerializedActor[] {
@@ -7,7 +8,10 @@ export function copySceneActors(scene: SerializedScene, selectedIds: readonly st
   const actors = structuredClone(scene.actors.filter((actor) => ids.has(actor.id)));
   const references = new Set([...ids, ...actors.flatMap((actor) => actor.components.map((component) => component.id))]);
   for (const actor of actors) {
-    if (actor.parentId && !ids.has(actor.parentId)) actor.parentId = null;
+    if (actor.parentId && !ids.has(actor.parentId)) {
+      actor.transform = authoredActorWorldTransform(scene.actors, actor);
+      actor.parentId = null;
+    }
     actor.folderId = null;
     for (const component of actor.components) {
       const properties = component.properties;

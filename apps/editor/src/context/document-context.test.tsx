@@ -185,7 +185,7 @@ describe("DocumentProvider actions and route", () => {
     const heldRead = new Promise<void>((resolve) => { finishRead = resolve; });
     const realLoad = ProjectService.prototype.loadDocument;
     let started = false;
-    const read = vi.spyOn(ProjectService.prototype, "loadDocument").mockImplementation(async function(kind, path) {
+    const read = vi.spyOn(ProjectService.prototype, "loadDocument").mockImplementation(async function(this: ProjectService, kind, path) {
       if (path === target.path) {
         started = true;
         await heldRead;
