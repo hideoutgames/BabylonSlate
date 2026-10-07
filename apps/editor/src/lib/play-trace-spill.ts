@@ -35,6 +35,7 @@ export async function spillRecordedTraceDocument(options: {
 export async function finishPlaySessionWithTrace(options: {
   executeConsoleCommand: (line: string) => Promise<unknown>;
   stop: () => PlaySessionResult;
+  diagnostics?: { dispose(): Promise<void> };
 }): Promise<PlaySessionResult> {
   let timeout: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -47,5 +48,6 @@ export async function finishPlaySessionWithTrace(options: {
   } finally {
     clearTimeout(timeout);
   }
+  await options.diagnostics?.dispose();
   return options.stop();
 }

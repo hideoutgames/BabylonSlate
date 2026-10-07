@@ -314,19 +314,23 @@ export function PlayOverlay({
   onCloseRef.current = onClose;
   const closedRef = useRef(false);
   const finishSessionRef = useRef<() => void>(() => {});
-  finishSessionRef.current = () => {
-    if (closedRef.current) return;
-    closedRef.current = true;
+  const detachInspection = () => {
     inspectionDetachRef.current?.();
     inspectionDetachRef.current = null;
-    const session = sessionRef.current;
-    sessionRef.current = null;
+  };
+  finishSessionRef.current = () => {
+    if (closedRef.current) return;
     if (sessionOwner && sessionTicket) {
       void sessionOwner.stop(sessionTicket).then((result) => {
-        if (!result && !sessionOwner.getSnapshot().quarantined) onCloseRef.current(emptyPlayResult(), sessionTicket);
+        // A refused retention gate leaves the runtime and its controls available.
+        if (!result && sessionOwner.canStart()) onCloseRef.current(emptyPlayResult(), sessionTicket);
       });
       return;
     }
+    closedRef.current = true;
+    detachInspection();
+    const session = sessionRef.current;
+    sessionRef.current = null;
     void (async () => {
       const result = session ? await finishPlaySessionWithTrace(session) : emptyPlayResult();
       onCloseRef.current(result);
@@ -586,6 +590,10 @@ export function PlayOverlay({
       setPaused(initialPauseOnPlayRef.current);
       let session: PlaySession;
       if (sessionOwner && sessionTicket && !sessionOwner.attach(sessionTicket, async () => {
+        closedRef.current = true;
+        inspectionDetachRef.current?.();
+        inspectionDetachRef.current = null;
+        sessionRef.current = null;
         const result = await finishPlaySessionWithTrace(session);
         onCloseRef.current(result, sessionTicket);
         return result;

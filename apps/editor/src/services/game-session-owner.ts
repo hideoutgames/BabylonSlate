@@ -1,6 +1,6 @@
 /** Game lifetime is independent of the canvas or React surface presenting it. */
 export type GameSessionMode = "play" | "simulate" | "preview";
-export type GameSessionLifecycle = "idle" | "preparing" | "running" | "paused" | "stopping" | "failure";
+export type GameSessionLifecycle = "idle" | "preparing" | "running" | "paused" | "stopping" | "retention-resolution" | "failure";
 
 export interface GameSessionTicket {
   readonly generation: number;
@@ -41,6 +41,7 @@ export class GameSessionOwner<Result extends GameSessionStopResult> {
     ticket: GameSessionTicket;
     abort: AbortController;
     stop?: () => Result | Promise<Result>;
+    beforeStop?: () => Promise<boolean>;
     releaseBarrier?: Promise<{ quarantined: boolean }>;
     stopping?: Promise<Result | undefined>;
   } | null = null;
@@ -98,6 +99,13 @@ export class GameSessionOwner<Result extends GameSessionStopResult> {
     return true;
   }
 
+  /** Retention admission must resolve before abort, End Play, or native disposal. */
+  setBeforeStop(ticket: GameSessionTicket, beforeStop: () => Promise<boolean>): boolean {
+    if (!this.isCurrent(ticket) || !this.current!.stop || this.current!.stopping) return false;
+    this.current!.beforeStop = beforeStop;
+    return true;
+  }
+
   acknowledgePaused(ticket: GameSessionTicket, paused: boolean): void {
     if (!this.isCurrent(ticket) || !["running", "paused"].includes(this.state.lifecycle)) return;
     const lifecycle = paused ? "paused" : "running";
@@ -133,24 +141,39 @@ export class GameSessionOwner<Result extends GameSessionStopResult> {
       this.publish({ ...this.state, mode: null, lifecycle: "idle", quarantined: false, error: null });
       return Promise.resolve(undefined);
     }
-    current.stopping = Promise.resolve().then(current.stop).then((result) => {
-      const released = current.releaseBarrier
-        ? Promise.all([current.releaseBarrier, result.released]).then((releases) => ({
-            quarantined: releases.some((release) => release.quarantined),
-          }))
-        : result.released;
-      void released.then(
-        (release) => this.completeRelease(ticket, release.quarantined),
-        (error: unknown) => this.fail(ticket, error, true),
+    const stopNative = (): Promise<Result | undefined> => {
+      current.abort.abort();
+      this.publish({ ...this.state, lifecycle: "stopping" });
+      return Promise.resolve().then(current.stop!).then((result) => {
+        const released = current.releaseBarrier
+          ? Promise.all([current.releaseBarrier, result.released]).then((releases) => ({
+              quarantined: releases.some((release) => release.quarantined),
+            }))
+          : result.released;
+        void released.then(
+          (release) => this.completeRelease(ticket, release.quarantined),
+          (error: unknown) => this.fail(ticket, error, true),
+        );
+        return result;
+      }, (error: unknown) => {
+        // A failed stop does not establish that a native owner released anything.
+        this.fail(ticket, error, true);
+        return undefined;
+      });
+    };
+    if (current.beforeStop && !ticket.signal.aborted) {
+      this.publish({ ...this.state, lifecycle: "stopping", error: null });
+      const refused = (error: unknown = null): undefined => {
+        current.stopping = undefined;
+        if (this.owns(ticket)) this.publish({ ...this.state, lifecycle: "retention-resolution",
+          error: error === null ? null : error instanceof Error ? error.message : String(error) });
+        return undefined;
+      };
+      current.stopping = Promise.resolve().then(current.beforeStop).then(
+        (admitted) => admitted ? stopNative() : refused(),
+        refused,
       );
-      return result;
-    }, (error: unknown) => {
-      // A failed stop does not establish that a native owner released anything.
-      this.fail(ticket, error, true);
-      return undefined;
-    });
-    current.abort.abort();
-    this.publish({ ...this.state, lifecycle: "stopping" });
+    } else current.stopping = stopNative();
     return current.stopping;
   }
 

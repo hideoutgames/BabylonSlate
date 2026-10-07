@@ -92,4 +92,44 @@ describe("game session ownership", () => {
     expect(ticket.signal.aborted).toBe(true);
     expect(owner.begin("preview")).not.toBeNull();
   });
+  it("keeps the ticket and native runtime alive when retention refuses, then retries once", async () => {
+    const owner = new GameSessionOwner<GameSessionStopResult>();
+    const ticket = owner.begin("simulate")!;
+    const stop = vi.fn(() => ({ released: Promise.resolve({ quarantined: false }) }));
+    owner.attach(ticket, stop);
+    const gate = deferred<boolean>();
+    const beforeStop = vi.fn().mockImplementationOnce(() => gate.promise).mockResolvedValueOnce(true);
+    owner.setBeforeStop(ticket, beforeStop);
+    const first = owner.stop(ticket);
+    expect(owner.stop(ticket)).toBe(first);
+    expect(ticket.signal.aborted).toBe(false);
+    gate.resolve(false);
+    expect(await first).toBeUndefined();
+    expect(stop).not.toHaveBeenCalled();
+    expect(owner.isCurrent(ticket)).toBe(true);
+    expect(owner.getSnapshot().lifecycle).toBe("retention-resolution");
+    expect(owner.begin("play")).toBeNull();
+    const result = await owner.stop(ticket);
+    expect(stop).toHaveBeenCalledOnce();
+    expect(ticket.signal.aborted).toBe(true);
+    await result?.released;
+    expect(owner.canStart()).toBe(true);
+  });
+
+  it("turns capture errors into retryable retention failures without aborting", async () => {
+    const owner = new GameSessionOwner<GameSessionStopResult>();
+    const ticket = owner.begin("simulate")!;
+    const stop = vi.fn(() => ({ released: Promise.resolve({ quarantined: false }) }));
+    owner.attach(ticket, stop);
+    owner.setBeforeStop(ticket, async () => { throw new Error("Undo budget exceeded"); });
+    await owner.stop(ticket);
+    expect(owner.getSnapshot()).toMatchObject({ lifecycle: "retention-resolution", error: "Undo budget exceeded", quarantined: false });
+    expect(ticket.signal.aborted).toBe(false);
+    expect(stop).not.toHaveBeenCalled();
+    owner.fail(ticket, new Error("Worker crashed"));
+    const result = await owner.stop(ticket);
+    await result?.released;
+    expect(stop).toHaveBeenCalledOnce();
+  });
+
 });
