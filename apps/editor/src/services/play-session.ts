@@ -470,6 +470,7 @@ export function startPlaySession(options: {
   simulationSaveStorage?: ReturnType<typeof createSessionSaveStorage>;
   /** Authoring asset identities admitted by preparation; this does not load assets. */
   simulationAssetGuids?: readonly string[];
+  onRetentionUnavailable?: (reason: string) => void;
   saveGame?: import("@babylonslate/core").SaveGameConfiguration;
   renderSettings?: import("@babylonslate/render").RenderShadingSettings;
   consoleRenderSettings?: import("@babylonslate/render").RenderShadingSettings;
@@ -995,6 +996,10 @@ export function startPlaySession(options: {
     },
   });
   const onCommand = (command: CommandMessage) => {
+    if (command.type === "simulationRetentionUnavailable") {
+      if (command.sessionGeneration === (options.sessionGeneration ?? 0)) options.onRetentionUnavailable?.(command.reason);
+      return;
+    }
     if (command.type === "simulationQuiesced") { acceptQuiesced(command); return; }
     if (command.type === "simulationCaptureChunk" || command.type === "simulationCaptureResult") { captureClient.receive(command); return; }
     if (captureFenceActive && shouldForwardPlayEngineCommand(command.type)) captureFenceChanged = true;
