@@ -12,6 +12,7 @@ const KINDS = Object.keys({
   scene: true,
   "scene-layer": true,
   graph: true,
+  prefab: true,
   enum: true,
   structure: true,
   "data-definition": true,

@@ -956,10 +956,7 @@ function attachMeshCollisionDashes(
   const modelPayload = assetGuid
     ? assets?.modelPayloads?.get(assetGuid)
     : undefined;
-  let complexMesh:
-    | { vertices: Array<{ x: number; y: number; z: number }>; indices: number[] }
-    | null
-    | undefined;
+  let complexMesh: ReturnType<typeof extractGltfCollisionMesh> | undefined;
   if (
     parseMeshCollisionMode(component.properties.collisionMode) === "complex" &&
     assetGuid

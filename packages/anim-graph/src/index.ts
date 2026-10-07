@@ -1,6 +1,7 @@
 export {
   ANIM_EVENT_INITIALIZE_TYPE,
   ANIM_EVENT_UPDATE_TYPE,
+  ANIM_EXIT_TIME_REACHED_TYPE,
   ANIM_GRAPH_SCHEMA_VERSION,
   ANIM_RULE_ENTER_NODE_ID,
   ANIM_RULE_EXIT_NODE_ID,
@@ -17,6 +18,7 @@ export {
   defaultAnimStatePosition,
   defaultAnimVariableValue,
   animGraphMembersFromVariables,
+  animExitTimeReached,
   evaluateAnimGraph,
   parseAnimGraphDocument,
   resolveAnimGraphClips,

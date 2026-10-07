@@ -1,7 +1,7 @@
 import { WaterWorld } from "./water-world";
 import { dynamicRuntimeGeometry } from "./dynamic-runtime-mesh";
 import { DynamicMeshCollisionCache, dynamicMeshCollisionDescriptor } from "./dynamic-mesh-collision";
-import { landscapeCollisionMesh, normalizeWaterBuoyancy, parseMovementProperties, type MovementProperties, type Transform } from "@babylonslate/core";
+import { landscapeCollisionMesh, normalizeWaterBuoyancy, parseMovementProperties, sameCollisionTriangleMesh, type CollisionTriangleMesh, type MovementProperties, type Transform } from "@babylonslate/core";
 import type {
   ColliderDesc,
   ColliderLocalTransform,
@@ -15,6 +15,7 @@ import {
   decodeTileGid,
   parseMeshCollisionLayer,
   parseMeshCollisionMask,
+  parseMeshCollisionMode,
   resolveMeshCollisions,
   spriteAnimationFrameAt,
   spriteClipFrameAt,
@@ -50,6 +51,7 @@ import {
   copyTransform,
   inverseQuaternion,
   multiplyQuaternion,
+  relativeTransform,
   rotateVector,
   type ActorTransformMap,
 } from "./actor-world-transform";
@@ -173,10 +175,8 @@ export class PhysicsWorldSync {
     }
   >();
   private models = new Map<string, ModelPayload>();
-  private complexMeshes = new Map<
-    string,
-    { vertices: Array<{ x: number; y: number; z: number }>; indices: number[] }
-  >();
+  private complexMeshes = new Map<string, CollisionTriangleMesh>();
+  private onMissingComplexMesh: ((assetGuid: string) => void) | null = null;
   private pixelsPerUnit = 100;
 
   constructor(
@@ -259,67 +259,53 @@ export class PhysicsWorldSync {
       | ReadonlyMap<string, ModelPayload>
       | Readonly<Record<string, ModelPayload>>;
     complexMeshes?:
-      | ReadonlyMap<
-          string,
-          {
-            vertices: Array<{ x: number; y: number; z: number }>;
-            indices: number[];
-          }
-        >
-      | Readonly<
-          Record<
-            string,
-            {
-              vertices: Array<{ x: number; y: number; z: number }>;
-              indices: number[];
-            }
-          >
-        >;
+      | ReadonlyMap<string, CollisionTriangleMesh>
+      | Readonly<Record<string, CollisionTriangleMesh>>;
   }): void {
     const models = toMap(options.models);
     const meshes = options.complexMeshes
       ? toMap(options.complexMeshes)
-      : new Map<string, { vertices: Vec3[]; indices: number[] }>();
+      : new Map<string, CollisionTriangleMesh>();
     const nextModels = new Map<string, ModelPayload>();
-    const nextMeshes = new Map<
-      string,
-      { vertices: Vec3[]; indices: number[] }
-    >();
-    const live = new Set([...models.keys(), ...meshes.keys()]);
+    const nextMeshes = new Map<string, CollisionTriangleMesh>();
     const identities = new Map<string, string>();
-    for (const guid of live) {
-      const model = models.get(guid),
-        mesh = meshes.get(guid);
-      // This full-content comparison belongs to installation, never a tick.
-      // Exact collision content gives each retained immutable source its identity;
-      // unrelated material metadata cannot invalidate prepared physics geometry.
-      const identity = JSON.stringify([
-        model?.simpleColliders,
-        model?.importScale,
-        mesh,
-      ]);
-      const unchanged = this.modelContentIdentities.get(guid) === identity;
-      if (model)
-        nextModels.set(
-          guid,
-          unchanged && this.models.has(guid)
-            ? this.models.get(guid)!
-            : structuredClone(model),
-        );
-      if (mesh)
-        nextMeshes.set(
-          guid,
-          unchanged && this.complexMeshes.has(guid)
-            ? this.complexMeshes.get(guid)!
-            : structuredClone(mesh),
-        );
+    // These full-content comparisons belong to installation, never a tick.
+    // Exact collision content gives each retained immutable source its identity;
+    // unrelated material metadata cannot invalidate prepared physics geometry.
+    for (const [guid, model] of models) {
+      const identity = JSON.stringify([model.simpleColliders, model.importScale]);
+      nextModels.set(
+        guid,
+        this.modelContentIdentities.get(guid) === identity && this.models.has(guid)
+          ? this.models.get(guid)!
+          : structuredClone(model),
+      );
       identities.set(guid, identity);
+    }
+    for (const [guid, mesh] of meshes) {
+      const installed = this.complexMeshes.get(guid);
+      nextMeshes.set(
+        guid,
+        installed && sameCollisionTriangleMesh(installed, mesh)
+          ? installed
+          : { positions: mesh.positions.slice(), indices: mesh.indices.slice() },
+      );
     }
     this.modelContentIdentities.clear();
     for (const [guid, identity] of identities)
       this.modelContentIdentities.set(guid, identity);
     this.models = nextModels;
     this.complexMeshes = nextMeshes;
+  }
+
+  /**
+   * Called (once per resolution) when a Complex Collision MeshComponent names a
+   * Model with no installed mesh, so the host can cook it on demand. The
+   * component contributes no collider until the mesh is installed; the next
+   * sync then rebuilds the actor's body.
+   */
+  setMissingComplexMeshHandler(handler: ((assetGuid: string) => void) | null): void {
+    this.onMissingComplexMesh = handler;
   }
 
   setActorSpriteClip(
@@ -982,7 +968,7 @@ export class PhysicsWorldSync {
           // rotation, so writing earlier bodies cannot change a later ancestor.
           local =
             parent && !parent.destroyed
-              ? localPhysicsTransform(transform, this.readbackPose(parent))
+              ? localPhysicsTransform(transform, this.readbackPose(parent), actor.transform)
               : transform;
         }
         Object.assign(actor.transform.position, local.position);
@@ -1016,17 +1002,16 @@ export class PhysicsWorldSync {
       ancestor && parent ? this.worldTransforms.get(parent.guid) : undefined;
     let transform: Transform;
     if (body) {
-      const scale = actor.transform.scale;
       transform = {
         position: { ...body.position },
         rotation: { ...body.rotation },
-        scale: ancestor
-          ? {
-              x: ancestor.scale.x * scale.x,
-              y: ancestor.scale.y * scale.y,
-              z: ancestor.scale.z * scale.z,
-            }
-          : { ...scale },
+        // Scale is unchanged by the step: reuse the pre-step composition,
+        // which predates this readback's local rotation writes.
+        scale: authored
+          ? { ...authored.scale }
+          : ancestor
+            ? composeParentChildTransform(ancestor, actor.transform).scale
+            : { ...actor.transform.scale },
       };
     } else if (authored && ancestor === authoredParent) {
       transform = authored;
@@ -1721,6 +1706,8 @@ export class PhysicsWorldSync {
     );
     this.meshSources.set(component, { descriptor, collisions });
     this.geometryByComponent.delete(component);
+    if (assetGuid && descriptor[4] == null && parseMeshCollisionMode(descriptor[1]) === "complex")
+      this.onMissingComplexMesh?.(assetGuid);
     return collisions;
   }
 
@@ -1970,13 +1957,28 @@ export function actorLocalPhysicsTransform(
 ): PhysicsTransform {
   const parentId = actorParentGuid(actor);
   const parentWorld = parentId ? transforms.get(parentId) : undefined;
-  return parentWorld ? localPhysicsTransform(world, parentWorld) : world;
+  return parentWorld ? localPhysicsTransform(world, parentWorld, actor.transform) : world;
 }
 
+/**
+ * A body's world pose as the actor's local position and rotation. The actor
+ * keeps its own scale, so its composed world scale completes the body pose,
+ * and a nonuniform or mirrored parent inverts through the authored matrices.
+ */
 function localPhysicsTransform(
   world: PhysicsTransform,
   parentWorld: Transform,
+  local: Transform,
 ): PhysicsTransform {
+  const { x: sx, y: sy, z: sz } = parentWorld.scale;
+  if (!(sx === sy && sy === sz)) {
+    const relative = relativeTransform(parentWorld, {
+      position: world.position,
+      rotation: world.rotation,
+      scale: composeParentChildTransform(parentWorld, local).scale,
+    }, local);
+    if (relative) return { position: relative.position, rotation: relative.rotation };
+  }
   const inverseRotation = inverseQuaternion(parentWorld.rotation);
   const offset = rotateVector(inverseRotation, {
     x: world.position.x - parentWorld.position.x,

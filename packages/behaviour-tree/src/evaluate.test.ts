@@ -786,6 +786,158 @@ describe("evaluateBehaviourTree", () => {
     expect(ready.status).toBe("running");
   });
 
+  describe("lower-priority aborts", () => {
+    function guardedPatrol(highTask: string, highDecorators: BtNode["decorators"]) {
+      const high = node("high", "task", highTask);
+      high.decorators.push(...highDecorators);
+      return tree(
+        [
+          node("root", "selector", "bt.composite.selector", ["high", "low"]),
+          high,
+          node("low", "task", "bt.task.custom"),
+        ],
+        "root",
+      );
+    }
+
+    function latentHost() {
+      const counts = { activations: 0, aborts: 0 };
+      const host = {
+        tick: (
+          _task: BtNode,
+          _board: Record<string, unknown>,
+          _dt: number,
+          memory: Record<string, unknown>,
+        ) => {
+          if (memory.started !== true) {
+            memory.started = true;
+            counts.activations += 1;
+          }
+          return "running" as const;
+        },
+        abort: () => {
+          counts.aborts += 1;
+        },
+      };
+      return { counts, host };
+    }
+
+    function run(
+      doc: BehaviourTreeDocument,
+      host: ReturnType<typeof latentHost>["host"],
+      boards: Array<Record<string, unknown>>,
+    ) {
+      let state = null as ReturnType<typeof evaluateBehaviourTree> | null;
+      for (const blackboard of boards) {
+        state = evaluateBehaviourTree(doc, state, 1 / 60, { blackboard, host });
+      }
+      return state!;
+    }
+
+    it("does not abort while another decorator on the higher branch fails", () => {
+      const doc = guardedPatrol("bt.task.succeed", [
+        {
+          id: "alert",
+          classId: "bt.decorator.blackboardIsSet",
+          abortMode: "lowerPriority",
+          observedKeys: ["alert"],
+          properties: { key: "alert" },
+        },
+        {
+          id: "armed",
+          classId: "bt.decorator.blackboardIsSet",
+          abortMode: "none",
+          observedKeys: ["armed"],
+          properties: { key: "armed" },
+        },
+      ]);
+      const { counts, host } = latentHost();
+      const state = run(doc, host, [
+        { alert: false, armed: false },
+        { alert: true, armed: false },
+        { alert: true, armed: false },
+      ]);
+      expect(counts).toEqual({ activations: 1, aborts: 0 });
+      expect(state.btNodeId).toBe("low");
+    });
+
+    it("aborts only when the observed condition changes to true", () => {
+      const doc = guardedPatrol("bt.task.fail", [
+        {
+          id: "alert",
+          classId: "bt.decorator.blackboardIsSet",
+          abortMode: "lowerPriority",
+          observedKeys: ["alert"],
+          properties: { key: "alert" },
+        },
+      ]);
+      const { counts, host } = latentHost();
+      const state = run(doc, host, [
+        { alert: false },
+        { alert: true },
+        { alert: true },
+        { alert: true },
+      ]);
+      // One abort when alert flips; the failing high branch then hands back
+      // to a fresh low activation that is not aborted again while alert stays set.
+      expect(counts).toEqual({ activations: 2, aborts: 1 });
+      // Clearing and setting alert again is a new change and aborts once more.
+      const cleared = evaluateBehaviourTree(doc, state, 1 / 60, {
+        blackboard: { alert: false },
+        host,
+      });
+      evaluateBehaviourTree(doc, cleared, 1 / 60, { blackboard: { alert: true }, host });
+      expect(counts).toEqual({ activations: 3, aborts: 2 });
+    });
+
+    it("restarts a Wait from zero when the abort re-enters it", () => {
+      const doc = guardedPatrol("bt.task.fail", [
+        {
+          id: "alert",
+          classId: "bt.decorator.blackboardIsSet",
+          abortMode: "lowerPriority",
+          observedKeys: ["alert"],
+          properties: { key: "alert" },
+        },
+      ]);
+      const low = doc.nodes.find((entry) => entry.id === "low")!;
+      low.classId = "bt.task.wait";
+      low.properties = { durationMs: 100 };
+      const first = evaluateBehaviourTree(doc, null, 0.06, { blackboard: { alert: false } });
+      expect(first.btNodeId).toBe("low");
+      const reentered = evaluateBehaviourTree(doc, first, 0.06, { blackboard: { alert: true } });
+      expect(reentered.status).toBe("running");
+      expect(reentered.btNodeId).toBe("low");
+      const done = evaluateBehaviourTree(doc, reentered, 0.06, { blackboard: { alert: true } });
+      expect(done.status).toBe("success");
+    });
+  });
+
+  it("runs each iteration of a looped Wait on its own tick", () => {
+    const wait = node("wait", "task", "bt.task.wait");
+    wait.properties = { durationMs: 10 };
+    wait.decorators.push({
+      id: "loop",
+      classId: "bt.decorator.loop",
+      abortMode: "none",
+      observedKeys: [],
+      properties: { numLoops: 100 },
+    });
+    const doc = tree(
+      [node("root", "sequence", "bt.composite.sequence", ["wait"]), wait],
+      "root",
+    );
+    let state = evaluateBehaviourTree(doc, null, 1 / 60);
+    expect(state.status).toBe("running");
+    let ticks = 1;
+    while (state.status === "running" && ticks < 200) {
+      state = evaluateBehaviourTree(doc, state, 1 / 60);
+      ticks += 1;
+    }
+    expect(state.status).toBe("success");
+    expect(ticks).toBe(100);
+  });
+
   it("reproduces the same service schedule for the same seed", () => {
     const root = node("root", "sequence", "bt.composite.sequence", ["idle"]);
     root.services.push({

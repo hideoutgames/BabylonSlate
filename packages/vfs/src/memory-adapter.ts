@@ -1,4 +1,5 @@
 import { checkStorageRevision, StorageReadCounter, validateStorageRange } from "./storage-range";
+import { isStorageNotFound, StorageNotFoundError } from "@babylonslate/core";
 import type {
   DirEntry,
   FileStat,
@@ -132,12 +133,14 @@ export class MemoryStorageAdapter implements ProjectStorage {
       let child = dir.children.get(seg);
       if (!child) {
         if (!createDirs) {
-          throw new Error(`File not found: ${parts.join("/")}`);
+          throw new StorageNotFoundError(parts.join("/"));
         }
         child = { kind: "dir", children: new Map(), mtime: now() };
         dir.children.set(seg, child);
       }
       if (child.kind !== "dir") {
+        // A file in place of a parent directory: lookups find nothing (ENOTDIR).
+        if (!createDirs) throw new StorageNotFoundError(parts.join("/"));
         throw new Error(`Not a directory: ${parts.slice(0, i + 1).join("/")}`);
       }
       dir = child;
@@ -150,11 +153,11 @@ export class MemoryStorageAdapter implements ProjectStorage {
     const parts = this.split(path);
     const { parent, name } = this.walk(parts, false);
     if (!name) {
-      throw new Error(`File not found: ${path}`);
+      throw new StorageNotFoundError(path);
     }
     const node = parent.children.get(name);
     if (!node || node.kind !== "file") {
-      throw new Error(`File not found: ${path}`);
+      throw new StorageNotFoundError(path);
     }
     this.reads.record("full", node.data.byteLength);
     return new Uint8Array(node.data);
@@ -165,7 +168,7 @@ export class MemoryStorageAdapter implements ProjectStorage {
     validateStorageRange(offset, length);
     const { parent, name } = this.walk(this.split(path), false);
     const node = name ? parent.children.get(name) : undefined;
-    if (!node || node.kind !== "file") throw new Error(`File not found: ${path}`);
+    if (!node || node.kind !== "file") throw new StorageNotFoundError(path);
     validateStorageRange(offset, length, node.data.byteLength);
     checkStorageRevision(path, node.revision, expectedRevision);
     const bytes = node.data.slice(offset, offset + length);
@@ -197,13 +200,15 @@ export class MemoryStorageAdapter implements ProjectStorage {
   }
 
   async exists(path: string): Promise<boolean> {
+    const parts = this.split(path);
+    this.root();
+    if (parts.length === 0) return true;
     try {
-      const parts = this.split(path);
-      if (parts.length === 0) return true;
       const { parent, name } = this.walk(parts, false);
       return name !== null && parent.children.has(name);
-    } catch {
-      return false;
+    } catch (error) {
+      if (isStorageNotFound(error)) return false;
+      throw error;
     }
   }
 
@@ -213,7 +218,7 @@ export class MemoryStorageAdapter implements ProjectStorage {
     for (const seg of parts) {
       const child = dir.children.get(seg);
       if (!child || child.kind !== "dir") {
-        throw new Error(`File not found: ${path}`);
+        throw new StorageNotFoundError(path);
       }
       dir = child;
     }
@@ -234,7 +239,7 @@ export class MemoryStorageAdapter implements ProjectStorage {
       let child = dir.children.get(seg);
       if (!child) {
         if (!recursive && i < parts.length - 1) {
-          throw new Error(`File not found: ${parts.slice(0, i + 1).join("/")}`);
+          throw new StorageNotFoundError(parts.slice(0, i + 1).join("/"));
         }
         child = { kind: "dir", children: new Map(), mtime: now() };
         dir.children.set(seg, child);
@@ -252,7 +257,7 @@ export class MemoryStorageAdapter implements ProjectStorage {
       throw new Error(`Cannot remove root`);
     }
     if (!parent.children.has(name)) {
-      throw new Error(`File not found: ${path}`);
+      throw new StorageNotFoundError(path);
     }
     parent.children.delete(name);
     parent.mtime = now();
@@ -266,11 +271,11 @@ export class MemoryStorageAdapter implements ProjectStorage {
     }
     const { parent, name } = this.walk(parts, false);
     if (!name) {
-      throw new Error(`File not found: ${path}`);
+      throw new StorageNotFoundError(path);
     }
     const node = parent.children.get(name);
     if (!node) {
-      throw new Error(`File not found: ${path}`);
+      throw new StorageNotFoundError(path);
     }
     return {
       isDir: node.kind === "dir",

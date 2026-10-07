@@ -37,6 +37,29 @@ export class SourceRevisionChangedError extends Error {
   }
 }
 
+/**
+ * The path, or one of its parent directories, does not exist. Permission,
+ * I/O, quota, stale-handle and invalid-path failures use other errors, so only
+ * this error may be read as "absent".
+ */
+export class StorageNotFoundError extends Error {
+  readonly code = "not-found";
+  readonly path: string;
+  constructor(path: string, options?: { cause?: unknown; message?: string }) {
+    super(options?.message ?? `File not found: ${path}`, options && "cause" in options ? { cause: options.cause } : undefined);
+    this.name = "StorageNotFoundError";
+    this.path = path;
+  }
+}
+
+/** True only for a genuine missing path; every other storage failure must propagate. */
+export function isStorageNotFound(error: unknown): error is StorageNotFoundError {
+  if (error instanceof StorageNotFoundError) return true;
+  const candidate = error as { name?: unknown; code?: unknown } | null;
+  return typeof candidate === "object" && candidate !== null &&
+    candidate.name === "StorageNotFoundError" && candidate.code === "not-found";
+}
+
 export interface StorageReadMetrics {
   operations: number;
   fullReads: number;
@@ -55,6 +78,8 @@ export type ProjectStorageReader = Pick<ProjectStorage, "readText" | "readBinary
 
 /**
  * Binary-capable project filesystem. UI never calls Capacitor directly.
+ * Reads, `readdir`, `stat` and `remove` of a missing path reject with
+ * `StorageNotFoundError` (message `File not found: <path>`).
  * @see docs/architecture/vfs.md
  */
 export interface ProjectStorage {
@@ -100,9 +125,11 @@ export interface ProjectStorage {
   /** Cumulative I/O at this adapter's boundary; counters do not measure retained memory. */
   getReadMetrics?(): StorageReadMetrics;
   writeBinary(path: string, data: Uint8Array): Promise<void>;
+  /** False only for a missing path; rejects on permission, I/O or invalid-path failures. */
   exists(path: string): Promise<boolean>;
   readdir(path: string): Promise<DirEntry[]>;
   mkdir(path: string, recursive?: boolean): Promise<void>;
+  /** Rejects with `StorageNotFoundError` when the path is already missing. */
   remove(path: string): Promise<void>;
   stat(path: string): Promise<FileStat>;
 }

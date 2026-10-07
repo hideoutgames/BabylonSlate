@@ -1,9 +1,9 @@
-import { SourceRevisionChangedError, areaEmissionTextureGuids, normalizeScene, normalizeSceneLayer, parseText2DProperties, renderEffectsAssetGuids, type ProjectDocument } from "@babylonslate/core";
+import { SourceRevisionChangedError, areaEmissionTextureGuids, collisionTriangleMeshBytes, normalizeScene, normalizeSceneLayer, parseText2DProperties, renderEffectsAssetGuids, type CollisionTriangleMesh, type ProjectDocument } from "@babylonslate/core";
 import {
   isAssetSourceRevisionChanged, AUDIO_DEFAULT_SOURCE_CHUNK, FONT_FACETYPE_CHUNK_ID, FONT_MSDF_CHUNK_ID, FONT_MSDF_PNG_CHUNK_ID,
-  cookComplexCollisionMeshes, currentAreaEmissionChunk, decodeAreaEmission, modelAnimationDurations, normalizeAudioPayload, normalizeFontPayload, normalizeModelPayload,
+  complexCollisionModelGuids, cookComplexCollisionMesh, currentAreaEmissionChunk, decodeAreaEmission, modelAnimationDurations, normalizeAudioPayload, normalizeFontPayload, normalizeModelPayload,
   registryAssetRepresentation, selectTextureChunk, type AssetLoadScope, type AssetRegistry,
-  type IndexedAsset, type RegistryLoadedAsset,
+  type IndexedAsset, type ModelPayload, type RegistryLoadedAsset,
 } from "@babylonslate/assets";
 import { packedContentFromGame, packedPlayControls, packedSourceControls, type GameSourceContent, type PackedGameContent } from "@babylonslate/exporter";
 import type { SceneSourceAssets } from "@babylonslate/render";
@@ -212,6 +212,17 @@ async function acquirePlayAssetSourcesAttempt(
     audioPayloads: new Map(), payloads: new Map(), decodedPayloads: new Map(), navmeshBytes: new Map(), audioReverbBytes: new Map(),
     complexMeshes, modelAnimationDurations: durations,
   };
+  // One cache entry per Model revision: up-front and on-demand cooking share it,
+  // so a Model is cooked at most once while any consumer retains it.
+  const cookModelCollision = (guid: string, source: Uint8Array, model: ModelPayload, signal: AbortSignal) => scope.acquire(guid, {
+    key: `model-cpu:collision-v2:${host.documentOverrides?.get(guid)?.cacheKey ?? "saved"}`,
+    estimate: { sourceBytes: 0, decodedBytes: source.byteLength, temporaryBytes: source.byteLength * 3 },
+    load: async (_asset, loadSignal) => {
+      loadSignal.throwIfAborted();
+      const mesh = cookComplexCollisionMesh(source, model);
+      return { value: mesh, sourceBytes: 0, decodedBytes: mesh ? collisionTriangleMeshBytes(mesh) : 0 };
+    },
+  }, { signal, dependencies: "none", refresh: false });
   let released = false;
   const release = () => {
     if (released) return;
@@ -294,6 +305,7 @@ async function acquirePlayAssetSourcesAttempt(
     };
     for (const [guid, modes] of fontModes) visitFallbacks(guid, modes);
     const emissions = new Set(areaEmissionTextureGuids([...documents.values()].map((value) => value.document.payload)));
+    const complexCollisionGuids = complexCollisionModelGuids([...documents.values()].map((value) => value.document.payload));
     let completed = 0;
     let sourceBytes = 0;
     let documentBytes = 0;
@@ -332,23 +344,21 @@ async function acquirePlayAssetSourcesAttempt(
         const model = normalizeModelPayload(payload);
         game.modelPayloads.set(guid, model);
         if (source) {
-          const prepared = await scope.acquire(guid, {
-            key: `model-cpu:collision-and-clips-v1:${host.documentOverrides?.get(guid)?.cacheKey ?? "saved"}`,
-            estimate: { sourceBytes: 0, decodedBytes: source.byteLength * 4, temporaryBytes: source.byteLength * 2 },
+          const clips = await scope.acquire(guid, {
+            key: `model-cpu:clips-v1:${host.documentOverrides?.get(guid)?.cacheKey ?? "saved"}`,
+            estimate: { sourceBytes: 0, decodedBytes: 4096, temporaryBytes: source.byteLength },
             load: async (_asset, signal) => {
               signal.throwIfAborted();
-              const meshes = cookComplexCollisionMeshes(new Map([[guid, source]]), new Map([[guid, model]]));
-              const clips = modelAnimationDurations(source);
-              const mesh = meshes.get(guid);
-              const decodedBytes = (mesh ? mesh.vertices.length * 32 + mesh.indices.length * 8 : 0) + clips.size * 128;
-              return {
-                value: { meshes, clips }, sourceBytes: 0, decodedBytes,
-                dispose: () => { meshes.clear(); clips.clear(); },
-              };
+              const value = modelAnimationDurations(source);
+              return { value, sourceBytes: 0, decodedBytes: value.size * 128, dispose: () => value.clear() };
             },
           }, { signal: options.signal, dependencies: "none", refresh: false });
-          for (const [id, mesh] of prepared.meshes) complexMeshes.set(id, mesh);
-          durations.set(guid, prepared.clips);
+          durations.set(guid, clips);
+          // Only Models a Scene/Class in this closure simulates with Complex Collision are cooked up front.
+          if (complexCollisionGuids.has(guid)) {
+            const mesh = await cookModelCollision(guid, source, model, options.signal);
+            if (mesh) complexMeshes.set(guid, mesh);
+          }
         }
       } else if (type === "Audio") {
         const audio = normalizeAudioPayload(payload);
@@ -471,7 +481,13 @@ async function acquirePlayAssetSourcesAttempt(
     };
     controls.push(...packedPlayControls(content).filter((control) => control.type !== "loadNavMesh"));
     if (game.scripts.length) controls.unshift({ type: "loadScripts", scripts: game.scripts });
-    return { game, content, sources, controls, required, audioChunks, diagnostics: compiled.diagnostics, release };
+    /** On-demand fallback for a Model the content scan did not mark (for example a script switching Collision Mode). */
+    const cookComplexCollision = async (guid: string): Promise<CollisionTriangleMesh | null> => {
+      const source = released ? undefined : game.modelBytes.get(guid);
+      if (!source) return null;
+      return cookModelCollision(guid, source, game.modelPayloads.get(guid) ?? normalizeModelPayload({}), options.signal);
+    };
+    return { game, content, sources, controls, required, audioChunks, diagnostics: compiled.diagnostics, release, cookComplexCollision };
   } catch (error) {
     release();
     throw new Error(`Asset preparation for ${options.consumer} failed: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
