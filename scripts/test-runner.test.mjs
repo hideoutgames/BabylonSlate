@@ -138,7 +138,7 @@ test("one resolved policy reaches child worker settings regardless of local CI f
         GITHUB_REPOSITORY: "fixture/repo",
         RUNNER_OS: "Linux",
       },
-      ["2", "1"],
+      ["4", "1"],
     ],
   ]) {
     const result = await runStage(
