@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
+import { useId, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
 import { ChevronDownIcon } from "lucide-react";
 import { Button } from "@babylonslate/ui/components/button";
 import { Dialog, DialogContent, DialogTitle } from "@babylonslate/ui/components/dialog";
@@ -108,12 +108,8 @@ export function ColorPicker({
   const coarse = isCoarsePointerEnvironment();
   const current = draft && !disabled && draft.withAlpha === withAlpha && sameColor(draft.source, value) ? draft : null;
 
-  useEffect(() => {
-    if (draft && !current) {
-      setDraft(null);
-      dragRef.current = null;
-    }
-  }, [draft, current]);
+  // Drop a stale draft while rendering; opening the palette resets the drag.
+  if (draft && !current) setDraft(null);
 
   const close = () => {
     dragRef.current = null;
@@ -157,6 +153,7 @@ export function ColorPicker({
       onClick={(event) => {
         event.stopPropagation();
         const bounds = event.currentTarget.getBoundingClientRect();
+        dragRef.current = null;
         setDraft({ source: [...value], color: [...value], hsv: toHsv(value), withAlpha,
           hex: colorToHex(rgb(value)), alpha: String(value[3]), anchor: { x: bounds.left, y: bounds.bottom + 4 } });
       }}>

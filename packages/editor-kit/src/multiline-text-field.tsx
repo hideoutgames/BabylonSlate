@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Button } from "@babylonslate/ui/components/button";
 import {
   Dialog,
@@ -44,10 +44,12 @@ export function MultilineTextField({
 }: MultilineTextFieldProps) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(value);
-
-  useEffect(() => {
+  // Reseed the draft while rendering when the editor opens or the value changes.
+  const [seededFrom, setSeededFrom] = useState<{ open: boolean; value: string } | null>(null);
+  if (seededFrom?.open !== open || seededFrom.value !== value) {
+    setSeededFrom({ open, value });
     if (open) setDraft(value);
-  }, [open, value]);
+  }
 
   const finish = () => {
     if (!open) return;
