@@ -759,8 +759,10 @@ overrides; resetting a field removes its key and resumes live project inheritanc
 The viewport reload key includes effective shadow settings alongside CEL settings.
 
 `SceneShadowController` owns authored-light shadow resources in both editor and
-Play. Mesh additions/removals update caster membership, disabled lights release
-allocation, and local lights have a separate budget from the directional light.
+Play. Mesh additions/removals update caster membership; a mesh-count check
+admits additions before Babylon's deferred `onNewMeshAddedObservable`, so a mesh
+created in the same task as a frame casts and receives in that frame. Disabled
+lights release allocation, and local lights have a separate budget from the directional light.
 Collider display roots and their merged dash mesh carry the editor-helper
 marker and never enter shadow maps. The exclusion applies to each marked mesh,
 not its entire subtree: authored model components beneath a collider still cast

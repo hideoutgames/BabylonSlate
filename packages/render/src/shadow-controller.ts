@@ -203,6 +203,11 @@ export class SceneShadowController {
   private readonly entries = new Map<Light, Entry>();
   private readonly meshes = new Set<AbstractMesh>();
   private readonly pending = new Set<AbstractMesh>();
+  /** Scene meshes already queued once; a removal forgets the mesh so a re-add is queued again. */
+  private readonly known = new WeakSet<AbstractMesh>();
+  /** scene.meshes.length at the last scan, and synchronous removals since. */
+  private knownMeshCount = 0;
+  private removedSinceScan = 0;
   private readonly spatial = new ShadowSpatialIndex();
   private selectionCamera: Camera | null = null;
   /** Per-map closures read their current owner; a local map can move between lights. */
@@ -229,13 +234,19 @@ export class SceneShadowController {
         entry.resetAllocation = true;
       }
     });
-    for (const mesh of scene.meshes) this.pending.add(mesh);
+    this.queueUnknownMeshes();
     scene.onNewMeshAddedObservable.add((mesh) => {
       // Babylon defers this notification. RTT-only proxies can already have
       // left the Scene before it arrives; removal must win over a stale add.
-      if (!mesh.isDisposed() && scene.meshes.includes(mesh)) this.pending.add(mesh);
+      // sync() may already have queued the mesh through the count check.
+      if (!mesh.isDisposed() && !this.known.has(mesh) && scene.meshes.includes(mesh)) {
+        this.known.add(mesh);
+        this.pending.add(mesh);
+      }
     });
     scene.onMeshRemovedObservable.add((mesh) => {
+      this.removedSinceScan++;
+      this.known.delete(mesh);
       this.pending.delete(mesh);
       // Only casters own a spatial leaf or generator render-list membership.
       if (!this.meshes.delete(mesh)) return;
@@ -373,6 +384,15 @@ export class SceneShadowController {
     }
     return { passes, bytes };
   }
+  private queueUnknownMeshes(): void {
+    for (const mesh of this.scene.meshes) {
+      if (this.known.has(mesh)) continue;
+      this.known.add(mesh);
+      this.pending.add(mesh);
+    }
+    this.knownMeshCount = this.scene.meshes.length;
+    this.removedSinceScan = 0;
+  }
   diagnostics(lights: readonly Light[] = this.scene.lights) {
     return lights.map((light) => shadowLightRow(light, this.entries.get(light)));
   }
@@ -380,6 +400,11 @@ export class SceneShadowController {
     const scene = this.scene;
     if (scene.isDisposed) return;
     syncDirectionalLightPolicy(scene);
+    // Babylon pushes a mesh synchronously but notifies it on a later task, and
+    // a frame can render first. Removals notify synchronously, so a length
+    // that is not the last scan minus those removals means an unnotified add.
+    if (scene.meshes.length !== this.knownMeshCount - this.removedSinceScan)
+      this.queueUnknownMeshes();
     const hadPending = this.pending.size > 0;
     for (const mesh of this.pending) {
       if (mesh.isDisposed() || !scene.meshes.includes(mesh)) continue;
