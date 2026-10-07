@@ -257,7 +257,7 @@ The shared type visual registry recognizes this component for object-reference p
 
 ### Deformer
 
-**Add Component → Rendering → Deformer** uses the shared component catalog and PropertyGrid in Scene Details and the Class/Prefab Inspector. Target Mesh lists only Mesh Components on the same actor; Enabled defaults off. Strength, 2–4 controls per axis, automatic or manual target-local bounds, and up to 64 vector control offsets use existing compact controls. Resolution changes reset offsets. Inherited control resets, duplication and Class previews retain the cage's own mesh target. The type registry uses the existing mesh glyph. Deformation is visual only; collision and picking retain the original geometry.
+**Add Component → Rendering → Deformer** uses the shared component catalog and PropertyGrid in Scene Details and the Class/Prefab Inspector. Target Mesh lists only Mesh Components on the same actor; Enabled defaults off. Strength, 2–4 controls per axis, automatic or manual target-local bounds, and up to 64 vector control offsets use existing compact controls. Resolution changes reset offsets. Inherited control resets, duplication and Class previews retain the cage's own mesh target. The type registry uses the existing mesh glyph. Deformation is visual only; collision, marquee and Play picking retain the original geometry, while viewport taps select the drawn shape.
 
 ### Spline and river path editing
 
