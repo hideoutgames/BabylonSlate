@@ -1,7 +1,6 @@
 import { captureSimulationScene, type SimulationSceneCaptureResult, type SimulationCaptureIdentity } from "./simulation-scene-capture";
 import { RuntimeMaterialEditGate } from "./runtime-material-edit-gate";
 import { runtimeEditLocalTransform } from "./runtime-transform-edit";
-import { RuntimeDiagnosticRecorder } from "./runtime-diagnostic-recorder";
 import { RuntimeInspector } from "./runtime-inspector";
 import { RuntimeDataCatalog, dataTypeSchemas } from "./data-catalog";
 import { SaveGameError, SaveGameService, resolveActorDefaults, type SaveGameServiceOptions } from "@babylonslate/core";
@@ -41,9 +40,7 @@ import {
   World,
   createActorFromSerialized,
   attachSerializedComponents,
-  createWorldSnapshot,
   createDebugInspectSnapshot,
-  stringifyWorldSnapshot,
   Actor,
   ActorComponent,
   BObject,
@@ -67,7 +64,6 @@ import {
   type SceneSubsystemHooks,
   type Subsystem,
   type TickContext,
-  type TickPhase,
   type SceneActorHooks,
 } from "@babylonslate/object-model";
 import {
@@ -110,12 +106,10 @@ import {
   matchCommandName,
   parseCommandArgs,
   isReservedConsoleCommandName,
-  TraceRecorder,
   createInfiniteLoopGuard,
   isInfiniteLoopError,
   INFINITE_LOOP_DIAGNOSTIC_CODE,
   DEFAULT_INFINITE_LOOP_COUNT,
-  shouldEmitStatsCommand,
   type CommandRegistry,
   type CommandResult,
   type ConsoleCommandHost,
@@ -155,6 +149,7 @@ import type { ModelPayload, SpriteAnimationPayload, SpritePayload, TilemapPayloa
 import { initNavigation, type NavObstacleKind, type NavPoint } from "@babylonslate/navigation";
 import { RuntimeSubsystems } from "./runtime-subsystems";
 import { RenderSlots } from "./render-slots";
+import { TickPipeline } from "./tick-pipeline";
 import { SnapshotPublisher } from "./snapshot-publisher";
 import { RenderCommandEmitter } from "./render-command-emitter";
 import { AudioParticleEmitter, createAudioHostBindings } from "./audio-particle-emitter";
@@ -493,8 +488,6 @@ class InProcessRuntime implements RuntimeDriver {
   private commandRevision = 0;
   private lastBoundaryRequestId = 0;
   private readonly diagnosticsEnabled: boolean;
-  private diagnosticRecorder: RuntimeDiagnosticRecorder | null = null;
-  private profileTickPublishMs = 0;
   private readonly deferMaterialEdits: boolean;
   private materialEditGate: RuntimeMaterialEditGate | null = null;
   private materialEditEmission: { preparation: RuntimeMaterialEditPreparation; emitted: boolean } | null = null;
@@ -506,7 +499,6 @@ class InProcessRuntime implements RuntimeDriver {
   private boundaryScheduled = false;
   private readonly pauseReasons = new Set<SessionPauseReason>();
   private readonly pendingPauseChanges = new Map<SessionPauseReason, boolean>();
-  private resetElapsed = false;
   private readonly assetPreloads = new RuntimeAssetPreloads(command => this.emit(command));
   private readonly classAssetGuids = new Map<string, string>();
   private readonly demandAssetCatalog: boolean;
@@ -550,14 +542,12 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly tweens = new TweenRuntime((owner) => !this.stopped && !this.paused && !this.streams.blocking &&
     (!owner || this.admission.canRunActions(owner)));
   private readonly onCommand?: (command: CommandMessage) => void;
-  private readonly maxCatchUp = 4;
   private readonly dt: number;
   private physicsWorldKind: PhysicsWorldKind;
   private physicsGeneration = 0;
   private gravity: [number, number, number];
   private readonly havokWasmUrl: string | undefined;
   private readonly preferSoftwarePhysics: boolean;
-  private accumulator = 0;
   private paused = false;
   private readonly simulationWaiters = new Set<() => void>();
   private readonly scalability: ScalabilitySession;
@@ -567,14 +557,9 @@ class InProcessRuntime implements RuntimeDriver {
   private timeDilation = 1;
   private showCollision = false;
   private running = false;
-  private processingTick = false;
   private flushingConsoleActors = false;
   private frameId = 0;
   private readonly removingActors = new WeakSet<Actor>();
-  private _lastScriptMs = 0;
-  private _lastPhysicsMs = 0;
-  private phaseScriptMs = 0;
-  private phasePhysicsMs = 0;
   private readonly scriptHost: ScriptHost;
   private readonly scriptSources = new Map<string, CompiledScript>();
   private scriptSourceWork: Promise<void> = Promise.resolve();
@@ -650,10 +635,7 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly commandClasses = new Map<string, { classId: string; assetGuid: string }>();
   private readonly consoleLifetime = new AbortController();
   private readonly loopGuard: InfiniteLoopGuard;
-  private readonly trace: TraceRecorder;
-  private lastTrace: TracePayload | null = null;
   private readonly seed: number;
-  private tickPrints: Array<{ message: string; key: string }> = [];
   private tilemaps = new Map<string, TilemapPayload>();
   private waters = new Map<string, WaterDefinition>();
   private tilesets = new Map<string, TilesetPayload>();
@@ -738,7 +720,7 @@ class InProcessRuntime implements RuntimeDriver {
     releaseAssets: (ownerGuid) => this.assetPreloads.releaseOwner(ownerGuid),
     markUnsupportedInstance: (sceneGuid) => this.markUnsupportedSimulationInstance("stream", sceneGuid),
     blockSettled: () => {
-      this.accumulator = 0;
+      this.ticks.resetAccumulator();
       this.admission.flush();
       if (!this.streams.blocking) {
         const waiters = [...this.simulationWaiters];
@@ -781,14 +763,14 @@ class InProcessRuntime implements RuntimeDriver {
   }, nowMs);
   /** Frame index (first-spawned actor per guid) the BT and crowd ticks share. */
   private navFrameActors: Map<string, Actor> | null = null;
-  private lastStatsEmitMs: number | null = null;
+  private readonly ticks: TickPipeline;
 
   get lastScriptMs(): number {
-    return this._lastScriptMs;
+    return this.ticks.lastScriptMs;
   }
 
   get lastPhysicsMs(): number {
-    return this._lastPhysicsMs;
+    return this.ticks.lastPhysicsMs;
   }
   get snapshotCapacity(): number { return this.snapshots.capacity; }
   get snapshotGeneration(): number { return this.snapshots.generation; }
@@ -804,7 +786,6 @@ class InProcessRuntime implements RuntimeDriver {
     const projectVersion = options.project?.version ?? "";
     this.demandAssetCatalog = options.classAssetGuids !== undefined;
     for (const [classId, guid] of Object.entries(options.classAssetGuids ?? {})) this.classAssetGuids.set(classId, guid);
-    this.trace = new TraceRecorder({ byteBudget: options.traceByteBudget });
     this.diagnosticsEnabled = options.includeDebugCommands ?? true;
     this.deferMaterialEdits = options.deferMaterialEdits === true;
     this.materialParameters = new RuntimeMaterialParameters(options.materialParameterCatalog, options.materialTextureAssetGuids);
@@ -950,7 +931,7 @@ class InProcessRuntime implements RuntimeDriver {
       dt: this.dt,
       classRegistry: registry,
       guidFactory: () => `rt-${++guidSeq}`,
-      onPhase: (phase) => this.markPhase(phase),
+      onPhase: (phase) => this.ticks.markPhase(phase),
       canTickScene: () => !this.stopped && !this.streams.blocking,
       canTickActor: (actor) => this.admission.canTickActor(actor),
       componentHooksFor: (classId) => {
@@ -995,18 +976,38 @@ class InProcessRuntime implements RuntimeDriver {
     this.snapshots = new SnapshotPublisher(options.maxActors ?? 256, this.world, this.renderSlots, {
       stopped: () => this.stopped,
       frameId: () => this.frameId,
-      lastScriptMs: () => this._lastScriptMs,
-      lastPhysicsMs: () => this._lastPhysicsMs,
+      lastScriptMs: () => this.ticks.lastScriptMs,
+      lastPhysicsMs: () => this.ticks.lastPhysicsMs,
       canPublish: () => this.admission.canTickScene() || this.admission.hasReadyLayers(),
       cameraActor: () => this.playCameraActor(),
       applyOverlayLayouts: () => this.overlay.applyLayouts(),
       retireDetachedStreams: () => this.streams.retireDetached(),
       removedActors: () => this.behaviourTrees.emitSnapshot(true),
-      recorder: () => this.diagnosticRecorder,
-      profilePublish: (milliseconds) => { this.profileTickPublishMs += milliseconds; },
+      recorder: () => this.ticks.recorder,
+      profilePublish: (milliseconds) => this.ticks.profilePublish(milliseconds),
       reportLog: (message, severity, category) => this.reportLog(message, severity, category),
       reportError: (error) => { this.reportError(error); },
       emit: (command) => this.emit(command),
+    }, nowMs);
+    this.ticks = new TickPipeline(this.world, this.snapshots, this.logs, {
+      canTick: () => this.running && !this.paused && !this.saveBoundaryActive && !this.streams.blocking,
+      canAdvance: () => this.running && !this.paused && !this.streams.blocking,
+      paused: () => this.paused,
+      stopped: () => this.stopped,
+      runTick: () => this.runTick(),
+      settlePauseChanges: () => this.settlePauseChanges(),
+      frameId: () => this.frameId,
+      liveActors: () => this.renderSlots.guidCount,
+      btTraceStates: () => this.behaviourTrees.traceStates(),
+      reportLog: (message, severity, category) => this.reportLog(message, severity, category),
+      emit: (command) => this.emit(command),
+    }, {
+      dt: this.dt,
+      seed: this.seed,
+      generation: this.sessionGeneration,
+      mode: this.sessionMode,
+      diagnosticsEnabled: this.diagnosticsEnabled,
+      traceByteBudget: options.traceByteBudget,
     }, nowMs);
     this.dynamicMeshes = new DynamicRuntimeMeshSync({
       eligible: (actor) => !actor.sceneLayerId && this.admission.canRun(actor),
@@ -1138,7 +1139,7 @@ class InProcessRuntime implements RuntimeDriver {
         tickIndex: () => this.world.clock.tickIndex,
         anchors: this.anchors,
         recordDiagnostic: (diagnostic) => this.diagnostics.push(diagnostic),
-        recordPrint: (print) => this.tickPrints.push(print),
+        recordPrint: (print) => this.ticks.recordPrint(print),
         emit,
       }),
       ...createActorHostBindings({
@@ -1201,7 +1202,7 @@ class InProcessRuntime implements RuntimeDriver {
         dynamicMeshes: this.dynamicMeshes,
         movement: this.movement,
         textAppear: this.textAppear,
-        processingTick: () => this.processingTick,
+        processingTick: () => this.ticks.processing,
         flushPainters: () => this.flushPainters(),
         flushTextAppear: () => this.flushTextAppear(),
         refreshComponent: (component, propertyName) => this.refreshRuntimeComponent(component, propertyName),
@@ -1856,7 +1857,7 @@ class InProcessRuntime implements RuntimeDriver {
     const slotId = this.renderSlots.recordedSlot(owner);
     if (component.classId === "DeformerComponent") {
       if (slotId !== undefined) {
-        if (this.processingTick) this.renderEmitter.queueDeformers(owner);
+        if (this.ticks.processing) this.renderEmitter.queueDeformers(owner);
         else this.renderEmitter.emitActorDeformers(owner, slotId);
       }
       return;
@@ -2473,25 +2474,7 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   stopTrace(): TracePayload | null {
-    return this.lastTrace;
-  }
-
-  private finalizeTrace(reason: "requested" | "session-ended" = "requested"): void {
-    const payload = this.trace.stop(reason);
-    if (payload) {
-      this.lastTrace = payload;
-      this.emit({
-        type: "trace",
-        payload: payload as unknown as Record<string, unknown>,
-      });
-      if (payload.retention?.stopReason === "oversized-frame") {
-        this.reportLog(
-          `Trace recording stopped: an oversized frame exceeds the ${payload.retention.byteBudget}-byte retained-data budget. ` +
-          `${payload.frames.length} complete frames retained; ${payload.retention.droppedFrames} frames dropped.`,
-          "warning", "Trace",
-        );
-      }
-    }
+    return this.ticks.lastTrace;
   }
 
   restoreBtFromTrace(states: readonly TraceBtState[]): void {
@@ -2796,7 +2779,7 @@ class InProcessRuntime implements RuntimeDriver {
         this.audioParticles.stopAudio(target);
         this.audioParticles.stopParticles(target);
         this.world.destroyActor(target.guid);
-        if (!this.processingTick && !this.flushingConsoleActors) {
+        if (!this.ticks.processing && !this.flushingConsoleActors) {
           this.flushingConsoleActors = true;
           try {
             this.world.flushPending();
@@ -2838,12 +2821,10 @@ class InProcessRuntime implements RuntimeDriver {
           .join("\n"),
       startSnapshot: () => {
         if (this.sessionMode === "simulate") return { success: false, output: "Use Play or Preview Build to record diagnostics." };
-        if (this.diagnosticRecorder?.busy) return { success: false, output: "Stop the current profile or frame capture first." };
-        this.trace.start({ seed: this.seed, dt: this.dt });
-        this.lastTrace = null;
+        return this.ticks.startTrace();
       },
       stopSnapshot: () => {
-        this.finalizeTrace();
+        this.ticks.finalizeTrace();
       },
     };
   }
@@ -3166,36 +3147,6 @@ class InProcessRuntime implements RuntimeDriver {
     });
     this.world.spawnActorNow(second);
     this.assignSlot(second);
-  }
-
-  private phaseMark = 0;
-  private currentTimingPhase: TickPhase | null = null;
-
-  private markPhase(phase: TickPhase): void {
-    const now = nowMs();
-    if (this.currentTimingPhase !== null) {
-      const elapsed = now - this.phaseMark;
-      if (this.currentTimingPhase === "physics") {
-        this.phasePhysicsMs += elapsed;
-      } else {
-        this.phaseScriptMs += elapsed;
-      }
-    }
-    this.currentTimingPhase = phase;
-    this.phaseMark = now;
-  }
-
-  private closePhaseTiming(): void {
-    const now = nowMs();
-    if (this.currentTimingPhase !== null) {
-      const elapsed = now - this.phaseMark;
-      if (this.currentTimingPhase === "physics") {
-        this.phasePhysicsMs += elapsed;
-      } else {
-        this.phaseScriptMs += elapsed;
-      }
-    }
-    this.currentTimingPhase = null;
   }
 
   private assignSlot(actor: Actor): number {
@@ -3575,7 +3526,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.consoleLifetime.abort(new Error("The runtime session has ended"));
     this.layers.rejectWaiters();
     this.stopped = true;
-    this.diagnosticRecorder?.stop();
+    this.ticks.stopDiagnostics();
     this.materialEditGate?.cancel("The game session has stopped.");
     if (this.inspectorRequests.length) this.flushInspectorRequests();
     this.flushBoundaryRequests();
@@ -3593,7 +3544,7 @@ class InProcessRuntime implements RuntimeDriver {
     const retiring = this.cancelRealization();
     this.sceneLoadId++;
     this.pendingSceneFinish = null;
-    this.finalizeTrace("session-ended");
+    this.ticks.finalizeTrace("session-ended");
     for (const actor of this.world.getActors()) {
       for (const component of [...actor.components]) {
         if (!component.destroyed) {
@@ -3631,14 +3582,14 @@ class InProcessRuntime implements RuntimeDriver {
   private setPauseReason(reason: SessionPauseReason, paused: boolean): void {
     if (this.stopped) return;
     if (this.simulationQuiescent && !paused) return;
-    if (this.processingTick) { this.pendingPauseChanges.set(reason, paused); return; }
+    if (this.ticks.processing) { this.pendingPauseChanges.set(reason, paused); return; }
     const wasPaused = this.paused;
     if (paused) this.pauseReasons.add(reason); else this.pauseReasons.delete(reason);
     this.paused = this.pauseReasons.size > 0;
     if (this.paused === wasPaused) return;
-    this.accumulator = 0;
+    this.ticks.resetAccumulator();
     if (this.paused) { this.resetInputState(); return; }
-    this.resetElapsed = true;
+    this.ticks.discardNextElapsed();
     this.admission.flush();
     if (!this.streams.blocking) {
       const waiters = [...this.simulationWaiters];
@@ -3669,10 +3620,7 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   requestDiagnosticOperation(request: DiagnosticOperationRequest): Promise<DiagnosticOperationResult> {
-    this.diagnosticRecorder ??= new RuntimeDiagnosticRecorder({ generation: this.sessionGeneration, mode: this.sessionMode,
-      enabled: this.diagnosticsEnabled, traceActive: () => this.trace.isRecording, now: nowMs, emit: command => this.emit(command) });
-    if (this.stopped) this.diagnosticRecorder.stop();
-    return this.diagnosticRecorder.request(request);
+    return this.ticks.requestDiagnosticOperation(request);
   }
 
   private markUnsupportedSimulationInstance(kind: "stream" | "layer", id: string): void {
@@ -3946,29 +3894,17 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   tick(): void {
-    if (!this.running || this.paused || this.saveBoundaryActive || this.streams.blocking || this.processingTick) return;
-    this.processingTick = true;
-    const profiling = this.diagnosticRecorder?.recording === true;
-    const profileStarted = profiling ? nowMs() : 0;
-    const previousTick = profiling ? this.world.clock.tickIndex : 0;
-    if (profiling) this.profileTickPublishMs = 0;
-    try {
-      this.runTick();
-    } catch (error) {
-      // Animation and other script phases also abort via the already-reported
-      // loop sentinel; keep it inside the runtime boundary, like Actor ticks.
-      if (!isInfiniteLoopError(error)) throw error;
-    } finally {
-      this.processingTick = false;
-      if (profiling && this.world.clock.tickIndex > previousTick) this.diagnosticRecorder?.record(this.world.clock.tickIndex,
-        nowMs() - profileStarted, this._lastScriptMs, this._lastPhysicsMs, this.profileTickPublishMs);
-      if (this.pendingPauseChanges.size) {
-        for (const [reason, paused] of this.pendingPauseChanges) this.setPauseReason(reason, paused);
-        this.pendingPauseChanges.clear();
-      }
+    this.ticks.tick();
+  }
+
+  private settlePauseChanges(): void {
+    if (this.pendingPauseChanges.size) {
+      for (const [reason, paused] of this.pendingPauseChanges) this.setPauseReason(reason, paused);
+      this.pendingPauseChanges.clear();
     }
   }
 
+  /** The tick's phases in order; `TickPipeline` owns the gate, timing, stats and trace around them. */
   private runTick(): void {
     const simDt = this.simulationDt();
     this.world.clock.dt = simDt;
@@ -3980,7 +3916,7 @@ class InProcessRuntime implements RuntimeDriver {
     const pending = this.input.drain();
     this.resolvedInput = this.resolver.resolve(pending, simDt);
     this.connectionBox.current = this.resolvedInput.gamepadConnections;
-    this.tickPrints = [];
+    this.ticks.clearPrints();
     for (const connection of this.resolvedInput.gamepadConnections) {
       this.emit({
         type: "log",
@@ -3993,10 +3929,7 @@ class InProcessRuntime implements RuntimeDriver {
       });
     }
 
-    this.phaseScriptMs = 0;
-    this.phasePhysicsMs = 0;
-    this.currentTimingPhase = null;
-    this.phaseMark = nowMs();
+    this.ticks.beginPhaseTiming();
 
     this.loopGuard.reset();
     this.tweens.advance(simDt);
@@ -4028,10 +3961,7 @@ class InProcessRuntime implements RuntimeDriver {
         this.navFrameActors = null;
       }
     }
-    this.closePhaseTiming();
-
-    this._lastScriptMs = this.phaseScriptMs;
-    this._lastPhysicsMs = this.phasePhysicsMs;
+    this.ticks.closePhaseTiming();
 
     this.flushPainters();
     this.flushTextAppear();
@@ -4044,74 +3974,11 @@ class InProcessRuntime implements RuntimeDriver {
       this.navigation.emitDebug();
       this.behaviourTrees.emitSnapshot();
     }
-    const statsNow = nowMs();
-    if (shouldEmitStatsCommand(statsNow, this.lastStatsEmitMs)) {
-      this.lastStatsEmitMs = statsNow;
-      this.emit({
-        type: "stats",
-        frameId: this.frameId,
-        tickIndex: this.world.clock.tickIndex,
-        scriptMs: this._lastScriptMs,
-        physicsMs: this._lastPhysicsMs,
-        publishMs: this.snapshots.lastPublishMs,
-        liveActors: this.renderSlots.guidCount,
-        snapshotCapacity: this.snapshots.capacity,
-      });
-    }
-    if (this.trace.isRecording) {
-      const recordedTick = this.world.clock.tickIndex;
-      this.trace.recordFrame({
-        tickIndex: recordedTick,
-        scriptMs: this._lastScriptMs,
-        physicsMs: this._lastPhysicsMs,
-        logs: this.logs
-          .entries()
-          .filter((entry) => entry.frameId === completedFrameId)
-          .map((entry) => ({
-            severity: entry.severity,
-            category: entry.category,
-            message: entry.message,
-          })),
-        prints: [...this.tickPrints],
-        snapshotText: stringifyWorldSnapshot({
-          ...createWorldSnapshot(this.world),
-          dt: this.dt,
-        }),
-        inputEvents: pending.map((event) => {
-          if (event.kind === "key") {
-            return {
-              type: "key",
-              code: event.code,
-              down: event.phase === "down",
-              tick: event.tick,
-            };
-          }
-          return { type: event.kind, tick: event.tick };
-        }),
-        bt: this.behaviourTrees.traceStates(),
-      });
-      if (!this.trace.isRecording) this.finalizeTrace();
-    }
+    this.ticks.finishTick(completedFrameId, pending);
   }
 
   advance(elapsedSeconds: number): void {
-    if (!this.running || this.paused || this.streams.blocking) return;
-    if (this.resetElapsed) { this.resetElapsed = false; elapsedSeconds = 0; }
-    this.accumulator += Number.isFinite(elapsedSeconds) ? Math.max(0, elapsedSeconds) : 0;
-    let steps = 0;
-    // Hosts copy the snapshot once after advance(), so catch-up ticks keep their
-    // overlay layout and removal pass but compose and write only the burst's
-    // final frame. Any tick may pause or block the session; the flush still runs.
-    this.snapshots.deferWrites(() => {
-      while (!this.paused && !this.stopped && this.accumulator >= this.dt && steps < this.maxCatchUp) {
-        this.tick();
-        this.accumulator = Math.max(0, this.accumulator - this.dt);
-        steps += 1;
-      }
-    });
-    if (steps === this.maxCatchUp) {
-      this.accumulator = 0;
-    }
+    this.ticks.advance(elapsedSeconds);
   }
 
   copySnapshot(out: Float32Array): boolean {
