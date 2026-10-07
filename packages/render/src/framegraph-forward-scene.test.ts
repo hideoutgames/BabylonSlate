@@ -813,6 +813,44 @@ it("gives the settings effect chain's offscreen scene color a real depth attachm
   }
 });
 
+it("clears the temporal geometry attachments on their own target, never the backbuffer", async () => {
+  const { engine, scene, camera } = host();
+  // The spatial chain needs four float targets and depth sampling.
+  Object.assign(engine.getCaps(), {
+    maxDrawBuffers: 4, drawBuffersExtension: true, depthTextureExtension: true,
+    textureHalfFloatRender: true, textureFloatRender: true, texelFetch: true,
+  });
+  updateSceneRenderingSettings(scene, {
+    mode: "pbr",
+    effects: { ...DEFAULT_RENDER_EFFECTS, temporalAntiAliasing: { enabled: true, samples: 8, blend: 0.1 } },
+  });
+  // WebGL2 accepts only a single BACK or NONE draw buffer on the default
+  // framebuffer; any other layout is INVALID_OPERATION, which fails the
+  // editor's presented frame. clearAttachments binds its layout first.
+  const backbufferLayouts: number[][] = [];
+  const bind = (attachments: number[]) => {
+    if (!engine._currentRenderTarget && (attachments.length !== 1 || ![0x0405, 0].includes(attachments[0]!)))
+      backbufferLayouts.push(attachments);
+  };
+  const farClears: boolean[] = [];
+  vi.mocked(engine.bindAttachments).mockImplementation(bind);
+  vi.mocked(engine.clearAttachments).mockImplementation((color, attachments) => {
+    bind(attachments);
+    // Sky pixels' view depth terminates at the far plane, in the geometry target.
+    if (color?.r === camera.maxZ) farClears.push(engine._currentRenderTarget !== null);
+  });
+  const graph = new ForwardSceneFrameGraph(scene);
+  try {
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.taskNames()).toContain("Scene Temporal Anti-Aliasing");
+    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    expect(backbufferLayouts).toEqual([]);
+    expect(farClears).toEqual([true]);
+  } finally {
+    graph.dispose();
+  }
+});
+
 
 it("redraws without advancing native animation or catching up after resume", async () => {
   const path = "frameGraph";
