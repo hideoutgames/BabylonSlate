@@ -74,10 +74,11 @@ export async function moveStorageFile(
     await storage.remove(from);
     await storage.writeBinary(to, replacement);
   } catch (error) {
+    const failures: unknown[] = [error];
     try { await storage.writeBinary(from, original); }
-    catch (restoreError) {
-      throw new AggregateError([error, restoreError], `Rename failed; the original is preserved at ${backup}`);
-    }
+    catch (restoreError) { failures.push(restoreError); }
+    if (failures.length > 1)
+      throw new AggregateError(failures, `Rename failed; the original is preserved at ${backup}`, { cause: error });
     await removeBackup(storage, backup);
     throw error;
   }
@@ -115,13 +116,16 @@ export async function moveStorageTree(storage: ProjectStorage, from: string, to:
     await storage.remove(from);
     await copyStorageTree(storage, backup, to);
   } catch (error) {
+    const failures: unknown[] = [error];
     try {
       // A partial destination may still have the old spelling on this host.
       if (await storage.exists(to)) await storage.remove(to);
       await copyStorageTree(storage, backup, from);
     } catch (restoreError) {
-      throw new AggregateError([error, restoreError], `Move failed; the original is preserved at ${backup}`);
+      failures.push(restoreError);
     }
+    if (failures.length > 1)
+      throw new AggregateError(failures, `Move failed; the original is preserved at ${backup}`, { cause: error });
     await removeBackup(storage, backup);
     throw error;
   }

@@ -734,11 +734,10 @@ export function evaluateAnimGraph(
       : 0)
     ?? 0;
   const blendDurationMs = Math.max(0, blendSeconds) * 1000;
-  let fromWeight = 0;
   let toWeight = 1;
   if (blendState && blendFromStateId && blendDurationMs > 0 && blendFromStateId !== nextId) {
     const t = Math.min(1, blendElapsedMs / blendDurationMs);
-    fromWeight = 1 - t;
+    const fromWeight = 1 - t;
     toWeight = t;
     const fromDuration = clipDurationMs(blendState, clips);
     const fromClock = advanceClock(
@@ -753,7 +752,6 @@ export function evaluateAnimGraph(
       blendFromStateId = null;
       blendFromTimeMs = 0;
       blendElapsedMs = 0;
-      fromWeight = 0;
       toWeight = 1;
     } else {
       blendFromTimeMs = fromClock.timeMs;

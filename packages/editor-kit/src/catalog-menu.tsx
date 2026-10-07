@@ -262,7 +262,7 @@ export function CatalogMenu<T extends CatalogMenuItem>({
   const onSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.nativeEvent.isComposing || rows.length === 0) return;
     const active = activeIndex >= 0 ? rows[activeIndex]! : null;
-    let next = activeIndex;
+    let next: number;
     switch (event.key) {
       case "ArrowDown":
         next = Math.min(rows.length - 1, activeIndex + 1);

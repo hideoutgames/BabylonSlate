@@ -2659,7 +2659,7 @@ function initializeEngine(
       if (runtimeScalability && !worldLoading) {
         // A stored preparation failure rethrows until the coordinator's retry
         // succeeds. It must not escape endFrame and stop the shared Engine loop.
-        let ready = false;
+        let ready: boolean;
         try { ready = worldRenderer.isReady() && sceneLayerCompositor?.isReady() !== false; } catch { ready = false; }
         if (ready) runtimeScalability.presented();
       }

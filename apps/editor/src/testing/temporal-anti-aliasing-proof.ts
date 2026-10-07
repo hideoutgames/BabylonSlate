@@ -63,7 +63,7 @@ export async function runTemporalAntiAliasingProof(backend: "webgl2" | "webgpu")
         for (let presented = 0; presented < count;) {
           each?.();
           engine.beginFrame();
-          let rendered = false;
+          let rendered: boolean;
           try {
             rendered = graph.render(camera, false).rendered !== false;
           } finally {

@@ -5601,7 +5601,7 @@ class InProcessRuntime implements RuntimeDriver {
       try {
         parseColliderProperties({ shape }, actor.sceneLayerId ? "2d" : this.physicsWorldKind);
       } catch (error) {
-        throw new Error(`${actorLabel(actor)} / ${component.guid}: ${error instanceof Error ? error.message : String(error)}`);
+        throw new Error(`${actorLabel(actor)} / ${component.guid}: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
       }
     }
     const slotId = this.assignSlot(actor);
@@ -5975,8 +5975,8 @@ class InProcessRuntime implements RuntimeDriver {
       this.emit({ type: "snapshotLayout", capacity, generation: this._snapshotGeneration });
     } catch (error) {
       const message = `Unable to grow Actor snapshot capacity to ${capacity}: ${error instanceof Error ? error.message : String(error)}`;
-      this.reportError(new Error(message));
-      throw new Error(message);
+      this.reportError(new Error(message, { cause: error }));
+      throw new Error(message, { cause: error });
     }
   }
 

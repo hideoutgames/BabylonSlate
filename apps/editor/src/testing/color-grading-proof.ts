@@ -89,7 +89,7 @@ export async function runColorGradingProof(backend: "webgl2" | "webgpu") {
         }
         for (let presented = 0; presented < 2;) {
           engine.beginFrame();
-          let rendered = false;
+          let rendered: boolean;
           try {
             rendered = graph.render(camera, false).rendered !== false;
           } finally {

@@ -151,7 +151,6 @@ describe("DocumentEditStack", () => {
 
     const redone = stack.redo(doc);
     expect(redone?.doc.value).toBe(2);
-    doc = redone!.doc;
     expect(stack.canUndo).toBe(true);
   });
 
@@ -263,7 +262,7 @@ describe("DocumentEditStack", () => {
     let doc: TestDoc = { value: 0 };
 
     ({ doc } = stack.apply(doc, new IncrementCommand(1)));
-    ({ doc } = stack.undo(doc)!);
+    stack.undo(doc);
 
     stack.clear();
     expect(stack.canUndo).toBe(false);
