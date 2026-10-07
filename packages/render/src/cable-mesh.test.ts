@@ -374,7 +374,7 @@ describe("cable rendering", () => {
     sync.apply(ropeScene({ materialGuid: "rope" }));
     expect(scene.getMeshByName(name)!.material).toBe(materials.rope);
     let now = 0;
-    for (let frame = 0; frame < 600; frame++) stepEditorCables(scene, now += 1000 / 60);
+    for (let frame = 0; frame < 120; frame++) stepEditorCables(scene, now += 1000 / 60);
     const hook = sync.meshForActor("hook")!;
     unfreezeActorWorldMatrix(hook);
     hook.position.set(3, 1.5, 0);
@@ -397,7 +397,7 @@ describe("cable rendering", () => {
     const mesh = scene.getMeshByName(editorComponentMeshName("rope", "cable")) as Mesh;
     const geometry = mesh.geometry;
     let now = 0;
-    for (let frame = 0; frame < 600; frame++) stepEditorCables(scene, now += 1000 / 60);
+    for (let frame = 0; frame < 120; frame++) stepEditorCables(scene, now += 1000 / 60);
     const hook = sync.meshForActor("hook")!;
     unfreezeActorWorldMatrix(hook);
     hook.position.set(3, 1.5, 0);

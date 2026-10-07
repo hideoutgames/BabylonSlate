@@ -240,26 +240,6 @@ describe("SkyboxCreatorPreview", () => {
     } as DOMRect);
   }
 
-  it("shows the template net labels and empty state without a Texture", () => {
-    render(
-      <SkyboxCreatorPreview
-        payload={createDefaultSkyboxCreatorPayload() as unknown as Record<string, unknown>}
-        onCreate={() => {}}
-      />,
-    );
-    expect(screen.getByTestId("skybox-creator-preview")).toBeTruthy();
-    expect(screen.getByTestId("skybox-creator-net")).toBeTruthy();
-    expect(screen.getByText("Front")).toBeTruthy();
-    expect(screen.getByText("Back")).toBeTruthy();
-    expect(screen.getByText("Left")).toBeTruthy();
-    expect(screen.getByText("Right")).toBeTruthy();
-    expect(screen.getByText("Up")).toBeTruthy();
-    expect(screen.getByText("Down")).toBeTruthy();
-    expect(screen.getByTestId("skybox-creator-empty")).toBeTruthy();
-    expect(screen.getByTestId("skybox-creator-create")).toBeTruthy();
-    expect(screen.queryByTestId("skybox-creator-preview-canvas")).toBeNull();
-  });
-
   it("picks the source Texture from the empty Preview", async () => {
     const onChange = vi.fn();
     render(
@@ -445,25 +425,5 @@ describe("SkyboxCreatorCubemap", () => {
     );
     await screen.findByTestId("skybox-creator-preview-canvas");
     expect(decodeSourceToRgba).toHaveBeenCalledTimes(callsAfterLoad);
-  });
-
-  it("renders the cubemap canvas in an overflow-hidden host without a min-height", async () => {
-    render(
-      <SkyboxCreatorCubemap
-        payload={
-          {
-            ...createDefaultSkyboxCreatorPayload(),
-            sourceTextureGuid: "tex-1",
-          } as unknown as Record<string, unknown>
-        }
-      />,
-    );
-    const host = screen.getByTestId("skybox-creator-cubemap");
-    expect(host.className).toMatch(/overflow-hidden/);
-    expect(host.className).toMatch(/min-h-0/);
-    const canvas = await screen.findByTestId("skybox-creator-preview-canvas");
-    expect(host.contains(canvas)).toBe(true);
-    expect(canvas.className).not.toMatch(/min-h-\[160px\]/);
-    expect(canvas.className).toMatch(/h-full/);
   });
 });

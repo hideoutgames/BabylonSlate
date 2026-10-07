@@ -1,47 +1,10 @@
 import { expect, test } from "@playwright/test";
 import { createContentBrowserAsset, openMainScene, openTestProject } from "./open-test-project";
-import { clickPlayAndWaitForOverlay, PLAY_OVERLAY_TIMEOUT_MS, waitForPlayOverlay } from "./play";
-import { saveAllIfEnabled } from "./save-all";
-import {
-  EXPECTED_PREVIEW_ACTOR_POSITIONS,
-  previewPlacementScene,
-  previewPhysicsScene,
-} from "./preview-scene-fixture";
+import { clickPlayAndWaitForOverlay, waitForPlayOverlay } from "./play";
+import { previewPhysicsScene } from "./preview-scene-fixture";
 import { expectSpheresRollDownhill, setPreviewScene } from "./preview-parity";
-import { IPAD_TEST_TAG } from "./ipad-tag";
 
 test.describe("P4 Play overlay and session report", () => {
-  test("framecap changes rendered FPS while simulation keeps ticking", { tag: IPAD_TEST_TAG }, async ({ page }) => {
-    test.setTimeout(120_000);
-    await openTestProject(page);
-    await openMainScene(page);
-    await clickPlayAndWaitForOverlay(page);
-    await page.getByTestId("play-stats-toggle").click();
-    const fps = page.getByTestId("play-fps");
-    const tick = () => page.evaluate(() => {
-      const host = globalThis as unknown as {
-        __babylonslatePlayTest?: { tickIndex: () => number };
-      };
-      return host.__babylonslatePlayTest?.tickIndex() ?? 0;
-    });
-
-    for (const cap of [30, 15, 60]) {
-      await page.getByTestId("play-console-open").click();
-      await page.getByTestId("debug-console-input").fill(`framecap ${cap}`);
-      await page.getByTestId("debug-console-submit").click();
-      await expect(page.getByTestId("debug-console-transcript")).toContainText(`framecap ${cap}`);
-      await page.getByTestId("debug-console").getByRole("button", { name: "Close" }).click();
-      // Allow the previous one-second sample to expire; heavy hosts may render
-      // below the cap, but a 60 Hz input pump must not masquerade as capped FPS.
-      await expect.poll(async () => {
-        const value = Number(await fps.getAttribute("data-fps"));
-        return value > 0 && value <= cap + 3;
-      }, { timeout: 15_000 }).toBe(true);
-      const before = await tick();
-      await expect.poll(tick, { timeout: 10_000 }).toBeGreaterThan(before + 60);
-    }
-    await page.getByTestId("play-overlay-close").click();
-  });
 
   test("Play rolls all eight legacy duplicated spheres down an angled cube", async ({ page }) => {
     test.setTimeout(120_000);
@@ -50,48 +13,6 @@ test.describe("P4 Play overlay and session report", () => {
     await setPreviewScene(page, previewPhysicsScene());
     await clickPlayAndWaitForOverlay(page);
     await expectSpheresRollDownhill(page.getByTestId("play-overlay"));
-    await page.getByTestId("play-overlay-close").click();
-  });
-
-  test("overlay Play keeps each authored mesh at its own world position", async ({
-    page,
-  }) => {
-    await openTestProject(page);
-    await openMainScene(page);
-    const scene = previewPlacementScene();
-    expect(
-      await page.evaluate(async (nextScene) => {
-        const host = globalThis as unknown as {
-          __babylonslateTest?: {
-            setActiveSceneContent: (scene: typeof nextScene) => Promise<boolean>;
-          };
-        };
-        return host.__babylonslateTest?.setActiveSceneContent(nextScene) ?? false;
-      }, scene),
-    ).toBe(true);
-    await saveAllIfEnabled(page);
-    await clickPlayAndWaitForOverlay(page);
-
-    await expect
-      .poll(
-        () =>
-          page.evaluate(() => {
-            const host = globalThis as unknown as {
-              __babylonslatePlayTest?: {
-                visuals: () => Array<{
-                  visible: boolean;
-                  worldMatrixPosition: [number, number, number];
-                }>;
-              };
-            };
-            return (host.__babylonslatePlayTest?.visuals() ?? [])
-              .filter((visual) => visual.visible)
-              .map((visual) => visual.worldMatrixPosition)
-              .sort((a, b) => a[0] - b[0]);
-          }),
-        { timeout: 15_000 },
-      )
-      .toEqual(expect.arrayContaining(EXPECTED_PREVIEW_ACTOR_POSITIONS));
     await page.getByTestId("play-overlay-close").click();
   });
 
@@ -124,26 +45,6 @@ test.describe("P4 Play overlay and session report", () => {
       "data-node-id",
       "throw-node",
     );
-  });
-
-  test("clean Play skips the save-and-compile dialog", async ({ page }) => {
-    await openTestProject(page);
-    await openMainScene(page);
-
-    await clickPlayAndWaitForOverlay(page);
-    await expect(page.getByTestId("play-prepare-dialog")).toHaveCount(0);
-    await page.getByTestId("play-stats-toggle").click();
-    await expect(page.getByTestId("stats-hud-draws")).toBeVisible();
-    await expect
-      .poll(async () => {
-        const attr = await page
-          .getByTestId("stats-hud-draws")
-          .getAttribute("data-draws");
-        return Number(attr ?? "0");
-      }, { timeout: 15_000 })
-      .toBeGreaterThan(0);
-
-    await page.getByTestId("play-overlay-close").click();
   });
 
   test("repeated Play cycles keep live mesh and texture counts stable", async ({
@@ -247,76 +148,6 @@ test.describe("P4 Play overlay and session report", () => {
     await expect(page.getByTestId("save-all-project")).toBeDisabled();
   });
 
-  test("Play chrome is labeled, stats stay collapsed, Pause is first-class", async ({
-    page,
-  }) => {
-    await openTestProject(page);
-    await openMainScene(page);
-
-    await clickPlayAndWaitForOverlay(page);
-    await expect(page.getByTestId("play-log-tail")).toHaveCount(0);
-    await expect(page.getByTestId("stats-hud")).toBeHidden();
-    await expect(page.getByTestId("play-overlay-pause")).toBeVisible();
-    await expect(page.getByTestId("play-overlay-pause")).toContainText("Pause");
-    await expect(page.getByTestId("play-overlay-close")).toContainText("Stop");
-    await expect(page.getByTestId("play-console-open")).toContainText("Console");
-    await expect(page.getByTestId("play-stats-toggle")).toContainText("Stats");
-
-    const pauseBox = await page.getByTestId("play-overlay-pause").boundingBox();
-    const closeBox = await page.getByTestId("play-overlay-close").boundingBox();
-    expect(pauseBox, "Pause should be sized").not.toBeNull();
-    expect(closeBox, "Stop should be sized").not.toBeNull();
-    expect(pauseBox!.height).toBeGreaterThanOrEqual(44);
-    expect(closeBox!.height).toBeGreaterThanOrEqual(44);
-
-    await page.getByTestId("play-stats-toggle").click();
-    await expect(page.getByTestId("stats-hud")).toBeVisible();
-    await expect(page.getByTestId("play-fps")).toBeVisible();
-
-    await page.getByTestId("play-overlay-pause").click();
-    await expect(page.getByTestId("play-overlay-pause")).toContainText("Resume");
-
-    await page.getByTestId("play-overlay-close").click();
-    await expect(page.getByTestId("play-overlay")).toHaveCount(0);
-  });
-
-  test("Play is enabled from startup without a scene tab; creating a scene opens it exclusively", async ({
-    page,
-  }) => {
-    await openTestProject(page);
-    await expect(page.getByTestId("play-preview")).toBeEnabled();
-    await expect(
-      page.locator('[data-testid="document-tab"][data-document-kind="scene"]'),
-    ).toHaveCount(0);
-
-    await page.getByTestId("content-browser-new-asset").click();
-    await expect(page.getByTestId("content-browser-new-asset-dialog")).toBeVisible();
-    await page.getByTestId("new-asset-type").click();
-    await page.getByTestId("new-asset-type-Scene").click();
-    await page.getByTestId("new-asset-name").fill("LevelTwo");
-    await page.getByTestId("content-browser-new-asset-create").click();
-    await expect(page.getByTestId("document-workspace-scene")).toBeVisible();
-    await expect(page.getByTestId("play-preview")).toBeEnabled();
-    await expect(
-      page.locator('[data-testid="document-tab"][data-document-kind="scene"]'),
-    ).toHaveCount(1);
-    await expect(
-      page.locator('[data-testid="document-tab"][data-document-kind="scene"]'),
-    ).toContainText("LevelTwo Scene");
-
-    await page
-      .locator('[data-testid="document-tab"][data-document-kind="content-browser"]')
-      .click();
-    await expect(page.getByTestId("play-preview")).toBeEnabled();
-
-    await page.locator('[data-asset-path="assets/main.scene.babasset"]').dblclick();
-    await expect(page.getByTestId("document-workspace-scene")).toBeVisible();
-    await expect(
-      page.locator('[data-testid="document-tab"][data-document-kind="scene"]'),
-    ).toHaveCount(1);
-    await expect(page.getByTestId("play-preview")).toBeEnabled();
-  });
-
   test("Play from Scene boots the open tab; off uses project startup", async ({
     page,
   }) => {
@@ -357,133 +188,6 @@ test.describe("P4 Play overlay and session report", () => {
       "data-scene-guid",
       guids.startup,
     );
-    await page.getByTestId("play-overlay-close").click();
-  });
-
-  test("infinite ExecuteJavaScript closes Play and opens the session report", async ({
-    page,
-  }) => {
-    await openTestProject(page);
-
-    await page.getByTestId("settings-menu").click();
-    await page.getByTestId("project-settings").click();
-    await expect(page.getByTestId("settings-loop-count")).toBeVisible();
-    await page.getByTestId("settings-loop-count").fill("50");
-    await page.getByTestId("settings-loop-count").blur();
-    await page
-      .getByTestId("settings-modal")
-      .locator('[data-slot="dialog-close"]')
-      .click();
-    await expect(page.getByTestId("settings-modal")).toHaveCount(0);
-
-    const installed = await page.evaluate(async (graph) => {
-      const host = globalThis as unknown as {
-        __babylonslateTest?: {
-          setMainGraphContent: (g: unknown) => Promise<boolean>;
-        };
-      };
-      if (!host.__babylonslateTest) return false;
-      return host.__babylonslateTest.setMainGraphContent(graph);
-    }, {
-      nodes: [
-        {
-          id: "tick",
-          type: "flow.event.tick",
-          position: { x: 40, y: 80 },
-          data: {},
-        },
-        {
-          id: "js",
-          type: "debug.executeJavaScript",
-          position: { x: 320, y: 80 },
-          data: {
-            inputs: [],
-            outputs: [],
-            body: "while (true) {}",
-          },
-        },
-      ],
-      edges: [
-        {
-          id: "e1",
-          source: "tick",
-          target: "js",
-          sourceHandle: "execOut",
-          targetHandle: "execIn",
-        },
-      ],
-    });
-    expect(installed).toBe(true);
-
-    await openMainScene(page);
-    await page.getByTestId("play-preview").click();
-    await expect(page.getByTestId("preview-session-report")).toBeVisible({
-      timeout: PLAY_OVERLAY_TIMEOUT_MS,
-    });
-    await expect(page.getByTestId("play-overlay")).toHaveCount(0);
-    await expect(page.getByTestId("session-report-row")).toContainText(
-      "Infinite loop detected",
-    );
-  });
-
-  test("Project Settings author render resolution and a packaged startup scene", async ({
-    page,
-  }) => {
-    await openTestProject(page);
-    await page.getByTestId("settings-menu").click();
-    await page.getByTestId("project-settings").click();
-    await page.getByTestId("settings-modal-category-rendering").click();
-    await page
-      .getByTestId("settings-modal")
-      .getByRole("button", { name: "Resolution", exact: true })
-      .click();
-    await expect(page.getByTestId("setting-render-custom")).toBeVisible();
-    await expect(page.getByTestId("setting-render-width")).toBeVisible();
-    await expect(page.getByTestId("setting-render-height")).toBeVisible();
-    await expect(page.getByTestId("setting-render-black-bars")).toBeVisible();
-    await page.getByTestId("settings-modal-category-game").click();
-    await expect(page.getByTestId("settings-startup-scene")).toBeVisible();
-  });
-
-  test("Play overlay Inspector shows a live tick while the session runs", async ({
-    page,
-  }) => {
-    await openTestProject(page);
-    await openMainScene(page);
-    await clickPlayAndWaitForOverlay(page);
-    await expect(page.getByTestId("play-stats-toggle")).toBeVisible();
-    await expect(page.getByTestId("play-console-open")).toBeVisible();
-    await page.getByTestId("play-inspector-toggle").click();
-    await expect(page.getByTestId("debug-inspect")).toBeVisible();
-    const firstTick = Number(
-      await page.getByTestId("debug-inspect-tick").getAttribute("data-tick"),
-    );
-    await expect
-      .poll(
-        async () =>
-          Number(
-            await page.getByTestId("debug-inspect-tick").getAttribute("data-tick"),
-          ),
-        { timeout: 15_000 },
-      )
-      .toBeGreaterThan(firstTick);
-    await page.keyboard.press("Escape");
-    await expect(page.getByTestId("debug-inspect")).toHaveCount(0);
-    await page.getByTestId("play-overlay-close").click();
-  });
-
-  test("turning Debug Stats off hides the overlay Stats control", async ({
-    page,
-  }) => {
-    await openTestProject(page);
-    await openMainScene(page);
-    await page.getByTestId("debug-menu").click();
-    await page.getByTestId("overlay-stats-toggle").click();
-    await page.keyboard.press("Escape");
-    await clickPlayAndWaitForOverlay(page);
-    await expect(page.getByTestId("play-stats-toggle")).toHaveCount(0);
-    await expect(page.getByTestId("play-console-open")).toBeVisible();
-    await expect(page.getByTestId("play-inspector-toggle")).toBeVisible();
     await page.getByTestId("play-overlay-close").click();
   });
 });

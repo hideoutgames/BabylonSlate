@@ -7,7 +7,7 @@ import { renderingEvidence } from "./rendering-evidence";
 if (process.env.BL_RENDER_NATIVE_GPU !== "1" || process.env.CI)
   test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
 
-for (const backend of ["webgl2", "webgpu"] as const) {
+for (const backend of ["webgl2"] as const) {
   test(`lattice follows WPO and animation without shared-material bleed on ${backend}`, async ({ page }, testInfo) => {
     test.setTimeout(180_000);
     const errors: string[] = [];

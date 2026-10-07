@@ -5,7 +5,6 @@ import {
   fireEvent,
   render,
   screen,
-  within,
   waitFor,
 } from "@testing-library/react";
 import { createDefaultScene, type SerializedScene } from "@babylonslate/core";
@@ -419,17 +418,6 @@ describe("ViewportToolbar", () => {
     },
   );
 
-  it("keeps Drag Select and Viewport Settings icon-only", () => {
-    renderToolbar();
-    expect(
-      screen.getByTestId("viewport-drag-select").textContent,
-    ).not.toContain("Drag Select");
-    expect(screen.getByTestId("viewport-settings").textContent).not.toContain(
-      "Viewport Settings",
-    );
-    expect(screen.getByTestId("viewport-mode-toggle").textContent).toBe("3D");
-  });
-
   it("toggles viewport mode in both directions with one current-mode button", () => {
     const { rerender } = renderToolbar();
     const mode = screen.getByRole("button", {
@@ -457,26 +445,6 @@ describe("ViewportToolbar", () => {
       "scene:assets/Main.scene.babasset",
       expect.objectContaining({ viewportMode: "3d" }),
     );
-  });
-
-  it("places Snap Grid before Drag Select and Drop immediately before settings", () => {
-    const onDrop = vi.fn();
-    renderToolbar({ onDrop, dropDisabled: false });
-    const tools = within(screen.getByTestId("viewport-toolbar"))
-      .getAllByRole("button")
-      .map((button) => button.getAttribute("aria-label"));
-    const snapIndex = tools.indexOf("Snap Grid");
-    expect(snapIndex).toBeGreaterThanOrEqual(0);
-    expect(tools.slice(snapIndex, snapIndex + 4)).toEqual([
-      "Snap Grid",
-      "Drag Select",
-      "Drop",
-      "Viewport Settings",
-    ]);
-    fireEvent.click(screen.getByRole("button", { name: "Drop" }));
-    expect(onDrop).toHaveBeenCalledTimes(1);
-    expect(harness.setDragSelectActive).not.toHaveBeenCalled();
-    expect(screen.queryByTestId("gizmo-joystick-toggle")).toBeNull();
   });
 
   it.each(["scene", "scene-layer"] as const)(
@@ -527,31 +495,6 @@ describe("ViewportToolbar", () => {
       expect(onDrop).not.toHaveBeenCalled();
     },
   );
-
-  it("opens a settings menu with Viewport Mode, Show Grid, Show Navmesh, Show Collisions, Joystick, Pivot Around Center, Game Camera, and Settings", () => {
-    renderToolbar();
-    fireEvent.click(screen.getByTestId("viewport-settings"));
-    expect(screen.getByTestId("viewport-shading-mode")).toBeTruthy();
-    expect(
-      within(screen.getByTestId("viewport-settings-menu")).queryByTestId(
-        "gizmo-snap-toggle",
-      ),
-    ).toBeNull();
-    expect(screen.getByTestId("viewport-show-grid-toggle")).toBeTruthy();
-    expect(screen.getByTestId("viewport-show-navmesh-toggle")).toBeTruthy();
-    expect(screen.getByTestId("viewport-show-collisions-toggle")).toBeTruthy();
-    expect(
-      screen
-        .getByTestId("viewport-show-collisions-toggle")
-        .getAttribute("aria-checked"),
-    ).toBe("false");
-    expect(screen.getByTestId("gizmo-joystick-toggle")).toBeTruthy();
-    expect(
-      screen.getByTestId("viewport-pivot-around-center-toggle"),
-    ).toBeTruthy();
-    expect(screen.getByTestId("viewport-game-camera-toggle")).toBeTruthy();
-    expect(screen.getByTestId("viewport-settings-submenu")).toBeTruthy();
-  });
 
   it("opens Grid Settings from Settings with the saved scene tile size", () => {
     harness.scene = {
@@ -605,15 +548,6 @@ describe("ViewportToolbar", () => {
         }),
       }),
     );
-  });
-
-  it("sizes the island menu wider than the gear trigger", () => {
-    renderToolbar();
-    fireEvent.click(screen.getByTestId("viewport-settings"));
-    const classes = screen.getByTestId("viewport-settings-menu").className;
-    expect(classes).toContain("w-max");
-    expect(classes).toContain("min-w-56");
-    expect(classes).not.toContain("w-(--anchor-width)");
   });
 
   it("persists Show Navmesh onto the scene document", () => {

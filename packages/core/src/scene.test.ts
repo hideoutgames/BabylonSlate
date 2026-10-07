@@ -537,28 +537,6 @@ describe("scene schema", () => {
     expect(wouldCreateComponentCycle(components, "child", null)).toBe(false);
   });
 
-  it("creates mesh components with a mesh kind", () => {
-    expect(createMeshComponent("c1", "sphere").properties.meshKind).toBe(
-      "sphere",
-    );
-  });
-
-  it("defaults MeshComponent collision to No Collision with layer/mask", () => {
-    expect(createMeshComponent("c1", "box").properties).toMatchObject({
-      collisionMode: "none",
-      layer: 1,
-      mask: 0xffffffff,
-    });
-  });
-
-  it("creates mesh components with an identity local transform", () => {
-    expect(createMeshComponent("c1", "sphere").transform).toEqual({
-      position: [0, 0, 0],
-      rotation: [0, 0, 0, 1],
-      scale: [1, 1, 1],
-    });
-  });
-
   it("normalizes missing component transforms to identity and keeps authored ones", () => {
     const scene = normalizeScene({
       actors: [

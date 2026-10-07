@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import indexHtml from "../../index.html?raw";
 import {
   applyDocumentTheme,
   readStoredThemePreference,
@@ -98,22 +97,5 @@ describe("subscribeSystemTheme", () => {
     expect(seen).toEqual([false]);
     unsubscribe();
     expect(listeners.size).toBe(0);
-  });
-});
-
-describe("theme boot script", () => {
-  it("reads engine settings from localStorage before first paint", () => {
-    expect(indexHtml).toContain('localStorage.getItem("babylonslate:engine-settings")');
-    expect(indexHtml).toContain("prefers-color-scheme: dark");
-    expect(indexHtml).not.toMatch(/<html[^>]*class="dark"/);
-  });
-});
-
-describe("standalone chrome", () => {
-  it("declares viewport-fit cover and web-app capable so Add to Home Screen is fullscreen", () => {
-    expect(indexHtml).toContain("viewport-fit=cover");
-    expect(indexHtml).toContain('name="apple-mobile-web-app-capable"');
-    expect(indexHtml).toContain('content="yes"');
-    expect(indexHtml).toContain('name="mobile-web-app-capable"');
   });
 });

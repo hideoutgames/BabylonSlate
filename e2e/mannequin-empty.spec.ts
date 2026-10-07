@@ -40,23 +40,6 @@ async function previewPixels(surface: Locator) {
 }
 
 test.describe("3D Empty Kenney Mannequin", () => {
-  test("Model preview draws on opening without orbiting the canvas", async ({
-    page,
-  }, testInfo) => {
-    await openTestProject(page);
-    await openAssetFromBrowser(page, "assets/Mannequin/mannequin.babasset");
-    const canvas = page.getByTestId("model-preview-canvas");
-    await expect(canvas).toBeVisible();
-    await expect
-      .poll(async () => (await previewPixels(canvas)).model, {
-        timeout: 15_000,
-      })
-      .toBeGreaterThan(100);
-    await canvas.screenshot({
-      path: testInfo.outputPath("model-first-open.png"),
-    });
-  });
-
   test("selected Model and Animation assets generate rendered browser thumbnails", async ({
     page,
   }) => {

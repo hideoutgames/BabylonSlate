@@ -11,7 +11,6 @@ import {
   type NodeRegistry,
 } from "@babylonslate/scripting";
 import {
-  arrayMapNodes,
   createDefaultNodeRegistry,
 } from "./index";
 
@@ -58,54 +57,6 @@ function runLog(source: string): string[] {
 }
 
 describe("array-map nodes", () => {
-  it("exports at least one node definition", () => {
-    expect(arrayMapNodes.length).toBeGreaterThan(0);
-    expect(arrayMapNodes[0]?.id).toBeTruthy();
-    expect(arrayMapNodes[0]?.category).toBeTruthy();
-  });
-
-  it("registers the complete Array catalog with stable ids", () => {
-    expect(arrayMapNodes.map((entry) => entry.id)).toEqual(
-      expect.arrayContaining([
-        "array.make",
-        "array.get",
-        "array.getSafe",
-        "array.length",
-        "array.isEmpty",
-        "array.lastIndex",
-        "array.isValidIndex",
-        "array.contains",
-        "array.find",
-        "array.append",
-        "array.appendArray",
-        "array.set",
-        "array.insert",
-        "array.removeIndex",
-        "array.removeItem",
-        "array.clear",
-        "array.reverse",
-        "array.slice",
-        "array.first",
-        "array.last",
-      ]),
-    );
-    expect(arrayMapNodes.find((entry) => entry.id === "array.make")?.title).toBe(
-      "Make Array",
-    );
-    expect(arrayMapNodes.find((entry) => entry.id === "array.append")?.title).toBe(
-      "Append Item",
-    );
-    expect(arrayMapNodes.find((entry) => entry.id === "array.find")?.title).toBe(
-      "Find Index",
-    );
-    expect(arrayMapNodes.find((entry) => entry.id === "array.set")?.title).toBe(
-      "Set At Index",
-    );
-    expect(
-      arrayMapNodes.find((entry) => entry.id === "array.removeIndex")?.title,
-    ).toBe("Remove At");
-  });
-
   it("Make Array exposes dynamic shared-T item pins from count", () => {
     const def = createDefaultNodeRegistry().get("array.make")!;
     const pins = def.pins({ count: 3 });

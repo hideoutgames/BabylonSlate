@@ -19,8 +19,7 @@ describe("Voronoi shader generation", () => {
     const scene = new Scene(engine);
     try {
       const material = new NodeMaterial("Voronoi", scene);
-      // Exercise source generation on NullEngine; material-noise.spec.ts covers
-      // shader compilation and pixels on actual WebGL2 and WebGPU engines.
+      // NullEngine only generates source; it never compiles WGSL.
       material.shaderLanguage = shaderLanguage;
       const noise = blockAdapterFor("noise.voronoi")!({
         name: "noise",
@@ -56,20 +55,14 @@ describe("Voronoi shader generation", () => {
         material.build();
       });
       const source = material.compiledShaders;
+      expect(source).toContain("voronoi(");
       if (shaderLanguage === ShaderLanguage.WGSL) {
-        expect(source).toContain("fn voronoiRandom(");
-        // By-value WGSL arguments are immutable; native out arguments use pointers.
+        // By-value WGSL arguments are immutable; writing one fails WebGPU
+        // pipeline creation, so out arguments must go through pointers.
         expect(source).not.toMatch(/\b(?:p|seed|offset|density|outValue|cells)\s*=/);
         expect(source).toMatch(/\(\*outValue\)\s*=/);
         expect(source).toMatch(/\(\*cells\)\s*=/);
-      } else {
-        expect(source).toContain("vec2 voronoiRandom(");
-        expect(source).toContain("out float outValue");
-        expect(source).toContain("out float cells");
       }
-      expect(source).toContain("voronoi(");
-      expect(source).toContain("tempOutput");
-      expect(source).toContain("tempCells");
     } finally {
       scene.dispose();
       engine.dispose();

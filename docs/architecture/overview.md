@@ -146,6 +146,6 @@ Patterns rather than exact module names, so deep imports such as `@babylonjs/cor
 
 Platform detection lives behind `getHostPlatform()` in `vfs`, so Capacitor stays in one package.
 
-The editor bundle has a chunk import cycle (the `document-context` chunk imports the `@babylonslate/render` chunk, which imports helpers placed in the `editor-route` chunk), so `editor-route` modules evaluate before `document-context` finishes. A module-scope read of a value from another chunk, such as `const ROOT = PROJECT_CONTENT_ROOT_ID` or a call like `profileComponents(...)`, can therefore see `undefined` in built bundles while Vitest's unbundled modules look fine. Read such values at render or call time. `e2e/content-browser-breadcrumbs.spec.ts` covers the Content Browser root label that this hid.
+The editor bundle has a chunk import cycle (the `document-context` chunk imports the `@babylonslate/render` chunk, which imports helpers placed in the `editor-route` chunk), so `editor-route` modules evaluate before `document-context` finishes. A module-scope read of a value from another chunk, such as `const ROOT = PROJECT_CONTENT_ROOT_ID` or a call like `profileComponents(...)`, can therefore see `undefined` in built bundles while Vitest's unbundled modules look fine. Read such values at render or call time.
 
 See [CODING_STANDARDS.md](../CODING_STANDARDS.md) for conventions, [theming.md](theming.md) for the UI palette, and [testing.md](testing.md) for the test topology.

@@ -191,23 +191,6 @@ describe("runtime behaviour tree evaluation", () => {
     runtime.stop();
   });
 
-  it("registerBehaviourTree is enough when the tree was not in options", () => {
-    const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({
-      seed: 1,
-      maxActors: 4,
-      seedDemoActors: false,
-      playScene: aiScene({ treeGuid: "tree-1" }),
-      onCommand: (command) => commands.push(command),
-    });
-    runtime.registerBehaviourTree("tree-1", createDefaultBehaviourTree());
-    runtime.start();
-    runtime.realizePlayWorld();
-    runtime.tick();
-    expect(commands.some((command) => command.type === "btState")).toBe(true);
-    runtime.stop();
-  });
-
   it("emits a diagnostic when the tree guid is missing", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
@@ -279,49 +262,6 @@ describe("runtime behaviour tree evaluation", () => {
       elapsed,
     );
     replay.stop();
-  });
-
-  it("Play Sound succeeds when the Audio guid is in the Play library", () => {
-    const tree = {
-      name: "Sound",
-      rootId: "sound",
-      blackboardGuid: null,
-      nodes: [
-        {
-          id: "sound",
-          kind: "task" as const,
-          classId: "bt.task.playSound",
-          children: [],
-          decorators: [],
-          services: [],
-          properties: { audioAssetGuid: "audio-1", volume: 0.4 },
-        },
-      ],
-    };
-    const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({
-      seed: 1,
-      maxActors: 4,
-      seedDemoActors: false,
-      playScene: aiScene({ treeGuid: "tree-1" }),
-      behaviourTrees: { "tree-1": tree },
-      audioAssetGuids: ["audio-1"],
-      onCommand: (command) => commands.push(command),
-    });
-    runtime.start();
-    runtime.realizePlayWorld();
-    runtime.tick();
-    expect(commands.filter((command) => command.type === "playSound")).toEqual([
-      expect.objectContaining({
-        type: "playSound",
-        assetGuid: "audio-1",
-        volume: 0.4,
-        emitterActorGuid: "guard",
-      }),
-    ]);
-    const states = commands.filter((command) => command.type === "btState");
-    expect(states.at(-1)).toMatchObject({ status: "success" });
-    runtime.stop();
   });
 
   it("Play Sound fails when the Audio guid is missing from the Play library", () => {

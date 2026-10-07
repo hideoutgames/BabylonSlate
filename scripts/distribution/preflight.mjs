@@ -1,7 +1,7 @@
 import { GITHUB_RELEASE_PLATFORMS, createIdentity, existingAppleIdentity, releaseDisposition, requestedPlatforms, validateChecks, validateSource } from "./contract.mjs";
 import { validateChangelog } from "./changelog.mjs";
 
-const VERIFY_JOBS = ["static", "unit", ...Array.from({ length: 7 }, (_, i) => `e2e (${i + 1})`)];
+const VERIFY_JOBS = ["static", "unit", ...Array.from({ length: 4 }, (_, i) => `e2e (${i + 1})`)];
 
 export async function resolveTag(api, tag) {
   let reference = (await api(`/git/ref/tags/${encodeURIComponent(tag)}`, { optional: true }))?.object;

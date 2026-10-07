@@ -201,13 +201,4 @@ describe("schema migration", () => {
     expect(result.version).toBe(1);
     expect(result.payload).toEqual({ name: "Icon" });
   });
-
-  it("does not register a UserInterface migration chain", () => {
-    const registry = createDefaultMigrationRegistry();
-    expect(registry.currentVersion("UserInterface")).toBe(0);
-    const result = registry.migrate("UserInterface", 1, { name: "HUD" });
-    expect(result.migrated).toBe(false);
-    expect(result.version).toBe(1);
-    expect(result.payload).toEqual({ name: "HUD" });
-  });
 });

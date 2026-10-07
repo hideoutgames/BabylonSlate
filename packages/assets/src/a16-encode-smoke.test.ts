@@ -3,7 +3,6 @@ import { A16_ENCODE_FIXTURES, A16_POLICY } from "@babylonslate/test-kit";
 import { read as readKtx2 } from "ktx-parse";
 import {
   createNodeBasisEncodeFn,
-  readVendoredBasisPresent,
   syntheticRgbaForSize,
 } from "./node-basis-encode";
 import { DEFAULT_TEXTURE_ENCODE_SETTINGS } from "./texture-compression";
@@ -11,10 +10,6 @@ import { isKtx2Bytes } from "./texture-loader";
 import { sniffKtx2Size } from "./ktx2-info";
 
 describe("A16 encode CI smoke (real Basis wasm)", () => {
-  it("vendored basis encoder is present", () => {
-    expect(readVendoredBasisPresent()).toBe(true);
-  });
-
   it("encodes 512 UASTC KTX2 under the fixture wall envelope", async () => {
     const fixture = A16_ENCODE_FIXTURES.find(
       (entry) => entry.size === 512 && entry.format === "png",

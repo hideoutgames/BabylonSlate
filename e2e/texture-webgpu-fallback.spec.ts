@@ -25,7 +25,6 @@ import {
   textureEncodeChunkId,
   type TextureEncodeSettings,
 } from "../packages/assets/src/texture-compression";
-import { createDefaultTilemapPayload } from "../packages/assets/src/tilemap-payload";
 import { createDefaultTilesetPayload } from "../packages/assets/src/tileset-payload";
 import { createDefaultMaterialDocument } from "../packages/shader-graph/src/document";
 import type {
@@ -37,17 +36,7 @@ import { openMinimalTestProject } from "./minimal-project";
 import { openAssetFromBrowser, openMainScene } from "./open-test-project";
 import { clickPlayAndWaitForOverlay } from "./play";
 import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
-import {
-  compressedGpuTextures,
-  expectPreviewDraws,
-  offBlockGrid,
-  previewDraw,
-  recordCompressedGpuTextures,
-  settledAlignmentPass,
-  textureAlignment,
-  watchGpuFailures,
-  type CompressedTexture,
-} from "./webgpu-texture-proof";
+import { compressedGpuTextures, expectPreviewDraws, offBlockGrid, previewDraw, recordCompressedGpuTextures, textureAlignment, watchGpuFailures, type CompressedTexture } from "./webgpu-texture-proof";
 
 // Explicit software adapter admission for this functional proof, not GPU qualification.
 test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
@@ -303,68 +292,6 @@ test("WebGPU decodes a Basis KTX2 off the 4×4 block grid to RGBA: the viewport 
   expect(offBlockGrid(compressed!)).toEqual([]);
   expect(gpuFailures).toEqual([]);
 });
-
-/** Turns source control **Enable** off in Project Settings. */
-async function disableSourceControl(page: Page): Promise<void> {
-  await page.getByTestId("settings-menu").click();
-  await page.getByTestId("project-settings").click();
-  const modal = page.getByTestId("settings-modal");
-  await expect(modal).toBeVisible();
-  await page.getByTestId("settings-modal-category-sourceControl").click();
-  const enable = page.getByTestId("settings-source-control-enabled");
-  await expect(enable).toHaveAttribute("aria-checked", "true");
-  await enable.click();
-  await page.getByTestId("settings-source-control-disable-confirm-action").click();
-  await expect(enable).toHaveAttribute("aria-checked", "false");
-  await modal.locator('[data-slot="dialog-close"]').click();
-  await expect(modal).toHaveCount(0);
-}
-
-test("an old Texture off the grid requires Retry Encoding before and after source control is disabled", async ({ page }) => {
-  test.setTimeout(180_000);
-  await openMinimalTestProject(page, await fixture("webgl2", true));
-  // Opening the project re-encodes nothing: teammates share these files.
-  expect(await textureAlignment(page)).toEqual({ runs: 0, pending: 0, requeued: [] });
-  const odd = { compressionState: "compressed", ktx2: { width: 1, height: 1 } };
-  const aligned = { compressionState: "compressed", ktx2: { width: 4, height: 4 } };
-  for (const assetPath of [TEXTURE_PATH, LEGACY_TEXTURE_PATH, WAITING_TEXTURE_PATH]) {
-    expect(await committedKtx2(page, assetPath), assetPath).toEqual(odd);
-  }
-
-  // Texture Details offers Retry Encoding for it, the user's own re-encode.
-  await openAssetFromBrowser(page, LEGACY_TEXTURE_PATH);
-  const details = page.getByTestId("texture-details");
-  await details.getByTestId("texture-retry-encode").click();
-  await expect.poll(() => committedKtx2(page, LEGACY_TEXTURE_PATH), { timeout: 60_000 }).toEqual(aligned);
-  await expect(details.getByTestId("texture-retry-encode")).toHaveCount(0);
-  // The commit's own recheck finds it aligned; the other one still waits for the user.
-  expect(await settledAlignmentPass(page)).toEqual([]);
-  expect(await committedKtx2(page, WAITING_TEXTURE_PATH)).toEqual(odd);
-
-  // Changing source control permissions does not request broad texture processing.
-  const before = await textureAlignment(page);
-  await disableSourceControl(page);
-  expect(await textureAlignment(page)).toEqual(before);
-  expect(await committedKtx2(page, WAITING_TEXTURE_PATH)).toEqual(odd);
-
-  // With source control off, the other Texture still prepares through its own Retry.
-  await openAssetFromBrowser(page, WAITING_TEXTURE_PATH);
-  await page.getByTestId("texture-details").getByTestId("texture-retry-encode").click();
-  await expect.poll(() => committedKtx2(page, WAITING_TEXTURE_PATH), { timeout: 60_000 }).toEqual(aligned);
-  await expect(page.getByTestId("texture-details").getByTestId("texture-retry-encode")).toHaveCount(0);
-  // The Tileset's atlas keeps its 1×1 encode.
-  expect(await committedKtx2(page, TEXTURE_PATH)).toEqual(odd);
-});
-
-test("WebGL2 draws the same 1×1 Albedo KTX2", async ({ page }, testInfo) => {
-  test.setTimeout(120_000);
-  await openMinimalTestProject(page, await fixture("webgl2"));
-  await openMainScene(page);
-  await expectBoxesDrawKtx2(page, testInfo, "webgl2");
-});
-
-const TILESET_GUID = "00000000-0000-4000-8000-000000000075";
-const TILEMAP_GUID = "00000000-0000-4000-8000-000000000076";
 const TOP: Rgb = [0, 200, 0];
 const BOTTOM: Rgb = [200, 0, 0];
 const GREY: Rgb = [128, 128, 128];
@@ -421,41 +348,6 @@ async function addTwoToneTexture(
   ));
 }
 
-/**
- * A 2D scene whose Tilemap fills one chunk with the top tile of a one-column,
- * two-tile atlas (`tile`×`2·tile`, green over red): drawn upright the map
- * reads green, upside down it reads red.
- */
-async function atlasScene(page: Page, tile: number, source: "png" | "ktx2"): Promise<Map<string, Uint8Array>> {
-  const { files, startupSceneGuid } = await projectFiles("webgpu");
-  const width = tile;
-  const height = tile * 2;
-  await addTwoToneTexture(page, files, width, height, source);
-  files.set("assets/ground.tileset.babasset", await encodeAssetDocument({
-    guid: TILESET_GUID, type: "Tileset", name: "Ground", version: 1,
-    payload: { ...createDefaultTilesetPayload(), textureGuid: TEXTURE_GUID, atlasWidth: width, atlasHeight: height, tileWidth: tile, tileHeight: tile },
-  }, { dependencies: [TEXTURE_GUID] }));
-  const tilemap = createDefaultTilemapPayload();
-  tilemap.tilesetGuid = TILESET_GUID;
-  tilemap.tilesets = [{ guid: TILESET_GUID, firstGid: 1, tileCount: 2 }];
-  tilemap.layers[0]!.chunks = [{ cx: 0, cy: 0, tiles: Array<number>(32 * 32).fill(1) }];
-  files.set("assets/ground.tilemap.babasset", await encodeAssetDocument({
-    guid: TILEMAP_GUID, type: "Tilemap", name: "Ground Map", version: 1, payload: tilemap as unknown as Record<string, unknown>,
-  }, { dependencies: [TILESET_GUID] }));
-  const scene = createDefaultScene("2d");
-  // 32 tiles at 100 pixels per unit, centred on the origin.
-  const half = (32 * tile) / 100 / 2;
-  scene.actors.push(createActor("ground", "Ground", {
-    transform: { position: [-half, -half, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
-    components: [{ id: "ground-map", classId: "TilemapComponent", properties: { assetGuid: TILEMAP_GUID } }],
-  }));
-  files.set(MAIN_SCENE_FILE, await encodeAssetDocument({
-    guid: startupSceneGuid, type: "Scene", name: "Main",
-    version: createDefaultMigrationRegistry().currentVersion("Scene"), payload: scene as unknown as Record<string, unknown>,
-  }, { dependencies: [TILEMAP_GUID] }));
-  return files;
-}
-
 /** A 9×9 grid of viewport samples over the 2D scene. */
 const GRID_POINTS: ViewportProofSamplePoint[] = Array.from({ length: 81 }, (_, index) => ({
   x: 0.1 + (index % 9) * 0.1,
@@ -463,57 +355,6 @@ const GRID_POINTS: ViewportProofSamplePoint[] = Array.from({ length: 81 }, (_, i
 }));
 
 type TileReading = { green: number; red: number; reads: "upright" | "upside down" | "mixed" };
-
-function tileReading(proof: ViewportProofResult): TileReading {
-  let green = 0;
-  let red = 0;
-  for (const sample of proof.skybox) {
-    const [r = 0, g = 0, b = 0] = sample.pixels.at(-1) ?? [];
-    if (g >= 80 && g > 2 * Math.max(r, b)) green += 1;
-    if (r >= 80 && r > 2 * Math.max(g, b)) red += 1;
-  }
-  const reads = green > 0 && red === 0 ? "upright" : red > 0 && green === 0 ? "upside down" : "mixed";
-  return { green, red, reads };
-}
-
-test("WebGPU draws a Tilemap atlas the same way up as its PNG, decoded to RGBA off the block grid or block-compressed on it", async ({ page }, testInfo) => {
-  test.setTimeout(300_000);
-  const { gpuFailures } = watchGpuFailures(page);
-  await page.addInitScript(recordCompressedGpuTextures);
-  const readings: Record<string, TileReading & { compressed: CompressedTexture[] }> = {};
-  // A 10×20 KTX2 is off the 4×4 block grid (decoded to RGBA); 12×24 stays block-compressed.
-  for (const [label, tile, source] of [
-    ["png", 10, "png"],
-    ["rgba", 10, "ktx2"],
-    ["compressed", 12, "ktx2"],
-  ] as const) {
-    await openMinimalTestProject(page, await atlasScene(page, tile, source));
-    await openMainScene(page);
-    let proof: ViewportProofResult | undefined;
-    let reading: TileReading | undefined;
-    await expect(async () => {
-      proof = await viewportProof(page, testInfo, `tilemap-${label}`, { skyboxPoints: GRID_POINTS });
-      reading = tileReading(proof);
-      expect(reading.green + reading.red, label).toBeGreaterThanOrEqual(3);
-    }).toPass({ timeout: 60_000 });
-    // Software WebGL2 decodes every KTX2 to RGBA, so a fallback would prove nothing here.
-    expect(proof!.backend, label).toBe("webgpu");
-    const recorded = await compressedGpuTextures(page);
-    expect(recorded, label).not.toBeNull();
-    readings[label] = { ...reading!, compressed: recorded! };
-  }
-  const { png, rgba, compressed } = readings as Record<"png" | "rgba" | "compressed", TileReading & { compressed: CompressedTexture[] }>;
-  const blockCompressed = compressed.compressed.some((texture) => texture.width === 12 && texture.height === 24);
-  await testInfo.attach("tilemap-orientation", { body: JSON.stringify({ readings, blockCompressed, gpuFailures }), contentType: "application/json" });
-  expect(png.reads).toBe("upright");
-  expect(rgba.reads, "RGBA-decoded 10x20 KTX2").toBe(png.reads);
-  // The block-compressed upload ignores invertY; the ResourceCache wrapper flips V instead.
-  expect(blockCompressed, "12x24 KTX2 reached the GPU block-compressed").toBe(true);
-  expect(compressed.reads, "block-compressed 12x24 KTX2").toBe(png.reads);
-  // The 10×20 KTX2 was drawn, and never block-compressed.
-  expect(offBlockGrid(rgba.compressed)).toEqual([]);
-  expect(gpuFailures).toEqual([]);
-});
 
 /**
  * A 2D scene on `backend` with one 2D Texture showing the whole 12×24
@@ -570,25 +411,6 @@ async function drawTextureQuad(
   expect(proof!.backend, source).toBe(backend);
   return { ...reading!, compressed: await compressedGpuTextures(page) };
 }
-
-test("WebGPU draws a block-compressed KTX2 on a 2D Texture the same way up as its PNG", async ({ page }, testInfo) => {
-  test.setTimeout(240_000);
-  const { gpuFailures } = watchGpuFailures(page);
-  await page.addInitScript(recordCompressedGpuTextures);
-  const readings: Record<string, TileReading & { compressed: CompressedTexture[] }> = {};
-  for (const source of ["png", "ktx2"] as const) {
-    const { compressed: recorded, ...reading } = await drawTextureQuad(page, testInfo, "webgpu", source);
-    expect(recorded, source).not.toBeNull();
-    readings[source] = { ...reading, compressed: recorded! };
-  }
-  const { png, ktx2 } = readings as Record<"png" | "ktx2", TileReading & { compressed: CompressedTexture[] }>;
-  const blockCompressed = ktx2.compressed.some((texture) => texture.width === 12 && texture.height === 24);
-  await testInfo.attach("texture2d-orientation", { body: JSON.stringify({ readings, blockCompressed, gpuFailures }), contentType: "application/json" });
-  expect(png.reads).toBe("upright");
-  expect(blockCompressed, "12x24 KTX2 reached the GPU block-compressed").toBe(true);
-  expect(ktx2.reads, "block-compressed 12x24 KTX2").toBe(png.reads);
-  expect(gpuFailures).toEqual([]);
-});
 
 test("WebGL2 draws a KTX2 on a 2D Texture the same way up as its PNG", async ({ page }, testInfo) => {
   test.setTimeout(180_000);

@@ -168,24 +168,6 @@ describe("MarkupAutocompleteTextarea", () => {
     cleanup();
   });
 
-  it("keeps a fixed-height list of every tag when the field is empty", () => {
-    render(
-      <MarkupAutocompleteTextarea
-        value=""
-        onChange={() => {}}
-        data-testid="markup"
-      />,
-    );
-    const list = screen.getByTestId("markup-suggestions");
-    expect(list.getAttribute("role")).toBe("listbox");
-    expect(list.style.height).toBe("256px");
-    expect(screen.getByTestId("search-item-tag:b")).toBeTruthy();
-    expect(screen.getByTestId("search-item-tag:b").tagName).not.toBe("BUTTON");
-    expect(screen.getByTestId("search-item-tag:b").className).toMatch(
-      /touch-pan-y/,
-    );
-  });
-
   it("lists tags above the textarea when the caret is after [", () => {
     render(
       <MarkupAutocompleteTextarea

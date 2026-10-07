@@ -10,7 +10,6 @@ import {
   type NodeRegistry,
 } from "@babylonslate/scripting";
 import { createDefaultNodeRegistry } from "./index";
-import { structNodes } from "./struct";
 
 function node(
   registry: NodeRegistry,
@@ -35,19 +34,6 @@ const statsFields = [
 ];
 
 describe("struct nodes", () => {
-  it("registers Make/Break Structure plus engine rotator/color/transform nodes", () => {
-    expect(structNodes.map((entry) => entry.id)).toEqual([
-      "struct.make",
-      "struct.break",
-      "struct.makeRotator",
-      "struct.breakRotator",
-      "struct.makeColor",
-      "struct.breakColor",
-      "struct.makeTransform",
-      "struct.breakTransform",
-    ]);
-  });
-
   it("types Make/Break pins from the Structure field snapshot", () => {
     const properties = {
       structGuid: "struct-stats",

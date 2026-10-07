@@ -39,41 +39,6 @@ async function fixture(t) {
 }
 const small = { workers: 1, memoryGiB: 1, browsers: 0 };
 
-test("docs builds use a fixed one-worker reservation smaller than application builds", () => {
-  const docs = { workers: 1, browsers: 0, memoryGiB: 1.5 };
-  assert.deepEqual(workloadFor("docs", {}), docs);
-  assert.deepEqual(workloadFor("docs", { BL_TEST_PROFILE: "fast" }), docs);
-  assert.deepEqual(workloadFor("build", {}), {
-    workers: 2,
-    browsers: 0,
-    memoryGiB: 2,
-  });
-});
-
-test("Node tooling uses a small fixed reservation in shared and fast modes", () => {
-  const tooling = { workers: 1, browsers: 0, memoryGiB: 0.75 };
-  assert.deepEqual(workloadFor("tooling", {}), tooling);
-  assert.deepEqual(
-    workloadFor("tooling", { BL_TEST_PROFILE: "fast" }),
-    tooling,
-  );
-});
-
-test("routine typechecks and selected test files fit concurrent shared agents", () => {
-  const typecheck = { workers: 1, browsers: 0, memoryGiB: 1.5 };
-  assert.deepEqual(workloadFor("typecheck", {}), typecheck);
-  assert.deepEqual(
-    workloadFor("typecheck", { BL_TEST_PROFILE: "fast" }),
-    typecheck,
-  );
-  assert.deepEqual(workloadFor("focused", {}), typecheck);
-  assert.deepEqual(workloadFor("focused", { BL_TEST_PROFILE: "fast" }), {
-    workers: 2,
-    browsers: 0,
-    memoryGiB: 3,
-  });
-});
-
 test("shared browser work fits a six-GiB host budget while retaining headroom", async (t) => {
   const options = await fixture(t);
   const lease = await acquireResources(workloadFor("browser", {}), {

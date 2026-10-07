@@ -225,26 +225,16 @@ describe("render scheduler", () => {
     expect(scheduler.shouldRender(34)).toBe(true);
   });
 
-  it("does not render when the canvas is not visible", () => {
+  it.each([
+    ["the canvas is not visible", (scheduler: RenderScheduler, on: boolean) => scheduler.setVisible(!on)],
+    ["obstructed by a modal", (scheduler: RenderScheduler, on: boolean) => scheduler.setObstructed(on)],
+    ["the canvas is resizing", (scheduler: RenderScheduler, on: boolean) => scheduler.setResizing(on)],
+  ] as const)("does not render while %s", (_gate, gate) => {
     const scheduler = new RenderScheduler();
     scheduler.setAlwaysRender(true);
-    scheduler.setVisible(false);
+    gate(scheduler, true);
     expect(scheduler.shouldRender(0)).toBe(false);
-  });
-
-  it("does not render when obstructed by a modal", () => {
-    const scheduler = new RenderScheduler();
-    scheduler.setAlwaysRender(true);
-    scheduler.setObstructed(true);
-    expect(scheduler.shouldRender(0)).toBe(false);
-  });
-
-  it("does not render while the canvas is resizing", () => {
-    const scheduler = new RenderScheduler();
-    scheduler.setAlwaysRender(true);
-    scheduler.setResizing(true);
-    expect(scheduler.shouldRender(0)).toBe(false);
-    scheduler.setResizing(false);
+    gate(scheduler, false);
     expect(scheduler.shouldRender(0)).toBe(true);
   });
 

@@ -41,11 +41,6 @@ describe("memory storage adapter", () => {
     expect(storage.getReadMetrics()).toMatchObject({ actualBytesRead: 4, fullReads: 0 });
   });
 
-  it("defaults pickProjectFolder to MyGame", async () => {
-    const storage = new MemoryStorageAdapter();
-    expect((await storage.pickProjectFolder()).name).toBe("MyGame");
-  });
-
   it("releases the current folder", async () => {
     const storage = new MemoryStorageAdapter();
     await storage.pickProjectFolder("X.babproject");

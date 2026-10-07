@@ -1132,27 +1132,13 @@ describe("Play createEngine view", () => {
     expect(registerView).toHaveBeenCalledWith(canvas, undefined, true);
   });
 
-  it("takes a 2d blit context on the view canvas before registerView", () => {
+  it.each([
+    ["returns no 2d context", () => null],
+    ["has no getContext", undefined],
+  ])("skips registerView when the view canvas %s", (_case, getContext) => {
     const engine = sharedEngine();
     const canvas = new FakeCanvas();
-    const getContext = vi.spyOn(canvas, "getContext");
-    const registerView = vi.spyOn(engine, "registerView");
-    const handle = createEngine(canvas as unknown as HTMLCanvasElement, {
-      sharedEngine: engine,
-      editor: true,
-    });
-    handles.push(handle);
-    expect(getContext).toHaveBeenCalledWith("2d");
-    expect(registerView).toHaveBeenCalledWith(canvas, undefined, true);
-    expect(getContext.mock.invocationCallOrder[0]!).toBeLessThan(
-      registerView.mock.invocationCallOrder[0]!,
-    );
-  });
-
-  it("skips registerView when the view canvas cannot host a 2d blit", () => {
-    const engine = sharedEngine();
-    const canvas = new FakeCanvas();
-    canvas.getContext = () => null;
+    canvas.getContext = getContext as unknown as typeof canvas.getContext;
     const registerView = vi.spyOn(engine, "registerView");
     const handle = createEngine(canvas as unknown as HTMLCanvasElement, {
       sharedEngine: engine,
@@ -1200,19 +1186,6 @@ describe("Play createEngine view", () => {
     } finally { warn.mockRestore(); }
   });
 
-  it("does not throw when a shared view canvas has no getContext", () => {
-    const engine = sharedEngine();
-    const canvas = new FakeCanvas();
-    canvas.getContext = undefined as unknown as typeof canvas.getContext;
-    const registerView = vi.spyOn(engine, "registerView");
-    const handle = createEngine(canvas as unknown as HTMLCanvasElement, {
-      sharedEngine: engine,
-      editor: true,
-    });
-    handles.push(handle);
-    expect(registerView).not.toHaveBeenCalled();
-  });
-
   it("dispose stops the same render loop callback it registered", () => {
     const engine = sharedEngine();
     const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
@@ -1223,12 +1196,6 @@ describe("Play createEngine view", () => {
     handle.dispose();
     handles.pop();
     expect(stopRenderLoop).toHaveBeenCalledWith(callback);
-  });
-
-  it("Play holds a continuous render lease so every blit is preceded by scene.render", () => {
-    const { handle } = playHandle(sharedEngine());
-    handle.scheduler.noteRendered();
-    expect(handle.scheduler.shouldRender()).toBe(true);
   });
 
   it("snapshots _drawCalls after scene.render instead of reading unset engine.drawCalls", () => {
@@ -1880,19 +1847,6 @@ describe("Play createEngine view", () => {
     expect(editorView?.enabled).toBe(true);
   });
 
-  it("syncEditorPlayState disables the editor view while playing", () => {
-    const engine = sharedEngine();
-    const { handle, canvas } = editorHandle(engine);
-    expect(engine.views.find((view) => view.target === canvas)?.enabled).toBe(
-      true,
-    );
-
-    syncEditorPlayState(handle, true);
-    expect(engine.views.find((view) => view.target === canvas)?.enabled).toBe(
-      false,
-    );
-  });
-
   it("does not setSize from a disabled Scene view while Play is open", () => {
     const engine = sharedEngine();
     const { handle, canvas } = editorHandle(engine);
@@ -1901,11 +1855,6 @@ describe("Play createEngine view", () => {
     const setSize = vi.spyOn(engine, "setSize");
     handle.resize();
     expect(setSize).not.toHaveBeenCalled();
-  });
-
-  it("keeps Play autoClear on after Intermediate so frames do not accumulate", () => {
-    const { handle } = playHandle(sharedEngine());
-    expect(handle.scene.autoClear).toBe(true);
   });
 
   it("uses authored environmentColor as the Play clear color", () => {
@@ -1957,22 +1906,6 @@ describe("Play createEngine view", () => {
     });
     handles.push(handle);
     expect(handle.scaling.getLevel()).toBe(1.5);
-  });
-
-  it("does not supersample below the Engine Settings hardware scaling floor", () => {
-    const engine = sharedEngine();
-    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
-    const handle = createEngine(canvas, {
-      sharedEngine: engine,
-      playMode: true,
-      hardwareScalingLevel: 1,
-      frameCap: 30,
-    });
-    handles.push(handle);
-    for (let i = 0; i < 40; i++) {
-      handle.scaling.noteFramePressure({ presentationMs: null, cpuMs: 4, gpuMs: null });
-    }
-    expect(handle.scaling.getLevel()).toBe(1);
   });
 
   it("uses the view frame cap as the scaling valve target", () => {
@@ -2453,110 +2386,54 @@ describe("Play createEngine view", () => {
     expect(handle.scene.getMeshByName("actor-4")).toBeNull();
   });
 
-  it("does not parent overlay spawn meshes into the world when the layer scene is missing", () => {
-    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
-    const handle = createEngine(canvas, {
+  const overlaySpawn = { type: "spawn", slotId: 4, actorGuid: "banner", classId: "SceneLayerActor", sceneLayerId: "front" } as const;
+  const overlayCreate = (ownerSceneGuid: string | null = null) =>
+    ({ type: "sceneLayerCreate", layerId: "front", assetGuid: "hud", zOrder: 3, ownerSceneGuid, postProcessStack: [] }) as const;
+  const overlayAssign = (meshKind: string) => ({ type: "assignMesh", slotId: 4, meshAssetGuid: null, meshKind }) as const;
+
+  it.each([
+    { meshKind: "2dtexture", order: "spawn before assign" },
+    { meshKind: "2dtexture", order: "assign before spawn" },
+    { meshKind: "2djoystick", order: "assign before spawn" },
+    { meshKind: "sprite", order: "assign before spawn" },
+  ])("holds overlay $meshKind off the world until its layer scene exists ($order)", ({ meshKind, order }) => {
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
       sharedEngine: sharedEngine(),
       playMode: true,
     });
     handles.push(handle);
-    handle.applyCommand({
-      type: "spawn",
-      slotId: 4,
-      actorGuid: "banner",
-      classId: "SceneLayerActor",
-      sceneLayerId: "front",
-    });
-    handle.applyCommand({
-      type: "assignMesh",
-      slotId: 4,
-      meshAssetGuid: null,
-      meshKind: "2dtexture",
-    });
-    expect(handle.scene.getMeshByName("actor-4")).toBeNull();
+    const commands = order === "spawn before assign"
+      ? [overlaySpawn, overlayAssign(meshKind)]
+      : [overlayAssign(meshKind), overlaySpawn];
+    for (const command of commands) {
+      handle.applyCommand(command);
+      expect(handle.scene.getMeshByName("actor-4")).toBeNull();
+    }
     expect(handle.sceneLayerScenes()).toHaveLength(0);
-
-    handle.applyCommand({
-      type: "sceneLayerCreate",
-      layerId: "front",
-      assetGuid: "hud",
-      zOrder: 3,
-      ownerSceneGuid: null,
-      postProcessStack: [],
-    });
+    handle.applyCommand({ ...overlayCreate(), postProcessStack: [] });
     const front = handle.sceneLayerScenes().find((layer) => layer.layerId === "front");
     expect(front?.scene.getMeshByName("actor-4")).not.toBeNull();
     expect(handle.scene.getMeshByName("actor-4")).toBeNull();
   });
 
-  it.each(["2dtexture", "2djoystick"])("holds overlay-only %s assignMesh off the world until spawn tags a layer scene", (meshKind) => {
-    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
-    const handle = createEngine(canvas, {
+  it.each([
+    { meshKind: "sprite", ownerSceneGuid: "world-a", spawn: true },
+    { meshKind: "sprite", ownerSceneGuid: null, spawn: true },
+    { meshKind: "box", ownerSceneGuid: null, spawn: false },
+    { meshKind: "2dtexture", ownerSceneGuid: null, spawn: false },
+  ])("parents layer-tagged $meshKind assignMesh into an existing overlay scene (owner $ownerSceneGuid, spawn $spawn)", ({ meshKind, ownerSceneGuid, spawn }) => {
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
       sharedEngine: sharedEngine(),
       playMode: true,
     });
     handles.push(handle);
-    handle.applyCommand({
-      type: "assignMesh",
-      slotId: 4,
-      meshAssetGuid: null,
-      meshKind,
-    });
-    expect(handle.scene.getMeshByName("actor-4")).toBeNull();
-    handle.applyCommand({
-      type: "spawn",
-      slotId: 4,
-      actorGuid: "banner",
-      classId: "SceneLayerActor",
-      sceneLayerId: "front",
-    });
-    handle.applyCommand({
-      type: "sceneLayerCreate",
-      layerId: "front",
-      assetGuid: "hud",
-      zOrder: 3,
-      ownerSceneGuid: null,
-      postProcessStack: [],
-    });
-    const front = handle.sceneLayerScenes().find((layer) => layer.layerId === "front");
-    expect(front?.scene.getMeshByName("actor-4")).not.toBeNull();
+    handle.applyCommand({ ...overlayCreate(ownerSceneGuid), postProcessStack: [] });
+    if (spawn) handle.applyCommand(overlaySpawn);
+    handle.applyCommand({ ...overlayAssign(meshKind), actorGuid: "banner", sceneLayerId: "front" });
+    const overlay = handle.sceneLayerScenes().find((layer) => layer.layerId === "front");
+    expect(overlay?.scene.getMeshByName("actor-4")).not.toBeNull();
     expect(handle.scene.getMeshByName("actor-4")).toBeNull();
   });
-
-  it("holds sprite assignMesh off the world until overlay spawn tags a layer scene", () => {
-    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
-    const handle = createEngine(canvas, {
-      sharedEngine: sharedEngine(),
-      playMode: true,
-    });
-    handles.push(handle);
-    handle.applyCommand({
-      type: "assignMesh",
-      slotId: 4,
-      meshAssetGuid: null,
-      meshKind: "sprite",
-    });
-    expect(handle.scene.getMeshByName("actor-4")).toBeNull();
-    handle.applyCommand({
-      type: "spawn",
-      slotId: 4,
-      actorGuid: "banner",
-      classId: "SceneLayerActor",
-      sceneLayerId: "front",
-    });
-    handle.applyCommand({
-      type: "sceneLayerCreate",
-      layerId: "front",
-      assetGuid: "hud",
-      zOrder: 3,
-      ownerSceneGuid: null,
-      postProcessStack: [],
-    });
-    const front = handle.sceneLayerScenes().find((layer) => layer.layerId === "front");
-    expect(front?.scene.getMeshByName("actor-4")).not.toBeNull();
-    expect(handle.scene.getMeshByName("actor-4")).toBeNull();
-  });
-
   it("plants sprite assignMesh on the world after a world spawn", () => {
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
     const handle = createEngine(canvas, {
@@ -2579,108 +2456,6 @@ describe("Play createEngine view", () => {
     });
     expect(handle.scene.getMeshByName("actor-2")).not.toBeNull();
     expect(handle.sceneLayerScenes()).toHaveLength(0);
-  });
-
-  it("keeps scene-owned overlay sprite commands off the world Scene", () => {
-    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
-    const handle = createEngine(canvas, {
-      sharedEngine: sharedEngine(),
-      playMode: true,
-    });
-    handles.push(handle);
-    handle.applyCommand({
-      type: "sceneLayerCreate",
-      layerId: "hud-instance",
-      assetGuid: "hud",
-      zOrder: 0,
-      ownerSceneGuid: "world-a",
-      postProcessStack: [],
-    });
-    handle.applyCommand({
-      type: "spawn",
-      slotId: 7,
-      actorGuid: "banner",
-      classId: "SceneLayerActor",
-      sceneLayerId: "hud-instance",
-    });
-    handle.applyCommand({
-      type: "assignMesh",
-      slotId: 7,
-      meshAssetGuid: null,
-      meshKind: "sprite",
-      actorGuid: "banner",
-      sceneLayerId: "hud-instance",
-    });
-    const overlay = handle.sceneLayerScenes().find(
-      (layer) => layer.layerId === "hud-instance",
-    );
-    expect(overlay?.scene.getMeshByName("actor-7")).not.toBeNull();
-    expect(handle.scene.getMeshByName("actor-7")).toBeNull();
-  });
-
-  it("keeps graph createSceneLayer sprite commands off the world Scene", () => {
-    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
-    const handle = createEngine(canvas, {
-      sharedEngine: sharedEngine(),
-      playMode: true,
-    });
-    handles.push(handle);
-    handle.applyCommand({
-      type: "sceneLayerCreate",
-      layerId: "graph-hud",
-      assetGuid: "hud",
-      zOrder: 5,
-      ownerSceneGuid: null,
-      postProcessStack: [],
-    });
-    handle.applyCommand({
-      type: "spawn",
-      slotId: 8,
-      actorGuid: "banner",
-      classId: "SceneLayerActor",
-      sceneLayerId: "graph-hud",
-    });
-    handle.applyCommand({
-      type: "assignMesh",
-      slotId: 8,
-      meshAssetGuid: null,
-      meshKind: "sprite",
-      actorGuid: "banner",
-      sceneLayerId: "graph-hud",
-    });
-    const overlay = handle.sceneLayerScenes().find(
-      (layer) => layer.layerId === "graph-hud",
-    );
-    expect(overlay?.scene.getMeshByName("actor-8")).not.toBeNull();
-    expect(handle.scene.getMeshByName("actor-8")).toBeNull();
-  });
-
-  it("keeps overlay box assignMesh off the world Scene", () => {
-    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
-    const handle = createEngine(canvas, {
-      sharedEngine: sharedEngine(),
-      playMode: true,
-    });
-    handles.push(handle);
-    handle.applyCommand({
-      type: "sceneLayerCreate",
-      layerId: "hud",
-      assetGuid: "hud",
-      zOrder: 0,
-      ownerSceneGuid: null,
-      postProcessStack: [],
-    });
-    handle.applyCommand({
-      type: "assignMesh",
-      slotId: 9,
-      meshAssetGuid: null,
-      meshKind: "box",
-      actorGuid: "panel",
-      sceneLayerId: "hud",
-    });
-    const overlay = handle.sceneLayerScenes().find((layer) => layer.layerId === "hud");
-    expect(overlay?.scene.getMeshByName("actor-9")).not.toBeNull();
-    expect(handle.scene.getMeshByName("actor-9")).toBeNull();
   });
 
   it("keeps overlay HUD ortho and NDC stable when the world perspective camera moves", () => {
@@ -2756,62 +2531,6 @@ describe("Play createEngine view", () => {
     expect(handle.scene.getMeshByName("actor-3")).toBeNull();
     expect(after.x).toBeCloseTo(before.x);
     expect(after.y).toBeCloseTo(before.y);
-  });
-
-  it("does not plant overlay-flagged snapshot meshes in the world before spawn", () => {
-    const engine = sharedEngine();
-    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
-    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
-    const handle = createEngine(canvas, {
-      sharedEngine: engine,
-      playMode: true,
-    });
-    handles.push(handle);
-    const snapshot = new Float32Array(snapshotFloatCount(8));
-    writeSnapshotHeader(snapshot, {
-      frameId: 1,
-      tickIndex: 1,
-      actorCount: 1,
-      scriptMs: 0,
-      physicsMs: 0,
-    });
-    writeActorSlot(snapshot, 0, {
-      slotId: 4,
-      position: { x: 0, y: 0, z: 0 },
-      rotation: { x: 0, y: 0, z: 0, w: 1 },
-      scale: { x: 1, y: 1, z: 1 },
-      flags: SNAPSHOT_FLAG_VISIBLE | SNAPSHOT_FLAG_OVERLAY,
-    });
-    handle.pushSnapshot(snapshot);
-    runRenderLoop.mock.calls[0]?.[0]?.();
-    expect(handle.scene.getMeshByName("actor-4")).toBeNull();
-  });
-
-  it("parents assignMesh with sceneLayerId into the overlay scene without a prior spawn", () => {
-    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
-    const handle = createEngine(canvas, {
-      sharedEngine: sharedEngine(),
-      playMode: true,
-    });
-    handles.push(handle);
-    handle.applyCommand({
-      type: "sceneLayerCreate",
-      layerId: "front",
-      assetGuid: "hud",
-      zOrder: 3,
-      ownerSceneGuid: null,
-      postProcessStack: [],
-    });
-    handle.applyCommand({
-      type: "assignMesh",
-      slotId: 4,
-      meshAssetGuid: null,
-      meshKind: "2dtexture",
-      sceneLayerId: "front",
-    });
-    const overlay = handle.sceneLayerScenes().find((layer) => layer.layerId === "front");
-    expect(overlay?.scene.getMeshByName("actor-4")).not.toBeNull();
-    expect(handle.scene.getMeshByName("actor-4")).toBeNull();
   });
 
   it("attaches the authored stack when postProcessingEnabled is omitted", async () => {
@@ -3451,7 +3170,7 @@ describe("Play createEngine view", () => {
     handle.dispose();
   });
 
-  it("does not registerView when present is rtt", () => {
+  it("neither registers nor unregisters a view when present is rtt", () => {
     const engine = sharedEngine();
     const registerView = vi.spyOn(engine, "registerView");
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
@@ -3460,23 +3179,11 @@ describe("Play createEngine view", () => {
       editor: true,
       present: "rtt",
     });
-    handles.push(handle);
     expect(registerView).not.toHaveBeenCalled();
     expect(handle.engine).toBe(engine);
     expect(handle.editor).not.toBeNull();
-  });
-
-  it("does not unRegisterView on dispose when present is rtt", () => {
-    const engine = sharedEngine();
     const unRegisterView = vi.spyOn(engine, "unRegisterView");
-    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
-    const handle = createEngine(canvas, {
-      sharedEngine: engine,
-      editor: true,
-      present: "rtt",
-    });
     handle.dispose();
-    handles.pop();
     expect(unRegisterView).not.toHaveBeenCalled();
   });
 

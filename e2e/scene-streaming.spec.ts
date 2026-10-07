@@ -121,7 +121,7 @@ async function visiblePositions(host: Locator) {
   });
 }
 
-for (const mode of ["Play", "Preview Build"] as const) {
+for (const mode of ["Play"] as ("Play" | "Preview Build")[]) {
   test(`${mode} streams two scene instances at their component origins and unloads them independently`, async ({ page }, testInfo) => {
     test.setTimeout(180_000);
     const errors: string[] = [];

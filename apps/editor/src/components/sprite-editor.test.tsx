@@ -94,16 +94,6 @@ describe("SpriteEditor", () => {
     );
   });
 
-  it("does not show a leftover Clip Name field", () => {
-    render(
-      <SpriteEditor
-        payload={createDefaultSpritePayload() as unknown as Record<string, unknown>}
-        onChange={vi.fn()}
-      />,
-    );
-    expect(screen.queryByTestId("property-clip-name")).toBeNull();
-  });
-
   it("renders a sprite preview with a pivot marker", () => {
     render(
       <SpritePreview

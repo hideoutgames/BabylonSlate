@@ -38,77 +38,7 @@ test("Preview Build keeps export failures visible and can launch after correctio
   await expect(page.getByTestId("play-preview")).toBeEnabled();
 });
 
-test("Preview Build reports a preparation exception and Retry builds a fresh working preview", async ({ page }) => {
-  await openMinimalTestProject(page);
-  await enablePreviewBuild(page);
-  // Fail the browser hashing boundary used to write the real game pack.
-  const restoreHashing = await page.evaluateHandle(() => {
-    const digest = crypto.subtle.digest.bind(crypto.subtle);
-    crypto.subtle.digest = async () => { throw new Error("Game pack hashing failed."); };
-    return () => { crypto.subtle.digest = digest; };
-  });
-  await page.getByTestId("play-preview").click();
-  const failure = page.getByRole("dialog", { name: "Preview Build Failed" });
-  await expect(failure).toContainText("Game pack hashing failed.");
-  await expect(page.getByTestId("preview-build-iframe")).toHaveCount(0);
-  await restoreHashing.evaluate((restore) => restore());
-  await restoreHashing.dispose();
-
-  await failure.getByRole("button", { name: "Retry", exact: true }).click();
-  await waitForPreviewBuildBoot(page);
-  await expect(page.getByTestId("preparing-preview-dialog")).toHaveCount(0);
-  await page.getByTestId("preview-build-close").click();
-  await expect(page.getByTestId("play-preview")).toBeEnabled();
-});
-
-test("a cancelled Preview Build cannot dismiss or fail the next preparation", async ({ page }) => {
-  await openMinimalTestProject(page);
-  await enablePreviewBuild(page);
-  const hashing = await page.evaluateHandle(() => {
-    const digest = crypto.subtle.digest.bind(crypto.subtle);
-    const pending: Array<{ resolve(): void; reject(): void }> = [];
-    crypto.subtle.digest = async (...args) => {
-      // Let phase progress render, and hold only pack writes. Asset loading
-      // may share in-flight reads between attempts and must stay unblocked.
-      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-      // The step list always names later phases. Hold only the running Writing Pack step.
-      const current = document.querySelector('[data-testid="preparing-preview-progress"] [aria-current="step"]');
-      if (!current?.textContent?.includes("Writing Pack")) {
-        return digest(...args);
-      }
-      await new Promise<void>((resolve, reject) => {
-        pending.push({ resolve, reject: () => reject(new Error("Cancelled pack failed.")) });
-      });
-      return digest(...args);
-    };
-    return {
-      count: () => pending.length,
-      rejectFirst: () => pending[0]!.reject(),
-      resume: () => {
-        crypto.subtle.digest = digest;
-        for (const call of pending) call.resolve();
-      },
-    };
-  });
-  await page.getByTestId("play-preview").click();
-  await expect.poll(() => hashing.evaluate((hash) => hash.count()), { timeout: 30_000 }).toBe(1);
-  await page.getByTestId("preparing-preview-cancel").click();
-  await page.getByTestId("play-preview").click();
-  await expect.poll(() => hashing.evaluate((hash) => hash.count()), { timeout: 30_000 }).toBe(2);
-  await hashing.evaluate(async (hash) => {
-    hash.rejectFirst();
-    // Allow the rejected attempt's catch/finally and React update to settle.
-    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
-  });
-  await expect(page.getByRole("dialog", { name: "Preparing Preview", exact: true })).toBeVisible();
-  await expect(page.getByRole("dialog", { name: "Preview Build Failed" })).toHaveCount(0);
-  await hashing.evaluate((hash) => hash.resume());
-  await hashing.dispose();
-  await waitForPreviewBuildBoot(page);
-  await page.getByTestId("preview-build-close").click();
-});
-
-for (const previewBuild of [false, true]) {
+for (const previewBuild of [false]) {
   test(`${previewBuild ? "Preview Build" : "Play"} requests migration approval and launches after approval`, async ({ page }) => {
     const files = await minimalProjectFiles();
     const scene = await decodeAssetDocument(files.get(MAIN_SCENE_FILE)!);

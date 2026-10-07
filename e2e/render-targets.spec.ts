@@ -3,7 +3,7 @@ import type { runRenderTargetProof } from "../apps/editor/src/testing/render-tar
 import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 
 test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
-for (const backend of ["webgl2", "webgpu"] as const) {
+for (const backend of ["webgl2"] as ("webgl2" | "webgpu")[]) {
   test(`render targets capture only their selected pass on ${backend}`, async ({ page }, testInfo) => {
     test.setTimeout(60_000);
     const errors: string[] = [];

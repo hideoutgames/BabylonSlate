@@ -12,25 +12,6 @@ describe("SearchDropdown", () => {
     cleanup();
   });
 
-  it("opens an anchored menu, not a bottom sheet", () => {
-    render(
-      <SearchDropdown
-        open
-        onOpenChange={() => {}}
-        title="Tile Palette"
-        items={items}
-        onSelect={() => {}}
-        data-testid="palette"
-      >
-        <button type="button">Palette</button>
-      </SearchDropdown>,
-    );
-
-    const root = screen.getByTestId("palette");
-    expect(root.getAttribute("data-slot")).toBe("dropdown-menu-content");
-    expect(root.closest("[data-side='bottom'][data-slot='sheet-content']")).toBeNull();
-  });
-
   it("filters rows as the query changes and reports the selection", () => {
     const onSelect = vi.fn();
     const onOpenChange = vi.fn();

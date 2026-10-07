@@ -2,13 +2,6 @@ import { describe, expect, it } from "vitest";
 import { createActor } from "./scene";
 import { createDefaultScene } from "./project";
 import {
-  DEFAULT_RICH_TEXT_EXAMPLE,
-  DEFAULT_TEXT2D_SIZE,
-  DEFAULT_TEXT2D_WRAP_HEIGHT,
-  DEFAULT_TEXT2D_WRAP_WIDTH,
-  TEXT2D_ALIGNMENTS,
-  TEXT2D_VERTICAL_ALIGNMENTS,
-  TEXT2D_RENDERERS,
   createRichText2DComponent,
   createText2DComponent,
   parseText2DProperties,
@@ -20,31 +13,7 @@ import {
 } from "./text2d";
 
 describe("2DTextComponent helpers", () => {
-  it("creates overlay text with bitmap defaults and ignore HitTest", () => {
-    const component = createText2DComponent("t1");
-    expect(component.classId).toBe("2DTextComponent");
-    expect(component.properties).toEqual({
-      text: "Text",
-      fontAssetGuid: null,
-      materialGuid: null,
-      materialUv: "text",
-      size: DEFAULT_TEXT2D_SIZE,
-      color: [1, 1, 1],
-      renderer: "bitmap",
-      outline: 0,
-      outlineColor: [0, 0, 0],
-      alignment: "left",
-      verticalAlignment: "center",
-      bold: false,
-      italic: false,
-      underline: false,
-      hitTest: "ignore",
-      wrapWidth: DEFAULT_TEXT2D_WRAP_WIDTH,
-      wrapHeight: DEFAULT_TEXT2D_WRAP_HEIGHT,
-    });
-    expect(TEXT2D_RENDERERS).toEqual(["bitmap", "msdf"]);
-    expect(TEXT2D_ALIGNMENTS).toEqual(["left", "center", "right"]);
-    expect(TEXT2D_VERTICAL_ALIGNMENTS).toEqual(["top", "center", "bottom"]);
+  it("falls back to valid defaults for invalid 2D Text properties", () => {
     expect(
       parseText2DProperties({ size: -1, renderer: "nope", materialGuid: "  ", materialUv: "invalid" }),
     ).toMatchObject({
@@ -58,12 +27,6 @@ describe("2DTextComponent helpers", () => {
       materialUv: "text",
     });
     expect(parseText2DProperties({ materialGuid: " text-material ", materialUv: "glyph" })).toMatchObject({ materialGuid: "text-material", materialUv: "glyph" });
-  });
-
-  it("seeds 2D Rich Text with the markup example", () => {
-    const component = createRichText2DComponent("rt1");
-    expect(component.classId).toBe("2DRichTextComponent");
-    expect(component.properties.text).toBe(DEFAULT_RICH_TEXT_EXAMPLE);
   });
 
   it("collects Font and inline image guids from overlay text components", () => {

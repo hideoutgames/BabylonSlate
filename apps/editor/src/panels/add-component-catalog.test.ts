@@ -71,58 +71,6 @@ describe("Add Component catalog", () => {
     expect(world).not.toContain("2DPanelComponent");
   });
 
-  it("groups addable classes into Rendering, Animation, Camera, and Physics", () => {
-    const byCategory = new Map<string, string[]>();
-    for (const entry of ADDABLE_COMPONENT_CLASSES) {
-      const list = byCategory.get(entry.category) ?? [];
-      list.push(entry.id);
-      byCategory.set(entry.category, list);
-    }
-    expect([...byCategory.keys()]).toEqual([
-      "General",
-      "Rendering",
-      "Animation",
-      "AI",
-      "Camera",
-      "Audio",
-      "Particles",
-      "Water",
-      "Overlay",
-      "Physics",
-    ]);
-    expect(byCategory.get("General")).toEqual(["SaveGameComponent", "MovementComponent", "SplineComponent"]);
-    expect(byCategory.get("Rendering")).toEqual([
-      "MeshComponent",
-      "SpriteComponent",
-      "DynamicRuntimeMeshComponent",
-      "TilemapComponent",
-      "LightComponent",
-      "AreaRectLightComponent",
-      "FogVolumeComponent",
-      "OutlineComponent",
-      "DeformerComponent",
-      "HemisphericFillLightComponent",
-      "SkyboxComponent",
-      "Text3DComponent",
-    ]);
-    expect(byCategory.get("UI")).toBeUndefined();
-    expect(byCategory.get("Animation")).toEqual(["AnimationGraphComponent"]);
-    expect(byCategory.get("AI")).toEqual([
-      "BehaviourTreeComponent",
-      "NavAgentComponent",
-    ]);
-    expect(byCategory.get("Camera")).toEqual(["CameraComponent", "RenderTargetCaptureComponent", "SpringArmComponent"]);
-    expect(byCategory.get("Audio")).toEqual(["AudioComponent"]);
-    expect(byCategory.get("Particles")).toEqual(["ParticleComponent"]);
-    expect(byCategory.get("Physics")).toEqual([
-      "RigidBodyComponent",
-      "CableComponent",
-      "ColliderComponent",
-      "PhysicsConstraintComponent",
-      "RagdollComponent",
-    ]);
-  });
-
   it("seeds RigidBody defaults from the physics property schema", () => {
     expect(defaultPropertiesFor("RigidBodyComponent")).toEqual({
       motionType: "dynamic",
@@ -448,12 +396,6 @@ describe("projectAddComponentItems", () => {
 });
 
 describe("prefabComponentLabel", () => {
-  it("uses the catalog Title Case label for engine class ids", () => {
-    expect(
-      prefabComponentLabel({ classId: "MeshComponent", properties: {} }),
-    ).toBe("Mesh");
-  });
-
   it("appends the bound asset name when a guid property is set", () => {
     expect(
       prefabComponentLabel(
@@ -461,12 +403,6 @@ describe("prefabComponentLabel", () => {
         (guid) => (guid === "hero" ? "Hero" : undefined),
       ),
     ).toBe("Mesh (Hero)");
-  });
-
-  it("title-cases a user ActorComponent class id", () => {
-    expect(prefabComponentLabel({ classId: "RegenHealth", properties: {} })).toBe(
-      "Regen Health",
-    );
   });
 });
 

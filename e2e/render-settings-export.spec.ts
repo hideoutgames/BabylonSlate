@@ -36,11 +36,11 @@ const magentaPixels = (page: Page, captured: string) => page.evaluate(async (bas
   return count;
 }, captured);
 
+// One packed WebGL2 export keeps the standalone settings and deferred-loading
+// journey in CI; backend variants are covered by webgpu-backend and player-backend.
 for (const variant of [
   { mode: "packed", backend: "webgl2", fail: false },
-  { mode: "loose", backend: "webgpu", fail: false },
-  { mode: "packed", backend: "webgpu", fail: true },
-] as const) {
+] as { mode: "packed" | "loose"; backend: "webgl2" | "webgpu"; fail: boolean }[]) {
   test(`non-default ${variant.mode} settings reach the standalone ${variant.backend} player${variant.fail ? " after initialization failure" : ""}`, async ({ page, baseURL }, testInfo) => {
     test.setTimeout(120_000);
     await page.addInitScript(() => { Error.stackTraceLimit = 30; });

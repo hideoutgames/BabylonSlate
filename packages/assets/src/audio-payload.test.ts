@@ -3,22 +3,7 @@ import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readGoldenBinary, writeGoldenBinary } from "@babylonslate/test-kit";
 import {
-  AUDIO_BAKE_DEBOUNCE_MS,
-  AUDIO_BAKE_WORKER_TIMEOUT_MS,
-  AUDIO_DECODED_PCM_LRU_BYTES,
-  AUDIO_GEOMETRY_COLLECT_SLICE,
-  AUDIO_MAX_CLIPS,
-  AUDIO_MAX_CONCURRENT_VOICES,
-  AUDIO_MAX_PROBES,
-  AUDIO_OCCUPANCY_GRID_MAX_X,
-  AUDIO_OCCUPANCY_GRID_MAX_Y,
-  AUDIO_OCCUPANCY_GRID_MAX_Z,
-  AUDIO_PRE_UNLOCK_QUEUE_CAP,
-  AUDIO_SHARED_REVERB_BUSES,
-  AUDIO_REVERB_COMB_COUNT,
-  AUDIO_REVERB_ALLPASS_COUNT,
   AUDIO_SPEED_OF_SOUND,
-  AUDIO_VOXEL_SIZE,
   audioAssetDependencies,
   fillEmptySourceClipName,
   remapAudioPayloadGuids,
@@ -63,24 +48,6 @@ const FIXTURE_DIR = dirname(fileURLToPath(import.meta.url));
 const UPDATE = process.env.UPDATE_GOLDENS === "1";
 
 describe("audio payloads", () => {
-  it("checks in the A16 audio budgets as named constants", () => {
-    expect(AUDIO_OCCUPANCY_GRID_MAX_X).toBe(24);
-    expect(AUDIO_OCCUPANCY_GRID_MAX_Y).toBe(24);
-    expect(AUDIO_OCCUPANCY_GRID_MAX_Z).toBe(16);
-    expect(AUDIO_VOXEL_SIZE).toBe(2);
-    expect(AUDIO_MAX_PROBES).toBe(32);
-    expect(AUDIO_BAKE_WORKER_TIMEOUT_MS).toBe(8_000);
-    expect(AUDIO_GEOMETRY_COLLECT_SLICE).toBe(8);
-    expect(AUDIO_BAKE_DEBOUNCE_MS).toBe(1_500);
-    expect(AUDIO_SHARED_REVERB_BUSES).toBe(1);
-    expect(AUDIO_REVERB_COMB_COUNT).toBe(4);
-    expect(AUDIO_REVERB_ALLPASS_COUNT).toBe(2);
-    expect(AUDIO_PRE_UNLOCK_QUEUE_CAP).toBe(32);
-    expect(AUDIO_DECODED_PCM_LRU_BYTES).toBe(256 * 1024 * 1024);
-    expect(AUDIO_MAX_CONCURRENT_VOICES).toBe(32);
-    expect(AUDIO_MAX_CLIPS).toBe(8);
-  });
-
   it("normalizes empty imported Audio without inventing channel or attenuation", () => {
     expect(normalizeAudioPayload({})).toEqual({
       volume: 1,

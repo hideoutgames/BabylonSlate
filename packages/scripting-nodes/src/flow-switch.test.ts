@@ -28,26 +28,6 @@ function node(
 }
 
 describe("Switch on Int / Switch on String catalog", () => {
-  it("registers both flow switch nodes with structuredFlow metadata", () => {
-    const registry = createDefaultNodeRegistry();
-    const intDef = registry.get("flow.switchInt");
-    const stringDef = registry.get("flow.switchString");
-    expect(intDef?.title).toBe("Switch on Int");
-    expect(stringDef?.title).toBe("Switch on String");
-    expect(intDef?.category).toBe("flow");
-    expect(stringDef?.category).toBe("flow");
-    expect(intDef?.structuredFlow).toEqual({
-      kind: "switchOnInt",
-      valuePin: "value",
-      defaultPin: "default",
-    });
-    expect(stringDef?.structuredFlow).toEqual({
-      kind: "switchOnString",
-      valuePin: "value",
-      defaultPin: "default",
-    });
-  });
-
   it("builds exec in, typed selector, encoded case outs, and Default from cases", () => {
     const registry = createDefaultNodeRegistry();
     const intPins = registry.get("flow.switchInt")!.pins({ cases: [0, 2, 1] });

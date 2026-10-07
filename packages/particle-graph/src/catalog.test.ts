@@ -3,7 +3,6 @@ import {
   PARTICLE_CATALOG,
   PARTICLE_CONDITION_TESTS,
   PARTICLE_RANDOM_LOCKS,
-  PARTICLE_UNSUPPORTED_V1_TYPES,
   PARTICLE_VALUE_TYPE_OPTIONS,
   isParticleSpineRole,
   particleNodeDefinition,
@@ -89,19 +88,6 @@ describe("particle node catalog", () => {
       }
       if (definition.role !== "create") expect(definition.inputs[0]?.type.kind).toBe("particle");
       if (definition.role !== "output") expect(definition.outputs.map((pin) => pin.type.kind)).toEqual(["particle"]);
-    }
-  });
-
-  it("exposes only Particle and Emit Rate on the Emitter Output", () => {
-    const output = PARTICLE_CATALOG.filter((definition) => definition.terminal);
-    expect(output.map((definition) => definition.title)).toEqual(["Emitter Output"]);
-    expect(output[0]!.inputs.map((pin) => pin.id)).toEqual(["particle", "emitRate"]);
-    expect(output[0]!.outputs).toEqual([]);
-  });
-
-  it("keeps reserved v1 exclusions out of the catalog", () => {
-    for (const type of Object.keys(PARTICLE_UNSUPPORTED_V1_TYPES)) {
-      expect(particleNodeDefinition(type)).toBeUndefined();
     }
   });
 

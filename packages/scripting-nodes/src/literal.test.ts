@@ -12,7 +12,6 @@ import {
 } from "@babylonslate/scripting";
 import {
   createDefaultNodeRegistry,
-  literalNodes,
 } from "./index";
 
 function node(
@@ -33,24 +32,6 @@ function node(
 }
 
 describe("literal nodes", () => {
-  it("registers Make Bool, Int, Float, String, and Class on the literal palette", () => {
-    expect(literalNodes.map((entry) => entry.id)).toEqual(
-      expect.arrayContaining([
-        "literal.makeBool",
-        "literal.makeInt",
-        "literal.makeFloat",
-        "literal.makeString",
-        "literal.makeClass",
-        "literal.makeAsset",
-        "literal.makeQuat",
-      ]),
-    );
-    expect(literalNodes.every((entry) => entry.category === "literal")).toBe(
-      true,
-    );
-    expect(literalNodes.every((entry) => entry.pure === true)).toBe(true);
-  });
-
   it("uses Title Case Make titles and In/Out pins of the same type", () => {
     const registry = createDefaultNodeRegistry();
     const makeInt = registry.get("literal.makeInt")!;
@@ -148,24 +129,6 @@ describe("literal nodes", () => {
     };
     const compiled = compileGraph(graph, { assetGuid: "a", registry });
     expect(compiled.source).toContain("7");
-  });
-
-  it("registers typed To String nodes for scalars, vectors, and rotator", () => {
-    expect(literalNodes.map((entry) => entry.id)).toEqual(
-      expect.arrayContaining([
-        "literal.toStringBool",
-        "literal.toStringInt",
-        "literal.toStringFloat",
-        "literal.toStringVec2",
-        "literal.toStringVec3",
-        "literal.toStringVec4",
-        "literal.toStringRotator",
-      ]),
-    );
-    const toInt = createDefaultNodeRegistry().get("literal.toStringInt")!;
-    expect(toInt.title).toBe("To String (Int)");
-    expect(toInt.pins({})[0]?.type).toEqual(INT);
-    expect(toInt.pins({})[1]?.type).toEqual(STRING);
   });
 
   it("compiles To String (Float) through formatValue", () => {

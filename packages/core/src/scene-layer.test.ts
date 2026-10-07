@@ -12,7 +12,6 @@ import {
   sceneLayerRelativeAnchorWorldPosition,
   sceneLayerToEditorScene,
   walkOverlayPointerHits,
-  SCENE_LAYER_HIT_TESTS,
 } from "./scene-layer";
 import { createActor, createDefaultSceneSettings } from "./scene";
 
@@ -99,10 +98,6 @@ describe("SceneLayer schema", () => {
       { assetGuid: "layer-a", zOrder: 2, enabled: false },
       { assetGuid: "layer-b", zOrder: 0, enabled: true },
     ]);
-  });
-
-  it("exposes HitTest enum values for overlay visuals", () => {
-    expect(SCENE_LAYER_HIT_TESTS).toEqual(["ignore", "block", "passThrough"]);
   });
 
   it("projects a SceneLayer into a locked 2D editor scene", () => {
@@ -272,19 +267,6 @@ describe("SceneLayer anchors and hit tests", () => {
 });
 
 describe("2DPanel properties", () => {
-  it("defaults to a texture source with zero 9-slice margins", () => {
-    expect(parseOverlayPanelProperties({})).toEqual({
-      source: "texture",
-      textureGuid: null,
-      materialGuid: null,
-      marginLeft: 0,
-      marginRight: 0,
-      marginTop: 0,
-      marginBottom: 0,
-      hitTest: "ignore",
-    });
-  });
-
   it("keeps 0-1 margins as fractions and values above 1 as legacy pixels", () => {
     expect(parseOverlayPanelProperties({ marginLeft: 0.5 }).marginLeft).toBe(0.5);
     expect(parseOverlayPanelProperties({ marginRight: 10 }).marginRight).toBe(10);

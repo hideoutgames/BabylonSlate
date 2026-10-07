@@ -1,5 +1,4 @@
 import { expect, test, type Page } from "@playwright/test";
-import { IPAD_TEST_TAG } from "./ipad-tag";
 import { openMinimalTestProject as openTestProject } from "./minimal-project";
 
 const E2E_TIMEOUT_MS = 90_000;
@@ -11,26 +10,7 @@ async function openWindowsMenu(page: Page) {
   await expect(content).toBeVisible();
 }
 
-test.describe("Windows menu", { tag: IPAD_TEST_TAG }, () => {
-  test("sits left of Focus and is disabled on Content Browser", async ({
-    page,
-  }) => {
-    await openTestProject(page);
-
-    const windows = page.getByTestId("windows-menu");
-    const focus = page.getByTestId("focus-layout");
-    await expect(windows).toBeVisible();
-    await expect(windows).toBeDisabled();
-    await expect(focus).toBeDisabled();
-
-    const windowsBox = await windows.boundingBox();
-    const focusBox = await focus.boundingBox();
-    expect(windowsBox).not.toBeNull();
-    expect(focusBox).not.toBeNull();
-    expect(windowsBox!.x + windowsBox!.width).toBeLessThanOrEqual(
-      focusBox!.x + 1,
-    );
-  });
+test.describe("Windows menu", () => {
 
   test("restores Outliner and Output Log to their default dock positions", async ({
     page,

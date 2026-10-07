@@ -30,12 +30,6 @@ function node(
 }
 
 describe("flow nodes", () => {
-  it("exports at least one node definition", () => {
-    expect(flowNodes.length).toBeGreaterThan(0);
-    expect(flowNodes[0]?.id).toBeTruthy();
-    expect(flowNodes[0]?.category).toBeTruthy();
-  });
-
   it("registers On Command Run pins from the parameter list", () => {
     const command = flowNodes.find((node) => node.id === "flow.event.commandRun");
     expect(command?.title).toBe("Event On Command Run");
@@ -134,22 +128,6 @@ describe("flow nodes", () => {
       { assetGuid: "a", registry },
     );
     expect(compiled.source).toContain("ctx.args.sceneName");
-  });
-
-  it("registers On Text Changed as a catalog event", () => {
-    const node = flowNodes.find((entry) => entry.id === "flow.event.textChanged");
-    expect(node?.title).toBe("Event On Text Changed");
-    const pins = node?.pins({}) ?? [];
-    expect(pins.some((pin) => pin.id === "text" && pin.direction === "out")).toBe(
-      true,
-    );
-  });
-
-  it("registers On Audio Finished as a catalog event", () => {
-    const node = flowNodes.find((entry) => entry.id === "flow.event.audioFinished");
-    expect(node?.title).toBe("Event On Audio Finished");
-    const pins = node?.pins({}) ?? [];
-    expect(pins.some((pin) => pin.id === "execOut")).toBe(true);
   });
 
   it("registers Actor collision events with Hit Result and Instigator pins", () => {

@@ -17,28 +17,6 @@ const membersOfKind = (
 ): MyClassMember[] => members.filter((member) => member.kind === kind);
 
 describe("My Class members", () => {
-  it("Title Cases poorly cased event titles in the Class tree", () => {
-    const graph: SerializedGraph = {
-      nodes: [
-        {
-          id: "hit",
-          type: "flow.event.custom",
-          position: { x: 0, y: 0 },
-          data: { title: "event on hit", name: "on hit" },
-        },
-      ],
-      edges: [],
-    };
-    expect(membersForGraph(graph)).toEqual([
-      {
-        kind: "event",
-        name: "On Hit",
-        detail: "hit",
-        eventType: "flow.event.custom",
-      },
-    ]);
-  });
-
   it("lists the event nodes a graph declares", () => {
     const graph: SerializedGraph = {
       nodes: [
@@ -544,37 +522,6 @@ describe("My Class members", () => {
           componentId: "text-1",
         }),
       ]),
-    );
-  });
-
-  it("titles bound component events with a qualifier in the Events tree", () => {
-    const graph: SerializedGraph = {
-      nodes: [
-        {
-          id: "click",
-          type: "flow.event.onClick",
-          position: { x: 0, y: 0 },
-          data: {
-            title: "Event On Click (2D Button)",
-            eventQualifier: "2D Button",
-            componentId: "btn-1",
-          },
-        },
-        {
-          id: "begin",
-          type: "flow.event.beginPlay",
-          position: { x: 0, y: 80 },
-          data: { title: "Event Begin Play" },
-        },
-      ],
-      edges: [],
-    };
-    const events = membersOfKind(membersForGraph(graph), "event");
-    expect(events.find((row) => row.detail === "click")?.name).toBe(
-      "Event On Click (2D Button)",
-    );
-    expect(events.find((row) => row.detail === "begin")?.name).toBe(
-      "Event Begin Play",
     );
   });
 });

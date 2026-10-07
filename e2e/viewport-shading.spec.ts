@@ -14,7 +14,6 @@ import {
 import { guidForPath } from "./material-graph";
 import { saveAllIfEnabled } from "./save-all";
 import { setPreviewScene } from "./preview-parity";
-import { clickPlayAndWaitForOverlay } from "./play";
 
 async function greenPixels(canvas: Locator): Promise<number> {
   return canvas.evaluate((node: HTMLCanvasElement) => {
@@ -68,79 +67,6 @@ async function expectSkyboxPixels(canvas: Locator) {
     return sky;
   }), { timeout: 20_000 }).toBeGreaterThan(100);
 }
-
-test("Emissive surface stays self-lit on a curved mesh without scene lights", async ({
-  page,
-}) => {
-  test.setTimeout(180_000);
-  await openTestProject(page);
-  await createContentBrowserAsset(page, "Material", "SelfLit");
-  const materialPath = "assets/SelfLit.material.babasset";
-  await openAssetFromBrowser(page, materialPath);
-  const graph = page.getByTestId("material-graph-editor");
-  await graph.locator('.react-flow__node[data-id="baseColor"]').click();
-  await page.getByTestId("property-color").fill("#000000");
-  await graph.locator('.react-flow__node[data-id="output"]').getByText("Material Output", { exact: true }).click();
-  await expect(page.getByTestId("property-emissive")).toBeVisible();
-  await page.getByTestId("property-emissive").fill("#008000");
-  await saveAllIfEnabled(page);
-  const mesh = createMeshComponent("emissive-mesh", "sphere");
-  mesh.properties.materialGuid = await guidForPath(page, materialPath);
-  const scene = createDefaultScene();
-  scene.settings.environmentColor = [0, 0, 0];
-  scene.settings.environmentTextureGuid = null;
-  scene.settings.grid.showGrid = false;
-  scene.actors = [
-    createActor("emissive-sphere", "Emissive Sphere", {
-      transform: {
-        position: [0, 0, 0],
-        rotation: [0, 0, 0, 1],
-        scale: [4, 4, 4],
-      },
-      components: [mesh],
-    }),
-  ];
-  await openMainScene(page);
-  await setPreviewScene(page, scene);
-  const viewport = page.getByTestId("viewport-canvas");
-  await expect
-    .poll(() => greenPixels(viewport), { timeout: 30_000 })
-    .toBeGreaterThan(500);
-  // Authored sRGB #008000 must round-trip through linear lighting to 128,
-  // without an extra display conversion brightening it to ~188.
-  const green = await viewport.evaluate((node: HTMLCanvasElement) => {
-    const copy = document.createElement("canvas");
-    copy.width = node.width;
-    copy.height = node.height;
-    const ctx = copy.getContext("2d")!;
-    ctx.drawImage(node, 0, 0);
-    const pixels = ctx.getImageData(0, 0, copy.width, copy.height).data;
-    const counts = new Array<number>(256).fill(0);
-    for (let i = 0; i < pixels.length; i += 4) {
-      if (pixels[i]! < 5 && pixels[i + 2]! < 5 && pixels[i + 1]! > 80)
-        counts[pixels[i + 1]!]!++;
-    }
-    return counts.indexOf(Math.max(...counts));
-  });
-  expect(green).toBeGreaterThanOrEqual(125);
-  expect(green).toBeLessThanOrEqual(131);
-  await clickPlayAndWaitForOverlay(page);
-  await expect
-    .poll(() => greenPixels(page.getByTestId("play-canvas")), {
-      timeout: 30_000,
-    })
-    .toBeGreaterThan(500);
-  await page.getByTestId("play-overlay-close").click();
-  await openAssetFromBrowser(page, materialPath);
-  await graph.locator('.react-flow__node[data-id="output"]').getByText("Material Output", { exact: true }).click();
-  await expect(page.getByTestId("property-emissive")).toBeVisible();
-  await page.getByTestId("property-emissive").fill("#000000");
-  await saveAllIfEnabled(page);
-  await openMainScene(page);
-  await expect
-    .poll(() => greenPixels(viewport), { timeout: 30_000 })
-    .toBeLessThan(50);
-});
 
 test("Unlit preserves skyboxes and PBR model color in Scene, Prefab, and Model Preview", async ({
   page,

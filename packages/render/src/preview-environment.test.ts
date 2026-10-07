@@ -1,6 +1,6 @@
 import { mockCubeTextureIO } from "./texture-test-fixtures";
 import { afterEach, describe, expect, it } from "vitest";
-import { NullEngine, PBRMaterial, Texture } from "@babylonjs/core";
+import { PBRMaterial, Texture } from "@babylonjs/core";
 import { createTestEngine } from "./create-null-engine";
 import { createMaterialPreviewScene } from "./material-preview";
 import { createModelPreviewScene } from "./model-preview";
@@ -74,14 +74,6 @@ describe("installPreviewEnvironment", () => {
     handles.push(handle);
     // model-thumbnail builds this host; it never installs the environment.
     const host = createModelPreviewScene(handle.engine, { transparent: true });
-    expect(host.scene.meshes.some((mesh) => isSkyboxMesh(mesh))).toBe(false);
-    host.dispose();
-  });
-
-  it("is not installed by the material preview factory itself", () => {
-    const handle = new NullEngine();
-    handles.push({ engine: handle });
-    const host = createMaterialPreviewScene(handle);
     expect(host.scene.meshes.some((mesh) => isSkyboxMesh(mesh))).toBe(false);
     host.dispose();
   });

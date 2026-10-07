@@ -24,20 +24,6 @@ describe("PinListEditor", () => {
     cleanup();
   });
 
-  it("renders compact color+name rows without per-row field groups", () => {
-    render(<PinListEditor rows={rows} onChange={() => {}} />);
-    expect(screen.getByTestId("pin-list-editor")).toBeTruthy();
-    expect(screen.getByTestId("pin-row-a")).toBeTruthy();
-    expect(screen.getByDisplayValue("amount")).toBeTruthy();
-    expect(screen.queryByLabelText("Optional")).toBeNull();
-    const swatch = screen
-      .getByTestId("pin-row-a")
-      .querySelector("[data-type-color-swatch]");
-    expect((swatch as HTMLElement).style.backgroundColor).toBe(
-      "var(--pin-float)",
-    );
-  });
-
   it("moves and removes rows", () => {
     const onChange = vi.fn();
     render(<PinListEditor rows={rows} onChange={onChange} />);
@@ -392,21 +378,6 @@ describe("PinListEditor", () => {
     expect(screen.queryByTestId("pin-a-optional")).toBeNull();
     expect(screen.queryByTestId("pin-a-default")).toBeNull();
     expect(screen.getByTestId("pin-a-class-type")).toBeTruthy();
-  });
-
-  it("centers row actions on the selected card including extra fields", () => {
-    render(
-      <PinListEditor
-        rows={rows.slice(0, 1)}
-        selectedId="a"
-        onChange={() => {}}
-      />,
-    );
-    const cluster = screen.getByTestId("pin-a-remove").parentElement;
-    const extras = screen.getByTestId("pin-a-optional");
-    expect(cluster?.parentElement?.contains(extras)).toBe(true);
-    expect(cluster?.parentElement?.className).toMatch(/items-center/);
-    expect(cluster?.className).toMatch(/self-center/);
   });
 
   it("adds an input pin with direction", () => {

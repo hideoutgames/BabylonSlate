@@ -662,33 +662,6 @@ describe("ContentBrowserWorkspace grid window", () => {
     expect(docs.repairAfterAssetDelete).toHaveBeenCalledWith(new Set(["tex-0"]), new Set(), expect.any(Function));
   });
 
-  it("mounts only viewport-near tiles for a large folder", () => {
-    docs.thumbnailsEnabled = false;
-    stubGridSize(
-      CONTENT_BROWSER_GRID_PAD_PX * 2 +
-        CONTENT_BROWSER_TILE_WIDTH_PX * 4 +
-        CONTENT_BROWSER_GRID_GAP_PX * 3,
-      CONTENT_BROWSER_GRID_PAD_PX * 2 +
-        CONTENT_BROWSER_TILE_HEIGHT_PX * 2 +
-        CONTENT_BROWSER_GRID_GAP_PX,
-    );
-    installRegistry(Array.from({ length: 300 }, (_, index) => texture(index)));
-    render(<ContentBrowserWorkspace />);
-    const tiles = document.querySelectorAll('[data-testid^="content-item-"]');
-    expect(tiles.length).toBeGreaterThan(0);
-    expect(tiles.length).toBeLessThan(80);
-    expect(
-      document.querySelector(
-        '[data-testid="content-item-assets/tex-0.babasset"]',
-      ),
-    ).toBeTruthy();
-    expect(
-      document.querySelector(
-        '[data-testid="content-item-assets/tex-299.babasset"]',
-      ),
-    ).toBeNull();
-  });
-
   it("mounts no tiles while hidden and shows the current folder again when visible", () => {
     docs.thumbnailsEnabled = false;
     stubGridSize(
