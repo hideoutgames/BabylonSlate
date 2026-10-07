@@ -73,6 +73,7 @@ import {
 } from "@babylonslate/bridge";
 import { attachInputCapture, type InputCaptureHandle } from "./input-capture";
 import { createSessionBoundaryClient } from "./session-boundary-client";
+import { RuntimeInspectorClient, type RuntimeInspectionAction, type RuntimeInspectionWriteOptions } from "./runtime-inspector-client";
 import { observedMoveXFromEvents } from "../lib/play-input-observe";
 import { createGameWorkerHost, type GameWorkerHost } from "./game-worker-host";
 import { playLoadControl, type PlayPhysicsSettings } from "./play-physics";
@@ -342,6 +343,8 @@ export interface PlaySession {
     line: string,
   ) => Promise<{ success: boolean; output: string }>;
   inspectWorld: () => Promise<DebugInspectSnapshot>;
+  /** Correlated typed selection and live edits; continuous drafts are coalesced. */
+  requestRuntimeInspection: (action: RuntimeInspectionAction, options?: RuntimeInspectionWriteOptions) => Promise<import("@babylonslate/bridge").RuntimeInspectorResult>;
   /** Advance one simulation tick while paused. */
   step: () => void;
   lastTrace: () => TracePayload | null;
@@ -601,6 +604,25 @@ export function startPlaySession(options: {
     if (worker) worker.postControl({ type: "sessionBoundary", ...request });
     else if (runtime) void runtime.requestSessionBoundary(request).then((result) => boundaryClient.receive(result));
     else throw new Error("The game runtime is unavailable");
+  });
+  const inspectorClient = new RuntimeInspectorClient({
+    sessionGeneration: options.sessionGeneration ?? 0,
+    send: async request => {
+      if (worker) { worker.postControl({ type: "runtimeInspector", ...request }); return; }
+      if (!runtime) throw new Error("The game runtime is unavailable");
+      const owner = runtime;
+      const result = await owner.requestRuntimeInspector(request);
+      if (runtime !== owner || stopped) return;
+      if (result.success && result.payload?.kind === "mutation") {
+        // Apply the authoritative edited pose before acknowledging it. This is
+        // snapshot publication only: paused edits never advance a game tick.
+        if (!owner.copySnapshot(snapBuf)) throw new Error("The runtime edit applied, but its presentation snapshot is unavailable.");
+        lastWorkerTickIndex = applyPlaySnapshotTick(lastWorkerTickIndex, snapBuf);
+        handle.pushSnapshot(snapBuf);
+        if (acknowledgedPaused) handle.requestPausedRedraw();
+      }
+      inspectorClient.receive(result);
+    },
   });
   const suppressGameInput = () => {
     const suppressed = inputTransitionPending || gameInputMode === "edit" || acknowledgedPaused || requestedPauses.size > 0;
@@ -886,8 +908,15 @@ export function startPlaySession(options: {
   const saveServer = createSaveStorageServer(saveStorage, (response) => worker?.postControl({ type: "saveStorageResponse", response }));
   const onCommand = (command: CommandMessage) => {
     if (command.type === "sessionBoundaryResult") { boundaryClient.receive(command); return; }
+    if (command.type === "runtimeInspectorResult") {
+      if (command.success && command.payload?.kind === "mutation" && acknowledgedPaused) handle.requestPausedRedraw();
+      inspectorClient.receive(command);
+      return;
+    }
     if (command.type === "saveStorageRequest") { saveServer.receive(command.request); return; }
     noteCommand();
+    if (command.type === "activeScene") inspectorClient.invalidateScene();
+    if (command.type === "despawn") inspectorClient.invalidateActor(command.actorGuid);
     if (command.type === "sceneStreamBlocking") handle.setSceneStreamingPaused(command.blocking);
     if (command.type === "snapshotLayout" && runtime)
       snapBuf = new Float32Array(snapshotFloatCount(command.capacity));
@@ -1303,6 +1332,7 @@ export function startPlaySession(options: {
       }
       return Promise.resolve({ tickIndex: 0, nodes: [] });
     },
+    requestRuntimeInspection: (action, options) => inspectorClient.request(action, options),
     step: () => {
       applyPlaySessionStep({ worker, runtime });
     },
@@ -1330,6 +1360,7 @@ export function startPlaySession(options: {
       streamReadiness.dispose();
       stopped = true;
       boundaryClient.dispose();
+      inspectorClient.dispose();
       simulationSaveStorage?.dispose();
       releaseConsoleCapture();
       window.removeEventListener("error", onWindowError);
