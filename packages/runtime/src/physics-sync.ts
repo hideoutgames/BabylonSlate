@@ -50,6 +50,7 @@ import {
   copyTransform,
   inverseQuaternion,
   multiplyQuaternion,
+  relativeTransform,
   rotateVector,
   type ActorTransformMap,
 } from "./actor-world-transform";
@@ -1016,17 +1017,16 @@ export class PhysicsWorldSync {
       ancestor && parent ? this.worldTransforms.get(parent.guid) : undefined;
     let transform: Transform;
     if (body) {
-      const scale = actor.transform.scale;
       transform = {
         position: { ...body.position },
         rotation: { ...body.rotation },
-        scale: ancestor
-          ? {
-              x: ancestor.scale.x * scale.x,
-              y: ancestor.scale.y * scale.y,
-              z: ancestor.scale.z * scale.z,
-            }
-          : { ...scale },
+        // Scale is unchanged by the step: reuse the pre-step composition,
+        // which predates this readback's local rotation writes.
+        scale: authored
+          ? { ...authored.scale }
+          : ancestor
+            ? composeParentChildTransform(ancestor, actor.transform).scale
+            : { ...actor.transform.scale },
       };
     } else if (authored && ancestor === authoredParent) {
       transform = authored;
@@ -1970,13 +1970,28 @@ export function actorLocalPhysicsTransform(
 ): PhysicsTransform {
   const parentId = actorParentGuid(actor);
   const parentWorld = parentId ? transforms.get(parentId) : undefined;
-  return parentWorld ? localPhysicsTransform(world, parentWorld) : world;
+  return parentWorld ? localPhysicsTransform(world, parentWorld, actor.transform) : world;
 }
 
+/**
+ * A body's world pose as the actor's local position and rotation. The actor
+ * keeps its own scale, so its composed world scale completes the body pose,
+ * and a nonuniform or mirrored parent inverts through the authored matrices.
+ */
 function localPhysicsTransform(
   world: PhysicsTransform,
   parentWorld: Transform,
+  local: Transform,
 ): PhysicsTransform {
+  const { x: sx, y: sy, z: sz } = parentWorld.scale;
+  if (!(sx === sy && sy === sz)) {
+    const relative = relativeTransform(parentWorld, {
+      position: world.position,
+      rotation: world.rotation,
+      scale: composeParentChildTransform(parentWorld, local).scale,
+    }, local);
+    if (relative) return { position: relative.position, rotation: relative.rotation };
+  }
   const inverseRotation = inverseQuaternion(parentWorld.rotation);
   const offset = rotateVector(inverseRotation, {
     x: world.position.x - parentWorld.position.x,
