@@ -120,10 +120,18 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
     return this.playAnimOwnedSlots.has(slotId);
   }
 
-  /** The slot's actor left: its evaluation and last published state go with it. */
-  releaseSlot(slotId: number): void {
+  /**
+   * The slot's actor left: its evaluation, last published state and Play
+   * Animation ownership go with it, so a later actor's Animation Graph runs.
+   * Its Play Sound voice stops, as its AudioComponent voices do. Only slot
+   * owners tick trees, and Destroy Actor releases the slot without retiring
+   * the actor, so this hook covers every removal.
+   */
+  releaseSlot(slotId: number, owner: Actor | undefined): void {
     this.evalBySlot.delete(slotId);
     this.lastStateJson.delete(slotId);
+    this.playAnimOwnedSlots.delete(slotId);
+    if (owner) this.stopPlaySound(owner.guid);
   }
 
   /** Stop clears the debug overlay the session was streaming. */
