@@ -10,6 +10,7 @@ import {
   Constants,
   DiscardBlock,
   FragmentOutputBlock,
+  FogBlock,
   ImageProcessingBlock,
   InputBlock,
   Material,
@@ -21,6 +22,7 @@ import {
   ShaderLanguage,
   NodeMaterialBlockConnectionPointTypes,
   NodeMaterialModes,
+  NodeMaterialSystemValues,
   RemapBlock,
   ScaleBlock,
   TextureBlock,
@@ -81,6 +83,7 @@ import { AuthoredShadowDepthWrapper } from "./authored-shadow-depth-wrapper";
 import { applyLatticeDeformerPlumbing, LatticeDeformerBlock } from "./lattice-deformer-block";
 import { registerLatticeShadowAdapter } from "./lattice-deformer-binding";
 import { OverlayStyleBlock } from "./overlay-style-block";
+import { LinearColorBlock } from "./linear-color-block";
 
 export type AuthoredSurfaceVariant = "outlineMask" | "captureDepth" | "captureNormal" | "shadowDepth";
 
@@ -1355,6 +1358,20 @@ function attachSurfaceShading(
     right.connectTo(add.right);
     return add.output;
   };
+  const applyFog = (color: NodeMaterialConnectionPoint) => {
+    if (options.overlay) return color;
+    const fog = new FogBlock(`${options.name}_fog`);
+    const displayColor = new InputBlock(`${options.name}_fogColor`);
+    displayColor.setAsSystemValue(NodeMaterialSystemValues.FogColor);
+    const linearColor = new LinearColorBlock(`${options.name}_linearFogColor`);
+    displayColor.output.connectTo(linearColor.color);
+    linearColor.output.connectTo(fog.fogColor);
+    color.connectTo(fog.input);
+    plumbing.worldPosition?.connectTo(fog.worldPosition);
+    plumbing.view?.connectTo(fog.view);
+    created.push(fog, displayColor, linearColor);
+    return fog.output;
+  };
 
   if (plan.shadingModel === "unlit") {
     fragment.convertToGammaSpace = true;
@@ -1377,7 +1394,7 @@ function attachSurfaceShading(
         created.push(alpha);
       } else style.alpha.connectTo(fragment.a);
     } else {
-      if (color) color.connectTo(fragment.rgb);
+      if (color) applyFog(color).connectTo(fragment.rgb);
       if (opacity) opacity.connectTo(fragment.a);
     }
     return fragment;
@@ -1435,37 +1452,33 @@ function attachSurfaceShading(
 
   const environmentOperand = plan.outputs.environmentInfluence;
   const customEnvironment = environmentOperand && !(environmentOperand.kind === "constant" && environmentOperand.value[0] === 1);
-  if (emissive || customEnvironment) {
-    // These are the linear contributions supported by our surface compiler.
-    // pbr.lighting has already passed through image processing and must not be
-    // used for an additive linear emissive contribution.
-    const diffuse = addColor(pbr.ambientClr, pbr.diffuseDir, "diffuseColor");
-    const lit = addColor(diffuse, pbr.specularDir, "litColor");
-    let indirect = addColor(pbr.diffuseInd, pbr.specularInd, "environmentColor");
-    if (customEnvironment) {
-      const influence = outputPoint("environmentInfluence", `${options.name}_environmentInfluence`, false)!;
-      const clamp = new ClampBlock(`${options.name}_environmentInfluenceClamp`);
-      clamp.minimum = 0;
-      clamp.maximum = 1;
-      const scale = new ScaleBlock(`${options.name}_environmentInfluenceScale`);
-      created.push(clamp, scale);
-      influence.connectTo(clamp.value);
-      clamp.output.connectTo(scale.factor);
-      indirect.connectTo(scale.input);
-      indirect = scale.output;
-    }
-    const lighting = addColor(lit, indirect, "totalLighting");
-    const color = emissive ? addColor(lighting, emissive, "surfaceEmission") : lighting;
-    const imageProcessing = new LinearSurfaceImageProcessingBlock(
-      `${options.name}_imageProcessing`,
-    );
-    imageProcessing.convertInputToLinearSpace = false;
-    created.push(imageProcessing);
-    color.connectTo(imageProcessing.color);
-    imageProcessing.rgb.connectTo(fragment.rgb);
-  } else {
-    pbr.lighting.connectTo(fragment.rgb);
+  // These are the linear contributions supported by our surface compiler.
+  // pbr.lighting has already passed through image processing and must not be
+  // used for linear emission or fog composition.
+  const diffuse = addColor(pbr.ambientClr, pbr.diffuseDir, "diffuseColor");
+  const lit = addColor(diffuse, pbr.specularDir, "litColor");
+  let indirect = addColor(pbr.diffuseInd, pbr.specularInd, "environmentColor");
+  if (customEnvironment) {
+    const influence = outputPoint("environmentInfluence", `${options.name}_environmentInfluence`, false)!;
+    const clamp = new ClampBlock(`${options.name}_environmentInfluenceClamp`);
+    clamp.minimum = 0;
+    clamp.maximum = 1;
+    const scale = new ScaleBlock(`${options.name}_environmentInfluenceScale`);
+    created.push(clamp, scale);
+    influence.connectTo(clamp.value);
+    clamp.output.connectTo(scale.factor);
+    indirect.connectTo(scale.input);
+    indirect = scale.output;
   }
+  const lighting = addColor(lit, indirect, "totalLighting");
+  const color = emissive ? addColor(lighting, emissive, "surfaceEmission") : lighting;
+  const imageProcessing = new LinearSurfaceImageProcessingBlock(
+    `${options.name}_imageProcessing`,
+  );
+  imageProcessing.convertInputToLinearSpace = false;
+  created.push(imageProcessing);
+  applyFog(color).connectTo(imageProcessing.color);
+  imageProcessing.rgb.connectTo(fragment.rgb);
   return fragment;
 }
 

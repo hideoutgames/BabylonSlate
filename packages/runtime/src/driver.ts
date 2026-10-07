@@ -3210,6 +3210,11 @@ class InProcessRuntime implements RuntimeDriver {
    */
   private attemptPossessViewTarget(): void {
     if (this.cameraPossessedByScript) return;
+    const scene = this.playScene;
+    const defaultActor = scene?.actors.find((actor) => actor.id === scene.settings.mainCameraActorId);
+    if (defaultActor?.components.some((component) =>
+      component.id === scene?.settings.mainCameraComponentId && component.classId === "CameraComponent",
+    ) && this.slotByGuid.has(defaultActor.id)) return;
     for (const actor of this.playScene?.actors ?? []) {
       const opted = actor.components.some(
         (component) =>
