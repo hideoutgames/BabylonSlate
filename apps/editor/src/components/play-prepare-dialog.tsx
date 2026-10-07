@@ -38,7 +38,7 @@ export function PlayPrepareDialog({
     <Dialog open={open} onOpenChange={() => {}}>
       <ProgressDialogContent data-testid="play-prepare-dialog">
         <ProgressDialogStatus
-          title="Preparing Play"
+          title={title}
           phase={label}
           value={null}
           valueLabel={saving ? "1 / 2" : "2 / 2"}
@@ -52,8 +52,9 @@ export function PlayPrepareDialog({
           ) : null}
         />
         <p role="status" data-testid="play-prepare-phase" className="sr-only">
-          {saving ? "Saving…" : "Compiling…"}
+          {label}
         </p>
+        {onCancel ? <div className="flex justify-end"><Button size="sm" variant="outline" onClick={onCancel}>Cancel</Button></div> : null}
       </ProgressDialogContent>
     </Dialog>
   );

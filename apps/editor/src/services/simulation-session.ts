@@ -15,13 +15,25 @@ export class SimulationSession {
   private detached = false;
   private disposed = false;
 
+  readonly ticket: GameSessionTicket;
+  readonly viewport: SimulationViewport;
+  readonly baseline: OpenDocument;
+  readonly storage: ReturnType<typeof createSessionSaveStorage>;
+  private readonly releaseAuthoring: () => void;
+
   private constructor(
-    readonly ticket: GameSessionTicket,
-    readonly viewport: SimulationViewport,
-    readonly baseline: OpenDocument,
-    readonly storage: ReturnType<typeof createSessionSaveStorage>,
-    private readonly releaseAuthoring: () => void,
-  ) {}
+    ticket: GameSessionTicket,
+    viewport: SimulationViewport,
+    baseline: OpenDocument,
+    storage: ReturnType<typeof createSessionSaveStorage>,
+    releaseAuthoring: () => void,
+  ) {
+    this.ticket = ticket;
+    this.viewport = viewport;
+    this.baseline = baseline;
+    this.storage = storage;
+    this.releaseAuthoring = releaseAuthoring;
+  }
 
   static async prepare(options: {
     ticket: GameSessionTicket;
