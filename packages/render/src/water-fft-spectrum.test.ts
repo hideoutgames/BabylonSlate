@@ -118,7 +118,7 @@ describe("FFT ocean spectrum and CPU reference", () => {
       const definition = water({ waveModel, waveDirection: 40, waveSpread: 0.2 });
       const set = waterWaveSet(definition);
       expect(waterFftLayout(set, 64, 2).bandEdges[0]).toBe(set.cutoffK);
-      let ratio = 0, sumX = 0, sumZ = 0;
+      let ratio = 0, sumX = 0, sumZ = 0, outOfBand = 0;
       const seeds = 24;
       for (let seed = 0; seed < seeds; seed++) {
         const seeded = waterWaveSet(water({ waveModel, waveDirection: 40, waveSpread: 0.2, waveSeed: seed * 101 + 7 }));
@@ -130,7 +130,7 @@ describe("FFT ocean spectrum and CPU reference", () => {
             const i = (y * 64 * layout.cascades + cascade * 64 + x) * 4, power = spectrum[i]! ** 2 + spectrum[i + 1]! ** 2;
             const kx = (x < 32 ? x : x - 64) * scale, kz = (y < 32 ? y : y - 64) * scale, k = Math.hypot(kx, kz);
             // Inside the cascade's own band only, so neither the analytic band nor another cascade counts twice.
-            if (k < low * (1 - 1e-9) || k >= high * (1 + 1e-9)) expect(power).toBe(0);
+            if ((k < low * (1 - 1e-9) || k >= high * (1 + 1e-9)) && power !== 0) outOfBand++;
             if (k > 0) { sumX += power * kx / k; sumZ += power * kz / k; }
           }
           let variance = 0;
@@ -139,6 +139,7 @@ describe("FFT ocean spectrum and CPU reference", () => {
           ratio += variance / (64 * 64) / waterFftBandVariance(seeded, low, high) / layout.cascades;
         }
       }
+      expect(outOfBand).toBe(0);
       // Realized height variance matches ∫S(k)dk over the bands (averaged over seeds and cascades).
       expect(ratio / seeds).toBeGreaterThan(0.85);
       expect(ratio / seeds).toBeLessThan(1.15);
