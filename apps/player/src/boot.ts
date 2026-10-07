@@ -1,4 +1,4 @@
-import { createSaveStorageServer } from "@babylonslate/core";
+import { createSaveStorageServer, newGuid } from "@babylonslate/core";
 import { createSaveGameStorage } from "@babylonslate/vfs";
 import type { ScalabilityAcknowledgement, RenderProjectSettings } from "@babylonslate/core";
 import { buildMaterialParameterCatalog } from "@babylonslate/shader-graph";
@@ -61,6 +61,7 @@ import { packedFontCssStacks } from "./fonts";
 import { createPlayerConsoleHost } from "./console-host";
 import { createPlayerPauseState } from "./console-pause";
 import type { DebugInspectSnapshot } from "@babylonslate/object-model";
+import type { PlayerPreviewDiagnosticPorts } from "./player-diagnostic-types";
 
 function havokWasmUrl(): string {
   return new URL("./havok/HavokPhysics.wasm", document.baseURI).href;
@@ -90,6 +91,7 @@ export type PlayerDiagnostic = {
 };
 
 export type PlayerBootHandle = {
+  previewDiagnostics?: PlayerPreviewDiagnosticPorts;
   ticks: () => number;
   rendering: () => ReturnType<EngineHandle["renderDiagnostics"]> | null;
   scalability: () => ScalabilityAcknowledgement | undefined;
@@ -116,6 +118,8 @@ export type PlayerTestHandle = Pick<PlayerBootHandle,
 >;
 
 export type PlayerBootOptions = {
+  /** Only the editor-hosted Preview path grants the lazy diagnostic transport. */
+  previewDiagnostics?: boolean;
   canvas: HTMLCanvasElement;
   game: LoadedGame;
   /** Preview iframes borrow the editor host's application-private storage. */
@@ -190,6 +194,8 @@ function initializePlayer(
 
   let worker: PlayerWorkerHost | null = null;
   let runtime: RuntimeDriver | null = null;
+  let diagnosticListeners: Set<(command: { type: string } & Record<string, unknown>) => void> | undefined;
+  const diagnosticSessionId = options.previewDiagnostics ? newGuid() : "";
   let input: ReturnType<typeof attachInputCapture> | null = null;
   const consoleHost = createPlayerConsoleHost({
     execute: () =>
@@ -443,6 +449,8 @@ function initializePlayer(
     layer,
   }));
   const loadControl = {
+    sessionMode: options.previewDiagnostics ? "preview" as const : "play" as const,
+    sessionGeneration: 0,
     frameCap: manifest.playFrameCap,
     traceByteBudget: options.traceByteBudget,
     renderSettings: manifest.render,
@@ -583,6 +591,7 @@ function initializePlayer(
   const saveServer = createSaveStorageServer(saveStorage, (response) => worker?.postControl({ type: "saveStorageResponse", response }));
   own(() => saveServer.dispose());
   const onCommand = (command: { type: string } & Record<string, unknown>) => {
+    if (diagnosticListeners) for (const listener of diagnosticListeners) listener(command);
     if (command.type === "saveStorageRequest") { saveServer.receive(command.request as import("@babylonslate/core").SaveStorageRequest); return; }
     if (halted) return;
     if (command.type === "sceneStreamBlocking") handle.setSceneStreamingPaused(command.blocking === true);
@@ -822,6 +831,38 @@ function initializePlayer(
 
   function playerHandle(): PlayerBootHandle {
     return {
+      ...(options.previewDiagnostics && manifest.bundleDebugger ? { previewDiagnostics: {
+        sessionGeneration: 0,
+        identity: () => {
+          const render = handle.scalabilityStatus()?.effective.render ?? runtimeOutput;
+          const frameCap = handle.scheduler.gateState().frameCap;
+          return { sessionId: diagnosticSessionId, mode: "preview" as const,
+            sourceSha: null, buildId: null, sceneId: hostSceneGuid ?? startup,
+            backend: handle.engine.isWebGPU ? "webgpu" : "webgl2", renderPath: handle.renderPathStatus().effective.renderPath,
+            runtimeHost: worker ? "worker" as const : "in-process" as const,
+            quality: JSON.stringify(render), frameCap: Number.isFinite(frameCap) ? frameCap : null,
+            dynamicResolution: render.quality?.resolution?.dynamic === true,
+            enabledDiagnostics: ["performance"], gpuTiming: "unavailable" as const };
+        },
+        observeFrames: (listener) => handle.observePerformance(listener),
+        captureFrame: async (signal) => {
+          const cancel = () => handle.cancelFrameCapture("Preview frame capture was cancelled.");
+          signal.addEventListener("abort", cancel, { once: true });
+          try { signal.throwIfAborted(); return await handle.captureFrame(); }
+          finally { signal.removeEventListener("abort", cancel); }
+        },
+        send: async (request) => {
+          if (halted) throw new Error("Preview has stopped.");
+          if (worker) { worker.postControl({ type: "diagnosticOperation", ...request }); return; }
+          if (!runtime) throw new Error("Preview runtime is unavailable.");
+          return runtime.requestDiagnosticOperation(request);
+        },
+        subscribe: (receive) => {
+          (diagnosticListeners ??= new Set()).add(receive);
+          return () => { diagnosticListeners?.delete(receive); if (!diagnosticListeners?.size) diagnosticListeners = undefined; };
+        },
+        own,
+      } satisfies PlayerPreviewDiagnosticPorts } : {}),
       ticks: () => ticks,
       rendering: () => halted ? null : handle.renderDiagnostics(),
       scalability: () => handle.scalabilityStatus?.(),

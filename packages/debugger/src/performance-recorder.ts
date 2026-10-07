@@ -200,14 +200,16 @@ export function parsePerformanceProfile(value: unknown): PerformanceProfile | nu
       input.columns.some((column, index) => column !== columns[index]) || !safeId(input.count) || !Array.isArray(input.chunks)) return null;
     let count = 0;
     for (const chunk of input.chunks) {
-      if (!Array.isArray(chunk) || !chunk.length || chunk.length % columns.length || chunk.length > CHUNK_RECORDS * columns.length) return null;
+      if ((!Array.isArray(chunk) && !(chunk instanceof Float64Array)) || !chunk.length || chunk.length % columns.length || chunk.length > CHUNK_RECORDS * columns.length) return null;
       bytes += chunk.length * 8;
       if (bytes > data.byteBudget || !chunk.every((number: unknown, index: number) =>
-        number === null ? columns[index % columns.length] === "intervalMs" : typeof number === "number" && finite(number))) return null;
+        number === null || (typeof number === "number" && Number.isNaN(number))
+          ? columns[index % columns.length] === "intervalMs" : typeof number === "number" && finite(number))) return null;
       count += chunk.length / columns.length;
     }
     if (count !== input.count) return null;
-    return { columns, count, chunks: input.chunks.map((chunk) => Float64Array.from(chunk, (number) => number === null ? NaN : number)) };
+    return { columns, count, chunks: input.chunks.map((chunk) => chunk instanceof Float64Array
+      ? chunk : Float64Array.from(chunk, (number) => number === null ? NaN : number)) };
   };
   const frames = parseStream(data.frames, PERFORMANCE_FRAME_COLUMNS);
   const ticks = frames && parseStream(data.ticks, PERFORMANCE_TICK_COLUMNS);

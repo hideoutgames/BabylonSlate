@@ -103,6 +103,8 @@ export type GameManifest = {
 };
 
 export type ExportGameOptions = {
+  /** Editor-hosted Preview only; never enables diagnostics in ordinary exports. */
+  includePreviewDiagnostics?: boolean;
   saveGame?: import("@babylonslate/core").SaveGameConfiguration;
   project?: { name: string; version: string };
   inputAssets?: import("@babylonslate/core").InputAssetDefinition[];

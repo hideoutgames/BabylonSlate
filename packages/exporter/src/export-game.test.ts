@@ -24,6 +24,19 @@ function stubPlayer(): Map<string, Uint8Array> {
 }
 
 describe("exportGame", () => {
+  it("excludes Preview diagnostics from ordinary exports even when debugging is enabled", async () => {
+    const playerFiles = stubPlayer();
+    playerFiles.set("player-preview-diagnostics.js", new TextEncoder().encode("export const previewOnly = true"));
+    const options = { bundleDebugger: true, startupSceneGuid: "scene-1", scripts: [], assets: [], playerFiles,
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS };
+    const ordinary = await exportGame(options);
+    if (!ordinary.ok) throw new Error(ordinary.error);
+    expect(ordinary.value.files.has("player-preview-diagnostics.js")).toBe(false);
+    const preview = await exportGame({ ...options, includePreviewDiagnostics: true });
+    if (!preview.ok) throw new Error(preview.error);
+    expect(preview.value.files.has("player-preview-diagnostics.js")).toBe(true);
+    expect(preview.value.manifest).not.toHaveProperty("includePreviewDiagnostics");
+  });
   it("preserves focus input selections and normalizes unsafe repeat values through player manifests", async () => {
     const result = await exportGame({ mode: "packed", bundleDebugger: false, startupSceneGuid: "scene-1", scripts: [], assets: [], playerFiles: stubPlayer(),
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,

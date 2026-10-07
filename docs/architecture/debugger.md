@@ -157,3 +157,35 @@ Project Settings **Export Game** preset: **Bundle Debugger** (off for release). 
 - **Changes:** compares world snapshots with the previous retained frame, matching subsystems/actors/components by GUID and showing Added, Removed and Changed values. Entity array reordering alone is not a change; tick/delta metadata is excluded. Select a row for full before/after values. The first frame or missing/unreadable snapshots cannot be compared.
 - **Log:** includes the selected frame and up to 29 preceding recorded frames (30 total), with an explicit tick range. Search covers message, category, severity, print key and tick; severity filtering distinguishes logs and prints. Selecting a row navigates to its frame and reveals the full selectable/copyable message. Current-tick rows have an orange start edge.
 - Each Trace document owns inspection/search/zoom state, including when a dock closes and reopens. Snapshot supports arrows, Home/End and Enter/Space. Touch targets adapt without enlarging desktop controls. The file format is unchanged; input details and behaviour-tree mappings remain limited to fields actually recorded.
+
+## Explicit performance collection
+
+`SessionDiagnostics` coordinates profile and frame requests through correlated
+runtime admission. The runtime excludes overlapping trace/profile/frame work and
+refuses recording in Simulation. Performance recordings default to 10 seconds
+and 16 MiB of accounted numeric buffers and metadata; this is not a browser heap
+or JSON export limit. Deadlines also run while the game is paused. Stop drains the
+accepted runtime tick chunk before finalizing; a failed admission or lost chunk
+is reported instead of substituting HUD samples.
+
+Completed-frame intervals come from the actual coherent canvas-copy boundary,
+including asynchronous RTT presentation. Held attempts never enter that
+population. Preparation, submission and copy are main-thread wall measurements;
+driver waits can contribute, and asynchronous copy can overlap submission. Tick
+script, physics, publish and other measured phases have their own runtime clock
+and population. Neither clock is subtracted from the other. Summaries report
+count, median, nearest-rank p95/p99, maximum and over-budget count with missing
+values excluded. The first completed frame has no interval. Loading flags,
+dimensions, resolution scale, frame/tick IDs and scene generations remain in
+individual rows. Profiling currently reports GPU timing as unavailable and does
+not acquire additional timer queries.
+
+The packaged Preview player collects the same streams inside its own runtime.
+Its diagnostics entry is loaded only after an explicit, source/origin-checked
+handshake. Requests and bounded transferable chunks also match client/session
+identities; replacing the iframe retires the client. Player source/build identity
+is unavailable when the packaged artifact has no embedded identity, rather than
+borrowing the editor's identity. The independently built
+`player-preview-diagnostics.js` entry is omitted from ordinary exported games,
+including games that bundle existing debug commands. The player keeps its
+existing single-file runtime build.

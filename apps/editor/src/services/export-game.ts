@@ -495,6 +495,7 @@ export async function collectAndExportGame(
     } catch (error) { return { ok: false, error: `Save Game definition: ${error instanceof Error ? error.message : String(error)}` }; }
   }
   const packed = await exportGame({
+    includePreviewDiagnostics: params.previewBuild === true,
     saveGame,
     project: params.project,
     mode,

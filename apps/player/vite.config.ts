@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig, type Plugin } from "vite";
 import { copyEngineDefaultSkyboxFaces } from "../editor/vite-engine-skybox";
+import { previewDiagnosticsEntry } from "./vite-preview-diagnostics";
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(rootDir, "../..");
@@ -62,7 +63,7 @@ function writePlayerFileList(): Plugin {
 
 export default defineConfig({
   base: "./",
-  plugins: [copyRuntimePublic(), writePlayerFileList()],
+  plugins: [copyRuntimePublic(), previewDiagnosticsEntry(rootDir), writePlayerFileList()],
   build: {
     target: "es2022",
     cssCodeSplit: false,

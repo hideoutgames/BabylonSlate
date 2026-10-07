@@ -78,13 +78,15 @@ export class SessionDiagnostics<FrameReport> {
     const state = this.operation;
     if (!state || state.kind !== "profile" || state.id !== message.recordingId || !state.recorder) return false;
     if (!Number.isSafeInteger(message.sequence) || message.sequence !== state.sequence ||
-      !(message.rows instanceof Float64Array) || !message.rows.length || message.rows.length % 6 || message.rows.length > 256 * 6) {
+      !(message.rows instanceof Float64Array) || (!message.rows.length && !message.droppedRecords) ||
+      message.rows.length % 6 || message.rows.length > 256 * 6 ||
+      (message.droppedRecords !== undefined && (!Number.isSafeInteger(message.droppedRecords) || message.droppedRecords < 0))) {
       void this.finish(state, "error");
       return false;
     }
     state.sequence++;
     if (Number.isSafeInteger(message.droppedRecords) && message.droppedRecords! >= 0)
-      state.droppedRecords = Math.max(state.droppedRecords, message.droppedRecords!);
+      state.droppedRecords += message.droppedRecords!;
     try {
       for (let index = 0; index < message.rows.length; index += 6) state.recorder.recordTick({
         tickId: message.rows[index]!, elapsedMs: message.rows[index + 1]!,
@@ -114,6 +116,9 @@ export class SessionDiagnostics<FrameReport> {
   async dispose(): Promise<void> {
     this.disposed = true;
     if (this.operation) await this.finish(this.operation, "session-ended");
+  }
+  async cancel(): Promise<void> {
+    if (this.operation) await this.finish(this.operation, "requested");
   }
 
   private refusal(): string | null {

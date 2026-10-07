@@ -2,6 +2,15 @@ import { describe, expect, it } from "vitest";
 import { selectPlayerRuntimeFiles } from "./player-files";
 
 describe("selectPlayerRuntimeFiles", () => {
+  it("keeps the standalone diagnostics entry only for explicit editor Preview", () => {
+    const files = new Map([
+      ["player.js", new Uint8Array([1])],
+      ["player-preview-diagnostics.js", new Uint8Array([2])],
+    ]);
+    expect([...selectPlayerRuntimeFiles(files, { physicsWorld: "3d" }).keys()]).toEqual(["player.js"]);
+    expect([...selectPlayerRuntimeFiles(files, { physicsWorld: "3d", includePreviewDiagnostics: true }).keys()])
+      .toEqual(["player.js", "player-preview-diagnostics.js"]);
+  });
   it("keeps Havok for 3d and Rapier for 2d", () => {
     const files = new Map([
       ["player.js", new Uint8Array([1])],
