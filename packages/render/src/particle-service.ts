@@ -465,8 +465,8 @@ export class ParticleService {
         } catch (error) { this.fail(entry, generation, error); }
       });
       const after = host.onAfterRenderObservable.add(() => {
-        if (!this.current(entry, generation) || this.paused) return;
-        if (entry.state === "playing") {
+        if (!this.current(entry, generation)) return;
+        if (entry.state === "playing" && !this.paused) {
           // The driver runs on the simulation clock, so pause (updateSpeed 0) holds it.
           const ratio = host.getAnimationRatio() || 1;
           for (const record of entry.systems) {
