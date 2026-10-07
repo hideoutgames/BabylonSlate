@@ -410,6 +410,94 @@ describe("P19 behaviour tree task hosts", () => {
     runtime.stop();
   });
 
+  it.each([
+    ["destroyed", (runtime: ReturnType<typeof createInProcessRuntime>) => {
+      runtime.getWorld().destroyActor("guard");
+      runtime.tick();
+    }],
+    ["removed by a Scene change", (runtime: ReturnType<typeof createInProcessRuntime>) => {
+      runtime.executeConsoleCommand("changescene Other");
+    }],
+  ] as const)("Play Sound voice stops once when its actor is %s", (_how, remove) => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      maxActors: 4,
+      seedDemoActors: false,
+      playScene: hostScene(),
+      behaviourTrees: {
+        "tree-1": leafTree("sound", "bt.task.playSound", { audioAssetGuid: "audio-1" }),
+      },
+      audioAssetGuids: ["audio-1"],
+      sceneLibrary: {
+        Other: { name: "Other", viewportMode: "3d", settings: createDefaultSceneSettings(), folders: [], actors: [] },
+      },
+      sceneGuidByKey: { Other: "other-scene" },
+      onCommand: (command) => commands.push(command),
+    });
+    runtime.start();
+    runtime.realizePlayWorld();
+    runtime.tick();
+    expect(commands.filter((command) => command.type === "playSound")).toEqual([
+      expect.objectContaining({ voiceId: "bt:guard:sound" }),
+    ]);
+    commands.length = 0;
+    remove(runtime);
+    expect(commands.filter((command) => command.type === "stopSound")).toEqual([
+      { type: "stopSound", voiceId: "bt:guard:sound" },
+    ]);
+    runtime.stop();
+  });
+
+  it("Animation Graph drives an actor reusing the slot of an actor despawned mid Play Animation", async () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      maxActors: 4,
+      seedDemoActors: false,
+      dt: 0.1,
+      playScene: hostScene(),
+      behaviourTrees: {
+        "tree-1": leafTree("anim", "bt.task.playAnimation", {
+          clipKind: "animation",
+          clipAssetGuid: "walk-1",
+        }),
+      },
+      animGraphs: { "graph-1": createDefaultAnimGraph("Hero") },
+      animClipCatalog: [
+        { guid: "walk-1", type: "Animation", name: "Walk", clipName: "Walk", durationMs: 2000 },
+      ],
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([{
+      assetGuid: "replacement-script", classId: "Replacement", parentClassId: "Actor",
+      source: "export function onTick() {}", anchors: [],
+      entryPoints: [{ name: "onTick", event: "onTick", isAsync: false }],
+    }]);
+    runtime.start();
+    runtime.realizePlayWorld();
+    runtime.tick();
+    expect(commands.filter((command) => command.type === "animState")).toEqual([
+      expect.objectContaining({ slotId: 0, stateId: "bt.playAnimation", justFinished: false }),
+    ]);
+    runtime.getWorld().destroyActor("guard");
+    runtime.tick();
+    const replacement = runtime.spawnScriptedActor({ classId: "Replacement" });
+    replacement!.attachComponent(runtime.getWorld().createComponent({
+      classId: "AnimationGraphComponent", variables: { graphGuid: "graph-1" },
+    }));
+    expect(commands.filter((command) => command.type === "spawn").at(-1)).toMatchObject({
+      actorGuid: replacement!.guid,
+      slotId: 0,
+    });
+    commands.length = 0;
+    runtime.tick();
+    const graphStates = commands.filter((command) => command.type === "animState");
+    expect(graphStates).toEqual([expect.objectContaining({ slotId: 0 })]);
+    expect(graphStates[0]).not.toMatchObject({ stateId: "bt.playAnimation" });
+    runtime.stop();
+  });
+
   it("Rotate To Face yaws around Z in a 2D scene", () => {
     const scene = hostScene();
     scene.viewportMode = "2d";
