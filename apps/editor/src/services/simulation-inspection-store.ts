@@ -89,6 +89,18 @@ export class SimulationInspectionStore {
     this.publish({ selected, selection: null, selectionError: null });
     this.schedule(0);
   };
+  async pick(actorGuid: string, slotId: number): Promise<void> {
+    const selectionGeneration = ++this.selectionGeneration;
+    const result = await this.request({ kind: "resolvePick", actorGuid, slotId });
+    if (selectionGeneration !== this.selectionGeneration) return;
+    if (result.payload?.kind !== "identity") throw new Error("The runtime could not resolve the picked object.");
+    this.select(result.payload.row.identity);
+  }
+  selectionUnavailable(target: RuntimeObjectIdentity, reason: string): void {
+    if (this.state.selected && runtimeIdentityKey(this.state.selected) === runtimeIdentityKey(target)) {
+      this.publish({ selection: null, selectionError: reason });
+    }
+  }
   loadMoreIdentities = (): void => { if (this.cursor && !this.state.identitiesLimited) { this.loadNext = true; this.schedule(0); } };
   loadMoreProperties = (): void => {
     if (this.state.selection?.nextOffset !== undefined) {

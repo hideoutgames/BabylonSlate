@@ -161,3 +161,22 @@ instance edits use typed material requests, while assignment uses the component'
 validated property owner. Expanding a container requests one bounded value page,
 without starting another polling system. Runtime selection is kept separately from
 the immutable authored selection and never changes automatically when slots recycle.
+
+Runtime picking resolves the render slot and actor GUID through the authoritative
+runtime before changing selection. Transform tools bind that exact identity and
+render-slot metadata, reuse the existing gizmo host, and submit coalesced world-pose
+requests; the runtime converts them against the authoritative parent. The final
+commit is acknowledged before the draft proxy follows the next runtime pose. Edit
+input and viewport visibility own the gizmo subscription; Game Input and hidden
+views disable its controls and release detailed polling.
+
+Every Stop route passes the common owner's asynchronous retention admission gate.
+A refused capture leaves the ticket un-aborted in `retention-resolution`, with
+Retry/Discard controls; native End Play and release cannot run first. Successful
+admission then finalizes diagnostics, disables capture leases, and stops the native
+runtime. The local Keep preference and authored asset GUID scope are snapshotted
+at preparation. Unsupported initial or runtime topology is shown explicitly;
+quiescence still precedes any failed Stop resolution. Source-document and project
+transitions await Stop and actual release before recovery cleanup or replacement.
+Unexpected host teardown requests discard, while an unconfirmed native release
+keeps the authoring protection and shared Engine quarantined until reload.

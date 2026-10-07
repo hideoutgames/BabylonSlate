@@ -1,3 +1,4 @@
+import { DiagnosticResultsProvider } from "./diagnostic-results-context";
 import { createPortal } from "react-dom";
 import { SimulationInspectionProvider } from "./simulation-inspection-context";
 import { prepareSaveGameConfiguration } from "../services/save-game-configuration";
@@ -65,6 +66,7 @@ import type {
 import {
   DEFAULT_PLAY_DEBUGGER_OVERLAY,
   playDebuggerOverlayFromSettings,
+  simulationDefaultsFromSettings,
   type PlayDebuggerOverlaySettings,
 } from "../lib/play-debugger-defaults";
 import { loadPlayerDistFiles } from "../services/load-player-files";
@@ -229,9 +231,11 @@ function PlayDiagnosticsProvider({ children }: { children: ReactNode }) {
 
 export function PlayProvider({ children }: { children: ReactNode }) {
   return (
-    <PlayDiagnosticsProvider>
-      <PlaySessionProvider>{children}</PlaySessionProvider>
-    </PlayDiagnosticsProvider>
+    <DiagnosticResultsProvider>
+      <PlayDiagnosticsProvider>
+        <PlaySessionProvider>{children}</PlaySessionProvider>
+      </PlayDiagnosticsProvider>
+    </DiagnosticResultsProvider>
   );
 }
 
@@ -259,6 +263,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   // Presentation may close immediately; editor owners remain held until release.
   const playing = playOpen || sessionState.lifecycle === "running" || sessionState.lifecycle === "paused" ||
     sessionState.lifecycle === "stopping" || sessionState.quarantined;
+  const [simulationAssetGuids, setSimulationAssetGuids] = useState<readonly string[] | undefined>();
   const [playSaveGame, setPlaySaveGame] = useState<import("@babylonslate/core").SaveGameConfiguration>();
   const playingRef = useRef(false);
   const [preparing, setPreparing] = useState(false);
@@ -432,6 +437,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     projectDocument,
     projectGuid,
     registryEpoch,
+    registerBeforeTransition,
     setActiveDocument,
   } = documents;
   const projectOpen = projectDocument != null;
@@ -483,6 +489,16 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     sessionState.quarantined ? "Reload the editor after the previous session release failure" : null;
   const simulationDocumentId = simulationRef.current?.baseline.id ?? (sessionState.mode === "simulate" ? simulationDocument?.id ?? null : null);
   const canSimulate = simulationUnavailableReason === null && sessionOwner.canStart();
+
+  useEffect(() => registerBeforeTransition?.((transition) => {
+    if (sessionOwner.canStart()) return true;
+    const sourceId = simulationRef.current?.baseline.id ?? playScene?.id;
+    if ((transition.kind === "close-document" || transition.kind === "replace-document") && transition.documentId !== sourceId) return true;
+    return sessionOwner.stop().then(async result => {
+      if (result) await result.released;
+      return sessionOwner.canStart();
+    }).catch(error => { appendLog(`Could not release the game session before changing documents: ${String(error)}`); return false; });
+  }), [registerBeforeTransition, sessionOwner, playScene?.id, appendLog]);
   void simulationViewportRevision;
   const playPhysics = playScene
     ? playPhysicsFromSceneSettings(playScene.scene.settings)
@@ -671,8 +687,10 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     return () => {
       queueMicrotask(() => {
         if (providerMountRef.current !== mount) return;
+        simulationRef.current?.discardChanges("Simulation host closed; changes discarded.");
         void sessionOwner.stop().then(async (result) => {
           if (result) await result.released;
+          if (!sessionOwner.canStart()) return;
           const simulation = simulationRef.current;
           simulationRef.current = null;
           simulation?.dispose(false);
@@ -715,7 +733,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const simulation = simulationRef.current;
-    if (!simulation || (!sessionOwner.canStart() && !sessionState.quarantined)) return;
+    if (!simulation || !sessionOwner.canStart()) return;
     simulationRef.current = null;
     simulation.dispose(!sessionState.quarantined);
     setSimulationHost(null);
@@ -1098,6 +1116,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       sessionTicketRef.current = ticket;
       pendingScriptsRef.current = null;
       let presentationRequested = false;
+      if (!simulating) setSimulationAssetGuids(undefined);
       const current = <T,>(pending: Promise<T>) => sessionOwner.awaitCurrent(ticket, pending);
       preparingRef.current = true;
       setPreparing(true);
@@ -1107,9 +1126,11 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
           const source = playRequestInputsRef.current.documents;
           const simulation = await SimulationSession.prepare({
             ticket, viewport: simulationViewport, source, backingStorage: createSaveGameStorage(),
+            keepChanges: simulationDefaultsFromSettings(appSettings.debuggerDefaults).keepChanges,
           });
           if (!sessionOwner.isCurrent(ticket)) { simulation.dispose(false); return; }
           simulationRef.current = simulation;
+          setSimulationAssetGuids((source.assetRegistry?.list() ?? []).map(asset => asset.header.guid));
           source.setActiveDocument(simulation.baseline.id);
         }
         if (plan.action === "prepare") {
@@ -1568,6 +1589,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       sessionOwner,
       previewBuild,
       requestPreviewBuild,
+      appSettings.debuggerDefaults,
       setDiagnostics,
     ],
   );
@@ -1716,6 +1738,8 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             sessionOwner={sessionOwner}
             sessionTicket={sessionTicketRef.current}
             simulationSaveStorage={simulationRef.current?.storage}
+            simulationSession={simulationRef.current ?? undefined}
+            simulationAssetGuids={simulationAssetGuids}
             embedded={sessionTicketRef.current.mode === "simulate"}
             sharedEngine={engineRef.current}
             injectFixtureThrow={injectThrow}

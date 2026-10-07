@@ -142,7 +142,7 @@ export function SimulationInspector({ store, panel }: { store: SimulationInspect
   const selection = state.selection;
   const identity = state.selected ? runtimeIdentityKey(state.selected) : null;
   const selectedRow = state.rows.find(row => runtimeIdentityKey(row.identity) === identity);
-  const materialGuid = selection?.properties.find(property => property.key === "materialGuid")?.value;
+  const materialGuid = selection?.materialGuid ?? selection?.properties.find(property => property.key === "materialGuid")?.value;
   return <PanelFrame title="Simulation Inspector" data-testid="simulation-inspector">
     <div className="p-2"><SearchInput value={search} onChange={setSearch} placeholder="Search Runtime Properties" /></div>
     <p className="px-2 pb-2 text-xs text-muted-foreground">{selectedRow ? `${selectedRow.name || selectedRow.classId} · Tick ${state.tickIndex}` : state.selected ? "Selected Runtime Object" : "Select a runtime object in the Outliner or viewport."}</p>

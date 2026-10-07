@@ -20,7 +20,7 @@ export type PlayOverlayChromeProps = {
   showInspector?: boolean;
   onPauseToggle: () => void;
   pausePending?: boolean;
-  simulation?: { inputMode: "game" | "edit"; inputPending: boolean; onInputModeChange: (mode: "game" | "edit") => void };
+  simulation?: { keepChanges?: boolean; inputMode: "game" | "edit"; inputPending: boolean; onInputModeChange: (mode: "game" | "edit") => void };
   onStatsToggle: () => void;
   onConsoleOpen: () => void;
   onInspectorToggle?: () => void;
@@ -59,7 +59,7 @@ export function PlayOverlayChrome({
       </div>
       <div className="pointer-events-auto flex flex-wrap items-center justify-end gap-2">
         {simulation ? <>
-          <span className="text-xs font-medium">Simulation · Discard On Stop</span>
+          <span className="text-xs font-medium">Simulation · {simulation.keepChanges ? "Keep Changes On Stop" : "Discard On Stop"}</span>
           <Button size="touch" variant="secondary" disabled={simulation.inputPending}
             data-testid="simulation-input-mode"
             onClick={() => simulation.onInputModeChange(simulation.inputMode === "game" ? "edit" : "game")}>

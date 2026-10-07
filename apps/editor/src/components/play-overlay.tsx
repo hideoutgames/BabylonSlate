@@ -1,3 +1,9 @@
+import { useDiagnosticResultsStore } from "../context/diagnostic-results-context";
+import type { DiagnosticResultsStore } from "../services/diagnostic-results-store";
+import type { SimulationSession } from "../services/simulation-session";
+import { SimulationRetentionDialog, SimulationRetentionHint } from "./simulation-retention-dialog";
+import { SimulationTransformToolbar } from "./simulation-transform-toolbar";
+import type { GizmoTool, RuntimeTransformTools } from "@babylonslate/render";
 import { useSimulationInspectionStore } from "../context/simulation-inspection-context";
 import { useAppSettings } from "../context/app-settings-context";
 import { captureShadowDiagnostics, lightsDebugText } from "@babylonslate/render";
@@ -34,6 +40,7 @@ import type { StatsHudHighlight } from "./stats-hud";
 import { attachLifecyclePause } from "../services/lifecycle-pause";
 import {
   applyLiveEngineSettings,
+  canvasIsEditorVisible,
   localRenderingQualityOverrides,
   ENGINE_SETTINGS_CHANGED_EVENT,
   type LiveEngineSettings,
@@ -95,6 +102,8 @@ export interface PlayOverlayProps {
   sessionOwner?: GameSessionOwner<PlaySessionResult>;
   sessionTicket?: GameSessionTicket;
   embedded?: boolean;
+  simulationSession?: SimulationSession;
+  simulationAssetGuids?: readonly string[];
   simulationSaveStorage?: Parameters<typeof startPlaySession>[0]["simulationSaveStorage"];
   saveGame?: import("@babylonslate/core").SaveGameConfiguration;
   sharedEngine: AbstractEngine;
@@ -194,6 +203,8 @@ export function PlayOverlay({
   sessionTicket,
   embedded = false,
   simulationSaveStorage,
+  simulationSession,
+  simulationAssetGuids,
   saveGame,
   sharedEngine,
   injectFixtureThrow,
@@ -261,7 +272,15 @@ export function PlayOverlay({
     usePlay();
   const simulating = sessionTicket?.mode === "simulate";
   const inspectionStore = useSimulationInspectionStore();
+  const diagnosticStore = useDiagnosticResultsStore();
+  const diagnosticDetachRef = useRef<(() => void) | null>(null);
   const inspectionDetachRef = useRef<(() => void) | null>(null);
+  const transformToolsRef = useRef<RuntimeTransformTools | null>(null);
+  const transformConsumerRef = useRef<(() => void) | null>(null);
+  const transformDetachRef = useRef<(() => void) | null>(null);
+  const transformEditableRef = useRef(false);
+  const syncTransformVisibilityRef = useRef<() => void>(() => {});
+  const [transformTool, setTransformTool] = useState<GizmoTool>("translate");
   const overlayRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sessionRef = useRef<PlaySession | null>(null);
@@ -315,6 +334,8 @@ export function PlayOverlay({
   const closedRef = useRef(false);
   const finishSessionRef = useRef<() => void>(() => {});
   const detachInspection = () => {
+    transformDetachRef.current?.();
+    transformDetachRef.current = null;
     inspectionDetachRef.current?.();
     inspectionDetachRef.current = null;
   };
@@ -333,6 +354,8 @@ export function PlayOverlay({
     sessionRef.current = null;
     void (async () => {
       const result = session ? await finishPlaySessionWithTrace(session) : emptyPlayResult();
+      diagnosticDetachRef.current?.();
+      diagnosticDetachRef.current = null;
       onCloseRef.current(result);
     })();
   };
@@ -342,12 +365,16 @@ export function PlayOverlay({
     if (!session || !simulating || closedRef.current) return;
     const sequence = ++inputSequenceRef.current;
     inputModeRef.current = mode;
+    transformEditableRef.current = false;
+    syncTransformVisibilityRef.current();
     setInputPending(true);
     setControlError(null);
     void session.setInputMode(mode).then(() => {
       if (sessionRef.current !== session || inputSequenceRef.current !== sequence) return;
       inputModeRef.current = mode;
       setInputMode(mode);
+      transformEditableRef.current = mode === "edit";
+      syncTransformVisibilityRef.current();
       session.requestPausedRedraw();
     }, (error: unknown) => {
       if (sessionRef.current === session && inputSequenceRef.current === sequence) setControlError(String(error));
@@ -589,12 +616,17 @@ export function PlayOverlay({
       userPausedRef.current = initialPauseOnPlayRef.current;
       setPaused(initialPauseOnPlayRef.current);
       let session: PlaySession;
+      let diagnosticLease: ReturnType<DiagnosticResultsStore["bindSession"]> | undefined;
       if (sessionOwner && sessionTicket && !sessionOwner.attach(sessionTicket, async () => {
         closedRef.current = true;
+        transformDetachRef.current?.();
+        transformDetachRef.current = null;
         inspectionDetachRef.current?.();
         inspectionDetachRef.current = null;
         sessionRef.current = null;
         const result = await finishPlaySessionWithTrace(session);
+        diagnosticLease?.release();
+        diagnosticDetachRef.current = null;
         onCloseRef.current(result, sessionTicket);
         return result;
       })) return;
@@ -605,6 +637,9 @@ export function PlayOverlay({
           mode: sessionTicket?.mode === "simulate" ? "simulate" : "play",
           sessionGeneration: sessionTicket?.generation,
           simulationSaveStorage,
+          simulationAssetGuids,
+          onProfile: profile => diagnosticLease?.publishProfile(profile),
+          onRetentionUnavailable: reason => simulationSession?.reportRetentionUnavailable(reason),
           injectFixtureThrow,
           scripts: scriptsRef.current,
           physics: physicsRef.current,
@@ -731,7 +766,62 @@ export function PlayOverlay({
         return;
       }
       sessionRef.current = session;
-      if (simulating && inspectionStore) inspectionDetachRef.current = inspectionStore.attach((action, options) => session.requestRuntimeInspection(action, options));
+      if (simulationSession && sessionOwner && sessionTicket) {
+        sessionOwner.setBeforeStop(sessionTicket, () => simulationSession.resolveStop(() => session.captureSimulationScene()));
+      }
+      diagnosticLease = diagnosticStore?.bindSession({
+        mode: simulating ? "simulate" : "play",
+        startProfile: async options => {
+          const result = await session.diagnostics.startProfile(options);
+          if (!result.success) throw new Error(result.reason ?? "Performance recording is unavailable.");
+        },
+        stopProfile: () => session.diagnostics.stopProfile(),
+        captureFrame: () => session.diagnostics.captureFrame(),
+        stopSession: () => sessionOwner && sessionTicket ? sessionOwner.stop(sessionTicket) : finishSessionRef.current(),
+        releaseInput: () => { if (simulating) changeInputModeRef.current("edit"); },
+      });
+      diagnosticDetachRef.current = diagnosticLease?.release ?? null;
+      if (simulating && inspectionStore) {
+        inspectionDetachRef.current = inspectionStore.attach((action, options) => session.requestRuntimeInspection(action, options));
+        const tools = session.handle.attachRuntimeTransformTools({
+          onPick: target => {
+            if (!target) inspectionStore.select(null);
+            else void inspectionStore.pick(target.actorGuid, target.slotId).catch(error => setControlError(String(error)));
+          },
+          onTransform: ({ target, transform, space, phase }) => inspectionStore.request({ kind: "setTransform", target, transform, space },
+            phase === "commit" ? { final: true } : { continuous: true }),
+          onSelectionLost: (target, reason) => inspectionStore.selectionUnavailable(target, reason),
+          onError: reason => setControlError(reason),
+        });
+        transformToolsRef.current = tools;
+        const syncSelection = () => {
+          const state = inspectionStore.getSnapshot();
+          const detail = state.selection;
+          tools.setSelection(state.selected, { slotId: detail?.renderSlotId,
+            worldTransform: detail?.worldTransform, writable: detail?.transformCapability === "live" });
+        };
+        const unsubscribe = inspectionStore.subscribe(syncSelection);
+        syncSelection();
+        const syncToolsVisibility = () => {
+          const enabled = transformEditableRef.current && canvasIsEditorVisible(canvas, true);
+          tools.setEnabled(enabled);
+          if (enabled && !transformConsumerRef.current) transformConsumerRef.current = inspectionStore.consume("selection");
+          if (!enabled) { transformConsumerRef.current?.(); transformConsumerRef.current = null; }
+        };
+        syncTransformVisibilityRef.current = syncToolsVisibility;
+        const visibility = typeof IntersectionObserver === "undefined" ? null : new IntersectionObserver(syncToolsVisibility);
+        visibility?.observe(canvas);
+        syncToolsVisibility();
+        transformDetachRef.current = () => {
+          visibility?.disconnect();
+          syncTransformVisibilityRef.current = () => {};
+          unsubscribe();
+          transformConsumerRef.current?.();
+          transformConsumerRef.current = null;
+          transformToolsRef.current = null;
+          tools.dispose();
+        };
+      }
       void createAppSettingsStore()
         .load()
         .then((settings) => {
@@ -755,6 +845,7 @@ export function PlayOverlay({
       syncFramebuffer(session.handle);
       const resizeObserver = new ResizeObserver(() => {
         layoutPlay();
+        syncTransformVisibilityRef.current();
         const framebuffer = playFramebufferSize(
           runtimeRenderRef.current,
           liveSizeRef.current,
@@ -816,7 +907,7 @@ export function PlayOverlay({
       };
     });
     return () => { cancelled = true; disposePresentation?.(); };
-  }, [sharedEngine, injectFixtureThrow, reportBtState, pushLog, sessionOwner, sessionTicket, simulating, simulationSaveStorage, inspectionStore]);
+  }, [sharedEngine, injectFixtureThrow, reportBtState, pushLog, sessionOwner, sessionTicket, simulating, simulationSaveStorage, simulationAssetGuids, inspectionStore, simulationSession, diagnosticStore]);
 
   useEffect(() => {
     if (!isTestModeEnabled()) return;
@@ -894,6 +985,7 @@ export function PlayOverlay({
       data-post-process-passes={String(postProcessPasses)}
       data-assigned-materials={assignedMaterials}
     >
+      {simulationSession ? <SimulationRetentionDialog session={simulationSession} onStop={() => finishSessionRef.current()} /> : null}
       <SceneLoadingDialog open={sceneLoading !== null} progress={sceneLoading?.progress ?? 0}
         phase={sceneLoading?.phase ?? "Preparing Scene"} onStop={() => finishSessionRef.current()} />
       <PlayOverlayChrome
@@ -902,9 +994,9 @@ export function PlayOverlay({
         inspectorOpen={inspectorOpen}
         showStats={overlayStats}
         showConsole={overlayConsole}
-        showInspector={overlayInspector}
+        showInspector={overlayInspector && !simulating}
         pausePending={pausePending}
-        simulation={simulating ? { inputMode, inputPending, onInputModeChange: (mode) => changeInputModeRef.current(mode) } : undefined}
+        simulation={simulating ? { inputMode, inputPending, keepChanges: simulationSession?.keepChanges, onInputModeChange: (mode) => changeInputModeRef.current(mode) } : undefined}
         onPauseToggle={() => pauseRef.current("user", !userPausedRef.current)}
         onStatsToggle={() => setStatsOpen((open) => !open)}
         onConsoleOpen={() => setConsoleOpen(true)}
@@ -930,8 +1022,12 @@ export function PlayOverlay({
         }
         extras={
           <>
+            {simulationSession ? <SimulationRetentionHint session={simulationSession} /> : null}
             {controlError ? <p role="alert" className="pointer-events-auto text-xs text-destructive">{controlError}</p> : null}
-            {simulating && inputMode === "edit" ? <p className="pointer-events-none text-xs text-muted-foreground">Pause To Inspect Without Gameplay Changing Values. Editor Camera Does Not Change The Game Camera.</p> : null}
+            {simulating && inputMode === "edit" ? <>
+              <SimulationTransformToolbar tool={transformTool} onToolChange={tool => { setTransformTool(tool); transformToolsRef.current?.setTool(tool); }} />
+              <p className="pointer-events-none text-xs text-muted-foreground">Pause to inspect without gameplay changing values. The editor camera does not change the game camera.</p>
+            </> : null}
             <span
               data-testid="play-move-x"
               data-move-x={moveX === null ? "" : String(moveX)}
