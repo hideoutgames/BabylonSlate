@@ -44,7 +44,7 @@ for (const backend of ["webgl2"] as ("webgl2" | "webgpu")[]) {
     page.on("pageerror", (error) => errors.push(error.message));
     page.on("console", (message) => {
       if (["warning", "error"].includes(message.type()) &&
-        /shader|WebGPU uncaptured|VALIDATE_STATUS|ERROR: 0:|context lost|fatal error/i.test(message.text()))
+        /shader|WebGPU uncaptured|VALIDATE_STATUS|ERROR: 0:|INVALID_OPERATION|context lost|fatal error/i.test(message.text()))
         errors.push(message.text());
     });
     await page.goto("/?test=1&temporalAntiAliasingProof=1");
