@@ -93,6 +93,7 @@ export type ScriptBundleEntry = {
   variables?: Array<{
     name: string;
     type: string;
+    typeClassId?: string;
     defaultValue?: unknown;
     container?: "single" | "array" | "map";
     keyTypeId?: string;
@@ -116,6 +117,7 @@ export type ScriptBundleEntry = {
 };
 
 export type ControlMessage =
+  | ({ type: "runtimeInspector" } & import("./runtime-inspector").RuntimeInspectorRequest)
   | ({ type: "sessionBoundary" } & SessionBoundaryRequest)
   | { type: "saveStorageResponse"; response: import("@babylonslate/core").SaveStorageResponse }
   | { type: "ragdollPoseCaptured"; slotId: number; requestId: string; bones?: import("@babylonslate/core").RagdollBonePose[]; error?: string }
@@ -373,6 +375,8 @@ export type DebugBehaviourTree = {
 };
 
 export type CommandMessage =
+  | ({ type: "runtimeInspectorResult" } & import("./runtime-inspector").RuntimeInspectorResult)
+  | { type: "resetActorInterpolation"; actorGuid: string; slotId: number; frameId: number }
   | ({ type: "sessionBoundaryResult" } & SessionBoundaryResult)
   | { type: "saveStorageRequest"; request: import("@babylonslate/core").SaveStorageRequest }
   | { type: "setUIControl2D"; slotId: number; componentId: string; uiControl: { classId: string; properties: import("@babylonslate/core").UIControl2DProperties }; focused?: boolean; beginEditing?: boolean }

@@ -748,3 +748,39 @@ Definitions use `.datadefinition.babasset`; trees use `.datatree.babasset` (vers
 Experimental Data Object and Data Sheet formats are unsupported. Their files are preserved and never silently reinterpreted as empty trees. Unsupported reachable data blocks export with an actionable error.
 
 Editor screenshots: [Data Definition fields](../design/evidence/data-workspace/01-data-definition.png), [Data Tree workspace](../design/evidence/data-workspace/02-data-tree.png), and [typed entry node with Inspector defaults](../design/evidence/data-workspace/03-data-tree-node.png).
+
+### Simulation runtime inspection and edits
+
+The runtime Inspector is an on-demand headless service, separate from the legacy
+formatted `inspectWorld()` snapshot and scene persistence capture. Its correlated
+`runtimeInspector` requests run after the current synchronous tick and deferred
+publication complete; they also run while a user pause is held, without ticking.
+Writes are admitted only in Simulation. The worker sends a completed pose snapshot
+before a successful mutation reply. In-process consumers must refresh that snapshot
+when a paused edit succeeds.
+
+Identity pages contain actor/component GUIDs, a scene-instance identity and lifetime
+tokens. GUID reuse cannot retarget an old selection. The World increments its
+structural revision at actor realization/removal, component attachment/destruction,
+and actor name/parent changes; requesting the unchanged revision returns no tree.
+Pages contain at most 128 identity rows. Selection reads return only reflected
+properties of the requested object, with 64 KiB transport admission and explicit
+pagination/collection summaries. Values are read at a maximum 5 Hz by visible editor
+consumers; closing a consumer means no Inspector requests or collection.
+
+The initial writable set includes exposed primitive, vector and typed object-reference
+variables (including bounded arrays/maps), actor visibility/event flags/name, local
+actor/component transforms, validated camera/light/outline properties, body tuning,
+collider tuning, navigation parameters, audio volume, and catalog-backed surface
+material assignments and instance parameters. Unsupported asset/component internals,
+structural fields, computed fields and types without a validated live codec report
+read-only or restart-required capabilities. Class/type metadata accompanies compiled
+variables; reference edits never evaluate expressions or property paths.
+
+Mutations carry independent request IDs and per-property sequences. At most 32
+bounded requests wait at the boundary; stopped/stale/oversized requests fail explicitly.
+An accepted transform uses the physics teleport owner, preserves body velocity,
+updates affected descendants, and publishes a new presentation frame identity with
+an interpolation reset while keeping the simulation tick unchanged. Runtime edits
+remain outside authoring history; final scene persistence has its own full-state
+capture contract, independent of the Inspector's writable subset.

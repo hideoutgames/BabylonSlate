@@ -51,3 +51,5 @@ export {
   type PlayEngineCommandType,
 } from "./play-engine-commands";
 export { dynamicMeshTransferables } from "./dynamic-mesh-transfers";
+
+export type { RuntimeObjectIdentity, RuntimeInspectorValue, RuntimePropertyCapability, RuntimePropertyDescriptor, RuntimeIdentityRow, RuntimeIdentityCursor, RuntimeInspectorAction, RuntimeInspectorRequest, RuntimeInspectorPayload, RuntimeInspectorResult } from "./runtime-inspector";

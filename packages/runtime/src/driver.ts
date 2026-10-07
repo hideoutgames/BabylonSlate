@@ -1,3 +1,4 @@
+import { RuntimeInspector } from "./runtime-inspector";
 import { SceneLayerActorSwitchers } from "./scene-layer-actor-switcher";
 import { RuntimeDataCatalog } from "./data-catalog";
 import { overlayAnchorBindings } from "./overlay-anchor-layout";
@@ -31,6 +32,8 @@ import {
   type SessionPauseReason,
   type SessionBoundaryRequest,
   type SessionBoundaryResult,
+  type RuntimeInspectorRequest,
+  type RuntimeInspectorResult,
 } from "@babylonslate/bridge";
 import {
   ClassRegistry,
@@ -297,6 +300,7 @@ export interface RuntimeDriver {
   pause(reason?: SessionPauseReason): void;
   resume(reason?: SessionPauseReason): void;
   requestSessionBoundary(request: SessionBoundaryRequest): Promise<SessionBoundaryResult>;
+  requestRuntimeInspector(request: RuntimeInspectorRequest): Promise<RuntimeInspectorResult>;
   tick(): void;
   /** Fixed-step catch-up from wall/accumulated time; capped. */
   advance(elapsedSeconds: number): void;
@@ -519,6 +523,10 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly sessionMode: GameSessionMode;
   private commandRevision = 0;
   private lastBoundaryRequestId = 0;
+  private runtimeInspector: RuntimeInspector | null = null;
+  private inspectorScheduled = false;
+  private lastInspectorRequestId = 0;
+  private readonly inspectorRequests: Array<{ request: RuntimeInspectorRequest; resolve(result: RuntimeInspectorResult): void }> = [];
   private readonly boundaryRequests: Array<{ request: SessionBoundaryRequest; resolve(result: SessionBoundaryResult): void }> = [];
   private boundaryScheduled = false;
   private readonly pauseReasons = new Set<SessionPauseReason>();
@@ -1202,7 +1210,7 @@ class InProcessRuntime implements RuntimeDriver {
         }
         const owner = target.owner;
         if (!(owner instanceof Actor) || owner.destroyed) return null;
-        const slotId = this.slotByGuid.get(owner.guid);
+        const slotId = this.slotByActor.get(owner);
         const guid = this.animGraphGuid(target);
         const document = guid ? this.animGraphs.get(guid) : undefined;
         const evalKey = target.guid;
@@ -1397,79 +1405,7 @@ class InProcessRuntime implements RuntimeDriver {
         this.textAppear.execute(component, operation);
         if (!this.processingTick) this.flushTextAppear();
       },
-      refreshComponent: (component, propertyName) => {
-        const owner = component.owner;
-        if (!owner || owner.destroyed) return;
-        if (isUIControl2DClass(component.classId)) {
-          this.uiControls.refresh(component);
-          if (owner.sceneLayerId) this.applyOverlayLayouts();
-          return;
-        }
-        if ((propertyName === "opacity" || propertyName === "tint") && supportsOverlayVisualStyle(component.classId)) {
-          const slotId = this.slotByGuid.get(owner.guid);
-          if (slotId !== undefined) this.emit({ type: "setOverlayVisualStyle", slotId, componentId: component.guid,
-            style: parseOverlayVisualStyle(Object.fromEntries(component.variables)) });
-          return;
-        }
-        if (component.classId === "2DRichTextComponent") this.textAppear.refresh(component);
-        if (owner.sceneLayerId && component.classId === "2DAnchorComponent") {
-          for (const _ of this.applyOverlayAnchors(this.world.getActors())) void _;
-        }
-        if (owner.sceneLayerId) this.applyOverlayLayouts();
-        if (owner.sceneLayerId && isOverlayScrollClass(component.classId) &&
-          (propertyName === "scroll.offset" || propertyName === "scrollX" || propertyName === "scrollY")) {
-          const scroll = this.overlayLayout.entries(owner.sceneLayerId).get(overlayLayoutKey(owner.guid, component.guid))?.scroll;
-          if (scroll) { component.setVariable("scrollX", scroll.x); component.setVariable("scrollY", scroll.y); }
-        }
-        if (owner.sceneLayerId && (isOverlayLayoutClass(component.classId) || component.classId === "2DAnchorComponent")) return;
-        // Steering/tuning is consumed by the next motor tick; only dimensions
-        // need immediate collider/query refresh after a property write.
-        if (component.classId === "MovementComponent" && propertyName && propertyName !== "radius" && propertyName !== "height") return;
-        const slotId = this.slotByGuid.get(owner.guid);
-        if (component.classId === "DeformerComponent") {
-          if (slotId !== undefined) {
-            if (this.processingTick) this.dirtyDeformerActors.add(owner);
-            else this.emitActorDeformers(owner, slotId);
-          }
-          return;
-        }
-        if (component.classId === "DynamicRuntimeMeshComponent" &&
-          (propertyName === "materialGuid" || propertyName === "enableCollision" || propertyName === "layer" || propertyName === "mask")) {
-          if (propertyName === "materialGuid" && slotId !== undefined) this.emitMaterialAssignments([component], slotId, true);
-          // Geometry collision changes are coalesced by the next physics step.
-          return;
-        }
-        if (slotId !== undefined) {
-          if (component.classId === "RenderTargetCaptureComponent") this.emitRenderTargetCapture(owner, slotId);
-          else if (component.classId === "OutlineComponent") this.emitActorOutlines(owner, slotId);
-          else if (component.classId === "FogVolumeComponent") this.emitActorFogVolumes(owner, slotId);
-          else if (propertyName === "transform") this.emitComponentTransforms(owner, slotId);
-          else if (component.classId !== "PhysicsConstraintComponent" && component.classId !== "RagdollComponent" && component.classId !== "MovementComponent") this.emitMeshAssignment(owner, slotId);
-        }
-        if (component.classId === "ParticleComponent") {
-          this.emitParticleComponents(owner);
-        }
-        if (component.classId === "AudioComponent") {
-          const volume = Number(component.getVariable("volume") ?? 1);
-          this.emit({
-            type: "setVoiceGain",
-            voiceId: component.guid,
-            volume: Number.isFinite(volume) ? volume : 1,
-          });
-        }
-        if (component.classId === "NavAgentComponent") {
-          this.updateNavAgentParams(owner);
-        }
-        const sync = owner.sceneLayerId
-          ? this.overlayPhysicsSync
-          : this.physicsSync;
-        if (component.classId === "RagdollComponent" || component.classId === "MeshComponent") {
-          // Ragdoll and mesh-collision edits can create or retire the owner's
-          // body; reconcile that one actor from its own chain.
-          this.ragdolls.sync();
-          sync.syncActor(owner, this.world);
-        } else sync.applyComponent(component);
-      },
+      refreshComponent: (component, propertyName) => this.refreshRuntimeComponent(component, propertyName),
       playSound: (asset, volume, options) => {
         this.emit({
           type: "playSound",
@@ -2704,6 +2640,80 @@ class InProcessRuntime implements RuntimeDriver {
     };
   };
 
+  private refreshRuntimeComponent(component: ActorComponent, propertyName?: string): void {
+    const owner = component.owner;
+    if (!owner || owner.destroyed) return;
+    if (isUIControl2DClass(component.classId)) {
+      this.uiControls.refresh(component);
+      if (owner.sceneLayerId) this.applyOverlayLayouts();
+      return;
+    }
+    if ((propertyName === "opacity" || propertyName === "tint") && supportsOverlayVisualStyle(component.classId)) {
+      const slotId = this.slotByActor.get(owner);
+      if (slotId !== undefined) this.emit({ type: "setOverlayVisualStyle", slotId, componentId: component.guid,
+        style: parseOverlayVisualStyle(Object.fromEntries(component.variables)) });
+      return;
+    }
+    if (component.classId === "2DRichTextComponent") this.textAppear.refresh(component);
+    if (owner.sceneLayerId && component.classId === "2DAnchorComponent") {
+      for (const _ of this.applyOverlayAnchors(this.world.getActors())) void _;
+    }
+    if (owner.sceneLayerId) this.applyOverlayLayouts();
+    if (owner.sceneLayerId && isOverlayScrollClass(component.classId) &&
+      (propertyName === "scroll.offset" || propertyName === "scrollX" || propertyName === "scrollY")) {
+      const scroll = this.overlayLayout.entries(owner.sceneLayerId).get(overlayLayoutKey(owner.guid, component.guid))?.scroll;
+      if (scroll) { component.setVariable("scrollX", scroll.x); component.setVariable("scrollY", scroll.y); }
+    }
+    if (owner.sceneLayerId && (isOverlayLayoutClass(component.classId) || component.classId === "2DAnchorComponent")) return;
+    // Steering/tuning is consumed by the next motor tick; only dimensions
+    // need immediate collider/query refresh after a property write.
+    if (component.classId === "MovementComponent" && propertyName && propertyName !== "radius" && propertyName !== "height") return;
+    const slotId = this.slotByActor.get(owner);
+    if (component.classId === "DeformerComponent") {
+      if (slotId !== undefined) {
+        if (this.processingTick) this.dirtyDeformerActors.add(owner);
+        else this.emitActorDeformers(owner, slotId);
+      }
+      return;
+    }
+    if (component.classId === "DynamicRuntimeMeshComponent" &&
+      (propertyName === "materialGuid" || propertyName === "enableCollision" || propertyName === "layer" || propertyName === "mask")) {
+      if (propertyName === "materialGuid" && slotId !== undefined) this.emitMaterialAssignments([component], slotId, true);
+      // Geometry collision changes are coalesced by the next physics step.
+      return;
+    }
+    if (slotId !== undefined) {
+      if (component.classId === "RenderTargetCaptureComponent") this.emitRenderTargetCapture(owner, slotId);
+      else if (component.classId === "OutlineComponent") this.emitActorOutlines(owner, slotId);
+      else if (component.classId === "FogVolumeComponent") this.emitActorFogVolumes(owner, slotId);
+      else if (propertyName === "transform") this.emitComponentTransforms(owner, slotId);
+      else if (component.classId !== "PhysicsConstraintComponent" && component.classId !== "RagdollComponent" && component.classId !== "MovementComponent") this.emitMeshAssignment(owner, slotId);
+    }
+    if (component.classId === "ParticleComponent") {
+      this.emitParticleComponents(owner);
+    }
+    if (component.classId === "AudioComponent") {
+      const volume = Number(component.getVariable("volume") ?? 1);
+      this.emit({
+        type: "setVoiceGain",
+        voiceId: component.guid,
+        volume: Number.isFinite(volume) ? volume : 1,
+      });
+    }
+    if (component.classId === "NavAgentComponent") {
+      this.updateNavAgentParams(owner);
+    }
+    const sync = owner.sceneLayerId
+      ? this.overlayPhysicsSync
+      : this.physicsSync;
+    if (component.classId === "RagdollComponent" || component.classId === "MeshComponent") {
+      // Ragdoll and mesh-collision edits can create or retire the owner's
+      // body; reconcile that one actor from its own chain.
+      this.ragdolls.sync();
+      sync.syncActor(owner, this.world);
+    } else sync.applyComponent(component);
+  }
+
   private canTickScene(): boolean {
     return !this.paused && !this.saveBoundaryActive && !this.sceneWorkBlocked && !this.bootLoading && !this.stopped && this.streamBlockingCount === 0;
   }
@@ -2720,8 +2730,8 @@ class InProcessRuntime implements RuntimeDriver {
     return this.layerLoads.get(actor.sceneLayerId)?.ready === true;
   }
 
-  private setMaterialParameter(material: MaterialInstanceObject, parameterName: string, parameter: MaterialParameterValue): boolean {
-    if (!this.canRunOwner(material)) return false;
+  private setMaterialParameter(material: MaterialInstanceObject, parameterName: string, parameter: MaterialParameterValue, inspector = false): boolean {
+    if (inspector ? !(material instanceof MaterialObject) || !material.component.owner || !this.inspectorActorReady(material.component.owner) : !this.canRunOwner(material)) return false;
     const validated = this.materialParameters.accepts(material, parameterName, parameter);
     if (!validated && (material instanceof PostProcessMaterialObject || this.validateLegacyMeshParameters)) return false;
     if (material instanceof PostProcessMaterialObject) {
@@ -2736,7 +2746,7 @@ class InProcessRuntime implements RuntimeDriver {
       const component = material.component;
       const owner = component.owner;
       if (!owner || owner.destroyed || component.destroyed || component.getVariable("materialObject") !== material) return false;
-      const slotId = this.slotByGuid.get(owner.guid);
+      const slotId = this.slotByActor.get(owner);
       if (slotId === undefined) return false;
       const skipButtonMesh = overlayButtonHasSiblingVisual(owner) || overlayButtonHasParentVisual(owner, this.world);
       if (!owner.components.some((entry) => entry === component && isPlayRenderable(entry, skipButtonMesh))) return false;
@@ -5915,6 +5925,7 @@ class InProcessRuntime implements RuntimeDriver {
   stop(): void {
     if (this.stopped) return;
     this.stopped = true;
+    if (this.inspectorRequests.length) this.flushInspectorRequests();
     this.flushBoundaryRequests();
     this.pendingPauseChanges.clear();
     this.tweens.stop();
@@ -6012,6 +6023,104 @@ class InProcessRuntime implements RuntimeDriver {
       queueMicrotask(() => this.flushBoundaryRequests());
     }
     return result;
+  }
+
+  private inspectorActorReady(actor: Actor): boolean {
+    if (this.stopped || this.saveBoundaryActive || actor.destroyed || actor.world !== this.world || this.world.findActorInstances(actor.guid).length !== 1 || this.streamBlockingCount > 0 || !this.streamActorReady(actor)) return false;
+    return actor.sceneLayerId ? this.layerLoads.get(actor.sceneLayerId)?.ready === true : !this.sceneWorkBlocked && !this.bootLoading;
+  }
+
+  private getRuntimeInspector(): RuntimeInspector {
+    return this.runtimeInspector ??= new RuntimeInspector({
+      world: this.world, materials: this.materialParameters, sessionGeneration: this.sessionGeneration,
+      canWrite: () => this.sessionMode === "simulate", stopped: () => this.stopped,
+      ready: actor => this.inspectorActorReady(actor),
+      sceneIdentity: actor => {
+        const stream = this.actorStream.get(actor);
+        if (stream) return `stream:${stream.actor.guid}:${stream.loadId}`;
+        if (actor.sceneLayerId) return `layer:${actor.sceneLayerId}:${this.layerLoads.get(actor.sceneLayerId)?.loadId ?? -1}`;
+        return `scene:${this.playSceneGuid}:${this.sceneLoadId}:${this.world.currentScene?.guid ?? ""}`;
+      },
+      boundary: () => ({ tickIndex: this.world.clock.tickIndex, frameId: this.frameId,
+        commandRevision: this.commandRevision, structuralRevision: this.world.structuralRevision }),
+      applyProperty: (target, key, value) => {
+        const prior = target instanceof Actor && key === "generateHitEvents" ? target.generateHitEvents :
+          target instanceof Actor && key === "generateOverlapEvents" ? target.generateOverlapEvents : target.getVariable(key);
+        const apply = (next: unknown) => {
+          if (target instanceof Actor && key === "generateHitEvents") target.generateHitEvents = next as boolean;
+          else if (target instanceof Actor && key === "generateOverlapEvents") target.generateOverlapEvents = next as boolean;
+          else target.setVariable(key, next);
+          if (target instanceof ActorComponent) this.refreshRuntimeComponent(target, key);
+        };
+        try { apply(value); } catch (error) { apply(prior); throw error; }
+        if (target instanceof Actor && key === "visible") this.publishInspectorSnapshot(target);
+      },
+      applyTransform: (target, transform) => {
+        const prior = target.transform;
+        const actor = target instanceof Actor ? target : target.owner!;
+        const affected = [actor];
+        if (target instanceof Actor) {
+          const ids = new Set([actor.guid]);
+          let changed = true;
+          while (changed) {
+            changed = false;
+            for (const candidate of this.world.getActors()) {
+              if (candidate.destroyed || candidate.sceneLayerId !== actor.sceneLayerId || ids.has(candidate.guid) || !ids.has(String(candidate.getVariable("parentId") ?? ""))) continue;
+              affected.push(candidate); ids.add(candidate.guid); changed = true;
+            }
+          }
+        }
+        const apply = () => {
+          for (const affectedActor of affected) {
+            this.ragdolls.retire(affectedActor);
+            const sync = affectedActor.sceneLayerId ? this.overlayPhysicsSync : this.physicsSync;
+            sync.teleportActor(affectedActor, this.world);
+          }
+        };
+        target.transform = { position: { x: transform.position[0], y: transform.position[1], z: transform.position[2] },
+          rotation: { x: transform.rotation[0], y: transform.rotation[1], z: transform.rotation[2], w: transform.rotation[3] },
+          scale: { x: transform.scale[0], y: transform.scale[1], z: transform.scale[2] } };
+        try { apply(); } catch (error) { target.transform = prior; apply(); throw error; }
+        if (target instanceof ActorComponent) {
+          const slotId = this.slotByActor.get(actor);
+          if (slotId !== undefined) this.emitComponentTransforms(actor, slotId);
+        }
+        this.publishInspectorSnapshot(actor);
+      },
+      applyMaterial: (component, name, value) => {
+        const material = component.getVariable("materialObject");
+        return material instanceof MaterialObject && this.setMaterialParameter(material, name, value, true);
+      },
+    });
+  }
+
+  private publishInspectorSnapshot(actor: Actor): void {
+    // Presentation identity advances, while tick index, delays and physics do not.
+    this.frameId++;
+    const slotId = this.slotByActor.get(actor);
+    if (slotId !== undefined) this.emit({ type: "resetActorInterpolation", actorGuid: actor.guid, slotId, frameId: this.frameId });
+    this.publishSnapshot();
+  }
+
+  requestRuntimeInspector(request: RuntimeInspectorRequest): Promise<RuntimeInspectorResult> {
+    const inspector = this.getRuntimeInspector();
+    const invalid = inspector.validateRequest(request) ??
+      (request.requestId <= this.lastInspectorRequestId ? "Invalid or superseded Inspector request ID." :
+        this.inspectorRequests.length >= 32 ? "Runtime Inspector request queue is full." : null);
+    if (invalid) return Promise.resolve(inspector.result(request, invalid));
+    this.lastInspectorRequestId = request.requestId;
+    const result = new Promise<RuntimeInspectorResult>(resolve => this.inspectorRequests.push({ request: structuredClone(request), resolve }));
+    if (!this.inspectorScheduled) {
+      this.inspectorScheduled = true;
+      queueMicrotask(() => this.flushInspectorRequests());
+    }
+    return result;
+  }
+
+  private flushInspectorRequests(): void {
+    this.inspectorScheduled = false;
+    const inspector = this.getRuntimeInspector();
+    for (const { request, resolve } of this.inspectorRequests.splice(0)) resolve(inspector.execute(request));
   }
 
   private boundaryResult(request: SessionBoundaryRequest, reason?: string): SessionBoundaryResult {

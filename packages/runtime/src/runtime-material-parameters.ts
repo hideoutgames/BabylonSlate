@@ -38,6 +38,16 @@ export class RuntimeMaterialParameters {
     this.textures = new Set(textures);
   }
 
+  /** Loaded catalog admission for a surface assignment; never accepts made-up assets. */
+  acceptsAssignment(assetGuid: string): boolean {
+    return Object.hasOwn(this.catalog, assetGuid) && this.catalog[assetGuid]!.domain === "surface";
+  }
+
+  describe(material: MaterialInstanceObject): Record<string, MaterialParameterValue> | null {
+    const state = this.state(material);
+    return state ? Object.fromEntries([...state.values].map(([name, value]) => [name, copy(value)])) : null;
+  }
+
   accepts(
     material: MaterialInstanceObject,
     name: string,

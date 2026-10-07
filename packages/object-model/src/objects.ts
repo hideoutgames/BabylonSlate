@@ -42,6 +42,7 @@ export type TickContext = {
 };
 
 export interface WorldLike {
+  markStructureChanged?(): void;
   rngNextFloat(): number;
 }
 
@@ -161,12 +162,18 @@ export class Actor extends BObject {
     this.suppressedComponentSourceIds = Object.freeze(normalizeSuppressedComponentSourceIds(options.suppressedComponentSourceIds));
   }
 
+  override setVariable(name: string, value: unknown): void {
+    if ((name === "parentId" || name === "name") && value !== this.getVariable(name)) this.world?.markStructureChanged?.();
+    super.setVariable(name, value);
+  }
+
   attachComponent(component: ActorComponent): void {
     if (component.owner) {
       throw new Error(`component ${component.guid} already attached`);
     }
     component.owner = this;
     this.components.push(component);
+    this.world?.markStructureChanged?.();
     if (this.world) component.callOnCreation();
   }
 }
@@ -230,6 +237,11 @@ export class SceneStreamingActor extends Actor {
 }
 
 export class ActorComponent extends BObject {
+  override callOnDestroyed(): void {
+    this.owner?.world?.markStructureChanged?.();
+    super.callOnDestroyed();
+  }
+
   private materialObject: MaterialObject | null = null;
   private creationCalled = false;
 

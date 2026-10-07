@@ -87,6 +87,19 @@ const pauseGate = createPlayPauseGate({
 
 function handleControl(msg: ControlMessage): void {
   switch (msg.type) {
+    case "runtimeInspector": {
+      const rt = runtime;
+      if (!rt) {
+        onCommand({ type: "runtimeInspectorResult", sessionGeneration: msg.sessionGeneration, requestId: msg.requestId,
+          success: false, reason: "Runtime is unavailable.", tickIndex: 0, frameId: 0, commandRevision: 0, structuralRevision: 0 });
+        return;
+      }
+      void rt.requestRuntimeInspector(msg).then(result => {
+        if (runtime === rt && result.success && result.payload?.kind === "mutation") publishSnapshot();
+        onCommand({ type: "runtimeInspectorResult", ...result });
+      });
+      return;
+    }
     case "sessionBoundary": {
       const rt = runtime;
       if (!rt) {
