@@ -365,18 +365,22 @@ for (const [name, scenario, status] of [
   });
 }
 
-test("slot waits until fewer than two other non-draft main PRs remain, excluding self and 271", async (t) => {
+test("slot waits until fewer than four other non-draft main PRs remain, excluding self and 271", async (t) => {
   const f = await github(t, {
     slots: [
       [
         { number: 1, isDraft: false },
         { number: 2, isDraft: false },
+        { number: 3, isDraft: false },
+        { number: 4, isDraft: false },
         { number: 42, isDraft: false },
         { number: 271, isDraft: false },
       ],
       [
         { number: 1, isDraft: false },
         { number: 2, isDraft: true },
+        { number: 3, isDraft: false },
+        { number: 4, isDraft: false },
         { number: 42, isDraft: false },
         { number: 271, isDraft: false },
       ],
@@ -387,7 +391,7 @@ test("slot waits until fewer than two other non-draft main PRs remain, excluding
     f.context,
   );
   assert.equal(result.status, "success");
-  assert.equal(result.otherReadyPrs, 1);
+  assert.equal(result.otherReadyPrs, 3);
   const calls = (await readFile(join(f.cwd, "gh-calls.jsonl"), "utf8"))
     .trim()
     .split("\n")
@@ -417,6 +421,8 @@ test("occupied slots expire rather than granting capacity", async (t) => {
       [
         { number: 1, isDraft: false },
         { number: 2, isDraft: false },
+        { number: 3, isDraft: false },
+        { number: 4, isDraft: false },
       ],
     ],
   });
