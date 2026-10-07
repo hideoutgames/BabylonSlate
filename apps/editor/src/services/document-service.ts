@@ -41,6 +41,14 @@ export interface OpenDocument {
   background?: boolean;
 }
 
+export interface SimulationDocumentLease {
+  readonly baseline: OpenDocument;
+  /** Synchronous capability: no public writable window exists during admission. */
+  apply<T>(operation: (scene: SerializedScene) => { scene: SerializedScene; value: T }):
+    { ok: true; value: T } | { ok: false; reason: string };
+  release(): void;
+}
+
 export interface DocumentRegistryState {
   openDocuments: Map<string, OpenDocument>;
   tabOrder: string[];
@@ -121,9 +129,18 @@ function sameLayout(
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
+function sameSceneContent(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+  if (!left || !right || typeof left !== "object" || typeof right !== "object" || Array.isArray(left) !== Array.isArray(right)) return false;
+  const a = left as Record<string, unknown>, b = right as Record<string, unknown>;
+  const keys = Object.keys(a);
+  return keys.length === Object.keys(b).length && keys.every(key => Object.hasOwn(b, key) && sameSceneContent(a[key], b[key]));
+}
+
 type TabsSnapshot = { order: readonly string[]; foreground: readonly string[]; active: string | null };
 
 export class DocumentService {
+  private readonly savedScenes = new WeakMap<OpenDocument, SerializedScene>();
   private readonly identityListeners = new Set<DocumentIdentityListener>();
   private readonly authoringLocks = new Map<symbol, string>();
   private readonly authoringLockListeners = new Set<() => void>();
@@ -148,6 +165,41 @@ export class DocumentService {
     this.publishAuthoringLock();
     return () => {
       if (this.authoringLocks.delete(key)) this.publishAuthoringLock();
+    };
+  }
+
+  /** The private lease alone can install its one fully admitted Simulation result. */
+  beginSimulationDocument(id: string): SimulationDocumentLease {
+    this.assertAuthoringWritable();
+    const document = this.state.openDocuments.get(id);
+    if (!document || document.ref.kind !== "scene" || !document.content) throw new Error("The Simulation Scene is not open.");
+    const baseline = Object.freeze({ ...document, ref: Object.freeze({ ...document.ref }) });
+    if (!document.dirty && !this.savedScenes.has(document)) this.savedScenes.set(document, document.content as SerializedScene);
+    const key = Symbol("simulation-document");
+    this.authoringLocks.set(key, "Read-only during Simulation Play");
+    this.publishAuthoringLock();
+    let applied = false;
+    return {
+      baseline,
+      apply: operation => {
+        if (!this.authoringLocks.has(key) || applied) return { ok: false, reason: "The Simulation document lease is no longer current." };
+        if (this.authoringLocks.size !== 1) return { ok: false, reason: "Another editor operation owns authoring protection." };
+        const current = this.state.openDocuments.get(id);
+        if (current !== document || current.content !== baseline.content || current.ref.path !== baseline.ref.path || current.dirty !== baseline.dirty) {
+          return { ok: false, reason: "The authoring Scene changed after Simulation began." };
+        }
+        // The operation must synchronously admit history before returning a changed
+        // scene. All authoring guards remain locked while it runs.
+        const result = operation(baseline.content as SerializedScene);
+        if (result.scene !== baseline.content) {
+          current.content = result.scene; current.dirty = true; applied = true;
+          current.ref = { ...current.ref, label: `${result.scene.name} ${documentKindLabel(current.ref.kind)}` };
+          this.advanceKinds([current.ref.kind]);
+          recordDocumentDirty(current.ref.kind, id);
+        }
+        return { ok: true, value: result.value };
+      },
+      release: () => { if (this.authoringLocks.delete(key)) this.publishAuthoringLock(); },
     };
   }
 
@@ -460,6 +512,7 @@ export class DocumentService {
     const alreadyOpened = this.state.openDocuments.has(id);
     if (!alreadyOpened) {
       this.state.openDocuments.set(id, entry);
+      if (entry.ref.kind === "scene" && entry.content) this.savedScenes.set(entry, entry.content as SerializedScene);
       this.state.tabOrder.push(id);
       this.advanceKinds([fullRef.kind]);
     } else if (!options?.background) {
@@ -561,6 +614,8 @@ export class DocumentService {
       id: newId,
       ref: createDocumentRef(kind, newPath, doc.content ?? undefined),
     };
+    const savedScene = this.savedScenes.get(doc);
+    if (savedScene) this.savedScenes.set(next, savedScene);
     this.state.openDocuments.set(newId, next);
     this.state.tabOrder = this.state.tabOrder.map((id) =>
       id === oldId ? newId : id,
@@ -646,6 +701,14 @@ export class DocumentService {
     };
   }
 
+  /** Undo/Redo compares scene content to the last successful saved revision. */
+  updateSceneFromHistory(id: string, scene: SerializedScene): void {
+    this.updateScene(id, scene);
+    const document = this.state.openDocuments.get(id);
+    const saved = document && this.savedScenes.get(document);
+    if (document && saved) document.dirty = !sameSceneContent(saved, scene);
+  }
+
   updateGraph(id: string, graph: SerializedGraph): void {
     this.assertAuthoringWritable();
     const doc = this.state.openDocuments.get(id);
@@ -719,6 +782,7 @@ export class DocumentService {
     for (const snapshot of saved) {
       const doc = this.state.openDocuments.get(snapshot.id);
       if (doc && doc.ref.kind !== "content-browser" && doc.ref.path === snapshot.ref.path) {
+        if (doc.ref.kind === "scene" && snapshot.content) this.savedScenes.set(doc, snapshot.content as SerializedScene);
         const dirty = doc.content !== snapshot.content;
         if (doc.dirty !== dirty) changed.push(doc.ref.kind);
         doc.dirty = dirty;
@@ -732,6 +796,7 @@ export class DocumentService {
     const doc = this.state.openDocuments.get(id);
     if (!doc || doc.ref.kind === "content-browser") return;
     doc.content = content;
+    if (doc.ref.kind === "scene") this.savedScenes.set(doc, content as SerializedScene);
     doc.dirty = false;
     this.advanceKinds([doc.ref.kind]);
   }

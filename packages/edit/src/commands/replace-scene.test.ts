@@ -92,3 +92,14 @@ describe("ReplaceSceneCommand", () => {
     expect(() => new ReplaceSceneCommand(before, after)).toThrow(/Scene transaction/);
   });
 });
+
+
+it("preflights both scene snapshots before retaining a history-budgeted command", () => {
+  const { before, after } = fixture();
+  const required = 2 * (Buffer.byteLength(JSON.stringify(before)) + Buffer.byteLength(JSON.stringify(after)));
+  expect(() => new ReplaceSceneCommand(before, after, { maxHistoryBytes: required - 1 })).toThrow("Undo history budget");
+  const admitted = new ReplaceSceneCommand(before, after, { maxHistoryBytes: required });
+  expect(admitted.byteSize * 2).toBe(required);
+  expect(admitted.apply(before)).toEqual(after);
+  expect(ReplaceSceneCommand.isNoop(before, structuredClone(before))).toBe(true);
+});

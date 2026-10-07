@@ -176,3 +176,20 @@ See [scene-editing.md](scene-editing.md) for viewport/outliner wiring.
 ## Tests
 
 Every command type gets an apply-then-invert property test asserting structural equality of the document model. Stack tests cover merge keys, dual budgets, and active-document scoping; `session.test.ts` covers closed-history retention, identity checks, rename and oldest-first eviction. `document-service.test.ts` checks that each `DocumentService` mutation advances exactly the document revisions it should; `document-context.test.tsx` checks on the real provider that registry-only updates and tab switches keep `openDocuments`, `tabOrder` and `dirtyDocuments`, and that a Scene edit leaves Class-keyed inputs alone, plus Undo across the exclusive Scene switch, and no history after Discard, an external change, an open-time prefab sync of a changed Class or delete-and-recreate at the same path; `graph-panel.test.tsx` checks on the real provider that a mounted Class graph panel's Add Node palette offers a function added, unsaved, in another open Class tab. Playwright `e2e/p2-accept.spec.ts` covers killed-tab journal recovery; `e2e/p6-scene-editing.spec.ts` covers scene undo through the command layer; `e2e/p5-scripting.spec.ts` covers Class graph undo/redo on the canvas; `e2e/p18-editor-opt.spec.ts` covers idle-unmount (2-minute grace, cap 3 including the open Scene, overlay Play **through** idle grace without resetting Tick) plus Prefab/Play sharing the project-lifetime Engine.
+
+Simulation retention uses `beginSimulationDocument` to acquire an exclusive,
+private document lease after pending project writes have completed. Its immutable
+baseline records content identity, path and dirty state. The lease checks those
+identities again and synchronously installs only a history-admitted result while
+ordinary document mutations remain locked. Permissions and source-control state
+are rechecked by the document action. A failed capture or admission keeps the
+source document, dirty flag, Undo and Redo unchanged; explicit Discard releases
+the session without a document command. The one whole-scene command is labeled
+“Apply Simulation Changes”. Complete candidates are retained singly for retry.
+
+`ReplaceSceneCommand` can preflight the configured history budget before copying
+snapshots. Its canonical UTF-8 counter does not construct a second full JSON
+string; both command directions must fit. Scene Undo/Redo compares the restored
+content with the last successful saved scene reference, so undoing Keep to a
+clean baseline returns it to clean. Save remains the normal persistence boundary,
+and the existing journal records the complete command as one entry.

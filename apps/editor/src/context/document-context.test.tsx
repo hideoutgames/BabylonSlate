@@ -256,6 +256,27 @@ describe("DocumentProvider actions and route", () => {
     }
   });
 
+  it("awaits a session transition owner before closing a scene and preserves the project when Stop is refused", async () => {
+    const actions = await openProject();
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    const original = openScene(MAIN_SCENE_ID);
+    let resolve!: (allowed: boolean) => void;
+    const unregister = actions.registerBeforeTransition(() => new Promise<boolean>(done => { resolve = done; }));
+    act(() => actions.closeDocument(MAIN_SCENE_ID));
+    expect(openScene(MAIN_SCENE_ID)).toBe(original);
+    await act(async () => { resolve(false); await Promise.resolve(); });
+    expect(openScene(MAIN_SCENE_ID)).toBe(original);
+    let closing!: Promise<void>;
+    act(() => { closing = actions.forceCloseProject(); });
+    await act(async () => { resolve(false); await closing; });
+    expect(documents().route).toBe("editor");
+    expect(openScene(MAIN_SCENE_ID)).toBe(original);
+    act(() => actions.closeDocument(MAIN_SCENE_ID));
+    await act(async () => { resolve(true); await Promise.resolve(); });
+    expect(documents().openDocuments.some(doc => doc.id === MAIN_SCENE_ID)).toBe(false);
+    unregister();
+  });
+
   it.each(["delete", "replace"] as const)("repairs nested data defaults in open documents during Class %s using live and saved schemas", async (operation) => {
     const actions = await openProject();
     const registry = documents().assetRegistry!;

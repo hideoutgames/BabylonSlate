@@ -92,9 +92,11 @@ function inertDocuments(current: () => DocumentsValue | undefined): DocumentsVal
   const revisionsFor = revisionsFollowingDocuments();
   return {
     lockAuthoring: unsubscribe,
+    beginSimulationDocument: () => { throw new Error("No Simulation document in this fixture"); },
     getAuthoringLock: () => ({ readOnly: false, reason: null, revision: 0 }),
     subscribeAuthoringLock: unsubscribe,
     lockAuthoringWrites: () => ({ ready: Promise.resolve(true), release: noop }),
+    registerBeforeTransition: () => noop,
     withSceneWrite: async work => work({
       writeSceneNavmeshChunk: (...args) => current()?.writeSceneNavmeshChunk(...args) ?? Promise.resolve(),
       writeSceneAudioReverbChunk: (...args) => current()?.writeSceneAudioReverbChunk(...args) ?? Promise.resolve(),

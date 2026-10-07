@@ -40,6 +40,8 @@ export class DocumentEditStack<TDoc> {
     this.maxBytes = Math.max(1, options.maxBytes);
   }
 
+  get byteBudget(): number { return this.maxBytes; }
+
   get canUndo(): boolean {
     return this.undoStack.length > 0;
   }

@@ -1,3 +1,4 @@
+import type { SimulationDocumentTransaction } from "../services/simulation-document";
 import { collectPlayDataCatalog } from "../services/play-data-assets";
 import { collectDataGraphAssets } from "../lib/data-graph";
 import { normalizeWaterDefinition, normalizeRenderTargetPayload, normalizeRenderTargetTexturePayload, type WaterDefinition, type RenderTargetPayload, type RenderTargetTexturePayload } from "@babylonslate/core";
@@ -76,6 +77,7 @@ import {
   replayJournalLines,
   resolveJournalLines,
   SetAssetDocumentCommand,
+  ReplaceSceneCommand,
   type EditCommand,
 } from "@babylonslate/edit";
 import { attachJournalFlushOnHide, JournalBuffer } from "../lib/journal-buffer";
@@ -103,6 +105,7 @@ import {
 } from "../services/document-service";
 import { attachEditGestureBoundaries } from "../services/edit-gesture-boundaries";
 import { ProjectService, type PluginImportResult } from "../services/project-service";
+import { DocumentTransitionGate } from "../services/document-transition-gate";
 import type { GitConfigPrefill } from "@babylonslate/source-control";
 import {
   readGitPrefill,
@@ -308,8 +311,10 @@ import {
 export type AppRoute = "home" | "editor";
 
 interface DocumentContextValue {
+  registerBeforeTransition: DocumentTransitionGate["register"];
   /** Protect in-memory authoring; the owner must release its lease on every exit. */
   lockAuthoring: DocumentService["lockAuthoring"];
+  beginSimulationDocument: (id: string) => SimulationDocumentTransaction;
   getAuthoringLock: DocumentService["getAuthoringLock"];
   subscribeAuthoringLock: DocumentService["onAuthoringLockChange"];
   lockAuthoringWrites: ProjectService["lockAuthoringWrites"];
@@ -842,6 +847,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const settingsStore = useMemo(() => createAppSettingsStore(), []);
   const derivedStorageRef = useRef<ProjectStorage | null>(null);
   const documentServiceRef = useRef(new DocumentService());
+  const documentTransitions = useRef(new DocumentTransitionGate()).current;
+  const registerBeforeTransition = useCallback<DocumentTransitionGate["register"]>(handler => documentTransitions.register(handler), [documentTransitions]);
   const sceneDocumentLoadRef = useRef<AbortController | null>(null);
   const [sceneDocumentLoad, setSceneDocumentLoad] = useState<{ ref: DocumentRef; failed: boolean } | null>(null);
   useEffect(() => () => sceneDocumentLoadRef.current?.abort(), []);
@@ -1694,6 +1701,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const openProject = useCallback(async (source?: "folder" | "zip") => {
+    if (!await documentTransitions.check({ kind: "replace-project" })) return;
     await attachEnginePlugins();
     try {
       const result = await projectService.openProject(source);
@@ -1703,16 +1711,17 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     } finally {
       setNeedsReconnect(await projectService.needsReconnect());
     }
-  }, [attachEnginePlugins, enterEditor, projectService]);
+  }, [attachEnginePlugins, enterEditor, projectService, documentTransitions]);
 
   const createEmptyProject = useCallback(
     async (name: string, options?: CreateProjectOptions) => {
+      if (!await documentTransitions.check({ kind: "replace-project" })) return;
       await attachEnginePlugins(true);
       const { document, layouts, migrationPending: pending } =
         await projectService.createEmptyProject(name, options);
       await enterEditor(document, layouts, pending);
     },
-    [attachEnginePlugins, enterEditor, projectService],
+    [attachEnginePlugins, enterEditor, projectService, documentTransitions],
   );
 
   const createFromTemplate = useCallback(
@@ -1725,6 +1734,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       if (!template) {
         throw new Error(`Unknown template: ${templateId}`);
       }
+      if (!await documentTransitions.check({ kind: "replace-project" })) return;
       await attachEnginePlugins(true);
       const { document, layouts, migrationPending: pending } =
         await projectService.createFromTemplate({
@@ -1735,11 +1745,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         });
       await enterEditor(document, layouts, pending);
     },
-    [attachEnginePlugins, enterEditor, projectService],
+    [attachEnginePlugins, enterEditor, projectService, documentTransitions],
   );
 
   const openListedProject = useCallback(
     async (handle: ProjectFolderHandle) => {
+      if (!await documentTransitions.check({ kind: "replace-project" })) return;
       await attachEnginePlugins();
       try {
         const { document, layouts, migrationPending: pending } =
@@ -1749,7 +1760,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         setNeedsReconnect(await projectService.needsReconnect());
       }
     },
-    [attachEnginePlugins, enterEditor, projectService],
+    [attachEnginePlugins, enterEditor, projectService, documentTransitions],
   );
 
   const updateListedProject = useCallback(
@@ -2050,6 +2061,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const saveAll = saveProject;
 
   const forceCloseProject = useCallback(async () => {
+    if (!await documentTransitions.check({ kind: "close-project" })) return;
+    documentService.assertAuthoringWritable();
     cancelSceneDocumentLoad();
     if (saveDebounceRef.current) {
       clearTimeout(saveDebounceRef.current);
@@ -2096,9 +2109,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     cancelSceneDocumentLoad,
     setAnimEditorModes,
     setProjectDocument,
+    documentTransitions,
   ]);
 
   const closeProject = useCallback(async () => {
+    if (!await documentTransitions.check({ kind: "close-project" })) {
+      return { blocked: true, dirty: documentService.getDirtyDocuments(), projectDirty: projectSaveState.current.isDirty(projectDocumentRef.current) };
+    }
     const dirty = documentService.getDirtyDocuments();
     const projectDirty = projectSaveState.current.isDirty(projectDocumentRef.current);
     if (dirty.length > 0 || projectDirty) {
@@ -2106,7 +2123,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     }
     await forceCloseProject();
     return { blocked: false, dirty: [], projectDirty: false };
-  }, [documentService, forceCloseProject]);
+  }, [documentService, forceCloseProject, documentTransitions]);
 
   const exportProject = useCallback(async (snapshot?: ProjectDocument) => {
     return projectService.exportZip(snapshot);
@@ -2247,7 +2264,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     await replayRecoveryJournal();
   }, [replayRecoveryJournal]);
 
-  const closeDocument = useCallback(
+  const performCloseDocument = useCallback(
     (id: string) => {
       documentService.assertDocumentCanClose(id);
       const doc = documentService.getDocument(id);
@@ -2298,6 +2315,16 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     ],
   );
 
+  const closeDocument = useCallback((id: string): void => {
+    const allowed = documentTransitions.check({ kind: "close-document", documentId: id });
+    if (typeof allowed === "boolean") {
+      if (allowed) performCloseDocument(id);
+    } else {
+      void allowed.then(result => { if (result) performCloseDocument(id); })
+        .catch(error => { console.error("[editor] document close was refused", error); });
+    }
+  }, [documentTransitions, performCloseDocument]);
+
   const closeDocumentsForPaths = useCallback(
     (paths: Iterable<string>) => {
       documentService.assertAuthoringWritable();
@@ -2314,9 +2341,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         if (doc.ref.kind === "content-browser") continue;
         if (pathSet.has(doc.ref.path)) ids.push(doc.id);
       }
-      for (const id of ids) closeDocument(id);
+      for (const id of ids) performCloseDocument(id);
     },
-    [closeDocument, documentService],
+    [performCloseDocument, documentService],
   );
 
   const replaceClassReferencesBeforeDelete = useCallback(async (
@@ -2426,6 +2453,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   const finishOpenDocument = useCallback(
     async (ref: DocumentRef) => {
+      if (ref.kind === "scene" && !documentService.getDocument(documentId(ref))) {
+        const allowed = documentTransitions.check({ kind: "replace-document", documentId: documentId(ref) });
+        if (allowed === false || (typeof allowed !== "boolean" && !await allowed)) return;
+      }
       const controller = isSceneWorkspaceKind(ref.kind) ? new AbortController() : null;
       if (controller) {
         cancelSceneDocumentLoad();
@@ -2450,7 +2481,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
             const nextId = documentId(ref);
             const others = documentService.getOpenDocumentsOrdered()
               .filter((doc) => doc.ref.kind === "scene" && doc.id !== nextId);
-            for (const other of others) closeDocument(other.id);
+            for (const other of others) performCloseDocument(other.id);
           },
         } : undefined);
       } catch (error) {
@@ -2474,7 +2505,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         await syncPrefabInstancesRef.current({ quiet: true });
       }
     },
-    [bump, captureLayoutForId, closeDocument, documentService, projectService, cancelSceneDocumentLoad],
+    [bump, captureLayoutForId, performCloseDocument, documentService, projectService, cancelSceneDocumentLoad, documentTransitions],
   );
 
   const ensureAssetDocument = useCallback(async (ref: DocumentRef): Promise<string> => {
@@ -2493,6 +2524,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const openDocument = useCallback(
     async (ref: DocumentRef) => {
       if (ref.kind === "scene") {
+        if (!documentService.getDocument(documentId(ref))) {
+          const allowed = documentTransitions.check({ kind: "replace-document", documentId: documentId(ref) });
+          if (allowed === false || (typeof allowed !== "boolean" && !await allowed)) return;
+        }
         exclusiveSceneRequest.current += 1;
         const blocking = dirtyScenesBlockingOpen(
           documentService.getDirtyDocuments(),
@@ -2505,7 +2540,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       }
       await finishOpenDocument(ref);
     },
-    [documentService, finishOpenDocument, setPendingExclusiveScene],
+    [documentService, finishOpenDocument, setPendingExclusiveScene, documentTransitions],
   );
 
   const openRecordedTrace = useCallback(
@@ -2533,6 +2568,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       // same event is already visible here.
       const ref = pendingExclusiveSceneRef.current;
       if (!ref) return;
+      const allowed = documentTransitions.check({ kind: "replace-document", documentId: documentId(ref) });
+      if (allowed === false || (typeof allowed !== "boolean" && !await allowed)) return;
       const request = exclusiveSceneRequest.current;
       if (mode === "save") {
         const saved = await saveAll();
@@ -2542,7 +2579,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       setPendingExclusiveScene(null);
       await finishOpenDocument(ref);
     },
-    [documentService, finishOpenDocument, saveAll, setPendingExclusiveScene],
+    [documentService, finishOpenDocument, saveAll, setPendingExclusiveScene, documentTransitions],
   );
 
   const cancelExclusiveSceneOpen = useCallback(() => {
@@ -2785,6 +2822,47 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     },
     [bump, documentService, projectService],
   );
+
+  const beginSimulationDocument = useCallback((id: string): SimulationDocumentTransaction => {
+    const lease = documentService.beginSimulationDocument(id);
+    return {
+      baseline: lease.baseline,
+      release: lease.release,
+      applyScene: async (candidate) => {
+        const path = lease.baseline.ref.path;
+        const registry = projectService.registry;
+        const asset = registry?.list().find(entry => entry.path === path);
+        if (asset && registry?.getRoot(asset.rootId)?.readOnly) return { ok: false, reason: "The Scene belongs to a read-only asset source." };
+        if (isMutatingApplyBlocked(sourceControlRef.current, path, isPluginDocumentReadOnly(projectService.plugins, path), false)) {
+          return { ok: false, reason: "The Scene is read-only or locked by source control." };
+        }
+        try {
+          const admitted = lease.apply(previous => {
+            if (ReplaceSceneCommand.isNoop(previous, candidate)) return { scene: previous,
+              value: { ok: true as const, status: "unchanged" as const, doc: previous, command: null } };
+            const command = new ReplaceSceneCommand(previous, candidate, { maxHistoryBytes: editSessionRef.current.getStack(id).byteBudget });
+            const result = editSessionRef.current.applyWithHistoryAdmission(id, previous, command);
+            return { scene: result.ok ? result.doc : previous, value: result };
+          });
+          if (!admitted.ok) return admitted;
+          const result = admitted.value;
+          if (!result.ok) return { ok: false, reason: result.reason === "history-budget"
+            ? `Apply Simulation Changes needs ${result.requiredBytes} bytes of Undo history; the limit is ${result.maxBytes} bytes. The document is unchanged; discard or retry after the budget is changed.`
+            : "The complete Simulation transaction could not account for its Undo history." };
+          if (result.status === "applied" && result.command) {
+            // The commit is already atomic. Notification failures must never be
+            // reported as a failed Keep after the document/history changed.
+            try { await notifyAppliedCommand(id, result.command); }
+            catch (error) { console.error("Simulation changes applied; editor notification failed", error); }
+            void afterMutatingApply(sourceControlRef.current, path);
+          }
+          return { ok: true, status: result.status };
+        } catch (error) {
+          return { ok: false, reason: error instanceof Error ? error.message : "The complete Simulation transaction could not be applied." };
+        }
+      },
+    };
+  }, [documentService, notifyAppliedCommand, projectService]);
 
   const applySceneChange = useCallback(
     async (
@@ -4425,7 +4503,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         const result =
           direction === "undo" ? stack.undo(content) : stack.redo(content);
         if (!result) return;
-        documentService.updateScene(activeDocumentId, result.doc);
+        documentService.updateSceneFromHistory(activeDocumentId, result.doc);
         void notifyAppliedCommand(activeDocumentId, result.command);
         return;
       }
@@ -4724,9 +4802,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const actions = useMemo<DocumentActions>(
     () => ({
       lockAuthoring,
+      beginSimulationDocument,
       getAuthoringLock,
       subscribeAuthoringLock,
       lockAuthoringWrites,
+      registerBeforeTransition,
       withSceneWrite,
       refreshAssetRegistry,
       noteAssetsCreated,
@@ -4837,9 +4917,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     }),
     [
       lockAuthoring,
+      beginSimulationDocument,
       getAuthoringLock,
       subscribeAuthoringLock,
       lockAuthoringWrites,
+      registerBeforeTransition,
       withSceneWrite,
       refreshAssetRegistry,
       noteAssetsCreated,

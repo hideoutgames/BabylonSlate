@@ -1,6 +1,6 @@
 import type { SerializedScene } from "@babylonslate/core";
 import type { EditCommand } from "../command";
-import { snapshotBytes } from "../snapshot-bytes";
+import { canonicalSnapshotBytes } from "../snapshot-bytes";
 
 // Inversion shares immutable snapshots, including their measured cost. The
 // cache does not retain scenes after their commands leave history.
@@ -45,7 +45,7 @@ function cloneJson(value: unknown, path: string, ancestors = new Set<object>(), 
   }
 }
 
-function capture(scene: SerializedScene): SerializedScene {
+function capture(scene: SerializedScene, bytes = canonicalSnapshotBytes(scene)): SerializedScene {
   if (snapshots.has(scene)) return scene;
   const snapshot = cloneJson(scene, "scene") as SerializedScene;
   if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot) ||
@@ -54,7 +54,7 @@ function capture(scene: SerializedScene): SerializedScene {
     !Array.isArray(snapshot.actors) || !Array.isArray(snapshot.folders)) {
     throw new Error("Scene transaction requires a complete scene document.");
   }
-  snapshots.set(snapshot, snapshotBytes(snapshot));
+  snapshots.set(snapshot, bytes);
   return snapshot;
 }
 
@@ -75,13 +75,19 @@ function equalJson(left: unknown, right: unknown): boolean {
  */
 export class ReplaceSceneCommand implements EditCommand<SerializedScene> {
   readonly type = "scene.replace";
+  readonly label = "Apply Simulation Changes";
+  static isNoop(from: SerializedScene, to: SerializedScene): boolean { return equalJson(from, to); }
   readonly from: SerializedScene;
   readonly to: SerializedScene;
   readonly byteSize: number;
 
-  constructor(from: SerializedScene, to: SerializedScene) {
-    this.from = capture(from);
-    this.to = from === to ? this.from : capture(to);
+  constructor(from: SerializedScene, to: SerializedScene, options?: { maxHistoryBytes: number }) {
+    const limit = options ? Math.floor(options.maxHistoryBytes / 2) : Number.MAX_SAFE_INTEGER;
+    const fromBytes = snapshots.get(from) ?? canonicalSnapshotBytes(from, limit);
+    const toBytes = snapshots.get(to) ?? canonicalSnapshotBytes(to, Math.max(0, limit - fromBytes));
+    if (fromBytes + toBytes > limit) throw new Error("Apply Simulation Changes exceeds the configured Undo history budget.");
+    this.from = capture(from, fromBytes);
+    this.to = from === to ? this.from : capture(to, toBytes);
     this.byteSize = snapshots.get(this.from)! + snapshots.get(this.to)!;
   }
 
