@@ -170,6 +170,7 @@ export function disablePlayFreeCam(
 
 export type PlayFreeCamInputHandle = {
   reset: () => void;
+  isInteracting: () => boolean;
   dispose: () => void;
 };
 
@@ -180,6 +181,8 @@ export type PlayFreeCamInputOptions = {
   orbitScale?: number;
   panScale?: number;
   isEnabled?: () => boolean;
+  /** A selected runtime gizmo may own this fresh gesture instead of the camera. */
+  blockPointer?: (x: number, y: number) => boolean;
   requestFrame?: (callback: FrameRequestCallback) => number;
   cancelFrame?: (id: number) => void;
 };
@@ -240,9 +243,11 @@ export function attachPlayFreeCamInput(
 
   const onPointerDown = (event: PointerEvent) => {
     if (!enabled()) return;
+    const point = toCanvas(event);
+    if (options.blockPointer?.(point.x, point.y)) return;
     event.preventDefault();
     canvas.focus?.({ preventScroll: true });
-    pointers.set(event.pointerId, toCanvas(event));
+    pointers.set(event.pointerId, point);
     canvas.setPointerCapture?.(event.pointerId);
     lastSpread = pointerSpread();
   };
@@ -299,6 +304,7 @@ export function attachPlayFreeCamInput(
 
   return {
     reset,
+    isInteracting: () => pointers.size > 0,
     dispose: () => {
       reset();
       flyKeys?.dispose();

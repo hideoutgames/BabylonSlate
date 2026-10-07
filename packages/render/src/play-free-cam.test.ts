@@ -288,6 +288,29 @@ describe("attachPlayFreeCamInput", () => {
     engine.dispose();
   });
 
+  it("leaves a gizmo-owned pointer gesture out of camera input until a fresh down", () => {
+    const { engine, scene } = createTestEngine();
+    setupDefaultViewport(scene);
+    const freeCam = createPlayFreeCamController(scene, { binding: createSnapshotSceneBinding(), mode: "2d" });
+    const canvas = new FakeCanvas();
+    freeCam.setEnabled(true);
+    let gizmoOwns = true;
+    const input = attachPlayFreeCamInput(canvas as unknown as HTMLCanvasElement, freeCam,
+      { mode: "2d", blockPointer: () => gizmoOwns });
+    const start = scene.activeCamera!.position.clone();
+    canvas.emit("pointerdown", { pointerId: 1, clientX: 10, clientY: 10 });
+    expect(input.isInteracting()).toBe(false);
+    gizmoOwns = false;
+    canvas.emit("pointermove", { pointerId: 1, clientX: 80, clientY: 30 });
+    expect(scene.activeCamera!.position.equals(start)).toBe(true);
+    canvas.emit("pointerup", { pointerId: 1 });
+    canvas.emit("pointerdown", { pointerId: 2, clientX: 10, clientY: 10 });
+    expect(input.isInteracting()).toBe(true);
+    canvas.emit("pointermove", { pointerId: 2, clientX: 80, clientY: 30 });
+    expect(scene.activeCamera!.position.equals(start)).toBe(false);
+    input.dispose(); freeCam.dispose(); engine.dispose();
+  });
+
   it("pinch-zooms 2D ortho and does not pan while two pointers are down", () => {
     const { engine, scene } = createTestEngine();
     setupDefaultViewport(scene);

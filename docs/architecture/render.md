@@ -2194,3 +2194,25 @@ removes the previous interpolation endpoint when that publication arrives,
 including world-space descendant poses. It does not apply authored local
 coordinates to the flattened render roots. Coalesced pending reset publications
 use a bounded frame interval; subsequent ordinary snapshots resume interpolation.
+
+Simulation attaches the existing gizmo host through
+`EngineHandle.attachRuntimeTransformTools`. It owns one invisible draft mesh and
+the viewport coordinator's existing editor-overlay slot. The actual runtime mesh
+is never dragged directly: continuous and final world-pose drafts go through the
+correlated runtime mutation channel, where authoritative parents and physics
+apply the edit. The final draft remains displayed until its acknowledgement,
+then follows the effective runtime pose. Mesh matrices already contain absolute
+world coordinates; Babylon's floating-origin shader offset is not added again.
+The adapter binds the full runtime identity to an explicitly supplied render slot
+and its visual lifetime, refuses stale/recycled targets, and clears the selection
+on destruction. It uses selected-object reads only. Inspector world-pose replies
+can position a gizmo for an object without a render mesh.
+
+Gizmo gestures and the existing free camera have exclusive pointer ownership.
+Edit exit, pointer cancellation, focus loss, selection changes, and disposal
+release active gestures without manufacturing a final committed write. A pointer
+which began on a gizmo cannot become a camera drag later. The adapter is created
+only for Simulation consumers, starts disabled, and is enabled only while the
+session uses Edit input; ordinary Play does not allocate its proxy, gizmos, or
+utility Scene. UI consumers retain the acknowledged object identity and expose
+pending/rejected writes through the shared Inspector transport.

@@ -74,6 +74,7 @@ export interface RenderFrameReport extends RenderFrameReportDraft {
     snapshotFrameId: number;
     tickId: number;
     sceneGeneration: number;
+    sceneLoadId?: number;
     sceneAssetGuid?: string;
     viewId: number;
     width: number;
@@ -170,7 +171,8 @@ export class RenderFrameCapture {
   private readonly parents: number[] = [];
   private readonly encoder = new TextEncoder();
 
-  constructor(readonly engine: AbstractEngine) {}
+  readonly engine: AbstractEngine;
+  constructor(engine: AbstractEngine) { this.engine = engine; }
 
   stage<T>(scene: Scene, description: RenderFrameStageDescription, draw: () => T): T {
     const row = this.begin(scene, description);

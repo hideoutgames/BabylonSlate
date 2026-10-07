@@ -1,4 +1,5 @@
 import { RuntimeMaterialEditOwner, type RuntimeMaterialPreparationRequest, type RuntimeMaterialCommitCommand } from "./runtime-material-edit";
+import { createRuntimeTransformTools, type RuntimeTransformTools, type RuntimeTransformToolsOptions, type RuntimeTransformToolsOwner } from "./runtime-transform-tools";
 import { beginRenderFrameCapture, RenderFrameReportFeed, type RenderFrameReport, type RenderFrameReportReceipt } from "./render-frame-report";
 import { pausedSceneRedrawIssue, setSceneGameTimePaused } from "./scene-game-time";
 import { applyDynamicRuntimeMeshUpdate } from "./dynamic-runtime-mesh";
@@ -310,6 +311,8 @@ export interface EngineHandle {
   /** Explicit next coherent game presentation; rejects concurrent profiling. */
   captureFrame: () => Promise<RenderFrameReport>;
   cancelFrameCapture: (reason?: string) => void;
+  /** Existing gizmos/selection overlay adapted to exact runtime identities. */
+  attachRuntimeTransformTools: (options: RuntimeTransformToolsOptions) => RuntimeTransformTools;
   renderPathStatus: () => ResolvedRenderingPipeline;
   scalabilityStatus: () => ScalabilityAcknowledgement | undefined;
   /** Non-persistent game-wide session render path request; null resumes the project path. */
@@ -1157,6 +1160,8 @@ function initializeEngine(
   const renderTargetCaptures = sceneRenderTargetCaptures(scene);
   renderTargetCaptures.setAssets(binding.renderTargets, binding.renderTargetTextures);
   const captureActorSlots = new Map<number, string>();
+  const runtimeActorIdentities = new Map<number, import("@babylonslate/bridge").RuntimeObjectIdentity>();
+  const runtimeComponentTokens = new Map<number, Map<string, number>>();
   binding.areaEmissions = options.areaEmissions;
   binding.texturePixelSizes = options.texturePixelSizes;
   binding.fontFacetypeBytes = options.fontFacetypeBytes;
@@ -1177,6 +1182,9 @@ function initializeEngine(
     scheduler.invalidate("snapshot");
   };
 
+  let runtimeTransformTools: RuntimeTransformToolsOwner | null = null;
+  let runtimeTransformToolsEnabled = false;
+  onRollback(() => runtimeTransformTools?.dispose());
   const playFreeCam: PlayFreeCamController | null = options.playMode
     ? createPlayFreeCamController(scene, {
         binding,
@@ -1191,6 +1199,7 @@ function initializeEngine(
   const playFreeCamInput: PlayFreeCamInputHandle | null = playFreeCam
     ? attachPlayFreeCamInput(canvas, playFreeCam, {
         mode: options.viewportMode ?? "3d",
+        blockPointer: (x, y) => runtimeTransformTools?.blocksCameraPointer(x, y) ?? false,
       })
     : null;
   onRollback(() => playFreeCamInput?.dispose());
@@ -2446,10 +2455,11 @@ function initializeEngine(
       ? beginRenderFrameCapture(engine) : null;
     const frameReportReceipt = frameScope ? frameReportFeed.candidate({ ...frameScope.capture.report, frame: {
       renderFrameId: engine.frameId, snapshotFrameId: sampled?.frameId ?? 0, tickId: sampled?.tickIndex ?? 0,
-      sceneGeneration: loadGeneration, sceneAssetGuid: lastSceneAssetGuid, viewId: scene.uniqueId,
+      sceneGeneration: loadGeneration, sceneLoadId: worldLoadId, sceneAssetGuid: worldSceneAssetGuid ?? lastSceneAssetGuid, viewId: scene.uniqueId,
       width: scene.activeCamera?.outputRenderTarget?.getSize().width ?? engine.getRenderWidth(true),
       height: scene.activeCamera?.outputRenderTarget?.getSize().height ?? engine.getRenderHeight(true),
-      backend: engine.isWebGPU ? "webgpu" : engine.webGLVersion === 2 ? "webgl2" : engine.webGLVersion === 1 ? "webgl1" : "unknown",
+      backend: engine.isWebGPU ? "webgpu" : "webGLVersion" in engine && engine.webGLVersion === 2 ? "webgl2"
+        : "webGLVersion" in engine && engine.webGLVersion === 1 ? "webgl1" : "unknown",
     } }) : null;
     try {
       const presentingLayers = new Set([...pendingPresentations.values()].flatMap((pending) => pending.owner ? [pending.owner.layerId] : []));
@@ -2852,6 +2862,8 @@ function initializeEngine(
     dispose: () => {
       if (disposed) return;
       resetJoysticks();
+      runtimeTransformTools?.dispose();
+      runtimeTransformTools = null;
       disposed = true;
       runtimeMaterialEdits.dispose();
       performanceFeed.dispose();
@@ -3072,6 +3084,9 @@ function initializeEngine(
       }
       if (command.type === "spawn") {
         captureActorSlots.set(command.slotId, command.actorGuid);
+        runtimeComponentTokens.delete(command.slotId);
+        if (command.runtimeIdentity) runtimeActorIdentities.set(command.slotId, command.runtimeIdentity);
+        else runtimeActorIdentities.delete(command.slotId);
         renderTargetCaptures.registerActor(command.actorGuid, () => binding.meshes.get(command.slotId) ?? null);
         appliedSnapshotIdentity = null;
         audioService?.noteActorSlot(command.actorGuid, command.slotId);
@@ -3099,8 +3114,11 @@ function initializeEngine(
       }
       if (command.type === "despawn") {
         const actorGuid = captureActorSlots.get(command.slotId);
+        if (actorGuid) runtimeTransformTools?.actorRemoved(actorGuid, command.slotId);
         if (actorGuid) renderTargetCaptures.removeActor(actorGuid);
         captureActorSlots.delete(command.slotId);
+        runtimeActorIdentities.delete(command.slotId);
+        runtimeComponentTokens.delete(command.slotId);
         appliedSnapshotIdentity = null;
         pendingOverlayAssign.delete(command.slotId);
         worldPlaySlots.delete(command.slotId);
@@ -3111,8 +3129,12 @@ function initializeEngine(
         rebuildIfActiveCameraChanged(previousCamera);
       }
       if ((command.type === "sceneLoading" || command.type === "activeScene") && command.sceneLoadId > worldLoadId) {
+        runtimeTransformTools?.clear();
+        frameReportFeed.cancel("The runtime changed Scene before frame capture completed.");
         renderTargetCaptures.clear();
         captureActorSlots.clear();
+        runtimeActorIdentities.clear();
+        runtimeComponentTokens.clear();
         particleService?.retireSlots((slotId) => worldPlaySlots.has(slotId));
         appliedSnapshotIdentity = null;
         runtimeMaterialEdits.cancelAll();
@@ -3230,6 +3252,9 @@ function initializeEngine(
       }
       particleService?.handleCommand(command);
       if (command.type === "assignMesh") {
+        if (command.runtimeComponentTokens) runtimeComponentTokens.set(command.slotId,
+          new Map(command.runtimeComponentTokens.map((entry) => [entry.componentGuid, entry.componentToken])));
+        else runtimeComponentTokens.delete(command.slotId);
         appliedSnapshotIdentity = null;
         if (command.sceneLayerId) {
           worldPlaySlots.delete(command.slotId);
@@ -3405,6 +3430,7 @@ function initializeEngine(
       resetJoysticks();
       playFreeCamInput?.reset();
       simulationEditMode = enabled;
+      runtimeTransformTools?.setEnabled(enabled && runtimeTransformToolsEnabled);
       const previous = scene.activeCamera;
       playFreeCam.setEnabled(enabled);
       appliedSnapshotIdentity = null;
@@ -3458,6 +3484,58 @@ function initializeEngine(
       return result;
     },
     cancelFrameCapture: (reason) => frameReportFeed.cancel(reason),
+    attachRuntimeTransformTools: (callbacks) => {
+      if (disposed || !options.playMode || options.editor || runtimeTransformTools)
+        throw new Error("Runtime transform tools require a live, unattached game view.");
+      const owner = createRuntimeTransformTools(scene, canvas, {
+        mode: options.viewportMode ?? "3d", scheduler,
+        requestRedraw: () => {
+          if (gameTimePaused) scheduler.requestPausedFrame();
+          else scheduler.invalidate("gizmo");
+        },
+        pointerCanvas,
+        cameraGestureActive: () => playFreeCamInput?.isInteracting() ?? false,
+        forwardPointers: !!options.sharedEngine || presentRtt,
+        registerOverlay: (draw) => worldRenderer.attachEditorOverlay(draw),
+        selectVisuals: (meshes) => outlineHost.selection.set(meshes),
+        resolve: (identity, slotId) => {
+          if (slotId === undefined || !Number.isSafeInteger(slotId) || binding.isOverlaySlot?.(slotId)) return null;
+          const slot = slotId;
+          const matches = () => {
+            const owner = runtimeActorIdentities.get(slot);
+            return owner?.actorGuid === identity.actorGuid && owner.actorToken === identity.actorToken &&
+              owner.sceneInstanceId === identity.sceneInstanceId &&
+              (!identity.componentGuid || runtimeComponentTokens.get(slot)?.get(identity.componentGuid) === identity.componentToken);
+          };
+          if (!matches()) return null;
+          const root = binding.meshes.get(slot);
+          const mesh = identity.componentGuid ? meshForPlayComponent(binding, slot, identity.componentGuid) : root ?? null;
+          return { slotId: slot, mesh, visuals: mesh ? [mesh, ...mesh.getChildMeshes()] : [],
+            isCurrent: () => matches() && (!root || binding.meshes.get(slot) === root) && !root?.isDisposed(),
+          };
+        },
+        pick: (x, y) => {
+          const mapped = mapCanvasPointer(scene, x, y, pointerCanvas());
+          const picked = pickAtCanvas(scene, mapped.x, mapped.y);
+          const actorGuid = picked?.slotId != null ? captureActorSlots.get(picked.slotId) : undefined;
+          return actorGuid && picked?.slotId != null ? { actorGuid, slotId: picked.slotId } : null;
+        },
+      }, callbacks);
+      runtimeTransformTools = owner;
+      runtimeTransformToolsEnabled = false;
+      return {
+        setSelection: owner.setSelection, setTool: owner.setTool, setSnap: owner.setSnap,
+        setEnabled: (enabled) => {
+          if (runtimeTransformTools !== owner) return;
+          runtimeTransformToolsEnabled = enabled;
+          owner.setEnabled(enabled && simulationEditMode);
+        },
+        dispose: () => {
+          if (runtimeTransformTools !== owner) return;
+          owner.dispose(); runtimeTransformTools = null; runtimeTransformToolsEnabled = false;
+        },
+      };
+    },
     renderPathStatus: () => sceneRenderPathStatus(scene),
     scalabilityStatus: () => lastScalabilityStatus,
     setRenderPath: (renderPath: RenderPath | null) => {

@@ -126,3 +126,5 @@ export { createSplineMesh, splineMeshBody, updateSplineMeshBody } from "./spline
 export { createSplineHandles, dragSplineHandle, insertSplinePoint, removeSplinePoint, splineHandles, type SplineHandle } from "./spline-handles";
 export type { ComponentShapeEdit, ShapeHandlesOptions, ShapeHandleTarget } from "./shape-handles";
 export { attachSceneBrushInput, type SceneBrushState } from "./scene-brush-input";
+
+export type { RuntimeTransformTools, RuntimeTransformToolsOptions, RuntimeTransformChange } from "./runtime-transform-tools";
