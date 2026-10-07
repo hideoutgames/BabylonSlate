@@ -18,7 +18,7 @@ import { CableWorldSync } from "./cable-sync";
 import { DynamicRuntimeMeshSync } from "./dynamic-runtime-mesh";
 import { MovementWorldSync } from "./movement";
 import { captureComponent } from "./render-targets";
-import { createDefaultRenderTargetCaptureProperties, normalizeRenderTargetPayload, normalizeRenderTargetTexturePayload, type RenderTargetPayload, type RenderTargetTexturePayload } from "@babylonslate/core";
+import { createDefaultRenderTargetCaptureProperties, type RenderTargetPayload, type RenderTargetTexturePayload } from "@babylonslate/core";
 import { normalizeWaterDefinition, type WaterDefinition } from "@babylonslate/core";
 import { ScalabilitySession, type ScalabilityRequest, type ScalabilityResult, type ScalabilitySnapshot, type ScalabilityAcknowledgement, type RenderPath, type RenderProjectSettings } from "@babylonslate/core";
 import type { CollisionTriangleMesh, InputAssetDefinition } from "@babylonslate/core";
@@ -70,7 +70,6 @@ import {
   SCENE_SUBSYSTEM_CLASS_ID,
   instantiableSubsystemClassIds,
   isLockedEngineClassId,
-  isSceneLayerExclusiveComponent,
   sceneAssetClassId,
   hydrateClassVariableValue,
   hydrateScenePropertyReferences,
@@ -87,7 +86,6 @@ import {
   createDefaultSceneSettings,
   cloneSceneStreamingActorsSteps,
   DEFAULT_PLAY_FRAME_CAP,
-  isSceneLayerDeniedComponent,
   parseSceneLayerAnchor,
   normalizeSceneLayer,
   newGuid,
@@ -182,6 +180,22 @@ import { initNavigation, type NavObstacleKind, type NavPoint } from "@babylonsla
 import { RuntimeSubsystems } from "./runtime-subsystems";
 import { RenderSlots } from "./render-slots";
 import { RenderCommandEmitter, liveOverlayButtons } from "./render-command-emitter";
+import { AudioParticleEmitter, createAudioHostBindings } from "./audio-particle-emitter";
+import { createActorHostBindings, createAssetHostBindings } from "./runtime-host-actors";
+import { createComponentHostBindings } from "./runtime-host-components";
+import { createWorldInputProvider } from "./runtime-host-input";
+import { createNavigationHostBindings } from "./runtime-host-navigation";
+import { createOutputHostBindings } from "./runtime-host-output";
+import { createPhysicsHostBindings } from "./runtime-host-physics";
+import {
+  actorFromIlluminationTarget,
+  createIlluminationHostBindings,
+  createMaterialHostBindings,
+  createRenderTargetHostBindings,
+  createScalabilityHostBindings,
+} from "./runtime-host-render";
+import { createTimingHostBindings } from "./runtime-host-timing";
+import { indexSceneLibrary } from "./scene-library";
 import { RuntimeNavigation } from "./runtime-navigation";
 import { AnimGraphRuntime } from "./anim-graph-runtime";
 import { BehaviourTreeRuntime } from "./behaviour-tree-runtime";
@@ -774,6 +788,13 @@ class InProcessRuntime implements RuntimeDriver {
     materialParameters: () => this.materialParameters,
     emit: (command) => this.emit(command),
   });
+  private readonly audioParticles = new AudioParticleEmitter({
+    canRun: (actor) => this.canRunOwner(actor),
+    defer: (actor, action) => this.runOwnerAction(actor, action),
+    slot: (actor) => this.actorSlot(actor),
+    frameId: () => this.frameId,
+    emit: (command) => this.emit(command),
+  });
   private readonly delays = new LatentDelays({ canRun: (owner) => this.canRunOwnerActions(owner) });
   private readonly navigation = new RuntimeNavigation({
     world: () => this.world,
@@ -868,49 +889,14 @@ class InProcessRuntime implements RuntimeDriver {
     this.cooperativeSceneLoading = options.cooperativeSceneLoading
       ? (options.cooperativeSceneLoading === true ? {} : options.cooperativeSceneLoading)
       : null;
-    if (options.sceneLibrary && !this.acquireScene) {
-      for (const [key, scene] of Object.entries(options.sceneLibrary)) {
-        this.sceneLibrary.set(key, scene);
-        const displayName =
-          typeof scene.name === "string" ? scene.name.trim() : "";
-        if (displayName && displayName !== key) {
-          this.sceneLibrary.set(displayName, scene);
-        }
-      }
-    }
-    if (options.sceneGuidByKey) {
-      for (const [key, guid] of Object.entries(options.sceneGuidByKey)) {
-        this.sceneGuidByKey.set(key, guid);
-      }
-    }
-    if (options.sceneLibrary) {
-      for (const [key, scene] of Object.entries(options.sceneLibrary)) {
-        if (!this.sceneGuidByKey.has(key)) {
-          this.sceneGuidByKey.set(key, key);
-        }
-        const displayName =
-          typeof scene.name === "string" ? scene.name.trim() : "";
-        if (displayName && !this.sceneGuidByKey.has(displayName)) {
-          this.sceneGuidByKey.set(
-            displayName,
-            this.sceneGuidByKey.get(key) ?? key,
-          );
-        }
-      }
-    }
-    if (options.sceneLayerLibrary) {
-      for (const [key, layer] of Object.entries(options.sceneLayerLibrary)) {
-        this.sceneLayerLibrary.set(key, layer);
-      }
-    }
-    if (options.playScene) {
-      if (!this.acquireScene) this.sceneLibrary.set(this.playSceneGuid, options.playScene);
-      this.sceneGuidByKey.set(this.playSceneGuid, this.playSceneGuid);
-      if (options.playScene.name) {
-        if (!this.acquireScene) this.sceneLibrary.set(options.playScene.name, options.playScene);
-        this.sceneGuidByKey.set(options.playScene.name, this.playSceneGuid);
-      }
-    }
+    indexSceneLibrary({
+      sceneLibrary: options.sceneLibrary,
+      sceneGuidByKey: options.sceneGuidByKey,
+      sceneLayerLibrary: options.sceneLayerLibrary,
+      playScene: options.playScene,
+      playSceneGuid: this.playSceneGuid,
+      acquired: Boolean(this.acquireScene),
+    }, { scenes: this.sceneLibrary, sceneGuids: this.sceneGuidByKey, sceneLayers: this.sceneLayerLibrary });
     this.commands = createCommandRegistry({
       includeDebug: options.includeDebugCommands ?? true,
     });
@@ -1148,42 +1134,21 @@ class InProcessRuntime implements RuntimeDriver {
       onFocusChange: (actor, component) => revealFocusedElement(this.overlayLayout, this.world, actor, component,
         (layerId, actorId, componentId, x, y) => this.applySceneLayerScroll(layerId, actorId, componentId, x, y)),
     });
-    const resolved = () => this.resolvedInput;
-    const connections = this.connectionBox;
-    this.world.setInputProvider({
-      isActionHeld: (action) => resolved().actions[action]?.held ?? false,
-      wasActionPressed: (action) =>
-        resolved().actions[action]?.pressed ?? false,
-      wasActionReleased: (action) =>
-        resolved().actions[action]?.released ?? false,
-      getPressedKeys: () => resolved().pressedKeys,
-      getAxis: (axis) => resolved().axes[axis] ?? 0,
-      getAxis2D: (axis) => resolved().axes2D[axis] ?? { x: 0, y: 0 },
-      getCursorPosition: () => resolved().cursor,
-      setCursorVisible: (visible) => {
-        this.emit({
-          type: "setCursorVisible",
-          visible: visible === true,
-          frameId: this.frameId,
-        });
-      },
-      get gamepadConnections() {
-        return connections.current;
-      },
-      setGamepadRumble: (gamepadIndex, intensity, durationMs) => {
-        this.emit({
-          type: "log",
-          severity: "log",
-          category: "input",
-          message: `rumble pad=${gamepadIndex} intensity=${intensity} ms=${durationMs}`,
-          frameId: this.frameId,
-        });
-      },
-    });
+    this.world.setInputProvider(createWorldInputProvider({
+      resolved: () => this.resolvedInput,
+      connections: this.connectionBox,
+      frameId: () => this.frameId,
+      emit: (command) => this.emit(command),
+    }));
 
     this.dataCatalog = new RuntimeDataCatalog(options.dataAssets);
     for (const [guid, value] of Object.entries(options.renderTargets ?? {})) this.sourceRenderTargets.set(guid, value);
     for (const [guid, value] of Object.entries(options.renderTargetTextures ?? {})) this.sourceRenderTargetTextures.set(guid, value);
+    const emit = (command: CommandMessage): void => this.emit(command);
+    const frameId = (): number => this.frameId;
+    const slot = (actor: Actor): number | undefined => this.actorSlot(actor);
+    const canRun = (owner: BObject): boolean => this.canRunOwner(owner);
+    const continueSimulation = (owner: BObject | null): Promise<void> | undefined => this.continueSimulation(owner);
     this.scriptHost = new ScriptHost({
       data: this.dataCatalog,
       seed: options.seed,
@@ -1193,142 +1158,85 @@ class InProcessRuntime implements RuntimeDriver {
       interfaceRegistry: this.world.interfaceRegistry,
       classRegistry: registry,
       checkInfiniteLoop: () => this.loopGuard.check(),
-      log: (severity, category, message) => {
-        this.emit({
-          type: "log",
-          severity,
-          category,
-          message,
-          frameId: this.frameId,
-        });
-        if (severity === "error") {
-          const stack = new Error().stack ?? "";
-          const anchor = mapStackToAnchor(stack, this.anchors);
-          const diag: RuntimeDiagnostic = {
-            code: "runtime.log",
-            message,
-            severity: "error",
-            assetGuid: anchor?.assetGuid,
-            graphId: anchor?.graphId,
-            nodeId: anchor?.nodeId,
-            bodyLine: anchor?.bodyLine,
-            stack,
-            frameId: this.frameId,
-            tickIndex: this.world.clock.tickIndex,
-          };
-          this.diagnostics.push(diag);
-          this.emit({
-            type: "diagnostic",
-            code: diag.code,
-            message: diag.message,
-            assetGuid: diag.assetGuid,
-            graphId: diag.graphId,
-            nodeId: diag.nodeId,
-            bodyLine: diag.bodyLine,
-            stack: diag.stack,
-            frameId: this.frameId,
-            severity: "error",
-          });
-        }
-      },
-      print: (message, key, duration, color) => {
-        this.tickPrints.push({ message, key });
-        this.emit({
-          type: "print",
-          message,
-          key,
-          duration,
-          color,
-          frameId: this.frameId,
-        });
-      },
-      drawDebug: (payload) => {
-        this.emit({
-          type: "debugDraw",
-          ...(payload as Record<string, unknown>),
-          frameId: this.frameId,
-        } as CommandMessage);
-      },
-      setCursorVisible: (visible) => {
-        this.emit({
-          type: "setCursorVisible",
-          visible: visible === true,
-          frameId: this.frameId,
-        });
-      },
-      destroyActor: (actor) => {
-        if (!actor) return;
-        this.emitAudioStops(actor);
-        this.emitParticleStops(actor);
-        this.world.destroyActor(actor.guid);
-        this.tweens.cancelInvalid();
-      },
-      addComponent: (actor, classId, transform) => {
-        const target = actor;
-        if (this.stopped || !target || target.destroyed) return null;
-        const id = String(classId ?? "").trim();
-        if (!id) return null;
-        const overlay = Boolean(target.sceneLayerId);
-        if (overlay && isSceneLayerDeniedComponent(id)) return null;
-        if (!overlay && isSceneLayerExclusiveComponent(id)) return null;
-        const pose = coerceTransform(transform);
-        const component = this.world.createComponent({
-          classId: id,
-          ...(pose ? { transform: pose } : {}),
-        });
-        this.scriptHost.bindInterfaceHandlers(component);
-        target.attachComponent(component);
-        return component;
-      },
+      ...createOutputHostBindings({
+        frameId,
+        tickIndex: () => this.world.clock.tickIndex,
+        anchors: this.anchors,
+        recordDiagnostic: (diagnostic) => this.diagnostics.push(diagnostic),
+        recordPrint: (print) => this.tickPrints.push(print),
+        emit,
+      }),
+      ...createActorHostBindings({
+        world: () => this.world,
+        stopped: () => this.stopped,
+        scripts: () => this.scriptHost,
+        audioParticles: this.audioParticles,
+        tweens: this.tweens,
+        classAssetGuids: this.classAssetGuids,
+        demandAssetCatalog: this.demandAssetCatalog,
+        assetPreloads: this.assetPreloads,
+        spawn: (spawn) => this.spawnScriptedActor(spawn),
+        continueSimulation,
+        slot,
+        emit,
+      }),
+      ...createAssetHostBindings({
+        world: () => this.world,
+        demandAssetCatalog: this.demandAssetCatalog,
+        assetPreloads: this.assetPreloads,
+        continueSimulation,
+      }),
+      ...createTimingHostBindings({
+        tweens: this.tweens,
+        delays: this.delays,
+        stopped: () => this.stopped,
+        continueSimulation,
+      }),
+      ...createPhysicsHostBindings({
+        world: () => this.world,
+        physics: () => this.physicsSync,
+        overlayPhysics: () => this.overlayPhysicsSync,
+        ragdolls: this.ragdolls,
+        dt: this.dt,
+        projectCursorToScene: (channel, options) => this.projectCursorToScene(channel, options),
+      }),
+      ...createScalabilityHostBindings({
+        getScalability: () => this.getScalability(),
+        requestScalability: (request) => this.requestScalability(request),
+      }),
+      ...createMaterialHostBindings({
+        canRun,
+        materialParameters: this.materialParameters,
+        setMaterialParameter: (material, name, parameter) => this.setMaterialParameter(material, name, parameter),
+      }),
+      ...createIlluminationHostBindings({
+        slot,
+        emitMeshAssignment: (actor, slotId) => this.renderEmitter.emitMeshAssignment(actor, slotId),
+        possessCamera: (target) => this.possessCamera(target),
+      }),
+      ...createRenderTargetHostBindings({
+        renderTargets: this.sourceRenderTargets,
+        renderTargetTextures: this.sourceRenderTargetTextures,
+        canRun,
+        emit,
+      }),
+      ...createComponentHostBindings({
+        painters: this.painters,
+        uiControls: this.uiControls,
+        dynamicMeshes: this.dynamicMeshes,
+        movement: this.movement,
+        textAppear: this.textAppear,
+        processingTick: () => this.processingTick,
+        flushPainters: () => this.flushPainters(),
+        flushTextAppear: () => this.flushTextAppear(),
+        refreshComponent: (component, propertyName) => this.refreshRuntimeComponent(component, propertyName),
+      }),
+      ...createAudioHostBindings({ frameId, emit }),
+      ...createNavigationHostBindings({ navigation: () => this.navigation }),
       animGraphControl: (target) => this.animGraphs.control(target),
-      spawnActor: (classId, transform, owner) => {
-        const id = String(classId ?? "").trim();
-        if (!id) return null;
-        const guid = this.classAssetGuids.get(id);
-        if (this.demandAssetCatalog && guid && this.assetPreloads.getState(guid) !== "ready") {
-          throw new Error(`Class ${id} (${guid}) is not prepared; await ctx.spawnActorAsync or Preload Assets first`);
-        }
-        return this.spawnScriptedActor({
-          classId: id,
-          transform: coerceTransform(transform),
-          streamOwner: owner,
-        });
-      },
-      spawnActorAsync: async (classId, transform, owner) => {
-        const id = String(classId ?? "").trim();
-        if (!id || this.stopped || owner?.destroyed) return null;
-        const guid = this.classAssetGuids.get(id);
-        if (this.demandAssetCatalog && !guid && !isLockedEngineClassId(id)) throw new Error(`Class ${id} is missing from the asset catalog`);
-        const preload = this.demandAssetCatalog && guid
-          ? await this.assetPreloads.acquire([guid], owner?.guid ?? this.world.currentScene?.guid ?? "session") : null;
-        if (this.stopped || owner?.destroyed) {
-          if (preload) this.assetPreloads.release(preload.preloadId);
-          throw sceneRealizationCancelled();
-        }
-        try {
-          { const pending = this.continueSimulation(owner ?? null); if (pending) await pending; }
-          if (preload && !preload.success) throw new Error(`Cannot spawn ${id} requested by ${owner?.guid ?? "session"}: ${preload.errorMessage}`);
-          const actor = this.spawnScriptedActor({ classId: id, transform: coerceTransform(transform), streamOwner: owner });
-          if (preload) {
-            if (actor && !actor.destroyed) this.assetPreloads.transferOwner(preload.preloadId, actor.guid);
-            else this.assetPreloads.release(preload.preloadId);
-          }
-          return actor;
-        } catch (error) {
-          if (preload) this.assetPreloads.release(preload.preloadId);
-          throw error;
-        }
-      },
-      getActors: () => this.world.getActors(),
       registerSaveActor: (actor, persistentId) => this.registerSaveActor(actor, persistentId),
       getSaveActorId: (actor) => this.saveGameWorld?.persistentId(actor) ?? actor.guid,
       resolveSaveActor: (id) => this.saveGameWorld?.findActor(id) ?? this.world.findActor(id),
-      attachToBone: (actor, target, boneName) => {
-        const slotId = this.actorSlot(actor);
-        const targetSlotId = target ? this.actorSlot(target) : null;
-        if (slotId === undefined || targetSlotId === undefined) return;
-        this.emit({ type: "attachToBone", slotId, targetSlotId, boneName });
-      },
       getSceneReference: (owner) => {
         // Subsystems have no stream, so they read the main Scene.
         const scene = this.streamForOwner(owner)?.scene ?? this.world.currentScene;
@@ -1345,17 +1253,6 @@ class InProcessRuntime implements RuntimeDriver {
       loadScene: (target, blocking) => this.loadSceneStream(target, blocking),
       unloadScene: (target, blocking) => this.unloadSceneStream(target, blocking),
       preloadAssets: (assets, owner, options) => this.preloadForGameplay(assets, owner, options),
-      prepareAssets: this.demandAssetCatalog ? async (assets, owner) => {
-        try { await this.assetPreloads.prepare(assets, owner?.guid ?? this.world.currentScene?.guid ?? "session"); }
-        catch (error) {
-          const pending = this.continueSimulation(owner ?? null);
-          if (pending) await pending;
-          throw error;
-        }
-        { const pending = this.continueSimulation(owner ?? null); if (pending) await pending; }
-      } : undefined,
-      releasePreload: (preloadId) => this.assetPreloads.release(preloadId),
-      getAssetLoadState: (assetGuid) => this.assetPreloads.getState(assetGuid),
       isSceneLoaded: (target) => this.getSceneState(target) === "Loaded",
       getSceneLoadProgress: (target) => this.getSceneLoadProgress(target),
       getSceneState: (target) => this.getSceneState(target),
@@ -1368,58 +1265,8 @@ class InProcessRuntime implements RuntimeDriver {
       },
       executeConsoleCommand: (command) => this.executeConsoleCommand(command),
       executeConsoleCommandAsync: (command) => this.executeConsoleCommandAsync(command),
-      tween: (request) => this.tweens.start(request).then(async completed => {
-        if (!completed) return false;
-        { const pending = this.continueSimulation(request.owner ?? null); if (pending) await pending; }
-        return true;
-      }),
-      isTweenSessionActive: () => !this.stopped,
-      delay: (seconds, owner) =>
-        new Promise<void>((resolve) => {
-          if (this.stopped) { resolve(); return; }
-          this.delays.add(seconds, resolve, owner);
-          // A boundary requested after the timer fired still holds the continuation.
-        }).then(() => this.continueSimulation(owner ?? null)),
       reportError: (error) => {
         this.reportError(error);
-      },
-      findActor: (actorId) => {
-        const actor = this.world.findActor(actorId);
-        if (!actor || actor.destroyed) return undefined;
-        return actor;
-      },
-      sampleWater: (position, actorId) =>
-        // Current at call time in its own state (reused within the tick while nothing it read changed); the step
-        // keeps its own evaluation and clock.
-        this.physicsSync.water.query(this.world.getActors(), this.world.clock.tickIndex * this.dt, position, actorId),
-      lineTrace: (start, end, options) =>
-        this.physicsSync.lineTrace(start, end, options),
-      projectCursorToScene: (channel, options) =>
-        this.projectCursorToScene(channel, options),
-      sphereOverlap: (center, radius, channel) =>
-        this.physicsSync.sphereOverlap(center, radius, { channel }),
-      shapeSweep: (shape, start, end, channel) =>
-        this.physicsSync.shapeSweep(shape, start, end, { channel }),
-      addImpulse: (actor, impulse, strength) => {
-        const target = actor;
-        if (!target) return;
-        if (this.ragdolls.addImpulse(target, impulse, strength)) return;
-        this.physicsSync.addImpulse(
-          target.guid,
-          impulse,
-          strength,
-        );
-      },
-      moveCharacter: (actor, translation, dt, offset) => {
-        const target = actor;
-        if (!target) return;
-        const sync = target.sceneLayerId ? this.overlayPhysicsSync : this.physicsSync;
-        sync.moveCharacter(target, translation, dt, offset);
-      },
-      teleportActor: (actor, options) => {
-        this.ragdolls.retireActor(actor);
-        const sync = actor.sceneLayerId ? this.overlayPhysicsSync : this.physicsSync;
-        sync.teleportActor(actor, this.world, options);
       },
       changeScene: (scene) => {
         this.applyChangeScene(scene);
@@ -1442,103 +1289,6 @@ class InProcessRuntime implements RuntimeDriver {
       },
       unregisterSceneLayerPostProcess: (layerGuid, materialGuid) => {
         this.unregisterSceneLayerPostProcess(layerGuid, materialGuid);
-      },
-      setRenderResolution: (width, height) => {
-        this.requestScalability({ kind: "patch", render: { width, height, customResolution: true, blackBars: true } });
-      },
-      getScalability: () => this.getScalability(),
-      requestScalability: (request) => this.requestScalability(request),
-      getPostProcessEntry: (owner, entryId) => {
-        if (!this.canRunOwner(owner)) return null;
-        const material = getPostProcessMaterialObject(owner, entryId);
-        return material && this.materialParameters.hasPostProcessDefinition(material) ? material : null;
-      },
-      getMaterialParameter: (material, name, kind) => this.canRunOwner(material)
-        ? this.materialParameters.get(material, name, kind) : null,
-      resetMaterialParameter: (material, name, kind) => {
-        if (!this.canRunOwner(material)) return false;
-        const value = this.materialParameters.resetValue(material, name, kind);
-        return value !== null && this.setMaterialParameter(material, name, value);
-      },
-      setMaterialParameter: (material, name, parameter) => { this.setMaterialParameter(material, name, parameter); },
-      possessCamera: (target) => {
-        this.possessCamera(target);
-      },
-      getRenderTargetMode: (guid) => normalizeRenderTargetPayload(
-        this.sourceRenderTargets.get(guid) ?? null,
-      ).mode,
-      getRenderTargetTextureTarget: (guid) => normalizeRenderTargetTexturePayload(
-        this.sourceRenderTargetTextures.get(guid) ?? null,
-      ).renderTargetGuid,
-      captureRenderTarget: (target) => {
-        if (!(target instanceof Actor) || !this.canRunOwner(target) || !captureComponent(target)) return;
-        this.emit({ type: "captureRenderTarget", actorGuid: target.guid });
-      },
-      updateIllumination: (target) => {
-        this.reemitIllumination(target);
-      },
-      paint2D: (component, operation, args) => {
-        const changed = this.painters.execute(component, operation, args);
-        if (!this.processingTick) this.flushPainters();
-        return changed;
-      },
-      uiControlFunction: (component, name, args) => this.uiControls.invoke(component, name, args),
-      dynamicMeshFunction: (component, name, args) => this.dynamicMeshes.invoke(component, name, args),
-      movementFunction: (component, name, args) => this.movement.invoke(component, name, args),
-      text2DAppearProgress: (component) => this.textAppear.progress(component),
-      text2DAppear: (component, operation) => {
-        this.textAppear.execute(component, operation);
-        if (!this.processingTick) this.flushTextAppear();
-      },
-      refreshComponent: (component, propertyName) => this.refreshRuntimeComponent(component, propertyName),
-      playSound: (asset, volume, options) => {
-        this.emit({
-          type: "playSound",
-          assetGuid: String(asset ?? ""),
-          volume: Number(volume ?? 1),
-          frameId: this.frameId,
-          emitterActorGuid: options?.emitterActorGuid ?? null,
-          loop: options?.loop,
-          voiceId: options?.voiceId,
-        });
-      },
-      setParticlePlaying: (actorGuid, playing, componentId) => {
-        this.emit({
-          type: "setParticlePlaying",
-          actorGuid: String(actorGuid ?? ""),
-          playing: Boolean(playing),
-          ...(componentId ? { componentId: String(componentId) } : {}),
-        });
-      },
-      setChannelVolume: (channelGuid, volume) => {
-        this.emit({
-          type: "setChannelVolume",
-          channelGuid: String(channelGuid ?? ""),
-          volume: Number(volume ?? 1),
-        });
-      },
-      setGlobalVolume: (volume) => {
-        this.emit({
-          type: "setGlobalVolume",
-          volume: Number(volume ?? 1),
-        });
-      },
-      findPathTo: (from, to) => this.findNavPath(from, to),
-      moveTo: (actor, destination) => {
-        if (!actor) return;
-        this.setNavAgentTarget(actor.guid, destination);
-      },
-      stopMovement: (actor) => {
-        if (!actor) return;
-        this.stopNavAgent(actor.guid);
-      },
-      isPathValid: (from, to) => this.findNavPath(from, to).length > 1,
-      getClosestNavigablePoint: (point) => this.navigation.closestNavigablePoint(point),
-      getRandomPointInRadius: (center, radius) => this.navigation.randomPointInRadius(center, radius),
-      addObstacle: (kind, pose, size) =>
-        this.addNavObstacle(kind === "cylinder" ? "cylinder" : "box", pose, size),
-      removeObstacle: (id) => {
-        this.removeNavObstacle(id);
       },
     });
 
@@ -2261,9 +2011,9 @@ class InProcessRuntime implements RuntimeDriver {
       if (slotId === undefined) continue;
       this.renderEmitter.emitMeshAssignment(actor, slotId);
       checkpoint();
-      this.emitAudioComponents(actor);
+      this.audioParticles.emitAudio(actor);
       checkpoint();
-      this.emitParticleComponents(actor);
+      this.audioParticles.emitParticles(actor);
       checkpoint();
       yield;
     }
@@ -2944,15 +2694,10 @@ class InProcessRuntime implements RuntimeDriver {
       else if (component.classId !== "PhysicsConstraintComponent" && component.classId !== "RagdollComponent" && component.classId !== "MovementComponent") this.renderEmitter.emitMeshAssignment(owner, slotId);
     }
     if (component.classId === "ParticleComponent") {
-      this.emitParticleComponents(owner);
+      this.audioParticles.emitParticles(owner);
     }
     if (component.classId === "AudioComponent") {
-      const volume = Number(component.getVariable("volume") ?? 1);
-      this.emit({
-        type: "setVoiceGain",
-        voiceId: component.guid,
-        volume: Number.isFinite(volume) ? volume : 1,
-      });
+      this.audioParticles.emitVoiceGain(component);
     }
     if (component.classId === "NavAgentComponent") {
       this.navigation.updateAgentParams(owner);
@@ -3189,8 +2934,8 @@ class InProcessRuntime implements RuntimeDriver {
     const slotId = this.actorSlot(actor);
     const ownsSlot = () => slotId !== undefined && this.renderSlots.owner(slotId) === actor;
     try {
-      if (ownsSlot()) this.emitAudioStops(actor);
-      if (ownsSlot()) this.emitParticleStops(actor);
+      if (ownsSlot()) this.audioParticles.stopAudio(actor);
+      if (ownsSlot()) this.audioParticles.stopParticles(actor);
       if (ownsSlot()) this.emit({ type: "despawn", slotId: slotId!, actorGuid: actor.guid });
     } finally {
       if (ownsSlot()) this.renderSlots.release(actor.guid, slotId!);
@@ -3999,8 +3744,8 @@ class InProcessRuntime implements RuntimeDriver {
       destroyActor: (query) => {
         const target = this.resolveConsoleActor(query);
         if (!(target instanceof Actor)) return target;
-        this.emitAudioStops(target);
-        this.emitParticleStops(target);
+        this.audioParticles.stopAudio(target);
+        this.audioParticles.stopParticles(target);
         this.world.destroyActor(target.guid);
         if (!this.processingTick && !this.flushingConsoleActors) {
           this.flushingConsoleActors = true;
@@ -4210,9 +3955,9 @@ class InProcessRuntime implements RuntimeDriver {
     checkpoint();
     this.renderEmitter.emitMeshAssignment(actor, slotId);
     checkpoint();
-    this.emitAudioComponents(actor);
+    this.audioParticles.emitAudio(actor);
     checkpoint();
-    this.emitParticleComponents(actor);
+    this.audioParticles.emitParticles(actor);
     checkpoint();
     this.world.spawnActorNow(actor);
     checkpoint();
@@ -4225,90 +3970,6 @@ class InProcessRuntime implements RuntimeDriver {
     // The frame index answers first-spawned: a new actor enters only when no
     // earlier live actor already holds its guid.
     if (this.world.findActor(actor.guid) === actor) this.navFrameActors?.set(actor.guid, actor);
-  }
-
-  private emitAudioComponents(actor: Actor): void {
-    if (!this.canRunOwner(actor)) {
-      this.runOwnerAction(actor, () => this.emitAudioComponents(actor));
-      return;
-    }
-    for (const component of actor.components) {
-      if (component.destroyed || component.classId !== "AudioComponent") continue;
-      const playOnStart = component.getVariable("playOnStart") !== false;
-      const assetGuid =
-        (typeof component.getVariable("audioAssetGuid") === "string"
-          ? component.getVariable("audioAssetGuid")
-          : null) ?? component.assetGuid;
-      if (!playOnStart || typeof assetGuid !== "string" || !assetGuid) continue;
-      const volume = Number(component.getVariable("volume") ?? 1);
-      this.emit({
-        type: "playSound",
-        assetGuid,
-        volume: Number.isFinite(volume) ? volume : 1,
-        frameId: this.frameId,
-        loop: component.getVariable("loop") === true,
-        voiceId: component.guid,
-        emitterActorGuid: actor.guid,
-      });
-    }
-  }
-
-  private emitAudioStops(actor: Actor): void {
-    for (const component of actor.components) {
-      if (component.classId !== "AudioComponent") continue;
-      this.emit({ type: "stopSound", voiceId: component.guid });
-    }
-  }
-
-  private emitParticleComponents(actor: Actor): void {
-    const slotId = this.actorSlot(actor);
-    if (slotId === undefined) return;
-    for (const component of actor.components) {
-      if (component.destroyed || component.classId !== "ParticleComponent") {
-        continue;
-      }
-      const assetGuid =
-        (typeof component.getVariable("particleSystemGuid") === "string"
-          ? component.getVariable("particleSystemGuid")
-          : null) ?? component.assetGuid;
-      if (typeof assetGuid !== "string" || !assetGuid) continue;
-      const sortingLayer = component.getVariable("sortingLayer");
-      const orderInLayer = component.getVariable("orderInLayer");
-      this.emit({
-        type: "assignParticle",
-        slotId,
-        actorGuid: actor.guid,
-        componentId: component.guid,
-        particleSystemGuid: assetGuid,
-        play: this.canRunOwner(actor) && component.getVariable("playOnStart") !== false,
-        sortingLayer:
-          typeof sortingLayer === "string" && sortingLayer.trim() !== ""
-            ? sortingLayer
-            : "Default",
-        orderInLayer:
-          typeof orderInLayer === "number" && Number.isFinite(orderInLayer)
-            ? Math.round(orderInLayer)
-            : 0,
-      });
-      if (component.getVariable("playOnStart") !== false && !this.canRunOwner(actor)) {
-        this.runOwnerAction(actor, () => this.emit({ type: "setParticlePlaying", actorGuid: actor.guid,
-          componentId: component.guid, playing: true }));
-      }
-    }
-  }
-
-  private emitParticleStops(actor: Actor): void {
-    const slotId = this.actorSlot(actor) ?? 0;
-    for (const component of actor.components) {
-      if (component.classId !== "ParticleComponent") continue;
-      this.emit({
-        type: "assignParticle",
-        slotId,
-        actorGuid: actor.guid,
-        componentId: component.guid,
-        particleSystemGuid: null,
-      });
-    }
   }
 
   private possessCamera(target: unknown): void {
@@ -4430,14 +4091,6 @@ class InProcessRuntime implements RuntimeDriver {
       worldOrigin: ray.origin,
       worldDirection: ray.direction,
     };
-  }
-
-  private reemitIllumination(target: unknown): void {
-    const actor = actorFromIlluminationTarget(target);
-    if (!actor) return;
-    const slotId = this.actorSlot(actor);
-    if (slotId === undefined) return;
-    this.renderEmitter.emitMeshAssignment(actor, slotId);
   }
 
   private guardScript(run: () => void): void {
@@ -5784,44 +5437,6 @@ function resolveOverlayPointerButton(
     owner,
     button: buttons.length === 1 ? buttons[0] : undefined,
   };
-}
-
-function coerceTransform(value: unknown): Transform | undefined {
-  if (!value || typeof value !== "object") return undefined;
-  const row = value as {
-    position?: { x?: unknown; y?: unknown; z?: unknown };
-    rotation?: { x?: unknown; y?: unknown; z?: unknown; w?: unknown };
-    scale?: { x?: unknown; y?: unknown; z?: unknown };
-  };
-  if (!row.position && !row.rotation && !row.scale) return undefined;
-  const position = row.position ?? {};
-  const rotation = row.rotation ?? {};
-  const scale = row.scale ?? {};
-  return {
-    position: {
-      x: typeof position.x === "number" && Number.isFinite(position.x) ? position.x : 0,
-      y: typeof position.y === "number" && Number.isFinite(position.y) ? position.y : 0,
-      z: typeof position.z === "number" && Number.isFinite(position.z) ? position.z : 0,
-    },
-    rotation: {
-      x: typeof rotation.x === "number" && Number.isFinite(rotation.x) ? rotation.x : 0,
-      y: typeof rotation.y === "number" && Number.isFinite(rotation.y) ? rotation.y : 0,
-      z: typeof rotation.z === "number" && Number.isFinite(rotation.z) ? rotation.z : 0,
-      w: typeof rotation.w === "number" && Number.isFinite(rotation.w) ? rotation.w : 1,
-    },
-    scale: {
-      x: typeof scale.x === "number" && Number.isFinite(scale.x) ? scale.x : 1,
-      y: typeof scale.y === "number" && Number.isFinite(scale.y) ? scale.y : 1,
-      z: typeof scale.z === "number" && Number.isFinite(scale.z) ? scale.z : 1,
-    },
-  };
-}
-
-function actorFromIlluminationTarget(target: unknown): Actor | null {
-  if (!target || typeof target !== "object") return null;
-  if (target instanceof Actor) return target;
-  if (target instanceof ActorComponent) return target.owner;
-  return null;
 }
 
 function nowMs(): number {
