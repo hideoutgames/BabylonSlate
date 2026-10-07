@@ -11,6 +11,7 @@ import {
   PREFAB_TRANSFORM_OVERRIDE,
   descendantClassIds,
   mergedPrefabComponentsForClass,
+  prefabAssetTemplates,
   stampUserComponentOverrides,
   syncActorComponentsFromPrefab,
   syncSceneActorsFromPrefabs,
@@ -18,7 +19,7 @@ import {
 import { EditSession, commandToJournalPayload, diffSceneCommands, replayJournalLines, serializeJournalLine } from "@babylonslate/edit";
 import { instantiatePrefabComponents } from "./prefab-preview";
 import { MODEL_MATERIALS_PICKER_VALUE, patchInspectorComponentProperty } from "./mesh-material-properties";
-import { duplicateSceneActor } from "./place-actors";
+import { duplicateSceneActor, spawnPlacedActor } from "./place-actors";
 
 const identity = identitySerializedTransform();
 
@@ -257,6 +258,44 @@ describe("syncSceneActorsFromPrefabs", () => {
     });
     expect(next.actors[0]?.components[0]?.properties.meshKind).toBe("sphere");
     expect(next.actors[1]?.components[0]?.properties.meshKind).toBe("box");
+  });
+
+  it("syncs actors placed from a Prefab asset by GUID, with open tabs winning over saved headers", () => {
+    const placed = spawnPlacedActor(createDefaultScene(), {
+      id: "asset-rock",
+      title: "Rock",
+      category: "Project",
+      kind: {
+        type: "asset",
+        name: "Rock",
+        guid: "rock-guid",
+        assetType: "Prefab",
+        components: [createMeshComponent("prefab-mesh", "box")],
+      },
+    }, "rock", [0, 0, 0]);
+    expect(placed.classId).toBe("Actor");
+    const plain = createActor("plain", "Plain", {
+      components: instantiatePrefabComponents([createMeshComponent("prefab-mesh", "box")], "plain"),
+    });
+    // The Prefab link survives a save and reload of the scene.
+    const scene = normalizeScene({ ...createDefaultScene(), actors: [placed, plain] });
+    expect(scene.actors[0]?.prefabGuid).toBe("rock-guid");
+
+    const assets = [{
+      path: "assets/Rock.prefab.babasset",
+      header: { type: "Prefab", guid: "rock-guid", payload: { components: [createMeshComponent("prefab-mesh", "cylinder")] } },
+    }];
+    const saved = syncSceneActorsFromPrefabs(scene, prefabAssetTemplates({ assets, openDocuments: [] }));
+    expect(saved.actors.map((actor) => actor.components[0]?.properties.meshKind)).toEqual(["cylinder", "box"]);
+
+    const edited = syncSceneActorsFromPrefabs(scene, prefabAssetTemplates({
+      assets,
+      openDocuments: [{
+        ref: { kind: "prefab", path: "assets/Rock.prefab.babasset" },
+        content: { components: [createMeshComponent("prefab-mesh", "sphere")] },
+      }],
+    }));
+    expect(edited.actors.map((actor) => actor.components[0]?.properties.meshKind)).toEqual(["sphere", "box"]);
   });
 });
 

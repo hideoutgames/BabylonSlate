@@ -1,4 +1,5 @@
 import { rethrowNativeStorageRangeError, rethrowStorageReadFailure, StorageReadCounter, validateStorageRange, validateStorageRangeResult } from "./storage-range";
+import { isStorageNotFound, StorageNotFoundError } from "@babylonslate/core";
 import type {
   DirEntry,
   FileStat,
@@ -114,7 +115,7 @@ export class ScopedStorageAdapter implements ProjectStorage {
         const message = opts?.path
           ? `File not found: ${opts.path}`
           : "File not found";
-        throw new Error(message, { cause: err });
+        throw new StorageNotFoundError(opts?.path ?? "", { cause: err, message });
       }
       if (isScopedStorageError(err, ScopedStorageErrorCode.RevisionChanged)) {
         rethrowNativeStorageRangeError(err, opts?.path ?? "asset");
@@ -314,10 +315,15 @@ export class ScopedStorageAdapter implements ProjectStorage {
   async exists(path: string): Promise<boolean> {
     path = scopedStoragePath(path, true);
     const folder = this.getFolder();
-    const { exists } = await this.withScope(() =>
-      this.plugin.exists({ folder: folder.id, path, ...(this.readScopeId ? { readScope: this.readScopeId } : {}) }),
-    );
-    return exists;
+    try {
+      const { exists } = await this.withScope(() =>
+        this.plugin.exists({ folder: folder.id, path, ...(this.readScopeId ? { readScope: this.readScopeId } : {}) }),
+      );
+      return exists;
+    } catch (error) {
+      if (isStorageNotFound(error)) return false;
+      throw error;
+    }
   }
 
   async readdir(path: string): Promise<DirEntry[]> {
@@ -346,7 +352,7 @@ export class ScopedStorageAdapter implements ProjectStorage {
         path,
       });
       if (!exists) {
-        throw new Error(`File not found: ${path}`);
+        throw new StorageNotFoundError(path);
       }
       if (isDirectory) {
         await this.plugin.rmdir({ folder: folder.id, path, recursive: true });

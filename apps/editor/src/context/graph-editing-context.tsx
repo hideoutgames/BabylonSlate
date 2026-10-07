@@ -14,9 +14,14 @@ export interface GraphEditingContextValue {
   setSelectedNodeIds: (nodeIds: string[]) => void;
   selectedMemberId: string | null;
   setSelectedMemberId: (id: string | null) => void;
-  /** Null means the Class event graph. */
+  /**
+   * The graph tab last focused: a function member id, or null for the Class
+   * Event Graph. Class, Inspector, and drops target this graph.
+   */
   activeFunctionId: string | null;
   setActiveFunctionId: (id: string | null) => void;
+  /** Fall back to the Event Graph when this function's tab goes away. */
+  releaseActiveFunctionId: (id: string) => void;
   canvasDropApi: GraphCanvasDropApi | null;
   setCanvasDropApi: (api: GraphCanvasDropApi | null) => void;
 }
@@ -102,6 +107,10 @@ export function GraphEditingProvider({
     setActiveFunctionIdState(id);
   }, []);
 
+  const releaseActiveFunctionId = useCallback((id: string) => {
+    setActiveFunctionIdState((current) => (current === id ? null : current));
+  }, []);
+
   const value = useMemo<GraphEditingContextValue>(
     () => ({
       selectedNodeIds,
@@ -110,12 +119,14 @@ export function GraphEditingProvider({
       setSelectedMemberId,
       activeFunctionId,
       setActiveFunctionId,
+      releaseActiveFunctionId,
       canvasDropApi,
       setCanvasDropApi,
     }),
     [
       activeFunctionId,
       canvasDropApi,
+      releaseActiveFunctionId,
       selectedMemberId,
       selectedNodeIds,
       setActiveFunctionId,

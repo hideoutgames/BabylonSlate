@@ -18,6 +18,7 @@ import {
   type TreeViewNode,
 } from "@babylonslate/editor-kit";
 import {
+  classMemberCategoryPath,
   type GraphClassMemberKind,
   type SerializedGraph,
 } from "@babylonslate/core";
@@ -41,7 +42,7 @@ import {
   type VariableAccessKind,
 } from "../lib/class-members";
 import { MemberAccessChooser } from "../components/member-access-chooser";
-import { PlusIcon } from "lucide-react";
+import { FolderIcon, PlusIcon } from "lucide-react";
 import { GraphDropHint, type GraphDropHintState } from "@babylonslate/graph-ui";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
@@ -64,6 +65,10 @@ import {
 } from "../lib/overridable-functions";
 import { componentGraphMembersForClass } from "../lib/component-graph-members";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
+import {
+  EVENT_GRAPH_PANEL_ID,
+  openFunctionGraphPanel,
+} from "../shell/function-graph-panels";
 
 const CLASS_KINDS = ["graph"] as const;
 const INTERFACE_KINDS = ["script-interface"] as const;
@@ -84,6 +89,8 @@ export type MyClassMember = {
   pins?: import("@babylonslate/core").GraphClassMemberPin[];
   hasError?: boolean;
   componentId?: string;
+  /** Class tree folder path; `|` separates subcategories. */
+  category?: string;
 };
 
 export type MyClassPanelProps = IDockviewPanelProps;
@@ -250,6 +257,7 @@ function inheritedMembers(
             : {}),
           ...(member.assetGuid ? { assetGuid: member.assetGuid } : {}),
           ...(member.pins ? { pins: member.pins } : {}),
+          ...(member.category ? { category: member.category } : {}),
         });
       }
     }
@@ -285,6 +293,7 @@ export function membersForGraph(
       ...(member.functionId ? { functionId: member.functionId } : {}),
       ...(member.assetGuid ? { assetGuid: member.assetGuid } : {}),
       ...(member.pins ? { pins: member.pins } : {}),
+      ...(member.category ? { category: member.category } : {}),
     }));
   const declaredKeys = new Set(
     declared.map((member) => `${member.kind}:${member.name}`),
@@ -325,6 +334,66 @@ export function membersForGraph(
   return [...declared, ...componentRefs, ...events, ...inherited];
 }
 
+type CategoryFolder = {
+  path: string;
+  name: string;
+  folders: Map<string, CategoryFolder>;
+  members: MyClassMember[];
+};
+
+/** Section members nested into category folders, in first-seen order. */
+function categoryFolderTree(members: MyClassMember[]): CategoryFolder {
+  const root: CategoryFolder = { path: "", name: "", folders: new Map(), members: [] };
+  for (const member of members) {
+    let folder = root;
+    for (const segment of classMemberCategoryPath(member.category)) {
+      let child = folder.folders.get(segment);
+      if (!child) {
+        child = {
+          path: folder.path ? `${folder.path}|${segment}` : segment,
+          name: segment,
+          folders: new Map(),
+          members: [],
+        };
+        folder.folders.set(segment, child);
+      }
+      folder = child;
+    }
+    folder.members.push(member);
+  }
+  return root;
+}
+
+/** Collapse key for a category folder row (`section-` prefixed in the tree id). */
+function categoryFolderKey(sectionId: string, path: string): string {
+  return `${sectionId}|${path}`;
+}
+
+function memberTreeNode(
+  member: MyClassMember,
+  sectionId: string,
+  depth: number,
+): TreeViewNode {
+  return {
+    id: member.detail ?? `${sectionId}-${member.name}`,
+    label: member.name,
+    depth,
+    hasChildren: false,
+    expanded: false,
+    muted: member.hasError,
+    icon: memberIcon(member),
+    trailing: member.inherited ? (
+      <Badge
+        variant="secondary"
+        className="px-1 py-0 text-[9px] leading-4"
+        data-testid={`inherited-badge-${member.detail ?? member.name}`}
+      >
+        Inherited
+      </Badge>
+    ) : undefined,
+  };
+}
+
 export function blueprintTreeNodes(
   members: MyClassMember[],
   collapsed: ReadonlySet<string>,
@@ -353,26 +422,25 @@ export function blueprintTreeNodes(
       expanded,
     });
     if (!expanded) continue;
-    for (const member of kids) {
-      rows.push({
-        id: member.detail ?? `${section.id}-${member.name}`,
-        label: member.name,
-        depth: 1,
-        hasChildren: false,
-        expanded: false,
-        muted: member.hasError,
-        icon: memberIcon(member),
-        trailing: member.inherited ? (
-          <Badge
-            variant="secondary"
-            className="px-1 py-0 text-[9px] leading-4"
-            data-testid={`inherited-badge-${member.detail ?? member.name}`}
-          >
-            Inherited
-          </Badge>
-        ) : undefined,
-      });
-    }
+    const pushFolder = (folder: CategoryFolder, depth: number) => {
+      for (const child of folder.folders.values()) {
+        const key = categoryFolderKey(section.id, child.path);
+        const childExpanded = !collapsed.has(key);
+        rows.push({
+          id: `section-${key}`,
+          label: child.name,
+          depth,
+          hasChildren: true,
+          expanded: childExpanded,
+          icon: <FolderIcon />,
+        });
+        if (childExpanded) pushFolder(child, depth + 1);
+      }
+      for (const member of folder.members) {
+        rows.push(memberTreeNode(member, section.id, depth));
+      }
+    };
+    pushFolder(categoryFolderTree(kids), 1);
   }
   return rows;
 }
@@ -983,8 +1051,8 @@ export function ClassMembersView({
 }
 
 /** Class panel — My Blueprint member tree stacked under Components. */
-export function MyClassPanel(_props: MyClassPanelProps) {
-  void _props;
+export function MyClassPanel(props: MyClassPanelProps) {
+  const dockApi = props.containerApi as MyClassPanelProps["containerApi"] | undefined;
   const { documentId } = useDocumentWorkspace();
   const { openDocuments, applyGraphChange, applyAssetDocumentChange, assetRegistry, registryEpoch, openDocument } =
     useDocuments();
@@ -1055,6 +1123,7 @@ export function MyClassPanel(_props: MyClassPanelProps) {
   }, [assetRegistry, className, classDocuments, indexed, interfaceDocuments, parentOf, registryEpoch]);
 
   const focusEvent = (nodeId: string, name: string) => {
+    dockApi?.getPanel(EVENT_GRAPH_PANEL_ID)?.api.setActive();
     setActiveFunctionId(null);
     setSelectedNodeIds([nodeId]);
     setFocusDiagnostic({
@@ -1112,6 +1181,7 @@ export function MyClassPanel(_props: MyClassPanelProps) {
           }
           if (member?.kind === "function") {
             setSelectedMemberId(id);
+            if (dockApi) openFunctionGraphPanel(dockApi, id, member.name);
             setActiveFunctionId(id);
             return;
           }

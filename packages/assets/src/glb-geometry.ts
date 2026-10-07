@@ -1,4 +1,5 @@
 import { encodeGlbJsonBin, splitGlbJsonBin } from "./importers/glb-parse";
+import type { CollisionTriangleMesh } from "@babylonslate/core";
 import type { HullVec3 } from "./convex-hull";
 
 const FLOAT = 5126;
@@ -65,14 +66,6 @@ function quatMat(x: number, y: number, z: number, w: number): Mat4 {
   m[9] = 2 * (yz - wx);
   m[10] = 1 - 2 * (xx + yy);
   return m;
-}
-
-function transformPoint(m: Mat4, p: HullVec3): HullVec3 {
-  return {
-    x: m[0]! * p.x + m[4]! * p.y + m[8]! * p.z + m[12]!,
-    y: m[1]! * p.x + m[5]! * p.y + m[9]! * p.z + m[13]!,
-    z: m[2]! * p.x + m[6]! * p.y + m[10]! * p.z + m[14]!,
-  };
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -177,36 +170,36 @@ function accessorValues(
   return out;
 }
 
-function primitivePositions(
+/** Appends one primitive's baked xyz triples and re-based triangle indices. */
+function appendPrimitive(
   json: Record<string, unknown>,
   bin: Uint8Array,
   primitive: Record<string, unknown>,
   world: Mat4,
   scale: number,
-): { vertices: HullVec3[]; indices: number[] } {
+  positions: number[],
+  indices: number[],
+): void {
   const attributes = asRecord(primitive.attributes);
   const positionIndex =
     typeof attributes.POSITION === "number" ? attributes.POSITION : -1;
-  if (positionIndex < 0) return { vertices: [], indices: [] };
+  if (positionIndex < 0) return;
   const raw = accessorValues(json, bin, positionIndex, 3);
-  const vertices: HullVec3[] = [];
-  for (let i = 0; i + 2 < raw.length; i += 3) {
-    const local = { x: raw[i]!, y: raw[i + 1]!, z: raw[i + 2]! };
-    const worldPoint = transformPoint(world, local);
-    vertices.push({
-      x: worldPoint.x * scale,
-      y: worldPoint.y * scale,
-      z: worldPoint.z * scale,
-    });
+  const base = positions.length / 3;
+  let count = 0;
+  for (let i = 0; i + 2 < raw.length; i += 3, count++) {
+    const x = raw[i]!, y = raw[i + 1]!, z = raw[i + 2]!;
+    positions.push(
+      (world[0]! * x + world[4]! * y + world[8]! * z + world[12]!) * scale,
+      (world[1]! * x + world[5]! * y + world[9]! * z + world[13]!) * scale,
+      (world[2]! * x + world[6]! * y + world[10]! * z + world[14]!) * scale,
+    );
   }
-  const indices: number[] = [];
   if (typeof primitive.indices === "number") {
-    const values = accessorValues(json, bin, primitive.indices, 1);
-    for (const value of values) indices.push(value);
+    for (const value of accessorValues(json, bin, primitive.indices, 1)) indices.push(base + value);
   } else {
-    for (let i = 0; i < vertices.length; i++) indices.push(i);
+    for (let i = 0; i < count; i++) indices.push(base + i);
   }
-  return { vertices, indices };
 }
 
 function collectFromNode(
@@ -215,7 +208,7 @@ function collectFromNode(
   nodeIndex: number,
   parent: Mat4,
   scale: number,
-  vertices: HullVec3[],
+  positions: number[],
   indices: number[],
   seen: Set<number>,
 ): void {
@@ -229,22 +222,13 @@ function collectFromNode(
     const mesh = asRecord(meshes[node.mesh]);
     const primitives = Array.isArray(mesh.primitives) ? mesh.primitives : [];
     for (const primitive of primitives) {
-      const extracted = primitivePositions(
-        json,
-        bin,
-        asRecord(primitive),
-        world,
-        scale,
-      );
-      const base = vertices.length;
-      vertices.push(...extracted.vertices);
-      for (const index of extracted.indices) indices.push(base + index);
+      appendPrimitive(json, bin, asRecord(primitive), world, scale, positions, indices);
     }
   }
   const children = Array.isArray(node.children) ? node.children : [];
   for (const child of children) {
     if (typeof child === "number") {
-      collectFromNode(json, bin, child, world, scale, vertices, indices, seen);
+      collectFromNode(json, bin, child, world, scale, positions, indices, seen);
     }
   }
 }
@@ -269,13 +253,36 @@ export function extractGltfPositions(
   bytes: Uint8Array,
   importScale = 1,
 ): HullVec3[] {
-  return extractGltfCollisionMesh(bytes, importScale)?.vertices ?? [];
+  const positions = collectGltfTriangles(bytes, importScale)?.positions;
+  if (!positions) return [];
+  return Array.from({ length: positions.length / 3 }, (_, i) => ({
+    x: positions[i * 3]!,
+    y: positions[i * 3 + 1]!,
+    z: positions[i * 3 + 2]!,
+  }));
 }
 
+/** Rest-pose triangles with node transforms and Import Scale baked, packed for transfer. */
 export function extractGltfCollisionMesh(
   bytes: Uint8Array,
   importScale = 1,
-): { vertices: HullVec3[]; indices: number[] } | null {
+): CollisionTriangleMesh | null {
+  const triangles = collectGltfTriangles(bytes, importScale);
+  if (!triangles) return null;
+  const { positions, indices } = triangles;
+  const vertexCount = positions.length / 3;
+  // Malformed out-of-range indices keep a Uint32 slot so collider validation still rejects them.
+  const fits = vertexCount <= 0x10000 && indices.every((index) => index < 0x10000);
+  return {
+    positions: Float32Array.from(positions),
+    indices: fits ? Uint16Array.from(indices) : Uint32Array.from(indices),
+  };
+}
+
+function collectGltfTriangles(
+  bytes: Uint8Array,
+  importScale: number,
+): { positions: number[]; indices: number[] } | null {
   const parsed = parseGltfJsonBin(bytes);
   if (!parsed) return null;
   const { json, bin } = parsed;
@@ -283,7 +290,7 @@ export function extractGltfCollisionMesh(
     typeof importScale === "number" && Number.isFinite(importScale) && importScale > 0
       ? importScale
       : 1;
-  const vertices: HullVec3[] = [];
+  const positions: number[] = [];
   const indices: number[] = [];
   const seen = new Set<number>();
   const scenes = Array.isArray(json.scenes) ? json.scenes : [];
@@ -293,17 +300,16 @@ export function extractGltfCollisionMesh(
   if (roots.length > 0) {
     for (const root of roots) {
       if (typeof root === "number") {
-        collectFromNode(json, bin, root, identityMat(), scale, vertices, indices, seen);
+        collectFromNode(json, bin, root, identityMat(), scale, positions, indices, seen);
       }
     }
   } else {
     const nodes = Array.isArray(json.nodes) ? json.nodes : [];
     for (let i = 0; i < nodes.length; i++) {
-      collectFromNode(json, bin, i, identityMat(), scale, vertices, indices, seen);
+      collectFromNode(json, bin, i, identityMat(), scale, positions, indices, seen);
     }
   }
-  if (vertices.length === 0) return null;
-  return { vertices, indices };
+  return positions.length === 0 ? null : { positions, indices };
 }
 
 /** Unit cube GLB (size 1, centered) for importer / hull tests. */

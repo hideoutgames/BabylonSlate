@@ -68,7 +68,8 @@ export function planSceneEffects(
   const reflections = mode === "pbr" && effects.reflections.enabled ? effects.reflections : null;
   const volumetricLighting = effects.volumetricLighting.enabled ? effects.volumetricLighting
     : fogVolumesPresent ? { ...effects.volumetricLighting, enabled: true, density: 0 } : null;
-  if (!sceneLinear && !bloom && !imageProcessing && !fxaa && !temporalAntiAliasing && !ambientOcclusion && !reflections && !volumetricLighting)
+  // sceneLinear always yields imageProcessing, so it needs no separate term.
+  if (!bloom && !imageProcessing && !fxaa && !temporalAntiAliasing && !ambientOcclusion && !reflections && !volumetricLighting)
     return null;
   return { sceneLinear, bloom, imageProcessing, fxaa, temporalAntiAliasing, ambientOcclusion, reflections, volumetricLighting };
 }

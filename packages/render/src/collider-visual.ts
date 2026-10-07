@@ -168,7 +168,13 @@ function shapeEdges(shape: ColliderShape): Array<[Vector3, Vector3]> {
     case "convex":
       return hullEdges(shape.points);
     case "mesh":
-      return hullEdges(shape.vertices);
+      return hullEdges(
+        Array.from({ length: shape.positions.length / 3 }, (_, i) => ({
+          x: shape.positions[i * 3]!,
+          y: shape.positions[i * 3 + 1]!,
+          z: shape.positions[i * 3 + 2]!,
+        })),
+      );
     default:
       return boxEdges(0.5, 0.5, 0.5);
   }

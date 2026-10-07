@@ -426,6 +426,19 @@ describe("ContentBrowserWorkspace grid window", () => {
     expect(busyWhileReading).toBe(true);
     expect(screen.getByTestId("content-browser-import").hasAttribute("disabled")).toBe(false);
   });
+  it("blocks other actions while a Duplicate runs and reports its failure", async () => {
+    installRegistry([texture(0)]);
+    let failDuplicate!: (error: Error) => void;
+    const duplicateAsset = vi.fn(() => new Promise<IndexedAsset>((_resolve, reject) => { failDuplicate = reject; }));
+    docs.assetRegistry = { ...(docs.assetRegistry as object), duplicateAsset };
+    render(<ContentBrowserWorkspace />);
+    fireEvent.contextMenu(screen.getByTestId("content-item-assets/tex-0.babasset"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Duplicate" }));
+    await waitFor(() => expect(screen.getByTestId("content-browser-import").hasAttribute("disabled")).toBe(true));
+    await act(async () => { failDuplicate(new Error("Asset already exists: assets/tex-0_1.babasset")); });
+    expect(await screen.findByText("Asset already exists: assets/tex-0_1.babasset")).toBeTruthy();
+    expect(screen.getByTestId("content-browser-import").hasAttribute("disabled")).toBe(false);
+  });
   it("retries only the remaining items after a partially completed copy", async () => {
     installRegistry([texture(0), texture(1)], ["Characters"]);
     const copied: string[] = [];

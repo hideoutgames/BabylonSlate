@@ -411,6 +411,25 @@ describe("mountEnabledPlugins", () => {
     expect(registry.getRoot("project")).toBeTruthy();
   });
 
+  it("forgets a plugin folder deleted from storage when plugins are mounted again", async () => {
+    const storage = await projectStorage();
+    const settings = createDefaultPluginSettings({ pluginGuid: "tools", displayName: "Tools" });
+    await writePluginFolder(storage, "Tools", settings, [
+      { relativePath: "Old/Hammer.class.babasset", guid: "hammer", type: "Class", name: "Hammer" },
+    ]);
+    const registry = new AssetRegistry(storage);
+    const options = { enabledGuids: new Set(["tools"]) };
+    await mountEnabledPlugins(registry, await discoverProjectPlugins(storage), options);
+    expect(registry.folderTree("plugin:tools").children.map((folder) => folder.name)).toEqual(["Old"]);
+    await storage.remove("plugins/Tools/assets/Old");
+
+    await mountEnabledPlugins(registry, await discoverProjectPlugins(storage), options);
+
+    expect(registry.folderTree("plugin:tools").children).toEqual([]);
+    await registry.createFolder("plugin:tools", "Old");
+    expect(await storage.exists("plugins/Tools/assets/Old")).toBe(true);
+  });
+
   it("unmounts dependent content when its prerequisite is disabled and restores it when re-enabled", async () => {
     const storage = await projectStorage();
     const base = createDefaultPluginSettings({

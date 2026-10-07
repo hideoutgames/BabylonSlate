@@ -138,7 +138,7 @@ describe("debugColliderFromDesc", () => {
         {
           id: "mesh",
           bodyId: "body",
-          shape: { kind: "mesh", vertices: [], indices: [] },
+          shape: { kind: "mesh", positions: new Float32Array(), indices: new Uint16Array() },
           friction: 0,
           restitution: 0,
           isTrigger: false,
@@ -205,7 +205,7 @@ describe("debugColliderFromDesc", () => {
   it("retains triangle geometry and pose for mesh collision debugging", () => {
     const listed = debugColliderFromDesc({
       id: "triangle", bodyId: "body",
-      shape: { kind: "mesh", vertices: [{ x: 0, y: 0, z: 0 }, { x: 2, y: 0, z: 0 }, { x: 0, y: 3, z: 0 }], indices: [0, 1, 2] },
+      shape: { kind: "mesh", positions: new Float32Array([0, 0, 0, 2, 0, 0, 0, 3, 0]), indices: new Uint16Array([0, 1, 2]) },
       friction: 0, restitution: 0, isTrigger: false, layer: 1, mask: 1,
     }, identity);
     expect(listed).toMatchObject({

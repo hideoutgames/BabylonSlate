@@ -1,8 +1,8 @@
-import { normalizeWaterDefinition } from "@babylonslate/core";
+import { normalizeWaterDefinition, type CollisionTriangleMesh } from "@babylonslate/core";
 import { parseAnimGraphDocument } from "@babylonslate/anim-graph";
 import { parseBehaviourTreeDocument, parseBlackboardDocument } from "@babylonslate/behaviour-tree";
 import { normalizeModelPayload, normalizeTilemapPayload, normalizeTilesetPayload, parseSpriteAnimationPayload, type SpritePayload } from "@babylonslate/assets";
-import type { ControlMessage } from "@babylonslate/bridge";
+import type { ControlMessage, CookedCollisionMeshEntry } from "@babylonslate/bridge";
 import type { RuntimeDriver } from "./driver";
 
 /** Apply the same prepared source controls in worker and in-process hosts. */
@@ -32,9 +32,15 @@ export async function applyRuntimeSourceControl(runtime: RuntimeDriver, control:
       })), spriteAnimations: new Map(control.spriteAnimations.map(entry => [entry.guid, parseSpriteAnimationPayload(entry.document)])), pixelsPerUnit: control.pixelsPerUnit });
       return true;
     case "loadModels":
-      runtime.registerModelContent({ models: new Map(control.models.map(entry => [entry.guid, normalizeModelPayload(entry.document)])), complexMeshes: new Map((control.complexMeshes ?? []).map(entry => [entry.guid, { vertices: entry.vertices, indices: entry.indices }])) });
+      runtime.registerModelContent({ models: new Map(control.models.map(entry => [entry.guid, normalizeModelPayload(entry.document)])), complexMeshes: cookedCollisionMeshMap(control.complexMeshes) });
       return true;
+    case "loadComplexCollision": runtime.registerComplexCollisionMeshes(cookedCollisionMeshMap(control.meshes), control.unavailable); return true;
     case "loadNavMesh": await runtime.loadNavMesh(new Uint8Array(control.bytes)); return true;
     default: return false;
   }
+}
+
+/** Index cooked collision entries by Model guid without copying their typed arrays. */
+export function cookedCollisionMeshMap(entries: readonly CookedCollisionMeshEntry[] | undefined): Map<string, CollisionTriangleMesh> {
+  return new Map((entries ?? []).map(entry => [entry.guid, { positions: entry.positions, indices: entry.indices }]));
 }

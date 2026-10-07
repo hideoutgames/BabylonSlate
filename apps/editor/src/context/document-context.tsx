@@ -76,7 +76,7 @@ import {
   commandToJournalPayload,
   DEFAULT_EDIT_BYTE_BUDGET,
   diffGraphCommands,
-  diffSceneCommands,
+  planSceneChange,
   EditSession,
   journalRepathLine,
   journalDiscardLine,
@@ -85,6 +85,7 @@ import {
   resolveJournalLines,
   SetAssetDocumentCommand,
   ReplaceSceneCommand,
+  type EditApplyResult,
   type EditCommand,
   type HistoryAdmissionResult,
 } from "@babylonslate/edit";
@@ -97,6 +98,8 @@ import {
   isTestModeEnabled,
   createSecretStore,
   createNativeHttp,
+  ENGINE_SETTINGS_CHANGED_EVENT,
+  type EngineSettings,
 } from "@babylonslate/vfs";
 import type { ProjectStorage } from "@babylonslate/core";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
@@ -182,6 +185,7 @@ import {
   toggleDockWindow as toggleDockWindowOnApi,
   type DockWindowApi,
 } from "../shell/dock-window-ops";
+import { isFunctionGraphPanelId } from "../shell/function-graph-panels";
 import {
   isDockviewDocumentKind,
   listDockWindows,
@@ -215,6 +219,8 @@ import {
 import { tryReparentUserClass } from "../lib/reparent-class";
 import {
   descendantClassIds,
+  prefabAssetTemplateKey,
+  prefabAssetTemplates,
   prefabTemplatesByClassId,
   scenesEqualForPrefabSync,
   stampUserComponentOverrides,
@@ -317,6 +323,13 @@ import {
   type MaterialFunctionDocument,
 } from "@babylonslate/shader-graph";
 export type AppRoute = "home" | "editor";
+
+/** Scene instance sync scope; omit both lists to sync every Class and Prefab. */
+type PrefabSyncOptions = {
+  classIds?: readonly string[];
+  prefabGuids?: readonly string[];
+  quiet?: boolean;
+};
 
 interface DocumentContextValue {
   registerBeforeTransition: DocumentTransitionGate["register"];
@@ -558,6 +571,13 @@ interface DocumentContextValue {
   redoActiveDocument: () => void;
   canUndoActiveDocument: boolean;
   canRedoActiveDocument: boolean;
+  /**
+   * Set when an edit was larger than the Undo memory limit: it applied, but
+   * its document's Undo history was cleared. Once per gesture; `sequence`
+   * advances for each new notice.
+   */
+  undoHistoryNotice: { documentId: string; sequence: number } | null;
+  dismissUndoHistoryNotice: () => void;
   registerDockviewApi: (
     id: string,
     api: DockviewApi,
@@ -886,7 +906,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     new EditSession({ maxBytes: DEFAULT_EDIT_BYTE_BUDGET }),
   );
   const syncPrefabInstancesRef = useRef<
-    (options?: { classIds?: readonly string[]; quiet?: boolean }) => Promise<void>
+    (options?: PrefabSyncOptions) => Promise<void>
   >(async () => {});
   const dockviewApisRef = useRef(new Map<string, DockviewApi>());
   const dockSubscriptionsRef = useRef(new Map<string, Array<{ dispose: () => void }>>());
@@ -908,6 +928,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     return pending;
   }, []);
   const [autoSaveStatus, setAutoSaveStatus] = useState<DocumentContextValue["autoSaveStatus"]>(null);
+  const [undoHistoryNotice, setUndoHistoryNotice] = useState<DocumentContextValue["undoHistoryNotice"]>(null);
+  const dismissUndoHistoryNotice = useCallback(() => setUndoHistoryNotice(null), []);
+  /** Tell the user once per gesture when an edit could not reach Undo history. */
+  const reportHistoryOutcome = useCallback((id: string, result: EditApplyResult<unknown>) => {
+    if (result.history !== "cleared") return;
+    setUndoHistoryNotice((current) => ({ documentId: id, sequence: (current?.sequence ?? 0) + 1 }));
+  }, []);
   // Keyed by saved revision, and projects made from one template share guids:
   // enterEditor replaces it so one project never shows another's thumbnails.
   const thumbnailLruRef = useRef(new ThumbnailDecodeLru(THUMBNAIL_DECODE_LRU_ENTRIES));
@@ -932,7 +959,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   /** Re-derives the context value after service state it reads changed (edits, tabs, saves). */
   const [contextTick, setContextTick] = useState(0);
   /** Registry-adjacent changes outside the registry itself; part of `registryEpoch`. */
-  const [registryTick, setRegistryTick] = useState(0);
+  const registryTickRef = useRef(0);
+  const [registryTick, setRegistryTick] = useRefState(registryTickRef);
   // Both terms only rise, so the sum changes exactly when either does.
   const registryEpoch = projectService.registryGeneration + registryTick;
   const previousThumbnailIndexRef = useRef<ReturnType<typeof createAssetThumbnailRevisionIndex> | null>(null);
@@ -1028,7 +1056,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const withSceneWrite = useCallback<ProjectService["withSceneWrite"]>(work => projectService.withSceneWrite(work), [projectService]);
   useEffect(() => documentService.onAuthoringLockChange(bump), [bump, documentService]);
   /** Plugins, search index or Show Plugin Content changed: advance `registryEpoch`. */
-  const bumpRegistry = useCallback(() => setRegistryTick((v) => v + 1), []);
+  const bumpRegistry = useCallback(() => setRegistryTick((v) => v + 1), [setRegistryTick]);
   const bumpDockWindows = useCallback(() => {
     setDockWindowTick((v) => v + 1);
   }, []);
@@ -1208,7 +1236,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     void settingsStore.load().then((settings) => {
       editSessionRef.current.configure({
         maxEntries: settings.undoHistoryLength,
-        maxBytes: DEFAULT_EDIT_BYTE_BUDGET,
+        maxBytes: settings.undoByteBudget,
       });
       thumbnailsEnabledRef.current = settings.thumbnailsEnabled !== false;
       setThumbnailsEnabled(settings.thumbnailsEnabled !== false);
@@ -1218,6 +1246,20 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       mounted = false;
     };
   }, [bump, documentService, refreshProjectList, refreshTemplates, settingsStore]);
+
+  // Undo preferences apply to every open document's history as they change.
+  useEffect(() => {
+    const onSettings = (event: Event) => {
+      const detail = (event as CustomEvent<Partial<EngineSettings>>).detail;
+      editSessionRef.current.configure({
+        maxEntries: detail?.undoHistoryLength,
+        maxBytes: detail?.undoByteBudget,
+      });
+      bump();
+    };
+    window.addEventListener(ENGINE_SETTINGS_CHANGED_EVENT, onSettings);
+    return () => window.removeEventListener(ENGINE_SETTINGS_CHANGED_EVENT, onSettings);
+  }, [bump]);
 
   useEffect(
     () => projectService.onRegistryChange(bumpRegistry),
@@ -1610,12 +1652,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     for (const [id, content] of documents) {
       const doc = documentService.getDocument(id);
       if (!doc || doc.content === content) continue;
+      // Replay can end at the saved content, so compare rather than mark dirty.
       if (isSceneWorkspaceKind(doc.ref.kind)) {
-        documentService.updateScene(id, content as SerializedScene);
+        documentService.updateScene(id, content as SerializedScene, "compare");
       } else if (doc.ref.kind === "graph") {
-        documentService.updateGraph(id, content as SerializedGraph);
+        documentService.updateGraph(id, content as SerializedGraph, "compare");
       } else {
-        documentService.updateAssetDocument(id, content as Record<string, unknown>);
+        documentService.updateAssetDocument(id, content as Record<string, unknown>, "compare");
       }
     }
     // Undo can leave the journal at the saved content. There is nothing to
@@ -2849,6 +2892,39 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     };
   }, [documentService, projectService]);
 
+  /**
+   * Prefab templates for stamping user component overrides (Class prefabs and
+   * Prefab assets), rebuilt only when one can have changed: the registry (its
+   * generation or `registryEpoch` tick) or an open Class or Prefab document
+   * (the graph- and prefab-kind revisions).
+   */
+  const prefabTemplatesCacheRef = useRef<{
+    registry: unknown;
+    key: string;
+    templates: ReturnType<typeof prefabTemplatesByClassId>;
+  } | null>(null);
+  const prefabTemplatesForStamping = useCallback(() => {
+    const registry = projectService.registry;
+    const revisions = documentService.getRevisions();
+    const key = `${projectService.registryGeneration}:${registryTickRef.current}:${revisions.graph}:${revisions.prefab}`;
+    const cached = prefabTemplatesCacheRef.current;
+    if (cached && cached.registry === registry && cached.key === key) return cached.templates;
+    const { graphs, parentOf } = classGraphsForPrefabSync();
+    const templates = {
+      ...prefabTemplatesByClassId({
+        classIds: Object.keys(graphs),
+        parentOf,
+        graphs,
+      }),
+      ...prefabAssetTemplates({
+        assets: registry?.list() ?? [],
+        openDocuments: [...documentService.getState().openDocuments.values()],
+      }),
+    };
+    prefabTemplatesCacheRef.current = { registry, key, templates };
+    return templates;
+  }, [classGraphsForPrefabSync, documentService, projectService]);
+
   const enqueuePrefabSyncForClassPath = useCallback(
     async (path: string) => {
       const { graphs, parentOf } = classGraphsForPrefabSync();
@@ -2861,6 +2937,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       });
     },
     [classGraphsForPrefabSync],
+  );
+
+  const enqueuePrefabSyncForPrefabPath = useCallback(
+    async (path: string) => {
+      const guid = projectService.registry?.getByPath(path)?.header.guid;
+      if (guid) await syncPrefabInstancesRef.current({ prefabGuids: [guid] });
+    },
+    [projectService],
   );
 
   const notifyAppliedCommand = useCallback(
@@ -2904,6 +2988,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       }
       const result = editSessionRef.current.applyBatch(id, previous, commands)!;
       documentService.updateGraph(id, result.doc);
+      reportHistoryOutcome(id, result);
       await notifyAppliedCommand(id, result.command);
       void afterMutatingApply(sourceControlRef.current, doc.ref.path);
       if (commands.some((command) => command.type === "graph.setComponents")) {
@@ -2916,6 +3001,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       enqueuePrefabSyncForClassPath,
       notifyAppliedCommand,
       projectService,
+      reportHistoryOutcome,
     ],
   );
 
@@ -3016,50 +3102,33 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         return false;
       }
       const previous = doc.content as SerializedScene;
-      const { graphs, parentOf } = classGraphsForPrefabSync();
       const intended = options?.prefabSync
         ? next
-        : stampUserComponentOverrides(
-            previous,
-            next,
-            prefabTemplatesByClassId({
-              classIds: Object.keys(graphs),
-              parentOf,
-              graphs,
-            }),
-          );
-      const commands = diffSceneCommands(previous, intended);
+        : stampUserComponentOverrides(previous, next, prefabTemplatesForStamping());
+      // Deltas, or one whole-scene replacement for fields no delta covers:
+      // either way the edit reaches Undo and the journal.
+      const commands = planSceneChange(previous, intended);
       if (commands.length === 0) {
-        if (scenesEqualForPrefabSync(previous, intended)) {
-          return false;
-        }
-        documentService.updateScene(id, intended);
-        await notifyDocumentEdited({
-          scheduleDebouncedSave,
-          bump,
-          journal: async () => {},
-        });
-        void afterMutatingApply(sourceControlRef.current, doc.ref.path);
-        return true;
+        return false;
       }
       const result = editSessionRef.current.applyBatch(id, previous, commands)!;
       documentService.updateScene(id, result.doc);
+      reportHistoryOutcome(id, result);
       await notifyAppliedCommand(id, result.command);
       void afterMutatingApply(sourceControlRef.current, doc.ref.path);
       return true;
     },
     [
-      bump,
-      classGraphsForPrefabSync,
       documentService,
       notifyAppliedCommand,
+      prefabTemplatesForStamping,
       projectService,
-      scheduleDebouncedSave,
+      reportHistoryOutcome,
     ],
   );
 
   const syncPrefabInstances = useCallback(async (
-    options?: { classIds?: readonly string[]; quiet?: boolean },
+    options?: PrefabSyncOptions,
   ) => {
     if (documentService.getAuthoringLock().readOnly) return;
     const open = [...documentService.getState().openDocuments.values()];
@@ -3072,12 +3141,22 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       classIdForPath: classIdForGraphPath,
     });
     const parentOf = classParentLookup(assets);
-    const classIds = options?.classIds ?? Object.keys(graphs);
-    const templates = prefabTemplatesByClassId({
-      classIds: [...classIds],
-      parentOf,
-      graphs,
-    });
+    // A targeted sync touches only the edited Class lineage or Prefab assets.
+    const targeted = options?.classIds !== undefined || options?.prefabGuids !== undefined;
+    const classIds = options?.classIds ?? (targeted ? [] : Object.keys(graphs));
+    const assetTemplates = prefabAssetTemplates({ assets, openDocuments: open });
+    const prefabKeys = options?.prefabGuids?.map(prefabAssetTemplateKey);
+    const templates = {
+      ...prefabTemplatesByClassId({
+        classIds: [...classIds],
+        parentOf,
+        graphs,
+      }),
+      ...(targeted
+        ? Object.fromEntries((prefabKeys ?? []).flatMap((key) =>
+            assetTemplates[key] ? [[key, assetTemplates[key]] as const] : []))
+        : assetTemplates),
+    };
     const scene = sceneDoc.content as SerializedScene;
     const next = syncSceneActorsFromPrefabs(scene, templates);
     if (scenesEqualForPrefabSync(scene, next)) return;
@@ -3127,13 +3206,15 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         return false;
       }
       const command = new SetAssetDocumentCommand(previous, next, mergeKey);
-      const current = editSessionRef.current.apply(id, previous, command).doc;
-      documentService.updateAssetDocument(id, current);
+      const result = editSessionRef.current.apply(id, previous, command);
+      documentService.updateAssetDocument(id, result.doc);
+      reportHistoryOutcome(id, result);
       await notifyAppliedCommand(id, command);
       void afterMutatingApply(sourceControlRef.current, doc.ref.path);
+      if (doc.ref.kind === "prefab") await enqueuePrefabSyncForPrefabPath(doc.ref.path);
       return true;
     },
-    [documentService, notifyAppliedCommand, projectService],
+    [documentService, enqueuePrefabSyncForPrefabPath, notifyAppliedCommand, projectService, reportHistoryOutcome],
   );
 
   const textureUsageBlockedReason = useCallback(
@@ -4649,7 +4730,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         const result =
           direction === "undo" ? stack.undo(content) : stack.redo(content);
         if (!result) return;
-        documentService.updateGraph(activeDocumentId, result.doc);
+        documentService.updateGraph(activeDocumentId, result.doc, "compare");
         void notifyAppliedCommand(activeDocumentId, result.command);
         if (
           JSON.stringify(content.components) !==
@@ -4678,11 +4759,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         const result =
           direction === "undo" ? stack.undo(content) : stack.redo(content);
         if (!result) return;
-        documentService.updateAssetDocument(activeDocumentId, result.doc);
+        documentService.updateAssetDocument(activeDocumentId, result.doc, "compare");
         void notifyAppliedCommand(activeDocumentId, result.command);
+        if (doc.ref.kind === "prefab") void enqueuePrefabSyncForPrefabPath(doc.ref.path);
       }
     },
-    [documentService, enqueuePrefabSyncForClassPath, notifyAppliedCommand, projectService],
+    [documentService, enqueuePrefabSyncForClassPath, enqueuePrefabSyncForPrefabPath, notifyAppliedCommand, projectService],
   );
 
 
@@ -4733,6 +4815,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         surface === "design" || surface === "landscape" || surface === "foliage" ? surface : undefined,
       );
       for (const panel of listDockPanels(dock)) {
+        // Function graph tabs persist in the DockView snapshot, not as
+        // remembered catalog placements.
+        if (isFunctionGraphPanelId(panel.id)) continue;
         const def = isDockviewDocumentKind(kind)
           ? findWindowDefinition(kind, panel.id, dockOptions)
           : undefined;
@@ -5040,6 +5125,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       confirmExternalChangeReloadDocs,
       dismissExternalChange,
       undoActiveDocument,
+      dismissUndoHistoryNotice,
       redoActiveDocument,
       registerDockviewApi,
       unregisterDockviewApi,
@@ -5158,6 +5244,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       confirmExternalChangeReloadDocs,
       dismissExternalChange,
       undoActiveDocument,
+      dismissUndoHistoryNotice,
       redoActiveDocument,
       registerDockviewApi,
       unregisterDockviewApi,
@@ -5278,6 +5365,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         dirtyDocuments,
         projectDirty: projectSaveState.current.isDirty(projectDocument),
         autoSaveStatus,
+        undoHistoryNotice,
         migrationPending,
         templates,
         homepageReady,
@@ -5328,6 +5416,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       tabOrder,
       dirtyDocuments,
       autoSaveStatus,
+      undoHistoryNotice,
       currentGraphSignature,
       route,
       projectDocument,

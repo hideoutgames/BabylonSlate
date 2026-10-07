@@ -1,5 +1,6 @@
 import {
   isFunctionLibraryClass,
+  normalizeClassMemberCategory,
   type GraphClassMember,
   type GraphClassMemberKind,
   type GraphClassMemberPin,
@@ -1065,11 +1066,9 @@ function syncFunctionGraphPins(
   memberId: string,
   pins: GraphClassMemberPin[],
 ): SerializedGraph {
-  const slice = graph.functionGraphs?.[memberId];
   const member = (graph.members ?? []).find((entry) => entry.id === memberId);
-  const withCalls: SerializedGraph = {
-    ...graph,
-    nodes: graph.nodes.map((node) => {
+  const syncCalls = (nodes: SerializedGraph["nodes"]) =>
+    nodes.map((node) => {
       if (
         node.type !== "functions.call" ||
         node.data.functionName !== member?.name
@@ -1079,8 +1078,22 @@ function syncFunctionGraphPins(
       const nextData: Record<string, unknown> = { ...node.data, pins };
       delete nextData.__pins;
       return { ...node, data: nextData };
-    }),
+    });
+  // Calls live in the Event Graph and in other functions (or recursively).
+  const functionGraphs = graph.functionGraphs
+    ? Object.fromEntries(
+        Object.entries(graph.functionGraphs).map(([id, entry]) => [
+          id,
+          { ...entry, nodes: syncCalls(entry.nodes) },
+        ]),
+      )
+    : undefined;
+  const withCalls: SerializedGraph = {
+    ...graph,
+    nodes: syncCalls(graph.nodes),
+    ...(functionGraphs ? { functionGraphs } : {}),
   };
+  const slice = withCalls.functionGraphs?.[memberId];
   if (!slice) return withCalls;
   return {
     ...withCalls,
@@ -1618,6 +1631,11 @@ export function patchClassMember(
     const next = { ...member, ...patch };
     if ("overridable" in patch && patch.overridable !== true) {
       delete next.overridable;
+    }
+    if ("category" in patch) {
+      const category = normalizeClassMemberCategory(patch.category);
+      if (category) next.category = category;
+      else delete next.category;
     }
     return next;
   });

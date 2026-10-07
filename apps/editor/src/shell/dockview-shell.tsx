@@ -28,7 +28,11 @@ import {
   inlineDetachedDockviewLayout,
 } from "./phone-dock-layout";
 import { PhoneWindowSwitcher } from "./phone-window-switcher";
-import { listDockWindows } from "./window-catalog";
+import { listDockWindows, type DockWindowDefinition } from "./window-catalog";
+import {
+  FUNCTION_GRAPH_PANEL_COMPONENT,
+  isFunctionGraphPanelId,
+} from "./function-graph-panels";
 import { profileComponents } from "../lib/render-profile";
 
 const SPACED_THEME: DockviewTheme = { ...themeAbyss, gap: 4 };
@@ -71,6 +75,9 @@ export function DockviewShell({
   const apiRef = useRef<DockviewApi | null>(null);
   const [api, setApi] = useState<DockviewApi | null>(null);
   const [activePanelId, setActivePanelId] = useState<string | null>(null);
+  const [functionWindows, setFunctionWindows] = useState<
+    DockWindowDefinition[]
+  >([]);
   const phoneLayoutRef = useRef<ReturnType<typeof enterPhoneDockLayout> | null>(
     null,
   );
@@ -149,9 +156,30 @@ export function DockviewShell({
   useLayoutEffect(() => {
     if (!api) return;
     const updateSelection = () => setActivePanelId(api.activePanel?.id ?? null);
+    // Open function graph tabs join the phone Window picker.
+    const updateFunctionWindows = () =>
+      setFunctionWindows(
+        api.panels
+          .filter((panel) => isFunctionGraphPanelId(panel.id))
+          .map((panel) => ({
+            id: panel.id,
+            component: FUNCTION_GRAPH_PANEL_COMPONENT,
+            title: panel.api.title ?? panel.id,
+          })),
+      );
     updateSelection();
-    const subscription = api.onDidActivePanelChange(updateSelection);
-    return () => subscription.dispose();
+    updateFunctionWindows();
+    const subscriptions = [
+      api.onDidActivePanelChange(() => {
+        updateSelection();
+        updateFunctionWindows();
+      }),
+      api.onDidAddPanel(updateFunctionWindows),
+      api.onDidRemovePanel(updateFunctionWindows),
+    ];
+    return () => {
+      for (const subscription of subscriptions) subscription.dispose();
+    };
   }, [api]);
 
   useLayoutEffect(() => {
@@ -176,12 +204,15 @@ export function DockviewShell({
 
   useLayoutEffect(() => () => phoneLayoutRef.current?.dispose(), []);
 
-  const windows = listDockWindows(documentKind, {
-    actorPrefab,
-    sourceControl,
-    animEditorMode,
-    sceneMode,
-  });
+  const windows = [
+    ...listDockWindows(documentKind, {
+      actorPrefab,
+      sourceControl,
+      animEditorMode,
+      sceneMode,
+    }),
+    ...functionWindows,
+  ];
   const selectWindow = (id: string) => {
     const dock = apiRef.current;
     if (!dock) return;
