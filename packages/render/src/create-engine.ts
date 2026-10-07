@@ -1,4 +1,5 @@
 import { RuntimeMaterialEditOwner, type RuntimeMaterialPreparationRequest, type RuntimeMaterialCommitCommand } from "./runtime-material-edit";
+import { drainFinalAuthoringResources } from "./final-authoring-drain";
 import { createRuntimeTransformTools, type RuntimeTransformTools, type RuntimeTransformToolsOptions, type RuntimeTransformToolsOwner } from "./runtime-transform-tools";
 import { beginRenderFrameCapture, RenderFrameReportFeed, type RenderFrameReport, type RenderFrameReportReceipt } from "./render-frame-report";
 import { pausedSceneRedrawIssue, setSceneGameTimePaused } from "./scene-game-time";
@@ -288,6 +289,8 @@ export interface EngineHandle {
   prepareRuntimeMaterialEdit: (request: RuntimeMaterialPreparationRequest) => Promise<void>;
   commitRuntimeMaterialEdit: (command: RuntimeMaterialCommitCommand) => { success: boolean; reason?: string };
   releaseRuntimeMaterialPreparation: (editToken: string) => void;
+  /** Keep-only: drain accepted render owners after the correlated runtime command fence. */
+  quiesceAuthoringRevision: (commandRevision: number, signal: AbortSignal) => Promise<{ commandRevision: number }>;
   setPaused: (paused: boolean) => void;
   /** Freeze render-owned game time independently of presentation/input pause reasons. */
   setGameTimePaused: (paused: boolean) => void;
@@ -1259,6 +1262,7 @@ function initializeEngine(
   });
   onRollback(() => materialLibrary.dispose());
   const runtimeMaterialEdits = new RuntimeMaterialEditOwner(binding, materialLibrary);
+  let finalAuthoringDrain: AbortController | null = null;
   onRollback(() => runtimeMaterialEdits.dispose());
   binding.resolveMaterial = (guid, options) => {
     const host = options?.scene ?? scene;
@@ -2635,6 +2639,7 @@ function initializeEngine(
   const contextLostObserver = engine.onContextLostObservable.add(() => {
     if (disposed) return;
     contextLost = true;
+    finalAuthoringDrain?.abort(new Error("The graphics context was lost during final scene capture."));
     runtimeMaterialEdits.cancelAll();
     frameReportFeed.cancel("The graphics context was lost before frame capture completed.");
     presentationStats.contextLosses += 1;
@@ -2865,6 +2870,7 @@ function initializeEngine(
       runtimeTransformTools?.dispose();
       runtimeTransformTools = null;
       disposed = true;
+      finalAuthoringDrain?.abort(new Error("The game view stopped during final scene capture."));
       runtimeMaterialEdits.dispose();
       performanceFeed.dispose();
       frameReportFeed.cancel("The game view was disposed.");
@@ -3005,6 +3011,34 @@ function initializeEngine(
       return result;
     },
     releaseRuntimeMaterialPreparation: (token) => runtimeMaterialEdits.release(token),
+    quiesceAuthoringRevision: async (commandRevision, signal) => {
+      if (!Number.isSafeInteger(commandRevision) || commandRevision < 0 || finalAuthoringDrain)
+        throw new Error("The final render command fence is invalid or already pending.");
+      if (!gameTimePaused || disposed || contextLost || worldLoading)
+        throw new Error("Final scene capture requires a complete, paused game view.");
+      const controller = new AbortController();
+      const cancel = () => controller.abort(signal.reason);
+      signal.addEventListener("abort", cancel, { once: true });
+      if (signal.aborted) cancel();
+      finalAuthoringDrain = controller;
+      const generation = loadGeneration, sceneLoadId = worldLoadId;
+      const assert = () => {
+        controller.signal.throwIfAborted();
+        if (disposed || contextLost || worldLoading || generation !== loadGeneration || sceneLoadId !== worldLoadId)
+          throw new Error("The final scene render ownership changed during capture.");
+      };
+      try {
+        await drainFinalAuthoringResources(scene, binding, materialLibrary, {
+          signal: controller.signal, assertCurrent: assert,
+          pendingParticles: (slots) => particleService?.pendingSlotPreparation(slots) ?? [],
+        });
+        assert();
+        return { commandRevision };
+      } finally {
+        signal.removeEventListener("abort", cancel);
+        if (finalAuthoringDrain === controller) finalAuthoringDrain = null;
+      }
+    },
     pushSnapshot: (buffer: Float32Array) => {
       interpolator.push(buffer);
       interpAlpha = 1;
@@ -3018,6 +3052,7 @@ function initializeEngine(
       scheduler.invalidate("snapshot");
     },
     applyCommand: (command: CommandMessage) => {
+      finalAuthoringDrain?.abort(new Error(`Runtime render command ${command.type} arrived after the final capture fence.`));
       streamAdmission?.receive(command);
       if (command.type === "snapshotLayout") {
         interpolator.installLayout(command.capacity, command.generation);
