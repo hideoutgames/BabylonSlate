@@ -7,11 +7,11 @@ import { componentPropertyRows } from "./component-property-rows";
 
 afterEach(cleanup);
 
-function cameraEditor() {
+function cameraEditor(projectionMode = "perspective") {
   let committed: SerializedComponent = {
     id: "camera",
     classId: "CameraComponent",
-    properties: { nearClip: 0.1, farClip: 1000, fieldOfView: 60 },
+    properties: { nearClip: 0.1, farClip: 1000, fieldOfView: 60, projectionMode },
   };
   function Editor() {
     const [component, setComponent] = useState(committed);
@@ -30,6 +30,14 @@ function cameraEditor() {
 }
 
 describe("camera Details editing", () => {
+  it.each(["perspective", "orthographic"])("shows controls used by %s projection without validation warnings", (projectionMode) => {
+    const editor = cameraEditor(projectionMode);
+    expect(Boolean(editor.queryByTestId("property-actor-camera-fieldOfView"))).toBe(projectionMode === "perspective");
+    expect(Boolean(editor.queryByTestId("property-actor-camera-orthographicSize"))).toBe(projectionMode === "orthographic");
+    expect(editor.queryByText(/Near Clip must/)).toBeNull();
+    expect(editor.queryByText(/Far Clip must/)).toBeNull();
+  });
+
   it.each([
     { property: "nearClip", value: "5", expected: 5 },
     { property: "farClip", value: "50", expected: 50 },
@@ -52,6 +60,8 @@ describe("camera Details editing", () => {
     expect(editor.current().nearClip).toBeGreaterThan(0);
     expect(editor.current().nearClip).toBeLessThan(editor.current().farClip as number);
     expect(Number((input as HTMLInputElement).value)).toBeCloseTo(editor.current()[property] as number, 2);
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(editor.getByRole("alert").textContent).toMatch(/Clip must/);
   });
 
   it.each([

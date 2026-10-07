@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { useState } from "react";
 import {
   cleanup,
   fireEvent,
@@ -19,6 +20,21 @@ import { dispatchPointerEvent } from "./test-support/pointer-events";
 describe("PropertyGrid", () => {
   afterEach(() => {
     cleanup();
+  });
+
+  it("restores a text edit on Escape and does not commit the cancelled draft", () => {
+    const onCommit = vi.fn();
+    function Editor() {
+      const [value, setValue] = useState("Camera");
+      return <PropertyGrid rows={[{ kind: "text", id: "name", label: "Name", value, onChange: setValue, onCommit }]} />;
+    }
+    render(<Editor />);
+    const input = screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement;
+    input.focus();
+    fireEvent.change(input, { target: { value: "Player" } });
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(input.value).toBe("Camera");
+    expect(onCommit).not.toHaveBeenCalled();
   });
 
   it("shows readable Boolean states and toggles from the value label", () => {
