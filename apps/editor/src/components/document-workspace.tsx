@@ -716,8 +716,8 @@ export function DocumentWorkspace() {
                 {doc.ref.kind === "scene" ? <SceneDocumentDocks id={id} layout={doc.layout} /> : <RegisteredDockviewShell
                   id={id}
                   documentKind={
-                    doc.ref.kind === "scene-layer"
-                      ? "scene-layer"
+                    doc.ref.kind === "scene-layer" || doc.ref.kind === "prefab"
+                      ? doc.ref.kind
                       : "graph"
                   }
                   initialLayout={doc.layout}

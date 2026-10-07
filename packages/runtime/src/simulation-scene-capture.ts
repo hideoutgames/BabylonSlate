@@ -382,6 +382,7 @@ export function captureSimulationScene(input: SimulationSceneCaptureInput): Simu
         visible: visible !== false, locked: before?.locked ?? false, folderId: before?.folderId ?? null, components,
         ...(Object.keys(actorProperties).length || before?.properties ? { properties: actorProperties } : {}),
         ...(suppressed.size ? { suppressedComponentSourceIds: [...suppressed] } : {}),
+        ...(before?.prefabGuid ? { prefabGuid: before.prefabGuid } : {}),
       });
     }
     const scene: SerializedScene = {
