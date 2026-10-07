@@ -1,4 +1,4 @@
-import { act, cleanup, render, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS,
@@ -12,10 +12,17 @@ import {
   type SerializedGraph,
   type SerializedScene,
 } from "@babylonslate/core";
-import { MemorySecretStore, OpfsStorageAdapter, createDerivedStorage } from "@babylonslate/vfs";
+import {
+  DEFAULT_UNDO_BYTE_BUDGET,
+  MemorySecretStore,
+  OpfsStorageAdapter,
+  createAppSettingsStore,
+  createDerivedStorage,
+} from "@babylonslate/vfs";
 import { FakeLockProvider } from "@babylonslate/source-control";
 import { appendJournalLines, readJournalLines } from "@babylonslate/assets";
 import { SetActorTransformCommand, SetSceneNameCommand, commandToJournalPayload, serializeJournalLine } from "@babylonslate/edit";
+import { UndoHistoryNotice } from "../components/undo-history-notice";
 import { createProjectAsset } from "../lib/create-project-asset";
 import { subscribeModelThumbnailJobs } from "../lib/model-thumbnail-queue";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
@@ -106,10 +113,11 @@ function movedScene(scene: SerializedScene, dx: number): SerializedScene {
 }
 
 /** Mounts the real provider and creates a 2D project with its Main scene. */
-async function openProject(): Promise<DocumentActions> {
+async function openProject(children?: React.ReactNode): Promise<DocumentActions> {
   render(
     <DocumentProvider>
       <Probe />
+      {children}
     </DocumentProvider>,
   );
   await waitFor(() => expect(documents().homepageReady).toBe(true));
@@ -265,6 +273,100 @@ describe("DocumentProvider actions and route", () => {
     }));
     expect(openScene(MAIN_SCENE_ID).actors.find(actor => actor.id === "saved")?.classId).toBe(failRename ? "Hero" : "Champion");
     expect(documents().dirtyDocuments.some(doc => doc.id === MAIN_SCENE_ID)).toBe(true);
+  });
+
+  it("records a SceneLayer switcher entries edit for Undo and crash recovery", async () => {
+    const actions = await openProject();
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, {
+      ...openScene(MAIN_SCENE_ID), actors: [createActor("switcher", "Switcher", { classId: "SceneLayerActorSwitcher" })],
+    }));
+    await act(() => actions.saveAll());
+    const handle = await new OpfsStorageAdapter().openDocumentsProject("Stable");
+    const properties = { sceneLayerActors: [{ classId: "HudLayer", defaults: { title: "Paused" } }] };
+    let applied = false;
+    await act(async () => {
+      const saved = openScene(MAIN_SCENE_ID);
+      applied = await actions.applySceneChange(MAIN_SCENE_ID, { ...saved, actors: saved.actors.map(actor => ({ ...actor, properties })) });
+    });
+    expect(applied).toBe(true);
+    act(() => actions.undoActiveDocument());
+    expect(openScene(MAIN_SCENE_ID).actors).toMatchObject([{ id: "switcher" }]);
+    expect(openScene(MAIN_SCENE_ID).actors[0]!.properties).toBeUndefined();
+    act(() => actions.redoActiveDocument());
+    expect(openScene(MAIN_SCENE_ID).actors[0]!.properties).toEqual(properties);
+    // Unmount without Close/Save to preserve the crash-recovery journal.
+    cleanup();
+    render(<DocumentProvider><Probe /></DocumentProvider>);
+    await waitFor(() => expect(documents().homepageReady).toBe(true));
+    const reopened = seen.actions!;
+    await act(() => reopened.openListedProject(handle));
+    act(() => reopened.keepRecovery());
+    await waitFor(() => expect(openScene(MAIN_SCENE_ID).actors[0]?.properties).toEqual(properties));
+  });
+
+  it("applies an edit larger than a lowered Undo memory limit, clears Undo and notifies once per gesture", async () => {
+    const actions = await openProject(<UndoHistoryNotice documentId={MAIN_SCENE_ID} />);
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 1)));
+    expect(documents().canUndoActiveDocument).toBe(true);
+    const settings = createAppSettingsStore();
+    try {
+      // The preference reaches the Main scene's existing history.
+      await act(() => settings.update((current) => { current.undoByteBudget = 1_048_576; }));
+      const withBlob = (blob: string): SerializedScene => {
+        const scene = openScene(MAIN_SCENE_ID);
+        return { ...scene, actors: scene.actors.map((actor, index) => index === 0 ? { ...actor, properties: { blob } } : actor) };
+      };
+      // Two steps of one gesture, each about 1.2 MB.
+      await act(() => actions.applySceneChange(MAIN_SCENE_ID, withBlob("a".repeat(1_200_000))));
+      await act(() => actions.applySceneChange(MAIN_SCENE_ID, withBlob("b".repeat(1_200_000))));
+      expect(openScene(MAIN_SCENE_ID).actors[0]!.properties).toEqual({ blob: "b".repeat(1_200_000) });
+      expect(documents().canUndoActiveDocument).toBe(false);
+      expect(documents().undoHistoryNotice).toEqual({ documentId: MAIN_SCENE_ID, sequence: 1 });
+      expect(screen.getByTestId("undo-history-notice").textContent).toContain("can't be undone");
+      fireEvent.click(screen.getByTestId("undo-history-notice-dismiss"));
+      expect(screen.queryByTestId("undo-history-notice")).toBeNull();
+      expect(documents().undoHistoryNotice).toBeNull();
+    } finally {
+      await act(() => settings.update((current) => { current.undoByteBudget = DEFAULT_UNDO_BYTE_BUDGET; }));
+    }
+  });
+
+  it("stamps Prefab overrides against a Class edited after an earlier Scene edit", async () => {
+    const actions = await openProject();
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    const classDocId = documentId({ kind: "graph", path: MAIN_CLASS_FILE });
+    await act(() => actions.openDocument({ kind: "graph", path: MAIN_CLASS_FILE, label: "Main" }));
+    const classGraph = () => documents().openDocuments.find((doc) => doc.id === classDocId)!.content as SerializedGraph;
+    const sprite = (flipX: boolean): SerializedComponent => ({
+      id: "component-sprite", classId: "SpriteComponent", properties: { flipX }, parentId: null,
+    });
+    await act(() => actions.applyGraphChange(classDocId, { ...classGraph(), components: [sprite(false)] }));
+    const instance = createActor("actor-main-instance", "Main Instance", {
+      classId: classIdForGraphPath(MAIN_CLASS_FILE),
+      components: [{ ...sprite(false), id: "instance-sprite", sourceId: "component-sprite" }],
+    });
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, { ...openScene(MAIN_SCENE_ID), actors: [instance] }));
+    const editInstanceSprite = (properties: Record<string, unknown>) => {
+      const scene = openScene(MAIN_SCENE_ID);
+      return actions.applySceneChange(MAIN_SCENE_ID, {
+        ...scene,
+        actors: scene.actors.map((actor) => ({
+          ...actor,
+          components: actor.components.map((component) => ({
+            ...component, properties: { ...component.properties, ...properties },
+          })),
+        })),
+      });
+    };
+    await act(() => editInstanceSprite({ flipX: true }));
+    const instanceSprite = () => openScene(MAIN_SCENE_ID).actors[0]!.components[0]!;
+    expect(instanceSprite().overrideKeys).toEqual(["flipX"]);
+    // The Class now matches the instance, so the next Scene edit drops that override.
+    await act(() => actions.applyGraphChange(classDocId, { ...classGraph(), components: [sprite(true)] }));
+    await act(() => editInstanceSprite({ flipY: true }));
+    expect(instanceSprite()).toMatchObject({ properties: { flipX: true, flipY: true }, overrideKeys: ["flipY"] });
   });
 
   it("waits for an in-flight save before renaming a Class used by that save", async () => {

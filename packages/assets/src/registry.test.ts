@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { encodeAssetDocument, decodeAssetDocument } from "./asset-document";
-import { encodeBabasset } from "./babasset";
+import { encodeBabasset, readBabassetHeader } from "./babasset";
 import { projectContentRoot, type ContentRoot } from "./content-root";
 import {
   buildMinimalGlbFixture,
@@ -231,6 +231,87 @@ describe("AssetRegistry", () => {
     expect(registry.getByGuid("new")?.path).toBe("assets/moved/new.babasset");
     expect(await storage.exists("assets/moved/new.babasset")).toBe(true);
     expect(await storage.exists("assets/source")).toBe(false);
+  });
+
+  describe("overlapping writes to one destination path", () => {
+    /** Hold the first write to a matching path until the returned release is called. */
+    function holdFirstWrite(storage: MemoryStorageAdapter, path: RegExp) {
+      let entered!: () => void;
+      let release!: () => void;
+      const writing = new Promise<void>((resolve) => { entered = resolve; });
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      const write = storage.writeBinary.bind(storage);
+      let held = false;
+      vi.spyOn(storage, "writeBinary").mockImplementation(async (target, bytes) => {
+        if (path.test(target) && !held) { held = true; entered(); await gate; }
+        return write(target, bytes);
+      });
+      return { writing, release };
+    }
+
+    const material = (guid: string) => ({
+      guid, type: "Material", name: guid, version: 1, dependencies: [], payload: { owner: guid }, chunks: [],
+    });
+
+    async function guidOnDisk(storage: MemoryStorageAdapter, path: string): Promise<string> {
+      return readBabassetHeader(await storage.readBinary(path)).guid;
+    }
+
+    it("lets exactly one of two creations at the same path succeed", async () => {
+      const storage = await createStorage();
+      const registry = new AssetRegistry(storage);
+      await registry.mountRoot(projectContentRoot());
+      const { writing, release } = holdFirstWrite(storage, /^assets\/Rock\.babasset$/);
+      const first = registry.createAsset("project", "Rock.babasset", material("first"));
+      await writing;
+      const second = registry.createAsset("project", "Rock.babasset", material("second"));
+      release();
+      const [firstResult, secondResult] = await Promise.allSettled([first, second]);
+      expect(firstResult.status).toBe("fulfilled");
+      expect(secondResult).toMatchObject({ status: "rejected", reason: expect.objectContaining({ message: expect.stringMatching(/already exists/) }) });
+      expect(registry.getByGuid("first")?.path).toBe("assets/Rock.babasset");
+      expect(registry.getByGuid("second")).toBeUndefined();
+      expect(await guidOnDisk(storage, "assets/Rock.babasset")).toBe("first");
+    });
+
+    it("gives overlapping duplicates distinct names and keeps an unindexed file at a copy name", async () => {
+      const storage = await createStorage();
+      await writeAsset(storage, "assets/Rock.babasset", { guid: "rock", type: "Material", name: "Rock" });
+      const registry = new AssetRegistry(storage);
+      await registry.mountRoot(projectContentRoot());
+      await storage.writeText("assets/Rock_1.babasset", "not yet scanned");
+      const { writing, release } = holdFirstWrite(storage, /^assets\/Rock_\d+\.babasset$/);
+      const first = registry.duplicateAsset("rock", "project");
+      await writing;
+      const second = registry.duplicateAsset("rock", "project");
+      release();
+      const copies = await Promise.all([first, second]);
+      expect(copies.map((copy) => copy.path).sort()).toEqual(["assets/Rock_2.babasset", "assets/Rock_3.babasset"]);
+      for (const copy of copies) {
+        expect(registry.getByGuid(copy.header.guid)?.path).toBe(copy.path);
+        expect(await guidOnDisk(storage, copy.path)).toBe(copy.header.guid);
+      }
+      expect(await storage.readText("assets/Rock_1.babasset")).toBe("not yet scanned");
+    });
+
+    it("refuses a rename onto a path a creation is still writing", async () => {
+      const storage = await createStorage();
+      await writeAsset(storage, "assets/Stone.babasset", { guid: "stone", type: "Material", name: "Stone" });
+      const stoneBytes = await storage.readBinary("assets/Stone.babasset");
+      const registry = new AssetRegistry(storage);
+      await registry.mountRoot(projectContentRoot());
+      const { writing, release } = holdFirstWrite(storage, /^assets\/Rock\.babasset$/);
+      const creation = registry.createAsset("project", "Rock.babasset", material("rock"));
+      await writing;
+      // The rename settles while the creation's file is not on disk yet.
+      await expect(registry.renameAsset("stone", "Rock")).rejects.toThrow(/already exists/);
+      release();
+      await creation;
+      expect(registry.getByGuid("rock")?.path).toBe("assets/Rock.babasset");
+      expect(await guidOnDisk(storage, "assets/Rock.babasset")).toBe("rock");
+      expect(registry.getByGuid("stone")?.path).toBe("assets/Stone.babasset");
+      expect(await storage.readBinary("assets/Stone.babasset")).toEqual(stoneBytes);
+    });
   });
 
   it("preserves an in-flight Font representation attachment through a folder move", async () => {

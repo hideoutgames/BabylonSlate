@@ -1,4 +1,5 @@
 import type { DirEntry, FileStat, ProjectFolderHandle, ProjectStorage, StorageRangeRead, StorageReadOptions } from "@babylonslate/core";
+import { StorageNotFoundError } from "@babylonslate/core";
 import { projectRelativePath } from "./project-path";
 import { checkStorageRevision, rethrowStorageReadFailure, StorageReadCounter, validateStorageRange } from "./storage-range";
 
@@ -58,7 +59,7 @@ export class HttpCatalogStorageAdapter implements ProjectStorage {
   }
   private file(path: string): HttpStorageFile {
     const file = this.files.get(this.path(path));
-    if (!file) throw new Error(`File not found: ${path}`);
+    if (!file) throw new StorageNotFoundError(path);
     return file;
   }
   getReadMetrics() { return this.reads.snapshot(); }
@@ -86,7 +87,7 @@ export class HttpCatalogStorageAdapter implements ProjectStorage {
   }
   async readdir(path: string): Promise<DirEntry[]> {
     const cleaned = this.path(path);
-    if (!this.directories.has(cleaned)) throw new Error(`Directory not found: ${path}`);
+    if (!this.directories.has(cleaned)) throw new StorageNotFoundError(path, { message: `Directory not found: ${path}` });
     const prefix = cleaned ? `${cleaned}/` : "";
     const entries: DirEntry[] = [];
     for (const directory of this.directories) {

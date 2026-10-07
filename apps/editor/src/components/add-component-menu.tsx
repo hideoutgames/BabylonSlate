@@ -11,6 +11,8 @@ import {
 } from "../panels/add-component-catalog";
 
 const categoryLabel = (category: string) => category;
+/** Project assets and classes follow the engine categories. */
+const TRAILING_CATEGORIES = ["Project"] as const;
 
 type AddComponentMenuItem = {
   id: string;
@@ -71,6 +73,7 @@ export function AddComponentMenu({
         <TypeVisualIcon visual={visualForAddComponentItem(source)} />
       )}
       formatCategory={categoryLabel}
+      trailingCategories={TRAILING_CATEGORIES}
       searchLabel="Search Components"
       searchPlaceholder="Search components"
       treeLabel="Components"

@@ -208,6 +208,8 @@ function inertDocuments(current: () => DocumentsValue | undefined): DocumentsVal
     redoActiveDocument: noop,
     canUndoActiveDocument: false,
     canRedoActiveDocument: false,
+    undoHistoryNotice: null,
+    dismissUndoHistoryNotice: noop,
     registerDockviewApi: noop,
     unregisterDockviewApi: noop,
     captureLayoutForId: noop,

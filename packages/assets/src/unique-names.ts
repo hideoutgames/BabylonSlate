@@ -41,6 +41,7 @@ export function stripAssetFileSuffix(fileName: string): string {
     .replace(/\.scene\.babasset$/i, "")
     .replace(/\.graph\.babasset$/i, "")
     .replace(/\.class\.babasset$/i, "")
+    .replace(/\.prefab\.babasset$/i, "")
     .replace(/\.eui\.babasset$/i, "")
     .replace(/\.spriteanim\.babasset$/i, "")
     .replace(/\.sprite\.babasset$/i, "")
@@ -80,6 +81,7 @@ export function assetFileSuffix(fileName: string): string {
   if (/\.scene\.babasset$/i.test(fileName)) return ".scene.babasset";
   if (/\.graph\.babasset$/i.test(fileName)) return ".graph.babasset";
   if (/\.class\.babasset$/i.test(fileName)) return ".class.babasset";
+  if (/\.prefab\.babasset$/i.test(fileName)) return ".prefab.babasset";
   if (/\.eui\.babasset$/i.test(fileName)) return ".eui.babasset";
   if (/\.spriteanim\.babasset$/i.test(fileName)) return ".spriteanim.babasset";
   if (/\.sprite\.babasset$/i.test(fileName)) return ".sprite.babasset";

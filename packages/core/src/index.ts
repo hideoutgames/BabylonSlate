@@ -29,6 +29,7 @@ export * from "./class-member-category";
 export * from "./engine-version";
 export * from "./guid-result";
 export * from "./math-rng";
+export * from "./affine-transform";
 export * from "./euler";
 export * from "./easing";
 export * from "./tween";

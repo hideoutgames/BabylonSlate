@@ -1,13 +1,21 @@
 import { checkStorageRevision, StorageReadCounter, validateStorageRange } from "./storage-range";
+import type { Dirent, Stats } from "node:fs";
 import { open, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { projectFolderName, projectRelativePath } from "./project-path";
+import { isStorageNotFound, StorageNotFoundError } from "@babylonslate/core";
 import type {
   DirEntry,
   FileStat,
   ProjectFolderHandle,
   ProjectStorage,
 } from "@babylonslate/core";
+
+/** Only a missing entry (or a file in place of a parent directory) means "not found". */
+function nodeStorageError(error: unknown, path: string): unknown {
+  const code = (error as { code?: unknown } | null)?.code;
+  return code === "ENOENT" || code === "ENOTDIR" ? new StorageNotFoundError(path, { cause: error }) : error;
+}
 
 /**
  * Node filesystem adapter for CI and tooling.
@@ -91,19 +99,21 @@ export class NodeStorageAdapter implements ProjectStorage {
   }
 
   async readBinary(path: string): Promise<Uint8Array> {
+    const full = this.resolvePath(path);
+    let buf: Buffer;
     try {
-      const buf = await readFile(this.resolvePath(path));
-      this.reads.record("full", buf.byteLength);
-      return new Uint8Array(buf);
-    } catch {
-      throw new Error(`File not found: ${path}`);
+      buf = await readFile(full);
+    } catch (error) {
+      throw nodeStorageError(error, path);
     }
+    this.reads.record("full", buf.byteLength);
+    return new Uint8Array(buf);
   }
 
   async readBinaryRange(path: string, offset: number, length: number, expectedRevision?: string) {
     validateStorageRange(offset, length);
     const full = this.resolvePath(path);
-    const handle = await open(full, "r");
+    const handle = await open(full, "r").catch((error: unknown) => { throw nodeStorageError(error, path); });
     let actualBytesRead = 0;
     try {
       const before = await handle.stat({ bigint: true });
@@ -147,31 +157,40 @@ export class NodeStorageAdapter implements ProjectStorage {
 
   async exists(path: string): Promise<boolean> {
     try {
-      await stat(this.resolvePath(path, true));
+      await this.stat(path);
       return true;
-    } catch {
-      return false;
+    } catch (error) {
+      if (isStorageNotFound(error)) return false;
+      throw error;
     }
   }
 
   async readdir(path: string): Promise<DirEntry[]> {
     const full = this.resolvePath(path === "." ? "" : path, true);
+    let entries: Dirent[];
     try {
-      const entries = await readdir(full, { withFileTypes: true });
-      const out: DirEntry[] = [];
-      for (const e of entries) {
-        const s = await stat(join(full, e.name));
-        out.push({
-          name: e.name,
-          isDir: e.isDirectory(),
-          size: e.isFile() ? s.size : null,
-          mtime: s.mtimeMs,
-        });
-      }
-      return out;
-    } catch {
-      throw new Error(`File not found: ${path}`);
+      entries = await readdir(full, { withFileTypes: true });
+    } catch (error) {
+      throw nodeStorageError(error, path);
     }
+    const out: DirEntry[] = [];
+    for (const e of entries) {
+      let s: Stats;
+      try {
+        s = await stat(join(full, e.name));
+      } catch (error) {
+        // Removed after it was listed.
+        if ((error as { code?: unknown } | null)?.code === "ENOENT") continue;
+        throw error;
+      }
+      out.push({
+        name: e.name,
+        isDir: e.isDirectory(),
+        size: e.isFile() ? s.size : null,
+        mtime: s.mtimeMs,
+      });
+    }
+    return out;
   }
 
   async mkdir(path: string, recursive = true): Promise<void> {
@@ -179,24 +198,27 @@ export class NodeStorageAdapter implements ProjectStorage {
   }
 
   async remove(path: string): Promise<void> {
+    const full = this.resolvePath(path);
     try {
-      await rm(this.resolvePath(path), { recursive: true, force: false });
-    } catch {
-      throw new Error(`File not found: ${path}`);
+      await rm(full, { recursive: true, force: false });
+    } catch (error) {
+      throw nodeStorageError(error, path);
     }
   }
 
   async stat(path: string): Promise<FileStat> {
+    const full = this.resolvePath(path, true);
+    let s: Stats;
     try {
-      const s = await stat(this.resolvePath(path, true));
-      return {
-        isDir: s.isDirectory(),
-        size: s.isFile() ? s.size : null,
-        mtime: s.mtimeMs,
-      };
-    } catch {
-      throw new Error(`File not found: ${path}`);
+      s = await stat(full);
+    } catch (error) {
+      throw nodeStorageError(error, path);
     }
+    return {
+      isDir: s.isDirectory(),
+      size: s.isFile() ? s.size : null,
+      mtime: s.mtimeMs,
+    };
   }
 }
 
