@@ -80,7 +80,7 @@ export async function createAppWebGpuEngine(
 }
 
 /**
- * Babylon 9.20's dispose assumes initAsync created every helper. Its failed
+ * Babylon 9.29's dispose assumes initAsync created every helper. Its failed
  * adapter/device path dereferences missing helpers before releasing listeners
  * and EngineStore ownership. This adapter is only for failed initialization,
  * before this Engine can own any application Scene or resource-cache entry.

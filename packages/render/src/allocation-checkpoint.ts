@@ -18,7 +18,7 @@ export function beginEngineAllocationCheckpoint(
   const engine = scene.getEngine();
   const textures = new Set(scene.textures);
   const internals = new Set(engine.getLoadedTexturesCache());
-  // Babylon 9.20 has no public wrapper enumeration. Read the typed cache only;
+  // Babylon 9.29 has no public wrapper enumeration. Read the typed cache only;
   // all ownership release goes through public dispose methods, never cache edits.
   const wrappers = new Set(engine._renderTargetWrapperCache);
   return ({ before, textureFilter } = {}) => {

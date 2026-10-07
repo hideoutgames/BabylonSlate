@@ -118,7 +118,7 @@ export function sceneEffectsImageProcessingConfiguration(
     config.vignetteBlendMode = ImageProcessingConfiguration.VIGNETTEMODE_MULTIPLY;
   }
   if (plan.colorGrading) {
-    // A 3D LUT: Babylon's 2D-strip polyfill is GLSL-only on Babylon 9.20.
+    // A 3D LUT: Babylon's 2D-strip polyfill is GLSL-only on Babylon 9.29.
     config.colorGradingTexture = plan.colorGrading;
     config.colorGradingEnabled = true;
   }

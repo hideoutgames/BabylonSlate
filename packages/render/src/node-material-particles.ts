@@ -19,7 +19,7 @@ export function particleMaterialForSystem(system: IParticleSystem): NodeMaterial
 }
 
 /**
- * Babylon 9.20's recursive particle binder passes its original empty defines
+ * Babylon 9.29's recursive particle binder passes its original empty defines
  * string to a replacement observer. A cached Effect can then append observers
  * indefinitely during the same notification. Keep the current defines and one
  * owned observer per system/blend, without changing Engine or prototype state.

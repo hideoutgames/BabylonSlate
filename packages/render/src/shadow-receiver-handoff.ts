@@ -18,7 +18,7 @@ type Journal = { handoffs: ShadowReceiverHandoff[]; invalid: boolean };
 const MAX_PENDING_HANDOFFS = 64;
 const journals = new WeakMap<Scene, Journal>();
 
-/** Every per-light input of Babylon 9.20 PrepareDefinesForLight except the generator. */
+/** Every per-light input of Babylon 9.29 PrepareDefinesForLight except the generator. */
 function receiverSignature(light: ShadowLight): string {
   const defines: Record<string, unknown> = {};
   light.prepareLightSpecificDefines(defines as unknown as MaterialDefines, 0);

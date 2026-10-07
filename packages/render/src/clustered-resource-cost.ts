@@ -3,7 +3,7 @@ import type { ClusteredLightContainer } from "@babylonjs/core/Lights/Clustered/c
 import type { ManagedLightingResource } from "./managed-lighting-resources";
 
 /**
- * Pinned 9.20 footprint. WebGL2: one R32F tile mask plus one RGBA32F
+ * Pinned 9.29 footprint. WebGL2: one R32F tile mask plus one RGBA32F
  * five-texel light row per batch. WebGPU: one u32-per-light-word storage mask
  * plus the same light rows, and the one 64x64 R8 dummy RTT counted once.
  */

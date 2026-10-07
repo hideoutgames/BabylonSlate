@@ -248,7 +248,7 @@ export function isMeshFrameReady(mesh: AbstractMesh): boolean {
         const material = part.getMaterial();
         capture(material);
         // A strict probe can replace a ready effect with a compiling variant.
-        // Babylon 9.20 otherwise retains the previous effect's frozen/same-frame
+        // Babylon 9.29 otherwise retains the previous effect's frozen/same-frame
         // readiness and can bind the new effect before its pipeline exists.
         if (material?._storeEffectOnSubMeshes) {
           const wrapper = part._drawWrapperOverride ?? part._getDrawWrapper();
@@ -290,7 +290,7 @@ export function pendingSceneTextures(scene: Scene): string[] {
 }
 
 /**
- * Babylon 9.20 Scene.isReady also waits for every cached Engine effect. Mirror
+ * Babylon 9.29 Scene.isReady also waits for every cached Engine effect. Mirror
  * its scene-owned checks so an unrelated preview cannot block this viewport.
  */
 export function isSceneFrameReady(scene: Scene, targets: readonly RenderTargetTexture[] = []): boolean {

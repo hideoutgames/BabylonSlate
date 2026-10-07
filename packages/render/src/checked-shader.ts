@@ -1,6 +1,6 @@
 type Replacement = string | ((match: string, ...groups: string[]) => string);
 
-/** Babylon 9.20 shader adaptation contract: reject changed hooks before compiling. */
+/** Babylon 9.29 shader adaptation contract: reject changed hooks before compiling. */
 export function checkedShader(source: string, label: string) {
   return {
     value: source,

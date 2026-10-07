@@ -576,6 +576,9 @@ describe("Play createEngine view", () => {
     });
     vi.spyOn(engine, "createMultipleRenderTarget").mockImplementation((size) =>
       engine._createHardwareRenderTargetWrapper(true, false, size));
+    // Babylon 9.29 graph clears go through the extension's clearAttachments,
+    // which reads the absent WebGL context. NullEngine.clear draws nothing either.
+    vi.spyOn(engine, "clearAttachments").mockImplementation(() => {});
     return engine;
   }
 

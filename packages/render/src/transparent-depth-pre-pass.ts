@@ -8,7 +8,7 @@ import type { RenderingManager } from "@babylonjs/core/Rendering/renderingManage
 import { isMeshFrameReady } from "./scene-perf";
 
 type SortCompare = (a: SubMesh, b: SubMesh) => number;
-/** The Babylon 9.20 members `RenderingGroup._RenderSorted` reads; the sort is the group's (authored or default). */
+/** The Babylon 9.29 members `RenderingGroup._RenderSorted` reads; the sort is the group's (authored or default). */
 type SortedGroup = { _transparentSortCompareFn?: SortCompare | null; disableDepthPrePass?: boolean };
 type TransparentHook = (subMeshes: SmartArray<SubMesh>, group?: RenderingGroup) => void;
 
@@ -143,8 +143,8 @@ export function attachSceneDepthPrePass(scene: Scene): () => void {
   const manager = (scene as unknown as { _renderingManager: RenderingManager })._renderingManager;
   const prePass = new TransparentDepthPrePass(scene, "Scene");
   const render = manager.render;
-  const wrapped: RenderingManager["render"] = function (this: RenderingManager, custom, meshes, particles, sprites, depthOnly, opaque, alphaTest, transparent, hook) {
-    render.call(this, custom, meshes, particles, sprites, depthOnly, opaque, alphaTest, transparent, hook ?? prePass.renderTransparent);
+  const wrapped: RenderingManager["render"] = function (this: RenderingManager, custom, meshes, particles, sprites, depthOnly, opaque, alphaTest, transparent, hook, spriteManagers) {
+    render.call(this, custom, meshes, particles, sprites, depthOnly, opaque, alphaTest, transparent, hook ?? prePass.renderTransparent, spriteManagers);
   };
   manager.render = wrapped;
   return () => {

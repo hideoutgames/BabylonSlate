@@ -1,40 +1,8 @@
-diff --git a/Physics/v2/Plugins/havokPlugin.js b/Physics/v2/Plugins/havokPlugin.js
---- a/Physics/v2/Plugins/havokPlugin.js
-+++ b/Physics/v2/Plugins/havokPlugin.js
-@@ -918,11 +918,15 @@ export class HavokPlugin {
-      */
-     setShape(body, shape) {
--        const shapeHandle = shape && shape._pluginData ? shape._pluginData : BigInt(0);
-+        // Havok 1.3.14 binds HP_ShapeId as a one-element tuple, including null.
-+        // Keep public setShape(body, null) usable for final collider detachment.
-+        const shapeHandle = shape && shape._pluginData ? shape._pluginData : [BigInt(0)];
-         if (!(body.transformNode instanceof Mesh) || !body.transformNode._thinInstanceDataStorage?.matrixData) {
--            this._hknp.HP_Body_SetShape(body._pluginData.hpBodyId, shapeHandle);
-+            if (this._hknp.HP_Body_SetShape(body._pluginData.hpBodyId, shapeHandle) !== this._hknp.Result.RESULT_OK) {
-+                throw new Error("Havok native shape attachment failed");
-+            }
-             this._internalUpdateMassProperties(body._pluginData);
-             return;
-         }
-         const m = body.transformNode;
-         const instancesCount = m._thinInstanceDataStorage?.instancesCount ?? 0;
-         for (let i = 0; i < instancesCount; i++) {
-@@ -1386,7 +1392,9 @@ export class HavokPlugin {
-                 }
-                 // Set transform using the (possibly updated) region offset
-                 const offset = body._pluginData.worldRegion.floatingOrigin;
--                this._hknp.HP_Body_SetQTransform(body._pluginData.hpBodyId, this._getTransformInfos(node, offset));
-+                if (this._hknp.HP_Body_SetQTransform(body._pluginData.hpBodyId, this._getTransformInfos(node, offset)) !== this._hknp.Result.RESULT_OK) {
-+                    throw new Error("Havok native body teleport failed");
-+                }
-             }
-         }
-         else if (body.getPrestepType() == PhysicsPrestepType.ACTION) {
 diff --git a/Engines/WebGPU/webgpuCacheRenderPipeline.js b/Engines/WebGPU/webgpuCacheRenderPipeline.js
-index fbd0488aa52e990f2d15e846eb48c28062308f9e..d36af217d52ef58c1a5c811a86f3c6ce67aca8e9 100644
+index ad74e8e1285c4b11dd438bc3d17f44cf44043d88..935c8ebb843a0c58a473dc33c55d3f5ac16d0c00 100644
 --- a/Engines/WebGPU/webgpuCacheRenderPipeline.js
 +++ b/Engines/WebGPU/webgpuCacheRenderPipeline.js
-@@ -938,7 +938,9 @@ export class WebGPUCacheRenderPipeline {
+@@ -955,7 +955,9 @@ export class WebGPUCacheRenderPipeline {
                      stencilBack: this._stencilEnabled && depthStencilFormatHasStencil ? stencilBack : undefined,
                      stencilReadMask: this._stencilEnabled && depthStencilFormatHasStencil ? this._stencilReadMask : 0xffffffff,
                      stencilWriteMask: this._stencilEnabled && depthStencilFormatHasStencil ? this._stencilWriteMask : 0xffffffff,
@@ -46,7 +14,7 @@ index fbd0488aa52e990f2d15e846eb48c28062308f9e..d36af217d52ef58c1a5c811a86f3c6ce
                      depthBiasSlopeScale: topologyIsTriangle ? this._depthBiasSlopeScale : 0,
                  },
 diff --git a/Materials/Node/Blocks/Input/inputBlock.pure.js b/Materials/Node/Blocks/Input/inputBlock.pure.js
-index af4f41adb3fc89a86ecc1ca868192ba4a754135b..e23576c700da5919badb2b77a38d9d8da4c2b793 100644
+index af4f41adb3fc89a86ecc1ca868192ba4a754135b..3c8b2420b8e5f5bb6245298bb406582e8a31c72d 100644
 --- a/Materials/Node/Blocks/Input/inputBlock.pure.js
 +++ b/Materials/Node/Blocks/Input/inputBlock.pure.js
 @@ -41,6 +41,21 @@ const attributeDefine = {
@@ -71,32 +39,26 @@ index af4f41adb3fc89a86ecc1ca868192ba4a754135b..e23576c700da5919badb2b77a38d9d8d
  };
  /**
   * Block used to expose an input value
-@@ -542,16 +557,25 @@ export class InputBlock extends NodeMaterialBlock {
+@@ -540,26 +555,36 @@ export class InputBlock extends NodeMaterialBlock {
+             }
+             else {
                  if (state.shaderLanguage === 1 /* ShaderLanguage.WGSL */) {
--                    if (!alreadyDeclared) {
++                    const defineName = attributeDefine[this.name];
++                    const numericDefine = attributeNumericDefine[this.name];
++                    const gated = !!(defineName || numericDefine);
+                     if (!alreadyDeclared) {
 -                        const defineName = attributeDefine[this.name];
 -                        if (defineName) {
 -                            state._attributeDeclaration += this._emitDefine(defineName);
 -                            state._attributeDeclaration += `attribute ${this.declarationVariableName}: ${state._getShaderType(this.type)};\n`;
 -                            state._attributeDeclaration += `#else\n`;
 -                            state._attributeDeclaration += `var<private> ${this.declarationVariableName}: ${state._getShaderType(this.type)} = ${state._getShaderType(this.type)}(0.);\n`;
--                            state._attributeDeclaration += `#endif\n`;
--                        }
--                        else {
--                            state._attributeDeclaration += `attribute ${this.declarationVariableName}: ${state._getShaderType(this.type)};\n`;
--                        }
--                    }
--                    this._prefix = `vertexInputs.`;
-+                    const defineName = attributeDefine[this.name];
-+                    const numericDefine = attributeNumericDefine[this.name];
-+                    const gated = !!(defineName || numericDefine);
-+                    if (!alreadyDeclared) {
 +                        if (gated) {
 +                            const shaderType = state._getShaderType(this.type);
 +                            const defineStart = defineName ? this._emitDefine(defineName) : `#if ${numericDefine}\n`;
 +                            state._attributeDeclaration += defineStart;
 +                            state._attributeDeclaration += `attribute ${this.declarationVariableName}: ${shaderType};\n`;
-+                            state._attributeDeclaration += `#endif\n`;
+                             state._attributeDeclaration += `#endif\n`;
 +                            // BabylonSlate: the private copy is assigned from
 +                            // vertexInputs under the same guard, so consumers
 +                            // read a valid zero when the attribute is gated out.
@@ -104,14 +66,14 @@ index af4f41adb3fc89a86ecc1ca868192ba4a754135b..e23576c700da5919badb2b77a38d9d8d
 +                            state.compilationString += defineStart;
 +                            state.compilationString += `${this.declarationVariableName} = vertexInputs.${this.declarationVariableName};\n`;
 +                            state.compilationString += `#endif\n`;
-+                        }
-+                        else {
-+                            state._attributeDeclaration += `attribute ${this.declarationVariableName}: ${state._getShaderType(this.type)};\n`;
-+                        }
-+                    }
+                         }
+                         else {
+                             state._attributeDeclaration += `attribute ${this.declarationVariableName}: ${state._getShaderType(this.type)};\n`;
+                         }
+                     }
+-                    this._prefix = `vertexInputs.`;
 +                    this._prefix = gated ? "" : `vertexInputs.`;
                  }
-@@ -558,8 +589,9 @@ export class InputBlock extends NodeMaterialBlock {
                  else {
                      if (!alreadyDeclared) {
                          const defineName = attributeDefine[this.name];
@@ -123,6 +85,19 @@ index af4f41adb3fc89a86ecc1ca868192ba4a754135b..e23576c700da5919badb2b77a38d9d8d
                              state._attributeDeclaration += `attribute ${state._getShaderType(this.type)} ${this.declarationVariableName};\n`;
                              state._attributeDeclaration += `#else\n`;
                              state._attributeDeclaration += `${state._getShaderType(this.type)} ${this.declarationVariableName} = ${state._getShaderType(this.type)}(0.);\n`;
+diff --git a/Materials/Node/nodeMaterial.pure.js b/Materials/Node/nodeMaterial.pure.js
+index 677079dbbeaeeed37feb51fc976b9c2fb0f34423..c7823a5ea1f5a31047b5748814c0f044420a0610 100644
+--- a/Materials/Node/nodeMaterial.pure.js
++++ b/Materials/Node/nodeMaterial.pure.js
+@@ -1123,7 +1123,7 @@ let NodeMaterial = (() => {
+                         Effect.RegisterShader(tempName, this._fragmentCompilationState._builtCompilationString, undefined, this.shaderLanguage);
+                         effect = this.getScene()
+                             .getEngine()
+-                            .createEffectForParticles(tempName, this._fragmentCompilationState.uniforms, this._fragmentCompilationState.samplers, defines.toString() + "\n" + join, result?.fallbacks, onCompiled, onError, particleSystem);
++                            .createEffectForParticles(tempName, this._fragmentCompilationState.uniforms, this._fragmentCompilationState.samplers, defines.toString() + "\n" + join, result?.fallbacks, onCompiled, onError, particleSystem, this.shaderLanguage);
+                         particleSystem.setCustomEffect(effect, blendMode);
+                         this._createEffectForParticles(particleSystem, blendMode, onCompiled, onError, effect, defines, particleSystemDefinesJoined); // add the effect.onBindObservable observer
+                         return;
 diff --git a/Materials/effect.pure.js b/Materials/effect.pure.js
 index 801aa3c223053ecfb677eb540ffe18ad03b03025..94cc6e2a27e92f4b473d28aef56700624bc1081b 100644
 --- a/Materials/effect.pure.js
@@ -151,6 +126,27 @@ index 801aa3c223053ecfb677eb540ffe18ad03b03025..94cc6e2a27e92f4b473d28aef5670062
              this._vertexSourceCode = migratedVertexCode;
              this._fragmentSourceCode = migratedFragmentCode;
              this._prepareEffect(keepExistingPipelineContext);
+diff --git a/Misc/khronosTextureContainer2.js b/Misc/khronosTextureContainer2.js
+index c0900265932b6e5d8a98368cafc75c59b205ff11..c6374e130aee35ca0f34368b67a8a9810a5d22f9 100644
+--- a/Misc/khronosTextureContainer2.js
++++ b/Misc/khronosTextureContainer2.js
+@@ -227,6 +227,16 @@ export class KhronosTextureContainer2 {
+      * @internal
+      */
+     async _uploadAsync(data, internalTexture, options) {
++        // WebGPU rejects a block-compressed texture whose base size is not whole 4x4 blocks,
++        // while WebGL2 uploads it. Decode such a Basis Universal KTX2 (vkFormat 0) to RGBA instead.
++        // Decided from the bytes, so it also holds when a lost device rebuilds the texture.
++        if (this._engine.isWebGPU && data.byteLength >= 28) {
++            const header = new DataView(data.buffer, data.byteOffset, data.byteLength);
++            if (header.getUint32(12, true) === 0 && ((header.getUint32(20, true) | header.getUint32(24, true)) & 3) !== 0) {
++                options = options ?? {};
++                options.forceRGBA = true;
++            }
++        }
+         const decodedData = await this._decodeAsync(data, options);
+         this._createTexture(decodedData, internalTexture, options);
+     }
 diff --git a/Misc/rgbdTextureTools.js b/Misc/rgbdTextureTools.js
 index 4a3beadf2109e61112863c8d5393a91ba2eba2ec..ce977cda0f0faf7cad46c191b3deea4341b20a2f 100644
 --- a/Misc/rgbdTextureTools.js
@@ -386,75 +382,33 @@ index 4a3beadf2109e61112863c8d5393a91ba2eba2ec..ce977cda0f0faf7cad46c191b3deea43
      }
      /**
       * Encode the texture to RGBD if possible.
-diff --git a/assetContainer.js b/assetContainer.js
---- a/assetContainer.js
-+++ b/assetContainer.js
-@@ -202,7 +202,7 @@
-         }
-         this.scene = scene;
-         this["proceduralTextures"] = [];
--        scene.onDisposeObservable.add(() => {
-+        this._onSceneDisposeObserver = scene.onDisposeObservable.add(() => {
-             if (!this._wasAddedToScene) {
-                 this.dispose();
-             }
-@@ -849,6 +849,11 @@
-      * Disposes all the assets in the container
-      */
-     dispose() {
-+        // BabylonSlate: retired model generations must not retain Scene observers.
-+        if (this._onSceneDisposeObserver) {
-+            this.scene.onDisposeObservable.remove(this._onSceneDisposeObserver);
-+            this._onSceneDisposeObserver = null;
-+        }
-         const cameras = this.cameras.slice(0);
-         for (const camera of cameras) {
-             camera.dispose();
-diff --git a/Materials/Node/nodeMaterial.pure.js b/Materials/Node/nodeMaterial.pure.js
---- a/Materials/Node/nodeMaterial.pure.js
-+++ b/Materials/Node/nodeMaterial.pure.js
-@@ -1109,7 +1109,7 @@
-                         Effect.RegisterShader(tempName, this._fragmentCompilationState._builtCompilationString, undefined, this.shaderLanguage);
-                         effect = this.getScene()
-                             .getEngine()
--                            .createEffectForParticles(tempName, this._fragmentCompilationState.uniforms, this._fragmentCompilationState.samplers, defines.toString() + "\n" + join, result?.fallbacks, onCompiled, onError, particleSystem);
-+                            .createEffectForParticles(tempName, this._fragmentCompilationState.uniforms, this._fragmentCompilationState.samplers, defines.toString() + "\n" + join, result?.fallbacks, onCompiled, onError, particleSystem, this.shaderLanguage);
-                         particleSystem.setCustomEffect(effect, blendMode);
-                         this._createEffectForParticles(particleSystem, blendMode, onCompiled, onError, effect, defines, particleSystemDefinesJoined); // add the effect.onBindObservable observer
-                         return;
-diff --git a/Misc/khronosTextureContainer2.js b/Misc/khronosTextureContainer2.js
---- a/Misc/khronosTextureContainer2.js
-+++ b/Misc/khronosTextureContainer2.js
-@@ -227,6 +227,16 @@
-      * @internal
-      */
-     async _uploadAsync(data, internalTexture, options) {
-+        // WebGPU rejects a block-compressed texture whose base size is not whole 4x4 blocks,
-+        // while WebGL2 uploads it. Decode such a Basis Universal KTX2 (vkFormat 0) to RGBA instead.
-+        // Decided from the bytes, so it also holds when a lost device rebuilds the texture.
-+        if (this._engine.isWebGPU && data.byteLength >= 28) {
-+            const header = new DataView(data.buffer, data.byteOffset, data.byteLength);
-+            if (header.getUint32(12, true) === 0 && ((header.getUint32(20, true) | header.getUint32(24, true)) & 3) !== 0) {
-+                options = options ?? {};
-+                options.forceRGBA = true;
-+            }
-+        }
-         const decodedData = await this._decodeAsync(data, options);
-         this._createTexture(decodedData, internalTexture, options);
-     }
+diff --git a/Particles/gpuParticleSystem.pure.d.ts b/Particles/gpuParticleSystem.pure.d.ts
+index 42a19a93119be03738ecfb3d48e2a0626a14d81a..92204738b04416361b5427ec5d001c7c93c214b9 100644
+--- a/Particles/gpuParticleSystem.pure.d.ts
++++ b/Particles/gpuParticleSystem.pure.d.ts
+@@ -56,6 +56,8 @@ export declare class GPUParticleSystem extends BaseParticleSystem implements IDi
+     _randomTexture2: RawTexture;
+     /** Indicates that the update of particles is done in the animate function (and not in render). Default: false */
+     updateInAnimate: boolean;
++    /** BabylonSlate: skip simulation/emission/prewarm and draw existing buffers only. */
++    paused: boolean;
+     private _attributesStrideSize;
+     private _cachedUpdateDefines;
+     private _randomTextureSize;
 diff --git a/Particles/gpuParticleSystem.pure.js b/Particles/gpuParticleSystem.pure.js
+index 23cc4b44ae5ddaa1a098cc367cbe2b53fb5c8196..125ef9305ad59e91d2e3bf3fd1486edce2fd407b 100644
 --- a/Particles/gpuParticleSystem.pure.js
 +++ b/Particles/gpuParticleSystem.pure.js
-@@ -674,6 +674,8 @@
+@@ -775,6 +775,8 @@ export class GPUParticleSystem extends BaseParticleSystem {
          this._timeDelta = 0;
          /** Indicates that the update of particles is done in the animate function (and not in render). Default: false */
          this.updateInAnimate = false;
 +        // BabylonSlate: hold simulation while drawing the last completed particle buffers.
 +        this.paused = false;
          this._actualFrame = 0;
+         this._renderPassObserver = null;
          this._renderShadersLoaded = false;
-         this._rawTextureWidth = 256;
-@@ -1319,6 +1321,9 @@
+@@ -1462,6 +1464,9 @@ export class GPUParticleSystem extends BaseParticleSystem {
       * @param preWarm defines if we are in the pre-warmimg phase
       */
      animate(preWarm = false) {
@@ -464,7 +418,7 @@ diff --git a/Particles/gpuParticleSystem.pure.js b/Particles/gpuParticleSystem.p
          this._timeDelta = this.updateSpeed * (preWarm ? this.preWarmStepOffset : this._scene?.getAnimationRatio() || 1);
          this._actualFrame += this._timeDelta;
          if (!this._stopped) {
-@@ -1683,6 +1688,11 @@
+@@ -1883,6 +1888,11 @@ export class GPUParticleSystem extends BaseParticleSystem {
       * @returns the current number of particles
       */
      render(preWarm = false, forceUpdateOnly = false) {
@@ -476,7 +430,7 @@ diff --git a/Particles/gpuParticleSystem.pure.js b/Particles/gpuParticleSystem.p
          if (!this._started) {
              return 0;
          }
-@@ -1690,7 +1700,7 @@
+@@ -1890,7 +1900,7 @@ export class GPUParticleSystem extends BaseParticleSystem {
              return 0;
          }
          if (!preWarm && this._scene) {
@@ -485,7 +439,7 @@ diff --git a/Particles/gpuParticleSystem.pure.js b/Particles/gpuParticleSystem.p
                  for (let index = 0; index < this.preWarmCycles; index++) {
                      this.animate(true);
                      this.render(true, true);
-@@ -1706,113 +1716,115 @@
+@@ -1906,114 +1916,116 @@ export class GPUParticleSystem extends BaseParticleSystem {
                  this._currentRenderingCameraUniqueId = this._scene.activeCamera.uniqueId;
              }
          }
@@ -500,35 +454,7 @@ diff --git a/Particles/gpuParticleSystem.pure.js b/Particles/gpuParticleSystem.p
 -                    this._currentEmitRate1 = this._currentEmitRate2;
 -                    this._currentEmitRate2 = nextGradient.getFactor();
 -                    this._currentEmitRateGradient = currentGradient;
-+        if (!this.paused) {
-+            // Get everything ready to render
-+            this._initialize();
-+            // Compute effective emit rate, applying emit rate gradients if set
-+            let effectiveEmitRate = this.emitRate;
-+            if (this._emitRateGradients && this._emitRateGradients.length > 0 && this.targetStopDuration) {
-+                const ratio = this._actualFrame / this.targetStopDuration;
-+                GradientHelper.GetCurrentGradient(ratio, this._emitRateGradients, (currentGradient, nextGradient, scale) => {
-+                    if (currentGradient !== this._currentEmitRateGradient) {
-+                        this._currentEmitRate1 = this._currentEmitRate2;
-+                        this._currentEmitRate2 = nextGradient.getFactor();
-+                        this._currentEmitRateGradient = currentGradient;
-+                    }
-+                    effectiveEmitRate = Lerp(this._currentEmitRate1, this._currentEmitRate2, scale);
-+                });
-+            }
-+            // Compute start size and life time gradient factors for shader uniforms
-+            if (this.targetStopDuration) {
-+                const ratio = this._actualFrame / this.targetStopDuration;
-+                if (this._startSizeGradients && this._startSizeGradients.length > 0) {
-+                    GradientHelper.GetCurrentGradient(ratio, this._startSizeGradients, (currentGradient, nextGradient, scale) => {
-+                        if (currentGradient !== this._currentStartSizeGradient) {
-+                            this._currentStartSize1 = this._currentStartSize2;
-+                            this._currentStartSize2 = nextGradient.getFactor();
-+                            this._currentStartSizeGradient = currentGradient;
-+                        }
-+                        this._startSizeGradientFactor = Lerp(this._currentStartSize1, this._currentStartSize2, scale);
-+                    });
-                 }
+-                }
 -                effectiveEmitRate = Lerp(this._currentEmitRate1, this._currentEmitRate2, scale);
 -            });
 -        }
@@ -541,9 +467,50 @@ diff --git a/Particles/gpuParticleSystem.pure.js b/Particles/gpuParticleSystem.p
 -                        this._currentStartSize1 = this._currentStartSize2;
 -                        this._currentStartSize2 = nextGradient.getFactor();
 -                        this._currentStartSizeGradient = currentGradient;
--                    }
++        if (!this.paused) {
++            // Get everything ready to render
++            this._initialize();
++            // Compute effective emit rate, applying emit rate gradients if set
++            let effectiveEmitRate = this.emitRate;
++            if (this._emitRateGradients && this._emitRateGradients.length > 0 && this.targetStopDuration) {
++                const ratio = this._actualFrame / this.targetStopDuration;
++                GradientHelper.GetCurrentGradient(ratio, this._emitRateGradients, (currentGradient, nextGradient, scale) => {
++                    if (currentGradient !== this._currentEmitRateGradient) {
++                        this._currentEmitRate1 = this._currentEmitRate2;
++                        this._currentEmitRate2 = nextGradient.getFactor();
++                        this._currentEmitRateGradient = currentGradient;
+                     }
 -                    this._startSizeGradientFactor = Lerp(this._currentStartSize1, this._currentStartSize2, scale);
 -                });
+-            }
+-            else {
+-                this._startSizeGradientFactor = 1.0;
+-            }
+-            if (this._lifeTimeGradients && this._lifeTimeGradients.length > 0) {
+-                GradientHelper.GetCurrentGradient(ratio, this._lifeTimeGradients, (currentGradient, nextGradient, scale) => {
+-                    const current = currentGradient;
+-                    const next = nextGradient;
+-                    this._lifeTimeGradientMin = Lerp(current.factor1, next.factor1, scale);
+-                    this._lifeTimeGradientMax = Lerp(current.factor2 ?? current.factor1, next.factor2 ?? next.factor1, scale);
++                    effectiveEmitRate = Lerp(this._currentEmitRate1, this._currentEmitRate2, scale);
+                 });
+             }
+-            else {
+-                this._lifeTimeGradientMin = 1.0;
+-                this._lifeTimeGradientMax = 1.0;
++            // Compute start size and life time gradient factors for shader uniforms
++            if (this.targetStopDuration) {
++                const ratio = this._actualFrame / this.targetStopDuration;
++                if (this._startSizeGradients && this._startSizeGradients.length > 0) {
++                    GradientHelper.GetCurrentGradient(ratio, this._startSizeGradients, (currentGradient, nextGradient, scale) => {
++                        if (currentGradient !== this._currentStartSizeGradient) {
++                            this._currentStartSize1 = this._currentStartSize2;
++                            this._currentStartSize2 = nextGradient.getFactor();
++                            this._currentStartSizeGradient = currentGradient;
++                        }
++                        this._startSizeGradientFactor = Lerp(this._currentStartSize1, this._currentStartSize2, scale);
++                    });
++                }
 +                else {
 +                    this._startSizeGradientFactor = 1.0;
 +                }
@@ -559,7 +526,49 @@ diff --git a/Particles/gpuParticleSystem.pure.js b/Particles/gpuParticleSystem.p
 +                    this._lifeTimeGradientMin = 1.0;
 +                    this._lifeTimeGradientMax = 1.0;
 +                }
-+            }
+             }
+-        }
+-        if (this.emitRateControl) {
+-            // Emit-rate-controlled mode: limits active particles to ~emitRate * maxLifeTime,
+-            // matching CPU particle behavior with circular buffer recycling.
+-            // Accumulate fractional particles over time. Manual emit bypasses the rate.
+-            if (this.manualEmitCount > -1) {
+-                this._accumulatedCount += this.manualEmitCount;
+-                this.manualEmitCount = 0;
+-            }
+-            else if (!this._stopped) {
+-                this._accumulatedCount += effectiveEmitRate * this._timeDelta;
+-            }
+-            // Convert accumulated fractional count into whole particles to emit this frame.
+-            // The fractional remainder carries over to the next frame.
+-            let newParticles = 0;
+-            if (this._accumulatedCount >= 1) {
+-                newParticles = this._accumulatedCount | 0;
+-                this._accumulatedCount -= newParticles;
+-            }
+-            // The maximum number of particles that can be alive at once is bounded by
+-            // emitRate * maxLifeTime (e.g. 1000 emit/s * 0.3s = 300 particles).
+-            // This matches CPU particle system behavior and avoids filling the entire capacity.
+-            // When emitRate is 0 but manualEmitCount is used, the rate-based steady state
+-            // would be 0, blocking buffer growth. Use newParticles as a floor so manual
+-            // emissions can always allocate slots.
+-            const steadyStateCount = Math.min(Math.max(Math.ceil(effectiveEmitRate * this.maxLifeTime), newParticles), this._maxActiveParticleCount);
+-            // During ramp-up, grow the active buffer size by adding new slots.
+-            // Once _currentActiveCount reaches steadyStateCount, no new slots are added —
+-            // existing slots are recycled instead (handled by _emitIndex below).
+-            if (this._currentActiveCount < steadyStateCount && newParticles > 0) {
+-                const growth = Math.min(newParticles, steadyStateCount - this._currentActiveCount);
+-                this._currentActiveCount += growth;
+-            }
+-            // Tell the update shader which particle slots to (re)initialize this frame.
+-            // _emitIndex is where the circular write pointer starts in the buffer,
+-            // _emitCount is how many consecutive slots to reinitialize (with wrapping).
+-            // The shader checks each particle's index against this range to decide
+-            // whether to recycle it (emit branch) or advance its simulation (update branch).
+-            if (this._currentActiveCount > 0 && newParticles > 0) {
+-                this._emitCount = Math.min(newParticles, this._currentActiveCount);
+-                this._emitIndex = this._writePointer % this._currentActiveCount;
+-                this._writePointer += this._emitCount;
 +            if (this.emitRateControl) {
 +                // Emit-rate-controlled mode: limits active particles to ~emitRate * maxLifeTime,
 +                // matching CPU particle behavior with circular buffer recycling.
@@ -607,64 +616,6 @@ diff --git a/Particles/gpuParticleSystem.pure.js b/Particles/gpuParticleSystem.p
 +                }
              }
              else {
--                this._startSizeGradientFactor = 1.0;
--            }
--            if (this._lifeTimeGradients && this._lifeTimeGradients.length > 0) {
--                GradientHelper.GetCurrentGradient(ratio, this._lifeTimeGradients, (currentGradient, nextGradient, scale) => {
--                    const current = currentGradient;
--                    const next = nextGradient;
--                    this._lifeTimeGradientMin = Lerp(current.factor1, next.factor1, scale);
--                    this._lifeTimeGradientMax = Lerp(current.factor2 ?? current.factor1, next.factor2 ?? next.factor1, scale);
--                });
--            }
--            else {
--                this._lifeTimeGradientMin = 1.0;
--                this._lifeTimeGradientMax = 1.0;
--            }
--        }
--        if (this.emitRateControl) {
--            // Emit-rate-controlled mode: limits active particles to ~emitRate * maxLifeTime,
--            // matching CPU particle behavior with circular buffer recycling.
--            // Accumulate fractional particles over time. Manual emit bypasses the rate.
--            if (this.manualEmitCount > -1) {
--                this._accumulatedCount += this.manualEmitCount;
--                this.manualEmitCount = 0;
--            }
--            else if (!this._stopped) {
--                this._accumulatedCount += effectiveEmitRate * this._timeDelta;
--            }
--            // Convert accumulated fractional count into whole particles to emit this frame.
--            // The fractional remainder carries over to the next frame.
--            let newParticles = 0;
--            if (this._accumulatedCount >= 1) {
--                newParticles = this._accumulatedCount | 0;
--                this._accumulatedCount -= newParticles;
--            }
--            // The maximum number of particles that can be alive at once is bounded by
--            // emitRate * maxLifeTime (e.g. 1000 emit/s * 0.3s = 300 particles).
--            // This matches CPU particle system behavior and avoids filling the entire capacity.
--            // When emitRate is 0 but manualEmitCount is used, the rate-based steady state
--            // would be 0, blocking buffer growth. Use newParticles as a floor so manual
--            // emissions can always allocate slots.
--            const steadyStateCount = Math.min(Math.max(Math.ceil(effectiveEmitRate * this.maxLifeTime), newParticles), this._maxActiveParticleCount);
--            // During ramp-up, grow the active buffer size by adding new slots.
--            // Once _currentActiveCount reaches steadyStateCount, no new slots are added —
--            // existing slots are recycled instead (handled by _emitIndex below).
--            if (this._currentActiveCount < steadyStateCount && newParticles > 0) {
--                const growth = Math.min(newParticles, steadyStateCount - this._currentActiveCount);
--                this._currentActiveCount += growth;
--            }
--            // Tell the update shader which particle slots to (re)initialize this frame.
--            // _emitIndex is where the circular write pointer starts in the buffer,
--            // _emitCount is how many consecutive slots to reinitialize (with wrapping).
--            // The shader checks each particle's index against this range to decide
--            // whether to recycle it (emit branch) or advance its simulation (update branch).
--            if (this._currentActiveCount > 0 && newParticles > 0) {
--                this._emitCount = Math.min(newParticles, this._currentActiveCount);
--                this._emitIndex = this._writePointer % this._currentActiveCount;
--                this._writePointer += this._emitCount;
--            }
--            else {
 +                // Legacy mode: dead particles recycle immediately, filling up to capacity.
 +                if (this.manualEmitCount > -1) {
 +                    this._accumulatedCount += this.manualEmitCount;
@@ -682,7 +633,7 @@ diff --git a/Particles/gpuParticleSystem.pure.js b/Particles/gpuParticleSystem.p
 +                this._emitIndex = 0;
                  this._emitCount = 0;
              }
--        }
+         }
 -        else {
 -            // Legacy mode: dead particles recycle immediately, filling up to capacity.
 -            if (this.manualEmitCount > -1) {
@@ -700,10 +651,11 @@ diff --git a/Particles/gpuParticleSystem.pure.js b/Particles/gpuParticleSystem.p
 -            this._currentActiveCount = Math.min(this._maxActiveParticleCount, this._currentActiveCount);
 -            this._emitIndex = 0;
 -            this._emitCount = 0;
-         }
+-        }
          if (!this._currentActiveCount) {
              return 0;
-@@ -1829,7 +1841,7 @@
+         }
+@@ -2029,7 +2041,7 @@ export class GPUParticleSystem extends BaseParticleSystem {
              Matrix.TranslationToRef(emitterPosition.x, emitterPosition.y, emitterPosition.z, emitterWM);
          }
          const engine = this._engine;
@@ -712,34 +664,107 @@ diff --git a/Particles/gpuParticleSystem.pure.js b/Particles/gpuParticleSystem.p
              this._update(emitterWM);
          }
          let outparticles = 0;
-diff --git a/Particles/gpuParticleSystem.pure.d.ts b/Particles/gpuParticleSystem.pure.d.ts
---- a/Particles/gpuParticleSystem.pure.d.ts
-+++ b/Particles/gpuParticleSystem.pure.d.ts
-@@ -56,6 +56,8 @@
-     _randomTexture2: RawTexture;
-     /** Indicates that the update of particles is done in the animate function (and not in render). Default: false */
-     updateInAnimate: boolean;
-+    /** BabylonSlate: skip simulation/emission/prewarm and draw existing buffers only. */
-+    paused: boolean;
-     private _attributesStrideSize;
-     private _cachedUpdateDefines;
-     private _randomTextureSize;
-diff --git a/scene.pure.js b/scene.pure.js
---- a/scene.pure.js
-+++ b/scene.pure.js
-@@ -4448,8 +4448,9 @@
+diff --git a/Physics/v2/Plugins/havokPlugin.js b/Physics/v2/Plugins/havokPlugin.js
+index 3d66a1233b00a9d792d58bb0b233cf8815e5a9de..e73a4da64e042d7c2f0a9f44b4777721e51b58d7 100644
+--- a/Physics/v2/Plugins/havokPlugin.js
++++ b/Physics/v2/Plugins/havokPlugin.js
+@@ -918,9 +918,13 @@ export class HavokPlugin {
+      * will set the shape for each instance of the mesh.
+      */
+     setShape(body, shape) {
+-        const shapeHandle = shape && shape._pluginData ? shape._pluginData : BigInt(0);
++        // Havok 1.3.14 binds HP_ShapeId as a one-element tuple, including null.
++        // Keep public setShape(body, null) usable for final collider detachment.
++        const shapeHandle = shape && shape._pluginData ? shape._pluginData : [BigInt(0)];
+         if (!(body.transformNode instanceof Mesh) || !body.transformNode._thinInstanceDataStorage?.matrixData) {
+-            this._hknp.HP_Body_SetShape(body._pluginData.hpBodyId, shapeHandle);
++            if (this._hknp.HP_Body_SetShape(body._pluginData.hpBodyId, shapeHandle) !== this._hknp.Result.RESULT_OK) {
++                throw new Error("Havok native shape attachment failed");
++            }
+             this._internalUpdateMassProperties(body._pluginData);
+             return;
+         }
+@@ -1383,7 +1387,9 @@ export class HavokPlugin {
+                 }
+                 // Set transform using the (possibly updated) region offset
+                 const offset = body._pluginData.worldRegion.floatingOrigin;
+-                this._hknp.HP_Body_SetQTransform(body._pluginData.hpBodyId, this._getTransformInfos(node, offset));
++                if (this._hknp.HP_Body_SetQTransform(body._pluginData.hpBodyId, this._getTransformInfos(node, offset)) !== this._hknp.Result.RESULT_OK) {
++                    throw new Error("Havok native body teleport failed");
++                }
+             }
+         }
+         else if (body.getPrestepType() == PhysicsPrestepType.ACTION) {
+diff --git a/assetContainer.js b/assetContainer.js
+index 046984e478022e39c2405a1fa1d86c5326015e25..521afef3565b03446e7699397d540f17b61afc22 100644
+--- a/assetContainer.js
++++ b/assetContainer.js
+@@ -202,7 +202,7 @@ export class AssetContainer extends AbstractAssetContainer {
+         }
+         this.scene = scene;
+         this["proceduralTextures"] = [];
+-        scene.onDisposeObservable.add(() => {
++        this._onSceneDisposeObserver = scene.onDisposeObservable.add(() => {
+             if (!this._wasAddedToScene) {
+                 this.dispose();
+             }
+@@ -849,6 +849,11 @@ export class AssetContainer extends AbstractAssetContainer {
+      * Disposes all the assets in the container
+      */
+     dispose() {
++        // BabylonSlate: retired model generations must not retain Scene observers.
++        if (this._onSceneDisposeObserver) {
++            this.scene.onDisposeObservable.remove(this._onSceneDisposeObserver);
++            this._onSceneDisposeObserver = null;
++        }
+         const cameras = this.cameras.slice(0);
+         for (const camera of cameras) {
+             camera.dispose();
+diff --git a/scene.pure.d.ts b/scene.pure.d.ts
+index 87086e3298f112a76b9e324e2d04d6b1ea60cd47..79b40ff5e116b92d42aed46496340b62987cdab0 100644
+--- a/scene.pure.d.ts
++++ b/scene.pure.d.ts
+@@ -2365,8 +2365,9 @@ export declare class Scene implements IAnimatable, IClipPlanesHolder, IAssetCont
       * Render the scene
       * @param updateCameras defines a boolean indicating if cameras must update according to their inputs (true by default)
       * @param ignoreAnimations defines a boolean indicating if animations should not be executed (false by default)
--     */
--    render(updateCameras = true, ignoreAnimations = false) {
 +     * @param ignoreActions BabylonSlate: suppress frame and intersection gameplay actions during render-only presentation.
-+     */
+      */
+-    render(updateCameras?: boolean, ignoreAnimations?: boolean): void;
++    render(updateCameras?: boolean, ignoreAnimations?: boolean, ignoreActions?: boolean): void;
+     private _renderFrame;
+     /**
+      * Freeze all materials
+diff --git a/scene.pure.js b/scene.pure.js
+index 07e0f7e14442d2187e86d561a8c448f01d67b238..10f58511d6243c767e4fbfd258eb68feade6945e 100644
+--- a/scene.pure.js
++++ b/scene.pure.js
+@@ -4517,20 +4517,21 @@ export class Scene {
+      * Render the scene
+      * @param updateCameras defines a boolean indicating if cameras must update according to their inputs (true by default)
+      * @param ignoreAnimations defines a boolean indicating if animations should not be executed (false by default)
++     * @param ignoreActions BabylonSlate: suppress frame and intersection gameplay actions during render-only presentation.
+      */
+-    render(updateCameras = true, ignoreAnimations = false) {
 +    render(updateCameras = true, ignoreAnimations = false, ignoreActions = false) {
          if (this.isDisposed) {
              return;
          }
-@@ -4476,7 +4477,7 @@
+         const renderingMeshEvaluationDepth = this._renderingMeshEvaluationDepth;
+         try {
+-            this._renderFrame(updateCameras, ignoreAnimations);
++            this._renderFrame(updateCameras, ignoreAnimations, ignoreActions);
+         }
+         finally {
+             this._renderingMeshEvaluationDepth = renderingMeshEvaluationDepth;
+         }
+     }
+-    _renderFrame(updateCameras, ignoreAnimations) {
++    _renderFrame(updateCameras, ignoreAnimations, ignoreActions) {
+         if (this.onReadyObservable.hasObservers() && this._executeWhenReadyTimeoutId === null) {
+             this._checkIsReady();
+         }
+@@ -4554,7 +4555,7 @@ export class Scene {
          this.resetCachedMaterial();
          this.onBeforeAnimationsObservable.notifyObservers(this);
          // Actions
@@ -748,10 +773,10 @@ diff --git a/scene.pure.js b/scene.pure.js
              this.actionManager.processTrigger(11);
          }
          // Animations
-@@ -4562,8 +4563,10 @@
-                 this._processSubCameras(this.activeCamera, !!this.activeCamera.outputRenderTarget);
+@@ -4643,8 +4644,10 @@ export class Scene {
              }
          }
+         this._inputManager._updateMeshUnderPointer();
 -        // Intersection checks
 -        this._checkIntersections();
 +        // Intersection state is left intact until the next gameplay presentation.
@@ -761,18 +786,3 @@ diff --git a/scene.pure.js b/scene.pure.js
          // Executes the after render stage actions.
          for (const step of this._afterRenderStage) {
              step.action();
-diff --git a/scene.pure.d.ts b/scene.pure.d.ts
---- a/scene.pure.d.ts
-+++ b/scene.pure.d.ts
-@@ -2327,8 +2327,9 @@
-      * Render the scene
-      * @param updateCameras defines a boolean indicating if cameras must update according to their inputs (true by default)
-      * @param ignoreAnimations defines a boolean indicating if animations should not be executed (false by default)
--     */
--    render(updateCameras?: boolean, ignoreAnimations?: boolean): void;
-+     * @param ignoreActions BabylonSlate: suppress frame and intersection gameplay actions during render-only presentation.
-+     */
-+    render(updateCameras?: boolean, ignoreAnimations?: boolean, ignoreActions?: boolean): void;
-     /**
-      * Freeze all materials
-      * A frozen material will not be updatable but should be faster to render

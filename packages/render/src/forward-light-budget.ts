@@ -2,7 +2,7 @@ import type { AbstractEngine } from "@babylonjs/core";
 
 export interface ForwardLightBudget {
   slots: number;
-  source: "webgl2" | "webgl2-minimum" | "non-ubo";
+  source: "webgl2" | "webgl2-minimum" | "webgpu" | "non-ubo";
   reservedBlocks: number;
   vertexBlocks: number | null;
   fragmentBlocks: number | null;
@@ -12,13 +12,14 @@ export interface ForwardLightBudget {
 
 const budgets = new WeakMap<AbstractEngine, ForwardLightBudget>();
 
-/** Babylon 9.20 does not expose UBO limits through EngineCapabilities. */
+/** Babylon 9.29 EngineCapabilities report only WebGPU's per-stage UBO limit; WebGL2 limits are queried here. */
 export function forwardLightBudget(engine: AbstractEngine): ForwardLightBudget {
   const cached = budgets.get(engine);
   if (cached) return cached;
   // Native PBR/Standard reserve these binding indices even when a compiler
   // optimizes their blocks away. Graph PBR and CEL use the same light budget.
   const reservedBlocks = 3; // Material, Scene, Mesh
+  const perStage = engine.getCaps().maxUniformBuffersPerShaderStage;
   let budget: ForwardLightBudget;
   if (!engine.supportsUniformBuffers) {
     budget = {
@@ -27,6 +28,18 @@ export function forwardLightBudget(engine: AbstractEngine): ForwardLightBudget {
       reservedBlocks: 0,
       vertexBlocks: null,
       fragmentBlocks: null,
+      bindings: null,
+      combinedBlocks: null,
+    };
+  } else if (perStage != null) {
+    // Babylon 9.29 clamps every material's light count to this limit less
+    // Scene, Mesh, Material and LeftOver (GetSupportedSimultaneousLights).
+    budget = {
+      slots: Math.max(1, perStage - 4),
+      source: "webgpu",
+      reservedBlocks: 4,
+      vertexBlocks: perStage,
+      fragmentBlocks: perStage,
       bindings: null,
       combinedBlocks: null,
     };

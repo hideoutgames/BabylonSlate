@@ -38,7 +38,7 @@ function positiveFinite(value: number): boolean {
  * bound. Automatically insetting split-normal vertices can open hard contacts,
  * so adaptation adds no normal displacement.
  *
- * Babylon 9.20's GLSL and WGSL shadowMapVertexMetric apply half of native bias
+ * Babylon 9.29's GLSL and WGSL shadowMapVertexMetric apply half of native bias
  * to normalized hardware depth, including reverse depth. CSM depth clamping
  * writes that metric plus another native bias in shadowMapFragment (1.5 total).
  * Color-depth filters add one native bias. PCSS uses hardware depth for its
