@@ -2,7 +2,7 @@ import {
   Color4,
   Mesh,
   NodeMaterialModes,
-  RenderTargetTexture,
+  type RenderTargetTexture,
   Vector3,
   type AbstractEngine,
   type AbstractMesh,
@@ -19,7 +19,7 @@ import { isColliderVisualMesh } from "./collider-visual";
 import { isSkyboxMesh } from "./skybox";
 import { hasSurfaceVisual } from "./scene-loader";
 import { MaterialLibrary, type MaterialResolveOptions } from "./material-library";
-import { createMaterialPreviewScene } from "./material-preview";
+import { createMaterialPreviewScene, createPreviewRenderTarget, renderPreviewFrame } from "./material-preview";
 import type { MeshAssetContext } from "./mesh-assets";
 import { applyMaterialToVisualMeshes } from "./visual-meshes";
 import { acquireMaterialTexture, bindResourceCacheToHandle, resourceCacheForEngine } from "./resource-cache";
@@ -157,7 +157,7 @@ export async function captureAssetThumbnailPng(
     } else {
       host.mesh.isVisible = false;
       host.scene.shadowsEnabled = false;
-      sync = new EditorSceneSync(host.scene, undefined, { resolveMaterial, freezeActiveMeshes: false, preparationPriority: "background",
+      sync = new EditorSceneSync(host.scene, undefined, { resolveMaterial, preparationPriority: "background",
         releaseMaterialInstance: (key, guid) => library.releaseInstance(key, guid),
         validateMaterialParameter: (guid, name, value) => {
           const document = request.materials.get(guid);
@@ -202,9 +202,9 @@ export async function captureAssetThumbnailPng(
     host.scene.clearColor = new Color4(0, 0, 0, 0);
     host.scene.activeCamera = host.camera;
     const size = Number.isFinite(maxEdge) ? Math.max(1, Math.min(512, Math.floor(maxEdge))) : DEFAULT_THUMBNAIL_MAX_EDGE;
-    target = new RenderTargetTexture("assetThumbnail", { width: size, height: size }, host.scene, false);
+    target = createPreviewRenderTarget("assetThumbnail", { width: size, height: size }, host.scene);
     host.camera.outputRenderTarget = target;
-    host.scene.render();
+    if (!(await renderPreviewFrame(host, current))) return null;
     const readback = await whileCurrent(Promise.resolve(target.readPixels()), current);
     if (!readback || !current()) return null;
     const pixels = readback instanceof ArrayBuffer ? new Uint8Array(readback)
@@ -219,7 +219,8 @@ export async function captureAssetThumbnailPng(
     target?.dispose();
     sync?.dispose();
     library.dispose();
-    host.dispose();
+    // The Scene still holds cache-bound resources until its renderer releases.
+    await host.whenReleased().catch(() => {});
     binding.dispose();
   }
 }

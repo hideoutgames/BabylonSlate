@@ -1,5 +1,4 @@
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
-import { PostProcess } from "@babylonjs/core/PostProcesses/postProcess";
 import { limitManagedRenderBytes, managedRenderReservations } from "./managed-render-resources";
 import { MaterialLibrary } from "./material-library";
 import { DirectionalLight, FreeCamera, MeshBuilder, NullEngine, NullEngineOptions, PointLight, RawTexture, RenderTargetTexture, Scene, StandardMaterial, Vector3, VertexBuffer } from "@babylonjs/core";
@@ -15,6 +14,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { FrameGraphTextureManager } from "@babylonjs/core/FrameGraph/frameGraphTextureManager";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
+import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { SharedOutlineOwner } from "./shared-outline";
 import { createGizmoHost } from "./gizmo-host";
 import { applyCableFrame, createCableMesh } from "./cable-mesh";
@@ -29,15 +29,8 @@ function host() {
   const options = new NullEngineOptions();
   options.renderWidth = 80;
   options.renderHeight = 64;
-  const engine = new NullEngine(options);
+  const engine = adaptNullEngineFrameGraph(new NullEngine(options));
   engines.push(engine);
-  // NullEngine lacks this MRT driver boundary; keep the real graph/tasks and
-  // native Scene readiness, camera ownership and drawing paths.
-  vi.spyOn(engine, "buildTextureLayout").mockImplementation((enabled, backbuffer) =>
-    backbuffer ? [0x0405] : enabled.map((value, index) => value ? 0x8ce0 + index : 0));
-  vi.spyOn(engine, "bindAttachments").mockImplementation(() => {});
-  vi.spyOn(engine, "restoreSingleAttachment").mockImplementation(() => {});
-  vi.spyOn(engine, "restoreSingleAttachmentForRenderTarget").mockImplementation(() => {});
   const scene = new Scene(engine);
   const camera = new FreeCamera("camera", new Vector3(0, 0, -4), scene);
   scene.activeCamera = camera;
@@ -240,7 +233,7 @@ it("keeps canceled roots staged between Removed and Despawn and rejects obsolete
   admission.clear(); renderer.dispose();
 });
 
-it("draws editor gizmos once after native and graph frames, never during preparation or skipped frames", async () => {
+it("draws editor gizmos once after each graph frame, never during preparation or skipped frames", async () => {
   const { scene, camera, renderer } = host();
   const box = MeshBuilder.CreateBox("selected", {}, scene);
   const gizmos = createGizmoHost(scene, {
@@ -261,17 +254,13 @@ it("draws editor gizmos once after native and graph frames, never during prepara
   expect(frames).toBe(1);
   expect(camera.getScene()).toBe(scene);
 
-  // A new camera/output uses the same layer and native fallback while the
-  // graph is rebuilt. RTT depth clearing must not erase the world color.
+  // A new camera uses the same layer.
   const replacement = new FreeCamera("replacement", new Vector3(0, 0, -8), scene);
-  const target = new RenderTargetTexture("prefab", 32, scene);
-  replacement.outputRenderTarget = target;
   scene.activeCamera = replacement;
   await renderer.prepare();
-  expect(renderer.render()).toMatchObject({ path: "classic", rendered: true });
+  expect(renderer.render()).toMatchObject({ path: "frameGraph", rendered: true });
   expect(layer.activeCamera).toBe(replacement);
   expect(replacement.getScene()).toBe(scene);
-  expect(replacement.outputRenderTarget).toBe(target);
   expect(frames).toBe(2);
   gizmos.dispose();
   renderer.render();
@@ -301,7 +290,7 @@ it("restores a borrowed camera after an editor overlay fails and leaves sibling 
   sibling.dispose();
 });
 
-it("never presents an unready scene or acknowledges a temporary native fallback as a prepared graph frame", async () => {
+it("never presents an unready scene or draws before its graph is prepared", async () => {
   const { scene, renderer } = host();
   let assetsReady = false;
   scene.addIsReadyCheck({ isReady: () => assetsReady });
@@ -310,13 +299,13 @@ it("never presents an unready scene or acknowledges a temporary native fallback 
   expect(renderer.render()).toMatchObject({ rendered: false, readyForPresentation: false });
   expect(frame).not.toHaveBeenCalled();
   assetsReady = true;
-  expect(renderer.render()).toMatchObject({ path: "classic", rendered: true, readyForPresentation: false });
-  expect(frame).toHaveBeenCalledTimes(1);
+  expect(renderer.render()).toMatchObject({ rendered: false, readyForPresentation: false });
+  expect(frame).not.toHaveBeenCalled();
   await renderer.prepare();
-  expect(frame).toHaveBeenCalledTimes(1);
+  expect(frame).not.toHaveBeenCalled();
   expect(renderer.isReady()).toBe(true);
   expect(renderer.render()).toEqual({ path: "frameGraph", rendered: true, readyForPresentation: true });
-  expect(frame).toHaveBeenCalledTimes(2);
+  expect(frame).toHaveBeenCalledTimes(1);
   renderer.dispose();
 });
 
@@ -388,29 +377,30 @@ it("does not resume native task allocation after disposal during asynchronous in
   expect(scene.objectRenderers).toHaveLength(0);
 });
 
-it("does not acknowledge a changed-output fallback until its pending preparation settles", async () => {
+it("rejects a changed output the graph cannot draw without drawing a frame", async () => {
   const { scene, camera, renderer } = host();
   const { started, release } = holdGraphInitialization();
   const pending = renderer.prepare();
+  const settled = pending.then(() => undefined, (error: unknown) => error);
   await started;
-  const target = new RenderTargetTexture("native target", 32, scene);
+  const target = new RenderTargetTexture("color-only target", 32, scene);
   camera.outputRenderTarget = target;
+  const frame = vi.fn();
+  scene.onAfterRenderObservable.add(frame);
   try {
     expect(renderer.isReady()).toBe(false);
-    expect(renderer.render()).toMatchObject({ path: "classic", rendered: true, readyForPresentation: false });
+    expect(renderer.render()).toMatchObject({ rendered: false, readyForPresentation: false });
   } finally {
     release();
-    await pending;
   }
-  expect(await pending).toMatchObject({ path: "classic", reason: expect.stringContaining("color/depth") });
-  expect(renderer.isReady()).toBe(true);
-  expect(renderer.render()).toMatchObject({ path: "classic", readyForPresentation: true });
+  expect(String(await settled)).toContain("color/depth");
+  expect(frame).not.toHaveBeenCalled();
   expect(camera.outputRenderTarget).toBe(target);
   renderer.dispose();
   expect(target.getInternalTexture()).not.toBeNull();
 });
 
-it("rejects the loading owner at the preparation deadline instead of accepting a timeout as classic readiness", async () => {
+it("rejects the loading owner at the preparation deadline instead of accepting a timeout as readiness", async () => {
   const { scene, renderer } = host();
   scene.addIsReadyCheck({ isReady: () => false });
   const pending = expect(renderer.prepare()).rejects.toThrow("timed out");
@@ -422,16 +412,14 @@ it("rejects the loading owner at the preparation deadline instead of accepting a
   renderer.dispose();
 });
 
-it("admits the native frozen queue as an explicit ready fallback", async () => {
+it("rejects a frozen active-mesh queue instead of drawing it", async () => {
   const { scene, renderer } = host();
   const mesh = MeshBuilder.CreateBox("box", {}, scene);
   await new Promise<void>((resolve) => scene.freezeActiveMeshes(false, resolve));
   const drawn = vi.spyOn(mesh, "render");
-  expect(await renderer.prepare()).toMatchObject({ path: "classic", reason: expect.stringContaining("Frozen") });
+  await expect(renderer.prepare()).rejects.toThrow("Frozen");
+  expect(renderer.render()).toMatchObject({ rendered: false, readyForPresentation: false });
   expect(drawn).not.toHaveBeenCalled();
-  expect(renderer.isReady()).toBe(true);
-  expect(renderer.render()).toMatchObject({ path: "classic", rendered: true, readyForPresentation: true });
-  expect(drawn).toHaveBeenCalledTimes(1);
   renderer.dispose();
 });
 
@@ -505,29 +493,19 @@ it("releases replaced stack tasks without a frame and rejects stale facade dispo
 });
 
 
-it("keeps the native fallback alive while its shader warms after graph allocation is rejected", async () => {
+it("reports refused graph allocation for an authored stack without attaching camera passes", async () => {
   const { scene, camera, engine, renderer } = host();
   engine.getCaps().depthTextureExtension = true;
   limitManagedRenderBytes(engine, 1);
   const library = new MaterialLibrary();
   const document = createDefaultMaterialDocument("Scene Color", "postProcess");
-  const probe = vi.spyOn(PostProcess.prototype, "isReady").mockReturnValue(false);
   try {
     renderer.attachPostProcess({ scene, camera, library, documentFor: () => document,
-      deviceBuffers: { sceneDepth: false, sceneNormal: false },
       stack: [{ id: "pass", materialGuid: "color", enabled: true, order: 0 }] });
-    const preparing = renderer.prepare();
-    await vi.waitFor(() => expect(camera._postProcesses.filter(Boolean)).toHaveLength(1));
-    const warming = camera._postProcesses.find(Boolean);
-    await new Promise<void>((resolve) => setTimeout(resolve, 50));
-    expect(camera._postProcesses.find(Boolean)).toBe(warming);
-    expect(renderer.isReady()).toBe(false);
-    probe.mockRestore();
-    await expect(preparing).resolves.toMatchObject({ path: "classic", reason: expect.stringContaining("reservation") });
-    renderer.invalidate();
-    await renderer.prepare();
-    expect(camera._postProcesses.find(Boolean)).not.toBe(warming);
-  } finally { probe.mockRestore(); await renderer.retire(); library.dispose(); }
+    await expect(renderer.prepare()).rejects.toThrow("reservation");
+    expect(renderer.render()).toMatchObject({ rendered: false, readyForPresentation: false });
+    expect(camera._postProcesses.filter(Boolean)).toHaveLength(0);
+  } finally { await renderer.retire(); library.dispose(); }
 });
 
 it("caches strict readiness on unchanged frames and re-probes once after a scene change", async () => {
@@ -574,9 +552,8 @@ it("draws unvalidated frames without acknowledging them and re-probes a scene ch
 });
 
 it.each(["isReady", "render"] as const)("applies a new shadow profile while %s is waiting for shaders", async (probe) => {
-  const { scene, engine, camera, renderer } = host();
+  const { scene, engine, renderer } = host();
   Object.assign(engine.getCaps(), { maxTextureSize: 4096, textureHalfFloatRender: true, textureHalfFloatLinearFiltering: true });
-  camera.outputRenderTarget = new RenderTargetTexture("native", 32, scene);
   const sun = new DirectionalLight("sun", new Vector3(0, -1, 1), scene);
   const controller = sceneShadowController(scene);
   controller.register(sun, true);
@@ -597,18 +574,16 @@ it.each(["isReady", "render"] as const)("applies a new shadow profile while %s i
   renderer.dispose();
 });
 
-it("holds native fallback when light admission invalidates its cached shader readiness", async () => {
-  const { scene, camera, renderer } = host();
+it("holds frames when light admission invalidates its cached shader readiness", async () => {
+  const { scene, renderer } = host();
   const quality = normalizeRenderingQuality({ lighting: { localLightMode: "manual", maxLocalLights: 1 } });
   updateSceneRenderingSettings(scene, { quality });
-  // A depthless caller output takes the supported native fallback path.
-  camera.outputRenderTarget = new RenderTargetTexture("native", 32, scene);
   const first = new PointLight("first", new Vector3(0, 0, -3), scene);
   const second = new PointLight("second", new Vector3(100, 0, -3), scene);
   let secondReady = false;
   scene.addIsReadyCheck({ isReady: () => !second.isEnabled() || secondReady });
   await renderer.prepare();
-  expect(renderer.render()).toMatchObject({ path: "classic", rendered: true });
+  expect(renderer.render()).toMatchObject({ path: "frameGraph", rendered: true });
   const draws = vi.fn();
   scene.onAfterRenderObservable.add(draws);
   first.position.x = 100;
@@ -617,14 +592,16 @@ it("holds native fallback when light admission invalidates its cached shader rea
   expect(second.isEnabled()).toBe(true);
   expect(draws).not.toHaveBeenCalled();
   secondReady = true;
+  await renderer.prepare();
+  expect(draws).not.toHaveBeenCalled();
   expect(renderer.render()).toMatchObject({ rendered: true });
   expect(draws).toHaveBeenCalledOnce();
   renderer.dispose();
 });
 
-it.each(["classic", "frameGraph"] as const)("holds a %s candidate invalidated during its render callbacks", async (path) => {
-  const { scene, camera, renderer } = host();
-  if (path === "classic") camera.outputRenderTarget = new RenderTargetTexture("native", 32, scene);
+it("holds a frame invalidated during its render callbacks", async () => {
+  const { scene, renderer } = host();
+  const path = "frameGraph";
   await renderer.prepare();
   let ready = true;
   scene.addIsReadyCheck({ isReady: () => ready });
@@ -663,7 +640,7 @@ it("attaches an inactive outline view without allocating or replacing the admitt
   foreign.dispose();
 });
 
-it("rejects an unsupported outlined view instead of presenting an outline-free classic fallback", async () => {
+it("rejects an outlined view on a scene the graph cannot draw without drawing it", async () => {
   const { scene, renderer } = host();
   const box = MeshBuilder.CreateBox("outlined", {}, scene);
   const view = SharedOutlineOwner.forScene(scene).createView("editor");
@@ -674,11 +651,10 @@ it("rejects an unsupported outlined view instead of presenting an outline-free c
   const detach = renderer.attachSharedOutline(view);
   const nativeDraw = vi.fn();
   scene.customRenderFunction = nativeDraw;
-  await expect(renderer.prepare()).rejects.toThrow("Shared outlines require the prepared FrameGraph");
+  await expect(renderer.prepare()).rejects.toThrow("render owner");
   expect(renderer.render()).toMatchObject({ rendered: false, readyForPresentation: false });
   expect(nativeDraw).not.toHaveBeenCalled();
   detach();
-  expect(await renderer.prepare()).toMatchObject({ path: "classic" });
   renderer.dispose();
   view.dispose();
 });

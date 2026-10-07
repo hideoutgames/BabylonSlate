@@ -486,8 +486,11 @@ export function MaterialEditingProvider({
     if (!host || !library || !rootParameters || !instanceOverrides) return;
     for (const [name, fallback] of Object.entries(rootParameters)) {
       const value = instanceOverrides[name];
-      if (value?.kind === fallback.kind) library.setParameter(host.scene, documentId, name, value);
+      const override = value?.kind === fallback.kind ? value : null;
+      if (override) library.setParameter(host.scene, documentId, name, override);
       else library.resetParameter(host.scene, documentId, name);
+      // A previewed post-process pass owns its own graph instance.
+      host.setPostProcessParameter(name, override);
     }
   }, [documentId, instanceOverrides, rootParameters]);
   const applyInstanceParametersRef = useRef(applyInstanceParameters);
@@ -554,11 +557,10 @@ export function MaterialEditingProvider({
         return;
       }
       setCompileDiagnostics([]);
-      applyInstanceParametersRef.current();
       host.applyParticleMaterial?.(document.domain === "particle" ? result.material : null);
       if (document.domain === "postProcess") {
         host.applyMaterial(null);
-        host.applyPostProcess(result.material);
+        host.applyPostProcess({ library, materialGuid: documentId, document });
       } else if (document.domain === "particle") {
         host.applyMaterial(null);
         host.applyPostProcess(null);
@@ -566,6 +568,7 @@ export function MaterialEditingProvider({
         host.applyPostProcess(null);
         host.applyMaterial(result.material);
       }
+      applyInstanceParametersRef.current();
       dispatch({ type: "result", generation, ok: true, durationMs });
       finishManualRender();
     },

@@ -40,12 +40,6 @@ import {
 import { syncAuthoredIlluminationSteps } from "./scene-illumination";
 import { runSceneWork, type SceneWorkOptions } from "./scene-work";
 import { applyEditorBillboardFromActor } from "./editor-billboard";
-import {
-  freezeEditorActiveMeshes,
-  hasEditorActiveMeshFreeze,
-  isStructuralEditorChange,
-  unfreezeEditorActiveMeshes,
-} from "./scene-perf";
 import { isColliderVisualMesh, isColliderVisualTree } from "./collider-visual";
 import { visualMeshes } from "./visual-meshes";
 import { isTilemapChunkMesh } from "./tilemap-mesh";
@@ -56,8 +50,6 @@ import { authoredMaterialInstancePreparation } from "./authored-material-instanc
 import type { NativePreparationPriority } from "./native-preparation";
 
 export type EditorSceneSyncOptions = {
-  /** FrameGraph owns its camera-specific active queue; world matrices still freeze. */
-  freezeActiveMeshes?: boolean;
   resolveMaterial?: MeshAssetContext["resolveMaterial"];
   releaseMaterialInstance?: MeshAssetContext["releaseMaterialInstance"];
   validateMaterialParameter?: MeshAssetContext["validateMaterialParameter"];
@@ -92,7 +84,6 @@ export class EditorSceneSync {
   private readonly releaseMaterialInstance?: MeshAssetContext["releaseMaterialInstance"];
   private readonly validateMaterialParameter?: MeshAssetContext["validateMaterialParameter"];
   private readonly onAfterApply?: () => void;
-  private readonly freezeActiveMeshes: boolean;
   private readonly preparationPriority?: NativePreparationPriority;
   private readonly constructionMaterials = new WeakMap<Mesh, Material | null>();
   private sortingLayers: string[] = [...DEFAULT_SORTING_LAYERS];
@@ -124,7 +115,6 @@ export class EditorSceneSync {
     this.releaseMaterialInstance = options?.releaseMaterialInstance;
     this.validateMaterialParameter = options?.validateMaterialParameter;
     this.onAfterApply = options?.onAfterApply;
-    this.freezeActiveMeshes = options?.freezeActiveMeshes !== false;
     this.preparationPriority = options?.preparationPriority;
   }
 
@@ -195,7 +185,6 @@ export class EditorSceneSync {
     this.selectedActorIds = new Set(options.selectedActorIds);
     this.selectedComponentIds = new Set(options.selectedComponentIds ?? []);
     if (!this.applyingScene && this.lastScene && this.syncCollisionVisibility(this.lastScene)) {
-      this.freezeActiveQueue();
       this.scheduler?.invalidate("selection");
     }
   }
@@ -243,7 +232,7 @@ export class EditorSceneSync {
         controller.signal.throwIfAborted();
         const rebuild = options.assets ? this.installAssets(options.assets).rebuild : false;
         const work = { ...options, signal: controller.signal };
-        await runSceneWork(this.applySteps(sceneData, rebuild, true), work);
+        await runSceneWork(this.applySteps(sceneData, rebuild), work);
         while (this.materialRefreshGeneration === generation) {
           this.materialRefreshGeneration = null;
           await runSceneWork(this.materialRefreshSteps(sceneData), work);
@@ -263,15 +252,10 @@ export class EditorSceneSync {
     }
   }
 
-  private *applySteps(sceneData: SerializedScene, rebuild = false, cooperative = false): Generator<number, void, unknown> {
+  private *applySteps(sceneData: SerializedScene, rebuild = false): Generator<number, void, unknown> {
     const layout = resolveOverlayLayout(sceneData.actors, { pixelsPerUnit: this.assets?.pixelsPerUnit, textureSize: guid => this.assets?.texturePixelSizes?.get(guid) });
     sceneData = { ...sceneData, actors: layout.actors };
     rebuild ||= this.assetsNeedRebuild;
-    // Blocking loads already require final readiness; skip the immediate path's
-    // full-document structural pre-scan and unfreeze before phased planning.
-    // Without a freeze to release, the pre-scan would decide nothing.
-    if (cooperative || rebuild || (hasEditorActiveMeshFreeze(this.scene) &&
-      isStructuralEditorChange(this.lastScene, sceneData))) unfreezeEditorActiveMeshes(this.scene);
     const assets = this.meshAssetsForScene(sceneData);
     const liveIds = new Set<string>();
     const nextKinds = new Map<string, string | null>();
@@ -348,7 +332,6 @@ export class EditorSceneSync {
                 applyEditorLayoutClips(this.scene, layout.entries);
                 freezeStaticActorWorldMatrix(candidate);
                 if (!this.applyingScene) {
-                  this.freezeActiveQueue();
                   this.scheduler?.invalidate("asset");
                   this.onAfterApply?.();
                 }
@@ -456,7 +439,6 @@ export class EditorSceneSync {
     this.assetsNeedRebuild = false;
     this.onAfterApply?.();
     if (generation !== this.applyGeneration) return;
-    this.freezeActiveQueue();
     this.applyingScene = null;
     this.materialsRefreshable = true;
     this.scheduler?.invalidate("asset");
@@ -472,10 +454,8 @@ export class EditorSceneSync {
     // An aborted/failed apply retains partial roots for the next reconciliation.
     // Late material publication must not reactivate that partial generation.
     if (!this.materialsRefreshable || !this.lastScene) return;
-    unfreezeEditorActiveMeshes(this.scene);
     for (const _progress of this.materialRefreshSteps(this.lastScene)) void _progress;
     this.onAfterApply?.();
-    this.freezeActiveQueue();
     this.scheduler?.invalidate("asset");
   }
 
@@ -490,10 +470,6 @@ export class EditorSceneSync {
       }
       yield 0.99;
     }
-  }
-
-  private freezeActiveQueue(): void {
-    if (this.freezeActiveMeshes) freezeEditorActiveMeshes(this.scene);
   }
 
   serializedScene(): SerializedScene | null {
@@ -595,7 +571,6 @@ export class EditorSceneSync {
       this.prepareActorVisual(actor, root);
       freezeStaticActorWorldMatrix(root);
       if (!this.applyingScene) {
-        this.freezeActiveQueue();
         this.scheduler?.invalidate("asset");
         this.onAfterApply?.();
       }
@@ -665,8 +640,6 @@ export class EditorSceneSync {
       }
     }
     this.syncCollisionVisibility(sceneData);
-    // New and newly revealed dashes must enter the frozen active mesh list.
-    this.freezeActiveQueue();
     this.scheduler?.invalidate("asset");
   }
 
@@ -787,7 +760,6 @@ export class EditorSceneSync {
         // Restore that matrix without announcing a partially realized scene.
         if (wasFrozen || !this.applyingScene) freezeStaticActorWorldMatrix(root);
         if (!this.applyingScene) {
-          this.freezeActiveQueue();
           this.scheduler?.invalidate("asset");
           this.onAfterApply?.();
         }

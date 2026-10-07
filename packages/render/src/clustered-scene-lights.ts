@@ -514,7 +514,7 @@ export class ClusteredSceneLights {
     this.reservedTextureBytes = 0;
     this.allocatedBatches = 0;
     // Native removeLight appends borrowed children. Restore their original
-    // sequence for classic fallback/disposal, including per-mesh filtered lists.
+    // sequence for disposal, including per-mesh filtered lists.
     this.restoreAuthoredOrder();
   }
 

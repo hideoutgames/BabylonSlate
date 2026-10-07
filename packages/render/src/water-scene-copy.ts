@@ -62,8 +62,8 @@ let revisions = 0;
 
 /**
  * The scene copy for a render pass, or null. Only a ForwardSceneFrameGraph's
- * "Forward transparent" pass has one; classic frames, captures, previews and
- * thumbnails use other pass ids and keep today's blended water.
+ * "Forward transparent" pass has one; captures and other passes use other
+ * pass ids and keep today's blended water.
  */
 export function waterSceneCopyForPass(scene: Scene, renderPassId: number): WaterSceneCopy | null {
   return registries.get(scene)?.get(renderPassId) ?? null;

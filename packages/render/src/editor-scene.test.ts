@@ -91,8 +91,10 @@ function sceneWith(actors: SerializedScene["actors"]): SerializedScene {
 }
 
 function listedActiveMeshes(scene: {
+  render: () => void;
   getActiveMeshes: () => { data: unknown[]; length: number };
 }): unknown[] {
+  scene.render();
   const active = scene.getActiveMeshes();
   return active.data.slice(0, active.length);
 }
@@ -1243,26 +1245,6 @@ describe("EditorSceneSync", () => {
     expect(visualMeshes(root!).length).toBeGreaterThan(0);
   });
 
-  it("puts instantiated GLB parts on the frozen active-mesh list", async () => {
-    const { scene } = createHandle();
-    createEditorCamera(scene, { mode: "3d" });
-    const mesh = createMeshComponent("c1", "box");
-    mesh.properties.assetGuid = "model-1";
-    const sync = new EditorSceneSync(scene);
-    sync.setMeshAssets({
-      modelBytes: new Map([["model-1", encodeTriangleGlb()]]),
-    });
-    sync.apply(sceneWith([createActor("a", "A", { components: [mesh] })]));
-    const root = sync.meshForActor("a");
-    await sync.whenEditorModelsReady();
-    const parts = visualMeshes(root!).filter((part) => part.getTotalVertices() > 0);
-    expect(parts.length).toBeGreaterThan(0);
-    expect(scene._activeMeshesFrozen).toBe(true);
-    const active = scene.getActiveMeshes();
-    const listed = active.data.slice(0, active.length);
-    expect(parts.some((part) => listed.includes(part))).toBe(true);
-  });
-
   it("loads a Model guid once for two actors on the same scene", async () => {
     const { scene } = createHandle();
     const bytes = encodeTriangleGlb();
@@ -1782,34 +1764,7 @@ describe("editor grid", () => {
     grid.dispose();
   });
 
-  it("keeps 2D camera bounds in the frozen active list after setCameraBounds", () => {
-    const { scene } = createHandle();
-    createEditorCamera(scene, { mode: "2d" });
-    const grid = createEditorGrid(scene, { mode: "2d" });
-    const sync = new EditorSceneSync(scene);
-    sync.apply(
-      sceneWith([
-        createActor("a", "A", { components: [createMeshComponent("c1", "box")] }),
-      ]),
-    );
-    expect(scene._activeMeshesFrozen).toBe(true);
-    grid.setCameraBounds({ width: 10, height: 6 });
-    expect(grid.boundsMesh?.alwaysSelectAsActiveMesh).toBe(true);
-    expect(grid.boundsMesh?.isVisible).toBe(true);
-    expect(grid.boundsMesh?.visibility).toBe(1);
-    expect(listedActiveMeshes(scene)).toContain(grid.boundsMesh);
-
-    grid.setVisible(false);
-    expect(scene._activeMeshesFrozen).toBe(true);
-    expect(
-      (grid.boundsMesh?.material as ShaderMaterial).serialize().floats
-        .boundsVisible,
-    ).toBe(1);
-    expect(listedActiveMeshes(scene)).toContain(grid.boundsMesh);
-    grid.dispose();
-  });
-
-  it("puts the grid back in the frozen active list after hide then apply then show", () => {
+  it("restores the grid after hide then apply then show", () => {
     const { scene } = createHandle();
     const grid = createEditorGrid(scene, { mode: "3d" });
     const sync = new EditorSceneSync(scene);
@@ -1819,7 +1774,6 @@ describe("editor grid", () => {
         createActor("a", "A", { components: [createMeshComponent("c1", "box")] }),
       ]),
     );
-    expect(scene._activeMeshesFrozen).toBe(true);
     expect(grid.mesh.isVisible).toBe(true);
     expect(grid.mesh.visibility).toBe(0);
     expect(

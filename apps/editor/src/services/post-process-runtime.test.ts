@@ -1,6 +1,7 @@
 import { expect, it, vi } from "vitest";
 import { InputBlock, NodeMaterial, NullEngine } from "@babylonjs/core";
 import { createEngine } from "@babylonslate/render";
+import { adaptNullEngineFrameGraph } from "@babylonslate/render/framegraph-test-fixtures";
 import { createInProcessRuntime } from "@babylonslate/runtime";
 import { createActor, createDefaultScene } from "@babylonslate/core";
 import {
@@ -37,7 +38,12 @@ class Canvas extends EventTarget {
 }
 
 it("applies compiled gameplay entry reads, setters and resets through Play load metadata and the real renderer", async () => {
-  const engine = new NullEngine();
+  // Real FrameGraph ownership; only absent NullEngine driver calls are adapted.
+  const engine = adaptNullEngineFrameGraph(new NullEngine());
+  Object.assign(engine.getCaps(), {
+    maxTextureSize: 4096, maxDrawBuffers: 4, drawBuffersExtension: true,
+    textureFloatRender: true, textureHalfFloatRender: true,
+  });
   // Drive complete native frames explicitly, including the visible canvas copy.
   engine.customAnimationFrameRequester = {
     requestAnimationFrame: () => 0,
@@ -45,23 +51,6 @@ it("applies compiled gameplay entry reads, setters and resets through Play load 
   };
   vi.spyOn(engine, "getRenderingCanvas").mockReturnValue(
     new Canvas() as unknown as HTMLCanvasElement,
-  );
-  const upload = engine.createRawTexture.bind(engine);
-  vi.spyOn(engine, "createRawTexture").mockImplementation((...args) => {
-    const texture = upload(...args);
-    texture.isReady = true;
-    return texture;
-  });
-  vi.spyOn(engine, "buildTextureLayout").mockImplementation(
-    (enabled, backbuffer) =>
-      backbuffer
-        ? [0x0405]
-        : enabled.map((value, index) => (value ? 0x8ce0 + index : 0)),
-  );
-  vi.spyOn(engine, "bindAttachments").mockImplementation(() => {});
-  vi.spyOn(engine, "restoreSingleAttachment").mockImplementation(() => {});
-  vi.spyOn(engine, "restoreSingleAttachmentForRenderTarget").mockImplementation(
-    () => {},
   );
   const material = createDefaultMaterialDocument("Gain", "postProcess");
   material.nodes.push(
@@ -244,7 +233,7 @@ it("applies compiled gameplay entry reads, setters and resets through Play load 
         enabled: true,
       })),
     );
-    // The coordinator materializes the replaced stack's native passes on the
+    // The coordinator materializes the replaced stack's graph passes on the
     // next preparation, not synchronously inside setPostProcessStack.
     await handle.prewarmSceneMaterials();
     expect(values()).toEqual([0.25, 0.8, 0.3]);

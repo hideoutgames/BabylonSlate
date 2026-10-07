@@ -1,4 +1,4 @@
-/** Test-build-only primitive pixel oracle; no production renderer is selected. */
+/** Test-build-only pixel oracle: Babylon's own Scene.render is the reference for the graph. */
 import {
   Color3,
   Color4,
@@ -63,9 +63,9 @@ export async function runFrameGraphForwardProof(backend: "webgl2" | "webgpu" = "
   };
   const captures: {
     name: string;
-    classic: number[];
+    reference: number[];
     graph: number[];
-    classicDraws: number;
+    referenceDraws: number;
     graphDraws: number;
     readinessDraws: number;
     prepared: Awaited<ReturnType<ForwardSceneFrameGraph["prepare"]>>;
@@ -198,8 +198,8 @@ export async function runFrameGraphForwardProof(backend: "webgl2" | "webgpu" = "
           beforeTarget?.();
           scene.render(false);
         });
-        const classicDraws = readEngineDrawCalls(engine);
-        const classic = await read(target);
+        const referenceDraws = readEngineDrawCalls(engine);
+        const reference = await read(target);
         engine.restoreDefaultFramebuffer(true);
         beginEngineDrawCallFrame(engine);
         const previousBefore = before;
@@ -221,9 +221,9 @@ export async function runFrameGraphForwardProof(backend: "webgl2" | "webgpu" = "
         engine.restoreDefaultFramebuffer(true);
         captures.push({
           name: `${mode}-${name}`,
-          classic,
+          reference,
           graph,
-          classicDraws,
+          referenceDraws,
           graphDraws,
           readinessDraws,
           prepared,
@@ -245,10 +245,13 @@ export async function runFrameGraphForwardProof(backend: "webgl2" | "webgpu" = "
       await new Promise<void>((resolve, reject) =>
         scene.freezeActiveMeshes(false, resolve, reject),
       );
-      await capture("frozen");
-      // The classic owner retains native submesh queues while active membership
-      // is frozen. After unfreeze, every subsequent capture must use the graph.
+      // A frozen active-mesh queue has no graph equivalent; preparation rejects.
+      const frozenQueue = await coordinator.prepare(camera).then(
+        () => null,
+        (error: unknown) => (error instanceof Error ? error.message : String(error)),
+      );
       scene.unfreezeActiveMeshes();
+      await capture("frozen");
       expectedCamera = secondCamera;
       await capture("camera-switched");
       secondCamera.position.x = -2;
@@ -279,7 +282,7 @@ export async function runFrameGraphForwardProof(backend: "webgl2" | "webgpu" = "
       coordinator.dispose();
       const targetReferencesAfter = target ? [color?._references, depth?._references] : null;
       const targetAfterDispose = target ? await read(target) : null;
-      const classicAfterDispose = target ? (
+      const referenceAfterDispose = target ? (
         draw(() => scene.render(false)), await read(target)
       ) : null;
       // The caller's RTT owns its own ObjectRenderer and must remain usable.
@@ -297,7 +300,8 @@ export async function runFrameGraphForwardProof(backend: "webgl2" | "webgpu" = "
         siblingPreservedDuringTarget,
         targetReferencesAfter,
         targetAfterDispose,
-        classicAfterDispose,
+        referenceAfterDispose,
+        frozenQueue,
       });
       sibling.dispose();
     }

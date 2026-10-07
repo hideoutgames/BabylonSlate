@@ -178,9 +178,7 @@ export async function runClusteredLightProof() {
               (index ? 0.8 : 1) *
               (mixing === "pbr" || mixing === "additive" ? count / groups : 1),
           );
-        const referenceReady = await graph.prepare(camera);
-        if (referenceReady.path !== "frameGraph")
-          throw new Error(referenceReady.reason);
+        await graph.prepare(camera);
         scene.render(false);
         const reference = await read();
         for (let index = 0; index < lights.length; index++)
@@ -288,9 +286,7 @@ export async function runClusteredLightProof() {
             );
           for (let pose = 0; pose < poses.length; pose++) {
             applyPose(pose);
-            const prepared = await graph.prepare(alternate);
-            if (prepared.path !== "frameGraph")
-              throw new Error(prepared.reason);
+            await graph.prepare(alternate);
             scene.render(false);
             records[pose]!.reference = await read();
           }
@@ -352,8 +348,7 @@ export async function runClusteredLightProof() {
             scene.activeCamera = camera;
             camera.position.set(x, 3, -6);
             camera.setTarget(Vector3.Zero());
-            const ready = await tieGraph.prepare(camera);
-            if (ready.path !== "frameGraph") throw new Error(ready.reason);
+            await tieGraph.prepare(camera);
             scene.render(false);
             const reference = await read();
             const referenceOrder = surface.lightSources.map(
@@ -453,8 +448,7 @@ export async function runClusteredLightProof() {
             scene.activeCamera = camera;
             camera.position.set(x, 3, -6);
             camera.setTarget(Vector3.Zero());
-            const ready = await tieGraph.prepare(camera);
-            if (ready.path !== "frameGraph") throw new Error(ready.reason);
+            await tieGraph.prepare(camera);
             scene.render(false);
             const reference = await read();
             const referenceOrder = surface.lightSources.map(

@@ -4,7 +4,6 @@ import {
   Color4,
   Constants,
   MeshBuilder,
-  NodeMaterialModes,
   NullEngine,
   RenderTargetTexture,
   Scene,
@@ -16,7 +15,8 @@ import {
   type NodeMaterial,
 } from "@babylonjs/core";
 import { LoadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader";
-import type { MaterialPreviewMesh } from "@babylonslate/shader-graph";
+import type { MaterialParameterValue } from "@babylonslate/bridge";
+import type { MaterialDocument, MaterialPreviewMesh } from "@babylonslate/shader-graph";
 import { createRttCanvasBlitter } from "./flip-read-pixels";
 import { adoptLoadedHierarchy } from "./glb-anim";
 import {
@@ -29,12 +29,14 @@ import {
   visualHierarchyBoundingVectors,
 } from "./visual-meshes";
 import { installEngineDefaultMaterial } from "./default-material";
-import { OwnedPostProcess } from "./owned-post-process";
-import { PostProcessRetirement } from "./post-process-retirement";
+import type { MaterialLibrary } from "./material-library";
+import type { AttachedPostProcessStack, PostProcessStackDiagnostic } from "./post-process-material";
+import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { createPreviewLighting } from "./preview-lighting";
 import { previewMeshesReady } from "./preview-readiness";
 import { createText2DMesh } from "./text2d-mesh";
 import { resolveSceneRenderingQuality } from "./render-settings";
+import { SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
 
 export const MATERIAL_PREVIEW_MESH_NAME = "materialPreviewMesh";
 
@@ -96,9 +98,22 @@ export function createMaterialPreviewMesh(
   }
 }
 
+/** A post-process Material previewed as the preview camera's only pass. */
+export interface MaterialPreviewPostProcess {
+  library: MaterialLibrary;
+  materialGuid: string;
+  document: MaterialDocument;
+  parameters?: Record<string, MaterialParameterValue>;
+  onDiagnostic?: (diagnostic: PostProcessStackDiagnostic) => void;
+}
+
+const PREVIEW_POST_PROCESS_ENTRY = "preview";
+
 export interface MaterialPreviewScene {
   scene: Scene;
   camera: ArcRotateCamera;
+  /** Draws the preview Scene through the FrameGraph into the camera's output target. */
+  renderer: SceneRenderCoordinator;
   /** Current preview mesh; replaced when the primitive choice changes. */
   mesh: Mesh;
   setMesh: (
@@ -106,10 +121,13 @@ export interface MaterialPreviewScene {
     customMeshBytes?: Uint8Array | null,
   ) => Promise<Mesh>;
   applyMaterial: (material: Material | null) => void;
-  applyPostProcess: (material: NodeMaterial | null) => void;
+  applyPostProcess: (source: MaterialPreviewPostProcess | null) => void;
+  /** Sets a parameter on the previewed post-process pass; null restores its default. */
+  setPostProcessParameter: (name: string, value: MaterialParameterValue | null) => boolean;
   applyParticleMaterial: (material: NodeMaterial | null) => void;
   dispose: () => void;
-  /** Confirmed native release of retired preview passes; rejects if release failed. */
+  /** Disposes, then resolves once the renderer's native resources are released
+   * and the Scene is disposed; rejects if release failed. */
   whenReleased: () => Promise<void>;
 }
 
@@ -151,11 +169,12 @@ export function createMaterialPreviewScene(
   camera.useNaturalPinchZoom = true;
 
   createPreviewLighting(scene);
+  // Previews never draw planar water reflections.
+  const renderer = new SceneRenderCoordinator(scene, { waterPlanarReflections: false });
 
   let mesh = createMaterialPreviewMesh(scene, options.mesh ?? "cube");
   aimPreviewCameraAtMesh(camera, mesh);
-  let postProcess: OwnedPostProcess | null = null;
-  const postProcessRetirement = new PostProcessRetirement();
+  let postProcess: AttachedPostProcessStack | null = null;
   let currentMaterial: Material | null = mesh.material;
   let particlePlane: Mesh | null = null;
   let textPreview: Mesh | null = null;
@@ -164,17 +183,11 @@ export function createMaterialPreviewScene(
   let customContainer: AssetContainer | null = null;
   let meshGeneration = 0;
 
+  // The renderer retires the pass with its graph.
   const disposePostProcess = () => {
-    if (!postProcess) return;
-    const pass = postProcess;
+    const stack = postProcess;
     postProcess = null;
-    try {
-      pass.dispose(camera);
-    } finally {
-      // A fully released pass needs no tracking; a pending or failed release
-      // keeps the Scene quarantined until actual release is confirmed.
-      if (!pass.isReleased) postProcessRetirement.add(pass);
-    }
+    stack?.dispose();
   };
 
   const disposeCustomContainer = () => {
@@ -182,9 +195,11 @@ export function createMaterialPreviewScene(
     customContainer = null;
   };
 
+  // The preview Scene lives on the shared Engine: release it only after the
+  // renderer confirms actual native release of its graph and passes.
   let released: Promise<void> | null = null;
   const releasePreview = () => {
-    released ??= postProcessRetirement.whenReleased().then(() => {
+    released ??= renderer.whenReleased().then(() => {
       if (!scene.isDisposed) scene.dispose();
     });
     return released;
@@ -193,6 +208,7 @@ export function createMaterialPreviewScene(
   const host: MaterialPreviewScene = {
     scene,
     camera,
+    renderer,
     get mesh() {
       return mesh;
     },
@@ -248,38 +264,25 @@ export function createMaterialPreviewScene(
       }
       applyMaterialToVisualMeshes(mesh, material);
     },
-    applyPostProcess: (material) => {
+    applyPostProcess: (source) => {
       disposePostProcess();
-      if (!material) return;
+      if (!source) return;
       disposeTextPreview();
       disposeParticles();
-      // Same guard as NodeMaterial.createPostProcess: only post-process and
-      // SFE materials can author a camera pass.
-      if (
-        material.mode !== NodeMaterialModes.PostProcess &&
-        material.mode !== NodeMaterialModes.SFE
-      ) {
-        return;
-      }
-      const pass = new OwnedPostProcess(`${material.name}PostProcess`, "postprocess", {
+      postProcess = renderer.attachPostProcess({
+        scene,
         camera,
-        engine: scene.getEngine(),
-        size: 1,
-        samplingMode: Constants.TEXTURE_NEAREST_SAMPLINGMODE,
-        blockCompilation: true,
-        shaderLanguage: material.shaderLanguage,
+        library: source.library,
+        documentFor: (guid) => guid === source.materialGuid ? source.document : null,
+        stack: [{ id: PREVIEW_POST_PROCESS_ENTRY, materialGuid: source.materialGuid, enabled: true, order: 0, parameters: source.parameters }],
+        onDiagnostic: source.onDiagnostic,
       });
-      try {
-        material.createEffectForPostProcess(pass);
-      } catch (error) {
-        try {
-          pass.dispose(camera);
-        } finally {
-          if (!pass.isReleased) postProcessRetirement.add(pass);
-        }
-        throw error;
-      }
-      postProcess = pass;
+    },
+    setPostProcessParameter: (name, value) => {
+      if (!postProcess) return false;
+      return value
+        ? postProcess.setParameter(PREVIEW_POST_PROCESS_ENTRY, name, value)
+        : postProcess.resetParameter(PREVIEW_POST_PROCESS_ENTRY, name);
     },
     applyParticleMaterial: (material) => {
       disposeParticles();
@@ -298,16 +301,9 @@ export function createMaterialPreviewScene(
       disposeParticles();
       disposePostProcess();
       disposeCustomContainer();
-      // The preview Scene lives on the shared Engine: release it only after
-      // retired post-process passes confirm actual native release.
-      if (postProcessRetirement.releasedConfirmed) {
-        released = Promise.resolve();
-        scene.dispose();
-      } else {
-        void releasePreview().catch((error: unknown) => {
-          console.warn(`[render] Material preview scene is quarantined until actual release: ${String(error)}`);
-        });
-      }
+      void releasePreview().catch((error: unknown) => {
+        console.warn(`[render] Material preview scene is quarantined until actual release: ${String(error)}`);
+      });
     },
     whenReleased: () => {
       host.dispose();
@@ -322,6 +318,35 @@ export function createMaterialPreviewScene(
     void host.setMesh("custom", options.customMeshBytes);
   }
   return host;
+}
+
+/**
+ * Prepare the preview renderer for the camera's current output target and draw
+ * one validated frame into it. False when the frame never became presentable
+ * before the shader warm deadline or `isCurrent` turned false.
+ */
+export async function renderPreviewFrame(
+  host: MaterialPreviewScene,
+  isCurrent: () => boolean = () => true,
+): Promise<boolean> {
+  await host.renderer.prepare(() => {
+    if (!isCurrent()) throw new Error("Preview frame was superseded.");
+  });
+  const deadline = performance.now() + SCENE_SHADER_WARM_TIMEOUT_MS;
+  while (isCurrent()) {
+    const frame = host.renderer.render();
+    if (frame.rendered && frame.readyForPresentation) return true;
+    if (performance.now() >= deadline) return false;
+    await new Promise<void>((resolve) => setTimeout(resolve, 16));
+  }
+  return false;
+}
+
+/** A preview output target the FrameGraph can draw into: color plus depth. */
+export function createPreviewRenderTarget(name: string, size: { width: number; height: number }, scene: Scene): RenderTargetTexture {
+  const target = new RenderTargetTexture(name, size, scene, false);
+  target.createDepthStencilTexture(0, false, false, 1, Constants.TEXTUREFORMAT_DEPTH24);
+  return target;
 }
 
 const TAP_TOLERANCE_PX = 8;
@@ -524,9 +549,11 @@ function previewBufferSize(
 }
 
 /**
- * Draw the preview Scene into an RTT (`camera.outputRenderTarget`) and blit
- * that buffer onto a 2D canvas. Never `registerView` or default-framebuffer
- * `scene.render()` — those overwrite Scene viewport and Play overlay.
+ * Draw the preview Scene through its FrameGraph renderer into an RTT
+ * (`camera.outputRenderTarget`) and blit that buffer onto a 2D canvas. Never
+ * `registerView` or the default framebuffer — those overwrite Scene viewport
+ * and Play overlay. A frame the renderer is still preparing stays pending and
+ * is drawn on a later `present`.
  */
 export function createMaterialPreviewPresenter(
   host: MaterialPreviewScene,
@@ -571,12 +598,7 @@ export function createMaterialPreviewPresenter(
       return rtt;
     }
     releaseRtt();
-    rtt = new RenderTargetTexture(
-      "materialPreview",
-      { width, height },
-      host.scene,
-      false,
-    );
+    rtt = createPreviewRenderTarget("materialPreview", { width, height }, host.scene);
     host.camera.outputRenderTarget = rtt;
     return rtt;
   };
@@ -635,9 +657,14 @@ export function createMaterialPreviewPresenter(
         // Shader warm-up must not consume a static preview's presentation interval.
         const preview = host.scene.getMeshByName("materialPreviewText") ?? host.scene.getMeshByName("materialPreviewParticlePlane") ?? host.mesh;
         if (!previewMeshesReady(preview)) return;
+        const frame = host.renderer.render();
+        if (!frame.rendered || !frame.readyForPresentation) {
+          // Surfaces a failed preparation; otherwise the frame stays pending.
+          host.renderer.isReady();
+          return;
+        }
         pendingForce = false;
         lastPresentMs = at;
-        host.scene.render();
         blit(texture);
         if (renderError) { renderError = null; options.onError?.(null); }
       } catch (error) {

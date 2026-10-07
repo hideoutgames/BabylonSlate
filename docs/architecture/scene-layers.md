@@ -61,7 +61,7 @@ Extra unlit ortho `Scene`s on the shared Engine:
 - Each live SceneLayer: orthographic HUD camera at `(0, 0, -10)` looking at origin, `lightsEnabled = false`, unlit, no world PP. Each overlay `render` re-binds that camera (mode, pose, view/projection) so a shared Engine cannot reuse the world perspective camera.
 - Draw order: world, then layers by `zOrder` (stable by instance id on ties).
 - Layer with no PP: `autoClear = false` on color; clear depth so 2D quads sort.
-- Layer with PP: render to an RTT, run the Scene-owned coordinator's stack, then alpha-composite onto the framebuffer. The coordinator selects its graph or explicit native fallback; world and layer inputs remain isolated. Engine Settings `postProcessingEnabled` still gates overlay PP in editor Play only.
+- Layer with PP: render to an RTT, run the Scene-owned coordinator's stack, then alpha-composite onto the framebuffer. The coordinator draws through its FrameGraph; world and layer inputs remain isolated. Engine Settings `postProcessingEnabled` still gates overlay PP in editor Play only.
 
 Play world and layer post-process attachment share the coordinator's entry/parameter ownership. Editor and caller-bound RTT previews keep native attachment. A layer RTT owns its sampleable depth attachment when supported. Stack or size replacement installs a new renderer and target without drawing. At most one previously presented target/blit is retained while its replacement prepares; an unrendered candidate is never used as a fallback. A pending first-frame check may replay only that prior image while preparation is incomplete; it cannot acknowledge the new load. Only a ready replacement frame and blit release it, after its old graph has also retired. Removing a layer detaches it immediately and waits for all its graph generations before disposing its Scene. Bounded cleanup reporting (`dispose()` / `whenDisposed()`) stays separate from confirmed actual release (`whenReleased()`): an uncertain bounded report only warns, the layer Scene and RTT are still disposed once actual release confirms, and a release that never confirms quarantines them alive with a warning instead of destroying a target still borrowed by pending work. Other layers remain independent.
 
@@ -188,7 +188,7 @@ In cooperative Play/player sessions, `createSceneLayer` returns the live loading
 
 Preview Build and the exported player own no loading screen: `Event On Scene Start Loading`, `Event On Scene Finish Loading` and `Get Scene Loading Progress` drive authored loading Scene Layers, which keep rendering throughout the transaction because the player never obstructs its scheduler. The engine's world/layer admission still withholds not-ready owners. Editor Play keeps its `SceneLoadingDialog`.
 
-Layer post-process targets retain alpha so transparent pixels preserve the world and lower layers when composited. Play pass diagnostics count ready, enabled graph tasks as well as the native fallback passes.
+Layer post-process targets retain alpha so transparent pixels preserve the world and lower layers when composited. Play pass diagnostics count ready, enabled graph tasks.
 
 ## 2D Painter
 

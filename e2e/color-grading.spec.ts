@@ -35,16 +35,14 @@ for (const backend of ["webgl2"] as const) {
     });
     await testInfo.attach("grading-pixels", { body: JSON.stringify(result), contentType: "application/json" });
     expect(errors).toEqual([]);
-    expect(result.captures).toHaveLength(2);
-    for (const capture of result.captures) {
-      const { path, off } = capture;
-      expect(off.some((value, i) => i % 4 === 0 && value > 150), `${path}: visible swatches`).toBe(true);
-      expect(difference(off, capture.identity), `${path}: an identity LUT preserves color`).toBeLessThan(3);
-      expect(difference(off, capture.inverted, (value) => 255 - value), `${path}: an inverting LUT inverts color`).toBeLessThan(4);
-      expect(difference(off, capture.linearInverted, (value) => 255 - value), `${path}: grading follows the Scene Linear display stage`).toBeLessThan(6);
-      expect(difference(off, capture.missing), `${path}: a missing LUT asset grades nothing`).toBeLessThan(1);
-      expect(difference(off, capture.disabled), `${path}: disabling restores color`).toBeLessThan(1);
-    }
-    expect(difference(result.captures[0]!.inverted, result.captures[1]!.inverted), "native and graph parity").toBeLessThan(2);
+    expect(result.captures).toHaveLength(1);
+    const capture = result.captures[0]!;
+    const { off } = capture;
+    expect(off.some((value, i) => i % 4 === 0 && value > 150), "visible swatches").toBe(true);
+    expect(difference(off, capture.identity), "an identity LUT preserves color").toBeLessThan(3);
+    expect(difference(off, capture.inverted, (value) => 255 - value), "an inverting LUT inverts color").toBeLessThan(4);
+    expect(difference(off, capture.linearInverted, (value) => 255 - value), "grading follows the Scene Linear display stage").toBeLessThan(6);
+    expect(difference(off, capture.missing), "a missing LUT asset grades nothing").toBeLessThan(1);
+    expect(difference(off, capture.disabled), "disabling restores color").toBeLessThan(1);
   });
 }

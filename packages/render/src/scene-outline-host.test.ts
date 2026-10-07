@@ -73,7 +73,7 @@ describe("authored scene outline host", () => {
 
   it("keeps regular instance model parts while excluding a separately authored child actor", () => {
     const { scene } = setup();
-    const sync = new EditorSceneSync(scene, undefined, { freezeActiveMeshes: false });
+    const sync = new EditorSceneSync(scene);
     const document = createDefaultScene();
     document.actors = [createActor("parent", "Parent", { components: [createMeshComponent("parent-mesh")] }),
       createActor("child", "Child", { parentId: "parent", components: [createMeshComponent("child-mesh")] })];
@@ -113,7 +113,6 @@ describe("authored scene outline host", () => {
     const { scene, host } = setup();
     new UniversalCamera("camera", new Vector3(0, 0, -3), scene);
     const sync = new EditorSceneSync(scene, undefined, {
-      freezeActiveMeshes: false,
       onAfterApply: () => host.setActor("model", sync.visualMeshesForActor("model"), authored("model")),
     });
     try {

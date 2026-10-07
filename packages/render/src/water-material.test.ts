@@ -300,7 +300,7 @@ describe("Water material binding", () => {
       const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ resolution: 8 }), createDefaultWaterDefinition("realistic"));
       const ultra = await compiled(lake);
       expect(ultra).toContain("#define SLATE_WATER_PLANAR\n");
-      // This pass has no scene copy (classic frames, captures and previews draw like it): Ultra still compiles no
+      // This pass has no scene copy (captures draw like it): Ultra still compiles no
       // refraction or march into it.
       expect(ultra).not.toContain("SLATE_WATER_REFRACTION\n");
       expect(ultra).not.toContain("SLATE_WATER_SSR\n");

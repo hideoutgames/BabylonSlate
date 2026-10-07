@@ -171,11 +171,8 @@ export async function runSpatialEffectsProof(
           stencil: true,
         });
   engine.setSize(96, 72);
-  const captures = [];
-  const fogCaptures = [];
-  const occlusionCaptures = [];
   try {
-    for (const path of ["frameGraph", "classic"] as const) {
+    const captureScene = async () => {
       const scene = new Scene(engine);
       scene.clearColor = new Color4(0, 0, 0, 1);
       const library = new MaterialLibrary();
@@ -197,7 +194,6 @@ export async function runSpatialEffectsProof(
         camera.orthoBottom = -4.5;
       }
       scene.activeCamera = camera;
-      if (path === "classic") scene.activeCameras = [camera];
       const black = new PBRMaterial("Neutral Occluders", scene);
       black.unlit = true;
       black.albedoColor = new Color3(0.08, 0.08, 0.08);
@@ -314,11 +310,8 @@ export async function runSpatialEffectsProof(
       const graph = new ForwardSceneFrameGraph(scene);
       const draw = async (activeCamera = camera) => {
         scene.activeCamera = activeCamera;
-        if (path === "classic") scene.activeCameras = [activeCamera];
         settings();
-        const prepared = await graph.prepare(activeCamera);
-        if (prepared.path !== path)
-          throw new Error(`Expected ${path}: ${JSON.stringify(prepared)}`);
+        await graph.prepare(activeCamera);
         const deadline = performance.now() + 15_000;
         while (!graph.readiness(activeCamera).ready) {
           if (performance.now() > deadline)
@@ -366,12 +359,10 @@ export async function runSpatialEffectsProof(
       };
       try {
         if (kind === "fogVolumes") {
-          fogCaptures.push({ path, ...await captureFogVolumes(scene, camera, draw) });
-          continue;
+          return { fogCaptures: [await captureFogVolumes(scene, camera, draw)] };
         }
         if (kind === "ambientOcclusion") {
-          occlusionCaptures.push({ path, ...await captureAmbientOcclusion(camera, effects, draw) });
-          continue;
+          return { occlusionCaptures: [await captureAmbientOcclusion(camera, effects, draw)] };
         }
         const off = await draw();
         effects.reflections.enabled =
@@ -396,11 +387,6 @@ export async function runSpatialEffectsProof(
           const checkStack = async () => {
             const pixels = await draw();
             stackDifferences.push(pixels.reduce((sum, value, i) => sum + Math.abs(value - on[i]!), 0) / on.length);
-            if (path === "classic") {
-              const passes = camera._postProcesses.filter((pass) => pass !== null);
-              if (passes.indexOf(stack.passes[0]!) > passes.findIndex((pass) => pass.name === "Scene Reflections"))
-                throw new Error("Authored color must precede scene reflections");
-            }
           };
           await checkStack();
           stack = attach();
@@ -471,8 +457,7 @@ export async function runSpatialEffectsProof(
         effects.reflections.enabled =
           effects.volumetricLighting.enabled = false;
         const disabled = await draw();
-        captures.push({
-          path,
+        return { captures: [{
           off,
           on,
           identityDisplay,
@@ -481,7 +466,7 @@ export async function runSpatialEffectsProof(
           disabled,
           cameraSwitchDifference,
           stackDifferences,
-        });
+        }] };
       } finally {
         graph.dispose();
         await graph.whenReleased();
@@ -493,7 +478,8 @@ export async function runSpatialEffectsProof(
         engine.beginFrame();
         engine.endFrame();
       }
-    }
+    };
+    const { captures = [], fogCaptures = [], occlusionCaptures = [] } = await captureScene();
     return { captures, fogCaptures, occlusionCaptures, reservations: managedRenderReservations(engine) };
   } finally {
     engine.dispose();

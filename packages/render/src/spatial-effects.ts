@@ -1,6 +1,5 @@
 import {
   Camera,
-  Constants,
   EffectWrapper,
   Matrix,
   Vector2,
@@ -177,7 +176,7 @@ function customWrapper(
   });
 }
 
-/** Identical stages and uniform contracts on camera and FrameGraph paths. */
+/** Spatial stages and their uniform contracts for the FrameGraph. */
 export function createSpatialStages(
   scene: Scene,
   camera: Camera,
@@ -487,15 +486,4 @@ export function createSpatialStages(
     }
     throw error;
   }
-}
-
-export function spatialGeometryTypes(plan: SceneEffectsPlan): number[] {
-  return [
-    Constants.PREPASS_DEPTH_TEXTURE_TYPE,
-    ...(plan.reflections || plan.ambientOcclusion
-      ? [Constants.PREPASS_WORLD_NORMAL_TEXTURE_TYPE]
-      : []),
-    ...(plan.reflections ? [Constants.PREPASS_REFLECTIVITY_TEXTURE_TYPE] : []),
-    ...(plan.temporalAntiAliasing ? [Constants.PREPASS_VELOCITY_LINEAR_TEXTURE_TYPE] : []),
-  ];
 }

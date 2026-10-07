@@ -435,7 +435,7 @@ it("compiles refraction and the screen-space march only into the copy's pass, fo
   expect(compiled(sampling, high)).toContain("#define SLATE_WATER_SSR_STEPS 16\n");
   expect(compiled(plain, high)).not.toContain("SLATE_WATER_REFRACTION\n");
   expect(compiled(plain, high)).not.toContain("SLATE_WATER_SSR\n");
-  // The main object pass (and any pass without a copy: captures, previews, classic frames) compiles neither.
+  // The main object pass (and any pass without a copy: captures, previews) compiles neither.
   const objectsPass = () => scene.objectRenderers.filter((renderer) => renderer.name === "Forward objects").at(-1)!.renderPassId;
   const objects = objectsPass();
   expect(compiled(sampling, objects)).toContain("#define SLATE_WATER\n");

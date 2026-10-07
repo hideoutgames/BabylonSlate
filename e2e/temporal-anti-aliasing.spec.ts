@@ -58,19 +58,17 @@ for (const backend of ["webgl2"] as ("webgl2" | "webgpu")[]) {
     await testInfo.attach("temporal-pixels", { body: JSON.stringify(result), contentType: "application/json" });
     expect(errors).toEqual([]);
     expect(result.reservations.reservedBytes).toBe(0);
-    expect(result.captures).toHaveLength(2);
+    expect(result.captures).toHaveLength(1);
     for (const capture of result.captures) {
-      const { path } = capture;
-      expect(capture.off.some((value, i) => i % 4 === 0 && value > 200), `${path}: visible surfaces`).toBe(true);
-      expect(partialPixels(capture.off), `${path}: aliased edges without TAA`).toBeLessThan(8);
-      expect(partialPixels(capture.on), `${path}: accumulated edges are smoothed`).toBeGreaterThan(40);
-      expect(difference(capture.off, capture.on).mean, `${path}: accumulation keeps the image in place`).toBeLessThan(6);
-      expect(difference(capture.on, capture.next).mean, `${path}: converged frames are stable`).toBeLessThan(1.5);
-      expect(capture.projectionRestored, `${path}: the camera projection stays unjittered`).toBe(true);
-      expect(trailPixels(capture.moved, capture.movedReference, result.width), `${path}: a moved surface leaves no trail`).toBe(0);
-      expect(difference(capture.moved, capture.movedReference).mean, `${path}: a moved surface resolves`).toBeLessThan(6);
-      expect(difference(capture.panned, capture.pannedReference).mean, `${path}: history follows camera motion`).toBeLessThan(5);
+      expect(capture.off.some((value, i) => i % 4 === 0 && value > 200), "visible surfaces").toBe(true);
+      expect(partialPixels(capture.off), "aliased edges without TAA").toBeLessThan(8);
+      expect(partialPixels(capture.on), "accumulated edges are smoothed").toBeGreaterThan(40);
+      expect(difference(capture.off, capture.on).mean, "accumulation keeps the image in place").toBeLessThan(6);
+      expect(difference(capture.on, capture.next).mean, "converged frames are stable").toBeLessThan(1.5);
+      expect(capture.projectionRestored, "the camera projection stays unjittered").toBe(true);
+      expect(trailPixels(capture.moved, capture.movedReference, result.width), "a moved surface leaves no trail").toBe(0);
+      expect(difference(capture.moved, capture.movedReference).mean, "a moved surface resolves").toBeLessThan(6);
+      expect(difference(capture.panned, capture.pannedReference).mean, "history follows camera motion").toBeLessThan(5);
     }
-    expect(difference(result.captures[0]!.on, result.captures[1]!.on).mean, "native and graph parity").toBeLessThan(1);
   });
 }

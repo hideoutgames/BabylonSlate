@@ -597,14 +597,11 @@ second path Parameter `out` → Sample `texture`) and asserts
 | Scene Depth | `SceneDepthBlock` with linearized depth (`useNonLinearDepth = false`) |
 | Scene Normal | `PrePassTextureBlock.worldNormal` sampled through a `TextureBlock` |
 
-If a device cannot provide a required buffer, `attachPostProcessStack` skips
-**only that pass** and reports an anchored `material.capability` diagnostic on
-the Scene Depth / Scene Normal node. Runtime probes depth with a try/catch
-`enableDepthRenderer` and pre-pass support without disposing a renderer another
-subsystem already owns. Compilation runs first; only successful passes lease a
-linearized camera depth renderer (`useNonLinearDepth = false`,
-`storeCameraSpaceZ = false`) or a shared pre-pass renderer. The stack releases
-only buffers it created.
+The FrameGraph post-process stack supplies these as logical scene buffers. If
+the graph cannot provide a required buffer, the stack skips **only that pass**
+and reports an anchored `material.framegraph.buffer` diagnostic on the Scene
+Depth / Scene Normal node. The graph allocates a single geometry producer for
+enabled depth/normal consumers.
 
 ## Runtime
 
@@ -633,8 +630,8 @@ Pack warns when a Material samples a Texture guid with no bytes (`Packed Materia
 Scene Details authors `SceneSettings.postProcessStack` (ordered Material guid +
 Enabled) with `NamedListEditor` / `AssetPicker`. The picker lists post-process
 Materials only (open-document domain wins over a stale header).
-`attachPostProcessStack` compiles and attaches enabled entries to the active
-game camera, skipping (and reporting) a missing, surface-domain or failing
+`SceneRenderCoordinator.attachPostProcess` compiles enabled entries into the
+view's FrameGraph, skipping (and reporting) a missing, surface-domain or failing
 material rather than blacking out the frame. The stack is empty by default.
 
 Engine Settings `postProcessingEnabled` defaults **on**. It gates editor scene

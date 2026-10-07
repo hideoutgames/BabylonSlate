@@ -123,7 +123,11 @@ describe("editor camera model", () => {
     data.settings.mainCameraComponentId = "camera";
     sync.apply(data);
     const model = scene.getMeshByName(editorComponentMeshName("other", "camera")) as Mesh;
-    const active = () => scene.getActiveMeshes().data.slice(0, scene.getActiveMeshes().length);
+    // The editor never freezes its active queue; collect the current frame's members.
+    const active = () => {
+      scene.render();
+      return scene.getActiveMeshes().data.slice(0, scene.getActiveMeshes().length);
+    };
     expect(active()).toContain(model);
     const hit = scene.pickWithRay(new Ray(new Vector3(0, 0, 5), new Vector3(0, 0, -1)), (mesh) => mesh === model);
     expect(hit?.hit).toBe(true);

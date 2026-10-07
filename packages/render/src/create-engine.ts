@@ -381,7 +381,7 @@ export interface EngineHandle {
   }>;
   /** Authored camera post-process passes currently attached. */
   postProcessPassCount: () => number;
-  /** Prepared FrameGraph task names in record order, or [] on classic. */
+  /** Prepared FrameGraph task names in record order, or [] before preparation. */
   renderTaskNames: () => string[];
   /** Unique Material guids currently assigned to Play meshes. */
   assignedMaterialGuids: () => string[];
@@ -1576,7 +1576,6 @@ function initializeEngine(
     : null;
   const editorSync = options.editor
     ? new EditorSceneSync(scene, scheduler, {
-        freezeActiveMeshes: false,
         resolveMaterial: (guid, options) => binding.resolveMaterial?.(guid, options) ?? null,
         releaseMaterialInstance: (key, guid) => binding.releaseMaterialInstance?.(key, guid),
         validateMaterialParameter: (guid, name, value) => binding.validateMaterialParameter?.(guid, name, value) ?? false,

@@ -1,5 +1,5 @@
 import type { AnimationGroup, AbstractEngine, Material, Scene } from "@babylonjs/core";
-import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
+import type { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
 import {
   DEFAULT_THUMBNAIL_MAX_EDGE,
   type ModelMaterialSlot,
@@ -12,6 +12,8 @@ import {
 } from "./model-preview";
 import {
   aimPreviewCameraAtMesh,
+  createPreviewRenderTarget,
+  renderPreviewFrame,
   type MaterialPreviewScene,
 } from "./material-preview";
 import { retargetAnimationGroupWithMeshProxy } from "./node-rig";
@@ -127,11 +129,11 @@ async function captureAdmittedModelThumbnail(
     applyModelMaterialSlots(host.mesh, slots, (guid) =>
       resolveMaterial(guid, host.scene),
     );
-    rtt = new RenderTargetTexture("modelThumbnail", { width: size, height: size }, host.scene, false);
+    rtt = createPreviewRenderTarget("modelThumbnail", { width: size, height: size }, host.scene);
     host.camera.outputRenderTarget = rtt;
     // A one-shot render must await imported PBR materials and textures.
     if (!(await waitForPreviewMeshesReady(host.mesh)) || options.signal?.aborted) return null;
-    host.scene.render();
+    if (!(await renderPreviewFrame(host, () => !options.signal?.aborted))) return null;
     const buffer = await rtt.readPixels();
     if (!buffer || options.signal?.aborted) return null;
     const pixels = rgbaBytesFromReadback(buffer, size * size * 4);
@@ -146,6 +148,6 @@ async function captureAdmittedModelThumbnail(
     sourceLoaded?.dispose();
     sourceHost?.dispose();
     loaded?.dispose();
-    host.dispose();
+    await host.whenReleased().catch(() => {});
   }
 }

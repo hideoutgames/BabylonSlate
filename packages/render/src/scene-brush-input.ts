@@ -1,7 +1,6 @@
 import { Color4, Matrix, Mesh, MeshBuilder, Quaternion, Ray, Vector3, type AbstractMesh, type LinesMesh } from "@babylonjs/core";
 import { appendFoliageInstance, chooseFoliageModel, createActor, identitySerializedTransform, parseFoliageProperties, parseLandscapeProperties, sculptLandscape, type FoliageGroup, type FoliageProperties, type LandscapeBrush, type SerializedScene } from "@babylonslate/core";
 import type { EngineHandle } from "./create-engine";
-import { freezeEditorActiveMeshes } from "./scene-perf";
 import { RENDERING_GROUP } from "./sorting";
 
 export interface SceneBrushState {
@@ -67,7 +66,6 @@ export function attachSceneBrushInput(handle: EngineHandle, canvas: HTMLCanvasEl
   const hideRing = () => {
     if (!ring) return;
     ring.dispose(); ring = null;
-    freezeEditorActiveMeshes(handle.scene);
     handle.scheduler.invalidate("manual");
   };
   const showRing = (point: Vector3, normal: Vector3, state: SceneBrushState) => {
@@ -86,11 +84,9 @@ export function attachSceneBrushInput(handle: EngineHandle, canvas: HTMLCanvasEl
     const inner = state.mode === "landscape" ? radius * (1 - state.landscapeBrush.falloff) : 0;
     const lines = [circle(radius), inner > radius * 0.05 ? circle(inner) : Array.from({ length: RING_SEGMENTS + 1 }, () => point.add(normal.scale(RING_LIFT)))];
     const colors = [lines[0]!.map(() => RING_COLOR), lines[1]!.map(() => RING_INNER_COLOR)];
-    const created = !ring;
     ring = MeshBuilder.CreateLineSystem("sceneBrushPreview", { lines, colors, useVertexAlpha: true, instance: ring ?? undefined, updatable: true }, handle.scene);
     ring.isPickable = false;
     ring.renderingGroupId = RENDERING_GROUP.foreground;
-    if (created) freezeEditorActiveMeshes(handle.scene);
     handle.scheduler.invalidate("manual");
   };
   const cellKey = (p: Vector3, spacing: number) => `${Math.floor(p.x / spacing)}:${Math.floor(p.y / spacing)}:${Math.floor(p.z / spacing)}`;

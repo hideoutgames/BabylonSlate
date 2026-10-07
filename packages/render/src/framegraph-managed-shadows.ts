@@ -189,9 +189,9 @@ export function unsupportedManagedShadows(scene: Scene): string | undefined {
     for (const [camera, generator] of light.getShadowGenerators() ?? []) {
       const owned = controller?.boundGenerator(light);
       if (!owned || owned !== generator)
-        return "Unmanaged shadow allocations require classic rendering.";
+        return "Unmanaged shadow allocations are not supported.";
       if (camera !== null || owned.camera !== null)
-        return "Camera-specific shadow allocations require classic rendering.";
+        return "Camera-specific shadow allocations are not supported.";
       if (!generator.getShadowMap()?.getInternalTexture())
         return "The admitted shadow allocation is not ready for FrameGraph import.";
     }

@@ -36,8 +36,7 @@ export interface SceneEffectsPlan {
   ambientOcclusion: RenderEffectsSettings["ambientOcclusion"] | null;
   reflections: RenderEffectsSettings["reflections"] | null;
   volumetricLighting: RenderEffectsSettings["volumetricLighting"] | null;
-  /** FrameGraph only: the chain renders at `renderScale`, then FSR 1 restores
-   * the output size. The classic camera chain renders at full size. */
+  /** The chain renders at `renderScale`, then FSR 1 restores the output size. */
   upscale: RenderEffectsSettings["upscaling"] | null;
 }
 

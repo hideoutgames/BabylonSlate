@@ -6,7 +6,6 @@ import { createScenePostProcessGraph, type ScenePostProcessGraph } from "./scene
 import { FrameGraphCopyToTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/copyToTextureTask";
 import { FrameGraphCopyToBackbufferColorTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/copyToBackbufferColorTask";
 import { ScenePostProcessOwner } from "./scene-post-process-owner";
-import { SceneEffectsOwner } from "./scene-effects-owner";
 import { SceneEffectsGraph } from "./scene-effects-graph";
 import { upscaledRenderSize } from "./scene-effects";
 import { liveSceneEffectsKey } from "./spatial-effects";
@@ -28,8 +27,7 @@ import { FrameGraphCullObjectsTask } from "@babylonjs/core/FrameGraph/Tasks/Misc
 import { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/clearTextureTask";
 import { HasStencilAspect } from "@babylonjs/core/Materials/Textures/textureHelper.functions";
 import { isSceneFrameReady, withSceneReadinessState } from "./scene-perf";
-import { attachSceneDepthPrePass } from "./transparent-depth-pre-pass";
-import { admittedSceneMeshes, admittedSceneParticles, withSceneStreamNativeVisibility } from "./scene-stream-admission";
+import { admittedSceneMeshes, admittedSceneParticles } from "./scene-stream-admission";
 import { findSceneShadowController } from "./shadow-controller";
 import { syncSceneLighting } from "./scene-lighting";
 import { FrameGraphClusteredLightsTask } from "./framegraph-clustered-lights";
@@ -40,11 +38,12 @@ import {
   unsupportedManagedShadows,
 } from "./framegraph-managed-shadows";
 
-/** Internal proof result; renderer selection and authored settings are untouched. */
-export type ForwardSceneGraphResult =
-  { path: "frameGraph" } | { path: "classic"; reason: string };
+/** The FrameGraph is the only scene renderer; a frame it cannot draw is skipped. */
+export type ForwardSceneGraphResult = { path: "frameGraph" };
 export type ForwardSceneGraphReadiness = ForwardSceneGraphResult & {
   ready: boolean;
+  /** Why the scene cannot draw yet, or at all. */
+  reason?: string;
   /** Missing or stale resources need preparation; a temporary shader/scene
    * readiness failure on an already prepared path only needs another probe. */
   preparationRequired?: true;
@@ -88,10 +87,11 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
 }
 
 /**
- * Opt-in Forward proof for the backbuffer or an explicit 2D color/depth target.
- * The caller retains its existing frame
+ * The scene renderer: a Forward FrameGraph drawing to the backbuffer or an
+ * explicit 2D color/depth target. The caller retains its existing frame
  * scheduler and calls render instead of Scene.render, exactly once per frame.
  * prepare only builds/probes effects; it never presents or consumes a frame.
+ * A scene the graph cannot draw fails preparation; there is no native fallback.
  */
 export class ForwardSceneFrameGraph {
   private measureWork = false;
@@ -162,14 +162,10 @@ export class ForwardSceneFrameGraph {
   private readonly lightEnabledObservers = new Map<Light, Observer<boolean>>();
   private readonly beforeRender: Observer<Scene>;
   private readonly onDispose: Observer<Scene>;
-  /** Classic frames' transparent depth pre-passes under their own render pass id (graph tasks have their own). */
-  private readonly detachClassicDepthPrePass: () => void;
   private readonly scene: Scene;
-  private readonly effectsOwner: SceneEffectsOwner;
 
   constructor(scene: Scene) {
     this.scene = scene;
-    this.effectsOwner = new SceneEffectsOwner(scene);
     // Strict readiness probes rebuild every light/material variant. Cache the
     // result and re-probe only after scene or rendering-definition changes.
     const mark = () => this.markReadinessDirty();
@@ -207,7 +203,6 @@ export class ForwardSceneFrameGraph {
       true,
     );
     this.onDispose = scene.onDisposeObservable.add(() => this.dispose());
-    this.detachClassicDepthPrePass = attachSceneDepthPrePass(scene);
   }
 
   attachPostProcess(options: AttachPostProcessStackOptions, invalidate: () => void): AttachedPostProcessStack {
@@ -221,7 +216,6 @@ export class ForwardSceneFrameGraph {
     if (!this.pending) this.releaseGraph();
     const current = () => !this.disposed && this.postProcessOwner === owner;
     return {
-      get passes() { return current() ? owner.passes : []; },
       whenDisposed: () => owner.whenDisposed(),
       whenReleased: () => owner.whenReleased(),
       setParameter: (id, name, value) => current() && owner.setParameter(id, name, value),
@@ -271,10 +265,10 @@ export class ForwardSceneFrameGraph {
     if (this.disposed) return 0;
     const stackPasses = this.postProcessGraph
       ? this.postProcessGraph.postProcessTasks.filter((task) => task.isActive).length
-      : this.postProcessOwner?.passes.length ?? 0;
+      : 0;
     const graphEffects =
       this.effectsGraph?.tasks.filter((task) => task !== this.outlineTask && !task.disabled).length ?? 0;
-    return stackPasses + graphEffects + this.effectsOwner.passes.length + (this.outlineTask ? 1 : 0);
+    return stackPasses + graphEffects + (this.outlineTask ? 1 : 0);
   }
 
   /** Prepared graph task names in record order, for diagnostics and tests. */
@@ -406,13 +400,13 @@ export class ForwardSceneFrameGraph {
    * Strict scene probe gated by the dirty flag: a clean cache reports the last
    * admitted result; a dirty one re-probes and re-arms only on success. A
    * current prepared graph re-runs the full task probe; otherwise the
-   * scene-level probe covers classic-path hosts.
+   * scene-level probe gates preparation.
    */
   sceneStrictlyReady(camera: Camera): boolean {
     if (this.unavailable(camera)) return false;
     this.syncMembership();
-    // A settings change stales a prepared graph like a stack revision; a
-    // graphless classic path has no baked chain to re-key.
+    // A settings change stales a prepared graph like a stack revision; with
+    // no graph yet there is no baked chain to re-key.
     if (!this.readinessDirtyFlag &&
       (!this.graph || this.preparedEffectsKey === this.effectsKey(camera) && this.outlineMatches() && this.waterMatches(camera)))
       return true;
@@ -480,11 +474,7 @@ export class ForwardSceneFrameGraph {
     const reason = this.unsupported(camera) ?? this.failure;
     if (reason) {
       this.releaseGraph();
-      if (this.outlineView?.active)
-        return Promise.reject(new Error(`Shared outlines require the prepared FrameGraph: ${reason}`));
-      this.postProcessOwner?.useNative(camera);
-      this.effectsOwner.useNative(camera);
-      return Promise.resolve({ path: "classic", reason });
+      return Promise.reject(new Error(`Scene cannot render: ${reason}`));
     }
     const work = this.prepareGraph(camera, assertCurrent);
     this.pending = work;
@@ -499,30 +489,20 @@ export class ForwardSceneFrameGraph {
     return work;
   }
 
-  /** A pending eligible graph is distinct from an admitted classic fallback. */
+  /** Preparation reports an unsupported scene or a failed build as an error. */
   readiness(camera: Camera): ForwardSceneGraphReadiness {
     this.admittedCamera = undefined;
     const unavailable = this.unavailable(camera);
-    if (unavailable) return { path: "classic", reason: unavailable, ready: false };
+    if (unavailable) return { path: "frameGraph", reason: unavailable, ready: false };
     this.syncMembership();
     this.syncShadowAdmission(camera);
     this.admittedCamera = camera;
     this.admittedRevision = this.readinessRevision;
     this.admittedChecks = this.strictChecks;
     this.refreshFailure(camera);
+    // Preparation rejects with this reason, so the owner surfaces it.
     const reason = this.unsupported(camera) ?? this.failure;
-    if (reason) {
-      // Native stack creation belongs to preparation, never a readiness probe.
-      // The strict scene probe only gates while an enabled chain must draw;
-      // with no enabled effects the classic path admits exactly as before.
-      const effectsEnabled = this.postProcessOwner?.hasEnabledEntries || this.effectsOwner.hasEnabledEntries;
-      const nativePrepared = (!this.postProcessOwner?.hasEnabledEntries || this.postProcessOwner.nativeReadyFor(camera)) &&
-        (!this.effectsOwner.hasEnabledEntries || this.effectsOwner.nativeReadyFor(camera));
-      const preparationRequired = Boolean(this.outlineView?.active) || !nativePrepared;
-      return { path: "classic", reason,
-        ready: !preparationRequired && (!effectsEnabled || this.sceneStrictlyReady(camera)),
-        ...(preparationRequired ? { preparationRequired: true as const } : {}) };
-    }
+    if (reason) return { path: "frameGraph", reason, ready: false, preparationRequired: true };
     const outputCurrent = this.outputMatches(this.output(camera));
     if (this.graph && !outputCurrent) this.markReadinessDirty();
     if (this.pending) return { path: "frameGraph", ready: false };
@@ -541,14 +521,14 @@ export class ForwardSceneFrameGraph {
     return { path: "frameGraph", ready: true };
   }
 
-  /** Render one scene frame, with an explicit, observable classic fallback.
+  /** Render one scene frame, or skip it with the reason it cannot draw yet.
    * reuseAdmission is for a caller that invokes readiness() immediately before
    * with no scene work between; any invalidation or strict probe re-admits. */
-  render(camera: Camera, updateCameras = true, reuseAdmission = false): ForwardSceneGraphResult & { rendered?: boolean } {
+  render(camera: Camera, updateCameras = true, reuseAdmission = false): ForwardSceneGraphResult & { rendered?: false; reason?: string } {
     const admitted = this.admittedCamera;
     this.admittedCamera = undefined;
     const unavailable = this.unavailable(camera) ?? pausedSceneRedrawIssue(this.scene);
-    if (unavailable) return { path: "classic", reason: unavailable, rendered: false };
+    if (unavailable) return { path: "frameGraph", reason: unavailable, rendered: false };
     this.syncMembership();
     if (!reuseAdmission || admitted !== camera || this.admittedRevision !== this.readinessRevision ||
       this.admittedChecks !== this.strictChecks)
@@ -571,32 +551,13 @@ export class ForwardSceneFrameGraph {
         : undefined);
     if (this.graph && !outputCurrent) this.markReadinessDirty();
     this.setActiveCamera(camera);
-    if (reason) {
-      const blocked =
-        this.outlineView?.active ||
-        (this.postProcessOwner?.hasEnabledEntries &&
-          (this.pending || !this.postProcessOwner.nativeReadyFor(camera) ||
-            !this.sceneStrictlyReady(camera))) ||
-        (this.effectsOwner.hasEnabledEntries &&
-          (this.pending || !this.effectsOwner.nativeReadyFor(camera) ||
-            !this.sceneStrictlyReady(camera)));
-      if (blocked)
-        return { path: "classic", reason, rendered: false };
-      const rendered = this.renderNativeFrame(updateCameras);
-      return { path: "classic", reason, ...(rendered ? {} : { rendered: false }) };
-    }
+    if (reason) return { path: "frameGraph", reason, rendered: false };
 
     const graph = this.graph!;
     this.assignCamera(camera);
     this.syncSceneInputs();
     if (this.readinessDirty) {
-      const readiness = this.probeReadiness();
-      if (!readiness.ready) {
-        if (this.postProcessOwner?.hasEnabledEntries || this.effectsOwner.hasEnabledEntries || this.outlineView?.active)
-          return { path: "classic", reason: "FrameGraph effects are not ready.", rendered: false };
-        const rendered = this.renderNativeFrame(updateCameras, readiness);
-        return { path: "classic", reason: "FrameGraph effects are not ready.", ...(rendered ? {} : { rendered: false }) };
-      }
+      if (!this.isReady()) return { path: "frameGraph", reason: "FrameGraph is not ready.", rendered: false };
       this.readinessDirtyFlag = false;
     }
     const cameras = this.scene.activeCameras;
@@ -640,33 +601,6 @@ export class ForwardSceneFrameGraph {
     }
   }
 
-  private renderNativeFrame(updateCameras: boolean, checked?: { nativeReady: boolean; revision: number }): boolean {
-    if (this.disposed || this.scene.isDisposed) return false;
-    // Admission may dirty shaders after the coordinator's initial probe. A
-    // graph still warming is allowed to use a complete native frame, but graph
-    // readiness and native readiness are different contracts.
-    if (this.readinessDirty) {
-      // Reuse this attempt's native probe, including an unready result. A later
-      // attempt or an intervening invalidation must probe again.
-      if (checked?.revision === this.readinessRevision) {
-        if (!checked.nativeReady) return false;
-      } else {
-        this.strictChecks += 1;
-        if (!isSceneFrameReady(this.scene)) return false;
-      }
-    }
-    const revision = this.readinessRevision;
-    const capture = activeRenderFrameCapture(this.scene.getEngine());
-    if (capture) capture.stage(this.scene, { name: "Native scene submission", kind: "native",
-      detail: "Classic renderer stage; internal pass/resource detail is unavailable." },
-      () => withSceneStreamNativeVisibility(this.scene, () => renderSceneWithGameTime(this.scene, updateCameras)));
-    else withSceneStreamNativeVisibility(this.scene, () => renderSceneWithGameTime(this.scene, updateCameras));
-    this.syncMembership();
-    // A successful probe after drawing cannot prove a mesh was not skipped.
-    // Hold a candidate dirtied by render callbacks and retry on the next frame.
-    return revision === this.readinessRevision;
-  }
-
   /** Releases only this coordinator's tasks and graph, never the scene/Engine. */
   dispose(): void {
     if (this.disposed) return;
@@ -677,13 +611,6 @@ export class ForwardSceneFrameGraph {
     this.retainedGraphs.clear();
     for (const entry of retained) entry.release?.();
     this.releasePostProcessOwner();
-    try {
-      this.effectsOwner.dispose();
-      this.postProcessRetirement.add(this.effectsOwner);
-    } catch (error) {
-      this.cleanupFailure = error;
-      throw error;
-    }
     for (const detach of this.readinessDetach) detach();
     this.readinessDetach.length = 0;
     for (const [mesh, observer] of this.meshMaterialObservers)
@@ -694,7 +621,6 @@ export class ForwardSceneFrameGraph {
     this.lightEnabledObservers.clear();
     this.scene.onBeforeRenderObservable.remove(this.beforeRender);
     this.scene.onDisposeObservable.remove(this.onDispose);
-    this.detachClassicDepthPrePass();
     if (!this.pending) this.releaseGraph();
   }
 
@@ -723,19 +649,19 @@ export class ForwardSceneFrameGraph {
           !isManagedClusteredLight(scene, light),
       )
     )
-      return "Unmanaged clustered light masks require classic rendering.";
+      return "Unmanaged clustered light masks are not supported.";
     if (scene.frameGraph || scene.customRenderFunction)
       return "Scene already has a render owner.";
     if (scene.activeCameras?.length || camera.cameraRigMode !== 0)
-      return "Multiple and rig cameras require classic rendering.";
+      return "Multiple and rig cameras are not supported.";
     // Native freezing retains a submesh/LOD render queue, not just mesh
     // membership. A new ObjectRenderer would re-filter it for the new camera.
     if (scene._activeMeshesFrozen)
-      return "Frozen active-mesh queues require classic rendering.";
+      return "Frozen active-mesh queues are not supported.";
     // FrameGraph restores the default framebuffer around execution. Only take
     // a camera's explicit output from an otherwise unbound frame boundary.
     if (scene.getEngine()._currentRenderTarget)
-      return "A caller-bound render target requires classic rendering.";
+      return "A caller-bound render target is not supported.";
     const target = camera.outputRenderTarget;
     if (
       target &&
@@ -745,21 +671,14 @@ export class ForwardSceneFrameGraph {
         !target.depthStencilTexture)
     )
       return "FrameGraph output requires a single-sample 2D color/depth texture.";
-    // Graph frames attach no native passes; only collect owners for a candidate.
-    if (camera._postProcesses.some(Boolean) || scene.postProcesses.length) {
-      const ownedPasses = [
-        ...(this.postProcessOwner?.passes ?? []),
-        ...this.effectsOwner.passes,
-      ];
-      if (camera._postProcesses.some((pass) => pass && !ownedPasses.includes(pass)) ||
-        scene.postProcesses.some((pass) => !ownedPasses.includes(pass)))
-        return "Scene post-processing requires classic rendering.";
-    }
+    // Post-processing runs as graph tasks attached through attachPostProcess.
+    if (camera._postProcesses.some(Boolean) || scene.postProcesses.length)
+      return "Native camera post-processes are not supported; attach them to the render coordinator.";
     if (
       scene.customRenderTargets.length ||
       scene.environmentTexture?.isRenderTarget
     )
-      return "Scene render targets require classic rendering.";
+      return "Scene custom render targets are not supported.";
     return unsupportedManagedShadows(scene);
   }
 
@@ -857,8 +776,6 @@ export class ForwardSceneFrameGraph {
           if (result.ok === false) throw new Error(result.reason);
           if (this.postProcessGraph) postProcessOwner.useGraph(this.postProcessGraph);
         }
-        // The graph owns all processing for the frames it renders.
-        this.effectsOwner.useGraph();
         const composeOutline = (target: FrameGraphTextureHandle) => {
           const task = new FrameGraphSharedOutlineTask("Shared outlines", this.graph!, this.preparedOutlineView!);
           this.outlineTask = task;
@@ -1019,11 +936,7 @@ export class ForwardSceneFrameGraph {
           throw new Error("Forward FrameGraph readiness timed out.");
         await new Promise<void>((resolve) => setTimeout(resolve, 16));
       }
-      if (this.disposed)
-        return {
-          path: "classic",
-          reason: "FrameGraph coordinator is disposed.",
-        };
+      if (this.disposed) throw new Error("FrameGraph coordinator is disposed.");
       this.readinessDirtyFlag = false;
       assertCurrent();
       this.preparedPostProcessRevision = postProcessRevision;
@@ -1037,18 +950,11 @@ export class ForwardSceneFrameGraph {
     } catch (error) {
       this.releaseGraph();
       // Cancellation belongs to the old loading owner. Validate before latching
-      // a fallback so a superseded build cannot poison its replacement.
+      // a failure so a superseded build cannot poison its replacement.
       assertCurrent();
       this.failure = error instanceof Error ? error.message : String(error);
-      console.warn(`FrameGraph preparation failed: ${this.failure}`);
       this.failedOutput = { ...this.output(camera), camera };
-      if (this.outlineView?.active)
-        throw new Error(`Shared outline preparation failed: ${this.failure}`, { cause: error });
-      if (!this.disposed && !scene.isDisposed) {
-        this.postProcessOwner?.useNative(camera);
-        this.effectsOwner.useNative(camera);
-      }
-      return { path: "classic", reason: this.failure };
+      throw new Error(`FrameGraph preparation failed: ${this.failure}`, { cause: error });
     }
   }
 
@@ -1100,10 +1006,6 @@ export class ForwardSceneFrameGraph {
   }
 
   private isReady(): boolean {
-    return this.probeReadiness().ready;
-  }
-
-  private probeReadiness(): { ready: boolean; nativeReady: boolean; revision: number } {
     this.strictChecks += 1;
     const cameras = this.scene.activeCameras;
     const shadowFlags = this.scene.lights.map(
@@ -1127,10 +1029,8 @@ export class ForwardSceneFrameGraph {
         // own render-pass variants, without waiting on unrelated Engine effects.
         this.scene._activeCamera = camera;
         this.scene.getEngine().currentRenderPassId = camera.renderPassId;
-        const revision = this.readinessRevision;
         const cameraReady = isSceneFrameReady(this.scene);
-        const graphReady = this.graph!.isReady();
-        return { ready: cameraReady && graphReady, nativeReady: cameraReady, revision };
+        return this.graph!.isReady() && cameraReady;
       });
     } finally {
       this.water?.endProbe();
@@ -1169,9 +1069,6 @@ export class ForwardSceneFrameGraph {
 
   private releasePostProcessOwner(): void {
     try {
-      // Native effects borrow authored prepass buffers and follow the authored
-      // chain. Detach them before replacing either that owner or its buffers.
-      this.effectsOwner.useGraph();
       if (this.postProcessOwner) {
         this.postProcessOwner.dispose();
         this.postProcessRetirement.add(this.postProcessOwner);

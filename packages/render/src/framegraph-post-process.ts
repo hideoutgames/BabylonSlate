@@ -416,7 +416,7 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
     pass.dispose();
     this.trackCleanup(pass.whenDisposed());
     if (pass.isReleased) this.ownedPasses.delete(pass);
-    else void pass.whenReleased().then(() => this.ownedPasses.delete(pass));
+    else void pass.whenReleased().then(() => this.ownedPasses.delete(pass), () => {});
   }
 
   /** CPU/native ownership only; a managed GPU lease drains separately afterward. */

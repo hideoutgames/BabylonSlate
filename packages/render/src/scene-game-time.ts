@@ -48,7 +48,7 @@ export function pausedSceneRedrawIssue(scene: Scene): string | undefined {
   }
 }
 
-/** Internal draw boundary shared by FrameGraph and native fallback. */
+/** Internal draw boundary shared by the FrameGraph and direct Scene.render callers. */
 export function renderSceneWithGameTime(scene: Scene, updateCameras = true): void {
   const issue = pausedSceneRedrawIssue(scene);
   if (issue) throw new Error(issue);

@@ -94,6 +94,7 @@ const harness = vi.hoisted(() => ({
     setMesh: vi.fn(),
     applyMaterial: vi.fn(),
     applyPostProcess: vi.fn(),
+    setPostProcessParameter: vi.fn(),
     dispose: vi.fn(),
   },
   presenter: {
@@ -516,7 +517,7 @@ describe("MaterialEditingProvider preview isolation", () => {
     await act(async () => finishRead(new Uint8Array([9, 9, 9])));
     await waitFor(() => expect(screen.getByTestId("preview-state").textContent).toBe("ready"));
     expect(harness.acquireCalls).toBe(1);
-    expect(harness.host.applyPostProcess).toHaveBeenCalledWith(harness.acquireResult.ok ? harness.acquireResult.material : null);
+    expect(harness.host.applyPostProcess).toHaveBeenCalledWith(expect.objectContaining({ document: material }));
   });
 
   it("resolves RenderTargetTexture samples to opaque black without reading image chunks", async () => {
