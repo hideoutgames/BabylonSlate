@@ -66,8 +66,6 @@ import {
   filterInspectorPinPickerAssets,
   classIdFromClassAsset,
   classParentLookup,
-  addSelectedAssetGuid,
-  addSelectedFolderPath,
   exclusiveSelectAsset,
   exclusiveSelectFolder,
   paintSelectTiles,
@@ -1669,23 +1667,6 @@ describe("content-browser-helpers", () => {
     expect(
       classDocumentShowsPrefab(null, parentOf, { assetType: "Graph" }),
     ).toBe(true);
-  });
-
-  it("adds a guid to the Content Browser selection without replacing others", () => {
-    const selected = addSelectedAssetGuid(new Set(["scene-1"]), "class-1");
-    expect([...selected]).toEqual(["scene-1", "class-1"]);
-  });
-
-  it("adds a folder path to the Content Browser selection without replacing others", () => {
-    const selected = addSelectedFolderPath(new Set(["assets/fx"]), "assets/textures");
-    expect([...selected]).toEqual(["assets/fx", "assets/textures"]);
-  });
-
-  it("does not drop a guid that is already selected", () => {
-    const current = new Set(["scene-1"]);
-    const selected = addSelectedAssetGuid(current, "scene-1");
-    expect([...selected]).toEqual(["scene-1"]);
-    expect(selected).not.toBe(current);
   });
 
   it("replaces the Content Browser selection with a single asset tap", () => {

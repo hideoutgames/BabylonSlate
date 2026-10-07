@@ -419,26 +419,6 @@ export function classIdFromClassAsset(asset: ClassAssetRef): string {
   return displayAssetTitle(asset.header.name) || asset.header.name;
 }
 
-/** Additive Content Browser tile selection. Long-press / context menu never replaces. */
-export function addSelectedAssetGuid(
-  selected: ReadonlySet<string>,
-  guid: string,
-): Set<string> {
-  const next = new Set(selected);
-  next.add(guid);
-  return next;
-}
-
-/** Additive Content Browser folder-tile selection. Long-press / context menu never replaces. */
-export function addSelectedFolderPath(
-  selected: ReadonlySet<string>,
-  path: string,
-): Set<string> {
-  const next = new Set(selected);
-  next.add(path);
-  return next;
-}
-
 /** Single tap / click replaces the whole Content Browser selection with one asset. */
 export function exclusiveSelectAsset(guid: string): ContentBrowserSelection {
   return { guids: new Set([guid]), folderPaths: new Set() };
