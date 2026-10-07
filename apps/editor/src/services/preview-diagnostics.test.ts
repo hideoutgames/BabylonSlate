@@ -73,4 +73,24 @@ describe("Preview diagnostics lifecycle", () => {
     expect((await start).success).toBe(false);
     expect(vi.getTimerCount()).toBe(0);
   });
+
+  it("serializes modal input ownership without starting an expensive diagnostic operation", async () => {
+    const parent = {};
+    const origin = window.location.origin;
+    const operations: Array<[string, boolean | undefined]> = [];
+    const player = { postMessage: (data: unknown) => server.receive({ source: parent, origin, data }) } as unknown as Window;
+    const server = createPreviewDiagnosticServer({ source: () => parent, origin: () => origin,
+      send: (data) => window.dispatchEvent(new MessageEvent("message", { source: player, origin, data })) }, {
+      execute: async (operation, settings) => { operations.push([operation, settings.inputSuppressed]); return { success: true }; },
+      close: () => {},
+    });
+    const adapter = createPreviewDiagnostics({ source: () => player, origin, onProfile: vi.fn(), onError: vi.fn() });
+    await adapter.setInputSuppressed(false);
+    expect(operations).toEqual([]);
+    const opened = adapter.setInputSuppressed(true);
+    const closed = adapter.setInputSuppressed(false);
+    await opened; await closed;
+    expect(operations).toEqual([["input", true], ["input", false]]);
+    await adapter.finish();
+  });
 });

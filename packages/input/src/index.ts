@@ -33,3 +33,5 @@ export {
 } from "./resolver";
 export type { InputBindingControls } from "./input-bindings";
 export * from "./input-assets";
+
+export { attachInputCapture, type InputCaptureHandle } from "./dom-input-capture";

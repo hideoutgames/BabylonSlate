@@ -15,6 +15,8 @@ export function createPreviewDiagnostics(options: {
   let starting: Promise<PreviewDiagnosticResult> | null = null;
   let closing: Promise<void> | null = null;
   let disposed = false;
+  let inputSuppressed = false;
+  let inputTransition: Promise<PreviewDiagnosticResult> = Promise.resolve({ success: true });
   const client = createPreviewDiagnosticClient({ source: options.source, origin: () => options.origin,
     send: (message, transfer) => {
       const source = options.source();
@@ -43,6 +45,13 @@ export function createPreviewDiagnostics(options: {
   };
   return {
     get lastProfile(): PerformanceProfile | null { return retained; },
+    setInputSuppressed(suppressed: boolean): Promise<PreviewDiagnosticResult> {
+      if (disposed || closing) return Promise.resolve({ success: false, reason: "Preview diagnostics are closing." });
+      if (inputSuppressed === suppressed) return inputTransition;
+      inputSuppressed = suppressed;
+      inputTransition = inputTransition.then(() => client.request("input", { inputSuppressed: suppressed }));
+      return inputTransition;
+    },
     startProfile(settings: { durationMs?: number; byteBudget?: number } = {}): Promise<PreviewDiagnosticResult> {
       if (closing || disposed || starting || profileActive) return Promise.resolve({ success: false, reason: "Preview diagnostics are unavailable or already recording." });
       profileActive = true;

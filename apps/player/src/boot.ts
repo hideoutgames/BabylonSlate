@@ -5,7 +5,7 @@ import { buildMaterialParameterCatalog } from "@babylonslate/shader-graph";
 import { materialParameterTextureAssetGuids } from "@babylonslate/assets";
 import { captureShadowDiagnostics, lightsDebugText } from "@babylonslate/render";
 import type { AbstractEngine } from "@babylonjs/core";
-import { snapshotFloatCount, type ControlMessage } from "@babylonslate/bridge";
+import { createSessionBoundaryClient, snapshotFloatCount, type ControlMessage, type SessionBoundaryRequest, type SessionBoundaryResult } from "@babylonslate/bridge";
 import { encodeInputEvents } from "@babylonslate/input";
 import { parseAnimGraphDocument } from "@babylonslate/anim-graph";
 import {
@@ -351,7 +351,8 @@ function initializePlayer(
       options.onDiagnostic?.(diagnostics);
     },
     onTouchAxis: (controlId, value) => {
-      input?.ring.push({ kind: "touchAxis", controlId, value, tick: playInputStampTick(runtime?.getWorld().clock.tickIndex, lastWorkerTickIndex) });
+      if (options.previewDiagnostics) input?.setTouchAxis(controlId, value);
+      else input?.ring.push({ kind: "touchAxis", controlId, value, tick: playInputStampTick(runtime?.getWorld().clock.tickIndex, lastWorkerTickIndex) });
     },
     onSceneLayerScroll: (event) => {
       const control = { type: "sceneLayerScroll" as const, ...event };
@@ -522,6 +523,54 @@ function initializePlayer(
   let raf = 0;
   let halted = false;
   let lifecyclePaused = false;
+  let last = performance.now();
+  let acknowledgedPaused = false;
+  let editorInputSuppressed = false;
+  let inputTransition = 0;
+  let inputTransitionPending = false;
+  let lastBoundaryId = 0;
+  let pendingBoundary: Promise<void> = Promise.resolve();
+  const boundaryClient = options.previewDiagnostics ? createSessionBoundaryClient(0, request => {
+    if (halted) throw new Error("Preview has stopped.");
+    if (worker) worker.postControl({ type: "sessionBoundary", ...request });
+    else if (runtime) void runtime.requestSessionBoundary(request).then(result => boundaryClient?.receive(result));
+    else throw new Error("Preview runtime is unavailable.");
+  }, 3000) : undefined;
+  own(() => boundaryClient?.dispose());
+  const applyInputOwnership = () => {
+    const suppressed = editorInputSuppressed || inputTransitionPending || lifecyclePaused || acknowledgedPaused;
+    input?.setSuppressed(suppressed);
+    handle.setGameInputEnabled(!suppressed);
+  };
+  const requestBoundary = (action: SessionBoundaryRequest["action"]): Promise<void> => {
+    const request = boundaryClient!.request(action).then(result => {
+      if (!result.success) throw new Error(result.reason ?? "Preview runtime rejected the boundary.");
+      if (halted || result.requestId <= lastBoundaryId) return;
+      lastBoundaryId = result.requestId;
+      acknowledgedPaused = result.paused;
+      handle.setGameTimePaused(result.paused);
+      handle.setPaused(false);
+      if (!result.paused) last = performance.now();
+      applyInputOwnership();
+    });
+    pendingBoundary = request;
+    // Capture awaits the rejecting promise; background event owners also report
+    // failure without leaking an unhandled rejection or unfreezing the view.
+    void request.catch(error => options.onConsoleEvent?.({ type: "log", severity: "error", message: String(error) }));
+    return request;
+  };
+  const setEditorInputSuppressed = async (suppressed: boolean) => {
+    if (!boundaryClient) throw new Error("Editor input control is available only in Preview.");
+    const transition = ++inputTransition;
+    editorInputSuppressed = suppressed;
+    inputTransitionPending = true;
+    applyInputOwnership();
+    input?.neutralize();
+    await requestBoundary({ kind: "resetInput" });
+    if (transition !== inputTransition || halted) return;
+    inputTransitionPending = false;
+    applyInputOwnership();
+  };
   const pauseState = createPlayerPauseState();
   let detachLifecycle = () => {};
   let pauseGate: ReturnType<typeof createPlayPauseGate> | null = null;
@@ -786,6 +835,7 @@ function initializePlayer(
   };
   const onCommand = (command: { type: string } & Record<string, unknown>) => {
     if (diagnosticListeners) for (const listener of diagnosticListeners) listener(command);
+    if (command.type === "sessionBoundaryResult") { boundaryClient?.receive(command as SessionBoundaryResult & { type: string }); return; }
     if (command.type === "assetSourcesReady") {
       const requestId = Number(command.requestId);
       const request = pendingSourceRequests.get(requestId);
@@ -798,10 +848,18 @@ function initializePlayer(
     if (halted) return;
     if (command.type === "sceneStreamBlocking") handle.setSceneStreamingPaused(command.blocking === true);
     if (command.type === "sessionPaused") {
-      const paused = pauseState.setConsolePaused(command.paused === true);
-      handle.setPaused(paused);
-      pauseGate?.setPaused(paused);
-      worker?.postControl({ type: "setPaused", paused });
+      if (boundaryClient) {
+        // The console already changed its runtime reason. Read the effective
+        // boundary rather than converting a lifecycle hold into a user pause.
+        handle.setPaused(true);
+        input?.setSuppressed(true);
+        void requestBoundary({ kind: "resetInput" });
+      } else {
+        const paused = pauseState.setConsolePaused(command.paused === true);
+        handle.setPaused(paused);
+        pauseGate?.setPaused(paused);
+        worker?.postControl({ type: "setPaused", paused });
+      }
     }
     consoleHost.receive(command);
     options.onConsoleEvent?.(command);
@@ -958,12 +1016,13 @@ function initializePlayer(
   input = attachInputCapture(canvas, {
     skipPointerAndKeyboard: () => handle.isFreeCamEnabled(),
   });
+  if (options.previewDiagnostics) applyInputOwnership();
   own(() => input?.dispose());
   const releaseUnlock = unlockAudioOnFirstGesture(() => {
     void handle.unlockAudio();
   }, canvas);
   own(releaseUnlock);
-  let last = performance.now();
+  last = performance.now();
   let fpsWindowStart = last;
 
   const pump = () => {
@@ -1006,10 +1065,16 @@ function initializePlayer(
     detachLifecycle = attachLifecyclePause((paused) => {
       const wasPaused = lifecyclePaused;
       lifecyclePaused = paused;
-      const effectivePaused = pauseState.setLifecyclePaused(paused);
-      handle.setPaused(effectivePaused);
-      pauseGate?.setPaused(effectivePaused);
-      worker?.postControl({ type: "setPaused", paused: effectivePaused });
+      if (boundaryClient) {
+        handle.setPaused(true);
+        applyInputOwnership();
+        void requestBoundary({ kind: "pause", reason: "lifecycle", paused });
+      } else {
+        const effectivePaused = pauseState.setLifecyclePaused(paused);
+        handle.setPaused(effectivePaused);
+        pauseGate?.setPaused(effectivePaused);
+        worker?.postControl({ type: "setPaused", paused: effectivePaused });
+      }
       if (paused) {
         cancelAnimationFrame(raf);
       } else if (wasPaused) {
@@ -1050,10 +1115,11 @@ function initializePlayer(
             enabledDiagnostics: ["performance"], gpuTiming: "unavailable" as const };
         },
         observeFrames: (listener) => handle.observePerformance(listener),
+        setEditorInputSuppressed,
         captureFrame: async (signal) => {
           const cancel = () => handle.cancelFrameCapture("Preview frame capture was cancelled.");
           signal.addEventListener("abort", cancel, { once: true });
-          try { signal.throwIfAborted(); return await handle.captureFrame(); }
+          try { await pendingBoundary; signal.throwIfAborted(); return await handle.captureFrame(); }
           finally { signal.removeEventListener("abort", cancel); }
         },
         send: async (request) => {

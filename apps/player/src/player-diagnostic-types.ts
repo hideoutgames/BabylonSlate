@@ -7,6 +7,7 @@ export type PlayerPreviewDiagnosticPorts = {
   sessionGeneration: number;
   identity: () => PerformanceIdentity;
   observeFrames: EngineHandle["observePerformance"];
+  setEditorInputSuppressed: (suppressed: boolean) => Promise<void>;
   captureFrame: (signal: AbortSignal) => Promise<RenderFrameReport>;
   send: (request: DiagnosticOperationRequest) => Promise<DiagnosticOperationResult | undefined>;
   subscribe: (receive: (command: { type: string } & Record<string, unknown>) => void) => () => void;

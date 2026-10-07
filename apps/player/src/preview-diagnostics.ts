@@ -26,9 +26,13 @@ export function installPreviewDiagnostics(ports: PlayerPreviewDiagnosticPorts, e
       if (closed) return { success: false, reason: "Preview diagnostics stopped." };
       if (operation === "profile-start") return session.startProfile(settings);
       if (operation === "profile-stop") { await session.stopProfile(); await transfer; return { success: true }; }
+      if (operation === "input") { await ports.setEditorInputSuppressed(settings.inputSuppressed === true); return { success: true }; }
       return { success: true, result: await session.captureFrame() };
     },
-    close: () => session.cancel(),
+    close: async () => {
+      await session.cancel();
+      if (!closed) await ports.setEditorInputSuppressed(false).catch(error => console.warn("Preview input ownership could not be restored.", error));
+    },
   });
   const unsubscribe = ports.subscribe((command) => {
     if (command.sessionGeneration !== ports.sessionGeneration) return;

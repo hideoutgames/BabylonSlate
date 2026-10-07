@@ -193,6 +193,22 @@ export function PreviewBuildOverlay({
     };
   }, [diagnosticResults, iframeRef, origin, src, pushLog]);
   useEffect(() => {
+    let lastSuppressed: boolean | undefined;
+    const sync = () => {
+      if (stoppingRef.current) return;
+      const owner = diagnosticOwner.current;
+      if (!owner) return;
+      const suppressed = consoleOpen || treeOpen || diagnosticResults?.getSnapshot().open === true;
+      if (lastSuppressed === suppressed) return;
+      lastSuppressed = suppressed;
+      void owner.adapter.setInputSuppressed(suppressed).then(result => {
+        if (!result.success && !stoppingRef.current) owner.reportError(result.reason ?? "Preview input ownership failed.");
+      });
+    };
+    sync();
+    return diagnosticResults?.subscribe(sync);
+  }, [diagnosticResults, consoleOpen, treeOpen, src]);
+  useEffect(() => {
     const requests = pending.current;
     const receive = (event: MessageEvent) => {
       if (

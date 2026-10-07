@@ -60,3 +60,5 @@ export type { DiagnosticOperation, DiagnosticOperationRequest, DiagnosticOperati
 export type { RuntimeMaterialEditPreparation, RuntimeMaterialEditResponse } from "./runtime-material-edit";
 
 export type { SimulationQuiesceRequest, SimulationCaptureRequest, SimulationCaptureSummary, SimulationCaptureIdentity } from "./simulation-capture";
+
+export { createSessionBoundaryClient } from "./session-boundary-client";

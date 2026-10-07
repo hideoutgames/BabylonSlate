@@ -1,7 +1,8 @@
 import { newGuid } from "@babylonslate/core";
 
 export const PREVIEW_DIAGNOSTIC_MESSAGE = "babylonslate-preview-diagnostic-control";
-export type PreviewDiagnosticOperation = "profile-start" | "profile-stop" | "frame";
+export type PreviewDiagnosticOperation = "profile-start" | "profile-stop" | "frame" | "input";
+export type PreviewDiagnosticSettings = { durationMs?: number; byteBudget?: number; inputSuppressed?: boolean; gpuTiming?: boolean };
 export type PreviewDiagnosticResult = { success: boolean; reason?: string; result?: unknown };
 export type PreviewProfileTransfer = { metadata: Record<string, unknown>; frames: Float64Array[]; ticks: Float64Array[] };
 type Incoming = { source: unknown; origin: string; data: unknown };
@@ -11,7 +12,7 @@ export type PreviewDiagnosticEndpoint = {
 };
 type Message = { type: typeof PREVIEW_DIAGNOSTIC_MESSAGE; client: string; session?: string;
   action: "open" | "ready" | "request" | "result" | "profile-start" | "profile-chunk" | "profile-end" | "profile-error" | "close";
-  requestId?: number; operation?: PreviewDiagnosticOperation; durationMs?: number; byteBudget?: number;
+  requestId?: number; operation?: PreviewDiagnosticOperation; durationMs?: number; byteBudget?: number; inputSuppressed?: boolean; gpuTiming?: boolean;
   success?: boolean; reason?: string; result?: unknown; profileId?: number; metadata?: Record<string, unknown>;
   stream?: "frames" | "ticks"; sequence?: number; rows?: Float64Array };
 const validId = (id: unknown): id is string => typeof id === "string" && id.length > 0 && id.length <= 128;
@@ -62,7 +63,7 @@ export function createPreviewDiagnosticClient(endpoint: PreviewDiagnosticEndpoin
   };
   return {
     connect,
-    async request(operation: PreviewDiagnosticOperation, settings: { durationMs?: number; byteBudget?: number } = {}): Promise<PreviewDiagnosticResult> {
+    async request(operation: PreviewDiagnosticOperation, settings: PreviewDiagnosticSettings = {}): Promise<PreviewDiagnosticResult> {
       try { await connect(); } catch (error) { return { success: false, reason: String(error) }; }
       if (closed || pending.size >= 4) return { success: false, reason: "Preview diagnostic request limit reached." };
       const requestId = ++sequence;
@@ -127,7 +128,7 @@ export function createPreviewDiagnosticClient(endpoint: PreviewDiagnosticEndpoin
 
 /** Loaded only by the actual packaged player's explicit Preview handshake. */
 export function createPreviewDiagnosticServer(endpoint: PreviewDiagnosticEndpoint, options: {
-  execute: (operation: PreviewDiagnosticOperation, settings: { durationMs?: number; byteBudget?: number }) => Promise<PreviewDiagnosticResult>;
+  execute: (operation: PreviewDiagnosticOperation, settings: PreviewDiagnosticSettings) => Promise<PreviewDiagnosticResult>;
   close: () => void | Promise<void>;
 }) {
   const session = newGuid();
@@ -169,17 +170,19 @@ export function createPreviewDiagnosticServer(endpoint: PreviewDiagnosticEndpoin
       if (!client || message.client !== client || message.session !== session) return;
       if (message.action === "close") { client = undefined; lastRequestId = -1; void options.close(); return; }
       if (message.action !== "request" || !validSequence(message.requestId) || message.requestId <= lastRequestId ||
-        !["profile-start", "profile-stop", "frame"].includes(String(message.operation))) return;
+        !["profile-start", "profile-stop", "frame", "input"].includes(String(message.operation))) return;
       lastRequestId = message.requestId;
       const requestId = message.requestId;
       if (inFlight >= 4) { send({ action: "result", requestId, success: false, reason: "Too many Preview diagnostic requests." }); return; }
-      if ((message.durationMs !== undefined && (!validSequence(message.durationMs) || message.durationMs < 1000 || message.durationMs > 60_000)) ||
+      if ((message.operation === "input" && typeof message.inputSuppressed !== "boolean") ||
+        (message.gpuTiming !== undefined && typeof message.gpuTiming !== "boolean") ||
+        (message.durationMs !== undefined && (!validSequence(message.durationMs) || message.durationMs < 1000 || message.durationMs > 60_000)) ||
         (message.byteBudget !== undefined && (!validSequence(message.byteBudget) || message.byteBudget < 4 * 1024 * 1024 || message.byteBudget > MAX_TRANSFER_BYTES))) {
         send({ action: "result", requestId, success: false, reason: "Invalid Preview recording settings." }); return;
       }
       inFlight++;
       const owner = client;
-      void options.execute(message.operation!, { durationMs: message.durationMs, byteBudget: message.byteBudget })
+      void options.execute(message.operation!, { durationMs: message.durationMs, byteBudget: message.byteBudget, inputSuppressed: message.inputSuppressed, gpuTiming: message.gpuTiming })
         .then((result) => { if (client === owner) send({ action: "result", requestId, ...result }); },
           (error: unknown) => { if (client === owner) send({ action: "result", requestId, success: false, reason: String(error) }); })
         .finally(() => { inFlight--; });
