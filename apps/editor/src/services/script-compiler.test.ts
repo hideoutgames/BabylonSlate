@@ -960,12 +960,12 @@ describe("script compiler service", () => {
     });
     expect(play?.source).toContain("ctx.print");
     expect(play?.source).toContain("ctx.log");
-    expect(play?.source).toContain("ctx.checkInfiniteLoop();");
+    expect(play?.source).toContain("ctx.checkInfiniteLoop(");
     const preview = compileGraphDocuments([
       { path: "assets/main.class.babasset", content: tickToPrint },
     ]);
     expect(preview[0]?.source).toContain("ctx.print");
-    expect(preview[0]?.source).toContain("ctx.checkInfiniteLoop();");
+    expect(preview[0]?.source).toContain("ctx.checkInfiniteLoop(");
     const exported = compileGraphDocuments(
       [{ path: "assets/main.class.babasset", content: tickToPrint }],
       { stripDevelopmentOnly: true },

@@ -429,6 +429,11 @@ function PlayAwareKeybinds({ children }: { children: ReactNode }) {
   return <KeybindProvider suspended={playing}>{children}</KeybindProvider>;
 }
 
+function DocumentValidationProvider({ children }: { children: ReactNode }) {
+  const { activeDocumentId } = useDocuments();
+  return <ValidationProvider scopeKey={activeDocumentId ?? undefined}>{children}</ValidationProvider>;
+}
+
 export default function EditorRoute({
   gallery = false,
 }: {
@@ -447,7 +452,7 @@ export default function EditorRoute({
         <AssetCreateDocumentsProvider>
           <TagDocumentsProvider>
             <GraphPinDefaultsProvider>
-              <ValidationProvider>
+              <DocumentValidationProvider>
                 <PlayProvider>
                   <MaterialRenderControlProvider>
                     <EditorUtilityRuntime />
@@ -464,7 +469,7 @@ export default function EditorRoute({
                     </ProjectSearchProvider>
                   </MaterialRenderControlProvider>
                 </PlayProvider>
-              </ValidationProvider>
+              </DocumentValidationProvider>
             </GraphPinDefaultsProvider>
           </TagDocumentsProvider>
         </AssetCreateDocumentsProvider>

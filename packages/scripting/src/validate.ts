@@ -215,6 +215,35 @@ function validateStructural(
     );
   }
 
+  const execAdjacency = new Map(graph.nodes.map((node) => [node.id, [] as string[]]));
+  for (const edge of graph.edges) {
+    const source = findNode(graph, edge.sourceNodeId);
+    const target = findNode(graph, edge.targetNodeId);
+    if (!source || !target) continue;
+    // A latent action yields to the runtime, so its back-edge is not an
+    // uninterrupted synchronous loop. Other cycles remain legal, with a warning.
+    if (registry?.get(source.typeId)?.latent || source.properties.async === true) continue;
+    if (findPin(source, edge.sourcePinId)?.kind === "exec" &&
+      findPin(target, edge.targetPinId)?.kind === "exec") {
+      execAdjacency.get(source.id)!.push(target.id);
+    }
+  }
+  const execCycle = hasCycle(execAdjacency, compiled);
+  if (execCycle) {
+    out.push(diagnostic({ severity: "warning", code: "exec.cycle",
+      message: "Execution cycle may run indefinitely. Ensure it exits or yields through a latent action.",
+      assetGuid: ctx.assetGuid, graphId: graph.id, nodeId: execCycle }));
+  }
+  for (const node of graph.nodes) {
+    if (!compiled.has(node.id) || node.typeId !== "flow.whileLoop") continue;
+    const condition = node.pins.find((pin) => pin.id === "condition");
+    if (!condition || graph.edges.some((edge) => edge.targetNodeId === node.id && edge.targetPinId === condition.id)) continue;
+    if (readPinDefaultForPin(node.properties, condition) !== true) continue;
+    out.push(diagnostic({ severity: "warning", code: "flow.constant_loop",
+      message: "While Loop condition is always True. Ensure the loop body breaks or yields.",
+      assetGuid: ctx.assetGuid, graphId: graph.id, nodeId: node.id, pinId: condition.id }));
+  }
+
   const entryNodes = graph.nodes.filter((n) =>
     n.pins.some((p) => p.kind === "exec" && p.direction === "in"),
   );

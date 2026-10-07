@@ -5393,7 +5393,11 @@ class InProcessRuntime implements RuntimeDriver {
     try {
       run();
     } catch (error) {
-      if (isInfiniteLoopError(error)) throw error;
+      if (isInfiniteLoopError(error)) {
+        // Stop must finish tearing down every owner even if On End loops.
+        if (!this.stopped) throw error;
+        return;
+      }
       this.reportError(error);
     }
   }
@@ -5864,7 +5868,11 @@ class InProcessRuntime implements RuntimeDriver {
     if (this.stopped) return;
     this.running = true;
     this.paused = false;
-    this.world.start();
+    try {
+      this.world.start();
+    } catch (error) {
+      if (!isInfiniteLoopError(error)) throw error;
+    }
   }
 
   stop(): void {
@@ -5955,6 +5963,10 @@ class InProcessRuntime implements RuntimeDriver {
     this.processingTick = true;
     try {
       this.runTick();
+    } catch (error) {
+      // Animation and other script phases also abort via the already-reported
+      // loop sentinel; keep it inside the runtime boundary, like Actor ticks.
+      if (!isInfiniteLoopError(error)) throw error;
     } finally {
       this.processingTick = false;
     }
@@ -6164,15 +6176,16 @@ class InProcessRuntime implements RuntimeDriver {
     const err = error instanceof Error ? error : new Error(String(error));
     const stack = err.stack ?? "";
     const anchor = mapStackToAnchor(stack, this.anchors);
+    const location = isInfiniteLoopError(err) ? err.scriptLocation : undefined;
     const diag: RuntimeDiagnostic = {
       code: isInfiniteLoopError(err)
         ? INFINITE_LOOP_DIAGNOSTIC_CODE
         : "runtime.uncaught",
       message: err.message,
       severity: "error",
-      assetGuid: hint?.assetGuid ?? this.currentBtAssetGuid ?? anchor?.assetGuid,
-      graphId: anchor?.graphId,
-      nodeId: hint?.btNodeId ? undefined : anchor?.nodeId,
+      assetGuid: hint?.assetGuid ?? this.currentBtAssetGuid ?? location?.assetGuid ?? anchor?.assetGuid,
+      graphId: location?.graphId ?? anchor?.graphId,
+      nodeId: hint?.btNodeId ? undefined : location?.nodeId ?? anchor?.nodeId,
       bodyLine: anchor?.bodyLine,
       btNodeId: hint?.btNodeId ?? this.currentBtNodeId ?? anchor?.btNodeId,
       stack,

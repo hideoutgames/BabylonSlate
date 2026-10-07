@@ -34,6 +34,27 @@ function renderValidation() {
 }
 
 describe("ValidationProvider", () => {
+  it("clears errors and focus on document switches and ignores stale async publishers", () => {
+    let current!: ReturnType<typeof useValidation>;
+    function Probe() { current = useValidation(); return null; }
+    const view = render(<ValidationProvider scopeKey="class-a"><Probe /></ValidationProvider>);
+    const error = { ...pairingWarning("Invalid graph"), severity: "error" as const };
+    act(() => { current.setDiagnostics([error]); current.setFocusDiagnostic(error); });
+    expect(current.errorCount).toBe(1);
+    const stale = current;
+    view.rerender(<ValidationProvider scopeKey="material-b"><Probe /></ValidationProvider>);
+    expect(current.errorCount).toBe(0);
+    expect(current.focusDiagnostic).toBeNull();
+    act(() => { stale.setDiagnostics([error]); stale.setFocusDiagnostic(error); });
+    expect(current.diagnostics).toEqual([]);
+    expect(current.focusDiagnostic).toBeNull();
+    view.rerender(<ValidationProvider scopeKey="class-a"><Probe /></ValidationProvider>);
+    act(() => stale.setDiagnostics([error]));
+    expect(current.errorCount).toBe(0);
+    act(() => current.setDiagnostics([error]));
+    expect(current.errorCount).toBe(1);
+  });
+
   it("keeps the published diagnostics when a panel recomputes an equal list", () => {
     const validation = renderValidation();
     act(() => validation().setDiagnostics([pairingWarning("Needs a collider.")]));

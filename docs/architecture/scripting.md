@@ -214,6 +214,8 @@ IR → **plain JavaScript ES modules** (no TypeScript in the browser).
 
 Validator and compiler share the **type context builder** so a graph that validates compiles.
 
+Validation warns on reachable synchronous execution cycles and While Loop conditions authored as constant True; these remain legal because a branch, Break, or latent action may terminate or suspend them. Runtime loop detection remains authoritative for data-dependent conditions and authored JavaScript.
+
 Execution back-edges retain the editor loop-budget checks even for cycles made only of control nodes or stripped development nodes. Break still exits its enclosing structured loop; a latent cycle resumes on the runtime tick clock, and pending Tick entries do not stack.
 
 Tap-to-connect accepts an execution output wired to the same node's execution input, including a self-repeating Delay. Host graph connection restrictions still apply.
