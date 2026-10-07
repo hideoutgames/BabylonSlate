@@ -1,19 +1,16 @@
 import type { BObject } from "@babylonslate/object-model";
+import type { OwnerAdmission } from "./owner-admission";
 import type { RuntimeSubsystem } from "./runtime-subsystems";
 
 type DelayWaiter = { remaining: number; resolve: () => void; owner?: BObject | null };
 
-interface LatentDelaysHost {
-  /** Whether the owner's time runs now (a SceneSubsystem's runs with its Scene). */
-  canRun(owner: BObject): boolean;
-}
-
 /** Script `Delay` timers, counted in simulation time while their owner may run. */
 export class LatentDelays implements RuntimeSubsystem {
   private readonly waiters: DelayWaiter[] = [];
-  private readonly host: LatentDelaysHost;
+  /** An owner's time runs while its actions may run (a SceneSubsystem's with its Scene). */
+  private readonly admission: Pick<OwnerAdmission, "canRunActions">;
 
-  constructor(host: LatentDelaysHost) { this.host = host; }
+  constructor(admission: Pick<OwnerAdmission, "canRunActions">) { this.admission = admission; }
 
   add(seconds: unknown, resolve: () => void, owner?: BObject | null): void {
     this.waiters.push({ remaining: Math.max(0, Number(seconds) || 0), resolve, owner });
@@ -26,7 +23,7 @@ export class LatentDelays implements RuntimeSubsystem {
     const due: Array<() => void> = [];
     for (const waiter of this.waiters) {
       if (waiter.owner?.destroyed) continue;
-      if (waiter.owner && !this.host.canRun(waiter.owner)) {
+      if (waiter.owner && !this.admission.canRunActions(waiter.owner)) {
         remaining.push(waiter);
         continue;
       }

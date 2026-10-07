@@ -56,8 +56,6 @@ import {
   Actor,
   ActorComponent,
   BObject,
-  GameInstance,
-  GameSubsystem,
   MaterialObject,
   PostProcessMaterialObject,
   getPostProcessMaterialObject,
@@ -766,14 +764,12 @@ class InProcessRuntime implements RuntimeDriver {
     materialParameters: () => this.materialParameters,
     emit: (command) => this.emit(command),
   });
-  private readonly audioParticles = new AudioParticleEmitter({
-    canRun: (actor) => this.admission.canRun(actor),
-    defer: (actor, action) => this.admission.run(actor, action),
+  private readonly audioParticles = new AudioParticleEmitter(this.admission, {
     slot: (actor) => this.actorSlot(actor),
     frameId: () => this.frameId,
     emit: (command) => this.emit(command),
   });
-  private readonly delays = new LatentDelays({ canRun: (owner) => this.admission.canRunActions(owner) });
+  private readonly delays = new LatentDelays(this.admission);
   private readonly navigation = new RuntimeNavigation({
     world: () => this.world,
     worldKind: () => this.physicsWorldKind,
