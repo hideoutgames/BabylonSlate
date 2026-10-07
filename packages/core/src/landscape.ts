@@ -56,19 +56,23 @@ export function landscapeCollisionMesh(value: unknown) {
   if (!value || typeof value !== "object" || (value as Record<string, unknown>).collisionsEnabled !== true) return null;
   const data = parseLandscapeProperties(value);
   const side = data.subdivisions + 1;
-  const vertices: Array<{ x: number; y: number; z: number }> = [];
-  const indices: number[] = [];
+  const positions = new Float32Array(side * side * 3);
+  const triangleCorners = data.subdivisions * data.subdivisions * 6;
+  const indices = side * side <= 0x10000 ? new Uint16Array(triangleCorners) : new Uint32Array(triangleCorners);
+  let corner = 0;
   for (let z = 0; z < side; z++) for (let x = 0; x < side; x++) {
     const a = z * side + x;
-    vertices.push({ x: x * data.width / data.subdivisions - data.width / 2,
-      y: data.heights[a]!, z: z * data.depth / data.subdivisions - data.depth / 2 });
+    positions[a * 3] = x * data.width / data.subdivisions - data.width / 2;
+    positions[a * 3 + 1] = data.heights[a]!;
+    positions[a * 3 + 2] = z * data.depth / data.subdivisions - data.depth / 2;
     if (x < data.subdivisions && z < data.subdivisions) {
       const b = a + side;
       // Match the rendered heightfield's diagonal and upward-facing winding.
-      indices.push(a, a + 1, b, a + 1, b + 1, b);
+      indices.set([a, a + 1, b, a + 1, b + 1, b], corner);
+      corner += 6;
     }
   }
-  return { kind: "mesh" as const, vertices, indices };
+  return { kind: "mesh" as const, positions, indices };
 }
 
 /** Each dab is immutable, allowing an entire drag to share one undo entry. */

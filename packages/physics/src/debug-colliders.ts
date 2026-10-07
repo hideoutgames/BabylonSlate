@@ -143,14 +143,18 @@ export function debugColliderFromDesc(
         points: shape.points.map((point) => ({ ...point })),
       };
     case "mesh":
-      if (shape.vertices.length < 3 || shape.indices.length < 3) return null;
+      if (shape.positions.length < 9 || shape.indices.length < 3) return null;
       return {
         id: desc.id,
         shape: "mesh",
         position,
         rotation,
-        points: shape.vertices.map((point) => ({ ...point })),
-        indices: [...shape.indices],
+        points: Array.from({ length: shape.positions.length / 3 }, (_, i) => ({
+          x: shape.positions[i * 3]!,
+          y: shape.positions[i * 3 + 1]!,
+          z: shape.positions[i * 3 + 2]!,
+        })),
+        indices: Array.from(shape.indices),
       };
     default:
       return null;

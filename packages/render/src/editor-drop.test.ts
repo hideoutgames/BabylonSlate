@@ -18,7 +18,7 @@ import { createTestEngine } from "./create-null-engine";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { calculateEditorDropTransforms } from "./editor-drop";
 import type { MeshAssetContext } from "./mesh-assets";
-import type { ColliderShape } from "@babylonslate/physics";
+import type { ColliderShape, Vec3 } from "@babylonslate/physics";
 import {
   createDefaultSpritePayload,
   emptyChunkTiles,
@@ -252,7 +252,8 @@ describe("editor Drop", () => {
     expect(rotated.y + 10).toBeCloseTo(2.25);
   });
 
-  it.each<{ shape: ColliderShape; x: number; y: number }>([
+  // Authored ColliderComponent rows: mesh shapes keep object-per-vertex data.
+  it.each<{ shape: Exclude<ColliderShape, { kind: "mesh" }> | { kind: "mesh"; vertices: Vec3[]; indices: number[] }; x: number; y: number }>([
     { shape: { kind: "sphere", radius: 2 }, x: 1, y: Math.sqrt(3) + 0.75 },
     {
       shape: { kind: "capsule", radius: 1, halfHeight: 2 },
